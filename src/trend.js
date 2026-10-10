@@ -272,6 +272,7 @@ export function createTrend({ stageOrder = [], limit = FIX_STRIKE_LIMIT, blindCa
      * @param {{gap?: string, stage?: string|null, value?: number|null}} o either a
      *   raw gap (parsed here) or an already-read `{stage, value}` — never both
      *   spellings of the same reading in one call.
+     *   (A judged stage's value is its distinct red COUNT, supplied by the caller.)
      * @returns {{iteration: number, stage: string, value: number|null, improved: boolean,
      *   comparable: boolean, noProgress: number, limit: number, stageIndex: number}}
      */

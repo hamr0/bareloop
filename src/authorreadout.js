@@ -26,6 +26,8 @@
 import { scrubRaw } from './text.js';
 import { redactSecrets } from './validate.js';
 import { judgedStages } from './kinds.js';
+import { CALIBRATION_SIZE } from './judged.js';
+import { INJECTION_LOCATE_BATTERY } from './calibrate.js';
 
 /**
  * @param {{goal?: string|null, closeDecl?: any}} spec the RESOLVED spec — the bytes
@@ -142,6 +144,36 @@ export function answeredQuestionLines(confirmed) {
   return lines;
 }
 
+/** a quote for a human line: one line, cut at `max` with the cut VISIBLE
+ * @param {unknown} q @param {number} [max] @returns {string} */
+function shortQuote(q, max = 80) {
+  const one = String(q ?? '').replace(/\s+/g, ' ').trim();
+  return one.length > max ? `${one.slice(0, max)}…[truncated, ${one.length} chars]` : one;
+}
+
+/**
+ * ONE plain line saying WHY a graded case reds, read off its own `diag` (F192):
+ * the first red's rule, function, `why` and quoted text — and how many more the
+ * record holds. A case with no reds says why it has none (no facts: each
+ * attempt's axis and cause). Null when the row predates `diag`.
+ * @param {any} row a `graded` or `injection.styles` row
+ * @returns {string|null}
+ */
+function diagLine(row) {
+  const d = row?.diag;
+  if (!d) return null;
+  const first = d.reds?.[0];
+  if (first) {
+    const more = d.reds.length > 1 ? ` (+${d.reds.length - 1} more red(s) in signing.json)` : '';
+    return `          why: ${first.rule} · ${first.fn} — ${first.why}; quote: ${first.quote === null ? '(none)' : `"${shortQuote(first.quote)}"`}${more}`;
+  }
+  const failed = (d.attempts ?? []).filter((/** @type {any} */ a) => !a.ok);
+  if (failed.length) {
+    return `          why: no facts — ${failed.map((/** @type {any} */ a) => `attempt ${a.attempt} [${a.axis}] ${shortQuote(a.detail, 120)}`).join('; ')}`;
+  }
+  return d.reason ? `          why: ${shortQuote(d.reason, 120)}` : null;
+}
+
 /**
  * THE CALIBRATION GATE'S OWN READOUT — the one gate that spends money, and the
  * one whose rows a signer has to read case by case.
@@ -170,12 +202,44 @@ export function calibrationLines(calibration) {
   if (calibration.casualty) {
     lines.push(`      CASUALTY on ${calibration.casualty.kind} "${calibration.casualty.at}" [${calibration.casualty.axis}] `
       + '— a broken judge is no evidence about the set');
+    const cl = diagLine(calibration.casualty);
+    if (cl) lines.push(cl);
   }
-  for (const g of graded.filter((/** @type {any} */ x) => !x.ok)) lines.push(`      WRONG  ${g.id}: ${g.detail}`);
-  for (const s of styles.filter((/** @type {any} */ x) => !x.resisted)) lines.push(`      LEAK   ${s.style}: ${s.detail}`);
+  for (const g of graded.filter((/** @type {any} */ x) => !x.ok)) {
+    lines.push(`      WRONG  ${g.id}: ${g.detail}`);
+    const l = diagLine(g);
+    if (l) lines.push(l);
+  }
+  for (const s of styles.filter((/** @type {any} */ x) => !x.resisted)) {
+    lines.push(`      LEAK   ${s.style}: ${s.detail}`);
+    const l = diagLine(s);
+    if (l) lines.push(l);
+  }
   lines.push(`      certified  card ${String(calibration.cardHash ?? 'unknown').slice(0, 12)}  cases `
     + `${String(calibration.casesHash ?? 'unknown').slice(0, 12)}  set ${String(calibration.setHash ?? 'unknown').slice(0, 12)}`);
   return lines;
+}
+
+/**
+ * The calibration gate's real result as one line a person reads next to the step (hamr, 2026-10-09: the panel
+ * showed `calibrating ✓` over a gate that graded 8 of 10 and let 2 attack styles leak). PASS IS THE GATE'S OWN:
+ * `ok` is `calibration.ok` as `runCalibration` decided it (every case right as a SET of reds, every style
+ * resisted), never recomputed here, so there is no second spelling of the floor. The counts are read from the
+ * record (`graded[].ok` is `compareExpectation`, which compares reds as sets); the denominators are the live
+ * constants (CALIBRATION_SIZE, the battery length), so a gate that stopped part-way reads "x of 10", not "x of x".
+ * @param {any} calibration `signing.gates.calibration`
+ * @returns {{ok: boolean, note: string}|null} null when the gate was not reached
+ */
+export function calibrationSummary(calibration) {
+  if (!calibration || typeof calibration !== 'object') return null;
+  const graded = Array.isArray(calibration.graded) ? calibration.graded : [];
+  const styles = Array.isArray(calibration.injection?.styles) ? calibration.injection.styles : [];
+  const right = graded.filter((/** @type {any} */ g) => g?.ok === true).length;
+  const resisted = styles.filter((/** @type {any} */ x) => x?.resisted === true).length;
+  return {
+    ok: calibration.ok === true,
+    note: `${right} of ${CALIBRATION_SIZE} practice cases graded right · ${resisted} of ${INJECTION_LOCATE_BATTERY.length} attack tests resisted`,
+  };
 }
 
 /**
@@ -320,4 +384,387 @@ export function crashRecord(err) {
       reason: cause === undefined || cause === null ? null : String(cause?.message ?? cause),
     }),
   };
+}
+
+// ── THE PLAIN REASON FOR A REFUSED RUBRIC PROPOSAL ──────────────────────────
+//
+// A rubric draft that stopped at `proposal-invalid` / `rubric-invalid` used to
+// say only that code, and the technical reds behind it were lost to the person
+// (live, panel session smv0j8bp2pbyn, 2026-10-09; hamr: "A user should get a
+// reason that they can understand and do something about"). ONE owner: the
+// panel session and the CLI both print `proposalStopText`, so there is one
+// spelling and two doors. Every sentence is written HERE, by code — the model
+// never words a reason — and the structured red travels beside it so the record
+// loses nothing.
+
+/** the longest case name / quoted piece a plain sentence will carry */
+const PLAIN_QUOTE_MAX = 60;
+/** the most bullets a message lists before it says how many more there are */
+const PLAIN_MAX_BULLETS = 8;
+/** the most reds one drafting-log record carries, and the longest string in any of them */
+const RECORD_MAX_REDS = 40;
+const RECORD_STR_MAX = 600;
+
+/** model-derived text in a person-facing line: scrubbed, one line, bounded
+ * @param {unknown} s @returns {string} */
+function safeText(s) {
+  const one = redactSecrets(String(s ?? '')).replace(/\s+/g, ' ').trim();
+  return one.length > PLAIN_QUOTE_MAX ? `${one.slice(0, PLAIN_QUOTE_MAX)}…` : one;
+}
+
+/**
+ * @typedef {{code: string, path: string, detail: string, [k: string]: any}} PlainRed
+ * @typedef {{kind: string, sentence: string, red: PlainRed}} PlainReason
+ */
+
+/**
+ * The ONE table of plain kinds → sentence builders. A builder gets the red, the
+ * name of the case it lands on (when it lands on one) and the match of the
+ * regex that picked it. `unmapped` is the only kind the table does not list.
+ * Order matters: the first matching entry wins.
+ * @type {{kind: string, when: (r: PlainRed) => boolean, say: (r: PlainRed, c: string, m: RegExpMatchArray|null) => string}[]}
+ */
+const PLAIN_TABLE = [
+  // ── the rubric card (validateCard, surfaced as code invalid-value at path "card") ──
+  { kind: 'card-not-object', when: (r) => r.code === 'invalid-value' && /^the card must be an object/.test(r.detail),
+    say: () => 'The model did not hand back a rubric in the expected shape.' },
+  { kind: 'card-empty', when: (r) => r.code === 'invalid-value' && /^the card must carry a non-empty/.test(r.detail),
+    say: () => 'The model\'s rubric has no rules in it.' },
+  { kind: 'card-line-bad', when: (r) => r.code === 'invalid-value' && /^card item \d+: must be an object/.test(r.detail),
+    say: (r) => `Rubric line ${cardLineNo(r)} is not a proper line.` },
+  { kind: 'card-line-no-rule', when: (r) => r.code === 'invalid-value' && /^card item \d+: needs a `rule`/.test(r.detail),
+    say: (r) => `Rubric line ${cardLineNo(r)} does not pick which rule it uses.` },
+  { kind: 'card-line-unknown-rule', when: (r) => r.code === 'invalid-value' && /^card item \d+: `.*` is not a rule this arbiter implements/.test(r.detail),
+    say: (r, _c, _m) => `Rubric line ${cardLineNo(r)} names a rule bareloop does not have (${safeText(/`(.*?)` is not a rule/.exec(r.detail)?.[1] ?? '')}).` },
+  { kind: 'card-line-repeat', when: (r) => r.code === 'invalid-value' && /^card item \d+: `.*` is named twice/.test(r.detail),
+    say: (r) => `Rubric line ${cardLineNo(r)} uses a rule that an earlier line already uses.` },
+  { kind: 'card-line-no-text', when: (r) => r.code === 'invalid-value' && /^card item \d+: needs `text`/.test(r.detail),
+    say: (r) => `Rubric line ${cardLineNo(r)} has no wording.` },
+  { kind: 'proposal-not-object', when: (r) => r.code === 'invalid-value' && r.path === 'proposal',
+    say: () => 'The model\'s answer was not a rubric plus practice cases.' },
+  // ── the practice-case set as a whole ──
+  { kind: 'set-no-rules', when: (r) => r.code === 'calibration-cardless',
+    say: () => 'The rubric has no rules, so the practice cases had nothing to be checked against.' },
+  { kind: 'set-not-list', when: (r) => r.code === 'calibration-size' && !('declared' in r),
+    say: () => `The practice cases did not come back as a list of ${CALIBRATION_SIZE}.` },
+  { kind: 'set-size', when: (r) => r.code === 'calibration-size',
+    say: (r) => `The model gave ${r.declared} practice case${r.declared === 1 ? '' : 's'}; exactly ${r.required ?? CALIBRATION_SIZE} are needed.` },
+  { kind: 'set-one-sided', when: (r) => r.code === 'calibration-polarity',
+    say: (r) => `The practice cases were ${r.passes} pass and ${r.reds} fail; the set needs at least one of each, or it cannot tell a working judge from one that always gives the same answer.` },
+  // ── one practice case ──
+  { kind: 'case-not-object', when: (r) => r.code === 'calibration-case' && /^calibration\.cases\[\d+\]$/.test(r.path),
+    say: (_r, c) => `${c} is not a proper case.` },
+  { kind: 'case-name-repeat', when: (r) => r.code === 'calibration-case' && /\.id$/.test(r.path) && /declared twice/.test(r.detail),
+    say: (_r, c) => `Two practice cases share the name ${c}.` },
+  { kind: 'case-name-bad', when: (r) => r.code === 'calibration-case' && /\.id$/.test(r.path),
+    say: (_r, c) => `${c} has no usable name (a short name in lowercase letters, digits and hyphens is needed).` },
+  { kind: 'case-code-repeat', when: (r) => r.code === 'calibration-case' && /\.artifact$/.test(r.path) && /used twice/.test(r.detail),
+    say: (_r, c) => `${c} reuses the same sample code as another case.` },
+  { kind: 'case-code-missing', when: (r) => r.code === 'calibration-case' && /\.artifact$/.test(r.path),
+    say: (_r, c) => `${c} has no sample code to look at.` },
+  { kind: 'case-impossible-no-doc', when: (r) => r.code === 'calibration-case' && /\.expect\.reds$/.test(r.path) && /expects has-doc red on/.test(r.detail),
+    say: (r, c) => {
+      const fn = safeText(/expects has-doc red on (\S+?),/.exec(r.detail)?.[1] ?? 'a function');
+      return `${c} says "fail: no doc comment" on ${fn}, but ${fn} has a doc comment right above it.`;
+    } },
+  { kind: 'case-pass-lists-fails', when: (r) => r.code === 'calibration-case' && /\.expect\.reds$/.test(r.path) && /^a PASS case expects no reds/.test(r.detail),
+    say: (_r, c) => `${c} is marked as a pass but also lists things that fail.` },
+  { kind: 'case-fail-lists-nothing', when: (r) => r.code === 'calibration-case' && /\.expect\.reds$/.test(r.path) && /^a RED case names WHICH/.test(r.detail),
+    say: (_r, c) => `${c} is marked as a fail but does not say which rule or function fails.` },
+  { kind: 'case-fails-not-list', when: (r) => r.code === 'calibration-case' && /\.expect\.reds$/.test(r.path),
+    say: (_r, c) => `${c} does not give its expected failures as a list.` },
+  { kind: 'case-no-expected', when: (r) => r.code === 'calibration-case' && /\.expect$/.test(r.path),
+    say: (_r, c) => `${c} has no expected result.` },
+  { kind: 'case-verdict-bad', when: (r) => r.code === 'calibration-case' && /\.expect\.verdict$/.test(r.path),
+    say: (_r, c) => `${c} expects a result that is neither pass nor fail.` },
+  { kind: 'case-fail-malformed', when: (r) => r.code === 'calibration-case' && /\.reds\[\d+\]$/.test(r.path) && /^an expected red is/.test(r.detail),
+    say: (_r, c) => `${c} has an expected failure that is not written as a rule and a function.` },
+  { kind: 'case-fail-repeat', when: (r) => r.code === 'calibration-case' && /\.reds\[\d+\]$/.test(r.path),
+    say: (_r, c) => `${c} lists the same failure twice.` },
+  { kind: 'case-fail-rule-foreign', when: (r) => r.code === 'calibration-case' && /\.rule$/.test(r.path) && typeof r.rule === 'string',
+    say: (r, c) => `${c} expects a failure from the rule "${safeText(r.rule)}", which this rubric does not use.` },
+  { kind: 'case-fail-rule-missing', when: (r) => r.code === 'calibration-case' && /\.rule$/.test(r.path),
+    say: (_r, c) => `${c} has an expected failure with no rule named.` },
+  { kind: 'case-fail-fn-missing', when: (r) => r.code === 'calibration-case' && /\.fn$/.test(r.path),
+    say: (_r, c) => `${c} has an expected failure with no function named.` },
+];
+
+/** @param {PlainRed} r the 1-based rubric line a card red lands on @returns {number} */
+function cardLineNo(r) {
+  return Number(/^card item (\d+):/.exec(r.detail)?.[1] ?? -1) + 1;
+}
+
+/**
+ * Every plain kind the table can emit — the list the test enumerates against.
+ * @returns {string[]}
+ */
+export function plainKinds() {
+  return PLAIN_TABLE.map((e) => e.kind);
+}
+
+/**
+ * Map the technical reds of a refused proposal to plain sentences, one per red.
+ * An unknown code is NEVER dropped: it becomes a generic sentence that still
+ * quotes the code and path, under the kind `unmapped`.
+ * @param {PlainRed[]} reds
+ * @param {{cases?: any}} [o] the proposed cases, to name a case by its own id
+ * @returns {PlainReason[]}
+ */
+export function plainReasons(reds, { cases = null } = {}) {
+  return (Array.isArray(reds) ? reds : []).map((red) => {
+    const r = /** @type {PlainRed} */ ({ ...red, code: String(red?.code ?? ''), path: String(red?.path ?? ''), detail: String(red?.detail ?? '') });
+    const idx = /^calibration\.cases\[(\d+)\]/.exec(r.path)?.[1];
+    const given = idx !== undefined && Array.isArray(cases) ? cases[Number(idx)]?.id : undefined;
+    const caseName = idx === undefined ? 'A case'
+      : typeof given === 'string' && given.trim() !== '' ? `Case "${safeText(given)}"` : `Case ${Number(idx) + 1}`;
+    const hit = PLAIN_TABLE.find((e) => e.when(r));
+    if (hit) return { kind: hit.kind, sentence: hit.say(r, caseName, null), red: r };
+    return {
+      kind: 'unmapped',
+      sentence: `The model's proposal failed a check that has no plain wording yet ("${safeText(r.code)}" at ${safeText(r.path)}).`,
+      red: r,
+    };
+  });
+}
+
+/** @param {number} n @returns {string} the panel's money spelling: 2 decimals, "<$0.01" under a cent */
+function moneyText(n) {
+  return n > 0 && n < 0.005 ? '<$0.01' : `$${n.toFixed(2)}`;
+}
+
+/**
+ * The money clause: the measured figure, "at least" when a call was unpriced,
+ * and `null` when there is no honest figure (the caller then says unknown or
+ * drops the clause — never a zero).
+ * @param {{knownUsd?: number|null, spendComplete?: boolean|null}|null|undefined} spend
+ * @returns {string|null}
+ */
+function spendText(spend) {
+  if (!spend || typeof spend.knownUsd !== 'number' || !Number.isFinite(spend.knownUsd)) return null;
+  return `${spend.spendComplete === false ? 'at least ' : ''}${moneyText(spend.knownUsd)}`;
+}
+
+/** the stops this module explains in plain words */
+export const PLAIN_PROPOSAL_STOPS = Object.freeze(['proposal-invalid', 'rubric-invalid']);
+
+/**
+ * THE MESSAGE a person reads when the rubric proposal was refused. Both doors
+ * (the panel's failed step and the CLI) print exactly this.
+ * @param {{stop: string, reds: PlainRed[], cases?: any, spend?: {knownUsd?: number|null, spendComplete?: boolean|null}|null,
+ *   source?: 'proposal'|'signer'}} o
+ * @returns {string}
+ */
+export function proposalStopText({ stop, reds, cases = null, spend = null, source = 'proposal' }) {
+  const reasons = plainReasons(reds, { cases });
+  const unique = [...new Set(reasons.map((x) => x.sentence))];
+  const shown = unique.slice(0, PLAIN_MAX_BULLETS);
+  const onlyCases = reasons.length > 0 && reasons.every((x) => x.kind.startsWith('case-') || x.kind.startsWith('set-'));
+  const spent = spendText(spend);
+  const head = stop === 'rubric-invalid'
+    ? 'The rubric and practice cases failed the last check before signing, so nothing was signed.'
+    : `The model's ${onlyCases ? 'practice cases for your rubric' : 'rubric and practice cases'} didn't hold up, so we stopped before grading anything.`;
+  const lines = [`${head} Spent so far: ${spent ?? 'unknown'}.`, 'What was wrong:'];
+  for (const s of shown) lines.push(` • ${s}`);
+  if (unique.length > shown.length) lines.push(` • …and ${unique.length - shown.length} more.`);
+  lines.push(source === 'signer' ? 'This one is from the edit made before signing.' : 'This is the model\'s mistake, not yours.');
+  lines.push(`What to do: draft again${spent ? ` (about ${spent} to reach here)` : ''}.`);
+  lines.push('If it fails the same way twice, make your PASS/FAIL examples more concrete.');
+  return lines.join('\n');
+}
+
+// ── THE SIGNING GATES' REFUSAL, in plain words (hamr, 2026-10-09) ──────────────────────────
+//
+// `prepareSigning` (src/authorjob.js) can refuse with a list of reds from four gates. The panel used to say
+// `signing gates failed — calibration-miswrite, calibration-miswrite, calibration-miswrite, injection-leak`.
+// Same principle as the proposal text above ("a user should get a reason that they can understand and do
+// something about"): one owner, written by code, the structured reds travel beside it in the drafting log.
+//
+// WHOSE FAULT. A calibration-miswrite is NOT claimed to be the model's mistake: the practice case was written by
+// the model, but the check can be the one that is wrong (live, 2026-10-09: two of three misses were our rule).
+// The text says the practice case and the check DISAGREE, and leaves it at that.
+//
+// EVERY RED CODE REACHABLE AT THE REFUSAL, enumerated from source:
+//   gate 1a/1b (the declaration; validateJob + validateCloseDecl): DECLARATION_CODES below, plus seed-unreadable
+//     and listing-unreadable (authorjob.js)
+//   gate 2 (precheck): broken-close
+//   gate 4 (calibration; calibrate.js + authorjob.js calibrationGate): calibration-missing, no-judge-seam,
+//     cap-halt, pricing-red, provider-red, artifact-red (the casualty axes), calibration-miswrite,
+//     injection-leak, and the invalid-set reds (invalid-value at `card`, calibration-case / -size / -polarity /
+//     -cardless / -orphan) which the proposal table above already words
+//   gate 3 refuses with NO red at all (refusal only: the close already passes at the seed)
+// An unknown code is never dropped: it becomes a generic sentence that quotes the code.
+
+/** codes the declaration gates (validateJob, validateCloseDecl) raise: one plain sentence covers the family */
+export const DECLARATION_CODES = Object.freeze([
+  'bounds', 'class-absent', 'class-battery-locked', 'class-ceiling', 'cmd-denied', 'duplicate-kind', 'duplicate-name',
+  'env-ownership-absent', 'genre-env-missing', 'genre-env-ungrounded', 'genre-owned-env', 'guard-missing',
+  'guard-weakened', 'guards-absent', 'human-stage-not-last', 'human-stage-offered', 'invalid-value', 'judged-outside-write-scope', 'judged-stage-order',
+  'listing-absent', 'listing-conflict', 'locked-kind', 'missing-field', 'missing-required', 'one-population',
+  'path-not-in-listing', 'secret-literal', 'unknown-field', 'unknown-kind',
+]);
+
+/** the rulebook rules in the words of a person: what the rule flags */
+const RULE_FLAGS = Object.freeze({
+  'has-doc': 'there is no doc comment',
+  'says-what': 'the doc only repeats the function\'s name',
+  params: 'a parameter is missing from the doc, or the doc names one that does not exist',
+  returns: 'the return value is not documented',
+});
+
+/** @param {unknown} rule @returns {string} */
+const ruleFlag = (rule) => (typeof rule === 'string' && Object.hasOwn(RULE_FLAGS, rule)
+  ? /** @type {Record<string,string>} */ (RULE_FLAGS)[rule] : `the rule "${safeText(rule)}" applies`);
+
+/** "says-what · initCache; params · initCache" to [{rule, fn}] @param {string} list */
+const ruleFns = (list) => list.split(';').map((x) => x.trim()).filter(Boolean).map((x) => {
+  const [rule, fn] = x.split('·').map((t) => t.trim());
+  return { rule, fn: fn ?? '' };
+});
+
+/**
+ * A calibration-miswrite red as plain sentences: what the practice case expected against what the check found,
+ * read off the red's own detail (the compareExpectation pieces calibrate.js writes).
+ * @param {PlainRed} r @returns {string[]}
+ */
+function miswriteSentences(r) {
+  const who = `Case "${safeText(r.caseId ?? /^case "(.*?)" was graded/.exec(r.detail)?.[1] ?? '')}"`;
+  const missing = /expected red\(s\) the pipe did not raise: (.*?)(?: — |\. The floor)/.exec(r.detail)?.[1];
+  const extra = /red\(s\) the pipe raised that nobody signed: (.*?)(?: — |\. The floor)/.exec(r.detail)?.[1];
+  /** @type {string[]} */
+  const out = [];
+  for (const { rule, fn } of missing ? ruleFns(missing) : []) {
+    out.push(`${who}${fn ? ` (${safeText(fn)})` : ''}: the practice case says ${ruleFlag(rule)}, but the check passed it.`);
+  }
+  for (const { rule, fn } of extra ? ruleFns(extra) : []) {
+    out.push(`${who}${fn ? ` (${safeText(fn)})` : ''}: the check says ${ruleFlag(rule)}, but the practice case did not expect that.`);
+  }
+  if (out.length === 0) {
+    const m = /signed "(\w+)", the pipe rendered "(\w+)"/.exec(r.detail);
+    out.push(m
+      ? `${who}: the practice case says ${m[1] === 'red' ? 'fail' : 'pass'}, but the check said ${m[2] === 'red' ? 'fail' : 'pass'}.`
+      : `${who}: the practice case and the check disagree.`);
+  }
+  return out;
+}
+
+/**
+ * @type {{kind: string, when: (r: PlainRed) => boolean, say: (r: PlainRed) => string[], todo: string}[]}
+ * Order matters; the first match wins. `todo` is the one thing the person can do.
+ */
+const SIGNING_TABLE = [
+  { kind: 'miswrite', when: (r) => r.code === 'calibration-miswrite', say: miswriteSentences, todo: 'draft again' },
+  { kind: 'injection-leak', when: (r) => r.code === 'injection-leak',
+    say: (r) => [`A test file tried to trick the judge ("${safeText(r.style ?? '')}"), and what the judge pointed at changed, so the judge could not be shown to resist it.`],
+    todo: 'draft again' },
+  { kind: 'calibration-missing', when: (r) => r.code === 'calibration-missing',
+    say: () => ['The rubric came without practice cases, so the check was never tried out.'], todo: 'draft again' },
+  { kind: 'no-judge', when: (r) => r.code === 'no-judge-seam',
+    say: () => ['No judge model was set up to try out the rubric, so it was never graded.'], todo: 'check the judge model and its key in Settings, then try again' },
+  { kind: 'cap-halt', when: (r) => r.code === 'cap-halt',
+    say: () => ['The spending cap ran out while the practice cases were being graded. Nothing says the rubric is wrong.'], todo: 'raise the cap, then draft again' },
+  { kind: 'pricing-red', when: (r) => r.code === 'pricing-red',
+    say: () => ['A model call could not be priced, so the cap could not be applied; bareloop stopped rather than spend blind.'], todo: 'set the price for this model in Settings, then try again' },
+  { kind: 'provider-red', when: (r) => r.code === 'provider-red',
+    say: () => ['The judge model could not be reached or was cut off while the practice cases were graded. Nothing says the rubric is wrong.'], todo: 'try again in a few minutes' },
+  { kind: 'artifact-red', when: (r) => r.code === 'artifact-red',
+    say: () => ['The judge model answered with something bareloop could not read while the practice cases were graded. Nothing says the rubric is wrong.'], todo: 'try again' },
+  { kind: 'broken-close', when: (r) => r.code === 'broken-close',
+    say: (r) => [`A check of the close (${safeText(r.path.split('.').pop() ?? '')}) cannot run on this repository, so nothing it reported could be trusted.`],
+    todo: 'check that the project\'s tools (its install, build and test commands) run, then try again' },
+  { kind: 'seed-unreadable', when: (r) => r.code === 'seed-unreadable',
+    say: () => ['bareloop could not read the repository\'s starting commit.'], todo: 'check that the source is a git repository with at least one commit' },
+  { kind: 'listing-unreadable', when: (r) => r.code === 'listing-unreadable',
+    say: () => ['bareloop could not list the files of the repository\'s starting commit.'], todo: 'check that the source is a git repository with at least one commit' },
+  { kind: 'judged-outside-fence', when: (r) => r.code === 'judged-outside-write-scope',
+    say: (r) => [`The rubric check looks at ${listText(r.outside)}, but the job may only edit ${listText(r.fence)} — so the run could never fix what it finds.`],
+    todo: 'draft again' },
+  { kind: 'declaration', when: (r) => DECLARATION_CODES.includes(r.code) && !(r.code === 'invalid-value' && r.path === 'card'),
+    say: (r) => [`The close the model wrote was refused before anything ran ("${safeText(r.code)}" at ${safeText(r.path)}).`], todo: 'draft again' },
+];
+
+/** a red's string list as plain text, each entry scrubbed and bounded
+ * @param {unknown} v @returns {string} */
+const listText = (v) => {
+  const items = (Array.isArray(v) ? v : []).filter((x) => typeof x === 'string' && x !== '').slice(0, 4).map((x) => safeText(x));
+  return items.length ? items.join(', ') : 'files outside the edit area';
+};
+
+/** the sentence when the gates refuse with no red at all (the close already passes on the untouched repository) */
+const SEED_GREEN_SENTENCE = 'Nothing in the close fails on the repository as it is, so there is nothing for a run to do.';
+
+/**
+ * Plain sentences for the reds of a refused signing, one or more per red. Card and practice-case reds reuse the
+ * proposal table; an unknown code is a generic sentence that quotes the code.
+ * @param {PlainRed[]} reds @param {{cases?: any}} [o]
+ * @returns {{kind: string, sentence: string, todo: string, red: PlainRed}[]}
+ */
+export function signingReasons(reds, { cases = null } = {}) {
+  /** @type {{kind: string, sentence: string, todo: string, red: PlainRed}[]} */
+  const out = [];
+  for (const red of Array.isArray(reds) ? reds : []) {
+    const r = /** @type {PlainRed} */ ({ ...red, code: String(red?.code ?? ''), path: String(red?.path ?? ''), detail: String(red?.detail ?? '') });
+    const hit = SIGNING_TABLE.find((e) => e.when(r));
+    if (hit) { for (const sentence of hit.say(r)) out.push({ kind: hit.kind, sentence, todo: hit.todo, red: r }); continue; }
+    const [pr] = plainReasons([r], { cases });
+    if (pr && pr.kind !== 'unmapped') { out.push({ kind: pr.kind, sentence: pr.sentence, todo: 'draft again', red: r }); continue; }
+    out.push({
+      kind: 'unmapped',
+      sentence: `A check before signing failed and has no plain wording yet ("${safeText(r.code)}" at ${safeText(r.path)}).`,
+      todo: 'draft again; if it fails the same way, report the code above',
+      red: r,
+    });
+  }
+  return out;
+}
+
+/** every plain kind `signingReasons` can emit besides the proposal table's — what the test enumerates
+ * @returns {string[]} */
+export function signingKinds() {
+  return [...SIGNING_TABLE.map((e) => e.kind), 'seed-green', 'unmapped'];
+}
+
+/**
+ * THE MESSAGE a person reads when the signing gates refuse. The panel's failed step and the CLI print exactly this.
+ * @param {{reds: PlainRed[], refusal?: {detail?: string}|null, cases?: any,
+ *   spend?: {knownUsd?: number|null, spendComplete?: boolean|null}|null}} o
+ * @returns {string}
+ */
+export function signingStopText({ reds, refusal = null, cases = null, spend = null }) {
+  const reasons = signingReasons(reds, { cases });
+  if (reasons.length === 0) {
+    reasons.push({ kind: 'seed-green', sentence: SEED_GREEN_SENTENCE, todo: 'check that the close measures the right thing, or describe a sharper problem',
+      red: { code: '', path: '', detail: String(refusal?.detail ?? '') } });
+  }
+  const unique = [...new Set(reasons.map((x) => x.sentence))];
+  const shown = unique.slice(0, PLAIN_MAX_BULLETS);
+  const spent = spendText(spend);
+  const lines = [`The checks before signing did not all pass, so nothing was signed. Spent so far: ${spent ?? 'unknown'}.`, 'What was wrong:'];
+  for (const s of shown) lines.push(` • ${s}`);
+  if (unique.length > shown.length) lines.push(` • …and ${unique.length - shown.length} more.`);
+  if (reasons.some((x) => x.kind === 'miswrite' || x.kind === 'injection-leak')) {
+    lines.push('The practice cases and the check disagree; either one can be the one that is wrong, so this is not necessarily your doing or the model\'s.');
+  }
+  lines.push(`What to do: ${reasons[0].todo}${reasons[0].todo === 'draft again' && spent ? ` (about ${spent} to reach here)` : ''}.`);
+  return lines.join('\n');
+}
+
+/**
+ * The reds as the drafting log keeps them: every structured field, the plain
+ * sentence beside it, every string secret-scrubbed and bounded, the list capped.
+ * @param {PlainRed[]} reds @param {{cases?: any, signing?: boolean}} [o] `signing`: the reds are the signing gates', worded by signingReasons
+ * @returns {Record<string, any>[]}
+ */
+export function redsRecord(reds, { cases = null, signing = false } = {}) {
+  /** @param {unknown} s */
+  const cut = (s) => { const t = redactSecrets(String(s ?? '')); return t.length > RECORD_STR_MAX ? `${t.slice(0, RECORD_STR_MAX)}…` : t; };
+  return (signing ? signingReasons(reds, { cases }) : plainReasons(reds, { cases })).slice(0, RECORD_MAX_REDS).map(({ kind, sentence, red }) => {
+    /** @type {Record<string, any>} */
+    const out = { kind, plain: sentence };
+    for (const [k, v] of Object.entries(red)) {
+      if (typeof v === 'string') out[k] = cut(v);
+      else if (typeof v === 'number' || typeof v === 'boolean' || v === null) out[k] = v;
+      else if (Array.isArray(v)) out[k] = v.slice(0, 10).map((x) => (typeof x === 'string' ? cut(x) : x));
+    }
+    return out;
+  });
 }

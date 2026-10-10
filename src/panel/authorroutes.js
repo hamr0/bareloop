@@ -13,7 +13,7 @@
 // The SIGN route additionally requires the EXACT `specHash` from that
 // session's own `signing.json` (never trusted from the request body alone
 // without that check) — a mismatch, a missing gate, or a session not yet
-// `prepared` all refuse. No other route in this file (start/send/revise/
+// `prepared` all refuse. No other route in this file (start/send/
 // sign-prepare) can reach the sign path — `signRun` is the only function
 // here that ever calls `spawnFn`.
 
@@ -282,7 +282,7 @@ export function createAuthorRoutes(opts) {
       return true;
     }
 
-    const m = /^\/api\/author\/([A-Za-z0-9]+)(\/(send|revise|sign-prepare|sign|check-deps|abandon))?$/.exec(pathname);
+    const m = /^\/api\/author\/([A-Za-z0-9]+)(\/(send|sign-prepare|sign|check-deps|abandon))?$/.exec(pathname);
     if (!m) { send(404, { ok: false, error: 'not found' }); return true; }
     const session = sessions.get(m[1]);
     if (!session) { send(404, { ok: false, error: 'no such session' }); return true; }
@@ -298,10 +298,6 @@ export function createAuthorRoutes(opts) {
     if (sub === 'send') {
       const r = session.send(String(body?.text ?? ''));
       send(r.ok ? 200 : 400, { ...r, state: session.state });
-      return true;
-    }
-    if (sub === 'revise') {
-      session.revise(String(body?.text ?? '')).then((r) => send(r.ok ? 200 : 400, { ...r, state: session.state }));
       return true;
     }
     if (sub === 'abandon') {

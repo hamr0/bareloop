@@ -311,9 +311,28 @@
   .imported-box .summary-row{flex-wrap:wrap;}
   .imported-box .sum-val{flex:1 1 180px;min-width:0;overflow-wrap:anywhere;}
 
-  .map-box{border:1px solid var(--border-strong);padding:10px;overflow-x:auto;margin-top:16px;margin-bottom:14px;background:var(--panel2);}
+  .map-box{border:1px solid var(--border-strong);padding:10px;margin-top:16px;margin-bottom:14px;background:var(--panel2);}
   .map-box::before{content:"┤ MAP ├";display:block;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;margin:-2px 0 8px 0;}
-  .map-box svg{display:block;max-width:100%;height:auto;}
+  /* ruling 1A: chips as wide as their own text, side by side, wrapping — a name is never truncated */
+  .map-chips{display:flex;flex-wrap:wrap;gap:8px 4px;align-items:flex-start;padding-left:1.4em;}
+  /* ruling A: a step + its trailing arrow are ONE unit (the arrow never wraps alone); the lead arrow of a wrapped line
+     hangs in the container's left padding (absolute, zero layout impact — toggling it can never move a chip) */
+  .map-item{position:relative;display:inline-flex;align-items:center;gap:4px;max-width:100%;}
+  .map-arrow{color:var(--text-dim);font-size:13px;flex:none;}
+  .map-lead{display:none;position:absolute;left:-1.3em;top:50%;transform:translateY(-50%);color:var(--text-dim);font-size:13px;}
+  .map-item.line-start .map-lead{display:block;}
+  .chip-retry{color:var(--text-dim);font-size:11px;}
+  .map-chip{display:inline-block;width:auto;max-width:100%;min-width:0;box-sizing:border-box;font:inherit;font-size:12px;line-height:1.4;text-align:left;padding:4px 8px;border:2px solid var(--border-strong);border-radius:0;background:var(--panel2);color:var(--text-faint);white-space:normal;overflow-wrap:anywhere;}
+  button.map-chip{cursor:pointer;}
+  .map-chip.s-done{border-color:var(--green);color:var(--text);} .map-chip.s-done .chip-sign{color:#2e7d32;}
+  .map-chip.s-running{border-color:var(--amber);color:var(--text);} .map-chip.s-running .chip-sign{color:#b8860b;}
+  .map-chip.s-stopped{border-color:var(--red);color:var(--text);} .map-chip.s-stopped .chip-sign{color:var(--red);}
+  .map-chip.s-died{border-color:var(--magenta);color:var(--text);} .map-chip.s-died .chip-sign{color:var(--magenta);}
+  .map-chip.retry{border-style:dashed;}
+  .map-chip.resumed-next{border-right-style:dotted;}
+  .map-chip .chip-blocked{color:var(--red);font-size:10px;}
+  .map-chip.s-running .chip-sign{animation:chip-pulse 1.2s infinite;}
+  @keyframes chip-pulse{0%,100%{opacity:1}50%{opacity:0.3}}
   .map-key{display:flex;gap:14px;font-size:11px;color:var(--text-dim);margin-top:6px;flex-wrap:wrap;}
 
   .step-card{position:relative;border:1px solid var(--border);padding:10px;margin-bottom:8px;background:var(--panel2);}
@@ -613,7 +632,7 @@
                animated dots, then a check or a cross with its code-owned reason; chat turns stay in the thread above it, right over the ask box. -->
           <ol class="chat-steps" id="chat-progress-row" data-testid="chat-steps" aria-live="polite" hidden></ol>
 
-          <!-- build item 1 — a failed/rejected send, revise, sign-prepare,
+          <!-- build item 1 — a failed/rejected send, revise (reopen), sign-prepare,
                sign or check-deps POST shows here and STAYS shown: it is set
                only by this tab's own action handlers below and is never
                touched by renderActions()/poll() (which own #chat-card-error
@@ -623,10 +642,12 @@
 
           <div class="chat-input-row">
             <label for="chat-msg" style="display:none">Message</label>
-            <textarea id="chat-msg" rows="2" placeholder="Ask for a change, or reply to the plan…" data-testid="chat-msg"></textarea>
+            <textarea id="chat-msg" rows="2" placeholder="Answer here when the draft asks you a question…" data-testid="chat-msg"></textarea>
           </div>
           <button class="btn primary wide" type="button" id="chat-main-btn" data-testid="chat-main" disabled>Start drafting</button>
           <div class="hint" id="chat-main-hint" data-testid="chat-main-hint"></div>
+          <!-- hamr 2026-10-09: Revise = reopen the boxes, filled as drafted, and draft again. Shown only while a plan waits for the OK. -->
+          <button class="btn wide" type="button" id="chat-reopen-btn" data-testid="chat-reopen" hidden>Revise</button>
           <div class="hint">Only your click signs. The chat can't.</div>
         </section>
 
@@ -869,7 +890,6 @@
         btn.setAttribute("aria-selected", "true");
         var panel = document.getElementById(btn.getAttribute("aria-controls"));
         if(panel){ panel.hidden = false; panel.classList.add("active"); }
-        if(btn.id === "tab-run"){ reflowMap(); }
       });
     });
   }
@@ -884,33 +904,16 @@
     });
   }
 
-  // ---- step map renderer (verbatim algorithm from design/panel-mockup.html's
-  // buildStepMapSVG — ONE renderer, no second hand-authored map anywhere on this page) ----
-  function stepMapColors(state){
-    if(state === "done") return {stroke:"var(--green)", textFill:"#2e7d32"};
-    if(state === "running") return {stroke:"var(--amber)", textFill:"#b8860b"};
-    if(state === "stopped") return {stroke:"var(--red)", textFill:"var(--red)"};
-    // died (hamr's ruling B, 2026-09-25): distinct from stopped/red — no
-    // verdict was ever reached, so this box never shares the red look.
-    if(state === "died") return {stroke:"var(--magenta)", textFill:"var(--magenta)"};
-    return {stroke:"var(--border-strong)", textFill:"var(--text-faint)"};
-  }
+  // ---- step map renderer (buildStepMapHTML below — ONE renderer, no second hand-authored map anywhere on this page) ----
   function escapeXml(s){
     return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
-  var stepMapUidCounter = 0;
-  var MAP_MARGIN = 10, MAP_GAP = 28;
-  var CHAR_W = 7.2;
-  var TITLE_HPAD = 16;
-  var MIN_BOX_W = 100;
-  var BOX_H = 60, BOX_H_2LINE = 78;
-  var ROW_GAP = 70;
   // s.noNumber (F196): a synthetic placeholder box (e.g. "died during
   // planning") is a LABEL, never a real step — it renders without the
   // leading "<n> " step number a real step gets.
   // item 4 (2026-09-25): each step box shows its attempts INLINE, e.g.
   // "attempt 1 [✗] · attempt 2 [✓]" — appended to the box's own title text
-  // (the existing wrapTitleLines 2-line wrap handles overflow the same way
+  // (the chip wraps long text inside itself the same way
   // it already does for a long step id; no third renderer, no new box shape).
   // item 1 (2026-09-27, panel P2 defect): an attempt's own outcome is null
   // in exactly two situations — its window is still open on a LIVE run (the
@@ -935,9 +938,9 @@
     if(g === "✗") return '<span class="glyph-red">' + g + '</span>';
     return g;
   }
-  // PLAIN TEXT ONLY — feeds the SVG step map's title/width calculation
-  // (`stepTitleText`, an SVG <text> node), never innerHTML; a colour span
-  // here would render as literal "<span>" characters inside the map.
+  // PLAIN TEXT ONLY — feeds the step map chip label (`stepTitleText`, escaped
+  // before it goes into the chip); a colour span here would render as literal
+  // "<span>" characters inside the map.
   // {@link glyphSpan} (the P3 colour addition) is used only by the DOM
   // part-card renderer below, never by this function.
   function attemptsInlineText(attempts, boxIsLive){
@@ -1042,224 +1045,102 @@
   function boxStatusText(box){
     return box.status && box.status.word ? "[" + box.status.sign + "] " + boxStatusWord(box) : boxStatusWord(box);
   }
-  function naturalBoxWidth(steps){
+  // Ruling 1A (hamr, 2026-10-09): the step map is a row of CHIPS — each box as wide as its own text, flowing
+  // side by side and wrapping to the next line. Plain HTML + CSS (.map-chips / .map-chip): the browser does the
+  // wrapping, so there is no width arithmetic, no resize observer, and no horizontal scroll at phone width. A name
+  // is never truncated (it wraps inside its chip when it is longer than the line).
+  // Marks that were line styles on the old SVG are now border styles: a retried step has a DASHED border, and a step
+  // whose leg ended there (the run resumed after it) has a DOTTED right edge. The sign + word come from
+  // boxStatusText (src/panel/status.js's table) — the chip shows "[sign title]" and keeps the word in its tooltip.
+  function buildStepMapHTML(steps){
     var numIdx = stepNumberIndices(steps);
-    var maxChars = 0;
-    steps.forEach(function(s, idx){ maxChars = Math.max(maxChars, stepTitleText(numIdx[idx], s).length); });
-    return Math.max(MIN_BOX_W, Math.ceil(maxChars * CHAR_W) + TITLE_HPAD);
+    var last = steps.length - 1;
+    var body = steps.map(function(s, idx){
+      var sign = s.status && s.status.sign ? s.status.sign : "";
+      var tries = boxRetryTry(s);
+      var cls = "map-chip s-" + String(s.state).replace(/[^a-z-]/g, "") +
+        (tries ? " retry" : "") + (s.resumedNext ? " resumed-next" : "");
+      var label = escapeXml(stepTitleText(numIdx[idx], s));
+      var blocked = s.blocked > 0 ? ' <span class="chip-blocked">' + s.blocked + ' blocked</span>' : '';
+      var retry = tries ? '<span class="chip-retry">\u21bb' + tries + '</span> ' : '';
+      var inner = '[' + retry + '<span class="chip-sign">' + escapeXml(sign) + '</span> ' + label + blocked + ']';
+      var tip = ' title="' + escapeXml(boxStatusText(s)) + '"';
+      var attrs = ' class="' + cls + '"' + tip + (s.resumedNext ? ' data-resumed="1"' : '') + (tries ? ' data-retry="' + tries + '"' : '');
+      var chip = typeof s.partIndex === "number"
+        ? '<button type="button"' + attrs + ' data-part-index="' + s.partIndex + '">' + inner + '</button>'
+        : '<span' + attrs + '>' + inner + '</span>';
+      return '<span class="map-item" role="listitem">' +
+        (idx > 0 ? '<span class="map-lead" aria-hidden="true">\u2192</span>' : '') +
+        chip + (idx < last ? '<span class="map-arrow" aria-hidden="true">\u2192</span>' : '') + '</span>';
+    }).join("");
+    return '<div class="map-chips" role="list" aria-label="step map">' + body + '</div>';
   }
-  function computeMapLayout(n, availW, naturalW){
-    if(!availW) return {perRow:n, boxW:naturalW};
-    var usableW = availW - MAP_MARGIN * 2;
-    for(var perRow = n; perRow >= 2; perRow--){
-      var totalW = perRow * naturalW + (perRow - 1) * MAP_GAP;
-      if(totalW <= usableW){
-        var stretched = (usableW - (perRow - 1) * MAP_GAP) / perRow;
-        return {perRow:perRow, boxW:Math.max(naturalW, stretched)};
-      }
+  // Ruling A: the first chip of each WRAPPED line shows a leading arrow. CSS cannot know which chip starts a line, so
+  // after render/resize this compares each item's offsetTop with the previous item's (same line = same top). The lead
+  // arrow is absolutely positioned (no layout impact), so toggling the class can never reflow a chip — no loop.
+  // Takes anything with offsetTop + classList (real elements, or stubs in tests).
+  function markLineStarts(items){
+    for(var i = 0; i < items.length; i++){
+      var starts = i > 0 && items[i].offsetTop > items[i - 1].offsetTop;
+      if(starts) items[i].classList.add("line-start"); else items[i].classList.remove("line-start");
     }
-    return {perRow:1, boxW:Math.max(MIN_BOX_W, usableW)};
   }
-  function wrapTitleLines(text, maxWidth){
-    var maxChars = Math.max(1, Math.floor((maxWidth - TITLE_HPAD) / CHAR_W));
-    if(text.length <= maxChars) return [text];
-    var words = text.split(' ');
-    var line1 = '', i = 0;
-    for(; i < words.length; i++){
-      var cand = line1 ? line1 + ' ' + words[i] : words[i];
-      if(line1 && cand.length > maxChars) break;
-      line1 = cand;
-    }
-    if(!line1) return [text.slice(0, maxChars), text.slice(maxChars)];
-    var line2 = words.slice(i).join(' ');
-    return line2 ? [line1, line2] : [line1];
-  }
-  // ONE shared rule for "does this box draw a retry loop, and what try number" — a multi-attempt
+  // ONE shared rule for "does this box draw a retry mark, and what try number" — a multi-attempt
   // box (a re-run step, or the fix loop; `run` on an old-shape spine falls in here too, naturally,
-  // never special-cased) gets a dashed self-loop labelled with its final try number; anything
-  // else (incl. every no-verdict kind, whose attempts is already forced to [] upstream) gets 0.
+  // never special-cased) gets a dashed border; anything else (incl. every no-verdict kind, whose
+  // attempts is already forced to [] upstream) gets 0.
   function boxRetryTry(box){
     var attempts = Array.isArray(box.attempts) ? box.attempts : [];
     return attempts.length > 1 ? attempts.length : 0;
   }
-  // item 2 (2026-09-27): the ONE place a retry loop's x-coordinate (curve
-  // start/control/end, and the "try N" label) is kept inside the box that
-  // owns it — MIN_BOX_W (100) is comfortably wider than 2*RETRY_INSET, so
-  // this never inverts the clamp range.
-  var RETRY_INSET = 4;
-  function clampRetryX(v, boxX, boxW){
-    var lo = boxX + RETRY_INSET, hi = boxX + boxW - RETRY_INSET;
-    return Math.min(hi, Math.max(lo, v));
-  }
-  function buildStepMapSVG(steps, availWidth){
-    var n = steps.length;
-    var naturalW = naturalBoxWidth(steps);
-    var layout = computeMapLayout(n, availWidth, naturalW);
-    var perRow = layout.perRow, boxW = layout.boxW, gap = MAP_GAP;
-    var rows = Math.ceil(n / perRow);
-    var margin = MAP_MARGIN;
-    var numIdx = stepNumberIndices(steps);
-    var titleLines = steps.map(function(s, idx){ return wrapTitleLines(stepTitleText(numIdx[idx], s), boxW); });
-    var maxLines = titleLines.reduce(function(m, l){ return Math.max(m, l.length); }, 1);
-    var boxH = maxLines > 1 ? BOX_H_2LINE : BOX_H;
-    var rowH = boxH + ROW_GAP;
-    var totalW = margin * 2 + perRow * boxW + (perRow - 1) * gap;
-    var totalH = rows * rowH;
-    var uid = "sm" + (stepMapUidCounter++);
-    var body =
-      '<defs>' +
-        '<marker id="' + uid + '-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">' +
-          '<path d="M0,0 L6,3 L0,6 z" fill="var(--text-dim)"></path></marker>' +
-        '<marker id="' + uid + '-arrow-grey" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">' +
-          '<path d="M0,0 L6,3 L0,6 z" fill="var(--text-faint)"></path></marker>' +
-      '</defs>';
-    steps.forEach(function(s, idx){
-      var row = Math.floor(idx / perRow);
-      var col = idx % perRow;
-      var rtl = (row % 2) === 1;
-      var slotCol = rtl ? (perRow - 1 - col) : col;
-      var x = margin + slotCol * (boxW + gap);
-      var y = 30 + row * rowH;
-      var colors = stepMapColors(s.state);
-      var lines = titleLines[idx];
-      var nextRow = idx < n - 1 ? Math.floor((idx + 1) / perRow) : null;
-      var hasDrop = nextRow !== null && nextRow !== row;
-      var stateY = y + boxH - 18;
-      var partIdxAttr = typeof s.partIndex === "number" ? (' data-part-index="' + s.partIndex + '" style="cursor:pointer;"') : '';
-      body += '<rect x="' + x + '" y="' + y + '" width="' + boxW + '" height="' + boxH +
-        '" rx="0" fill="var(--panel2)" stroke="' + colors.stroke + '" stroke-width="2"' + partIdxAttr + '></rect>';
-      if(s.blocked > 0){
-        body += '<text x="' + (x + boxW - 6) + '" y="' + (y + 12) +
-          '" text-anchor="end" font-size="10" fill="var(--red)">' + s.blocked + ' blocked</text>';
-      }
-      if(lines.length === 1){
-        body += '<text x="' + (x + boxW / 2) + '" y="' + (y + 25) +
-          '" text-anchor="middle" font-size="12" fill="var(--text)">' + escapeXml(lines[0]) + '</text>';
-      } else {
-        body += '<text x="' + (x + boxW / 2) + '" y="' + (y + 17) +
-          '" text-anchor="middle" font-size="12" fill="var(--text)">' + escapeXml(lines[0]) + '</text>';
-        body += '<text x="' + (x + boxW / 2) + '" y="' + (y + 29) +
-          '" text-anchor="middle" font-size="12" fill="var(--text)">' + escapeXml(lines[1]) + '</text>';
-      }
-      body += '<text x="' + (x + boxW / 2) + '" y="' + stateY +
-        '" text-anchor="middle" font-size="10" fill="' + colors.textFill + '">' + escapeXml(boxStatusText(s)) + '</text>';
-      // P2 (2026-09-27 ruling): a running box gets the mockup's pulsing
-      // amber dot (design/panel-mockup.html ~line 1648) — same fixed color
-      // and animation, never re-derived from the state's own stroke color.
-      if(s.state === "running"){
-        body += '<circle cx="' + (x + 20) + '" cy="' + (y + 12) + '" r="4" fill="#b8860b">' +
-          '<animate attributeName="opacity" values="1;0.3;1" dur="1.2s" repeatCount="indefinite"></animate></circle>';
-      }
-      var retryTry = boxRetryTry(s);
-      if(retryTry){
-        // dashed self-loop under the box, same proportions as the design mockup's curve,
-        // scaled to this box's own width. When this same box also carries the row-to-row
-        // snake drop (which leaves from dead-center, x=cx), shift the loop's start away from
-        // center by a fixed pixel offset so the two never begin at the same point.
-        // item 2 (2026-09-27): at a narrow box width, subtracting that same
-        // fixed pixel shift from proportionally-small x-fractions (e.g. the
-        // curve's own endpoint at 2.8% of boxW) can push the coordinate past
-        // the box's own left edge — the fixed shift was sized for desktop
-        // widths and never scaled down with boxW. clampRetryX is the ONE
-        // place every retry x-coordinate (curve start/control/end AND the
-        // "try N" label) is kept inside [x + RETRY_INSET, x + boxW -
-        // RETRY_INSET] — never re-clamped ad hoc per coordinate — so the
-        // whole loop and its label always stay inside the box that owns it,
-        // at every width, while keeping the mockup's proportions untouched
-        // wherever they already fit (every desktop-width box already fits).
-        var retryShift = hasDrop ? 14 : 0;
-        var bottom = y + boxH;
-        var sx = clampRetryX(x + boxW * 0.50 - retryShift, x, boxW);
-        var sy = bottom + 5;
-        var c1x = clampRetryX(x + boxW * 0.278 - retryShift, x, boxW), c1y = bottom + 30;
-        var c2x = clampRetryX(x + boxW * 0.167 - retryShift, x, boxW), c2y = bottom + 30;
-        var ex = clampRetryX(x + boxW * 0.028 - retryShift, x, boxW), ey = bottom + 2;
-        var labelX = clampRetryX(x + boxW * 0.267 - retryShift, x, boxW);
-        body += '<path d="M ' + sx + ' ' + sy + ' C ' + c1x + ' ' + c1y + ', ' + c2x + ' ' + c2y + ', ' + ex + ' ' + ey +
-          '" fill="none" stroke="var(--text-faint)" stroke-width="1.5" stroke-dasharray="3,3" marker-end="url(#' + uid + '-arrow-grey)"></path>';
-        body += '<text x="' + labelX + '" y="' + (bottom + 32) +
-          '" text-anchor="middle" font-size="10" fill="var(--text-faint)">try ' + retryTry + '</text>';
-      }
-      if(idx < n - 1){
-        // P5-R: where a leg ended and the next leg picked up, the connector is DOTTED (and says so) —
-        // one run, one map; the dotted line is the only mark of the resume.
-        var dash = s.resumedNext ? ' stroke-dasharray="2,4" data-resumed="1"' : '';
-        if(nextRow === row){
-          var midY = y + boxH / 2;
-          if(!rtl){
-            var nx = x + boxW + gap;
-            body += '<line x1="' + (x + boxW) + '" y1="' + midY + '" x2="' + (nx - 2) + '" y2="' + midY +
-              '" stroke="var(--text-dim)" stroke-width="2"' + dash + ' marker-end="url(#' + uid + '-arrow)"></line>';
-          } else {
-            var px = x - gap - boxW;
-            body += '<line x1="' + x + '" y1="' + midY + '" x2="' + (px + boxW + 2) + '" y2="' + midY +
-              '" stroke="var(--text-dim)" stroke-width="2"' + dash + ' marker-end="url(#' + uid + '-arrow)"></line>';
-          }
-        } else {
-          var cx = x + boxW / 2;
-          body += '<line x1="' + cx + '" y1="' + (y + boxH) + '" x2="' + cx + '" y2="' + (y + rowH - 2) +
-            '" stroke="var(--text-dim)" stroke-width="2"' + dash + ' marker-end="url(#' + uid + '-arrow)"></line>';
-        }
-      }
-    });
-    return '<svg width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + ' ' + totalH + '" role="img" aria-label="step map">' + body + '</svg>';
-  }
-  // the line-style key under the MAP (hamr 2026-10-04): only the two line styles, never a sign legend
+  // the line-style key under the MAP (hamr 2026-10-04): only the two border styles, never a sign legend
   function stepMapKeyHTML(steps){
     var resumed = (steps || []).some(function(b){ return b.resumedNext; });
     return '<div class="map-key" data-testid="map-key">' +
-      '<span>⤾ dashed = retry</span>' +
-      (resumed ? '<span>&middot;&middot;&middot; dotted = resumed</span>' : '') +
+      '<span>\u21bbN = took N tries (dashed box)</span>' +
+      (resumed ? '<span>dotted edge = resumed after</span>' : '') +
       '</div>';
-  }
-  var lastSteps = null;
-  var lastWidth = null;
-  function mapAvailWidth(wrapper){
-    if(!wrapper) return null;
-    var w = wrapper.getBoundingClientRect().width;
-    if(!w) return null;
-    return Math.max(0, w - 20);
   }
   function renderStepMap(steps){
     var mount = document.getElementById("map-mount");
     var wrapper = document.getElementById("map-box");
-    lastSteps = steps;
     if(!steps || !steps.length){
       mount.innerHTML = "";
       wrapper.hidden = true;
       return;
     }
     wrapper.hidden = false;
-    var w = mapAvailWidth(wrapper);
-    lastWidth = w;
-    mount.innerHTML = buildStepMapSVG(steps, w) + stepMapKeyHTML(steps);
-    // build item B: a map box click jumps to the Audit tab, that same part
+    mount.innerHTML = buildStepMapHTML(steps) + stepMapKeyHTML(steps);
+    layoutMap();
+    // build item B: a map chip click jumps to the Audit tab, that same part
     // expanded and scrolled into view — same click-through as the card list,
-    // sharing partIndex so the two can never disagree about which row a box
-    // maps to. Delegated once per render (mount.innerHTML above already
-    // wiped any previous listeners' targets along with the old markup).
-    mount.querySelectorAll("rect[data-part-index]").forEach(function(rect){
-      rect.addEventListener("click", function(){
-        var idx = Number(rect.getAttribute("data-part-index"));
+    // sharing partIndex so the two can never disagree about which row a chip
+    // maps to. Bound once per render (mount.innerHTML above already wiped any
+    // previous listeners' targets along with the old markup).
+    mount.querySelectorAll(".map-chip[data-part-index]").forEach(function(chip){
+      chip.addEventListener("click", function(){
+        var idx = Number(chip.getAttribute("data-part-index"));
         document.getElementById("tab-audit").click();
         openAuditPart(idx);
       });
     });
   }
-  function reflowMap(){
-    var wrapper = document.getElementById("map-box");
-    if(!wrapper || wrapper.hidden || !lastSteps) return;
-    var w = mapAvailWidth(wrapper);
-    if(w === null || w === lastWidth) return;
-    lastWidth = w;
-    document.getElementById("map-mount").innerHTML = buildStepMapSVG(lastSteps, w) + stepMapKeyHTML(lastSteps);
+  function layoutMap(){
+    var box = document.getElementById("map-box");
+    if(!box || box.hidden) return;
+    markLineStarts(Array.prototype.slice.call(box.querySelectorAll(".map-item")));
+  }
+  var layoutTimer = null;
+  function layoutMapSoon(){
+    if(layoutTimer) clearTimeout(layoutTimer);
+    layoutTimer = setTimeout(function(){ layoutTimer = null; layoutMap(); }, 60);
   }
   if(typeof ResizeObserver !== "undefined"){
-    var ro = new ResizeObserver(function(){ reflowMap(); });
-    var mb = document.getElementById("map-box");
-    if(mb) ro.observe(mb);
+    var mapRo = new ResizeObserver(layoutMapSoon);
+    var mapBoxEl = document.getElementById("map-box");
+    if(mapBoxEl) mapRo.observe(mapBoxEl);
   } else {
-    window.addEventListener("resize", reflowMap);
+    window.addEventListener("resize", layoutMapSoon);
   }
 
   // F196: a `synthetic` step (e.g. the "died during planning" placeholder
@@ -3675,6 +3556,7 @@
     var msgInput = document.getElementById("chat-msg");
     var mainBtn = document.getElementById("chat-main-btn");
     var mainHint = document.getElementById("chat-main-hint");
+    var reopenBtn = document.getElementById("chat-reopen-btn");
     var mainAction = "none";
     var lastState = null;
     var startOk = false;
@@ -4127,26 +4009,20 @@
     }
 
     // hamr's ruling 2026-10-05: ONE wide button below the message box. Its wording, action and enabled state are ONE
-    // pure function of (state, typed-text-empty, reuse); state = {session, startOk, phase, pendingAsk, revisesLeft,
-    // signClicked, specHash}. Actions: start | check-deps | send | revise | sign-prepare | sign | none.
+    // pure function of (state, typed-text-empty, reuse); state = {session, startOk, phase, pendingAsk,
+    // signClicked, specHash}. Actions: start | check-deps | send | sign-prepare | sign | none.
     function mainButtonFor(st, textEmpty, reuse){
       var ask = st.pendingAsk;
       var atMenu = !!ask && ask.kind === "menu";
-      var left = st.revisesLeft || 0;
-      var hint = atMenu ? left + (left === 1 ? " change left" : " changes left") : "";
+      var hint = "";
       if(!st.session){
         return {text: reuse ? "Sign & run" : "Start drafting", action: "start", disabled: !st.startOk, hint: ""};
       }
       if(ask && ask.kind === "install-needed"){
         return {text: "Check again", action: "check-deps", disabled: false, hint: ""};
       }
-      if(ask && !textEmpty){
-        return atMenu
-          ? {text: "Send", action: "revise", disabled: left <= 0, hint: hint}
-          : {text: "Send", action: "send", disabled: false, hint: ""};
-      }
       if(ask && !atMenu){
-        return {text: "Send", action: "send", disabled: true, hint: ""};
+        return {text: "Send", action: "send", disabled: textEmpty, hint: ""};
       }
       if(atMenu || st.phase === "prepared"){
         if(st.phase === "prepared" && st.signClicked){
@@ -4156,16 +4032,21 @@
       }
       return {text: "Sign & run", action: "none", disabled: true, hint: ""};
     }
-    // pure: the ask box takes typed text only when the session has a pending ask that accepts it (the plan menu -> a
-    // change request, or any question); not with no session, no ask, or while waiting on an install
+    // pure: the ask box takes typed text only when the session has a pending ask that accepts it (a question the plan
+    // raised); not with no session, no ask, while the plan waits for the OK (that is Sign & run or Revise, never typed
+    // text), or while waiting on an install
     function askBoxOpenFor(st){
-      return !!st.session && !!st.pendingAsk && st.pendingAsk.kind !== "install-needed";
+      return !!st.session && !!st.pendingAsk && st.pendingAsk.kind !== "install-needed" && st.pendingAsk.kind !== "menu";
+    }
+    // pure: Revise shows only while a plan waits for the OK
+    function reviseShownFor(st){
+      return !!st.session && !!st.pendingAsk && st.pendingAsk.kind === "menu";
     }
     function renderMain(){
       var st = {session: sessionLive, startOk: startOk, signClicked: signClickedOnce};
       if(sessionLive && lastState){
         st.phase = lastState.phase; st.pendingAsk = lastState.pendingAsk;
-        st.revisesLeft = lastState.revisesLeft; st.specHash = lastState.specHash;
+        st.specHash = lastState.specHash;
       }
       // hamr 2026-10-05: the ask box is open only while something asks for a reply; otherwise dimmed and emptied
       var open = askBoxOpenFor(st);
@@ -4176,6 +4057,7 @@
       mainBtn.disabled = b.disabled;
       mainAction = b.action;
       mainHint.textContent = b.hint;
+      reopenBtn.hidden = !reviseShownFor(st);
       fitBox(msgInput);
       fitCardBoxes();
     }
@@ -4444,10 +4326,10 @@
     // build item 1 — the "lost answer" fix. ROOT CAUSE: `renderActions`
     // (fed by the every-2s `poll()`) unconditionally overwrites
     // `#chat-card-error` on every tick (`errEl.textContent = state.error ||
-    // ""`), including the SAME tick the send/revise/sign handlers below
+    // ""`), including the SAME tick the send/sign handlers below
     // used to call `poll()` in their own `.then` — so a refused/failed POST's
     // error was wiped before a person could read it (often on the very next
-    // line of the same callback). Compounding it, `send`/`revise` cleared
+    // line of the same callback). Compounding it, `send` cleared
     // `msgInput.value` unconditionally, even on failure — so a rejected
     // answer vanished from the box with no trace at all. Fixed by: (1) a
     // dedicated `#chat-action-error` element only these handlers touch,
@@ -4508,20 +4390,20 @@
       }).catch(function(){ chatActionFailed("network error — could not reach the panel server, your text was NOT sent"); });
     }
 
-    function doRevise(){
+    // hamr 2026-10-09 (as fwdloop's Revise): the draft is ended and the New job card opens with the SAME values in every
+    // box, all editable; Start drafting then drafts fresh from whatever the boxes now say. No typed change request goes
+    // to the model. The ended draft is an Abandon: money already spent stays booked.
+    function doReopen(){
       if(!sessionId) return;
-      var text = msgInput.value;
-      authorPost("/api/author/" + sessionId + "/revise", {text: text}).then(function(r){
+      authorPost("/api/author/" + sessionId + "/abandon", {}).then(function(r){
         var o = chatPostOutcome(r);
-        if(o.ok){
-          chatActionOk();
-          msgInput.value = "";
-        } else {
-          chatActionFailed(o.error);
-        }
-        poll();
-      }).catch(function(){ chatActionFailed("network error — could not reach the panel server, your text was NOT sent"); });
+        if(!o.ok){ chatActionFailed(o.error); return; }
+        openNewCard();
+        chatActionOk();
+        thread.innerHTML = '<div class="msg system">' + escapeXml("The boxes are open as you drafted them. Edit what you want, then Start drafting. The first draft's cost stays counted.") + "</div>";
+      }).catch(function(){ chatActionFailed("network error — could not reach the panel server, not revised"); });
     }
+    reopenBtn.addEventListener("click", doReopen);
 
     function doSign(){
       if(!sessionId) return;
@@ -4553,7 +4435,6 @@
       if(mainAction === "start") doStart();
       else if(mainAction === "check-deps") doCheckDeps();
       else if(mainAction === "send") doSend();
-      else if(mainAction === "revise") doRevise();
       else if(mainAction === "sign-prepare" || mainAction === "sign") doSign();
     });
 

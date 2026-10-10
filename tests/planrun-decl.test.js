@@ -28,7 +28,7 @@ import { join } from 'node:path';
 import { runJob } from '../src/run.js';
 import { validateJob, jobSpecHash } from '../src/job.js';
 import { makeSpine } from '../src/spine.js';
-import { classGuards } from '../src/authoring.js';
+import { classGuards, ANY_SUPPRESSION_WARNING } from '../src/authoring.js';
 import { GENRE } from '../src/authorjob.js';
 import { DECLARED_GAP_PREFIX } from '../src/declaredclose.js';
 import { stageGap } from '../src/ralph.js';
@@ -426,4 +426,49 @@ test('F198 item 2: the fix worker\'s prompt carries the close\'s own number hist
   assert.match(fixCalls[0], /count-stage 5/, 'fix attempt 1 sees the seed grade (5) already on the record');
   assert.match(fixCalls[1], /count-stage 5 → 5/, 'fix attempt 2 sees BOTH prior grades — the history GROWS, one entry per attempt');
   assert.doesNotMatch(fixCalls[0], /top up|revise|abandon|converging|strike/i, 'facts only — no lever, no advice, no model-generated prose');
+});
+
+// ── the `any` guard's worker warning (run mv13ery3) ─────────────────────────
+// The js `any` suppression regex reads ADDED comment lines, so plain prose like
+// ", any" reds `no-suppressions`. The worker is told so up front, and ONLY when
+// the job's own stages carry that pattern.
+
+const runDeclared = async (/** @type {any} */ t, /** @type {any} */ mutate) => {
+  const { dir, spine } = makePatient(t);
+  const job = declaredJob();
+  mutate(job);
+  const jv = validateJob(job, { shellCapUsd: job.budgetUsd });
+  assert.deepEqual(jv.reds, []);
+  const provider = scriptedProvider([
+    { text: 'scout' },
+    { text: PLAN([{ type: 'tree-changed', scope: 'src/**' }, { type: 'check-passes', name: 'verdict' }]) },
+    { toolCalls: [{ id: 't1', name: 'shell_write', arguments: { path: join(dir, 'src', 'fix.js'), content: '// ok\n' } }] },
+    { text: 'wrote src/fix.js' },
+  ]);
+  await runJob(job, { approvals: approve(job), workdir: dir, provider, emit: makeSpine(spine) });
+  return provider.systems.join('\n---\n');
+};
+
+test('a js job whose guards carry the `any` pattern tells the worker the check reads comments', async (t) => {
+  const systems = await runDeclared(t, () => {});
+  assert.ok(systems.includes(ANY_SUPPRESSION_WARNING.trim()), 'the worker prompt carries the warning line');
+});
+
+test('a job under another language\'s battery (no js `any` pattern) is not told about it', async (t) => {
+  const systems = await runDeclared(t, (/** @type {any} */ job) => {
+    job.closeDecl.lang = 'python';
+    job.closeDecl.stages = [
+      ...classGuards({ verdictType: 'green', lang: 'python' }).map((g) => ({
+        name: g.name, kind: g.kind,
+        params: { ...g.params, ...(g.fill.includes('allowPrefixes') ? { allowPrefixes: ['src/'] } : {}) },
+      })).slice(0, 1),
+      job.closeDecl.stages[1],
+      ...classGuards({ verdictType: 'green', lang: 'python' }).map((g) => ({
+        name: g.name, kind: g.kind,
+        params: { ...g.params, ...(g.fill.includes('allowPrefixes') ? { allowPrefixes: ['src/'] } : {}) },
+      })).slice(1),
+    ];
+  });
+  assert.ok(systems.length > 100, 'a worker prompt was really sent');
+  assert.ok(!systems.includes('no-suppressions check also reads comments'), 'no warning without the js guard');
 });

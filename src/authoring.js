@@ -517,6 +517,32 @@ export const TYPES_GENRE_TEMPLATE = `1. The STRICT form of the language's type c
 export const GENRE_LANGUAGES = Object.freeze(['js', 'python']);
 
 /**
+ * The js `any` suppression pattern's regex, ONE spelling: the TYPES js battery
+ * below composes it into the signed guard, and `anySuppressionWarning` keys on
+ * it, so the warning and the guard cannot drift. The guard scans every ADDED
+ * line, comments included, so plain prose like ", any" trips it.
+ */
+const JS_ANY_REGEX = '(?:[{<|(\\[:,]|\\bas)\\s*any\\b|\\bany\\[\\]';
+
+/** The worker-facing line that rides with the js `any` guard (run mv13ery3). */
+export const ANY_SUPPRESSION_WARNING = '\nThe no-suppressions check also reads comments: never write the word any right after a comma, colon, bracket, brace, < or | '
+  + "(e.g. ', any', ': any', '(any'), even in plain English — write 'every', start the clause differently, or put it in backticks.";
+
+/**
+ * The warning line for a job whose ACTUAL stages carry the js `any` pattern, else
+ * ''. Derived from the stages' patterns (never goal prose), so a job without the
+ * guard is told nothing about it.
+ * @param {any[]|null|undefined} stages
+ * @returns {string}
+ */
+export function anySuppressionWarning(stages) {
+  const has = Array.isArray(stages) && stages.some((s) => isObj(s) && s.kind === 'pattern-absent-in-diff'
+    && isObj(s.params) && Array.isArray(s.params.patterns)
+    && s.params.patterns.some((/** @type {any} */ q) => isObj(q) && q.regex === JS_ANY_REGEX));
+  return has ? ANY_SUPPRESSION_WARNING : '';
+}
+
+/**
  * THE GENRE, as data. The suppression batteries are the hand-written closes'
  * own `SUPPRESSIONS` tables (`scripts/u-pulselog-close.mjs:35`,
  * `scripts/u-spawner-close.mjs:34`) — operator-owned genre knowledge, minted by
@@ -541,7 +567,7 @@ export const TYPES_GENRE = Object.freeze({
         Object.freeze({ id: 'ts-expect-error', regex: '@ts-expect-error' }),
         Object.freeze({ id: 'ts-nocheck', regex: '@ts-nocheck' }),
         Object.freeze({ id: 'eslint-disable', regex: 'eslint-disable' }),
-        Object.freeze({ id: 'any', regex: '(?:[{<|(\\[:,]|\\bas)\\s*any\\b|\\bany\\[\\]' }),
+        Object.freeze({ id: 'any', regex: JS_ANY_REGEX }),
         Object.freeze({ id: 'any-star', regex: '@\\w+\\s*\\{\\s*[*?]\\s*\\}' }),
         Object.freeze({ id: 'cast', regex: '@type\\s*\\{.*\\}\\s*\\*\\/\\s*\\(' }),
       ]),
@@ -1058,6 +1084,25 @@ function scopeOfJob(declaration, idx, guards) {
 }
 
 /**
+ * Which of a judged stage's paths lie OUTSIDE the job's write fence? One owner of the rule "a check must be
+ * free to edit every file it can report on", called from every door that validates a declaration. It uses
+ * the shipped fence spelling (`globToPrefix`, the same containment reading plan.js's `insideFence` has) and
+ * returns `[]` when there is no fence to compare against or the paths are not a string list (shape is the
+ * schema walk's business).
+ * @param {unknown} paths @param {string[]|null|undefined} writeScope
+ * @returns {string[]}
+ */
+export function judgedOutsideFence(paths, writeScope) {
+  if (!Array.isArray(writeScope) || writeScope.length === 0 || !Array.isArray(paths)) return [];
+  const fence = writeScope.filter(isNonEmptyString).map(globToPrefix);
+  if (fence.length === 0) return [];
+  return paths.filter(isNonEmptyString).filter((raw) => {
+    const n = normPrefix(raw);
+    return !fence.some((f) => f === '.' || n === f || n.startsWith(`${f}/`));
+  });
+}
+
+/**
  * Kinds a declaration may carry AT MOST ONCE, as data beside the catalogue.
  *
  * `files-changed` is the whole list and the reason is the catalogue's own
@@ -1154,7 +1199,9 @@ function readPath(p, dotted) {
  * @param {{catalogue?: Record<string, KindSpec>, listing?: string[]|null,
  *   guards?: {name: string, kind: string, params: Record<string, any>, fill: string[]}[]|null,
  *   envOwned?: string[]|null, envInjected?: Record<string, string>|null, deferListing?: boolean,
- *   verdictType?: string|null}} [opts]
+ *   verdictType?: string|null, writeScope?: string[]|null}} [opts]
+ *   `writeScope` — the job's signed write fence. Every path a judged stage judges must sit inside it
+ *     ({@link judgedOutsideFence}); absent, the rule is not run (the plain-folder deferral has no fence).
  *   `listing` — repo-relative paths at the seed (`git ls-tree -r --name-only`).
  *   `guards` — the picked class's injected guards (`classGuards`).
  *   `verdictType` — the class the USER picked (`VERDICT_CLASSES`).
@@ -1171,7 +1218,7 @@ function readPath(p, dotted) {
 export function validateDeclaration(declaration, opts = {}) {
   const {
     catalogue = KIND_CATALOGUE, listing = null, guards = null, envOwned = null, envInjected = null,
-    verdictType = null,
+    verdictType = null, writeScope = null,
   } = opts;
   const deferListing = opts.deferListing === true;
   /** @type {Red[]} */
@@ -1312,6 +1359,18 @@ export function validateDeclaration(declaration, opts = {}) {
         }
         red('duplicate-kind', `${at}.kind`, why(label, owner), { kind: s.kind, stage: label, twin: owner });
       } else kindOwners.set(s.kind, label);
+    }
+
+    // A judged stage may only judge what the run can fix: a path outside the write fence is a
+    // finding the worker can never act on (run mv13ery3: bin/pulselog.js, fence src/**).
+    if (s.kind === JUDGED_FLOOR_KIND && isObj(s.params)) {
+      const outside = judgedOutsideFence(s.params.paths, writeScope);
+      if (outside.length > 0) {
+        red('judged-outside-write-scope', `${at}.params.paths`, `stage "${label}" judges ${outside.join(', ')}, but the `
+          + `job may only edit ${writeScope?.join(', ')}. A check that reports on a file the run is fenced out of can `
+          + 'never be satisfied — every finding on it is one the worker cannot fix. Name files inside the write fence',
+        { stage: label, outside, fence: (writeScope ?? []).map(globToPrefix) });
+      }
     }
 
     // ── RULING 5, AS LAW: judged and human stages are `offer: false`, and the

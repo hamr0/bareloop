@@ -1,6 +1,6 @@
 {
   "name": "bareloop",
-  "version": "0.38.0",
+  "version": "0.39.0",
   "description": "Workflows that earn their own design, with receipts — agent-authored workflows for repeated, long, verifiable jobs that improve across runs under an un-gameable gate.",
   "type": "module",
   "main": "./src/index.js",
@@ -27,8 +27,8 @@
     "check:lockfile": "node scripts/check-lockfile.mjs"
   },
   "dependencies": {
-    "bare-agent": "^0.43.0",
-    "bareguard": "^0.13.0",
+    "bare-agent": "^0.49.0",
+    "bareguard": "^0.21.0",
     "litectx": "^0.32.0"
   },
   "devDependencies": {

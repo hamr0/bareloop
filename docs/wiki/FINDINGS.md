@@ -13398,6 +13398,201 @@ calibration as a whole rather than patching one more rule in isolation.
 
 **Status: OPEN, parked by ruling, not built.**
 
+**Addendum 2026-10-08 — the probe, hamr's ruling A, the fix (not yet re-proven live).**
+
+*Probe.* One paid run of the archived `mub2nboo` calibration set (10 cases plus the 5 injection
+styles) against `deepseek-flash` as judge, with the per-case `diag` record on (the two
+2026-10-08 commits `0e4c0fc`, `7f55006`): 16 calls, $0.013, spend complete. The raw result sat in
+a scratch directory, not in the repo — do not cite its path as permanent. Calibration graded 1 of
+10 (the 10 cases were the same ones that graded 4 of 10 live on 2026-09-21). Injection: 5 of 5
+styles resisted.
+
+*Which cause.* Of the `has-doc` reds: (a) `docQuote` null, 6, all correct (those functions really
+are undocumented); (b) `docQuote` lacks `/**`, 7, **all 7 false**; (c) quote not found in the
+artifact, 0. So the live failure was (b): asked for "the first line of the JSDoc block", the judge
+quoted the first WORDED line (e.g. ` * Formats a byte count as a human-readable string...`), not
+the bare `/**` opener line, and the rule reddened any quote without `/**`.
+
+*Ruling A (hamr, 2026-10-08): code does the check, the judge only points.* The `ask` text is
+unchanged. In `JUDGE_RULES['has-doc'].check` (`src/judged.js`) the `/**` test on the quote is
+replaced by a check against the artifact: find the declaration line (exactly one trimmed-line
+match, else red), take the comment block that ends on the nearest non-blank line above it, require
+that block's opener to be `/**` (a plain `/*` block is not JSDoc), and pass the quote only when
+every non-empty line of it is a line inside that block. Null `docQuote` still reds; an invented
+quote still reds through the existing quote check; a block above a different function, a body
+line, a plain `/*` block, and a missing or duplicated declaration all red. Every real caller
+passes the artifact (`pipeOnce` in `src/calibrate.js`, `runJudgedFloor` in `src/kinds.js`); when
+`decide()` is called without one (tests only) the old `/**` substring test applies, nothing
+looser. Params, returns, attempts, floors and verdict routing untouched. No rulebook version or
+hash exists: `setHash` (`src/calibrate.js`) folds only card, cases and judge model, so this change
+does not invalidate any stamp, and nothing marks a set as certified under the old rule (none ever
+cleared).
+
+*$0 replay* of the new `decide()` over the probe's saved raw locate facts for the 10 cases (same
+judge answers, same card): old 1 of 10, new **6 of 10** graded as signed. Fixed: `full-contract-pass`,
+`clamp-contract-pass`, `two-functions-pass`, `omitted-param-red`, `missing-returns-red`
+(and `undocumented-function-red`, already right). Still wrong, for other reasons:
+`name-echo-denies-purpose` and `name-echo-and-no-returns` (signed to red on `has-doc` because the
+doc only echoes the function name; the rulebook cannot express "doc says nothing", so `has-doc`
+passes, and a `returns` red appears instead because the judge's `returnsTagQuote` dropped the
+leading `* `), `phantom-param-red` and `phantom-param-and-no-returns` (the judge reported the
+phantom `overwrite` tag correctly in `paramTagNames`, but the `params` rule only reds a param
+MISSING a tag, never an extra tag — also inexpressible; the second case then still has its `returns`
+red but not the signed `params` one).
+
+*Still open.* (1) The name-echo cases cannot be expressed by the current rules; either those cases
+or the rulebook change — a ruling for hamr (the `returns` quote prefix miss, item 3, also feeds them). (2) The phantom-param cases are the same kind: the `params`
+rule has no extra-tag check, so either those cases or the rule change — also a ruling for hamr. (3) The `returns` quote sometimes drops its
+leading `* ` prefix; a candidate bareguard-side `quoteIn` match, per hamr's rule "use bareguard,
+validate it, ask it to change" — not filed. (4) The fix is test-proven and replay-proven only: no
+live calibration has run since. The F192 status stays OPEN.
+
+*Items 1 and 3A built (2026-10-08, commits `eeaab46`, `c1224d6`; hamr's rulings).* (1) `params` now also
+reds an EXTRA `@param`: a documented tag whose name matches no declared parameter ("@param overwrite names
+no parameter of copyFile"). Dotted sub-params (`opts.a`) are never extra; each destructured parameter slot
+absorbs one unmatched root tag, so a documented root (`@param [opts]` for `{ a } = {}`) is never reddened
+(conservative: a phantom sitting beside a pattern can be missed). (3A) `validateCalibrationSet` — the one
+validator behind the authoring revise loop (`cardauthor.js` `validateJudgedArtifacts`), the declared-close
+gate and `runCalibration`'s $0 legality check — now refuses a case expecting a `has-doc` red on a function
+that has a JSDoc block directly above it (read off the artifact with `docBlockAbove`), before any locate
+call. The archived mub2nboo set is therefore refused at $0 (`name-echo-denies-purpose`,
+`name-echo-and-no-returns`); expected and correct. Suggestion only, not changed: the case-proposal prompt
+could tell the model that has-doc only checks a block exists. $0 replay over the 8 legal archived cases
+with the probe's real facts: 8/8 graded correctly (the 3 passes, both phantom-param cases, omitted-param,
+missing-returns, undocumented). The `returns` quote `* ` prefix miss did not show in that replay; it stays an
+open separate item (bareguard `quoteIn`, awaiting hamr). Not re-proven live.
+
+**Addendum 2026-10-09 — hamr's ruling "A": a rule that can express "the doc only restates the function name" (built, not re-proven live).**
+
+*Live evidence.* The panel, 2026-10-09, DeepSeek `deepseek-flash`: the person's FAIL example said a doc comment that only
+restates the function name "teaches the reader nothing". The drafter wrote cases `doc-restates-function-name` (getTotal) and
+`name-restating-doc-and-unlisted-param` (validateForm) expecting a `has-doc` red on a documented function, and the item-3A
+check refused them at $0, because the rulebook could not express it. Same class as archived `mub2nboo`'s name-echo cases
+(`tests/fixtures/f192-params-real.json`). The plan's Checks list had even promised "not only a restatement of the function
+name", which nothing checked.
+
+*Built (`src/judged.js`).* A fourth rule, **`says-what`**. Its locate ask has the judge quote the doc block's DESCRIPTION (the
+prose before the first `@tag`) verbatim, or null. `decide()` then, with no judge verdict anywhere: finds the quote with
+bareguard `quoteIn(.., {wholeLines:true})` AND inside the block `docBlockAbove` returns (which stays the authority on
+location; comment decoration is stripped on both sides before the line match); splits the function name into words
+(camelCase / snake_case / kebab, lowercased) and tokenises the description the same way; drops a fixed stopword list
+(`SAYS_WHAT_STOPWORDS`: a an the of to for in on at by with from into and or as, function words only) and the name's own words
+with light inflections (s, es, ed, d, ing, silent-e + ing, y to ies). No words left, no description, or a quote that cannot be
+located reds. Unsure is red; with no artifact in hand it reds too.
+
+*The honest ceiling.* It catches a PURE name echo. A description that adds even one generic non-stopword passes: "Returns the
+total." for `getTotal` passes ("Gets the total." reds). A miss of that kind is a new card line and a re-sign, never a smarter
+judge. Stated in the code comment.
+
+*Case-proposal prompt.* Every rule now carries a plain-words `means`; `cardCasesPrompt` renders it as "what it can check" and
+tells the model that a function with any doc block above it never breaks `has-doc`, and that "the doc only restates the
+function name" is a `says-what` red. `has-doc` stays "a block exists"; the 3A refusal is unchanged. No new validator red
+code was added, so `plainReasons` needed no new mapping (the enumeration test stays complete).
+
+*$0 results on the real artifacts* (each description line read off the artifact the way an honest judge would quote it; the
+rule is new, so no archive holds a real `descriptionQuote`): `parseDate` ("parseDate") RED, `slugify` ("slugify") RED, the
+undocumented `debounce` RED; `formatBytes`, `clamp`, `parseQuery`, `buildQuery`, `copyFile`, `createUser`, `sendEmail` all
+pass. Fail-first: with the `said.length === 0` red disabled 4 tests fail; with the name-word filter removed 3 fail.
+
+*Open / not built.* (1) Not re-proven live: no paid calibration has run with the new rule. (2) A $0 legality check for a case
+that EXPECTS a `says-what` red on a function whose description does add words (the 3A analogue) is not built; the prompt
+steers the model instead, and the check would be a new validator red needing a ruling. (3) Noted while reading: the confirm
+turn's "Checks" and "Not checked" lines are written by the MODEL (`CONFIRM_SCHEMA` in `src/authorflow.js`), not by code; only
+the protections are code-owned. A plan can therefore promise a check no rule implements. Logged, not built.
+
+**Addendum 2026-10-09 (b) — the second and third live panel sessions (`smv0nrwe3l8y2`, `smv0o4mex8ddj`, `deepseek-flash`): five fixes, a plain-words refusal, an honest calibrating line (built; not re-proven live).**
+
+*Live evidence.* Session `smv0nrwe3l8y2`: calibration graded 7 of 10, and signing refused with `calibration-miswrite` x3 plus
+`injection-leak`. Session `smv0o4mex8ddj`: 8 of 10, two miswrites and two injection leaks. Real locate facts, cards and cases
+are copied into `tests/fixtures/f192-live-smv0nrwe.json` and `f192-live-smv0o4mex.json` (no secrets). Whose fault each was:
+two were our rule, one the drafter's case, one our injection check, one a missing field rule.
+
+*Fixes (`src/judged.js`, `src/calibrate.js`).* (1) `says-what` no longer reds when the artifact itself proves there is NO doc
+block (declaration found exactly once, no JSDoc block above): `has-doc` alone owns absence, so `resetCounters`/`init` stop
+double-reddening. A block with no prose still reds; a missing or duplicated declaration is unsure, so red. (2) Prefix
+matching (hamr option A): a description word is a name word when one starts with the other and the shorter is at least 4
+letters (`init`/`initialize`, `calc`/`calculate`). Honest ceiling and risk: a name word of 3 or fewer letters never matches
+(`add`/`address`, `get`/`getter` pass), and a longer word that merely begins with a name word (`parse`/`parser`) reads as an
+echo, a false red only when the description adds nothing else. (3) The `params` rule is unchanged where the drafter was
+wrong (`buildQuery({ table, limit = 10 })` documented as `@param options` passes; a destructured parameter may be documented
+under any root name); the case-proposal prompt now says so (`params.means`). (4) The calibration gate's injection facts check
+(`factsResist`) now calls the SAME helper as `has-doc`'s decide (`docQuoteInBlock`), so a worded `docQuote` inside the real
+block (` * Add two numbers.`) is not a leak; a quote outside the block, an invented one, or one under another function's
+declaration still is. (6) `params` reads the fields of a simple destructured pattern off the declaration text (defaults and
+renames handled): when the doc names ANY field, bare (`@param x`) or dotted (`@param opts.x`, `param0.x`), EVERY field must be
+named (`@param missing for field y of renderPoint's destructured parameter`); `@param options` alone still passes. Honest
+ceiling: nested, array and rest patterns, and brackets in a default, are never reddened on fields.
+
+*$0 replays over the real facts.* `smv0nrwe3l8y2`: before 7 of 10 with a leaked style; after 9 of 10 (the tenth is the case
+itself being wrong: prompt fix only) and all 5 styles resist. `smv0o4mex8ddj`: 10 of 10 as SETS of reds and 5 of 5 styles.
+Fail-first mutations: absence rule off (3 tests fail), prefix off (2), injection check back to the opener test (1), field rule
+off (3), bare-field exemption off (1).
+
+*Plain words (`src/authorreadout.js`).* `signingStopText` replaces the bare `signing gates failed - <codes>` line in the panel
+and prints first on the CLI; the full reds go to `draft-log.jsonl` as a `step-reds` record. A miswrite names the case and
+function and says what the practice case expected against what the check found, and does NOT claim whose fault it is (the
+practice case and the check disagree). Every red code reachable at that line is mapped (declaration family, `broken-close`,
+seed/listing unreadable, the calibration codes and casualty axes, `injection-leak`) with a tripwire scanning the source red
+sites; an unknown code quotes itself. (7) The `calibrating` step is the rubric-compile phase and was marked done long before
+the gate ran; `calibrationSummary` now rewrites that line once the gate returns (`calibrating` x with "8 of 10 practice cases
+graded right - 3 of 5 attack tests resisted", or done with "10 of 10 ... 5 of 5"), pass being the gate's own `ok`.
+
+*Process note.* Edits to prompt-register files (`src/judged.js`, `src/cardauthor.js`) need a `Failure: run <8 chars>` line; a
+panel draft session id (13 chars) does not match, so those commits were held for hamr's ruling.
+
+**Addendum 2026-10-09 (c) — signing refused a MIXED rubric close after calibration PASSED (session `smv0tasvb0u89`, `deepseek-flash`): fixed (test-proven; not re-proven live).**
+
+Calibration passed live (10 of 10 practice cases, 5 of 5 attack styles). Signing then refused: `gates.seedVerdict = {ok:false, redAtSeed:["changed-from-seed"], workRed:[]}`, and the panel said "Nothing in the close fails on the repository as it is, so there is nothing for a run to do." The close was MIXED: guards, mechanical stages and a `judged-floor` stage (`jsdoc-contract-floor`), which ruling 8 skips at seed. The existing exemption (a passed calibration plays the seed-red role) was gated on `judgedStages.length > 0 && mechanicalWork.length === 0` in `prepareSigning`, so it reached only a pure-judged close; and `judgedStages` there is the imported FUNCTION, so `.length` was its arity (always 1), a latent always-true that only the second clause had been holding up. Every mixed rubric job refused here.
+
+*hamr's ruling (2026-10-09):* "a rubric job should check if judge can judge (calibration) and judge rules can apply properly to pass ... we can't close everything upfront", and "calibration passing yes". Rule: in ANY close carrying a judged stage, pure or mixed, a PASSED calibration gate satisfies the seed-red requirement. A close with NO judged stage keeps the old rule (some work stage must be red at seed). A failed or missing calibration never satisfies it.
+
+*Built:* one owner, `seedProofIsCalibration(judged, calibration)` in `src/authorjob.js` (judged stage present AND `calibration.ok === true`), consulted only after the calibration gate returned (a failed gate already returned its own reds and refusal, so a mixed close with failed calibration is refused naming calibration, never by "nothing fails"). When a mechanical work stage IS red at seed, it signs on that evidence and `satisfiedBy` is not set. Mechanical stages still run at seed and a guard red at seed (`changed-from-seed`) means what it did. The panel/CLI gate-3 line now says "carries a judged stage".
+
+*Run-time check (read, not run):* the close-first precheck (`planrun.js` `judgeClose`, 0a) runs the GRADING path (`runDeclaredClose`, `src/kinds.js`), which does not skip the judged stage; it is first-red-wins, so on this live close `changed-from-seed` (red on an untouched tree by design, the tree-changed pairing) ends the close before the judged stage and `already-green` is not detected on a repo that is already documented. That is the same for every mechanical close with a tree-changed stage today, not new with this change; a worker plan could be paid for on an already-done repo. Named, not fixed: arbiter territory, for hamr.
+
+Proven where: `tests/calibrate.test.js` (mixed signs, mixed with failed calibration refuses naming the practice case, no-judged-stage all-green still refuses, real fixture `tests/fixtures/f192-live-smv0tasvb.json`); fail-first with the helper forced false: 5 failed.
+
+*Addendum 2026-10-09 (d), the rubric judge's locate truncated on deepseek-flash's thinking.* Live evidence: panel run `mv117wde` (DeepSeek `deepseek-flash`); the `jsdoc-contract` judged stage crashed 4 times with `truncated:max_tokens`, and all 8 judge-locate calls cost about $0.0048, i.e. the full `JUDGE_MAX_TOKENS` (4000). A $0.0029 probe (one real locate request built by `runLocate`) returned `finish_reason: stop` with 2409 completion tokens, 1835 (76%) of them `reasoning_tokens`: deepseek-flash thinks by default and the thinking is billed against the judge's output budget. fwdloop already disables it (`thinking:{type:'disabled'}`, `../fwdloop/src/drafter.js`), and bare-agent 0.49.0 added the `thinking` option to `OpenAIProvider` (constructor or per call, forwarded verbatim to `body.thinking`).
+
+*hamr's ruling (2026-10-09), "A":* switch thinking off for the judge, keep `JUDGE_MAX_TOKENS=4000` unchanged. Raising the cap is the fallback only if A fails live, and is not built.
+
+*Built:* (1) bare-agent `^0.43.0` to `^0.49.0` (own commit; full gate green; bareguard stays 0.21.0, deduped; bareloop passes its own `actionTranslator` to `wireGate`, so 0.48's new default translator and its bareguard 0.19 fs-scope notes do not reach it). (2) `judgeCallOptions(provider)` in `src/providers.js`, reading the allow-list `OPENAI_JUDGE_CALL_OPTIONS` (`deepseek-flash` to `thinking:{type:'disabled'}`), applied only to an `OpenAIProvider` instance; `defaultJudgeLoop` (`src/judged.js`), the one constructor of every judge Loop (locate in the run, the calibration gate and the authoring pipeline), spreads it into each `loop.run`. It is a per-call option, not a constructor one, because `buildRunnerProviders` reuses the worker instance as the judge when the identity matches; the worker, drafter, confirm turn and scout are untouched and do not get the field. A model not on the list never gets the field.
+
+*Proven where:* `tests/providers.test.js` captures the request at the provider's `_request` seam through `runLocate` to `defaultJudgeLoop` to `Loop` to `OpenAIProvider.generate`: deepseek-flash judge body carries `thinking:{type:'disabled'}` and `max_tokens` 4000; a non-listed model's judge body has no `thinking`; a worker-path call on a deepseek-flash provider has no `thinking`. Fail-first: with the spread removed the first test goes red. *Test-proven only, not exercised live:* whether the locate now fits in 4000 tokens is the open question; a one-call probe script (`judge-thinking-probe-off.mjs`) is prepared, not run.
+
+**Addendum 2026-10-09 (e) — panel run `mv13ery3` (DeepSeek `deepseek-flash`, job `rubric-repo2`, wall-halt, $0.48): four items (1, 3, 4 built; 2 held for hamr).**
+
+*Live evidence.* Spine `panel-sessions/smv135fe8vqlb/source-seed/rubric-repo2-bareloop/u-mv13ery3.jsonl`, signed spec `…/smv135fe8vqlb/resolved-spec.json`.
+
+1. *Judged path outside the write fence (built, test-proven; not re-proven live).* The drafter declared `docs-judged-floor` with `paths: ["bin/pulselog.js"]` (a CLI script with no exported functions) under `writeScope: ["src/**"]`; the judge's locate found nothing ("unsure, and unsure is red") on iterations 2-5 and the worker could not fix a file it is fenced out of. The drafter's own `notes` say why: the `src/**/*.js` glob matched nothing in the seed listing it was handed, so `bin/pulselog.js` was the only real file it could name (the listing question is not addressed here). Fix: `judgedOutsideFence` (src/authoring.js) is the one owner of "a check must be free to edit every file it can report on", reds `judged-outside-write-scope` in `validateDeclaration` with the shipped `globToPrefix` spelling; `writeScope` is forwarded from all four doors (the authoring revise loop, `validateCloseDecl` at signing, the runner pre-flight and `validateJob`'s deferred gate). Plain sentence in `src/authorreadout.js`; one drafter clause in the soft-green register. Tests: `tests/judgedfence.test.js` on the real signed spec (`tests/fixtures/f192-live-mv13ery3.json`).
+2. *The no-suppressions `any` pattern fires on plain prose (HELD, hamr ruling A given, not built).* Iteration 1 failed `no-suppressions` on prose such as `* Escape hatch: any command that exits 0 is healthy.` (three of the six hits; the other three, `Record<string, any>` in `@param`/`@returns` braces, are genuine type positions and must keep counting). The pattern is data in `TYPES_GENRE` and `checkGuards` requires every signed close's guard params to equal `classGuards()` byte for byte, so editing the regex data makes every already-signed js close fail `guard-weakened` until re-signed. That stop is reported to hamr; nothing is committed for item 2.
+3. *Step map as fit-to-text chips (built).* hamr ruling 1A, for any map in bareloop: the SVG snake is replaced by HTML chips `[sign title]`, each as wide as its own text, flowing and wrapping. The only map renderer in `src/` is the panel's (`src/panel/index.html`); the renderer had to change, not only CSS, because the old map was SVG. Retry is a dashed border, a leg boundary a dotted right edge; the status word rides the chip tooltip (`boxStatusText`, `src/panel/status.js` stays the one owner). Not screenshot-verified (phone width needs hamr's own DevTools).
+4. *The close-trend strike governor was blind to a repeated judged failure (built, test-proven; not re-proven live).* The five `ladder` records of `mv13ery3`: iterations 3-5 all `docs-judged-floor`, `value:null`, `comparable:false`, `noProgress:0`, so the loop ran to the wall. A numberless judged stage now reports its itemized red set (`path|rule|fn`, or `path|unsure|reason`); `closeGrade` carries it as `reds`; `trend.record` compares it as a set against the stage's own previous reading: same set is no progress, a different or smaller one is progress. `strikeLimit` (2), the wall and every numeric path are untouched. Replayed on the real sequence the governor strikes at iteration 4 (the second identical repeat, after the baseline at iteration 2), not iteration 5 and not the wall. `tests/judgedstrike.test.js`; `mv117wde`'s sequence is the numeric regression.
+5. *Item 2 DROPPED by hamr ruling ("warn worker"); worker warning built.* The `any` suppression guard stays exactly as signed (narrowing it would force re-signing and open a multi-line JSDoc loophole). Instead the worker's system prompt carries one genre-owned line (`ANY_SUPPRESSION_WARNING`, `src/authoring.js`, next to the pattern's single `JS_ANY_REGEX`), added in `src/planrun.js` only when the job's own `closeDecl` stages carry that pattern, never from goal prose. Test-proven (`tests/planrun-decl.test.js`, `tests/authoring.test.js`: the line's examples really match the guard, safe spellings do not); not re-proven live.
+
+**Addendum 2026-10-10 (f) — live run `mv1j01sl` (panel, job `rubric-repo2`, DeepSeek `deepseek-flash`, $1.50 cap): the strike governor struck live; the judge's false reds are parked by ruling.**
+
+*Live evidence.* Spine `panel-sessions/smv1itzb2qs3p/source-seed/rubric-repo2-bareloop/u-mv1j01sl.jsonl`, patient worktree `…/pulselog-f192-live/source-mu4hdwqs/tree/.bareloop/wt/smv1itzb2qs3p`. Started 2026-10-09T22:17Z; the soft-green job was "every exported function in src/ carries a JSDoc block naming each parameter and what it returns" plus typecheck and suite stages. Outcome `escalated`, category `cap-halt`, 2 of 2 strikes, at 22:48:53Z (31 minutes). `job-end` `spentUsd` 0.4604, `spendComplete: false`; the settled `runs.jsonl` row says 0.5159 because it adds drafting.
+
+*What the governor did.* The `close-trend` ladder read `docs-judged-floor` 24, then 1, then 6, then 7 (iteration 2 was `no-suppressions`, which carries no number). Iteration 4 (6 against a best of 1) was strike one and iteration 5 (7) was strike two, so the judged-red-count comparison of 747ae6b and 4809afb worked live: it counted failing functions, saw the count rise off its best, and stopped the loop. Plainly, it did NOT buy time here. The spine's `wall-bounded` record at iteration 5 already shows `elapsedMs` 1847298 against a requested 1800000 and `remainingMs` 0 (the enforced figure, 2760000, adds close-stage allowance); the strike and the wall landed in the same minute. The governor is proven to strike on a judged count; this run does not show it ahead of the wall.
+
+*The real red.* Iteration 2 `no-suppressions` was a true red despite the e2bd2cb worker warning: the worker wrote `Record<string, any>` in the `@returns` at `src/run.js:41`. It fixed it on the next try. The warning does not stop the worker writing it once; the guard catching it is what held.
+
+*The iteration-4 and iteration-5 reds were almost all false: the instrument, not the work.* Checked against the files in the worktree:
+
+1. *Glued `@param` tags.* `src/metrics.js` `fmtDelta` carries `@param {number | null | undefined} curr` and `@param {number | null | undefined} prev` on two lines; `resolveMetric` (`metric`, `batch`) and `padL` (`s`, `n`) are likewise correct. The judge returned the tags glued into one entry (`{number | null | undefined} curr, {number | null | undefined} prev`), so the params rule reported "`@param` missing for curr, prev" and, in the same breath, "names no parameter of fmtDelta". Same function, two contradictory reds from one misread.
+2. *One-line functions.* `src/index.js` has six (`run`, `runDigest`, `runBackup`, `createSink`, `assembleEmail`, `sendEmail`), each like `export function run(args) { return runHealth(args); }`. The judge quoted the part-line `return runHealth(args);`; `quoteIn` with `wholeLines` refused it as "not in the artifact", and unsure is red. Six reds at iteration 5 came from this alone.
+3. *Destructured parameter.* `src/backup.js` `runBackup` is documented `@param {{ configPath: string, now?: number }} args`, which c8ee936 and f38d91b made legal, and it was still red "1 param(s) but only 0 @param tag(s)". Iteration 3's single red (`runDigest`, documented `@param {RunDigestArgs} args`, destructured signature) is the same class.
+4. *The escalation text contradicts itself.* It reads "2/2 strikes — the fix loop stopped making progress against the close's own numbers (still progressing — docs-judged-floor 24 → 1 → 6 → 7)".
+
+I did not check every one of the 7 reds at iteration 5 and 6 at iteration 4 for being false beyond the cases above; `flightlogSummary` (iteration 4) is documented with both params in the file, so it too reads false, but I did not trace why.
+
+*hamr's ruling (2026-10-10):* stop live runs on the JSDoc-on-a-repo job ("the wrong confusing job"). Ship F192 on what is proven: live calibration 10 of 10 practice cases and 5 of 5 attack styles (`smv0tasvb0u89`, addendum c) and the strike governor working live. The judge false-red classes above are NOT patched. After the next UI piece ("The job" block) there is a discussion on shape, with testing on a non-repo flight-search rubric job.
+
+*Thinking-off (05f14d0) and the judged-path fence (4173b04).* 05f14d0 is an ancestor of HEAD and dated before this run; the spine records neither the thinking flag nor the build the panel server was running, so that thinking-off was in force for this run is NOT verified from the spine. Truncation: the run has 32 `judge-round` records (all `judged-locate` on `docs-judged-floor`, no judge-round carries a finish-reason or truncation field), and the string `max_tokens` appears nowhere in the spine; no stage reported a judge truncation. Count found: 0 judge rounds truncated by `max_tokens`, with the caveat that the records cannot show it directly (the only truncation records are one `scout-truncated`, 43 bytes, which is the scout's, not the judge's). The fence (4173b04) did not trip: no `judged-outside-write-scope` red appears. Not checked: judge reasoning-token share, and whether the iteration-1 locate failures ("locate found nothing", "omitted top-level function(s)") were model or fence causes.
+
+*F192 status.* Closed: calibration passes live (10/10 and 5/5), the seed-red gate for a mixed rubric close (addendum c), and the judged-count strike governor (struck live, above). Open, parked by ruling and not built: the judge false-red classes above (glued `@param` entries, one-line function quotes refused by `quoteIn`, destructured `@param` read as 0 tags) and the self-contradicting escalation sentence. A rubric job on a repo can therefore still be stopped by a false red; this is not fixed.
+
 ## F193 — the prompt-commit rule assumed every prompt-register-file change came from a run failure; a type-only edit could not satisfy it honestly (fixed)
 
 Found 2026-09-23 on `feat/panel-n6`. Commit `565fb99` widened one JSDoc `@param` type annotation in

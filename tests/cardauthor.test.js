@@ -14,7 +14,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
-  JUDGE_RULE_IDS, validateCard, decide,
+  JUDGE_RULE_IDS, JUDGE_RULES, validateCard, decide,
   CALIBRATION_SIZE, CASE_VERDICTS, validateCalibrationSet, validateJudgedArtifacts, expectedOf,
 } from '../src/judged.js';
 
@@ -142,6 +142,14 @@ test('the compile prompt carries the Judge Examples answer VERBATIM, and the rul
   const p = cardCasesPrompt({ answers: ANSWERS() });
   assert.ok(p.includes(ANSWERS()[4]), 'the Judge Examples answer reaches the compiler unedited');
   for (const id of JUDGE_RULE_IDS) assert.ok(p.includes(id), `the rulebook names ${id}`);
+});
+
+test('the compile prompt states what each rule can check, so a name-echo case selects says-what and has-doc stays "a block exists"', () => {
+  const p = cardCasesPrompt({ answers: ANSWERS() });
+  for (const id of JUDGE_RULE_IDS) assert.ok(p.includes(JUDGE_RULES[id].means), `${id}: its reach is in the prompt`);
+  assert.match(p, /- has-doc\n\s+what it can check: checks only that a JSDoc block sits directly above/);
+  assert.match(p, /- says-what\n\s+what it can check: .*restates the name/);
+  assert.match(p, /only restates the function name" is a\s+says-what red, never a has-doc one/);
 });
 
 // ── 2. THE CARD ─────────────────────────────────────────────────────────────

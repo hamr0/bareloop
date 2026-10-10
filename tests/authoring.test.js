@@ -1587,6 +1587,28 @@ test('calibration readout: itemized rows, never an aggregate — and a casualty 
   assert.match(calibrationLines(null)[0], /not reached/);
 });
 
+test('calibration readout (F192): one plain why-line per failing case, quote cut visibly', () => {
+  const long = '/** ' + 'q'.repeat(200);
+  const lines = calibrationLines({
+    ok: false, judgeModel: 'm',
+    graded: [
+      { id: 'full', ok: false, detail: 'x', diag: { attempts: [], reds: [
+        { rule: 'has-doc', fn: 'formatBytes', why: 'the quoted line is not in the artifact', quote: long },
+        { rule: 'params', fn: 'formatBytes', why: 'w', quote: null },
+      ] } },
+      { id: 'nofacts', ok: false, detail: 'y', diag: { reds: [], attempts: [{ attempt: 1, ok: false, axis: 'artifact-red', detail: 'did not parse' }] } },
+      { id: 'old', ok: false, detail: 'z' },
+    ],
+    injection: { styles: [] },
+    casualty: { kind: 'case', at: 'p', axis: 'provider-red', diag: { reds: [], attempts: [{ attempt: 2, ok: false, axis: 'provider-red', detail: 'ECONNRESET' }] } },
+  });
+  const why = lines.filter((l) => l.includes('why:'));
+  assert.equal(why.length, 3, 'a row that predates diag prints no why-line');
+  assert.match(why.find((l) => l.includes('has-doc')), /why: has-doc · formatBytes — the quoted line is not in the artifact; quote: "\/\*\* q+…\[truncated, 204 chars\]" \(\+1 more red\(s\)/);
+  assert.ok(why.some((l) => /no facts — attempt 1 \[artifact-red\] did not parse/.test(l)));
+  assert.ok(why.some((l) => /attempt 2 \[provider-red\] ECONNRESET/.test(l)));
+});
+
 // PRD item 33 M3 piece 4, step S4 — the confirm turn's open questions, shown at
 // the SIGNING readout (D4: the signed spec format itself does not change).
 test('openQuestionLines: none is shown as an explicit "(none)", never a silent absence', () => {
@@ -1802,4 +1824,26 @@ test('crashRecord: a non-Error throw is recorded honestly, never coerced into an
   // than crash inside the crash handler (F70)
   assert.equal(crashRecord(null).raw.text, 'null');
   assert.equal(crashRecord(undefined).name, null);
+});
+
+// ── the `any` worker warning stays true to the guard (run mv13ery3) ──────────
+import { anySuppressionWarning, ANY_SUPPRESSION_WARNING as ANY_WARN } from '../src/authoring.js';
+
+test('anySuppressionWarning: examples in the line match the guard; safe spellings do not', () => {
+  const anyPat = TYPES_GENRE.languages.js.suppressions.find((p) => p.id === 'any');
+  const re = new RegExp(anyPat.regex);
+  for (const ex of ['x, any', 'x: any', '(any password']) assert.ok(re.test(ex), `${ex} trips the guard`);
+  for (const ex of ['every command', '`any` command', 'Any command']) assert.ok(!re.test(ex), `${ex} is clean`);
+  for (const ex of ["', any'", "': any'", "'(any'"]) assert.ok(ANY_WARN.includes(ex), `the line names ${ex}`);
+});
+
+test('anySuppressionWarning: keyed on the stages\' patterns, the signed guard bytes unchanged', () => {
+  const stagesFor = (lang) => classGuards({ verdictType: 'green', lang }).map((g) => ({ name: g.name, kind: g.kind, params: g.params }));
+  // composed guards are what get signed: snapshot proves the regex bytes did not move
+  const anyPat = TYPES_GENRE.languages.js.suppressions.find((p) => p.id === 'any');
+  assert.equal(anyPat.regex, '(?:[{<|(\\[:,]|\\bas)\\s*any\\b|\\bany\\[\\]');
+  assert.equal(anySuppressionWarning(stagesFor('js')), ANY_WARN);
+  assert.equal(anySuppressionWarning(stagesFor('python')), '');
+  assert.equal(anySuppressionWarning(null), '');
+  assert.equal(anySuppressionWarning([]), '');
 });

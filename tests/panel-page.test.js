@@ -1,5 +1,5 @@
 // PANEL-BUILD.md P1 — the panel PAGE (`src/panel/index.html`). The step-map
-// renderer (`buildStepMapSVG`/`wrapTitleLines`) is copied verbatim from
+// renderer (`buildStepMapHTML`/`wrapTitleLines`) is copied verbatim from
 // `design/panel-mockup.html` into this file's inline `<script>` (one
 // renderer, no second hand-authored map — the build spec's own rule). It has
 // no module exports (a plain IIFE, matching the mockup it was copied from),
@@ -28,63 +28,42 @@ const PAGE_PATH = join(HERE, '..', 'src', 'panel', 'index.html');
  * reimplementation, the exact text the browser would run. */
 function loadStepMapGeometry() {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const start = html.indexOf('function stepMapColors');
-  const end = html.indexOf('var lastSteps = null;');
+  const start = html.indexOf('function escapeXml');
+  const end = html.indexOf('function renderStepMap(');
   assert.ok(start !== -1 && end !== -1 && end > start, 'expected to find the step-map geometry block in src/panel/index.html');
   const body = html.slice(start, end);
   // eslint-disable-next-line no-new-func
   const factory = new Function(`${body}
-    return { wrapTitleLines, buildStepMapSVG, naturalBoxWidth, computeMapLayout, stepTitleText, stepNumberIndices, buildOrderedBoxes, partHasNoVerdict, partResultGlyph, boxRetryTry, partBoxState, attemptGlyph };
+    return { buildStepMapHTML, stepMapKeyHTML, stepTitleText, stepNumberIndices, buildOrderedBoxes, partHasNoVerdict, partResultGlyph, boxRetryTry, partBoxState, attemptGlyph };
   `);
   return factory();
 }
 
 test('src/panel/index.html carries exactly one step-map renderer (no second hand-authored map)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const occurrences = html.split('function buildStepMapSVG').length - 1;
+  const occurrences = html.split('function buildStepMapHTML').length - 1;
   assert.equal(occurrences, 1);
 });
 
-test('wrapTitleLines: a short title stays on one line', () => {
-  const { wrapTitleLines } = loadStepMapGeometry();
-  const lines = wrapTitleLines('1 short', 200);
-  assert.equal(lines.length, 1);
-});
-
-test('wrapTitleLines: a title too wide for its box wraps onto a SECOND line, never squeezed/truncated to one', () => {
-  const { wrapTitleLines } = loadStepMapGeometry();
-  // a box width deliberately narrower than the natural width of this title —
-  // the wrap path only fires when a box was clamped below its natural size.
-  const title = '7 Update references in source across the whole repository tree';
-  const lines = wrapTitleLines(title, 160);
-  assert.equal(lines.length, 2);
-  // both lines concatenate back to the same words, in order — proves nothing
-  // was silently dropped by the wrap.
-  assert.equal(`${lines[0]} ${lines[1]}`.replace(/\s+/g, ' '), title);
-});
-
-test('buildStepMapSVG: a step list containing a long title renders a taller (2-line) box, never overlapping the next box', () => {
-  const { buildStepMapSVG } = loadStepMapGeometry();
+test('buildStepMapHTML (ruling 1A): one chip per step, in the given order, each carrying its own full text', () => {
+  const { buildStepMapHTML } = loadStepMapGeometry();
   const steps = [
-    { title: 'Read the errors', state: 'done' },
-    { title: 'Update references in source across the whole repository tree and every downstream consumer', state: 'running' },
-    { title: 'Run the check', state: 'waiting' },
+    { title: 'scout', state: 'done', noNumber: true, attempts: [], status: { sign: '✓', word: 'passed' } },
+    { title: 'plan', state: 'done', noNumber: true, attempts: [], status: { sign: '✓', word: 'passed' } },
+    { title: 'doc-audit-sweep', state: 'stopped', attempts: [], status: { sign: '■', word: 'stopped' } },
   ];
-  // a narrow available width forces the box below its natural (unsqueezed)
-  // width, which is exactly what triggers the 2-line wrap path.
-  const svg = buildStepMapSVG(steps, 420);
-  assert.match(svg, /<svg /);
-  // two <text> elements at DIFFERENT y-offsets for the long title's box
-  // (BOX_H_2LINE's y+17 / y+29 pair) proves the 2-line path actually fired,
-  // not just that the function ran without throwing.
-  const textYs = [...svg.matchAll(/<text x="[\d.]+" y="([\d.]+)"/g)].map((m) => Number(m[1]));
-  assert.ok(textYs.length > 0);
-  // group y-values by rounding to the nearest box row start; at least one
-  // pair of consecutive close y-values (title line 1 / line 2, 12px apart)
-  // must exist for the 2-line box.
-  const sorted = [...textYs].sort((a, b) => a - b);
-  const hasTwoLinePair = sorted.some((y, i) => i > 0 && Math.abs(y - sorted[i - 1]) === 12);
-  assert.ok(hasTwoLinePair, `expected a 2-line title pair (12px apart) among y-offsets: ${sorted.join(',')}`);
+  const html = buildStepMapHTML(steps);
+  assert.match(html, /^<div class="map-chips" /);
+  const chips = [...html.matchAll(/<span class="map-chip[^"]*"[^>]*>(.*?)\]<\/span>/g)].map((m) => m[1].replace(/<[^>]+>/g, ''));
+  assert.deepEqual(chips, ['[✓ scout', '[✓ plan', '[■ 1 doc-audit-sweep']);
+  // fit-to-text flow, wrapping, no horizontal scroll: the CSS contract
+  const css = readFileSync(PAGE_PATH, 'utf8');
+  assert.match(css, /\.map-chips\{display:flex;flex-wrap:wrap;/);
+  const chipRule = css.match(/\.map-chip\{[^}]*\}/)[0];
+  assert.match(chipRule, /display:inline-block;width:auto;max-width:100%/, 'as wide as its own text, never wider than the line');
+  assert.match(chipRule, /overflow-wrap:anywhere/, 'a name longer than the line wraps inside its chip');
+  assert.doesNotMatch(chipRule, /text-overflow|overflow:hidden|white-space:nowrap/, 'a name is never truncated');
+  assert.doesNotMatch(css.match(/\.map-box\{[^}]*\}/)[0], /overflow-x:auto/, 'no horizontal scroll on the map');
 });
 
 // ---------------------------------------------------------------------------
@@ -117,17 +96,16 @@ function findRealLongStepId() {
   return null;
 }
 
-test('step-title wrap, exercised with a REAL long step id when the archive has one, else an authored fixture (named honestly)', () => {
-  const { buildStepMapSVG } = loadStepMapGeometry();
+test('step-title is never truncated, exercised with a REAL long step id when the archive has one, else an authored fixture (named honestly)', () => {
+  const { buildStepMapHTML } = loadStepMapGeometry();
   const real = findRealLongStepId();
   const title = real ?? 'update-references-in-source-across-the-whole-repository-tree'; // authored fixture — no real step id in the archive reached 30+ chars at test time
   if (!real) {
     // honest label — this assertion documents that the fixture is authored, not found
     assert.ok(title.length >= 30, 'authored fixture must itself be long enough to force the wrap');
   }
-  const svg = buildStepMapSVG([{ title, state: 'running' }, { title: 'x', state: 'waiting' }], 300);
-  assert.match(svg, /<svg /);
-  assert.ok(svg.length > 0);
+  const html = buildStepMapHTML([{ title, state: 'running', attempts: [] }, { title: 'x', state: 'waiting', attempts: [] }]);
+  assert.ok(html.includes(`1 ${title}]`), 'the long name is rendered in full — never truncated');
 });
 
 // ---------------------------------------------------------------------------
@@ -255,26 +233,26 @@ test('stepTitleText: a step flagged noNumber renders WITHOUT the leading "<n> " 
 // "2 annotate-checks-strict" instead of "1 annotate-checks-strict".
 // ---------------------------------------------------------------------------
 
-test('buildStepMapSVG: a noNumber box (scout+plan) ahead of a real step must NOT shift the real step\'s number — first real step stays "1 <title>", never "2 <title>"', () => {
-  const { buildStepMapSVG } = loadStepMapGeometry();
+test('buildStepMapHTML: a noNumber box (scout+plan) ahead of a real step must NOT shift the real step\'s number — first real step stays "1 <title>", never "2 <title>"', () => {
+  const { buildStepMapHTML } = loadStepMapGeometry();
   const boxes = [
     { title: 'scout + plan', state: 'done', noNumber: true, attempts: [] },
     { title: 'annotate-checks-strict', state: 'done', attempts: [] },
   ];
-  const svg = buildStepMapSVG(boxes, 900);
+  const svg = buildStepMapHTML(boxes, 900);
   assert.match(svg, /1 annotate-checks-strict/, `expected the real step to render as step 1, got: ${svg}`);
   assert.doesNotMatch(svg, /2 annotate-checks-strict/, `real step must not be mislabelled step 2 by the noNumber box ahead of it: ${svg}`);
 });
 
-test('buildStepMapSVG: a noNumber box (scout+plan), a real step A, a real step B, and a noNumber box (fix loop) — A is "1", B is "2", never "2"/"3"', () => {
-  const { buildStepMapSVG } = loadStepMapGeometry();
+test('buildStepMapHTML: a noNumber box (scout+plan), a real step A, a real step B, and a noNumber box (fix loop) — A is "1", B is "2", never "2"/"3"', () => {
+  const { buildStepMapHTML } = loadStepMapGeometry();
   const boxes = [
     { title: 'scout + plan', state: 'done', noNumber: true, attempts: [] },
     { title: 'step A', state: 'done', attempts: [] },
     { title: 'step B', state: 'done', attempts: [] },
     { title: 'fix loop', state: 'done', noNumber: true, attempts: [] },
   ];
-  const svg = buildStepMapSVG(boxes, 1200);
+  const svg = buildStepMapHTML(boxes, 1200);
   assert.match(svg, /1 step A/, `expected step A labelled 1, got: ${svg}`);
   assert.match(svg, /2 step B/, `expected step B labelled 2, got: ${svg}`);
   assert.doesNotMatch(svg, /2 step A/);
@@ -1050,7 +1028,7 @@ test('item 4: attemptsInlineText / stepTitleText — attempts append to the box 
   const { attemptsInlineText, stepTitleText } = (function(){
     const html = readFileSync(PAGE_PATH, 'utf8');
     const start = html.indexOf('function attemptGlyph(');
-    const end = html.indexOf('function naturalBoxWidth(');
+    const end = html.indexOf('function renderStepMap(');
     const body = html.slice(start, end);
     // eslint-disable-next-line no-new-func
     return new Function(`${body}\nreturn { attemptsInlineText, stepTitleText };`)();
@@ -1778,22 +1756,21 @@ test('boxRetryTry: the one shared rule — a box with >1 attempts reports its fi
   assert.equal(boxRetryTry({ attempts: [] }), 0);
 });
 
-test('buildStepMapSVG: a step with 3 attempts renders a dashed retry path and "try 3"', () => {
-  const { buildOrderedBoxes, buildStepMapSVG } = loadStepMapGeometry();
+test('buildStepMapHTML: a step with 3 attempts renders a dashed-border chip marked "try 3"', () => {
+  const { buildOrderedBoxes, buildStepMapHTML } = loadStepMapGeometry();
   const parts = [
     {
       kind: 'step', label: 'flaky step', occurrence: 1, outcome: 'green',
       attempts: [{ n: 1, outcome: 'red' }, { n: 2, outcome: 'red' }, { n: 3, outcome: 'green' }],
     },
   ];
-  const boxes = buildOrderedBoxes(parts, false);
-  const svg = buildStepMapSVG(boxes, 900);
-  assert.match(svg, /stroke-dasharray="3,3"/, 'expected a dashed retry path');
-  assert.match(svg, />try 3</, 'expected the final try number in the label');
+  const html = buildStepMapHTML(buildOrderedBoxes(parts, false));
+  assert.match(html, /class="map-chip [^"]*\bretry\b[^"]*"[^>]*data-retry="3"/);
+  assert.match(readFileSync(PAGE_PATH, 'utf8'), /\.map-chip\.retry\{border-style:dashed;\}/);
 });
 
-test('buildStepMapSVG: a fix loop with 4 attempts renders a dashed retry path and "try 4"', () => {
-  const { buildOrderedBoxes, buildStepMapSVG } = loadStepMapGeometry();
+test('buildStepMapHTML: a fix loop with 4 attempts renders a dashed-border chip marked "try 4"', () => {
+  const { buildOrderedBoxes, buildStepMapHTML } = loadStepMapGeometry();
   const parts = [
     {
       kind: 'fix', label: 'fix', occurrence: null, outcome: 'green',
@@ -1802,120 +1779,32 @@ test('buildStepMapSVG: a fix loop with 4 attempts renders a dashed retry path an
       ],
     },
   ];
-  const boxes = buildOrderedBoxes(parts, false);
-  const svg = buildStepMapSVG(boxes, 900);
-  assert.match(svg, /stroke-dasharray="3,3"/, 'expected a dashed retry path');
-  assert.match(svg, />try 4</, 'expected the final try number in the label');
+  const html = buildStepMapHTML(buildOrderedBoxes(parts, false));
+  assert.match(html, /\bretry\b[^"]*"[^>]*data-retry="4"/);
 });
 
-// item 2 (2026-09-27, hamr-reported: phone-width run mu2p83go's map): the
-// retry curve's x-coordinates and its own control points used a fixed pixel
-// `retryShift` (14px, sized for desktop) subtracted from proportionally-
-// small fractions of `boxW` (e.g. the curve's endpoint at 2.8% of boxW) —
-// at a narrow box width that pushed the endpoint past the box's own left
-// edge (reproduced exactly: availWidth=350, 3 steps, middle one with 2
-// attempts and a row change -> box x=10, boxW=330 -> endpoint x=5.24,
-// outside [10, 340]). RED-PROOF: this must fail against the pre-fix file
-// (at least the 350/hasDrop case), never pass by construction.
-function retryPathCoords(svg) {
-  const pathRe = /<path d="M ([\d.]+) [\d.]+ C ([\d.]+) [\d.]+, ([\d.]+) [\d.]+, ([\d.]+) [\d.]+"[^>]*stroke-dasharray="3,3"/g;
-  const out = [];
-  let m;
-  while ((m = pathRe.exec(svg))) out.push([Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])]);
-  return out;
-}
-function retryLabelXs(svg) {
-  const labelRe = /<text x="([\d.]+)" y="[\d.]+" text-anchor="middle" font-size="10" fill="var\(--text-faint\)">try \d+</g;
-  const out = [];
-  let m;
-  while ((m = labelRe.exec(svg))) out.push(Number(m[1]));
-  return out;
-}
-function boxRects(svg) {
-  const rectRe = /<rect x="([\d.]+)" y="[\d.]+" width="([\d.]+)" height="[\d.]+"/g;
-  const out = [];
-  let m;
-  while ((m = rectRe.exec(svg))) out.push({ x: Number(m[1]), w: Number(m[2]) });
-  return out;
-}
-// 3 steps, middle one carrying the retry loop — matches the reported repro
-// shape (a row change puts the retry-loop box at the end of its row, so it
-// also carries the snake-drop arrow -> hasDrop true -> retryShift applied).
-function threeStepRetryParts() {
-  return [
-    { kind: 'step', label: 'a', occurrence: 1, outcome: 'green', attempts: [{ n: 1, outcome: 'green' }] },
-    {
-      kind: 'step', label: 'b', occurrence: 1, outcome: 'green',
-      attempts: [{ n: 1, outcome: 'red' }, { n: 2, outcome: 'green' }],
-    },
-    { kind: 'step', label: 'c', occurrence: 1, outcome: 'green', attempts: [{ n: 1, outcome: 'green' }] },
-  ];
-}
-[350, 500, 800, 1200].forEach((availWidth) => {
-  test(`buildStepMapSVG: retry loop stays inside its own box at width=${availWidth} (hasDrop true — reported repro shape)`, () => {
-    const { buildOrderedBoxes, buildStepMapSVG } = loadStepMapGeometry();
-    const boxes = buildOrderedBoxes(threeStepRetryParts(), false);
-    const svg = buildStepMapSVG(boxes, availWidth);
-    const rects = boxRects(svg);
-    const box = rects[1]; // the middle box owns the retry loop in this fixture
-    assert.ok(box, 'precondition: expected 3 boxes rendered');
-    const paths = retryPathCoords(svg);
-    assert.ok(paths.length >= 1, 'precondition: expected at least one dashed retry path');
-    paths.forEach((xs) => {
-      xs.forEach((v, idx) => {
-        assert.ok(v >= box.x && v <= box.x + box.w, `retry path coord[${idx}]=${v} must lie within box [${box.x}, ${box.x + box.w}] at width=${availWidth}`);
-      });
-    });
-    retryLabelXs(svg).forEach((lx) => {
-      assert.ok(lx >= box.x && lx <= box.x + box.w, `retry label x=${lx} must lie within box [${box.x}, ${box.x + box.w}] at width=${availWidth}`);
-    });
-  });
-  test(`buildStepMapSVG: retry loop stays inside its own box at width=${availWidth} (hasDrop false — a single-row layout wide enough for all 3 boxes)`, () => {
-    const { buildOrderedBoxes, buildStepMapSVG } = loadStepMapGeometry();
-    const boxes = buildOrderedBoxes(threeStepRetryParts(), false);
-    // force a single row (no snake-drop) by reusing the same fixture and
-    // widening availWidth enough that perRow === 3 (no row change at all,
-    // so the retry-carrying box stays at index 1 with no drop arrow).
-    const svg = buildStepMapSVG(boxes, Math.max(availWidth, 1600));
-    const rects = boxRects(svg);
-    const box = rects[1];
-    const paths = retryPathCoords(svg);
-    assert.ok(paths.length >= 1, 'precondition: expected at least one dashed retry path');
-    paths.forEach((xs) => {
-      xs.forEach((v, idx) => {
-        assert.ok(v >= box.x && v <= box.x + box.w, `retry path coord[${idx}]=${v} must lie within box [${box.x}, ${box.x + box.w}] at width=${availWidth} (hasDrop false)`);
-      });
-    });
-    retryLabelXs(svg).forEach((lx) => {
-      assert.ok(lx >= box.x && lx <= box.x + box.w, `retry label x=${lx} must lie within box [${box.x}, ${box.x + box.w}] at width=${availWidth} (hasDrop false)`);
-    });
-  });
-});
-
-test('buildStepMapSVG: a single-attempt step and a no-verdict part (e.g. plan) render NO dashed retry path', () => {
-  const { buildOrderedBoxes, buildStepMapSVG } = loadStepMapGeometry();
+test('buildStepMapHTML: a single-attempt step and a no-verdict part (e.g. plan) render NO retry mark', () => {
+  const { buildOrderedBoxes, buildStepMapHTML } = loadStepMapGeometry();
   const parts = [
     { kind: 'plan', label: 'plan', occurrence: null, outcome: null, attempts: [] },
     { kind: 'step', label: 'clean step', occurrence: 1, outcome: 'green', attempts: [{ n: 1, outcome: 'green' }] },
   ];
-  const boxes = buildOrderedBoxes(parts, false);
-  const svg = buildStepMapSVG(boxes, 900);
-  assert.doesNotMatch(svg, /stroke-dasharray="3,3"/, 'no box here has >1 attempts, so no retry loop should render');
+  const html = buildStepMapHTML(buildOrderedBoxes(parts, false));
+  assert.doesNotMatch(html, /\bretry\b|data-retry/, 'no box here has >1 attempts, so no retry mark should render');
 });
 
-test('MAP: no sign legend (hamr 2026-10-04); one small line-style key `⤾ dashed = retry · dotted = resumed` sits under the MAP; each step card carries its own sign + word', () => {
+test('MAP: no sign legend (hamr 2026-10-04); one small line-style key `dashed box = retry · dotted edge = resumed after` sits under the MAP; each step card carries its own sign + word', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   assert.doesNotMatch(html, /stepMapLegendHTML|map-legend/);
   assert.doesNotMatch(html, /dot green"><\/span>done|dot magenta"><\/span>died/);
   assert.match(html, /class="step-state"[^]*?class="st-word"/);
-  const src = html.slice(html.indexOf('function stepMapKeyHTML('), html.indexOf('var lastSteps = null;'));
+  const src = html.slice(html.indexOf('function stepMapKeyHTML('), html.indexOf('function renderStepMap('));
   // eslint-disable-next-line no-new-func
   const key = new Function(src + '\nreturn stepMapKeyHTML;')();
-  assert.match(key([{}]), /⤾ dashed = retry<\/span><\/div>$/);
+  assert.match(key([{}]), /↻N = took N tries \(dashed box\)<\/span><\/div>$/);
   assert.doesNotMatch(key([{}]), /dotted/);
-  assert.match(key([{}, { resumedNext: true }]), /dashed = retry<\/span><span>&middot;&middot;&middot; dotted = resumed<\/span>/);
-  assert.match(html, /buildStepMapSVG\(steps, w\) \+ stepMapKeyHTML\(steps\)/);
-  assert.match(html, /buildStepMapSVG\(lastSteps, w\) \+ stepMapKeyHTML\(lastSteps\)/);
+  assert.match(key([{}, { resumedNext: true }]), /↻N = took N tries \(dashed box\)<\/span><span>dotted edge = resumed after<\/span>/);
+  assert.match(html, /buildStepMapHTML\(steps\) \+ stepMapKeyHTML\(steps\)/);
 });
 
 // ---------------------------------------------------------------------------
@@ -2201,17 +2090,15 @@ test('pollTick: visibilitychange-style forced tick refreshes the list even insid
   assert.equal(runsCalls, 2, 'a forced catch-up tick must not be swallowed by the 10s throttle');
 });
 
-test('buildStepMapSVG: a running box draws the pulsing amber dot (mockup-verbatim circle+animate), a done/waiting box does not', () => {
-  const { buildOrderedBoxes, buildStepMapSVG } = loadStepMapGeometry();
+test('buildStepMapHTML: a running chip pulses (CSS), a done/waiting chip does not', () => {
+  const { buildOrderedBoxes, buildStepMapHTML } = loadStepMapGeometry();
   const parts = [
     { kind: 'step', label: 'a', occurrence: 1, outcome: 'green', attempts: [{ n: 1, outcome: 'green' }] },
     { kind: 'step', label: 'b', occurrence: 1, outcome: null, attempts: [] },
   ];
-  const boxes = buildOrderedBoxes(parts, true); // isLive=true — the last part is the running one
-  const svg = buildStepMapSVG(boxes, 900);
-  const dots = [...svg.matchAll(/<circle[^>]*fill="#b8860b">/g)];
-  assert.equal(dots.length, 1, 'exactly one running box in this list, exactly one pulsing dot');
-  assert.match(svg, /<animate attributeName="opacity" values="1;0\.3;1" dur="1\.2s" repeatCount="indefinite">/);
+  const html = buildStepMapHTML(buildOrderedBoxes(parts, true)); // isLive=true — the last part is the running one
+  assert.equal([...html.matchAll(/class="map-chip s-running/g)].length, 1, 'exactly one running chip');
+  assert.match(readFileSync(PAGE_PATH, 'utf8'), /\.map-chip\.s-running \.chip-sign\{animation:chip-pulse/);
 });
 
 test('pollTick: does nothing while document.hidden is true, and resumes fetching once visible again', async () => {
@@ -2569,11 +2456,10 @@ test('build item 1: chatPostOutcome — RED-PROOF against the pre-fix decision r
   assert.equal(chatPostOutcome(null).ok, false);
 });
 
-test('build item 1: sendBtn/reviseBtn only clear msgInput inside the o.ok branch — a failed POST must never wipe the typed answer', () => {
+test('build item 1: sendBtn only clears msgInput inside the o.ok branch — a failed POST must never wipe the typed answer', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const sendSrc = html.slice(html.indexOf('function doSend('), html.indexOf('function doRevise('));
-  const reviseSrc = html.slice(html.indexOf('function doRevise('), html.indexOf('function doSign('));
-  for (const [name, src] of [['send', sendSrc], ['revise', reviseSrc]]) {
+  const sendSrc = html.slice(html.indexOf('function doSend('), html.indexOf('function doReopen('));
+  for (const [name, src] of [['send', sendSrc]]) {
     assert.match(src, /if\(o\.ok\)\{\s*chatActionOk\(\);\s*msgInput\.value = "";/, `${name}: msgInput.value = "" must sit inside the o.ok branch`);
     // the ONLY place msgInput.value is assigned in this handler is that one
     // success-branch line — never a second unconditional clear elsewhere.

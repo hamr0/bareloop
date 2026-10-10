@@ -194,12 +194,12 @@ test('2026-10-07: a STOPPED run wears [■] on the table, the card, the expanded
   const f = new Function(`${['escapeXml', 'boxStatusWord', 'boxStatusText', 'glyphClass', 'stepStateHTML'].map(fnSrc).join('\n')}\nreturn stepStateHTML;`)();
   assert.match(f({ state: 'stopped', status: { ...STATUS.stopped } }, 't'), /dot stopped"><\/span><b class="st-word">stopped</);
   // map box text
-  const start = PAGE.indexOf('function stepMapColors');
-  const body = PAGE.slice(start, PAGE.indexOf('var lastSteps = null;'));
+  const start = PAGE.indexOf('function escapeXml');
+  const body = PAGE.slice(start, PAGE.indexOf('function renderStepMap('));
   // eslint-disable-next-line no-new-func
-  const g = new Function(`${body}\nreturn { buildOrderedBoxes, buildStepMapSVG };`)();
+  const g = new Function(`${body}\nreturn { buildOrderedBoxes, buildStepMapHTML };`)();
   const parts = [{ kind: 'step', label: 'a', occurrence: 1, outcome: null, stopReason: 'you stopped it', attempts: [], status: partStatusFor({ stopReason: 'you stopped it' }) }];
-  assert.match(g.buildStepMapSVG(g.buildOrderedBoxes(parts, false), 900), />\[■\] stopped</);
+  assert.match(g.buildStepMapHTML(g.buildOrderedBoxes(parts, false)), /title="\[■\] stopped"/);
 });
 
 test('2026-10-07: the ✗ result chip still finds a stopped [■] run (it was a [✗] before the sign ruling)', () => {
@@ -312,17 +312,17 @@ test('2026-10-07: a part wears `[sign] word` from the ONE table — never the ra
   assert.doesNotMatch(PAGE, /escapeXml\(s\.state\)/);
   assert.doesNotMatch(fnSrc('stepStateHTML'), /boxStatusText|\[/); // the card/Audit state is the word only; the sign is the map's
   // end to end through the page's own buildOrderedBoxes + SVG: no bare "done" text
-  const start = PAGE.indexOf('function stepMapColors');
-  const body = PAGE.slice(start, PAGE.indexOf('var lastSteps = null;'));
+  const start = PAGE.indexOf('function escapeXml');
+  const body = PAGE.slice(start, PAGE.indexOf('function renderStepMap('));
   // eslint-disable-next-line no-new-func
-  const g = new Function(`${body}\nreturn { buildOrderedBoxes, buildStepMapSVG };`)();
+  const g = new Function(`${body}\nreturn { buildOrderedBoxes, buildStepMapHTML };`)();
   const parts = [
     { kind: 'scout', label: 'scout', outcome: null, attempts: [], status: partStatusFor({ kind: 'scout' }) },
     { kind: 'step', label: 'a', occurrence: 1, outcome: 'green', attempts: [{ n: 1, outcome: 'green' }], status: partStatusFor({ kind: 'step', outcome: 'green' }) },
     { kind: 'step', label: 'b', occurrence: 1, outcome: null, stopReason: 'money cap', attempts: [], status: partStatusFor({ stopReason: 'money cap' }) },
   ];
-  const svg = g.buildStepMapSVG(g.buildOrderedBoxes(parts, false), 900);
-  assert.match(svg, />\[✓\] passed</);
-  assert.match(svg, />\[✗\] capped</);
-  assert.doesNotMatch(svg, />done</);
+  const svg = g.buildStepMapHTML(g.buildOrderedBoxes(parts, false));
+  assert.match(svg, /title="\[✓\] passed"/);
+  assert.match(svg, /title="\[✗\] capped"/);
+  assert.doesNotMatch(svg, /title="done"|>done</);
 });

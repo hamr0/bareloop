@@ -1,0 +1,368 @@
+{
+  "schema": "job-v1",
+  "job": "rubric-repo2",
+  "description": "rubric-repo2 — authored through the bareloop panel (soft-green, js)",
+  "provider": "openai-api",
+  "baseUrl": "https://api.deepseek.com/v1",
+  "cadence": {
+    "unit": "day",
+    "every": 1
+  },
+  "budgetUsd": 1.5,
+  "maxWallMs": 1800000,
+  "writeScope": [
+    "src/**"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  },
+  "goal": "Add a JSDoc doc comment to every exported function in src/ that lacks one, so that every exported function in src/ has a JSDoc block, each block names every parameter in that function's signature with no @param for a parameter that does not exist, each block states what the function returns, the exported function signatures in src/ are unchanged, and the existing test suite (`npm test`, node --test) still passes with no failures.",
+  "verdictType": "soft-green",
+  "closeDecl": {
+    "genre": "TYPES",
+    "lang": "js",
+    "stages": [
+      {
+        "name": "changed-from-seed",
+        "kind": "files-changed",
+        "params": {
+          "requireNonEmpty": true,
+          "allowPrefixes": [
+            "src/**"
+          ]
+        }
+      },
+      {
+        "name": "typecheck-src-errors",
+        "kind": "count-not-worse",
+        "params": {
+          "cmd": "npm",
+          "args": [
+            "run",
+            "typecheck"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "error TS\\d+",
+                "capture": null,
+                "sign": 1,
+                "aggregate": "sum",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "src/"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": 0,
+          "timeoutMs": 300000
+        }
+      },
+      {
+        "name": "typecheck-outside-src-errors",
+        "kind": "count-not-worse",
+        "params": {
+          "cmd": "npm",
+          "args": [
+            "run",
+            "typecheck"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "error TS\\d+",
+                "capture": null,
+                "sign": 1,
+                "aggregate": "sum",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "excludePrefixes": [
+              "src/"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": "seed",
+          "timeoutMs": 300000
+        }
+      },
+      {
+        "name": "tests-executed-kept",
+        "kind": "count-not-worse",
+        "params": {
+          "cmd": "npm",
+          "args": [
+            "test"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^# tests (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "test/"
+            ]
+          },
+          "direction": "higher-is-better",
+          "baseline": "seed",
+          "timeoutMs": 600000
+        }
+      },
+      {
+        "name": "suite-green",
+        "kind": "command-exit",
+        "params": {
+          "cmd": "npm",
+          "args": [
+            "test"
+          ],
+          "expectExit": 0,
+          "timeoutMs": 600000
+        }
+      },
+      {
+        "name": "suite-no-failures",
+        "kind": "count-not-worse",
+        "params": {
+          "cmd": "npm",
+          "args": [
+            "test"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^# fail (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "test/"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": 0,
+          "timeoutMs": 600000
+        }
+      },
+      {
+        "name": "no-suppressions",
+        "kind": "pattern-absent-in-diff",
+        "params": {
+          "patterns": [
+            {
+              "id": "ts-ignore",
+              "regex": "@ts-ignore"
+            },
+            {
+              "id": "ts-expect-error",
+              "regex": "@ts-expect-error"
+            },
+            {
+              "id": "ts-nocheck",
+              "regex": "@ts-nocheck"
+            },
+            {
+              "id": "eslint-disable",
+              "regex": "eslint-disable"
+            },
+            {
+              "id": "any",
+              "regex": "(?:[{<|(\\[:,]|\\bas)\\s*any\\b|\\bany\\[\\]"
+            },
+            {
+              "id": "any-star",
+              "regex": "@\\w+\\s*\\{\\s*[*?]\\s*\\}"
+            },
+            {
+              "id": "cast",
+              "regex": "@type\\s*\\{.*\\}\\s*\\*\\/\\s*\\("
+            }
+          ],
+          "extensions": [
+            ".js",
+            ".mjs",
+            ".cjs"
+          ]
+        }
+      },
+      {
+        "name": "docs-judged-floor",
+        "kind": "judged-floor",
+        "params": {
+          "card": {
+            "items": [
+              {
+                "rule": "has-doc",
+                "text": "A doc comment sits directly above the function — with no doc block there is nothing to read about the contract."
+              },
+              {
+                "rule": "says-what",
+                "text": "The doc comment says what the function does; a comment that only restates the function's own name teaches the reader nothing."
+              },
+              {
+                "rule": "params",
+                "text": "Every parameter the signature declares is named in the doc with its meaning, and no doc entry names a parameter the signature does not have."
+              },
+              {
+                "rule": "returns",
+                "text": "The doc states what the function returns, so the reader learns the contract without reading the body."
+              }
+            ]
+          },
+          "paths": [
+            "bin/pulselog.js"
+          ]
+        }
+      }
+    ],
+    "notes": [
+      "THE SEED LISTING CONTRADICTS THE SURVEY ON THE ONE THING THAT MATTERS MOST. The facts object describes '11 hand-written .js modules in src/', but the mechanical listing says the glob src/**/*.js matches NOTHING at the seed commit, and the validator confirmed it: a src/** path is 'not in the listing'. So although the person's whole goal is 'every exported function in src/', there is no file under src/ I am allowed to name. Every path in a stage must be read off the listing, so the judged floor could only be pointed at the one real source artifact that exists: bin/pulselog.js, which is the CLI and is outside the src/** write fence. If the src/ modules really are absent from the seed tree, the mechanical part of the plan ('no exported function in src/ left undocumented') is vacuously satisfied, and the judged floor over bin/pulselog.js is the only real-artifact read available. I did not invent src/run.js, src/backup.js or any other name that sounds like it should exist.",
+      "The judged card line 'says-what' (prose actually teaches the reader; the FAIL case 'a doc comment that only restates the function name') is the human read the person described. It is carried ONLY on the judged stage, never as an in-run check, exactly as the soft-green brief requires - nothing mechanical here claims to cover it.",
+      "The extracted-not-checked item the person listed: 'do not change any function behaviour' is covered only to the depth the existing tests reach. suite-green / suite-no-failures / tests-executed-kept exercise behaviour the 5 node:test files happen to touch; a behaviour change the tests never exercise is caught by nothing I declared. Stated here rather than silently claimed.",
+      "The person's other unprotected FAIL criterion - that each @param actually gives the parameter's MEANING rather than just its name - is prose quality and is likewise left to the judged floor plus the human.",
+      "tests-executed-kept reads the TAP line '# tests N' through a pipe (node --test's default reporter is TAP when stdout is not a TTY, which is always the case here). The facts object notes test/backup.test.js SKIPS its sqlite cases when the runtime is older than Node 22.5, and package.json engines.node is >=18 while CI runs Node 22: the seed baseline is measured on the same machine on the same run, so a run cannot lower the executed count by turning tests into skips relative to its own seed - but the absolute number is machine-dependent, which is why no number is written here.",
+      "typecheck-outside-src-errors is required by the genre whenever a typecheck stage is scoped to a subset of the tree, and it is declared with baseline 'seed'. I note honestly that its population is structurally near-empty: tsconfig.json 'include' is only src/**/*.js, so npm run typecheck does not check test/*.js or bin/pulselog.js at all, and it will read 0 both at seed and after the work. It stays because removing it would leave the scoped typecheck stage without its ceiling; the real anti-drift signal for the CLI is that the tests spawn bin/pulselog.js via spawnSync.",
+      "Both typecheck stages and both test-count stages invoke the tools through npm (npm run typecheck, npm test) rather than a bare binary, per the genre rule that the binary must actually resolve. npm run typecheck is the safe non-mutating invocation - plain tsc would emit declaration files into ./types and I did not declare that.",
+      "Strictness: the person's confirmed answer asks only that npm run typecheck 'still pass, with no new type errors'; it does not ask for a strictness the repo does not already use, so the checker runs at the repo's own tsconfig settings (allowJs+checkJs, strict:false, strictNullChecks:true).",
+      "The tsc term uses aggregate 'sum' over a capture-less 'error TS\\d+' pattern (a TALLY), deliberately not the single-term short form: the short form aggregates 'first', and a clean typecheck prints no error lines at all, which would be read as a broken instrument rather than as zero errors. The pattern is the genre's measured piped shape, not the terminal shape.",
+      "npm test is run three times (executed-count, exit code, fail-count) because the genre's suite-green requires two separate assertions - the suite exits clean AND reports zero failing tests - and one population per stage forbids folding the executed count and the failure count into a single stage. This is slower than one run; first-red-wins still puts every cheap structural check ahead of the judged floor, which is the only paid call."
+    ],
+    "calibration": {
+      "cases": [
+        {
+          "id": "cart-total-full-doc",
+          "artifact": "/**\n * Calculates the total price of the items in the cart.\n *\n * @param {Array<Item>} items - the cart items to total.\n * @param {number} taxRate - the tax rate to apply, as a decimal.\n * @returns {number} the total price including tax.\n */\nfunction cartTotal(items, taxRate) {\n  const subtotal = items.reduce((sum, item) => sum + item.price, 0);\n  return subtotal * (1 + taxRate);\n}",
+          "expect": {
+            "verdict": "pass",
+            "reds": []
+          }
+        },
+        {
+          "id": "parse-date-name-echo",
+          "artifact": "/**\n * Parse the date.\n *\n * @param {string} input - the ISO date string to parse.\n * @returns {Date} the parsed date.\n */\nfunction parseDate(input) {\n  return new Date(input);\n}",
+          "expect": {
+            "verdict": "red",
+            "reds": [
+              {
+                "rule": "says-what",
+                "fn": "parseDate"
+              }
+            ]
+          }
+        },
+        {
+          "id": "add-phantom-param",
+          "artifact": "/**\n * Adds two numbers together and returns their sum.\n *\n * @param {number} a - the first addend.\n * @param {number} c - the second addend.\n * @returns {number} the sum of the two addends.\n */\nfunction add(a, b) {\n  return a + b;\n}",
+          "expect": {
+            "verdict": "red",
+            "reds": [
+              {
+                "rule": "params",
+                "fn": "add"
+              }
+            ]
+          }
+        },
+        {
+          "id": "active-count-missing-returns",
+          "artifact": "/**\n * Counts the number of active users in the list.\n *\n * @param {Array<User>} users - the users to inspect.\n */\nfunction activeCount(users) {\n  return users.filter((u) => u.active).length;\n}",
+          "expect": {
+            "verdict": "red",
+            "reds": [
+              {
+                "rule": "returns",
+                "fn": "activeCount"
+              }
+            ]
+          }
+        },
+        {
+          "id": "create-user-destructured-root-name",
+          "artifact": "/**\n * Creates a new user record from the supplied options.\n *\n * @param {Object} options - the user options.\n * @returns {User} the newly created user.\n */\nfunction createUser({ name, age }) {\n  return { name, age, id: nextId() };\n}",
+          "expect": {
+            "verdict": "pass",
+            "reds": []
+          }
+        },
+        {
+          "id": "draw-partial-destructured-fields",
+          "artifact": "/**\n * Draws a point at the given coordinates.\n *\n * @param {number} x - the horizontal coordinate.\n */\nfunction draw({ x, y }) {\n  plot(x, y);\n}",
+          "expect": {
+            "verdict": "red",
+            "reds": [
+              {
+                "rule": "params",
+                "fn": "draw"
+              }
+            ]
+          }
+        },
+        {
+          "id": "log-void-function",
+          "artifact": "/**\n * Logs a message to the console with a timestamp prefix.\n *\n * @param {string} message - the message to log.\n */\nfunction log(message) {\n  console.log(`[${new Date().toISOString()}] ${message}`);\n}",
+          "expect": {
+            "verdict": "pass",
+            "reds": []
+          }
+        },
+        {
+          "id": "tick-no-doc-block",
+          "artifact": "function tick() {\n  counter += 1;\n}",
+          "expect": {
+            "verdict": "red",
+            "reds": [
+              {
+                "rule": "has-doc",
+                "fn": "tick"
+              }
+            ]
+          }
+        },
+        {
+          "id": "format-duration-full-doc",
+          "artifact": "/**\n * Formats a duration in seconds as a human-readable string.\n *\n * @param {number} seconds - the duration in seconds.\n * @param {boolean} short - whether to use the short form.\n * @returns {string} the formatted duration.\n */\nfunction formatDuration(seconds, short) {\n  const minutes = Math.floor(seconds / 60);\n  return short ? `${minutes}m` : `${minutes} minute(s)`;\n}",
+          "expect": {
+            "verdict": "pass",
+            "reds": []
+          }
+        },
+        {
+          "id": "get-user-name-echo-and-no-returns",
+          "artifact": "/**\n * Get user.\n *\n * @param {string} id - the user id.\n */\nfunction getUser(id) {\n  return db.users.find((u) => u.id === id);\n}",
+          "expect": {
+            "verdict": "red",
+            "reds": [
+              {
+                "rule": "says-what",
+                "fn": "getUser"
+              },
+              {
+                "rule": "returns",
+                "fn": "getUser"
+              }
+            ]
+          }
+        }
+      ],
+      "judgeModel": "deepseek-flash"
+    }
+  }
+}

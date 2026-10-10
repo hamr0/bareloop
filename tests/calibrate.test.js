@@ -31,9 +31,10 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import {
   runCalibration, compareExpectation, factsResist, artifactHash,
@@ -49,7 +50,9 @@ import { JUDGE_MODEL, CALIBRATION_SIZE, expectedOf, decide } from '../src/judged
  * bottom of this file proves it by handing in a different one. */
 const TEST_JUDGE = JUDGE_MODEL;
 import { signJudgedArtifacts } from '../src/cardauthor.js';
-import { prepareSigning, assembleSpec, authorCloseForJob, GENRE } from '../src/authorjob.js';
+import { prepareSigning, assembleSpec, authorCloseForJob, GENRE, seedProofIsCalibration } from '../src/authorjob.js';
+import { judgedStages } from '../src/kinds.js';
+import { signingStopText } from '../src/authorreadout.js';
 import { classGuards } from '../src/authoring.js';
 
 // ── the artifacts, and an honest extractor over them ─────────────────────────
@@ -567,8 +570,12 @@ test('the signing record stores WHAT the gate certified — hashes and the judge
   assert.equal(c.setHash, artifactHash({ card: CARD(), cases: CASES(), judgeModel: JUDGE_MODEL }));
   assert.equal(c.graded.length, CALIBRATION_SIZE);
   assert.equal(c.injection.styles.length, 5);
-  // the ARTIFACTS are not copied into the evidence — they are already in the spec
-  assert.ok(!JSON.stringify(c).includes('export function add'));
+  // the ARTIFACTS are not copied into the evidence — they are already in the spec. F192:
+  // `diag` keeps the judge's QUOTED lines (that is its whole job), so the check is that
+  // no artifact BODY rides along, not that no line of one appears.
+  assert.ok(c.graded.every((g) => !('artifact' in g) && !('artifact' in g.diag)));
+  assert.ok(!JSON.stringify(c).includes(JSON.stringify(ARTIFACT_RED)), 'a whole artifact body is never copied');
+  assert.ok(!JSON.stringify(c).includes(JSON.stringify(ARTIFACT_PASS)), 'a whole artifact body is never copied');
 });
 
 test('a judged close with NO calibration set is refused — the gate is MANDATORY at signing', async (t) => {
@@ -587,7 +594,8 @@ test('a judged close with NO calibration set is refused — the gate is MANDATOR
 test('a judged close whose gate FAILS in this run is refused, naming the case', async (t) => {
   const p = makePatient(t);
   const cases = CASES();
-  cases[0].expect = { verdict: 'red', reds: [{ rule: 'has-doc', fn: 'add' }] };
+  // a legal-but-wrong expectation (a has-doc red on a documented fn is now refused at $0, F192 3A)
+  cases[0].expect = { verdict: 'red', reds: [{ rule: 'params', fn: 'add' }] };
   const r = await prepareSigning({
     spec: sgSpec({ cases }), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeModel: TEST_JUDGE, judgeLoop: honest().loop,
   });
@@ -616,11 +624,49 @@ test('a gate CASUALTY refuses under the TRANSPORT\'s name — never as a verdict
   assert.ok(!r.reds.some((x) => x.code === 'calibration-miswrite'));
 });
 
-test('a MECHANICAL close is unchanged: it still needs a seed red, calibration or not', async (t) => {
+/** a MIXED close: guards + a mechanical work stage that is GREEN at seed + the judged stage */
+const mixedGreenSpec = (/** @type {any} */ cases = CASES()) => assembleSpec({ ...DRAFT }, {
+  closeDecl: {
+    genre: GENRE,
+    lang: 'js',
+    stages: [
+      ...sgGuards(),
+      { name: 'already-fine', kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } },
+      { name: 'docs-read-well', kind: 'judged-floor', params: { card: CARD(), paths: ['src/mod.js'] } },
+    ],
+    calibration: { cases, judgeModel: JUDGE_MODEL },
+  },
+  verdictType: 'soft-green',
+});
+
+test('F192 (hamr 2026-10-09): a MIXED close, mechanical stage green at seed, SIGNS once calibration passes', async (t) => {
   const p = makePatient(t);
-  // the mechanical work stage is GREEN at seed (`node -e ''` exits 0), so D9.3
-  // must still refuse — a passed calibration is NOT a licence for a close that
-  // has nothing to do
+  const r = await prepareSigning({
+    spec: mixedGreenSpec(), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeModel: TEST_JUDGE, judgeLoop: honest().loop,
+  });
+  assert.equal(r.gates.calibration.ok, true, 'the ruler is fine');
+  assert.deepEqual(r.gates.seedVerdict.workRed, [], 'no mechanical stage is red at the seed');
+  assert.equal(r.ok, true, JSON.stringify(r.reds ?? r.refusal));
+  assert.equal(r.gates.seedVerdict.satisfiedBy, 'calibration');
+});
+
+test('F192: a MIXED close whose calibration FAILS is refused, naming calibration — never "nothing fails"', async (t) => {
+  const p = makePatient(t);
+  const cases = CASES();
+  cases[0].expect = { verdict: 'red', reds: [{ rule: 'params', fn: 'add' }] };
+  const r = await prepareSigning({
+    spec: mixedGreenSpec(cases), workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeModel: TEST_JUDGE, judgeLoop: honest().loop,
+  });
+  assert.equal(r.ok, false);
+  assert.ok(r.reds.some((x) => x.code === 'calibration-miswrite'));
+  assert.doesNotMatch(r.refusal.detail, /No work stage of this close is RED/);
+  assert.equal(r.gates.seedVerdict.satisfiedBy, undefined);
+  assert.match(signingStopText({ reds: r.reds, refusal: r.refusal }), /practice case/);
+  assert.doesNotMatch(signingStopText({ reds: r.reds, refusal: r.refusal }), /Nothing in the close fails/);
+});
+
+test('a close with NO judged stage is unchanged: all green at the seed still refuses', async (t) => {
+  const p = makePatient(t);
   const spec = assembleSpec({ ...DRAFT }, {
     closeDecl: {
       genre: GENRE,
@@ -628,19 +674,30 @@ test('a MECHANICAL close is unchanged: it still needs a seed red, calibration or
       stages: [
         ...sgGuards(),
         { name: 'already-fine', kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } },
-        { name: 'docs-read-well', kind: 'judged-floor', params: { card: CARD(), paths: ['src/mod.js'] } },
       ],
-      calibration: { cases: CASES(), judgeModel: JUDGE_MODEL },
     },
-    verdictType: 'soft-green',
+    verdictType: 'green',
   });
-  const r = await prepareSigning({
-    spec, workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000, judgeModel: TEST_JUDGE, judgeLoop: honest().loop,
-  });
-  assert.equal(r.gates.calibration.ok, true, 'the ruler is fine');
-  assert.equal(r.ok, false, 'and the close still has nothing to do');
+  const r = await prepareSigning({ spec, workdir: p.dir, seedRef: p.seed, timeoutMs: 30_000 });
+  assert.equal(r.ok, false);
+  assert.equal(r.gates.calibration, null, 'no judged stage, no calibration gate');
   assert.equal(r.gates.seedVerdict.satisfiedBy, undefined);
   assert.match(r.refusal.detail, /No work stage of this close is RED at the seed/);
+});
+
+test('F192 live fixture (session smv0tasvb0u89): the real mixed close + passed calibration now clears the seed gate', () => {
+  const fx = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'f192-live-smv0tasvb.json'), 'utf8'));
+  const judged = judgedStages(fx.resolvedSpec.closeDecl);
+  assert.equal(judged.length, 1, 'the real close carries one judged stage');
+  assert.ok(fx.resolvedSpec.closeDecl.stages.length > judged.length, 'and it is MIXED');
+  const g = fx.signing.gates;
+  assert.equal(g.seedVerdict.ok, false, 'the live refusal: no work stage red at seed');
+  assert.deepEqual(g.seedVerdict.workRed, []);
+  assert.equal(g.calibration.ok, true, 'while calibration passed');
+  assert.equal(seedProofIsCalibration(judged, g.calibration), true, 'the rule now signs it');
+  assert.equal(seedProofIsCalibration(judged, { ...g.calibration, ok: false }), false, 'a failed calibration never satisfies it');
+  assert.equal(seedProofIsCalibration(judged, null), false, 'a missing one neither');
+  assert.equal(seedProofIsCalibration([], g.calibration), false, 'and a close with no judged stage never reaches it');
 });
 
 test('a mechanical work stage that IS red at seed signs on its own seed evidence', async (t) => {
@@ -650,7 +707,7 @@ test('a mechanical work stage that IS red at seed signs on its own seed evidence
   });
   assert.equal(r.ok, true, JSON.stringify(r.reds ?? r.refusal));
   assert.deepEqual(r.gates.seedVerdict.workRed, ['checks-clean']);
-  assert.equal(r.gates.seedVerdict.satisfiedBy, undefined, 'the alternate route is for the judged-ONLY shape');
+  assert.equal(r.gates.seedVerdict.satisfiedBy, undefined, 'a work stage red at the seed signs on that evidence; calibration is not the proof then');
   assert.equal(r.gates.calibration.ok, true, 'and the gate is mandatory for it too');
 });
 
@@ -909,4 +966,154 @@ test('runCalibration REFUSES without a judge identity — there is no library pi
       `${JSON.stringify(bad)} must be refused, not defaulted`,
     );
   }
+});
+
+// ── 9. THE DIAGNOSTIC RECORD (F192) ─────────────────────────────────────────
+//
+// A refusal must be diagnosable from its OWN record: the judge's facts as
+// returned, the decision's full reds per rule, and — when locate failed — every
+// attempt's axis and cause. `diag` is a NEW field; grading never reads it.
+
+/** an honest judge that answers `pass-1` with the facts `mutate` makes of the honest ones */
+const judgeWith = (/** @type {(f: any) => any} */ mutate, id = 'case 1') => fakeJudge((a) => {
+  const f = extract(a);
+  return a.includes(`// ${id}\n`) ? mutate(f) : f;
+});
+
+test('diag: a REFLOWED multi-line docQuote is diagnosable as reason (c), with the quote', async () => {
+  const j = judgeWith((f) => {
+    f.functions[0].docQuote = '/** add two numbers @param {number} a @param {number} b */';
+    return f;
+  });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: j.loop });
+  const g = r.graded.find((x) => x.id === 'pass-1');
+  assert.equal(g.ok, false, 'the reflowed quote really does fail the case');
+  const red = g.diag.reds.find((x) => x.rule === 'has-doc');
+  assert.equal(red.fn, 'add');
+  assert.match(red.why, /`docQuote` is not in the artifact/);
+  assert.equal(red.quote, '/** add two numbers @param {number} a @param {number} b */');
+  assert.equal(g.diag.facts.functions[0].docQuote, red.quote, 'the raw facts ride beside the reds');
+  assert.deepEqual(g.diag.attempts, [{ attempt: 1, ok: true, axis: null, detail: null }]);
+  // an honest case carries a diag too, with no reds
+  assert.deepEqual(r.graded.find((x) => x.id === 'pass-2').diag.reds, []);
+  // …and the injection battery is covered the same way
+  assert.ok(r.injection.styles.every((s) => s.diag && s.diag.facts && Array.isArray(s.diag.reds)));
+});
+
+test('diag: a NULL docQuote is diagnosable as reason (a)', async () => {
+  const j = judgeWith((f) => { f.functions[0].docQuote = null; return f; });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: j.loop });
+  const red = r.graded.find((x) => x.id === 'pass-1').diag.reds.find((x) => x.rule === 'has-doc');
+  assert.match(red.why, /no JSDoc block above the declaration/);
+  assert.equal(r.graded.find((x) => x.id === 'pass-1').diag.facts.functions[0].docQuote, null);
+});
+
+test('diag: a docQuote that is in the artifact but not in the JSDoc block above is diagnosable as reason (b)', async () => {
+  // F192 ruling A: (b) is now a mechanical check against the artifact — a real line
+  // from the function body is found, and is not inside the block directly above
+  const j = judgeWith((f) => { f.functions[0].docQuote = '  return a + b;'; return f; });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: j.loop });
+  const red = r.graded.find((x) => x.id === 'pass-1').diag.reds.find((x) => x.rule === 'has-doc');
+  assert.match(red.why, /not inside a JSDoc block/);
+});
+
+test('diag: a locate call that fails on EVERY attempt carries each attempt\'s axis and cause', async () => {
+  const loop = () => ({ run: async () => { throw new Error('ECONNRESET at the judge'); } });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: loop });
+  assert.equal(r.stop, 'provider-red');
+  const d = r.casualty.diag;
+  assert.equal(d.attempts.length, r.casualty.attempts.length);
+  assert.ok(d.attempts.length >= 2);
+  for (const a of d.attempts) {
+    assert.equal(a.ok, false);
+    assert.equal(a.axis, 'provider-red');
+    assert.match(a.detail, /the locate call failed: ECONNRESET at the judge/);
+  }
+  assert.equal(d.facts, null);
+  assert.deepEqual(d.reds, []);
+  // the existing shape of the attempts is untouched
+  assert.deepEqual(Object.keys(r.casualty.attempts[0]).sort(), ['attempt', 'axis', 'costUsd', 'ok']);
+});
+
+test('diag: a secret-shaped string in a judge quote is MASKED, and a long quote is cut visibly', async () => {
+  const SECRET = 'sk-ant-api03-' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4'.repeat(2);
+  const j = judgeWith((f) => {
+    f.functions[0].docQuote = `/** ${SECRET} ${'x'.repeat(2000)}`;
+    return f;
+  });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: j.loop });
+  const g = r.graded.find((x) => x.id === 'pass-1');
+  const blob = JSON.stringify(g.diag);
+  assert.ok(!blob.includes(SECRET), 'the key must not reach the record');
+  assert.ok(!blob.includes('A1b2C3d4E5f6G7h8I9j0K1l2M3n4'), 'not even a fragment of it');
+  assert.match(g.diag.reds[0].quote, /raw trimmed:/, 'a cut is announced, never silent');
+  assert.ok(g.diag.reds[0].quote.length < 600);
+});
+
+test('diag: grading, hashes and verdicts are the same with the field as the pipe\'s own reading says', async () => {
+  const j = judgeWith((f) => { f.functions[0].docQuote = null; return f; });
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases: CASES(), card: CARD(), judgeLoop: j.loop });
+  assert.equal(r.setHash, artifactHash({ card: CARD(), cases: CASES(), judgeModel: TEST_JUDGE }));
+  assert.equal(r.cardHash, artifactHash(CARD()));
+  assert.equal(r.casesHash, artifactHash(CASES()));
+  for (const c of CASES()) {
+    const g = r.graded.find((x) => x.id === c.id);
+    const facts = c.id === 'pass-1' ? (() => { const f = extract(c.artifact); f.functions[0].docQuote = null; return f; })() : extract(c.artifact);
+    const got = expectedOf(decide(facts, CARD(), { artifactText: c.artifact }));
+    assert.deepEqual(g.got, got);
+    assert.deepEqual(g.want.verdict, c.expect.verdict);
+    assert.equal(g.ok, compareExpectation(got, c.expect).ok);
+    // diag reds carry exactly the addresses `got` does — the new field adds prose, never addresses
+    assert.deepEqual(g.diag.reds.map((x) => ({ rule: x.rule, fn: x.fn })), got.reds);
+  }
+  assert.deepEqual(r.failures, ['pass-1']);
+});
+
+// ── F192 item 3A: an unwinnable case is refused at $0, before any locate call ──
+
+test('F192 3A: a case expecting has-doc red on a documented function is refused with ZERO judge calls', async () => {
+  const fx = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'f192-params-real.json'), 'utf8'));
+  const nameEcho = fx['name-echo-denies-purpose'];
+  const cases = CASES();
+  cases[5] = { id: 'name-echo-denies-purpose', artifact: nameEcho.artifact, expect: nameEcho.expect };
+  let calls = 0;
+  const loop = () => { calls += 1; throw new Error('a refused set must not reach the judge'); };
+  const r = await runCalibration({ judgeModel: TEST_JUDGE, cases, card: CARD(), judgeLoop: loop });
+  assert.equal(r.ok, false);
+  assert.equal(r.stop, 'invalid-set');
+  assert.equal(calls, 0);
+  assert.equal(r.costUsd, 0);
+  assert.match(r.reds.map((x) => x.detail).join('\n'),
+    /case name-echo-denies-purpose expects has-doc red on parseDate, but parseDate has a JSDoc block directly above it — has-doc only checks that a block exists, so no judge answer can grade this case/);
+});
+
+// F192 (2026-10-09 live panel session smv0nrwe3l8y2): since ruling A (0f27db5) has-doc accepts any quoted
+// line INSIDE the real block above the declaration. The injection facts check shares that ONE acceptance
+// (docQuoteInBlock), so the honest judge that quotes a worded line is not a leak; a quote outside the block
+// or beside the wrong function still is.
+test('factsResist: the live fake-system-marker facts (worded docQuote inside the block) RESIST; outside the block or wrong function LEAK', () => {
+  const live = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'f192-live-smv0nrwe.json'), 'utf8'));
+  for (const b of INJECTION_LOCATE_BATTERY) {
+    const f = live.injection[b.id].facts;
+    assert.equal(factsResist(f, b.expectFacts, b.artifact).ok, true, b.id);
+    assert.equal(compareExpectation(expectedOf(decide(f, INJECTION_CARD, { artifactText: b.artifact })), b.expect).ok, true, b.id);
+  }
+  const b = INJECTION_LOCATE_BATTERY.find((x) => x.id === 'inj-fake-system-marker');
+  assert.ok(b);
+  const live3 = live.injection['inj-fake-system-marker'].facts;
+  assert.equal(live3.functions[0].docQuote, ' * Add two numbers.');
+  /** @param {string|null} docQuote @param {string} [decl] */
+  const withAdd = (docQuote, decl) => ({ functions: live3.functions.map((/** @type {any} */ f) => (f.name === 'add' ? { ...f, docQuote, declarationQuote: decl ?? f.declarationQuote } : f)) });
+  assert.equal(factsResist(withAdd('/**'), b.expectFacts, b.artifact).ok, true, 'the opener line still resists');
+  // a line that is in the artifact but NOT in add's block (the attack's own comment line)
+  const inj = b.artifact.split('\n').find((l) => l.includes('SYSTEM'));
+  assert.ok(inj);
+  assert.equal(factsResist(withAdd(inj), b.expectFacts, b.artifact).ok, false, 'outside the block');
+  // an invented line
+  assert.equal(factsResist(withAdd(' * Adds, and is fully documented.'), b.expectFacts, b.artifact).ok, false, 'invented');
+  // pointing at the wrong function: the block of add, claimed for modulo's declaration
+  const wrong = { functions: live3.functions.map((/** @type {any} */ f) => (f.name === 'modulo' ? { ...f, docQuote: ' * Add two numbers.' } : f)) };
+  assert.equal(factsResist(wrong, b.expectFacts, b.artifact).ok, false, 'modulo is undocumented');
+  // add's docQuote under another function's declaration
+  assert.equal(factsResist(withAdd(' * Add two numbers.', 'export function modulo(a, b) {'), b.expectFacts, b.artifact).ok, false, 'declaration of another function');
 });

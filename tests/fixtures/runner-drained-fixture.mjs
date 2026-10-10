@@ -109,7 +109,7 @@ const job = {
   provider: 'anthropic-api',
   cadence: { unit: 'day', every: 1 },
   budgetUsd: 1.5,
-  writeScope: ['tests/**'],
+  writeScope: ['tests/**', 'src/**'], // the judged artifact (src/mod.mjs) must sit inside the fence (F192 e)
   goal: 'Write tests/test_x.mjs with an ok assertion.',
   verdictType: 'soft-green',
   closeDecl: {

@@ -99,7 +99,7 @@
 // in the stored declaration (forward-compat point 3), and the suite pins it.
 
 import { jobSpecHash, validateJob } from './job.js';
-import { seedAtHead, seedListing, seedRead as runSeedRead, makeSeedTrees, SEED_EXEMPT_KINDS, judgedStages, closeJudges } from './kinds.js';
+import { seedAtHead, seedListing, seedRead as runSeedRead, makeSeedTrees, judgedStages, closeJudges } from './kinds.js';
 // SOFTGREEN modules 4 and 5 — the compile the interview's Q6/Q7 answers land in,
 // and the gate that decides whether the ruler they describe is a ruler.
 import { proposeJudgedArtifacts, signJudgedArtifacts, foldJudgedArtifacts } from './cardauthor.js';
@@ -951,6 +951,17 @@ const scrubRed = (r) => /** @type {any} */ (Object.fromEntries(
 ));
 
 /**
+ * THE one spelling of "a passed calibration gate stands in for the seed red": the
+ * close carries a judged stage AND the gate ran and passed. A failed or missing
+ * calibration never satisfies it, and a close with no judged stage never reaches it.
+ * @param {any[]} judged `judgedStages(closeDecl)` @param {any} calibration `gates.calibration`
+ * @returns {boolean}
+ */
+export function seedProofIsCalibration(judged, calibration) {
+  return judged.length > 0 && calibration?.ok === true;
+}
+
+/**
  * GATE 4 — the calibration gate, and the only gate here that spends money.
  *
  * It answers ONE question: has this close's own ruler been shown to grade the
@@ -1033,7 +1044,10 @@ async function calibrationGate({ spec, judgedStages, judgeLoop, judgeModel, onJu
 
   /** what the signing evidence KEEPS about this gate. The per-case artifacts are
    * deliberately not in it — they are already in the signed spec, and a second
-   * copy in the evidence file is a second thing to keep in step. What IS kept is
+   * copy in the evidence file is a second thing to keep in step. Each graded row's
+   * `diag` (F192) keeps the judge's own facts and the decision's reds — scrubbed
+   * and bounded quotes, never an artifact body — so a refusal reads from its own
+   * record. What IS kept is
    * WHICH BYTES were certified (`cardHash`/`casesHash`/`setHash`) and BY WHICH
    * MODEL (`judgeModel`), which is what makes a judge-model bump detectable at
    * all. */
@@ -1135,16 +1149,15 @@ async function calibrationGate({ spec, judgedStages, judgeLoop, judgeModel, onJu
  *      has already had its chance, and nobody pays to discover a broken
  *      declaration.
  *
- * D9.3 AND THE JUDGED-ONLY CLOSE (2026-08-18 second addendum, ruling 3; hamr:
- * *"fix it now, we are delivering softgreen, isn't that the whole point?"*). Gate
- * 3 protects against a close that cannot fail — one that scans nothing and reads
- * green at seed against a true red. A judged stage SKIPS the seed read by ruling
- * 8, so a close whose only work stage is judged has no seed red to show and used
- * to be unsignable: the one job shape softgreen exists for. For that shape, and
- * ONLY that shape, a PASSED calibration gate plays the seed-red role — it is that
- * close's own proof of failability, held to the same all-or-nothing bar. A close
- * with a mechanical work stage is UNCHANGED: it still needs a seed red, whatever
- * its calibration says.
+ * D9.3 AND THE JUDGED CLOSE (2026-08-18 second addendum, ruling 3; hamr: *"fix it now,
+ * we are delivering softgreen, isn't that the whole point?"*; widened 2026-10-09 to mixed
+ * closes, hamr: *"a rubric job should check if judge can judge (calibration) and judge
+ * rules can apply properly to pass ... we can't close everything upfront"*). Gate 3
+ * protects against a close that cannot fail. A judged stage SKIPS the seed read by ruling
+ * 8, so it can never show red there. For ANY close carrying a judged stage (pure or
+ * mixed with mechanical stages), a PASSED calibration gate plays the seed-red role
+ * (`seedProofIsCalibration`). A close with NO judged stage is UNCHANGED: some work stage
+ * must be red at the seed. A failed or missing calibration never satisfies it.
  *
  * Gates 2 and 3 share ONE execution, and that is stated rather than hidden: at
  * job creation the tree IS the seed, so "does every stage run against the real
@@ -1240,7 +1253,7 @@ export async function prepareSigning({
   }
   // the class rides from the SPEC (PRD v1.57 §2) — gate 1a already refused a spec
   // whose class is unknown or locked, so this is the class D5's battery hangs off
-  const dv = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: spec.verdictType });
+  const dv = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: spec.verdictType, writeScope: spec.writeScope });
   // the grounded gate's reds quote BOTH untrusted sources — the declaration, and
   // the seed listing itself (the listing rule names what really sits beside an
   // invented path). The listing half is a channel gate 1a structurally cannot
@@ -1349,17 +1362,17 @@ export async function prepareSigning({
   // the close-authoring layer, and this gate is what refuses it BEFORE a
   // signature rather than after a paid run.
   //
-  // THE JUDGED-ONLY ROUTE (ruling 3). A close whose work stages are ALL
-  // seed-exempt has no seed verdict to be red — not because it measures nothing,
-  // but because ruling 8 exempts a judged stage from being measured at seed. Its
-  // proof of failability is the calibration gate, which has just run and passed
-  // (a failed one returned above), and which contains signed cases the pipe must
-  // RED as well as ones it must pass — the polarity law makes "this close can
-  // fail" a thing that was demonstrated rather than assumed. A close with any
-  // mechanical work stage takes the original path unchanged.
-  const mechanicalWork = work.filter((r) => !SEED_EXEMPT_KINDS.includes(r.kind));
-  const judgedOnly = judgedStages.length > 0 && mechanicalWork.length === 0;
-  if (judgedOnly && base.gates.calibration?.ok) {
+  // THE JUDGED ROUTE (ruling 3, widened 2026-10-09 by hamr: "a rubric job should
+  // check if judge can judge (calibration) and judge rules can apply properly to
+  // pass ... we can't close everything upfront"). A close carrying ANY judged stage
+  // has a work-bearing stage that ruling 8 exempts from the seed read, so the seed
+  // cannot show it red — not because it measures nothing, but because it is not
+  // measured there. Its proof of failability is the calibration gate, which has
+  // just run and passed (a failed one returned above), and which contains signed
+  // cases the pipe must RED as well as ones it must pass. That holds for a PURE
+  // judged close and a MIXED one alike; a close with NO judged stage takes the
+  // original path unchanged (some work stage must be red at the seed).
+  if (workRed.length === 0 && seedProofIsCalibration(judged, base.gates.calibration)) {
     // said out loud in the record: this close passed gate 3 on a DIFFERENT proof,
     // and a reader must never have to infer which one from an empty workRed list
     base.gates.seedVerdict.satisfiedBy = 'calibration';

@@ -36,8 +36,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
   JUDGE_MODEL, JUDGE_MAX_TOKENS, JUDGE_RULES, JUDGE_RULE_IDS, LOCATE_AXES,
-  validateCard, validateFacts, locatePrompt, runLocate, decide,
+  SAYS_WHAT_STOPWORDS, validateCard, validateFacts, locatePrompt, runLocate, decide, validateCalibrationSet, CALIBRATION_SIZE, expectedOf,
 } from '../src/judged.js';
+import { compareExpectation } from '../src/calibrate.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const POC = join(HERE, '..', 'poc', 'softgreen-judge');
@@ -618,4 +619,400 @@ test('the whole pipe grades the two real artifacts correctly, end to end, on fak
     assert.equal(loc.ok, true);
     assert.equal(decide(loc.facts, CARD, { artifactText: artifact }).verdict, expected);
   }
+});
+
+// ── has-doc: code reads the artifact, the judge only points (F192, ruling A) ──
+//
+// REAL data: the artifacts are the archived mub2nboo calibration cases and the
+// facts are deepseek-flash's actual answers from the 2026-10-08 probe — the judge
+// quoted the first WORDED JSDoc line, not the bare opener.
+
+const F192 = JSON.parse(readFileSync(join(HERE, 'fixtures', 'f192-has-doc-real.json'), 'utf8'));
+const HAS_DOC = { items: [CARD.items[0]] };
+/** has-doc verdict for `fn` facts over an artifact */
+const hasDoc = (/** @type {any} */ fn, /** @type {string} */ artifact) =>
+  decide({ functions: [fn] }, HAS_DOC, { artifactText: artifact });
+
+test('F192: the real worded-first-line docQuote no longer reds has-doc, on all three real cases', () => {
+  for (const [id, c] of Object.entries(F192)) {
+    const d = decide(c.facts, HAS_DOC, { artifactText: c.artifact });
+    assert.equal(d.verdict, 'pass', `${id}: ${JSON.stringify(d.items)}`);
+  }
+});
+
+test('F192: the bare opener quote still passes', () => {
+  const c = F192['full-contract-pass'];
+  const fn = { ...c.facts.functions[0], docQuote: '/**' };
+  assert.equal(hasDoc(fn, c.artifact).verdict, 'pass');
+});
+
+test('F192: a docQuote that is not inside the block directly above the declaration still reds', () => {
+  const c = F192['two-functions-pass'];
+  const [parse, build] = c.facts.functions;
+  const why = (/** @type {any} */ d) => d.items[0].reds.map((/** @type {any} */ r) => r.why).join(';');
+  // the completeness check wants BOTH functions reported; `patch` edits one of them
+  const both = (/** @type {number} */ i, /** @type {any} */ patch) => {
+    const fns = [{ ...parse }, { ...build }];
+    fns[i] = { ...fns[i], ...patch };
+    return decide({ functions: fns }, HAS_DOC, { artifactText: c.artifact });
+  };
+  // (a) null stays red, with its own why
+  const none = both(0, { docQuote: null });
+  assert.equal(none.verdict, 'red');
+  assert.match(why(none), /no JSDoc block/);
+  // the JSDoc block of a DIFFERENT function (parseQuery's) quoted for buildQuery
+  const other = both(1, { docQuote: ' * Turns an Express-style query string into a plain object.' });
+  assert.equal(other.verdict, 'red');
+  assert.match(why(other), /not inside a JSDoc block/);
+  // a line from the function body
+  const body = both(1, { docQuote: '    .join(\'&\');' });
+  assert.equal(body.verdict, 'red');
+  assert.match(why(body), /not inside a JSDoc block/);
+  // invented text: red through the quote-verification pass
+  const invented = both(1, { docQuote: ' * Builds a query string, honestly.' });
+  assert.equal(invented.verdict, 'red');
+  assert.match(why(invented), /not in the artifact/);
+});
+
+test('F192: a plain block comment above the declaration is not a JSDoc block', () => {
+  const art = '/*\n * Adds two numbers.\n */\nfunction add(a, b) {\n  return a + b;\n}\n';
+  const fn = { name: 'add', declarationQuote: 'function add(a, b) {', docQuote: ' * Adds two numbers.' };
+  assert.equal(hasDoc(fn, art).verdict, 'red');
+  const jsdoc = art.replace('/*\n', '/**\n');
+  assert.equal(hasDoc(fn, jsdoc).verdict, 'pass', 'the same lines under a double-star opener pass');
+});
+
+test('F192: a block separated from the declaration by code is not directly above it', () => {
+  const art = '/**\n * Old doc.\n */\nconst x = 1;\nfunction add(a, b) {\n  return a + b;\n}\n';
+  const fn = { name: 'add', declarationQuote: 'function add(a, b) {', docQuote: ' * Old doc.' };
+  assert.equal(hasDoc(fn, art).verdict, 'red');
+});
+
+test('F192: an unfindable or duplicated declaration line is unsure, and unsure is red', () => {
+  const c = F192['full-contract-pass'];
+  const fn = c.facts.functions[0];
+  assert.equal(hasDoc({ ...fn, declarationQuote: 'function nope() {' }, c.artifact).verdict, 'red');
+  const twice = `${c.artifact}\n/**\n * again\n */\nfunction formatBytes(bytes, decimals = 1) {\n}\n`;
+  assert.equal(hasDoc(fn, twice).verdict, 'red');
+});
+
+// ── params: an EXTRA @param tag reds (F192, item 1) ──────────────────────────
+//
+// REAL data: tests/fixtures/f192-params-real.json — the archived mub2nboo cases
+// and deepseek-flash's actual facts from the 2026-10-08 probe.
+
+const F192P = JSON.parse(readFileSync(join(HERE, 'fixtures', 'f192-params-real.json'), 'utf8'));
+const PARAMS_ONLY = { items: [CARD.items[1]] };
+/** params reds (rule-level why strings) for one function's facts */
+const paramReds = (/** @type {any} */ fn) => {
+  const d = decide({ functions: [fn] }, PARAMS_ONLY, { artifactText: null });
+  return d.items[0].reds.map((/** @type {any} */ r) => r.why);
+};
+/** a synthetic fn whose declaration quote carries every name */
+const synth = (/** @type {string[]} */ names, /** @type {string[]} */ tags, /** @type {boolean[]} */ pat = names.map(() => false)) => ({
+  name: 'f', declarationQuote: `function f(${names.join(', ')}) {`, paramNames: names, paramIsPattern: pat, paramTagNames: tags,
+});
+
+test('F192 item 1: the real phantom @param cases red, with a plain why', () => {
+  const a = F192P['phantom-param-red'].facts.functions[0];
+  assert.deepEqual(paramReds(a), ['@param overwrite names no parameter of copyFile']);
+  const b = F192P['phantom-param-and-no-returns'].facts.functions[0];
+  assert.deepEqual(paramReds(b), ['@param admin names no parameter of createUser']);
+});
+
+test('F192 item 1: the existing missing-param red is unchanged, and a fully matching doc stays green', () => {
+  const m = F192P['omitted-param-red'].facts.functions[0];
+  assert.deepEqual(paramReds(m), ['@param missing for cc']);
+  assert.deepEqual(paramReds(F192['full-contract-pass'].facts.functions[0]), []);
+  assert.deepEqual(paramReds(F192['clamp-contract-pass'].facts.functions[0]), []);
+});
+
+test('F192 item 1: dotted sub-params are not extra', () => {
+  assert.deepEqual(paramReds(synth(['opts'], ['opts', 'opts.a', 'opts.b'])), []);
+  assert.deepEqual(paramReds(synth(['opts', 'n'], ['opts', 'n', 'opts.a'])), []);
+});
+
+test('F192 item 1: a destructured slot absorbs ONE unmatched root tag, and only that', () => {
+  const pat = '{ a = 1 } = {}';
+  // `@param [opts]` documents the pattern: no red (the real makeSpine shape)
+  assert.deepEqual(paramReds(synth([pat], ['[opts]', 'opts.a'], [true])), []);
+  // a named param plus a pattern, root documented: no red
+  assert.deepEqual(paramReds(synth(['x', pat], ['x', 'opts'], [false, true])), []);
+  // one root for the pattern AND a second unmatched tag: the second is extra
+  assert.deepEqual(paramReds(synth(['x', pat], ['x', 'opts', 'ghost'], [false, true])), ['@param ghost names no parameter of f']);
+});
+
+// ── 3A: a case may not expect a has-doc red on a function that HAS a doc block ──
+
+const caseOf = (/** @type {string} */ id, /** @type {any} */ fx) => ({ id, artifact: fx.artifact, expect: fx.expect });
+const setWith = (/** @type {any[]} */ extra) => {
+  const filler = Array.from({ length: CALIBRATION_SIZE - extra.length }, (_, i) => ({
+    id: `filler-${i}`,
+    artifact: `/** doc ${i} */\nfunction g${i}(a) {\n  return a;\n}\n`,
+    expect: i === 0 ? { verdict: 'red', reds: [{ rule: 'params', fn: 'g0' }] } : { verdict: 'pass', reds: [] },
+  }));
+  return [...extra, ...filler];
+};
+
+test('F192 item 3A: the real name-echo cases are illegal, with the plain message', () => {
+  for (const [id, fn] of [['name-echo-denies-purpose', 'parseDate'], ['name-echo-and-no-returns', 'slugify']]) {
+    const v = validateCalibrationSet(setWith([caseOf(id, F192P[id])]), { card: CARD });
+    assert.equal(v.ok, false, id);
+    assert.ok(v.reds.some((r) => r.detail === `case ${id} expects has-doc red on ${fn}, but ${fn} has a JSDoc block directly above it `
+      + '— has-doc only checks that a block exists, so no judge answer can grade this case'), JSON.stringify(v.reds));
+  }
+});
+
+test('F192 item 3A: a has-doc red on a genuinely undocumented function stays legal', () => {
+  const v = validateCalibrationSet(setWith([caseOf('undocumented-function-red', F192P['undocumented-function-red'])]), { card: CARD });
+  assert.deepEqual(v.reds, []);
+});
+
+// ── quote matching is bareguard's quoteIn({wholeLines:true}) (F192, item 3) ──
+//
+// REAL data: the archived mub2nboo `name-echo-denies-purpose` artifact and the
+// judge's actual `returnsTagQuote`, which dropped the leading `* ` of its line.
+
+const NE = F192P['name-echo-denies-purpose'];
+const RETURNS_ONLY = { items: [CARD.items.find((/** @type {any} */ i) => i.rule === 'returns')] };
+const returnsReds = (/** @type {any} */ patch) =>
+  decide({ functions: [{ ...NE.facts.functions[0], ...patch }] }, RETURNS_ONLY, { artifactText: NE.artifact })
+    .items[0].reds.map((/** @type {any} */ r) => r.why);
+
+test('F192 item 3: the real @returns quote that dropped its leading "* " is found, not reddened', () => {
+  assert.equal(NE.facts.functions[0].returnsTagQuote, '@returns {Date} the parsed date, in the local time zone.');
+  assert.deepEqual(returnsReds({}), []);
+});
+
+test('F192 item 3: a fragment of a line, a changed word and reordered lines still red', () => {
+  assert.match(returnsReds({ returnsValueQuote: 'return' })[0], /returnsValueQuote.*not in the artifact/);
+  assert.match(returnsReds({ returnsTagQuote: '@returns {Date} the parsed date, in UTC.' })[0], /returnsTagQuote/);
+  assert.match(returnsReds({ returnsValueQuote: "return new Date(y, m - 1, d);\nfunction parseDate(value, pattern) {" })[0], /returnsValueQuote/);
+});
+
+test('F192 item 3: has-doc keeps docBlockAbove as the authority when the quote is the bare opener', () => {
+  // "/**" alone matches any source holding that line (quoteIn proves nothing about location);
+  // the block-above check must still decide. A function whose block sits ABOVE ANOTHER function reds.
+  const art = '/**\n * Doc of a.\n */\nfunction a() {}\n\nfunction b() {}\n';
+  const fn = (/** @type {string} */ n) => ({ name: n, declarationQuote: `function ${n}() {}`, docQuote: '/**' });
+  assert.equal(decide({ functions: [fn('a'), fn('b')] }, HAS_DOC, { artifactText: art }).verdict, 'red');
+  assert.equal(decide({ functions: [fn('a')] }, HAS_DOC, { artifactText: art.replace('function b() {}\n', '') }).verdict, 'pass');
+});
+
+// ── `says-what` (F192 addendum 2026-10-09, hamr ruling A): the doc is more than the name ──
+//
+// REAL artifacts: the archived mub2nboo name-echo cases (f192-params-real.json) must red; the real
+// documented passes (f192-has-doc-real.json, and the other f192-params-real documented functions) must
+// pass. The judge's `descriptionQuote` is the one thing no archive holds (the rule is new), so each is
+// the description line read OFF the real artifact the way an honest judge would quote it.
+
+const SAYS_ONLY = { items: [{ rule: 'says-what', text: 'The doc says what the function does, not just its name.' }] };
+/** the first prose line of the doc block above `fnName`, read off the artifact, as a judge would quote it */
+const honestDescription = (/** @type {string} */ art, /** @type {string} */ fnName) => {
+  const lines = art.split('\n');
+  const at = lines.findIndex((l) => new RegExp(`function\\s+${fnName}\\b`).test(l));
+  let i = at - 1;
+  while (i >= 0 && !lines[i].includes('/**')) i--;
+  return lines.slice(i + 1, at).find((l) => /^\s*\*\s+\S/.test(l) && !/^\s*\*\s+@/.test(l)) ?? null;
+};
+const saysFacts = (/** @type {string} */ art, /** @type {any} */ f, /** @type {string|null|undefined} */ quote) => ({
+  functions: [{ name: f.name, declarationQuote: f.declarationQuote, descriptionQuote: quote === undefined ? honestDescription(art, f.name) : quote }],
+});
+// (the rule's own check, one function at a time: decide() also demands every top-level function be reported)
+const saysReds = (/** @type {string} */ art, /** @type {any} */ f, /** @type {string|null|undefined} */ quote) =>
+  JUDGE_RULES['says-what'].check(saysFacts(art, f, quote).functions[0], art).map((/** @type {any} */ r) => r.why);
+
+test('says-what: the real mub2nboo name-echo artifacts RED (parseDate, slugify)', () => {
+  for (const id of ['name-echo-denies-purpose', 'name-echo-and-no-returns']) {
+    const c = F192P[id];
+    const f = c.facts.functions[0];
+    assert.equal(honestDescription(c.artifact, f.name)?.trim(), `* ${f.name}`, `${id}: the description line is the bare name`);
+    const d = decide(saysFacts(c.artifact, f), SAYS_ONLY, { artifactText: c.artifact });
+    assert.equal(d.verdict, 'red', id);
+    assert.equal(d.firstRed, 'says-what');
+    assert.match(d.items[0].reds[0].why, /only restates the function name/);
+  }
+});
+
+test('says-what: the real documented functions PASS (formatBytes, clamp, parseQuery, buildQuery, copyFile, createUser, sendEmail)', () => {
+  const real = [
+    ...Object.values(F192).flatMap((c) => c.facts.functions.map((f) => [c.artifact, f])),
+    ...['phantom-param-red', 'phantom-param-and-no-returns', 'omitted-param-red'].map((id) => [F192P[id].artifact, F192P[id].facts.functions[0]]),
+  ];
+  assert.ok(real.length >= 7);
+  for (const [art, f] of real) assert.deepEqual(saysReds(art, f), [], f.name);
+});
+
+test('says-what: a function with no doc block, or a null / opener-only / invented / tag-only quote, is red (unsure is red)', () => {
+  const c = F192P['undocumented-function-red'];
+  const f = c.facts.functions[0];
+  // no doc block at all: has-doc owns that red, says-what stays silent (F192 2026-10-09, one red per absence)
+  assert.equal(decide(saysFacts(c.artifact, f, null), SAYS_ONLY, { artifactText: c.artifact }).verdict, 'pass');
+  const both = { items: [{ rule: 'has-doc', text: 'has a doc block' }, { rule: 'says-what', text: 'says what' }] };
+  const dd = decide({ functions: [{ ...f, docQuote: null, descriptionQuote: null }] }, both, { artifactText: c.artifact });
+  assert.equal(dd.verdict, 'red');
+  assert.equal(dd.firstRed, 'has-doc');
+  const ne = F192P['name-echo-denies-purpose'];
+  const nf = ne.facts.functions[0];
+  assert.equal(decide(saysFacts(ne.artifact, nf, '/**'), SAYS_ONLY, { artifactText: ne.artifact }).verdict, 'red');
+  const fb = F192['full-contract-pass'];
+  const ff = fb.facts.functions[0];
+  assert.match(saysReds(fb.artifact, ff, ' * Formats every byte count into a tidy string.')[0], /not in the artifact/);
+  // a @param line is not a description: the prose before the first tag is empty
+  assert.match(saysReds(fb.artifact, ff, ' * @param {number} bytes - the number of bytes to format; must be zero or greater.')[0], /only restates/);
+  // no artifact in hand: no looser path
+  assert.equal(decide(saysFacts(fb.artifact, ff), SAYS_ONLY, { artifactText: null }).verdict, 'red');
+});
+
+test('says-what: the quote must sit inside the block directly above the declaration (docBlockAbove stays the authority)', () => {
+  const art = '/**\n * Computes the rolling median of a window.\n */\nfunction a() {}\n\n/**\n * b\n */\nfunction b() {}\n';
+  const fa = { name: 'a', declarationQuote: 'function a() {}' };
+  const fb = { name: 'b', declarationQuote: 'function b() {}' };
+  assert.deepEqual(saysReds(art, fa), []);
+  // b's description quoted from a's block: found in the file, not in b's block
+  assert.match(saysReds(art, fb, ' * Computes the rolling median of a window.')[0], /not inside the JSDoc block/);
+  assert.match(saysReds(art, fb)[0], /only restates/);
+});
+
+test('says-what: name words (camel, snake, kebab), light inflections and the stopword list', () => {
+  /** @param {string} name @param {string} line */
+  const verdictOf = (name, line) => {
+    const art = `/**\n * ${line}\n */\nfunction ${name}() {}\n`;
+    return saysReds(art, { name, declarationQuote: `function ${name}() {}` });
+  };
+  assert.equal(verdictOf('getTotal', 'Gets the total.').length, 1, 'inflected echo reds');
+  assert.equal(verdictOf('parse_date', 'Parses a date').length, 1, 'snake_case + s');
+  assert.equal(verdictOf('validate', 'Validating the').length, 1, 'ing with silent e');
+  assert.equal(verdictOf('parseDate', 'parseDate').length, 1, 'camel in the description too');
+  assert.equal(verdictOf('parseDate', 'Parse the date string').length, 0, 'adds "string"');
+  // THE STATED CEILING: generic words that are not stopwords pass
+  assert.equal(verdictOf('getTotal', 'Returns the total.').length, 0, 'ceiling: "Returns" is an added word');
+  assert.deepEqual([...SAYS_WHAT_STOPWORDS], ['a', 'an', 'the', 'of', 'to', 'for', 'in', 'on', 'at', 'by', 'with', 'from', 'into', 'and', 'or', 'as']);
+  const one = '/** Parse date. */\nfunction parseDate() {}\n';
+  assert.equal(saysReds(one, { name: 'parseDate', declarationQuote: 'function parseDate() {}' }, '/** Parse date. */').length, 1, 'one-line block');
+});
+
+test('says-what: the locate prompt asks for descriptionQuote only when the card names the rule', () => {
+  assert.match(locatePrompt(SAYS_ONLY), /descriptionQuote/);
+  assert.doesNotMatch(locatePrompt({ items: [CARD.items[0]] }), /descriptionQuote/);
+});
+
+// ── F192, the 2026-10-09 live panel session smv0nrwe3l8y2 (deepseek-flash judge): REAL locate facts ──
+// A $0 replay of decide() over the ten live cases' real facts. Before the fixes below it graded 7 of 10
+// (no-doc-block-at-all double red, initCache echo missed, buildQuery signed wrong); after, 9 of 10 -- the
+// tenth is the CASE being wrong (a destructured parameter documented under any root name is not a params red).
+
+const LIVE = JSON.parse(readFileSync(join(HERE, 'fixtures', 'f192-live-smv0nrwe.json'), 'utf8'));
+const liveGot = (/** @type {string} */ id) =>
+  expectedOf(decide(LIVE.cases[id].facts, LIVE.card, { artifactText: LIVE.cases[id].artifact }));
+
+test('live replay: the ten real cases grade 9 of 10; the one miss is the case, not the rule', () => {
+  const wrong = Object.keys(LIVE.cases).filter((id) => !compareExpectation(liveGot(id), LIVE.cases[id].expect).ok);
+  assert.deepEqual(wrong, ['tag-names-wrong-parameter-on-destructured']);
+  // and the rule is right to pass it: a destructured parameter documented under a root name is normal JSDoc
+  assert.deepEqual(liveGot('tag-names-wrong-parameter-on-destructured').reds, []);
+});
+
+test('says-what: no doc block at all is has-doc\'s red alone (one red per absence)', () => {
+  const got = liveGot('no-doc-block-at-all');
+  assert.deepEqual(got.reds.map((r) => `${r.rule}·${r.fn}`), ['has-doc·resetCounters']);
+  // a block with NO prose still reds says-what, and an unfindable / duplicated declaration is unsure = red
+  const art = '/**\n * @returns {number} n\n */\nfunction f() { return 1; }\n';
+  assert.equal(saysReds(art, { name: 'f', declarationQuote: 'function f() { return 1; }' }, null).length, 1);
+  assert.equal(saysReds('const x = 1;\n', { name: 'g', declarationQuote: 'function g() {}' }, null).length, 1, 'declaration not in the artifact');
+  const dup = 'function h() {}\nfunction h() {}\n';
+  assert.equal(saysReds(dup, { name: 'h', declarationQuote: 'function h() {}' }, null).length, 1, 'duplicated declaration');
+  assert.equal(saysReds('', { name: 'h', declarationQuote: null }, null).length, 1, 'no declaration quote');
+});
+
+test('says-what: prefix matching, shorter word at least 4 letters (init/initialize, calc/calculate)', () => {
+  /** @param {string} name @param {string} line */
+  const reds = (name, line) => {
+    const art = `/**\n * ${line}\n */\nfunction ${name}() {}\n`;
+    return saysReds(art, { name, declarationQuote: `function ${name}() {}` }).length;
+  };
+  assert.equal(reds('initCache', 'Initialize the cache.'), 1, 'init / initialize (the live initCache)');
+  assert.equal(reds('initializeCache', 'Init the cache.'), 1, 'initialize / init, the other direction');
+  assert.equal(reds('calcTotal', 'Calculate the total.'), 1, 'calc / calculate');
+  assert.equal(reds('calculateTotal', 'Calc total'), 1, 'calculate / calc');
+  // a 3-letter name word never prefix-matches: those echoes pass (stated ceiling)
+  assert.equal(reds('add', 'Address'), 0, 'add vs address');
+  assert.equal(reds('get', 'Getter'), 0, 'get vs getter');
+  assert.equal(reds('addUser', 'Address user'), 0, 'add vs address inside a longer name');
+  // the stated false-red risk: a longer word that merely begins with a name word is an echo
+  assert.equal(reds('parseDate', 'Parser date'), 1, 'parse / parser is read as an echo');
+  // adding a real word still passes
+  assert.equal(reds('initCache', 'Initialize the cache with the default size.'), 0);
+});
+
+test('the case-proposal prompt tells the model a destructured parameter may be documented under any name (F192, live buildQuery)', async () => {
+  const { cardCasesPrompt } = await import('../src/cardauthor.js');
+  const p = cardCasesPrompt({ answers: {}, questions: {} });
+  assert.match(p, /destructured parameter[^]*ANY root name[^]*never a\s+params red|destructured parameter[^]*ANY root name[^]*never a params red/);
+  // and the rule itself is untouched: `@param options` for `{ table, limit = 10 }` passes
+  assert.deepEqual(liveGot('tag-names-wrong-parameter-on-destructured').reds, []);
+});
+
+// ── F192 item 6 (hamr ruling A, 2026-10-09): the fields of a destructured parameter, and the second live session ──
+// smv0o4mex8ddj: renderPoint({ x, y }) documented with `@param x` only was signed a params red and the old rule
+// passed it (the slot absorbed the tag). buildQuery documented as `@param options` (smv0nrwe3l8y2) must stay a pass.
+
+const LIVE2 = JSON.parse(readFileSync(join(HERE, 'fixtures', 'f192-live-smv0o4mex.json'), 'utf8'));
+const redSet = (/** @type {any} */ g) => g.reds.map((/** @type {any} */ r) => `${r.rule}·${r.fn}`).sort().join(',');
+
+test('live replay 2: the ten smv0o4mex8ddj cases grade 10 of 10 as SETS, and every injection style resists', async () => {
+  const { factsResist, INJECTION_LOCATE_BATTERY, INJECTION_CARD } = await import('../src/calibrate.js');
+  for (const [id, c] of Object.entries(LIVE2.cases)) {
+    const got = expectedOf(decide(c.facts, LIVE2.card, { artifactText: c.artifact }));
+    assert.equal(redSet(got), redSet(c.expect), id);
+    assert.equal(got.verdict, c.expect.verdict, id);
+  }
+  for (const b of INJECTION_LOCATE_BATTERY) {
+    const f = LIVE2.injection[b.id].facts;
+    assert.equal(factsResist(f, b.expectFacts, b.artifact).ok, true, b.id);
+    assert.equal(compareExpectation(expectedOf(decide(f, INJECTION_CARD, { artifactText: b.artifact })), b.expect).ok, true, b.id);
+  }
+});
+
+/** the params rule alone, on a real artifact function */
+const paramsReds = (/** @type {string} */ art, /** @type {any} */ f) =>
+  JUDGE_RULES.params.check(f, art).map((/** @type {any} */ r) => r.why);
+
+test('params: the real renderPoint (`@param x` alone for { x, y }) reds on field y; the real buildQuery (`@param options`) passes', () => {
+  const rp = LIVE2.cases['red-destructured-param-untagged'];
+  assert.deepEqual(paramsReds(rp.artifact, rp.facts.functions[0]), ["@param missing for field y of renderPoint's destructured parameter"]);
+  const bq = LIVE.cases['tag-names-wrong-parameter-on-destructured'];
+  assert.deepEqual(paramsReds(bq.artifact, bq.facts.functions[0]), []);
+});
+
+test('params: destructured fields, bare or dotted, defaults and renames; nested / rest / array patterns never red', () => {
+  /** @param {string} pat @param {string[]} tags */
+  const run = (pat, tags) => {
+    const decl = `function f(${pat}) {`;
+    const art = `/**\n * Does a thing for you.\n */\n${decl}\n}\n`;
+    return paramsReds(art, { name: 'f', declarationQuote: decl, paramNames: [pat], paramIsPattern: [true], paramTagNames: tags });
+  };
+  assert.deepEqual(run('{ x, y }', ['x', 'y']), [], 'every field bare');
+  assert.deepEqual(run('{ x, y }', ['opts', 'opts.x', 'opts.y']), [], 'every field dotted');
+  assert.deepEqual(run('{ x, y }', ['param0.x', 'param0.y']), [], 'param0 spelling');
+  assert.equal(run('{ x, y }', ['opts', 'opts.x']).length, 1, 'dotted, one field missing');
+  assert.match(run('{ x, y }', ['opts.y'])[0], /field x/);
+  assert.match(run('{ x, y, z }', ['x', 'z'])[0], /field y/);
+  assert.deepEqual(run('{ table, limit = 10 }', ['options']), [], 'whole object under one root, no fields');
+  assert.deepEqual(run('{ limit = 10, x }', ['limit', 'x']), [], 'default is read');
+  assert.equal(run('{ limit = 10, x }', ['limit']).length, 1, 'default field, x missing');
+  assert.equal(run('{ a: b, c }', ['a']).length, 1, 'rename: the field is a, c is missing');
+  assert.deepEqual(run('{ a: b, c }', ['a', 'c']), [], 'rename: the field is a');
+  assert.deepEqual(run('{ a: { b }, c }', ['c']), [], 'nested: conservative, never red');
+  assert.deepEqual(run('{ a, ...rest }', ['a']), [], 'rest: conservative');
+  assert.deepEqual(run('{ a, b = [1, 2] }', ['a']), [], 'bracket default: conservative');
+  assert.deepEqual(run('{ x, y } = {}', ['x', 'y']), [], 'with a default object');
+  assert.equal(run('{ x, y } = {}', ['x']).length, 1);
+  // an extra bare tag beyond the pattern's fields is still extra
+  assert.match(run('{ x, y }', ['x', 'y', 'bogus', 'other'])[0], /names no parameter/);
+});
+
+test('the case-proposal prompt tells the model that naming SOME fields of a destructured parameter requires naming all', async () => {
+  const { cardCasesPrompt } = await import('../src/cardauthor.js');
+  assert.match(cardCasesPrompt({ answers: {}, questions: {} }), /EVERY field must be named/);
 });

@@ -21,8 +21,8 @@ function renderMainWith(state) {
   const msg = { value: state.typed || '', disabled: false, style: {}, scrollHeight: 10, offsetHeight: 0, clientHeight: 0 };
   const mainBtn = { textContent: '', disabled: false };
   const mainHint = { textContent: '' };
-  const src = `${fnSrc('mainButtonFor')}\n${fnSrc('askBoxOpenFor')}\n${fnSrc('fitBox')}\n${fnSrc('renderMain')}\n`
-    + 'var mainAction = "none"; var fitCardBoxes = function(){}; var verdictValue = function(){ return "deterministic"; };\nrenderMain();\nreturn mainAction;';
+  const src = `${fnSrc('mainButtonFor')}\n${fnSrc('askBoxOpenFor')}\n${fnSrc('reviseShownFor')}\n${fnSrc('fitBox')}\n${fnSrc('renderMain')}\n`
+    + 'var mainAction = "none"; var reopenBtn = { hidden: true }; var fitCardBoxes = function(){}; var verdictValue = function(){ return "deterministic"; };\nrenderMain();\nreturn mainAction;';
   // eslint-disable-next-line no-new-func
   new Function('msgInput', 'mainBtn', 'mainHint', 'sessionLive', 'lastState', 'startOk', 'startFrom', 'signClickedOnce', src)(
     msg, mainBtn, mainHint, state.sessionLive, state.lastState, true, null, false);
@@ -41,12 +41,15 @@ test('ask box: disabled (and emptied) with no session, no pending ask, or while 
   assert.equal(install.mainBtn.textContent, 'Check again');
 });
 
-test('ask box: enabled for the plan menu (change request) and for any question the session asks', () => {
-  const menu = renderMainWith({ sessionLive: true, lastState: { phase: 'confirming', pendingAsk: { kind: 'menu' }, revisesLeft: 2 } });
-  assert.equal(menu.msg.disabled, false);
-  const typed = renderMainWith({ sessionLive: true, typed: 'shorter goal', lastState: { phase: 'confirming', pendingAsk: { kind: 'menu' }, revisesLeft: 2 } });
-  assert.equal(typed.msg.value, 'shorter goal', 'enabled keeps typed text');
-  assert.equal(typed.mainBtn.textContent, 'Send');
+test('ask box: dimmed at the plan menu (Sign & run or Revise, never typed text), enabled for any question the session asks', () => {
+  const menu = renderMainWith({ sessionLive: true, lastState: { phase: 'confirming', pendingAsk: { kind: 'menu' } } });
+  assert.equal(menu.msg.disabled, true);
+  const typed = renderMainWith({ sessionLive: true, typed: 'shorter goal', lastState: { phase: 'confirming', pendingAsk: { kind: 'menu' } } });
+  assert.equal(typed.msg.value, '', 'a change request typed at the plan is dropped, not sent');
+  assert.equal(typed.mainBtn.textContent, 'Sign & run');
+  const typedQ = renderMainWith({ sessionLive: true, typed: 'my answer', lastState: { phase: 'asking', pendingAsk: { kind: 'question' } } });
+  assert.equal(typedQ.msg.value, 'my answer', 'enabled keeps typed text');
+  assert.equal(typedQ.mainBtn.textContent, 'Send');
   const q = renderMainWith({ sessionLive: true, lastState: { phase: 'asking', pendingAsk: { kind: 'question' } } });
   assert.equal(q.msg.disabled, false);
 });

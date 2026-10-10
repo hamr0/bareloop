@@ -128,7 +128,7 @@ import { readSourceManifest, missingDependencies, nonRepoSourceMessage } from '.
 import { tallyCalls } from './text.js';
 import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
-  openQuestionLines, answeredQuestionLines, fellBackLines,
+  openQuestionLines, answeredQuestionLines, fellBackLines, PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText,
 } from './authorreadout.js';
 
 /** Thrown to unwind `main` to an exit code without ever calling
@@ -978,6 +978,15 @@ export async function main(argv, deps = {}) {
         if (r.red) out(`  red: ${JSON.stringify(r.red)}`);
         for (const e of refusalEvents(r)) emit(e.type, e);
       }
+      // a refused rubric proposal reads in plain words FIRST (the same text the panel shows), the technical reds after
+      if (PLAIN_PROPOSAL_STOPS.includes(String(authored.stop))) {
+        out(`\n${proposalStopText({
+          stop: String(authored.stop), reds: authored.reds ?? [],
+          cases: authored.judged?.signed?.cases ?? authored.judged?.proposal?.proposal?.cases ?? null,
+          spend: authored.cost ? { knownUsd: authored.cost.knownUsd ?? null, spendComplete: authored.cost.spendComplete ?? null } : null,
+          source: authored.judged?.source === 'signer' ? 'signer' : 'proposal',
+        })}`);
+      }
       for (const red of authored.reds ?? []) {
         out(`\nRED ${red.code} at ${red.path}\n${red.detail}`);
         emit('job-red', red);
@@ -1181,16 +1190,16 @@ export async function main(argv, deps = {}) {
           : (g.seedVerdict.ok
             ? `PASS — work red at seed: ${g.seedVerdict.workRed.join(', ')}`
             : (g.seedVerdict.satisfiedBy === 'calibration'
-              ? 'PASS via the CALIBRATION gate — this close\'s only work stage is judged'
+              ? 'PASS via the CALIBRATION gate — this close carries a judged stage'
               : 'FAIL — no work stage is red at the seed'))}`);
         if (g.seedVerdict) {
           out(`      red at seed:   ${g.seedVerdict.redAtSeed.join(', ') || '(none)'}`);
           out(`      green at seed: ${g.seedVerdict.greenAtSeed.join(', ') || '(none)'}`);
-          // ruling 3: a judged-ONLY close clears gate 3 on its calibration instead,
+          // ruling 3 (widened 2026-10-09): a close with a judged stage clears gate 3 on its calibration instead,
           // and the surface SAYS which proof carried it rather than leaving a reader
           // to wonder why an empty workRed list passed
           if (g.seedVerdict.satisfiedBy === 'calibration') {
-            out('      a judged stage skips the seed read (ruling 8), so this close\'s proof that it CAN fail is');
+            out('      a judged stage skips the seed read (ruling 8), so this close\'s proof that its judged stage CAN fail is');
             out('      the graded calibration set below — signed cases it must red as well as ones it must pass.');
           }
         }
@@ -1207,6 +1216,14 @@ export async function main(argv, deps = {}) {
         if ((signing.guards ?? []).length) { out('\nguard stages at the seed'); for (const r of signing.guards) row(r); }
         if ((signing.stops ?? []).length) { out('\nstages that could NOT RUN (a broken instrument is a casualty, never a verdict)'); for (const r of signing.stops) row(r); }
 
+        // a refused signing reads in plain words FIRST (the same text the panel shows), the technical reds after
+        if (!signing.ok) {
+          const t = costSoFar();
+          out(`\n${signingStopText({
+            reds: signing.reds ?? [], refusal: signing.refusal,
+            spend: { knownUsd: t.knownUsd ?? null, spendComplete: t.spendComplete ?? null },
+          })}`);
+        }
         if (signing.refusal) {
           const r = signing.refusal;
           out(`\nREFUSED (${r.kind})  verb=${r.verb ?? 'none'}  path=${r.path}`);

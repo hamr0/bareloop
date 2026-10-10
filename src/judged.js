@@ -63,9 +63,10 @@
 // persisted raw goes through the ONE `scrubRaw` inventory here, and the CALLER
 // redacts at its emission boundary, the same split `src/kinds.js` documents.
 
+import { quoteIn } from 'bareguard';
 import { createRequire } from 'node:module';
 import { extractArtifact, priceOf, scrubRaw, rateSourceFields } from './text.js';
-import { resolveProvider } from './providers.js';
+import { resolveProvider, judgeCallOptions } from './providers.js';
 
 const require = createRequire(import.meta.url);
 
@@ -257,16 +258,20 @@ export const LOCATE_AXES = Object.freeze({
 const quoteOf = (/** @type {unknown} */ v) => (typeof v === 'string' && v.trim() !== '' ? v : null);
 
 /**
- * Every trimmed, non-empty line of `quote` must appear as a trimmed line of the
- * artifact. Line-wise and trimmed rather than substring-wise, because a model
- * re-indents and a strict byte compare would red honest facts; and every line
- * rather than any line, because a half-invented quote is an invented quote.
- * @param {string} quote @param {Set<string>|null} lines
+ * The quote must be a contiguous run of whole lines of the artifact, in order —
+ * bareguard's `quoteIn(.., {wholeLines:true})` (asked by bareloop, F192; shipped in
+ * bareguard 0.21.0), the one owner of line matching. Whole lines rather than
+ * substring, so a bare `return` cannot pass by hiding inside a longer line; one
+ * leading JSDoc/comment decoration is forgiven, because the judge routinely drops
+ * the leading star-space of a JSDoc tag line. A quote that is ALL decoration
+ * (`/**` alone) proves nothing about location: `has-doc` keeps `docBlockAbove` as
+ * the authority on where the block sits.
+ * @param {string} quote @param {string|null} text
  * @returns {boolean} true when the artifact is in hand AND the quote is not in it
  */
-function unquoted(quote, lines) {
-  if (!lines) return false; // no artifact in hand: decide() says nothing it cannot know
-  return quote.split('\n').map((l) => l.trim()).filter(Boolean).some((l) => !lines.has(l));
+function unquoted(quote, text) {
+  if (text === null) return false; // no artifact in hand: decide() says nothing it cannot know
+  return !quoteIn(quote, text, { wholeLines: true }).ok;
 }
 
 /**
@@ -274,16 +279,16 @@ function unquoted(quote, lines) {
  * Scoped per rule rather than globally so a fabricated `@returns` line reds the
  * returns item and not the whole card — an itemized red that names the wrong
  * item is a calibration signal pointing at the wrong card line.
- * @param {any} fn @param {string[]} fields @param {Set<string>|null} lines
+ * @param {any} fn @param {string[]} fields @param {string|null} text
  * @returns {RuleRed[]}
  */
-function quoteReds(fn, fields, lines) {
+function quoteReds(fn, fields, text) {
   /** @type {RuleRed[]} */
   const reds = [];
   const name = String(fn?.name ?? '(unnamed)');
   for (const f of fields) {
     const q = quoteOf(fn?.[f]);
-    if (q && unquoted(q, lines)) {
+    if (q && unquoted(q, text)) {
       reds.push({ fn: name, why: `\`${f}\` is not in the artifact — locate quoted a line nobody can find, and unsure is red`, quote: q });
     }
   }
@@ -291,37 +296,279 @@ function quoteReds(fn, fields, lines) {
 }
 
 /**
+ * The trimmed lines of the JSDoc block sitting directly above a declaration, read
+ * off the artifact itself. The declaration is its first non-empty quoted line,
+ * matched as a trimmed line; found zero or several times it is ambiguous, and
+ * unsure is null. "Directly above" is the nearest non-blank line: it must close
+ * a comment (`*/`), and the block's opener (the nearest `/*` at or above it) must
+ * be a double-star opener — a plain single-star block comment is not a JSDoc block.
+ * @param {string} text @param {string|null} declQuote
+ * @returns {Set<string>|null} the block's trimmed lines, opener..closer inclusive; null when unsure
+ */
+function docBlockAbove(text, declQuote) {
+  return locateDocBlock(text, declQuote).block;
+}
+
+/**
+ * `docBlockAbove` with the reason it came back empty: `declFound` is true when the
+ * declaration line matched exactly once (so "no block" is a fact about the artifact),
+ * false when it is missing, duplicated or unquoted (so "no block" is only unsure).
+ * @param {string} text @param {string|null} declQuote
+ * @returns {{declFound: boolean, block: Set<string>|null}}
+ */
+function locateDocBlock(text, declQuote) {
+  const decl = (declQuote ?? '').split('\n').map((l) => l.trim()).find(Boolean);
+  if (!decl) return { declFound: false, block: null };
+  const all = text.split('\n').map((l) => l.trim());
+  const at = all.flatMap((l, i) => (l === decl ? [i] : []));
+  if (at.length !== 1) return { declFound: false, block: null };
+  let end = at[0] - 1;
+  while (end >= 0 && all[end] === '') end--;
+  if (end < 0 || !all[end].endsWith('*/')) return { declFound: true, block: null };
+  let start = end;
+  while (start >= 0 && !all[start].includes('/*')) {
+    if (start < end && all[start].includes('*/')) return { declFound: true, block: null }; // another comment closes first: no opener for this block
+    start--;
+  }
+  if (start < 0 || !all[start].includes('/**')) return { declFound: true, block: null };
+  return { declFound: true, block: new Set(all.slice(start, end + 1).filter(Boolean)) };
+}
+
+/**
+ * THE ONE ACCEPTANCE for "this quote points at the JSDoc block of this declaration":
+ * every non-empty line of `docQuote` is a line inside the block directly above the
+ * declaration. `has-doc`'s check and the calibration gate's injection facts check
+ * both call this, so the two can never disagree about what a good pointer is (F192).
+ * @param {string} text the artifact @param {string|null} declQuote @param {string} docQuote
+ * @returns {boolean}
+ */
+export function docQuoteInBlock(text, declQuote, docQuote) {
+  const block = docBlockAbove(text, declQuote);
+  return block !== null && docQuote.split('\n').map((l) => l.trim()).filter(Boolean).every((l) => block.has(l));
+}
+
+/**
+ * Does the artifact mechanically show a JSDoc block directly above function `fn`'s
+ * declaration? The declaration line is found by name (function / const-assigned /
+ * method shapes); found zero or several times it is ambiguous, and unsure is false
+ * (a case is never refused on a guess). The block test is `docBlockAbove` — the
+ * one owner `has-doc` itself uses.
+ * @param {string} text @param {string} fn @returns {boolean}
+ */
+function hasDocBlockDirectlyAbove(text, fn) {
+  const n = fn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^(?:export\\s+)?(?:default\\s+)?(?:(?:async\\s+)?function\\s*\\*?\\s*${n}\\b`
+    + `|(?:const|let|var)\\s+${n}\\s*=|(?:static\\s+)?(?:async\\s+)?${n}\\s*\\()`);
+  const hits = text.split('\n').map((l) => l.trim()).filter((l) => re.test(l));
+  if (hits.length !== 1) return false;
+  return docBlockAbove(text, hits[0]) !== null;
+}
+
+// ── `says-what`: the doc's description is more than the function's own name ──
+//
+// hamr ruling "A" (2026-10-09, F192 addendum): a person's FAIL example is "a doc
+// comment that only restates the function name ... teaches the reader nothing",
+// and `has-doc` cannot express it (a block exists, so it passes). Same shape as
+// every rule here: the judge only POINTS (quotes the description line(s) of the
+// block verbatim); code does the check; unsure is red; the judge never says
+// pass/fail.
+//
+// THE HONEST CEILING: this catches a PURE name echo (the description, minus a
+// small fixed list of function words, adds no word beyond the function name's
+// own words and their light inflections). It does NOT catch a description that
+// adds only generic words: "Returns the total." for `getTotal` passes. A miss
+// of that kind is a new card line and a re-sign, never a smarter judge.
+
+/**
+ * Function words ONLY: articles, prepositions, conjunctions. No judgement words
+ * ("returns", "gets", "function"): a description that adds one of those has added
+ * something, and deciding whether it is MEANINGFUL is exactly what this rule
+ * refuses to do.
+ */
+export const SAYS_WHAT_STOPWORDS = Object.freeze(
+  ['a', 'an', 'the', 'of', 'to', 'for', 'in', 'on', 'at', 'by', 'with', 'from', 'into', 'and', 'or', 'as'],
+);
+
+/** camelCase / snake_case / kebab-case / digits to lowercase words
+ * @param {string} s @returns {string[]} */
+function wordsOf(s) {
+  return s
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((w) => w.toLowerCase());
+}
+
+/** the light inflections of a word: s, es, ed, d, ing (silent e dropped), ies
+ * @param {string} w @returns {Set<string>} */
+function inflections(w) {
+  const f = new Set([w, `${w}s`, `${w}es`, `${w}ed`, `${w}d`, `${w}ing`]);
+  if (w.endsWith('e')) f.add(`${w.slice(0, -1)}ing`);
+  if (w.endsWith('y')) f.add(`${w.slice(0, -1)}ies`);
+  return f;
+}
+
+/** @param {string} a @param {string} b */
+const sameWord = (a, b) => inflections(a).has(b) || inflections(b).has(a);
+
+/**
+ * Prefix match (hamr ruling A, 2026-10-09): one word starts with the other and the SHORTER is
+ * at least 4 letters, so a description's "Initialize" echoes a name's `init` (and `calc` /
+ * `calculate`). HONEST CEILING AND RISK: a name word of 3 or fewer letters never prefix-matches
+ * ("add" vs "address", "get" vs "getter"), so those echoes pass; and a real longer word that
+ * merely begins with a name word ("read" vs "reader", "parse" vs "parser") counts as an echo,
+ * a false red only when the description adds nothing else.
+ * @param {string} a @param {string} b @returns {boolean}
+ */
+function sharesPrefix(a, b) {
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  return short.length >= 4 && long.startsWith(short);
+}
+
+/**
+ * The field names a destructured parameter's pattern text declares, read mechanically:
+ * `{ x, y }` -> x, y; `{ table, limit = 10 } = {}` -> table, limit; a rename `{ a: b }` -> a (the field is
+ * `a`). HONEST CEILING: a nested pattern (`{ a: { b } }`), an array pattern, a rest element (`...rest`) or
+ * anything with brackets / parentheses in a default makes the field list unsure, and unsure here means NO
+ * fields: the params rule then never reds on fields (conservative, never a false red).
+ * @param {string} text @returns {string[]}
+ */
+function patternFields(text) {
+  const m = /^\s*\{([^{}[\]()]*)\}\s*(?:=\s*\{\s*\})?\s*$/.exec(text);
+  if (!m || m[1].includes('...')) return [];
+  /** @type {string[]} */
+  const out = [];
+  for (const part of m[1].split(',')) {
+    const field = /^\s*([A-Za-z_$][\w$]*)\s*(?::|=|$)/.exec(part)?.[1];
+    if (part.trim() === '') continue;
+    if (!field) return [];
+    out.push(field);
+  }
+  return out;
+}
+
+/** a doc-block line with its comment decoration (opener, leading star, closer) removed
+ * @param {string} line @returns {string} */
+function undecorated(line) {
+  return line.trim().replace(/^\/\*+/, '').replace(/\*+\/$/, '').replace(/^\*+/, '').trim();
+}
+
+/**
+ * The prose of a quoted description: its undecorated lines up to the first `@tag`.
+ * @param {string} quote @returns {string[]}
+ */
+function descriptionLines(quote) {
+  /** @type {string[]} */
+  const out = [];
+  for (const l of quote.split('\n').map(undecorated)) {
+    if (l === '') continue;
+    if (l.startsWith('@')) break;
+    out.push(l);
+  }
+  return out;
+}
+
+/**
  * THE OWNED RULE TABLE. Frozen: the rulebook is the arbiter's, and a caller that
  * could add a rule at runtime would be authoring the arbiter.
- * @type {Readonly<Record<string, {id: string, ask: string, check: (fn: any, lines: Set<string>|null) => RuleRed[]}>>}
+ * `means` is the rule's plain-words reach: what it CAN check, and what it cannot. The case-proposal
+ * prompt renders it, so a proposed case never expects a red the rule cannot raise.
+ * @type {Readonly<Record<string, {id: string, means: string, ask: string, check: (fn: any, text: string|null) => RuleRed[]}>>}
  */
 export const JUDGE_RULES = Object.freeze({
   'has-doc': Object.freeze({
     id: 'has-doc',
+    means: 'checks only that a JSDoc block sits directly above the function; it cannot judge what the block says, '
+      + 'so a function with ANY doc block above it never breaks this rule',
     ask: '  "docQuote": the first line of the JSDoc block (a /** ... */ comment) IMMEDIATELY above the '
       + 'declaration, VERBATIM, or null if there is no such block',
-    check(fn, lines) {
+    check(fn, text) {
       const name = String(fn?.name ?? '(unnamed)');
       const decl = quoteOf(fn?.declarationQuote);
       const doc = quoteOf(fn?.docQuote);
       if (!doc) return [{ fn: name, why: `no JSDoc block above the declaration`, quote: decl }];
-      // quote-anchored, not derived: a "doc" line that is not a JSDoc opener is
-      // not a doc block, whatever the model called it.
-      if (!doc.includes('/**')) {
-        return [{ fn: name, why: 'the quoted line above the declaration is not a JSDoc opener (`/**`)', quote: doc }];
+      const q = quoteReds(fn, ['docQuote', 'declarationQuote'], text);
+      if (q.length) return q;
+      // CODE DOES THE CHECK, THE JUDGE ONLY POINTS (hamr ruling A, F192). The
+      // judge was asked for the opener line and routinely quotes the first
+      // WORDED line instead; testing the quote for `/**` read that as no doc.
+      // Now the quote is only a pointer: the artifact itself says whether a
+      // JSDoc block sits directly above the declaration, and the quote passes
+      // iff every line of it is inside that block.
+      if (typeof text !== 'string') {
+        // no artifact in hand (no real caller reaches this): the old quote-anchored test, nothing looser
+        if (!doc.includes('/**')) {
+          return [{ fn: name, why: 'the quoted line above the declaration is not a JSDoc opener (`/**`)', quote: doc }];
+        }
+        return [];
       }
-      return quoteReds(fn, ['docQuote', 'declarationQuote'], lines);
+      if (!docQuoteInBlock(text, decl, doc)) {
+        return [{ fn: name, why: 'the quoted doc line is not inside a JSDoc block (`/** ... */`) directly above the declaration', quote: doc }];
+      }
+      return [];
+    },
+  }),
+
+  'says-what': Object.freeze({
+    id: 'says-what',
+    means: 'checks that the doc block\'s description says something beyond the function\'s own name: it reds when the '
+      + 'description only restates the name (e.g. `parseDate` documented as "Parse the date"). It catches a pure name '
+      + 'echo only; a description that adds even generic words ("Returns the total.") passes',
+    ask: '  "descriptionQuote": the DESCRIPTION of the JSDoc block IMMEDIATELY above the declaration (the prose '
+      + 'line(s) before the first @tag), VERBATIM, or null if the block has no prose before its first tag or there '
+      + 'is no block',
+    check(fn, text) {
+      const name = String(fn?.name ?? '(unnamed)');
+      const decl = quoteOf(fn?.declarationQuote);
+      const desc = quoteOf(fn?.descriptionQuote);
+      // ONE RED PER ABSENCE (F192, 2026-10-09): with NO doc block at all, `has-doc` owns the
+      // red and `says-what` stays silent. Only when the artifact itself proves it (the
+      // declaration line matched exactly once and no JSDoc block sits above it); a missing or
+      // duplicated declaration is unsure, and unsure is red. A block with no prose still reds.
+      if (typeof text === 'string' && decl && !quoteReds(fn, ['declarationQuote'], text).length) {
+        const loc = locateDocBlock(text, decl);
+        if (loc.declFound && loc.block === null) return [];
+      }
+      if (!desc) return [{ fn: name, why: 'the doc block has no description, so nothing says what the function does', quote: decl }];
+      // location + verbatim: unsure is red, and there is no looser no-artifact path
+      // (every real caller passes the artifact)
+      if (typeof text !== 'string') {
+        return [{ fn: name, why: 'no artifact to check the quoted description against: unsure, and unsure is red', quote: desc }];
+      }
+      const q = quoteReds(fn, ['descriptionQuote', 'declarationQuote'], text);
+      if (q.length) return q;
+      const block = decl ? docBlockAbove(text, decl) : null;
+      const inBlock = block === null ? null : new Set([...block].map(undecorated));
+      if (inBlock === null || !desc.split('\n').map(undecorated).filter(Boolean).every((l) => inBlock.has(l))) {
+        return [{ fn: name, why: 'the quoted description is not inside the JSDoc block directly above the declaration', quote: desc }];
+      }
+      const own = wordsOf(name);
+      const prose = descriptionLines(desc);
+      const said = prose.flatMap(wordsOf)
+        .filter((w) => !SAYS_WHAT_STOPWORDS.includes(w))
+        .filter((w) => !own.some((o) => sameWord(w, o) || sharesPrefix(w, o)));
+      if (said.length === 0) {
+        return [{ fn: name, why: `the doc description only restates the function name (\`${prose.join(' ')}\`); it says nothing more than \`${name}\` already does`, quote: desc }];
+      }
+      return [];
     },
   }),
 
   params: Object.freeze({
     id: 'params',
+    means: 'checks that the @param tags match the declared parameters: a parameter with no tag, or a tag naming a '
+      + 'parameter the function does not have. A destructured parameter (e.g. `{ table, limit = 10 }`) has no name of '
+      + 'its own, so it may be documented under ANY root name (`@param options`) and that is normal JSDoc, never a '
+      + 'params red; do not propose a case expecting one. But when the doc names the fields of a simple destructured '
+      + 'parameter one by one (`@param x`, or `@param opts.x`), EVERY field must be named: `@param x` alone for '
+      + '`{ x, y }` is a params red. Nested, array and rest patterns are never reddened on fields',
     ask: '  "paramNames": the parameter names in the declaration, in order. For a DESTRUCTURED parameter '
       + '(e.g. `{ a = 1 } = {}`) there is no name — use the literal text of the pattern.\n'
       + '  "paramIsPattern": one true/false per entry of paramNames, true when that entry is a destructuring '
       + 'pattern rather than a plain name\n'
       + '  "paramTagNames": the names appearing in @param tags of that JSDoc block (empty array if none)',
-    check(fn, lines) {
+    check(fn, text) {
       const name = String(fn?.name ?? '(unnamed)');
       const decl = quoteOf(fn?.declarationQuote);
       const params = Array.isArray(fn?.paramNames) ? fn.paramNames.map(String) : null;
@@ -329,7 +576,7 @@ export const JUDGE_RULES = Object.freeze({
       if (params === null || tags === null) {
         return [{ fn: name, why: 'locate gave no param facts — unsure, and unsure is red', quote: decl }];
       }
-      const q = quoteReds(fn, ['declarationQuote'], lines);
+      const q = quoteReds(fn, ['declarationQuote'], text);
       if (q.length) return q;
 
       // DERIVED-FACT HARDENING (the POC measured `paramNames` drifting between
@@ -362,18 +609,52 @@ export const JUDGE_RULES = Object.freeze({
       } else if (params.length > tags.length) {
         reds.push({ fn: name, why: `${params.length} param(s) but only ${tags.length} @param tag(s)`, quote: decl });
       }
+      // THE EXTRA TAG (F192 probe: a documented `@param overwrite` on
+      // copyFile(src, dest) was reported by locate and never reddened). A tag is
+      // extra when its name matches no declared parameter. Tag spellings are
+      // normalised first: `[opts]` / `[opts=1]` -> `opts`. A dotted tag
+      // (`opts.a`) documents a member of another param and is never extra.
+      // A DESTRUCTURED slot has no name to match, so the documented root of such
+      // a slot (`@param opts` for `{ a } = {}`) cannot be told from a phantom by
+      // name: each pattern slot absorbs ONE unmatched tag, and only the tags
+      // beyond that budget are extra. Conservative on purpose — it can miss a
+      // phantom sitting beside a pattern, it never reds a documented root.
+      const norm = tags.map((t) => t.trim().replace(/^\[/, '').replace(/\]$/, '').replace(/=.*$/, '').trim()).filter(Boolean);
+      // THE FIELDS OF A DESTRUCTURED PARAMETER (hamr ruling A, 2026-10-09, live renderPoint): `@param x` alone for
+      // `{ x, y }` documents ONE field and leaves the other unnamed. Fields are read off the declared pattern
+      // text mechanically (see `patternFields`). When the doc names ANY field of a pattern, bare (`x`) or
+      // dotted (`opts.x`, `param0.x`), EVERY field must be named; a doc that names the whole object under one
+      // root and no fields (`@param options`) still passes. Bare field tags are the pattern's own, never "extra".
+      const fieldsOf = params.map((p, i) => (pattern[i] ? patternFields(p) : null));
+      const allFields = new Set(fieldsOf.flatMap((f) => f ?? []));
+      for (let i = 0; i < params.length; i += 1) {
+        const fields = fieldsOf[i];
+        if (!fields || fields.length === 0) continue;
+        const said = (/** @type {string} */ f) => norm.some((t) => t === f || t.endsWith(`.${f}`));
+        if (!fields.some(said)) continue;
+        const gap = fields.find((f) => !said(f));
+        if (gap !== undefined) reds.push({ fn: name, why: `@param missing for field ${gap} of ${name}'s destructured parameter`, quote: decl });
+      }
+      const roots = norm.filter((t) => !/[.[]/.test(t));
+      const unmatched = roots.filter((t) => !named.includes(t) && !allFields.has(t));
+      const slack = pattern.filter(Boolean).length;
+      if (unmatched.length > slack) {
+        const extra = unmatched.slice(slack);
+        reds.push({ fn: name, why: `@param ${extra.join(', ')} names no parameter of ${name}`, quote: decl });
+      }
       return reds;
     },
   }),
 
   returns: Object.freeze({
     id: 'returns',
+    means: 'checks that a function whose body returns a value has an @returns tag',
     ask: '  "returnsTagQuote": the @returns/@return tag line VERBATIM, or null if absent\n'
       + '  "returnsValueQuote": a VERBATIM `return <something>` line from the function body, or null if the '
       + 'function never returns a value',
-    check(fn, lines) {
+    check(fn, text) {
       const name = String(fn?.name ?? '(unnamed)');
-      const q = quoteReds(fn, ['returnsTagQuote', 'returnsValueQuote'], lines);
+      const q = quoteReds(fn, ['returnsTagQuote', 'returnsValueQuote'], text);
       if (q.length) return q;
       const value = quoteOf(fn?.returnsValueQuote);
       const tag = quoteOf(fn?.returnsTagQuote);
@@ -542,6 +823,21 @@ export function validateCalibrationSet(cases, { card = null } = {}) {
       red('calibration-case', `${at}.artifact`, 'the same artifact is used twice — two identical cases are one case '
         + 'counted twice, and the floor is over distinct evidence');
     } else artifacts.add(String(c.artifact));
+
+    // A has-doc red the rulebook cannot raise (F192, ruling 3A): has-doc only
+    // checks that a JSDoc block sits directly above the declaration, so a case
+    // that expects it on a function that HAS one can never be graded by any
+    // judge answer. Read off the artifact by the same owner `has-doc` uses.
+    if (str(c.artifact) && obj(c.expect) && Array.isArray(c.expect.reds)) {
+      for (const r of c.expect.reds) {
+        if (!obj(r) || r.rule !== 'has-doc' || !str(r.fn)) continue;
+        if (hasDocBlockDirectlyAbove(String(c.artifact), String(r.fn))) {
+          red('calibration-case', `${at}.expect.reds`, `case ${str(c.id) ? c.id : `#${i}`} expects has-doc red on ${r.fn}, `
+            + `but ${r.fn} has a JSDoc block directly above it — has-doc only checks that a block exists, so no judge `
+            + 'answer can grade this case');
+        }
+      }
+    }
 
     const e = c.expect;
     if (!obj(e)) { red('calibration-case', `${at}.expect`, `{verdict: ${CASE_VERDICTS.join('|')}, reds: [...]}`); return; }
@@ -811,7 +1107,7 @@ export const defaultJudgeLoop = ({ provider, system, rates = null }) => {
   return {
     run: async (/** @type {any[]} */ msgs, /** @type {any[]} */ tools, /** @type {any} */ opts) => {
       seen = null;
-      const res = await loop.run(msgs, tools, opts);
+      const res = await loop.run(msgs, tools, { ...judgeCallOptions(provider), ...opts });
       return res && typeof res === 'object' && seen ? { ...res, rateSource: /** @type {any} */ (seen).rateSource } : res;
     },
   };
@@ -986,15 +1282,13 @@ export function decide(facts, card, { artifactText = null } = {}) {
     }
   }
 
-  const lines = typeof artifactText === 'string'
-    ? new Set(artifactText.split('\n').map((l) => l.trim()).filter(Boolean))
-    : null;
+  const text = typeof artifactText === 'string' ? artifactText : null;
 
   const graded = items.map((it) => {
     const rule = JUDGE_RULES[it.rule];
     /** @type {RuleRed[]} */
     const reds = [];
-    for (const fn of fns) reds.push(...rule.check(fn, lines));
+    for (const fn of fns) reds.push(...rule.check(fn, text));
     return { rule: it.rule, text: it.text, ok: reds.length === 0, reds };
   });
 

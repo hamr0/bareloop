@@ -272,13 +272,13 @@ export function declaredStages(closeDecl) {
  *
  * @param {any} closeDecl
  * @param {{at?: string, listing?: string[]|null, deferListing?: boolean,
- *   catalogue?: Record<string, any>, verdictType?: string|null}} [opts]
+ *   catalogue?: Record<string, any>, verdictType?: string|null, writeScope?: string[]|null}} [opts]
  * @returns {{ok: boolean, reds: Red[], closeDecl: any, grounded: boolean,
  *   scoped: {scoped: boolean, via: string|null},
  *   ceiling: {class: string, kind: string, stage: string|null, locked: boolean}|null}}
  */
 export function validateCloseDecl(closeDecl, opts = {}) {
-  const { at = 'closeDecl', listing = null, catalogue, verdictType = null } = opts;
+  const { at = 'closeDecl', listing = null, catalogue, verdictType = null, writeScope = null } = opts;
   const deferListing = opts.deferListing === true;
   /** @type {Red[]} */
   const reds = [];
@@ -401,6 +401,7 @@ export function validateCloseDecl(closeDecl, opts = {}) {
     ...(deferListing ? { deferListing: true } : {}),
     guards: classGuards({ verdictType: picked, lang: closeDecl.lang }),
     verdictType: picked,
+    writeScope,
     envOwned: owned,
     // POST-injection: an owned name is accepted only when its value is EXACTLY
     // the recorded one. `{}` (nothing recorded) keeps the pre-injection rule, so
@@ -678,14 +679,19 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
  *    recommend a top-up on a dying run — the one direction trend.js names as
  *    dangerous. F6's answer applies: unknown, never a number that means the
  *    opposite of what it says.
- *  - a stage with no measurement at all donates nothing, for the same reason.
+ *  - a JUDGED stage (no measurement) donates its distinct red COUNT, always 'down';
+ *  - any other stage with no measurement at all donates nothing, for the same reason.
  * The stage POSITION still travels either way, so "the run got further than it
  * ever had" is readable on every declared close.
  * @param {any} stage @param {any} r the M1 StageResult
  * @returns {number|null}
  */
 function trendValueOf(stage, r) {
-  if (typeof r?.value !== 'number' || !Number.isFinite(r.value)) return null;
+  if (typeof r?.value !== 'number' || !Number.isFinite(r.value)) {
+    // a JUDGED stage has no measurement: its number is how many DISTINCT reds it itemizes
+    // (F192 e), lower-is-better, compared to its best-so-far like any deterministic count
+    return Number.isInteger(r?.detail?.redCount) ? r.detail.redCount : null;
+  }
   return stage?.params?.direction === 'lower-is-better' ? r.value : null;
 }
 

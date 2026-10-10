@@ -2735,3 +2735,28 @@ than a rejected `ProviderError` — bareloop's local shim, `withMalformedToolCal
 that commit: no provider bareloop constructs can still throw a JSON SyntaxError out of `generate()`
 after a billed round (Anthropic/Gemini never had the class; every provider's raw-HTTP-body parse
 was already guarded). Closed.
+
+## BG-1 — RESOLVED (bareguard 0.21.0, 2026-10-08, same-day): `quoteIn` has no whole-line mode — a bare `return` passes by hiding inside a longer line, and a judge quote that drops the leading `* ` cannot be matched (F192)
+
+**Filed and delivered the same day.** The judged floor verifies every quote the judge returns
+against the artifact. bareloop's own matcher (every trimmed quote line must equal a trimmed
+artifact line) read a real `@returns` quote that dropped its leading `* ` as "not in the
+artifact" (run `mub2nboo`, `parseDate`), while bareguard's `quoteIn` default (substring after
+whitespace collapse) would let a fragment like `return` pass by sitting inside a longer line.
+Neither is the match the floor needs. Per the standing rule (use bareguard, validate it, ask it
+to change — never a local workaround), the ask went to bareguard's own session.
+
+**Delivered:** `quoteIn(quote, source, { wholeLines: true })` — the quote's lines must be a
+contiguous run of whole source lines, in order; one leading decoration (`/**`, `*/`, `* `, a lone
+`*`, `//` at line start, `#` alone or before a space/tab) is stripped per line; empty and
+decoration-only lines are skipped on both sides; a quote that is all decoration (`/**` alone)
+falls back to per-line equality and proves nothing about location; a hostile `opts` means the
+default mode and never throws. The default mode is unchanged.
+
+**Validated here ($0, real data, not fixtures authored for the purpose):** the archived
+`mub2nboo` quotes (every `docQuote`/`declarationQuote`/`returnsTagQuote`/`returnsValueQuote`
+in `tests/fixtures/f192-*-real.json`) plus the leading-`* `-dropped `@returns` line, a bare
+`/**`, `return`, a changed word and reordered lines: every real quote found, every fragment,
+invented or reordered quote not found. Consumed in `src/judged.js` (`unquoted`); `docBlockAbove`
+stays the authority on where the doc block sits. The $0 replay of the 8 legal archived cases
+reads 8/8.

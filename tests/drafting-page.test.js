@@ -23,15 +23,15 @@ function fnSrc(name) {
   return PAGE.slice(start, i + 1);
 }
 function load() {
-  const start = PAGE.indexOf('function stepMapColors');
-  const end = PAGE.indexOf('var lastSteps = null;');
+  const start = PAGE.indexOf('function escapeXml');
+  const end = PAGE.indexOf('function renderStepMap(');
   const names = ['escapeXml', 'panelMoney', 'duration', 'toolBreakdownLine', 'draftingMoneyText', 'draftingLine1Text', 'partLine2Text', 'draftingCallCost', 'draftingTableHtml', 'partLine1Text'];
   // eslint-disable-next-line no-new-func
   return new Function(`var MIN_BOX_W=100,CHAR_W=7,TITLE_HPAD=24,MAP_MARGIN=10,MAP_GAP=40,BOX_H=40,BOX_H_2LINE=52,ROW_GAP=40,stepMapUidCounter=0;
     function toolDisplayLabel(k){return k;}
     function attemptChecksLine(){return "";}
     ${PAGE.slice(start, end)}\n${names.map(fnSrc).join('\n')}
-    return { buildStepMapSVG: buildStepMapSVG, buildOrderedBoxes: buildOrderedBoxes, stepNumberIndices: stepNumberIndices, partResultGlyph: partResultGlyph,
+    return { buildStepMapHTML: buildStepMapHTML, buildOrderedBoxes: buildOrderedBoxes, stepNumberIndices: stepNumberIndices, partResultGlyph: partResultGlyph,
       ${names.join(', ')} };`)();
 }
 
@@ -63,7 +63,7 @@ const scout = { kind: 'scout', label: 'scout', outcome: null, attempts: [{ n: 1,
 const step = { kind: 'step', id: 's1', label: 's1', occurrence: 1, outcome: 'green', blocked: 0, attempts: [{ n: 1, outcome: 'green' }] };
 
 test('page map: a drafting box comes FIRST with an arrow to scout; it is done, unnumbered, and the first real step is still step 1', (t) => {
-  const { buildOrderedBoxes, stepNumberIndices, buildStepMapSVG } = load();
+  const { buildOrderedBoxes, stepNumberIndices, buildStepMapHTML } = load();
   const boxes = buildOrderedBoxes([realPart(t), scout, step], false);
   assert.deepEqual(boxes.map((b) => b.kind), ['drafting', 'scout', 'step']);
   assert.equal(boxes[0].title, 'drafting');
@@ -71,9 +71,9 @@ test('page map: a drafting box comes FIRST with an arrow to scout; it is done, u
   assert.equal(boxes[0].noNumber, true);
   assert.deepEqual(boxes.map((b) => b.partIndex), [0, 1, 2], 'a box\'s partIndex IS its index in the shown list (the server shifted the rest)');
   assert.deepEqual(stepNumberIndices(boxes), [-1, -1, 0], 'drafting is not a numbered step');
-  const svg = buildStepMapSVG(boxes, 900);
-  assert.ok(svg.indexOf('>drafting<') !== -1 && svg.indexOf('>drafting<') < svg.indexOf('>scout<'), 'drafting is drawn before scout');
-  assert.equal((svg.match(/<line [^>]*>/g) ?? []).length, 2, 'drafting -> scout -> step');
+  const svg = buildStepMapHTML(boxes, 900);
+  assert.ok(svg.indexOf(' drafting]') !== -1 && svg.indexOf(' drafting]') < svg.indexOf(' scout]'), 'drafting is drawn before scout');
+  assert.equal((svg.match(/<button /g) ?? []).length, 3, 'drafting, scout and step: one chip each, in that order');
   assert.equal((svg.match(/data-part-index="0"/g) ?? []).length, 1, 'clicking the drafting box opens part 0');
 });
 

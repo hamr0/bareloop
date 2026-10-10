@@ -1,0 +1,469 @@
+{
+ "_source": "panel session smv0tasvb0u89, deepseek-flash, 2026-10-09: real resolved spec and signing gates of a MIXED rubric close refused at the seed gate despite a passed calibration",
+ "resolvedSpec": {
+  "schema": "job-v1",
+  "job": "rubric-repo",
+  "description": "rubric-repo — authored through the bareloop panel (soft-green, js)",
+  "provider": "openai-api",
+  "baseUrl": "https://api.deepseek.com/v1",
+  "cadence": {
+   "unit": "day",
+   "every": 1
+  },
+  "budgetUsd": 1.5,
+  "maxWallMs": 2400000,
+  "writeScope": [
+   "src/**"
+  ],
+  "escalation": {
+   "mode": "decision-ready"
+  },
+  "goal": "Add a JSDoc block to every exported function in src/ that does not have one, where each block names every parameter (none missing, none that the signature does not have) and states what the function returns, the change touches only comment lines so no function behaviour or signature changes, and the existing test suite still passes.",
+  "verdictType": "soft-green",
+  "closeDecl": {
+   "genre": "TYPES",
+   "lang": "js",
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "src/",
+       "src/**"
+      ]
+     }
+    },
+    {
+     "name": "comment-only-diff",
+     "kind": "pattern-absent-in-diff",
+     "params": {
+      "patterns": [
+       {
+        "id": "added-non-comment-line",
+        "regex": "^(?!\\+\\+\\+)[+ ]?(?!\\s*[*/]).*\\S"
+       }
+      ],
+      "extensions": [
+       ".js"
+      ],
+      "scope": {
+       "includePrefixes": [
+        "src/",
+        "src/**"
+       ]
+      }
+     }
+    },
+    {
+     "name": "suite-exit-clean",
+     "kind": "command-exit",
+     "params": {
+      "cmd": "npm",
+      "args": [
+       "test"
+      ],
+      "expectExit": 0,
+      "timeoutMs": 600000
+     }
+    },
+    {
+     "name": "suite-zero-failures",
+     "kind": "count-not-worse",
+     "params": {
+      "cmd": "npm",
+      "args": [
+       "test"
+      ],
+      "parser": {
+       "terms": [
+        {
+         "lineMatch": "^# fail (\\d+)$",
+         "capture": 1,
+         "sign": 1,
+         "aggregate": "first",
+         "region": "whole-output"
+        }
+       ]
+      },
+      "scope": {
+       "includePrefixes": [
+        "test/"
+       ]
+      },
+      "direction": "lower-is-better",
+      "baseline": 0,
+      "timeoutMs": 600000
+     }
+    },
+    {
+     "name": "tests-kept",
+     "kind": "count-not-worse",
+     "params": {
+      "cmd": "npm",
+      "args": [
+       "test"
+      ],
+      "parser": {
+       "terms": [
+        {
+         "lineMatch": "^# tests (\\d+)$",
+         "capture": 1,
+         "sign": 1,
+         "aggregate": "first",
+         "region": "whole-output"
+        }
+       ]
+      },
+      "scope": {
+       "includePrefixes": [
+        "test/"
+       ]
+      },
+      "direction": "higher-is-better",
+      "baseline": "seed",
+      "timeoutMs": 600000
+     }
+    },
+    {
+     "name": "no-suppressions",
+     "kind": "pattern-absent-in-diff",
+     "params": {
+      "patterns": [
+       {
+        "id": "ts-ignore",
+        "regex": "@ts-ignore"
+       },
+       {
+        "id": "ts-expect-error",
+        "regex": "@ts-expect-error"
+       },
+       {
+        "id": "ts-nocheck",
+        "regex": "@ts-nocheck"
+       },
+       {
+        "id": "eslint-disable",
+        "regex": "eslint-disable"
+       },
+       {
+        "id": "any",
+        "regex": "(?:[{<|(\\[:,]|\\bas)\\s*any\\b|\\bany\\[\\]"
+       },
+       {
+        "id": "any-star",
+        "regex": "@\\w+\\s*\\{\\s*[*?]\\s*\\}"
+       },
+       {
+        "id": "cast",
+        "regex": "@type\\s*\\{.*\\}\\s*\\*\\/\\s*\\("
+       }
+      ],
+      "extensions": [
+       ".js",
+       ".mjs",
+       ".cjs"
+      ]
+     }
+    },
+    {
+     "name": "jsdoc-contract-floor",
+     "kind": "judged-floor",
+     "params": {
+      "card": {
+       "items": [
+        {
+         "rule": "has-doc",
+         "text": "There is a doc comment sitting directly above the function — a function with no doc block at all is the first thing that fails."
+        },
+        {
+         "rule": "says-what",
+         "text": "The doc comment says what the function does — if it only restates the function's own name, it teaches the reader nothing."
+        },
+        {
+         "rule": "params",
+         "text": "Every parameter in the signature is named in the doc with its meaning, and the doc never names a parameter the signature does not have — a wrong or invented parameter makes the doc simply wrong."
+        },
+        {
+         "rule": "returns",
+         "text": "The doc states what the function returns, so the reader can learn the contract without reading the body."
+        }
+       ]
+      },
+      "paths": [
+       "src/index.js",
+       "src/run.js",
+       "src/checks.js",
+       "src/sink.js",
+       "src/backup.js",
+       "src/deliver.js",
+       "src/digest.js",
+       "src/fallback.js"
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "Shape is unchanged from the seed-read measurement: changed-from-seed (which is correctly RED at an untouched seed), the one plan-requested diff check, the suite's two assertions, the executed-tests floor, the mandated no-suppressions guard, then the single judged stage. The two 'gap' lines the seed-read printed are inherent, not defects: the runner's `# tests N` / `# fail N` summary lines name no file, so a path scope can never act on them. The scope includePrefixes [\"test/\"] declares WHICH population those suite-level counters belong to (the tests under test/, the only test prefixes in the seed listing); it is not a filter, and the values read (67 executed, 0 failed) are whole-suite figures as intended.",
+    "Green at seed is the correct and only possible reading for suite-exit-clean, suite-zero-failures and tests-kept: the person asked that the EXISTING suite still pass, which is a regression check, so an untouched seed must be green — they grade the change, not the seed. The population that would be red at seed (exported functions with no/partial JSDoc) cannot be counted by ANY kind in this catalogue, and that absence of a mechanical instrument is exactly why this job was declared soft-green and why it ends in a judged-floor.",
+    "Nothing in the catalogue can read JSDoc structure — not whether an exported function carries a block, not which parameters a block names, not whether it states a return — and nothing can enumerate a directory, so the judged stage can only be pointed at named files, one paid call each. src/ holds 11 files and the card accepts at most 8, so I named 8: the entry barrel, the orchestration/core modules, and the four modules that carry their own test file (backup, deliver, digest, fallback). src/metrics.js, src/email.js and src/dumpers.js therefore escape judgement entirely; that is a real hole in this close and I cannot close it with the kinds available.",
+    "The brief's three 'asked for, but nothing checks them' items, stated rather than claimed: (a) whether the prose actually describes the function's purpose, and (b) whether a block merely restates the function name, are carried only by the judged stage's says-what line, rendered by the arbiter's rulebook over the judge's verbatim quotes — no mechanical stage touches them; (c) whether each @param's MEANING is explained is covered NOWHERE: the card's params line can confirm only that every parameter is named, and that no @param names a parameter the signature lacks. The card also cannot confirm that a function left without a block is genuinely unexported rather than missed.",
+    "The plan's fifth check — 'the change adds only comment lines: no code or signature line in src/ is added, removed, or modified' — is expressed as a diff pattern that flags every ADDED src/*.js line that is not a comment-only line (a line that, after an optional diff '+' or a single leading space, does not begin with whitespace then `*` or `/`, and that contains a non-space character). A modified line reappears as an added line and is caught. A line DELETED without being re-added is invisible: pattern-absent-in-diff inspects added lines only, and no kind in the catalogue inspects removed ones. Behaviour safety therefore rests also on suite-exit-clean and tests-kept, which would catch a deletion that broke anything the tests exercise.",
+    "No typecheck stage is composed. The repo does have `npm run typecheck` (tsc --noEmit, allowJs+checkJs, strictNullChecks) and CI runs it before the tests, so JSDoc-shaped annotations are type-relevant here — but the confirmed plan lists five checks and no typecheck, and this genre adds no check the plan did not ask for. Recorded as a known blind spot: a run could add JSDoc that introduces a new tsc diagnostic and this close would not see it.",
+    "Two interview guardrails are already enforced by the always-on write fence rather than by a stage of mine, so I composed nothing extra for them: 'do not edit tests' (test/** is outside the changed set the fence allows) and 'do not add dependencies' (package.json/package-lock.json are outside it). Likewise 'do not change any function behaviour or signature' rests on the comment-only pattern plus the suite.",
+    "PATH is not pinned. The survey says test/fallback.test.js, test/backup.test.js and test/pulselog.test.js prepend a temp dir to PATH to shadow `mail`, and that bare node/npm/tsc resolution needs a normal POSIX PATH — but it gives no value for PATH (value: null), and I will not invent one that could break npm's own resolution. If the close runs in a stripped environment, those integration tests can fail for the wrong reason.",
+    "allowPrefixes carries both \"src/\" and \"src/**\": the brief states the write fence as a glob and the kind's field is a path prefix, so either spelling admits every file in the seed listing under src/ and neither admits anything a run should not touch.",
+    "The judged stage is placed after no-suppressions rather than before it, the one place the ordering yields: it is the only paid, non-mechanical stage, so cheap-before-expensive (and first-red-wins on a bad diff before paying the judge) puts it last. no-suppressions still precedes every judged call."
+   ],
+   "calibration": {
+    "cases": [
+     {
+      "id": "pass-full-contract",
+      "artifact": "/**\n * Convert a temperature from Celsius to Fahrenheit.\n * @param {number} celsius - the temperature in degrees Celsius\n * @returns {number} the temperature in degrees Fahrenheit\n */\nfunction toFahrenheit(celsius) {\n  return (celsius * 9) / 5 + 32;\n}",
+      "expect": {
+       "verdict": "pass",
+       "reds": []
+      }
+     },
+     {
+      "id": "red-name-echo",
+      "artifact": "/**\n * Parse the date.\n * @param {string} input - the ISO date string to parse\n * @returns {Date} the parsed date\n */\nfunction parseDate(input) {\n  return new Date(input);\n}",
+      "expect": {
+       "verdict": "red",
+       "reds": [
+        {
+         "rule": "says-what",
+         "fn": "parseDate"
+        }
+       ]
+      }
+     },
+     {
+      "id": "red-param-not-in-signature",
+      "artifact": "/**\n * Compute the area of a rectangle.\n * @param {number} width - the rectangle width\n * @param {number} height - the rectangle height\n * @param {number} depth - the rectangle depth\n * @returns {number} the area of the rectangle\n */\nfunction area(width, height) {\n  return width * height;\n}",
+      "expect": {
+       "verdict": "red",
+       "reds": [
+        {
+         "rule": "params",
+         "fn": "area"
+        }
+       ]
+      }
+     },
+     {
+      "id": "red-param-undocumented",
+      "artifact": "/**\n * Join two path segments with a single slash.\n * @param {string} base - the leading path segment\n * @returns {string} the joined path\n */\nfunction joinPath(base, segment) {\n  return base.replace(/\\/$/, \"\") + \"/\" + segment;\n}",
+      "expect": {
+       "verdict": "red",
+       "reds": [
+        {
+         "rule": "params",
+         "fn": "joinPath"
+        }
+       ]
+      }
+     },
+     {
+      "id": "red-missing-returns",
+      "artifact": "/**\n * Sum every number in the list.\n * @param {number[]} values - the numbers to add up\n */\nfunction sum(values) {\n  return values.reduce((a, b) => a + b, 0);\n}",
+      "expect": {
+       "verdict": "red",
+       "reds": [
+        {
+         "rule": "returns",
+         "fn": "sum"
+        }
+       ]
+      }
+     },
+     {
+      "id": "red-no-doc-block",
+      "artifact": "function startWorker() {\n  setInterval(tick, 1000);\n}",
+      "expect": {
+       "verdict": "red",
+       "reds": [
+        {
+         "rule": "has-doc",
+         "fn": "startWorker"
+        }
+       ]
+      }
+     },
+     {
+      "id": "pass-destructured-root-name",
+      "artifact": "/**\n * Insert one row into the given table.\n * @param {Object} options - the insert options\n * @returns {number} the number of inserted rows\n */\nfunction insert({ table, limit = 10 }) {\n  return db.insert(table, limit);\n}",
+      "expect": {
+       "verdict": "pass",
+       "reds": []
+      }
+     },
+     {
+      "id": "red-destructured-partial-fields",
+      "artifact": "/**\n * Compute the midpoint between the origin and the given point.\n * @param {number} x - the x coordinate\n * @returns {Object} the midpoint coordinates\n */\nfunction midpoint({ x, y }) {\n  return { x: x / 2, y: y / 2 };\n}",
+      "expect": {
+       "verdict": "red",
+       "reds": [
+        {
+         "rule": "params",
+         "fn": "midpoint"
+        }
+       ]
+      }
+     },
+     {
+      "id": "pass-no-args-no-return",
+      "artifact": "/**\n * Reset the in-memory cache to an empty state.\n */\nfunction clearCache() {\n  cache = new Map();\n}",
+      "expect": {
+       "verdict": "pass",
+       "reds": []
+      }
+     },
+     {
+      "id": "red-name-echo-wrong-param-no-returns",
+      "artifact": "/**\n * Format the date.\n * @param {Date} when - the date to format\n * @param {string} locale - the locale to format with\n */\nfunction formatDate(when) {\n  return when.toISOString().slice(0, 10);\n}",
+      "expect": {
+       "verdict": "red",
+       "reds": [
+        {
+         "rule": "says-what",
+         "fn": "formatDate"
+        },
+        {
+         "rule": "params",
+         "fn": "formatDate"
+        },
+        {
+         "rule": "returns",
+         "fn": "formatDate"
+        }
+       ]
+      }
+     }
+    ],
+    "judgeModel": "deepseek-flash"
+   }
+  }
+ },
+ "signing": {
+  "ok": false,
+  "refusal": {
+   "kind": "decision-ready",
+   "verb": null,
+   "path": "closeDecl",
+   "detail": "No work stage of this close is RED at the seed, so the close already passes on the untouched repository: there is nothing for a run to do, and an instrument that measures nothing reads clean the same way one that measures correctly does.",
+   "options": [
+    "check the close is measuring the right thing (a tool that scans nothing exits clean)",
+    "re-author the close from a sharper description of what is wrong today",
+    "the job may already be done — abandon it"
+   ],
+   "red": null
+  },
+  "work": [
+   {
+    "stage": "comment-only-diff",
+    "kind": "pattern-absent-in-diff",
+    "verdict": "green",
+    "value": null,
+    "baseline": null,
+    "baselineSource": null,
+    "guard": false,
+    "gap": []
+   },
+   {
+    "stage": "suite-exit-clean",
+    "kind": "command-exit",
+    "verdict": "green",
+    "value": null,
+    "baseline": null,
+    "baselineSource": null,
+    "guard": false,
+    "gap": []
+   },
+   {
+    "stage": "suite-zero-failures",
+    "kind": "count-not-worse",
+    "verdict": "green",
+    "value": 0,
+    "baseline": 0,
+    "baselineSource": "declared 0",
+    "guard": false,
+    "gap": [
+     "close: suite-zero-failures: term 0: 1 matching line(s) named no path, so the scope filter could not judge them — they were KEPT"
+    ]
+   },
+   {
+    "stage": "tests-kept",
+    "kind": "count-not-worse",
+    "verdict": "green",
+    "value": 67,
+    "baseline": 67,
+    "baselineSource": "measured IN PLACE — the working tree is verifiably identical to the seed",
+    "guard": false,
+    "gap": [
+     "close: tests-kept: term 0: 1 matching line(s) named no path, so the scope filter could not judge them — they were KEPT"
+    ]
+   },
+   {
+    "stage": "jsdoc-contract-floor",
+    "kind": "judged-floor",
+    "verdict": "skipped",
+    "value": null,
+    "baseline": null,
+    "baselineSource": null,
+    "guard": false,
+    "gap": []
+   }
+  ],
+  "guards": [
+   {
+    "stage": "changed-from-seed",
+    "kind": "files-changed",
+    "verdict": "red",
+    "value": null,
+    "baseline": null,
+    "baselineSource": null,
+    "guard": true,
+    "gap": [
+     "close: changed-from-seed: nothing changed against the seed — the changed set is empty"
+    ]
+   },
+   {
+    "stage": "no-suppressions",
+    "kind": "pattern-absent-in-diff",
+    "verdict": "green",
+    "value": null,
+    "baseline": null,
+    "baselineSource": null,
+    "guard": true,
+    "gap": []
+   }
+  ],
+  "gates": {
+   "seedVerdict": {
+    "ok": false,
+    "redAtSeed": [
+     "changed-from-seed"
+    ],
+    "greenAtSeed": [
+     "comment-only-diff",
+     "suite-exit-clean",
+     "suite-zero-failures",
+     "tests-kept",
+     "no-suppressions"
+    ],
+    "workRed": []
+   },
+   "calibration": {
+    "ok": true,
+    "stop": null,
+    "judgeModel": "deepseek-flash",
+    "failures": [],
+    "casualty": null,
+    "spendComplete": true,
+    "calls": 15
+   }
+  }
+ }
+}

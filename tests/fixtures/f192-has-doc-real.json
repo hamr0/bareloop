@@ -1,0 +1,99 @@
+{
+ "full-contract-pass": {
+  "artifact": "/**\n * Formats a byte count as a human-readable string such as \"1.4 MB\".\n *\n * @param {number} bytes - the number of bytes to format; must be zero or greater.\n * @param {number} [decimals=1] - how many digits to keep after the decimal point.\n * @returns {string} the formatted size, with a unit suffix such as \"KB\" or \"MB\".\n */\nfunction formatBytes(bytes, decimals = 1) {\n  const units = ['B', 'KB', 'MB', 'GB', 'TB'];\n  let i = 0;\n  let n = bytes;\n  while (n >= 1024 && i < units.length - 1) {\n    n /= 1024;\n    i += 1;\n  }\n  return `${n.toFixed(decimals)} ${units[i]}`;\n}\n\nmodule.exports = { formatBytes };",
+  "facts": {
+   "functions": [
+    {
+     "name": "formatBytes",
+     "declarationQuote": "function formatBytes(bytes, decimals = 1) {",
+     "docQuote": " * Formats a byte count as a human-readable string such as \"1.4 MB\".",
+     "paramNames": [
+      "bytes",
+      "decimals"
+     ],
+     "paramIsPattern": [
+      false,
+      false
+     ],
+     "paramTagNames": [
+      "bytes",
+      "decimals"
+     ],
+     "returnsTagQuote": " * @returns {string} the formatted size, with a unit suffix such as \"KB\" or \"MB\".",
+     "returnsValueQuote": "  return `${n.toFixed(decimals)} ${units[i]}`;"
+    }
+   ]
+  }
+ },
+ "clamp-contract-pass": {
+  "artifact": "/**\n * Clamps a number to the inclusive range [min, max].\n *\n * @param {number} value - the number to clamp.\n * @param {number} min - the lower bound, returned when value falls below it.\n * @param {number} max - the upper bound, returned when value rises above it.\n * @returns {number} value, min or max, whichever lies inside the range.\n */\nfunction clamp(value, min, max) {\n  return Math.min(Math.max(value, min), max);\n}\n\nexport default clamp;",
+  "facts": {
+   "functions": [
+    {
+     "name": "clamp",
+     "declarationQuote": "function clamp(value, min, max) {",
+     "docQuote": " * Clamps a number to the inclusive range [min, max].",
+     "paramNames": [
+      "value",
+      "min",
+      "max"
+     ],
+     "paramIsPattern": [
+      false,
+      false,
+      false
+     ],
+     "paramTagNames": [
+      "value",
+      "min",
+      "max"
+     ],
+     "returnsTagQuote": " * @returns {number} value, min or max, whichever lies inside the range.",
+     "returnsValueQuote": "  return Math.min(Math.max(value, min), max);"
+    }
+   ]
+  }
+ },
+ "two-functions-pass": {
+  "artifact": "/**\n * Turns an Express-style query string into a plain object.\n *\n * @param {string} search - the query string, with or without a leading \"?\".\n * @returns {Object} an object whose keys are the query parameter names.\n */\nfunction parseQuery(search) {\n  const out = {};\n  new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)\n    .forEach((v, k) => { out[k] = v; });\n  return out;\n}\n\n/**\n * Serialises a plain object back into a query string.\n *\n * @param {Object} params - key/value pairs to encode; nested values are JSON-encoded.\n * @param {boolean} encode - whether to percent-encode each key and value.\n * @returns {string} the query string, without a leading \"?\".\n */\nfunction buildQuery(params, encode) {\n  return Object.entries(params)\n    .map(([k, v]) => [encode ? encodeURIComponent(k) : k, encode ? encodeURIComponent(v) : v])\n    .map(([k, v]) => `${k}=${v}`)\n    .join('&');\n}",
+  "facts": {
+   "functions": [
+    {
+     "name": "parseQuery",
+     "declarationQuote": "function parseQuery(search) {",
+     "docQuote": " * Turns an Express-style query string into a plain object.",
+     "paramNames": [
+      "search"
+     ],
+     "paramIsPattern": [
+      false
+     ],
+     "paramTagNames": [
+      "search"
+     ],
+     "returnsTagQuote": " * @returns {Object} an object whose keys are the query parameter names.",
+     "returnsValueQuote": "return out;"
+    },
+    {
+     "name": "buildQuery",
+     "declarationQuote": "function buildQuery(params, encode) {",
+     "docQuote": " * Serialises a plain object back into a query string.",
+     "paramNames": [
+      "params",
+      "encode"
+     ],
+     "paramIsPattern": [
+      false,
+      false
+     ],
+     "paramTagNames": [
+      "params",
+      "encode"
+     ],
+     "returnsTagQuote": " * @returns {string} the query string, without a leading \"?\".",
+     "returnsValueQuote": "return Object.entries(params)"
+    }
+   ]
+  }
+ }
+}

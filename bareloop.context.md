@@ -67,7 +67,7 @@ inherited rule carries the green that minted it and the contrast that attributed
   an unknown provider name THROWS there, it never falls back to a default. Per-model
   request-key gating lives in that table: `deepseek-flash` sets bare-agent's
   `legacyMaxTokens`, because DeepSeek silently ignores `max_completion_tokens` and an
-  output cap that does not bind is a money hazard. `provider: 'gemini-api'` (PRD item 31.3)
+  output cap that does not bind is a money hazard. The judge's calls additionally carry a per-model, judge-only `thinking:{type:'disabled'}` (allow-list `OPENAI_JUDGE_CALL_OPTIONS`, read through `judgeCallOptions`, applied by `defaultJudgeLoop`; F192) because deepseek-flash's default thinking ate the 4000-token locate budget; workers and the drafter are untouched. `provider: 'gemini-api'` (PRD item 31.3)
   takes the same `Loop` path, reads `GEMINI_API_KEY`, and maps two real tiers
   (`sonnet` → `gemini-2.5-pro`, `haiku` → `gemini-2.5-flash`). It is
   **ADMITTED-PENDING-PROBE**: it has ZERO runs, and the probe rule is not waived for it —
@@ -677,6 +677,16 @@ attempt PLUS its close. Unpriced is never free: a null cost is a `pricing-red` s
 never retried, and the ladder is otherwise ONE retry (`JUDGE_ATTEMPTS`) — after that a broken
 judge is an instrument stop, never a red about the tree.
 
+**The rulebook, and what each rule can raise** (`JUDGE_RULES` in `src/judged.js`; every rule carries a plain-words `means` the case-proposal prompt renders, so a proposed practice case never expects a red the rule cannot raise). The judge only POINTS (quotes lines verbatim); code does every check; unsure is red; the judge never says pass/fail. Quotes are matched by bareguard's `quoteIn(..., {wholeLines:true})` (bareguard `^0.21.0`): a contiguous run of whole artifact lines, so a bare fragment cannot pass by hiding in a longer line, while a dropped leading `* ` of a JSDoc tag line still matches. `has-doc` checks only that a JSDoc block sits directly above the function (read off the artifact by `docBlockAbove`; the judge's quote is a pointer that must lie inside that block), so a documented function never breaks it. **`says-what`** (the doc's description must say more than the function's own name) reds when the described prose, minus a fixed list of function words and the name's own words (camel/snake/kebab, light inflections, and a prefix echo such as `init`/`initialize` when the shorter word is at least 4 letters), leaves nothing; no description, or an unlocatable quote, reds. It catches a pure name echo only ("Returns the total." for `getTotal` passes), and with NO doc block at all it stays silent and leaves the red to `has-doc` (the card is not required to carry both). `params` reds a declared parameter with no tag, an `@param` naming no parameter (each destructured slot absorbs one unmatched root tag), and, when the doc names any field of a simple destructured parameter, a missing field; `@param options` alone for `{ x, y }` passes. `returns` reds a returning function with no `@returns`. A practice case that expects a `has-doc` red on a function that has a block is refused as a legality red before any call (`validateCalibrationSet`).
+
+**A judged stage may only judge files inside the job's write fence** (`judgedOutsideFence`, `src/authoring.js`, called from `validateDeclaration`, which every door reaches: the authoring revise loop, `validateCloseDecl` at signing and runner pre-flight, and `validateJob` for hand-written or reused specs). A path outside `writeScope` reds `judged-outside-write-scope` at draft time, because a finding on a file the run is fenced out of can never be fixed. With no fence to compare against (the plain-folder deferral) the rule is not run.
+
+**One red count.** A judged stage's red COUNT is the number of distinct failing functions it itemizes (`redCount`/`redSet` on the stage detail, `src/kinds.js`; an unsure entry counts as one). The same number is the gap headline ("N red(s) across M of K artifact(s)") and the trend value the close-trend governor compares to best-so-far, direction always down (`trendValueOf`, `src/declaredclose.js`), so a repeated or growing judged failure strikes like any numeric stage instead of running to the wall. Spines written before this change carry the old headline (the card-item count).
+
+**A refused draft or signing says WHY in plain words.** `proposalStopText` (a refused rubric proposal: `proposal-invalid` / `rubric-invalid`) and `signingStopText` (refused signing gates) in `src/authorreadout.js` are the one owner of the wording, printed by the panel's failed step and the CLI alike: code-written sentences per red kind naming the case and function, the real spend so far, and what to do; a practice-case/check mismatch is not claimed to be anyone's fault; an unknown red code is quoted, never dropped. The full scrubbed reds go into the session's `draft-log.jsonl` as a `step-reds` record, and the calibrating line shows the gate's real result (`calibrationSummary`: "N of 10 practice cases graded right, M of 5 attack tests resisted").
+
+**The worker is warned about the `any` suppression guard.** A job whose actual close stages carry the js `any` suppression pattern gets one extra genre-owned line in the worker system prompt (`ANY_SUPPRESSION_WARNING`, `anySuppressionWarning`, `src/authoring.js`): the guard scans added comment lines too, so prose like `, any` trips it. The guard regex itself is unchanged.
+
 **The two SIGNED artifacts of a judged close** (softgreen module 4, design §4.3/§4.4). The
 softgreen interview's Judge Examples answer (PRD item 33 M3 piece 3 — one example to pass, one
 to fail, and why; formerly two questions, Q6+Q7) compiles into the RUBRIC CARD and the FROZEN
@@ -745,12 +755,13 @@ signing record keeps WHAT was certified — `cardHash`, `casesHash`, `setHash` (
 resolved judge identity), the graded rows and the battery — beside `judgeModel` itself.
 `runCalibration` takes `judgeModel` as a REQUIRED argument and throws without one.
 
-**D9.3 for a judged-ONLY close** (ruling 3, hamr: *"fix it now, we are delivering softgreen"*).
-A judged stage skips the seed read (ruling 8), so a close whose only work stage is judged has no
-seed red and used to be unsignable — the one job shape softgreen exists for. For that shape only,
-a PASSED calibration gate plays the seed-red role (the polarity law makes *this close can fail* a
-demonstrated fact), and the record says so: `gates.seedVerdict.satisfiedBy === 'calibration'`. A
-close with any mechanical work stage is UNCHANGED and still needs its seed red.
+**D9.3 for a close with a judged stage** (ruling 3, hamr: *"fix it now, we are delivering softgreen"*;
+widened 2026-10-09: *"a rubric job should check if judge can judge (calibration) ... we can't close
+everything upfront"*). A judged stage skips the seed read (ruling 8), so it can never be red at seed. For
+ANY close carrying a judged stage, pure or mixed with mechanical stages, a PASSED calibration gate plays the
+seed-red role (`seedProofIsCalibration`), and the record says so when no mechanical stage is red itself:
+`gates.seedVerdict.satisfiedBy === 'calibration'`. A failed or missing calibration never satisfies it. A close
+with NO judged stage is UNCHANGED and still needs a work stage red at the seed.
 
 **THE JUDGE TIER IS INSIDE THE SIGNATURE, and the stage refuses a mismatch.** *"A judge-model
 bump forces a full recalibration"* used to be an operator-side rule with nothing to fire on,
@@ -1863,7 +1874,7 @@ hand them to the one `Loop` that drives worker, scout and planner rounds; the ru
 them once. No price on the row = no `rates` key anywhere = the guesstimate above, byte-identical to
 before. bareloop keeps no price list of its own, ever.
 
-**The provenance is on the record, per round (`rateSource`).** The pinned bare-agent (`^0.43.0`)
+**The provenance is on the record, per round (`rateSource`).** The pinned bare-agent (`^0.49.0`)
 carries it on every metering payload, and bareloop forwards it VERBATIM (`rateSourceFields`,
 `src/planrun.js`): every API `worker-round` (worker, scout, planner, fix loop) carries it beside
 `pricing` today — `'caller'` when a customer price is on the key's row, else `'tier'`/`'default'`
@@ -3453,13 +3464,13 @@ key you want first (the panel picks the row by the Model menu).
   re-attaches to it from the server's session map (nothing is stored page-side). A panel restart mints a new token and
   loses the in-memory sessions: the page then shows one "reload this page" line and stops the Chat poll (no auto-reload;
   drafting money already spent stays booked via `draft-spend.json`, below). `GET /api/author/:id` polls the session's state
-  (phase, chat messages, cost, `revisesLeft`, `specHash` once prepared). `POST /api/author/
+  (phase, chat messages, cost, `specHash` once prepared). `POST /api/author/
   :id/send {text}` answers whatever the confirm turn is currently asking (the `language` pick or a plan's
   own follow-up question — the old `worseThanBefore` ask is retired, 2026-09-28) — refused outright when the pending ask is the
-  plan MENU itself (`{ok:false}`, no route from chat text to a plan decision, ever). `POST
-  /api/author/:id/revise {text}` is the menu's own `fix` pick, with the chat text as the
-  correction (D3: max 2 rounds, `revisesLeft` derived from the confirm turn's own round
-  number, never a second hardcoded cap). `POST /api/author/:id/sign-prepare` is the menu's
+  plan MENU itself (`{ok:false}`, no route from chat text to a plan decision, ever). There is no
+  typed-revise route (2026-10-09): the panel's **Revise** button, shown only while a plan waits for the OK,
+  abandons the draft (`/abandon`; spend already booked stays booked) and reopens the New job card with the same
+  values in every box, editable, for a fresh Start drafting; no change request is ever sent to the model. `POST /api/author/:id/sign-prepare` is the menu's
   own `confirm` pick — it runs gates 1–4 and reaches `phase:'prepared'` with a `specHash`; it
   NEVER signs. `POST /api/author/:id/sign {specHash}` is the ONLY route that spawns a run —
   it refuses unless `phase==='prepared'` and the posted hash matches the session's own
@@ -3471,7 +3482,7 @@ key you want first (the panel picks the row by the Model menu).
   server's environment with `~/.config/bareloop/.env` merged in per request (a key is never read
   into or sent to the page — a missing one refuses the session at $0, naming only the env var). `src/panel/authorsession.js` takes
   test-only DI seams (`scout`/`generate`/`confirmGenerate`/`authorFn`/`prepareSigningFn`) so
-  a test can drive the real ask()-channel/revise/hash wiring without a live provider call;
+  a test can drive the real ask()-channel/hash wiring without a live provider call;
   none of them are reachable from `authorroutes.js`'s real construction path. Sessions live
   under `~/.config/bareloop/panel-sessions/<id>/` (each one's own `resolved-spec.json` and
   `signing.json`, the two files `bareloop author` itself already writes). Edit/re-sign, the
@@ -3516,7 +3527,7 @@ key you want first (the panel picks the row by the Model menu).
   died, else failed. A run that DIED (no `job-end`, runner gone) leaves its last part in flight: when that part has no outcome
   and no cut-off, the server marks it `died` (`[?] died`), never the "happened, so passed" default — replay alone cannot tell
   died from still running, so `getRunDetail` decides it from the same `death` verdict as the run's status. A live run's open
-  part stays running; a part that finished before the death keeps its own status. The page's map box reads `[sign] word` (the live part reads `[▶] running`); the step cards and Audit rows
+  part stays running; a part that finished before the death keeps its own status. The page's step map is a row of fit-to-text chips that flow and wrap (no truncation, no horizontal scroll), `[sign title]` each, in plan order, with an arrow between neighbours and a leading arrow on a wrapped line; the status word (from the same table) rides in the chip's tooltip, a retried step has a dashed border and a `↻N` tries mark, a leg boundary a dotted right edge, and a click jumps to that part's Audit row (the live part reads `[▶]`); the step cards and Audit rows
   show the word only; no surface says "done".
   **Resume (item 2)** → `POST /api/runs/:runid/resume` (`src/panel/runroutes.js`), behind
   `checkHumanGuard` (token + own address, like `/api/author/*`); body `{budgetUsd?, maxWallMin?}`

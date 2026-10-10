@@ -52,6 +52,7 @@ import { closeJudges } from '../kinds.js';
 import { redactSecrets } from '../validate.js';
 import { tallyCalls } from '../text.js';
 import { writeDraftSpend, appendDraftLog } from '../draftspend.js';
+import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, redsRecord, calibrationSummary } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 
 /**
@@ -132,13 +133,24 @@ const SOURCE_CHECK_CODES = new Set([
   'source-file-oversize', 'source-changed-after-scan', 'source-untracked-in-repo',
 ]);
 
-/** the confirm turn's own fixed round cap (`src/authorflow.js`'s
- * `runConfirmTurn`: `for (let round = 1; round <= 2; round += 1)`) — named
- * here, once, rather than re-guessed at every `onPhase('confirm-round')`
- * below. Not itself exported from the library as a named constant (it is
- * the loop bound the confirm turn's own doc calls "D3" / "ruling 5"); this is
- * this file's one place that would need editing if that cap ever changed. */
-const CONFIRM_ROUND_CAP = 2;
+/**
+ * The confirm turn's plan as the chat shows it: ONE owner of the text (hamr, 2026-10-09: the one-blob "Plan: ...
+ * Checks: ... Not checked: ..." was unreadable). Each section is a heading on its own line, its content on the next,
+ * and a blank line between sections. `#NOT CHECKED:` and `#QUESTIONS:` appear only when there is something to say.
+ * The CLI composes its own plan screen (src/authorrun.js) and shares no text with this one.
+ * @param {{goal?: string, checks?: string[], notChecked?: string[], questions?: string[]}} p
+ * @returns {string}
+ */
+export function planText(p) {
+  const sections = [
+    `#PLAN:\n${JSON.stringify(p.goal ?? '')}`,
+    `#CHECKS:\n${(p.checks ?? []).join(' · ') || '(none)'}`,
+  ];
+  if ((p.notChecked ?? []).length) sections.push(`#NOT CHECKED:\n${(p.notChecked ?? []).join(' · ')}`);
+  if ((p.questions ?? []).length) sections.push(`#QUESTIONS:\n${(p.questions ?? []).join(' · ')}`);
+  sections.push('Sign & run to confirm this plan, or Revise to edit the boxes and draft again.');
+  return sections.join('\n\n');
+}
 
 /** @param {string} name @returns {boolean} kebab-case slug, same rule `job.js`'s `SLUG_RE` enforces */
 function isSlug(name) {
@@ -304,7 +316,7 @@ export function validateJobCard(card, opts = {}) {
 /**
  * ONE session's engine — created already RUNNING (the caller awaits nothing;
  * the pipeline drives itself, reporting through `state`). `state.pendingAsk`
- * is the ONE thing a person answers next; `answer()`/`send()`/`revise()`/
+ * is the ONE thing a person answers next; `answer()`/`send()`/
  * `signPrepare()` are the only ways in.
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
@@ -322,7 +334,7 @@ export function createSession(card, deps = {}) {
   const timeoutMs = deps.timeoutMs ?? 300_000;
   // TEST SEAMS ONLY (never set by `src/panel/authorroutes.js`'s real caller):
   // override the declaration composer and/or `prepareSigning` itself so a
-  // test can drive the REAL confirm turn / ask() channel / revise-round /
+  // test can drive the REAL confirm turn / ask() channel /
   // hash-matching machinery this file owns, without also re-running (and
   // re-proving) `authorClose`'s own composer ladder or `prepareSigning`'s own
   // gates — both already have their own test suites. Absent, both default to
@@ -342,7 +354,6 @@ export function createSession(card, deps = {}) {
     messages: /** @type {{role: string, text: string}[]} */ ([]),
     pendingAsk: /** @type {any} */ (null),
     cost: /** @type {any} */ (null),
-    revisesLeft: CONFIRM_ROUND_CAP,
     specHash: /** @type {string|null} */ (null),
     resolvedSpecPath: /** @type {string|null} */ (null),
     error: /** @type {string|null} */ (null),
@@ -436,15 +447,9 @@ export function createSession(card, deps = {}) {
     resolvePending = resolveFn;
     if (step.kind === 'language') say('bot', `${step.field?.prompt ?? 'Which language is this job about?'} (${(step.candidates ?? []).join(', ')})`);
     else if (step.kind === 'menu') {
-      const p = step.plan ?? {};
-      const lines = [`Plan: ${JSON.stringify(p.goal ?? '')}`, `Checks: ${(p.checks ?? []).join(' · ') || '(none)'}`];
-      if ((p.notChecked ?? []).length) lines.push(`Not checked: ${p.notChecked.join(' · ')}`);
-      if ((p.questions ?? []).length) lines.push(`Questions: ${p.questions.join(' · ')}`);
-      lines.push('Sign & run to confirm this plan, or Revise to describe a change.');
-      say('bot', lines.join('\n'));
+      say('bot', planText(step.plan ?? {}));
     } else if (step.kind === 'answer') say('bot', `A question the plan raised (${step.index} of ${step.total}): ${step.question}`);
     else if (step.kind === 'goal') say('bot', 'Type the goal sentence yourself.');
-    else if (step.kind === 'fix') say('bot', 'What should change?');
   });
 
   /** @param {string|null} value @returns {boolean} */
@@ -457,21 +462,7 @@ export function createSession(card, deps = {}) {
     return true;
   };
 
-  /** @param {'menu'|'fix'|'answer'|'language'|'goal'} kind @param {number} timeoutMsInner */
-  const waitForPendingKind = async (kind, timeoutMsInner = 2000) => {
-    const start = Date.now();
-    while (Date.now() - start < timeoutMsInner) {
-      if (state.pendingAsk?.kind === kind) return true;
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise((r) => { setTimeout(r, 10); });
-    }
-    return state.pendingAsk?.kind === kind;
-  };
-
   const onPhase = (name, data = {}) => {
-    if (name === 'confirm-round' && typeof data.round === 'number') {
-      state.revisesLeft = Math.max(0, CONFIRM_ROUND_CAP - (data.round - 1));
-    }
     // COLLAPSED INTO THE PROGRESS INDICATOR ONLY (build item 3) — this used
     // to also `say('system', `… ${name}`)`, one jargon chat bubble per
     // library phase (`… confirm-turn-done`, `… seed-read`, …), read back to
@@ -764,9 +755,28 @@ export function createSession(card, deps = {}) {
       });
       const signingFile = join(outDir, 'signing.json');
       writeFileSync(signingFile, `${JSON.stringify(signing, null, 2)}\n`);
+      // The `calibrating` line is the rubric phase the person watched; its ✓ was set long before the gate graded
+      // anything. Once the gate has a result, the line says THAT, on its own line (hamr, 2026-10-09).
+      const calSum = calibrationSummary(signing.gates?.calibration);
+      const calStep = latestStep(state.steps, 'calibrate');
+      if (calSum && calStep) {
+        calStep.status = calSum.ok ? 'done' : 'failed';
+        calStep.detail = calSum.note;
+        logSteps();
+      }
 
       if (!signing.ok) {
-        refuse(`signing gates failed — ${signing.reds.map((r) => r.code).join(', ') || 'no work red at seed'}`);
+        // plain words for the person (src/authorreadout.js, the one owner the CLI prints too); the full reds go into
+        // the drafting log on the failed step, so the cause survives the session
+        const runningNo = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
+        appendDraftLog(outDir, {
+          kind: 'step-reds', no: runningNo === -1 ? state.steps.length - 1 : runningNo, stop: 'signing-gates-failed',
+          reds: redsRecord(signing.reds ?? [], { signing: true }), at: new Date().toISOString(),
+        });
+        refuse(signingStopText({
+          reds: signing.reds ?? [], refusal: signing.refusal,
+          spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete },
+        }));
         return;
       }
       state.specHash = signing.specHash;
@@ -840,7 +850,7 @@ export function createSession(card, deps = {}) {
     // TEST SEAMS (see the constructor's own note): a test overrides
     // `generate`/`confirmGenerate` directly (bypassing this real, constructed
     // `provider` for the model boundary) and/or `scout` (bypassing the real
-    // paid scout) so it can drive the REAL confirm turn/ask()/revise/hash
+    // paid scout) so it can drive the REAL confirm turn/ask()/hash
     // machinery below with a deterministic fake, never a live provider call.
     // no NEW model call starts after an abandon; a call already in flight books its usage via onCall and is discarded
     const noCallAfterAbandon = (fn) => (...a) => { if (abandoned) throw new Error('abandoned — no new model call'); return fn(...a); };
@@ -865,6 +875,23 @@ export function createSession(card, deps = {}) {
       ...(authorFnOverride ? { authorFn: authorFnOverride } : {}),
     });
 
+    if (!authored.ok && PLAIN_PROPOSAL_STOPS.includes(String(authored.stop))) {
+      // a refused rubric proposal: the person gets the reason in plain words (src/authorreadout.js, the one owner the
+      // CLI prints too), and the full reds go into the drafting log on the failed step so the cause survives the session
+      const cases = authored.judged?.signed?.cases ?? authored.judged?.proposal?.proposal?.cases ?? null;
+      const reds = authored.reds ?? [];
+      const runningNo = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
+      appendDraftLog(outDir, {
+        kind: 'step-reds', no: runningNo === -1 ? state.steps.length - 1 : runningNo, stop: authored.stop,
+        reds: redsRecord(reds, { cases }), at: new Date().toISOString(),
+      });
+      refuse(proposalStopText({
+        stop: String(authored.stop), reds, cases,
+        spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete },
+        source: authored.judged?.source === 'signer' ? 'signer' : 'proposal',
+      }));
+      return;
+    }
     if (!authored.ok) {
       refuse(`Stopped: ${authored.stop ?? 'authoring-failed'}${authored.refusal ? ` — ${authored.refusal.detail}` : ''}`, authored.stop === 'confirm-abandoned' ? 'abandoned' : 'refused');
       return;
@@ -888,7 +915,7 @@ export function createSession(card, deps = {}) {
     /** @param {string} text */
     send: (text) => {
       if (!state.pendingAsk) return { ok: false, error: 'nothing is being asked right now' };
-      if (state.pendingAsk.kind === 'menu') return { ok: false, error: 'use Sign & run or Revise for a plan, never Send — the chat can never sign or pick a plan action' };
+      if (state.pendingAsk.kind === 'menu') return { ok: false, error: 'use Sign & run for a plan, never Send — the chat can never sign or pick a plan action' };
       if (state.pendingAsk.kind === 'install-needed') return { ok: false, error: 'install the packages, then click Check again — nothing to send here' };
       say('you', text);
       answer(text);
@@ -915,17 +942,6 @@ export function createSession(card, deps = {}) {
       const r = resolveDepsCheck;
       resolveDepsCheck = null;
       r();
-      return { ok: true };
-    },
-    /** @param {string} text */
-    revise: async (text) => {
-      if (!state.pendingAsk || state.pendingAsk.kind !== 'menu') return { ok: false, error: 'no plan is waiting for a Revise right now' };
-      if (state.revisesLeft <= 0) return { ok: false, error: 'no revises left (D3: max 2 rounds)' };
-      answer('fix');
-      const reached = await waitForPendingKind('fix', 3000);
-      if (!reached) return { ok: false, error: 'the confirm turn did not ask for a fix in time' };
-      say('you', text);
-      answer(text);
       return { ok: true };
     },
     /** click 1 — the confirm pick. Never signs on its own. */
