@@ -1169,7 +1169,7 @@ export function nonRepoSourceMessage(kind) {
  *     outside-the-repo inputs arrive with the plain-folder piece);
  *   - a path that does not exist, or that git does not track (a repo job would not see it);
  *   - the front door's own refusals for a file: an environment file by NAME, a symlink, a non-text file, an oversize
- *     file, and a known secret shape in its content (the NAME of the pattern is reported, never the match).
+ *     file. A known secret shape in its content is NOT a refusal (masked where recorded, as the P6 worktree door does).
  * A folder value is checked for existence and tracking only (its files are the repo's own, which the worktree door
  * already masks). Reads the tree; writes nothing.
  * @param {{n: number, label: string, value: string}[]} inputs the parsed Inputs (`parseInputs`)
@@ -1214,8 +1214,9 @@ export async function proveInputFiles(inputs) {
     if (ls.size > MAX_BUFFER) return bad(n, `${value} is over the ${MAX_BUFFER}B per-file ceiling`);
     const buf = await readFile(abs);
     if (hasNulByte(buf.subarray(0, 8192))) return bad(n, `${value} is not a text file — text only for now`);
-    const names = secretPatternNames(buf.toString('utf8'));
-    if (names.length) return bad(n, `${value} carries a known secret shape (${names.join(', ')}) — refused (secrets never enter a job)`);
+    // a secret-shaped CONTENT is not refused (P6 worktree repo door, hamr 2026-10-05 Q2=A, same ruling for inputs): the file is
+    // the person's own, left in place; bareloop masks a secret wherever IT records one (`redactSecrets`, the one inventory) and
+    // never copies this file's text into a record — only its path travels. `.env` by name and symlinks stay refused above.
   }
   return { ok: true, repo, root };
 }

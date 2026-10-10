@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { parseJobBlock, parseInputs, renderJobLines, renderExamples, renderInputs } from '../src/jobblock.js';
 import { proveInputFiles } from '../src/source.js';
+import { redactSecrets } from '../src/validate.js';
 
 test('plain lines are numbered 1, 2, 3 and empty lines are ignored', () => {
   const r = parseJobBlock('Fix the tests\n\n  Keep the API  \nMake npm test pass\n');
@@ -103,8 +104,10 @@ test('proveInputFiles: line 1 the repo, lines 2+ tracked files inside it; each m
     assert.match(await err(`repo: ${repo}\nenv: .env`), /line 2: .* environment file/);
     assert.match(await err(`repo: ${repo}\nl: docs/link.md`), /line 2: .* symlink/);
     assert.match(await err(`repo: ${repo}\nb: docs/bin.dat`), /line 2: .* not a text file/);
-    const secret = await err(`repo: ${repo}\nk: docs/keys.md`);
-    assert.match(secret, /line 2: .* known secret shape/);
-    assert.ok(!secret.includes('sk-ant'), 'the match itself is never echoed');
+    // a secret-shaped CONTENT is masked where recorded, never refused (P6 worktree door ruling); .env by name and symlinks stay refused
+    const keyed = await run(`repo: ${repo}\nk: docs/keys.md`);
+    assert.equal(keyed.ok, true, JSON.stringify(keyed));
+    assert.ok(!JSON.stringify(keyed).includes('sk-ant'), 'the file\'s text is never carried into the result');
+    assert.equal(redactSecrets(`key sk-ant-api03-${'B'.repeat(95)}`).includes('sk-ant'), false, 'the ONE masking owner masks that very shape');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
