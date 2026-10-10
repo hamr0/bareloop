@@ -998,3 +998,62 @@ Rulings by hamr 2026-10-07/08, built on `feat/panel-run-page`.
 - **Capped on every surface**: `capKindOf` (`src/legs.js`) is the one cap rule for the run status, a leg's stop reason and the open step of a single-leg run. A stop in the close-fix loop reads "during the fix phase".
 - **Picker and list**: the Reuse picker reads Loading… until its list arrives and a Check type radio never blanks typed boxes; an expanded job shows its latest 7 other runs, older ones by search.
 - Not seen live yet: phone width, the fix-phase stop text, the already-green Edit in chat ending.
+
+## Addendum 2026-10-10 — P7 — "The job" block, numbered Inputs, linked checks, Signed row (signed by hamr 2026-10-10)
+
+Screen signed by hamr 2026-10-10: scratchpad mock `job-block-mock.html` (copied to `design/job-block-mock.html` with this addendum).
+
+### What the person sees
+
+**Chat card, both check types.** Fields in order: Check type, Model, Job name, **The job**, **Inputs**, Destination, Cap $ / Time cap.
+- Goal, Success, Guardrails and Judge examples boxes are GONE (panel and CLI interview). Success is a guardrail.
+- **The job:** one multi-line box. Each plain line gets a number (1, 2, 3…) in a gutter OUTSIDE the box, left. A line starting with `~` gets no number; it belongs to the numbered line above. Consecutive `~` lines join into ONE rule with `'; '` (fwd's joinGuardrails). A `~` line starting `PASS:` or `FAIL:` is a judge example (rubric only); any other `~` line is a guardrail. A `~` before line 1 is a $0 red. Empty lines are ignored.
+- **Inputs:** multi-line, numbered in the gutter, one `label: value` per line.
+  - Line 1 = the repo (absolute path), both check types.
+  - Lines 2+ = files or folders INSIDE that repo, repo-relative (e.g. `spec: docs/spec.md`). Proven at $0 before any token: exists, inside the repo, tracked, not refused by the front door (secret shape, `.env`, symlink). A miss is a $0 red naming the line number.
+  - The drafter is told: "the person pointed at these inputs: N label path".
+  - Search lines and files outside the repo are NOT in this piece — they arrive with the plain-folder/flight piece (#3). Typing one now is a $0 red: "line N: only files inside the repo for now".
+- **Empty-box examples (placeholder, grey, disappears on typing; changes with the Check type radio):**
+  - The job, deterministic: `Fix the failing date tests in src/date.js` / `~ don't edit any test file` / `Make npm test pass`
+  - The job, rubric: `Write a one-page summary of docs/plan.md` / `~ PASS: every number is quoted from the file` / `~ FAIL: a number that is not in the file` / `Keep it under 300 words`
+  - Inputs: `repo: /home/me/myrepo` / `spec: docs/spec.md`
+- **Locked on Reuse/Edit/Resume:** Job name, The job (same as Goal/Success/Guardrails/Judge are today). Open: Inputs, Destination, caps, model.
+
+**Drafting confirm card (the plan bubble).** Replaces the plain-text `#PLAN / #CHECKS / #NOT CHECKED` bubble with the SAME renderer as the Job tab (one renderer, two places):
+- each numbered job line, its joined `~` rule, then its drafted check(s) folded: `› check · <name> · machine check | judge`;
+- `› Not checked (the AI's own reading) · N` fold, same shape;
+- `› Always on · N` fold for the mandatory guards (no-suppressions etc.) — they serve no job line;
+- legend `› = the approved plan`; only the `›/⌄` marker is blue+bold (`--plan`: dark #7aa2f7, light #2668c2).
+- The Sign & run button is unchanged.
+
+**Job tab (read only).** Same renderer, read from the SIGNED spec, then rows: Inputs (numbered), Destination, Cap, **Signed** (`YYYY-MM-DD HH:MM · <first 6 of specHash>`; time = the run's first `job-start` ts, local time). Older runs without job lines: show the signed goal sentence as line 1 and the stage names as checks, note "older job — numbered lines were not saved".
+
+### Rules (code, never the model)
+1. The drafter tags every close stage it writes with `fromLine: N` (a job line number), or lists `refused: [{line, reason}]`.
+2. Validator ($0, at draft): every `fromLine` names a real line; every numbered job line has ≥1 stage OR a refusal reason. Not checked does NOT cover a line. Else red → the existing revise loop.
+3. Mandatory guard stages carry no `fromLine` (they belong to "Always on").
+4. Judge examples for calibration = the `PASS:`/`FAIL:` `~` lines, each kept with its line number (replaces answer 4).
+
+### What goes into the signed spec (hash changes for NEW jobs only)
+- `jobLines: [{n, text, rule}]` — the person's own words, so the Job tab and Reuse prefill show exactly what was typed (today the spec only has the model's goal sentence; Reuse prefills stage names into Success).
+- `inputs: [{n, label, value}]`.
+- each `closeDecl` stage may carry `fromLine`; `closeDecl.refused` list.
+- `goal` stays (the model's confirm sentence; the worker prompt reads it).
+- Old signed specs keep their hash (never rewritten); they render via the "older job" fallback. `workflowKey` of new jobs differs from old ones — old greens stay reusable as themselves.
+
+### Where it lands (call sites)
+- **Parser (new, one owner):** `src/jobblock.js` — `parseJobBlock(text)` → `{lines:[{n,text,rule,examples}]}` or red; `parseInputs(text)` → `[{n,label,value}]` or red. Both used by panel server AND CLI interview.
+- **Drafter:** `src/authorflow.js` question sets (`GREEN_QUESTIONS`, `FIELD_LABELS`, soft-green sets, `JUDGE_EXAMPLES_QUESTION`) collapse to one "The job" answer rendered as numbered lines; `CONFIRM_SCHEMA` checks become `{text, fromLine}`; `declarationSchema` stage gains optional `fromLine`, closeDecl gains `refused`; `src/cardauthor.js` `cardCasesPrompt` reads PASS/FAIL lines; validator rule 2 in `src/authoring.js validateDeclaration` + `src/declaredclose.js CLOSE_DECL_FIELDS`; `src/job.js JOB_FIELDS` admits `jobLines`, `inputs`. Prompt edits carry Failure/Addresses/Corrects labels (Failure cites mv1j01sl: the drafter guessed which judge example belonged to which goal part).
+- **Panel server:** `src/panel/authorsession.js` `CARD_FIELDS` → `jobText, inputs` replace goal/source/success/guardrails/judgeExamples; `validateJobCard`; answers build at ~836; input proving before `prepareSource`; `planText` → structured plan message `{role:'bot', kind:'plan', plan}`. `src/panel/server.js getRunJob` returns `jobLines, stages (name, kind class, fromLine), refused, notChecked, inputs, signedAt, specHash`; `reuseCardFromSpec`/`getStartFrom`/`getStartFromImport` prefill from `jobLines`/`inputs`.
+- **Page:** `src/panel/index.html` — two gutter boxes replace six; one `renderJobPlan()` used by the chat plan bubble and `renderJob`; the four repeated prefill blocks become one; LOCKED_IDS/OPEN_IDS/CARD_BOX_IDS/fit lists updated.
+- **CLI:** `src/interviewrun.js` asks "The job" and "Inputs" as multi-line answers (a removed box is removed everywhere).
+- **Tests:** page tests pinning the old ids and `planText` text are updated, not deleted; new tests for the parser, the $0 input proving, the fromLine validator (fail-first), the Job tab with old and new specs.
+
+### Build order (one sonnet builder, commit per item, hermetic `npm test` only, runs.jsonl count before/after)
+1. `jobblock.js` + tests. 2. Drafter + validator + spec fields. 3. Panel server + inputs proving. 4. Page: boxes, shared renderer, Job tab, Signed row. 5. CLI interview. 6. Docs: bareloop.context.md, FINDINGS entry.
+
+### Done means
+Gate green on HEAD (typecheck, build:types, npm test — exit codes quoted), my own screenshots at 1280, then hamr clicks through it, then ONE paid DeepSeek (deepseek-flash) drafting run on a small repo job proving the drafter tags `fromLine` live (proposed separately with its $0 premise read, cap stated).
+
+### Not in this piece
+Search inputs, files outside the repo, plain-folder rubric jobs (piece #3, with the flight-search run). .docx/.xlsx readers (piece #2). PDF (off). Try-3 questions (later).

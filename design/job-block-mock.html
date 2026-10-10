@@ -1,0 +1,111 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Job block mock</title>
+<style>
+:root{--bg:#1a1b26;--panel:#1f2335;--panel2:#24283b;--border:#292e42;--border-strong:#3b4261;
+--text:#c0caf5;--text-dim:#a9b1d6;--text-faint:#565f89;--accent:#7aa2f7;--plan:#7aa2f7;--green:#9ece6a;}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 "Courier Prime","Courier New",monospace}
+body{padding:16px;overflow-x:hidden}
+h2{font-size:13px;color:var(--text-faint);letter-spacing:.08em;text-transform:uppercase;margin:0 0 12px}
+.cols{display:flex;flex-wrap:wrap;gap:20px}
+.card{flex:1 1 420px;min-width:0;background:var(--panel);border:1px solid var(--border-strong);padding:14px}
+.card h3{margin:0 0 10px;font-size:14px}
+.field{margin-bottom:12px}
+label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:2px;text-transform:uppercase;letter-spacing:.04em}
+.hint{font-size:11px;color:var(--text-faint);text-transform:none;letter-spacing:0;font-weight:400}
+.ro{border:1px solid var(--border-strong);background:var(--bg);padding:6px 8px}
+.radio{display:flex;gap:16px;flex-wrap:wrap}
+/* numbered box: gutter OUTSIDE the box */
+.nbox{display:grid;grid-template-columns:22px 1fr;column-gap:6px}
+.gut{color:var(--text-faint);text-align:right;padding-top:5px}
+.gut div,.lines div{min-height:21px;white-space:pre-wrap;overflow-wrap:anywhere}
+.lines{border:1px solid var(--text-dim);background:var(--bg);padding:4px 8px}
+.tl{color:var(--text-dim)}
+.caps{display:flex;gap:10px;flex-wrap:wrap}.caps .field{flex:1 1 120px}
+hr{border:0;border-top:1px dotted var(--border-strong);margin:16px 0}
+.jl{margin-bottom:8px}
+.jl .sub{color:var(--text-dim);padding-left:30px}
+.jl .num{display:inline-block;width:22px;text-align:right;color:var(--text-faint);margin-right:8px}
+.fold{padding-left:30px;color:var(--text)}
+.fold b{color:var(--plan)}
+.row{display:grid;grid-template-columns:110px 1fr;gap:8px;margin-bottom:6px}
+.row .k{color:var(--text-faint);font-size:12px;text-transform:uppercase}
+.legend{font-size:12px;color:var(--text-faint);margin:6px 0 10px}
+.legend b{color:var(--plan)}
+</style></head><body>
+
+<h2>1 · Chat card (where you write the job)</h2>
+<div class="cols">
+
+<div class="card">
+<h3>Deterministic job</h3>
+<div class="field"><label>Check type</label><div class="radio"><span>(•) Deterministic</span><span>( ) Rubric</span><span>( ) Reuse workflow</span></div></div>
+<div class="field"><label>Model</label><div class="ro">deepseek-flash</div></div>
+<div class="field"><label>Job name</label><div class="ro">fix-date-tests</div></div>
+
+<div class="field"><label>The job</label>
+<div class="nbox"><div class="gut"><div>1</div><div></div><div>2</div><div>3</div><div></div><div></div></div>
+<div class="lines">
+<div>Fix the failing date tests in src/date.js</div>
+<div class="tl">~ don't edit any test file</div>
+<div>Keep the public API the same</div>
+<div>Make npm test pass</div>
+<div class="tl">~ no new dependencies</div>
+<div class="tl">~ no @ts-ignore</div>
+</div></div></div>
+
+<div class="field"><label>Inputs</label>
+<div class="nbox"><div class="gut"><div>1</div></div>
+<div class="lines"><div>repo: /home/hamr/code/myrepo</div></div></div></div>
+
+<div class="field"><label>Destination</label><div class="ro">src/</div></div>
+<div class="caps"><div class="field"><label>Cap $</label><div class="ro">1.50</div></div><div class="field"><label>Time cap (min)</label><div class="ro">30</div></div></div>
+</div>
+
+<div class="card">
+<h3>Rubric job</h3>
+<div class="field"><label>Check type</label><div class="radio"><span>( ) Deterministic</span><span>(•) Rubric</span><span>( ) Reuse workflow</span></div></div>
+<div class="field"><label>Model</label><div class="ro">deepseek-flash</div></div>
+<div class="field"><label>Job name</label><div class="ro">cheap-flights</div></div>
+
+<div class="field"><label>The job</label>
+<div class="nbox"><div class="gut"><div>1</div><div></div><div></div><div>2</div><div></div><div>3</div></div>
+<div class="lines">
+<div>Find 3 flights from Amsterdam to Lisbon on 14 Nov</div>
+<div class="tl">~ PASS: price and time quoted from the page</div>
+<div class="tl">~ FAIL: a price that is not on the page</div>
+<div>Sort them cheapest first</div>
+<div class="tl">~ direct flights only</div>
+<div>Write a short table: airline, time, price</div>
+</div></div></div>
+
+<div class="field"><label>Inputs</label>
+<div class="nbox"><div class="gut"><div>1</div><div>2</div></div>
+<div class="lines"><div>search: flights Amsterdam to Lisbon 14 Nov</div><div>prefs: /home/hamr/trips/prefs.md</div></div></div></div>
+
+<div class="field"><label>Destination</label><div class="ro">/home/hamr/trips/out/</div></div>
+<div class="caps"><div class="field"><label>Cap $</label><div class="ro">1.00</div></div><div class="field"><label>Time cap (min)</label><div class="ro">20</div></div></div>
+</div>
+</div>
+
+<hr>
+<h2>2 · Job tab (read only, after you sign) — rubric shown</h2>
+<div class="cols"><div class="card">
+<div class="legend"><b>›</b> = the approved plan (tap to open)</div>
+<div class="jl"><span class="num">1</span>Find 3 flights from Amsterdam to Lisbon on 14 Nov
+<div class="sub">~ PASS: price and time quoted from the page; FAIL: a price that is not on the page</div>
+<div class="fold"><b>›</b> check · flights-found · judge</div></div>
+<div class="jl"><span class="num">2</span>Sort them cheapest first
+<div class="sub">~ direct flights only</div>
+<div class="fold"><b>›</b> check · sorted-by-price · machine check</div></div>
+<div class="jl"><span class="num">3</span>Write a short table: airline, time, price
+<div class="fold"><b>›</b> check · table-shape · machine check</div></div>
+<div class="fold" style="padding-left:0;margin:10px 0"><b>›</b> Not checked (the AI's own reading) · 1</div>
+<hr>
+<div class="row"><span class="k">Inputs</span><span>1 search: flights Amsterdam to Lisbon 14 Nov<br>2 prefs: /home/hamr/trips/prefs.md</span></div>
+<div class="row"><span class="k">Destination</span><span>/home/hamr/trips/out/</span></div>
+<div class="row"><span class="k">Cap</span><span>$1.00 · 20 min</span></div>
+<div class="row"><span class="k">Signed</span><span>2026-10-10 14:02 · a3f9c1</span></div>
+</div></div>
+</body></html>
