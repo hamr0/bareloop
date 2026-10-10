@@ -14279,3 +14279,24 @@ says a bundle's spec cannot be edited (`src/planrun.js`).
 **Reverses a pinned test.** `tests/authorflow.test.js` "a truncated authoring round routes as provider-red through the flow" pinned the old routing (and "does not burn the malformed-emission retries"); it now pins the new one.
 
 **Proven where:** `tests/authorflow.test.js` (the P7 item 6 tests and the rewritten truncation test go red with the cut-off detection disabled), `tests/panel-author.test.js` (the stop text).
+
+## F216 — run mv2i30bf: the P7 `fromLine` tagging held live, and the run still ended step-red on blind per-file pre-steps (live panel run, 2026-10-10; no code change, evidence only, hamr 2026-10-10 "yes")
+
+**Date/Run:** 2026-10-10, run `mv2i30bf`, job `pulselog-p7-types`, panel session `smv2hrm9kddet`, deepseek-flash, $1.50 cap. Patient: a copy of pulselog with `noImplicitAny` on, 55 typecheck errors at seed, tests 67/67. Outcome: `job-end` `step-red` at `src-email-type-annotations`, `spentUsd` 0.3827 (`spendComplete: false`); `runs.jsonl` settled 0.4695 including drafting; about 24 min (14:39:28 to 15:03:43Z).
+
+**Grounded in:** the spine `u-mv2i30bf.jsonl` (plan-accepted, exit-eval, ladder, attempt-bounded, job-end), the gate audit `u-mv2i30bf-gate-audit.jsonl`, the signed `resolved-spec.json` (`jobLines`, `closeDecl`) and `signing.json` (seed values 55 and 67/67).
+
+**The P7 part worked live (first live proof of F214's `fromLine`).** Every close stage the drafter wrote carried a real `fromLine`: the two typecheck stages `[1]`, the three suite stages `[2]`, `src-additions-avoid-any-type` `[1]`, and `src-additions-are-jsdoc-only` `[1,3]` (a multi-line check: line 3, "Don't change what any function does", got a mechanical check, not a refusal). The mandatory guards (`changed-from-seed`, `no-suppressions`) carry none. This closes F214's "not proven" for the tagging; the confirm-plan class display remains as F214 left it.
+
+**Why it failed (no code defect found).**
+- The plan was per-file. Its early steps (`src-checks-jsdoc`, `src-email-digest-jsdoc`; after the replan `src-checks-type-annotations`, `src-email-type-annotations`) carried only `tree-changed` (plus `artifact-written` after the replan) exits. Only the final step carried `check-passes typecheck-clean-in-src` (`src-typecheck-zero`, then `src-typecheck-clean`), and no run reached it.
+- The worker has no shell (`run` is locked forever), so a per-file step never sees the compiler's error list. These are blind per-file pre-steps.
+- On `src/email.js` the worker made zero edits across 4 attempts: no `edit` action in the gate audit inside either email step's window (14:46:36-14:54:47 and 14:59:08-15:03:43Z); those windows hold only `shell_read`, `shell_grep`, `ctx_recall`, `ctx_get` (37 reads and greps, 10 recalls/gets in the first, 33 and 2 in the second), including unrelated files. All 19 audited edits fall inside the two `src/checks.js` steps.
+- Three of the four email attempts hit the round cap (20 in the first plan, then 10 after the replan); the fourth (step 1, attempt 2) was cut at `max_tokens` after 11 of 20 rounds and routed as a failed attempt per the 2026-10-05 ruling (F122 addendum).
+- The strike ladder logged `wrote: false` on all 5 strikes (two on `src-email-digest-jsdoc`, one on `src-checks-type-annotations` which then went green on iteration 2, two on `src-email-type-annotations`).
+
+**The gate rules held.** Rule A-v2 (F81): the seed-red typecheck check sat only on the final step. Rule B: the replan kept `check-passes` on its final step `src-typecheck-clean`; this is a live replan with Rule B holding, which F81 recorded as still pending. The residual is a shape neither rule covers: blind per-file pre-steps that spend the budget before the step that carries the error list.
+
+**Same class before P7.** Run `muuvmmul` (2026-10-05, `pulselog-panel-strict`): step-red at `strict-checks-js`, `wrote: false` on all 4 strikes (two legs), 4 attempts at the round cap of 10. Earlier pulselog strict-typing runs on DeepSeek: `muutlcko` green, `muuvmmul` step-red, `muux1x96` stopped, `muv50wb2` step-red, so 1 of 4 green. `muv50wb2` is a different cause (F212, the `tree-changed` instrument blind on a file scope; the worker wrote on 5 of 6 strikes), so the like-for-like count is `muuvmmul` and this run. Related prior notes: F16 above (a worker that read everything and never wrote) and F103 ("this worker reads ~9 or more rounds before its first write").
+
+**Ruling and status.** hamr 2026-10-10 "yes": no code change; logged as evidence only (PRD §8a: this is a reading, not a build). Nothing built, nothing parked for a decision.
