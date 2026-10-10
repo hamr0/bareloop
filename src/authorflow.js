@@ -111,6 +111,68 @@ export const AUTHOR_MAX_TOKENS = 32000;
 /** the one slot the model fills on an injected guard */
 export const FILL_MARKER = '<FILL IN>';
 
+/** P7 item 5 (fwdloop am24/25): the most questions the MACHINE keeps from the try-3 drafter. The drafter is never told this number. */
+export const MAX_QUESTIONS = 2;
+
+/**
+ * The model-visible words of the optional `questions` property — offered ONLY on the last drafting try and only after the
+ * two before it both failed validation (a mechanism, never a wish: the schema carries it on that one call and nowhere
+ * else). It lives in the property's description, so the frozen revise turn stays measurement-only. No digit and no number
+ * word anywhere in it (a test greps this): the machine, not the prompt, bounds the count.
+ */
+export const QUESTIONS_DESCRIPTION = 'Optional. Add a question only if a refusal in the measured results names a job line that cannot be drafted '
+  + 'without the person\'s answer (an undefined size, format, destination, or what "done" means). Each question is {line, question}: '
+  + '"line" is the number of the job line it is about. If the refusals can be fixed without asking, fix them and leave this out. '
+  + 'Never ask about a budget, a cap or a time limit (the person signs those). Still deliver the complete corrected declaration.';
+
+/**
+ * Which job lines did these validation reds name? A red names a line in its text ("job line N") or through the stage it
+ * sits on (path `stages[i]…` → that stage's own `fromLine`; `refused[i]…` → that refusal's `line`). A red naming none (a
+ * missing top-level key) names no line. Sorted real line numbers.
+ * @param {Red[]} reds @param {any} declaration @param {number[]} lineNums
+ * @returns {number[]}
+ */
+export function linesNamedByReds(reds, declaration, lineNums) {
+  /** @type {Set<number>} */
+  const found = new Set();
+  const stages = Array.isArray(declaration?.stages) ? declaration.stages : [];
+  const refused = Array.isArray(declaration?.refused) ? declaration.refused : [];
+  for (const red of reds ?? []) {
+    for (const m of String(red?.detail ?? '').matchAll(/\bjob line (\d+)\b/g)) found.add(Number(m[1]));
+    const st = /^stages\[(\d+)\]/.exec(String(red?.path ?? ''));
+    if (st && Array.isArray(stages[Number(st[1])]?.fromLine)) {
+      for (const n of stages[Number(st[1])].fromLine) if (Number.isInteger(n)) found.add(n);
+    }
+    const rf = /^refused\[(\d+)\]/.exec(String(red?.path ?? ''));
+    if (rf && Number.isInteger(refused[Number(rf[1])]?.line)) found.add(refused[Number(rf[1])].line);
+  }
+  return [...found].filter((n) => lineNums.includes(n)).sort((a, b) => a - b);
+}
+
+/**
+ * The machine's keep-or-drop of the try-3 questions. Kept only when its line is one the previous try's reds named and its
+ * text is non-blank, at most {@link MAX_QUESTIONS}; every drop comes back with its reason, for the draft's log.
+ * @param {any} raw @param {number[]} failedLines
+ * @returns {{kept: {line: number, question: string}[], dropped: {reason: string, raw: any}[]}}
+ */
+export function normalizeQuestions(raw, failedLines) {
+  /** @type {{line: number, question: string}[]} */
+  const kept = [];
+  /** @type {{reason: string, raw: any}[]} */
+  const dropped = [];
+  if (raw === undefined || raw === null) return { kept, dropped };
+  if (!Array.isArray(raw)) return { kept, dropped: [{ reason: 'questions is not a list', raw }] };
+  for (const q of raw) {
+    if (!q || typeof q !== 'object' || !Number.isInteger(q.line)) { dropped.push({ reason: 'no line', raw: q }); continue; }
+    if (!failedLines.includes(q.line)) { dropped.push({ reason: `line ${q.line} is not a line the previous try's checks failed on`, raw: q }); continue; }
+    if (typeof q.question !== 'string' || q.question.trim() === '') { dropped.push({ reason: 'blank question', raw: q }); continue; }
+    if (kept.length >= MAX_QUESTIONS) { dropped.push({ reason: 'beyond the machine\'s limit', raw: q }); continue; }
+    kept.push({ line: q.line, question: redactSecrets(q.question.trim()) });
+  }
+  return { kept, dropped };
+}
+
+
 /**
  * ONE red, scrubbed — the same spelling `prepareSigning` uses (src/authorjob.js),
  * and for the same reason: a validation red QUOTES what the model declared, and
@@ -762,10 +824,11 @@ export function schemaCoverage(catalogue = KIND_CATALOGUE) {
  * THROWS on a catalogue it cannot cover: a malformed catalogue is a bareloop bug,
  * and failing loudly beats emitting a schema that quietly cannot say something
  * the validator will then demand.
+ * `questions` (P7 item 5, last drafting try only) adds the optional `questions` property; absent, the schema is byte-identical.
  * @param {Record<string, any>} [catalogue]
- * @param {{verdictType?: string|null}} [o]
+ * @param {{verdictType?: string|null, questions?: boolean}} [o]
  */
-export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = null } = {}) {
+export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = null, questions = false } = {}) {
   const cov = schemaCoverage(catalogue);
   if (!cov.ok) {
     throw new Error('[authorflow] the declaration schema does not cover the catalogue — '
@@ -825,6 +888,17 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
         },
         description: 'job lines you could not turn into a stage, each with a reason — a note does not cover a line',
       },
+      ...(questions ? {
+        questions: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { line: { type: 'integer', minimum: 1 }, question: { type: 'string', minLength: 1 } },
+            required: ['line', 'question'],
+          },
+          description: QUESTIONS_DESCRIPTION,
+        },
+      } : {}),
     },
     required: ['stages'],
     additionalProperties: false,
@@ -835,13 +909,13 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
  * The output channel. It records and acknowledges; it takes no action, which is
  * why handing it to a toolless authoring call does not reopen D3.
  * @param {{calls: any[]}} box
- * @param {{catalogue?: Record<string, any>, verdictType?: string|null}} [o]
+ * @param {{catalogue?: Record<string, any>, verdictType?: string|null, questions?: boolean}} [o]
  */
-export function declarationTool(box, { catalogue = KIND_CATALOGUE, verdictType = null } = {}) {
+export function declarationTool(box, { catalogue = KIND_CATALOGUE, verdictType = null, questions = false } = {}) {
   return {
     name: DECLARATION_TOOL_NAME,
     description: 'Deliver the finished close. Call this exactly once, with the whole declaration as its arguments.',
-    parameters: declarationSchema(catalogue, { verdictType }),
+    parameters: declarationSchema(catalogue, { verdictType, questions }),
     execute: async (/** @type {any} */ args) => { box.calls.push(args); return DECLARATION_ACK; },
   };
 }
@@ -1661,12 +1735,12 @@ export async function askStructured({ messages, generate, mode, retries, label, 
 /** THE DECLARATION CHANNEL — the one this loop has always used. Its schema is
  * CLASS-SCOPED, like the prompt's catalogue block: the two must offer one set of
  * kinds, or the composer reads about a kind it cannot call.
- * @param {{catalogue: Record<string, any>, verdictType: string}} o */
-const declarationChannel = ({ catalogue, verdictType }) => ({
+ * @param {{catalogue: Record<string, any>, verdictType: string, questions?: boolean}} o */
+const declarationChannel = ({ catalogue, verdictType, questions = false }) => ({
   name: DECLARATION_TOOL_NAME,
   instruction: STRUCTURE_INSTRUCTION_TOOL,
   textPath: 'declaration',
-  tool: (/** @type {{calls: any[]}} */ box) => declarationTool(box, { catalogue, verdictType }),
+  tool: (/** @type {{calls: any[]}} */ box) => declarationTool(box, { catalogue, verdictType, questions }),
 });
 
 /** The declaration ask, over the shared ladder. `declaration` is `artifact`
@@ -1674,11 +1748,11 @@ const declarationChannel = ({ catalogue, verdictType }) => ({
  * anonymous artifact, and one word for two things is how a reader loses which.
  * @param {{messages: any[], generate: Function, mode: 'tool'|'text', retries: number,
  *   label: string, book: ReturnType<typeof makeCostBook>, catalogue: Record<string, any>,
- *   verdictType: string}} o
+ *   verdictType: string, questions?: boolean}} o
  */
-async function askDeclaration({ messages, generate, mode, retries, label, book, catalogue, verdictType }) {
+async function askDeclaration({ messages, generate, mode, retries, label, book, catalogue, verdictType, questions = false }) {
   const r = await askStructured({
-    messages, generate, mode, retries, label, book, channel: declarationChannel({ catalogue, verdictType }),
+    messages, generate, mode, retries, label, book, channel: declarationChannel({ catalogue, verdictType, questions }),
   });
   return { ...r, declaration: r.artifact };
 }
@@ -2148,6 +2222,7 @@ export async function runConfirmTurn({
  *   priorCalls?: {label: string, costUsd: number|null, unpricedRounds: number}[]|null,
  *   priorRaws?: any[]|null,
  *   jobLines?: {n: number, text: string}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
+ *   offerQuestions?: boolean,
  *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
  */
 export async function authorClose({
@@ -2185,6 +2260,10 @@ export async function authorClose({
   structureRetries = MAX_STRUCTURE_RETRIES,
   structuredMode = 'tool',
   catalogue = KIND_CATALOGUE,
+  // P7 item 5 (fwdloop am25): OFF unless the caller can really ask the person (the panel). When on, ONLY the last of the
+  // full drafting ladder (the author call plus both revisions), and only after the two before it both failed validation,
+  // is offered the optional `questions` property — see `askOpen` below. Absent = byte-identical to today.
+  offerQuestions = false,
 }) {
   // TIGHTEN-ONLY: a caller may lower the ceiling, never raise it — unlimited
   // revising launders thrash as adaptation (addendum 5). The floor is zero: one
@@ -2413,6 +2492,10 @@ export async function authorClose({
       };
   };
 
+  /** the job lines the PREVIOUS try's validation reds named — set only when the next try may ask (null = it may not) @type {number[]|null} */
+  let questionLines = null;
+  /** @type {{line: number, question: string}[]} */
+  let askedQuestions = [];
   const seedTrees = makeSeedTrees();
   try {
     for (let i = 0; i <= revisionCap; i += 1) {
@@ -2422,8 +2505,21 @@ export async function authorClose({
       // a readout quoting a number the loop does not obey is a second
       // instrument, and this file's own history is what that costs.
       onPhase('author-call', { call: label, i, of: revisionCap });
-      const ask = await askDeclaration({ messages, generate, mode: structuredMode, retries: retryCap, label, book, catalogue, verdictType });
+      // P7 item 5: a mechanism, never a wish. Only the last try of the full ladder carries the property, and only when the
+      // two before it both failed validation (`questionLines` is set at the end of the second one, below).
+      const askOpen = questionLines !== null && i === revisionCap;
+      const ask = await askDeclaration({ messages, generate, mode: structuredMode, retries: retryCap, label, book, catalogue, verdictType, questions: askOpen });
       messages = ask.convo;
+      /** @type {{reason: string, raw: any}[]} */
+      let droppedQuestions = [];
+      if (askOpen && ask.declaration && typeof ask.declaration === 'object' && Object.hasOwn(ask.declaration, 'questions')) {
+        // `questions` is never part of the declaration: stripped before validation, kept only through the machine's filter
+        const { questions: rawQuestions, ...rest } = ask.declaration;
+        ask.declaration = rest;
+        const nq = normalizeQuestions(rawQuestions, /** @type {number[]} */ (questionLines));
+        askedQuestions = nq.kept;
+        droppedQuestions = nq.dropped;
+      }
 
       // The cap tripped BEFORE this ask made any call at all, so there is no
       // iteration to record: an iteration row for a call that never happened is
@@ -2441,6 +2537,7 @@ export async function authorClose({
         call: label, attempts: ask.attempts, declaration: ask.declaration ?? null,
         artifactRed: ask.red ?? null, providerError: ask.providerError ?? null,
         validation: null, seedRead: null, reviseTurn: null,
+        ...(askOpen ? { questionsOffered: true, questions: askedQuestions, droppedQuestions } : {}),
       };
       iterations.push(iter);
 
@@ -2466,6 +2563,12 @@ export async function authorClose({
       if (!ask.declaration) {
         fatal = [/** @type {Red} */ (ask.red)];
         stop = 'artifact-red';
+        break;
+      }
+      // P7 item 5: the person is asked; nothing from this try is validated, measured or signable. The reds that opened the
+      // asking stay as the record of why (`lastValidation`).
+      if (askedQuestions.length) {
+        stop = 'questions-open';
         break;
       }
 
@@ -2531,6 +2634,14 @@ export async function authorClose({
       }
 
       if (i === revisionCap) { stop = 'max-revisions'; break; }
+
+      // P7 item 5: the NEXT try is the last of a full ladder, and this one AND the first both failed validation — it may ask,
+      // about the lines THIS try's reds named. A try that validated (a confident guess) never opens asking.
+      if (offerQuestions && revisionCap === MAX_REVISIONS && i === revisionCap - 1 && Array.isArray(jobLines) && jobLines.length > 0
+          && !v.ok && iterations[0]?.validation?.ok === false) {
+        const named = linesNamedByReds(vReds, ask.declaration, jobLines.map((l) => l.n));
+        questionLines = named.length ? named : null;
+      }
 
       const turn = buildReviseTurn(measured);
       // A TRIPWIRE, not behaviour: it can only fire once something else is
@@ -2614,6 +2725,8 @@ export async function authorClose({
     // WHICH stages broke on the dropped one, so this is never a silent swap.
     fellBack,
     stop,
+    // P7 item 5: what the person is asked (empty on every other stop)
+    questions: stop === 'questions-open' ? askedQuestions : [],
     revisions: Math.max(0, iterations.length - 1),
   };
 }

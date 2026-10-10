@@ -1170,3 +1170,63 @@ test('planMessage: a structured plan — lines with their checks, loose checks, 
   assert.deepEqual(m.plan.questions, ['which folder?']);
   assert.equal(m.plan.older, false);
 });
+
+// ── P7 batch 2 item 5 (fwdloop am24/25): the last drafting try asks; the answer is a `~` rule; the draft runs again ──────
+
+async function untilTrue(fn, ms = 5000) { const t0 = Date.now(); while (Date.now() - t0 < ms && !fn()) { await new Promise((r) => { setTimeout(r, 10); }); } }
+
+test('P7 item 5: questions-open -> each question asked through the ordinary ask path (named line, required, no skip) -> answers become word-for-word `~` rules on those lines in the signed jobLines and the plan card -> the draft runs once more, may not ask', async () => {
+  /** @type {any[]} */ const legs = [];
+  const authorFn = async (/** @type {any} */ o) => {
+    legs.push({ offerQuestions: o.offerQuestions ?? false, jobLines: JSON.parse(JSON.stringify(o.jobLines)), answers1: o.answers[1], priorCalls: o.priorCalls?.length ?? 0 });
+    if (legs.length === 1) {
+      return {
+        ok: false, stop: 'questions-open', declaration: null, reds: [{ code: 'job-line-uncovered', path: 'stages', detail: 'job line 2 has no stage' }],
+        questions: [{ line: 2, question: 'which tests?' }, { line: 1, question: 'which folder?' }],
+        iterations: [{ droppedQuestions: [{ reason: 'blank question', raw: {} }] }],
+        cost: { costUsd: 0.04, knownUsd: 0.04, spendComplete: true, calls: [{ label: 'author', costUsd: 0.04, unpricedRounds: 0 }], unpricedRounds: 0 }, raws: [],
+      };
+    }
+    return fakeAuthorFn()();
+  };
+  const sessionsRoot = tmp('panel-author-sess-q-');
+  const session = createSession(baseCard({ source: makeRepo(), jobName: 'panel-author-try3-q', jobText: 'fix things\ntidy the tests\n~ no new deps' }), {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot,
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    generate: async () => { throw new Error('unused'); },
+    confirmGenerate: makeFakeConfirmGenerate([{ goal: 'fix things', checks: [{ text: 'tsc clean', fromLine: [1] }], questions: [], notChecked: [] }]),
+    authorFn,
+    prepareSigningFn: fakePrepareSigningFn('cafef00dbeef0123'),
+  });
+  await untilTrue(() => session.state.pendingAsk?.kind === 'menu');
+  assert.equal(session.signPrepare().ok, true);
+  await untilTrue(() => session.state.pendingAsk?.kind === 'answer');
+  const say = () => session.state.messages.filter((/** @type {any} */ m) => m.role === 'bot').at(-1).text;
+  assert.equal(say(), 'A question the plan raised (1 of 2), about job line 2: which tests?');
+  assert.equal(legs[0].offerQuestions, true, 'the first leg may ask (a real asker is wired)');
+  // required: a blank answer asks again, no skip
+  assert.equal(session.send('   ').ok, true);
+  const botSaid = () => session.state.messages.filter((/** @type {any} */ m) => m.role === 'bot').map((/** @type {any} */ m) => m.text);
+  await untilTrue(() => botSaid().some((t) => /An answer is needed/.test(t)));
+  assert.ok(botSaid().some((t) => /no skip/i.test(t)));
+  await untilTrue(() => session.state.pendingAsk?.kind === 'answer' && /\(1 of 2\)/.test(say()));
+  assert.equal(say(), 'A question the plan raised (1 of 2), about job line 2: which tests?', 'the same question is asked again');
+  session.send('only the date tests,\nnot the rest');
+  await untilTrue(() => /\(2 of 2\)/.test(say()));
+  assert.equal(say(), 'A question the plan raised (2 of 2), about job line 1: which folder?');
+  session.send('src/date');
+  await untilTrue(() => ['prepared', 'refused', 'error'].includes(session.state.phase));
+  assert.equal(session.state.phase, 'prepared', String(session.state.error));
+  assert.equal(legs.length, 2, 'the draft ran again, once');
+  assert.equal(legs[1].offerQuestions, false, 'the redraft may not ask');
+  assert.equal(legs[1].priorCalls, 1, 'the first leg\'s spend is carried so the one cap still binds');
+  assert.deepEqual(legs[1].jobLines.map((/** @type {any} */ l) => [l.n, l.rule]), [[1, 'src/date'], [2, 'no new deps; only the date tests, not the rest']],
+    'word for word (newlines folded to a space), joined to an existing rule with "; "');
+  assert.match(legs[1].answers1, /2\. tidy the tests\n {3}rule: no new deps; only the date tests, not the rest/, 'the answers text the later stages read carries them too');
+  const plan = session.state.messages.filter((/** @type {any} */ m) => m.kind === 'plan').at(-1);
+  assert.deepEqual(plan.plan.lines.map((/** @type {any} */ l) => l.rule), ['src/date', 'no new deps; only the date tests, not the rest'], 'the plan card shows them like any ~ rule');
+  const resolved = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
+  assert.deepEqual(resolved.jobLines.map((/** @type {any} */ l) => l.rule), ['src/date', 'no new deps; only the date tests, not the rest'], 'signed with the spec');
+  const log = readFileSync(join(sessionsRoot, session.id, 'draft-log.jsonl'), 'utf8');
+  assert.match(log, /questions-dropped/, 'a dropped question is logged');
+});

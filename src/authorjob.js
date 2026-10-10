@@ -427,6 +427,8 @@ function composerRefusal(reds) {
  *   authorFn?: Function, authorOpts?: object, writeScope?: string[]|null,
  *   signerFix?: Function|any, proposeFn?: Function, compileOpts?: object,
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
+ *   answerQuestions?: ((o: {questions: {line: number, question: string}[], dropped: {reason: string, raw: any}[], confirmed: any}) =>
+ *     Promise<{jobLines: {n: number, text: string, rule?: string}[], answers: Record<string|number, any>}|null>)|null,
  *   confirmGenerate?: Function|null, isRepo?: boolean,
  *   langResult?: {kind: string, candidates?: string[], [k: string]: any}|null}} o
  * @returns {Promise<{ok: boolean, refusal: Refusal|null, verdictType: string|null,
@@ -483,6 +485,11 @@ export async function authorCloseForJob({
   //                  shape matters here (a $0 language pick before the scout,
   //                  D7); every other kind leaves `lang` exactly as given.
   ask = null, confirmGenerate = null, isRepo = false, langResult = null,
+  // P7 item 5 (fwdloop am24/25): the seam that can really ASK the person. Present = the last drafting try, and only after
+  // the two before it both failed, may ask (`offerQuestions` below); the seam takes the machine-filtered questions, gets
+  // each answer (required, no skip), and hands back the job lines with the answers added as `~` rules plus the matching
+  // answers text. ABSENT (the CLI, every older caller) = nothing is ever offered and this file is byte-identical.
+  answerQuestions = null,
 }) {
   /** @type {any} */
   const base = {
@@ -675,13 +682,38 @@ export async function authorCloseForJob({
   // loop obeys — `author-call` carries the enforced cap instead, from where it
   // is computed.
   onPhase('author', {});
-  const authored = await authorFn({
+  /** the answers text the later stages read; the try-3 redraft replaces it (the person's answers are new `~` rules) @type {Record<string|number, any>} */
+  let stageAnswers = interview.answers;
+  let authored = await authorFn({
     workdir, seedRef: seed, lang, verdictType: picked,
-    answers: interview.answers, questions: questions ?? questionsFor(picked),
+    answers: stageAnswers, questions: questions ?? questionsFor(picked),
     scout: survey, listing: seeds, generate, ceilingUsd, onPhase, onCall, writeScope,
     priorCalls: confirmPriorCalls, priorRaws: confirmPriorRaws, confirmed, jobLines, inputs,
+    ...(answerQuestions ? { offerQuestions: true } : {}),
     ...authorOpts,
   });
+  // P7 item 5: the drafter, on the last try after two failed ones, asked. The person answers (required, no skip); each
+  // answer becomes a `~` rule on its job line; the draft then runs ONCE more over the same survey, listing and confirmed
+  // plan, and may not ask again. The first leg's calls are carried as prior spend so the one ceiling still binds.
+  if (!authored.ok && authored.stop === 'questions-open' && answerQuestions && Array.isArray(authored.questions) && authored.questions.length) {
+    const dropped = (authored.iterations ?? []).flatMap((/** @type {any} */ it) => it?.droppedQuestions ?? []);
+    const updated = await answerQuestions({ questions: authored.questions, dropped, confirmed });
+    if (updated === null) return { ...base, interview, authoring: authored, reds: [], stop: 'confirm-abandoned', cost: authored.cost };
+    const scoutCalls = (survey?.calls ?? []).length;
+    const scoutRaws = (survey?.raws ?? []).length;
+    jobLines = updated.jobLines;
+    stageAnswers = updated.answers;
+    onPhase('author', {});
+    authored = await authorFn({
+      workdir, seedRef: seed, lang, verdictType: picked,
+      answers: stageAnswers, questions: questions ?? questionsFor(picked),
+      scout: survey, listing: seeds, generate, ceilingUsd, onPhase, onCall, writeScope,
+      priorCalls: (authored.cost?.calls ?? []).slice(scoutCalls), priorRaws: (authored.raws ?? []).slice(scoutRaws),
+      confirmed, jobLines, inputs,
+      ...authorOpts,
+      offerQuestions: false,
+    });
+  }
 
   if (!authored.ok) {
     return {
@@ -759,7 +791,7 @@ export async function authorCloseForJob({
     book.absorb(authored.cost?.calls ?? []);
     onPhase('rubric', { size: CALIBRATION_SIZE });
     const proposed = await proposeFn({
-      answers: interview.answers,
+      answers: stageAnswers,
       questions: questions ?? questionsFor(picked),
       generate,
       book,

@@ -476,7 +476,7 @@ export function createSession(card, deps = {}) {
     if (step.kind === 'language') say('bot', `${step.field?.prompt ?? 'Which language is this job about?'} (${(step.candidates ?? []).join(', ')})`);
     else if (step.kind === 'menu') {
       sayPlan(step.plan ?? {});
-    } else if (step.kind === 'answer') say('bot', `A question the plan raised (${step.index} of ${step.total}): ${step.question}`);
+    } else if (step.kind === 'answer') say('bot', `A question the plan raised (${step.index} of ${step.total})${Number.isInteger(step.line) ? `, about job line ${step.line}` : ''}: ${step.question}`);
     else if (step.kind === 'goal') say('bot', 'Type the goal sentence yourself.');
   });
 
@@ -888,6 +888,33 @@ export function createSession(card, deps = {}) {
     const generate = noCallAfterAbandon(deps.generate ?? makeLoopGenerate(provider, { rates: draftPrice?.rates ?? null }));
     const confirmGenerate = noCallAfterAbandon(deps.confirmGenerate ?? makeLoopGenerate(provider, { system: CONFIRM_SYSTEM, rates: draftPrice?.rates ?? null }));
 
+    // P7 item 5 (fwdloop am24/25): the last drafting try, after two failed ones, may ask. Each question comes through the same
+    // ask path as every other (the chat box + Send); the answer is REQUIRED (a blank one asks again, there is no skip) and is
+    // added WORD FOR WORD as a `~` rule on the job line it names — never rewritten. The lines are mutated in place, so the
+    // signed `jobLines`, the answers text and the plan card all read the same words.
+    const answerQuestions = async (/** @type {{questions: {line: number, question: string}[], dropped: {reason: string, raw: any}[], confirmed: any}} */ o) => {
+      if (o.dropped.length) appendDraftLog(outDir, { kind: 'questions-dropped', no: Math.max(0, state.steps.length - 1), dropped: o.dropped, at: new Date().toISOString() });
+      const total = o.questions.length;
+      for (let k = 0; k < total; k += 1) {
+        const q = o.questions[k];
+        let text = '';
+        for (;;) {
+          const a = await ask({ kind: 'answer', index: k + 1, total, question: q.question, line: q.line });
+          if (a === null) return null;
+          // one `~` line is one line: the person's own words, newlines folded to spaces, nothing else touched
+          text = String(a).replace(/\s*\n\s*/g, ' ').trim();
+          if (text) break;
+          say('bot', 'An answer is needed here — there is no skip. Type it in the box below and press Send.');
+        }
+        const line = jobLines.find((l) => l.n === q.line);
+        if (line) line.rule = line.rule ? `${line.rule}; ${text}` : text;
+      }
+      draft.jobLines = signedJobLines(jobLines);
+      answers[1] = renderJobLines(jobLines);
+      state.messages.push({ ...planMessage(o.confirmed ?? {}, jobLines), text: 'Your answers are in as ~ rules on those job lines. Drafting again.' });
+      return { jobLines, answers };
+    };
+
     state.phase = 'drafting';
     // no early "drafting" line: the real author phase (PHASE_STEP) starts it, carrying draftDetail (see onPhase)
     // build item 4 — the DISPLAY id (card.model, e.g. "deepseek-flash"), not
@@ -902,7 +929,7 @@ export function createSession(card, deps = {}) {
       ceilingUsd: card.capUsd,
       rates: draftPrice?.rates ?? null,
       onPhase, onCall,
-      ask, confirmGenerate, isRepo: true, langResult,
+      ask, answerQuestions, confirmGenerate, isRepo: true, langResult,
       ...(deps.scout ? { scout: deps.scout } : {}),
       ...(authorFnOverride ? { authorFn: authorFnOverride } : {}),
     });

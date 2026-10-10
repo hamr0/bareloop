@@ -2506,3 +2506,100 @@ test('P7: the declaration schema lets a stage carry fromLine and the declaration
   assert.equal(branch.properties.fromLine.items.type, 'integer');
   assert.equal(branch.required.includes('fromLine'), false, 'optional: a mandatory guard carries none');
 });
+
+// ── P7 batch 2 item 5: questions on the LAST drafting try only (fwdloop am24/25), the machine decides ────────────────
+
+const JOB2 = [{ n: 1, text: 'fix the types' }, { n: 2, text: 'tidy up' }];
+/** valid shape; stage `typecheck` serves line 1 only — line 2 is uncovered, a validation red naming "job line 2" */
+const redDecl = (/** @type {string} */ note) => {
+  const d = goodDeclaration();
+  d.stages[1].fromLine = [1];
+  d.notes = [note];
+  return d;
+};
+/** every line served — validates */
+const greenDecl = (/** @type {string} */ note) => {
+  const d = goodDeclaration();
+  d.stages[1].fromLine = [1, 2];
+  d.notes = [note];
+  return d;
+};
+const Q = (/** @type {number} */ line, /** @type {string} */ question) => ({ line, question });
+const offeredAt = (/** @type {any[]} */ calls) => calls.map((c) => Boolean(c.tools[0]?.parameters?.properties?.questions));
+
+test('P7 item 5 (fail-first): tries 1 and 2 both fail validation -> ONLY try 3 is offered `questions`; the machine keeps 2 on a failed line, drops the rest and logs them; nothing from try 3 is measured', async () => {
+  const { generate, calls } = scriptGenerate([
+    { declaration: redDecl('a') }, { declaration: redDecl('b') },
+    { declaration: { ...redDecl('c'), questions: [Q(2, 'what does tidy up mean?'), Q(9, 'about a line that does not exist'), Q(2, 'second on line 2'), Q(2, 'third on line 2'), Q(2, '   ')] } },
+  ]);
+  const seed = scriptSeedRead();
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: seed.fn, jobLines: JOB2, offerQuestions: true });
+  assert.deepEqual(offeredAt(calls), [false, false, true], 'try 1 and try 2 carry no way to ask; only try 3 does');
+  assert.equal(r.stop, 'questions-open');
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.questions, [Q(2, 'what does tidy up mean?'), Q(2, 'second on line 2')], 'two kept, in order');
+  const log = r.iterations[2];
+  assert.deepEqual(log.droppedQuestions.map((/** @type {any} */ d) => d.reason).sort(), [
+    "beyond the machine's limit", 'blank question', "line 9 is not a line the previous try's checks failed on",
+  ].sort());
+  assert.equal(log.validation, null, 'the asking try is not validated or measured: the person answers first');
+  assert.equal(seed.seen.length, 0, 'no seed read ran at all (tries 1 and 2 never validated)');
+  assert.ok(r.reds.some((/** @type {any} */ x) => /job line 2/.test(x.detail)), 'the reds that opened asking stay as the record');
+  assert.ok(!JSON.stringify(calls[2].messages).includes('questions'), 'the frozen revise turn is untouched: the words live in the property description');
+});
+
+test('P7 item 5: a try that PASSES validation (try 1, or try 2) never opens asking — a confident guess is not asked', async () => {
+  // passes try 1 (seed read red -> revise continues)
+  const a = scriptGenerate([{ declaration: greenDecl('a') }, { declaration: greenDecl('b') }, { declaration: greenDecl('c') }]);
+  await authorClose({ ...baseArgs(), generate: a.generate, seedReadFn: scriptSeedRead().fn, jobLines: JOB2, offerQuestions: true });
+  assert.deepEqual(offeredAt(a.calls), [false, false, false]);
+  // fails try 1, passes try 2
+  const b = scriptGenerate([{ declaration: redDecl('a') }, { declaration: greenDecl('b') }, { declaration: { ...greenDecl('c'), questions: [Q(2, 'x')] } }]);
+  const rb = await authorClose({ ...baseArgs(), generate: b.generate, seedReadFn: scriptSeedRead().fn, jobLines: JOB2, offerQuestions: true });
+  assert.deepEqual(offeredAt(b.calls), [false, false, false], 'try 2 passed: try 3 may not ask');
+  assert.notEqual(rb.stop, 'questions-open');
+  // passes try 1, fails try 2
+  const c = scriptGenerate([{ declaration: greenDecl('a') }, { declaration: redDecl('b') }, { declaration: redDecl('c') }]);
+  await authorClose({ ...baseArgs(), generate: c.generate, seedReadFn: scriptSeedRead().fn, jobLines: JOB2, offerQuestions: true });
+  assert.deepEqual(offeredAt(c.calls), [false, false, false], 'try 1 passed: try 3 may not ask');
+});
+
+test('P7 item 5: off unless the caller can ask (default), with no job lines, or with a tightened ladder — and a question on a line try 2 did not fail on is dropped', async () => {
+  const mk = () => scriptGenerate([{ declaration: redDecl('a') }, { declaration: redDecl('b') }, { declaration: { ...redDecl('c'), questions: [Q(2, 'q')] } }]);
+  const off = mk();
+  const r0 = await authorClose({ ...baseArgs(), generate: off.generate, seedReadFn: scriptSeedRead().fn, jobLines: JOB2 });
+  assert.deepEqual(offeredAt(off.calls), [false, false, false], 'default: never offered');
+  assert.notEqual(r0.stop, 'questions-open');
+  const noLines = mk();
+  await authorClose({ ...baseArgs(), generate: noLines.generate, seedReadFn: scriptSeedRead().fn, offerQuestions: true });
+  assert.deepEqual(offeredAt(noLines.calls), [false, false, false].slice(0, noLines.calls.length), 'no job lines: nothing to ask about');
+  const tight = mk();
+  await authorClose({ ...baseArgs(), generate: tight.generate, seedReadFn: scriptSeedRead().fn, jobLines: JOB2, offerQuestions: true, maxRevisions: 1 });
+  assert.ok(offeredAt(tight.calls).every((x) => x === false), 'a ladder of fewer than three tries has no try 3');
+  // line 1 is covered (try 2's reds name only line 2): a question about it is dropped, and with none kept the loop validates as ever
+  const wrong = scriptGenerate([{ declaration: redDecl('a') }, { declaration: redDecl('b') }, { declaration: { ...redDecl('c'), questions: [Q(1, 'about a covered line')] } }]);
+  const rw = await authorClose({ ...baseArgs(), generate: wrong.generate, seedReadFn: scriptSeedRead().fn, jobLines: JOB2, offerQuestions: true });
+  assert.deepEqual(rw.questions, []);
+  assert.notEqual(rw.stop, 'questions-open');
+  assert.equal(rw.iterations[2].droppedQuestions.length, 1);
+});
+
+test('P7 item 5: the schema carries `questions` only when asked for, the property words name no number, and the helpers behave', async () => {
+  const { QUESTIONS_DESCRIPTION, MAX_QUESTIONS, linesNamedByReds, normalizeQuestions } = await import('../src/authorflow.js');
+  assert.equal(declarationSchema().properties.questions, undefined);
+  assert.equal(declarationSchema(undefined, { questions: true }).properties.questions.description, QUESTIONS_DESCRIPTION);
+  assert.equal(JSON.stringify(declarationSchema()), JSON.stringify(declarationSchema(undefined, { questions: false })), 'absent = byte-identical');
+  assert.doesNotMatch(QUESTIONS_DESCRIPTION, /\d|\b(one|two|three|four|five|both|single|pair|couple|few|several|up to|at most)\b/i, 'the drafter is never told a number');
+  assert.equal(MAX_QUESTIONS, 2);
+  const reds = [
+    { code: 'job-line-uncovered', path: 'stages', detail: 'job line 3 has no stage and no refusal' },
+    { code: 'invalid-value', path: 'stages[1].fromLine', detail: 'stage "t" has fromLine [2, 4]' },
+    { code: 'missing-field', path: 'stages', detail: 'a top-level fault naming no line' },
+    { code: 'x', path: 'refused[0].reason', detail: 'blank' },
+  ];
+  const decl = { stages: [{ name: 'g' }, { name: 't', fromLine: [2, 4] }], refused: [{ line: 1, reason: '' }] };
+  assert.deepEqual(linesNamedByReds(reds, decl, [1, 2, 3]), [1, 2, 3], '4 is not a real line; the stage and refusal paths map through the declaration');
+  assert.deepEqual(linesNamedByReds([reds[2]], decl, [1, 2, 3]), []);
+  assert.deepEqual(normalizeQuestions('nope', [1]).dropped.map((d) => d.reason), ['questions is not a list']);
+  assert.deepEqual(normalizeQuestions([{ question: 'no line' }, 'str'], [1]).kept, []);
+});
