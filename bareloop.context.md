@@ -632,7 +632,10 @@ reason "the AI's answer was cut off at the output limit" (`axis: 'output-truncat
 booked, `AUTHOR_MAX_TOKENS` is never raised, and only a real transport failure stays `provider-red`. `draftStopText`
 (`src/authorreadout.js`) words any drafting stop that has no wording of its own; the panel puts it on the failed step. (2)
 `authorClose({ offerQuestions })` (default `false`; the CLI never sets it) offers the optional `questions` property on the LAST
-try of the full ladder only, and only when the two tries before it both failed validation; the machine keeps at most
+try of the full ladder only, and only when the two tries before it both failed — validation OR the seed read (hamr ruled 2026-10-10; this DIFFERS
+from fwdloop's validation-only rule): a seed-read failure is a work stage that instrument-stopped or a close with no work stage
+red at the seed (vacuous), and its lines are the `fromLine`s of the stages named, else every job line (`seedReadFailure`);
+the machine keeps at most
 `MAX_QUESTIONS` (2) — each on a job line the previous try's reds named — and logs the rest in `iterations[].droppedQuestions`;
 the drafter is never told a number. It then stops `questions-open` (`questions: [{line, question}]`, nothing validated).
 `authorCloseForJob({ answerQuestions })` is the seam that asks the person (required answer, no skip), takes back the job lines
