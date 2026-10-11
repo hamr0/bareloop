@@ -21,7 +21,6 @@ import { main } from '../src/cli.js';
 import { updateConfig } from '../src/config.js';
 import { scriptedProvider } from './helpers.js';
 import { hashCloseScriptBytes } from '../src/close-integrity.js';
-import { ANTHROPIC_TIER_MODELS } from '../src/providers.js';
 
 /** this repo's own root — every fixture bundle's node_modules/bareloop
  * symlinks here so `checkBundleDeps`'s preflight (F128) passes for the
@@ -255,7 +254,15 @@ test('bareloop run: no key and no injected provider -> the engine refuses (exit 
     stdout: out, stderr: err, cwd: process.cwd(), env: {}, ...homes(t),
   });
   assert.equal(rc, 2);
-  assert.match(err.text(), /ANTHROPIC_API_KEY/);
+  assert.match(err.text(), /Name the model with --model <id>: one ticked in Settings > Providers with both prices\./, 'a bundle signed without a model follows the run-u rule');
+  assert.doesNotMatch(err.text(), /ANTHROPIC_API_KEY/, 'no built-in key name');
+  // and with a model named but no Settings line carrying it: refused at $0 naming the model
+  const named = sink(); const namedErr = sink();
+  const rc2 = await main(['run', bundleDir, '--repo', repo, '--model', 'some-model', '--approve', bundleHash], {
+    stdout: named, stderr: namedErr, cwd: process.cwd(), env: {}, ...homes(t),
+  });
+  assert.equal(rc2, 2);
+  assert.match(namedErr.text(), /some-model is not set up: put its key in your keys file and type its Base URL in Settings > Providers\. Nothing was spent\./);
   assert.match(out.text(), new RegExp(bundleHash));
   assert.match(out.text(), /first run — this bundle has never been blessed/);
   assert.equal(existsSync(join(repo, '.bareloop')), false, 'no worktree may be created when nothing was spent');
@@ -263,13 +270,13 @@ test('bareloop run: no key and no injected provider -> the engine refuses (exit 
   assert.equal(existsSync(join(bundleDir, 'blessing.json')), false);
 });
 
-test('bareloop run: a bundle naming a DIFFERENT-keyed provider is accepted (one engine): no key -> exit 2 naming OPENAI_API_KEY, no worktree; an injected provider greens it', async (t) => {
+test('bareloop run: a bundle naming a DIFFERENT-keyed provider is accepted (one engine): no key -> exit 2 (no Settings line for its model), no worktree; an injected provider greens it', async (t) => {
   // One runner: the bundle door no longer carries its own ANTHROPIC-only key contract; the
   // engine reads the key the bundle's provider names (the keys file / env). The signed judge
   // is anthropic-keyed here so the refusal that fires is the WORKER's.
   const { bundleDir, bundleHash } = await exportFixture(t, {
     provider: 'openai-api',
-    judge: { provider: 'anthropic-api', model: ANTHROPIC_TIER_MODELS.sonnet },
+    judge: { provider: 'anthropic-api', model: 'claude-sonnet-5' },
   });
   const repo = tmp(t, 'cli-repo-');
   initRepo(repo);
@@ -277,8 +284,8 @@ test('bareloop run: a bundle naming a DIFFERENT-keyed provider is accepted (one 
   const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
     stdout: out, stderr: err, cwd: process.cwd(), env: { ANTHROPIC_API_KEY: 'sk-test-not-used' }, ...homes(t),
   });
-  assert.equal(rc, 2, 'the engine refuses a missing key');
-  assert.match(err.text(), /OPENAI_API_KEY/, 'it names the key the bundle needs');
+  assert.equal(rc, 2, 'the engine refuses a bundle with no model line to run on');
+  assert.match(err.text(), /Name the model with --model <id>/, 'a bundle signed without a model stops at $0');
   assert.equal(existsSync(join(repo, '.bareloop')), false, 'nothing may be created when nothing was spent');
 
   const now = makeNow(1_700_000_100_000);

@@ -103,7 +103,7 @@ test('bundle seam: a signed bundle run keeps its books under runDir and is liste
   assert.equal(rows[0].spine, join(f.runDir, 'spine.jsonl'));
 });
 
-test('bundle seam: a $0 refusal (no key) exits 2 BEFORE prepareTree — no tree, no books', async (t) => {
+test('bundle seam: a $0 refusal (no Settings line to run on) exits 2 BEFORE prepareTree — no tree, no books', async (t) => {
   const f = fixture(t);
   const code = await startRun(f.spec, {
     workdir: f.workdir, seed: f.seed, spineName: 'unused', approve: jobSpecHash(f.spec), bundle: f.bundle,
@@ -112,7 +112,8 @@ test('bundle seam: a $0 refusal (no key) exits 2 BEFORE prepareTree — no tree,
   assert.equal(code, 2);
   assert.equal(f.prepared(), 0, 'the hook never ran');
   assert.ok(!existsSync(f.runDir));
-  assert.match(f.err.join('\n'), /ANTHROPIC_API_KEY/);
+  assert.match(f.err.join('\n'), /Name the model with --model <id>/, 'a bundle signed without a model needs a Settings line named at run start');
+  assert.doesNotMatch(f.err.join('\n'), /ANTHROPIC_API_KEY/);
 });
 
 test('bundle seam: the signature equality still gates — a wrong approve previews and never prepares a tree', async (t) => {

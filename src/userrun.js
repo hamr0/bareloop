@@ -83,7 +83,7 @@ import { parseJsonl } from './replayio.js';
 import { claimRun, monthlyRefusalText, legSpend, chainSpend } from './monthly.js';
 import { ConfigError } from './config.js';
 import { commandFor } from './invoke.js';
-import { applyConfiguredKey, judgeRatesFor, keyNameFor, priceReadout, ratesFor, rowsForHome } from './providerrows.js';
+import { judgeRatesFor, keyNameFor, keyValueOf, priceReadout, ratesFor, ratesOfLine, resolveWorker, judgeRowFor, rowsForHome, REFUSE_NAME_MODEL } from './providerrows.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
 import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines, tokensLine, doorTimingRedLines } from './u-readout.js';
@@ -273,7 +273,8 @@ class ExitSignal extends Error {
  * @property {string} [into] the source door's own directory (`source.json`, and the spine directory beside it).
  *   Default `dirname(workdir)` — the copied-tree layout, where the tree is `<into>/tree`. A repo job on a WORKTREE
  *   (P6 item 1) has its tree inside the person's repo, so its `into` is passed explicitly.
- * @property {string|null} [model] the raw `--model` tier name (`sonnet`/`haiku`), or null for the default
+ * @property {string|null} [model] the raw `--model <id>` (a model id of a ticked Settings line), or null
+ * @property {string|null} [providerKey] the raw `--provider <KEY>` (a key's env name), or null
  * @property {string|null} [readShim] the raw `--read-shim` arm name, or null for the default
  * @property {string|null} [scout] the raw `--scout` value (`on`/`off`), or null for the default
  * @property {string|null} [draftSpentUsd] the raw `--draft-spent-usd` value (hamr's
@@ -306,6 +307,7 @@ class ExitSignal extends Error {
  * @property {string} spineName
  * @property {string} [into] see `RunOpts.into`
  * @property {string|null} model
+ * @property {string|null} providerKey
  * @property {string|null} readShim
  * @property {string|null} scout
  * @property {string|null} draftSpentUsd
@@ -389,25 +391,13 @@ async function execute(ctx) {
   /** @type {{workdir: string, seed: string, spine: string}} */
   const target = { workdir: ctx.workdir, seed: ctx.seed, spine: ctx.spineName };
 
-  // --model picks the DEFAULT worker tier (runner territory — the spec names no model, so
-  // the signed hash is unaffected). Tier names, not model ids. This map is the OPERATOR's
-  // and is deliberately WIDER than the planner's menu: since 2026-08-06 `STEP_MODELS` is
-  // sonnet-only (the haiku attribution probe — see src/plan.js), so a PLAN can no longer
-  // say haiku while `--model haiku` still can. haiku takes no output_config.effort
-  // (provider-gated, battery rule) — nothing to gate yet since neither tier sets effort.
-  // PRD v1.36 floor: the drafter/default tier is sonnet MINIMUM — measured, a haiku
-  // drafter died plan-red twice on the same rejection (ms7gne7s). `--model haiku` runs
-  // BELOW the floor: an explicit operator probe whose rows are probes, never battery
-  // evidence.
-  const DEFAULT_TIER_MODELS = { sonnet: 'claude-sonnet-5', haiku: 'claude-haiku-4-5-20251001' };
-  // `modelFlagArg` is null when --model was never passed at all — distinct from a
-  // flag that happens to resolve to the default tier's own id, because the SPEC
-  // (below, once loaded) needs to know whether a flag was actually given, not just
-  // what it resolved to (build-list #3: spec wins, a mismatched flag is refused).
+  // --model <id> names the Settings line a run works on when the SPEC names no model (an older spec, signed before a job carried its
+  // own); a spec's own `model` still wins and a different --model is refused. --provider <KEY> narrows to one key when two keys tick the
+  // same id. Runner territory: the spec names neither, so the signed hash is unaffected. There are no tier aliases and no built-in model.
+  // `modelFlagArg` is null when --model was never passed — distinct from a flag that happens to equal the spec's model, because the SPEC
+  // (below, once loaded) needs to know whether a flag was actually given (build-list #3: spec wins, a mismatched flag is refused).
   const modelFlagArg = ctx.model ?? null;
-  const tierArg = modelFlagArg ?? 'sonnet';
-  const FLAG_TIER_MODEL = DEFAULT_TIER_MODELS[/** @type {keyof typeof DEFAULT_TIER_MODELS} */ (tierArg)];
-  if (!FLAG_TIER_MODEL) { err(`unknown --model "${tierArg}" — one of: ${Object.keys(DEFAULT_TIER_MODELS).join(', ')}`); throw new ExitSignal(2); }
+  const providerFlagArg = ctx.providerKey ?? null;
   // --read-shim picks the READ SHIM's ARM (src/readshim.js, Phase 2 A0/A1/A2/A3). Runner
   // territory exactly like --model: the spec names no shim, so the signed hash is
   // unaffected. Phase 2 itself never flipped this default — its own "what this
@@ -545,11 +535,12 @@ async function execute(ctx) {
   try {
     modelResolution = resolveWorkerModel({
       specModel: spec.model,
-      flagModel: modelFlagArg === null ? undefined : FLAG_TIER_MODEL,
-      defaultModel: /** @type {NonNullable<typeof providerEntry>} */ (providerEntry).tiers.sonnet,
+      flagModel: modelFlagArg === null ? undefined : modelFlagArg,
+      // a scripted provider handed in by a test IS the run: it names its own model; a real run has no default
+      defaultModel: deps.provider ? String(/** @type {any} */ (deps.provider).model ?? 'scripted') : undefined,
     });
   } catch (e) {
-    die(/** @type {Error} */ (e).message);
+    die(spec.model === undefined && modelFlagArg === null ? REFUSE_NAME_MODEL : /** @type {Error} */ (e).message);
   }
   const MODEL = modelResolution.model;
   const MODEL_LABEL = modelResolution.source === 'spec' ? `${MODEL} (spec)` : MODEL;
@@ -1022,16 +1013,20 @@ async function execute(ctx) {
   // spine, then handed down as data (`runJob`'s `rates`) — nothing deep in the run re-reads config. A bad
   // price refuses here; it never falls back to the built-in guess. No price set = `null` = no `rates` key
   // passed anywhere, byte-identical to before. The judge's own row is resolved below, beside its key.
-  const keyCfg = cfgOn ? rowsForHome(cfgHome) : [];
+  const keyCfg = cfgOn ? rowsForHome(cfgHome, env) : [];
   /** @type {ReturnType<typeof ratesFor>} */
   let workerPrice = null;
-  try {
-    workerPrice = ratesFor(spec.provider, spec.baseUrl, keyCfg, spec.model);
-  } catch (e) {
-    if (!(e instanceof ConfigError)) throw e;
-    err(`${e.message} — refusing to start rather than guess a price. Nothing spent.`);
-    throw new ExitSignal(2);
-  }
+  // WHICH SETTINGS LINE THIS RUN WORKS ON (P8): the row is the key, the Base URL and the old-max_tokens tick; the line is the model
+  // and its price. A scripted provider handed in by a test IS the run (no row). A refusal here is $0, before anything else.
+  const W = deps.provider ? null : resolveWorker(keyCfg, spec, { model: modelFlagArg, provider: providerFlagArg });
+  const refuseWorker = () => { if (W && !W.ok) { err(W.say.includes('Nothing was spent') ? W.say : `${W.say} Nothing was spent.`); throw new ExitSignal(2); } };
+  // the preview cannot name its key without a line: refuse it here. A SIGNED run meets its other gates first (pause door, wall) and
+  // is refused at the key check below — still before anything is spent
+  if ((ctx.approve ?? null) === null) refuseWorker();
+  /** the endpoint the worker talks to: the chosen row's own Base URL (a spec signed before addresses were required carries none) */
+  const baseUrl = W && W.ok ? W.baseUrl : (typeof spec.baseUrl === 'string' ? spec.baseUrl : undefined);
+  const wLine = W && W.ok ? ratesOfLine(W.line) : null;
+  workerPrice = W ? (wLine && W.ok ? { ...wLine, envName: W.row.envName } : null) : ratesFor(spec.provider, spec.baseUrl, keyCfg, spec.model);
 
   if ((ctx.approve ?? null) !== specHash) {
     out(dead ? 'U — RESUME, continuing a halted run, REAL dollars' : 'U — user-mode e2e, ONE run, REAL dollars');
@@ -1192,7 +1187,7 @@ async function execute(ctx) {
     // right key only by accident of the runner's own generic error message,
     // never from this hint. `keyNameFor` is the same resolved name
     // the real key check at launch reads (the person's row variable, else the provider's built-in one).
-    const invoke = (/** @type {string} */ tail) => `  ${keyNameFor(spec.provider, spec.baseUrl, keyCfg, spec.model).name}=... ${INVOKE}${dead ? ` --resume ${RESUME}` : ''}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL}${tail} --approve ${PRINT_APPROVE}`;
+    const invoke = (/** @type {string} */ tail) => `  ${(W && W.ok ? W.row.envName : null) ?? keyNameFor(spec.provider, spec.baseUrl, keyCfg, spec.model).name ?? '<KEY>'}=... ${INVOKE}${dead ? ` --resume ${RESUME}` : ''}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL}${tail} --approve ${PRINT_APPROVE}`;
     /** the door the operator has already picked, as flags — hoisted out of the else
      * below so the inhibitor line at the bottom can print the WHOLE command rather
      * than a shape the operator has to assemble. Empty on an ordinary run and on the
@@ -1446,13 +1441,15 @@ async function execute(ctx) {
   let judgePrice = null;
   if (JUDGES) {
     try {
-      judgePrice = judgeRatesFor(judge, spec.provider, spec.baseUrl, workerPrice, keyCfg);
+      judgePrice = judgeRatesFor(judge, spec.provider, baseUrl, workerPrice, keyCfg);
     } catch (e) {
       if (!(e instanceof ConfigError)) throw e;
       err(`${e.message} — refusing to start rather than guess a price. Nothing spent.`);
       throw new ExitSignal(2);
     }
   }
+  /** the row the judge's key (and endpoint) comes from: the worker's own row when the judge shares its provider, else the judge provider's row */
+  const judgeRow = judgeRowFor(keyCfg, judge, spec.provider, W && W.ok ? W.row : null);
   // undefined, not null: both come straight off `env[...]` lookups below, which
   // (like process.env) never produce null for a missing key.
   /** @type {string|undefined} */
@@ -1468,13 +1465,10 @@ async function execute(ctx) {
     // row = the built-in. Names only — values come from the
     // env / keys file. The judge follows the worker's choice when it is the same provider
     // (the same rule that gives it the worker's baseUrl below).
-    const workerEnv = applyConfiguredKey(env, spec.provider, spec.baseUrl, keyCfg, spec.model);
-    const judgeEnv = judge.provider === spec.provider ? workerEnv : applyConfiguredKey(env, judge.provider, undefined, keyCfg, judge.model);
-    /** the variable NAME this worker's key is read from (the person's pick, else built-in) — for messages only */
-    const workerKeyName = keyNameFor(spec.provider, spec.baseUrl, keyCfg, spec.model).name;
-    // A green anthropic-api job's behaviour is byte-identical to before: its
-    // worker key IS `ANTHROPIC_API_KEY`, demanded as ever.
-    workerApiKey = workerEnv[providerEntry.envKey];
+    refuseWorker();
+    const workerKeyName = /** @type {NonNullable<typeof W> & {ok: true}} */ (W).row.envName;
+    // A job's worker key is its Settings row's own variable — there is no built-in name.
+    workerApiKey = keyValueOf(env, workerKeyName);
     if (!workerApiKey) { err(`${workerKeyName} not set (secrets load from the environment — never the tree)`); throw new ExitSignal(2); }
     // F181 — a key that reads as "set" above can still carry a line break/
     // control char/stray whitespace (a two-line secret-store entry, e.g.) and
@@ -1487,10 +1481,10 @@ async function execute(ctx) {
     // override matters most in the case this item exists for: a job whose worker and
     // judge are the SAME provider but different accounts, and the anthropic case
     // where one variable used to do two jobs.
-    judgeApiKey = env.JUDGE_API_KEY ?? judgeEnv[judgeEntry.envKey];
+    judgeApiKey = env.JUDGE_API_KEY ?? keyValueOf(env, judgeRow?.envName);
     if (JUDGES && !judgeApiKey) {
       err(`This job's close JUDGES (${judgedStages(spec.closeDecl).length} judged stage(s)) and its judge is ${judge.model} on ${judge.provider}${spec.judge ? ' (signed override)' : " (this job's own worker model — no `judge` override signed)"}.`);
-      err(`Neither JUDGE_API_KEY nor ${judgeEntry.envKey} is set — secrets load from the environment, never the tree.`);
+      err(`Neither JUDGE_API_KEY nor ${judgeRow?.envName ?? `a key row for ${judge.provider}`} is set — secrets load from the environment, never the tree.`);
       err('Refused at $0, BEFORE the worker spends anything: a judged run that discovers this at the close has paid for a verdict it cannot render.');
       throw new ExitSignal(2);
     }
@@ -1500,7 +1494,7 @@ async function execute(ctx) {
     if (JUDGES) {
       const judgeKeyProblem = apiKeyProblem(/** @type {string} */ (judgeApiKey));
       if (judgeKeyProblem) {
-        const judgeEnvName = env.JUDGE_API_KEY ? 'JUDGE_API_KEY' : judgeEntry.envKey;
+        const judgeEnvName = env.JUDGE_API_KEY ? 'JUDGE_API_KEY' : (judgeRow?.envName ?? judge.provider);
         err(`${judgeEnvName} ${judgeKeyProblem} — refusing rather than crashing mid-call (never trimmed or repaired; fix the value at its source)`);
         throw new ExitSignal(2);
       }
@@ -1640,7 +1634,7 @@ async function execute(ctx) {
   // OpenAI-compatible gateway/endpoint. Undefined for anthropic-api jobs and
   // for an openai-api job that names none (bare-agent's OpenAIProvider then
   // defaults to api.openai.com/v1 on its own).
-  const baseUrl = typeof spec.baseUrl === 'string' ? spec.baseUrl : undefined;
+  // (`baseUrl` — the worker row's Base URL — was resolved above with the Settings line)
   // TEST SEAM — same shape as the bundle door (src/bundlerun.js): a caller that supplies
   // `deps.provider` skips the real-key check above entirely and this
   // construction never runs (a scripted provider IS the run).
@@ -1648,26 +1642,11 @@ async function execute(ctx) {
   let providerFor = deps.providerFor;
   let judgeProvider = deps.judgeProvider ?? null;
   if (!provider) {
-    provider = makeProvider(spec.provider, { apiKey: /** @type {string} */ (workerApiKey), model: MODEL, baseUrl });
-    // P: the per-step model-tier factory. The TIER menu a PLAN may name is signed in the
-    // plan schema (STEP_MODELS — sonnet-only since the 2026-08-06 haiku attribution probe);
-    // the tier->model mapping is the RUNNER's territory, here, and keeps haiku for the
-    // operator's own --model knob. haiku takes no output_config.effort (provider-gated,
-    // battery rule) - nothing to gate yet since neither tier sets effort params.
-    // `sonnet` maps to the RESOLVED worker model (MODEL — spec/flag/default), not the
-    // bare provider-table id, so a spec-named model reaches every plan step's own
-    // provider (STEP_MODELS is sonnet-only), not just the top-level `provider` above.
-    // ONLY when the SPEC named it: a `--model haiku` probe keeps its old reach (the
-    // top-level provider), never silently widening into every step's tier. The tier
-    // table itself comes from `providerEntry` (src/providers.js) — for openai-api
-    // today that means BOTH tiers resolve to the same `deepseek-flash` id (hamr's
-    // ruling, PRD 30.7: one secondary provider, not a menu; swapped from the
-    // retired `deepseek-chat`, F171), so a `--model haiku` probe against an
-    // openai-api job harmlessly re-resolves to the same model.
-    const TIER_MODELS = modelResolution.source === 'spec' ? { ...providerEntry.tiers, sonnet: MODEL } : providerEntry.tiers;
-    /** @type {Record<string, any>} */
-    const tierCache = {};
-    providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)] === MODEL ? provider : makeProvider(spec.provider, { apiKey: /** @type {string} */ (workerApiKey), model: TIER_MODELS[/** @type {keyof typeof TIER_MODELS} */ (tier)], baseUrl }));
+    const legacyMaxTokens = W && W.ok ? W.row.legacyMaxTokens : false;
+    provider = makeProvider(spec.provider, { apiKey: /** @type {string} */ (workerApiKey), model: MODEL, baseUrl, legacyMaxTokens });
+    // P: the per-step model factory. The ONLY tier a plan may name is the schema token `sonnet` (STEP_MODELS, src/plan.js — a
+    // documented schema token, not a model id); it means THIS job's worker model, so every step's provider is the one above.
+    providerFor = () => provider;
     // SOFTGREEN — the JUDGED stage's own provider. Since PRD item 32.1 its identity is
     // RESOLVED (`judge` above), not pinned: the spec's signed `judge` override, else this
     // job's own worker model. It is still never a step knob and never agent-selectable —
@@ -1684,7 +1663,7 @@ async function execute(ctx) {
     // every live softgreen run would have done: run-author wired this seam and this
     // runner never did.
     judgeProvider = judgeApiKey
-      ? makeProvider(judge.provider, { apiKey: /** @type {string} */ (judgeApiKey), model: judge.model, baseUrl: judge.provider === spec.provider ? baseUrl : undefined })
+      ? makeProvider(judge.provider, { apiKey: /** @type {string} */ (judgeApiKey), model: judge.model, baseUrl: judge.provider === spec.provider ? baseUrl : (judgeRow && judgeRow.baseUrl.trim() !== '' ? judgeRow.baseUrl.trim() : undefined), legacyMaxTokens: judgeRow ? judgeRow.legacyMaxTokens : false })
       : null;
   }
 
@@ -2433,6 +2412,7 @@ function buildCtx(mode, opts) {
     spineName: /** @type {string} */ (opts.spineName),
     ...(opts.into === undefined ? {} : { into: opts.into }),
     model: opts.model ?? null,
+    providerKey: opts.providerKey ?? null,
     readShim: opts.readShim ?? null,
     scout: opts.scout ?? null,
     draftSpentUsd: opts.draftSpentUsd ?? null,
@@ -2661,6 +2641,7 @@ export async function main(argv, deps = {}) {
       spineName: target.spine,
       ...(target.into === undefined ? {} : { into: target.into }),
       model: argFlag('model'),
+      providerKey: argFlag('provider'),
       readShim: argFlag('read-shim'),
       scout: argFlag('scout'),
       draftSpentUsd: argFlag('draft-spent-usd'),

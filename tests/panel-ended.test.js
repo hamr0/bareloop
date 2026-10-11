@@ -311,6 +311,23 @@ test('resume route: unchanged caps spawn run-u with the SAME signed spec, --resu
   assert.deepEqual(readdirSync(out).filter((n) => !n.startsWith('resume-')).sort(), ['resolved-spec.json', 'source-x'], 'no revision file when the caps did not change');
 });
 
+test('resume route: an older spec\'s Settings line rides as --model / --provider (hash untouched); with none given, no such flags', async (t) => {
+  const home = tmp();
+  makeRun(home, { runid: 'line1', spent: 5 });
+  const spawnFn = makeSpawn();
+  const { post } = await startServer(t, { home, spawnFn });
+  assert.equal((await post('/api/runs/line1/resume', { budgetUsd: 8, maxWallMin: 60, model: 'm-one', provider: 'A_KEY' })).status, 200);
+  const args = spawnFn.calls[0].args;
+  assert.deepEqual(args.slice(args.indexOf('--model'), args.indexOf('--model') + 4), ['--model', 'm-one', '--provider', 'A_KEY']);
+  assert.ok(args.indexOf('--model') > args.indexOf('--approve'));
+  const home2 = tmp();
+  makeRun(home2, { runid: 'line2', spent: 5 });
+  const spawn2 = makeSpawn();
+  const two = await startServer(t, { home: home2, spawnFn: spawn2 });
+  await two.post('/api/runs/line2/resume', { budgetUsd: 8, maxWallMin: 60 });
+  assert.equal(spawn2.calls[0].args.includes('--model') || spawn2.calls[0].args.includes('--provider'), false);
+});
+
 test('resume route: raised caps write resolved-spec-r1.json beside the original (never over it) and approve the NEW hash', async (t) => {
   const home = tmp();
   const { out, specHash } = makeRun(home, { runid: 'raise1' });

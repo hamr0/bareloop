@@ -75,8 +75,8 @@ function spineFile(events) {
 
 /** the preview: no --approve, so nothing reads a key and nothing touches a patient */
 const preview = (args, job = 'bareagent-types') => {
-  const r = spawnSync(process.execPath, [RUNNER, '--job', job, ...args], {
-    encoding: 'utf8', timeout: 240_000, env: { ...cleanEnv(), ANTHROPIC_API_KEY: '' },
+  const r = spawnSync(process.execPath, [RUNNER, '--job', job, '--model', 'claude-sonnet-5', ...args], {
+    encoding: 'utf8', timeout: 240_000, env: { ...cleanEnv({}, { rows: !args.includes('--approve') }), ANTHROPIC_API_KEY: '' },
   });
   const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   if (r.status === null) throw new Error(`run-u.mjs never exited (${r.error?.code ?? r.signal ?? 'no error'}):\n${out.slice(0, 400)}`);

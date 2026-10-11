@@ -24,7 +24,7 @@ import { spendSummary, monthlyLimitOf } from '../monthly.js';
 import { spawn as realSpawn } from 'node:child_process';
 import { loadKeysEnv, keysFilePath, keysHome, filledKeyNames, ensureKeysFile } from '../keysfile.js';
 import { SHAPES } from '../providershapes.js';
-import { keyRows, effectiveModels, usableKey } from '../providerrows.js';
+import { keyRows, effectiveModels, usableKey, rowNamesOf } from '../providerrows.js';
 import { apiKeyProblem } from '../providers.js';
 import { listModels } from '../modellist.js';
 
@@ -54,10 +54,8 @@ export function createSettingsRoutes(opts) {
    */
   function rowNames(config) {
     const filled = filledKeyNames(opts.home);
-    const shellEnv = opts.env ?? process.env;
-    const named = new Set([...Object.keys(config?.keys ?? {}), ...Object.keys(config?.models ?? {})]);
-    const shellOnly = [...named].filter((n) => !filled.includes(n) && typeof shellEnv[n] === 'string' && shellEnv[n] !== '').sort();
-    return { filled, shellOnly, all: [...filled, ...shellOnly] };
+    const all = rowNamesOf(filled, config, opts.env ?? process.env);
+    return { filled, shellOnly: all.filter((n) => !filled.includes(n)), all };
   }
   /** config.json, or a plain-words problem (never read as "nothing set"). @returns {{config: Record<string, any>, problem: string|null}} */
   function config() {

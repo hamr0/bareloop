@@ -73,9 +73,9 @@ test('list: empty states — no match says so with the query; no green jobs at a
 
 test('pick: a job hands its newest-green runid and the card Model to the EXISTING reuse door (reuseWorkflow -> start-from?runid=&model=) — no second fill path', async () => {
   const calls = [];
-  const { pickReuseJob } = build(['pickReuseJob'], { reuseWorkflow: (...a) => calls.push(a), modelSelect: { value: 'deepseek-flash' } });
+  const { pickReuseJob } = build(['pickParts', 'pickQuery', 'pickReuseJob'], { reuseWorkflow: (...a) => calls.push(a), modelSelect: { value: 'GW_KEY|deepseek-flash' } });
   pickReuseJob(JOBS[1]);
-  assert.deepEqual(calls, [['r3', 'deepseek-flash']]);
+  assert.deepEqual(calls, [['r3', 'model=deepseek-flash&provider=GW_KEY']], 'the pick carries the KEY and the model (two keys can tick one model id)');
   // and reuseWorkflow itself asks start-from with the model, then dispatches bareloop-reuse (the one fill path)
   const urls = []; const events = [];
   const { reuseWorkflow } = build(['reuseWorkflow'], {
@@ -83,9 +83,9 @@ test('pick: a job hands its newest-green runid and the card Model to the EXISTIN
     document: { getElementById: () => ({ click() {} }), dispatchEvent: (e) => events.push(e) },
     CustomEvent: class { constructor(t, i) { this.type = t; this.detail = i.detail; } }, window: { alert() { throw new Error('no alert'); } },
   });
-  reuseWorkflow('r 3', 'deepseek-flash');
+  reuseWorkflow('r 3', 'model=deepseek-flash&provider=GW_KEY');
   await new Promise((r) => { setTimeout(r, 10); });
-  assert.deepEqual(urls, ['/api/author/start-from?runid=r%203&model=deepseek-flash']);
+  assert.deepEqual(urls, ['/api/author/start-from?runid=r%203&model=deepseek-flash&provider=GW_KEY']);
   assert.equal(events[0].type, 'bareloop-reuse');
   assert.match(PAGE, /document\.addEventListener\("bareloop-reuse", function\(e\)\{ applyReuse\(e\.detail \|\| \{\}\); \}\);/, 'the listener and the picker share applyReuse');
 });
@@ -95,7 +95,7 @@ test('picked state: applyReuse (either door) puts the radio on Reuse workflow, t
   const sfLine = { hidden: true, textContent: '', className: '' };
   const sfNote = { hidden: true, textContent: '' };
   const api = build(['rwMeta', 'applyReuse'], {
-    clearStartFrom: () => log.push('clear'), openNewCard: () => log.push('open'), modelSelect: { value: '' },
+    clearStartFrom: () => log.push('clear'), openNewCard: () => log.push('open'), modelSelect: { value: '' }, setPick() {},
     setVerdict: (v) => log.push(`verdict:${v}`), fillCard: (c) => log.push(`fill:${c.jobName}`), setReuseLocked: (on) => log.push(`lock:${on}`),
     renderPicker: () => log.push('picker'), sfLine, sfNote, refreshModelStatus() {}, refreshReuseLine() {}, refreshCapNote() {}, refreshStartEnabled() {},
   }, 'var startFrom = null, reuseCheckType = "deterministic", reusePickedName = "";', '__s: () => ({startFrom, reuseCheckType, reusePickedName})');
@@ -195,7 +195,7 @@ test('radios stay CLICKABLE during reuse (only a live session freezes them); the
 
 test('checkType on the start request comes from the PICKED job when the radio is Reuse workflow, never from the radio', () => {
   const val = (id) => ({ value: id === 'jf-cap-money' ? '2' : '' });
-  const mk = (verdict, reuseCheckType) => build(['currentCard'], { document: { getElementById: val }, verdictValue: () => verdict }, `var reuseCheckType = ${JSON.stringify(reuseCheckType)};`).currentCard();
+  const mk = (verdict, reuseCheckType) => build(['pickParts', 'currentCard'], { document: { getElementById: val }, verdictValue: () => verdict }, `var reuseCheckType = ${JSON.stringify(reuseCheckType)};`).currentCard();
   assert.equal(mk('reuse', 'rubric').checkType, 'rubric');
   assert.equal(mk('reuse', 'deterministic').checkType, 'deterministic');
   assert.equal(mk('rubric', 'deterministic').checkType, 'rubric');

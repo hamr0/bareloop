@@ -70,8 +70,9 @@ function mountCard() {
   const log = [];
   const originLine = dom.document.getElementById('chat-origin-line');
   const errEl = { textContent: '' };
+  const modelSelect = { value: '' };
   const api = build(['applyResume'], {
-    document: dom.document, clearStartFrom: () => log.push('clear'), openNewCard: () => log.push('open'), modelSelect: { value: '' },
+    document: dom.document, clearStartFrom: () => log.push('clear'), openNewCard: () => log.push('open'), modelSelect, setPick: (c) => { modelSelect.value = c.model; },
     fillCard: (c) => { const set = (id, v) => { dom.document.getElementById(id).value = v === undefined || v === null ? '' : String(v); }; set('jf-name', c.jobName); set('jf-job', c.jobText); set('jf-inputs', c.inputs); set('jf-dest', c.destination); set('jf-cap-money', c.capUsd); set('jf-cap-time', Math.round(c.maxWallMs / 60000)); },
     setVerdict: (v) => log.push(`verdict:${v}`), setVal: (id, v) => { dom.document.getElementById(id).value = v === undefined || v === null ? '' : String(v); },
     panelMoney: (n) => `$${Number(n).toFixed(2)}`, originLine, errEl, renderPicker() {}, refreshModelStatus() {}, refreshStartEnabled: () => log.push('refresh'),

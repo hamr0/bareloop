@@ -2394,7 +2394,7 @@
   // hand it to the Chat tab's New job card. The page decides nothing: the server owns what is locked and what is open.
   // `model` (optional) = the Chat card's Model box, when the picker asks: the estimate line then counts only that worker's runs.
   function reuseWorkflow(runid, model){
-    authorGet("/api/author/start-from?runid=" + encodeURIComponent(runid) + (model ? "&model=" + encodeURIComponent(model) : "")).then(function(r){
+    authorGet("/api/author/start-from?runid=" + encodeURIComponent(runid) + (model ? "&" + model : "")).then(function(r){
       if(!r || !r.ok){ window.alert((r && r.error) || "nothing to start from"); return; }
       document.getElementById("tab-chat").click();
       document.dispatchEvent(new CustomEvent("bareloop-reuse", {detail: {runid: runid, prefill: r}}));
@@ -4033,7 +4033,7 @@
       }
     }
     function loadReuseJobs(){
-      authorGet("/api/author/reuse-jobs" + (modelSelect.value ? "?model=" + encodeURIComponent(modelSelect.value) : "")).then(function(r){
+      authorGet("/api/author/reuse-jobs" + (modelSelect.value ? "?" + pickQuery(modelSelect.value) : "")).then(function(r){
         rwFailed = !(r && r.ok);
         rwJobs = rwFailed ? null : r.jobs;
         renderReuseList();
@@ -4050,7 +4050,7 @@
       refreshStartEnabled();
       rwQ.focus();
     }
-    function pickReuseJob(j){ if(j) reuseWorkflow(j.runid, modelSelect.value); }
+    function pickReuseJob(j){ if(j) reuseWorkflow(j.runid, pickQuery(modelSelect.value)); }
     rwQ.addEventListener("input", function(){ rwHl = 0; renderReuseList(); });
     rwQ.addEventListener("keydown", function(e){
       if(e.key === "ArrowDown"){ rwHl = Math.min(rwHl + 1, rwShown.length - 1); renderReuseList(); e.preventDefault(); }
@@ -4140,7 +4140,8 @@
       return {
         // on "Reuse workflow" the type is the picked job's own, never the radio's
         checkType: (verdictValue() === "reuse" ? reuseCheckType : verdictValue()) === "rubric" ? "rubric" : "deterministic",
-        model: document.getElementById("jf-model").value,
+        provider: pickParts(document.getElementById("jf-model").value).provider,
+        model: pickParts(document.getElementById("jf-model").value).model,
         jobName: document.getElementById("jf-name").value.trim(),
         jobText: document.getElementById("jf-job").value.trim(),
         inputs: document.getElementById("jf-inputs").value.trim(),
@@ -4242,15 +4243,15 @@
       return { keyOk: true, ok: false, text: reachStatusText(reach.status) };
     }
     function refreshModelStatus(){
-      var modelId = modelSelect.value;
-      if(modelId === ""){
+      var modelId = pickParts(modelSelect.value).model;
+      if(modelSelect.value === ""){
         keyOk = false;
         modelStatusEl.className = "jf-readiness bad";
-        modelStatusEl.textContent = "[✗] no model — give a key a Name in Settings > Providers";
+        modelStatusEl.textContent = "[✗] no model — Tick a model in Settings > Providers.";
         refreshStartEnabled();
         return;
       }
-      authorGet("/api/author/model-check?model=" + encodeURIComponent(modelId)).then(function(r){
+      authorGet("/api/author/model-check?" + pickQuery(modelSelect.value)).then(function(r){
         var line = modelStatusLine(r, modelId);
         keyOk = line.keyOk;
         modelStatusEl.className = "jf-readiness " + (line.ok ? "ok" : "bad");
@@ -4268,25 +4269,61 @@
     function refreshReuseLine(){
       if(!startFrom) return;
       var q = (startFrom.importId ? "import=" + encodeURIComponent(startFrom.importId) : "runid=" + encodeURIComponent(startFrom.runid)) +
-        "&model=" + encodeURIComponent(modelSelect.value);
+        "&" + pickQuery(modelSelect.value);
       authorGet("/api/author/start-from?" + q).then(function(r){
         if(startFrom && r && r.ok){ sfLine.textContent = r.line ? rwMeta({checkType: reuseCheckType, line: r.line}) : ""; }
       }).catch(function(){ /* the line keeps what it had */ });
     }
     modelSelect.addEventListener("change", refreshReuseLine);
     modelSelect.addEventListener("change", function(){ if(!rwBox.hidden && startFrom === null && !reuseSession) loadReuseJobs(); });
-    // P4b — the Model menu IS the Settings rows: every Name, in keys-file order (a blank Name
-    // is never offered). Re-read whenever Settings loads or saves, keeping the pick if it survives.
+    // P8 — the Model menu IS the Settings rows: every TICKED, PRICED line, labelled "<KEY> · <model>", in keys-file order. An option's
+    // value carries the key AND the model ("KEY|model"): two keys can tick the same model id, and the card names which one.
+    // Re-read whenever Settings loads or saves, keeping the pick if it survives.
+    function pickValue(slot, model){ return (slot || "") + "|" + model; }
+    function pickParts(v){
+      var i = String(v).indexOf("|");
+      return i < 0 ? {provider: "", model: String(v)} : {provider: v.slice(0, i), model: v.slice(i + 1)};
+    }
+    function pickQuery(v){ var p = pickParts(v); return "model=" + encodeURIComponent(p.model) + "&provider=" + encodeURIComponent(p.provider); }
+    // restore a saved card's pick: its key and model; an older card names only the model (the first option holding it)
+    function setPick(c){
+      if(!c || !c.model) return;
+      var want = c.provider ? pickValue(c.provider, c.model) : null;
+      var opts = Array.prototype.slice.call(modelSelect.options);
+      var hit = opts.filter(function(o){ return want ? o.value === want : pickParts(o.value).model === c.model; })[0];
+      if(!hit){
+        hit = document.createElement("option");
+        hit.value = want || pickValue("", c.model);
+        hit.textContent = (c.provider ? c.provider + " \u00b7 " : "") + c.model;
+        modelSelect.appendChild(hit);
+      }
+      modelSelect.value = hit.value;
+    }
+    var modelReads = 0;
     function loadModels(){
+      if(modelSelect.options.length === 0){
+        modelSelect.innerHTML = '<option value="">Reading your models\u2026</option>';
+      }
       authorGet("/api/author/models").then(function(r){
-        var models = r && r.ok ? r.models : [];
+        if(!r || !r.ok) throw new Error("read");
+        modelReads = 0;
+        var lines = r.lines || [];
         var was = modelSelect.value;
-        modelSelect.innerHTML = models.length ? models.map(function(m){
-          return '<option value="' + escapeXml(m.id) + '">' + escapeXml(m.id) + " · " + escapeXml(m.envName) + "</option>";
-        }).join("") : '<option value="">no model — add a Name in Settings</option>';
-        if(models.some(function(m){ return m.id === was; })) modelSelect.value = was;
+        modelSelect.innerHTML = lines.length ? lines.map(function(m){
+          return '<option value="' + escapeXml(pickValue(m.slot, m.model)) + '">' + escapeXml(m.label) + "</option>";
+        }).join("") : '<option value="">' + escapeXml(r.say || "Tick a model in Settings > Providers.") + "</option>";
+        if(lines.some(function(m){ return pickValue(m.slot, m.model) === was; })) modelSelect.value = was;
         refreshModelStatus();
-      }).catch(function(){ refreshModelStatus(); });
+      }).catch(function(){
+        modelReads += 1;
+        if(modelReads <= 5){
+          modelSelect.innerHTML = '<option value="">Could not read your models. Trying again\u2026</option>';
+          setTimeout(loadModels, 1500);
+        } else {
+          modelSelect.innerHTML = '<option value="">Could not read your models. Reload the page.</option>';
+        }
+        refreshModelStatus();
+      });
     }
     document.addEventListener("bareloop-providers-changed", loadModels);
     loadModels();
@@ -4568,10 +4605,7 @@
       reusePickedName = c.jobName || "job";
       setVerdict(reuseSession ? "reuse" : reuseCheckType);
       if(c.model){
-        if(!Array.prototype.some.call(modelSelect.options, function(o){ return o.value === c.model; })){
-          modelSelect.insertAdjacentHTML("beforeend", '<option value="' + escapeXml(c.model) + '">' + escapeXml(c.model) + "</option>");
-        }
-        modelSelect.value = c.model;
+        setPick(c);
       }
       fillCard(c);
 
@@ -4615,7 +4649,7 @@
       reuseCheckType = c.checkType === "rubric" ? "rubric" : "deterministic";
       reusePickedName = c.jobName || (pre.origin && pre.origin.job) || "job";
       setVerdict("reuse");
-      if(c.model){ modelSelect.value = c.model; }
+      if(c.model){ setPick(c); }
       fillCard(c);
 
       setReuseLocked(true);
@@ -4641,7 +4675,7 @@
       clearStartFrom();
       openNewCard();
       setVerdict(c.checkType === "rubric" ? "rubric" : "deterministic");
-      if(c.model){ modelSelect.value = c.model; }
+      if(c.model){ setPick(c); }
       fillCard(c);
 
       originLine.textContent = d.origin || "";
@@ -4665,7 +4699,7 @@
       resumeRun = {runid: d.runid, noTime: typeof r.maxWallMin !== "number"};
       document.getElementById("job-card-title").textContent = "RESUME " + (d.title || d.runid);
       setVerdict(c.checkType === "rubric" ? "rubric" : "deterministic");
-      if(c.model){ modelSelect.value = c.model; }
+      if(c.model){ setPick(c); }
       fillCard(c);
       setVal("jf-cap-money", r.budgetUsd);
       setVal("jf-cap-time", resumeRun.noTime ? "" : r.maxWallMin);

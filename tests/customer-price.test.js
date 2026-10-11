@@ -105,7 +105,7 @@ function homeWith(t, keyRow) {
 }
 
 /** one run-u start on the DeepSeek-shaped spec; token-only rounds (costUsd null) so bare-agent prices them */
-async function runPriced(t, { home, budgetUsd = 5, preview = false, specOver = {}, registry, workflow }) {
+async function runPriced(t, { home, budgetUsd = 5, preview = false, specOver = {}, registry, workflow, real = false }) {
   // the spine lands at `<workdir>/../<spineName>`: nest the patient one level down so that sibling is inside this
   // test's own mktemp dir (cleaned by its `after`), not a fixed name straight under the system tmpdir
   const workdir = join(tmp(t), 'patient');
@@ -139,7 +139,8 @@ async function runPriced(t, { home, budgetUsd = 5, preview = false, specOver = {
     code = await startRun(spec, {
       workdir, seed, spineName: 'customer-price-fixture-bareloop', ...(preview ? {} : { approve: jobSpecHash(spec) }),
       ...(registry ? { registry } : {}), ...(workflow ? { workflow } : {}),
-      deps: { provider: counted, env: {}, out: (s) => outs.push(s), err: (s) => errs.push(s), runlistHome: home },
+      deps: real ? { env: {}, keysHome: home, out: (s) => outs.push(s), err: (s) => errs.push(s), runlistHome: home }
+        : { provider: counted, env: {}, out: (s) => outs.push(s), err: (s) => errs.push(s), runlistHome: home },
     });
   } catch { code = 'threw'; }
   const row = readRunList({ home }).rows[0];
@@ -338,6 +339,18 @@ function judgeHome(t, { deepseek, anthropic, other }) {
   return home;
 }
 
+test('a model line with no price, half a price or a bad price is NOT a usable model: the run refuses at $0 with the one sentence, no provider call, no run-list row, no spine', async (t) => {
+  for (const fields of [{}, { priceInPerM: 0.006 }, { priceInPerM: -1, priceOutPerM: 1 }, { priceInPerM: 'cheap', priceOutPerM: 1 }]) {
+    // eslint-disable-next-line no-await-in-loop
+    const r = await runPriced(t, { home: homeWith(t, fields), real: true });
+    assert.equal(r.code, 2, JSON.stringify(fields));
+    assert.match(r.errs, /deepseek-flash is not set up: put its key in your keys file and type its Base URL in Settings > Providers\. Nothing was spent\./, JSON.stringify(fields));
+    assert.equal(r.providerCalls, 0);
+    assert.equal(r.row, undefined, 'no run-list row');
+    assert.deepEqual(r.spine, []);
+  }
+});
+
 test('a judged close prices its judge rounds at the worker row when the judge is the worker\'s own provider, at the judge\'s own row when a signed judge names another, and at the guess with no price', async (t) => {
   const workerPrice = { priceInPerM: 0.006, priceOutPerM: 1.2 };
   const judgePrice = { priceInPerM: 0.8, priceOutPerM: 4 };
@@ -411,9 +424,10 @@ test('the preview\'s approve line names the key variable the run reads, and carr
   const ds = await runPriced(t, { home: homeWith(t, { priceInPerM: 0.006, priceOutPerM: 1.2 }), preview: true });
   assert.match(approveLine(ds.outs), /^\s+DEEPSEEK_API_KEY=\.\.\. /);
   assert.doesNotMatch(approveLine(ds.outs), /--registry|--workflow/);
-  // a plain OpenAI job (no baseUrl, no rows): the built-in OPENAI_API_KEY
+  // a job no row serves has NO built-in key name to print: a placeholder, never a vendor's variable
   const plain = await runPriced(t, { home: tmp(t), preview: true, specOver: { baseUrl: null, model: 'gpt-x' } });
-  assert.match(approveLine(plain.outs), /^\s+OPENAI_API_KEY=\.\.\. /);
+  assert.match(approveLine(plain.outs), /^\s+<KEY>=\.\.\. /);
+  assert.doesNotMatch(approveLine(plain.outs), /OPENAI_API_KEY/);
   // registry given: the printed approve line AND the inhibitor line carry it; workflow defaults to the job name
   const reg = mkdtempSync(join(tmpdir(), 'cp-reg-'));
   t.after(() => rmSync(reg, { recursive: true, force: true }));

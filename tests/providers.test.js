@@ -1,5 +1,5 @@
 // PRD item 28, shape (1): the provider factory (src/providers.js). Tests
-// the seam itself — provider name -> ctor/envKey/tier table/param gating —
+// the seam itself — provider name -> ctor + endpoint option name, the row's old-max_tokens tick —
 // plus the job-spec-level admission of `openai-api`/`baseUrl` (src/job.js)
 // and the `stopReason` forwarding on a real-Loop `worker-round` (src/
 // planrun.js, driven through the existing scripted-provider harness).
@@ -8,8 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  resolveProvider, makeProvider, buildRunnerProviders, ANTHROPIC_TIER_MODELS, OPENAI_TIER_MODELS,
-  GEMINI_TIER_MODELS, PROBE_STATUS, probeWarningLines, apiKeyProblem, checkProviderReachable, judgeCallOptions,
+  resolveProvider, makeProvider, buildRunnerProviders, PROBE_STATUS, probeWarningLines, apiKeyProblem, checkProviderReachable, judgeCallOptions,
 } from '../src/providers.js';
 import { validateJob, PROVIDERS } from '../src/job.js';
 
@@ -31,24 +30,16 @@ test('the PROVIDERS menu is the exact admitted set — a new entry is a delibera
   assert.deepEqual([...PROVIDERS], ['anthropic-api', 'openai-api', 'gemini-api', 'clipipe-subscription']);
 });
 
-// ── resolveProvider: name -> {ctor, envKey, tiers, paramsFor} ──────────
+// ── resolveProvider: shape id -> {ctor, endpointKey} — and NOTHING else (no key name, no model ids, no per-model gating) ──────────
 
-test('resolveProvider("anthropic-api") yields the AnthropicProvider ctor, its own env key, and today\'s exact tier ids', async () => {
-  const { AnthropicProvider } = await import('bare-agent/providers');
-  const entry = resolveProvider('anthropic-api');
-  assert.equal(entry.ctor, AnthropicProvider);
-  assert.equal(entry.envKey, 'ANTHROPIC_API_KEY');
-  assert.deepEqual({ ...entry.tiers }, { sonnet: 'claude-sonnet-5', haiku: 'claude-haiku-4-5-20251001' });
-  assert.deepEqual({ ...ANTHROPIC_TIER_MODELS }, { sonnet: 'claude-sonnet-5', haiku: 'claude-haiku-4-5-20251001' });
-});
-
-test('resolveProvider("openai-api") yields the OpenAIProvider ctor, OPENAI_API_KEY, and deepseek-flash on both tiers (hamr\'s ruling: one secondary provider, not a menu)', async () => {
-  const { OpenAIProvider } = await import('bare-agent/providers');
-  const entry = resolveProvider('openai-api');
-  assert.equal(entry.ctor, OpenAIProvider);
-  assert.equal(entry.envKey, 'OPENAI_API_KEY');
-  assert.deepEqual({ ...entry.tiers }, { sonnet: 'deepseek-flash', haiku: 'deepseek-flash' });
-  assert.deepEqual({ ...OPENAI_TIER_MODELS }, { sonnet: 'deepseek-flash', haiku: 'deepseek-flash' });
+test('resolveProvider yields exactly the bare-agent ctor and the endpoint option name for each shape — no env key, no tier table, no param gating', async () => {
+  const { AnthropicProvider, OpenAIProvider, GeminiProvider } = await import('bare-agent/providers');
+  const want = { 'anthropic-api': AnthropicProvider, 'openai-api': OpenAIProvider, 'gemini-api': GeminiProvider };
+  for (const [name, ctor] of Object.entries(want)) {
+    const entry = resolveProvider(name);
+    assert.equal(entry.ctor, ctor, name);
+    assert.deepEqual(Object.keys(entry).sort(), ['ctor', 'endpointKey'], `${name}: a key name, a model id or a per-model table in here would be a hardcoded vendor`);
+  }
 });
 
 test('resolveProvider on an unknown name throws a NAMED error — no silent default (the resolveRates lesson)', () => {
@@ -65,16 +56,17 @@ test('makeProvider constructs with exposeErrorBody:true unconditionally (F153)',
   assert.equal(p.model, 'claude-sonnet-5');
 });
 
-test('the deepseek-flash entry carries the legacy-max-tokens flag (F149: DeepSeek silently ignores max_completion_tokens, asked 64 got 665/608) — the anthropic entry does not', () => {
-  const deepseek = makeProvider('openai-api', { apiKey: 'k', model: 'deepseek-flash' });
-  assert.equal(deepseek.legacyMaxTokens, true, 'an output cap that does not bind is a money hazard — this MUST bind');
-  const anthropic = makeProvider('anthropic-api', { apiKey: 'k', model: 'claude-sonnet-5' });
+test('the old max_tokens spelling is the ROW\'s tick: legacyMaxTokens:true reaches an openai-api provider; unticked, nothing — whatever the model id or host (F149)', () => {
+  const ticked = makeProvider('openai-api', { apiKey: 'k', model: 'any-model', legacyMaxTokens: true });
+  assert.equal(ticked.legacyMaxTokens, true, 'an output cap that does not bind is a money hazard — a ticked row MUST bind');
+  // nothing sniffs a model id or a host: a model that once needed the tick gets none until the person ticks it
+  const unticked = makeProvider('openai-api', { apiKey: 'k', model: 'deepseek-flash', baseUrl: 'https://api.deepseek.com/v1' });
+  assert.notEqual(unticked.legacyMaxTokens, true);
+  // the tick means something only on openai-api
+  const anthropic = makeProvider('anthropic-api', { apiKey: 'k', model: 'm', legacyMaxTokens: true });
   assert.notEqual(anthropic.legacyMaxTokens, true, 'Anthropic has only ever had one request key — nothing to gate, ever');
-});
-
-test('an openai-api model with no table entry gets no legacy-key override — bare-agent\'s own default (max_completion_tokens, GPT-5-safe) applies untouched', () => {
-  const gpt = makeProvider('openai-api', { apiKey: 'k', model: 'gpt-4.1' });
-  assert.notEqual(gpt.legacyMaxTokens, true);
+  const gemini = makeProvider('gemini-api', { apiKey: 'k', model: 'm', legacyMaxTokens: true });
+  assert.notEqual(gemini.legacyMaxTokens, true);
 });
 
 test('makeProvider forwards baseUrl only when given', () => {
@@ -98,17 +90,15 @@ test('makeProvider forwards baseUrl only when given', () => {
 // claim — a second instance against the same endpoint/model/key is a second
 // prompt-cache prefix — not merely a convenience).
 
-test('buildRunnerProviders: providerFor(tier) reuses the top-level provider when the tier resolves to the same model', () => {
+test('buildRunnerProviders: providerFor(tier) is the job\'s own provider — the plan\'s one tier token means THIS job\'s worker model', () => {
   const { provider, providerFor } = buildRunnerProviders({
     providerName: 'openai-api',
     apiKey: 'worker-key',
     model: 'deepseek-flash',
-    tierModels: { sonnet: 'deepseek-flash', haiku: 'deepseek-flash' },
     judgeApiKey: 'judge-key',
     judgeModel: 'claude-haiku-4-5',
   });
-  assert.equal(providerFor('sonnet'), provider, 'same model id -> the SAME instance, not a rebuild');
-  assert.equal(providerFor('haiku'), provider, 'deepseek-flash on both tiers -> the same instance too');
+  assert.equal(providerFor('sonnet'), provider, 'the SAME instance, not a rebuild');
 });
 
 test('buildRunnerProviders: with no judgeProviderName override, the judge DEFAULTS to the worker\'s own provider (PRD item 32.1)', async () => {
@@ -117,7 +107,6 @@ test('buildRunnerProviders: with no judgeProviderName override, the judge DEFAUL
     providerName: 'openai-api',
     apiKey: 'worker-key',
     model: 'deepseek-flash',
-    tierModels: { sonnet: 'deepseek-flash', haiku: 'deepseek-flash' },
     judgeApiKey: 'judge-key',
     judgeModel: 'claude-haiku-4-5',
   });
@@ -133,7 +122,6 @@ test('buildRunnerProviders: an explicit judgeProviderName override builds THAT p
     providerName: 'openai-api',
     apiKey: 'worker-key',
     model: 'deepseek-flash',
-    tierModels: { sonnet: 'deepseek-flash', haiku: 'deepseek-flash' },
     judgeApiKey: 'judge-key',
     judgeModel: 'claude-haiku-4-5',
     judgeProviderName: 'anthropic-api',
@@ -148,7 +136,6 @@ test('buildRunnerProviders: the worker instance is REUSED when provider+model+ke
     providerName: 'anthropic-api',
     apiKey: 'shared-key',
     model: 'claude-sonnet-5',
-    tierModels: { sonnet: 'claude-sonnet-5', haiku: 'claude-haiku-4-5' },
     judgeApiKey: 'shared-key',
     judgeModel: 'claude-sonnet-5',
   });
@@ -160,7 +147,6 @@ test('buildRunnerProviders: reuse requires EVERY axis to match — a differing k
     providerName: 'anthropic-api',
     apiKey: 'worker-key',
     model: 'claude-sonnet-5',
-    tierModels: { sonnet: 'claude-sonnet-5', haiku: 'claude-haiku-4-5' },
     judgeApiKey: 'a-different-account-key',
     judgeModel: 'claude-sonnet-5',
   });
@@ -168,19 +154,13 @@ test('buildRunnerProviders: reuse requires EVERY axis to match — a differing k
   assert.equal(judgeProvider.apiKey, 'a-different-account-key');
 });
 
-test('buildRunnerProviders: a spec-named model on one tier builds a SECOND provider instance for a differing tier', () => {
-  const { provider, providerFor } = buildRunnerProviders({
-    providerName: 'anthropic-api',
-    apiKey: 'k',
-    model: 'claude-opus-4',
-    tierModels: { sonnet: 'claude-opus-4', haiku: 'claude-haiku-4-5-20251001' },
-    judgeApiKey: 'k',
-    judgeModel: 'claude-haiku-4-5',
-  });
-  assert.equal(providerFor('sonnet'), provider);
-  const haikuProvider = providerFor('haiku');
-  assert.notEqual(haikuProvider, provider);
-  assert.equal(haikuProvider.model, 'claude-haiku-4-5-20251001');
+test('buildRunnerProviders: the row\'s old-max_tokens tick reaches the worker, and the judge takes its own row\'s tick (the worker\'s only when it shares the worker\'s shape)', () => {
+  const same = buildRunnerProviders({ providerName: 'openai-api', apiKey: 'k', model: 'm', legacyMaxTokens: true, judgeApiKey: 'k2', judgeModel: 'j' });
+  assert.equal(same.provider.legacyMaxTokens, true);
+  assert.equal(same.judgeProvider.legacyMaxTokens, true, 'a judge on the worker\'s own shape and row follows the worker\'s tick');
+  const other = buildRunnerProviders({ providerName: 'openai-api', apiKey: 'k', model: 'm', legacyMaxTokens: true, judgeApiKey: 'k2', judgeModel: 'j', judgeProviderName: 'openai-api', judgeLegacyMaxTokens: false });
+  assert.notEqual(other.judgeProvider.legacyMaxTokens, true, 'a judge row with its own tick OFF is not forced on by the worker\'s');
+  assert.notEqual(other.judgeProvider, other.provider);
 });
 
 // ── job-spec-level admission: provider + baseUrl ────────────────────────
@@ -256,13 +236,9 @@ test('provider reds an unrecognized value, unchanged behaviour from before this 
 // across bare-agent's providers. The endpoint does NOT, and these tests exist
 // because the way it fails is SILENT.
 
-test('gemini-api is on the menu, with its own key, tiers and endpoint spelling', () => {
+test('gemini-api is on the menu with its own endpoint spelling', () => {
   assert.ok(PROVIDERS.includes('gemini-api'), 'a spec can name it');
-  const e = resolveProvider('gemini-api');
-  assert.equal(e.envKey, 'GEMINI_API_KEY', 'its own key, never borrowed from another provider');
-  assert.equal(e.tiers.sonnet, 'gemini-2.5-pro');
-  assert.equal(e.tiers.haiku, 'gemini-2.5-flash', 'gemini has a real cheap tier, so haiku maps to it honestly');
-  assert.notEqual(e.tiers.sonnet, e.tiers.haiku, 'and the two tiers are genuinely different models, unlike DeepSeek');
+  assert.equal(resolveProvider('gemini-api').endpointKey, 'baseUrl');
 });
 
 test('the silent-ignore hazard endpointKey guards against is REAL, measured on the dependency', async () => {
@@ -318,7 +294,7 @@ test('the endpoint lands under the provider\'s own option name, and REACHES the 
   const url = 'https://endpoint.invalid/v1';
   for (const name of PROVIDERS.filter((p) => p !== 'clipipe-subscription')) {
     const e = resolveProvider(name);
-    const p = makeProvider(name, { apiKey: 'k', model: e.tiers.sonnet, baseUrl: url });
+    const p = makeProvider(name, { apiKey: 'k', model: 'a-model', baseUrl: url });
     assert.equal(p[e.endpointKey], url, `${name}: the endpoint must arrive under ${e.endpointKey} and STICK`);
   }
 });
@@ -326,7 +302,7 @@ test('the endpoint lands under the provider\'s own option name, and REACHES the 
 test('an omitted endpoint leaves the provider on its own default — never undefined', () => {
   for (const name of PROVIDERS.filter((p) => p !== 'clipipe-subscription')) {
     const e = resolveProvider(name);
-    const p = makeProvider(name, { apiKey: 'k', model: e.tiers.sonnet });
+    const p = makeProvider(name, { apiKey: 'k', model: 'a-model' });
     assert.equal(typeof p[e.endpointKey], 'string', `${name}: an absent baseUrl must not blank the endpoint`);
     assert.ok(p[e.endpointKey].startsWith('http'), `${name}: it falls back to a real default`);
   }
@@ -335,7 +311,7 @@ test('an omitted endpoint leaves the provider on its own default — never undef
 test('every admitted provider still gets exposeErrorBody unconditionally (F153)', () => {
   for (const name of PROVIDERS.filter((p) => p !== 'clipipe-subscription')) {
     const e = resolveProvider(name);
-    const p = makeProvider(name, { apiKey: 'k', model: e.tiers.sonnet });
+    const p = makeProvider(name, { apiKey: 'k', model: 'a-model' });
     assert.equal(p.exposeErrorBody, true, `${name}: the provider's own error sentence must reach the human`);
   }
 });
@@ -582,8 +558,8 @@ const F192_CARD = { items: [{ rule: 'has-doc', text: 'Every top-level function h
 const F192_ARTIFACT = '/** doc */\nexport function a() {}\n';
 
 /** run one judge locate against a real provider whose `_request` captures the body */
-async function captureJudgeBody(/** @type {string} */ model) {
-  const provider = makeProvider('openai-api', { apiKey: 'test-key', model });
+async function captureJudgeBody(/** @type {string} */ model, /** @type {boolean} */ legacyMaxTokens = false) {
+  const provider = makeProvider('openai-api', { apiKey: 'test-key', model, legacyMaxTokens });
   /** @type {any} */
   let body = null;
   /** @type {any} */ (provider)._request = async (/** @type {string} */ _path, /** @type {any} */ b) => {
@@ -596,7 +572,7 @@ async function captureJudgeBody(/** @type {string} */ model) {
 }
 
 test('F192: a deepseek-flash judge locate carries thinking:{type:"disabled"} and the unchanged 4000-token cap', async () => {
-  const body = await captureJudgeBody('deepseek-flash');
+  const body = await captureJudgeBody('deepseek-flash', true); // the row's "old max_tokens" tick, set by the person
   assert.deepEqual(body.thinking, { type: 'disabled' });
   assert.equal(JUDGE_MAX_TOKENS, 4000);
   assert.equal(body.max_tokens, 4000, 'deepseek-flash takes the legacy max_tokens key (F149) and the cap is untouched');

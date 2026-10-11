@@ -11,7 +11,6 @@
 // the author doors and the run doors all resolve through `findRow` / `keyNameFor` /
 // `applyConfiguredKey` / `modelChoiceFor` below — no second lookup exists. Key VALUES
 // never pass through here — only names.
-import { resolveProvider } from './providers.js';
 import { readConfig } from './config.js';
 import { filledKeyNames } from './keysfile.js';
 import { SHAPES } from './providershapes.js';
@@ -46,6 +45,8 @@ export function usableKey(raw) {
  * @property {number} [inPerM] the customer's own price, USD per 1M input tokens
  * @property {number} [outPerM] the same, for output tokens
  */
+
+/** @typedef {{ rates: { in: number, out: number }, inPerM: number, outPerM: number, envName: string }|null} PriceResult */
 
 /**
  * @typedef {object} KeyRow
@@ -114,14 +115,46 @@ export function keyRows({ filled, config }) {
 }
 
 /**
- * The rows for a keys home. `undefined` home (a door that skipped the keys file) = no
- * rows, so nothing resolves through the file.
+ * The key names that make rows: every key in the keys file with a value (file order), plus — when `env` is given — a key only the
+ * SHELL holds that config already names (`keys.<ENV>` or `models.<ENV>`), sorted after them. The page shows such a row as
+ * "found in shell"; the run path must resolve it the same way.
+ * @param {readonly string[]} filled the keys file's filled names
+ * @param {Record<string, any>} config
+ * @param {Record<string, string|undefined>} [env] the shell side
+ * @returns {string[]}
+ */
+export function rowNamesOf(filled, config, env) {
+  if (!env) return [...filled];
+  const named = new Set([...Object.keys(config?.keys ?? {}), ...Object.keys(config?.models ?? {})]);
+  const shellOnly = [...named].filter((n) => !filled.includes(n) && typeof env[n] === 'string' && env[n] !== '').sort();
+  return [...filled, ...shellOnly];
+}
+
+/**
+ * The rows for a keys home. `undefined` home (a door that skipped the keys file) = no rows. With `env`, a shell-only key that
+ * config names is a row too ({@link rowNamesOf}).
+ * @param {string|undefined} home
+ * @param {Record<string, string|undefined>} [env]
+ * @returns {KeyRow[]}
+ */
+export function rowsForHome(home, env) {
+  if (home === undefined) return [];
+  const config = readConfig({ home }).config;
+  return keyRows({ filled: rowNamesOf(filledKeyNames(home), config, env), config });
+}
+
+/**
+ * EVERY row a config home names, keyed or not: the keys file's filled names plus every name `keys.<ENV>` / `models.<ENV>` carries. For
+ * a readout that must say which variable a model line WOULD read ("KEY is not set in this shell") before any key exists. Never for a run.
  * @param {string|undefined} home
  * @returns {KeyRow[]}
  */
-export function rowsForHome(home) {
+export function namedRowsForHome(home) {
   if (home === undefined) return [];
-  return keyRows({ filled: filledKeyNames(home), config: readConfig({ home }).config });
+  const config = readConfig({ home }).config;
+  const named = [...new Set([...Object.keys(config?.keys ?? {}), ...Object.keys(config?.models ?? {})])];
+  const filled = filledKeyNames(home);
+  return keyRows({ filled: [...filled, ...named.filter((n) => !filled.includes(n))], config });
 }
 
 /**
@@ -174,67 +207,106 @@ export function findRow(rows, { provider, baseUrl, model }) {
 }
 
 /**
- * How a Model-menu pick resolves: the row with a ticked-and-priced line for the model (a model
- * no row ticks is never offered). `baseUrl` is absent when blank, exactly as a spec omits it.
+ * How a Model-menu pick resolves: the row named by `provider` (its key's env name) with a ticked-and-priced line for `model`.
+ * With no `provider` (an older caller) the first row ticking the model. `baseUrl` is absent when blank, exactly as a spec omits it.
+ * A model no row ticks, or a row that does not tick it, is `null` — never offered, never run.
  * @param {readonly KeyRow[]} rows
- * @param {string} model
- * @returns {{ provider: string, baseUrl?: string, envName: string, name: string }|null}
+ * @param {{ provider?: string|null, model?: string|null }} pick `provider` is the KEY's env name
+ * @returns {{ provider: string, baseUrl?: string, envName: string, name: string, legacyMaxTokens: boolean }|null}
  */
-export function modelChoiceFor(rows, model) {
-  const hit = model === '' ? undefined : tickedLines(rows).find((x) => x.line.model === model);
+export function modelChoiceFor(rows, { provider, model }) {
+  if (typeof model !== 'string' || model === '') return null;
+  const hit = tickedLines(rows).find((x) => x.line.model === model && (typeof provider === 'string' && provider !== '' ? x.row.envName === provider : true));
   if (!hit) return null;
   const r = hit.row;
-  return { provider: r.provider, ...(r.baseUrl.trim() !== '' ? { baseUrl: r.baseUrl.trim() } : {}), envName: r.envName, name: hit.line.model };
+  return { provider: r.provider, ...(r.baseUrl.trim() !== '' ? { baseUrl: r.baseUrl.trim() } : {}), envName: r.envName, name: hit.line.model, legacyMaxTokens: r.legacyMaxTokens };
 }
 
 /**
- * The models Chat offers (every ticked-and-priced line), in keys-file order.
+ * The lines Chat's Model menu offers: every ticked-and-priced line of the rows, in keys-file order, labelled `<KEY> · <model>`.
  * @param {readonly KeyRow[]} rows
- * @returns {{ id: string, envName: string, shape: string }[]}
+ * @returns {{ slot: string, model: string, label: string }[]}
  */
-export function chatModels(rows) {
-  return tickedLines(rows).map(({ row, line }) => ({
-    id: line.model, envName: row.envName, shape: SHAPES.find((s) => s.id === row.provider)?.label ?? row.provider,
-  }));
+export function chatLines(rows) {
+  return tickedLines(rows).map(({ row, line }) => ({ slot: row.envName, model: line.model, label: `${row.envName} · ${line.model}` }));
+}
+
+/** The plain sentence when a stale Chat pick names a key and a model no row ticks (fwd's wording, bareloop's seam). */
+export const REFUSE_NO_TICK = 'Tick a model in Settings > Providers. Nothing was spent.';
+export const REFUSE_NO_PICK = 'Pick a model. Nothing was spent.';
+/** @param {string} key @returns {string} */
+export const refuseNotSetUp = (key) => `${key} is not set up: put its key in your keys file and type its Base URL in Settings > Providers. Nothing was spent.`;
+
+/**
+ * Judge a Model-menu pick `{provider, model}` against the rows, for the doors that start a session. `ok:true` carries the choice;
+ * otherwise the plain refusal (one of the three sentences).
+ * @param {readonly KeyRow[]} rows
+ * @param {{ provider?: string|null, model?: string|null }} pick
+ * @returns {{ ok: true, choice: NonNullable<ReturnType<typeof modelChoiceFor>> } | { ok: false, say: string }}
+ */
+export function judgePick(rows, pick) {
+  if (typeof pick.model !== 'string' || pick.model === '') return { ok: false, say: tickedLines(rows).length === 0 ? REFUSE_NO_TICK : REFUSE_NO_PICK };
+  const choice = modelChoiceFor(rows, pick);
+  if (choice) return { ok: true, choice };
+  const key = typeof pick.provider === 'string' ? pick.provider : '';
+  if (key !== '' && !rows.some((r) => r.envName === key)) return { ok: false, say: refuseNotSetUp(key) };
+  if (key !== '') return { ok: false, say: rows.find((r) => r.envName === key)?.models.some(isTickedLine) ? REFUSE_NO_PICK : REFUSE_NO_TICK };
+  return { ok: false, say: tickedLines(rows).length === 0 ? REFUSE_NO_TICK : REFUSE_NO_PICK };
 }
 
 /**
- * The key variable NAME a job on `(provider, baseUrl[, model])` reads: the matching row's
- * variable, else the provider's built-in one (byte-identical to before for anything no row
- * claims).
+ * The CLI sentence when a run names no model and the spec carries none (fwd's `pickTicked` sentence).
+ */
+export const REFUSE_NAME_MODEL = 'Name the model with --model <id>: one ticked in Settings > Providers with both prices.';
+
+/**
+ * Which Settings line a RUN works on. A spec's own `model` wins; a spec that names none (signed before models were required)
+ * takes `--model <id>`; a spec with no `baseUrl` (the same era) matches a row on any endpoint of its shape. `--provider <KEY>`
+ * narrows to one key when two keys tick the same id. Pure; the signed spec is never changed, so its hash is untouched.
+ * @param {readonly KeyRow[]} rows
+ * @param {{ provider?: string|null, baseUrl?: string|null, model?: string|null }} spec the signed spec's worker fields
+ * @param {{ model?: string|null, provider?: string|null }} [flags] the operator's `--model` / `--provider`
+ * @returns {{ ok: true, row: KeyRow, line: ModelLine, model: string, baseUrl: string|undefined } | { ok: false, say: string }}
+ */
+export function resolveWorker(rows, spec, flags = {}) {
+  const model = typeof spec.model === 'string' && spec.model !== '' ? spec.model : (typeof flags.model === 'string' && flags.model !== '' ? flags.model : '');
+  if (model === '') return { ok: false, say: REFUSE_NAME_MODEL };
+  const want = typeof spec.baseUrl === 'string' && spec.baseUrl.trim() !== '' ? endpointOf(String(spec.provider), spec.baseUrl) : null;
+  const key = typeof flags.provider === 'string' && flags.provider !== '' ? flags.provider : null;
+  const hits = tickedLines(rows).filter(({ row, line }) => row.provider === spec.provider && line.model === model
+    && (want === null || endpointOf(row.provider, row.baseUrl) === want) && (key === null || row.envName === key));
+  if (hits.length === 0) return { ok: false, say: refuseNotSetUp(model) };
+  const names = [...new Set(hits.map((h) => h.row.envName))];
+  if (names.length > 1) return { ok: false, say: `${model} is ticked on more than one key (${names.join(', ')}): name one with --provider <KEY>. Nothing was spent.` };
+  const { row, line } = hits[0];
+  return { ok: true, row, line, model, baseUrl: row.baseUrl.trim() !== '' ? row.baseUrl.trim() : undefined };
+}
+
+/**
+ * The key variable NAME a job on `(provider, baseUrl[, model])` reads: the matching row's own env name. There is NO built-in
+ * name: no matching row = no key (`name: null`).
  * @param {string|null|undefined} provider
  * @param {string|null|undefined} baseUrl
  * @param {readonly KeyRow[]} rows
  * @param {string|null|undefined} [model]
- * @returns {{ name: string, builtIn: string, chosen: boolean }}
+ * @returns {{ name: string|null, chosen: boolean }}
  */
 export function keyNameFor(provider, baseUrl, rows, model) {
-  const builtIn = resolveProvider(/** @type {string} */ (provider)).envKey;
   const row = findRow(rows, { provider, baseUrl, model });
-  return row && row.envName !== builtIn
-    ? { name: row.envName, builtIn, chosen: true }
-    : { name: builtIn, builtIn, chosen: false };
+  return row ? { name: row.envName, chosen: true } : { name: null, chosen: false };
 }
 
 /**
- * The env a door hands to provider construction, with the matching row's key variable
- * standing in for the provider's built-in one: `env[builtIn] = env[row.envName]` (the `null`
- * no-key marker becomes {@link NO_KEY_PLACEHOLDER}). A copy — never mutates the input.
- * No matching row and no marker = the env unchanged.
+ * The key VALUE for a row's env name out of an env (the `null` no-key marker becomes {@link NO_KEY_PLACEHOLDER}); `undefined`
+ * when the row's variable is unset or empty.
  * @param {Record<string,string|undefined>} env
- * @param {string|null|undefined} provider
- * @param {string|null|undefined} baseUrl
- * @param {readonly KeyRow[]} rows
- * @param {string|null|undefined} [model]
- * @returns {Record<string,string|undefined>}
+ * @param {string|null|undefined} envName
+ * @returns {string|undefined}
  */
-export function applyConfiguredKey(env, provider, baseUrl, rows, model) {
-  if (typeof provider !== 'string') return env;
-  let k;
-  try { k = keyNameFor(provider, baseUrl, rows, model); } catch { return env; } // unknown provider: resolveProvider's own named throw fires at its own door
-  const value = env[k.name];
-  if (!k.chosen && value !== 'null') return env;
-  return { ...env, [k.builtIn]: usableKey(value) };
+export function keyValueOf(env, envName) {
+  if (typeof envName !== 'string') return undefined;
+  const v = env[envName];
+  return v === undefined || v === '' ? undefined : usableKey(v);
 }
 
 /**
@@ -280,10 +352,35 @@ export function ratesFor(provider, baseUrl, rows, model) {
   const row = findRow(rows, { provider, baseUrl, model });
   if (!row) return null;
   const line = model ? row.models.find((l) => l.model === model) : row.models.find(isTickedLine);
-  if (!line || !isPrice(line.inPerM) || !isPrice(line.outPerM)) return null;
+  const r = line ? ratesOfLine(line) : null;
+  return r ? { ...r, envName: row.envName } : null;
+}
+
+/**
+ * A model line's own price in bare-agent's shape, or `null` when the line carries none (a price is a pair or nothing).
+ * @param {ModelLine} line
+ * @returns {{ rates: { in: number, out: number }, inPerM: number, outPerM: number }|null}
+ */
+export function ratesOfLine(line) {
+  if (!isPrice(line.inPerM) || !isPrice(line.outPerM)) return null;
   const inPerM = /** @type {number} */ (line.inPerM);
   const outPerM = /** @type {number} */ (line.outPerM);
-  return { rates: { in: inPerM / 1000, out: outPerM / 1000 }, inPerM, outPerM, envName: row.envName };
+  return { rates: { in: inPerM / 1000, out: outPerM / 1000 }, inPerM, outPerM };
+}
+
+/**
+ * The row a judge's key and endpoint come from: the worker's own row when the judge shares the worker's API shape, else the judge
+ * shape's row that ticks the judge's model (else the first row of that shape). `null` when no row is on that shape.
+ * @param {readonly KeyRow[]} rows
+ * @param {{ provider: string, model?: string|null }} judge
+ * @param {string|null|undefined} workerProvider
+ * @param {KeyRow|null} workerRow
+ * @returns {KeyRow|null}
+ */
+export function judgeRowFor(rows, judge, workerProvider, workerRow) {
+  if (judge.provider === workerProvider && workerRow) return workerRow;
+  const onShape = rows.filter((r) => r.provider === judge.provider);
+  return onShape.find((r) => r.models.some((l) => l.model === judge.model && isTickedLine(l))) ?? onShape[0] ?? null;
 }
 
 /**

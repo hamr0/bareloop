@@ -137,7 +137,7 @@ test('validateJobCard: RED-PROOF — an empty/zero/non-number Cap $ is refused; 
 
 test('validateJobCard: the Model must be a Name in Settings — a model no row names, or no rows at all, refuses ($0)', () => {
   assert.equal(validateJobCard(baseCard({ model: 'not-a-name' })).ok, false);
-  assert.match(validateJobCard(baseCard({ model: 'gpt-x' })).error, /Names in Settings/);
+  assert.match(validateJobCard(baseCard({ model: 'gpt-x' })).error, /^(Tick a model in Settings > Providers|Pick a model)\. Nothing was spent\.$/);
   assert.equal(rawValidateJobCard(baseCard(), { rows: [] }).ok, false, 'no rows = nothing to pick');
   const two = keyRows({ filled: ['ANTHROPIC_API_KEY', 'MY_KEY'], config: { keys: { ...ANTH_CFG.keys, MY_KEY: { name: 'gpt-x', priceInPerM: 1, priceOutPerM: 2, shape: 'openai-api', baseUrl: '' } }, models: ANTH_CFG.models } });
   assert.equal(rawValidateJobCard(baseCard({ model: 'gpt-x' }), { rows: two }).ok, true, 'a Name typed in Settings is a valid Model');
@@ -382,7 +382,7 @@ test('POST /api/author/start: a Model no Settings row names is refused at $0 (40
     method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': none.token }, body: JSON.stringify(baseCard({ source: repo })),
   });
   assert.equal(r0.status, 400);
-  assert.match((await r0.json()).error, /Names in Settings/);
+  assert.match((await r0.json()).error, /^(Tick a model in Settings > Providers|Pick a model)\. Nothing was spent\.$/);
   // (b) a row exists but its value is malformed (a tab): the session refuses naming the key variable
   const { base, token } = await startAuthorServer(t, { env: {}, home: keysHomeWith('ANTHROPIC_API_KEY=sk-a\tb\n') });
   const res = await fetch(`${base}/api/author/start`, {
@@ -964,7 +964,7 @@ test('createSession: a model line with no price, half a price or a bad price is 
     // eslint-disable-next-line no-await-in-loop
     const r = await priceSession(t, { row, jobName: `panel-author-price-bad-${why.replace(' ', '-')}` });
     assert.equal(r.session.state.phase, 'refused', why);
-    assert.match(r.session.state.error, /Stopped — nothing spent\./, why);
+    assert.match(r.session.state.error, /Nothing was spent\./, why);
     assert.equal(r.seen.requests, 0, `${why}: no provider call`);
     assert.equal(r.generated(), null, `${why}: the composer never ran`);
     assert.equal(r.session.state.draftSpentUsd, 0, why);

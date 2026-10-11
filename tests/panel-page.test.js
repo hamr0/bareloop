@@ -2387,7 +2387,7 @@ test('build item 5: refreshModelStatus renders through modelStatusLine into ONE 
 
 test('build item 7 (2026-09-28): refreshModelStatus calls the model-check route with the SELECTED model id, and runs on both load and change', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /\/api\/author\/model-check\?model=" \+ encodeURIComponent\(modelId\)/);
+  assert.match(html, /\/api\/author\/model-check\?" \+ pickQuery\(modelSelect\.value\)/, 'the KEY and the model both go: two keys can tick one id');
   assert.match(html, /modelSelect\.addEventListener\("change", refreshModelStatus\)/);
   const start = html.indexOf('function refreshModelStatus(){');
   const callIdx = html.indexOf('refreshModelStatus();', start);
@@ -2941,7 +2941,7 @@ test('Model is the fifth open box on a reuse card: setReuseLocked no longer lock
   const lock = extractFnSource(html, 'setReuseLocked');
   assert.doesNotMatch(lock, /modelSelect/, 'the Model menu stays editable on a reuse card');
   const fn = extractFnSource(html, 'refreshReuseLine');
-  assert.match(fn, /&model=" \+ encodeURIComponent\(modelSelect\.value\)/);
+  assert.match(fn, /"&" \+ pickQuery\(modelSelect\.value\)/);
   assert.match(fn, /sfLine\.textContent = r\.line/);
   assert.match(html, /modelSelect\.addEventListener\("change", refreshReuseLine\)/);
 });

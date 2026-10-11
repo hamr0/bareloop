@@ -101,7 +101,7 @@
 //                  in; a draft missing one, or naming one the provider factory
 //                  does not know, dies here loud, listing the known table.
 import { keysForDoor } from './keysfile.js';
-import { applyConfiguredKey, judgeRatesFor, keyNameFor, ratesFor, rowsForHome } from './providerrows.js';
+import { judgeRatesFor, judgeRowFor, keyNameFor, keyValueOf, ratesFor, ratesOfLine, resolveWorker, rowsForHome } from './providerrows.js';
 import { ConfigError } from './config.js';
 import {
   readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, statSync,
@@ -466,13 +466,15 @@ export async function main(argv, deps = {}) {
     try { return resolveProvider(draft?.provider); } catch (e) { return die(/** @type {Error} */ (e).message); }
   })();
   const PROVIDER_NAME = /** @type {string} */ (draft.provider);
-  // The same tier run-u drafts and works on. The declaration is authored by a
-  // model, so the floor is the drafter floor (PRD v1.36: sonnet MINIMUM).
-  const MODEL = /** @type {NonNullable<typeof providerEntry>} */ (providerEntry).tiers.sonnet;
-  // spec.baseUrl (PRD item 28, ruling (d)) — the same forwarding rule run-u
-  // applies: forwarded only when the draft names one, every provider
-  // constructor defaults it on its own when absent.
-  const baseUrl = typeof draft?.baseUrl === 'string' ? draft.baseUrl : undefined;
+  // The Settings LINE this authoring run works on (P8): the draft's own `model` on a ticked, priced line of a key row on the
+  // draft's API shape (and Base URL, when it names one). The row is the key, the Base URL and the old-max_tokens tick. Nothing is
+  // built in: a draft naming no model, or a model no row ticks, stops here at $0.
+  const keyCfg = rowsForHome(keys.home, env);
+  const W = resolveWorker(keyCfg, draft);
+  if (!W.ok) { err(W.say.includes('Nothing was spent') ? W.say : `${W.say} Nothing was spent.`); throw new ExitSignal(2); }
+  const MODEL = W.model;
+  const baseUrl = W.baseUrl;
+  const AUTHOR_ROW = W.row;
 
   // THE JUDGE THIS RUN'S OWN WORKER RESOLVES TO (PRD item 32.1) — resolved ONCE,
   // here, from the DRAFT, and reused for BOTH the compose-time stamp (the
@@ -508,12 +510,9 @@ export async function main(argv, deps = {}) {
 
   // Secrets load from the environment; they never enter argv (a command line is
   // world-readable on /proc) and they are never printed.
-  // P4a item 4 — the key variable the person picked in Settings (config.json) stands in for
-  // the provider's built-in one; none picked = the built-in. Names only.
-  const keyCfg = rowsForHome(keys.home);
-  const authorEnv = applyConfiguredKey(env, PROVIDER_NAME, baseUrl, keyCfg);
-  const AUTHOR_ENV_KEY = keyNameFor(PROVIDER_NAME, baseUrl, keyCfg).name;
-  const apiKey = authorEnv[/** @type {NonNullable<typeof providerEntry>} */ (providerEntry).envKey];
+  // The key is the chosen row's own variable (P8: no built-in name). Names only.
+  const AUTHOR_ENV_KEY = AUTHOR_ROW.envName;
+  const apiKey = keyValueOf(env, AUTHOR_ENV_KEY);
   if (!apiKey) { err(`${AUTHOR_ENV_KEY} not set (secrets load from the environment — never the tree, never argv)`); throw new ExitSignal(2); }
   // F181 — a key that carries a line break/control char/stray whitespace (a
   // two-line secret-store entry, e.g.) reads as "set" by the presence check
@@ -527,17 +526,17 @@ export async function main(argv, deps = {}) {
   // loop, confirm turn, calibration judge). A bad price refuses here; it never falls back to the guess.
   /** @type {ReturnType<typeof ratesFor>} */
   let authorPrice = null;
-  try { authorPrice = ratesFor(PROVIDER_NAME, baseUrl, keyCfg); } catch (e) {
-    if (!(e instanceof ConfigError)) throw e;
-    err(`${e.message} — refusing to start rather than guess a price. Nothing spent.`);
-    throw new ExitSignal(2);
+  {
+    const al = ratesOfLine(W.line);
+    authorPrice = al ? { ...al, envName: AUTHOR_ROW.envName } : null;
   }
   /** The judge's key follows the RESOLVED judge provider's own env var, with
    * `JUDGE_API_KEY` as the role-named override in front (PRD item 32.3) — the same
    * contract `scripts/run-u.mjs` keeps, so one story covers both surfaces. When the
    * judge IS the authoring provider this is the key already read above. */
+  const judgeRowOf = (/** @type {{provider: string, model?: string|null}} */ j) => judgeRowFor(keyCfg, j, PROVIDER_NAME, AUTHOR_ROW);
   const judgeKeyFor = (/** @type {string} */ providerName) => (
-    env.JUDGE_API_KEY ?? (providerName === PROVIDER_NAME ? authorEnv : applyConfiguredKey(env, providerName, undefined, keyCfg))[resolveProvider(providerName).envKey]
+    env.JUDGE_API_KEY ?? (providerName === PROVIDER_NAME ? apiKey : keyValueOf(env, judgeRowFor(keyCfg, { provider: providerName }, PROVIDER_NAME, AUTHOR_ROW)?.envName))
   );
 
   /** F6 — an unpriced call makes the TOTAL unknown, and unknown is reported as
@@ -579,7 +578,7 @@ export async function main(argv, deps = {}) {
   // one) — the real judge identity is not resolved until after `validateJob`,
   // further down, where a second call takes only its `.judgeProvider`.
   const { provider } = buildRunnerProviders({
-    providerName: PROVIDER_NAME, apiKey, model: MODEL, tierModels: providerEntry.tiers, baseUrl,
+    providerName: PROVIDER_NAME, apiKey, model: MODEL, baseUrl, legacyMaxTokens: AUTHOR_ROW.legacyMaxTokens,
     judgeApiKey: apiKey, judgeModel: MODEL, judgeProviderName: PROVIDER_NAME, judgeBaseUrl: baseUrl,
   });
   emit('author-start', { runid, source: SOURCE, lang: LANG, verdictType: VERDICT, provider: PROVIDER_NAME, model: MODEL, baseUrl: baseUrl ?? null, job: draft?.job ?? null, timeoutMs: TIMEOUT_MS, ceilingUsd: CEILING_USD });
@@ -1115,7 +1114,7 @@ export async function main(argv, deps = {}) {
           const judgeKeyValue = judgeKeyFor(judge.provider);
           const judgeKeyProblem = judgeKeyValue ? apiKeyProblem(judgeKeyValue) : null;
           if (judgeKeyProblem) {
-            const judgeEnvName = env.JUDGE_API_KEY ? 'JUDGE_API_KEY' : resolveProvider(judge.provider).envKey;
+            const judgeEnvName = env.JUDGE_API_KEY ? 'JUDGE_API_KEY' : (judgeRowOf(judge)?.envName ?? judge.provider);
             err(`${judgeEnvName} ${judgeKeyProblem} — refusing rather than crashing mid-call (never trimmed or repaired; fix the value at its source)`);
             // F186 — the scout above already ran and may have left its own gate
             // audit in the tree. Under `process.exit()` this path used to skip
@@ -1149,9 +1148,10 @@ export async function main(argv, deps = {}) {
         let judgeProvider = null;
         if (judge) {
           judgeProvider = buildRunnerProviders({
-            providerName: PROVIDER_NAME, apiKey, model: MODEL, tierModels: providerEntry.tiers, baseUrl,
+            providerName: PROVIDER_NAME, apiKey, model: MODEL, baseUrl, legacyMaxTokens: AUTHOR_ROW.legacyMaxTokens,
             judgeApiKey: judgeKeyFor(judge.provider), judgeModel: judge.model, judgeProviderName: judge.provider,
-            judgeBaseUrl: judge.provider === PROVIDER_NAME ? baseUrl : undefined,
+            judgeBaseUrl: judge.provider === PROVIDER_NAME ? baseUrl : (judgeRowOf(judge)?.baseUrl.trim() || undefined),
+            judgeLegacyMaxTokens: judge.provider === PROVIDER_NAME ? AUTHOR_ROW.legacyMaxTokens : (judgeRowOf(judge)?.legacyMaxTokens ?? false),
           }).judgeProvider;
         }
         if (judge) {
@@ -1297,7 +1297,7 @@ export async function main(argv, deps = {}) {
               + 'and run-u will enforce the remainder (Cap $ minus this) as ITS ceiling — pass --draft-spent-usd exactly as shown below, never a rounded or re-typed figure.');
           }
           out('\nTo run it (the same signature and gates as any other job — nothing here bypasses them):');
-          out(`  ${keyNameFor(PROVIDER_NAME, baseUrl, keyCfg, spec.model).name}=... ${commandFor('run-u', deps.invokedAs)} --spec ${specFile} --approve ${hash}${draftSpentUsd > 0 ? ` --draft-spent-usd ${draftSpentUsd}${draftIncomplete ? ' --draft-spend-incomplete' : ''}` : ''}`);
+          out(`  ${AUTHOR_ENV_KEY}=... ${commandFor('run-u', deps.invokedAs)} --spec ${specFile} --approve ${hash}${draftSpentUsd > 0 ? ` --draft-spent-usd ${draftSpentUsd}${draftIncomplete ? ' --draft-spend-incomplete' : ''}` : ''}`);
           emit('author-end', { outcome: 'prepared', specHash: hash });
         }
       }

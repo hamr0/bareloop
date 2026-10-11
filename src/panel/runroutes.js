@@ -175,6 +175,9 @@ export function createRunRoutes(opts) {
       '--wait', 'systemd-inhibit', '--why=bareloop panel resume',
       process.execPath, bareloopBin,
       'run-u', '--spec', specPath, '--resume', m[1], '--approve', specHash,
+      // an older spec that names no model runs on the Settings line the person picks at resume (hash untouched, run-u's own rule)
+      ...(typeof body?.model === 'string' && body.model !== '' ? ['--model', body.model] : []),
+      ...(typeof body?.provider === 'string' && body.provider !== '' ? ['--provider', body.provider] : []),
       // the drafting fold rides every leg of the chain (a leg that dropped it would widen the ceiling)
       ...(plan.draftSpentUsd !== null ? ['--draft-spent-usd', String(plan.draftSpentUsd), ...(plan.draftSpendComplete === false ? ['--draft-spend-incomplete'] : [])] : []),
     ];

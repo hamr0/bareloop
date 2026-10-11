@@ -87,7 +87,7 @@
 // non-repo source gets the form up to here and then an honest named stop:
 // bareloop has no checks for that kind of job yet (ruling 7 → M4).
 import { keysForDoor } from './keysfile.js';
-import { applyConfiguredKey, rowsForHome } from './providerrows.js';
+import { keyValueOf, namedRowsForHome, resolveWorker } from './providerrows.js';
 import {
   writeFileSync, mkdirSync, readFileSync, statSync,
 } from 'node:fs';
@@ -192,6 +192,9 @@ export async function main(argv, deps = {}) {
   // way an empty `--verdict`/`--provider` value already does elsewhere in this
   // file.
   const baseUrlArg = arg('base-url');
+  // `--model <id>`: the model id of a line ticked in Settings > Providers (with both prices). Written into the draft as `model`, so the
+  // job carries its own model; absent when never given (run-author then stops at $0 asking for one).
+  const modelArg = arg('model');
   // `--lang` IS GONE (PRD item 33 M3, ruling 3): language is a FACT of the
   // repository, read off its own manifest, never a flag a person sets. A
   // `--lang` on the command line now is an operator error, stopped loud rather
@@ -686,6 +689,7 @@ export async function main(argv, deps = {}) {
     // written as `null`/`''`; every provider constructor defaults its own
     // endpoint on its own in that case (PRD item 28 ruling (d)).
     ...(baseUrlArg === null ? {} : { baseUrl: baseUrlArg }),
+    ...(modelArg === null ? {} : { model: modelArg }),
     cadence: { unit: 'day', every: 1 },
     budgetUsd,
     ...(wallMin === null ? {} : { maxWallMs: Math.round(wallMin * 60_000) }),
@@ -782,29 +786,17 @@ export async function main(argv, deps = {}) {
   // anything this script itself let through; the try/catch is only for the
   // off-menu case `validateJob` reds but does not stop the write for (an
   // admitted-but-uncrafted table entry would otherwise crash this print).
-  let providerEntry = null;
-  try { providerEntry = resolveProvider(PROVIDER); } catch { providerEntry = null; }
-  const providerEnvKey = providerEntry?.envKey ?? null;
-  say(`  ${providerEnvKey ?? 'YOUR_PROVIDER_API_KEY'}=... ${commandFor('author', deps.invokedAs)} ${childArgs.join(' ')}`);
-  // An `openai-api` + `baseUrl` draft (DeepSeek, today's one secondary, reached
-  // this way) still reads its key from `OPENAI_API_KEY` — there is no separate
-  // "DeepSeek key" env var, and a person pointed only at the command above could
-  // reasonably miss that. Said once, plainly, never a key VALUE.
-  if (draft.baseUrl !== undefined && providerEnvKey) {
-    say(`  (the endpoint above is reached through the "${PROVIDER}" table entry, so its key still goes in ${providerEnvKey} — there is no separate endpoint-specific key variable)`);
-  }
-  // NO KEY, NO OFFER. `run-author.mjs` refuses without one and exits 2 at its own
-  // door, before a spine exists — so with the shell unkeyed this question has
-  // exactly one possible outcome for the person, and putting it anyway spends
-  // their attention on a choice they do not have. What is actionable instead is
-  // the command above and the one line that says how to make it work.
-  // F181 — a key that IS set can still carry a shape run-author will refuse
-  // (a line break/control char/stray whitespace, e.g. a two-line secret-store
-  // entry). A malformed key must not count as KEYED: this offer must read the
-  // same "will it actually run" question run-author itself asks at its door.
-  // P4a item 4 — the key variable the person picked in Settings stands in for the built-in one
-  const keyEnv = keys.home !== undefined ? applyConfiguredKey(env, PROVIDER, draft.baseUrl, rowsForHome(keys.home)) : env;
-  const rawKeyValue = providerEnvKey ? keyEnv[providerEnvKey] : undefined;
+  // The key is the Settings row's own variable (P8: no built-in name). The worker is the draft's API shape + Base URL + model line.
+  const keyRowsNow = keys.home !== undefined ? namedRowsForHome(keys.home) : [];
+  const worker = resolveWorker(keyRowsNow, { provider: PROVIDER, baseUrl: draft.baseUrl, model: modelArg });
+  const providerEnvKey = worker.ok ? worker.row.envName : null;
+  say(`  ${providerEnvKey ?? 'YOUR_KEY_NAME'}=... ${commandFor('author', deps.invokedAs)} ${childArgs.join(' ')}`);
+  if (!worker.ok) say(`  (${worker.say.replace(' Nothing was spent.', '')} — bareloop author stops at $0 until it is)`);
+  // NO KEY, NO OFFER. `run-author.mjs` refuses without one and exits 2 at its own door, before a spine exists — so with the shell
+  // unkeyed this question has exactly one possible outcome for the person, and putting it anyway spends their attention on a choice
+  // they do not have. F181 — a key that IS set can still carry a shape run-author will refuse (a line break/control char/stray
+  // whitespace). A malformed key must not count as KEYED: this offer reads the same "will it actually run" question run-author asks.
+  const rawKeyValue = providerEnvKey ? keyValueOf(env, providerEnvKey) : undefined;
   const keyProblem = rawKeyValue ? apiKeyProblem(rawKeyValue) : null;
   const KEYED = providerEnvKey !== null && Boolean(rawKeyValue) && !keyProblem;
   if (!KEYED) {
@@ -814,7 +806,7 @@ export async function main(argv, deps = {}) {
     } else {
       say(providerEnvKey
         ? `  (${providerEnvKey} is not set in this shell — bareloop author refuses without it; secrets load from the environment, never the tree)`
-        : `  (provider "${PROVIDER}" is not in the runnable table — bareloop author will refuse it loud; this is not a key problem)`);
+        : '  (no key row serves this model yet — bareloop author refuses it at $0; this is not a key problem)');
     }
     // The repair, in plain words and WITHOUT a command: which secret store a person
     // keeps their key in is theirs, and printing one specific incantation would be

@@ -106,7 +106,7 @@ async function runU(t, env, keysHomeDir) {
   writeFileSync(closePath, CLOSE_SOURCE);
   const spec = {
     schema: 'job-v1', job: 'keysfile-wiring-fixture', description: 'P4a item 1 wiring fixture.',
-    provider: 'anthropic-api', cadence: { unit: 'day', every: 1 }, budgetUsd: 1, maxWallMs: 1_800_000,
+    provider: 'anthropic-api', model: 'm-a', cadence: { unit: 'day', every: 1 }, budgetUsd: 1, maxWallMs: 1_800_000,
     writeScope: ['src/**'], goal: 'Append MARKER_OK to src/mod.mjs.', verdictType: 'green',
     close: [{ name: 'has-marker', cmd: `node ${closePath} has-marker`, expect: 0, sha256: hashCloseScriptBytes(CLOSE_SOURCE) }],
     tools: ['read', 'grep', 'write', 'edit', 'recall', 'get'], escalation: { mode: 'decision-ready' },
@@ -119,15 +119,17 @@ async function runU(t, env, keysHomeDir) {
   return { code, errs: errs.join('\n') };
 }
 
-test('run-u door: with no key anywhere the run stops "not set"; with the value in the keys file it reaches the key check (a malformed file value is refused by shape, $0)', async (t) => {
+test('run-u door: with no key line the run stops "not set up"; with the value in the keys file it reaches the key check (a malformed file value is refused by shape, $0)', async (t) => {
   const home = tmp(t);
+  // the row (a key line in the file) AND its ticked priced line are the Settings the run works on
+  writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { MY_KEY: { shape: 'anthropic-api' } }, models: { MY_KEY: [{ model: 'm-a', use: true, inPerM: 1, outPerM: 2 }] } }));
   const none = await runU(t, {}, home);
   assert.equal(none.code, 2);
-  assert.match(none.errs, /ANTHROPIC_API_KEY not set/);
-  writeKeys(home, 'ANTHROPIC_API_KEY=tab\there-bad\n');
+  assert.match(none.errs, /m-a is not set up/, 'no key line = no row = no line to run on');
+  writeKeys(home, 'MY_KEY=tab\there-bad\n');
   const filled = await runU(t, {}, home);
   assert.equal(filled.code, 2);
-  assert.match(filled.errs, /ANTHROPIC_API_KEY contains a tab character/);
+  assert.match(filled.errs, /MY_KEY contains a tab character/);
   assert.equal(filled.errs.includes('tab\there-bad'), false, 'the value is never echoed');
 });
 

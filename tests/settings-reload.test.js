@@ -70,7 +70,7 @@ test('in-process panel: Chat\'s Model menu and model-check follow the Settings r
   t.after(() => close());
   const H = { 'x-bareloop-token': token, 'content-type': 'application/json' };
   const get = async (p) => (await fetch(`http://127.0.0.1:${port}${p}`, { headers: H })).json();
-  const models = async () => (await get('/api/author/models')).models.map((m) => m.id);
+  const models = async () => (await get('/api/author/models')).lines.map((m) => m.model);
   assert.deepEqual(await models(), ['model-a'], 'OTHER_KEY has no ticked line: not offered');
   let b = await get('/api/author/model-check?model=model-a');
   assert.equal(b.envKey, 'DEEPSEEK_API_KEY');

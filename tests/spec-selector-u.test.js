@@ -71,9 +71,10 @@ function buildFixture(opts = {}) {
   return { dir, specPath, spec, into: null, tree: null };
 }
 
+// P8: a signed spec that names no model runs on a Settings line named with `--model <id>` — the scratch config home carries one
 const preview = (args) => {
-  const r = spawnSync(process.execPath, [RUNNER, ...args], {
-    encoding: 'utf8', timeout: 60_000, env: { ...cleanEnv(), ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '' },
+  const r = spawnSync(process.execPath, [RUNNER, ...args, '--model', 'claude-sonnet-5'], {
+    encoding: 'utf8', timeout: 60_000, env: { ...cleanEnv({}, { rows: !args.includes('--approve') }), ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '' },
   });
   const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   if (r.status === null) throw new Error(`run-u.mjs never exited (${r.error?.code ?? r.signal ?? 'no error'}):\n${out.slice(0, 400)}`);

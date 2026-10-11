@@ -8,7 +8,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, chmodSync, statSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { updateConfig } from '../src/config.js';
-import { applyConfiguredKey, keyNameFor, keyRows, findRow, modelChoiceFor, chatModels, effectiveModels, NO_KEY_PLACEHOLDER, usableKey } from '../src/providerrows.js';
+import { keyValueOf, keyNameFor, keyRows, findRow, modelChoiceFor, chatLines, effectiveModels, NO_KEY_PLACEHOLDER, usableKey, resolveWorker } from '../src/providerrows.js';
 import { apiKeyProblem } from '../src/providers.js';
 import { Loop } from 'bare-agent';
 import { rateProvenance } from '../src/ledger.js';
@@ -63,23 +63,36 @@ test('rows: nothing is built in; saved entries win; matching is by shape + endpo
   assert.equal(rows[1].legacyMaxTokens, true);
   assert.equal(keyRows({ filled: ['A_KEY'], config: { keys: { A_KEY: { shape: 'anthropic-api', legacyMaxTokens: true } } } })[0].legacyMaxTokens, false, 'the old max_tokens tick only matters on openai-api');
   assert.equal(keyNameFor('anthropic-api', undefined, rows).name, 'A_KEY');
-  assert.deepEqual(keyNameFor('openai-api', `${GW}/`, rows, 'm-e'), { name: 'E_KEY', builtIn: 'OPENAI_API_KEY', chosen: true }, 'trailing slash is the same endpoint; the ticked priced line breaks the tie');
+  assert.deepEqual(keyNameFor('openai-api', `${GW}/`, rows, 'm-e'), { name: 'E_KEY', chosen: true }, 'trailing slash is the same endpoint; the ticked priced line breaks the tie');
+  assert.deepEqual(keyNameFor('openai-api', 'https://elsewhere.example/v1', rows), { name: null, chosen: false }, 'no row = no key name: there is no built-in variable');
   assert.equal(findRow(rows, { provider: 'openai-api', baseUrl: GW, model: 'm-d' })?.envName, 'D_KEY');
   assert.equal(findRow(rows, { provider: 'openai-api', baseUrl: GW, model: 'm-x' })?.envName, 'D_KEY', 'an unticked line breaks no tie: the first row on the endpoint');
   assert.equal(findRow(rows, { provider: 'openai-api', baseUrl: 'https://elsewhere.example/v1' }), null, 'an endpoint no row claims matches no row');
   assert.equal(findRow(rows, { provider: 'openai-api', baseUrl: undefined }), null, 'a blank endpoint is blank: there is no default host to fall back to');
-  // env mapping: the row's value lands on the built-in name; input never mutated
+  // the key is the row's own variable (the `null` no-key marker becomes the placeholder); input never mutated
   const env = { D_KEY: SECRET_B, OPENAI_API_KEY: SECRET_A };
-  const out = applyConfiguredKey(env, 'openai-api', GW, rows, 'm-d');
-  assert.equal(out.OPENAI_API_KEY, SECRET_B);
-  assert.equal(env.OPENAI_API_KEY, SECRET_A);
+  assert.equal(keyValueOf(env, 'D_KEY'), SECRET_B);
+  assert.equal(keyValueOf(env, 'E_KEY'), undefined);
+  assert.equal(keyValueOf({ D_KEY: '' }, 'D_KEY'), undefined, 'an empty value is no key');
+  // the run resolves its worker line: the spec's model wins, --model fills an older spec, --provider breaks a tie
+  const spec = { provider: 'openai-api', baseUrl: GW };
+  assert.equal(resolveWorker(rows, { ...spec, model: 'm-d' }).row?.envName, 'D_KEY');
+  assert.equal(resolveWorker(rows, spec, { model: 'm-e' }).row?.envName, 'E_KEY');
+  assert.equal(resolveWorker(rows, { provider: 'openai-api' }, { model: 'm-d' }).baseUrl, GW, 'a spec with no address takes the row\'s own');
+  assert.equal(resolveWorker(rows, spec).say, 'Name the model with --model <id>: one ticked in Settings > Providers with both prices.');
+  assert.equal(resolveWorker(rows, { ...spec, model: 'm-x' }).say, 'm-x is not set up: put its key in your keys file and type its Base URL in Settings > Providers. Nothing was spent.', 'an unticked line is not a model');
+  const dup = keyRows({ filled: ['A_KEY', 'B_KEY'], config: { keys: { A_KEY: { shape: 'openai-api' }, B_KEY: { shape: 'openai-api' } }, models: { A_KEY: [{ model: 'same', use: true, inPerM: 1, outPerM: 1 }], B_KEY: [{ model: 'same', use: true, inPerM: 1, outPerM: 1 }] } } });
+  assert.match(resolveWorker(dup, { provider: 'openai-api', model: 'same' }).say, /same is ticked on more than one key \(A_KEY, B_KEY\): name one with --provider <KEY>\. Nothing was spent\./);
+  assert.equal(resolveWorker(dup, { provider: 'openai-api', model: 'same' }, { provider: 'B_KEY' }).row?.envName, 'B_KEY');
   // Chat: only ticked, priced lines; a pick resolves to shape + URL (URL absent when blank)
-  assert.deepEqual(chatModels(rows).map((m) => m.id), ['m-a', 'm-d', 'm-e']);
-  assert.deepEqual(modelChoiceFor(rows, 'm-a'), { provider: 'anthropic-api', envName: 'A_KEY', name: 'm-a' });
-  assert.equal(modelChoiceFor(rows, 'm-d').baseUrl, GW);
-  assert.equal(modelChoiceFor(rows, 'm-x'), null, 'an unticked line is never offered');
-  assert.equal(modelChoiceFor(rows, ''), null);
-  assert.equal(modelChoiceFor(rows, 'nope'), null);
+  assert.deepEqual(chatLines(rows).map((m) => m.label), ['A_KEY · m-a', 'D_KEY · m-d', 'E_KEY · m-e']);
+  assert.deepEqual(modelChoiceFor(rows, { model: 'm-a' }), { provider: 'anthropic-api', envName: 'A_KEY', name: 'm-a', legacyMaxTokens: false });
+  assert.equal(modelChoiceFor(rows, { model: 'm-d' }).baseUrl, GW);
+  assert.equal(modelChoiceFor(rows, { model: 'm-d' }).legacyMaxTokens, true, 'the row\'s old-max_tokens tick rides with the choice');
+  assert.equal(modelChoiceFor(rows, { model: 'm-d', provider: 'E_KEY' }), null, 'a stale pick: that key does not tick that model');
+  assert.equal(modelChoiceFor(rows, { model: 'm-x' }), null, 'an unticked line is never offered');
+  assert.equal(modelChoiceFor(rows, { model: '' }), null);
+  assert.equal(modelChoiceFor(rows, { model: 'nope' }), null);
   assert.equal(effectiveModels('A_KEY', config)[0].model, 'm-a');
 });
 
@@ -113,9 +126,7 @@ test('LOCAL_KEY=null: a row is made (null counts as SET, shown as "set in file")
   assert.equal(calls[0].h.Authorization, `Bearer ${NO_KEY_PLACEHOLDER}`);
   assert.equal(usableKey('null'), NO_KEY_PLACEHOLDER);
   const rows = keyRows({ filled: ['LOCAL_KEY'], config: { keys: { LOCAL_KEY: { shape: 'openai-api', baseUrl: 'http://127.0.0.1:11434/v1' } } } });
-  const env = applyConfiguredKey({ LOCAL_KEY: 'null' }, 'openai-api', 'http://127.0.0.1:11434/v1', rows);
-  assert.equal(env.OPENAI_API_KEY, NO_KEY_PLACEHOLDER);
-  assert.equal(applyConfiguredKey({ OPENAI_API_KEY: 'null' }, 'openai-api', undefined, []).OPENAI_API_KEY, NO_KEY_PLACEHOLDER, 'the marker is a placeholder even on the built-in name');
+  assert.equal(keyValueOf({ LOCAL_KEY: 'null' }, rows[0].envName), NO_KEY_PLACEHOLDER, 'the run hands the provider the placeholder, never the word null');
 });
 
 test('MONEY: a local (unknown-model) OpenAI-compatible round is a loud GUESS with a real non-zero cost — never a real $0, and never vouched', async () => {
