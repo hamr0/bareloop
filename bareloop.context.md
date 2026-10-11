@@ -647,13 +647,15 @@ plan with the first leg's spend carried as prior spend and `offerQuestions: fals
 plan's open questions) are a separate, unchanged mechanism: they are asked before drafting, about the plan; try-3 questions
 are asked after two failed drafts, about a job line.
 
-**Drafter thinking knob (hamr 2026-10-10; default UNCHANGED).** `draftThinking: 'default' | 'off'` (any other value throws, an operator
-param, never read from env inside the library, not in the panel UI) is owned by `draftCallOptions(provider, mode)` (`src/providers.js`).
-`'default'` sends nothing, byte-identical to before; `'off'` adds the per-CALL option `thinking: {type: 'disabled'}` for `deepseek-flash`
-only (an allow-list; any other model gets nothing), the same wire shape as the rubric judge's (F192). It is threaded explicitly:
-`makeLoopGenerate(provider, { draftThinking })` for the author, revise, structure-retry and confirm calls; `authorCloseForJob({ draftThinking })`
-for the scout (it hands `runAuthorScout` a `callOptions`); `createSession(card, { draftThinking })` in the panel does both. A paid ON/OFF
-contrast decides the default later.
+**Drafter thinking knob (hamr 2026-10-10; DEFAULT now OFF, hamr 2026-10-11).** `draftThinking: 'on' | 'off'` (any other value throws, an
+operator param, never read from env inside the library, not in the panel UI) is owned by `draftCallOptions(provider, mode)`
+(`src/providers.js`). The default is `'off'`, decided by the frozen ON/OFF contrast (`docs/logs/2026-10-10-drafter-thinking-contrast-prereg.md`):
+it adds the per-CALL option `thinking: {type: 'disabled'}` for `deepseek-flash` only (an allow-list; any other model gets nothing), the
+same wire shape as the rubric judge's (F192). `'on'` sends nothing (the model's own thinking) and stays selectable for a later Settings
+checkbox. It is threaded explicitly: `makeLoopGenerate(provider, { draftThinking })` for the author, revise, structure-retry and confirm calls;
+`authorCloseForJob({ draftThinking })` for the scout (it hands `runAuthorScout` a `callOptions`); `createSession(card, { draftThinking })` in
+the panel does both. The CLI drafter (`src/authorrun.js`) passes no value, so it gets the same default through the same two seams. Worker and
+judge calls are unchanged.
 
 
 **D5 — the mandatory guards are SHOWN and FIXED, and the battery keys off the VERDICT

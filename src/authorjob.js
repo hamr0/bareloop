@@ -421,7 +421,7 @@ function composerRefusal(reds) {
  *   verdictType?: string|null,
  *   questions?: Record<string|number, string>|null, generate?: Function, provider?: any,
  *   seedRef?: string|null, scout?: any, listing?: any, ceilingUsd?: number|null, judgeModel?: string|null,
- *   rates?: {in: number, out: number}|null, draftThinking?: 'default'|'off',
+ *   rates?: {in: number, out: number}|null, draftThinking?: 'on'|'off',
  *   onPhase?: (phase: string, data?: any) => void,
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void,
  *   seedFn?: Function, scoutFn?: Function, listingFn?: Function,
@@ -446,7 +446,7 @@ export async function authorCloseForJob({
   rates = null,
   // The drafter's THINKING knob ('default' | 'off'; an operator param, never read from env here). It reaches the scout through
   // `callOptions`; the `generate`/`confirmGenerate` the caller passes must be built with the SAME mode (`makeLoopGenerate`).
-  draftThinking = 'default',
+  draftThinking = 'off',
   // Q2 IS GONE from the numbered interview (PRD item 33 M3 piece 3) — the
   // fence it used to describe in prose is now Destination's own proven
   // `writeScope`, and this is what carries it into the composer prompt

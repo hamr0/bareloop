@@ -1597,11 +1597,11 @@ export function makeCostBook({ ceilingUsd = null, onCall = () => {} } = {}) {
  * `cacheMessages` (F18) and `maxTokens` (F30) are not optional on this stack.
  * `rates` is the customer's own price for this provider's key row (USD per 1K, `ratesFor`);
  * absent = bare-agent's built-in guess, exactly as before.
- * `draftThinking` ('default' | 'off', operator knob) adds the drafter's per-call thinking option via `draftCallOptions`.
+ * `draftThinking` ('on' | 'off', operator knob; default 'off') adds the drafter's per-call thinking option via `draftCallOptions`.
  * @param {any} provider @param {{system?: string, maxTokens?: number, rates?: {in: number, out: number}|null, draftThinking?: string}} [o]
  * @returns {(messages: any[], tools: any[], opts?: any) => Promise<any>}
  */
-export function makeLoopGenerate(provider, { system = AUTHOR_SYSTEM, maxTokens = AUTHOR_MAX_TOKENS, rates = null, draftThinking = 'default' } = {}) {
+export function makeLoopGenerate(provider, { system = AUTHOR_SYSTEM, maxTokens = AUTHOR_MAX_TOKENS, rates = null, draftThinking = 'off' } = {}) {
   // the drafter's per-call options (src/providers.js `draftCallOptions`, one owner); a bad mode throws HERE, at construction
   const callOptions = draftCallOptions(provider, draftThinking);
   return async (/** @type {any[]} */ messages, /** @type {any[]} */ tools, /** @type {any} */ opts = {}) => {

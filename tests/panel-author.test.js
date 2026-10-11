@@ -1256,5 +1256,40 @@ test('P7 item 6: ANY drafting stop says why in plain words on the card — a pro
 });
 
 test('createSession: draftThinking is an enumerated operator option — a bad value throws before any session exists (hamr 2026-10-10)', () => {
-  assert.throws(() => createSession(baseCard({ jobName: 'draft-thinking-bad' }), { draftThinking: 'maybe', sessionsRoot: '/nonexistent/never-created' }), /draftThinking must be one of default \| off/);
+  assert.throws(() => createSession(baseCard({ jobName: 'draft-thinking-bad' }), { draftThinking: 'maybe', sessionsRoot: '/nonexistent/never-created' }), /draftThinking must be one of on \| off/);
+});
+
+// ── hamr 2026-10-11: a session built with NO thinking value drafts with deepseek-flash thinking OFF ────────────────────
+test('createSession: with NO draftThinking value the drafter\'s real request body carries thinking:{type:"disabled"} for deepseek-flash; "on" leaves it out', async () => {
+  const realFetch = globalThis.fetch;
+  const bodyOf = async (/** @type {any} */ extra) => {
+    /** @type {any[]} */
+    const bodies = [];
+    globalThis.fetch = /** @type {any} */ (async (/** @type {any} */ _u, /** @type {any} */ init) => {
+      try { bodies.push(JSON.parse(init.body)); } catch { /* not a JSON body */ }
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'x' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1 }, model: 'deepseek-flash' }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const home = keysHomeWith('DS_KEY=sk-fake\n');
+    writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { DS_KEY: { name: 'deepseek-flash', shape: 'openai-api', baseUrl: 'https://gw.example/v1' } } }));
+    const session = createSession(baseCard({ source: makeRepo(), model: 'deepseek-flash', jobName: 'panel-author-think-default', capUsd: 1 }), {
+      env: { DS_KEY: 'sk-fake' }, home, sessionsRoot: tmp('panel-author-sess-think-'),
+      scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+      ...extra,
+    });
+    const start = Date.now();
+    while (bodies.length === 0 && Date.now() - start < 5000) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((r) => { setTimeout(r, 10); });
+    }
+    try { /** @type {any} */ (session).abandon?.(); } catch { /* best effort */ }
+    return bodies[0];
+  };
+  try {
+    const dflt = await bodyOf({});
+    assert.ok(dflt, 'the drafter made a model call');
+    assert.deepEqual(dflt.thinking, { type: 'disabled' });
+    const on = await bodyOf({ draftThinking: 'on' });
+    assert.ok(on);
+    assert.equal('thinking' in on, false);
+  } finally { globalThis.fetch = realFetch; }
 });

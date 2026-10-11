@@ -339,7 +339,7 @@ export function validateJobCard(card, opts = {}) {
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
  *   scout?: any, generate?: Function, confirmGenerate?: Function, authorFn?: Function,
- *   prepareSigningFn?: Function, npmCiFn?: Function, draftThinking?: "default"|"off", reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
+ *   prepareSigningFn?: Function, npmCiFn?: Function, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
  * @returns {any} the session object
@@ -348,7 +348,7 @@ export function createSession(card, deps = {}) {
   const env = deps.env ?? process.env;
   // The drafter's THINKING knob ('default' | 'off'): an explicit operator option, never read from env and not in the panel UI. A bad
   // value throws here, before a session exists. 'default' (today's behaviour) until a paid ON/OFF contrast decides otherwise.
-  const draftThinking = assertDraftThinking(deps.draftThinking ?? 'default');
+  const draftThinking = assertDraftThinking(deps.draftThinking ?? 'off');
   // P7: the person's own words, parsed ONCE by the one parser (src/jobblock.js). The card validator refused a malformed
   // block before a session exists; a reuse card's job text is the origin's and is not drafted from.
   const jobParsed = parseJobBlock(card.jobText);

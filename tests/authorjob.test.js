@@ -1430,7 +1430,7 @@ test('END TO END: an unrunnable declared stage escalates by its OWN fault row, w
 
 // ── hamr 2026-10-10: the drafter's thinking knob reaches the scout through authorCloseForJob, and a bad value throws ─────
 
-test('draftThinking: off hands the scout the deepseek-flash options; default hands it nothing; a bad value throws before any work', async (t) => {
+test('draftThinking: off hands the scout the deepseek-flash options; on hands it nothing; NO value is off; a bad value throws before any work', async (t) => {
   const { makeProvider } = await import('../src/providers.js');
   const p = makePatient(t);
   const flash = makeProvider('openai-api', { apiKey: 'k', model: 'deepseek-flash' });
@@ -1442,9 +1442,11 @@ test('draftThinking: off hands the scout the deepseek-flash options; default han
     ...extra,
   });
   await go({ draftThinking: 'off' });
+  await go({ draftThinking: 'on' });
   await go({});
   assert.deepEqual(seen[0].callOptions, { thinking: { type: 'disabled' } });
-  assert.equal('callOptions' in seen[1], false, "'default' passes the scout exactly what it always got");
+  assert.equal('callOptions' in seen[1], false, "'on' passes the scout exactly what it always got");
+  assert.deepEqual(seen[2].callOptions, { thinking: { type: 'disabled' } }, 'no value = off (hamr 2026-10-11)');
   await assert.rejects(() => go({ draftThinking: 'maybe' }), /draftThinking must be one of/);
-  assert.equal(seen.length, 2, 'the bad value threw before the scout ran');
+  assert.equal(seen.length, 3, 'the bad value threw before the scout ran');
 });

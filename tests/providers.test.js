@@ -610,7 +610,7 @@ test('F192: judgeCallOptions is empty for a non-OpenAI provider even when the mo
   assert.deepEqual(judgeCallOptions(p), {});
 });
 
-// ── hamr 2026-10-10: the DRAFTER's per-call "thinking off" knob (default unchanged) ─────────────────────────────────
+// ── hamr 2026-10-10: the DRAFTER's per-call "thinking off" knob (default OFF since hamr 2026-10-11) ─────────────────────────────────
 
 import { draftCallOptions, DRAFT_THINKING_MODES } from '../src/providers.js';
 import { runAuthorScout } from '../src/authorscout.js';
@@ -628,11 +628,11 @@ async function captureBodies(/** @type {string} */ model, /** @type {(p: any) =>
   return bodies;
 }
 
-test('draftCallOptions: the knob is the enumerated pair; default sends nothing; off sends thinking disabled for deepseek-flash ONLY', () => {
-  assert.deepEqual([...DRAFT_THINKING_MODES], ['default', 'off']);
+test('draftCallOptions: the knob is the enumerated pair; the DEFAULT is off; on sends nothing; off sends thinking disabled for deepseek-flash ONLY', () => {
+  assert.deepEqual([...DRAFT_THINKING_MODES], ['on', 'off']);
   const flash = makeProvider('openai-api', { apiKey: 'k', model: 'deepseek-flash' });
-  assert.deepEqual(draftCallOptions(flash), {});
-  assert.deepEqual(draftCallOptions(flash, 'default'), {});
+  assert.deepEqual(draftCallOptions(flash), { thinking: { type: 'disabled' } }, 'no value = off');
+  assert.deepEqual(draftCallOptions(flash, 'on'), {});
   assert.deepEqual(draftCallOptions(flash, 'off'), { thinking: { type: 'disabled' } });
   assert.deepEqual(draftCallOptions(makeProvider('openai-api', { apiKey: 'k', model: 'gpt-5' }), 'off'), {}, 'not on the allow-list');
   assert.deepEqual(draftCallOptions(makeProvider('anthropic-api', { apiKey: 'k', model: 'deepseek-flash' }), 'off'), {}, 'not an OpenAI-shaped provider');
@@ -640,20 +640,23 @@ test('draftCallOptions: the knob is the enumerated pair; default sends nothing; 
 
 test('draftCallOptions: any other value throws as an operator-param guard (never a silent default)', () => {
   const flash = makeProvider('openai-api', { apiKey: 'k', model: 'deepseek-flash' });
-  for (const bad of ['on', 'OFF', '', null, true, 0, {}]) {
-    assert.throws(() => draftCallOptions(flash, bad), /draftThinking must be one of default \| off/);
+  for (const bad of ['default', 'OFF', '', null, true, 0, {}]) {
+    assert.throws(() => draftCallOptions(flash, bad), /draftThinking must be one of on \| off/);
   }
   assert.throws(() => makeLoopGenerate(flash, { draftThinking: 'nope' }), /draftThinking must be one of/, 'and at the generate seam, at construction');
 });
 
-test('drafter generate (real OpenAIProvider, _request stubbed): off puts thinking on the request body for deepseek-flash only; default leaves the body unchanged', async () => {
+test('drafter generate (real OpenAIProvider, _request stubbed): the DEFAULT (no value) and off put thinking on the request body for deepseek-flash only; on leaves the body unchanged', async () => {
   const call = (/** @type {any} */ mode) => (/** @type {any} */ p) => makeLoopGenerate(p, { draftThinking: mode })([{ role: 'user', content: 'hi' }], [], {});
   const [off] = await captureBodies('deepseek-flash', call('off'));
   assert.deepEqual(off.thinking, { type: 'disabled' });
-  const [dflt] = await captureBodies('deepseek-flash', call('default'));
   const [none] = await captureBodies('deepseek-flash', (p) => makeLoopGenerate(p)([{ role: 'user', content: 'hi' }], [], {}));
+  assert.deepEqual(none.thinking, { type: 'disabled' }, 'a drafter built with NO thinking value sends thinking disabled');
+  assert.deepEqual(none, off, 'no value is exactly off');
+  const [dflt] = await captureBodies('deepseek-flash', call('on'));
   assert.equal('thinking' in dflt, false);
-  assert.deepEqual(dflt, none, "'default' is byte-identical to a generate built with no knob at all");
+  const { thinking: _t, ...offSansThinking } = off;
+  assert.deepEqual(dflt, offSansThinking, "'on' is byte-identical to the off body minus the one thinking field");
   const [other] = await captureBodies('gpt-5', call('off'));
   assert.equal('thinking' in other, false, 'a model not on the allow-list gets nothing');
   // the drafter's own max_tokens cap rides along unchanged

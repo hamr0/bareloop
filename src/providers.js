@@ -144,10 +144,11 @@ export function judgeCallOptions(provider) {
 
 /**
  * The drafter's THINKING knob — an enumerated OPERATOR param, never model output and never read from env inside the library.
- * `'default'` sends nothing (byte-identical to today); `'off'` sends the per-model options in {@link OPENAI_DRAFT_OFF_OPTIONS}.
- * The default stays `'default'` until a paid ON/OFF contrast decides otherwise (hamr 2026-10-10).
+ * `'on'` sends nothing (the model's own thinking, byte-identical to a no-knob call); `'off'` sends the per-model options in
+ * {@link OPENAI_DRAFT_OFF_OPTIONS}. The DEFAULT is `'off'` (hamr 2026-10-11, decided by the frozen ON/OFF contrast,
+ * docs/logs/2026-10-10-drafter-thinking-contrast-prereg.md); `'on'` stays selectable for a later Settings checkbox.
  */
-export const DRAFT_THINKING_MODES = Object.freeze(['default', 'off']);
+export const DRAFT_THINKING_MODES = Object.freeze(['on', 'off']);
 
 /**
  * Per-MODEL options the DRAFTER's calls carry when thinking is `'off'` (hamr 2026-10-10; same wire shape and the same reasons as
@@ -160,24 +161,24 @@ const OPENAI_DRAFT_OFF_OPTIONS = Object.freeze({
 });
 
 /**
- * Throw unless `mode` is one of {@link DRAFT_THINKING_MODES} — an operator-param guard, so a typo never silently means "default".
+ * Throw unless `mode` is one of {@link DRAFT_THINKING_MODES} — an operator-param guard, so a typo never silently means a mode.
  * @param {unknown} mode
- * @returns {'default'|'off'}
+ * @returns {'on'|'off'}
  */
 export function assertDraftThinking(mode) {
-  if (mode === 'default' || mode === 'off') return mode;
+  if (mode === 'on' || mode === 'off') return mode;
   throw new Error(`[providers] draftThinking must be one of ${DRAFT_THINKING_MODES.join(' | ')}, got ${JSON.stringify(mode)}`);
 }
 
 /**
  * The ONE owner of the per-call options every DRAFTING model call carries (scout, confirm, author, revise, structure retries).
- * `'default'` -> `{}`. `'off'` -> the allow-listed per-model options, `{}` for any provider/model not on the list.
+ * `'on'` -> `{}`. `'off'` (the default) -> the allow-listed per-model options, `{}` for any provider/model not on the list.
  * @param {any} provider a constructed bare-agent provider
- * @param {unknown} [mode] 'default' | 'off'
+ * @param {unknown} [mode] 'on' | 'off' (default 'off')
  * @returns {Record<string, any>}
  */
-export function draftCallOptions(provider, mode = 'default') {
-  if (assertDraftThinking(mode) === 'default') return {};
+export function draftCallOptions(provider, mode = 'off') {
+  if (assertDraftThinking(mode) === 'on') return {};
   if (!(provider instanceof OpenAIProvider)) return {};
   return OPENAI_DRAFT_OFF_OPTIONS[/** @type {keyof typeof OPENAI_DRAFT_OFF_OPTIONS} */ (provider.model)] ?? {};
 }
