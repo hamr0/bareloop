@@ -592,7 +592,7 @@ test('F192: a model NOT on the judge allow-list gets NO thinking field (OpenAI w
   assert.equal('thinking' in body, false);
 });
 
-test('F192: a worker/author call on the SAME deepseek-flash provider instance carries NO thinking field — the scope is the judge only', async () => {
+test('F192: a drafter call with thinking ON on the SAME deepseek-flash provider instance carries NO thinking field — the judge option never leaks into the call options', async () => {
   const provider = makeProvider('openai-api', { apiKey: 'test-key', model: 'deepseek-flash' });
   /** @type {any} */
   let body = null;
@@ -600,7 +600,7 @@ test('F192: a worker/author call on the SAME deepseek-flash provider instance ca
     body = JSON.parse(JSON.stringify(b));
     throw new Error('captured');
   };
-  await makeLoopGenerate(provider)([{ role: 'user', content: 'hi' }], [], {}).catch(() => {});
+  await makeLoopGenerate(provider, { draftThinking: 'on' })([{ role: 'user', content: 'hi' }], [], {}).catch(() => {});
   assert.ok(body, 'the worker-path request reached the provider seam');
   assert.equal('thinking' in body, false);
 });

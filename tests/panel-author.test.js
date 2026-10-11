@@ -1261,14 +1261,16 @@ test('createSession: draftThinking is an enumerated operator option — a bad va
 
 // ── hamr 2026-10-11: a session built with NO thinking value drafts with deepseek-flash thinking OFF ────────────────────
 test('createSession: with NO draftThinking value the drafter\'s real request body carries thinking:{type:"disabled"} for deepseek-flash; "on" leaves it out', async () => {
-  const realFetch = globalThis.fetch;
+  const { createRequire } = await import('node:module');
+  const OpenAIProvider = createRequire(import.meta.url)('bare-agent/providers').OpenAIProvider;
+  const realRequest = OpenAIProvider.prototype._request;
   const bodyOf = async (/** @type {any} */ extra) => {
     /** @type {any[]} */
     const bodies = [];
-    globalThis.fetch = /** @type {any} */ (async (/** @type {any} */ _u, /** @type {any} */ init) => {
-      try { bodies.push(JSON.parse(init.body)); } catch { /* not a JSON body */ }
-      return new Response(JSON.stringify({ choices: [{ message: { content: 'x' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1 }, model: 'deepseek-flash' }), { status: 200, headers: { 'content-type': 'application/json' } });
-    });
+    OpenAIProvider.prototype._request = async function stub(/** @type {string} */ _p, /** @type {any} */ b) {
+      bodies.push(JSON.parse(JSON.stringify(b)));
+      return { choices: [{ message: { content: 'x' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1 }, model: 'deepseek-flash' };
+    };
     const home = keysHomeWith('DS_KEY=sk-fake\n');
     writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { DS_KEY: { name: 'deepseek-flash', shape: 'openai-api', baseUrl: 'https://gw.example/v1' } } }));
     const session = createSession(baseCard({ source: makeRepo(), model: 'deepseek-flash', jobName: 'panel-author-think-default', capUsd: 1 }), {
@@ -1291,5 +1293,5 @@ test('createSession: with NO draftThinking value the drafter\'s real request bod
     const on = await bodyOf({ draftThinking: 'on' });
     assert.ok(on);
     assert.equal('thinking' in on, false);
-  } finally { globalThis.fetch = realFetch; }
+  } finally { OpenAIProvider.prototype._request = realRequest; }
 });
