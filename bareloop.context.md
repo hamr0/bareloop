@@ -67,7 +67,7 @@ inherited rule carries the green that minted it and the contrast that attributed
   an unknown provider name THROWS there, it never falls back to a default. Per-model
   request-key gating lives in that table: `deepseek-flash` sets bare-agent's
   `legacyMaxTokens`, because DeepSeek silently ignores `max_completion_tokens` and an
-  output cap that does not bind is a money hazard. The judge's calls additionally carry a per-model, judge-only `thinking:{type:'disabled'}` (allow-list `OPENAI_JUDGE_CALL_OPTIONS`, read through `judgeCallOptions`, applied by `defaultJudgeLoop`; F192) because deepseek-flash's default thinking ate the 4000-token locate budget; workers and the drafter are untouched. `provider: 'gemini-api'` (PRD item 31.3)
+  output cap that does not bind is a money hazard. The judge's calls additionally carry the per-call `thinkingMode: 'off'` where bare-agent's `thinkingSupport` says the model is switchable (read through `judgeCallOptions`, applied by `defaultJudgeLoop`; F192) because deepseek-flash's default thinking ate the 4000-token locate budget; workers are untouched. `provider: 'gemini-api'` (PRD item 31.3)
   takes the same `Loop` path, reads `GEMINI_API_KEY`, and maps two real tiers
   (`sonnet` → `gemini-2.5-pro`, `haiku` → `gemini-2.5-flash`). It is
   **ADMITTED-PENDING-PROBE**: it has ZERO runs, and the probe rule is not waived for it —
@@ -647,15 +647,25 @@ plan with the first leg's spend carried as prior spend and `offerQuestions: fals
 plan's open questions) are a separate, unchanged mechanism: they are asked before drafting, about the plan; try-3 questions
 are asked after two failed drafts, about a job line.
 
-**Drafter thinking knob (hamr 2026-10-10; DEFAULT now OFF, hamr 2026-10-11).** `draftThinking: 'on' | 'off'` (any other value throws, an
-operator param, never read from env inside the library, not in the panel UI) is owned by `draftCallOptions(provider, mode)`
-(`src/providers.js`). The default is `'off'`, decided by the frozen ON/OFF contrast (`docs/logs/2026-10-10-drafter-thinking-contrast-prereg.md`):
-it adds the per-CALL option `thinking: {type: 'disabled'}` for `deepseek-flash` only (an allow-list; any other model gets nothing), the
-same wire shape as the rubric judge's (F192). `'on'` sends nothing (the model's own thinking) and stays selectable for a later Settings
-checkbox. It is threaded explicitly: `makeLoopGenerate(provider, { draftThinking })` for the author, revise, structure-retry and confirm calls;
-`authorCloseForJob({ draftThinking })` for the scout (it hands `runAuthorScout` a `callOptions`); `createSession(card, { draftThinking })` in
-the panel does both. The CLI drafter (`src/authorrun.js`) passes no value, so it gets the same default through the same two seams. Worker and
-judge calls are unchanged. Each panel `draft-log.jsonl` `call` entry records what was actually sent as `thinking` (`draftThinkingSent`, which reads `draftCallOptions`): `'off'` (the switch was sent), `'on'` (mode on, nothing sent), or `'not-switchable'` (mode off but the model is not on the allow-list, so nothing was sent).
+**Drafter thinking knob (hamr 2026-10-10; DEFAULT OFF, hamr 2026-10-11; via bare-agent's switch since v0.51).** `draftThinking: 'on' | 'off'` (any other
+value throws, an operator param, never read from env inside the library, not in the panel UI) is owned by `draftCallOptions(provider, mode)`
+(`src/providers.js`). bareloop keeps NO per-model thinking list: bare-agent >= 0.51 owns the request shapes (`thinkingMode: 'on' | 'off'`, per provider
+and model) and `thinkingSupport(kind, model)` (pure lookup, no network) says whether a model can be switched. The default is `'off'`, decided by the
+frozen ON/OFF contrast (`docs/logs/2026-10-10-drafter-thinking-contrast-prereg.md`). With mode `'off'`, a call carries the per-CALL option
+`thinkingMode: 'off'` only when `thinkingSupport` answers `switchable: true` (e.g. deepseek-flash, claude-sonnet-5, gpt-5); a model measured NOT switchable
+(claude-opus-5-5) gets nothing (asking would throw before send), and an `'unverified'` model (not measured by bare-agent) also gets nothing on this
+default path, so an unknown or local model's drafting never breaks by default. `'on'` sends nothing (the model's own thinking, byte-identical to a call with
+no knob). The raw `thinking` option is never sent. It is threaded explicitly: `makeLoopGenerate(provider, { draftThinking })` for the author, revise,
+structure-retry and confirm calls; `authorCloseForJob({ draftThinking })` for the scout (it hands `runAuthorScout` a `callOptions`);
+`createSession(card, { draftThinking })` in the panel does both. The CLI drafter (`src/authorrun.js`) passes no value, so it gets the same default
+through the same two seams. The rubric judge uses the same rule (`judgeCallOptions`: `thinkingMode: 'off'` only where switchable; a judge on
+claude-opus-5-5 does not throw). Worker calls are unchanged. Each panel `draft-log.jsonl` `call` entry records `thinking` = what was asked and sent
+(`draftThinkingSent`): `'off'` (the switch was sent), `'on'` (mode on, nothing sent), `'not-switchable'` (measured not switchable, nothing sent) or
+`'unverified'` (not measured, nothing sent); plus `thinkingApplied` (bare-agent's own verdict for that call's run: `true` / `false` = reasoning seen
+although `'off'` was sent / `null` = unreadable) when thinkingMode was sent, absent otherwise. The panel's drafting list opens with a code-owned
+`thinking` row (`thinkingRowText`, shown with a check, before "checking setup"): `thinking off`, `thinking on`, `thinking on (this model can't turn it off)`,
+`thinking on (not verified for this model)`, or, once any call reports `thinkingApplied: false` after `'off'` was sent, `thinking on (the model thought
+anyway)` (a `step-label` record in the draft log carries the change). A Reuse workflow session drafts nothing and has no row.
 
 
 **D5 — the mandatory guards are SHOWN and FIXED, and the battery keys off the VERDICT
