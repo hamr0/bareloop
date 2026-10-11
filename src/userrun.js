@@ -170,10 +170,10 @@ const JOBS = {
   },
   // PRD item 28 / 30.9 — the openai-api probe through THIS runner (the shipped
   // one), not poc-run-param.mjs. Same job shape, same seed, its own patient copy.
-  'bareguard-types-openai-shape': {
-    spec: 'bareguard-u-types-openai-shape.json',
-    workdir: '/home/hamr/PycharmProjects/bareloop-patients/bareguard-u-openai-shape',
-    spine: 'bareguard-u-openai-shape-bareloop',
+  'bareguard-types-gateway': {
+    spec: 'bareguard-u-types-gateway.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/bareguard-u-gateway',
+    spine: 'bareguard-u-gateway-bareloop',
     seed: '2ae8fcd37041c186524a6eb5e953b9752cd602fa',
   },
   // N4's hitl PROVING job (build plan §Proving; hamr's ruling, 2026-08-13). The job
@@ -533,7 +533,7 @@ async function execute(ctx) {
       specModel: spec.model,
       flagModel: modelFlagArg === null ? undefined : modelFlagArg,
       // a scripted provider handed in by a test IS the run: it names its own model; a real run has no default
-      defaultModel: deps.provider ? String(/** @type {any} */ (deps.provider).model ?? 'scripted') : undefined,
+      suppliedModel: deps.provider ? String(/** @type {any} */ (deps.provider).model ?? 'scripted') : undefined,
     });
   } catch (e) {
     die(spec.model === undefined && modelFlagArg === null ? REFUSE_NAME_MODEL : /** @type {Error} */ (e).message);

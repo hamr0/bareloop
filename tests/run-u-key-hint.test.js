@@ -28,10 +28,10 @@ const preview = (job, model) => {
   return { code: r.status, out };
 };
 
-test('an openai-shaped job (bareguard-types-openai-shape) prints its row\'s variable (GW_KEY) in its invocation hints, never another provider\'s', () => {
-  const { code, out } = preview('bareguard-types-openai-shape', 'deepseek-flash');
+test('an openai-shaped job (bareguard-types-gateway) prints its row\'s variable (GW_KEY) in its invocation hints, never another provider\'s', () => {
+  const { code, out } = preview('bareguard-types-gateway', 'deepseek-flash');
   assert.equal(code, 0, out);
-  assert.match(out, /GW_KEY=\.\.\. node scripts\/run-u\.mjs --job bareguard-types-openai-shape/, 'the approve line names the row the model line is on');
+  assert.match(out, /GW_KEY=\.\.\. node scripts\/run-u\.mjs --job bareguard-types-gateway/, 'the approve line names the row the model line is on');
   assert.doesNotMatch(out, /ANTHROPIC_API_KEY|OPENAI_API_KEY/, 'no vendor key name anywhere in its preview');
 });
 

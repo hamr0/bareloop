@@ -166,7 +166,7 @@ export function resolveJudge({ specJudge, workerProvider, workerModel } = {}) {
  *
  * @param {{provider?: string, model?: string, judge?: any}} source draft or spec
  * @param {string} fallbackProviderName used only when `source.provider` is absent
- * @param {(o: {specModel?: string, flagModel?: string, defaultModel?: string}) => {model: string, source: string}} resolveWorkerModelFn `resolveWorkerModel` from `./job.js`
+ * @param {(o: {specModel?: string, flagModel?: string, suppliedModel?: string}) => {model: string, source: string}} resolveWorkerModelFn `resolveWorkerModel` from `./job.js`
  * @returns {{provider: string, model: string}}
  */
 export function resolveJobJudge(source, fallbackProviderName, resolveWorkerModelFn) {

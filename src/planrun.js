@@ -2301,7 +2301,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // chain, node_modules/bareguard/src/gate.js) — i.e. only the residual
       // case of an in-fence path that still carries one of these segments.
       tools: { denyArgPatterns: { write: [FORBIDDEN_WRITE_SEGMENT_PATTERN], edit: [FORBIDDEN_WRITE_SEGMENT_PATTERN] } },
-      budget: { maxCostUsd: Math.max(remainingUsd(), 0.0001) },
+      budget: { maxCostUsd: Math.max(remainingUsd(), 1e-4) },
       limits: { maxTurns },
       audit: { path: auditPath },
       // The gate audit is the THIRD persistent, append-only channel (beside the

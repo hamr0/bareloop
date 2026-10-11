@@ -277,29 +277,33 @@ test('spec.model validates green as a non-empty string, and reds on any other ty
 // resolveWorkerModel — the runner's spec-vs-flag decision, extracted so it is
 // testable without running scripts/run-u.mjs (build-list #3).
 test('resolveWorkerModel: spec present, no flag -> spec wins, source "spec"', () => {
-  const r = resolveWorkerModel({ specModel: 'claude-sonnet-5', flagModel: undefined, defaultModel: 'claude-sonnet-5' });
+  const r = resolveWorkerModel({ specModel: 'claude-sonnet-5', flagModel: undefined, suppliedModel: 'claude-sonnet-5' });
   assert.deepEqual(r, { model: 'claude-sonnet-5', source: 'spec' });
 });
 
 test('resolveWorkerModel: spec present, flag names the SAME model -> spec wins, no throw', () => {
-  const r = resolveWorkerModel({ specModel: 'claude-sonnet-5', flagModel: 'claude-sonnet-5', defaultModel: 'claude-sonnet-5' });
+  const r = resolveWorkerModel({ specModel: 'claude-sonnet-5', flagModel: 'claude-sonnet-5', suppliedModel: 'claude-sonnet-5' });
   assert.deepEqual(r, { model: 'claude-sonnet-5', source: 'spec' });
 });
 
 test('resolveWorkerModel: spec present, flag names a DIFFERENT model -> throws naming both', () => {
   assert.throws(
-    () => resolveWorkerModel({ specModel: 'claude-sonnet-5', flagModel: 'claude-haiku-4-5-20251001', defaultModel: 'claude-sonnet-5' }),
+    () => resolveWorkerModel({ specModel: 'claude-sonnet-5', flagModel: 'claude-haiku-4-5-20251001', suppliedModel: 'claude-sonnet-5' }),
     (e) => e instanceof Error && e.message.includes('claude-sonnet-5') && e.message.includes('claude-haiku-4-5-20251001'),
   );
 });
 
 test('resolveWorkerModel: no spec, flag present -> flag wins, source "flag"', () => {
-  const r = resolveWorkerModel({ specModel: undefined, flagModel: 'claude-haiku-4-5-20251001', defaultModel: 'claude-sonnet-5' });
+  const r = resolveWorkerModel({ specModel: undefined, flagModel: 'claude-haiku-4-5-20251001', suppliedModel: 'claude-sonnet-5' });
   assert.deepEqual(r, { model: 'claude-haiku-4-5-20251001', source: 'flag' });
 });
 
-test('resolveWorkerModel: neither spec nor flag -> the runner default, source "default"', () => {
-  const r = resolveWorkerModel({ specModel: undefined, flagModel: undefined, defaultModel: 'claude-sonnet-5' });
+test('resolveWorkerModel: neither spec nor flag and nothing supplied -> throws (bareloop keeps no default model)', () => {
+  assert.throws(() => resolveWorkerModel({ specModel: undefined, flagModel: undefined }), /no model is named/);
+});
+
+test('resolveWorkerModel: neither spec nor flag -> the model the CALLER supplies, source "default"', () => {
+  const r = resolveWorkerModel({ specModel: undefined, flagModel: undefined, suppliedModel: 'claude-sonnet-5' });
   assert.deepEqual(r, { model: 'claude-sonnet-5', source: 'default' });
 });
 
