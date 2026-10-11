@@ -1192,10 +1192,13 @@ export async function proveInputFiles(inputs) {
   if (found === null || found.isFile) return bad(1, `${repo} is not inside a git repo, so the other inputs cannot be checked`);
   const root = found.dir;
   const rootReal = await realpath(root);
+  const repoReal = await realpath(repo);
   for (const inp of inputs.slice(1)) {
     const { n, label, value } = inp;
     if (/^search$/i.test(label) || /^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return bad(n, 'only files inside the repo for now');
-    const abs = resolve(repo, value);
+    // like-for-like: resolve against the repo as the REAL filesystem sees it, so a repo reached through a symlinked parent
+    // compares against `rootReal` in the same spelling (a symlinked INPUT FILE is still refused below, by lstat)
+    const abs = resolve(repoReal, value);
     const outside = (/** @type {string} */ p) => !(p === rootReal || p.startsWith(`${rootReal}${sep}`));
     if (outside(abs)) return bad(n, 'only files inside the repo for now');
     let ls;
@@ -1204,7 +1207,7 @@ export async function proveInputFiles(inputs) {
     let real;
     try { real = await realpath(abs); } catch { return bad(n, `${value} does not exist in the repo`); }
     if (outside(real)) return bad(n, 'only files inside the repo for now');
-    const rel = relative(root, abs).split(sep).join('/');
+    const rel = relative(rootReal, abs).split(sep).join('/');
     const tracked = await git(root, ['ls-files', '-z', '--', rel === '' ? '.' : rel]);
     if (!tracked.ok || tracked.out.split('\0').filter(Boolean).length === 0) {
       return bad(n, `${value} is not tracked by git — a repo job only sees tracked files; commit it first`);

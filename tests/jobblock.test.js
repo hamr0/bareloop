@@ -111,3 +111,30 @@ test('proveInputFiles: line 1 the repo, lines 2+ tracked files inside it; each m
     assert.equal(redactSecrets(`key sk-ant-api03-${'B'.repeat(95)}`).includes('sk-ant'), false, 'the ONE masking owner masks that very shape');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('proveInputFiles: a repo reached through a symlinked parent still proves its own tracked files, and still refuses escapes', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jobblock-symparent-'));
+  try {
+    mkdirSync(join(dir, 'real'));
+    const repo = join(dir, 'real', 'r');
+    gitIn(dir, ['init', '-q', repo]);
+    writeFileSync(join(repo, 'a.txt'), 'hello\n');
+    writeFileSync(join(dir, 'real', 'outside.txt'), 'x');
+    symlinkSync(join(repo, 'a.txt'), join(repo, 'link.txt'));
+    gitIn(repo, ['add', 'a.txt', 'link.txt']);
+    gitIn(repo, ['commit', '-q', '-m', 'init']);
+    symlinkSync(join(dir, 'real'), join(dir, 'up'));
+    const viaLink = join(dir, 'up', 'r');
+    const run = (/** @type {string} */ text) => {
+      const p = parseInputs(text);
+      assert.ok(p.ok, text);
+      return proveInputFiles(p.inputs);
+    };
+    const ok = await run(`repo: ${viaLink}\nfile: a.txt`);
+    assert.equal(ok.ok, true, JSON.stringify(ok));
+    assert.match(/** @type {any} */ (await run(`repo: ${viaLink}\nx: ../outside.txt`)).error, /line 2: only files inside the repo for now/);
+    assert.match(/** @type {any} */ (await run(`repo: ${viaLink}\nl: link.txt`)).error, /line 2: .* symlink/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
