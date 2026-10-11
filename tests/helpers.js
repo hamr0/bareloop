@@ -275,3 +275,12 @@ export function cleanEnv(over = {}) {
     ...over,
   };
 }
+
+/**
+ * P8 fixtures: nothing is built in, so a test that needs a usable Settings row writes one. This is
+ * the Anthropic-shaped row with one ticked, priced line — config.json spelling (`keys` + `models`).
+ */
+export const ANTH_CFG = Object.freeze({
+  keys: { ANTHROPIC_API_KEY: { shape: 'anthropic-api' } },
+  models: { ANTHROPIC_API_KEY: [{ model: 'claude-sonnet-5', use: true, inPerM: 3, outPerM: 15 }] },
+});

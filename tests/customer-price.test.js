@@ -1,4 +1,5 @@
-// The customer's own price (hamr 2026-09-30): `config.keys.<ENV>.{priceInPerM,priceOutPerM}`, USD per 1M
+// The customer's own price (hamr 2026-09-30, P8 2026-10-11): a row's model LINE `{model, use, inPerM, outPerM}`
+// (config `models.<ENV>`; an older `keys.<ENV>.{name,priceInPerM,priceOutPerM}` still reads as one line), USD per 1M
 // tokens, resolved by ONE lookup beside keyNameFor and handed to bare-agent's `Loop({ rates })`.
 // Scratch homes only; no provider, no network.
 
@@ -7,7 +8,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ConfigError, readConfig, updateConfig } from '../src/config.js';
+import { readConfig, updateConfig } from '../src/config.js';
 import { keyRows, keyNameFor, judgeRatesFor, priceReadout, ratesFor } from '../src/providerrows.js';
 import { createPanelServer } from '../src/panel/server.js';
 
@@ -18,7 +19,14 @@ const tmp = (t) => {
   return d;
 };
 const DS = 'https://api.deepseek.com/v1';
-const rowsOf = (keys) => keyRows({ filled: ['OPENAI_API_KEY', 'DEEPSEEK_API_KEY'], config: { keys } });
+/** the older single-line row spelling, with the fixture's own shape / address / model id (nothing is built in) */
+const withDefaults = (keys) => Object.fromEntries(Object.entries(keys).map(([k, v]) => [k, {
+  name: k === 'DEEPSEEK_API_KEY' ? 'deepseek-flash' : (k === 'ANTHROPIC_API_KEY' ? 'claude-haiku-4-5' : 'gpt-x'),
+  shape: k === 'ANTHROPIC_API_KEY' ? 'anthropic-api' : 'openai-api',
+  baseUrl: k === 'DEEPSEEK_API_KEY' || k === 'OTHER_KEY' ? DS : '',
+  ...v,
+}]));
+const rowsOf = (keys, filled = ['OPENAI_API_KEY', 'DEEPSEEK_API_KEY']) => keyRows({ filled, config: { keys: withDefaults(Object.fromEntries(filled.map((f) => [f, keys[f] ?? {}]))) } });
 
 test('ratesFor: no price = null; both set = exactly perM/1000; the row is the one keyNameFor picks', () => {
   assert.equal(ratesFor('openai-api', DS, rowsOf({}), 'deepseek-flash'), null);
@@ -35,38 +43,34 @@ test('ratesFor: no price = null; both set = exactly perM/1000; the row is the on
   assert.deepEqual(ratesFor('openai-api', DS, rowsOf({ DEEPSEEK_API_KEY: { priceInPerM: 0, priceOutPerM: 0 } }))?.rates, { in: 0, out: 0 });
 });
 
-test('ratesFor: one field, negative, NaN, Infinity, string, null all throw ConfigError naming the row and field', () => {
-  const bad = (fields, re) => assert.throws(
-    () => ratesFor('openai-api', DS, rowsOf({ DEEPSEEK_API_KEY: fields })),
-    (e) => e instanceof ConfigError && re.test(e.message),
-  );
-  bad({ priceInPerM: 1 }, /keys\.DEEPSEEK_API_KEY sets priceInPerM but not priceOutPerM/);
-  bad({ priceOutPerM: 1 }, /sets priceOutPerM but not priceInPerM/);
-  bad({ priceInPerM: -1, priceOutPerM: 1 }, /keys\.DEEPSEEK_API_KEY\.priceInPerM must be a number/);
-  bad({ priceInPerM: 1, priceOutPerM: Number.NaN }, /priceOutPerM must be a number/);
-  bad({ priceInPerM: Infinity, priceOutPerM: 1 }, /priceInPerM must be a number/);
-  bad({ priceInPerM: '0.006', priceOutPerM: 1 }, /priceInPerM must be a number/);
-  bad({ priceInPerM: 1, priceOutPerM: null }, /priceOutPerM must be a number/);
+test('ratesFor: half a price, negative, NaN, Infinity, string, null read as NO price — the line is unticked, nothing throws', () => {
+  for (const fields of [{ priceInPerM: 1 }, { priceOutPerM: 1 }, { priceInPerM: -1, priceOutPerM: 1 }, { priceInPerM: 1, priceOutPerM: Number.NaN },
+    { priceInPerM: Infinity, priceOutPerM: 1 }, { priceInPerM: '0.006', priceOutPerM: 1 }, { priceInPerM: 1, priceOutPerM: null }]) {
+    const rows = rowsOf({ DEEPSEEK_API_KEY: fields });
+    const line = rows.find((r) => r.envName === 'DEEPSEEK_API_KEY').models[0];
+    assert.deepEqual(line, { model: 'deepseek-flash', use: false }, JSON.stringify(fields));
+    assert.equal(ratesFor('openai-api', DS, rows, 'deepseek-flash'), null, JSON.stringify(fields));
+  }
 });
 
-test('a Settings row save keeps the two price fields on the row (panel route, scratch home)', async (t) => {
+test('a Settings model-line save keeps the price on the line and ratesFor reads it (panel route, scratch home)', async (t) => {
   const home = tmp(t);
   const keysFile = join(home, '.env');
   writeFileSync(keysFile, 'DEEPSEEK_API_KEY=sk-test-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n');
   chmodSync(keysFile, 0o600);
-  updateConfig({ keys: { DEEPSEEK_API_KEY: { priceInPerM: 0.006, priceOutPerM: 1.2 } } }, { home });
+  updateConfig({ keys: { DEEPSEEK_API_KEY: { shape: 'openai-api', baseUrl: DS } } }, { home });
   const { port, token, close } = await createPanelServer({ port: 0, home, env: {}, sessionsRoot: tmp(t), fetchImpl: async () => { throw new Error('no network'); } });
   t.after(() => close());
-  const res = await fetch(`http://127.0.0.1:${port}/api/settings/providers/row`, {
+  const res = await fetch(`http://127.0.0.1:${port}/api/settings/model`, {
     method: 'POST',
     headers: { 'x-bareloop-token': token, 'content-type': 'application/json' },
-    body: JSON.stringify({ envName: 'DEEPSEEK_API_KEY', name: 'deepseek-flash', shape: 'openai-api', baseUrl: DS }),
+    body: JSON.stringify({ slot: 'DEEPSEEK_API_KEY', model: 'deepseek-flash', use: true, inPerM: 0.006, outPerM: 1.2 }),
   });
   assert.equal(res.status, 200);
-  const row = readConfig({ home }).config.keys.DEEPSEEK_API_KEY;
-  assert.equal(row.priceInPerM, 0.006);
-  assert.equal(row.priceOutPerM, 1.2);
-  assert.equal(row.name, 'deepseek-flash', 'the save itself still landed');
+  const cfg = readConfig({ home }).config;
+  assert.deepEqual(cfg.models.DEEPSEEK_API_KEY, [{ model: 'deepseek-flash', use: true, inPerM: 0.006, outPerM: 1.2 }]);
+  const got = ratesFor('openai-api', DS, keyRows({ filled: ['DEEPSEEK_API_KEY'], config: cfg }), 'deepseek-flash');
+  assert.deepEqual(got?.rates, { in: 0.006 / 1000, out: 1.2 / 1000 });
 });
 
 // ── end to end through the run engine (`startRun`), scripted provider, scratch home ──────────────────
@@ -96,7 +100,7 @@ function homeWith(t, keyRow) {
   const f = join(home, '.env');
   writeFileSync(f, 'DEEPSEEK_API_KEY=sk-test-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n');
   chmodSync(f, 0o600);
-  if (keyRow) updateConfig({ keys: { DEEPSEEK_API_KEY: keyRow } }, { home });
+  updateConfig({ keys: withDefaults({ DEEPSEEK_API_KEY: keyRow ?? {} }) }, { home });
   return home;
 }
 
@@ -204,19 +208,6 @@ test('end to end: the cap binds on the customer-priced dollars — a low price d
   assert.ok(workerRounds(high.spine).length <= workerRounds(guess.spine).length);
 });
 
-test('a bad price refuses the run at $0: exit 2, "Nothing spent", no provider call, no run-list row, no spine', async (t) => {
-  const home = homeWith(t, { priceInPerM: 0.006 });
-  const r = await runPriced(t, { home });
-  assert.equal(r.code, 2);
-  assert.match(r.errs, /keys\.DEEPSEEK_API_KEY sets priceInPerM but not priceOutPerM.*Nothing spent\./);
-  assert.equal(r.providerCalls, 0);
-  assert.equal(r.row, undefined, 'no run-list row');
-  assert.deepEqual(r.spine, []);
-  const neg = await runPriced(t, { home: homeWith(t, { priceInPerM: -1, priceOutPerM: 1 }) });
-  assert.equal(neg.code, 2);
-  assert.match(neg.errs, /priceInPerM must be a number/);
-});
-
 // ── every other door and seam that makes a model call ─────────────────────────────────────────────
 import { makeLoopGenerate } from '../src/authorflow.js';
 import { defaultJudgeLoop } from '../src/judged.js';
@@ -251,25 +242,6 @@ test('the authoring scout hands its rates to every Loop it builds, and no rates 
   await runAuthorScout({ workdir: '/w', createLoop, createSurveyor });
   assert.ok(seen.length >= 1);
   for (const o of seen) assert.equal(Object.hasOwn(o, 'rates'), false);
-});
-
-test('the authoring door (run-author) refuses a bad price at $0, before any provider, naming the row', async (t) => {
-  const home = homeWith(t, { priceInPerM: 'cheap', priceOutPerM: 1 });
-  const folder = tmp(t);
-  writeFileSync(join(folder, 'a.txt'), 'hello');
-  const prep = await prepareSource({ source: folder, into: join(tmp(t), 'into') });
-  assert.equal(prep.stop, null);
-  const dir = tmp(t);
-  writeFileSync(join(dir, 'answers.json'), '{}');
-  writeFileSync(join(dir, 'draft.json'), JSON.stringify({ provider: 'openai-api', baseUrl: DS, model: 'deepseek-flash' }));
-  let errText = '';
-  let outText = '';
-  const code = await authorMain(
-    ['--source', prep.tree, '--answers', join(dir, 'answers.json'), '--draft', join(dir, 'draft.json'), '--verdict', 'green', '--out', join(dir, 'out')],
-    { env: {}, keysHome: home, stdout: { write: (s) => { outText += s; } }, stderr: { write: (s) => { errText += s; } } },
-  );
-  assert.equal(code, 2, errText + outText);
-  assert.match(errText, /keys\.DEEPSEEK_API_KEY\.priceInPerM must be a number.*Nothing spent\./);
 });
 
 // ── a judged (soft-green) close, end to end through the run-u engine ────────────────────────────
@@ -360,7 +332,9 @@ function judgeHome(t, { deepseek, anthropic, other }) {
   if (deepseek) keys.DEEPSEEK_API_KEY = deepseek;
   if (anthropic) keys.ANTHROPIC_API_KEY = anthropic;
   if (other) keys.OTHER_KEY = other;
-  if (Object.keys(keys).length) updateConfig({ keys }, { home });
+  // the DeepSeek-shaped row always exists (the worker's endpoint); the others only when given
+  if (!keys.DEEPSEEK_API_KEY) keys.DEEPSEEK_API_KEY = {};
+  updateConfig({ keys: withDefaults(keys) }, { home });
   return home;
 }
 
@@ -409,10 +383,7 @@ test('a judged close prices its judge rounds at the worker row when the judge is
 });
 
 test('judgeRatesFor: same provider, the judge model names a second row on the worker endpoint -> that row; no model / an unmatched model -> the worker\'s price; another provider unchanged', () => {
-  const rows = keyRows({ filled: ['DEEPSEEK_API_KEY', 'OTHER_KEY'], config: { keys: {
-    DEEPSEEK_API_KEY: { priceInPerM: 1, priceOutPerM: 2 },
-    OTHER_KEY: { name: 'deepseek-pro', shape: 'openai-api', baseUrl: DS, priceInPerM: 9, priceOutPerM: 9 },
-  } } });
+  const rows = rowsOf({ DEEPSEEK_API_KEY: { priceInPerM: 1, priceOutPerM: 2 }, OTHER_KEY: { name: 'deepseek-pro', priceInPerM: 9, priceOutPerM: 9 } }, ['DEEPSEEK_API_KEY', 'OTHER_KEY']);
   const workerPrice = ratesFor('openai-api', DS, rows, 'deepseek-flash');
   assert.equal(workerPrice?.envName, 'DEEPSEEK_API_KEY');
   const j = (model) => judgeRatesFor({ provider: 'openai-api', model }, 'openai-api', DS, workerPrice, rows);
@@ -424,11 +395,11 @@ test('judgeRatesFor: same provider, the judge model names a second row on the wo
   // no price on the worker's row: the guess (null) stands for an unmatched model
   assert.equal(judgeRatesFor({ provider: 'openai-api', model: 'x' }, 'openai-api', DS, null, rows), null);
   // a different provider resolves on its own row, as before
-  const withAnth = keyRows({ filled: ['ANTHROPIC_API_KEY'], config: { keys: { ANTHROPIC_API_KEY: { priceInPerM: 3, priceOutPerM: 4 } } } });
+  const withAnth = rowsOf({ ANTHROPIC_API_KEY: { name: 'claude-x', priceInPerM: 3, priceOutPerM: 4 } }, ['ANTHROPIC_API_KEY']);
   assert.equal(judgeRatesFor({ provider: 'anthropic-api', model: 'claude-x' }, 'openai-api', DS, workerPrice, withAnth)?.envName, 'ANTHROPIC_API_KEY');
-  // a bad price on the judge's row still throws
-  const bad = keyRows({ filled: ['OTHER_KEY'], config: { keys: { OTHER_KEY: { name: 'deepseek-pro', shape: 'openai-api', baseUrl: DS, priceInPerM: 1 } } } });
-  assert.throws(() => judgeRatesFor({ provider: 'openai-api', model: 'deepseek-pro' }, 'openai-api', DS, null, bad), ConfigError);
+  // half a price on the judge's row reads as no price (an unticked line), never a throw
+  const bad = rowsOf({ OTHER_KEY: { name: 'deepseek-pro', priceInPerM: 1 } }, ['OTHER_KEY']);
+  assert.equal(judgeRatesFor({ provider: 'openai-api', model: 'deepseek-pro' }, 'openai-api', DS, null, bad), null);
 });
 
 // ── the preview's copy-paste "To approve and run" line (F207 b): the key variable the run will really read,

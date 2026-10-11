@@ -19,6 +19,7 @@ import {
 } from '../src/panel/authorsession.js';
 import { classGuards } from '../src/authoring.js';
 import { keyRows } from '../src/providerrows.js';
+import { ANTH_CFG } from './helpers.js';
 import { appendRun } from '../src/runlist.js';
 import { jobSpecHash, workflowKey } from '../src/job.js';
 
@@ -40,8 +41,8 @@ function makeRepo() {
   git(dir, ['commit', '-q', '-m', 'seed']);
   return dir;
 }
-const keysHomeWith = (text = 'ANTHROPIC_API_KEY=fake-not-a-real-key\n') => { const d = tmp('p5-sf-home-'); writeFileSync(join(d, '.env'), text, { mode: 0o600 }); return d; };
-const ROWS = keyRows({ filled: ['ANTHROPIC_API_KEY'], config: {} });
+const keysHomeWith = (text = 'ANTHROPIC_API_KEY=fake-not-a-real-key\n') => { const d = tmp('p5-sf-home-'); writeFileSync(join(d, '.env'), text, { mode: 0o600 }); writeFileSync(join(d, 'config.json'), JSON.stringify(ANTH_CFG)); return d; };
+const ROWS = keyRows({ filled: ['ANTHROPIC_API_KEY'], config: ANTH_CFG });
 
 // `source` is a shorthand for Inputs line 1 (P7: the Source box is gone)
 const baseCard = ({ source = '/x', ...o } = {}) => ({
@@ -360,14 +361,14 @@ test('routes: GET start-from (guarded) prefills with locked/open; POST start REF
 const homeWithTwoRows = () => {
   const d = tmp('p5-sf-two-');
   writeFileSync(join(d, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\nDEEPSEEK_API_KEY=fake-not-a-real-key\nGW_KEY=fake-not-a-real-key\n', { mode: 0o600 });
-  writeFileSync(join(d, 'config.json'), JSON.stringify({ keys: TWO_ROWS }));
+  writeFileSync(join(d, 'config.json'), JSON.stringify({ keys: { ...ANTH_CFG.keys, ...TWO_ROWS }, models: ANTH_CFG.models }));
   return d;
 };
 const TWO_ROWS = {
-  DEEPSEEK_API_KEY: { name: 'deepseek-flash', shape: 'openai-api', baseUrl: 'https://api.deepseek.com/v1' },
-  GW_KEY: { name: 'gpt-x', shape: 'openai-api', baseUrl: 'https://gw.example/v1' },
+  DEEPSEEK_API_KEY: { name: 'deepseek-flash', priceInPerM: 1, priceOutPerM: 2, shape: 'openai-api', baseUrl: 'https://api.deepseek.com/v1' },
+  GW_KEY: { name: 'gpt-x', priceInPerM: 1, priceOutPerM: 2, shape: 'openai-api', baseUrl: 'https://gw.example/v1' },
 };
-const ROWS2 = keyRows({ filled: ['ANTHROPIC_API_KEY', 'DEEPSEEK_API_KEY', 'GW_KEY'], config: { keys: TWO_ROWS } });
+const ROWS2 = keyRows({ filled: ['ANTHROPIC_API_KEY', 'DEEPSEEK_API_KEY', 'GW_KEY'], config: { keys: { ...ANTH_CFG.keys, ...TWO_ROWS }, models: ANTH_CFG.models } });
 
 test('Model open: buildReuseSpec sets provider/baseUrl/model from the chosen Settings row the way authoring spells them — same workflowKey, NEW signature', async () => {
   const origin = await realSpec();

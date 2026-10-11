@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { endedFor } from '../src/panel/server.js';
 import { validateJobCard } from '../src/panel/authorsession.js';
 import { keyRows } from '../src/providerrows.js';
+import { ANTH_CFG } from './helpers.js';
 
 const PAGE = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
 function fnSrc(name) {
@@ -139,7 +140,7 @@ test('card: applyEdit fills EVERY box from the signed job, radio on the job\'s o
 });
 
 test('job name: a panel job lives in its session folder, never repo jobs/ — so a second draft under the SAME name is not refused by validateJobCard (checked against the real repo jobs/ dir)', () => {
-  const rows = keyRows({ filled: ['ANTHROPIC_API_KEY'], config: {} });
+  const rows = keyRows({ filled: ['ANTHROPIC_API_KEY'], config: ANTH_CFG });
   const card = { jobName: 'pulselog-digest', checkType: 'deterministic', model: 'claude-sonnet-5', jobText: 'g', inputs: 'repo: /s', destination: 'o', capUsd: 1 };
   assert.deepEqual(validateJobCard(card, { rows }), { ok: true }, 'drafting the same name again is accepted');
   assert.equal(validateJobCard({ ...card, jobName: 'pulselog-u-types' }, { rows }).ok, false, 'only a name that IS a repo jobs/*.json is refused');
