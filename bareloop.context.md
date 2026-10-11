@@ -650,8 +650,9 @@ are asked after two failed drafts, about a job line.
 **Drafter thinking knob (hamr 2026-10-10; DEFAULT OFF, hamr 2026-10-11; via bare-agent's switch since v0.51).** `draftThinking: 'on' | 'off'` (any other
 value throws, an operator param, never read from env inside the library, not in the panel UI) is owned by `draftCallOptions(provider, mode)`
 (`src/providers.js`). bareloop keeps NO per-model thinking list: bare-agent >= 0.51 owns the request shapes (`thinkingMode: 'on' | 'off'`, per provider
-and model) and `thinkingSupport(kind, model)` (pure lookup, no network) says whether a model can be switched. The default is `'off'`, decided by the
-frozen ON/OFF contrast (`docs/logs/2026-10-10-drafter-thinking-contrast-prereg.md`). With mode `'off'`, a call carries the per-CALL option
+and model) and `thinkingSupport(kind, model)` (pure lookup, no network) says whether a model can be switched. The default is `'off'`. The frozen ON/OFF contrast
+(`docs/logs/2026-10-10-drafter-thinking-contrast-prereg.md`) measured deepseek-flash only; the default applies to every switchable model, drafting and
+judge alike, by hamr's 2026-10-11 ruling (no per-model exceptions), and is not measured live on other providers (Anthropic, Gemini, OpenAI). With mode `'off'`, a call carries the per-CALL option
 `thinkingMode: 'off'` only when `thinkingSupport` answers `switchable: true` (e.g. deepseek-flash, claude-sonnet-5, gpt-5); a model measured NOT switchable
 (claude-opus-5-5) gets nothing (asking would throw before send), and an `'unverified'` model (not measured by bare-agent) also gets nothing on this
 default path, so an unknown or local model's drafting never breaks by default. `'on'` sends nothing (the model's own thinking, byte-identical to a call with
