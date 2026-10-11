@@ -69,6 +69,8 @@ test('GET /api/author/models: {ok, lines, say}; the empty text; model-check judg
   const full = await get('/api/author/models');
   assert.equal(full.body.say, '');
   assert.deepEqual(full.body.lines.map((l) => l.label), ['A_KEY · shared', 'A_KEY · a-only', 'B_KEY · shared']);
+  // every line carries the server's answer for the "Thinking on" box (bare-agent's lookup; an unmeasured model is 'unverified' and stays enabled)
+  assert.deepEqual(full.body.lines[0].thinking, { support: 'unverified', canChange: true, say: '' });
   const ok = await get('/api/author/model-check?model=shared&provider=B_KEY');
   assert.equal(ok.body.envKey, 'B_KEY', 'the key is the chosen row\'s own variable');
   assert.equal(ok.body.keyStatus, 'found');

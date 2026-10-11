@@ -138,7 +138,7 @@ test('page: attachSession runs against a fake DOM and wires the live session (fa
   // sessionId/sessionLive are page-level vars; run the body with them as closure vars via a wrapper
   const body = src.replace('return attachSession;', 'return {attachSession, get: () => ({sessionId, sessionLive, reuseSession, signClickedOnce})};');
   const g = new Function('document', 'modelSelect', 'openNewCard', 'setVal', 'renderMessages', 'renderActions', 'setReuseLocked', 'poll', 'escapeXml', 'setInterval', 'clearInterval', 'fitCardBoxes', 'renderPicker', 'fillCard', 'setJobPlaceholders',
-    `var sessionId = null, sessionLive = false, reuseSession = false, autoSigned = false, signClickedOnce = false, pollTimer = null, reuseCheckType = "deterministic", reusePickedName = "";\n${fnSrc('setVerdict')}\n${fnSrc('pickValue')}\n${fnSrc('pickParts')}\n${fnSrc('setPick')}\n${body}`);
+    `var sessionId = null, sessionLive = false, reuseSession = false, autoSigned = false, signClickedOnce = false, pollTimer = null, reuseCheckType = "deterministic", reusePickedName = "";\n${fnSrc('setVerdict')}\n${fnSrc('pickValue')}\n${fnSrc('pickParts')}\nfunction syncThinking(){}\n${fnSrc('setPick')}\n${body}`);
   const doc = { getElementById: el, createElement: () => ({ value: '', textContent: '' }), querySelectorAll: () => ({ forEach: (fn) => radios.forEach(fn) }) };
   const out = g(doc, modelSelect, () => calls.push('openNewCard'), (id, v) => { el(id).value = v; }, () => calls.push('messages'), () => calls.push('actions'),
     (on) => calls.push(`lock:${on}`), () => calls.push('poll'), (x) => x, (fn, ms) => { calls.push(`interval:${ms}`); return 7; }, () => {}, () => calls.push('fit'), () => calls.push('picker'),

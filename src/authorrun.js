@@ -1170,7 +1170,7 @@ export async function main(argv, deps = {}) {
           // number would silently widen it.
           ceilingUsd: CEILING_USD,
           priorCalls: [...metered],
-          judgeLoop: judgeProvider ? (o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system, rates: judgePrice?.rates ?? null }) : null,
+          judgeLoop: judgeProvider ? (o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system, rates: judgePrice?.rates ?? null, thinking: spec.thinking === true }) : null,
           // the seam's other half (PRD item 32.1): the graded set is STAMPED with
           // this, and the close later refuses to grade under any other identity.
           judgeModel: judge?.model ?? null,

@@ -375,7 +375,7 @@ const defaultLoop = (/** @type {any} */ { system, policy, onLlmResult, provider,
  * @param {{workdir: string, provider?: any,
  *   rounds?: number, minBytes?: number, blobMax?: number, maxTokens?: number, ctx?: boolean,
  *   attempts?: number, ceilingUsd?: number|null, callTimeoutMs?: number,
- *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingApplied?: boolean|null}) => void,
+ *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string}) => void,
  *   createLoop?: (o: {system: string, policy: any, onLlmResult: any, provider: any, rates?: {in: number, out: number}}) => any,
  *   rates?: {in: number, out: number}|null, callOptions?: Record<string, any>,
  *   createSurveyor?: (o: {workdir: string, granted: readonly string[], ctx: boolean}) => Promise<any>}} o
@@ -400,7 +400,7 @@ export async function runAuthorScout({
   onCall = () => {},
   createLoop = defaultLoop,
   rates = null,
-  // the drafter's per-call model options (`draftCallOptions`, src/providers.js; e.g. thinking off) — {} = nothing extra, byte-identical
+  // the drafter's per-call model options (`thinkingCallOptions`, src/thinking.js; e.g. thinking off) — {} = nothing extra, byte-identical
   callOptions = {},
   createSurveyor = defaultSurveyor,
 }) {
@@ -436,8 +436,8 @@ export async function runAuthorScout({
     // metered without the report going out: exactly the pairing invariant the
     // raw already rides. It REPORTS and decides nothing; the ceiling still binds
     // through `capStop` between calls, untouched.
-    // bare-agent's per-run `thinkingApplied` rides the reporting seam only, never the stored entry (see makeCostBook.add)
-    onCall({ ...call, ...(r?.thinkingApplied === undefined ? {} : { thinkingApplied: r.thinkingApplied }) });
+    // bare-agent's per-run `thinkingStatus` rides the reporting seam only, never the stored entry (see makeCostBook.add)
+    onCall({ ...call, ...(r?.thinkingStatus === undefined ? {} : { thinkingStatus: r.thinkingStatus }) });
     return raws.push(scrubRaw({ label, attempt, text: r?.text })) - 1;
   };
   // TIGHTEN-ONLY: an operator may lower the ceiling, never raise it. A garbage

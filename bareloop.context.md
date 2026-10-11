@@ -67,7 +67,7 @@ inherited rule carries the green that minted it and the contrast that attributed
   an unknown provider name THROWS there, it never falls back to a default. Per-model
   request-key gating lives in that table: `deepseek-flash` sets bare-agent's
   `legacyMaxTokens`, because DeepSeek silently ignores `max_completion_tokens` and an
-  output cap that does not bind is a money hazard. The judge's calls additionally carry the per-call `thinkingMode: 'off'` where bare-agent's `thinkingSupport` says the model is switchable (read through `judgeCallOptions`, applied by `defaultJudgeLoop`; F192) because deepseek-flash's default thinking ate the 4000-token locate budget; workers are untouched. `provider: 'gemini-api'` (PRD item 31.3)
+  output cap that does not bind is a money hazard. The judge's calls carry the per-call `thinkingMode` the job's signed "Thinking on" tick asks for (`src/thinking.js`, applied by `defaultJudgeLoop`; F192: unticked = off, because deepseek-flash's default thinking ate the 4000-token locate budget); workers are untouched. `provider: 'gemini-api'` (PRD item 31.3)
   takes the same `Loop` path, reads `GEMINI_API_KEY`, and maps two real tiers
   (`sonnet` → `gemini-2.5-pro`, `haiku` → `gemini-2.5-flash`). It is
   **ADMITTED-PENDING-PROBE**: it has ZERO runs, and the probe rule is not waived for it —
@@ -647,26 +647,29 @@ plan with the first leg's spend carried as prior spend and `offerQuestions: fals
 plan's open questions) are a separate, unchanged mechanism: they are asked before drafting, about the plan; try-3 questions
 are asked after two failed drafts, about a job line.
 
-**Drafter thinking knob (hamr 2026-10-10; DEFAULT OFF, hamr 2026-10-11; via bare-agent's switch since v0.51).** `draftThinking: 'on' | 'off'` (any other
-value throws, an operator param, never read from env inside the library, not in the panel UI) is owned by `draftCallOptions(provider, mode)`
-(`src/providers.js`). bareloop keeps NO per-model thinking list: bare-agent >= 0.51 owns the request shapes (`thinkingMode: 'on' | 'off'`, per provider
-and model) and `thinkingSupport(kind, model)` (pure lookup, no network) says whether a model can be switched. The default is `'off'`. The frozen ON/OFF contrast
-(`docs/logs/2026-10-10-drafter-thinking-contrast-prereg.md`) measured deepseek-flash only; the default applies to every switchable model, drafting and
-judge alike, by hamr's 2026-10-11 ruling (no per-model exceptions), and is not measured live on other providers (Anthropic, Gemini, OpenAI). With mode `'off'`, a call carries the per-CALL option
-`thinkingMode: 'off'` only when `thinkingSupport` answers `switchable: true` (e.g. deepseek-flash, claude-sonnet-5, gpt-5); a model measured NOT switchable
-(claude-opus-5-5) gets nothing (asking would throw before send), and an `'unverified'` model (not measured by bare-agent) also gets nothing on this
-default path, so an unknown or local model's drafting never breaks by default. `'on'` sends nothing (the model's own thinking, byte-identical to a call with
-no knob). The raw `thinking` option is never sent. It is threaded explicitly: `makeLoopGenerate(provider, { draftThinking })` for the author, revise,
-structure-retry and confirm calls; `authorCloseForJob({ draftThinking })` for the scout (it hands `runAuthorScout` a `callOptions`);
-`createSession(card, { draftThinking })` in the panel does both. The CLI drafter (`src/authorrun.js`) passes no value, so it gets the same default
-through the same two seams. The rubric judge uses the same rule (`judgeCallOptions`: `thinkingMode: 'off'` only where switchable; a judge on
-claude-opus-5-5 does not throw). Worker calls are unchanged. Each panel `draft-log.jsonl` `call` entry records `thinking` = what was asked and sent
-(`draftThinkingSent`): `'off'` (the switch was sent), `'on'` (mode on, nothing sent), `'not-switchable'` (measured not switchable, nothing sent) or
-`'unverified'` (not measured, nothing sent); plus `thinkingApplied` (bare-agent's own verdict for that call's run: `true` / `false` = reasoning seen
-although `'off'` was sent / `null` = unreadable) when thinkingMode was sent, absent otherwise. The panel's drafting list opens with a code-owned
-`thinking` row (`thinkingRowText`, shown with a check, before "checking setup"): `thinking off`, `thinking on`, `thinking on (this model can't turn it off)`,
-`thinking on (not verified for this model)`, or, once any call reports `thinkingApplied: false` after `'off'` was sent, `thinking on (the model thought
-anyway)` (a `step-label` record in the draft log carries the change). A Reuse workflow session drafts nothing and has no row.
+**Thinking on (per job; hamr 2026-10-11).** The New job card has a "Thinking on" tick under Model, unticked by default, saved in the SIGNED job as the optional
+boolean `thinking` (absent = off; an old spec and any unticked job keep the hash they would have had; a ticked job's `jobSpecHash` and `workflowKey` differ). It
+covers DRAFTING (scout, confirm, author, revise, structure retries) AND the rubric JUDGE; the WORKER is never handed a thinking option. A Reuse card does not
+offer the tick: it never drafts and the judge follows the SIGNED value, so the 10/10 calibration gate runs with the same tick as the later grading
+(`defaultJudgeLoop({ ..., thinking })` takes it in all three constructors: the run, `run-author`, the panel's gate). bareloop keeps NO per-model thinking list and no
+vendor regex: bare-agent (>= 0.52) owns the request shapes, and `thinkingSupport(kind, model, { baseUrl })` (a pure lookup, no network) answers `true` (measured
+switchable), `false` (measured NOT switchable) or `'unverified'`. `src/thinking.js` is the ONE owner of what a call sends:
+
+| tick | support `true` | support `false` | support `'unverified'` |
+|---|---|---|---|
+| on | `{thinkingMode:'on'}` | `{}` (the box is greyed and cannot be on) | `{thinkingMode:'on'}` |
+| off | `{thinkingMode:'off'}` | `{}` (the model thinks as it would) | `{thinkingMode:'off'}` (bare-agent decides) |
+
+bare-agent 0.52 never throws because a model cannot switch: the call always runs and reports `GenerateResult.thinkingStatus` (`'applied'` / `'unsupported'` /
+`'ignored'` / `'unknown'`; `Loop.run()` surfaces the worst across rounds). For an unmeasured model it tries the other shapes, then ONE plain request
+(`'unsupported'`, the result kept), so drafting does not break. The raw `thinking` option is never sent. The per-call option is threaded through
+`makeLoopGenerate(provider, { draftThinking: 'on' | 'off' })` and `authorCloseForJob({ draftThinking })` (any other value throws, an operator param); the panel builds it
+from `card.thinking`. `GET /api/author/models` answers each Model line with `thinking: { support, canChange, say }`: the page decides nothing: `canChange:false` greys
+AND unticks the box with `say` ("can't change this for this model"); `'unverified'` leaves it enabled with no note. Each panel `draft-log.jsonl` `call` entry records
+`thinking` (`'on'` / `'off'`, the tick), `thinkingSupport` (`true` / `false` / `'unverified'`) and, when bare-agent reported one, `thinkingStatus`. The drafting list opens
+with a code-owned `thinking` row (`thinkingRowText`, before "checking setup"): `thinking off` / `thinking on`; `thinking off (not verified for this model)`;
+`thinking on (this model can't change it)`; and, once a call reports a status, `thinking on (the model thought anyway)` (`'ignored'`), `thinking on (this model can't change it)`
+(`'unsupported'`) or `thinking off (not confirmed)` (`'unknown'`) — a `step-label` record in the draft log carries the change. A Reuse workflow session drafts nothing and has no row.
 
 
 **D5 — the mandatory guards are SHOWN and FIXED, and the battery keys off the VERDICT
@@ -1918,7 +1921,7 @@ hand them to the one `Loop` that drives worker, scout and planner rounds; the ru
 them once. No price on the row = no `rates` key anywhere = the guesstimate above, byte-identical to
 before. bareloop keeps no price list of its own, ever.
 
-**The provenance is on the record, per round (`rateSource`).** The pinned bare-agent (`^0.51.0`)
+**The provenance is on the record, per round (`rateSource`).** The pinned bare-agent (`^0.52.0`)
 carries it on every metering payload, and bareloop forwards it VERBATIM (`rateSourceFields`,
 `src/planrun.js`): every API `worker-round` (worker, scout, planner, fix loop) carries it beside
 `pricing` today — `'caller'` when a customer price is on the key's row, else `'tier'`/`'default'`

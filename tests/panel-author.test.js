@@ -1299,7 +1299,7 @@ test('createSession: with NO draftThinking value the drafter\'s real request bod
 });
 
 // ── hamr 2026-10-11 ledger: the draft log records what was actually SENT for thinking ──────────────────────────────────
-test('draft-log call entries carry the thinking that was really sent: off for deepseek-flash, unverified for a model bare-agent has not measured, on when asked', async () => {
+test('draft-log call entries carry the tick\'s mode and bare-agent\'s support answer: off/true for a measured model, off/\'unverified\' for an unmeasured one, on when ticked', async () => {
   const thinkingLogged = async (/** @type {string} */ modelName, /** @type {any} */ extra) => {
     const home = keysHomeWith('DS_KEY=sk-fake\n');
     writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { DS_KEY: { name: modelName, priceInPerM: 1, priceOutPerM: 2, shape: 'openai-api', baseUrl: 'https://gw.example/v1' } } }));
@@ -1320,16 +1320,16 @@ test('draft-log call entries carry the thinking that was really sent: off for de
     await untilTrue(() => session.state.phase === 'refused');
     const entries = readFileSync(join(sessionsRoot, session.id, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((e) => e.kind === 'call');
     assert.ok(entries.length > 0, 'a call entry was logged');
-    return [...new Set(entries.map((e) => e.thinking))];
+    return [...new Set(entries.map((e) => `${e.thinking}/${e.thinkingSupport}`))];
   };
-  assert.deepEqual(await thinkingLogged('deepseek-flash', {}), ['off']);
-  assert.deepEqual(await thinkingLogged('some-other-model', {}), ['unverified']);
-  assert.deepEqual(await thinkingLogged('deepseek-flash', { draftThinking: 'on' }), ['on']);
+  assert.deepEqual(await thinkingLogged('deepseek-flash', {}), ['off/true']);
+  assert.deepEqual(await thinkingLogged('some-other-model', {}), ['off/unverified'], 'an unmeasured model is still sent off (bare-agent decides)');
+  assert.deepEqual(await thinkingLogged('deepseek-flash', { draftThinking: 'on' }), ['on/true']);
 });
 
 // ── hamr 2026-10-11: the FIRST drafting row says whether the drafter thinks (text owned by code) ───────────────────────
-test('the first drafting row (before "checking setup") reads thinking off / on / cannot-turn-off / not verified / thought anyway, and the draft log carries thinkingApplied', async () => {
-  const run = async (/** @type {string} */ modelName, /** @type {string} */ shape, /** @type {any} */ extra, /** @type {any} */ applied) => {
+test('the first drafting row (before "checking setup") reads thinking off / on / cannot change / not verified, then bare-agent\'s thinkingStatus (applied / unsupported / ignored / unknown) changes its words, and the draft log carries thinkingStatus', async () => {
+  const run = async (/** @type {string} */ modelName, /** @type {string} */ shape, /** @type {any} */ extra, /** @type {any} */ status) => {
     const home = keysHomeWith('DS_KEY=sk-fake-key-value-1234567890\n');
     writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { DS_KEY: { name: modelName, priceInPerM: 1, priceOutPerM: 2, shape, baseUrl: 'https://gw.example/v1' } } }));
     const sessionsRoot = tmp('panel-author-sess-thinkrow-');
@@ -1338,7 +1338,7 @@ test('the first drafting row (before "checking setup") reads thinking off / on /
       scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
       generate: async () => { throw new Error('unused'); },
       confirmGenerate: makeFakeConfirmGenerate([{ goal: 'g', checks: [{ text: 'c', fromLine: [1] }], questions: [], notChecked: [] }]),
-      authorFn: async (/** @type {any} */ o) => { o.onCall({ label: 'author', costUsd: 0.01, unpricedRounds: 0, ...(applied === undefined ? {} : { thinkingApplied: applied }) }); return {
+      authorFn: async (/** @type {any} */ o) => { o.onCall({ label: 'author', costUsd: 0.01, unpricedRounds: 0, ...(status === undefined ? {} : { thinkingStatus: status }) }); return {
         ok: false, stop: 'provider-red', declaration: null, reds: [{ code: 'provider-red', path: 'author', detail: 'x' }], iterations: [],
         cost: { costUsd: 0.01, knownUsd: 0.01, spendComplete: true, calls: [], unpricedRounds: 0 }, raws: [],
       }; },
@@ -1350,18 +1350,46 @@ test('the first drafting row (before "checking setup") reads thinking off / on /
     const log = readFileSync(join(sessionsRoot, session.id, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     return { steps: session.state.steps, calls: log.filter((e) => e.kind === 'call') };
   };
-  const off = await run('deepseek-flash', 'openai-api', {}, true);
+  const off = await run('deepseek-flash', 'openai-api', {}, 'applied');
   assert.deepEqual(off.steps[0], { id: 'thinking', label: 'thinking off', status: 'done', detail: '' });
   assert.equal(off.steps[1].id, 'setup', 'the row comes before "checking setup"');
   const authorCall = (/** @type {any} */ r) => r.calls.find((/** @type {any} */ c) => c.label === 'author');
   assert.equal(authorCall(off).thinking, 'off');
-  assert.equal(authorCall(off).thinkingApplied, true);
+  assert.equal(authorCall(off).thinkingStatus, 'applied');
   assert.equal((await run('deepseek-flash', 'openai-api', { draftThinking: 'on' })).steps[0].label, 'thinking on');
-  assert.equal((await run('claude-opus-5-5', 'anthropic-api', {})).steps[0].label, "thinking on (this model can't turn it off)");
+  assert.equal((await run('claude-opus-5-5', 'anthropic-api', {})).steps[0].label, "thinking on (this model can't change it)");
   const unv = await run('some-other-model', 'openai-api', {});
-  assert.equal(unv.steps[0].label, 'thinking on (not verified for this model)');
-  assert.equal('thinkingApplied' in authorCall(unv), false, 'absent when bare-agent reported none');
-  const anyway = await run('deepseek-flash', 'openai-api', {}, false);
+  assert.equal(unv.steps[0].label, 'thinking off (not verified for this model)');
+  assert.equal('thinkingStatus' in authorCall(unv), false, 'absent when bare-agent reported none');
+  const anyway = await run('deepseek-flash', 'openai-api', {}, 'ignored');
   assert.equal(anyway.steps[0].label, 'thinking on (the model thought anyway)');
-  assert.equal(authorCall(anyway).thinkingApplied, false);
+  assert.equal(authorCall(anyway).thinkingStatus, 'ignored');
+  assert.equal((await run('some-other-model', 'openai-api', {}, 'unsupported')).steps[0].label, "thinking on (this model can't change it)");
+  assert.equal((await run('some-other-model', 'openai-api', {}, 'unknown')).steps[0].label, 'thinking off (not confirmed)');
+});
+
+// ── P8 batch 5: the "Thinking on" tick is signed into the job ONLY when ticked (and only where the model can change) ───────────────────
+test('the card\'s Thinking on tick: ticked writes thinking:true into the signed spec; unticked writes NO field; a model that cannot change it is never signed on; a non-boolean tick is refused at $0', async () => {
+  const specOf = async (/** @type {string} */ modelName, /** @type {string} */ shape, /** @type {any} */ cardExtra) => {
+    const home = keysHomeWith('DS_KEY=sk-fake-key-value-1234567890\n');
+    writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { DS_KEY: { shape, baseUrl: 'https://gw.example/v1' } }, models: { DS_KEY: [{ model: modelName, use: true, inPerM: 1, outPerM: 2 }] } }));
+    const session = createSession(baseCard({ source: makeRepo(), model: modelName, provider: 'DS_KEY', jobName: 'panel-author-thinktick', capUsd: 1, ...cardExtra }), {
+      env: { DS_KEY: 'sk-fake-key-value-1234567890' }, home, sessionsRoot: tmp('panel-author-sess-thinktick-'),
+      scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+      generate: async () => { throw new Error('unused'); },
+      confirmGenerate: makeFakeConfirmGenerate([{ goal: 'g', checks: [{ text: 'c', fromLine: [1] }], questions: [], notChecked: [] }]),
+      authorFn: fakeAuthorFn(),
+      prepareSigningFn: fakePrepareSigningFn('cafef00dbeef0123'),
+    });
+    await untilTrue(() => session.state.pendingAsk?.kind === 'menu');
+    session.signPrepare();
+    await untilTrue(() => session.state.phase === 'prepared');
+    assert.equal(session.state.phase, 'prepared', String(session.state.error));
+    return JSON.parse(readFileSync(join(session.state.outDir, 'resolved-spec.json'), 'utf8'));
+  };
+  assert.equal((await specOf('deepseek-flash', 'openai-api', { thinking: true })).thinking, true);
+  assert.equal('thinking' in (await specOf('deepseek-flash', 'openai-api', {})), false, 'unticked: no field, so the hash is what it would have been');
+  assert.equal('thinking' in (await specOf('deepseek-flash', 'openai-api', { thinking: false })), false);
+  assert.equal('thinking' in (await specOf('claude-opus-5-5', 'anthropic-api', { thinking: true })), false, 'measured not switchable: the tick cannot be on');
+  assert.deepEqual(validateJobCard({ ...baseCard({}), thinking: 'yes' }, { jobsDir: '/nonexistent' }), { ok: false, error: 'Thinking on must be on or off' });
 });

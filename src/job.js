@@ -167,7 +167,7 @@ export const CONDITION_KEYS = Object.freeze(['providerPath', 'closeVerbosity', '
 // `steps` stays in the field list ONLY so a retired spec reds by name
 // (`shape-retired`) instead of falling through to a generic unknown-field —
 // the operator gets told what happened, not just that something is wrong.
-const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'baseUrl', 'conditions', 'cadence', 'budgetUsd', 'maxWallMs', 'closeTimeoutMs', 'model', 'judge', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools', 'jobLines', 'inputs'];
+const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'baseUrl', 'conditions', 'cadence', 'budgetUsd', 'maxWallMs', 'closeTimeoutMs', 'model', 'thinking', 'judge', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools', 'jobLines', 'inputs'];
 /** the exact fields of a signed `judge` override — nested objects red unknown
  * keys too, because no smuggling level exists in a signed spec */
 const JUDGE_FIELDS = ['provider', 'model'];
@@ -329,7 +329,12 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
   // on THAT model, not merely on the goal/close it runs against. The judge
   // model stays library-pinned pending recalibration — out of scope here.
   if (spec.model !== undefined && !isNonEmptyString(spec.model)) {
-    red('invalid-value', 'model', 'non-empty string — exact provider model id (e.g. "claude-sonnet-5")');
+    red('invalid-value', 'model', 'non-empty string — the exact model id of a line ticked in Settings > Providers');
+  }
+  // THINKING (P8) — the job's "Thinking on" tick, OPTIONAL: absent means off (and an old spec keeps the hash it always had); present it is
+  // signed like `model`. It covers DRAFTING and the rubric JUDGE only — the worker is never handed a thinking option. A boolean, nothing else.
+  if (spec.thinking !== undefined && typeof spec.thinking !== 'boolean') {
+    red('invalid-value', 'thinking', 'true or false — the job\'s "Thinking on" tick (absent = off)');
   }
 
   // JUDGE — PRD item 32.1 (hamr, 2026-09-10: the judge "defaults to whatever

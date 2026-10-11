@@ -27,7 +27,7 @@ function harness() {
     querySelector: () => radios.find((r) => r.checked) ?? null,
   };
   const st = { live: false };
-  const src = `var LOCKED_IDS = ["jf-name", "jf-job"]; var OPEN_IDS = ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var reuseOn = false; var sessionLive = false; var resumeRun = null; var CAP_IDS = ["jf-cap-money", "jf-cap-time"];
+  const src = `var LOCKED_IDS = ["jf-name", "jf-job"]; var OPEN_IDS = ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var reuseOn = false; var sessionLive = false; var resumeRun = null; var CAP_IDS = ["jf-cap-money", "jf-cap-time"]; function syncThinking(){}
 ${fnSrc('syncCardLock')}\n${fnSrc('setReuseLocked')}
 return { setReuseLocked, setLive: function(v){ sessionLive = v; syncCardLock(); } };`;
   // eslint-disable-next-line no-new-func

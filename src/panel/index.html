@@ -590,6 +590,8 @@
   .pv-typed input{flex:1 1 160px;min-width:0;max-width:260px;min-height:28px;box-sizing:border-box;}
   .pv-typed .hint{flex:1 1 100%;margin:0;}
   .hint.bad{color:var(--red);}
+  .field label.jf-thinking{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:6px;margin-top:6px;font-size:12px;text-transform:none;letter-spacing:0;}
+  .field label.jf-thinking input{width:auto;min-height:0;margin:0;}
   .table-wrap{overflow-x:auto;border:1px solid var(--border-strong);background:var(--panel2);max-width:100%;}
   @media (max-width: 899px){
     .money-strip{grid-template-columns:1fr 1fr;}
@@ -686,6 +688,9 @@
               <!-- build item 5 (2026-09-28) — ONE line under Model, not two:
                    key + reachability collapsed into a single readiness read. -->
               <div class="jf-readiness unknown" id="jf-model-status" data-testid="jf-model-status"></div>
+              <!-- P8: the job's "Thinking on" tick (drafting + the rubric judge; never the worker). The SERVER's per-line `thinking.canChange` decides. -->
+              <label class="jf-thinking" id="jf-thinking-label"><input type="checkbox" id="jf-thinking" data-testid="jf-thinking"> Thinking on</label>
+              <div class="hint" id="jf-thinking-note" data-testid="jf-thinking-note"></div>
             </div>
             <div class="field">
               <label for="jf-name">Job name</label>
@@ -3907,6 +3912,9 @@
     var actionErrEl = document.getElementById("chat-action-error");
     var moneyCapInput = document.getElementById("jf-cap-money");
     var modelSelect = document.getElementById("jf-model");
+    var thinkingBox = document.getElementById("jf-thinking");
+    var thinkingNote = document.getElementById("jf-thinking-note");
+    var lineThinking = {};   // option value -> the server's {support, canChange, say} for that Model line
     var modelStatusEl = document.getElementById("jf-model-status");
     var progressRow = document.getElementById("chat-progress-row");
 
@@ -3956,6 +3964,7 @@
       // the Check type radios stay clickable on a reuse card (Deterministic / Rubric = leave reuse); a live session or a resume freezes them
       document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.disabled = live || resuming; });
       document.getElementById("job-card").classList.toggle("reuse", reuseOn);
+      syncThinking();
     }
     function setReuseLocked(on){ reuseOn = on; syncCardLock(); }
     function clearStartFrom(keepBoxes){
@@ -4115,6 +4124,7 @@
       clearCardBoxes();
       setVerdict("deterministic");
       modelSelect.selectedIndex = 0;
+      setThinkingTick(false);
       msgInput.value = "";
       rwQ.value = "";
       lastPhase = null;
@@ -4146,6 +4156,8 @@
         jobText: document.getElementById("jf-job").value.trim(),
         inputs: document.getElementById("jf-inputs").value.trim(),
         destination: document.getElementById("jf-dest").value.trim(),
+        // the "Thinking on" tick: sent as a boolean; the server judges it per line and signs it only when ticked
+        thinking: thinkingBox.checked === true,
         capUsd: moneyCap,
         maxWallMs: timeCapMin === "" ? undefined : Math.round(Number(timeCapMin) * 60000),
       };
@@ -4298,7 +4310,20 @@
         modelSelect.appendChild(hit);
       }
       modelSelect.value = hit.value;
+      syncThinking();
     }
+    // The "Thinking on" box follows the SERVER's answer for the picked line (`thinking.canChange`): false greys AND unticks it with the
+    // server's words; 'unverified' leaves it enabled with no note. The tick is the person's; the page decides nothing.
+    function syncThinking(){
+      var t = lineThinking[modelSelect.value];
+      var blocked = !!(t && t.canChange === false);
+      if(blocked) thinkingBox.checked = false;
+      thinkingBox.disabled = blocked || sessionLive || resumeRun !== null || reuseOn;
+      thinkingNote.textContent = blocked ? (t.say || "") : "";
+      document.getElementById("jf-thinking-label").hidden = reuseOn;
+    }
+    function setThinkingTick(on){ thinkingBox.checked = on === true; syncThinking(); }
+    modelSelect.addEventListener("change", syncThinking);
     var modelReads = 0;
     function loadModels(){
       if(modelSelect.options.length === 0){
@@ -4309,10 +4334,13 @@
         modelReads = 0;
         var lines = r.lines || [];
         var was = modelSelect.value;
+        lineThinking = {};
+        lines.forEach(function(m){ lineThinking[pickValue(m.slot, m.model)] = m.thinking || null; });
         modelSelect.innerHTML = lines.length ? lines.map(function(m){
           return '<option value="' + escapeXml(pickValue(m.slot, m.model)) + '">' + escapeXml(m.label) + "</option>";
         }).join("") : '<option value="">' + escapeXml(r.say || "Tick a model in Settings > Providers.") + "</option>";
         if(lines.some(function(m){ return pickValue(m.slot, m.model) === was; })) modelSelect.value = was;
+        syncThinking();
         refreshModelStatus();
       }).catch(function(){
         modelReads += 1;
@@ -4636,6 +4664,7 @@
       setVal("jf-name", c.jobName); setVal("jf-job", c.jobText); setVal("jf-inputs", c.inputs);
       setVal("jf-dest", c.destination); setVal("jf-cap-money", c.capUsd);
       setVal("jf-cap-time", typeof c.maxWallMs === "number" ? Math.round(c.maxWallMs / 60000) : "");
+      setThinkingTick(c.thinking === true);
       fitCardBoxes();
     }
     // ONE owner of the reuse fill: the Run tab's / Import view's button and the picker both arrive here (the

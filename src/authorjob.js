@@ -113,7 +113,7 @@ import {
   QUESTION_SETS, questionsFor, requiredAnswersFor, authorClose, makeCostBook,
   runConfirmTurn, LANGUAGE_PICK_FIELD,
 } from './authorflow.js';
-import { draftCallOptions, assertDraftThinking } from './providers.js';
+import { thinkingCallOptions, assertThinkingMode } from './thinking.js';
 import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
 import {
   DECLARED_GAP_PREFIX, DECLARED_GENRES, guardNames, isDeclaredClose, validateCloseDecl,
@@ -423,7 +423,7 @@ function composerRefusal(reds) {
  *   seedRef?: string|null, scout?: any, listing?: any, ceilingUsd?: number|null, judgeModel?: string|null,
  *   rates?: {in: number, out: number}|null, draftThinking?: 'on'|'off',
  *   onPhase?: (phase: string, data?: any) => void,
- *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingApplied?: boolean|null}) => void,
+ *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string}) => void,
  *   seedFn?: Function, scoutFn?: Function, listingFn?: Function,
  *   authorFn?: Function, authorOpts?: object, writeScope?: string[]|null,
  *   signerFix?: Function|any, proposeFn?: Function, compileOpts?: object,
@@ -496,7 +496,7 @@ export async function authorCloseForJob({
   answerQuestions = null,
 }) {
   // an operator-param guard: a typo never silently means "default" (throws before any work, even when the survey is supplied)
-  assertDraftThinking(draftThinking);
+  assertThinkingMode(draftThinking);
   /** @type {any} */
   const base = {
     ok: false, refusal: null, verdictType: null, closeDecl: null, seedRef: null,
@@ -597,7 +597,7 @@ export async function authorCloseForJob({
     // real tree. `attempts` is the ceiling the scout enforces on itself, so the
     // reader knows how many the line could repeat for.
     onPhase('scout', { attempts: SCOUT_ATTEMPTS });
-    const scoutCallOptions = draftCallOptions(provider, draftThinking);
+    const scoutCallOptions = thinkingCallOptions(provider, draftThinking);
     survey = await scoutFn({ workdir, provider, ceilingUsd, onCall, ...(rates ? { rates } : {}), ...(Object.keys(scoutCallOptions).length ? { callOptions: scoutCallOptions } : {}) });
     // …and the survey's own VERDICT, said the moment it lands. `state` is what
     // every downstream refusal keys on (F59: absent is never "no facts needed"),

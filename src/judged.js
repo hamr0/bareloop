@@ -66,7 +66,8 @@
 import { quoteIn } from 'bareguard';
 import { createRequire } from 'node:module';
 import { extractArtifact, priceOf, scrubRaw, rateSourceFields } from './text.js';
-import { resolveProvider, judgeCallOptions } from './providers.js';
+import { resolveProvider } from './providers.js';
+import { thinkingCallOptions } from './thinking.js';
 
 const require = createRequire(import.meta.url);
 
@@ -1087,9 +1088,11 @@ function topLevelFunctionNames(artifactText) {
  * so the priced seam is the only legal one.
  * `rates` is the customer's own price for the judge's row (USD per 1K, `ratesFor`'s
  * `rates`); null/absent = bare-agent's built-in guess, exactly as before.
- * @param {{provider: any, system: string, rates?: {in: number, out: number}|null}} o
+ * `thinking` is the job's SIGNED "Thinking on" tick (false/absent = off): the judge follows the signed value — so the calibration gate
+ * (10/10) and the later grading run with the SAME tick — and bare-agent decides what each model can switch (src/thinking.js).
+ * @param {{provider: any, system: string, rates?: {in: number, out: number}|null, thinking?: boolean}} o
  * @returns {{run: (msgs: any[], tools: any[], opts?: any) => Promise<any>}} */
-export const defaultJudgeLoop = ({ provider, system, rates = null }) => {
+export const defaultJudgeLoop = ({ provider, system, rates = null, thinking = false }) => {
   const { Loop } = require('bare-agent');
   // BA-21: the Loop's run RESULT carries no `rateSource` — only the per-call metering event
   // does (`onLlmResult`). Capture it there and ride it on the result, so `runLocate` can
@@ -1105,7 +1108,7 @@ export const defaultJudgeLoop = ({ provider, system, rates = null }) => {
   return {
     run: async (/** @type {any[]} */ msgs, /** @type {any[]} */ tools, /** @type {any} */ opts) => {
       seen = null;
-      const res = await loop.run(msgs, tools, { ...judgeCallOptions(provider), ...opts });
+      const res = await loop.run(msgs, tools, { ...thinkingCallOptions(provider, thinking === true ? 'on' : 'off'), ...opts });
       return res && typeof res === 'object' && seen ? { ...res, rateSource: /** @type {any} */ (seen).rateSource } : res;
     },
   };

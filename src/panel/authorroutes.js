@@ -29,7 +29,8 @@ import { validateJob } from '../job.js';
 import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
 import { ConfigError } from '../config.js';
 import { keysForDoor, keysHome } from '../keysfile.js';
-import { chatLines, judgePick, keyValueOf, rowsForHome } from '../providerrows.js';
+import { judgePick, keyValueOf, rowsForHome, tickedLines } from '../providerrows.js';
+import { thinkingForLine } from '../thinking.js';
 import { apiKeyProblem, checkProviderReachable } from '../providers.js';
 
 /** @returns {string} a fresh per-process token — never persisted, never logged */
@@ -180,7 +181,10 @@ export function createAuthorRoutes(opts) {
     // ── P4b: Chat's Model menu IS the Settings rows (a blank Name is not offered). ──
     if (pathname === '/api/author/models') {
       if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
-      const lines = chatLines(rowsForHome(keysHome(opts.home), envNow()));
+      // every ticked-and-priced line of a row, labelled `<KEY> · <model>`; `thinking` is the server's answer for the "Thinking on" box
+      const lines = tickedLines(rowsForHome(keysHome(opts.home), envNow())).map(({ row, line }) => ({
+        slot: row.envName, model: line.model, label: `${row.envName} · ${line.model}`, thinking: thinkingForLine(row.provider, line.model, row.baseUrl),
+      }));
       send(200, { ok: true, lines, say: lines.length === 0 ? 'Tick a model in Settings > Providers.' : '' });
       return true;
     }

@@ -61,7 +61,7 @@ test('page: resetCard empties every box, check type back to deterministic, Model
   let lastPhase = 'prepared';
   // eslint-disable-next-line no-new-func
   const run = new Function('document', 'modelSelect', 'msgInput', 'clearStartFrom', 'openNewCard', 'refreshModelStatus', 'rwQ',
-    `var lastPhase = "prepared"; var CARD_BOX_IDS = ["jf-name", "jf-job", "jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time"]; var NUMBERED_IDS = []; function gutterSync(){} function setJobPlaceholders(){}\n${fnSrc('clearCardBoxes')}\n${fnSrc('setVerdict')}\n${fnSrc('resetCard')}\nresetCard();\nreturn lastPhase;`);
+    `var lastPhase = "prepared"; var CARD_BOX_IDS = ["jf-name", "jf-job", "jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time"]; var NUMBERED_IDS = []; function gutterSync(){} function setJobPlaceholders(){} function setThinkingTick(on){ globalThis.__tick = on; }\n${fnSrc('clearCardBoxes')}\n${fnSrc('setVerdict')}\n${fnSrc('resetCard')}\nresetCard();\nreturn lastPhase;`);
   lastPhase = run(doc, modelSelect, msgInput, () => calls.push('clearStartFrom'), () => calls.push('openNewCard'), () => calls.push('refreshModelStatus'), { value: 'q' });
   for (const id of ['jf-name', 'jf-job', 'jf-inputs', 'jf-dest', 'jf-cap-money', 'jf-cap-time']) assert.equal(els[id].value, '', id);
   assert.deepEqual(radios.map((r) => r.checked), [true, false], 'deterministic');

@@ -115,7 +115,7 @@ test('lock: in resume mode EVERYTHING is locked — boxes, Model, Check type rad
   const dom = fakeDom();
   const radios = [{ disabled: false }, { disabled: false }, { disabled: false }];
   dom.document.querySelectorAll = () => radios;
-  const sandbox = (resumeRun, sessionLive) => build(['syncCardLock'], { document: dom.document },
+  const sandbox = (resumeRun, sessionLive) => build(['syncCardLock'], { document: dom.document, syncThinking() {} },
     `var sessionLive = ${sessionLive}; var reuseOn = false; var resumeRun = ${JSON.stringify(resumeRun)};
      var LOCKED_IDS = ["jf-name", "jf-job"];
      var OPEN_IDS = ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var CAP_IDS = ["jf-cap-money", "jf-cap-time"];`).syncCardLock;

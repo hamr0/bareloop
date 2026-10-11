@@ -73,7 +73,7 @@
 // No spine emission here — M4 wires events.
 
 import { renderInputs } from './jobblock.js';
-import { draftCallOptions } from './providers.js';
+import { thinkingCallOptions } from './thinking.js';
 import { createRequire } from 'node:module';
 import { realpathSync } from 'node:fs';
 import { join, relative, isAbsolute } from 'node:path';
@@ -1536,7 +1536,7 @@ export function resolveSourcePrefixes({ workdir, sourcePaths, seedFiles }) {
  */
 /**
  * @param {{ceilingUsd?: number|null,
- *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingApplied?: boolean|null}) => void}} [o]
+ *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string}) => void}} [o]
  *   `ceilingUsd` is the OPERATOR's ceiling; `null`/absent is UNBOUNDED.
  *   `onCall` is a REPORTING seam fired as each metered call lands — the shell's
  *   only chance to know what has been spent while the run is still alive. It is
@@ -1557,9 +1557,9 @@ export function makeCostBook({ ceilingUsd = null, onCall = () => {} } = {}) {
       const call = { label, ...priceOf(r) };
       entries.push(call);
       raws.push(scrubRaw({ label, attempt, text: r?.text, reason: r?.error ? String(r.error) : null }));
-      // bare-agent's per-run `thinkingApplied` (true | false | null) rides the REPORTING seam only — never the stored entry,
-      // so the cost report and every persisted shape stay as they were; absent when thinkingMode was not sent
-      onCall({ ...call, ...(r?.thinkingApplied === undefined ? {} : { thinkingApplied: r.thinkingApplied }) });
+      // bare-agent's per-run `thinkingStatus` ('applied' | 'unsupported' | 'ignored' | 'unknown') rides the REPORTING seam only —
+      // never the stored entry, so the cost report and every persisted shape stay as they were; absent when thinkingMode was not sent
+      onCall({ ...call, ...(r?.thinkingStatus === undefined ? {} : { thinkingStatus: r.thinkingStatus }) });
       return entries.at(-1);
     },
     /** @param {{label: string, costUsd: number|null, unpricedRounds: number}[]} calls
@@ -1599,13 +1599,13 @@ export function makeCostBook({ ceilingUsd = null, onCall = () => {} } = {}) {
  * `cacheMessages` (F18) and `maxTokens` (F30) are not optional on this stack.
  * `rates` is the customer's own price for this provider's key row (USD per 1K, `ratesFor`);
  * absent = bare-agent's built-in guess, exactly as before.
- * `draftThinking` ('on' | 'off', operator knob; default 'off') adds the drafter's per-call thinking option via `draftCallOptions`.
+ * `draftThinking` ('on' | 'off', the job's "Thinking on" tick spelled as a word; default 'off') adds the drafter's per-call thinking option via `thinkingCallOptions` (src/thinking.js, the one owner).
  * @param {any} provider @param {{system?: string, maxTokens?: number, rates?: {in: number, out: number}|null, draftThinking?: string}} [o]
  * @returns {(messages: any[], tools: any[], opts?: any) => Promise<any>}
  */
 export function makeLoopGenerate(provider, { system = AUTHOR_SYSTEM, maxTokens = AUTHOR_MAX_TOKENS, rates = null, draftThinking = 'off' } = {}) {
-  // the drafter's per-call options (src/providers.js `draftCallOptions`, one owner); a bad mode throws HERE, at construction
-  const callOptions = draftCallOptions(provider, draftThinking);
+  // the drafter's per-call options (src/thinking.js `thinkingCallOptions`, one owner); a bad mode throws HERE, at construction
+  const callOptions = thinkingCallOptions(provider, draftThinking);
   return async (/** @type {any[]} */ messages, /** @type {any[]} */ tools, /** @type {any} */ opts = {}) => {
     const loop = new Loop({ provider, system, ...(rates ? { rates } : {}) });
     const wired = tools.map((t) => ({
@@ -2265,7 +2265,7 @@ export async function runConfirmTurn({
  *   generate: Function, seedReadFn?: Function, closeCtx?: any,
  *   ceilingUsd?: number|null,
  *   onPhase?: (phase: string, data?: any) => void,
- *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingApplied?: boolean|null}) => void,
+ *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string}) => void,
  *   maxRevisions?: number, structureRetries?: number,
  *   structuredMode?: 'tool'|'text', catalogue?: Record<string, any>, writeScope?: string[]|null,
  *   priorCalls?: {label: string, costUsd: number|null, unpricedRounds: number}[]|null,

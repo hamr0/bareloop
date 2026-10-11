@@ -26,7 +26,7 @@ import { SHAPE_IDS } from './providershapes.js';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { AnthropicProvider, OpenAIProvider, GeminiProvider, thinkingSupport } = require('bare-agent/providers');
+const { AnthropicProvider, OpenAIProvider, GeminiProvider } = require('bare-agent/providers');
 
 /**
  * Which admitted providers have paid for their own end-to-end probe, and which
@@ -40,115 +40,6 @@ export const PROBE_STATUS = Object.freeze({
   'openai-api': Object.freeze({ probed: true, evidence: 'run mtu12vks, green through scripts/run-u.mjs, $1.64/$4 (F157)' }),
   'gemini-api': Object.freeze({ probed: false, evidence: 'ZERO runs — admitted to the menu, owes its own paid probe (PRD item 31.3)' }),
 });
-
-/**
- * THINKING (hamr 2026-10-11: no hardcoded per-model lists in bareloop — bare-agent >=0.51 owns the shapes). The drafter and the
- * rubric judge run thinking OFF by default (deepseek-flash thinks by default and bills the reasoning as output: F192 run mv117wde
- * truncated judge locates at the cap, and a drafter answer that runs to the output cap is a failed try). This module is the ONE
- * owner of what a call sends: it asks bare-agent's `thinkingSupport(kind, model)` (pure lookup, no network) and sends the
- * normalized per-call `thinkingMode: 'off'` ONLY when the model is measured switchable. A model measured NOT switchable
- * (claude-opus-5-5 …) gets nothing — asking would throw before send — and a model bare-agent has not measured ('unverified') also
- * gets nothing on this DEFAULT path, so a local/unknown model's drafting never breaks by default. PER-CALL, never constructor
- * options (the drafter's provider is the worker's instance; the worker is deliberately left as it was). The raw `thinking`
- * option is never sent (bare-agent throws if both are set).
- */
-
-/**
- * The thinking-ladder kind bare-agent's `thinkingSupport` is keyed by, from a constructed provider; null for anything that is
- * not one of the three admitted constructors (a test double, a clipipe) — such a provider is never sent the switch.
- * OpenAI-shaped providers are DeepSeek by model id `deepseek-*` or a `deepseek.com` baseUrl (bare-agent's documented rule,
- * provider-openai.js:80), else OpenAI.
- * @param {any} provider
- * @returns {'anthropic'|'openai'|'deepseek'|'gemini'|null}
- */
-function thinkingKind(provider) {
-  if (provider instanceof AnthropicProvider) return 'anthropic';
-  if (provider instanceof GeminiProvider) return 'gemini';
-  if (provider instanceof OpenAIProvider) {
-    return /^deepseek-/i.test(String(provider.model)) || /deepseek\.com/i.test(String(provider.baseUrl)) ? 'deepseek' : 'openai';
-  }
-  return null;
-}
-
-/**
- * What an 'off' request means for this provider instance, for the draft log and the panel row: `'off'` (measured switchable —
- * the switch is sent), `'not-switchable'` (measured NOT switchable — nothing sent, the model thinks as it would),
- * `'unverified'` (bare-agent has not measured this model — nothing sent on the default path).
- * @param {any} provider a constructed bare-agent provider
- * @returns {'off'|'not-switchable'|'unverified'}
- */
-function offOutcome(provider) {
-  const kind = thinkingKind(provider);
-  if (kind === null) return 'not-switchable';
-  const support = thinkingSupport(kind, provider.model);
-  if (support.switchable === true) return 'off';
-  return support.switchable === 'unverified' ? 'unverified' : 'not-switchable';
-}
-
-/**
- * The per-call options the rubric JUDGE's model calls carry for this provider instance: `{ thinkingMode: 'off' }` when
- * bare-agent measures the model switchable, else `{}` (F192: judge runs thinking off; a judge on a model that cannot turn it
- * off must not throw).
- * @param {any} provider a constructed bare-agent provider
- * @returns {Record<string, any>}
- */
-export function judgeCallOptions(provider) {
-  return offOutcome(provider) === 'off' ? { thinkingMode: 'off' } : {};
-}
-
-/**
- * The drafter's THINKING knob — an enumerated OPERATOR param, never model output and never read from env inside the library.
- * `'on'` sends nothing (the model's own thinking, byte-identical to a no-knob call); `'off'` sends `thinkingMode: 'off'` where
- * bare-agent measures the model switchable. The DEFAULT is `'off'` (hamr 2026-10-11, decided by the frozen ON/OFF contrast,
- * docs/logs/2026-10-10-drafter-thinking-contrast-prereg.md); `'on'` stays selectable for a later Settings checkbox.
- */
-export const DRAFT_THINKING_MODES = Object.freeze(['on', 'off']);
-
-/**
- * Throw unless `mode` is one of {@link DRAFT_THINKING_MODES} — an operator-param guard, so a typo never silently means a mode.
- * @param {unknown} mode
- * @returns {'on'|'off'}
- */
-export function assertDraftThinking(mode) {
-  if (mode === 'on' || mode === 'off') return mode;
-  throw new Error(`[providers] draftThinking must be one of ${DRAFT_THINKING_MODES.join(' | ')}, got ${JSON.stringify(mode)}`);
-}
-
-/**
- * What the drafting calls on this provider ACTUALLY carry for thinking, for the draft log and the panel row: `'on'` (mode on,
- * nothing sent), `'off'` (mode off and the switch is sent), `'not-switchable'` (mode off, model measured not switchable —
- * nothing sent), `'unverified'` (mode off, model not measured by bare-agent — nothing sent). Never re-derives a model list.
- * @param {any} provider a constructed bare-agent provider
- * @param {unknown} [mode] 'on' | 'off' (default 'off')
- * @returns {'on'|'off'|'not-switchable'|'unverified'}
- */
-export function draftThinkingSent(provider, mode = 'off') {
-  if (assertDraftThinking(mode) === 'on') return 'on';
-  return offOutcome(provider);
-}
-
-/**
- * {@link draftThinkingSent} for a model the caller has only NAMED (provider shape, model id, baseUrl) — no key, no network. For
- * the panel's first drafting row, which is shown before the key is read. Constructing the provider only makes the class and
- * the model id available to `thinkingSupport`; it sends nothing.
- * @param {{providerName: string, model: string, baseUrl?: string|null}} o
- * @param {unknown} [mode] 'on' | 'off' (default 'off')
- * @returns {'on'|'off'|'not-switchable'|'unverified'}
- */
-export function draftThinkingFor({ providerName, model, baseUrl }, mode = 'off') {
-  return draftThinkingSent(makeProvider(providerName, { apiKey: 'unset', model, ...(baseUrl ? { baseUrl } : {}) }), mode);
-}
-
-/**
- * The ONE owner of the per-call options every DRAFTING model call carries (scout, confirm, author, revise, structure retries).
- * `{ thinkingMode: 'off' }` exactly when {@link draftThinkingSent} says `'off'`, else `{}`.
- * @param {any} provider a constructed bare-agent provider
- * @param {unknown} [mode] 'on' | 'off' (default 'off')
- * @returns {Record<string, any>}
- */
-export function draftCallOptions(provider, mode = 'off') {
-  return draftThinkingSent(provider, mode) === 'off' ? { thinkingMode: 'off' } : {};
-}
 
 /**
  * @typedef {object} ProviderTableEntry

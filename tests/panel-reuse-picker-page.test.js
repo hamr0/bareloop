@@ -195,7 +195,7 @@ test('radios stay CLICKABLE during reuse (only a live session freezes them); the
 
 test('checkType on the start request comes from the PICKED job when the radio is Reuse workflow, never from the radio', () => {
   const val = (id) => ({ value: id === 'jf-cap-money' ? '2' : '' });
-  const mk = (verdict, reuseCheckType) => build(['pickParts', 'currentCard'], { document: { getElementById: val }, verdictValue: () => verdict }, `var reuseCheckType = ${JSON.stringify(reuseCheckType)};`).currentCard();
+  const mk = (verdict, reuseCheckType) => build(['pickParts', 'currentCard'], { document: { getElementById: val }, verdictValue: () => verdict, thinkingBox: { checked: false } }, `var reuseCheckType = ${JSON.stringify(reuseCheckType)};`).currentCard();
   assert.equal(mk('reuse', 'rubric').checkType, 'rubric');
   assert.equal(mk('reuse', 'deterministic').checkType, 'deterministic');
   assert.equal(mk('rubric', 'deterministic').checkType, 'rubric');

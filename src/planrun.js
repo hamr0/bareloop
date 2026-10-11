@@ -1685,7 +1685,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // ride, so `runJob`'s ONE ledger accounts a close's spend exactly as it accounts
       // an attempt's (a budget funds the attempt PLUS its close), and a null cost trips
       // the same F6 pricing halt rather than being laundered into $0.
-      judgeLoop: judgeProvider ? (/** @type {{system: string}} */ o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system, rates: judgeRates }) : null,
+      judgeLoop: judgeProvider ? (/** @type {{system: string}} */ o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system, rates: judgeRates, thinking: job.thinking === true }) : null,
       // the seam's other half (PRD item 32.1) — WHICH model that loop drives. Passed
       // through untouched: this module resolves no judge, exactly as it constructs no
       // provider. `runJudgedFloor` stops as a wiring gap when it is absent rather than
