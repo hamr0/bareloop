@@ -1918,7 +1918,7 @@ hand them to the one `Loop` that drives worker, scout and planner rounds; the ru
 them once. No price on the row = no `rates` key anywhere = the guesstimate above, byte-identical to
 before. bareloop keeps no price list of its own, ever.
 
-**The provenance is on the record, per round (`rateSource`).** The pinned bare-agent (`^0.49.0`)
+**The provenance is on the record, per round (`rateSource`).** The pinned bare-agent (`^0.51.0`)
 carries it on every metering payload, and bareloop forwards it VERBATIM (`rateSourceFields`,
 `src/planrun.js`): every API `worker-round` (worker, scout, planner, fix loop) carries it beside
 `pricing` today — `'caller'` when a customer price is on the key's row, else `'tier'`/`'default'`
