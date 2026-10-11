@@ -500,6 +500,9 @@
   .jp .older{font-size:12px;color:var(--text-faint);margin:0 0 8px;}
   .jp .jp-sum{margin:0 0 8px;overflow-wrap:anywhere;}
   .jp .jp-sum .lbl{display:inline-block;color:var(--text-faint);margin-right:8px;}
+  .jp-qs{margin:8px 0;overflow-wrap:anywhere;}
+  .jp-qs .lbl{display:inline-block;color:var(--text-faint);margin-right:8px;}
+  .jp-qs ul{margin:4px 0;padding-left:26px;}
   .jp-goal{font-size:12px;color:var(--text-faint);margin-top:8px;}
   /* hamr 2026-10-05: the focused/selected Chat-card field gets a blue border (the accent), no outline ring */
   #panel-chat :is(input,select,textarea):focus{border-color:var(--accent);outline:none;}
@@ -4035,7 +4038,8 @@
         if(m.kind === "plan" && m.plan){
           // P7: the confirm turn's plan is drawn by the one job-plan renderer (the Job tab uses the same)
           var qs = (m.plan.questions || []).length
-            ? '<div class="jp-goal" data-testid="plan-questions">questions: ' + escapeXml(m.plan.questions.join(" \u00B7 ")) + "</div>" : "";
+            ? '<div class="jp-qs" data-testid="plan-questions"><span class="lbl">AI\'s open questions</span><ul>' +
+              m.plan.questions.map(function(q){ return "<li>" + escapeXml(q) + "</li>"; }).join("") + "</ul><b>Revise if you need to.</b></div>" : "";
           return '<div class="msg ' + cls + '" data-testid="plan-bubble">' + whoHtml + renderJobPlan(m.plan) + qs + '<div class="jp-goal">' + escapeXml(m.text) + "</div></div>";
         }
         return '<div class="msg ' + cls + '">' + whoHtml + escapeXml(m.text) + '</div>';

@@ -72,13 +72,24 @@ test('renderMessages: a plan message is drawn as the plan bubble with the footer
   assert.match(thread.innerHTML, /data-testid="plan-bubble"/);
   assert.match(thread.innerHTML, /<PLAN\/>/);
   assert.doesNotMatch(thread.innerHTML, /goal sentence/, 'the goal is the AI\'s summary row inside renderJobPlan, not a loose extra line');
-  assert.match(thread.innerHTML, /questions: which folder\?/);
+  assert.match(thread.innerHTML, /data-testid="plan-questions"><span class="lbl">AI's open questions<\/span><ul><li>which folder\?<\/li><\/ul><b>Revise if you need to\.<\/b>/);
+  assert.doesNotMatch(thread.innerHTML, /questions: /, 'no grey "questions: a · b" line any more');
   assert.match(thread.innerHTML, /Sign &amp; run to confirm/);
   thread.innerHTML = 'user opened a fold';
   f(JSON.parse(JSON.stringify(state)));
   assert.equal(thread.innerHTML, 'user opened a fold', 'same messages: not redrawn');
   f({ messages: [...state.messages, { role: 'you', text: 'hi' }] });
   assert.match(thread.innerHTML, /hi/);
+});
+
+test('renderMessages: no open-questions row when the plan has no questions; each question is its own item, escaped', () => {
+  const thread = { innerHTML: '', scrollTop: 0, scrollHeight: 10 };
+  // eslint-disable-next-line no-new-func
+  const f = new Function('thread', 'escapeXml', 'renderJobPlan', 'chatWhoLabel', `var lastMsgSig = null;\n${fnSrc('renderMessages')}\nreturn renderMessages;`)(thread, escapeXml, () => '<PLAN/>', () => 'bareloop');
+  f({ messages: [{ role: 'bot', kind: 'plan', text: 't', plan: { lines: [], questions: [] } }] });
+  assert.doesNotMatch(thread.innerHTML, /plan-questions|Revise if you need to/);
+  f({ messages: [{ role: 'bot', kind: 'plan', text: 't2', plan: { lines: [], questions: ['a <b>?', 'c?'] } }] });
+  assert.match(thread.innerHTML, /<li>a &lt;b&gt;\?<\/li><li>c\?<\/li>/);
 });
 
 /** a fake numbered box: the mirror reports 21px per logical line (2 rows when a line is longer than 10 chars) */
