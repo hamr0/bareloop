@@ -14320,3 +14320,17 @@ says a bundle's spec cannot be edited (`src/planrun.js`).
 **Why it is not a job defect.** The same job drafted live in smv2k6bczlvk3 reached a signable spec (an any-types count stage, red at seed, value 5), so the job is signable. These drafters did not find a seed-red check for line 1 (JSDoc is not machine-checkable), and lines 2-3 already pass. This matches the fwd POC am26 (deepseek asked 0 questions on 20 jobs): the ask is an option, not a guarantee. The cut-offs this contrast was built around were NOT what blocked this job.
 
 **Ruling and status.** hamr's standing ruling: the JSDoc-on-a-repo job is "the wrong confusing job"; rubric gets retested on plain folders. Open, evidence only, no code change; revisit with the rubric-on-plain-folders step.
+
+
+## F219 — the close child's env strip does not see a Settings row named like `GW_KEY` (found building P8, 2026-10-11; open, arbiter-adjacent, no code change)
+
+**Grounded in:** `src/ralph.js:125-143` (`CLOSE_ENV_DENY`: exact names, the `AWS_` prefix, and the shape `/(_API_KEY|_SECRET|_TOKEN|_PASSWORD|_CREDENTIALS?)$/i`). Measured: `GW_KEY`, `FOO_KEY`, `LOCAL_LLM_KEY` and `K` all read "not stripped"; `MY_PROVIDER_API_KEY`, `PROVIDER_TOKEN` read stripped. Since P8 a Settings row is named by whatever the person types in the keys file, and the run's merged env (shell + keys file) is what a close child inherits minus the denylist. A row named without one of those suffixes reaches the close child, which executes worker-authored code. The new keys-file comment suggests `MY_PROVIDER_API_KEY`, which IS stripped, but nothing forces that name. Not widened here (the denylist is arbiter territory): hamr decides whether the shape rule should also take `_KEY`.
+
+## F220 — `NODE_ENV=test` is not set under `node --test`, so a guard written on it would have let the suite open a real file manager (found building P8, 2026-10-11; fixed on `feat/settings-providers`)
+
+**Grounded in:** `src/panel/settingsroutes.js` (`openKeysFolder`): the opener is withheld "under NODE_ENV=test". The first run of `tests/settings-routes-p8.test.js` answered `opened: true` for a test process with no injected opener, i.e. it had called the real `xdg-open`. Fixed: a test process is `NODE_ENV === 'test' || NODE_TEST_CONTEXT !== undefined`. The test now pins `opened:false` for a test process.
+
+## F221 — a shell-only key that config names was a Settings row but not a run-path row (found building P8, 2026-10-11; fixed on `feat/settings-providers`)
+
+**Grounded in:** the panel's row list (`settingsroutes.js` `rowNames`) added a key only the shell holds when `keys.<ENV>` / `models.<ENV>` named it, but `rowsForHome` (`src/providerrows.js`) read the keys FILE only, so a run on that row refused `<model> is not set up` while the page showed it `found in shell`. Fixed: one `rowNamesOf(filled, config, env)` serves both, and the run doors (`userrun`, `authorrun`, `interviewrun`, the panel session and routes) pass their env. Not covered: the panel's track-record helpers in `server.js` (`workerOfChoice`, `rowModelOf`) still read the file only.
+

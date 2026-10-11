@@ -12,7 +12,7 @@ import {
 } from '../src/providers.js';
 import { validateJob, PROVIDERS } from '../src/job.js';
 
-// The `stopReason`-on-`worker-round` tests live in tests/planrun.test.js
+// The `stopReason`-on-`worker-round` tests live in tests/planrun-*.test.js
 // instead of here: `makePatient`/`go`/`PLAN`/`tcall`/`JOB` are that file's
 // own LOCAL helpers (not exported from tests/helpers.js), and driving a
 // real Loop through a scripted provider is exactly "the existing planrun

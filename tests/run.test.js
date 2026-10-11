@@ -11,7 +11,7 @@
 // smoke, and the four money-contract readings below are ports, not new tests.
 // Guards that moved house rather than dying are covered where they now live:
 // close-unsupported, broken-close, already-green and the close's cwd in
-// tests/planrun.test.js; close-crashed and the close-output scrub in
+// tests/planrun-*.test.js; close-crashed and the close-output scrub in
 // tests/ralph.test.js.
 
 import { test, after } from 'node:test';

@@ -27,7 +27,7 @@ import { scanSecrets } from '../src/validate.js';
 
 const RUNNER = new URL('../scripts/run-u.mjs', import.meta.url).pathname;
 
-/** A tmpdir patient shaped like a real workdir (planrun.test.js's idiom). */
+/** A tmpdir patient shaped like a real workdir (the planrun-*.test.js idiom). */
 function makePatient(t) {
   const wd = mkdtempSync(join(tmpdir(), 'coldstore-'));
   t.after(() => rmSync(wd, { recursive: true, force: true }));

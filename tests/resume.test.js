@@ -1918,7 +1918,7 @@ test('§3 the reuse restart hands runJob whether its fold was EXACT — a floor 
 // ══ PRD v1.46 §2+§3 — THE MONEY-PAUSE CYCLE, END TO END ══════════════════════
 //
 // The two halves above are each tested on their own: §2 gives a drained wallet a
-// decision-ready `money-halt` (tests/planrun.test.js), and §3 lets `readResume`
+// decision-ready `money-halt` (tests/planrun-*.test.js), and §3 lets `readResume`
 // read a landed cap-halt as a CHECKPOINT rather than a graded row. What neither
 // covers is the thing hamr actually asked for — the WHOLE cycle, through the real
 // `runJob`:

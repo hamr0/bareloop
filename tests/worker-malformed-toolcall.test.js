@@ -43,7 +43,7 @@ function makePatient(t) {
   mkdirSync(join(wd, 'tests'));
   mkdirSync(join(wd, 'src'));
   writeFileSync(join(wd, 'src', 'mod.mjs'), 'export const x = 1;\n');
-  // MUST be red at the seed (planrun.test.js's makePatient idiom): an
+  // MUST be red at the seed (the planrun-*.test.js makePatient idiom): an
   // already-green close short-circuits runPlan before the scout/plan/worker
   // ever run at all, which would make this fixture unable to reach the
   // worker path this finding is about.
@@ -80,7 +80,7 @@ const PLAN = () => JSON.stringify({
 });
 
 /** collect spine events in memory — same pure-listener contract as
- * tests/planrun.test.js's own `collector`. */
+ * tests/planrun-*.test.js's own `collector`. */
 function collector() {
   /** @type {any[]} */
   const events = [];

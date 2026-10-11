@@ -56,20 +56,16 @@ inherited rule carries the green that minted it and the contrast that attributed
   with `anthropic-api` on cost, and budgets don't transfer between them.
   `job.provider === 'clipipe-subscription'` with no `nativeProvider` supplied is
   `interpreter-red`, never a silent fall-back to the metered API (`src/planrun.js:1073`).
-  `provider: 'openai-api'` (PRD item 28) takes the ordinary `Loop` path against an
-  OpenAI-shaped endpoint, reads `OPENAI_API_KEY`, and accepts an optional job-level
-  `baseUrl` (https, or http on loopback only; credentials in the URL are a red). Its one
-  admitted model is `deepseek-flash`, which earned the slot with a real paid green under
-  its retired predecessor `deepseek-chat` (F171: no longer served as of 2026-09-13,
-  swapped to `deepseek-flash`) — no endpoint or model enters the menu without its own
-  clean paid probe. The provider table
-  lives in `src/providers.js` (`resolveProvider`/`makeProvider`/`buildRunnerProviders`);
-  an unknown provider name THROWS there, it never falls back to a default. Per-model
-  request-key gating lives in that table: `deepseek-flash` sets bare-agent's
-  `legacyMaxTokens`, because DeepSeek silently ignores `max_completion_tokens` and an
-  output cap that does not bind is a money hazard. The judge's calls carry the per-call `thinkingMode` the job's signed "Thinking on" tick asks for (`src/thinking.js`, applied by `defaultJudgeLoop`; F192: unticked = off, because deepseek-flash's default thinking ate the 4000-token locate budget); workers are untouched. `provider: 'gemini-api'` (PRD item 31.3)
-  takes the same `Loop` path, reads `GEMINI_API_KEY`, and maps two real tiers
-  (`sonnet` → `gemini-2.5-pro`, `haiku` → `gemini-2.5-flash`). It is
+  `provider` names an API SHAPE — a wire protocol, never a vendor: `anthropic-api`, `openai-api` (an OpenAI-compatible endpoint, with an optional job-level
+  `baseUrl`: https, or http on loopback only; credentials in the URL are a red) or `gemini-api`. Nothing about a vendor, a model id, an address, a price or a
+  key name is built in (P8): a job's WORKER runs on a **Settings line** — a key row (its API shape, Base URL and "old max_tokens" tick) with a model line the
+  person ticked and priced (see "Settings > Providers" below). The provider table lives in `src/providers.js` (`resolveProvider`/`makeProvider`/
+  `buildRunnerProviders`) and holds only the bare-agent client class and endpoint option name per shape; an unknown provider name THROWS there, it never falls
+  back to a default. The request-key spelling is the ROW's tick, never a model-id table: a server that ignores `max_completion_tokens` (F149) does not bind
+  the output cap until the "old max_tokens" box is ticked, and an output cap that does not bind is a money hazard, so tick it on that row before a paid run
+  (`makeProvider(shape, { legacyMaxTokens })`, forwarded for `openai-api` only). The judge's calls carry the per-call `thinkingMode` the job's signed "Thinking on" tick asks for
+  (`src/thinking.js`, applied by `defaultJudgeLoop`; F192: unticked = off, because a model's default thinking can eat the 4000-token locate budget); workers are untouched. A plan step's
+  `model: "sonnet"` is a documented schema token meaning "this job's worker model" (`STEP_MODELS`), not a model id. `gemini-api` (PRD item 31.3) is
   **ADMITTED-PENDING-PROBE**: it has ZERO runs, and the probe rule is not waived for it —
   `PROBE_STATUS` (`src/providers.js`) is the machine-readable form of that debt, and
   `probeWarningLines(provider)` renders the loud launch-time marker `src/userrun.js`
@@ -85,11 +81,11 @@ inherited rule carries the green that minted it and the contrast that attributed
   at $0 through machinery that treats $0 as a real price. The JUDGE IS NO LONGER PINNED
   (PRD item 32): `resolveJudge` (exported) resolves it per job — the spec's signed
   `judge: {provider, model}` if it names one, else **this job's own worker provider and
-  model**, so a DeepSeek or Gemini job judges on its own provider and needs no second
+  model**, so a job on any provider judges on its own provider and needs no second
   account. There is no library fall-back: a run that cannot name its judge has not wired
   one, and the judged stage instrument-STOPS rather than grading under an identity nobody
-  chose. `JUDGE_MODEL` stays exported as the pre-item-32 pin — no grading path reads it.
-  The judge's key follows the resolved judge provider's own `envKey`, with `JUDGE_API_KEY`
+  chose. The old `JUDGE_MODEL` constant is gone (a vendor model id is not a public export).
+  The judge's key is the resolved judge row's own variable (the worker's row when the judge shares its shape), with `JUDGE_API_KEY`
   as a role-named override in front of it. The bundle runner
   (`bareloop run`) is a door to this same engine (`src/bundlerun.js` → `src/userrun.js`), so it
   reads whatever key the bundle's provider names (keys file or env) and refuses a missing one
@@ -155,13 +151,14 @@ minting claim, or the shell-owned retry cap — all unknown-field reds.
 |---|---|---|
 | `job` | kebab-case slug | |
 | `description` | non-empty string | |
-| `provider` | `anthropic-api` \| `openai-api` \| `gemini-api` \| `clipipe-subscription` | menu (`PROVIDERS`); part of the lineage key by definition. Only `anthropic-api` is guaranteed (F48); `openai-api` (PRD item 28) goes through the provider factory (`src/providers.js`), reads `OPENAI_API_KEY`, and admits only `deepseek-flash` today (F171: swapped from the retired `deepseek-chat`) — see "Worker surface" above for its `baseUrl` field and per-model gating; `gemini-api` (PRD item 31.3) reads `GEMINI_API_KEY` and is ADMITTED-PENDING-PROBE — zero runs, and every launch says so (`PROBE_STATUS`/`probeWarningLines`); `clipipe-subscription` drives the worker natively and needs `opts.nativeProvider` |
+| `provider` | `anthropic-api` \| `openai-api` \| `gemini-api` \| `clipipe-subscription` | menu (`PROVIDERS`): an API SHAPE (a wire protocol), part of the lineage key by definition. Only `anthropic-api` is guaranteed (F48); the shapes go through the provider factory (`src/providers.js`) — see "Worker surface" above for the `baseUrl` field and the row's old-max_tokens tick; `gemini-api` (PRD item 31.3) is ADMITTED-PENDING-PROBE — zero runs, and every launch says so (`PROBE_STATUS`/`probeWarningLines`); `clipipe-subscription` drives the worker natively and needs `opts.nativeProvider` |
 | `conditions` | `{ providerPath?, closeVerbosity?, taskFraming?, scaffold? }` | declared keys only, string values — the environment label (consumed by the N3 lineage key; recorded on spines from run one) |
 | `cadence` | `{ unit: hour\|day\|week, every: 1..30 }` | validated now, consumed at N5 (Scheduler) |
 | `budgetUsd` | finite `0 < n <= shell cap` | ceiling chain: workflow ≤ job ≤ shell — each layer may tighten, never exceed |
 | `maxWallMs` | optional integer ms `>= MIN_WALL_MS` (one close timeout) | the run's wall clock. **NO DEFAULT, by ruling** — absent means time-unbounded *by explicit operator choice*, never by fallback (F45: a defaulted cap is a silent second ceiling). Enforcement is a BETWEEN-ROUND deadline, so the honest worst case is `maxWallMs + closeStages × closeTimeoutMs` — every stage of a staged close gets the FULL timeout — and all three numbers are reported (`loop.stop()` cannot cut an in-flight call — F61 measured 500ms→4,018ms). The `MIN_WALL_MS` floor is a ONE-stage, un-autoset-default number, so a spec with many stages OR a raised/autoset `closeTimeoutMs` can validate while its overshoot dwarfs its cap: `runPlan` adds a RUN-START check (PRD item 27/M3) that refuses `wall-under-close-timeout` at $0 once the EFFECTIVE per-stage ceiling is known (autoset or signed), rather than a silent clamp. Operator-only, tighten-only; adding or changing it changes the spec hash |
 | `closeTimeoutMs` | optional integer ms `>= CLOSE_TIMEOUT_FLOOR_MS` (120,000 — hamr's arbiter floor, 2026-09-07) | PRD item 27/M3's SIGNED override for the close's own per-stage wall-clock cap. Absent (the normal case): the run autosets it from a $0 seed timing pass — `max(FLOOR, K × slowest measured stage)`, `K = 5` (hamr, 2026-09-07: "2 and 5 are fine"). Present: the operator's own number wins outright and may legally sit ABOVE *or below* the autoset estimate (the rates-passthrough shape, F113 — never tighten-only). Arbiter territory exactly like `budgetUsd`/`maxWallMs`/`close[].sha256`: the authoring pipeline's `assembleSpec` refuses a draft carrying it |
-| `model` | optional non-empty string, exact provider model id (e.g. `"claude-sonnet-5"`) | the WORKER's model, build-list #3. Absent means today's runner default; present it wins over a `--model` flag outright, and a flag naming a different id is refused (`resolveWorkerModel`, `src/job.js`) rather than silently overridden. Part of the signed hash like every other field. Worker only — the JUDGE's model comes from the `judge` row below, which DEFAULTS to this same worker model |
+| `model` | optional non-empty string, the exact model id of a line ticked in Settings > Providers | the WORKER's model. A job carries its own model (P8: bareloop has no default); a spec signed before that (no `model`, perhaps no `baseUrl`) runs on the line `--model <id>` names (plus `--provider <KEY>` when two keys tick it) — the signed hash is untouched. Present, it wins over a `--model` flag outright, and a flag naming a different id is refused (`resolveWorkerModel`, `src/job.js`) rather than silently overridden. Part of the signed hash like every other field. Worker only — the JUDGE's model comes from the `judge` row below, which DEFAULTS to this same worker model |
+| `thinking` | optional boolean | the job's "Thinking on" tick (P8): absent = off, and an old spec keeps the hash it always had; present it is signed like `model`. Covers DRAFTING and the rubric JUDGE only — the worker is never handed a thinking option (see "Thinking on" below) |
 | `judge` | optional `{provider, model}`, both non-empty; `provider` from the `PROVIDERS` menu | the signed JUDGE override (PRD item 32). Absent, the judge resolves to this job's own `provider`/`model` (`resolveJudge`) — which is what lets a non-Anthropic job judge without a second account. Present, it pins a judge deliberately different from the worker (an independent reader). Both halves are required together: a judge with a provider and no model is an identity nobody signed. Part of the signed hash, so changing it kills the signature and forces recalibration. Unknown nested keys red — no smuggling level exists in a signed spec. The drafting agent cannot express it: naming your own examiner is arbiter territory |
 | `writeScope` | array of contained globs | the operator's outer fence; the plan's own scopes must fit inside it, same containment code |
 | `steps` | RETIRED | operator-authored `steps[]` was deleted (PRD v1.32); a spec carrying it reds `shape-retired:steps` by name rather than half-running |
@@ -363,7 +360,7 @@ middle writes; `validatePlan` gates it against the SIGNED job spec before tokens
 | `steps[].tools` | non-empty unique subset of the SPEC ceiling | a verb beyond the ceiling reds `verb-escape` with the verb as structured data (overreach, distinct from the operator-side `request-red`); `run` is `verb-escape` at every layer |
 | `steps[].rounds` | int 1..shell cap (default 40) | the step's per-attempt tool-round bound (the Gate's `maxTurns` natively) |
 | `steps[].target` | path inside the fence | v1.18 deliverable; REQUIRED on write-granted steps |
-| `steps[].model` | optional; `sonnet` (`STEP_MODELS`) | the step's model TIER — a menu, never a model string the agent spells (the tier→model mapping and any per-model effort params are the runner's). `opus` is deliberately absent: reserved for work the human assigns, never plan-selectable; `haiku` was removed 2026-08-06 as a reversible ATTRIBUTION PROBE (F87, see `STEP_MODELS`), so the menu is one entry deep and the field is no longer offered in the drafting prompt. The field and its validator branch STAY: `model: "sonnet"` still validates, a stored bridge declaring it still loads, and restoring haiku is a one-token edit — this is not a finding that haiku is incapable. **The narrowing binds only what the AGENT may express.** Which real model a tier maps to, and what the caller runs as its own default worker model, stay the OPERATOR's: `providerFor` is yours, and the in-repo runner's `--model haiku` probe knob is untouched (PRD v1.36) — the runner's tier map is deliberately WIDER than the plan menu. Off-menu reds `invalid-value`. A step naming a tier when the caller supplied no `providerFor` factory is an `interpreter-red` STOP, never a silent run on the default tier |
+| `steps[].model` | optional; `sonnet` (`STEP_MODELS`) | the step's model TIER — a menu, never a model string the agent spells (`sonnet` is a schema token meaning this job's worker model; the runner maps it, there is no tier table). `opus` is deliberately absent: reserved for work the human assigns, never plan-selectable; `haiku` was removed 2026-08-06 as a reversible ATTRIBUTION PROBE (F87, see `STEP_MODELS`), so the menu is one entry deep and the field is no longer offered in the drafting prompt. The field and its validator branch STAY: `model: "sonnet"` still validates, a stored bridge declaring it still loads, and restoring haiku is a one-token edit — this is not a finding that haiku is incapable. **The narrowing binds only what the AGENT may express.** Which real model a tier maps to, and what the caller runs as its own default worker model, stay the OPERATOR's: `providerFor` is yours, and the in-repo runner's `--model haiku` probe knob is untouched (PRD v1.36) — the runner's tier map is deliberately WIDER than the plan menu. Off-menu reds `invalid-value`. A step naming a tier when the caller supplied no `providerFor` factory is an `interpreter-red` STOP, never a silent run on the default tier |
 | `steps[].attempts` | optional; int `>= 1` | **RETIRED and INERT (F79) — it bounds nothing.** A step's iterations are governed by the STRIKE LADDER (below), which is shell-owned and inexpressible from the plan. The field is no longer offered in the drafting prompt and the runner ignores it; it is deliberately still ACCEPTED, because stored bridge plans carry it and a plan minted under one runner's number must not red under another's. The shape is still checked (a known field holding garbage stays a `bounds` red); the old `<= capRuns` ceiling is gone with the cap it named. It was previously TIGHTEN-only — which meant a step that needed MORE iterations could not ask, and drafters measurably tightened it instead (F77) |
 | `steps[].scope` | optional; one value from the SAME menu `tree-changed` uses | narrows this step's live WRITE fence to a subset of the signed `writeScope` — chosen from the offered scope menu (below), never authored. Off-menu reds `invalid-value` carrying the menu |
 | `steps[].exit` | 1..2 items (`MAX_EXITS_PER_STEP`), ALL must pass (AND-only, no OR/NOT) | closed menu (`EXIT_TYPES`): `artifact-written(path, pattern?)` · `tree-changed(scope)` · `json-valid(path)` · `check-passes(name)`. **`tree-changed.scope` is a MENU, not a glob the agent authors** — the runner enumerates the signed fence entries plus the real directories beneath them (shallowest-first, capped at `MAX_SCOPE_MENU`=24; `legalScopes` in `src/plan.js`), `planPrompt` lists them verbatim, and `validatePlan` accepts membership only — the SAME array on both sides, so what was offered is what is accepted; omitted, it derives from `writeScope` alone — never a free-text fallback. An off-menu value that escapes the fence still reds `scope-escape` (the ledger's attribution class), an in-fence unoffered value reds `invalid-value` carrying the menu. `runPlan` emits `scope-menu {offered, truncated, offerableCount?, cap?}` so a capped menu is never silently complete. `check-passes` must name a stage on the close's DERIVED menu (`check-unknown` red names the offered menu — no operator authors this list, it comes straight from `checkMenu(close)`); on a write-granted step it must be paired with `tree-changed` (`exit-illegal` — the seed tree is green, a lone check would pass untouched, F17/F46). **`check-passes` also requires a write-class verb (`write`/`edit`) on the SAME step** (`exit-illegal` — BREAKING for plan authors: a read-only "verify" step carrying a check used to validate and no longer does). A failing check's gap is re-delivered to that step's OWN worker, so a step holding a check must be able to act on it; a read-only one is a mailbox with no hands and stalls to cap on a byte-identical gap (measured on 4 of 4 drafted plans). The check belongs on the step that fixes; the run's final verification is the operator's close, which the agent never authors. The rule is stated identically in the drafter prompt and the validator, so the two can never disagree — and it is suppressed when `tools` failed to parse (the step's hands are unknowable then, and the real defect already redded: one defect, one red). `artifact-written.pattern` must compile AND survive a ReDoS shape check — an unbounded quantifier over a group that itself repeats unboundedly (`(a+)+`, `(\d*)*`, even wrapped: `((a+))+`) is an `invalid-value` red (F49, catastrophic-backtracking footgun; rewrite without a repeated group inside a repeat). Exits verify FORM, not truth — progress gates; the operator's close stays the one arbiter |
@@ -953,13 +950,12 @@ down.
 `--base-url` is OPTIONAL with NO default (PRD item 33 close-out — L17 named the provider but
 never admitted the endpoint): a provider name's table entry (`src/providers.js`) can be reached
 through an OpenAI-compatible gateway other than its own default host — DeepSeek, today's one
-secondary, is reached as `--provider openai-api --base-url https://api.deepseek.com/v1`. Absent,
+secondary, is reached as `--provider openai-api --base-url <the endpoint>`; `--model <id>` names the Settings line the job runs on and lands in the draft's `model`. Absent,
 the draft carries NO `baseUrl` field at all (never `null`, never `''`) and every provider
 constructor defaults its own endpoint. When given, it lands in the draft's `baseUrl` field
 beside `provider` and passes through the SAME `validateJob` pass every other field takes below,
 at $0: `http://` to a public host, an embedded `user:pass@`, or an unparseable string reds there,
-before anything is written. The key still follows the PROVIDER, not the endpoint — a DeepSeek
-draft's key still loads from `OPENAI_API_KEY`, and the hand-off says so.
+before anything is written. The key is the Settings ROW's variable that carries the model line — the hand-off names it.
 
 **Source and Destination are the interview's own FIRST TWO QUESTIONS, and they REPLACE
 `--patient`** (PRD item 33 M3, ruling 2, `docs/product/ITEM33-BUILD.md`). Source — "a local
@@ -1024,8 +1020,8 @@ spends it.
 
 **It ends by OFFERING the paid step, and the offer's default is NO.** `run-author.mjs` is a
 DIFFERENT PROCESS under its own ceiling; the interview prints its exact command line (with
-`--budget` propagated only when one was given, and a note when the CHOSEN provider's own key —
-`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, resolved through the same provider table
+`--budget` propagated only when one was given, and a note when the CHOSEN row's own key — the
+variable named by the Settings row that carries the model line, resolved through the same rows
 `run-author.mjs` and `run-u.mjs` share — is unset in this shell, OR set but MALFORMED: F181 — a
 value carrying a line break/control character/stray whitespace (a two-line secret-store entry,
 e.g.) reads a distinct reason via `apiKeyProblem` (`src/providers.js`), never the value)
@@ -1837,9 +1833,7 @@ omitted is the cold path and byte-identical to a run nobody resumed.
 F87; the field stays legal and one-token reversible, and the narrowing binds only what the
 AGENT may express, never what the operator may run).
 The tier menu is signed into the schema; mapping a tier
-onto a real model (and any per-model provider params) is the RUNNER's territory — nothing
-forces the `sonnet` tier onto any particular model, and running haiku as your default worker
-model stays an operator choice the plan menu never governed — so both
+onto a real model (and any per-model provider params) is the RUNNER's territory — the runner maps the one `sonnet` token to the job's worker model (there is no tier table) — so both
 `runJob` and `runPlan` take `providerFor?: (tier: string) => provider`. It is called ONLY for
 a step that declared a tier, once per such step — the scout, the plan drafter and every
 untiered step stay on `opts.provider`, so a caller that never plans tiers can omit it
@@ -1914,8 +1908,8 @@ bare-agent's `Loop` takes `rates: {in, out, cacheReadMult?, cacheWriteMult?}` �
 tokens, the two multipliers applying to the input rate for the cache-read and cache-write
 tiers (defaulting to Anthropic's 0.1× / 1.25×). A caller-supplied rate is recorded as
 VOUCHED rather than as a guess, and it silences bare-agent's own guesstimate warning.
-**Where bareloop takes it from:** the CUSTOMER's own price on the key's row in
-`~/.config/bareloop/config.json` (`keys.<ENV NAME>.priceInPerM` / `priceOutPerM`, USD per 1M
+**Where bareloop takes it from:** the CUSTOMER's own price on the model line in
+`~/.config/bareloop/config.json` (`models.<ENV NAME>[].inPerM` / `outPerM`, USD per 1M
 tokens — see "Settings" below). `runJob` / `runPlan` accept `rates` (and `judgeRates`) as data and
 hand them to the one `Loop` that drives worker, scout and planner rounds; the run doors resolve
 them once. No price on the row = no `rates` key anywhere = the guesstimate above, byte-identical to
@@ -3257,7 +3251,7 @@ worktree, before the engine is ever reached.
 some other module's own generic `main`). `cliMain(argv, deps)` is the in-process test/
 integration seam: pass `deps.provider` (and optionally `providerFor`/`judgeProvider`) and the
 real key check is skipped entirely — a scripted provider *is* the run, the
-same seam `tests/planrun.test.js` uses. `deps` also accepts `env`, `stdout`, `stderr`, `cwd`,
+same seam `tests/planrun-*.test.js` uses. `deps` also accepts `env`, `stdout`, `stderr`, `cwd`,
 `now`, `stdin` — omit any of them and the real `process.*` equivalent is used.
 
 Bare `bareloop` (no sub-command) prints a numbered menu — `1 export  2 run  3 history  q
@@ -3732,11 +3726,11 @@ key you want first (the panel picks the row by the Model menu).
   `resolved-spec.json`, F185) — exactly one, never both, never neither; `--resume
   <runid|path>`; `--door <runid|path>` with `--decide <rerun|accept|pause>` and (`rerun`
   only) `--text <…>`; `--review-door`; `--approve <specHash>`; `--registry <dir>` +
-  `--workflow <name>`; `--model <sonnet|haiku>`; `--read-shim <off|cap|diff|all>`; `--scout
+  `--workflow <name>`; `--model <id>` (a model id of a ticked Settings line — for a spec that names none) and `--provider <KEY>` (the key's env name, when two keys tick one id; no tier aliases); `--read-shim <off|cap|diff|all>`; `--scout
   <on|off>`. No key/no injected `deps.provider`: prints the preview (invocation hints, the
-  right key name for the job's own provider) and exits `0`, spending nothing — the same
-  preview `scripts/run-u.mjs --job <x>` prints with no `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`
-  set. `scripts/run-u.mjs` is unchanged in behaviour: it is the pre-existing thin adapter
+  right key variable — the Settings row's own) and exits `0`, spending nothing. A spec that names no
+  model and no `--model`, or a model no ticked line carries, is refused at $0 with one plain sentence
+  (`Name the model with --model <id>: …` / `<model> is not set up: …`). `scripts/run-u.mjs` is unchanged in behaviour: it is the pre-existing thin adapter
   over this same `src/userrun.js:main`, not rewired to go through `src/cli.js`.
   **Printed commands are spelled the way you entered:** every re-invocation these flows print (the approve
   line, resume, pause, reopen, the interview's run-author line, the author's run-u line) reads `bareloop
@@ -3855,37 +3849,26 @@ Two files in `~/.config/bareloop/`, outside any repo:
 - **`config.json` — every setting, never a key value.** `readConfig({ home })` /
   `updateConfig(patch, { home })` (atomic tmp + rename, mode 600, unknown fields kept).
   Fields: `monthlyLimitUsd` (number above 0; absent or `null` = no limit; any other value present
-  is a `ConfigError`, refused like an unreadable file), `anthropicBalanceNote` (a note the
-  person types; no check ever reads it), `keys.<ENV NAME>` = `{ name, shape, baseUrl, priceInPerM?, priceOutPerM? }` (the Providers rows' settings, plus the customer's own price below). A secret-shaped
+  is a `ConfigError`, refused like an unreadable file), `keys.<ENV NAME>` = `{ shape, baseUrl, legacyMaxTokens }` (the Providers rows' settings: an API shape id, the typed Base URL,
+  the "old max_tokens" tick), `models.<ENV NAME>` = a list of `{ model, use, inPerM?, outPerM? }` lines (replaced WHOLE on every save; the customer's own price below). Nothing is built
+  in: a row with nothing saved is shape `openai-api`, no address, no lines. A secret-shaped
   string anywhere in the document is refused on save. An unreadable file is a `problem` string and
   a refused run start ($0), never "no limit". There is no monthly TIME limit (dropped).
 
-**Your own price — `keys.<ENV NAME>.priceInPerM` / `priceOutPerM`.** The customer sets the price of the
-model behind a key, on that key's row, in USD **per 1M tokens** (input and output), for example
-`"keys": { "DEEPSEEK_API_KEY": { "priceInPerM": 0.006, "priceOutPerM": 1.2 } }`. There is no built-in
-price list. Both numbers or neither: each must be a finite number 0 or more, and one alone, a negative,
-a string or `null` refuses the run at $0 (`ConfigError`, exit 2, "Nothing spent.") — a bad price never
-falls back to the guess. A Settings save keeps the two fields (the Settings SCREEN has no price field
-yet; edit `config.json`). `ratesFor(provider, baseUrl, rows, model)` (`src/providerrows.js`) is the one
-lookup, on the SAME row `keyNameFor` picks the key from (`findRow`: shape + endpoint + model), returning
-`null` (no price) or `{ rates: {in, out}, inPerM, outPerM, envName }` with `rates` in bare-agent's
-per-1K unit (`perM / 1000`). The run doors resolve it once, at $0, before the monthly claim and any
-worktree or spine (`src/userrun.js`; `src/authorrun.js`; the panel's authoring session): the worker row
-prices worker, scout and planner rounds; the judge is priced at ITS model's own row — for a different
-provider its own row, for the worker's provider the row on the worker's endpoint named for the judge's model
-(`judgeRatesFor`, `src/providerrows.js`), falling back to the worker's price when the model names no row.
-(The judge's KEY still follows the worker's row, so with two rows on one endpoint key and price can differ.) A priced round is stamped `rateSource:'caller'` (VOUCHED, see `spendProvenance`); with
-no price it stays the built-in guess, as before. The run preview and the run tail print
-`price    yours: in $0.006 / out $1.20 per 1M tokens (DEEPSEEK_API_KEY row)` when a price is set, and
-nothing when none is; a 0 / 0 price is accepted but the line then ends `— WARNING: this price is $0, so spend and limits read $0`. **The price is yours, and it sets what the cap means:** the cap and the halts run
-on the dollars your price produces, so a price set too low weakens the cap (a run can do far more
-than you meant before it halts). When a vendor lists two prices (for example a cache-hit and a
-cache-miss input rate) enter the higher one. bare-agent applies its own cache multipliers (read 0.1×,
-write 1.25× of the input rate) to cache tokens; they are not configurable here, so cache tokens are
-priced from your input price by that rule. A price applies from the next run: **past runs are never
-re-priced** (a spine and the run list keep the dollars they booked). Not covered by a price: a native
-(CLI) session, which reports its own cost, and the reuse engine (`runReuse` / `selectBridge`), which
-resolves no key row.
+**Your own price — the model LINE's `inPerM` / `outPerM`.** The customer sets the price of each model they use, on that model's line under its key row, in USD **per 1M tokens**
+(input and output): `"models": { "MY_KEY": [ { "model": "<id>", "use": true, "inPerM": 0.006, "outPerM": 1.2 } ] }`. There is no built-in price list. A price is a PAIR or nothing: each number
+a finite number 0 or more (0 / 0 typed is a chosen price), and a ticked line needs both (`modelsProblem`, `src/config.js`, the one rule). A line without both prices cannot be ticked, so it
+is never in Chat's menu and a run on it refuses at $0 (`<model> is not set up: …`). `ratesFor(provider, baseUrl, rows, model)` (`src/providerrows.js`) reads the line's price (`ratesOfLine`);
+the run doors resolve the chosen line once, at $0, before the monthly claim and any worktree or spine (`src/userrun.js`; `src/authorrun.js`; the panel's authoring session): the worker line
+prices worker, scout and planner rounds; the judge is priced at ITS model's own line — for a different provider its own row, for the worker's provider the row on the worker's endpoint
+with a line named for the judge's model (`judgeRatesFor`), falling back to the worker's price when the model names no line. A priced round is stamped `rateSource:'caller'`
+(VOUCHED, see `spendProvenance`). The run preview and the run tail print `price    yours: in $0.006 / out $1.20 per 1M tokens (MY_KEY row)`; a 0 / 0 price is accepted but the
+line then ends `— WARNING: this price is $0, so spend and limits read $0`. **The price is yours, and it sets what the cap means:** the cap and the halts run on the dollars your
+price produces, so a price set too low weakens the cap. When a vendor lists two prices (for example a cache-hit and a cache-miss input rate) enter the higher one. bare-agent
+applies its own cache multipliers (read 0.1×, write 1.25× of the input rate) to cache tokens; they are not configurable here. A price applies from the next run: **past runs are
+never re-priced**. Not covered by a price: a native (CLI) session, which reports its own cost, and the reuse engine (`runReuse` / `selectBridge`), which resolves no key row. An
+older config's `keys.<ENV>.{name,priceInPerM,priceOutPerM}` still reads as ONE line (ticked when both prices are valid numbers, else unticked with no price) until the first Settings
+save of that row's list removes them.
 
 **Monthly $ limit.** `checkMonthlyRoom({ capUsd, home, now })` → `{ ok, leftUsd, limitUsd,
 atLeast, heldUsd, heldRuns }`; `monthlyRefusalText(room)` is the ONE spelling: `Max $<left, 2 decimals>
@@ -3929,45 +3912,31 @@ real spend.
 
 **Money & limits tab** (`GET/POST /api/settings/money`): two tiles ($ and tokens, this month / to date, a
 `≥` prefix when a figure is a floor) and a per-provider table ($, minutes, tokens; a run is grouped
-by the provider on its `job-start`, an older spine by its model). The limit field auto-saves on
+by the Providers ROW that served it — its key variable name — and a run no row serves lands under its own shape and address). The limit field auto-saves on
 change (no Save button); blank clears it. `POST` needs an explicit `monthlyLimitUsd` key (a number
 above 0, or `null`/blank to clear) — an empty or key-less body is a `400`, never "clear the limit".
 
-**Providers tab (P4b, `src/providerrows.js`).** One row per key in `.env` that HAS A VALUE — nothing is
-hardcoded; an empty line is no row, a removed line drops its row on Reload keys. A missing `.env` is
-created (mode 600) on the first Providers read with five empty preset lines (`ANTHROPIC_API_KEY`,
-`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `LOCAL_API_KEY`); an existing file is never
-edited. A value of `null` counts as SET and means "no real key" (the provider is handed the
-placeholder `no-key-needed`, never the word `null`). Each row: the env NAME (read-only) + found,
-**Name** (the model id Chat uses), **API shape** (Anthropic / OpenAI-compatible / Gemini), **Base
-URL** (blank = the shape's own host), **Test**, **Tokens used** (total, display only), and Balance
-(DeepSeek fetched, Anthropic a typed note). Saves on change to `config.json`
-`keys.<ENV NAME> = { name, shape, baseUrl, priceInPerM?, priceOutPerM? }`. The last two columns are the customer's own price
-(**In $/1M**, **Out $/1M**, plain boxes; blank = not set, a number >= 0 otherwise; the server refuses a half-set pair with a plain
-error and saves nothing, and the page saves NOTHING in a row with exactly one price box filled, showing "Fill both price boxes
-or clear both." when the person leaves that box, until both boxes are filled or both cleared).
-**Open keys folder** (`POST /api/settings/open-keys-folder`) opens `~/.config/bareloop` in the file manager (`xdg-open` / `open`,
-argv array, never the file itself); where it cannot, the page shows the path as text. Defaults for a key with no saved entry:
-`ANTHROPIC_API_KEY` claude-sonnet-5 / Anthropic; `DEEPSEEK_API_KEY` deepseek-flash /
-OpenAI-compatible / `https://api.deepseek.com/v1`; `OPENAI_API_KEY` OpenAI-compatible;
-`GEMINI_API_KEY` Gemini; `LOCAL_API_KEY` OpenAI-compatible / `http://127.0.0.1:11434/v1` (Ollama, LM
-Studio, llama.cpp: change the URL); any other name OpenAI-compatible; Name blank until typed. **The
-only price shown is the customer's own, typed in the two price boxes** (cost recording, the estimated provenance, spend sums, caps
-and the monthly limit are unchanged; a local model has no known rate, so its rounds come out as a
-non-zero loud guess, never a real $0).
+**Settings > Providers (P4b, P8 — rewritten from fwdloop's m4d-am3 layout; `src/providerrows.js`, `src/modellist.js`, `src/panel/settingsroutes.js`).** One row per key in `.env` that HAS A VALUE, plus a key
+only the shell holds when config already names it (`keys.<ENV>` or `models.<ENV>`; its status reads `found in shell`) — nothing is hardcoded, there is no add-row and no remove-row control. A missing `.env`
+is created (mode 600, dir 700) on the first Providers read with two comment lines and no key. A value of `null` counts as SET and means "no real key" (the provider is handed the placeholder
+`no-key-needed`, never the word `null`; the row shows `set in file`). A key whose value has a space or a line break shows `The key has a space or a line break in it. Fix it in your keys file, then
+reload keys.` Each row: the env NAME + status, an **API shape** select (Anthropic / OpenAI-compatible / Gemini), the typed **Base URL** (empty = no run, no list, `type the Base URL`), the **Old max_tokens**
+tick (applies to `openai-api` only), **Tokens** (the key's spend), `[ Test ] [ ⟳ Refresh ]`, and its model lines: a **Use** tick, the model name, **In / Out $/1M** boxes, tokens (`—` when no spend row names the model).
+A listed id from Refresh is shown unticked and is not saved until touched; `+ type a model name` adds a line unticked. Saves are on change; success reads `saved — applies from the next model call`;
+every refusal is a plain sentence in `say` (`Fill both prices to tick this model.`, `Fill both price boxes or clear both.`, `A price must be a number, 0 or more.`, …). **Open keys folder** (in the KEYS strip,
+`POST /api/settings/open-keys-folder`) opens the folder of the keys file only (`xdg-open` / `open`, argv array, detached, never a path from the request; a non-empty body is `no-path-allowed`); where it cannot —
+another OS, a failed spawn, a test process with no injected opener — it answers `opened:false` and the page shows the path as text.
 
-`providerrows.js` is the ONE owner of "model → key + shape + URL": `keyRows`, `findRow` (rows on the
-same shape + endpoint; the Name breaks a tie), `modelChoiceFor` / `chatModels` (Chat's Model menu IS
-the rows; a blank Name is not offered), `keyNameFor` / `applyConfiguredKey` (a job on `(provider,
-baseUrl[, model])` reads the matching row's variable, else the provider's built-in one). All doors
-(`run-u`, `interview`, `author`, the panel's drafting) use it. Routes (all behind the per-start token
-and Origin check; the chat can never reach them): `GET /api/settings/providers`, `POST .../row`
-(`{envName, name, shape, baseUrl}`), `POST .../balance-note`, `POST .../test` (one
-`checkProviderReachable` models-list GET at the row's shape + URL, $0; a refused connection reads
-`nothing answering at <URL>`), `GET .../balance?env=`
-(DeepSeek-hosted row, server-side), and `GET /api/author/models` (Chat's Model menu). The old
-`providers.<row>.key` config field and the key dropdown are gone. Like the authoring routes, a POST
-body over 1 MiB is refused `413`.
+`providerrows.js` is the ONE owner of "model → key + shape + URL": `keyRows` (`{ envName, provider, baseUrl, legacyMaxTokens, models }`), `effectiveModels` (the older single-name read), `tickedLines`,
+`findRow` (rows on the same shape + endpoint — a blank Base URL is blank, there is no default host; the row with a ticked, priced line for the model breaks a tie), `modelChoiceFor(rows, { provider, model })`
+(by the KEY's env name; the line must be ticked and priced), `judgePick` (the three refusals: `Tick a model in Settings > Providers. Nothing was spent.` / `Pick a model. Nothing was spent.` /
+`<KEY> is not set up: put its key in your keys file and type its Base URL in Settings > Providers. Nothing was spent.`), `resolveWorker` (a run's line: the spec's model, else `--model`; `--provider <KEY>`
+narrows), `keyValueOf` (a row's own variable; the `null` marker becomes the placeholder). All doors (`run-u`, `run <bundle>`, `interview`, `author`, the panel's drafting) use it. Routes (all behind the per-start
+token and Origin check, GET too; the chat can never reach them): `GET /api/settings/providers` (`{ok, keysFile:{path,exists,refusal}, configProblem, shapes, rows:[{slot, label, envVar, keyStatus, shape, baseUrl,
+legacyMaxTokens, tokens, models}]}`), `POST .../provider` (`{slot, shape?, baseUrl?, legacyMaxTokens?}`, every field judged before anything is written), `POST .../model` (`{slot, model, use?, inPerM?, outPerM?}`),
+`POST .../models` (Refresh) and `POST .../test` (both ONE free GET of `<Base URL>/models` through `src/modellist.js`, key only in a header per shape, redirect not followed, 4 s; no completion, no spend row),
+and `GET /api/author/models` (Chat's Model menu: every ticked-and-priced line, `{slot, model, label, thinking}`, `<KEY> · <model>`). There is no Balance route. Like the authoring routes, a POST body over 1 MiB is refused `413`.
+A Chat card carries `provider` (the key's env name) beside `model`; `/api/author/model-check`, `start-from` and `reuse-jobs` take `?provider=` too.
 
 ### The source front door — a plain folder/file/URL, no `--patient` (PRD item 33/M2, `src/source.js`)
 

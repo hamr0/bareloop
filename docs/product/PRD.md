@@ -1377,3 +1377,11 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 - Supersedes, for the panel: "no price → run as estimated" (a ticked model is always priced). Key values never reach the page.
 - Work order after the job-block release: (1) providers list, (2) file readers (.docx, .xlsx), (3) rubric on plain folders (+ flight search); the judge false-red classes from the JSDoc rubric run stay parked until (3).
 - The spec for (1) is written and shown to hamr before any build.
+
+### Settings > Providers from fwdloop, Thinking on tick, no hardcoded vendors (v1.92 — 2026-10-11)
+
+- Built per `docs/product/PANEL-BUILD.md` "Addendum 2026-10-11 — P8" (all open questions ruled by hamr 2026-10-11): the Providers page is rewritten from fwdloop's layout; config holds per-key `{shape, baseUrl, legacyMaxTokens}` and per-key model lines `{model, use, inPerM, outPerM}`; Balance is removed.
+- A job carries its own model; a run works on a ticked, priced Settings line; a key is its row's own variable name; an older spec names its line at run start with `--model` (hash untouched).
+- "Thinking on" is a signed per-job tick (drafting and the rubric judge; never the worker); bare-agent owns what each model can switch.
+- Code names no provider, model, address or price (grep test with a reasoned allow-list); `JUDGE_MODEL` is no longer exported.
+

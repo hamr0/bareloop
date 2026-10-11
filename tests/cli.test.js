@@ -1,7 +1,7 @@
 // Export M2 (`docs/product/EXPORT-BUILD.md`) — the `bareloop` CLI
 // (`src/cli.js`: `main(argv, deps)`). Every test drives `main` in-process, at
 // $0, with a scripted provider (`tests/helpers.js`'s `scriptedProvider`) —
-// the same seam `tests/planrun.test.js` uses. A real (throwaway) git repo is
+// the same seam `tests/planrun-*.test.js` uses. A real (throwaway) git repo is
 // the patient; the worktree/branch/gate-audit assertions are the whole point
 // of M2 and cannot be faked without one.
 

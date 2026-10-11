@@ -62,7 +62,7 @@ function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'ptools-'));
   // Every harness builds a REAL litectx index in this tree, so the tree is not
   // small — the test's own context owns its teardown (the `makePatient` idiom in
-  // tests/planrun.test.js). Measured before this line existed: 8 tests per run
+  // tests/planrun-*.test.js). Measured before this line existed: 8 tests per run
   // stranded 8 `ptools-*` trees in $TMPDIR, forever.
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   mkdirSync(join(dir, 'src'));
