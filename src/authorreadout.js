@@ -53,7 +53,7 @@ export function declarationLines({ goal, closeDecl }) {
  * F176'S FALLBACK, SAID OUT LOUD — the revise ladder kept the NEWEST SOUND
  * declaration rather than the last one it happened to try, because "kept the
  * last accepted revision" is not the same claim as "kept the best revision"
- * (docs/logs/FINDINGS.md F176). Absent on every run where the fallback never
+ * (docs/wiki/FINDINGS.md F176). Absent on every run where the fallback never
  * fired (the overwhelming majority), which is why this returns an EMPTY list
  * rather than a "no fallback" line — a green close has nothing to say here and
  * printing it every run would be noise, not information.

@@ -273,7 +273,7 @@ export function resolveProvider(providerName) {
 /**
  * Report whether a resolved API key VALUE (not its presence — every call
  * site already presence-checks separately) carries a shape an HTTP header
- * value cannot: F181 (`docs/logs/FINDINGS.md`) — a two-line secret-store
+ * value cannot: F181 (`docs/wiki/FINDINGS.md`) — a two-line secret-store
  * entry put the key plus a trailing metadata line into `OPENAI_API_KEY`
  * (`"<key>\nmeta"`), the presence-only check at every door passed, and Node
  * crashed `TypeError [ERR_INVALID_CHAR]` inside its own header-encode at the

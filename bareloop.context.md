@@ -1340,7 +1340,7 @@ arm replaces the CLI-display cap rather than stacking on it; a non-capping arm l
 installed *inside* the shim, so native never loses its bound. Default-flip pending a paid contrast;
 see CHANGELOG for the replay numbers behind it.
 
-**`scout` (default `true`) — the operator-only off switch** (`docs/product/SCOUT-CONTRAST.md`),
+**`scout` (default `true`) — the operator-only off switch** (`docs/logs/SCOUT-CONTRAST.md`),
 threaded verbatim from `runJob` to `runPlan`. `false` on a FRESH run (no `resumeSeed`) skips the
 read-only survey entirely — `scout-start`/`scout-result`/`scout-empty` never fire, and a single
 `scout-skipped { reason: 'operator-off', meaning }` records it (a RECORD, never silence — the
@@ -3335,7 +3335,7 @@ key you want first (the panel picks the row by the Model menu).
   close scripts need at run time. The correct flow is **`cd <bundle> && npm install`** (reads
   the bundle's own `package.json`), then **`./node_modules/.bin/bareloop run . --repo <path>
   …`**. `checkBundleDeps` (above) is the fail-safe that catches the wrong-shape install
-  before any close ever runs; see `docs/logs/FINDINGS.md` F128 for the full account
+  before any close ever runs; see `docs/wiki/FINDINGS.md` F128 for the full account
   (grounded in the real crashed spine) and `docs/product/EXPORT-BUILD.md`'s dated addendum.
 
   **Minting-run line, corrected (F128).** The first-run notice used to print the shipped
@@ -3709,7 +3709,7 @@ key you want first (the panel picks the row by the Model menu).
   live card reads "$X so far · running Ym" exactly like the right pane.
 
 - **`bareloop run-u <flags…>`** (PANEL-BUILD.md P0 task 2/4) → the person-path run flow
-  (the JOBS-table/`--spec` runner, resume, the review door — `docs/logs/FINDINGS.md`'s
+  (the JOBS-table/`--spec` runner, resume, the review door — `docs/wiki/FINDINGS.md`'s
   U-mode). `src/cli.js`'s `run-u` dispatch hands `rest` straight to
   **`src/userrun.js`'s own `main(argv, deps)`**, unparsed — that function is the flag
   grammar's ONE owner, and `scripts/run-u.mjs` calls the exact same function directly, so
@@ -3731,7 +3731,7 @@ key you want first (the panel picks the row by the Model menu).
   fed by each flow's `deps.invokedAs`.
 
 - **`bareloop interview <flags…>`** (PANEL-BUILD.md P0 task 3/4) → the close-authoring
-  interview, at the terminal, one question at a time (D10; `docs/logs/FINDINGS.md`'s
+  interview, at the terminal, one question at a time (D10; `docs/wiki/FINDINGS.md`'s
   interview surface). `src/cli.js`'s `interview` dispatch hands `rest` straight to
   **`src/interviewrun.js`'s own `main(argv, deps)`**, unparsed — the same one-owner shape
   `run-u` uses, and `scripts/run-interview.mjs` calls the exact same function directly.
@@ -4320,7 +4320,7 @@ blast radius.
 
 ## Gotchas
 
-*Recorded here as they're found (repo-side friction goes to `docs/logs/FINDINGS.md`).*
+*Recorded here as they're found (repo-side friction goes to `docs/wiki/FINDINGS.md`).*
 
 - **`non-green-verdict` is a misleading refusal verb, and it is kept on purpose.** When
   `runInterview` refuses a job for having no git repository (`repoPath` absent), the refusal

@@ -3,7 +3,7 @@
 // smoke, the ONE budget ledger (cap-not-estimate; unpriced is never free, F6),
 // and the decision-ready stops. It composes the plan flow below it and
 // interprets nothing itself.
-// Design record: docs/product/2026-07-12-n2-headless-loop-design.md.
+// Design record: docs/logs/2026-07-12-n2-headless-loop-design.md.
 //
 // The legacy operator-authored `steps[]` path was DELETED 2026-07-26 (PRD
 // v1.32): the drafting call, config-v1, the per-step interpret loops and the
@@ -219,7 +219,7 @@ async function primitiveSmoke(workdir) {
  *        frozen A0 baseline arm has to be exactly today, so a guard firing under a disabled
  *        shim would make the baseline a treatment arm. The default-flip belongs to a
  *        paid contrast nobody has approved yet (the `layerRoot` precedent, F41).
- * @param {boolean} [opts.scout=true] operator-only switch (docs/product/SCOUT-CONTRAST.md),
+ * @param {boolean} [opts.scout=true] operator-only switch (docs/logs/SCOUT-CONTRAST.md),
  *   forwarded verbatim to the plan flow: `false` on a fresh run (no `resumeSeed`) skips the
  *   read-only survey and records `scout-skipped {reason:'operator-off'}` instead — the
  *   planner drafts from `(no scout notes)`. Runner territory exactly like `readShim`: the
@@ -282,7 +282,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
   // blind-instrument failure this programme keeps logging. Only the guard runs
   // here; the flag itself is threaded onward to the plan flow as written.
   readShimArm(readShim);
-  // The scout switch's guard, same class and same door (docs/product/SCOUT-CONTRAST.md):
+  // The scout switch's guard, same class and same door (docs/logs/SCOUT-CONTRAST.md):
   // a mis-coerced value would run under the wrong label with no way to recover which arm
   // actually fired from the results afterwards.
   if (typeof scout !== 'boolean') throw new TypeError(`scout: expected boolean, got ${JSON.stringify(scout)}`);

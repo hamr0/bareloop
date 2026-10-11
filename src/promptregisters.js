@@ -2,7 +2,7 @@
 // (hamr, 2026-08-25): "a check". A commit that changes a prompt register must
 // say, in its message, the failure that caused the change, what it addresses,
 // and what it corrects — doctrine already stated once ("a frozen rule without
-// a wired detector is prose", docs/product/2026-08-23-agreed-build-list.md:187-189)
+// a wired detector is prose", docs/logs/2026-08-23-agreed-build-list.md:187-189)
 // so convention-only was rejected. This module is the ONE place that inventory
 // lives: `scripts/prompt-commit-check.mjs` reads it to decide which commits the
 // rule applies to, and this file's own doc-comment is where a human reads it.

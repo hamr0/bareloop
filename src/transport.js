@@ -1,5 +1,5 @@
 // hamr's ruling, verbatim: "one retry for transport layer failure and
-// reporting with the rest end of gate." (F115, docs/logs/FINDINGS.md.)
+// reporting with the rest end of gate." (F115, docs/wiki/FINDINGS.md.)
 //
 // A transport failure is fetch THROWING — the request never produced an HTTP
 // response at all (a TLS fault mid-record, a reset socket, a DNS/network

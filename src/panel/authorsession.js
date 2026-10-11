@@ -346,8 +346,8 @@ export function validateJobCard(card, opts = {}) {
  */
 export function createSession(card, deps = {}) {
   const env = deps.env ?? process.env;
-  // The drafter's THINKING knob ('default' | 'off'): an explicit operator option, never read from env and not in the panel UI. A bad
-  // value throws here, before a session exists. 'default' (today's behaviour) until a paid ON/OFF contrast decides otherwise.
+  // The drafter's THINKING knob ('on' | 'off'): an explicit operator option, never read from env and not in the panel UI. A bad
+  // value throws here, before a session exists. Default 'off' (hamr ruling 2026-10-11, after the paid ON/OFF contrast).
   const draftThinking = assertDraftThinking(deps.draftThinking ?? 'off');
   // P7: the person's own words, parsed ONCE by the one parser (src/jobblock.js). The card validator refused a malformed
   // block before a session exists; a reuse card's job text is the origin's and is not drafted from.

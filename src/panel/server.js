@@ -36,7 +36,7 @@ import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
 } from '../replayio.js';
 import { summarizeForAllLine, auditWindowsOf } from '../replay.js';
-import { legsOf, legsWallMs, stopFilePath } from '../legs.js';
+import { legsOf, legsWallMs, stopFilePath, capKindOf } from '../legs.js';
 import { chainSpend } from '../ledger.js';
 import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
@@ -480,7 +480,7 @@ function endedBase(summary, death, o) {
   if (outcome === 'escalated') {
     const strikes = esc?.spend?.strikes;
     const limit = esc?.spend?.strikeLimit;
-    if (cat === 'cap-halt' && o.moneyHalt) {
+    if (capKindOf({ outcome, category: cat, moneyHalt: o.moneyHalt }) === 'money') {
       const money = typeof summary.spentUsd === 'number' && typeof summary.budgetUsd === 'number'
         ? ` (${panelMoney2(summary.spentUsd)} of ${panelMoney2(summary.budgetUsd)})` : '';
       return {
@@ -495,7 +495,7 @@ function endedBase(summary, death, o) {
         actions: [],
       };
     }
-    if (cat === 'wall-halt') {
+    if (capKindOf({ outcome, category: cat, moneyHalt: o.moneyHalt }) === 'time') {
       return { reason: 'Time cap reached.', next: CHANGE, line: 'time cap', actions: [] };
     }
     if (cat === 'provider-red') {

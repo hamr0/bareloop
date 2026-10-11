@@ -444,7 +444,7 @@ export async function authorCloseForJob({
   generate, provider = null, seedRef = null, scout = null, listing = null,
   ceilingUsd = null,
   rates = null,
-  // The drafter's THINKING knob ('default' | 'off'; an operator param, never read from env here). It reaches the scout through
+  // The drafter's THINKING knob ('on' | 'off', default 'off'; an operator param, never read from env here). It reaches the scout through
   // `callOptions`; the `generate`/`confirmGenerate` the caller passes must be built with the SAME mode (`makeLoopGenerate`).
   draftThinking = 'off',
   // Q2 IS GONE from the numbered interview (PRD item 33 M3 piece 3) — the

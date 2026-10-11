@@ -3279,7 +3279,7 @@
   // drives both fetches — never two independent timers that could race
   // each other. ----
   //
-  // F195 (docs/logs/FINDINGS.md): /api/runs re-replays every spine on
+  // F195 (docs/wiki/FINDINGS.md): /api/runs re-replays every spine on
   // every call (~457ms CPU at 250 rows). hamr's ruling B, 2026-09-27:
   // "refresh less often, up to 30s at most, choose the lesser when
   // possible" — the Runs list polls every 10s (RUNS_LIST_POLL_MS) instead
