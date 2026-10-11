@@ -5,6 +5,33 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.40.0] - 2026-10-11
+
+### Added
+
+- **The job block (P7).** A job is now written as two numbered boxes, **The job** and **Inputs**, replacing Goal / Source / Success / Guardrails / Judge examples. A `~` line is a rule for the line above it; `~ PASS:` / `~ FAIL:` lines are a rubric's judge examples and keep their line number. Inputs are numbered `label: value`: line 1 is the repo, later lines are files inside it, proven at $0 before any session. One parser (`src/jobblock.js`) serves the panel and the CLI interview, which now asks The job and Inputs as multi-line answers.
+- **Every job line is covered.** The signed spec carries `jobLines` and `inputs`. Each stage the drafter writes names the job line(s) it serves (`fromLine`, an array, so one check may serve several lines), or the line is listed in `closeDecl.refused` with a reason; an uncovered line is a $0 red fed back through the revise loop. Signed `jobLines` carry `rules[]` beside `rule`, so Reuse never cuts an example at its own `; `. Only new jobs' hashes move; Inputs is open on a Reuse.
+- **Try-3 questions.** On the last drafting try, after two failed ones (validation red, seed-read failure or vacuous close, or an output cut-off), the drafter may ask up to 2 questions, each naming a job line. The panel asks each through the ordinary ask path (answer required, no Skip), adds the answer word for word as a `~` rule on that line, and drafts once more with no asking. Off unless the caller wires an asker (the CLI never does).
+- **Thinking switch for drafting and the judge.** `thinkingMode` ('on' | 'off', anything else throws) is asked of bare-agent; `off` is sent only for models bare-agent's `thinkingSupport` says are switchable, and nothing is sent for a not-switchable or unverified model. The draft log records `thinking` (off / on / not-switchable / unverified) and bare-agent's `thinkingApplied` verdict per call.
+- **Panel.**
+  - One shared plan renderer draws the chat bubble and the Job tab: numbered lines, rules, checks under the line they serve, with *Not checked* and *Always on* folds; an "AI's summary" row, and an "AI's open questions" row (each question its own item, then "Revise if you need to.") shown only when there are questions.
+  - The Job tab runs The job, Inputs, Destination, Tools, Cap, Signed, with the job at full height; older jobs show an older-job note and keep their goal as line 1.
+  - The job boxes grow to 8 lines then scroll, with the number gutter scrolling alongside; the left pane widens to 630px from 1200px wide.
+  - The drafting list opens with a code-owned *thinking* row; if the model reports it thought anyway after `off` was sent, it reads "thinking on (the model thought anyway)".
+  - Every drafting stop now says why in plain words (what happened, what it cost, what to do).
+
+### Changed
+
+- **Thinking is OFF by default for drafting and the judge, for every switchable model, worker untouched.** The default was decided by a frozen, pre-registered 8-draft ON/OFF contrast measured on **deepseek-flash only** (rule said OFF; underpowered by declaration); extending it to every other switchable model is hamr's ruling of 2026-10-11, not a measurement. `on` sends nothing and is byte-identical to a call with no knob. The deepseek-flash request body is unchanged (thinking disabled, now produced by bare-agent); the per-model allow-lists in `src/providers.js` are deleted.
+- A secret-shaped input file is masked, not refused (matching the worktree repo door); `.env` by name and symlinks are still refused.
+- Dependencies: `bare-agent` ^0.49.0 to ^0.51.0.
+
+### Fixed
+
+- **Output cut-off is a failed try, not provider-red.** A drafter answer stopped at the output cap (`truncated:max_tokens`) now goes through the same retry ladder as a malformed artifact, with the reason "the AI's answer was cut off at the output limit"; the cut-off reply is not replayed, `AUTHOR_MAX_TOKENS` is not raised, real transport failures stay provider-red, and spend stays booked. An all-cut-off try also counts for the try-3 question gate. Test-proven only, not exercised live.
+- A dropped connection (ECONNRESET "socket hang up") is a call casualty like ETIMEDOUT, and the scout stop says in words that the first look did not complete (F217).
+- `proveInputFiles` compares like-for-like, so a repo behind a symlinked parent proves its Inputs.
+
 ## [0.39.0] - 2026-10-10
 
 ### Added
