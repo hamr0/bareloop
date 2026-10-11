@@ -1444,9 +1444,9 @@ test('draftThinking: off hands the scout the deepseek-flash options; on hands it
   await go({ draftThinking: 'off' });
   await go({ draftThinking: 'on' });
   await go({});
-  assert.deepEqual(seen[0].callOptions, { thinking: { type: 'disabled' } });
+  assert.deepEqual(seen[0].callOptions, { thinkingMode: 'off' });
   assert.equal('callOptions' in seen[1], false, "'on' passes the scout exactly what it always got");
-  assert.deepEqual(seen[2].callOptions, { thinking: { type: 'disabled' } }, 'no value = off (hamr 2026-10-11)');
+  assert.deepEqual(seen[2].callOptions, { thinkingMode: 'off' }, 'no value = off (hamr 2026-10-11)');
   await assert.rejects(() => go({ draftThinking: 'maybe' }), /draftThinking must be one of/);
   assert.equal(seen.length, 3, 'the bad value threw before the scout ran');
 });
