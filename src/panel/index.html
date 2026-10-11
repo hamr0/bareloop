@@ -530,19 +530,90 @@
   .money-item input{width:100%;height:44px;box-sizing:border-box;}
   .keyfile-strip{position:relative;border:1px solid var(--border-strong);padding:12px 12px 8px;background:var(--panel2);margin:14px 0;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
   .keyfile-strip::before{content:"┤ KEYS ├";position:absolute;top:-9px;left:10px;background:var(--panel2);padding:0 4px;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;}
-  .keyfile-strip-main{display:flex;flex-direction:column;gap:3px;flex:1;min-width:220px;}
-  .keyfile-strip-actions{display:flex;gap:6px;flex:none;}
+  .keyfile-strip-main{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0;overflow-wrap:anywhere;}
+  .keyfile-strip-actions{display:flex;flex-wrap:wrap;gap:6px;flex:none;max-width:100%;}
   .keyfile-strip code{background:var(--bg);border:1px solid var(--border-strong);padding:1px 5px;font-size:11px;color:var(--amber);overflow-wrap:anywhere;}
-  .pv-table td,.pv-table th{white-space:nowrap;vertical-align:top;}
-  .pv-table select,.pv-table input{min-height:32px;max-width:190px;box-sizing:border-box;}
-  .pv-table .hint{display:block;margin-top:3px;}
-  .pv-table td.pv-price-cell input{width:90px;}
-  /* the Test cell keeps ONE width whatever the result says ("testing…", "OK · 312 ms", a long failure note) */
-  .pv-table td.pv-test-cell{width:180px;min-width:180px;max-width:180px;}
-  .pv-table .pv-test-result{white-space:normal;overflow-wrap:anywhere;}
+  /* M4d Providers layout F (hamr approved 2026-10-11): ONE shared grid, so a key row, the model sub-head and
+     every model row sit on the same column edges. Key band: KEY | API SHAPE | BASE URL (two columns) | OLD MAX_TOKENS | TOKENS | refresh.
+     Model row: [USE 44px][MODEL] under KEY, IN + OUT side by side under BASE URL, TOKENS on the key band's TOKENS edge. A key row has a
+     solid 1px line, a model row a dotted 1px hairline. Below 1280px every row collapses to stacked label : value lines. */
+  .pv-grid{--pv-cols:minmax(0,2.8fr) minmax(0,1.5fr) minmax(0,.95fr) minmax(0,.95fr) minmax(0,.9fr) minmax(0,.6fr) 272px;font-size:13px;}
+  .pv-head,.pv-krow,.pv-mhead,.pv-mrow{display:grid;grid-template-columns:var(--pv-cols);column-gap:8px;align-items:center;padding:0 8px;min-width:0;}
+  .pv-head > *,.pv-krow > *,.pv-mhead > *,.pv-mrow > *{min-width:0;}
+  .pv-head,.pv-mhead{font-size:11px;font-weight:700;color:var(--text-dim);letter-spacing:0.04em;min-height:26px;}
+  .pv-head{background:var(--panel2);border-bottom:1px solid var(--border-strong);}
+  .pv-mhead{background:var(--bg);border-bottom:1px dotted var(--border-strong);}
+  .pv-key{border-top:1px solid var(--border-strong);}
+  .pv-krow{min-height:40px;padding-top:4px;padding-bottom:4px;}
+  .pv-c-url{grid-column:3 / span 2;}
+  .pv-lbl{display:none;}
+  .pv-name{display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px;min-width:0;overflow-wrap:anywhere;}
+  .pv-name code{font-weight:700;}
+  .pv-ok{color:var(--green);font-weight:700;}
+  .pv-fold{border:0;background:none;color:var(--text);font:inherit;padding:0 4px 0 0;min-width:22px;min-height:24px;cursor:pointer;text-align:left;}
+  .pv-krow select,.pv-krow input[type=text]{width:100%;max-width:100%;min-height:28px;box-sizing:border-box;}
+  .pv-grid select,.pv-grid input[type=text]{font-size:12px;height:28px;padding:2px 6px;}
+  .pv-legacy{display:inline-flex;align-items:center;gap:6px;cursor:pointer;min-height:28px;text-transform:none;letter-spacing:0;font-weight:400;font-size:12px;}
+  .pv-legacy input,.pv-m-use input{width:16px;height:16px;margin:0;accent-color:var(--accent);cursor:pointer;}
+  .pv-tok{text-align:right;font-variant-numeric:tabular-nums;}
+  .pv-refcell{display:flex;justify-content:flex-end;}
+  .pv-refbox{display:flex;flex-direction:column;align-items:flex-start;max-width:100%;}
+  .pv-refbtns{display:flex;gap:6px;}
+  .pv-refbox .pv-msg{width:0;min-width:100%;overflow-wrap:anywhere;margin:2px 0 0;}
+  .pv-refbox .pv-msg:empty{display:none;}
+  .pv-refbtn{white-space:nowrap;flex:0 0 auto;}
+  .pv-refbtn:disabled{opacity:.5;cursor:not-allowed;}
+  .pv-sum{color:var(--text-faint);font-size:11px;font-weight:400;}
+  .pv-key[data-open="1"] .pv-sum{display:none;}
+  .pv-knote{padding:0 8px 4px 34px;margin:0;}
+  .pv-knote:empty{display:none;}
+  .pv-knote > .hint:empty{display:none;}
+  .pv-key[data-open="0"] .pv-models{display:none;}
+  .pv-mrow{border-top:1px dotted var(--border-strong);min-height:32px;}
+  .pv-mrow:hover,.pv-mrow:focus-within{background:var(--panel2);}
+  .pv-um{grid-column:1;display:flex;align-items:center;gap:0;min-width:0;}
+  .pv-uh,.pv-m-use{flex:0 0 44px;width:44px;display:flex;align-items:center;justify-content:center;}
+  .pv-m-use{min-height:32px;}
+  .pv-m-name{min-width:0;overflow-wrap:anywhere;font-size:12px;}
+  .pv-pair{grid-column:3 / span 2;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:8px;align-items:center;min-width:0;}
+  .pv-pair > *{min-width:0;}
+  .pv-pair input[type=text]{width:100%;text-align:right;}
+  .pv-mhead .pv-tok{text-align:right;}
+  .pv-mhead .pv-tok,.pv-m-tok{grid-column:6;}
+  .pv-m-msg{grid-column:1 / -1;padding:2px 8px 2px 52px;margin:0;}
+  .pv-m-msg:empty{display:none;}
+  .pv-more{padding:3px 8px 3px 34px;border-top:1px dotted var(--border-strong);}
+  .pv-more:empty{display:none;}
+  .pv-more .pv-add{border:0;background:none;color:var(--accent);font:inherit;font-size:12px;padding:2px 0;min-height:24px;cursor:pointer;text-decoration:underline;}
+  .pv-more.pv-failed{color:var(--amber);background:var(--amber-bg);font-size:12px;}
+  .pv-typed{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:4px;}
+  .pv-typed input{flex:1 1 160px;min-width:0;max-width:260px;min-height:28px;box-sizing:border-box;}
+  .pv-typed .hint{flex:1 1 100%;margin:0;}
+  .hint.bad{color:var(--red);}
   .table-wrap{overflow-x:auto;border:1px solid var(--border-strong);background:var(--panel2);max-width:100%;}
   @media (max-width: 899px){
     .money-strip{grid-template-columns:1fr 1fr;}
+    .keyfile-strip-main{flex:1 1 100%;}
+  }
+  @media (max-width: 1279px){
+    .pv-head,.pv-mhead{display:none;}
+    .pv-krow,.pv-mrow{display:block;padding:2px 8px;}
+    .pv-cell{display:grid;grid-template-columns:104px minmax(0,1fr);gap:8px;align-items:center;min-height:44px;border-top:1px dotted var(--border);}
+    .pv-cell:first-child{border-top:none;}
+    .pv-lbl{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim);font-weight:700;}
+    .pv-cell.nolbl{display:flex;}
+    .pv-tok{text-align:left;}
+    .pv-grid select,.pv-grid input[type=text]{height:44px;font-size:14px;}
+    .pv-krow select,.pv-krow input[type=text]{min-height:44px;}
+    .pv-legacy{min-height:44px;gap:10px;}
+    .pv-legacy input,.pv-m-use input{width:24px;height:24px;}
+    .pv-um{min-height:44px;}
+    .pv-uh,.pv-m-use{min-height:44px;}
+    .pv-cell.pv-pair{display:grid;grid-template-columns:104px minmax(0,1fr) minmax(0,1fr);}
+    .pv-cell.pv-pair::before{content:"In / Out $/1M";font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim);font-weight:700;}
+    .pv-fold,.pv-refbtn,.pv-more .pv-add{min-height:44px;min-width:44px;}
+    .pv-knote,.pv-more{padding-left:8px;}
+    .pv-m-msg{padding-left:8px;}
   }
   @media (max-width: 899px){
     .main{flex-direction:column;}
@@ -815,30 +886,26 @@
     </div>
 
     <div class="pane-body">
-      <!-- PROVIDERS TAB (P4b: one row per key in the keys file that has a value) -->
+      <!-- PROVIDERS TAB (P8: one row per key in the keys file that has a value; layout rewritten from fwdloop src/panel/index.html@f9449e8) -->
       <section id="panel-providers" class="tabpanel active" role="tabpanel" aria-labelledby="tab-providers">
-        <div class="keyfile-strip" data-testid="keyfile-box">
+        <div class="keyfile-strip" data-testid="keys-strip">
           <div class="keyfile-strip-main">
-            <span>Put <code>NAME=key</code> lines in your keys file (Open keys folder), then Reload keys — every key that has a value gets a row. Only names are listed; keys never reach this page.</span>
-            <span class="hint" id="pv-keyfile-path" data-testid="keyfile-path"></span>
-            <span class="hint" id="pv-keyfile-note" data-testid="keyfile-warning"></span>
+            <span>Put <code>NAME=key</code> lines in <code id="keys-path" data-testid="keys-path">~/.config/bareloop/.env</code>, then Reload keys &mdash; each row below says whether its key is set. Only names are listed; keys never reach this page.</span>
+            <span class="hint bad" id="keys-refusal" data-testid="keys-refusal"></span>
+            <span class="hint" id="keys-open-note" data-testid="keys-open-note"></span>
           </div>
           <div class="keyfile-strip-actions">
-            <button class="btn small" type="button" id="btn-open-keys-folder" data-testid="btn-open-keys-folder">Open keys folder</button>
-            <button class="btn small" type="button" id="btn-reload-keys" data-testid="btn-reload-keys">Reload keys</button>
+            <button class="btn small" id="open-keys-folder" type="button" data-testid="open-keys-folder" aria-label="Open keys folder">Open keys folder</button>
+            <button class="btn small" id="reload-keys" type="button" data-testid="reload-keys">Reload keys</button>
           </div>
         </div>
         <div class="table-wrap" data-testid="provider-table-wrap">
-          <table class="pv-table" data-testid="provider-table">
-            <thead>
-              <tr><th>Key</th><th>Name</th><th>API shape</th><th>Base URL</th><th>Test</th><th>Tokens used</th><th>Balance</th><th>In $/1M</th><th>Out $/1M</th></tr>
-            </thead>
-            <tbody id="pv-rows"></tbody>
-          </table>
+          <div class="pv-grid" data-testid="provider-table">
+            <div class="pv-head" aria-hidden="true"><span>KEY</span><span>API SHAPE</span><span class="pv-c-url">BASE URL</span><span>OLD MAX_TOKENS</span><span class="pv-tok">TOKENS</span><span></span></div>
+            <div id="pv-rows"></div>
+          </div>
         </div>
-        <div class="hint" id="pv-price-hint" data-testid="pv-price-hint">If your vendor lists two prices, enter the higher one.</div>
-        <div id="pv-shell" data-testid="pv-shell"></div>
-        <div class="hint" id="pv-note" data-testid="pv-note" style="margin-top:6px;">Name is the model id Chat uses. Base URL blank = the API shape's own host. Test asks the provider for its model list — it costs nothing.</div>
+        <div class="hint" id="pv-note" data-testid="pv-note" style="margin-top:6px;">&#10227; refresh models (free) &middot; old max_tokens: tick if the server wants the old field name</div>
       </section>
 
       <!-- MONEY & LIMITS TAB -->
@@ -3478,7 +3545,7 @@
     document.getElementById("btn-settings").addEventListener("click", function(){
       mainView.hidden = true;
       settingsView.hidden = false;
-      loadProviders();
+      loadProviders(true);
       loadMoney();
     });
     document.getElementById("settings-back").addEventListener("click", function(){
@@ -3487,7 +3554,7 @@
     });
     document.getElementById("tab-money").addEventListener("click", loadMoney);
 
-    // ---- Providers tab (P4b): one row per key in the keys file that has a value ----
+    // ---- Providers tab (P8): one block per key in the keys file that has a value; rewritten from fwdloop src/panel/index.html@f9449e8 ----
     var pvRows = document.getElementById("pv-rows");
     var pvNote = document.getElementById("pv-note");
     var PV_NOTE_DEFAULT = pvNote.textContent;
@@ -3497,104 +3564,316 @@
       if(n >= 1e3) return (n / 1e3).toFixed(1) + "k";
       return String(n);
     }
-    function loadProviders(){
-      authorGet("/api/settings/providers").then(function(r){
-        if(!r || !r.ok){ pvNote.textContent = "could not read providers"; document.getElementById("pv-keyfile-path").textContent = "the keys file (path unknown — could not read providers)"; return; }
-        var kf = r.keysFile;
-        document.getElementById("pv-keyfile-path").textContent = "";
-        document.getElementById("pv-keyfile-note").textContent = kf.warning ? ("⚠ " + kf.warning) : "";
-        pvRows.innerHTML = r.rows.length ? r.rows.map(function(row){
-          var e = escapeXml(row.envName);
-          var shapeOpts = r.shapes.map(function(s){
-            return '<option value="' + escapeXml(s.id) + '"' + (s.id === row.shape ? " selected" : "") + ">" + escapeXml(s.label) + "</option>";
-          }).join("");
-          var bal = row.balance.kind === "note"
-            ? '<input type="text" class="pv-balance" placeholder="type by hand" value="' + (row.balance.usd === null ? "" : escapeXml(row.balance.usd.toFixed(2))) + '"><div class="hint">a note, never checked</div>'
-            : (row.balance.kind === "fetch" ? '<span class="pv-balance-fetch" data-env="' + e + '">…</span>' : "—");
-          return '<tr data-testid="provider-row-' + e + '" data-env="' + e + '">'
-            + "<td><code>" + e + "</code>"
-            + '<div class="hint" data-testid="pv-status-' + e + '">' + escapeXml(row.keyStatus) + "</div></td>"
-            + '<td><input type="text" class="pv-name" data-testid="pv-name-' + e + '" placeholder="model id" value="' + escapeXml(row.name) + '"></td>'
-            + '<td><select class="pv-shape" data-testid="pv-shape-' + e + '">' + shapeOpts + "</select></td>"
-            + '<td><input type="text" class="pv-url" data-testid="pv-url-' + e + '" placeholder="' + escapeXml(row.placeholder || "the shape\'s own host") + '" value="' + escapeXml(row.baseUrl) + '"></td>'
-            + '<td class="pv-test-cell">' + (row.canTest
-              ? '<button class="btn small pv-test" type="button" data-testid="test-connection-' + e + '">Test</button><div class="hint pv-test-result" data-testid="test-result-' + e + '"></div>'
-              : '<span class="hint">not available</span>') + "</td>"
-            + '<td data-testid="pv-tokens-' + e + '">' + escapeXml(tokensText(row.tokens)) + "</td>"
-            + "<td>" + bal + "</td>"
-            + '<td class="pv-price-cell"><input type="text" inputmode="decimal" class="pv-price-in" data-testid="pv-price-in-' + e + '" placeholder="not set" value="' + (row.priceInPerM === null ? "" : escapeXml(String(row.priceInPerM))) + '"></td>'
-            + '<td class="pv-price-cell"><input type="text" inputmode="decimal" class="pv-price-out" data-testid="pv-price-out-' + e + '" placeholder="not set" value="' + (row.priceOutPerM === null ? "" : escapeXml(String(row.priceOutPerM))) + '"></td></tr>';
-        }).join("") : '<tr><td colspan="9" class="hint" data-testid="pv-empty">no keys with a value yet — add NAME=key to the keys file, then Reload keys</td></tr>';
-        pvRows.querySelectorAll(".pv-balance-fetch").forEach(function(fetchEl){
-          authorGet("/api/settings/providers/balance?env=" + encodeURIComponent(fetchEl.getAttribute("data-env"))).then(function(b){
-            fetchEl.textContent = b && b.text ? b.text : ("— " + ((b && b.note) || "unavailable"));
-          }).catch(function(){ fetchEl.textContent = "— unavailable"; });
-        });
-        // a key exported only in the shell has no row: say so, by NAME, once per name
-        document.getElementById("pv-shell").innerHTML = (r.shellOnly || []).map(function(n){
-          return '<div class="hint" data-testid="pv-shell-' + escapeXml(n) + '">' + escapeXml(n) + " is set in your shell but not in ~/.config/bareloop/.env — add it there to use it here and in Chat.</div>";
-        }).join("");
-        pvNote.textContent = r.configProblem ? r.configProblem : PV_NOTE_DEFAULT;
-        document.dispatchEvent(new CustomEvent("bareloop-providers-changed"));
-      }).catch(function(){ pvNote.textContent = "could not read providers"; });
+    // A hint line: plain text, red when it is a refusal.
+    function setNote(el, bad, text){
+      el.className = "hint" + (bad ? " bad" : "");
+      el.textContent = text || "";
     }
-    // The row's POST body, or null when exactly ONE price box is filled: a price is both boxes or neither (the server
-    // refuses a half-set one), so nothing in that row saves. This runs only when a save would happen (the row's
-    // change event), so typing the first box never flashes the message; it shows when the person leaves that box.
-    var PV_HALF_PRICE = "Fill both price boxes or clear both.";
-    function pvRowBody(env, v){
-      var pin = String(v.priceIn).trim();
-      var pout = String(v.priceOut).trim();
-      if((pin === "") !== (pout === "")) return null;
-      return { envName: env, name: v.name, shape: v.shape, baseUrl: v.baseUrl, priceInPerM: pin, priceOutPerM: pout };
+    // The server's own plain sentence (`say`); the page never shows a code or an HTTP status.
+    function settingsRefusal(r){
+      var b = r && r.body;
+      if(b && typeof b.say === "string" && b.say) return b.say;
+      return "Settings cannot do that. Keys are typed into your keys file by hand.";
     }
-    pvRows.addEventListener("change", function(e){
-      var t = e.target;
-      var tr = t.closest("tr");
-      if(!tr) return;
-      if(t.classList.contains("pv-balance")){
-        authorPost("/api/settings/providers/balance-note", { usd: t.value.trim() === "" ? null : t.value.trim() }).then(function(r){
-          pvNote.textContent = r.body && r.body.ok ? "Saved — balance note." : ((r.body && r.body.error) || "could not save");
-        }).catch(function(){ pvNote.textContent = "could not save"; });
-        return;
-      }
-      if(!(t.classList.contains("pv-name") || t.classList.contains("pv-shape") || t.classList.contains("pv-url") || t.classList.contains("pv-price-in") || t.classList.contains("pv-price-out"))) return;
-      var env = tr.getAttribute("data-env");
-      var rowBody = pvRowBody(env, {
-        name: tr.querySelector(".pv-name").value,
-        shape: tr.querySelector(".pv-shape").value,
-        baseUrl: tr.querySelector(".pv-url").value,
-        priceIn: tr.querySelector(".pv-price-in").value,
-        priceOut: tr.querySelector(".pv-price-out").value,
-      });
-      if(!rowBody){ pvNote.textContent = PV_HALF_PRICE; return; }
-      authorPost("/api/settings/providers/row", rowBody).then(function(r){
-        pvNote.textContent = r.body && r.body.ok ? ("Saved — " + env + ".") : ((r.body && r.body.error) || "could not save");
-        // no re-render: it would steal focus mid-edit; Chat's Model menu just re-reads
+    function networkText(){ return "Could not reach the panel, so nothing is confirmed. Check it is still running."; }
+    // `list` true = also ask each provider for its model list (free): on page open and on Reload keys. A save repaints without asking again.
+    function loadProviders(list){
+      return authorGet("/api/settings/providers").then(function(d){
+        if(!d || !d.ok){ setNote(document.getElementById("keys-refusal"), true, "Could not read your providers. Reload the page."); return; }
+        paintProviders(d, list === true);
         document.dispatchEvent(new CustomEvent("bareloop-providers-changed"));
-      }).catch(function(){ pvNote.textContent = "could not save"; });
-    });
-    pvRows.addEventListener("click", function(e){
-      var t = e.target;
-      if(!t.classList || !t.classList.contains("pv-test")) return;
-      var out = t.parentNode.querySelector(".pv-test-result");
-      out.textContent = "testing…"; t.disabled = true;
-      authorPost("/api/settings/providers/test", { envName: t.closest("tr").getAttribute("data-env") }).then(function(r){
-        var b = r.body || {};
-        out.textContent = b.reachable ? ("OK" + (b.ms !== null && b.ms !== undefined ? " · " + b.ms + " ms" : "")) : ("failed — " + (b.note || b.status || b.error || "no answer"));
-      }).catch(function(){ out.textContent = "failed — no answer"; }).then(function(){ t.disabled = false; });
-    });
-    document.getElementById("btn-reload-keys").addEventListener("click", loadProviders);
+      }, function(){ setNote(document.getElementById("keys-refusal"), true, networkText()); });
+    }
     // Open keys folder: the server opens the FOLDER in the file manager; if it cannot, the path shows as text
-    document.getElementById("btn-open-keys-folder").addEventListener("click", function(){
-      var out = document.getElementById("pv-keyfile-path");
+    document.getElementById("open-keys-folder").addEventListener("click", function(){
+      var out = document.getElementById("keys-open-note");
+      out.textContent = "";
       authorPost("/api/settings/open-keys-folder", {}).then(function(r){
         var b = r.body || {};
-        out.textContent = b.ok && b.opened ? "" : ("Could not open it here. Your keys folder: " + (b.path || "(unknown)"));
-      }).catch(function(){ out.textContent = "Could not open it here — the keys folder is ~/.config/bareloop"; });
+        if(b.ok === true) out.textContent = b.opened ? "" : "Could not open it here. Your keys folder: " + (b.path || "(unknown)");
+        else out.textContent = settingsRefusal(r);
+      }, function(){ out.textContent = networkText(); });
     });
+    document.getElementById("reload-keys").addEventListener("click", function(){ loadProviders(true); });
+
+    // M4d Providers layout F. One parent block per key (.pv-key): its key band (name, API shape select, Base URL box, the legacy tick, tokens,
+    // the Refresh button), a folded summary, and its model lines as child rows (.pv-mrow). The key row owns shape, Base URL and the legacy
+    // tick, so a model line can never drift from them. Shape and Base URL are always editable; a change of either saves both (judged together).
+    var folds = {};      // slot -> true (unfolded) / false (folded): set once, on first paint (a key with a ticked model starts unfolded), then only the person changes it
+    var typedOpen = {};  // slot -> true while "+ type a model name" is open
+    function buildProviderRow(row){
+      var key = document.createElement("div");
+      key.className = "pv-key";
+      key.setAttribute("data-slot", row.slot);
+      key.setAttribute("data-testid", "provider-row-" + row.slot);
+      key.innerHTML =
+        '<div class="pv-krow">' +
+          '<div class="pv-cell pv-name nolbl"><button class="pv-fold" type="button" data-act="fold" data-testid="pv-fold"></button><code></code><span class="pv-status" data-f="status" data-testid="pv-status-' + escapeXml(row.slot) + '"></span><span class="pv-sum" data-f="sum" data-testid="pv-sum"></span></div>' +
+          '<div class="pv-cell"><span class="pv-lbl">API shape</span><select data-prov="shape" data-testid="prov-shape" aria-label="' + escapeXml(row.label + " API shape") + '"></select></div>' +
+          '<div class="pv-cell pv-c-url"><span class="pv-lbl">Base URL</span><input type="text" data-prov="baseUrl" data-testid="prov-baseurl" aria-label="' + escapeXml(row.label + " Base URL") + '" autocomplete="off" spellcheck="false" placeholder="type the Base URL"></div>' +
+          '<div class="pv-cell"><span class="pv-lbl">Old max_tokens</span><label class="pv-legacy"><input type="checkbox" data-prov="legacyMaxTokens" data-testid="prov-legacy" aria-label="' + escapeXml(row.label + " legacy max_tokens") + '"><span data-f="legacy-word">off</span></label></div>' +
+          '<div class="pv-cell pv-tok pv-ktok"><span class="pv-lbl">Tokens</span><span data-f="tokens" data-testid="pv-tokens-' + escapeXml(row.slot) + '"></span></div>' +
+          '<div class="pv-cell pv-refcell nolbl"><div class="pv-refbox"><div class="pv-refbtns"><button class="btn small pv-refbtn" type="button" data-act="test-key" data-testid="prov-test" aria-label="' + escapeXml("Test " + row.envVar) + '">Test</button><button class="btn small pv-refbtn" type="button" data-act="refresh-models" data-testid="prov-refresh" aria-label="' + escapeXml("Refresh models for " + row.label) + '">&#10227; Refresh</button></div><div class="hint pv-msg" data-f="msg-test" data-testid="prov-msg-test" role="status"></div></div></div>' +
+        '</div>' +
+        '<div class="pv-knote"><div class="hint bad pv-msg" data-f="msg-edit" data-testid="prov-msg-edit"></div><div class="hint pv-msg" data-f="msg-legacyMaxTokens" data-testid="prov-msg-legacyMaxTokens"></div></div>' +
+        '<div class="pv-models" data-models-for="' + escapeXml(row.slot) + '" data-testid="models-row-' + escapeXml(row.slot) + '">' +
+          '<div class="pv-mhead" aria-hidden="true"><span class="pv-um"><span class="pv-uh">USE</span><span>MODEL</span></span><span class="pv-pair"><span>IN $/1M</span><span>OUT $/1M</span></span><span class="pv-tok">TOKENS</span></div>' +
+          '<div data-f="models"></div>' +
+          '<div class="pv-more"><button class="pv-add" type="button" data-act="typed-open" data-testid="model-typed-open">+ type a model name</button>' +
+          '<div class="pv-typed" data-f="typed" hidden><input type="text" data-typed="1" data-testid="model-typed" autocomplete="off" spellcheck="false" aria-label="' + escapeXml(row.label + " model name") + '" placeholder="type a model name"> ' +
+          '<button class="btn small" type="button" data-act="add-model" data-testid="model-add">Add</button><div class="hint pv-msg" data-f="typed-msg" data-testid="model-typed-msg"></div></div></div>' +
+        '</div>';
+      key.querySelector("code").textContent = row.envVar;
+      key.querySelectorAll("input").forEach(function(inp){
+        inp.addEventListener("input", function(){ inp.setAttribute("data-dirty", "1"); });
+      });
+      key.querySelector("select").addEventListener("change", function(ev){ ev.target.setAttribute("data-dirty", "1"); });
+      return key;
+    }
+    // One child row per model: [Use][name], In + Out side by side, Tokens. The price pair is both-or-neither; the server's one rule says why not.
+    function buildModelLine(slot, m){
+      var d = document.createElement("div");
+      d.className = "pv-mrow";
+      d.setAttribute("data-model", m.model);
+      d.setAttribute("data-testid", "model-line");
+      d.innerHTML =
+        '<div class="pv-cell pv-um nolbl"><span class="pv-m-use"><input type="checkbox" data-mf="use" data-testid="model-use"></span><code class="pv-m-name"></code></div>' +
+        '<div class="pv-cell pv-pair"><label><input type="text" inputmode="decimal" data-mf="inPerM" data-testid="model-in" autocomplete="off"></label>' +
+        '<label><input type="text" inputmode="decimal" data-mf="outPerM" data-testid="model-out" autocomplete="off"></label></div>' +
+        '<div class="pv-cell pv-tok pv-m-tok"><span class="pv-lbl">Tokens</span><span data-f="model-tokens" data-testid="model-tokens"></span></div>' +
+        '<div class="hint pv-msg pv-m-msg" data-f="msg-model" data-testid="model-msg"></div>';
+      d.querySelector(".pv-m-name").textContent = m.model;
+      d.querySelector("[data-mf=use]").setAttribute("aria-label", slot + " " + m.model + " use");
+      d.querySelector("[data-mf=inPerM]").setAttribute("aria-label", m.model + " price in per 1M tokens");
+      d.querySelector("[data-mf=outPerM]").setAttribute("aria-label", m.model + " price out per 1M tokens");
+      d.querySelectorAll("input[type=text]").forEach(function(inp){
+        inp.addEventListener("input", function(){ inp.setAttribute("data-dirty", "1"); });
+      });
+      return d;
+    }
+    // The provider's own model list per key (asked on page open, Reload keys, Refresh models): { models: [ids] } or { why }. Not saved: only ticked or typed lines are.
+    var listed = {};
+    var lastData = null;
+    function linesFor(row){
+      var l = listed[row.slot];
+      var have = {};
+      row.models.forEach(function(m){ have[m.model] = true; });
+      var extra = (l && l.models ? l.models : []).filter(function(id){ return !have[id]; }).map(function(id){ return { model: id, use: false }; });
+      return row.models.concat(extra);
+    }
+    // "3 models · none ticked", "2 models · 1 ticked"; a list that failed with nothing saved says so.
+    function sumText(row){
+      var l = listed[row.slot];
+      var lines = linesFor(row);
+      if(l && l.why && lines.length === 0) return "failed — type a name";
+      var ticked = lines.filter(function(m){ return m.use === true; }).length;
+      return lines.length + (lines.length === 1 ? " model" : " models") + " · " + (ticked === 0 ? "none ticked" : ticked + " ticked");
+    }
+    function paintModels(row, mr){
+      var box = mr.querySelector("[data-f=models]");
+      var lines = linesFor(row);
+      var l = listed[row.slot];
+      var typed = mr.querySelector("[data-f=typed]");
+      typed.hidden = typedOpen[row.slot] !== true;
+      var wanted = lines.map(function(m){ return m.model; });
+      Array.prototype.slice.call(box.querySelectorAll(".pv-mrow")).forEach(function(el){
+        if(wanted.indexOf(el.getAttribute("data-model")) < 0) box.removeChild(el);
+      });
+      var note = box.querySelector("[data-f=models-note]");
+      lines.forEach(function(m){
+        var line = Array.prototype.find.call(box.querySelectorAll(".pv-mrow"), function(el){ return el.getAttribute("data-model") === m.model; });
+        if(!line){ line = buildModelLine(row.slot, m); box.insertBefore(line, note); }
+        var use = line.querySelector("[data-mf=use]");
+        use.checked = m.use === true;
+        ["inPerM", "outPerM"].forEach(function(f){
+          var inp = line.querySelector('[data-mf="' + f + '"]');
+          inp.placeholder = "—";
+          if(inp.getAttribute("data-dirty") !== "1") inp.value = typeof m[f] === "number" ? String(m[f]) : "";
+        });
+        line.querySelector("[data-f=model-tokens]").textContent = typeof m.tokens === "number" ? tokensText(m.tokens) : "—";
+      });
+      note = box.querySelector("[data-f=models-note]");
+      if(!note){ note = document.createElement("div"); note.className = "hint pv-more"; note.setAttribute("data-f", "models-note"); note.setAttribute("data-testid", "models-note"); box.appendChild(note); }
+      setNote(note, false, l && l.why ? l.why + " Type the model name below." : (lines.length === 0 ? "No models yet. Press ⟳ to refresh models, or type a name." : ""));
+      note.className += " pv-more" + (l && l.why ? " pv-failed" : "");
+      box.parentNode.querySelector(".pv-mhead").hidden = lines.length === 0;
+    }
+    var STATUS_WORD = { "set in file": "set in file", "found in shell": "found in shell", "not set": "not set", "refused": "refused — see above" };
+    // The Refresh button: "[ ⟳ Refresh ]", disabled "[ ⟳ refreshing… ]" while the free list call is out.
+    function setRefreshBtn(key, pending){
+      var b = key.querySelector("[data-act=refresh-models]");
+      b.disabled = pending === true;
+      b.innerHTML = pending === true ? "&#10227; refreshing&hellip;" : "&#10227; Refresh";
+    }
+    // The Test button: "[ Test ]", disabled "[ testing… ]" while the free call is out. The route says ok + ms or a plain-words why; written on the key row's own note.
+    function testKey(slot, key){
+      var b = key.querySelector("[data-act=test-key]");
+      var msg = key.querySelector("[data-f=msg-test]");
+      var row = lastData && lastData.rows.filter(function(r){ return r.slot === slot; })[0];
+      if(row && row.baseUrl === ""){
+        setNote(msg, true, "Type a Base URL for " + row.envVar + " in Settings.");
+        return;
+      }
+      b.disabled = true;
+      b.innerHTML = "testing&hellip;";
+      setNote(msg, false, "");
+      authorPost("/api/settings/test", { slot: slot }).then(function(r){
+        var d = r.body;
+        if(d && d.ok === true) setNote(msg, false, "OK \u00b7 " + d.ms + " ms");
+        else setNote(msg, true, d && d.why ? d.why : settingsRefusal(r));
+      }, function(){ setNote(msg, true, networkText()); }).then(function(){
+        b.disabled = false;
+        b.innerHTML = "Test";
+      });
+    }
+    function refreshModels(slot, tr){
+      listed[slot] = { pending: true };
+      setRefreshBtn(tr, true);
+      return authorPost("/api/settings/models", { slot: slot }).then(function(r){
+        var b = r.body;
+        listed[slot] = b && b.ok ? { models: b.models } : { why: (b && b.why) ? b.why : settingsRefusal(r) };
+      }, function(){ listed[slot] = { why: networkText() }; }).then(function(){
+        if(lastData) paintProviders(lastData, false);
+      });
+    }
+    function paintProviders(data, list){
+      lastData = data;
+      var path = data.keysFile && data.keysFile.path ? data.keysFile.path : "~/.config/bareloop/.env";
+      document.getElementById("keys-path").textContent = path;
+      setNote(document.getElementById("keys-refusal"), true, data.keysFile && data.keysFile.refusal);
+      setNote(pvNote, !!data.configProblem, data.configProblem || PV_NOTE_DEFAULT);
+      data.rows.forEach(function(row){
+        var key = pvRows.querySelector('.pv-key[data-slot="' + row.slot + '"]');
+        if(!key){ key = buildProviderRow(row); pvRows.appendChild(key); }
+        if(folds[row.slot] === undefined) folds[row.slot] = row.models.some(function(m){ return m.use === true; });
+        key.setAttribute("data-open", folds[row.slot] ? "1" : "0");
+        var fold = key.querySelector("[data-act=fold]");
+        fold.textContent = folds[row.slot] ? "▾" : "▸";
+        fold.setAttribute("aria-expanded", folds[row.slot] ? "true" : "false");
+        fold.setAttribute("aria-label", (folds[row.slot] ? "Fold " : "Unfold ") + row.label + " models");
+        paintModels(row, key.querySelector(".pv-models"));
+        setRefreshBtn(key, !!(listed[row.slot] && listed[row.slot].pending));
+        key.querySelector("[data-f=sum]").textContent = sumText(row);
+        var st = key.querySelector("[data-f=status]");
+        var word = STATUS_WORD[row.keyStatus] || row.keyStatus;
+        st.className = row.keyStatus === "set in file" || row.keyStatus === "found in shell" ? "pv-status pv-ok" : "pv-status hint";
+        st.textContent = st.className.indexOf("pv-ok") >= 0 ? "✓" : word;
+        st.setAttribute("title", word);
+        if(st.className.indexOf("pv-ok") >= 0) st.setAttribute("aria-label", word); else st.removeAttribute("aria-label");
+        var legacyIn = key.querySelector('[data-prov=legacyMaxTokens]');
+        if(document.activeElement !== legacyIn) legacyIn.checked = row.legacyMaxTokens === true;
+        key.querySelector("[data-f=legacy-word]").textContent = legacyIn.checked ? "on" : "off";
+        // shape + Base URL: the key row's own boxes, written from the server's row unless the person has typed in them (a refused value stays typed, with its sentence)
+        var sel = key.querySelector("[data-prov=shape]");
+        if(sel.options.length !== data.shapes.length || data.shapes.some(function(sh, i){ return sel.options[i].value !== sh.id; })){
+          sel.textContent = "";
+          data.shapes.forEach(function(sh){ var o = document.createElement("option"); o.value = sh.id; o.textContent = sh.label; sel.appendChild(o); });
+        }
+        if(sel.getAttribute("data-dirty") !== "1") sel.value = row.shape;
+        var urlIn = key.querySelector("[data-prov=baseUrl]");
+        if(urlIn.getAttribute("data-dirty") !== "1" && document.activeElement !== urlIn) urlIn.value = row.baseUrl;
+        key.querySelector("[data-f=tokens]").textContent = tokensText(row.tokens);
+      });
+      // rows that left the keys file leave the page
+      Array.prototype.slice.call(pvRows.querySelectorAll(".pv-key")).forEach(function(key){
+        if(!data.rows.some(function(r){ return r.slot === key.getAttribute("data-slot"); })) pvRows.removeChild(key);
+      });
+      if(list) data.rows.forEach(function(row){
+        var key = pvRows.querySelector('.pv-key[data-slot="' + row.slot + '"]');
+        if(row.baseUrl === ""){ listed[row.slot] = { why: "Type a Base URL for " + row.slot + " in Settings." }; paintProviders(lastData, false); }
+        else refreshModels(row.slot, key);
+      });
+    }
+    // Shape and Base URL save together, on change of either (blur / Enter / pick); the server judges them as a pair and says which sentence on
+    // a refusal (nothing saved, the typed value stays so the person can fix it).
+    function saveEndpoint(key){
+      var msg = key.querySelector("[data-f=msg-edit]");
+      var payload = { slot: key.getAttribute("data-slot"), shape: key.querySelector("[data-prov=shape]").value, baseUrl: key.querySelector("[data-prov=baseUrl]").value.trim() };
+      authorPost("/api/settings/provider", payload).then(function(r){
+        if(r.body && r.body.ok){
+          key.querySelector("[data-prov=shape]").removeAttribute("data-dirty");
+          key.querySelector("[data-prov=baseUrl]").removeAttribute("data-dirty");
+          setNote(msg, true, "");
+          loadProviders();
+        } else setNote(msg, true, settingsRefusal(r));
+      }, function(){ setNote(msg, true, networkText()); });
+    }
+    pvRows.addEventListener("click", function(ev){
+      var b = ev.target.closest && ev.target.closest("button[data-act]");
+      if(!b) return;
+      var key = b.closest(".pv-key");
+      var slot = key.getAttribute("data-slot");
+      var act = b.getAttribute("data-act");
+      if(act === "refresh-models") refreshModels(slot, key);
+      else if(act === "test-key") testKey(slot, key);
+      else if(act === "fold"){ folds[slot] = !folds[slot]; paintProviders(lastData, false); }
+      else if(act === "typed-open"){ typedOpen[slot] = !typedOpen[slot]; paintProviders(lastData, false); }
+      else if(act === "add-model") addTypedModel(slot, b.closest("[data-f=typed]"));
+    });
+    // Saved like bareloop saves a row field: on change (blur or Enter), no Save button. The legacy tick saves alone; shape and Base URL save as a pair.
+    pvRows.addEventListener("change", function(ev){
+      var inp = ev.target;
+      if(!inp.getAttribute) return;
+      if(inp.getAttribute("data-prov") === "legacyMaxTokens"){ saveProvider(inp.closest(".pv-key"), inp); return; }
+      if(inp.getAttribute("data-prov") === "shape" || inp.getAttribute("data-prov") === "baseUrl"){ saveEndpoint(inp.closest(".pv-key")); return; }
+      if(!inp.getAttribute("data-mf")) return;
+      saveModel(inp.closest(".pv-models") ? inp.closest(".pv-models").getAttribute("data-models-for") : "", inp.closest(".pv-mrow"));
+    });
+    // A box the person typed: empty = back to the default (null); a number is sent as a number; anything else is
+    // sent as the text typed, so the server refuses it by naming the box.
+    function priceValue(text){
+      var t = String(text).trim();
+      if(t === "") return null;
+      var n = Number(t);
+      return isFinite(n) ? n : t;
+    }
+    // One model line per save: {slot, model, use, inPerM, outPerM}. A refusal is the line's hint (the server's one rule),
+    // and nothing was saved: the repaint puts the tick back.
+    function saveModel(slot, line){
+      var msg = line.querySelector("[data-f=msg-model]");
+      var payload = {
+        slot: slot,
+        model: line.getAttribute("data-model"),
+        use: line.querySelector("[data-mf=use]").checked,
+        inPerM: priceValue(line.querySelector("[data-mf=inPerM]").value),
+        outPerM: priceValue(line.querySelector("[data-mf=outPerM]").value)
+      };
+      authorPost("/api/settings/model", payload).then(function(r){
+        if(r.body && r.body.ok){
+          line.querySelectorAll("input[type=text]").forEach(function(inp){ inp.removeAttribute("data-dirty"); });
+          loadProviders();
+          setNote(msg, false, "saved — applies from the next model call");
+        } else { setNote(msg, true, settingsRefusal(r)); loadProviders(); }
+      }, function(){ setNote(msg, true, networkText()); });
+    }
+
+    // A model name typed because the list failed: saved as an unticked, empty line (typed lines are saved); the person then fills the prices and ticks it.
+    function addTypedModel(slot, box){
+      var inp = box.querySelector("input");
+      var msg = box.querySelector("[data-f=typed-msg]");
+      authorPost("/api/settings/model", { slot: slot, model: inp.value.trim(), use: false }).then(function(r){
+        if(r.body && r.body.ok){ inp.value = ""; setNote(msg, false, "added"); loadProviders(); }
+        else setNote(msg, true, settingsRefusal(r));
+      }, function(){ setNote(msg, true, networkText()); });
+    }
+
+    // The legacy tick saves alone: {slot, legacyMaxTokens}. A refusal is the cell's hint line.
+    function saveProvider(key, inp){
+      var field = inp.getAttribute("data-prov");
+      var msg = key.querySelector("[data-f=msg-" + field + "]");
+      var payload = { slot: key.getAttribute("data-slot") };
+      payload[field] = inp.checked;
+      authorPost("/api/settings/provider", payload).then(function(r){
+        if(r.body && r.body.ok){
+          inp.removeAttribute("data-dirty");
+          loadProviders();
+          setNote(msg, false, "saved — applies from the next model call");
+        } else setNote(msg, true, settingsRefusal(r));
+      }, function(){ setNote(msg, true, networkText()); });
+    }
+
+    document.getElementById("tab-providers").addEventListener("click", function(){ loadProviders(); });
     wireTabs([document.getElementById("tab-providers"), document.getElementById("tab-money")]);
-    document.getElementById("tab-providers").addEventListener("click", loadProviders);
     // Auto-save on a human edit (change = blur or Enter): POST carries the per-start token; the chat has no route here
     limitInput.addEventListener("change", function(){
       var text = limitInput.value.trim();
