@@ -45,7 +45,7 @@ import {
   questionsFor, requiredAnswersFor, makeLoopGenerate, CONFIRM_SYSTEM, SOFTGREEN_JUDGE_EXAMPLES_KEY,
 } from '../authorflow.js';
 import {
-  resolveProvider, buildRunnerProviders, apiKeyProblem, assertDraftThinking,
+  resolveProvider, buildRunnerProviders, apiKeyProblem, assertDraftThinking, draftThinkingSent,
 } from '../providers.js';
 import { resolveJobJudge, defaultJudgeLoop } from '../judged.js';
 import { closeJudges } from '../kinds.js';
@@ -544,6 +544,7 @@ export function createSession(card, deps = {}) {
     const callNo = runningNo === -1 ? state.steps.length - 1 : runningNo;
     appendDraftLog(outDir, {
       kind: 'call', no: callNo, step: state.steps[callNo]?.id ?? null, label: call.label, model: draftIdentity?.model ?? null,
+      thinking: draftThinkingLogged,
       costUsd: call.costUsd ?? null, unpricedRounds: call.unpricedRounds ?? 0, at: nowIso,
     });
     try {
@@ -555,6 +556,8 @@ export function createSession(card, deps = {}) {
   };
   /** @type {string|null} */
   let draftStartedAt = null;
+  /** what the drafting calls really carry for thinking ('on' | 'off' | 'not-switchable'), set once the provider is built; null before @type {string|null} */
+  let draftThinkingLogged = null;
   /** P6 item 1: the worktree this session made in the person's repo (null until made, and again once removed) @type {{repo: string, dir: string}|null} */
   let madeWorktree = null;
   /** a session that ends WITHOUT ever running (refused, errored, abandoned) takes its worktree with it; a signed one keeps it for the run */
@@ -881,6 +884,7 @@ export function createSession(card, deps = {}) {
       providerName: modelChoice.provider, apiKey, model: MODEL, tierModels: providerEntry.tiers, baseUrl: modelChoice.baseUrl,
       judgeApiKey: apiKey, judgeModel: MODEL, judgeProviderName: modelChoice.provider, judgeBaseUrl: modelChoice.baseUrl,
     });
+    draftThinkingLogged = draftThinkingSent(provider, draftThinking);
     // TEST SEAMS (see the constructor's own note): a test overrides
     // `generate`/`confirmGenerate` directly (bypassing this real, constructed
     // `provider` for the model boundary) and/or `scout` (bypassing the real

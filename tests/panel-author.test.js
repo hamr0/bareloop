@@ -1295,3 +1295,32 @@ test('createSession: with NO draftThinking value the drafter\'s real request bod
     assert.equal('thinking' in on, false);
   } finally { OpenAIProvider.prototype._request = realRequest; }
 });
+
+// ── hamr 2026-10-11 ledger: the draft log records what was actually SENT for thinking ──────────────────────────────────
+test('draft-log call entries carry the thinking that was really sent: off for deepseek-flash, not-switchable for any other model, on when asked', async () => {
+  const thinkingLogged = async (/** @type {string} */ modelName, /** @type {any} */ extra) => {
+    const home = keysHomeWith('DS_KEY=sk-fake\n');
+    writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { DS_KEY: { name: modelName, shape: 'openai-api', baseUrl: 'https://gw.example/v1' } } }));
+    const sessionsRoot = tmp('panel-author-sess-thinklog-');
+    const session = createSession(baseCard({ source: makeRepo(), model: modelName, jobName: 'panel-author-thinklog', capUsd: 1 }), {
+      env: { DS_KEY: 'sk-fake' }, home, sessionsRoot,
+      scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+      generate: async () => { throw new Error('unused'); },
+      confirmGenerate: makeFakeConfirmGenerate([{ goal: 'g', checks: [{ text: 'c', fromLine: [1] }], questions: [], notChecked: [] }]),
+      authorFn: async (/** @type {any} */ o) => { o.onCall({ label: 'author', costUsd: 0.01, unpricedRounds: 0 }); return {
+        ok: false, stop: 'provider-red', declaration: null, reds: [{ code: 'provider-red', path: 'author', detail: 'x' }], iterations: [],
+        cost: { costUsd: 0.01, knownUsd: 0.01, spendComplete: true, calls: [], unpricedRounds: 0 }, raws: [],
+      }; },
+      ...extra,
+    });
+    await untilTrue(() => session.state.pendingAsk?.kind === 'menu');
+    session.signPrepare();
+    await untilTrue(() => session.state.phase === 'refused');
+    const entries = readFileSync(join(sessionsRoot, session.id, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((e) => e.kind === 'call');
+    assert.ok(entries.length > 0, 'a call entry was logged');
+    return [...new Set(entries.map((e) => e.thinking))];
+  };
+  assert.deepEqual(await thinkingLogged('deepseek-flash', {}), ['off']);
+  assert.deepEqual(await thinkingLogged('some-other-model', {}), ['not-switchable']);
+  assert.deepEqual(await thinkingLogged('deepseek-flash', { draftThinking: 'on' }), ['on']);
+});

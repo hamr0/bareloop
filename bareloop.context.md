@@ -655,7 +655,7 @@ same wire shape as the rubric judge's (F192). `'on'` sends nothing (the model's 
 checkbox. It is threaded explicitly: `makeLoopGenerate(provider, { draftThinking })` for the author, revise, structure-retry and confirm calls;
 `authorCloseForJob({ draftThinking })` for the scout (it hands `runAuthorScout` a `callOptions`); `createSession(card, { draftThinking })` in
 the panel does both. The CLI drafter (`src/authorrun.js`) passes no value, so it gets the same default through the same two seams. Worker and
-judge calls are unchanged.
+judge calls are unchanged. Each panel `draft-log.jsonl` `call` entry records what was actually sent as `thinking` (`draftThinkingSent`, which reads `draftCallOptions`): `'off'` (the switch was sent), `'on'` (mode on, nothing sent), or `'not-switchable'` (mode off but the model is not on the allow-list, so nothing was sent).
 
 
 **D5 — the mandatory guards are SHOWN and FIXED, and the battery keys off the VERDICT

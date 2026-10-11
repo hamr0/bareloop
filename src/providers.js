@@ -184,6 +184,19 @@ export function draftCallOptions(provider, mode = 'off') {
 }
 
 /**
+ * What the drafting calls on this provider ACTUALLY carry for thinking, for the draft log: `'on'` (mode on, nothing sent),
+ * `'off'` (mode off and `draftCallOptions` really produced the switch), `'not-switchable'` (mode off but this provider/model is
+ * not on the allow-list, so nothing was sent and the model thinks as it would). Reads `draftCallOptions` — never re-derives the list.
+ * @param {any} provider a constructed bare-agent provider
+ * @param {unknown} [mode] 'on' | 'off' (default 'off')
+ * @returns {'on'|'off'|'not-switchable'}
+ */
+export function draftThinkingSent(provider, mode = 'off') {
+  if (assertDraftThinking(mode) === 'on') return 'on';
+  return Object.keys(draftCallOptions(provider, mode)).length > 0 ? 'off' : 'not-switchable';
+}
+
+/**
  * @typedef {object} ProviderTableEntry
  * @property {new (options: any) => any} ctor the bare-agent provider class
  * @property {string} envKey the environment variable this provider reads its key from
