@@ -72,6 +72,8 @@
 // F6 throughout: an unpriced call makes the TOTAL unknown, and unknown is null.
 // No spine emission here — M4 wires events.
 
+import { renderInputs } from './jobblock.js';
+import { draftCallOptions } from './providers.js';
 import { createRequire } from 'node:module';
 import { realpathSync } from 'node:fs';
 import { join, relative, isAbsolute } from 'node:path';
@@ -109,6 +111,96 @@ export const REVISE_RED_CAP = 20;
 export const AUTHOR_MAX_TOKENS = 32000;
 /** the one slot the model fills on an injected guard */
 export const FILL_MARKER = '<FILL IN>';
+
+/** P7 item 5 (fwdloop am24/25): the most questions the MACHINE keeps from the try-3 drafter. The drafter is never told this number. */
+export const MAX_QUESTIONS = 2;
+
+/**
+ * The model-visible words of the optional `questions` property — offered ONLY on the last drafting try and only after the
+ * two before it both failed validation (a mechanism, never a wish: the schema carries it on that one call and nowhere
+ * else). It lives in the property's description, so the frozen revise turn stays measurement-only. No digit and no number
+ * word anywhere in it (a test greps this): the machine, not the prompt, bounds the count.
+ */
+export const QUESTIONS_DESCRIPTION = 'Optional. Add a question only if a refusal in the measured results names a job line that cannot be drafted '
+  + 'without the person\'s answer (an undefined size, format, destination, or what "done" means). Each question is {line, question}: '
+  + '"line" is the number of the job line it is about. If the refusals can be fixed without asking, fix them and leave this out. '
+  + 'Never ask about a budget, a cap or a time limit (the person signs those). Still deliver the complete corrected declaration.';
+
+/**
+ * Which job lines did these validation reds name? A red names a line in its text ("job line N") or through the stage it
+ * sits on (path `stages[i]…` → that stage's own `fromLine`; `refused[i]…` → that refusal's `line`). A red naming none (a
+ * missing top-level key) names no line. Sorted real line numbers.
+ * @param {Red[]} reds @param {any} declaration @param {number[]} lineNums
+ * @returns {number[]}
+ */
+export function linesNamedByReds(reds, declaration, lineNums) {
+  /** @type {Set<number>} */
+  const found = new Set();
+  const stages = Array.isArray(declaration?.stages) ? declaration.stages : [];
+  const refused = Array.isArray(declaration?.refused) ? declaration.refused : [];
+  for (const red of reds ?? []) {
+    for (const m of String(red?.detail ?? '').matchAll(/\bjob line (\d+)\b/g)) found.add(Number(m[1]));
+    const st = /^stages\[(\d+)\]/.exec(String(red?.path ?? ''));
+    if (st && Array.isArray(stages[Number(st[1])]?.fromLine)) {
+      for (const n of stages[Number(st[1])].fromLine) if (Number.isInteger(n)) found.add(n);
+    }
+    const rf = /^refused\[(\d+)\]/.exec(String(red?.path ?? ''));
+    if (rf && Number.isInteger(refused[Number(rf[1])]?.line)) found.add(refused[Number(rf[1])].line);
+  }
+  return [...found].filter((n) => lineNums.includes(n)).sort((a, b) => a - b);
+}
+
+/**
+ * The machine's keep-or-drop of the try-3 questions. Kept only when its line is one the previous try's reds named and its
+ * text is non-blank, at most {@link MAX_QUESTIONS}; every drop comes back with its reason, for the draft's log.
+ * @param {any} raw @param {number[]} failedLines
+ * @returns {{kept: {line: number, question: string}[], dropped: {reason: string, raw: any}[]}}
+ */
+export function normalizeQuestions(raw, failedLines) {
+  /** @type {{line: number, question: string}[]} */
+  const kept = [];
+  /** @type {{reason: string, raw: any}[]} */
+  const dropped = [];
+  if (raw === undefined || raw === null) return { kept, dropped };
+  if (!Array.isArray(raw)) return { kept, dropped: [{ reason: 'questions is not a list', raw }] };
+  for (const q of raw) {
+    if (!q || typeof q !== 'object' || !Number.isInteger(q.line)) { dropped.push({ reason: 'no line', raw: q }); continue; }
+    if (!failedLines.includes(q.line)) { dropped.push({ reason: `line ${q.line} is not a line the previous try's checks failed on`, raw: q }); continue; }
+    if (typeof q.question !== 'string' || q.question.trim() === '') { dropped.push({ reason: 'blank question', raw: q }); continue; }
+    if (kept.length >= MAX_QUESTIONS) { dropped.push({ reason: 'beyond the machine\'s limit', raw: q }); continue; }
+    kept.push({ line: q.line, question: redactSecrets(q.question.trim()) });
+  }
+  return { kept, dropped };
+}
+
+/**
+ * Did this try FAIL THE SEED READ (hamr's ruling 2026-10-10, differing from fwdloop's validation-only rule)? It did when a work
+ * stage instrument-stopped, or when no work stage is red on the repo as it is — the vacuous close ("nothing in the close fails
+ * at all": it grades nothing). The mandatory guards (`guardNames`) are green at the seed by design and never count as work.
+ * The job lines it names are the `fromLine`s of the stages the seed read named (the instrument-stopped ones, else every work
+ * stage); if none of them maps to a real line, EVERY numbered job line counts.
+ * @param {any[]} rows @param {any} declaration @param {string[]} guardNames @param {number[]} lineNums
+ * @returns {{failed: boolean, lines: number[]}}
+ */
+export function seedReadFailure(rows, declaration, guardNames, lineNums) {
+  const work = (Array.isArray(rows) ? rows : []).filter((r) => !guardNames.includes(r?.stage));
+  const stopped = work.filter((r) => r?.verdict === 'instrument-stop');
+  const vacuous = !work.some((r) => r?.verdict === 'red');
+  if (stopped.length === 0 && !vacuous) return { failed: false, lines: [] };
+  const named = new Set((stopped.length ? stopped : work).map((r) => r?.stage));
+  /** @type {Set<number>} */
+  const found = new Set();
+  for (const st of Array.isArray(declaration?.stages) ? declaration.stages : []) {
+    if (named.has(st?.name) && Array.isArray(st.fromLine)) for (const n of st.fromLine) if (Number.isInteger(n)) found.add(n);
+  }
+  const lines = [...found].filter((n) => lineNums.includes(n)).sort((a, b) => a - b);
+  return { failed: true, lines: lines.length ? lines : [...lineNums] };
+}
+
+/** The honest truncation signal: bare-agent's Loop tags a round cut off at the output cap `error: 'truncated:max_tokens'`
+ * with the neutral `stopReason: 'max_tokens'` (node_modules/bare-agent/src/loop.js, BA-6/BA-13).
+ * @param {any} r */
+export const isOutputCutOff = (r) => r?.error === 'truncated:max_tokens' || (Boolean(r?.error) && r?.stopReason === 'max_tokens');
 
 /**
  * ONE red, scrubbed — the same spelling `prepareSigning` uses (src/authorjob.js),
@@ -205,6 +297,22 @@ export const SOURCE_FIELD = Object.freeze({
   prompt: 'A local folder, subfolder or file, or one URL the machine can reach (no login, no setup).',
 });
 
+/** P7: the Inputs box's wording (replaces Source). Line 1 is the repo; lines 2+ are tracked files inside it. */
+export const INPUTS_FIELD = Object.freeze({
+  id: 'inputs',
+  kind: 'mechanical',
+  label: 'Inputs',
+  prompt: 'What the job points at, one per line as `label: value`. Line 1 is the repo, as an absolute path\n'
+    + '(e.g. `repo: /home/me/myrepo`). Lines 2 and on are files or folders inside that repo, repo-relative\n'
+    + '(e.g. `spec: docs/spec.md`) — git must track them.',
+});
+
+/** P7: how to write "The job" (printed under its question by the CLI; the panel's box shows the same in its examples). */
+export const JOB_BLOCK_HELP = Object.freeze([
+  'One line per thing the job must do — each plain line gets a number. A line starting with `~` is a rule for the',
+  'numbered line above it. For a rubric check, a `~ PASS: ...` and a `~ FAIL: ...` line are your examples.',
+]);
+
 /** Destination's wording when Source resolved to a git repo: the answer IS the
  * signed `writeScope` fence (ITEM33-BUILD.md M3 ruling 2). */
 export const DESTINATION_FIELD_REPO = Object.freeze({
@@ -231,8 +339,11 @@ export const DESTINATION_FIELD_PLAIN = Object.freeze({
 export function destinationFieldFor(isRepo) { return isRepo ? DESTINATION_FIELD_REPO : DESTINATION_FIELD_PLAIN; }
 
 /**
- * THE FREE-TEXT TRIO EVERY CLASS SHARES: Goal, What success looks like,
- * Guardrails — numbered contiguously from 1. This is what `answers[1..3]` are
+ * P7 (2026-10-10, docs/product/PANEL-BUILD.md): the old free-text trio (Goal, What success looks like, Guardrails) is ONE
+ * answer now — "The job", the person's numbered lines with their `~` rules (src/jobblock.js renders it). What follows
+ * is the history of the trio, kept because the numbering rule below still holds.
+ *
+ * THE FREE-TEXT SLOTS EVERY CLASS SHARES, numbered contiguously from 1. This is what `answers[1..3]` are
  * filed under for every class; soft-green appends a fourth
  * (`SOFTGREEN_QUESTIONS`) and hitl appends a different fourth
  * (`HITL_QUESTIONS`), each its own next number rather than a fixed one, so a
@@ -242,7 +353,7 @@ export function destinationFieldFor(isRepo) { return isRepo ? DESTINATION_FIELD_
  * 2026-09-10 "The intake form (RULED)" ruling, `docs/product/PRD.md`) — not the
  * old worded questions ("What do you want done?", "How do you check today
  * whether it's working?", "...worse than before?"). Motivated by run `mtv8jihy`
- * (F159, `docs/logs/FINDINGS.md`): a rulebook this prompt commit did not touch
+ * (F159, `docs/wiki/FINDINGS.md`): a rulebook this prompt commit did not touch
  * still had to compile against a card built from a person's actual bar, and the
  * old wording never matched what got signed — this reshape (commit 1ac4d05)
  * trimmed the SET to three slots but left their PROSE unreconciled with the
@@ -251,9 +362,7 @@ export function destinationFieldFor(isRepo) { return isRepo ? DESTINATION_FIELD_
  * `authorPrompt`'s interview block and `scripts/run-interview.mjs`.
  */
 export const GREEN_QUESTIONS = Object.freeze({
-  1: 'what you want to achieve',
-  2: 'checks a machine can count',
-  3: 'what must not happen or change',
+  1: 'the job, as numbered lines — each line may carry the rules (~) the person wrote under it',
 });
 
 /**
@@ -268,13 +377,11 @@ export const GREEN_QUESTIONS = Object.freeze({
  * calls `questionsFor` — additive, nothing existing breaks.
  */
 export const FIELD_LABELS = Object.freeze({
-  1: 'Goal',
-  2: 'What success looks like',
-  3: 'Guardrails',
+  1: 'The job',
 });
 
-/** The key Guardrails' merged question and Judge Examples both prove out at:
- * green holds exactly 3 free-text slots, so 4 is the next number for both the
+/** The key Judge Examples and hitl's own question both prove out at: green holds
+ * exactly one free-text slot (P7), so 2 is the next number for both the
  * soft-green and hitl extensions below — computed, never hardcoded twice. */
 const NEXT_FREE_TEXT_KEY = Object.keys(GREEN_QUESTIONS).length + 1;
 
@@ -288,7 +395,7 @@ export const SOFTGREEN_JUDGE_EXAMPLES_KEY = NEXT_FREE_TEXT_KEY;
  * you'd pass and one you'd fail, and say why."). Exported so `cardauthor.js`'s
  * prompt and this module's own `SOFTGREEN_QUESTIONS` render the identical
  * string; its label ("Judge examples") lives in `SOFTGREEN_FIELD_LABELS`. */
-export const JUDGE_EXAMPLES_QUESTION = 'one pass, one fail, and why';
+export const JUDGE_EXAMPLES_QUESTION = 'the PASS: and FAIL: examples the person wrote under their job lines, each with its line number';
 
 /** {@link FIELD_LABELS} plus Judge Examples' own label, for the soft-green set. */
 export const SOFTGREEN_FIELD_LABELS = Object.freeze({
@@ -457,7 +564,7 @@ export const LANGUAGE_PICK_FIELD = Object.freeze({
 });
 
 /**
- * F175's open half (docs/logs/FINDINGS.md, run mu0voeo4), hamr's ruling
+ * F175's open half (docs/wiki/FINDINGS.md, run mu0voeo4), hamr's ruling
  * (2026-09-16): "Confirm" and "Type the goal yourself" may not bypass a
  * `questions` entry the model itself raised on the plan being accepted — the
  * person answers it inline, one question at a time, with NO extra model
@@ -746,10 +853,11 @@ export function schemaCoverage(catalogue = KIND_CATALOGUE) {
  * THROWS on a catalogue it cannot cover: a malformed catalogue is a bareloop bug,
  * and failing loudly beats emitting a schema that quietly cannot say something
  * the validator will then demand.
+ * `questions` (P7 item 5, last drafting try only) adds the optional `questions` property; absent, the schema is byte-identical.
  * @param {Record<string, any>} [catalogue]
- * @param {{verdictType?: string|null}} [o]
+ * @param {{verdictType?: string|null, questions?: boolean}} [o]
  */
-export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = null } = {}) {
+export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = null, questions = false } = {}) {
   const cov = schemaCoverage(catalogue);
   if (!cov.ok) {
     throw new Error('[authorflow] the declaration schema does not cover the catalogue — '
@@ -768,6 +876,7 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
         type: 'object',
         properties: {
           name: { type: 'string', description: 'a unique lowercase-hyphenated slug saying what this stage asserts' },
+          fromLine: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'integer', minimum: 1 }, description: 'the numbers of the job line(s) this stage checks, e.g. [1] or [1, 3] (absent on a mandatory guard)' },
           kind: { const: kind },
           params: { type: 'object', properties, required: [...spec.required], additionalProperties: false },
         },
@@ -795,6 +904,30 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
         items: { type: 'string', minLength: 1 },
         description: 'anything you could not express, or any fact you needed and did not have',
       },
+      refused: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            line: { type: 'integer', minimum: 1, description: 'the number of a job line no stage checks' },
+            reason: { type: 'string', minLength: 1, description: 'why, in plain words the person can read' },
+          },
+          required: ['line', 'reason'],
+          additionalProperties: false,
+        },
+        description: 'job lines you could not turn into a stage, each with a reason — a note does not cover a line',
+      },
+      ...(questions ? {
+        questions: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { line: { type: 'integer', minimum: 1 }, question: { type: 'string', minLength: 1 } },
+            required: ['line', 'question'],
+          },
+          description: QUESTIONS_DESCRIPTION,
+        },
+      } : {}),
     },
     required: ['stages'],
     additionalProperties: false,
@@ -805,13 +938,13 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
  * The output channel. It records and acknowledges; it takes no action, which is
  * why handing it to a toolless authoring call does not reopen D3.
  * @param {{calls: any[]}} box
- * @param {{catalogue?: Record<string, any>, verdictType?: string|null}} [o]
+ * @param {{catalogue?: Record<string, any>, verdictType?: string|null, questions?: boolean}} [o]
  */
-export function declarationTool(box, { catalogue = KIND_CATALOGUE, verdictType = null } = {}) {
+export function declarationTool(box, { catalogue = KIND_CATALOGUE, verdictType = null, questions = false } = {}) {
   return {
     name: DECLARATION_TOOL_NAME,
     description: 'Deliver the finished close. Call this exactly once, with the whole declaration as its arguments.',
-    parameters: declarationSchema(catalogue, { verdictType }),
+    parameters: declarationSchema(catalogue, { verdictType, questions }),
     execute: async (/** @type {any} */ args) => { box.calls.push(args); return DECLARATION_ACK; },
   };
 }
@@ -986,7 +1119,7 @@ export function writeScopeBlock(writeScope) {
  * acceptance — BINDING, never re-decided by the composer, and a DIFFERENT
  * meaning from `openQuestions` (which means "could not resolve"): the two
  * never merge.
- * @param {{checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[],
+ * @param {{checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[],
  *   answeredQuestions?: string[]}} confirmed
  */
 export function confirmedBlock(confirmed) {
@@ -998,7 +1131,9 @@ export function confirmedBlock(confirmed) {
   return 'THE CONFIRMED PLAN — the person already saw and confirmed this in the confirm turn\n\n'
     + 'Compose stages for these checks and no other — a genre never adds a check the goal did not ask for, and '
     + 'neither do you:\n\n'
-    + `${checks.map((c) => `  - ${c}`).join('\n') || '  (none)'}\n\n`
+    + `${(confirmed.checkItems?.length
+      ? confirmed.checkItems.map((c) => `  - ${c.fromLine && c.fromLine.length ? `[line ${c.fromLine.join(', ')}] ` : ''}${c.text}`)
+      : checks.map((c) => `  - ${c}`)).join('\n') || '  (none)'}\n\n`
     + 'These protections are already always-on and unchanged by this plan — never compose one of these as a check:\n\n'
     + `${protections.map((p) => `  - ${p}`).join('\n') || '  (none)'}\n\n`
     + (notChecked.length
@@ -1011,6 +1146,21 @@ export function confirmedBlock(confirmed) {
     + (openQuestions.length
       ? `OPEN QUESTIONS the confirm turn could not resolve (state these in your notes, never decide them silently):\n\n${openQuestions.map((q) => `  - ${q}`).join('\n')}`
       : 'The confirm turn left no open questions.');
+}
+
+/**
+ * P7: the job-line tagging order (model-facing, registered). Rule 1 of the job block: every stage the drafter writes
+ * names the ONE numbered job line it serves, or the line is refused with a reason; the mandatory guards serve no line.
+ * The $0 validator (validateDeclaration, `jobLines`) enforces it and the revise loop feeds a miss back.
+ * @param {number} count how many numbered job lines the person wrote
+ */
+export function jobLineTagBlock(count) {
+  return 'EVERY STAGE SERVES ONE JOB LINE\n\n'
+    + `The person's job has ${count} numbered line${count === 1 ? '' : 's'} (the interview above). Tag every stage YOU write `
+    + 'with "fromLine": [N, ...] — the number(s) of the job line(s) that stage checks (one stage may serve several lines, e.g. a judged stage that reads lines 1-3). A job line that no kind in the catalogue '
+    + 'can check is not left out silently: list it in "refused" as {"line": N, "reason": "..."}, with a reason in plain '
+    + 'words the person can read. Every numbered line needs at least one stage or one refusal — a note in "notes" does '
+    + 'NOT cover a line. The mandatory guards serve no job line and carry NO "fromLine".';
 }
 
 /**
@@ -1035,11 +1185,15 @@ export function confirmedBlock(confirmed) {
  *   guards: {name: string, kind: string, params: Record<string, any>, fill: string[]}[],
  *   ownedEnvNames?: string[], mode?: 'tool'|'text', catalogue?: Record<string, any>,
  *   writeScope?: string[]|null,
- *   confirmed?: {checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
+ *   jobLines?: {n: number}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
+ *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
  */
 export function authorPrompt({
   answers, questions = GREEN_QUESTIONS, facts, listingBlock, lang, verdictType, guards,
   ownedEnvNames = [], mode = 'tool', catalogue = KIND_CATALOGUE, writeScope = null,
+  // P7: the person's numbered job lines and the inputs they pointed at. ABSENT = byte-identical prompt (every caller
+  // that predates the job block). Present: the drafter is told to tag every stage it writes with the line it serves.
+  jobLines = null, inputs = null,
   // PRD item 33 M3 piece 4: ABSENT for every caller that predates the confirm
   // turn (or ran without `ask`) — byte-identical prompt, nothing added. Present
   // only when a confirm turn actually ran and the person accepted a plan.
@@ -1115,7 +1269,9 @@ measure anything.`;
     // asks what KIND of job this is; the person answered what DONE means, and the
     // composer reads that plus the catalogue and works the rest out.
     `WHAT THE PERSON DECLARED "DONE" TO MEAN — their answer, not yours\n\n${statement}`,
-    `THE INTERVIEW — the person's own words\n\n${interview}`,
+    `THE INTERVIEW — the person's own words\n\n${interview}`
+      + (inputs && inputs.length ? `\n\n${renderInputs(inputs)}` : ''),
+    ...(jobLines && jobLines.length ? [jobLineTagBlock(jobLines.length)] : []),
     // Q2 IS GONE (PRD item 33 M3 piece 3) — what it used to carry (which files
     // change, which are read-only) is proven against the machine now, not typed,
     // and this is where that proof reaches the composer instead of vanishing.
@@ -1380,7 +1536,7 @@ export function resolveSourcePrefixes({ workdir, sourcePaths, seedFiles }) {
  */
 /**
  * @param {{ceilingUsd?: number|null,
- *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void}} [o]
+ *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingApplied?: boolean|null}) => void}} [o]
  *   `ceilingUsd` is the OPERATOR's ceiling; `null`/absent is UNBOUNDED.
  *   `onCall` is a REPORTING seam fired as each metered call lands — the shell's
  *   only chance to know what has been spent while the run is still alive. It is
@@ -1401,7 +1557,9 @@ export function makeCostBook({ ceilingUsd = null, onCall = () => {} } = {}) {
       const call = { label, ...priceOf(r) };
       entries.push(call);
       raws.push(scrubRaw({ label, attempt, text: r?.text, reason: r?.error ? String(r.error) : null }));
-      onCall({ ...call });
+      // bare-agent's per-run `thinkingApplied` (true | false | null) rides the REPORTING seam only — never the stored entry,
+      // so the cost report and every persisted shape stay as they were; absent when thinkingMode was not sent
+      onCall({ ...call, ...(r?.thinkingApplied === undefined ? {} : { thinkingApplied: r.thinkingApplied }) });
       return entries.at(-1);
     },
     /** @param {{label: string, costUsd: number|null, unpricedRounds: number}[]} calls
@@ -1441,10 +1599,13 @@ export function makeCostBook({ ceilingUsd = null, onCall = () => {} } = {}) {
  * `cacheMessages` (F18) and `maxTokens` (F30) are not optional on this stack.
  * `rates` is the customer's own price for this provider's key row (USD per 1K, `ratesFor`);
  * absent = bare-agent's built-in guess, exactly as before.
- * @param {any} provider @param {{system?: string, maxTokens?: number, rates?: {in: number, out: number}|null}} [o]
+ * `draftThinking` ('on' | 'off', operator knob; default 'off') adds the drafter's per-call thinking option via `draftCallOptions`.
+ * @param {any} provider @param {{system?: string, maxTokens?: number, rates?: {in: number, out: number}|null, draftThinking?: string}} [o]
  * @returns {(messages: any[], tools: any[], opts?: any) => Promise<any>}
  */
-export function makeLoopGenerate(provider, { system = AUTHOR_SYSTEM, maxTokens = AUTHOR_MAX_TOKENS, rates = null } = {}) {
+export function makeLoopGenerate(provider, { system = AUTHOR_SYSTEM, maxTokens = AUTHOR_MAX_TOKENS, rates = null, draftThinking = 'off' } = {}) {
+  // the drafter's per-call options (src/providers.js `draftCallOptions`, one owner); a bad mode throws HERE, at construction
+  const callOptions = draftCallOptions(provider, draftThinking);
   return async (/** @type {any[]} */ messages, /** @type {any[]} */ tools, /** @type {any} */ opts = {}) => {
     const loop = new Loop({ provider, system, ...(rates ? { rates } : {}) });
     const wired = tools.map((t) => ({
@@ -1460,7 +1621,7 @@ export function makeLoopGenerate(provider, { system = AUTHOR_SYSTEM, maxTokens =
     // throws on a malformed tool-call arguments string (BA-27): it returns the
     // round priced with `toolCalls: []` plus its own `malformedToolCall` marker,
     // which `Loop.run` surfaces unchanged on its return. No local shim needed.
-    return loop.run(messages, wired, { cacheMessages: true, maxTokens, timeoutMs: AUTHOR_CALL_TIMEOUT_MS, ...opts });
+    return loop.run(messages, wired, { cacheMessages: true, maxTokens, timeoutMs: AUTHOR_CALL_TIMEOUT_MS, ...callOptions, ...opts });
   };
 }
 
@@ -1489,7 +1650,7 @@ function canonical(x) {
  *   label: string, book: ReturnType<typeof makeCostBook>,
  *   channel: {name: string, instruction: string, textPath?: string, tool: (box: {calls: any[]}) => any}}} o
  * @returns {Promise<{artifact: any, attempts: number, convo: any[], raw: string,
- *   providerError: string|null, red: Red|null, budget: 'cap-halt'|'pricing-red'|null}>}
+ *   providerError: string|null, red: Red|null, budget: 'cap-halt'|'pricing-red'|null, allCutOff?: boolean}>}
  */
 export async function askStructured({ messages, generate, mode, retries, label, book, channel }) {
   /** @type {any[]} */
@@ -1497,6 +1658,8 @@ export async function askStructured({ messages, generate, mode, retries, label, 
   let attempts = 0;
   /** @type {Red|null} */
   let red = null;
+  /** how many of this ask's attempts were cut off at the output cap (P7: all of them = a failed try for the question gate) */
+  let cutOffs = 0;
 
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     // THE CEILING, immediately before the paid call and nowhere else. Sited HERE
@@ -1541,11 +1704,23 @@ export async function askStructured({ messages, generate, mode, retries, label, 
     book.add(attempt === 0 ? label : `${label}#${attempt + 1}`, r, attempts);
     const raw = redactSecrets(String(r?.text ?? ''));
 
-    if (r?.error) {
+    // ITEM 6 (P7, live session smv2bzdqmp0f8, 2026-10-10): a round cut off at the output cap is the MODEL's own overlong
+    // answer, not a transport fault — it is a failed try on the same ladder as a malformed artifact (the spend is already
+    // booked above). Only a real error (a throw, a provider/halt tag) stays provider-red.
+    const cutOff = isOutputCutOff(r);
+    if (cutOff) cutOffs += 1;
+    if (r?.error && !cutOff) {
       return { artifact: null, attempts, convo, raw, providerError: String(r.error), red: null, budget: null };
     }
 
-    if (mode === 'tool') {
+    if (cutOff) {
+      red = {
+        code: 'artifact-red',
+        path: channel.name,
+        detail: "the AI's answer was cut off at the output limit",
+        axis: 'output-truncated',
+      };
+    } else if (mode === 'tool') {
       // F179 (2026-09-15 ruling) — retry, never repair. bare-agent 0.43.0
       // (BA-27) already priced this round on the real usage and returns it
       // with `toolCalls: []` plus its own `malformedToolCall` marker instead
@@ -1598,22 +1773,23 @@ export async function askStructured({ messages, generate, mode, retries, label, 
 
     if (attempt < retries) {
       const block = renderRejectBlock({ kind: 'artifact', reds: [/** @type {Red} */ (red).detail] });
-      convo.push({ role: 'assistant', content: raw.trim() || '(the reply carried no text)' });
+      // a cut-off reply is NOT replayed (it would re-bill the whole cap as input and teach nothing)
+      convo.push({ role: 'assistant', content: (cutOff ? '' : raw.trim()) || '(the reply carried no text)' });
       convo.push({ role: 'user', content: `${block}\n\n${mode === 'tool' ? channel.instruction : STRUCTURE_INSTRUCTION_TEXT}` });
     }
   }
-  return { artifact: null, attempts, convo, raw: '', providerError: null, red, budget: null };
+  return { artifact: null, attempts, convo, raw: '', providerError: null, red, budget: null, allCutOff: attempts > 0 && cutOffs === attempts };
 }
 
 /** THE DECLARATION CHANNEL — the one this loop has always used. Its schema is
  * CLASS-SCOPED, like the prompt's catalogue block: the two must offer one set of
  * kinds, or the composer reads about a kind it cannot call.
- * @param {{catalogue: Record<string, any>, verdictType: string}} o */
-const declarationChannel = ({ catalogue, verdictType }) => ({
+ * @param {{catalogue: Record<string, any>, verdictType: string, questions?: boolean}} o */
+const declarationChannel = ({ catalogue, verdictType, questions = false }) => ({
   name: DECLARATION_TOOL_NAME,
   instruction: STRUCTURE_INSTRUCTION_TOOL,
   textPath: 'declaration',
-  tool: (/** @type {{calls: any[]}} */ box) => declarationTool(box, { catalogue, verdictType }),
+  tool: (/** @type {{calls: any[]}} */ box) => declarationTool(box, { catalogue, verdictType, questions }),
 });
 
 /** The declaration ask, over the shared ladder. `declaration` is `artifact`
@@ -1621,11 +1797,11 @@ const declarationChannel = ({ catalogue, verdictType }) => ({
  * anonymous artifact, and one word for two things is how a reader loses which.
  * @param {{messages: any[], generate: Function, mode: 'tool'|'text', retries: number,
  *   label: string, book: ReturnType<typeof makeCostBook>, catalogue: Record<string, any>,
- *   verdictType: string}} o
+ *   verdictType: string, questions?: boolean}} o
  */
-async function askDeclaration({ messages, generate, mode, retries, label, book, catalogue, verdictType }) {
+async function askDeclaration({ messages, generate, mode, retries, label, book, catalogue, verdictType, questions = false }) {
   const r = await askStructured({
-    messages, generate, mode, retries, label, book, channel: declarationChannel({ catalogue, verdictType }),
+    messages, generate, mode, retries, label, book, channel: declarationChannel({ catalogue, verdictType, questions }),
   });
   return { ...r, declaration: r.artifact };
 }
@@ -1663,9 +1839,17 @@ const CONFIRM_SCHEMA = Object.freeze({
   properties: {
     checks: {
       type: 'array',
-      items: { type: 'string', minLength: 1 },
-      description: 'the mechanical checks you plan to compose, each one traceable to something the Goal or What '
-        + 'success looks like answers actually asked for — never a check invented beyond them',
+      items: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', minLength: 1 },
+          fromLine: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'integer', minimum: 1 }, description: 'the number(s) of the numbered job line(s) this check is for, e.g. [1] or [1, 3]' },
+        },
+        required: ['text', 'fromLine'],
+        additionalProperties: false,
+      },
+      description: 'the mechanical checks you plan to compose, each one traceable to the numbered job line it checks '
+        + '(fromLine, an array: one check may serve several lines) — never a check invented beyond what the job lines and their rules asked for',
     },
     goal: {
       type: 'string',
@@ -1676,7 +1860,7 @@ const CONFIRM_SCHEMA = Object.freeze({
     notChecked: {
       type: 'array',
       items: { type: 'string', minLength: 1 },
-      description: 'anything the person asked for (in the Goal, What success looks like, Guardrails, or '
+      description: 'anything the person asked for (in the job lines, the rules under them, or '
         + 'worse-than-before answers) that none of your listed checks can verify — named plainly in the person\'s '
         + 'own words; an empty list means every ask is covered by a listed check',
     },
@@ -1690,6 +1874,25 @@ const CONFIRM_SCHEMA = Object.freeze({
   required: ['checks', 'goal', 'notChecked', 'questions'],
   additionalProperties: false,
 });
+
+/**
+ * The confirm plan's checks as `{text, fromLine}` items. The schema asks for objects (P7: each check names the job line
+ * it is for); a bare string (a text-mode reply, an older caller) reads as a check with no line.
+ * @param {any} raw the plan's `checks`
+ * @returns {{text: string, fromLine: number[]|null}[]}
+ */
+export function normalizeChecks(raw) {
+  /** a fromLine as a non-empty, duplicate-free array of line numbers, else null (never a guess)
+   * @param {any} v @returns {number[]|null} */
+  const normLines = (v) => (Array.isArray(v) && v.length > 0 && v.every((x) => Number.isInteger(x) && x >= 1) ? [...new Set(v)] : null);
+  return (Array.isArray(raw) ? raw : []).flatMap((/** @type {any} */ c) => {
+    if (typeof c === 'string') return c.trim() ? [{ text: c, fromLine: null }] : [];
+    if (c && typeof c === 'object' && typeof c.text === 'string' && c.text.trim()) {
+      return [{ text: c.text, fromLine: normLines(c.fromLine) }];
+    }
+    return [];
+  });
+}
 
 /** The output channel. It records and acknowledges; it takes no action.
  * @param {{calls: any[]}} box */
@@ -1722,9 +1925,10 @@ const confirmChannel = () => ({
  */
 export const CONFIRM_SYSTEM = 'You read what a NON-ENGINEER answered, plus a read-only survey or listing of their '
   + 'own repository, and draft a PLAN for a job\'s definition of done: the checks you plan to compose and one '
-  + 'signed goal sentence. You never propose a check the Goal or What-success-looks-like answers did not ask for '
+  + 'signed goal sentence. You never propose a check the numbered job lines (and the ~ rules written under them) did not ask for '
   + '— a genre never adds a check the goal did not ask for (run mtv8jihy drafted an unasked tsc --strict stage; '
-  + 'that is exactly the mistake this order exists to prevent). The always-on guards (changed-from-seed, '
+  + 'that is exactly the mistake this order exists to prevent). Tag each check with "fromLine", an array of the number(s) of the '
+  + 'numbered job line(s) it is for. The always-on guards (changed-from-seed, '
   + 'no-suppressions, and every mandatory guard) and the write fence are shown to the person by the SYSTEM, never '
   + 'by you: you never claim, name, or list a protection or guard of your own — that is not your call to state, and '
   + 'a protection is never a check and never named in the goal sentence. The goal sentence names every check you '
@@ -1756,15 +1960,16 @@ export const CONFIRM_SYSTEM = 'You read what a NON-ENGINEER answered, plus a rea
  * @param {{answers: Record<string|number, string>, questions: Record<string|number, string>,
  *   labels?: Record<string|number, string>, facts?: any, listing?: string|null,
  *   writeScope?: string[]|null, isRepo: boolean, lang: string, worseThanBefore?: string,
- *   fixText?: string|null, protections?: string[]}} o
+ *   fixText?: string|null, protections?: string[], inputs?: {n: number, label: string, value: string}[]|null}} o
  */
-export function confirmPrompt({ answers, questions, labels = {}, facts = null, listing = null, writeScope = null, isRepo, lang, worseThanBefore = '', fixText = null, protections = [] }) {
+export function confirmPrompt({ answers, questions, labels = {}, facts = null, listing = null, writeScope = null, isRepo, lang, worseThanBefore = '', fixText = null, protections = [], inputs = null }) {
   const lines = ['THE PERSON\'S OWN ANSWERS (a non-engineer; read exactly what they wrote, invent nothing beyond it):'];
   for (const k of Object.keys(questions)) {
     const label = labels[k] ? ` (${labels[k]})` : '';
     lines.push(`Q${k}${label}. ${questions[k]}`);
     lines.push(`A${k}. ${answers?.[k] ?? '(no answer)'}`);
   }
+  if (inputs && inputs.length) lines.push('', renderInputs(inputs));
   if (isRepo && worseThanBefore) {
     lines.push('', `WORSE THAN BEFORE (a constraint the person named, repo jobs only): ${worseThanBefore}`);
   }
@@ -1821,14 +2026,14 @@ async function askConfirmPlan({ convo, generate, mode, book, label }) {
  *   generate: Function, book: ReturnType<typeof makeCostBook>,
  *   ask: (step: {kind: string, [k: string]: any}) => Promise<string|null>,
  *   onPhase?: (phase: string, data?: any) => void, mode?: 'tool'|'text',
- *   worseThanBefore?: string}} o retired field (hamr's ruling 2026-09-28):
+ *   worseThanBefore?: string, inputs?: {n: number, label: string, value: string}[]|null}} o retired field (hamr's ruling 2026-09-28):
  *   `worseThanBefore` is never asked any more and defaults to `''` — a
  *   caller may still pass a string through (kept for a future, non-ask
  *   source of the same constraint), it just never comes from an ask() step.
  * @returns {Promise<{ok: boolean,
  *   stop: null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart',
  *   rounds: number,
- *   accepted: {goal: string, checks: string[], protections: string[], lang: string,
+ *   accepted: {goal: string, checks: string[], checkItems: {text: string, fromLine: number[]|null}[], protections: string[], lang: string,
  *     worseThanBefore: string, openQuestions: string[], notChecked: string[], answeredQuestions?: string[]}|null,
  *   reds: Red[], cost: any}>}
  */
@@ -1841,6 +2046,8 @@ export async function runConfirmTurn({
   // still pass a resolved string through (kept as a plain pass-through, not
   // an ask trigger).
   worseThanBefore: presetWorseThanBefore = '',
+  // P7: the inputs the person pointed at; absent = the prompt is byte-identical
+  inputs = null,
 }) {
   /** @typedef {null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart'} ConfirmStop */
   /** @returns {{ok: boolean, stop: ConfirmStop, rounds: number, accepted: null, reds: Red[], cost: any}} */
@@ -1911,14 +2118,14 @@ export async function runConfirmTurn({
   let convo = [{
     role: 'user',
     content: confirmPrompt({
-      answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, protections,
+      answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, protections, inputs,
     }),
   }];
 
   for (let round = 1; round <= 2; round += 1) {
     if (fixText) {
       convo = [...convo, { role: 'user', content: confirmPrompt({
-        answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, fixText, protections,
+        answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, fixText, protections, inputs,
       }) }];
     }
     onPhase('confirm-round', { round });
@@ -1947,6 +2154,8 @@ export async function runConfirmTurn({
     // shown at confirm-done and recorded on acceptance. `notChecked` is the
     // model's own honest gap list, carried through unchanged.
     const notChecked = [...(r.plan.notChecked ?? [])];
+    const checkItems = normalizeChecks(r.plan.checks);
+    r.plan = { ...r.plan, checks: checkItems.map((c) => c.text), checkItems };
     const plan = { ...r.plan, protections, notChecked };
     onPhase('confirm-done', { round, plan });
     const picked = await ask({ kind: 'menu', field: CONFIRM_MENU, plan });
@@ -1959,7 +2168,7 @@ export async function runConfirmTurn({
       return {
         ok: true, stop: null, rounds: round,
         accepted: {
-          goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], protections: [...protections],
+          goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], checkItems: [...(r.plan.checkItems ?? [])], protections: [...protections],
           lang: resolvedLang, worseThanBefore,
           // every question forced above was answered in order, so what's left
           // unresolved is honestly empty — computed FROM questionsFromPlan
@@ -1980,7 +2189,7 @@ export async function runConfirmTurn({
       return {
         ok: true, stop: null, rounds: round,
         accepted: {
-          goal: redactSecrets(String(typed).trim()), checks: [...(r.plan.checks ?? [])], protections: [...protections],
+          goal: redactSecrets(String(typed).trim()), checks: [...(r.plan.checks ?? [])], checkItems: [...(r.plan.checkItems ?? [])], protections: [...protections],
           lang: resolvedLang, worseThanBefore,
           openQuestions: questionsFromPlan(r.plan).slice(answeredQuestions.length),
           notChecked: [...notChecked], answeredQuestions,
@@ -2002,7 +2211,7 @@ export async function runConfirmTurn({
       return {
         ok: true, stop: null, rounds: round,
         accepted: {
-          goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], protections: [...protections],
+          goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], checkItems: [...(r.plan.checkItems ?? [])], protections: [...protections],
           lang: resolvedLang, worseThanBefore, openQuestions: [...questionsFromPlan(r.plan), redactedFix], notChecked: [...notChecked],
         },
         reds: [], cost: book.report(),
@@ -2056,12 +2265,14 @@ export async function runConfirmTurn({
  *   generate: Function, seedReadFn?: Function, closeCtx?: any,
  *   ceilingUsd?: number|null,
  *   onPhase?: (phase: string, data?: any) => void,
- *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void,
+ *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingApplied?: boolean|null}) => void,
  *   maxRevisions?: number, structureRetries?: number,
  *   structuredMode?: 'tool'|'text', catalogue?: Record<string, any>, writeScope?: string[]|null,
  *   priorCalls?: {label: string, costUsd: number|null, unpricedRounds: number}[]|null,
  *   priorRaws?: any[]|null,
- *   confirmed?: {checks: string[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
+ *   jobLines?: {n: number, text: string}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
+ *   offerQuestions?: boolean,
+ *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
  */
 export async function authorClose({
   workdir, seedRef, lang, verdictType,
@@ -2084,6 +2295,9 @@ export async function authorClose({
   // straight into `authorPrompt`'s `confirmedBlock`. `null` is every caller
   // that ran no confirm turn — the prompt is then byte-identical to today.
   confirmed = null,
+  // P7: the person's numbered job lines and inputs (src/jobblock.js). ABSENT = every caller that predates the job block:
+  // no tagging order in the prompt, and no coverage rule in the validator.
+  jobLines = null, inputs = null,
   generate, seedReadFn = runSeedReadStages, closeCtx = {},
   ceilingUsd = null,
   // The two REPORTING seams, defaulted to nothing so every existing caller is
@@ -2095,6 +2309,10 @@ export async function authorClose({
   structureRetries = MAX_STRUCTURE_RETRIES,
   structuredMode = 'tool',
   catalogue = KIND_CATALOGUE,
+  // P7 item 5 (fwdloop am25): OFF unless the caller can really ask the person (the panel). When on, ONLY the last of the
+  // full drafting ladder (the author call plus both revisions), and only after the two before it both failed validation,
+  // is offered the optional `questions` property — see `askOpen` below. Absent = byte-identical to today.
+  offerQuestions = false,
 }) {
   // TIGHTEN-ONLY: a caller may lower the ceiling, never raise it — unlimited
   // revising launders thrash as adaptation (addendum 5). The floor is zero: one
@@ -2257,7 +2475,7 @@ export async function authorClose({
   // ── the grounded loop ─────────────────────────────────────────────────────
   const prompt = authorPrompt({
     answers, questions, facts, listingBlock: /** @type {string} */ (seeds.block),
-    lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue, writeScope, confirmed,
+    lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue, writeScope, confirmed, jobLines, inputs,
   });
   /** @type {any[]} */
   let messages = [{ role: 'user', content: prompt }];
@@ -2323,6 +2541,15 @@ export async function authorClose({
       };
   };
 
+  /** the job lines the PREVIOUS try's validation reds named — set only when the next try may ask (null = it may not) @type {number[]|null} */
+  let questionLines = null;
+  /** per try: null = it passed (validated AND was measured with a work stage red); else the job lines its failure named @type {({lines: number[]}|null)[]} */
+  const tryFails = [];
+  /** @type {{line: number, question: string}[]} */
+  let askedQuestions = [];
+  /** P7 item 5: may the try AFTER try `i` ask? Only the last try of a full ladder, and only when try 1 and try `i` both failed. */
+  const nextTryMayAsk = (/** @type {number} */ i) => offerQuestions && revisionCap === MAX_REVISIONS && i === revisionCap - 1
+    && Array.isArray(jobLines) && jobLines.length > 0 && Boolean(tryFails[0]) && Boolean(tryFails[1]);
   const seedTrees = makeSeedTrees();
   try {
     for (let i = 0; i <= revisionCap; i += 1) {
@@ -2332,8 +2559,21 @@ export async function authorClose({
       // a readout quoting a number the loop does not obey is a second
       // instrument, and this file's own history is what that costs.
       onPhase('author-call', { call: label, i, of: revisionCap });
-      const ask = await askDeclaration({ messages, generate, mode: structuredMode, retries: retryCap, label, book, catalogue, verdictType });
+      // P7 item 5: a mechanism, never a wish. Only the last try of the full ladder carries the property, and only when the
+      // two before it both failed (validation or the seed read; `questionLines` is set at the end of the second one, below).
+      const askOpen = questionLines !== null && i === revisionCap;
+      const ask = await askDeclaration({ messages, generate, mode: structuredMode, retries: retryCap, label, book, catalogue, verdictType, questions: askOpen });
       messages = ask.convo;
+      /** @type {{reason: string, raw: any}[]} */
+      let droppedQuestions = [];
+      if (askOpen && ask.declaration && typeof ask.declaration === 'object' && Object.hasOwn(ask.declaration, 'questions')) {
+        // `questions` is never part of the declaration: stripped before validation, kept only through the machine's filter
+        const { questions: rawQuestions, ...rest } = ask.declaration;
+        ask.declaration = rest;
+        const nq = normalizeQuestions(rawQuestions, /** @type {number[]} */ (questionLines));
+        askedQuestions = nq.kept;
+        droppedQuestions = nq.dropped;
+      }
 
       // The cap tripped BEFORE this ask made any call at all, so there is no
       // iteration to record: an iteration row for a call that never happened is
@@ -2351,6 +2591,7 @@ export async function authorClose({
         call: label, attempts: ask.attempts, declaration: ask.declaration ?? null,
         artifactRed: ask.red ?? null, providerError: ask.providerError ?? null,
         validation: null, seedRead: null, reviseTurn: null,
+        ...(askOpen ? { questionsOffered: true, questions: askedQuestions, droppedQuestions } : {}),
       };
       iterations.push(iter);
 
@@ -2374,8 +2615,29 @@ export async function authorClose({
         break;
       }
       if (!ask.declaration) {
+        // hamr's ruling 2026-10-10 (live session smv2k6bczlvk3): a try whose EVERY structure attempt was cut off at the output cap
+        // is a FAILED try for the question gate. A cut-off names no line, so every numbered job line counts. The ladder goes on to
+        // try 3 only when that gate can open (try 1 failed too); anywhere else it stops artifact-red as it always did.
+        if (ask.allCutOff && i === revisionCap - 1) {
+          const allLines = (jobLines ?? []).map((l) => l.n);
+          tryFails[i] = { lines: allLines };
+          iter.cutOff = true;
+          if (nextTryMayAsk(i)) {
+            questionLines = allLines.length ? allLines : null;
+            const block = renderRejectBlock({ kind: 'artifact', reds: [/** @type {Red} */ (ask.red).detail] });
+            messages = [...ask.convo, { role: 'assistant', content: '(the reply carried no text)' },
+              { role: 'user', content: `${block}\n\n${structuredMode === 'tool' ? STRUCTURE_INSTRUCTION_TOOL : STRUCTURE_INSTRUCTION_TEXT}` }];
+            continue;
+          }
+        }
         fatal = [/** @type {Red} */ (ask.red)];
         stop = 'artifact-red';
+        break;
+      }
+      // P7 item 5: the person is asked; nothing from this try is validated, measured or signable. The reds that opened the
+      // asking stay as the record of why (`lastValidation`).
+      if (askedQuestions.length) {
+        stop = 'questions-open';
         break;
       }
 
@@ -2390,7 +2652,7 @@ export async function authorClose({
       }
       previous = ask.declaration;
 
-      const v = validateDeclaration(ask.declaration, { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope });
+      const v = validateDeclaration(ask.declaration, { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope, jobLines });
       // SCRUBBED HERE, once, where the reds enter this module's records — the same
       // boundary rule `renderRejectBlock` already states, applied to the OTHER
       // channel they travel down. A validation red quotes what the model declared
@@ -2410,6 +2672,7 @@ export async function authorClose({
         // a validation red IS a measurement of the declaration, so it rides the
         // same channel and counts as a revision (addendum 5)
         measured = renderRejectBlock({ kind: 'validation', reds: vReds });
+        tryFails[i] = { lines: linesNamedByReds(vReds, ask.declaration, (jobLines ?? []).map((l) => l.n)) };
       } else {
         // what gets MEASURED is what will RUN: the resolved declaration with the
         // genre's environment already injected
@@ -2438,9 +2701,19 @@ export async function authorClose({
         finalFrom = label;
         measured = renderSeedReadBlock(rows);
         measuredIterations.push({ label, declaration: injected.declaration, seedRead: rows, droppedEnv: injected.dropped });
+        const sf = seedReadFailure(rows, injected.declaration, guards.map((/** @type {any} */ g) => g.name), (jobLines ?? []).map((l) => l.n));
+        tryFails[i] = sf.failed ? { lines: sf.lines } : null;
       }
 
       if (i === revisionCap) { stop = 'max-revisions'; break; }
+
+      // P7 item 5: the NEXT try is the last of a full ladder, and this one AND the first both FAILED — either failed validation
+      // or failed the seed read (a vacuous close; hamr's ruling 2026-10-10, differing from fwdloop's validation-only rule) — so
+      // it may ask, about the lines THIS try's failure named. A try that passed (a confident guess) never opens asking.
+      if (nextTryMayAsk(i)) {
+        const second = tryFails[1];
+        questionLines = second && second.lines.length ? second.lines : null;
+      }
 
       const turn = buildReviseTurn(measured);
       // A TRIPWIRE, not behaviour: it can only fire once something else is
@@ -2524,6 +2797,8 @@ export async function authorClose({
     // WHICH stages broke on the dropped one, so this is never a silent swap.
     fellBack,
     stop,
+    // P7 item 5: what the person is asked (empty on every other stop)
+    questions: stop === 'questions-open' ? askedQuestions : [],
     revisions: Math.max(0, iterations.length - 1),
   };
 }

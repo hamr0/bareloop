@@ -53,7 +53,7 @@ export function declarationLines({ goal, closeDecl }) {
  * F176'S FALLBACK, SAID OUT LOUD — the revise ladder kept the NEWEST SOUND
  * declaration rather than the last one it happened to try, because "kept the
  * last accepted revision" is not the same claim as "kept the best revision"
- * (docs/logs/FINDINGS.md F176). Absent on every run where the fallback never
+ * (docs/wiki/FINDINGS.md F176). Absent on every run where the fallback never
  * fired (the overwhelming majority), which is why this returns an EMPTY list
  * rather than a "no fallback" line — a green close has nothing to say here and
  * printing it every run would be noise, not information.
@@ -572,6 +572,54 @@ export function proposalStopText({ stop, reds, cases = null, spend = null, sourc
   return lines.join('\n');
 }
 
+// ── ANY DRAFTING STOP, in plain words (P7 item 6, live session smv2bzdqmp0f8, 2026-10-10) ───────────────────────────
+// A provider-red used to reach the panel as the bare line "Stopped: provider-red" — a code, no reason. Every stop of the
+// drafting loop that is not a rubric-proposal or signing refusal (those have their own wording above and below) now says
+// what happened, what it cost and what to do, in words. The stop's own reds are quoted (scrubbed, bounded), never dropped.
+
+/** the reason inside a `scout-absent` red's detail: `the survey is ABSENT (<reason>) — an absent facts object ...` (src/authorflow.js) */
+const SCOUT_REASON_RE = /^the survey is [^(]*\((.*)\) — an absent facts/s;
+
+/**
+ * @param {{stop: string, reds?: PlainRed[]|null, refusal?: {detail?: string}|null,
+ *   spend?: {knownUsd?: number|null, spendComplete?: boolean|null}|null}} o
+ * @returns {string}
+ */
+export function draftStopText({ stop, reds = null, refusal = null, spend = null }) {
+  const spent = spendText(spend);
+  /** @type {Record<string, string>} */
+  const heads = {
+    'provider-red': 'The AI provider failed before a usable plan came back — a connection or service fault, not a problem with your job.',
+    'artifact-red': 'The AI answered, but its answer could not be used as a plan.',
+    'cap-halt': 'Drafting stopped on your cost cap.',
+    'pricing-red': 'Drafting stopped: the cost of a call could not be priced, so the cap cannot be enforced.',
+    'max-revisions': 'The AI used all its tries without a plan that passed the checks.',
+    precheck: 'Drafting stopped before any call: something it needs was missing.',
+    unchanged: 'Drafting stopped: the AI sent the same plan twice.',
+    'scout-absent': 'Drafting stopped: the first look at your repo did not complete.',
+  };
+  const redList = Array.isArray(reds) ? reds : [];
+  // F217: the first look at the repo failing (a dropped connection, a timeout) arrives as a `precheck` stop with a
+  // `scout-absent` red. That is NOT "something it needs was missing", and its reason sits past the 60-char quote bound
+  // behind a fixed lead-in, so the person saw neither. Word it as the scout's stop and quote the reason in full (scrubbed).
+  const scoutRed = stop === 'precheck' ? redList.find((r) => r?.code === 'scout-absent') : undefined;
+  const head = scoutRed ? heads['scout-absent'] : (heads[stop] ?? `Drafting stopped (${safeText(stop)}).`);
+  /** @type {string[]} */
+  const said = scoutRed
+    ? [SCOUT_REASON_RE.exec(String(scoutRed.detail ?? ''))?.[1]
+      ?.replace(/\s+/g, ' ').trim().slice(0, 240) ?? safeText(scoutRed.detail)].map((x) => redactSecrets(x)).filter(Boolean)
+    : [...new Set(redList.map((r) => safeText(r?.detail)).filter(Boolean))];
+  if (said.length === 0 && refusal?.detail) said.push(safeText(refusal.detail));
+  const lines = [`${head} Spent so far: ${spent ?? 'unknown'}.`];
+  if (said.length) {
+    lines.push('What it said:');
+    for (const x of said.slice(0, PLAIN_MAX_BULLETS)) lines.push(` • ${x}`);
+    if (said.length > PLAIN_MAX_BULLETS) lines.push(` • …and ${said.length - PLAIN_MAX_BULLETS} more.`);
+  }
+  lines.push(stop === 'cap-halt' || stop === 'pricing-red' ? 'What to do: raise the cap or fix the price in Settings, then draft again.' : 'What to do: draft again.');
+  return lines.join('\n');
+}
+
 // ── THE SIGNING GATES' REFUSAL, in plain words (hamr, 2026-10-09) ──────────────────────────
 //
 // `prepareSigning` (src/authorjob.js) can refuse with a list of reds from four gates. The panel used to say
@@ -598,7 +646,7 @@ export function proposalStopText({ stop, reds, cases = null, spend = null, sourc
 export const DECLARATION_CODES = Object.freeze([
   'bounds', 'class-absent', 'class-battery-locked', 'class-ceiling', 'cmd-denied', 'duplicate-kind', 'duplicate-name',
   'env-ownership-absent', 'genre-env-missing', 'genre-env-ungrounded', 'genre-owned-env', 'guard-missing',
-  'guard-weakened', 'guards-absent', 'human-stage-not-last', 'human-stage-offered', 'invalid-value', 'judged-outside-write-scope', 'judged-stage-order',
+  'guard-weakened', 'guards-absent', 'human-stage-not-last', 'human-stage-offered', 'invalid-value', 'job-line-uncovered', 'judged-outside-write-scope', 'judged-stage-order',
   'listing-absent', 'listing-conflict', 'locked-kind', 'missing-field', 'missing-required', 'one-population',
   'path-not-in-listing', 'secret-literal', 'unknown-field', 'unknown-kind',
 ]);

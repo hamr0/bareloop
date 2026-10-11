@@ -154,9 +154,9 @@ test('module 3 ruling 4 — softgreen INHERITS green\'s guard battery: the same 
 
 // ── 3. the seven questions ──────────────────────────────────────────────────
 
-test('module 3 §4.6 — the softgreen interview is green\'s three BYTE FOR BYTE, plus Judge Examples (PRD item 33 M3 piece 3)', () => {
+test('module 3 §4.6 — the softgreen interview is green\'s job question BYTE FOR BYTE, plus Judge Examples (PRD item 33 M3 piece 3, P7)', () => {
   const qs = questionsFor('soft-green');
-  assert.equal(Object.keys(qs).length, 4, 'nothing hardcodes the count anywhere else — the library reports it');
+  assert.equal(Object.keys(qs).length, 2, 'nothing hardcodes the count anywhere else — the library reports it');
   for (const [n, q] of Object.entries(GREEN_QUESTIONS)) {
     assert.equal(qs[n], q, `question ${n} is green's own string, byte for byte`);
   }
@@ -166,8 +166,9 @@ test('module 3 §4.6 — the softgreen interview is green\'s three BYTE FOR BYTE
   // one you'd fail, and say why."). The old Q6 ("what separates a pass from a
   // fail") is retired as its own question, since the "why" half of a real
   // pass/fail pair is what the rubric card now compiles from (cardauthor.js).
-  assert.equal(qs[4], 'one pass, one fail, and why');
-  assert.deepEqual(requiredAnswersFor('soft-green'), [1, 2, 3, 4]);
+  // P7: the examples are the PASS:/FAIL: lines of The job, each kept with its line number
+  assert.equal(qs[2], 'the PASS: and FAIL: examples the person wrote under their job lines, each with its line number');
+  assert.deepEqual(requiredAnswersFor('soft-green'), [1, 2]);
   assert.equal(QUESTION_SETS['soft-green'].locked, false);
   assert.equal(QUESTION_SETS['soft-green'].questions, SOFTGREEN_QUESTIONS);
 });
@@ -190,8 +191,8 @@ test('module 3 — the Judge Examples answer reaches the composer verbatim, the 
     verdictType: 'soft-green',
     guards: classGuards({ verdictType: 'soft-green', lang: 'js' }),
   });
-  assert.ok(p.includes(questionsFor('soft-green')[4]), 'the judge-examples question travels into the brief');
-  assert.ok(p.includes('A4. answer 4'), 'with the person\'s own words beside it');
+  assert.ok(p.includes(questionsFor('soft-green')[2]), 'the judge-examples question travels into the brief');
+  assert.ok(p.includes('A2. answer 2'), 'with the person\'s own words beside it');
 });
 
 // ── 4. the composer's menu is CLASS-SCOPED ──────────────────────────────────

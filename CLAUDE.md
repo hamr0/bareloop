@@ -11,7 +11,7 @@ contrast that attributed it.
 
 - `docs/product/PRD.md` — the PRD's core spec (§1–§10, design laws, non-goals, risks, build
   ladder). §3 design laws are inherited doctrine, each paid for in the adaptlearn experiment;
-  do not relitigate them without new evidence. New addenda append here (currently to v1.89);
+  do not relitigate them without new evidence. New addenda append here (currently to v1.91);
   the earlier history is split by theme across `docs/wiki/` (see `docs/index.md`) — six
   companion pages: close-verdicts, money-time, product-surface, providers-context,
   reuse-layer3, workflow-governance. The original monolith is kept at
@@ -46,7 +46,7 @@ bareloop is a published JS library and follows `~/PycharmProjects/hamr0/LIBRARY_
   built on publish. Never hand-edit a `.d.ts`; never `!`, `as any`, or `@ts-ignore`.
 - **One production dependency is the bar** (the bare suite's packages are that budget's
   first claim). `typescript`/`@types/node` are dev-only and don't count.
-  - `bare-agent` (`^0.49.0`) — provides the `Loop`/`Retry`/`wireGate`/`HaltError` primitives
+  - `bare-agent` (`^0.51.0`) — provides the `Loop`/`Retry`/`wireGate`/`HaltError` primitives
     that drive every worker turn against a real provider (`src/planrun.js:48`); nothing in
     bareloop talks to a model API directly.
   - `bareguard` (`^0.21.0`) — provides `Gate`, the budget/wall-clock enforcement primitive

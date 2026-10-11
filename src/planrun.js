@@ -795,7 +795,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   item 27/M3 Part B), forwarded to every close invocation as
  *   `BARELOOP_CLOSE_DIR`
  * @param {number} [opts.maxStepRounds] the shell's per-step rounds ceiling (validatePlan's bound)
- * @param {boolean} [opts.scout=true] operator-only switch (docs/product/SCOUT-CONTRAST.md):
+ * @param {boolean} [opts.scout=true] operator-only switch (docs/logs/SCOUT-CONTRAST.md):
  *        `false` on a FRESH run (no `resumeSeed`) skips the survey entirely — `scoutBlob`
  *        stays `''`, no `scout-start`/`scout-result`/`scout-empty` is emitted, and a single
  *        `scout-skipped {reason:'operator-off'}` records it (a RECORD, never silence — the
@@ -1001,7 +1001,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // The scout switch's guard, same class and same door: a mis-typed value
   // coerced by truthiness would run the scout under an "off" label (or skip it
   // under an "on" one) and no reading of the results afterwards could recover
-  // which arm actually ran (docs/product/SCOUT-CONTRAST.md).
+  // which arm actually ran (docs/logs/SCOUT-CONTRAST.md).
   if (typeof scout !== 'boolean') throw new TypeError(`scout: expected boolean, got ${JSON.stringify(scout)}`);
   // G1's OTHER half, refused at the same $0 door. `validatePlan` reds `read-blind`
   // when a step grants `read` without the retrieval pair — but a step cannot grant
@@ -2036,7 +2036,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     }
     const listed = await seedListing(workdir, s.seedRef);
     const v = listed.stop === null
-      ? validateCloseDecl(job.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: job.verdictType, writeScope: job.writeScope })
+      ? validateCloseDecl(job.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: job.verdictType, writeScope: job.writeScope, jobLines: Array.isArray(job.jobLines) ? job.jobLines : null })
       : { ok: false, grounded: false, reds: [{ code: 'listing-unreadable', path: 'closeDecl', detail: listed.stop }] };
     emit('close-decl', {
       genre: job.closeDecl.genre,
@@ -2939,7 +2939,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       meaning: 'the killed run already paid for this survey; its plan is reloaded, not re-drafted. A replan after this point drafts from an empty survey plus the failure brief.',
     });
   } else if (scout === false) {
-    // The operator-off arm (docs/product/SCOUT-CONTRAST.md): a fresh run whose
+    // The operator-off arm (docs/logs/SCOUT-CONTRAST.md): a fresh run whose
     // operator asked for no survey. Precedence already settled above — the
     // resume branch fires first and wins its own reason, so this arm is only
     // ever reached when there is nothing to resume from.

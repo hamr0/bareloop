@@ -38,9 +38,10 @@ async function until(fn, ms = 8000) { const t0 = Date.now(); while (Date.now() -
 const settled = (s) => ['prepared', 'refused', 'error', 'confirm', 'drafting'].includes(s.state.phase) || s.state.pendingAsk !== null;
 
 /** @param {any} card @param {any} [extra] */
-function fresh(card, calls, extra = {}) {
+function fresh({ source, ...card }, calls, extra = {}) {
   return createSession({
-    checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'absdest-job', goal: 'g', success: 's', guardrails: 'n', judgeExamples: '', capUsd: 2, ...card,
+    inputs: `repo: ${source}`,
+    checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'absdest-job', jobText: 'g', capUsd: 2, ...card,
   }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: home(), sessionsRoot: tmp('absdest-sess-'),
     generate: async () => { calls.n++; throw new Error('no model'); }, confirmGenerate: async () => { calls.n++; throw new Error('no model'); },
@@ -99,7 +100,7 @@ test('Reuse card: an absolute Destination on a REPO source is refused with the s
   const repo = makeRepo();
   const calls = { n: 0 };
   const run = (destination) => {
-    const card = { ...pre.card, source: repo, destination, capUsd: 1 };
+    const card = { ...pre.card, inputs: `repo: ${repo}`, destination, capUsd: 1 };
     return createSession(card, {
       env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: h, sessionsRoot: tmp('absdest-sess-'),
       reuse: { spec: buildReuseSpec(pre.spec, card), workflowKey: pre.workflowKey },

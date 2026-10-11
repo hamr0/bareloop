@@ -18,19 +18,21 @@ function fnSrc(name) {
   return PAGE.slice(start, i + 1);
 }
 
-const WRAP_IDS = ['jf-goal', 'jf-source', 'jf-dest', 'jf-success', 'jf-guardrails', 'jf-judge'];
+const WRAP_IDS = ['jf-job', 'jf-inputs', 'jf-dest'];
 
-test('the six free-text card boxes are wrapping <textarea>s; Job name stays a one-line input; ids and placeholders kept', () => {
+test('the three free-text card boxes (The job, Inputs, Destination) are wrapping <textarea>s; Job name stays a one-line input; ids and placeholders kept', () => {
   for (const id of WRAP_IDS) {
     assert.match(PAGE, new RegExp(`<textarea[^>]*id="${id}"[^>]*></textarea>`), `${id} is a textarea`);
     assert.doesNotMatch(PAGE, new RegExp(`<input[^>]*id="${id}"`), `${id} is no longer an input`);
   }
   assert.match(PAGE, /<input id="jf-name" type="text" placeholder="kebab-case, unique">/);
-  assert.match(PAGE, /<textarea[^>]*id="jf-source"[^>]*placeholder="absolute path to a local repo"/);
   assert.match(PAGE, /<textarea[^>]*id="jf-dest"[^>]*placeholder="the write fence/);
-  assert.match(PAGE, /<textarea[^>]*id="jf-judge"[^>]*disabled/);
+  // P7: the empty-box examples are set by the page and change with the Check type radio (setJobPlaceholders)
+  assert.match(PAGE, /deterministic: "Fix the failing date tests in src\/date\.js\\n~ don't edit any test file\\nMake npm test pass"/);
+  assert.match(PAGE, /rubric: "Write a one-page summary of docs\/plan\.md\\n~ PASS: every number is quoted from the file\\n~ FAIL: a number that is not in the file\\nKeep it under 300 words"/);
+  assert.match(PAGE, /INPUTS_PLACEHOLDER = "repo: \/home\/me\/myrepo\\nspec: docs\/spec\.md"/);
   // no Enter handler on them: Enter is a newline
-  assert.doesNotMatch(PAGE, /getElementById\("jf-(goal|source|dest|success|guardrails|judge)"\)\.addEventListener\("keydown"/);
+  assert.doesNotMatch(PAGE, /getElementById\("jf-(job|inputs|dest)"\)\.addEventListener\("keydown"/);
   const rule = PAGE.match(/\.job-card textarea\.jf-wrap\{([^}]*)\}/)[1];
   assert.match(rule, /resize:vertical/);
   assert.match(rule, /overflow-y:auto/);
@@ -43,7 +45,7 @@ test('ONE fit function serves the ask box and the card boxes (no copy-paste, fit
   assert.equal((PAGE.match(/function fit\w+\(/g) || []).length, 2, 'fitBox + the card-box loop that calls it');
   assert.match(fnSrc('fitCardBoxes'), /fitBox\(document\.getElementById\(id\)\)/);
   // eslint-disable-next-line no-new-func
-  const fitBox = new Function(`${fnSrc('fitBox')}\nreturn fitBox;`)();
+  const fitBox = new Function('window', `${fnSrc('fitBox')}\nreturn fitBox;`)({ getComputedStyle: () => ({ maxHeight: '200px' }) });
   const mk = (scroll) => ({ scrollHeight: scroll, offsetHeight: 0, clientHeight: 0, style: {} });
   const one = mk(20); fitBox(one);
   assert.ok(parseFloat(one.style.height) <= 40, 'one line stays small');
@@ -51,6 +53,25 @@ test('ONE fit function serves the ask box and the card boxes (no copy-paste, fit
   assert.equal(many.style.height, '200px', 'capped, then scrolls inside');
   const hidden = mk(0); fitBox(hidden);
   assert.equal(hidden.style.height, '', 'a hidden box measures 0 and gets no height');
+});
+
+test('P7 numbered boxes: a 12-line job grows to the 8-line cap (read from the CSS max-height), then scrolls; the gutter scrolls with the text and never sizes the row', () => {
+  const rule = PAGE.match(/\.job-card \.nbox textarea\.jf-wrap\{([^}]*)\}/)[1];
+  assert.match(rule, /max-height:calc\(12em \+ 14px\)/, '8 lines x 1.5em + 2 x 6px padding + 2 x 1px border');
+  assert.match(rule, /line-height:1\.5/, 'the textarea and the gutter/mirror share one line height');
+  const gut = PAGE.match(/\.nbox \.gut\{([^}]*)\}/)[1];
+  assert.match(gut, /contain:size/);
+  assert.match(gut, /padding:7px 0/, 'top AND bottom, so both scroll the same distance');
+  // 13px font -> 8 lines = 156 + 14 = 170px; a 12-line job measures 12 x 19.5 + 12 = 246
+  const cap = 8 * 19.5 + 14;
+  // eslint-disable-next-line no-new-func
+  const fitBox = new Function('window', `${fnSrc('fitBox')}\nreturn fitBox;`)({ getComputedStyle: () => ({ maxHeight: `${cap}px` }) });
+  const twelve = { scrollHeight: 12 * 19.5 + 12, offsetHeight: 2, clientHeight: 0, style: {} };
+  fitBox(twelve);
+  assert.equal(twelve.style.height, `${cap}px`);
+  const five = { scrollHeight: 5 * 19.5 + 12, offsetHeight: 2, clientHeight: 0, style: {} };
+  fitBox(five);
+  assert.equal(parseFloat(five.style.height), 5 * 19.5 + 12 + 2, 'below 8 lines it grows with the content');
 });
 
 test('card fields (hamr 2026-10-05): editable = soft white + the ordinary 1px border, no added thick/grey border; focused = blue border', () => {
@@ -63,15 +84,16 @@ test('card fields (hamr 2026-10-05): editable = soft white + the ordinary 1px bo
   assert.deepEqual([...PAGE.matchAll(/^\s*([^{\n]*)\{[^}]*var\(--field-border\)[^}]*\}/gm)].map((m) => m[1].trim()), ['#chat-msg']);
 });
 
-test('card box default heights (hamr 2026-10-05): goal/success/guardrails/judge start at 2 rows, source/dest at 1; fitBox only sets height from auto, so rows is the floor', () => {
+test('card box default heights (hamr 2026-10-05): The job at 3 rows, Inputs at 2, Destination at 1; fitBox only sets height from auto, so rows is the floor', () => {
   const rowsOf = (id) => Number(PAGE.match(new RegExp(`<textarea[^>]*id="${id}"[^>]*rows="(\\d+)"`))[1]);
-  for (const id of ['jf-goal', 'jf-success', 'jf-guardrails', 'jf-judge']) assert.equal(rowsOf(id), 2, `${id} defaults to 2 lines`);
-  for (const id of ['jf-source', 'jf-dest']) assert.equal(rowsOf(id), 1, `${id} stays 1 line`);
+  assert.equal(rowsOf('jf-job'), 3, 'The job defaults to 3 lines');
+  assert.equal(rowsOf('jf-inputs'), 2, 'Inputs defaults to 2 lines');
+  assert.equal(rowsOf('jf-dest'), 1, 'jf-dest stays 1 line');
   // fitBox resets to "auto" (the rows attribute then sizes the box) and measures scrollHeight, which the browser never
   // reports below the rows-sized client height; a hidden box clears the inline height so rows rule again.
   assert.match(fnSrc('fitBox'), /style\.height = "auto"/);
   // eslint-disable-next-line no-new-func
-  const fitBox = new Function(`${fnSrc('fitBox')}\nreturn fitBox;`)();
+  const fitBox = new Function('window', `${fnSrc('fitBox')}\nreturn fitBox;`)({ getComputedStyle: () => ({ maxHeight: '200px' }) });
   const el = { scrollHeight: 40, offsetHeight: 0, clientHeight: 0, style: { height: '999px' } }; // empty 2-row box measures its rows height
   fitBox(el);
   assert.equal(el.style.height, '40px', 'an empty 2-row box keeps its 2-row height');
@@ -88,11 +110,14 @@ test('live growth (hamr 2026-10-06): an input event on each card textarea calls 
   const document = { getElementById: (id) => boxes[id] };
   const fitBox = (el) => calls.push(el.id);
   // eslint-disable-next-line no-new-func
-  new Function('document', 'fitBox', m[1])(document, fitBox);
+  const gutters = [];
+  new Function('document', 'fitBox', 'FIT_IDS', 'NUMBERED_IDS', 'gutterSync', m[1])(document, fitBox, WRAP_IDS, ['jf-job', 'jf-inputs'], (id) => gutters.push(id));
   for (const id of WRAP_IDS) {
     assert.equal(typeof boxes[id].handlers.input, 'function', `${id} listens for input`);
     calls.length = 0;
+    gutters.length = 0;
     boxes[id].handlers.input();
     assert.deepEqual(calls, [id], `${id}: input fits that box`);
+    assert.deepEqual(gutters, id === 'jf-dest' ? [] : [id], `${id}: a numbered box re-measures its gutter, Destination has none`);
   }
 });

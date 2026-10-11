@@ -46,7 +46,7 @@ function fakeDom() {
   return { document, els, clicks };
 }
 const DETAIL = { runid: 'run1', job: 'pulselog-digest', runNo: 4, resume: { budgetUsd: 1, maxWallMin: 20, spentUsd: 1, spendComplete: true, wallUsedMs: 9 * 60_000 - 1000 } };
-const CARD = { checkType: 'deterministic', jobName: 'pulselog-digest', model: 'deepseek-flash', goal: 'g', source: '/s', destination: 'out/', success: 'ok', guardrails: 'none', judgeExamples: '', capUsd: 1, maxWallMs: 1200000 };
+const CARD = { checkType: 'deterministic', jobName: 'pulselog-digest', model: 'deepseek-flash', jobText: 'g', inputs: 'repo: /s', destination: 'out/', capUsd: 1, maxWallMs: 1200000 };
 
 test('door: Resume asks the SAME start-from reader, opens the Chat tab, and hands the card the engine\'s resume plan + the "name (run-N)" title', async () => {
   const urls = []; const events = []; const dom = fakeDom();
@@ -72,6 +72,7 @@ function mountCard() {
   const errEl = { textContent: '' };
   const api = build(['applyResume'], {
     document: dom.document, clearStartFrom: () => log.push('clear'), openNewCard: () => log.push('open'), modelSelect: { value: '' },
+    fillCard: (c) => { const set = (id, v) => { dom.document.getElementById(id).value = v === undefined || v === null ? '' : String(v); }; set('jf-name', c.jobName); set('jf-job', c.jobText); set('jf-inputs', c.inputs); set('jf-dest', c.destination); set('jf-cap-money', c.capUsd); set('jf-cap-time', Math.round(c.maxWallMs / 60000)); },
     setVerdict: (v) => log.push(`verdict:${v}`), setVal: (id, v) => { dom.document.getElementById(id).value = v === undefined || v === null ? '' : String(v); },
     panelMoney: (n) => `$${Number(n).toFixed(2)}`, originLine, errEl, renderPicker() {}, refreshModelStatus() {}, refreshStartEnabled: () => log.push('refresh'),
   }, 'var resumeRun = null;', '__run: () => resumeRun');
@@ -82,7 +83,7 @@ test('card: applyResume titles the card RESUME <job> (run-N), fills every box fr
   const { api, dom, originLine } = mountCard();
   api.applyResume({ runid: 'run1', prefill: { card: CARD }, resume: DETAIL.resume, title: 'pulselog-digest (run-4)' });
   assert.equal(dom.els['job-card-title'].textContent, 'RESUME pulselog-digest (run-4)');
-  for (const [id, v] of [['jf-name', 'pulselog-digest'], ['jf-goal', 'g'], ['jf-source', '/s'], ['jf-dest', 'out/'], ['jf-success', 'ok'], ['jf-guardrails', 'none'], ['jf-cap-money', '1'], ['jf-cap-time', '20']]) {
+  for (const [id, v] of [['jf-name', 'pulselog-digest'], ['jf-job', 'g'], ['jf-inputs', 'repo: /s'], ['jf-dest', 'out/'], ['jf-cap-money', '1'], ['jf-cap-time', '20']]) {
     assert.equal(dom.els[id].value, v, id);
   }
   assert.equal(originLine.textContent, 'The same run goes on, not a new one. Only the money cap and the time cap can change; everything else is the signed job.');
@@ -115,10 +116,10 @@ test('lock: in resume mode EVERYTHING is locked — boxes, Model, Check type rad
   dom.document.querySelectorAll = () => radios;
   const sandbox = (resumeRun, sessionLive) => build(['syncCardLock'], { document: dom.document },
     `var sessionLive = ${sessionLive}; var reuseOn = false; var resumeRun = ${JSON.stringify(resumeRun)};
-     var LOCKED_IDS = ["jf-name", "jf-goal", "jf-success", "jf-guardrails", "jf-judge"];
-     var OPEN_IDS = ["jf-source", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var CAP_IDS = ["jf-cap-money", "jf-cap-time"];`).syncCardLock;
+     var LOCKED_IDS = ["jf-name", "jf-job"];
+     var OPEN_IDS = ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var CAP_IDS = ["jf-cap-money", "jf-cap-time"];`).syncCardLock;
   sandbox({ runid: 'r', noTime: false }, false)();
-  for (const id of ['jf-name', 'jf-goal', 'jf-success', 'jf-guardrails', 'jf-judge', 'jf-source', 'jf-dest', 'jf-model']) {
+  for (const id of ['jf-name', 'jf-job', 'jf-inputs', 'jf-dest', 'jf-model']) {
     assert.equal(dom.els[id].classList.contains('locked'), true, `${id} locked`);
     assert.equal(dom.els[id].readOnly, true, `${id} readOnly`);
   }
@@ -130,7 +131,7 @@ test('lock: in resume mode EVERYTHING is locked — boxes, Model, Check type rad
   assert.deepEqual(radios.map((r) => r.disabled), [true, true, true], 'Check type radios locked too');
   // leaving resume mode opens the boxes again (and the radios)
   sandbox(null, false)();
-  assert.equal(dom.els['jf-source'].classList.contains('locked'), false);
+  assert.equal(dom.els['jf-inputs'].classList.contains('locked'), false);
   assert.deepEqual(radios.map((r) => r.disabled), [false, false, false]);
 });
 
@@ -182,7 +183,9 @@ test('Job tab: read-only on every run — no input, button, select or textarea i
   const tab = PAGE.slice(PAGE.indexOf('<section id="panel-details"'), PAGE.indexOf('</section>', PAGE.indexOf('<section id="panel-details"')));
   assert.ok(tab.includes('id="job-card-readonly"'));
   assert.doesNotMatch(tab, /<(input|button|select|textarea)\b/i, 'the Job tab markup has no control');
-  assert.doesNotMatch(fnSrc('renderJob'), /<(input|button|select|textarea)\b|innerHTML/i, 'renderJob paints values with textContent only');
+  // P7: the plan and the numbered inputs are drawn as escaped HTML by the ONE renderJobPlan; every other value is textContent
+  assert.doesNotMatch(fnSrc('renderJob') + fnSrc('renderJobPlan'), /<(input|button|select|textarea)\b/i, 'no control is painted');
+  assert.match(fnSrc('renderJobPlan'), /escapeXml\(l\.text\)/, 'a job line is escaped');
   assert.match(tab, /<label>\$ cap<\/label>/);
   assert.match(tab, /<label>Time cap<\/label>/, 'the caption never swaps to "Money cap ($)" / "Time cap (min)"');
   for (const gone of ['openResumeOnJobTab', 'paintResumeMode', 'resumeMode', 'resume-job', 'resume-cap', 'details-cap-money-label', 'details-cap-time-label']) {

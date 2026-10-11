@@ -1,5 +1,5 @@
 // THE TWO SIGNED ARTIFACTS — softgreen module 4 (design record
-// docs/product/2026-08-17-softgreen-review-door-design.md §4.3 and §4.4,
+// docs/logs/2026-08-17-softgreen-review-door-design.md §4.3 and §4.4,
 // plus the 2026-08-18 threshold addendum).
 //
 // Module 1 built the judged floor's core, module 2 wired the stage into a close,
@@ -239,6 +239,9 @@ THEIR ANSWER — verbatim, and the only input you have
 
 Q${qKey}. ${q}
 A${qKey}. ${answers?.[qKey] ?? '(no answer given)'}
+
+Each example is kept with the number of the job line the person wrote it under. Never attach an example to a different
+line than the one it names (run mv1j01sl guessed which example belonged to which part of the goal).
 
 ---
 

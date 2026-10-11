@@ -61,12 +61,11 @@ test('prefill from an imported job: the bundle\'s spec with $BARELOOP_BUNDLE res
   assert.equal(pre.from, 'imported job');
   assert.deepEqual(pre.origin, { runid: null, job: 'fixture-export-job', importId: id });
   assert.equal(pre.card.jobName, 'fixture-export-job');
-  assert.equal(pre.card.goal, 'Make the fixture pass its own close.');
-  assert.equal(pre.card.success, 'changed-from-seed · suite-green', 'success is the close stages, read by the Job tab\'s own reader');
+  assert.equal(pre.card.jobText, 'Make the fixture pass its own close.', 'an older (imported) job has no numbered lines: the signed goal sentence is line 1');
   assert.equal(pre.card.destination, 'src/**');
   assert.equal(pre.card.capUsd, 1.5);
   assert.equal(pre.card.maxWallMs, 1_800_000);
-  assert.equal(pre.card.source, '');
+  assert.equal(pre.card.inputs, '', 'an exported job carries no repo: Inputs starts blank');
   assert.ok(pre.card.model !== '', 'the Settings Name of the job\'s provider');
   assert.ok(pre.spec.close.every((s) => s.cmd.includes(`${bundleDir}/close/`) && !s.cmd.includes('$BARELOOP_BUNDLE')), 'close paths point at the verified folder');
   assert.equal(pre.workflowKey, workflowKey(resolveBundleSpec(readBundle(bundleDir), bundleDir).spec));
@@ -107,16 +106,16 @@ test('routes: the imported reuse refuses a changed locked box by name and accept
   const post = (p, body) => fetch(`${base}${p}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: JSON.stringify(body) });
   const pre = await (await get(`/api/author/start-from?import=${id}`)).json();
   assert.equal(pre.ok, true, JSON.stringify(pre));
-  assert.deepEqual(pre.open, ['source', 'destination', 'model', 'capUsd', 'maxWallMs']);
+  assert.deepEqual(pre.open, ['inputs', 'destination', 'model', 'capUsd', 'maxWallMs']);
   assert.equal((await get('/api/author/start-from?import=aaaaaaaaaaaa')).status, 404);
 
-  const bad = await post('/api/author/start', { ...pre.card, source: '/x', goal: 'smuggled', startFrom: { importId: id } });
+  const bad = await post('/api/author/start', { ...pre.card, inputs: 'repo: /x', jobText: 'smuggled', startFrom: { importId: id } });
   assert.equal(bad.status, 400);
-  assert.equal((await bad.json()).error, 'Goal is locked on a reused workflow — Clear the card to change it');
+  assert.equal((await bad.json()).error, 'The job is locked on a reused workflow — Clear the card to change it');
   const noSource = await post('/api/author/start', { ...pre.card, startFrom: { importId: id } });
   assert.equal(noSource.status, 400);
-  assert.equal((await noSource.json()).error, 'Source is required');
-  const ok = await (await post('/api/author/start', { ...pre.card, source: '/some/source', destination: 'lib/', capUsd: 1, startFrom: { importId: id } })).json();
+  assert.equal((await noSource.json()).error, 'Inputs is required');
+  const ok = await (await post('/api/author/start', { ...pre.card, inputs: `repo: ${makeRepo()}`, destination: 'lib/', capUsd: 1, startFrom: { importId: id } })).json();
   assert.equal(ok.ok, true);
   assert.equal(ok.reuse, true);
 });
@@ -125,7 +124,7 @@ test('session: an imported reuse re-verifies the close bytes, signs the spec as 
   const { home, bundleDir, id } = setup();
   const pre = getStartFromImport(id, { home });
   const spec = buildReuseSpec(pre.spec, { destination: 'lib/', capUsd: 1, maxWallMs: 600000 });
-  const mk = () => createSession({ ...pre.card, source: makeRepo(), destination: 'lib/', capUsd: 1, maxWallMs: 600000 }, {
+  const mk = () => createSession({ ...pre.card, inputs: `repo: ${makeRepo()}`, destination: 'lib/', capUsd: 1, maxWallMs: 600000 }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home, sessionsRoot: tmp('reuse-imp-sess-'),
     reuse: { spec, workflowKey: pre.workflowKey },
     generate: async () => { throw new Error('a reuse must never call the model'); },
@@ -167,7 +166,7 @@ test('session: an imported reuse takes the CHOSEN Settings row as the worker (th
   const { rowsForHome } = await import('../src/providerrows.js');
   const pre = getStartFromImport(id, { home });
   assert.equal(pre.ok, true, JSON.stringify(pre));
-  const card = { ...pre.card, model: 'deepseek-flash', source: makeRepo(), destination: 'lib/', capUsd: 1, maxWallMs: 600000 };
+  const card = { ...pre.card, model: 'deepseek-flash', inputs: `repo: ${makeRepo()}`, destination: 'lib/', capUsd: 1, maxWallMs: 600000 };
   const spec = buildReuseSpec(pre.spec, card, rowsForHome(home));
   assert.equal(spec.provider, 'openai-api');
   assert.equal(spec.baseUrl, 'https://api.deepseek.com/v1');

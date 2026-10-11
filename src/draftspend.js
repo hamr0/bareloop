@@ -24,7 +24,10 @@ export const DRAFT_LOG_FILE = 'draft-log.jsonl';
  * One line of the drafting log. `no` = the step's position in the session's progress list (a step id can repeat).
  *  - `step-start`  {no, id, label, at}
  *  - `step-end`    {no, status: 'done'|'failed', label, at}   (a re-opened step writes `step-reopen` {no, at} first)
- *  - `call`        {no, step, label, model, costUsd (null stays null), unpricedRounds, at}: one METERED model call
+ *  - `step-label`  {no, label, at}   (the step reads `label` from now on, status and times untouched: the thinking row's "the model thought anyway")
+ *  - `call`        {no, step, label, model, thinking, thinkingApplied?, costUsd (null stays null), unpricedRounds, at}: one METERED model call
+ *    (`thinking` = what was asked and sent: off | on | not-switchable | unverified; `thinkingApplied` = bare-agent's own verdict for the
+ *    call's run (true | false | null), present only when thinkingMode was sent)
  *    (no token counts: the call path does not carry them without reworking the library, so none are recorded)
  * @typedef {{kind: string, no: number, at: string, [k: string]: any}} DraftEvent
  */
@@ -148,6 +151,8 @@ export function readDraftSteps(dir) {
       x.status = ev.status === 'failed' ? 'failed' : 'done';
       x.endedAt = ev.at;
       if (typeof ev.label === 'string') x.label = ev.label;
+    } else if (ev.kind === 'step-label' && byNo.has(ev.no)) {
+      if (typeof ev.label === 'string') byNo.get(ev.no).label = ev.label;
     } else if (ev.kind === 'step-reopen' && byNo.has(ev.no)) {
       const x = byNo.get(ev.no);
       x.status = 'running';

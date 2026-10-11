@@ -422,7 +422,7 @@ test('runAuthorScout: a call rejecting with an ETIMEDOUT casualty lands as call-
   assert.equal(seen.cleaned, 1);
 });
 
-// F179's scope note (docs/logs/FINDINGS.md): the scout builds its own Loop and
+// F179's scope note (docs/wiki/FINDINGS.md): the scout builds its own Loop and
 // was never wired to the authoring-flow retry ladder (`askStructured`'s
 // malformed-tool-call-arguments axis) — this stays true after the 0.43.0 bump.
 // A malformed survey tool call now arrives as bare-agent's own priced
@@ -1053,4 +1053,16 @@ test('runAuthorScout (real Loop + real provider stub): the F59 recovery round se
   const systemMessages = recoveryMessages.filter((/** @type {any} */ m) => m.role === 'system');
   assert.equal(systemMessages.length, 1, `expected exactly one system message, got ${systemMessages.length}`);
   assert.equal(recoveryMessages[0].role, 'system', 'the single system message stays at index 0');
+});
+
+test('runAuthorScout (F217): a REAL OpenAIProvider whose socket is reset ("socket hang up", ECONNRESET) lands as call-failed with the plain reason, cost null — never an uncaught throw', async () => {
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });
+  provider._request = async () => { throw Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }); };
+  const { createSurveyor, seen } = stubSurveyor();
+  const r = await runAuthorScout({ workdir: '/w', provider, attempts: 1, createSurveyor });
+  assert.equal(r.state, 'ABSENT');
+  assert.equal(r.cause, 'call-failed');
+  assert.match(r.reason, /the connection to the provider dropped \(socket hang up\)/);
+  assert.equal(seen.cleaned, 1);
 });

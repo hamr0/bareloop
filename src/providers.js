@@ -24,7 +24,7 @@
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { AnthropicProvider, OpenAIProvider, GeminiProvider } = require('bare-agent/providers');
+const { AnthropicProvider, OpenAIProvider, GeminiProvider, thinkingSupport } = require('bare-agent/providers');
 
 /**
  * Today's anthropic-api tier table — EXACTLY the `DEFAULT_TIER_MODELS` both
@@ -116,30 +116,112 @@ const OPENAI_MODEL_OPTIONS = Object.freeze({
 });
 
 /**
- * Per-MODEL JUDGE-ONLY request options (F192, hamr ruling A 2026-10-09). deepseek-flash
- * thinks by default and bills the reasoning as output: run mv117wde's rubric judge locate
- * truncated at JUDGE_MAX_TOKENS=4000 four times, and a probe measured 1835 of 2409
- * completion tokens as reasoning. The judge extracts quotes and decides nothing, so it
- * runs with thinking off. These are PER-CALL options (bare-agent >=0.49 forwards
- * `thinking` verbatim to `body.thinking`), never constructor options: the judge may be
- * the very same provider instance as the worker (`buildRunnerProviders` reuses it), and
- * the worker is deliberately left as it was. A model with no entry gets nothing; the
- * field is never sent to a model not listed here (OpenAI/Anthropic would reject or
- * misread it). Read through `judgeCallOptions` only — one owner.
+ * THINKING (hamr 2026-10-11: no hardcoded per-model lists in bareloop — bare-agent >=0.51 owns the shapes). The drafter and the
+ * rubric judge run thinking OFF by default (deepseek-flash thinks by default and bills the reasoning as output: F192 run mv117wde
+ * truncated judge locates at the cap, and a drafter answer that runs to the output cap is a failed try). This module is the ONE
+ * owner of what a call sends: it asks bare-agent's `thinkingSupport(kind, model)` (pure lookup, no network) and sends the
+ * normalized per-call `thinkingMode: 'off'` ONLY when the model is measured switchable. A model measured NOT switchable
+ * (claude-opus-5-5 …) gets nothing — asking would throw before send — and a model bare-agent has not measured ('unverified') also
+ * gets nothing on this DEFAULT path, so a local/unknown model's drafting never breaks by default. PER-CALL, never constructor
+ * options (the drafter's provider is the worker's instance; the worker is deliberately left as it was). The raw `thinking`
+ * option is never sent (bare-agent throws if both are set).
  */
-const OPENAI_JUDGE_CALL_OPTIONS = Object.freeze({
-  'deepseek-flash': Object.freeze({ thinking: Object.freeze({ type: 'disabled' }) }),
-});
 
 /**
- * The per-call options the rubric JUDGE's model calls carry for this provider
- * instance, from the allow-list above. Empty for any provider/model not listed.
+ * The thinking-ladder kind bare-agent's `thinkingSupport` is keyed by, from a constructed provider; null for anything that is
+ * not one of the three admitted constructors (a test double, a clipipe) — such a provider is never sent the switch.
+ * OpenAI-shaped providers are DeepSeek by model id `deepseek-*` or a `deepseek.com` baseUrl (bare-agent's documented rule,
+ * provider-openai.js:80), else OpenAI.
+ * @param {any} provider
+ * @returns {'anthropic'|'openai'|'deepseek'|'gemini'|null}
+ */
+function thinkingKind(provider) {
+  if (provider instanceof AnthropicProvider) return 'anthropic';
+  if (provider instanceof GeminiProvider) return 'gemini';
+  if (provider instanceof OpenAIProvider) {
+    return /^deepseek-/i.test(String(provider.model)) || /deepseek\.com/i.test(String(provider.baseUrl)) ? 'deepseek' : 'openai';
+  }
+  return null;
+}
+
+/**
+ * What an 'off' request means for this provider instance, for the draft log and the panel row: `'off'` (measured switchable —
+ * the switch is sent), `'not-switchable'` (measured NOT switchable — nothing sent, the model thinks as it would),
+ * `'unverified'` (bare-agent has not measured this model — nothing sent on the default path).
+ * @param {any} provider a constructed bare-agent provider
+ * @returns {'off'|'not-switchable'|'unverified'}
+ */
+function offOutcome(provider) {
+  const kind = thinkingKind(provider);
+  if (kind === null) return 'not-switchable';
+  const support = thinkingSupport(kind, provider.model);
+  if (support.switchable === true) return 'off';
+  return support.switchable === 'unverified' ? 'unverified' : 'not-switchable';
+}
+
+/**
+ * The per-call options the rubric JUDGE's model calls carry for this provider instance: `{ thinkingMode: 'off' }` when
+ * bare-agent measures the model switchable, else `{}` (F192: judge runs thinking off; a judge on a model that cannot turn it
+ * off must not throw).
  * @param {any} provider a constructed bare-agent provider
  * @returns {Record<string, any>}
  */
 export function judgeCallOptions(provider) {
-  if (!(provider instanceof OpenAIProvider)) return {};
-  return OPENAI_JUDGE_CALL_OPTIONS[/** @type {keyof typeof OPENAI_JUDGE_CALL_OPTIONS} */ (provider.model)] ?? {};
+  return offOutcome(provider) === 'off' ? { thinkingMode: 'off' } : {};
+}
+
+/**
+ * The drafter's THINKING knob — an enumerated OPERATOR param, never model output and never read from env inside the library.
+ * `'on'` sends nothing (the model's own thinking, byte-identical to a no-knob call); `'off'` sends `thinkingMode: 'off'` where
+ * bare-agent measures the model switchable. The DEFAULT is `'off'` (hamr 2026-10-11, decided by the frozen ON/OFF contrast,
+ * docs/logs/2026-10-10-drafter-thinking-contrast-prereg.md); `'on'` stays selectable for a later Settings checkbox.
+ */
+export const DRAFT_THINKING_MODES = Object.freeze(['on', 'off']);
+
+/**
+ * Throw unless `mode` is one of {@link DRAFT_THINKING_MODES} — an operator-param guard, so a typo never silently means a mode.
+ * @param {unknown} mode
+ * @returns {'on'|'off'}
+ */
+export function assertDraftThinking(mode) {
+  if (mode === 'on' || mode === 'off') return mode;
+  throw new Error(`[providers] draftThinking must be one of ${DRAFT_THINKING_MODES.join(' | ')}, got ${JSON.stringify(mode)}`);
+}
+
+/**
+ * What the drafting calls on this provider ACTUALLY carry for thinking, for the draft log and the panel row: `'on'` (mode on,
+ * nothing sent), `'off'` (mode off and the switch is sent), `'not-switchable'` (mode off, model measured not switchable —
+ * nothing sent), `'unverified'` (mode off, model not measured by bare-agent — nothing sent). Never re-derives a model list.
+ * @param {any} provider a constructed bare-agent provider
+ * @param {unknown} [mode] 'on' | 'off' (default 'off')
+ * @returns {'on'|'off'|'not-switchable'|'unverified'}
+ */
+export function draftThinkingSent(provider, mode = 'off') {
+  if (assertDraftThinking(mode) === 'on') return 'on';
+  return offOutcome(provider);
+}
+
+/**
+ * {@link draftThinkingSent} for a model the caller has only NAMED (provider shape, model id, baseUrl) — no key, no network. For
+ * the panel's first drafting row, which is shown before the key is read. Constructing the provider only makes the class and
+ * the model id available to `thinkingSupport`; it sends nothing.
+ * @param {{providerName: string, model: string, baseUrl?: string|null}} o
+ * @param {unknown} [mode] 'on' | 'off' (default 'off')
+ * @returns {'on'|'off'|'not-switchable'|'unverified'}
+ */
+export function draftThinkingFor({ providerName, model, baseUrl }, mode = 'off') {
+  return draftThinkingSent(makeProvider(providerName, { apiKey: 'unset', model, ...(baseUrl ? { baseUrl } : {}) }), mode);
+}
+
+/**
+ * The ONE owner of the per-call options every DRAFTING model call carries (scout, confirm, author, revise, structure retries).
+ * `{ thinkingMode: 'off' }` exactly when {@link draftThinkingSent} says `'off'`, else `{}`.
+ * @param {any} provider a constructed bare-agent provider
+ * @param {unknown} [mode] 'on' | 'off' (default 'off')
+ * @returns {Record<string, any>}
+ */
+export function draftCallOptions(provider, mode = 'off') {
+  return draftThinkingSent(provider, mode) === 'off' ? { thinkingMode: 'off' } : {};
 }
 
 /**
@@ -232,7 +314,7 @@ export function resolveProvider(providerName) {
 /**
  * Report whether a resolved API key VALUE (not its presence — every call
  * site already presence-checks separately) carries a shape an HTTP header
- * value cannot: F181 (`docs/logs/FINDINGS.md`) — a two-line secret-store
+ * value cannot: F181 (`docs/wiki/FINDINGS.md`) — a two-line secret-store
  * entry put the key plus a trailing metadata line into `OPENAI_API_KEY`
  * (`"<key>\nmeta"`), the presence-only check at every door passed, and Node
  * crashed `TypeError [ERR_INVALID_CHAR]` inside its own header-encode at the

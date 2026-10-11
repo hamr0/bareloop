@@ -40,8 +40,8 @@ async function start(t) {
   return { base, token, H };
 }
 const card = (source) => ({
-  checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'reattach-job', goal: 'fix things', source,
-  destination: 'src/', success: 'tsc clean', guardrails: 'no new deps', judgeExamples: '', capUsd: 2,
+  checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'reattach-job', jobText: 'fix things\n~ no new deps\ntsc clean', inputs: `repo: ${source}`,
+  destination: 'src/', capUsd: 2,
 });
 
 test('GET /api/author/live: null with no session, the live id (with its card) while one runs, null again after Abandon', async (t) => {
@@ -117,8 +117,9 @@ test('page: on load and on opening the Chat tab (no session attached) it asks /a
 test('page: attachSession takes the session over as if this tab had started it (id, card, lock, poll, thread, progress, Abandon)', () => {
   const a = fnSrc('attachSession');
   assert.match(a, /sessionId = j\.sessionId;\s*sessionLive = true;/, 'live session id: Start stays disabled, button reads Abandon');
-  for (const id of ['jf-name', 'jf-goal', 'jf-source', 'jf-dest', 'jf-success', 'jf-guardrails', 'jf-judge', 'jf-cap-money', 'jf-cap-time']) {
-    assert.match(a, new RegExp(`"${id}"`), `${id} refilled from the session's card`);
+  assert.match(a, /fillCard\(c\);/, 'every box is refilled from the session\'s card through the ONE fillCard');
+  for (const id of ['jf-name', 'jf-job', 'jf-inputs', 'jf-dest', 'jf-cap-money', 'jf-cap-time']) {
+    assert.match(fnSrc('fillCard'), new RegExp(`"${id}"`), `${id} is filled by fillCard`);
   }
   assert.match(a, /renderMessages\(st\);\s*renderActions\(st\);/);
   assert.match(a, /setInterval\(poll, 2000\)/);
@@ -135,14 +136,15 @@ test('page: attachSession runs against a fake DOM and wires the live session (fa
   const src = `${fnSrc('attachSession')}\nreturn attachSession;`;
   // sessionId/sessionLive are page-level vars; run the body with them as closure vars via a wrapper
   const body = src.replace('return attachSession;', 'return {attachSession, get: () => ({sessionId, sessionLive, reuseSession, signClickedOnce})};');
-  const g = new Function('document', 'modelSelect', 'openNewCard', 'setVal', 'renderMessages', 'renderActions', 'setReuseLocked', 'poll', 'escapeXml', 'setInterval', 'clearInterval', 'fitCardBoxes', 'renderPicker',
+  const g = new Function('document', 'modelSelect', 'openNewCard', 'setVal', 'renderMessages', 'renderActions', 'setReuseLocked', 'poll', 'escapeXml', 'setInterval', 'clearInterval', 'fitCardBoxes', 'renderPicker', 'fillCard', 'setJobPlaceholders',
     `var sessionId = null, sessionLive = false, reuseSession = false, autoSigned = false, signClickedOnce = false, pollTimer = null, reuseCheckType = "deterministic", reusePickedName = "";\n${fnSrc('setVerdict')}\n${body}`);
   const doc = { getElementById: el, querySelectorAll: () => ({ forEach: (fn) => radios.forEach(fn) }) };
   const out = g(doc, modelSelect, () => calls.push('openNewCard'), (id, v) => { el(id).value = v; }, () => calls.push('messages'), () => calls.push('actions'),
-    (on) => calls.push(`lock:${on}`), () => calls.push('poll'), (x) => x, (fn, ms) => { calls.push(`interval:${ms}`); return 7; }, () => {}, () => calls.push('fit'), () => calls.push('picker'));
-  out.attachSession({ sessionId: 's1', state: { reuse: false, card: { checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'j', goal: 'g', capUsd: 3, maxWallMs: 120000 } } });
+    (on) => calls.push(`lock:${on}`), () => calls.push('poll'), (x) => x, (fn, ms) => { calls.push(`interval:${ms}`); return 7; }, () => {}, () => calls.push('fit'), () => calls.push('picker'),
+    (c) => { el('jf-job').value = c.jobText; el('jf-cap-money').value = c.capUsd; el('jf-cap-time').value = Math.round(c.maxWallMs / 60000); }, () => {});
+  out.attachSession({ sessionId: 's1', state: { reuse: false, card: { checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'j', jobText: 'g', capUsd: 3, maxWallMs: 120000 } } });
   assert.deepEqual(out.get(), { sessionId: 's1', sessionLive: true, reuseSession: false, signClickedOnce: false });
-  assert.equal(el('jf-goal').value, 'g');
+  assert.equal(el('jf-job').value, 'g');
   assert.equal(el('jf-cap-money').value, 3);
   assert.equal(el('jf-cap-time').value, 2);
   assert.equal(radios.find((r) => r.checked).value, 'rubric');

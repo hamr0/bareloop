@@ -23,6 +23,8 @@ import { openSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { createSession, validateJobCard, validateReuseCard, lockedFieldChanged, buildReuseSpec, cardFields, STEP_LABELS } from './authorsession.js';
+import { parseInputs } from '../jobblock.js';
+import { proveInputFiles } from '../source.js';
 import { validateJob } from '../job.js';
 import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
 import { ConfigError } from '../config.js';
@@ -274,11 +276,19 @@ export function createAuthorRoutes(opts) {
         const v = validateJobCard(card, { jobsDir: opts.jobsDir, rows });
         if (!v.ok) { send(400, { ok: false, error: v.error }); return true; }
       }
-      const session = createSession(cardFields(card), {
-        env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}),
-      });
-      sessions.set(session.id, session);
-      send(200, { ok: true, sessionId: session.id, reuse: reuse !== null, state: session.state });
+      // P7: the Inputs are proven at $0 before a session (so before any token): line 1 the repo, lines 2+ tracked files inside it.
+      // A miss is a plain 400 naming the line, shown under the card exactly like every other refused start.
+      const ip = parseInputs(card.inputs);
+      if (!ip.ok) { send(400, { ok: false, error: ip.error }); return true; }
+      proveInputFiles(ip.inputs).then((proof) => {
+        if (!proof.ok) { send(400, { ok: false, error: proof.error }); return; }
+        if (hasLiveSession()) { send(409, { ok: false, error: 'an authoring session is already live — one at a time' }); return; }
+        const session = createSession(cardFields(card), {
+          env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}),
+        });
+        sessions.set(session.id, session);
+        send(200, { ok: true, sessionId: session.id, reuse: reuse !== null, state: session.state });
+      }).catch((e) => { send(500, { ok: false, error: `could not check the inputs: ${/** @type {Error} */ (e)?.message ?? e}` }); });
       return true;
     }
 

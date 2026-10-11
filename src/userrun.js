@@ -111,7 +111,7 @@ const JOBS = {
     seed: '92d71a7c1253f8f2430e2d308ecfef01c826b5c2',
   },
   // Bench row G3 (the NEGATIVE row) — the planted contract contradiction
-  // (docs/product/G3-SCOPING.md). A copy of the pulselog-u patient (patients are
+  // (docs/logs/G3-SCOPING.md). A copy of the pulselog-u patient (patients are
   // always copies) with one extra commit: two test/** files that pin
   // assembleEmail's subject to two different strings, unsatisfiable together
   // inside writeScope: src/**. Not frozen, not signed, no run — BUILT ON BRANCH
@@ -153,7 +153,7 @@ const JOBS = {
   // Bench row G2 (the NEGATIVE row) — TESTGEN cold start in plan-v1. The legacy
   // steps[] config went 0-of-43 (F38); this config's rate is UNKNOWN until its
   // establishing run. Same patient/seed/grader as the l2accept battery
-  // (TESTGEN-PREREG); the spec is the cold goal. See docs/product/G2-SCOPING.md.
+  // (TESTGEN-PREREG); the spec is the cold goal. See docs/logs/G2-SCOPING.md.
   'aurora-testgen-cold': {
     spec: 'aurora-testgen-cold.json',
     workdir: '/home/hamr/PycharmProjects/bareloop-patients/aurora-soar',
@@ -445,7 +445,7 @@ async function execute(ctx) {
   const SHIM_TAIL = shimArg === null ? '' : ` --read-shim ${shimArg}`;
 
   // --scout picks whether the plan flow pays for the read-only survey at all
-  // (docs/product/SCOUT-CONTRAST.md). Runner territory exactly like --read-shim
+  // (docs/logs/SCOUT-CONTRAST.md). Runner territory exactly like --read-shim
   // and --model: the spec names no scout, so the signed hash is unaffected. An
   // unrecognised value throws at argv, before the approval gate — the same
   // param-guard class as --read-shim above, for the same reason: a silently

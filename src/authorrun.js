@@ -570,7 +570,7 @@ export async function main(argv, deps = {}) {
   out(`  ${ceilingLine(CEILING_USD)}`);
   out('  stops at prepareSigning — this script NEVER signs and NEVER runs the job\n');
 
-  // F190 (docs/logs/FINDINGS.md) — this used to be a hand-rolled `makeProvider`
+  // F190 (docs/wiki/FINDINGS.md) — this used to be a hand-rolled `makeProvider`
   // call, a duplicate of the SAME construction `buildRunnerProviders` already
   // owns for `src/cli.js`. Routed through the one owner now: the judge half of
   // this call is a THROWAWAY (`judgeProviderName`/`judgeModel`/`judgeBaseUrl` all
@@ -818,7 +818,7 @@ export async function main(argv, deps = {}) {
   // piece 4, step S6, D5 amended 2026-09-21) ──────────────────────────────────
   // This USED TO run the whole confirm turn first (over a $0 manual listing,
   // via `runConfirmTurn`), THEN give this stop once the person confirmed a plan
-  // — D5's original shape. Live run `mu4hc7sp` (docs/logs/FINDINGS.md F191)
+  // — D5's original shape. Live run `mu4hc7sp` (docs/wiki/FINDINGS.md F191)
   // crashed inside that confirm turn instead: `confirmProtections`
   // (`src/authorflow.js`) calls `classGuards` (`src/authoring.js`), which is
   // keyed by CODE LANGUAGE and THROWS on a plain folder's `lang:
@@ -879,6 +879,9 @@ export async function main(argv, deps = {}) {
       // fence is not this script's business to invent one for, so an absent or
       // malformed field travels as `null` and `authorPrompt` simply states nothing.
       writeScope: Array.isArray(draft.writeScope) ? draft.writeScope : null,
+      // P7: the person's numbered job lines and inputs ride the draft; the drafter tags every stage with a line
+      jobLines: Array.isArray(draft.jobLines) ? draft.jobLines : null,
+      inputs: Array.isArray(draft.inputs) ? draft.inputs : null,
       provider,
       generate: makeLoopGenerate(provider, { rates: authorPrice?.rates ?? null }),
       rates: authorPrice?.rates ?? null,

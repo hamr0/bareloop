@@ -31,7 +31,7 @@
 //     form (PRD item 33 M3 piece 3): Goal / Success / Guardrails, soft-green
 //     adding Judge Examples. Source and Destination are MECHANICAL fields —
 //     proven against the machine rather than typed — and their wording is
-//     ALSO the library's (`SOURCE_FIELD`, `destinationFieldFor`,
+//     ALSO the library's (`INPUTS_FIELD`, `destinationFieldFor`,
 //     `src/authorflow.js`), so this module prints what the library hands it
 //     for all six fields, never re-worded here, never re-ordered, never stored;
 //   - the REFUSALS are the library's (`runInterview`): a locked class refuses at
@@ -89,7 +89,7 @@
 import { keysForDoor } from './keysfile.js';
 import { applyConfiguredKey, rowsForHome } from './providerrows.js';
 import {
-  writeFileSync, mkdirSync, existsSync, readFileSync, statSync,
+  writeFileSync, mkdirSync, readFileSync, statSync,
 } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { spawnSync as realSpawnSync } from 'node:child_process';
@@ -101,13 +101,18 @@ import {
   PLAIN_FOLDER_DEFERRED_FIELDS,
 } from './authorjob.js';
 import {
-  SOURCE_FIELD, destinationFieldFor, labelsFor,
+  INPUTS_FIELD, JOB_BLOCK_HELP, destinationFieldFor, labelsFor, SOFTGREEN_JUDGE_EXAMPLES_KEY,
 } from './authorflow.js';
+import {
+  parseJobBlock, parseInputs, renderJobLines, renderExamples, jobBlockFitsCheck, signedJobLines,
+} from './jobblock.js';
 import { validateJob, validateBaseUrl, PROVIDERS } from './job.js';
 import { resolveProvider, probeWarningLines, apiKeyProblem } from './providers.js';
 import { scanSecrets, redactSecrets } from './validate.js';
 import { detectLanguage } from './detectlang.js';
-import { prepareSource, proveDestination, looksLikeRepoSource, missingDependencies } from './source.js';
+import {
+  prepareSource, proveDestination, looksLikeRepoSource, missingDependencies, proveInputFiles,
+} from './source.js';
 import { parseCeiling, ceilingLine } from './authorreadout.js';
 import { commandFor } from './invoke.js';
 
@@ -353,18 +358,26 @@ export async function main(argv, deps = {}) {
     throw new ExitSignal(1);
   }
 
-  // ── 1. SOURCE — the form's first field (PRD item 33 M3, ruling 2) ────────────
+  // ── 1. INPUTS — the form's first field (P7, docs/product/PANEL-BUILD.md; replaces Source) ───────────────
+  // Line 1 is the repo (the Source this door has always taken); lines 2+ are tracked files inside it, proven at $0
+  // by `proveInputFiles` — the same function the panel calls. A bad line re-asks, naming the line.
   say('');
-  say('── SOURCE ' + '─'.repeat(58));
-  // LIBRARY WORDING (PRD item 33 M3 piece 3, ruling 1) — this script prints what
-  // `src/authorflow.js` hands it and writes none of its own.
-  say(SOURCE_FIELD.prompt);
-  const sourceRaw = await readAnswer('the source',
-    'Source is required — this is what the job reads. Again:');
-  const isUrl = /^https?:\/\//i.test(sourceRaw);
-  const SOURCE = isUrl ? sourceRaw : resolve(sourceRaw);
-  if (!isUrl && !existsSync(SOURCE)) {
-    die(`${SOURCE} does not exist — Source is a folder, subfolder, file, or URL bareloop can actually read.`);
+  say('── INPUTS ' + '─'.repeat(58));
+  // LIBRARY WORDING — this script prints what `src/authorflow.js` hands it and writes none of its own.
+  say(INPUTS_FIELD.prompt);
+  /** @type {import('./jobblock.js').JobInput[]} */
+  let INPUTS = [];
+  /** @type {string} */
+  let SOURCE = '';
+  for (;;) {
+    const raw = await readAnswer('the inputs', 'Inputs is required — line 1 is the repo this job reads. Again:');
+    const parsed = parseInputs(raw);
+    if (!parsed.ok) { say(`  ${parsed.error}`); continue; }
+    const proof = await proveInputFiles(parsed.inputs);
+    if (!proof.ok) { say(`  ${proof.error}`); continue; }
+    INPUTS = parsed.inputs;
+    SOURCE = proof.repo;
+    break;
   }
   // the SAME rule `prepareSource` uses to route its own destination check
   // (`looksLikeRepoSource`, `src/source.js`) — never a second, hand-typed copy
@@ -401,7 +414,7 @@ export async function main(argv, deps = {}) {
   //                       ruling 7): a plain-folder job still gets the form; it
   //                       only gets an honest "no checks yet" stop later (M4).
   let LANG = 'none-detected';
-  if (!isUrl && statSync(SOURCE).isDirectory()) {
+  if (statSync(SOURCE).isDirectory()) {
     const langResult = detectLanguage(SOURCE);
     if (langResult.kind === 'ambiguous') {
       // NO LONGER DIES (PRD item 33 M3 piece 4, step S5): `LANG` takes the
@@ -560,25 +573,38 @@ export async function main(argv, deps = {}) {
   say(`  asks     ${REQUIRED.length} frozen question(s) for this class, then the numbers and names the job spec needs`);
 
   // ── 3. the class's own frozen questions, one at a time ───────────────────────
+  // P7: "The job" is ONE multi-line answer — numbered lines with their `~` rules, parsed by `parseJobBlock` (the same
+  // parser the panel uses) and filed under key 1 as the numbered text the drafter reads. A rubric's second answer
+  // (the judge examples) is DERIVED from the `~ PASS:`/`~ FAIL:` lines of that block, never asked a second time.
   /** @type {Record<string, string>} */
   const answers = {};
+  /** @type {import('./jobblock.js').JobLine[]} */
+  let JOB_LINES = [];
+  const ASKED = REQUIRED.filter((n) => !(VERDICT === 'soft-green' && n === SOFTGREEN_JUDGE_EXAMPLES_KEY));
   let asked = 0;
-  for (const n of REQUIRED) {
+  for (const n of ASKED) {
     asked += 1;
     say('');
-    say(`── ${asked} of ${REQUIRED.length} ${'─'.repeat(Math.max(0, 56 - String(asked).length))}`);
-    // the FIELD LABEL, from the signed table (PRD item 33 M3 piece 3's wording
-    // fix) — printed on its own line so the literal `${n}. ${QUESTIONS[n]}` below
-    // stays byte-identical to what the library holds, which is what the wizard
-    // test suite (`tests/run-interview.test.js`) asserts verbatim and in order.
-    // A key with no signed-table row prints no label.
+    say(`── ${asked} of ${ASKED.length} ${'─'.repeat(Math.max(0, 56 - String(asked).length))}`);
+    // the FIELD LABEL, from the signed table — printed on its own line so the literal `${n}. ${QUESTIONS[n]}` below
+    // stays byte-identical to what the library holds. A key with no signed-table row prints no label.
     if (LABELS[n]) say(LABELS[n]);
-    // the frozen wording, printed as the library holds it. Numbered by the library's
-    // own key, so the number a person sees is the number their answer is filed under.
+    // the frozen wording, printed as the library holds it. Numbered by the library's own key.
     say(`${n}. ${QUESTIONS[n]}`);
-    answers[n] = await readAnswer(`question ${n}`,
-      'that one is required — every question in this class\'s set has to be answered before a close can be authored from it. Again:');
+    for (const h of JOB_BLOCK_HELP) say(`   ${h}`);
+    for (;;) {
+      const raw = await readAnswer(`question ${n}`,
+        'that one is required — every question in this class\'s set has to be answered before a close can be authored from it. Again:');
+      const parsed = parseJobBlock(raw);
+      if (!parsed.ok) { say(`  ${parsed.error}`); continue; }
+      const misfit = jobBlockFitsCheck(parsed.lines, VERDICT === 'soft-green');
+      if (misfit) { say(`  ${misfit}`); continue; }
+      JOB_LINES = parsed.lines;
+      answers[n] = renderJobLines(parsed.lines);
+      break;
+    }
   }
+  if (VERDICT === 'soft-green') answers[SOFTGREEN_JUDGE_EXAMPLES_KEY] = renderExamples(JOB_LINES);
 
   // ── 4. the OPERATOR's half of the spec — the part nothing authors for you ────
   say('');
@@ -667,6 +693,9 @@ export async function main(argv, deps = {}) {
     // meaningless fence derived from an output directory.
     ...(writeScope === null ? {} : { writeScope }),
     escalation: { mode: 'decision-ready' },
+    // P7: the person's own words, signed beside the model's goal sentence — what the Job tab and Reuse show back
+    jobLines: signedJobLines(JOB_LINES),
+    inputs: INPUTS,
     // `tools` is deliberately OMITTED: an omitted menu hashes as the concrete current
     // TOOL_MENU (MED-1), which pins WHICH menu was signed and makes a widening flip the
     // hash. Naming one here would freeze today's list into the operator's own half.

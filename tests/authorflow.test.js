@@ -187,7 +187,7 @@ test('question sets: the GREEN set asks nothing about a genre and nothing about 
   // leaving a hole. PRD item 33 M3 piece 3 shrank the set to THREE (Goal, Success,
   // Guardrails) — Source and Destination (the old "which files" half of Q2) are now
   // MECHANICAL fields proven against the machine, never a numbered free-text slot.
-  assert.deepEqual(numbers, [1, 2, 3]);
+  assert.deepEqual(numbers, [1]);
   assert.deepEqual(requiredAnswersFor('green'), numbers);
   const all = Object.values(GREEN_QUESTIONS).join(' ');
   assert.ok(!/type[- ]?fix|type checker|TYPES/i.test(all), `a genre-specific slot survives: ${all}`);
@@ -197,10 +197,9 @@ test('question sets: the GREEN set asks nothing about a genre and nothing about 
   // 1ac4d05, only reshaped the SET; this is the wording half). No trailing "?":
   // these are what the field HOLDS, read beside its label (FIELD_LABELS), not a
   // question typed at a person.
+  // P7 (2026-10-10): ONE answer — "The job", numbered lines with their ~ rules (src/jobblock.js)
   assert.deepEqual(GREEN_QUESTIONS, {
-    1: 'what you want to achieve',
-    2: 'checks a machine can count',
-    3: 'what must not happen or change',
+    1: 'the job, as numbered lines — each line may carry the rules (~) the person wrote under it',
   });
   assert.ok(!/worse than before/i.test(all), `the retired "worse than before" half survives: ${all}`);
 });
@@ -243,18 +242,14 @@ test('the interview block carries each field\'s LABEL beside its question, from 
     answers: baseArgs().answers, questions: GREEN_QUESTIONS, facts: FACTS,
     listingBlock: '', lang: 'js', guards: greenGuards('js'), ownedEnvNames: [], verdictType: 'green',
   });
-  assert.match(p, /Q1 \(Goal\)\. what you want to achieve/);
-  assert.match(p, /Q2 \(What success looks like\)\. checks a machine can count/);
-  assert.match(p, /Q3 \(Guardrails\)\. what must not happen or change/);
+  assert.match(p, /Q1 \(The job\)\. the job, as numbered lines/);
 });
 
 test('labelsFor mirrors questionsFor: same admission rule, and soft-green\'s fourth label is "Judge examples"', () => {
-  assert.deepEqual(labelsFor('green'), { 1: 'Goal', 2: 'What success looks like', 3: 'Guardrails' });
-  assert.deepEqual(labelsFor('soft-green'), {
-    1: 'Goal', 2: 'What success looks like', 3: 'Guardrails', 4: 'Judge examples',
-  });
-  // hitl's own fourth question has no row in the signed table — no fabricated label
-  assert.deepEqual(labelsFor('hitl'), { 1: 'Goal', 2: 'What success looks like', 3: 'Guardrails' });
+  assert.deepEqual(labelsFor('green'), { 1: 'The job' });
+  assert.deepEqual(labelsFor('soft-green'), { 1: 'The job', 2: 'Judge examples' });
+  // hitl's own second question has no row in the signed table — no fabricated label
+  assert.deepEqual(labelsFor('hitl'), { 1: 'The job' });
   assert.throws(() => labelsFor('chartreuse'), /chartreuse/);
 });
 
@@ -1353,7 +1348,7 @@ test('authorClose: a last revision that REGRESSES keeps the last accepted close 
 // ── 6b. F176 — a later revision that measures WORSE (instrument-stops) than an
 // earlier one must not be kept just because it was last. Row shapes below are
 // copied from the real archived run that found this (`mu0voeo4`,
-// docs/logs/FINDINGS.md F176): a `count-not-worse` stage instrument-stops with
+// docs/wiki/FINDINGS.md F176): a `count-not-worse` stage instrument-stops with
 // `exitCode: 97` and a `stop` detail naming the broken parser term — never a
 // hand-invented shape.
 
@@ -1711,18 +1706,19 @@ test('makeLoopGenerate: a HALF-WRITTEN declaration on a truncated round is never
   assert.equal(r.error, 'truncated:max_tokens');
 });
 
-test('makeLoopGenerate: a truncated authoring round routes as provider-red through the flow, not as a declaration defect', async () => {
-  // where the distinct outcome has to LAND: a casualty is never evidence about
-  // the model (F45), so it must not spend the structure-retry budget that exists
-  // for a malformed emission, and it must not read as an artifact-red.
+test('makeLoopGenerate: a truncated authoring round is a FAILED TRY through the flow (hamr 2026-10-10, F215: live session smv2bzdqmp0f8), not provider-red', async () => {
+  // SUPERSEDES the F45 pin that read a cut-off round as a transport casualty: the cut-off is the MODEL's own overlong
+  // answer, so it takes the same retry ladder as a malformed artifact and, when every attempt is cut off, stops
+  // artifact-red with the reason in words. A real transport failure stays provider-red (see the P7 item 6 tests below).
   const provider = countingProvider([{ text: '', stopReason: 'max_tokens' }]);
   const r = await authorClose({ ...baseArgs(), generate: makeLoopGenerate(provider), seedReadFn: scriptSeedRead().fn });
 
   assert.equal(r.ok, false);
-  assert.equal(r.stop, 'provider-red', 'a cut-off round is a transport casualty, never an artifact-red');
-  assert.equal(r.reds[0].code, 'provider-red');
-  assert.match(r.reds[0].detail, /truncated:max_tokens/);
-  assert.equal(r.iterations[0].attempts, 1, 'and it does not burn the malformed-emission retries on its way out');
+  assert.equal(r.stop, 'artifact-red', 'a cut-off round is a failed try, never provider-red');
+  assert.equal(r.reds[0].code, 'artifact-red');
+  assert.equal(r.reds[0].detail, "the AI's answer was cut off at the output limit");
+  assert.equal(r.iterations[0].attempts, 1 + MAX_STRUCTURE_RETRIES, 'it takes the same retry ladder as a malformed artifact');
+  assert.equal(r.iterations[0].providerError, null);
 });
 
 test('makeLoopGenerate: the whole authoring flow pays ONE provider round per call, every one of them cached and capped', async () => {
@@ -2162,7 +2158,7 @@ test('authorClose: a provider casualty still leaves its raw on the trail', async
 
 // ── F179/F180 — a malformed tool-call JSON no longer crashes the loop ──────
 //
-// Run mu2bjmed (docs/logs/FINDINGS.md F179/F180): bare-agent 0.42.0's
+// Run mu2bjmed (docs/wiki/FINDINGS.md F179/F180): bare-agent 0.42.0's
 // `OpenAIProvider.generate` used to do `JSON.parse(tc.function.arguments)`
 // with no try/catch, so a model's malformed tool-call arguments threw a raw
 // SyntaxError AFTER the billed HTTP round. Unwrapped, that throw escaped
@@ -2475,4 +2471,312 @@ test('makeLoopGenerate (F179): a VALID reply is untouched — no side-channel fi
   });
   assert.deepEqual(r.artifact, decl);
   assert.equal(book.report().calls.length, 1);
+});
+
+// ── P7: the job block reaches the drafter (docs/product/PANEL-BUILD.md) ─────
+
+test('P7: with jobLines the author prompt orders fromLine tagging and carries the inputs; without them it is byte-identical', async () => {
+  const { jobLineTagBlock, normalizeChecks, confirmedBlock } = await import('../src/authorflow.js');
+  const args = {
+    answers: baseArgs().answers, questions: GREEN_QUESTIONS, facts: FACTS,
+    listingBlock: '', lang: 'js', guards: greenGuards('js'), ownedEnvNames: [], verdictType: 'green',
+  };
+  const plain = authorPrompt(args);
+  assert.ok(!/fromLine/.test(plain), 'a caller with no job lines sees no tagging order');
+  const tagged = authorPrompt({
+    ...args, jobLines: [{ n: 1 }, { n: 2 }], inputs: [{ n: 1, label: 'repo', value: '/r' }, { n: 2, label: 'spec', value: 'docs/spec.md' }],
+  });
+  assert.ok(tagged.includes(jobLineTagBlock(2)));
+  assert.match(tagged, /fromLine/);
+  assert.match(tagged, /the person pointed at these inputs: 1 repo \/r · 2 spec docs\/spec\.md/);
+  // the checks in the confirmed block carry their job line
+  const block = confirmedBlock({ checks: ['a', 'b'], checkItems: [{ text: 'a', fromLine: [1] }, { text: 'b', fromLine: null }], protections: [] });
+  assert.match(block, /- \[line 1\] a\n/);
+  assert.match(block, /- b\n/);
+  assert.deepEqual(normalizeChecks(['x', { text: 'y', fromLine: [2] }, { text: '  ' }, 5]), [{ text: 'x', fromLine: null }, { text: 'y', fromLine: [2] }]);
+  assert.deepEqual(normalizeChecks([{ text: 'm', fromLine: [1, 3, 1] }, { text: 'bare', fromLine: 2 }, { text: 'empty', fromLine: [] }]),
+    [{ text: 'm', fromLine: [1, 3] }, { text: 'bare', fromLine: null }, { text: 'empty', fromLine: null }], 'several lines kept, a bare integer or empty array is no line');
+  assert.match(confirmedBlock({ checks: ['m'], checkItems: [{ text: 'm', fromLine: [1, 3] }], protections: [] }), /- \[line 1, 3\] m\n/);
+});
+
+test('P7: the declaration schema lets a stage carry fromLine and the declaration carry refused[]', () => {
+  const s = declarationSchema();
+  assert.equal(s.properties.refused.items.required.join(), 'line,reason');
+  const branch = s.properties.stages.items.oneOf[0];
+  assert.equal(branch.properties.fromLine.type, 'array');
+  assert.equal(branch.properties.fromLine.items.type, 'integer');
+  assert.equal(branch.required.includes('fromLine'), false, 'optional: a mandatory guard carries none');
+});
+
+// ── P7 batch 2 item 5: questions on the LAST drafting try only (fwdloop am24/25), the machine decides ────────────────
+
+const JOB2 = [{ n: 1, text: 'fix the types' }, { n: 2, text: 'tidy up' }];
+/** valid shape; stage `typecheck` serves line 1 only — line 2 is uncovered, a validation red naming "job line 2" */
+const redDecl = (/** @type {string} */ note) => {
+  const d = goodDeclaration();
+  d.stages[1].fromLine = [1];
+  d.notes = [note];
+  return d;
+};
+/** every line served — validates */
+const greenDecl = (/** @type {string} */ note) => {
+  const d = goodDeclaration();
+  d.stages[1].fromLine = [1, 2];
+  d.notes = [note];
+  return d;
+};
+const Q = (/** @type {number} */ line, /** @type {string} */ question) => ({ line, question });
+const offeredAt = (/** @type {any[]} */ calls) => calls.map((c) => Boolean(c.tools[0]?.parameters?.properties?.questions));
+
+test('P7 item 5 (fail-first): tries 1 and 2 both fail validation -> ONLY try 3 is offered `questions`; the machine keeps 2 on a failed line, drops the rest and logs them; nothing from try 3 is measured', async () => {
+  const { generate, calls } = scriptGenerate([
+    { declaration: redDecl('a') }, { declaration: redDecl('b') },
+    { declaration: { ...redDecl('c'), questions: [Q(2, 'what does tidy up mean?'), Q(9, 'about a line that does not exist'), Q(2, 'second on line 2'), Q(2, 'third on line 2'), Q(2, '   ')] } },
+  ]);
+  const seed = scriptSeedRead();
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: seed.fn, jobLines: JOB2, offerQuestions: true });
+  assert.deepEqual(offeredAt(calls), [false, false, true], 'try 1 and try 2 carry no way to ask; only try 3 does');
+  assert.equal(r.stop, 'questions-open');
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.questions, [Q(2, 'what does tidy up mean?'), Q(2, 'second on line 2')], 'two kept, in order');
+  const log = r.iterations[2];
+  assert.deepEqual(log.droppedQuestions.map((/** @type {any} */ d) => d.reason).sort(), [
+    "beyond the machine's limit", 'blank question', "line 9 is not a line the previous try's checks failed on",
+  ].sort());
+  assert.equal(log.validation, null, 'the asking try is not validated or measured: the person answers first');
+  assert.equal(seed.seen.length, 0, 'no seed read ran at all (tries 1 and 2 never validated)');
+  assert.ok(r.reds.some((/** @type {any} */ x) => /job line 2/.test(x.detail)), 'the reds that opened asking stay as the record');
+  assert.ok(!JSON.stringify(calls[2].messages).includes('questions'), 'the frozen revise turn is untouched: the words live in the property description');
+});
+
+test('P7 item 5: a try that PASSES validation (try 1, or try 2) never opens asking — a confident guess is not asked', async () => {
+  // passes try 1 (seed read red -> revise continues)
+  const a = scriptGenerate([{ declaration: greenDecl('a') }, { declaration: greenDecl('b') }, { declaration: greenDecl('c') }]);
+  await authorClose({ ...baseArgs(), generate: a.generate, seedReadFn: scriptSeedRead().fn, jobLines: JOB2, offerQuestions: true });
+  assert.deepEqual(offeredAt(a.calls), [false, false, false]);
+  // fails try 1, passes try 2
+  const b = scriptGenerate([{ declaration: redDecl('a') }, { declaration: greenDecl('b') }, { declaration: { ...greenDecl('c'), questions: [Q(2, 'x')] } }]);
+  const rb = await authorClose({ ...baseArgs(), generate: b.generate, seedReadFn: scriptSeedRead().fn, jobLines: JOB2, offerQuestions: true });
+  assert.deepEqual(offeredAt(b.calls), [false, false, false], 'try 2 passed: try 3 may not ask');
+  assert.notEqual(rb.stop, 'questions-open');
+  // passes try 1, fails try 2
+  const c = scriptGenerate([{ declaration: greenDecl('a') }, { declaration: redDecl('b') }, { declaration: redDecl('c') }]);
+  await authorClose({ ...baseArgs(), generate: c.generate, seedReadFn: scriptSeedRead().fn, jobLines: JOB2, offerQuestions: true });
+  assert.deepEqual(offeredAt(c.calls), [false, false, false], 'try 1 passed: try 3 may not ask');
+});
+
+test('P7 item 5: off unless the caller can ask (default), with no job lines, or with a tightened ladder — and a question on a line try 2 did not fail on is dropped', async () => {
+  const mk = () => scriptGenerate([{ declaration: redDecl('a') }, { declaration: redDecl('b') }, { declaration: { ...redDecl('c'), questions: [Q(2, 'q')] } }]);
+  const off = mk();
+  const r0 = await authorClose({ ...baseArgs(), generate: off.generate, seedReadFn: scriptSeedRead().fn, jobLines: JOB2 });
+  assert.deepEqual(offeredAt(off.calls), [false, false, false], 'default: never offered');
+  assert.notEqual(r0.stop, 'questions-open');
+  const noLines = mk();
+  await authorClose({ ...baseArgs(), generate: noLines.generate, seedReadFn: scriptSeedRead().fn, offerQuestions: true });
+  assert.deepEqual(offeredAt(noLines.calls), [false, false, false].slice(0, noLines.calls.length), 'no job lines: nothing to ask about');
+  const tight = mk();
+  await authorClose({ ...baseArgs(), generate: tight.generate, seedReadFn: scriptSeedRead().fn, jobLines: JOB2, offerQuestions: true, maxRevisions: 1 });
+  assert.ok(offeredAt(tight.calls).every((x) => x === false), 'a ladder of fewer than three tries has no try 3');
+  // line 1 is covered (try 2's reds name only line 2): a question about it is dropped, and with none kept the loop validates as ever
+  const wrong = scriptGenerate([{ declaration: redDecl('a') }, { declaration: redDecl('b') }, { declaration: { ...redDecl('c'), questions: [Q(1, 'about a covered line')] } }]);
+  const rw = await authorClose({ ...baseArgs(), generate: wrong.generate, seedReadFn: scriptSeedRead().fn, jobLines: JOB2, offerQuestions: true });
+  assert.deepEqual(rw.questions, []);
+  assert.notEqual(rw.stop, 'questions-open');
+  assert.equal(rw.iterations[2].droppedQuestions.length, 1);
+});
+
+test('P7 item 5: the schema carries `questions` only when asked for, the property words name no number, and the helpers behave', async () => {
+  const { QUESTIONS_DESCRIPTION, MAX_QUESTIONS, linesNamedByReds, normalizeQuestions } = await import('../src/authorflow.js');
+  assert.equal(declarationSchema().properties.questions, undefined);
+  assert.equal(declarationSchema(undefined, { questions: true }).properties.questions.description, QUESTIONS_DESCRIPTION);
+  assert.equal(JSON.stringify(declarationSchema()), JSON.stringify(declarationSchema(undefined, { questions: false })), 'absent = byte-identical');
+  assert.doesNotMatch(QUESTIONS_DESCRIPTION, /\d|\b(one|two|three|four|five|both|single|pair|couple|few|several|up to|at most)\b/i, 'the drafter is never told a number');
+  assert.equal(MAX_QUESTIONS, 2);
+  const reds = [
+    { code: 'job-line-uncovered', path: 'stages', detail: 'job line 3 has no stage and no refusal' },
+    { code: 'invalid-value', path: 'stages[1].fromLine', detail: 'stage "t" has fromLine [2, 4]' },
+    { code: 'missing-field', path: 'stages', detail: 'a top-level fault naming no line' },
+    { code: 'x', path: 'refused[0].reason', detail: 'blank' },
+  ];
+  const decl = { stages: [{ name: 'g' }, { name: 't', fromLine: [2, 4] }], refused: [{ line: 1, reason: '' }] };
+  assert.deepEqual(linesNamedByReds(reds, decl, [1, 2, 3]), [1, 2, 3], '4 is not a real line; the stage and refusal paths map through the declaration');
+  assert.deepEqual(linesNamedByReds([reds[2]], decl, [1, 2, 3]), []);
+  assert.deepEqual(normalizeQuestions('nope', [1]).dropped.map((d) => d.reason), ['questions is not a list']);
+  assert.deepEqual(normalizeQuestions([{ question: 'no line' }, 'str'], [1]).kept, []);
+});
+
+// ── P7 batch 2 item 6: a drafter answer cut off at the output cap is a FAILED TRY, not provider-red ─────────────────
+
+const openaiCut = () => ({
+  choices: [{ message: { content: '', tool_calls: [] }, finish_reason: 'length' }],
+  usage: { prompt_tokens: 120, completion_tokens: 32000 },
+  model: 'deepseek-flash',
+});
+
+test('P7 item 6 (fail-first): a REAL OpenAIProvider round that stops at max_tokens, then a valid round — the cut-off is a failed try on the retry ladder (not provider-red), both rounds booked, the reject block says so', async () => {
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });
+  const decl = goodDeclaration();
+  let call = 0;
+  provider._request = async () => { call += 1; return call === 1 ? openaiCut() : openaiChoice(DECLARATION_TOOL_NAME, JSON.stringify(decl)); };
+  const book = makeCostBook();
+  const channel = { name: DECLARATION_TOOL_NAME, instruction: 'call declare_close exactly once', tool: (/** @type {{calls: any[]}} */ b) => declarationTool(b) };
+  const r = await askStructured({
+    messages: [{ role: 'user', content: 'author it' }], generate: makeLoopGenerate(provider), mode: 'tool', retries: 2, label: 'author', book, channel,
+  });
+  assert.equal(r.providerError, null, 'NOT provider-red');
+  assert.deepEqual(r.artifact, decl, 'the sound second round lands');
+  assert.equal(call, 2);
+  const report = book.report();
+  assert.equal(report.calls.length, 2);
+  assert.equal(typeof report.calls[0].costUsd, 'number', 'the cut-off round stays booked and priced');
+  assert.ok(report.calls[0].costUsd > 0);
+  const said = r.convo.filter((/** @type {any} */ m) => m.role === 'user').map((/** @type {any} */ m) => m.content).join('\n');
+  assert.match(said, /the AI's answer was cut off at the output limit/);
+});
+
+test('P7 item 6: EVERY attempt cut off — artifact-red with axis output-truncated and the plain reason, every attempt booked; max tokens is not raised', async () => {
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });
+  const seenMax = [];
+  provider._request = async (/** @type {any} */ body) => { seenMax.push(body?.max_tokens); return openaiCut(); };
+  const book = makeCostBook();
+  const channel = { name: DECLARATION_TOOL_NAME, instruction: 'x', tool: (/** @type {{calls: any[]}} */ b) => declarationTool(b) };
+  const r = await askStructured({
+    messages: [{ role: 'user', content: 'author it' }], generate: makeLoopGenerate(provider), mode: 'tool', retries: MAX_STRUCTURE_RETRIES, label: 'author', book, channel,
+  });
+  assert.equal(r.providerError, null);
+  assert.equal(r.artifact, null);
+  assert.equal(r.red?.axis, 'output-truncated');
+  assert.equal(r.red?.detail, "the AI's answer was cut off at the output limit");
+  assert.equal(book.report().calls.length, 1 + MAX_STRUCTURE_RETRIES);
+  assert.ok(seenMax.every((m) => m === AUTHOR_MAX_TOKENS || m === undefined), 'tighten-only: the cap is never raised to retry');
+});
+
+test('P7 item 6: a REAL transport failure stays provider-red (only the output cap is a failed try); and authorClose stops artifact-red with the reason, never provider-red, on a cut-off', async () => {
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });
+  provider._request = async () => { throw Object.assign(new Error('socket timed out'), { code: 'ETIMEDOUT' }); };
+  const channel = { name: DECLARATION_TOOL_NAME, instruction: 'x', tool: (/** @type {{calls: any[]}} */ b) => declarationTool(b) };
+  const down = await askStructured({
+    messages: [{ role: 'user', content: 'a' }], generate: makeLoopGenerate(provider), mode: 'tool', retries: 2, label: 'author', book: makeCostBook(), channel,
+  });
+  assert.match(String(down.providerError), /socket timed out/);
+  assert.equal(down.red, null);
+
+  provider._request = async () => openaiCut();
+  const r = await authorClose({ ...baseArgs(), generate: makeLoopGenerate(provider), seedReadFn: scriptSeedRead().fn });
+  assert.equal(r.stop, 'artifact-red');
+  assert.equal(r.reds[0].code, 'artifact-red');
+  assert.match(r.reds[0].detail, /cut off at the output limit/);
+  assert.ok(r.cost.knownUsd > 0, 'the spend of the cut-off calls stays booked');
+});
+
+// ── P7 item 5, hamr's ruling 2026-10-10: tries 1 and 2 may also have failed the SEED READ (a vacuous close) ─────────────
+
+/** a seed read whose verdicts come per CALL: `verdicts[k]` is the work stage's verdict on the k-th seed read (guards stay red like the default fixture) */
+const seedByCall = (/** @type {string[]} */ verdicts) => {
+  let k = 0;
+  return async (/** @type {any} */ declaration) => {
+    const v = verdicts[Math.min(k, verdicts.length - 1)]; k += 1;
+    return declaration.stages.map((/** @type {any} */ s) => ({
+      verdict: s.name === 'typecheck' ? v : 'green', exitCode: 0, value: null, baseline: null, baselineSource: null, gapLines: [], judged: true, stage: s.name, kind: s.kind, detail: {},
+    }));
+  };
+};
+
+test('P7 item 5 (hamr 2026-10-10, fail-first): tries 1 and 2 both VACUOUS at the seed read (nothing fails on the repo as it is) -> try 3 is offered the question, on the lines the vacuous stage serves', async () => {
+  const { generate, calls } = scriptGenerate([
+    { declaration: greenDecl('a') }, { declaration: greenDecl('b') },
+    { declaration: { ...greenDecl('c'), questions: [Q(2, 'what must fail first?'), Q(9, 'no such line')] } },
+  ]);
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: seedByCall(['green']), jobLines: JOB2, offerQuestions: true });
+  assert.deepEqual(offeredAt(calls), [false, false, true]);
+  assert.equal(r.stop, 'questions-open');
+  assert.deepEqual(r.questions, [Q(2, 'what must fail first?')]);
+  assert.equal(r.iterations[2].droppedQuestions.length, 1, 'the unreal line is dropped and logged');
+});
+
+test('P7 item 5 (hamr 2026-10-10): validation-red then vacuous (mixed) opens asking; a try that validates AND seeds red (try 1 or try 2) never does', async () => {
+  const mixed = scriptGenerate([{ declaration: redDecl('a') }, { declaration: greenDecl('b') }, { declaration: { ...greenDecl('c'), questions: [Q(1, 'q')] } }]);
+  const rm = await authorClose({ ...baseArgs(), generate: mixed.generate, seedReadFn: seedByCall(['green']), jobLines: JOB2, offerQuestions: true });
+  assert.deepEqual(offeredAt(mixed.calls), [false, false, true]);
+  assert.equal(rm.stop, 'questions-open');
+  // try 1 validates and seeds fine (a work stage is red) — a confident guess
+  const a = scriptGenerate([{ declaration: greenDecl('a') }, { declaration: greenDecl('b') }, { declaration: greenDecl('c') }]);
+  await authorClose({ ...baseArgs(), generate: a.generate, seedReadFn: seedByCall(['red', 'green', 'green']), jobLines: JOB2, offerQuestions: true });
+  assert.deepEqual(offeredAt(a.calls), [false, false, false], 'try 1 passed: no question');
+  // try 2 validates and seeds fine
+  const b = scriptGenerate([{ declaration: greenDecl('a') }, { declaration: greenDecl('b') }, { declaration: greenDecl('c') }]);
+  await authorClose({ ...baseArgs(), generate: b.generate, seedReadFn: seedByCall(['green', 'red', 'green']), jobLines: JOB2, offerQuestions: true });
+  assert.deepEqual(offeredAt(b.calls), [false, false, false], 'try 2 passed: no question');
+});
+
+// ── P7 item 5, hamr's ruling 2026-10-10 (live session smv2k6bczlvk3): a try CUT OFF at the output cap is a FAILED try ──────────
+
+const CUT = { error: 'truncated:max_tokens' };
+
+test('P7 item 5 (hamr 2026-10-10, fail-first): try 1 fails validation and EVERY attempt of try 2 is cut off -> try 3 is offered the question, on every numbered job line', async () => {
+  const { generate, calls } = scriptGenerate([
+    { declaration: redDecl('a') }, CUT, CUT, CUT,
+    { declaration: { ...redDecl('c'), questions: [Q(1, 'what does fix the types mean?'), Q(9, 'no such line')] } },
+  ]);
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: scriptSeedRead().fn, jobLines: JOB2, offerQuestions: true });
+  assert.deepEqual(offeredAt(calls), [false, false, false, false, true], 'the three cut-off attempts of try 2 carry no question; try 3 does');
+  assert.equal(r.stop, 'questions-open');
+  assert.deepEqual(r.questions, [Q(1, 'what does fix the types mean?')], 'line 1 was not named by try 1\'s reds, yet a cut-off names no line: every job line counts');
+  assert.equal(r.iterations[1].cutOff, true);
+});
+
+test('P7 item 5 (hamr 2026-10-10): try 1 PASSES and try 2 is cut off -> no question (and the ladder stops artifact-red as before)', async () => {
+  const { generate, calls } = scriptGenerate([{ declaration: greenDecl('a') }, CUT, CUT, CUT, { declaration: { ...greenDecl('c'), questions: [Q(1, 'x')] } }]);
+  const r = await authorClose({ ...baseArgs(), generate, seedReadFn: scriptSeedRead().fn, jobLines: JOB2, offerQuestions: true });
+  assert.ok(offeredAt(calls).every((x) => x === false));
+  assert.equal(r.stop, 'artifact-red');
+  assert.notEqual(r.stop, 'questions-open');
+});
+
+test('P7 item 5 (hamr 2026-10-10): one attempt of try 2 cut off but a LATER attempt finished — the try is judged by that finished attempt', async () => {
+  // finished and red -> try 3 asks (on the lines that finished attempt\'s reds named)
+  const a = scriptGenerate([{ declaration: redDecl('a') }, CUT, { declaration: redDecl('b') }, { declaration: { ...redDecl('c'), questions: [Q(2, 'q')] } }]);
+  const ra = await authorClose({ ...baseArgs(), generate: a.generate, seedReadFn: scriptSeedRead().fn, jobLines: JOB2, offerQuestions: true });
+  assert.equal(ra.stop, 'questions-open');
+  assert.deepEqual(ra.questions, [Q(2, 'q')]);
+  // finished and passing -> try 3 may not ask
+  const b = scriptGenerate([{ declaration: redDecl('a') }, CUT, { declaration: greenDecl('b') }, { declaration: { ...greenDecl('c'), questions: [Q(2, 'q')] } }]);
+  const rb = await authorClose({ ...baseArgs(), generate: b.generate, seedReadFn: scriptSeedRead().fn, jobLines: JOB2, offerQuestions: true });
+  assert.ok(offeredAt(b.calls).every((x) => x === false), 'a finished passing attempt is not a failed try, whatever was cut off before it');
+  assert.notEqual(rb.stop, 'questions-open');
+});
+
+test('seedReadFailure: vacuous or instrument-stopped work stage fails; a red work stage passes; guards never count; unmapped lines mean every line', async () => {
+  const { seedReadFailure } = await import('../src/authorflow.js');
+  const decl = { stages: [{ name: 'g' }, { name: 'w1', fromLine: [1] }, { name: 'w2', fromLine: [3] }] };
+  const row = (/** @type {string} */ stage, /** @type {string} */ verdict) => ({ stage, verdict });
+  assert.deepEqual(seedReadFailure([row('g', 'green'), row('w1', 'red'), row('w2', 'green')], decl, ['g'], [1, 2, 3]), { failed: false, lines: [] });
+  assert.deepEqual(seedReadFailure([row('g', 'red'), row('w1', 'green'), row('w2', 'green')], decl, ['g'], [1, 2, 3]), { failed: true, lines: [1, 3] }, 'only guards red = vacuous work');
+  assert.deepEqual(seedReadFailure([row('w1', 'instrument-stop'), row('w2', 'red')], decl, [], [1, 2, 3]), { failed: true, lines: [1] }, 'the stopped stage names its line');
+  assert.deepEqual(seedReadFailure([row('w1', 'green')], { stages: [{ name: 'w1' }] }, [], [1, 2]), { failed: true, lines: [1, 2] }, 'no mapping: every numbered line counts');
+});
+
+test('F217: a REAL OpenAIProvider whose socket is reset (ECONNRESET "socket hang up") is provider-red with the plain reason on the drafter path — not an uncaught throw', async () => {
+  const { OpenAIProvider } = await import('bare-agent/providers');
+  const provider = new OpenAIProvider({ apiKey: 'test-key', model: 'deepseek-flash' });
+  provider._request = async () => { throw Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }); };
+  const channel = { name: DECLARATION_TOOL_NAME, instruction: 'x', tool: (/** @type {{calls: any[]}} */ b) => declarationTool(b) };
+  const down = await askStructured({
+    messages: [{ role: 'user', content: 'a' }], generate: makeLoopGenerate(provider), mode: 'tool', retries: 2, label: 'author', book: makeCostBook(), channel,
+  });
+  assert.equal(down.providerError, 'the connection to the provider dropped (socket hang up)');
+  assert.equal(down.red, null);
+});
+
+test('F217: a scout killed by a reset connection reaches the person: authorClose precheck red -> draftStopText names the scout and the plain reason', async () => {
+  const { draftStopText } = await import('../src/authorreadout.js');
+  const reason = 'the survey call failed: the connection to the provider dropped (socket hang up)';
+  const r = await authorClose({ ...baseArgs(), generate: async () => { throw new Error('no token may be spent'); }, seedReadFn: scriptSeedRead().fn, scout: { state: 'ABSENT', facts: null, reason, calls: [] } });
+  assert.equal(r.stop, 'precheck');
+  const text = draftStopText({ stop: r.stop, reds: r.reds, spend: { knownUsd: 0, spendComplete: true } });
+  assert.match(text, /first look at your repo did not complete/);
+  assert.ok(text.includes('the connection to the provider dropped (socket hang up)'), text);
 });

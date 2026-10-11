@@ -53,8 +53,8 @@ async function draftSession(t, calls, gapMs = 0) {
   const seen = [];
   let sessionDir = '';
   const session = createSession({
-    checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'draft-spend-job', goal: 'fix things', source: repo,
-    destination: 'src/', success: 'tsc clean', guardrails: 'no new deps', judgeExamples: '', capUsd: 2,
+    checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'draft-spend-job', jobText: 'fix things\n~ no new deps\ntsc clean', inputs: `repo: ${repo}`,
+    destination: 'src/', capUsd: 2,
   }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home, sessionsRoot: join(home, 'panel-sessions'),
     scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
@@ -245,8 +245,8 @@ test('Revise at the plan menu (an abandon, then a fresh Start): the abandoned dr
     git(repo, ['add', '-A']);
     git(repo, ['commit', '-q', '-m', 'seed']);
     const s = createSession({
-      checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'revise-spend-job', goal: 'fix things', source: repo,
-      destination: 'src/', success: 'tsc clean', guardrails: 'no new deps', judgeExamples: '', capUsd: 2,
+      checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'revise-spend-job', jobText: 'fix things\n~ no new deps\ntsc clean', inputs: `repo: ${repo}`,
+      destination: 'src/', capUsd: 2,
     }, {
       env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: h, sessionsRoot: join(h, 'panel-sessions'),
       scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
@@ -267,4 +267,18 @@ test('Revise at the plan menu (an abandon, then a fresh Start): the abandoned dr
   const file = JSON.parse(readFileSync(join(session.state.outDir, 'draft-spend.json'), 'utf8'));
   assert.equal(file.spentUsd, 0.0005, 'the confirm call booked before the revise is still booked after it');
   assert.equal(monthSpend({ home }).usd, 0.0005, 'and the month counts it');
+});
+
+test('readDraftSteps: a step-label record relabels the step without touching its status or times (the thinking row\'s "thought anyway")', (t) => {
+  const dir = tmp(t);
+  const lines = [
+    { kind: 'step-start', no: 0, id: 'thinking', label: 'thinking off', at: '2026-10-11T10:00:00.000Z' },
+    { kind: 'step-end', no: 0, status: 'done', label: 'thinking off', at: '2026-10-11T10:00:00.000Z' },
+    { kind: 'step-label', no: 0, label: 'thinking on (the model thought anyway)', at: '2026-10-11T10:00:09.000Z' },
+  ];
+  writeFileSync(join(dir, DRAFT_LOG_FILE), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+  const [x] = readDraftSteps(dir);
+  assert.equal(x.label, 'thinking on (the model thought anyway)');
+  assert.equal(x.status, 'done');
+  assert.equal(x.wallMs, 0, 'the relabel does not stretch the row\'s time');
 });

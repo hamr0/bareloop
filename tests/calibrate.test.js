@@ -847,11 +847,10 @@ test('authorCloseForJob compiles the Judge Examples answer into the close for a 
   /** @type {any[]} */
   const phases = [];
   const r = await authorCloseForJob({
-    // PRD item 33 M3 piece 3: the green trio is 1-3, Judge Examples is 4 —
-    // the old Q6+Q7 pair is now this one answer.
+    // P7: The job is 1, the Judge Examples (its PASS:/FAIL: lines) are 2.
     answers: {
-      1: 'document the exported functions', 2: 'I read the file', 3: 'do not touch tests, and it is worse if the docs are wrong',
-      4: 'I would pass a documented function and fail an undocumented one — every exported function has a doc '
+      1: '1. document the exported functions\n   rule: do not touch tests',
+      2: 'line 1 PASS: a documented function\nline 1 FAIL: an undocumented function — every exported function has a doc '
         + 'block and every parameter is described.',
     },
     verdictType: 'soft-green',
@@ -866,7 +865,7 @@ test('authorCloseForJob compiles the Judge Examples answer into the close for a 
     authorFn: async () => ({ ok: true, declaration, reds: [], stop: null, cost: { calls: [{ label: 'author', costUsd: 0.02, unpricedRounds: 0 }] }, genreEnv: { applied: {} } }),
     proposeFn: async (/** @type {any} */ o) => {
       // the compile is asked with the person's OWN answer, verbatim
-      assert.equal(o.answers[4], 'I would pass a documented function and fail an undocumented one — every '
+      assert.equal(o.answers[2], 'line 1 PASS: a documented function\nline 1 FAIL: an undocumented function — every '
         + 'exported function has a doc block and every parameter is described.');
       o.book.absorb([{ label: 'judged-compile', costUsd: 0.03, unpricedRounds: 0 }]);
       return { ok: true, proposal, reds: [], stop: null, attempts: 1 };

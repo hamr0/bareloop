@@ -2019,7 +2019,7 @@ test('refreshRunsList: a failing fetch keeps the last good state and only surfac
 });
 
 // ---------------------------------------------------------------------------
-// F195 (docs/logs/FINDINGS.md) — hamr's ruling B, 2026-09-27: the Runs list
+// F195 (docs/wiki/FINDINGS.md) — hamr's ruling B, 2026-09-27: the Runs list
 // throttles to a 10s refresh (RUNS_LIST_POLL_MS) instead of every 2s tick;
 // the open run's own detail is unaffected. Fail-first: RUNS_LIST_POLL_MS
 // and the `force` param on `refreshRunsList`/`pollTick` do not exist on the

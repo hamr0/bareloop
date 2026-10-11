@@ -2,7 +2,7 @@
 //
 // Prereg: docs/archive/REUSE-PREPROBE-PREREG.md (FROZEN 2026-08-01) — every
 // rule below is that document's, not this script's. Design record:
-// docs/product/2026-08-01-layer-3-reuse-design.md (D2 mechanical gate, D4 bridge-as-draft,
+// docs/logs/2026-08-01-layer-3-reuse-design.md (D2 mechanical gate, D4 bridge-as-draft,
 // D8 scout stays ON, D9 this probe gates the build).
 //
 // The question: does having a same-shape bridge in hand change what gets DRAFTED at all?
@@ -605,7 +605,7 @@ const results = {
   dry: DRY,
   ...(DRY ? { DRY_NOTICE: 'PLUMBING ONLY. Every number here came from a scripted stub provider, not a model. It is not evidence of anything and must never be read as a result.' } : {}),
   prereg: 'docs/archive/REUSE-PREPROBE-PREREG.md',
-  designRecord: 'docs/product/2026-08-01-layer-3-reuse-design.md',
+  designRecord: 'docs/logs/2026-08-01-layer-3-reuse-design.md',
   runid,
   startedAt: new Date().toISOString(),
   model: DRY ? null : MODEL,

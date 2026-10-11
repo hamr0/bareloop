@@ -58,10 +58,10 @@ test('page: the reuse card opens filled from the server\'s prefill, shows the se
   assert.match(fnSrc('clearStartFrom'), /setReuseLocked\(false\)/);
 });
 
-test('page: setReuseLocked greys Name, Goal, Success, Guardrails and Judge examples — and never Source, Destination, Model, the caps or (hamr 2026-10-06) the Check type radios, which stay clickable until a session is live', () => {
+test('page: setReuseLocked greys Name and The job — and never Inputs, Destination, Model, the caps or (hamr 2026-10-06) the Check type radios, which stay clickable until a session is live', () => {
   const els = {};
   const mk = (id) => { els[id] = { id, readOnly: false, disabled: false, classes: new Set(), classList: { toggle(c, on) { if (on) els[id].classes.add(c); else els[id].classes.delete(c); } } }; return els[id]; };
-  for (const id of ['jf-name', 'jf-goal', 'jf-source', 'jf-dest', 'jf-success', 'jf-guardrails', 'jf-judge', 'jf-cap-money', 'jf-cap-time', 'job-card', 'jf-model']) mk(id);
+  for (const id of ['jf-name', 'jf-job', 'jf-inputs', 'jf-dest', 'jf-cap-money', 'jf-cap-time', 'job-card', 'jf-model']) mk(id);
   const radios = [{ value: 'deterministic', disabled: false, checked: true }, { value: 'rubric', disabled: false, checked: false }];
   const doc = {
     getElementById: (id) => els[id],
@@ -70,13 +70,13 @@ test('page: setReuseLocked greys Name, Goal, Success, Guardrails and Judge examp
   };
   const modelSelect = els['jf-model'];
   // eslint-disable-next-line no-new-func
-  const f = new Function('document', 'modelSelect', `var LOCKED_IDS = ["jf-name", "jf-goal", "jf-success", "jf-guardrails", "jf-judge"]; var OPEN_IDS = ["jf-source", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var reuseOn = false; var sessionLive = false; var resumeRun = null; var CAP_IDS = ["jf-cap-money", "jf-cap-time"];\n${fnSrc('syncCardLock')}\n${fnSrc('setReuseLocked')}\nreturn setReuseLocked;`)(doc, modelSelect);
+  const f = new Function('document', 'modelSelect', `var LOCKED_IDS = ["jf-name", "jf-job"]; var OPEN_IDS = ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var reuseOn = false; var sessionLive = false; var resumeRun = null; var CAP_IDS = ["jf-cap-money", "jf-cap-time"];\n${fnSrc('syncCardLock')}\n${fnSrc('setReuseLocked')}\nreturn setReuseLocked;`)(doc, modelSelect);
   f(true);
-  for (const id of ['jf-name', 'jf-goal', 'jf-success', 'jf-guardrails', 'jf-judge']) {
+  for (const id of ['jf-name', 'jf-job']) {
     assert.equal(els[id].readOnly, true, `${id} is read only`);
     assert.ok(els[id].classes.has('locked'), `${id} is greyed`);
   }
-  for (const id of ['jf-source', 'jf-dest', 'jf-cap-money', 'jf-cap-time']) {
+  for (const id of ['jf-inputs', 'jf-dest', 'jf-cap-money', 'jf-cap-time']) {
     assert.equal(els[id].readOnly, false, `${id} stays editable`);
     assert.equal(els[id].classes.has('locked'), false);
   }
@@ -84,13 +84,12 @@ test('page: setReuseLocked greys Name, Goal, Success, Guardrails and Judge examp
   assert.equal(modelSelect.disabled, false, 'Model is open on a reuse (hamr 2026-10-04)');
   assert.equal(modelSelect.classes.has('locked'), false);
   // a live session freezes the radios, reuse or not
-  const live = new Function('document', 'modelSelect', `var LOCKED_IDS = ["jf-name"]; var OPEN_IDS = ["jf-source"]; var reuseOn = true; var sessionLive = true; var resumeRun = null; var CAP_IDS = [];\n${fnSrc('syncCardLock')}\nreturn syncCardLock;`)(doc, modelSelect);
+  const live = new Function('document', 'modelSelect', `var LOCKED_IDS = ["jf-name"]; var OPEN_IDS = ["jf-inputs"]; var reuseOn = true; var sessionLive = true; var resumeRun = null; var CAP_IDS = [];\n${fnSrc('syncCardLock')}\nreturn syncCardLock;`)(doc, modelSelect);
   live();
   assert.ok(radios.every((r) => r.disabled), 'a live session freezes the Check type radios');
   f(false);
-  assert.ok(['jf-name', 'jf-goal', 'jf-success', 'jf-guardrails'].every((id) => !els[id].readOnly), 'unlocked again for Clear');
+  assert.ok(['jf-name', 'jf-job'].every((id) => !els[id].readOnly), 'unlocked again for Clear');
   assert.ok(radios.every((r) => !r.disabled) && !modelSelect.disabled);
-  assert.equal(els['jf-judge'].disabled, true, 'deterministic: the rubric-only box is disabled as before');
 });
 
 test('page: a reuse session signs the hash the server prepared as soon as it is ready — one click (Sign & run), the server re-checks the hash', () => {

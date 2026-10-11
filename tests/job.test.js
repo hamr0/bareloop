@@ -738,3 +738,37 @@ test('checkMenu refuses to loop on a needs CYCLE — terminates, each stage at m
   }
   assert.deepEqual(menu.map((m) => m.run.map((s) => s.name)), [['b', 'a'], ['a', 'b']], 'deterministic, both directions');
 });
+
+// ── P7: jobLines / inputs ride the signed spec (docs/product/PANEL-BUILD.md "What goes into the signed spec") ──────
+
+test('P7: jobLines and inputs validate, move the hash, and a spec without them keeps its hash', () => {
+  const withBlock = mut((j) => {
+    j.jobLines = [{ n: 1, text: 'Fix the suite', rule: "don't edit tests" }, { n: 2, text: 'Keep the API', rule: '' }];
+    j.inputs = [{ n: 1, label: 'repo', value: '/home/me/r' }, { n: 2, label: 'spec', value: 'docs/spec.md' }];
+  });
+  const r = validateJob(withBlock);
+  assert.deepEqual(r.reds, []);
+  assert.notEqual(jobSpecHash(withBlock), jobSpecHash(JOB1));
+  assert.equal(jobSpecHash(JOB1), jobSpecHash(clone(JOB1)));
+});
+
+test('P7: malformed jobLines / inputs red by path', () => {
+  const codes = (j) => validateJob(j).reds.map((x) => `${x.code}@${x.path}`);
+  assert.ok(codes(mut((j) => { j.jobLines = []; })).includes('invalid-value@jobLines'));
+  assert.ok(codes(mut((j) => { j.jobLines = [{ n: 2, text: 'x', rule: '' }]; })).includes('invalid-value@jobLines[0].n'));
+  assert.ok(codes(mut((j) => { j.jobLines = [{ n: 1, text: 'x', rule: '', extra: 1 }]; })).includes('unknown-field@jobLines[0].extra'));
+  assert.ok(codes(mut((j) => { j.inputs = [{ n: 1, label: '', value: 'v' }]; })).includes('invalid-value@inputs[0].label'));
+  assert.ok(codes(mut((j) => { j.inputs = [{ n: 1, label: 'repo' }]; })).includes('invalid-value@inputs[0].value'));
+});
+
+test('P7: jobLines[].rules sits BESIDE rule — admitted when it joins back to rule, red otherwise, and an old-shape spec keeps its exact hash', () => {
+  const codes = (j) => validateJob(j).reds.map((x) => `${x.code}@${x.path}`);
+  const withRules = mut((j) => { j.jobLines = [{ n: 1, text: 'Document it', rule: 'PASS: /** Adds a and b; returns sum */; FAIL: none', rules: ['PASS: /** Adds a and b; returns sum */', 'FAIL: none'] }]; });
+  assert.deepEqual(validateJob(withRules).reds, []);
+  assert.ok(codes(mut((j) => { j.jobLines = [{ n: 1, text: 'x', rule: 'a; b', rules: ['a'] }]; })).includes('invalid-value@jobLines[0].rules'));
+  assert.ok(codes(mut((j) => { j.jobLines = [{ n: 1, text: 'x', rule: 'a', rules: 'a' }]; })).includes('invalid-value@jobLines[0].rules'));
+  // an older spec (no `rules`) validates and hashes exactly as it did before the field existed
+  const old = mut((j) => { j.jobLines = [{ n: 1, text: 'Fix the suite', rule: "don't edit tests" }, { n: 2, text: 'Keep the API', rule: '' }]; });
+  assert.deepEqual(validateJob(old).reds, []);
+  assert.equal(jobSpecHash(old), 'b76843e72acffd0f4db209fb24a148040f7bffdaf3ea8a0b192f14ddca6aa3ef');
+});

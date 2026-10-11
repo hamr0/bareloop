@@ -587,12 +587,29 @@ test('F192: a deepseek-flash judge locate carries thinking:{type:"disabled"} and
   assert.equal(body.max_tokens, 4000, 'deepseek-flash takes the legacy max_tokens key (F149) and the cap is untouched');
 });
 
-test('F192: a model NOT on the judge allow-list gets NO thinking field (OpenAI would reject or misread it)', async () => {
+test('thinkingMode: a gpt-5 judge locate carries bare-agent\'s own off shape (reasoning_effort minimal) and NEVER the raw thinking field', async () => {
   const body = await captureJudgeBody('gpt-5');
+  assert.equal(body.reasoning_effort, 'minimal', "bare-agent's measured off shape for gpt-5, not a bareloop list");
   assert.equal('thinking' in body, false);
 });
 
-test('F192: a worker/author call on the SAME deepseek-flash provider instance carries NO thinking field — the scope is the judge only', async () => {
+test('thinkingMode: a judge on claude-opus-5-5 (measured NOT switchable) does not throw and sends no thinking field of any kind', async () => {
+  const provider = makeProvider('anthropic-api', { apiKey: 'test-key', model: 'claude-opus-5-5' });
+  assert.deepEqual(judgeCallOptions(provider), {});
+  /** @type {any} */
+  let body = null;
+  /** @type {any} */ (provider)._request = async (/** @type {any} */ b) => { body = JSON.parse(JSON.stringify(b)); throw new Error('captured'); };
+  await runLocate({ artifactText: F192_ARTIFACT, card: F192_CARD, loopFactory: ({ system }) => defaultJudgeLoop({ provider, system }) });
+  assert.ok(body, 'the request was sent (bare-agent did not refuse before send)');
+  assert.equal('thinking' in body, false);
+});
+
+test('thinkingMode: a judge on an UNVERIFIED model sends nothing (the default path never breaks a model bare-agent has not measured)', async () => {
+  const body = await captureJudgeBody('some-local-model');
+  for (const k of ['thinking', 'reasoning_effort', 'think']) assert.equal(k in body, false, k);
+});
+
+test('F192: a drafter call with thinking ON on the SAME deepseek-flash provider instance carries NO thinking field — the judge option never leaks into the call options', async () => {
   const provider = makeProvider('openai-api', { apiKey: 'test-key', model: 'deepseek-flash' });
   /** @type {any} */
   let body = null;
@@ -600,7 +617,7 @@ test('F192: a worker/author call on the SAME deepseek-flash provider instance ca
     body = JSON.parse(JSON.stringify(b));
     throw new Error('captured');
   };
-  await makeLoopGenerate(provider)([{ role: 'user', content: 'hi' }], [], {}).catch(() => {});
+  await makeLoopGenerate(provider, { draftThinking: 'on' })([{ role: 'user', content: 'hi' }], [], {}).catch(() => {});
   assert.ok(body, 'the worker-path request reached the provider seam');
   assert.equal('thinking' in body, false);
 });
@@ -608,4 +625,86 @@ test('F192: a worker/author call on the SAME deepseek-flash provider instance ca
 test('F192: judgeCallOptions is empty for a non-OpenAI provider even when the model id matches the allow-list', () => {
   const p = makeProvider('anthropic-api', { apiKey: 'k', model: 'deepseek-flash' });
   assert.deepEqual(judgeCallOptions(p), {});
+});
+
+// ── hamr 2026-10-10: the DRAFTER's per-call "thinking off" knob (default OFF since hamr 2026-10-11) ─────────────────────────────────
+
+import { draftCallOptions, draftThinkingSent, DRAFT_THINKING_MODES } from '../src/providers.js';
+import { runAuthorScout } from '../src/authorscout.js';
+
+/** every request body a real OpenAIProvider of `model` is asked to send while `fn(provider)` runs (the stub answers with a plain text round) */
+async function captureBodies(/** @type {string} */ model, /** @type {(p: any) => Promise<any>} */ fn) {
+  const provider = makeProvider('openai-api', { apiKey: 'test-key', model });
+  /** @type {any[]} */
+  const bodies = [];
+  /** @type {any} */ (provider)._request = async (/** @type {string} */ _path, /** @type {any} */ b) => {
+    bodies.push(JSON.parse(JSON.stringify(b)));
+    return { choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 5 }, model };
+  };
+  await fn(provider);
+  return bodies;
+}
+
+test('draftCallOptions: the knob is the enumerated pair; the DEFAULT is off; on sends nothing; off sends thinkingMode off ONLY where bare-agent measures the model switchable', () => {
+  assert.deepEqual([...DRAFT_THINKING_MODES], ['on', 'off']);
+  const flash = makeProvider('openai-api', { apiKey: 'k', model: 'deepseek-flash' });
+  assert.deepEqual(draftCallOptions(flash), { thinkingMode: 'off' }, 'no value = off');
+  assert.deepEqual(draftCallOptions(flash, 'on'), {});
+  assert.deepEqual(draftCallOptions(flash, 'off'), { thinkingMode: 'off' });
+  assert.deepEqual(draftCallOptions(makeProvider('openai-api', { apiKey: 'k', model: 'gpt-5' }), 'off'), { thinkingMode: 'off' }, 'measured switchable');
+  assert.deepEqual(draftCallOptions(makeProvider('anthropic-api', { apiKey: 'k', model: 'claude-opus-5-5' }), 'off'), {}, 'measured NOT switchable: nothing sent');
+  assert.deepEqual(draftCallOptions(makeProvider('openai-api', { apiKey: 'k', model: 'some-local-model' }), 'off'), {}, 'unverified: nothing sent on the default path');
+  assert.deepEqual(draftCallOptions({ model: 'deepseek-flash' }, 'off'), {}, 'not a constructed provider (a test double): never sent');
+});
+
+test('draftThinkingSent: on | off | not-switchable | unverified, from bare-agent thinkingSupport', () => {
+  const sent = (/** @type {string} */ prov, /** @type {string} */ model, /** @type {any} */ mode) => draftThinkingSent(makeProvider(prov, { apiKey: 'k', model }), mode);
+  assert.equal(sent('openai-api', 'deepseek-flash'), 'off');
+  assert.equal(sent('openai-api', 'deepseek-flash', 'on'), 'on');
+  assert.equal(sent('anthropic-api', 'claude-opus-5-5'), 'not-switchable');
+  assert.equal(sent('openai-api', 'some-local-model'), 'unverified');
+});
+
+test('draftCallOptions: any other value throws as an operator-param guard (never a silent default)', () => {
+  const flash = makeProvider('openai-api', { apiKey: 'k', model: 'deepseek-flash' });
+  for (const bad of ['default', 'OFF', '', null, true, 0, {}]) {
+    assert.throws(() => draftCallOptions(flash, bad), /draftThinking must be one of on \| off/);
+  }
+  assert.throws(() => makeLoopGenerate(flash, { draftThinking: 'nope' }), /draftThinking must be one of/, 'and at the generate seam, at construction');
+});
+
+test('drafter generate (real OpenAIProvider, _request stubbed): the DEFAULT (no value) and off put thinking on the request body for deepseek-flash only; on leaves the body unchanged', async () => {
+  const call = (/** @type {any} */ mode) => (/** @type {any} */ p) => makeLoopGenerate(p, { draftThinking: mode })([{ role: 'user', content: 'hi' }], [], {});
+  const [off] = await captureBodies('deepseek-flash', call('off'));
+  assert.deepEqual(off.thinking, { type: 'disabled' });
+  const [none] = await captureBodies('deepseek-flash', (p) => makeLoopGenerate(p)([{ role: 'user', content: 'hi' }], [], {}));
+  assert.deepEqual(none.thinking, { type: 'disabled' }, 'a drafter built with NO thinking value sends thinking disabled');
+  assert.deepEqual(none, off, 'no value is exactly off');
+  const [dflt] = await captureBodies('deepseek-flash', call('on'));
+  assert.equal('thinking' in dflt, false);
+  const { thinking: _t, ...offSansThinking } = off;
+  assert.deepEqual(dflt, offSansThinking, "'on' is byte-identical to the off body minus the one thinking field");
+  const [gpt5] = await captureBodies('gpt-5', call('off'));
+  assert.equal(gpt5.reasoning_effort, 'minimal', "gpt-5 'off': bare-agent's own measured shape");
+  assert.equal('thinking' in gpt5, false);
+  const [unverified] = await captureBodies('some-local-model', call('off'));
+  const [unverifiedOn] = await captureBodies('some-local-model', call('on'));
+  assert.deepEqual(unverified, unverifiedOn, 'an unverified model: the default off path sends nothing (== on == no knob)');
+  for (const k of ['thinking', 'reasoning_effort', 'think']) assert.equal(k in unverified, false, k);
+  // 'on' is byte-identical to a call made with NO thinking knob at all (raw provider, not our wrapper)
+  const [plain] = await captureBodies('deepseek-flash', (p) => makeLoopGenerate(p, { draftThinking: 'on' })([{ role: 'user', content: 'hi' }], [], {}));
+  assert.deepEqual(plain, dflt);
+  // the drafter's own max_tokens cap rides along unchanged
+  assert.equal(off.max_tokens, dflt.max_tokens);
+});
+
+test('the scout (every call it makes) carries the drafter options through runAuthorScout({callOptions})', async () => {
+  const surveyor = async () => ({ tools: [{ name: 'shell_read', description: 'read', parameters: { type: 'object', properties: {} }, execute: async () => '' }], policy: null, onLlmResult: null, cleanup: async () => {} });
+  const run = (/** @type {any} */ callOptions) => (/** @type {any} */ p) => runAuthorScout({ workdir: '/w', provider: p, createSurveyor: surveyor, attempts: 1, ...(callOptions ? { callOptions } : {}) });
+  const off = await captureBodies('deepseek-flash', run({ thinkingMode: 'off' }));
+  assert.ok(off.length >= 1);
+  assert.ok(off.every((b) => b.thinking && b.thinking.type === 'disabled'), 'survey, recovery and re-ask rounds alike');
+  const dflt = await captureBodies('deepseek-flash', run(null));
+  assert.ok(dflt.length >= 1);
+  assert.ok(dflt.every((b) => !('thinking' in b)));
 });

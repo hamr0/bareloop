@@ -28,7 +28,7 @@ import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { createPanelServer } from '../src/panel/server.js';
 import { checkHumanGuard, signRun } from '../src/panel/authorroutes.js';
-import { createSession, planText, validateJobCard as rawValidateJobCard, jobNameTaken } from '../src/panel/authorsession.js';
+import { createSession, planMessage, PLAN_FOOTER, validateJobCard as rawValidateJobCard, jobNameTaken } from '../src/panel/authorsession.js';
 import { keyRows } from '../src/providerrows.js';
 import { classGuards } from '../src/authoring.js';
 import { GENRE } from '../src/authorjob.js';
@@ -98,16 +98,15 @@ function keysHomeWith(text = 'ANTHROPIC_API_KEY=fake-not-a-real-key\n') {
 const ROWS = keyRows({ filled: ['ANTHROPIC_API_KEY'], config: {} });
 const validateJobCard = (card, opts = {}) => rawValidateJobCard(card, { rows: ROWS, ...opts });
 
-const baseCard = (overrides = {}) => ({
+// P7: the card is { jobText, inputs, ... } — "The job" and "Inputs" are the two boxes. `source` is kept as a SHORTHAND for
+// Inputs line 1 (`repo: <source>`) so the many call sites that point a card at a fixture repo read as before.
+const baseCard = ({ source = '/tmp/does-not-matter-for-validateJobCard', ...overrides } = {}) => ({
   checkType: 'deterministic',
   model: 'claude-sonnet-5',
   jobName: 'panel-author-test-job',
-  goal: 'fix things',
-  source: '/tmp/does-not-matter-for-validateJobCard',
+  jobText: 'fix things\n~ no new deps\ntsc clean',
+  inputs: `repo: ${source}`,
   destination: 'src/',
-  success: 'tsc clean',
-  guardrails: 'no new deps',
-  judgeExamples: '',
   capUsd: 2,
   ...overrides,
 });
@@ -153,11 +152,15 @@ test('validateJobCard: a taken job name refuses (P3 is new jobs only, Q4=A) — 
 });
 
 test('validateJobCard: missing required fields refuse one at a time', () => {
-  for (const field of ['jobName', 'goal', 'source', 'destination', 'success', 'guardrails']) {
+  for (const field of ['jobName', 'jobText', 'inputs', 'destination']) {
     const r = validateJobCard(baseCard({ [field]: '' }));
     assert.equal(r.ok, false, `${field} empty must refuse`);
   }
-  assert.equal(validateJobCard(baseCard({ checkType: 'rubric', judgeExamples: '' })).ok, false, 'rubric with no judge examples must refuse');
+  assert.equal(validateJobCard(baseCard({ checkType: 'rubric' })).ok, false, 'rubric with no PASS:/FAIL: examples must refuse');
+  assert.equal(validateJobCard(baseCard({ checkType: 'rubric', jobText: 'Write it\n~ PASS: quoted\n~ FAIL: invented' })).ok, true, 'a rubric with examples is fine');
+  assert.match(validateJobCard(baseCard({ jobText: 'Fix it\n~ PASS: x' })).error, /examples are for a Rubric check/, 'a deterministic job has no judge to read them');
+  assert.match(validateJobCard(baseCard({ jobText: '~ nope\nFix it' })).error, /belongs to the numbered line above/);
+  assert.match(validateJobCard(baseCard({ inputs: 'just-a-path' })).error, /Inputs, line 1: write it as "label: value"/);
 });
 
 // ---------------------------------------------------------------------------
@@ -461,7 +464,9 @@ function fakeDeclaration() {
     name: x.name, kind: x.kind, params: { ...x.params, ...(x.fill.includes('allowPrefixes') ? { allowPrefixes: ['src/'] } : {}) },
   }));
   return {
-    stages: [g[0], { name: 'verdict', kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } }, g[1]],
+    // P7: the one non-guard stage serves job line 1; line 2 of baseCard()'s job block is refused with a reason
+    stages: [g[0], { name: 'verdict', fromLine: [1], kind: 'command-exit', params: { cmd: 'node', args: ['-e', ''], expectExit: 0 } }, g[1]],
+    refused: [{ line: 2, reason: 'no command in this fixture can check it' }],
     notes: [],
   };
 }
@@ -521,7 +526,7 @@ test('createSession end to end: draft -> plan menu -> prepared -> sign, driven b
   const repo = makeRepo();
   const specHash = 'cafef00dbeef0123';
   const plans = [
-    { goal: 'fix things v1', checks: ['tsc clean'], questions: [], notChecked: [] },
+    { goal: 'fix things v1', checks: [{ text: 'tsc clean', fromLine: [1] }], questions: [], notChecked: [] },
   ];
   const session = createSession(baseCard({ source: repo, jobName: 'panel-author-e2e-1' }), {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(),
@@ -549,10 +554,14 @@ test('createSession end to end: draft -> plan menu -> prepared -> sign, driven b
   assert.ok(await waitForAskKind('menu'), `expected a menu ask; got phase=${session.state.phase} error=${session.state.error}`);
   assert.equal('revisesLeft' in session.state, false, 'no typed-revise rounds exist any more');
   assert.equal(typeof /** @type {any} */ (session).revise, 'undefined');
-  // hamr 2026-10-09: the plan reads as headed sections, a blank line between them (one owner: planText)
-  const shown = session.state.messages.filter((m) => m.role === 'bot').at(-1).text;
-  assert.equal(shown, '#PLAN:\n"fix things v1"\n\n#CHECKS:\ntsc clean\n\n'
-    + 'Sign & run to confirm this plan, or Revise to edit the boxes and draft again.');
+  // P7: the plan is a STRUCTURED message the page draws with the one renderer (one owner: planMessage) — each numbered
+  // job line, its rule, its drafted check; the always-on protections serve no line
+  const shown = session.state.messages.filter((m) => m.role === 'bot').at(-1);
+  assert.equal(shown.kind, 'plan');
+  assert.equal(shown.text, PLAN_FOOTER);
+  assert.deepEqual(shown.plan.lines.map((l) => [l.n, l.text, l.rule, l.checks.map((c) => c.name)]),
+    [[1, 'fix things', 'no new deps', ['tsc clean']], [2, 'tsc clean', '', []]]);
+  assert.ok(shown.plan.alwaysOn.length > 0, 'the real protections are Always on');
 
   const badSend = session.send('this must be refused — menu picks never go through send');
   assert.equal(badSend.ok, false, 'RED-PROOF: send() must refuse a pending menu ask');
@@ -1145,16 +1154,212 @@ test('P6 item 3: npm ci "succeeds" but node_modules is still missing -> falls ba
   assert.equal(session.state.phase, 'install-needed');
 });
 
-test('planText: PLAN, CHECKS, NOT CHECKED (and QUESTIONS) are headed sections, a blank line apart; empty ones are left out', () => {
-  assert.equal(planText({
-    goal: 'Every exported function gets a doc comment that says what it does.',
-    checks: ['every exported function has a doc block', 'the doc is not only a restatement of the function name'],
-    notChecked: ['the doc is accurate', 'the doc is well written'],
-    questions: [],
-  }), '#PLAN:\n"Every exported function gets a doc comment that says what it does."\n\n'
-    + '#CHECKS:\nevery exported function has a doc block · the doc is not only a restatement of the function name\n\n'
-    + '#NOT CHECKED:\nthe doc is accurate · the doc is well written\n\n'
-    + 'Sign & run to confirm this plan, or Revise to edit the boxes and draft again.');
-  assert.equal(planText({ goal: 'g', checks: [], notChecked: [], questions: ['which folder?'] }),
-    '#PLAN:\n"g"\n\n#CHECKS:\n(none)\n\n#QUESTIONS:\nwhich folder?\n\nSign & run to confirm this plan, or Revise to edit the boxes and draft again.');
+test('planMessage: a structured plan — lines with their checks, loose checks, Not checked, Always on, questions; footer in plain words', () => {
+  const lines = [{ n: 1, text: 'Fix it', rule: "don't edit tests" }, { n: 2, text: 'Run npm test', rule: '' }];
+  const m = planMessage({
+    goal: 'g', checks: ['a', 'b', 'c'], checkItems: [{ text: 'a', fromLine: [1] }, { text: 'b', fromLine: [2] }, { text: 'c', fromLine: null }],
+    notChecked: ['the doc is accurate'], questions: ['which folder?'], protections: ['no-suppressions'],
+  }, lines);
+  assert.equal(m.kind, 'plan');
+  assert.equal(m.role, 'bot');
+  assert.equal(m.text, 'Sign & run to confirm this plan, or Revise to edit the boxes and draft again.');
+  assert.deepEqual(m.plan.lines.map((l) => l.checks.map((c) => c.name)), [['a'], ['b']]);
+  assert.deepEqual(m.plan.loose.map((c) => c.name), ['c']);
+  assert.deepEqual(m.plan.notChecked, ['the doc is accurate']);
+  assert.deepEqual(m.plan.alwaysOn, ['no-suppressions']);
+  assert.deepEqual(m.plan.questions, ['which folder?']);
+  assert.equal(m.plan.older, false);
+});
+
+// ── P7 batch 2 item 5 (fwdloop am24/25): the last drafting try asks; the answer is a `~` rule; the draft runs again ──────
+
+async function untilTrue(fn, ms = 5000) { const t0 = Date.now(); while (Date.now() - t0 < ms && !fn()) { await new Promise((r) => { setTimeout(r, 10); }); } }
+
+test('P7 item 5: questions-open -> each question asked through the ordinary ask path (named line, required, no skip) -> answers become word-for-word `~` rules on those lines in the signed jobLines and the plan card -> the draft runs once more, may not ask', async () => {
+  /** @type {any[]} */ const legs = [];
+  const authorFn = async (/** @type {any} */ o) => {
+    legs.push({ offerQuestions: o.offerQuestions ?? false, jobLines: JSON.parse(JSON.stringify(o.jobLines)), answers1: o.answers[1], priorCalls: o.priorCalls?.length ?? 0 });
+    if (legs.length === 1) {
+      return {
+        ok: false, stop: 'questions-open', declaration: null, reds: [{ code: 'job-line-uncovered', path: 'stages', detail: 'job line 2 has no stage' }],
+        questions: [{ line: 2, question: 'which tests?' }, { line: 1, question: 'which folder?' }],
+        iterations: [{ droppedQuestions: [{ reason: 'blank question', raw: {} }] }],
+        cost: { costUsd: 0.04, knownUsd: 0.04, spendComplete: true, calls: [{ label: 'author', costUsd: 0.04, unpricedRounds: 0 }], unpricedRounds: 0 }, raws: [],
+      };
+    }
+    return fakeAuthorFn()();
+  };
+  const sessionsRoot = tmp('panel-author-sess-q-');
+  const session = createSession(baseCard({ source: makeRepo(), jobName: 'panel-author-try3-q', jobText: 'fix things\ntidy the tests\n~ no new deps' }), {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot,
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    generate: async () => { throw new Error('unused'); },
+    confirmGenerate: makeFakeConfirmGenerate([{ goal: 'fix things', checks: [{ text: 'tsc clean', fromLine: [1] }], questions: [], notChecked: [] }]),
+    authorFn,
+    prepareSigningFn: fakePrepareSigningFn('cafef00dbeef0123'),
+  });
+  await untilTrue(() => session.state.pendingAsk?.kind === 'menu');
+  assert.equal(session.signPrepare().ok, true);
+  await untilTrue(() => session.state.pendingAsk?.kind === 'answer');
+  const say = () => session.state.messages.filter((/** @type {any} */ m) => m.role === 'bot').at(-1).text;
+  assert.equal(say(), 'A question the plan raised (1 of 2), about job line 2: which tests?');
+  assert.equal(legs[0].offerQuestions, true, 'the first leg may ask (a real asker is wired)');
+  // required: a blank answer asks again, no skip
+  assert.equal(session.send('   ').ok, true);
+  const botSaid = () => session.state.messages.filter((/** @type {any} */ m) => m.role === 'bot').map((/** @type {any} */ m) => m.text);
+  await untilTrue(() => botSaid().some((t) => /An answer is needed/.test(t)));
+  assert.ok(botSaid().some((t) => /no skip/i.test(t)));
+  await untilTrue(() => session.state.pendingAsk?.kind === 'answer' && /\(1 of 2\)/.test(say()));
+  assert.equal(say(), 'A question the plan raised (1 of 2), about job line 2: which tests?', 'the same question is asked again');
+  session.send('only the date tests,\nnot the rest');
+  await untilTrue(() => /\(2 of 2\)/.test(say()));
+  assert.equal(say(), 'A question the plan raised (2 of 2), about job line 1: which folder?');
+  session.send('src/date');
+  await untilTrue(() => ['prepared', 'refused', 'error'].includes(session.state.phase));
+  assert.equal(session.state.phase, 'prepared', String(session.state.error));
+  assert.equal(legs.length, 2, 'the draft ran again, once');
+  assert.equal(legs[1].offerQuestions, false, 'the redraft may not ask');
+  assert.equal(legs[1].priorCalls, 1, 'the first leg\'s spend is carried so the one cap still binds');
+  assert.deepEqual(legs[1].jobLines.map((/** @type {any} */ l) => [l.n, l.rule]), [[1, 'src/date'], [2, 'no new deps; only the date tests, not the rest']],
+    'word for word (newlines folded to a space), joined to an existing rule with "; "');
+  assert.match(legs[1].answers1, /2\. tidy the tests\n {3}rule: no new deps; only the date tests, not the rest/, 'the answers text the later stages read carries them too');
+  const plan = session.state.messages.filter((/** @type {any} */ m) => m.kind === 'plan').at(-1);
+  assert.deepEqual(plan.plan.lines.map((/** @type {any} */ l) => l.rule), ['src/date', 'no new deps; only the date tests, not the rest'], 'the plan card shows them like any ~ rule');
+  const resolved = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
+  assert.deepEqual(resolved.jobLines.map((/** @type {any} */ l) => l.rule), ['src/date', 'no new deps; only the date tests, not the rest'], 'signed with the spec');
+  const log = readFileSync(join(sessionsRoot, session.id, 'draft-log.jsonl'), 'utf8');
+  assert.match(log, /questions-dropped/, 'a dropped question is logged');
+});
+
+test('P7 item 6: ANY drafting stop says why in plain words on the card — a provider-red names the provider fault, the spend and what to do (not the bare code)', async () => {
+  const session = createSession(baseCard({ source: makeRepo(), jobName: 'panel-author-stopreason' }), {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot: tmp('panel-author-sess-stop-'),
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    generate: async () => { throw new Error('unused'); },
+    confirmGenerate: makeFakeConfirmGenerate([{ goal: 'g', checks: [{ text: 'c', fromLine: [1] }], questions: [], notChecked: [] }]),
+    authorFn: async (/** @type {any} */ o) => { o.onCall({ label: 'author', costUsd: 0.0384, unpricedRounds: 0 }); return {
+      ok: false, stop: 'provider-red', declaration: null, reds: [{ code: 'provider-red', path: 'author', detail: 'socket hang up' }], iterations: [],
+      cost: { costUsd: 0.0384, knownUsd: 0.0384, spendComplete: true, calls: [], unpricedRounds: 0 }, raws: [],
+    }; },
+  });
+  await untilTrue(() => session.state.pendingAsk?.kind === 'menu');
+  session.signPrepare();
+  await untilTrue(() => session.state.phase === 'refused');
+  const shown = session.state.error;
+  assert.equal(session.state.phase, 'refused');
+  assert.doesNotMatch(shown, /^Stopped: provider-red$/);
+  assert.match(shown, /AI provider failed/);
+  assert.match(shown, /socket hang up/, 'the reason the stop carried is quoted');
+  assert.match(shown, /Spent so far: \$0\.04/);
+  assert.match(shown, /What to do: draft again/);
+  assert.equal(session.state.steps.at(-1).detail, shown, 'the same words are on the failed step the card draws');
+});
+
+test('createSession: draftThinking is an enumerated operator option — a bad value throws before any session exists (hamr 2026-10-10)', () => {
+  assert.throws(() => createSession(baseCard({ jobName: 'draft-thinking-bad' }), { draftThinking: 'maybe', sessionsRoot: '/nonexistent/never-created' }), /draftThinking must be one of on \| off/);
+});
+
+// ── hamr 2026-10-11: a session built with NO thinking value drafts with deepseek-flash thinking OFF ────────────────────
+test('createSession: with NO draftThinking value the drafter\'s real request body carries thinking:{type:"disabled"} for deepseek-flash; "on" leaves it out', async () => {
+  const { createRequire } = await import('node:module');
+  const OpenAIProvider = createRequire(import.meta.url)('bare-agent/providers').OpenAIProvider;
+  const realRequest = OpenAIProvider.prototype._request;
+  const bodyOf = async (/** @type {any} */ extra) => {
+    /** @type {any[]} */
+    const bodies = [];
+    OpenAIProvider.prototype._request = async function stub(/** @type {string} */ _p, /** @type {any} */ b) {
+      bodies.push(JSON.parse(JSON.stringify(b)));
+      return { choices: [{ message: { content: 'x' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1 }, model: 'deepseek-flash' };
+    };
+    const home = keysHomeWith('DS_KEY=sk-fake\n');
+    writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { DS_KEY: { name: 'deepseek-flash', shape: 'openai-api', baseUrl: 'https://gw.example/v1' } } }));
+    const session = createSession(baseCard({ source: makeRepo(), model: 'deepseek-flash', jobName: 'panel-author-think-default', capUsd: 1 }), {
+      env: { DS_KEY: 'sk-fake' }, home, sessionsRoot: tmp('panel-author-sess-think-'),
+      scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+      ...extra,
+    });
+    const start = Date.now();
+    while (bodies.length === 0 && Date.now() - start < 5000) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((r) => { setTimeout(r, 10); });
+    }
+    try { /** @type {any} */ (session).abandon?.(); } catch { /* best effort */ }
+    return bodies[0];
+  };
+  try {
+    const dflt = await bodyOf({});
+    assert.ok(dflt, 'the drafter made a model call');
+    assert.deepEqual(dflt.thinking, { type: 'disabled' });
+    const on = await bodyOf({ draftThinking: 'on' });
+    assert.ok(on);
+    assert.equal('thinking' in on, false);
+  } finally { OpenAIProvider.prototype._request = realRequest; }
+});
+
+// ── hamr 2026-10-11 ledger: the draft log records what was actually SENT for thinking ──────────────────────────────────
+test('draft-log call entries carry the thinking that was really sent: off for deepseek-flash, unverified for a model bare-agent has not measured, on when asked', async () => {
+  const thinkingLogged = async (/** @type {string} */ modelName, /** @type {any} */ extra) => {
+    const home = keysHomeWith('DS_KEY=sk-fake\n');
+    writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { DS_KEY: { name: modelName, shape: 'openai-api', baseUrl: 'https://gw.example/v1' } } }));
+    const sessionsRoot = tmp('panel-author-sess-thinklog-');
+    const session = createSession(baseCard({ source: makeRepo(), model: modelName, jobName: 'panel-author-thinklog', capUsd: 1 }), {
+      env: { DS_KEY: 'sk-fake' }, home, sessionsRoot,
+      scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+      generate: async () => { throw new Error('unused'); },
+      confirmGenerate: makeFakeConfirmGenerate([{ goal: 'g', checks: [{ text: 'c', fromLine: [1] }], questions: [], notChecked: [] }]),
+      authorFn: async (/** @type {any} */ o) => { o.onCall({ label: 'author', costUsd: 0.01, unpricedRounds: 0 }); return {
+        ok: false, stop: 'provider-red', declaration: null, reds: [{ code: 'provider-red', path: 'author', detail: 'x' }], iterations: [],
+        cost: { costUsd: 0.01, knownUsd: 0.01, spendComplete: true, calls: [], unpricedRounds: 0 }, raws: [],
+      }; },
+      ...extra,
+    });
+    await untilTrue(() => session.state.pendingAsk?.kind === 'menu');
+    session.signPrepare();
+    await untilTrue(() => session.state.phase === 'refused');
+    const entries = readFileSync(join(sessionsRoot, session.id, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((e) => e.kind === 'call');
+    assert.ok(entries.length > 0, 'a call entry was logged');
+    return [...new Set(entries.map((e) => e.thinking))];
+  };
+  assert.deepEqual(await thinkingLogged('deepseek-flash', {}), ['off']);
+  assert.deepEqual(await thinkingLogged('some-other-model', {}), ['unverified']);
+  assert.deepEqual(await thinkingLogged('deepseek-flash', { draftThinking: 'on' }), ['on']);
+});
+
+// ── hamr 2026-10-11: the FIRST drafting row says whether the drafter thinks (text owned by code) ───────────────────────
+test('the first drafting row (before "checking setup") reads thinking off / on / cannot-turn-off / not verified / thought anyway, and the draft log carries thinkingApplied', async () => {
+  const run = async (/** @type {string} */ modelName, /** @type {string} */ shape, /** @type {any} */ extra, /** @type {any} */ applied) => {
+    const home = keysHomeWith('DS_KEY=sk-fake-key-value-1234567890\n');
+    writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { DS_KEY: { name: modelName, shape, baseUrl: 'https://gw.example/v1' } } }));
+    const sessionsRoot = tmp('panel-author-sess-thinkrow-');
+    const session = createSession(baseCard({ source: makeRepo(), model: modelName, jobName: 'panel-author-thinkrow', capUsd: 1 }), {
+      env: { DS_KEY: 'sk-fake-key-value-1234567890' }, home, sessionsRoot,
+      scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+      generate: async () => { throw new Error('unused'); },
+      confirmGenerate: makeFakeConfirmGenerate([{ goal: 'g', checks: [{ text: 'c', fromLine: [1] }], questions: [], notChecked: [] }]),
+      authorFn: async (/** @type {any} */ o) => { o.onCall({ label: 'author', costUsd: 0.01, unpricedRounds: 0, ...(applied === undefined ? {} : { thinkingApplied: applied }) }); return {
+        ok: false, stop: 'provider-red', declaration: null, reds: [{ code: 'provider-red', path: 'author', detail: 'x' }], iterations: [],
+        cost: { costUsd: 0.01, knownUsd: 0.01, spendComplete: true, calls: [], unpricedRounds: 0 }, raws: [],
+      }; },
+      ...extra,
+    });
+    await untilTrue(() => session.state.pendingAsk?.kind === 'menu');
+    session.signPrepare();
+    await untilTrue(() => session.state.phase === 'refused');
+    const log = readFileSync(join(sessionsRoot, session.id, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    return { steps: session.state.steps, calls: log.filter((e) => e.kind === 'call') };
+  };
+  const off = await run('deepseek-flash', 'openai-api', {}, true);
+  assert.deepEqual(off.steps[0], { id: 'thinking', label: 'thinking off', status: 'done', detail: '' });
+  assert.equal(off.steps[1].id, 'setup', 'the row comes before "checking setup"');
+  const authorCall = (/** @type {any} */ r) => r.calls.find((/** @type {any} */ c) => c.label === 'author');
+  assert.equal(authorCall(off).thinking, 'off');
+  assert.equal(authorCall(off).thinkingApplied, true);
+  assert.equal((await run('deepseek-flash', 'openai-api', { draftThinking: 'on' })).steps[0].label, 'thinking on');
+  assert.equal((await run('claude-opus-5-5', 'anthropic-api', {})).steps[0].label, "thinking on (this model can't turn it off)");
+  const unv = await run('some-other-model', 'openai-api', {});
+  assert.equal(unv.steps[0].label, 'thinking on (not verified for this model)');
+  assert.equal('thinkingApplied' in authorCall(unv), false, 'absent when bare-agent reported none');
+  const anyway = await run('deepseek-flash', 'openai-api', {}, false);
+  assert.equal(anyway.steps[0].label, 'thinking on (the model thought anyway)');
+  assert.equal(authorCall(anyway).thinkingApplied, false);
 });

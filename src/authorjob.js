@@ -113,6 +113,7 @@ import {
   QUESTION_SETS, questionsFor, requiredAnswersFor, authorClose, makeCostBook,
   runConfirmTurn, LANGUAGE_PICK_FIELD,
 } from './authorflow.js';
+import { draftCallOptions, assertDraftThinking } from './providers.js';
 import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
 import {
   DECLARED_GAP_PREFIX, DECLARED_GENRES, guardNames, isDeclaredClose, validateCloseDecl,
@@ -416,16 +417,19 @@ function composerRefusal(reds) {
  * one-genre-at-a-time law is untouched.
  *
  * @param {{answers: Record<string|number, any>, repoPath?: string|null, lang: string,
+ *   jobLines?: {n: number, text: string}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
  *   verdictType?: string|null,
  *   questions?: Record<string|number, string>|null, generate?: Function, provider?: any,
  *   seedRef?: string|null, scout?: any, listing?: any, ceilingUsd?: number|null, judgeModel?: string|null,
- *   rates?: {in: number, out: number}|null,
+ *   rates?: {in: number, out: number}|null, draftThinking?: 'on'|'off',
  *   onPhase?: (phase: string, data?: any) => void,
- *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void,
+ *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingApplied?: boolean|null}) => void,
  *   seedFn?: Function, scoutFn?: Function, listingFn?: Function,
  *   authorFn?: Function, authorOpts?: object, writeScope?: string[]|null,
  *   signerFix?: Function|any, proposeFn?: Function, compileOpts?: object,
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
+ *   answerQuestions?: ((o: {questions: {line: number, question: string}[], dropped: {reason: string, raw: any}[], confirmed: any}) =>
+ *     Promise<{jobLines: {n: number, text: string, rule?: string}[], answers: Record<string|number, any>}|null>)|null,
  *   confirmGenerate?: Function|null, isRepo?: boolean,
  *   langResult?: {kind: string, candidates?: string[], [k: string]: any}|null}} o
  * @returns {Promise<{ok: boolean, refusal: Refusal|null, verdictType: string|null,
@@ -434,9 +438,15 @@ function composerRefusal(reds) {
  */
 export async function authorCloseForJob({
   answers, repoPath = null, lang, verdictType = null, questions = null,
+  // P7: the person's numbered job lines and numbered inputs (src/jobblock.js). Absent = every caller that predates the
+  // job block (no line tagging, no coverage rule).
+  jobLines = null, inputs = null,
   generate, provider = null, seedRef = null, scout = null, listing = null,
   ceilingUsd = null,
   rates = null,
+  // The drafter's THINKING knob ('on' | 'off', default 'off'; an operator param, never read from env here). It reaches the scout through
+  // `callOptions`; the `generate`/`confirmGenerate` the caller passes must be built with the SAME mode (`makeLoopGenerate`).
+  draftThinking = 'off',
   // Q2 IS GONE from the numbered interview (PRD item 33 M3 piece 3) — the
   // fence it used to describe in prose is now Destination's own proven
   // `writeScope`, and this is what carries it into the composer prompt
@@ -479,7 +489,14 @@ export async function authorCloseForJob({
   //                  shape matters here (a $0 language pick before the scout,
   //                  D7); every other kind leaves `lang` exactly as given.
   ask = null, confirmGenerate = null, isRepo = false, langResult = null,
+  // P7 item 5 (fwdloop am24/25): the seam that can really ASK the person. Present = the last drafting try, and only after
+  // the two before it both failed, may ask (`offerQuestions` below); the seam takes the machine-filtered questions, gets
+  // each answer (required, no skip), and hands back the job lines with the answers added as `~` rules plus the matching
+  // answers text. ABSENT (the CLI, every older caller) = nothing is ever offered and this file is byte-identical.
+  answerQuestions = null,
 }) {
+  // an operator-param guard: a typo never silently means "default" (throws before any work, even when the survey is supplied)
+  assertDraftThinking(draftThinking);
   /** @type {any} */
   const base = {
     ok: false, refusal: null, verdictType: null, closeDecl: null, seedRef: null,
@@ -580,7 +597,8 @@ export async function authorCloseForJob({
     // real tree. `attempts` is the ceiling the scout enforces on itself, so the
     // reader knows how many the line could repeat for.
     onPhase('scout', { attempts: SCOUT_ATTEMPTS });
-    survey = await scoutFn({ workdir, provider, ceilingUsd, onCall, ...(rates ? { rates } : {}) });
+    const scoutCallOptions = draftCallOptions(provider, draftThinking);
+    survey = await scoutFn({ workdir, provider, ceilingUsd, onCall, ...(rates ? { rates } : {}), ...(Object.keys(scoutCallOptions).length ? { callOptions: scoutCallOptions } : {}) });
     // …and the survey's own VERDICT, said the moment it lands. `state` is what
     // every downstream refusal keys on (F59: absent is never "no facts needed"),
     // and the fact count is the one number that says whether the ladder came
@@ -627,7 +645,7 @@ export async function authorCloseForJob({
     onPhase('confirm', {});
     const confirm = await runConfirmTurn({
       verdictType: picked, answers: interview.answers, questions: questions ?? questionsFor(picked),
-      facts: survey.facts, listing: null, writeScope, isRepo, lang, worseThanBefore,
+      facts: survey.facts, listing: null, writeScope, isRepo, lang, worseThanBefore, inputs,
       generate: confirmGenerate, book: confirmBook, ask, onPhase,
     });
     // DISTINCT from `runConfirmTurn`'s own per-round 'confirm-done' (fired once
@@ -671,13 +689,38 @@ export async function authorCloseForJob({
   // loop obeys — `author-call` carries the enforced cap instead, from where it
   // is computed.
   onPhase('author', {});
-  const authored = await authorFn({
+  /** the answers text the later stages read; the try-3 redraft replaces it (the person's answers are new `~` rules) @type {Record<string|number, any>} */
+  let stageAnswers = interview.answers;
+  let authored = await authorFn({
     workdir, seedRef: seed, lang, verdictType: picked,
-    answers: interview.answers, questions: questions ?? questionsFor(picked),
+    answers: stageAnswers, questions: questions ?? questionsFor(picked),
     scout: survey, listing: seeds, generate, ceilingUsd, onPhase, onCall, writeScope,
-    priorCalls: confirmPriorCalls, priorRaws: confirmPriorRaws, confirmed,
+    priorCalls: confirmPriorCalls, priorRaws: confirmPriorRaws, confirmed, jobLines, inputs,
+    ...(answerQuestions ? { offerQuestions: true } : {}),
     ...authorOpts,
   });
+  // P7 item 5: the drafter, on the last try after two failed ones, asked. The person answers (required, no skip); each
+  // answer becomes a `~` rule on its job line; the draft then runs ONCE more over the same survey, listing and confirmed
+  // plan, and may not ask again. The first leg's calls are carried as prior spend so the one ceiling still binds.
+  if (!authored.ok && authored.stop === 'questions-open' && answerQuestions && Array.isArray(authored.questions) && authored.questions.length) {
+    const dropped = (authored.iterations ?? []).flatMap((/** @type {any} */ it) => it?.droppedQuestions ?? []);
+    const updated = await answerQuestions({ questions: authored.questions, dropped, confirmed });
+    if (updated === null) return { ...base, interview, authoring: authored, reds: [], stop: 'confirm-abandoned', cost: authored.cost };
+    const scoutCalls = (survey?.calls ?? []).length;
+    const scoutRaws = (survey?.raws ?? []).length;
+    jobLines = updated.jobLines;
+    stageAnswers = updated.answers;
+    onPhase('author', {});
+    authored = await authorFn({
+      workdir, seedRef: seed, lang, verdictType: picked,
+      answers: stageAnswers, questions: questions ?? questionsFor(picked),
+      scout: survey, listing: seeds, generate, ceilingUsd, onPhase, onCall, writeScope,
+      priorCalls: (authored.cost?.calls ?? []).slice(scoutCalls), priorRaws: (authored.raws ?? []).slice(scoutRaws),
+      confirmed, jobLines, inputs,
+      ...authorOpts,
+      offerQuestions: false,
+    });
+  }
 
   if (!authored.ok) {
     return {
@@ -724,6 +767,11 @@ export async function authorCloseForJob({
     ...(authored.declaration.notes?.length
       ? { notes: authored.declaration.notes.map((/** @type {any} */ n) => (typeof n === 'string' ? redactSecrets(n) : n)) }
       : {}),
+    // P7: the job lines the drafter could not turn into a stage, each with its reason — the Job tab shows them. Free
+    // text the model wrote, so it rides the same redactor `notes` does.
+    ...(authored.declaration.refused?.length
+      ? { refused: authored.declaration.refused.map((/** @type {any} */ r) => ({ line: r.line, reason: redactSecrets(String(r.reason)) })) }
+      : {}),
   };
 
   // ── THE TWO SIGNED ARTIFACTS (softgreen module 4, wired here by module 5) ──
@@ -750,7 +798,7 @@ export async function authorCloseForJob({
     book.absorb(authored.cost?.calls ?? []);
     onPhase('rubric', { size: CALIBRATION_SIZE });
     const proposed = await proposeFn({
-      answers: interview.answers,
+      answers: stageAnswers,
       questions: questions ?? questionsFor(picked),
       generate,
       book,
@@ -1253,7 +1301,7 @@ export async function prepareSigning({
   }
   // the class rides from the SPEC (PRD v1.57 §2) — gate 1a already refused a spec
   // whose class is unknown or locked, so this is the class D5's battery hangs off
-  const dv = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: spec.verdictType, writeScope: spec.writeScope });
+  const dv = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: spec.verdictType, writeScope: spec.writeScope, jobLines: Array.isArray(spec.jobLines) ? spec.jobLines : null });
   // the grounded gate's reds quote BOTH untrusted sources — the declaration, and
   // the seed listing itself (the listing rule names what really sits beside an
   // invented path). The listing half is a channel gate 1a structurally cannot

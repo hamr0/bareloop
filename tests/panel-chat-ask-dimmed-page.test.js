@@ -24,8 +24,8 @@ function renderMainWith(state) {
   const src = `${fnSrc('mainButtonFor')}\n${fnSrc('askBoxOpenFor')}\n${fnSrc('reviseShownFor')}\n${fnSrc('fitBox')}\n${fnSrc('renderMain')}\n`
     + 'var mainAction = "none"; var reopenBtn = { hidden: true }; var fitCardBoxes = function(){}; var verdictValue = function(){ return "deterministic"; };\nrenderMain();\nreturn mainAction;';
   // eslint-disable-next-line no-new-func
-  new Function('msgInput', 'mainBtn', 'mainHint', 'sessionLive', 'lastState', 'startOk', 'startFrom', 'signClickedOnce', src)(
-    msg, mainBtn, mainHint, state.sessionLive, state.lastState, true, null, false);
+  new Function('msgInput', 'mainBtn', 'mainHint', 'sessionLive', 'lastState', 'startOk', 'startFrom', 'signClickedOnce', 'window', src)(
+    msg, mainBtn, mainHint, state.sessionLive, state.lastState, true, null, false, { getComputedStyle: () => ({ maxHeight: '200px' }) });
   return { msg, mainBtn };
 }
 

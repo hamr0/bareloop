@@ -38,8 +38,8 @@ function keysHome() {
 }
 
 const card = (/** @type {string} */ source) => ({
-  checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'pw-job', goal: 'fix things', source, destination: 'src/',
-  success: 'tsc clean', guardrails: 'no new deps', judgeExamples: '', capUsd: 2,
+  checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'pw-job', jobText: 'fix things\n~ no new deps\ntsc clean', inputs: `repo: ${source}`, destination: 'src/',
+  capUsd: 2,
 });
 
 async function untilInstallNeeded(/** @type {any} */ session) {

@@ -2736,6 +2736,49 @@ that commit: no provider bareloop constructs can still throw a JSON SyntaxError 
 after a billed round (Anthropic/Gemini never had the class; every provider's raw-HTTP-body parse
 was already guarded). Closed.
 
+## BA-28 — bare-agent owns a normalized thinking switch (`thinking: 'on' | 'off'`) per provider shape + model, and a way to ask whether a provider+model can be switched (2026-10-11, Chat "Thinking on" box) — ADOPTED (bare-agent 0.51.0)
+
+### Ask
+
+bare-agent owns a normalized thinking switch, e.g. `thinking: 'on' | 'off'`, and translates it per
+provider shape + model. It also exposes a way to ask whether a provider+model CAN be switched, so a
+UI can show "can't change this for this model". An unknown model sends nothing, reports
+not-switchable, and never guesses a field.
+
+### Why
+
+hamr, 2026-10-11: "they are the ones should be keeping different shapes per provider and you just
+ask on/off". bareloop's Chat gets a per-run "Thinking on" box, default off, for extra-hard jobs
+(PRD v1.91). fwdloop has the same need.
+
+### Today in bareloop
+
+`src/providers.js` `draftCallOptions` / `judgeCallOptions` hand-keep one entry
+(`OpenAIProvider` + `deepseek-flash` -> `{thinking:{type:'disabled'}}`) through bare-agent 0.49's
+verbatim passthrough. bareloop drops this mapping when bare-agent ships the switch.
+
+### Known shapes
+
+- `deepseek-flash` off: proven live (F192 judge; drafter contrast
+  `docs/logs/2026-10-10-drafter-thinking-contrast-prereg.md`).
+- DeepSeek + forced `tool_choice` returns 400 in thinking mode (fwdloop F49).
+- `claude-sonnet-5`: adaptive thinking by default; `haiku-4.5` lacks `output_config`.
+- OpenAI `reasoning_effort` and the Gemini thinking config: unverified.
+
+### Disconfirming evidence, considered per this file's standing rule
+
+bare-agent's provider docs call the passthrough "Deliberately opaque ... a library that reshapes it
+would need a release every time the API moves". This ask reverses that for a normalized layer.
+bare-agent may instead ship a shape table that consumers read; either answer serves bareloop.
+
+### Status
+
+Relayed to the bare-agent session ("agent") 2026-10-11. Filed, awaiting bare-agent's design answer.
+
+2026-10-11 — bare-agent answered YES and built it on its branch feat/thinking-mode (target v0.51.0, not on npm yet): new option `thinkingMode: 'on'|'off'` (raw `thinking` passthrough unchanged; both at one level throws); `thinkingSupport(provider, model)` exported from bare-agent/providers, no network, returns {switchable: true|false|'unverified', off, on, note}; unknown model tries the provider's known shapes and throws a loud ValidationError if all are rejected; `thinkingApplied` true/false/null on generate() and Loop.run(); DeepSeek 'on' + forced toolChoice refused before send. Measured switchable: claude-sonnet-5, claude-haiku-4-5, gpt-5, gpt-5-mini, gpt-5.1+, gemini flash models, deepseek-flash, deepseek-v4-pro; not switchable: claude-opus-5-5, gemini-3.1-pro-preview; Ollama unverified. bareloop adopts it in the providers-list part once v0.51.0 is on npm and deletes its own deepseek-flash mapping.
+
+2026-10-11 — adopted in bareloop on feat/job-block (161598c; draft log and first drafting row 3e87bdd): bare-agent ^0.51.0, `thinkingSupport` decides per call, bareloop's own deepseek-flash mapping deleted. API differences from the announcement: `thinkingSupport(provider, model)` takes the ladder KIND string ('anthropic' | 'openai' | 'deepseek' | 'gemini' | 'ollama'), not a provider instance, so bareloop maps the constructed provider to a kind (an OpenAI-shaped provider is 'deepseek' by model id `deepseek-*` or a deepseek.com baseUrl, bare-agent's documented rule; `isDeepSeek` is not exported); `thinkingApplied` rides the Loop.run result (sticky-false), reaching bareloop per call through the onCall reporting seam. Design call awaiting hamr's confirmation: an 'unverified' model gets NOTHING on the default off path (so an unknown or local model's drafting never breaks); asking 'off' there would be tried at runtime and fail loudly, which is reserved for an explicit Chat tick (not built yet).
+
 ## BG-1 — RESOLVED (bareguard 0.21.0, 2026-10-08, same-day): `quoteIn` has no whole-line mode — a bare `return` passes by hiding inside a longer line, and a judge quote that drops the leading `* ` cannot be matched (F192)
 
 **Filed and delivered the same day.** The judged floor verifies every quote the judge returns
