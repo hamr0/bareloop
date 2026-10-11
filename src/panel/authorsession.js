@@ -45,7 +45,7 @@ import {
   questionsFor, requiredAnswersFor, makeLoopGenerate, CONFIRM_SYSTEM, SOFTGREEN_JUDGE_EXAMPLES_KEY,
 } from '../authorflow.js';
 import {
-  resolveProvider, buildRunnerProviders, apiKeyProblem, assertDraftThinking, draftThinkingSent,
+  resolveProvider, buildRunnerProviders, apiKeyProblem, assertDraftThinking, draftThinkingFor,
 } from '../providers.js';
 import { resolveJobJudge, defaultJudgeLoop } from '../judged.js';
 import { closeJudges } from '../kinds.js';
@@ -66,6 +66,7 @@ import { planFromConfirm } from './jobplan.js';
  * @type {Readonly<Record<string, string>>}
  */
 export const STEP_LABELS = Object.freeze({
+  thinking: 'thinking',
   setup: 'checking setup',
   copy: 'making worktree',
   check: 'checking source',
@@ -108,6 +109,20 @@ export const PHASE_STEP = Object.freeze({
   'rubric-done': 'calibrate',
   'rubric-scrubbed': 'calibrate',
 });
+
+/**
+ * The first drafting row's words (hamr 2026-10-11) — code-owned, one owner, ALWAYS starting "thinking on" or "thinking off".
+ * `sent` is what the drafting calls carry (`draftThinkingFor`); `thoughtAnyway` = a call reported `thinkingApplied === false`
+ * after 'off' was sent (bare-agent saw reasoning in the reply).
+ * @param {'on'|'off'|'not-switchable'|'unverified'} sent @param {boolean} [thoughtAnyway]
+ * @returns {string}
+ */
+export function thinkingRowText(sent, thoughtAnyway = false) {
+  if (sent === 'off') return thoughtAnyway ? 'thinking on (the model thought anyway)' : 'thinking off';
+  if (sent === 'on') return 'thinking on';
+  if (sent === 'not-switchable') return "thinking on (this model can't turn it off)";
+  return 'thinking on (not verified for this model)';
+}
 
 /** @typedef {{id: string, label: string, status: 'running'|'done'|'failed', detail: string}} StepLine */
 
@@ -542,9 +557,16 @@ export function createSession(card, deps = {}) {
     // the call's label, the drafting model, its cost (null stays null: unpriced is never $0). One owner: this onCall.
     const runningNo = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
     const callNo = runningNo === -1 ? state.steps.length - 1 : runningNo;
+    // bare-agent's own verdict on the call's run (true | false | null), present only when thinkingMode was sent. 'off' sent but
+    // reasoning seen (false) turns the first drafting row into "thinking on (the model thought anyway)" and stays so.
+    if (draftThinkingLogged === 'off' && call.thinkingApplied === false && !thoughtAnyway) {
+      thoughtAnyway = true;
+      const row = latestStep(state.steps, 'thinking');
+      if (row) { row.label = thinkingRowText('off', true); appendDraftLog(outDir, { kind: 'step-label', no: state.steps.indexOf(row), label: row.label, at: new Date().toISOString() }); }
+    }
     appendDraftLog(outDir, {
       kind: 'call', no: callNo, step: state.steps[callNo]?.id ?? null, label: call.label, model: draftIdentity?.model ?? null,
-      thinking: draftThinkingLogged,
+      thinking: draftThinkingLogged, ...(call.thinkingApplied === undefined ? {} : { thinkingApplied: call.thinkingApplied }),
       costUsd: call.costUsd ?? null, unpricedRounds: call.unpricedRounds ?? 0, at: nowIso,
     });
     try {
@@ -556,8 +578,10 @@ export function createSession(card, deps = {}) {
   };
   /** @type {string|null} */
   let draftStartedAt = null;
-  /** what the drafting calls really carry for thinking ('on' | 'off' | 'not-switchable'), set once the provider is built; null before @type {string|null} */
+  /** what the drafting calls really carry for thinking ('on' | 'off' | 'not-switchable' | 'unverified'), set once the Model Name resolves; null before @type {string|null} */
   let draftThinkingLogged = null;
+  /** a drafting call reported thinkingApplied === false after 'off' was sent */
+  let thoughtAnyway = false;
   /** P6 item 1: the worktree this session made in the person's repo (null until made, and again once removed) @type {{repo: string, dir: string}|null} */
   let madeWorktree = null;
   /** a session that ends WITHOUT ever running (refused, errored, abandoned) takes its worktree with it; a signed one keeps it for the run */
@@ -583,9 +607,18 @@ export function createSession(card, deps = {}) {
 
   async function run() {
     // ── keys, at $0, before anything is prepared ────────────────────────
-    stepStart('setup');
     const keyRows = rowsForHome(configHome);
     const modelChoice = modelChoiceFor(keyRows, card.model);
+    // hamr 2026-10-11: the FIRST drafting row says whether the drafter thinks, before any other line ("checking setup" follows).
+    // A Reuse session drafts nothing, so it has no row. A provider shape that cannot be built is refused below, in words.
+    if (modelChoice && deps.reuse === undefined) {
+      try {
+        draftThinkingLogged = draftThinkingFor({ providerName: modelChoice.provider, model: modelChoice.name, baseUrl: modelChoice.baseUrl ?? null }, draftThinking);
+        state.steps.push({ id: 'thinking', label: thinkingRowText(/** @type {any} */ (draftThinkingLogged)), status: 'done', detail: '' });
+        logSteps();
+      } catch { draftThinkingLogged = null; }
+    }
+    stepStart('setup');
     if (!modelChoice) { refuse(`Model "${card.model}" is not a Name in Settings > Providers. Stopped — nothing spent.`); return; }
     draftIdentity = { provider: modelChoice.provider, baseUrl: modelChoice.baseUrl ?? null, model: modelChoice.name };
     let providerEntry;
@@ -884,7 +917,6 @@ export function createSession(card, deps = {}) {
       providerName: modelChoice.provider, apiKey, model: MODEL, tierModels: providerEntry.tiers, baseUrl: modelChoice.baseUrl,
       judgeApiKey: apiKey, judgeModel: MODEL, judgeProviderName: modelChoice.provider, judgeBaseUrl: modelChoice.baseUrl,
     });
-    draftThinkingLogged = draftThinkingSent(provider, draftThinking);
     // TEST SEAMS (see the constructor's own note): a test overrides
     // `generate`/`confirmGenerate` directly (bypassing this real, constructed
     // `provider` for the model boundary) and/or `scout` (bypassing the real

@@ -1536,7 +1536,7 @@ export function resolveSourcePrefixes({ workdir, sourcePaths, seedFiles }) {
  */
 /**
  * @param {{ceilingUsd?: number|null,
- *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void}} [o]
+ *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingApplied?: boolean|null}) => void}} [o]
  *   `ceilingUsd` is the OPERATOR's ceiling; `null`/absent is UNBOUNDED.
  *   `onCall` is a REPORTING seam fired as each metered call lands — the shell's
  *   only chance to know what has been spent while the run is still alive. It is
@@ -1557,7 +1557,9 @@ export function makeCostBook({ ceilingUsd = null, onCall = () => {} } = {}) {
       const call = { label, ...priceOf(r) };
       entries.push(call);
       raws.push(scrubRaw({ label, attempt, text: r?.text, reason: r?.error ? String(r.error) : null }));
-      onCall({ ...call });
+      // bare-agent's per-run `thinkingApplied` (true | false | null) rides the REPORTING seam only — never the stored entry,
+      // so the cost report and every persisted shape stay as they were; absent when thinkingMode was not sent
+      onCall({ ...call, ...(r?.thinkingApplied === undefined ? {} : { thinkingApplied: r.thinkingApplied }) });
       return entries.at(-1);
     },
     /** @param {{label: string, costUsd: number|null, unpricedRounds: number}[]} calls
@@ -2263,7 +2265,7 @@ export async function runConfirmTurn({
  *   generate: Function, seedReadFn?: Function, closeCtx?: any,
  *   ceilingUsd?: number|null,
  *   onPhase?: (phase: string, data?: any) => void,
- *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void,
+ *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingApplied?: boolean|null}) => void,
  *   maxRevisions?: number, structureRetries?: number,
  *   structuredMode?: 'tool'|'text', catalogue?: Record<string, any>, writeScope?: string[]|null,
  *   priorCalls?: {label: string, costUsd: number|null, unpricedRounds: number}[]|null,

@@ -423,7 +423,7 @@ function composerRefusal(reds) {
  *   seedRef?: string|null, scout?: any, listing?: any, ceilingUsd?: number|null, judgeModel?: string|null,
  *   rates?: {in: number, out: number}|null, draftThinking?: 'on'|'off',
  *   onPhase?: (phase: string, data?: any) => void,
- *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number}) => void,
+ *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingApplied?: boolean|null}) => void,
  *   seedFn?: Function, scoutFn?: Function, listingFn?: Function,
  *   authorFn?: Function, authorOpts?: object, writeScope?: string[]|null,
  *   signerFix?: Function|any, proposeFn?: Function, compileOpts?: object,

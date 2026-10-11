@@ -268,3 +268,17 @@ test('Revise at the plan menu (an abandon, then a fresh Start): the abandoned dr
   assert.equal(file.spentUsd, 0.0005, 'the confirm call booked before the revise is still booked after it');
   assert.equal(monthSpend({ home }).usd, 0.0005, 'and the month counts it');
 });
+
+test('readDraftSteps: a step-label record relabels the step without touching its status or times (the thinking row\'s "thought anyway")', (t) => {
+  const dir = tmp(t);
+  const lines = [
+    { kind: 'step-start', no: 0, id: 'thinking', label: 'thinking off', at: '2026-10-11T10:00:00.000Z' },
+    { kind: 'step-end', no: 0, status: 'done', label: 'thinking off', at: '2026-10-11T10:00:00.000Z' },
+    { kind: 'step-label', no: 0, label: 'thinking on (the model thought anyway)', at: '2026-10-11T10:00:09.000Z' },
+  ];
+  writeFileSync(join(dir, DRAFT_LOG_FILE), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+  const [x] = readDraftSteps(dir);
+  assert.equal(x.label, 'thinking on (the model thought anyway)');
+  assert.equal(x.status, 'done');
+  assert.equal(x.wallMs, 0, 'the relabel does not stretch the row\'s time');
+});
