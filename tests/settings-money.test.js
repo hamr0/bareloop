@@ -9,7 +9,12 @@ import { join } from 'node:path';
 import { spendSummary } from '../src/monthly.js';
 import { appendRun } from '../src/runlist.js';
 import { readConfig, configPath, updateConfig } from '../src/config.js';
-import { DEEPSEEK_BASE_URL } from '../src/providerrows.js';
+import { keyRows } from '../src/providerrows.js';
+
+const GW = 'https://gw.example/v1';
+/** three rows: nothing is built in, so the fixture types every shape and address itself */
+const ROWS3 = keyRows({ filled: ['ANTHROPIC_API_KEY', 'DS_KEY', 'OAI_KEY'], config: { keys: {
+  ANTHROPIC_API_KEY: { shape: 'anthropic-api' }, DS_KEY: { shape: 'openai-api', baseUrl: GW }, OAI_KEY: { shape: 'openai-api' } } } });
 import { createPanelServer } from '../src/panel/server.js';
 
 /** @param {import('node:test').TestContext} t */
@@ -30,28 +35,28 @@ function addRun(home, dir, { runid, atIso, provider, baseUrl, model, usd, comple
   appendRun({ at: atIso, runid, job: 'j', spine, patient: null, via: 'run-u' }, { home });
 }
 
-test('spendSummary: total vs this month, per provider (DeepSeek apart from OpenAI), tokens, "at least" on an unknown leg', (t) => {
+test('spendSummary: total vs this month, per Providers ROW (two OpenAI-shaped rows apart by address), tokens, "at least" on an unknown leg', (t) => {
   const home = tmp(t);
   const d = tmp(t);
   addRun(home, d, { runid: 'a', atIso: at(2026, 8, 2), provider: 'anthropic-api', usd: 2, tokens: 1000 });
   addRun(home, d, { runid: 'b', atIso: at(2026, 7, 2), provider: 'anthropic-api', usd: 5, tokens: 500 }); // last month
-  addRun(home, d, { runid: 'c', atIso: at(2026, 8, 3), provider: 'openai-api', baseUrl: DEEPSEEK_BASE_URL, usd: 1, tokens: 200 });
+  addRun(home, d, { runid: 'c', atIso: at(2026, 8, 3), provider: 'openai-api', baseUrl: GW, usd: 1, tokens: 200 });
   addRun(home, d, { runid: 'd', atIso: at(2026, 8, 4), provider: 'openai-api', usd: 0.5, tokens: 100 });
-  const s = spendSummary({ home, now: NOW });
+  const s = spendSummary({ home, now: NOW, rows: ROWS3 });
   assert.deepEqual(s.total, { usd: 8.5, atLeast: false, tokens: 1800 });
   assert.deepEqual(s.month, { usd: 3.5, atLeast: false, tokens: 1300 }, 'last month\'s 500 tokens stay out of this month');
-  assert.deepEqual(Object.keys(s.byProvider).sort(), ['anthropic', 'deepseek', 'openai']);
-  assert.equal(s.byProvider.anthropic.monthUsd, 2);
-  assert.equal(s.byProvider.anthropic.totalUsd, 7);
-  assert.equal(s.byProvider.anthropic.tokens, 1500);
-  assert.equal(s.byProvider.deepseek.totalUsd, 1);
-  assert.equal(s.byProvider.openai.totalUsd, 0.5);
+  assert.deepEqual(Object.keys(s.byProvider).sort(), ['ANTHROPIC_API_KEY', 'DS_KEY', 'OAI_KEY']);
+  assert.equal(s.byProvider.ANTHROPIC_API_KEY.monthUsd, 2);
+  assert.equal(s.byProvider.ANTHROPIC_API_KEY.totalUsd, 7);
+  assert.equal(s.byProvider.ANTHROPIC_API_KEY.tokens, 1500);
+  assert.equal(s.byProvider.DS_KEY.totalUsd, 1);
+  assert.equal(s.byProvider.OAI_KEY.totalUsd, 0.5);
   addRun(home, d, { runid: 'e', atIso: at(2026, 8, 5), provider: 'anthropic-api', usd: 0.25, noJobEnd: true }); // died: a floor
-  const s2 = spendSummary({ home, now: NOW });
+  const s2 = spendSummary({ home, now: NOW, rows: ROWS3 });
   assert.equal(s2.total.atLeast, true);
   assert.equal(s2.month.atLeast, true);
-  assert.equal(s2.byProvider.deepseek.totalAtLeast, false, 'an unknown leg only marks the figures it belongs to');
-  assert.equal(s2.byProvider.anthropic.totalAtLeast, true);
+  assert.equal(s2.byProvider.DS_KEY.totalAtLeast, false, 'an unknown leg only marks the figures it belongs to');
+  assert.equal(s2.byProvider.ANTHROPIC_API_KEY.totalAtLeast, true);
 });
 
 test('spendSummary: a custom-endpoint run lands under its own label, not another row', (t) => {
@@ -81,7 +86,7 @@ test('/api/settings/money: GET needs the token; returns the figures; POST saves 
   assert.equal(got.ok, true);
   assert.equal(got.totalUsd, 2);
   assert.equal(got.monthlyLimitUsd, null);
-  assert.equal(got.byProvider[0].label, 'Anthropic');
+  assert.equal(got.byProvider[0].label, 'anthropic-api', 'no row serves it: its own shape, never a vendor name');
   const saved = await fetch(`${base}/api/settings/money`, { method: 'POST', headers: H, body: JSON.stringify({ monthlyLimitUsd: 50 }) });
   assert.equal(saved.status, 200);
   assert.equal(readConfig({ home }).config.monthlyLimitUsd, 50);
@@ -193,17 +198,17 @@ test('spendSummary minutes: job-end wall is exact; a run with no job-end is an "
   const T = (min) => new Date(Date.UTC(2026, 8, 2, 10, min, 0)).toISOString();
   const done = [{ type: 'job-start', provider: 'anthropic-api', ts: T(0) }, { type: 'worker-round', costUsd: 1, ts: T(3) }, { type: 'job-end', engagementSpentUsd: 1, spentUsd: 1, spendComplete: true, ts: T(10) }];
   const died = [{ type: 'job-start', provider: 'openai-api', ts: T(0) }, { type: 'worker-round', costUsd: 1, ts: T(4) }];
-  const blind = [{ type: 'job-start', provider: 'openai-api', baseUrl: DEEPSEEK_BASE_URL }, { type: 'job-end', engagementSpentUsd: 0, spentUsd: 0, spendComplete: true }];
+  const blind = [{ type: 'job-start', provider: 'openai-api', baseUrl: GW }, { type: 'job-end', engagementSpentUsd: 0, spentUsd: 0, spendComplete: true }];
   addSpine(home, d, 'm1', at(2026, 8, 2), done);
   addSpine(home, d, 'm2', at(2026, 8, 3), died);
   addSpine(home, d, 'm3', at(2026, 8, 4), blind);
-  const s = spendSummary({ home, now: NOW });
-  assert.equal(s.byProvider.anthropic.monthWallMs, 10 * 60000);
-  assert.equal(s.byProvider.anthropic.monthWallAtLeast, false);
-  assert.equal(s.byProvider.openai.totalWallMs, 4 * 60000);
-  assert.equal(s.byProvider.openai.totalWallAtLeast, true);
-  assert.equal(s.byProvider.deepseek.totalWallMs, null, 'no timestamps at all = unknown, not 0');
-  assert.equal(s.byProvider.deepseek.monthWallMs, null);
+  const s = spendSummary({ home, now: NOW, rows: ROWS3 });
+  assert.equal(s.byProvider.ANTHROPIC_API_KEY.monthWallMs, 10 * 60000);
+  assert.equal(s.byProvider.ANTHROPIC_API_KEY.monthWallAtLeast, false);
+  assert.equal(s.byProvider.OAI_KEY.totalWallMs, 4 * 60000);
+  assert.equal(s.byProvider.OAI_KEY.totalWallAtLeast, true);
+  assert.equal(s.byProvider.DS_KEY.totalWallMs, null, 'no timestamps at all = unknown, not 0');
+  assert.equal(s.byProvider.DS_KEY.monthWallMs, null);
 });
 
 test('/api/settings/money carries the wall minutes per provider, and the page renders them as "at least" / "unknown" / minutes', async (t) => {
@@ -214,7 +219,7 @@ test('/api/settings/money carries the wall minutes per provider, and the page re
   const { port, token, close } = await createPanelServer({ port: 0, home, env: {}, sessionsRoot: tmp(t) });
   t.after(() => close());
   const body = await (await fetch(`http://127.0.0.1:${port}/api/settings/money`, { headers: { 'x-bareloop-token': token } })).json();
-  const row = body.byProvider.find((p) => p.label === 'Anthropic');
+  const row = body.byProvider.find((p) => p.label === 'anthropic-api');
   assert.equal(row.totalWallMs, 6 * 60000);
   assert.equal(row.monthWallAtLeast, false);
   const html = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
@@ -226,11 +231,12 @@ test('spendSummary: tokensByRow — an old spine (model, no provider) counts tow
   const d = tmp(t);
   addRun(home, d, { runid: 'o1', atIso: at(2026, 8, 2), model: 'claude-sonnet-5', usd: 1, tokens: 700 });
   addRun(home, d, { runid: 'o2', atIso: at(2026, 8, 3), provider: 'anthropic-api', model: 'claude-sonnet-5', usd: 1, tokens: 50 });
-  const row = (envName, name) => ({ envName, name, provider: 'anthropic-api', baseUrl: '' });
+  const row = (envName, name) => ({ envName, provider: 'anthropic-api', baseUrl: '', legacyMaxTokens: false, models: [{ model: name, use: true, inPerM: 1, outPerM: 2 }] });
   // exact Name wins; a Name that is a PREFIX of the model does not
   const s = spendSummary({ home, now: NOW, rows: [row('A_KEY', 'claude-sonnet'), row('B_KEY', 'claude-sonnet-5')] });
   assert.equal(s.tokensByRow.B_KEY, 750, 'old spine (700) + the provider-recorded spine (50, today\'s matching)');
   assert.equal(s.tokensByRow.A_KEY ?? 0, 0, 'a prefix Name gets nothing from the old spine');
+  assert.deepEqual(s.tokensByModel, { B_KEY: { 'claude-sonnet-5': 750 } }, 'per model line; a model no spend row names is absent, never 0');
   // two rows sharing the Name: the unmatched old spine counts toward neither
   const s2 = spendSummary({ home, now: NOW, rows: [row('A_KEY', 'claude-sonnet-5'), row('B_KEY', 'claude-sonnet-5')] });
   assert.equal(s2.tokensByRow.A_KEY, 50);

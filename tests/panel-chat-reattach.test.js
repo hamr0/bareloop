@@ -10,6 +10,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createPanelServer } from '../src/panel/server.js';
 import { createAuthorRoutes } from '../src/panel/authorroutes.js';
+import { ANTH_CFG } from './helpers.js';
 
 const dirs = [];
 test.after(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
@@ -27,7 +28,7 @@ function makeRepo() {
 }
 function keysHome() {
   const d = tmp('reattach-home-');
-  writeFileSync(join(d, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 });
+  writeFileSync(join(d, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 }); writeFileSync(join(d, 'config.json'), JSON.stringify(ANTH_CFG));
   return d;
 }
 async function start(t) {

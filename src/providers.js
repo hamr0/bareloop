@@ -21,6 +21,8 @@
 // (`buildRunnerProviders`, below); it never prices a round (F113: rates
 // passthrough is dead), and never decides a budget.
 
+import { listModels } from './modellist.js';
+import { SHAPE_IDS } from './providershapes.js';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -430,44 +432,16 @@ export function buildRunnerProviders({
 }
 
 /**
- * A `providerName`'s own models-list GET endpoint — the shape this
- * function's ONE caller (`checkProviderReachable`, below) needs and nothing
- * else reads: `anthropic-api` and `openai-api` (the panel's Model select,
- * PANEL-BUILD.md P3 build item 7) are the only two shapes this build knows
- * how to ask, both a plain unauthenticated-body GET with the key in a
- * header — never a completion/chat endpoint, so this never spends a token.
- * @param {string} providerName
- * @param {string} [baseUrl]
- * @returns {{url: string, headers: Record<string,string>}|null} `null` when
- *   this provider's models-list shape is not known (never guessed at)
- */
-function modelsListRequest(providerName, baseUrl) {
-  if (providerName === 'anthropic-api') {
-    return {
-      url: `${baseUrl || 'https://api.anthropic.com/v1'}/models`,
-      headers: { 'x-api-key': '', 'anthropic-version': '2023-06-01' },
-    };
-  }
-  if (providerName === 'openai-api') {
-    return { url: `${baseUrl || 'https://api.openai.com/v1'}/models`, headers: {} };
-  }
-  return null;
-}
-
-/**
- * $0 reachability check: a GET against `providerName`'s own models-list
- * endpoint, server-side, with the key in a header — NEVER a completion
- * request, so it never spends a token (PANEL-BUILD.md P3 build item 7: "the
- * person must get feedback BEFORE drafting if the chosen model can't
- * work"). Reused, unmodified, by the panel's model-readiness route today
- * (`src/panel/authorroutes.js`) and by the future Settings providers
- * table's own "test" column (PANEL-BUILD.md P4) — ONE function, not two
- * hand-typed copies of the same probe.
+ * $0 reachability check: ONE GET of the provider's models list (`src/modellist.js`, the one owner of
+ * that call), server-side, with the key in a header — NEVER a completion request, so it never spends
+ * a token (PANEL-BUILD.md P3 build item 7: "the person must get feedback BEFORE drafting if the
+ * chosen model can't work"). Used by the panel's model-readiness route (`src/panel/authorroutes.js`);
+ * Settings > Providers' Test and Refresh call `listModels` directly. A blank `baseUrl` makes no call.
  *
- * NEVER returns the key, never logs it — the key only ever appears in a
- * request header sent straight to the provider's own host.
+ * NEVER returns the key, never logs it — the key only ever appears in a request header sent
+ * straight to the provider's own host.
  * @param {object} o
- * @param {string} o.providerName
+ * @param {string} o.providerName an API shape id
  * @param {string} o.apiKey
  * @param {string} [o.model] when given, the response is also checked for this model id
  * @param {string} [o.baseUrl]
@@ -478,39 +452,16 @@ function modelsListRequest(providerName, baseUrl) {
 export async function checkProviderReachable({
   providerName, apiKey, model, baseUrl, fetchImpl = fetch, timeoutMs = 4000,
 }) {
-  const req = modelsListRequest(providerName, baseUrl);
-  if (!req) {
+  if (!SHAPE_IDS.includes(providerName)) {
     return {
       reachable: false, modelListed: null, status: 'unsupported-provider',
       note: `no models-list check known for "${providerName}"`,
     };
   }
-  const headers = { ...req.headers };
-  if (providerName === 'anthropic-api') headers['x-api-key'] = apiKey;
-  else headers.Authorization = `Bearer ${apiKey}`;
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    // GET ONLY — no body, no completion/chat call, no tokens spent.
-    const res = await fetchImpl(req.url, { method: 'GET', headers, signal: controller.signal });
-    if (!res.ok) {
-      return { reachable: false, modelListed: null, status: `HTTP ${res.status}`, note: `models list returned HTTP ${res.status}` };
-    }
-    /** @type {any} */
-    let body = null;
-    try { body = await res.json(); } catch { body = null; }
-    const ids = Array.isArray(body?.data) ? body.data.map((/** @type {any} */ m) => m?.id).filter(Boolean) : [];
-    const modelListed = model ? ids.includes(model) : null;
-    return { reachable: true, modelListed, status: 'ok', note: null };
-  } catch (/** @type {any} */ e) {
-    const cls = e?.name === 'AbortError' ? 'timeout' : (e?.code || e?.name || 'network-error');
-    // connection refused surfaces as fetch's bare TypeError ("fetch failed") — say it plainly
-    const refused = e?.name === 'TypeError' || e?.code === 'ECONNREFUSED' || e?.cause?.code === 'ECONNREFUSED';
-    return { reachable: false, modelListed: null, status: String(cls), note: refused ? `nothing answering at ${req.url}` : `request failed: ${cls}` };
-  } finally {
-    clearTimeout(timer);
-  }
+  const r = await listModels({ shape: providerName, baseUrl: baseUrl ?? '', key: apiKey, fetchImpl, timeoutMs });
+  if (r.ok) return { reachable: true, modelListed: model ? r.models.includes(model) : null, status: 'ok', note: null };
+  const note = r.status.startsWith('HTTP ') ? `models list returned ${r.status}` : (r.detail ?? r.why);
+  return { reachable: false, modelListed: null, status: r.status, note };
 }
 
 /**

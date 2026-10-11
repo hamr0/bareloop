@@ -76,18 +76,24 @@ export function filledKeyNames(home) {
 }
 
 /**
- * Create the keys file with the five empty preset lines when — and only when — it does not
- * exist (mode 600). An existing file is never touched.
- * @param {readonly string[]} presetNames the names to seed, in order
+ * The two comment lines a fresh keys file is created with — no provider name, no preset key.
+ * Each key the person types becomes a row in Settings > Providers.
+ */
+export const KEYS_FILE_BODY = '# bareloop keys — type NAME=value by hand; this file is never shown or written by bareloop.\n'
+  + '# One line per provider key, e.g. MY_PROVIDER_API_KEY=... ; each key becomes a row in Settings > Providers.\n';
+
+/**
+ * Create the keys file with {@link KEYS_FILE_BODY} when — and only when — it does not
+ * exist (mode 600, dir 700). An existing file is never touched.
  * @param {string} [home]
  * @returns {boolean} true if it was created
  */
-export function ensureKeysFile(presetNames, home) {
+export function ensureKeysFile(home) {
   const file = keysFilePath(home);
   if (existsSync(file)) return false;
-  mkdirSync(keysHome(home), { recursive: true });
+  mkdirSync(keysHome(home), { recursive: true, mode: 0o700 });
   try {
-    writeFileSync(file, presetNames.map((n) => `${n}=\n`).join(''), { mode: 0o600, flag: 'wx' });
+    writeFileSync(file, KEYS_FILE_BODY, { mode: 0o600, flag: 'wx' });
   } catch (/** @type {any} */ e) {
     if (e?.code === 'EEXIST') return false; // lost a race: the file is there, untouched
     throw e;
@@ -101,6 +107,8 @@ export function ensureKeysFile(presetNames, home) {
  * @property {string[]} names the NAMES the file defines (sorted; never values)
  * @property {string|null} warning a plain-words warning (file readable by others, or
  *   unreadable), else null — a warning, never a refusal
+ * @property {boolean} [unreadable] true only when the file is there but could not be read (the Settings row then
+ *   reads "refused — see above"); absent otherwise
  * @property {Record<string,string|undefined>} env shell env with the file filling the
  *   names the shell does not set. THE ONLY place values leave this module.
  */
@@ -127,7 +135,7 @@ export function loadKeysEnv(opts = {}) {
   try {
     parsed = parseKeysText(readFileSync(file, 'utf8'));
   } catch (/** @type {any} */ e) {
-    return { exists: true, names: [], warning: `${file} could not be read (${e?.code ?? 'error'})`, env: { ...base } };
+    return { exists: true, names: [], warning: `${file} could not be read (${e?.code ?? 'error'})`, unreadable: true, env: { ...base } };
   }
   /** @type {Record<string,string|undefined>} */
   const env = { ...base };

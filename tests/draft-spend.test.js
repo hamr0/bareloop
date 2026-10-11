@@ -13,6 +13,8 @@ import { writeDraftSpend } from '../src/draftspend.js';
 import { monthSpend, spendSummary, checkMonthlyRoom } from '../src/monthly.js';
 import { updateConfig } from '../src/config.js';
 import { appendRun } from '../src/runlist.js';
+import { keyRows } from '../src/providerrows.js';
+import { ANTH_CFG } from './helpers.js';
 
 /** @param {import('node:test').TestContext} t */
 const tmp = (t) => {
@@ -42,6 +44,7 @@ function plantDraft(home, id, over = {}) {
 async function draftSession(t, calls, gapMs = 0) {
   const home = tmp(t);
   writeFileSync(join(home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 });
+  writeFileSync(join(home, 'config.json'), JSON.stringify(ANTH_CFG));
   const repo = tmp(t);
   git(repo, ['init', '-q', '-b', 'main']);
   writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0' }));
@@ -155,13 +158,20 @@ test('month attribution is startedAt; an other-month draft is not in this month 
 test('spendSummary / Money attribute a draft to its provider row; spendComplete=false propagates "at least"; a draft never nulls a wall', (t) => {
   const home = tmp(t);
   plantDraft(home, 'sa', { spentUsd: 1.25 });
-  plantDraft(home, 'sd', { spentUsd: 0.5, provider: 'openai-api', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-flash', spendComplete: false });
-  const s = spendSummary({ home, now: NOW });
-  assert.equal(s.byProvider.anthropic.monthUsd, 1.25);
-  assert.equal(s.byProvider.anthropic.monthAtLeast, false);
-  assert.equal(s.byProvider.deepseek.monthUsd, 0.5);
-  assert.equal(s.byProvider.deepseek.monthAtLeast, true);
-  assert.equal(s.byProvider.anthropic.monthWallAtLeast, false);
+  plantDraft(home, 'sd', { spentUsd: 0.5, provider: 'openai-api', baseUrl: 'https://gw.example/v1', model: 'deepseek-flash', spendComplete: false });
+  // a draft lands under the Providers ROW that served it (its key variable name); the second row is an OpenAI-shaped one at a typed address
+  const rows = keyRows({ filled: ['ANTHROPIC_API_KEY', 'GW_KEY'], config: { keys: {
+    ANTHROPIC_API_KEY: { shape: 'anthropic-api' }, GW_KEY: { shape: 'openai-api', baseUrl: 'https://gw.example/v1' } },
+  models: { ANTHROPIC_API_KEY: [{ model: 'claude-sonnet-5', use: true, inPerM: 3, outPerM: 15 }], GW_KEY: [{ model: 'deepseek-flash', use: true, inPerM: 1, outPerM: 2 }] } } });
+  const s = spendSummary({ home, now: NOW, rows });
+  assert.equal(s.byProvider.ANTHROPIC_API_KEY.monthUsd, 1.25);
+  assert.equal(s.byProvider.ANTHROPIC_API_KEY.monthAtLeast, false);
+  assert.equal(s.byProvider.GW_KEY.monthUsd, 0.5);
+  assert.equal(s.byProvider.GW_KEY.monthAtLeast, true);
+  assert.equal(s.byProvider.ANTHROPIC_API_KEY.monthWallAtLeast, false);
+  // and with no rows at all a run lands under its own shape, never a vendor name
+  const bare = spendSummary({ home, now: NOW });
+  assert.deepEqual(Object.keys(bare.byProvider).sort(), ['other:anthropic-api', 'other:openai-api @ https://gw.example/v1']);
   assert.equal(s.month.usd, 1.75);
   assert.equal(s.month.atLeast, true);
   assert.equal(monthSpend({ home, now: NOW }).atLeast, true);
@@ -237,6 +247,7 @@ test('Revise at the plan menu (an abandon, then a fresh Start): the abandoned dr
   const { home, session } = await (async () => {
     const h = tmp(t);
     writeFileSync(join(h, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 });
+    writeFileSync(join(h, 'config.json'), JSON.stringify(ANTH_CFG));
     const repo = tmp(t);
     git(repo, ['init', '-q', '-b', 'main']);
     writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0' }));

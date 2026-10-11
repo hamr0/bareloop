@@ -18,6 +18,7 @@ import { createSession, buildReuseSpec } from '../src/panel/authorsession.js';
 import { resolveBundleSpec, readBundle } from '../src/bundle.js';
 import { jobSpecHash, workflowKey } from '../src/job.js';
 import { exportFixtureBundle } from './bundle-fixture.js';
+import { ANTH_CFG } from './helpers.js';
 
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 /** @type {string[]} */ const dirs = [];
@@ -27,7 +28,7 @@ const tmp = (p = 'reuse-imp-') => { const d = mkdtempSync(join(tmpdir(), p)); di
 /** a config home with a Settings row (the key's NAME is all a row needs) and one imported bundle in it */
 function setup({ deps = true, importRow = true, env = 'ANTHROPIC_API_KEY=fake-not-a-real-key\n' } = {}) {
   const home = tmp('reuse-imp-home-');
-  if (env) writeFileSync(join(home, '.env'), env, { mode: 0o600 });
+  if (env) { writeFileSync(join(home, '.env'), env, { mode: 0o600 }); writeFileSync(join(home, 'config.json'), JSON.stringify(ANTH_CFG)); }
   const bundleDir = join(tmp('reuse-imp-user-'), 'fix.bareloop');
   const b = exportFixtureBundle(bundleDir);
   // the bundle's own `bareloop` dependency (what `cd <bundle> && npm install` provides): a link to this checkout
@@ -152,17 +153,17 @@ test('session: an imported reuse re-verifies the close bytes, signs the spec as 
   assert.match(s2.state.error, /does not match its signed bytes/);
 });
 
-test('providerInWords: the host of the spec baseUrl plus the model; else the shape default host; never the shape name', async () => {
+test('providerInWords: the host of the spec baseUrl plus the model; with no address the shape label (no default host exists)', async () => {
   const { providerInWords } = await import('../src/providerrows.js');
   assert.equal(providerInWords({ provider: 'openai-api', baseUrl: 'https://api.deepseek.com/v1' }), 'api.deepseek.com');
   assert.equal(providerInWords({ provider: 'openai-api', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' }), 'api.deepseek.com, deepseek-chat');
-  assert.equal(providerInWords({ provider: 'openai-api' }), 'api.openai.com');
+  assert.equal(providerInWords({ provider: 'openai-api' }), 'OpenAI-compatible');
   assert.equal(providerInWords({ provider: 'gemini-api' }), 'Gemini');
 });
 
 test('session: an imported reuse takes the CHOSEN Settings row as the worker (the bundle\'s provider is not forced); close bytes are still verified; same workflowKey, new signature', async () => {
   const { home, id } = setup({ env: 'DEEPSEEK_API_KEY=fake-not-a-real-key\n' });
-  writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { DEEPSEEK_API_KEY: { name: 'deepseek-flash', shape: 'openai-api', baseUrl: 'https://api.deepseek.com/v1' } } }));
+  writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { DEEPSEEK_API_KEY: { name: 'deepseek-flash', priceInPerM: 1, priceOutPerM: 2, shape: 'openai-api', baseUrl: 'https://api.deepseek.com/v1' } } }));
   const { rowsForHome } = await import('../src/providerrows.js');
   const pre = getStartFromImport(id, { home });
   assert.equal(pre.ok, true, JSON.stringify(pre));

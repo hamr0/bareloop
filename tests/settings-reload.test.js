@@ -41,15 +41,17 @@ test('CLI-started panel: Reload re-reads the keys file — rows appear and disap
   writeFileSync(envFile, `DEEPSEEK_API_KEY=${KEY_A}\nOPENAI_API_KEY=${KEY_B}\n`);
   chmodSync(envFile, 0o600);
   const { base, H } = await startCli(t, home);
-  const rows = async () => Object.fromEntries((await (await fetch(`${base}/api/settings/providers`, { headers: H })).json()).rows.map((r) => [r.envName, r]));
+  const rows = async () => Object.fromEntries((await (await fetch(`${base}/api/settings/providers`, { headers: H })).json()).rows.map((r) => [r.slot, r]));
   let r = await rows();
   assert.deepEqual(Object.keys(r), ['DEEPSEEK_API_KEY', 'OPENAI_API_KEY']);
-  assert.equal(r.DEEPSEEK_API_KEY.keyStatus, 'found');
+  assert.equal(r.DEEPSEEK_API_KEY.keyStatus, 'set in file');
   // the person edits the file: OPENAI removed, DEEPSEEK emptied, two names added
   writeFileSync(envFile, `DEEPSEEK_API_KEY=\nGEMINI_API_KEY=${KEY_B}\nNEW_ONE=${KEY_A}\n`);
   r = await rows();
   assert.deepEqual(Object.keys(r), ['GEMINI_API_KEY', 'NEW_ONE'], 'a removed or emptied key has no row; new ones appear');
-  assert.equal(r.GEMINI_API_KEY.shape, 'gemini-api');
+  assert.equal(r.GEMINI_API_KEY.shape, 'openai-api', 'a row with nothing saved reads the plain default: no vendor is assumed from the name');
+  assert.equal(r.GEMINI_API_KEY.baseUrl, '');
+  assert.deepEqual(r.GEMINI_API_KEY.models, []);
 });
 
 test('in-process panel: Chat\'s Model menu and model-check follow the Settings rows and the keys file live', async (t) => {
@@ -59,23 +61,30 @@ test('in-process panel: Chat\'s Model menu and model-check follow the Settings r
   const envFile = join(home, '.env');
   writeFileSync(envFile, `DEEPSEEK_API_KEY=${KEY_A}\nOTHER_KEY=${KEY_B}\n`);
   chmodSync(envFile, 0o600);
+  writeFileSync(join(home, 'config.json'), JSON.stringify({
+    keys: { DEEPSEEK_API_KEY: { shape: 'openai-api', baseUrl: 'https://gw.example/v1' } },
+    models: { DEEPSEEK_API_KEY: [{ model: 'model-a', use: true, inPerM: 1, outPerM: 2 }] },
+  }));
   const fetchImpl = async () => ({ ok: true, json: async () => ({ data: [] }) });
   const { port, token, close } = await createPanelServer({ port: 0, home, env: {}, sessionsRoot: join(home, 's'), fetchImpl });
   t.after(() => close());
   const H = { 'x-bareloop-token': token, 'content-type': 'application/json' };
   const get = async (p) => (await fetch(`http://127.0.0.1:${port}${p}`, { headers: H })).json();
   const models = async () => (await get('/api/author/models')).models.map((m) => m.id);
-  assert.deepEqual(await models(), ['deepseek-flash'], 'OTHER_KEY has a blank Name: not offered');
-  let b = await get('/api/author/model-check?model=deepseek-flash');
+  assert.deepEqual(await models(), ['model-a'], 'OTHER_KEY has no ticked line: not offered');
+  let b = await get('/api/author/model-check?model=model-a');
   assert.equal(b.envKey, 'DEEPSEEK_API_KEY');
   assert.equal(b.keyStatus, 'found');
-  // naming the other row in Settings puts it in Chat's menu, with no restart
-  await fetch(`http://127.0.0.1:${port}/api/settings/providers/row`, { method: 'POST', headers: H, body: JSON.stringify({ envName: 'OTHER_KEY', name: 'my-model', shape: 'openai-api', baseUrl: '' }) });
-  assert.deepEqual(await models(), ['deepseek-flash', 'my-model']);
+  // ticking a priced line on the other row in Settings puts it in Chat's menu, with no restart
+  const post = (p, body) => fetch(`http://127.0.0.1:${port}${p}`, { method: 'POST', headers: H, body: JSON.stringify(body) });
+  await post('/api/settings/provider', { slot: 'OTHER_KEY', shape: 'openai-api', baseUrl: 'https://other.example/v1' });
+  const saved = await post('/api/settings/model', { slot: 'OTHER_KEY', model: 'my-model', use: true, inPerM: 1, outPerM: 2 });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(await models(), ['model-a', 'my-model']);
   b = await get('/api/author/model-check?model=my-model');
   assert.equal(b.envKey, 'OTHER_KEY');
   writeFileSync(envFile, `OPENAI_API_KEY=${KEY_B}\n`);
-  b = await get('/api/author/model-check?model=deepseek-flash');
+  b = await get('/api/author/model-check?model=model-a');
   assert.equal(b.ok, false, 'a model whose key left the file is no longer a model');
   assert.deepEqual(await models(), []);
 });

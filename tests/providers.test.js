@@ -458,7 +458,7 @@ test('apiKeyProblem never trims or repairs — it only reports; the caller decid
 // completion/chat call, never returns the key material. Every real network
 // call is stubbed via `fetchImpl`; nothing here reaches the internet. ─────
 
-test('checkProviderReachable: anthropic-api — GET only, to /v1/models, key in x-api-key, never a completion endpoint', async () => {
+test('checkProviderReachable: anthropic-api — GET only, to <typed Base URL>/models, key in x-api-key, never a completion endpoint', async () => {
   /** @type {any} */
   let seen = null;
   const fetchImpl = async (url, init) => {
@@ -466,10 +466,10 @@ test('checkProviderReachable: anthropic-api — GET only, to /v1/models, key in 
     return { ok: true, json: async () => ({ data: [{ id: 'claude-sonnet-5' }] }) };
   };
   const r = await checkProviderReachable({
-    providerName: 'anthropic-api', apiKey: 'sk-ant-secret', model: 'claude-sonnet-5', fetchImpl,
+    providerName: 'anthropic-api', apiKey: 'sk-ant-secret', model: 'claude-sonnet-5', baseUrl: 'https://llm.example.test/v1', fetchImpl,
   });
   assert.equal(seen.method, 'GET');
-  assert.equal(seen.url, 'https://api.anthropic.com/v1/models');
+  assert.equal(seen.url, 'https://llm.example.test/v1/models');
   assert.equal(seen.headers['x-api-key'], 'sk-ant-secret');
   assert.equal(seen.headers['anthropic-version'], '2023-06-01');
   assert.equal(r.reachable, true);
@@ -477,12 +477,12 @@ test('checkProviderReachable: anthropic-api — GET only, to /v1/models, key in 
   // RED-PROOF: a model id NOT in the stubbed list must read false, not just
   // "truthy because the call succeeded" — otherwise this field proves nothing.
   const r2 = await checkProviderReachable({
-    providerName: 'anthropic-api', apiKey: 'sk-ant-secret', model: 'not-a-real-model', fetchImpl,
+    providerName: 'anthropic-api', apiKey: 'sk-ant-secret', model: 'not-a-real-model', baseUrl: 'https://llm.example.test/v1', fetchImpl,
   });
   assert.equal(r2.modelListed, false);
 });
 
-test('checkProviderReachable: openai-api (DeepSeek shape) — GET to <baseUrl>/models, key as Bearer, never x-api-key', async () => {
+test('checkProviderReachable: openai-api — GET to <baseUrl>/models, key as Bearer, never x-api-key', async () => {
   /** @type {any} */
   let seen = null;
   const fetchImpl = async (url, init) => {
@@ -491,10 +491,10 @@ test('checkProviderReachable: openai-api (DeepSeek shape) — GET to <baseUrl>/m
   };
   const r = await checkProviderReachable({
     providerName: 'openai-api', apiKey: 'sk-deepseek-secret', model: 'deepseek-flash',
-    baseUrl: 'https://api.deepseek.com/v1', fetchImpl,
+    baseUrl: 'https://gw.example/v1', fetchImpl,
   });
   assert.equal(seen.method, 'GET');
-  assert.equal(seen.url, 'https://api.deepseek.com/v1/models');
+  assert.equal(seen.url, 'https://gw.example/v1/models');
   assert.equal(seen.headers.Authorization, 'Bearer sk-deepseek-secret');
   assert.equal(seen.headers['x-api-key'], undefined, 'never sends the anthropic header shape to an openai-shaped endpoint');
   assert.equal(r.reachable, true);
@@ -503,7 +503,7 @@ test('checkProviderReachable: openai-api (DeepSeek shape) — GET to <baseUrl>/m
 
 test('checkProviderReachable: an HTTP error status reads reachable:false with the status named, never thrown', async () => {
   const fetchImpl = async () => ({ ok: false, status: 401, json: async () => ({}) });
-  const r = await checkProviderReachable({ providerName: 'anthropic-api', apiKey: 'bad-key', fetchImpl });
+  const r = await checkProviderReachable({ providerName: 'anthropic-api', apiKey: 'bad-key', baseUrl: 'https://llm.example.test/v1', fetchImpl });
   assert.equal(r.reachable, false);
   assert.equal(r.status, 'HTTP 401');
   assert.equal(r.modelListed, null);
@@ -511,7 +511,7 @@ test('checkProviderReachable: an HTTP error status reads reachable:false with th
 
 test('checkProviderReachable: a network/transport failure reads reachable:false with an error class, never throws', async () => {
   const fetchImpl = async () => { throw new Error('ECONNREFUSED'); };
-  const r = await checkProviderReachable({ providerName: 'anthropic-api', apiKey: 'k', fetchImpl });
+  const r = await checkProviderReachable({ providerName: 'anthropic-api', apiKey: 'k', baseUrl: 'https://llm.example.test/v1', fetchImpl });
   assert.equal(r.reachable, false);
   assert.equal(r.note, 'request failed: Error');
 });
@@ -531,24 +531,39 @@ test('checkProviderReachable: an abort (timeout) reads status "timeout", not a g
       rejectFn(e);
     });
   });
-  const r = await checkProviderReachable({ providerName: 'anthropic-api', apiKey: 'k', fetchImpl, timeoutMs: 5 });
+  const r = await checkProviderReachable({ providerName: 'anthropic-api', apiKey: 'k', baseUrl: 'https://llm.example.test/v1', fetchImpl, timeoutMs: 5 });
   assert.equal(r.reachable, false);
   assert.equal(r.status, 'timeout');
 });
 
-test('checkProviderReachable: an unsupported provider name never calls fetch at all', async () => {
+test('checkProviderReachable: an unknown shape name, or a blank Base URL (no default host exists), never calls fetch at all', async () => {
   let called = false;
   const fetchImpl = async () => { called = true; return { ok: true, json: async () => ({}) }; };
-  const r = await checkProviderReachable({ providerName: 'gemini-api', apiKey: 'k', fetchImpl });
+  const r = await checkProviderReachable({ providerName: 'no-such-api', apiKey: 'k', baseUrl: 'https://x.example/v1', fetchImpl });
   assert.equal(called, false);
   assert.equal(r.reachable, false);
   assert.equal(r.status, 'unsupported-provider');
+  const blank = await checkProviderReachable({ providerName: 'openai-api', apiKey: 'k', fetchImpl });
+  assert.equal(called, false);
+  assert.equal(blank.reachable, false);
+  assert.equal(blank.status, 'no-base-url');
+});
+
+test('checkProviderReachable: gemini-api is now testable — key in x-goog-api-key, ids from models[].name minus its models/ prefix', async () => {
+  /** @type {any} */
+  let seen = null;
+  const fetchImpl = async (url, init) => { seen = { url: String(url), headers: init.headers, redirect: init.redirect }; return { ok: true, json: async () => ({ models: [{ name: 'models/m-1' }] }) }; };
+  const r = await checkProviderReachable({ providerName: 'gemini-api', apiKey: 'g-key', model: 'm-1', baseUrl: 'https://gem.example/v1beta', fetchImpl });
+  assert.equal(seen.url, 'https://gem.example/v1beta/models');
+  assert.equal(seen.headers['x-goog-api-key'], 'g-key');
+  assert.equal(seen.redirect, 'manual', 'a redirect is never followed, so the key is never sent on');
+  assert.equal(r.modelListed, true);
 });
 
 test('checkProviderReachable: RED-PROOF — the returned object never carries the api key anywhere in its own JSON shape', async () => {
   const fetchImpl = async () => ({ ok: true, json: async () => ({ data: [] }) });
   const secret = 'sk-this-must-never-come-back-abc123';
-  const r = await checkProviderReachable({ providerName: 'anthropic-api', apiKey: secret, fetchImpl });
+  const r = await checkProviderReachable({ providerName: 'anthropic-api', apiKey: secret, baseUrl: 'https://llm.example.test/v1', fetchImpl });
   assert.ok(!JSON.stringify(r).includes(secret));
 });
 
