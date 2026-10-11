@@ -138,3 +138,13 @@ test('proveInputFiles: a repo reached through a symlinked parent still proves it
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('signedJobLines keeps each ~ line whole in rules beside the joined rule; a line with no ~ line carries no rules', async () => {
+  const { signedJobLines } = await import('../src/jobblock.js');
+  const r = parseJobBlock('Document it\n~ PASS: /** Adds a and b; returns sum */\n~ FAIL: none\nPlain');
+  assert.ok(r.ok);
+  assert.deepEqual(signedJobLines(r.lines), [
+    { n: 1, text: 'Document it', rule: 'PASS: /** Adds a and b; returns sum */; FAIL: none', rules: ['PASS: /** Adds a and b; returns sum */', 'FAIL: none'] },
+    { n: 2, text: 'Plain', rule: '' },
+  ]);
+});

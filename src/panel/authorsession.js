@@ -910,7 +910,7 @@ export function createSession(card, deps = {}) {
           say('bot', 'An answer is needed here — there is no skip. Type it in the box below and press Send.');
         }
         const line = jobLines.find((l) => l.n === q.line);
-        if (line) line.rule = line.rule ? `${line.rule}; ${text}` : text;
+        if (line) { line.rule = line.rule ? `${line.rule}; ${text}` : text; line.rules.push(text); }
       }
       draft.jobLines = signedJobLines(jobLines);
       answers[1] = renderJobLines(jobLines);

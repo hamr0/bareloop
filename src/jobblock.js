@@ -5,7 +5,7 @@
 // Both are pure and $0: a malformed block is a named red `{ok: false, error}`, never a throw and never a guess.
 
 /** @typedef {{verdict: 'PASS'|'FAIL', text: string}} JobExample a `~ PASS:` / `~ FAIL:` line (rubric only), kept with its job line */
-/** @typedef {{n: number, text: string, rule: string, examples: JobExample[]}} JobLine one numbered job line; `rule` = its `~` lines joined with '; ' ('' when none) */
+/** @typedef {{n: number, text: string, rule: string, rules: string[], examples: JobExample[]}} JobLine one numbered job line; `rule` = its `~` lines joined with '; ' ('' when none), `rules` = those same `~` lines one by one (so an example's own '; ' survives) */
 /** @typedef {{n: number, label: string, value: string}} JobInput one numbered `label: value` input line */
 
 /** the joiner for consecutive `~` lines (fwd's joinGuardrails) */
@@ -25,7 +25,7 @@ export function parseJobBlock(text) {
   const lines = [];
   /** @type {string[]} */
   let rule = [];
-  const flush = () => { if (lines.length) lines[lines.length - 1].rule = rule.join(RULE_JOINER); rule = []; };
+  const flush = () => { if (lines.length) { lines[lines.length - 1].rule = rule.join(RULE_JOINER); lines[lines.length - 1].rules = rule; } rule = []; };
   let row = 0;
   for (const raw of text.split(/\r?\n/)) {
     const t = raw.trim();
@@ -44,7 +44,7 @@ export function parseJobBlock(text) {
       continue;
     }
     flush();
-    lines.push({ n: lines.length + 1, text: t, rule: '', examples: [] });
+    lines.push({ n: lines.length + 1, text: t, rule: '', rules: [], examples: [] });
   }
   flush();
   if (lines.length === 0) return { ok: false, error: 'The job is required' };
@@ -129,11 +129,12 @@ export function jobBlockFitsCheck(lines, rubric) {
 }
 
 /**
- * The signed `jobLines` field from parsed lines: the person's own words, `{n, text, rule}` (examples stay inside the
- * rule text, where the person wrote them).
+ * The signed `jobLines` field from parsed lines: the person's own words, `{n, text, rule, rules}` (examples stay inside the
+ * rule text, where the person wrote them). `rules` is the same `~` lines as an array, BESIDE the joined `rule` (never
+ * replacing it); it is omitted on a line with no `~` line, and an older spec lacks it entirely.
  * @param {JobLine[]} lines
- * @returns {{n: number, text: string, rule: string}[]}
+ * @returns {{n: number, text: string, rule: string, rules?: string[]}[]}
  */
 export function signedJobLines(lines) {
-  return lines.map((l) => ({ n: l.n, text: l.text, rule: l.rule }));
+  return lines.map((l) => ({ n: l.n, text: l.text, rule: l.rule, ...(l.rules.length ? { rules: [...l.rules] } : {}) }));
 }

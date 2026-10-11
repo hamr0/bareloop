@@ -2113,13 +2113,14 @@ export function signedLine(ts, hash) {
 }
 
 /**
- * The Job box's text for a signed spec: the person's own numbered lines (a `~` line per piece of a line's rule), or — for
+ * The Job box's text for a signed spec: the person's own numbered lines (a `~` line per entry of `rules`, or — for a spec
+ * signed before `rules` existed — per '; '-split piece of `rule`), or — for
  * an older job that saved no job lines — the signed goal sentence as the one line.
  * @param {any} spec @returns {string}
  */
 export function jobTextFromSpec(spec) {
   if (Array.isArray(spec?.jobLines) && spec.jobLines.length) {
-    return spec.jobLines.map((/** @type {any} */ l) => [String(l.text), ...(l.rule ? String(l.rule).split('; ').map((r) => `~ ${r}`) : [])].join('\n')).join('\n');
+    return spec.jobLines.map((/** @type {any} */ l) => [String(l.text), ...(Array.isArray(l.rules) ? l.rules.map((r) => `~ ${r}`) : l.rule ? String(l.rule).split('; ').map((r) => `~ ${r}`) : [])].join('\n')).join('\n');
   }
   return typeof spec?.goal === 'string' ? spec.goal : '';
 }

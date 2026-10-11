@@ -84,6 +84,14 @@ test('signedLine / jobTextFromSpec / inputsTextFromSpec', () => {
   assert.equal(inputsTextFromSpec({}, ''), '');
 });
 
+test('jobTextFromSpec: an example\'s own "; " survives via rules; an older spec without rules falls back to the split', () => {
+  const rules = ['PASS: /** Adds a and b; returns sum */', 'FAIL: no doc'];
+  const spec = { jobLines: [{ n: 1, text: 'Document every function', rule: rules.join('; '), rules }] };
+  assert.equal(jobTextFromSpec(spec), 'Document every function\n~ PASS: /** Adds a and b; returns sum */\n~ FAIL: no doc');
+  const old = { jobLines: [{ n: 1, text: 'Fix it', rule: 'a; b' }, { n: 2, text: 'Run it', rule: '' }] };
+  assert.equal(jobTextFromSpec(old), 'Fix it\n~ a\n~ b\nRun it');
+});
+
 test('getRunJob: a P7 run returns the plan, jobLines, inputs, specHash and the Signed line from the FIRST job-start; an older run falls back', () => {
   const home = tmp('p7-home-');
   const mk = (runid, spec) => {

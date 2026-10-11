@@ -725,10 +725,14 @@ function validatePlanShape(spec, red, reds) {
       spec.jobLines.forEach((/** @type {any} */ l, /** @type {number} */ i) => {
         const at = `jobLines[${i}]`;
         if (!isObj(l)) { red('invalid-value', at, '{n, text, rule}'); return; }
-        for (const key of Object.keys(l)) if (!['n', 'text', 'rule'].includes(key)) red('unknown-field', `${at}.${key}`, 'job line fields: n, text, rule');
+        for (const key of Object.keys(l)) if (!['n', 'text', 'rule', 'rules'].includes(key)) red('unknown-field', `${at}.${key}`, 'job line fields: n, text, rule, rules');
         if (l.n !== i + 1) red('invalid-value', `${at}.n`, `lines are numbered 1, 2, 3 in order — expected ${i + 1}`);
         if (!isNonEmptyString(l.text)) red('invalid-value', `${at}.text`, 'non-empty text');
         if (typeof l.rule !== 'string') red('invalid-value', `${at}.rule`, 'a string ("" when the line has no ~ rule)');
+        // optional, beside `rule`: the same `~` lines one by one; it must join back to `rule` exactly
+        if (l.rules !== undefined && (!Array.isArray(l.rules) || l.rules.some((/** @type {any} */ r) => !isNonEmptyString(r)) || l.rules.join('; ') !== l.rule)) {
+          red('invalid-value', `${at}.rules`, 'an array of the ~ lines that joins with "; " to exactly `rule`');
+        }
       });
     }
   }

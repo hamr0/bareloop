@@ -760,3 +760,15 @@ test('P7: malformed jobLines / inputs red by path', () => {
   assert.ok(codes(mut((j) => { j.inputs = [{ n: 1, label: '', value: 'v' }]; })).includes('invalid-value@inputs[0].label'));
   assert.ok(codes(mut((j) => { j.inputs = [{ n: 1, label: 'repo' }]; })).includes('invalid-value@inputs[0].value'));
 });
+
+test('P7: jobLines[].rules sits BESIDE rule — admitted when it joins back to rule, red otherwise, and an old-shape spec keeps its exact hash', () => {
+  const codes = (j) => validateJob(j).reds.map((x) => `${x.code}@${x.path}`);
+  const withRules = mut((j) => { j.jobLines = [{ n: 1, text: 'Document it', rule: 'PASS: /** Adds a and b; returns sum */; FAIL: none', rules: ['PASS: /** Adds a and b; returns sum */', 'FAIL: none'] }]; });
+  assert.deepEqual(validateJob(withRules).reds, []);
+  assert.ok(codes(mut((j) => { j.jobLines = [{ n: 1, text: 'x', rule: 'a; b', rules: ['a'] }]; })).includes('invalid-value@jobLines[0].rules'));
+  assert.ok(codes(mut((j) => { j.jobLines = [{ n: 1, text: 'x', rule: 'a', rules: 'a' }]; })).includes('invalid-value@jobLines[0].rules'));
+  // an older spec (no `rules`) validates and hashes exactly as it did before the field existed
+  const old = mut((j) => { j.jobLines = [{ n: 1, text: 'Fix the suite', rule: "don't edit tests" }, { n: 2, text: 'Keep the API', rule: '' }]; });
+  assert.deepEqual(validateJob(old).reds, []);
+  assert.equal(jobSpecHash(old), 'b76843e72acffd0f4db209fb24a148040f7bffdaf3ea8a0b192f14ddca6aa3ef');
+});
