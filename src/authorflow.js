@@ -353,7 +353,7 @@ export function destinationFieldFor(isRepo) { return isRepo ? DESTINATION_FIELD_
  * 2026-09-10 "The intake form (RULED)" ruling, `docs/product/PRD.md`) — not the
  * old worded questions ("What do you want done?", "How do you check today
  * whether it's working?", "...worse than before?"). Motivated by run `mtv8jihy`
- * (F159, `docs/logs/FINDINGS.md`): a rulebook this prompt commit did not touch
+ * (F159, `docs/wiki/FINDINGS.md`): a rulebook this prompt commit did not touch
  * still had to compile against a card built from a person's actual bar, and the
  * old wording never matched what got signed — this reshape (commit 1ac4d05)
  * trimmed the SET to three slots but left their PROSE unreconciled with the
@@ -564,7 +564,7 @@ export const LANGUAGE_PICK_FIELD = Object.freeze({
 });
 
 /**
- * F175's open half (docs/logs/FINDINGS.md, run mu0voeo4), hamr's ruling
+ * F175's open half (docs/wiki/FINDINGS.md, run mu0voeo4), hamr's ruling
  * (2026-09-16): "Confirm" and "Type the goal yourself" may not bypass a
  * `questions` entry the model itself raised on the plan being accepted — the
  * person answers it inline, one question at a time, with NO extra model
