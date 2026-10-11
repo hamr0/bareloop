@@ -230,7 +230,7 @@ test('tripwire: the runner ANSWERS through the library seam and never re-spells 
 test('tripwire: the JUDGE SEAM reaches runJob — a judged stage with no provider instrument-STOPS', () => {
   // softgreen's whole point is a close that JUDGES, and the judged stage's provider
   // is not necessarily the worker's — before PRD item 32 it was pinned to
-  // `JUDGE_MODEL` on Anthropic, never agent-selectable, and absent it the stage
+  // a library-pinned judge model on Anthropic, never agent-selectable, and absent it the stage
   // stopped as a wiring gap rather than grading on whatever model was lying
   // around. `run-author.mjs` wired it; this runner — the one that actually runs
   // the job — did not, so every live softgreen run would have died at its own

@@ -35,7 +35,9 @@ import {
   runStage, seedRead, LIVE_KINDS, SEED_EXEMPT_KINDS, JUDGE_ATTEMPTS, MAX_JUDGED_PATHS,
   EXIT_GREEN, EXIT_RED, EXIT_STOP, STOP_FAULTS,
 } from '../src/kinds.js';
-import { JUDGE_MODEL, LOCATE_LABEL } from '../src/judged.js';
+import { LOCATE_LABEL } from '../src/judged.js';
+const JUDGE_MODEL = 'claude-haiku-4-5'; // a fixture id: the library keeps no pinned judge model (P8)
+
 import { runDeclaredStages, declaredStages, DECLARED_GAP_PREFIX } from '../src/declaredclose.js';
 import { KIND_CATALOGUE, CATALOGUE_LIVE_KINDS, LOCKED_KINDS, NEVER_OFFERED_KINDS } from '../src/authoring.js';
 import { ACCOUNTED_ROUND_TYPES } from '../src/run.js';

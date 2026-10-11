@@ -25,7 +25,6 @@
 // authored is preserved from the spine as a reusable artifact, and the next run of
 // this shape reuses and fine-tunes it rather than starting cold.
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, rmSync, readdirSync, openSync, readSync, closeSync, fstatSync, unlinkSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
 import { join, resolve, dirname, basename } from 'node:path';
@@ -87,9 +86,6 @@ import { judgeRatesFor, keyNameFor, keyValueOf, priceReadout, ratesFor, ratesOfL
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
 // end-of-run readout sits past the approval gate, so nothing could ever drive it here
 import { wallLine, doomedResume, deathAtOf, evidencePackage, doorLines, resumeAtLines, reviewDoorPackage, runDoorLines, tokensLine, doorTimingRedLines } from './u-readout.js';
-
-const require = createRequire(import.meta.url);
-const { AnthropicProvider } = require('bare-agent/providers');
 
 const JOBS = {
   'aurora-spawner': {
@@ -174,10 +170,10 @@ const JOBS = {
   },
   // PRD item 28 / 30.9 — the openai-api probe through THIS runner (the shipped
   // one), not poc-run-param.mjs. Same job shape, same seed, its own patient copy.
-  'bareguard-types-deepseek': {
-    spec: 'bareguard-u-types-deepseek.json',
-    workdir: '/home/hamr/PycharmProjects/bareloop-patients/bareguard-u-deepseek',
-    spine: 'bareguard-u-deepseek-bareloop',
+  'bareguard-types-openai-shape': {
+    spec: 'bareguard-u-types-openai-shape.json',
+    workdir: '/home/hamr/PycharmProjects/bareloop-patients/bareguard-u-openai-shape',
+    spine: 'bareguard-u-openai-shape-bareloop',
     seed: '2ae8fcd37041c186524a6eb5e953b9752cd602fa',
   },
   // N4's hitl PROVING job (build plan §Proving; hamr's ruling, 2026-08-13). The job

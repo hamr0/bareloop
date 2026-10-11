@@ -58,7 +58,9 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runStage, STOP_FAULTS, EXIT_STOP, EXIT_GREEN } from '../src/kinds.js';
-import { JUDGE_MODEL, resolveJudge } from '../src/judged.js';
+import { resolveJudge } from '../src/judged.js';
+const JUDGE_MODEL = 'claude-haiku-4-5'; // a fixture id: the library keeps no pinned judge model (P8)
+
 import { validateCloseDecl, declaredStages } from '../src/declaredclose.js';
 import { foldJudgedArtifacts } from '../src/cardauthor.js';
 import { jobSpecHash } from '../src/job.js';
