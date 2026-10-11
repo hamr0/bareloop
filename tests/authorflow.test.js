@@ -1348,7 +1348,7 @@ test('authorClose: a last revision that REGRESSES keeps the last accepted close 
 // ── 6b. F176 — a later revision that measures WORSE (instrument-stops) than an
 // earlier one must not be kept just because it was last. Row shapes below are
 // copied from the real archived run that found this (`mu0voeo4`,
-// docs/logs/FINDINGS.md F176): a `count-not-worse` stage instrument-stops with
+// docs/wiki/FINDINGS.md F176): a `count-not-worse` stage instrument-stops with
 // `exitCode: 97` and a `stop` detail naming the broken parser term — never a
 // hand-invented shape.
 
@@ -2158,7 +2158,7 @@ test('authorClose: a provider casualty still leaves its raw on the trail', async
 
 // ── F179/F180 — a malformed tool-call JSON no longer crashes the loop ──────
 //
-// Run mu2bjmed (docs/logs/FINDINGS.md F179/F180): bare-agent 0.42.0's
+// Run mu2bjmed (docs/wiki/FINDINGS.md F179/F180): bare-agent 0.42.0's
 // `OpenAIProvider.generate` used to do `JSON.parse(tc.function.arguments)`
 // with no try/catch, so a model's malformed tool-call arguments threw a raw
 // SyntaxError AFTER the billed HTTP round. Unwrapped, that throw escaped

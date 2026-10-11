@@ -6,7 +6,7 @@
 // (a local commit-message gate), never part of the published library surface
 // — `scripts/` is not in package.json's `files`, so nothing here ships.
 //
-// Doctrine this file exists to satisfy (docs/product/2026-08-23-agreed-build-list.md
+// Doctrine this file exists to satisfy (docs/logs/2026-08-23-agreed-build-list.md
 // :187-189): "a frozen rule without a wired detector is prose" — Q9 (hamr,
 // 2026-08-25) answered "a check", so this is enforcement, not convention.
 

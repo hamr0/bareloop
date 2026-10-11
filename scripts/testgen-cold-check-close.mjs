@@ -1,5 +1,5 @@
 // Layer 2 POC — the operator-signed IN-RUN CHECK, COLD variant (aurora-testgen-cold,
-// bench row G2; see docs/product/G2-SCOPING.md "Config wrinkle"). This is the grader's
+// bench row G2; see docs/logs/G2-SCOPING.md "Config wrinkle"). This is the grader's
 // deterministic prefix; it is NOT the grader: it decides nothing and mints nothing. A
 // check-green row still faces the frozen grader exactly once (harness-run) for the rate
 // — the grader stays the only truth.

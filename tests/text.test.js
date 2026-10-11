@@ -204,7 +204,7 @@ test('capStop: a breach that is CERTAIN outranks a blindness that is not — cap
 
 // ── callCasualty: the ONE predicate for "was this throw a call casualty" ────
 //
-// F179/F180 (docs/logs/FINDINGS.md): bare-agent 0.42.0's OpenAIProvider.generate
+// F179/F180 (docs/wiki/FINDINGS.md): bare-agent 0.42.0's OpenAIProvider.generate
 // used to throw a raw SyntaxError mid-call (a malformed tool-call arguments
 // string, JSON.parse with no try/catch) rather than resolve with `{error}`, and
 // this predicate used to admit that class too. bare-agent 0.43.0 fixed it

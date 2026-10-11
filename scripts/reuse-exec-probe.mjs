@@ -518,7 +518,7 @@ const results = {
   dry: false,
   what: 'ONE full real run of jobs/litectx-u-types.json through the shipped runJob flow, identical to scripts/run-u.mjs\'s litectx-types target EXCEPT that the plan drafter\'s prompt carries arm C\'s mechanical-start block (the aurora bridge as the starting draft).',
   prereg: 'docs/archive/REUSE-PREPROBE-PREREG.md',
-  designRecord: 'docs/product/2026-08-01-layer-3-reuse-design.md',
+  designRecord: 'docs/logs/2026-08-01-layer-3-reuse-design.md',
   runid,
   startedAt: new Date(started).toISOString(),
   model: MODEL,

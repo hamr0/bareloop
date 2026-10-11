@@ -422,7 +422,7 @@ test('runAuthorScout: a call rejecting with an ETIMEDOUT casualty lands as call-
   assert.equal(seen.cleaned, 1);
 });
 
-// F179's scope note (docs/logs/FINDINGS.md): the scout builds its own Loop and
+// F179's scope note (docs/wiki/FINDINGS.md): the scout builds its own Loop and
 // was never wired to the authoring-flow retry ladder (`askStructured`'s
 // malformed-tool-call-arguments axis) — this stays true after the 0.43.0 bump.
 // A malformed survey tool call now arrives as bare-agent's own priced

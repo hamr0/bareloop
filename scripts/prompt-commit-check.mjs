@@ -11,7 +11,7 @@
 //   Addresses: what it addresses
 //   Corrects:  what it corrects
 // Convention-only was rejected — doctrine already on record is "a frozen rule
-// without a wired detector is prose" (docs/product/2026-08-23-agreed-build-list.md
+// without a wired detector is prose" (docs/logs/2026-08-23-agreed-build-list.md
 // :187-189). Enforcement is wired into `npm test` (package.json's `test`
 // script); CI runs `npm test` and (since #2b, below) only adds the env var
 // that names the real pre-push range.
