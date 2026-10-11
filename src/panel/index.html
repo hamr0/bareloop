@@ -35,9 +35,6 @@
      controls to a UA sans font, not the page's monospace — without this,
      inputs/selects render off-theme even though buttons already inherit it. */
   input,select{font:inherit;padding:6px 8px;border:1px solid var(--border-strong);border-radius:0;background:var(--bg);color:var(--text);}
-  /* the opened option list is a separate popup in some browsers and does not follow the select's `font:inherit`:
-     name the family on select AND option so it stays the page's monospace (hamr click-through nit, API shape). */
-  select,option{font-family:inherit;}
   input::placeholder{color:var(--text-faint);}
   table{border-collapse:collapse;width:100%;}
   th,td{text-align:left;padding:6px 8px;border-bottom:1px dotted var(--border-strong);font-size:12px;}
