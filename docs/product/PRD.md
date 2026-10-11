@@ -1365,3 +1365,14 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 - Only a run that earned its green is a reuse source: `already-green` offers Edit in chat, the Reuse picker lists real greens only, and the server refuses a reuse of any other run.
 - One cap rule (`capKindOf`) reads capped on every surface, including a leg that ended `escalated` on a money or wall halt.
 - Detail: `docs/product/PANEL-BUILD.md` addendum 2026-10-08 run page.
+
+### Drafter thinking off; next panel part — Settings providers list (v1.91 — 2026-10-11)
+
+- Drafter thinking is OFF by default for every drafting call (panel and CLI); worker and judge unchanged. Decided by the pre-registered contrast (`docs/logs/2026-10-10-drafter-thinking-contrast-prereg.md`). A drafter try cut off at the output cap counts as a failed try for the try-3 question gate.
+- NEXT panel part, Settings providers list: one line per API key per model, filled from the provider's free list-models call, with a Refresh button; a typed name when the list call fails.
+- A "Use" tick per model; ticking REQUIRES both prices (in/out per 1M tokens); an unticked model may have none; a local model may be priced 0/0, typed explicitly. Prices move from per-key to per-model (an existing per-key price carries over to that key's current model, ticked).
+- Only ticked models appear in the Chat Model dropdown, named "provider · model". The Claude-named tiers (sonnet/haiku) leave the model choice; ticking Opus in Settings is the person assigning it, the agent never picks a model.
+- ONE Settings checkbox "Thinking on (drafting)", all jobs, unticked by default; a model the code cannot switch shows "can't change this for this model", never pretends.
+- Supersedes, for the panel: "no price → run as estimated" (a ticked model is always priced). Key values never reach the page.
+- Work order after the job-block release: (1) providers list, (2) file readers (.docx, .xlsx), (3) rubric on plain folders (+ flight search); the judge false-red classes from the JSDoc rubric run stay parked until (3).
+- The spec for (1) is written and shown to hamr before any build.
