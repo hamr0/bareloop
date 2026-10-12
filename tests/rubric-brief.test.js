@@ -140,3 +140,16 @@ test('copyOut delivers output/steps/<n>.json with the output — each under its 
   }
   assert.equal(JSON.parse(readFileSync(r.files[0].path, 'utf8')).text, 'one');
 });
+
+test('the step-file brief tells the worker to copy numbers, times and prices exactly as the input writes them — in the worker goal AND the composer prompt, one text', async () => {
+  const { rubricGoal } = await import('../src/rubricstep.js');
+  const line = 'copy every number, time and price exactly as the input writes it (for example "9:27 AM", not "09:27")';
+  assert.ok(stepFileContract().replace(/\s+/g, ' ').includes(line), 'the contract carries the rule');
+  assert.match(stepFileContract(), /the check matches the numbers in your claim against your quote/);
+  assert.ok(rubricGoal({ jobLines: [{ n: 1, text: 'x', rule: '' }], files: [{ label: 'C', rel: 'input/C.md' }] }).replace(/\s+/g, ' ').includes(line));
+  const prompt = authorPrompt({
+    answers: { 1: 'x' }, questions: { 1: GREEN_QUESTIONS[1] }, facts: { rubricFiles: true }, listingBlock: '', lang: RUBRIC_LANG,
+    verdictType: 'soft-green', guards: guards(), catalogue: catalogueForLang(RUBRIC_LANG),
+  });
+  assert.ok(prompt.replace(/\s+/g, ' ').includes(line));
+});

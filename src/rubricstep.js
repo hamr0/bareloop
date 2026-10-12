@@ -31,6 +31,8 @@ export function stepFileContract() {
     '  "cites" — an object: for each input you drew on, its label as the key and a list of {"claim", "quote"} as the value.',
     '            "claim" is one thing your text relies on; "quote" is words copied EXACTLY from that input (spacing and',
     '            ** or __ marks do not matter). Every number in a claim must also appear in its quote.',
+    '  In each claim, copy every number, time and price exactly as the input writes it (for example "9:27 AM", not "09:27"),',
+    '  because the check matches the numbers in your claim against your quote.',
     'Write nothing outside output/, and never edit the files under input/. The file must be complete, valid JSON: a file cut',
     'off before its closing brace counts as not written.',
   ].join('\n');
