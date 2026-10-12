@@ -2781,6 +2781,7 @@ export async function authorClose({
           iter.cutOff = true;
           if (nextTryMayAsk(i)) {
             questionLines = allLines.length ? allLines : null;
+            onPhase('author-try-failed', { call: label, i, of: revisionCap, reds: [scrubRed(/** @type {Red} */ (ask.red))] });
             const block = renderRejectBlock({ kind: 'artifact', reds: [/** @type {Red} */ (ask.red).detail] });
             messages = [...ask.convo, { role: 'assistant', content: '(the reply carried no text)' },
               { role: 'user', content: `${block}\n\n${structuredMode === 'tool' ? STRUCTURE_INSTRUCTION_TOOL : STRUCTURE_INSTRUCTION_TEXT}` }];
@@ -2830,6 +2831,8 @@ export async function authorClose({
         // same channel and counts as a revision (addendum 5)
         measured = renderRejectBlock({ kind: 'validation', reds: vReds });
         tryFails[i] = { lines: linesNamedByReds(vReds, ask.declaration, (jobLines ?? []).map((l) => l.n)) };
+        // WHY this try was refused, for the drafting log and the progress line (the reds are already scrubbed)
+        onPhase('author-try-failed', { call: label, i, of: revisionCap, reds: vReds });
       } else {
         // what gets MEASURED is what will RUN: the resolved declaration with the
         // genre's environment already injected
@@ -2860,6 +2863,16 @@ export async function authorClose({
         measuredIterations.push({ label, declaration: injected.declaration, seedRead: rows, droppedEnv: injected.dropped });
         const sf = seedReadFailure(rows, injected.declaration, guards.map((/** @type {any} */ g) => g.name), (jobLines ?? []).map((l) => l.n));
         tryFails[i] = sf.failed ? { lines: sf.lines } : null;
+        if (sf.failed) {
+          const guardNames = guards.map((/** @type {any} */ g) => g.name);
+          const stoppedNames = [...new Set(rows.filter((/** @type {any} */ r) => !guardNames.includes(r?.stage) && r?.verdict === 'instrument-stop').map((/** @type {any} */ r) => String(r.stage)))];
+          onPhase('author-try-failed', {
+            call: label, i, of: revisionCap,
+            reason: stoppedNames.length
+              ? `a check could not run at the starting point (${stoppedNames.join(', ')})`
+              : 'no check was failing at the starting point, so none of them could tell a finished job from an unfinished one',
+          });
+        }
       }
 
       if (i === revisionCap) { stop = 'max-revisions'; break; }

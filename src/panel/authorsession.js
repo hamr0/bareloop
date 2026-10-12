@@ -55,7 +55,7 @@ import { rubricGoal, reconcileRubricPlan } from '../rubricstep.js';
 import { redactSecrets } from '../validate.js';
 import { tallyCalls } from '../text.js';
 import { writeDraftSpend, appendDraftLog } from '../draftspend.js';
-import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, draftStopText, redsRecord, calibrationSummary } from '../authorreadout.js';
+import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, draftStopText, redsRecord, calibrationSummary, tryRefusedText } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 import {
   parseJobBlock, parseInputs, jobBlockFitsCheck, renderJobLines, renderExamples, signedJobLines,
@@ -529,6 +529,17 @@ export function createSession(card, deps = {}) {
     // person needs to read; the step-by-step detail lives in one line.
     // ONE owner of the drafting line's detail (model + cap): the drafting line is started here, by the real author phase
     if (PHASE_STEP[name]) stepStart(PHASE_STEP[name], PHASE_STEP[name] === 'draft' ? `${card.model}, $${card.capUsd.toFixed(2)} cap` : undefined);
+    // WHY a try was refused: the drafting log keeps it beside the call that made it (it used to say only "retry 3 of 3"), and the
+    // progress line shows it briefly, in code's words
+    if (name === 'author-try-failed') {
+      const no = state.steps.findLastIndex((/** @type {any} */ x) => x.id === 'draft');
+      const reason = tryRefusedText(data);
+      appendDraftLog(outDir, {
+        kind: 'try-refused', no: no === -1 ? state.steps.length - 1 : no, call: String(data.call ?? ''), reason,
+        ...(Array.isArray(data.reds) && data.reds.length ? { reds: redsRecord(data.reds) } : {}), at: new Date().toISOString(),
+      });
+      stepDetail('draft', `${data.call}: refused — ${reason.length > 160 ? `${reason.slice(0, 160)}…` : reason}`);
+    }
     // a drafting call after the first (`author-call` i >= 1, of up to `of + 1`) is a RETRY: the line says so in plain words, so a
     // long silence on call 2 of 3 does not read as a hang. The same one line, relabelled — never a second line.
     if (name === 'author-call' && Number.isInteger(data.i) && data.i >= 1 && Number.isInteger(data.of)) {

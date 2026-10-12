@@ -2782,3 +2782,26 @@ test('F217: a scout killed by a reset connection reaches the person: authorClose
   assert.match(text, /first look at your repo did not complete/);
   assert.ok(text.includes('the connection to the provider dropped (socket hang up)'), text);
 });
+
+test('authorClose: a refused try announces WHY — a validation red names its reds, a vacuous seed read says no check was failing; a passing try announces nothing', async () => {
+  /** @type {[string, any][]} */
+  const phases = [];
+  const { generate } = scriptGenerate([
+    { declaration: { stages: [{ name: 'x', kind: 'no-such-kind', params: {} }] } },
+    { declaration: goodDeclaration() },
+  ]);
+  const allGreen = new Proxy({}, { get: () => ({ verdict: 'green', exitCode: 0 }) });
+  await authorClose({
+    ...baseArgs(), generate, seedReadFn: scriptSeedRead(allGreen).fn, maxRevisions: 1,
+    onPhase: (/** @type {string} */ n, /** @type {any} */ d) => phases.push([n, d]),
+  });
+  const failed = phases.filter(([n]) => n === 'author-try-failed').map(([, d]) => d);
+  assert.deepEqual(failed.map((f) => f.call), ['author', 'revise-1']);
+  assert.ok(failed[0].reds.length > 0 && failed[0].reds.every((/** @type {any} */ r) => typeof r.code === 'string' && typeof r.detail === 'string'), 'try 1: the validation reds ride along');
+  assert.match(failed[1].reason, /no check was failing at the starting point/, 'try 2: validated, but the seed read was vacuous');
+  // and a try that passes (a red work stage at the seed) announces nothing
+  /** @type {string[]} */ const ok = [];
+  const g2 = scriptGenerate([{ declaration: goodDeclaration() }]);
+  await authorClose({ ...baseArgs(), generate: g2.generate, seedReadFn: scriptSeedRead().fn, maxRevisions: 0, onPhase: (/** @type {string} */ n) => ok.push(n) });
+  assert.ok(!ok.includes('author-try-failed'));
+});

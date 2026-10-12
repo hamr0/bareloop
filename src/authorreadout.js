@@ -316,6 +316,7 @@ export function phaseLine(phase, data = {}) {
     case 'listing': return '· listing the files the declaration may name…';
     case 'listing-done': return `· listing ${data.stop ? `STOPPED (${data.stop})` : `${data.files ?? 'unknown'} file(s)`}`;
     case 'author': return '· authoring the close declaration…';
+    case 'author-try-failed': return `·   ${data.call} refused — ${tryRefusedText(data)}`;
     case 'author-call': return `· ${data.call} (call ${(data.i ?? 0) + 1} of up to ${(data.of ?? 0) + 1})…`;
     case 'seed-read': return `· measuring ${data.stages ?? '?'} stage(s) at the seed — each one runs a real toolchain…`;
     case 'stage': return `·   ${data.stage} [${data.kind}] ${data.verdict} — ${ms(data.durationMs)}`;
@@ -549,6 +550,21 @@ function moneyText(n) {
 function spendText(spend) {
   if (!spend || typeof spend.knownUsd !== 'number' || !Number.isFinite(spend.knownUsd)) return null;
   return `${spend.spendComplete === false ? 'at least ' : ''}${moneyText(spend.knownUsd)}`;
+}
+
+/**
+ * WHY one drafting try was refused, in the code's own words: the unique `detail` of each red it raised (the same sentences
+ * `draftStopText` quotes at a stop), else the plain `reason` the loop gave (a seed-read failure raises no red). Scrubbed,
+ * one line, bounded; never empty.
+ * @param {{reds?: PlainRed[]|null, reason?: string|null}} o
+ * @returns {string}
+ */
+export function tryRefusedText({ reds = null, reason = null }) {
+  const said = [...new Set((Array.isArray(reds) ? reds : []).map((r) => fullText(r?.detail)).filter(Boolean))];
+  if (said.length === 0 && reason) said.push(fullText(reason));
+  if (said.length === 0) return 'no reason was recorded';
+  const text = said.slice(0, 3).join('; ') + (said.length > 3 ? `; …and ${said.length - 3} more` : '');
+  return text.length > 600 ? `${text.slice(0, 600)}…` : text;
 }
 
 /** the stops this module explains in plain words */
