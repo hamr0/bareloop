@@ -77,7 +77,7 @@ function mountCard() {
     setVerdict: (v) => log.push(`verdict:${v}`), setVal: (id, v) => { dom.document.getElementById(id).value = v === undefined || v === null ? '' : String(v); },
     panelMoney: (n) => `$${Number(n).toFixed(2)}`, originLine, errEl, renderPicker() {}, refreshModelStatus() {}, refreshStartEnabled: () => log.push('refresh'),
   }, 'var resumeRun = null;', '__run: () => resumeRun');
-  return { api, dom, log, originLine, errEl };
+  return { api, dom, log, originLine, errEl, modelSelect };
 }
 
 test('card: applyResume titles the card RESUME <job> (run-N), fills every box from the signed job, caps from the resume plan, shows the fixed intro and the spent hint', () => {
@@ -136,17 +136,19 @@ test('lock: in resume mode EVERYTHING is locked — boxes, Model, Check type rad
   assert.deepEqual(radios.map((r) => r.disabled), [false, false, false]);
 });
 
-function signHarness(resumeRun, postResult) {
+// the page's own pickParts ("KEY|model"), extracted
+const pickParts = build(['pickParts']).pickParts;
+function signHarness(resumeRun, postResult, sel = { value: '' }, ok = true) {
   const dom = fakeDom();
   const posts = []; const log = [];
   dom.document.getElementById('jf-cap-money').value = '12';
   dom.document.getElementById('jf-cap-time').value = '90';
   const resumeSignBtn = dom.document.getElementById('chat-resume-sign');
-  const api = build(['signResume'], {
-    document: dom.document, resumeSignBtn,
+  const api = build(['resumeSignBlocked', 'signResume'], {
+    document: dom.document, resumeSignBtn, modelSelect: sel, keyOk: ok, pickParts,
     authorPost: (path, body) => { posts.push({ path, body }); return Promise.resolve(postResult); },
     resetCard: () => log.push('reset'), afterResumeRefresh: (...a) => log.push(['follow', ...a]),
-  }, `var resumeRun = ${JSON.stringify(resumeRun)};`);
+  }, `var resumeRun = ${JSON.stringify(resumeRun)};`, '__x: 0');
   return { api, dom, posts, log, resumeSignBtn };
 }
 
@@ -192,4 +194,39 @@ test('Job tab: read-only on every run — no input, button, select or textarea i
   for (const gone of ['openResumeOnJobTab', 'paintResumeMode', 'resumeMode', 'resume-job', 'resume-cap', 'details-cap-money-label', 'details-cap-time-label']) {
     assert.ok(!PAGE.includes(gone), `${gone} is deleted`);
   }
+});
+
+// Q2(b) (hamr 2026-10-11): an older spec that names no model opens the Resume card's Model box; the pick rides the POST
+test('Q2(b) page: a spec that names NO model opens the Model box and the resume POST carries model + provider (the Settings line picked)', async () => {
+  const m = mountCard();
+  m.api.applyResume({ runid: 'run1', prefill: { card: { ...CARD, model: 'jobstart-model' }, specNamesModel: false }, resume: DETAIL.resume, title: 't' });
+  assert.deepEqual(m.api.__run(), { runid: 'run1', noTime: false, pickModel: true });
+  assert.equal(m.modelSelect.value, '', 'the card does not preselect a model the spec never named');
+  // the lock rule: Model open (not disabled, not readOnly), the other boxes still locked
+  const dom = fakeDom();
+  const lock = build(['syncCardLock'], { document: dom.document, syncThinking() {} },
+    `var sessionLive = false; var reuseOn = false; var resumeRun = {runid: 'r', noTime: false, pickModel: true};
+     var LOCKED_IDS = ["jf-name", "jf-job"]; var OPEN_IDS = ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var CAP_IDS = ["jf-cap-money", "jf-cap-time"];`).syncCardLock;
+  lock();
+  assert.equal(dom.els['jf-model'].disabled, false);
+  assert.equal(dom.els['jf-model'].readOnly, false);
+  for (const id of ['jf-name', 'jf-job', 'jf-inputs', 'jf-dest']) assert.equal(dom.els[id].readOnly, true, `${id} still locked`);
+  const h = signHarness({ runid: 'r', noTime: false, pickModel: true }, { status: 200, body: { ok: true } }, { value: 'DEEPSEEK_API_KEY|deepseek-flash' });
+  await h.api.signResume();
+  assert.deepEqual(h.posts[0].body, { budgetUsd: '12', maxWallMin: '90', model: 'deepseek-flash', provider: 'DEEPSEEK_API_KEY' });
+  // no ticked line: Sign & resume is blocked, nothing is posted
+  const none = signHarness({ runid: 'r', noTime: false, pickModel: true }, { status: 200, body: { ok: true } }, { value: '' }, false);
+  await none.api.signResume();
+  assert.deepEqual(none.posts, []);
+  assert.match(PAGE, /resumeSignBtn\.disabled = resumeSignBlocked\(\)/, 'refreshStartEnabled keeps the button in step with the Model pick');
+});
+
+test('Q2(b) page: a spec that names a model keeps the Model box locked, preselects it, and the POST sends neither model nor provider', async () => {
+  const m = mountCard();
+  m.api.applyResume({ runid: 'run1', prefill: { card: CARD, specNamesModel: true }, resume: DETAIL.resume, title: 't' });
+  assert.deepEqual(m.api.__run(), { runid: 'run1', noTime: false });
+  assert.equal(m.modelSelect.value, 'deepseek-flash');
+  const h = signHarness({ runid: 'r', noTime: false }, { status: 200, body: { ok: true } }, { value: 'DEEPSEEK_API_KEY|deepseek-flash' });
+  await h.api.signResume();
+  assert.deepEqual(h.posts[0].body, { budgetUsd: '12', maxWallMin: '90' });
 });

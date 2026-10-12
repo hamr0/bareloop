@@ -2491,7 +2491,7 @@ export function reuseLine(record) {
  * @param {{ home?: string, model?: string, provider?: string }} [opts] `model` = the Model box's current Name (the estimate counts only runs on that worker); absent = the card's own Model
  * @returns {{ok: true, origin: {runid: string, job: string}, outcome: string|null, card: Record<string, any>, from: 'signed job',
  *   locked: readonly string[], open: readonly string[], note: string|null,
- *   specHash: string, workflowKey: string, spec: any, specPath: string,
+ *   specHash: string, workflowKey: string, spec: any, specPath: string, specNamesModel: boolean,
  *   trackRecord: ReturnType<typeof trackRecordFor>, line: string}|{ok: false, error: string}|null}
  */
 export function getStartFrom(runid, opts = {}) {
@@ -2540,6 +2540,8 @@ export function getStartFrom(runid, opts = {}) {
     workflowKey: key,
     spec,
     specPath: signed.specPath,
+    // an older spec signed before models were required names none: the Resume card then opens its Model box (run-u takes `--model`)
+    specNamesModel: typeof spec.model === 'string' && spec.model !== '',
     trackRecord,
     line: reuseLine(trackRecord),
   };

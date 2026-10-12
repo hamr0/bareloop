@@ -219,7 +219,7 @@ export function createAuthorRoutes(opts) {
       send(200, {
         ok: true, origin: pre.origin, card: pre.card, from: pre.from, note: pre.note,
         locked: pre.locked, open: pre.open, specHash: pre.specHash, workflowKey: pre.workflowKey, trackRecord: pre.trackRecord,
-        line: pre.line,
+        line: pre.line, specNamesModel: pre.specNamesModel,
       });
       return true;
     }

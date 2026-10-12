@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
-import { createPanelServer, endedFor, getRunDetail, listRuns } from '../src/panel/server.js';
+import { createPanelServer, endedFor, getRunDetail, getStartFrom, listRuns } from '../src/panel/server.js';
 import { appendRun } from '../src/runlist.js';
 import { jobSpecHash } from '../src/job.js';
 
@@ -522,4 +522,23 @@ test('page: renderRun calls renderEnded (an engine with a caller), and the run c
   assert.match(fnSrc('renderRun'), /renderEnded\(detail\);/);
   assert.match(PAGE, /r\.status \? '<span class="wf-ended"[^]*?statusWordHtml\(r\.status, r\.endedLine\)/);
   assert.match(PAGE, /g\.lastStatus \? '<span class="wf-ended wf-ended-inline"[^]*?statusWordHtml\(g\.lastStatus, g\.lastEndedLine\)/);
+});
+
+// Q2(b) (hamr 2026-10-11): the Resume card learns from start-from whether the signed spec names a model; the resume of a
+// model-less spec carries the picked line and does not move the spec hash.
+test('Q2(b): start-from says whether the signed spec names a model; a resume carrying model+provider spawns on the SAME hash and writes no revision', async (t) => {
+  const home = tmp();
+  const { out, specHash } = makeRun(home, { runid: 'old1', spent: 5 });
+  assert.equal(getStartFrom('old1', { home }).specNamesModel, false, 'SPEC names no model');
+  const named = tmp();
+  makeRun(named, { runid: 'new1', spent: 5, spec: { ...SPEC, model: 'deepseek-flash' } });
+  assert.equal(getStartFrom('new1', { home: named }).specNamesModel, true);
+  const spawnFn = makeSpawn();
+  const { post } = await startServer(t, { home, spawnFn });
+  assert.equal((await post('/api/runs/old1/resume', { budgetUsd: 8, maxWallMin: 60, model: 'deepseek-flash', provider: 'DEEPSEEK_API_KEY' })).status, 200);
+  const args = spawnFn.calls[0].args;
+  assert.equal(args[args.indexOf('--approve') + 1], specHash);
+  assert.equal(specHash, jobSpecHash(SPEC), 'the hash is the unchanged signed spec\'s');
+  assert.deepEqual(args.slice(args.indexOf('--model'), args.indexOf('--model') + 4), ['--model', 'deepseek-flash', '--provider', 'DEEPSEEK_API_KEY']);
+  assert.deepEqual(readdirSync(out).filter((n) => !n.startsWith('resume-')).sort(), ['resolved-spec.json', 'source-x'], 'no revision file');
 });

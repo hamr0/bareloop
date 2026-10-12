@@ -3959,8 +3959,10 @@
       var resuming = resumeRun !== null;
       var setLock = function(id, on){ var el = document.getElementById(id); el.readOnly = on; el.classList.toggle("locked", on); };
       LOCKED_IDS.forEach(function(id){ setLock(id, reuseOn || live || resuming); });
-      OPEN_IDS.forEach(function(id){ setLock(id, live || (resuming && CAP_IDS.indexOf(id) === -1)); });
-      document.getElementById("jf-model").disabled = live || resuming;
+      // the one exception on a resume card: an older spec that names no model leaves the Model box open (picked at resume)
+      var modelOpen = resuming && resumeRun.pickModel === true;
+      OPEN_IDS.forEach(function(id){ setLock(id, live || (resuming && CAP_IDS.indexOf(id) === -1 && !(modelOpen && id === "jf-model"))); });
+      document.getElementById("jf-model").disabled = live || (resuming && !modelOpen);
       // the Check type radios stay clickable on a reuse card (Deterministic / Rubric = leave reuse); a live session or a resume freezes them
       document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.disabled = live || resuming; });
       document.getElementById("job-card").classList.toggle("reuse", reuseOn);
@@ -4175,6 +4177,7 @@
       var capOk = moneyCapInput.value.trim() !== "" && Number.isFinite(v) && v > 0;
       // on Reuse workflow nothing starts before a job is picked
       startOk = capOk && !sessionLive && keyOk && (verdictValue() !== "reuse" || startFrom !== null);
+      if(resumeSignBtn){ resumeSignBtn.disabled = resumeSignBlocked(); }
       syncCardLock();
       renderMain();
       refreshClearBtn();
@@ -4725,10 +4728,12 @@
       var r = d.resume || {};
       clearStartFrom();
       openNewCard();
+      // hamr 2026-10-11 Q2(b): a spec that names no model (the server says so) opens the Model box; the pick rides the POST
       resumeRun = {runid: d.runid, noTime: typeof r.maxWallMin !== "number"};
+      if((d.prefill || {}).specNamesModel === false){ resumeRun.pickModel = true; }
       document.getElementById("job-card-title").textContent = "RESUME " + (d.title || d.runid);
       setVerdict(c.checkType === "rubric" ? "rubric" : "deterministic");
-      if(c.model){ setPick(c); }
+      if(c.model && !resumeRun.pickModel){ setPick(c); }
       fillCard(c);
       setVal("jf-cap-money", r.budgetUsd);
       setVal("jf-cap-time", resumeRun.noTime ? "" : r.maxWallMin);
@@ -4750,16 +4755,20 @@
     document.addEventListener("bareloop-resume", function(e){ applyResume(e.detail || {}); });
     document.getElementById("chat-resume-cancel").addEventListener("click", function(){ resetCard(); });
     var resumeSignBtn = document.getElementById("chat-resume-sign");
+    // a Model pick that is needed (older spec) blocks Sign & resume until a ticked line is picked and its key is usable
+    function resumeSignBlocked(){ return resumeRun !== null && resumeRun.pickModel === true && (modelSelect.value === "" || !keyOk); }
     function signResume(){
       var run = resumeRun;
       if(run === null) return;
+      if(resumeSignBlocked()) return;
       var err = document.getElementById("chat-resume-err");
       err.hidden = true;
       resumeSignBtn.disabled = true;
       var body = {budgetUsd: document.getElementById("jf-cap-money").value};
       if(!run.noTime){ body.maxWallMin = document.getElementById("jf-cap-time").value; }
+      if(run.pickModel){ var pk = pickParts(modelSelect.value); body.model = pk.model; if(pk.provider !== ""){ body.provider = pk.provider; } }
       return authorPost("/api/runs/" + encodeURIComponent(run.runid) + "/resume", body).then(function(res){
-        resumeSignBtn.disabled = false;
+        resumeSignBtn.disabled = resumeSignBlocked();
         if(res.body && res.body.ok){
           // the SAME run goes on: the card goes back to empty, the right side to its Run tab, which follows it until it is live again
           resetCard();
@@ -4769,7 +4778,7 @@
           err.textContent = (res.body && res.body.error) || ("refused (" + res.status + ")");
           err.hidden = false;
         }
-      }).catch(function(x){ resumeSignBtn.disabled = false; err.textContent = "could not reach the panel: " + x.message; err.hidden = false; });
+      }).catch(function(x){ resumeSignBtn.disabled = resumeSignBlocked(); err.textContent = "could not reach the panel: " + x.message; err.hidden = false; });
     }
     resumeSignBtn.addEventListener("click", signResume);
 
