@@ -262,3 +262,51 @@ test('rubricStepShapeReds: a part carries only the fields its class and check na
   assert.deepEqual(bad({ step: 1, parts: [{ text: 'x', class: 'none', pattern: '(a+)+' }] }), ['p.parts[0].pattern']);
   assert.deepEqual(bad({ step: 1, parts: [{ text: 'x', class: 'guard' }] }), ['p.parts[0].domains']);
 });
+
+// ── the trend number (ruling 2A) ─────────────────────────────────────────────
+
+test('a red rubric-step stage emits its red count through the declared close as the {stage,value} the governor reads: failing claims (bareguard\'s measured) plus 1 per other failing check', async () => {
+  const { closeGrade } = await import('../src/declaredclose.js');
+  const f = await freeze();
+  const parts = [
+    count1('maxWords', 'under 10 words', { value: 10 }),
+    { text: 'quote the changelog', class: 'countable', check: 'cited', source: 'Changelog' },
+  ];
+  const q = realQuote(f.text);
+  const decl = { stages: [stage(parts)] };
+  const stages = declaredStages(decl);
+  const run = async (body) => { writeStep(f, 1, body); return runDeclaredStages(stages, (x) => x, { cwd: f.tree, seedRef: f.seed }); };
+  // 3 reds: too many words (1) + two unsupported quotes (2)
+  const three = await run({ text: words(30), cites: { Changelog: [{ claim: 'a', quote: 'nowhere one' }, { claim: 'b', quote: 'nowhere two' }, { claim: 'c', quote: q }] } });
+  assert.equal(three.verdict, 'needs_revision');
+  assert.deepEqual(closeGrade(three), { gap: three.gap, stage: 'line-1', value: 3 });
+  // 1 red: within words, one unsupported quote
+  const one = await run({ text: words(5), cites: { Changelog: [{ claim: 'a', quote: 'nowhere one' }, { claim: 'c', quote: q }] } });
+  assert.equal(closeGrade(one).value, 1);
+  // a missing file is one red; the foundational check counts as one
+  writeStep(f, 1, '{"text": "cut o');
+  assert.equal(closeGrade(await runDeclaredStages(stages, (x) => x, { cwd: f.tree, seedRef: f.seed })).value, 1);
+  // green donates nothing to compare (no red)
+  const green = await run({ text: words(5), cites: { Changelog: [{ claim: 'c', quote: q }] } });
+  assert.equal(green.verdict, 'satisfied');
+});
+
+test('the governor reads 3 reds then 1 red as IMPROVING (converging), and 1 then 3 is not', async () => {
+  const { createTrend } = await import('../src/trend.js');
+  const { closeGrade } = await import('../src/declaredclose.js');
+  const f = await freeze();
+  const stages = declaredStages({ stages: [stage([count1('maxWords', 'under 10 words', { value: 10 }), { text: 'q', class: 'countable', check: 'cited', source: 'Changelog' }])] });
+  const q = realQuote(f.text);
+  const grade = async (body) => { writeStep(f, 1, body); return closeGrade(await runDeclaredStages(stages, (x) => x, { cwd: f.tree, seedRef: f.seed })); };
+  const threeBody = { text: words(30), cites: { Changelog: [{ claim: 'a', quote: 'nowhere one' }, { claim: 'b', quote: 'nowhere two' }] } };
+  const oneBody = { text: words(5), cites: { Changelog: [{ claim: 'a', quote: 'nowhere one' }, { claim: 'c', quote: q }] } };
+  const down = createTrend({ stageOrder: ['line-1'] });
+  down.record(await grade(threeBody));
+  down.record(await grade(oneBody));
+  assert.equal(down.verdict().trend, 'converging', JSON.stringify(down.verdict()));
+  const up = createTrend({ stageOrder: ['line-1'] });
+  up.record(await grade(oneBody));
+  up.record(await grade(threeBody));
+  assert.notEqual(up.verdict().trend, 'converging', JSON.stringify(up.verdict()));
+});
+const count1 = (check, text, rest) => ({ text, class: 'countable', check, ...rest });

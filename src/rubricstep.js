@@ -256,7 +256,11 @@ export async function gradeStep({ params, bytes, outputBytes, inputs }, inputSha
   const r = await checkStep(rubric, String(params.step), parsed.obj === null ? null : flattenStep(parsed.obj), {
     inputs, ...(outputBytes === null ? {} : { outputBytes }),
   });
-  const detail = { step: params.step, rubricSha: r.rubricSha, outputSha: r.outputSha, why: parsed.why, gaps: r.full.gaps.length };
+  // the stage's ONE trend number for the fix-loop governor (F192 e, mirrored): failing CLAIMS under a `cited` check (bareguard's
+  // own `measured` count of unsupported quotes), plus 1 for every other failing check — lower is better, compared to the
+  // best so far through the same `closeGrade` {stage, value} path numeric stages use
+  const redCount = r.full.gaps.reduce((/** @type {number} */ n, /** @type {any} */ g) => n + (g.check === 'cited' && g.kind === 'unsupported' && typeof g.measured === 'number' ? g.measured : 1), 0);
+  const detail = { step: params.step, rubricSha: r.rubricSha, outputSha: r.outputSha, why: parsed.why, gaps: r.full.gaps.length, ...(r.verdict === 'red' ? { redCount } : {}) };
   if (r.verdict === 'stopped') return { verdict: 'stopped', gapLines: [], fault: r.fault ? `${r.fault.kind}: ${r.fault.detail}` : 'the rubric stopped', detail };
   if (r.verdict === 'green') return { verdict: 'green', gapLines: [], fault: null, detail };
   return { verdict: 'red', gapLines: r.gaps.map((g) => plainStepGap(params.step, parsed.why ?? 'empty', g)), fault: null, detail };
