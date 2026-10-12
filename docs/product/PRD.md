@@ -1054,6 +1054,19 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     | R7, R8 | Unchanged (existing doctrine). R14 (positioning): not ruled, not needed for the build. |
        happened check rest on the output alone?
 
+    **2026-10-12 — required facts RULED** (hamr; supersedes Part 1a's worker-chosen `cites` list where they differ)
+
+    | # | Ruling |
+    |---|---|
+    | RF1 | Check what the person asked for, not what the worker chose to write. At drafting the AI turns each job line and its `~` rules into REQUIRED FACTS (name, shape, rule when asked, source input); facts named in the job line itself ("SFO to LAX") become rows with no `~` line. The list shows on the plan card, one row per fact under its line, and is signed with the job; the AI never changes it after signing. |
+    | RF2 | Shapes: money, number, date, time (rules `<` `<=` `>` `>=` between) and phrase (the quote must contain it). Checked in code by bareguard 0.22.0 `cited` + `decides` + typed `values` (needs the bump `^0.21.0` → `^0.22.0`, peer range checked in a clean install). No AI in the check. |
+    | RF3 | EVERY answer is quoted word-for-word and shape-checked, even a fact with no rule; a rule only adds a condition. A red names the fact and why, and goes to the fix loop. |
+    | RF4 | Fact step (find, list, look up): the output is the filled facts only, nothing unchecked is part of the answer; "N results" = N filled copies, the count a rule code checks. |
+    | RF5 | Prose step (report, summary): free text, shape-checked (size, sections); content is "Not checked" on the card and judged by the person at Accept. Every number in prose must equal a checked fact value from an earlier step (same canonical compare). |
+    | RF6 | Superlatives ("cheapest", "the last 3") are Not checked for now (later piece). A rule the AI cannot express as shape + rule goes to Not checked in the person's words, never a vague check. |
+    | RF7 | F223 (`docs/wiki/FINDINGS.md`) is closed by design once this is built. |
+    | RF8 | Later piece, its own build AFTER required facts: **rerun from line N** at the end gate of a GREEN run only. Lines before N keep their checked outputs byte-for-byte (not redone, not edited); the person's words go to line N and everything from N is redone; money and time already spent stay folded in (tighten-only, never a fresh budget). Changes the end gate (accept / rerun / pause). |
+
 34. **Item 34 — loose ends housed** (hamr, 2026-09-13: every open end gets fix / keep /
     backlog / remove).
 
@@ -1428,3 +1441,9 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 - README rewritten to the deterministic / rubric split and the bareloop / fwdloop line (hamr-approved text).
 - Backlog: scheduled watch jobs. The spec's `cadence` field (hour/day/week) exists, but nothing runs a job on a schedule yet; price and news watch jobs need it.
 - Backlog, needs its own ruling: jobs that need the person's login or cookies (bank pages, members-only prices). Out of scope until ruled.
+
+### Required facts for rubric jobs (v1.96 — 2026-10-12)
+
+- A rubric job's checks come from required facts drafted from the job line and `~` rules and signed on the card; every answer is quoted and shape-checked in code (bareguard `^0.22.0` `cited` + `decides`), not chosen by the worker. Rulings RF1–RF8 are in item 33, "2026-10-12 — required facts RULED"; this closes F223 by design once built.
+- Prose steps stay free text, shape-checked, content "Not checked" and judged at Accept; numbers in prose must equal an earlier checked fact. Superlatives and inexpressible rules go to Not checked in the person's words.
+- Later piece, its own build after required facts: "rerun from line N" on green runs only (earlier outputs byte-for-byte kept, spend folded, tighten-only).
