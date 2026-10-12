@@ -17,7 +17,7 @@
   "license": "Apache-2.0",
   "author": "hamr0",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "test": "node scripts/hermetic.mjs && node scripts/prompt-commit-check.mjs --range origin/main..HEAD",

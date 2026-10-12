@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
       # litectx's impact() shells out to ripgrep (documented requirement; not on the runner
       # image). Without it a symbol reads as 0 callers and the two ctx_impact tests fail (LC-5).

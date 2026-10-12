@@ -5,6 +5,12 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Changed
+
+- **Node 22 or newer is required** (`engines.node` `>=22`, CI on Node 22). barebrowse, which the coming rubric `search` step drives, needs Node 22; Node 20 is past end-of-life.
+
 ## [0.41.0] - 2026-10-12
 
 ### Added
