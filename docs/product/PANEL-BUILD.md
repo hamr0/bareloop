@@ -1087,7 +1087,7 @@ Source of truth for the screen and its texts: fwdloop branch `m4d-am3`, HEAD `a3
 6. bare-agent 0.52 (not on npm yet; rc2 passed our suite in a scratch copy) gives `thinkingSupport(kind, model, { baseUrl })`. bareloop's copied DeepSeek regex in `thinkingKind` is deleted. **Blocked until 0.52 is on npm, then bump the dependency.**
 7. No-hardcode ban, option A: CODE only. Comments that tell history may still name vendors. A grep test (fwd's `test/m4d-am6-e.test.js`, rewritten) holds it.
 8. Chat's Model menu = only ticked and priced model lines (fwd's texts).
-9. NOT in this piece: splitting `tests/planrun.test.js` (hamr has not ruled).
+9. NOT in this piece: splitting `tests/planrun.test.js` (hamr has not ruled). *(Ruled later the same day, 2026-10-11: split into `tests/planrun-*.test.js` by topic, 5d66d5e.)*
 
 ### What the person sees (Settings > Providers) — fwd's page, word for word
 
@@ -1256,7 +1256,7 @@ Verify at **1920 / 1280 / 1279 / 1024 / 780 / 390 / 320** wide (barebrowse canno
 **Done means:** gate green on HEAD (typecheck, build:types, `npm test`; the three exit codes and the last line quoted), the grep test green with its allow-list printed, my own screenshots at the seven widths, runs.jsonl line count unchanged, and **hamr clicks through it himself**: ticks "old max_tokens" on his DeepSeek row and types its shape/Base URL, presses Test and Refresh, ticks a priced line, opens a New job card, sees the Model menu list only that line, ticks "Thinking on" and unticks it. No "done/release" claim before that. One paid DeepSeek (deepseek-flash) drafting run proving the tick reaches the wire is proposed separately with its $0 archive-read premise and a stated cap.
 
 ### Not in this piece
-Splitting `tests/planrun.test.js` (no ruling). A Balance replacement (fwd's is "replaced by nothing"). Changing what a signed spec stores for provider/baseUrl/model. Adding or removing rows from the page. Worker thinking. Any change to budgets, caps, verdicts, the monthly limit logic or the close (arbiter territory).
+Splitting `tests/planrun.test.js` (no ruling when this was written; split on 2026-10-11, 5d66d5e). A Balance replacement (fwd's is "replaced by nothing"). Changing what a signed spec stores for provider/baseUrl/model. Adding or removing rows from the page. Worker thinking. Any change to budgets, caps, verdicts, the monthly limit logic or the close (arbiter territory).
 
 ### Open questions for hamr — ALL RULED (hamr 2026-10-11)
 Each was answered by hamr in conversation on 2026-10-11; the batches that depended on them are updated below the list.

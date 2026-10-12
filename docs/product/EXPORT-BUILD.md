@@ -80,7 +80,7 @@ spine bundling for replay, tarball packing (use `npm pack`).
 
 ## POC first (dev rule), $0 — the riskiest seam
 
-Before any module: prove, with a SCRIPTED provider (the `tests/planrun.test.js` helper) and
+Before any module: prove, with a SCRIPTED provider (the `tests/planrun-fixtures.js` helper; `tests/planrun.test.js` was split into `tests/planrun-*.test.js` on 2026-10-11) and
 a real close script, that `runJob` (a) accepts a `git worktree add --detach` checkout as
 `workdir`, mints its work branch there, and leaves the origin checkout untouched; (b) runs a
 close whose `cmd` was substituted in memory from a `$BARELOOP_BUNDLE` token, with the
