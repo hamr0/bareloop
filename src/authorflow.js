@@ -82,11 +82,12 @@ import { JUDGE_RULE_IDS } from './judged.js';
 import {
   KIND_CATALOGUE, MAX_STAGES, DIRECTIONS, BASELINES,
   GENRE_LANGUAGES, RUBRIC_LANG, DECLARABLE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames, genreInstruments,
-  validateDeclaration, envCapableKind, classMenu, VERDICT_CLASSES, LIVE_CLASSES, MENU_CLASSES,
+  validateDeclaration, envCapableKind, classMenu, VERDICT_CLASSES, LIVE_CLASSES, MENU_CLASSES, catalogueForLang,
 } from './authoring.js';
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
 import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
+import { stepFileContract } from './rubricstep.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
@@ -854,10 +855,12 @@ export function schemaCoverage(catalogue = KIND_CATALOGUE) {
  * and failing loudly beats emitting a schema that quietly cannot say something
  * the validator will then demand.
  * `questions` (P7 item 5, last drafting try only) adds the optional `questions` property; absent, the schema is byte-identical.
+ * `kinds` (Part 1a) narrows the branches to the kinds a language may use (`catalogueForLang`) WITHOUT narrowing the coverage check,
+ * which stays over the whole catalogue; null (the default) = no narrowing.
  * @param {Record<string, any>} [catalogue]
- * @param {{verdictType?: string|null, questions?: boolean}} [o]
+ * @param {{verdictType?: string|null, questions?: boolean, kinds?: string[]|null}} [o]
  */
-export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = null, questions = false } = {}) {
+export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = null, questions = false, kinds = null } = {}) {
   const cov = schemaCoverage(catalogue);
   if (!cov.ok) {
     throw new Error('[authorflow] the declaration schema does not cover the catalogue — '
@@ -865,7 +868,7 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
   }
   const menu = classMenu(verdictType, catalogue);
   const branches = Object.entries(catalogue)
-    .filter(([kind, spec]) => !spec.locked && menu.includes(kind))
+    .filter(([kind, spec]) => !spec.locked && menu.includes(kind) && (kinds === null || kinds.includes(kind)))
     .map(([kind, spec]) => {
       /** @type {Record<string, any>} */
       const properties = {};
@@ -938,13 +941,13 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
  * The output channel. It records and acknowledges; it takes no action, which is
  * why handing it to a toolless authoring call does not reopen D3.
  * @param {{calls: any[]}} box
- * @param {{catalogue?: Record<string, any>, verdictType?: string|null, questions?: boolean}} [o]
+ * @param {{catalogue?: Record<string, any>, verdictType?: string|null, questions?: boolean, kinds?: string[]|null}} [o]
  */
-export function declarationTool(box, { catalogue = KIND_CATALOGUE, verdictType = null, questions = false } = {}) {
+export function declarationTool(box, { catalogue = KIND_CATALOGUE, verdictType = null, questions = false, kinds = null } = {}) {
   return {
     name: DECLARATION_TOOL_NAME,
     description: 'Deliver the finished close. Call this exactly once, with the whole declaration as its arguments.',
-    parameters: declarationSchema(catalogue, { verdictType, questions }),
+    parameters: declarationSchema(catalogue, { verdictType, questions, kinds }),
     execute: async (/** @type {any} */ args) => { box.calls.push(args); return DECLARATION_ACK; },
   };
 }
@@ -1199,6 +1202,11 @@ export function authorPrompt({
   // only when a confirm turn actually ran and the person accepted a plan.
   confirmed = null,
 }) {
+  // PART 1a: a rubric job on the person's own local files has no repository, no genre template and no tool to measure with —
+  // it gets its own brief (`rubricAuthorPrompt`), which still ends in the same declaration tool and the same guards
+  if (lang === RUBRIC_LANG) {
+    return rubricAuthorPrompt({ answers, questions, facts, listingBlock, verdictType, guards, mode, catalogue, writeScope, jobLines, inputs });
+  }
   const statement = CLASS_STATEMENTS[String(verdictType)] ?? null;
   if (statement === null) {
     throw new Error(`[authorflow] the authoring prompt needs the verdict class the user picked, and "${verdictType}" `
@@ -1301,6 +1309,101 @@ measure anything.`;
       + envLine,
     output,
   ].join('\n\n---\n\n');
+}
+
+/**
+ * What a rubric job on local files means by DONE — the class statement of the text genre (Part 1a). It is stated as an order
+ * about KINDS: every part of a job line is counted or checked against a quote, because nothing in this build judges.
+ */
+export const RUBRIC_FILES_STATEMENT = 'The person declared this job SOFT-GREEN and pointed it at their own text files: the work is writing '
+  + 'about those files. This build has no judge, so every part of a job line must be one of two things. COUNTED: a limit on words, '
+  + 'sections or lines of what is written. Or BACKED BY A QUOTE: a claim that must carry words copied from a named input. '
+  + 'Compose ONE rubric-step stage per numbered job line, after the mandatory guard, and name only limits the person actually '
+  + 'asked for. A part you cannot express that way is not approximated by a stage that means something else.';
+
+/**
+ * The composer prompt for a rubric job on local files (Part 1a, docs/product/ITEM33-BUILD.md). There is no repository
+ * and no survey: the facts are the numbered inputs and the listing is the frozen tree (input/ files, output/). It states
+ * the step-file contract the worker is also told ({@link stepFileContract}), so the stage and the file cannot drift.
+ * @param {{answers: Record<string|number, string>, questions?: Record<string|number, string>, facts: any, listingBlock: string,
+ *   verdictType: string, guards: {name: string, kind: string, params: Record<string, any>, fill: string[]}[],
+ *   mode?: 'tool'|'text', catalogue?: Record<string, any>, writeScope?: string[]|null,
+ *   jobLines?: {n: number}[]|null, inputs?: {n: number, label: string, value: string}[]|null}} o
+ * @returns {string}
+ */
+export function rubricAuthorPrompt({
+  answers, questions = GREEN_QUESTIONS, facts, listingBlock, verdictType, guards,
+  mode = 'tool', catalogue = KIND_CATALOGUE, writeScope = null, jobLines = null, inputs = null,
+}) {
+  const interview = Object.entries(questions)
+    .map(([n, q]) => `Q${n}. ${q}\nA${n}. ${answers?.[n] ?? '(no answer given)'}`)
+    .join('\n\n');
+  const role = `You are composing the close for one job.
+
+The close is what decides whether a run of this job came back DONE. It runs after the work is
+finished, it is the only truth, and nothing else can overrule it. It is a list of STAGES. Each
+stage names a kind from the catalogue below and fills that kind's parameters. Stages run in the
+order you declare them.
+
+Two sources fed you this brief and neither of them is you:
+ - the person who wants the job done answered an interview, below, in their own words. They are
+   not a software engineer and did not name commands, thresholds or patterns;
+ - the person's own text files, frozen into the job. There is no code repository: the files sit
+   under input/ and the run writes only under output/.`;
+  const guardJson = guards.map((g) => ({
+    name: g.name,
+    kind: g.kind,
+    params: { ...g.params, ...Object.fromEntries(g.fill.map((f) => [f, FILL_MARKER])) },
+  }));
+  const output = mode === 'tool'
+    ? `HOW TO ANSWER
+
+Call the ${DECLARATION_TOOL_NAME} tool exactly once. Its arguments ARE the declaration: an ordered
+"stages" array, plus "notes" for anything you could not express, and "refused" for a job line no stage can check.
+Do not write the declaration as text.
+
+Stage names are unique. Every parameter name comes from the catalogue and no other. No parameter is
+left as a placeholder. You never write a number the person did not ask for.`
+    : `HOW TO ANSWER
+
+A single JSON object and nothing else: an ordered "stages" array, plus "notes" for anything you
+could not express, and "refused" for a job line no stage can check.
+
+Stage names are unique. Every parameter name comes from the catalogue and no other. No parameter is
+left as a placeholder. You never write a number the person did not ask for.`;
+  return [
+    role,
+    `WHAT THE PERSON DECLARED "DONE" TO MEAN — their answer, not yours\n\n${RUBRIC_FILES_STATEMENT}`,
+    `THE INTERVIEW — the person's own words\n\n${interview}`
+      + (inputs && inputs.length ? `\n\n${renderInputs(inputs)}` : ''),
+    ...(jobLines && jobLines.length ? [jobLineTagBlock(jobLines.length)] : []),
+    ...(writeScope && writeScope.length ? [writeScopeBlock(writeScope)] : []),
+    `THE STEP FILES — what the worker leaves behind for each job line\n\n${stepFileContract()}\n\n`
+      + 'The rubric-step stage for job line N reads exactly that file, output/steps/N.json. It names the inputs (by label) the '
+      + 'step must cite from, and the limits on its "text".',
+    `THE FILES — the inputs the person pointed at, frozen into the job\n\n${JSON.stringify(facts, null, 2)}`
+      + (listingBlock ? `\n\n${listingBlock}` : ''),
+    rubricCatalogueBlock(catalogue, { verdictType }),
+    'MANDATORY GUARDS — already placed and already parameterised\n\n'
+      + 'This kind of job carries a stage the person did not ask for. It is fixed and you may not change, drop, rename, or '
+      + `re-kind it. The ONLY thing you fill in is each "${FILL_MARKER}" slot, from the interview:\n\n${JSON.stringify(guardJson, null, 2)}\n\n`
+      + 'Place it first: it is cheap, and the first red ends the judgement.',
+    output,
+  ].join('\n\n---\n\n');
+}
+
+/**
+ * The kind rows of the catalogue, without the command-output parser text a rubric job never needs.
+ * @param {Record<string, any>} catalogue @param {{verdictType?: string|null}} [o]
+ */
+function rubricCatalogueBlock(catalogue, { verdictType = null } = {}) {
+  const menu = classMenu(verdictType, catalogue);
+  const rows = Object.entries(catalogue).filter(([name, spec]) => menu.includes(name) && !spec.locked).map(([name, spec]) => `- ${name}\n    ${spec.shape}\n    required: ${spec.required.join(', ')}`
+    + `${spec.optional.length ? `   optional: ${spec.optional.join(', ')}` : ''}\n    asserts: ${spec.asserts}`);
+  return `THE KIND CATALOGUE — these are the only kinds that exist.
+You parameterise kinds. You never write a script, a shell fragment, or a new kind.
+
+${rows.join('\n\n')}`;
 }
 
 // ── 3. THE MEASURED BLOCKS ───────────────────────────────────────────────────
@@ -1784,12 +1887,12 @@ export async function askStructured({ messages, generate, mode, retries, label, 
 /** THE DECLARATION CHANNEL — the one this loop has always used. Its schema is
  * CLASS-SCOPED, like the prompt's catalogue block: the two must offer one set of
  * kinds, or the composer reads about a kind it cannot call.
- * @param {{catalogue: Record<string, any>, verdictType: string, questions?: boolean}} o */
-const declarationChannel = ({ catalogue, verdictType, questions = false }) => ({
+ * @param {{catalogue: Record<string, any>, verdictType: string, questions?: boolean, kinds?: string[]|null}} o */
+const declarationChannel = ({ catalogue, verdictType, questions = false, kinds = null }) => ({
   name: DECLARATION_TOOL_NAME,
   instruction: STRUCTURE_INSTRUCTION_TOOL,
   textPath: 'declaration',
-  tool: (/** @type {{calls: any[]}} */ box) => declarationTool(box, { catalogue, verdictType, questions }),
+  tool: (/** @type {{calls: any[]}} */ box) => declarationTool(box, { catalogue, verdictType, questions, kinds }),
 });
 
 /** The declaration ask, over the shared ladder. `declaration` is `artifact`
@@ -1797,11 +1900,11 @@ const declarationChannel = ({ catalogue, verdictType, questions = false }) => ({
  * anonymous artifact, and one word for two things is how a reader loses which.
  * @param {{messages: any[], generate: Function, mode: 'tool'|'text', retries: number,
  *   label: string, book: ReturnType<typeof makeCostBook>, catalogue: Record<string, any>,
- *   verdictType: string, questions?: boolean}} o
+ *   verdictType: string, questions?: boolean, kinds?: string[]|null}} o
  */
-async function askDeclaration({ messages, generate, mode, retries, label, book, catalogue, verdictType, questions = false }) {
+async function askDeclaration({ messages, generate, mode, retries, label, book, catalogue, verdictType, questions = false, kinds = null }) {
   const r = await askStructured({
-    messages, generate, mode, retries, label, book, channel: declarationChannel({ catalogue, verdictType, questions }),
+    messages, generate, mode, retries, label, book, channel: declarationChannel({ catalogue, verdictType, questions, kinds }),
   });
   return { ...r, declaration: r.artifact };
 }
@@ -2308,12 +2411,15 @@ export async function authorClose({
   maxRevisions = MAX_REVISIONS,
   structureRetries = MAX_STRUCTURE_RETRIES,
   structuredMode = 'tool',
-  catalogue = KIND_CATALOGUE,
+  catalogue: catalogueIn = KIND_CATALOGUE,
   // P7 item 5 (fwdloop am25): OFF unless the caller can really ask the person (the panel). When on, ONLY the last of the
   // full drafting ladder (the author call plus both revisions), and only after the two before it both failed validation,
   // is offered the optional `questions` property — see `askOpen` below. Absent = byte-identical to today.
   offerQuestions = false,
 }) {
+  // PART 1a: the menu this close may draw from — a rubric job on local files sees its own two kinds, a code job never sees
+  // the rubric-only ones (`catalogueForLang`). Everything below (prompt, schema, validator, env) reads THIS one catalogue.
+  const catalogue = catalogueForLang(lang, catalogueIn);
   // TIGHTEN-ONLY: a caller may lower the ceiling, never raise it — unlimited
   // revising launders thrash as adaptation (addendum 5). The floor is zero: one
   // authoring call with no revise round is a legal ask, and a garbage value is
@@ -2562,7 +2668,7 @@ export async function authorClose({
       // P7 item 5: a mechanism, never a wish. Only the last try of the full ladder carries the property, and only when the
       // two before it both failed (validation or the seed read; `questionLines` is set at the end of the second one, below).
       const askOpen = questionLines !== null && i === revisionCap;
-      const ask = await askDeclaration({ messages, generate, mode: structuredMode, retries: retryCap, label, book, catalogue, verdictType, questions: askOpen });
+      const ask = await askDeclaration({ messages, generate, mode: structuredMode, retries: retryCap, label, book, catalogue: catalogueIn, kinds: Object.keys(catalogue), verdictType, questions: askOpen });
       messages = ask.convo;
       /** @type {{reason: string, raw: any}[]} */
       let droppedQuestions = [];

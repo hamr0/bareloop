@@ -381,6 +381,21 @@ export const LOCKED_KINDS = Object.freeze(CATALOGUE_KINDS.filter((k) => KIND_CAT
  * that the catalogue never names is a capability nothing can reach. */
 export const CATALOGUE_LIVE_KINDS = Object.freeze(CATALOGUE_KINDS.filter((k) => !KIND_CATALOGUE[k].locked));
 
+/**
+ * The catalogue a close of this language may use. A rubric job on local files (`RUBRIC_LANG`) sees only
+ * {@link RUBRIC_LANG_KINDS}; every code language sees the whole catalogue MINUS the rubric-only kinds, so a code job's
+ * composer, schema and validator can never reach for a stage that reads step files. One filter, both directions.
+ * @param {string|null|undefined} lang
+ * @param {Record<string, KindSpec>} [catalogue]
+ * @returns {Record<string, KindSpec>}
+ */
+export function catalogueForLang(lang, catalogue = KIND_CATALOGUE) {
+  const keep = lang === RUBRIC_LANG
+    ? (/** @type {string} */ k) => RUBRIC_LANG_KINDS.includes(k)
+    : (/** @type {string} */ k) => !RUBRIC_ONLY_KINDS.includes(k);
+  return Object.freeze(Object.fromEntries(Object.entries(catalogue).filter(([k]) => keep(k))));
+}
+
 export const DIRECTIONS = Object.freeze(['lower-is-better', 'higher-is-better']);
 /** D12: the close stores the COUNTING RULE, never the number. "seed" is measured
  * at this run's own seed every run; 0 is literally zero. A frozen constant (the
@@ -525,6 +540,10 @@ export const GENRE_LANGUAGES = Object.freeze(['js', 'python']);
 export const RUBRIC_LANG = 'text';
 /** every `closeDecl.lang` a close may declare: the code languages plus the rubric-files one */
 export const DECLARABLE_LANGUAGES = Object.freeze([...GENRE_LANGUAGES, RUBRIC_LANG]);
+/** the kinds that exist only for a rubric job on local files — a code job's menu, schema and validator never offer them */
+export const RUBRIC_ONLY_KINDS = Object.freeze(['rubric-step']);
+/** the whole kind menu of a rubric job on local files: the one machine guard that applies to a file tree, plus its own stage */
+export const RUBRIC_LANG_KINDS = Object.freeze(['files-changed', 'rubric-step']);
 /** the rubric-files language's data, all declared-empty (never an absent field that would read as "not looked into", F59) */
 const TEXT_LANGUAGE = Object.freeze({
   suppressions: Object.freeze([]), extensions: Object.freeze([]), env: Object.freeze([]), instruments: Object.freeze([]),
