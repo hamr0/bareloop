@@ -19,6 +19,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 - **Chat's Model menu** lists only ticked, priced lines as `<KEY> · <model>`; a card carries `provider` (the key's env name) beside `model`, and a stale pick is refused at $0 with one of three plain sentences.
 - **A job's key is its row's own variable name.** There is no built-in key name, tier table, default model, default address or per-model gating: the "old max_tokens" tick on the row decides the output-cap spelling.
+- **Existing DeepSeek rows need one tick.** An existing DeepSeek row (or any OpenAI-compatible server that wants the old `max_tokens` field) must have "old max_tokens" ticked once in Settings > Providers: the built-in per-model rule that did this is gone (no-hardcode ruling), and until the tick is set the output cap may not bind (F149).
 - The Money tab groups spend by the Providers row that served it (a run no row serves lands under its own shape and address) and carries tokens per model.
 - A fresh keys file holds two comment lines and no preset key.
 - Dependencies: `bare-agent` ^0.51.0 to ^0.52.0.
