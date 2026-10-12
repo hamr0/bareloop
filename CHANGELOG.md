@@ -5,7 +5,7 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.41.0] - 2026-10-12
 
 ### Added
 
@@ -17,6 +17,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Changed
 
+- **Resume of a pre-P8 run whose signed spec names no model** opens the Resume card's Model box (it was locked, so the person could not act on `--model`). The menu offers only lines of the spec's API shape (and endpoint, when the spec names one) and shows `Tick a <shape> model in Settings > Providers.` when none match; Sign & resume stays blocked until a usable line is picked, and the pick is sent as model + provider. The spec and its hash are untouched. Changing the Model line now blocks Start/Sign until its key check returns, and a late answer for a line no longer selected is ignored (the New job card shares this path).
 - **Chat's Model menu** lists only ticked, priced lines as `<KEY> · <model>`; a card carries `provider` (the key's env name) beside `model`, and a stale pick is refused at $0 with one of three plain sentences.
 - **A job's key is its row's own variable name.** There is no built-in key name, tier table, default model, default address or per-model gating: the "old max_tokens" tick on the row decides the output-cap spelling.
 - **Existing DeepSeek rows need one tick.** An existing DeepSeek row (or any OpenAI-compatible server that wants the old `max_tokens` field) must have "old max_tokens" ticked once in Settings > Providers: the built-in per-model rule that did this is gone (no-hardcode ruling), and until the tick is set the output cap may not bind (F149).
