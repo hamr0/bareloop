@@ -3244,7 +3244,8 @@
     };
     (plan.lines || []).forEach(function(l){
       h += '<div class="jl" data-testid="plan-line"><span class="num">' + escapeXml(String(l.n)) + "</span>" + escapeXml(l.text);
-      if(l.rule) h += '<div class="sub">~ ' + escapeXml(l.rule) + "</div>";
+      // one `~` row per rule (fwdloop's shape); an older plan that carries only the joined `rule` still shows it
+      (l.rules && l.rules.length ? l.rules : (l.rule ? [l.rule] : [])).forEach(function(r){ h += '<div class="sub">~ ' + escapeXml(r) + "</div>"; });
       (l.checks || []).forEach(function(c){ h += checkLine(c); });
       (l.refused || []).forEach(function(r){ h += '<div class="fold" data-testid="plan-refused"><span class="mk">\u203A</span> not checked \u00B7 ' + escapeXml(r) + "</div>"; });
       h += "</div>";

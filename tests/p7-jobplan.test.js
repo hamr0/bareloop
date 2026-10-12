@@ -163,3 +163,10 @@ test('a check that serves several job lines is shown under EACH line it serves (
   assert.deepEqual(c.lines.map((l) => l.checks.map((x) => x.name)), [['both'], ['both']]);
   assert.deepEqual(c.loose.map((x) => x.name), ['nowhere']);
 });
+
+test('plan lines carry each `~` rule on its own: from the line\'s rules array (a rule may hold "; "), else the joined rule split, on the signed plan and the confirm plan alike', () => {
+  const withRules = planFromSpec({ jobLines: [{ n: 1, text: 'Doc it', rule: 'PASS: a; b; FAIL: c', rules: ['PASS: a; b', 'FAIL: c'] }, { n: 2, text: 'old', rule: 'x; y' }, { n: 3, text: 'none', rule: '' }] });
+  assert.deepEqual(withRules.lines.map((l) => l.rules), [['PASS: a; b', 'FAIL: c'], ['x', 'y'], []]);
+  const c = planFromConfirm([{ n: 1, text: 'a', rule: 'p; q', rules: ['p', 'q'] }], { checkItems: [] });
+  assert.deepEqual(c.lines[0].rules, ['p', 'q']);
+});

@@ -196,3 +196,10 @@ test('left pane: 420px by default, 630px only from 1200px up; the stacked layout
   assert.match(PAGE, /@media \(max-width: 899px\)\{\s*\.main\{flex-direction:column;\}\s*\.left-pane\{width:100%;/);
   assert.doesNotMatch(PAGE, /\.left-pane\{width:630px;flex/, 'the base rule never changes: 630 is wide-only');
 });
+
+test('renderJobPlan: each `~` rule is its own marked row under its numbered line (fwdloop shape); the gutter number is on the job line only', () => {
+  const h = renderJobPlan({ ...PLAN, loose: [], lines: [{ n: 1, text: 'List the last 3 releases', rule: 'every version quoted from the changelog; under 120 words', rules: ['every version quoted from the changelog', 'under 120 words'], checks: [], refused: [] }] });
+  assert.match(h, /class="sub">~ every version quoted from the changelog<\/div><div class="sub">~ under 120 words<\/div>/);
+  assert.equal((h.match(/class="num"/g) ?? []).length, 1, 'only the job line carries a gutter number');
+  assert.doesNotMatch(h, /~ every version quoted from the changelog; under/, 'not joined');
+});
