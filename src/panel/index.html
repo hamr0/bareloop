@@ -4268,13 +4268,22 @@
         refreshStartEnabled();
         return;
       }
+      // the key state of the NEW pick is unknown until its check returns: blocked at once, and a late answer for a line
+      // no longer selected is ignored (it would otherwise unblock Start / Sign & resume for the wrong key)
+      var asked = modelSelect.value;
+      keyOk = false;
+      modelStatusEl.className = "jf-readiness unknown";
+      modelStatusEl.textContent = "checking the key\u2026";
+      refreshStartEnabled();
       authorGet("/api/author/model-check?" + pickQuery(modelSelect.value)).then(function(r){
+        if(modelSelect.value !== asked) return;
         var line = modelStatusLine(r, modelId);
         keyOk = line.keyOk;
         modelStatusEl.className = "jf-readiness " + (line.ok ? "ok" : "bad");
         modelStatusEl.textContent = line.text;
         refreshStartEnabled();
       }).catch(function(){
+        if(modelSelect.value !== asked) return;
         keyOk = false;
         modelStatusEl.className = "jf-readiness bad";
         modelStatusEl.textContent = "[✗] could not check the key";

@@ -264,3 +264,32 @@ test('Resume Model menu: a pick-model card offers only lines of the old spec\'s 
   all.api.renderModelOptions();
   assert.match(all.modelSelect.innerHTML, /ANTH_KEY · claude-x[\s\S]*OAI_A[\s\S]*OAI_B/);
 });
+
+// Ledger fix (hamr 2026-10-12): the key state is UNKNOWN (blocked) the moment the Model changes, and a late answer for a line
+// no longer selected is ignored. refreshModelStatus is the shared path: the New job card runs the same function.
+test('refreshModelStatus: blocks at once on a Model change, and a stale model-check answer for the old line cannot unblock the new one', async () => {
+  const pending = [];
+  const sel = { value: 'A_KEY|a' };
+  const el = { className: '', textContent: '' };
+  const api = build(['refreshModelStatus', 'pickParts', 'modelStatusLine'], {
+    modelSelect: sel, modelStatusEl: el, pickQuery: (v) => v, refreshStartEnabled() {}, reachStatusText: (x) => x,
+    authorGet: (u) => new Promise((resolve) => pending.push({ u, resolve })),
+  }, 'var keyOk = true;', '__key: () => keyOk');
+  api.refreshModelStatus();                    // line A asked
+  assert.equal(api.__key(), false, 'blocked the moment the check starts, not left at the previous line\'s state');
+  pending[0].resolve({ ok: true, keyStatus: 'found', envKey: 'A_KEY' });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(api.__key(), true, 'A: key found');
+  sel.value = 'B_KEY|b';
+  api.refreshModelStatus();                    // line B asked, A's state must not carry over
+  assert.equal(api.__key(), false, 'switching to B blocks until B\'s check returns');
+  sel.value = 'A_KEY|a';                       // and back: B's request is now stale
+  api.refreshModelStatus();
+  pending[1].resolve({ ok: true, keyStatus: 'found', envKey: 'B_KEY' });   // late answer for B while A is selected
+  await new Promise((r) => setImmediate(r));
+  assert.equal(api.__key(), false, 'a stale answer for a line no longer selected is ignored');
+  pending[2].resolve({ ok: true, keyStatus: 'missing', envKey: 'A_KEY' });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(api.__key(), false);
+  assert.match(el.textContent, /A_KEY not set/);
+});
