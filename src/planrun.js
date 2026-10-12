@@ -1887,7 +1887,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       },
       decisionReady: true,
       decision: `The close minted ${outcome} and it STANDS. What happens to the work is yours: accept it, rerun it with your own words as the gap, or pause and come back.`
-        + (held ? ' This green was rendered by the judged floor, so it has earned no reuse until you accept it.' : ''),
+        + (held ? ' This is a rubric (soft-green) job, so its green earns no reuse until you accept it, whether or not a judge ran.' : ''),
       options: [...HUMAN_DECISIONS],
       meaning: 'not a verdict — the verdict is already minted and nothing an answer does can change it; this records a disposition',
     });

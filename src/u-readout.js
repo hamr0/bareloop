@@ -202,7 +202,7 @@ export function reviewDoorPackage({ door, diff }) {
   const out = [];
   out.push(`REVIEW DOOR — this run's close minted ${String(d.outcome ?? 'a verdict')} and it STANDS. Nothing you do here changes it.`);
   if (held) {
-    out.push('  held     this green was rendered by the judged floor, so it has earned NO reuse and NO learning credit until you accept it');
+    out.push('  held     this is a rubric (soft-green) job, so its green earns NO reuse and NO learning credit until you accept it, whether or not a judge ran');
   }
   // the body: what the machine judged, what moved, and the lines themselves —
   // rendered by the SAME code the pause screen uses, off the same record shape.
