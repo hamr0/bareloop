@@ -197,3 +197,37 @@ test('rubricGoal: the worker brief carries the step-file contract, every input l
   assert.match(g, /- Changelog: input\/CHANGELOG\.md/);
   assert.match(g, /1\. Summarize\n {3}rule: under 200 words\n2\. List fixes$/);
 });
+
+test('createSession with the REAL prepareSigning on a rubric job on a file: reaches prepared with zero judge-round records, zero booked spend, and a rubric-step line the seed reads red', async () => {
+  const file = changelogCopy();
+  const session = createSession({
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-door-real-signing', jobText: '1. Summarize the unreleased changes\n~ under 200 words',
+    inputs: `Changelog: ${file}`, destination: join(tmp(), 'delivered'), capUsd: 1,
+  }, {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(), sessionsRoot: tmp('rubric-door-sess-'),
+    generate: async () => { throw new Error('no model call'); },
+    authorFn: async () => ({
+      ok: true,
+      declaration: {
+        stages: [
+          { name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } },
+          { name: 'line-1', fromLine: [1], kind: 'rubric-step', params: { step: 1, parts: [{ text: 'under 200 words', class: 'countable', check: 'maxWords', value: 200 }] } },
+        ],
+        notes: [],
+      },
+      genreEnv: null, cost: { costUsd: 0, knownUsd: 0, spendComplete: true, calls: [], unpricedRounds: 0 }, reds: [],
+    }),
+  });
+  const t0 = Date.now();
+  while (!['prepared', 'refused', 'error'].includes(session.state.phase) && Date.now() - t0 < 15000) await new Promise((r) => { setTimeout(r, 20); });
+  assert.equal(session.state.phase, 'prepared', `${session.state.phase} / ${session.state.error}`);
+  const signing = JSON.parse(readFileSync(join(session.state.outDir, 'signing.json'), 'utf8'));
+  assert.equal(signing.ok, true);
+  assert.equal(signing.gates.calibration, null, 'no calibration: zero judge rounds');
+  assert.deepEqual(signing.gates.seedVerdict.workRed, ['line-1']);
+  assert.equal(session.state.draftSpentUsd, 0);
+  assert.equal(session.state.steps.some((s) => s.id === 'calibrate'), false, 'no calibrating line in the progress list');
+  const spec = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
+  assert.equal(spec.closeDecl.stages[1].kind, 'rubric-step');
+  assert.equal(spec.closeDecl.calibration, undefined);
+});
