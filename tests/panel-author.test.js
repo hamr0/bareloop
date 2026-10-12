@@ -1393,3 +1393,22 @@ test('the card\'s Thinking on tick: ticked writes thinking:true into the signed 
   assert.equal('thinking' in (await specOf('claude-opus-5-5', 'anthropic-api', { thinking: true })), false, 'measured not switchable: the tick cannot be on');
   assert.deepEqual(validateJobCard({ ...baseCard({}), thinking: 'yes' }, { jobsDir: '/nonexistent' }), { ok: false, error: 'Thinking on must be on or off' });
 });
+
+test('Part 1a: POST /api/author/start accepts a rubric card whose Inputs are TWO local files (the route no longer asks the repo proof of them); a deterministic card with the same Inputs is still refused at $0', async (t) => {
+  const a = join(tmp('panel-author-rubric-'), 'CHANGELOG.md'); writeFileSync(a, readFileSync(join(dirname(new URL(import.meta.url).pathname), '..', 'CHANGELOG.md')));
+  const b = join(tmp('panel-author-rubric-'), 'notes.md'); writeFileSync(b, 'second input\n');
+  // an unresolvable host: whatever the session does after it starts, nothing can reach a real provider
+  const home = keysHomeWith('ANTHROPIC_API_KEY=fake-not-a-real-key\n', ANTH_WITH_URL);
+  const { base, token } = await startAuthorServer(t, { env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home });
+  const post = async (card) => fetch(`${base}/api/author/start`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: JSON.stringify(card) });
+  const rubric = baseCard({ checkType: 'rubric', jobName: 'panel-author-rubric-files', jobText: '1. Summarize', destination: join(tmp('panel-author-out-'), 'out'), inputs: `Changelog: ${a}\nNotes: ${b}` });
+  const ok = await post(rubric);
+  assert.equal(ok.status, 200, JSON.stringify(await ok.clone().json()));
+  const started = await ok.json();
+  assert.equal(started.ok, true);
+  // abandon so the one-at-a-time lock is free for the control below
+  await fetch(`${base}/api/author/${started.sessionId}/abandon`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: '{}' });
+  const det = await post({ ...rubric, checkType: 'deterministic', jobName: 'panel-author-det-files' });
+  assert.equal(det.status, 400, 'a deterministic card still needs a repo as its first input');
+  assert.match((await det.json()).error, /is not a folder|repo/);
+});
