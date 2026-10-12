@@ -635,7 +635,9 @@ export async function authorCloseForJob({
   let confirmPriorCalls = [];
   /** @type {any[]} */
   let confirmPriorRaws = [];
-  if (ask && isRepo && survey?.state === 'PRESENT') {
+  // PART 1a (hamr's ruling 1A): a rubric job on local files runs the SAME confirm turn a repo job does — the survey is the
+  // numbered inputs (synthetic, above), and the protections it shows come from code, never the model
+  if (ask && (isRepo || lang === RUBRIC_LANG) && survey?.state === 'PRESENT') {
     if (typeof confirmGenerate !== 'function') {
       throw new Error('[authorjob] authorCloseForJob was given `ask` for a repo job but no `confirmGenerate` — the '
         + 'confirm turn needs its OWN model boundary (bound to CONFIRM_SYSTEM), never the authoring `generate` '
@@ -658,7 +660,7 @@ export async function authorCloseForJob({
     onPhase('confirm', {});
     const confirm = await runConfirmTurn({
       verdictType: picked, answers: interview.answers, questions: questions ?? questionsFor(picked),
-      facts: survey.facts, listing: null, writeScope, isRepo, lang, worseThanBefore, inputs,
+      facts: survey.facts, listing: null, writeScope, isRepo, lang, worseThanBefore, inputs, jobLines,
       generate: confirmGenerate, book: confirmBook, ask, onPhase,
     });
     // DISTINCT from `runConfirmTurn`'s own per-round 'confirm-done' (fired once

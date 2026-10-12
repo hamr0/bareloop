@@ -1013,12 +1013,12 @@ export async function main(argv, deps = {}) {
       // predates the confirm turn's own `ask` wiring (`authored.confirmed` is
       // `null` for every caller that runs no confirm turn) — the draft's own
       // goal (if any) then stands untouched.
-      if (authored.confirmed?.goal) {
+      if (RUBRIC_FILES && Array.isArray(draft.jobLines) && draft.jobLines.length > 0) {
+        // PART 1a: the worker's goal for a rubric job on files is written by code from the person's own numbered lines and the
+        // frozen input files the manifest recorded (src/rubricstep.js); the confirmed goal sentence rides as the plan line
+        draft.goal = redactSecrets(rubricGoal({ jobLines: draft.jobLines, files: manifestRead.manifest?.inputs ?? [], confirmedGoal: authored.confirmed?.goal ?? null }));
+      } else if (authored.confirmed?.goal) {
         draft.goal = redactSecrets(String(authored.confirmed.goal));
-      } else if (RUBRIC_FILES && Array.isArray(draft.jobLines) && draft.jobLines.length > 0) {
-        // PART 1a: no confirm turn runs for a rubric job on files, so the worker's goal is written by code from the person's
-        // own numbered lines and the frozen input files the manifest recorded (src/rubricstep.js)
-        draft.goal = redactSecrets(rubricGoal({ jobLines: draft.jobLines, files: manifestRead.manifest?.inputs ?? [] }));
       }
       // ── 2. the operator's half + the authored half → one spec ──────────────────
       // an `ok:true` authoring result always carries a verdictType (the class was

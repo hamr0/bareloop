@@ -87,7 +87,7 @@ import {
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
 import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
-import { stepFileContract, inputLabelsOf } from './rubricstep.js';
+import { stepFileContract, inputLabelsOf, stepFileRel } from './rubricstep.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
@@ -633,10 +633,10 @@ export const GUARD_DESCRIPTIONS = Object.freeze({
  * close — one source, never a second hand-typed list — rendered through the
  * frozen line in {@link GUARD_DESCRIPTIONS}, plus the write fence (a real,
  * signed fence — {@link writeScopeBlock}'s own subject) when one is set.
- * @param {{verdictType: string, lang: string, writeScope?: string[]|null}} o
+ * @param {{verdictType: string, lang: string, writeScope?: string[]|null, jobLines?: {n: number}[]|null}} o
  * @returns {string[]}
  */
-export function confirmProtections({ verdictType, lang, writeScope = null }) {
+export function confirmProtections({ verdictType, lang, writeScope = null, jobLines = null }) {
   const guards = classGuards({ verdictType, lang });
   const lines = guards.map((g) => {
     const desc = GUARD_DESCRIPTIONS[g.name];
@@ -648,6 +648,11 @@ export function confirmProtections({ verdictType, lang, writeScope = null }) {
   });
   if (Array.isArray(writeScope) && writeScope.length > 0) {
     lines.push(`write fence — the run may only change files matching: ${writeScope.join(', ')}`);
+  }
+  // PART 1a: a rubric job on local files always checks, for EVERY numbered line, that the line's file exists, is complete
+  // JSON and has text — a fact of the close's shape (`rubric-step`), not a plan of the model's, so it is listed from code
+  if (lang === RUBRIC_LANG && Array.isArray(jobLines)) {
+    for (const l of jobLines) lines.push(`line ${l.n} file — ${stepFileRel(l.n)} must exist, be complete JSON, and carry text`);
   }
   return lines;
 }
@@ -1228,7 +1233,7 @@ export function authorPrompt({
   // an absent catalogue is the language's own menu (`catalogueForLang`), so a code job's prompt never lists a rubric-only kind
   const catalogue = catalogueIn ?? catalogueForLang(lang);
   if (lang === RUBRIC_LANG) {
-    return rubricAuthorPrompt({ answers, questions, facts, listingBlock, verdictType, guards, mode, catalogue, writeScope, jobLines, inputs });
+    return rubricAuthorPrompt({ answers, questions, facts, listingBlock, verdictType, guards, mode, catalogue, writeScope, jobLines, inputs, confirmed });
   }
   const statement = CLASS_STATEMENTS[String(verdictType)] ?? null;
   if (statement === null) {
@@ -1351,12 +1356,12 @@ export const RUBRIC_FILES_STATEMENT = 'The person declared this job SOFT-GREEN a
  * @param {{answers: Record<string|number, string>, questions?: Record<string|number, string>, facts: any, listingBlock: string,
  *   verdictType: string, guards: {name: string, kind: string, params: Record<string, any>, fill: string[]}[],
  *   mode?: 'tool'|'text', catalogue?: Record<string, any>, writeScope?: string[]|null,
- *   jobLines?: {n: number}[]|null, inputs?: {n: number, label: string, value: string}[]|null}} o
+ *   jobLines?: {n: number}[]|null, inputs?: {n: number, label: string, value: string}[]|null, confirmed?: any}} o
  * @returns {string}
  */
 export function rubricAuthorPrompt({
   answers, questions = GREEN_QUESTIONS, facts, listingBlock, verdictType, guards,
-  mode = 'tool', catalogue = KIND_CATALOGUE, writeScope = null, jobLines = null, inputs = null,
+  mode = 'tool', catalogue = KIND_CATALOGUE, writeScope = null, jobLines = null, inputs = null, confirmed = null,
 }) {
   const interview = Object.entries(questions)
     .map(([n, q]) => `Q${n}. ${q}\nA${n}. ${answers?.[n] ?? '(no answer given)'}`)
@@ -1401,6 +1406,7 @@ left as a placeholder. You never write a number the person did not ask for.`;
       + (inputs && inputs.length ? `\n\n${renderInputs(inputs)}` : ''),
     ...(jobLines && jobLines.length ? [jobLineTagBlock(jobLines.length)] : []),
     ...(writeScope && writeScope.length ? [writeScopeBlock(writeScope)] : []),
+    ...(confirmed ? [confirmedBlock(confirmed)] : []),
     `THE STEP FILES — what the worker leaves behind for each job line\n\n${stepFileContract()}\n\n`
       + 'The rubric-step stage for job line N reads exactly that file, output/steps/N.json. It names the inputs (by label) the '
       + 'step must cite from, and the limits on its "text".',
@@ -2049,6 +2055,17 @@ const confirmChannel = () => ({
  * an ORDER to the model itself, the same register {@link AUTHOR_SYSTEM} and
  * {@link CLASS_STATEMENTS} already use, rather than a code matcher over prose.
  */
+/**
+ * What the confirm turn tells the model about a rubric job on local text files (model-facing, registered). There is no
+ * repository and no judge: a check is a limit a machine counts (words, lines, sections), or a claim a quote from a named
+ * input must back. Everything else the person asked for is named in `notChecked`, in their words.
+ */
+export const RUBRIC_CONFIRM_NOTE = 'THIS JOB HAS NO REPOSITORY. Its inputs are the person\'s own text files, and each numbered job line leaves ONE '
+  + 'file the run writes (output/steps/<line>.json: a "text" and, per input, quoted claims). In this build only two kinds '
+  + 'of check exist: a COUNTED limit on that text (words, lines, sections, words per section) and a claim that must be '
+  + 'backed by a quote copied from a named input. Plan a check only for what the person asked for in those terms; '
+  + 'anything that needs reading the text to judge it (tone, quality, accuracy) goes in `notChecked`, in the person\'s own words.';
+
 export const CONFIRM_SYSTEM = 'You read what a NON-ENGINEER answered, plus a read-only survey or listing of their '
   + 'own repository, and draft a PLAN for a job\'s definition of done: the checks you plan to compose and one '
   + 'signed goal sentence. You never propose a check the numbered job lines (and the ~ rules written under them) did not ask for '
@@ -2100,6 +2117,9 @@ export function confirmPrompt({ answers, questions, labels = {}, facts = null, l
     lines.push('', `WORSE THAN BEFORE (a constraint the person named, repo jobs only): ${worseThanBefore}`);
   }
   lines.push('', `LANGUAGE: ${lang}`);
+  // PART 1a: a rubric job on the person's own text files. The model is told what a check CAN be here, so that anything
+  // needing judgement lands in `notChecked` instead of being promised as a check
+  if (lang === RUBRIC_LANG) lines.push('', RUBRIC_CONFIRM_NOTE);
   if (writeScope) lines.push(`WRITE SCOPE (the fence — the run may write only here): ${writeScope.join(', ')}`);
   if (protections.length > 0) {
     lines.push(
@@ -2152,7 +2172,8 @@ async function askConfirmPlan({ convo, generate, mode, book, label }) {
  *   generate: Function, book: ReturnType<typeof makeCostBook>,
  *   ask: (step: {kind: string, [k: string]: any}) => Promise<string|null>,
  *   onPhase?: (phase: string, data?: any) => void, mode?: 'tool'|'text',
- *   worseThanBefore?: string, inputs?: {n: number, label: string, value: string}[]|null}} o retired field (hamr's ruling 2026-09-28):
+ *   worseThanBefore?: string, inputs?: {n: number, label: string, value: string}[]|null,
+ *   jobLines?: {n: number}[]|null}} o retired field (hamr's ruling 2026-09-28):
  *   `worseThanBefore` is never asked any more and defaults to `''` — a
  *   caller may still pass a string through (kept for a future, non-ask
  *   source of the same constraint), it just never comes from an ask() step.
@@ -2174,6 +2195,8 @@ export async function runConfirmTurn({
   worseThanBefore: presetWorseThanBefore = '',
   // P7: the inputs the person pointed at; absent = the prompt is byte-identical
   inputs = null,
+  // PART 1a: the numbered job lines, so a rubric job's per-line file protections are listed from code
+  jobLines = null,
 }) {
   /** @typedef {null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart'} ConfirmStop */
   /** @returns {{ok: boolean, stop: ConfirmStop, rounds: number, accepted: null, reds: Red[], cost: any}} */
@@ -2199,7 +2222,7 @@ export async function runConfirmTurn({
   // the prompt below so the model can check `notChecked` against it, and
   // reused (never recomputed) after the call so the shown, prompted, and
   // recorded protections are always the exact same list.
-  const protections = confirmProtections({ verdictType, lang: resolvedLang, writeScope });
+  const protections = confirmProtections({ verdictType, lang: resolvedLang, writeScope, jobLines });
 
   // ── up to 2 paid rounds (ruling 5) ─────────────────────────────────────────
   /** @type {string|null} */

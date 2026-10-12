@@ -40,10 +40,11 @@ export function stepFileContract() {
  * The worker's goal for a rubric job on local files — written by code from the person's own numbered lines, never by a
  * model. It states everything the close will judge about the FORM of the answer (the file, the keys, the quotes); what
  * each line asks for stays in the person's own words, with its `~` rules beneath it.
- * @param {{jobLines: {n: number, text: string, rule: string}[], files: {label: string, rel: string}[]}} o
+ * @param {{jobLines: {n: number, text: string, rule: string}[], files: {label: string, rel: string}[], confirmedGoal?: string|null}} o
+ *   `confirmedGoal` — the one goal sentence the person confirmed in the confirm turn, kept as the plan line
  * @returns {string}
  */
-export function rubricGoal({ jobLines, files }) {
+export function rubricGoal({ jobLines, files, confirmedGoal = null }) {
   const inputs = files.map((f) => `  - ${f.label}: ${f.rel}`).join('\n');
   const lines = jobLines.map((l) => `${l.n}. ${l.text}${l.rule ? `\n   rule: ${l.rule}` : ''}`).join('\n');
   return [
@@ -51,6 +52,7 @@ export function rubricGoal({ jobLines, files }) {
     `The input files (label: file):\n${inputs}`,
     stepFileContract(),
     `The job, line by line:\n${lines}`,
+    ...(confirmedGoal ? [`The plan the person confirmed: ${confirmedGoal}`] : []),
   ].join('\n\n');
 }
 

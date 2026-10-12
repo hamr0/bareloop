@@ -1034,7 +1034,7 @@ export function createSession(card, deps = {}) {
       return;
     }
 
-    if (RUBRIC_FILES) draft.goal = redactSecrets(rubricGoal({ jobLines, files: prep.manifest.inputs }));
+    if (RUBRIC_FILES) draft.goal = redactSecrets(rubricGoal({ jobLines, files: prep.manifest.inputs, confirmedGoal: authored.confirmed?.goal ?? null }));
     else if (authored.confirmed?.goal) draft.goal = redactSecrets(String(authored.confirmed.goal));
     const spec = assembleSpec(draft, { ...authored, verdictType: /** @type {string} */ (authored.verdictType) });
     await finish(spec, authored.seedRef);

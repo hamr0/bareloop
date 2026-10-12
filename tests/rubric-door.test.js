@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { classGuards, RUBRIC_LANG, DECLARABLE_LANGUAGES, GENRE_LANGUAGES } from '../src/authoring.js';
+import { confirmProtections, RUBRIC_CONFIRM_NOTE } from '../src/authorflow.js';
 import { validateCloseDecl, guardNames } from '../src/declaredclose.js';
 import { authorCloseForJob, runInterview } from '../src/authorjob.js';
 import { proveRubricInputs } from '../src/source.js';
@@ -28,6 +29,18 @@ const tmp = (p = 'rubric-door-') => { const d = mkdtempSync(join(tmpdir(), p)); 
 const changelogCopy = () => { const f = join(tmp(), 'CHANGELOG.md'); copyFileSync(join(HERE, '..', 'CHANGELOG.md'), f); return f; };
 const rows = keyRows({ filled: ['ANTHROPIC_API_KEY'], config: ANTH_CFG });
 const validateJobCard = (card) => rawValidateJobCard(card, { rows });
+/** a fake confirm-turn model boundary: it RECORDS what the model is shown, and delivers `plan` through the real confirm tool channel */
+function confirmModel(plan) {
+  const seen = [];
+  const generate = async (convo, tools) => {
+    seen.push(convo);
+    await tools[0].execute(plan);
+    return { text: JSON.stringify(plan), error: null, cost: 0.0005 };
+  };
+  return { generate, seen };
+}
+const waitFor = async (fn, ms = 15000) => { const t0 = Date.now(); while (!fn() && Date.now() - t0 < ms) await new Promise((r) => { setTimeout(r, 15); }); return fn(); };
+const PLAN = { goal: 'Summarize the unreleased changes in under 200 words.', checks: [{ text: 'the summary is under 200 words', fromLine: [1] }], notChecked: ['be friendly'], questions: [] };
 const keysHome = () => { const d = tmp('rubric-door-home-'); writeFileSync(join(d, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 }); writeFileSync(join(d, 'config.json'), JSON.stringify(ANTH_CFG)); return d; };
 
 test('the text genre: soft-green keeps the machine guard that applies to a file tree (changed-from-seed), drops the code-suppression scan; green and unknown languages stay as they were', () => {
@@ -129,9 +142,10 @@ test('P1=B at the card: a rubric on a local FILE needs no examples; a rubric on 
 
 // ── the panel session ────────────────────────────────────────────────────────
 
-test('createSession on a rubric job with a local file: no "not a code project" stop, no scout, no confirm turn — a signed-ready spec with the text genre, the output/ fence and a code-written goal', async () => {
+test('createSession on a rubric job with a local file: the CONFIRM TURN runs (no scout), the plan can only be signed after the person confirms, and the spec carries the text genre, the output/ fence and a code-written goal', async () => {
   const file = changelogCopy();
   const dest = join(tmp(), 'delivered');
+  const cm = confirmModel(PLAN);
   let authorOpts = null;
   const session = createSession({
     checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-door-session', jobText: '1. Summarize the unreleased changes\n~ keep it under 200 words',
@@ -139,8 +153,8 @@ test('createSession on a rubric job with a local file: no "not a code project" s
   }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(), sessionsRoot: tmp('rubric-door-sess-'),
     scout: { state: 'PRESENT', facts: { x: 1 }, calls: [], raws: [] },
-    generate: async () => { throw new Error('no model call'); },
-    confirmGenerate: async () => { throw new Error('no confirm turn for a rubric job on files'); },
+    generate: async () => { throw new Error('no authoring model call'); },
+    confirmGenerate: cm.generate,
     authorFn: async (o) => {
       authorOpts = o;
       return {
@@ -151,8 +165,14 @@ test('createSession on a rubric job with a local file: no "not a code project" s
     },
     prepareSigningFn: async () => ({ ok: true, specHash: 'abc123def4567890', seedRef: 'deadbeef', work: [], guards: [], stops: [], reds: [], refusal: null, gates: {} }),
   });
-  const t0 = Date.now();
-  while (!['prepared', 'refused', 'error'].includes(session.state.phase) && Date.now() - t0 < 8000) await new Promise((r) => { setTimeout(r, 20); });
+  // the confirm turn is reached, and nothing is signable until the person answers it
+  assert.ok(await waitFor(() => session.state.pendingAsk?.kind === 'menu'), `expected the confirm menu; got ${session.state.phase} / ${session.state.error}`);
+  assert.equal(cm.seen.length, 1, 'exactly one paid confirm round so far');
+  assert.notEqual(session.state.phase, 'prepared');
+  assert.equal(authorOpts, null, 'the composer has not run before the person confirmed');
+  assert.equal(session.send('sign it').ok, false, 'a typed message can never pick the menu');
+  assert.equal(session.signPrepare().ok, true);
+  assert.ok(await waitFor(() => ['prepared', 'refused', 'error'].includes(session.state.phase)));
   assert.equal(session.state.phase, 'prepared', `${session.state.phase} / ${session.state.error}`);
   const spec = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
   assert.equal(spec.verdictType, 'soft-green');
@@ -161,13 +181,44 @@ test('createSession on a rubric job with a local file: no "not a code project" s
   assert.match(spec.goal, /output\/steps\/N\.json/);
   assert.match(spec.goal, /Changelog: input\/CHANGELOG\.md/);
   assert.match(spec.goal, /1\. Summarize the unreleased changes\n {3}rule: keep it under 200 words/);
+  assert.match(spec.goal, /The plan the person confirmed: Summarize the unreleased changes in under 200 words\./);
   assert.equal(authorOpts.lang, 'text');
-  // the frozen source the run will use: manifest with inputs, destination recorded for copy-out
+  assert.equal(authorOpts.confirmed.goal, PLAN.goal, 'the confirmed plan reaches the composer');
   const into = join(session.state.outDir, 'source-seed');
   const manifest = JSON.parse(readFileSync(join(into, 'source.json'), 'utf8'));
   assert.equal(manifest.destination, dest);
   assert.equal(manifest.inputs[0].label, 'Changelog');
   assert.equal(existsSync(join(into, 'tree', 'input', 'CHANGELOG.md')), true);
+});
+
+test('the rubric confirm turn: the PROTECTIONS shown are the code\'s (guard list + write fence + one file line per job line), the model is told what a check can be and shown the same list as ALREADY COVERED, and notChecked is the model\'s own', async () => {
+  const file = changelogCopy();
+  const cm = confirmModel(PLAN);
+  const session = createSession({
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-door-protections', jobText: '1. Summarize\n2. List the fixes', inputs: `Changelog: ${file}`,
+    destination: join(tmp(), 'out'), capUsd: 1,
+  }, {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(), sessionsRoot: tmp('rubric-door-sess-'),
+    generate: async () => { throw new Error('no model call'); }, confirmGenerate: cm.generate,
+  });
+  assert.ok(await waitFor(() => session.state.pendingAsk?.kind === 'menu'), `${session.state.phase} / ${session.state.error}`);
+  const expected = confirmProtections({ verdictType: 'soft-green', lang: RUBRIC_LANG, writeScope: ['output/'], jobLines: [{ n: 1 }, { n: 2 }] });
+  assert.deepEqual(expected, [
+    'changed-from-seed — the run must actually change at least one file in scope — a close that reports done without touching anything is refused',
+    'write fence — the run may only change files matching: output/',
+    'line 1 file — output/steps/1.json must exist, be complete JSON, and carry text',
+    'line 2 file — output/steps/2.json must exist, be complete JSON, and carry text',
+  ]);
+  const shown = session.state.pendingAsk.plan.protections;
+  assert.deepEqual(shown, expected, 'what the person is shown is the code\'s list, whatever the model said');
+  assert.equal(session.state.pendingAsk.plan.notChecked[0], 'be friendly');
+  const prompt = cm.seen[0][0].content;
+  assert.ok(prompt.includes(RUBRIC_CONFIRM_NOTE), 'the model is told what a check can be here');
+  for (const line of expected) assert.ok(prompt.includes(line), `ALREADY COVERED must carry: ${line}`);
+  assert.match(prompt, /LANGUAGE: text/);
+  assert.match(prompt, /the person pointed at these inputs: 1 Changelog /);
+  // abandon so the session ends
+  session.abandon();
 });
 
 test('createSession: a web input line stops at $0 in the exact plain words; a relative Destination is refused before anything is copied', async () => {
@@ -198,7 +249,7 @@ test('rubricGoal: the worker brief carries the step-file contract, every input l
   assert.match(g, /1\. Summarize\n {3}rule: under 200 words\n2\. List fixes$/);
 });
 
-test('createSession with the REAL prepareSigning on a rubric job on a file: reaches prepared with zero judge-round records, zero booked spend, and a rubric-step line the seed reads red', async () => {
+test('createSession with the REAL prepareSigning on a rubric job on a file: reaches prepared with zero judge-round records, only the confirm round booked, and a rubric-step line the seed reads red', async () => {
   const file = changelogCopy();
   const session = createSession({
     checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-door-real-signing', jobText: '1. Summarize the unreleased changes\n~ under 200 words',
@@ -206,6 +257,7 @@ test('createSession with the REAL prepareSigning on a rubric job on a file: reac
   }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(), sessionsRoot: tmp('rubric-door-sess-'),
     generate: async () => { throw new Error('no model call'); },
+    confirmGenerate: confirmModel(PLAN).generate,
     authorFn: async () => ({
       ok: true,
       declaration: {
@@ -218,14 +270,15 @@ test('createSession with the REAL prepareSigning on a rubric job on a file: reac
       genreEnv: null, cost: { costUsd: 0, knownUsd: 0, spendComplete: true, calls: [], unpricedRounds: 0 }, reds: [],
     }),
   });
-  const t0 = Date.now();
-  while (!['prepared', 'refused', 'error'].includes(session.state.phase) && Date.now() - t0 < 15000) await new Promise((r) => { setTimeout(r, 20); });
+  assert.ok(await waitFor(() => session.state.pendingAsk?.kind === 'menu'), `${session.state.phase} / ${session.state.error}`);
+  assert.equal(session.signPrepare().ok, true);
+  assert.ok(await waitFor(() => ['prepared', 'refused', 'error'].includes(session.state.phase)));
   assert.equal(session.state.phase, 'prepared', `${session.state.phase} / ${session.state.error}`);
   const signing = JSON.parse(readFileSync(join(session.state.outDir, 'signing.json'), 'utf8'));
   assert.equal(signing.ok, true);
   assert.equal(signing.gates.calibration, null, 'no calibration: zero judge rounds');
   assert.deepEqual(signing.gates.seedVerdict.workRed, ['line-1']);
-  assert.equal(session.state.draftSpentUsd, 0);
+  assert.equal(session.state.draftSpentUsd, 0.0005, 'only the confirm round was booked: signing added no judge round');
   assert.equal(session.state.steps.some((s) => s.id === 'calibrate'), false, 'no calibrating line in the progress list');
   const spec = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
   assert.equal(spec.closeDecl.stages[1].kind, 'rubric-step');
