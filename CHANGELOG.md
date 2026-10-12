@@ -18,9 +18,12 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **A red count for the fix-loop governor.** A red `rubric-step` stage reports failing claims plus failing checks, lower is better, through the same `closeGrade` path numeric stages use.
 - **The panel words a rubric-step check** as "line N — does its output pass the line's checks?" instead of the raw stage name.
 - **Worker brief:** copy every number, time and price in a claim exactly as the input writes it.
+- **The panel topbar shows the version:** `bareloop · v<version> · automate a job, verified`, read from bareloop's own package.json when the page is served (never written into the HTML).
 
 ### Fixed
 
+- **A check shown at the confirm turn could be dropped from the signed close without a word (run mv5bk400).** The composer put "lists 3 releases" in the close's notes and wrote no stage for it. Now `minClaims` / `maxClaims` count the claims listed under an input (the code counts, bareguard's `min`/`max` compares), parts say which confirmed checks they carry out (`covers`), the plan card after drafting is built from the signed close itself, every confirmed check no part carries out is moved to Not checked in code, and signing refuses when the checks shown differ from the checks of the close.
+- **Wrong labels on a rubric job on files:** the close carries genre `TEXT` (not `TYPES`), its records carry no `judgedCount` (no judge ran), and the progress list says "copying input files" / "reading input files" instead of "making worktree" / "reading repo".
 - **The panel could not start a rubric job with two or more local-file Inputs:** `POST /api/author/start` asked the repo proof of every card and reded line 1 ("is not a folder"). A rubric card whose first input is a local file now skips it; the session proves each line.
 
 ### Changed
