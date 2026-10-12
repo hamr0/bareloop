@@ -1034,6 +1034,24 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     4. fwd's "a correct red on a clean input counts as a catch, not a miss" — what it means for
        scoring calibration (RL L145–168).
     5. Does the worker report a typed `done` boolean per step (fwdloop has one), or does the
+
+    **2026-10-12 — rubric job shape RULED** (hamr, interview this session; supersedes the
+    draft above where they differ; the draft stays as written).
+
+    | # | Ruling |
+    |---|---|
+    | R0 | A rubric job is for research and search jobs only (local files, web pages). Code jobs stay deterministic. Narrows item 33's "repo OR plain folder" for soft-green. |
+    | R12 | A source is one of three: a local file; a fixed URL (only that page); `search` (the worker may search and follow results; `~` rules can limit domains). Within H6: read, type, click; never pays or books. |
+    | R1–R4 | Four built-in checks run on EVERY step before any judge: happened (output exists, not empty, not cut off; a failed one never reaches the judge), cited (no word-for-word quote → red), frozen (every file/page saved with sha256 at the moment it is read; the judge quotes only the frozen copy), clean (crashed, unparseable or unpriced judge call → red). |
+    | R5 | Practice cases are made by code breaking a real output on purpose, one exact change per `~` rule, answer known by construction; model-written cases only as extras. A new job's first run has no real output yet and falls back to the ruled model-written cases. Changes the ruled "the AI generates the cases" (Calibration). |
+    | R6 + Q2 | The judge checks twice. Calibration: each case graded 3 times, all must be right. Live run: each step read twice; disagreement = unsure = red. Never opens a mid-run question. |
+    | R11 | Each `~` rule is sorted at drafting as countable (code checks) or cited (judge quotes, code checks). A rule that is neither, or a self-contradicting card, is red and the job does not sign. |
+    | R13 | Run tab shows chips per step — (happened)(cited)(frozen)(clean)(agreement) plus the `~` rules, green/red, legend at top; Audit shows one row per judge call with quote, source and the source's sha. |
+    | Q1 / R9 / R10 | Already settled by the P7 job block (2026-10-10): the form is The job + Inputs; numbered lines with `~` rules; judge examples are `~ PASS:` / `~ FAIL:` lines. |
+    | Q3 | The first judge rule is one general rule: "a quoted value meets a condition" (e.g. price ≤ X, date in range, count). |
+    | Q4 | In calibration, a red on the untouched (clean) case is a MISS: calibration fails with a plain-words reason. fwd's "counts as a catch" is not adopted. |
+    | Q5 | No worker `done` flag; the happened check reads the output alone (only the close is truth). |
+    | R7, R8 | Unchanged (existing doctrine). R14 (positioning): not ruled, not needed for the build. |
        happened check rest on the output alone?
 
 34. **Item 34 — loose ends housed** (hamr, 2026-09-13: every open end gets fix / keep /
@@ -1398,3 +1416,7 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
   - A bundle names its model; the CLI finds the key through the Settings rows; a missing row stops at $0 in plain words.
 - [ ] Open: the Export UI shape (interview before spec). [ ] Open: the bench move.
 - Rulings: memory (stay public; work order; CLI runs exported jobs).
+
+### Rubric job shape ruled (v1.94 — 2026-10-12)
+
+- The R0–R14 draft and its 5 open questions are ruled; the rulings are in item 33, "2026-10-12 — rubric job shape RULED". Next in work order (2): the build spec for the rubric job + the barebrowse search step, shown to hamr before any build, then a flight-search job run green on DeepSeek.
