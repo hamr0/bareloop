@@ -1810,6 +1810,7 @@ function resolveSpecForRow(row) {
  *     change any file?"
  *   - `pattern-absent-in-diff` is always the `no-suppressions` guard: "no
  *     casts or silencers added?"
+ *   - `rubric-step` (Part 1a) is one job line's output file: "line N — does its output pass the line's checks?"
  *   - `command-exit` is the genre's `suite-green` stage (the only shipped use
  *     of this kind): "does the test suite pass?"
  *   - `count-not-worse` splits three ways on its own declared
@@ -1877,6 +1878,8 @@ function stageQuestionText({
   if (kind === 'files-changed') return 'did it change any file?';
   if (kind === 'pattern-absent-in-diff') return 'no casts or silencers added?';
   if (kind === 'command-exit') return 'does the test suite pass?';
+  // Part 1a: one rubric-step stage = one job line's output file
+  if (kind === 'rubric-step') return params && Number.isInteger(params.step) ? `line ${params.step} — does its output pass the line's checks?` : null;
   if (kind !== 'count-not-worse' || !params || typeof params !== 'object') return null;
   const what = Object.hasOwn(GENRE_WHAT, String(genre)) ? GENRE_WHAT[String(genre)] : null;
   if (params.direction === 'higher-is-better' && params.baseline === 'seed') {

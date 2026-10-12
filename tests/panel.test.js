@@ -2112,6 +2112,43 @@ test('build item 1: a bundle-layout spec.json\'s closeDecl attaches kind/directi
   });
 });
 
+test('Part 1a: a rubric-step stage in the signed closeDecl gets the code-owned plain question, not its raw name (line-1)', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
+  writeSpine(join(dir, 'runs', 'r1', 'spine.jsonl'), [
+    { type: 'job-start', job: 'rubricq-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'soft-green' },
+    { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    { type: 'step-end', step: 'do-thing', outcome: 'red', ts: '2026-09-05T00:00:02.000Z', seq: 3 },
+    {
+      type: 'outer-close', verdict: 'needs_revision', stage: 'line-2',
+      stages: [{ name: 'line-1', verdict: 'satisfied' }, { name: 'line-2', verdict: 'needs_revision' }], ts: '2026-09-05T00:00:03.000Z', seq: 4,
+    },
+    { type: 'job-end', outcome: 'needs_revision', spentUsd: 0.01, spendComplete: true, ts: '2026-09-05T00:00:04.000Z', seq: 5 },
+  ]);
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify({
+    job: 'rubricq-job',
+    closeDecl: {
+      lang: 'text',
+      stages: [
+        { name: 'line-1', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts: [] } },
+        { name: 'line-2', kind: 'rubric-step', fromLine: [2], params: { step: 2, parts: [] } },
+      ],
+    },
+  }));
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'rubricqrun', job: 'rubricq-job', spine: join(dir, 'runs', 'r1', 'spine.jsonl'), patient: null, via: 'bundle',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const detail = await (await fetch(`${base}/api/runs/rubricqrun`)).json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  assert.ok(fixPart);
+  const stages = fixPart.attempts[0].stages;
+  assert.equal(stages[0].question, "line 1 — does its output pass the line's checks?");
+  assert.equal(stages[1].question, "line 2 — does its output pass the line's checks?");
+  assert.equal(stages[1].kind, 'rubric-step');
+});
+
 test('checks-count fix (2026-09-28, hamr\'s live catch on run mulbz0ny): declaredStagesTotal is the DECLARED stage count (closeDecl.stages.length), never the RAN count (stages.length) — first-red-wins means a later fix-loop attempt can stop after 1 of 7 declared stages and its own stages array carries only that one', async (t) => {
   const home = tmp();
   const dir = tmp();
