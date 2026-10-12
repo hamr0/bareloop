@@ -519,3 +519,31 @@ Item 25 step (4): 31.5 calibration on a real bar; 31.4 green on DeepSeek (`deeps
 with `ANTHROPIC_API_KEY` unset; plus one plain-folder green and one soft-green end to end.
 
 2026-09-13 (hamr): 31.4 runs on DeepSeek, not gemini — one secondary provider.
+
+## Addendum 2026-10-12 — Part 1a: rubric engine on a local file, no judge (signed by hamr 2026-10-12)
+
+Branch feat/rubric-search. This build runs a rubric job on a local file with no judge. The judge, the web and the chips come later.
+
+What gets built, in order:
+
+1. A rubric job may start from a plain local file. Each input line is `label: /absolute/file`. Bareloop freezes each file into the job (label, relative path, sha256) and refuses a non-UTF-8 file at $0. A rubric job skips the repo-only source message and gets no language guards. A URL or search line is a $0 red: "line N: web inputs (URLs, search) arrive in a later build. Nothing spent."
+2. One output per job line: `output/steps/<n>.json` holding `{text, cites:{<label>:[{claim,quote}]}}`. The worker brief in the drafter prompt says so, the plan validator allows the path, and the copy-out delivers `steps/` with the output (P2=A).
+3. A new close kind `rubric-step`, one stage per job line (`fromLine:[n]`). At run start the runner builds the rubric (input sha from source.json, checkpoint `<n>`, not gating), checks the step file, and renders the gaps. A stop is exit 97; a red is a close red.
+4. Checks: the step file happened (it exists and parses as a JSON object); every input the step cites is cited with real quotes (`cites:<label>`); countable limits on `text` (maxWords, minWords, sections, sectionWords, max, min). A cut-off is detected only as a step file that is not a JSON object; text cut inside valid JSON cannot be detected (documented limit). Step files are capped at 5 MiB.
+5. Each part of a job line is sorted at drafting: countable, judged, or guard. A job line is a $0 red when a part has no class, when two countables contradict (both parts and numbers are named), when a guard has no web input, or when any part is judged. Plain words: "line N: this rule needs the judge, which arrives in the next build. Nothing spent." and "line N: '<part>' can't be counted or checked against a quote. Say it as a count (words, sections, rows) or as something a quote must show."
+6. Signing runs calibration only when the close has judged stages, so signing a 1a job makes zero judge-round records.
+
+Rulings:
+
+- P1=B. The `~ PASS:` / `~ FAIL:` example lines are required on a rubric job only when it holds a judged part. `jobBlockFitsCheck` changes to match.
+- P2=A. Per-line step files live at `output/steps/<n>.json` and are delivered with the output.
+
+Known mismatches with bareguard 0.21, handled without patching it: string inputs and UTF-8, one source per cited input, no claims on an empty step, and the rubric is rebuilt each run.
+
+Deferred:
+
+- 1b: the judge plug-in per bareguard locate section 5.2, final gating with requiresHuman accept:'later' through the door, reads/agree, clean, mutation calibration, chips, Audit rows.
+- Part 2: web sources and the S1A gate.
+- Part 3: chips.
+
+Live proof plan: DeepSeek (`deepseek-flash`), cap $0.50, a copy of the repo's own CHANGELOG.md as the input, two job lines. Run only on hamr's go.
