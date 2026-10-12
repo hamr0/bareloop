@@ -7,7 +7,7 @@
 // run-u` drives (`src/userrun.js`): providers, keys (the keys file / env, any provider the
 // bundle's spec names), judge, monthly limit and readout are that engine's. The test seam is
 // the engine's too: `deps.provider` (and `providerFor`/`judgeProvider`) supplies a scripted
-// provider and skips the real-key check (same as `tests/planrun.test.js`'s pattern).
+// provider and skips the real-key check (same as `tests/planrun-*.test.js`'s pattern).
 //
 // Money/arbiter rules the bundle door keeps: `--budget`/`--wall` only TIGHTEN a bundle's
 // signed ceilings (`checkEnvelope`, M1); a bundle's `bundleHash` (the human-facing

@@ -5,6 +5,39 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.41.0] - 2026-10-12
+
+### Added
+
+- **Settings > Providers, rewritten from fwdloop's layout (P8).** One shared grid: a key row (API shape, Base URL, the "old max_tokens" tick, Tokens, `[ Test ] [ ⟳ Refresh ]`) with its model lines under it (Use tick, In / Out $/1M, tokens), a folded summary, `label : value` lines below 1280px, and the KEYS strip stacking below 900px. **Test** and **Refresh** are one free `GET <Base URL>/models` (`src/modellist.js`); `gemini-api` is now testable. `Open keys folder` stays in the KEYS strip.
+- **Model lines.** Config gains `models.<ENV>` — a list of `{ model, use, inPerM, outPerM }` — and `keys.<ENV>` becomes `{ shape, baseUrl, legacyMaxTokens }`. A price is a pair or nothing, a ticked line needs both, 0 / 0 is a chosen price. An older `keys.<ENV>.{name,priceInPerM,priceOutPerM}` still reads as one line until the row's first save.
+- **"Thinking on" tick (per job).** A tick under Model in the New job card, unticked by default, saved in the signed job as the optional `thinking` boolean (absent = off; an old spec and any unticked job keep their hash). It covers drafting and the rubric judge, never the worker. `src/thinking.js` is the one owner; bare-agent (^0.52.0) says what each model can switch and reports `thinkingStatus`, which the draft log and the drafting `thinking` row show.
+- **`--model <id>` and `--provider <KEY>`** on `run-u`, `run <bundle>` and the resume route name the Settings line a run works on (for a spec that names no model); `interview` takes `--model` and writes it into the draft.
+- `tests/no-hardcode.test.js`: a search of `src/` and `bin/` finds no provider name, model name, web address or price in code, except an allow-list with a reason per entry.
+
+### Changed
+
+- **Resume of a pre-P8 run whose signed spec names no model** opens the Resume card's Model box (it was locked, so the person could not act on `--model`). The menu offers only lines of the spec's API shape (and endpoint, when the spec names one) and shows `Tick a <shape> model in Settings > Providers.` when none match; Sign & resume stays blocked until a usable line is picked, and the pick is sent as model + provider. The spec and its hash are untouched. Changing the Model line now blocks Start/Sign until its key check returns, and a late answer for a line no longer selected is ignored (the New job card shares this path).
+- **Chat's Model menu** lists only ticked, priced lines as `<KEY> · <model>`; a card carries `provider` (the key's env name) beside `model`, and a stale pick is refused at $0 with one of three plain sentences.
+- **A job's key is its row's own variable name.** There is no built-in key name, tier table, default model, default address or per-model gating: the "old max_tokens" tick on the row decides the output-cap spelling.
+- **Existing DeepSeek rows need one tick.** An existing DeepSeek row (or any OpenAI-compatible server that wants the old `max_tokens` field) must have "old max_tokens" ticked once in Settings > Providers: the built-in per-model rule that did this is gone (no-hardcode ruling), and until the tick is set the output cap may not bind (F149).
+- The Money tab groups spend by the Providers row that served it (a run no row serves lands under its own shape and address) and carries tokens per model.
+- A fresh keys file holds two comment lines and no preset key.
+- Dependencies: `bare-agent` ^0.51.0 to ^0.52.0.
+- The exported bundle README tells the user to put their provider's API key in their keys file (the name their Settings row uses), with no vendor.
+
+### Removed
+
+- **Balance** (the Settings column, both routes and the `anthropicBalanceNote` config field).
+- Built-in tiers and keys: `*_TIER_MODELS`, `envKey`, `OPENAI_MODEL_OPTIONS`/`paramsFor`, `PRESET_KEY_NAMES`, the vendor default addresses, the `--model sonnet|haiku` aliases, the vendor map in the Money tab.
+- **`JUDGE_MODEL`** is no longer exported from the package root or `src/judged.js` (a public-API removal: pass your own model id). `resolveWorkerModel` takes `suppliedModel` instead of `defaultModel` and throws when no model is named.
+- The bench row `bareguard-types-deepseek` is renamed `bareguard-types-gateway` (spec file renamed; contents and hash untouched; the patient directory it names is now `bareloop-patients/bareguard-u-gateway`).
+
+### Breaking
+
+- **The config shape changed.** Every row that relied on a built-in default (shape, address, model, price) must have its API shape, Base URL and model lines entered or ticked ONCE in Settings. A row on a server that ignores `max_completion_tokens` (F149) needs "old max_tokens" ticked by hand, once, before a paid run: an output cap that does not bind is a money hazard.
+- **Specs signed before this release that name no `model` (or no `baseUrl`)** have nothing to run on until a line is named at run start: `--model <id>` (the hash is untouched). A signed model no ticked line carries is refused at $0.
+
 ## [0.40.0] - 2026-10-11
 
 ### Added

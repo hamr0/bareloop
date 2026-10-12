@@ -29,7 +29,8 @@ import { validateJob } from '../job.js';
 import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
 import { ConfigError } from '../config.js';
 import { keysForDoor, keysHome } from '../keysfile.js';
-import { keyNameFor, modelChoiceFor, rowsForHome, chatModels, usableKey } from '../providerrows.js';
+import { endpointOf, judgePick, keyValueOf, rowsForHome, tickedLines } from '../providerrows.js';
+import { thinkingForLine } from '../thinking.js';
 import { apiKeyProblem, checkProviderReachable } from '../providers.js';
 
 /** @returns {string} a fresh per-process token — never persisted, never logged */
@@ -137,13 +138,13 @@ export function createAuthorRoutes(opts) {
     if (pathname === '/api/author/model-check') {
       if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
       const q = new URL(/** @type {string} */ (req.url), 'http://127.0.0.1').searchParams;
-      const modelId = q.get('model') ?? '';
-      const rows = rowsForHome(keysHome(opts.home));
-      const choice = modelChoiceFor(rows, modelId);
-      if (!choice) { send(400, { ok: false, error: `unknown model "${modelId}"` }); return true; }
-      // the key of the Settings row this Name belongs to
-      const keyName = keyNameFor(choice.provider, choice.baseUrl, rows, choice.name).name;
-      const raw = envNow()[keyName];
+      const rows = rowsForHome(keysHome(opts.home), envNow());
+      const pick = judgePick(rows, { provider: q.get('provider'), model: q.get('model') });
+      if (!pick.ok) { send(400, { ok: false, error: pick.say }); return true; }
+      const choice = pick.choice;
+      // the key of the Settings row this line belongs to
+      const keyName = choice.envName;
+      const raw = keyValueOf(envNow(), keyName);
       const problem = raw ? apiKeyProblem(raw) : null;
       const keyStatus = !raw ? 'missing' : (problem ? 'bad-shape' : 'found');
       if (keyStatus !== 'found') {
@@ -157,7 +158,7 @@ export function createAuthorRoutes(opts) {
       // `checkProviderReachable`'s own doc) — a short timeout so a flaky
       // endpoint never hangs the card.
       checkProviderReachable({
-        providerName: choice.provider, apiKey: /** @type {string} */ (usableKey(raw)), model: choice.name,
+        providerName: choice.provider, apiKey: /** @type {string} */ (raw), model: choice.name,
         baseUrl: choice.baseUrl, fetchImpl, timeoutMs: 4000,
       }).then((r) => {
         send(200, {
@@ -180,7 +181,11 @@ export function createAuthorRoutes(opts) {
     // ── P4b: Chat's Model menu IS the Settings rows (a blank Name is not offered). ──
     if (pathname === '/api/author/models') {
       if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
-      send(200, { ok: true, models: chatModels(rowsForHome(keysHome(opts.home))) });
+      // every ticked-and-priced line of a row, labelled `<KEY> · <model>`; `thinking` is the server's answer for the "Thinking on" box
+      const lines = tickedLines(rowsForHome(keysHome(opts.home), envNow())).map(({ row, line }) => ({
+        slot: row.envName, model: line.model, label: `${row.envName} · ${line.model}`, shape: row.provider, endpoint: endpointOf(row.provider, row.baseUrl), thinking: thinkingForLine(row.provider, line.model, row.baseUrl),
+      }));
+      send(200, { ok: true, lines, say: lines.length === 0 ? 'Tick a model in Settings > Providers.' : '' });
       return true;
     }
 
@@ -207,14 +212,14 @@ export function createAuthorRoutes(opts) {
       const sp = new URL(/** @type {string} */ (req.url), 'http://127.0.0.1').searchParams;
       const runid = sp.get('runid') ?? '';
       // `model` = the card's Model box right now: the estimate line counts only runs on that worker
-      const asModel = sp.has('model') ? { model: sp.get('model') ?? '' } : {};
+      const asModel = sp.has('model') ? { model: sp.get('model') ?? '', provider: sp.get('provider') ?? '' } : {};
       const pre = sp.has('import') ? opts.startFrom.getImport(sp.get('import') ?? '', asModel) : opts.startFrom.get(runid, asModel);
       if (pre === null) { send(404, { ok: false, error: 'no such run' }); return true; }
       if (!pre.ok) { send(409, pre); return true; }
       send(200, {
         ok: true, origin: pre.origin, card: pre.card, from: pre.from, note: pre.note,
         locked: pre.locked, open: pre.open, specHash: pre.specHash, workflowKey: pre.workflowKey, trackRecord: pre.trackRecord,
-        line: pre.line,
+        line: pre.line, specNamesModel: pre.specNamesModel, specWorker: pre.specWorker,
       });
       return true;
     }
@@ -225,7 +230,7 @@ export function createAuthorRoutes(opts) {
       if (!opts.startFrom || !opts.startFrom.listJobs) { send(404, { ok: false, error: 'not found' }); return true; }
       if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
       const sp = new URL(/** @type {string} */ (req.url), 'http://127.0.0.1').searchParams;
-      const asModel = sp.has('model') ? { model: sp.get('model') ?? '' } : {};
+      const asModel = sp.has('model') ? { model: sp.get('model') ?? '', provider: sp.get('provider') ?? '' } : {};
       send(200, { ok: true, jobs: opts.startFrom.listJobs(asModel) });
       return true;
     }
@@ -243,7 +248,7 @@ export function createAuthorRoutes(opts) {
       if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
       if (hasLiveSession()) { send(409, { ok: false, error: 'an authoring session is already live — one at a time' }); return true; }
       const card = body ?? {};
-      const rows = rowsForHome(keysHome(opts.home));
+      const rows = rowsForHome(keysHome(opts.home), envNow());
       // Reuse workflow — started from a green run or an imported job: only Source, Destination and the two caps may
       // differ from the signed workflow. The SERVER refuses any other change (the page greys those boxes, but is
       // never trusted); the spec it signs is a copy of the origin's with just those four set. Nothing is drafted.

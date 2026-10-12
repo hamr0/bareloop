@@ -17,25 +17,27 @@ import { cleanEnv } from './helpers.js';
 
 const RUNNER = new URL('../scripts/run-u.mjs', import.meta.url).pathname;
 
-const preview = (job) => {
-  const r = spawnSync(process.execPath, [RUNNER, '--job', job], {
-    encoding: 'utf8', timeout: 60_000, env: { ...cleanEnv(), ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '' },
+// P8: the hint names the Settings ROW's own variable (there is no built-in key name). The scratch config home carries two rows —
+// ANTHROPIC_API_KEY (Anthropic shape) and GW_KEY (OpenAI shape at the address the bench spec signs).
+const preview = (job, model) => {
+  const r = spawnSync(process.execPath, [RUNNER, '--job', job, ...(model ? ['--model', model] : [])], {
+    encoding: 'utf8', timeout: 60_000, env: { ...cleanEnv({}, { rows: true }), ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '' },
   });
   const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   if (r.status === null) throw new Error(`run-u.mjs never exited (${r.error?.code ?? r.signal ?? 'no error'}):\n${out.slice(0, 400)}`);
   return { code: r.status, out };
 };
 
-test('an openai-api job (bareguard-types-deepseek) prints OPENAI_API_KEY in its invocation hints, never ANTHROPIC_API_KEY', () => {
-  const { code, out } = preview('bareguard-types-deepseek');
+test('an openai-shaped job (bareguard-types-gateway) prints its row\'s variable (GW_KEY) in its invocation hints, never another provider\'s', () => {
+  const { code, out } = preview('bareguard-types-gateway', 'deepseek-flash');
   assert.equal(code, 0, out);
-  assert.match(out, /OPENAI_API_KEY=\.\.\. node scripts\/run-u\.mjs --job bareguard-types-deepseek/, 'the approve line names the real provider key');
-  assert.doesNotMatch(out, /ANTHROPIC_API_KEY/, 'an openai-api job must never print the anthropic key name anywhere in its preview');
+  assert.match(out, /GW_KEY=\.\.\. node scripts\/run-u\.mjs --job bareguard-types-gateway/, 'the approve line names the row the model line is on');
+  assert.doesNotMatch(out, /ANTHROPIC_API_KEY|OPENAI_API_KEY/, 'no vendor key name anywhere in its preview');
 });
 
-test('an anthropic-api job (aurora-spawner) still prints ANTHROPIC_API_KEY — the fix must not have flipped everyone to one name', () => {
+test('an anthropic-shaped job (aurora-spawner) prints the variable of ITS row — the fix must not have flipped everyone to one name', () => {
   const { code, out } = preview('aurora-spawner');
   assert.equal(code, 0, out);
-  assert.match(out, /ANTHROPIC_API_KEY=\.\.\. node scripts\/run-u\.mjs --job aurora-spawner/);
-  assert.doesNotMatch(out, /OPENAI_API_KEY/);
+  assert.match(out, /ANTHROPIC_API_KEY=\.\.\. node scripts\/run-u\.mjs --job aurora-spawner/, 'the row is NAMED ANTHROPIC_API_KEY here by the fixture, not by the code');
+  assert.doesNotMatch(out, /GW_KEY/);
 });

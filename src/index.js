@@ -148,16 +148,14 @@ export { answerReviewDoor } from './reviewdoor.js';
 // SOFTGREEN module 1 — the judged floor's core. The pieces an adopter (and an
 // integrating UI) genuinely needs: `resolveJudge` (PRD item 32.1 — WHICH model
 // grades a job: the spec's signed `judge` override, else the job's own worker
-// model, and no library fall-back), `JUDGE_MODEL` (the pre-item-32 pin, kept
-// exported for adopters and still the right default for an anthropic-api job,
-// but no longer read by any grading path), the rulebook a card SELECTS from,
+// model, and no library fall-back; the old pinned-model constant is gone), the rulebook a card SELECTS from,
 // the card gate, and the two halves themselves so a calibration harness can
 // grade the whole pipe without running a close.
 // `defaultJudgeLoop` (src/judged.js) is the one spelling of how this repo drives a
 // judge; the runner reaches it through `runPlan`'s `judgeProvider`. It is internal:
 // the package root does not export it.
 export {
-  JUDGE_MODEL, resolveJudge, JUDGE_RULES, JUDGE_RULE_IDS,
+  resolveJudge, JUDGE_RULES, JUDGE_RULE_IDS,
   runLocate, decide,
   // SOFTGREEN module 4 — what a legal SIGNED calibration set is. The SIZE is
   // hamr's own ruling and a size change is a spec-level threshold change;

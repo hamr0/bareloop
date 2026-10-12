@@ -70,13 +70,14 @@ function mountCard() {
   const log = [];
   const originLine = dom.document.getElementById('chat-origin-line');
   const errEl = { textContent: '' };
+  const modelSelect = { value: '' };
   const api = build(['applyResume'], {
-    document: dom.document, clearStartFrom: () => log.push('clear'), openNewCard: () => log.push('open'), modelSelect: { value: '' },
+    document: dom.document, clearStartFrom: () => log.push('clear'), openNewCard: () => log.push('open'), modelSelect, setPick: (c) => { modelSelect.value = c.model; },
     fillCard: (c) => { const set = (id, v) => { dom.document.getElementById(id).value = v === undefined || v === null ? '' : String(v); }; set('jf-name', c.jobName); set('jf-job', c.jobText); set('jf-inputs', c.inputs); set('jf-dest', c.destination); set('jf-cap-money', c.capUsd); set('jf-cap-time', Math.round(c.maxWallMs / 60000)); },
     setVerdict: (v) => log.push(`verdict:${v}`), setVal: (id, v) => { dom.document.getElementById(id).value = v === undefined || v === null ? '' : String(v); },
-    panelMoney: (n) => `$${Number(n).toFixed(2)}`, originLine, errEl, renderPicker() {}, refreshModelStatus() {}, refreshStartEnabled: () => log.push('refresh'),
+    panelMoney: (n) => `$${Number(n).toFixed(2)}`, originLine, errEl, renderPicker() {}, refreshModelStatus() {}, renderModelOptions() {}, refreshStartEnabled: () => log.push('refresh'),
   }, 'var resumeRun = null;', '__run: () => resumeRun');
-  return { api, dom, log, originLine, errEl };
+  return { api, dom, log, originLine, errEl, modelSelect };
 }
 
 test('card: applyResume titles the card RESUME <job> (run-N), fills every box from the signed job, caps from the resume plan, shows the fixed intro and the spent hint', () => {
@@ -114,7 +115,7 @@ test('lock: in resume mode EVERYTHING is locked — boxes, Model, Check type rad
   const dom = fakeDom();
   const radios = [{ disabled: false }, { disabled: false }, { disabled: false }];
   dom.document.querySelectorAll = () => radios;
-  const sandbox = (resumeRun, sessionLive) => build(['syncCardLock'], { document: dom.document },
+  const sandbox = (resumeRun, sessionLive) => build(['syncCardLock'], { document: dom.document, syncThinking() {} },
     `var sessionLive = ${sessionLive}; var reuseOn = false; var resumeRun = ${JSON.stringify(resumeRun)};
      var LOCKED_IDS = ["jf-name", "jf-job"];
      var OPEN_IDS = ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var CAP_IDS = ["jf-cap-money", "jf-cap-time"];`).syncCardLock;
@@ -135,17 +136,19 @@ test('lock: in resume mode EVERYTHING is locked — boxes, Model, Check type rad
   assert.deepEqual(radios.map((r) => r.disabled), [false, false, false]);
 });
 
-function signHarness(resumeRun, postResult) {
+// the page's own pickParts ("KEY|model"), extracted
+const pickParts = build(['pickParts']).pickParts;
+function signHarness(resumeRun, postResult, sel = { value: '' }, ok = true) {
   const dom = fakeDom();
   const posts = []; const log = [];
   dom.document.getElementById('jf-cap-money').value = '12';
   dom.document.getElementById('jf-cap-time').value = '90';
   const resumeSignBtn = dom.document.getElementById('chat-resume-sign');
-  const api = build(['signResume'], {
-    document: dom.document, resumeSignBtn,
+  const api = build(['resumeSignBlocked', 'signResume'], {
+    document: dom.document, resumeSignBtn, modelSelect: sel, keyOk: ok, pickParts,
     authorPost: (path, body) => { posts.push({ path, body }); return Promise.resolve(postResult); },
     resetCard: () => log.push('reset'), afterResumeRefresh: (...a) => log.push(['follow', ...a]),
-  }, `var resumeRun = ${JSON.stringify(resumeRun)};`);
+  }, `var resumeRun = ${JSON.stringify(resumeRun)};`, '__x: 0');
   return { api, dom, posts, log, resumeSignBtn };
 }
 
@@ -191,4 +194,102 @@ test('Job tab: read-only on every run — no input, button, select or textarea i
   for (const gone of ['openResumeOnJobTab', 'paintResumeMode', 'resumeMode', 'resume-job', 'resume-cap', 'details-cap-money-label', 'details-cap-time-label']) {
     assert.ok(!PAGE.includes(gone), `${gone} is deleted`);
   }
+});
+
+// Q2(b) (hamr 2026-10-11): an older spec that names no model opens the Resume card's Model box; the pick rides the POST
+test('Q2(b) page: a spec that names NO model opens the Model box and the resume POST carries model + provider (the Settings line picked)', async () => {
+  const m = mountCard();
+  m.api.applyResume({ runid: 'run1', prefill: { card: { ...CARD, model: 'jobstart-model' }, specNamesModel: false }, resume: DETAIL.resume, title: 't' });
+  assert.deepEqual(m.api.__run(), { runid: 'run1', noTime: false, pickModel: true });
+  assert.equal(m.modelSelect.value, '', 'the card does not preselect a model the spec never named');
+  // the lock rule: Model open (not disabled, not readOnly), the other boxes still locked
+  const dom = fakeDom();
+  const lock = build(['syncCardLock'], { document: dom.document, syncThinking() {} },
+    `var sessionLive = false; var reuseOn = false; var resumeRun = {runid: 'r', noTime: false, pickModel: true};
+     var LOCKED_IDS = ["jf-name", "jf-job"]; var OPEN_IDS = ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var CAP_IDS = ["jf-cap-money", "jf-cap-time"];`).syncCardLock;
+  lock();
+  assert.equal(dom.els['jf-model'].disabled, false);
+  assert.equal(dom.els['jf-model'].readOnly, false);
+  for (const id of ['jf-name', 'jf-job', 'jf-inputs', 'jf-dest']) assert.equal(dom.els[id].readOnly, true, `${id} still locked`);
+  const h = signHarness({ runid: 'r', noTime: false, pickModel: true }, { status: 200, body: { ok: true } }, { value: 'DEEPSEEK_API_KEY|deepseek-flash' });
+  await h.api.signResume();
+  assert.deepEqual(h.posts[0].body, { budgetUsd: '12', maxWallMin: '90', model: 'deepseek-flash', provider: 'DEEPSEEK_API_KEY' });
+  // no ticked line: Sign & resume is blocked, nothing is posted
+  const none = signHarness({ runid: 'r', noTime: false, pickModel: true }, { status: 200, body: { ok: true } }, { value: '' }, false);
+  await none.api.signResume();
+  assert.deepEqual(none.posts, []);
+  assert.match(fnSrc('refreshStartEnabled'), /syncResumeSign\(\)/);
+  assert.match(fnSrc('syncResumeSign'), /resumeSignBtn\.disabled = resumeSignBlocked\(\)/, 'refreshStartEnabled keeps the button in step with the Model pick');
+});
+
+test('Q2(b) page: a spec that names a model keeps the Model box locked, preselects it, and the POST sends neither model nor provider', async () => {
+  const m = mountCard();
+  m.api.applyResume({ runid: 'run1', prefill: { card: CARD, specNamesModel: true }, resume: DETAIL.resume, title: 't' });
+  assert.deepEqual(m.api.__run(), { runid: 'run1', noTime: false });
+  assert.equal(m.modelSelect.value, 'deepseek-flash');
+  const h = signHarness({ runid: 'r', noTime: false }, { status: 200, body: { ok: true } }, { value: 'DEEPSEEK_API_KEY|deepseek-flash' });
+  await h.api.signResume();
+  assert.deepEqual(h.posts[0].body, { budgetUsd: '12', maxWallMin: '90' });
+});
+
+// Ledger fix (hamr 2026-10-12): the Resume card's Model menu lists ONLY lines resolveWorker would accept for the old spec
+// (same shape; same endpoint when the spec names one) — the real renderModelOptions against a fake select.
+function menuHarness(resumeRun, lines, say = '') {
+  const modelSelect = { value: '', innerHTML: '', options: [] };
+  const api = build(['pickValue', 'renderModelOptions'], {
+    modelSelect, escapeXml: (x) => String(x), syncThinking() {}, resumeRun: undefined,
+  }, `var resumeRun = ${JSON.stringify(resumeRun)}; var modelLines = ${JSON.stringify(lines)}; var modelSay = ${JSON.stringify(say)}; var lineThinking = {};`);
+  return { api, modelSelect };
+}
+const LINES = [
+  { slot: 'ANTH_KEY', model: 'claude-x', label: 'ANTH_KEY · claude-x', shape: 'anthropic-api', endpoint: '' },
+  { slot: 'OAI_A', model: 'gpt-a', label: 'OAI_A · gpt-a', shape: 'openai-api', endpoint: 'https://api.one.test/v1' },
+  { slot: 'OAI_B', model: 'gpt-b', label: 'OAI_B · gpt-b', shape: 'openai-api', endpoint: 'https://api.two.test/v1' },
+];
+test('Resume Model menu: a pick-model card offers only lines of the old spec\'s shape (and endpoint when it names one); no match -> a sentence naming the shape, no value', () => {
+  const onlyShape = menuHarness({ runid: 'r', pickModel: true, worker: { provider: 'openai-api', endpoint: '', label: 'OpenAI-compatible' } }, LINES);
+  onlyShape.api.renderModelOptions();
+  assert.match(onlyShape.modelSelect.innerHTML, /OAI_A · gpt-a/);
+  assert.match(onlyShape.modelSelect.innerHTML, /OAI_B · gpt-b/);
+  assert.doesNotMatch(onlyShape.modelSelect.innerHTML, /ANTH_KEY/, 'a mismatched-shape line is not offered');
+  const pinned = menuHarness({ runid: 'r', pickModel: true, worker: { provider: 'openai-api', endpoint: 'https://api.two.test/v1', label: 'OpenAI-compatible' } }, LINES);
+  pinned.api.renderModelOptions();
+  assert.match(pinned.modelSelect.innerHTML, /OAI_B · gpt-b/);
+  assert.doesNotMatch(pinned.modelSelect.innerHTML, /OAI_A|ANTH_KEY/, 'a named endpoint pins the line');
+  const none = menuHarness({ runid: 'r', pickModel: true, worker: { provider: 'gemini-api', endpoint: '', label: 'Gemini' } }, LINES);
+  none.api.renderModelOptions();
+  assert.equal(none.modelSelect.innerHTML, '<option value="">Tick a Gemini model in Settings > Providers.</option>');
+  // not resuming (or a spec that names its model): every ticked line, as before
+  const all = menuHarness(null, LINES);
+  all.api.renderModelOptions();
+  assert.match(all.modelSelect.innerHTML, /ANTH_KEY · claude-x[\s\S]*OAI_A[\s\S]*OAI_B/);
+});
+
+// Ledger fix (hamr 2026-10-12): the key state is UNKNOWN (blocked) the moment the Model changes, and a late answer for a line
+// no longer selected is ignored. refreshModelStatus is the shared path: the New job card runs the same function.
+test('refreshModelStatus: blocks at once on a Model change, and a stale model-check answer for the old line cannot unblock the new one', async () => {
+  const pending = [];
+  const sel = { value: 'A_KEY|a' };
+  const el = { className: '', textContent: '' };
+  const api = build(['refreshModelStatus', 'pickParts', 'modelStatusLine'], {
+    modelSelect: sel, modelStatusEl: el, pickQuery: (v) => v, refreshStartEnabled() {}, reachStatusText: (x) => x,
+    authorGet: (u) => new Promise((resolve) => pending.push({ u, resolve })),
+  }, 'var keyOk = true;', '__key: () => keyOk');
+  api.refreshModelStatus();                    // line A asked
+  assert.equal(api.__key(), false, 'blocked the moment the check starts, not left at the previous line\'s state');
+  pending[0].resolve({ ok: true, keyStatus: 'found', envKey: 'A_KEY' });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(api.__key(), true, 'A: key found');
+  sel.value = 'B_KEY|b';
+  api.refreshModelStatus();                    // line B asked, A's state must not carry over
+  assert.equal(api.__key(), false, 'switching to B blocks until B\'s check returns');
+  sel.value = 'A_KEY|a';                       // and back: B's request is now stale
+  api.refreshModelStatus();
+  pending[1].resolve({ ok: true, keyStatus: 'found', envKey: 'B_KEY' });   // late answer for B while A is selected
+  await new Promise((r) => setImmediate(r));
+  assert.equal(api.__key(), false, 'a stale answer for a line no longer selected is ignored');
+  pending[2].resolve({ ok: true, keyStatus: 'missing', envKey: 'A_KEY' });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(api.__key(), false);
+  assert.match(el.textContent, /A_KEY not set/);
 });

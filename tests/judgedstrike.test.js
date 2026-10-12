@@ -9,7 +9,9 @@ import { join } from 'node:path';
 import { createTrend, FIX_STRIKE_LIMIT } from '../src/trend.js';
 import { closeGrade } from '../src/declaredclose.js';
 import { runStage } from '../src/kinds.js';
-import { JUDGE_MODEL } from '../src/judged.js';
+
+const JUDGE_MODEL = 'claude-haiku-4-5'; // a fixture id: the library keeps no pinned judge model (P8)
+
 
 // the signed close's stage order, from mv13ery3's resolved spec (stageIndex 6 and 7 below)
 const ORDER = ['changed-from-seed', 'typecheck-src-errors', 'typecheck-outside-src-errors', 'tests-executed-kept',

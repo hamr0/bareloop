@@ -13,6 +13,7 @@ import { validateJudgedArtifacts, validateCalibrationSet, CALIBRATION_SIZE } fro
 import { signJudgedArtifacts, PROPOSAL_TOOL_NAME } from '../src/cardauthor.js';
 import { plainReasons, plainKinds, proposalStopText, redsRecord, signingReasons, signingKinds, signingStopText, DECLARATION_CODES, calibrationSummary } from '../src/authorreadout.js';
 import { createSession } from '../src/panel/authorsession.js';
+import { ANTH_CFG } from './helpers.js';
 
 /** P7: the recorded live stages predate fromLine — tag every non-guard stage to job line 1 (the fixture card has one line) */
 const GUARD_NAMES = new Set(['changed-from-seed', 'no-suppressions']);
@@ -170,7 +171,7 @@ const git = (/** @type {string} */ dir, /** @type {string[]} */ args) => execFil
 test('PANEL: a proposal-invalid stop shows the plain message under the failed step and writes the full reds to draft-log.jsonl', async (t) => {
   const mk = () => { const d = mkdtempSync(join(tmpdir(), 'plainreasons-')); t.after(() => rmSync(d, { recursive: true, force: true })); return d; };
   const home = mk();
-  writeFileSync(join(home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 });
+  writeFileSync(join(home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 }); writeFileSync(join(home, 'config.json'), JSON.stringify(ANTH_CFG));
   const repo = mk();
   git(repo, ['init', '-q', '-b', 'main']);
   writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0' }));
@@ -307,7 +308,7 @@ test('SIGNING redsRecord: the signing sentence rides beside every structured fie
 test('PANEL: a signing-gates refusal shows the plain message and writes the full reds to draft-log.jsonl', async (t) => {
   const mk = () => { const d = mkdtempSync(join(tmpdir(), 'plainsign-')); t.after(() => rmSync(d, { recursive: true, force: true })); return d; };
   const home = mk();
-  writeFileSync(join(home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 });
+  writeFileSync(join(home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 }); writeFileSync(join(home, 'config.json'), JSON.stringify(ANTH_CFG));
   const repo = mk();
   git(repo, ['init', '-q', '-b', 'main']);
   writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0' }));
@@ -390,7 +391,7 @@ test('calibrationSummary: the real smv0o4mex8ddj result reads 8 of 10 and 3 of 5
 async function panelWithCalibration(calibration, t) {
   const mk = () => { const d = mkdtempSync(join(tmpdir(), 'plaincal-')); t.after(() => rmSync(d, { recursive: true, force: true })); return d; };
   const home = mk();
-  writeFileSync(join(home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 });
+  writeFileSync(join(home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 }); writeFileSync(join(home, 'config.json'), JSON.stringify(ANTH_CFG));
   const repo = mk();
   git(repo, ['init', '-q', '-b', 'main']);
   writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0' }));

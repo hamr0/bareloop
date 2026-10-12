@@ -19,6 +19,7 @@ import {
 } from '../src/panel/authorsession.js';
 import { classGuards } from '../src/authoring.js';
 import { keyRows } from '../src/providerrows.js';
+import { ANTH_CFG } from './helpers.js';
 import { appendRun } from '../src/runlist.js';
 import { jobSpecHash, workflowKey } from '../src/job.js';
 
@@ -40,8 +41,8 @@ function makeRepo() {
   git(dir, ['commit', '-q', '-m', 'seed']);
   return dir;
 }
-const keysHomeWith = (text = 'ANTHROPIC_API_KEY=fake-not-a-real-key\n') => { const d = tmp('p5-sf-home-'); writeFileSync(join(d, '.env'), text, { mode: 0o600 }); return d; };
-const ROWS = keyRows({ filled: ['ANTHROPIC_API_KEY'], config: {} });
+const keysHomeWith = (text = 'ANTHROPIC_API_KEY=fake-not-a-real-key\n') => { const d = tmp('p5-sf-home-'); writeFileSync(join(d, '.env'), text, { mode: 0o600 }); writeFileSync(join(d, 'config.json'), JSON.stringify(ANTH_CFG)); return d; };
+const ROWS = keyRows({ filled: ['ANTHROPIC_API_KEY'], config: ANTH_CFG });
 
 // `source` is a shorthand for Inputs line 1 (P7: the Source box is gone)
 const baseCard = ({ source = '/x', ...o } = {}) => ({
@@ -360,31 +361,36 @@ test('routes: GET start-from (guarded) prefills with locked/open; POST start REF
 const homeWithTwoRows = () => {
   const d = tmp('p5-sf-two-');
   writeFileSync(join(d, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\nDEEPSEEK_API_KEY=fake-not-a-real-key\nGW_KEY=fake-not-a-real-key\n', { mode: 0o600 });
-  writeFileSync(join(d, 'config.json'), JSON.stringify({ keys: TWO_ROWS }));
+  writeFileSync(join(d, 'config.json'), JSON.stringify({ keys: { ...ANTH_CFG.keys, ...TWO_ROWS }, models: ANTH_CFG.models }));
   return d;
 };
 const TWO_ROWS = {
-  DEEPSEEK_API_KEY: { name: 'deepseek-flash', shape: 'openai-api', baseUrl: 'https://api.deepseek.com/v1' },
-  GW_KEY: { name: 'gpt-x', shape: 'openai-api', baseUrl: 'https://gw.example/v1' },
+  DEEPSEEK_API_KEY: { name: 'deepseek-flash', priceInPerM: 1, priceOutPerM: 2, shape: 'openai-api', baseUrl: 'https://api.deepseek.com/v1' },
+  GW_KEY: { name: 'gpt-x', priceInPerM: 1, priceOutPerM: 2, shape: 'openai-api', baseUrl: 'https://gw.example/v1' },
 };
-const ROWS2 = keyRows({ filled: ['ANTHROPIC_API_KEY', 'DEEPSEEK_API_KEY', 'GW_KEY'], config: { keys: TWO_ROWS } });
+const ROWS2 = keyRows({ filled: ['ANTHROPIC_API_KEY', 'DEEPSEEK_API_KEY', 'GW_KEY'], config: { keys: { ...ANTH_CFG.keys, ...TWO_ROWS }, models: ANTH_CFG.models } });
 
 test('Model open: buildReuseSpec sets provider/baseUrl/model from the chosen Settings row the way authoring spells them — same workflowKey, NEW signature', async () => {
   const origin = await realSpec();
   const ds = buildReuseSpec(origin, { destination: 'src/', capUsd: 2, maxWallMs: 600000, model: 'gpt-x' }, ROWS2);
   assert.equal(ds.provider, 'openai-api');
   assert.equal(ds.baseUrl, 'https://gw.example/v1');
-  assert.equal(ds.model, 'gpt-x', 'a Name that is not the provider default tier is signed in');
+  assert.equal(ds.model, 'gpt-x', 'the chosen line\'s model is signed in');
   const dflt = buildReuseSpec(origin, { destination: 'src/', capUsd: 2, model: 'deepseek-flash' }, ROWS2);
   assert.equal(dflt.baseUrl, 'https://api.deepseek.com/v1');
-  assert.equal('model' in dflt, false, 'the provider\'s own default tier is left unsaid, as authoring does');
+  assert.equal(dflt.model, 'deepseek-flash', 'a job ALWAYS carries its own model — there is no provider default to leave unsaid');
   assert.equal(workflowKey(ds), workflowKey(origin), 'the model is not the workflow');
   assert.notEqual(jobSpecHash(ds), jobSpecHash(origin), 'the signature covers the model');
-  // back to the provider's own default tier: no model, no baseUrl, exactly as authoring spells a default
+  // back to the row with a blank address: no baseUrl, exactly as authoring spells it
   const back = buildReuseSpec(ds, { destination: 'src/', capUsd: 2, model: 'claude-sonnet-5' }, ROWS2);
   assert.equal(back.provider, 'anthropic-api');
   assert.equal('baseUrl' in back, false);
-  assert.equal('model' in back, false);
+  assert.equal(back.model, 'claude-sonnet-5');
+  // two keys ticking the same model id: the card's `provider` (the key's env name) picks the row
+  const twin = keyRows({ filled: ['A_KEY', 'B_KEY'], config: { keys: { A_KEY: { shape: 'openai-api', baseUrl: 'https://a.example/v1' }, B_KEY: { shape: 'openai-api', baseUrl: 'https://b.example/v1' } },
+    models: { A_KEY: [{ model: 'same', use: true, inPerM: 1, outPerM: 1 }], B_KEY: [{ model: 'same', use: true, inPerM: 1, outPerM: 1 }] } } });
+  assert.equal(buildReuseSpec(origin, { destination: 'src/', capUsd: 2, model: 'same', provider: 'B_KEY' }, twin).baseUrl, 'https://b.example/v1');
+  assert.equal(buildReuseSpec(origin, { destination: 'src/', capUsd: 2, model: 'same', provider: 'A_KEY' }, twin).baseUrl, 'https://a.example/v1');
   // no rows / no model: the worker is left as signed
   const same = buildReuseSpec(origin, { destination: 'src/', capUsd: 2 }, ROWS2);
   assert.equal(same.provider, origin.provider);
@@ -443,7 +449,7 @@ test('Model open, routes: the Model box is accepted on a reuse start (any other 
   assert.equal(smuggled.status, 400);
   const bad = await post('/api/author/start', { ...pre.card, model: 'not-a-row', startFrom: 'o1' });
   assert.equal(bad.status, 400);
-  assert.match((await bad.json()).error, /Model must be one of the Names/);
+  assert.match((await bad.json()).error, /^Tick a model in Settings > Providers\. Nothing was spent\.$|^Pick a model\. Nothing was spent\.$/);
   const ok = await (await post('/api/author/start', { ...pre.card, model: 'deepseek-flash', inputs: `repo: ${makeRepo()}`, startFrom: 'o1' })).json();
   assert.equal(ok.ok, true, JSON.stringify(ok));
   assert.equal(ok.reuse, true);

@@ -93,13 +93,32 @@ gitFix(repoBase, ['commit', '-q', '-m', 'seed']);
  * @param {{verdict?: string, out: string, budget?: string|null,
  *   provider?: string|null, baseUrl?: string|null, key?: string, lines: string[]}} o
  */
+/** P8: the Settings rows the interview's hand-off reads (nothing is built in). A key row per shape, each with one ticked, priced line. */
+const RUN_CFG = {
+  keys: { ANTHROPIC_API_KEY: { shape: 'anthropic-api' }, GW_KEY: { shape: 'openai-api', baseUrl: 'https://api.deepseek.com/v1' } },
+  models: {
+    ANTHROPIC_API_KEY: [{ model: 'claude-sonnet-5', use: true, inPerM: 3, outPerM: 15 }],
+    GW_KEY: [{ model: 'gw-model', use: true, inPerM: 1, outPerM: 2 }],
+  },
+};
+/** the model line each provider's rows tick */
+const MODEL_FOR = { 'anthropic-api': 'claude-sonnet-5', 'openai-api': 'gw-model' };
+/** a clean env whose scratch HOME carries {@link RUN_CFG}; key VALUES still come from the shell vars a test passes */
+const envWithRows = (over) => {
+  const e = cleanEnv(over);
+  const d = join(e.HOME, '.config', 'bareloop');
+  mkdirSync(d, { recursive: true });
+  writeFileSync(join(d, 'config.json'), JSON.stringify(RUN_CFG));
+  return e;
+};
+
 const interview = ({
   verdict = CLASS, out, budget = '2.50', provider = 'anthropic-api', baseUrl = null, key = '', lines, viaCli = false,
 }) => {
   const args = [
     '--verdict', verdict, '--out', out,
     ...(budget === null ? [] : ['--budget', budget]),
-    ...(provider === null ? [] : ['--provider', provider]),
+    ...(provider === null ? [] : ['--provider', provider, '--model', MODEL_FOR[provider] ?? 'claude-sonnet-5']),
     ...(baseUrl === null ? [] : ['--base-url', baseUrl]),
   ];
   // viaCli: enter through the shipped `bareloop` bin (`bareloop interview ...`) instead of the script adapter.
@@ -111,7 +130,7 @@ const interview = ({
     // env, so a provider-swap scenario's "not set" reading can never depend on
     // whatever happens to be exported in the machine actually running the test.
     env: {
-      ...cleanEnv(), ANTHROPIC_API_KEY: key, OPENAI_API_KEY: '', GEMINI_API_KEY: '',
+      ...envWithRows(), ANTHROPIC_API_KEY: key, OPENAI_API_KEY: '', GEMINI_API_KEY: '', GW_KEY: '',
     },
   });
   if (r.status === null) throw new Error(`run-interview.mjs never exited (${r.error?.code ?? r.signal ?? '?'}):\n${(r.stdout ?? '').slice(0, 400)}`);
@@ -133,10 +152,10 @@ const interview = ({
 const interviewInteractive = async ({
   verdict = CLASS, out, key = '', provider = 'anthropic-api', steps,
 }) => {
-  const args = ['--verdict', verdict, '--out', out, '--budget', '2.50', '--provider', provider];
+  const args = ['--verdict', verdict, '--out', out, '--budget', '2.50', '--provider', provider, '--model', MODEL_FOR[provider] ?? 'claude-sonnet-5'];
   const child = spawn(process.execPath, [SCRIPT, ...args], {
     env: {
-      ...cleanEnv(), ANTHROPIC_API_KEY: key, OPENAI_API_KEY: '', GEMINI_API_KEY: '',
+      ...envWithRows(), ANTHROPIC_API_KEY: key, OPENAI_API_KEY: '', GEMINI_API_KEY: '', GW_KEY: '',
     },
   });
   let buf = '';
@@ -668,15 +687,15 @@ test('--provider lands in the draft VERBATIM, and no anthropic-api literal is fo
   assert.equal(draft.provider, 'openai-api');
 });
 
-test('the offer\'s key name FOLLOWS the chosen provider, never a hardcoded ANTHROPIC_API_KEY', () => {
+test('the offer\'s key name is the Settings ROW\'s variable for the chosen provider and model — never a built-in vendor name', () => {
   const out = outDir();
   const r = interview({ provider: 'openai-api', out, lines: session(CLASS) });
   assert.equal(r.code, 0, r.out);
-  const envKey = resolveProvider('openai-api').envKey;
-  assert.equal(envKey, 'OPENAI_API_KEY');
-  assert.match(r.out, new RegExp(`${envKey} is not set in this shell`));
-  assert.match(r.out, new RegExp(`${envKey}=\\.\\.\\. node scripts/run-author\\.mjs`));
-  assert.doesNotMatch(r.out, /ANTHROPIC_API_KEY/, 'a different provider must never surface the old hardcoded key name');
+  assert.match(r.out, /GW_KEY is not set in this shell/);
+  assert.match(r.out, /GW_KEY=\.\.\. node scripts\/run-author\.mjs/);
+  assert.doesNotMatch(r.out, /ANTHROPIC_API_KEY|OPENAI_API_KEY/, 'a different row must never surface another row\'s or a vendor\'s key name');
+  // and --model lands in the draft, so the job carries its own model
+  assert.equal(JSON.parse(readFileSync(join(out, 'specdraft.json'), 'utf8')).model, 'gw-model');
 });
 
 test('the offer\'s printed run-author command is spelled the way the person entered: `bareloop author` via the CLI, the script via the adapter', () => {
@@ -747,14 +766,14 @@ test('--base-url carrying credentials refuses BEFORE anything prints, and the cr
   assert.equal(existsSync(out), false);
 });
 
-test('the hand-off names the endpoint and points the key hint at OPENAI_API_KEY — no separate endpoint-specific key variable', () => {
+test('the hand-off names the endpoint and points the key hint at the row\'s variable', () => {
   const out = outDir();
   const DEEPSEEK_URL = 'https://api.deepseek.com/v1';
   const r = interview({ provider: 'openai-api', baseUrl: DEEPSEEK_URL, out, lines: session(CLASS) });
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, new RegExp(`endpoint\\s+${DEEPSEEK_URL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
-  assert.match(r.out, /OPENAI_API_KEY/);
-  assert.match(r.out, /there is no separate endpoint-specific key variable/);
+  assert.match(r.out, /GW_KEY/);
+  assert.doesNotMatch(r.out, /OPENAI_API_KEY/);
 });
 
 test('--base-url never appears when the flag was never given — the hand-off carries no stale endpoint hint', () => {
@@ -855,11 +874,13 @@ test('a yes at the offer starts the PACKAGED door — bin/bareloop.mjs author wi
   /** @type {any[][]} */ const spawned = [];
   const sink = () => { let t = ''; return { write: (x) => { t += x; return true; }, text: () => t }; };
   const so = sink(); const se = sink();
+  const rowsEnv = envWithRows();
   const code = await interviewMain(
-    ['--verdict', CLASS, '--out', out, '--budget', '2.50', '--provider', 'anthropic-api'],
+    ['--verdict', CLASS, '--out', out, '--budget', '2.50', '--provider', 'anthropic-api', '--model', 'claude-sonnet-5'],
     {
       stdin: Readable.from([`${session(CLASS, { run: 'y' }).join('\n')}\n`]), stdout: so, stderr: se,
-      env: { ...cleanEnv(), ANTHROPIC_API_KEY: 'sk-test-not-a-real-key', OPENAI_API_KEY: '', GEMINI_API_KEY: '' },
+      env: { ...rowsEnv, ANTHROPIC_API_KEY: 'sk-test-not-a-real-key', OPENAI_API_KEY: '', GEMINI_API_KEY: '' },
+      keysHome: join(rowsEnv.HOME, '.config', 'bareloop'),
       spawnSync: (...a) => { spawned.push(a); return { status: 0 }; },
     },
   );

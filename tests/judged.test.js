@@ -35,7 +35,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
-  JUDGE_MODEL, JUDGE_MAX_TOKENS, JUDGE_RULES, JUDGE_RULE_IDS, LOCATE_AXES,
+  JUDGE_MAX_TOKENS, JUDGE_RULES, JUDGE_RULE_IDS, LOCATE_AXES,
   SAYS_WHAT_STOPWORDS, validateCard, validateFacts, locatePrompt, runLocate, decide, validateCalibrationSet, CALIBRATION_SIZE, expectedOf,
 } from '../src/judged.js';
 import { compareExpectation } from '../src/calibrate.js';
@@ -123,8 +123,11 @@ test('the rule table is OWNED and enumerated — a card can only name what we im
   assert.ok(Object.isFrozen(JUDGE_RULES), 'the rulebook is arbiter-owned — no caller edits it');
 });
 
-test('the judge model is PINNED and never agent-selectable', () => {
-  assert.equal(JUDGE_MODEL, 'claude-haiku-4-5');
+test('the library pins NO judge model (P8: a vendor model id is not exported) — only the output cap is a library number', async () => {
+  const judged = await import('../src/judged.js');
+  const root = await import('../src/index.js');
+  assert.equal('JUDGE_MODEL' in judged, false);
+  assert.equal('JUDGE_MODEL' in root, false, 'and it is not a public export either');
   assert.ok(Number.isFinite(JUDGE_MAX_TOKENS) && JUDGE_MAX_TOKENS > 0);
 });
 

@@ -510,7 +510,7 @@ test('exit code 4 is the CRASH, and nothing else in this runner claims it', () =
 // dies loud on a missing/unresolvable one. Extracted whole (`let providerEntry;`
 // through the `baseUrl` line that closes it) so the twin below runs the REAL
 // resolution, not a re-typed stand-in of it.
-const PROVIDER_BLOCK = /\n {2}const providerEntry = \(\(\) => \{\n[\s\S]*?\n {2}const baseUrl = typeof draft\?\.baseUrl === 'string' \? draft\.baseUrl : undefined;\n/.exec(SRC)?.[0];
+const PROVIDER_BLOCK = /\n {2}const providerEntry = \(\(\) => \{\n[\s\S]*?\n {2}const PROVIDER_NAME = [^\n]*\n/.exec(SRC)?.[0];
 const DRAFT_JUDGE = /const resolveDraftJudge = [\s\S]*?\n {2}const draftJudge = resolveDraftJudge\(draft\);/.exec(SRC)?.[0];
 const GATE_JUDGE = /const judge = judges\n[\s\S]*?: null;/.exec(SRC)?.[0];
 // the STAMP: the actual argument `authorCloseForJob` is called with — extracted
@@ -556,6 +556,8 @@ const judgeTwin = (draft) => new Promise((res, reject) => {
     'const die = (m) => { throw new Error(m); };',
     `const draft = ${JSON.stringify(draft)};`,
     /** @type {string} */ (PROVIDER_BLOCK),
+    // P8: the worker is the draft's own Settings line — the model id is the draft's (a draft carries its own model)
+    'const MODEL = draft.model;',
     /** @type {string} */ (DRAFT_JUDGE),
     'const judges = true;',
     "const spec = { ...draft, verdictType: 'green', closeDecl: {} };", // the `assembleSpec` fold: provider/model/judge carried through unchanged
@@ -575,16 +577,16 @@ const judgeTwin = (draft) => new Promise((res, reject) => {
 });
 
 test('a non-anthropic worker: the compose-time stamp and the calibration gate agree with EACH OTHER and with the job\'s real worker', async () => {
-  const draft = { provider: 'openai-api' }; // no model, no judge override — DeepSeek via openai-api, item 30.7's secondary provider
+  const draft = { provider: 'openai-api', model: 'some-model' }; // no judge override — a job carries its own model (P8: no provider default exists)
   const { stamp, gate } = await judgeTwin(draft);
-  // the job's own worker resolves to deepseek-flash (openai-api's only tier) —
-  // NOT anthropic's sonnet, which is what the old hardcoded PROVIDER_NAME/MODEL
+  // the job's own worker is the draft's own model on the draft's own provider —
+  // NOT a fixed vendor's model, which is what the old hardcoded PROVIDER_NAME/MODEL
   // stamped regardless of the draft's own provider.
-  assert.deepEqual(stamp, { provider: 'openai-api', model: 'deepseek-flash' });
+  assert.deepEqual(stamp, { provider: 'openai-api', model: 'some-model' });
   assert.deepEqual(gate, stamp, 'the calibration gate must certify the SAME identity the stamp promised — a mismatch is exactly the recalibration refusal this fixes');
 });
 
-test('an explicit draft model wins over the provider\'s own tier default, at both sites', async () => {
+test('the draft\'s model is what both sites stamp (there is no provider default to fall back to)', async () => {
   const draft = { provider: 'openai-api', model: 'deepseek-reasoner' };
   const { stamp, gate } = await judgeTwin(draft);
   assert.deepEqual(stamp, { provider: 'openai-api', model: 'deepseek-reasoner' });
@@ -592,26 +594,21 @@ test('an explicit draft model wins over the provider\'s own tier default, at bot
 });
 
 test('a signed judge override wins at both sites, regardless of the worker', async () => {
-  const draft = { provider: 'anthropic-api', judge: { provider: 'gemini-api', model: 'gemini-2.5-flash' } };
+  const draft = { provider: 'anthropic-api', model: 'm-worker', judge: { provider: 'gemini-api', model: 'a-judge-model' } };
   const { stamp, gate } = await judgeTwin(draft);
-  assert.deepEqual(stamp, { provider: 'gemini-api', model: 'gemini-2.5-flash' });
+  assert.deepEqual(stamp, { provider: 'gemini-api', model: 'a-judge-model' });
   assert.deepEqual(gate, stamp);
 });
 
 test('the resolved identity matches what scripts/run-u.mjs itself resolves at run time — not just self-agreement', async () => {
-  // Mirrors run-u.mjs:300-311's worker-model resolution and its 1144 judge
-  // resolution directly (imported live, not re-typed): spec.provider's own
-  // provider-table entry, spec.model if named else that provider's tiers.sonnet,
-  // then resolveJudge over spec.judge. If the twin above agreed with itself but
-  // NOT with this, the close would still be born mismatched from the runner
-  // that actually grades it.
-  const { resolveProvider } = await import('../src/providers.js');
+  // Mirrors the run engine's worker-model resolution and its judge resolution directly (imported live, not re-typed): the
+  // spec's own model, then resolveJudge over spec.judge. If the twin above agreed with itself but NOT with this, the close would
+  // still be born mismatched from the runner that actually grades it.
   const { resolveWorkerModel } = await import('../src/job.js');
   const { resolveJudge } = await import('../src/judged.js');
-  const draft = { provider: 'openai-api' };
-  const providerEntry = resolveProvider(draft.provider);
-  const { model } = resolveWorkerModel({ specModel: draft.model, flagModel: undefined, defaultModel: providerEntry.tiers.sonnet });
-  const expected = resolveJudge({ specJudge: draft.judge, workerProvider: draft.provider, workerModel: model });
+  const draft = { provider: 'openai-api', model: 'some-model' };
+  const { model } = resolveWorkerModel({ specModel: draft.model, flagModel: undefined });
+  const expected = resolveJudge({ specJudge: undefined, workerProvider: draft.provider, workerModel: model });
 
   const { stamp, gate } = await judgeTwin(draft);
   assert.deepEqual(stamp, expected);
@@ -658,7 +655,7 @@ const AUTHOR_PROVIDER_LINE = /const \{ provider \} = buildRunnerProviders\(\{[\s
 test('the judge-provider construction statement is still BOUNDED, and the author provider line is untouched', () => {
   assert.ok(JUDGE_PROVIDER_ARG, 'the judgeProvider construction moved or was reworded — this guard no longer reads the code it guards');
   assert.match(JUDGE_PROVIDER_ARG, /buildRunnerProviders\(\{/, 'the judge provider must be routed through the one owner, not a hand-rolled makeProvider call');
-  assert.match(JUDGE_PROVIDER_ARG, /judgeBaseUrl: judge\.provider === PROVIDER_NAME \? baseUrl : undefined/,
+  assert.match(JUDGE_PROVIDER_ARG, /judgeBaseUrl: judge\.provider === PROVIDER_NAME \? baseUrl : /,
     'the same-provider conditional (mirroring scripts/run-u.mjs) is gone from the judge provider construction');
   assert.ok(AUTHOR_PROVIDER_LINE, 'the author provider construction line moved or was reworded — F190 must not have touched this call site');
   assert.match(AUTHOR_PROVIDER_LINE, /buildRunnerProviders\(\{/, 'the author provider must also be routed through the one owner (F190, 2026-09-21)');
@@ -674,9 +671,8 @@ test('the judge-provider construction statement is still BOUNDED, and the author
  * `judgeKeyFor`/`apiKey` are stubbed (fixed fake strings, deliberately
  * DIFFERENT from each other) because key RESOLUTION is F181's concern, not
  * this one — only the endpoint the constructed client ends up holding is at
- * issue. `providerEntry`/`MODEL` are resolved the same way the real script
- * resolves them (`resolveProvider(PROVIDER_NAME)`, `.tiers.sonnet`) — never a
- * hand-picked pair that could drift from what `run-author.mjs` itself does.
+ * issue. `providerEntry` is resolved the same way the real script resolves it;
+ * the author's MODEL is a fixed fake id (the real one is the Settings line's).
  * @param {{judgeProvider: string, judgeModel: string, providerName: string, authorBaseUrl: string|undefined}} args
  */
 const providerTwin = ({
@@ -691,7 +687,10 @@ const providerTwin = ({
     `const PROVIDER_NAME = ${JSON.stringify(providerName)};`,
     "const apiKey = 'fake-author-key';",
     'const providerEntry = resolveProvider(PROVIDER_NAME);',
-    'const MODEL = providerEntry.tiers.sonnet;',
+    "const MODEL = 'author-model';",
+    // the Settings row the worker line is on (P8): no row for the judge's OTHER provider here, so it keeps its own default host
+    'const AUTHOR_ROW = { legacyMaxTokens: false };',
+    'const judgeRowOf = () => null;',
     `const baseUrl = ${authorBaseUrl === undefined ? 'undefined' : JSON.stringify(authorBaseUrl)};`,
     /** @type {string} */ (JUDGE_PROVIDER_ARG),
     'console.log(JSON.stringify({ baseUrl: judgeProvider.baseUrl }));',
@@ -856,15 +855,15 @@ test('a --source prepared from a NON-repo (a plain folder), with a valid provide
   // a REAL provider is needed to reach the key check at all — the old fixture's
   // empty draft ('{}') died even earlier (unknown provider) once the plain-folder
   // stop moved past provider resolution
-  writeFileSync(draftFile, JSON.stringify({ provider: 'anthropic-api' }));
+  writeFileSync(draftFile, JSON.stringify({ provider: 'anthropic-api', model: 'claude-sonnet-5' }));
   const out = join(dir, 'out');
   const r = spawnSync(process.execPath, [
     SCRIPT, '--source', prep.tree, '--answers', answersFile, '--draft', draftFile,
     '--verdict', 'green', '--out', out,
-  ], { encoding: 'utf8', timeout: 30_000, env: { ...cleanEnv(), ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' } });
+  ], { encoding: 'utf8', timeout: 30_000, env: { ...cleanEnv({}, { config: true }), ANTHROPIC_API_KEY: '', OPENAI_API_KEY: '', GEMINI_API_KEY: '' } });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   assert.equal(r.status, 2, text);
-  assert.match(text, /ANTHROPIC_API_KEY not set/);
+  assert.match(text, /claude-sonnet-5 is not set up/, 'no key value anywhere = no row serves the model line');
   assert.doesNotMatch(text, /bareloop has no checks for this kind/, 'the old early stop must not fire before the key check any more');
   // no spine FILE at all — `appendFileSync` inside `emit` creates it lazily on
   // its first write, and `author-start` (the first emit in this file) fires
@@ -886,7 +885,7 @@ test('a key with an embedded newline refuses at $0 — before any spine record e
   const answersFile = join(dir, 'answers.json');
   const draftFile = join(dir, 'specdraft.json');
   writeFileSync(answersFile, '{}');
-  writeFileSync(draftFile, JSON.stringify({ provider: 'anthropic-api' }));
+  writeFileSync(draftFile, JSON.stringify({ provider: 'anthropic-api', model: 'claude-sonnet-5' }));
   const out = join(dir, 'out');
   const r = spawnSync(process.execPath, [
     SCRIPT, '--source', prep.tree, '--answers', answersFile, '--draft', draftFile,
@@ -895,7 +894,7 @@ test('a key with an embedded newline refuses at $0 — before any spine record e
     encoding: 'utf8',
     timeout: 30_000,
     env: {
-      ...cleanEnv(), ANTHROPIC_API_KEY: 'sk-test\nmeta', OPENAI_API_KEY: '', GEMINI_API_KEY: '',
+      ...cleanEnv({}, { config: true }), ANTHROPIC_API_KEY: 'sk-test\nmeta', OPENAI_API_KEY: '', GEMINI_API_KEY: '',
     },
   });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
@@ -920,7 +919,7 @@ test('F191: a plain-folder source stops immediately at $0 — author-start then 
   const answersFile = join(dir, 'answers.json');
   const draftFile = join(dir, 'specdraft.json');
   writeFileSync(answersFile, '{}');
-  writeFileSync(draftFile, JSON.stringify({ provider: 'anthropic-api' }));
+  writeFileSync(draftFile, JSON.stringify({ provider: 'anthropic-api', model: 'claude-sonnet-5' }));
   const out = join(dir, 'out');
   const r = spawnSync(process.execPath, [
     SCRIPT, '--source', prep.tree, '--answers', answersFile, '--draft', draftFile,
@@ -929,7 +928,7 @@ test('F191: a plain-folder source stops immediately at $0 — author-start then 
     encoding: 'utf8',
     timeout: 30_000,
     env: {
-      ...cleanEnv(), ANTHROPIC_API_KEY: 'sk-fake-never-used', OPENAI_API_KEY: '', GEMINI_API_KEY: '',
+      ...cleanEnv({}, { config: true }), ANTHROPIC_API_KEY: 'sk-fake-never-used', OPENAI_API_KEY: '', GEMINI_API_KEY: '',
     },
   });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
@@ -960,7 +959,7 @@ test('C1: a single-FILE source gets the file wording on the CLI (the one message
   const answersFile = join(dir, 'answers.json');
   const draftFile = join(dir, 'specdraft.json');
   writeFileSync(answersFile, '{}');
-  writeFileSync(draftFile, JSON.stringify({ provider: 'anthropic-api' }));
+  writeFileSync(draftFile, JSON.stringify({ provider: 'anthropic-api', model: 'claude-sonnet-5' }));
   const out = join(dir, 'out');
   const r = spawnSync(process.execPath, [
     SCRIPT, '--source', prep.tree, '--answers', answersFile, '--draft', draftFile,
@@ -969,7 +968,7 @@ test('C1: a single-FILE source gets the file wording on the CLI (the one message
     encoding: 'utf8',
     timeout: 30_000,
     env: {
-      ...cleanEnv(), ANTHROPIC_API_KEY: 'sk-fake-never-used', OPENAI_API_KEY: '', GEMINI_API_KEY: '',
+      ...cleanEnv({}, { config: true }), ANTHROPIC_API_KEY: 'sk-fake-never-used', OPENAI_API_KEY: '', GEMINI_API_KEY: '',
     },
   });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
@@ -995,7 +994,7 @@ test('F191: a real throw inside the plain-folder branch (authored.json pre-exist
   const answersFile = join(dir, 'answers.json');
   const draftFile = join(dir, 'specdraft.json');
   writeFileSync(answersFile, '{}');
-  writeFileSync(draftFile, JSON.stringify({ provider: 'anthropic-api' }));
+  writeFileSync(draftFile, JSON.stringify({ provider: 'anthropic-api', model: 'claude-sonnet-5' }));
   const out = join(dir, 'out');
   mkdirSync(join(out, 'authored.json'), { recursive: true }); // the booby trap: a directory, not a file
   const r = spawnSync(process.execPath, [
@@ -1005,7 +1004,7 @@ test('F191: a real throw inside the plain-folder branch (authored.json pre-exist
     encoding: 'utf8',
     timeout: 30_000,
     env: {
-      ...cleanEnv(), ANTHROPIC_API_KEY: 'sk-fake-never-used', OPENAI_API_KEY: '', GEMINI_API_KEY: '',
+      ...cleanEnv({}, { config: true }), ANTHROPIC_API_KEY: 'sk-fake-never-used', OPENAI_API_KEY: '', GEMINI_API_KEY: '',
     },
   });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;

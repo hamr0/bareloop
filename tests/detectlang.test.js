@@ -290,7 +290,7 @@ test('run-author.mjs reaches the API-key check from a prepared --source alone â€
   const draft = join(base, 'draft-e2e.json');
   writeFileSync(answers, JSON.stringify({ 1: 'a', 2: 'b', 3: 'c', 4: 'd', 5: 'e' }));
   writeFileSync(draft, JSON.stringify({
-    schema: 'job-v1', job: 'e2e-job', description: 'e2e', provider: 'anthropic-api',
+    schema: 'job-v1', job: 'e2e-job', description: 'e2e', provider: 'anthropic-api', model: 'claude-sonnet-5',
     cadence: { unit: 'day', every: 1 }, budgetUsd: 1, writeScope: ['src/**'], goal: 'g',
     tools: ['read'], escalation: { mode: 'decision-ready' },
   }));
@@ -303,10 +303,10 @@ test('run-author.mjs reaches the API-key check from a prepared --source alone â€
     env: { ...cleanEnv(), ANTHROPIC_API_KEY: '' },
   });
   const text = `${r.stdout ?? ''}${r.stderr ?? ''}`;
-  // dies at the (pre-existing) missing-key check â€” proof it got THAT far,
+  // dies at the worker check (no Settings line serves the model) â€” proof it got THAT far,
   // meaning language resolution from --source succeeded without --lang
   assert.notEqual(r.status, 0);
-  assert.match(text, /ANTHROPIC_API_KEY not set/, text);
+  assert.match(text, /claude-sonnet-5 is not set up/, text);
   assert.ok(!/--lang was given|is no longer a flag/.test(text), 'must not have died on the --lang path');
 });
 

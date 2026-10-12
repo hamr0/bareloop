@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createSession } from '../src/panel/authorsession.js';
+import { ANTH_CFG } from './helpers.js';
 
 /** @type {string[]} */
 const tmpDirs = [];
@@ -33,7 +34,7 @@ function makeRepo() {
 
 function keysHome() {
   const d = tmp('pw-home-');
-  writeFileSync(join(d, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 });
+  writeFileSync(join(d, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 }); writeFileSync(join(d, 'config.json'), JSON.stringify(ANTH_CFG));
   return d;
 }
 

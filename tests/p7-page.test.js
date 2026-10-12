@@ -119,10 +119,14 @@ test('fillCard is the ONE prefill (re-attach, Reuse, Edit in chat, Resume): the 
   const vals = {};
   const calls = [];
   // eslint-disable-next-line no-new-func
-  const fillCard = new Function('setVal', 'fitCardBoxes', `${fnSrc('fillCard')}\nreturn fillCard;`)((id, v) => { vals[id] = v; }, () => calls.push('fit'));
+  const ticks = [];
+  const fillCard = new Function('setVal', 'fitCardBoxes', 'setThinkingTick', `${fnSrc('fillCard')}\nreturn fillCard;`)((id, v) => { vals[id] = v; }, () => calls.push('fit'), (on) => ticks.push(on));
   fillCard({ jobName: 'j', jobText: 'a\n~ b', inputs: 'repo: /r', destination: 'src/', capUsd: 2, maxWallMs: 600000 });
   assert.deepEqual(vals, { 'jf-name': 'j', 'jf-job': 'a\n~ b', 'jf-inputs': 'repo: /r', 'jf-dest': 'src/', 'jf-cap-money': 2, 'jf-cap-time': 10 });
   assert.deepEqual(calls, ['fit']);
+  assert.deepEqual(ticks, [false], 'the Thinking on tick is restored from the card (unticked when the card has none)');
+  fillCard({ jobName: 'j', thinking: true });
+  assert.deepEqual(ticks, [false, true], 'a ticked card re-ticks the box');
   for (const old of ['jf-goal', 'jf-source', 'jf-success', 'jf-guardrails', 'jf-judge', 'details-goal', 'details-success', 'details-guardrails', 'details-source']) {
     assert.ok(!PAGE.includes(old), `${old} is gone from the page`);
   }

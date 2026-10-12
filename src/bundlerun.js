@@ -204,13 +204,16 @@ export async function bundleMain(args, {
       workdir: worktree,
       seed,
       approve: approveHash,
+      // an exported bundle follows the run-u rule: a spec that names no model takes `--model <id>` (+ `--provider <KEY>` when two keys tick it)
+      ...(typeof flags.model === 'string' ? { model: flags.model } : {}),
+      ...(typeof flags.provider === 'string' ? { providerKey: flags.provider } : {}),
       deps: { ...deps, env, out, err, ...(keysHome === undefined ? {} : { keysHome }) },
       bundle: {
         runid,
         runDir,
         // the bare re-invocation prefix; the leg's OWN tightened ceilings (only those the person passed) ride as
         // DATA so the engine, which knows the halt kind and the spend, spells the printed line. Text only.
-        invoke: `bareloop run ${bundleDirArg} --repo ${repo}`,
+        invoke: `bareloop run ${bundleDirArg} --repo ${repo}${typeof flags.model === 'string' ? ` --model ${flags.model}` : ''}${typeof flags.provider === 'string' ? ` --provider ${flags.provider}` : ''}`,
         tightened: {
           ...(envelope.budgetUsd === undefined ? {} : { budgetUsd: envelope.budgetUsd }),
           ...(flags.wall === undefined ? {} : { wallMin: Number(flags.wall) }),

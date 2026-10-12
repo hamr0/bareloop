@@ -17,6 +17,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { main } from '../src/cli.js';
 import { main as userUMain } from '../src/userrun.js';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after } from 'node:test';
+
+/** a scratch keys home (P8: nothing is built in) — one key row on the Anthropic shape with ONE ticked, priced line for the model the aurora-spawner spec signs, the key line filled with a fake */
+const HOME = mkdtempSync(join(tmpdir(), 'cli-run-u-home-'));
+after(() => rmSync(HOME, { recursive: true, force: true }));
+writeFileSync(join(HOME, '.env'), 'MY_KEY=fake-not-a-real-key\n', { mode: 0o600 });
+writeFileSync(join(HOME, 'config.json'), JSON.stringify({ keys: { MY_KEY: { shape: 'anthropic-api' } }, models: { MY_KEY: [{ model: 'claude-sonnet-5', use: true, inPerM: 3, outPerM: 15 }] } }));
 
 /** a fresh in-memory stdout/stderr sink */
 function sink() {
@@ -57,13 +67,26 @@ test('bareloop run-u: an unknown --job value refuses by name, exit 2', async () 
   assert.match(err.text(), /unknown --job "not-a-real-job" — one of: /);
 });
 
-test('bareloop run-u: a misused --model value refuses at $0, before any key/provider check', async () => {
+test('bareloop run-u: a --model naming a DIFFERENT model than the signed spec refuses at $0 (the spec wins); there are no tier aliases', async () => {
+  for (const flag of ['bogus-tier', 'sonnet', 'haiku']) {
+    const out = sink(); const err = sink();
+    // eslint-disable-next-line no-await-in-loop
+    const rc = await main(['run-u', '--job', 'aurora-spawner', '--model', flag], {
+      stdout: out, stderr: err, env: NO_KEYS, cwd: process.cwd(), keysHome: HOME,
+    });
+    assert.equal(rc, 2, flag);
+    assert.match(err.text(), new RegExp(`spec names model "claude-sonnet-5" but --model resolved to "${flag}" — the signed spec wins`), flag);
+  }
+});
+
+test('bareloop run-u: a signed model no ticked Settings line carries refuses at $0, with the one sentence', async () => {
   const out = sink(); const err = sink();
-  const rc = await main(['run-u', '--job', 'aurora-spawner', '--model', 'bogus-tier'], {
-    stdout: out, stderr: err, env: NO_KEYS, cwd: process.cwd(),
-  });
+  const empty = mkdtempSync(join(tmpdir(), 'cli-run-u-empty-'));
+  after(() => rmSync(empty, { recursive: true, force: true }));
+  writeFileSync(join(empty, '.env'), 'MY_KEY=fake-not-a-real-key\n', { mode: 0o600 });
+  const rc = await main(['run-u', '--job', 'aurora-spawner'], { stdout: out, stderr: err, env: NO_KEYS, cwd: process.cwd(), keysHome: empty });
   assert.equal(rc, 2);
-  assert.match(err.text(), /unknown --model "bogus-tier" — one of: sonnet, haiku/);
+  assert.match(err.text(), /claude-sonnet-5 is not set up: put its key in your keys file and type its Base URL in Settings > Providers\. Nothing was spent\./);
 });
 
 // ---------------------------------------------------------------------------
@@ -103,7 +126,7 @@ test('bareloop run-u: --draft-spent-usd Infinity refuses at $0 (a real number th
 test('bareloop run-u: a real, valid --draft-spent-usd (0.81) is accepted — the preview still reaches exit 0', async () => {
   const out = sink(); const err = sink();
   const rc = await main(['run-u', '--job', 'aurora-spawner', '--draft-spent-usd', '0.81'], {
-    stdout: out, stderr: err, env: NO_KEYS, cwd: process.cwd(),
+    stdout: out, stderr: err, env: NO_KEYS, cwd: process.cwd(), keysHome: HOME,
   });
   assert.equal(rc, 0, err.text());
 });
@@ -115,7 +138,7 @@ test('bareloop run-u: a real, valid --draft-spent-usd (0.81) is accepted — the
 test('bareloop run-u: --draft-spend-incomplete alongside a real --draft-spent-usd is accepted — the preview still reaches exit 0', async () => {
   const out = sink(); const err = sink();
   const rc = await main(['run-u', '--job', 'aurora-spawner', '--draft-spent-usd', '0.81', '--draft-spend-incomplete'], {
-    stdout: out, stderr: err, env: NO_KEYS, cwd: process.cwd(),
+    stdout: out, stderr: err, env: NO_KEYS, cwd: process.cwd(), keysHome: HOME,
   });
   assert.equal(rc, 0, err.text());
 });
@@ -124,22 +147,23 @@ test('bareloop run-u: --draft-spend-incomplete alongside a real --draft-spent-us
 // the real preview path, still $0: no key -> print hints, exit 0, no spend
 // ---------------------------------------------------------------------------
 
-test('bareloop run-u: a real job with no key prints its preview and exits 0, spending nothing', async () => {
+test('bareloop run-u: a real job on a ticked Settings line prints its preview and exits 0, spending nothing', async () => {
   const out = sink(); const err = sink();
-  const rc = await main(['run-u', '--job', 'aurora-spawner'], { stdout: out, stderr: err, env: NO_KEYS, cwd: process.cwd() });
+  const rc = await main(['run-u', '--job', 'aurora-spawner'], { stdout: out, stderr: err, env: NO_KEYS, cwd: process.cwd(), keysHome: HOME });
   assert.equal(rc, 0, err.text());
-  assert.match(out.text() + err.text(), /ANTHROPIC_API_KEY/, 'the preview names the key this job\'s provider needs');
+  assert.match(out.text() + err.text(), /MY_KEY/, 'the preview names the key variable of the row the model line is on');
+  assert.doesNotMatch(out.text() + err.text(), /ANTHROPIC_API_KEY/, 'no built-in key name');
 });
 
 test('bareloop run-u: the printed re-invocation names `bareloop run-u`, never a script the package does not ship; the script adapter keeps its own spelling', async () => {
   const out = sink(); const err = sink();
-  const rc = await main(['run-u', '--job', 'aurora-spawner'], { stdout: out, stderr: err, env: NO_KEYS, cwd: process.cwd() });
+  const rc = await main(['run-u', '--job', 'aurora-spawner'], { stdout: out, stderr: err, env: NO_KEYS, cwd: process.cwd(), keysHome: HOME });
   assert.equal(rc, 0, err.text());
-  assert.match(out.text(), /ANTHROPIC_API_KEY=\.\.\. bareloop run-u --job aurora-spawner --approve [0-9a-f]{64}/);
+  assert.match(out.text(), /MY_KEY=\.\.\. bareloop run-u --job aurora-spawner --approve [0-9a-f]{64}/);
   assert.doesNotMatch(out.text() + err.text(), /scripts\/run-u\.mjs/);
 
   const direct = []; // entered as scripts/run-u.mjs does: no invokedAs
-  await userUMain(['--job', 'aurora-spawner'], { env: NO_KEYS, out: (/** @type {string} */ s) => direct.push(s), err: () => {} });
+  await userUMain(['--job', 'aurora-spawner'], { env: NO_KEYS, keysHome: HOME, out: (/** @type {string} */ s) => direct.push(s), err: () => {} });
   assert.match(direct.join('\n'), /node scripts\/run-u\.mjs --job aurora-spawner --approve /);
 });
 
@@ -161,11 +185,12 @@ test('bareloop run-u: dispatch through src/cli.js matches src/userrun.js:main ca
   const argv = ['--job', 'aurora-spawner', '--model', 'bogus-tier'];
 
   const cliOut = sink(); const cliErr = sink();
-  const cliRc = await main(['run-u', ...argv], { stdout: cliOut, stderr: cliErr, env: NO_KEYS, cwd: process.cwd() });
+  const cliRc = await main(['run-u', ...argv], { stdout: cliOut, stderr: cliErr, env: NO_KEYS, cwd: process.cwd(), keysHome: HOME });
 
   const directOut = []; const directErr = [];
   const directRc = await userUMain(argv, {
     env: NO_KEYS,
+    keysHome: HOME,
     out: (/** @type {string} */ s) => directOut.push(s),
     err: (/** @type {string} */ s) => directErr.push(s),
   });

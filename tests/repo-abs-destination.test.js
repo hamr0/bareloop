@@ -13,6 +13,7 @@ import { getStartFromImport } from '../src/panel/server.js';
 import { importsPath, importId } from '../src/panel/importroutes.js';
 import { createSession, buildReuseSpec, repoDestinationProblem } from '../src/panel/authorsession.js';
 import { exportFixtureBundle } from './bundle-fixture.js';
+import { ANTH_CFG } from './helpers.js';
 
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const MSG = 'Destination must be a path inside the repo, like src/digest.js';
@@ -33,7 +34,7 @@ function makeRepo() {
   git(dir, ['commit', '-q', '-m', 'seed']);
   return dir;
 }
-const home = () => { const d = tmp('absdest-home-'); writeFileSync(join(d, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 }); return d; };
+const home = () => { const d = tmp('absdest-home-'); writeFileSync(join(d, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 }); writeFileSync(join(d, 'config.json'), JSON.stringify(ANTH_CFG)); return d; };
 async function until(fn, ms = 8000) { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await new Promise((r) => { setTimeout(r, 10); }); } return false; }
 const settled = (s) => ['prepared', 'refused', 'error', 'confirm', 'drafting'].includes(s.state.phase) || s.state.pendingAsk !== null;
 

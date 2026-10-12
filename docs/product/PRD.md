@@ -1377,3 +1377,24 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 - Supersedes, for the panel: "no price → run as estimated" (a ticked model is always priced). Key values never reach the page.
 - Work order after the job-block release: (1) providers list, (2) file readers (.docx, .xlsx), (3) rubric on plain folders (+ flight search); the judge false-red classes from the JSDoc rubric run stay parked until (3).
 - The spec for (1) is written and shown to hamr before any build.
+
+### Settings > Providers from fwdloop, Thinking on tick, no hardcoded vendors (v1.92 — 2026-10-11)
+
+- Built per `docs/product/PANEL-BUILD.md` "Addendum 2026-10-11 — P8" (all open questions ruled by hamr 2026-10-11): the Providers page is rewritten from fwdloop's layout; config holds per-key `{shape, baseUrl, legacyMaxTokens}` and per-key model lines `{model, use, inPerM, outPerM}`; Balance is removed.
+- A job carries its own model; a run works on a ticked, priced Settings line; a key is its row's own variable name; an older spec names its line at run start with `--model` (hash untouched).
+- "Thinking on" is a signed per-job tick (drafting and the rubric judge; never the worker); bare-agent owns what each model can switch.
+- Code names no provider, model, address or price (grep test with a reasoned allow-list); `JUDGE_MODEL` is no longer exported.
+
+
+### Stay public; work order; the CLI runs exported jobs only (v1.93 — 2026-10-12)
+
+- bareloop and fwdloop stay PUBLIC (Apache-2.0, npm). hamr: "i think i will keep it public".
+- Work order (supersedes the 2026-10-11 "Work order after the job-block release" line above, which stays as written): (1) ship P8 Settings > Providers (`feat/settings-providers`, `docs/product/PANEL-BUILD.md` P8); (2) rubric on plain folders + flight search: first an interview with hamr to RULE the R0–R12 rubric job shape (still DRAFT, above), then the barebrowse search step (H6: read, type, click; never submits a payment or booking), then a flight-search job run green on DeepSeek; file readers (.docx/.xlsx) are built only when a job needs them; (3) Export in the UI + the CLI shrink.
+- The CLI is a runner for EXPORTED jobs, not a second door. hamr: "cli is meant to run an exported job, you create in ui, export it … and then you can run it without ui, can add more time/money if it stops and look into logs, further than that you import it, meant to run repeatable shape jobs on cli where you can only change inputs/destination, cap and time."
+  - CLI = panel launcher + run a bundle (change only inputs/destination, $ cap, time cap) + resume with more money/time + logs. No CLI/UI parity; anything else = import into the UI.
+  - CLI drafting (interview / author / run-author) is removed in part (3).
+  - PROPOSED, not ruled: the bench moves out of the shipped package to `scripts/` (to be confirmed in part (3)'s interview).
+  - UI Export is MISSING today (panel Import is read-only; export is CLI-only) and is built in part (3). It mirrors the Reuse workflow card (the same four open boxes).
+  - A bundle names its model; the CLI finds the key through the Settings rows; a missing row stops at $0 in plain words.
+- [ ] Open: the Export UI shape (interview before spec). [ ] Open: the bench move.
+- Rulings: memory (stay public; work order; CLI runs exported jobs).

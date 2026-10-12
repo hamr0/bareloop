@@ -12,6 +12,7 @@ import { getStartFromImport } from '../src/panel/server.js';
 import { importsPath, importId } from '../src/panel/importroutes.js';
 import { createSession, buildReuseSpec } from '../src/panel/authorsession.js';
 import { exportFixtureBundle } from './bundle-fixture.js';
+import { ANTH_CFG } from './helpers.js';
 
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 /** @type {string[]} */ const dirs = [];
@@ -33,7 +34,7 @@ function makeRepo() {
 }
 function setup() {
   const home = tmp('fence-home-');
-  writeFileSync(join(home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 });
+  writeFileSync(join(home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 }); writeFileSync(join(home, 'config.json'), JSON.stringify(ANTH_CFG));
   const bundleDir = join(tmp('fence-user-'), 'fix.bareloop');
   const b = exportFixtureBundle(bundleDir);
   mkdirSync(join(bundleDir, 'node_modules'));

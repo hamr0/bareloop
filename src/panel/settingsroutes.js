@@ -1,26 +1,35 @@
-// PANEL-BUILD.md P4a — Settings routes (`/api/settings/*`). A separate module from the
+// rewritten-from: fwdloop src/panel/settings.js@f9449e8 (the Providers routes; the Money routes are bareloop's own)
+// PANEL-BUILD.md P4a / P8 — Settings routes (`/api/settings/*`). A separate module from the
 // authoring routes on purpose: the chat/authoring session can reach NO route here (it has
 // no path to this file's handlers), and every route here is behind the same human-click
 // guard (per-server-start token + Origin/Host, `checkHumanGuard`) — GET too, because the
 // pages these serve name key variables and spend.
 //
-// Providers (P4b): the rows are the keys file's filled lines; Name / API shape / Base URL save to
-// config.json `keys.<ENV NAME>` (src/providerrows.js is the one owner of the rows).
+// Providers (P8): the rows are the keys file's filled lines (plus a shell-only key that config
+// already names); API shape / Base URL / old-max_tokens save to config.json `keys.<ENV NAME>`
+// and the model lines to `models.<ENV NAME>` (src/providerrows.js is the one owner of the rows).
+// Test and Refresh are ONE free GET of `<Base URL>/models` (src/modellist.js), never a completion,
+// and write no spend row. Every refusal is a plain sentence in `say`; the page shows `say`, never
+// a code or an HTTP status.
 //
 // Every write goes to `~/.config/bareloop/config.json` through `src/config.js` (the one
 // writer); the monthly limit is a person's own number, set by hand — nothing here (and
 // nothing the agent can reach) raises it on their behalf. Key VALUES never appear in any
 // response: names and found / not set only.
 import { checkHumanGuard } from './authorroutes.js';
-import { readConfig, updateConfig, ConfigError } from '../config.js';
+import {
+  readConfig, updateConfig, ConfigError, providerFieldProblem, cleanBaseUrl, modelsProblem,
+} from '../config.js';
 import { spendSummary, monthlyLimitOf } from '../monthly.js';
 import { spawn as realSpawn } from 'node:child_process';
 import { loadKeysEnv, keysFilePath, keysHome, filledKeyNames, ensureKeysFile } from '../keysfile.js';
-import { SHAPES, PRESET_KEY_NAMES, keyRows, endpointOf, defaultUrlOf, usableKey } from '../providerrows.js';
-import { apiKeyProblem, checkProviderReachable } from '../providers.js';
+import { SHAPES } from '../providershapes.js';
+import { keyRows, effectiveModels, usableKey, rowNamesOf } from '../providerrows.js';
+import { apiKeyProblem } from '../providers.js';
+import { listModels } from '../modellist.js';
 
-/** DeepSeek's own balance endpoint (same host as its models list). */
-const DEEPSEEK_BALANCE_URL = 'https://api.deepseek.com/user/balance';
+const BROKEN_CONFIG = 'Your settings file (config.json) cannot be read. Fix or remove it, then look again.';
+const BAD_KEY = 'The key has a space or a line break in it. Fix it in your keys file, then reload keys.';
 
 /**
  * `openFolderSpawn` / `platform` are test seams for the Open keys folder button (a real caller passes
@@ -36,11 +45,209 @@ export function createSettingsRoutes(opts) {
    * module; values never do.
    * @returns {ReturnType<typeof loadKeysEnv>} */
   const keys = () => loadKeysEnv({ env: opts.env, home: opts.home });
-  /** the Providers rows: keys with a value in the file, over the saved settings
-   * @param {Record<string, any>} config */
-  const currentRows = (config) => keyRows({ filled: filledKeyNames(opts.home), config });
-  /** @param {string} u @returns {string} */
-  const hostOf = (u) => { try { return new URL(u).hostname; } catch { return ''; } };
+
+  /**
+   * The row names: every key in the keys file with a value, plus a key only the SHELL holds when
+   * config already names it (`keys.<ENV>` or `models.<ENV>`).
+   * @param {Record<string, any>} config
+   * @returns {{ filled: string[], shellOnly: string[], all: string[] }}
+   */
+  function rowNames(config) {
+    const filled = filledKeyNames(opts.home);
+    const all = rowNamesOf(filled, config, opts.env ?? process.env);
+    return { filled, shellOnly: all.filter((n) => !filled.includes(n)), all };
+  }
+  /** config.json, or a plain-words problem (never read as "nothing set"). @returns {{config: Record<string, any>, problem: string|null}} */
+  function config() {
+    const c = readConfig({ home: opts.home });
+    return c.problem ? { config: {}, problem: BROKEN_CONFIG } : { config: c.config, problem: null };
+  }
+  /** @param {string} refused @param {string} say @param {number} [status] */
+  const refuse = (refused, say, status = 400) => ({ status, body: { ok: false, refused, say } });
+  /** @param {number} status @param {any} body */
+  const reply = (status, body) => ({ status, body });
+  /** The row a request names, or null: only a key that is a row is a provider. @param {unknown} slot @param {Record<string, any>} cfg */
+  const slotOf = (slot, cfg) => (typeof slot === 'string' && rowNames(cfg).all.includes(slot) ? slot : null);
+
+  /** One row's key for a header only; or `{why}` in plain words. @param {string} slot @param {ReturnType<typeof loadKeysEnv>} k @returns {{ key?: string, why?: string }} */
+  function keyFor(slot, k) {
+    if (k.unreadable) return { why: String(k.warning) };
+    const value = k.env[slot];
+    if (value === undefined || value === '') return { why: 'No key set for this provider.' };
+    if (value !== 'null' && apiKeyProblem(value)) return { why: BAD_KEY };
+    return { key: /** @type {string} */ (usableKey(value)) };
+  }
+
+  /**
+   * Test and Refresh: the ONE free GET (src/modellist.js) for a row. `{unknown:true}` when the slot is not a row.
+   * @param {unknown} rawSlot
+   * @returns {Promise<{unknown: true}|{ok: true, models: string[], ms: number}|{ok: false, why: string}>}
+   */
+  async function listFor(rawSlot) {
+    const c = config();
+    const k = keys();
+    const slot = slotOf(rawSlot, c.config);
+    if (!slot) return { unknown: true };
+    if (c.problem) return { ok: false, why: c.problem };
+    const row = keyRows({ filled: [slot], config: c.config })[0];
+    // the address comes first: a row with no address has nothing to send yet
+    if (row.baseUrl.trim() === '') return { ok: false, why: `Type a Base URL for ${slot} in Settings.` };
+    const kf = keyFor(slot, k);
+    if (kf.why) return { ok: false, why: kf.why };
+    const r = await listModels({ shape: row.provider, baseUrl: row.baseUrl, key: /** @type {string} */ (kf.key), fetchImpl });
+    return r.ok ? r : { ok: false, why: r.why };
+  }
+
+  /** The Providers GET. */
+  function providers() {
+    const k = keys();
+    const c = config();
+    const names = rowNames(c.config);
+    const rows = keyRows({ filled: names.all, config: c.config });
+    const spend = spendSummary({ home: opts.home, now: opts.now, rows });
+    return reply(200, {
+      ok: true,
+      keysFile: { path: keysFilePath(opts.home), exists: k.exists, refusal: k.warning },
+      configProblem: c.problem,
+      shapes: SHAPES.map((x) => ({ id: x.id, label: x.label })),
+      rows: rows.map((r) => {
+        const raw = k.env[r.envName];
+        let keyStatus = 'not set';
+        if (k.unreadable) keyStatus = 'refused — see above';
+        else if (raw && raw !== 'null' && apiKeyProblem(raw)) keyStatus = BAD_KEY;
+        else if (names.filled.includes(r.envName)) keyStatus = 'set in file';
+        else if (names.shellOnly.includes(r.envName)) keyStatus = 'found in shell';
+        const own = spend.tokensByModel[r.envName] ?? {};
+        return {
+          slot: r.envName, label: r.envName, envVar: r.envName, keyStatus,
+          shape: r.provider, baseUrl: r.baseUrl, legacyMaxTokens: r.legacyMaxTokens,
+          tokens: spend.tokensByRow[r.envName] ?? 0,
+          models: r.models.map(({ model, use, inPerM, outPerM }) => ({
+            model, use, ...(inPerM === undefined ? {} : { inPerM }), ...(outPerM === undefined ? {} : { outPerM }),
+            // this model's own tokens from the spend rows that name it; absent = no row names it (never 0)
+            ...(Object.hasOwn(own, model) ? { tokens: own[model] } : {}),
+          })),
+        };
+      }),
+    });
+  }
+
+  /**
+   * Save one model line: {slot, model, use?, inPerM?, outPerM?}. A field left out keeps the line's value; a price
+   * `null` clears it. The WHOLE list is judged by `modelsProblem` (the one rule) before anything is written.
+   * @param {any} body
+   */
+  function modelRoute(body) {
+    const c = config();
+    const k = keys();
+    const slot = slotOf(body?.slot, c.config);
+    if (!slot) return refuse('unknown-provider', 'That provider is not known.');
+    if (c.problem) return refuse('config-broken', `${BROKEN_CONFIG} Nothing was saved.`);
+    if (Object.hasOwn(body, 'cachedInPerM')) {
+      return refuse('bad-price', 'Cached input has no price of its own: it is priced as input. Nothing was saved.');
+    }
+    if (typeof body.model !== 'string') return refuse('bad-model', 'Pick a model line. Nothing was saved.');
+    const list = effectiveModels(slot, c.config).map((m) => ({ ...m }));
+    /** @type {Record<string, any>|undefined} */
+    let line = list.find((m) => m.model === body.model);
+    if (!line) { line = { model: body.model, use: false }; list.push(/** @type {any} */ (line)); }
+    if (Object.hasOwn(body, 'use')) line.use = body.use;
+    for (const f of /** @type {const} */ (['inPerM', 'outPerM'])) {
+      if (!Object.hasOwn(body, f)) continue;
+      if (body[f] === null) delete line[f];
+      else line[f] = body[f];
+    }
+    const problem = modelsProblem(list);
+    if (problem) return refuse('bad-model', problem);
+    try {
+      updateConfig({ models: { [slot]: list } }, { home: opts.home });
+    } catch (e) {
+      if (!(e instanceof ConfigError)) throw e;
+      return refuse('config-broken', `${BROKEN_CONFIG} Nothing was saved.`);
+    }
+    return reply(200, { ok: true, slot });
+  }
+
+  /** Save a row's shape, Base URL and old-max_tokens tick. Every field is judged first; write only if all pass. @param {any} body */
+  function providerRoute(body) {
+    const c = config();
+    const slot = slotOf(body?.slot, c.config);
+    if (!slot) return refuse('unknown-provider', 'That provider is not known.');
+    if (c.problem) return refuse('config-broken', `${BROKEN_CONFIG} Nothing was saved.`);
+    /** @type {Record<string, string>} */
+    const say = { shape: 'Pick an API shape from the list.', baseUrl: 'The Base URL must start with http:// or https://.', legacyMaxTokens: 'The legacy max_tokens tick must be on or off.' };
+    /** @type {Record<string, string|boolean|null>} */
+    const patch = {};
+    for (const key of Object.keys(say)) {
+      if (!Object.hasOwn(body, key)) continue;
+      const v = body[key];
+      const clearUrl = key === 'baseUrl' && v === '';
+      if (!clearUrl && providerFieldProblem(key, v) !== null) return refuse('bad-provider', `${say[key]} Nothing was saved.`);
+      patch[key] = clearUrl ? null : (key === 'baseUrl' ? cleanBaseUrl(v) : v);
+    }
+    if (Object.keys(patch).length === 0) return refuse('bad-provider', 'Nothing to save.');
+    try {
+      updateConfig({ keys: { [slot]: patch } }, { home: opts.home });
+    } catch (e) {
+      if (!(e instanceof ConfigError)) throw e;
+      return refuse('config-broken', `${BROKEN_CONFIG} Nothing was saved.`);
+    }
+    return reply(200, { ok: true, slot });
+  }
+
+  /**
+   * Open the FOLDER of the server's own keys file (never a file, never an editor, never a path from the request) in the OS file manager:
+   * argv array, no shell, detached. Another OS, a failed spawn, or a test process with no injected opener: `opened:false` + the path,
+   * which the page shows as text.
+   * @param {any} body
+   * @returns {Promise<{status: number, body: any}>}
+   */
+  function openKeysFolder(body) {
+    if (body !== null && typeof body === 'object' && Object.keys(body).length > 0) {
+      return Promise.resolve(refuse('no-path-allowed', 'The keys folder is opened from the panel\'s own settings; a path cannot be sent. Nothing was opened.'));
+    }
+    const dir = keysHome(opts.home);
+    const cannot = () => reply(200, { ok: true, opened: false, path: dir });
+    const platform = opts.platform ?? process.platform;
+    const cmd = platform === 'linux' ? 'xdg-open' : (platform === 'darwin' ? 'open' : null);
+    // under a test process (NODE_ENV=test or `node --test`) nothing is spawned unless a test injected an opener
+    const underTest = process.env.NODE_ENV === 'test' || process.env.NODE_TEST_CONTEXT !== undefined;
+    const opener = opts.openFolderSpawn ?? (underTest ? null : realSpawn);
+    if (!cmd || !opener) return Promise.resolve(cannot());
+    return new Promise((resolve) => {
+      let child;
+      try { child = opener(cmd, [dir], { detached: true, stdio: 'ignore' }); } catch { resolve(cannot()); return; }
+      let settled = false;
+      child.once('error', () => { if (!settled) { settled = true; resolve(cannot()); } });
+      child.once('spawn', () => {
+        if (settled) return;
+        settled = true;
+        if (typeof child.unref === 'function') child.unref();
+        resolve(reply(200, { ok: true, opened: true, path: dir }));
+      });
+    });
+  }
+
+  /**
+   * The POST routes that answer asynchronously.
+   * @param {string} pathname
+   * @param {any} body
+   * @returns {Promise<{status: number, body: any}>|{status: number, body: any}}
+   */
+  function postRoute(pathname, body) {
+    if (pathname === '/api/settings/provider') return providerRoute(body);
+    if (pathname === '/api/settings/model') return modelRoute(body);
+    if (pathname === '/api/settings/open-keys-folder') return openKeysFolder(body);
+    return listFor(body?.slot).then((r) => {
+      if ('unknown' in r) return refuse('unknown-provider', 'That provider is not known.');
+      if (pathname === '/api/settings/test') return reply(200, r.ok ? { ok: true, ms: r.ms } : r);
+      // /api/settings/models
+      if (!r.ok) return reply(200, r);
+      const ids = r.models;
+      return reply(200, ids.length === 0 ? { ok: false, why: 'The provider did not list any models.' } : { ok: true, models: ids });
+    });
+  }
+
   /**
    * @param {import('node:http').IncomingMessage} req
    * @param {import('node:http').ServerResponse} res
@@ -61,7 +268,8 @@ export function createSettingsRoutes(opts) {
     if (pathname === '/api/settings/money') {
       if (req.method === 'GET') {
         const cfg = readConfig({ home: opts.home });
-        const s = spendSummary({ home: opts.home, now: opts.now });
+        const rows = keyRows({ filled: rowNames(cfg.config).all, config: cfg.config });
+        const s = spendSummary({ home: opts.home, now: opts.now, rows });
         /** @type {number|null} */
         let limit = null;
         let configProblem = cfg.problem;
@@ -109,171 +317,22 @@ export function createSettingsRoutes(opts) {
       return true;
     }
 
-    // ── Providers (P4b): one row per key in the keys file that has a value. ──
+    // ── Providers (P8) ──
     if (pathname === '/api/settings/providers' && req.method === 'GET') {
-      // a missing keys file is created with the five empty preset lines (never edited if present)
-      ensureKeysFile(PRESET_KEY_NAMES, opts.home);
-      const cfg = readConfig({ home: opts.home });
-      const k = keys();
-      const rows = currentRows(cfg.config);
-      const s = spendSummary({ home: opts.home, now: opts.now, rows });
-      const note = cfg.config.anthropicBalanceNote;
-      // a preset key exported only in the shell gets no row (the rows are the keys file): NAMES the
-      // person can act on, read off the RAW shell env — never a value, never a length
-      const shellEnv = opts.env ?? process.env;
-      const filled = new Set(filledKeyNames(opts.home));
-      const shellOnly = PRESET_KEY_NAMES.filter((n) => typeof shellEnv[n] === 'string' && shellEnv[n] !== '' && !filled.has(n));
-      send(200, {
-        ok: true,
-        shellOnly,
-        keysFile: { path: keysFilePath(opts.home), exists: k.exists, names: k.names, warning: k.warning },
-        configProblem: cfg.problem,
-        shapes: SHAPES.map((x) => ({ id: x.id, label: x.label })),
-        rows: rows.map((r) => {
-          const raw = k.env[r.envName];
-          const problem = raw ? apiKeyProblem(raw) : null;
-          const isDeepseek = r.provider === 'openai-api' && hostOf(endpointOf(r.provider, r.baseUrl)) === 'api.deepseek.com';
-          return {
-            envName: r.envName, name: r.name, shape: r.provider, baseUrl: r.baseUrl,
-            placeholder: defaultUrlOf(r.provider),
-            keyStatus: !raw ? 'not set' : (raw === 'null' ? 'no key needed' : (problem ? `bad shape (${problem})` : 'found')),
-            canTest: r.provider !== 'gemini-api',
-            priceInPerM: typeof r.priceInPerM === 'number' ? r.priceInPerM : null,
-            priceOutPerM: typeof r.priceOutPerM === 'number' ? r.priceOutPerM : null,
-            tokens: s.tokensByRow[r.envName] ?? 0,
-            balance: r.provider === 'anthropic-api'
-              ? { kind: 'note', usd: typeof note === 'number' && Number.isFinite(note) ? note : null }
-              : (isDeepseek ? { kind: 'fetch' } : { kind: 'none' }),
-          };
-        }),
-      });
+      // a missing keys file is created with its two comment lines (never edited if present)
+      ensureKeysFile(opts.home);
+      const r = providers();
+      send(r.status, r.body);
+      return true;
+    }
+    const postPaths = ['/api/settings/provider', '/api/settings/model', '/api/settings/models', '/api/settings/test', '/api/settings/open-keys-folder'];
+    if (req.method === 'POST' && postPaths.includes(pathname)) {
+      Promise.resolve(postRoute(pathname, body)).then((r) => send(r.status, r.body));
       return true;
     }
 
-    if (pathname === '/api/settings/providers/row' && req.method === 'POST') {
-      const row = currentRows(readConfig({ home: opts.home }).config).find((r) => r.envName === body?.envName);
-      if (!row) { send(400, { ok: false, error: 'unknown key — add NAME=key to your keys file and reload keys' }); return true; }
-      // only the three settings a row has; each is optional in the body, the whole triple is stored
-      /** @type {Record<string, string|number|null>} */
-      const patch = {
-        name: typeof body?.name === 'string' ? body.name.trim() : row.name,
-        shape: typeof body?.shape === 'string' ? body.shape : row.provider,
-        baseUrl: typeof body?.baseUrl === 'string' ? body.baseUrl.trim().replace(/\/+$/, '') : row.baseUrl,
-      };
-      // the two prices (USD per 1M tokens): absent = unchanged; blank / null = not set (the field is removed,
-      // never written as 0); otherwise a finite number >= 0 — anything else is refused and nothing is saved
-      for (const f of /** @type {const} */ (['priceInPerM', 'priceOutPerM'])) {
-        if (!Object.hasOwn(body ?? {}, f)) continue;
-        const v = body[f];
-        const label = f === 'priceInPerM' ? 'In' : 'Out';
-        if (v === null || (typeof v === 'string' && v.trim() === '')) { patch[f] = null; continue; }
-        const n = typeof v === 'number' ? v : (typeof v === 'string' && /^\d+(\.\d+)?$/.test(v.trim()) ? Number(v.trim()) : NaN);
-        if (!(Number.isFinite(n) && n >= 0)) {
-          send(400, { ok: false, error: `the ${label} price must be a number, 0 or more (USD per 1M tokens), or blank for not set` });
-          return true;
-        }
-        patch[f] = n;
-      }
-      // a price is both fields or neither — ratesFor refuses a half-set one at run time, so never save half
-      const after = (/** @type {'priceInPerM'|'priceOutPerM'} */ f) => (Object.hasOwn(patch, f) ? patch[f] !== null : row[f] !== undefined);
-      if (after('priceInPerM') !== after('priceOutPerM')) {
-        send(400, { ok: false, error: 'set both prices (In and Out, USD per 1M tokens) or neither — a half-set price is refused' });
-        return true;
-      }
-      try {
-        updateConfig({ keys: { [row.envName]: patch } }, { home: opts.home });
-      } catch (e) {
-        if (!(e instanceof ConfigError)) throw e;
-        send(400, { ok: false, error: e.message });
-        return true;
-      }
-      send(200, { ok: true, envName: row.envName, ...patch });
-      return true;
-    }
-
-    if (pathname === '/api/settings/open-keys-folder' && req.method === 'POST') {
-      // opens the FOLDER (never the file, never an editor) in the file manager; argv array, no shell, detached.
-      // Another OS, or a failed spawn: say so and hand back the path, which the page then shows as text.
-      const dir = keysHome(opts.home);
-      const platform = opts.platform ?? process.platform;
-      const cmd = platform === 'linux' ? 'xdg-open' : (platform === 'darwin' ? 'open' : null);
-      const cannot = () => send(200, { ok: true, opened: false, path: dir });
-      if (!cmd) { cannot(); return true; }
-      let child;
-      try {
-        child = (opts.openFolderSpawn ?? realSpawn)(cmd, [dir], { detached: true, stdio: 'ignore' });
-      } catch { cannot(); return true; }
-      let settled = false;
-      child.once('error', () => { if (!settled) { settled = true; cannot(); } });
-      child.once('spawn', () => {
-        if (settled) return;
-        settled = true;
-        if (typeof child.unref === 'function') child.unref();
-        send(200, { ok: true, opened: true, path: dir });
-      });
-      return true;
-    }
-
-    if (pathname === '/api/settings/providers/balance-note' && req.method === 'POST') {
-      // the Anthropic balance is a NOTE the person types; no check ever reads it
-      const raw = body?.usd;
-      const usd = raw === null || raw === '' || raw === undefined ? null : Number(raw);
-      if (usd !== null && !(Number.isFinite(usd) && usd >= 0)) { send(400, { ok: false, error: 'the balance must be a number, 0 or more' }); return true; }
-      try {
-        updateConfig({ anthropicBalanceNote: usd }, { home: opts.home });
-      } catch (e) {
-        if (!(e instanceof ConfigError)) throw e;
-        send(400, { ok: false, error: e.message });
-        return true;
-      }
-      send(200, { ok: true, usd });
-      return true;
-    }
-
-    if (pathname === '/api/settings/providers/test' && req.method === 'POST') {
-      const row = currentRows(readConfig({ home: opts.home }).config).find((r) => r.envName === body?.envName);
-      if (!row) { send(400, { ok: false, error: 'unknown key' }); return true; }
-      const raw = keys().env[row.envName];
-      if (!raw) { send(200, { ok: true, reachable: false, status: 'no key', note: `${row.envName} not set`, ms: null }); return true; }
-      const problem = apiKeyProblem(raw);
-      if (problem) { send(200, { ok: true, reachable: false, status: 'bad key', note: `${row.envName} ${problem}`, ms: null }); return true; }
-      const started = Date.now();
-      // $0: one GET of the models list with THIS row's shape + URL (never a completion), key only in a header
-      checkProviderReachable({
-        providerName: row.provider, apiKey: usableKey(raw), baseUrl: row.baseUrl.trim() !== '' ? row.baseUrl : undefined, fetchImpl, timeoutMs: 4000,
-      }).then((r) => {
-        send(200, { ok: true, reachable: r.reachable, status: r.status, note: r.note, ms: Date.now() - started });
-      });
-      return true;
-    }
-
-    if (pathname === '/api/settings/providers/balance' && req.method === 'GET') {
-      // DeepSeek only: fetched server-side from the provider (key in a header, never returned)
-      const q = new URL(/** @type {string} */ (req.url), 'http://127.0.0.1').searchParams;
-      const row = currentRows(readConfig({ home: opts.home }).config).find((r) => r.envName === q.get('env'));
-      if (!row || row.provider !== 'openai-api' || hostOf(endpointOf(row.provider, row.baseUrl)) !== 'api.deepseek.com') { send(404, { ok: false, error: 'not found' }); return true; }
-      const raw = keys().env[row.envName];
-      if (!raw || apiKeyProblem(raw)) { send(200, { ok: true, text: null, note: 'no usable key' }); return true; }
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 4000);
-      fetchImpl(DEEPSEEK_BALANCE_URL, { method: 'GET', headers: { Authorization: `Bearer ${raw}` }, signal: controller.signal })
-        .then(async (res) => {
-          if (!res.ok) { send(200, { ok: true, text: null, note: `HTTP ${res.status}` }); return; }
-          /** @type {any} */
-          let j = null;
-          try { j = await res.json(); } catch { j = null; }
-          const infos = Array.isArray(j?.balance_infos) ? j.balance_infos : [];
-          const parts = infos
-            .filter((/** @type {any} */ b) => b && typeof b.currency === 'string' && b.total_balance !== undefined)
-            .map((/** @type {any} */ b) => `${String(b.total_balance)} ${b.currency}`);
-          send(200, { ok: true, text: parts.length ? parts.join(' + ') : null, note: parts.length ? null : 'balance not reported' });
-        })
-        .catch((/** @type {any} */ e) => { send(200, { ok: true, text: null, note: `request failed: ${e?.name === 'AbortError' ? 'timeout' : (e?.code || e?.name || 'error')}` }); })
-        .finally(() => clearTimeout(timer));
-      return true;
-    }
-
-    send(404, { ok: false, error: 'not found' });
+    const r = refuse('no-such-settings-route', 'Settings cannot do that. Keys are typed into your keys file by hand.', 404);
+    send(r.status, r.body);
     return true;
   }
   return { handle };

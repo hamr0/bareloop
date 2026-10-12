@@ -266,8 +266,11 @@ export const localBranches = (dir) => execFileSync('git', ['for-each-ref', '--fo
  * @param {Record<string, string|undefined>} [over]
  * @returns {Record<string, string|undefined>}
  */
-export function cleanEnv(over = {}) {
+export function cleanEnv(over = {}, { rows = false, config = false } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'bareloop-test-home-'));
+  if (rows) seedRows(join(home, '.config', 'bareloop'));
+  // `config`: the Settings config only (rows are named, models ticked) — the KEY VALUE then comes from the shell env a test passes in `over`
+  if (config) { const d = join(home, '.config', 'bareloop'); mkdirSync(d, { recursive: true }); writeFileSync(join(d, 'config.json'), JSON.stringify(ANTH_CFG)); }
   return {
     ...process.env,
     HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: join(home, '.config'),
@@ -275,3 +278,30 @@ export function cleanEnv(over = {}) {
     ...over,
   };
 }
+
+/**
+ * P8: write two usable Settings rows into a config home — an Anthropic-shaped one with the ticked, priced line `claude-sonnet-5`
+ * and an OpenAI-shaped one at a typed address with `deepseek-flash` (the models the bench specs sign or are given with `--model`).
+ * Both key lines hold a FAKE value: nothing here can call a real provider (a run past `--approve` is the caller's own choice).
+ * @param {string} dir the config home
+ */
+export function seedRows(dir) {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\nGW_KEY=fake-not-a-real-key\n', { mode: 0o600 });
+  writeFileSync(join(dir, 'config.json'), JSON.stringify({
+    keys: { ANTHROPIC_API_KEY: { shape: 'anthropic-api' }, GW_KEY: { shape: 'openai-api', baseUrl: 'https://api.deepseek.com/v1', legacyMaxTokens: true } },
+    models: {
+      ANTHROPIC_API_KEY: [{ model: 'claude-sonnet-5', use: true, inPerM: 3, outPerM: 15 }],
+      GW_KEY: [{ model: 'deepseek-flash', use: true, inPerM: 0.14, outPerM: 0.28 }],
+    },
+  }));
+}
+
+/**
+ * P8 fixtures: nothing is built in, so a test that needs a usable Settings row writes one. This is
+ * the Anthropic-shaped row with one ticked, priced line — config.json spelling (`keys` + `models`).
+ */
+export const ANTH_CFG = Object.freeze({
+  keys: { ANTHROPIC_API_KEY: { shape: 'anthropic-api' } },
+  models: { ANTHROPIC_API_KEY: [{ model: 'claude-sonnet-5', use: true, inPerM: 3, outPerM: 15 }] },
+});

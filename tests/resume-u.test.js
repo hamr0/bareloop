@@ -95,8 +95,8 @@ const haltedSpine = ({ outcome = 'cap-halt', job = SPEC.job, rounds = [BUDGET * 
  * `noExit` guard follows.
  */
 const preview = (args, job = 'bareagent-types') => {
-  const r = spawnSync(process.execPath, [RUNNER, '--job', job, ...args], {
-    encoding: 'utf8', timeout: 240_000, env: { ...cleanEnv(), ANTHROPIC_API_KEY: '' },
+  const r = spawnSync(process.execPath, [RUNNER, '--job', job, '--model', 'claude-sonnet-5', ...args], {
+    encoding: 'utf8', timeout: 240_000, env: { ...cleanEnv({}, { rows: !args.includes('--approve') }), ANTHROPIC_API_KEY: '' },
   });
   const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   if (r.status === null) {
@@ -457,7 +457,7 @@ test('§3 a resume with NO WALL LEFT is REFUSED at launch, before the key and be
   const { code, out } = preview(['--resume', spineFile(longSpine(BURNT_MIN)), '--approve', jobSpecHash(SPEC)]);
   assert.equal(code, 2, 'an operator-owned stop, on this file\'s convention (0 preview / 2 operator error)');
   assert.match(out, /WALL ALREADY EXHAUSTED/);
-  assert.doesNotMatch(out, /ANTHROPIC_API_KEY not set/, 'it stops ABOVE the key read — nothing about this needs a secret');
+  assert.doesNotMatch(out, /is not set up/, 'it stops ABOVE the key read — nothing about this needs a secret');
   assert.match(out, /RAISE maxWallMs/, 'and it names the lever, which is a spec edit and therefore a new signature');
 });
 
@@ -468,7 +468,7 @@ test('§3 CONTROL: a resume with wall left is NOT refused — it goes on to the 
   const { code, out } = preview(['--resume', spineFile(longSpine(SOME_LEFT_MIN)), '--approve', jobSpecHash(SPEC)]);
   assert.equal(code, 2);
   assert.doesNotMatch(out, /WALL ALREADY EXHAUSTED/);
-  assert.match(out, /ANTHROPIC_API_KEY not set/, 'the next gate down is where a healthy resume lands');
+  assert.match(out, /claude-sonnet-5 is not set up/, 'the next gate down is where a healthy resume lands');
 });
 
 test('§3 CONTROL: a resume with allowance still on the table does NOT cry wolf', () => {

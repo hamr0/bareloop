@@ -21,62 +21,12 @@
 // (`buildRunnerProviders`, below); it never prices a round (F113: rates
 // passthrough is dead), and never decides a budget.
 
+import { listModels } from './modellist.js';
+import { SHAPE_IDS } from './providershapes.js';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { AnthropicProvider, OpenAIProvider, GeminiProvider, thinkingSupport } = require('bare-agent/providers');
-
-/**
- * Today's anthropic-api tier table — EXACTLY the `DEFAULT_TIER_MODELS` both
- * runners hardcoded before this factory existed. Any change to these two
- * values is a change to shipped anthropic-api behaviour, not a refactor.
- */
-export const ANTHROPIC_TIER_MODELS = Object.freeze({
-  sonnet: 'claude-sonnet-5',
-  haiku: 'claude-haiku-4-5-20251001',
-});
-
-/**
- * DeepSeek (F149/F150) is a SINGLE model, not a tiered family — hamr's
- * ruling above: one secondary provider, not a menu. Both tiers map to the
- * same model id ON PURPOSE: `resolveWorkerModel`/a runner's `providerFor
- * (tier)` only ever LOOK UP a tier's model id (src/job.js:818-827,
- * scripts/run-u.mjs's `providerFor`) — neither assumes the tiers name
- * different models — so repeating the one id is the honest representation
- * of a single-model provider, not a second model masquerading as `haiku`.
- * If DeepSeek (or a future openai-api entrant) ever ships a genuinely
- * cheaper tier model, this is where it would earn its own `haiku` id.
- *
- * MODEL SWAP (F171, item 34 L16, hamr 2026-09-13): `deepseek-chat` is no
- * longer served — a live `/models` call returned only `deepseek-flash` and
- * `deepseek-v4-pro`. Switched to `deepseek-flash` (DeepSeek V4.1). F149's
- * `legacyMaxTokens` measurement (asked 64 output tokens, got 665/608) was
- * taken on `deepseek-chat` and is UNVERIFIED on `deepseek-flash` — kept on
- * below as the fail-safe (over-capping direction is safe; see F171).
- */
-export const OPENAI_TIER_MODELS = Object.freeze({
-  sonnet: 'deepseek-flash',
-  haiku: 'deepseek-flash',
-});
-
-/**
- * Gemini (PRD item 31.3, hamr 2026-09-09: "anthropic, openai, gemini drop
- * ollama for now"). Two real tiers, unlike DeepSeek's single model: `flash` is
- * the cheap tier by design, so `haiku` maps to it honestly rather than
- * repeating one id.
- *
- * ADMITTED-PENDING-PROBE. The probe rule stands (PRD item 28 ruling (d),
- * 2026-09-09): no endpoint is in the menu without its own clean paid probe,
- * and `gemini-api` has ZERO runs. `anthropic-api` is the original (~167
- * archived runs) and `openai-api` was probed green through the shipped runner
- * (run mtu12vks, $1.64/$4, F157); gemini owes that fire and has not paid it.
- * `PROBE_STATUS` below is the machine-readable form of that debt — nothing in
- * here silently pretends the provider is proven.
- */
-export const GEMINI_TIER_MODELS = Object.freeze({
-  sonnet: 'gemini-2.5-pro',
-  haiku: 'gemini-2.5-flash',
-});
+const { AnthropicProvider, OpenAIProvider, GeminiProvider } = require('bare-agent/providers');
 
 /**
  * Which admitted providers have paid for their own end-to-end probe, and which
@@ -92,145 +42,9 @@ export const PROBE_STATUS = Object.freeze({
 });
 
 /**
- * Per-MODEL request-key gating (F149, live-measured 2026-09-09): DeepSeek
- * silently IGNORES the modern `max_completion_tokens` key — asked for 64
- * output tokens, it returned 665/608 — and only honours the legacy
- * `max_tokens` key. `bare-agent`'s `OpenAIProvider` already exposes the
- * switch (`legacyMaxTokens`, BA-24; no model-name sniffing inside
- * bare-agent itself — "the caller declares the dialect"), so THIS table is
- * bareloop's routing of it, keyed per model, never a global default. An
- * output cap that does not bind is a money hazard: a reasoning model can
- * run to its own ceiling on every round, silently, so getting this wrong
- * for even one model defeats every budget that model's tier sets.
- *
- * A model with no entry here gets `{}` — bare-agent's own default
- * (`max_completion_tokens`, GPT-5-safe) applies, unmodified.
- *
- * F171 (2026-09-13): `deepseek-chat` was retired and swapped for
- * `deepseek-flash` (item 34 L16). This gating was measured on
- * `deepseek-chat` only and carried forward onto `deepseek-flash`
- * UNVERIFIED — re-verify before any paid DeepSeek run relies on it.
- */
-const OPENAI_MODEL_OPTIONS = Object.freeze({
-  'deepseek-flash': Object.freeze({ legacyMaxTokens: true }),
-});
-
-/**
- * THINKING (hamr 2026-10-11: no hardcoded per-model lists in bareloop — bare-agent >=0.51 owns the shapes). The drafter and the
- * rubric judge run thinking OFF by default (deepseek-flash thinks by default and bills the reasoning as output: F192 run mv117wde
- * truncated judge locates at the cap, and a drafter answer that runs to the output cap is a failed try). This module is the ONE
- * owner of what a call sends: it asks bare-agent's `thinkingSupport(kind, model)` (pure lookup, no network) and sends the
- * normalized per-call `thinkingMode: 'off'` ONLY when the model is measured switchable. A model measured NOT switchable
- * (claude-opus-5-5 …) gets nothing — asking would throw before send — and a model bare-agent has not measured ('unverified') also
- * gets nothing on this DEFAULT path, so a local/unknown model's drafting never breaks by default. PER-CALL, never constructor
- * options (the drafter's provider is the worker's instance; the worker is deliberately left as it was). The raw `thinking`
- * option is never sent (bare-agent throws if both are set).
- */
-
-/**
- * The thinking-ladder kind bare-agent's `thinkingSupport` is keyed by, from a constructed provider; null for anything that is
- * not one of the three admitted constructors (a test double, a clipipe) — such a provider is never sent the switch.
- * OpenAI-shaped providers are DeepSeek by model id `deepseek-*` or a `deepseek.com` baseUrl (bare-agent's documented rule,
- * provider-openai.js:80), else OpenAI.
- * @param {any} provider
- * @returns {'anthropic'|'openai'|'deepseek'|'gemini'|null}
- */
-function thinkingKind(provider) {
-  if (provider instanceof AnthropicProvider) return 'anthropic';
-  if (provider instanceof GeminiProvider) return 'gemini';
-  if (provider instanceof OpenAIProvider) {
-    return /^deepseek-/i.test(String(provider.model)) || /deepseek\.com/i.test(String(provider.baseUrl)) ? 'deepseek' : 'openai';
-  }
-  return null;
-}
-
-/**
- * What an 'off' request means for this provider instance, for the draft log and the panel row: `'off'` (measured switchable —
- * the switch is sent), `'not-switchable'` (measured NOT switchable — nothing sent, the model thinks as it would),
- * `'unverified'` (bare-agent has not measured this model — nothing sent on the default path).
- * @param {any} provider a constructed bare-agent provider
- * @returns {'off'|'not-switchable'|'unverified'}
- */
-function offOutcome(provider) {
-  const kind = thinkingKind(provider);
-  if (kind === null) return 'not-switchable';
-  const support = thinkingSupport(kind, provider.model);
-  if (support.switchable === true) return 'off';
-  return support.switchable === 'unverified' ? 'unverified' : 'not-switchable';
-}
-
-/**
- * The per-call options the rubric JUDGE's model calls carry for this provider instance: `{ thinkingMode: 'off' }` when
- * bare-agent measures the model switchable, else `{}` (F192: judge runs thinking off; a judge on a model that cannot turn it
- * off must not throw).
- * @param {any} provider a constructed bare-agent provider
- * @returns {Record<string, any>}
- */
-export function judgeCallOptions(provider) {
-  return offOutcome(provider) === 'off' ? { thinkingMode: 'off' } : {};
-}
-
-/**
- * The drafter's THINKING knob — an enumerated OPERATOR param, never model output and never read from env inside the library.
- * `'on'` sends nothing (the model's own thinking, byte-identical to a no-knob call); `'off'` sends `thinkingMode: 'off'` where
- * bare-agent measures the model switchable. The DEFAULT is `'off'` (hamr 2026-10-11, decided by the frozen ON/OFF contrast,
- * docs/logs/2026-10-10-drafter-thinking-contrast-prereg.md); `'on'` stays selectable for a later Settings checkbox.
- */
-export const DRAFT_THINKING_MODES = Object.freeze(['on', 'off']);
-
-/**
- * Throw unless `mode` is one of {@link DRAFT_THINKING_MODES} — an operator-param guard, so a typo never silently means a mode.
- * @param {unknown} mode
- * @returns {'on'|'off'}
- */
-export function assertDraftThinking(mode) {
-  if (mode === 'on' || mode === 'off') return mode;
-  throw new Error(`[providers] draftThinking must be one of ${DRAFT_THINKING_MODES.join(' | ')}, got ${JSON.stringify(mode)}`);
-}
-
-/**
- * What the drafting calls on this provider ACTUALLY carry for thinking, for the draft log and the panel row: `'on'` (mode on,
- * nothing sent), `'off'` (mode off and the switch is sent), `'not-switchable'` (mode off, model measured not switchable —
- * nothing sent), `'unverified'` (mode off, model not measured by bare-agent — nothing sent). Never re-derives a model list.
- * @param {any} provider a constructed bare-agent provider
- * @param {unknown} [mode] 'on' | 'off' (default 'off')
- * @returns {'on'|'off'|'not-switchable'|'unverified'}
- */
-export function draftThinkingSent(provider, mode = 'off') {
-  if (assertDraftThinking(mode) === 'on') return 'on';
-  return offOutcome(provider);
-}
-
-/**
- * {@link draftThinkingSent} for a model the caller has only NAMED (provider shape, model id, baseUrl) — no key, no network. For
- * the panel's first drafting row, which is shown before the key is read. Constructing the provider only makes the class and
- * the model id available to `thinkingSupport`; it sends nothing.
- * @param {{providerName: string, model: string, baseUrl?: string|null}} o
- * @param {unknown} [mode] 'on' | 'off' (default 'off')
- * @returns {'on'|'off'|'not-switchable'|'unverified'}
- */
-export function draftThinkingFor({ providerName, model, baseUrl }, mode = 'off') {
-  return draftThinkingSent(makeProvider(providerName, { apiKey: 'unset', model, ...(baseUrl ? { baseUrl } : {}) }), mode);
-}
-
-/**
- * The ONE owner of the per-call options every DRAFTING model call carries (scout, confirm, author, revise, structure retries).
- * `{ thinkingMode: 'off' }` exactly when {@link draftThinkingSent} says `'off'`, else `{}`.
- * @param {any} provider a constructed bare-agent provider
- * @param {unknown} [mode] 'on' | 'off' (default 'off')
- * @returns {Record<string, any>}
- */
-export function draftCallOptions(provider, mode = 'off') {
-  return draftThinkingSent(provider, mode) === 'off' ? { thinkingMode: 'off' } : {};
-}
-
-/**
  * @typedef {object} ProviderTableEntry
  * @property {new (options: any) => any} ctor the bare-agent provider class
- * @property {string} envKey the environment variable this provider reads its key from
- * @property {Readonly<Record<string, string>>} tiers tier name -> model id
  * @property {string} endpointKey the CONSTRUCTOR OPTION NAME this provider reads its endpoint from — NOT assumed to be `baseUrl` (see below)
- * @property {(model: string|undefined) => Record<string, any>} paramsFor per-model request-key/param gating, applied on TOP of {exposeErrorBody:true, apiKey, model, <endpointKey>?}
  */
 
 // ── WHY `endpointKey` IS A FIELD AND NOT THE LITERAL `baseUrl` ──────────────
@@ -260,35 +74,16 @@ export function draftCallOptions(provider, mode = 'off') {
 // the menu holds only http-shaped API providers, and the FIRST thing that
 // changes when Ollama is admitted is the one line nobody would think to look at.
 
-/** @type {Readonly<Record<string, ProviderTableEntry>>} */
+/**
+ * The three client classes bare-agent exports, chosen by shape id. NO key name, model id or per-model gating lives here: a row's
+ * key is its own env name (src/providerrows.js), a job carries its own model, and the old max_tokens spelling is the ROW's tick
+ * (`legacyMaxTokens`, `makeProvider`).
+ * @type {Readonly<Record<string, ProviderTableEntry>>}
+ */
 const PROVIDER_TABLE = Object.freeze({
-  'anthropic-api': Object.freeze({
-    ctor: AnthropicProvider,
-    envKey: 'ANTHROPIC_API_KEY',
-    tiers: ANTHROPIC_TIER_MODELS,
-    endpointKey: 'baseUrl',
-    // Anthropic has only ever had one request key for the output cap
-    // (`max_tokens`) — nothing to gate here, ever (unlike OpenAI-shaped
-    // backends, which fork on `max_tokens` vs `max_completion_tokens`).
-    paramsFor: () => ({}),
-  }),
-  'openai-api': Object.freeze({
-    ctor: OpenAIProvider,
-    envKey: 'OPENAI_API_KEY',
-    tiers: OPENAI_TIER_MODELS,
-    endpointKey: 'baseUrl',
-    paramsFor: (model) => OPENAI_MODEL_OPTIONS[/** @type {string} */ (model)] ?? {},
-  }),
-  'gemini-api': Object.freeze({
-    ctor: GeminiProvider,
-    envKey: 'GEMINI_API_KEY',
-    tiers: GEMINI_TIER_MODELS,
-    endpointKey: 'baseUrl',
-    // Gemini carries no `max_tokens`/`max_completion_tokens` fork of its own —
-    // bare-agent's GeminiProvider maps the cap internally. Nothing to gate, and
-    // an empty object is the honest statement of that, not an omission.
-    paramsFor: () => ({}),
-  }),
+  'anthropic-api': Object.freeze({ ctor: AnthropicProvider, endpointKey: 'baseUrl' }),
+  'openai-api': Object.freeze({ ctor: OpenAIProvider, endpointKey: 'baseUrl' }),
+  'gemini-api': Object.freeze({ ctor: GeminiProvider, endpointKey: 'baseUrl' }),
 });
 
 /**
@@ -348,15 +143,15 @@ export function apiKeyProblem(value) {
 }
 
 /**
- * Construct ONE provider instance for `providerName`/`model`, applying
- * `exposeErrorBody: true` (F153 — every constructed provider, unconditionally)
- * and the model's own request-key gating (`paramsFor`). `baseUrl` (PRD item
- * 28, ruling (d), 2026-09-09: admitted in v1) is forwarded only when given —
- * every provider constructor here defaults it on its own when absent.
+ * Construct ONE provider instance for `providerName`/`model`, applying `exposeErrorBody: true` (F153 — every constructed
+ * provider, unconditionally). `baseUrl` (PRD item 28, ruling (d), 2026-09-09: admitted in v1) is forwarded only when given.
+ * `legacyMaxTokens` is the Settings ROW's "old max_tokens" tick: a server that ignores `max_completion_tokens` (F149) does not
+ * bind the output cap until it is on. It is forwarded only for `openai-api` and only when `true` — nothing here sniffs a host
+ * or a model id to decide it.
  * @param {string} providerName
- * @param {{apiKey?: string, model?: string, baseUrl?: string}} [options]
+ * @param {{apiKey?: string, model?: string, baseUrl?: string, legacyMaxTokens?: boolean}} [options]
  */
-export function makeProvider(providerName, { apiKey, model, baseUrl } = {}) {
+export function makeProvider(providerName, { apiKey, model, baseUrl, legacyMaxTokens } = {}) {
   const entry = resolveProvider(providerName);
   return new entry.ctor({
     exposeErrorBody: true,
@@ -369,105 +164,59 @@ export function makeProvider(providerName, { apiKey, model, baseUrl } = {}) {
     // is spelled differently would otherwise IGNORE the endpoint silently and
     // run against its own default; see the note above the table.
     ...(baseUrl !== undefined ? { [entry.endpointKey]: baseUrl } : {}),
-    ...entry.paramsFor(model),
+    ...(providerName === 'openai-api' && legacyMaxTokens === true ? { legacyMaxTokens: true } : {}),
   });
 }
 
 /**
- * Build the `{provider, providerFor, judgeProvider}` triple both runners
- * need (`src/authorrun.js` and `src/panel/authorsession.js` call it) — ONE seam instead of two copies of the same construction and
- * tier-memoization logic. `model`/`tierModels` are already-RESOLVED inputs
- * (the caller runs `resolveWorkerModel` itself, exactly as both runners did
- * before this factory existed — that decision stays where each runner's own
- * `--model` flag/spec precedence lives, not duplicated in here).
+ * Build the `{provider, providerFor, judgeProvider}` triple both authoring runners need (`src/authorrun.js` and
+ * `src/panel/authorsession.js` call it) — ONE seam instead of two copies of the same construction. `model` is the
+ * already-RESOLVED worker model id (the caller picked the Settings line).
  *
- * THE JUDGE IS NO LONGER PINNED TO ANTHROPIC (PRD item 32.2, hamr 2026-09-10:
- * *"what i care about is that judge becomes llm agnostic and not set to one
- * model or provider"*). It is constructed through this same factory, from a
- * `judgeProviderName`/`judgeModel` pair the CALLER resolved (`resolveJudge`,
- * src/judged.js — the spec's signed `judge` override, else the job's own worker
- * provider and model). Item 28's pin, and item 28 part (2)'s deferral of a
- * signed `judge:{provider,model}` field, both close here.
- *
- * `judgeApiKey` stays a SEPARATE argument rather than being derived: the judge
- * may legitimately be a different provider from the worker, and reading its key
- * for it would put a second env-var reader in a module whose whole job is to
- * have exactly one. The caller reads the resolved judge provider's own `envKey`
- * and hands the key in — the same contract the worker key already has here.
+ * THE JUDGE IS NOT PINNED (PRD item 32.2): it is constructed through this same factory from a `judgeProviderName`/`judgeModel`
+ * pair the CALLER resolved. `judgeApiKey` stays a SEPARATE argument: the judge may be a different provider from the worker,
+ * and each key is read by the caller from its own row.
  * @param {object} args
- * @param {string} args.providerName spec.provider (or the anthropic-api default)
- * @param {string|undefined} args.apiKey the WORKER's key, read from the provider's own `envKey`
+ * @param {string} args.providerName the worker's API shape id
+ * @param {string|undefined} args.apiKey the WORKER's key, read from its row's env name
  * @param {string} args.model the already-resolved worker model id
- * @param {Readonly<Record<string, string>>} args.tierModels the already-resolved tier -> model map (spec override folded in by the caller)
- * @param {string|undefined} [args.baseUrl] spec.baseUrl, if any
- * @param {string|undefined} args.judgeApiKey the judge's own key, read by the caller from the RESOLVED judge provider's `envKey`
+ * @param {string|undefined} [args.baseUrl] the worker row's Base URL
+ * @param {boolean} [args.legacyMaxTokens] the worker row's old max_tokens tick
+ * @param {string|undefined} args.judgeApiKey the judge's own key
  * @param {string} args.judgeModel the resolved judge model id
- * @param {string} [args.judgeProviderName] the resolved judge provider name; defaults to `providerName` (the job's own worker provider), which is `resolveJudge`'s own default
- * @param {string|undefined} [args.judgeBaseUrl] the judge provider's endpoint, when it takes one
+ * @param {string} [args.judgeProviderName] the resolved judge shape; defaults to `providerName`
+ * @param {string|undefined} [args.judgeBaseUrl] the judge row's endpoint
+ * @param {boolean} [args.judgeLegacyMaxTokens] the judge row's old max_tokens tick (defaults to the worker's when the judge shares its provider)
  */
 export function buildRunnerProviders({
-  providerName, apiKey, model, tierModels, baseUrl, judgeApiKey, judgeModel,
-  judgeProviderName = providerName, judgeBaseUrl = undefined,
+  providerName, apiKey, model, baseUrl, legacyMaxTokens = false, judgeApiKey, judgeModel,
+  judgeProviderName = providerName, judgeBaseUrl = undefined, judgeLegacyMaxTokens = undefined,
 }) {
-  const provider = makeProvider(providerName, { apiKey, model, baseUrl });
-  /** @type {Record<string, any>} */
-  const tierCache = {};
-  const providerFor = (/** @type {string} */ tier) => (tierCache[tier] ??= (
-    tierModels[tier] === model
-      ? provider
-      : makeProvider(providerName, { apiKey, model: tierModels[tier], baseUrl })
-  ));
-  // the judge goes through the SAME table as the worker — one place names a
-  // provider identity, which is the entire reason this factory exists. Reusing
-  // the worker instance when the identity matches exactly is not an optimisation
-  // for its own sake: a second instance against the same endpoint/model is a
-  // second prompt-cache prefix, and cache writes are ~41% of the bill.
+  const provider = makeProvider(providerName, { apiKey, model, baseUrl, legacyMaxTokens });
+  // a plan step's `model` is the one schema token `sonnet` (STEP_MODELS, src/plan.js): it means THE JOB'S worker model
+  const providerFor = (/** @type {string} */ _tier) => provider;
+  // the judge goes through the SAME table as the worker. Reusing the worker instance when the identity matches exactly is not an
+  // optimisation for its own sake: a second instance against the same endpoint/model is a second prompt-cache prefix, and cache
+  // writes are ~41% of the bill.
+  const judgeLegacy = judgeLegacyMaxTokens ?? (judgeProviderName === providerName ? legacyMaxTokens : false);
   const judgeProvider = (judgeProviderName === providerName && judgeModel === model && judgeApiKey === apiKey
-    && judgeBaseUrl === baseUrl)
+    && judgeBaseUrl === baseUrl && judgeLegacy === legacyMaxTokens)
     ? provider
-    : makeProvider(judgeProviderName, { apiKey: judgeApiKey, model: judgeModel, baseUrl: judgeBaseUrl });
+    : makeProvider(judgeProviderName, { apiKey: judgeApiKey, model: judgeModel, baseUrl: judgeBaseUrl, legacyMaxTokens: judgeLegacy });
   return { provider, providerFor, judgeProvider };
 }
 
 /**
- * A `providerName`'s own models-list GET endpoint — the shape this
- * function's ONE caller (`checkProviderReachable`, below) needs and nothing
- * else reads: `anthropic-api` and `openai-api` (the panel's Model select,
- * PANEL-BUILD.md P3 build item 7) are the only two shapes this build knows
- * how to ask, both a plain unauthenticated-body GET with the key in a
- * header — never a completion/chat endpoint, so this never spends a token.
- * @param {string} providerName
- * @param {string} [baseUrl]
- * @returns {{url: string, headers: Record<string,string>}|null} `null` when
- *   this provider's models-list shape is not known (never guessed at)
- */
-function modelsListRequest(providerName, baseUrl) {
-  if (providerName === 'anthropic-api') {
-    return {
-      url: `${baseUrl || 'https://api.anthropic.com/v1'}/models`,
-      headers: { 'x-api-key': '', 'anthropic-version': '2023-06-01' },
-    };
-  }
-  if (providerName === 'openai-api') {
-    return { url: `${baseUrl || 'https://api.openai.com/v1'}/models`, headers: {} };
-  }
-  return null;
-}
-
-/**
- * $0 reachability check: a GET against `providerName`'s own models-list
- * endpoint, server-side, with the key in a header — NEVER a completion
- * request, so it never spends a token (PANEL-BUILD.md P3 build item 7: "the
- * person must get feedback BEFORE drafting if the chosen model can't
- * work"). Reused, unmodified, by the panel's model-readiness route today
- * (`src/panel/authorroutes.js`) and by the future Settings providers
- * table's own "test" column (PANEL-BUILD.md P4) — ONE function, not two
- * hand-typed copies of the same probe.
+ * $0 reachability check: ONE GET of the provider's models list (`src/modellist.js`, the one owner of
+ * that call), server-side, with the key in a header — NEVER a completion request, so it never spends
+ * a token (PANEL-BUILD.md P3 build item 7: "the person must get feedback BEFORE drafting if the
+ * chosen model can't work"). Used by the panel's model-readiness route (`src/panel/authorroutes.js`);
+ * Settings > Providers' Test and Refresh call `listModels` directly. A blank `baseUrl` makes no call.
  *
- * NEVER returns the key, never logs it — the key only ever appears in a
- * request header sent straight to the provider's own host.
+ * NEVER returns the key, never logs it — the key only ever appears in a request header sent
+ * straight to the provider's own host.
  * @param {object} o
- * @param {string} o.providerName
+ * @param {string} o.providerName an API shape id
  * @param {string} o.apiKey
  * @param {string} [o.model] when given, the response is also checked for this model id
  * @param {string} [o.baseUrl]
@@ -478,39 +227,16 @@ function modelsListRequest(providerName, baseUrl) {
 export async function checkProviderReachable({
   providerName, apiKey, model, baseUrl, fetchImpl = fetch, timeoutMs = 4000,
 }) {
-  const req = modelsListRequest(providerName, baseUrl);
-  if (!req) {
+  if (!SHAPE_IDS.includes(providerName)) {
     return {
       reachable: false, modelListed: null, status: 'unsupported-provider',
       note: `no models-list check known for "${providerName}"`,
     };
   }
-  const headers = { ...req.headers };
-  if (providerName === 'anthropic-api') headers['x-api-key'] = apiKey;
-  else headers.Authorization = `Bearer ${apiKey}`;
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    // GET ONLY — no body, no completion/chat call, no tokens spent.
-    const res = await fetchImpl(req.url, { method: 'GET', headers, signal: controller.signal });
-    if (!res.ok) {
-      return { reachable: false, modelListed: null, status: `HTTP ${res.status}`, note: `models list returned HTTP ${res.status}` };
-    }
-    /** @type {any} */
-    let body = null;
-    try { body = await res.json(); } catch { body = null; }
-    const ids = Array.isArray(body?.data) ? body.data.map((/** @type {any} */ m) => m?.id).filter(Boolean) : [];
-    const modelListed = model ? ids.includes(model) : null;
-    return { reachable: true, modelListed, status: 'ok', note: null };
-  } catch (/** @type {any} */ e) {
-    const cls = e?.name === 'AbortError' ? 'timeout' : (e?.code || e?.name || 'network-error');
-    // connection refused surfaces as fetch's bare TypeError ("fetch failed") — say it plainly
-    const refused = e?.name === 'TypeError' || e?.code === 'ECONNREFUSED' || e?.cause?.code === 'ECONNREFUSED';
-    return { reachable: false, modelListed: null, status: String(cls), note: refused ? `nothing answering at ${req.url}` : `request failed: ${cls}` };
-  } finally {
-    clearTimeout(timer);
-  }
+  const r = await listModels({ shape: providerName, baseUrl: baseUrl ?? '', key: apiKey, fetchImpl, timeoutMs });
+  if (r.ok) return { reachable: true, modelListed: model ? r.models.includes(model) : null, status: 'ok', note: null };
+  const note = r.status.startsWith('HTTP ') ? `models list returned ${r.status}` : (r.detail ?? r.why);
+  return { reachable: false, modelListed: null, status: r.status, note };
 }
 
 /**

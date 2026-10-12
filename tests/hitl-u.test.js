@@ -77,8 +77,8 @@ const pausedSpine = ({ at = `${D0}T10:20:00.000Z`, job = SPEC.job, changed = { p
 
 /** the preview: no --approve, so nothing reads a key and nothing touches a patient */
 const preview = (args, job = 'bareagent-types') => {
-  const r = spawnSync(process.execPath, [RUNNER, '--job', job, ...args], {
-    encoding: 'utf8', timeout: 240_000, env: { ...cleanEnv(), ANTHROPIC_API_KEY: '' },
+  const r = spawnSync(process.execPath, [RUNNER, '--job', job, '--model', 'claude-sonnet-5', ...args], {
+    encoding: 'utf8', timeout: 240_000, env: { ...cleanEnv({}, { rows: !args.includes('--approve') }), ANTHROPIC_API_KEY: '' },
   });
   const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   if (r.status === null) {
@@ -273,7 +273,7 @@ test('§1 REFUSED at launch: a signed paused resume with NO decision does not pr
   assert.equal(code, 2);
   assert.match(out, /NO DECISION/);
   assert.match(out, /--decide/);
-  assert.doesNotMatch(out, /ANTHROPIC_API_KEY not set/, 'it stops above the key: nothing about this needs a secret');
+  assert.doesNotMatch(out, /is not set up/, 'it stops above the key: nothing about this needs a secret');
 });
 
 test('§1 tripwire: the runner HANDS the ruling to runJob, and builds it through the LIBRARY seam', () => {
@@ -483,7 +483,7 @@ test('§1 the PAUSE door launches NOTHING and keeps the checkpoint the operator 
   // table's own envKey, and the JUDGE's, demanded only when the close judges), so
   // this anchors on the FIRST of them — the worker key, which every run needs.
   // The claim is unchanged: a pause exits before ANY secret is asked for.
-  const firstKeyDemand = src.indexOf('workerApiKey = workerEnv[providerEntry.envKey]');
+  const firstKeyDemand = src.indexOf('workerApiKey = keyValueOf(env, workerKeyName)');
   assert.ok(firstKeyDemand > 0, 'the runner still demands a worker key somewhere below');
   assert.ok(at < firstKeyDemand, 'above the key: nothing about saying "not now" needs a secret');
 });
@@ -493,7 +493,7 @@ test('§1 the pause door is REACHABLE and silent about money: a signed `--decide
   assert.equal(code, 0, out);
   assert.match(out, /PAUSED BY YOU/);
   assert.match(out, /60 days/, 'the TTL is the library\'s number, stated rather than implied');
-  assert.doesNotMatch(out, /ANTHROPIC_API_KEY not set/, 'it never reaches the key');
+  assert.doesNotMatch(out, /is not set up/, 'it never reaches the key');
   assert.doesNotMatch(out, /outcome +hitl-pause/, 'and it never launched a run: there is no leg to report');
 });
 
@@ -517,7 +517,7 @@ test('§1/W-2 a paused run whose WALL is gone refuses, and NAMES that the decisi
   assert.match(out, /WALL ALREADY EXHAUSTED/);
   assert.match(out, /waiting on a DECISION and its wall is gone/, 'the consequence is named, not left to be discovered');
   assert.match(out, /RAISE maxWallMs/, 'and the lever is the same signed spec edit every other wall stop names');
-  assert.doesNotMatch(out, /ANTHROPIC_API_KEY not set/, 'still above the key');
+  assert.doesNotMatch(out, /is not set up/, 'still above the key');
 });
 
 // ══ SOFTGREEN module 7 — F102/F103 AT THE SURFACE ══════════════════════════════
@@ -567,7 +567,7 @@ test('F103 — a held RERUN opens on the full signed wall: the preview says so, 
   // onto 87 seconds of a wall a dead leg had already spent
   const { out } = preview(['--resume', burnt, '--approve', jobSpecHash(SPEC)]);
   assert.doesNotMatch(out, /WALL ALREADY EXHAUSTED/);
-  assert.match(out, /ANTHROPIC_API_KEY not set/, 'it reached the launch — the only thing missing is a key');
+  assert.match(out, /claude-sonnet-5 is not set up/, 'it reached the launch — the only thing missing is a usable key row (a signed run with no Settings key line stops here, at $0)');
 });
 
 test('F103 — an ordinary resume with no decision still meets the exhausted wall (W-2 untouched)', () => {
@@ -591,5 +591,5 @@ test('ruling 5 — the PAUSE door is answered even below the wall-exhausted gate
   assert.equal(code, 0, out);
   assert.match(out, /PAUSED BY YOU/);
   assert.doesNotMatch(out, /WALL ALREADY EXHAUSTED/, 'the gate is for work, and a pause is not work');
-  assert.doesNotMatch(out, /ANTHROPIC_API_KEY not set/, 'nothing launched, nothing spent');
+  assert.doesNotMatch(out, /is not set up/, 'nothing launched, nothing spent');
 });

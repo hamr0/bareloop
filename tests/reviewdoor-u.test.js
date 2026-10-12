@@ -75,8 +75,8 @@ function spineFile(events) {
 
 /** the preview: no --approve, so nothing reads a key and nothing touches a patient */
 const preview = (args, job = 'bareagent-types') => {
-  const r = spawnSync(process.execPath, [RUNNER, '--job', job, ...args], {
-    encoding: 'utf8', timeout: 240_000, env: { ...cleanEnv(), ANTHROPIC_API_KEY: '' },
+  const r = spawnSync(process.execPath, [RUNNER, '--job', job, '--model', 'claude-sonnet-5', ...args], {
+    encoding: 'utf8', timeout: 240_000, env: { ...cleanEnv({}, { rows: !args.includes('--approve') }), ANTHROPIC_API_KEY: '' },
   });
   const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   if (r.status === null) throw new Error(`run-u.mjs never exited (${r.error?.code ?? r.signal ?? 'no error'}):\n${out.slice(0, 400)}`);
@@ -230,7 +230,7 @@ test('tripwire: the runner ANSWERS through the library seam and never re-spells 
 test('tripwire: the JUDGE SEAM reaches runJob — a judged stage with no provider instrument-STOPS', () => {
   // softgreen's whole point is a close that JUDGES, and the judged stage's provider
   // is not necessarily the worker's — before PRD item 32 it was pinned to
-  // `JUDGE_MODEL` on Anthropic, never agent-selectable, and absent it the stage
+  // a library-pinned judge model on Anthropic, never agent-selectable, and absent it the stage
   // stopped as a wiring gap rather than grading on whatever model was lying
   // around. `run-author.mjs` wired it; this runner — the one that actually runs
   // the job — did not, so every live softgreen run would have died at its own

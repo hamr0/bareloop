@@ -40,7 +40,9 @@ import {
   runCalibration, compareExpectation, factsResist, artifactHash,
   INJECTION_LOCATE_BATTERY, INJECTION_CARD, CALIBRATION_LABEL, CASUALTY_AXES,
 } from '../src/calibrate.js';
-import { JUDGE_MODEL, CALIBRATION_SIZE, expectedOf, decide } from '../src/judged.js';
+import { CALIBRATION_SIZE, expectedOf, decide } from '../src/judged.js';
+const JUDGE_MODEL = 'claude-haiku-4-5'; // a fixture id: the library keeps no pinned judge model (P8)
+
 
 /** The judge identity these tests hand in (PRD item 32.1: `runCalibration` takes it,
  * required, with no library default — a set stamped with a model nobody named is a

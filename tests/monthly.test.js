@@ -45,21 +45,28 @@ test('config: missing file = defaults; write is atomic, mode 600, keeps unknown 
   assert.equal(statSync(configPath(home)).mode & 0o777, 0o600);
 });
 
-test('config: keys merge per env name; null deletes; bad values are refused and nothing is written', (t) => {
+test('config: keys merge per env name; null deletes; models replace whole; bad values are refused and nothing is written', (t) => {
   const home = tmp(t);
-  updateConfig({ keys: { DEEPSEEK_API_KEY: { name: 'deepseek-flash', shape: 'openai-api', baseUrl: 'https://api.deepseek.com/v1' } } }, { home });
-  updateConfig({ keys: { OPENAI_API_KEY: { name: 'gpt-x' }, DEEPSEEK_API_KEY: { name: 'deepseek-v4' } }, anthropicBalanceNote: 12.5 }, { home });
+  updateConfig({ keys: { GW_KEY: { shape: 'openai-api', baseUrl: 'https://gw.example/v1/' } } }, { home });
+  updateConfig({ keys: { OTHER_KEY: { shape: 'anthropic-api' }, GW_KEY: { legacyMaxTokens: true } }, anthropicBalanceNote: 12.5 }, { home });
   assert.deepEqual(readConfig({ home }).config.keys, {
-    DEEPSEEK_API_KEY: { name: 'deepseek-v4', shape: 'openai-api', baseUrl: 'https://api.deepseek.com/v1' },
-    OPENAI_API_KEY: { name: 'gpt-x' },
-  });
-  updateConfig({ keys: { OPENAI_API_KEY: null }, monthlyLimitUsd: null }, { home });
-  assert.deepEqual(Object.keys(readConfig({ home }).config.keys), ['DEEPSEEK_API_KEY']);
+    GW_KEY: { shape: 'openai-api', baseUrl: 'https://gw.example/v1', legacyMaxTokens: true },
+    OTHER_KEY: { shape: 'anthropic-api' },
+  }, 'a trailing slash is stripped; fields merge');
+  assert.equal(Object.hasOwn(readConfig({ home }).config, 'anthropicBalanceNote'), false, 'the retired Balance note is dropped on any write');
+  updateConfig({ models: { GW_KEY: [{ model: 'a', use: false }, { model: 'b', use: true, inPerM: 0, outPerM: 0 }] } }, { home });
+  updateConfig({ models: { GW_KEY: [{ model: 'c', use: false }] } }, { home });
+  assert.deepEqual(readConfig({ home }).config.models.GW_KEY, [{ model: 'c', use: false }], 'the list is replaced whole');
+  updateConfig({ keys: { OTHER_KEY: null }, monthlyLimitUsd: null }, { home });
+  assert.deepEqual(Object.keys(readConfig({ home }).config.keys), ['GW_KEY']);
   const before = readFileSync(configPath(home), 'utf8');
   for (const bad of [
-    { monthlyLimitUsd: 0 }, { monthlyLimitUsd: -3 }, { monthlyLimitUsd: 'x' }, { anthropicBalanceNote: -1 },
+    { monthlyLimitUsd: 0 }, { monthlyLimitUsd: -3 }, { monthlyLimitUsd: 'x' },
     { keys: { 'Bad Name': {} } }, { keys: { K: { shape: 'ollama' } } }, { keys: { K: { baseUrl: 'ftp://x' } } },
-    { keys: { K: { name: 'two words' } } }, { keys: 'x' },
+    { keys: { K: { legacyMaxTokens: 'yes' } } }, { keys: 'x' },
+    { models: { K: [{ model: 'two words', use: false }] } }, { models: { K: [{ model: 'a', use: true }] } },
+    { models: { K: [{ model: 'a', use: false, inPerM: 1 }] } }, { models: { K: [{ model: 'a', use: false }, { model: 'a', use: false }] } },
+    { models: 'x' },
   ]) {
     assert.throws(() => updateConfig(bad, { home }), ConfigError, JSON.stringify(bad));
   }

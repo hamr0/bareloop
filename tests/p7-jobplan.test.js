@@ -11,6 +11,7 @@ import { planFromSpec, planFromConfirm, checkClassOfKind } from '../src/panel/jo
 import { getRunJob, signedLine, jobTextFromSpec, inputsTextFromSpec, createPanelServer } from '../src/panel/server.js';
 import { appendRun } from '../src/runlist.js';
 import { jobSpecHash } from '../src/job.js';
+import { ANTH_CFG } from './helpers.js';
 
 /** @type {string[]} */ const dirs = [];
 test.after(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
@@ -134,7 +135,7 @@ test('getRunJob: a P7 run returns the plan, jobLines, inputs, specHash and the S
 
 test('Start route: Inputs lines 2+ are proven at $0 before a session — a miss is a 400 naming the line', async (t) => {
   const home = tmp('p7-home-');
-  writeFileSync(join(home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 });
+  writeFileSync(join(home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 }); writeFileSync(join(home, 'config.json'), JSON.stringify(ANTH_CFG));
   const repo = tmp('p7-repo-');
   const g = (a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...a], { cwd: repo, encoding: 'utf8' });
   g(['init', '-q', '-b', 'main']);

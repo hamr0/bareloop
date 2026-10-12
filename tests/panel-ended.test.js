@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
-import { createPanelServer, endedFor, getRunDetail, listRuns } from '../src/panel/server.js';
+import { createPanelServer, endedFor, getRunDetail, getStartFrom, listRuns } from '../src/panel/server.js';
 import { appendRun } from '../src/runlist.js';
 import { jobSpecHash } from '../src/job.js';
 
@@ -311,6 +311,23 @@ test('resume route: unchanged caps spawn run-u with the SAME signed spec, --resu
   assert.deepEqual(readdirSync(out).filter((n) => !n.startsWith('resume-')).sort(), ['resolved-spec.json', 'source-x'], 'no revision file when the caps did not change');
 });
 
+test('resume route: an older spec\'s Settings line rides as --model / --provider (hash untouched); with none given, no such flags', async (t) => {
+  const home = tmp();
+  makeRun(home, { runid: 'line1', spent: 5 });
+  const spawnFn = makeSpawn();
+  const { post } = await startServer(t, { home, spawnFn });
+  assert.equal((await post('/api/runs/line1/resume', { budgetUsd: 8, maxWallMin: 60, model: 'm-one', provider: 'A_KEY' })).status, 200);
+  const args = spawnFn.calls[0].args;
+  assert.deepEqual(args.slice(args.indexOf('--model'), args.indexOf('--model') + 4), ['--model', 'm-one', '--provider', 'A_KEY']);
+  assert.ok(args.indexOf('--model') > args.indexOf('--approve'));
+  const home2 = tmp();
+  makeRun(home2, { runid: 'line2', spent: 5 });
+  const spawn2 = makeSpawn();
+  const two = await startServer(t, { home: home2, spawnFn: spawn2 });
+  await two.post('/api/runs/line2/resume', { budgetUsd: 8, maxWallMin: 60 });
+  assert.equal(spawn2.calls[0].args.includes('--model') || spawn2.calls[0].args.includes('--provider'), false);
+});
+
 test('resume route: raised caps write resolved-spec-r1.json beside the original (never over it) and approve the NEW hash', async (t) => {
   const home = tmp();
   const { out, specHash } = makeRun(home, { runid: 'raise1' });
@@ -505,4 +522,30 @@ test('page: renderRun calls renderEnded (an engine with a caller), and the run c
   assert.match(fnSrc('renderRun'), /renderEnded\(detail\);/);
   assert.match(PAGE, /r\.status \? '<span class="wf-ended"[^]*?statusWordHtml\(r\.status, r\.endedLine\)/);
   assert.match(PAGE, /g\.lastStatus \? '<span class="wf-ended wf-ended-inline"[^]*?statusWordHtml\(g\.lastStatus, g\.lastEndedLine\)/);
+});
+
+// Q2(b) (hamr 2026-10-11): the Resume card learns from start-from whether the signed spec names a model; the resume of a
+// model-less spec carries the picked line and does not move the spec hash.
+test('Q2(b): start-from says whether the signed spec names a model; a resume carrying model+provider spawns on the SAME hash and writes no revision', async (t) => {
+  const home = tmp();
+  const { out, specHash } = makeRun(home, { runid: 'old1', spent: 5 });
+  assert.equal(getStartFrom('old1', { home }).specNamesModel, false, 'SPEC names no model');
+  const named = tmp();
+  makeRun(named, { runid: 'new1', spent: 5, spec: { ...SPEC, model: 'deepseek-flash' } });
+  assert.equal(getStartFrom('new1', { home: named }).specNamesModel, true);
+  // the Resume card filters its Model menu on what the spec holds a line to: shape, endpoint (normalised) or '' for any, shape label
+  const pinned = tmp();
+  makeRun(pinned, { runid: 'pin1', spent: 5, spec: { ...SPEC, provider: 'openai-api', baseUrl: 'https://Api.Example/v1/' } });
+  assert.deepEqual(getStartFrom('pin1', { home: pinned }).specWorker, { provider: 'openai-api', endpoint: 'https://api.example/v1', label: 'OpenAI-compatible' });
+  const anyEp = tmp();
+  makeRun(anyEp, { runid: 'any1', spent: 5, spec: { ...SPEC, provider: 'anthropic-api' } });
+  assert.deepEqual(getStartFrom('any1', { home: anyEp }).specWorker, { provider: 'anthropic-api', endpoint: '', label: 'Anthropic' });
+  const spawnFn = makeSpawn();
+  const { post } = await startServer(t, { home, spawnFn });
+  assert.equal((await post('/api/runs/old1/resume', { budgetUsd: 8, maxWallMin: 60, model: 'deepseek-flash', provider: 'DEEPSEEK_API_KEY' })).status, 200);
+  const args = spawnFn.calls[0].args;
+  assert.equal(args[args.indexOf('--approve') + 1], specHash);
+  assert.equal(specHash, jobSpecHash(SPEC), 'the hash is the unchanged signed spec\'s');
+  assert.deepEqual(args.slice(args.indexOf('--model'), args.indexOf('--model') + 4), ['--model', 'deepseek-flash', '--provider', 'DEEPSEEK_API_KEY']);
+  assert.deepEqual(readdirSync(out).filter((n) => !n.startsWith('resume-')).sort(), ['resolved-spec.json', 'source-x'], 'no revision file');
 });

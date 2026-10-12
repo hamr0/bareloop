@@ -49,7 +49,8 @@ import { parseImportedRunId, safeSpinePath, spineStartedAt } from './importrun.j
 import { checkBundleDeps, resolveBundleSpec } from '../bundle.js';
 import { checkCloseByteSignature } from '../close-integrity.js';
 import { keysHome } from '../keysfile.js';
-import { rowsForHome, findRow, modelChoiceFor } from '../providerrows.js';
+import { rowsForHome, findRow, modelChoiceFor, tickedLines, endpointOf } from '../providerrows.js';
+import { SHAPES } from '../providershapes.js';
 import { resolveProvider } from '../providers.js';
 import { REUSE_LOCKED_FIELDS, REUSE_OPEN_FIELDS } from './authorsession.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
@@ -2374,28 +2375,38 @@ function signedSpecForRun(row, records) {
 }
 
 /**
- * The worker a signed spec ran: provider, baseUrl and model, the model falling back to the provider's default tier
- * when the spec names none (the same fallback `resolveWorkerModel` makes at run time).
+ * The worker a signed spec ran: provider, baseUrl and model ('' when an older spec names none: bareloop keeps no default).
  * @param {any} spec
  * @returns {{provider: string, baseUrl?: string, model: string}}
  */
 function workerOfSpec(spec) {
   const provider = typeof spec?.provider === 'string' ? spec.provider : '';
-  let model = typeof spec?.model === 'string' ? spec.model : '';
-  if (!model) { try { model = resolveProvider(provider).tiers.sonnet; } catch { model = ''; } }
+  const model = typeof spec?.model === 'string' ? spec.model : '';
   return { provider, ...(typeof spec?.baseUrl === 'string' && spec.baseUrl ? { baseUrl: spec.baseUrl } : {}), model };
 }
 /** @param {{provider: string, baseUrl?: string, model: string}} w @returns {string} one spelling of "the same worker" */
 const workerId = (w) => `${w.provider}\u0000${w.baseUrl ?? ''}\u0000${w.model}`;
 /**
+ * The model id a reuse card's Model box shows for a row: the spec's own model when the row has a line for it, else the
+ * row's first ticked line; `undefined` when there is no row or no such line.
+ * @param {import('../providerrows.js').KeyRow|null} row
+ * @param {string|null|undefined} specModel
+ * @returns {string|undefined}
+ */
+function rowModelOf(row, specModel) {
+  if (!row) return undefined;
+  if (specModel && row.models.some((l) => l.model === specModel)) return specModel;
+  return tickedLines([row])[0]?.line.model;
+}
+/**
  * The worker the reuse card's CURRENT Model box names: the Settings row's provider, baseUrl and Name. `null` when the
  * box is blank or names no row.
  * @param {string} model a Settings Name
- * @param {{ home?: string }} opts
+ * @param {{ home?: string, provider?: string }} opts `provider` is the key's env name the card picked
  * @returns {{provider: string, baseUrl?: string, model: string}|null}
  */
 function workerOfChoice(model, opts) {
-  const c = modelChoiceFor(rowsForHome(keysHome(opts.home)), model);
+  const c = modelChoiceFor(rowsForHome(keysHome(opts.home)), { provider: opts.provider, model });
   return c ? { provider: c.provider, ...(c.baseUrl ? { baseUrl: c.baseUrl } : {}), model: c.name } : null;
 }
 
@@ -2478,10 +2489,11 @@ export function reuseLine(record) {
  * $ cap and the Time cap — start at what the run had. `ok:false` when the run's signed job is not on disk (nothing
  * to copy: change the job: Clear the card). `null` when the runid is not listed.
  * @param {string} runid
- * @param {{ home?: string, model?: string }} [opts] `model` = the Model box's current Name (the estimate counts only runs on that worker); absent = the card's own Model
+ * @param {{ home?: string, model?: string, provider?: string }} [opts] `model` = the Model box's current Name (the estimate counts only runs on that worker); absent = the card's own Model
  * @returns {{ok: true, origin: {runid: string, job: string}, outcome: string|null, card: Record<string, any>, from: 'signed job',
  *   locked: readonly string[], open: readonly string[], note: string|null,
- *   specHash: string, workflowKey: string, spec: any, specPath: string,
+ *   specHash: string, workflowKey: string, spec: any, specPath: string, specNamesModel: boolean,
+ *   specWorker: {provider: string, endpoint: string, label: string},
  *   trackRecord: ReturnType<typeof trackRecordFor>, line: string}|{ok: false, error: string}|null}
  */
 export function getStartFrom(runid, opts = {}) {
@@ -2507,7 +2519,7 @@ export function getStartFrom(runid, opts = {}) {
   const jobStart = records.find((r) => r && r.type === 'job-start') ?? null;
   const card = reuseCardFromSpec(spec, {
     model: typeof saved.model === 'string' && saved.model ? saved.model
-      : (findRow(rowsForHome(keysHome(opts.home)), { provider: spec.provider, baseUrl: spec.baseUrl, model: spec.model })?.name
+      : (rowModelOf(findRow(rowsForHome(keysHome(opts.home)), { provider: spec.provider, baseUrl: spec.baseUrl, model: spec.model }), spec.model)
         ?? (typeof jobStart?.model === 'string' ? jobStart.model : '')),
     source: typeof saved.source === 'string' && saved.source ? saved.source : (typeof manifest?.source === 'string' ? manifest.source : (typeof row.patient === 'string' ? row.patient : '')),
     // a card saved by P7 or later keeps the Inputs text the person typed
@@ -2515,7 +2527,7 @@ export function getStartFrom(runid, opts = {}) {
     jobName: row.job,
   });
   const key = workflowKey(spec);
-  const trackRecord = trackRecordFor(key, { ...opts, worker: workerOfChoice(opts.model ?? card.model, opts) });
+  const trackRecord = trackRecordFor(key, { ...opts, worker: workerOfChoice(opts.model ?? card.model, { ...opts, provider: opts.provider ?? card.provider }) });
   return {
     ok: true,
     origin: { runid, job: row.job },
@@ -2530,6 +2542,14 @@ export function getStartFrom(runid, opts = {}) {
     workflowKey: key,
     spec,
     specPath: signed.specPath,
+    // an older spec signed before models were required names none: the Resume card then opens its Model box (run-u takes `--model`)
+    specNamesModel: typeof spec.model === 'string' && spec.model !== '',
+    // what resolveWorker will hold a picked line to: the spec's shape, and its endpoint when it names one ('' = any endpoint)
+    specWorker: {
+      provider: String(spec.provider),
+      endpoint: typeof spec.baseUrl === 'string' && spec.baseUrl.trim() !== '' ? endpointOf(String(spec.provider), spec.baseUrl) : '',
+      label: SHAPES.find((x) => x.id === spec.provider)?.label ?? String(spec.provider),
+    },
     trackRecord,
     line: reuseLine(trackRecord),
   };
@@ -2540,7 +2560,7 @@ export function getStartFrom(runid, opts = {}) {
  * that has at least one GREEN local run, newest green first. `runid` = that job's newest green run, so the page hands
  * it to the existing start-from flow unchanged; `line` is `getStartFrom`'s own estimate line (never a second
  * spelling). Local runs only — an imported job keeps its Reuse button in the Import view. $0, read-only.
- * @param {{ home?: string, model?: string }} [opts] `model` passes through to the estimate line, as start-from's does
+ * @param {{ home?: string, model?: string, provider?: string }} [opts] `model` passes through to the estimate line, as start-from's does
  * @returns {{job: string, runid: string, checkType: 'deterministic'|'rubric', line: string}[]}
  */
 export function listReuseJobs(opts = {}) {
@@ -2621,7 +2641,7 @@ function describeSpec(spec) {
  * signs it on this machine at [Sign & run]. Same card, same locked/open boxes as a run's reuse. `null` when no such
  * imported job.
  * @param {string} id
- * @param {{ home?: string, model?: string }} [opts] `model` as for {@link getStartFrom}
+ * @param {{ home?: string, model?: string, provider?: string }} [opts] `model` as for {@link getStartFrom}
  * @returns {{ok: true, origin: {runid: null, job: string, importId: string}, card: Record<string, any>, from: 'imported job',
  *   locked: readonly string[], open: readonly string[], note: string|null, specHash: string, workflowKey: string, spec: any,
  *   specPath: null, trackRecord: ReturnType<typeof trackRecordFor>, line: string}|{ok: false, error: string}|null}
@@ -2640,10 +2660,10 @@ export function getStartFromImport(id, opts = {}) {
   // the bundle's provider is no longer forced: Model is open on a reuse, so the person's chosen Settings row is the worker.
   // The card opens on the row matching the bundle's own provider when there is one, else blank (the page's menu picks).
   const rows = rowsForHome(keysHome(opts.home));
-  const named = findRow(rows, { provider: spec.provider, baseUrl: spec.baseUrl, model: spec.model })?.name ?? '';
+  const named = rowModelOf(findRow(rows, { provider: spec.provider, baseUrl: spec.baseUrl, model: spec.model }), spec.model) ?? '';
   const card = reuseCardFromSpec(spec, { model: named, source: '', jobName: row.job });
   const key = workflowKey(spec);
-  const trackRecord = trackRecordFor(key, { ...opts, worker: workerOfChoice(opts.model ?? card.model, opts) });
+  const trackRecord = trackRecordFor(key, { ...opts, worker: workerOfChoice(opts.model ?? card.model, { ...opts, provider: opts.provider ?? card.provider }) });
   return {
     ok: true,
     origin: { runid: null, job: row.job, importId: id },

@@ -283,7 +283,7 @@ test('MUTATION PROOF: removing the close-absolute-path precheck makes the "never
 // (c) the honest escalation tail (F130/PRD item 27(c)) — `resumable` threaded
 // from `runJob`/`src/cli.js` into `runPlan`'s three `--resume`-naming
 // readouts. Driven at the `runPlan` seam directly (same seam
-// tests/planrun.test.js's own WALL_OPTIONS pin uses) via a money-halt during
+// tests/planrun-*.test.js's own WALL_OPTIONS pin uses) via a money-halt during
 // PLAN DRAFTING: the scout is fully funded, the plan drafter's gate is
 // drained to a fraction of a cent, so its first round trips the budget gate
 // and `relay(e, 'plan')` escalates with `MONEY_OPTIONS`.
@@ -309,12 +309,12 @@ const JOB_MONEY = (wd) => ({
 
 /**
  * A provider that answers the scout call normally, then throws a `cap-halt`
- * on the very next round — the same shape `tests/planrun.test.js`'s own
+ * on the very next round — the same shape `tests/planrun-*.test.js`'s own
  * `timeoutError()` uses for `wall-halt` (a provider throw named by category,
  * which `categorize()` reads directly, `src/planrun.js`'s `relay(e, 'plan')`
  * seam). This targets the WIRING under test (does `resumable` reach the
  * escalation's option text) rather than bareguard's own budget-tripping
- * mechanics, which are exercised elsewhere in `tests/planrun.test.js`.
+ * mechanics, which are exercised elsewhere in `tests/planrun-*.test.js`.
  */
 function capHaltOnSecondCall() {
   let calls = 0;

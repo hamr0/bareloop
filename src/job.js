@@ -167,7 +167,7 @@ export const CONDITION_KEYS = Object.freeze(['providerPath', 'closeVerbosity', '
 // `steps` stays in the field list ONLY so a retired spec reds by name
 // (`shape-retired`) instead of falling through to a generic unknown-field —
 // the operator gets told what happened, not just that something is wrong.
-const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'baseUrl', 'conditions', 'cadence', 'budgetUsd', 'maxWallMs', 'closeTimeoutMs', 'model', 'judge', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools', 'jobLines', 'inputs'];
+const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'baseUrl', 'conditions', 'cadence', 'budgetUsd', 'maxWallMs', 'closeTimeoutMs', 'model', 'thinking', 'judge', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools', 'jobLines', 'inputs'];
 /** the exact fields of a signed `judge` override — nested objects red unknown
  * keys too, because no smuggling level exists in a signed spec */
 const JUDGE_FIELDS = ['provider', 'model'];
@@ -329,7 +329,12 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
   // on THAT model, not merely on the goal/close it runs against. The judge
   // model stays library-pinned pending recalibration — out of scope here.
   if (spec.model !== undefined && !isNonEmptyString(spec.model)) {
-    red('invalid-value', 'model', 'non-empty string — exact provider model id (e.g. "claude-sonnet-5")');
+    red('invalid-value', 'model', 'non-empty string — the exact model id of a line ticked in Settings > Providers');
+  }
+  // THINKING (P8) — the job's "Thinking on" tick, OPTIONAL: absent means off (and an old spec keeps the hash it always had); present it is
+  // signed like `model`. It covers DRAFTING and the rubric JUDGE only — the worker is never handed a thinking option. A boolean, nothing else.
+  if (spec.thinking !== undefined && typeof spec.thinking !== 'boolean') {
+    red('invalid-value', 'thinking', 'true or false — the job\'s "Thinking on" tick (absent = off)');
   }
 
   // JUDGE — PRD item 32.1 (hamr, 2026-09-10: the judge "defaults to whatever
@@ -984,15 +989,15 @@ export function checkApproval(job, approvals) {
  * mismatched flag is a mistake worth stopping on, never a silent swap); the
  * same id from both is not a conflict. Extracted from scripts/run-u.mjs so
  * the decision is testable without running the script or touching a provider.
- * @param {{ specModel?: string, flagModel?: string, defaultModel: string }} args
+ * @param {{ specModel?: string, flagModel?: string, suppliedModel?: string }} args
  *   `specModel` — `job.model` if the signed spec carries one, else undefined.
  *   `flagModel` — the model id an explicit `--model <tier>` resolved to, else
  *   undefined (a flag that was never passed, not merely a default tier name).
- *   `defaultModel` — the runner's own default when neither spec nor flag says.
+ *   `suppliedModel` — a model the CALLER supplies when neither spec nor flag says (bareloop keeps none of its own).
  * @returns {{ model: string, source: 'spec'|'flag'|'default' }}
- * @throws {Error} when the spec names a model and the flag names a different one
+ * @throws {Error} when the spec names a model and the flag names a different one, or when no model is named at all
  */
-export function resolveWorkerModel({ specModel, flagModel, defaultModel }) {
+export function resolveWorkerModel({ specModel, flagModel, suppliedModel }) {
   if (specModel !== undefined) {
     if (flagModel !== undefined && flagModel !== specModel) {
       throw new Error(`spec names model "${specModel}" but --model resolved to "${flagModel}" — the signed spec wins; a mismatched --model flag is refused, never silently overridden. Drop --model or point it at the same model.`);
@@ -1000,5 +1005,6 @@ export function resolveWorkerModel({ specModel, flagModel, defaultModel }) {
     return { model: specModel, source: 'spec' };
   }
   if (flagModel !== undefined) return { model: flagModel, source: 'flag' };
-  return { model: defaultModel, source: 'default' };
+  if (suppliedModel === undefined) throw new Error('no model is named — a job carries its own model, or the run is given --model <id> (one ticked in Settings > Providers with both prices)');
+  return { model: suppliedModel, source: 'default' };
 }

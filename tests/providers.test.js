@@ -1,5 +1,5 @@
 // PRD item 28, shape (1): the provider factory (src/providers.js). Tests
-// the seam itself — provider name -> ctor/envKey/tier table/param gating —
+// the seam itself — provider name -> ctor + endpoint option name, the row's old-max_tokens tick —
 // plus the job-spec-level admission of `openai-api`/`baseUrl` (src/job.js)
 // and the `stopReason` forwarding on a real-Loop `worker-round` (src/
 // planrun.js, driven through the existing scripted-provider harness).
@@ -8,12 +8,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  resolveProvider, makeProvider, buildRunnerProviders, ANTHROPIC_TIER_MODELS, OPENAI_TIER_MODELS,
-  GEMINI_TIER_MODELS, PROBE_STATUS, probeWarningLines, apiKeyProblem, checkProviderReachable, judgeCallOptions,
+  resolveProvider, makeProvider, buildRunnerProviders, PROBE_STATUS, probeWarningLines, apiKeyProblem, checkProviderReachable,
 } from '../src/providers.js';
 import { validateJob, PROVIDERS } from '../src/job.js';
 
-// The `stopReason`-on-`worker-round` tests live in tests/planrun.test.js
+// The `stopReason`-on-`worker-round` tests live in tests/planrun-*.test.js
 // instead of here: `makePatient`/`go`/`PLAN`/`tcall`/`JOB` are that file's
 // own LOCAL helpers (not exported from tests/helpers.js), and driving a
 // real Loop through a scripted provider is exactly "the existing planrun
@@ -31,24 +30,16 @@ test('the PROVIDERS menu is the exact admitted set — a new entry is a delibera
   assert.deepEqual([...PROVIDERS], ['anthropic-api', 'openai-api', 'gemini-api', 'clipipe-subscription']);
 });
 
-// ── resolveProvider: name -> {ctor, envKey, tiers, paramsFor} ──────────
+// ── resolveProvider: shape id -> {ctor, endpointKey} — and NOTHING else (no key name, no model ids, no per-model gating) ──────────
 
-test('resolveProvider("anthropic-api") yields the AnthropicProvider ctor, its own env key, and today\'s exact tier ids', async () => {
-  const { AnthropicProvider } = await import('bare-agent/providers');
-  const entry = resolveProvider('anthropic-api');
-  assert.equal(entry.ctor, AnthropicProvider);
-  assert.equal(entry.envKey, 'ANTHROPIC_API_KEY');
-  assert.deepEqual({ ...entry.tiers }, { sonnet: 'claude-sonnet-5', haiku: 'claude-haiku-4-5-20251001' });
-  assert.deepEqual({ ...ANTHROPIC_TIER_MODELS }, { sonnet: 'claude-sonnet-5', haiku: 'claude-haiku-4-5-20251001' });
-});
-
-test('resolveProvider("openai-api") yields the OpenAIProvider ctor, OPENAI_API_KEY, and deepseek-flash on both tiers (hamr\'s ruling: one secondary provider, not a menu)', async () => {
-  const { OpenAIProvider } = await import('bare-agent/providers');
-  const entry = resolveProvider('openai-api');
-  assert.equal(entry.ctor, OpenAIProvider);
-  assert.equal(entry.envKey, 'OPENAI_API_KEY');
-  assert.deepEqual({ ...entry.tiers }, { sonnet: 'deepseek-flash', haiku: 'deepseek-flash' });
-  assert.deepEqual({ ...OPENAI_TIER_MODELS }, { sonnet: 'deepseek-flash', haiku: 'deepseek-flash' });
+test('resolveProvider yields exactly the bare-agent ctor and the endpoint option name for each shape — no env key, no tier table, no param gating', async () => {
+  const { AnthropicProvider, OpenAIProvider, GeminiProvider } = await import('bare-agent/providers');
+  const want = { 'anthropic-api': AnthropicProvider, 'openai-api': OpenAIProvider, 'gemini-api': GeminiProvider };
+  for (const [name, ctor] of Object.entries(want)) {
+    const entry = resolveProvider(name);
+    assert.equal(entry.ctor, ctor, name);
+    assert.deepEqual(Object.keys(entry).sort(), ['ctor', 'endpointKey'], `${name}: a key name, a model id or a per-model table in here would be a hardcoded vendor`);
+  }
 });
 
 test('resolveProvider on an unknown name throws a NAMED error — no silent default (the resolveRates lesson)', () => {
@@ -65,16 +56,17 @@ test('makeProvider constructs with exposeErrorBody:true unconditionally (F153)',
   assert.equal(p.model, 'claude-sonnet-5');
 });
 
-test('the deepseek-flash entry carries the legacy-max-tokens flag (F149: DeepSeek silently ignores max_completion_tokens, asked 64 got 665/608) — the anthropic entry does not', () => {
-  const deepseek = makeProvider('openai-api', { apiKey: 'k', model: 'deepseek-flash' });
-  assert.equal(deepseek.legacyMaxTokens, true, 'an output cap that does not bind is a money hazard — this MUST bind');
-  const anthropic = makeProvider('anthropic-api', { apiKey: 'k', model: 'claude-sonnet-5' });
+test('the old max_tokens spelling is the ROW\'s tick: legacyMaxTokens:true reaches an openai-api provider; unticked, nothing — whatever the model id or host (F149)', () => {
+  const ticked = makeProvider('openai-api', { apiKey: 'k', model: 'any-model', legacyMaxTokens: true });
+  assert.equal(ticked.legacyMaxTokens, true, 'an output cap that does not bind is a money hazard — a ticked row MUST bind');
+  // nothing sniffs a model id or a host: a model that once needed the tick gets none until the person ticks it
+  const unticked = makeProvider('openai-api', { apiKey: 'k', model: 'deepseek-flash', baseUrl: 'https://api.deepseek.com/v1' });
+  assert.notEqual(unticked.legacyMaxTokens, true);
+  // the tick means something only on openai-api
+  const anthropic = makeProvider('anthropic-api', { apiKey: 'k', model: 'm', legacyMaxTokens: true });
   assert.notEqual(anthropic.legacyMaxTokens, true, 'Anthropic has only ever had one request key — nothing to gate, ever');
-});
-
-test('an openai-api model with no table entry gets no legacy-key override — bare-agent\'s own default (max_completion_tokens, GPT-5-safe) applies untouched', () => {
-  const gpt = makeProvider('openai-api', { apiKey: 'k', model: 'gpt-4.1' });
-  assert.notEqual(gpt.legacyMaxTokens, true);
+  const gemini = makeProvider('gemini-api', { apiKey: 'k', model: 'm', legacyMaxTokens: true });
+  assert.notEqual(gemini.legacyMaxTokens, true);
 });
 
 test('makeProvider forwards baseUrl only when given', () => {
@@ -98,17 +90,15 @@ test('makeProvider forwards baseUrl only when given', () => {
 // claim — a second instance against the same endpoint/model/key is a second
 // prompt-cache prefix — not merely a convenience).
 
-test('buildRunnerProviders: providerFor(tier) reuses the top-level provider when the tier resolves to the same model', () => {
+test('buildRunnerProviders: providerFor(tier) is the job\'s own provider — the plan\'s one tier token means THIS job\'s worker model', () => {
   const { provider, providerFor } = buildRunnerProviders({
     providerName: 'openai-api',
     apiKey: 'worker-key',
     model: 'deepseek-flash',
-    tierModels: { sonnet: 'deepseek-flash', haiku: 'deepseek-flash' },
     judgeApiKey: 'judge-key',
     judgeModel: 'claude-haiku-4-5',
   });
-  assert.equal(providerFor('sonnet'), provider, 'same model id -> the SAME instance, not a rebuild');
-  assert.equal(providerFor('haiku'), provider, 'deepseek-flash on both tiers -> the same instance too');
+  assert.equal(providerFor('sonnet'), provider, 'the SAME instance, not a rebuild');
 });
 
 test('buildRunnerProviders: with no judgeProviderName override, the judge DEFAULTS to the worker\'s own provider (PRD item 32.1)', async () => {
@@ -117,7 +107,6 @@ test('buildRunnerProviders: with no judgeProviderName override, the judge DEFAUL
     providerName: 'openai-api',
     apiKey: 'worker-key',
     model: 'deepseek-flash',
-    tierModels: { sonnet: 'deepseek-flash', haiku: 'deepseek-flash' },
     judgeApiKey: 'judge-key',
     judgeModel: 'claude-haiku-4-5',
   });
@@ -133,7 +122,6 @@ test('buildRunnerProviders: an explicit judgeProviderName override builds THAT p
     providerName: 'openai-api',
     apiKey: 'worker-key',
     model: 'deepseek-flash',
-    tierModels: { sonnet: 'deepseek-flash', haiku: 'deepseek-flash' },
     judgeApiKey: 'judge-key',
     judgeModel: 'claude-haiku-4-5',
     judgeProviderName: 'anthropic-api',
@@ -148,7 +136,6 @@ test('buildRunnerProviders: the worker instance is REUSED when provider+model+ke
     providerName: 'anthropic-api',
     apiKey: 'shared-key',
     model: 'claude-sonnet-5',
-    tierModels: { sonnet: 'claude-sonnet-5', haiku: 'claude-haiku-4-5' },
     judgeApiKey: 'shared-key',
     judgeModel: 'claude-sonnet-5',
   });
@@ -160,7 +147,6 @@ test('buildRunnerProviders: reuse requires EVERY axis to match — a differing k
     providerName: 'anthropic-api',
     apiKey: 'worker-key',
     model: 'claude-sonnet-5',
-    tierModels: { sonnet: 'claude-sonnet-5', haiku: 'claude-haiku-4-5' },
     judgeApiKey: 'a-different-account-key',
     judgeModel: 'claude-sonnet-5',
   });
@@ -168,19 +154,13 @@ test('buildRunnerProviders: reuse requires EVERY axis to match — a differing k
   assert.equal(judgeProvider.apiKey, 'a-different-account-key');
 });
 
-test('buildRunnerProviders: a spec-named model on one tier builds a SECOND provider instance for a differing tier', () => {
-  const { provider, providerFor } = buildRunnerProviders({
-    providerName: 'anthropic-api',
-    apiKey: 'k',
-    model: 'claude-opus-4',
-    tierModels: { sonnet: 'claude-opus-4', haiku: 'claude-haiku-4-5-20251001' },
-    judgeApiKey: 'k',
-    judgeModel: 'claude-haiku-4-5',
-  });
-  assert.equal(providerFor('sonnet'), provider);
-  const haikuProvider = providerFor('haiku');
-  assert.notEqual(haikuProvider, provider);
-  assert.equal(haikuProvider.model, 'claude-haiku-4-5-20251001');
+test('buildRunnerProviders: the row\'s old-max_tokens tick reaches the worker, and the judge takes its own row\'s tick (the worker\'s only when it shares the worker\'s shape)', () => {
+  const same = buildRunnerProviders({ providerName: 'openai-api', apiKey: 'k', model: 'm', legacyMaxTokens: true, judgeApiKey: 'k2', judgeModel: 'j' });
+  assert.equal(same.provider.legacyMaxTokens, true);
+  assert.equal(same.judgeProvider.legacyMaxTokens, true, 'a judge on the worker\'s own shape and row follows the worker\'s tick');
+  const other = buildRunnerProviders({ providerName: 'openai-api', apiKey: 'k', model: 'm', legacyMaxTokens: true, judgeApiKey: 'k2', judgeModel: 'j', judgeProviderName: 'openai-api', judgeLegacyMaxTokens: false });
+  assert.notEqual(other.judgeProvider.legacyMaxTokens, true, 'a judge row with its own tick OFF is not forced on by the worker\'s');
+  assert.notEqual(other.judgeProvider, other.provider);
 });
 
 // ── job-spec-level admission: provider + baseUrl ────────────────────────
@@ -256,13 +236,9 @@ test('provider reds an unrecognized value, unchanged behaviour from before this 
 // across bare-agent's providers. The endpoint does NOT, and these tests exist
 // because the way it fails is SILENT.
 
-test('gemini-api is on the menu, with its own key, tiers and endpoint spelling', () => {
+test('gemini-api is on the menu with its own endpoint spelling', () => {
   assert.ok(PROVIDERS.includes('gemini-api'), 'a spec can name it');
-  const e = resolveProvider('gemini-api');
-  assert.equal(e.envKey, 'GEMINI_API_KEY', 'its own key, never borrowed from another provider');
-  assert.equal(e.tiers.sonnet, 'gemini-2.5-pro');
-  assert.equal(e.tiers.haiku, 'gemini-2.5-flash', 'gemini has a real cheap tier, so haiku maps to it honestly');
-  assert.notEqual(e.tiers.sonnet, e.tiers.haiku, 'and the two tiers are genuinely different models, unlike DeepSeek');
+  assert.equal(resolveProvider('gemini-api').endpointKey, 'baseUrl');
 });
 
 test('the silent-ignore hazard endpointKey guards against is REAL, measured on the dependency', async () => {
@@ -318,7 +294,7 @@ test('the endpoint lands under the provider\'s own option name, and REACHES the 
   const url = 'https://endpoint.invalid/v1';
   for (const name of PROVIDERS.filter((p) => p !== 'clipipe-subscription')) {
     const e = resolveProvider(name);
-    const p = makeProvider(name, { apiKey: 'k', model: e.tiers.sonnet, baseUrl: url });
+    const p = makeProvider(name, { apiKey: 'k', model: 'a-model', baseUrl: url });
     assert.equal(p[e.endpointKey], url, `${name}: the endpoint must arrive under ${e.endpointKey} and STICK`);
   }
 });
@@ -326,7 +302,7 @@ test('the endpoint lands under the provider\'s own option name, and REACHES the 
 test('an omitted endpoint leaves the provider on its own default — never undefined', () => {
   for (const name of PROVIDERS.filter((p) => p !== 'clipipe-subscription')) {
     const e = resolveProvider(name);
-    const p = makeProvider(name, { apiKey: 'k', model: e.tiers.sonnet });
+    const p = makeProvider(name, { apiKey: 'k', model: 'a-model' });
     assert.equal(typeof p[e.endpointKey], 'string', `${name}: an absent baseUrl must not blank the endpoint`);
     assert.ok(p[e.endpointKey].startsWith('http'), `${name}: it falls back to a real default`);
   }
@@ -335,7 +311,7 @@ test('an omitted endpoint leaves the provider on its own default — never undef
 test('every admitted provider still gets exposeErrorBody unconditionally (F153)', () => {
   for (const name of PROVIDERS.filter((p) => p !== 'clipipe-subscription')) {
     const e = resolveProvider(name);
-    const p = makeProvider(name, { apiKey: 'k', model: e.tiers.sonnet });
+    const p = makeProvider(name, { apiKey: 'k', model: 'a-model' });
     assert.equal(p.exposeErrorBody, true, `${name}: the provider's own error sentence must reach the human`);
   }
 });
@@ -458,7 +434,7 @@ test('apiKeyProblem never trims or repairs — it only reports; the caller decid
 // completion/chat call, never returns the key material. Every real network
 // call is stubbed via `fetchImpl`; nothing here reaches the internet. ─────
 
-test('checkProviderReachable: anthropic-api — GET only, to /v1/models, key in x-api-key, never a completion endpoint', async () => {
+test('checkProviderReachable: anthropic-api — GET only, to <typed Base URL>/models, key in x-api-key, never a completion endpoint', async () => {
   /** @type {any} */
   let seen = null;
   const fetchImpl = async (url, init) => {
@@ -466,10 +442,10 @@ test('checkProviderReachable: anthropic-api — GET only, to /v1/models, key in 
     return { ok: true, json: async () => ({ data: [{ id: 'claude-sonnet-5' }] }) };
   };
   const r = await checkProviderReachable({
-    providerName: 'anthropic-api', apiKey: 'sk-ant-secret', model: 'claude-sonnet-5', fetchImpl,
+    providerName: 'anthropic-api', apiKey: 'sk-ant-secret', model: 'claude-sonnet-5', baseUrl: 'https://llm.example.test/v1', fetchImpl,
   });
   assert.equal(seen.method, 'GET');
-  assert.equal(seen.url, 'https://api.anthropic.com/v1/models');
+  assert.equal(seen.url, 'https://llm.example.test/v1/models');
   assert.equal(seen.headers['x-api-key'], 'sk-ant-secret');
   assert.equal(seen.headers['anthropic-version'], '2023-06-01');
   assert.equal(r.reachable, true);
@@ -477,12 +453,12 @@ test('checkProviderReachable: anthropic-api — GET only, to /v1/models, key in 
   // RED-PROOF: a model id NOT in the stubbed list must read false, not just
   // "truthy because the call succeeded" — otherwise this field proves nothing.
   const r2 = await checkProviderReachable({
-    providerName: 'anthropic-api', apiKey: 'sk-ant-secret', model: 'not-a-real-model', fetchImpl,
+    providerName: 'anthropic-api', apiKey: 'sk-ant-secret', model: 'not-a-real-model', baseUrl: 'https://llm.example.test/v1', fetchImpl,
   });
   assert.equal(r2.modelListed, false);
 });
 
-test('checkProviderReachable: openai-api (DeepSeek shape) — GET to <baseUrl>/models, key as Bearer, never x-api-key', async () => {
+test('checkProviderReachable: openai-api — GET to <baseUrl>/models, key as Bearer, never x-api-key', async () => {
   /** @type {any} */
   let seen = null;
   const fetchImpl = async (url, init) => {
@@ -491,10 +467,10 @@ test('checkProviderReachable: openai-api (DeepSeek shape) — GET to <baseUrl>/m
   };
   const r = await checkProviderReachable({
     providerName: 'openai-api', apiKey: 'sk-deepseek-secret', model: 'deepseek-flash',
-    baseUrl: 'https://api.deepseek.com/v1', fetchImpl,
+    baseUrl: 'https://gw.example/v1', fetchImpl,
   });
   assert.equal(seen.method, 'GET');
-  assert.equal(seen.url, 'https://api.deepseek.com/v1/models');
+  assert.equal(seen.url, 'https://gw.example/v1/models');
   assert.equal(seen.headers.Authorization, 'Bearer sk-deepseek-secret');
   assert.equal(seen.headers['x-api-key'], undefined, 'never sends the anthropic header shape to an openai-shaped endpoint');
   assert.equal(r.reachable, true);
@@ -503,7 +479,7 @@ test('checkProviderReachable: openai-api (DeepSeek shape) — GET to <baseUrl>/m
 
 test('checkProviderReachable: an HTTP error status reads reachable:false with the status named, never thrown', async () => {
   const fetchImpl = async () => ({ ok: false, status: 401, json: async () => ({}) });
-  const r = await checkProviderReachable({ providerName: 'anthropic-api', apiKey: 'bad-key', fetchImpl });
+  const r = await checkProviderReachable({ providerName: 'anthropic-api', apiKey: 'bad-key', baseUrl: 'https://llm.example.test/v1', fetchImpl });
   assert.equal(r.reachable, false);
   assert.equal(r.status, 'HTTP 401');
   assert.equal(r.modelListed, null);
@@ -511,7 +487,7 @@ test('checkProviderReachable: an HTTP error status reads reachable:false with th
 
 test('checkProviderReachable: a network/transport failure reads reachable:false with an error class, never throws', async () => {
   const fetchImpl = async () => { throw new Error('ECONNREFUSED'); };
-  const r = await checkProviderReachable({ providerName: 'anthropic-api', apiKey: 'k', fetchImpl });
+  const r = await checkProviderReachable({ providerName: 'anthropic-api', apiKey: 'k', baseUrl: 'https://llm.example.test/v1', fetchImpl });
   assert.equal(r.reachable, false);
   assert.equal(r.note, 'request failed: Error');
 });
@@ -531,180 +507,40 @@ test('checkProviderReachable: an abort (timeout) reads status "timeout", not a g
       rejectFn(e);
     });
   });
-  const r = await checkProviderReachable({ providerName: 'anthropic-api', apiKey: 'k', fetchImpl, timeoutMs: 5 });
+  const r = await checkProviderReachable({ providerName: 'anthropic-api', apiKey: 'k', baseUrl: 'https://llm.example.test/v1', fetchImpl, timeoutMs: 5 });
   assert.equal(r.reachable, false);
   assert.equal(r.status, 'timeout');
 });
 
-test('checkProviderReachable: an unsupported provider name never calls fetch at all', async () => {
+test('checkProviderReachable: an unknown shape name, or a blank Base URL (no default host exists), never calls fetch at all', async () => {
   let called = false;
   const fetchImpl = async () => { called = true; return { ok: true, json: async () => ({}) }; };
-  const r = await checkProviderReachable({ providerName: 'gemini-api', apiKey: 'k', fetchImpl });
+  const r = await checkProviderReachable({ providerName: 'no-such-api', apiKey: 'k', baseUrl: 'https://x.example/v1', fetchImpl });
   assert.equal(called, false);
   assert.equal(r.reachable, false);
   assert.equal(r.status, 'unsupported-provider');
+  const blank = await checkProviderReachable({ providerName: 'openai-api', apiKey: 'k', fetchImpl });
+  assert.equal(called, false);
+  assert.equal(blank.reachable, false);
+  assert.equal(blank.status, 'no-base-url');
+});
+
+test('checkProviderReachable: gemini-api is now testable — key in x-goog-api-key, ids from models[].name minus its models/ prefix', async () => {
+  /** @type {any} */
+  let seen = null;
+  const fetchImpl = async (url, init) => { seen = { url: String(url), headers: init.headers, redirect: init.redirect }; return { ok: true, json: async () => ({ models: [{ name: 'models/m-1' }] }) }; };
+  const r = await checkProviderReachable({ providerName: 'gemini-api', apiKey: 'g-key', model: 'm-1', baseUrl: 'https://gem.example/v1beta', fetchImpl });
+  assert.equal(seen.url, 'https://gem.example/v1beta/models');
+  assert.equal(seen.headers['x-goog-api-key'], 'g-key');
+  assert.equal(seen.redirect, 'manual', 'a redirect is never followed, so the key is never sent on');
+  assert.equal(r.modelListed, true);
 });
 
 test('checkProviderReachable: RED-PROOF — the returned object never carries the api key anywhere in its own JSON shape', async () => {
   const fetchImpl = async () => ({ ok: true, json: async () => ({ data: [] }) });
   const secret = 'sk-this-must-never-come-back-abc123';
-  const r = await checkProviderReachable({ providerName: 'anthropic-api', apiKey: secret, fetchImpl });
+  const r = await checkProviderReachable({ providerName: 'anthropic-api', apiKey: secret, baseUrl: 'https://llm.example.test/v1', fetchImpl });
   assert.ok(!JSON.stringify(r).includes(secret));
 });
 
-// ── F192 (hamr ruling A, 2026-10-09): the rubric judge runs with thinking OFF ───
-//
-// run mv117wde: deepseek-flash's default thinking ate the judge's 4000-token output
-// budget (1835 of 2409 completion tokens were reasoning), so the locate truncated 4x.
-// These tests capture the request body at the provider's `_request` seam, driven
-// through bareloop's own code (runLocate -> defaultJudgeLoop -> bare-agent Loop ->
-// OpenAIProvider.generate) — nothing between bareloop and the wire is stubbed.
-
-import { runLocate, defaultJudgeLoop, JUDGE_MAX_TOKENS } from '../src/judged.js';
-import { makeLoopGenerate } from '../src/authorflow.js';
-
-const F192_CARD = { items: [{ rule: 'has-doc', text: 'Every top-level function has a JSDoc block directly above it.' }] };
-const F192_ARTIFACT = '/** doc */\nexport function a() {}\n';
-
-/** run one judge locate against a real provider whose `_request` captures the body */
-async function captureJudgeBody(/** @type {string} */ model) {
-  const provider = makeProvider('openai-api', { apiKey: 'test-key', model });
-  /** @type {any} */
-  let body = null;
-  /** @type {any} */ (provider)._request = async (/** @type {string} */ _path, /** @type {any} */ b) => {
-    body = JSON.parse(JSON.stringify(b));
-    throw new Error('captured');
-  };
-  await runLocate({ artifactText: F192_ARTIFACT, card: F192_CARD, loopFactory: ({ system }) => defaultJudgeLoop({ provider, system }) });
-  assert.ok(body, 'the locate request reached the provider seam');
-  return body;
-}
-
-test('F192: a deepseek-flash judge locate carries thinking:{type:"disabled"} and the unchanged 4000-token cap', async () => {
-  const body = await captureJudgeBody('deepseek-flash');
-  assert.deepEqual(body.thinking, { type: 'disabled' });
-  assert.equal(JUDGE_MAX_TOKENS, 4000);
-  assert.equal(body.max_tokens, 4000, 'deepseek-flash takes the legacy max_tokens key (F149) and the cap is untouched');
-});
-
-test('thinkingMode: a gpt-5 judge locate carries bare-agent\'s own off shape (reasoning_effort minimal) and NEVER the raw thinking field', async () => {
-  const body = await captureJudgeBody('gpt-5');
-  assert.equal(body.reasoning_effort, 'minimal', "bare-agent's measured off shape for gpt-5, not a bareloop list");
-  assert.equal('thinking' in body, false);
-});
-
-test('thinkingMode: a judge on claude-opus-5-5 (measured NOT switchable) does not throw and sends no thinking field of any kind', async () => {
-  const provider = makeProvider('anthropic-api', { apiKey: 'test-key', model: 'claude-opus-5-5' });
-  assert.deepEqual(judgeCallOptions(provider), {});
-  /** @type {any} */
-  let body = null;
-  /** @type {any} */ (provider)._request = async (/** @type {any} */ b) => { body = JSON.parse(JSON.stringify(b)); throw new Error('captured'); };
-  await runLocate({ artifactText: F192_ARTIFACT, card: F192_CARD, loopFactory: ({ system }) => defaultJudgeLoop({ provider, system }) });
-  assert.ok(body, 'the request was sent (bare-agent did not refuse before send)');
-  assert.equal('thinking' in body, false);
-});
-
-test('thinkingMode: a judge on an UNVERIFIED model sends nothing (the default path never breaks a model bare-agent has not measured)', async () => {
-  const body = await captureJudgeBody('some-local-model');
-  for (const k of ['thinking', 'reasoning_effort', 'think']) assert.equal(k in body, false, k);
-});
-
-test('F192: a drafter call with thinking ON on the SAME deepseek-flash provider instance carries NO thinking field — the judge option never leaks into the call options', async () => {
-  const provider = makeProvider('openai-api', { apiKey: 'test-key', model: 'deepseek-flash' });
-  /** @type {any} */
-  let body = null;
-  /** @type {any} */ (provider)._request = async (/** @type {string} */ _path, /** @type {any} */ b) => {
-    body = JSON.parse(JSON.stringify(b));
-    throw new Error('captured');
-  };
-  await makeLoopGenerate(provider, { draftThinking: 'on' })([{ role: 'user', content: 'hi' }], [], {}).catch(() => {});
-  assert.ok(body, 'the worker-path request reached the provider seam');
-  assert.equal('thinking' in body, false);
-});
-
-test('F192: judgeCallOptions is empty for a non-OpenAI provider even when the model id matches the allow-list', () => {
-  const p = makeProvider('anthropic-api', { apiKey: 'k', model: 'deepseek-flash' });
-  assert.deepEqual(judgeCallOptions(p), {});
-});
-
-// ── hamr 2026-10-10: the DRAFTER's per-call "thinking off" knob (default OFF since hamr 2026-10-11) ─────────────────────────────────
-
-import { draftCallOptions, draftThinkingSent, DRAFT_THINKING_MODES } from '../src/providers.js';
-import { runAuthorScout } from '../src/authorscout.js';
-
-/** every request body a real OpenAIProvider of `model` is asked to send while `fn(provider)` runs (the stub answers with a plain text round) */
-async function captureBodies(/** @type {string} */ model, /** @type {(p: any) => Promise<any>} */ fn) {
-  const provider = makeProvider('openai-api', { apiKey: 'test-key', model });
-  /** @type {any[]} */
-  const bodies = [];
-  /** @type {any} */ (provider)._request = async (/** @type {string} */ _path, /** @type {any} */ b) => {
-    bodies.push(JSON.parse(JSON.stringify(b)));
-    return { choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 5 }, model };
-  };
-  await fn(provider);
-  return bodies;
-}
-
-test('draftCallOptions: the knob is the enumerated pair; the DEFAULT is off; on sends nothing; off sends thinkingMode off ONLY where bare-agent measures the model switchable', () => {
-  assert.deepEqual([...DRAFT_THINKING_MODES], ['on', 'off']);
-  const flash = makeProvider('openai-api', { apiKey: 'k', model: 'deepseek-flash' });
-  assert.deepEqual(draftCallOptions(flash), { thinkingMode: 'off' }, 'no value = off');
-  assert.deepEqual(draftCallOptions(flash, 'on'), {});
-  assert.deepEqual(draftCallOptions(flash, 'off'), { thinkingMode: 'off' });
-  assert.deepEqual(draftCallOptions(makeProvider('openai-api', { apiKey: 'k', model: 'gpt-5' }), 'off'), { thinkingMode: 'off' }, 'measured switchable');
-  assert.deepEqual(draftCallOptions(makeProvider('anthropic-api', { apiKey: 'k', model: 'claude-opus-5-5' }), 'off'), {}, 'measured NOT switchable: nothing sent');
-  assert.deepEqual(draftCallOptions(makeProvider('openai-api', { apiKey: 'k', model: 'some-local-model' }), 'off'), {}, 'unverified: nothing sent on the default path');
-  assert.deepEqual(draftCallOptions({ model: 'deepseek-flash' }, 'off'), {}, 'not a constructed provider (a test double): never sent');
-});
-
-test('draftThinkingSent: on | off | not-switchable | unverified, from bare-agent thinkingSupport', () => {
-  const sent = (/** @type {string} */ prov, /** @type {string} */ model, /** @type {any} */ mode) => draftThinkingSent(makeProvider(prov, { apiKey: 'k', model }), mode);
-  assert.equal(sent('openai-api', 'deepseek-flash'), 'off');
-  assert.equal(sent('openai-api', 'deepseek-flash', 'on'), 'on');
-  assert.equal(sent('anthropic-api', 'claude-opus-5-5'), 'not-switchable');
-  assert.equal(sent('openai-api', 'some-local-model'), 'unverified');
-});
-
-test('draftCallOptions: any other value throws as an operator-param guard (never a silent default)', () => {
-  const flash = makeProvider('openai-api', { apiKey: 'k', model: 'deepseek-flash' });
-  for (const bad of ['default', 'OFF', '', null, true, 0, {}]) {
-    assert.throws(() => draftCallOptions(flash, bad), /draftThinking must be one of on \| off/);
-  }
-  assert.throws(() => makeLoopGenerate(flash, { draftThinking: 'nope' }), /draftThinking must be one of/, 'and at the generate seam, at construction');
-});
-
-test('drafter generate (real OpenAIProvider, _request stubbed): the DEFAULT (no value) and off put thinking on the request body for deepseek-flash only; on leaves the body unchanged', async () => {
-  const call = (/** @type {any} */ mode) => (/** @type {any} */ p) => makeLoopGenerate(p, { draftThinking: mode })([{ role: 'user', content: 'hi' }], [], {});
-  const [off] = await captureBodies('deepseek-flash', call('off'));
-  assert.deepEqual(off.thinking, { type: 'disabled' });
-  const [none] = await captureBodies('deepseek-flash', (p) => makeLoopGenerate(p)([{ role: 'user', content: 'hi' }], [], {}));
-  assert.deepEqual(none.thinking, { type: 'disabled' }, 'a drafter built with NO thinking value sends thinking disabled');
-  assert.deepEqual(none, off, 'no value is exactly off');
-  const [dflt] = await captureBodies('deepseek-flash', call('on'));
-  assert.equal('thinking' in dflt, false);
-  const { thinking: _t, ...offSansThinking } = off;
-  assert.deepEqual(dflt, offSansThinking, "'on' is byte-identical to the off body minus the one thinking field");
-  const [gpt5] = await captureBodies('gpt-5', call('off'));
-  assert.equal(gpt5.reasoning_effort, 'minimal', "gpt-5 'off': bare-agent's own measured shape");
-  assert.equal('thinking' in gpt5, false);
-  const [unverified] = await captureBodies('some-local-model', call('off'));
-  const [unverifiedOn] = await captureBodies('some-local-model', call('on'));
-  assert.deepEqual(unverified, unverifiedOn, 'an unverified model: the default off path sends nothing (== on == no knob)');
-  for (const k of ['thinking', 'reasoning_effort', 'think']) assert.equal(k in unverified, false, k);
-  // 'on' is byte-identical to a call made with NO thinking knob at all (raw provider, not our wrapper)
-  const [plain] = await captureBodies('deepseek-flash', (p) => makeLoopGenerate(p, { draftThinking: 'on' })([{ role: 'user', content: 'hi' }], [], {}));
-  assert.deepEqual(plain, dflt);
-  // the drafter's own max_tokens cap rides along unchanged
-  assert.equal(off.max_tokens, dflt.max_tokens);
-});
-
-test('the scout (every call it makes) carries the drafter options through runAuthorScout({callOptions})', async () => {
-  const surveyor = async () => ({ tools: [{ name: 'shell_read', description: 'read', parameters: { type: 'object', properties: {} }, execute: async () => '' }], policy: null, onLlmResult: null, cleanup: async () => {} });
-  const run = (/** @type {any} */ callOptions) => (/** @type {any} */ p) => runAuthorScout({ workdir: '/w', provider: p, createSurveyor: surveyor, attempts: 1, ...(callOptions ? { callOptions } : {}) });
-  const off = await captureBodies('deepseek-flash', run({ thinkingMode: 'off' }));
-  assert.ok(off.length >= 1);
-  assert.ok(off.every((b) => b.thinking && b.thinking.type === 'disabled'), 'survey, recovery and re-ask rounds alike');
-  const dflt = await captureBodies('deepseek-flash', run(null));
-  assert.ok(dflt.length >= 1);
-  assert.ok(dflt.every((b) => !('thinking' in b)));
-});
+// The thinking tests (judge, drafter, scout, the per-job tick) moved to tests/thinking-tick.test.js (P8 batch 5).

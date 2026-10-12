@@ -2387,7 +2387,7 @@ test('build item 5: refreshModelStatus renders through modelStatusLine into ONE 
 
 test('build item 7 (2026-09-28): refreshModelStatus calls the model-check route with the SELECTED model id, and runs on both load and change', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /\/api\/author\/model-check\?model=" \+ encodeURIComponent\(modelId\)/);
+  assert.match(html, /\/api\/author\/model-check\?" \+ pickQuery\(modelSelect\.value\)/, 'the KEY and the model both go: two keys can tick one id');
   assert.match(html, /modelSelect\.addEventListener\("change", refreshModelStatus\)/);
   const start = html.indexOf('function refreshModelStatus(){');
   const callIdx = html.indexOf('refreshModelStatus();', start);
@@ -2936,22 +2936,12 @@ test('bug fix: the Details/Job tabpanel\'s readonly job card has its own unique 
   assert.doesNotMatch(renderJobBody, /getElementById\("job-card"\)/);
 });
 
-test('P4a Providers: the Test cell has a fixed width and its result wraps, so pressing Test never resizes the column', () => {
-  const html = readFileSync(PAGE_PATH, 'utf8');
-  const rule = /\.pv-table td\.pv-test-cell\{([^}]*)\}/.exec(html);
-  assert.ok(rule, 'a rule pins the Test cell');
-  const w = /(?:^|;)width:(\d+)px/.exec(rule[1])?.[1];
-  assert.ok(w && rule[1].includes(`min-width:${w}px`) && rule[1].includes(`max-width:${w}px`), 'width = min-width = max-width');
-  assert.match(html, /\.pv-table \.pv-test-result\{[^}]*white-space:normal/, 'the result text wraps instead of widening the cell');
-  assert.match(html, /'<td class="pv-test-cell">'/, 'the row builder puts the Test cell in that class');
-});
-
 test('Model is the fifth open box on a reuse card: setReuseLocked no longer locks the Model menu, and a Model change refetches the estimate line for that worker', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const lock = extractFnSource(html, 'setReuseLocked');
   assert.doesNotMatch(lock, /modelSelect/, 'the Model menu stays editable on a reuse card');
   const fn = extractFnSource(html, 'refreshReuseLine');
-  assert.match(fn, /&model=" \+ encodeURIComponent\(modelSelect\.value\)/);
+  assert.match(fn, /"&" \+ pickQuery\(modelSelect\.value\)/);
   assert.match(fn, /sfLine\.textContent = r\.line/);
   assert.match(html, /modelSelect\.addEventListener\("change", refreshReuseLine\)/);
 });
@@ -2971,27 +2961,3 @@ test('progress list: a signed session ends "signed hash" with a check and its ">
   assert.match(last, /&gt; drafting spent \$0\.12/);
 });
 
-test('providers row POST: exactly one price box filled saves nothing (body null, message shown at the change event only); both-filled and both-empty still post', () => {
-  const html = readFileSync(PAGE_PATH, 'utf8');
-  const start = html.indexOf('function pvRowBody(');
-  assert.ok(start > 0, 'pvRowBody exists in the page');
-  const braceStart = html.indexOf('{', start);
-  let depth = 0;
-  let i = braceStart;
-  for (; i < html.length; i += 1) {
-    if (html[i] === '{') depth += 1;
-    else if (html[i] === '}') { depth -= 1; if (depth === 0) break; }
-  }
-  // eslint-disable-next-line no-new-func
-  const pvRowBody = new Function(`${html.slice(start, i + 1)}\nreturn pvRowBody;`)();
-  const base = { name: 'n', shape: 'openai-compat', baseUrl: '' };
-  assert.equal(pvRowBody('K', { ...base, priceIn: '0.27', priceOut: ' ' }), null, 'only In filled: no row POST');
-  assert.equal(pvRowBody('K', { ...base, priceIn: '', priceOut: '1.1' }), null, 'only Out filled: no row POST');
-  assert.match(html, /var PV_HALF_PRICE = "Fill both price boxes or clear both\.";/);
-  const handler = html.slice(html.indexOf('pvRows.addEventListener("change"'), html.indexOf('pvRows.addEventListener("click"'));
-  assert.match(handler, /if\(!rowBody\)\{ pvNote\.textContent = PV_HALF_PRICE; return; \}\s*authorPost\("\/api\/settings\/providers\/row", rowBody\)/, 'the message shows inside the change handler, before and instead of the POST');
-  assert.equal(html.split('pvNote.textContent = PV_HALF_PRICE').length - 1, 1, 'the message is set in exactly one place (the change handler)');
-  assert.doesNotMatch(handler, /oninput|addEventListener\("input"/, 'no input-event path: typing the first box never flashes it');
-  assert.deepEqual(pvRowBody('K', { ...base, priceIn: ' 0.27 ', priceOut: '1.1' }), { envName: 'K', ...base, priceInPerM: '0.27', priceOutPerM: '1.1' });
-  assert.deepEqual(pvRowBody('K', { ...base, priceIn: '', priceOut: '' }), { envName: 'K', ...base, priceInPerM: '', priceOutPerM: '' });
-});

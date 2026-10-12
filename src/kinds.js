@@ -1776,7 +1776,7 @@ async function runJudgedFloor(stage, ctx) {
       + `${MAX_JUDGED_PATHS} — a judged stage buys one call per artifact, and a runaway list is a bill`, {}, STOP_FAULTS.CRASHED);
   }
   // 1b. THE TIER THE SIGNED SET WAS GRADED BY, against the tier this run would buy.
-  //     `JUDGE_MODEL` has always SAID a bump forces a full recalibration; this is the
+  //     the judge model has always SAID a bump forces a full recalibration; this is the
   //     detector, because a rule with no wired detector is prose (F45). The stamp comes
   //     off the SIGNED calibration (`calibration.judgeModel`, carried across by
   //     `declaredStages`), so a mismatch means exactly one thing: the pin moved under a
@@ -1799,7 +1799,7 @@ async function runJudgedFloor(stage, ctx) {
   // model). The IDENTITY is checked before the seam and before the stamp, because
   // an unwired identity makes both of the messages below unwritable: neither
   // "would grade with X" nor "the judge is X" can be said by a stage that cannot
-  // name X. There is deliberately NO fall-back to `JUDGE_MODEL` here — a run that
+  // name X. There is deliberately NO library-pinned fall-back here — a run that
   // cannot say which model grades has not wired a judge, and grading under an
   // identity nobody chose is exactly the silent-ignore class this repo refuses
   // everywhere else.

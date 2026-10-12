@@ -30,6 +30,7 @@ import { createPanelServer } from '../src/panel/server.js';
 import { checkHumanGuard, signRun } from '../src/panel/authorroutes.js';
 import { createSession, planMessage, PLAN_FOOTER, validateJobCard as rawValidateJobCard, jobNameTaken } from '../src/panel/authorsession.js';
 import { keyRows } from '../src/providerrows.js';
+import { ANTH_CFG } from './helpers.js';
 import { classGuards } from '../src/authoring.js';
 import { GENRE } from '../src/authorjob.js';
 
@@ -87,15 +88,18 @@ function makeRepoWithDeps() {
 }
 
 /** a scratch keys/config home whose .env carries ONE filled key (Settings row) — the Anthropic
- * row by default, whose default Name `claude-sonnet-5` is what baseCard() picks in Chat. */
-function keysHomeWith(text = 'ANTHROPIC_API_KEY=fake-not-a-real-key\n') {
+ * row by default, whose ticked, priced line `claude-sonnet-5` is what baseCard() picks in Chat. */
+function keysHomeWith(text = 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', cfg = ANTH_CFG) {
   const d = tmp('panel-author-home-');
   writeFileSync(join(d, '.env'), text, { mode: 0o600 });
+  writeFileSync(join(d, 'config.json'), JSON.stringify(cfg));
   return d;
 }
+/** the Anthropic-shaped row with a typed Base URL: the model-readiness GET has no default host to fall back on */
+const ANTH_WITH_URL = { ...ANTH_CFG, keys: { ANTHROPIC_API_KEY: { shape: 'anthropic-api', baseUrl: 'https://llm.example.test/v1' } } };
 
 /** the Settings rows a filled ANTHROPIC_API_KEY gives: Chat's Model menu */
-const ROWS = keyRows({ filled: ['ANTHROPIC_API_KEY'], config: {} });
+const ROWS = keyRows({ filled: ['ANTHROPIC_API_KEY'], config: ANTH_CFG });
 const validateJobCard = (card, opts = {}) => rawValidateJobCard(card, { rows: ROWS, ...opts });
 
 // P7: the card is { jobText, inputs, ... } — "The job" and "Inputs" are the two boxes. `source` is kept as a SHORTHAND for
@@ -133,9 +137,9 @@ test('validateJobCard: RED-PROOF — an empty/zero/non-number Cap $ is refused; 
 
 test('validateJobCard: the Model must be a Name in Settings — a model no row names, or no rows at all, refuses ($0)', () => {
   assert.equal(validateJobCard(baseCard({ model: 'not-a-name' })).ok, false);
-  assert.match(validateJobCard(baseCard({ model: 'gpt-x' })).error, /Names in Settings/);
+  assert.match(validateJobCard(baseCard({ model: 'gpt-x' })).error, /^(Tick a model in Settings > Providers|Pick a model)\. Nothing was spent\.$/);
   assert.equal(rawValidateJobCard(baseCard(), { rows: [] }).ok, false, 'no rows = nothing to pick');
-  const two = keyRows({ filled: ['ANTHROPIC_API_KEY', 'MY_KEY'], config: { keys: { MY_KEY: { name: 'gpt-x', shape: 'openai-api', baseUrl: '' } } } });
+  const two = keyRows({ filled: ['ANTHROPIC_API_KEY', 'MY_KEY'], config: { keys: { ...ANTH_CFG.keys, MY_KEY: { name: 'gpt-x', priceInPerM: 1, priceOutPerM: 2, shape: 'openai-api', baseUrl: '' } }, models: ANTH_CFG.models } });
   assert.equal(rawValidateJobCard(baseCard({ model: 'gpt-x' }), { rows: two }).ok, true, 'a Name typed in Settings is a valid Model');
 });
 
@@ -378,7 +382,7 @@ test('POST /api/author/start: a Model no Settings row names is refused at $0 (40
     method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': none.token }, body: JSON.stringify(baseCard({ source: repo })),
   });
   assert.equal(r0.status, 400);
-  assert.match((await r0.json()).error, /Names in Settings/);
+  assert.match((await r0.json()).error, /^(Tick a model in Settings > Providers|Pick a model)\. Nothing was spent\.$/);
   // (b) a row exists but its value is malformed (a tab): the session refuses naming the key variable
   const { base, token } = await startAuthorServer(t, { env: {}, home: keysHomeWith('ANTHROPIC_API_KEY=sk-a\tb\n') });
   const res = await fetch(`${base}/api/author/start`, {
@@ -398,7 +402,7 @@ test('POST /api/author/start: a Model no Settings row names is refused at $0 (40
 test('createSession: the Model Name resolves to ITS row\'s key variable, not the built-in one (Chat reads Settings)', async () => {
   const repo = makeRepo();
   const home = keysHomeWith('MY_KEY=sk-a\tb\n');
-  writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { MY_KEY: { name: 'gpt-x', shape: 'openai-api', baseUrl: 'https://gw.example/v1' } } }));
+  writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { MY_KEY: { name: 'gpt-x', priceInPerM: 1, priceOutPerM: 2, shape: 'openai-api', baseUrl: 'https://gw.example/v1' } } }));
   const session = createSession(baseCard({ source: repo, model: 'gpt-x', jobName: 'panel-author-row-key' }), {
     env: { MY_KEY: 'sk-a\tb' }, home, sessionsRoot: tmp('panel-author-sess-rowkey-'),
   });
@@ -839,7 +843,7 @@ test('GET /api/author/model-check: a found key triggers the $0 reachability GET 
     calls.push({ url: String(url), method: init.method, headers: init.headers });
     return { ok: true, json: async () => ({ data: [{ id: 'claude-sonnet-5' }] }) };
   };
-  const { base, token } = await startAuthorServer(t, { env: {}, home: keysHomeWith('ANTHROPIC_API_KEY=sk-real-enough\n'), fetchImpl });
+  const { base, token } = await startAuthorServer(t, { env: {}, home: keysHomeWith('ANTHROPIC_API_KEY=sk-real-enough\n', ANTH_WITH_URL), fetchImpl });
   const res = await fetch(`${base}/api/author/model-check?model=claude-sonnet-5`, { headers: { 'x-bareloop-token': token } });
   assert.equal(res.status, 200);
   const body = await res.json();
@@ -849,14 +853,14 @@ test('GET /api/author/model-check: a found key triggers the $0 reachability GET 
   assert.equal(body.reachability.modelListed, true);
   assert.equal(calls.length, 1, 'exactly one $0 GET — never a completion request');
   assert.equal(calls[0].method, 'GET');
-  assert.equal(calls[0].url, 'https://api.anthropic.com/v1/models');
+  assert.equal(calls[0].url, 'https://llm.example.test/v1/models', 'the row\'s own typed Base URL — no default host exists');
   assert.equal(calls[0].headers['x-api-key'], 'sk-real-enough');
   assert.ok(!JSON.stringify(body).includes('sk-real-enough'), 'RED-PROOF sentinel — the key value never comes back in the response');
 });
 
 test('GET /api/author/model-check: an unreachable endpoint (stubbed failure) reads reachability.reachable=false with a status, and never blocks the key check', async (t) => {
   const fetchImpl = async () => ({ ok: false, status: 503, json: async () => ({}) });
-  const { base, token } = await startAuthorServer(t, { env: {}, home: keysHomeWith('ANTHROPIC_API_KEY=sk-real-enough\n'), fetchImpl });
+  const { base, token } = await startAuthorServer(t, { env: {}, home: keysHomeWith('ANTHROPIC_API_KEY=sk-real-enough\n', ANTH_WITH_URL), fetchImpl });
   const res = await fetch(`${base}/api/author/model-check?model=claude-sonnet-5`, { headers: { 'x-bareloop-token': token } });
   const body = await res.json();
   assert.equal(body.keyStatus, 'found', 'the key IS usable — only the network call failed');
@@ -917,7 +921,7 @@ async function loopbackProvider(t) {
 async function priceSession(t, { row, jobName }) {
   const { seen, baseUrl } = await loopbackProvider(t);
   const home = keysHomeWith('MY_KEY=sk-fakekey\n');
-  writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { MY_KEY: { name: 'gpt-x', shape: 'openai-api', baseUrl, ...row } } }));
+  writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { MY_KEY: { name: 'gpt-x', priceInPerM: 1, priceOutPerM: 2, shape: 'openai-api', baseUrl, ...row } } }));
   let generated = null;
   const session = createSession(baseCard({ source: makeRepo(), model: 'gpt-x', jobName }), {
     env: { MY_KEY: 'sk-fakekey' }, home, sessionsRoot: tmp('panel-author-sess-price-'),
@@ -939,30 +943,28 @@ async function priceSession(t, { row, jobName }) {
   return { session, seen, generated: () => generated };
 }
 
-test('createSession: the drafting rounds are priced at the row\'s own price (tokens x config, not a hardcoded dollar), and differ from the no-price guess', async (t) => {
+test('createSession: the drafting rounds are priced at the row\'s own model-line price (tokens x config, not a hardcoded dollar), and differ from the bare-agent guess', async (t) => {
   const price = { priceInPerM: 0.006, priceOutPerM: 1.2 };
   const priced = await priceSession(t, { row: price, jobName: 'panel-author-price-on' });
-  const guessed = await priceSession(t, { row: {}, jobName: 'panel-author-price-off' });
   const pg = priced.generated();
-  const gg = guessed.generated();
-  assert.ok(pg && gg, `both composer stubs ran: ${priced.session.state.phase} ${JSON.stringify(priced.session.state.messages)}`);
+  assert.ok(pg, `the composer stub ran: ${priced.session.state.phase} ${JSON.stringify(priced.session.state.messages)}`);
   assert.equal(pg.error, null);
   const expected = (PRICE_USAGE.prompt_tokens * price.priceInPerM + PRICE_USAGE.completion_tokens * price.priceOutPerM) / 1e6;
   assert.ok(Math.abs(pg.cost - expected) < 1e-12, `${pg.cost} vs ${expected}`);
   assert.equal(pg.metrics.costUsd, pg.cost);
-  assert.notEqual(gg.cost, pg.cost, 'a customer price must change what a drafting round books');
-  assert.ok(gg.cost > pg.cost * 10, 'the guess is far above this customer price');
-  console.log(`# panel drafting round, same tokens (${PRICE_USAGE.prompt_tokens} in / ${PRICE_USAGE.completion_tokens} out): customer price $${pg.cost.toFixed(9)} vs guess $${gg.cost.toFixed(9)}`);
+  // the same tokens at bare-agent's own default rates (what an unpriced round books) are a different, far larger number
+  const guess = (PRICE_USAGE.prompt_tokens * 0.003 + PRICE_USAGE.completion_tokens * 0.015) / 1000;
+  assert.notEqual(guess, pg.cost, 'a customer price must change what a drafting round books');
+  assert.ok(guess > pg.cost * 10, 'the guess is far above this customer price');
+  console.log(`# panel drafting round, same tokens (${PRICE_USAGE.prompt_tokens} in / ${PRICE_USAGE.completion_tokens} out): customer price $${pg.cost.toFixed(9)} vs guess $${guess.toFixed(9)}`);
 });
 
-test('createSession: a bad price (one field only, or negative) refuses at $0 with the ConfigError text and makes zero provider calls', async (t) => {
-  for (const [row, why] of [[{ priceInPerM: 0.006 }, 'one field only'], [{ priceInPerM: -1, priceOutPerM: 1.2 }, 'negative']]) {
+test('createSession: a model line with no price, half a price or a bad price is not a usable model — refused at $0 with zero provider calls', async (t) => {
+  for (const [row, why] of [[{ priceInPerM: 0.006, priceOutPerM: undefined }, 'one field only'], [{ priceInPerM: -1, priceOutPerM: 1.2 }, 'negative'], [{ priceInPerM: undefined, priceOutPerM: undefined }, 'no price']]) {
     // eslint-disable-next-line no-await-in-loop
     const r = await priceSession(t, { row, jobName: `panel-author-price-bad-${why.replace(' ', '-')}` });
     assert.equal(r.session.state.phase, 'refused', why);
-    assert.match(r.session.state.error, /MY_KEY/, `${why}: names the row`);
-    assert.match(r.session.state.error, /price/i, why);
-    assert.match(r.session.state.error, /Stopped — nothing spent\./, why);
+    assert.match(r.session.state.error, /Nothing was spent\./, why);
     assert.equal(r.seen.requests, 0, `${why}: no provider call`);
     assert.equal(r.generated(), null, `${why}: the composer never ran`);
     assert.equal(r.session.state.draftSpentUsd, 0, why);
@@ -1272,7 +1274,7 @@ test('createSession: with NO draftThinking value the drafter\'s real request bod
       return { choices: [{ message: { content: 'x' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1 }, model: 'deepseek-flash' };
     };
     const home = keysHomeWith('DS_KEY=sk-fake\n');
-    writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { DS_KEY: { name: 'deepseek-flash', shape: 'openai-api', baseUrl: 'https://gw.example/v1' } } }));
+    writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { DS_KEY: { name: 'deepseek-flash', priceInPerM: 1, priceOutPerM: 2, shape: 'openai-api', baseUrl: 'https://gw.example/v1' } } }));
     const session = createSession(baseCard({ source: makeRepo(), model: 'deepseek-flash', jobName: 'panel-author-think-default', capUsd: 1 }), {
       env: { DS_KEY: 'sk-fake' }, home, sessionsRoot: tmp('panel-author-sess-think-'),
       scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
@@ -1297,10 +1299,10 @@ test('createSession: with NO draftThinking value the drafter\'s real request bod
 });
 
 // ── hamr 2026-10-11 ledger: the draft log records what was actually SENT for thinking ──────────────────────────────────
-test('draft-log call entries carry the thinking that was really sent: off for deepseek-flash, unverified for a model bare-agent has not measured, on when asked', async () => {
+test('draft-log call entries carry the tick\'s mode and bare-agent\'s support answer: off/true for a measured model, off/\'unverified\' for an unmeasured one, on when ticked', async () => {
   const thinkingLogged = async (/** @type {string} */ modelName, /** @type {any} */ extra) => {
     const home = keysHomeWith('DS_KEY=sk-fake\n');
-    writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { DS_KEY: { name: modelName, shape: 'openai-api', baseUrl: 'https://gw.example/v1' } } }));
+    writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { DS_KEY: { name: modelName, priceInPerM: 1, priceOutPerM: 2, shape: 'openai-api', baseUrl: 'https://gw.example/v1' } } }));
     const sessionsRoot = tmp('panel-author-sess-thinklog-');
     const session = createSession(baseCard({ source: makeRepo(), model: modelName, jobName: 'panel-author-thinklog', capUsd: 1 }), {
       env: { DS_KEY: 'sk-fake' }, home, sessionsRoot,
@@ -1318,25 +1320,25 @@ test('draft-log call entries carry the thinking that was really sent: off for de
     await untilTrue(() => session.state.phase === 'refused');
     const entries = readFileSync(join(sessionsRoot, session.id, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((e) => e.kind === 'call');
     assert.ok(entries.length > 0, 'a call entry was logged');
-    return [...new Set(entries.map((e) => e.thinking))];
+    return [...new Set(entries.map((e) => `${e.thinking}/${e.thinkingSupport}`))];
   };
-  assert.deepEqual(await thinkingLogged('deepseek-flash', {}), ['off']);
-  assert.deepEqual(await thinkingLogged('some-other-model', {}), ['unverified']);
-  assert.deepEqual(await thinkingLogged('deepseek-flash', { draftThinking: 'on' }), ['on']);
+  assert.deepEqual(await thinkingLogged('deepseek-flash', {}), ['off/true']);
+  assert.deepEqual(await thinkingLogged('some-other-model', {}), ['off/unverified'], 'an unmeasured model is still sent off (bare-agent decides)');
+  assert.deepEqual(await thinkingLogged('deepseek-flash', { draftThinking: 'on' }), ['on/true']);
 });
 
 // ── hamr 2026-10-11: the FIRST drafting row says whether the drafter thinks (text owned by code) ───────────────────────
-test('the first drafting row (before "checking setup") reads thinking off / on / cannot-turn-off / not verified / thought anyway, and the draft log carries thinkingApplied', async () => {
-  const run = async (/** @type {string} */ modelName, /** @type {string} */ shape, /** @type {any} */ extra, /** @type {any} */ applied) => {
+test('the first drafting row (before "checking setup") reads thinking off / on / cannot change / not verified, then bare-agent\'s thinkingStatus (applied / unsupported / ignored / unknown) changes its words, and the draft log carries thinkingStatus', async () => {
+  const run = async (/** @type {string} */ modelName, /** @type {string} */ shape, /** @type {any} */ extra, /** @type {any} */ status) => {
     const home = keysHomeWith('DS_KEY=sk-fake-key-value-1234567890\n');
-    writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { DS_KEY: { name: modelName, shape, baseUrl: 'https://gw.example/v1' } } }));
+    writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { DS_KEY: { name: modelName, priceInPerM: 1, priceOutPerM: 2, shape, baseUrl: 'https://gw.example/v1' } } }));
     const sessionsRoot = tmp('panel-author-sess-thinkrow-');
     const session = createSession(baseCard({ source: makeRepo(), model: modelName, jobName: 'panel-author-thinkrow', capUsd: 1 }), {
       env: { DS_KEY: 'sk-fake-key-value-1234567890' }, home, sessionsRoot,
       scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
       generate: async () => { throw new Error('unused'); },
       confirmGenerate: makeFakeConfirmGenerate([{ goal: 'g', checks: [{ text: 'c', fromLine: [1] }], questions: [], notChecked: [] }]),
-      authorFn: async (/** @type {any} */ o) => { o.onCall({ label: 'author', costUsd: 0.01, unpricedRounds: 0, ...(applied === undefined ? {} : { thinkingApplied: applied }) }); return {
+      authorFn: async (/** @type {any} */ o) => { o.onCall({ label: 'author', costUsd: 0.01, unpricedRounds: 0, ...(status === undefined ? {} : { thinkingStatus: status }) }); return {
         ok: false, stop: 'provider-red', declaration: null, reds: [{ code: 'provider-red', path: 'author', detail: 'x' }], iterations: [],
         cost: { costUsd: 0.01, knownUsd: 0.01, spendComplete: true, calls: [], unpricedRounds: 0 }, raws: [],
       }; },
@@ -1348,18 +1350,46 @@ test('the first drafting row (before "checking setup") reads thinking off / on /
     const log = readFileSync(join(sessionsRoot, session.id, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     return { steps: session.state.steps, calls: log.filter((e) => e.kind === 'call') };
   };
-  const off = await run('deepseek-flash', 'openai-api', {}, true);
+  const off = await run('deepseek-flash', 'openai-api', {}, 'applied');
   assert.deepEqual(off.steps[0], { id: 'thinking', label: 'thinking off', status: 'done', detail: '' });
   assert.equal(off.steps[1].id, 'setup', 'the row comes before "checking setup"');
   const authorCall = (/** @type {any} */ r) => r.calls.find((/** @type {any} */ c) => c.label === 'author');
   assert.equal(authorCall(off).thinking, 'off');
-  assert.equal(authorCall(off).thinkingApplied, true);
+  assert.equal(authorCall(off).thinkingStatus, 'applied');
   assert.equal((await run('deepseek-flash', 'openai-api', { draftThinking: 'on' })).steps[0].label, 'thinking on');
-  assert.equal((await run('claude-opus-5-5', 'anthropic-api', {})).steps[0].label, "thinking on (this model can't turn it off)");
+  assert.equal((await run('claude-opus-5-5', 'anthropic-api', {})).steps[0].label, "thinking on (this model can't change it)");
   const unv = await run('some-other-model', 'openai-api', {});
-  assert.equal(unv.steps[0].label, 'thinking on (not verified for this model)');
-  assert.equal('thinkingApplied' in authorCall(unv), false, 'absent when bare-agent reported none');
-  const anyway = await run('deepseek-flash', 'openai-api', {}, false);
+  assert.equal(unv.steps[0].label, 'thinking off (not verified for this model)');
+  assert.equal('thinkingStatus' in authorCall(unv), false, 'absent when bare-agent reported none');
+  const anyway = await run('deepseek-flash', 'openai-api', {}, 'ignored');
   assert.equal(anyway.steps[0].label, 'thinking on (the model thought anyway)');
-  assert.equal(authorCall(anyway).thinkingApplied, false);
+  assert.equal(authorCall(anyway).thinkingStatus, 'ignored');
+  assert.equal((await run('some-other-model', 'openai-api', {}, 'unsupported')).steps[0].label, "thinking on (this model can't change it)");
+  assert.equal((await run('some-other-model', 'openai-api', {}, 'unknown')).steps[0].label, 'thinking off (not confirmed)');
+});
+
+// ── P8 batch 5: the "Thinking on" tick is signed into the job ONLY when ticked (and only where the model can change) ───────────────────
+test('the card\'s Thinking on tick: ticked writes thinking:true into the signed spec; unticked writes NO field; a model that cannot change it is never signed on; a non-boolean tick is refused at $0', async () => {
+  const specOf = async (/** @type {string} */ modelName, /** @type {string} */ shape, /** @type {any} */ cardExtra) => {
+    const home = keysHomeWith('DS_KEY=sk-fake-key-value-1234567890\n');
+    writeFileSync(join(home, 'config.json'), JSON.stringify({ keys: { DS_KEY: { shape, baseUrl: 'https://gw.example/v1' } }, models: { DS_KEY: [{ model: modelName, use: true, inPerM: 1, outPerM: 2 }] } }));
+    const session = createSession(baseCard({ source: makeRepo(), model: modelName, provider: 'DS_KEY', jobName: 'panel-author-thinktick', capUsd: 1, ...cardExtra }), {
+      env: { DS_KEY: 'sk-fake-key-value-1234567890' }, home, sessionsRoot: tmp('panel-author-sess-thinktick-'),
+      scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+      generate: async () => { throw new Error('unused'); },
+      confirmGenerate: makeFakeConfirmGenerate([{ goal: 'g', checks: [{ text: 'c', fromLine: [1] }], questions: [], notChecked: [] }]),
+      authorFn: fakeAuthorFn(),
+      prepareSigningFn: fakePrepareSigningFn('cafef00dbeef0123'),
+    });
+    await untilTrue(() => session.state.pendingAsk?.kind === 'menu');
+    session.signPrepare();
+    await untilTrue(() => session.state.phase === 'prepared');
+    assert.equal(session.state.phase, 'prepared', String(session.state.error));
+    return JSON.parse(readFileSync(join(session.state.outDir, 'resolved-spec.json'), 'utf8'));
+  };
+  assert.equal((await specOf('deepseek-flash', 'openai-api', { thinking: true })).thinking, true);
+  assert.equal('thinking' in (await specOf('deepseek-flash', 'openai-api', {})), false, 'unticked: no field, so the hash is what it would have been');
+  assert.equal('thinking' in (await specOf('deepseek-flash', 'openai-api', { thinking: false })), false);
+  assert.equal('thinking' in (await specOf('claude-opus-5-5', 'anthropic-api', { thinking: true })), false, 'measured not switchable: the tick cannot be on');
+  assert.deepEqual(validateJobCard({ ...baseCard({}), thinking: 'yes' }, { jobsDir: '/nonexistent' }), { ok: false, error: 'Thinking on must be on or off' });
 });

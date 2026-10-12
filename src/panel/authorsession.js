@@ -20,7 +20,7 @@
 // `src/panel/server.js`'s POST routes). Nothing here changes what a step
 // means or what an answer does — only where the answer comes from.
 
-import { applyConfiguredKey, judgeRatesFor, keyNameFor, modelChoiceFor, ratesFor, rowsForHome } from '../providerrows.js';
+import { judgePick, judgeRatesFor, judgeRowFor, keyValueOf, modelChoiceFor, ratesOfLine, rowsForHome } from '../providerrows.js';
 import { ConfigError } from '../config.js';
 import {
   mkdirSync, existsSync, writeFileSync, readdirSync,
@@ -45,9 +45,10 @@ import {
   questionsFor, requiredAnswersFor, makeLoopGenerate, CONFIRM_SYSTEM, SOFTGREEN_JUDGE_EXAMPLES_KEY,
 } from '../authorflow.js';
 import {
-  resolveProvider, buildRunnerProviders, apiKeyProblem, assertDraftThinking, draftThinkingFor,
+  resolveProvider, buildRunnerProviders, apiKeyProblem,
 } from '../providers.js';
 import { resolveJobJudge, defaultJudgeLoop } from '../judged.js';
+import { assertThinkingMode, thinkingPlanFor, thinkingRowText } from '../thinking.js';
 import { closeJudges } from '../kinds.js';
 import { redactSecrets } from '../validate.js';
 import { tallyCalls } from '../text.js';
@@ -110,19 +111,7 @@ export const PHASE_STEP = Object.freeze({
   'rubric-scrubbed': 'calibrate',
 });
 
-/**
- * The first drafting row's words (hamr 2026-10-11) — code-owned, one owner, ALWAYS starting "thinking on" or "thinking off".
- * `sent` is what the drafting calls carry (`draftThinkingFor`); `thoughtAnyway` = a call reported `thinkingApplied === false`
- * after 'off' was sent (bare-agent saw reasoning in the reply).
- * @param {'on'|'off'|'not-switchable'|'unverified'} sent @param {boolean} [thoughtAnyway]
- * @returns {string}
- */
-export function thinkingRowText(sent, thoughtAnyway = false) {
-  if (sent === 'off') return thoughtAnyway ? 'thinking on (the model thought anyway)' : 'thinking off';
-  if (sent === 'on') return 'thinking on';
-  if (sent === 'not-switchable') return "thinking on (this model can't turn it off)";
-  return 'thinking on (not verified for this model)';
-}
+export { thinkingRowText };
 
 /** @typedef {{id: string, label: string, status: 'running'|'done'|'failed', detail: string}} StepLine */
 
@@ -194,7 +183,7 @@ export function jobNameTaken(name, opts = {}) {
 }
 
 /** the form's fields, in card order — what `card.json` stores, verbatim (P5 item 3) */
-export const CARD_FIELDS = Object.freeze(['jobName', 'checkType', 'model', 'jobText', 'inputs', 'destination', 'capUsd', 'maxWallMs']);
+export const CARD_FIELDS = Object.freeze(['jobName', 'checkType', 'provider', 'model', 'thinking', 'jobText', 'inputs', 'destination', 'capUsd', 'maxWallMs']);
 
 /**
  * The repo a card names: Inputs line 1 (P7 — the Source box is gone; the first input IS the repo). `''` when the Inputs
@@ -268,13 +257,13 @@ export function buildReuseSpec(originSpec, card, rows) {
   spec.budgetUsd = card.capUsd;
   if (typeof card.maxWallMs === 'number' && Number.isFinite(card.maxWallMs) && card.maxWallMs > 0) spec.maxWallMs = card.maxWallMs;
   else delete spec.maxWallMs;
-  const choice = rows && typeof card.model === 'string' ? modelChoiceFor(rows, card.model) : null;
+  const choice = rows && typeof card.model === 'string' ? modelChoiceFor(rows, { provider: card.provider, model: card.model }) : null;
   if (choice) {
     if (spec.verdictType === 'soft-green' && !spec.judge) spec.judge = resolveJobJudge(originSpec, originSpec.provider ?? choice.provider, resolveWorkerModel);
-    const entry = resolveProvider(choice.provider);
+    resolveProvider(choice.provider);
     spec.provider = choice.provider;
     if (choice.baseUrl) spec.baseUrl = choice.baseUrl; else delete spec.baseUrl;
-    if (choice.name !== entry.tiers.sonnet) spec.model = choice.name; else delete spec.model;
+    spec.model = choice.name; // a job always carries its own model
   }
   return spec;
 }
@@ -289,7 +278,8 @@ export function buildReuseSpec(originSpec, card, rows) {
  */
 export function validateReuseCard(card, opts = {}) {
   if (!card || typeof card !== 'object') return { ok: false, error: 'missing job card' };
-  if (!modelChoiceFor(opts.rows ?? [], card.model)) return { ok: false, error: 'Model must be one of the Names in Settings > Providers' };
+  const pick = judgePick(opts.rows ?? [], { provider: card.provider, model: card.model });
+  if (!pick.ok) return { ok: false, error: pick.say };
   const ip = parseInputs(card.inputs);
   if (!ip.ok) return { ok: false, error: ip.error };
   if (typeof card.destination !== 'string' || card.destination.trim() === '') return { ok: false, error: 'Destination is required' };
@@ -332,7 +322,9 @@ export function validateJobCard(card, opts = {}) {
     return { ok: false, error: `a job named "${jobName}" already exists — P3 is new jobs only (Q4=A)` };
   }
   if (checkType !== 'deterministic' && checkType !== 'rubric') return { ok: false, error: 'Check type must be deterministic or rubric' };
-  if (!modelChoiceFor(opts.rows ?? [], model)) return { ok: false, error: 'Model must be one of the Names in Settings > Providers' };
+  const pick = judgePick(opts.rows ?? [], { provider: card.provider, model });
+  if (!pick.ok) return { ok: false, error: pick.say };
+  if (card.thinking !== undefined && typeof card.thinking !== 'boolean') return { ok: false, error: 'Thinking on must be on or off' };
   const jb = parseJobBlock(card.jobText);
   if (!jb.ok) return { ok: false, error: jb.error };
   const misfit = jobBlockFitsCheck(jb.lines, checkType === 'rubric');
@@ -361,9 +353,9 @@ export function validateJobCard(card, opts = {}) {
  */
 export function createSession(card, deps = {}) {
   const env = deps.env ?? process.env;
-  // The drafter's THINKING knob ('on' | 'off'): an explicit operator option, never read from env and not in the panel UI. A bad
-  // value throws here, before a session exists. Default 'off' (hamr ruling 2026-10-11, after the paid ON/OFF contrast).
-  const draftThinking = assertDraftThinking(deps.draftThinking ?? 'off');
+  // The drafter's THINKING mode ('on' | 'off'): the card's "Thinking on" tick (unticked = 'off'), signed into the job only when ticked.
+  // `deps.draftThinking` is an operator override for tests/probes; a bad value throws here, before a session exists.
+  const draftThinking = assertThinkingMode(deps.draftThinking ?? (card.thinking === true ? 'on' : 'off'));
   // P7: the person's own words, parsed ONCE by the one parser (src/jobblock.js). The card validator refused a malformed
   // block before a session exists; a reuse card's job text is the origin's and is not drafted from.
   const jobParsed = parseJobBlock(card.jobText);
@@ -557,16 +549,22 @@ export function createSession(card, deps = {}) {
     // the call's label, the drafting model, its cost (null stays null: unpriced is never $0). One owner: this onCall.
     const runningNo = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
     const callNo = runningNo === -1 ? state.steps.length - 1 : runningNo;
-    // bare-agent's own verdict on the call's run (true | false | null), present only when thinkingMode was sent. 'off' sent but
-    // reasoning seen (false) turns the first drafting row into "thinking on (the model thought anyway)" and stays so.
-    if (draftThinkingLogged === 'off' && call.thinkingApplied === false && !thoughtAnyway) {
-      thoughtAnyway = true;
+    // bare-agent's own verdict on the call's run — `thinkingStatus`: 'applied' | 'unsupported' | 'ignored' | 'unknown' — present only
+    // when thinkingMode was sent. The first drafting row then says what REALLY happened ("the model thought anyway", "can't change it",
+    // "not confirmed"); a row that moved to a worse word never moves back.
+    if (draftThinkingPlan !== null && call.thinkingStatus !== undefined && call.thinkingStatus !== thinkingStatusSeen
+      && !(thinkingStatusSeen !== null && thinkingStatusSeen !== 'applied' && call.thinkingStatus === 'applied')) {
+      thinkingStatusSeen = call.thinkingStatus;
       const row = latestStep(state.steps, 'thinking');
-      if (row) { row.label = thinkingRowText('off', true); appendDraftLog(outDir, { kind: 'step-label', no: state.steps.indexOf(row), label: row.label, at: new Date().toISOString() }); }
+      if (row) {
+        row.label = thinkingRowText({ mode: draftThinkingPlan.mode, support: draftThinkingPlan.support, status: call.thinkingStatus });
+        appendDraftLog(outDir, { kind: 'step-label', no: state.steps.indexOf(row), label: row.label, at: new Date().toISOString() });
+      }
     }
     appendDraftLog(outDir, {
       kind: 'call', no: callNo, step: state.steps[callNo]?.id ?? null, label: call.label, model: draftIdentity?.model ?? null,
-      thinking: draftThinkingLogged, ...(call.thinkingApplied === undefined ? {} : { thinkingApplied: call.thinkingApplied }),
+      thinking: draftThinkingPlan === null ? null : draftThinkingPlan.mode, thinkingSupport: draftThinkingPlan === null ? null : draftThinkingPlan.support,
+      ...(call.thinkingStatus === undefined ? {} : { thinkingStatus: call.thinkingStatus }),
       costUsd: call.costUsd ?? null, unpricedRounds: call.unpricedRounds ?? 0, at: nowIso,
     });
     try {
@@ -578,10 +576,11 @@ export function createSession(card, deps = {}) {
   };
   /** @type {string|null} */
   let draftStartedAt = null;
-  /** what the drafting calls really carry for thinking ('on' | 'off' | 'not-switchable' | 'unverified'), set once the Model Name resolves; null before @type {string|null} */
-  let draftThinkingLogged = null;
-  /** a drafting call reported thinkingApplied === false after 'off' was sent */
-  let thoughtAnyway = false;
+  /** what the drafting calls will carry for thinking — the tick's mode and bare-agent's support answer — set once the Model resolves; null before
+   * @type {ReturnType<typeof thinkingPlanFor>|null} */
+  let draftThinkingPlan = null;
+  /** the worst-so-far `thinkingStatus` a drafting call reported (null until one did) @type {string|null} */
+  let thinkingStatusSeen = null;
   /** P6 item 1: the worktree this session made in the person's repo (null until made, and again once removed) @type {{repo: string, dir: string}|null} */
   let madeWorktree = null;
   /** a session that ends WITHOUT ever running (refused, errored, abandoned) takes its worktree with it; a signed one keeps it for the run */
@@ -607,36 +606,37 @@ export function createSession(card, deps = {}) {
 
   async function run() {
     // ── keys, at $0, before anything is prepared ────────────────────────
-    const keyRows = rowsForHome(configHome);
-    const modelChoice = modelChoiceFor(keyRows, card.model);
+    const keyRows = rowsForHome(configHome, env);
+    const pick = judgePick(keyRows, { provider: card.provider, model: card.model });
+    const modelChoice = pick.ok ? pick.choice : null;
     // hamr 2026-10-11: the FIRST drafting row says whether the drafter thinks, before any other line ("checking setup" follows).
     // A Reuse session drafts nothing, so it has no row. A provider shape that cannot be built is refused below, in words.
     if (modelChoice && deps.reuse === undefined) {
       try {
-        draftThinkingLogged = draftThinkingFor({ providerName: modelChoice.provider, model: modelChoice.name, baseUrl: modelChoice.baseUrl ?? null }, draftThinking);
-        state.steps.push({ id: 'thinking', label: thinkingRowText(/** @type {any} */ (draftThinkingLogged)), status: 'done', detail: '' });
+        draftThinkingPlan = thinkingPlanFor({ providerName: modelChoice.provider, model: modelChoice.name, baseUrl: modelChoice.baseUrl ?? null }, draftThinking);
+        state.steps.push({ id: 'thinking', label: thinkingRowText({ mode: draftThinkingPlan.mode, support: draftThinkingPlan.support }), status: 'done', detail: '' });
         logSteps();
-      } catch { draftThinkingLogged = null; }
+      } catch { draftThinkingPlan = null; }
     }
     stepStart('setup');
-    if (!modelChoice) { refuse(`Model "${card.model}" is not a Name in Settings > Providers. Stopped — nothing spent.`); return; }
+    if (!modelChoice) { refuse(pick.ok ? 'Pick a model. Nothing was spent.' : pick.say); return; }
     draftIdentity = { provider: modelChoice.provider, baseUrl: modelChoice.baseUrl ?? null, model: modelChoice.name };
     let providerEntry;
     try { providerEntry = resolveProvider(modelChoice.provider); } catch (e) { refuse(/** @type {Error} */ (e).message); return; }
-    // P4a item 4 — the key variable the person picked in Settings stands in for the built-in one
+    // the key is the chosen row's own variable (P8: no built-in name)
     const keyCfg = keyRows;
-    const draftEnv = applyConfiguredKey(env, modelChoice.provider, modelChoice.baseUrl, keyCfg, modelChoice.name);
-    const draftKeyName = keyNameFor(modelChoice.provider, modelChoice.baseUrl, keyCfg, modelChoice.name).name;
-    const apiKey = draftEnv[providerEntry.envKey];
+    const draftKeyName = modelChoice.envName;
+    const apiKey = keyValueOf(env, draftKeyName);
     if (!apiKey) { refuse(`${draftKeyName} not set. Stopped — nothing spent.`); return; }
     // the customer's own price on this row (USD per 1M in config.json), resolved once here at $0 and
     // handed to every model call this session makes; a bad price refuses, never falls back to the guess
-    /** @type {ReturnType<typeof ratesFor>} */
+    /** @type {import('../providerrows.js').PriceResult} */
     let draftPrice = null;
-    try { draftPrice = ratesFor(modelChoice.provider, modelChoice.baseUrl, keyCfg, modelChoice.name); } catch (e) {
-      if (!(e instanceof ConfigError)) throw e;
-      refuse(`${e.message}. Stopped — nothing spent.`);
-      return;
+    {
+      const chosenRow = keyCfg.find((r) => r.envName === modelChoice.envName);
+      const dl = chosenRow?.models.find((l) => l.model === modelChoice.name);
+      const dp = dl ? ratesOfLine(dl) : null;
+      draftPrice = dp ? { ...dp, envName: modelChoice.envName } : null;
     }
     const keyProblem = apiKeyProblem(apiKey);
     if (keyProblem) { refuse(`${draftKeyName} ${keyProblem}. Stopped — nothing spent.`); return; }
@@ -791,9 +791,10 @@ export function createSession(card, deps = {}) {
       const judges = closeJudges(spec.closeDecl);
       const judge = judges ? resolveJobJudge(spec, modelChoice.provider, resolveWorkerModel) : null;
       let judgeProvider = null;
-      /** @type {ReturnType<typeof ratesFor>} */
+      /** @type {import('../providerrows.js').PriceResult} */
       let judgePrice = null;
       if (judge) {
+        const judgeRow = judgeRowFor(keyCfg, judge, modelChoice.provider, keyCfg.find((r) => r.envName === modelChoice.envName) ?? null);
         try {
           judgePrice = judgeRatesFor(judge, modelChoice.provider, modelChoice.baseUrl, draftPrice, keyCfg);
         } catch (e) {
@@ -801,22 +802,23 @@ export function createSession(card, deps = {}) {
           refuse(`${e.message} — refusing before gate 4 spends anything`);
           return;
         }
-        const judgeKeyValue = env.JUDGE_API_KEY ?? (judge.provider === modelChoice.provider ? draftEnv : applyConfiguredKey(env, judge.provider, undefined, keyCfg, judge.model))[resolveProvider(judge.provider).envKey];
+        const judgeKeyValue = env.JUDGE_API_KEY ?? (judge.provider === modelChoice.provider ? apiKey : keyValueOf(env, judgeRow?.envName));
         const judgeKeyProblem = judgeKeyValue ? apiKeyProblem(judgeKeyValue) : null;
         if (!judgeKeyValue || judgeKeyProblem) {
           refuse(`the judge key is not usable (${judgeKeyProblem ?? 'not set'}) — refusing before gate 4 spends anything`);
           return;
         }
         judgeProvider = buildRunnerProviders({
-          providerName: modelChoice.provider, apiKey, model: MODEL, tierModels: providerEntry.tiers, baseUrl: modelChoice.baseUrl,
+          providerName: modelChoice.provider, apiKey, model: MODEL, baseUrl: modelChoice.baseUrl, legacyMaxTokens: modelChoice.legacyMaxTokens,
           judgeApiKey: judgeKeyValue, judgeModel: judge.model, judgeProviderName: judge.provider,
-          judgeBaseUrl: judge.provider === modelChoice.provider ? modelChoice.baseUrl : undefined,
+          judgeBaseUrl: judge.provider === modelChoice.provider ? modelChoice.baseUrl : (judgeRow?.baseUrl.trim() || undefined),
+          judgeLegacyMaxTokens: judge.provider === modelChoice.provider ? modelChoice.legacyMaxTokens : (judgeRow?.legacyMaxTokens ?? false),
         }).judgeProvider;
       }
       const signing = await prepareSigningFn({
         spec, workdir: prep.tree, seedRef: seedRef, timeoutMs,
         shellCapUsd: spec.budgetUsd, ceilingUsd: card.capUsd, priorCalls: [...metered],
-        judgeLoop: judgeProvider ? (o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system, rates: judgePrice?.rates ?? null }) : null,
+        judgeLoop: judgeProvider ? (o) => defaultJudgeLoop({ provider: judgeProvider, system: o.system, rates: judgePrice?.rates ?? null, thinking: spec.thinking === true }) : null,
         judgeModel: judge?.model ?? null,
         onJudgeCost: (c) => onCall({ label: `${c.label}:${c.id}`, costUsd: c.costUsd, unpricedRounds: c.unpricedRounds }),
       });
@@ -886,8 +888,10 @@ export function createSession(card, deps = {}) {
       inputs: INPUTS,
       provider: modelChoice.provider,
       ...(modelChoice.baseUrl ? { baseUrl: modelChoice.baseUrl } : {}),
-      // the Name is the model id: signed into the spec only when it is not the provider's own default
-      ...(modelChoice.name !== providerEntry.tiers.sonnet ? { model: modelChoice.name } : {}),
+      // a job always carries its own model (P8: there is no provider default to omit it against)
+      model: modelChoice.name,
+      // the "Thinking on" tick is signed ONLY when ticked (unticked writes no field: the hash stays what it would have been)
+      ...(card.thinking === true && draftThinkingPlan?.support !== false ? { thinking: true } : {}),
       cadence: { unit: 'day', every: 1 },
       budgetUsd: card.capUsd,
       ...(typeof card.maxWallMs === 'number' ? { maxWallMs: card.maxWallMs } : {}),
@@ -911,10 +915,10 @@ export function createSession(card, deps = {}) {
     }
 
     const draftJudge = (() => {
-      try { return resolveJobJudge(draft, modelChoice.provider, resolveWorkerModel); } catch { return { provider: modelChoice.provider, model: providerEntry.tiers.sonnet }; }
+      try { return resolveJobJudge(draft, modelChoice.provider, resolveWorkerModel); } catch { return { provider: modelChoice.provider, model: modelChoice.name }; }
     })();
     const { provider } = buildRunnerProviders({
-      providerName: modelChoice.provider, apiKey, model: MODEL, tierModels: providerEntry.tiers, baseUrl: modelChoice.baseUrl,
+      providerName: modelChoice.provider, apiKey, model: MODEL, baseUrl: modelChoice.baseUrl, legacyMaxTokens: modelChoice.legacyMaxTokens,
       judgeApiKey: apiKey, judgeModel: MODEL, judgeProviderName: modelChoice.provider, judgeBaseUrl: modelChoice.baseUrl,
     });
     // TEST SEAMS (see the constructor's own note): a test overrides

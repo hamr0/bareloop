@@ -1520,7 +1520,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     // never hidden. `null` when there is nothing to compare (a resumed run,
     // where a gap is expected and already explained; or `thisFileSpend`
     // itself unknown) or when the two already agree within $0.0001.
-    spendMismatch: (!resumed && spentUsd !== null && thisFileSpend.value !== null && Math.abs(spentUsd - thisFileSpend.value) > 0.0001)
+    spendMismatch: (!resumed && spentUsd !== null && thisFileSpend.value !== null && Math.abs(spentUsd - thisFileSpend.value) > 1e-4)
       ? { spentUsd, thisFileUsd: thisFileSpend.value, diffUsd: spentUsd - thisFileSpend.value }
       : null,
     timelineKind,
