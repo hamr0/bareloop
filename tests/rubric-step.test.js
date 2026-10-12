@@ -214,7 +214,7 @@ test('a step file that is a symlink is red "not a regular file" — never follow
 test('through the declared close: a text-language closeDecl validates, the staged close goes red at the seed then green once the file is written, and seedRead keeps the stage as work', async () => {
   const f = await freeze();
   const decl = {
-    genre: 'TYPES', lang: RUBRIC_LANG,
+    genre: 'TEXT', lang: RUBRIC_LANG,
     stages: [
       { name: 'changed-from-seed', fromLine: undefined, kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } },
       { name: 'line-1', fromLine: [1], kind: 'rubric-step', params: { step: 1, parts: [{ text: 'under 20 words', class: 'countable', check: 'maxWords', value: 20 }] } },

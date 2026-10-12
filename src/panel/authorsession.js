@@ -51,7 +51,7 @@ import { resolveJobJudge, defaultJudgeLoop } from '../judged.js';
 import { assertThinkingMode, thinkingPlanFor, thinkingRowText } from '../thinking.js';
 import { closeJudges } from '../kinds.js';
 import { RUBRIC_LANG } from '../authoring.js';
-import { rubricGoal } from '../rubricstep.js';
+import { rubricGoal, reconcileRubricPlan } from '../rubricstep.js';
 import { redactSecrets } from '../validate.js';
 import { tallyCalls } from '../text.js';
 import { writeDraftSpend, appendDraftLog } from '../draftspend.js';
@@ -84,6 +84,16 @@ export const STEP_LABELS = Object.freeze({
   gates: 'checking signing gates',
   hash: 'generating hash',
   signed: 'signed hash',
+});
+
+/**
+ * The same steps, worded for a job on the person's own local FILES (Part 1a): there is no worktree and no repo to read.
+ * Code-owned, one table beside STEP_LABELS; a step with no entry keeps its STEP_LABELS word.
+ * @type {Readonly<Record<string, string>>}
+ */
+export const FILE_JOB_STEP_LABELS = Object.freeze({
+  copy: 'copying input files',
+  read: 'reading input files',
 });
 
 /**
@@ -129,12 +139,13 @@ export function latestStep(steps, id) {
  * earlier line keeps its status and detail). Existing lines are never moved. Re-starting the step that is still the
  * LAST line just resumes that line.
  * @param {StepLine[]} steps @param {string} id @param {string} [detail] (absent = keep what the line has)
+ * @param {Readonly<Record<string, string>>} [labels] the label table (a file job passes its own)
  */
-export function advanceSteps(steps, id, detail) {
+export function advanceSteps(steps, id, detail, labels = STEP_LABELS) {
   for (const x of steps) if (x.status === 'running' && x.id !== id) x.status = 'done';
   const last = steps.at(-1);
   if (last && last.id === id) { last.status = 'running'; if (detail !== undefined) last.detail = detail; return; }
-  steps.push({ id, label: STEP_LABELS[id] ?? id, status: 'running', detail: detail ?? '' });
+  steps.push({ id, label: labels[id] ?? id, status: 'running', detail: detail ?? '' });
 }
 
 /** source-door refusals that come from CHECKING the copied source (the scan/freeze), not from reaching it */
@@ -437,10 +448,13 @@ export function createSession(card, deps = {}) {
     });
   };
 
+  /** a rubric job on local files words its copy/read steps for files (set once the card is known) */
+  let fileJob = card.checkType === 'rubric' && looksLikeLocalFile(parseInputs(card.inputs).ok ? (/** @type {any} */ (parseInputs(card.inputs))).inputs[0].value : '');
   /** @param {string} id @param {string} [detail] (absent = keep what the step has) start (or restart) a step; whatever step was running is finished */
   const stepStart = (id, detail) => {
-    advanceSteps(state.steps, id, detail);
-    state.progressLabel = STEP_LABELS[id] ?? id;
+    const labels = fileJob ? { ...STEP_LABELS, ...FILE_JOB_STEP_LABELS } : STEP_LABELS;
+    advanceSteps(state.steps, id, detail, labels);
+    state.progressLabel = labels[id] ?? id;
     logSteps();
   };
   /** @param {string} id @param {string} detail set a step's latest line's detail without changing its status */
@@ -1037,7 +1051,22 @@ export function createSession(card, deps = {}) {
     if (RUBRIC_FILES) draft.goal = redactSecrets(rubricGoal({ jobLines, files: prep.manifest.inputs, confirmedGoal: authored.confirmed?.goal ?? null }));
     else if (authored.confirmed?.goal) draft.goal = redactSecrets(String(authored.confirmed.goal));
     const spec = assembleSpec(draft, { ...authored, verdictType: /** @type {string} */ (authored.verdictType) });
+    // PART 1a (run mv5bk400): the plan the person confirmed named three checks for line 1; the composer wrote ONE stage and put
+    // "lists 3 releases" in its notes, so the card promised a check the close never ran. The card AFTER drafting is now built
+    // from the close itself, and every confirmed check no part carries out is moved to Not checked, in code, before signing.
+    if (RUBRIC_FILES) {
+      const rec = reconcileRubricPlan({
+        confirmed: authored.confirmed?.checkItems ?? [], notChecked: authored.confirmed?.notChecked ?? [], closeDecl: spec.closeDecl,
+      });
+      state.finalPlan = { goal: String(draft.goal ?? ''), checkItems: rec.checkItems, notChecked: rec.notChecked, protections: authored.confirmed?.protections ?? [], moved: rec.moved };
+    }
     await finish(spec, authored.seedRef);
+    if (state.finalPlan && state.phase === 'prepared') {
+      state.messages.push({
+        ...planMessage({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, protections: state.finalPlan.protections, questions: [] }, jobLines),
+        text: 'These are the checks the signed close will run, and what it will not check. Sign & run to accept them, or Revise to edit the boxes and draft again.',
+      });
+    }
   }
 
   // fire-and-forget — the caller (src/panel/server.js) never awaits this; it

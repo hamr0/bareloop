@@ -57,7 +57,7 @@ test('the text genre: soft-green keeps the machine guard that applies to a file 
 
 test('a closeDecl may declare lang "text" and is judged against its one guard; "cobol" is still a red; guardNames follows', () => {
   const decl = (lang, extra = {}) => ({
-    genre: 'TYPES', lang,
+    genre: 'TEXT', lang,
     stages: [{ name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } }],
     refused: [{ line: 1, reason: 'nothing in this fixture can check it' }],
     ...extra,

@@ -107,7 +107,7 @@ import { proposeJudgedArtifacts, signJudgedArtifacts, foldJudgedArtifacts } from
 import { runCalibration } from './calibrate.js';
 import { CALIBRATION_SIZE } from './judged.js';
 import {
-  GENRE_LANGUAGES, RUBRIC_LANG, DECLARABLE_LANGUAGES, LOCKED_KINDS, TYPES_GENRE, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
+  GENRE_LANGUAGES, RUBRIC_LANG, DECLARABLE_LANGUAGES, genreForLang, LOCKED_KINDS, TYPES_GENRE, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
   UNLISTED_CLASSES, MENU_CLASSES,
 } from './authoring.js';
 import {
@@ -767,7 +767,7 @@ export async function authorCloseForJob({
   // `prepareSigning`, which refuses there.
   /** @type {any} */
   let closeDecl = {
-    genre: GENRE,
+    genre: genreForLang(lang),
     lang,
     stages: authored.declaration.stages,
     ...(Object.keys(applied).length ? { genreEnv: { ...applied } } : {}),

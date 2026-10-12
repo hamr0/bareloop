@@ -22,6 +22,7 @@ import { spawn as realSpawn } from 'node:child_process';
 import { openSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
+import { planMatchesClose } from '../rubricstep.js';
 import { createSession, validateJobCard, validateReuseCard, lockedFieldChanged, buildReuseSpec, cardFields, STEP_LABELS } from './authorsession.js';
 import { parseInputs } from '../jobblock.js';
 import { proveInputFiles, looksLikeLocalFile } from '../source.js';
@@ -395,6 +396,15 @@ export function signRun(session, claimedHash, o) {
   } catch (e) {
     if (e instanceof ConfigError) return { ok: false, error: `${e.message} — refusing rather than guess the monthly limit` };
     return { ok: false, error: 'could not read the signed spec to check the monthly limit — refusing to sign' };
+  }
+  // PART 1a, the sign-vs-run invariant: the checks on the plan card the person saw are exactly the checks of the close about to be
+  // signed, per line. A mismatch is refused in plain words and nothing is spawned.
+  if (session.state.finalPlan) {
+    try {
+      const spec = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
+      const m = planMatchesClose(session.state.finalPlan.checkItems, spec.closeDecl);
+      if (!m.ok) return { ok: false, error: m.error };
+    } catch { return { ok: false, error: 'could not read the signed spec to compare it with the plan you were shown — refusing to sign' }; }
   }
   const logFile = join(session.state.outDir, 'run.log');
   // array argv, never a shell string — `--approve <hash>` is a literal

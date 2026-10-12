@@ -817,12 +817,13 @@ export const PARAM_SCHEMAS = Object.freeze({
       properties: {
         text: { type: 'string', minLength: 1, description: 'the constraint, in the person\'s own words' },
         class: { enum: ['countable', 'judged', 'guard', 'none'] },
-        check: { enum: ['maxWords', 'minWords', 'maxLines', 'sections', 'sectionWords', 'cited'], description: 'countable only' },
+        check: { enum: ['maxWords', 'minWords', 'maxLines', 'sections', 'sectionWords', 'cited', 'minClaims', 'maxClaims'], description: 'countable only; minClaims / maxClaims count the claims listed under the input named in source' },
         value: { type: 'integer', minimum: 1, description: 'maxWords / minWords / maxLines: the limit the person asked for' },
         names: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 }, description: 'sections / sectionWords: the section names' },
         wordsPerSection: { type: 'integer', minimum: 1 },
         source: { type: 'string', minLength: 1, description: 'cited: the label of the input a quote must come from' },
         domains: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 }, description: 'guard only: the web domains the rule is about' },
+        covers: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'integer', minimum: 1 }, description: 'the number(s) of the CONFIRMED check(s) this part carries out' },
       },
       required: ['text', 'class'],
       additionalProperties: false,
@@ -1150,8 +1151,9 @@ export function writeScopeBlock(writeScope) {
  * never merge.
  * @param {{checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[],
  *   answeredQuestions?: string[]}} confirmed
+ * @param {{numbered?: boolean}} [o] `numbered` (a rubric job on files): each confirmed check carries its `#n`, which a part cites in `covers`
  */
-export function confirmedBlock(confirmed) {
+export function confirmedBlock(confirmed, { numbered = false } = {}) {
   const checks = confirmed.checks ?? [];
   const protections = confirmed.protections ?? [];
   const openQuestions = confirmed.openQuestions ?? [];
@@ -1161,8 +1163,8 @@ export function confirmedBlock(confirmed) {
     + 'Compose stages for these checks and no other — a genre never adds a check the goal did not ask for, and '
     + 'neither do you:\n\n'
     + `${(confirmed.checkItems?.length
-      ? confirmed.checkItems.map((c) => `  - ${c.fromLine && c.fromLine.length ? `[line ${c.fromLine.join(', ')}] ` : ''}${c.text}`)
-      : checks.map((c) => `  - ${c}`)).join('\n') || '  (none)'}\n\n`
+      ? confirmed.checkItems.map((c, i) => `  - ${numbered ? `#${i + 1} ` : ''}${c.fromLine && c.fromLine.length ? `[line ${c.fromLine.join(', ')}] ` : ''}${c.text}`)
+      : checks.map((c, i) => `  - ${numbered ? `#${i + 1} ` : ''}${c}`)).join('\n') || '  (none)'}\n\n`
     + 'These protections are already always-on and unchanged by this plan — never compose one of these as a check:\n\n'
     + `${protections.map((p) => `  - ${p}`).join('\n') || '  (none)'}\n\n`
     + (notChecked.length
@@ -1406,7 +1408,10 @@ left as a placeholder. You never write a number the person did not ask for.`;
       + (inputs && inputs.length ? `\n\n${renderInputs(inputs)}` : ''),
     ...(jobLines && jobLines.length ? [jobLineTagBlock(jobLines.length)] : []),
     ...(writeScope && writeScope.length ? [writeScopeBlock(writeScope)] : []),
-    ...(confirmed ? [confirmedBlock(confirmed)] : []),
+    ...(confirmed ? [confirmedBlock(confirmed, { numbered: true }),
+      'EVERY CONFIRMED CHECK IS COMPOSED OR MOVED, NEVER DROPPED\n\nThe person saw the numbered checks above. On each countable part that carries one of them out, list its number in "covers". '
+      + 'A confirmed check that no part covers is not silently left out: it is moved to Not checked before signing, and the person is told. '
+      + 'To count "N things listed", use minClaims / maxClaims (it counts the claims listed under an input); anything else you cannot count is not composed.'] : []),
     `THE STEP FILES — what the worker leaves behind for each job line\n\n${stepFileContract()}\n\n`
       + 'The rubric-step stage for job line N reads exactly that file, output/steps/N.json. It names the inputs (by label) the '
       + 'step must cite from, and the limits on its "text".',

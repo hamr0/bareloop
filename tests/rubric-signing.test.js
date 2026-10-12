@@ -28,7 +28,7 @@ const DRAFT = {
   inputs: [{ n: 1, label: 'Changelog', value: '/x/CHANGELOG.md' }],
 };
 const DECL = () => ({
-  genre: 'TYPES', lang: RUBRIC_LANG,
+  genre: 'TEXT', lang: RUBRIC_LANG,
   stages: [
     { name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } },
     { name: 'line-1', fromLine: [1], kind: 'rubric-step', params: { step: 1, parts: [{ text: 'under 200 words', class: 'countable', check: 'maxWords', value: 200 }] } },

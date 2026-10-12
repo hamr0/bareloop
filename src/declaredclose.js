@@ -70,7 +70,7 @@
 
 import { runStage, makeSeedTrees, STOP_FAULTS, EXIT_RED, JUDGED_FLOOR_KIND, judgedStages } from './kinds.js';
 import {
-  validateDeclaration, classGuards, genreOwnedEnvNames, ungroundedGenreEnv, DECLARABLE_LANGUAGES, TYPES_GENRE, catalogueForLang, KIND_CATALOGUE,
+  validateDeclaration, classGuards, genreOwnedEnvNames, ungroundedGenreEnv, DECLARABLE_LANGUAGES, TYPES_GENRE, catalogueForLang, KIND_CATALOGUE, TEXT_GENRE, genreForLang,
   VERDICT_CLASSES, LIVE_CLASSES, NEVER_OFFERED_KINDS,
 } from './authoring.js';
 // the calibration set's own gate lives beside the rulebook it is graded against
@@ -83,7 +83,7 @@ import { isObj, isNonEmptyString } from './validate.js';
 
 /** The genres a `closeDecl` may name. v1 admits exactly one (D13) — a genre
  * classifier is designed the day there is a second genre to classify. */
-export const DECLARED_GENRES = Object.freeze([TYPES_GENRE.name]);
+export const DECLARED_GENRES = Object.freeze([TYPES_GENRE.name, TEXT_GENRE]);
 /**
  * The exact field set of a `closeDecl` — anything else is a smuggle channel, the
  * same rule `STAGE_FIELDS` enforces on a command stage.
@@ -321,9 +321,11 @@ export function validateCloseDecl(closeDecl, opts = {}) {
         + `land here); fields: ${CLOSE_DECL_FIELDS.join(', ')}`);
     }
   }
-  if (!DECLARED_GENRES.includes(closeDecl.genre)) {
-    red('invalid-value', `${at}.genre`, `menu: ${DECLARED_GENRES.join('|')} — v1 admits exactly one genre (D13), and a `
-      + 'genre with no guard battery must refuse rather than author a close without the guards it cannot supply');
+  // PART 1a: a genre is bound to its language — code languages are TYPES, the rubric-files language is TEXT, and neither may
+  // wear the other's label (`lang` is checked just below; an unknown lang reds there)
+  if (!DECLARED_GENRES.includes(closeDecl.genre) || closeDecl.genre !== genreForLang(closeDecl.lang)) {
+    red('invalid-value', `${at}.genre`, `menu: ${DECLARED_GENRES.join('|')} — a close's genre follows its language (${genreForLang(closeDecl.lang)} for "${String(closeDecl.lang)}"), `
+      + 'and a genre with no guard battery must refuse rather than author a close without the guards it cannot supply');
   }
   const langOk = DECLARABLE_LANGUAGES.includes(closeDecl.lang);
   if (!langOk) {
@@ -596,6 +598,7 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
   }
   const owned = !shared;
   const seedTrees = shared ?? makeSeedTrees();
+  const textClose = stages.some((st) => st?.kind === 'rubric-step');
   /** @type {any} */
   const ctx = {
     workdir: cwd,
@@ -637,10 +640,14 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
     /** @type {any[]} */
     const ran = [];
     /** @type {any} */
-    let last = { verdict: 'satisfied', judgedCount: 1 };
+    /** @type {any} */
+    let last = textClose ? { verdict: 'satisfied' } : { verdict: 'satisfied', judgedCount: 1 };
     for (const st of stages) {
       const r = await runStage(st, ctx);
       const t = translate(r, redact);
+      // PART 1a: `judgedCount` marks a judgment rendered by the close's judging kinds. A rubric-files (TEXT) close renders only
+      // mechanical verdicts and runs no judge, so none of its records may claim one
+      if (textClose) delete t.judgedCount;
       ran.push({
         name: st?.name ?? null,
         verdict: t.verdict,

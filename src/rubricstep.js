@@ -85,9 +85,12 @@ export const COUNT_CHECKS = Object.freeze({
   sections: Object.freeze(['names']),
   sectionWords: Object.freeze(['names', 'wordsPerSection']),
   cited: Object.freeze(['source']),
+  // a COUNT of the claims listed under an input: the code counts the list (flattenStep), bareguard's own min/max compares it
+  minClaims: Object.freeze(['value', 'source']),
+  maxClaims: Object.freeze(['value', 'source']),
 });
 /** every field a part may carry, whatever its class */
-const PART_FIELDS = Object.freeze(['text', 'class', 'check', 'value', 'names', 'wordsPerSection', 'source', 'domains']);
+const PART_FIELDS = Object.freeze(['text', 'class', 'check', 'value', 'names', 'wordsPerSection', 'source', 'domains', 'covers']);
 
 /** @typedef {{code: string, path: string, detail: string}} ShapeRed */
 
@@ -120,6 +123,10 @@ export function rubricStepShapeReds(p, at) {
     }
     if (!nonEmpty(part.text)) red('missing-field', `${w}.text`, 'the part, in the person\'s own words (a non-empty string)');
     if (!PART_CLASSES.includes(part.class)) { red('invalid-value', `${w}.class`, `one of ${PART_CLASSES.join(' | ')}`); return; }
+    if (Object.hasOwn(part, 'covers') && !(Array.isArray(part.covers) && part.covers.length > 0 && new Set(part.covers).size === part.covers.length
+      && part.covers.every((/** @type {unknown} */ x) => Number.isInteger(x) && /** @type {number} */ (x) >= 1))) {
+      red('invalid-value', `${w}.covers`, 'the numbers of the confirmed checks this part carries out (distinct integers, 1 or more)');
+    }
     if (part.class === 'guard') {
       if (!nameList(part.domains)) red('invalid-value', `${w}.domains`, 'a non-empty array of web domains the rule is about');
       return;
@@ -166,6 +173,8 @@ export function buildStepSpec(params, inputShas) {
       case 'sections': checks.push({ id, rule: 'sections', field: 'text', names: [...part.names] }); break;
       case 'sectionWords': checks.push({ id, rule: 'sectionWords', field: 'text', names: [...part.names], wordsPerSection: part.wordsPerSection }); break;
       case 'cited': checks.push({ id, rule: 'cited', claims: `cites:${part.source}`, source: part.source }); break;
+      case 'minClaims': checks.push({ id, rule: 'min', field: `claims:${part.source}`, value: part.value }); break;
+      case 'maxClaims': checks.push({ id, rule: 'max', field: `claims:${part.source}`, value: part.value }); break;
       default: throw new Error(`rubric-step: no check named "${part.check}"`);
     }
   });
@@ -199,11 +208,18 @@ export function parseStepFile(bytes) {
  * The step file as bareguard's rubric reads it: a flat object. `text` stays `text`; each label in `cites` becomes the field
  * `cites:<label>` (the name a `cited` check reads its claims from). Nothing else in the file is read.
  * @param {Record<string, any>} obj
+ * @param {string[]} [countLabels] labels whose claim COUNT a minClaims/maxClaims part reads
  * @returns {Record<string, any>}
  */
-export function flattenStep(obj) {
+export function flattenStep(obj, countLabels = []) {
   /** @type {Record<string, any>} */
   const fields = {};
+  // the number of claims listed under each label a claim-count check names (0 when the label is absent): counted HERE, by
+  // code, from the file's own list — the worker never writes a number the check trusts
+  for (const label of countLabels) {
+    const list = isRec(obj.cites) && Object.hasOwn(obj.cites, label) ? obj.cites[label] : null;
+    fields[`claims:${label}`] = Array.isArray(list) ? list.length : 0;
+  }
   // a missing or non-string `text` is read as empty, so the one red a worker sees is "text is missing or empty"
   fields.text = typeof obj.text === 'string' ? obj.text : '';
   if (isRec(obj.cites)) for (const [label, list] of Object.entries(obj.cites)) fields[`cites:${label}`] = list;
@@ -230,6 +246,12 @@ export function plainStepGap(step, why, g) {
   if (g.check === 'minWords') return `${at}: "text" has ${g.measured} words, at least ${g.limit} are required`;
   if (g.check === 'maxLines') return `${at}: "text" has ${g.measured} lines, at most ${g.limit} are allowed`;
   if (g.check === 'sections') return `${at}: "text" is missing section(s): ${(g.items ?? []).join(', ')}`;
+  if ((g.check === 'min' || g.check === 'max') && String(g.field ?? '').startsWith('claims:')) {
+    const label = String(g.field).slice('claims:'.length);
+    return g.check === 'min'
+      ? `${at}: only ${g.measured ?? 0} claim(s) are listed under "${label}" in "cites", at least ${g.limit} are required`
+      : `${at}: ${g.measured} claims are listed under "${label}" in "cites", at most ${g.limit} are allowed`;
+  }
   if (g.check === 'cited') {
     const label = String(g.field ?? '').replace(/^cites:/, '');
     if (g.kind === 'missing') return `${at}: "cites" has nothing under "${label}" — list each claim with a quote copied from that input`;
@@ -255,7 +277,8 @@ export async function gradeStep({ params, bytes, outputBytes, inputs }, inputSha
     return { verdict: 'stopped', gapLines: [], fault: `the rubric for job line ${params.step} could not be built: ${/** @type {Error} */ (e).message}`, detail: {} };
   }
   const parsed = parseStepFile(bytes);
-  const r = await checkStep(rubric, String(params.step), parsed.obj === null ? null : flattenStep(parsed.obj), {
+  const countLabels = [...new Set(params.parts.filter((/** @type {any} */ x) => x.class === 'countable' && (x.check === 'minClaims' || x.check === 'maxClaims')).map((/** @type {any} */ x) => String(x.source)))];
+  const r = await checkStep(rubric, String(params.step), parsed.obj === null ? null : flattenStep(parsed.obj, countLabels), {
     inputs, ...(outputBytes === null ? {} : { outputBytes }),
   });
   // the stage's ONE trend number for the fix-loop governor (F192 e, mirrored): failing CLAIMS under a `cited` check (bareguard's
@@ -368,4 +391,82 @@ export function checkRubricParts(stages, { inputLabels = null, red }) {
       }
     }
   });
+}
+
+// ── the sign-vs-run invariant: the checks the person is SHOWN are the checks the signed close RUNS ───────────────────
+
+/**
+ * One countable part as a plain sentence, written by code from the part's signed fields (never from the model's words), so the
+ * plan card and the close are one thing seen twice.
+ * @param {any} part @returns {string}
+ */
+export function partSentence(part) {
+  const list = (/** @type {unknown} */ v) => (Array.isArray(v) ? v.map((x) => String(x)).join(', ') : '');
+  switch (part.check) {
+    case 'maxWords': return `the text is at most ${part.value} words`;
+    case 'minWords': return `the text is at least ${part.value} words`;
+    case 'maxLines': return `the text is at most ${part.value} lines`;
+    case 'sections': return `the text has the section(s): ${list(part.names)}`;
+    case 'sectionWords': return `each section (${list(part.names)}) is about ${part.wordsPerSection} words`;
+    case 'cited': return `every claim is backed by a quote copied from "${part.source}"`;
+    case 'minClaims': return `at least ${part.value} claim(s) are listed under "${part.source}"`;
+    case 'maxClaims': return `at most ${part.value} claim(s) are listed under "${part.source}"`;
+    default: return String(part.text ?? part.check);
+  }
+}
+
+/**
+ * The checks a signed close actually runs, per job line, in plain code-written sentences: one per countable part of every
+ * rubric-step stage. This is the ONE reader both the plan card and the sign-time invariant use.
+ * @param {any} closeDecl
+ * @returns {{line: number, text: string, covers: number[]}[]}
+ */
+export function checksOfClose(closeDecl) {
+  const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
+  return stages.flatMap((/** @type {any} */ st) => (isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts)
+    ? st.params.parts.filter((/** @type {any} */ p) => isRec(p) && p.class === 'countable').map((/** @type {any} */ p) => ({
+      line: st.params.step, text: partSentence(p), covers: Array.isArray(p.covers) ? p.covers.filter(Number.isInteger) : [],
+    }))
+    : []));
+}
+
+/**
+ * Reconcile the CONFIRMED plan with the close the composer actually wrote. The plan card after drafting shows exactly
+ * the close's own checks (`checksOfClose`); every confirmed check that no part carries out (no part lists its number in
+ * `covers`) is moved to Not checked, in the person's words, with the reason. A check can therefore never be shown and then
+ * silently dropped (run mv5bk400: "lists 3 releases" was confirmed, then left out of the signed close without a word).
+ * @param {{confirmed: {text: string, fromLine: number[]|null}[], notChecked: string[], closeDecl: any}} o
+ * @returns {{checkItems: {text: string, fromLine: number[]}[], notChecked: string[], moved: {text: string, fromLine: number[]|null}[]}}
+ */
+export function reconcileRubricPlan({ confirmed, notChecked, closeDecl }) {
+  const real = checksOfClose(closeDecl);
+  const covered = new Set(real.flatMap((c) => c.covers));
+  const moved = confirmed.filter((_, i) => !covered.has(i + 1));
+  return {
+    checkItems: real.map((c) => ({ text: c.text, fromLine: [c.line] })),
+    notChecked: [
+      ...notChecked,
+      ...moved.map((m) => `${m.fromLine && m.fromLine.length ? `line ${m.fromLine.join(', ')}: ` : ''}${m.text} — nothing in this close counts it or checks it against a quote`),
+    ],
+    moved,
+  };
+}
+
+/**
+ * The sign-time invariant: the checks the person was shown (`shown`, from the plan card) are exactly the checks the signed
+ * close runs (`checksOfClose`), per line. Pure.
+ * @param {{text: string, fromLine: number[]|null}[]} shown @param {any} closeDecl
+ * @returns {{ok: true}|{ok: false, error: string}}
+ */
+export function planMatchesClose(shown, closeDecl) {
+  const key = (/** @type {number|null|undefined} */ line, /** @type {string} */ text) => `line ${line ?? '?'}: ${text}`;
+  const ran = checksOfClose(closeDecl).map((c) => key(c.line, c.text));
+  const saw = shown.map((c) => key(Array.isArray(c.fromLine) ? c.fromLine[0] : null, c.text));
+  const onlyShown = saw.filter((k) => !ran.includes(k));
+  const onlyRan = ran.filter((k) => !saw.includes(k));
+  if (onlyShown.length === 0 && onlyRan.length === 0 && saw.length === ran.length) return { ok: true };
+  const parts = [];
+  if (onlyShown.length) parts.push(`shown to you but not in the signed close: ${onlyShown.join('; ')}`);
+  if (onlyRan.length) parts.push(`in the signed close but not shown to you: ${onlyRan.join('; ')}`);
+  return { ok: false, error: `The checks you were shown do not match the checks the signed close would run (${parts.join(' | ')}). Nothing was signed — draft again.` };
 }

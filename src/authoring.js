@@ -353,13 +353,16 @@ export const KIND_CATALOGUE = Object.freeze({
     optional: Object.freeze([]),
     pathParams: Object.freeze([]),
     shape: 'step: integer (the job line number), parts: [{text: string, class: "countable" | "judged" | "guard" | "none", '
-      + 'check?: "maxWords" | "minWords" | "maxLines" | "sections" | "sectionWords" | "cited", value?: integer, names?: string[], '
-      + 'wordsPerSection?: integer, source?: string (an input label), domains?: string[]}]',
+      + 'check?: "maxWords" | "minWords" | "maxLines" | "sections" | "sectionWords" | "cited" | "minClaims" | "maxClaims", value?: integer, names?: string[], '
+      + 'wordsPerSection?: integer, source?: string (an input label), domains?: string[], covers?: integer[]}]',
     asserts: 'the file output/<step>.json under output/steps/ exists, is a JSON object, and its "text" is present and within the '
       + 'limits the person asked for. Write ONE rubric-step stage per numbered job line (step = that line number, fromLine = [that line]). '
       + 'In "parts" list each constraint the person put on that line, in their own words, and SORT it: "countable" when a machine can '
       + 'count it (check maxWords/minWords/maxLines with value; sections with names; sectionWords with names and wordsPerSection) or '
-      + 'when claims must be backed by a quote from a named input (check cited, source = the input label); "judged" when only reading '
+      + 'when claims must be backed by a quote from a named input (check cited, source = the input label), or when a number of '
+      + 'quoted claims is asked for (minClaims / maxClaims with value and source: it counts the claims listed under that input); '
+      + 'on every countable part that carries out a CONFIRMED check, list that check\'s number in covers (a confirmed check no part '
+      + 'covers is moved to Not checked before signing); "judged" when only reading '
       + 'it could decide; "guard" for a rule about web sources (domains); "none" when you cannot sort it. Never turn a part you cannot '
       + 'count or quote into a countable one by guessing a number.',
   }),
@@ -561,6 +564,10 @@ export const GENRE_LANGUAGES = Object.freeze(['js', 'python']);
  * repo job's language detection and the confirm turn offer); this is the one extra value a close may DECLARE.
  */
 export const RUBRIC_LANG = 'text';
+/** the genre label a close over local text files carries (`closeDecl.genre`); the code languages' is `TYPES_GENRE.name`. Never the other's. */
+export const TEXT_GENRE = 'TEXT';
+/** @param {unknown} lang @returns {string} the genre a close of this language is authored under */
+export function genreForLang(lang) { return lang === RUBRIC_LANG ? TEXT_GENRE : TYPES_GENRE.name; }
 /** every `closeDecl.lang` a close may declare: the code languages plus the rubric-files one */
 export const DECLARABLE_LANGUAGES = Object.freeze([...GENRE_LANGUAGES, RUBRIC_LANG]);
 /** the kinds that exist only for a rubric job on local files — a code job's menu, schema and validator never offer them */
