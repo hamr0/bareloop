@@ -23,8 +23,9 @@
 // on rather than catch.
 
 import { createHash } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
-import { mkdir, readdir, readFile, writeFile, lstat, stat, chmod, access, copyFile, cp, open, rm, realpath, readlink, symlink, constants as fsConstants } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, writeFile, lstat, stat, chmod, access, copyFile, cp, open, rm, realpath, readlink, symlink, constants as fsConstants } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep, basename, isAbsolute } from 'node:path';
 import { git } from './kinds.js';
 import { addWorktree, hideBareloopDir } from './worktree.js';
@@ -1222,4 +1223,91 @@ export async function proveInputFiles(inputs) {
     // never copies this file's text into a record — only its path travels. `.env` by name and symlinks stay refused above.
   }
   return { ok: true, repo, root };
+}
+
+/** the per-file ceiling for a rubric input: bareguard's `cited` check searches a quote in a source only up to this size
+ * (its `quoteSourceMaxBytes`); a bigger file could never be cited from, so the door refuses it at $0 */
+export const RUBRIC_INPUT_MAX_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Does this source manifest belong to a rubric job on local files (`proveRubricInputs` wrote it)? One spelling for both
+ * doors (the panel session and the CLI author run): a non-repo source that froze numbered, labelled input files.
+ * @param {Record<string, any>|null|undefined} manifest
+ * @returns {boolean}
+ */
+export function isRubricFilesManifest(manifest) {
+  return !!manifest && manifest.kind !== 'repo' && Array.isArray(manifest.inputs) && manifest.inputs.length > 0;
+}
+
+/**
+ * PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the front door for a RUBRIC job whose inputs are the
+ * person's own LOCAL FILES, not a repo. Each numbered `label: /absolute/file` line is proven at $0 and frozen into the
+ * same hidden-git tree a plain folder gets (`prepareSource`, which also refuses a secret shape, an environment file
+ * and a symlink), under `input/`; the manifest then also records `inputs: [{label, rel, sha256}]` — the bytes the
+ * rubric's `cited` check will search a quote in, hashed once, here. A line that is a web address or a search is a
+ * named refusal (web inputs arrive in a later build); so is a relative path, a missing file, a folder, a file over
+ * {@link RUBRIC_INPUT_MAX_BYTES}, and text that is not valid UTF-8. Every refusal is plain words naming the line and
+ * ends "Nothing spent." — nothing here touches a model.
+ * @param {{inputs: {n: number, label: string, value: string}[], into: string, destination?: string}} o
+ * @returns {Promise<{ok: true, prep: {stop: null, into: string, tree: string, manifestPath: string, manifest: Record<string, any>}}|{ok: false, error: string, code: string}>}
+ */
+export async function proveRubricInputs({ inputs, into, destination }) {
+  /** @param {string} code @param {number} n @param {string} msg @returns {{ok: false, error: string, code: string}} */
+  const bad = (code, n, msg) => ({ ok: false, code, error: `line ${n}: ${msg} Nothing spent.` });
+  if (!Array.isArray(inputs) || inputs.length === 0) return { ok: false, code: 'inputs-missing', error: 'Inputs is required. Nothing spent.' };
+  /** @type {Set<string>} */
+  const labels = new Set();
+  /** @type {{label: string, name: string, buf: Buffer}[]} */
+  const staged = [];
+  /** @type {Set<string>} */
+  const names = new Set();
+  const utf8 = new TextDecoder('utf-8', { fatal: true });
+  for (const inp of inputs) {
+    const { n, label, value } = inp;
+    if (/^search$/i.test(label) || /^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
+      return bad('web-input', n, 'web inputs (URLs, search) arrive in a later build.');
+    }
+    if (labels.has(label.toLowerCase())) return bad('label-repeat', n, `the label "${label}" is already used by an earlier line.`);
+    labels.add(label.toLowerCase());
+    if (!isAbsolute(value)) return bad('input-not-absolute', n, `${value} must be the full path of a file, like /home/me/notes.md.`);
+    const abs = resolve(value);
+    let ls;
+    try { ls = await lstat(abs); } catch { return bad('input-missing', n, `${abs} does not exist.`); }
+    if (ls.isSymbolicLink()) return bad('input-symlink', n, `${abs} is a symlink — refused, never followed.`);
+    if (!ls.isFile()) return bad('input-not-file', n, `${abs} is not a file — each input line is one file.`);
+    const base = basename(abs);
+    if (ENV_FILE.test(base)) return bad('input-env-file', n, `${abs} is an environment file — refused by name, whatever it contains.`);
+    if (ls.size > RUBRIC_INPUT_MAX_BYTES) return bad('input-oversize', n, `${abs} is over the ${RUBRIC_INPUT_MAX_BYTES / (1024 * 1024)} MiB limit for a quoted input.`);
+    const buf = await readFile(abs);
+    try { utf8.decode(buf); } catch { return bad('input-not-utf8', n, `${abs} is not UTF-8 text — text files only for now.`); }
+    if (hasNulByte(buf)) return bad('input-not-text', n, `${abs} is not a text file — text files only for now.`);
+    // two files with one name keep the line number in front, so neither overwrites the other under input/
+    const name = names.has(base) ? `${n}-${base}` : base;
+    names.add(name);
+    staged.push({ label, name, buf });
+  }
+  const stage = await mkdtemp(join(tmpdir(), 'bareloop-rubric-inputs-'));
+  try {
+    for (const f of staged) await writeFile(join(stage, f.name), f.buf);
+    const prep = await prepareSource({ source: stage, into, ...(destination === undefined ? {} : { destination }) });
+    if (prep.stop !== null) return { ok: false, code: prep.code, error: prep.stop };
+    // `source` names the person's own first file, never the scratch staging folder that was already removed
+    const manifest = { ...prep.manifest, source: resolve(inputs[0].value), inputs: staged.map((f) => ({ label: f.label, rel: `input/${f.name}`, sha256: sha256Hex(f.buf) })) };
+    await writeFile(prep.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    return { ok: true, prep: { ...prep, manifest } };
+  } finally {
+    await rm(stage, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Is this Inputs value a path to an existing regular FILE on this machine (not a repo folder, not a web address, not a
+ * missing path)? The $0 peek that tells a rubric job on local files from a rubric job on a repo before a session exists;
+ * `proveRubricInputs` makes the authoritative, line-by-line proof.
+ * @param {string} value
+ * @returns {boolean}
+ */
+export function looksLikeLocalFile(value) {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value) || !isAbsolute(value)) return false;
+  try { return lstatSync(resolve(value)).isFile(); } catch { return false; }
 }

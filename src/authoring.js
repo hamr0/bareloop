@@ -517,6 +517,20 @@ export const TYPES_GENRE_TEMPLATE = `1. The STRICT form of the language's type c
 export const GENRE_LANGUAGES = Object.freeze(['js', 'python']);
 
 /**
+ * PART 1a: the "language" of a RUBRIC job on local text files. It is not a code language and carries no suppression
+ * battery, no environment and no instruments — it only lets such a close declare which genre-shaped guards apply to it
+ * (`classGuards`) without pretending the file is JavaScript. `GENRE_LANGUAGES` stays the code-language menu (it is what a
+ * repo job's language detection and the confirm turn offer); this is the one extra value a close may DECLARE.
+ */
+export const RUBRIC_LANG = 'text';
+/** every `closeDecl.lang` a close may declare: the code languages plus the rubric-files one */
+export const DECLARABLE_LANGUAGES = Object.freeze([...GENRE_LANGUAGES, RUBRIC_LANG]);
+/** the rubric-files language's data, all declared-empty (never an absent field that would read as "not looked into", F59) */
+const TEXT_LANGUAGE = Object.freeze({
+  suppressions: Object.freeze([]), extensions: Object.freeze([]), env: Object.freeze([]), instruments: Object.freeze([]),
+});
+
+/**
  * The js `any` suppression pattern's regex, ONE spelling: the TYPES js battery
  * below composes it into the signed guard, and `anySuppressionWarning` keys on
  * it, so the warning and the guard cannot drift. The guard scans every ADDED
@@ -733,6 +747,7 @@ export const TYPES_GENRE = Object.freeze({
 
 /** @param {string} lang */
 function language(lang) {
+  if (lang === RUBRIC_LANG) return /** @type {any} */ (TEXT_LANGUAGE);
   const l = TYPES_GENRE.languages[/** @type {'js'|'python'} */ (lang)];
   // An unknown language THROWS rather than returning an empty battery: a genre
   // we have not admitted must not read as "this genre needs no guards" (F59's
@@ -858,7 +873,15 @@ export function classGuards({ verdictType, lang }) {
       + 'admission refuses it before any battery is built; a locked class must never resolve to an empty one');
   }
   const l = language(lang);
-  const guards = battery.guards.map((g) => {
+  // PART 1a: a rubric job on local TEXT files keeps every guard a machine can render over a file tree (`changed-from-seed`:
+  // something changed, and only inside the fence) and drops only the guards COMPOSED from a code language's tool data — a
+  // suppression scan over source code has nothing to scan in a text file, and composing it from no data would be the
+  // empty-guard hazard the throw below exists for. Only the soft-green battery has a text form.
+  if (lang === RUBRIC_LANG && String(verdictType) !== 'soft-green') {
+    throw new Error(`the "${RUBRIC_LANG}" genre is the rubric-files one: it carries a battery for soft-green only, not "${verdictType}"`);
+  }
+  const batteryGuards = lang === RUBRIC_LANG ? battery.guards.filter((g) => g.compose.length === 0) : battery.guards;
+  const guards = batteryGuards.map((g) => {
     /** @type {Record<string, any>} */
     const params = structuredClone(g.params);
     for (const p of g.compose) {

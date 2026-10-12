@@ -106,7 +106,7 @@ import { proposeJudgedArtifacts, signJudgedArtifacts, foldJudgedArtifacts } from
 import { runCalibration } from './calibrate.js';
 import { CALIBRATION_SIZE } from './judged.js';
 import {
-  GENRE_LANGUAGES, LOCKED_KINDS, TYPES_GENRE, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
+  GENRE_LANGUAGES, RUBRIC_LANG, DECLARABLE_LANGUAGES, LOCKED_KINDS, TYPES_GENRE, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
   UNLISTED_CLASSES, MENU_CLASSES,
 } from './authoring.js';
 import {
@@ -229,14 +229,14 @@ export function refusalEvents(refusal) {
  *     makes between a locked verdict and an invalid one).
  *
  * @param {{answers: Record<string|number, any>, verdictType?: string|null,
- *   repoPath?: string|null, questions?: Record<string|number, string>|null}} o
- *   `verdictType` and `repoPath` are STRUCTURED input from the UI, never parsed
+ *   repoPath?: string|null, questions?: Record<string|number, string>|null, required?: (string|number)[]|null}} o
+ *   `required` — the answer keys that must be present; absent = the picked class's whole set. `verdictType` and `repoPath` are STRUCTURED input from the UI, never parsed
  *   out of the prose of an answer: a class is picked off a radio and a path is
  *   read off the machine, or neither exists.
  * @returns {{ok: boolean, answers: Record<string|number, string>,
  *   verdictType: string|null, repoPath: string|null, refusal: Refusal|null, reds: Red[]}}
  */
-export function runInterview({ answers, verdictType = null, repoPath = null, questions = null }) {
+export function runInterview({ answers, verdictType = null, repoPath = null, questions = null, required: requiredOverride = null }) {
   /** @type {Red[]} */
   const reds = [];
   const out = (/** @type {Partial<any>} */ over) => ({
@@ -290,7 +290,8 @@ export function runInterview({ answers, verdictType = null, repoPath = null, que
   }
 
   const set = questions ?? questionsFor(picked);
-  const required = requiredAnswersFor(picked);
+  // PART 1a: a rubric job on local files asks one question (the job lines); the caller names the keys it needs
+  const required = Array.isArray(requiredOverride) ? requiredOverride : requiredAnswersFor(picked);
 
   if (!isObj(answers)) {
     reds.push({ code: 'missing-field', path: 'answers', detail: 'the interview answers, keyed by question number' });
@@ -504,7 +505,10 @@ export async function authorCloseForJob({
     confirmed: null,
   };
 
-  const interview = runInterview({ answers, verdictType, repoPath, questions });
+  // PART 1a: a rubric job on local files has ONE question — the numbered job lines (the judge-example answer is required only
+  // of a job that holds a judged part, and this build admits none). The prompt shows just that question.
+  if (lang === RUBRIC_LANG) questions = { 1: questionsFor('soft-green')[1] };
+  const interview = runInterview({ answers, verdictType, repoPath, questions, ...(lang === RUBRIC_LANG ? { required: [1] } : {}) });
   base.interview = interview;
   if (!interview.ok) {
     return { ...base, refusal: interview.refusal, reds: interview.reds, stop: interview.refusal ? 'refused' : 'interview-incomplete' };
@@ -530,7 +534,7 @@ export async function authorCloseForJob({
     }
   }
 
-  if (!GENRE_LANGUAGES.includes(lang)) {
+  if (!DECLARABLE_LANGUAGES.includes(lang)) {
     // THE GENRE REFUSAL, at the composer. This used to be a plain wiring red;
     // under v1.57 §2 the interview no longer asks the user to confirm a genre, so
     // this is where "we can't run this kind of job yet" actually lands — and it
@@ -588,6 +592,14 @@ export async function authorCloseForJob({
   // arrived at by accident.
   /** @type {any} */
   let survey = scout;
+  // PART 1a: a rubric job on local files has no repository to survey. Its "facts" are the numbered inputs the person
+  // pointed at — known to code at $0 — so the (paid) scout never runs and nothing is invented for it to find.
+  if (survey == null && lang === RUBRIC_LANG) {
+    survey = {
+      state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [],
+      facts: { rubricFiles: true, inputs: (Array.isArray(inputs) ? inputs : []).map((i) => ({ n: i.n, label: i.label })) },
+    };
+  }
   // `== null` and not `!survey`: this is the `??` these two lines replaced, kept
   // exactly — a caller-supplied survey is used whatever it is, and only an
   // ABSENT one is paid for.

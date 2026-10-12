@@ -70,7 +70,7 @@
 
 import { runStage, makeSeedTrees, STOP_FAULTS, EXIT_RED, JUDGED_FLOOR_KIND, judgedStages } from './kinds.js';
 import {
-  validateDeclaration, classGuards, genreOwnedEnvNames, ungroundedGenreEnv, GENRE_LANGUAGES, TYPES_GENRE,
+  validateDeclaration, classGuards, genreOwnedEnvNames, ungroundedGenreEnv, DECLARABLE_LANGUAGES, TYPES_GENRE,
   VERDICT_CLASSES, LIVE_CLASSES, NEVER_OFFERED_KINDS,
 } from './authoring.js';
 // the calibration set's own gate lives beside the rulebook it is graded against
@@ -324,9 +324,9 @@ export function validateCloseDecl(closeDecl, opts = {}) {
     red('invalid-value', `${at}.genre`, `menu: ${DECLARED_GENRES.join('|')} — v1 admits exactly one genre (D13), and a `
       + 'genre with no guard battery must refuse rather than author a close without the guards it cannot supply');
   }
-  const langOk = GENRE_LANGUAGES.includes(closeDecl.lang);
+  const langOk = DECLARABLE_LANGUAGES.includes(closeDecl.lang);
   if (!langOk) {
-    red('invalid-value', `${at}.lang`, `menu: ${GENRE_LANGUAGES.join('|')} — the language selects the genre's guard `
+    red('invalid-value', `${at}.lang`, `menu: ${DECLARABLE_LANGUAGES.join('|')} — the language selects the genre's guard `
       + 'battery and its environment, both of which are ours and neither of which has a default');
   }
   // `notes` is NOT checked here. It is M2's rule now (`validateDeclaration`),
@@ -486,7 +486,7 @@ export function validateCloseDecl(closeDecl, opts = {}) {
  * @param {any} closeDecl @param {string} verdictType @returns {string[]}
  */
 export function guardNames(closeDecl, verdictType) {
-  if (!isObj(closeDecl) || !GENRE_LANGUAGES.includes(closeDecl.lang)) return [];
+  if (!isObj(closeDecl) || !DECLARABLE_LANGUAGES.includes(closeDecl.lang)) return [];
   if (!LIVE_CLASSES.includes(String(verdictType))) return [];
   return classGuards({ verdictType: String(verdictType), lang: closeDecl.lang }).map((g) => g.name);
 }

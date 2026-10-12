@@ -81,7 +81,7 @@ import { seedRead as runSeedReadStages, makeSeedTrees, AGGREGATES, SIGNS, MAX_TE
 import { JUDGE_RULE_IDS } from './judged.js';
 import {
   KIND_CATALOGUE, MAX_STAGES, DIRECTIONS, BASELINES,
-  GENRE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames, genreInstruments,
+  GENRE_LANGUAGES, RUBRIC_LANG, DECLARABLE_LANGUAGES, TYPES_GENRE_TEMPLATE, classGuards, genreEnv, genreOwnedEnvNames, genreInstruments,
   validateDeclaration, envCapableKind, classMenu, VERDICT_CLASSES, LIVE_CLASSES, MENU_CLASSES,
 } from './authoring.js';
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
@@ -2431,7 +2431,7 @@ export async function authorClose({
     }], 'precheck');
   }
 
-  if (!GENRE_LANGUAGES.includes(lang)) {
+  if (!DECLARABLE_LANGUAGES.includes(lang)) {
     return refuse([{
       code: 'genre-unsupported',
       path: 'lang',

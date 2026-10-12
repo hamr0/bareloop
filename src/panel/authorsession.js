@@ -27,7 +27,7 @@ import {
 } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import {
-  prepareSource, proveDestination, missingDependencies, looksLikeRepoSource, nearestGitAncestor, nonRepoSourceMessage,
+  prepareSource, proveDestination, proveRubricInputs, looksLikeLocalFile, missingDependencies, looksLikeRepoSource, nearestGitAncestor, nonRepoSourceMessage,
 } from '../source.js';
 import {
   worktreePath, uncommittedCount, shortHead, removeWorktree,
@@ -50,6 +50,8 @@ import {
 import { resolveJobJudge, defaultJudgeLoop } from '../judged.js';
 import { assertThinkingMode, thinkingPlanFor, thinkingRowText } from '../thinking.js';
 import { closeJudges } from '../kinds.js';
+import { RUBRIC_LANG } from '../authoring.js';
+import { rubricGoal } from '../rubricstep.js';
 import { redactSecrets } from '../validate.js';
 import { tallyCalls } from '../text.js';
 import { writeDraftSpend, appendDraftLog } from '../draftspend.js';
@@ -327,10 +329,13 @@ export function validateJobCard(card, opts = {}) {
   if (card.thinking !== undefined && typeof card.thinking !== 'boolean') return { ok: false, error: 'Thinking on must be on or off' };
   const jb = parseJobBlock(card.jobText);
   if (!jb.ok) return { ok: false, error: jb.error };
-  const misfit = jobBlockFitsCheck(jb.lines, checkType === 'rubric');
-  if (misfit) return { ok: false, error: misfit };
   const ib = parseInputs(card.inputs);
   if (!ib.ok) return { ok: false, error: ib.error };
+  // P1=B: PASS/FAIL examples are required of a rubric job only when it holds a judged part. A rubric on the person's own
+  // local files (first input not a repo) holds none in this build; a rubric on a repo composes the judged floor.
+  const rubricFiles = checkType === 'rubric' && looksLikeLocalFile(ib.inputs[0].value);
+  const misfit = jobBlockFitsCheck(jb.lines, checkType === 'rubric', { judged: !rubricFiles });
+  if (misfit) return { ok: false, error: misfit };
   if (typeof destination !== 'string' || destination.trim() === '') return { ok: false, error: 'Destination is required' };
   if (typeof capUsd !== 'number' || !Number.isFinite(capUsd) || capUsd <= 0) {
     return { ok: false, error: '$ cap is required and must be a positive number' };
@@ -644,6 +649,9 @@ export function createSession(card, deps = {}) {
     const verdictType = card.checkType === 'rubric' ? 'soft-green' : 'green';
     const into = join(outDir, 'source-seed');
     const isRepoLike = looksLikeRepoSource(SOURCE);
+    // PART 1a: a RUBRIC job whose first input is not a repo works on the person's own local FILES — every numbered input
+    // line is one file, frozen by `proveRubricInputs`; there is no repo, no language and no scout (docs/product/ITEM33-BUILD.md)
+    const RUBRIC_FILES = card.checkType === 'rubric' && !isRepoLike;
     // hamr's ruling B (2026-10-05): ONE rule for both a fresh card and a reuse card, at $0, before the copy and any model call
     const destProblem = repoDestinationProblem(card.destination, isRepoLike);
     if (destProblem !== null) { refuse(destProblem); return; }
@@ -667,10 +675,21 @@ export function createSession(card, deps = {}) {
     // fence read as a directory and refused as "not absolute" — hiding the real problem with the Source. A scope-shaped
     // (relative) Destination is therefore handed to the door only when the source is repo-like.
     const destIsDir = isAbsoluteDestination(card.destination);
-    const prep = await prepareSource({
-      source: SOURCE, into, ...(isRepoLike || destIsDir ? { destination: card.destination } : {}),
-      ...(repoRoot === null ? {} : { worktree: worktreePath(repoRoot, id) }),
-    });
+    if (RUBRIC_FILES && !destIsDir) {
+      refuse('Destination must be the full path of a folder, like /home/me/out — the finished files are delivered there. Nothing spent.');
+      return;
+    }
+    /** @type {any} */
+    let prep;
+    if (RUBRIC_FILES) {
+      const proved = await proveRubricInputs({ inputs: INPUTS, into, destination: card.destination });
+      prep = proved.ok ? proved.prep : { stop: proved.error, code: proved.code };
+    } else {
+      prep = await prepareSource({
+        source: SOURCE, into, ...(isRepoLike || destIsDir ? { destination: card.destination } : {}),
+        ...(repoRoot === null ? {} : { worktree: worktreePath(repoRoot, id) }),
+      });
+    }
     if (repoRoot !== null && prep.stop === null && prep.manifest?.worktree) madeWorktree = { repo: repoRoot, dir: prep.manifest.worktree };
     if (abandoned) dropWorktree();
     if (prep.stop !== null) {
@@ -682,7 +701,7 @@ export function createSession(card, deps = {}) {
     stepStart('check');
 
     const IS_REPO_SOURCE = prep.manifest.kind === 'repo';
-    let LANG = 'none-detected';
+    let LANG = RUBRIC_FILES ? RUBRIC_LANG : 'none-detected';
     /** @type {any} */
     let langResult = null;
     if (IS_REPO_SOURCE) {
@@ -741,7 +760,7 @@ export function createSession(card, deps = {}) {
         state.phase = 'drafting';
       }
     }
-    if (!IS_REPO_SOURCE) {
+    if (!IS_REPO_SOURCE && !RUBRIC_FILES) {
       refuse(nonRepoSourceMessage(prep.manifest.kind));
       return;
     }
@@ -874,7 +893,9 @@ export function createSession(card, deps = {}) {
       return;
     }
 
-    const writeScope = card.destination.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
+    // a rubric job on files writes only inside the hidden tree's own `output/`; its Destination is a drop-off folder
+    // (proven above, per run), never a fence
+    const writeScope = RUBRIC_FILES ? ['output/'] : card.destination.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
     /** @type {any} the confirm turn (below) fills `goal` in once accepted —
      * declared loosely rather than typed field-by-field, since this object's
      * own shape is a `job-v1` draft `validateJob` itself is the real
@@ -909,7 +930,8 @@ export function createSession(card, deps = {}) {
     /** @type {Record<string, string>} */
     const answers = { 1: renderJobLines(jobLines) };
     if (verdictType === 'soft-green') answers[SOFTGREEN_JUDGE_EXAMPLES_KEY] = renderExamples(jobLines);
-    const required = requiredAnswersFor(verdictType);
+    // a rubric job on files holds no judged part in this build, so the PASS/FAIL examples are not required of it
+    const required = RUBRIC_FILES ? [1] : requiredAnswersFor(verdictType);
     for (const n of required) {
       if (!answers[n]) { refuse(`the ${verdictType} check type needs ${required.length} answers and one is missing (key ${n})`); return; }
     }
@@ -973,7 +995,7 @@ export function createSession(card, deps = {}) {
       rates: draftPrice?.rates ?? null,
       draftThinking,
       onPhase, onCall,
-      ask, answerQuestions, confirmGenerate, isRepo: true, langResult,
+      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult,
       ...(deps.scout ? { scout: deps.scout } : {}),
       ...(authorFnOverride ? { authorFn: authorFnOverride } : {}),
     });
@@ -1012,7 +1034,8 @@ export function createSession(card, deps = {}) {
       return;
     }
 
-    if (authored.confirmed?.goal) draft.goal = redactSecrets(String(authored.confirmed.goal));
+    if (RUBRIC_FILES) draft.goal = redactSecrets(rubricGoal({ jobLines, files: prep.manifest.inputs }));
+    else if (authored.confirmed?.goal) draft.goal = redactSecrets(String(authored.confirmed.goal));
     const spec = assembleSpec(draft, { ...authored, verdictType: /** @type {string} */ (authored.verdictType) });
     await finish(spec, authored.seedRef);
   }
