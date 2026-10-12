@@ -14,6 +14,14 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **New close kind `rubric-step`** (text genre only, `closeDecl.lang: "text"`; a code job never sees it): one stage per job line, graded by bareguard's rubric primitive rebuilt every run from the input shas the source door recorded. Checks: the step file exists and is a JSON object (`happened`), `text` present, `cited` per input the step cites, and `maxWords` / `minWords` / `maxLines` / `sections` / `sectionWords` on `text`. A missing or cut-off file is red; a changed input, an unreadable record or a rubric that cannot be built is an instrument stop (97).
 - **Every part of a job line is sorted at drafting** (countable, judged, guard, none). A judged part ("this rule needs the judge, which arrives in the next build. Nothing spent."), an unsortable part, a guard with no web input, contradicting limits (both parts and numbers named), a stage on the wrong line and a quote from an unknown input are plain-words reds; the drafting and signing stops print them whole.
 - Signing such a job makes zero judge-round records (the calibration gate runs only for a judged stage).
+- **The confirm turn is back for these jobs** (form -> confirm turn -> sign, scout still off). Its protections come from code: the text genre's guard, the write fence and one line per job line saying its step file must exist, be complete JSON and carry text; the model is told what a check can be here and shown the same list as already covered.
+- **A red count for the fix-loop governor.** A red `rubric-step` stage reports failing claims plus failing checks, lower is better, through the same `closeGrade` path numeric stages use.
+- **The panel words a rubric-step check** as "line N — does its output pass the line's checks?" instead of the raw stage name.
+- **Worker brief:** copy every number, time and price in a claim exactly as the input writes it.
+
+### Fixed
+
+- **The panel could not start a rubric job with two or more local-file Inputs:** `POST /api/author/start` asked the repo proof of every card and reded line 1 ("is not a folder"). A rubric card whose first input is a local file now skips it; the session proves each line.
 
 ### Changed
 
