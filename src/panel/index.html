@@ -4177,6 +4177,7 @@
       var capOk = moneyCapInput.value.trim() !== "" && Number.isFinite(v) && v > 0;
       // on Reuse workflow nothing starts before a job is picked
       startOk = capOk && !sessionLive && keyOk && (verdictValue() !== "reuse" || startFrom !== null);
+      if(typeof syncResumeSign === "function"){ syncResumeSign(); }
       syncCardLock();
       renderMain();
       refreshClearBtn();
@@ -4479,7 +4480,6 @@
       reopenBtn.hidden = !reviseShownFor(st);
       fitBox(msgInput);
       fitCardBoxes();
-      if(resumeSignBtn){ resumeSignBtn.disabled = resumeSignBlocked(); }
     }
     msgInput.addEventListener("input", renderMain);
     // P7 — the numbered boxes. A plain job line is numbered 1, 2, 3; a line starting `~` is a rule for the line above and has no
@@ -4757,6 +4757,7 @@
     var resumeSignBtn = document.getElementById("chat-resume-sign");
     // a Model pick that is needed (older spec) blocks Sign & resume until a ticked line is picked and its key is usable
     function resumeSignBlocked(){ return resumeRun !== null && resumeRun.pickModel === true && (modelSelect.value === "" || !keyOk); }
+    function syncResumeSign(){ resumeSignBtn.disabled = resumeSignBlocked(); }
     function signResume(){
       var run = resumeRun;
       if(run === null) return;

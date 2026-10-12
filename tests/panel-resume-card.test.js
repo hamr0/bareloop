@@ -218,7 +218,8 @@ test('Q2(b) page: a spec that names NO model opens the Model box and the resume 
   const none = signHarness({ runid: 'r', noTime: false, pickModel: true }, { status: 200, body: { ok: true } }, { value: '' }, false);
   await none.api.signResume();
   assert.deepEqual(none.posts, []);
-  assert.match(fnSrc('renderMain'), /resumeSignBtn\.disabled = resumeSignBlocked\(\)/, 'renderMain (run at the end of refreshStartEnabled) keeps the button in step with the Model pick');
+  assert.match(fnSrc('refreshStartEnabled'), /syncResumeSign\(\)/);
+  assert.match(fnSrc('syncResumeSign'), /resumeSignBtn\.disabled = resumeSignBlocked\(\)/, 'refreshStartEnabled keeps the button in step with the Model pick');
 });
 
 test('Q2(b) page: a spec that names a model keeps the Model box locked, preselects it, and the POST sends neither model nor provider', async () => {
