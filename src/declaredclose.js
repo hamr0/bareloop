@@ -70,7 +70,7 @@
 
 import { runStage, makeSeedTrees, STOP_FAULTS, EXIT_RED, JUDGED_FLOOR_KIND, judgedStages } from './kinds.js';
 import {
-  validateDeclaration, classGuards, genreOwnedEnvNames, ungroundedGenreEnv, DECLARABLE_LANGUAGES, TYPES_GENRE,
+  validateDeclaration, classGuards, genreOwnedEnvNames, ungroundedGenreEnv, DECLARABLE_LANGUAGES, TYPES_GENRE, catalogueForLang, KIND_CATALOGUE,
   VERDICT_CLASSES, LIVE_CLASSES, NEVER_OFFERED_KINDS,
 } from './authoring.js';
 // the calibration set's own gate lives beside the rulebook it is graded against
@@ -391,7 +391,9 @@ export function validateCloseDecl(closeDecl, opts = {}) {
   }
 
   const v = validateDeclaration(closeDecl, {
-    ...(catalogue ? { catalogue } : {}),
+    // PART 1a: the kinds a close may use depend on its language — a rubric-files ("text") close sees its own two kinds, every
+    // code close never sees a rubric-only one. A caller-supplied catalogue is narrowed the same way.
+    catalogue: catalogueForLang(closeDecl.lang, catalogue ?? KIND_CATALOGUE),
     // BOTH are forwarded, always. Forwarding only one would hide the case M2
     // reds as `listing-conflict` — a caller that defers the tree-grounded half
     // AND hands over a tree does not know which gate it is running, and silently

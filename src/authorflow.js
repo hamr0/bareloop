@@ -802,6 +802,27 @@ export const PARAM_SCHEMAS = Object.freeze({
     items: { type: 'string' },
     description: 'the AUTHORITATIVE artifacts to judge, repository-relative, read off the listing. One paid call each.',
   },
+  step: { type: 'integer', minimum: 1, description: 'the number of the job line this stage serves; its file is output/steps/<step>.json' },
+  parts: {
+    type: 'array',
+    description: 'every constraint the person put on that job line, in their own words, each SORTED: countable (a machine counts it, or a '
+      + 'quote from a named input must back it), judged (only reading it could decide), guard (a rule about web sources), none (you cannot sort it)',
+    items: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', minLength: 1, description: 'the constraint, in the person\'s own words' },
+        class: { enum: ['countable', 'judged', 'guard', 'none'] },
+        check: { enum: ['maxWords', 'minWords', 'maxLines', 'sections', 'sectionWords', 'cited'], description: 'countable only' },
+        value: { type: 'integer', minimum: 1, description: 'maxWords / minWords / maxLines: the limit the person asked for' },
+        names: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 }, description: 'sections / sectionWords: the section names' },
+        wordsPerSection: { type: 'integer', minimum: 1 },
+        source: { type: 'string', minLength: 1, description: 'cited: the label of the input a quote must come from' },
+        domains: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 }, description: 'guard only: the web domains the rule is about' },
+      },
+      required: ['text', 'class'],
+      additionalProperties: false,
+    },
+  },
   ask: {
     type: 'string',
     minLength: 1,
@@ -1186,14 +1207,14 @@ export function jobLineTagBlock(count) {
  * @param {{answers: Record<string|number, string>, questions?: Record<string|number, string>,
  *   facts: any, listingBlock: string, lang: string, verdictType: string,
  *   guards: {name: string, kind: string, params: Record<string, any>, fill: string[]}[],
- *   ownedEnvNames?: string[], mode?: 'tool'|'text', catalogue?: Record<string, any>,
+ *   ownedEnvNames?: string[], mode?: 'tool'|'text', catalogue?: Record<string, any>|null,
  *   writeScope?: string[]|null,
  *   jobLines?: {n: number}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
  *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
  */
 export function authorPrompt({
   answers, questions = GREEN_QUESTIONS, facts, listingBlock, lang, verdictType, guards,
-  ownedEnvNames = [], mode = 'tool', catalogue = KIND_CATALOGUE, writeScope = null,
+  ownedEnvNames = [], mode = 'tool', catalogue: catalogueIn = null, writeScope = null,
   // P7: the person's numbered job lines and the inputs they pointed at. ABSENT = byte-identical prompt (every caller
   // that predates the job block). Present: the drafter is told to tag every stage it writes with the line it serves.
   jobLines = null, inputs = null,
@@ -1204,6 +1225,8 @@ export function authorPrompt({
 }) {
   // PART 1a: a rubric job on the person's own local files has no repository, no genre template and no tool to measure with —
   // it gets its own brief (`rubricAuthorPrompt`), which still ends in the same declaration tool and the same guards
+  // an absent catalogue is the language's own menu (`catalogueForLang`), so a code job's prompt never lists a rubric-only kind
+  const catalogue = catalogueIn ?? catalogueForLang(lang);
   if (lang === RUBRIC_LANG) {
     return rubricAuthorPrompt({ answers, questions, facts, listingBlock, verdictType, guards, mode, catalogue, writeScope, jobLines, inputs });
   }

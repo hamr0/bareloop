@@ -36,7 +36,7 @@ import { execFileSync } from 'node:child_process';
 import { AGGREGATES, SIGNS, MAX_TERMS, EXIT_GREEN, EXIT_RED, EXIT_STOP } from '../src/kinds.js';
 import {
   KIND_CATALOGUE, CATALOGUE_LIVE_KINDS, LOCKED_KINDS, MAX_STAGES, VERDICT_CLASSES, LOCKED_CLASSES,
-  DIRECTIONS, BASELINES, classGuards, classMenu, genreOwnedEnvNames, genreInstruments, validateDeclaration,
+  DIRECTIONS, BASELINES, classGuards, classMenu, genreOwnedEnvNames, genreInstruments, validateDeclaration, catalogueForLang,
 } from '../src/authoring.js';
 import {
   DECLARATION_TOOL_NAME, DECLARATION_ACK, AUTHOR_MAX_TOKENS,
@@ -510,7 +510,9 @@ test('the authoring prompt carries the genre template, the catalogue and the FIL
   // the catalogue this prompt names is the PICKED CLASS's menu (softgreen module
   // 3), not the whole live set: a green job is never shown a kind whose pick
   // would red as `class-ceiling` after the call was paid for.
-  for (const k of classMenu('green')) assert.ok(p.includes(k), `the catalogue must name ${k}`);
+  // ...and the LANGUAGE's menu (Part 1a): a code job is never shown the rubric-only kind
+  for (const k of classMenu('green', catalogueForLang('js'))) assert.ok(p.includes(k), `the catalogue must name ${k}`);
+  assert.ok(!p.includes('rubric-step'), 'a code job never sees the rubric-only kind');
   for (const k of CATALOGUE_LIVE_KINDS.filter((x) => !classMenu('green').includes(x))) {
     assert.ok(!p.includes(k), `${k} is above a green promise and must be inexpressible, not merely refused later`);
   }

@@ -74,6 +74,7 @@
 
 import { normalizeParser, MAX_JUDGED_PATHS, JUDGED_FLOOR_KIND } from './kinds.js';
 import { JUDGE_RULE_IDS, validateCard } from './judged.js';
+import { rubricStepShapeReds, PART_CLASSES } from './rubricstep.js';
 import { isObj, isNonEmptyString, hasNestedQuantifier, globToPrefix } from './validate.js';
 
 /** @typedef {{code: string, path: string, detail: string, [k: string]: any}} Red */
@@ -339,6 +340,28 @@ export const KIND_CATALOGUE = Object.freeze({
       + 'renders pass/fail per card item over those facts — first red wins, and anything it cannot be sure of is a red. '
       + 'Name one card line per thing you actually look for, in the order you look for them, and name the real files the '
       + 'work lands in. It is never offered to the agent as an in-run check.',
+  }),
+  // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES. One stage per numbered job
+  // line, reading the one file that line leaves behind (output/steps/N.json). It measures nothing with a command and buys
+  // nothing: bareguard's rubric primitive grades the file against the person's own counted limits and quotes. It exists only in
+  // the text genre's menu (`catalogueForLang`) — a code job never sees it. `parts` is the person's constraints on the line,
+  // each SORTED by the drafter into a class; only `countable` parts become checks, and the validator reds the rest in plain
+  // words (`checkRubricParts`), so no signed stage carries a part this build cannot run.
+  'rubric-step': Object.freeze({
+    verdictClass: 'green',
+    required: Object.freeze(['step', 'parts']),
+    optional: Object.freeze([]),
+    pathParams: Object.freeze([]),
+    shape: 'step: integer (the job line number), parts: [{text: string, class: "countable" | "judged" | "guard" | "none", '
+      + 'check?: "maxWords" | "minWords" | "maxLines" | "sections" | "sectionWords" | "cited", value?: integer, names?: string[], '
+      + 'wordsPerSection?: integer, source?: string (an input label), domains?: string[]}]',
+    asserts: 'the file output/<step>.json under output/steps/ exists, is a JSON object, and its "text" is present and within the '
+      + 'limits the person asked for. Write ONE rubric-step stage per numbered job line (step = that line number, fromLine = [that line]). '
+      + 'In "parts" list each constraint the person put on that line, in their own words, and SORT it: "countable" when a machine can '
+      + 'count it (check maxWords/minWords/maxLines with value; sections with names; sectionWords with names and wordsPerSection) or '
+      + 'when claims must be backed by a quote from a named input (check cited, source = the input label); "judged" when only reading '
+      + 'it could decide; "guard" for a rule about web sources (domains); "none" when you cannot sort it. Never turn a part you cannot '
+      + 'count or quote into a countable one by guessing a number.',
   }),
   // LIVE at N4 slice 1, and the ONLY kind that does not measure anything: it
   // does not RUN, it PAUSES the run and hands the tree to a person (ruling 1).
@@ -1730,6 +1753,9 @@ function checkKind({ kind, params: p, at, red, scoped, label, populations, envOw
     case 'files-changed':
       if (!strArray(p.allowPrefixes)) red('invalid-value', `${at}.params.allowPrefixes`, 'a non-empty array of path prefixes');
       if (p.requireNonEmpty !== true) red('invalid-value', `${at}.params.requireNonEmpty`, 'literally true');
+      break;
+    case 'rubric-step':
+      for (const r of rubricStepShapeReds(p, `${at}.params`)) red(r.code, r.path, r.detail);
       break;
     case 'human-confirms':
       // the whole surface: the question the signer answers. It is shown to a

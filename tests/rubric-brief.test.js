@@ -38,7 +38,7 @@ const JOB_LINES = [{ n: 1, text: 'Summarize the unreleased changes', rule: 'unde
 const INPUTS = [{ n: 1, label: 'Changelog', value: '/x/CHANGELOG.md' }];
 
 test('catalogueForLang: the text genre sees only its own kinds; a code language never sees a rubric-only kind', () => {
-  assert.deepEqual(Object.keys(catalogueForLang(RUBRIC_LANG)).sort(), ['files-changed']); // + rubric-step once the kind lands (deliverable 3)
+  assert.deepEqual(Object.keys(catalogueForLang(RUBRIC_LANG)).sort(), ['files-changed', 'rubric-step']);
   for (const lang of ['js', 'python']) {
     assert.deepEqual(Object.keys(catalogueForLang(lang)), Object.keys(KIND_CATALOGUE).filter((k) => k !== 'rubric-step'));
   }
