@@ -1066,6 +1066,9 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     | RF6 | Superlatives ("cheapest", "the last 3") are Not checked for now (later piece). A rule the AI cannot express as shape + rule goes to Not checked in the person's words, never a vague check. |
     | RF7 | F223 (`docs/wiki/FINDINGS.md`) is closed by design once this is built. |
     | RF8 | Later piece, its own build AFTER required facts: **rerun from line N** at the end gate of a GREEN run only. Lines before N keep their checked outputs byte-for-byte (not redone, not edited); the person's words go to line N and everything from N is redone; money and time already spent stay folded in (tighten-only, never a fresh budget). Changes the end gate (accept / rerun / pause). |
+    | RF9 | One quote per result: each result (e.g. one flight) is ONE claim with ONE quote holding all its facts (bareguard's typed claim binding: values d0, d1… each canonically equal to what the quote holds). Separate quotes per fact would let a worker mix facts from different results (price from flight A, time from flight B) into a result that does not exist. |
+    | RF10 | Two bareguard additions asked (hamr chose A: ask bareguard, never patch locally): (a) a shape-only value decide — no condition, only "the value is in the quote" (needed for RF3's facts with no rule); (b) a `text` shape — the value appears in the quote as a whole word, case/space-insensitive, otherwise exact (versions "0.41.0", flight numbers "MS791", names). Asked of the guard session 2026-10-12; the build waits for the published version. |
+    | RF11 | Honest limit of the text shape: code proves the value is a word in the result's quote, not that it is the RIGHT word for that fact ("Nonstop" as airline would pass). Accepted: the quote is one result row and the person sees the answers at Accept. |
 
 34. **Item 34 — loose ends housed** (hamr, 2026-09-13: every open end gets fix / keep /
     backlog / remove).
@@ -1444,6 +1447,7 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 
 ### Required facts for rubric jobs (v1.96 — 2026-10-12)
 
-- A rubric job's checks come from required facts drafted from the job line and `~` rules and signed on the card; every answer is quoted and shape-checked in code (bareguard `^0.22.0` `cited` + `decides`), not chosen by the worker. Rulings RF1–RF8 are in item 33, "2026-10-12 — required facts RULED"; this closes F223 by design once built.
+- A rubric job's checks come from required facts drafted from the job line and `~` rules and signed on the card; every answer is quoted and shape-checked in code (bareguard `^0.22.0` `cited` + `decides`), not chosen by the worker. Rulings RF1–RF11 are in item 33, "2026-10-12 — required facts RULED"; this closes F223 by design once built.
 - Prose steps stay free text, shape-checked, content "Not checked" and judged at Accept; numbers in prose must equal an earlier checked fact. Superlatives and inexpressible rules go to Not checked in the person's words.
+- Facts of one result share one quote; a shape-only check and a `text` shape are asked of bareguard, the build waits for them.
 - Later piece, its own build after required facts: "rerun from line N" on green runs only (earlier outputs byte-for-byte kept, spend folded, tighten-only).
