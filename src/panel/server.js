@@ -49,7 +49,8 @@ import { parseImportedRunId, safeSpinePath, spineStartedAt } from './importrun.j
 import { checkBundleDeps, resolveBundleSpec } from '../bundle.js';
 import { checkCloseByteSignature } from '../close-integrity.js';
 import { keysHome } from '../keysfile.js';
-import { rowsForHome, findRow, modelChoiceFor, tickedLines } from '../providerrows.js';
+import { rowsForHome, findRow, modelChoiceFor, tickedLines, endpointOf } from '../providerrows.js';
+import { SHAPES } from '../providershapes.js';
 import { resolveProvider } from '../providers.js';
 import { REUSE_LOCKED_FIELDS, REUSE_OPEN_FIELDS } from './authorsession.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
@@ -2492,6 +2493,7 @@ export function reuseLine(record) {
  * @returns {{ok: true, origin: {runid: string, job: string}, outcome: string|null, card: Record<string, any>, from: 'signed job',
  *   locked: readonly string[], open: readonly string[], note: string|null,
  *   specHash: string, workflowKey: string, spec: any, specPath: string, specNamesModel: boolean,
+ *   specWorker: {provider: string, endpoint: string, label: string},
  *   trackRecord: ReturnType<typeof trackRecordFor>, line: string}|{ok: false, error: string}|null}
  */
 export function getStartFrom(runid, opts = {}) {
@@ -2542,6 +2544,12 @@ export function getStartFrom(runid, opts = {}) {
     specPath: signed.specPath,
     // an older spec signed before models were required names none: the Resume card then opens its Model box (run-u takes `--model`)
     specNamesModel: typeof spec.model === 'string' && spec.model !== '',
+    // what resolveWorker will hold a picked line to: the spec's shape, and its endpoint when it names one ('' = any endpoint)
+    specWorker: {
+      provider: String(spec.provider),
+      endpoint: typeof spec.baseUrl === 'string' && spec.baseUrl.trim() !== '' ? endpointOf(String(spec.provider), spec.baseUrl) : '',
+      label: SHAPES.find((x) => x.id === spec.provider)?.label ?? String(spec.provider),
+    },
     trackRecord,
     line: reuseLine(trackRecord),
   };

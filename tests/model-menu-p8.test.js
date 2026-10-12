@@ -70,6 +70,8 @@ test('GET /api/author/models: {ok, lines, say}; the empty text; model-check judg
   assert.equal(full.body.say, '');
   assert.deepEqual(full.body.lines.map((l) => l.label), ['A_KEY · shared', 'A_KEY · a-only', 'B_KEY · shared']);
   // every line carries the server's answer for the "Thinking on" box (bare-agent's lookup; an unmeasured model is 'unverified' and stays enabled)
+  // each line names its shape and normalised endpoint: the Resume card filters on them exactly as resolveWorker does
+  assert.deepEqual(full.body.lines.map((l) => [l.shape, l.endpoint]), [['openai-api', 'https://a.example/v1'], ['openai-api', 'https://a.example/v1'], ['openai-api', 'https://b.example/v1']]);
   assert.deepEqual(full.body.lines[0].thinking, { support: 'unverified', canChange: true, say: '' });
   const ok = await get('/api/author/model-check?model=shared&provider=B_KEY');
   assert.equal(ok.body.envKey, 'B_KEY', 'the key is the chosen row\'s own variable');

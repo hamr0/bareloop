@@ -75,7 +75,7 @@ function mountCard() {
     document: dom.document, clearStartFrom: () => log.push('clear'), openNewCard: () => log.push('open'), modelSelect, setPick: (c) => { modelSelect.value = c.model; },
     fillCard: (c) => { const set = (id, v) => { dom.document.getElementById(id).value = v === undefined || v === null ? '' : String(v); }; set('jf-name', c.jobName); set('jf-job', c.jobText); set('jf-inputs', c.inputs); set('jf-dest', c.destination); set('jf-cap-money', c.capUsd); set('jf-cap-time', Math.round(c.maxWallMs / 60000)); },
     setVerdict: (v) => log.push(`verdict:${v}`), setVal: (id, v) => { dom.document.getElementById(id).value = v === undefined || v === null ? '' : String(v); },
-    panelMoney: (n) => `$${Number(n).toFixed(2)}`, originLine, errEl, renderPicker() {}, refreshModelStatus() {}, refreshStartEnabled: () => log.push('refresh'),
+    panelMoney: (n) => `$${Number(n).toFixed(2)}`, originLine, errEl, renderPicker() {}, refreshModelStatus() {}, renderModelOptions() {}, refreshStartEnabled: () => log.push('refresh'),
   }, 'var resumeRun = null;', '__run: () => resumeRun');
   return { api, dom, log, originLine, errEl, modelSelect };
 }
@@ -230,4 +230,37 @@ test('Q2(b) page: a spec that names a model keeps the Model box locked, preselec
   const h = signHarness({ runid: 'r', noTime: false }, { status: 200, body: { ok: true } }, { value: 'DEEPSEEK_API_KEY|deepseek-flash' });
   await h.api.signResume();
   assert.deepEqual(h.posts[0].body, { budgetUsd: '12', maxWallMin: '90' });
+});
+
+// Ledger fix (hamr 2026-10-12): the Resume card's Model menu lists ONLY lines resolveWorker would accept for the old spec
+// (same shape; same endpoint when the spec names one) — the real renderModelOptions against a fake select.
+function menuHarness(resumeRun, lines, say = '') {
+  const modelSelect = { value: '', innerHTML: '', options: [] };
+  const api = build(['pickValue', 'renderModelOptions'], {
+    modelSelect, escapeXml: (x) => String(x), syncThinking() {}, resumeRun: undefined,
+  }, `var resumeRun = ${JSON.stringify(resumeRun)}; var modelLines = ${JSON.stringify(lines)}; var modelSay = ${JSON.stringify(say)}; var lineThinking = {};`);
+  return { api, modelSelect };
+}
+const LINES = [
+  { slot: 'ANTH_KEY', model: 'claude-x', label: 'ANTH_KEY · claude-x', shape: 'anthropic-api', endpoint: '' },
+  { slot: 'OAI_A', model: 'gpt-a', label: 'OAI_A · gpt-a', shape: 'openai-api', endpoint: 'https://api.one.test/v1' },
+  { slot: 'OAI_B', model: 'gpt-b', label: 'OAI_B · gpt-b', shape: 'openai-api', endpoint: 'https://api.two.test/v1' },
+];
+test('Resume Model menu: a pick-model card offers only lines of the old spec\'s shape (and endpoint when it names one); no match -> a sentence naming the shape, no value', () => {
+  const onlyShape = menuHarness({ runid: 'r', pickModel: true, worker: { provider: 'openai-api', endpoint: '', label: 'OpenAI-compatible' } }, LINES);
+  onlyShape.api.renderModelOptions();
+  assert.match(onlyShape.modelSelect.innerHTML, /OAI_A · gpt-a/);
+  assert.match(onlyShape.modelSelect.innerHTML, /OAI_B · gpt-b/);
+  assert.doesNotMatch(onlyShape.modelSelect.innerHTML, /ANTH_KEY/, 'a mismatched-shape line is not offered');
+  const pinned = menuHarness({ runid: 'r', pickModel: true, worker: { provider: 'openai-api', endpoint: 'https://api.two.test/v1', label: 'OpenAI-compatible' } }, LINES);
+  pinned.api.renderModelOptions();
+  assert.match(pinned.modelSelect.innerHTML, /OAI_B · gpt-b/);
+  assert.doesNotMatch(pinned.modelSelect.innerHTML, /OAI_A|ANTH_KEY/, 'a named endpoint pins the line');
+  const none = menuHarness({ runid: 'r', pickModel: true, worker: { provider: 'gemini-api', endpoint: '', label: 'Gemini' } }, LINES);
+  none.api.renderModelOptions();
+  assert.equal(none.modelSelect.innerHTML, '<option value="">Tick a Gemini model in Settings > Providers.</option>');
+  // not resuming (or a spec that names its model): every ticked line, as before
+  const all = menuHarness(null, LINES);
+  all.api.renderModelOptions();
+  assert.match(all.modelSelect.innerHTML, /ANTH_KEY · claude-x[\s\S]*OAI_A[\s\S]*OAI_B/);
 });

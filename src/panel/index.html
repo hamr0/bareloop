@@ -4081,7 +4081,9 @@
     document.getElementById("rw-change").addEventListener("click", unpickReuse);
     // leaving resume mode: the title, the hidden drafting chrome, the time box and the resume box all come back
     function exitResumeMode(){
+      var filtered = resumeRun !== null && !!resumeRun.worker;
       resumeRun = null;
+      if(filtered){ renderModelOptions(); }
       originLine.classList.remove("res");
       document.getElementById("job-card-title").textContent = "Job card \u2014 draft";
       document.getElementById("chat-resume-box").hidden = true;
@@ -4328,6 +4330,24 @@
     function setThinkingTick(on){ thinkingBox.checked = on === true; syncThinking(); }
     modelSelect.addEventListener("change", syncThinking);
     var modelReads = 0;
+    var modelLines = [];
+    var modelSay = "";
+    // A Resume card that must PICK a model (old spec naming none) offers only the lines resolveWorker (src/providerrows.js) accepts
+    // for that spec: the same shape, and the same endpoint when the spec names one (`resumeRun.worker`, from start-from, endpoint
+    // already normalised by the server). With none, the sentence names the shape to tick (label from providershapes).
+    function renderModelOptions(){
+      var w = resumeRun !== null && resumeRun.pickModel === true ? resumeRun.worker : null;
+      var lines = modelLines.filter(function(m){ return !w || (m.shape === w.provider && (w.endpoint === "" || m.endpoint === w.endpoint)); });
+      var was = modelSelect.value;
+      lineThinking = {};
+      lines.forEach(function(m){ lineThinking[pickValue(m.slot, m.model)] = m.thinking || null; });
+      var none = (w && modelLines.length) ? "Tick a " + w.label + " model in Settings > Providers." : (modelSay || "Tick a model in Settings > Providers.");
+      modelSelect.innerHTML = lines.length ? lines.map(function(m){
+        return '<option value="' + escapeXml(pickValue(m.slot, m.model)) + '">' + escapeXml(m.label) + "</option>";
+      }).join("") : '<option value="">' + escapeXml(none) + "</option>";
+      if(lines.some(function(m){ return pickValue(m.slot, m.model) === was; })) modelSelect.value = was;
+      syncThinking();
+    }
     function loadModels(){
       if(modelSelect.options.length === 0){
         modelSelect.innerHTML = '<option value="">Reading your models\u2026</option>';
@@ -4335,15 +4355,9 @@
       authorGet("/api/author/models").then(function(r){
         if(!r || !r.ok) throw new Error("read");
         modelReads = 0;
-        var lines = r.lines || [];
-        var was = modelSelect.value;
-        lineThinking = {};
-        lines.forEach(function(m){ lineThinking[pickValue(m.slot, m.model)] = m.thinking || null; });
-        modelSelect.innerHTML = lines.length ? lines.map(function(m){
-          return '<option value="' + escapeXml(pickValue(m.slot, m.model)) + '">' + escapeXml(m.label) + "</option>";
-        }).join("") : '<option value="">' + escapeXml(r.say || "Tick a model in Settings > Providers.") + "</option>";
-        if(lines.some(function(m){ return pickValue(m.slot, m.model) === was; })) modelSelect.value = was;
-        syncThinking();
+        modelLines = r.lines || [];
+        modelSay = r.say || "";
+        renderModelOptions();
         refreshModelStatus();
       }).catch(function(){
         modelReads += 1;
@@ -4730,7 +4744,7 @@
       openNewCard();
       // hamr 2026-10-11 Q2(b): a spec that names no model (the server says so) opens the Model box; the pick rides the POST
       resumeRun = {runid: d.runid, noTime: typeof r.maxWallMin !== "number"};
-      if((d.prefill || {}).specNamesModel === false){ resumeRun.pickModel = true; }
+      if((d.prefill || {}).specNamesModel === false){ resumeRun.pickModel = true; if(d.prefill.specWorker){ resumeRun.worker = d.prefill.specWorker; } renderModelOptions(); }
       document.getElementById("job-card-title").textContent = "RESUME " + (d.title || d.runid);
       setVerdict(c.checkType === "rubric" ? "rubric" : "deterministic");
       if(c.model && !resumeRun.pickModel){ setPick(c); }

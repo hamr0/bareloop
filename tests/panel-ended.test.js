@@ -533,6 +533,13 @@ test('Q2(b): start-from says whether the signed spec names a model; a resume car
   const named = tmp();
   makeRun(named, { runid: 'new1', spent: 5, spec: { ...SPEC, model: 'deepseek-flash' } });
   assert.equal(getStartFrom('new1', { home: named }).specNamesModel, true);
+  // the Resume card filters its Model menu on what the spec holds a line to: shape, endpoint (normalised) or '' for any, shape label
+  const pinned = tmp();
+  makeRun(pinned, { runid: 'pin1', spent: 5, spec: { ...SPEC, provider: 'openai-api', baseUrl: 'https://Api.Example/v1/' } });
+  assert.deepEqual(getStartFrom('pin1', { home: pinned }).specWorker, { provider: 'openai-api', endpoint: 'https://api.example/v1', label: 'OpenAI-compatible' });
+  const anyEp = tmp();
+  makeRun(anyEp, { runid: 'any1', spent: 5, spec: { ...SPEC, provider: 'anthropic-api' } });
+  assert.deepEqual(getStartFrom('any1', { home: anyEp }).specWorker, { provider: 'anthropic-api', endpoint: '', label: 'Anthropic' });
   const spawnFn = makeSpawn();
   const { post } = await startServer(t, { home, spawnFn });
   assert.equal((await post('/api/runs/old1/resume', { budgetUsd: 8, maxWallMin: 60, model: 'deepseek-flash', provider: 'DEEPSEEK_API_KEY' })).status, 200);
