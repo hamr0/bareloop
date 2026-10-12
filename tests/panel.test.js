@@ -2546,3 +2546,38 @@ test('plain-checks: no resolvable spec -> declaredStages is omitted entirely (ne
   assert.equal(fixPart.attempts[0].declaredStages, undefined);
   assert.equal(fixPart.attempts[0].declaredStagesTotal, undefined);
 });
+
+// ── the topbar version (hamr 2026-10-12): `bareloop · v<version> · automate a job, verified` ─────────────────
+
+test('the topbar shows the version read from bareloop\'s own package.json — templated at serve time, never hardcoded in the HTML', async (t) => {
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const source = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
+  // the file on disk carries the placeholder and no version literal in the topbar
+  assert.match(source, /<span class="version" id="panel-version">v__BARELOOP_PANEL_VERSION__<\/span>/);
+  assert.doesNotMatch(source, /id="panel-version">v\d/);
+  const { base } = await startServer(t, { home: tmp() });
+  const html = await (await fetch(`${base}/`)).text();
+  assert.ok(!html.includes('__BARELOOP_PANEL_VERSION__'), 'the placeholder is always filled');
+  assert.match(pkg.version, /^\d+\.\d+\.\d+/);
+  assert.ok(html.includes(`<span class="version" id="panel-version">v${pkg.version}</span>`), `the page shows v${pkg.version}`);
+  // order and separators: brand, version, tagline — the dots are the CSS separators in front of the last two
+  const brand = html.indexOf('<span class="brand">bareloop</span>');
+  const ver = html.indexOf('id="panel-version"');
+  const tag = html.indexOf('<span class="tagline">automate a job, verified</span>');
+  assert.ok(brand > 0 && brand < ver && ver < tag);
+  assert.match(html, /\.topbar \.tagline::before,\.topbar \.version::before\{content:"· "/);
+  // styled like the tagline (not bold), and at phone width the version stays while only the tagline folds away
+  assert.match(html, /\.topbar \.tagline,\.topbar \.version\{[^}]*font-weight:400/);
+  assert.match(html, /@media \(max-width: 600px\)\{ \.topbar \.tagline\{display:none;\} \}/);
+  assert.doesNotMatch(html, /\.topbar \.version\{display:none/);
+});
+
+test('the topbar version FOLLOWS package.json: a different package.json gives a different version, a missing one says unknown — so a hardcoded version fails here', async (t) => {
+  const dir = tmp();
+  const fake = join(dir, 'package.json');
+  writeFileSync(fake, JSON.stringify({ name: 'bareloop', version: '9.8.7' }));
+  const { base } = await startServer(t, { home: tmp(), packageJsonPath: fake });
+  assert.ok((await (await fetch(`${base}/`)).text()).includes('<span class="version" id="panel-version">v9.8.7</span>'));
+  const gone = await startServer(t, { home: tmp(), packageJsonPath: join(dir, 'missing.json') });
+  assert.ok((await (await fetch(`${gone.base}/`)).text()).includes('id="panel-version">vunknown</span>'));
+});
