@@ -74,7 +74,7 @@
 
 import { normalizeParser, MAX_JUDGED_PATHS, JUDGED_FLOOR_KIND } from './kinds.js';
 import { JUDGE_RULE_IDS, validateCard } from './judged.js';
-import { rubricStepShapeReds, PART_CLASSES } from './rubricstep.js';
+import { rubricStepShapeReds, checkRubricParts } from './rubricstep.js';
 import { isObj, isNonEmptyString, hasNestedQuantifier, globToPrefix } from './validate.js';
 
 /** @typedef {{code: string, path: string, detail: string, [k: string]: any}} Red */
@@ -1264,7 +1264,8 @@ function readPath(p, dotted) {
  * @param {{catalogue?: Record<string, KindSpec>, listing?: string[]|null,
  *   guards?: {name: string, kind: string, params: Record<string, any>, fill: string[]}[]|null,
  *   envOwned?: string[]|null, envInjected?: Record<string, string>|null, deferListing?: boolean,
- *   verdictType?: string|null, writeScope?: string[]|null, jobLines?: {n: number}[]|null}} [opts]
+ *   verdictType?: string|null, writeScope?: string[]|null, jobLines?: {n: number}[]|null, inputLabels?: string[]|null}} [opts]
+ *   `inputLabels` — the labels of the person's inputs (Part 1a). Present, a rubric-step `cited` part must name one of them.
  *   `jobLines` — the person's numbered job lines (P7). Present, every stage must name the line it serves and every
  *     line needs a stage or a refusal ({@link checkJobLines}); absent (every spec that predates the job block), the
  *     rule is not run.
@@ -1286,7 +1287,7 @@ function readPath(p, dotted) {
 export function validateDeclaration(declaration, opts = {}) {
   const {
     catalogue = KIND_CATALOGUE, listing = null, guards = null, envOwned = null, envInjected = null,
-    verdictType = null, writeScope = null, jobLines = null,
+    verdictType = null, writeScope = null, jobLines = null, inputLabels = null,
   } = opts;
   const deferListing = opts.deferListing === true;
   /** @type {Red[]} */
@@ -1512,6 +1513,8 @@ export function validateDeclaration(declaration, opts = {}) {
 
   if (haveGuards) checkGuards({ declaration, guards: /** @type {any[]} */ (guards), red });
   checkJobLines({ declaration, stages, jobLines, guards: haveGuards ? /** @type {any[]} */ (guards) : [], red });
+  // PART 1a (R11): the sorting rules for the rubric-step stages — plain-words reds, judged and web parts refused in this build
+  checkRubricParts(stages, { inputLabels, red });
 
   const ok = reds.length === 0;
   return { ok, reds, declaration: ok ? normalizeDeclaration(declaration) : null, grounded: haveListing, scoped, ceiling };

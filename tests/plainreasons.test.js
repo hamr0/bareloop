@@ -283,16 +283,23 @@ test('SIGNING: every red code reachable at the refusal is mapped; an unknown one
   assert.equal(u.kind, 'unmapped');
   assert.match(u.sentence, /"brand-new-gate-red" at somewhere/);
   assert.ok(signingKinds().includes('unmapped'));
+  // Part 1a: every rubric-step sorting red is mapped by its prefix and says its own sentence, whole
+  for (const code of ['rubric-contradiction', 'rubric-part-guard', 'rubric-part-judged', 'rubric-part-source', 'rubric-part-unsortable', 'rubric-step-line', 'rubric-step-twice']) {
+    const [r] = signingReasons([{ code, path: 'closeDecl.stages[1]', detail: `line 3: ${code} sentence.` }]);
+    assert.equal(r.kind, 'rubric-part', code);
+    assert.equal(r.sentence, `line 3: ${code} sentence.`);
+  }
 });
 
 test('TRIPWIRE: a new declaration red code fails here until it is mapped in DECLARATION_CODES', () => {
   const found = new Set();
-  for (const f of ['declaredclose.js', 'validate.js', 'kinds.js', 'authoring.js', 'judged.js']) {
+  for (const f of ['declaredclose.js', 'validate.js', 'kinds.js', 'authoring.js', 'judged.js', 'rubricstep.js']) {
     const src = readFileSync(join(HERE, '..', 'src', f), 'utf8');
     for (const m of src.matchAll(/\bred\('([a-z]+(?:-[a-z]+)*)'/g)) found.add(m[1]);
   }
   for (const code of found) {
-    assert.ok(DECLARATION_CODES.includes(code) || code.startsWith('calibration-'), `red code "${code}" has no plain signing sentence`);
+    // `rubric-*` (Part 1a) are whole plain sentences already; one prefix row of SIGNING_TABLE maps them all
+    assert.ok(DECLARATION_CODES.includes(code) || code.startsWith('calibration-') || code.startsWith('rubric-'), `red code "${code}" has no plain signing sentence`);
   }
   assert.ok(found.size >= 20, 'the scan found the red sites');
 });

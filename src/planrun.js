@@ -45,6 +45,7 @@ import { defaultJudgeLoop } from './judged.js';
 export { rateSourceFields };
 import { createClock, isWallTimeout } from './clock.js';
 import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade, HUMAN_PAUSE, HITL_PAUSE, HITL_DECISION_RED } from './declaredclose.js';
+import { inputLabelsOf } from './rubricstep.js';
 import {
   seedAtHead, seedListing, changedSet, GAP_TRIM_MARKER, GATE_AUDIT_FILE, ARBITER_BOOK_STORES,
   HUMAN_KIND, HUMAN_DECISIONS, normalizeHumanRuling, resolveHumanRuling,
@@ -2036,7 +2037,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     }
     const listed = await seedListing(workdir, s.seedRef);
     const v = listed.stop === null
-      ? validateCloseDecl(job.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: job.verdictType, writeScope: job.writeScope, jobLines: Array.isArray(job.jobLines) ? job.jobLines : null })
+      ? validateCloseDecl(job.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: job.verdictType, writeScope: job.writeScope, jobLines: Array.isArray(job.jobLines) ? job.jobLines : null , inputLabels: inputLabelsOf(job.inputs) })
       : { ok: false, grounded: false, reds: [{ code: 'listing-unreadable', path: 'closeDecl', detail: listed.stop }] };
     emit('close-decl', {
       genre: job.closeDecl.genre,

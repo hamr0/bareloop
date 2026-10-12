@@ -405,6 +405,13 @@ const PLAIN_MAX_BULLETS = 8;
 const RECORD_MAX_REDS = 40;
 const RECORD_STR_MAX = 600;
 
+/** a code-written sentence that carries the person's own words (a rubric-step sorting red): scrubbed and one line, bounded wide enough to stay whole
+ * @param {unknown} s @returns {string} */
+function fullText(s) {
+  const one = redactSecrets(String(s ?? '')).replace(/\s+/g, ' ').trim();
+  return one.length > 400 ? `${one.slice(0, 400)}…` : one;
+}
+
 /** model-derived text in a person-facing line: scrubbed, one line, bounded
  * @param {unknown} s @returns {string} */
 function safeText(s) {
@@ -608,7 +615,7 @@ export function draftStopText({ stop, reds = null, refusal = null, spend = null 
   const said = scoutRed
     ? [SCOUT_REASON_RE.exec(String(scoutRed.detail ?? ''))?.[1]
       ?.replace(/\s+/g, ' ').trim().slice(0, 240) ?? safeText(scoutRed.detail)].map((x) => redactSecrets(x)).filter(Boolean)
-    : [...new Set(redList.map((r) => safeText(r?.detail)).filter(Boolean))];
+    : [...new Set(redList.map((r) => (String(r?.code ?? '').startsWith('rubric-') ? fullText(r?.detail) : safeText(r?.detail))).filter(Boolean))];
   if (said.length === 0 && refusal?.detail) said.push(safeText(refusal.detail));
   const lines = [`${head} Spent so far: ${spent ?? 'unknown'}.`];
   if (said.length) {
@@ -726,6 +733,8 @@ const SIGNING_TABLE = [
   { kind: 'judged-outside-fence', when: (r) => r.code === 'judged-outside-write-scope',
     say: (r) => [`The rubric check looks at ${listText(r.outside)}, but the job may only edit ${listText(r.fence)} — so the run could never fix what it finds.`],
     todo: 'draft again' },
+  // Part 1a: the rubric-step sorting reds are already whole sentences in the person's words (src/rubricstep.js `checkRubricParts`)
+  { kind: 'rubric-part', when: (r) => r.code.startsWith('rubric-'), say: (r) => [fullText(r.detail)], todo: 'draft again, or reword that line' },
   { kind: 'declaration', when: (r) => DECLARATION_CODES.includes(r.code) && !(r.code === 'invalid-value' && r.path === 'card'),
     say: (r) => [`The close the model wrote was refused before anything ran ("${safeText(r.code)}" at ${safeText(r.path)}).`], todo: 'draft again' },
 ];

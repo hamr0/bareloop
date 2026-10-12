@@ -259,3 +259,105 @@ export async function gradeStep({ params, bytes, outputBytes, inputs }, inputSha
   if (r.verdict === 'green') return { verdict: 'green', gapLines: [], fault: null, detail };
   return { verdict: 'red', gapLines: r.gaps.map((g) => plainStepGap(params.step, parsed.why ?? 'empty', g)), fault: null, detail };
 }
+
+// ── R11: the sorting rules, applied at DRAFTING ──────────────────────────────────────────────────────────────────────
+
+/**
+ * The labels of a job's numbered inputs, or null when it carries none (a caller that has no inputs in hand skips the label rule).
+ * @param {unknown} inputs @returns {string[]|null}
+ */
+export function inputLabelsOf(inputs) {
+  if (!Array.isArray(inputs)) return null;
+  const labels = inputs.map((i) => (isRec(i) ? i.label : null)).filter((l) => typeof l === 'string');
+  return labels.length > 0 ? labels : null;
+}
+
+/** @param {string} text @returns {string} a person's own words, one line, bounded for a message */
+const sayText = (text) => {
+  const one = String(text).replace(/\s+/g, ' ').trim();
+  return one.length > 80 ? `${one.slice(0, 80)}…` : one;
+};
+
+/**
+ * The word range a part allows, as `[min, max]` (null = no bound on that side), read off its check. `sectionWords` allows
+ * each of its sections 80-120% of its asked words (bareguard's own band), so the whole text must hold at least
+ * `names x ceil(0.8 x asked)` words — and at most `names x floor(1.2 x asked)` for the sections alone.
+ * @param {any} part @returns {{min: number|null, max: number|null, say: string}|null}
+ */
+function wordRange(part) {
+  if (part.check === 'maxWords') return { min: null, max: part.value, say: `at most ${part.value} words` };
+  if (part.check === 'minWords') return { min: part.value, max: null, say: `at least ${part.value} words` };
+  if (part.check === 'sectionWords') {
+    const lo = Math.ceil(part.wordsPerSection * 0.8);
+    const hi = Math.floor(part.wordsPerSection * 1.2);
+    return { min: part.names.length * lo, max: null, say: `${part.names.length} section(s) of ${lo}-${hi} words each, so at least ${part.names.length * lo} words` };
+  }
+  return null;
+}
+
+/**
+ * R11 — the drafting-time rules for the `rubric-step` stages of a declaration, each a red in the person's plain words that
+ * names the job line and ends "Nothing spent." where nothing was. Pure; never throws. Judged parts are RED in this build
+ * (the judge arrives in the next one): the sorting is still asked for, so a part that needs the judge is named as such
+ * instead of being approximated by a count.
+ *   - a stage serves exactly the one job line it names (`step` = its only `fromLine`), and no line has two stages;
+ *   - a part with no class (`none`) cannot be counted or checked against a quote;
+ *   - a `judged` part needs the judge; a `guard` part is about web sources and the job has no web input;
+ *   - two countable parts of ONE line that no text can satisfy together (a minimum above a maximum) are a contradiction,
+ *     naming both parts and both numbers;
+ *   - a `cited` part names a label the person's inputs do not have.
+ * @param {any[]} stages the declaration's stages
+ * @param {{inputLabels?: string[]|null, red: (code: string, path: string, detail: string, extra?: object) => void}} o
+ *   `inputLabels` absent = the label rule is not run (a caller with no inputs in hand)
+ */
+export function checkRubricParts(stages, { inputLabels = null, red }) {
+  /** @type {Map<number, string>} */
+  const owner = new Map();
+  stages.forEach((st, i) => {
+    if (!isRec(st) || st.kind !== 'rubric-step' || !isRec(st.params)) return;
+    const at = `stages[${i}]`;
+    const p = st.params;
+    const step = p.step;
+    const label = nonEmpty(st.name) ? st.name : at;
+    const line = Number.isInteger(step) ? step : '?';
+    if (Array.isArray(st.fromLine) && !(st.fromLine.length === 1 && st.fromLine[0] === step)) {
+      red('rubric-step-line', `${at}.fromLine`, `line ${line}: stage "${label}" reads the file for job line ${line} but says it serves line(s) ${st.fromLine.join(', ')}. One rubric-step stage serves exactly its own line.`, { stage: label });
+    }
+    if (Number.isInteger(step)) {
+      const twin = owner.get(step);
+      if (twin !== undefined) red('rubric-step-twice', `${at}.params.step`, `line ${line}: stages "${twin}" and "${label}" both read the file for job line ${line}. Give each job line one stage.`, { stage: label, twin });
+      else owner.set(step, label);
+    }
+    if (!Array.isArray(p.parts)) return;
+    /** @type {{part: any, range: {min: number|null, max: number|null, say: string}}[]} */
+    const ranges = [];
+    p.parts.forEach((/** @type {any} */ part, /** @type {number} */ j) => {
+      if (!isRec(part)) return;
+      const w = `${at}.params.parts[${j}]`;
+      const said = sayText(part.text ?? '');
+      if (part.class === 'none') {
+        red('rubric-part-unsortable', w, `line ${line}: '${said}' can't be counted or checked against a quote. Say it as a count (words, sections, rows) or as something a quote must show.`, { line: step, stage: label });
+      } else if (part.class === 'judged') {
+        red('rubric-part-judged', w, `line ${line}: this rule needs the judge, which arrives in the next build. Nothing spent.`, { line: step, stage: label });
+      } else if (part.class === 'guard') {
+        red('rubric-part-guard', w, `line ${line}: '${said}' is about web sources, and this job has no web input. Nothing spent.`, { line: step, stage: label });
+      } else if (part.class === 'countable') {
+        if (part.check === 'cited' && Array.isArray(inputLabels) && !inputLabels.includes(part.source)) {
+          red('rubric-part-source', `${w}.source`, `line ${line}: '${said}' asks for a quote from "${sayText(part.source ?? '')}", but the job's inputs are ${inputLabels.map((l) => `"${l}"`).join(', ')}.`, { line: step, stage: label });
+        }
+        const range = wordRange(part);
+        if (range) ranges.push({ part, range });
+      }
+    });
+    for (let a = 0; a < ranges.length; a += 1) {
+      for (let b = a + 1; b < ranges.length; b += 1) {
+        const [x, y] = [ranges[a], ranges[b]];
+        const lo = Math.max(x.range.min ?? -Infinity, y.range.min ?? -Infinity);
+        const hi = Math.min(x.range.max ?? Infinity, y.range.max ?? Infinity);
+        if (lo > hi) {
+          red('rubric-contradiction', `${at}.params.parts`, `line ${line}: '${sayText(x.part.text)}' (${x.range.say}) and '${sayText(y.part.text)}' (${y.range.say}) cannot both be met — no text has between ${lo} and ${hi} words. Change one of them. Nothing spent.`, { line: step, stage: label });
+        }
+      }
+    }
+  });
+}

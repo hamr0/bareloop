@@ -272,13 +272,14 @@ export function declaredStages(closeDecl) {
  *
  * @param {any} closeDecl
  * @param {{at?: string, listing?: string[]|null, deferListing?: boolean,
- *   catalogue?: Record<string, any>, verdictType?: string|null, writeScope?: string[]|null, jobLines?: {n: number}[]|null}} [opts]
+ *   catalogue?: Record<string, any>, verdictType?: string|null, writeScope?: string[]|null, jobLines?: {n: number}[]|null,
+ *   inputLabels?: string[]|null}} [opts]
  * @returns {{ok: boolean, reds: Red[], closeDecl: any, grounded: boolean,
  *   scoped: {scoped: boolean, via: string|null},
  *   ceiling: {class: string, kind: string, stage: string|null, locked: boolean}|null}}
  */
 export function validateCloseDecl(closeDecl, opts = {}) {
-  const { at = 'closeDecl', listing = null, catalogue, verdictType = null, writeScope = null, jobLines = null } = opts;
+  const { at = 'closeDecl', listing = null, catalogue, verdictType = null, writeScope = null, jobLines = null, inputLabels = null } = opts;
   const deferListing = opts.deferListing === true;
   /** @type {Red[]} */
   const reds = [];
@@ -405,6 +406,7 @@ export function validateCloseDecl(closeDecl, opts = {}) {
     verdictType: picked,
     writeScope,
     jobLines,
+    inputLabels,
     envOwned: owned,
     // POST-injection: an owned name is accepted only when its value is EXACTLY
     // the recorded one. `{}` (nothing recorded) keeps the pre-injection rule, so
