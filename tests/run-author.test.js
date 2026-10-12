@@ -1035,7 +1035,7 @@ test('F191: a real throw inside the plain-folder branch (authored.json pre-exist
 // `}` — the block capture stops at that `else` seam, which is also the
 // guarantee that nothing below can fall through into the repo-shaped
 // continuation.
-const PLAIN_FOLDER_BLOCK = /if \(!IS_REPO_SOURCE\) \{[\s\S]*?\n {2}\} else \{/.exec(SRC)?.[0];
+const PLAIN_FOLDER_BLOCK = /if \(!IS_REPO_SOURCE && !RUBRIC_FILES\) \{[\s\S]*?\n {2}\} else \{/.exec(SRC)?.[0];
 
 test('the plain-folder branch is still BOUNDED — this guard reads the branch, not the rest of the file', () => {
   assert.ok(PLAIN_FOLDER_BLOCK, 'the plain-folder branch moved — this guard no longer reads the code it guards');
@@ -1092,7 +1092,7 @@ test('ambiguous language no longer dies — it travels through as langResult, fo
 test('the confirm turn is wired into the authorCloseForJob call: ask, its OWN confirmGenerate, isRepo, langResult', () => {
   const CALL = /const authored = await authorCloseForJob\(\{[\s\S]*?\n {4}\}\);/.exec(SRC)?.[0];
   assert.ok(CALL, 'the authorCloseForJob call moved — this guard no longer reads the code it guards');
-  assert.match(CALL, /\bask, confirmGenerate, isRepo: true, langResult,/);
+  assert.match(CALL, /\bask, confirmGenerate, isRepo: !RUBRIC_FILES, langResult,/);
   // the confirm turn's model boundary must be its OWN — bound to CONFIRM_SYSTEM,
   // never the authoring `generate` (bound to AUTHOR_SYSTEM); reusing `generate`
   // would run the wrong system prompt silently
