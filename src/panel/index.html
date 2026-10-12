@@ -4177,7 +4177,6 @@
       var capOk = moneyCapInput.value.trim() !== "" && Number.isFinite(v) && v > 0;
       // on Reuse workflow nothing starts before a job is picked
       startOk = capOk && !sessionLive && keyOk && (verdictValue() !== "reuse" || startFrom !== null);
-      if(resumeSignBtn){ resumeSignBtn.disabled = resumeSignBlocked(); }
       syncCardLock();
       renderMain();
       refreshClearBtn();
@@ -4480,6 +4479,7 @@
       reopenBtn.hidden = !reviseShownFor(st);
       fitBox(msgInput);
       fitCardBoxes();
+      if(resumeSignBtn){ resumeSignBtn.disabled = resumeSignBlocked(); }
     }
     msgInput.addEventListener("input", renderMain);
     // P7 — the numbered boxes. A plain job line is numbered 1, 2, 3; a line starting `~` is a rule for the line above and has no
