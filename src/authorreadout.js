@@ -409,7 +409,8 @@ const RECORD_STR_MAX = 600;
 /** a code-written sentence that carries the person's own words (a rubric-step sorting red): scrubbed and one line, bounded wide enough to stay whole
  * @param {unknown} s @returns {string} */
 function fullText(s) {
-  const one = redactSecrets(String(s ?? '')).replace(/\s+/g, ' ').trim();
+  // every caller renders a drafting refusal AFTER a model call was paid; a red text written for the $0 front doors ends "Nothing spent." — false here
+  const one = redactSecrets(String(s ?? '')).replace(/\s+/g, ' ').trim().replace(/\s*Nothing spent\.$/, '');
   return one.length > 400 ? `${one.slice(0, 400)}…` : one;
 }
 

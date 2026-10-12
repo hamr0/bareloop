@@ -617,7 +617,7 @@ test('progress list (hamr 2026-10-05): a normal session has ONE drafting line, s
   assert.equal(drafts[0].detail, `${baseCard().model}, $1.00 cap`);
 });
 
-test('I1: a drafting call after the first relabels the ONE drafting line "drafting (retry N of M)" in plain words; the first call stays "drafting"', async () => {
+test('I1: a drafting call after the first relabels the ONE drafting line "drafting (look N of M)" (a passed try) in plain words; the first call stays "drafting"', async () => {
   /** @type {any} */ let session = null;
   /** @type {string[]} */ const seen = [];
   const note = () => seen.push(`${session.state.steps.filter((/** @type {any} */ x) => x.id === 'draft').map((/** @type {any} */ x) => x.label).join('|')}#${session.state.progressLabel}`);
@@ -641,8 +641,42 @@ test('I1: a drafting call after the first relabels the ONE drafting line "drafti
   assert.equal(session.signPrepare().ok, true);
   await until(() => ['prepared', 'refused', 'error'].includes(session.state.phase));
   assert.equal(session.state.phase, 'prepared', String(session.state.error));
-  assert.deepEqual(seen, ['drafting#drafting', 'drafting (retry 2 of 3)#drafting (retry 2 of 3)', 'drafting (retry 3 of 3)#drafting (retry 3 of 3)']);
+  assert.deepEqual(seen, ['drafting#drafting', 'drafting (look 2 of 3)#drafting (look 2 of 3)', 'drafting (look 3 of 3)#drafting (look 3 of 3)']);
   assert.equal(session.state.steps.filter((/** @type {any} */ x) => x.id === 'draft').length, 1, 'still ONE drafting line');
+});
+
+test('the drafting label says "retry" only after a REFUSED try, "look" after a passed one', async () => {
+  /** @type {any} */ let session = null;
+  /** @type {string[]} */ const seen = [];
+  const authorFn = async (/** @type {any} */ o) => {
+    o.onPhase('author-call', { call: 'author', i: 0, of: 2 });
+    o.onPhase('author-call', { call: 'revise-1', i: 1, of: 2 }); seen.push(session.state.progressLabel);
+    o.onPhase('author-try-failed', { call: 'revise-1', i: 1, of: 2, reason: 'x' });
+    o.onPhase('author-call', { call: 'revise-2', i: 2, of: 2 }); seen.push(session.state.progressLabel);
+    return fakeAuthorFn()();
+  };
+  session = createSession(baseCard({ source: makeRepo(), jobName: 'panel-author-look-retry', capUsd: 1 }), {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot: tmp('panel-author-sess-lookretry-'),
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    generate: async () => { throw new Error('unused'); },
+    confirmGenerate: makeFakeConfirmGenerate([{ goal: 'fix things', checks: ['tsc clean'], questions: [], notChecked: [] }]),
+    authorFn, prepareSigningFn: fakePrepareSigningFn('cafef00dbeef0123'),
+  });
+  const until = async (/** @type {() => boolean} */ fn) => { const t0 = Date.now(); while (Date.now() - t0 < 5000 && !fn()) { await new Promise((r) => { setTimeout(r, 10); }); } };
+  await until(() => session.state.pendingAsk?.kind === 'menu');
+  session.signPrepare();
+  await until(() => ['prepared', 'refused', 'error'].includes(session.state.phase));
+  assert.deepEqual(seen, ['drafting (look 2 of 3)', 'drafting (retry 3 of 3)']);
+});
+
+test('a try-refused reason and the drafting stop texts never say "Nothing spent." (a model call was paid)', async () => {
+  const { tryRefusedText, draftStopText } = await import('../src/authorreadout.js');
+  const red = { code: 'rubric-contradiction', path: 'p', detail: 'line 2: a and b cannot both be met. Nothing spent.' };
+  assert.equal(tryRefusedText({ reds: [red] }), 'line 2: a and b cannot both be met.');
+  assert.equal(tryRefusedText({ reason: 'x failed. Nothing spent.' }), 'x failed.');
+  const stop = draftStopText({ stop: 'max-revisions', reds: [red], spend: { knownUsd: 0.01, spendComplete: true } });
+  assert.doesNotMatch(stop, /Nothing spent/);
+  assert.match(stop, /cannot both be met\./);
 });
 
 // ---------------------------------------------------------------------------

@@ -150,10 +150,14 @@ test('both doors print the sorting reds in FULL (no 60-character cut): the draft
     { code: 'rubric-part-unsortable', path: 'stages[1].params.parts[0]', detail: "line 2: 'make the whole thing feel considerably more professional and polished throughout' can't be counted or checked against a quote. Say it as a count (words, sections, rows) or as something a quote must show." },
     { code: 'rubric-part-judged', path: 'stages[1].params.parts[1]', detail: 'line 2: this rule needs the judge, which arrives in the next build. Nothing spent.' },
   ];
+  // whole, but without a trailing "Nothing spent." — these stops follow paid model calls (the $0 front-door wording would be false here)
+  const whole = (/** @type {string} */ d) => d.replace(/ Nothing spent\.$/, '');
   const drafting = draftStopText({ stop: 'max-revisions', reds, spend: { knownUsd: 0.03, spendComplete: true } });
-  for (const r of reds) assert.ok(drafting.includes(r.detail), `drafting stop lost: ${r.detail}\n${drafting}`);
+  for (const r of reds) assert.ok(drafting.includes(whole(r.detail)), `drafting stop lost: ${r.detail}\n${drafting}`);
+  assert.doesNotMatch(drafting, /Nothing spent/);
   const signing = signingStopText({ reds, spend: { knownUsd: 0.03, spendComplete: true } });
-  for (const r of reds) assert.ok(signing.includes(r.detail), `signing stop lost: ${r.detail}\n${signing}`);
+  for (const r of reds) assert.ok(signing.includes(whole(r.detail)), `signing stop lost: ${r.detail}\n${signing}`);
+  assert.doesNotMatch(signing, /Nothing spent/);
   assert.equal(signing.includes('no plain wording yet'), false);
 });
 

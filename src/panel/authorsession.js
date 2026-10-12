@@ -519,6 +519,7 @@ export function createSession(card, deps = {}) {
     return true;
   };
 
+  let lastTryRefused = false;
   const onPhase = (name, data = {}) => {
     // COLLAPSED INTO THE PROGRESS INDICATOR ONLY (build item 3) — this used
     // to also `say('system', `… ${name}`)`, one jargon chat bubble per
@@ -532,6 +533,7 @@ export function createSession(card, deps = {}) {
     // WHY a try was refused: the drafting log keeps it beside the call that made it (it used to say only "retry 3 of 3"), and the
     // progress line shows it briefly, in code's words
     if (name === 'author-try-failed') {
+      lastTryRefused = true;
       const no = state.steps.findLastIndex((/** @type {any} */ x) => x.id === 'draft');
       const reason = tryRefusedText(data);
       appendDraftLog(outDir, {
@@ -540,10 +542,12 @@ export function createSession(card, deps = {}) {
       });
       stepDetail('draft', `${data.call}: refused — ${reason.length > 160 ? `${reason.slice(0, 160)}…` : reason}`);
     }
-    // a drafting call after the first (`author-call` i >= 1, of up to `of + 1`) is a RETRY: the line says so in plain words, so a
-    // long silence on call 2 of 3 does not read as a hang. The same one line, relabelled — never a second line.
+    // a drafting call after the first (`author-call` i >= 1, of up to `of + 1`) is relabelled in plain words, so a long silence on call 2
+    // of 3 does not read as a hang. The loop drafts again after a try that PASSED too (the drafter sees its own seed-read), so
+    // "retry" is said only when the previous try was actually refused; otherwise it is "look". The same one line, never a second one.
     if (name === 'author-call' && Number.isInteger(data.i) && data.i >= 1 && Number.isInteger(data.of)) {
-      const label = `${STEP_LABELS.draft} (retry ${data.i + 1} of ${data.of + 1})`;
+      const label = `${STEP_LABELS.draft} (${lastTryRefused ? 'retry' : 'look'} ${data.i + 1} of ${data.of + 1})`;
+      lastTryRefused = false;
       stepLabel('draft', label);
       state.progressLabel = label;
     }

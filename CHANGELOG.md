@@ -24,6 +24,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **Drafting wording.** The drafting line says `drafting (retry N of M)` only after a try that was actually refused, and `drafting (look N of M)` after one that passed (the loop drafts again after a passed try too). A refused try's reason, and the drafting stop texts, no longer end "Nothing spent." — a drafting try always paid for its model call.
 - **The plan card showed the drafter's prose (run mv5e1ktb).** The confirm turn's bubble stayed above the code-worded card and was the one read. After drafting the earlier plan bubbles are dropped, so the card is the signed close's own sentences. "at most 1 lines" now reads "1 line" (and "1 word").
 - **The review door's held line said "rendered by the judged floor" for a rubric close where no judge ran.** Wording only: the hold is by verdict class and is unchanged.
 
