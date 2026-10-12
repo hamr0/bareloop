@@ -7,8 +7,17 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **Rubric jobs on local files, no judge yet (Part 1a).** A Rubric job whose first Input is the full path of a text file (`label: /abs/file`) no longer stops at "not a code project". `proveRubricInputs` (`src/source.js`) freezes each file into the hidden-git tree and records `inputs: [{ label, rel, sha256 }]` in `source.json`; a web address, search line, relative path, symlink, env file, over-5-MiB or non-UTF-8 file is refused at $0 in plain words ("line N: web inputs (URLs, search) arrive in a later build. Nothing spent."). There is no scout and no confirm turn: the worker's goal is written by code from the numbered job lines (`src/rubricstep.js`).
+- **One output per job line.** The worker writes `output/steps/<n>.json` (`{ text, cites: { <label>: [{ claim, quote }] } }`); `output/steps/` is delivered with the output.
+- **New close kind `rubric-step`** (text genre only, `closeDecl.lang: "text"`; a code job never sees it): one stage per job line, graded by bareguard's rubric primitive rebuilt every run from the input shas the source door recorded. Checks: the step file exists and is a JSON object (`happened`), `text` present, `cited` per input the step cites, and `maxWords` / `minWords` / `maxLines` / `sections` / `sectionWords` on `text`. A missing or cut-off file is red; a changed input, an unreadable record or a rubric that cannot be built is an instrument stop (97).
+- **Every part of a job line is sorted at drafting** (countable, judged, guard, none). A judged part ("this rule needs the judge, which arrives in the next build. Nothing spent."), an unsortable part, a guard with no web input, contradicting limits (both parts and numbers named), a stage on the wrong line and a quote from an unknown input are plain-words reds; the drafting and signing stops print them whole.
+- Signing such a job makes zero judge-round records (the calibration gate runs only for a judged stage).
+
 ### Changed
 
+- **`~ PASS:` / `~ FAIL:` examples are required of a rubric job only when it holds a judged part** (`jobBlockFitsCheck(lines, rubric, { judged })`, hamr's ruling P1=B). A rubric on a local file holds none in this build; a rubric on a repo still needs them.
 - **Node 22 or newer is required** (`engines.node` `>=22`, CI on Node 22). barebrowse, which the coming rubric `search` step drives, needs Node 22; Node 20 is past end-of-life.
 
 ## [0.41.0] - 2026-10-12
