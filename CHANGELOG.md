@@ -19,8 +19,13 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **The panel words a rubric-step check** as "line N — does its output pass the line's checks?" instead of the raw stage name.
 - **Worker brief:** copy every number, time and price in a claim exactly as the input writes it.
 - **The panel topbar shows the version:** `bareloop · v<version> · automate a job, verified`, read from bareloop's own package.json when the page is served (never written into the HTML).
+- **Each `~` guardrail is shown on its own marked row** under its numbered job line on the plan card and the Job tab (fwdloop's shape).
+- **A refused drafting try records why** in `draft-log.jsonl` (`try-refused`) and on the drafting step's progress line.
 
 ### Fixed
+
+- **The plan card showed the drafter's prose (run mv5e1ktb).** The confirm turn's bubble stayed above the code-worded card and was the one read. After drafting the earlier plan bubbles are dropped, so the card is the signed close's own sentences. "at most 1 lines" now reads "1 line" (and "1 word").
+- **The review door's held line said "rendered by the judged floor" for a rubric close where no judge ran.** Wording only: the hold is by verdict class and is unchanged.
 
 - **A check shown at the confirm turn could be dropped from the signed close without a word (run mv5bk400).** The composer put "lists 3 releases" in the close's notes and wrote no stage for it. Now `minClaims` / `maxClaims` count the claims listed under an input (the code counts, bareguard's `min`/`max` compares), parts say which confirmed checks they carry out (`covers`), the plan card after drafting is built from the signed close itself, every confirmed check no part carries out is moved to Not checked in code, and signing refuses when the checks shown differ from the checks of the close.
 - **Wrong labels on a rubric job on files:** the close carries genre `TEXT` (not `TYPES`), its records carry no `judgedCount` (no judge ran), and the progress list says "copying input files" / "reading input files" instead of "making worktree" / "reading repo".
