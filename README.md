@@ -18,33 +18,25 @@
 
 **"Automate this job — I don't know the best workflow."**
 
-For work that is repeated, long, and verifiable: an agent authors the workflow scaffolding
-itself, as a constrained and validated config rather than freeform code. Every run executes
-under an outer gate the agent cannot reach or argue with. And the workflow gets better across
-runs, because what actually worked is kept with receipts and carried into the next run.
+The best workflow is the shortest proven path that gets the job done, and that heals itself when a different model works a different way.
 
-Agents got good at doing the work. The open problem is knowing when the work is actually
-done. Three of the strongest results in long-running agent work landed on the same answer
-independently: the ralph loop, code machine MCP, and recursive language models all trust the
-agent to do the work and verify it with something the agent cannot reach. Trust, but verify.
+bareloop finds that path for you. Write your problem in plain language, as steps. Under each step, say what counts as success and what it must never do. The agent builds the bridge it will walk on, and the run is green only when the output passes checks the agent never touches.
 
-bareloop takes that principle and makes it the product. You describe a repeated, verifiable
-job and what *done* means for it. The agent handles the rest, under verification it never
-gets to touch.
+The harness (budget, time, what it may touch) and the judge both sit **outside** the agent loop. The agent can't judge itself. Every run is recorded, so you can audit it and replay it at $0 and see exactly what happened.
 
-## Two kinds of done
+## Two kinds of jobs
 
-Jobs differ by what decides the result is good. That difference is the product's spine, so you
-choose it when you create the job.
+**Deterministic (code)**: code decides. Tests pass, the linter is quiet, the build exits clean. If no check exists yet, say what you need and the agent builds that check first.
+> *"Fix the lint errors."* · *"Add doc comments to every function."* · *"Split this 3,000-line file without breaking a test."*
 
-**green** — a predicate decides. Tests pass, the build exits clean, the type checker is
-quiet.
-> *"Fix the failing suite."* · *"Migrate this package to strict types."*
+**Rubric (research)**: it searches, collects, compares and hands you a report where every fact is quoted from a saved copy of its source. A judge only points at the quotes, and fixed rules decide.
+> *"Find flights LAX→SFO under $400, nonstop, no red-eye."* · *"Compare these 5 laptops on price, weight and warranty."*
 
-**softgreen** — an assessment decides, against a rubric you wrote and signed. You say what
-separates a pass from a fail, and give one example of each; the judge only quotes back what it
-finds in the real work, and fixed rules — not the judge — render the verdict.
-> *"Reserve a ticket from SF to LA under $400."* · *"Improve my resume."*
+## What it won't do
+
+bareloop reads, searches and writes. It never acts on the world: no paying, booking, sending forms or posting. When a job needs a person partway through, or needs to *do* something, like book the flight bareloop found, that's **[fwdloop](https://npmjs.com/package/fwdloop)**.
+
+**Small tools, all local.** Built on the bare suite (bareagent, bareguard, litectx), always LLM-agnostic, always on your machine, with a simple panel UI.
 
 ## You have the last word
 

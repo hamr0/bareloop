@@ -1420,3 +1420,11 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 ### Rubric job shape ruled (v1.94 — 2026-10-12)
 
 - The R0–R14 draft and its 5 open questions are ruled; the rulings are in item 33, "2026-10-12 — rubric job shape RULED". Next in work order (2): the build spec for the rubric job + the barebrowse search step, shown to hamr before any build, then a flight-search job run green on DeepSeek.
+
+### Rubric gate and backlog (v1.95 — 2026-10-12)
+
+- Rubric jobs read, search and write; they never act on the world. The browse gate (bareguard primitives) refuses clicks/presses on pay/book/buy/checkout/purchase/reserve/confirm and on send/submit/sign up/post, and typing into card fields; the only form left is a search box (hamr, 2026-10-12). Sending, booking and anything needing a person mid-job is fwdloop's; booking runs in fwdloop from a bareloop green.
+- bareloop requires Node 22 (barebrowse needs it; Node 20 is end-of-life).
+- README rewritten to the deterministic / rubric split and the bareloop / fwdloop line (hamr-approved text).
+- Backlog: scheduled watch jobs. The spec's `cadence` field (hour/day/week) exists, but nothing runs a job on a schedule yet; price and news watch jobs need it.
+- Backlog, needs its own ruling: jobs that need the person's login or cookies (bank pages, members-only prices). Out of scope until ruled.
