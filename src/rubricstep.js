@@ -402,10 +402,11 @@ export function checkRubricParts(stages, { inputLabels = null, red }) {
  */
 export function partSentence(part) {
   const list = (/** @type {unknown} */ v) => (Array.isArray(v) ? v.map((x) => String(x)).join(', ') : '');
+  const n = (/** @type {unknown} */ v, /** @type {string} */ unit) => `${v} ${unit}${v === 1 ? '' : 's'}`;
   switch (part.check) {
-    case 'maxWords': return `the text is at most ${part.value} words`;
-    case 'minWords': return `the text is at least ${part.value} words`;
-    case 'maxLines': return `the text is at most ${part.value} lines`;
+    case 'maxWords': return `the text is at most ${n(part.value, 'word')}`;
+    case 'minWords': return `the text is at least ${n(part.value, 'word')}`;
+    case 'maxLines': return `the text is at most ${n(part.value, 'line')}`;
     case 'sections': return `the text has the section(s): ${list(part.names)}`;
     case 'sectionWords': return `each section (${list(part.names)}) is about ${part.wordsPerSection} words`;
     case 'cited': return `every claim is backed by a quote copied from "${part.source}"`;

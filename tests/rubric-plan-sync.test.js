@@ -195,7 +195,9 @@ test('through the session: confirm shows 3 checks for line 1, the composer write
   session.signPrepare();
   assert.ok(await waitFor(() => ['prepared', 'refused', 'error'].includes(session.state.phase)));
   assert.equal(session.state.phase, 'prepared', `${session.state.phase} / ${session.state.error}`);
-  const finalCard = session.state.messages.filter((m) => m.kind === 'plan').at(-1);
+  const planBubbles = session.state.messages.filter((m) => m.kind === 'plan');
+  assert.equal(planBubbles.length, 1, 'the confirm turn\'s drafter-worded bubble is gone: the code-worded card is the only plan on screen');
+  const finalCard = planBubbles.at(-1);
   assert.match(finalCard.text, /checks the signed close will run/);
   const allChecks = finalCard.plan.lines.flatMap((l) => l.checks.map((c) => c.name));
   assert.ok(allChecks.length >= 3);
@@ -205,4 +207,12 @@ test('through the session: confirm shows 3 checks for line 1, the composer write
   // card == close, so signing is allowed
   const r = signRun(session, session.state.specHash, { env: {}, spawnFn: () => ({ unref() {} }), bareloopBin: '/x/bareloop.mjs', home: tmp('rubric-sync-home-') });
   assert.equal(r.ok, true, JSON.stringify(r));
+});
+
+test('partSentence is correct English for a count of one (run mv5e1ktb: "at most 1 lines")', () => {
+  assert.equal(partSentence({ check: 'maxLines', value: 1 }), 'the text is at most 1 line');
+  assert.equal(partSentence({ check: 'maxLines', value: 3 }), 'the text is at most 3 lines');
+  assert.equal(partSentence({ check: 'maxWords', value: 1 }), 'the text is at most 1 word');
+  assert.equal(partSentence({ check: 'minWords', value: 1 }), 'the text is at least 1 word');
+  assert.equal(partSentence({ check: 'maxWords', value: 120 }), 'the text is at most 120 words');
 });
