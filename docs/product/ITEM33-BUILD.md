@@ -832,6 +832,13 @@ worker brief says "one quote per result, from that result's own text" (quote cap
   (search the input text, read a slice around a hit), bounded rounds, toolless final round, spend booked to drafting.
 - It returns, per job line: facts it can check (name, shape, label or phrase, one example value it saw), and what it
   could not find (→ Not checked, or a question).
+- LABELS ARE PICKED, NEVER TYPED (hamr, 2026-10-13, after the look re-run got direction 0 of 3 with the job's own
+  words as labels, and fwd's evidence that an AI writing a value itself passed 8/10 vs 10/10 when only picking): before
+  the look, code scans the source at $0 and lists, per shape (money, number, date, time), the words that sit right
+  before a value of that shape, with how often each occurs (e.g. `Departure time:` ×43, `From` ×44, `Leaves` …). Text
+  facts get the words right before each repeated phrase the same way. The look and the drafter pick labels ONLY from
+  that list (by its id or exact text); a label not on the list is a $0 red naming it. Same scan for every page or
+  file — never a per-site label table.
 - The drafter writes the facts from that report. Code proves each label/phrase is in the source once ($0); a word not
   found is a red naming the word and the input.
 
