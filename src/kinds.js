@@ -1577,6 +1577,8 @@ async function runRubricStep(stage, ctx) {
   // green, before this one: the close is first-red-wins in stage order, which the validator pins). Unreadable = a stopped instrument.
   /** @type {Record<number, string[]>} */
   const factQuotes = {};
+  /** @type {number[]} */
+  const factMissing = [];
   const tie = Array.isArray(p.parts) ? p.parts.find((/** @type {any} */ x) => x && x.class === 'countable' && x.check === 'numbersFromFacts') : null;
   for (const n of tie ? tie.from : []) {
     try {
@@ -1584,10 +1586,12 @@ async function runRubricStep(stage, ctx) {
       const results = Array.isArray(parsedFacts?.results) ? parsedFacts.results : [];
       factQuotes[n] = results.map((/** @type {any} */ r) => (r && typeof r.quote === 'string' ? r.quote : ''));
     } catch (e) {
+      // M2: an earlier line's file that is not there (the seed read, before any worker wrote) is a normal red, never an instrument fault
+      if (/** @type {any} */ (e)?.code === 'ENOENT') { factMissing.push(n); continue; }
       return stop(`the checked facts of line ${n} (${stepFileRel(n)}) could not be read for the number tie: ${/** @type {Error} */ (e).message}`);
     }
   }
-  const graded = await gradeStep({ params: p, bytes: notRegular ? null : bytes, outputBytes: notRegular ? null : bytes, inputs, factQuotes }, inputShas);
+  const graded = await gradeStep({ params: p, bytes: notRegular ? null : bytes, outputBytes: notRegular ? null : bytes, inputs, factQuotes, factMissing }, inputShas);
   if (graded.verdict === 'stopped') return stop(`the rubric stopped: ${graded.fault}`, STOP_FAULTS.CRASHED);
   const gap = new Gap(ctx.gapKeep, ctx.gapCap);
   if (notRegular) gap.push(`${stage.name}: line ${step}: ${stepFileRel(step)} is not a regular file`);

@@ -86,12 +86,32 @@ test('without an earlier fact step a prose step has no number tie (Part 1a behav
   writeStep(f, 2, { text: 'Seven things happened in 1999.' });
   assert.equal((await runStage(proseStage([]), ctxOf(f))).verdict, 'green');
   const rel = releases(f.text).slice(0, 3);
-  writeStep(f, 1, { results: rel.map((x) => ({ quote: x.quote, values: {} })) });
-  unlinkSync(join(f.tree, stepFileRel(1)));
+  // a fact file that is there but is not JSON stays an instrument fault (it ran green before this stage, so it should parse)
+  writeStep(f, 1, '{ not json');
   const r = await runStage(proseStage([tie]), ctxOf(f));
   assert.equal(r.verdict, 'instrument-stop');
   assert.equal(r.exitCode, EXIT_STOP);
   assert.match(r.gapLines.join(' '), /the checked facts of line 1 .* could not be read for the number tie/);
+  assert.ok(rel.length === 3);
+});
+
+test('M2: an earlier fact line whose step file is not there yet (the seed read) is a normal red in plain words, never an instrument fault', async () => {
+  const f = await freeze();
+  // no step files at all (the seed read), and the prose step's own file is missing too
+  let r = await runStage(proseStage([tie]), ctxOf(f));
+  assert.equal(r.verdict, 'red');
+  assert.match(r.gapLines.join('\n'), /line 1's answer is not there yet \(output\/steps\/1\.json\)/);
+  assert.ok(r.detail.redCount >= 1);
+  // the prose step's own file is there, line 1's still is not: still a red, still not a stop
+  writeStep(f, 2, { text: 'Seven things happened in 1999.' });
+  r = await runStage(proseStage([tie]), ctxOf(f));
+  assert.equal(r.verdict, 'red');
+  assert.match(r.gapLines.join('\n'), /line 1's answer is not there yet/);
+  // once line 1's file exists the tie works as before
+  const rel = releases(f.text).slice(0, 3);
+  writeStep(f, 1, { results: rel.map((x) => ({ quote: x.quote, values: {} })) });
+  writeStep(f, 2, { text: `Release ${rel[0].version}.` });
+  assert.equal((await runStage(proseStage([tie]), ctxOf(f))).verdict, 'green');
 });
 
 test('drafting reds: a prose step after a fact line with no tie; a tie to a line that is not a fact line, or comes later', () => {

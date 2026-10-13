@@ -352,14 +352,15 @@ export function plainStepGap(step, why, g, params = null) {
  * Grade ONE step: build the rubric, run it over the step file's fields, and say what happened in the close's own terms.
  * Pure of the filesystem (the runner in src/kinds.js reads the files). `stopped` = the instrument failed (never a red).
  * @param {{params: {step: number, parts: any[]}, bytes: string|null, outputBytes: string|null, inputs: Record<string, string>,
- *   factQuotes?: Record<number, string[]>}} o
+ *   factQuotes?: Record<number, string[]>, factMissing?: number[]}} o
  *   `factQuotes` maps an earlier fact line's number to the quotes its (already checked) step file holds — what a prose step's numbers are tied to
+ *   `factMissing` lists the earlier fact lines whose step file is not there (yet): a normal red, never an instrument fault
  *   `inputs` maps each cited label to its frozen TEXT; its sha256 is taken here from that text, and bareguard compares it to
  *   the manifest's recorded sha via `inputShas`.
  * @param {Record<string, string>} inputShas the manifest's recorded sha256 per cited label
  * @returns {Promise<{verdict: 'green'|'red'|'stopped', gapLines: string[], fault: string|null, detail: Record<string, any>}>}
  */
-export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes = {} }, inputShas) {
+export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes = {}, factMissing = [] }, inputShas) {
   let rubric;
   try { rubric = createRubric(buildStepSpec(params, inputShas)); } catch (e) {
     return { verdict: 'stopped', gapLines: [], fault: `the rubric for job line ${params.step} could not be built: ${/** @type {Error} */ (e).message}`, detail: {} };
@@ -375,6 +376,12 @@ export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes
   const extra = [];
   let extraCount = 0;
   const tie = params.parts.find((/** @type {any} */ x) => isRec(x) && x.class === 'countable' && x.check === 'numbersFromFacts');
+  if (tie) {
+    for (const n of factMissing) {
+      extraCount += 1;
+      extra.push(`line ${n}'s answer is not there yet (${stepFileRel(n)}), so the numbers in line ${params.step}'s text cannot be tied to it`);
+    }
+  }
   if (tie && parsed.obj !== null && typeof parsed.obj.text === 'string') {
     const quotes = tie.from.flatMap((/** @type {number} */ n) => factQuotes[n] ?? []);
     const t = numbersInQuote(parsed.obj.text, quotes.join('\n'));

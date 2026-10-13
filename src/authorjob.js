@@ -1407,8 +1407,11 @@ export async function prepareSigning({
     stops: stops.map((s) => ({ stage: s.stage, gap: s.gap })),
   };
   if (stops.length) {
+    // M2: a rubric job's readout never uses the code-job wording ("install, build and test commands")
+    const rubricJob = (Array.isArray(spec.closeDecl?.stages) ? spec.closeDecl.stages : []).some((/** @type {any} */ st) => st && (st.kind === 'rubric-step' || st.kind === 'judged-floor'));
     const reds = stops.map((s) => ({
       code: 'broken-close',
+      ...(rubricJob ? { rubricJob: true } : {}),
       path: `closeDecl.stages.${s.stage}`,
       detail: s.gap.join('\n') || `stage "${s.stage}" rendered no judgment`,
     }));

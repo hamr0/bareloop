@@ -793,6 +793,10 @@ const SIGNING_TABLE = [
     say: () => ['The judge model could not be reached or was cut off while the practice cases were graded. Nothing says the rubric is wrong.'], todo: 'try again in a few minutes' },
   { kind: 'artifact-red', when: (r) => r.code === 'artifact-red',
     say: () => ['The judge model answered with something bareloop could not read while the practice cases were graded. Nothing says the rubric is wrong.'], todo: 'try again' },
+  // M2: a rubric job's check has no install/build/test commands to blame — its own wording, never the code-job one
+  { kind: 'broken-close-rubric', when: (r) => r.code === 'broken-close' && r.rubricJob === true,
+    say: (r) => [`A check of the close (${safeText(r.path.split('.').pop() ?? '')}) could not run, so nothing it reported could be trusted.`],
+    todo: 'draft again; if it fails the same way, report the check named above' },
   { kind: 'broken-close', when: (r) => r.code === 'broken-close',
     say: (r) => [`A check of the close (${safeText(r.path.split('.').pop() ?? '')}) cannot run on this repository, so nothing it reported could be trusted.`],
     todo: 'check that the project\'s tools (its install, build and test commands) run, then try again' },

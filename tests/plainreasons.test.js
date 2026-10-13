@@ -287,6 +287,11 @@ test('SIGNING: every red code reachable at the refusal is mapped; an unknown one
   assert.equal(u.kind, 'unmapped');
   assert.match(u.sentence, /"brand-new-gate-red" at somewhere/);
   assert.ok(signingKinds().includes('unmapped'));
+  // M2: a rubric job's broken check never says "install, build and test commands" (the code-job wording)
+  const [rj] = signingReasons([{ code: 'broken-close', path: 'closeDecl.stages.line-2', detail: 'x', rubricJob: true }]);
+  assert.equal(rj.kind, 'broken-close-rubric');
+  assert.doesNotMatch(`${rj.sentence} ${rj.todo}`, /install|build and test/);
+  assert.match(signingReasons([{ code: 'broken-close', path: 'closeDecl.stages.suite', detail: 'x' }])[0].todo, /install, build and test/);
   // Part 1a: every rubric-step sorting red is mapped by its prefix and says its own sentence, whole
   for (const code of ['rubric-contradiction', 'rubric-part-guard', 'rubric-part-judged', 'rubric-part-source', 'rubric-part-unsortable', 'rubric-step-line', 'rubric-step-twice']) {
     const [r] = signingReasons([{ code, path: 'closeDecl.stages[1]', detail: `line 3: ${code} sentence.` }]);

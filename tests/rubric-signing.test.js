@@ -90,3 +90,52 @@ test('a seed that already satisfies the rubric (a step file present and within l
   assert.equal(r.ok, false);
   assert.match(r.refusal?.detail ?? '', /No work stage of this close is RED at the seed/);
 });
+
+test('M2: a prose line after a fact line signs as a NORMAL seed red (no step files at the seed), never a broken-close; and a rubric job\'s refusal never says "install, build and test"', async () => {
+  const prep = await frozen();
+  const draft = { ...DRAFT, jobLines: [{ n: 1, text: 'List the last 3 releases', rule: '' }, { n: 2, text: 'Summarize them in one short paragraph', rule: '' }] };
+  const decl = {
+    genre: 'TEXT', lang: RUBRIC_LANG,
+    stages: [
+      { name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } },
+      { name: 'line-1', fromLine: [1], kind: 'rubric-step', params: { step: 1, parts: [{ text: 'list the last 3 releases', class: 'fact', source: 'Changelog',
+        facts: [{ name: 'version', shape: 'text', anchor: '## [', until: ']' }], count: { min: 3, max: 3 } }] } },
+      { name: 'line-2', fromLine: [2], kind: 'rubric-step', params: { step: 2, parts: [
+        { text: 'under 80 words', class: 'countable', check: 'maxWords', value: 80 },
+        { text: 'every number in the text is in a quote checked on line 1', class: 'countable', check: 'numbersFromFacts', from: [1] }] } },
+    ],
+  };
+  const spec = assembleSpec(draft, { closeDecl: decl, verdictType: 'soft-green' });
+  const r = await prepareSigning({ spec, workdir: prep.tree, seedRef: prep.manifest.seed, timeoutMs: 30_000,
+    judgeLoop: async () => { throw new Error('no judge'); }, calibrateFn: async () => { throw new Error('no calibration'); } });
+  assert.deepEqual(r.reds.filter((x) => x.code === 'broken-close'), [], JSON.stringify(r.reds));
+  assert.equal(r.gates.precheck.ok, true, 'the precheck ran every stage');
+  assert.ok(r.gates.seedVerdict.workRed.includes('line-2'), 'line 2 is an ordinary seed red');
+  assert.equal(r.ok, true, JSON.stringify(r.reds));
+});
+
+test('M2: a rubric job whose check truly cannot run (input bytes changed after freezing) refuses with a broken-close red marked rubricJob, worded without the code-job commands', async () => {
+  const prep = await frozen();
+  const { writeFileSync } = await import('node:fs');
+  const rel = JSON.parse((await import('node:fs')).readFileSync(join(dirname(prep.tree), 'source.json'), 'utf8')).inputs[0].rel;
+  writeFileSync(join(prep.tree, rel), 'tampered after the door');
+  const decl = {
+    genre: 'TEXT', lang: RUBRIC_LANG,
+    stages: [
+      { name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } },
+      { name: 'line-1', fromLine: [1], kind: 'rubric-step', params: { step: 1, parts: [{ text: 'list the last 3 releases', class: 'fact', source: 'Changelog',
+        facts: [{ name: 'version', shape: 'text', anchor: '## [', until: ']' }], count: { min: 3, max: 3 } }] } },
+    ],
+  };
+  const spec = assembleSpec({ ...DRAFT, jobLines: [{ n: 1, text: 'List the last 3 releases', rule: '' }] }, { closeDecl: decl, verdictType: 'soft-green' });
+  const r = await prepareSigning({ spec, workdir: prep.tree, seedRef: prep.manifest.seed, timeoutMs: 30_000,
+    judgeLoop: async () => { throw new Error('no judge'); }, calibrateFn: async () => { throw new Error('no calibration'); } });
+  assert.equal(r.ok, false);
+  const broken = r.reds.filter((x) => x.code === 'broken-close');
+  assert.equal(broken.length, 1, JSON.stringify(r.reds));
+  assert.equal(broken[0].rubricJob, true);
+  const { signingStopText } = await import('../src/authorreadout.js');
+  const said = signingStopText({ reds: r.reds, refusal: r.refusal });
+  assert.doesNotMatch(said, /install, build and test/);
+  assert.match(said, /could not run/);
+});
