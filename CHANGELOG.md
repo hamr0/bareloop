@@ -50,6 +50,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **The panel could not start a rubric job with two or more local-file Inputs:** `POST /api/author/start` asked the repo proof of every card and reded line 1 ("is not a folder"). A rubric card whose first input is a local file now skips it; the session proves each line.
 
 - **The panel shows a refused Start (Part 1c item f).** The $0 refusal that `/api/author/start` returns (an Inputs line, a Destination) was drawn as a faint 11px hint under the cap fields and never scrolled into view, so it read as nothing happening; it is now red, 13px and brought into view, like the progress list's failure line. The failed-draft refusal of a pasted web address that cannot be read no longer ends in two full stops.
+- **A fact line's `~` rule is carried by its fact part, and `covers` stays on the part (Part 1c L4).** Live drafts of the flights job (panel session smv710w8c3wdh, 3 of 3 tries) were refused on form: `covers` written on every fact, and "not a red-eye" / "nonstop" sent as a judged or unsortable part beside the fact part. The one rulebook (`RUBRIC_RULES`, `REQUIRED_FACTS_BRIEF`) now says a limit the AI turns into a number goes on the time the input holds, as a `between` range marked AI's proposal, inside the fact part; a rule it cannot express goes in `refused`, never a part; and the refusals (`src/facts.js`, `src/rubricstep.js`) say where each belongs.
 
 ### Changed
 

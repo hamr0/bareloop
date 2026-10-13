@@ -482,9 +482,9 @@ export function checkRubricParts(stages, { inputLabels = null, red }) {
       const w = `${at}.params.parts[${j}]`;
       const said = sayText(part.text ?? '');
       if (part.class === 'none') {
-        red('rubric-part-unsortable', w, `line ${line}: '${said}' can't be counted or checked against a quote. Say it as a count (words, sections, rows) or as something a quote must show.`, { line: step, stage: label });
+        red('rubric-part-unsortable', w, `line ${line}: '${said}' can't be counted or checked against a quote. Say it as a count (words, sections, rows) or as something a quote must show.` + (factLine ? ' This line lists facts: a limit you can say as a time, number, date or money fact goes INSIDE its fact part (add the fact, list the rule\'s number in that part\'s "rules"); anything else goes in "refused", never a part of its own.' : ''), { line: step, stage: label });
       } else if (part.class === 'judged') {
-        red('rubric-part-judged', w, `line ${line}: this rule needs the judge, which arrives in the next build. Nothing spent.`, { line: step, stage: label });
+        red('rubric-part-judged', w, `line ${line}: this rule needs the judge, which arrives in the next build. Nothing spent.` + (factLine ? ' This line lists facts: a limit you can say as a time, number, date or money fact goes INSIDE its fact part (add the fact, list the rule\'s number in that part\'s "rules"); anything else goes in "refused", never a part of its own.' : ''), { line: step, stage: label });
       } else if (part.class === 'guard') {
         red('rubric-part-guard', w, `line ${line}: '${said}' is about web sources, and this job has no web input. Nothing spent.`, { line: step, stage: label });
       } else if (part.class === 'fact') {

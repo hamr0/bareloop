@@ -4,14 +4,14 @@
 
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, copyFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, copyFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkRubricRules, lineRules } from '../src/rubricstep.js';
+import { checkRubricRules, lineRules, rubricStepShapeReds } from '../src/rubricstep.js';
 import { parseJobBlock } from '../src/jobblock.js';
 import { validateDeclaration, RUBRIC_LANG, classGuards, catalogueForLang, KIND_CATALOGUE } from '../src/authoring.js';
-import { authorClose, DECLARATION_TOOL_NAME, GREEN_QUESTIONS, declarationSchema, REQUIRED_FACTS_BRIEF, authorPrompt } from '../src/authorflow.js';
+import { authorClose, DECLARATION_TOOL_NAME, GREEN_QUESTIONS, declarationSchema, REQUIRED_FACTS_BRIEF, RUBRIC_RULES, authorPrompt } from '../src/authorflow.js';
 import { proveRubricInputs } from '../src/source.js';
 import { buildSeedListing } from '../src/authorscout.js';
 
@@ -176,4 +176,66 @@ test('RF16: a part on step 2 listing rules [1,2] covers line 2\'s ~ rules: no ru
 test('RF16: a refusal for line 1 rule 1 does not cover line 2\'s rule 1: the red for line 2 rule 1 remains', () => {
   const reds = redsOf([stage([textPart([2])], 2)], { jobLines: twoLines(), refused: [{ line: 1, rule: 1, reason: 'x' }] });
   assert.deepEqual(reds, [{ code: 'rubric-rule-dropped', line: 2, rule: 1 }]);
+});
+
+// ── L4 (live fix, panel session smv710w8c3wdh, 3 of 3 tries refused on form) ────────────────────────────────────────────────
+// The shapes below are the REAL refused declarations from that session's draft-log (parts and facts as the drafter wrote them): try A
+// put "covers" on every fact; try B sent "not a red-eye" / "nonstop" as judged parts beside the fact part; try C a "none" part. The
+// page is the real 8,801-character fetch of the same session. A scripted model can only DELIVER a declaration.
+const FLIGHTS_LINE = { n: 1, text: 'List 3 flights from San Francisco to Los Angeles', rule: 'under $450; not a red-eye; nonstop', rules: ['under $450', 'not a red-eye', 'nonstop'] };
+const REAL_FACTS = [
+  { name: 'Origin', shape: 'phrase', phrase: 'Leaves San Francisco International Airport' },
+  { name: 'Destination', shape: 'phrase', phrase: 'arrives at Los Angeles International Airport' },
+  { name: 'Price', shape: 'money', anchor: 'generic', unit: 'US dollars', rule: { op: 'lt', value: 450 } },
+  { name: 'Departure time', shape: 'time', anchor: 'Departure time:', rule: { op: 'between', lo: '07:00', hi: '23:00' }, aiProposal: true },
+];
+
+test('L4 cause 1: "covers" on a fact (try A of smv710w8c3wdh) is refused with the place it belongs; the same facts with "covers" once on the part validate', () => {
+  const withCovers = REAL_FACTS.map((f, i) => ({ ...f, covers: [i + 1] }));
+  const reds = [];
+  checkRubricRules([stage([factPart(withCovers, { rules: [1, 2] })])], { jobLines: [FLIGHTS_LINE], refused: [{ line: 1, rule: 3, reason: 'nonstop' }], red: (code) => reds.push(code) });
+  const shape = [];
+  rubricStepShapeReds({ step: 1, parts: [factPart(withCovers, { rules: [1, 2] })] }, 'stages[1].params').forEach((r) => shape.push(r));
+  assert.equal(shape.length, 4, 'one red per fact that carries covers');
+  assert.match(shape[0].detail, /"covers" is a field of the PART, not of a fact - write the numbers once on the fact part/);
+  assert.deepEqual(rubricStepShapeReds({ step: 1, parts: [factPart(REAL_FACTS, { rules: [1, 2], covers: [1, 2, 3, 4] })] }, 'stages[1].params'), []);
+  assert.match(REQUIRED_FACTS_BRIEF, /"covers" and "rules" are fields of the PART, written once on it as a list of numbers\. A fact never has a "covers" or a "rules" field\./);
+});
+
+test('L4 cause 2: a ~ rule beside the fact part as a judged / none part (tries 1 and 3 of smv710w8c3wdh) is refused AND told where it goes; a red-eye rule drafted as a time fact with `between`, marked AI\'s proposal, is accepted', async () => {
+  const proved = await proveRubricInputs({ inputs: [{ n: 1, label: 'Flights', value: 'https://www.google.com/travel/flights?q=sfo-lax' }], into: join(tmp(), 'seed'), fetchUrl: async (url) => ({ ok: true, text: readFileSync(join(HERE, 'fixtures', 'page-partial.txt'), 'utf8'), url }) });
+  assert.equal(proved.ok, true);
+  if (!proved.ok) return;
+  const prep = proved.prep;
+  const guard = { name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } };
+  // the REAL refused shape: the fact part holds the departure window, and "not a red-eye" is ALSO a part of its own
+  const refusedShape = [factPart(REAL_FACTS, { rules: [1, 2], covers: [1, 2, 3, 4], source: 'Flights' }), { text: 'not a red-eye', class: 'judged', rules: [2] }];
+  const fixed = [factPart(REAL_FACTS, { rules: [1, 2], covers: [1, 2, 3, 4], source: 'Flights' })];
+  /** @type {any[]} */
+  const seen = [];
+  let calls = 0;
+  const generate = async (/** @type {any} */ messages, /** @type {any} */ tools) => {
+    seen.push(messages);
+    calls += 1;
+    await tools.find((/** @type {any} */ t) => t.name === DECLARATION_TOOL_NAME).execute({ stages: [guard, stage(calls === 1 ? refusedShape : fixed)], refused: [{ line: 1, rule: 3, reason: 'nonstop: the page holds no stop count I can quote' }] });
+    return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } };
+  };
+  const listing = await buildSeedListing({ workdir: prep.tree, seedRef: prep.manifest.seed, sourcePaths: undefined, testPaths: undefined });
+  const r = await authorClose({
+    workdir: prep.tree, seedRef: prep.manifest.seed, lang: RUBRIC_LANG, verdictType: 'soft-green',
+    answers: { 1: '1. List 3 flights from San Francisco to Los Angeles' }, questions: { 1: GREEN_QUESTIONS[1] },
+    scout: { state: 'PRESENT', facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Flights' }] }, calls: [], raws: [] },
+    listing, generate, writeScope: ['output/'], jobLines: [FLIGHTS_LINE], inputs: [{ n: 1, label: 'Flights', value: 'https://www.google.com/travel/flights?q=sfo-lax' }],
+  });
+  assert.equal(r.iterations[0].validation.ok, false, 'the real refused shape is refused at $0');
+  assert.ok(r.iterations[0].validation.reds.some((/** @type {any} */ x) => x.code === 'rubric-part-judged'));
+  const second = seen[1].map((/** @type {any} */ m) => m.content).join('\n');
+  assert.match(second, /a limit you can say as a time, number, date or money fact goes INSIDE its fact part/, 'the drafter is told where the rule goes');
+  assert.equal(r.ok, true, JSON.stringify(r.reds));
+  const timeFact = r.declaration.stages[1].params.parts[0].facts.find((/** @type {any} */ f) => f.shape === 'time');
+  assert.equal(timeFact.rule.op, 'between');
+  assert.equal(timeFact.aiProposal, true);
+  assert.equal(r.declaration.stages[1].params.parts.length, 1, 'one part: the rule is not a part of its own');
+  assert.match(REQUIRED_FACTS_BRIEF, /"not a red-eye" is a time fact with a between rule\) is carried by the fact part/);
+  assert.match(RUBRIC_RULES, /holds no "red-eye"/);
 });

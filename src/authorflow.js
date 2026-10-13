@@ -1409,7 +1409,9 @@ export const RUBRIC_FILES_STATEMENT = 'The person declared this job SOFT-GREEN a
  */
 export const RUBRIC_RULES = 'THE RULES FOR TURNING THE PERSON\'S WORDS INTO CHECKS (the same for every turn of this job):\n - A limit the person WROTE ("under $450") is a rule that can be checked: plan it as a limit with its number.\n'
   + ' - A number YOU make out of their words ("not a red-eye" becomes a departure time between 06:00 and 21:00) is your proposal, marked '
-  + 'as the AI\'s proposal for the person to check; a limit on a time that you propose is a RANGE (between), never one-sided.\n'
+  + 'as the AI\'s proposal for the person to check; a limit on a time that you propose is a RANGE (between), never one-sided. The input does '
+  + 'not have to hold the person\'s word (it holds no "red-eye"): the limit goes on the time the input DOES hold (e.g. the one after "Departure time:"), as a '
+  + 'range marked as the AI\'s proposal.\n'
   + ' - Names, labels and units are the INPUT\'s own words, copied exactly as the input writes them. When the input does not use the '
   + 'person\'s word (they wrote SFO, the input says San Francisco International Airport), use the words the input uses; never invent a '
   + 'word the input does not hold, and never add a code (like SFO) that the person did not write and the input does not hold.';
@@ -1437,6 +1439,10 @@ export const REQUIRED_FACTS_BRIEF = 'REQUIRED FACTS — what a line that finds, 
   + 'rule under the line) or be listed in "refused"; a rule that is neither is refused at $0.\n'
   + ' - A line that WRITES (a summary, a report) keeps word, section and line counts. Code ties its numbers to the facts of the lines '
   + 'before it; you do not add that.\n'
+  + ' - A ~ rule that you carry out as a fact (a limit on a time, a price, a date: "not a red-eye" is a time fact with a between rule) is carried by the '
+  + 'fact part: list its number in that part\'s "rules". It is NOT also a part of its own: on a line that lists facts, a part of class judged or none '
+  + 'is refused. A rule you cannot express as a shape and a rule goes in "refused", never into a part.\n'
+  + ' - "covers" and "rules" are fields of the PART, written once on it as a list of numbers. A fact never has a "covers" or a "rules" field.\n'
   + ' - ONE stage per job line, holding ALL of that line\'s facts (and its other parts). Two stages for one line are refused: put a '
   + '~ rule\'s fact (a "not a red-eye" time) on the same stage as the line\'s other facts.\n'
   + ' - WHICH SHAPE TAKES WHICH FIELDS (a field a shape does not take is refused):\n'
@@ -1502,7 +1508,7 @@ left as a placeholder. You never write a number the person did not ask for.`;
     ...(jobLines && jobLines.length ? [jobLineTagBlock(jobLines.length)] : []),
     ...(writeScope && writeScope.length ? [writeScopeBlock(writeScope)] : []),
     ...(confirmed ? [confirmedBlock(confirmed, { numbered: true }),
-      'EVERY CONFIRMED CHECK IS COMPOSED OR MOVED, NEVER DROPPED\n\nThe person saw the numbered checks above. On each countable part that carries one of them out, list its number in "covers". '
+      'EVERY CONFIRMED CHECK IS COMPOSED OR MOVED, NEVER DROPPED\n\nThe person saw the numbered checks above. On each countable or fact part that carries one of them out, list its number in the PART\'s "covers" (once on the part, never on a fact inside it). '
       + 'A confirmed check that no part covers is not silently left out: it is moved to Not checked before signing, and the person is told. '
       + 'To count "N things listed", use minClaims / maxClaims (it counts the claims listed under an input); anything else you cannot count is not composed.'] : []),
     REQUIRED_FACTS_BRIEF,

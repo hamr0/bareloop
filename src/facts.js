@@ -58,7 +58,13 @@ export function factShapeReds(part, w, red) {
     part.facts.forEach((/** @type {any} */ f, /** @type {number} */ j) => {
       const fw = `${w}.facts[${j}]`;
       if (!isRec(f)) { red('invalid-value', fw, '{name, shape, ...}'); return; }
-      for (const k of Object.keys(f)) if (!FACT_FIELDS.includes(k)) red('invalid-value', `${fw}.${k}`, `"${k}" is not a field of a fact — fields: ${FACT_FIELDS.join(', ')}`);
+      for (const k of Object.keys(f)) {
+        if (FACT_FIELDS.includes(k)) continue;
+        // L4 (smv710w8c3wdh, 3 of 3 tries): "covers" / "rules" are fields of the PART, written once, never of a fact inside it
+        red('invalid-value', `${fw}.${k}`, k === 'covers' || k === 'rules'
+          ? `"${k}" is a field of the PART, not of a fact - write the numbers once on the fact part ("${k}": [..]) and take it off every fact. Fact fields: ${FACT_FIELDS.join(', ')}`
+          : `"${k}" is not a field of a fact — fields: ${FACT_FIELDS.join(', ')}`);
+      }
       if (!(typeof f.name === 'string' && NAME_RE.test(f.name))) red('invalid-value', `${fw}.name`, 'the fact\'s name: letters, spaces, "_" or "-" only (no digits), at most 64 characters');
       else if (seen.has(f.name)) red('invalid-value', `${fw}.name`, `the name "${f.name}" is used twice on this line`);
       else seen.add(f.name);
