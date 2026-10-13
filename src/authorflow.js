@@ -88,7 +88,7 @@ import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } f
 import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
 import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, withFactBindings } from './rubricstep.js';
-import { sampleOf } from './facts.js';
+import { sampleOf, factShapeGuide } from './facts.js';
 import { earlyFactTestsOfDeclaration } from './factcheck.js';
 
 const require = createRequire(import.meta.url);
@@ -1430,7 +1430,11 @@ export const REQUIRED_FACTS_BRIEF = 'REQUIRED FACTS — what a line that finds, 
   + 'person\'s own words}. EVERY ~ rule of a line must be carried out by a part (list its number in the part\'s "rules", 1 = the first ~ '
   + 'rule under the line) or be listed in "refused"; a rule that is neither is refused at $0.\n'
   + ' - A line that WRITES (a summary, a report) keeps word, section and line counts. Code ties its numbers to the facts of the lines '
-  + 'before it; you do not add that.';
+  + 'before it; you do not add that.\n'
+  + ' - ONE stage per job line, holding ALL of that line\'s facts (and its other parts). Two stages for one line are refused: put a '
+  + '~ rule\'s fact (a "not a red-eye" time) on the same stage as the line\'s other facts.\n'
+  + ' - WHICH SHAPE TAKES WHICH FIELDS (a field a shape does not take is refused):\n'
+  + factShapeGuide();
 
 /**
  * The composer prompt for a rubric job on local files (Part 1a, docs/product/ITEM33-BUILD.md). There is no repository

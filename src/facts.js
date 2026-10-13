@@ -9,6 +9,8 @@
 // frozen input, every value really is in the quote (compared exactly by shape), every value meets its rule. No model is in
 // the check. The claim TEXT that bareguard's number scan reads is written by code from the values, never by the worker.
 
+import { rubricVocabulary } from 'bareguard';
+
 /** the shapes a fact may have (bareguard's value kinds, plus `phrase` = a presence decide) */
 export const FACT_SHAPES = Object.freeze(['money', 'number', 'date', 'time', 'phrase', 'text']);
 /** the comparison ops a rule may use (bareguard's) */
@@ -257,6 +259,71 @@ export function plainFactItem(item, part) {
     case 'claim-value-mismatch': return say(`the value is not what the quote holds (${detail.replace('!=', ' is not ')})`);
     default: return `${who}: ${m[3]}${detail ? ` ${detail}` : ''}`;
   }
+}
+
+// ── which shape takes which fields (live fix B2) ─────────────────────────────────────────────────────────────────────────────
+//
+// The drafter put `until` on a money fact and `anchor`/`until`/`rule` on a phrase (smv6k6l8dxkzs). What a shape takes is bareguard's
+// to say, so the table the drafter is shown is READ OFF `rubricVocabulary` (the `cited` rule's decide shapes and their stated
+// conditions), never hand-typed. If bareguard's wording of a condition changes so that it cannot be read, this throws at load time
+// and the test that pins it fails: a stale guide is never shown quietly.
+
+/**
+ * The fields each fact shape takes, in the fact part's own names (`rule` = bareguard's op/value/lo/hi; `unit`/`currency`; `phrase`
+ * = the presence decide's phrases), read off bareguard's rubric vocabulary.
+ * @returns {Record<string, string[]>} shape -> the fields it takes besides name and shape
+ */
+export function factShapeFields() {
+  const decides = /** @type {any} */ (rubricVocabulary).rules?.cited?.fields?.decides?.shapes;
+  const value = decides?.value;
+  const presence = decides?.presence;
+  const kinds = /** @type {string[]} */ (value?.fields?.valueKind?.enum);
+  /** @type {string[]} */
+  const conditions = value?.conditions ?? [];
+  const find = (/** @type {RegExp} */ re) => {
+    for (const c of conditions) { const m = re.exec(c); if (m) return m; }
+    throw new Error(`bareguard's rubric vocabulary no longer states the condition ${re} — update src/facts.js factShapeFields`);
+  };
+  if (!Array.isArray(kinds) || !presence?.fields?.phrases) throw new Error('bareguard\'s rubric vocabulary has no cited decide shapes — update src/facts.js factShapeFields');
+  const bindOnlyKind = find(/^valueKind (\w+) is bind-only: it refuses op, value, lo, hi, currency and unit/)[1];
+  const untilKind = find(/^until is allowed only on a (\w+) decide that also signs an anchor/)[1];
+  const moneyKind = find(/^(\w+) needs exactly one of currency or unit/)[1];
+  /** @type {Record<string, string[]>} */
+  const out = {};
+  for (const k of kinds) {
+    /** @type {string[]} */
+    const f = [];
+    if (k !== bindOnlyKind) f.push('rule');
+    if (value.fields.anchor) f.push('anchor');
+    if (k === untilKind) f.push('until');
+    if (k === moneyKind) f.push('unit or currency');
+    out[k] = f;
+  }
+  out.phrase = ['phrase'];
+  return out;
+}
+
+/**
+ * The lines the drafter is shown about which shape takes which fields, generated from {@link factShapeFields} (shapes with the same
+ * fields are listed together). One owner: the composer brief and the confirm note both print this.
+ * @returns {string}
+ */
+export function factShapeGuide() {
+  const by = factShapeFields();
+  /** @type {Map<string, string[]>} */
+  const groups = new Map();
+  for (const shape of FACT_SHAPES) {
+    const key = (by[shape] ?? []).join(' | ');
+    groups.set(key, [...(groups.get(key) ?? []), shape]);
+  }
+  const all = [...new Set(Object.values(by).flat())];
+  const lines = [];
+  for (const [key, shapes] of groups) {
+    const takes = key === '' ? [] : key.split(' | ');
+    const never = all.filter((f) => !takes.includes(f));
+    lines.push(`${shapes.join(' / ')}: takes ${takes.length ? takes.join(', ') : 'no extra field'}${never.length ? `; never ${never.join(', ')}` : ''}`);
+  }
+  return lines.map((l) => ` - ${l}`).join('\n');
 }
 
 // ── records (PART 1b item 3) ─────────────────────────────────────────────────────────────────────────────────────────
