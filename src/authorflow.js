@@ -1407,6 +1407,19 @@ export const RUBRIC_FILES_STATEMENT = 'The person declared this job SOFT-GREEN a
   + 'asked for. A part you cannot express that way is not approximated by a stage that means something else.';
 
 /**
+ * THE RUBRIC RULES, in one place (live fix B1): what the confirm step and the drafter are both told about turning the person's words
+ * into checks. The confirm note ({@link RUBRIC_CONFIRM_NOTE}) and the composer brief ({@link REQUIRED_FACTS_BRIEF}) interpolate THIS
+ * constant, so the two cannot drift (in smv6k6l8dxkzs the confirm step planned a limit the drafter then could not carry, and the
+ * drafter added an airport code the person never wrote). Field-neutral: neither turn needs the other's field names.
+ */
+export const RUBRIC_RULES = 'THE RULES FOR TURNING THE PERSON\'S WORDS INTO CHECKS (the same for every turn of this job):\n - A limit the person WROTE ("under $450") is a rule that can be checked: plan it as a limit with its number.\n'
+  + ' - A number YOU make out of their words ("not a red-eye" becomes a departure time between 06:00 and 21:00) is your proposal, marked '
+  + 'as the AI\'s proposal for the person to check; a limit on a time that you propose is a RANGE (between), never one-sided.\n'
+  + ' - Names, labels and units are the INPUT\'s own words, copied exactly as the input writes them. When the input does not use the '
+  + 'person\'s word (they wrote SFO, the input says San Francisco International Airport), use the words the input uses; never invent a '
+  + 'word the input does not hold, and never add a code (like SFO) that the person did not write and the input does not hold.';
+
+/**
  * REQUIRED FACTS, as the composer is told them (PART 1b, PRD item 33 RF1–RF17). The shape of the fact part is in the catalogue and the
  * schema; this is the judgement the schema cannot carry: what becomes a fact, where its words come from, and what is Not checked.
  */
@@ -1417,14 +1430,12 @@ export const REQUIRED_FACTS_BRIEF = 'REQUIRED FACTS — what a line that finds, 
   + 'One fact per thing the person asked for. Give every fact a shape. A rule (op, value, or between lo and hi) only where the person '
   + 'asked for a limit.\n'
   + ' - LOOK at THE INPUTS above before you write a check. Copy every label (anchor), unit, phrase and record marker EXACTLY as the '
-  + 'input writes it. If the input does not use the person\'s word (they wrote SFO, the input says San Francisco International '
-  + 'Airport), use the words the input uses and say so in "notes"; never invent a word the input does not hold.\n'
+  + 'input writes it, and say in "notes" when you used the input\'s words instead of the person\'s.\n'
   + ' - record: where one record opens (record.start) and where the slice the worker quotes ends (record.end). A record is one flight, '
   + 'one release, one row. When a record holds several values of one kind (leaves / arrives, subtotal / total) give the fact an '
   + 'anchor, the label that sits right before the value you mean.\n'
-  + ' - A limit the person wrote is theirs. A number YOU make out of their words ("not a red-eye" becomes departs between 06:00 and '
-  + '21:00) is your proposal: set aiProposal true on that fact, and a limit on a time that you propose is a RANGE (between), never '
-  + 'one-sided.\n'
+  + ' - Set aiProposal true on a fact whose number you made out of their words.\n'
+  + RUBRIC_RULES + '\n'
   + ' - How MANY results were asked for is a count ("3 releases": count {min: 3, max: 3}). WHICH ones ("the last", "the newest") and '
   + 'anything else you cannot express as a shape and a rule ("the cheapest", "the best", "a good pick") is NOT CHECKED: list it in "refused" as {"line": N, "rule": the number of that ~ rule, "reason": the '
   + 'person\'s own words}. EVERY ~ rule of a line must be carried out by a part (list its number in the part\'s "rules", 1 = the first ~ '
@@ -2173,7 +2184,8 @@ export const RUBRIC_CONFIRM_NOTE = 'THIS JOB HAS NO REPOSITORY. Its inputs are t
   + 'only for what the person asked for in those terms; '
   + 'anything that needs reading the text to judge it (tone, quality, accuracy), any superlative ("the cheapest", "the best") and any '
   + 'choice of WHICH ones ("the last", "the newest") goes in `notChecked`, in the person\'s own words; how MANY results were asked for is '
-  + 'a count and can be checked.';
+  + 'a count and can be checked.\n'
+  + RUBRIC_RULES;
 
 export const CONFIRM_SYSTEM = 'You read what a NON-ENGINEER answered, plus a read-only survey or listing of their '
   + 'own repository, and draft a PLAN for a job\'s definition of done: the checks you plan to compose and one '
