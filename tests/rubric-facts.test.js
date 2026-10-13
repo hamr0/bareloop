@@ -38,7 +38,7 @@ const releases = (text) => text.split('\n').map((l) => /^## \[(\d+\.\d+\.\d+)\] 
   .map((m) => ({ quote: m[0], version: m[1], date: m[2] }));
 
 const factPart = (over = {}) => ({
-  text: 'list the last 3 releases with their dates', class: 'fact', source: 'Changelog', record: { start: '## [', end: '\n' },
+  text: 'list the last 3 releases with their dates', class: 'fact', source: 'Changelog',
   facts: [
     { name: 'version', shape: 'text', anchor: '## [', until: ']' },
     { name: 'released', shape: 'date', rule: { op: 'gte', value: '2026-01-01' } },
@@ -112,13 +112,12 @@ test('a fact step has no free text: a step file with only "text" is red, and a f
   assert.match(r.gapLines.join('\n'), /has no results/);
 });
 
-test('the plan card rows come from the signed part: one per fact, then the records and the count; sign == run', () => {
+test('the plan card rows come from the signed part: one per fact, then the count; sign == run', () => {
   const part = factPart();
   const rows = factRows(part);
   assert.deepEqual(rows, [
     'fact · version — text, the words after "## [" up to "]", quoted from "Changelog"',
     'fact · released — date, at least 2026-01-01, quoted from "Changelog"',
-    'fact · records — each begins at "## [" and is quoted up to the end of the line, in "Changelog"',
     'fact · results — exactly 3 results, each quoted from "Changelog"',
   ]);
   const decl = { stages: [stage([{ ...part, covers: [1] }])] };
@@ -142,7 +141,7 @@ test('the shape of a fact part: bad shape, op, bound, money unit, phrase with a 
   assert.deepEqual(reds(factPart({ facts: [{ name: 'a', shape: 'phrase', phrase: 'Nonstop' }, { name: 'a', shape: 'date' }] })), ['x.parts[0].facts[1].name']);
   assert.deepEqual(reds(factPart({ facts: [{ name: 'top3', shape: 'date' }] })), ['x.parts[0].facts[0].name']);
   assert.deepEqual(reds(factPart({ count: { min: 5, max: 3 } })), ['x.parts[0].count']);
-  assert.deepEqual(reds(factPart({ record: { end: 'x' } })), ['x.parts[0].record.start']);
+  assert.deepEqual(reds(factPart({ record: { start: 'x' } })), ['x.parts[0].record']);
   assert.deepEqual(reds(factPart({ facts: [{ name: 'a', shape: 'text', until: ']' }] })), ['x.parts[0].facts[0].until']);
 });
 

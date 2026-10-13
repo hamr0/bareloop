@@ -11,8 +11,6 @@ import { fileURLToPath } from 'node:url';
 import { checkRubricRules, lineRules } from '../src/rubricstep.js';
 import { parseJobBlock } from '../src/jobblock.js';
 import { validateDeclaration, RUBRIC_LANG, classGuards, catalogueForLang, KIND_CATALOGUE } from '../src/authoring.js';
-import { sampleOf } from '../src/facts.js';
-import { readFileSync } from 'node:fs';
 import { authorClose, DECLARATION_TOOL_NAME, GREEN_QUESTIONS, declarationSchema, REQUIRED_FACTS_BRIEF, authorPrompt } from '../src/authorflow.js';
 import { proveRubricInputs } from '../src/source.js';
 import { buildSeedListing } from '../src/authorscout.js';
@@ -26,7 +24,7 @@ const tmp = (p = 'rubric-rules-') => { const d = mkdtempSync(join(tmpdir(), p));
 const FLIGHT_LINE = { n: 1, text: 'Find a flight SFO to LAX', rule: 'under $450; not a red-eye; nonstop', rules: ['under $450', 'not a red-eye', 'nonstop'] };
 const fact = (name, shape, extra = {}) => ({ name, shape, ...extra });
 const stage = (parts, step = 1) => ({ name: `line-${step}`, kind: 'rubric-step', fromLine: [step], params: { step, parts } });
-const factPart = (facts, over = {}) => ({ text: 'find a flight', class: 'fact', source: 'Flights', record: { start: 'Departure' }, facts, ...over });
+const factPart = (facts, over = {}) => ({ text: 'find a flight', class: 'fact', source: 'Flights', facts, ...over });
 const run = (stages, o) => {
   /** @type {string[]} */
   const out = [];
@@ -91,7 +89,8 @@ test('the declaration schema the model fills can say a fact part; the composer p
   const parts = schema.properties.stages.items.oneOf.find((b) => b.title === 'rubric-step').properties.params.properties.parts.items.properties;
   assert.ok(parts.class.enum.includes('fact'));
   assert.deepEqual(Object.keys(parts.facts.items.properties).sort(), ['aiProposal', 'anchor', 'currency', 'name', 'phrase', 'rule', 'shape', 'unit', 'until']);
-  assert.ok(parts.record && parts.count && parts.rules);
+  assert.ok(parts.count && parts.rules);
+  assert.equal(parts.record, undefined, 'no record cutting (Part 1c)');
   assert.deepEqual(Object.keys(schema.properties.refused.items.properties), ['line', 'rule', 'reason']);
   const prompt = authorPrompt({
     answers: { 1: 'x' }, questions: { 1: GREEN_QUESTIONS[1] }, facts: { rubricFiles: true }, listingBlock: '', lang: RUBRIC_LANG,
@@ -111,22 +110,21 @@ async function freeze() {
   return { file, prep: r.prep };
 }
 
-test('authorClose: a fact list with a word the input does not hold is refused at $0 and the drafter is told; the corrected try validates with its `tested` evidence filled in by code', async () => {
+test('authorClose: a fact list with no record marker validates and is kept as drafted (record cutting is gone)', async () => {
   const { prep, file } = await freeze();
   const guard = { name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } };
   const good = {
-    text: 'list the last 3 releases', class: 'fact', source: 'Changelog', record: { start: '## [', end: '\n' }, rules: [1],
+    text: 'list the last 3 releases', class: 'fact', source: 'Changelog', rules: [1],
     facts: [{ name: 'version', shape: 'text', anchor: '## [', until: ']' }, { name: 'released', shape: 'date', rule: { op: 'gte', value: '2026-10-01' } }],
     count: { min: 3, max: 3 },
   };
-  const bad = { ...good, facts: [{ name: 'version', shape: 'text', anchor: 'Release number:', until: ']' }, good.facts[1]] };
   /** @type {any[]} */
   const seen = [];
   let calls = 0;
   const generate = async (messages, tools) => {
     seen.push(messages);
     calls += 1;
-    await tools.find((t) => t.name === DECLARATION_TOOL_NAME).execute({ stages: [guard, stage([calls === 1 ? bad : good])] });
+    await tools.find((t) => t.name === DECLARATION_TOOL_NAME).execute({ stages: [guard, stage([good])] });
     return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } };
   };
   const listing = await buildSeedListing({ workdir: prep.tree, seedRef: prep.manifest.seed, sourcePaths: undefined, testPaths: undefined });
@@ -138,17 +136,9 @@ test('authorClose: a fact list with a word the input does not hold is refused at
     listing, generate, writeScope: ['output/'], jobLines, inputs: [{ n: 1, label: 'Changelog', value: file }],
   });
   assert.equal(r.ok, true, JSON.stringify(r.reds));
-  assert.equal(r.iterations[0].validation.ok, false, 'the first try was refused, at $0');
-  assert.equal(r.iterations[1].validation.ok, true, 'the corrected second try was accepted');
-  assert.equal(r.iterations[0].seedRead, null, 'and the refused try was never run');
-  const second = seen[1].map((m) => m.content).join('\n');
-  assert.match(second, /'Release number:' is not in the input "Changelog"/);
-  assert.match(second, /Nothing was signed/);
+  assert.equal(r.iterations[0].validation.ok, true, 'the first try was accepted');
   const part = r.declaration.stages[1].params.parts[0];
-  assert.equal(part.tested.facts[0].name, 'version');
-  assert.equal(part.tested.facts[0].found, part.tested.records);
-  assert.match(part.tested.facts[1].caught, /^5\/5$/);
-  assert.equal(part.sample, sampleOf(readFileSync(join(HERE, '..', 'CHANGELOG.md'), 'utf8')).note, 'the real changelog is cut for the drafter, and the cut is said on the card');
+  assert.deepEqual(Object.keys(part).sort(), ['class', 'count', 'facts', 'rules', 'source', 'text'], 'nothing is added to the part by code: no record, no test evidence, no sample');
 });
 
 // A ~ rule is carried only by a part on ITS OWN step: a part on another step never covers it.

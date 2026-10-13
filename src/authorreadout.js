@@ -468,7 +468,7 @@ const PLAIN_TABLE = [
     say: (r) => `Rubric line ${cardLineNo(r)} uses a rule that an earlier line already uses.` },
   { kind: 'card-line-no-text', when: (r) => r.code === 'invalid-value' && /^card item \d+: needs `text`/.test(r.detail),
     say: (r) => `Rubric line ${cardLineNo(r)} has no wording.` },
-  // Part 1b live fix B3: the rubric-step reds are whole sentences already (src/rubricstep.js, src/factcheck.js); a shape red on its parameters is worded here
+  // Part 1b live fix B3: the rubric-step reds are whole sentences already (src/rubricstep.js); a shape red on its parameters is worded here
   { kind: 'rubric-red', when: (r) => r.code.startsWith('rubric-'), say: (r) => fullText(r.detail) },
   { kind: 'rubric-shape', when: isRubricShape, say: (r) => rubricShapeSentence(r) },
   { kind: 'proposal-not-object', when: (r) => r.code === 'invalid-value' && r.path === 'proposal',

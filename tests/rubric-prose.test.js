@@ -35,7 +35,7 @@ const writeStep = (f, n, body) => {
 const releases = (text) => text.split('\n').map((l) => /^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})$/.exec(l)).filter(Boolean).map((m) => ({ quote: m[0], version: m[1], date: m[2] }));
 
 const factPart = () => ({
-  text: 'list the last 3 releases', class: 'fact', source: 'Changelog', record: { start: '## [', end: '\n' },
+  text: 'list the last 3 releases', class: 'fact', source: 'Changelog',
   facts: [{ name: 'version', shape: 'text', anchor: '## [', until: ']' }, { name: 'released', shape: 'date' }], count: { min: 3, max: 3 },
 });
 const factStage = { name: 'line-1', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts: [factPart()] } };

@@ -9,11 +9,9 @@ import { checksOfClose, planMatchesClose, reconcileRubricPlan, withFactBindings,
 import { factRows } from '../src/facts.js';
 
 const FACT = {
-  text: 'list the last 3 releases', class: 'fact', source: 'Changelog', record: { start: '## [', end: '\n' }, rules: [1],
+  text: 'list the last 3 releases', class: 'fact', source: 'Changelog', rules: [1],
   facts: [{ name: 'version', shape: 'text', anchor: '## [', until: ']' }, { name: 'released', shape: 'date', rule: { op: 'gte', value: '2026-10-01' } }],
   count: { min: 3, max: 3 }, covers: [1],
-  tested: { records: 46, of: 46, facts: [{ name: 'version', found: 46, caught: '5/5' }, { name: 'released', found: 45, pass: 8, fail: 37, caught: '5/5' }] },
-  sample: 'the first 14998 of 460743 characters, cut at a line end; every check is tested on the whole input',
 };
 const JOB_LINES = [
   { n: 1, text: 'List the last 3 releases', rule: 'released on or after 2026-10-01; the cheapest one', rules: ['released on or after 2026-10-01', 'the cheapest one'] },
@@ -30,14 +28,12 @@ const closeDecl = () => withFactBindings({
 });
 const spec = () => ({ goal: 'g', verdictType: 'soft-green', jobLines: JOB_LINES, closeDecl: closeDecl() });
 
-test('the rows under line 1 are the fact rows (with the early-test evidence and the said-so sample), then line 2\'s own checks and its number tie', () => {
+test('the rows under line 1 are the fact rows then line 2\'s own checks and its number tie', () => {
   const rows = checksOfClose(closeDecl());
   assert.deepEqual(rows.filter((r) => r.line === 1).map((r) => r.text), factRows(FACT));
   assert.deepEqual(rows.filter((r) => r.line === 1).map((r) => r.text), [
-    'fact · version — text, the words after "## [" up to "]", quoted from "Changelog" — tested on the real input: found 46/46, a changed value caught 5/5',
-    'fact · released — date, at least 2026-10-01, quoted from "Changelog" — tested on the real input: found 45/46, 8 pass, 37 fail, a changed value caught 5/5',
-    'fact · records — each begins at "## [" and is quoted up to the end of the line, in "Changelog"',
-    'fact · input — the AI read the first 14998 of 460743 characters, cut at a line end; every check is tested on the whole input',
+    'fact · version — text, the words after "## [" up to "]", quoted from "Changelog"',
+    'fact · released — date, at least 2026-10-01, quoted from "Changelog"',
     'fact · results — exactly 3 results, each quoted from "Changelog"',
   ]);
   assert.deepEqual(rows.filter((r) => r.line === 2).map((r) => r.text), ['the text is at most 100 words', 'every number in the text is in a quote checked on line 1']);
@@ -63,14 +59,14 @@ test('the card after drafting: checks are the close\'s own rows, Not checked hol
   assert.deepEqual(rec.moved, []);
   assert.deepEqual(planMatchesClose(rec.checkItems, closeDecl()), { ok: true });
   const plan = planFromConfirm(JOB_LINES, { checkItems: rec.checkItems, notChecked: rec.notChecked, protections: [] });
-  assert.equal(plan.lines[0].checks.length, 5);
+  assert.equal(plan.lines[0].checks.length, 3);
   assert.equal(plan.lines[1].checks.length, 2);
 });
 
 test('sign == run covers facts: a row the person was not shown, a row dropped, and a changed fact are each a refusal', () => {
   const shown = checksOfClose(closeDecl()).map((c) => ({ text: c.text, fromLine: [c.line] }));
   assert.deepEqual(planMatchesClose(shown, closeDecl()), { ok: true });
-  assert.equal(planMatchesClose(shown.filter((c) => !c.text.includes('records')), closeDecl()).ok, false, 'a row the close runs but the card did not show');
+  assert.equal(planMatchesClose(shown.filter((c) => !c.text.includes('results')), closeDecl()).ok, false, 'a row the close runs but the card did not show');
   const changed = closeDecl();
   changed.stages[1].params.parts[0].facts[1].rule = { op: 'gte', value: '2020-01-01' };
   const r = planMatchesClose(shown, changed);

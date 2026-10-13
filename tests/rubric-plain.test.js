@@ -10,12 +10,12 @@ import { rubricStepShapeReds } from '../src/rubricstep.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (f) => readFileSync(join(HERE, '..', 'src', f), 'utf8');
-/** every rubric red code the rubric-step code can raise, read from the three source files that raise them */
-const CODES = [...new Set(['rubricstep.js', 'facts.js', 'factcheck.js'].flatMap((f) => [...read(f).matchAll(/\bred\('(rubric-[a-z-]+)'/g)].map((m) => m[1])))].sort();
+/** every rubric red code the rubric-step code can raise, read from the source files that raise them */
+const CODES = [...new Set(['rubricstep.js', 'facts.js'].flatMap((f) => [...read(f).matchAll(/\bred\('(rubric-[a-z-]+)'/g)].map((m) => m[1])))].sort();
 
 test('B3: the source scan finds the rubric red codes (so the sweep below cannot pass over nothing)', () => {
-  assert.ok(CODES.length >= 22, `found ${CODES.length}: ${CODES.join(', ')}`);
-  for (const c of ['rubric-step-twice', 'rubric-fact-record-long', 'rubric-fact-record-end', 'rubric-rule-dropped', 'rubric-contradiction']) assert.ok(CODES.includes(c), c);
+  assert.ok(CODES.length >= 15, `found ${CODES.length}: ${CODES.join(', ')}`);
+  for (const c of ['rubric-step-twice', 'rubric-rule-dropped', 'rubric-contradiction']) assert.ok(CODES.includes(c), c);
 });
 
 test('B3: every rubric red code reads as a plain sentence on both doors (proposal and signing), never "unmapped"', () => {
@@ -46,7 +46,7 @@ test('B3: the two live sessions\' reds (rubric-step-twice; invalid-value on a fa
 });
 
 test('B3: every shape red the rubric-step validator can raise on a fact part is mapped (a sweep of broken parts)', () => {
-  const good = () => ({ text: 't', class: 'fact', source: 'In', record: { start: 'R' }, facts: [{ name: 'p', shape: 'money', currency: '$', rule: { op: 'lt', value: 5 } }] });
+  const good = () => ({ text: 't', class: 'fact', source: 'In', facts: [{ name: 'p', shape: 'money', currency: '$', rule: { op: 'lt', value: 5 } }] });
   const m = (f) => { const x = good(); f(x); return x; };
   const parts = [
     m((x) => { x.facts[0].until = 'z'; }), m((x) => { x.facts[0].shape = 'phrase'; x.facts[0].phrase = 'p'; x.facts[0].anchor = 'a'; }),

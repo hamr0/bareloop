@@ -12,7 +12,7 @@ function redsFor(shape, field, value) {
   const f = { name: 'thing', shape, ...(shape === 'money' ? { unit: 'US dollars' } : {}), ...(shape === 'phrase' ? { phrase: 'Nonstop' } : {}) };
   Object.assign(f, { [field]: value });
   const reds = [];
-  factShapeReds({ source: 'In', record: { start: 'R' }, facts: [f] }, 'p', (code, path, detail) => reds.push({ code, path, detail }));
+  factShapeReds({ source: 'In', facts: [f] }, 'p', (code, path, detail) => reds.push({ code, path, detail }));
   return reds.filter((r) => r.path.endsWith(`.${field}`));
 }
 

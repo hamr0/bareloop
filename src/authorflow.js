@@ -88,8 +88,7 @@ import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } f
 import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
 import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, withFactBindings } from './rubricstep.js';
-import { sampleOf, factShapeGuide } from './facts.js';
-import { earlyFactTestsOfDeclaration } from './factcheck.js';
+import { factShapeGuide } from './facts.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
@@ -827,13 +826,6 @@ export const PARAM_SCHEMAS = Object.freeze({
         domains: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 }, description: 'guard only: the web domains the rule is about' },
         covers: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'integer', minimum: 1 }, description: 'the number(s) of the CONFIRMED check(s) this part carries out' },
         rules: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'integer', minimum: 1 }, description: 'the number(s) of the job line\'s ~ rules this part carries out (1 = the first ~ rule under the line)' },
-        record: {
-          type: 'object',
-          description: 'fact only: where one record opens in the input (start) and where the slice the worker quotes ends (end, optional), both copied VERBATIM from the input',
-          properties: { start: { type: 'string', minLength: 1 }, end: { type: 'string', minLength: 1 } },
-          required: ['start'],
-          additionalProperties: false,
-        },
         facts: {
           type: 'array',
           minItems: 1,
@@ -847,7 +839,7 @@ export const PARAM_SCHEMAS = Object.freeze({
               unit: { type: 'string', minLength: 1, description: 'money: the words the input writes after the amount, copied verbatim (or give currency instead)' },
               currency: { enum: ['$', '€', '£'], description: 'money: the symbol the input writes before the amount (or give unit instead)' },
               phrase: { type: 'string', minLength: 1, description: 'phrase only: the fixed words, copied verbatim from the input' },
-              anchor: { type: 'string', minLength: 1, description: 'a label copied VERBATIM from the input that sits right before the value (picks the right one when a record holds several)' },
+              anchor: { type: 'string', minLength: 1, description: 'a label copied VERBATIM from the input that sits right before the value (picks the right one when a result holds several)' },
               until: { type: 'string', minLength: 1, description: 'text with an anchor: the label copied VERBATIM that ends the value' },
               rule: {
                 type: 'object',
@@ -1268,7 +1260,7 @@ export function jobLineTagBlock(count) {
  *   writeScope?: string[]|null,
  *   jobLines?: {n: number}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
  *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null,
- *   inputSamples?: Record<string, {text: string, cut: boolean, shown: number, total: number, note: string|null}>|null}} o
+ * }} o
  */
 export function authorPrompt({
   answers, questions = GREEN_QUESTIONS, facts, listingBlock, lang, verdictType, guards,
@@ -1281,14 +1273,13 @@ export function authorPrompt({
   // only when a confirm turn actually ran and the person accepted a plan.
   confirmed = null,
   // PART 1b: what the drafter reads of each input (label -> sample); null = none read
-  inputSamples = null,
 }) {
   // PART 1a: a rubric job on the person's own local files has no repository, no genre template and no tool to measure with —
   // it gets its own brief (`rubricAuthorPrompt`), which still ends in the same declaration tool and the same guards
   // an absent catalogue is the language's own menu (`catalogueForLang`), so a code job's prompt never lists a rubric-only kind
   const catalogue = catalogueIn ?? catalogueForLang(lang);
   if (lang === RUBRIC_LANG) {
-    return rubricAuthorPrompt({ answers, questions, facts, listingBlock, verdictType, guards, mode, catalogue, writeScope, jobLines, inputs, confirmed, inputSamples });
+    return rubricAuthorPrompt({ answers, questions, facts, listingBlock, verdictType, guards, mode, catalogue, writeScope, jobLines, inputs, confirmed });
   }
   const statement = CLASS_STATEMENTS[String(verdictType)] ?? null;
   if (statement === null) {
@@ -1429,11 +1420,9 @@ export const REQUIRED_FACTS_BRIEF = 'REQUIRED FACTS — what a line that finds, 
   + ' - The facts come from the job line itself AND from its ~ rules: "SFO to LAX" is a from fact and a to fact even with no ~ line. '
   + 'One fact per thing the person asked for. Give every fact a shape. A rule (op, value, or between lo and hi) only where the person '
   + 'asked for a limit.\n'
-  + ' - LOOK at THE INPUTS above before you write a check. Copy every label (anchor), unit, phrase and record marker EXACTLY as the '
+  + ' - LOOK at THE INPUTS above before you write a check. Copy every label (anchor), unit and phrase EXACTLY as the '
   + 'input writes it, and say in "notes" when you used the input\'s words instead of the person\'s.\n'
-  + ' - record: where one record opens (record.start) and where the slice the worker quotes ends (record.end). A record is one flight, '
-  + 'one release, one row. When a record holds several values of one kind (leaves / arrives, subtotal / total) give the fact an '
-  + 'anchor, the label that sits right before the value you mean.\n'
+  + ' - When one result holds several values of one kind (leaves / arrives, subtotal / total) give the fact an anchor, the label that sits right before the value you mean.\n'
   + ' - Set aiProposal true on a fact whose number you made out of their words.\n'
   + RUBRIC_RULES + '\n'
   + ' - How MANY results were asked for is a count ("3 releases": count {min: 3, max: 3}). WHICH ones ("the last", "the newest") and '
@@ -1455,12 +1444,12 @@ export const REQUIRED_FACTS_BRIEF = 'REQUIRED FACTS — what a line that finds, 
  *   verdictType: string, guards: {name: string, kind: string, params: Record<string, any>, fill: string[]}[],
  *   mode?: 'tool'|'text', catalogue?: Record<string, any>, writeScope?: string[]|null,
  *   jobLines?: {n: number}[]|null, inputs?: {n: number, label: string, value: string}[]|null, confirmed?: any,
- *   inputSamples?: Record<string, {text: string, cut: boolean, shown: number, total: number, note: string|null}>|null}} o
+ * }} o
  * @returns {string}
  */
 export function rubricAuthorPrompt({
   answers, questions = GREEN_QUESTIONS, facts, listingBlock, verdictType, guards,
-  mode = 'tool', catalogue = KIND_CATALOGUE, writeScope = null, jobLines = null, inputs = null, confirmed = null, inputSamples = null,
+  mode = 'tool', catalogue = KIND_CATALOGUE, writeScope = null, jobLines = null, inputs = null, confirmed = null,
 }) {
   const interview = Object.entries(questions)
     .map(([n, q]) => `Q${n}. ${q}\nA${n}. ${answers?.[n] ?? '(no answer given)'}`)
@@ -1515,7 +1504,6 @@ left as a placeholder. You never write a number the person did not ask for.`;
       + 'step must cite from, and the limits on its "text".',
     `THE FILES — the inputs the person pointed at, frozen into the job\n\n${JSON.stringify(facts, null, 2)}`
       + (listingBlock ? `\n\n${listingBlock}` : ''),
-    ...(inputSamples && Object.keys(inputSamples).length ? [inputSamplesBlock(inputSamples)] : []),
     rubricCatalogueBlock(catalogue, { verdictType }),
     'MANDATORY GUARDS — already placed and already parameterised\n\n'
       + 'This kind of job carries a stage the person did not ask for. It is fixed and you may not change, drop, rename, or '
@@ -1523,17 +1511,6 @@ left as a placeholder. You never write a number the person did not ask for.`;
       + 'Place it first: it is cheap, and the first red ends the judgement.',
     output,
   ].join('\n\n---\n\n');
-}
-
-/**
- * What the drafter reads of each input (PART 1b, RF13 "look first"): the real words the checks depend on — every label, unit and
- * phrase a check names must be copied from here. A big input is shown as a SAMPLE and the cut is said, never silent.
- * @param {Record<string, {text: string, cut: boolean, shown: number, total: number, note: string|null}>} samples
- * @returns {string}
- */
-function inputSamplesBlock(samples) {
-  const parts = Object.entries(samples).map(([label, s]) => `INPUT "${label}"${s.cut ? ` — you are shown ${s.note}` : ' — shown whole'}\n<<<\n${s.text}\n>>>`);
-  return `THE INPUTS, AS THE WORKER WILL SEE THEM — read them before you write a check\n\n${parts.join('\n\n')}`;
 }
 
 /**
@@ -2746,18 +2723,9 @@ export async function authorClose({
   if (envProbe.reds.length) return refuse(envProbe.reds, 'precheck');
 
   // ── the grounded loop ─────────────────────────────────────────────────────
-  // PART 1b (RF13, look first): a rubric job on files — the drafter reads the person's inputs (a big one as a said-so sample), and
-  // the early tests below run on the WHOLE frozen text. null = not a files job, or the freeze could not be read here.
-  /** @type {Record<string, string>|null} */
-  let inputTexts = null;
-  if (lang === RUBRIC_LANG && Array.isArray(inputs) && inputs.length > 0) {
-    const frozen = await readFrozenInputs(workdir, inputs.map((i) => i.label));
-    if (frozen.ok) inputTexts = frozen.texts;
-  }
   const prompt = authorPrompt({
     answers, questions, facts, listingBlock: /** @type {string} */ (seeds.block),
     lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue, writeScope, confirmed, jobLines, inputs,
-    inputSamples: inputTexts ? Object.fromEntries(Object.entries(inputTexts).map(([l, t]) => [l, sampleOf(t)])) : null,
   });
   /** @type {any[]} */
   let messages = [{ role: 'user', content: prompt }];
@@ -2937,12 +2905,6 @@ export async function authorClose({
 
       // PART 1b: code puts the number tie on every prose step that follows a fact step, before anything is validated or signed
       let v = validateDeclaration(withFactBindings(ask.declaration), { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope, jobLines, inputLabels: inputLabelsOf(inputs) });
-      // PART 1b (RF13–RF15): the three early tests on the person's real frozen input, before any fact check can be signed. A red here
-      // is a validation red like any other (the drafter revises); a pass fills each fact part's `tested` evidence IN, by code.
-      if (v.ok && lang === RUBRIC_LANG) {
-        const early = await earlyFactTestsOfDeclaration(v.declaration, inputTexts, (t) => sampleOf(t).note);
-        v = early.reds.length > 0 ? { ...v, ok: false, reds: [...v.reds, ...early.reds], declaration: null } : { ...v, declaration: early.declaration };
-      }
       // SCRUBBED HERE, once, where the reds enter this module's records — the same
       // boundary rule `renderRejectBlock` already states, applied to the OTHER
       // channel they travel down. A validation red quotes what the model declared

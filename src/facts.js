@@ -20,7 +20,7 @@ export const MAX_FACTS = 10;
 /** every field a fact may carry */
 const FACT_FIELDS = Object.freeze(['name', 'shape', 'unit', 'currency', 'phrase', 'anchor', 'until', 'rule', 'aiProposal']);
 /** every field a part of class `fact` may carry (the shared ones are checked by rubricStepShapeReds) */
-export const FACT_PART_FIELDS = Object.freeze(['source', 'record', 'facts', 'count']);
+export const FACT_PART_FIELDS = Object.freeze(['source', 'facts', 'count']);
 /** a fact's name appears in the claim text bareguard scans for numbers, so it carries letters only (no digit can red the claim) */
 const NAME_RE = /^[A-Za-z][A-Za-z _-]{0,63}$/;
 
@@ -45,18 +45,11 @@ const boundOk = (/** @type {string} */ shape, /** @type {unknown} */ v) => (shap
  */
 export function factShapeReds(part, w, red) {
   for (const k of Object.keys(part)) {
-    if (!['text', 'class', 'covers', 'rules', 'source', 'record', 'facts', 'count', 'tested', 'sample'].includes(k)) {
+    if (!['text', 'class', 'covers', 'rules', 'source', 'facts', 'count'].includes(k)) {
       red('invalid-value', `${w}.${k}`, `"${k}" is not a field of a fact part — fields: text, class, covers, rules, ${FACT_PART_FIELDS.join(', ')}`);
     }
   }
   if (!(nonEmpty(part.source) && part.source.length <= 128)) red('invalid-value', `${w}.source`, 'the label of the input the quotes come from');
-  if (!isRec(part.record)) red('invalid-value', `${w}.record`, '{start, end?} — the words (copied from the input) that open a record, and optionally the words that close its quoted slice');
-  else {
-    // a marker may be only white space (a line break ends a heading): non-empty, not "non-blank"
-    if (!(typeof part.record.start === 'string' && part.record.start !== '')) red('invalid-value', `${w}.record.start`, 'the words that open each record, copied from the input');
-    if (Object.hasOwn(part.record, 'end') && !(typeof part.record.end === 'string' && part.record.end !== '')) red('invalid-value', `${w}.record.end`, 'the words that end the quoted slice of a record, copied from the input');
-    for (const k of Object.keys(part.record)) if (k !== 'start' && k !== 'end') red('invalid-value', `${w}.record.${k}`, `"${k}" is not a field of record — fields: start, end`);
-  }
   if (!Array.isArray(part.facts) || part.facts.length === 0 || part.facts.length > MAX_FACTS) {
     red('invalid-value', `${w}.facts`, `a list of 1 to ${MAX_FACTS} facts {name, shape, ...}`);
   } else {
@@ -167,10 +160,9 @@ function ruleWords(f) {
  * One fact as a plain row, written by code from the signed fields:
  * `fact · price — money, at most 450 US dollars, after "Price", quoted from "Flights"`.
  * @param {any} f @param {string} source
- * @param {{records: number, facts: {name: string, found: number|null, pass?: number, fail?: number, caught?: string}[]}|null} [tested] the early-test evidence code filled in at drafting
  * @returns {string}
  */
-export function factSentence(f, source, tested = null) {
+export function factSentence(f, source) {
   /** @type {string[]} */
   const bits = [];
   if (f.shape === 'phrase') bits.push('phrase', `must say "${f.phrase}"`);
@@ -181,13 +173,7 @@ export function factSentence(f, source, tested = null) {
     if (f.anchor !== undefined) bits.push(f.until !== undefined ? `the words after "${f.anchor}" up to "${f.until}"` : `after "${f.anchor}"`);
   }
   bits.push(`quoted from "${source}"`);
-  const t = tested && Array.isArray(tested.facts) ? tested.facts.find((x) => x && x.name === f.name) : null;
-  /** @type {string[]} */
-  const ev = [];
-  if (t && typeof t.found === 'number') ev.push(`found ${t.found}/${tested ? tested.records : '?'}`);
-  if (t && typeof t.pass === 'number' && typeof t.fail === 'number') ev.push(`${t.pass} pass, ${t.fail} fail`);
-  if (t && typeof t.caught === 'string') ev.push(`a changed value caught ${t.caught}`);
-  return `fact · ${f.name} — ${bits.join(', ')}${f.aiProposal ? ' — AI\'s proposal — check it' : ''}${ev.length ? ` — tested on the real input: ${ev.join(', ')}` : ''}`;
+  return `fact · ${f.name} — ${bits.join(', ')}${f.aiProposal ? ' — AI\'s proposal — check it' : ''}`;
 }
 
 /**
@@ -219,11 +205,9 @@ export function countSentence(part) {
  * @param {any} part @returns {string[]}
  */
 export function factRows(part) {
-  const rows = (Array.isArray(part.facts) ? part.facts : []).map((/** @type {any} */ f) => factSentence(f, part.source, isRec(part.tested) ? /** @type {any} */ (part.tested) : null));
-  const rec = isRec(part.record) && typeof part.record.start === 'string' && part.record.start !== '' ? [`fact · records — each begins at "${part.record.start}"${part.record.end !== undefined ? ` and is quoted up to ${sayEnd(part.record.end)}` : ''}, in "${part.source}"`] : [];
+  const rows = (Array.isArray(part.facts) ? part.facts : []).map((/** @type {any} */ f) => factSentence(f, part.source));
   const c = countSentence(part);
-  const cut = typeof part.sample === 'string' && part.sample !== '' ? [`fact · input — the AI read ${part.sample}`] : [];
-  return [...rows, ...rec, ...cut, ...(c ? [c] : [])];
+  return [...rows, ...(c ? [c] : [])];
 }
 
 /**
@@ -242,7 +226,7 @@ export function plainFactItem(item, part) {
   switch (m[3]) {
     case 'quote-not-found': return `${at}: the quote is not found word for word in "${part.source}"`;
     case 'empty-quote': return `${at}: the quote is empty — copy the words from "${part.source}" that hold the facts`;
-    case 'quote-too-long': return `${at}: the quote is too long — copy only the one record, not more`;
+    case 'quote-too-long': return `${at}: the quote is too long — copy only that one result's own words, not more`;
     case 'numbers': return `${at}: the number ${detail} is not in the quote the way the value writes it — write each value as the quote writes it (for example "9:27 AM", not "09:27")`;
     case 'value-over': case 'value-under': return say(`the value in the quote is ${m[3] === 'value-over' ? 'above' : 'below'} what the rule allows${f && f.rule ? ` (${ruleWords(f)})` : ''}`);
     case 'value-none': return say(`the quote holds no ${f ? f.shape : 'value'}${f && f.anchor !== undefined ? ` after "${f.anchor}"` : ''}`);
@@ -324,70 +308,4 @@ export function factShapeGuide() {
     lines.push(`${shapes.join(' / ')}: takes ${takes.length ? takes.join(', ') : 'no extra field'}${never.length ? `; never ${never.join(', ')}` : ''}`);
   }
   return lines.map((l) => ` - ${l}`).join('\n');
-}
-
-// ── records (PART 1b item 3) ─────────────────────────────────────────────────────────────────────────────────────────
-//
-// A source holds many look-alike RECORDS (a flight, a release, a row). The drafter names where a record OPENS (`record.start`,
-// words copied from the input) and, optionally, where the slice the worker quotes ENDS (`record.end`): the whole block made
-// anchors ambiguous in the flight POC (a trailing "Flight details" button repeated the labels), so a record is the PREFIX slice.
-// CODE finds the records and counts them; the model names two strings and nothing else.
-
-/** @typedef {{start: number, end: number, text: string, endFound: boolean}} RecordSlice */
-
-/**
- * Split a text into records. A record opens at each occurrence of `record.start` and runs to the next one (or the end of the
- * text); with `record.end`, the quoted slice stops at the first `end` inside that record (a record without it keeps its whole
- * span and says so in `endFound`). Plain, case-sensitive, verbatim string search — the words are copied from the input.
- * @param {string} text @param {{start: string, end?: string}} record @returns {RecordSlice[]}
- */
-export function splitRecords(text, record) {
-  /** @type {number[]} */
-  const starts = [];
-  if (typeof record.start === 'string' && record.start !== '') {
-    for (let i = text.indexOf(record.start); i !== -1; i = text.indexOf(record.start, i + record.start.length)) starts.push(i);
-  }
-  return starts.map((s, k) => {
-    const stop = k + 1 < starts.length ? starts[k + 1] : text.length;
-    let e = stop;
-    let endFound = true;
-    if (typeof record.end === 'string' && record.end !== '') {
-      const j = text.indexOf(record.end, s + record.start.length);
-      if (j !== -1 && j <= stop) e = j; else endFound = false;
-    }
-    return { start: s, end: e, text: text.slice(s, e), endFound };
-  });
-}
-
-/** how much of a big input the drafter is shown (characters, cut at a line end) */
-export const SAMPLE_CHARS = 15000;
-
-/**
- * What the drafter reads of an input: all of it when it is small, else the first part, cut at a line end — and the cut is SAID
- * (never a silent truncation: the changelog was 455k characters cut to 15k in the POC). Every check is tested on the WHOLE input
- * regardless (`earlyFactTests`), so the cut limits what the drafter sees, never what is checked.
- * @param {string} text @param {number} [max]
- * @returns {{text: string, cut: boolean, shown: number, total: number, note: string|null}}
- */
-export function sampleOf(text, max = SAMPLE_CHARS) {
-  if (text.length <= max) return { text, cut: false, shown: text.length, total: text.length, note: null };
-  const nl = text.lastIndexOf('\n', max);
-  const shown = nl > 0 ? nl : max;
-  return {
-    text: text.slice(0, shown), cut: true, shown, total: text.length,
-    note: `the first ${shown} of ${text.length} characters, cut at a line end; every check is tested on the whole input`,
-  };
-}
-
-/** an end marker in words: a bare line break reads as "the end of the line" @param {string} end @returns {string} */
-const sayEnd = (end) => (end === '\n' ? 'the end of the line' : `"${end}"`);
-
-/**
- * The quote instruction a worker is given for a record, in plain words (the worker brief and the composer prompt both use it).
- * @param {{start: string, end?: string}} record @returns {string}
- */
-export function recordWords(record) {
-  return record.end !== undefined
-    ? `from the words "${record.start}" up to (not including) ${sayEnd(record.end)}`
-    : `from the words "${record.start}" up to where the next record opens`;
 }

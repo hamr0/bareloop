@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { createRubric, checkStep, renderGaps, numbersInQuote } from 'bareguard';
-import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem, factBrief, recordWords } from './facts.js';
+import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem, factBrief } from './facts.js';
 
 // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES — what one job line leaves
 // behind and how it is told to the worker.
@@ -37,7 +37,7 @@ export function stepFileContract() {
     '  In each claim, copy every number, time and price exactly as the input writes it (for example "9:27 AM", not "09:27"),',
     '  because the check matches the numbers in your claim against your quote.',
     'A job line the brief below marks as a FACTS line is different: its file holds ONLY {"results": [{"quote": "...", "values":',
-    '{"<fact>": "<value>"}}]} — one result per record, one quote copied exactly from that record, the values written as the quote',
+    '{"<fact>": "<value>"}}]} — one result per thing found, one quote copied exactly from the text of that one result, the values written as the quote',
     'writes them; no "text" and no "cites". A line the brief marks as a TEXT line keeps "text" (free words), and every number in it',
     'must be copied from a quote of an earlier facts line.',
     'Write nothing outside output/, and never edit the files under input/. The file must be complete, valid JSON: a file cut',
@@ -46,7 +46,7 @@ export function stepFileContract() {
 }
 
 /**
- * What the worker is told about each line, from the close that will grade it (PART 1b item 7): a FACTS line gets its record, its
+ * What the worker is told about each line, from the close that will grade it (PART 1b item 7): a FACTS line gets its
  * facts and its count; a TEXT line that follows a facts line is told its numbers come from that line's quotes. Written by code from
  * the signed parts, never by a model. A line with no rubric-step stage gets nothing here.
  * @param {any} closeDecl @returns {{line: number, text: string}[]}
@@ -61,15 +61,15 @@ export function lineBriefs(closeDecl) {
     const fp = factPartOf(st.params);
     if (fp) {
       const c = isRec(fp.count) ? fp.count : null;
-      const count = !c ? 'one result for every record you find' : c.min !== undefined && c.max !== undefined
+      const count = !c ? 'one result for every one you find' : c.min !== undefined && c.max !== undefined
         ? (c.min === c.max ? `exactly ${c.min} result${c.min === 1 ? '' : 's'}` : `${c.min} to ${c.max} results`)
         : c.min !== undefined ? `at least ${c.min} results` : `at most ${c.max} results`;
       out.push({
         line: n,
         text: [
           `Job line ${n} is a FACTS line. Write ${stepFileRel(n)} as {"results": [{"quote": "...", "values": {...}}]} and nothing else — no "text", no "cites".`,
-          `  One result per record in the input "${fp.source}": ${count}. A record's quote is the words ${recordWords(fp.record)}.`,
-          '  "quote": copy those words exactly, from the start of ONE record to its end — one quote per result, never joined from two records.',
+          `  One result per thing you find in the input "${fp.source}": ${count}.`,
+          '  "quote": ONE quote per result, copied exactly from that result\'s own text in the input (at most 4000 characters) — never joined from two results.',
           '  "values": one entry per fact below, written exactly as the quote writes it (for example "9:27 AM", not "09:27"; "389", not "389.00").',
           ...fp.facts.map((/** @type {any} */ f) => `    - ${factBrief(f)}`),
         ].join('\n'),
@@ -315,7 +315,7 @@ export function plainStepGap(step, why, g, params = null) {
   const at = `line ${step}`;
   const fact = params ? factPartOf(params) : null;
   if (fact && g.check === 'cited') {
-    if (g.kind === 'missing' || g.kind === 'no-claims') return `${at}: ${file} has no results — add one result per record: {"quote": ..., "values": {...}}`;
+    if (g.kind === 'missing' || g.kind === 'no-claims') return `${at}: ${file} has no results — add one result per thing you found: {"quote": ..., "values": {...}}`;
     if (g.kind === 'unsupported') return (g.items ?? []).map((/** @type {string} */ it) => `${at}: ${plainFactItem(it, fact)}`).join('\n');
     if (g.kind === 'too-many') return `${at}: the results hold too many different quotes to check (${g.measured} against a limit of ${g.limit})`;
     return `${at}: the results cannot be checked (${g.kind})`;
