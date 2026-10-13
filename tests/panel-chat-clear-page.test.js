@@ -97,11 +97,14 @@ test('page: when a polled session reaches signed (the run starts) the page goes 
   const els = { 'tab-runs': { click: () => calls.push('tab-runs') } };
   const state = { phase: 'signed' };
   const run = new Function('document', 'authorGet', 'renderMessages', 'renderActions', 'clearInterval', 'resetCard',
-    `var sessionId = "s1", pollTimer = 1, lastPhase = null, reuseSession = false, autoSigned = false;\n${fnSrc('poll')}\nreturn poll();`);
-  await run({ getElementById: (id) => els[id] }, () => Promise.resolve({ state }), () => {}, () => {}, () => calls.push('clearInterval'), () => calls.push('resetCard'));
+    `var sessionId = "s1", pollTimer = 1, lastPhase = null, reuseSession = false, autoSigned = false, knownRunIdsAtSign = ['old'];
+     var afterSignRefresh = function(ids, n){ document.signRefresh = [ids, n]; }, currentRunIds = function(){ return []; };\n${fnSrc('poll')}\nreturn poll();`);
+  const docObj = { getElementById: (id) => els[id] };
+  await run(docObj, () => Promise.resolve({ state }), () => {}, () => {}, () => calls.push('clearInterval'), () => calls.push('resetCard'));
   await new Promise((r) => setImmediate(r));
   assert.ok(calls.includes('resetCard'), 'signed resets the card');
   assert.ok(calls.includes('tab-runs'), 'the switch to the run is kept');
+  assert.deepEqual(docObj.signRefresh, [['old'], 12], 'M3: the Runs list is refreshed until the new run is listed');
   assert.ok(calls.indexOf('resetCard') > calls.indexOf('tab-runs'), 'reset after the switch');
   // the reset leaves an empty card, so the main button offers a fresh draft, not the signed job
   const mainButtonFor = new Function(`${fnSrc('mainButtonFor')}\nreturn mainButtonFor;`)();

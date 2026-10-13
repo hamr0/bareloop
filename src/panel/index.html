@@ -2493,6 +2493,19 @@
     }, 1500);
   }
 
+  // M3 (Part 1c full-run fixes): after Sign & run the new run's row is written a few seconds later (the runner starts, then
+  // appends its row), and the Runs list only re-fetches every RUNS_LIST_POLL_MS — so a run just signed showed only after a page
+  // refresh. Like a resume, a sign forces list refreshes until a run that was not listed before the click appears; bounded.
+  function afterSignRefresh(knownIds, tries){
+    refreshRunsList(true).then(function(runs){
+      var fresh = Array.isArray(runs) && runs.some(function(r){ return knownIds.indexOf(r.runid) === -1; });
+      if(!fresh && tries > 0) setTimeout(function(){ afterSignRefresh(knownIds, tries - 1); }, 1500);
+    });
+  }
+  function currentRunIds(){
+    try { return (JSON.parse(lastRunsSig || "[]") || []).map(function(r){ return r.runid; }); } catch(e){ return []; }
+  }
+
   function renderRun(detail){
     if(detail.fileMissing){
       setRunHeader("\u00B7", runName(detail.job, detail.runNo, detail.runid), "file missing");
@@ -3408,7 +3421,7 @@
       pollFailStreak = 0;
       var runs = result.runs || [];
       var next = sig(runs);
-      if(next === lastRunsSig) return; // unchanged payload — never rebuild the DOM for nothing
+      if(next === lastRunsSig) return runs; // unchanged payload — never rebuild the DOM for nothing
       lastRunsSig = next;
       withScrollPreserved(["left-pane-body"], function(){
         // setItems re-runs the SAME filter/search state and view mode
@@ -3416,6 +3429,7 @@
         // bar's own state) — a poll tick never resets either.
         runsFilterBar.setItems(runs);
       });
+      return runs;
     }).catch(function(){
       pollFailStreak++;
       // Keep the last good render; a transient failure is invisible. Only a
@@ -3912,6 +3926,7 @@
     var mainHint = document.getElementById("chat-main-hint");
     var reopenBtn = document.getElementById("chat-reopen-btn");
     var mainAction = "none";
+    var knownRunIdsAtSign = null; // the run ids listed when Sign & run was pressed (M3: afterSignRefresh waits for a new one)
     var lastState = null;
     var startOk = false;
     var errEl = document.getElementById("chat-card-error");
@@ -4602,6 +4617,7 @@
         renderActions(j.state);
         if(reuseSession && !autoSigned && j.state.phase === "prepared" && j.state.specHash){
           autoSigned = true;
+          knownRunIdsAtSign = currentRunIds();
           authorPost("/api/author/" + sessionId + "/sign", {specHash: j.state.specHash}).then(function(r){
             var o = chatPostOutcome(r);
             if(o.ok){ chatActionOk(); } else { autoSigned = false; chatActionFailed(o.error); }
@@ -4610,6 +4626,7 @@
         }
         if(j.state.phase === "signed"){
           clearInterval(pollTimer);
+          afterSignRefresh(knownRunIdsAtSign || currentRunIds(), 12);
           document.getElementById("tab-runs").click();
           // hamr's ruling 2026-10-05: the run has started, so the Chat card goes back to the empty card (the one reset
           // Clear uses) — it must not keep showing a signed job that invites a rerun. The run itself is untouched.
@@ -4914,6 +4931,7 @@
       authorGet("/api/author/" + sessionId).then(function(j){
         var hash = j.state && j.state.specHash;
         if(!hash) return;
+        knownRunIdsAtSign = currentRunIds();
         authorPost("/api/author/" + sessionId + "/sign", {specHash: hash}).then(function(r){
           var o = chatPostOutcome(r);
           if(o.ok){ chatActionOk(); } else { chatActionFailed(o.error); return; }

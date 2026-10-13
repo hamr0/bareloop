@@ -2961,3 +2961,54 @@ test('progress list: a signed session ends "signed hash" with a check and its ">
   assert.match(last, /&gt; drafting spent \$0\.12/);
 });
 
+
+// M3 (Part 1c full-run fixes): after Sign & run the Runs list is re-fetched (forced, past the 10s throttle) until a run that was not
+// listed at the click appears. The REAL `afterSignRefresh` / `currentRunIds` / `refreshRunsList` are extracted verbatim from the page.
+test('M3: afterSignRefresh forces list refreshes past the throttle until a new run appears, then stops; bounded when none ever does', async () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const src = [
+    extractFnSource(html, 'sig'), extractFnSource(html, 'withScrollPreserved'), extractFnSource(html, 'refreshRunsList'),
+    extractFnSource(html, 'afterSignRefresh'), extractFnSource(html, 'currentRunIds'),
+  ].join('\n');
+  const make = (listFor) => {
+    const calls = [];
+    const timers = [];
+    // eslint-disable-next-line no-new-func
+    const f = new Function('calls', 'timers', 'listFor', `
+      var document = { hidden: false, getElementById: function(){ return { scrollTop: 0 }; } };
+      var setTimeout = function(fn){ timers.push(fn); };
+      function getJSON(path){ calls.push(path); return Promise.resolve({ runs: listFor(calls.length) }); }
+      var runsFilterBar = { setItems: function(){} };
+      var lastRunsSig = ${JSON.stringify(JSON.stringify([{ runid: 'old1' }]))};
+      var lastRunsListRefreshAt = Date.now();
+      var RUNS_LIST_POLL_MS = 10000;
+      var pollFailStreak = 0;
+      ${src}
+      return { afterSignRefresh: afterSignRefresh, currentRunIds: currentRunIds };
+    `)(calls, timers, listFor);
+    return { f, calls, timers };
+  };
+  const flush = () => new Promise((r) => setImmediate(r));
+  // the row appears on the 3rd fetch: 3 forced fetches (the throttle was just reset, so only `force` explains them), then stop
+  const a = make((n) => (n >= 3 ? [{ runid: 'old1' }, { runid: 'new1' }] : [{ runid: 'old1' }]));
+  assert.deepEqual(a.f.currentRunIds(), ['old1']);
+  a.f.afterSignRefresh(a.f.currentRunIds(), 12);
+  for (let i = 0; i < 6; i += 1) { await flush(); const t = a.timers.shift(); if (t) t(); }
+  await flush();
+  assert.equal(a.calls.length, 3);
+  assert.equal(a.timers.length, 0, 'it stops once a new run is listed');
+  // never appears: bounded (1 + 12 tries)
+  const b = make(() => [{ runid: 'old1' }]);
+  b.f.afterSignRefresh(['old1'], 12);
+  for (let i = 0; i < 30; i += 1) { await flush(); const t = b.timers.shift(); if (t) t(); }
+  await flush();
+  assert.equal(b.calls.length, 13);
+});
+
+test('M3 call site: the chat poll calls afterSignRefresh when the session reaches "signed", with the ids captured at the Sign click', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const at = html.indexOf('if(j.state.phase === "signed"){');
+  assert.ok(at !== -1);
+  assert.match(html.slice(at, at + 300), /afterSignRefresh\(knownRunIdsAtSign \|\| currentRunIds\(\), 12\)/);
+  assert.equal((html.match(/knownRunIdsAtSign = currentRunIds\(\)/g) ?? []).length, 2, 'both sign paths (click and Reuse auto-sign) capture the ids');
+});
