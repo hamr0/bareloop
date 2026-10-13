@@ -219,3 +219,16 @@ test('run-u --spec: a web input that cannot be read at run start stops the run i
   assert.equal(r.provider.messagesLog.length, 0, 'no model call was made');
   assert.equal(existsSync(join(r.prep.tree, 'output', 'out.txt')), false);
 });
+
+test('the panel page: a refused Start (a $0 refusal such as an Inputs line) is drawn red and sized like a failure line, and brought into view - it used to be a faint 11px hint under the cap fields that read as "nothing happened"', () => {
+  const html = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
+  assert.match(html, /<div class="hint bad card-refusal" id="chat-card-error" data-testid="chat-card-error" role="alert"><\/div>/);
+  assert.match(html, /\.card-refusal:not\(:empty\)\{font-size:13px/);
+  assert.match(html, /\.hint\.bad\{color:var\(--red\);\}/);
+  assert.match(html, /errEl\.textContent = \(r\.body && r\.body\.error\) \|\| "refused";\s*\/\/[^\n]*\n\s*try \{ errEl\.scrollIntoView/);
+});
+
+test('proveRubricInputs: the refusal for an unreadable page ends in one full stop, not two', async (t) => {
+  const r = await proveRubricInputs({ inputs: [{ n: 1, label: 'Flights', value: URL1 }], into: join(tmp(t, 'url-dots-'), 'seed'), fetchUrl: async () => ({ ok: false, error: 'blocked by the SSRF guard.' }) });
+  assert.equal(!r.ok && r.error, 'line 1: blocked by the SSRF guard. Nothing spent.');
+});

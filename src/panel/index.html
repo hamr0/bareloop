@@ -591,6 +591,9 @@
   .pv-typed input{flex:1 1 160px;min-width:0;max-width:260px;min-height:28px;box-sizing:border-box;}
   .pv-typed .hint{flex:1 1 100%;margin:0;}
   .hint.bad{color:var(--red);}
+  /* a refused Start (a $0 refusal, e.g. an Inputs line) is read like the red failure line of the progress list, not like a faint hint */
+  .card-refusal:not(:empty){font-size:13px;margin-top:8px;line-height:1.4;}
+  .card-refusal:empty{display:none;}
   .field label.jf-thinking{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:6px;margin-top:6px;font-size:12px;text-transform:none;letter-spacing:0;}
   .field label.jf-thinking input{width:auto;min-height:0;margin:0;}
   .table-wrap{overflow-x:auto;border:1px solid var(--border-strong);background:var(--panel2);max-width:100%;}
@@ -728,7 +731,7 @@
                 <input id="jf-cap-time" type="text" placeholder="or blank = no wall">
               </div>
             </div>
-            <div class="hint" id="chat-card-error" data-testid="chat-card-error"></div>
+            <div class="hint bad card-refusal" id="chat-card-error" data-testid="chat-card-error" role="alert"></div>
             <div id="chat-resume-box" class="chat-resume-box" data-testid="resume-box" hidden>
               <div class="hint" id="chat-resume-spent" data-testid="resume-spent"></div>
               <div class="ended-actions"><button class="btn primary" type="button" id="chat-resume-sign" data-testid="btn-sign-resume">Sign &amp; resume</button> <button class="btn" type="button" id="chat-resume-cancel" data-testid="btn-resume-cancel">Cancel</button></div>
@@ -4629,6 +4632,8 @@
       authorPost("/api/author/start", body).then(function(r){
         if(r.status !== 200 || !r.body.ok){
           errEl.textContent = (r.body && r.body.error) || "refused";
+          // the refusal is the answer to the click: bring it into view (it sits under the cap fields, above the progress list)
+          try { errEl.scrollIntoView({block: "nearest"}); } catch(e){}
           sessionLive = false;
           refreshStartEnabled();
           return;

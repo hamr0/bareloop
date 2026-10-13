@@ -1273,7 +1273,7 @@ export async function proveRubricInputs({ inputs, into, destination, fetchUrl = 
     labels.add(label.toLowerCase());
     if (isWebUrl(value)) {
       const got = await fetchUrl(value.trim());
-      if (!got.ok) return bad('input-url-unreadable', n, `${got.error}.`);
+      if (!got.ok) return bad('input-url-unreadable', n, `${got.error.replace(/[.\s]+$/, '')}.`);
       const pageBuf = Buffer.from(got.text, 'utf8');
       const leak = secretPatternNames(got.text);
       if (leak.length) return bad('input-url-secret', n, `the page at ${got.url} carries a known secret shape (${leak.join(', ')}) - refused, secrets never enter a job.`);
