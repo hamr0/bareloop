@@ -1271,3 +1271,61 @@ Each was answered by hamr in conversation on 2026-10-11; the batches that depend
 8. **RULED — the page is fwd's LATEST `m4d-am3` UI** (the tip, not `a334e6c`), including the Test placement: `[ Test ] [ ⟳ Refresh ]` in the key row's last track, and Open keys folder in the KEYS strip.
 
 **Batch changes from these rulings.** Batch 4: Q2 (b) is built as "pick a Settings line at run/resume start" and Q3 (a) as `--model <id>` / `--provider <KEY>`; both are no longer stop points. Batch 5: table cell (off, 'unverified') is `{thinkingMode:'off'}`. Batch 6: #12 (`DEFAULT_TIER_MODELS`, tier aliases) goes per Q3; #18 (`STEP_MODELS`) STAYS on the allow-list per Q4; #19 bundle README text is generic per Q5. Batch 3: the page is read from the latest `m4d-am3` tip.
+
+## Addendum 2026-10-13 — P9: one runs list (Running now · Needs you · Jobs), DRAFT for hamr to sign
+
+hamr picked version **F** in a design lab on 2026-10-13 ("F is it"). Mockup: `design/runs-list-mock.html`, the wide
+box **F** at the top (desktop + 390 px phone). Boxes NOW and A–D in the same file are the options it was picked from,
+kept for reference only. Borrowed from sawt (`~/PycharmProjects/sawt` commit 82429a2: run cards folded under job
+cards, cap 7, "use search") and from lab version B (a "Running now" strip). Why: with many runs the list got busy,
+the job and its newest run shared one row, and it was hard to see what was running.
+
+### What the left list becomes (top to bottom; a section with 0 items is not shown at all)
+
+1. **Running now (N)** — every live run, one card each: `[▶] job run-N · wall · $ so far` / its step line. Clicking it
+   selects that run and scrolls to its job card below. Not filtered, not searched.
+2. **Needs you (N)** — runs that stopped and can go on only with the person: a run whose Resume the engine would
+   accept (the same `readResume` answer the run page's Resume card uses today — ONE owner, never a second rule), tagged
+   `Resume`. Not filtered. Clicking it selects that run and scrolls to its job. (See open question 1 for Accept.)
+3. A dashed line, a faint line "filters below act on Jobs and quiet jobs only", then the EXISTING filter chips and
+   search box, moved here unchanged.
+4. **Jobs (N) · run in the last 30 days** — one job card per job, newest activity first:
+   - job card: `[sign] job  k runs · check type` / `word · reason` of its newest run;
+   - inside it, the newest run's card (2 lines, as today's expanded run rows);
+   - `▸ older runs (k)` fold; open shows at most **7** older runs, then `(and k older: use search)`; a selected run
+     beyond the 7 is still shown (sawt's rule).
+5. **`▸ quiet jobs (N) · no run in 30 days`** — one fold line; open shows those job cards, same shape as 4.
+
+### Rules
+
+- Filters and search act on Jobs and quiet jobs only. A job shows if ANY of its runs match; when the match is an older
+  run, the job opens on it — the EXISTING `autoExpandJob` / `representedRun` rules, reused, not rewritten.
+- The **Workflows / History** switch is removed: one list. The flat History view goes; search covers it. (The Audit
+  tab's own Grouped / Flat switch is a different thing and stays.)
+- 30 days and 7 are named constants in one place.
+- Words, glyphs, run-N names, colours, font: unchanged (status words from `src/panel/status.js`). Selected card keeps
+  today's blue border + blue fill; hover shows the blue fill.
+- Phone: the same stacked list (F's phone column), not sawt's dropdowns. 44 px touch targets.
+- The server gives the page what it needs (`live`, a Needs-you flag from `readResume`, last-run time); the page never
+  derives status or resumability itself.
+
+### fwdloop
+
+The same list applies to fwdloop, plus a **Scheduled (N)** section after Needs you (soonest first). bareloop never
+edits fwdloop: this spec is handed to fwdloop's own session.
+
+### Proof and Done
+
+Tests for: section order and hiding; filters never hiding Running now / Needs you; cap 7 + hint; selected run beyond
+cap shown; search hit on an older run opens its job on it; quiet split at 30 days; Needs you uses the same answer as
+the Resume card. Orchestrator screenshots at 1280 and 780; hamr checks 390 and 320 in his own DevTools and clicks
+through before any done/release claim.
+
+### Open questions for hamr
+
+1. **Accept in Needs you.** The panel has no Accept (review door) button today, so a "passed, waiting for your
+   Accept" row (shown in the mockup) has nothing to click through to. Options: (a) Needs you = Resume only for now,
+   Accept joins when the panel gets its review door; (b) build the panel's Accept door in this piece too.
+   Recommend (a).
+2. **When.** `feat/rubric-search` is still open (Part 1b live fixes + Part 1c). This is a separate module, so it gets
+   its own branch AFTER rubric-search is reviewed and released (one branch at a time, one builder per worktree).
