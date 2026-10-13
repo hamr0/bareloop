@@ -426,6 +426,25 @@ function safeText(s) {
  * @typedef {{kind: string, sentence: string, red: PlainRed}} PlainReason
  */
 
+/** a shape red on a rubric-step stage's own parameters (live fix B3): invalid-value / missing-field at `stages[n].params.step|parts…` */
+const isRubricShape = (/** @type {PlainRed} */ r) => (r.code === 'invalid-value' || r.code === 'missing-field') && /^stages\[\d+\]\.params\.(step|parts)\b/.test(r.path);
+
+/**
+ * The plain sentence for a shape red on a rubric-step: WHERE (stage, part, fact, field — counted from 1, the way the plan card shows
+ * them) and WHAT is wrong, in the red's own detail. Code-worded, secret-scrubbed.
+ * @param {PlainRed} r @returns {string}
+ */
+function rubricShapeSentence(r) {
+  const m = /^stages\[(\d+)\]\.params\.(.*)$/.exec(r.path);
+  const where = [`stage ${Number(m?.[1] ?? 0) + 1}`];
+  for (const seg of (m?.[2] ?? '').split('.').filter(Boolean)) {
+    const idx = /^(parts|facts)\[(\d+)\]$/.exec(seg);
+    if (idx) where.push(`${idx[1] === 'parts' ? 'part' : 'fact'} ${Number(idx[2]) + 1}`);
+    else if (seg !== 'parts' && seg !== 'facts') where.push(`field "${safeText(seg)}"`);
+  }
+  return `The model's check for a job line is not shaped right (${where.join(', ')}): ${fullText(r.detail).replace(/\.$/, '')}.`;
+}
+
 /**
  * The ONE table of plain kinds → sentence builders. A builder gets the red, the
  * name of the case it lands on (when it lands on one) and the match of the
@@ -449,6 +468,9 @@ const PLAIN_TABLE = [
     say: (r) => `Rubric line ${cardLineNo(r)} uses a rule that an earlier line already uses.` },
   { kind: 'card-line-no-text', when: (r) => r.code === 'invalid-value' && /^card item \d+: needs `text`/.test(r.detail),
     say: (r) => `Rubric line ${cardLineNo(r)} has no wording.` },
+  // Part 1b live fix B3: the rubric-step reds are whole sentences already (src/rubricstep.js, src/factcheck.js); a shape red on its parameters is worded here
+  { kind: 'rubric-red', when: (r) => r.code.startsWith('rubric-'), say: (r) => fullText(r.detail) },
+  { kind: 'rubric-shape', when: isRubricShape, say: (r) => rubricShapeSentence(r) },
   { kind: 'proposal-not-object', when: (r) => r.code === 'invalid-value' && r.path === 'proposal',
     say: () => 'The model\'s answer was not a rubric plus practice cases.' },
   // ── the practice-case set as a whole ──
@@ -586,6 +608,14 @@ export function declarationRecord(declaration) {
   try { return { declaration: JSON.parse(text) }; } catch { return { declarationText: text, declarationCut: true }; }
 }
 
+/** one red as a line of a stop message: a rubric red is a whole sentence already, a rubric shape red is worded by code, any other is bounded
+ * @param {any} r @returns {string} */
+function said1(r) {
+  const red = /** @type {PlainRed} */ ({ code: String(r?.code ?? ''), path: String(r?.path ?? ''), detail: String(r?.detail ?? '') });
+  if (red.code.startsWith('rubric-')) return fullText(red.detail);
+  return isRubricShape(red) ? rubricShapeSentence(red) : safeText(red.detail);
+}
+
 /** the stops this module explains in plain words */
 export const PLAIN_PROPOSAL_STOPS = Object.freeze(['proposal-invalid', 'rubric-invalid']);
 
@@ -650,7 +680,7 @@ export function draftStopText({ stop, reds = null, refusal = null, spend = null 
   const said = scoutRed
     ? [SCOUT_REASON_RE.exec(String(scoutRed.detail ?? ''))?.[1]
       ?.replace(/\s+/g, ' ').trim().slice(0, 240) ?? safeText(scoutRed.detail)].map((x) => redactSecrets(x)).filter(Boolean)
-    : [...new Set(redList.map((r) => (String(r?.code ?? '').startsWith('rubric-') ? fullText(r?.detail) : safeText(r?.detail))).filter(Boolean))];
+    : [...new Set(redList.map((r) => said1(r)).filter(Boolean))];
   if (said.length === 0 && refusal?.detail) said.push(safeText(refusal.detail));
   const lines = [`${head} Spent so far: ${spent ?? 'unknown'}.`];
   if (said.length) {
@@ -770,6 +800,7 @@ const SIGNING_TABLE = [
     todo: 'draft again' },
   // Part 1a: the rubric-step sorting reds are already whole sentences in the person's words (src/rubricstep.js `checkRubricParts`)
   { kind: 'rubric-part', when: (r) => r.code.startsWith('rubric-'), say: (r) => [fullText(r.detail)], todo: 'draft again, or reword that line' },
+  { kind: 'rubric-shape', when: isRubricShape, say: (r) => [rubricShapeSentence(r)], todo: 'draft again, or reword that line' },
   { kind: 'declaration', when: (r) => DECLARATION_CODES.includes(r.code) && !(r.code === 'invalid-value' && r.path === 'card'),
     say: (r) => [`The close the model wrote was refused before anything ran ("${safeText(r.code)}" at ${safeText(r.path)}).`], todo: 'draft again' },
 ];

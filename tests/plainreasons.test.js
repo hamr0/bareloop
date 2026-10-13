@@ -89,6 +89,10 @@ test('every red the proposal validators can raise has a plain sentence (none unm
   // the signer-side red (signJudgedArtifacts on a non-object)
   const s = signJudgedArtifacts({ proposal: null });
   for (const r of plainReasons(s.reds)) { assert.notEqual(r.kind, 'unmapped'); hit.add(r.kind); }
+  // Part 1b live fix B3: the rubric-step kinds (fixtures for every rubric code live in tests/rubric-plain.test.js)
+  for (const r of plainReasons([{ code: 'rubric-step-twice', path: 'stages[3].params.step', detail: 'line 2: two stages.' }, { code: 'invalid-value', path: 'stages[1].params.parts[0].facts[4].until', detail: 'x' }])) {
+    assert.notEqual(r.kind, 'unmapped'); hit.add(r.kind);
+  }
   assert.deepEqual([...hit].sort(), plainKinds().sort(), 'a kind with no fixture here is a sentence nothing proves');
 });
 
