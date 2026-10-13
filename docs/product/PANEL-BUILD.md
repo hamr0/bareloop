@@ -1286,7 +1286,8 @@ the job and its newest run shared one row, and it was hard to see what was runni
    selects that run and scrolls to its job card below. Not filtered, not searched.
 2. **Needs you (N)** — runs that stopped and can go on only with the person: a run whose Resume the engine would
    accept (the same `readResume` answer the run page's Resume card uses today — ONE owner, never a second rule), tagged
-   `Resume`. Not filtered. Clicking it selects that run and scrolls to its job. (See open question 1 for Accept.)
+   `Resume`. Not filtered. Clicking it selects that run, opens the Run tab and scrolls to its job. The tag is a label,
+   never a button (open question 1).
 3. A dashed line, a faint line "filters below act on Jobs and quiet jobs only", then the EXISTING filter chips and
    search box, moved here unchanged.
 4. **Jobs (N) · run in the last 30 days** — one job card per job, newest activity first:
@@ -1323,9 +1324,10 @@ through before any done/release claim.
 
 ### Open questions for hamr
 
-1. **Accept in Needs you.** The panel has no Accept (review door) button today, so a "passed, waiting for your
-   Accept" row (shown in the mockup) has nothing to click through to. Options: (a) Needs you = Resume only for now,
-   Accept joins when the panel gets its review door; (b) build the panel's Accept door in this piece too.
-   Recommend (a).
+1. **RULED (hamr 2026-10-13) — Accept.** Accept is the rubric job's end gate and lives only on the Run tab; the left
+   list has NO controls (avoids mistakes). The `Resume` / `Accept` tags on Needs you cards are LABELS saying what is
+   waiting, never buttons: clicking the card opens that run on the Run tab, where the real control is. A rubric run
+   waiting for Accept joins Needs you when the rubric Accept gate ships (rubric work); until then Needs you lists
+   resumable runs only.
 2. **When.** `feat/rubric-search` is still open (Part 1b live fixes + Part 1c). This is a separate module, so it gets
    its own branch AFTER rubric-search is reviewed and released (one branch at a time, one builder per worktree).
