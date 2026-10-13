@@ -824,7 +824,10 @@ worker brief says "one quote per result, from that result's own text" (quote cap
 - Changelog job (file input).
 - Flights job from a pasted Google Flights URL, direction checked against the page first.
 
-### Open for hamr
+### Ruled by hamr (2026-10-13)
 
-1. barebrowse becomes a production dependency (bare suite, Node 22 — matches). OK?
-2. I1 (ask early, only about intent): build it here as the "could not find" questions, or park.
+1. barebrowse becomes a production dependency (bare suite, Node 22 — matches): yes.
+2. I1, ask early: when the look shows the person's intent on a particular `~` rule was not captured (its words or
+   meaning not found in the source), ask about THAT rule at once, named by its line and rule. Any other drafting
+   failure asks nothing piecemeal: it tells the person to review the whole job and submit it again, with the reasons
+   in plain words.
