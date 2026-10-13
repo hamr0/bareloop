@@ -774,7 +774,7 @@ smv6k6l8dxkzs = flights job). Neither reached a run; both stopped at the $0 draf
 
 Proof: $0 tests per item; then the two live drafts again (same jobs), hamr's go.
 
-## Addendum 2026-10-13 — Part 1c: look, then say what I can check (DRAFT, not signed)
+## Addendum 2026-10-13 — Part 1c: look, then say what I can check (signed by hamr 2026-10-13)
 
 Rulings: PRD item 33, "2026-10-13 — look, then say what I can check RULED" (RF18–RF22). Replaces the record
 cutting and early tests of Part 1b. Why: three live drafts (smv6jhano7ba3 changelog, smv6k6l8dxkzs and smv6lyypleng8
@@ -791,6 +791,25 @@ Riskiest assumptions, in order; stop and report if one fails:
 - (b) The AI look, with read-only search tools over that text, reports the right label for each fact on the real page
   and on the changelog (3 drafts each, DeepSeek `deepseek-flash`, thinking off). Pass = every reported word is really
   in the source and is the label of the right value; no one-time ids, no single record's value used as a label.
+
+### 0b. Step 0 results (2026-10-13) and what they add to the build
+
+- (a) PASSED, $0: barebrowse 0.21.0 `browse(url, {incognito:true, blockPrivateNetwork:true, pruneMode:'act'})` fetched a
+  Google Flights results URL (`/travel/flights?q=…&curr=USD&hl=en&gl=us`) in ~3.5 s: 44 flights, 43 `Departure time:`,
+  `Leaves San Francisco International Airport … arrives at Los Angeles International Airport`, prices in US dollars.
+  `pruneMode` 'read' and 'full' returned almost nothing; the general route page (`/flights-from-…html`) has no flight
+  list; without `curr=USD` prices come in the fetcher's local currency. An empty or near-empty fetch is a plain-words
+  stop, never a silent empty input.
+- (b) $0.0723, 6 looks (scratch `poc-look/`): 0 of 6 used a one-time id or one result's value as a label; price `From`,
+  time `Departure time:`, nonstop `Nonstop`, version `## [`, date `] - ` right in every look; red-eye proposed as a
+  window with aiProposal. Misses, now part of this build:
+  1. Every place, date or name in the job line itself is a fact too (direction "from San Francisco … to Los Angeles"
+     was missed 3 of 3: it must bind to the label before each airport, e.g. `Leaves` / `arrives at`).
+  2. Prose lines and their `~` limits (word count, paragraphs) are not looked up: they stay prose-step checks.
+  3. Code's "found" checks are whitespace-blind (Google writes U+202F before AM/PM; 259 in the page).
+  4. The look answers through the strict answer form (tool / schema), never free prose with JSON inside.
+- The build's FIRST step re-runs this test with the fixed instructions (same two jobs, 3 looks each, cap $0.10)
+  before any product code; pass = every fact of both jobs right in at least 5 of 6 looks, no id or value as a label.
 
 ### 1. Keep from Part 1b
 
