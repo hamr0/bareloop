@@ -1071,7 +1071,7 @@ export function createSession(card, deps = {}) {
     // from the close itself, and every confirmed check no part carries out is moved to Not checked, in code, before signing.
     if (RUBRIC_FILES) {
       const rec = reconcileRubricPlan({
-        confirmed: authored.confirmed?.checkItems ?? [], notChecked: authored.confirmed?.notChecked ?? [], closeDecl: spec.closeDecl,
+        confirmed: authored.confirmed?.checkItems ?? [], notChecked: authored.confirmed?.notChecked ?? [], closeDecl: spec.closeDecl, jobLines,
       });
       state.finalPlan = { goal: String(draft.goal ?? ''), checkItems: rec.checkItems, notChecked: rec.notChecked, protections: authored.confirmed?.protections ?? [], moved: rec.moved };
     }

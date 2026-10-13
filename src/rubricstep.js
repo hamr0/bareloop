@@ -563,6 +563,19 @@ export function withFactBindings(declaration) {
 }
 
 /**
+ * The ~ rules the drafter listed under Not checked (`refused` entries that name a `rule`), each as one line in the person's own
+ * words: `line N: "<the rule as written>" — <the drafter's reason>` (PART 1b, RF6 / RF16).
+ * @param {any} closeDecl @param {any[]|null|undefined} jobLines @returns {string[]}
+ */
+export function ruleNotChecked(closeDecl, jobLines) {
+  const refused = isRec(closeDecl) && Array.isArray(closeDecl.refused) ? closeDecl.refused : [];
+  return refused.filter((/** @type {any} */ r) => isRec(r) && Number.isInteger(r.line) && Number.isInteger(r.rule) && typeof r.reason === 'string').map((/** @type {any} */ r) => {
+    const text = lineRules((jobLines ?? []).find((/** @type {any} */ l) => isRec(l) && l.n === r.line))[r.rule - 1];
+    return `line ${r.line}: ${text ? `"${text}"` : `rule ${r.rule}`} — ${r.reason}`;
+  });
+}
+
+/**
  * The Not-checked lines code owns for the rubric-step stages of a close: a prose step's CONTENT is judged by the person at
  * Accept, and the card says so (PART 1b, RF5). One line per prose step (a stage with no fact part).
  * @param {any} closeDecl @returns {string[]}
@@ -619,10 +632,11 @@ export function checksOfClose(closeDecl) {
  * the close's own checks (`checksOfClose`); every confirmed check that no part carries out (no part lists its number in
  * `covers`) is moved to Not checked, in the person's words, with the reason. A check can therefore never be shown and then
  * silently dropped (run mv5bk400: "lists 3 releases" was confirmed, then left out of the signed close without a word).
- * @param {{confirmed: {text: string, fromLine: number[]|null}[], notChecked: string[], closeDecl: any}} o
+ * @param {{confirmed: {text: string, fromLine: number[]|null}[], notChecked: string[], closeDecl: any, jobLines?: any[]|null}} o
+ *   `jobLines` — the person's numbered lines, so a ~ rule the drafter listed as Not checked reads in the person's own words
  * @returns {{checkItems: {text: string, fromLine: number[]}[], notChecked: string[], moved: {text: string, fromLine: number[]|null}[]}}
  */
-export function reconcileRubricPlan({ confirmed, notChecked, closeDecl }) {
+export function reconcileRubricPlan({ confirmed, notChecked, closeDecl, jobLines = null }) {
   const real = checksOfClose(closeDecl);
   const covered = new Set(real.flatMap((c) => c.covers));
   const moved = confirmed.filter((_, i) => !covered.has(i + 1));
@@ -631,6 +645,7 @@ export function reconcileRubricPlan({ confirmed, notChecked, closeDecl }) {
     notChecked: [
       ...notChecked,
       ...proseNotChecked(closeDecl),
+      ...ruleNotChecked(closeDecl, jobLines),
       ...moved.map((m) => `${m.fromLine && m.fromLine.length ? `line ${m.fromLine.join(', ')}: ` : ''}${m.text} — nothing in this close counts it or checks it against a quote`),
     ],
     moved,
