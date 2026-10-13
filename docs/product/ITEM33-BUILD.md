@@ -743,3 +743,33 @@ earlier quotes.
 
 - Rerun from line N (RF8) — own later build. Web sources (Part 2). Chips/Audit (Part 3).
   Superlatives.
+
+## Addendum 2026-10-13 — Part 1b live fixes (signed by hamr 2026-10-13, "go")
+
+Found in the first live drafts on DeepSeek `deepseek-flash` (panel sessions smv6jhano7ba3 = changelog job,
+smv6k6l8dxkzs = flights job). Neither reached a run; both stopped at the $0 drafting checks, total spend < $0.01 each.
+
+- **A1 — the long-record refusal says what to do.** `rubric-fact-record-long` names the record (its first line), its
+  length, the end marker the draft gave (or "no end given"), and an example taken from that record ("end the slice at
+  the end of the heading line"). Evidence: changelog, start `## [` with no end → 30 of 46 records over 4000 chars; any
+  end (`\n`, `\n\n`, `### `) → 0 over, longest 24–533 ($0 measured).
+- **A2 — an end marker that is not found is its own red.** Today `splitRecords` silently falls back to the whole record
+  when `record.end` is absent from a record (`endFound:false`), which reads as "too long". New red names the marker and
+  how many records lack it.
+- **A3 — every refused proposal is kept.** The draft log (`draft-log.jsonl`) records the refused declaration itself
+  beside `try-refused`, so a failed draft can be read and replayed at $0. Secrets masked as everywhere.
+- **B1 — one rulebook for the confirm step and the drafter.** `RUBRIC_CONFIRM_NOTE` and the drafter brief get the same
+  rubric rules from ONE place: a limit the person wrote ("under $450") is a checkable rule; a number made from their
+  words ("not a red-eye") is a time range marked AI's proposal; names, labels and units are the INPUT's own words
+  (never add a code like SFO the person did not write and the input does not hold).
+- **B2 — the drafter is shown which shape takes which fields**, generated from bareguard's `rubricVocabulary` (never a
+  hand-typed copy): money/number/date/time take anchor and rule, no until; text takes anchor and until, no rule;
+  phrase takes only its words. Plus: one stage per job line holding all its facts.
+- **B3 — plain words for every rubric red.** No "has no plain wording yet" for `rubric-step-twice`, `invalid-value`
+  on a fact field, or any new rubric red code; a test lists every rubric red code and fails on an unmapped one.
+- **I1 — ask early, only about intent.** A $0 red that only the person can settle (their word is not in the input;
+  a limit needs a number only they know) asks them at once, using the existing question gate (same caps, answer
+  becomes a signed `~` rule). Every other red goes back to the AI to fix itself. Which red codes count as "intent"
+  is one list in code; the builder proposes it, hamr rules on it before it ships.
+
+Proof: $0 tests per item; then the two live drafts again (same jobs), hamr's go.
