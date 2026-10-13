@@ -589,6 +589,56 @@ export function checkRubricRules(stages, { jobLines = null, refused = null, red 
   }
 }
 
+/** a clock time as a person writes it: 7:00, 07:00, 7:00 AM, 11 PM is not matched (no minutes) */
+const CLOCK = '\\d{1,2}:\\d{2}(?:\\s?[AaPp][Mm])?';
+const TIME_RANGE_RE = new RegExp(`\\b(?:between|from)\\s+(${CLOCK})\\s+(?:and|to|-)\\s+(${CLOCK})`, 'i');
+const NEGATING_RE = /\b(?:not|no|never|outside|except|before|after|without)\b/i;
+
+/**
+ * PART 1c L3 - the person's own words win over the AI's reading of them, settled by CODE before anything is validated or signed:
+ *   - a limit on a fact whose bounds are all in the words the person wrote (the line, its `~` rules, an answer they gave) is the
+ *     person's, so it is NOT marked "AI's proposal" (smv710w8c3wdh: the plan called the person's own range the AI's);
+ *   - a time range the AI proposed while the person wrote ONE explicit positive time range ("between 07:00 and 23:00") on that line
+ *     is replaced by exactly that range (smv710w8c3wdh: the plan said 5:00 AM). Only when it is unambiguous: one such range in the
+ *     line's rules and one AI-proposed `between` time fact on the line; a rule with a negation ("not between ...") is never read as a range;
+ *   - a `~` rule is a check or under Not checked, never both: a `refused` entry for a rule that a part of its own line carries is dropped.
+ * Pure; returns a new declaration, the input untouched. The model is told the same in the brief; this makes it true either way.
+ * @param {any} declaration @param {any[]|null|undefined} jobLines @returns {any}
+ */
+export function settlePersonsWords(declaration, jobLines) {
+  if (!isRec(declaration) || !Array.isArray(declaration.stages) || !Array.isArray(jobLines)) return declaration;
+  const stages = declaration.stages.map((/** @type {any} */ st) => {
+    if (!(isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts))) return st;
+    const fp = factPartOf(st.params);
+    const jl = jobLines.find((l) => isRec(l) && l.n === st.params.step);
+    if (!fp || !Array.isArray(fp.facts) || !jl) return st;
+    const rules = lineRules(jl);
+    const said = `${jl.text ?? ''} ${rules.join(' ')}`;
+    const ranges = rules.filter((r) => !NEGATING_RE.test(r)).map((r) => TIME_RANGE_RE.exec(r)).filter((m) => m !== null);
+    const proposed = fp.facts.filter((/** @type {any} */ f) => isRec(f) && f.aiProposal === true && f.shape === 'time' && isRec(f.rule) && f.rule.op === 'between');
+    const facts = fp.facts.map((/** @type {any} */ f) => {
+      if (!isRec(f) || !isRec(f.rule) || f.aiProposal !== true) return f;
+      const own = (/** @type {unknown[]} */ bounds) => bounds.every((b) => boundSpellings(b).some((sp) => said.includes(sp)));
+      const bounds = f.rule.op === 'between' ? [f.rule.lo, f.rule.hi] : [f.rule.value];
+      const { aiProposal: _drop, ...rest } = f;
+      if (own(bounds)) return rest;
+      if (ranges.length === 1 && proposed.length === 1 && proposed[0] === f) {
+        const m = /** @type {RegExpExecArray} */ (ranges[0]);
+        return { ...rest, rule: { op: 'between', lo: m[1], hi: m[2] } };
+      }
+      return f;
+    });
+    const parts = st.params.parts.map((/** @type {any} */ x) => (x === fp ? { ...x, facts } : x));
+    return { ...st, params: { ...st.params, parts } };
+  });
+  const carried = (/** @type {number} */ line, /** @type {number} */ n) => stages.some((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && st.params.step === line
+    && Array.isArray(st.params.parts) && st.params.parts.some((/** @type {any} */ x) => isRec(x) && Array.isArray(x.rules) && x.rules.includes(n)));
+  /** @type {any} */
+  const out = { ...declaration, stages };
+  if (Array.isArray(declaration.refused)) out.refused = declaration.refused.filter((/** @type {any} */ r) => !(isRec(r) && Number.isInteger(r.line) && Number.isInteger(r.rule) && carried(r.line, r.rule)));
+  return out;
+}
+
 /**
  * PART 1b — put the number tie on every prose step. A rubric-step stage with no fact part that comes AFTER one or more fact
  * stages gets exactly one `numbersFromFacts` part naming those lines; one the model wrote is replaced. Pure; returns a new

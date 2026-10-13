@@ -105,6 +105,7 @@ export function lookReportSchema() {
               description: 'only where the person asked for a limit (or you made one out of their words and set aiProposal)',
             },
             aiProposal: { type: 'boolean', description: 'true when YOU made this number out of the person\'s words (for example a night window for "not a red-eye")' },
+            forRule: { type: 'integer', minimum: 1, description: 'the number of the ~ rule under that line this fact carries out (1 = the first), when it carries one - a rule you turned into a number or range yourself ("not a red-eye") is carried by a fact with aiProposal, never reported as not found' },
           },
         },
       },
@@ -140,6 +141,7 @@ export function lookPrompt({ jobLines, labels, lists }) {
     + `Shapes a value can have: ${FACT_SHAPES.join(', ')} (phrase = fixed words the quote must contain; text = the words after a label).\n`
     + 'For each job line, find the facts the person asked for and report ONLY what you can check in the input:\n'
     + ' - Search the input with the person\'s words AND other words that mean the same, read the spots you find, and use what you know (for example what a red-eye is: propose a night time window and set aiProposal true).\n'
+    + ' - A ~ rule whose meaning you can turn into a number or a range from what you know (a red-eye is a night departure; a weekend; business hours) is NOT something to ask the person about and NOT "notFound": report it as a fact on the time, date or amount the input does hold, with a between (or other) rule, aiProposal true and forRule set to that rule\'s number. Use notFound with a rule number only for intent you cannot know (for example "one per week" when the input has no weekly grouping).\n'
     + ' - Every place, date or name written in the job line itself is a fact too. Bind it to the label that sits right before it in the input - a direction like "from X to Y" is the label before the origin (for example Leaves) and the label before the destination (for example arrives at): report each as a phrase fact whose label is that label and whose value is the place EXACTLY as the input writes it.\n'
     + ' - A label is PICKED from the LIST above (its id or its exact words) - never typed. A label that is not on the list is refused. Never use the person\'s own words as a label unless the list holds them, never a one-time id like [ref=...], and never one result\'s own value.\n'
     + ' - Lines that ask for written prose (a summary, a short text) and the ~ limits on them (word count, paragraphs) are NOT looked up: put them in "prose" with their line number.\n'
@@ -147,7 +149,7 @@ export function lookPrompt({ jobLines, labels, lists }) {
     + `Report only through ${LOOK_REPORT_TOOL}.`;
 }
 
-/** @typedef {{line: number, name: string, shape: string, source: string, label?: string, labelId?: string, value?: string, phrase?: string, example: string, rule?: any, aiProposal?: boolean}} LookFact */
+/** @typedef {{line: number, name: string, shape: string, source: string, label?: string, labelId?: string, value?: string, phrase?: string, example: string, rule?: any, aiProposal?: boolean, forRule?: number}} LookFact */
 /** @typedef {{line: number, rule?: number, words?: string, why: string}} LookNotFound */
 /** @typedef {{facts: LookFact[], prose: {line: number, text?: string}[], notFound: LookNotFound[]}} LookReport */
 
@@ -199,10 +201,13 @@ export function verifyLookReport(raw, { scans, jobLines, prove }) {
     }
     if (isRec(f.rule)) out.rule = f.rule;
     if (f.aiProposal === true) out.aiProposal = true;
+    if (Number.isInteger(f.forRule) && f.forRule >= 1) out.forRule = f.forRule;
     facts.push(out);
   }
   for (const n of Array.isArray(rep.notFound) ? rep.notFound : []) {
     if (!isRec(n) || !Number.isInteger(n.line) || !lineNos.has(n.line) || typeof n.why !== 'string') continue;
+    // a rule that a verified fact carries is checked, so it is not also "not found" (L3: a ~ rule is one or the other)
+    if (Number.isInteger(n.rule) && facts.some((x) => x.line === n.line && x.forRule === n.rule)) continue;
     notFound.push({ line: n.line, ...(Number.isInteger(n.rule) ? { rule: n.rule } : {}), ...(typeof n.words === 'string' && n.words ? { words: n.words } : {}), why: n.why });
   }
   const prose = (Array.isArray(rep.prose) ? rep.prose : []).filter((p) => isRec(p) && Number.isInteger(p.line) && lineNos.has(p.line))
@@ -226,6 +231,7 @@ export function renderLookReport(report) {
     if (f.example) bits.push(`seen: ${JSON.stringify(f.example)}`);
     if (f.rule) bits.push(`rule ${JSON.stringify(f.rule)}`);
     if (f.aiProposal) bits.push("AI's proposal");
+    if (f.forRule !== undefined) bits.push(`carries ~ rule ${f.forRule}`);
     add(f.line, `CAN CHECK: ${bits.join(', ')}`);
   }
   for (const p of report.prose) add(p.line, 'WRITTEN TEXT (not looked up; keep its word/section counts)');
@@ -251,6 +257,22 @@ export function labelListsOf(texts) {
 export { LABEL_SHAPES };
 
 /**
+ * L3: a reason the AI gave, cut only at a sentence end (never mid-sentence): whole sentences while they fit in `max` characters,
+ * and nothing at all if the first one alone does not fit. A trailing full stop is dropped (the caller closes the clause).
+ * @param {string} text @param {number} max @returns {string}
+ */
+export function wholeSentences(text, max) {
+  const sentences = text.replace(/\s+/g, ' ').trim().split(/(?<=[.!?])\s+/).filter(Boolean);
+  let out = '';
+  for (const s of sentences) {
+    const next = out === '' ? s : `${out} ${s}`;
+    if (next.length > max) break;
+    out = next;
+  }
+  return out.replace(/[.!?]+$/, '');
+}
+
+/**
  * I1 (hamr, 2026-10-13, "Ruled by hamr" 2): when the look shows the person's intent on one `~` rule was NOT captured - its words or
  * meaning are not in the source - the person is asked about THAT rule at once, named by its line and rule. Only a look entry that names
  * a rule number counts; anything else the look could not find is not asked piecemeal (it is Not checked, or the whole job is reviewed).
@@ -272,7 +294,8 @@ export function ruleQuestions(notFound, jobLines) {
     if (seen.has(key)) continue;
     seen.add(key);
     const words = n.words ? `${JSON.stringify(n.words)} (from your words)` : 'what this rule asks for';
-    out.push({ line: n.line, question: `Line ${n.line}, rule ${n.rule} - "${rule}": I could not find ${words} in your input (${String(n.why).replace(/\s+/g, ' ').trim().slice(0, 160)}). What do you mean by it? Your answer is added as a new ~ rule on line ${n.line}.` });
+    const why = wholeSentences(String(n.why), 200);
+    out.push({ line: n.line, question: `Line ${n.line}, rule ${n.rule} - "${rule}": I could not find ${words} in your input${why ? ` (${why})` : ''}. What do you mean by it? Your answer is added as a new ~ rule on line ${n.line}.` });
   }
   return out;
 }

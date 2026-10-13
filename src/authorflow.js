@@ -87,7 +87,7 @@ import {
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
 import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
-import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, withFactBindings } from './rubricstep.js';
+import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, withFactBindings, settlePersonsWords } from './rubricstep.js';
 import { factShapeGuide } from './facts.js';
 import { renderLookReport, labelListsOf } from './inputlook.js';
 import { checkDeclarationWords } from './factwords.js';
@@ -1439,6 +1439,7 @@ export const REQUIRED_FACTS_BRIEF = 'REQUIRED FACTS — what a line that finds, 
   + 'rule under the line) or be listed in "refused"; a rule that is neither is refused at $0.\n'
   + ' - A line that WRITES (a summary, a report) keeps word, section and line counts. Code ties its numbers to the facts of the lines '
   + 'before it; you do not add that.\n'
+  + ' - A look fact that says "carries ~ rule N" is how the look carried that rule: put N in the fact part\'s "rules" and do not also list rule N in "refused".\n'
   + ' - A ~ rule that you carry out as a fact (a limit on a time, a price, a date: "not a red-eye" is a time fact with a between rule) is carried by the '
   + 'fact part: list its number in that part\'s "rules". It is NOT also a part of its own: on a line that lists facts, a part of class judged or none '
   + 'is refused. A rule you cannot express as a shape and a rule goes in "refused", never into a part.\n'
@@ -2937,7 +2938,7 @@ export async function authorClose({
       previous = ask.declaration;
 
       // PART 1b: code puts the number tie on every prose step that follows a fact step, before anything is validated or signed
-      let v = validateDeclaration(withFactBindings(ask.declaration), { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope, jobLines, inputLabels: inputLabelsOf(inputs) });
+      let v = validateDeclaration(withFactBindings(settlePersonsWords(ask.declaration, jobLines)), { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope, jobLines, inputLabels: inputLabelsOf(inputs) });
       // PART 1c: code proves, at $0, that every label is PICKED from the input's own list and every word a fact depends on is really
       // in the source (white-space blind, once is enough). A word that is not found is a red naming the word and the input; the
       // drafter revises like it does for any validation red.
