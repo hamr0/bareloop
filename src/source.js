@@ -32,6 +32,7 @@ import { addWorktree, hideBareloopDir } from './worktree.js';
 import { MAX_BUFFER } from './kinds.js';
 import { PROVIDER_TIMEOUT_MS } from './clock.js';
 import { scanSecrets, SECRET_PATTERNS, SECRET_PATTERN_NAMES } from './validate.js';
+import { fetchPageText, isWebUrl } from './pagefetch.js';
 
 /** @typedef {{stop: string, code: string}} SourceRefusal a named, non-throwing stop */
 
@@ -1244,31 +1245,44 @@ export function isRubricFilesManifest(manifest) {
  * person's own LOCAL FILES, not a repo. Each numbered `label: /absolute/file` line is proven at $0 and frozen into the
  * same hidden-git tree a plain folder gets (`prepareSource`, which also refuses a secret shape, an environment file
  * and a symlink), under `input/`; the manifest then also records `inputs: [{label, rel, sha256}]` — the bytes the
- * rubric's `cited` check will search a quote in, hashed once, here. A line that is a web address or a search is a
- * named refusal (web inputs arrive in a later build); so is a relative path, a missing file, a folder, a file over
+ * rubric's `cited` check will search a quote in, hashed once, here. A line that is a web address is fetched ONCE with
+ * barebrowse (PART 1c, read only) and its text frozen under `input/` like a file (the manifest row also records its `url`,
+ * so run start can fetch it again); a `search:` line is a named refusal (a later build); so is a relative path, a missing file, a folder, a file over
  * {@link RUBRIC_INPUT_MAX_BYTES}, and text that is not valid UTF-8. Every refusal is plain words naming the line and
  * ends "Nothing spent." — nothing here touches a model.
- * @param {{inputs: {n: number, label: string, value: string}[], into: string, destination?: string}} o
+ * @param {{inputs: {n: number, label: string, value: string}[], into: string, destination?: string, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>}} o `fetchUrl` - how a web address is read (default barebrowse via `fetchPageText`; a test injects a stub, never the network)
  * @returns {Promise<{ok: true, prep: {stop: null, into: string, tree: string, manifestPath: string, manifest: Record<string, any>}}|{ok: false, error: string, code: string}>}
  */
-export async function proveRubricInputs({ inputs, into, destination }) {
+export async function proveRubricInputs({ inputs, into, destination, fetchUrl = (u) => fetchPageText(u) }) {
   /** @param {string} code @param {number} n @param {string} msg @returns {{ok: false, error: string, code: string}} */
   const bad = (code, n, msg) => ({ ok: false, code, error: `line ${n}: ${msg} Nothing spent.` });
   if (!Array.isArray(inputs) || inputs.length === 0) return { ok: false, code: 'inputs-missing', error: 'Inputs is required. Nothing spent.' };
   /** @type {Set<string>} */
   const labels = new Set();
-  /** @type {{label: string, name: string, buf: Buffer}[]} */
+  /** @type {{label: string, name: string, buf: Buffer, url?: string}[]} */
   const staged = [];
   /** @type {Set<string>} */
   const names = new Set();
   const utf8 = new TextDecoder('utf-8', { fatal: true });
   for (const inp of inputs) {
     const { n, label, value } = inp;
-    if (/^search$/i.test(label) || /^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
-      return bad('web-input', n, 'web inputs (URLs, search) arrive in a later build.');
+    if (/^search$/i.test(label) || (/^[a-z][a-z0-9+.-]*:\/\//i.test(value) && !isWebUrl(value))) {
+      return bad('web-input', n, 'a search, or an address that is not http or https, is not an input yet.');
     }
     if (labels.has(label.toLowerCase())) return bad('label-repeat', n, `the label "${label}" is already used by an earlier line.`);
     labels.add(label.toLowerCase());
+    if (isWebUrl(value)) {
+      const got = await fetchUrl(value.trim());
+      if (!got.ok) return bad('input-url-unreadable', n, `${got.error}.`);
+      const pageBuf = Buffer.from(got.text, 'utf8');
+      const leak = secretPatternNames(got.text);
+      if (leak.length) return bad('input-url-secret', n, `the page at ${got.url} carries a known secret shape (${leak.join(', ')}) - refused, secrets never enter a job.`);
+      const stem = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'page';
+      const pageName = names.has(`${stem}.txt`) ? `${n}-${stem}.txt` : `${stem}.txt`;
+      names.add(pageName);
+      staged.push({ label, name: pageName, buf: pageBuf, url: got.url });
+      continue;
+    }
     if (!isAbsolute(value)) return bad('input-not-absolute', n, `${value} must be the full path of a file, like /home/me/notes.md.`);
     const abs = resolve(value);
     let ls;
@@ -1292,7 +1306,11 @@ export async function proveRubricInputs({ inputs, into, destination }) {
     const prep = await prepareSource({ source: stage, into, ...(destination === undefined ? {} : { destination }) });
     if (prep.stop !== null) return { ok: false, code: prep.code, error: prep.stop };
     // `source` names the person's own first file, never the scratch staging folder that was already removed
-    const manifest = { ...prep.manifest, source: resolve(inputs[0].value), inputs: staged.map((f) => ({ label: f.label, rel: `input/${f.name}`, sha256: sha256Hex(f.buf) })) };
+    const manifest = {
+      ...prep.manifest,
+      source: isWebUrl(inputs[0].value) ? inputs[0].value.trim() : resolve(inputs[0].value),
+      inputs: staged.map((f) => ({ label: f.label, rel: `input/${f.name}`, sha256: sha256Hex(f.buf), ...(f.url === undefined ? {} : { url: f.url }) })),
+    };
     await writeFile(prep.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
     return { ok: true, prep: { ...prep, manifest } };
   } finally {
@@ -1310,4 +1328,63 @@ export async function proveRubricInputs({ inputs, into, destination }) {
 export function looksLikeLocalFile(value) {
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value) || !isAbsolute(value)) return false;
   try { return lstatSync(resolve(value)).isFile(); } catch { return false; }
+}
+
+/**
+ * Is this Inputs value one a rubric job can work on without a repo: a regular FILE on this machine, or a web address (PART 1c)?
+ * @param {string} value
+ * @returns {boolean}
+ */
+export function looksLikeRubricInput(value) {
+  return isWebUrl(value) || looksLikeLocalFile(value);
+}
+
+/**
+ * RUN START for a rubric job with web inputs (PART 1c, RF22): fetch every web input AGAIN and make that text the run's frozen input
+ * BEFORE the worker starts. The drafting copy was only for the look (prices change); the close grades, and the worker reads, THIS
+ * copy. It is written into the prepared tree, committed as the new seed (so the page is never read as a worker write), and
+ * `source.json` is rewritten (new sha256 per input, new seed, `draftSha256` keeps what the look saw). Nothing but the text of a
+ * recorded web address is ever refetched; a job with only file inputs returns at once and changes nothing.
+ * @param {{into: string, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>}} o `into` - the prepared copy (source.json + tree/)
+ * @returns {Promise<{ok: true, refreshed: string[], seed: string|null}|{ok: false, error: string}>}
+ */
+export async function refreezeUrlInputs({ into, fetchUrl = (u) => fetchPageText(u) }) {
+  const read = await readSourceManifest(into);
+  if (read.stop !== null) return { ok: false, error: read.stop };
+  if (!read.present || !read.manifest) return { ok: true, refreshed: [], seed: null };
+  const manifest = read.manifest;
+  const rows = Array.isArray(manifest.inputs) ? manifest.inputs.filter((/** @type {any} */ r) => r && typeof r.url === 'string' && r.url !== '') : [];
+  if (rows.length === 0) return { ok: true, refreshed: [], seed: null };
+  const tree = join(resolve(into), 'tree');
+  /** @type {{row: any, buf: Buffer}[]} */
+  const fresh = [];
+  for (const row of rows) {
+    const got = await fetchUrl(row.url);
+    if (!got.ok) return { ok: false, error: `Input "${row.label}": ${got.error}. The run did not start. Nothing spent.` };
+    const leak = secretPatternNames(got.text);
+    if (leak.length) return { ok: false, error: `Input "${row.label}": the page at ${got.url} carries a known secret shape (${leak.join(', ')}) - refused, secrets never enter a job. The run did not start. Nothing spent.` };
+    fresh.push({ row, buf: Buffer.from(got.text, 'utf8') });
+  }
+  for (const f of fresh) await writeFile(join(tree, f.row.rel), f.buf);
+  const add = await git(tree, [...NO_HOOKS, 'add', '-A', '-f']);
+  if (!add.ok) return { ok: false, error: `the fresh page copy could not be staged: ${add.err}. The run did not start. Nothing spent.` };
+  const commit = await git(tree, [...GIT_IDENTITY, ...NO_HOOKS, 'commit', '-q', '--allow-empty', '-m', 'bareloop: run start - fresh copy of the web inputs']);
+  if (!commit.ok) return { ok: false, error: `the fresh page copy could not be committed: ${commit.err}. The run did not start. Nothing spent.` };
+  const head = await git(tree, ['rev-parse', 'HEAD']);
+  if (!head.ok) return { ok: false, error: `git rev-parse HEAD failed in ${tree}: ${head.err}. The run did not start. Nothing spent.` };
+  const seed = head.out.trim();
+  const byLabel = new Map(fresh.map((f) => [f.row.label, f.buf]));
+  const inputs = manifest.inputs.map((/** @type {any} */ r) => {
+    const buf = byLabel.get(r.label);
+    return buf === undefined || typeof r.url !== 'string' ? r : { ...r, draftSha256: r.draftSha256 ?? r.sha256, sha256: sha256Hex(buf) };
+  });
+  const files = Array.isArray(manifest.files) ? manifest.files.map((/** @type {any} */ m) => {
+    const hit = inputs.find((/** @type {any} */ r) => typeof r.url === 'string' && r.rel === `input/${m.path}`);
+    if (!hit) return m;
+    const buf = byLabel.get(hit.label);
+    return buf === undefined ? m : { ...m, bytes: buf.length, sha256: sha256Hex(buf) };
+  }) : manifest.files;
+  const next = { ...manifest, inputs, files, seed, refrozenAt: new Date().toISOString() };
+  await writeFile(join(resolve(into), 'source.json'), `${JSON.stringify(next, null, 2)}\n`);
+  return { ok: true, refreshed: rows.map((/** @type {any} */ r) => r.label), seed };
 }

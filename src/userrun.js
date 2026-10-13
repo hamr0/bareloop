@@ -42,7 +42,7 @@ import { makeSpine } from './spine.js';
 // signed into the job spec — a job is a repeatable SHAPE, the source/
 // destination a per-run value, exactly like `bareloop run <bundle> --repo
 // <path>` varies the repo without touching the bundle's signature).
-import { readSourceManifest, frontDoorFromManifest, proveDestination, copyOut } from './source.js';
+import { readSourceManifest, frontDoorFromManifest, proveDestination, copyOut, refreezeUrlInputs } from './source.js';
 import { scanSecrets, redactSecrets } from './validate.js';
 import { runBehaviour, formatBehaviour } from './behaviour.js';
 // the three doors' SEMANTICS live in the library; this script surfaces them
@@ -235,6 +235,7 @@ class ExitSignal extends Error {
  * @property {any} [provider] the TEST SEAM: supplying this skips the real-key
  *   check entirely, the same shape `src/cli.js`'s `main(argv, deps)` uses.
  * @property {(tier: string) => any} [providerFor]
+ * @property {(url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>} [fetchUrl] PART 1c - a test seam: how a web input is read at run start (production: barebrowse)
  * @property {any} [judgeProvider]
  * @property {string} [runlistHome] F196 — a test seam for `appendRun`'s
  *   (src/runlist.js) `home` override, the same shape `deps.provider` already
@@ -2592,12 +2593,23 @@ export async function main(argv, deps = {}) {
           + 'with exactly one source-*/ sibling.');
       }
       const into = candidates[0];
-      const manifestRead = await readSourceManifest(into);
+      let manifestRead = await readSourceManifest(into);
       if (manifestRead.stop !== null) {
         die(`--spec ${specPath}: ${manifestRead.code} — ${manifestRead.stop}`);
       }
       if (!manifestRead.present || !manifestRead.manifest) {
         die(`--spec ${specPath}: ${into} carries no source.json — not a prepared copy this runner can trust`);
+      }
+      // PART 1c (RF22): a FRESH run of a rubric job with web inputs fetches each address again and makes that text the run's frozen
+      // input BEFORE the worker starts (the drafting copy was only for the look). A resume / door / decision keeps the copy its
+      // first start froze. A refusal is plain words, $0.
+      if (argFlag('resume') === null && argFlag('door') === null && argFlag('decide') === null) {
+        const fresh = await refreezeUrlInputs({ into, ...(deps.fetchUrl ? { fetchUrl: deps.fetchUrl } : {}) });
+        if (!fresh.ok) die(`--spec ${specPath}: ${fresh.error}`);
+        if (fresh.refreshed.length > 0) {
+          manifestRead = await readSourceManifest(into);
+          if (manifestRead.stop !== null || !manifestRead.manifest) die(`--spec ${specPath}: the run copy's record could not be read after the fresh fetch`);
+        }
       }
       const seed = manifestRead.manifest.seed;
       if (typeof seed !== 'string' || !seed) {

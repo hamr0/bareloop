@@ -221,20 +221,23 @@ test('the rubric confirm turn: the PROTECTIONS shown are the code\'s (guard list
   session.abandon();
 });
 
-test('createSession: a web input line stops at $0 in the exact plain words; a relative Destination is refused before anything is copied', async () => {
+test('createSession: a search line, and a web address that cannot be read, stop at $0 in the exact plain words; a relative Destination is refused before anything is copied', async () => {
   const file = changelogCopy();
-  const run = async (inputs, destination) => {
+  const run = async (inputs, destination, fetchUrl) => {
     const s = createSession({ checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-door-web', jobText: '1. Summarize', inputs, destination, capUsd: 1 }, {
-      env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(), sessionsRoot: tmp('rubric-door-sess-'),
+      ...(fetchUrl ? { fetchUrl } : {}), env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(), sessionsRoot: tmp('rubric-door-sess-'),
       generate: async () => { throw new Error('no model call'); },
     });
     const t0 = Date.now();
     while (!['prepared', 'refused', 'error'].includes(s.state.phase) && Date.now() - t0 < 8000) await new Promise((r) => { setTimeout(r, 20); });
     return s.state;
   };
-  const web = await run(`Changelog: ${file}\nPage: https://example.com/changes`, join(tmp(), 'out'));
+  const search = await run(`Changelog: ${file}\nsearch: best flights`, join(tmp(), 'out'));
+  assert.equal(search.phase, 'refused');
+  assert.equal(search.error, 'line 2: a search, or an address that is not http or https, is not an input yet. Nothing spent.');
+  const web = await run(`Changelog: ${file}\nPage: https://example.com/changes`, join(tmp(), 'out'), async () => ({ ok: false, error: 'https://example.com/changes came back with no text' }));
   assert.equal(web.phase, 'refused');
-  assert.equal(web.error, 'line 2: web inputs (URLs, search) arrive in a later build. Nothing spent.');
+  assert.equal(web.error, 'line 2: https://example.com/changes came back with no text. Nothing spent.');
   const rel = await run(`Changelog: ${file}`, 'out/');
   assert.equal(rel.phase, 'refused');
   assert.match(rel.error, /Destination must be the full path of a folder/);

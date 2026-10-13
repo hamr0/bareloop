@@ -25,7 +25,7 @@ import { readFileSync } from 'node:fs';
 import { planMatchesClose } from '../rubricstep.js';
 import { createSession, validateJobCard, validateReuseCard, lockedFieldChanged, buildReuseSpec, cardFields, STEP_LABELS } from './authorsession.js';
 import { parseInputs } from '../jobblock.js';
-import { proveInputFiles, looksLikeLocalFile } from '../source.js';
+import { proveInputFiles, looksLikeRubricInput } from '../source.js';
 import { validateJob } from '../job.js';
 import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
 import { ConfigError } from '../config.js';
@@ -288,7 +288,7 @@ export function createAuthorRoutes(opts) {
       if (!ip.ok) { send(400, { ok: false, error: ip.error }); return true; }
       // Part 1a: a rubric job whose first input is a local FILE has no repo to prove inputs against; the session proves every
       // line itself (`proveRubricInputs`), at $0, before any model call
-      const filesJob = reuse === null && card?.checkType === 'rubric' && looksLikeLocalFile(ip.inputs[0].value);
+      const filesJob = reuse === null && card?.checkType === 'rubric' && looksLikeRubricInput(ip.inputs[0].value);
       (filesJob ? Promise.resolve(/** @type {{ok: true}} */ ({ ok: true })) : proveInputFiles(ip.inputs)).then((proof) => {
         if (!proof.ok) { send(400, { ok: false, error: proof.error }); return; }
         if (hasLiveSession()) { send(409, { ok: false, error: 'an authoring session is already live — one at a time' }); return; }

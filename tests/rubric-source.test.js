@@ -55,14 +55,14 @@ test('two inputs with one file name never overwrite each other under input/', as
   assert.equal(readFileSync(join(r.prep.tree, 'input', '2-notes.md'), 'utf8'), 'beta text\n');
 });
 
-test('a URL or a search line is refused in the exact plain words, naming the line, before anything is written', async () => {
+test('a search line, or an address that is not http(s), is refused in the exact plain words, naming the line, before anything is written (a web address is Part 1c: tests/url-inputs.test.js)', async () => {
   const { file } = changelogCopy();
-  for (const [value, label] of [['https://example.com/page', 'Page'], ['best flights', 'search']]) {
+  for (const [value, label] of [['ftp://example.com/page', 'Page'], ['best flights', 'search']]) {
     const into = join(tmp(), 'seed');
     const r = await proveRubricInputs({ inputs: [{ n: 1, label: 'Changelog', value: file }, { n: 2, label, value }], into });
     assert.equal(r.ok, false);
     if (r.ok) return;
-    assert.equal(r.error, 'line 2: web inputs (URLs, search) arrive in a later build. Nothing spent.');
+    assert.equal(r.error, 'line 2: a search, or an address that is not http or https, is not an input yet. Nothing spent.');
     assert.equal(existsSync(into), false, 'a refusal leaves nothing on disk');
   }
 });

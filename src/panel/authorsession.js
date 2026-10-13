@@ -27,7 +27,7 @@ import {
 } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import {
-  prepareSource, proveDestination, proveRubricInputs, looksLikeLocalFile, missingDependencies, looksLikeRepoSource, nearestGitAncestor, nonRepoSourceMessage,
+  prepareSource, proveDestination, proveRubricInputs, looksLikeRubricInput, missingDependencies, looksLikeRepoSource, nearestGitAncestor, nonRepoSourceMessage,
 } from '../source.js';
 import {
   worktreePath, uncommittedCount, shortHead, removeWorktree,
@@ -344,7 +344,7 @@ export function validateJobCard(card, opts = {}) {
   if (!ib.ok) return { ok: false, error: ib.error };
   // P1=B: PASS/FAIL examples are required of a rubric job only when it holds a judged part. A rubric on the person's own
   // local files (first input not a repo) holds none in this build; a rubric on a repo composes the judged floor.
-  const rubricFiles = checkType === 'rubric' && looksLikeLocalFile(ib.inputs[0].value);
+  const rubricFiles = checkType === 'rubric' && looksLikeRubricInput(ib.inputs[0].value);
   const misfit = jobBlockFitsCheck(jb.lines, checkType === 'rubric', { judged: !rubricFiles });
   if (misfit) return { ok: false, error: misfit };
   if (typeof destination !== 'string' || destination.trim() === '') return { ok: false, error: 'Destination is required' };
@@ -362,7 +362,7 @@ export function validateJobCard(card, opts = {}) {
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
  *   scout?: any, generate?: Function, confirmGenerate?: Function, authorFn?: Function,
- *   prepareSigningFn?: Function, npmCiFn?: Function, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
+ *   prepareSigningFn?: Function, npmCiFn?: Function, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
  * @returns {any} the session object
@@ -449,7 +449,7 @@ export function createSession(card, deps = {}) {
   };
 
   /** a rubric job on local files words its copy/read steps for files (set once the card is known) */
-  let fileJob = card.checkType === 'rubric' && looksLikeLocalFile(parseInputs(card.inputs).ok ? (/** @type {any} */ (parseInputs(card.inputs))).inputs[0].value : '');
+  let fileJob = card.checkType === 'rubric' && looksLikeRubricInput(parseInputs(card.inputs).ok ? (/** @type {any} */ (parseInputs(card.inputs))).inputs[0].value : '');
   /** @param {string} id @param {string} [detail] (absent = keep what the step has) start (or restart) a step; whatever step was running is finished */
   const stepStart = (id, detail) => {
     const labels = fileJob ? { ...STEP_LABELS, ...FILE_JOB_STEP_LABELS } : STEP_LABELS;
@@ -711,7 +711,7 @@ export function createSession(card, deps = {}) {
     /** @type {any} */
     let prep;
     if (RUBRIC_FILES) {
-      const proved = await proveRubricInputs({ inputs: INPUTS, into, destination: card.destination });
+      const proved = await proveRubricInputs({ inputs: INPUTS, into, destination: card.destination, ...(deps.fetchUrl ? { fetchUrl: deps.fetchUrl } : {}) });
       prep = proved.ok ? proved.prep : { stop: proved.error, code: proved.code };
     } else {
       prep = await prepareSource({
