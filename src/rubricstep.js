@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createRubric, checkStep, renderGaps } from 'bareguard';
+import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem } from './facts.js';
 
 // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES — what one job line leaves
 // behind and how it is told to the worker.
@@ -71,7 +72,7 @@ export function rubricGoal({ jobLines, files, confirmedGoal = null }) {
 // (src/authoring.js `checkRubricParts`) so no signed stage ever carries one.
 
 /** the closed set of classes a part is sorted into; `none` = "I could not sort this one" (a red, in plain words, never a guess) */
-export const PART_CLASSES = Object.freeze(['countable', 'judged', 'guard', 'none']);
+export const PART_CLASSES = Object.freeze(['countable', 'fact', 'judged', 'guard', 'none']);
 /**
  * The counted/quoted checks a `countable` part may name, with the fields each needs — read off bareguard's own rule table
  * (`rubricVocabulary`): the names are bareguard's, so a check this build cannot run is inexpressible, not rejected late.
@@ -90,7 +91,7 @@ export const COUNT_CHECKS = Object.freeze({
   maxClaims: Object.freeze(['value', 'source']),
 });
 /** every field a part may carry, whatever its class */
-const PART_FIELDS = Object.freeze(['text', 'class', 'check', 'value', 'names', 'wordsPerSection', 'source', 'domains', 'covers']);
+const PART_FIELDS = Object.freeze(['text', 'class', 'check', 'value', 'names', 'wordsPerSection', 'source', 'domains', 'covers', 'record', 'facts', 'count', 'tested', 'sample']);
 
 /** @typedef {{code: string, path: string, detail: string}} ShapeRed */
 
@@ -127,6 +128,7 @@ export function rubricStepShapeReds(p, at) {
       && part.covers.every((/** @type {unknown} */ x) => Number.isInteger(x) && /** @type {number} */ (x) >= 1))) {
       red('invalid-value', `${w}.covers`, 'the numbers of the confirmed checks this part carries out (distinct integers, 1 or more)');
     }
+    if (part.class === 'fact') { factShapeReds(part, w, (c, path, d) => red(c, path, d)); return; }
     if (part.class === 'guard') {
       if (!nameList(part.domains)) red('invalid-value', `${w}.domains`, 'a non-empty array of web domains the rule is about');
       return;
@@ -150,7 +152,7 @@ export function rubricStepShapeReds(p, at) {
 /** the labels of the inputs a step's `cited` parts name (each once, in order) @param {any} params @returns {string[]} */
 export function citedLabels(params) {
   const parts = Array.isArray(params?.parts) ? params.parts : [];
-  return [...new Set(parts.filter((/** @type {any} */ x) => isRec(x) && x.class === 'countable' && x.check === 'cited').map((/** @type {any} */ x) => String(x.source)))];
+  return [...new Set(parts.filter((/** @type {any} */ x) => isRec(x) && ((x.class === 'countable' && x.check === 'cited') || x.class === 'fact')).map((/** @type {any} */ x) => String(x.source)))];
 }
 
 /**
@@ -164,8 +166,15 @@ export function citedLabels(params) {
  */
 export function buildStepSpec(params, inputShas) {
   /** @type {Record<string, any>[]} */
-  const checks = [{ id: 'text-present', rule: 'nonEmpty', field: 'text' }];
+  const checks = factPartOf(params) ? [] : [{ id: 'text-present', rule: 'nonEmpty', field: 'text' }];
   params.parts.forEach((part, i) => {
+    if (part.class === 'fact') {
+      // ONE bareguard `cited` check per fact part: the quote is in the frozen input, every value is in the quote and meets its rule
+      checks.push({ id: `p${i + 1}-facts`, rule: 'cited', claims: `cites:${part.source}`, source: part.source, decides: factDecides(part) });
+      if (part.count?.min !== undefined) checks.push({ id: `p${i + 1}-count-min`, rule: 'min', field: `claims:${part.source}`, value: part.count.min });
+      if (part.count?.max !== undefined) checks.push({ id: `p${i + 1}-count-max`, rule: 'max', field: `claims:${part.source}`, value: part.count.max });
+      return;
+    }
     if (part.class !== 'countable') return;
     const id = `p${i + 1}-${part.check}`;
     switch (part.check) {
@@ -209,9 +218,10 @@ export function parseStepFile(bytes) {
  * `cites:<label>` (the name a `cited` check reads its claims from). Nothing else in the file is read.
  * @param {Record<string, any>} obj
  * @param {string[]} [countLabels] labels whose claim COUNT a minClaims/maxClaims part reads
+ * @param {any} [factPart] the step's `fact` part: its `results` become claims (text built by code) under `cites:<source>`
  * @returns {Record<string, any>}
  */
-export function flattenStep(obj, countLabels = []) {
+export function flattenStep(obj, countLabels = [], factPart = null) {
   /** @type {Record<string, any>} */
   const fields = {};
   // the number of claims listed under each label a claim-count check names (0 when the label is absent): counted HERE, by
@@ -220,9 +230,14 @@ export function flattenStep(obj, countLabels = []) {
     const list = isRec(obj.cites) && Object.hasOwn(obj.cites, label) ? obj.cites[label] : null;
     fields[`claims:${label}`] = Array.isArray(list) ? list.length : 0;
   }
+  if (factPart) {
+    const claims = factClaims(factPart, obj.results);
+    fields[`claims:${factPart.source}`] = claims.length;
+    fields[`cites:${factPart.source}`] = claims;
+  }
   // a missing or non-string `text` is read as empty, so the one red a worker sees is "text is missing or empty"
   fields.text = typeof obj.text === 'string' ? obj.text : '';
-  if (isRec(obj.cites)) for (const [label, list] of Object.entries(obj.cites)) fields[`cites:${label}`] = list;
+  if (isRec(obj.cites) && !factPart) for (const [label, list] of Object.entries(obj.cites)) fields[`cites:${label}`] = list;
   return fields;
 }
 
@@ -232,11 +247,22 @@ export function flattenStep(obj, countLabels = []) {
  * rendering, so nothing is ever dropped.
  * @param {number} step @param {string} why why there was no object, when there was none
  * @param {any} g a bareguard gap
+ * @param {any} [params] the stage's parameters (a fact step words its gaps by fact)
  * @returns {string}
  */
-export function plainStepGap(step, why, g) {
+export function plainStepGap(step, why, g, params = null) {
   const file = stepFileRel(step);
   const at = `line ${step}`;
+  const fact = params ? factPartOf(params) : null;
+  if (fact && g.check === 'cited') {
+    if (g.kind === 'missing' || g.kind === 'no-claims') return `${at}: ${file} has no results — add one result per record: {"quote": ..., "values": {...}}`;
+    if (g.kind === 'unsupported') return (g.items ?? []).map((/** @type {string} */ it) => `${at}: ${plainFactItem(it, fact)}`).join('\n');
+    if (g.kind === 'too-many') return `${at}: the results hold too many different quotes to check (${g.measured} against a limit of ${g.limit})`;
+    return `${at}: the results cannot be checked (${g.kind})`;
+  }
+  if (fact && (g.check === 'min' || g.check === 'max') && String(g.field ?? '').startsWith('claims:')) {
+    return g.check === 'min' ? `${at}: ${g.measured ?? 0} result(s) are listed, at least ${g.limit} are required` : `${at}: ${g.measured} results are listed, at most ${g.limit} are allowed`;
+  }
   if (g.check === 'happened' || g.id === 'happened') {
     const reason = why === 'missing' ? 'does not exist' : why === 'not-json' ? 'is not valid JSON (was it cut off?)' : why === 'not-object' ? 'is not a JSON object' : 'is empty';
     return `${at}: ${file} ${reason}`;
@@ -278,7 +304,7 @@ export async function gradeStep({ params, bytes, outputBytes, inputs }, inputSha
   }
   const parsed = parseStepFile(bytes);
   const countLabels = [...new Set(params.parts.filter((/** @type {any} */ x) => x.class === 'countable' && (x.check === 'minClaims' || x.check === 'maxClaims')).map((/** @type {any} */ x) => String(x.source)))];
-  const r = await checkStep(rubric, String(params.step), parsed.obj === null ? null : flattenStep(parsed.obj, countLabels), {
+  const r = await checkStep(rubric, String(params.step), parsed.obj === null ? null : flattenStep(parsed.obj, countLabels, factPartOf(params)), {
     inputs, ...(outputBytes === null ? {} : { outputBytes }),
   });
   // the stage's ONE trend number for the fix-loop governor (F192 e, mirrored): failing CLAIMS under a `cited` check (bareguard's
@@ -288,7 +314,7 @@ export async function gradeStep({ params, bytes, outputBytes, inputs }, inputSha
   const detail = { step: params.step, rubricSha: r.rubricSha, outputSha: r.outputSha, why: parsed.why, gaps: r.full.gaps.length, ...(r.verdict === 'red' ? { redCount } : {}) };
   if (r.verdict === 'stopped') return { verdict: 'stopped', gapLines: [], fault: r.fault ? `${r.fault.kind}: ${r.fault.detail}` : 'the rubric stopped', detail };
   if (r.verdict === 'green') return { verdict: 'green', gapLines: [], fault: null, detail };
-  return { verdict: 'red', gapLines: r.gaps.map((g) => plainStepGap(params.step, parsed.why ?? 'empty', g)), fault: null, detail };
+  return { verdict: 'red', gapLines: r.gaps.flatMap((g) => plainStepGap(params.step, parsed.why ?? 'empty', g, params).split('\n')), fault: null, detail };
 }
 
 // ── R11: the sorting rules, applied at DRAFTING ──────────────────────────────────────────────────────────────────────
@@ -362,6 +388,7 @@ export function checkRubricParts(stages, { inputLabels = null, red }) {
     if (!Array.isArray(p.parts)) return;
     /** @type {{part: any, range: {min: number|null, max: number|null, say: string}}[]} */
     const ranges = [];
+    const factLine = p.parts.some((/** @type {any} */ x) => isRec(x) && x.class === 'fact');
     p.parts.forEach((/** @type {any} */ part, /** @type {number} */ j) => {
       if (!isRec(part)) return;
       const w = `${at}.params.parts[${j}]`;
@@ -372,7 +399,18 @@ export function checkRubricParts(stages, { inputLabels = null, red }) {
         red('rubric-part-judged', w, `line ${line}: this rule needs the judge, which arrives in the next build. Nothing spent.`, { line: step, stage: label });
       } else if (part.class === 'guard') {
         red('rubric-part-guard', w, `line ${line}: '${said}' is about web sources, and this job has no web input. Nothing spent.`, { line: step, stage: label });
+      } else if (part.class === 'fact') {
+        if (Array.isArray(inputLabels) && !inputLabels.includes(part.source)) {
+          red('rubric-part-source', `${w}.source`, `line ${line}: '${said}' asks for quotes from "${sayText(part.source ?? '')}", but the job's inputs are ${inputLabels.map((l) => `"${l}"`).join(', ')}.`, { line: step, stage: label });
+        }
+        if (p.parts.filter((/** @type {any} */ x) => isRec(x) && x.class === 'fact').length > 1) {
+          red('rubric-fact-twice', w, `line ${line}: '${said}' is a second fact list on the same line. One line has one list of facts; put them all in one. Nothing spent.`, { line: step, stage: label });
+        }
       } else if (part.class === 'countable') {
+        if (factLine) {
+          red('rubric-fact-text', w, `line ${line}: '${said}' counts or quotes free text, but this line lists facts and has no text. Say it as a fact (a shape and a rule) or remove it. Nothing spent.`, { line: step, stage: label });
+          return;
+        }
         if (part.check === 'cited' && Array.isArray(inputLabels) && !inputLabels.includes(part.source)) {
           red('rubric-part-source', `${w}.source`, `line ${line}: '${said}' asks for a quote from "${sayText(part.source ?? '')}", but the job's inputs are ${inputLabels.map((l) => `"${l}"`).join(', ')}.`, { line: step, stage: label });
         }
@@ -380,6 +418,13 @@ export function checkRubricParts(stages, { inputLabels = null, red }) {
         if (range) ranges.push({ part, range });
       }
     });
+    if (factLine && rubricStepShapeReds(p, at).length === 0) {
+      // bareguard is the judge of whether a fact list is SIGNABLE (anchors, units, bounds): ask it at drafting, at $0, so a list
+      // it would refuse at run time is a red the drafter can fix now
+      try { createRubric(buildStepSpec(/** @type {{step: number, parts: any[]}} */ (p), Object.fromEntries(citedLabels(p).map((l) => [l, '0'.repeat(64)])))); } catch (e) {
+        red('rubric-fact-invalid', `${at}.params.parts`, `line ${line}: the facts cannot be signed: ${/** @type {Error} */ (e).message}`, { line: step, stage: label });
+      }
+    }
     for (let a = 0; a < ranges.length; a += 1) {
       for (let b = a + 1; b < ranges.length; b += 1) {
         const [x, y] = [ranges[a], ranges[b]];
@@ -425,9 +470,11 @@ export function partSentence(part) {
 export function checksOfClose(closeDecl) {
   const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
   return stages.flatMap((/** @type {any} */ st) => (isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts)
-    ? st.params.parts.filter((/** @type {any} */ p) => isRec(p) && p.class === 'countable').map((/** @type {any} */ p) => ({
-      line: st.params.step, text: partSentence(p), covers: Array.isArray(p.covers) ? p.covers.filter(Number.isInteger) : [],
-    }))
+    ? st.params.parts.filter((/** @type {any} */ p) => isRec(p) && (p.class === 'countable' || p.class === 'fact')).flatMap((/** @type {any} */ p) => {
+      const covers = Array.isArray(p.covers) ? p.covers.filter(Number.isInteger) : [];
+      // a fact part is one plan row per fact (and one for its count): the person signs the rows, the close runs the same list
+      return (p.class === 'fact' ? factRows(p) : [partSentence(p)]).map((/** @type {string} */ text) => ({ line: st.params.step, text, covers }));
+    })
     : []));
 }
 
