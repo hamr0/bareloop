@@ -112,12 +112,13 @@ test('a fact step has no free text: a step file with only "text" is red, and a f
   assert.match(r.gapLines.join('\n'), /has no results/);
 });
 
-test('the plan card rows come from the signed part: one per fact, then the count; sign == run', () => {
+test('the plan card rows come from the signed part: one per fact, then the records and the count; sign == run', () => {
   const part = factPart();
   const rows = factRows(part);
   assert.deepEqual(rows, [
     'fact · version — text, the words after "## [" up to "]", quoted from "Changelog"',
     'fact · released — date, at least 2026-01-01, quoted from "Changelog"',
+    'fact · records — each begins at "## [", in "Changelog"',
     'fact · results — exactly 3 results, each quoted from "Changelog"',
   ]);
   const decl = { stages: [stage([{ ...part, covers: [1] }])] };

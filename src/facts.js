@@ -194,8 +194,9 @@ export function countSentence(part) {
  */
 export function factRows(part) {
   const rows = (Array.isArray(part.facts) ? part.facts : []).map((/** @type {any} */ f) => factSentence(f, part.source));
+  const rec = isRec(part.record) && nonEmpty(part.record.start) ? [`fact · records — each begins at "${part.record.start}"${part.record.end !== undefined ? ` and is quoted up to "${part.record.end}"` : ''}, in "${part.source}"`] : [];
   const c = countSentence(part);
-  return c ? [...rows, c] : rows;
+  return [...rows, ...rec, ...(c ? [c] : [])];
 }
 
 /**
@@ -231,4 +232,67 @@ export function plainFactItem(item, part) {
     case 'claim-value-mismatch': return say(`the value is not what the quote holds (${detail.replace('!=', ' is not ')})`);
     default: return `${who}: ${m[3]}${detail ? ` ${detail}` : ''}`;
   }
+}
+
+// ── records (PART 1b item 3) ─────────────────────────────────────────────────────────────────────────────────────────
+//
+// A source holds many look-alike RECORDS (a flight, a release, a row). The drafter names where a record OPENS (`record.start`,
+// words copied from the input) and, optionally, where the slice the worker quotes ENDS (`record.end`): the whole block made
+// anchors ambiguous in the flight POC (a trailing "Flight details" button repeated the labels), so a record is the PREFIX slice.
+// CODE finds the records and counts them; the model names two strings and nothing else.
+
+/** @typedef {{start: number, end: number, text: string, endFound: boolean}} RecordSlice */
+
+/**
+ * Split a text into records. A record opens at each occurrence of `record.start` and runs to the next one (or the end of the
+ * text); with `record.end`, the quoted slice stops at the first `end` inside that record (a record without it keeps its whole
+ * span and says so in `endFound`). Plain, case-sensitive, verbatim string search — the words are copied from the input.
+ * @param {string} text @param {{start: string, end?: string}} record @returns {RecordSlice[]}
+ */
+export function splitRecords(text, record) {
+  /** @type {number[]} */
+  const starts = [];
+  if (typeof record.start === 'string' && record.start !== '') {
+    for (let i = text.indexOf(record.start); i !== -1; i = text.indexOf(record.start, i + record.start.length)) starts.push(i);
+  }
+  return starts.map((s, k) => {
+    const stop = k + 1 < starts.length ? starts[k + 1] : text.length;
+    let e = stop;
+    let endFound = true;
+    if (typeof record.end === 'string' && record.end !== '') {
+      const j = text.indexOf(record.end, s + record.start.length);
+      if (j !== -1 && j < stop) e = j; else endFound = false;
+    }
+    return { start: s, end: e, text: text.slice(s, e), endFound };
+  });
+}
+
+/** how much of a big input the drafter is shown (characters, cut at a line end) */
+export const SAMPLE_CHARS = 15000;
+
+/**
+ * What the drafter reads of an input: all of it when it is small, else the first part, cut at a line end — and the cut is SAID
+ * (never a silent truncation: the changelog was 455k characters cut to 15k in the POC). Every check is tested on the WHOLE input
+ * regardless (`earlyFactTests`), so the cut limits what the drafter sees, never what is checked.
+ * @param {string} text @param {number} [max]
+ * @returns {{text: string, cut: boolean, shown: number, total: number, note: string|null}}
+ */
+export function sampleOf(text, max = SAMPLE_CHARS) {
+  if (text.length <= max) return { text, cut: false, shown: text.length, total: text.length, note: null };
+  const nl = text.lastIndexOf('\n', max);
+  const shown = nl > 0 ? nl : max;
+  return {
+    text: text.slice(0, shown), cut: true, shown, total: text.length,
+    note: `the first ${shown} of ${text.length} characters, cut at a line end; every check is tested on the whole input`,
+  };
+}
+
+/**
+ * The quote instruction a worker is given for a record, in plain words (the worker brief and the composer prompt both use it).
+ * @param {{start: string, end?: string}} record @returns {string}
+ */
+export function recordWords(record) {
+  return record.end !== undefined
+    ? `from the words "${record.start}" up to (not including) "${record.end}"`
+    : `from the words "${record.start}" up to where the next record opens`;
 }

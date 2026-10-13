@@ -87,7 +87,8 @@ import {
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
 import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
-import { stepFileContract, inputLabelsOf, stepFileRel } from './rubricstep.js';
+import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs } from './rubricstep.js';
+import { sampleOf } from './facts.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
@@ -1217,7 +1218,8 @@ export function jobLineTagBlock(count) {
  *   ownedEnvNames?: string[], mode?: 'tool'|'text', catalogue?: Record<string, any>|null,
  *   writeScope?: string[]|null,
  *   jobLines?: {n: number}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
- *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
+ *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null,
+ *   inputSamples?: Record<string, {text: string, cut: boolean, shown: number, total: number, note: string|null}>|null}} o
  */
 export function authorPrompt({
   answers, questions = GREEN_QUESTIONS, facts, listingBlock, lang, verdictType, guards,
@@ -1229,13 +1231,15 @@ export function authorPrompt({
   // turn (or ran without `ask`) — byte-identical prompt, nothing added. Present
   // only when a confirm turn actually ran and the person accepted a plan.
   confirmed = null,
+  // PART 1b: what the drafter reads of each input (label -> sample); null = none read
+  inputSamples = null,
 }) {
   // PART 1a: a rubric job on the person's own local files has no repository, no genre template and no tool to measure with —
   // it gets its own brief (`rubricAuthorPrompt`), which still ends in the same declaration tool and the same guards
   // an absent catalogue is the language's own menu (`catalogueForLang`), so a code job's prompt never lists a rubric-only kind
   const catalogue = catalogueIn ?? catalogueForLang(lang);
   if (lang === RUBRIC_LANG) {
-    return rubricAuthorPrompt({ answers, questions, facts, listingBlock, verdictType, guards, mode, catalogue, writeScope, jobLines, inputs, confirmed });
+    return rubricAuthorPrompt({ answers, questions, facts, listingBlock, verdictType, guards, mode, catalogue, writeScope, jobLines, inputs, confirmed, inputSamples });
   }
   const statement = CLASS_STATEMENTS[String(verdictType)] ?? null;
   if (statement === null) {
@@ -1358,12 +1362,13 @@ export const RUBRIC_FILES_STATEMENT = 'The person declared this job SOFT-GREEN a
  * @param {{answers: Record<string|number, string>, questions?: Record<string|number, string>, facts: any, listingBlock: string,
  *   verdictType: string, guards: {name: string, kind: string, params: Record<string, any>, fill: string[]}[],
  *   mode?: 'tool'|'text', catalogue?: Record<string, any>, writeScope?: string[]|null,
- *   jobLines?: {n: number}[]|null, inputs?: {n: number, label: string, value: string}[]|null, confirmed?: any}} o
+ *   jobLines?: {n: number}[]|null, inputs?: {n: number, label: string, value: string}[]|null, confirmed?: any,
+ *   inputSamples?: Record<string, {text: string, cut: boolean, shown: number, total: number, note: string|null}>|null}} o
  * @returns {string}
  */
 export function rubricAuthorPrompt({
   answers, questions = GREEN_QUESTIONS, facts, listingBlock, verdictType, guards,
-  mode = 'tool', catalogue = KIND_CATALOGUE, writeScope = null, jobLines = null, inputs = null, confirmed = null,
+  mode = 'tool', catalogue = KIND_CATALOGUE, writeScope = null, jobLines = null, inputs = null, confirmed = null, inputSamples = null,
 }) {
   const interview = Object.entries(questions)
     .map(([n, q]) => `Q${n}. ${q}\nA${n}. ${answers?.[n] ?? '(no answer given)'}`)
@@ -1417,6 +1422,7 @@ left as a placeholder. You never write a number the person did not ask for.`;
       + 'step must cite from, and the limits on its "text".',
     `THE FILES — the inputs the person pointed at, frozen into the job\n\n${JSON.stringify(facts, null, 2)}`
       + (listingBlock ? `\n\n${listingBlock}` : ''),
+    ...(inputSamples && Object.keys(inputSamples).length ? [inputSamplesBlock(inputSamples)] : []),
     rubricCatalogueBlock(catalogue, { verdictType }),
     'MANDATORY GUARDS — already placed and already parameterised\n\n'
       + 'This kind of job carries a stage the person did not ask for. It is fixed and you may not change, drop, rename, or '
@@ -1424,6 +1430,17 @@ left as a placeholder. You never write a number the person did not ask for.`;
       + 'Place it first: it is cheap, and the first red ends the judgement.',
     output,
   ].join('\n\n---\n\n');
+}
+
+/**
+ * What the drafter reads of each input (PART 1b, RF13 "look first"): the real words the checks depend on — every label, unit and
+ * phrase a check names must be copied from here. A big input is shown as a SAMPLE and the cut is said, never silent.
+ * @param {Record<string, {text: string, cut: boolean, shown: number, total: number, note: string|null}>} samples
+ * @returns {string}
+ */
+function inputSamplesBlock(samples) {
+  const parts = Object.entries(samples).map(([label, s]) => `INPUT "${label}"${s.cut ? ` — you are shown ${s.note}` : ' — shown whole'}\n<<<\n${s.text}\n>>>`);
+  return `THE INPUTS, AS THE WORKER WILL SEE THEM — read them before you write a check\n\n${parts.join('\n\n')}`;
 }
 
 /**
@@ -2630,9 +2647,18 @@ export async function authorClose({
   if (envProbe.reds.length) return refuse(envProbe.reds, 'precheck');
 
   // ── the grounded loop ─────────────────────────────────────────────────────
+  // PART 1b (RF13, look first): a rubric job on files — the drafter reads the person's inputs (a big one as a said-so sample), and
+  // the early tests below run on the WHOLE frozen text. null = not a files job, or the freeze could not be read here.
+  /** @type {Record<string, string>|null} */
+  let inputTexts = null;
+  if (lang === RUBRIC_LANG && Array.isArray(inputs) && inputs.length > 0) {
+    const frozen = await readFrozenInputs(workdir, inputs.map((i) => i.label));
+    if (frozen.ok) inputTexts = frozen.texts;
+  }
   const prompt = authorPrompt({
     answers, questions, facts, listingBlock: /** @type {string} */ (seeds.block),
     lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue, writeScope, confirmed, jobLines, inputs,
+    inputSamples: inputTexts ? Object.fromEntries(Object.entries(inputTexts).map(([l, t]) => [l, sampleOf(t)])) : null,
   });
   /** @type {any[]} */
   let messages = [{ role: 'user', content: prompt }];

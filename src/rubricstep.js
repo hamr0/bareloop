@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
 import { createRubric, checkStep, renderGaps } from 'bareguard';
 import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem } from './facts.js';
 
@@ -517,4 +519,31 @@ export function planMatchesClose(shown, closeDecl) {
   if (onlyShown.length) parts.push(`shown to you but not in the signed close: ${onlyShown.join('; ')}`);
   if (onlyRan.length) parts.push(`in the signed close but not shown to you: ${onlyRan.join('; ')}`);
   return { ok: false, error: `The checks you were shown do not match the checks the signed close would run (${parts.join(' | ')}). Nothing was signed — draft again.` };
+}
+
+/**
+ * The frozen TEXT of the named inputs, read the way the runner reads them: the source door's record (`source.json`, one level
+ * above the tree) names each input's file and sha256, and a file whose bytes no longer match is not returned. Used at DRAFTING
+ * (the drafter reads the input, the early tests run on it) and at run start (the backstop). Never throws.
+ * @param {string} workdir the frozen tree @param {string[]} labels
+ * @returns {Promise<{ok: true, texts: Record<string, string>}|{ok: false, why: string}>}
+ */
+export async function readFrozenInputs(workdir, labels) {
+  /** @type {any} */
+  let manifest;
+  try { manifest = JSON.parse(await readFile(join(dirname(workdir), 'source.json'), 'utf8')); } catch (e) {
+    return { ok: false, why: `the source record could not be read: ${/** @type {Error} */ (e).message}` };
+  }
+  const recorded = Array.isArray(manifest?.inputs) ? manifest.inputs : [];
+  /** @type {Record<string, string>} */
+  const texts = {};
+  for (const label of labels) {
+    const row = recorded.find((/** @type {any} */ r) => r && r.label === label);
+    if (!row || typeof row.rel !== 'string' || typeof row.sha256 !== 'string') return { ok: false, why: `the source record has no input labelled "${label}"` };
+    let buf;
+    try { buf = await readFile(join(workdir, row.rel)); } catch (e) { return { ok: false, why: `input "${label}" could not be read: ${/** @type {Error} */ (e).message}` }; }
+    if (sha256Of(buf) !== row.sha256) return { ok: false, why: `input "${label}" no longer matches the bytes frozen at the source door` };
+    texts[label] = buf.toString('utf8');
+  }
+  return { ok: true, texts };
 }
