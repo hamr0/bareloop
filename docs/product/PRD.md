@@ -1076,6 +1076,16 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     | RF16 | Every `~` rule must become a check or appear under Not checked in the person's words; code refuses a draft that silently drops one (same honesty rule as the sign==run fix). |
     | RF17 | A rule the AI turns into a number (e.g. "not a red-eye" → departs between 06:00 and 21:00) is marked on the card "AI's proposal — check it"; "not a red-eye" must use a between range, never a one-sided bound. A `text` fact may carry a label (anchor) so "from SFO" means the word after the departure label, which makes route direction checkable — asked of the guard session 2026-10-12 (correction to loop's earlier "no anchor on text in v1"). |
 
+    **2026-10-13 — look, then say what I can check RULED** (hamr; after the first live Part 1b drafts failed on record cutting, sessions smv6jhano7ba3, smv6k6l8dxkzs, smv6lyypleng8; supersedes RF15 and the record parts of RF12/RF13)
+
+    | # | Ruling |
+    |---|---|
+    | RF18 | Drafting does not grade. It only checks that each fact CAN be checked: a label with a value of the fact's shape (or the phrase itself) is found at least once in the real source. No record cutting, no per-record tests, no broken-copy test at drafting. Finding and grading are the run's and the close's job (the close is code, so a weak check costs a fix try, never a false green). Supersedes RF15. |
+    | RF19 | The drafting look is a read-only search of the input, done by the AI with tools (like the repo scout, read-only by construction, bounded rounds, spend booked to drafting): it searches the person's words AND other words that mean the same ("nonstop" / "direct", "San Francisco" / "SFO"), reads the spots it finds, and uses what it knows ("not a red-eye" → a night window, marked AI's proposal, RF17). It reports "I can check these facts", one line each with the label and value it saw. What it cannot find goes to Not checked, or becomes a question only the person can answer. |
+    | RF20 | Code proves every label and phrase the AI reports is really in the source (once is enough). Code never decides two words mean the same: the AI proposes the words, code proves they are there, the card shows the exact words used. |
+    | RF21 | Web input from the start: an input line may be a URL the person pastes (a results page). bareloop fetches it with barebrowse, read only: once at drafting for the look, and again at run start. A search the AI runs itself (no URL) is a later piece. |
+    | RF22 | The close grades against the page the RUN fetched: code saves it at run start as the run's frozen input, before the worker reads it; the worker cannot change it; every quote is checked against that copy. The drafting copy is only for the look (prices change). |
+
 34. **Item 34 — loose ends housed** (hamr, 2026-09-13: every open end gets fix / keep /
     backlog / remove).
 
@@ -1459,3 +1469,9 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 - Every word a check depends on is found in the real source at drafting (files at $0, web search with one small drafting search) or drafting stops and asks the person to change or remove the rule.
 - Before signing, every check is tried on the real source: found in each record, one value per record, and red on a code-broken copy; a check failing any of the three cannot be signed.
 - Later piece, its own build after required facts: "rerun from line N" on green runs only (earlier outputs byte-for-byte kept, spend folded, tighten-only).
+
+### Look, then say what I can check (v1.97 — 2026-10-13)
+
+- Drafting no longer grades: it checks each fact CAN be checked (label + value of its shape, or the phrase, found once in the real source). Record cutting and the three early tests are dropped (RF15 superseded). Rulings RF18–RF22 in item 33, "2026-10-13 — look, then say what I can check RULED".
+- The AI looks with read-only search tools, using the person's words, words that mean the same, and what it knows; code proves every word it reports is really in the source.
+- A rubric input may be a pasted URL, fetched with barebrowse at drafting (for the look) and again at run start; the close grades against the run's own saved copy.

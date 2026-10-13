@@ -773,3 +773,58 @@ smv6k6l8dxkzs = flights job). Neither reached a run; both stopped at the $0 draf
   is one list in code; the builder proposes it, hamr rules on it before it ships.
 
 Proof: $0 tests per item; then the two live drafts again (same jobs), hamr's go.
+
+## Addendum 2026-10-13 — Part 1c: look, then say what I can check (DRAFT, not signed)
+
+Rulings: PRD item 33, "2026-10-13 — look, then say what I can check RULED" (RF18–RF22). Replaces the record
+cutting and early tests of Part 1b. Why: three live drafts (smv6jhano7ba3 changelog, smv6k6l8dxkzs and smv6lyypleng8
+flights) all failed at drafting on record cutting — the AI copied one-time ids (`[ref=3817]` → 1 "record" of 78,255
+chars) and one record's value as a label (`generic "59 US dollars"`); each fix (A1–A3, B1–B3, C1–C4) found the next.
+Also found: the saved flights page is LAX → SFO, so test job B (SFO → LAX) could never pass — the operator's miss.
+
+### 0. POC first ($0 + small drafting spend, before any build)
+
+Riskiest assumptions, in order; stop and report if one fails:
+- (a) barebrowse fetches a pasted Google Flights results URL headless, read-only, and returns text holding each
+  flight's labels and values (`Departure time: 9:27 AM`, `Leaves …`). Check: its exported API, its Node/peer ranges in a
+  clean install beside bare-agent/bareguard/litectx, and what text form it returns.
+- (b) The AI look, with read-only search tools over that text, reports the right label for each fact on the real page
+  and on the changelog (3 drafts each, DeepSeek `deepseek-flash`, thinking off). Pass = every reported word is really
+  in the source and is the label of the right value; no one-time ids, no single record's value used as a label.
+
+### 1. Keep from Part 1b
+
+Fact step and step file, one quote per result (RF9), bareguard `cited` + `decides`, prose step + numbers tie, plan card
+rows, RF16 no silent drop, RF17 AI's proposal, A3 refused proposals logged, B1 one rulebook, B2 shape table, B3 plain
+words.
+
+### 2. Remove
+
+`record` (start/end) on fact parts, `splitRecords`/`sampleOf` use at drafting, the three early tests and their reds
+(`rubric-fact-record-long`, `-record-end`, `-ambiguous`, `-untested`, per-record counts), the run-time backstop. The
+worker brief says "one quote per result, from that result's own text" (quote cap stays bareguard's 4000).
+
+### 3. The look (RF19, RF20)
+
+- A read-only search step before drafting, built on the existing authoring scout (`src/authorscout.js`): fixed grant
+  (search the input text, read a slice around a hit), bounded rounds, toolless final round, spend booked to drafting.
+- It returns, per job line: facts it can check (name, shape, label or phrase, one example value it saw), and what it
+  could not find (→ Not checked, or a question).
+- The drafter writes the facts from that report. Code proves each label/phrase is in the source once ($0); a word not
+  found is a red naming the word and the input.
+
+### 4. URL inputs (RF21, RF22)
+
+- An input line may be `label: https://…`. Drafting fetches it once for the look (booked to drafting).
+- Run start fetches it again and saves the text as the run's frozen input before the worker starts; quotes are checked
+  against that copy; the worker reads that copy, never the live page.
+
+### 5. Live proof (DeepSeek `deepseek-flash`, cap $0.50, 20 min each, hamr's go)
+
+- Changelog job (file input).
+- Flights job from a pasted Google Flights URL, direction checked against the page first.
+
+### Open for hamr
+
+1. barebrowse becomes a production dependency (bare suite, Node 22 — matches). OK?
+2. I1 (ask early, only about intent): build it here as the "could not find" questions, or park.
