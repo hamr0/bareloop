@@ -96,3 +96,54 @@ test('the saved REAL flights page (temp copy): the picked labels and the directi
   assert.equal(prove('Flights', 'Leaves Nowhere Airport'), 0);
   assert.equal(prove('Nope', 'x'), 0);
 });
+
+// ── M1 (Part 1c full-run fixes): a label that starts each result must repeat as often as results were asked for ─────────────────────
+const MV73_PAGE = '/home/hamr/.config/bareloop/panel-sessions/smv73148pw343/source-seed/tree/input/flights.txt';
+
+test('M1: a label counted fewer times than the line asks for results is a red naming the label, its count and N; one counted enough passes (CHANGELOG)', () => {
+  // `## [` sits before 45 text values, `(` 179: both repeat; a label the list counts once cannot be in each of 3 results
+  const ok = checkFactWords({ part: part([{ name: 'version', shape: 'text', anchor: '## [' }], { count: { min: 3, max: 3 } }), text: CHANGELOG, line: 1 });
+  assert.deepEqual(ok, []);
+  // a synthetic page with a once-only label and a repeated one, scanned by the real scanner
+  const text = ['Sort: Cheapest from $37', ...Array.from({ length: 5 }, (_, i) => `Flight ${i}: From $${50 + i} Leaves 10:0${i} AM`)].join('\n');
+  const rare = checkFactWords({ part: part([{ name: 'cheapest', shape: 'money', currency: '$', anchor: 'Cheapest from' }], { count: { min: 3, max: 3 }, source: 'Page' }), text, line: 1 });
+  assert.deepEqual(rare.map((r) => r.code), ['rubric-fact-label-rare']);
+  assert.match(rare[0].detail, /the label "Cheapest from" is in the input "Page" only 1 time, but this line asks for 3 results/);
+  assert.match(rare[0].detail, /at least 3 times/);
+  assert.deepEqual(checkFactWords({ part: part([{ name: 'price', shape: 'money', currency: '$', anchor: 'From' }], { count: { min: 3, max: 3 }, source: 'Page' }), text, line: 1 }), []);
+  // a line asking for one result, or with no count, may use a once-only label
+  assert.deepEqual(checkFactWords({ part: part([{ name: 'cheapest', shape: 'money', currency: '$', anchor: 'Cheapest from' }], { count: { min: 1, max: 1 }, source: 'Page' }), text, line: 1 }), []);
+  assert.deepEqual(checkFactWords({ part: part([{ name: 'cheapest', shape: 'money', currency: '$', anchor: 'Cheapest from' }], { source: 'Page' }), text, line: 1 }), []);
+});
+
+test('M1 on the REAL frozen page of run mv73swnx (copied to a temp dir, never committed): "Cheapest from" and "departing" are refused for 3 results, "Departure time:" and "From" accepted', { skip: !existsSync(MV73_PAGE) }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'm1-page-'));
+  made.push(dir);
+  const copy = join(dir, 'flights.txt');
+  copyFileSync(MV73_PAGE, copy);
+  const text = readFileSync(copy, 'utf8');
+  const p = part([
+    { name: 'from price', shape: 'money', currency: '$', anchor: 'From' },
+    { name: 'cheapest price', shape: 'money', currency: '$', anchor: 'Cheapest from' },
+    { name: 'departure time', shape: 'time', anchor: 'Departure time:' },
+    { name: 'departing date', shape: 'date', anchor: 'departing' },
+  ], { count: { min: 3, max: 3 }, source: 'Flights' });
+  const reds = checkFactWords({ part: p, text, line: 1 });
+  assert.deepEqual(reds.map((r) => r.code), ['rubric-fact-label-rare', 'rubric-fact-label-rare']);
+  assert.match(reds[0].detail, /fact "cheapest price": the label "Cheapest from" is in the input "Flights" only 1 time, but this line asks for 3 results/);
+  assert.match(reds[1].detail, /fact "departing date": the label "departing" is in the input "Flights" only 1 time/);
+  const good = checkFactWords({ part: part([{ name: 'departure time', shape: 'time', anchor: 'Departure time:' }], { count: { min: 3, max: 3 }, source: 'Flights' }), text, line: 1 });
+  assert.deepEqual(good, []);
+});
+
+test('M1: the ONE rulebook tells it, the brief and the confirm note carry it, and the red reaches the person in its own plain words', async () => {
+  const { RUBRIC_RULES, REQUIRED_FACTS_BRIEF } = await import('../src/authorflow.js');
+  const { proposalStopText } = await import('../src/authorreadout.js');
+  assert.match(RUBRIC_RULES, /asks for N results[\s\S]*N or more times/);
+  assert.ok(REQUIRED_FACTS_BRIEF.includes(RUBRIC_RULES), 'the brief interpolates the one rulebook');
+  const decl = { stages: [{ kind: 'rubric-step', params: { step: 1, parts: [part([{ name: 'c', shape: 'money', currency: '$', anchor: 'Cheapest from' }], { count: { min: 3, max: 3 }, source: 'Page' })] } }] };
+  const text = ['Sort: Cheapest from $37', ...Array.from({ length: 5 }, (_, i) => `Flight ${i}: From $${50 + i}`)].join('\n');
+  const reds = checkDeclarationWords(decl, { Page: text });
+  assert.deepEqual(reds.map((r) => r.code), ['rubric-fact-label-rare']);
+  assert.match(proposalStopText({ reds }), /"Cheapest from" is in the input "Page" only 1 time, but this line asks for 3 results/);
+});

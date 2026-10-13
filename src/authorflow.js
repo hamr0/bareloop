@@ -1414,7 +1414,9 @@ export const RUBRIC_RULES = 'THE RULES FOR TURNING THE PERSON\'S WORDS INTO CHEC
   + 'range marked as the AI\'s proposal.\n'
   + ' - Names, labels and units are the INPUT\'s own words, copied exactly as the input writes them. When the input does not use the '
   + 'person\'s word (they wrote SFO, the input says San Francisco International Airport), use the words the input uses; never invent a '
-  + 'word the input does not hold, and never add a code (like SFO) that the person did not write and the input does not hold.';
+  + 'word the input does not hold, and never add a code (like SFO) that the person did not write and the input does not hold.\n'
+  + ' - A label for a line that asks for N results (a count of N) must sit in each result, so the label list must count it N or more times '
+  + '(the x-number beside it). A label counted fewer times is on the page once or twice (a sort tab, a switch) and is refused at $0 with its count.';
 
 /**
  * REQUIRED FACTS, as the composer is told them (PART 1b, PRD item 33 RF1–RF17). The shape of the fact part is in the catalogue and the
