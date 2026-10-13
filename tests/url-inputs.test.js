@@ -9,7 +9,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fetchPageText, CONNECT_OPTIONS, SNAPSHOT_OPTIONS, NETWORK_IDLE_MS, NETWORK_IDLE_TIMEOUT_MS, MIN_PAGE_CHARS, isWebUrl } from '../src/pagefetch.js';
+import { fetchPageText, pageContentChars, MIN_CONTENT_CHARS, CONNECT_OPTIONS, SNAPSHOT_OPTIONS, NETWORK_IDLE_MS, NETWORK_IDLE_TIMEOUT_MS, MIN_PAGE_CHARS, isWebUrl } from '../src/pagefetch.js';
 import { proveRubricInputs, refreezeUrlInputs, looksLikeRubricInput, readSourceManifest } from '../src/source.js';
 import { readFrozenInputs } from '../src/rubricstep.js';
 import { jobSpecHash } from '../src/job.js';
@@ -114,6 +114,28 @@ test('fetchPageText: an empty or near-empty page, a bot challenge, a thrown erro
   const hang = await fetchPageText(URL1, { timeoutMs: 30, closeWaitMs: 200, connect: async () => ({ goto: () => new Promise(() => {}), waitForNetworkIdle: async () => {}, snapshot: async () => '', close: async () => { closed += 1; } }) });
   assert.match(String(!hang.ok && hang.error), /no answer inside/);
   assert.equal(closed, 1);
+});
+
+// the two REAL pages the first live drafts fetched (panel sessions smv713up97m3k: 719 chars, header only; smv710w8c3wdh: 8,801 chars, 3 flights)
+const HEADER_ONLY = readFileSync(new URL('./fixtures/page-header-only.txt', import.meta.url), 'utf8');
+const PARTIAL = readFileSync(new URL('./fixtures/page-partial.txt', import.meta.url), 'utf8');
+
+test('fetchPageText (L2): a page that is only the site header and menus (the real 719-character fetch) is a plain-words stop even though it is over the 200-character floor; the real 8,801-character partial page is read', async () => {
+  assert.ok(HEADER_ONLY.trim().length >= MIN_PAGE_CHARS, 'it passes the old size floor - that is the bug');
+  assert.equal(pageContentChars(HEADER_ONLY), 0, 'nothing outside the banner');
+  const header = await fetchPageText(URL1, { connect: lateFillBrowser({ partial: HEADER_ONLY, full: HEADER_ONLY }).connect });
+  assert.equal(header.ok, false);
+  assert.match(String(!header.ok && header.error), /only the site's own header and menus/);
+  // the partial page has a search form and 3 flights outside the banner: it is content (a PARTIAL page is L1's job, not L2's)
+  assert.ok(pageContentChars(PARTIAL) >= MIN_CONTENT_CHARS, String(pageContentChars(PARTIAL)));
+  const partial = await fetchPageText(URL1, { connect: lateFillBrowser({ partial: PARTIAL, full: PARTIAL }).connect });
+  assert.equal(partial.ok, true);
+  // a full results page (many flights under main) is read
+  const full = PARTIAL + PARTIAL.split('\n').slice(40).join('\n').repeat(8);
+  assert.equal((await fetchPageText(URL1, { connect: lateFillBrowser({ partial: full, full }).connect })).ok, true);
+  // plain text (a page with no landmarks) counts whole; chrome roles are matched by ARIA landmark only
+  assert.equal(pageContentChars('Hello world, this is a plain page.'), 'Hello world, this is a plain page.'.length);
+  assert.equal(pageContentChars('url: https://x/\n1,000 chars → 50 chars (95% pruned)\n- navigation [ref=1]\n  - link "Home" [ref=2]\n- main [ref=3]\n  - StaticText "Body text here" [ref=4]'), 'main'.length + 'StaticText "Body text here"'.length, 'the navigation subtree is out, the main subtree is in');
 });
 
 test('fetchPageText: a credentialed, secret-shaped, non-http or malformed address never reaches the browser', async () => {

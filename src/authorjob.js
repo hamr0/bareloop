@@ -117,6 +117,7 @@ import {
 } from './authorflow.js';
 import { ruleQuestions } from './inputlook.js';
 import { thinkingCallOptions, assertThinkingMode } from './thinking.js';
+import { pageContentChars } from './pagefetch.js';
 import { runAuthorScout, runInputLook, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
 import {
   DECLARED_GAP_PREFIX, DECLARED_GENRES, guardNames, isDeclaredClose, validateCloseDecl,
@@ -607,6 +608,10 @@ export async function authorCloseForJob({
       ? await readFrozenInputs(workdir, inputList.map((i) => i.label)) : null;
     if (frozen !== null && !frozen.ok) {
       survey = { state: 'ABSENT', reason: `the look at your input could not start: ${frozen.why}`, cause: 'call-failed', budgetStop: null, calls: [], raws: [], facts: null };
+    } else if (frozen !== null && lookFn && !Object.values(frozen.texts).some((t) => pageContentChars(t) > 0)) {
+      // L2: an input with nothing in it (empty, or only a site's header and menus) is never looked at and never asked about - there is
+      // nothing to check a rule against. Plain words, before any model call.
+      survey = { state: 'ABSENT', reason: 'your input holds nothing to read (it is empty, or only the site\'s own header and menus) - nothing was asked and nothing was spent', cause: 'call-failed', budgetStop: null, calls: [], raws: [], facts: null };
     } else if (frozen !== null && lookFn) {
       onPhase('look', {});
       const lookCallOptions = thinkingCallOptions(provider, draftThinking);

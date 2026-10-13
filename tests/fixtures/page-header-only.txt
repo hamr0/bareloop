@@ -1,0 +1,16 @@
+url: https://www.google.com/travel/flights?q=Flights%20to%20LAX%20from%20SFO%20on%202026-11-12%20oneway&curr=USD&hl=en&gl=us
+1,261 chars → 555 chars (56% pruned)
+- banner [ref=5]
+  - _promote [ref=8]
+    - button "Main menu" [expanded=false] [ref=13]
+    - link "Google" [ref=36]
+    - _promote [ref=18]
+      - button "Skip to main content" [ref=31]
+        - StaticText "Skip to main content" [ref=41]
+      - button "Accessibility feedback" [ref=32]
+        - StaticText "Accessibility feedback" [ref=46]
+    - button "Change appearance" [expanded=false] [ref=33]
+    - _promote [ref=28]
+      - button "Google apps" [expanded=false] [ref=57]
+      - link "Sign in" [ref=35]
+        - StaticText "Sign in" [ref=52]

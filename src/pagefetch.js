@@ -24,12 +24,44 @@ export const NETWORK_IDLE_TIMEOUT_MS = 20_000;
 export const GOTO_TIMEOUT_MS = 30_000;
 /** a page that comes back with fewer characters than this (after trimming) is treated as "nothing came back" */
 export const MIN_PAGE_CHARS = 200;
+/** the page text left after the site's own header, menus and footer are taken out must hold at least this many characters, or the page is
+ *  "only site chrome" (L2: a 719-character fetch of Google's header and sign-in passed the 200-character floor) */
+export const MIN_CONTENT_CHARS = 100;
+/** the page reader's landmark roles for a site's own chrome (the ARIA names of header, menu and footer); everything under one is not the page's content */
+const CHROME_ROLES = new Set(['banner', 'navigation', 'contentinfo']);
 /** our own deadline around one whole fetch (a hung browser leaves no trace; this is the only thing that fires on the absence of an answer) */
 export const PAGE_FETCH_TIMEOUT_MS = 90_000;
 
 /** @param {unknown} v @returns {boolean} an http(s) address (the one spelling of "this Inputs value is a web address") */
 export function isWebUrl(v) {
   return typeof v === 'string' && /^https?:\/\//i.test(v.trim());
+}
+
+/**
+ * How much of a fetched page is the page's own content: the snapshot's header lines (url, size note, hint) and every part of the tree
+ * under a banner / navigation / contentinfo landmark are taken out, the page reader's bracketed tags are removed, and what is left is
+ * counted. Generic - no site names, only the ARIA landmark roles. Text that is not a snapshot tree (a plain file) has no landmark, so it
+ * counts whole.
+ * @param {string} text @returns {number}
+ */
+export function pageContentChars(text) {
+  const lines = String(text ?? '').split('\n');
+  let skipIndent = -1;
+  let n = 0;
+  let head = true;
+  for (const raw of lines) {
+    if (head && (/^url: /.test(raw) || /^[\d,]+ chars → /.test(raw) || /^hint: /.test(raw))) continue;
+    head = false;
+    const m = /^(\s*)- ([A-Za-z_]+)\b/.exec(raw);
+    const indent = m ? m[1].length : raw.length - raw.trimStart().length;
+    if (skipIndent >= 0) {
+      if (raw.trim() === '' || indent > skipIndent) continue;
+      skipIndent = -1;
+    }
+    if (m && CHROME_ROLES.has(m[2])) { skipIndent = indent; continue; }
+    n += raw.replace(/\[[A-Za-z]+=[^\]\s]*\]/g, ' ').replace(/^\s*-\s*/, '').replace(/\s+/g, ' ').trim().length;
+  }
+  return n;
 }
 
 /**
@@ -76,6 +108,7 @@ export async function fetchPageText(url, { connect, timeoutMs = PAGE_FETCH_TIMEO
     if (/\[BOT CHALLENGE DETECTED\]/.test(text)) return { ok: false, error: `${u.href} asked for a human check (a bot challenge), so the page could not be read` };
     const size = text.trim().length;
     if (size < MIN_PAGE_CHARS) return { ok: false, error: `${u.href} came back with ${size === 0 ? 'no text' : `only ${size} characters of text`} (less than ${MIN_PAGE_CHARS}) - the page did not load, or holds nothing to read` };
+    if (pageContentChars(text) < MIN_CONTENT_CHARS) return { ok: false, error: `${u.href} came back with only the site's own header and menus - the page did not load its content, so there is nothing to read` };
     return { ok: true, text, url: u.href };
   } catch (e) {
     return { ok: false, error: `${u.href} could not be read: ${/** @type {Error} */ (e)?.message ?? String(e)}` };

@@ -4,7 +4,7 @@
 
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, copyFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, copyFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -228,4 +228,31 @@ test('authorCloseForJob on a rubric job: the look runs ONCE on the frozen input 
   await authorCloseForJob({ ...base, lookFn: async () => ({ state: 'ABSENT', reason: 'the look ended without a report', cause: 'empty', budgetStop: null, calls: [], raws: [], facts: null }) });
   assert.equal(seen.scout.state, 'ABSENT');
   assert.equal(seen.scout.reason, 'the look ended without a report');
+});
+
+test('authorCloseForJob (L2): an input with nothing to read (empty, or only a site header) is never looked at and never asked about - the look is not called, no question is raised, nothing is paid', async () => {
+  const header = readFileSync(join(HERE, 'fixtures', 'page-header-only.txt'), 'utf8');
+  const URL1 = 'https://www.google.com/travel/flights?q=sfo-lax';
+  for (const [name, text] of [['empty', '   \n'], ['header only', header]]) {
+    const proved = await proveRubricInputs({ inputs: [{ n: 1, label: 'Flights', value: URL1 }], into: join(tmp(), 'seed'), fetchUrl: async (url) => ({ ok: true, text, url }) });
+    assert.equal(proved.ok, true, name);
+    if (!proved.ok) return;
+    let looked = 0;
+    let asked = 0;
+    /** @type {any} */
+    let seen = null;
+    await authorCloseForJob({
+      answers: { 1: '1. Summarize the changes\n   rule: not a red-eye' }, verdictType: 'soft-green', repoPath: proved.prep.tree, lang: RUBRIC_LANG,
+      jobLines: [{ n: 1, text: 'Summarize the changes', rule: 'not a red-eye', rules: ['not a red-eye'] }], inputs: [{ n: 1, label: 'Flights', value: URL1 }], writeScope: ['output/'],
+      provider: { fake: true }, ceilingUsd: 1,
+      lookFn: async () => { looked += 1; return { state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [], facts: { rubricFiles: true, inputs: [], look: { facts: [], prose: [], notFound: [{ line: 1, rule: 1, words: 'red-eye', why: 'nothing' }] } } }; },
+      answerQuestions: async () => { asked += 1; return null; },
+      generate: async () => { throw new Error('no model call in this test'); },
+      authorFn: async (o) => { seen = o; return { ok: false, stop: 'precheck', declaration: null, iterations: [], raws: [], cost: null, reds: [] }; },
+    });
+    assert.equal(looked, 0, `${name}: the look is not called`);
+    assert.equal(asked, 0, `${name}: nothing is asked`);
+    assert.equal(seen.scout.state, 'ABSENT', name);
+    assert.match(seen.scout.reason, /holds nothing to read/, name);
+  }
 });
