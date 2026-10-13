@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkRubricRules, lineRules } from '../src/rubricstep.js';
+import { parseJobBlock } from '../src/jobblock.js';
 import { validateDeclaration, RUBRIC_LANG, classGuards, catalogueForLang, KIND_CATALOGUE } from '../src/authoring.js';
 import { sampleOf } from '../src/facts.js';
 import { readFileSync } from 'node:fs';
@@ -148,4 +149,34 @@ test('authorClose: a fact list with a word the input does not hold is refused at
   assert.equal(part.tested.facts[0].found, part.tested.records);
   assert.match(part.tested.facts[1].caught, /^5\/5$/);
   assert.equal(part.sample, sampleOf(readFileSync(join(HERE, '..', 'CHANGELOG.md'), 'utf8')).note, 'the real changelog is cut for the drafter, and the cut is said on the card');
+});
+
+// A ~ rule is carried only by a part on ITS OWN step: a part on another step never covers it.
+const TWO_LINE_JOB = 'Find the last 3 releases\nSummarize them\n~ under 80 words\n~ one paragraph';
+const twoLines = () => {
+  const p = parseJobBlock(TWO_LINE_JOB);
+  assert.ok(p.ok, 'the two-line job parses');
+  return p.lines;
+};
+const textPart = (rules) => ({ text: 'summarize', class: 'countable', check: 'wordCount', rules });
+const redsOf = (stages, o) => {
+  /** @type {{code: string, line: number, rule: number}[]} */
+  const out = [];
+  checkRubricRules(stages, { red: (code, _p, _d, extra) => out.push({ code, ...extra }), ...o });
+  return out;
+};
+
+test('RF16: a part on step 1 listing rules [1,2] does not cover line 2\'s ~ rules: two reds naming line 2', () => {
+  const reds = redsOf([stage([textPart([1, 2])], 1)], { jobLines: twoLines(), refused: [] });
+  assert.deepEqual(reds, [{ code: 'rubric-rule-dropped', line: 2, rule: 1 }, { code: 'rubric-rule-dropped', line: 2, rule: 2 }]);
+});
+
+test('RF16: a part on step 2 listing rules [1,2] covers line 2\'s ~ rules: no rubric-rule-dropped', () => {
+  const reds = redsOf([stage([textPart([1, 2])], 2)], { jobLines: twoLines(), refused: [] });
+  assert.deepEqual(reds.filter((r) => r.code === 'rubric-rule-dropped'), []);
+});
+
+test('RF16: a refusal for line 1 rule 1 does not cover line 2\'s rule 1: the red for line 2 rule 1 remains', () => {
+  const reds = redsOf([stage([textPart([2])], 2)], { jobLines: twoLines(), refused: [{ line: 1, rule: 1, reason: 'x' }] });
+  assert.deepEqual(reds, [{ code: 'rubric-rule-dropped', line: 2, rule: 1 }]);
 });
