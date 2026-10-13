@@ -1064,6 +1064,7 @@ export function createSession(card, deps = {}) {
         : draftStopText({
           stop: String(authored.stop ?? 'authoring-failed'), reds: stopReds, refusal: authored.refusal,
           spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete },
+          wholeJob: RUBRIC_FILES,
         }), authored.stop === 'confirm-abandoned' ? 'abandoned' : 'refused');
       return;
     }

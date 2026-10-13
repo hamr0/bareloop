@@ -656,10 +656,11 @@ const SCOUT_REASON_RE = /^the survey is [^(]*\((.*)\) — an absent facts/s;
 
 /**
  * @param {{stop: string, reds?: PlainRed[]|null, refusal?: {detail?: string}|null,
- *   spend?: {knownUsd?: number|null, spendComplete?: boolean|null}|null}} o
+ *   spend?: {knownUsd?: number|null, spendComplete?: boolean|null}|null, wholeJob?: boolean}} o `wholeJob` - a rubric job on the person's
+ *   own inputs (PART 1c, I1): a failed draft asks nothing piecemeal; the person reviews the whole job and submits it again
  * @returns {string}
  */
-export function draftStopText({ stop, reds = null, refusal = null, spend = null }) {
+export function draftStopText({ stop, reds = null, refusal = null, spend = null, wholeJob = false }) {
   const spent = spendText(spend);
   /** @type {Record<string, string>} */
   const heads = {
@@ -690,7 +691,9 @@ export function draftStopText({ stop, reds = null, refusal = null, spend = null 
     for (const x of said.slice(0, PLAIN_MAX_BULLETS)) lines.push(` • ${x}`);
     if (said.length > PLAIN_MAX_BULLETS) lines.push(` • …and ${said.length - PLAIN_MAX_BULLETS} more.`);
   }
-  lines.push(stop === 'cap-halt' || stop === 'pricing-red' ? 'What to do: raise the cap or fix the price in Settings, then draft again.' : 'What to do: draft again.');
+  lines.push(stop === 'cap-halt' || stop === 'pricing-red'
+    ? 'What to do: raise the cap or fix the price in Settings, then draft again.'
+    : (wholeJob ? 'What to do: review the whole job - every line and its ~ rules, and the inputs - and submit it again.' : 'What to do: draft again.'));
   return lines.join('\n');
 }
 

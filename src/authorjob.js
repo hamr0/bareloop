@@ -113,8 +113,9 @@ import {
 } from './authoring.js';
 import {
   QUESTION_SETS, questionsFor, requiredAnswersFor, authorClose, makeCostBook,
-  runConfirmTurn, LANGUAGE_PICK_FIELD,
+  runConfirmTurn, LANGUAGE_PICK_FIELD, normalizeQuestions,
 } from './authorflow.js';
+import { ruleQuestions } from './inputlook.js';
 import { thinkingCallOptions, assertThinkingMode } from './thinking.js';
 import { runAuthorScout, runInputLook, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
 import {
@@ -639,6 +640,22 @@ export async function authorCloseForJob({
     onPhase('scout-done', { state: survey?.state ?? null, facts: Object.keys(survey?.facts ?? {}).length });
   }
 
+  // PART 1c, I1 (hamr 2026-10-13): the look found that the person's intent on a particular `~` rule was NOT captured (its words or
+  // meaning are not in the source) - ask about THAT rule at once, before any plan or draft is paid for. The question gate is the
+  // existing one (`answerQuestions`: answer required, no skip, the answer becomes a `~` rule on its line; `normalizeQuestions` keeps
+  // at most MAX_QUESTIONS, each on a line the look named). Everything else the look could not find asks nothing piecemeal.
+  if (answerQuestions && lang === RUBRIC_LANG && survey?.state === 'PRESENT' && Array.isArray(survey.facts?.look?.notFound) && Array.isArray(jobLines)) {
+    const candidates = ruleQuestions(survey.facts.look.notFound, jobLines);
+    const kept = normalizeQuestions(candidates, [...new Set(candidates.map((q) => q.line))]);
+    if (kept.kept.length > 0) {
+      onPhase('look-ask', { questions: kept.kept.length });
+      const updated = await answerQuestions({ questions: kept.kept, dropped: kept.dropped, confirmed: null });
+      if (updated === null) return { ...base, interview, verdictType: picked, seedRef: seed, reds: [], stop: 'confirm-abandoned', cost: null };
+      jobLines = updated.jobLines;
+      interview.answers = updated.answers;
+    }
+  }
+
   // ── THE CONFIRM TURN'S PAID HALF (PRD item 33 M3 piece 4) ──────────────────
   // Slotted between the scout and the listing: it reuses the scout's own
   // survey (ruling 4 — never a second read of the source) and needs nothing
@@ -731,7 +748,9 @@ export async function authorCloseForJob({
     answers: stageAnswers, questions: questions ?? questionsFor(picked),
     scout: survey, listing: seeds, generate, ceilingUsd, onPhase, onCall, writeScope,
     priorCalls: confirmPriorCalls, priorRaws: confirmPriorRaws, confirmed, jobLines, inputs,
-    ...(answerQuestions ? { offerQuestions: true } : {}),
+    // PART 1c: a rubric job asks nothing piecemeal on a failed try - it stops, and the person reviews the whole job (the one early
+    // ask is about a `~` rule the look could not find, above)
+    ...(answerQuestions && lang !== RUBRIC_LANG ? { offerQuestions: true } : {}),
     ...authorOpts,
   });
   // P7 item 5: the drafter, on the last try after two failed ones, asked. The person answers (required, no skip); each

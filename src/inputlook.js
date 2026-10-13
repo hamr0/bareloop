@@ -10,6 +10,7 @@
 
 import { scanLabels, labelOnList, renderLabelList, normLabel, LABEL_SHAPES } from './labelscan.js';
 import { FACT_SHAPES, FACT_OPS } from './facts.js';
+import { lineRules } from './rubricstep.js';
 
 /** the name of the answer tool - the one place the AI's report enters */
 export const LOOK_REPORT_TOOL = 'report_look';
@@ -248,3 +249,30 @@ export function labelListsOf(texts) {
 }
 
 export { LABEL_SHAPES };
+
+/**
+ * I1 (hamr, 2026-10-13, "Ruled by hamr" 2): when the look shows the person's intent on one `~` rule was NOT captured - its words or
+ * meaning are not in the source - the person is asked about THAT rule at once, named by its line and rule. Only a look entry that names
+ * a rule number counts; anything else the look could not find is not asked piecemeal (it is Not checked, or the whole job is reviewed).
+ * The wording is the code's own, never the model's. The keep-or-drop and the cap are `normalizeQuestions` (src/authorflow.js).
+ * @param {LookNotFound[]} notFound @param {{n: number, text?: string, rule?: string, rules?: string[]}[]} jobLines
+ * @returns {{line: number, question: string}[]} every candidate question (the caller applies the machine's caps)
+ */
+export function ruleQuestions(notFound, jobLines) {
+  /** @type {{line: number, question: string}[]} */
+  const out = [];
+  /** @type {Set<string>} */
+  const seen = new Set();
+  for (const n of Array.isArray(notFound) ? notFound : []) {
+    if (!Number.isInteger(n.rule)) continue;
+    const line = jobLines.find((l) => l.n === n.line);
+    const rule = line ? lineRules(line)[/** @type {number} */ (n.rule) - 1] : undefined;
+    if (!line || rule === undefined) continue;
+    const key = `${n.line}:${n.rule}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const words = n.words ? `${JSON.stringify(n.words)} (from your words)` : 'what this rule asks for';
+    out.push({ line: n.line, question: `Line ${n.line}, rule ${n.rule} - "${rule}": I could not find ${words} in your input (${String(n.why).replace(/\s+/g, ' ').trim().slice(0, 160)}). What do you mean by it? Your answer is added as a new ~ rule on line ${n.line}.` });
+  }
+  return out;
+}
