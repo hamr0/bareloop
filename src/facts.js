@@ -188,6 +188,21 @@ export function factSentence(f, source, tested = null) {
   return `fact · ${f.name} — ${bits.join(', ')}${f.aiProposal ? ' — AI\'s proposal — check it' : ''}${ev.length ? ` — tested on the real input: ${ev.join(', ')}` : ''}`;
 }
 
+/**
+ * One fact as the WORKER is told it (item 7): what to write for it and where in the quote it sits, in plain words, from the signed
+ * fields. A phrase fact has no value to write — the quote has to say it.
+ * @param {any} f @returns {string}
+ */
+export function factBrief(f) {
+  if (f.shape === 'phrase') return `${f.name} — no value to write; the quote you copy must say "${f.phrase}"`;
+  /** @type {string[]} */
+  const bits = [f.shape === 'money' ? `an amount in ${f.unit !== undefined ? f.unit : f.currency}` : `a ${f.shape}`];
+  if (f.shape === 'text') bits[0] = 'words';
+  if (f.anchor !== undefined) bits.push(f.until !== undefined ? `the words right after "${f.anchor}" up to "${f.until}"` : `right after "${f.anchor}"`);
+  if (f.rule) bits.push(`must be ${ruleWords(f)}`);
+  return `${f.name} — ${bits.join(', ')}`;
+}
+
 /** the "N results" row of a fact part, or null @param {any} part @returns {string|null} */
 export function countSentence(part) {
   const c = isRec(part.count) ? part.count : null;

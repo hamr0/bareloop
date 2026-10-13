@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { createRubric, checkStep, renderGaps, numbersInQuote } from 'bareguard';
-import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem } from './facts.js';
+import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem, factBrief, recordWords } from './facts.js';
 
 // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES — what one job line leaves
 // behind and how it is told to the worker.
@@ -36,20 +36,67 @@ export function stepFileContract() {
     '            ** or __ marks do not matter). Every number in a claim must also appear in its quote.',
     '  In each claim, copy every number, time and price exactly as the input writes it (for example "9:27 AM", not "09:27"),',
     '  because the check matches the numbers in your claim against your quote.',
+    'A job line the brief below marks as a FACTS line is different: its file holds ONLY {"results": [{"quote": "...", "values":',
+    '{"<fact>": "<value>"}}]} — one result per record, one quote copied exactly from that record, the values written as the quote',
+    'writes them; no "text" and no "cites". A line the brief marks as a TEXT line keeps "text" (free words), and every number in it',
+    'must be copied from a quote of an earlier facts line.',
     'Write nothing outside output/, and never edit the files under input/. The file must be complete, valid JSON: a file cut',
     'off before its closing brace counts as not written.',
   ].join('\n');
 }
 
 /**
+ * What the worker is told about each line, from the close that will grade it (PART 1b item 7): a FACTS line gets its record, its
+ * facts and its count; a TEXT line that follows a facts line is told its numbers come from that line's quotes. Written by code from
+ * the signed parts, never by a model. A line with no rubric-step stage gets nothing here.
+ * @param {any} closeDecl @returns {{line: number, text: string}[]}
+ */
+export function lineBriefs(closeDecl) {
+  const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
+  /** @type {{line: number, text: string}[]} */
+  const out = [];
+  for (const st of stages) {
+    if (!(isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts) && Number.isInteger(st.params.step))) continue;
+    const n = st.params.step;
+    const fp = factPartOf(st.params);
+    if (fp) {
+      const c = isRec(fp.count) ? fp.count : null;
+      const count = !c ? 'one result for every record you find' : c.min !== undefined && c.max !== undefined
+        ? (c.min === c.max ? `exactly ${c.min} result${c.min === 1 ? '' : 's'}` : `${c.min} to ${c.max} results`)
+        : c.min !== undefined ? `at least ${c.min} results` : `at most ${c.max} results`;
+      out.push({
+        line: n,
+        text: [
+          `Job line ${n} is a FACTS line. Write ${stepFileRel(n)} as {"results": [{"quote": "...", "values": {...}}]} and nothing else — no "text", no "cites".`,
+          `  One result per record in the input "${fp.source}": ${count}. A record's quote is the words ${recordWords(fp.record)}.`,
+          '  "quote": copy those words exactly, from the start of ONE record to its end — one quote per result, never joined from two records.',
+          '  "values": one entry per fact below, written exactly as the quote writes it (for example "9:27 AM", not "09:27"; "389", not "389.00").',
+          ...fp.facts.map((/** @type {any} */ f) => `    - ${factBrief(f)}`),
+        ].join('\n'),
+      });
+      continue;
+    }
+    const tie = st.params.parts.find((/** @type {any} */ x) => isRec(x) && x.class === 'countable' && x.check === 'numbersFromFacts');
+    if (tie) {
+      out.push({
+        line: n,
+        text: `Job line ${n} is a TEXT line. Write ${stepFileRel(n)} as {"text": "..."}. Your words are free, but every number in the text must be copied exactly as it is written in a quote you wrote for job line ${tie.from.join(', ')} — use no other number.`,
+      });
+    }
+  }
+  return out;
+}
+
+/**
  * The worker's goal for a rubric job on local files — written by code from the person's own numbered lines, never by a
  * model. It states everything the close will judge about the FORM of the answer (the file, the keys, the quotes); what
  * each line asks for stays in the person's own words, with its `~` rules beneath it.
- * @param {{jobLines: {n: number, text: string, rule: string}[], files: {label: string, rel: string}[], confirmedGoal?: string|null}} o
+ * @param {{jobLines: {n: number, text: string, rule: string}[], files: {label: string, rel: string}[], confirmedGoal?: string|null, closeDecl?: any}} o
  *   `confirmedGoal` — the one goal sentence the person confirmed in the confirm turn, kept as the plan line
+ *   `closeDecl` — the drafted close: with it, each line is briefed by what its stage checks (a facts line or a text line, `lineBriefs`)
  * @returns {string}
  */
-export function rubricGoal({ jobLines, files, confirmedGoal = null }) {
+export function rubricGoal({ jobLines, files, confirmedGoal = null, closeDecl = null }) {
   const inputs = files.map((f) => `  - ${f.label}: ${f.rel}`).join('\n');
   const lines = jobLines.map((l) => `${l.n}. ${l.text}${l.rule ? `\n   rule: ${l.rule}` : ''}`).join('\n');
   return [
@@ -57,6 +104,7 @@ export function rubricGoal({ jobLines, files, confirmedGoal = null }) {
     `The input files (label: file):\n${inputs}`,
     stepFileContract(),
     `The job, line by line:\n${lines}`,
+    ...(closeDecl ? lineBriefs(closeDecl).map((b) => b.text) : []),
     ...(confirmedGoal ? [`The plan the person confirmed: ${confirmedGoal}`] : []),
   ].join('\n\n');
 }

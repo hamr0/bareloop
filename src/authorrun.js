@@ -1016,7 +1016,7 @@ export async function main(argv, deps = {}) {
       if (RUBRIC_FILES && Array.isArray(draft.jobLines) && draft.jobLines.length > 0) {
         // PART 1a: the worker's goal for a rubric job on files is written by code from the person's own numbered lines and the
         // frozen input files the manifest recorded (src/rubricstep.js); the confirmed goal sentence rides as the plan line
-        draft.goal = redactSecrets(rubricGoal({ jobLines: draft.jobLines, files: manifestRead.manifest?.inputs ?? [], confirmedGoal: authored.confirmed?.goal ?? null }));
+        draft.goal = redactSecrets(rubricGoal({ jobLines: draft.jobLines, files: manifestRead.manifest?.inputs ?? [], confirmedGoal: authored.confirmed?.goal ?? null, closeDecl: authored.closeDecl }));
       } else if (authored.confirmed?.goal) {
         draft.goal = redactSecrets(String(authored.confirmed.goal));
       }
