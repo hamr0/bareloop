@@ -286,7 +286,7 @@ export function splitRecords(text, record) {
     let endFound = true;
     if (typeof record.end === 'string' && record.end !== '') {
       const j = text.indexOf(record.end, s + record.start.length);
-      if (j !== -1 && j < stop) e = j; else endFound = false;
+      if (j !== -1 && j <= stop) e = j; else endFound = false;
     }
     return { start: s, end: e, text: text.slice(s, e), endFound };
   });

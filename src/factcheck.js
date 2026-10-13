@@ -119,9 +119,14 @@ export async function earlyFactTests({ part, text, line, probeFn = probe }) {
   // ── the records ──────────────────────────────────────────────────────────────────────────────────────────────────
   const all = splitRecords(text, part.record);
   if (all.length === 0) { red('rubric-fact-no-records', `no record in "${src}" opens with "${part.record.start}".`); return { reds, notes, tested: empty }; }
-  if (part.record.end !== undefined && all.every((r) => !r.endFound)) {
-    red('rubric-fact-record-end', `no record in "${src}" holds "${part.record.end}" after "${part.record.start}", so the quoted slice has no end.`);
-    return { reds, notes, tested: empty };
+  if (part.record.end !== undefined) {
+    // an end marker the records do not hold is its own red (live fix A2): it used to fall back silently to the whole record and read as "too long"
+    const lacking = all.filter((r) => !r.endFound).length;
+    if (lacking > 0) {
+      const where = lacking === all.length ? `none of the ${all.length} records` : `${lacking} of the ${all.length} records`;
+      red('rubric-fact-record-end', `the end marker ${JSON.stringify(part.record.end)} is not found after "${part.record.start}" in ${where} in "${src}", so the quoted slice has no end there. Name an end marker every record holds (copy it from the input), or leave record.end out.`);
+      return { reds, notes, tested: empty };
+    }
   }
   const records = all.slice(0, MAX_TEST_RECORDS);
   const N = records.length;

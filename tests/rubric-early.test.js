@@ -155,3 +155,22 @@ test('money, number and time facts (the changelog holds none): FOUND, the pass /
   assert.equal(stops.found, 6);
   assert.ok(price.caught === '5/5' && fare.caught === '5/5' && departs.caught === '5/5');
 });
+
+test('A2: an end marker that is in the input but not in some records is its own red naming the marker and how many records lack it', async () => {
+  // three records; the third never says "DONE" after its start, so its slice would silently be the whole record
+  const mini = 'REC one DONE\nREC two DONE\nREC three, no end marker here\n';
+  const p = { text: 'x', class: 'fact', source: 'Mini', record: { start: 'REC ', end: 'DONE' }, facts: [{ name: 'tag', shape: 'text' }] };
+  const r = await earlyFactTests({ part: p, text: mini, line: 1 });
+  assert.deepEqual(r.reds.map((x) => x.code), ['rubric-fact-record-end']);
+  assert.match(r.reds[0].detail, /the end marker "DONE" is not found after "REC " in 1 of the 3 records in "Mini"/);
+  assert.doesNotMatch(r.reds[0].detail, /longer than/, 'it must not read as "too long"');
+  // every record lacking it reads "none of the N records"
+  const none = await earlyFactTests({ part: { ...p, record: { start: 'REC ', end: 'o' } }, text: 'REC a\nREC b\n', line: 1 });
+  assert.match(none.reds.map((x) => x.detail).join(' '), /(not in the input|none of the 2 records)/);
+  // all records hold it: no such red
+  const ok = await earlyFactTests({ part: p, text: 'REC one DONE\nREC two DONE\n', line: 1 });
+  assert.ok(!ok.reds.some((x) => x.code === 'rubric-fact-record-end'));
+  // an end marker that is the very first thing after a record (it opens the next record too) still ends that record
+  const edge = splitRecords('\n- a\n- b\n', { start: '\n- ', end: '\n' });
+  assert.deepEqual(edge.map((x) => x.endFound), [true, true]);
+});
