@@ -174,3 +174,21 @@ test('A2: an end marker that is in the input but not in some records is its own 
   const edge = splitRecords('\n- a\n- b\n', { start: '\n- ', end: '\n' });
   assert.deepEqual(edge.map((x) => x.endFound), [true, true]);
 });
+
+test('A1: a record that is too long is named by its first line, with its length, the end marker given (or none) and an example from that record', async () => {
+  const big = `## [9.9.9] - 2026-01-02\n${'- a bullet line\n'.repeat(400)}`;
+  const doc = `${big}## [9.9.8] - 2026-01-01\n- small\n`;
+  const p = { text: 'x', class: 'fact', source: 'Changelog', record: { start: '## [' }, facts: [{ name: 'tag', shape: 'phrase', phrase: 'small' }] };
+  const none = await earlyFactTests({ part: p, text: doc, line: 1 });
+  assert.deepEqual(codes(none), ['rubric-fact-record-long']);
+  const d = none.reds[0].detail;
+  assert.match(d, /the record in "Changelog" that starts "## \[9\.9\.9\] - 2026-01-02" is \d{4} characters long/);
+  assert.match(d, /no end marker was given/);
+  assert.match(d, /For example, end the slice at the end of its first line \(record\.end = "\\n"\), which cuts this record to 23 characters/);
+  // an end marker that IS found but still leaves it long is named
+  const given = await earlyFactTests({ part: { ...p, record: { start: '## [', end: '- small' } }, text: `${big}- small\n`, line: 1 });
+  assert.match(given.reds.map((x) => x.detail).join(' '), /the end marker given was "- small"/);
+  // the cure the message gives actually clears it
+  const fixed = await earlyFactTests({ part: { ...p, record: { start: '## [', end: '\n' }, facts: [{ name: 'v', shape: 'text', anchor: '## [', until: ']' }] }, text: doc, line: 1 });
+  assert.deepEqual(fixed.reds, []);
+});

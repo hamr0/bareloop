@@ -22,6 +22,26 @@ const BREAK_RECORDS = 5;
 /** the value each shape is probed with: one no real record is expected to hold (a hit is still read as a hit) */
 const PROBE = Object.freeze({ number: '999999999', money: '999999999', date: '0001-01-01', time: '00:00', text: 'zzqx-no-such-text' });
 
+
+/** the longest record slice a quote may hold */
+const MAX_QUOTE_CHARS = 4000;
+
+/**
+ * The refusal for a record that is too long, in plain words that say what to do (live fix A1): which record (its first line),
+ * how long, the end marker the draft gave (or none), and an example taken from that very record.
+ * @param {string} src the input's label @param {string} recText the record's slice @param {{start: string, end?: string}} record
+ * @returns {string}
+ */
+function longRecordText(src, recText, record) {
+  const first = recText.split('\n')[0].trim();
+  const shown = first.length > 60 ? `${first.slice(0, 60)}…` : first;
+  const gave = record.end === undefined ? 'no end marker was given' : `the end marker given was ${JSON.stringify(record.end)}`;
+  const eg = recText.includes('\n')
+    ? `For example, end the slice at the end of its first line (record.end = "\\n"), which cuts this record to ${first.length} characters.`
+    : 'Name a marker inside the record where the slice should end.';
+  return `the record in "${src}" that starts "${shown}" is ${recText.length} characters long, over the ${MAX_QUOTE_CHARS} a quote may hold, and ${gave}. Name where the quoted slice ends (record.end), copied from the input. ${eg}`;
+}
+
 /** @typedef {{name: string, found: number|null, pass?: number, fail?: number, caught?: string}} FactTested */
 /** @typedef {{records: number, of: number, facts: FactTested[]}} Tested */
 /** @param {string} t @returns {string} */
@@ -145,7 +165,7 @@ export async function earlyFactTests({ part, text, line, probeFn = probe }) {
     if (f.shape === 'phrase') {
       let found = 0;
       for (const r of records) {
-        if (r.text.length > 4000) { red('rubric-fact-record-long', `a record in "${src}" is longer than the 4000 characters a quote may hold. Name where the quoted slice ends (record.end).`); return { reds, notes, tested: { records: N, of: all.length, facts } }; }
+        if (r.text.length > MAX_QUOTE_CHARS) { red('rubric-fact-record-long', longRecordText(src, r.text, part.record)); return { reds, notes, tested: { records: N, of: all.length, facts } }; }
         if (!hasAny(await probeFn(d, r.text, undefined), ['phrase-missing'])) found += 1;
       }
       row.found = found;
@@ -173,7 +193,7 @@ export async function earlyFactTests({ part, text, line, probeFn = probe }) {
     /** @type {{text: string, values: string[]}[]} */
     const hits = [];
     for (const r of records) {
-      if (r.text.length > 4000) { red('rubric-fact-record-long', `a record in "${src}" is longer than the 4000 characters a quote may hold. Name where the quoted slice ends (record.end).`); return { reds, notes, tested: { records: N, of: all.length, facts } }; }
+      if (r.text.length > MAX_QUOTE_CHARS) { red('rubric-fact-record-long', longRecordText(src, r.text, part.record)); return { reds, notes, tested: { records: N, of: all.length, facts } }; }
       const items = await probeFn(bind, r.text, PROBE[/** @type {'number'} */ (f.shape)]);
       if (hasAny(items, ['value-malformed'])) { malformed += 1; continue; }
       if (hasAny(items, ['anchor-ambiguous'])) { ambiguous += 1; continue; }
