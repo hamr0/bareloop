@@ -568,6 +568,24 @@ export function tryRefusedText({ reds = null, reason = null }) {
   return text.length > 600 ? `${text.slice(0, 600)}…` : text;
 }
 
+/** the most characters of a refused declaration the drafting log keeps (a bigger one is kept as cut text, said so) */
+const DECLARATION_RECORD_MAX = 60000;
+
+/**
+ * A refused declaration as the drafting log keeps it (live fix A3), so a failed draft can be read and replayed at $0: the declaration
+ * itself, every secret masked as everywhere else (the JSON text goes through `redactSecrets`, then parses back), and bounded.
+ * @param {unknown} declaration
+ * @returns {{declaration: unknown}|{declarationText: string, declarationCut: true}|{}} nothing when there is no declaration
+ */
+export function declarationRecord(declaration) {
+  if (declaration === undefined || declaration === null) return {};
+  let text;
+  try { text = redactSecrets(JSON.stringify(declaration)); } catch { return {}; }
+  if (typeof text !== 'string') return {};
+  if (text.length > DECLARATION_RECORD_MAX) return { declarationText: text.slice(0, DECLARATION_RECORD_MAX), declarationCut: true };
+  try { return { declaration: JSON.parse(text) }; } catch { return { declarationText: text, declarationCut: true }; }
+}
+
 /** the stops this module explains in plain words */
 export const PLAIN_PROPOSAL_STOPS = Object.freeze(['proposal-invalid', 'rubric-invalid']);
 

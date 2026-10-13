@@ -2948,7 +2948,7 @@ export async function authorClose({
         measured = renderRejectBlock({ kind: 'validation', reds: vReds });
         tryFails[i] = { lines: linesNamedByReds(vReds, ask.declaration, (jobLines ?? []).map((l) => l.n)) };
         // WHY this try was refused, for the drafting log and the progress line (the reds are already scrubbed)
-        onPhase('author-try-failed', { call: label, i, of: revisionCap, reds: vReds });
+        onPhase('author-try-failed', { call: label, i, of: revisionCap, reds: vReds, declaration: ask.declaration });
       } else {
         // what gets MEASURED is what will RUN: the resolved declaration with the
         // genre's environment already injected
@@ -2983,7 +2983,7 @@ export async function authorClose({
           const guardNames = guards.map((/** @type {any} */ g) => g.name);
           const stoppedNames = [...new Set(rows.filter((/** @type {any} */ r) => !guardNames.includes(r?.stage) && r?.verdict === 'instrument-stop').map((/** @type {any} */ r) => String(r.stage)))];
           onPhase('author-try-failed', {
-            call: label, i, of: revisionCap,
+            call: label, i, of: revisionCap, declaration: ask.declaration,
             reason: stoppedNames.length
               ? `a check could not run at the starting point (${stoppedNames.join(', ')})`
               : 'no check was failing at the starting point, so none of them could tell a finished job from an unfinished one',

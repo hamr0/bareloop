@@ -125,3 +125,35 @@ test('the drafter reads the input: authorClose puts the (cut, said-so) sample of
   assert.ok(prompt.includes(s.text), 'the sample itself is in the prompt');
   assert.equal(prompt.includes(real.slice(s.shown + 2000, s.shown + 2100)), false, 'and nothing past the cut');
 });
+
+test('A3: a refused try hands its declaration to onPhase (the panel writes it beside try-refused); declarationRecord masks secrets and bounds it', async () => {
+  const { prep, file } = await freeze();
+  const { declarationRecord } = await import('../src/authorreadout.js');
+  const bad = { stages: [{ name: 'no-such', kind: 'no-such-kind-at-all', params: {} }], refused: [{ line: 1, reason: 'fixture' }] };
+  const generate = async (messages, tools) => {
+    await tools.find((t) => t.name === DECLARATION_TOOL_NAME).execute(bad);
+    return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } };
+  };
+  const listing = await buildSeedListing({ workdir: prep.tree, seedRef: prep.manifest.seed, sourcePaths: undefined, testPaths: undefined });
+  /** @type {any[]} */
+  const failed = [];
+  await authorClose({
+    workdir: prep.tree, seedRef: prep.manifest.seed, lang: RUBRIC_LANG, verdictType: 'soft-green',
+    answers: { 1: '1. List the last 3 releases' }, questions: { 1: GREEN_QUESTIONS[1] },
+    scout: { state: 'PRESENT', facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }] }, calls: [], raws: [] },
+    listing, generate, writeScope: ['output/'], jobLines: [{ n: 1, text: 'List the last 3 releases', rule: '' }], inputs: [{ n: 1, label: 'Changelog', value: file }],
+    onPhase: (name, data) => { if (name === 'author-try-failed') failed.push(data); },
+  });
+  assert.ok(failed.length >= 1, 'a refused try was reported');
+  assert.deepEqual(failed[0].declaration.stages, bad.stages, 'the refused declaration itself rides the phase');
+  assert.deepEqual(declarationRecord(failed[0].declaration), { declaration: JSON.parse(JSON.stringify(failed[0].declaration)) });
+  // secrets masked, a huge one cut and said so, nothing => nothing
+  const key = `sk-${'a1B2c3D4'.repeat(4)}`;
+  const masked = JSON.stringify(declarationRecord({ stages: [{ name: 'x', note: `token ${key} here` }] }));
+  assert.equal(masked.includes(key), false);
+  assert.match(masked, /token .* here/);
+  const huge = declarationRecord({ blob: 'z'.repeat(70000) });
+  assert.equal(huge.declarationCut, true);
+  assert.ok(huge.declarationText.length <= 60000);
+  assert.deepEqual(declarationRecord(undefined), {});
+});

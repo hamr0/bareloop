@@ -55,7 +55,7 @@ import { rubricGoal, reconcileRubricPlan } from '../rubricstep.js';
 import { redactSecrets } from '../validate.js';
 import { tallyCalls } from '../text.js';
 import { writeDraftSpend, appendDraftLog } from '../draftspend.js';
-import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, draftStopText, redsRecord, calibrationSummary, tryRefusedText } from '../authorreadout.js';
+import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, draftStopText, redsRecord, declarationRecord, calibrationSummary, tryRefusedText } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 import {
   parseJobBlock, parseInputs, jobBlockFitsCheck, renderJobLines, renderExamples, signedJobLines,
@@ -538,7 +538,7 @@ export function createSession(card, deps = {}) {
       const reason = tryRefusedText(data);
       appendDraftLog(outDir, {
         kind: 'try-refused', no: no === -1 ? state.steps.length - 1 : no, call: String(data.call ?? ''), reason,
-        ...(Array.isArray(data.reds) && data.reds.length ? { reds: redsRecord(data.reds) } : {}), at: new Date().toISOString(),
+        ...(Array.isArray(data.reds) && data.reds.length ? { reds: redsRecord(data.reds) } : {}), ...declarationRecord(data.declaration), at: new Date().toISOString(),
       });
       stepDetail('draft', `${data.call}: refused — ${reason.length > 160 ? `${reason.slice(0, 160)}…` : reason}`);
     }

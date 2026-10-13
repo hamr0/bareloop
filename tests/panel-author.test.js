@@ -1452,7 +1452,7 @@ test('drafting retries record WHY each try was refused: a try-refused line in dr
   const sessionsRoot = tmp('panel-author-sess-tryrefused-');
   const authorFn = async (/** @type {any} */ o) => {
     o.onPhase('author-call', { call: 'author', i: 0, of: 2 });
-    o.onPhase('author-try-failed', { call: 'author', i: 0, of: 2, reds: [{ code: 'unknown-kind', path: 'stages[0].kind', detail: 'stage "x" names a kind that does not exist' }] });
+    o.onPhase('author-try-failed', { call: 'author', i: 0, of: 2, declaration: { stages: [{ name: 'x', kind: 'nope', note: 'sk-AAAAbbbbCCCCdddd1234' }] }, reds: [{ code: 'unknown-kind', path: 'stages[0].kind', detail: 'stage "x" names a kind that does not exist' }] });
     o.onPhase('author-call', { call: 'revise-1', i: 1, of: 2 });
     o.onPhase('author-try-failed', { call: 'revise-1', i: 1, of: 2, reason: 'no check was failing at the starting point' });
     return fakeAuthorFn()();
@@ -1477,6 +1477,9 @@ test('drafting retries record WHY each try was refused: a try-refused line in dr
     ['revise-1', 'no check was failing at the starting point'],
   ]);
   assert.equal(refused[0].reds[0].code, 'unknown-kind');
+  assert.equal(refused[0].declaration.stages[0].kind, 'nope', 'A3: the refused declaration itself is kept beside the reason');
+  assert.equal(JSON.stringify(refused[0]).includes('sk-AAAAbbbbCCCCdddd1234'), false, 'secrets masked');
+  assert.equal(refused[1].declaration, undefined, 'no declaration, none invented');
   assert.equal(refused[0].no, session.state.steps.findIndex((/** @type {any} */ x) => x.id === 'draft'), 'it is filed under the drafting step');
   assert.match(session.state.steps.find((/** @type {any} */ x) => x.id === 'draft').detail, /^revise-1: refused — no check was failing/);
   assert.equal(tryRefusedText({}), 'no reason was recorded', 'never empty');
