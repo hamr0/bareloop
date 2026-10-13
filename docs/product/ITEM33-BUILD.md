@@ -860,3 +860,31 @@ worker brief says "one quote per result, from that result's own text" (quote cap
    meaning not found in the source), ask about THAT rule at once, named by its line and rule. Any other drafting
    failure asks nothing piecemeal: it tells the person to review the whole job and submit it again, with the reasons
    in plain words.
+
+## Addendum 2026-10-13 — Part 1c live fixes (signed by hamr 2026-10-13, "2" = all four)
+
+From the first live drafts of the flights URL job (DeepSeek `deepseek-flash`, panel sessions smv710w8c3wdh and
+smv713up97m3k). No run reached the worker yet.
+
+- **L1 — wait for the page to finish loading.** The same URL gave 77,951 chars / 44 flights (step 0), 8,801 chars /
+  3 flights (smv710w8c3wdh) and 719 chars / header only (smv713up97m3k): `browse()` snapshots at load, before the
+  page's own scripts fill the results. Use barebrowse's published page API (`connect()` → `goto` →
+  `waitForNetworkIdle`, bounded), then `snapshot` with the same options as now. Generic for every site, never a
+  site-specific selector. Same fetch at drafting and at run start.
+- **L2 — an empty page stops, and is never asked about.** A page that is only site chrome (header, menus, sign-in)
+  is a plain-words stop, "Nothing spent", before the look. The 200-char floor let a 719-char header through; the
+  stop must catch a header-only page generically (e.g. the snapshot after the banner/navigation holds no content).
+  The look never asks the person about rules when the input itself is empty.
+- **L3 — the plan card keeps the person's words.**
+  - When the person answered a question with a number or range ("not between 00:00 and 06:00", "between 07:00 and
+    23:00"), the check uses exactly that range and is NOT marked AI's proposal (smv710: the plan said 5:00 AM).
+  - A `~` rule is either a check or under Not checked, never both ("not a red-eye" was in both).
+  - The early question text is never cut mid-sentence ("…found nothing. The)." ).
+  - A rule the AI can turn into a number from its own knowledge ("not a red-eye") is proposed as a range marked
+    AI's proposal (RF17), not asked: the early ask is only for intent the AI cannot know.
+- **L4 — drafting tries refused on form** (smv710w8c3wdh, 3 of 3): `"covers" is not a field of a fact`; "not a
+  red-eye" sent as a judged / unsortable part instead of a time fact with a `between` rule. Read the saved refused
+  declarations (draft-log `declaration`), fix the cause in the drafter's instructions or schema (one rulebook, B1/B2),
+  and add a test that a red-eye-shaped `~` rule drafts to a time fact.
+
+Proof: $0 tests per item; then hamr re-runs Job 1 (flights URL) and Job 2 (changelog) fully in the panel.
