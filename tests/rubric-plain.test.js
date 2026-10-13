@@ -11,10 +11,10 @@ import { rubricStepShapeReds } from '../src/rubricstep.js';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (f) => readFileSync(join(HERE, '..', 'src', f), 'utf8');
 /** every rubric red code the rubric-step code can raise, read from the source files that raise them */
-const CODES = [...new Set(['rubricstep.js', 'facts.js'].flatMap((f) => [...read(f).matchAll(/\bred\('(rubric-[a-z-]+)'/g)].map((m) => m[1])))].sort();
+const CODES = [...new Set(['rubricstep.js', 'facts.js', 'factwords.js'].flatMap((f) => [...read(f).matchAll(/\bred\('(rubric-[a-z-]+)'/g)].map((m) => m[1])))].sort();
 
 test('B3: the source scan finds the rubric red codes (so the sweep below cannot pass over nothing)', () => {
-  assert.ok(CODES.length >= 15, `found ${CODES.length}: ${CODES.join(', ')}`);
+  assert.ok(CODES.length >= 17, `found ${CODES.length}: ${CODES.join(', ')}`);
   for (const c of ['rubric-step-twice', 'rubric-rule-dropped', 'rubric-contradiction']) assert.ok(CODES.includes(c), c);
 });
 

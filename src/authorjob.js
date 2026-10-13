@@ -101,6 +101,7 @@
 import { jobSpecHash, validateJob } from './job.js';
 import { seedAtHead, seedListing, seedRead as runSeedRead, makeSeedTrees, judgedStages, closeJudges } from './kinds.js';
 import { inputLabelsOf, readFrozenInputs } from './rubricstep.js';
+import { proverOf } from './factwords.js';
 // SOFTGREEN modules 4 and 5 — the compile the interview's Q6/Q7 answers land in,
 // and the gate that decides whether the ruler they describe is a ruler.
 import { proposeJudgedArtifacts, signJudgedArtifacts, foldJudgedArtifacts } from './cardauthor.js';
@@ -609,7 +610,7 @@ export async function authorCloseForJob({
       onPhase('look', {});
       const lookCallOptions = thinkingCallOptions(provider, draftThinking);
       survey = await lookFn({
-        texts: frozen.texts, inputs: inputList, jobLines, provider, ceilingUsd, onCall, ...(rates ? { rates } : {}),
+        texts: frozen.texts, inputs: inputList, jobLines, provider, ceilingUsd, onCall, prove: proverOf(frozen.texts), ...(rates ? { rates } : {}),
         ...(Object.keys(lookCallOptions).length ? { callOptions: lookCallOptions } : {}),
       });
       onPhase('look-done', { state: survey?.state ?? null, facts: survey?.facts?.look?.facts?.length ?? 0 });

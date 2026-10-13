@@ -110,7 +110,7 @@ async function freeze() {
   return { file, prep: r.prep };
 }
 
-test('authorClose: a fact list with no record marker validates and is kept as drafted (record cutting is gone)', async () => {
+test('authorClose: a label that is not on the input\'s list is refused at $0 and the drafter is told the word and the input; the corrected try (a label picked from the list, no record marker) validates as drafted', async () => {
   const { prep, file } = await freeze();
   const guard = { name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } };
   const good = {
@@ -118,13 +118,14 @@ test('authorClose: a fact list with no record marker validates and is kept as dr
     facts: [{ name: 'version', shape: 'text', anchor: '## [', until: ']' }, { name: 'released', shape: 'date', rule: { op: 'gte', value: '2026-10-01' } }],
     count: { min: 3, max: 3 },
   };
+  const bad = { ...good, facts: [{ name: 'version', shape: 'text', anchor: 'Release number:', until: ']' }, good.facts[1]] };
   /** @type {any[]} */
   const seen = [];
   let calls = 0;
   const generate = async (messages, tools) => {
     seen.push(messages);
     calls += 1;
-    await tools.find((t) => t.name === DECLARATION_TOOL_NAME).execute({ stages: [guard, stage([good])] });
+    await tools.find((t) => t.name === DECLARATION_TOOL_NAME).execute({ stages: [guard, stage([calls === 1 ? bad : good])] });
     return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } };
   };
   const listing = await buildSeedListing({ workdir: prep.tree, seedRef: prep.manifest.seed, sourcePaths: undefined, testPaths: undefined });
@@ -136,7 +137,13 @@ test('authorClose: a fact list with no record marker validates and is kept as dr
     listing, generate, writeScope: ['output/'], jobLines, inputs: [{ n: 1, label: 'Changelog', value: file }],
   });
   assert.equal(r.ok, true, JSON.stringify(r.reds));
-  assert.equal(r.iterations[0].validation.ok, true, 'the first try was accepted');
+  assert.equal(r.iterations[0].validation.ok, false, 'the first try was refused, at $0');
+  assert.equal(r.iterations[1].validation.ok, true, 'the corrected second try was accepted');
+  assert.equal(r.iterations[0].seedRead, null, 'and the refused try was never run');
+  const second = seen[1].map((m) => m.content).join('\n');
+  assert.match(second, /the label "Release number:" is not one of the labels the input "Changelog" holds before a text value/);
+  assert.match(second, /Nothing was signed/);
+  assert.match(seen[0].map((m) => m.content).join('\n'), /LABELS IN THE INPUT "Changelog" - pick a label ONLY from this list/, 'the drafter is shown the list it must pick from');
   const part = r.declaration.stages[1].params.parts[0];
   assert.deepEqual(Object.keys(part).sort(), ['class', 'count', 'facts', 'rules', 'source', 'text'], 'nothing is added to the part by code: no record, no test evidence, no sample');
 });

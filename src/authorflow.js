@@ -89,7 +89,8 @@ import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty }
 import { redactSecrets } from './validate.js';
 import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, withFactBindings } from './rubricstep.js';
 import { factShapeGuide } from './facts.js';
-import { renderLookReport } from './inputlook.js';
+import { renderLookReport, labelListsOf } from './inputlook.js';
+import { checkDeclarationWords } from './factwords.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
@@ -1261,6 +1262,7 @@ export function jobLineTagBlock(count) {
  *   writeScope?: string[]|null,
  *   jobLines?: {n: number}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
  *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null,
+ *   labelLists?: string[]|null,
  * }} o
  */
 export function authorPrompt({
@@ -1273,14 +1275,15 @@ export function authorPrompt({
   // turn (or ran without `ask`) — byte-identical prompt, nothing added. Present
   // only when a confirm turn actually ran and the person accepted a plan.
   confirmed = null,
-  // PART 1b: what the drafter reads of each input (label -> sample); null = none read
+  // PART 1c: the label lists code made from the frozen inputs (src/labelscan.js `renderLabelList`); a label is picked from them
+  labelLists = null,
 }) {
   // PART 1a: a rubric job on the person's own local files has no repository, no genre template and no tool to measure with —
   // it gets its own brief (`rubricAuthorPrompt`), which still ends in the same declaration tool and the same guards
   // an absent catalogue is the language's own menu (`catalogueForLang`), so a code job's prompt never lists a rubric-only kind
   const catalogue = catalogueIn ?? catalogueForLang(lang);
   if (lang === RUBRIC_LANG) {
-    return rubricAuthorPrompt({ answers, questions, facts, listingBlock, verdictType, guards, mode, catalogue, writeScope, jobLines, inputs, confirmed });
+    return rubricAuthorPrompt({ answers, questions, facts, listingBlock, verdictType, guards, mode, catalogue, writeScope, jobLines, inputs, confirmed, labelLists });
   }
   const statement = CLASS_STATEMENTS[String(verdictType)] ?? null;
   if (statement === null) {
@@ -1447,12 +1450,13 @@ export const REQUIRED_FACTS_BRIEF = 'REQUIRED FACTS — what a line that finds, 
  *   verdictType: string, guards: {name: string, kind: string, params: Record<string, any>, fill: string[]}[],
  *   mode?: 'tool'|'text', catalogue?: Record<string, any>, writeScope?: string[]|null,
  *   jobLines?: {n: number}[]|null, inputs?: {n: number, label: string, value: string}[]|null, confirmed?: any,
+ *   labelLists?: string[]|null,
  * }} o
  * @returns {string}
  */
 export function rubricAuthorPrompt({
   answers, questions = GREEN_QUESTIONS, facts, listingBlock, verdictType, guards,
-  mode = 'tool', catalogue = KIND_CATALOGUE, writeScope = null, jobLines = null, inputs = null, confirmed = null,
+  mode = 'tool', catalogue = KIND_CATALOGUE, writeScope = null, jobLines = null, inputs = null, confirmed = null, labelLists = null,
 }) {
   const interview = Object.entries(questions)
     .map(([n, q]) => `Q${n}. ${q}\nA${n}. ${answers?.[n] ?? '(no answer given)'}`)
@@ -1507,6 +1511,7 @@ left as a placeholder. You never write a number the person did not ask for.`;
       + 'step must cite from, and the limits on its "text".',
     `THE FILES — the inputs the person pointed at, frozen into the job\n\n${JSON.stringify(withoutLook(facts), null, 2)}`
       + (listingBlock ? `\n\n${listingBlock}` : ''),
+    ...(Array.isArray(labelLists) && labelLists.length ? [labelLists.join('\n\n')] : []),
     ...(facts && facts.look ? [renderLookReport(facts.look)] : []),
     rubricCatalogueBlock(catalogue, { verdictType }),
     'MANDATORY GUARDS — already placed and already parameterised\n\n'
@@ -2734,9 +2739,20 @@ export async function authorClose({
   if (envProbe.reds.length) return refuse(envProbe.reds, 'precheck');
 
   // ── the grounded loop ─────────────────────────────────────────────────────
+  // PART 1c: a rubric job on files - the frozen input text the found-once check proves every word against, and the label lists code
+  // made from it (a label is PICKED from them, never typed). null = not a files job, or the freeze could not be read here.
+  /** @type {Record<string, string>|null} */
+  let inputTexts = null;
+  /** @type {string[]|null} */
+  let labelLists = null;
+  if (lang === RUBRIC_LANG && Array.isArray(inputs) && inputs.length > 0) {
+    const frozen = await readFrozenInputs(workdir, inputs.map((i) => i.label));
+    if (frozen.ok) { inputTexts = frozen.texts; labelLists = Object.values(labelListsOf(frozen.texts).lists); }
+  }
   const prompt = authorPrompt({
     answers, questions, facts, listingBlock: /** @type {string} */ (seeds.block),
     lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue, writeScope, confirmed, jobLines, inputs,
+    labelLists,
   });
   /** @type {any[]} */
   let messages = [{ role: 'user', content: prompt }];
@@ -2916,6 +2932,13 @@ export async function authorClose({
 
       // PART 1b: code puts the number tie on every prose step that follows a fact step, before anything is validated or signed
       let v = validateDeclaration(withFactBindings(ask.declaration), { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope, jobLines, inputLabels: inputLabelsOf(inputs) });
+      // PART 1c: code proves, at $0, that every label is PICKED from the input's own list and every word a fact depends on is really
+      // in the source (white-space blind, once is enough). A word that is not found is a red naming the word and the input; the
+      // drafter revises like it does for any validation red.
+      if (v.ok && lang === RUBRIC_LANG) {
+        const words = checkDeclarationWords(v.declaration, inputTexts);
+        if (words.length > 0) v = { ...v, ok: false, reds: [...v.reds, ...words], declaration: null };
+      }
       // SCRUBBED HERE, once, where the reds enter this module's records — the same
       // boundary rule `renderRejectBlock` already states, applied to the OTHER
       // channel they travel down. A validation red quotes what the model declared
