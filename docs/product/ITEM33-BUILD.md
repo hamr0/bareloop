@@ -808,8 +808,11 @@ Riskiest assumptions, in order; stop and report if one fails:
   2. Prose lines and their `~` limits (word count, paragraphs) are not looked up: they stay prose-step checks.
   3. Code's "found" checks are whitespace-blind (Google writes U+202F before AM/PM; 259 in the page).
   4. The look answers through the strict answer form (tool / schema), never free prose with JSON inside.
-- The build's FIRST step re-runs this test with the fixed instructions (same two jobs, 3 looks each, cap $0.10)
-  before any product code; pass = every fact of both jobs right in at least 5 of 6 looks, no id or value as a label.
+- ~~The build's FIRST step re-runs this test~~ — DROPPED (hamr, 2026-10-13). The re-run (scratch `poc-look2/`, $0.0823)
+  got price, time, nonstop, version, date right in 6 of 6 and no id/value labels, but direction 0 of 3 (labels `from` /
+  `to` / `Where from?` — the job's own words, which a found-once check cannot tell from a real label). The 5-of-6 bar
+  was the operator's own gate and graded at drafting, against RF18. Ruling: build now, then FULL live runs; fix only
+  what a full run breaks.
 
 ### 1. Keep from Part 1b
 
