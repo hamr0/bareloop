@@ -2779,7 +2779,7 @@ test('F217: a scout killed by a reset connection reaches the person: authorClose
   const r = await authorClose({ ...baseArgs(), generate: async () => { throw new Error('no token may be spent'); }, seedReadFn: scriptSeedRead().fn, scout: { state: 'ABSENT', facts: null, reason, calls: [] } });
   assert.equal(r.stop, 'precheck');
   const text = draftStopText({ stop: r.stop, reds: r.reds, spend: { knownUsd: 0, spendComplete: true } });
-  assert.match(text, /first look at your repo did not complete/);
+  assert.match(text, /first look at your repo or input did not complete/);
   assert.ok(text.includes('the connection to the provider dropped (socket hang up)'), text);
 });
 

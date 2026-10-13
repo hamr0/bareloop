@@ -36,7 +36,7 @@ test('a hand-built flight-shaped page: the label before each price, time and pla
   assert.equal(s.text.find((r) => r.label === 'Leaves')?.count, 3);
   for (const shape of LABEL_SHAPES) for (const r of s[shape]) {
     assert.doesNotMatch(r.label, /ref=|\d/, `${shape}: ${r.label}`);
-    assert.ok(r.count >= 2, 'only a label that repeats is listed');
+    assert.ok(r.count >= 1);
   }
   // ids are the list's own and stable
   assert.deepEqual(s.money.map((r) => r.id), s.money.map((_, i) => `m${i + 1}`));
@@ -101,4 +101,6 @@ test('a scan is bounded and never throws: an empty text, a huge line and a non-s
   for (const x of ['', null, undefined, 42]) assert.deepEqual(Object.values(scanLabels(/** @type {any} */ (x))).map((r) => r.length), [0, 0, 0, 0, 0]);
   const big = scanLabels(`Price $5 `.repeat(200000));
   assert.ok(big.money.length <= 40);
+  const one = scanLabels('Invoice total: $389.00 due 2026-11-12');
+  assert.ok(one.money.some((r) => r.label === 'Invoice total:' && r.count === 1), 'a one-page document keeps its single labels');
 });

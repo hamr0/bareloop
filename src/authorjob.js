@@ -100,7 +100,7 @@
 
 import { jobSpecHash, validateJob } from './job.js';
 import { seedAtHead, seedListing, seedRead as runSeedRead, makeSeedTrees, judgedStages, closeJudges } from './kinds.js';
-import { inputLabelsOf } from './rubricstep.js';
+import { inputLabelsOf, readFrozenInputs } from './rubricstep.js';
 // SOFTGREEN modules 4 and 5 — the compile the interview's Q6/Q7 answers land in,
 // and the gate that decides whether the ruler they describe is a ruler.
 import { proposeJudgedArtifacts, signJudgedArtifacts, foldJudgedArtifacts } from './cardauthor.js';
@@ -115,7 +115,7 @@ import {
   runConfirmTurn, LANGUAGE_PICK_FIELD,
 } from './authorflow.js';
 import { thinkingCallOptions, assertThinkingMode } from './thinking.js';
-import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
+import { runAuthorScout, runInputLook, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
 import {
   DECLARED_GAP_PREFIX, DECLARED_GENRES, guardNames, isDeclaredClose, validateCloseDecl,
 } from './declaredclose.js';
@@ -426,7 +426,7 @@ function composerRefusal(reds) {
  *   rates?: {in: number, out: number}|null, draftThinking?: 'on'|'off',
  *   onPhase?: (phase: string, data?: any) => void,
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string}) => void,
- *   seedFn?: Function, scoutFn?: Function, listingFn?: Function,
+ *   seedFn?: Function, scoutFn?: Function, listingFn?: Function, lookFn?: Function|null,
  *   authorFn?: Function, authorOpts?: object, writeScope?: string[]|null,
  *   signerFix?: Function|any, proposeFn?: Function, compileOpts?: object,
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
@@ -467,6 +467,9 @@ export async function authorCloseForJob({
   // callback back, and no decision in this file or below it depends on one.
   onPhase = () => {}, onCall = () => {},
   seedFn = seedAtHead, scoutFn = runAuthorScout, listingFn = buildSeedListing,
+  // PART 1c - the look at a rubric job's inputs (src/authorscout.js `runInputLook`). `null` is an explicit "no look" (a test seam, like
+  // a caller-supplied `scout`); the shipped default is the real, paid, read-only look.
+  lookFn = runInputLook,
   authorFn = authorClose, authorOpts = {},
   // SOFTGREEN modules 4+5. `signerFix` is the D5 seam: a function (or a value)
   // carrying the SIGNER's corrected artifacts back. Absent means the proposal is
@@ -593,13 +596,29 @@ export async function authorCloseForJob({
   // arrived at by accident.
   /** @type {any} */
   let survey = scout;
-  // PART 1a: a rubric job on local files has no repository to survey. Its "facts" are the numbered inputs the person
-  // pointed at — known to code at $0 — so the (paid) scout never runs and nothing is invented for it to find.
+  // PART 1a: a rubric job on local files has no repository to survey. PART 1c: its survey is the LOOK - a read-only, bounded, paid
+  // look at the person's frozen input text that reports which facts can be checked and with which label (picked from a code-made
+  // list). Without a look (`lookFn` null, or no model boundary) the survey is just the numbered inputs, known to code at $0.
   if (survey == null && lang === RUBRIC_LANG) {
-    survey = {
-      state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [],
-      facts: { rubricFiles: true, inputs: (Array.isArray(inputs) ? inputs : []).map((i) => ({ n: i.n, label: i.label })) },
-    };
+    const inputList = (Array.isArray(inputs) ? inputs : []).map((i) => ({ n: i.n, label: i.label }));
+    const frozen = lookFn && provider && Array.isArray(jobLines) && jobLines.length > 0 && inputList.length > 0
+      ? await readFrozenInputs(workdir, inputList.map((i) => i.label)) : null;
+    if (frozen !== null && !frozen.ok) {
+      survey = { state: 'ABSENT', reason: `the look at your input could not start: ${frozen.why}`, cause: 'call-failed', budgetStop: null, calls: [], raws: [], facts: null };
+    } else if (frozen !== null && lookFn) {
+      onPhase('look', {});
+      const lookCallOptions = thinkingCallOptions(provider, draftThinking);
+      survey = await lookFn({
+        texts: frozen.texts, inputs: inputList, jobLines, provider, ceilingUsd, onCall, ...(rates ? { rates } : {}),
+        ...(Object.keys(lookCallOptions).length ? { callOptions: lookCallOptions } : {}),
+      });
+      onPhase('look-done', { state: survey?.state ?? null, facts: survey?.facts?.look?.facts?.length ?? 0 });
+    } else {
+      survey = {
+        state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [],
+        facts: { rubricFiles: true, inputs: inputList },
+      };
+    }
   }
   // `== null` and not `!survey`: this is the `??` these two lines replaced, kept
   // exactly — a caller-supplied survey is used whatever it is, and only an

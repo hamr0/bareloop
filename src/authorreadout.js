@@ -313,6 +313,8 @@ export function phaseLine(phase, data = {}) {
     case 'seed': return '· reading the seed commit…';
     case 'scout': return `· scout running (up to ${data.attempts ?? '?'} attempt(s)) — a real survey over the repository…`;
     case 'scout-done': return `· scout ${data.state ?? 'unknown'} — ${data.facts ?? 0} fact(s)`;
+    case 'look': return '· looking at your input — a read-only search for the facts the job asks for…';
+    case 'look-done': return `· look ${data.state ?? 'unknown'} — ${data.facts ?? 0} fact(s) can be checked`;
     case 'listing': return '· listing the files the declaration may name…';
     case 'listing-done': return `· listing ${data.stop ? `STOPPED (${data.stop})` : `${data.files ?? 'unknown'} file(s)`}`;
     case 'author': return '· authoring the close declaration…';
@@ -668,7 +670,7 @@ export function draftStopText({ stop, reds = null, refusal = null, spend = null 
     'max-revisions': 'The AI used all its tries without a plan that passed the checks.',
     precheck: 'Drafting stopped before any call: something it needs was missing.',
     unchanged: 'Drafting stopped: the AI sent the same plan twice.',
-    'scout-absent': 'Drafting stopped: the first look at your repo did not complete.',
+    'scout-absent': 'Drafting stopped: the first look at your repo or input did not complete.',
   };
   const redList = Array.isArray(reds) ? reds : [];
   // F217: the first look at the repo failing (a dropped connection, a timeout) arrives as a `precheck` stop with a

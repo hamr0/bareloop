@@ -16,8 +16,8 @@
 
 /** the shapes a list is made for */
 export const LABEL_SHAPES = Object.freeze(['money', 'number', 'date', 'time', 'text']);
-/** a label must occur at least this often to be listed */
-export const MIN_COUNT = 2;
+/** a label must occur at least this often to be listed (1: a one-page document with one total still has its label; the list is cut to the highest counts) */
+export const MIN_COUNT = 1;
 /** how many labels one shape's list holds at most (the highest counts first) */
 export const MAX_PER_SHAPE = 40;
 /** the longest label, in characters */

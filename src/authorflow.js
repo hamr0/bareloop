@@ -89,6 +89,7 @@ import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty }
 import { redactSecrets } from './validate.js';
 import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, withFactBindings } from './rubricstep.js';
 import { factShapeGuide } from './facts.js';
+import { renderLookReport } from './inputlook.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
@@ -1420,8 +1421,10 @@ export const REQUIRED_FACTS_BRIEF = 'REQUIRED FACTS — what a line that finds, 
   + ' - The facts come from the job line itself AND from its ~ rules: "SFO to LAX" is a from fact and a to fact even with no ~ line. '
   + 'One fact per thing the person asked for. Give every fact a shape. A rule (op, value, or between lo and hi) only where the person '
   + 'asked for a limit.\n'
-  + ' - LOOK at THE INPUTS above before you write a check. Copy every label (anchor), unit and phrase EXACTLY as the '
-  + 'input writes it, and say in "notes" when you used the input\'s words instead of the person\'s.\n'
+  + ' - THE LOOK above is what a read of the inputs found: write the facts from it. Copy every label (anchor), unit and phrase EXACTLY '
+  + 'as the look gives it (the look\'s phrase facts become phrase facts with the same words), and say in "notes" when you used the input\'s '
+  + 'words instead of the person\'s. A label (anchor) is PICKED from the labels the look found in the input, never typed; one that is not '
+  + 'among them is refused at $0. What the look could not find is not checked: list it under "refused" in the person\'s words.\n'
   + ' - When one result holds several values of one kind (leaves / arrives, subtotal / total) give the fact an anchor, the label that sits right before the value you mean.\n'
   + ' - Set aiProposal true on a fact whose number you made out of their words.\n'
   + RUBRIC_RULES + '\n'
@@ -1502,8 +1505,9 @@ left as a placeholder. You never write a number the person did not ask for.`;
     `THE STEP FILES — what the worker leaves behind for each job line\n\n${stepFileContract()}\n\n`
       + 'The rubric-step stage for job line N reads exactly that file, output/steps/N.json. It names the inputs (by label) the '
       + 'step must cite from, and the limits on its "text".',
-    `THE FILES — the inputs the person pointed at, frozen into the job\n\n${JSON.stringify(facts, null, 2)}`
+    `THE FILES — the inputs the person pointed at, frozen into the job\n\n${JSON.stringify(withoutLook(facts), null, 2)}`
       + (listingBlock ? `\n\n${listingBlock}` : ''),
+    ...(facts && facts.look ? [renderLookReport(facts.look)] : []),
     rubricCatalogueBlock(catalogue, { verdictType }),
     'MANDATORY GUARDS — already placed and already parameterised\n\n'
       + 'This kind of job carries a stage the person did not ask for. It is fixed and you may not change, drop, rename, or '
@@ -1511,6 +1515,13 @@ left as a placeholder. You never write a number the person did not ask for.`;
       + 'Place it first: it is cheap, and the first red ends the judgement.',
     output,
   ].join('\n\n---\n\n');
+}
+
+/** the facts object without the look's report (that is its own block, written by code) @param {any} facts */
+function withoutLook(facts) {
+  if (!facts || typeof facts !== 'object' || !('look' in facts)) return facts;
+  const { look: _look, ...rest } = facts;
+  return rest;
 }
 
 /**

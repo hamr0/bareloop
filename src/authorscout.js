@@ -56,6 +56,7 @@ import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, strategyFor } from
 import { redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { extractArtifact, priceOf, scrubRaw, stampRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { PROVIDER_TIMEOUT_MS } from './clock.js';
+import { lookReadTools, lookReportSchema, lookPrompt, verifyLookReport, labelListsOf, LOOK_REPORT_TOOL } from './inputlook.js';
 
 const require = createRequire(import.meta.url);
 const { Loop, wireGate } = require('bare-agent');
@@ -654,6 +655,113 @@ export async function runAuthorScout({
     // when the loop threw
     await surveyor.cleanup();
   }
+}
+
+// ── THE LOOK AT A RUBRIC JOB'S INPUTS (PART 1c, docs/product/ITEM33-BUILD.md "3. The look") ─────────────────────────────────────
+//
+// The same pattern as the repo survey above, aimed at the person's own input text instead of a repository: a FIXED read-only grant
+// (search the input, read a slice around a hit - closures over in-memory text, so there is nothing to fence), a hard round bound, a
+// reserved final round whose ONLY tool is the answer form (no more looking), the spend metered per call into the same `calls` the
+// drafting book absorbs, and the answer through a strict tool call (never free prose with JSON inside). The result is shaped like a
+// survey (`state`, `facts`, `calls`, `raws`, `budgetStop`) so the drafting pipeline absorbs it exactly as it absorbs the repo scout.
+
+/** the look's hard round bound */
+export const LOOK_ROUNDS = AUTHOR_SCOUT_ROUNDS;
+
+export const LOOK_SYSTEM = 'You are a careful analyst setting up a checkable job. You are given the person\'s job and the text of their inputs. '
+  + 'You can only search and read that text - you cannot write, run anything or change anything. You have a hard, small number of turns. '
+  + 'Your single deliverable is a report of which facts the job asks for can be CHECKED in the input, with the label that sits right before each value (picked from the list you are shown), and what you could not find. '
+  + 'You do not judge whether a result is good and you do not decide what is done with the job.';
+
+export const LOOK_RECOVERY_PROMPT = 'You are out of looking turns. Report NOW, from what you have already read: call the report tool once with everything you can check and everything you could not find.';
+
+/**
+ * Run the look. `createLoop` is the same seam the repo scout has; nothing else here needs a live process.
+ * @param {{texts: Record<string, string>, inputs: {n: number, label: string}[], jobLines: {n: number, text: string, rule?: string, rules?: string[]}[],
+ *   provider?: any, rounds?: number, maxTokens?: number, ceilingUsd?: number|null, callTimeoutMs?: number,
+ *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string}) => void,
+ *   createLoop?: (o: {system: string, policy: any, onLlmResult: any, provider: any, rates?: {in: number, out: number}}) => any,
+ *   rates?: {in: number, out: number}|null, callOptions?: Record<string, any>,
+ *   prove?: (source: string, phrase: string) => number}} o
+ * @returns {Promise<{state: 'PRESENT'|'ABSENT', facts: any, reason: string|null, cause: string|null, meta: any, raw: string,
+ *   raws: ReturnType<typeof scrubRaw>[], calls: {label: string, costUsd: number|null, unpricedRounds: number}[],
+ *   budgetStop: 'cap-halt'|'pricing-red'|null}>}
+ */
+export async function runInputLook({
+  texts, inputs, jobLines, provider = null, rounds = LOOK_ROUNDS, maxTokens = AUTHOR_SCOUT_MAX_TOKENS, ceilingUsd = null,
+  callTimeoutMs = AUTHOR_CALL_TIMEOUT_MS, onCall = () => {}, createLoop = defaultLoop, rates = null, callOptions = {}, prove,
+}) {
+  const callTimeout = Number.isFinite(Number(callTimeoutMs)) && Number(callTimeoutMs) > 0
+    ? Math.min(Math.trunc(Number(callTimeoutMs)), AUTHOR_CALL_TIMEOUT_MS) : AUTHOR_CALL_TIMEOUT_MS;
+  const priced = rates ? { rates } : {};
+  /** @type {{label: string, costUsd: number|null, unpricedRounds: number}[]} */
+  const calls = [];
+  /** @type {ReturnType<typeof scrubRaw>[]} */
+  const raws = [];
+  const record = (/** @type {string} */ label, /** @type {any} */ r) => {
+    const call = { label, ...priceOf(r) };
+    calls.push(call);
+    onCall({ ...call, ...(r?.thinkingStatus === undefined ? {} : { thinkingStatus: r.thinkingStatus }) });
+    raws.push(scrubRaw({ label, attempt: 1, text: r?.text }));
+  };
+  const settled = async (/** @type {Promise<any>} */ p) => {
+    try { return await p; } catch (e) {
+      const reason = callCasualty(e);
+      if (reason === null) throw e;
+      return { error: reason };
+    }
+  };
+  const { scans, lists } = labelListsOf(texts);
+  /** @type {{calls: any[]}} */
+  const box = { calls: [] };
+  /** @type {any} */
+  let loop = null;
+  const reportTool = {
+    name: LOOK_REPORT_TOOL,
+    description: 'Deliver the report. Call this exactly once, with the whole report as its arguments.',
+    parameters: lookReportSchema(),
+    execute: async (/** @type {any} */ args) => { box.calls.push(args); if (loop) loop.stop(); return 'received'; },
+  };
+  const tools = [...lookReadTools(texts), reportTool];
+  const absent = (/** @type {string} */ reason, /** @type {string} */ cause, /** @type {'cap-halt'|'pricing-red'|null} */ budgetStop = null) => ({
+    state: /** @type {'ABSENT'} */ ('ABSENT'), facts: null, reason, cause, meta: { rounds: seen, bounded }, raw: '', raws, calls, budgetStop,
+  });
+  let seen = 0;
+  let bounded = false;
+  const halt0 = capStop({ ceilingUsd, ...tallyCalls(calls) });
+  if (halt0) return absent(`the look was never asked for: the $${ceilingUsd} ceiling was already spent`, SURVEY_CAUSES.NOT_FUNDED, halt0);
+
+  const metered = async (/** @type {any} */ arg) => {
+    if ((arg?.kind ?? 'turn') === 'turn') {
+      seen += 1;
+      if (seen >= rounds) { bounded = true; loop.stop(); }
+    }
+  };
+  loop = createLoop({ system: LOOK_SYSTEM, policy: undefined, onLlmResult: metered, provider, ...priced });
+  const r = await settled(loop.run([{ role: 'user', content: lookPrompt({ jobLines, labels: Object.keys(texts), lists }) }], tools,
+    { cacheMessages: true, maxTokens, timeoutMs: callTimeout, ...callOptions }));
+  record('input-look', r);
+  /** @type {any} */
+  let last = r;
+  if (box.calls.length === 0 && !r?.error) {
+    // THE RESERVED FINAL ROUND: no more looking - the only tool is the answer form
+    const halt = capStop({ ceilingUsd, ...tallyCalls(calls) });
+    if (halt) return absent(`the look stopped on the cost ceiling before it reported: ${halt}`, SURVEY_CAUSES.NOT_FUNDED, halt);
+    const recovery = createLoop({ system: LOOK_SYSTEM, policy: undefined, onLlmResult: undefined, provider, ...priced });
+    const rMsgs = Array.isArray(r?.msgs) && r.msgs.length ? (r.msgs[0]?.role === 'system' ? r.msgs.slice(1) : r.msgs) : [];
+    const only = { ...reportTool, execute: async (/** @type {any} */ args) => { box.calls.push(args); recovery.stop(); return 'received'; } };
+    last = await settled(recovery.run([...rMsgs, { role: 'user', content: LOOK_RECOVERY_PROMPT }], [only],
+      { cacheMessages: true, maxTokens, timeoutMs: callTimeout, ...callOptions }));
+    record('input-look-recovery', last);
+  }
+  if (box.calls.length === 0) {
+    return absent(last?.error ? `the look call failed: ${redactSecrets(String(last.error))}` : 'the look ended without a report', last?.error ? SURVEY_CAUSES.CALL_FAILED : SURVEY_CAUSES.EMPTY);
+  }
+  const report = verifyLookReport(box.calls[0], { scans, jobLines, ...(prove ? { prove } : {}) });
+  return {
+    state: 'PRESENT', reason: null, cause: null, meta: { rounds: seen, bounded }, raw: '', raws, calls, budgetStop: null,
+    facts: { rubricFiles: true, inputs: inputs.map((i) => ({ n: i.n, label: i.label })), look: report },
+  };
 }
 
 // ── L1: THE MECHANICAL SEED LISTING ──────────────────────────────────────────

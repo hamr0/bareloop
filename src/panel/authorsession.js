@@ -77,6 +77,7 @@ export const STEP_LABELS = Object.freeze({
   reuse: 'reusing signed workflow',
   read: 'reading repo',
   scout: 'scouting repo',
+  look: 'looking at your input',
   listing: 'listing files',
   confirm: 'confirming plan',
   draft: 'drafting',
@@ -113,6 +114,8 @@ export const PHASE_STEP = Object.freeze({
   seed: 'read',
   scout: 'scout',
   'scout-done': 'scout',
+  look: 'look',
+  'look-done': 'look',
   confirm: 'confirm',
   'confirm-turn-done': 'confirm',
   listing: 'listing',
@@ -362,7 +365,7 @@ export function validateJobCard(card, opts = {}) {
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
  *   scout?: any, generate?: Function, confirmGenerate?: Function, authorFn?: Function,
- *   prepareSigningFn?: Function, npmCiFn?: Function, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
+ *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
  * @returns {any} the session object
@@ -1026,6 +1029,8 @@ export function createSession(card, deps = {}) {
       onPhase, onCall,
       ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult,
       ...(deps.scout ? { scout: deps.scout } : {}),
+      // PART 1c: a test that replaces the model boundary (`generate`) must not reach the real paid look; `deps.lookFn` brings its own
+      ...(deps.lookFn !== undefined ? { lookFn: deps.lookFn } : (deps.generate ? { lookFn: null } : {})),
       ...(authorFnOverride ? { authorFn: authorFnOverride } : {}),
     });
 
