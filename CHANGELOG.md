@@ -21,6 +21,12 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **The panel topbar shows the version:** `bareloop · v<version> · automate a job, verified`, read from bareloop's own package.json when the page is served (never written into the HTML).
 - **Each `~` guardrail is shown on its own marked row** under its numbered job line on the plan card and the Job tab (fwdloop's shape).
 - **A refused drafting try records why** in `draft-log.jsonl` (`try-refused`) and on the drafting step's progress line.
+- **Required facts (Part 1b): a job line that finds, lists or looks something up is checked by what the person asked for, not what the worker chose to write.** The drafter turns the line and its `~` rules into a signed list of facts (name, shape money / number / date / time / phrase / text, a rule only where asked, the input they come from); the worker's file for that line is `{ results: [{ quote, values }] }` with no free text, and bareguard's `cited` + `decides` checks every result in code: the quote is really in the frozen input, every value is really in the quote (compared by shape), every value meets its rule. The claim text is written by code; "N results" is a count code checks. (`src/facts.js`, `src/rubricstep.js`)
+- **Records.** The drafter names where a record opens and where the quoted slice ends; code splits the input and counts the records. The drafter reads the input at drafting (a big one as a said-so sample: the first 15000 characters, cut at a line end, shown on the card).
+- **Three early tests at drafting, on the real input,** before a fact check can be signed (`src/factcheck.js`): every word a check depends on is really in the input; the check finds its value in each record (count shown); a rule has one value per record or an anchor; a value changed by code makes the check go red; the pass / fail split of a rule is shown. A run repeats the words / found / one-per-record tests on the source it reads and stops in plain words if it no longer fits.
+- **No silently dropped rule.** Every `~` rule must become a check (its number in a part's `rules`) or be listed under Not checked (`refused` entries may now name a `rule`); a number the AI made out of the person's words is marked "AI's proposal — check it", and an AI time limit must be a range.
+- **Prose after facts.** Every number in a text step must appear in a checked quote of an earlier fact line (bareguard `numbersInQuote`); the card says "what the text says" is not checked and is judged at Accept.
+- **Plan card and worker brief.** One code-worded row per fact (with the early-test evidence) on the confirm card and the Job tab, covered by the sign-time shown == run check; the worker's goal briefs each line by what its stage checks.
 
 ### Fixed
 
@@ -34,6 +40,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Changed
 
+- **bareguard `^0.21.0` -> `^0.23.0`** (`cited` decides with typed values, bind-only and `text` decides, anchors match on word edges only, a `cited` claim carrying `values` with no `decides` is red).
 - **`~ PASS:` / `~ FAIL:` examples are required of a rubric job only when it holds a judged part** (`jobBlockFitsCheck(lines, rubric, { judged })`, hamr's ruling P1=B). A rubric on a local file holds none in this build; a rubric on a repo still needs them.
 - **Node 22 or newer is required** (`engines.node` `>=22`, CI on Node 22). barebrowse, which the coming rubric `search` step drives, needs Node 22; Node 20 is past end-of-life.
 
