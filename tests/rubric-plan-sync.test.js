@@ -22,6 +22,8 @@ import { createSession } from '../src/panel/authorsession.js';
 import { signRun } from '../src/panel/authorroutes.js';
 import { ANTH_CFG } from './helpers.js';
 
+// PART 1b (RF5): every prose step says what is not checked — its text
+const TEXT_NOT_CHECKED = ['line 1: what the text says — you judge it at Accept', 'line 2: what the text says — you judge it at Accept'];
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** @type {string[]} */
 const made = [];
@@ -59,7 +61,7 @@ test('(b) reconcile: with the real mv5bk400 close, a confirmed check no part cov
     { text: 'the text is at most 80 words', fromLine: [2] },
   ]);
   assert.deepEqual(rec.moved.map((m) => m.text), ['output/steps/1.json lists 3 releases']);
-  assert.deepEqual(rec.notChecked, ['be friendly', 'line 1: output/steps/1.json lists 3 releases — nothing in this close counts it or checks it against a quote']);
+  assert.deepEqual(rec.notChecked, ['be friendly', ...TEXT_NOT_CHECKED, 'line 1: output/steps/1.json lists 3 releases — nothing in this close counts it or checks it against a quote']);
   // and the card and the close agree
   assert.deepEqual(planMatchesClose(rec.checkItems, closeDecl), { ok: true });
 });
@@ -67,7 +69,7 @@ test('(b) reconcile: with the real mv5bk400 close, a confirmed check no part cov
 test('(b) a composer that says nothing about covers drops NOTHING silently: every confirmed check lands in Not checked', () => {
   const rec = reconcileRubricPlan({ confirmed: CONFIRMED, notChecked: [], closeDecl: clone(REAL.closeDecl) });
   assert.equal(rec.moved.length, 4);
-  assert.equal(rec.notChecked.length, 4);
+  assert.equal(rec.notChecked.length, 6, 'the 4 moved checks and the two prose steps\' "what the text says"');
   assert.ok(rec.notChecked.some((n) => n.includes('lists 3 releases')));
   assert.ok(rec.checkItems.every((c) => !c.text.includes('releases')));
 });
@@ -81,7 +83,7 @@ test('(a) "lists 3 releases" becomes a REAL check: a minClaims part counts the c
   const rec = reconcileRubricPlan({ confirmed: CONFIRMED, notChecked: [], closeDecl });
   assert.deepEqual(rec.moved, []);
   assert.ok(rec.checkItems.some((c) => c.text === 'at least 3 claim(s) are listed under "Changelog"' && c.fromLine[0] === 1));
-  assert.deepEqual(rec.notChecked, []);
+  assert.deepEqual(rec.notChecked, TEXT_NOT_CHECKED, 'only the prose steps\' own Not-checked lines');
   assert.equal(partSentence({ check: 'maxClaims', source: 'Changelog', value: 5 }), 'at most 5 claim(s) are listed under "Changelog"');
 });
 

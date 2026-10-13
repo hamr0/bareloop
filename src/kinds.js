@@ -1573,7 +1573,21 @@ async function runRubricStep(stage, ctx) {
   } catch (e) {
     if (/** @type {any} */ (e)?.code !== 'ENOENT') return stop(`${stepFileRel(step)} could not be read: ${/** @type {Error} */ (e).message}`);
   }
-  const graded = await gradeStep({ params: p, bytes: notRegular ? null : bytes, outputBytes: notRegular ? null : bytes, inputs }, inputShas);
+  // PART 1b: a prose step's numbers are tied to the quotes the earlier fact lines' step files hold (those stages ran, and were
+  // green, before this one: the close is first-red-wins in stage order, which the validator pins). Unreadable = a stopped instrument.
+  /** @type {Record<number, string[]>} */
+  const factQuotes = {};
+  const tie = Array.isArray(p.parts) ? p.parts.find((/** @type {any} */ x) => x && x.class === 'countable' && x.check === 'numbersFromFacts') : null;
+  for (const n of tie ? tie.from : []) {
+    try {
+      const parsedFacts = JSON.parse(await readFile(join(ctx.workdir, stepFileRel(n)), 'utf8'));
+      const results = Array.isArray(parsedFacts?.results) ? parsedFacts.results : [];
+      factQuotes[n] = results.map((/** @type {any} */ r) => (r && typeof r.quote === 'string' ? r.quote : ''));
+    } catch (e) {
+      return stop(`the checked facts of line ${n} (${stepFileRel(n)}) could not be read for the number tie: ${/** @type {Error} */ (e).message}`);
+    }
+  }
+  const graded = await gradeStep({ params: p, bytes: notRegular ? null : bytes, outputBytes: notRegular ? null : bytes, inputs, factQuotes }, inputShas);
   if (graded.verdict === 'stopped') return stop(`the rubric stopped: ${graded.fault}`, STOP_FAULTS.CRASHED);
   const gap = new Gap(ctx.gapKeep, ctx.gapCap);
   if (notRegular) gap.push(`${stage.name}: line ${step}: ${stepFileRel(step)} is not a regular file`);

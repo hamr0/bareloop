@@ -87,7 +87,7 @@ import {
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
 import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
-import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs } from './rubricstep.js';
+import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, withFactBindings } from './rubricstep.js';
 import { sampleOf } from './facts.js';
 
 const require = createRequire(import.meta.url);
@@ -2836,7 +2836,8 @@ export async function authorClose({
       }
       previous = ask.declaration;
 
-      const v = validateDeclaration(ask.declaration, { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope, jobLines, inputLabels: inputLabelsOf(inputs) });
+      // PART 1b: code puts the number tie on every prose step that follows a fact step, before anything is validated or signed
+      const v = validateDeclaration(withFactBindings(ask.declaration), { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope, jobLines, inputLabels: inputLabelsOf(inputs) });
       // SCRUBBED HERE, once, where the reds enter this module's records — the same
       // boundary rule `renderRejectBlock` already states, applied to the OTHER
       // channel they travel down. A validation red quotes what the model declared

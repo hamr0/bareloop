@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
-import { createRubric, checkStep, renderGaps } from 'bareguard';
+import { createRubric, checkStep, renderGaps, numbersInQuote } from 'bareguard';
 import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem } from './facts.js';
 
 // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES — what one job line leaves
@@ -91,9 +91,12 @@ export const COUNT_CHECKS = Object.freeze({
   // a COUNT of the claims listed under an input: the code counts the list (flattenStep), bareguard's own min/max compares it
   minClaims: Object.freeze(['value', 'source']),
   maxClaims: Object.freeze(['value', 'source']),
+  // PART 1b: put on every prose step by CODE (`withFactBindings`) when an earlier line is a fact step — every number in the text
+  // must be in a checked quote of those lines. The model never writes it; bareguard's `numbersInQuote` reads it (gradeStep).
+  numbersFromFacts: Object.freeze(['from']),
 });
 /** every field a part may carry, whatever its class */
-const PART_FIELDS = Object.freeze(['text', 'class', 'check', 'value', 'names', 'wordsPerSection', 'source', 'domains', 'covers', 'record', 'facts', 'count', 'tested', 'sample']);
+const PART_FIELDS = Object.freeze(['text', 'class', 'check', 'value', 'names', 'wordsPerSection', 'source', 'domains', 'covers', 'from', 'record', 'facts', 'count', 'tested', 'sample']);
 
 /** @typedef {{code: string, path: string, detail: string}} ShapeRed */
 
@@ -140,11 +143,13 @@ export function rubricStepShapeReds(p, at) {
     for (const f of COUNT_CHECKS[part.check]) {
       const ok = f === 'value' || f === 'wordsPerSection' ? Number.isInteger(part[f]) && part[f] >= 1
         : f === 'names' ? nameList(part.names)
-          : nonEmpty(part.source) && part.source.length <= 128;
+          : f === 'from' ? Array.isArray(part.from) && part.from.length > 0 && new Set(part.from).size === part.from.length && part.from.every((/** @type {unknown} */ x) => Number.isInteger(x) && /** @type {number} */ (x) >= 1)
+            : nonEmpty(part.source) && part.source.length <= 128;
       if (!ok) {
         red('invalid-value', `${w}.${f}`, f === 'names' ? 'a non-empty array of section names'
           : f === 'source' ? 'the label of the input a quote must come from'
-            : 'an integer, 1 or more');
+            : f === 'from' ? 'the numbers of the earlier fact lines whose checked quotes the text\'s numbers come from (distinct integers, 1 or more)'
+              : 'an integer, 1 or more');
       }
     }
   });
@@ -186,6 +191,7 @@ export function buildStepSpec(params, inputShas) {
       case 'cited': checks.push({ id, rule: 'cited', claims: `cites:${part.source}`, source: part.source }); break;
       case 'minClaims': checks.push({ id, rule: 'min', field: `claims:${part.source}`, value: part.value }); break;
       case 'maxClaims': checks.push({ id, rule: 'max', field: `claims:${part.source}`, value: part.value }); break;
+      case 'numbersFromFacts': break; // read in gradeStep from the earlier lines' step files (bareguard's numbersInQuote), not a rubric rule
       default: throw new Error(`rubric-step: no check named "${part.check}"`);
     }
   });
@@ -293,13 +299,15 @@ export function plainStepGap(step, why, g, params = null) {
 /**
  * Grade ONE step: build the rubric, run it over the step file's fields, and say what happened in the close's own terms.
  * Pure of the filesystem (the runner in src/kinds.js reads the files). `stopped` = the instrument failed (never a red).
- * @param {{params: {step: number, parts: any[]}, bytes: string|null, outputBytes: string|null, inputs: Record<string, string>}} o
+ * @param {{params: {step: number, parts: any[]}, bytes: string|null, outputBytes: string|null, inputs: Record<string, string>,
+ *   factQuotes?: Record<number, string[]>}} o
+ *   `factQuotes` maps an earlier fact line's number to the quotes its (already checked) step file holds — what a prose step's numbers are tied to
  *   `inputs` maps each cited label to its frozen TEXT; its sha256 is taken here from that text, and bareguard compares it to
  *   the manifest's recorded sha via `inputShas`.
  * @param {Record<string, string>} inputShas the manifest's recorded sha256 per cited label
  * @returns {Promise<{verdict: 'green'|'red'|'stopped', gapLines: string[], fault: string|null, detail: Record<string, any>}>}
  */
-export async function gradeStep({ params, bytes, outputBytes, inputs }, inputShas) {
+export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes = {} }, inputShas) {
   let rubric;
   try { rubric = createRubric(buildStepSpec(params, inputShas)); } catch (e) {
     return { verdict: 'stopped', gapLines: [], fault: `the rubric for job line ${params.step} could not be built: ${/** @type {Error} */ (e).message}`, detail: {} };
@@ -309,14 +317,28 @@ export async function gradeStep({ params, bytes, outputBytes, inputs }, inputSha
   const r = await checkStep(rubric, String(params.step), parsed.obj === null ? null : flattenStep(parsed.obj, countLabels, factPartOf(params)), {
     inputs, ...(outputBytes === null ? {} : { outputBytes }),
   });
+  // PART 1b: a prose step's numbers are tied to the checked facts of earlier lines (bareguard's `numbersInQuote`: token match on the
+  // numbers, not a canonical compare — a documented limit). Words are free; a number that no checked quote holds is a red.
+  /** @type {string[]} */
+  const extra = [];
+  let extraCount = 0;
+  const tie = params.parts.find((/** @type {any} */ x) => isRec(x) && x.class === 'countable' && x.check === 'numbersFromFacts');
+  if (tie && parsed.obj !== null && typeof parsed.obj.text === 'string') {
+    const quotes = tie.from.flatMap((/** @type {number} */ n) => factQuotes[n] ?? []);
+    const t = numbersInQuote(parsed.obj.text, quotes.join('\n'));
+    if (!t.ok) {
+      extraCount = t.missing.length || 1;
+      extra.push(`line ${params.step}: "text" has number(s) ${t.missing.join(', ')} that no checked quote of line ${tie.from.join(', ')} holds — use only numbers from those quotes, written as they write them`);
+    }
+  }
   // the stage's ONE trend number for the fix-loop governor (F192 e, mirrored): failing CLAIMS under a `cited` check (bareguard's
   // own `measured` count of unsupported quotes), plus 1 for every other failing check — lower is better, compared to the
   // best so far through the same `closeGrade` {stage, value} path numeric stages use
-  const redCount = r.full.gaps.reduce((/** @type {number} */ n, /** @type {any} */ g) => n + (g.check === 'cited' && g.kind === 'unsupported' && typeof g.measured === 'number' ? g.measured : 1), 0);
-  const detail = { step: params.step, rubricSha: r.rubricSha, outputSha: r.outputSha, why: parsed.why, gaps: r.full.gaps.length, ...(r.verdict === 'red' ? { redCount } : {}) };
+  const redCount = extraCount + r.full.gaps.reduce((/** @type {number} */ n, /** @type {any} */ g) => n + (g.check === 'cited' && g.kind === 'unsupported' && typeof g.measured === 'number' ? g.measured : 1), 0);
+  const detail = { step: params.step, rubricSha: r.rubricSha, outputSha: r.outputSha, why: parsed.why, gaps: r.full.gaps.length, ...(r.verdict === 'red' || extra.length > 0 ? { redCount } : {}) };
   if (r.verdict === 'stopped') return { verdict: 'stopped', gapLines: [], fault: r.fault ? `${r.fault.kind}: ${r.fault.detail}` : 'the rubric stopped', detail };
-  if (r.verdict === 'green') return { verdict: 'green', gapLines: [], fault: null, detail };
-  return { verdict: 'red', gapLines: r.gaps.flatMap((g) => plainStepGap(params.step, parsed.why ?? 'empty', g, params).split('\n')), fault: null, detail };
+  if (r.verdict === 'green' && extra.length === 0) return { verdict: 'green', gapLines: [], fault: null, detail };
+  return { verdict: 'red', gapLines: [...extra, ...r.gaps.flatMap((g) => plainStepGap(params.step, parsed.why ?? 'empty', g, params).split('\n'))], fault: null, detail };
 }
 
 // ── R11: the sorting rules, applied at DRAFTING ──────────────────────────────────────────────────────────────────────
@@ -372,6 +394,11 @@ function wordRange(part) {
 export function checkRubricParts(stages, { inputLabels = null, red }) {
   /** @type {Map<number, string>} */
   const owner = new Map();
+  /** the stage index of each fact line (PART 1b: a prose step ties its numbers to fact lines that are checked BEFORE it) @type {Map<number, number>} */
+  const factAt = new Map();
+  stages.forEach((st, i) => {
+    if (isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Number.isInteger(st.params.step) && factPartOf(st.params)) factAt.set(st.params.step, i);
+  });
   stages.forEach((st, i) => {
     if (!isRec(st) || st.kind !== 'rubric-step' || !isRec(st.params)) return;
     const at = `stages[${i}]`;
@@ -391,6 +418,13 @@ export function checkRubricParts(stages, { inputLabels = null, red }) {
     /** @type {{part: any, range: {min: number|null, max: number|null, say: string}}[]} */
     const ranges = [];
     const factLine = p.parts.some((/** @type {any} */ x) => isRec(x) && x.class === 'fact');
+    if (!factLine) {
+      const wantFrom = [...factAt].filter(([, idx]) => idx < i).map(([n]) => n);
+      const tied = p.parts.find((/** @type {any} */ x) => isRec(x) && x.class === 'countable' && x.check === 'numbersFromFacts');
+      if (wantFrom.length > 0 && !(tied && Array.isArray(tied.from) && wantFrom.every((n) => tied.from.includes(n)))) {
+        red('rubric-numbers-unbound', `${at}.params.parts`, `line ${line}: this text step comes after the fact line(s) ${wantFrom.join(', ')}, so every number in its text must be tied to their checked quotes. Nothing spent.`, { line: step, stage: label });
+      }
+    }
     p.parts.forEach((/** @type {any} */ part, /** @type {number} */ j) => {
       if (!isRec(part)) return;
       const w = `${at}.params.parts[${j}]`;
@@ -409,6 +443,13 @@ export function checkRubricParts(stages, { inputLabels = null, red }) {
           red('rubric-fact-twice', w, `line ${line}: '${said}' is a second fact list on the same line. One line has one list of facts; put them all in one. Nothing spent.`, { line: step, stage: label });
         }
       } else if (part.class === 'countable') {
+        if (part.check === 'numbersFromFacts') {
+          const bad = Array.isArray(part.from) ? part.from.filter((/** @type {number} */ n) => !(factAt.has(n) && /** @type {number} */ (factAt.get(n)) < i)) : [];
+          if (factLine || bad.length > 0) {
+            red('rubric-numbers-source', `${w}.from`, `line ${line}: the numbers in the text are tied to line(s) ${bad.length ? bad.join(', ') : part.from}, which are not fact lines checked before this one. Nothing spent.`, { line: step, stage: label });
+          }
+          return;
+        }
         if (factLine) {
           red('rubric-fact-text', w, `line ${line}: '${said}' counts or quotes free text, but this line lists facts and has no text. Say it as a fact (a shape and a rule) or remove it. Nothing spent.`, { line: step, stage: label });
           return;
@@ -440,6 +481,38 @@ export function checkRubricParts(stages, { inputLabels = null, red }) {
   });
 }
 
+/**
+ * PART 1b — put the number tie on every prose step. A rubric-step stage with no fact part that comes AFTER one or more fact
+ * stages gets exactly one `numbersFromFacts` part naming those lines; one the model wrote is replaced. Pure; returns a new
+ * declaration (the input is untouched). The model never writes this part: it is code's, so a draft cannot omit it.
+ * @param {any} declaration @returns {any}
+ */
+export function withFactBindings(declaration) {
+  if (!isRec(declaration) || !Array.isArray(declaration.stages)) return declaration;
+  /** @type {number[]} */
+  const seen = [];
+  const stages = declaration.stages.map((/** @type {any} */ st) => {
+    if (!(isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts))) return st;
+    if (factPartOf(st.params)) { if (Number.isInteger(st.params.step)) seen.push(st.params.step); return st; }
+    const rest = st.params.parts.filter((/** @type {any} */ x) => !(isRec(x) && x.class === 'countable' && x.check === 'numbersFromFacts'));
+    if (seen.length === 0) return rest.length === st.params.parts.length ? st : { ...st, params: { ...st.params, parts: rest } };
+    const from = [...seen];
+    return { ...st, params: { ...st.params, parts: [...rest, { text: `every number in the text is in a quote checked on line ${from.join(', ')}`, class: 'countable', check: 'numbersFromFacts', from }] } };
+  });
+  return { ...declaration, stages };
+}
+
+/**
+ * The Not-checked lines code owns for the rubric-step stages of a close: a prose step's CONTENT is judged by the person at
+ * Accept, and the card says so (PART 1b, RF5). One line per prose step (a stage with no fact part).
+ * @param {any} closeDecl @returns {string[]}
+ */
+export function proseNotChecked(closeDecl) {
+  const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
+  return stages.filter((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts) && !factPartOf(st.params))
+    .map((/** @type {any} */ st) => `line ${st.params.step}: what the text says — you judge it at Accept`);
+}
+
 // ── the sign-vs-run invariant: the checks the person is SHOWN are the checks the signed close RUNS ───────────────────
 
 /**
@@ -459,6 +532,7 @@ export function partSentence(part) {
     case 'cited': return `every claim is backed by a quote copied from "${part.source}"`;
     case 'minClaims': return `at least ${part.value} claim(s) are listed under "${part.source}"`;
     case 'maxClaims': return `at most ${part.value} claim(s) are listed under "${part.source}"`;
+    case 'numbersFromFacts': return `every number in the text is in a quote checked on line ${list(part.from)}`;
     default: return String(part.text ?? part.check);
   }
 }
@@ -496,6 +570,7 @@ export function reconcileRubricPlan({ confirmed, notChecked, closeDecl }) {
     checkItems: real.map((c) => ({ text: c.text, fromLine: [c.line] })),
     notChecked: [
       ...notChecked,
+      ...proseNotChecked(closeDecl),
       ...moved.map((m) => `${m.fromLine && m.fromLine.length ? `line ${m.fromLine.join(', ')}: ` : ''}${m.text} — nothing in this close counts it or checks it against a quote`),
     ],
     moved,
