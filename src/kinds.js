@@ -69,6 +69,7 @@ import { CLOSE_ENV_DENY } from './ralph.js';
 import { runLocate, decide, validateCard, LOCATE_AXES, LOCATE_LABEL } from './judged.js';
 import { rateSourceFields } from './text.js';
 import { gradeStep, stepFileRel, STEP_MAX_BYTES, citedLabels, sha256Of } from './rubricstep.js';
+import { backstopFactTests } from './factcheck.js';
 
 /** the close's two judgment exits — a stage's verdict, in the shape the
  * hand-written closes already spoke (exit code is truth) */
@@ -1559,6 +1560,13 @@ async function runRubricStep(stage, ctx) {
     if (sha256Of(buf) !== row.sha256) return stop(`input "${label}" (${row.rel}) no longer matches the bytes frozen at the source door`);
     inputShas[label] = row.sha256;
     inputs[label] = buf.toString('utf8');
+  }
+  // PART 1b (RF13): the same words / found / one-per-record tests on the source the worker reads — files change, and a check that
+  // can no longer find its value must stop early in plain words, never grade a worker against a source it does not fit
+  const factPart = Array.isArray(p.parts) ? p.parts.find((/** @type {any} */ x) => x && x.class === 'fact') : null;
+  if (factPart) {
+    const why = await backstopFactTests({ part: factPart, text: inputs[factPart.source] ?? '', line: step });
+    if (why.length > 0) return stop(why.join(' '));
   }
   // the step file: a regular file, read once, bounded
   const abs = join(ctx.workdir, stepFileRel(step));

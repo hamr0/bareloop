@@ -89,6 +89,7 @@ import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty }
 import { redactSecrets } from './validate.js';
 import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, withFactBindings } from './rubricstep.js';
 import { sampleOf } from './facts.js';
+import { earlyFactTestsOfDeclaration } from './factcheck.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
@@ -817,7 +818,7 @@ export const PARAM_SCHEMAS = Object.freeze({
       type: 'object',
       properties: {
         text: { type: 'string', minLength: 1, description: 'the constraint, in the person\'s own words' },
-        class: { enum: ['countable', 'judged', 'guard', 'none'] },
+        class: { enum: ['countable', 'fact', 'judged', 'guard', 'none'] },
         check: { enum: ['maxWords', 'minWords', 'maxLines', 'sections', 'sectionWords', 'cited', 'minClaims', 'maxClaims'], description: 'countable only; minClaims / maxClaims count the claims listed under the input named in source' },
         value: { type: 'integer', minimum: 1, description: 'maxWords / minWords / maxLines: the limit the person asked for' },
         names: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 }, description: 'sections / sectionWords: the section names' },
@@ -825,6 +826,53 @@ export const PARAM_SCHEMAS = Object.freeze({
         source: { type: 'string', minLength: 1, description: 'cited: the label of the input a quote must come from' },
         domains: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 }, description: 'guard only: the web domains the rule is about' },
         covers: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'integer', minimum: 1 }, description: 'the number(s) of the CONFIRMED check(s) this part carries out' },
+        rules: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'integer', minimum: 1 }, description: 'the number(s) of the job line\'s ~ rules this part carries out (1 = the first ~ rule under the line)' },
+        record: {
+          type: 'object',
+          description: 'fact only: where one record opens in the input (start) and where the slice the worker quotes ends (end, optional), both copied VERBATIM from the input',
+          properties: { start: { type: 'string', minLength: 1 }, end: { type: 'string', minLength: 1 } },
+          required: ['start'],
+          additionalProperties: false,
+        },
+        facts: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 10,
+          description: 'fact only: the REQUIRED FACTS every result must hold, one per thing the person asked for (from the job line AND its ~ rules)',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', minLength: 1, description: 'what the fact is called: letters and spaces only, no digits' },
+              shape: { enum: ['money', 'number', 'date', 'time', 'phrase', 'text'], description: 'money / number / date / time may carry a rule; phrase = fixed words the quote must contain; text = words the quote holds, as it writes them' },
+              unit: { type: 'string', minLength: 1, description: 'money: the words the input writes after the amount, copied verbatim (or give currency instead)' },
+              currency: { enum: ['$', '€', '£'], description: 'money: the symbol the input writes before the amount (or give unit instead)' },
+              phrase: { type: 'string', minLength: 1, description: 'phrase only: the fixed words, copied verbatim from the input' },
+              anchor: { type: 'string', minLength: 1, description: 'a label copied VERBATIM from the input that sits right before the value (picks the right one when a record holds several)' },
+              until: { type: 'string', minLength: 1, description: 'text with an anchor: the label copied VERBATIM that ends the value' },
+              rule: {
+                type: 'object',
+                description: 'only when the person asked for a limit',
+                properties: {
+                  op: { enum: ['lt', 'lte', 'gt', 'gte', 'between'] },
+                  value: { type: ['number', 'string'], description: 'a number for number/money; a string for date (YYYY-MM-DD) / time (HH:MM)' },
+                  lo: { type: ['number', 'string'] },
+                  hi: { type: ['number', 'string'] },
+                },
+                required: ['op'],
+                additionalProperties: false,
+              },
+              aiProposal: { type: 'boolean', description: 'true when the rule\'s number is YOURS (made out of the person\'s words), not one the person wrote' },
+            },
+            required: ['name', 'shape'],
+            additionalProperties: false,
+          },
+        },
+        count: {
+          type: 'object',
+          description: 'fact only: how many results the person asked for',
+          properties: { min: { type: 'integer', minimum: 1 }, max: { type: 'integer', minimum: 1 } },
+          additionalProperties: false,
+        },
       },
       required: ['text', 'class'],
       additionalProperties: false,
@@ -941,12 +989,13 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
           type: 'object',
           properties: {
             line: { type: 'integer', minimum: 1, description: 'the number of a job line no stage checks' },
+            rule: { type: 'integer', minimum: 1, description: 'optional: the number of ONE ~ rule of that line that nothing checks (the line itself still has a stage)' },
             reason: { type: 'string', minLength: 1, description: 'why, in plain words the person can read' },
           },
           required: ['line', 'reason'],
           additionalProperties: false,
         },
-        description: 'job lines you could not turn into a stage, each with a reason — a note does not cover a line',
+        description: 'job lines (or single ~ rules of a line) you could not turn into a check, each with a reason in the person\'s words — a note does not cover a line or a rule',
       },
       ...(questions ? {
         questions: {
@@ -1350,10 +1399,38 @@ measure anything.`;
  * about KINDS: every part of a job line is counted or checked against a quote, because nothing in this build judges.
  */
 export const RUBRIC_FILES_STATEMENT = 'The person declared this job SOFT-GREEN and pointed it at their own text files: the work is writing '
-  + 'about those files. This build has no judge, so every part of a job line must be one of two things. COUNTED: a limit on words, '
-  + 'sections or lines of what is written. Or BACKED BY A QUOTE: a claim that must carry words copied from a named input. '
+  + 'about those files. This build has no judge, so every part of a job line must be one of three things. COUNTED: a limit on words, '
+  + 'sections or lines of what is written. Or a REQUIRED FACT: something the line finds, lists or looks up, each answer quoted word for '
+  + 'word from a named input and checked by its shape (money, number, date, time, phrase, text). Or BACKED BY A QUOTE: a claim that '
+  + 'must carry words copied from a named input. '
   + 'Compose ONE rubric-step stage per numbered job line, after the mandatory guard, and name only limits the person actually '
   + 'asked for. A part you cannot express that way is not approximated by a stage that means something else.';
+
+/**
+ * REQUIRED FACTS, as the composer is told them (PART 1b, PRD item 33 RF1–RF17). The shape of the fact part is in the catalogue and the
+ * schema; this is the judgement the schema cannot carry: what becomes a fact, where its words come from, and what is Not checked.
+ */
+export const REQUIRED_FACTS_BRIEF = 'REQUIRED FACTS — what a line that finds, lists or looks something up leaves behind\n\n'
+  + 'For such a line write ONE part of class "fact". The worker\'s file for that line holds only results, each with ONE quote copied '
+  + 'from the input and the value of every fact as the quote writes it — no free text. Code checks every value against its quote.\n'
+  + ' - The facts come from the job line itself AND from its ~ rules: "SFO to LAX" is a from fact and a to fact even with no ~ line. '
+  + 'One fact per thing the person asked for. Give every fact a shape. A rule (op, value, or between lo and hi) only where the person '
+  + 'asked for a limit.\n'
+  + ' - LOOK at THE INPUTS above before you write a check. Copy every label (anchor), unit, phrase and record marker EXACTLY as the '
+  + 'input writes it. If the input does not use the person\'s word (they wrote SFO, the input says San Francisco International '
+  + 'Airport), use the words the input uses and say so in "notes"; never invent a word the input does not hold.\n'
+  + ' - record: where one record opens (record.start) and where the slice the worker quotes ends (record.end). A record is one flight, '
+  + 'one release, one row. When a record holds several values of one kind (leaves / arrives, subtotal / total) give the fact an '
+  + 'anchor, the label that sits right before the value you mean.\n'
+  + ' - A limit the person wrote is theirs. A number YOU make out of their words ("not a red-eye" becomes departs between 06:00 and '
+  + '21:00) is your proposal: set aiProposal true on that fact, and a limit on a time that you propose is a RANGE (between), never '
+  + 'one-sided.\n'
+  + ' - How MANY results were asked for is a count ("3 releases": count {min: 3, max: 3}). WHICH ones ("the last", "the newest") and '
+  + 'anything else you cannot express as a shape and a rule ("the cheapest", "the best", "a good pick") is NOT CHECKED: list it in "refused" as {"line": N, "rule": the number of that ~ rule, "reason": the '
+  + 'person\'s own words}. EVERY ~ rule of a line must be carried out by a part (list its number in the part\'s "rules", 1 = the first ~ '
+  + 'rule under the line) or be listed in "refused"; a rule that is neither is refused at $0.\n'
+  + ' - A line that WRITES (a summary, a report) keeps word, section and line counts. Code ties its numbers to the facts of the lines '
+  + 'before it; you do not add that.';
 
 /**
  * The composer prompt for a rubric job on local files (Part 1a, docs/product/ITEM33-BUILD.md). There is no repository
@@ -1417,6 +1494,7 @@ left as a placeholder. You never write a number the person did not ask for.`;
       'EVERY CONFIRMED CHECK IS COMPOSED OR MOVED, NEVER DROPPED\n\nThe person saw the numbered checks above. On each countable part that carries one of them out, list its number in "covers". '
       + 'A confirmed check that no part covers is not silently left out: it is moved to Not checked before signing, and the person is told. '
       + 'To count "N things listed", use minClaims / maxClaims (it counts the claims listed under an input); anything else you cannot count is not composed.'] : []),
+    REQUIRED_FACTS_BRIEF,
     `THE STEP FILES — what the worker leaves behind for each job line\n\n${stepFileContract()}\n\n`
       + 'The rubric-step stage for job line N reads exactly that file, output/steps/N.json. It names the inputs (by label) the '
       + 'step must cite from, and the limits on its "text".',
@@ -2083,10 +2161,15 @@ const confirmChannel = () => ({
  * input must back. Everything else the person asked for is named in `notChecked`, in their words.
  */
 export const RUBRIC_CONFIRM_NOTE = 'THIS JOB HAS NO REPOSITORY. Its inputs are the person\'s own text files, and each numbered job line leaves ONE '
-  + 'file the run writes (output/steps/<line>.json: a "text" and, per input, quoted claims). In this build only two kinds '
-  + 'of check exist: a COUNTED limit on that text (words, lines, sections, words per section) and a claim that must be '
-  + 'backed by a quote copied from a named input. Plan a check only for what the person asked for in those terms; '
-  + 'anything that needs reading the text to judge it (tone, quality, accuracy) goes in `notChecked`, in the person\'s own words.';
+  + 'file the run writes (output/steps/<line>.json: a "text" and, per input, quoted claims — or, for a line that finds, lists or '
+  + 'looks something up, only filled facts, each quoted from the input). In this build only three kinds of check exist: a COUNTED '
+  + 'limit on that text (words, lines, sections, words per section); a claim that must be backed by a quote copied from a named input; '
+  + 'and a REQUIRED FACT, something a line finds (a price, a date, a time, a name, a phrase) with a limit only if the person gave one '
+  + '— plan one fact check for each thing the line asks to find, including those named in the line itself ("SFO to LAX"). Plan a check '
+  + 'only for what the person asked for in those terms; '
+  + 'anything that needs reading the text to judge it (tone, quality, accuracy), any superlative ("the cheapest", "the best") and any '
+  + 'choice of WHICH ones ("the last", "the newest") goes in `notChecked`, in the person\'s own words; how MANY results were asked for is '
+  + 'a count and can be checked.';
 
 export const CONFIRM_SYSTEM = 'You read what a NON-ENGINEER answered, plus a read-only survey or listing of their '
   + 'own repository, and draft a PLAN for a job\'s definition of done: the checks you plan to compose and one '
@@ -2837,7 +2920,13 @@ export async function authorClose({
       previous = ask.declaration;
 
       // PART 1b: code puts the number tie on every prose step that follows a fact step, before anything is validated or signed
-      const v = validateDeclaration(withFactBindings(ask.declaration), { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope, jobLines, inputLabels: inputLabelsOf(inputs) });
+      let v = validateDeclaration(withFactBindings(ask.declaration), { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope, jobLines, inputLabels: inputLabelsOf(inputs) });
+      // PART 1b (RF13–RF15): the three early tests on the person's real frozen input, before any fact check can be signed. A red here
+      // is a validation red like any other (the drafter revises); a pass fills each fact part's `tested` evidence IN, by code.
+      if (v.ok && lang === RUBRIC_LANG) {
+        const early = await earlyFactTestsOfDeclaration(v.declaration, inputTexts, (t) => sampleOf(t).note);
+        v = early.reds.length > 0 ? { ...v, ok: false, reds: [...v.reds, ...early.reds], declaration: null } : { ...v, declaration: early.declaration };
+      }
       // SCRUBBED HERE, once, where the reds enter this module's records — the same
       // boundary rule `renderRejectBlock` already states, applied to the OTHER
       // channel they travel down. A validation red quotes what the model declared

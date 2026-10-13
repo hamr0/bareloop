@@ -43,15 +43,16 @@ const boundOk = (/** @type {string} */ shape, /** @type {unknown} */ v) => (shap
  */
 export function factShapeReds(part, w, red) {
   for (const k of Object.keys(part)) {
-    if (!['text', 'class', 'covers', 'source', 'record', 'facts', 'count', 'tested', 'sample'].includes(k)) {
-      red('invalid-value', `${w}.${k}`, `"${k}" is not a field of a fact part — fields: text, class, covers, ${FACT_PART_FIELDS.join(', ')}`);
+    if (!['text', 'class', 'covers', 'rules', 'source', 'record', 'facts', 'count', 'tested', 'sample'].includes(k)) {
+      red('invalid-value', `${w}.${k}`, `"${k}" is not a field of a fact part — fields: text, class, covers, rules, ${FACT_PART_FIELDS.join(', ')}`);
     }
   }
   if (!(nonEmpty(part.source) && part.source.length <= 128)) red('invalid-value', `${w}.source`, 'the label of the input the quotes come from');
   if (!isRec(part.record)) red('invalid-value', `${w}.record`, '{start, end?} — the words (copied from the input) that open a record, and optionally the words that close its quoted slice');
   else {
-    if (!nonEmpty(part.record.start)) red('invalid-value', `${w}.record.start`, 'the words that open each record, copied from the input');
-    if (Object.hasOwn(part.record, 'end') && !nonEmpty(part.record.end)) red('invalid-value', `${w}.record.end`, 'the words that end the quoted slice of a record, copied from the input');
+    // a marker may be only white space (a line break ends a heading): non-empty, not "non-blank"
+    if (!(typeof part.record.start === 'string' && part.record.start !== '')) red('invalid-value', `${w}.record.start`, 'the words that open each record, copied from the input');
+    if (Object.hasOwn(part.record, 'end') && !(typeof part.record.end === 'string' && part.record.end !== '')) red('invalid-value', `${w}.record.end`, 'the words that end the quoted slice of a record, copied from the input');
     for (const k of Object.keys(part.record)) if (k !== 'start' && k !== 'end') red('invalid-value', `${w}.record.${k}`, `"${k}" is not a field of record — fields: start, end`);
   }
   if (!Array.isArray(part.facts) || part.facts.length === 0 || part.facts.length > MAX_FACTS) {
@@ -163,9 +164,11 @@ function ruleWords(f) {
 /**
  * One fact as a plain row, written by code from the signed fields:
  * `fact · price — money, at most 450 US dollars, after "Price", quoted from "Flights"`.
- * @param {any} f @param {string} source @returns {string}
+ * @param {any} f @param {string} source
+ * @param {{records: number, facts: {name: string, found: number|null, pass?: number, fail?: number, caught?: string}[]}|null} [tested] the early-test evidence code filled in at drafting
+ * @returns {string}
  */
-export function factSentence(f, source) {
+export function factSentence(f, source, tested = null) {
   /** @type {string[]} */
   const bits = [];
   if (f.shape === 'phrase') bits.push('phrase', `must say "${f.phrase}"`);
@@ -176,7 +179,13 @@ export function factSentence(f, source) {
     if (f.anchor !== undefined) bits.push(f.until !== undefined ? `the words after "${f.anchor}" up to "${f.until}"` : `after "${f.anchor}"`);
   }
   bits.push(`quoted from "${source}"`);
-  return `fact · ${f.name} — ${bits.join(', ')}${f.aiProposal ? ' — AI\'s proposal — check it' : ''}`;
+  const t = tested && Array.isArray(tested.facts) ? tested.facts.find((x) => x && x.name === f.name) : null;
+  /** @type {string[]} */
+  const ev = [];
+  if (t && typeof t.found === 'number') ev.push(`found ${t.found}/${tested ? tested.records : '?'}`);
+  if (t && typeof t.pass === 'number' && typeof t.fail === 'number') ev.push(`${t.pass} pass, ${t.fail} fail`);
+  if (t && typeof t.caught === 'string') ev.push(`a changed value caught ${t.caught}`);
+  return `fact · ${f.name} — ${bits.join(', ')}${f.aiProposal ? ' — AI\'s proposal — check it' : ''}${ev.length ? ` — tested on the real input: ${ev.join(', ')}` : ''}`;
 }
 
 /** the "N results" row of a fact part, or null @param {any} part @returns {string|null} */
@@ -193,10 +202,11 @@ export function countSentence(part) {
  * @param {any} part @returns {string[]}
  */
 export function factRows(part) {
-  const rows = (Array.isArray(part.facts) ? part.facts : []).map((/** @type {any} */ f) => factSentence(f, part.source));
-  const rec = isRec(part.record) && nonEmpty(part.record.start) ? [`fact · records — each begins at "${part.record.start}"${part.record.end !== undefined ? ` and is quoted up to "${part.record.end}"` : ''}, in "${part.source}"`] : [];
+  const rows = (Array.isArray(part.facts) ? part.facts : []).map((/** @type {any} */ f) => factSentence(f, part.source, isRec(part.tested) ? /** @type {any} */ (part.tested) : null));
+  const rec = isRec(part.record) && typeof part.record.start === 'string' && part.record.start !== '' ? [`fact · records — each begins at "${part.record.start}"${part.record.end !== undefined ? ` and is quoted up to ${sayEnd(part.record.end)}` : ''}, in "${part.source}"`] : [];
   const c = countSentence(part);
-  return [...rows, ...rec, ...(c ? [c] : [])];
+  const cut = typeof part.sample === 'string' && part.sample !== '' ? [`fact · input — the AI read ${part.sample}`] : [];
+  return [...rows, ...rec, ...cut, ...(c ? [c] : [])];
 }
 
 /**
@@ -287,12 +297,15 @@ export function sampleOf(text, max = SAMPLE_CHARS) {
   };
 }
 
+/** an end marker in words: a bare line break reads as "the end of the line" @param {string} end @returns {string} */
+const sayEnd = (end) => (end === '\n' ? 'the end of the line' : `"${end}"`);
+
 /**
  * The quote instruction a worker is given for a record, in plain words (the worker brief and the composer prompt both use it).
  * @param {{start: string, end?: string}} record @returns {string}
  */
 export function recordWords(record) {
   return record.end !== undefined
-    ? `from the words "${record.start}" up to (not including) "${record.end}"`
+    ? `from the words "${record.start}" up to (not including) ${sayEnd(record.end)}`
     : `from the words "${record.start}" up to where the next record opens`;
 }

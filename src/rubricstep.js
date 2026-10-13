@@ -96,7 +96,7 @@ export const COUNT_CHECKS = Object.freeze({
   numbersFromFacts: Object.freeze(['from']),
 });
 /** every field a part may carry, whatever its class */
-const PART_FIELDS = Object.freeze(['text', 'class', 'check', 'value', 'names', 'wordsPerSection', 'source', 'domains', 'covers', 'from', 'record', 'facts', 'count', 'tested', 'sample']);
+const PART_FIELDS = Object.freeze(['text', 'class', 'check', 'value', 'names', 'wordsPerSection', 'source', 'domains', 'covers', 'rules', 'from', 'record', 'facts', 'count', 'tested', 'sample']);
 
 /** @typedef {{code: string, path: string, detail: string}} ShapeRed */
 
@@ -132,6 +132,10 @@ export function rubricStepShapeReds(p, at) {
     if (Object.hasOwn(part, 'covers') && !(Array.isArray(part.covers) && part.covers.length > 0 && new Set(part.covers).size === part.covers.length
       && part.covers.every((/** @type {unknown} */ x) => Number.isInteger(x) && /** @type {number} */ (x) >= 1))) {
       red('invalid-value', `${w}.covers`, 'the numbers of the confirmed checks this part carries out (distinct integers, 1 or more)');
+    }
+    if (Object.hasOwn(part, 'rules') && !(Array.isArray(part.rules) && part.rules.length > 0 && new Set(part.rules).size === part.rules.length
+      && part.rules.every((/** @type {unknown} */ x) => Number.isInteger(x) && /** @type {number} */ (x) >= 1))) {
+      red('invalid-value', `${w}.rules`, 'the numbers of the line\'s ~ rules this part carries out (distinct integers, 1 or more)');
     }
     if (part.class === 'fact') { factShapeReds(part, w, (c, path, d) => red(c, path, d)); return; }
     if (part.class === 'guard') {
@@ -479,6 +483,62 @@ export function checkRubricParts(stages, { inputLabels = null, red }) {
       }
     }
   });
+}
+
+/** the ~ rules of one job line, one string each (`rules` when the line has the array, else the joined `rule` split on "; ") @param {any} l @returns {string[]} */
+export function lineRules(l) {
+  if (isRec(l) && Array.isArray(l.rules)) return l.rules.filter((/** @type {unknown} */ r) => typeof r === 'string' && r);
+  return isRec(l) && typeof l.rule === 'string' && l.rule ? l.rule.split('; ').filter(Boolean) : [];
+}
+
+/** @param {unknown} b @returns {string[]} the spellings a rule bound can have in the person's own words */
+const boundSpellings = (b) => {
+  const s = String(b);
+  return [s, s.replace(/^0+(?=\d)/, ''), s.replace(/\.0+$/, '')];
+};
+
+/**
+ * PART 1b, RF16 + RF17 — the rules that need the person's own job lines. Only a close built for REQUIRED FACTS is held to them (a
+ * close with a fact part, or any part that says which `~` rules it carries out): an older Part 1a close is left as it was signed.
+ *   - every `~` rule of every job line is carried out by a part (its number in the part's `rules`), or is listed in `refused` with
+ *     its `rule` number, or its whole line is refused: a rule that is none of those was silently dropped, and that is a red;
+ *   - a number the AI made out of the person's words (a bound the person did not write) must be marked `aiProposal`, and a time
+ *     limit the AI proposes must be a range (`between`), never one-sided — "not a red-eye" must not let a 10 PM flight through.
+ * @param {any[]} stages @param {{jobLines?: any[]|null, refused?: any, red: (code: string, path: string, detail: string, extra?: object) => void}} o
+ */
+export function checkRubricRules(stages, { jobLines = null, refused = null, red }) {
+  const rubric = stages.map((st, i) => ({ st, i })).filter(({ st }) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts));
+  const anyTag = rubric.some(({ st }) => st.params.parts.some((/** @type {any} */ x) => isRec(x) && (x.class === 'fact' || Object.hasOwn(x, 'rules'))));
+  if (!anyTag || !Array.isArray(jobLines)) return;
+  const refusedList = Array.isArray(refused) ? refused.filter(isRec) : [];
+  for (const l of jobLines) {
+    if (!isRec(l) || !Number.isInteger(l.n)) continue;
+    const rules = lineRules(l);
+    const wholeLine = refusedList.some((r) => r.line === l.n && !Object.hasOwn(r, 'rule'));
+    const carried = new Set(rubric.filter(({ st }) => st.params.step === l.n).flatMap(({ st }) => st.params.parts.flatMap((/** @type {any} */ x) => (isRec(x) && Array.isArray(x.rules) ? x.rules : []))));
+    rules.forEach((text, k) => {
+      const n = k + 1;
+      if (wholeLine || carried.has(n) || refusedList.some((r) => r.line === l.n && r.rule === n)) return;
+      red('rubric-rule-dropped', `jobLines[${l.n - 1}].rules[${k}]`, `line ${l.n}: your rule "${sayText(text)}" is neither checked nor listed under Not checked. Make it a check (list ${n} in the part's "rules") or list it in "refused" as {"line": ${l.n}, "rule": ${n}, "reason": "..."}. Nothing spent.`, { line: l.n, rule: n });
+    });
+  }
+  for (const { st, i } of rubric) {
+    const fp = factPartOf(st.params);
+    if (!fp || !Array.isArray(fp.facts)) continue;
+    const jl = jobLines.find((l) => isRec(l) && l.n === st.params.step);
+    const said = jl ? `${jl.text ?? ''} ${lineRules(jl).join(' ')}` : null;
+    fp.facts.forEach((/** @type {any} */ f, /** @type {number} */ j) => {
+      if (!isRec(f) || !isRec(f.rule)) return;
+      const w = `stages[${i}].params.parts[${st.params.parts.indexOf(fp)}].facts[${j}]`;
+      const bounds = f.rule.op === 'between' ? [f.rule.lo, f.rule.hi] : [f.rule.value];
+      if (said !== null && !f.aiProposal && bounds.some((b) => !boundSpellings(b).some((sp) => said.includes(sp)))) {
+        red('rubric-fact-unmarked', w, `line ${st.params.step}: the limit on fact "${f.name}" (${bounds.join(' to ')}) is not in the words the person wrote, so it is the AI's own number. Set "aiProposal": true on that fact so the card says "AI's proposal — check it". Nothing spent.`, { line: st.params.step });
+      }
+      if (f.aiProposal && f.shape === 'time' && f.rule.op !== 'between') {
+        red('rubric-fact-onesided', w, `line ${st.params.step}: fact "${f.name}" is a time limit the AI made up, and a one-sided limit lets the other end through (a 10 PM flight passes "not a red-eye"). Use a range: "op": "between" with "lo" and "hi". Nothing spent.`, { line: st.params.step });
+      }
+    });
+  }
 }
 
 /**

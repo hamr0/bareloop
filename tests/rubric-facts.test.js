@@ -38,7 +38,7 @@ const releases = (text) => text.split('\n').map((l) => /^## \[(\d+\.\d+\.\d+)\] 
   .map((m) => ({ quote: m[0], version: m[1], date: m[2] }));
 
 const factPart = (over = {}) => ({
-  text: 'list the last 3 releases with their dates', class: 'fact', source: 'Changelog', record: { start: '## [' },
+  text: 'list the last 3 releases with their dates', class: 'fact', source: 'Changelog', record: { start: '## [', end: '\n' },
   facts: [
     { name: 'version', shape: 'text', anchor: '## [', until: ']' },
     { name: 'released', shape: 'date', rule: { op: 'gte', value: '2026-01-01' } },
@@ -118,7 +118,7 @@ test('the plan card rows come from the signed part: one per fact, then the recor
   assert.deepEqual(rows, [
     'fact · version — text, the words after "## [" up to "]", quoted from "Changelog"',
     'fact · released — date, at least 2026-01-01, quoted from "Changelog"',
-    'fact · records — each begins at "## [", in "Changelog"',
+    'fact · records — each begins at "## [" and is quoted up to the end of the line, in "Changelog"',
     'fact · results — exactly 3 results, each quoted from "Changelog"',
   ]);
   const decl = { stages: [stage([{ ...part, covers: [1] }])] };

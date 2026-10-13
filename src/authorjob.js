@@ -785,7 +785,7 @@ export async function authorCloseForJob({
     // P7: the job lines the drafter could not turn into a stage, each with its reason — the Job tab shows them. Free
     // text the model wrote, so it rides the same redactor `notes` does.
     ...(authored.declaration.refused?.length
-      ? { refused: authored.declaration.refused.map((/** @type {any} */ r) => ({ line: r.line, reason: redactSecrets(String(r.reason)) })) }
+      ? { refused: authored.declaration.refused.map((/** @type {any} */ r) => ({ line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), reason: redactSecrets(String(r.reason)) })) }
       : {}),
   };
 

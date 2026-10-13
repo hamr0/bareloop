@@ -74,7 +74,7 @@
 
 import { normalizeParser, MAX_JUDGED_PATHS, JUDGED_FLOOR_KIND } from './kinds.js';
 import { JUDGE_RULE_IDS, validateCard } from './judged.js';
-import { rubricStepShapeReds, checkRubricParts } from './rubricstep.js';
+import { rubricStepShapeReds, checkRubricParts, checkRubricRules } from './rubricstep.js';
 import { isObj, isNonEmptyString, hasNestedQuantifier, globToPrefix } from './validate.js';
 
 /** @typedef {{code: string, path: string, detail: string, [k: string]: any}} Red */
@@ -352,15 +352,20 @@ export const KIND_CATALOGUE = Object.freeze({
     required: Object.freeze(['step', 'parts']),
     optional: Object.freeze([]),
     pathParams: Object.freeze([]),
-    shape: 'step: integer (the job line number), parts: [{text: string, class: "countable" | "judged" | "guard" | "none", '
+    shape: 'step: integer (the job line number), parts: [{text: string, class: "countable" | "fact" | "judged" | "guard" | "none", '
       + 'check?: "maxWords" | "minWords" | "maxLines" | "sections" | "sectionWords" | "cited" | "minClaims" | "maxClaims", value?: integer, names?: string[], '
-      + 'wordsPerSection?: integer, source?: string (an input label), domains?: string[], covers?: integer[]}]',
+      + 'wordsPerSection?: integer, source?: string (an input label), domains?: string[], covers?: integer[], rules?: integer[], '
+      + 'fact parts: record?: {start: string, end?: string}, facts?: [{name, shape: "money"|"number"|"date"|"time"|"phrase"|"text", unit?|currency?, phrase?, anchor?, until?, '
+      + 'rule?: {op, value | lo+hi}, aiProposal?: boolean}], count?: {min?, max?}}]',
     asserts: 'the file output/<step>.json under output/steps/ exists, is a JSON object, and its "text" is present and within the '
       + 'limits the person asked for. Write ONE rubric-step stage per numbered job line (step = that line number, fromLine = [that line]). '
       + 'In "parts" list each constraint the person put on that line, in their own words, and SORT it: "countable" when a machine can '
       + 'count it (check maxWords/minWords/maxLines with value; sections with names; sectionWords with names and wordsPerSection) or '
       + 'when claims must be backed by a quote from a named input (check cited, source = the input label), or when a number of '
       + 'quoted claims is asked for (minClaims / maxClaims with value and source: it counts the claims listed under that input); '
+      + 'a line that FINDS, LISTS or LOOKS UP something gets ONE part of class "fact" instead (source = the input label, record = where a record opens '
+      + 'and where its quoted slice ends, facts = the required facts, count = how many results): its step file holds only filled facts and no free text, so '
+      + 'give such a line no word, section or claim-count parts; list in "rules" the number of every ~ rule a part carries out; '
       + 'on every countable part that carries out a CONFIRMED check, list that check\'s number in covers (a confirmed check no part '
       + 'covers is moved to Not checked before signing); "judged" when only reading '
       + 'it could decide; "guard" for a rule about web sources (domains); "none" when you cannot sort it. Never turn a part you cannot '
@@ -1522,6 +1527,8 @@ export function validateDeclaration(declaration, opts = {}) {
   checkJobLines({ declaration, stages, jobLines, guards: haveGuards ? /** @type {any[]} */ (guards) : [], red });
   // PART 1a (R11): the sorting rules for the rubric-step stages — plain-words reds, judged and web parts refused in this build
   checkRubricParts(stages, { inputLabels, red });
+  // PART 1b (RF16, RF17): every ~ rule is a check or Not checked; the AI's own numbers are marked and a time range is a range
+  checkRubricRules(stages, { jobLines, refused: declaration.refused, red });
 
   const ok = reds.length === 0;
   return { ok, reds, declaration: ok ? normalizeDeclaration(declaration) : null, grounded: haveListing, scoped, ceiling };
@@ -1564,15 +1571,15 @@ function checkJobLines({ declaration, stages, jobLines, guards, red }) {
   const refused = new Set();
   if (declaration.refused !== undefined) {
     if (!Array.isArray(declaration.refused)) {
-      red('invalid-value', 'refused', 'an array of {line, reason} — the job lines no stage can check, each with a reason');
+      red('invalid-value', 'refused', 'an array of {line, rule?, reason} — the job lines (or one ~ rule of a line) no stage can check, each with a reason');
     } else {
       declaration.refused.forEach((/** @type {any} */ r, /** @type {number} */ j) => {
         const at = `refused[${j}]`;
-        if (!isObj(r) || !Number.isInteger(r.line) || r.line < 1 || !isNonEmptyString(r.reason)) {
-          red('invalid-value', at, '{line, reason}: a job line number and a plain-words reason');
+        if (!isObj(r) || !Number.isInteger(r.line) || r.line < 1 || !isNonEmptyString(r.reason) || (Object.hasOwn(r, 'rule') && !(Number.isInteger(r.rule) && r.rule >= 1))) {
+          red('invalid-value', at, '{line, rule?, reason}: a job line number, optionally the number of one of its ~ rules, and a plain-words reason');
         } else if (known !== null && !known.includes(r.line)) {
           red('invalid-value', `${at}.line`, `refused line ${r.line}, but the job has lines ${known.join(', ')} only`);
-        } else refused.add(r.line);
+        } else if (!Object.hasOwn(r, 'rule')) refused.add(r.line);
       });
     }
   }

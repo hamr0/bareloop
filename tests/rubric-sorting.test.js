@@ -95,13 +95,13 @@ test('checkRubricParts is pure and never throws on malformed stages', () => {
   assert.deepEqual(seen, ['rubric-part-unsortable']);
 });
 
-test('the declaration schema for the text genre can only SAY a sorted part: four classes, the eight checks, no stray field, no command kind', () => {
+test('the declaration schema for the text genre can only SAY a sorted part: five classes (PART 1b added `fact`), the eight checks, no stray field, no command kind', () => {
   const cat = catalogueForLang(RUBRIC_LANG);
   const schema = declarationSchema(KIND_CAT_ALL(), { verdictType: 'soft-green', kinds: Object.keys(cat) });
   const branches = schema.properties.stages.items.oneOf;
   assert.deepEqual(branches.map((b) => b.title).sort(), ['files-changed', 'rubric-step']);
   const parts = branches.find((b) => b.title === 'rubric-step').properties.params.properties.parts.items;
-  assert.deepEqual(parts.properties.class.enum, ['countable', 'judged', 'guard', 'none']);
+  assert.deepEqual(parts.properties.class.enum, ['countable', 'fact', 'judged', 'guard', 'none']);
   assert.deepEqual(parts.properties.check.enum, ['maxWords', 'minWords', 'maxLines', 'sections', 'sectionWords', 'cited', 'minClaims', 'maxClaims']);
   assert.equal(parts.additionalProperties, false);
   assert.deepEqual(parts.required, ['text', 'class']);
