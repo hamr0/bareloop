@@ -9,7 +9,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fetchPageText, BROWSE_OPTIONS, MIN_PAGE_CHARS, isWebUrl } from '../src/pagefetch.js';
+import { fetchPageText, CONNECT_OPTIONS, SNAPSHOT_OPTIONS, NETWORK_IDLE_MS, NETWORK_IDLE_TIMEOUT_MS, MIN_PAGE_CHARS, isWebUrl } from '../src/pagefetch.js';
 import { proveRubricInputs, refreezeUrlInputs, looksLikeRubricInput, readSourceManifest } from '../src/source.js';
 import { readFrozenInputs } from '../src/rubricstep.js';
 import { jobSpecHash } from '../src/job.js';
@@ -44,39 +44,83 @@ test('isWebUrl / looksLikeRubricInput: an http(s) address is an input a rubric j
   assert.equal(looksLikeRubricInput('/no/such/file.txt'), false);
 });
 
-test('fetchPageText: calls barebrowse read-only with exactly the options step 0 proved, and returns the text', async () => {
-  /** @type {any[]} */
-  const calls = [];
-  const browse = async (/** @type {string} */ url, /** @type {any} */ opts) => { calls.push({ url, opts }); return PAGE1; };
-  const r = await fetchPageText(URL1, { browse });
+/**
+ * A stub of barebrowse's connect(): a page whose results FILL IN LATE, like a real results page. `snapshot` shows the partial page until
+ * `waitForNetworkIdle` has been awaited, then the full one. Every call is recorded in `log`; `closed` counts close().
+ * @param {{partial: string, full: string, idleThrows?: boolean, gotoThrows?: Error, snapshotAfterIdle?: boolean}} o
+ */
+function lateFillBrowser({ partial, full, idleThrows = false, gotoThrows }) {
+  /** @type {{op: string, args: any[]}[]} */
+  const log = [];
+  const state = { closed: 0, idled: false, opened: /** @type {any} */ (null) };
+  const connect = async (/** @type {any} */ opts) => {
+    log.push({ op: 'connect', args: [opts] });
+    state.opened = opts;
+    return {
+      async goto(/** @type {string} */ url, /** @type {number} */ timeout) { log.push({ op: 'goto', args: [url, timeout] }); if (gotoThrows) throw gotoThrows; },
+      async waitForNetworkIdle(/** @type {any} */ o) { log.push({ op: 'waitForNetworkIdle', args: [o] }); state.idled = true; if (idleThrows) throw new Error('waitForNetworkIdle timed out'); },
+      async snapshot(/** @type {any} */ o) { log.push({ op: 'snapshot', args: [o] }); return state.idled ? full : partial; },
+      async close() { state.closed += 1; log.push({ op: 'close', args: [] }); },
+    };
+  };
+  return { connect, log, state };
+}
+
+test('fetchPageText (L1): connects incognito and private-network-blocked, goes to the page, WAITS for the network to go quiet, then snapshots in act mode - and returns the filled page, not the load-time one', async () => {
+  const b = lateFillBrowser({ partial: 'HEADER ONLY. '.repeat(30), full: PAGE1 });
+  const r = await fetchPageText(URL1, { connect: b.connect });
   assert.equal(r.ok, true);
-  assert.deepEqual(calls.map((c) => c.opts), [{ incognito: true, blockPrivateNetwork: true, pruneMode: 'act' }]);
-  assert.deepEqual({ ...BROWSE_OPTIONS }, { incognito: true, blockPrivateNetwork: true, pruneMode: 'act' });
-  assert.equal(r.ok && r.text, PAGE1);
+  assert.equal(r.ok && r.text, PAGE1, 'the page after the wait, never the load-time snapshot');
+  assert.deepEqual(b.log.map((c) => c.op), ['connect', 'goto', 'waitForNetworkIdle', 'snapshot', 'close'], 'wait comes BEFORE the snapshot; the browser is always closed');
+  assert.deepEqual(b.log[0].args[0], { incognito: true, blockPrivateNetwork: true });
+  assert.deepEqual({ ...CONNECT_OPTIONS }, { incognito: true, blockPrivateNetwork: true });
+  assert.deepEqual(b.log[1].args[0], URL1);
+  assert.deepEqual(b.log[2].args[0], { idle: NETWORK_IDLE_MS, timeout: NETWORK_IDLE_TIMEOUT_MS }, 'bounded wait');
+  assert.deepEqual(b.log[3].args[0], { mode: 'act' });
+  assert.deepEqual({ ...SNAPSHOT_OPTIONS }, { mode: 'act' });
+  assert.ok(NETWORK_IDLE_TIMEOUT_MS <= 30_000 && NETWORK_IDLE_MS >= 500);
 });
 
-test('fetchPageText: an empty or near-empty page, a bot challenge, a thrown error and a hang are each a plain-words stop, never an empty input', async () => {
-  const stop = async (/** @type {() => Promise<any>} */ f, /** @type {number} */ timeoutMs = 1000) => fetchPageText(URL1, { browse: f, timeoutMs });
-  const empty = await stop(async () => '   ');
+test('fetchPageText (L1): a page that never goes quiet is read as it stands (the idle wait is bounded, its timeout is not a failure)', async () => {
+  const b = lateFillBrowser({ partial: PAGE1, full: PAGE2, idleThrows: true });
+  const r = await fetchPageText(URL1, { connect: b.connect });
+  assert.equal(r.ok, true);
+  assert.equal(r.ok && r.text, PAGE2);
+  assert.equal(b.state.closed, 1);
+});
+
+test('fetchPageText: an empty or near-empty page, a bot challenge, a thrown error and a hang are each a plain-words stop, never an empty input - and the browser is closed each time', async () => {
+  /** @param {string|((b: any) => any)} snap @param {{timeoutMs?: number, gotoThrows?: Error}} [o] */
+  const stop = async (snap, { timeoutMs = 1000, gotoThrows } = {}) => {
+    const b = lateFillBrowser({ partial: String(snap), full: String(snap), gotoThrows });
+    const r = await fetchPageText(URL1, { connect: b.connect, timeoutMs });
+    assert.equal(b.state.closed, 1, 'closed');
+    return r;
+  };
+  const empty = await stop('   ');
   assert.equal(empty.ok, false);
   assert.match(String(!empty.ok && empty.error), /came back with no text/);
-  const tiny = await stop(async () => 'x'.repeat(MIN_PAGE_CHARS - 1));
+  const tiny = await stop('x'.repeat(MIN_PAGE_CHARS - 1));
   assert.match(String(!tiny.ok && tiny.error), new RegExp(`only ${MIN_PAGE_CHARS - 1} characters`));
-  const bot = await stop(async () => `[BOT CHALLENGE DETECTED]\n${'x'.repeat(500)}`);
+  const bot = await stop(`[BOT CHALLENGE DETECTED]\n${'x'.repeat(500)}`);
   assert.match(String(!bot.ok && bot.error), /bot challenge/);
-  const boom = await stop(async () => { throw new Error('net::ERR_NAME_NOT_RESOLVED'); });
+  const boom = await stop(PAGE1, { gotoThrows: new Error('net::ERR_NAME_NOT_RESOLVED') });
   assert.match(String(!boom.ok && boom.error), /could not be read: net::ERR_NAME_NOT_RESOLVED/);
-  const hang = await stop(() => new Promise(() => {}), 30);
-  assert.match(String(!hang.ok && hang.error), /no answer inside/);
-  const exactly = await stop(async () => 'y'.repeat(MIN_PAGE_CHARS));
+  const exactly = await stop('y'.repeat(MIN_PAGE_CHARS));
   assert.equal(exactly.ok, true, 'a page at the minimum is read');
+  // a hang inside the page: the deadline fires and the browser is still closed
+  /** @type {number} */
+  let closed = 0;
+  const hang = await fetchPageText(URL1, { timeoutMs: 30, closeWaitMs: 200, connect: async () => ({ goto: () => new Promise(() => {}), waitForNetworkIdle: async () => {}, snapshot: async () => '', close: async () => { closed += 1; } }) });
+  assert.match(String(!hang.ok && hang.error), /no answer inside/);
+  assert.equal(closed, 1);
 });
 
 test('fetchPageText: a credentialed, secret-shaped, non-http or malformed address never reaches the browser', async () => {
   let reached = 0;
-  const browse = async () => { reached += 1; return PAGE1; };
+  const connect = async () => { reached += 1; return lateFillBrowser({ partial: PAGE1, full: PAGE1 }).connect({}); };
   for (const u of ['https://user:pw@example.com/x', `https://example.com/?k=sk-${'A1b2C3d4'.repeat(4)}`, 'ftp://example.com/x', 'not a url']) {
-    const r = await fetchPageText(u, { browse });
+    const r = await fetchPageText(u, { connect });
     assert.equal(r.ok, false, u);
   }
   assert.equal(reached, 0);

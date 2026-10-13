@@ -1,18 +1,30 @@
-// URL inputs (PART 1c, docs/product/ITEM33-BUILD.md "4. URL inputs", PRD item 33 RF21/RF22): an Inputs line may be a web address the
-// person pastes (a results page). bareloop fetches it with barebrowse, READ ONLY, headless and incognito, as published:
+// URL inputs (PART 1c, docs/product/ITEM33-BUILD.md "4. URL inputs" + live fix L1, PRD item 33 RF21/RF22): an Inputs line may be a web
+// address the person pastes (a results page). bareloop fetches it with barebrowse, READ ONLY, headless and incognito, as published:
 //
-//     browse(url, { incognito: true, blockPrivateNetwork: true, pruneMode: 'act' })
+//     page = await connect({ incognito: true, blockPrivateNetwork: true })
+//     await page.goto(url); await page.waitForNetworkIdle({ idle, timeout }); await page.snapshot({ mode: 'act' })
 //
-// (the options proven in step 0: 'read' and 'full' returned almost nothing from a results page). The text that comes back is the
-// input. An empty or near-empty fetch is a plain-words stop, never a silent empty input. Nothing here touches a model.
+// L1: one-shot `browse()` snapshots at load, before the page's own scripts fill a results list (the same URL gave 77,951 / 8,801 / 719
+// chars). So we wait for the network to go quiet (bounded) before the snapshot. Generic: no site selector. The snapshot mode is the one
+// proven in step 0 ('read' and 'full' returned almost nothing from a results page). The text that comes back is the input. An empty
+// fetch is a plain-words stop, never a silent empty input. Nothing here touches a model.
 
 import { SECRET_PATTERNS } from './validate.js';
 
-/** the options step 0 proved; kept as ONE frozen object so a test can pin them */
-export const BROWSE_OPTIONS = Object.freeze({ incognito: true, blockPrivateNetwork: true, pruneMode: 'act' });
+/** the session options (incognito: no auth ever enters; blockPrivateNetwork: SSRF guard); ONE frozen object so a test can pin them */
+export const CONNECT_OPTIONS = Object.freeze({ incognito: true, blockPrivateNetwork: true });
+/** the snapshot options step 0 proved */
+export const SNAPSHOT_OPTIONS = Object.freeze({ mode: 'act' });
+/** the page's network must be quiet this long (ms) before we read it: long enough to span the gap between a page's first load and the
+ *  script requests that fill the results, short enough not to stretch a plain page */
+export const NETWORK_IDLE_MS = 1500;
+/** the most we wait for the network to go quiet (ms); a page that never settles (polling, streaming) is read as it stands after this */
+export const NETWORK_IDLE_TIMEOUT_MS = 20_000;
+/** the most we wait for the page to load at all (ms) */
+export const GOTO_TIMEOUT_MS = 30_000;
 /** a page that comes back with fewer characters than this (after trimming) is treated as "nothing came back" */
 export const MIN_PAGE_CHARS = 200;
-/** our own deadline around one fetch (a hung browser leaves no trace; this is the only thing that fires on the absence of an answer) */
+/** our own deadline around one whole fetch (a hung browser leaves no trace; this is the only thing that fires on the absence of an answer) */
 export const PAGE_FETCH_TIMEOUT_MS = 90_000;
 
 /** @param {unknown} v @returns {boolean} an http(s) address (the one spelling of "this Inputs value is a web address") */
@@ -21,28 +33,43 @@ export function isWebUrl(v) {
 }
 
 /**
- * Fetch one page's text. `browse` is injected (a test never reaches the network); the default is barebrowse's own `browse`.
+ * @typedef {{goto: (url: string, timeout?: number) => Promise<void>, waitForNetworkIdle: (o?: {idle?: number, timeout?: number}) => Promise<void>,
+ *   snapshot: (o?: {mode?: string}) => Promise<string>, close: () => Promise<void>}} FetchPage the part of barebrowse's page handle the fetch uses
+ */
+
+/**
+ * Fetch one page's text. `connect` is injected (a test never reaches the network); the default is barebrowse's own `connect`.
  * @param {string} url
- * @param {{browse?: (url: string, opts: Record<string, any>) => Promise<string>, timeoutMs?: number}} [o]
+ * @param {{connect?: (opts: Record<string, any>) => Promise<FetchPage>, timeoutMs?: number, idleMs?: number, idleTimeoutMs?: number, closeWaitMs?: number}} [o]
  * @returns {Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>} `error` is plain words, without a spend line
  */
-export async function fetchPageText(url, { browse, timeoutMs = PAGE_FETCH_TIMEOUT_MS } = {}) {
+export async function fetchPageText(url, { connect, timeoutMs = PAGE_FETCH_TIMEOUT_MS, idleMs = NETWORK_IDLE_MS, idleTimeoutMs = NETWORK_IDLE_TIMEOUT_MS, closeWaitMs = 3000 } = {}) {
   let u;
   try { u = new URL(url.trim()); } catch { return { ok: false, error: `${url} is not a web address bareloop can read` }; }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return { ok: false, error: `${url} is not an http or https address` };
   if (u.username !== '' || u.password !== '') return { ok: false, error: 'a web address with a user name or password in it is refused - bareloop reads a page with no credentials at all' };
   if (SECRET_PATTERNS.some((re) => re.test(u.href))) return { ok: false, error: 'the web address carries a known secret shape - secrets never enter a job' };
-  /** @type {(url: string, opts: Record<string, any>) => Promise<string>} */
-  let run;
-  if (browse) run = browse;
+  /** @type {(opts: Record<string, any>) => Promise<FetchPage>} */
+  let open;
+  if (connect) open = connect;
   else {
-    try { run = (await import('barebrowse')).browse; } catch (e) { return { ok: false, error: `the page reader (barebrowse) could not be loaded: ${/** @type {Error} */ (e).message}` }; }
+    try { open = /** @type {any} */ ((await import('barebrowse')).connect); } catch (e) { return { ok: false, error: `the page reader (barebrowse) could not be loaded: ${/** @type {Error} */ (e).message}` }; }
   }
   /** @type {NodeJS.Timeout|undefined} */
   let timer;
+  /** @type {Promise<FetchPage>|undefined} */
+  let opening;
   try {
+    opening = open({ ...CONNECT_OPTIONS });
+    const page = opening;
     const text = await Promise.race([
-      run(u.href, { ...BROWSE_OPTIONS }),
+      (async () => {
+        const p = await page;
+        await p.goto(u.href, GOTO_TIMEOUT_MS);
+        // bounded: a page that never goes quiet (polling, streaming) is read as it stands - the wait is for a page that is still filling
+        try { await p.waitForNetworkIdle({ idle: idleMs, timeout: idleTimeoutMs }); } catch { /* read what is there */ }
+        return p.snapshot({ ...SNAPSHOT_OPTIONS });
+      })(),
       new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`no answer inside ${Math.round(timeoutMs / 1000)} seconds`)), timeoutMs); }),
     ]);
     if (typeof text !== 'string') return { ok: false, error: `${u.href} did not come back as text` };
@@ -54,5 +81,12 @@ export async function fetchPageText(url, { browse, timeoutMs = PAGE_FETCH_TIMEOU
     return { ok: false, error: `${u.href} could not be read: ${/** @type {Error} */ (e)?.message ?? String(e)}` };
   } finally {
     if (timer !== undefined) clearTimeout(timer);
+    // always close the browser, also when the deadline fired while it was still starting or loading
+    if (opening) {
+      /** @type {NodeJS.Timeout|undefined} */
+      let w;
+      await Promise.race([opening.then((p) => p.close()).catch(() => {}), new Promise((r) => { w = setTimeout(r, closeWaitMs); })]);
+      if (w !== undefined) clearTimeout(w);
+    }
   }
 }
