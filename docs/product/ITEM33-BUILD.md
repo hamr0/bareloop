@@ -888,3 +888,23 @@ smv713up97m3k). No run reached the worker yet.
   and add a test that a red-eye-shaped `~` rule drafts to a time fact.
 
 Proof: $0 tests per item; then hamr re-runs Job 1 (flights URL) and Job 2 (changelog) fully in the panel.
+
+## Addendum 2026-10-13 — Part 1c full-run fixes (signed by hamr 2026-10-13)
+
+From the first FULL runs on DeepSeek `deepseek-flash`: run mv73swnx (flights URL, step-red, $0.21 of $0.50) and
+drafting session smv74rc6x1g2l (changelog, signing refused, $0.01).
+
+- **M1 — a per-result label must repeat.** mv73swnx signed facts anchored on `Cheapest from` (a sort tab) and
+  `departing` (a "track prices" switch): each appears ONCE on the page, never inside a flight, so no one-flight quote
+  could hold them; the worker stretched quotes to reach them ("quote too long") and the step ladder stopped it. Rule:
+  a fact on a line asking for N results (count.min) must use an anchor the label list counts at least N times in the
+  source; fewer is a $0 red in plain words naming the label, its count and N. The drafter is shown the counts (the
+  list already holds them) and told the rule in the one rulebook.
+- **M2 — the prose number tie never crashes at the seed.** smv74rc6x1g2l: line 2's tie reads line 1's step file,
+  which does not exist at the seed read, so it threw (`broken-close`, ENOENT) and signing was refused. A missing
+  earlier step file is a normal red ("line 1's answer is not there yet"), never an instrument fault. The signing
+  refusal for a rubric job never says "check the project's install, build and test commands" (code-job wording).
+- **M3 — a new run shows in Runs without a refresh.** After Sign & run the run appeared only after a page refresh.
+  Find the cause in the panel's run list refresh and fix it; the orchestrator screenshots it.
+
+Proof: $0 tests per item; then hamr re-runs Job 1 and Job 2 fully.
