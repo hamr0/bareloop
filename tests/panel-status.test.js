@@ -114,7 +114,7 @@ const RUN = {
 
 test('P9 v2 C7: a run card is line 1 `[sign] run-N  date · model`, line 2 `**word** — reason · $ · wall`', () => {
   const html = listHarness().rlRunCardHtml({ ...RUN, draftSpentUsd: 0.08, draftSpendComplete: true }, false, false);
-  assert.match(html, /class="dot red"[^]*class="rl-rn">run-3<\/span> <span class="rl-faint">\d\d\/\d\d \d\d:\d\d · deepseek-flash<\/span>/);
+  assert.match(html, /class="dot red"[^]*class="rl-rn">run-3<\/span> <span class="rl-rest">&middot; \d\d\/\d\d \d\d:\d\d · deepseek-flash<\/span>/);  // P9 v2 O item 6: same-size .rl-rest after a middot
   assert.match(html, /<b class="st-word">failed<\/b> — checks said no &middot; \$3\.50 \(drafting \$0\.08\) · 10m00s<\/span>/);
   assert.doesNotMatch(html, /\$0\.08 drafting|resumed/);
   assert.equal((html.match(/rl-l1|rl-l2/g) || []).length, 2, 'exactly 2 lines');
