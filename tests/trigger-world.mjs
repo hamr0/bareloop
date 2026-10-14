@@ -2,6 +2,7 @@
 // A scratch HOME (the run-list home), an injectable clock, a real runs.jsonl writer, signed specs on disk laid out
 // the way a panel run is, and a panel server over real HTTP. Nothing here touches ~/.config/bareloop.
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { createScheduler } from '../src/panel/scheduler.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -80,14 +81,15 @@ export function makeRun(home, { runid, spec, outcome = 'green', accepted = false
 }
 
 /** a panel server over real HTTP on a scratch home; `post`/`get` carry the human-click token. */
-export async function panel({ home, env = {}, spawnFn, now, sessionDeps, schedulerIntervalMs = 0 } = {}) {
+export async function panel({ home, env = {}, spawnFn, now, sessionDeps, schedulerIntervalMs = 0, sessionsRoot = tmp('tw-sess-') } = {}) {
   const h = home ?? keysHome();
-  const { close, port, token, schedules, scheduler } = await createPanelServer({ port: 0, env, home: h, schedulerIntervalMs, sessionsRoot: tmp('tw-sess-'), ...(spawnFn ? { spawnFn } : {}), ...(now ? { scheduleNow: now } : {}), ...(sessionDeps ? { sessionDeps } : {}) });
+  const { close, port, token, schedules, scheduler } = await createPanelServer({ port: 0, env, home: h, schedulerIntervalMs, sessionsRoot, ...(spawnFn ? { spawnFn } : {}), ...(now ? { scheduleNow: now } : {}), ...(sessionDeps ? { sessionDeps } : {}) });
   test.after(() => close());
   const base = `http://127.0.0.1:${port}`;
   const hdr = { 'content-type': 'application/json', 'x-bareloop-token': token };
   return {
     home: h,
+    sessionsRoot,
     schedules,
     scheduler,
     close,
@@ -109,9 +111,11 @@ export function recordingSpawn(o = {}) {
     const handlers = {};
     const child = { unref() {}, once(ev, h) { handlers[ev] = h; return child; } };
     if (fn.failWith) setImmediate(() => handlers.error?.(fn.failWith));
+    if (fn.exitWith !== undefined) setImmediate(() => handlers.exit?.(fn.exitWith, null));
     return child;
   };
   fn.failWith = o.failWith ?? null;
+  fn.exitWith = o.exitWith;
   fn.spawns = spawns;
   return fn;
 }
@@ -133,7 +137,7 @@ export async function fireWorld({ when = DAILY, files = true, schedulerIntervalM
   const now = clock(SLOT - 3600_000);
   const p = await panel({ home, now, schedulerIntervalMs });
   const wh = when === 'files' ? { kind: 'new-file', folder: inbox } : when;
-  const body = { runid: 'r1', when: wh, inputs: `notes: ${notes}`, destination: 'output/', capUsd: 1.5, maxWallMs: 600000 };
+  const body = { runid: 'r1', when: wh, inputs: `notes: ${notes}`, destination: '/tw/out', capUsd: 1.5, maxWallMs: 600000 };
   const pre = await p.post('/api/author/schedule-prepare', body);
   assert.equal(pre.status, 200, JSON.stringify(pre.body));
   const set = await p.post('/api/author/schedule', { ...body, hash: pre.body.hash });
@@ -150,7 +154,7 @@ export async function fireWorld({ when = DAILY, files = true, schedulerIntervalM
   };
   const envNow = () => keysForDoor({ env: {}, keysHome: home }).env;
   const starter = createStarter({
-    door: p.schedules, startSession, envNow, spawnFn, bareloopBin: '/x/bareloop.mjs', sessionsRoot: tmp('tf-root-'), home,
+    door: p.schedules, startSession, envNow, spawnFn, bareloopBin: '/x/bareloop.mjs', sessionsRoot: tmp('tf-root-'), home, childGraceMs: 40,
     rowsFor: () => rowsForHome(kHome(home), envNow()), startFrom: (runid) => getStartFrom(runid, { home }),
   });
   p.schedules.attachStarter(starter);
@@ -175,3 +179,30 @@ export function waitExec(pid, name = 'run-u.mjs') {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
   }
 }
+
+/** a files-job world on the REAL starter/session factory: the schedule is signed with a good destination, then its stored spec is made to carry `output/` */
+export async function realWorld({ input = null, relative = true } = {}) {
+  const home = keysHome();
+  const notes = input ?? join(tmp('dc-in-'), 'notes.txt');
+  if (!input) writeFileSync(notes, 'hello\n');
+  const spec = specOf({ files: true, input: notes });
+  const run = makeRun(home, { runid: 'r1', spec, accepted: true });
+  const now = clock(SLOT - 3600_000);
+  const p = await panel({ home, now, sessionsRoot: tmp('dc-sess-'), spawnFn: recordingSpawn() });
+  const out = tmp('dc-out-');
+  const body = { runid: 'r1', when: DAILY, inputs: `notes: ${notes}`, destination: out, capUsd: 1.5, maxWallMs: 600000 };
+  const pre = await p.post('/api/author/schedule-prepare', body);
+  assert.equal(pre.status, 200, JSON.stringify(pre.body));
+  assert.equal((await p.post('/api/author/schedule', { ...body, hash: pre.body.hash })).status, 200);
+  const dir = join(home, 'triggers', 'sched-job');
+  if (relative) {
+    // what the live schedule held: the spec's own fence output/ and no destination of its own
+    const sf = join(dir, 'schedule.json');
+    const sch = JSON.parse(readFileSync(sf, 'utf8'));
+    delete sch.destination; // a schedule signed before the destination rode on it: the fence is all there is
+    writeFileSync(sf, JSON.stringify(sch));
+  }
+  now.set(SLOT + 60_000);
+  return { home, p, now, dir, notes, run, out, sessions: p.sessionsRoot, rows: () => readLedger(join(dir, 'ledger.jsonl')).rows };
+}
+

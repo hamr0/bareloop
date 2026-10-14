@@ -2709,6 +2709,9 @@ export function getStartFrom(runid, opts = {}) {
     source: typeof saved.source === 'string' && saved.source ? saved.source : (typeof manifest?.source === 'string' ? manifest.source : (typeof row.patient === 'string' ? row.patient : '')),
     // a card saved by P7 or later keeps the Inputs text the person typed
     inputs: typeof saved.inputs === 'string' && saved.inputs ? saved.inputs : '',
+    // a plain-files job delivers to an absolute folder the SPEC does not hold (its fence is `output/` inside the run's tree): the
+    // Destination opens with the folder the origin run was given, never with that fence
+    destination: [saved.destination, manifest?.destination].find((d) => typeof d === 'string' && /^(\/|[a-zA-Z]:[\\/])/.test(d)) ?? '',
     jobName: row.job,
   });
   const key = workflowKey(spec);
@@ -2806,7 +2809,7 @@ export function listReuseJobs(opts = {}) {
  * The reuse card for a signed spec: locked boxes from the spec through the Job tab's own readers, open boxes from
  * the spec's own fence and caps (Source and the saved text from the caller — a spec carries neither).
  * @param {any} spec
- * @param {{model: string, source: string, inputs?: string, jobName: string}} extra `inputs` = the Inputs text the person saved (else built from the spec's inputs, else `repo: <source>`)
+ * @param {{model: string, source: string, inputs?: string, jobName: string, destination?: string}} extra `destination` = an absolute per-run folder (a plain-files job), else the spec's fence; `inputs` = the Inputs text the person saved (else built from the spec's inputs, else `repo: <source>`)
  * @returns {Record<string, any>}
  */
 function reuseCardFromSpec(spec, extra) {
@@ -2817,7 +2820,7 @@ function reuseCardFromSpec(spec, extra) {
     model: typeof spec.model === 'string' && spec.model && !extra.model ? spec.model : extra.model,
     jobText: jobTextFromSpec(spec),
     inputs: extra.inputs || inputsTextFromSpec(spec, extra.source),
-    destination: writeScope.join(', '),
+    destination: extra.destination || writeScope.join(', '),
     capUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
     maxWallMs: typeof spec.maxWallMs === 'number' ? spec.maxWallMs : undefined,
   };
@@ -3179,6 +3182,8 @@ export function createPanelServer(opts = {}) {
       schedules.attachStarter(createStarter({
         door: schedules, startSession: authorRoutes.startSession, envNow: authorRoutes.envNow, spawnFn: authorRoutes.spawnFn,
         bareloopBin: authorRoutes.bareloopBin, sessionsRoot: opts.sessionsRoot, home, rowsFor, startFrom: (runid) => getStartFrom(runid, { home }),
+        forgetSession: authorRoutes.forgetHeadless,
+        ranSince: (job, sinceMs) => readRunList({ home }).rows.some((r) => r && r.job === job && Date.parse(r.at) >= sinceMs - 1000),
       }));
       // T Part 5: the scheduler runs the clock and the folder watch while THIS server is up (panel only, T6); stopped on close
       scheduler = createScheduler({

@@ -267,7 +267,9 @@ export function lockedFieldChanged(card, origin) {
  */
 export function buildReuseSpec(originSpec, card, rows) {
   const spec = JSON.parse(JSON.stringify(originSpec));
-  spec.writeScope = String(card.destination ?? '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+  // an ABSOLUTE Destination is a per-run output folder (a plain-files job): it is never part of the signed spec, and the spec's own
+  // fence (inside the run's tree) stays as signed. A repo job's Destination is the fence and is relative (an absolute one is refused).
+  if (!isAbsoluteDestination(String(card.destination ?? '').trim())) spec.writeScope = String(card.destination ?? '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
   const ip = parseInputs(card.inputs);
   if (ip.ok) spec.inputs = ip.inputs; else delete spec.inputs;
   spec.budgetUsd = card.capUsd;
@@ -309,6 +311,27 @@ export function validateReuseCard(card, opts = {}) {
 const isAbsoluteDestination = (destination) => /^(\/|[a-zA-Z]:[\\/])/.test(destination);
 
 export { nonRepoSourceMessage };
+
+/** the refusal for a plain-files rubric job whose Destination is not an absolute folder (ends with the words the session start shows) */
+export const FILES_DESTINATION_WORDS = 'Destination must be the full path of a folder, like /home/me/out — the finished files are delivered there. Nothing spent.';
+
+/**
+ * THE ONE Destination check of a session start, at $0, before any session, copy or model call. The session's own pipeline, the HTTP
+ * start (`startSession`), the schedule's two clicks and a scheduled fire's `wouldAccept` all call THIS (never a copy of it), so a start
+ * that would be refused for its Destination is refused before anything is made.
+ * @param {{inputs?: unknown, destination?: unknown, checkType?: unknown}} card the Inputs text (line 1 = the source), the Destination and the check type
+ * @returns {string|null} the plain refusal, or null when the Destination is fine
+ */
+export function startDestinationProblem(card) {
+  const ip = parseInputs(card?.inputs);
+  const source = ip.ok ? (ip.inputs[0]?.value ?? '') : '';
+  const destination = typeof card?.destination === 'string' ? card.destination : '';
+  const isRepoLike = looksLikeRepoSource(source);
+  const repo = repoDestinationProblem(destination, isRepoLike);
+  if (repo !== null) return repo;
+  if (card?.checkType === 'rubric' && !isRepoLike && !isAbsoluteDestination(destination)) return FILES_DESTINATION_WORDS;
+  return null;
+}
 
 /**
  * The ONE Destination rule for a REPO source (fresh card and Reuse card alike): there Destination is the write fence,
@@ -685,7 +708,7 @@ export function createSession(card, deps = {}) {
     // line is one file, frozen by `proveRubricInputs`; there is no repo, no language and no scout (docs/product/ITEM33-BUILD.md)
     const RUBRIC_FILES = card.checkType === 'rubric' && !isRepoLike;
     // hamr's ruling B (2026-10-05): ONE rule for both a fresh card and a reuse card, at $0, before the copy and any model call
-    const destProblem = repoDestinationProblem(card.destination, isRepoLike);
+    const destProblem = startDestinationProblem(card);
     if (destProblem !== null) { refuse(destProblem); return; }
 
     state.phase = 'preparing-source';
@@ -707,10 +730,6 @@ export function createSession(card, deps = {}) {
     // fence read as a directory and refused as "not absolute" — hiding the real problem with the Source. A scope-shaped
     // (relative) Destination is therefore handed to the door only when the source is repo-like.
     const destIsDir = isAbsoluteDestination(card.destination);
-    if (RUBRIC_FILES && !destIsDir) {
-      refuse('Destination must be the full path of a folder, like /home/me/out — the finished files are delivered there. Nothing spent.');
-      return;
-    }
     /** @type {any} */
     let prep;
     if (RUBRIC_FILES) {

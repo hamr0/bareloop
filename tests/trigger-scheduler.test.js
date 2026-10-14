@@ -89,7 +89,7 @@ test('one job\'s exception is written once and never stops the other jobs', asyn
   // a second job with its own signed schedule
   const spec2 = specOf({ job: 'other-job', files: true, input: w.notes });
   makeRun(w.home, { runid: 'r2', spec: spec2, accepted: true });
-  const body2 = { runid: 'r2', when: { kind: 'daily', hour: 9, minute: 0 }, inputs: `notes: ${w.notes}`, destination: 'output/', capUsd: 1.5, maxWallMs: 600000 };
+  const body2 = { runid: 'r2', when: { kind: 'daily', hour: 9, minute: 0 }, inputs: `notes: ${w.notes}`, destination: '/tw/out', capUsd: 1.5, maxWallMs: 600000 };
   w.now.set(SLOT - 3600_000);
   const pre = await w.p.post('/api/author/schedule-prepare', body2);
   assert.equal((await w.p.post('/api/author/schedule', { ...body2, hash: pre.body.hash })).status, 200);

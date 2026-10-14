@@ -12,7 +12,7 @@ import {
   clock, fireWorld, keysHome, makeRun, panel, specOf, tmp, SLOT, DAILY, waitExec,
 } from './trigger-world.mjs';
 
-const body = (notes) => ({ when: DAILY, inputs: `notes: ${notes}`, destination: 'output/', capUsd: 1.5, maxWallMs: 600000 });
+const body = (notes) => ({ when: DAILY, inputs: `notes: ${notes}`, destination: '/tw/out', capUsd: 1.5, maxWallMs: 600000 });
 
 async function sign(p, runid, notes, when = DAILY) {
   const b = { ...body(notes), runid, when };

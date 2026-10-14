@@ -26,6 +26,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **A plain-files job can be scheduled and reused with a real Destination (rubric-2 schedule refused at its first fire).** The Destination of a plain-files rubric job is an absolute folder that the signed spec never holds (its fence is `output/` inside the run's tree), but the Reuse and Schedule cards opened with that fence and `buildReuseSpec` wrote whatever was typed into it, so a schedule signed fine and its fire was refused ("Destination must be the full path of a folder"). The card now opens with the folder the origin run delivered to, an absolute Destination stays out of the spec (it rides on the schedule and in the hash both clicks bind), and ONE check (`startDestinationProblem`) runs at both schedule clicks, at the HTTP start (before any session folder exists) and in a scheduled fire's `wouldAccept`.
 - **A rubric job signed without an explicit `judge` can be scheduled and reused.** `workflowKey` now hashes the RESOLVED judge of a soft-green spec (the runner's `resolveJobJudge`), so a missing judge and its pinned default (what Schedule run and Reuse sign) are one workflow; an explicitly different judge is another, and deterministic keys are unchanged. Before, Schedule run (and Reuse) of such a job was refused with "not the one that had the good run" after an honoured Accept (mv76m82c). Soft-green keys differ from before, so a schedule saved by an earlier build for a judge-less rubric job needs re-signing.
 
 ## [0.42.0] - 2026-10-14

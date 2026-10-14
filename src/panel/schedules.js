@@ -28,7 +28,7 @@ import { checkTarget, createFileTrigger, queueOf, readSeen, recordDropped, recor
 import {
   SCHEDULE_WORDS, editClearsWords, lateRefusalWords, nextInWords, nextTimeWords, scheduledNextFor, scheduledWords,
 } from '../schedulewords.js';
-import { buildReuseSpec, validateReuseCard } from './authorsession.js';
+import { buildReuseSpec, startDestinationProblem, validateReuseCard } from './authorsession.js';
 
 /** a spawn error after the consuming row releases it at most this many times; then it stays consumed (bounded rows) */
 export const MAX_RELEASES = 3;
@@ -79,7 +79,7 @@ export function runnerAlive(row, nowMs) {
 /**
  * @typedef {{runid: string, outcome: string|null, spec: any, records: any[]}} JobRun
  * @typedef {{job: string, trigger: import('../trigger.js').Trigger, spec: any, specHash: string, workflowKey: string,
- *   originRunid: string, inputsText: string, signedBy: string, signedAt: string}} Schedule
+ *   originRunid: string, inputsText: string, destination?: string, signedBy: string, signedAt: string}} Schedule
  */
 
 /**
@@ -223,6 +223,10 @@ export function createScheduleDoor(deps) {
     };
     const rv = validateReuseCard(card, { rows });
     if (!rv.ok) return reply(400, { refused: 'bad-card', say: `${rv.error}. Nothing was changed.` });
+    // the SAME Destination check the session start runs (never a copy), at both clicks: a fire that would be refused for its
+    // Destination is never signed
+    const destProblem = startDestinationProblem({ ...card, checkType: pre.spec.verdictType === 'soft-green' ? 'rubric' : 'deterministic' });
+    if (destProblem !== null) return reply(400, { refused: 'bad-card', say: `${destProblem.replace(/ Nothing spent\.$/, '')} Nothing was changed.` });
     const ip = parseInputs(card.inputs);
     if (isFileTrigger(trigger)) {
       // a repo job's later inputs must be tracked files inside the repo, so an outside file cannot be one (I.3)
@@ -253,9 +257,13 @@ export function createScheduleDoor(deps) {
       if (!(e instanceof ConfigError)) throw e;
       monthlyNote = /** @type {Error} */ (e).message;
     }
+    // an absolute Destination (a plain-files job's per-run folder) is not in the spec, so it rides on the schedule and in the hash the
+    // two clicks bind: changing it between the clicks is a stale hash. The signature (`hash`) stays the spec's own.
+    const destination = typeof card.destination === 'string' && /^(\/|[a-zA-Z]:[\\/])/.test(card.destination.trim()) ? card.destination.trim() : null;
     return {
       ok: /** @type {true} */ (true), cancel: /** @type {false} */ (false), job, trigger, spec, key: green.key, originRunid: green.run.runid,
       inputsText: typeof card.inputs === 'string' ? card.inputs : '', words: scheduledWords(trigger, userHome), hash: jobSpecHash(spec), monthlyNote,
+      destination, bind: destination === null ? jobSpecHash(spec) : jobSpecHash({ spec, destination }),
       cur: readSchedule(job),
     };
   }
@@ -416,14 +424,14 @@ export function createScheduleDoor(deps) {
     prepare(body) {
       const s = inspect(body);
       if (!s.ok) return s.reply;
-      return { status: 200, body: { ok: true, job: s.job, words: s.words, hash: s.hash, monthlyNote: s.cancel ? null : s.monthlyNote, cancel: s.cancel } };
+      return { status: 200, body: { ok: true, job: s.job, words: s.words, hash: s.cancel ? s.hash : s.bind, monthlyNote: s.cancel ? null : s.monthlyNote, cancel: s.cancel } };
     },
 
     /** Click 2, carrying the hash it was shown. $0: no drafter, no run. @param {any} body */
     set(body) {
       const s = inspect(body);
       if (!s.ok) return s.reply;
-      if (typeof body.hash !== 'string' || body.hash !== s.hash) return { status: 409, body: { ok: false, refused: 'stale-hash', say: SCHEDULE_WORDS.stale } };
+      if (typeof body.hash !== 'string' || body.hash !== (s.cancel ? s.hash : s.bind)) return { status: 409, body: { ok: false, refused: 'stale-hash', say: SCHEDULE_WORDS.stale } };
       if (s.cancel) {
         if (s.cur) removeSchedule(s.job, s.cur, 'cancelled');
         return { status: 200, body: { ok: true, job: s.job, cancelled: true, words: SCHEDULE_WORDS.cancelWords } };
@@ -434,7 +442,7 @@ export function createScheduleDoor(deps) {
       /** @type {Schedule} */
       const schedule = {
         job: s.job, trigger: s.trigger, spec: s.spec, specHash: s.hash, workflowKey: s.key, originRunid: s.originRunid,
-        inputsText: s.inputsText, signedBy: userInfo().username, signedAt: new Date(now()).toISOString(),
+        inputsText: s.inputsText, ...(s.destination === null ? {} : { destination: s.destination }), signedBy: userInfo().username, signedAt: new Date(now()).toISOString(),
       };
       writeSchedule(s.job, schedule);
       let armed = true; let say = null;

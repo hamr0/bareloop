@@ -23,7 +23,7 @@ import { openSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { planMatchesClose } from '../rubricstep.js';
-import { createSession, validateJobCard, validateReuseCard, lockedFieldChanged, buildReuseSpec, cardFields, STEP_LABELS } from './authorsession.js';
+import { createSession, validateJobCard, validateReuseCard, lockedFieldChanged, buildReuseSpec, cardFields, startDestinationProblem, STEP_LABELS } from './authorsession.js';
 import { parseInputs } from '../jobblock.js';
 import { proveInputFiles, looksLikeRubricInput } from '../source.js';
 import { validateJob, workflowKey } from '../job.js';
@@ -132,6 +132,9 @@ export function createAuthorRoutes(opts) {
     return (o.filesJob ? Promise.resolve(/** @type {{ok: true}} */ ({ ok: true })) : proveInputFiles(inputs)).then((proof) => {
       if (!proof.ok) return { ok: /** @type {false} */ (false), status: 400, error: proof.error };
       if (!o.headless && hasLiveSession()) return { ok: /** @type {false} */ (false), status: 409, error: 'an authoring session is already live — one at a time' };
+      // the SAME Destination check the session runs, at $0, BEFORE the session (and its folder) exists
+      const destProblem = startDestinationProblem(card);
+      if (destProblem !== null) return { ok: /** @type {false} */ (false), status: 400, error: destProblem };
       const session = createSession(cardFields(card), {
         env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}), ...(opts.sessionDeps ?? {}),
       });
@@ -245,8 +248,10 @@ export function createAuthorRoutes(opts) {
       const pre = sp.has('import') ? opts.startFrom.getImport(sp.get('import') ?? '', asModel) : opts.startFrom.get(runid, asModel);
       if (pre === null) { send(404, { ok: false, error: 'no such run' }); return true; }
       if (!pre.ok) { send(409, pre); return true; }
+      // the card of a SCHEDULED job opens with the folder that schedule delivers to (a plain-files job keeps it on the schedule, not in the spec)
+      const sched = sp.get('mode') === 'schedule' && opts.schedules ? opts.schedules.readSchedule(pre.origin.job) : null;
       send(200, {
-        ok: true, origin: pre.origin, card: pre.card, from: pre.from, note: pre.note,
+        ok: true, origin: pre.origin, card: typeof sched?.destination === 'string' ? { ...pre.card, destination: sched.destination } : pre.card, from: pre.from, note: pre.note,
         locked: pre.locked, open: pre.open, specHash: pre.specHash, workflowKey: pre.workflowKey, trackRecord: pre.trackRecord,
         line: pre.line, specNamesModel: pre.specNamesModel, specWorker: pre.specWorker,
         // T Part 3: `mode=schedule` also returns the job's current schedule (data only) for the When field's prefill; Part 7 adds the
@@ -385,6 +390,8 @@ export function createAuthorRoutes(opts) {
 
   return {
     handle, sessions, headless, startSession, envNow, spawnFn, bareloopBin,
+    /** a headless session the starter has removed from disk leaves its map too @param {string} id */
+    forgetHeadless: (id) => { headless.delete(id); },
   };
 }
 
@@ -419,7 +426,7 @@ export function panelMoney2(n) {
  * it to sign"), and this is where it is checked, not trusted.
  * @param {ReturnType<typeof createSession>} session
  * @param {string} claimedHash
- * @param {{env: any, spawnFn: typeof realSpawn, bareloopBin: string, sessionsRoot?: string, home?: string, schedules?: {clearIfEdited: (job: string, key: string) => boolean}, reviewDoor?: boolean, onSpawnError?: (e: Error) => void}} o
+ * @param {{env: any, spawnFn: typeof realSpawn, bareloopBin: string, sessionsRoot?: string, home?: string, schedules?: {clearIfEdited: (job: string, key: string) => boolean}, reviewDoor?: boolean, onSpawnError?: (e: Error) => void, onExit?: (code: number|null) => void}} o
  * @returns {{ok: boolean, error?: string, job?: string}}
  */
 export function signRun(session, claimedHash, o) {
@@ -483,6 +490,7 @@ export function signRun(session, claimedHash, o) {
   });
   if (typeof child?.unref === 'function') child.unref();
   if (o.onSpawnError && typeof child?.once === 'function') child.once('error', o.onSpawnError);
+  if (o.onExit && typeof child?.once === 'function') child.once('exit', o.onExit);
   // T (D.7): signing an EDIT of a scheduled job clears its schedule back to by hand. A Reuse or a hand run of the same
   // workflow has the same workflow key and clears nothing. After the spawn: a refusal above never reaches here.
   if (o.schedules) {

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { createScheduleDoor } from '../src/panel/schedules.js';
 import { readLedger } from '../src/triggerledger.js';
 import { queueOf, readSeen, recordArrived } from '../src/triggerfiles.js';
-import { workflowKey } from '../src/job.js';
+import { jobSpecHash, workflowKey } from '../src/job.js';
 import {
   keysHome, makeRun, panel, specOf, tmp,
 } from './trigger-world.mjs';
@@ -15,7 +15,7 @@ import {
 // the deterministic key as computed BEFORE the judge-resolving fix: it must never move
 const DET_KEY = 'e450074cce6af8b0d58a4a68d853f5847026246a733c85df1b7983bd51bd681d';
 const DAILY = { kind: 'daily', hour: 9, minute: 0 };
-const card = (o = {}) => ({ inputs: 'notes: /tw/in/notes.txt', destination: 'output/', capUsd: 1.5, maxWallMs: 600000, ...o });
+const card = (o = {}) => ({ inputs: 'notes: /tw/in/notes.txt', destination: '/tw/out', capUsd: 1.5, maxWallMs: 600000, ...o });
 /** a home with one plain-files rubric job: a green run, accepted */
 function world({ files = true, outcome = 'green', accepted = true, job = 'sched-job' } = {}) {
   const home = keysHome();
@@ -103,6 +103,8 @@ test('prepare writes nothing; set needs the hash it was shown (stale hash refuse
   assert.equal(existsSync(w.triggers), false);
   const changed = await p.post('/api/author/schedule', { runid: w.runid, when: DAILY, ...card({ capUsd: 2 }), hash: pre.body.hash });
   assert.equal(changed.status, 409, 'a card edited between the clicks changes the hash');
+  const moved = await p.post('/api/author/schedule', { runid: w.runid, when: DAILY, ...card({ destination: '/tw/other' }), hash: pre.body.hash });
+  assert.equal(moved.status, 409, 'so does a Destination edited between the clicks');
   const set = await p.post('/api/author/schedule', { runid: w.runid, when: DAILY, ...card(), hash: pre.body.hash });
   assert.equal(set.status, 200, JSON.stringify(set.body));
   assert.equal(set.body.armed, true);
@@ -110,7 +112,10 @@ test('prepare writes nothing; set needs the hash it was shown (stale hash refuse
   assert.equal(sched.job, 'sched-job');
   assert.deepEqual(sched.trigger, DAILY);
   assert.deepEqual(sched.spec.trigger, DAILY);
-  assert.equal(sched.specHash, pre.body.hash);
+  // an absolute Destination rides on the schedule (not in the spec), so the hash the two clicks bind covers it and differs from the signature
+  assert.equal(sched.specHash, jobSpecHash(sched.spec));
+  assert.equal(sched.destination, '/tw/out');
+  assert.equal(set.body.hash, sched.specHash);
   assert.equal(sched.workflowKey, workflowKey(w.spec), 'the scheduled spec keeps the green run\'s workflow key');
   assert.equal(sched.spec.budgetUsd, 1.5);
   const rows = ledgerRows(w);
