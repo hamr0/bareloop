@@ -102,58 +102,37 @@ function fnSrc(name) {
 }
 const fake = () => ({ innerHTML: '', className: '', textContent: '', attrs: {}, setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute() {}, addEventListener() {}, children: [], appendChild(c) { this.children.push(c); } });
 
-function rowHarness() {
-  const names = ['escapeXml', 'runLabel', 'runName', 'glyphClass', 'statusWordHtml', 'panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText', 'resumedTagHtml', 'buildRunRowEl'];
+function listHarness() {
+  const names = ['escapeXml', 'runLabel', 'glyphClass', 'panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText', 'rlShortDate', 'runAtText', 'rlRunParts', 'rlRunCardHtml', 'rlJobCardHtml'];
   // eslint-disable-next-line no-new-func
-  return new Function('document', 'selectRun', 'scrollRunIntoViewMobile', `var currentRunid = null;\n${names.map(fnSrc).join('\n')}\nreturn buildRunRowEl;`)(
-    { createElement: fake, getElementById: fake }, () => {}, () => {});
+  return new Function(`${names.map(fnSrc).join('\n')}\nreturn { rlRunCardHtml, rlJobCardHtml };`)();
 }
 const RUN = {
-  runid: 'demod3', job: 'demo-plain-green', glyph: '✗', status: { sign: '✗', word: 'failed' }, endedLine: 'checks said no', checkType: 'deterministic',
-  spentUsd: 3.5, spendComplete: true, wallMs: 600000, date: '2026-10-04', resumedCount: 0, died: false,
+  runid: 'demod3', job: 'demo-plain-green', runNo: 3, at: '2026-10-04T10:00:00.000Z', model: 'deepseek-flash', glyph: '✗', status: { sign: '✗', word: 'failed' }, endedLine: 'checks said no', checkType: 'deterministic',
+  spentUsd: 3.5, spendComplete: true, wall: '10m00s', date: '2026-10-04', died: false,
 };
 
-test('C7: a History card is line 1 sign + job (run-N), line 2 **word** — reason, line 3 the facts', () => {
-  const row = rowHarness()(RUN);
-  const html = row.innerHTML;
-  const i1 = html.indexOf('demo-plain-green (demod3)');
-  const i2 = html.indexOf('<b class="st-word">failed</b> — checks said no');
-  const i3 = html.indexOf('deterministic');
-  assert.ok(i1 !== -1 && i2 > i1 && i3 > i2, html);
-  assert.match(html, /class="dot red"/);
+test('P9 v2 C7: a run card is line 1 `[sign] run-N  date · model`, line 2 `**word** — reason · $ · wall`', () => {
+  const html = listHarness().rlRunCardHtml({ ...RUN, draftSpentUsd: 0.08, draftSpendComplete: true }, false, false);
+  assert.match(html, /class="dot red"[^]*class="rl-rn">run-3<\/span> <span class="rl-faint">\d\d\/\d\d \d\d:\d\d · deepseek-flash<\/span>/);
+  assert.match(html, /<b class="st-word">failed<\/b> — checks said no &middot; \$3\.50 \(\$0\.08\) · 10m00s<\/span>/);
+  assert.doesNotMatch(html, /drafting|resumed/);
+  assert.equal((html.match(/rl-l1|rl-l2/g) || []).length, 2, 'exactly 2 lines');
 });
 
-test('C7: an EXPANDED per-run row (sub-card) is 2 left-aligned lines: `[sign] (run-N) **word** — reason` / `$ · wall · date`', () => {
-  const row = rowHarness()({ ...RUN, wall: '30m00s', draftSpentUsd: 0.08, draftSpendComplete: true }, true);
-  const html = row.innerHTML;
-  assert.match(html, /class="dot red"[^]*class="wf-name wf-runno"[^>]*>\(demod3\)<\/span>[^]*<b class="st-word">failed<\/b> — checks said no[^]*wf-meta-line[^]*\$3\.50 \(\$0\.08\)<\/span><span class="wf-meta">30m00s<\/span><span class="wf-meta">2026-10-04</,
-    'line 2 is money (drafting share without the word) · wall · date');
-  assert.doesNotMatch(html, /drafting/, 'the list cards drop the word "drafting"');
-  assert.doesNotMatch(html, /wf-rowmeta/, 'nothing is pushed right');
-  assert.equal((html.match(/wf-line1|wf-meta-line/g) || []).length, 2, 'exactly 2 lines');
+test('P9 v2 C7: a job card is `[sign] job · k runs · check type` / `**word** · why` of its head run, and is a box, not a button', () => {
+  const h = listHarness();
+  const c = { job: 'job1', head: { ...RUN, glyph: '✓', status: { sign: '✓', word: 'passed' }, endedLine: 'goal met' }, empty: false, count: 2, sel: { runid: 'x' }, selected: false, hits: [], older: { open: false, shown: [], hidden: 0, total: 0 } };
+  const html = h.rlJobCardHtml(c);
+  assert.match(html, /^<div class="rl-card" id="rl-job-job1"/);
+  assert.match(html, /class="dot green"[^]*<span class="rl-nm"[^>]*>job1<\/span> <span class="rl-cnt">&middot; 2 runs &middot; deterministic<\/span>/);
+  assert.match(html, /<span class="rl-l2"><b class="st-word">passed<\/b> &middot; goal met<\/span>/);
+  assert.doesNotMatch(h.rlJobCardHtml({ ...c, head: { ...c.head, checkType: 'unknown' } }), /unknown/, 'an unknown check type draws nothing');
 });
 
-test('C7: the workflow card is 2 lines: `▶ [sign] job (run-N) **word** — reason` / `check · $ ($) · wall · date`, no runs count, no resumed tag', () => {
-  const g = {
-    job: 'job1', runs: [{ runid: 'r1' }, { runid: 'r0' }], runCount: 2, lastRunid: 'r1', lastRunNo: 1, lastGlyph: '✓', lastStatus: { sign: '✓', word: 'passed' },
-    lastEndedLine: 'goal met', lastResumedCount: 2, lastCheckType: 'deterministic', lastSpend: '$5.00 ($0.08)', lastWall: '30m00s', lastDate: '2026-10-06',
-  };
-  const els = [];
-  const mkEl = () => { const e = { innerHTML: '', className: '', attrs: {}, children: [], setAttribute(k, v) { this.attrs[k] = v; }, addEventListener() {}, appendChild(c) { this.children.push(c); } }; els.push(e); return e; };
-  // eslint-disable-next-line no-new-func
-  const render = new Function('document', 'selectRun', 'scrollRunIntoViewMobile', 'currentRunsFilters', 'filtersActive', 'filterRuns', 'autoExpandJob', `
-    var currentRunid = null; var wfExpanded = {}; var WF_SUB_CAP = 7;
-    ${['escapeXml', 'runLabel', 'runName', 'glyphClass', 'statusWordHtml', 'activeOlderRun', 'representedRun', 'capSubRuns', 'renderWorkflows'].map(fnSrc).join('\n')}
-    return renderWorkflows;`)({ createElement: mkEl, getElementById: mkEl }, () => {}, () => {}, () => ({}), () => false, (r) => r, () => false);
-  render([g]);
-  const html = els.find((e) => e.attrs['data-testid'] === 'wf-row-job1').innerHTML;
-  assert.match(html, /▶<\/span><span class="dot green"><\/span><span class="wf-name"[^>]*>job1 \(run-1\)<\/span><span class="wf-ended wf-ended-inline"[^>]*><b class="st-word">passed<\/b> — goal met<\/span><\/span><span class="wf-meta-line"><span class="wf-meta">deterministic<\/span><span class="wf-meta">\$5\.00 \(\$0\.08\)<\/span><span class="wf-meta">30m00s<\/span><span class="wf-meta">2026-10-06<\/span><\/span>$/);
-  assert.doesNotMatch(html, /runs<|resumed|drafting/);
-});
-
-test('C7: a live run card reads **running** with no reason, never a stale ended line', () => {
-  const html = rowHarness()({ ...RUN, glyph: '▶', status: { sign: '▶', word: 'running' }, endedLine: null }).innerHTML;
-  assert.match(html, /<b class="st-word">running<\/b><\/span>/);
+test('P9 v2 C7: a live run card reads **running**, never a stale ended line', () => {
+  const html = listHarness().rlRunCardHtml({ ...RUN, glyph: '▶', status: { sign: '▶', word: 'running' }, endedLine: null, starting: true }, false, false);
+  assert.match(html, /<b class="st-word">running<\/b> — starting…/);
 });
 
 function headerHarness() {
@@ -174,7 +153,7 @@ test('C8: the right-side header reads `[sign] job (run-N) │ **word** — reaso
   assert.match(html, /^<span class="rp-sep">│<\/span><b class="st-word">failed<\/b> — checks said no · ended \d{1,2}\/\d{1,2}\/2026, \d{1,2}:\d{2} (AM|PM)$/);
 });
 
-test('2026-10-07: a STOPPED run wears [■] on the table, the card, the expanded row, the header, the summary box, the map and the step card — failed/capped keep [✗], died keeps [?]', () => {
+test('2026-10-07: a STOPPED run wears [■] on the table, the run card, the header, the summary box, the map and the step card — failed/capped keep [✗], died keeps [?]', () => {
   assert.equal(statusFor({ outcome: 'stopped' }).sign, '■');
   assert.equal(glyphForOutcome('stopped'), '■');
   assert.equal(partStatusFor({ kind: 'step', outcome: null, stopReason: 'you stopped it' }).sign, '■');
@@ -182,8 +161,7 @@ test('2026-10-07: a STOPPED run wears [■] on the table, the card, the expanded
   assert.equal(statusFor({ outcome: 'cap-halt' }).sign, '✗');
   assert.equal(statusFor({ outcome: null, died: true }).sign, '?');
   const S = { ...RUN, glyph: '■', status: { ...STATUS.stopped } };
-  assert.match(rowHarness()(S).innerHTML, /class="dot stopped"/); // card
-  assert.match(rowHarness()(S, true).innerHTML, /class="dot stopped"/); // expanded row
+  assert.match(listHarness().rlRunCardHtml(S, false, false), /class="dot stopped"/); // run card
   const h = headerHarness();
   h.setRunHeader('■', 'j (run-1)', '');
   assert.equal(h.els['active-wf-dot'].className, 'dot stopped'); // header
@@ -204,7 +182,7 @@ test('2026-10-07: a STOPPED run wears [■] on the table, the card, the expanded
 
 test('2026-10-07: the ✗ result chip still finds a stopped [■] run (it was a [✗] before the sign ruling)', () => {
   // eslint-disable-next-line no-new-func
-  const filterRuns = new Function(`${['matchesSearch', 'filterRuns'].map(fnSrc).join('\n')}\nreturn filterRuns;`)();
+  const filterRuns = new Function(`${['rlRunParts', 'runLabel', 'runAtText', 'rlShortDate', 'rowIsLive', 'rowWallText', 'rowSpendText', 'liveSpendText', 'liveWallPhrase', 'duration', 'panelMoney', 'panelMoneyWithDraft', 'escapeXml', 'runMatchesSearch', 'filterRuns'].map(fnSrc).join('\n')}\nreturn filterRuns;`)();
   const runs = [{ runid: 'a', glyph: '■', checkType: 'deterministic' }, { runid: 'b', glyph: '✓', checkType: 'deterministic' }];
   assert.deepEqual(filterRuns(runs, { checkTypes: [], results: ['✗'], time: 'all', search: '' }).map((r) => r.runid), ['a']);
 });
