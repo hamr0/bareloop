@@ -906,5 +906,14 @@ drafting session smv74rc6x1g2l (changelog, signing refused, $0.01).
   refusal for a rubric job never says "check the project's install, build and test commands" (code-job wording).
 - **M3 — a new run shows in Runs without a refresh.** After Sign & run the run appeared only after a page refresh.
   Find the cause in the panel's run list refresh and fix it; the orchestrator screenshots it.
+- **M4 — a "must say" phrase must repeat too.** Run mv76jhj1 (flights, DeepSeek `deepseek-flash`, step-red, $0.27): the
+  drafter signed phrase facts "from San Francisco" and "to Los Angeles" on a line asking for 3 flights. The frozen page
+  holds each only twice (the page header); every flight's own words say "Leaves San Francisco International Airport...",
+  so every per-result quote failed "the quote does not say ...", and the worker's workaround (gluing the header onto each
+  quote) was refused ("not found word for word"). Unwinnable from signing. Rule, in the SAME check as M1
+  (`checkFactWords`, one owner): a phrase fact's `phrase` counted in the named input (the matcher the draft-time
+  presence check already uses, `countPhrase`) fewer than the line's `count.min` is a $0 red in plain words naming the
+  words, the input, the count and N (`rubric-fact-phrase-rare`). Count 1 or no count keeps a once-only phrase legal.
+  The one rulebook (`RUBRIC_RULES`) tells the drafter.
 
 Proof: $0 tests per item; then hamr re-runs Job 1 and Job 2 fully.
