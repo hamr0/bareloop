@@ -100,21 +100,25 @@
 
 import { jobSpecHash, validateJob } from './job.js';
 import { seedAtHead, seedListing, seedRead as runSeedRead, makeSeedTrees, judgedStages, closeJudges } from './kinds.js';
+import { inputLabelsOf, readFrozenInputs } from './rubricstep.js';
+import { proverOf } from './factwords.js';
 // SOFTGREEN modules 4 and 5 — the compile the interview's Q6/Q7 answers land in,
 // and the gate that decides whether the ruler they describe is a ruler.
 import { proposeJudgedArtifacts, signJudgedArtifacts, foldJudgedArtifacts } from './cardauthor.js';
 import { runCalibration } from './calibrate.js';
 import { CALIBRATION_SIZE } from './judged.js';
 import {
-  GENRE_LANGUAGES, LOCKED_KINDS, TYPES_GENRE, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
+  GENRE_LANGUAGES, RUBRIC_LANG, DECLARABLE_LANGUAGES, genreForLang, LOCKED_KINDS, TYPES_GENRE, VERDICT_CLASSES, LOCKED_CLASSES, LIVE_CLASSES,
   UNLISTED_CLASSES, MENU_CLASSES,
 } from './authoring.js';
 import {
   QUESTION_SETS, questionsFor, requiredAnswersFor, authorClose, makeCostBook,
-  runConfirmTurn, LANGUAGE_PICK_FIELD,
+  runConfirmTurn, LANGUAGE_PICK_FIELD, normalizeQuestions,
 } from './authorflow.js';
+import { ruleQuestions } from './inputlook.js';
 import { thinkingCallOptions, assertThinkingMode } from './thinking.js';
-import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
+import { pageContentChars } from './pagefetch.js';
+import { runAuthorScout, runInputLook, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
 import {
   DECLARED_GAP_PREFIX, DECLARED_GENRES, guardNames, isDeclaredClose, validateCloseDecl,
 } from './declaredclose.js';
@@ -229,14 +233,14 @@ export function refusalEvents(refusal) {
  *     makes between a locked verdict and an invalid one).
  *
  * @param {{answers: Record<string|number, any>, verdictType?: string|null,
- *   repoPath?: string|null, questions?: Record<string|number, string>|null}} o
- *   `verdictType` and `repoPath` are STRUCTURED input from the UI, never parsed
+ *   repoPath?: string|null, questions?: Record<string|number, string>|null, required?: (string|number)[]|null}} o
+ *   `required` — the answer keys that must be present; absent = the picked class's whole set. `verdictType` and `repoPath` are STRUCTURED input from the UI, never parsed
  *   out of the prose of an answer: a class is picked off a radio and a path is
  *   read off the machine, or neither exists.
  * @returns {{ok: boolean, answers: Record<string|number, string>,
  *   verdictType: string|null, repoPath: string|null, refusal: Refusal|null, reds: Red[]}}
  */
-export function runInterview({ answers, verdictType = null, repoPath = null, questions = null }) {
+export function runInterview({ answers, verdictType = null, repoPath = null, questions = null, required: requiredOverride = null }) {
   /** @type {Red[]} */
   const reds = [];
   const out = (/** @type {Partial<any>} */ over) => ({
@@ -290,7 +294,8 @@ export function runInterview({ answers, verdictType = null, repoPath = null, que
   }
 
   const set = questions ?? questionsFor(picked);
-  const required = requiredAnswersFor(picked);
+  // PART 1a: a rubric job on local files asks one question (the job lines); the caller names the keys it needs
+  const required = Array.isArray(requiredOverride) ? requiredOverride : requiredAnswersFor(picked);
 
   if (!isObj(answers)) {
     reds.push({ code: 'missing-field', path: 'answers', detail: 'the interview answers, keyed by question number' });
@@ -424,7 +429,7 @@ function composerRefusal(reds) {
  *   rates?: {in: number, out: number}|null, draftThinking?: 'on'|'off',
  *   onPhase?: (phase: string, data?: any) => void,
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string}) => void,
- *   seedFn?: Function, scoutFn?: Function, listingFn?: Function,
+ *   seedFn?: Function, scoutFn?: Function, listingFn?: Function, lookFn?: Function|null,
  *   authorFn?: Function, authorOpts?: object, writeScope?: string[]|null,
  *   signerFix?: Function|any, proposeFn?: Function, compileOpts?: object,
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
@@ -465,6 +470,9 @@ export async function authorCloseForJob({
   // callback back, and no decision in this file or below it depends on one.
   onPhase = () => {}, onCall = () => {},
   seedFn = seedAtHead, scoutFn = runAuthorScout, listingFn = buildSeedListing,
+  // PART 1c - the look at a rubric job's inputs (src/authorscout.js `runInputLook`). `null` is an explicit "no look" (a test seam, like
+  // a caller-supplied `scout`); the shipped default is the real, paid, read-only look.
+  lookFn = runInputLook,
   authorFn = authorClose, authorOpts = {},
   // SOFTGREEN modules 4+5. `signerFix` is the D5 seam: a function (or a value)
   // carrying the SIGNER's corrected artifacts back. Absent means the proposal is
@@ -504,7 +512,10 @@ export async function authorCloseForJob({
     confirmed: null,
   };
 
-  const interview = runInterview({ answers, verdictType, repoPath, questions });
+  // PART 1a: a rubric job on local files has ONE question — the numbered job lines (the judge-example answer is required only
+  // of a job that holds a judged part, and this build admits none). The prompt shows just that question.
+  if (lang === RUBRIC_LANG) questions = { 1: questionsFor('soft-green')[1] };
+  const interview = runInterview({ answers, verdictType, repoPath, questions, ...(lang === RUBRIC_LANG ? { required: [1] } : {}) });
   base.interview = interview;
   if (!interview.ok) {
     return { ...base, refusal: interview.refusal, reds: interview.reds, stop: interview.refusal ? 'refused' : 'interview-incomplete' };
@@ -530,7 +541,7 @@ export async function authorCloseForJob({
     }
   }
 
-  if (!GENRE_LANGUAGES.includes(lang)) {
+  if (!DECLARABLE_LANGUAGES.includes(lang)) {
     // THE GENRE REFUSAL, at the composer. This used to be a plain wiring red;
     // under v1.57 §2 the interview no longer asks the user to confirm a genre, so
     // this is where "we can't run this kind of job yet" actually lands — and it
@@ -588,6 +599,34 @@ export async function authorCloseForJob({
   // arrived at by accident.
   /** @type {any} */
   let survey = scout;
+  // PART 1a: a rubric job on local files has no repository to survey. PART 1c: its survey is the LOOK - a read-only, bounded, paid
+  // look at the person's frozen input text that reports which facts can be checked and with which label (picked from a code-made
+  // list). Without a look (`lookFn` null, or no model boundary) the survey is just the numbered inputs, known to code at $0.
+  if (survey == null && lang === RUBRIC_LANG) {
+    const inputList = (Array.isArray(inputs) ? inputs : []).map((i) => ({ n: i.n, label: i.label }));
+    const frozen = lookFn && provider && Array.isArray(jobLines) && jobLines.length > 0 && inputList.length > 0
+      ? await readFrozenInputs(workdir, inputList.map((i) => i.label)) : null;
+    if (frozen !== null && !frozen.ok) {
+      survey = { state: 'ABSENT', reason: `the look at your input could not start: ${frozen.why}`, cause: 'call-failed', budgetStop: null, calls: [], raws: [], facts: null };
+    } else if (frozen !== null && lookFn && !Object.values(frozen.texts).some((t) => pageContentChars(t) > 0)) {
+      // L2: an input with nothing in it (empty, or only a site's header and menus) is never looked at and never asked about - there is
+      // nothing to check a rule against. Plain words, before any model call.
+      survey = { state: 'ABSENT', reason: 'your input holds nothing to read (it is empty, or only the site\'s own header and menus) - nothing was asked and nothing was spent', cause: 'call-failed', budgetStop: null, calls: [], raws: [], facts: null };
+    } else if (frozen !== null && lookFn) {
+      onPhase('look', {});
+      const lookCallOptions = thinkingCallOptions(provider, draftThinking);
+      survey = await lookFn({
+        texts: frozen.texts, inputs: inputList, jobLines, provider, ceilingUsd, onCall, prove: proverOf(frozen.texts), ...(rates ? { rates } : {}),
+        ...(Object.keys(lookCallOptions).length ? { callOptions: lookCallOptions } : {}),
+      });
+      onPhase('look-done', { state: survey?.state ?? null, facts: survey?.facts?.look?.facts?.length ?? 0 });
+    } else {
+      survey = {
+        state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [],
+        facts: { rubricFiles: true, inputs: inputList },
+      };
+    }
+  }
   // `== null` and not `!survey`: this is the `??` these two lines replaced, kept
   // exactly — a caller-supplied survey is used whatever it is, and only an
   // ABSENT one is paid for.
@@ -606,6 +645,22 @@ export async function authorCloseForJob({
     onPhase('scout-done', { state: survey?.state ?? null, facts: Object.keys(survey?.facts ?? {}).length });
   }
 
+  // PART 1c, I1 (hamr 2026-10-13): the look found that the person's intent on a particular `~` rule was NOT captured (its words or
+  // meaning are not in the source) - ask about THAT rule at once, before any plan or draft is paid for. The question gate is the
+  // existing one (`answerQuestions`: answer required, no skip, the answer becomes a `~` rule on its line; `normalizeQuestions` keeps
+  // at most MAX_QUESTIONS, each on a line the look named). Everything else the look could not find asks nothing piecemeal.
+  if (answerQuestions && lang === RUBRIC_LANG && survey?.state === 'PRESENT' && Array.isArray(survey.facts?.look?.notFound) && Array.isArray(jobLines)) {
+    const candidates = ruleQuestions(survey.facts.look.notFound, jobLines);
+    const kept = normalizeQuestions(candidates, [...new Set(candidates.map((q) => q.line))]);
+    if (kept.kept.length > 0) {
+      onPhase('look-ask', { questions: kept.kept.length });
+      const updated = await answerQuestions({ questions: kept.kept, dropped: kept.dropped, confirmed: null });
+      if (updated === null) return { ...base, interview, verdictType: picked, seedRef: seed, reds: [], stop: 'confirm-abandoned', cost: null };
+      jobLines = updated.jobLines;
+      interview.answers = updated.answers;
+    }
+  }
+
   // ── THE CONFIRM TURN'S PAID HALF (PRD item 33 M3 piece 4) ──────────────────
   // Slotted between the scout and the listing: it reuses the scout's own
   // survey (ruling 4 — never a second read of the source) and needs nothing
@@ -622,7 +677,9 @@ export async function authorCloseForJob({
   let confirmPriorCalls = [];
   /** @type {any[]} */
   let confirmPriorRaws = [];
-  if (ask && isRepo && survey?.state === 'PRESENT') {
+  // PART 1a (hamr's ruling 1A): a rubric job on local files runs the SAME confirm turn a repo job does — the survey is the
+  // numbered inputs (synthetic, above), and the protections it shows come from code, never the model
+  if (ask && (isRepo || lang === RUBRIC_LANG) && survey?.state === 'PRESENT') {
     if (typeof confirmGenerate !== 'function') {
       throw new Error('[authorjob] authorCloseForJob was given `ask` for a repo job but no `confirmGenerate` — the '
         + 'confirm turn needs its OWN model boundary (bound to CONFIRM_SYSTEM), never the authoring `generate` '
@@ -645,7 +702,7 @@ export async function authorCloseForJob({
     onPhase('confirm', {});
     const confirm = await runConfirmTurn({
       verdictType: picked, answers: interview.answers, questions: questions ?? questionsFor(picked),
-      facts: survey.facts, listing: null, writeScope, isRepo, lang, worseThanBefore, inputs,
+      facts: survey.facts, listing: null, writeScope, isRepo, lang, worseThanBefore, inputs, jobLines,
       generate: confirmGenerate, book: confirmBook, ask, onPhase,
     });
     // DISTINCT from `runConfirmTurn`'s own per-round 'confirm-done' (fired once
@@ -696,7 +753,9 @@ export async function authorCloseForJob({
     answers: stageAnswers, questions: questions ?? questionsFor(picked),
     scout: survey, listing: seeds, generate, ceilingUsd, onPhase, onCall, writeScope,
     priorCalls: confirmPriorCalls, priorRaws: confirmPriorRaws, confirmed, jobLines, inputs,
-    ...(answerQuestions ? { offerQuestions: true } : {}),
+    // PART 1c: a rubric job asks nothing piecemeal on a failed try - it stops, and the person reviews the whole job (the one early
+    // ask is about a `~` rule the look could not find, above)
+    ...(answerQuestions && lang !== RUBRIC_LANG ? { offerQuestions: true } : {}),
     ...authorOpts,
   });
   // P7 item 5: the drafter, on the last try after two failed ones, asked. The person answers (required, no skip); each
@@ -752,7 +811,7 @@ export async function authorCloseForJob({
   // `prepareSigning`, which refuses there.
   /** @type {any} */
   let closeDecl = {
-    genre: GENRE,
+    genre: genreForLang(lang),
     lang,
     stages: authored.declaration.stages,
     ...(Object.keys(applied).length ? { genreEnv: { ...applied } } : {}),
@@ -770,7 +829,7 @@ export async function authorCloseForJob({
     // P7: the job lines the drafter could not turn into a stage, each with its reason — the Job tab shows them. Free
     // text the model wrote, so it rides the same redactor `notes` does.
     ...(authored.declaration.refused?.length
-      ? { refused: authored.declaration.refused.map((/** @type {any} */ r) => ({ line: r.line, reason: redactSecrets(String(r.reason)) })) }
+      ? { refused: authored.declaration.refused.map((/** @type {any} */ r) => ({ line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), reason: redactSecrets(String(r.reason)) })) }
       : {}),
   };
 
@@ -1301,7 +1360,7 @@ export async function prepareSigning({
   }
   // the class rides from the SPEC (PRD v1.57 §2) — gate 1a already refused a spec
   // whose class is unknown or locked, so this is the class D5's battery hangs off
-  const dv = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: spec.verdictType, writeScope: spec.writeScope, jobLines: Array.isArray(spec.jobLines) ? spec.jobLines : null });
+  const dv = validateCloseDecl(spec.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: spec.verdictType, writeScope: spec.writeScope, jobLines: Array.isArray(spec.jobLines) ? spec.jobLines : null, inputLabels: inputLabelsOf(spec.inputs) });
   // the grounded gate's reds quote BOTH untrusted sources — the declaration, and
   // the seed listing itself (the listing rule names what really sits beside an
   // invented path). The listing half is a channel gate 1a structurally cannot
@@ -1348,8 +1407,11 @@ export async function prepareSigning({
     stops: stops.map((s) => ({ stage: s.stage, gap: s.gap })),
   };
   if (stops.length) {
+    // M2: a rubric job's readout never uses the code-job wording ("install, build and test commands")
+    const rubricJob = (Array.isArray(spec.closeDecl?.stages) ? spec.closeDecl.stages : []).some((/** @type {any} */ st) => st && (st.kind === 'rubric-step' || st.kind === 'judged-floor'));
     const reds = stops.map((s) => ({
       code: 'broken-close',
+      ...(rubricJob ? { rubricJob: true } : {}),
       path: `closeDecl.stages.${s.stage}`,
       detail: s.gap.join('\n') || `stage "${s.stage}" rendered no judgment`,
     }));

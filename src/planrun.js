@@ -45,6 +45,7 @@ import { defaultJudgeLoop } from './judged.js';
 export { rateSourceFields };
 import { createClock, isWallTimeout } from './clock.js';
 import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade, HUMAN_PAUSE, HITL_PAUSE, HITL_DECISION_RED } from './declaredclose.js';
+import { inputLabelsOf } from './rubricstep.js';
 import {
   seedAtHead, seedListing, changedSet, GAP_TRIM_MARKER, GATE_AUDIT_FILE, ARBITER_BOOK_STORES,
   HUMAN_KIND, HUMAN_DECISIONS, normalizeHumanRuling, resolveHumanRuling,
@@ -1886,7 +1887,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       },
       decisionReady: true,
       decision: `The close minted ${outcome} and it STANDS. What happens to the work is yours: accept it, rerun it with your own words as the gap, or pause and come back.`
-        + (held ? ' This green was rendered by the judged floor, so it has earned no reuse until you accept it.' : ''),
+        + (held ? ' This is a rubric (soft-green) job, so its green earns no reuse until you accept it, whether or not a judge ran.' : ''),
       options: [...HUMAN_DECISIONS],
       meaning: 'not a verdict — the verdict is already minted and nothing an answer does can change it; this records a disposition',
     });
@@ -2036,7 +2037,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     }
     const listed = await seedListing(workdir, s.seedRef);
     const v = listed.stop === null
-      ? validateCloseDecl(job.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: job.verdictType, writeScope: job.writeScope, jobLines: Array.isArray(job.jobLines) ? job.jobLines : null })
+      ? validateCloseDecl(job.closeDecl, { at: 'closeDecl', listing: listed.files, verdictType: job.verdictType, writeScope: job.writeScope, jobLines: Array.isArray(job.jobLines) ? job.jobLines : null , inputLabels: inputLabelsOf(job.inputs) })
       : { ok: false, grounded: false, reds: [{ code: 'listing-unreadable', path: 'closeDecl', detail: listed.stop }] };
     emit('close-decl', {
       genre: job.closeDecl.genre,

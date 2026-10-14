@@ -27,7 +27,7 @@ import {
 } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import {
-  prepareSource, proveDestination, missingDependencies, looksLikeRepoSource, nearestGitAncestor, nonRepoSourceMessage,
+  prepareSource, proveDestination, proveRubricInputs, looksLikeRubricInput, missingDependencies, looksLikeRepoSource, nearestGitAncestor, nonRepoSourceMessage,
 } from '../source.js';
 import {
   worktreePath, uncommittedCount, shortHead, removeWorktree,
@@ -50,10 +50,12 @@ import {
 import { resolveJobJudge, defaultJudgeLoop } from '../judged.js';
 import { assertThinkingMode, thinkingPlanFor, thinkingRowText } from '../thinking.js';
 import { closeJudges } from '../kinds.js';
+import { RUBRIC_LANG } from '../authoring.js';
+import { rubricGoal, reconcileRubricPlan } from '../rubricstep.js';
 import { redactSecrets } from '../validate.js';
 import { tallyCalls } from '../text.js';
 import { writeDraftSpend, appendDraftLog } from '../draftspend.js';
-import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, draftStopText, redsRecord, calibrationSummary } from '../authorreadout.js';
+import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, draftStopText, redsRecord, declarationRecord, calibrationSummary, tryRefusedText } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 import {
   parseJobBlock, parseInputs, jobBlockFitsCheck, renderJobLines, renderExamples, signedJobLines,
@@ -75,6 +77,7 @@ export const STEP_LABELS = Object.freeze({
   reuse: 'reusing signed workflow',
   read: 'reading repo',
   scout: 'scouting repo',
+  look: 'looking at your input',
   listing: 'listing files',
   confirm: 'confirming plan',
   draft: 'drafting',
@@ -82,6 +85,16 @@ export const STEP_LABELS = Object.freeze({
   gates: 'checking signing gates',
   hash: 'generating hash',
   signed: 'signed hash',
+});
+
+/**
+ * The same steps, worded for a job on the person's own local FILES (Part 1a): there is no worktree and no repo to read.
+ * Code-owned, one table beside STEP_LABELS; a step with no entry keeps its STEP_LABELS word.
+ * @type {Readonly<Record<string, string>>}
+ */
+export const FILE_JOB_STEP_LABELS = Object.freeze({
+  copy: 'copying input files',
+  read: 'reading input files',
 });
 
 /**
@@ -101,6 +114,8 @@ export const PHASE_STEP = Object.freeze({
   seed: 'read',
   scout: 'scout',
   'scout-done': 'scout',
+  look: 'look',
+  'look-done': 'look',
   confirm: 'confirm',
   'confirm-turn-done': 'confirm',
   listing: 'listing',
@@ -127,12 +142,13 @@ export function latestStep(steps, id) {
  * earlier line keeps its status and detail). Existing lines are never moved. Re-starting the step that is still the
  * LAST line just resumes that line.
  * @param {StepLine[]} steps @param {string} id @param {string} [detail] (absent = keep what the line has)
+ * @param {Readonly<Record<string, string>>} [labels] the label table (a file job passes its own)
  */
-export function advanceSteps(steps, id, detail) {
+export function advanceSteps(steps, id, detail, labels = STEP_LABELS) {
   for (const x of steps) if (x.status === 'running' && x.id !== id) x.status = 'done';
   const last = steps.at(-1);
   if (last && last.id === id) { last.status = 'running'; if (detail !== undefined) last.detail = detail; return; }
-  steps.push({ id, label: STEP_LABELS[id] ?? id, status: 'running', detail: detail ?? '' });
+  steps.push({ id, label: labels[id] ?? id, status: 'running', detail: detail ?? '' });
 }
 
 /** source-door refusals that come from CHECKING the copied source (the scan/freeze), not from reaching it */
@@ -327,10 +343,13 @@ export function validateJobCard(card, opts = {}) {
   if (card.thinking !== undefined && typeof card.thinking !== 'boolean') return { ok: false, error: 'Thinking on must be on or off' };
   const jb = parseJobBlock(card.jobText);
   if (!jb.ok) return { ok: false, error: jb.error };
-  const misfit = jobBlockFitsCheck(jb.lines, checkType === 'rubric');
-  if (misfit) return { ok: false, error: misfit };
   const ib = parseInputs(card.inputs);
   if (!ib.ok) return { ok: false, error: ib.error };
+  // P1=B: PASS/FAIL examples are required of a rubric job only when it holds a judged part. A rubric on the person's own
+  // local files (first input not a repo) holds none in this build; a rubric on a repo composes the judged floor.
+  const rubricFiles = checkType === 'rubric' && looksLikeRubricInput(ib.inputs[0].value);
+  const misfit = jobBlockFitsCheck(jb.lines, checkType === 'rubric', { judged: !rubricFiles });
+  if (misfit) return { ok: false, error: misfit };
   if (typeof destination !== 'string' || destination.trim() === '') return { ok: false, error: 'Destination is required' };
   if (typeof capUsd !== 'number' || !Number.isFinite(capUsd) || capUsd <= 0) {
     return { ok: false, error: '$ cap is required and must be a positive number' };
@@ -346,7 +365,7 @@ export function validateJobCard(card, opts = {}) {
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
  *   scout?: any, generate?: Function, confirmGenerate?: Function, authorFn?: Function,
- *   prepareSigningFn?: Function, npmCiFn?: Function, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
+ *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
  * @returns {any} the session object
@@ -432,10 +451,13 @@ export function createSession(card, deps = {}) {
     });
   };
 
+  /** a rubric job on local files words its copy/read steps for files (set once the card is known) */
+  let fileJob = card.checkType === 'rubric' && looksLikeRubricInput(parseInputs(card.inputs).ok ? (/** @type {any} */ (parseInputs(card.inputs))).inputs[0].value : '');
   /** @param {string} id @param {string} [detail] (absent = keep what the step has) start (or restart) a step; whatever step was running is finished */
   const stepStart = (id, detail) => {
-    advanceSteps(state.steps, id, detail);
-    state.progressLabel = STEP_LABELS[id] ?? id;
+    const labels = fileJob ? { ...STEP_LABELS, ...FILE_JOB_STEP_LABELS } : STEP_LABELS;
+    advanceSteps(state.steps, id, detail, labels);
+    state.progressLabel = labels[id] ?? id;
     logSteps();
   };
   /** @param {string} id @param {string} detail set a step's latest line's detail without changing its status */
@@ -500,6 +522,7 @@ export function createSession(card, deps = {}) {
     return true;
   };
 
+  let lastTryRefused = false;
   const onPhase = (name, data = {}) => {
     // COLLAPSED INTO THE PROGRESS INDICATOR ONLY (build item 3) — this used
     // to also `say('system', `… ${name}`)`, one jargon chat bubble per
@@ -510,10 +533,24 @@ export function createSession(card, deps = {}) {
     // person needs to read; the step-by-step detail lives in one line.
     // ONE owner of the drafting line's detail (model + cap): the drafting line is started here, by the real author phase
     if (PHASE_STEP[name]) stepStart(PHASE_STEP[name], PHASE_STEP[name] === 'draft' ? `${card.model}, $${card.capUsd.toFixed(2)} cap` : undefined);
-    // a drafting call after the first (`author-call` i >= 1, of up to `of + 1`) is a RETRY: the line says so in plain words, so a
-    // long silence on call 2 of 3 does not read as a hang. The same one line, relabelled — never a second line.
+    // WHY a try was refused: the drafting log keeps it beside the call that made it (it used to say only "retry 3 of 3"), and the
+    // progress line shows it briefly, in code's words
+    if (name === 'author-try-failed') {
+      lastTryRefused = true;
+      const no = state.steps.findLastIndex((/** @type {any} */ x) => x.id === 'draft');
+      const reason = tryRefusedText(data);
+      appendDraftLog(outDir, {
+        kind: 'try-refused', no: no === -1 ? state.steps.length - 1 : no, call: String(data.call ?? ''), reason,
+        ...(Array.isArray(data.reds) && data.reds.length ? { reds: redsRecord(data.reds) } : {}), ...declarationRecord(data.declaration), at: new Date().toISOString(),
+      });
+      stepDetail('draft', `${data.call}: refused — ${reason.length > 160 ? `${reason.slice(0, 160)}…` : reason}`);
+    }
+    // a drafting call after the first (`author-call` i >= 1, of up to `of + 1`) is relabelled in plain words, so a long silence on call 2
+    // of 3 does not read as a hang. The loop drafts again after a try that PASSED too (the drafter sees its own seed-read), so
+    // "retry" is said only when the previous try was actually refused; otherwise it is "look". The same one line, never a second one.
     if (name === 'author-call' && Number.isInteger(data.i) && data.i >= 1 && Number.isInteger(data.of)) {
-      const label = `${STEP_LABELS.draft} (retry ${data.i + 1} of ${data.of + 1})`;
+      const label = `${STEP_LABELS.draft} (${lastTryRefused ? 'retry' : 'look'} ${data.i + 1} of ${data.of + 1})`;
+      lastTryRefused = false;
       stepLabel('draft', label);
       state.progressLabel = label;
     }
@@ -644,6 +681,9 @@ export function createSession(card, deps = {}) {
     const verdictType = card.checkType === 'rubric' ? 'soft-green' : 'green';
     const into = join(outDir, 'source-seed');
     const isRepoLike = looksLikeRepoSource(SOURCE);
+    // PART 1a: a RUBRIC job whose first input is not a repo works on the person's own local FILES — every numbered input
+    // line is one file, frozen by `proveRubricInputs`; there is no repo, no language and no scout (docs/product/ITEM33-BUILD.md)
+    const RUBRIC_FILES = card.checkType === 'rubric' && !isRepoLike;
     // hamr's ruling B (2026-10-05): ONE rule for both a fresh card and a reuse card, at $0, before the copy and any model call
     const destProblem = repoDestinationProblem(card.destination, isRepoLike);
     if (destProblem !== null) { refuse(destProblem); return; }
@@ -667,10 +707,21 @@ export function createSession(card, deps = {}) {
     // fence read as a directory and refused as "not absolute" — hiding the real problem with the Source. A scope-shaped
     // (relative) Destination is therefore handed to the door only when the source is repo-like.
     const destIsDir = isAbsoluteDestination(card.destination);
-    const prep = await prepareSource({
-      source: SOURCE, into, ...(isRepoLike || destIsDir ? { destination: card.destination } : {}),
-      ...(repoRoot === null ? {} : { worktree: worktreePath(repoRoot, id) }),
-    });
+    if (RUBRIC_FILES && !destIsDir) {
+      refuse('Destination must be the full path of a folder, like /home/me/out — the finished files are delivered there. Nothing spent.');
+      return;
+    }
+    /** @type {any} */
+    let prep;
+    if (RUBRIC_FILES) {
+      const proved = await proveRubricInputs({ inputs: INPUTS, into, destination: card.destination, ...(deps.fetchUrl ? { fetchUrl: deps.fetchUrl } : {}) });
+      prep = proved.ok ? proved.prep : { stop: proved.error, code: proved.code };
+    } else {
+      prep = await prepareSource({
+        source: SOURCE, into, ...(isRepoLike || destIsDir ? { destination: card.destination } : {}),
+        ...(repoRoot === null ? {} : { worktree: worktreePath(repoRoot, id) }),
+      });
+    }
     if (repoRoot !== null && prep.stop === null && prep.manifest?.worktree) madeWorktree = { repo: repoRoot, dir: prep.manifest.worktree };
     if (abandoned) dropWorktree();
     if (prep.stop !== null) {
@@ -682,7 +733,7 @@ export function createSession(card, deps = {}) {
     stepStart('check');
 
     const IS_REPO_SOURCE = prep.manifest.kind === 'repo';
-    let LANG = 'none-detected';
+    let LANG = RUBRIC_FILES ? RUBRIC_LANG : 'none-detected';
     /** @type {any} */
     let langResult = null;
     if (IS_REPO_SOURCE) {
@@ -741,7 +792,7 @@ export function createSession(card, deps = {}) {
         state.phase = 'drafting';
       }
     }
-    if (!IS_REPO_SOURCE) {
+    if (!IS_REPO_SOURCE && !RUBRIC_FILES) {
       refuse(nonRepoSourceMessage(prep.manifest.kind));
       return;
     }
@@ -874,7 +925,9 @@ export function createSession(card, deps = {}) {
       return;
     }
 
-    const writeScope = card.destination.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
+    // a rubric job on files writes only inside the hidden tree's own `output/`; its Destination is a drop-off folder
+    // (proven above, per run), never a fence
+    const writeScope = RUBRIC_FILES ? ['output/'] : card.destination.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
     /** @type {any} the confirm turn (below) fills `goal` in once accepted —
      * declared loosely rather than typed field-by-field, since this object's
      * own shape is a `job-v1` draft `validateJob` itself is the real
@@ -909,7 +962,8 @@ export function createSession(card, deps = {}) {
     /** @type {Record<string, string>} */
     const answers = { 1: renderJobLines(jobLines) };
     if (verdictType === 'soft-green') answers[SOFTGREEN_JUDGE_EXAMPLES_KEY] = renderExamples(jobLines);
-    const required = requiredAnswersFor(verdictType);
+    // a rubric job on files holds no judged part in this build, so the PASS/FAIL examples are not required of it
+    const required = RUBRIC_FILES ? [1] : requiredAnswersFor(verdictType);
     for (const n of required) {
       if (!answers[n]) { refuse(`the ${verdictType} check type needs ${required.length} answers and one is missing (key ${n})`); return; }
     }
@@ -973,8 +1027,10 @@ export function createSession(card, deps = {}) {
       rates: draftPrice?.rates ?? null,
       draftThinking,
       onPhase, onCall,
-      ask, answerQuestions, confirmGenerate, isRepo: true, langResult,
+      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult,
       ...(deps.scout ? { scout: deps.scout } : {}),
+      // PART 1c: a test that replaces the model boundary (`generate`) must not reach the real paid look; `deps.lookFn` brings its own
+      ...(deps.lookFn !== undefined ? { lookFn: deps.lookFn } : (deps.generate ? { lookFn: null } : {})),
       ...(authorFnOverride ? { authorFn: authorFnOverride } : {}),
     });
 
@@ -1008,13 +1064,34 @@ export function createSession(card, deps = {}) {
         : draftStopText({
           stop: String(authored.stop ?? 'authoring-failed'), reds: stopReds, refusal: authored.refusal,
           spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete },
+          wholeJob: RUBRIC_FILES,
         }), authored.stop === 'confirm-abandoned' ? 'abandoned' : 'refused');
       return;
     }
 
-    if (authored.confirmed?.goal) draft.goal = redactSecrets(String(authored.confirmed.goal));
+    if (RUBRIC_FILES) draft.goal = redactSecrets(rubricGoal({ jobLines, files: prep.manifest.inputs, confirmedGoal: authored.confirmed?.goal ?? null, closeDecl: authored.closeDecl }));
+    else if (authored.confirmed?.goal) draft.goal = redactSecrets(String(authored.confirmed.goal));
     const spec = assembleSpec(draft, { ...authored, verdictType: /** @type {string} */ (authored.verdictType) });
+    // PART 1a (run mv5bk400): the plan the person confirmed named three checks for line 1; the composer wrote ONE stage and put
+    // "lists 3 releases" in its notes, so the card promised a check the close never ran. The card AFTER drafting is now built
+    // from the close itself, and every confirmed check no part carries out is moved to Not checked, in code, before signing.
+    if (RUBRIC_FILES) {
+      const rec = reconcileRubricPlan({
+        confirmed: authored.confirmed?.checkItems ?? [], notChecked: authored.confirmed?.notChecked ?? [], closeDecl: spec.closeDecl, jobLines,
+      });
+      state.finalPlan = { goal: String(draft.goal ?? ''), checkItems: rec.checkItems, notChecked: rec.notChecked, protections: authored.confirmed?.protections ?? [], moved: rec.moved };
+    }
     await finish(spec, authored.seedRef);
+    if (state.finalPlan && state.phase === 'prepared') {
+      // The confirm turn's plan bubble (and a try-3 "answers are in" one) is the DRAFTER's wording of the checks, written before
+      // any close existed. Once the close is signed-ready its card is the only plan the person sees: the earlier ones are
+      // dropped, so drafter prose can never sit above (and be read instead of) the code's sentences (run mv5e1ktb).
+      state.messages = state.messages.filter((/** @type {any} */ m) => m.kind !== 'plan');
+      state.messages.push({
+        ...planMessage({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, protections: state.finalPlan.protections, questions: [] }, jobLines),
+        text: 'These are the checks the signed close will run, and what it will not check. Sign & run to accept them, or Revise to edit the boxes and draft again.',
+      });
+    }
   }
 
   // fire-and-forget — the caller (src/panel/server.js) never awaits this; it

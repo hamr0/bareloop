@@ -113,8 +113,9 @@
   .topbar > div:first-child{display:flex;align-items:baseline;gap:0;white-space:nowrap;overflow:hidden;}
   .topbar .brand{font-weight:700;font-size:17px;letter-spacing:0.06em;flex:none;}
   .topbar .brand::before{content:"■ ";}
-  .topbar .tagline{font-size:12px;color:var(--text-dim);margin-left:8px;overflow:hidden;text-overflow:ellipsis;}
-  .topbar .tagline::before{content:"· ";color:var(--text-faint);}
+  .topbar .tagline,.topbar .version{font-size:12px;color:var(--text-dim);margin-left:8px;overflow:hidden;text-overflow:ellipsis;font-weight:400;}
+  .topbar .tagline::before,.topbar .version::before{content:"· ";color:var(--text-faint);}
+  .topbar .version{flex:none;}
   @media (max-width: 600px){ .topbar .tagline{display:none;} }
   .topbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
 
@@ -590,6 +591,9 @@
   .pv-typed input{flex:1 1 160px;min-width:0;max-width:260px;min-height:28px;box-sizing:border-box;}
   .pv-typed .hint{flex:1 1 100%;margin:0;}
   .hint.bad{color:var(--red);}
+  /* a refused Start (a $0 refusal, e.g. an Inputs line) is read like the red failure line of the progress list, not like a faint hint */
+  .card-refusal:not(:empty){font-size:13px;margin-top:8px;line-height:1.4;}
+  .card-refusal:empty{display:none;}
   .field label.jf-thinking{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:6px;margin-top:6px;font-size:12px;text-transform:none;letter-spacing:0;}
   .field label.jf-thinking input{width:auto;min-height:0;margin:0;}
   .table-wrap{overflow-x:auto;border:1px solid var(--border-strong);background:var(--panel2);max-width:100%;}
@@ -638,6 +642,7 @@
   <header class="topbar">
     <div>
       <span class="brand">bareloop</span>
+      <span class="version" id="panel-version">v__BARELOOP_PANEL_VERSION__</span>
       <span class="tagline">automate a job, verified</span>
     </div>
     <div class="topbar-right">
@@ -726,7 +731,7 @@
                 <input id="jf-cap-time" type="text" placeholder="or blank = no wall">
               </div>
             </div>
-            <div class="hint" id="chat-card-error" data-testid="chat-card-error"></div>
+            <div class="hint bad card-refusal" id="chat-card-error" data-testid="chat-card-error" role="alert"></div>
             <div id="chat-resume-box" class="chat-resume-box" data-testid="resume-box" hidden>
               <div class="hint" id="chat-resume-spent" data-testid="resume-spent"></div>
               <div class="ended-actions"><button class="btn primary" type="button" id="chat-resume-sign" data-testid="btn-sign-resume">Sign &amp; resume</button> <button class="btn" type="button" id="chat-resume-cancel" data-testid="btn-resume-cancel">Cancel</button></div>
@@ -2488,6 +2493,19 @@
     }, 1500);
   }
 
+  // M3 (Part 1c full-run fixes): after Sign & run the new run's row is written a few seconds later (the runner starts, then
+  // appends its row), and the Runs list only re-fetches every RUNS_LIST_POLL_MS — so a run just signed showed only after a page
+  // refresh. Like a resume, a sign forces list refreshes until a run that was not listed before the click appears; bounded.
+  function afterSignRefresh(knownIds, tries){
+    refreshRunsList(true).then(function(runs){
+      var fresh = Array.isArray(runs) && runs.some(function(r){ return knownIds.indexOf(r.runid) === -1; });
+      if(!fresh && tries > 0) setTimeout(function(){ afterSignRefresh(knownIds, tries - 1); }, 1500);
+    });
+  }
+  function currentRunIds(){
+    try { return (JSON.parse(lastRunsSig || "[]") || []).map(function(r){ return r.runid; }); } catch(e){ return []; }
+  }
+
   function renderRun(detail){
     if(detail.fileMissing){
       setRunHeader("\u00B7", runName(detail.job, detail.runNo, detail.runid), "file missing");
@@ -3235,14 +3253,15 @@
   // (src/panel/jobplan.js): numbered lines with their rule, the checks under the line each serves (folded), the AI's own
   // "Not checked", the always-on guards. Only the marker is blue (--plan). Returns HTML (every text is escaped).
   function renderJobPlan(plan){
-    var h = '<div class="jp" data-testid="job-plan">' + (plan.older ? '<div class="older" data-testid="plan-older">older job \u2014 numbered lines were not saved</div>' : "") + '<div class="jp-legend"><b>\u203A</b> = the approved plan</div>' +
+    var h = '<div class="jp" data-testid="job-plan">' + (plan.older ? '<div class="older" data-testid="plan-older">older job \u2014 numbered lines were not saved</div>' : "") + '<div class="jp-legend">Done when every <b>\u203A</b> check passes</div>' +
       (plan.goal && !plan.older ? '<div class="jp-sum" data-testid="plan-goal"><span class="lbl">AI\'s summary</span>' + escapeXml(plan.goal) + "</div>" : "");
     var checkLine = function(c){
       return '<div class="fold" data-testid="plan-check"><span class="mk">\u203A</span> check \u00B7 ' + escapeXml(c.name) + (c.cls ? " \u00B7 " + escapeXml(c.cls) : "") + "</div>";
     };
     (plan.lines || []).forEach(function(l){
       h += '<div class="jl" data-testid="plan-line"><span class="num">' + escapeXml(String(l.n)) + "</span>" + escapeXml(l.text);
-      if(l.rule) h += '<div class="sub">~ ' + escapeXml(l.rule) + "</div>";
+      // one `~` row per rule (fwdloop's shape); an older plan that carries only the joined `rule` still shows it
+      (l.rules && l.rules.length ? l.rules : (l.rule ? [l.rule] : [])).forEach(function(r){ h += '<div class="sub">~ ' + escapeXml(r) + "</div>"; });
       (l.checks || []).forEach(function(c){ h += checkLine(c); });
       (l.refused || []).forEach(function(r){ h += '<div class="fold" data-testid="plan-refused"><span class="mk">\u203A</span> not checked \u00B7 ' + escapeXml(r) + "</div>"; });
       h += "</div>";
@@ -3256,7 +3275,7 @@
         items.map(function(x){ return "<li>" + escapeXml(x) + "</li>"; }).join("") + "</ul></details>";
     };
     h += fold("Not checked (the AI's own reading)", plan.notChecked, "plan-notchecked");
-    h += fold("Always on", plan.alwaysOn, "plan-alwayson");
+    h += fold("Always checked", plan.alwaysOn, "plan-alwayson");
     return h + "</div>";
   }
 
@@ -3402,7 +3421,7 @@
       pollFailStreak = 0;
       var runs = result.runs || [];
       var next = sig(runs);
-      if(next === lastRunsSig) return; // unchanged payload — never rebuild the DOM for nothing
+      if(next === lastRunsSig) return runs; // unchanged payload — never rebuild the DOM for nothing
       lastRunsSig = next;
       withScrollPreserved(["left-pane-body"], function(){
         // setItems re-runs the SAME filter/search state and view mode
@@ -3410,6 +3429,7 @@
         // bar's own state) — a poll tick never resets either.
         runsFilterBar.setItems(runs);
       });
+      return runs;
     }).catch(function(){
       pollFailStreak++;
       // Keep the last good render; a transient failure is invisible. Only a
@@ -3906,6 +3926,7 @@
     var mainHint = document.getElementById("chat-main-hint");
     var reopenBtn = document.getElementById("chat-reopen-btn");
     var mainAction = "none";
+    var knownRunIdsAtSign = null; // the run ids listed when Sign & run was pressed (M3: afterSignRefresh waits for a new one)
     var lastState = null;
     var startOk = false;
     var errEl = document.getElementById("chat-card-error");
@@ -4596,6 +4617,7 @@
         renderActions(j.state);
         if(reuseSession && !autoSigned && j.state.phase === "prepared" && j.state.specHash){
           autoSigned = true;
+          knownRunIdsAtSign = currentRunIds();
           authorPost("/api/author/" + sessionId + "/sign", {specHash: j.state.specHash}).then(function(r){
             var o = chatPostOutcome(r);
             if(o.ok){ chatActionOk(); } else { autoSigned = false; chatActionFailed(o.error); }
@@ -4604,6 +4626,7 @@
         }
         if(j.state.phase === "signed"){
           clearInterval(pollTimer);
+          afterSignRefresh(knownRunIdsAtSign || currentRunIds(), 12);
           document.getElementById("tab-runs").click();
           // hamr's ruling 2026-10-05: the run has started, so the Chat card goes back to the empty card (the one reset
           // Clear uses) — it must not keep showing a signed job that invites a rerun. The run itself is untouched.
@@ -4626,6 +4649,8 @@
       authorPost("/api/author/start", body).then(function(r){
         if(r.status !== 200 || !r.body.ok){
           errEl.textContent = (r.body && r.body.error) || "refused";
+          // the refusal is the answer to the click: bring it into view (it sits under the cap fields, above the progress list)
+          try { errEl.scrollIntoView({block: "nearest"}); } catch(e){}
           sessionLive = false;
           refreshStartEnabled();
           return;
@@ -4906,6 +4931,7 @@
       authorGet("/api/author/" + sessionId).then(function(j){
         var hash = j.state && j.state.specHash;
         if(!hash) return;
+        knownRunIdsAtSign = currentRunIds();
         authorPost("/api/author/" + sessionId + "/sign", {specHash: hash}).then(function(r){
           var o = chatPostOutcome(r);
           if(o.ok){ chatActionOk(); } else { chatActionFailed(o.error); return; }

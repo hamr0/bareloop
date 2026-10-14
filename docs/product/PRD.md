@@ -1054,6 +1054,38 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     | R7, R8 | Unchanged (existing doctrine). R14 (positioning): not ruled, not needed for the build. |
        happened check rest on the output alone?
 
+    **2026-10-12 — required facts RULED** (hamr; supersedes Part 1a's worker-chosen `cites` list where they differ)
+
+    | # | Ruling |
+    |---|---|
+    | RF1 | Check what the person asked for, not what the worker chose to write. At drafting the AI turns each job line and its `~` rules into REQUIRED FACTS (name, shape, rule when asked, source input); facts named in the job line itself ("SFO to LAX") become rows with no `~` line. The list shows on the plan card, one row per fact under its line, and is signed with the job; the AI never changes it after signing. |
+    | RF2 | Shapes: money, number, date, time (rules `<` `<=` `>` `>=` between) and phrase (the quote must contain it). Checked in code by bareguard 0.22.0 `cited` + `decides` + typed `values` (needs the bump `^0.21.0` → `^0.22.0`, peer range checked in a clean install). No AI in the check. |
+    | RF3 | EVERY answer is quoted word-for-word and shape-checked, even a fact with no rule; a rule only adds a condition. A red names the fact and why, and goes to the fix loop. |
+    | RF4 | Fact step (find, list, look up): the output is the filled facts only, nothing unchecked is part of the answer; "N results" = N filled copies, the count a rule code checks. |
+    | RF5 | Prose step (report, summary): free text, shape-checked (size, sections); content is "Not checked" on the card and judged by the person at Accept. Every number in prose must equal a checked fact value from an earlier step (same canonical compare). |
+    | RF6 | Superlatives ("cheapest", "the last 3") are Not checked for now (later piece). A rule the AI cannot express as shape + rule goes to Not checked in the person's words, never a vague check. |
+    | RF7 | F223 (`docs/wiki/FINDINGS.md`) is closed by design once this is built. |
+    | RF8 | Later piece, its own build AFTER required facts: **rerun from line N** at the end gate of a GREEN run only. Lines before N keep their checked outputs byte-for-byte (not redone, not edited); the person's words go to line N and everything from N is redone; money and time already spent stay folded in (tighten-only, never a fresh budget). Changes the end gate (accept / rerun / pause). |
+    | RF9 | One quote per result: each result (e.g. one flight) is ONE claim with ONE quote holding all its facts (bareguard's typed claim binding: values d0, d1… each canonically equal to what the quote holds). Separate quotes per fact would let a worker mix facts from different results (price from flight A, time from flight B) into a result that does not exist. |
+    | RF10 | Two bareguard additions asked (hamr chose A: ask bareguard, never patch locally): (a) a shape-only value decide — no condition, only "the value is in the quote" (needed for RF3's facts with no rule); (b) a `text` shape — the value appears in the quote as a whole word, case/space-insensitive, otherwise exact (versions "0.41.0", flight numbers "MS791", names). Asked of the guard session 2026-10-12; the build waits for the published version. |
+    | RF11 | Honest limit of the text shape: code proves the value is a word in the result's quote, not that it is the RIGHT word for that fact ("Nonstop" as airline would pass). Accepted: the quote is one result row and the person sees the answers at Accept. |
+    | RF12 | Three layers, the same for every job: (1) is the answer real — every value sits in a real quote from ONE record, code, always (bareguard bind-only membership + `text`); (2) does it meet the rule — code, only when the value's role is certain: one value of its kind in the quote, or a label from the source right before it (anchor); (3) did it pick the right thing — the person at Accept, listed under Not checked. Not flight-specific: records commonly carry several values of one kind (leaves/lands, subtotal/total, min/max) and use their own words. |
+    | RF13 | Look first, fail early (hamr, 2026-10-12): every word a check depends on (phrase, label/anchor, unit) is searched for in the real source AT DRAFTING, before signing. Local files: read at $0. Web search: the drafter runs one real search at drafting (small spend, booked to drafting spend under the one cap) and checks against what it found. A word not found stops drafting in plain words naming the word and the input ("'SFO' is not in the input 'Flights' — change the rule to the words the source uses, or remove it; nothing was signed"). Code never decides two different words mean the same thing. Backstop: the run re-checks on the first page it reads (pages change) and stops early in plain words. |
+    | RF14 | When a word is missing, the drafter may SUGGEST a real line from the source ("the input has 'San Francisco International Airport' — use that?"); the person decides; code only proves the chosen words are really in the source. Labels/anchors the drafter takes from the source are shown on the card and signed. |
+    | RF15 | Three early tests, at drafting, on the real source (files at $0; web search on the one drafting search), before any check can be signed. Code splits the source into records (one per flight / release / row) and runs each check: (1) FOUND — the label/word/value exists in each record, count shown ("found 44/44"); 0 found stops drafting in plain words ("No flight on this page leaves SFO — wrong page or wrong direction?"); (2) ONE PER RECORD — where a rule needs a value, exactly one per record, else "ambiguous — add a label"; (3) TELLS RIGHT FROM WRONG — code breaks a real record on purpose (changed price, AM/PM swap, arrival as departure) and the check must go red, else "this check can't tell right from wrong here"; and the rule's split over the real records is shown ("39 pass, 5 fail"; a rule passing every record is flagged). A check failing any test cannot be signed: the person changes or removes it. Same principle as code jobs' seed-red and the ruled code-made practice cases (R5). |
+    | RF16 | Every `~` rule must become a check or appear under Not checked in the person's words; code refuses a draft that silently drops one (same honesty rule as the sign==run fix). |
+    | RF17 | A rule the AI turns into a number (e.g. "not a red-eye" → departs between 06:00 and 21:00) is marked on the card "AI's proposal — check it"; "not a red-eye" must use a between range, never a one-sided bound. A `text` fact may carry a label (anchor) so "from SFO" means the word after the departure label, which makes route direction checkable — asked of the guard session 2026-10-12 (correction to loop's earlier "no anchor on text in v1"). |
+
+    **2026-10-13 — look, then say what I can check RULED** (hamr; after the first live Part 1b drafts failed on record cutting, sessions smv6jhano7ba3, smv6k6l8dxkzs, smv6lyypleng8; supersedes RF15 and the record parts of RF12/RF13)
+
+    | # | Ruling |
+    |---|---|
+    | RF18 | Drafting does not grade. It only checks that each fact CAN be checked: a label with a value of the fact's shape (or the phrase itself) is found at least once in the real source. No record cutting, no per-record tests, no broken-copy test at drafting. Finding and grading are the run's and the close's job (the close is code, so a weak check costs a fix try, never a false green). Supersedes RF15. |
+    | RF19 | The drafting look is a read-only search of the input, done by the AI with tools (like the repo scout, read-only by construction, bounded rounds, spend booked to drafting): it searches the person's words AND other words that mean the same ("nonstop" / "direct", "San Francisco" / "SFO"), reads the spots it finds, and uses what it knows ("not a red-eye" → a night window, marked AI's proposal, RF17). It reports "I can check these facts", one line each with the label and value it saw. What it cannot find goes to Not checked, or becomes a question only the person can answer. |
+    | RF20 | Code proves every label and phrase the AI reports is really in the source (once is enough). Code never decides two words mean the same: the AI proposes the words, code proves they are there, the card shows the exact words used. |
+    | RF21 | Web input from the start: an input line may be a URL the person pastes (a results page). bareloop fetches it with barebrowse, read only: once at drafting for the look, and again at run start. A search the AI runs itself (no URL) is a later piece. |
+    | RF22 | The close grades against the page the RUN fetched: code saves it at run start as the run's frozen input, before the worker reads it; the worker cannot change it; every quote is checked against that copy. The drafting copy is only for the look (prices change). |
+
 34. **Item 34 — loose ends housed** (hamr, 2026-09-13: every open end gets fix / keep /
     backlog / remove).
 
@@ -1420,3 +1452,36 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 ### Rubric job shape ruled (v1.94 — 2026-10-12)
 
 - The R0–R14 draft and its 5 open questions are ruled; the rulings are in item 33, "2026-10-12 — rubric job shape RULED". Next in work order (2): the build spec for the rubric job + the barebrowse search step, shown to hamr before any build, then a flight-search job run green on DeepSeek.
+
+### Rubric gate and backlog (v1.95 — 2026-10-12)
+
+- Rubric jobs read, search and write; they never act on the world. The browse gate (bareguard primitives) refuses clicks/presses on pay/book/buy/checkout/purchase/reserve/confirm and on send/submit/sign up/post, and typing into card fields; the only form left is a search box (hamr, 2026-10-12). Sending, booking and anything needing a person mid-job is fwdloop's; booking runs in fwdloop from a bareloop green.
+- bareloop requires Node 22 (barebrowse needs it; Node 20 is end-of-life).
+- README rewritten to the deterministic / rubric split and the bareloop / fwdloop line (hamr-approved text).
+- Backlog: scheduled watch jobs. The spec's `cadence` field (hour/day/week) exists, but nothing runs a job on a schedule yet; price and news watch jobs need it.
+- Backlog, needs its own ruling: jobs that need the person's login or cookies (bank pages, members-only prices). Out of scope until ruled.
+
+### Required facts for rubric jobs (v1.96 — 2026-10-12)
+
+- A rubric job's checks come from required facts drafted from the job line and `~` rules and signed on the card; every answer is quoted and shape-checked in code (bareguard `^0.22.0` `cited` + `decides`), not chosen by the worker. Rulings RF1–RF17 are in item 33, "2026-10-12 — required facts RULED"; this closes F223 by design once built.
+- Prose steps stay free text, shape-checked, content "Not checked" and judged at Accept; numbers in prose must equal an earlier checked fact. Superlatives and inexpressible rules go to Not checked in the person's words.
+- Facts of one result share one quote; a shape-only check and a `text` shape are asked of bareguard, the build waits for them.
+- Every word a check depends on is found in the real source at drafting (files at $0, web search with one small drafting search) or drafting stops and asks the person to change or remove the rule.
+- Before signing, every check is tried on the real source: found in each record, one value per record, and red on a code-broken copy; a check failing any of the three cannot be signed.
+- Later piece, its own build after required facts: "rerun from line N" on green runs only (earlier outputs byte-for-byte kept, spend folded, tighten-only).
+
+### Look, then say what I can check (v1.97 — 2026-10-13)
+
+- Drafting no longer grades: it checks each fact CAN be checked (label + value of its shape, or the phrase, found once in the real source). Record cutting and the three early tests are dropped (RF15 superseded). Rulings RF18–RF22 in item 33, "2026-10-13 — look, then say what I can check RULED".
+- The AI looks with read-only search tools, using the person's words, words that mean the same, and what it knows; code proves every word it reports is really in the source.
+- A rubric input may be a pasted URL, fetched with barebrowse at drafting (for the look) and again at run start; the close grades against the run's own saved copy.
+- Work order (hamr, 2026-10-13; supersedes the order above where they differ): (1) finish Part 1c on `feat/rubric-search` (`docs/product/ITEM33-BUILD.md` Part 1c), live proof, /code-review, /release; (2) NEXT: P9 one runs list (`docs/product/PANEL-BUILD.md` P9, mockup `design/runs-list-mock.html`) on its own branch, built only after (1) is released; (3) then "rerun from line N" (RF8), then the remaining items of the order above.
+
+### Page words, site reach, money forms (v1.98 — 2026-10-14)
+
+- A rubric flights run failed on two drafting picks: a money form the page does not use ("$" where the page writes "US dollars") and a time label that repeats inside one record ("at"). See F228 and `docs/product/ITEM33-BUILD.md` (Part 1c, idea A addendum).
+- bareguard ^0.24.0 is adopted (money currency and unit may be lists, ruling #65). bareloop facts still carry one form; allowing lists in facts is a schema change and hamr's call. OPEN. See F228.
+- Idea A (DRAFT, not signed): the AI maps each job line and `~` rule to THIS page's own words; code keeps only words found on the page and decides; the AI never grades. The frozen code rules held on an unseen Google Flights page; a "number then marker" price layout is not read yet. See F226 and the `ITEM33-BUILD.md` idea A addendum.
+- hamr ruling 2026-10-14: no per-page patches; test idea A on the most-used sites only.
+- Site reach: most of the busiest travel and shopping sites block barebrowse. A barebrowse matter, not patched in bareloop. See F227.
+- Work order (hamr, 2026-10-14; supersedes the order above where they differ): release `feat/rubric-search` as is (self-review, then branch-review, then release); then P9 runs list on its own branch; then idea A on its own branch after its spec is signed.

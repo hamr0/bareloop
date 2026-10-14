@@ -2,7 +2,7 @@
 // `renderJobPlan()` draws in two places — the drafting confirm card (the plan bubble) and the read-only Job tab. The
 // server builds it; the page only draws it (so the two places can never read the same plan two ways).
 //
-//   { lines: [{n, text, rule, checks: [{name, cls}], refused: [reason...]}],
+//   { lines: [{n, text, rule, rules: [string...], checks: [{name, cls}], refused: [reason...]}],
 //     loose: [{name, cls}],        checks that name no job line (an older caller, or a model slip)
 //     notChecked: [text...],       "the AI's own reading" — what the drafter says nothing checks
 //     alwaysOn: [text...],         the mandatory guards / protections, which serve no job line
@@ -11,9 +11,10 @@
 // `cls` is 'machine check' | 'judge' | null (null = not known yet: the confirm card's checks are the model's plan, the
 // stage kinds exist only after drafting). Pure; no file IO.
 import { KIND_CATALOGUE } from '../authoring.js';
+import { checksOfClose, proseNotChecked, lineRules } from '../rubricstep.js';
 
 /** @typedef {{name: string, cls: 'machine check'|'judge'|null}} PlanCheck */
-/** @typedef {{n: number, text: string, rule: string, checks: PlanCheck[], refused: string[]}} PlanLine */
+/** @typedef {{n: number, text: string, rule: string, rules: string[], checks: PlanCheck[], refused: string[]}} PlanLine */
 /** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], alwaysOn: string[], older: boolean, goal?: string}} JobPlan */
 
 /**
@@ -30,8 +31,18 @@ export function checkClassOfKind(kind) {
 }
 
 /**
+ * The `~` rules of one job line, each on its own (the page draws one `~` row per rule): the line's own `rules` array when it
+ * has one (a rule may itself contain "; "), else the joined `rule` split on "; " (an older line that saved only the join).
+ * @param {any} l @returns {string[]}
+ */
+export function rulesOfLine(l) {
+  if (Array.isArray(l?.rules)) return l.rules.filter((/** @type {unknown} */ r) => typeof r === 'string' && r);
+  return typeof l?.rule === 'string' && l.rule ? l.rule.split('; ').filter(Boolean) : [];
+}
+
+/**
  * The plan of a SIGNED spec. With `jobLines`, each stage lands under EACH line its `fromLine` array names (a stage with none is
- * a mandatory guard: "Always on"), `closeDecl.refused` reasons land under their line, and `closeDecl.notes` are the
+ * a mandatory guard: "Always checked"), `closeDecl.refused` reasons land under their line, and `closeDecl.notes` are the
  * drafter's own "not checked" words. Without `jobLines` (a spec that predates the job block) the signed goal sentence is
  * line 1 and every stage name is a check under it — `older: true`.
  * @param {any} spec
@@ -42,24 +53,34 @@ export function planFromSpec(spec) {
   let stages = [];
   if (spec && Array.isArray(spec.closeDecl?.stages)) {
     stages = spec.closeDecl.stages.filter((/** @type {any} */ s) => s && typeof s.name === 'string' && s.name)
-      .map((/** @type {any} */ s) => ({ name: s.name, cls: checkClassOfKind(s.kind), fromLine: Array.isArray(s.fromLine) && s.fromLine.length ? s.fromLine.filter(Number.isInteger) : null }));
+      .flatMap((/** @type {any} */ s) => {
+        const fromLine = Array.isArray(s.fromLine) && s.fromLine.length ? s.fromLine.filter(Number.isInteger) : null;
+        // PART 1b: a rubric-step stage is shown as the checks it RUNS — one code-worded row per fact, per count, per limit — read by
+        // the same reader (`checksOfClose`) the confirm card and the sign-time invariant use, so the Job tab cannot differ from them
+        const rows = s.kind === 'rubric-step' ? checksOfClose({ stages: [s] }) : [];
+        return rows.length > 0 ? rows.map((r) => ({ name: r.text, cls: /** @type {'machine check'} */ ('machine check'), fromLine })) : [{ name: s.name, cls: checkClassOfKind(s.kind), fromLine }];
+      });
   } else if (spec && Array.isArray(spec.close)) {
     stages = spec.close.filter((/** @type {any} */ s) => s && typeof s.name === 'string' && s.name)
       .map((/** @type {any} */ s) => ({ name: s.name, cls: /** @type {'machine check'} */ ('machine check'), fromLine: null }));
   }
-  const notes = Array.isArray(spec?.closeDecl?.notes) ? spec.closeDecl.notes.filter((/** @type {any} */ n) => typeof n === 'string' && n) : [];
+  // a prose step says what it does not check (PART 1b, RF5): the person judges the text at Accept
+  const notes = [
+    ...(Array.isArray(spec?.closeDecl?.notes) ? spec.closeDecl.notes.filter((/** @type {any} */ n) => typeof n === 'string' && n) : []),
+    ...proseNotChecked(spec?.closeDecl),
+  ];
   const jl = Array.isArray(spec?.jobLines) ? spec.jobLines.filter((/** @type {any} */ l) => l && Number.isInteger(l.n) && typeof l.text === 'string') : [];
   if (jl.length === 0) {
     return {
       lines: [{
-        n: 1, text: typeof spec?.goal === 'string' && spec.goal ? spec.goal : '(no goal recorded)', rule: '',
+        n: 1, text: typeof spec?.goal === 'string' && spec.goal ? spec.goal : '(no goal recorded)', rule: '', rules: [],
         checks: stages.map((s) => ({ name: s.name, cls: s.cls })), refused: [],
       }],
       loose: [], notChecked: notes, alwaysOn: [], older: true,
     };
   }
   /** @type {PlanLine[]} */
-  const lines = jl.map((/** @type {any} */ l) => ({ n: l.n, text: l.text, rule: typeof l.rule === 'string' ? l.rule : '', checks: [], refused: [] }));
+  const lines = jl.map((/** @type {any} */ l) => ({ n: l.n, text: l.text, rule: typeof l.rule === 'string' ? l.rule : '', rules: rulesOfLine(l), checks: [], refused: [] }));
   /** @type {PlanCheck[]} */
   const loose = [];
   /** @type {string[]} */
@@ -74,7 +95,9 @@ export function planFromSpec(spec) {
   const refused = Array.isArray(spec?.closeDecl?.refused) ? spec.closeDecl.refused : [];
   for (const r of refused) {
     const line = lines.find((l) => l.n === r?.line);
-    if (line && typeof r.reason === 'string') line.refused.push(r.reason);
+    // a refusal of ONE ~ rule (PART 1b, RF16) names the rule in the person's words, so the row reads as that rule's Not checked
+    const ruleText = line && Number.isInteger(r.rule) ? lineRules(spec.jobLines.find((/** @type {any} */ l) => l?.n === r.line))[r.rule - 1] : null;
+    if (line && typeof r.reason === 'string') line.refused.push(ruleText ? `"${ruleText}" — ${r.reason}` : r.reason);
   }
   // the model's signed goal sentence rides along: the page draws it as the "AI's summary" row (an older job shows it as line 1 instead)
   return { lines, loose, notChecked: notes, alwaysOn, older: false, ...(typeof spec?.goal === 'string' && spec.goal ? { goal: spec.goal } : {}) };
@@ -82,8 +105,8 @@ export function planFromSpec(spec) {
 
 /**
  * The plan of the confirm turn, before anything is drafted: the person's own job lines, the model's checks under the
- * line each names, its own "not checked" words, and the real protections (code-owned) as "Always on".
- * @param {{n: number, text: string, rule: string}[]|null|undefined} jobLines
+ * line each names, its own "not checked" words, and the real protections (code-owned) as "Always checked".
+ * @param {{n: number, text: string, rule: string, rules?: string[]}[]|null|undefined} jobLines
  * @param {{checkItems?: {text: string, fromLine: number[]|null}[], checks?: string[], notChecked?: string[], protections?: string[]}} plan
  * @returns {JobPlan}
  */
@@ -93,7 +116,7 @@ export function planFromConfirm(jobLines, plan) {
     : (Array.isArray(plan?.checks) ? plan.checks.map((c) => ({ text: String(c), fromLine: null })) : []);
   const jl = Array.isArray(jobLines) ? jobLines : [];
   /** @type {PlanLine[]} */
-  const lines = jl.map((l) => ({ n: l.n, text: l.text, rule: l.rule, checks: [], refused: [] }));
+  const lines = jl.map((l) => ({ n: l.n, text: l.text, rule: l.rule, rules: rulesOfLine(l), checks: [], refused: [] }));
   /** @type {PlanCheck[]} */
   const loose = [];
   for (const c of items) {

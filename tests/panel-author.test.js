@@ -565,7 +565,7 @@ test('createSession end to end: draft -> plan menu -> prepared -> sign, driven b
   assert.equal(shown.text, PLAN_FOOTER);
   assert.deepEqual(shown.plan.lines.map((l) => [l.n, l.text, l.rule, l.checks.map((c) => c.name)]),
     [[1, 'fix things', 'no new deps', ['tsc clean']], [2, 'tsc clean', '', []]]);
-  assert.ok(shown.plan.alwaysOn.length > 0, 'the real protections are Always on');
+  assert.ok(shown.plan.alwaysOn.length > 0, 'the real protections are Always checked');
 
   const badSend = session.send('this must be refused — menu picks never go through send');
   assert.equal(badSend.ok, false, 'RED-PROOF: send() must refuse a pending menu ask');
@@ -617,7 +617,7 @@ test('progress list (hamr 2026-10-05): a normal session has ONE drafting line, s
   assert.equal(drafts[0].detail, `${baseCard().model}, $1.00 cap`);
 });
 
-test('I1: a drafting call after the first relabels the ONE drafting line "drafting (retry N of M)" in plain words; the first call stays "drafting"', async () => {
+test('I1: a drafting call after the first relabels the ONE drafting line "drafting (look N of M)" (a passed try) in plain words; the first call stays "drafting"', async () => {
   /** @type {any} */ let session = null;
   /** @type {string[]} */ const seen = [];
   const note = () => seen.push(`${session.state.steps.filter((/** @type {any} */ x) => x.id === 'draft').map((/** @type {any} */ x) => x.label).join('|')}#${session.state.progressLabel}`);
@@ -641,8 +641,42 @@ test('I1: a drafting call after the first relabels the ONE drafting line "drafti
   assert.equal(session.signPrepare().ok, true);
   await until(() => ['prepared', 'refused', 'error'].includes(session.state.phase));
   assert.equal(session.state.phase, 'prepared', String(session.state.error));
-  assert.deepEqual(seen, ['drafting#drafting', 'drafting (retry 2 of 3)#drafting (retry 2 of 3)', 'drafting (retry 3 of 3)#drafting (retry 3 of 3)']);
+  assert.deepEqual(seen, ['drafting#drafting', 'drafting (look 2 of 3)#drafting (look 2 of 3)', 'drafting (look 3 of 3)#drafting (look 3 of 3)']);
   assert.equal(session.state.steps.filter((/** @type {any} */ x) => x.id === 'draft').length, 1, 'still ONE drafting line');
+});
+
+test('the drafting label says "retry" only after a REFUSED try, "look" after a passed one', async () => {
+  /** @type {any} */ let session = null;
+  /** @type {string[]} */ const seen = [];
+  const authorFn = async (/** @type {any} */ o) => {
+    o.onPhase('author-call', { call: 'author', i: 0, of: 2 });
+    o.onPhase('author-call', { call: 'revise-1', i: 1, of: 2 }); seen.push(session.state.progressLabel);
+    o.onPhase('author-try-failed', { call: 'revise-1', i: 1, of: 2, reason: 'x' });
+    o.onPhase('author-call', { call: 'revise-2', i: 2, of: 2 }); seen.push(session.state.progressLabel);
+    return fakeAuthorFn()();
+  };
+  session = createSession(baseCard({ source: makeRepo(), jobName: 'panel-author-look-retry', capUsd: 1 }), {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot: tmp('panel-author-sess-lookretry-'),
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    generate: async () => { throw new Error('unused'); },
+    confirmGenerate: makeFakeConfirmGenerate([{ goal: 'fix things', checks: ['tsc clean'], questions: [], notChecked: [] }]),
+    authorFn, prepareSigningFn: fakePrepareSigningFn('cafef00dbeef0123'),
+  });
+  const until = async (/** @type {() => boolean} */ fn) => { const t0 = Date.now(); while (Date.now() - t0 < 5000 && !fn()) { await new Promise((r) => { setTimeout(r, 10); }); } };
+  await until(() => session.state.pendingAsk?.kind === 'menu');
+  session.signPrepare();
+  await until(() => ['prepared', 'refused', 'error'].includes(session.state.phase));
+  assert.deepEqual(seen, ['drafting (look 2 of 3)', 'drafting (retry 3 of 3)']);
+});
+
+test('a try-refused reason and the drafting stop texts never say "Nothing spent." (a model call was paid)', async () => {
+  const { tryRefusedText, draftStopText } = await import('../src/authorreadout.js');
+  const red = { code: 'rubric-contradiction', path: 'p', detail: 'line 2: a and b cannot both be met. Nothing spent.' };
+  assert.equal(tryRefusedText({ reds: [red] }), 'line 2: a and b cannot both be met.');
+  assert.equal(tryRefusedText({ reason: 'x failed. Nothing spent.' }), 'x failed.');
+  const stop = draftStopText({ stop: 'max-revisions', reds: [red], spend: { knownUsd: 0.01, spendComplete: true } });
+  assert.doesNotMatch(stop, /Nothing spent/);
+  assert.match(stop, /cannot both be met\./);
 });
 
 // ---------------------------------------------------------------------------
@@ -1156,7 +1190,7 @@ test('P6 item 3: npm ci "succeeds" but node_modules is still missing -> falls ba
   assert.equal(session.state.phase, 'install-needed');
 });
 
-test('planMessage: a structured plan — lines with their checks, loose checks, Not checked, Always on, questions; footer in plain words', () => {
+test('planMessage: a structured plan — lines with their checks, loose checks, Not checked, Always checked, questions; footer in plain words', () => {
   const lines = [{ n: 1, text: 'Fix it', rule: "don't edit tests" }, { n: 2, text: 'Run npm test', rule: '' }];
   const m = planMessage({
     goal: 'g', checks: ['a', 'b', 'c'], checkItems: [{ text: 'a', fromLine: [1] }, { text: 'b', fromLine: [2] }, { text: 'c', fromLine: null }],
@@ -1392,4 +1426,61 @@ test('the card\'s Thinking on tick: ticked writes thinking:true into the signed 
   assert.equal('thinking' in (await specOf('deepseek-flash', 'openai-api', { thinking: false })), false);
   assert.equal('thinking' in (await specOf('claude-opus-5-5', 'anthropic-api', { thinking: true })), false, 'measured not switchable: the tick cannot be on');
   assert.deepEqual(validateJobCard({ ...baseCard({}), thinking: 'yes' }, { jobsDir: '/nonexistent' }), { ok: false, error: 'Thinking on must be on or off' });
+});
+
+test('Part 1a: POST /api/author/start accepts a rubric card whose Inputs are TWO local files (the route no longer asks the repo proof of them); a deterministic card with the same Inputs is still refused at $0', async (t) => {
+  const a = join(tmp('panel-author-rubric-'), 'CHANGELOG.md'); writeFileSync(a, readFileSync(join(dirname(new URL(import.meta.url).pathname), '..', 'CHANGELOG.md')));
+  const b = join(tmp('panel-author-rubric-'), 'notes.md'); writeFileSync(b, 'second input\n');
+  // an unresolvable host: whatever the session does after it starts, nothing can reach a real provider
+  const home = keysHomeWith('ANTHROPIC_API_KEY=fake-not-a-real-key\n', ANTH_WITH_URL);
+  const { base, token } = await startAuthorServer(t, { env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home });
+  const post = async (card) => fetch(`${base}/api/author/start`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: JSON.stringify(card) });
+  const rubric = baseCard({ checkType: 'rubric', jobName: 'panel-author-rubric-files', jobText: '1. Summarize', destination: join(tmp('panel-author-out-'), 'out'), inputs: `Changelog: ${a}\nNotes: ${b}` });
+  const ok = await post(rubric);
+  assert.equal(ok.status, 200, JSON.stringify(await ok.clone().json()));
+  const started = await ok.json();
+  assert.equal(started.ok, true);
+  // abandon so the one-at-a-time lock is free for the control below
+  await fetch(`${base}/api/author/${started.sessionId}/abandon`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: '{}' });
+  const det = await post({ ...rubric, checkType: 'deterministic', jobName: 'panel-author-det-files' });
+  assert.equal(det.status, 400, 'a deterministic card still needs a repo as its first input');
+  assert.match((await det.json()).error, /is not a folder|repo/);
+});
+
+test('drafting retries record WHY each try was refused: a try-refused line in draft-log.jsonl (code\'s words, scrubbed) and the same reason briefly on the drafting step', async () => {
+  const { tryRefusedText } = await import('../src/authorreadout.js');
+  const sessionsRoot = tmp('panel-author-sess-tryrefused-');
+  const authorFn = async (/** @type {any} */ o) => {
+    o.onPhase('author-call', { call: 'author', i: 0, of: 2 });
+    o.onPhase('author-try-failed', { call: 'author', i: 0, of: 2, declaration: { stages: [{ name: 'x', kind: 'nope', note: 'sk-AAAAbbbbCCCCdddd1234' }] }, reds: [{ code: 'unknown-kind', path: 'stages[0].kind', detail: 'stage "x" names a kind that does not exist' }] });
+    o.onPhase('author-call', { call: 'revise-1', i: 1, of: 2 });
+    o.onPhase('author-try-failed', { call: 'revise-1', i: 1, of: 2, reason: 'no check was failing at the starting point' });
+    return fakeAuthorFn()();
+  };
+  const session = createSession(baseCard({ source: makeRepo(), jobName: 'panel-author-try-refused', capUsd: 1 }), {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHomeWith(), sessionsRoot,
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    generate: async () => { throw new Error('unused'); },
+    confirmGenerate: makeFakeConfirmGenerate([{ goal: 'fix things', checks: ['tsc clean'], questions: [], notChecked: [] }]),
+    authorFn,
+    prepareSigningFn: fakePrepareSigningFn('cafef00dbeef0123'),
+  });
+  const until = async (/** @type {() => boolean} */ fn) => { const t0 = Date.now(); while (Date.now() - t0 < 5000 && !fn()) { await new Promise((r) => { setTimeout(r, 10); }); } };
+  await until(() => session.state.pendingAsk?.kind === 'menu');
+  assert.equal(session.signPrepare().ok, true);
+  await until(() => ['prepared', 'refused', 'error'].includes(session.state.phase));
+  assert.equal(session.state.phase, 'prepared', String(session.state.error));
+  const log = readFileSync(join(sessionsRoot, session.id, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const refused = log.filter((e) => e.kind === 'try-refused');
+  assert.deepEqual(refused.map((e) => [e.call, e.reason]), [
+    ['author', 'stage "x" names a kind that does not exist'],
+    ['revise-1', 'no check was failing at the starting point'],
+  ]);
+  assert.equal(refused[0].reds[0].code, 'unknown-kind');
+  assert.equal(refused[0].declaration.stages[0].kind, 'nope', 'A3: the refused declaration itself is kept beside the reason');
+  assert.equal(JSON.stringify(refused[0]).includes('sk-AAAAbbbbCCCCdddd1234'), false, 'secrets masked');
+  assert.equal(refused[1].declaration, undefined, 'no declaration, none invented');
+  assert.equal(refused[0].no, session.state.steps.findIndex((/** @type {any} */ x) => x.id === 'draft'), 'it is filed under the drafting step');
+  assert.match(session.state.steps.find((/** @type {any} */ x) => x.id === 'draft').detail, /^revise-1: refused — no check was failing/);
+  assert.equal(tryRefusedText({}), 'no reason was recorded', 'never empty');
 });

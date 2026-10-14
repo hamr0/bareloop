@@ -36,7 +36,7 @@ import { execFileSync } from 'node:child_process';
 import { AGGREGATES, SIGNS, MAX_TERMS, EXIT_GREEN, EXIT_RED, EXIT_STOP } from '../src/kinds.js';
 import {
   KIND_CATALOGUE, CATALOGUE_LIVE_KINDS, LOCKED_KINDS, MAX_STAGES, VERDICT_CLASSES, LOCKED_CLASSES,
-  DIRECTIONS, BASELINES, classGuards, classMenu, genreOwnedEnvNames, genreInstruments, validateDeclaration,
+  DIRECTIONS, BASELINES, classGuards, classMenu, genreOwnedEnvNames, genreInstruments, validateDeclaration, catalogueForLang,
 } from '../src/authoring.js';
 import {
   DECLARATION_TOOL_NAME, DECLARATION_ACK, AUTHOR_MAX_TOKENS,
@@ -510,7 +510,9 @@ test('the authoring prompt carries the genre template, the catalogue and the FIL
   // the catalogue this prompt names is the PICKED CLASS's menu (softgreen module
   // 3), not the whole live set: a green job is never shown a kind whose pick
   // would red as `class-ceiling` after the call was paid for.
-  for (const k of classMenu('green')) assert.ok(p.includes(k), `the catalogue must name ${k}`);
+  // ...and the LANGUAGE's menu (Part 1a): a code job is never shown the rubric-only kind
+  for (const k of classMenu('green', catalogueForLang('js'))) assert.ok(p.includes(k), `the catalogue must name ${k}`);
+  assert.ok(!p.includes('rubric-step'), 'a code job never sees the rubric-only kind');
   for (const k of CATALOGUE_LIVE_KINDS.filter((x) => !classMenu('green').includes(x))) {
     assert.ok(!p.includes(k), `${k} is above a green promise and must be inexpressible, not merely refused later`);
   }
@@ -2777,6 +2779,29 @@ test('F217: a scout killed by a reset connection reaches the person: authorClose
   const r = await authorClose({ ...baseArgs(), generate: async () => { throw new Error('no token may be spent'); }, seedReadFn: scriptSeedRead().fn, scout: { state: 'ABSENT', facts: null, reason, calls: [] } });
   assert.equal(r.stop, 'precheck');
   const text = draftStopText({ stop: r.stop, reds: r.reds, spend: { knownUsd: 0, spendComplete: true } });
-  assert.match(text, /first look at your repo did not complete/);
+  assert.match(text, /first look at your repo or input did not complete/);
   assert.ok(text.includes('the connection to the provider dropped (socket hang up)'), text);
+});
+
+test('authorClose: a refused try announces WHY — a validation red names its reds, a vacuous seed read says no check was failing; a passing try announces nothing', async () => {
+  /** @type {[string, any][]} */
+  const phases = [];
+  const { generate } = scriptGenerate([
+    { declaration: { stages: [{ name: 'x', kind: 'no-such-kind', params: {} }] } },
+    { declaration: goodDeclaration() },
+  ]);
+  const allGreen = new Proxy({}, { get: () => ({ verdict: 'green', exitCode: 0 }) });
+  await authorClose({
+    ...baseArgs(), generate, seedReadFn: scriptSeedRead(allGreen).fn, maxRevisions: 1,
+    onPhase: (/** @type {string} */ n, /** @type {any} */ d) => phases.push([n, d]),
+  });
+  const failed = phases.filter(([n]) => n === 'author-try-failed').map(([, d]) => d);
+  assert.deepEqual(failed.map((f) => f.call), ['author', 'revise-1']);
+  assert.ok(failed[0].reds.length > 0 && failed[0].reds.every((/** @type {any} */ r) => typeof r.code === 'string' && typeof r.detail === 'string'), 'try 1: the validation reds ride along');
+  assert.match(failed[1].reason, /no check was failing at the starting point/, 'try 2: validated, but the seed read was vacuous');
+  // and a try that passes (a red work stage at the seed) announces nothing
+  /** @type {string[]} */ const ok = [];
+  const g2 = scriptGenerate([{ declaration: goodDeclaration() }]);
+  await authorClose({ ...baseArgs(), generate: g2.generate, seedReadFn: scriptSeedRead().fn, maxRevisions: 0, onPhase: (/** @type {string} */ n) => ok.push(n) });
+  assert.ok(!ok.includes('author-try-failed'));
 });

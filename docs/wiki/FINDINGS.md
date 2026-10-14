@@ -14334,3 +14334,90 @@ says a bundle's spec cannot be edited (`src/planrun.js`).
 
 **Grounded in:** the panel's row list (`settingsroutes.js` `rowNames`) added a key only the shell holds when `keys.<ENV>` / `models.<ENV>` named it, but `rowsForHome` (`src/providerrows.js`) read the keys FILE only, so a run on that row refused `<model> is not set up` while the page showed it `found in shell`. Fixed: one `rowNamesOf(filled, config, env)` serves both, and the run doors (`userrun`, `authorrun`, `interviewrun`, the panel session and routes) pass their env. Not covered: the panel's track-record helpers in `server.js` (`workerOfChoice`, `rowModelOf`) still read the file only.
 
+
+
+## F222 — the rubric-step fix loop has not run live: both live rubric runs greened on the first close judgment (runs mv5bk400, mv5e1ktb, 2026-10-12; open, no code change)
+
+**Grounded in:** two live DeepSeek `deepseek-flash` rubric runs on a CHANGELOG copy. `mv5bk400` ($0.05, line 2 "under 80 words") greened first time. `mv5e1ktb` (~$0.018 run + ~$0.003 drafting) tightened line 2 to "under 30 words" to force a red; the worker wrote 28 words and greened. Spine `~/.config/bareloop/panel-sessions/smv5dyorpyh87/source-seed/rubric-2-bareloop/u-mv5e1ktb.jsonl`: 2 `exit-eval`, 2 `close-verdict`, `job-end` green, `spentUsd` 0.0182677068. Mechanism: the worker sees its step's in-run exit check before handing in, so a close red reaches the fix loop only when the in-step check passes and the close disagrees, which is rare by design. hamr ruled 2026-10-12 (option B) to stop chasing a forced red. The rubric-step fix loop and the judged-red trend number stay TEST-PROVEN ONLY, never exercised live. Open, no code change.
+
+## F223 — facts in a rubric step's text without a quote still pass (found in run mv5bk400, 2026-10-12; parked for hamr's call, no code change)
+
+**Grounded in:** the step file `2-2026-10-12.json` of `mv5bk400` (under the session scratchpad `live1a/out/steps/`) and `src/rubricstep.js` (`cited`, ~line 87, 175 and 255). The step's text said "existing rows need one tick and pre-P8 specs must name a model", but its `cites` list holds no claim or quote for it. The `cited` check reads only the claims the worker chose to list under `cites.<label>`; it never reads the text itself. So a fact stated in the text with no quote passes, which breaks the ruled "no quote, no fact" rule. Options recorded, not decided: A, every sentence in the text needs a quote (strict and simple; linking words also need quotes); B, every number and name in the text needs a quote (looser; misses unnumbered claims such as "includes bags"). Parked for hamr's call; no code change.
+
+## F224 — required-facts POC: the checker holds, but real records carry several values of one kind and the source's words differ from the job's; the first-try drafter invents and drops rules (POC, 2026-10-12; open, design ruled, no product code)
+
+**Grounded in:** the POC under the session scratchpad `poc-facts/` (`jobA.mjs`, `role.mjs`, `role2.mjs`, `ph.mjs`, `survey.mjs`, `jobB.mjs`, `composer.mjs`, `out/*.txt`), run on real inputs: a captured Google Flights page (44 rows, 4 distinct prices) and a copy of this repo's CHANGELOG (45 release headings), against bareguard 0.22.0 `cited` + `decides`. The paid part (the drafter prompt) ran on DeepSeek `deepseek-flash`, thinking off, 9 calls, about $0.0011. The checker half is $0.
+
+- **Checker holds.** With a correct quote (anchored, or trimmed to one time), every planted wrong flight row went red (wrong price, price of another row, arrival given as departs, departs from another row, AM/PM swap, red-eye, over the limit, fabricated and paraphrased quote) and every honest row went green. The changelog job likewise (wrong date, date or version of another release, paraphrased or edited quote, digits permuted).
+- **Several values of one kind.** All 44 rows hold two time tokens (leaves and lands), so a time condition with no anchor is `value-many` on every honest row (`survey.mjs`: 44 of 44; `jobA.mjs` whole-row quote, no anchor: all 12 honest rows red). Only an anchor that spells the origin airport name works ("Leaves Los Angeles International Airport at"); generic anchors fail (`Leaves` gives value-none; `Airport at`, `International Airport at`, `at` give anchor-ambiguous).
+- **Role confusion.** A one-time quote built from the page's own lines, starting at the arrival time and claimed as departs, is GREEN with no anchor (`role2.mjs`); with the anchor it is red (`anchor-missing`). Without an anchor code cannot know which time it holds.
+- **The source's words differ from the job's.** The airport codes SFO and LAX are not in the row text (full airport names are): `phrases:["SFO"]` is `phrase-missing`. `currency:"$"` finds nothing (the page says "US dollars"; `unit:"US dollars"` works on 44 of 44).
+- **Not caught (changelog).** Older releases presented as "the last 3", the same release repeated three times, version "0.41" for "0.41.0" (a prefix passes `numbersInQuote`), and a claim text that omits the version.
+- **First-try drafter (POC prompt, 3 drafts per job).** Superlatives and "the last 3" went to notChecked 6 of 6. It invented a date rule with op `eq` and the year 2024 in 3 of 3 Cairo drafts (the job line said "3 Nov"; `eq` is not a legal op and is refused at signing). "Not a red-eye" never became a time rule (0 of 3). Facts from the job line itself (from/to as phrases SFO, LAX) appeared in 1 of 3 flight drafts. It invented a section name in 2 changelog drafts ("one-paragraph summary") and dropped the 120-word limit in 1.
+
+**Status:** hamr ruled the response 2026-10-12 (PRD item 33, RF12–RF14: three layers; look at the real source at drafting and stop early in plain words when a word is missing). A drafter retest against that design is pending; the build waits for bareguard 0.23.0. No product code changed.
+
+## F225 — required-facts POC round 2: reading the input fixes invention, but a gte-only red-eye proposal, direction-blind route phrases and silently dropped wishes remain (POC, 2026-10-12; open, design ruled, no product code)
+
+**Grounded in:** the POC under the session scratchpad `poc-facts/` (`composer2.mjs`, `wordcheck.mjs`, `wc2.mjs`, `blocks.mjs`, `blk.mjs`, `sign.mjs`, `out2/*.txt`, `out2/*.check.json`), on the same real inputs as F224, against bareguard 0.22.0. The checker half (`sign.mjs`, `wc2.mjs`) is $0 and was re-run to verify the numbers below.
+
+- **The drafter now reads the input.** The flight page goes in whole (about 23.5k tokens); the changelog is cut to its top 15,296 chars because the full file is about 455k chars. 9 drafts (3 jobs x 3), DeepSeek `deepseek-flash`, thinking off. Cost $0.0025 at the config row price; the config input price (0.006/M) looks like a cache-hit rate, at $0.28/$0.42 per M the same calls are about $0.044.
+- **Invention is down.** Invented year or op: 0 of 9 (round 1: 3 of 3 on the Cairo job). Still invented a limit or section in 3 drafts (`changelog-2` a section, `changelog-3` `maxLines:3`). Anchors are verbatim and work: "Departure time:" matches on 44 of 44 per-flight blocks (`wc2.mjs`), and every draft's checks pass the found-in-record test; there were 0 word-check stops.
+- **A one-sided red-eye proposal is not caught.** Running `flight-1`'s shape on whole blocks (`sign.mjs`): 14 of 14 honest blocks green; planted reds red as expected (wrong price, price of another row, arrival as departs, departs of another row, AM/PM swap, fabricated or paraphrased quote, quote missing a line, two joined blocks). But the honest red-eye rows, 10:04 PM and 10:35 PM, come out GREEN: all 3 flight drafts proposed `gte 06:00` (or `05:00`) with no upper bound, so a late-night departure passes "not a red-eye".
+- **Route phrases are direction-blind.** SFO and LAX are present in 44 of 44 blocks, so the route phrase passes on a LAX to SFO page too; the found-in-record test (0 stops) cannot see direction.
+- **Silent drops.** "one-paragraph" and "short" were dropped in 6 of 6 drafts: neither a check nor under `notChecked`.
+- **Suggestion text can be wrong.** Some suggestions claim a word is missing that is in the input ("cheapest", "Nov").
+- **Shape notes.** `values.d<j>` indexes the whole decides list, not the line's facts. `unit:"US dollars"` is value-many on whole blocks, while `currency:"$"` matches 44 of 44 (the reverse of what link rows showed in F224). A claim text with a leading zero ("09:27") reds on `numbers:09`.
+
+**Status:** hamr ruled the response 2026-10-12 (PRD item 33, RF15-RF17: three early tests at drafting, every `~` rule a check or a Not-checked line, AI-proposed numbers marked and "not a red-eye" as a between range). A text anchor (so route direction is checkable) is asked of the guard session. No product code changed.
+
+## F226 — idea A POC: the AI finds a page's own words well, but "any one alternative works" widens the check, and our code cannot read a currency written after the number (POC, 2026-10-14; open, no product code)
+
+**Grounded in:** the POC under the session scratchpad `/tmp/claude-1000/-home-hamr-PycharmProjects-bareloop/94ef7186-101f-4cfa-97b2-128f7d3957be/scratchpad/poc-m5` (`FROZEN-RULES.md`, `alt2a.json`, `alt3.out`, `altcheck2.mjs`, `alt2.log`), on real captured pages, DeepSeek `deepseek-flash`, thinking off. The idea (hamr's option 1): an AI reads the job lines and the `~` rules plus the page and maps each to THIS page's own words; code keeps only words really on the page and decides; the AI never grades.
+
+**Round 1 (6 pages, under $0.01):** Google Flights SFO-LAX and JFK-MIA, Kayak, npm, Hacker News, a changelog. The AI found the page's own words: "San Francisco International Airport", "From" with "US dollars", "Leaves John F. Kennedy International Airport at". On Kayak it honestly said the page has no times or stops. Four holes:
+- The AI listed "Arrival time:" as an alternative for "not a red-eye". Because any one alternative works, an arrival time could pass as a departure.
+- Bare "San Francisco" and "Los Angeles" are direction-blind: they match on a LAX to SFO page too.
+- On JFK-MIA the AI merged both places into one fact.
+- On npm and HN it listed item names instead of labels. Harmless: each appears once, so the count check stops them.
+
+**Code rules, frozen before any new-page number.** R1 same-value, R2 role-extend (R2a, R2b, R2c), R3 page-once and N2 per-line were written into `FROZEN-RULES.md` on 2026-10-14 before any unseen page was read. With them on the two Google pages, honest passed 10/10 and the cheats were caught 10/10 (arrival as departure, price+1, reversed direction, other route). The thresholds were chosen after seeing those two pages, and the cutter that makes the honest and cheat quotes is Google-only. So that result is a fit, not a test.
+
+**Unseen pages** (draft `alt2a.json`; the second draft run hung on the GitHub page with no deadline and was killed, exit 143; the GitHub page also gave 2 "socket hang up" casualties, so it was not graded):
+- **Google Flights London Gatwick to Palma, in pounds: HOLDS, small N.** The page held only 8 results, so N=8 is flagged and a proportional rule was applied (honest >= 90%, all cheats caught). Honest 8/8. Caught: arrival as departure 8/8, price+1 8/8, reversed direction 8/8 (and the other route, SFO-LAX page, 10/10).
+- **TUI Majorca holidays: FINDING.** Honest 0/10 (price+1 caught 10/10, which is the same refusal, not a value check).
+
+**Why TUI failed (traced).** The AI DID find the words: "£", "pp" (29 times), "Trip duration". Our code reads "label, then a number". TUI writes the number first ("282 £ pp"). Reading after "£" grabs the NEXT price, and R1 then drops the "£" label because it reads different values than "from". Second, every TUI card was 3 nights, so "7 nights" could not be met by that page at all: the page did not fit the job.
+
+**Lesson.** The AI side works. The code needs a "marker after the number" form; Airbnb's "€490 total" has the same shape (see F227). And a test page must actually hold answers to the job, or a red tells nothing.
+
+**Ruling and status.** hamr 2026-10-14: drop TUI, do not patch per page, test on the most-used sites (F227). Caveats: n=1 AI call per page; the nonstop, count and text kinds were not tried; honest/cheat tests are Google-only. Open, no product code changed. Rule v2 is not written or frozen.
+
+## F227 — most of the busiest travel and shopping sites block barebrowse (checked 2026-10-14, $0; open, a reach limit of barebrowse, nothing built here)
+
+**Grounded in:** barebrowse fetches on 2026-10-14 in the same POC (`/tmp/claude-1000/-home-hamr-PycharmProjects-bareloop/94ef7186-101f-4cfa-97b2-128f7d3957be/scratchpad/poc-m5/pages3`, `/tmp/claude-1000/-home-hamr-PycharmProjects-bareloop/94ef7186-101f-4cfa-97b2-128f7d3957be/scratchpad/poc-m5/pages2`), headless and headed.
+
+- **Blocked in headless AND headed mode:** Booking.com (empty page), Expedia ("We can't tell if you're a human or a bot."), eBay ("Something went wrong on our end"), Skyscanner ("Are you a person or a robot?").
+- **Loaded:** Google Flights; Airbnb (prices written "€490 total"); Amazon. On Amazon the current price reads "EUR 17.86" with no label, and the only labeled price is the OLD one, "List Price: EUR 178.65". A job asking for "the price" could quote the wrong one and look cited: a plausible wrong-quote trap.
+- Booking.com and Expedia are the top travel sites by traffic, so this limits which real jobs can run.
+
+**bareguard's reading (from the guard session, NOT run here):** "282 £ pp" may already read with `unit: ["£"]`; "€490 total" reads as money, but "total" after the value cannot be an anchor; "EUR 17.86" (code before the number) is not read (ruling #37 stands).
+
+**Status.** A barebrowse reach limit. If hamr rules, it is filed to barebrowse's own session, not fixed here. Open.
+
+## F228 — bareguard 0.24.0 (ruling #65, money currency and unit lists) validated at $0 on run mv7qabx4's real capture; bareloop's facts still carry one scalar, so a real run does not benefit yet (2026-10-14; bump landed, schema change open for hamr)
+
+**Grounded in:** `/tmp/claude-1000/-home-hamr-PycharmProjects-bareloop/94ef7186-101f-4cfa-97b2-128f7d3957be/scratchpad/poc-m5/v24check.mjs`, re-run on 2026-10-14 against `~/.config/bareloop/panel-sessions/smv7q1w53of5n/source-seed/tree/input/flights.txt` (the first 10 honest flights of run mv7qabx4, through bareloop's `gradeStep`, bareguard 0.24.0); `src/facts.js:21, :75, :77, :78, :115`; `src/authorflow.js:841-842`; `src/factwords.js:87`.
+
+| Case | Honest | Bad value |
+|---|---|---|
+| price as signed (anchor "From", currency "$") | 0/10 | price+1 "caught" 10/10, but for the same refusal, not a value check |
+| currency "$" + unit ["US dollars"] | 10/10 | price+1 caught 10/10, right reason ("44 is not 43") |
+| unit ["US dollars"] alone | 10/10 | price+1 caught 10/10, right reason |
+| departure as signed (anchor "at") | 0/10 | arrival-as-departure "caught" 10/10, same refusal |
+
+- The page writes "From 43 US dollars", so "$" never matches. The departure anchor "at" is in each quote more than once, so every honest quote is red. 0.24 does not change the second; the fix is the N2 per-line rule (F226), unbuilt.
+- **Bareloop side.** A fact carries one scalar `unit` or `currency` (`FACT_FIELDS` at `src/facts.js:21`; the exactly-one rule at :75; checks at :77-:78; the pass-through at :115; the drafter schema at `src/authorflow.js:841-842`; the unit presence check at `src/factwords.js:87`). So 0.24's lists cannot be reached through a signed spec. Note the case "currency + unit together" passed here only because the script calls `gradeStep` directly; `src/facts.js:75` refuses both together at signing.
+- A single string unit "US dollars" was ALREADY legal. mv7qabx4 failed because the drafter picked "$", not because the library lacked a form.
+- Allowing lists in facts is a schema change, arbiter-adjacent (it changes what a signed spec can express): hamr's call.
+- **Bump.** bareguard `^0.24.0` landed as 937ad19. The only break was the vocabulary text regex at `src/facts.js:280`. Gate 4079/4079.

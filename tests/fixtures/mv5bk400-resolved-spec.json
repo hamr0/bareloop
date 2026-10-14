@@ -1,0 +1,111 @@
+{
+  "schema": "job-v1",
+  "job": "rubric-one",
+  "description": "rubric-one — authored through the bareloop panel (soft-green, text)",
+  "jobLines": [
+    {
+      "n": 1,
+      "text": "List the last 3 releases",
+      "rule": "every version quoted from the changelog; under 120 words",
+      "rules": [
+        "every version quoted from the changelog",
+        "under 120 words"
+      ]
+    },
+    {
+      "n": 2,
+      "text": "Write a one-paragraph summary",
+      "rule": "under 80 words",
+      "rules": [
+        "under 80 words"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "n": 1,
+      "label": "Changelog",
+      "value": "/tmp/claude-1000/-home-hamr-PycharmProjects-bareloop/20557981-97ee-4d04-be76-e84e46d08774/scratchpad/live1a/input/CHANGELOG.md"
+    }
+  ],
+  "provider": "openai-api",
+  "baseUrl": "https://api.deepseek.com/v1",
+  "model": "deepseek-flash",
+  "cadence": {
+    "unit": "day",
+    "every": 1
+  },
+  "budgetUsd": 0.5,
+  "writeScope": [
+    "output/"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  },
+  "goal": "Do the job below from the input files, then write one JSON file per numbered line.\n\nThe input files (label: file):\n  - Changelog: input/CHANGELOG.md\n\nFor each numbered job line N, write ONE file output/steps/N.json: a JSON object with exactly these keys.\n  \"text\"  — your answer for that line, as a string.\n  \"cites\" — an object: for each input you drew on, its label as the key and a list of {\"claim\", \"quote\"} as the value.\n            \"claim\" is one thing your text relies on; \"quote\" is words copied EXACTLY from that input (spacing and\n            ** or __ marks do not matter). Every number in a claim must also appear in its quote.\n  In each claim, copy every number, time and price exactly as the input writes it (for example \"9:27 AM\", not \"09:27\"),\n  because the check matches the numbers in your claim against your quote.\nWrite nothing outside output/, and never edit the files under input/. The file must be complete, valid JSON: a file cut\noff before its closing brace counts as not written.\n\nThe job, line by line:\n1. List the last 3 releases\n   rule: every version quoted from the changelog; under 120 words\n2. Write a one-paragraph summary\n   rule: under 80 words\n\nThe plan the person confirmed: Confirm output/steps/1.json lists 3 releases with each version quoted from the Changelog and its text under 120 words, and output/steps/2.json carries a summary text under 80 words.",
+  "verdictType": "soft-green",
+  "closeDecl": {
+    "genre": "TYPES",
+    "lang": "text",
+    "stages": [
+      {
+        "name": "changed-from-seed",
+        "kind": "files-changed",
+        "params": {
+          "requireNonEmpty": true,
+          "allowPrefixes": [
+            "output/"
+          ]
+        }
+      },
+      {
+        "name": "line-1-versions-quoted-and-under-120-words",
+        "kind": "rubric-step",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "step": 1,
+          "parts": [
+            {
+              "text": "every version quoted from the changelog",
+              "class": "countable",
+              "check": "cited",
+              "source": "Changelog"
+            },
+            {
+              "text": "under 120 words",
+              "class": "countable",
+              "check": "maxWords",
+              "value": 120
+            }
+          ]
+        }
+      },
+      {
+        "name": "line-2-under-80-words",
+        "kind": "rubric-step",
+        "fromLine": [
+          2
+        ],
+        "params": {
+          "step": 2,
+          "parts": [
+            {
+              "text": "under 80 words",
+              "class": "countable",
+              "check": "maxWords",
+              "value": 80
+            }
+          ]
+        }
+      }
+    ],
+    "notes": [
+      "Line 1 asks to \"List the last 3 releases\". The plan names the check \"output/steps/1.json lists 3 releases\", but the catalogue has no check that counts list items, and I may not invent one or guess a number — so that part is not composed as a stage. It is also stated in the brief as not checked by anything: which releases are the most recent needs reading the changelog to judge.",
+      "Line 1 also asks that each version quoted is quoted accurately as it appears in the changelog. The cited check only requires a quote copied from the Changelog to back each claim; whether the wording is exactly as in the changelog needs reading the changelog to judge, so it is not composed.",
+      "Line 2 asks for \"a one-paragraph summary\". Whether the text is a one-paragraph summary — its quality and content, and that it summarizes the releases — needs reading the text to judge, and no judge exists in this build, so no part is composed for it. Only the word limit the person asked for (under 80 words) is composed.",
+      "The mandatory guard changed-from-seed is placed first with allowPrefixes [\"output/\"], the confirmed write fence."
+    ]
+  }
+}

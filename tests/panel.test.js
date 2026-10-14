@@ -2112,6 +2112,43 @@ test('build item 1: a bundle-layout spec.json\'s closeDecl attaches kind/directi
   });
 });
 
+test('Part 1a: a rubric-step stage in the signed closeDecl gets the code-owned plain question, not its raw name (line-1)', async (t) => {
+  const home = tmp();
+  const dir = tmp();
+  mkdirSync(join(dir, 'runs', 'r1'), { recursive: true });
+  writeSpine(join(dir, 'runs', 'r1', 'spine.jsonl'), [
+    { type: 'job-start', job: 'rubricq-job', ts: '2026-09-05T00:00:00.000Z', seq: 1, verdictType: 'soft-green' },
+    { type: 'step-start', step: 'do-thing', ts: '2026-09-05T00:00:01.000Z', seq: 2 },
+    { type: 'step-end', step: 'do-thing', outcome: 'red', ts: '2026-09-05T00:00:02.000Z', seq: 3 },
+    {
+      type: 'outer-close', verdict: 'needs_revision', stage: 'line-2',
+      stages: [{ name: 'line-1', verdict: 'satisfied' }, { name: 'line-2', verdict: 'needs_revision' }], ts: '2026-09-05T00:00:03.000Z', seq: 4,
+    },
+    { type: 'job-end', outcome: 'needs_revision', spentUsd: 0.01, spendComplete: true, ts: '2026-09-05T00:00:04.000Z', seq: 5 },
+  ]);
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify({
+    job: 'rubricq-job',
+    closeDecl: {
+      lang: 'text',
+      stages: [
+        { name: 'line-1', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts: [] } },
+        { name: 'line-2', kind: 'rubric-step', fromLine: [2], params: { step: 2, parts: [] } },
+      ],
+    },
+  }));
+  appendRun({
+    at: '2026-09-05T00:00:00.000Z', runid: 'rubricqrun', job: 'rubricq-job', spine: join(dir, 'runs', 'r1', 'spine.jsonl'), patient: null, via: 'bundle',
+  }, { home });
+  const { base } = await startServer(t, { home });
+  const detail = await (await fetch(`${base}/api/runs/rubricqrun`)).json();
+  const fixPart = detail.parts.find((p) => p.kind === 'fix');
+  assert.ok(fixPart);
+  const stages = fixPart.attempts[0].stages;
+  assert.equal(stages[0].question, "line 1 — does its output pass the line's checks?");
+  assert.equal(stages[1].question, "line 2 — does its output pass the line's checks?");
+  assert.equal(stages[1].kind, 'rubric-step');
+});
+
 test('checks-count fix (2026-09-28, hamr\'s live catch on run mulbz0ny): declaredStagesTotal is the DECLARED stage count (closeDecl.stages.length), never the RAN count (stages.length) — first-red-wins means a later fix-loop attempt can stop after 1 of 7 declared stages and its own stages array carries only that one', async (t) => {
   const home = tmp();
   const dir = tmp();
@@ -2508,4 +2545,39 @@ test('plain-checks: no resolvable spec -> declaredStages is omitted entirely (ne
   const fixPart = detail.parts.find((p) => p.kind === 'fix');
   assert.equal(fixPart.attempts[0].declaredStages, undefined);
   assert.equal(fixPart.attempts[0].declaredStagesTotal, undefined);
+});
+
+// ── the topbar version (hamr 2026-10-12): `bareloop · v<version> · automate a job, verified` ─────────────────
+
+test('the topbar shows the version read from bareloop\'s own package.json — templated at serve time, never hardcoded in the HTML', async (t) => {
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const source = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
+  // the file on disk carries the placeholder and no version literal in the topbar
+  assert.match(source, /<span class="version" id="panel-version">v__BARELOOP_PANEL_VERSION__<\/span>/);
+  assert.doesNotMatch(source, /id="panel-version">v\d/);
+  const { base } = await startServer(t, { home: tmp() });
+  const html = await (await fetch(`${base}/`)).text();
+  assert.ok(!html.includes('__BARELOOP_PANEL_VERSION__'), 'the placeholder is always filled');
+  assert.match(pkg.version, /^\d+\.\d+\.\d+/);
+  assert.ok(html.includes(`<span class="version" id="panel-version">v${pkg.version}</span>`), `the page shows v${pkg.version}`);
+  // order and separators: brand, version, tagline — the dots are the CSS separators in front of the last two
+  const brand = html.indexOf('<span class="brand">bareloop</span>');
+  const ver = html.indexOf('id="panel-version"');
+  const tag = html.indexOf('<span class="tagline">automate a job, verified</span>');
+  assert.ok(brand > 0 && brand < ver && ver < tag);
+  assert.match(html, /\.topbar \.tagline::before,\.topbar \.version::before\{content:"· "/);
+  // styled like the tagline (not bold), and at phone width the version stays while only the tagline folds away
+  assert.match(html, /\.topbar \.tagline,\.topbar \.version\{[^}]*font-weight:400/);
+  assert.match(html, /@media \(max-width: 600px\)\{ \.topbar \.tagline\{display:none;\} \}/);
+  assert.doesNotMatch(html, /\.topbar \.version\{display:none/);
+});
+
+test('the topbar version FOLLOWS package.json: a different package.json gives a different version, a missing one says unknown — so a hardcoded version fails here', async (t) => {
+  const dir = tmp();
+  const fake = join(dir, 'package.json');
+  writeFileSync(fake, JSON.stringify({ name: 'bareloop', version: '9.8.7' }));
+  const { base } = await startServer(t, { home: tmp(), packageJsonPath: fake });
+  assert.ok((await (await fetch(`${base}/`)).text()).includes('<span class="version" id="panel-version">v9.8.7</span>'));
+  const gone = await startServer(t, { home: tmp(), packageJsonPath: join(dir, 'missing.json') });
+  assert.ok((await (await fetch(`${gone.base}/`)).text()).includes('id="panel-version">vunknown</span>'));
 });

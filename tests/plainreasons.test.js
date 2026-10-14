@@ -89,6 +89,10 @@ test('every red the proposal validators can raise has a plain sentence (none unm
   // the signer-side red (signJudgedArtifacts on a non-object)
   const s = signJudgedArtifacts({ proposal: null });
   for (const r of plainReasons(s.reds)) { assert.notEqual(r.kind, 'unmapped'); hit.add(r.kind); }
+  // Part 1b live fix B3: the rubric-step kinds (fixtures for every rubric code live in tests/rubric-plain.test.js)
+  for (const r of plainReasons([{ code: 'rubric-step-twice', path: 'stages[3].params.step', detail: 'line 2: two stages.' }, { code: 'invalid-value', path: 'stages[1].params.parts[0].facts[4].until', detail: 'x' }])) {
+    assert.notEqual(r.kind, 'unmapped'); hit.add(r.kind);
+  }
   assert.deepEqual([...hit].sort(), plainKinds().sort(), 'a kind with no fixture here is a sentence nothing proves');
 });
 
@@ -283,16 +287,28 @@ test('SIGNING: every red code reachable at the refusal is mapped; an unknown one
   assert.equal(u.kind, 'unmapped');
   assert.match(u.sentence, /"brand-new-gate-red" at somewhere/);
   assert.ok(signingKinds().includes('unmapped'));
+  // M2: a rubric job's broken check never says "install, build and test commands" (the code-job wording)
+  const [rj] = signingReasons([{ code: 'broken-close', path: 'closeDecl.stages.line-2', detail: 'x', rubricJob: true }]);
+  assert.equal(rj.kind, 'broken-close-rubric');
+  assert.doesNotMatch(`${rj.sentence} ${rj.todo}`, /install|build and test/);
+  assert.match(signingReasons([{ code: 'broken-close', path: 'closeDecl.stages.suite', detail: 'x' }])[0].todo, /install, build and test/);
+  // Part 1a: every rubric-step sorting red is mapped by its prefix and says its own sentence, whole
+  for (const code of ['rubric-contradiction', 'rubric-part-guard', 'rubric-part-judged', 'rubric-part-source', 'rubric-part-unsortable', 'rubric-step-line', 'rubric-step-twice']) {
+    const [r] = signingReasons([{ code, path: 'closeDecl.stages[1]', detail: `line 3: ${code} sentence.` }]);
+    assert.equal(r.kind, 'rubric-part', code);
+    assert.equal(r.sentence, `line 3: ${code} sentence.`);
+  }
 });
 
 test('TRIPWIRE: a new declaration red code fails here until it is mapped in DECLARATION_CODES', () => {
   const found = new Set();
-  for (const f of ['declaredclose.js', 'validate.js', 'kinds.js', 'authoring.js', 'judged.js']) {
+  for (const f of ['declaredclose.js', 'validate.js', 'kinds.js', 'authoring.js', 'judged.js', 'rubricstep.js']) {
     const src = readFileSync(join(HERE, '..', 'src', f), 'utf8');
     for (const m of src.matchAll(/\bred\('([a-z]+(?:-[a-z]+)*)'/g)) found.add(m[1]);
   }
   for (const code of found) {
-    assert.ok(DECLARATION_CODES.includes(code) || code.startsWith('calibration-'), `red code "${code}" has no plain signing sentence`);
+    // `rubric-*` (Part 1a) are whole plain sentences already; one prefix row of SIGNING_TABLE maps them all
+    assert.ok(DECLARATION_CODES.includes(code) || code.startsWith('calibration-') || code.startsWith('rubric-'), `red code "${code}" has no plain signing sentence`);
   }
   assert.ok(found.size >= 20, 'the scan found the red sites');
 });

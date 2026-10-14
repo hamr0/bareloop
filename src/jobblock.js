@@ -113,16 +113,21 @@ export function renderInputs(inputs) {
  * The two cross-checks between a parsed job block and the Check type: a RUBRIC job needs at least one `PASS:` and one
  * `FAIL:` example (the calibration compile reads them); a DETERMINISTIC job has no judge, so an example line would be
  * silently dropped — a red instead.
+ * PART 1a (hamr's ruling P1=B, docs/product/ITEM33-BUILD.md "Addendum 2026-10-12"): the examples are required of a rubric
+ * job ONLY when it holds a judged part. A rubric job on the person's own local files holds none in this build (its
+ * parts are counted or checked against a quote), so the caller says `judged: false` and a block without examples fits.
+ * Examples written anyway are never a red there — they simply have no judge to read them yet.
  * @param {JobLine[]} lines
  * @param {boolean} rubric
+ * @param {{judged?: boolean}} [o] `judged` (default true): does this job hold a judged part, so that it needs examples?
  * @returns {string|null} the plain red, or null when the block fits the Check type
  */
-export function jobBlockFitsCheck(lines, rubric) {
+export function jobBlockFitsCheck(lines, rubric, { judged = true } = {}) {
   const all = lines.flatMap((l) => l.examples.map((e) => ({ n: l.n, ...e })));
   if (!rubric) {
     return all.length ? `The job, line ${all[0].n}: PASS:/FAIL: examples are for a Rubric check — a Deterministic job has no judge to read them` : null;
   }
-  if (!all.some((e) => e.verdict === 'PASS') || !all.some((e) => e.verdict === 'FAIL')) {
+  if (judged && (!all.some((e) => e.verdict === 'PASS') || !all.some((e) => e.verdict === 'FAIL'))) {
     return 'The job: a Rubric check needs at least one "~ PASS:" line and one "~ FAIL:" line under a job line';
   }
   return null;

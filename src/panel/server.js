@@ -60,6 +60,16 @@ import { planFromSpec } from './jobplan.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
+/** bareloop's own version, from its package.json (read each time the page is served); 'unknown' if it cannot be read, never a guess
+ * @param {string} [file] test seam: another package.json
+ * @returns {string} */
+function packageVersion(file = join(HERE, '..', '..', 'package.json')) {
+  try {
+    const v = JSON.parse(readFileSync(file, 'utf8')).version;
+    return typeof v === 'string' && v.length > 0 ? v : 'unknown';
+  } catch { return 'unknown'; }
+}
+
 /** Largest POST body the panel buffers (job cards are short prose); a bigger one is refused with 413. */
 const MAX_BODY_BYTES = 1024 * 1024;
 
@@ -1810,6 +1820,7 @@ function resolveSpecForRow(row) {
  *     change any file?"
  *   - `pattern-absent-in-diff` is always the `no-suppressions` guard: "no
  *     casts or silencers added?"
+ *   - `rubric-step` (Part 1a) is one job line's output file: "line N — does its output pass the line's checks?"
  *   - `command-exit` is the genre's `suite-green` stage (the only shipped use
  *     of this kind): "does the test suite pass?"
  *   - `count-not-worse` splits three ways on its own declared
@@ -1877,6 +1888,8 @@ function stageQuestionText({
   if (kind === 'files-changed') return 'did it change any file?';
   if (kind === 'pattern-absent-in-diff') return 'no casts or silencers added?';
   if (kind === 'command-exit') return 'does the test suite pass?';
+  // Part 1a: one rubric-step stage = one job line's output file
+  if (kind === 'rubric-step') return params && Number.isInteger(params.step) ? `line ${params.step} — does its output pass the line's checks?` : null;
   if (kind !== 'count-not-worse' || !params || typeof params !== 'object') return null;
   const what = Object.hasOwn(GENRE_WHAT, String(genre)) ? GENRE_WHAT[String(genre)] : null;
   if (params.direction === 'higher-is-better' && params.baseline === 'seed') {
@@ -2710,7 +2723,7 @@ function sendText(res, code, text) {
  * only `createPanelServer` below always supplies one.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ home?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes> }} opts
+ * @param {{ home?: string, packageJsonPath?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes> }} opts
  */
 export function handleRequest(req, res, opts) {
   /** the ONE writable route family for a path, or null — `/api/author/*` (authoring) or
@@ -2806,6 +2819,9 @@ export function handleRequest(req, res, opts) {
       return;
     }
     html = html.replace(/__BARELOOP_PANEL_PORT__/g, String(opts.port));
+    // the topbar reads `bareloop · v<version> · ...`: the version is bareloop's OWN package.json, read when the page is served
+    // and templated in exactly like the port — never written into the HTML
+    html = html.replace(/__BARELOOP_PANEL_VERSION__/g, packageVersion(opts.packageJsonPath));
     // PANEL-BUILD.md P3's human-click guard: a per-server-start token,
     // templated into the page exactly like the port — absent on every P1/P2
     // caller (no `opts.token`), which is fine: the page's own JS only reads
@@ -2887,7 +2903,7 @@ export function handleRequest(req, res, opts) {
  * @param {{ port?: number, home?: string, env?: Record<string,string|undefined>,
  *   sessionsRoot?: string, spawnFn?: (...a: any[]) => any, bareloopBin?: string,
  *   fetchImpl?: typeof fetch, settleMs?: number, userHome?: string,
- *   openFolderSpawn?: (cmd: string, args: string[], o: object) => any, platform?: string }} [opts]
+ *   openFolderSpawn?: (cmd: string, args: string[], o: object) => any, platform?: string, packageJsonPath?: string }} [opts]
  * @returns {Promise<{ server: import('node:http').Server, port: number, token: string, close: () => Promise<void> }>}
  */
 export function createPanelServer(opts = {}) {
@@ -2912,7 +2928,7 @@ export function createPanelServer(opts = {}) {
     const server = createServer((req, res) => {
       try {
         handleRequest(req, res, {
-          home, port: boundPort, token, authorRoutes, settingsRoutes, runRoutes, importRoutes,
+          home, port: boundPort, token, authorRoutes, settingsRoutes, runRoutes, importRoutes, packageJsonPath: opts.packageJsonPath,
         });
       } catch (e) {
         sendText(res, 500, `internal error: ${/** @type {Error} */ (e).message}`);

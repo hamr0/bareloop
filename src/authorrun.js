@@ -120,11 +120,13 @@ import { defaultJudgeLoop, resolveJobJudge } from './judged.js';
 import { validateJob, jobSpecHash, resolveWorkerModel } from './job.js';
 import { scanSecrets, redactSecrets } from './validate.js';
 import { detectLanguage } from './detectlang.js';
+import { RUBRIC_LANG } from './authoring.js';
+import { rubricGoal } from './rubricstep.js';
 import { moveFile } from './movefile.js';
 import { closeJudges, GATE_AUDIT_FILE } from './kinds.js';
 import { resolveProvider, buildRunnerProviders, apiKeyProblem } from './providers.js';
 import { commandFor } from './invoke.js';
-import { readSourceManifest, missingDependencies, nonRepoSourceMessage } from './source.js';
+import { readSourceManifest, missingDependencies, nonRepoSourceMessage, isRubricFilesManifest } from './source.js';
 import { tallyCalls } from './text.js';
 import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
@@ -327,6 +329,9 @@ export async function main(argv, deps = {}) {
   // folder has no genre to detect) and the branch further down that decides
   // which of the two paths this run actually takes.
   const IS_REPO_SOURCE = manifestRead.manifest.kind === 'repo';
+  // PART 1a: a soft-green job whose source froze the person's own local FILES (`proveRubricInputs` left `inputs` in the
+  // manifest) is NOT the plain-folder stop below: it is authored against the hidden tree with the text genre, no scout.
+  const RUBRIC_FILES = !IS_REPO_SOURCE && VERDICT === 'soft-green' && isRubricFilesManifest(manifestRead.manifest);
 
   // ── LANGUAGE, DETECTED — never asked (PRD item 33 M3, ruling 3) ──────────────
   // $0, no provider, run BEFORE the API key is even read — this script must
@@ -361,7 +366,7 @@ export async function main(argv, deps = {}) {
   // the language pick (the old repo-only "worse than before" ask is retired
   // entirely as of 2026-09-28 — see src/authorflow.js's own retirement note).
   let langResult = /** @type {ReturnType<typeof detectLanguage>|null} */ (null);
-  let LANG = 'none-detected';
+  let LANG = RUBRIC_FILES ? RUBRIC_LANG : 'none-detected';
   if (IS_REPO_SOURCE) {
     langResult = detectLanguage(SOURCE);
     // AMBIGUOUS NO LONGER DIES (PRD item 33 M3 piece 4, step S4): the confirm
@@ -834,7 +839,7 @@ export async function main(argv, deps = {}) {
   // build can close. The stop fires HERE, immediately, at $0, no scout, no
   // confirm turn, no model call — a plain folder's spine is exactly
   // `author-start` → `author-end{outcome:'not-authored', stop:'non-code-source'}`.
-  if (!IS_REPO_SOURCE) {
+  if (!IS_REPO_SOURCE && !RUBRIC_FILES) {
     const message = nonRepoSourceMessage(manifestRead.manifest.kind);
     out(`\n${message}`);
     const red = {
@@ -896,7 +901,7 @@ export async function main(argv, deps = {}) {
       // so every path that reaches this call is a repo job. `langResult`
       // travels through unchanged — its `ambiguous` shape is what the confirm
       // turn's own $0 half (D7) asks about, before the scout.
-      ask, confirmGenerate, isRepo: true, langResult,
+      ask, confirmGenerate, isRepo: !RUBRIC_FILES, langResult,
     });
     const authoredFile = writeOut('authored.json', authored);
     emit('authored', { ok: authored.ok, stop: authored.stop, seedRef: authored.seedRef, cost: authored.cost, reds: authored.reds });
@@ -1008,7 +1013,11 @@ export async function main(argv, deps = {}) {
       // predates the confirm turn's own `ask` wiring (`authored.confirmed` is
       // `null` for every caller that runs no confirm turn) — the draft's own
       // goal (if any) then stands untouched.
-      if (authored.confirmed?.goal) {
+      if (RUBRIC_FILES && Array.isArray(draft.jobLines) && draft.jobLines.length > 0) {
+        // PART 1a: the worker's goal for a rubric job on files is written by code from the person's own numbered lines and the
+        // frozen input files the manifest recorded (src/rubricstep.js); the confirmed goal sentence rides as the plan line
+        draft.goal = redactSecrets(rubricGoal({ jobLines: draft.jobLines, files: manifestRead.manifest?.inputs ?? [], confirmedGoal: authored.confirmed?.goal ?? null, closeDecl: authored.closeDecl }));
+      } else if (authored.confirmed?.goal) {
         draft.goal = redactSecrets(String(authored.confirmed.goal));
       }
       // ── 2. the operator's half + the authored half → one spec ──────────────────

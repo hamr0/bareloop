@@ -33,7 +33,7 @@ const NEW_SPEC = {
   },
 };
 
-test('planFromSpec: each stage lands under the job line it names; stages with no fromLine are Always on; refusals and notes ride along', () => {
+test('planFromSpec: each stage lands under the job line it names; stages with no fromLine are Always checked; refusals and notes ride along', () => {
   const p = planFromSpec(NEW_SPEC);
   assert.equal(p.older, false);
   assert.deepEqual(p.lines.map((l) => [l.n, l.text, l.rule, l.checks, l.refused]), [
@@ -61,7 +61,7 @@ test('planFromSpec: an OLDER spec shows the signed goal as line 1 and every stag
   assert.deepEqual(cmd.lines[0].checks, [{ name: 'suite-green', cls: 'machine check' }]);
 });
 
-test('planFromConfirm: the person\'s lines, the model\'s checks under the line each names (class not known yet), the real protections as Always on', () => {
+test('planFromConfirm: the person\'s lines, the model\'s checks under the line each names (class not known yet), the real protections as Always checked', () => {
   const p = planFromConfirm(
     [{ n: 1, text: 'Fix it', rule: '' }, { n: 2, text: 'Run tests', rule: 'quiet' }],
     { checkItems: [{ text: 'tsc clean', fromLine: [1] }, { text: 'tests pass', fromLine: [2] }, { text: 'stray', fromLine: [9] }], notChecked: ['style'], protections: ['no-suppressions'] },
@@ -162,4 +162,11 @@ test('a check that serves several job lines is shown under EACH line it serves (
   const c = planFromConfirm([{ n: 1, text: 'a', rule: '' }, { n: 2, text: 'b', rule: '' }], { checkItems: [{ text: 'both', fromLine: [1, 2] }, { text: 'nowhere', fromLine: [7] }] });
   assert.deepEqual(c.lines.map((l) => l.checks.map((x) => x.name)), [['both'], ['both']]);
   assert.deepEqual(c.loose.map((x) => x.name), ['nowhere']);
+});
+
+test('plan lines carry each `~` rule on its own: from the line\'s rules array (a rule may hold "; "), else the joined rule split, on the signed plan and the confirm plan alike', () => {
+  const withRules = planFromSpec({ jobLines: [{ n: 1, text: 'Doc it', rule: 'PASS: a; b; FAIL: c', rules: ['PASS: a; b', 'FAIL: c'] }, { n: 2, text: 'old', rule: 'x; y' }, { n: 3, text: 'none', rule: '' }] });
+  assert.deepEqual(withRules.lines.map((l) => l.rules), [['PASS: a; b', 'FAIL: c'], ['x', 'y'], []]);
+  const c = planFromConfirm([{ n: 1, text: 'a', rule: 'p; q', rules: ['p', 'q'] }], { checkItems: [] });
+  assert.deepEqual(c.lines[0].rules, ['p', 'q']);
 });

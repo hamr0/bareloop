@@ -74,6 +74,7 @@
 
 import { normalizeParser, MAX_JUDGED_PATHS, JUDGED_FLOOR_KIND } from './kinds.js';
 import { JUDGE_RULE_IDS, validateCard } from './judged.js';
+import { rubricStepShapeReds, checkRubricParts, checkRubricRules } from './rubricstep.js';
 import { isObj, isNonEmptyString, hasNestedQuantifier, globToPrefix } from './validate.js';
 
 /** @typedef {{code: string, path: string, detail: string, [k: string]: any}} Red */
@@ -340,6 +341,36 @@ export const KIND_CATALOGUE = Object.freeze({
       + 'Name one card line per thing you actually look for, in the order you look for them, and name the real files the '
       + 'work lands in. It is never offered to the agent as an in-run check.',
   }),
+  // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES. One stage per numbered job
+  // line, reading the one file that line leaves behind (output/steps/N.json). It measures nothing with a command and buys
+  // nothing: bareguard's rubric primitive grades the file against the person's own counted limits and quotes. It exists only in
+  // the text genre's menu (`catalogueForLang`) — a code job never sees it. `parts` is the person's constraints on the line,
+  // each SORTED by the drafter into a class; only `countable` parts become checks, and the validator reds the rest in plain
+  // words (`checkRubricParts`), so no signed stage carries a part this build cannot run.
+  'rubric-step': Object.freeze({
+    verdictClass: 'green',
+    required: Object.freeze(['step', 'parts']),
+    optional: Object.freeze([]),
+    pathParams: Object.freeze([]),
+    shape: 'step: integer (the job line number), parts: [{text: string, class: "countable" | "fact" | "judged" | "guard" | "none", '
+      + 'check?: "maxWords" | "minWords" | "maxLines" | "sections" | "sectionWords" | "cited" | "minClaims" | "maxClaims", value?: integer, names?: string[], '
+      + 'wordsPerSection?: integer, source?: string (an input label), domains?: string[], covers?: integer[], rules?: integer[], '
+      + 'fact parts: facts?: [{name, shape: "money"|"number"|"date"|"time"|"phrase"|"text", unit?|currency?, phrase?, anchor?, until?, '
+      + 'rule?: {op, value | lo+hi}, aiProposal?: boolean}], count?: {min?, max?}}]',
+    asserts: 'the file output/<step>.json under output/steps/ exists, is a JSON object, and its "text" is present and within the '
+      + 'limits the person asked for. Write ONE rubric-step stage per numbered job line (step = that line number, fromLine = [that line]). '
+      + 'In "parts" list each constraint the person put on that line, in their own words, and SORT it: "countable" when a machine can '
+      + 'count it (check maxWords/minWords/maxLines with value; sections with names; sectionWords with names and wordsPerSection) or '
+      + 'when claims must be backed by a quote from a named input (check cited, source = the input label), or when a number of '
+      + 'quoted claims is asked for (minClaims / maxClaims with value and source: it counts the claims listed under that input); '
+      + 'a line that FINDS, LISTS or LOOKS UP something gets ONE part of class "fact" instead (source = the input label, '
+      + 'facts = the required facts, count = how many results): its step file holds only filled facts and no free text, so '
+      + 'give such a line no word, section or claim-count parts; list in "rules" the number of every ~ rule a part carries out; '
+      + 'on every countable part that carries out a CONFIRMED check, list that check\'s number in covers (a confirmed check no part '
+      + 'covers is moved to Not checked before signing); "judged" when only reading '
+      + 'it could decide; "guard" for a rule about web sources (domains); "none" when you cannot sort it. Never turn a part you cannot '
+      + 'count or quote into a countable one by guessing a number.',
+  }),
   // LIVE at N4 slice 1, and the ONLY kind that does not measure anything: it
   // does not RUN, it PAUSES the run and hands the tree to a person (ruling 1).
   // `ask` is the whole parameter surface — no cmd, no timeoutMs, no env — so a
@@ -380,6 +411,21 @@ export const LOCKED_KINDS = Object.freeze(CATALOGUE_KINDS.filter((k) => KIND_CAT
  * cannot run is a close that stops at runtime, and a kind the executor runs
  * that the catalogue never names is a capability nothing can reach. */
 export const CATALOGUE_LIVE_KINDS = Object.freeze(CATALOGUE_KINDS.filter((k) => !KIND_CATALOGUE[k].locked));
+
+/**
+ * The catalogue a close of this language may use. A rubric job on local files (`RUBRIC_LANG`) sees only
+ * {@link RUBRIC_LANG_KINDS}; every code language sees the whole catalogue MINUS the rubric-only kinds, so a code job's
+ * composer, schema and validator can never reach for a stage that reads step files. One filter, both directions.
+ * @param {string|null|undefined} lang
+ * @param {Record<string, KindSpec>} [catalogue]
+ * @returns {Record<string, KindSpec>}
+ */
+export function catalogueForLang(lang, catalogue = KIND_CATALOGUE) {
+  const keep = lang === RUBRIC_LANG
+    ? (/** @type {string} */ k) => RUBRIC_LANG_KINDS.includes(k)
+    : (/** @type {string} */ k) => !RUBRIC_ONLY_KINDS.includes(k);
+  return Object.freeze(Object.fromEntries(Object.entries(catalogue).filter(([k]) => keep(k))));
+}
 
 export const DIRECTIONS = Object.freeze(['lower-is-better', 'higher-is-better']);
 /** D12: the close stores the COUNTING RULE, never the number. "seed" is measured
@@ -515,6 +561,28 @@ export const TYPES_GENRE_TEMPLATE = `1. The STRICT form of the language's type c
 6. A number the tool did not report is unknown, never zero.`;
 
 export const GENRE_LANGUAGES = Object.freeze(['js', 'python']);
+
+/**
+ * PART 1a: the "language" of a RUBRIC job on local text files. It is not a code language and carries no suppression
+ * battery, no environment and no instruments — it only lets such a close declare which genre-shaped guards apply to it
+ * (`classGuards`) without pretending the file is JavaScript. `GENRE_LANGUAGES` stays the code-language menu (it is what a
+ * repo job's language detection and the confirm turn offer); this is the one extra value a close may DECLARE.
+ */
+export const RUBRIC_LANG = 'text';
+/** the genre label a close over local text files carries (`closeDecl.genre`); the code languages' is `TYPES_GENRE.name`. Never the other's. */
+export const TEXT_GENRE = 'TEXT';
+/** @param {unknown} lang @returns {string} the genre a close of this language is authored under */
+export function genreForLang(lang) { return lang === RUBRIC_LANG ? TEXT_GENRE : TYPES_GENRE.name; }
+/** every `closeDecl.lang` a close may declare: the code languages plus the rubric-files one */
+export const DECLARABLE_LANGUAGES = Object.freeze([...GENRE_LANGUAGES, RUBRIC_LANG]);
+/** the kinds that exist only for a rubric job on local files — a code job's menu, schema and validator never offer them */
+export const RUBRIC_ONLY_KINDS = Object.freeze(['rubric-step']);
+/** the whole kind menu of a rubric job on local files: the one machine guard that applies to a file tree, plus its own stage */
+export const RUBRIC_LANG_KINDS = Object.freeze(['files-changed', 'rubric-step']);
+/** the rubric-files language's data, all declared-empty (never an absent field that would read as "not looked into", F59) */
+const TEXT_LANGUAGE = Object.freeze({
+  suppressions: Object.freeze([]), extensions: Object.freeze([]), env: Object.freeze([]), instruments: Object.freeze([]),
+});
 
 /**
  * The js `any` suppression pattern's regex, ONE spelling: the TYPES js battery
@@ -733,6 +801,7 @@ export const TYPES_GENRE = Object.freeze({
 
 /** @param {string} lang */
 function language(lang) {
+  if (lang === RUBRIC_LANG) return /** @type {any} */ (TEXT_LANGUAGE);
   const l = TYPES_GENRE.languages[/** @type {'js'|'python'} */ (lang)];
   // An unknown language THROWS rather than returning an empty battery: a genre
   // we have not admitted must not read as "this genre needs no guards" (F59's
@@ -858,7 +927,15 @@ export function classGuards({ verdictType, lang }) {
       + 'admission refuses it before any battery is built; a locked class must never resolve to an empty one');
   }
   const l = language(lang);
-  const guards = battery.guards.map((g) => {
+  // PART 1a: a rubric job on local TEXT files keeps every guard a machine can render over a file tree (`changed-from-seed`:
+  // something changed, and only inside the fence) and drops only the guards COMPOSED from a code language's tool data — a
+  // suppression scan over source code has nothing to scan in a text file, and composing it from no data would be the
+  // empty-guard hazard the throw below exists for. Only the soft-green battery has a text form.
+  if (lang === RUBRIC_LANG && String(verdictType) !== 'soft-green') {
+    throw new Error(`the "${RUBRIC_LANG}" genre is the rubric-files one: it carries a battery for soft-green only, not "${verdictType}"`);
+  }
+  const batteryGuards = lang === RUBRIC_LANG ? battery.guards.filter((g) => g.compose.length === 0) : battery.guards;
+  const guards = batteryGuards.map((g) => {
     /** @type {Record<string, any>} */
     const params = structuredClone(g.params);
     for (const p of g.compose) {
@@ -1199,7 +1276,8 @@ function readPath(p, dotted) {
  * @param {{catalogue?: Record<string, KindSpec>, listing?: string[]|null,
  *   guards?: {name: string, kind: string, params: Record<string, any>, fill: string[]}[]|null,
  *   envOwned?: string[]|null, envInjected?: Record<string, string>|null, deferListing?: boolean,
- *   verdictType?: string|null, writeScope?: string[]|null, jobLines?: {n: number}[]|null}} [opts]
+ *   verdictType?: string|null, writeScope?: string[]|null, jobLines?: {n: number}[]|null, inputLabels?: string[]|null}} [opts]
+ *   `inputLabels` — the labels of the person's inputs (Part 1a). Present, a rubric-step `cited` part must name one of them.
  *   `jobLines` — the person's numbered job lines (P7). Present, every stage must name the line it serves and every
  *     line needs a stage or a refusal ({@link checkJobLines}); absent (every spec that predates the job block), the
  *     rule is not run.
@@ -1221,7 +1299,7 @@ function readPath(p, dotted) {
 export function validateDeclaration(declaration, opts = {}) {
   const {
     catalogue = KIND_CATALOGUE, listing = null, guards = null, envOwned = null, envInjected = null,
-    verdictType = null, writeScope = null, jobLines = null,
+    verdictType = null, writeScope = null, jobLines = null, inputLabels = null,
   } = opts;
   const deferListing = opts.deferListing === true;
   /** @type {Red[]} */
@@ -1447,6 +1525,10 @@ export function validateDeclaration(declaration, opts = {}) {
 
   if (haveGuards) checkGuards({ declaration, guards: /** @type {any[]} */ (guards), red });
   checkJobLines({ declaration, stages, jobLines, guards: haveGuards ? /** @type {any[]} */ (guards) : [], red });
+  // PART 1a (R11): the sorting rules for the rubric-step stages — plain-words reds, judged and web parts refused in this build
+  checkRubricParts(stages, { inputLabels, red });
+  // PART 1b (RF16, RF17): every ~ rule is a check or Not checked; the AI's own numbers are marked and a time range is a range
+  checkRubricRules(stages, { jobLines, refused: declaration.refused, red });
 
   const ok = reds.length === 0;
   return { ok, reds, declaration: ok ? normalizeDeclaration(declaration) : null, grounded: haveListing, scoped, ceiling };
@@ -1489,15 +1571,15 @@ function checkJobLines({ declaration, stages, jobLines, guards, red }) {
   const refused = new Set();
   if (declaration.refused !== undefined) {
     if (!Array.isArray(declaration.refused)) {
-      red('invalid-value', 'refused', 'an array of {line, reason} — the job lines no stage can check, each with a reason');
+      red('invalid-value', 'refused', 'an array of {line, rule?, reason} — the job lines (or one ~ rule of a line) no stage can check, each with a reason');
     } else {
       declaration.refused.forEach((/** @type {any} */ r, /** @type {number} */ j) => {
         const at = `refused[${j}]`;
-        if (!isObj(r) || !Number.isInteger(r.line) || r.line < 1 || !isNonEmptyString(r.reason)) {
-          red('invalid-value', at, '{line, reason}: a job line number and a plain-words reason');
+        if (!isObj(r) || !Number.isInteger(r.line) || r.line < 1 || !isNonEmptyString(r.reason) || (Object.hasOwn(r, 'rule') && !(Number.isInteger(r.rule) && r.rule >= 1))) {
+          red('invalid-value', at, '{line, rule?, reason}: a job line number, optionally the number of one of its ~ rules, and a plain-words reason');
         } else if (known !== null && !known.includes(r.line)) {
           red('invalid-value', `${at}.line`, `refused line ${r.line}, but the job has lines ${known.join(', ')} only`);
-        } else refused.add(r.line);
+        } else if (!Object.hasOwn(r, 'rule')) refused.add(r.line);
       });
     }
   }
@@ -1688,6 +1770,9 @@ function checkKind({ kind, params: p, at, red, scoped, label, populations, envOw
     case 'files-changed':
       if (!strArray(p.allowPrefixes)) red('invalid-value', `${at}.params.allowPrefixes`, 'a non-empty array of path prefixes');
       if (p.requireNonEmpty !== true) red('invalid-value', `${at}.params.requireNonEmpty`, 'literally true');
+      break;
+    case 'rubric-step':
+      for (const r of rubricStepShapeReds(p, `${at}.params`)) red(r.code, r.path, r.detail);
       break;
     case 'human-confirms':
       // the whole surface: the question the signer answers. It is shown to a

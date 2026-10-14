@@ -519,3 +519,465 @@ Item 25 step (4): 31.5 calibration on a real bar; 31.4 green on DeepSeek (`deeps
 with `ANTHROPIC_API_KEY` unset; plus one plain-folder green and one soft-green end to end.
 
 2026-09-13 (hamr): 31.4 runs on DeepSeek, not gemini — one secondary provider.
+
+## Addendum 2026-10-12 — Part 1a: rubric engine on a local file, no judge (signed by hamr 2026-10-12)
+
+Branch feat/rubric-search. This build runs a rubric job on a local file with no judge. The judge, the web and the chips come later.
+
+What gets built, in order:
+
+1. A rubric job may start from a plain local file. Each input line is `label: /absolute/file`. Bareloop freezes each file into the job (label, relative path, sha256) and refuses a non-UTF-8 file at $0. A rubric job skips the repo-only source message and gets no language guards. A URL or search line is a $0 red: "line N: web inputs (URLs, search) arrive in a later build. Nothing spent."
+2. One output per job line: `output/steps/<n>.json` holding `{text, cites:{<label>:[{claim,quote}]}}`. The worker brief in the drafter prompt says so, the plan validator allows the path, and the copy-out delivers `steps/` with the output (P2=A).
+3. A new close kind `rubric-step`, one stage per job line (`fromLine:[n]`). At run start the runner builds the rubric (input sha from source.json, checkpoint `<n>`, not gating), checks the step file, and renders the gaps. A stop is exit 97; a red is a close red.
+4. Checks: the step file happened (it exists and parses as a JSON object); every input the step cites is cited with real quotes (`cites:<label>`); countable limits on `text` (maxWords, minWords, sections, sectionWords, max, min). A cut-off is detected only as a step file that is not a JSON object; text cut inside valid JSON cannot be detected (documented limit). Step files are capped at 5 MiB.
+5. Each part of a job line is sorted at drafting: countable, judged, or guard. A job line is a $0 red when a part has no class, when two countables contradict (both parts and numbers are named), when a guard has no web input, or when any part is judged. Plain words: "line N: this rule needs the judge, which arrives in the next build. Nothing spent." and "line N: '<part>' can't be counted or checked against a quote. Say it as a count (words, sections, rows) or as something a quote must show."
+6. Signing runs calibration only when the close has judged stages, so signing a 1a job makes zero judge-round records.
+
+Rulings:
+
+- P1=B. The `~ PASS:` / `~ FAIL:` example lines are required on a rubric job only when it holds a judged part. `jobBlockFitsCheck` changes to match.
+- P2=A. Per-line step files live at `output/steps/<n>.json` and are delivered with the output.
+
+Known mismatches with bareguard 0.21, handled without patching it: string inputs and UTF-8, one source per cited input, no claims on an empty step, and the rubric is rebuilt each run.
+
+Deferred:
+
+- 1b: the judge plug-in per bareguard locate section 5.2, final gating with requiresHuman accept:'later' through the door, reads/agree, clean, mutation calibration, chips, Audit rows.
+- Part 2: web sources and the S1A gate.
+- Part 3: chips.
+
+Live proof plan: DeepSeek (`deepseek-flash`), cap $0.50, a copy of the repo's own CHANGELOG.md as the input, two job lines. Run only on hamr's go.
+
+## Addendum 2026-10-13 — Part 1b: required facts (signed by hamr 2026-10-13)
+
+The rules are in PRD item 33, "2026-10-12 — required facts RULED" (RF1–RF17). This addendum holds the design discussion as ruled, then the build spec. Where they differ, the build spec wins: it came after POC rounds 1–3c and bareguard 0.23.0.
+
+### Design discussion (ruled 2026-10-12)
+
+Closes F223. Replaces "the worker picks its own facts" (Part 1a `cited`).
+
+#### The idea, one line
+
+Check what the person asked for, not what the worker chose to write.
+
+#### How it works
+
+1. **The person writes the job** as today: numbered lines + `~` rules.
+
+       1  Find a flight SFO to LAX
+          ~ under $450
+          ~ not a red-eye
+          ~ nonstop
+
+2. **At drafting, the AI turns each line into a list of REQUIRED FACTS.** Each fact has a
+   name, a shape and (when the person asked for one) a rule:
+
+       from     phrase   must say "SFO"
+       to       phrase   must say "LAX"
+       price    money    at most 450 US dollars
+       departs  time     between 06:00 and 21:00     <- "not a red-eye", made a number
+       stops    phrase   must say "Nonstop"          <- "nonstop"
+
+   The list is shown on the plan card, one row per fact, and SIGNED with the job.
+   The AI drafts it; it can never change it after signing (the agent never authors its arbiter).
+
+3. **At run time the worker fills every fact** with a value and a word-for-word quote:
+
+       price    389      quote: "$389 total"
+       departs  08:15    quote: "Depart 8:15 AM"
+
+4. **Code checks every fact. No AI.** One bareguard 0.22.0 `cited` check with `decides`
+   (already published): the quote is really in the frozen source (`quoteIn`); the value
+   really is in the quote, compared exactly by shape (`8:15 AM` = `08:15`, `389` = `389.00`);
+   the value passes the rule. Any red names the fact and why, and goes to the fix loop.
+
+#### Shapes (what bareguard 0.22.0 can check today)
+
+| shape  | example             | rules                         |
+|--------|---------------------|-------------------------------|
+| money  | 389 US dollars      | <, <=, >, >=, between         |
+| number | 3                   | <, <=, >, >=, between         |
+| date   | 2026-11-12          | <, <=, >, >=, between         |
+| time   | 08:15               | <, <=, >, >=, between         |
+| phrase | "Nonstop", "SFO"    | the quote must contain it     |
+
+EVERY fact is cited and shape-checked, even one with no rule (hamr, 2026-10-12: the agent must
+prove every answer by its shape, so it cannot make up facts). A rule only adds a condition on top.
+
+#### Two kinds of step (ruling A, refined for prose, 2026-10-12)
+
+- **Fact step** (find, list, look up): the output is the filled fact list. Every answer quoted
+  and shape-checked; nothing unchecked is part of the answer. "N results" (e.g. last 3 releases)
+  = N filled copies of the fact list; the count is a number rule code checks.
+- **Prose step** (write a report / summary): free text is allowed. Code checks only size and
+  shape (word count, sections, one paragraph). The card says "Not checked: what the text says";
+  the person judges the content at Accept.
+- **Prose numbers stay honest:** every number in a prose step must equal a checked fact value
+  from an earlier step (same canonical compare as the binding). Words free, numbers checked.
+
+#### What is NOT checked, said out loud
+
+- Anything the AI cannot turn into a shape + rule ("a good pick", "the LAST 3", "cheapest
+  of all") goes to **Not checked** on the card, in the person's words.
+- The person judges those at the end gate (the review door), or they did not matter.
+
+#### Is this too much to ask of a person?
+
+No more than today. They already write the `~` rules. The AI does the turning-into-facts; the
+person only reads the rows and signs. Facts named in the job line itself ("SFO to LAX") become
+rows without any `~` line. What they never wrote is not checked, and the card says so.
+
+#### What changes in the build
+
+- Part 1a's free `cites` list → the filled fact list on fact steps; prose steps keep free `text`, shape-checked, numbers tied to earlier checked facts.
+- `cited` (bareloop's own) → bareguard 0.22.0 `cited` + `decides` + typed `values`.
+  Needs the bareguard bump ^0.21.0 → ^0.22.0 (peer range checked in a clean install).
+- Drafter: emits the fact list per line (name, shape, rule, source input); a rule it cannot
+  express → Not checked, never a vague check.
+- Plan card: one row per required fact, code-worded, under its `~` line.
+- `minClaims`/`maxClaims`/word counts: kept where the person asked for them.
+
+#### Rulings on the open questions (hamr, 2026-10-12)
+
+1. The fact list comes from the job line too ("SFO to LAX" -> from/to rows), not only `~` rules.
+2. Superlatives ("cheapest", "the last 3"): Not checked for now (guard plan: superlatives later).
+3. Prose jobs are rubric jobs: shape-checked, content judged at Accept, numbers tied to checked facts.
+
+#### Later piece (ruled in, built after required facts): rerun from line N
+
+- At the end gate of a GREEN run: `Rerun from: [line N]` + the person's words, which go to line N.
+- Lines before N keep their checked outputs byte-for-byte; they are not redone or edited.
+- Money and time already spent stay folded in (tighten-only; never a fresh budget).
+- Picking an earlier line redoes everything from there.
+- Changes the end gate (accept / rerun / pause), so it is its own build after required facts.
+
+### Build spec
+
+Rulings: PRD item 33 "required facts RULED" RF1–RF17 (commits 0029d2a, 1c5fde4, 70f4a1c, 03374af).
+POC evidence: F224, F225, rounds 3/3b/3c (parity re-run on published 0.23.0: same results).
+Branch: feat/rubric-search (continues Part 1a). Builder: sonnet (strict pin), one item per commit,
+tests only via `npm test`, scratch HOME, runs.jsonl line count before/after, no subagents.
+
+#### 1. bareguard bump ^0.21.0 → ^0.23.0
+
+- package.json + lock. Node >=22 already matches bareloop `engines` and CI (22).
+- Peer ranges checked in a clean install (bare-agent wants bareguard >=0.19 <1.0: OK).
+- 0.22/0.23 behaviour changes to check in our suite: `cited` claims carrying `values` with no
+  `decides` now red; anchors match on word edges only.
+
+#### 2. The fact step (src/rubricstep.js)
+
+- New part class `fact` on a `rubric-step` stage:
+  `{ class:'fact', source:<input label>, record:{start, end?}, facts:[{name, shape, anchor?, until?, rule?, aiProposal?}], count? }`
+  - shape ∈ money | number | date | time | phrase | text.
+  - rule (optional) = bareguard op + value/lo+hi (`between` allowed). No rule = bind only
+    (the value must really be in the quote; with anchor, the value right after the label).
+  - text = bind only, never a rule. phrase = fixed words the quote must contain.
+  - anchor/until = labels copied VERBATIM from the input (e.g. `Leaves` + until ` at`).
+- Step file: `{ "results": [ { "quote": "...", "values": { "<fact>": "..." } } ] }` —
+  one quote per result holding all its facts (RF9). No free text, no free cites.
+- `buildStepSpec`: one bareguard `cited` check per fact part, `decides` from the facts in order
+  (d0, d1, … — d<j> indexes the WHOLE decides list, presence decides included). Each result →
+  claim `{claim, quote, values}`; the claim text is BUILT BY CODE from the values.
+- "N results" = `count` → existing minClaims/maxClaims.
+
+#### 3. Records (lesson from rounds 3–3c)
+
+- The drafter names the record marker; CODE splits the input and counts records.
+- A record is the PREFIX slice the drafter names (e.g. a flight block minus its trailing
+  "Flight details" button): the whole block made `Leaves`/`arrives at` anchors ambiguous.
+- The worker brief names that exact slice: "quote from the start of a record up to <end>".
+- Big inputs: drafter sees a SAMPLE (first N records + how it was cut, shown on the card),
+  never a silent truncation (changelog was 455k chars cut to 15k).
+
+#### 4. The prose step
+
+- Free text as today; parts = existing word/section/line counts.
+- `numbersFromFacts` (always on when an earlier fact step exists): every number in the text must
+  appear in an earlier checked quote — bareguard `numbersInQuote` (exists). Known limit: token
+  match, not canonical; brief says copy numbers as written.
+- Card: "Not checked: what the text says" on every prose step (RF5).
+
+#### 5. Drafter (composer prompt + validator) — look first, fail early (RF13–RF17)
+
+- Drafter reads the input (or its sample) at drafting; facts come from the job line AND its `~`
+  rules (RF1); labels, units, phrases taken verbatim; may suggest real source words (RF14).
+- Superlatives and anything that is not shape+rule → Not checked in the person's words (RF6).
+- Every `~` rule → a check or Not checked; a silent drop is a $0 red (RF16).
+- AI-made numbers marked "AI's proposal — check it" on the card; ranges like red-eye use
+  `between` (RF17).
+- Validator: unknown shape/op, source not an input label, empty phrase/anchor, rule on text,
+  record marker not found → red, plain words.
+- Three $0 early tests per fact check, on the frozen input (RF15):
+  1. found — the check finds its value in each record (count shown);
+  2. one per record — exactly one value where a rule needs it (or an anchor scopes it);
+  3. red on a code-broken copy (a value changed by code) + pass/fail split shown.
+  Any test failing → that check cannot be signed; plain words; the person changes or removes it.
+- Run-time backstop: the same found/one-per-record tests on the first source the worker reads.
+
+#### 6. Plan card (one renderer: renderJobPlan / checksOfClose / partSentence)
+
+- Under each line's `~` rows, one code-worded row per fact, e.g.
+  `› fact · price — money, at most 450 US dollars, after "Price", quoted from "Flights"`.
+- `planMatchesClose` covers facts (sign == run).
+
+#### 7. Worker brief (stepFileContract / rubricGoal)
+
+Fact step: one result per record, one quote copied exactly from the named slice holding all its
+facts, values written as the quote writes them. Prose step: free text; numbers copied from the
+earlier quotes.
+
+#### 8. Live proof (DeepSeek deepseek-flash, cap $0.50, 20 min each)
+
+- Changelog job (fact line "last 3 releases" + prose summary line).
+- Flight job from the captured page as a FILE input (web sources are Part 2).
+- Both through the panel; hamr clicks through. $0 archive read first (no paid fire before it).
+
+#### Known limits (documented, not built around)
+
+- SFO/LAX codes have no stable label on the flight page → direction only via full airport names.
+- Unanchored text/membership can't tell which field a value sits in.
+- `am`/`pm` lowercase and `9:27AM` are malformed times; `v0.41.0` is one token.
+
+#### Not in this build
+
+- Rerun from line N (RF8) — own later build. Web sources (Part 2). Chips/Audit (Part 3).
+  Superlatives.
+
+## Addendum 2026-10-13 — Part 1b live fixes (signed by hamr 2026-10-13, "go")
+
+Found in the first live drafts on DeepSeek `deepseek-flash` (panel sessions smv6jhano7ba3 = changelog job,
+smv6k6l8dxkzs = flights job). Neither reached a run; both stopped at the $0 drafting checks, total spend < $0.01 each.
+
+- **A1 — the long-record refusal says what to do.** `rubric-fact-record-long` names the record (its first line), its
+  length, the end marker the draft gave (or "no end given"), and an example taken from that record ("end the slice at
+  the end of the heading line"). Evidence: changelog, start `## [` with no end → 30 of 46 records over 4000 chars; any
+  end (`\n`, `\n\n`, `### `) → 0 over, longest 24–533 ($0 measured).
+- **A2 — an end marker that is not found is its own red.** Today `splitRecords` silently falls back to the whole record
+  when `record.end` is absent from a record (`endFound:false`), which reads as "too long". New red names the marker and
+  how many records lack it.
+- **A3 — every refused proposal is kept.** The draft log (`draft-log.jsonl`) records the refused declaration itself
+  beside `try-refused`, so a failed draft can be read and replayed at $0. Secrets masked as everywhere.
+- **B1 — one rulebook for the confirm step and the drafter.** `RUBRIC_CONFIRM_NOTE` and the drafter brief get the same
+  rubric rules from ONE place: a limit the person wrote ("under $450") is a checkable rule; a number made from their
+  words ("not a red-eye") is a time range marked AI's proposal; names, labels and units are the INPUT's own words
+  (never add a code like SFO the person did not write and the input does not hold).
+- **B2 — the drafter is shown which shape takes which fields**, generated from bareguard's `rubricVocabulary` (never a
+  hand-typed copy): money/number/date/time take anchor and rule, no until; text takes anchor and until, no rule;
+  phrase takes only its words. Plus: one stage per job line holding all its facts.
+- **B3 — plain words for every rubric red.** No "has no plain wording yet" for `rubric-step-twice`, `invalid-value`
+  on a fact field, or any new rubric red code; a test lists every rubric red code and fails on an unmapped one.
+- **I1 — ask early, only about intent.** A $0 red that only the person can settle (their word is not in the input;
+  a limit needs a number only they know) asks them at once, using the existing question gate (same caps, answer
+  becomes a signed `~` rule). Every other red goes back to the AI to fix itself. Which red codes count as "intent"
+  is one list in code; the builder proposes it, hamr rules on it before it ships.
+
+Proof: $0 tests per item; then the two live drafts again (same jobs), hamr's go.
+
+## Addendum 2026-10-13 — Part 1c: look, then say what I can check (signed by hamr 2026-10-13)
+
+Rulings: PRD item 33, "2026-10-13 — look, then say what I can check RULED" (RF18–RF22). Replaces the record
+cutting and early tests of Part 1b. Why: three live drafts (smv6jhano7ba3 changelog, smv6k6l8dxkzs and smv6lyypleng8
+flights) all failed at drafting on record cutting — the AI copied one-time ids (`[ref=3817]` → 1 "record" of 78,255
+chars) and one record's value as a label (`generic "59 US dollars"`); each fix (A1–A3, B1–B3, C1–C4) found the next.
+Also found: the saved flights page is LAX → SFO, so test job B (SFO → LAX) could never pass — the operator's miss.
+
+### 0. POC first ($0 + small drafting spend, before any build)
+
+Riskiest assumptions, in order; stop and report if one fails:
+- (a) barebrowse fetches a pasted Google Flights results URL headless, read-only, and returns text holding each
+  flight's labels and values (`Departure time: 9:27 AM`, `Leaves …`). Check: its exported API, its Node/peer ranges in a
+  clean install beside bare-agent/bareguard/litectx, and what text form it returns.
+- (b) The AI look, with read-only search tools over that text, reports the right label for each fact on the real page
+  and on the changelog (3 drafts each, DeepSeek `deepseek-flash`, thinking off). Pass = every reported word is really
+  in the source and is the label of the right value; no one-time ids, no single record's value used as a label.
+
+### 0b. Step 0 results (2026-10-13) and what they add to the build
+
+- (a) PASSED, $0: barebrowse 0.21.0 `browse(url, {incognito:true, blockPrivateNetwork:true, pruneMode:'act'})` fetched a
+  Google Flights results URL (`/travel/flights?q=…&curr=USD&hl=en&gl=us`) in ~3.5 s: 44 flights, 43 `Departure time:`,
+  `Leaves San Francisco International Airport … arrives at Los Angeles International Airport`, prices in US dollars.
+  `pruneMode` 'read' and 'full' returned almost nothing; the general route page (`/flights-from-…html`) has no flight
+  list; without `curr=USD` prices come in the fetcher's local currency. An empty or near-empty fetch is a plain-words
+  stop, never a silent empty input.
+- (b) $0.0723, 6 looks (scratch `poc-look/`): 0 of 6 used a one-time id or one result's value as a label; price `From`,
+  time `Departure time:`, nonstop `Nonstop`, version `## [`, date `] - ` right in every look; red-eye proposed as a
+  window with aiProposal. Misses, now part of this build:
+  1. Every place, date or name in the job line itself is a fact too (direction "from San Francisco … to Los Angeles"
+     was missed 3 of 3: it must bind to the label before each airport, e.g. `Leaves` / `arrives at`).
+  2. Prose lines and their `~` limits (word count, paragraphs) are not looked up: they stay prose-step checks.
+  3. Code's "found" checks are whitespace-blind (Google writes U+202F before AM/PM; 259 in the page).
+  4. The look answers through the strict answer form (tool / schema), never free prose with JSON inside.
+- ~~The build's FIRST step re-runs this test~~ — DROPPED (hamr, 2026-10-13). The re-run (scratch `poc-look2/`, $0.0823)
+  got price, time, nonstop, version, date right in 6 of 6 and no id/value labels, but direction 0 of 3 (labels `from` /
+  `to` / `Where from?` — the job's own words, which a found-once check cannot tell from a real label). The 5-of-6 bar
+  was the operator's own gate and graded at drafting, against RF18. Ruling: build now, then FULL live runs; fix only
+  what a full run breaks.
+
+### 1. Keep from Part 1b
+
+Fact step and step file, one quote per result (RF9), bareguard `cited` + `decides`, prose step + numbers tie, plan card
+rows, RF16 no silent drop, RF17 AI's proposal, A3 refused proposals logged, B1 one rulebook, B2 shape table, B3 plain
+words.
+
+### 2. Remove
+
+`record` (start/end) on fact parts, `splitRecords`/`sampleOf` use at drafting, the three early tests and their reds
+(`rubric-fact-record-long`, `-record-end`, `-ambiguous`, `-untested`, per-record counts), the run-time backstop. The
+worker brief says "one quote per result, from that result's own text" (quote cap stays bareguard's 4000).
+
+### 3. The look (RF19, RF20)
+
+- A read-only search step before drafting, built on the existing authoring scout (`src/authorscout.js`): fixed grant
+  (search the input text, read a slice around a hit), bounded rounds, toolless final round, spend booked to drafting.
+- It returns, per job line: facts it can check (name, shape, label or phrase, one example value it saw), and what it
+  could not find (→ Not checked, or a question).
+- LABELS ARE PICKED, NEVER TYPED (hamr, 2026-10-13, after the look re-run got direction 0 of 3 with the job's own
+  words as labels, and fwd's evidence that an AI writing a value itself passed 8/10 vs 10/10 when only picking): before
+  the look, code scans the source at $0 and lists, per shape (money, number, date, time), the words that sit right
+  before a value of that shape, with how often each occurs (e.g. `Departure time:` ×43, `From` ×44, `Leaves` …). Text
+  facts get the words right before each repeated phrase the same way. The look and the drafter pick labels ONLY from
+  that list (by its id or exact text); a label not on the list is a $0 red naming it. Same scan for every page or
+  file — never a per-site label table.
+- The drafter writes the facts from that report. Code proves each label/phrase is in the source once ($0); a word not
+  found is a red naming the word and the input.
+
+### 4. URL inputs (RF21, RF22)
+
+- An input line may be `label: https://…`. Drafting fetches it once for the look (booked to drafting).
+- Run start fetches it again and saves the text as the run's frozen input before the worker starts; quotes are checked
+  against that copy; the worker reads that copy, never the live page.
+
+### 5. Live proof (DeepSeek `deepseek-flash`, cap $0.50, 20 min each, hamr's go)
+
+- Changelog job (file input).
+- Flights job from a pasted Google Flights URL, direction checked against the page first.
+
+### Ruled by hamr (2026-10-13)
+
+1. barebrowse becomes a production dependency (bare suite, Node 22 — matches): yes.
+2. I1, ask early: when the look shows the person's intent on a particular `~` rule was not captured (its words or
+   meaning not found in the source), ask about THAT rule at once, named by its line and rule. Any other drafting
+   failure asks nothing piecemeal: it tells the person to review the whole job and submit it again, with the reasons
+   in plain words.
+
+## Addendum 2026-10-13 — Part 1c live fixes (signed by hamr 2026-10-13, "2" = all four)
+
+From the first live drafts of the flights URL job (DeepSeek `deepseek-flash`, panel sessions smv710w8c3wdh and
+smv713up97m3k). No run reached the worker yet.
+
+- **L1 — wait for the page to finish loading.** The same URL gave 77,951 chars / 44 flights (step 0), 8,801 chars /
+  3 flights (smv710w8c3wdh) and 719 chars / header only (smv713up97m3k): `browse()` snapshots at load, before the
+  page's own scripts fill the results. Use barebrowse's published page API (`connect()` → `goto` →
+  `waitForNetworkIdle`, bounded), then `snapshot` with the same options as now. Generic for every site, never a
+  site-specific selector. Same fetch at drafting and at run start.
+- **L2 — an empty page stops, and is never asked about.** A page that is only site chrome (header, menus, sign-in)
+  is a plain-words stop, "Nothing spent", before the look. The 200-char floor let a 719-char header through; the
+  stop must catch a header-only page generically (e.g. the snapshot after the banner/navigation holds no content).
+  The look never asks the person about rules when the input itself is empty.
+- **L3 — the plan card keeps the person's words.**
+  - When the person answered a question with a number or range ("not between 00:00 and 06:00", "between 07:00 and
+    23:00"), the check uses exactly that range and is NOT marked AI's proposal (smv710: the plan said 5:00 AM).
+  - A `~` rule is either a check or under Not checked, never both ("not a red-eye" was in both).
+  - The early question text is never cut mid-sentence ("…found nothing. The)." ).
+  - A rule the AI can turn into a number from its own knowledge ("not a red-eye") is proposed as a range marked
+    AI's proposal (RF17), not asked: the early ask is only for intent the AI cannot know.
+- **L4 — drafting tries refused on form** (smv710w8c3wdh, 3 of 3): `"covers" is not a field of a fact`; "not a
+  red-eye" sent as a judged / unsortable part instead of a time fact with a `between` rule. Read the saved refused
+  declarations (draft-log `declaration`), fix the cause in the drafter's instructions or schema (one rulebook, B1/B2),
+  and add a test that a red-eye-shaped `~` rule drafts to a time fact.
+
+Proof: $0 tests per item; then hamr re-runs Job 1 (flights URL) and Job 2 (changelog) fully in the panel.
+
+## Addendum 2026-10-13 — Part 1c full-run fixes (signed by hamr 2026-10-13)
+
+From the first FULL runs on DeepSeek `deepseek-flash`: run mv73swnx (flights URL, step-red, $0.21 of $0.50) and
+drafting session smv74rc6x1g2l (changelog, signing refused, $0.01).
+
+- **M1 — a per-result label must repeat.** mv73swnx signed facts anchored on `Cheapest from` (a sort tab) and
+  `departing` (a "track prices" switch): each appears ONCE on the page, never inside a flight, so no one-flight quote
+  could hold them; the worker stretched quotes to reach them ("quote too long") and the step ladder stopped it. Rule:
+  a fact on a line asking for N results (count.min) must use an anchor the label list counts at least N times in the
+  source; fewer is a $0 red in plain words naming the label, its count and N. The drafter is shown the counts (the
+  list already holds them) and told the rule in the one rulebook.
+- **M2 — the prose number tie never crashes at the seed.** smv74rc6x1g2l: line 2's tie reads line 1's step file,
+  which does not exist at the seed read, so it threw (`broken-close`, ENOENT) and signing was refused. A missing
+  earlier step file is a normal red ("line 1's answer is not there yet"), never an instrument fault. The signing
+  refusal for a rubric job never says "check the project's install, build and test commands" (code-job wording).
+- **M3 — a new run shows in Runs without a refresh.** After Sign & run the run appeared only after a page refresh.
+  Find the cause in the panel's run list refresh and fix it; the orchestrator screenshots it.
+- **M4 — a "must say" phrase must repeat too.** Run mv76jhj1 (flights, DeepSeek `deepseek-flash`, step-red, $0.27): the
+  drafter signed phrase facts "from San Francisco" and "to Los Angeles" on a line asking for 3 flights. The frozen page
+  holds each only twice (the page header); every flight's own words say "Leaves San Francisco International Airport...",
+  so every per-result quote failed "the quote does not say ...", and the worker's workaround (gluing the header onto each
+  quote) was refused ("not found word for word"). Unwinnable from signing. Rule, in the SAME check as M1
+  (`checkFactWords`, one owner): a phrase fact's `phrase` counted in the named input (the matcher the draft-time
+  presence check already uses, `countPhrase`) fewer than the line's `count.min` is a $0 red in plain words naming the
+  words, the input, the count and N (`rubric-fact-phrase-rare`). Count 1 or no count keeps a once-only phrase legal.
+  The one rulebook (`RUBRIC_RULES`) tells the drafter.
+
+Proof: $0 tests per item; then hamr re-runs Job 1 and Job 2 fully.
+
+## Addendum 2026-10-14 — Idea A: page words (DRAFT, not signed; build AFTER P9 on its own branch)
+
+Nothing here is signed. Rule v2 is not yet written or frozen. This records the idea, what the POC showed
+(FINDINGS F226-F228) and what is still open, so hamr can decide before any builder is launched.
+
+### Goal
+
+Today the drafter guesses the page's words (labels, units, place names) and a guess that is not on the page
+fails every try (run mv7qabx4: "$" where the page says "US dollars", anchor "at" three times per flight).
+Idea A: an AI reads the job lines and the `~` rules plus THIS page, and maps each one to the page's own words,
+per website. Code keeps only words really on the page and decides. The AI never grades. A check still needs a
+quote from the page for every claim; the AI's own summary is never the thing checked.
+
+### Frozen code rules (POC, verbatim from FROZEN-RULES.md, frozen 2026-10-14 before any new-page number)
+
+```
+R1 same-value: a value fact's labels are alternatives only if each reads the SAME SET of values across the page as the AI's first listed label; others dropped.
+R2 role: each place phrase is extended LEFT by up to 2 words while >=90% of its occurrences share that word (stop at tree markup chars " [ ] =).
+R2a: a kept phrase contained in another kept phrase is dropped.
+R2b same line: keep only place phrases that share >=90% of the lines of the longest kept phrase.
+R2c: ALL kept place phrases of a fact must be in the quote (AND).
+R3 page-once: a place phrase counted fewer times than the record proxy (min count of the usable money/time labels) is checked once on the page.
+N2 per-line: a label with max >=2 in one page line is unusable.
+Code keeps only words found on the page (count >= 1).
+Decision rule: rules HOLD on a page if honest pass >= 9/10 AND every planted cheat class is caught 10/10. Anything else = a finding, never a re-tune.
+```
+
+These were a POC only. They are scratch code, not product code. Rule v2 will be written after the open items below
+are decided, and frozen before any number is read.
+
+### What F226-F228 showed
+
+- F226: the AI finds the page's own words well. Google Flights SFO-LAX and JFK-MIA held with the rules on (but the
+  thresholds were chosen after seeing them). On an unseen Google Flights page (London Gatwick to Palma, 8 results,
+  small N) the rules held: honest 8/8, every cheat caught 8/8. On TUI Majorca holidays they did not: honest 0/10,
+  because the page writes "282 £ pp" (marker after the number) and our code reads label then number. Also that
+  page could not hold "7 nights" (every card was 3 nights). "Any one alternative works" widens a check: the AI offered
+  "Arrival time:" for "not a red-eye".
+- F227: Booking.com, Expedia, eBay and Skyscanner block barebrowse. Google Flights, Airbnb and Amazon load. Amazon's
+  only labeled price is the old "List Price".
+- F228: bareguard 0.24.0 reads "US dollars" as a unit and passes honest 10/10 on the mv7qabx4 capture, but a fact
+  carries one scalar unit or currency, so a signed spec cannot use lists. The "at" anchor still fails.
+
+### Open items for the spec (each is open, none decided)
+
+- (a) OPEN. Marker-after-number money form (Airbnb "€490 total", TUI "282 £ pp"). First step: ask the guard session
+  what 0.24 already reads, with evidence on the real captures, before any bareloop code.
+- (b) OPEN. Facts carrying currency and unit LISTS (a schema change in `src/facts.js`, `src/authorflow.js`,
+  `src/factwords.js`). Arbiter-adjacent. hamr's call.
+- (c) OPEN. N2 per-line label rule for time labels like "at" (bareguard's own anchor locate, measured 13 of 13 as
+  expected across 5 sources by the guard session). Built nowhere yet.
+- (d) OPEN. Page-level checks (a phrase the page must say once, not per result): a SECOND `cited` check over a
+  separate claims field (`pageClaims`) with a presence decide `{phrases}`. The guard's design, from the stash
+  `2026-10-14-idea-a-page-words-poc.md`. No new primitive.
+- (e) OPEN. Test pages must hold answers to the job (TUI could not meet "7 nights"). Check the page against the job
+  at $0 before reading any number from it.
+- (f) OPEN. Site reach (F227): barebrowse blocks the busiest travel sites. Filed to barebrowse's own session only if
+  hamr rules; not fixed here.
+
+### Next
+
+Next test pages: Google Flights, Airbnb, Amazon. Rule v2 is not yet written or frozen. Build comes AFTER P9, on its own
+branch, only after hamr signs a spec. Nothing in this addendum is signed.

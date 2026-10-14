@@ -107,7 +107,7 @@ test('a HELD judged green says so on the screen — and the accept door only pro
   // and the preview is the same promise one invocation later. The screen says why.
   const bare = preview(['--door', f]);
   assert.equal(bare.code, 0, bare.out);
-  assert.match(bare.out, /held\s+this green was rendered by the judged floor/);
+  assert.match(bare.out, /held\s+this is a rubric \(soft-green\) job, so its green earns NO reuse and NO learning credit until you accept it, whether or not a judge ran/);
   assert.doesNotMatch(bare.out, /accept\s+releases this run's learning credit/);
   assert.match(bare.out, /releases nothing/, 'the missing row is said in words, never silently dropped');
 

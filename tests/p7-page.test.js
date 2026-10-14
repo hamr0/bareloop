@@ -28,7 +28,7 @@ const PLAN = {
 
 test('renderJobPlan: legend, numbered lines with their rule, checks as "check · name · class", the two folds with their counts; every text escaped', () => {
   const h = renderJobPlan(PLAN);
-  assert.match(h, /<b>›<\/b> = the approved plan/);
+  assert.match(h, /Done when every <b>›<\/b> check passes/);
   assert.match(h, /class="num">1<\/span>Find &lt;3&gt; flights/, 'a job line is escaped');
   assert.match(h, /class="sub">~ PASS: quoted; FAIL: invented</);
   assert.match(h, /check · flights-found · judge/);
@@ -36,7 +36,7 @@ test('renderJobPlan: legend, numbered lines with their rule, checks as "check ·
   assert.match(h, /check · stray</, 'a check with no class shows no class');
   assert.match(h, /not checked · no command can check the layout/);
   assert.match(h, /<details[^>]*data-testid="plan-notchecked"><summary>Not checked \(the AI's own reading\) · 1</);
-  assert.match(h, /<details[^>]*data-testid="plan-alwayson"><summary>Always on · 2</);
+  assert.match(h, /<details[^>]*data-testid="plan-alwayson"><summary>Always checked · 2</);
   assert.doesNotMatch(h, /plan-older/);
   assert.doesNotMatch(h, /<script|<input|<button/i);
 });
@@ -195,4 +195,11 @@ test('left pane: 420px by default, 630px only from 1200px up; the stacked layout
   assert.match(PAGE, /@media \(min-width: 1200px\)\{ \.left-pane\{width:630px;\} \}/);
   assert.match(PAGE, /@media \(max-width: 899px\)\{\s*\.main\{flex-direction:column;\}\s*\.left-pane\{width:100%;/);
   assert.doesNotMatch(PAGE, /\.left-pane\{width:630px;flex/, 'the base rule never changes: 630 is wide-only');
+});
+
+test('renderJobPlan: each `~` rule is its own marked row under its numbered line (fwdloop shape); the gutter number is on the job line only', () => {
+  const h = renderJobPlan({ ...PLAN, loose: [], lines: [{ n: 1, text: 'List the last 3 releases', rule: 'every version quoted from the changelog; under 120 words', rules: ['every version quoted from the changelog', 'under 120 words'], checks: [], refused: [] }] });
+  assert.match(h, /class="sub">~ every version quoted from the changelog<\/div><div class="sub">~ under 120 words<\/div>/);
+  assert.equal((h.match(/class="num"/g) ?? []).length, 1, 'only the job line carries a gutter number');
+  assert.doesNotMatch(h, /~ every version quoted from the changelog; under/, 'not joined');
 });

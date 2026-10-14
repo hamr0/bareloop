@@ -61,13 +61,14 @@
 
 import { spawn } from 'node:child_process';
 import { realpathSync } from 'node:fs';
-import { readFile, stat, mkdtemp, rm, symlink } from 'node:fs/promises';
+import { readFile, stat, lstat, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, sep } from 'node:path';
+import { join, sep, dirname } from 'node:path';
 import { globToPrefix, isNonEmptyString } from './validate.js';
 import { CLOSE_ENV_DENY } from './ralph.js';
 import { runLocate, decide, validateCard, LOCATE_AXES, LOCATE_LABEL } from './judged.js';
 import { rateSourceFields } from './text.js';
+import { gradeStep, stepFileRel, STEP_MAX_BYTES, citedLabels, sha256Of } from './rubricstep.js';
 
 /** the close's two judgment exits — a stage's verdict, in the shape the
  * hand-written closes already spoke (exit code is truth) */
@@ -140,7 +141,7 @@ export const SIGNS = Object.freeze([1, -1]);
  * executor runs that the catalogue never names is a capability nothing can
  * reach. `judged-floor` joined at softgreen module 2 — the runner and the
  * catalogue unlock in ONE commit for exactly that reason. */
-export const LIVE_KINDS = Object.freeze(['command-exit', 'count-not-worse', 'pattern-absent-in-diff', 'files-changed', 'human-confirms', 'judged-floor']);
+export const LIVE_KINDS = Object.freeze(['command-exit', 'count-not-worse', 'pattern-absent-in-diff', 'files-changed', 'human-confirms', 'judged-floor', 'rubric-step']);
 /**
  * The judged stage's ladder: ONE attempt plus ONE retry, and no more.
  *
@@ -1527,6 +1528,85 @@ async function runFilesChanged(stage, ctx) {
 }
 
 /**
+ * PART 1a — the `rubric-step` kind: grade ONE job line's step file (output/steps/N.json) with bareguard's rubric primitive.
+ * It spawns nothing and buys nothing. The inputs a step cites are read from the frozen tree (`input/...`) and held to the
+ * sha256 the SOURCE DOOR recorded in `<into>/source.json` (`inputs: [{label, rel, sha256}]`), so an input that changed after
+ * the freeze is a stopped instrument, never a green. The rubric is built here, at every run, from the stage's own parameters
+ * (the inputs belong to the run, not to the signed job). A step file that is missing, cut off, or not a JSON object is a RED
+ * (the worker has not finished the line); an instrument that cannot read what it must is a STOP (97), never a red.
+ * @param {any} stage @param {Ctx} ctx @returns {Promise<StageResult>}
+ */
+async function runRubricStep(stage, ctx) {
+  const p = stage.params;
+  const step = p.step;
+  const stop = (/** @type {string} */ why, /** @type {string} */ fault = STOP_FAULTS.FAILED) => stopped(stage, ctx, `INSTRUMENT: stage "${stage.name}": ${why}`, { step }, fault);
+  // the source door's record of what was frozen: beside the tree, one level up (`<into>/source.json`, `<into>/tree`)
+  /** @type {any} */
+  let manifest;
+  try { manifest = JSON.parse(await readFile(join(dirname(ctx.workdir), 'source.json'), 'utf8')); } catch (e) {
+    return stop(`the source record (source.json beside the job's tree) could not be read: ${/** @type {Error} */ (e).message}`);
+  }
+  const recorded = Array.isArray(manifest?.inputs) ? manifest.inputs : [];
+  /** @type {Record<string, string>} */
+  const inputShas = {};
+  /** @type {Record<string, string>} */
+  const inputs = {};
+  for (const label of citedLabels(p)) {
+    const row = recorded.find((/** @type {any} */ r) => r && r.label === label);
+    if (!row || typeof row.rel !== 'string' || typeof row.sha256 !== 'string') return stop(`the step cites "${label}", but the source record has no input with that label`);
+    let buf;
+    try { buf = await readFile(join(ctx.workdir, row.rel)); } catch (e) { return stop(`input "${label}" (${row.rel}) could not be read: ${/** @type {Error} */ (e).message}`); }
+    if (sha256Of(buf) !== row.sha256) return stop(`input "${label}" (${row.rel}) no longer matches the bytes frozen at the source door`);
+    inputShas[label] = row.sha256;
+    inputs[label] = buf.toString('utf8');
+  }
+  // the step file: a regular file, read once, bounded
+  const abs = join(ctx.workdir, stepFileRel(step));
+  /** @type {string|null} */
+  let bytes = null;
+  let notRegular = false;
+  try {
+    const ls = await lstat(abs);
+    if (!ls.isFile()) notRegular = true;
+    else if (ls.size > STEP_MAX_BYTES) return stop(`${stepFileRel(step)} is over the ${STEP_MAX_BYTES} byte limit the rubric reads`);
+    else bytes = (await readFile(abs)).toString('utf8');
+  } catch (e) {
+    if (/** @type {any} */ (e)?.code !== 'ENOENT') return stop(`${stepFileRel(step)} could not be read: ${/** @type {Error} */ (e).message}`);
+  }
+  // PART 1b: a prose step's numbers are tied to the quotes the earlier fact lines' step files hold (those stages ran, and were
+  // green, before this one: the close is first-red-wins in stage order, which the validator pins). Unreadable = a stopped instrument.
+  /** @type {Record<number, string[]>} */
+  const factQuotes = {};
+  /** @type {number[]} */
+  const factMissing = [];
+  const tie = Array.isArray(p.parts) ? p.parts.find((/** @type {any} */ x) => x && x.class === 'countable' && x.check === 'numbersFromFacts') : null;
+  for (const n of tie ? tie.from : []) {
+    try {
+      const parsedFacts = JSON.parse(await readFile(join(ctx.workdir, stepFileRel(n)), 'utf8'));
+      const results = Array.isArray(parsedFacts?.results) ? parsedFacts.results : [];
+      factQuotes[n] = results.map((/** @type {any} */ r) => (r && typeof r.quote === 'string' ? r.quote : ''));
+    } catch (e) {
+      // M2: an earlier line's file that is not there (the seed read, before any worker wrote) is a normal red, never an instrument fault
+      if (/** @type {any} */ (e)?.code === 'ENOENT') { factMissing.push(n); continue; }
+      return stop(`the checked facts of line ${n} (${stepFileRel(n)}) could not be read for the number tie: ${/** @type {Error} */ (e).message}`);
+    }
+  }
+  const graded = await gradeStep({ params: p, bytes: notRegular ? null : bytes, outputBytes: notRegular ? null : bytes, inputs, factQuotes, factMissing }, inputShas);
+  if (graded.verdict === 'stopped') return stop(`the rubric stopped: ${graded.fault}`, STOP_FAULTS.CRASHED);
+  const gap = new Gap(ctx.gapKeep, ctx.gapCap);
+  if (notRegular) gap.push(`${stage.name}: line ${step}: ${stepFileRel(step)} is not a regular file`);
+  for (const l of graded.gapLines) gap.push(`${stage.name}: ${l}`);
+  const red = graded.verdict === 'red' || notRegular;
+  return result(stage, {
+    verdict: red ? 'red' : 'green',
+    exitCode: red ? EXIT_RED : EXIT_GREEN,
+    gapLines: gap.render(),
+    // the trend number (`trendValueOf`, src/declaredclose.js, reads `detail.redCount` for a stage with no measurement)
+    detail: { ...graded.detail, ...(notRegular ? { redCount: 1 } : {}) },
+  });
+}
+
+/**
  * THE SIGNER'S ANSWER, normalised at the seam that accepts it — the library half
  * of the three-button gate (2026-08-12 §1).
  *
@@ -1954,6 +2034,7 @@ const RUNNERS = {
   'files-changed': runFilesChanged,
   'human-confirms': runHumanConfirms,
   'judged-floor': runJudgedFloor,
+  'rubric-step': runRubricStep,
 };
 
 /**

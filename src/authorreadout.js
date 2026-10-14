@@ -313,9 +313,12 @@ export function phaseLine(phase, data = {}) {
     case 'seed': return '· reading the seed commit…';
     case 'scout': return `· scout running (up to ${data.attempts ?? '?'} attempt(s)) — a real survey over the repository…`;
     case 'scout-done': return `· scout ${data.state ?? 'unknown'} — ${data.facts ?? 0} fact(s)`;
+    case 'look': return '· looking at your input — a read-only search for the facts the job asks for…';
+    case 'look-done': return `· look ${data.state ?? 'unknown'} — ${data.facts ?? 0} fact(s) can be checked`;
     case 'listing': return '· listing the files the declaration may name…';
     case 'listing-done': return `· listing ${data.stop ? `STOPPED (${data.stop})` : `${data.files ?? 'unknown'} file(s)`}`;
     case 'author': return '· authoring the close declaration…';
+    case 'author-try-failed': return `·   ${data.call} refused — ${tryRefusedText(data)}`;
     case 'author-call': return `· ${data.call} (call ${(data.i ?? 0) + 1} of up to ${(data.of ?? 0) + 1})…`;
     case 'seed-read': return `· measuring ${data.stages ?? '?'} stage(s) at the seed — each one runs a real toolchain…`;
     case 'stage': return `·   ${data.stage} [${data.kind}] ${data.verdict} — ${ms(data.durationMs)}`;
@@ -405,6 +408,14 @@ const PLAIN_MAX_BULLETS = 8;
 const RECORD_MAX_REDS = 40;
 const RECORD_STR_MAX = 600;
 
+/** a code-written sentence that carries the person's own words (a rubric-step sorting red): scrubbed and one line, bounded wide enough to stay whole
+ * @param {unknown} s @returns {string} */
+function fullText(s) {
+  // every caller renders a drafting refusal AFTER a model call was paid; a red text written for the $0 front doors ends "Nothing spent." — false here
+  const one = redactSecrets(String(s ?? '')).replace(/\s+/g, ' ').trim().replace(/\s*Nothing spent\.$/, '');
+  return one.length > 400 ? `${one.slice(0, 400)}…` : one;
+}
+
 /** model-derived text in a person-facing line: scrubbed, one line, bounded
  * @param {unknown} s @returns {string} */
 function safeText(s) {
@@ -416,6 +427,25 @@ function safeText(s) {
  * @typedef {{code: string, path: string, detail: string, [k: string]: any}} PlainRed
  * @typedef {{kind: string, sentence: string, red: PlainRed}} PlainReason
  */
+
+/** a shape red on a rubric-step stage's own parameters (live fix B3): invalid-value / missing-field at `stages[n].params.step|parts…` */
+const isRubricShape = (/** @type {PlainRed} */ r) => (r.code === 'invalid-value' || r.code === 'missing-field') && /^stages\[\d+\]\.params\.(step|parts)\b/.test(r.path);
+
+/**
+ * The plain sentence for a shape red on a rubric-step: WHERE (stage, part, fact, field — counted from 1, the way the plan card shows
+ * them) and WHAT is wrong, in the red's own detail. Code-worded, secret-scrubbed.
+ * @param {PlainRed} r @returns {string}
+ */
+function rubricShapeSentence(r) {
+  const m = /^stages\[(\d+)\]\.params\.(.*)$/.exec(r.path);
+  const where = [`stage ${Number(m?.[1] ?? 0) + 1}`];
+  for (const seg of (m?.[2] ?? '').split('.').filter(Boolean)) {
+    const idx = /^(parts|facts)\[(\d+)\]$/.exec(seg);
+    if (idx) where.push(`${idx[1] === 'parts' ? 'part' : 'fact'} ${Number(idx[2]) + 1}`);
+    else if (seg !== 'parts' && seg !== 'facts') where.push(`field "${safeText(seg)}"`);
+  }
+  return `The model's check for a job line is not shaped right (${where.join(', ')}): ${fullText(r.detail).replace(/\.$/, '')}.`;
+}
 
 /**
  * The ONE table of plain kinds → sentence builders. A builder gets the red, the
@@ -440,6 +470,9 @@ const PLAIN_TABLE = [
     say: (r) => `Rubric line ${cardLineNo(r)} uses a rule that an earlier line already uses.` },
   { kind: 'card-line-no-text', when: (r) => r.code === 'invalid-value' && /^card item \d+: needs `text`/.test(r.detail),
     say: (r) => `Rubric line ${cardLineNo(r)} has no wording.` },
+  // Part 1b live fix B3: the rubric-step reds are whole sentences already (src/rubricstep.js); a shape red on its parameters is worded here
+  { kind: 'rubric-red', when: (r) => r.code.startsWith('rubric-'), say: (r) => fullText(r.detail) },
+  { kind: 'rubric-shape', when: isRubricShape, say: (r) => rubricShapeSentence(r) },
   { kind: 'proposal-not-object', when: (r) => r.code === 'invalid-value' && r.path === 'proposal',
     say: () => 'The model\'s answer was not a rubric plus practice cases.' },
   // ── the practice-case set as a whole ──
@@ -544,6 +577,47 @@ function spendText(spend) {
   return `${spend.spendComplete === false ? 'at least ' : ''}${moneyText(spend.knownUsd)}`;
 }
 
+/**
+ * WHY one drafting try was refused, in the code's own words: the unique `detail` of each red it raised (the same sentences
+ * `draftStopText` quotes at a stop), else the plain `reason` the loop gave (a seed-read failure raises no red). Scrubbed,
+ * one line, bounded; never empty.
+ * @param {{reds?: PlainRed[]|null, reason?: string|null}} o
+ * @returns {string}
+ */
+export function tryRefusedText({ reds = null, reason = null }) {
+  const said = [...new Set((Array.isArray(reds) ? reds : []).map((r) => fullText(r?.detail)).filter(Boolean))];
+  if (said.length === 0 && reason) said.push(fullText(reason));
+  if (said.length === 0) return 'no reason was recorded';
+  const text = said.slice(0, 3).join('; ') + (said.length > 3 ? `; …and ${said.length - 3} more` : '');
+  return text.length > 600 ? `${text.slice(0, 600)}…` : text;
+}
+
+/** the most characters of a refused declaration the drafting log keeps (a bigger one is kept as cut text, said so) */
+const DECLARATION_RECORD_MAX = 60000;
+
+/**
+ * A refused declaration as the drafting log keeps it (live fix A3), so a failed draft can be read and replayed at $0: the declaration
+ * itself, every secret masked as everywhere else (the JSON text goes through `redactSecrets`, then parses back), and bounded.
+ * @param {unknown} declaration
+ * @returns {{declaration: unknown}|{declarationText: string, declarationCut: true}|{}} nothing when there is no declaration
+ */
+export function declarationRecord(declaration) {
+  if (declaration === undefined || declaration === null) return {};
+  let text;
+  try { text = redactSecrets(JSON.stringify(declaration)); } catch { return {}; }
+  if (typeof text !== 'string') return {};
+  if (text.length > DECLARATION_RECORD_MAX) return { declarationText: text.slice(0, DECLARATION_RECORD_MAX), declarationCut: true };
+  try { return { declaration: JSON.parse(text) }; } catch { return { declarationText: text, declarationCut: true }; }
+}
+
+/** one red as a line of a stop message: a rubric red is a whole sentence already, a rubric shape red is worded by code, any other is bounded
+ * @param {any} r @returns {string} */
+function said1(r) {
+  const red = /** @type {PlainRed} */ ({ code: String(r?.code ?? ''), path: String(r?.path ?? ''), detail: String(r?.detail ?? '') });
+  if (red.code.startsWith('rubric-')) return fullText(red.detail);
+  return isRubricShape(red) ? rubricShapeSentence(red) : safeText(red.detail);
+}
+
 /** the stops this module explains in plain words */
 export const PLAIN_PROPOSAL_STOPS = Object.freeze(['proposal-invalid', 'rubric-invalid']);
 
@@ -582,10 +656,11 @@ const SCOUT_REASON_RE = /^the survey is [^(]*\((.*)\) — an absent facts/s;
 
 /**
  * @param {{stop: string, reds?: PlainRed[]|null, refusal?: {detail?: string}|null,
- *   spend?: {knownUsd?: number|null, spendComplete?: boolean|null}|null}} o
+ *   spend?: {knownUsd?: number|null, spendComplete?: boolean|null}|null, wholeJob?: boolean}} o `wholeJob` - a rubric job on the person's
+ *   own inputs (PART 1c, I1): a failed draft asks nothing piecemeal; the person reviews the whole job and submits it again
  * @returns {string}
  */
-export function draftStopText({ stop, reds = null, refusal = null, spend = null }) {
+export function draftStopText({ stop, reds = null, refusal = null, spend = null, wholeJob = false }) {
   const spent = spendText(spend);
   /** @type {Record<string, string>} */
   const heads = {
@@ -596,7 +671,7 @@ export function draftStopText({ stop, reds = null, refusal = null, spend = null 
     'max-revisions': 'The AI used all its tries without a plan that passed the checks.',
     precheck: 'Drafting stopped before any call: something it needs was missing.',
     unchanged: 'Drafting stopped: the AI sent the same plan twice.',
-    'scout-absent': 'Drafting stopped: the first look at your repo did not complete.',
+    'scout-absent': 'Drafting stopped: the first look at your repo or input did not complete.',
   };
   const redList = Array.isArray(reds) ? reds : [];
   // F217: the first look at the repo failing (a dropped connection, a timeout) arrives as a `precheck` stop with a
@@ -608,7 +683,7 @@ export function draftStopText({ stop, reds = null, refusal = null, spend = null 
   const said = scoutRed
     ? [SCOUT_REASON_RE.exec(String(scoutRed.detail ?? ''))?.[1]
       ?.replace(/\s+/g, ' ').trim().slice(0, 240) ?? safeText(scoutRed.detail)].map((x) => redactSecrets(x)).filter(Boolean)
-    : [...new Set(redList.map((r) => safeText(r?.detail)).filter(Boolean))];
+    : [...new Set(redList.map((r) => said1(r)).filter(Boolean))];
   if (said.length === 0 && refusal?.detail) said.push(safeText(refusal.detail));
   const lines = [`${head} Spent so far: ${spent ?? 'unknown'}.`];
   if (said.length) {
@@ -616,7 +691,9 @@ export function draftStopText({ stop, reds = null, refusal = null, spend = null 
     for (const x of said.slice(0, PLAIN_MAX_BULLETS)) lines.push(` • ${x}`);
     if (said.length > PLAIN_MAX_BULLETS) lines.push(` • …and ${said.length - PLAIN_MAX_BULLETS} more.`);
   }
-  lines.push(stop === 'cap-halt' || stop === 'pricing-red' ? 'What to do: raise the cap or fix the price in Settings, then draft again.' : 'What to do: draft again.');
+  lines.push(stop === 'cap-halt' || stop === 'pricing-red'
+    ? 'What to do: raise the cap or fix the price in Settings, then draft again.'
+    : (wholeJob ? 'What to do: review the whole job - every line and its ~ rules, and the inputs - and submit it again.' : 'What to do: draft again.'));
   return lines.join('\n');
 }
 
@@ -716,6 +793,10 @@ const SIGNING_TABLE = [
     say: () => ['The judge model could not be reached or was cut off while the practice cases were graded. Nothing says the rubric is wrong.'], todo: 'try again in a few minutes' },
   { kind: 'artifact-red', when: (r) => r.code === 'artifact-red',
     say: () => ['The judge model answered with something bareloop could not read while the practice cases were graded. Nothing says the rubric is wrong.'], todo: 'try again' },
+  // M2: a rubric job's check has no install/build/test commands to blame — its own wording, never the code-job one
+  { kind: 'broken-close-rubric', when: (r) => r.code === 'broken-close' && r.rubricJob === true,
+    say: (r) => [`A check of the close (${safeText(r.path.split('.').pop() ?? '')}) could not run, so nothing it reported could be trusted.`],
+    todo: 'draft again; if it fails the same way, report the check named above' },
   { kind: 'broken-close', when: (r) => r.code === 'broken-close',
     say: (r) => [`A check of the close (${safeText(r.path.split('.').pop() ?? '')}) cannot run on this repository, so nothing it reported could be trusted.`],
     todo: 'check that the project\'s tools (its install, build and test commands) run, then try again' },
@@ -726,6 +807,9 @@ const SIGNING_TABLE = [
   { kind: 'judged-outside-fence', when: (r) => r.code === 'judged-outside-write-scope',
     say: (r) => [`The rubric check looks at ${listText(r.outside)}, but the job may only edit ${listText(r.fence)} — so the run could never fix what it finds.`],
     todo: 'draft again' },
+  // Part 1a: the rubric-step sorting reds are already whole sentences in the person's words (src/rubricstep.js `checkRubricParts`)
+  { kind: 'rubric-part', when: (r) => r.code.startsWith('rubric-'), say: (r) => [fullText(r.detail)], todo: 'draft again, or reword that line' },
+  { kind: 'rubric-shape', when: isRubricShape, say: (r) => [rubricShapeSentence(r)], todo: 'draft again, or reword that line' },
   { kind: 'declaration', when: (r) => DECLARATION_CODES.includes(r.code) && !(r.code === 'invalid-value' && r.path === 'card'),
     say: (r) => [`The close the model wrote was refused before anything ran ("${safeText(r.code)}" at ${safeText(r.path)}).`], todo: 'draft again' },
 ];
