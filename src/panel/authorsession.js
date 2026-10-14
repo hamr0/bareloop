@@ -945,7 +945,6 @@ export function createSession(card, deps = {}) {
       model: modelChoice.name,
       // the "Thinking on" tick is signed ONLY when ticked (unticked writes no field: the hash stays what it would have been)
       ...(card.thinking === true && draftThinkingPlan?.support !== false ? { thinking: true } : {}),
-      cadence: { unit: 'day', every: 1 },
       budgetUsd: card.capUsd,
       ...(typeof card.maxWallMs === 'number' ? { maxWallMs: card.maxWallMs } : {}),
       writeScope,

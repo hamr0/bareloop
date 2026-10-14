@@ -42,13 +42,14 @@ import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
 import { jobSpecHash, workflowKey } from '../job.js';
 import { confirmProtections } from '../authorflow.js';
+import { createScheduleDoor } from './schedules.js';
 import { createAuthorRoutes, mintToken, checkHostGuard, panelMoney2 } from './authorroutes.js';
 import { createRunRoutes } from './runroutes.js';
 import { createImportRoutes, readImports, bundleStatus, IMPORT_CHANGED_LINE } from './importroutes.js';
 import { parseImportedRunId, safeSpinePath, spineStartedAt } from './importrun.js';
 import { checkBundleDeps, resolveBundleSpec } from '../bundle.js';
 import { checkCloseByteSignature } from '../close-integrity.js';
-import { keysHome } from '../keysfile.js';
+import { keysHome, keysForDoor } from '../keysfile.js';
 import { rowsForHome, findRow, modelChoiceFor, tickedLines, endpointOf } from '../providerrows.js';
 import { SHAPES } from '../providershapes.js';
 import { resolveProvider } from '../providers.js';
@@ -2676,6 +2677,27 @@ export function getStartFrom(runid, opts = {}) {
 }
 
 /**
+ * T Part 3: a job's listed runs, newest first, each with its signed spec (null when not on disk), its terminal outcome and
+ * its parsed spine. The schedule door's gate (`greenFor`) reads this; nothing here builds a run context.
+ * @param {string} job
+ * @param {{ home?: string }} [opts]
+ * @returns {{runid: string, outcome: string|null, spec: any, records: any[]}[]}
+ */
+export function jobRunsOf(job, opts = {}) {
+  const { rows } = readRunList(opts);
+  /** @type {{runid: string, outcome: string|null, spec: any, records: any[]}[]} */
+  const out = [];
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    const row = rows[i];
+    if (!row || row.job !== job || !existsSync(row.spine)) continue;
+    let records;
+    try { records = parseJsonl(row.spine).records; } catch { continue; }
+    out.push({ runid: row.runid, outcome: legsOf(records).at(-1)?.outcome ?? null, spec: signedSpecForRun(row, records)?.spec ?? null, records });
+  }
+  return out;
+}
+
+/**
  * The Reuse workflow picker's list: one entry per JOB (same-job identity = `workflowKey`, the one `getStartFrom` uses)
  * that has at least one GREEN local run, newest green first. `runid` = that job's newest green run, so the page hands
  * it to the existing start-from flow unchanged; `line` is `getStartFrom`'s own estimate line (never a second
@@ -3049,7 +3071,16 @@ export function createPanelServer(opts = {}) {
     server.listen(requestedPort, '127.0.0.1', () => {
       const addr = server.address();
       boundPort = typeof addr === 'object' && addr !== null ? addr.port : requestedPort;
+      const schedules = createScheduleDoor({
+        home,
+        sessionsRoot: opts.sessionsRoot,
+        jobRuns: (job) => jobRunsOf(job, { home }),
+        startFrom: (runid) => getStartFrom(runid, { home }),
+        jobOfRun: (runid) => readRunList({ home }).rows.find((r) => r && r.runid === runid)?.job ?? null,
+        rowsFor: () => rowsForHome(keysHome(home), keysForDoor({ env: opts.env, keysHome: home }).env),
+      });
       authorRoutes = createAuthorRoutes({
+        schedules,
         port: boundPort,
         token,
         env: opts.env,

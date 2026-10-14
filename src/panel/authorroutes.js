@@ -26,7 +26,7 @@ import { planMatchesClose } from '../rubricstep.js';
 import { createSession, validateJobCard, validateReuseCard, lockedFieldChanged, buildReuseSpec, cardFields, STEP_LABELS } from './authorsession.js';
 import { parseInputs } from '../jobblock.js';
 import { proveInputFiles, looksLikeRubricInput } from '../source.js';
-import { validateJob } from '../job.js';
+import { validateJob, workflowKey } from '../job.js';
 import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
 import { ConfigError } from '../config.js';
 import { keysForDoor, keysHome } from '../keysfile.js';
@@ -95,6 +95,7 @@ const TERMINAL_PHASES = new Set(['refused', 'abandoned', 'error', 'signed', 'sig
  * @param {{ port: number, token: string, env?: Record<string,string|undefined>,
  *   sessionsRoot?: string, spawnFn?: typeof realSpawn, bareloopBin?: string,
  *   jobsDir?: string, fetchImpl?: typeof fetch, home?: string,
+ *   schedules?: ReturnType<typeof import('./schedules.js').createScheduleDoor>,
  *   startFrom?: {get: (runid: string, o?: {model?: string}) => any, getImport: (id: string, o?: {model?: string}) => any, listJobs?: (o?: {model?: string}) => any[]} }} opts
  */
 export function createAuthorRoutes(opts) {
@@ -221,6 +222,8 @@ export function createAuthorRoutes(opts) {
         ok: true, origin: pre.origin, card: pre.card, from: pre.from, note: pre.note,
         locked: pre.locked, open: pre.open, specHash: pre.specHash, workflowKey: pre.workflowKey, trackRecord: pre.trackRecord,
         line: pre.line, specNamesModel: pre.specNamesModel, specWorker: pre.specWorker,
+        // T Part 3: `mode=schedule` also returns the job's current schedule (data only) for the When field's prefill
+        ...(sp.get('mode') === 'schedule' && opts.schedules ? { schedule: opts.schedules.read(pre.origin.job) } : {}),
       });
       return true;
     }
@@ -233,6 +236,17 @@ export function createAuthorRoutes(opts) {
       const sp = new URL(/** @type {string} */ (req.url), 'http://127.0.0.1').searchParams;
       const asModel = sp.has('model') ? { model: sp.get('model') ?? '', provider: sp.get('provider') ?? '' } : {};
       send(200, { ok: true, jobs: opts.startFrom.listJobs(asModel) });
+      return true;
+    }
+
+    // ── T Part 3: the schedule door, two clicks, both $0 (no drafter, no run, no provider call). Click 1 signs and
+    // writes nothing; click 2 carries the hash it was shown. `when: null` cancels (never refused). Placed with the
+    // other exact matches, before the session regex below.
+    if (pathname === '/api/author/schedule-prepare' || pathname === '/api/author/schedule') {
+      if (!opts.schedules) { send(404, { ok: false, error: 'not found' }); return true; }
+      if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
+      const r = pathname.endsWith('-prepare') ? opts.schedules.prepare(body ?? {}) : opts.schedules.set(body ?? {});
+      send(r.status, r.body);
       return true;
     }
 
@@ -336,7 +350,7 @@ export function createAuthorRoutes(opts) {
     }
     if (sub === 'sign') {
       const claimedHash = String(body?.specHash ?? '');
-      const r = signRun(session, claimedHash, { env: envNow(), spawnFn, bareloopBin, sessionsRoot: opts.sessionsRoot, home: opts.home });
+      const r = signRun(session, claimedHash, { env: envNow(), spawnFn, bareloopBin, sessionsRoot: opts.sessionsRoot, home: opts.home, ...(opts.schedules ? { schedules: opts.schedules } : {}) });
       send(r.ok ? 200 : 400, r);
       return true;
     }
@@ -378,7 +392,7 @@ export function panelMoney2(n) {
  * it to sign"), and this is where it is checked, not trusted.
  * @param {ReturnType<typeof createSession>} session
  * @param {string} claimedHash
- * @param {{env: any, spawnFn: typeof realSpawn, bareloopBin: string, sessionsRoot?: string, home?: string}} o
+ * @param {{env: any, spawnFn: typeof realSpawn, bareloopBin: string, sessionsRoot?: string, home?: string, schedules?: {clearIfEdited: (job: string, key: string) => boolean}}} o
  * @returns {{ok: boolean, error?: string, job?: string}}
  */
 export function signRun(session, claimedHash, o) {
@@ -439,6 +453,14 @@ export function signRun(session, claimedHash, o) {
     detached: true, stdio: ['ignore', logFd ?? 'ignore', logFd ?? 'ignore'], env: o.env,
   });
   if (typeof child?.unref === 'function') child.unref();
+  // T (D.7): signing an EDIT of a scheduled job clears its schedule back to by hand. A Reuse or a hand run of the same
+  // workflow has the same workflow key and clears nothing. After the spawn: a refusal above never reaches here.
+  if (o.schedules) {
+    try {
+      const signed = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
+      if (typeof signed?.job === 'string') o.schedules.clearIfEdited(signed.job, workflowKey(signed));
+    } catch { /* an unreadable spec was already refused above; the schedule stays */ }
+  }
   session.state.phase = 'signed';
   // hamr 2026-10-05: the sign shows as the last step of the one progress list, never as a thread bubble
   // hamr 2026-10-05 (option A): the drafting-spend line is that step's detail — nothing when there was no drafting spend (a Reuse)

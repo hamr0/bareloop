@@ -18,6 +18,7 @@ import { globToPrefix, scopeContained, isObj, isNonEmptyString, sweepSecretLiter
 import { validateCloseDecl, DECLARED_CLOSE_CLASSES } from './declaredclose.js';
 import { inputLabelsOf } from './rubricstep.js';
 import { CLOSE_TIMEOUT_FLOOR_MS } from './closetimeout.js';
+import { validateTrigger } from './trigger.js';
 
 // The menus below ARE the close-authoring hierarchy (PRD §7) and ship frozen:
 // they are read at call time, so a mutable export would let adopter code
@@ -168,7 +169,7 @@ export const CONDITION_KEYS = Object.freeze(['providerPath', 'closeVerbosity', '
 // `steps` stays in the field list ONLY so a retired spec reds by name
 // (`shape-retired`) instead of falling through to a generic unknown-field —
 // the operator gets told what happened, not just that something is wrong.
-const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'baseUrl', 'conditions', 'cadence', 'budgetUsd', 'maxWallMs', 'closeTimeoutMs', 'model', 'thinking', 'judge', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools', 'jobLines', 'inputs'];
+const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'baseUrl', 'conditions', 'cadence', 'trigger', 'budgetUsd', 'maxWallMs', 'closeTimeoutMs', 'model', 'thinking', 'judge', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools', 'jobLines', 'inputs'];
 /** the exact fields of a signed `judge` override — nested objects red unknown
  * keys too, because no smuggling level exists in a signed spec */
 const JUDGE_FIELDS = ['provider', 'model'];
@@ -278,15 +279,25 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
     }
   }
 
-  if (spec.cadence === undefined) red('missing-required', 'cadence');
-  else if (!isObj(spec.cadence)) red('invalid-value', 'cadence', 'object of {unit, every}');
-  else {
-    const cad = spec.cadence;
-    for (const key of Object.keys(cad)) {
-      if (key !== 'unit' && key !== 'every') red('unknown-field', `cadence.${key}`, 'nested objects red unknown keys too — no smuggling level exists in a signed spec');
+  // T (PRD v1.99): `cadence` is no longer required. A spec signed before triggers keeps its `cadence` (still validated
+  // when present, read as by hand, never rewritten, never re-hashed); a new spec carries none.
+  if (spec.cadence !== undefined) {
+    if (!isObj(spec.cadence)) red('invalid-value', 'cadence', 'object of {unit, every}');
+    else {
+      const cad = spec.cadence;
+      for (const key of Object.keys(cad)) {
+        if (key !== 'unit' && key !== 'every') red('unknown-field', `cadence.${key}`, 'nested objects red unknown keys too — no smuggling level exists in a signed spec');
+      }
+      if (!CADENCE_UNITS.includes(cad.unit)) red('invalid-value', 'cadence.unit', CADENCE_UNITS.join('|'));
+      if (!(Number.isInteger(cad.every) && cad.every >= 1 && cad.every <= 30)) red('bounds', 'cadence.every', '1..30');
     }
-    if (!CADENCE_UNITS.includes(cad.unit)) red('invalid-value', 'cadence.unit', CADENCE_UNITS.join('|'));
-    if (!(Number.isInteger(cad.every) && cad.every >= 1 && cad.every <= 30)) red('bounds', 'cadence.every', '1..30');
+  }
+
+  // T: the trigger the person signed (a typed object, never cron text). ABSENT = by hand. Set only by the panel's
+  // two-click schedule door; the agent never writes it (assembleSpec refuses a draft that carries it).
+  if (spec.trigger !== undefined) {
+    const tv = validateTrigger(spec.trigger);
+    if (!tv.ok) red(tv.code, tv.path, tv.say);
   }
 
   if (spec.budgetUsd === undefined) red('missing-required', 'budgetUsd');
@@ -932,6 +943,13 @@ export function jobSpecHash(job) {
 export const REUSE_OPEN_SPEC_FIELDS = Object.freeze(['source', 'destination', 'writeScope', 'budgetUsd', 'maxWallMs', 'inputs']);
 
 /**
+ * The signed spec's schedule fields: {@link workflowKey} ignores them too, so a scheduled spec keeps the workflow
+ * key of the green run it was scheduled from (else Reuse would refuse every scheduled spec). They stay inside
+ * {@link jobSpecHash}. Kept apart from {@link REUSE_OPEN_SPEC_FIELDS}, which names the Reuse boxes.
+ */
+export const SCHEDULE_SPEC_FIELDS = Object.freeze(['trigger']);
+
+/**
  * The worker-identity fields {@link workflowKey} ALSO ignores (hamr 2026-10-04: Model is open on a reuse; the Name
  * chosen in Settings carries its provider and baseUrl with it). They stay inside {@link jobSpecHash}, so what the person
  * signs still covers the model the run will use. Kept apart from {@link REUSE_OPEN_SPEC_FIELDS} on purpose: those are the
@@ -954,7 +972,7 @@ export function workflowKey(job) {
   try {
     /** @type {any} */
     const rest = isObj(job) ? { ...job } : job;
-    if (isObj(rest)) for (const f of [...REUSE_OPEN_SPEC_FIELDS, ...WORKFLOW_KEY_IDENTITY_FIELDS]) delete rest[f];
+    if (isObj(rest)) for (const f of [...REUSE_OPEN_SPEC_FIELDS, ...WORKFLOW_KEY_IDENTITY_FIELDS, ...SCHEDULE_SPEC_FIELDS]) delete rest[f];
     c = canon(resolveSpec(rest));
   } catch { c = '\u0000unhashable'; }
   return createHash('sha256').update(`workflow-key-v1\n${c}`).digest('hex');

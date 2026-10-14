@@ -51,6 +51,17 @@ export function doorRecordOf(events) {
 }
 
 /**
+ * Was this run's door ACCEPTED, honoured? A `door-decision` record with `decision: 'accept'` and `honoured: true`
+ * (written by {@link answerReviewDoor}, whichever surface asked: the CLI, or the panel's Accept). Pure, off the
+ * run's spine. A refused accept (`honoured: false`) does not count.
+ * @param {any[]} events the run's spine, parsed
+ * @returns {boolean}
+ */
+export function doorAccepted(events) {
+  return Array.isArray(events) && events.some((e) => e?.type === 'door-decision' && e.decision === 'accept' && e.honoured === true);
+}
+
+/**
  * IS THE DOOR STILL OPEN? The same 60-day TTL a hitl checkpoint keeps
  * (`PAUSE_TTL_MS`) and deliberately the same NUMBER — the door replaced `cancel`
  * precisely because an unanswered door and an unresumed pause are one state, and

@@ -7,6 +7,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **A job can be scheduled from the panel (T, Part 3 of 8; panel-only, nothing fires yet).** A signed spec may carry a `trigger` (`daily`, `weekdays`, `weekly`, `new-file` folder, `file-updated` file), set only by a two-click, $0 door (`POST /api/author/schedule-prepare`, then `POST /api/author/schedule` with the hash it showed; `when: null` cancels and is never refused). It needs a real green run of the job's current workflow (a rubric job also needs an honoured Accept). Files live under `~/.config/bareloop/triggers/<job>/` (`schedule.json`, one `ledger.jsonl` whose rows all carry the signature). The agent never writes a trigger: a draft that carries one is refused by name. `workflowKey` ignores `trigger`; `cadence` is no longer required (an old spec keeps it, still valid, same hash) and new specs no longer write it.
+
 ### Changed
 
 - **Runs-list card money names the drafting share.** The short form reads `$0.22 (drafting <$0.01)` (was `$0.22 (<$0.01)`, the bracket's meaning unclear); a floor reads `(drafting at least $X)`. The long form `($X drafting)` is unchanged.
