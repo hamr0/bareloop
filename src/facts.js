@@ -277,7 +277,7 @@ export function factShapeFields() {
   if (!Array.isArray(kinds) || !presence?.fields?.phrases) throw new Error('bareguard\'s rubric vocabulary has no cited decide shapes — update src/facts.js factShapeFields');
   const bindOnlyKind = find(/^valueKind (\w+) is bind-only: it refuses op, value, lo, hi, currency and unit/)[1];
   const untilKind = find(/^until is allowed only on a (\w+) decide that also signs an anchor/)[1];
-  const moneyKind = find(/^(\w+) needs exactly one of currency or unit/)[1];
+  const moneyKind = find(/^(\w+) needs (?:exactly|at least) one of currency or unit/)[1];
   /** @type {Record<string, string[]>} */
   const out = {};
   for (const k of kinds) {
