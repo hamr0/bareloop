@@ -3411,11 +3411,12 @@ key you want first (the panel picks the row by the Model menu).
 - **`bareloop panel [--port N]`** (PANEL-BUILD.md P1) → a READ-ONLY `node:http` server
   (no new dependency), bound to `127.0.0.1` ONLY, default port `4700`. Serves the panel's
   look (Tokyo Night box-drawing TUI style) over the run list's real data: `GET /` the page;
-  `GET /api/runs` (newest first, each row enriched with a glyph/check-type/spend/wall
-  summary, `fileMissing:true` when the listed spine is gone — the client groups this SAME
-  list by job for the left pane's "Workflows" view and renders it flat for "History", both
-  behind one `Runs` tab toggle; there is no separate `/api/workflows` endpoint, deleted in
-  the P1 Runs-tab merge); `GET /api/runs/:runid` (the full replay — parts/steps, counters,
+  `GET /api/runs` (P9 v2: `{runs, jobs, limits}`; `runs` newest first, each row enriched with a glyph/check-type/spend/wall
+  summary, `fileMissing:true` when the listed spine is gone, and the states the left list draws, all decided by the server:
+  `live`, `liveWhy` (`step N of M`), `liveSince`/`priorWallMs`, `needs` (`'Resume'` while the engine would accept a resume and
+  the run stopped under 7 days ago; `'Accept'` is not produced yet), `stoppedAt`; `jobs` = `[{job, headRunid, quiet, activityMs}]`
+  newest activity first; `limits` = `{quietDays:30, olderRuns:7, needsYouDays:7}`. The page groups `runs` by `jobs` into Running now,
+  Needs you, Jobs and a quiet fold; there is no Workflows / History switch and no separate `/api/workflows` endpoint); `GET /api/runs/:runid` (the full replay — parts/steps, counters,
   summary, model/provider/judge). Every `GET /api/runs` row and the detail carry `runNo` (P6 item 7): runs of one job are numbered
   oldest `at` first by ONE server function (`runNumbers`), and the page names a run `job (run-N)`; the run id stays in the Audit
   tab and every command line. A run that came out of a panel drafting session also carries the DRAFTING part as the FIRST element of
