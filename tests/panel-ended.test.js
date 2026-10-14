@@ -518,10 +518,11 @@ test('page: renderEnded paints ENDED and NEXT as text only (Resume lives in the 
   assert.equal(pg2.document.getElementById('ended-block').hidden, true, 'no Ended block while a run is live');
 });
 
-test('page: renderRun calls renderEnded (an engine with a caller), and the run card carries the endedLine under the job name', () => {
+test('page: renderRun calls renderEnded (an engine with a caller), and the list cards carry the endedLine', () => {
   assert.match(fnSrc('renderRun'), /renderEnded\(detail\);/);
-  assert.match(PAGE, /r\.status \? '<span class="wf-ended"[^]*?statusWordHtml\(r\.status, r\.endedLine\)/);
-  assert.match(PAGE, /g\.lastStatus \? '<span class="wf-ended wf-ended-inline"[^]*?statusWordHtml\(g\.lastStatus, g\.lastEndedLine\)/);
+  // the list's run card and job card carry the endedLine (the reason) from the server's row
+  assert.match(fnSrc('rlRunParts'), /p\.why = r\.endedLine \|\|/);
+  assert.match(fnSrc('rlJobCardHtml'), /rlRunParts\(h\)/);
 });
 
 // Q2(b) (hamr 2026-10-11): the Resume card learns from start-from whether the signed spec names a model; the resume of a

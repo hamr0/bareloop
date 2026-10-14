@@ -146,7 +146,7 @@ test('page: a live card reads "$X so far · running Ym" — the SAME strings the
 test('page: a starting row reads "starting…", and the card/pane have a starting branch', () => {
   const f = cardFns();
   assert.equal(f.rowSpendText({ starting: true, glyph: '▶' }), 'starting…');
-  assert.match(PAGE, /data-testid="hist-starting-/);
+  assert.match(fnSrc('rlRunParts'), /p\.why = "starting…"/);
   assert.match(fnSrc('renderRun'), /if\(detail\.starting\)\{/);
   assert.match(fnSrc('renderRun'), /starting… the run has not written its log yet/);
 });

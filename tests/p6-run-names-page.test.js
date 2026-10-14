@@ -25,25 +25,23 @@ const RUN = {
   spentUsd: 3.5, spendComplete: true, wallMs: 600000, date: '2026-10-04', resumedCount: 0, died: false,
 };
 
-function rowBuilder() {
-  const names = ['escapeXml', 'runLabel', 'runName', 'glyphClass', 'statusWordHtml', 'panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText', 'resumedTagHtml', 'buildRunRowEl'];
+function cards() {
+  const names = ['escapeXml', 'runLabel', 'glyphClass', 'panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText', 'rlShortDate', 'runAtText', 'rlRunParts', 'rlRunCardHtml'];
   // eslint-disable-next-line no-new-func
-  return new Function('document', 'selectRun', 'scrollRunIntoViewMobile', `var currentRunid = null;\n${names.map(fnSrc).join('\n')}\nreturn buildRunRowEl;`)(
-    { createElement: () => mk('r'), getElementById: () => mk('x') }, () => {}, () => {});
+  return new Function(`${names.map(fnSrc).join('\n')}\nreturn rlRunCardHtml;`)();
 }
+const stripIds = (html) => html.replace(/data-(testid|rl-run)="[^"]*"/g, '');
 
-test('run names: the History card and an expanded row read run-N, never the run id', () => {
-  const card = rowBuilder()(RUN).innerHTML;
-  assert.match(card, /my-job \(run-3\)/);
-  assert.doesNotMatch(card.replace(/data-testid="[^"]*"/g, ''), /mujjtrvd/);
-  const compact = rowBuilder()(RUN, true).innerHTML;
-  assert.match(compact, /\(run-3\)<\/span>/);
-  assert.match(compact, /\$3\.50<\/span>/);
-  assert.doesNotMatch(compact.replace(/data-testid="[^"]*"/g, ''), /mujjtrvd/);
+test('run names: a run card reads run-N (the full `job (run-N)` is its title), never the run id', () => {
+  const card = cards()({ ...RUN, at: '2026-10-04T10:00:00.000Z', wall: '10m00s' }, false, false);
+  assert.match(card, /class="rl-rn">run-3</);
+  assert.match(card, /title="my-job \(run-3\)"/);
+  assert.match(card, /\$3\.50/);
+  assert.doesNotMatch(stripIds(card), /mujjtrvd/);
 });
 
 test('run names: a run with no number (an imported bundle run) falls back to its id', () => {
-  assert.match(rowBuilder()({ ...RUN, runNo: undefined, runid: 'imp~r9' }).innerHTML, /my-job \(imp~r9\)/);
+  assert.match(cards()({ ...RUN, runNo: undefined, runid: 'imp~r9', at: '2026-10-04T10:00:00.000Z' }, false, false), /title="my-job \(imp~r9\)"/);
 });
 
 test('run names: the right-side header reads job (run-N) on every branch of renderRun', () => {
@@ -65,9 +63,8 @@ test('run names: the right-side header reads job (run-N) on every branch of rend
   assert.equal(els['active-wf-name'].textContent, 'my-job (run-3)');
 });
 
-test('run names: the workflow row names its latest run run-N; Resume and Reuse texts keep the real id', () => {
-  assert.match(PAGE, /var wfFullName = runName\(g\.job, g\.lastRunNo, g\.lastRunid\);/);
-  assert.match(PAGE, /lastRunNo: last\.runNo,/);
+test('run names: the run card names its run run-N from the server\'s runNo; Resume and Reuse texts keep the real id', () => {
+  assert.match(fnSrc('rlRunParts'), /var rn = runLabel\(r\.runNo, r\.runid\);/);
   assert.ok(PAGE.includes('title: detail.job + " (" + runLabel(detail.runNo, detail.runid) + ")"'), 'the RESUME card title names the run run-N');
   assert.match(PAGE, /"latest green run here, " \+ \(run\.runid/);
   assert.match(PAGE, /" · run " \+ r\.runid/);
