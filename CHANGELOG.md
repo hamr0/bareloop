@@ -24,6 +24,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **Search reads the whole visible row** (job, run-N, run id, model, status word, reason, date, cost, wall, check type); a matching run is marked with a blue bar, never selected, and the fold opens on it. The search box placeholder is shorter.
 - **`GET /api/runs` now returns `{runs, jobs, limits}`.** The server decides live, needs-you, each job's newest run, the quiet split and the limits; the page works out nothing.
 
+### Fixed
+
+- **A rubric job signed without an explicit `judge` can be scheduled and reused.** `workflowKey` now hashes the RESOLVED judge of a soft-green spec (the runner's `resolveJobJudge`), so a missing judge and its pinned default (what Schedule run and Reuse sign) are one workflow; an explicitly different judge is another, and deterministic keys are unchanged. Before, Schedule run (and Reuse) of such a job was refused with "not the one that had the good run" after an honoured Accept (mv76m82c). Soft-green keys differ from before, so a schedule saved by an earlier build for a judge-less rubric job needs re-signing.
+
 ## [0.42.0] - 2026-10-14
 
 ### Added

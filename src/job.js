@@ -19,6 +19,7 @@ import { validateCloseDecl, DECLARED_CLOSE_CLASSES } from './declaredclose.js';
 import { inputLabelsOf } from './rubricstep.js';
 import { CLOSE_TIMEOUT_FLOOR_MS } from './closetimeout.js';
 import { validateTrigger } from './trigger.js';
+import { resolveJobJudge } from './judged.js';
 
 // The menus below ARE the close-authoring hierarchy (PRD §7) and ship frozen:
 // they are read at call time, so a mutable export would let adopter code
@@ -963,7 +964,8 @@ export const WORKFLOW_KEY_IDENTITY_FIELDS = Object.freeze(['provider', 'baseUrl'
  * share a workflow key iff they ran the same goal, checks, guardrails and close — whatever source they ran on, wherever they wrote, whatever caps they had.
  * It is NOT a signature: {@link jobSpecHash} (which covers the caps and the fence) stays what the person signs, and
  * a reuse lands on a NEW jobSpecHash with the SAME workflowKey. Same never-throws contract as `jobSpecHash`, and
- * the same resolved-`tools` form, so an omitted-`tools` spec and its spelled-out menu share a key.
+ * the same resolved-`tools` form, so an omitted-`tools` spec and its spelled-out menu share a key. A soft-green spec keys on its
+ * RESOLVED judge identity (an absent `judge` is its worker's), so pinning the default judge never changes the key.
  * @param {object} job
  * @returns {string} sha256 hex
  */
@@ -972,6 +974,13 @@ export function workflowKey(job) {
   try {
     /** @type {any} */
     const rest = isObj(job) ? { ...job } : job;
+    // A RUBRIC job's judge defaults to its own worker. The worker identity is dropped below, so resolve the judge FIRST
+    // (the runner's one spelling) and key on that: a spec with no `judge` and the same spec with the judge pinned to
+    // its default (what a reuse/schedule signs) are one workflow; an explicitly different judge is another.
+    // Deterministic specs have no judge, so their key is untouched. An unresolvable judge leaves the spec as signed.
+    if (isObj(rest) && rest.verdictType === 'soft-green') {
+      try { rest.judge = resolveJobJudge(/** @type {any} */ (rest), /** @type {any} */ (rest.provider), resolveWorkerModel); } catch { /* validateJob reds it */ }
+    }
     if (isObj(rest)) for (const f of [...REUSE_OPEN_SPEC_FIELDS, ...WORKFLOW_KEY_IDENTITY_FIELDS, ...SCHEDULE_SPEC_FIELDS]) delete rest[f];
     c = canon(resolveSpec(rest));
   } catch { c = '\u0000unhashable'; }

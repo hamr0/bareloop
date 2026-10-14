@@ -12,6 +12,8 @@ import {
   keysHome, makeRun, panel, specOf, tmp,
 } from './trigger-world.mjs';
 
+// the deterministic key as computed BEFORE the judge-resolving fix: it must never move
+const DET_KEY = 'e450074cce6af8b0d58a4a68d853f5847026246a733c85df1b7983bd51bd681d';
 const DAILY = { kind: 'daily', hour: 9, minute: 0 };
 const card = (o = {}) => ({ inputs: 'notes: /tw/in/notes.txt', destination: 'output/', capUsd: 1.5, maxWallMs: 600000, ...o });
 /** a home with one plain-files rubric job: a green run, accepted */
@@ -22,6 +24,29 @@ function world({ files = true, outcome = 'green', accepted = true, job = 'sched-
   return { home, spec, runid: `${job}-r1`, triggers: join(home, 'triggers', job) };
 }
 const ledgerRows = (w) => readLedger(join(w.triggers, 'ledger.jsonl')).rows;
+
+test('a rubric job signed with NO explicit judge can be scheduled after its Accept (mv76m82c): same workflow key, not refused', async () => {
+  const home = keysHome();
+  const spec = specOf({ job: 'nojudge', files: true, judge: false });
+  assert.equal('judge' in spec, false);
+  makeRun(home, { runid: 'nojudge-r1', spec, outcome: 'green', accepted: true });
+  const p = await panel({ home });
+  const r = await p.post('/api/author/schedule-prepare', { runid: 'nojudge-r1', when: DAILY, ...card() });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.words, 'Every day at 09:00');
+});
+
+test('workflowKey: a missing judge and its resolved default share a key; a different judge does not; a deterministic key is unchanged', () => {
+  const bare = specOf({ files: true, judge: false });
+  const pinned = { ...bare, judge: { provider: 'anthropic-api', model: 'claude-sonnet-5' } };
+  const other = { ...bare, judge: { provider: 'anthropic-api', model: 'claude-haiku-4-5' } };
+  assert.equal(workflowKey(bare), workflowKey(pinned));
+  assert.notEqual(workflowKey(bare), workflowKey(other));
+  // a pinned judge keeps the key when the worker model changes (Model is open on a reuse)
+  assert.equal(workflowKey(pinned), workflowKey({ ...pinned, model: 'claude-haiku-4-5' }));
+  const det = specOf({ files: false });
+  assert.equal(workflowKey(det), DET_KEY);
+});
 
 test('no good run: refused with the fixed sentence, nothing written (deterministic outcome not green)', async () => {
   const w = world({ outcome: 'cap-halt' });

@@ -40,14 +40,14 @@ export function clock(start = Date.UTC(2026, 9, 14, 12, 0, 0)) {
 }
 
 /** a valid signed spec: plain-files rubric (`files: true`) or a repo-shaped deterministic job */
-export function specOf({ job = 'sched-job', files = false, goal = 'summarise the input', cap = 1.5, input = null } = {}) {
+export function specOf({ job = 'sched-job', files = false, goal = 'summarise the input', cap = 1.5, input = null, judge = true } = {}) {
   return {
     schema: 'job-v1', job, description: 'd', provider: 'anthropic-api', model: 'claude-sonnet-5', budgetUsd: cap, maxWallMs: 600000,
     writeScope: files ? ['output/'] : ['src/'], goal, verdictType: files ? 'soft-green' : 'green',
     close: [{ name: 'suite-green', cmd: 'npm test', expect: 0, sha256: 'a'.repeat(64) }],
     tools: ['read', 'grep', 'write', 'edit'], escalation: { mode: 'decision-ready' },
-    // a signed rubric job always names its judge (a reuse of one without would pin it and change the workflow key)
-    ...(files ? { judge: { provider: 'anthropic-api', model: 'claude-sonnet-5' } } : {}),
+    // `judge: false` is the real shape of a panel-signed rubric job: no explicit judge (it defaults to the worker's)
+    ...(files && judge ? { judge: { provider: 'anthropic-api', model: 'claude-sonnet-5' } } : {}),
     inputs: [{ n: 1, label: files ? 'notes' : 'repo', value: input ?? (files ? '/tw/in/notes.txt' : '/tw/repo') }],
   };
 }
