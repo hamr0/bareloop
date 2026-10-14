@@ -29,6 +29,9 @@ const LOG_TAIL_BYTES = 4000;
 /** how long a resume waits for an early engine exit before reporting "started" (ms) */
 export const DEFAULT_SETTLE_MS = 6000;
 
+/** how long an Accept waits for the engine's answer (it re-runs the mechanical close stages) before saying it is still checking (ms) */
+export const DEFAULT_ACCEPT_WAIT_MS = 5 * 60_000;
+
 /**
  * The next free `resolved-spec-r<k>.json` name in `dir` (k from 1) — never an existing one.
  * @param {string} dir
@@ -62,7 +65,9 @@ function readLogTail(file) {
  * @param {{ port: number, token: string, env?: Record<string,string|undefined>, home?: string,
  *   spawnFn?: typeof realSpawn, bareloopBin?: string, settleMs?: number,
  *   getResumeContext: (runid: string) => ({row: any, plan: any}|null),
- *   getStopContext?: (runid: string) => ({row: any, live: boolean, spineExists: boolean}|null) }} opts
+ *   getStopContext?: (runid: string) => ({row: any, live: boolean, spineExists: boolean}|null),
+ *   getAcceptContext?: (runid: string) => ({row: any, live: boolean, waiting: boolean, specPath: string|null, specHash: string|null}|null),
+ *   acceptWaitMs?: number }} opts
  */
 export function createRunRoutes(opts) {
   const envNow = () => keysForDoor({ env: opts.env, keysHome: opts.home }).env;
@@ -99,6 +104,58 @@ export function createRunRoutes(opts) {
   }
 
   /**
+   * T Part 8 — `POST /api/runs/:runid/accept`. The person's Accept of a run waiting at its REVIEW DOOR, recorded through the
+   * library's own door path and nothing else: `run-u --spec <signed spec> --door <runid> --decide accept --approve <hash>`
+   * (src/userrun.js, `answerReviewDoor`, src/reviewdoor.js). The panel invents no verdict path: the engine re-runs the MECHANICAL
+   * stages against the tree as it stands, a red there is `door-accept-red` and refuses, and only then is the disposition written
+   * to the run's own spine. The verdict the run minted is untouched. The engine's own words are what the page shows.
+   * @param {import('node:http').IncomingMessage} req
+   * @param {(code: number, obj: any) => void} send
+   * @param {string} runid
+   * @returns {boolean}
+   */
+  function handleAccept(req, send, runid) {
+    const guard = checkHumanGuard(req, { token: opts.token, port: opts.port });
+    if (!guard.ok) { send(403, { ok: false, error: `refused — ${guard.reason}` }); return true; }
+    if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
+    const ctx = opts.getAcceptContext ? opts.getAcceptContext(runid) : null;
+    if (!ctx) { send(404, { ok: false, error: 'no such run' }); return true; }
+    if (ctx.live) { send(409, { ok: false, error: 'This run is still running, so there is nothing to accept yet.' }); return true; }
+    if (!ctx.waiting) { send(409, { ok: false, error: 'This run is not waiting for your Accept (it opened no review door, the door was already answered, or it has expired).' }); return true; }
+    if (!ctx.specPath || !ctx.specHash) { send(409, { ok: false, error: "The signed job this run was judged by cannot be found on disk, so its door cannot be answered from here. Nothing was recorded." }); return true; }
+    const dir = dirname(ctx.specPath);
+    const logFile = join(dir, `accept-${runid}-${Date.now()}.log`);
+    const args = [
+      '--wait', 'systemd-inhibit', '--why=bareloop panel accept',
+      process.execPath, bareloopBin,
+      'run-u', '--spec', ctx.specPath, '--door', runid, '--decide', 'accept', '--approve', ctx.specHash,
+    ];
+    /** @type {number|null} */
+    let logFd = null;
+    try { logFd = openSync(logFile, 'a'); } catch { logFd = null; }
+    const child = spawnFn('setsid', args, { detached: true, stdio: ['ignore', logFd ?? 'ignore', logFd ?? 'ignore'], env: envNow() });
+    if (logFd !== null) { try { closeSync(logFd); } catch { /* the child holds its own copy */ } }
+    if (typeof child?.unref === 'function') child.unref();
+    let done = false;
+    const finish = (/** @type {number} */ code, /** @type {any} */ obj) => { if (!done) { done = true; send(code, obj); } };
+    // an accept that outlasts the wait is still going: say so (202), never claim it passed
+    const timer = setTimeout(() => finish(202, { ok: true, pending: true, runid, log: logFile }), opts.acceptWaitMs ?? DEFAULT_ACCEPT_WAIT_MS);
+    if (typeof timer.unref === 'function') timer.unref();
+    if (typeof child?.once === 'function') {
+      child.once('exit', (/** @type {number|null} */ code) => {
+        clearTimeout(timer);
+        if (code === 0) finish(200, { ok: true, accepted: true, runid, log: logFile });
+        else finish(409, { ok: false, error: readLogTail(logFile) || `the engine refused the accept (exit ${code}) and left no message`, log: logFile });
+      });
+      child.once('error', (/** @type {Error} */ e) => {
+        clearTimeout(timer);
+        finish(500, { ok: false, error: `could not start the engine: ${e.message}` });
+      });
+    }
+    return true;
+  }
+
+  /**
    * @param {import('node:http').IncomingMessage} req
    * @param {import('node:http').ServerResponse} res
    * @param {string} pathname
@@ -108,13 +165,15 @@ export function createRunRoutes(opts) {
   function handle(req, res, pathname, body) {
     const stopM = /^\/api\/runs\/([A-Za-z0-9._~-]+)\/stop$/.exec(pathname);
     const m = /^\/api\/runs\/([A-Za-z0-9._~-]+)\/resume$/.exec(pathname);
-    if (!m && !stopM) return false;
+    const acceptM = /^\/api\/runs\/([A-Za-z0-9._~-]+)\/accept$/.exec(pathname);
+    if (!m && !stopM && !acceptM) return false;
     const send = (/** @type {number} */ code, /** @type {any} */ obj) => {
       const text = JSON.stringify(obj);
       res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(text) });
       res.end(text);
     };
     if (stopM) return handleStop(req, send, stopM[1]);
+    if (acceptM) return handleAccept(req, send, acceptM[1]);
     if (!m) return false;
     const guard = checkHumanGuard(req, { token: opts.token, port: opts.port });
     if (!guard.ok) { send(403, { ok: false, error: `refused — ${guard.reason}` }); return true; }

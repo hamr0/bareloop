@@ -310,7 +310,7 @@ export function createAuthorRoutes(opts) {
         // hand-made POST must not sign a reuse of an already-green, red or still-running run. Imports are green by ruling;
         // Edit in chat and Resume only READ start-from (GET) and never post a startFrom, so this gate never touches them.
         if (fromImport === null && pre.outcome !== 'green') {
-          send(409, { ok: false, error: 'only a run that finished green can be reused — this one did not' });
+          send(409, { ok: false, error: pre.outcome === 'green-held' ? 'This run was started by a schedule and is waiting for your Accept. Accept it first, then it can be reused.' : 'only a run that finished green can be reused — this one did not' });
           return true;
         }
         const locked = lockedFieldChanged(card, pre.card);

@@ -2452,6 +2452,11 @@
       var canResume = !!detail.resume && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "resume"; });
       if(canResume) html = '<button class="btn primary" type="button" data-testid="btn-resume-run">Resume</button>';
     }
+    // Accept (T Part 8): right after Resume, before Edit in chat. Shown only when the SERVER says this run waits at its review door
+    // (`detail.accept`: a door record, not expired, no honoured decision after it). It records the person's accept through the engine's own door.
+    if(!live && detail.accept === true){
+      html += '<button class="btn primary" type="button" data-testid="btn-accept-run">Accept</button>';
+    }
     // Edit in chat: every non-green ending (the server's Ended block says so) — a died run included
     if(!live && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "edit"; })){
       html += '<button class="btn" type="button" data-testid="btn-edit-chat">Edit in chat</button>';
@@ -2486,6 +2491,21 @@
           if(res.body && res.body.ok){ stopAsked[detail.runid] = true; renderRunActions(detail); }
           else { stopBtn.disabled = false; bar.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="stop-err">' + escapeXml((res.body && res.body.error) || ("refused (" + res.status + ")")) + '</span>'); }
         }).catch(function(x){ stopBtn.disabled = false; bar.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="stop-err">could not reach the panel: ' + escapeXml(x.message) + '</span>'); });
+      });
+    }
+    var accBtn = bar.querySelector('[data-testid="btn-accept-run"]');
+    if(accBtn){
+      accBtn.addEventListener("click", function(){
+        accBtn.disabled = true;
+        authorPost("/api/runs/" + encodeURIComponent(detail.runid) + "/accept", {}).then(function(res){
+          if(res.status === 200 && res.body && res.body.ok){ refreshRunsList(true); selectRun(detail.runid); return; }
+          if(res.status === 202 && res.body && res.body.pending){
+            bar.insertAdjacentHTML("beforeend", '<span class="stopping" data-testid="accept-pending">still re-checking the tree; look again in a moment</span>');
+            return;
+          }
+          accBtn.disabled = false;
+          bar.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="accept-err">' + escapeXml((res.body && res.body.error) || ("refused (" + res.status + ")")) + '</span>');
+        }).catch(function(x){ accBtn.disabled = false; bar.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="accept-err">could not reach the panel: ' + escapeXml(x.message) + '</span>'); });
       });
     }
     var resBtn = bar.querySelector('[data-testid="btn-resume-run"]');

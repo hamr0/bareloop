@@ -46,7 +46,7 @@ import { createScheduleDoor } from './schedules.js';
 import { createStarter } from './schedulestart.js';
 import { createScheduler } from './scheduler.js';
 import { catchUpWords } from '../schedulewords.js';
-import { doorWaiting } from '../reviewdoor.js';
+import { doorWaiting, heldScheduled } from '../reviewdoor.js';
 import { createAuthorRoutes, mintToken, checkHostGuard, panelMoney2 } from './authorroutes.js';
 import { createRunRoutes } from './runroutes.js';
 import { createImportRoutes, readImports, bundleStatus, IMPORT_CHANGED_LINE } from './importroutes.js';
@@ -1027,6 +1027,21 @@ function triggerRecordOf(row) {
 }
 
 /**
+ * T Part 8 — what the Accept route needs: the run's row, whether its runner is alive, whether it waits at its review door
+ * ({@link doorWaiting}), and the signed spec it was judged by (the file and hash `run-u --door --approve` takes).
+ * @param {string} runid @param {{ home?: string }} opts
+ * @returns {{row: any, live: boolean, waiting: boolean, specPath: string|null, specHash: string|null}|null}
+ */
+export function getAcceptContext(runid, opts = {}) {
+  const row = findRunRow(runid, opts);
+  if (!row || row.via === 'import') return null;
+  if (!existsSync(row.spine)) return { row, live: runIsAlive(row), waiting: false, specPath: null, specHash: null };
+  const records = parseJsonl(row.spine).records;
+  const signed = signedSpecForRun(row, records);
+  return { row, live: runIsAlive(row), waiting: doorWaiting(records), specPath: signed ? signed.specPath : null, specHash: signed ? signed.specHash : null };
+}
+
+/**
  * `GET /api/runs/:runid` — the full replay for the Run tab: steps (or
  * iterations), counters, summary-box fields. Looks `runid` up in the run
  * list FIRST and reads only the path stored there (path safety — see file
@@ -1325,6 +1340,8 @@ function getRunDetailBody(runid, opts) {
     // `memory-cache` record at all (never armed on this run).
     behaviour: scopedBehaviour(row, rawSpineRecords),
     memoryCache: summary.memoryCache,
+    // T Part 8: is this run waiting for the person's Accept? The SAME answer fills the runs list's Needs-you tag (`doorWaiting`, one owner)
+    accept: !runIsAlive(row) && doorWaiting(rawSpineRecords),
     // T Part 7: why a SCHEDULED run started (the words `trigger.json` carried) and the fixed catch-up sentence; null on every hand run
     ...(() => {
       const trig = triggerRecordOf(row);
@@ -2699,8 +2716,12 @@ export function getStartFrom(runid, opts = {}) {
   return {
     ok: true,
     origin: { runid, job: row.job },
-    // the run's terminal outcome — the Reuse start (POST /api/author/start) refuses anything but a real green
-    outcome: legsOf(records).at(-1)?.outcome ?? null,
+    // the run's terminal outcome — the Reuse start (POST /api/author/start) refuses anything but a real green.
+    // T D.2: a SCHEDULED run's green reads `green-held` until the person accepts it, so that same refusal holds it unchanged
+    outcome: (() => {
+      const o = legsOf(records).at(-1)?.outcome ?? null;
+      return o === 'green' && heldScheduled(records, triggerRecordOf(row)) ? 'green-held' : o;
+    })(),
     card,
     from: 'signed job',
     locked: REUSE_LOCKED_FIELDS,
@@ -2739,7 +2760,9 @@ export function jobRunsOf(job, opts = {}) {
     if (!row || row.job !== job || !existsSync(row.spine)) continue;
     let records;
     try { records = parseJsonl(row.spine).records; } catch { continue; }
-    out.push({ runid: row.runid, outcome: legsOf(records).at(-1)?.outcome ?? null, spec: signedSpecForRun(row, records)?.spec ?? null, records });
+    const outcome = legsOf(records).at(-1)?.outcome ?? null;
+    // T D.2: a scheduled run's green is HELD until accepted, so it is not a good run for the schedule gate either
+    out.push({ runid: row.runid, outcome: outcome === 'green' && heldScheduled(records, triggerRecordOf(row)) ? 'green-held' : outcome, spec: signedSpecForRun(row, records)?.spec ?? null, records });
   }
   return out;
 }
@@ -2766,6 +2789,7 @@ export function listReuseJobs(opts = {}) {
     // only a REAL green (hamr 2026-10-08): `already-green` means the check passed before any work, so there is nothing to reuse
     // (src/reuse.js 'green-predates-run'). Narrower than the Run tab's Reuse button on purpose.
     if (outcome !== 'green') continue;
+    if (heldScheduled(records, triggerRecordOf(row))) continue; // T D.2: a scheduled green waits for the person's Accept
     const signed = signedSpecForRun(row, records);
     if (!signed) continue;
     const key = workflowKey(signed.spec);
@@ -2908,7 +2932,7 @@ export function handleRequest(req, res, opts) {
   function routesFor(o, p) {
     if (o.authorRoutes && p.startsWith('/api/author')) return o.authorRoutes;
     if (o.settingsRoutes && p.startsWith('/api/settings')) return o.settingsRoutes;
-    if (o.runRoutes && /^\/api\/runs\/[^/]+\/(resume|stop)$/.test(p)) return o.runRoutes;
+    if (o.runRoutes && /^\/api\/runs\/[^/]+\/(resume|stop|accept)$/.test(p)) return o.runRoutes;
     if (o.importRoutes && (p === '/api/fs/list' || p === '/api/imports' || p.startsWith('/api/imports/'))) return o.importRoutes;
     return null;
   }
@@ -3080,7 +3104,7 @@ export function handleRequest(req, res, opts) {
  *   sessionsRoot?: string, spawnFn?: (...a: any[]) => any, bareloopBin?: string,
  *   fetchImpl?: typeof fetch, settleMs?: number, userHome?: string,
  *   openFolderSpawn?: (cmd: string, args: string[], o: object) => any, platform?: string, packageJsonPath?: string,
- *   scheduleNow?: () => number, sessionDeps?: Record<string, any>, schedulerIntervalMs?: number }} [opts] `scheduleNow`, `sessionDeps` and `schedulerIntervalMs` are TEST SEAMS (the schedule clock; createSession's stubs; the scheduler's timer, 0 = none)
+ *   scheduleNow?: () => number, sessionDeps?: Record<string, any>, schedulerIntervalMs?: number, acceptWaitMs?: number }} [opts] `scheduleNow`, `sessionDeps` and `schedulerIntervalMs` are TEST SEAMS (the schedule clock; createSession's stubs; the scheduler's timer, 0 = none)
  * @returns {Promise<{ server: import('node:http').Server, port: number, token: string, schedules: ReturnType<typeof createScheduleDoor>, scheduler: ReturnType<typeof createScheduler>, close: () => Promise<void> }>}
  */
 export function createPanelServer(opts = {}) {
@@ -3175,6 +3199,8 @@ export function createPanelServer(opts = {}) {
         settleMs: opts.settleMs,
         getResumeContext: (runid) => getResumeContext(runid, { home }),
         getStopContext: (runid) => getStopContext(runid, { home }),
+        getAcceptContext: (runid) => getAcceptContext(runid, { home }),
+        ...(opts.acceptWaitMs !== undefined ? { acceptWaitMs: opts.acceptWaitMs } : {}),
       });
       importRoutes = createImportRoutes({
         port: boundPort, token, home, userHome: opts.userHome, describeSpec,

@@ -62,6 +62,17 @@ export function doorAccepted(events) {
 }
 
 /**
+ * T D.2 — a SCHEDULED run's green is held until the person accepts it (T10): a run that carries a `trigger.json` (a scheduled
+ * start wrote it) and holds no honoured accept. One shared predicate: `getStartFrom` reads its outcome as `'green-held'` (so
+ * the Reuse start refuses it unchanged), `listReuseJobs` skips it, and the schedule gate does not count it. A hand run is never held.
+ * @param {any[]} events the run's spine, parsed @param {any} triggerRec the run's `trigger.json`, or null
+ * @returns {boolean}
+ */
+export function heldScheduled(events, triggerRec) {
+  return !!triggerRec && typeof triggerRec === 'object' && !doorAccepted(events);
+}
+
+/**
  * Is this run WAITING for the person's Accept? Its spine holds a door record, the door has not expired ({@link doorAgeGate}),
  * and no honoured `accept` or `rerun` decision follows it (a `pause` keeps the same three doors open). One owner: the runs
  * list's Needs-you `Accept` tag, the Run tab's Accept button and the scheduled NEXT line all read this.
