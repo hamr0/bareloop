@@ -1405,6 +1405,8 @@ function makePollHarness(getJSONImpl) {
     function renderRun(detail){ renderRunCalls.push(detail); }
     var currentRunid = null;
     var runIsLive = false;
+    var openIsScheduled = false;
+    var lastOpenFetchAt = 0;
     var selectToken = 0;
     var lastRunsSig = null;
     var lastRunsPayloadSig = null;
