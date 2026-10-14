@@ -13,7 +13,7 @@ import {
 } from 'node:fs';
 import { userInfo } from 'node:os';
 import { dirname, join } from 'node:path';
-import { runlistHome } from '../runlist.js';
+import { readRunList, runIsAlive, runlistHome } from '../runlist.js';
 import { jobSpecHash, validateJob, workflowKey } from '../job.js';
 import { parseInputs } from '../jobblock.js';
 import { looksLikeRepoSource } from '../source.js';
@@ -22,12 +22,16 @@ import { ConfigError } from '../config.js';
 import { doorAccepted } from '../reviewdoor.js';
 import { findRow } from '../providerrows.js';
 import { validateTrigger, isClockTrigger, isFileTrigger } from '../trigger.js';
-import { armTrigger, nextSlot } from '../triggerclock.js';
+import { armTrigger, nextSlot, recordFire } from '../triggerclock.js';
 import { appendRow, readLedger, withoutReleased } from '../triggerledger.js';
-import { checkTarget, createFileTrigger, queueOf, readSeen, recordDropped } from '../triggerfiles.js';
+import { checkTarget, createFileTrigger, queueOf, readSeen, recordDropped, recordRan } from '../triggerfiles.js';
 import { SCHEDULE_WORDS, scheduledWords } from '../schedulewords.js';
 import { buildReuseSpec, validateReuseCard } from './authorsession.js';
 
+/** a spawn error after the consuming row releases it at most this many times; then it stays consumed (bounded rows) */
+export const MAX_RELEASES = 3;
+/** a headless start counts as busy from the fire until runs.jsonl shows a row for the job, or this long */
+const STARTING_MS = 120_000;
 const SLUG_RE = /^[a-z][a-z0-9-]*$/;
 /** the outcome rows a card's "last outcome" may be (clock and file alike) */
 const OUTCOME_KINDS = ['started', 'busy', 'monthly-exhausted', 'refused', 'deleted', 'changed'];
@@ -52,6 +56,10 @@ const OUTCOME_KINDS = ['started', 'busy', 'monthly-exhausted', 'refused', 'delet
  */
 export function createScheduleDoor(deps) {
   const { now = Date.now } = deps;
+  /** @type {ReturnType<typeof import('./schedulestart.js').createStarter>|null} */
+  let starter = null;
+  /** job -> ms the headless start began: closes the gap between the spawn and the row run-u appends (T19) @type {Map<string, number>} */
+  const starting = new Map();
   const triggersRoot = join(runlistHome(deps.home), 'triggers');
   /** @param {string} job */
   const dirOf = (job) => {
@@ -221,7 +229,91 @@ export function createScheduleDoor(deps) {
     return a.kind === 'new-file' ? a.folder === /** @type {any} */ (next).folder : a.path === /** @type {any} */ (next).path;
   }
 
+  /**
+   * Is a run of this job live, or a start in progress? Reads the run list ONCE and asks `runIsAlive` of this job's rows;
+   * a run waiting at its review door has ended (its pid is gone), so it is NOT busy (T7). Part 5 adds the pid-reuse guard.
+   * @param {string} job
+   */
+  function busy(job) {
+    const rows = readRunList({ home: deps.home }).rows.filter((r) => r && r.job === job);
+    const t = starting.get(job);
+    if (t !== undefined) {
+      if (now() - t >= STARTING_MS || rows.some((r) => Date.parse(r.at) >= t)) starting.delete(job);
+      else return true;
+    }
+    return rows.some((r) => runIsAlive(r, now()));
+  }
+
   return {
+    /** The starter is built after the author routes (which need this door), so it is attached here. @param {ReturnType<typeof import('./schedulestart.js').createStarter>} s */
+    attachStarter(s) { starter = s; },
+
+    busy,
+
+    /**
+     * One fire, in this order (T15): busy, then monthly, then wouldAccept, then the starter (which calls `beforeSpawn`, the
+     * ONE consuming row, only after every "no" is behind it). Each outcome is ONE row in ledger.jsonl, told once per
+     * `key|outcome|why` (read back from disk, so a restart does not repeat it). RULED 2026-10-14: a busy, monthly or refused
+     * fire consumes NOTHING, so the next tick tries again; a spawn error after `beforeSpawn` writes a `released` row (bounded).
+     * @param {string} job
+     * @param {{kind: 'clock', slot: number, catchUp: boolean, missed: number} | {kind: 'file', path: string, sha: string, size?: number}} cause
+     * @param {{beforeSpawn?: () => void}} [hooks]
+     * @returns {Promise<{outcome: 'busy'|'monthly-exhausted'|'refused'|'started', why?: string, told: boolean, sessionId?: string}>}
+     */
+    async fire(job, cause, hooks = {}) {
+      const schedule = readSchedule(job);
+      if (!schedule || !starter) return { outcome: 'refused', why: 'This job has no schedule any more. Nothing started.', told: false };
+      const sig = schedule.specHash;
+      const ledger = ledgerOf(job);
+      const key = cause.kind === 'file' ? cause.sha : String(cause.slot);
+      const consumeId = cause.kind === 'file' ? `ran:${cause.sha}` : `fire:${cause.slot}`;
+      const base = cause.kind === 'file' ? { file: cause.path, sha: cause.sha } : { slot: cause.slot, catchUp: cause.catchUp, missed: cause.missed };
+      /** @param {'busy'|'monthly-exhausted'|'refused'} outcome @param {string} why @param {Record<string, unknown>} [extra] */
+      const told = (outcome, why, extra = {}) => {
+        const tag = `${key}|${outcome}|${why}`;
+        const seen = readLedger(ledger).rows.some((r) => r.told === tag);
+        if (!seen) appendRow(ledger, { kind: outcome, sig, at: now(), told: tag, key, ...base, why, ...extra });
+        return { outcome, why, told: !seen };
+      };
+      if (busy(job)) return told('busy', 'A run of this job is still going. This one starts when it is done.');
+      try {
+        const room = checkMonthlyRoom({ capUsd: schedule.spec.budgetUsd, home: deps.home, sessionsRoot: deps.sessionsRoot });
+        if (!room.ok) {
+          return told('monthly-exhausted', 'Not enough money left this month for this run.', { leftUsd: room.leftUsd, needUsd: schedule.spec.budgetUsd, atLeast: room.atLeast === true });
+        }
+      } catch (e) {
+        if (!(e instanceof ConfigError)) throw e;
+        return told('refused', `${e.message} — refusing rather than guess the monthly limit. Nothing started.`);
+      }
+      // already consumed (a live `fire`/`ran` row, e.g. given up on after releases): never start it a second time
+      if (readLedger(ledger).rows.length > 0 && withoutReleased(readLedger(ledger).rows).some((r) => r.id === consumeId)) {
+        return { outcome: 'refused', why: 'This one was already started or given up on.', told: false };
+      }
+      const accept = starter.wouldAccept(job, cause);
+      if (!accept.ok) return told('refused', accept.why);
+      const beforeSpawn = hooks.beforeSpawn ?? (() => {
+        if (cause.kind === 'file') recordRan(ledger, { sha: cause.sha, path: cause.path, size: cause.size ?? 0 }, now(), sig);
+        else recordFire(ledger, { fire: true, slot: cause.slot, catchUp: cause.catchUp, missed: cause.missed }, now(), sig);
+      });
+      starting.set(job, now());
+      const r = await starter.start(job, cause, { beforeSpawn });
+      if (r.ok) {
+        appendRow(ledger, { kind: 'started', sig, at: now(), key, ...base, sessionId: r.sessionId, specHash: r.specHash });
+        return { outcome: 'started', told: true, sessionId: r.sessionId };
+      }
+      starting.delete(job);
+      if (r.consumed) {
+        // a spawn error AFTER the consuming row: release it so the slot or file is retryable, a bounded number of times
+        const releases = readLedger(ledger).rows.filter((x) => x.kind === 'released' && x.of === consumeId).length;
+        if (releases < MAX_RELEASES) {
+          appendRow(ledger, { kind: 'released', of: consumeId, sig, at: now(), why: r.why });
+          return told('refused', `${r.why} It will be tried again.`);
+        }
+        return told('refused', `${r.why} It was tried ${MAX_RELEASES} times and is given up on.`);
+      }
+      return told('refused', r.why);
+    },
+
     greenFor,
     armFor,
     readSchedule,

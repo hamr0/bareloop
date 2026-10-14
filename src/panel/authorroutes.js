@@ -96,6 +96,7 @@ const TERMINAL_PHASES = new Set(['refused', 'abandoned', 'error', 'signed', 'sig
  *   sessionsRoot?: string, spawnFn?: typeof realSpawn, bareloopBin?: string,
  *   jobsDir?: string, fetchImpl?: typeof fetch, home?: string,
  *   schedules?: ReturnType<typeof import('./schedules.js').createScheduleDoor>,
+ *   sessionDeps?: Record<string, any>,
  *   startFrom?: {get: (runid: string, o?: {model?: string}) => any, getImport: (id: string, o?: {model?: string}) => any, listJobs?: (o?: {model?: string}) => any[]} }} opts
  */
 export function createAuthorRoutes(opts) {
@@ -111,7 +112,33 @@ export function createAuthorRoutes(opts) {
   /** @type {Map<string, ReturnType<typeof createSession>>} */
   const sessions = new Map();
 
+  /** Headless (scheduled) sessions live apart from the person's: neither blocks nor is blocked by the other (T I.5). Not addressable over HTTP. */
+  /** @type {Map<string, ReturnType<typeof createSession>>} */
+  const headless = new Map();
+
   const hasLiveSession = () => [...sessions.values()].some((s) => !TERMINAL_PHASES.has(s.state.phase));
+
+  /**
+   * THE one session start (T Part 4, C.4.2): prove the Inputs at $0, then create the session — the route's tail, factored so the
+   * HTTP route and the schedule starter share ONE function. A scheduled fire is exactly a Reuse the person did not click.
+   * `headless` puts the session in its own map and skips the one-live-session rule.
+   * @param {any} card the form (fields only)
+   * @param {{spec: any, workflowKey: string}|null} reuse
+   * @param {import('../jobblock.js').JobInput[]} inputs the parsed Inputs
+   * @param {{headless?: boolean, filesJob?: boolean}} [o]
+   * @returns {Promise<{ok: true, session: ReturnType<typeof createSession>}|{ok: false, status: number, error: string}>}
+   */
+  function startSession(card, reuse, inputs, o = {}) {
+    return (o.filesJob ? Promise.resolve(/** @type {{ok: true}} */ ({ ok: true })) : proveInputFiles(inputs)).then((proof) => {
+      if (!proof.ok) return { ok: /** @type {false} */ (false), status: 400, error: proof.error };
+      if (!o.headless && hasLiveSession()) return { ok: /** @type {false} */ (false), status: 409, error: 'an authoring session is already live — one at a time' };
+      const session = createSession(cardFields(card), {
+        env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}), ...(opts.sessionDeps ?? {}),
+      });
+      (o.headless ? headless : sessions).set(session.id, session);
+      return { ok: /** @type {true} */ (true), session };
+    }).catch((e) => ({ ok: /** @type {false} */ (false), status: 500, error: `could not check the inputs: ${/** @type {Error} */ (e)?.message ?? e}` }));
+  }
 
   /**
    * @param {import('node:http').IncomingMessage} req
@@ -303,15 +330,10 @@ export function createAuthorRoutes(opts) {
       // Part 1a: a rubric job whose first input is a local FILE has no repo to prove inputs against; the session proves every
       // line itself (`proveRubricInputs`), at $0, before any model call
       const filesJob = reuse === null && card?.checkType === 'rubric' && looksLikeRubricInput(ip.inputs[0].value);
-      (filesJob ? Promise.resolve(/** @type {{ok: true}} */ ({ ok: true })) : proveInputFiles(ip.inputs)).then((proof) => {
-        if (!proof.ok) { send(400, { ok: false, error: proof.error }); return; }
-        if (hasLiveSession()) { send(409, { ok: false, error: 'an authoring session is already live — one at a time' }); return; }
-        const session = createSession(cardFields(card), {
-          env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}),
-        });
-        sessions.set(session.id, session);
-        send(200, { ok: true, sessionId: session.id, reuse: reuse !== null, state: session.state });
-      }).catch((e) => { send(500, { ok: false, error: `could not check the inputs: ${/** @type {Error} */ (e)?.message ?? e}` }); });
+      startSession(card, reuse, ip.inputs, { filesJob }).then((r) => {
+        if (!r.ok) { send(r.status, { ok: false, error: r.error }); return; }
+        send(200, { ok: true, sessionId: r.session.id, reuse: reuse !== null, state: r.session.state });
+      });
       return true;
     }
 
@@ -358,7 +380,9 @@ export function createAuthorRoutes(opts) {
     return true;
   }
 
-  return { handle, sessions };
+  return {
+    handle, sessions, headless, startSession, envNow, spawnFn, bareloopBin,
+  };
 }
 
 /**
@@ -392,7 +416,7 @@ export function panelMoney2(n) {
  * it to sign"), and this is where it is checked, not trusted.
  * @param {ReturnType<typeof createSession>} session
  * @param {string} claimedHash
- * @param {{env: any, spawnFn: typeof realSpawn, bareloopBin: string, sessionsRoot?: string, home?: string, schedules?: {clearIfEdited: (job: string, key: string) => boolean}}} o
+ * @param {{env: any, spawnFn: typeof realSpawn, bareloopBin: string, sessionsRoot?: string, home?: string, schedules?: {clearIfEdited: (job: string, key: string) => boolean}, reviewDoor?: boolean, onSpawnError?: (e: Error) => void}} o
  * @returns {{ok: boolean, error?: string, job?: string}}
  */
 export function signRun(session, claimedHash, o) {
@@ -444,6 +468,8 @@ export function signRun(session, claimedHash, o) {
     'systemd-inhibit', '--why=bareloop panel run',
     process.execPath, o.bareloopBin,
     'run-u', '--spec', session.state.resolvedSpecPath, '--approve', session.state.specHash,
+    // T (F.1): a scheduled run opens the review door even when deterministic, so its green waits for the person's Accept
+    ...(o.reviewDoor === true ? ['--review-door'] : []),
     ...(draftSpentUsd !== null ? ['--draft-spent-usd', String(draftSpentUsd), ...(draftIncomplete ? ['--draft-spend-incomplete'] : [])] : []),
   ];
   /** @type {number|null} */
@@ -453,6 +479,7 @@ export function signRun(session, claimedHash, o) {
     detached: true, stdio: ['ignore', logFd ?? 'ignore', logFd ?? 'ignore'], env: o.env,
   });
   if (typeof child?.unref === 'function') child.unref();
+  if (o.onSpawnError && typeof child?.once === 'function') child.once('error', o.onSpawnError);
   // T (D.7): signing an EDIT of a scheduled job clears its schedule back to by hand. A Reuse or a hand run of the same
   // workflow has the same workflow key and clears nothing. After the spawn: a refusal above never reaches here.
   if (o.schedules) {

@@ -64,3 +64,46 @@ test('withoutReleased: a released row cancels the latest earlier row with that i
   assert.deepEqual(withoutReleased(rows).map((r) => [r.id, r.n]), [['ran:a', 2], ['ran:b', undefined]]);
   assert.deepEqual(withoutReleased([{ kind: 'released', of: 'ran:zzz' }]), [], 'a release with nothing to cancel is dropped');
 });
+
+// ---- T16 (E.1): `ran` only after the starter says it would accept ----
+import { fireWorld, tmp as wtmp } from './trigger-world.mjs';
+import { createHash } from 'node:crypto';
+import { rmSync as rm, writeFileSync as wf } from 'node:fs';
+import { join as pjoin } from 'node:path';
+import { queueOf, readSeen, recordArrived } from '../src/triggerfiles.js';
+
+test('a persistently refused start writes a bounded number of rows (NEW test #1, T16)', async () => {
+  const w = await fireWorld({ when: 'files' });
+  const f = pjoin(w.inbox, 'a.csv');
+  wf(f, 'a,1\n');
+  const sha = createHash('sha256').update('a,1\n').digest('hex');
+  recordArrived(w.ledger, { path: f, sha, size: 4 }, 100, w.sig);
+  const key = pjoin(w.home, '.env');
+  rm(key); // the keys are gone: wouldAccept says no
+  const before = readLedger(w.ledger).rows.length;
+  for (let i = 0; i < 500; i += 1) await w.door.fire('sched-job', { kind: 'file', path: f, sha, size: 4 });
+  const rows = readLedger(w.ledger).rows;
+  assert.equal(rows.filter((r) => r.kind === 'ran').length, 0, 'no ran row');
+  assert.equal(rows.filter((r) => r.kind === 'unran').length, 0, 'no unran row either: nothing was consumed to undo');
+  assert.equal(rows.filter((r) => r.kind === 'refused').length, 1, 'told once');
+  assert.equal(rows.length - before, 1, 'exactly one new row after 500 ticks');
+  assert.equal(queueOf(readSeen(w.ledger)).length, 1, 'the file is still queued');
+  assert.equal(w.spawnFn.spawns.length, 0);
+  // the key appears: the next tick writes exactly one ran and one started
+  wf(key, 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 });
+  assert.equal((await w.door.fire('sched-job', { kind: 'file', path: f, sha, size: 4 })).outcome, 'started');
+  const after = readLedger(w.ledger).rows;
+  assert.equal(after.filter((r) => r.kind === 'ran').length, 1);
+  assert.equal(after.filter((r) => r.kind === 'started').length, 1);
+  assert.equal(queueOf(readSeen(w.ledger)).length, 0);
+});
+
+test('told once per key, and last outcome counts only rows under the current signature (read side)', async () => {
+  const w = await fireWorld();
+  rm(pjoin(w.home, '.env'));
+  await w.door.fire('sched-job', { kind: 'clock', slot: 1, catchUp: false, missed: 0 });
+  const read = w.door.read('sched-job');
+  assert.equal(read.lastOutcome.kind, 'refused');
+  assert.equal(read.lastOutcome.sig, w.sig);
+});
+void wtmp;

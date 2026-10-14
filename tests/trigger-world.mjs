@@ -5,11 +5,19 @@ import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { createPanelServer } from '../src/panel/server.js';
+import { createPanelServer, getStartFrom } from '../src/panel/server.js';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { createStarter } from '../src/panel/schedulestart.js';
+import { keysForDoor, keysHome as kHome } from '../src/keysfile.js';
+import { rowsForHome } from '../src/providerrows.js';
+import { readLedger } from '../src/triggerledger.js';
 import { appendRun } from '../src/runlist.js';
 import { jobSpecHash } from '../src/job.js';
 import { ANTH_CFG } from './helpers.js';
 
+// above Linux's hard pid ceiling (2^22): no process can hold it, so a fixture run reads as ended on any machine
+export const DEAD_PID = 2 ** 22 + 1;
 /** @type {string[]} */ const dirs = [];
 test.after(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
 export const tmp = (p = 'tw-') => { const d = mkdtempSync(join(tmpdir(), p)); dirs.push(d); return d; };
@@ -67,21 +75,88 @@ export function makeRun(home, { runid, spec, outcome = 'green', accepted = false
   writeFileSync(spine, `${recs.map((r) => JSON.stringify(r)).join('\n')}\n`);
   const old = new Date(Date.now() - 3 * 3600 * 1000);
   utimesSync(spine, old, old);
-  appendRun({ at, runid, job: spec.job, spine, patient: null, via: 'run-u' }, { home });
+  appendRun({ at, runid, job: spec.job, spine, patient: null, via: 'run-u', pid: DEAD_PID }, { home });
   return { out, spine, specHash: sh };
 }
 
 /** a panel server over real HTTP on a scratch home; `post`/`get` carry the human-click token. */
-export async function panel({ home, env = {}, spawnFn } = {}) {
+export async function panel({ home, env = {}, spawnFn, now, sessionDeps } = {}) {
   const h = home ?? keysHome();
-  const { close, port, token } = await createPanelServer({ port: 0, env, home: h, sessionsRoot: tmp('tw-sess-'), ...(spawnFn ? { spawnFn } : {}) });
+  const { close, port, token, schedules } = await createPanelServer({ port: 0, env, home: h, sessionsRoot: tmp('tw-sess-'), ...(spawnFn ? { spawnFn } : {}), ...(now ? { scheduleNow: now } : {}), ...(sessionDeps ? { sessionDeps } : {}) });
   test.after(() => close());
   const base = `http://127.0.0.1:${port}`;
   const hdr = { 'content-type': 'application/json', 'x-bareloop-token': token };
   return {
     home: h,
+    schedules,
     noToken: async (p, body) => { const r = await fetch(`${base}${p}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); return r.status; },
     get: async (p) => { const r = await fetch(`${base}${p}`, { headers: hdr }); return { status: r.status, body: await r.json() }; },
     post: async (p, body) => { const r = await fetch(`${base}${p}`, { method: 'POST', headers: hdr, body: JSON.stringify(body) }); return { status: r.status, body: await r.json() }; },
+  };
+}
+
+/**
+ * A recorded spawn: `spawns` holds every argv. `failWith` makes the child emit 'error' on the next turn (a launch failure).
+ * @param {{failWith?: Error|null}} [o]
+ */
+export function recordingSpawn(o = {}) {
+  /** @type {{cmd: string, args: string[]}[]} */
+  const spawns = [];
+  const fn = (cmd, args) => {
+    spawns.push({ cmd, args });
+    const handlers = {};
+    const child = { unref() {}, once(ev, h) { handlers[ev] = h; return child; } };
+    if (fn.failWith) setImmediate(() => handlers.error?.(fn.failWith));
+    return child;
+  };
+  fn.failWith = o.failWith ?? null;
+  fn.spawns = spawns;
+  return fn;
+}
+
+export const DAILY = { kind: 'daily', hour: 9, minute: 0 };
+// local time, like the clock maths
+export const SLOT = new Date(2026, 9, 14, 9, 0).getTime();
+export const CLOCK = (o = {}) => ({ kind: 'clock', slot: SLOT, catchUp: false, missed: 0, ...o });
+
+/** a signed schedule on a plain-files job; a door whose starter has a FAKE session factory and a recorded spawn */
+export async function fireWorld({ when = DAILY, files = true } = {}) {
+  const home = keysHome();
+  const inbox = tmp('tf-inbox-');
+  const notes = join(tmp('tf-in-'), 'notes.txt');
+  writeFileSync(notes, 'hello\n');
+  const spec = specOf({ files, input: notes });
+  makeRun(home, { runid: 'r1', spec, accepted: true });
+  // the schedule clock: armed one hour BEFORE the slot, so the slot is the first one due
+  const now = clock(SLOT - 3600_000);
+  const p = await panel({ home, now });
+  const wh = when === 'files' ? { kind: 'new-file', folder: inbox } : when;
+  const body = { runid: 'r1', when: wh, inputs: `notes: ${notes}`, destination: 'output/', capUsd: 1.5, maxWallMs: 600000 };
+  const pre = await p.post('/api/author/schedule-prepare', body);
+  assert.equal(pre.status, 200, JSON.stringify(pre.body));
+  const set = await p.post('/api/author/schedule', { ...body, hash: pre.body.hash });
+  assert.equal(set.status, 200, JSON.stringify(set.body));
+  const spawnFn = recordingSpawn();
+  /** @type {any[]} */ const made = [];
+  const startSession = async (card, reuse, inputs, o) => {
+    const outDir = tmp('tf-sess-');
+    const resolvedSpecPath = join(outDir, 'resolved-spec.json');
+    writeFileSync(resolvedSpecPath, JSON.stringify(reuse.spec));
+    const session = { state: { id: `s${made.length + 1}`, phase: 'prepared', specHash: jobSpecHash(reuse.spec), resolvedSpecPath, outDir }, abandon() {} };
+    made.push({ card, reuse, inputs, o, session });
+    return { ok: true, session };
+  };
+  const envNow = () => keysForDoor({ env: {}, keysHome: home }).env;
+  const starter = createStarter({
+    door: p.schedules, startSession, envNow, spawnFn, bareloopBin: '/x/bareloop.mjs', sessionsRoot: tmp('tf-root-'), home,
+    rowsFor: () => rowsForHome(kHome(home), envNow()), startFrom: (runid) => getStartFrom(runid, { home }),
+  });
+  p.schedules.attachStarter(starter);
+  const dir = join(home, 'triggers', 'sched-job');
+  now.set(SLOT + 60_000);
+  return {
+    now, home, p, door: p.schedules, spawnFn, made, notes, inbox, spec, body, dir, ledger: join(dir, 'ledger.jsonl'), starter, startSession,
+    rows: () => readLedger(join(dir, 'ledger.jsonl')).rows,
+    sig: JSON.parse(readFileSync(join(dir, 'schedule.json'), 'utf8')).specHash,
   };
 }
