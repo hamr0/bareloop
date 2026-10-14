@@ -6,7 +6,7 @@ costs $0 and needs no API key. For everything else, read
 
 ## What you need
 
-- Node.js >= 20.
+- Node.js >= 22.
 - A git repo with at least one commit — the "patient" bareloop will work in. Use a copy,
   never your only copy: the job you sign gets permission to write to it.
 - An Anthropic API key in your environment as `ANTHROPIC_API_KEY`. Never put it in a file
