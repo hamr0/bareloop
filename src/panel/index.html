@@ -3355,6 +3355,10 @@
   // from the run's own `glyph`/`died` fields, same rule `renderRun` already
   // uses for `isLive` — never re-derived a second way).
   var runIsLive = false;
+  // a FINISHED run of a scheduled job is still refetched on the list cadence: its SCHEDULED / NEXT block changes without the run
+  // changing (a refused fire turns NEXT red, a slot passes), and nothing else would repaint it
+  var openIsScheduled = false;
+  var lastOpenFetchAt = 0;
   function selectRun(runid){
     hideImportView();
     clearSelection();
@@ -3364,11 +3368,14 @@
     lastJobToolsList = null;
     lastRunDetailSig = null;
     runIsLive = false;
+    openIsScheduled = false;
+    lastOpenFetchAt = Date.now();
     var myToken = ++selectToken;
     getJSON("/api/runs/" + encodeURIComponent(runid)).then(function(detail){
       if(myToken !== selectToken) return; // a different run was selected before this resolved
       lastRunDetailSig = sig(detail);
       runIsLive = detail.glyph === "▶" && !detail.died;
+      openIsScheduled = !!(detail.schedule && detail.schedule.scheduled);
       renderRun(detail);
     }).catch(function(e){
       if(myToken !== selectToken) return;
@@ -3476,7 +3483,10 @@
   }
 
   function refreshOpenRun(){
-    if(!currentRunid || !runIsLive) return Promise.resolve();
+    if(!currentRunid) return Promise.resolve();
+    var scheduleDue = openIsScheduled && (Date.now() - lastOpenFetchAt) >= RUNS_LIST_POLL_MS;
+    if(!runIsLive && !scheduleDue) return Promise.resolve();
+    lastOpenFetchAt = Date.now();
     var runid = currentRunid;
     var myToken = selectToken;
     return getJSON("/api/runs/" + encodeURIComponent(runid)).then(function(detail){
@@ -3487,6 +3497,7 @@
       var changed = next !== lastRunDetailSig;
       lastRunDetailSig = next;
       runIsLive = detail.glyph === "▶" && !detail.died;
+      openIsScheduled = !!(detail.schedule && detail.schedule.scheduled);
       if(changed){
         withScrollPreserved(["right-pane-body"], function(){ renderRun(detail); });
       }
