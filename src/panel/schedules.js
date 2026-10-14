@@ -32,9 +32,47 @@ import { buildReuseSpec, validateReuseCard } from './authorsession.js';
 export const MAX_RELEASES = 3;
 /** a headless start counts as busy from the fire until runs.jsonl shows a row for the job, or this long */
 const STARTING_MS = 120_000;
+/** a live pid whose process started more than this after its run row was written is a RECYCLED pid, not that run */
+export const PID_REUSE_SLACK_MS = 5000;
+/** Linux counts process start time in clock ticks; 100 is the value on every mainstream build (getconf CLK_TCK) */
+const CLK_TCK = 100;
 const SLUG_RE = /^[a-z][a-z0-9-]*$/;
 /** the outcome rows a card's "last outcome" may be (clock and file alike) */
 const OUTCOME_KINDS = ['started', 'busy', 'monthly-exhausted', 'refused', 'deleted', 'changed'];
+
+/**
+ * When a process started, in epoch ms, from `/proc/<pid>/stat` field 22 (clock ticks since boot) and `/proc/stat` btime
+ * (whole seconds, so good to about a second). `null` where /proc cannot be read: the caller then trusts `isLiveRunner` alone.
+ * @param {number} pid
+ * @param {(path: string) => string} [read]
+ * @returns {number|null}
+ */
+export function procStartMs(pid, read = (p) => readFileSync(p, 'utf8')) {
+  try {
+    const stat = read(`/proc/${pid}/stat`);
+    // the command name (field 2) sits in parentheses and may hold spaces or parentheses: count fields after the LAST ")"
+    const after = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+    const ticks = Number(after[19]); // field 22 = index 19 after the state (field 3)
+    const btime = Number((/^btime (\d+)$/m.exec(read('/proc/stat')) ?? [])[1]);
+    if (!Number.isFinite(ticks) || !Number.isFinite(btime)) return null;
+    return btime * 1000 + (ticks / CLK_TCK) * 1000;
+  } catch { return null; }
+}
+
+/**
+ * Is this listed run's runner alive? `runIsAlive` (the pid is alive AND a bareloop runner) plus the PID REUSE GUARD: a
+ * pid whose process started MORE than 5 s after the row was written is a recycled pid, not that run. A resumed run's row
+ * keeps its first leg's time while its pid is the latest leg's, so the guard is skipped for it (the cmdline check stands).
+ * @param {any} row @param {number} nowMs
+ */
+export function runnerAlive(row, nowMs) {
+  if (!runIsAlive(row, nowMs)) return false;
+  if (!Number.isInteger(row.pid) || row.leg !== undefined) return true;
+  const at = Date.parse(row.at);
+  const started = procStartMs(row.pid);
+  if (!Number.isFinite(at) || started === null) return true;
+  return started <= at + PID_REUSE_SLACK_MS;
+}
 
 /**
  * @typedef {{runid: string, outcome: string|null, spec: any, records: any[]}} JobRun
@@ -51,7 +89,8 @@ const OUTCOME_KINDS = ['started', 'busy', 'monthly-exhausted', 'refused', 'delet
  *   startFrom: (runid: string) => any,
  *   jobOfRun: (runid: string) => string|null,
  *   rowsFor: () => readonly import('../providerrows.js').KeyRow[],
- * }} deps `jobRuns(job)` = the job's listed runs, newest first, each with its signed spec when on disk and its terminal
+ *   runRows?: () => any[],
+ * }} deps `runRows` = a test seam for the one run-list read the busy check does. `jobRuns(job)` = the job's listed runs, newest first, each with its signed spec when on disk and its terminal
  *   outcome off the spine; `startFrom(runid)` = the panel's `getStartFrom`; `jobOfRun` = the listed run's job name.
  */
 export function createScheduleDoor(deps) {
@@ -231,17 +270,17 @@ export function createScheduleDoor(deps) {
 
   /**
    * Is a run of this job live, or a start in progress? Reads the run list ONCE and asks `runIsAlive` of this job's rows;
-   * a run waiting at its review door has ended (its pid is gone), so it is NOT busy (T7). Part 5 adds the pid-reuse guard.
+   * a run waiting at its review door has ended (its pid is gone), so it is NOT busy (T7). Carries the pid-reuse guard.
    * @param {string} job
    */
   function busy(job) {
-    const rows = readRunList({ home: deps.home }).rows.filter((r) => r && r.job === job);
+    const rows = (deps.runRows ? deps.runRows() : readRunList({ home: deps.home }).rows).filter((r) => r && r.job === job);
     const t = starting.get(job);
     if (t !== undefined) {
       if (now() - t >= STARTING_MS || rows.some((r) => Date.parse(r.at) >= t)) starting.delete(job);
       else return true;
     }
-    return rows.some((r) => runIsAlive(r, now()));
+    return rows.some((r) => runnerAlive(r, now()));
   }
 
   return {
@@ -257,7 +296,7 @@ export function createScheduleDoor(deps) {
      * fire consumes NOTHING, so the next tick tries again; a spawn error after `beforeSpawn` writes a `released` row (bounded).
      * @param {string} job
      * @param {{kind: 'clock', slot: number, catchUp: boolean, missed: number} | {kind: 'file', path: string, sha: string, size?: number}} cause
-     * @param {{beforeSpawn?: () => void}} [hooks]
+     * @param {{beforeSpawn?: () => void, busy?: boolean}} [hooks] `busy` = the scheduler's one read of the run list this tick
      * @returns {Promise<{outcome: 'busy'|'monthly-exhausted'|'refused'|'started', why?: string, told: boolean, sessionId?: string}>}
      */
     async fire(job, cause, hooks = {}) {
@@ -275,7 +314,7 @@ export function createScheduleDoor(deps) {
         if (!seen) appendRow(ledger, { kind: outcome, sig, at: now(), told: tag, key, ...base, why, ...extra });
         return { outcome, why, told: !seen };
       };
-      if (busy(job)) return told('busy', 'A run of this job is still going. This one starts when it is done.');
+      if (hooks.busy ?? busy(job)) return told('busy', 'A run of this job is still going. This one starts when it is done.');
       try {
         const room = checkMonthlyRoom({ capUsd: schedule.spec.budgetUsd, home: deps.home, sessionsRoot: deps.sessionsRoot });
         if (!room.ok) {
@@ -318,6 +357,19 @@ export function createScheduleDoor(deps) {
     armFor,
     readSchedule,
     ledgerOf,
+
+    /**
+     * A failure the scheduler met on a job (a folder that went away, a file refused), written as ONE `refused` row per
+     * `tag`, read back from disk so a restart does not repeat it (T13). Returns whether it wrote.
+     * @param {string} job @param {string} sig @param {string} tag @param {string} why
+     */
+    tellOnce(job, sig, tag, why) {
+      const ledger = ledgerOf(job);
+      const key = `scheduler|${tag}`;
+      if (readLedger(ledger).rows.some((r) => r.told === key)) return false;
+      appendRow(ledger, { kind: 'refused', sig, at: now(), told: key, why });
+      return true;
+    },
 
     /** Click 1. All $0 checks; signs and writes nothing; returns `{words, hash, monthlyNote}`. @param {any} body */
     prepare(body) {

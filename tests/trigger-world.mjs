@@ -80,15 +80,17 @@ export function makeRun(home, { runid, spec, outcome = 'green', accepted = false
 }
 
 /** a panel server over real HTTP on a scratch home; `post`/`get` carry the human-click token. */
-export async function panel({ home, env = {}, spawnFn, now, sessionDeps } = {}) {
+export async function panel({ home, env = {}, spawnFn, now, sessionDeps, schedulerIntervalMs = 0 } = {}) {
   const h = home ?? keysHome();
-  const { close, port, token, schedules } = await createPanelServer({ port: 0, env, home: h, sessionsRoot: tmp('tw-sess-'), ...(spawnFn ? { spawnFn } : {}), ...(now ? { scheduleNow: now } : {}), ...(sessionDeps ? { sessionDeps } : {}) });
+  const { close, port, token, schedules, scheduler } = await createPanelServer({ port: 0, env, home: h, schedulerIntervalMs, sessionsRoot: tmp('tw-sess-'), ...(spawnFn ? { spawnFn } : {}), ...(now ? { scheduleNow: now } : {}), ...(sessionDeps ? { sessionDeps } : {}) });
   test.after(() => close());
   const base = `http://127.0.0.1:${port}`;
   const hdr = { 'content-type': 'application/json', 'x-bareloop-token': token };
   return {
     home: h,
     schedules,
+    scheduler,
+    close,
     noToken: async (p, body) => { const r = await fetch(`${base}${p}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); return r.status; },
     get: async (p) => { const r = await fetch(`${base}${p}`, { headers: hdr }); return { status: r.status, body: await r.json() }; },
     post: async (p, body) => { const r = await fetch(`${base}${p}`, { method: 'POST', headers: hdr, body: JSON.stringify(body) }); return { status: r.status, body: await r.json() }; },
@@ -120,7 +122,7 @@ export const SLOT = new Date(2026, 9, 14, 9, 0).getTime();
 export const CLOCK = (o = {}) => ({ kind: 'clock', slot: SLOT, catchUp: false, missed: 0, ...o });
 
 /** a signed schedule on a plain-files job; a door whose starter has a FAKE session factory and a recorded spawn */
-export async function fireWorld({ when = DAILY, files = true } = {}) {
+export async function fireWorld({ when = DAILY, files = true, schedulerIntervalMs = 0 } = {}) {
   const home = keysHome();
   const inbox = tmp('tf-inbox-');
   const notes = join(tmp('tf-in-'), 'notes.txt');
@@ -129,7 +131,7 @@ export async function fireWorld({ when = DAILY, files = true } = {}) {
   makeRun(home, { runid: 'r1', spec, accepted: true });
   // the schedule clock: armed one hour BEFORE the slot, so the slot is the first one due
   const now = clock(SLOT - 3600_000);
-  const p = await panel({ home, now });
+  const p = await panel({ home, now, schedulerIntervalMs });
   const wh = when === 'files' ? { kind: 'new-file', folder: inbox } : when;
   const body = { runid: 'r1', when: wh, inputs: `notes: ${notes}`, destination: 'output/', capUsd: 1.5, maxWallMs: 600000 };
   const pre = await p.post('/api/author/schedule-prepare', body);

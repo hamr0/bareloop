@@ -44,6 +44,7 @@ import { jobSpecHash, workflowKey } from '../job.js';
 import { confirmProtections } from '../authorflow.js';
 import { createScheduleDoor } from './schedules.js';
 import { createStarter } from './schedulestart.js';
+import { createScheduler } from './scheduler.js';
 import { createAuthorRoutes, mintToken, checkHostGuard, panelMoney2 } from './authorroutes.js';
 import { createRunRoutes } from './runroutes.js';
 import { createImportRoutes, readImports, bundleStatus, IMPORT_CHANGED_LINE } from './importroutes.js';
@@ -3034,8 +3035,8 @@ export function handleRequest(req, res, opts) {
  *   sessionsRoot?: string, spawnFn?: (...a: any[]) => any, bareloopBin?: string,
  *   fetchImpl?: typeof fetch, settleMs?: number, userHome?: string,
  *   openFolderSpawn?: (cmd: string, args: string[], o: object) => any, platform?: string, packageJsonPath?: string,
- *   scheduleNow?: () => number, sessionDeps?: Record<string, any> }} [opts] `scheduleNow` and `sessionDeps` are TEST SEAMS (the schedule clock; createSession's stubs)
- * @returns {Promise<{ server: import('node:http').Server, port: number, token: string, schedules: ReturnType<typeof createScheduleDoor>, close: () => Promise<void> }>}
+ *   scheduleNow?: () => number, sessionDeps?: Record<string, any>, schedulerIntervalMs?: number }} [opts] `scheduleNow`, `sessionDeps` and `schedulerIntervalMs` are TEST SEAMS (the schedule clock; createSession's stubs; the scheduler's timer, 0 = none)
+ * @returns {Promise<{ server: import('node:http').Server, port: number, token: string, schedules: ReturnType<typeof createScheduleDoor>, scheduler: ReturnType<typeof createScheduler>, close: () => Promise<void> }>}
  */
 export function createPanelServer(opts = {}) {
   const requestedPort = opts.port ?? DEFAULT_PORT;
@@ -3056,6 +3057,8 @@ export function createPanelServer(opts = {}) {
     let runRoutes;
     /** @type {ReturnType<typeof createImportRoutes>|undefined} */
     let importRoutes;
+    /** @type {ReturnType<typeof createScheduler>|undefined} */
+    let scheduler;
     const server = createServer((req, res) => {
       try {
         handleRequest(req, res, {
@@ -3104,6 +3107,11 @@ export function createPanelServer(opts = {}) {
         door: schedules, startSession: authorRoutes.startSession, envNow: authorRoutes.envNow, spawnFn: authorRoutes.spawnFn,
         bareloopBin: authorRoutes.bareloopBin, sessionsRoot: opts.sessionsRoot, home, rowsFor, startFrom: (runid) => getStartFrom(runid, { home }),
       }));
+      // T Part 5: the scheduler runs the clock and the folder watch while THIS server is up (panel only, T6); stopped on close
+      scheduler = createScheduler({
+        door: schedules, ...(opts.scheduleNow ? { now: opts.scheduleNow } : {}), ...(opts.schedulerIntervalMs !== undefined ? { intervalMs: opts.schedulerIntervalMs } : {}),
+      });
+      scheduler.start();
       settingsRoutes = createSettingsRoutes({
         port: boundPort, token, home, env: opts.env, fetchImpl: opts.fetchImpl,
         openFolderSpawn: opts.openFolderSpawn, platform: opts.platform,
@@ -3127,7 +3135,8 @@ export function createPanelServer(opts = {}) {
         port: boundPort,
         token,
         schedules,
-        close: () => new Promise((res2) => { server.close(() => res2(undefined)); }),
+        scheduler: /** @type {ReturnType<typeof createScheduler>} */ (scheduler),
+        close: () => new Promise((res2) => { scheduler?.stop(); server.close(() => res2(undefined)); }),
       });
     });
   });
