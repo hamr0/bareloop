@@ -1476,3 +1476,12 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 - The AI looks with read-only search tools, using the person's words, words that mean the same, and what it knows; code proves every word it reports is really in the source.
 - A rubric input may be a pasted URL, fetched with barebrowse at drafting (for the look) and again at run start; the close grades against the run's own saved copy.
 - Work order (hamr, 2026-10-13; supersedes the order above where they differ): (1) finish Part 1c on `feat/rubric-search` (`docs/product/ITEM33-BUILD.md` Part 1c), live proof, /code-review, /release; (2) NEXT: P9 one runs list (`docs/product/PANEL-BUILD.md` P9, mockup `design/runs-list-mock.html`) on its own branch, built only after (1) is released; (3) then "rerun from line N" (RF8), then the remaining items of the order above.
+
+### Page words, site reach, money forms (v1.98 — 2026-10-14)
+
+- A rubric flights run failed on two drafting picks: a money form the page does not use ("$" where the page writes "US dollars") and a time label that repeats inside one record ("at"). See F228 and `docs/product/ITEM33-BUILD.md` (Part 1c, idea A addendum).
+- bareguard ^0.24.0 is adopted (money currency and unit may be lists, ruling #65). bareloop facts still carry one form; allowing lists in facts is a schema change and hamr's call. OPEN. See F228.
+- Idea A (DRAFT, not signed): the AI maps each job line and `~` rule to THIS page's own words; code keeps only words found on the page and decides; the AI never grades. The frozen code rules held on an unseen Google Flights page; a "number then marker" price layout is not read yet. See F226 and the `ITEM33-BUILD.md` idea A addendum.
+- hamr ruling 2026-10-14: no per-page patches; test idea A on the most-used sites only.
+- Site reach: most of the busiest travel and shopping sites block barebrowse. A barebrowse matter, not patched in bareloop. See F227.
+- Work order (hamr, 2026-10-14; supersedes the order above where they differ): release `feat/rubric-search` as is (self-review, then branch-review, then release); then P9 runs list on its own branch; then idea A on its own branch after its spec is signed.
