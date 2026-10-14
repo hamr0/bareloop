@@ -9,6 +9,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Changed
 
+- **Runs-list card money names the drafting share.** The short form reads `$0.22 (drafting <$0.01)` (was `$0.22 (<$0.01)`, the bracket's meaning unclear); a floor reads `(drafting at least $X)`. The long form `($X drafting)` is unchanged.
 - **The panel's Runs list is rebuilt in fwdloop's shape (P9 v2).** One list, top to bottom: Running now (live runs, the wall counting up in place), Needs you (a stopped run the engine would resume, with a `Resume` label, for 7 days), the filters, Jobs (run in the last 30 days, newest activity first) and a folded `quiet jobs`. A job card shows `job · k runs · check type` and its newest run; its runs sit under it, with the older ones behind `older runs (k)` (7 shown, then "use search"). The Workflows / History switch and the flat History list are gone.
 - **Search reads the whole visible row** (job, run-N, run id, model, status word, reason, date, cost, wall, check type); a matching run is marked with a blue bar, never selected, and the fold opens on it. The search box placeholder is shorter.
 - **`GET /api/runs` now returns `{runs, jobs, limits}`.** The server decides live, needs-you, each job's newest run, the quiet split and the limits; the page works out nothing.

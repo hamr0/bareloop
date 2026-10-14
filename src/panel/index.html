@@ -2084,8 +2084,9 @@
    * complete run whose drafting share is itself incomplete — hamr's ruling:
    * a reader summing the two must never read the leading number as exact
    * when the bracket next to it isn't). `draftSpendComplete === false` marks
-   * the bracket itself a floor. `budgetUsd` (when given) appends " of $X.XX". `shortForm` drops the word
-   * "drafting" (the Runs list cards only — "$5.00 ($0.08)").
+   * the bracket itself a floor. `budgetUsd` (when given) appends " of $X.XX". `shortForm` moves the word
+   * "drafting" to lead inside the bracket (the Runs list cards only — "$5.00 (drafting $0.08)",
+   * floor "(drafting at least $0.08)").
    */
   function panelMoneyWithDraft(spendCoreVal, spendCoreFloor, draftSpentUsd, draftSpendComplete, budgetUsd, shortForm){
     var hasDraft = typeof draftSpentUsd === "number" && draftSpentUsd !== null;
@@ -2093,7 +2094,7 @@
     var core = (spendCoreVal === null || spendCoreVal === undefined)
       ? "unknown"
       : ((spendCoreFloor || draftFloor) ? "at least " + panelMoney(spendCoreVal) : panelMoney(spendCoreVal));
-    var draftPart = hasDraft ? " (" + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + (shortForm ? ")" : " drafting)") : "";
+    var draftPart = hasDraft ? (shortForm ? " (drafting " : " (") + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + (shortForm ? ")" : " drafting)") : "";
     var capPart = (budgetUsd === undefined) ? "" : (" of " + panelMoney(budgetUsd));
     return core + draftPart + capPart;
   }
@@ -2151,7 +2152,7 @@
     if(spendFloorUsd === null || spendFloorUsd === undefined) return "unknown";
     var hasDraft = typeof draftSpentUsd === "number" && draftSpentUsd !== null;
     var draftFloor = hasDraft && draftSpendComplete === false;
-    var draftPart = hasDraft ? " (" + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + (shortForm ? ")" : " drafting)") : "";
+    var draftPart = hasDraft ? (shortForm ? " (drafting " : " (") + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + (shortForm ? ")" : " drafting)") : "";
     return panelMoney(spendFloorUsd) + " so far" + draftPart;
   }
   /** build item 6 — the matching wall-clock phrase: "running <duration>",

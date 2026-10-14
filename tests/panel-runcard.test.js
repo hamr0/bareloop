@@ -143,6 +143,18 @@ test('page: a live card reads "$X so far · running Ym" — the SAME strings the
   assert.equal(f.rowWallText(done), '4m00s');
 });
 
+test('page: short-form card money leads the bracket with "drafting" (finished + live, exact + floor); long form unchanged', () => {
+  const f = cardFns();
+  const done = { glyph: '✓', died: false, spentUsd: 0.22, spendComplete: true, spendFloorUsd: null, draftSpentUsd: 0.004, draftSpendComplete: true, wall: '4m00s' };
+  assert.equal(f.rowSpendText(done, true), '$0.22 (drafting <$0.01)');
+  assert.equal(f.rowSpendText(done), '$0.22 (<$0.01 drafting)');
+  const live = { glyph: '▶', died: false, spentUsd: null, spendFloorUsd: 0.75, wallFloorMs: 1000, draftSpentUsd: 0.08, draftSpendComplete: true, wall: 'unknown' };
+  assert.equal(f.rowSpendText(live, true), '$0.75 so far (drafting $0.08)');
+  assert.equal(f.rowSpendText(live), '$0.75 so far ($0.08 drafting)');
+  const liveFloor = { ...live, draftSpendComplete: false };
+  assert.equal(f.rowSpendText(liveFloor, true), '$0.75 so far (drafting at least $0.08)');
+});
+
 test('page: a starting row reads "starting…", and the card/pane have a starting branch', () => {
   const f = cardFns();
   assert.equal(f.rowSpendText({ starting: true, glyph: '▶' }), 'starting…');
