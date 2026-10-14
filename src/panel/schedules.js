@@ -25,7 +25,7 @@ import { validateTrigger, isClockTrigger, isFileTrigger } from '../trigger.js';
 import { armTrigger, nextSlot, recordFire } from '../triggerclock.js';
 import { appendRow, readLedger, withoutReleased } from '../triggerledger.js';
 import { checkTarget, createFileTrigger, queueOf, readSeen, recordDropped, recordRan } from '../triggerfiles.js';
-import { SCHEDULE_WORDS, scheduledWords } from '../schedulewords.js';
+import { SCHEDULE_WORDS, lateRefusalWords, scheduledWords } from '../schedulewords.js';
 import { buildReuseSpec, validateReuseCard } from './authorsession.js';
 
 /** a spawn error after the consuming row releases it at most this many times; then it stays consumed (bounded rows) */
@@ -346,9 +346,9 @@ export function createScheduleDoor(deps) {
         const releases = readLedger(ledger).rows.filter((x) => x.kind === 'released' && x.of === consumeId).length;
         if (releases < MAX_RELEASES) {
           appendRow(ledger, { kind: 'released', of: consumeId, sig, at: now(), why: r.why });
-          return told('refused', `${r.why} It will be tried again.`);
+          return told('refused', lateRefusalWords(r.why, releases, MAX_RELEASES));
         }
-        return told('refused', `${r.why} It was tried ${MAX_RELEASES} times and is given up on.`);
+        return told('refused', lateRefusalWords(r.why, releases, MAX_RELEASES));
       }
       return told('refused', r.why);
     },
