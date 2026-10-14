@@ -28,7 +28,7 @@ const PLAN = {
 
 test('renderJobPlan: legend, numbered lines with their rule, checks as "check · name · class", the two folds with their counts; every text escaped', () => {
   const h = renderJobPlan(PLAN);
-  assert.match(h, /<b>›<\/b> = the approved plan/);
+  assert.match(h, /Done when every <b>›<\/b> check passes/);
   assert.match(h, /class="num">1<\/span>Find &lt;3&gt; flights/, 'a job line is escaped');
   assert.match(h, /class="sub">~ PASS: quoted; FAIL: invented</);
   assert.match(h, /check · flights-found · judge/);
@@ -36,7 +36,7 @@ test('renderJobPlan: legend, numbered lines with their rule, checks as "check ·
   assert.match(h, /check · stray</, 'a check with no class shows no class');
   assert.match(h, /not checked · no command can check the layout/);
   assert.match(h, /<details[^>]*data-testid="plan-notchecked"><summary>Not checked \(the AI's own reading\) · 1</);
-  assert.match(h, /<details[^>]*data-testid="plan-alwayson"><summary>Always on · 2</);
+  assert.match(h, /<details[^>]*data-testid="plan-alwayson"><summary>Always checked · 2</);
   assert.doesNotMatch(h, /plan-older/);
   assert.doesNotMatch(h, /<script|<input|<button/i);
 });

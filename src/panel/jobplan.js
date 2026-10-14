@@ -42,7 +42,7 @@ export function rulesOfLine(l) {
 
 /**
  * The plan of a SIGNED spec. With `jobLines`, each stage lands under EACH line its `fromLine` array names (a stage with none is
- * a mandatory guard: "Always on"), `closeDecl.refused` reasons land under their line, and `closeDecl.notes` are the
+ * a mandatory guard: "Always checked"), `closeDecl.refused` reasons land under their line, and `closeDecl.notes` are the
  * drafter's own "not checked" words. Without `jobLines` (a spec that predates the job block) the signed goal sentence is
  * line 1 and every stage name is a check under it — `older: true`.
  * @param {any} spec
@@ -105,7 +105,7 @@ export function planFromSpec(spec) {
 
 /**
  * The plan of the confirm turn, before anything is drafted: the person's own job lines, the model's checks under the
- * line each names, its own "not checked" words, and the real protections (code-owned) as "Always on".
+ * line each names, its own "not checked" words, and the real protections (code-owned) as "Always checked".
  * @param {{n: number, text: string, rule: string, rules?: string[]}[]|null|undefined} jobLines
  * @param {{checkItems?: {text: string, fromLine: number[]|null}[], checks?: string[], notChecked?: string[], protections?: string[]}} plan
  * @returns {JobPlan}

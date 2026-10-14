@@ -1022,8 +1022,8 @@ Screen signed by hamr 2026-10-10: scratchpad mock `job-block-mock.html` (copied 
 **Drafting confirm card (the plan bubble).** Replaces the plain-text `#PLAN / #CHECKS / #NOT CHECKED` bubble with the SAME renderer as the Job tab (one renderer, two places):
 - each numbered job line, its joined `~` rule, then its drafted check(s) folded: `› check · <name> · machine check | judge`;
 - `› Not checked (the AI's own reading) · N` fold, same shape;
-- `› Always on · N` fold for the mandatory guards (no-suppressions etc.) — they serve no job line;
-- legend `› = the approved plan`; only the `›/⌄` marker is blue+bold (`--plan`: dark #7aa2f7, light #2668c2).
+- `› Always checked · N` fold for the mandatory guards (no-suppressions etc.) — they serve no job line;
+- legend `Done when every › check passes`; only the `›/⌄` marker is blue+bold (`--plan`: dark #7aa2f7, light #2668c2).
 - The Sign & run button is unchanged.
 
 **Job tab (read only).** Same renderer, read from the SIGNED spec, then rows: Inputs (numbered), Destination, Cap, **Signed** (`YYYY-MM-DD HH:MM · <first 6 of specHash>`; time = the run's first `job-start` ts, local time). Older runs without job lines: show the signed goal sentence as line 1 and the stage names as checks, note "older job — numbered lines were not saved".
@@ -1031,7 +1031,7 @@ Screen signed by hamr 2026-10-10: scratchpad mock `job-block-mock.html` (copied 
 ### Rules (code, never the model)
 1. The drafter tags every close stage it writes with `fromLine: N` (a job line number), or lists `refused: [{line, reason}]`.
 2. Validator ($0, at draft): every `fromLine` names a real line; every numbered job line has ≥1 stage OR a refusal reason. Not checked does NOT cover a line. Else red → the existing revise loop.
-3. Mandatory guard stages carry no `fromLine` (they belong to "Always on").
+3. Mandatory guard stages carry no `fromLine` (they belong to "Always checked").
 4. Judge examples for calibration = the `PASS:`/`FAIL:` `~` lines, each kept with its line number (replaces answer 4).
 
 ### What goes into the signed spec (hash changes for NEW jobs only)

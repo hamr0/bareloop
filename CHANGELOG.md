@@ -56,6 +56,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Changed
 
+- **The plan card legend and fold wording** (chat plan card and Job tab): the legend reads "Done when every › check passes" and the mandatory-guards fold is "Always checked" (was "= the approved plan" and "Always on"). Words only.
+
 - **barebrowse `^0.21.0` is a production dependency** (bare suite, Node 22). bare-agent keeps its own optional nested `barebrowse ^0.5.0`; the two do not conflict in a clean install.
 - **bareguard `^0.21.0` -> `^0.23.0`** (`cited` decides with typed values, bind-only and `text` decides, anchors match on word edges only, a `cited` claim carrying `values` with no `decides` is red).
 - **`~ PASS:` / `~ FAIL:` examples are required of a rubric job only when it holds a judged part** (`jobBlockFitsCheck(lines, rubric, { judged })`, hamr's ruling P1=B). A rubric on a local file holds none in this build; a rubric on a repo still needs them.

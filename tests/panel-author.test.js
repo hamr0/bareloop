@@ -565,7 +565,7 @@ test('createSession end to end: draft -> plan menu -> prepared -> sign, driven b
   assert.equal(shown.text, PLAN_FOOTER);
   assert.deepEqual(shown.plan.lines.map((l) => [l.n, l.text, l.rule, l.checks.map((c) => c.name)]),
     [[1, 'fix things', 'no new deps', ['tsc clean']], [2, 'tsc clean', '', []]]);
-  assert.ok(shown.plan.alwaysOn.length > 0, 'the real protections are Always on');
+  assert.ok(shown.plan.alwaysOn.length > 0, 'the real protections are Always checked');
 
   const badSend = session.send('this must be refused — menu picks never go through send');
   assert.equal(badSend.ok, false, 'RED-PROOF: send() must refuse a pending menu ask');
@@ -1190,7 +1190,7 @@ test('P6 item 3: npm ci "succeeds" but node_modules is still missing -> falls ba
   assert.equal(session.state.phase, 'install-needed');
 });
 
-test('planMessage: a structured plan — lines with their checks, loose checks, Not checked, Always on, questions; footer in plain words', () => {
+test('planMessage: a structured plan — lines with their checks, loose checks, Not checked, Always checked, questions; footer in plain words', () => {
   const lines = [{ n: 1, text: 'Fix it', rule: "don't edit tests" }, { n: 2, text: 'Run npm test', rule: '' }];
   const m = planMessage({
     goal: 'g', checks: ['a', 'b', 'c'], checkItems: [{ text: 'a', fromLine: [1] }, { text: 'b', fromLine: [2] }, { text: 'c', fromLine: null }],
