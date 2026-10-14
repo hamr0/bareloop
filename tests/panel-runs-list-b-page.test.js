@@ -21,7 +21,7 @@ function fnSrc(name) {
 }
 
 const NAMES = ['escapeXml', 'runLabel', 'glyphClass', 'panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText',
-  'rlShortDate', 'runAtText', 'rlRunParts', 'runMatchesSearch', 'groupRunsByJob', 'filterRuns', 'filterWorkflows', 'filtersActive', 'rlModel', 'rlSectHtml', 'rlJumpCardHtml', 'rlTopHtml',
+  'rlShortDate', 'runAtText', 'rlRunParts', 'runMatchesSearch', 'groupRunsByJob', 'filterRuns', 'filterWorkflows', 'filtersActive', 'rlModel', 'rlSectHtml', 'rlJumpCardHtml', 'rlScheduledCardHtml', 'rlTopHtml',
   'rlRunCardHtml', 'rlJobCardHtml', 'rlJobsHtml', 'tickSince', 'withFocusPreserved', 'paintRunsList', 'rlRowOf', 'rlJump', 'rlClick', 'setRunsData'];
 
 const LIMITS = { quietDays: 30, olderRuns: 7, needsYouDays: 7 };
@@ -322,10 +322,11 @@ test('CSS: the section header is one rule (bold, normal case, 12 px, dim, no let
   assert.match(css.match(/\.rl-card\.rl-hit\{[^}]*\}/)[0], /inset 3px 0 0 var\(--accent\)/);
 });
 
-test('the Scheduled slot: the model takes `scheduled: []` from the payload and draws nothing; the top sections come from one ordered list', () => {
+test('the Scheduled section (T Part 7): the model takes `scheduled` from the payload; empty draws nothing, a filled one draws after Needs you; the top sections come from one ordered list', () => {
   const m = mount();
   const mod = model(m, [], []);
   assert.deepEqual(mod.scheduled, []);
-  assert.doesNotMatch(m.f.rlTopHtml({ ...mod, scheduled: [{ job: 'x' }] }), /Scheduled/, 'nothing draws it until the triggers piece lands');
+  assert.doesNotMatch(m.f.rlTopHtml(mod), /Scheduled/, 'an empty section draws nothing, not even its header');
+  assert.match(m.f.rlTopHtml({ ...mod, scheduled: [{ job: 'x', at: 'today 15:00', in: 'next in 3h', words: 'Every day at 15:00', runId: 'r1' }] }), /Scheduled \(1\)[\s\S]*rl-sched-x/);
   assert.match(fnSrc('rlTopHtml'), /var sections = \[/);
 });

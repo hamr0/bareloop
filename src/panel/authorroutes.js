@@ -249,8 +249,11 @@ export function createAuthorRoutes(opts) {
         ok: true, origin: pre.origin, card: pre.card, from: pre.from, note: pre.note,
         locked: pre.locked, open: pre.open, specHash: pre.specHash, workflowKey: pre.workflowKey, trackRecord: pre.trackRecord,
         line: pre.line, specNamesModel: pre.specNamesModel, specWorker: pre.specWorker,
-        // T Part 3: `mode=schedule` also returns the job's current schedule (data only) for the When field's prefill
-        ...(sp.get('mode') === 'schedule' && opts.schedules ? { schedule: opts.schedules.read(pre.origin.job) } : {}),
+        // T Part 3: `mode=schedule` also returns the job's current schedule (data only) for the When field's prefill; Part 7 adds the
+        // card's own words (`scheduleCard`: now / refusal / editNote / the button table). Edit in chat on a scheduled job gets the
+        // fixed edit note to show BEFORE signing (D.7).
+        ...(sp.get('mode') === 'schedule' && opts.schedules ? { schedule: opts.schedules.read(pre.origin.job), scheduleCard: opts.schedules.cardFor(pre.origin.job) } : {}),
+        ...(sp.get('mode') !== 'schedule' && opts.schedules && pre.origin?.job ? { editNote: opts.schedules.editNoteFor(pre.origin.job) } : {}),
       });
       return true;
     }

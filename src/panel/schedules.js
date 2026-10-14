@@ -9,9 +9,9 @@
 //   ledger.jsonl    ONE append-only ledger, every row carrying `sig` (the spec hash it was written under)
 // Rewritten from fwdloop src/panel/authortrigger.js (prepare/set/read/armFor/shapeOf); bareloop's gate is `greenFor`.
 import {
-  existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync,
+  existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
-import { userInfo } from 'node:os';
+import { homedir, userInfo } from 'node:os';
 import { dirname, join } from 'node:path';
 import { readRunList, runIsAlive, runlistHome } from '../runlist.js';
 import { jobSpecHash, validateJob, workflowKey } from '../job.js';
@@ -25,7 +25,9 @@ import { validateTrigger, isClockTrigger, isFileTrigger } from '../trigger.js';
 import { armTrigger, nextSlot, recordFire } from '../triggerclock.js';
 import { appendRow, readLedger, withoutReleased } from '../triggerledger.js';
 import { checkTarget, createFileTrigger, queueOf, readSeen, recordDropped, recordRan } from '../triggerfiles.js';
-import { SCHEDULE_WORDS, lateRefusalWords, scheduledWords } from '../schedulewords.js';
+import {
+  SCHEDULE_WORDS, editClearsWords, lateRefusalWords, nextInWords, nextTimeWords, scheduledNextFor, scheduledWords,
+} from '../schedulewords.js';
 import { buildReuseSpec, validateReuseCard } from './authorsession.js';
 
 /** a spawn error after the consuming row releases it at most this many times; then it stays consumed (bounded rows) */
@@ -90,11 +92,13 @@ export function runnerAlive(row, nowMs) {
  *   jobOfRun: (runid: string) => string|null,
  *   rowsFor: () => readonly import('../providerrows.js').KeyRow[],
  *   runRows?: () => any[],
- * }} deps `runRows` = a test seam for the one run-list read the busy check does. `jobRuns(job)` = the job's listed runs, newest first, each with its signed spec when on disk and its terminal
+ *   userHome?: string,
+ * }} deps `userHome` = the folder shown as `~` in words (default the OS home). `runRows` = a test seam for the one run-list read the busy check does. `jobRuns(job)` = the job's listed runs, newest first, each with its signed spec when on disk and its terminal
  *   outcome off the spine; `startFrom(runid)` = the panel's `getStartFrom`; `jobOfRun` = the listed run's job name.
  */
 export function createScheduleDoor(deps) {
   const { now = Date.now } = deps;
+  const userHome = deps.userHome ?? homedir();
   /** @type {ReturnType<typeof import('./schedulestart.js').createStarter>|null} */
   let starter = null;
   /** job -> ms the headless start began: closes the gap between the spawn and the row run-u appends (T19) @type {Map<string, number>} */
@@ -251,7 +255,7 @@ export function createScheduleDoor(deps) {
     }
     return {
       ok: /** @type {true} */ (true), cancel: /** @type {false} */ (false), job, trigger, spec, key: green.key, originRunid: green.run.runid,
-      inputsText: typeof card.inputs === 'string' ? card.inputs : '', words: scheduledWords(trigger, deps.home), hash: jobSpecHash(spec), monthlyNote,
+      inputsText: typeof card.inputs === 'string' ? card.inputs : '', words: scheduledWords(trigger, userHome), hash: jobSpecHash(spec), monthlyNote,
       cur: readSchedule(job),
     };
   }
@@ -281,6 +285,43 @@ export function createScheduleDoor(deps) {
       else return true;
     }
     return rows.some((r) => runnerAlive(r, now()));
+  }
+
+  /**
+   * The schedule and what the ledger says about it, as DATA: armed under the CURRENT signing, the next slot (clock kinds),
+   * the last outcome (rows with `sig` equal to the current signing, never a wall-clock compare, T19). No green gate.
+   * @param {string} job
+   */
+  function stateOf(job) {
+    const schedule = readSchedule(job);
+    if (!schedule) return { schedule: null, trigger: null, armed: false, armedAt: null, nextSlotMs: null, lastOutcome: null };
+    const rows = withoutReleased(readLedger(ledgerOf(job)).rows).filter((r) => r.sig === schedule.specHash);
+    const armed = rows.find((r) => r.kind === 'armed');
+    const outcomes = rows.filter((r) => OUTCOME_KINDS.includes(r.kind));
+    return {
+      schedule, trigger: schedule.trigger, armed: armed !== undefined, armedAt: armed ? armed.at : null,
+      nextSlotMs: isClockTrigger(schedule.trigger) && armed ? nextSlot(/** @type {any} */ (schedule.trigger), now()) : null,
+      lastOutcome: outcomes.length > 0 ? outcomes[outcomes.length - 1] : null,
+    };
+  }
+
+  /** @type {Map<string, {key: string, green: ReturnType<typeof greenFor>}>} */
+  const greenMemo = new Map();
+  /**
+   * `greenFor`, memoised on the job's run-list state (each of its spines' size and mtime), so the Run tab's poll does not
+   * re-parse every run of the job each time. A finished run changes its spine, so the key moves and the gate is asked again.
+   * @param {string} job
+   */
+  function cachedGreen(job) {
+    const rows = (deps.runRows ? deps.runRows() : readRunList({ home: deps.home }).rows).filter((r) => r && r.job === job);
+    const key = rows.map((r) => {
+      try { const st = statSync(r.spine); return `${r.runid}:${st.size}:${st.mtimeMs}`; } catch { return `${r.runid}:gone`; }
+    }).join('|');
+    const hit = greenMemo.get(job);
+    if (hit && hit.key === key) return hit.green;
+    const green = greenFor(job);
+    greenMemo.set(job, { key, green });
+    return green;
   }
 
   return {
@@ -444,18 +485,82 @@ export function createScheduleDoor(deps) {
      */
     read(job) {
       if (!SLUG_RE.test(job)) return null;
-      const schedule = readSchedule(job);
       const green = greenFor(job);
-      const base = { job, hasGreen: green.ok, refusal: green.ok ? null : green.say };
-      if (!schedule) return { ...base, schedule: null, trigger: null, armed: false, armedAt: null, nextSlotMs: null, lastOutcome: null };
-      const rows = withoutReleased(readLedger(ledgerOf(job)).rows).filter((r) => r.sig === schedule.specHash);
-      const armed = rows.find((r) => r.kind === 'armed');
-      const outcomes = rows.filter((r) => OUTCOME_KINDS.includes(r.kind));
+      return { job, hasGreen: green.ok, refusal: green.ok ? null : green.say, ...stateOf(job) };
+    },
+
+    stateOf,
+    userHome,
+
+    /**
+     * What the Run tab shows of a job's schedule (A.12: one read of the schedule files and the ledger; the green gate is
+     * memoised per run-list state, so a poll never re-parses every run). The SERVER decides: `scheduled` shows Cancel /
+     * modify, else `canSchedule` shows Schedule run, else no button. `fromRunid` = the green run the card opens from. `waitingRunNo` = the job's newest run when it waits
+     * for the person's Accept (the next scheduled run does NOT wait for it, T7).
+     * @param {string} job @param {{waitingRunNo?: number|null}} [o]
+     */
+    view(job, o = {}) {
+      if (!SLUG_RE.test(job)) return null;
+      const st = stateOf(job);
+      if (!st.schedule) {
+        const g = cachedGreen(job);
+        return { scheduled: false, canSchedule: g.ok, words: SCHEDULE_WORDS, ...(g.ok ? { fromRunid: g.run.runid } : {}) };
+      }
+      const next = scheduledNextFor({
+        trigger: st.schedule.trigger, armed: st.armed, nextSlotMs: st.nextSlotMs, lastOutcome: st.lastOutcome, waitingRunNo: o.waitingRunNo ?? null, now: now(),
+      });
       return {
-        ...base, schedule, trigger: schedule.trigger, armed: armed !== undefined, armedAt: armed ? armed.at : null,
-        nextSlotMs: isClockTrigger(schedule.trigger) && armed ? nextSlot(/** @type {any} */ (schedule.trigger), now()) : null,
-        lastOutcome: outcomes.length > 0 ? outcomes[outcomes.length - 1] : null,
+        scheduled: true, canSchedule: false, words: SCHEDULE_WORDS, fromRunid: st.schedule.originRunid,
+        text: scheduledWords(st.schedule.trigger, userHome), next: next.text, nextRed: next.red,
       };
+    },
+
+    /**
+     * The schedule card's data for `start-from?mode=schedule`: the current schedule in the When field's own terms, the
+     * words, the refusal that disables the field (a job with no good run and no schedule), and the edit note.
+     * Cancel is never refused, so a scheduled job is never disabled here.
+     * @param {string} job
+     */
+    cardFor(job) {
+      const st = stateOf(job);
+      const green = st.schedule ? null : cachedGreen(job);
+      const t = st.schedule ? st.schedule.trigger : null;
+      return {
+        scheduled: st.schedule !== null, trigger: t, now: t ? scheduledWords(t, userHome) : null,
+        refusal: green && !green.ok ? green.say : null,
+        editNote: t ? editClearsWords(t, userHome) : null,
+        words: SCHEDULE_WORDS,
+      };
+    },
+
+    /** The edit note for a job (Edit in chat shows it BEFORE signing, D.7), or null when the job is by hand. @param {string} job */
+    editNoteFor(job) {
+      const t = SLUG_RE.test(job) ? readSchedule(job)?.trigger : null;
+      return t ? editClearsWords(t, userHome) : null;
+    },
+
+    /**
+     * The Scheduled section of the runs list: `[{job, at, in, words, runId}]`, soonest first; a file trigger (no clock
+     * time) after those that have one, by name. `heads` = job -> its HEAD run id by time (summarizeJobs), so the click
+     * opens the job's newest run, never "the first in server order". A job that cannot be read is absent.
+     * @param {Map<string, string|null>|Record<string, string|null>} heads
+     */
+    listScheduled(heads) {
+      const nowMs = now();
+      const headOf = (/** @type {string} */ job) => (heads instanceof Map ? heads.get(job) : heads[job]) ?? null;
+      const out = [];
+      for (const { job, schedule } of this.scan()) {
+        try {
+          const st = stateOf(job);
+          const when = st.nextSlotMs;
+          out.push({
+            job, at: when === null ? null : nextTimeWords(when, nowMs), in: when === null ? null : nextInWords(when, nowMs),
+            words: scheduledWords(schedule.trigger, userHome), runId: headOf(job), _ms: when,
+          });
+        } catch { /* unreadable: absent */ }
+      }
+      out.sort((x, y) => (x._ms === null ? 1 : 0) - (y._ms === null ? 1 : 0) || (x._ms ?? 0) - (y._ms ?? 0) || (x.job < y.job ? -1 : x.job > y.job ? 1 : 0));
+      return out.map(({ _ms, ...rest }) => rest);
     },
   };
 }

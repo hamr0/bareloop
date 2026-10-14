@@ -19,7 +19,7 @@ import { readLedger } from '../src/triggerledger.js';
 import { queueOf, readSeen, recordArrived } from '../src/triggerfiles.js';
 import { appendRun } from '../src/runlist.js';
 import {
-  clock, keysHome, makeRun, panel, recordingSpawn, specOf, tmp, fireWorld as world, DAILY, SLOT, CLOCK,
+  clock, keysHome, makeRun, panel, recordingSpawn, specOf, tmp, fireWorld as world, DAILY, SLOT, CLOCK, waitExec,
 } from './trigger-world.mjs';
 
 
@@ -31,6 +31,7 @@ function liveRunner(home, job = 'sched-job', runid = 'live1') {
   const f = join(d, 'run-u.mjs');
   writeFileSync(f, 'setInterval(() => {}, 1000);\n');
   const c = spawn(process.execPath, [f], { stdio: 'ignore' });
+  waitExec(c.pid);
   test.after(() => { try { c.kill('SIGKILL'); } catch { /* gone */ } });
   const spine = join(d, `u-${runid}.jsonl`);
   writeFileSync(spine, '');

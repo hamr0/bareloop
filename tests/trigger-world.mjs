@@ -162,3 +162,16 @@ export async function fireWorld({ when = DAILY, files = true, schedulerIntervalM
     sig: JSON.parse(readFileSync(join(dir, 'schedule.json'), 'utf8')).specHash,
   };
 }
+
+/**
+ * Block (up to 3 s) until a just-spawned child has EXEC'd: before that, /proc/<pid>/cmdline still shows the parent's argv, so a runner
+ * check would read it as "not a bareloop runner" (a race that shows only on a loaded machine).
+ * @param {number} pid @param {string} name the script name the child runs
+ */
+export function waitExec(pid, name = 'run-u.mjs') {
+  const t0 = Date.now();
+  while (Date.now() - t0 < 3000) {
+    try { if (readFileSync(`/proc/${pid}/cmdline`, 'utf8').includes(name)) return; } catch { return; }
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+  }
+}

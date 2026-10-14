@@ -23,7 +23,7 @@ function fnSrc(name) {
 function build(fnNames, scope = {}, vars = '', ret = '') {
   const keys = Object.keys(scope);
   // eslint-disable-next-line no-new-func
-  return new Function(...keys, `${vars}\n${fnNames.map(fnSrc).join('\n')}\nreturn {${[...fnNames, ret].filter(Boolean).join(',')}};`)(...keys.map((k) => scope[k]));
+  return new Function(...keys, `var sched = null; function scheduleOff() { sched = null; } // T Part 7: the schedule card's state, off in these tests\n${vars}\n${fnNames.map(fnSrc).join('\n')}\nreturn {${[...fnNames, ret].filter(Boolean).join(',')}};`)(...keys.map((k) => scope[k]));
 }
 const escapeXml = (x) => String(x).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const JOBS = [

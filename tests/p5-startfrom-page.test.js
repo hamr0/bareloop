@@ -70,7 +70,7 @@ test('page: setReuseLocked greys Name and The job — and never Inputs, Destinat
   };
   const modelSelect = els['jf-model'];
   // eslint-disable-next-line no-new-func
-  const f = new Function('document', 'modelSelect', `var LOCKED_IDS = ["jf-name", "jf-job"]; var OPEN_IDS = ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var reuseOn = false; var sessionLive = false; var resumeRun = null; var CAP_IDS = ["jf-cap-money", "jf-cap-time"]; function syncThinking(){}\n${fnSrc('syncCardLock')}\n${fnSrc('setReuseLocked')}\nreturn setReuseLocked;`)(doc, modelSelect);
+  const f = new Function('document', 'modelSelect', `var LOCKED_IDS = ["jf-name", "jf-job"]; var OPEN_IDS = ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var reuseOn = false; var sessionLive = false; var resumeRun = null; var sched = null; var CAP_IDS = ["jf-cap-money", "jf-cap-time"]; function syncThinking(){}\n${fnSrc('syncCardLock')}\n${fnSrc('setReuseLocked')}\nreturn setReuseLocked;`)(doc, modelSelect);
   f(true);
   for (const id of ['jf-name', 'jf-job']) {
     assert.equal(els[id].readOnly, true, `${id} is read only`);

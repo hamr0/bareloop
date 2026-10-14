@@ -62,6 +62,21 @@ export function doorAccepted(events) {
 }
 
 /**
+ * Is this run WAITING for the person's Accept? Its spine holds a door record, the door has not expired ({@link doorAgeGate}),
+ * and no honoured `accept` or `rerun` decision follows it (a `pause` keeps the same three doors open). One owner: the runs
+ * list's Needs-you `Accept` tag, the Run tab's Accept button and the scheduled NEXT line all read this.
+ * @param {any[]} events the run's spine, parsed
+ * @param {{now?: () => number}} [opts]
+ * @returns {boolean}
+ */
+export function doorWaiting(events, opts = {}) {
+  const door = doorRecordOf(events);
+  if (!door || !doorAgeGate(door, opts.now ? { now: opts.now } : {}).ok) return false;
+  const at = events.lastIndexOf(door);
+  return !events.slice(at + 1).some((e) => e?.type === 'door-decision' && e.honoured === true && (e.decision === 'accept' || e.decision === 'rerun'));
+}
+
+/**
  * IS THE DOOR STILL OPEN? The same 60-day TTL a hitl checkpoint keeps
  * (`PAUSE_TTL_MS`) and deliberately the same NUMBER — the door replaced `cancel`
  * precisely because an unanswered door and an unresumed pause are one state, and

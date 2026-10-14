@@ -319,6 +319,9 @@
   .rw-picked{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;padding:6px 8px;border:1px solid var(--accent);}
   .rw-picked span{overflow-wrap:anywhere;}
   .rw-picked a{font-size:12px;cursor:pointer;flex:none;}
+  /* T Part 7: the SCHEDULED / NEXT twin of the ENDED block, and the note under both */
+  .ended-text.is-red{color:var(--red);}
+  #catchup-note{margin:-6px 0 14px;overflow-wrap:anywhere;}
   .run-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;}
   .run-actions[hidden]{display:none;}
   .run-actions .stopping{color:var(--amber);font-size:13px;overflow-wrap:anywhere;}
@@ -426,6 +429,13 @@
   .job-card h4::before{content:"┤ ";color:var(--text-faint);}
   .job-card h4::after{content:" ├";color:var(--text-faint);}
   .field{margin-bottom:10px;}
+  /* T Part 7: the When field (sub-boxes show and hide; 44px controls) */
+  .when-sub{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;}
+  .when-sub[hidden]{display:none;}
+  .when-sub select,.when-sub input{flex:1 1 120px;min-width:0;width:auto;min-height:44px;}
+  #jf-when{min-height:44px;}
+  .jf-err{color:var(--red);font-size:12px;overflow-wrap:anywhere;}
+  .jf-err:empty{display:none;}
   .field input,.field select{width:100%;}
   label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:2px;text-transform:uppercase;letter-spacing:0.04em;}
   .ro-value{padding:6px 8px;min-height:32px;box-sizing:border-box;border:1px solid var(--border);background:var(--bg);color:var(--text-dim);}
@@ -745,6 +755,24 @@
               <textarea class="jf-wrap" id="jf-dest" rows="1" placeholder="the write fence — where in the repo this run may change files"></textarea>
             </div>
 
+            <!-- T Part 7: the When field, only on the card opened by Schedule run / Cancel-modify schedule. Every word is filled from the server's table. -->
+            <div class="field" id="jf-when-field" data-testid="jf-when-field" hidden>
+              <label for="jf-when" id="jf-when-label">When</label>
+              <select id="jf-when" data-testid="jf-when" aria-label="When this job runs"></select>
+              <div class="when-sub" id="jf-when-clock" hidden>
+                <select id="jf-when-day" data-testid="jf-when-day" aria-label="Day of the week">
+                  <option value="mon">Monday</option><option value="tue">Tuesday</option><option value="wed">Wednesday</option><option value="thu">Thursday</option>
+                  <option value="fri">Friday</option><option value="sat">Saturday</option><option value="sun">Sunday</option>
+                </select>
+                <input id="jf-when-time" type="time" value="09:00" data-testid="jf-when-time" aria-label="Time, HH:MM">
+              </div>
+              <div class="when-sub" id="jf-when-filebox" hidden>
+                <input id="jf-when-path" type="text" autocomplete="off" spellcheck="false" data-testid="jf-when-path" aria-label="File or folder">
+              </div>
+              <div class="hint" id="jf-when-now" data-testid="jf-when-now"></div>
+              <div class="jf-err" id="jf-err-when" data-testid="jf-err-when"></div>
+            </div>
+
             <div class="cap-row" data-testid="cap-row">
               <div class="cap-field">
                 <label for="jf-cap-money">Cap $</label>
@@ -840,6 +868,12 @@
           <div class="import-view" id="import-view" data-testid="import-view" hidden></div>
           <div id="run-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run from the Runs list</div>
           <div id="run-content" hidden>
+            <!-- T Part 7 (RULED 2026-10-14): ENDED / NEXT moved here from the Audit tab; SCHEDULED / NEXT is its twin directly below it (fwd #summary-blocks) -->
+            <div id="summary-blocks" data-testid="summary-blocks">
+              <div id="ended-block" class="ended-block" data-testid="ended-block" hidden></div>
+              <div id="sched-block" class="ended-block" data-testid="sched-block" hidden></div>
+              <div class="hint" id="catchup-note" data-testid="catchup-note" hidden></div>
+            </div>
             <div class="run-actions" id="run-actions" data-testid="run-actions" hidden></div>
             <div class="counters" id="run-counters" data-testid="live-counters"></div>
             <div class="summary-box" id="run-summary" data-testid="run-summary"></div>
@@ -851,7 +885,6 @@
         <section id="panel-audit" class="tabpanel" role="tabpanel" aria-labelledby="tab-audit" hidden>
           <div id="audit-select-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run first</div>
           <div id="audit-body" hidden>
-            <div id="ended-block" class="ended-block" data-testid="ended-block" hidden></div>
             <div class="audit-toolbar" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
               <div class="chips" role="group" aria-label="Filter audit rows" style="margin-bottom:0;">
                 <button class="chip" aria-pressed="true" data-filter="all" data-testid="chip-all">All</button>
@@ -1470,11 +1503,22 @@
       (need ? '<span class="rl-pill rl-pill-need">' + escapeXml(r.needs) + '</span>' : ' <span class="rl-faint">' + faint + ' &middot; ' + escapeXml(rowSpendText(r, true)) + '</span>') + '</span>' +
       '<span class="rl-l2">' + l2 + '</span></button>';
   }
+  // Scheduled card (T Part 7): `[·] job  today 15:00` / `next in 3h · Every day at 15:00`, all from the server. A file trigger has no clock time:
+  // `at` / `in` are null and nothing is made up. A click does what Running now does (rlJump to the job's HEAD run, `runId` from the server and
+  // scrolls to its job). A job with no run to open stays a plain box. Never filtered or searched.
+  function rlScheduledCardHtml(s){
+    var body = '<span class="rl-l1"><span class="dot grey"></span><span class="rl-nm" title="' + escapeXml(s.job) + '">' + escapeXml(s.job) + '</span>' +
+      (s.at ? ' <span class="rl-faint">' + escapeXml(s.at) + '</span>' : '') + '</span>' +
+      '<span class="rl-l2">' + escapeXml([s.in, s.words].filter(function(x){ return x; }).join(" · ")) + '</span>';
+    if(typeof s.runId !== "string" || s.runId === "") return '<div class="rl-card" data-testid="rl-sched-' + escapeXml(s.job) + '">' + body + '</div>';
+    return '<button class="rl-card" type="button" data-rl-jump="' + escapeXml(s.runId) + '" data-testid="rl-sched-' + escapeXml(s.job) + '">' + body + '</button>';
+  }
   // The sections above the filters, from ONE ordered list: the Scheduled section (PRD v1.99) is one more entry here after Needs you, plus one draw function.
   function rlTopHtml(m){
     var sections = [
       { label: "Running now", items: m.running, draw: function(r){ return rlJumpCardHtml(r, false); } },
       { label: "Needs you", items: m.needs, draw: function(r){ return rlJumpCardHtml(r, true); } },
+      { label: "Scheduled", items: m.scheduled, draw: rlScheduledCardHtml },
     ];
     return sections.map(function(s){
       return s.items.length ? rlSectHtml(s.label, s.items.length) + s.items.map(s.draw).join("") : "";
@@ -2295,10 +2339,15 @@
     else { row.hidden = true; val.textContent = ""; }
   }
 
-  // ---- P5: the ENDED block (Audit tab, first block, every finished run) and Resume ----
-  // The sentences are CODE-OWNED on the server (`endedFor`, src/panel/server.js) — this only
-  // paints them. `detail.ended` is null while a run is live (no block while running).
+  // ---- P5: the ENDED block (Run tab, first block above the action row, every finished run) and Resume ----
+  // T Part 7 (RULED 2026-10-14): the block MOVED here from the Audit tab, and the SCHEDULED / NEXT block (renderScheduled) is its twin directly below it in the
+  // same container (#summary-blocks), built with the same `summaryRows`. The sentences are CODE-OWNED on the server (`endedFor`, src/panel/server.js;
+  // `detail.schedule`, src/schedulewords.js) — this only paints them. `detail.ended` is null while a run is live (no block while running).
   var lastEndedSig = null;
+  function summaryRows(a, b){
+    return '<div class="ended-row"><span class="ended-label">' + escapeXml(a[0]) + '</span><span class="ended-text" data-testid="' + a[2] + '">' + escapeXml(a[1]) + '</span></div>' +
+      '<div class="ended-row"><span class="ended-label">' + escapeXml(b[0]) + '</span><span class="ended-text" data-testid="' + b[2] + '">' + escapeXml(b[1]) + '</span></div>';
+  }
   // Resume (P5-R, hamr 2026-10-02: opened the run's own Job tab) MOVED to the left Chat card (hamr 2026-10-07): the card
   // in RESUME mode, only the money cap and the time cap open (applyResume / signResume). The Job tab is read-only on
   // every run — values only, no inputs, no buttons. A resume is the SAME run: no new card, no new job.
@@ -2313,13 +2362,28 @@
     box.hidden = false;
     box.className = "ended-block " + (detail.died ? "magenta" : (detail.glyph === "✓" ? "green" : "red"));
     // text only: the ONE place for [Stop] / [Resume] / [Reuse workflow] is the Run tab's top action row (renderRunActions)
-    box.innerHTML =
-      '<div class="ended-row"><span class="ended-label">ENDED</span><span class="ended-text" data-testid="ended-reason">' + escapeXml(e.reason) + '</span></div>' +
-      '<div class="ended-row"><span class="ended-label">NEXT</span><span class="ended-text" data-testid="ended-next">' + escapeXml(e.next) + '</span></div>';
+    box.innerHTML = summaryRows(["ENDED", e.reason, "ended-reason"], ["NEXT", e.next, "ended-next"]);
+  }
+  // SCHEDULED / NEXT (T Part 7): the job's schedule, painted from `detail.schedule` (the server's words); NEXT goes red when the server says `nextRed`.
+  // Under it, one note: why THIS run started (a scheduled start) and the catch-up sentence when it started late. Nothing is worked out here.
+  function renderScheduled(detail){
+    var box = document.getElementById("sched-block");
+    var note = document.getElementById("catchup-note");
+    var sc = detail.schedule;
+    if(sc && sc.scheduled){
+      var w = sc.words || {};
+      box.hidden = false;
+      box.className = "ended-block" + (sc.nextRed === true ? " red" : "");
+      box.innerHTML = summaryRows([w.scheduledLabel || "SCHEDULED", sc.text, "sched-text"], [w.nextLabel || "NEXT", sc.next, "sched-next"]);
+      if(sc.nextRed === true) box.querySelector('[data-testid="sched-next"]').classList.add("is-red");
+    } else { box.hidden = true; box.innerHTML = ""; }
+    var lines = [detail.startedBy, detail.catchUp].filter(function(x){ return typeof x === "string" && x !== ""; });
+    note.hidden = lines.length === 0;
+    note.textContent = lines.join(" ");
   }
   // ---- P5 item 5: the run's ACTION AREA (Run tab, above the counters) — Stop while the run is live, Resume once
   // it ended in a way the engine would accept (opens the Chat card's resume mode), Edit in chat on every non-green ending.
-  // The Ended block (Audit tab) is text only and carries no buttons.
+  // The Ended block (Run tab, above this row) is text only and carries no buttons.
   var stopAsked = {};
   // Reuse workflow (replaces P5 item 3's Start from this) — ask the server for the prefill (the signed job), then
   // hand it to the Chat tab's New job card. The page decides nothing: the server owns what is locked and what is open.
@@ -2331,6 +2395,19 @@
       document.dispatchEvent(new CustomEvent("bareloop-reuse", {detail: {runid: runid, prefill: r}}));
     }).catch(function(x){ window.alert("could not reach the panel: " + x.message); });
   }
+  // Schedule run / Cancel / modify schedule (T Part 7): starts nothing and signs nothing. It opens the SAME Chat card as the neighbouring Reuse
+  // workflow button, in schedule mode (the When field showing the current schedule). The run it copies from is the server's answer
+  // (`detail.schedule.fromRunid`: the green the schedule was made from), so a red run of a scheduled job still opens the card.
+  function scheduleInChat(detail){
+    var from = (detail.schedule && detail.schedule.fromRunid) || detail.runid;
+    authorGet("/api/author/start-from?mode=schedule&runid=" + encodeURIComponent(from)).then(function(r){
+      document.getElementById("tab-chat").click();
+      document.dispatchEvent(new CustomEvent("bareloop-schedule", {detail: (r && r.ok) ? {runid: from, prefill: r, job: detail.job} : {error: (r && r.error) || "nothing to schedule"}}));
+    }).catch(function(x){
+      document.getElementById("tab-chat").click();
+      document.dispatchEvent(new CustomEvent("bareloop-schedule", {detail: {error: "could not reach the panel: " + x.message}}));
+    });
+  }
   // Edit in chat (hamr 2026-10-07, option A) — the same prefill door as Reuse workflow (`start-from`, the ONE reader of a
   // run's signed job), but the Chat card opens with EVERY box open and the normal [Start drafting] path: it drafts a new job.
   // The origin line is code-owned fixed text; run name and status word come from the same helpers the run header uses.
@@ -2340,6 +2417,8 @@
       ". Every box is open. Change anything and it drafts as a new job; change nothing and it is another run of the same job.";
     authorGet("/api/author/start-from?runid=" + encodeURIComponent(detail.runid)).then(function(r){
       document.getElementById("tab-chat").click();
+      // a scheduled job: the server's fixed edit note (an edit clears the schedule) is shown BEFORE signing (T D.7)
+      if(r && r.ok && typeof r.editNote === "string" && r.editNote !== "") origin += " " + r.editNote;
       document.dispatchEvent(new CustomEvent("bareloop-edit", {detail: (r && r.ok) ? {runid: detail.runid, prefill: r, origin: origin} : {error: (r && r.error) || "nothing to copy"}}));
     }).catch(function(x){
       document.getElementById("tab-chat").click();
@@ -2381,8 +2460,20 @@
     if(!live && !detail.died && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "reuse"; })){
       html += '<button class="btn" type="button" data-testid="btn-reuse">Reuse workflow</button>';
     }
+    // T Part 7: the schedule button is LAST, right after Reuse workflow. The SERVER decides (detail.schedule): `scheduled` shows
+    // Cancel / modify schedule (every run of the job, also while one is live: cancel is never refused); else `canSchedule` shows
+    // Schedule run; else no button. The label never changes in place — a different state is a different button.
+    var sc = detail.schedule || null;
+    var scw = (sc && sc.words) || {};
+    if(sc && sc.scheduled){
+      html += '<button class="btn" type="button" data-testid="run-cancel-schedule">' + escapeXml(scw.cancelModify || "") + '</button>';
+    } else if(sc && sc.canSchedule){
+      html += '<button class="btn" type="button" data-testid="run-schedule">' + escapeXml(scw.scheduleRun || "") + '</button>';
+    }
     bar.innerHTML = html;
     bar.hidden = html === "";
+    var schedBtn = bar.querySelector('[data-testid="run-schedule"], [data-testid="run-cancel-schedule"]');
+    if(schedBtn) schedBtn.addEventListener("click", function(){ scheduleInChat(detail); });
     var reuseBtn = bar.querySelector('[data-testid="btn-reuse"]');
     if(reuseBtn) reuseBtn.addEventListener("click", function(){ reuseWorkflow(detail.runid); });
     var editBtn = bar.querySelector('[data-testid="btn-edit-chat"]');
@@ -2452,6 +2543,7 @@
     document.getElementById("audit-select-empty").hidden = true;
     document.getElementById("audit-body").hidden = false;
     renderEnded(detail);
+    renderScheduled(detail);
 
     setRunHeader(detail.glyph, runName(detail.job, detail.runNo, detail.runid), runHeaderBody(detail));
 
@@ -3871,6 +3963,14 @@
     // Reuse workflow — set when the card was opened by [Reuse workflow]: the run (or imported job) it came from.
     // Only Source, Destination and the two caps are open on that card; the SERVER refuses any other change.
     var startFrom = null;
+    // T Part 7: the card in SCHEDULE mode (opened by Schedule run / Cancel-modify schedule): the Reuse card plus the When field.
+    // `sched` = {job, runid, words, cur, scheduled, refusal, now} while it is on, else null. `cur` = the signed trigger (the When field's
+    // starting value); every word comes from `words` (the server's one table, src/schedulewords.js SCHEDULE_WORDS).
+    var sched = null;
+    var whenHash = null;       // the hash click 1 returned; null = click 1 not done (or a When / card box was edited since)
+    var whenConfirm = null;    // the lower-cased words the label shows after click 1: "Confirm: every day at 13:15"
+    var whenBusy = false;      // a request is out: the main button dims and cannot be pressed
+    var whenLocked = false;    // ~1.5 s after click 2 the main button is dead (hamr clicked Run twice thinking it was the trigger)
     // the picked job's OWN check type: with the Check type radio on "Reuse workflow" the card's checkType comes from here, never from the radio
     var reuseCheckType = "deterministic";
     var reusePickedName = "";
@@ -3897,7 +3997,8 @@
       // the one exception on a resume card: an older spec that names no model leaves the Model box open (picked at resume)
       var modelOpen = resuming && resumeRun.pickModel === true;
       OPEN_IDS.forEach(function(id){ setLock(id, live || (resuming && CAP_IDS.indexOf(id) === -1 && !(modelOpen && id === "jf-model"))); });
-      document.getElementById("jf-model").disabled = live || (resuming && !modelOpen);
+      // a schedule card keeps the Model the green run had (T9): only Inputs, Destination, When and the two caps are open
+      document.getElementById("jf-model").disabled = live || (resuming && !modelOpen) || !!sched;
       // the Check type radios stay clickable on a reuse card (Deterministic / Rubric = leave reuse); a live session or a resume freezes them
       document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.disabled = live || resuming; });
       document.getElementById("job-card").classList.toggle("reuse", reuseOn);
@@ -3913,6 +4014,7 @@
         document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === "deterministic"); });
       }
       startFrom = null; reuseSession = false; autoSigned = false; reuseCheckType = "deterministic";
+      scheduleOff();
       sfLine.hidden = true; sfNote.hidden = true; originLine.hidden = true;
       setReuseLocked(false);
       renderPicker();
@@ -4393,6 +4495,18 @@
       var ask = st.pendingAsk;
       var atMenu = !!ask && ask.kind === "menu";
       var hint = "";
+      // T Part 7 (hamr found these by clicking fwdloop): after click 2 of a schedule the card is the empty New job card and the button is DEAD for ~1.5 s,
+      // reading "Start drafting" — never a Run / Sign & run invitation
+      if(!st.session && st.whenLocked){
+        return {text: "Start drafting", action: "none", disabled: true, hint: ""};
+      }
+      // When changed from the signed value = the ONE button turns into Sign schedule (Cancel schedule when the choice is By hand): two clicks, $0, starts
+      // nothing. After click 1 it reads "Confirm: <words>". It never reaches the run routes. Unchanged = the Reuse card's own Sign & run.
+      if(!st.session && st.when && st.when.changed){
+        var ww = st.when.words || {};
+        var wtext = st.when.confirm ? (ww.confirmPrefix || "") + st.when.confirm : (st.when.cancel ? ww.cancelSchedule : ww.signSchedule);
+        return {text: wtext, action: st.when.confirm ? "when-sign" : "when-sign-prepare", disabled: !!st.when.busy, hint: ""};
+      }
       if(!st.session){
         return {text: reuse ? "Sign & run" : "Start drafting", action: "start", disabled: !st.startOk, hint: ""};
       }
@@ -4421,7 +4535,8 @@
       return !!st.session && !!st.pendingAsk && st.pendingAsk.kind === "menu";
     }
     function renderMain(){
-      var st = {session: sessionLive, startOk: startOk, signClicked: signClickedOnce};
+      var st = {session: sessionLive, startOk: startOk, signClicked: signClickedOnce, whenLocked: whenLocked};
+      if(sched){ st.when = {changed: whenChanged(), cancel: byId("jf-when").value === "hand", confirm: whenConfirm, busy: whenBusy, words: sched.words}; }
       if(sessionLive && lastState){
         st.phase = lastState.phase; st.pendingAsk = lastState.pendingAsk;
         st.specHash = lastState.specHash;
@@ -4854,12 +4969,142 @@
       });
     }
 
+    // ---- T Part 7: the schedule card (Schedule run / Cancel-modify schedule, PANEL-BUILD.md T addendum C.7, design/schedule-mock.html) ----
+    // The Reuse card plus the When field, copied from fwdloop's Run card (index.html:998-1019, 4690-4772). The page works out nothing: the
+    // server's words, refusals and hashes. Click 1 (schedule-prepare) is $0 and signs nothing; click 2 (schedule) signs; NOTHING runs.
+    function byId(id){ return document.getElementById(id); }
+    var WHEN_KINDS = ["hand", "daily", "weekdays", "weekly", "file-updated", "new-file"];
+    function whenTriggerFromBoxes(){
+      var kind = byId("jf-when").value;
+      if(kind === "hand") return null;
+      if(kind === "daily" || kind === "weekdays" || kind === "weekly"){
+        var m = /^(\d{2}):(\d{2})$/.exec(byId("jf-when-time").value);
+        var o = m ? {kind: kind, hour: Number(m[1]), minute: Number(m[2])} : {kind: kind};   // an empty time goes to the server, which says so
+        if(kind === "weekly") o.day = byId("jf-when-day").value;
+        return o;
+      }
+      var q = {kind: kind};
+      q[kind === "new-file" ? "folder" : "path"] = byId("jf-when-path").value.trim();
+      return q;
+    }
+    // one comparable spelling of a trigger (or By hand), so "changed" is a plain string compare
+    function whenCanon(t){
+      if(!t) return "hand";
+      return [t.kind, t.hour === undefined ? "" : t.hour, t.minute === undefined ? "" : t.minute, t.day || "", t.path || t.folder || ""].join("|");
+    }
+    // is When changed from the signed value? The ONE reader; the main button is Sign schedule while it is.
+    function whenChanged(){
+      return !!sched && !sched.refusal && whenCanon(whenTriggerFromBoxes()) !== whenCanon(sched.cur);
+    }
+    function whenShowSubs(){
+      var kind = byId("jf-when").value;
+      byId("jf-when-clock").hidden = !(kind === "daily" || kind === "weekdays" || kind === "weekly");
+      byId("jf-when-day").hidden = kind !== "weekly";
+      byId("jf-when-filebox").hidden = !(kind === "file-updated" || kind === "new-file");
+      byId("jf-when-path").placeholder = kind === "new-file" ? "/full/path/to/folder" : "/full/path/to/file";
+    }
+    function paintWhen(){
+      var field = byId("jf-when-field");
+      field.hidden = !sched;
+      if(!sched) return;
+      var w = sched.words || {};
+      var opts = w.options || {};
+      byId("jf-when-label").textContent = w.whenLabel || "";
+      var sel = byId("jf-when");
+      sel.innerHTML = "";
+      WHEN_KINDS.forEach(function(k){
+        var op = document.createElement("option");
+        op.value = k;
+        // on a scheduled job the first option reads Cancel schedule instead of By hand
+        op.textContent = k === "hand" ? (sched.scheduled ? w.cancelSchedule : w.byHand) : (opts[k] || k);
+        sel.appendChild(op);
+      });
+      var t = sched.cur;
+      sel.value = t ? t.kind : "hand";
+      if(t && t.hour !== undefined){ byId("jf-when-time").value = ("0" + t.hour).slice(-2) + ":" + ("0" + t.minute).slice(-2); }
+      if(t && t.day) byId("jf-when-day").value = t.day;
+      byId("jf-when-path").value = t ? (t.path || t.folder || "") : "";
+      // refused = the select and every sub-box are DISABLED and the reason stands where "Now:" would be
+      var refused = !!sched.refusal;
+      sel.disabled = byId("jf-when-day").disabled = byId("jf-when-time").disabled = byId("jf-when-path").disabled = refused;
+      byId("jf-when-now").textContent = refused ? sched.refusal : (sched.now ? (w.nowPrefix || "") + sched.now : "");
+      byId("jf-err-when").textContent = "";
+      whenShowSubs();
+    }
+    function scheduleOff(){
+      sched = null; whenHash = null; whenConfirm = null; whenBusy = false;
+      paintWhen();
+    }
+    // editing any When box between the two clicks DROPS the hash: the label returns to Sign schedule
+    function whenEdited(){
+      whenHash = null; whenConfirm = null;
+      byId("jf-err-when").textContent = "";
+      whenShowSubs();
+      renderMain();
+    }
+    ["jf-when", "jf-when-day", "jf-when-time"].forEach(function(id){ byId(id).addEventListener("change", whenEdited); });
+    byId("jf-when-path").addEventListener("input", whenEdited);
+    // the hash binds the WHOLE card (inputs, destination, caps), so a change to any of them drops it too
+    ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time"].forEach(function(id){ byId(id).addEventListener("input", function(){ if(sched && whenHash !== null) whenEdited(); }); });
+    function doWhenSign(){
+      if(!sched || whenBusy || whenLocked) return;
+      var timeCapMin = byId("jf-cap-time").value.trim();
+      var body = {
+        runid: sched.runid, when: whenTriggerFromBoxes(), inputs: byId("jf-inputs").value.trim(), destination: byId("jf-dest").value.trim(),
+        capUsd: Number(byId("jf-cap-money").value), maxWallMs: timeCapMin === "" ? undefined : Math.round(Number(timeCapMin) * 60000),
+      };
+      var second = whenHash !== null;
+      if(second) body.hash = whenHash;
+      whenBusy = true; renderMain();
+      authorPost(second ? "/api/author/schedule" : "/api/author/schedule-prepare", body).then(function(r){
+        whenBusy = false;
+        if(!(r.status >= 200 && r.status < 300 && r.body && r.body.ok === true)){
+          whenHash = null; whenConfirm = null;
+          byId("jf-err-when").textContent = (r.body && (r.body.say || r.body.error)) || ("refused (" + r.status + ")");
+          renderMain(); return;
+        }
+        var words = typeof r.body.words === "string" ? r.body.words : "";
+        if(!second){
+          whenHash = r.body.hash;
+          whenConfirm = words ? words.charAt(0).toLowerCase() + words.slice(1) : "";
+          byId("jf-err-when").textContent = "";
+          renderMain(); return;
+        }
+        // after click 2 the card clears to the empty New job card and NOTHING runs; the button is dead for 1.5 s
+        var say = typeof r.body.say === "string" ? r.body.say : "";
+        whenHash = null; whenConfirm = null;
+        whenLocked = true;
+        setTimeout(function(){ whenLocked = false; renderMain(); }, 1500);
+        resetCard();
+        if(say) chatActionFailed(say);
+        refreshRunsList(true);
+        if(currentRunid) selectRun(currentRunid);
+      }).catch(function(){
+        whenBusy = false; whenHash = null; whenConfirm = null;
+        byId("jf-err-when").textContent = "network error — could not reach the panel server, nothing was signed";
+        renderMain();
+      });
+    }
+    // the card opened by Schedule run / Cancel-modify schedule: the SAME Reuse fill (applyReuse), then the When field
+    function applyScheduleCard(d){
+      if(d.error){ errEl.textContent = d.error; return; }
+      if(sessionLive || resumeRun !== null){ errEl.textContent = "Finish or clear what is on the card first, then try again."; return; }
+      applyReuse({runid: d.runid, prefill: d.prefill});
+      var sc = (d.prefill || {}).scheduleCard || {};
+      sched = {job: d.job, runid: d.runid, words: sc.words || {}, cur: sc.trigger || null, scheduled: sc.scheduled === true, refusal: sc.refusal || null, now: sc.now || null};
+      whenHash = null; whenConfirm = null; whenBusy = false;
+      paintWhen();
+      refreshStartEnabled();
+    }
+    document.addEventListener("bareloop-schedule", function(e){ applyScheduleCard(e.detail || {}); });
+
     mainBtn.addEventListener("click", function(){
       if(mainBtn.disabled) return;
       if(mainAction === "start") doStart();
       else if(mainAction === "check-deps") doCheckDeps();
       else if(mainAction === "send") doSend();
       else if(mainAction === "sign-prepare" || mainAction === "sign") doSign();
+      else if(mainAction === "when-sign-prepare" || mainAction === "when-sign") doWhenSign();
     });
 
     refreshStartEnabled();

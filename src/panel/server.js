@@ -45,6 +45,8 @@ import { confirmProtections } from '../authorflow.js';
 import { createScheduleDoor } from './schedules.js';
 import { createStarter } from './schedulestart.js';
 import { createScheduler } from './scheduler.js';
+import { catchUpWords } from '../schedulewords.js';
+import { doorWaiting } from '../reviewdoor.js';
 import { createAuthorRoutes, mintToken, checkHostGuard, panelMoney2 } from './authorroutes.js';
 import { createRunRoutes } from './runroutes.js';
 import { createImportRoutes, readImports, bundleStatus, IMPORT_CHANGED_LINE } from './importroutes.js';
@@ -759,7 +761,8 @@ function summarizeRow(row, nowMs = Date.now()) {
     fileMissing: false,
     live,
     liveWhy: live ? liveStepWhy(rawRecords, summary) : null,
-    needs: needsTag(resume, stoppedAt, nowMs),
+    // a run waiting at its review door needs the person's Accept (never ages out, T10); else the Resume rule
+    needs: !live && doorWaiting(rawRecords, { now: () => nowMs }) ? 'Accept' : needsTag(resume, stoppedAt, nowMs),
     stoppedAt,
     // a live run's wall counts up from the start of its CURRENT leg; earlier legs add `priorWallMs` (the gap between legs is nobody's).
     // `priorWallMs` is null when the earlier legs' wall is not exact: the card then shows this leg's wall only, and says so.
@@ -871,7 +874,7 @@ export const RUNS_LIST_LIMITS = Object.freeze({ quietDays: 30, olderRuns: 7, nee
 /**
  * The ONE rule for a run's Needs-you tag (P9 v2 E): `Resume` when the engine would accept a resume (the SAME `resumePlanFor` answer the Run
  * tab's Resume card shows, already asked once per row by `endedForRow`), until the run has been stopped `needsYouDays` (exactly that old is out;
- * no readable stop time stays in). `Accept` is never produced yet: the panel has no review-door state (P9 v2 E.3).
+ * no readable stop time stays in). `Accept` comes from {@link doorWaiting} (T Part 8), asked in `summarizeRow`, never here.
  * @param {{ok?: boolean}|null|undefined} resume @param {string|null} stoppedAt @param {number} nowMs
  * @returns {'Accept'|'Resume'|null}
  */
@@ -944,13 +947,16 @@ export function listRuns(opts = {}) {
 
 /**
  * `GET /api/runs` (P9 v2 F): `{runs, jobs, limits}`. The server decides every state the left list draws — `live`, `needs`, each job's head run and
- * quiet flag, the limits — and the page works out nothing. `scheduled` joins with the triggers piece (PRD v1.99).
- * @param {{ home?: string, now?: number }} [opts]
+ * quiet flag, the limits — and the page works out nothing. `scheduled` is the triggers piece (PRD v1.99, T Part 7).
+ * @param {{ home?: string, now?: number, schedules?: ReturnType<typeof createScheduleDoor> }} [opts]
  */
 export function runsListPayload(opts = {}) {
   const nowMs = typeof opts.now === 'number' ? opts.now : Date.now();
   const runs = listRuns({ ...opts, now: nowMs });
-  return { runs, jobs: summarizeJobs(runs, nowMs), limits: RUNS_LIST_LIMITS };
+  const jobs = summarizeJobs(runs, nowMs);
+  // T Part 7: the Scheduled section, `[{job, at, in, words, runId}]`; runId = the job's HEAD run by time (summarizeJobs), never the first in server order
+  const scheduled = opts.schedules ? opts.schedules.listScheduled(new Map(jobs.map((j) => [j.job, j.headRunid]))) : [];
+  return { runs, jobs, scheduled, limits: RUNS_LIST_LIMITS };
 }
 
 /**
@@ -991,20 +997,54 @@ function findRunRow(runid, opts) {
 }
 
 /**
+ * T Part 7 — `detail.schedule`: `{scheduled, canSchedule, words, text?, next?, nextRed?}` from the schedule door's ONE read of the
+ * schedule files and ledger (A.12). `waitingRunNo` = the job's NEWEST run when it waits for the person's Accept: ONE spine parse,
+ * never a run context per run. A job that cannot be read has no schedule block.
+ * @param {string} job @param {any[]} rows the run list @param {Map<string, number>} nos @param {{ schedules?: ReturnType<typeof createScheduleDoor> }} opts
+ */
+function scheduleDetailFor(job, rows, nos, opts) {
+  try {
+    const door = /** @type {ReturnType<typeof createScheduleDoor>} */ (opts.schedules);
+    let newest = null;
+    for (const r of rows) if (r && r.job === job && (newest === null || atMs(r) >= atMs(newest))) newest = r;
+    let waitingRunNo = null;
+    if (newest && existsSync(newest.spine) && door.readSchedule(job) && !runIsAlive(newest)) {
+      const records = parseJsonl(newest.spine).records;
+      if (doorWaiting(records)) waitingRunNo = nos.get(newest.runid) ?? null;
+    }
+    return door.view(job, { waitingRunNo });
+  } catch { return null; }
+}
+
+/**
+ * The record `trigger.json` a SCHEDULED start wrote beside its signed spec (why the run started), or null for every hand run.
+ * @param {{ spine: string }} row @returns {any|null}
+ */
+function triggerRecordOf(row) {
+  const near = sourceNearSpine(row.spine);
+  if (!near.specPath) return null;
+  try { return JSON.parse(readFileSync(join(dirname(near.specPath), 'trigger.json'), 'utf8')); } catch { return null; }
+}
+
+/**
  * `GET /api/runs/:runid` — the full replay for the Run tab: steps (or
  * iterations), counters, summary-box fields. Looks `runid` up in the run
  * list FIRST and reads only the path stored there (path safety — see file
  * header); `null` when the runid is not in the list at all (caller renders
  * 404).
  * @param {string} runid
- * @param {{ home?: string }} [opts]
+ * @param {{ home?: string, schedules?: ReturnType<typeof createScheduleDoor> }} [opts]
  * @returns {any|null}
  */
 export function getRunDetail(runid, opts = {}) {
   const d = getRunDetailBody(runid, opts);
   if (!d) return d;
-  const runNo = runNumbers(readRunList(opts).rows).get(runid);
-  return runNo === undefined ? d : { ...d, runNo };
+  const { rows } = readRunList(opts);
+  const nos = runNumbers(rows);
+  const runNo = nos.get(runid);
+  // T Part 7: what the Run tab shows of the job's schedule — the SERVER decides every state and word (the page works out nothing)
+  const schedule = opts.schedules && typeof d.job === 'string' ? scheduleDetailFor(d.job, rows, nos, opts) : null;
+  return { ...d, ...(runNo === undefined ? {} : { runNo }), ...(schedule ? { schedule } : {}) };
 }
 
 /**
@@ -1285,6 +1325,11 @@ function getRunDetailBody(runid, opts) {
     // `memory-cache` record at all (never armed on this run).
     behaviour: scopedBehaviour(row, rawSpineRecords),
     memoryCache: summary.memoryCache,
+    // T Part 7: why a SCHEDULED run started (the words `trigger.json` carried) and the fixed catch-up sentence; null on every hand run
+    ...(() => {
+      const trig = triggerRecordOf(row);
+      return { startedBy: trig && typeof trig.reason === 'string' ? trig.reason : null, catchUp: catchUpWords(trig) };
+    })(),
   };
 }
 
@@ -2854,7 +2899,7 @@ function sendText(res, code, text) {
  * only `createPanelServer` below always supplies one.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ home?: string, packageJsonPath?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes> }} opts
+ * @param {{ home?: string, packageJsonPath?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
  */
 export function handleRequest(req, res, opts) {
   /** the ONE writable route family for a path, or null — `/api/author/*` (authoring) or
@@ -2968,7 +3013,7 @@ export function handleRequest(req, res, opts) {
     return;
   }
 
-  if (pathname === '/api/runs') { send(200, runsListPayload({ home: opts.home })); return; }
+  if (pathname === '/api/runs') { send(200, runsListPayload({ home: opts.home, schedules: opts.schedules })); return; }
 
   const runMatch = /^\/api\/runs\/([^/]+)(\/(audit|job|rounds))?$/.exec(pathname);
   if (runMatch) {
@@ -3006,7 +3051,7 @@ export function handleRequest(req, res, opts) {
       send(200, result);
       return;
     }
-    const result = getRunDetail(runid, { home: opts.home });
+    const result = getRunDetail(runid, { home: opts.home, schedules: opts.schedules });
     if (!result) { sendText(res, 404, 'no such run'); return; }
     send(200, result);
     return;
@@ -3059,10 +3104,12 @@ export function createPanelServer(opts = {}) {
     let importRoutes;
     /** @type {ReturnType<typeof createScheduler>|undefined} */
     let scheduler;
+    /** @type {ReturnType<typeof createScheduleDoor>|undefined} */
+    let schedulesRef;
     const server = createServer((req, res) => {
       try {
         handleRequest(req, res, {
-          home, port: boundPort, token, authorRoutes, settingsRoutes, runRoutes, importRoutes, packageJsonPath: opts.packageJsonPath,
+          home, port: boundPort, token, authorRoutes, settingsRoutes, runRoutes, importRoutes, packageJsonPath: opts.packageJsonPath, schedules: schedulesRef,
         });
       } catch (e) {
         sendText(res, 500, `internal error: ${/** @type {Error} */ (e).message}`);
@@ -3079,6 +3126,7 @@ export function createPanelServer(opts = {}) {
       const rowsFor = () => rowsForHome(keysHome(home), keysForDoor({ env: opts.env, keysHome: home }).env);
       const schedules = createScheduleDoor({
         home,
+        ...(opts.userHome ? { userHome: opts.userHome } : {}),
         ...(opts.scheduleNow ? { now: opts.scheduleNow } : {}),
         sessionsRoot: opts.sessionsRoot,
         jobRuns: (job) => jobRunsOf(job, { home }),
@@ -3086,6 +3134,7 @@ export function createPanelServer(opts = {}) {
         jobOfRun: (runid) => readRunList({ home }).rows.find((r) => r && r.runid === runid)?.job ?? null,
         rowsFor,
       });
+      schedulesRef = schedules;
       authorRoutes = createAuthorRoutes({
         schedules,
         ...(opts.sessionDeps ? { sessionDeps: opts.sessionDeps } : {}),

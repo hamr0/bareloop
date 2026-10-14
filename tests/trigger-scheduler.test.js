@@ -10,7 +10,7 @@ import { createScheduleDoor, procStartMs, runnerAlive, PID_REUSE_SLACK_MS } from
 import { readLedger } from '../src/triggerledger.js';
 import { appendRun } from '../src/runlist.js';
 import {
-  fireWorld as world, makeRun, specOf, tmp, SLOT, DEAD_PID,
+  fireWorld as world, makeRun, specOf, tmp, SLOT, DEAD_PID, waitExec,
 } from './trigger-world.mjs';
 
 const kinds = (w) => w.rows().map((r) => r.kind);
@@ -147,6 +147,7 @@ function liveRunner() {
   const f = join(d, 'run-u.mjs');
   writeFileSync(f, 'setInterval(() => {}, 1000);\n');
   const c = spawn(process.execPath, [f], { stdio: 'ignore' });
+  waitExec(c.pid);
   test.after(() => { try { c.kill('SIGKILL'); } catch { /* gone */ } });
   return { c, d };
 }

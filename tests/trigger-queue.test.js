@@ -10,7 +10,7 @@ import { createScheduleDoor } from '../src/panel/schedules.js';
 import { readLedger } from '../src/triggerledger.js';
 import { queueOf, readSeen, STABLE_POLLS } from '../src/triggerfiles.js';
 import { appendRun } from '../src/runlist.js';
-import { fireWorld, SLOT, DEAD_PID } from './trigger-world.mjs';
+import { fireWorld, SLOT, DEAD_PID, waitExec } from './trigger-world.mjs';
 
 async function qWorld() {
   const w = await fireWorld({ when: 'files' });
@@ -72,6 +72,7 @@ test('a live run of the job (pid alive, row in runs.jsonl) holds the queue; its 
   const d = tmp('tq-runner-');
   writeFileSync(join(d, 'run-u.mjs'), 'setInterval(() => {}, 1000);\n');
   const c = spawn(process.execPath, [join(d, 'run-u.mjs')], { stdio: 'ignore' });
+  waitExec(c.pid);
   test.after(() => { try { c.kill('SIGKILL'); } catch { /* gone */ } });
   writeFileSync(join(d, 'u-live.jsonl'), '');
   appendRun({ at: new Date().toISOString(), runid: 'live', job: 'sched-job', spine: join(d, 'u-live.jsonl'), patient: null, via: 'run-u', pid: c.pid }, { home: f.home });

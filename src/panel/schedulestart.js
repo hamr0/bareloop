@@ -149,7 +149,7 @@ export function createStarter(deps) {
         hooks.beforeSpawn?.();
         consumed = true;
         const outDir = session.state.outDir;
-        const words = scheduledWords(schedule.trigger, deps.home) ?? '';
+        const words = scheduledWords(schedule.trigger, deps.door.userHome) ?? '';
         const catchUp = cause.kind === 'clock' && cause.catchUp === true;
         writeFileSync(join(outDir, 'trigger.json'), `${JSON.stringify({
           kind: cause.kind, trigger: words, reason: `Started by the schedule: ${words}${catchUp ? ' (catch-up)' : ''}`, catchUp,

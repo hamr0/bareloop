@@ -24,11 +24,33 @@ function tilde(p, home) {
   return p;
 }
 
-/** Every schedule button/word the page shows lives here, so a reword is one edit (hamr will reword on his walk). */
+/**
+ * Every schedule button/word the page shows lives here, so a reword is ONE edit (hamr will reword on his walk).
+ * The server sends this table with the run detail and the schedule card; the page reads every label from it.
+ */
 export const SCHEDULE_WORDS = Object.freeze({
   byHand: 'By hand',
   cancelSchedule: 'Cancel schedule',
   cancelWords: 'Cancel schedule',
+  // the Run tab's buttons (never relabelled in place: a different state is a different button)
+  scheduleRun: 'Schedule run',
+  cancelModify: 'Cancel / modify schedule',
+  // the one main button of the schedule card
+  signSchedule: 'Sign schedule',
+  confirmPrefix: 'Confirm: ',
+  // the When field and the blocks
+  whenLabel: 'When',
+  nowPrefix: 'Now: ',
+  scheduledLabel: 'SCHEDULED',
+  nextLabel: 'NEXT',
+  options: Object.freeze({
+    hand: 'By hand',
+    daily: 'Every day at HH:MM',
+    weekdays: 'Weekdays at HH:MM',
+    weekly: 'Every <day> at HH:MM',
+    'file-updated': 'When <file> is updated',
+    'new-file': 'When a new file arrives in <folder>',
+  }),
   notGreen: 'This job has not had a good run yet. Run it by hand and get it right first; then you can set when it runs. A rubric job also needs your Accept once. Nothing was changed.',
   stale: 'What you were shown is not what is on the card now. Nothing was signed. Look again, then sign.',
 });
