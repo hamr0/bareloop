@@ -633,6 +633,20 @@ function lastRecordTs(/** @type {any[]} */ records) {
   return null;
 }
 
+/**
+ * A live run's plain "why" for the runs list: `step N of M` (the step it is on, of the plan's steps), or null while no plan is accepted yet
+ * (the card then says only `running`). Same words the Run tab's header uses.
+ * @param {any[]} records @param {any} summary
+ * @returns {string|null}
+ */
+function liveStepWhy(records, summary) {
+  const plan = records.findLast((r) => r && r.type === 'plan-accepted');
+  const total = Array.isArray(plan?.plan?.steps) ? plan.plan.steps.length : 0;
+  if (total === 0) return null;
+  const done = new Set((summary.steps ?? []).filter((/** @type {any} */ u) => u && u.outcome !== null && u.outcome !== undefined && !u.stopReason).map((/** @type {any} */ u) => u.id)).size;
+  return `step ${Math.min(done + 1, total)} of ${total}`;
+}
+
 function endedForRow(row, records, summary, death, withWorktree = false) {
   const out = summary.outcome;
   const maybeResumable = death.died || out === 'escalated' || (typeof out === 'string' && CHECKPOINT_OUTCOMES.includes(out));
@@ -669,6 +683,7 @@ function startingStub(row) {
     fileMissing: false,
     starting: true,
     live: true,
+    liveWhy: null,
     needs: null,
     stoppedAt: null,
     liveSince: typeof row.at === 'string' ? row.at : null,
@@ -740,6 +755,7 @@ function summarizeRow(row, nowMs = Date.now()) {
     via: row.via,
     fileMissing: false,
     live,
+    liveWhy: live ? liveStepWhy(rawRecords, summary) : null,
     needs: needsTag(resume, stoppedAt, nowMs),
     stoppedAt,
     // a live run's wall counts up from the start of its CURRENT leg; earlier legs add `priorWallMs` (the gap between legs is nobody's).

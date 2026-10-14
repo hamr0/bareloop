@@ -97,6 +97,8 @@ test('listRuns: live is the server\'s call: no job-end and still running. A live
   assert.equal(by.live.liveSince, T0);
   assert.equal(by.live.priorWallMs, 0, 'a never-resumed run has no earlier legs');
   assert.equal(by.live.needs, null);
+  assert.equal(by.live.liveWhy, 'step 1 of 1', 'the plain why of a live run is the server\'s');
+  assert.equal(by.done.liveWhy, null);
   assert.equal(by.done.live, false);
   assert.equal(by.done.liveSince ?? null, null);
   assert.equal(by.died.live, false);
