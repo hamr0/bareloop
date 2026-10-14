@@ -624,6 +624,15 @@ function lastJobEndTs(/** @type {any[]} */ records) {
   return null;
 }
 
+/** the timestamp of the spine's LAST record that carries one, or null (a died run has no job-end: this is when it went quiet) */
+function lastRecordTs(/** @type {any[]} */ records) {
+  for (let i = records.length - 1; i >= 0; i -= 1) {
+    const r = records[i];
+    if (r && typeof r === 'object' && typeof r.ts === 'string') return r.ts;
+  }
+  return null;
+}
+
 function endedForRow(row, records, summary, death, withWorktree = false) {
   const out = summary.outcome;
   const maybeResumable = death.died || out === 'escalated' || (typeof out === 'string' && CHECKPOINT_OUTCOMES.includes(out));
@@ -659,6 +668,11 @@ function startingStub(row) {
     via: row.via,
     fileMissing: false,
     starting: true,
+    live: true,
+    needs: null,
+    stoppedAt: null,
+    liveSince: typeof row.at === 'string' ? row.at : null,
+    priorWallMs: 0,
     died: false,
     glyph: '▶',
     status: statusFor({ outcome: null }),
@@ -692,11 +706,11 @@ function startingStub(row) {
  * @param {import('../runlist.js').RunRow} row
  * @returns {any}
  */
-function summarizeRow(row) {
+function summarizeRow(row, nowMs = Date.now()) {
   if (!existsSync(row.spine)) {
     if (runIsAlive(row)) return startingStub(row);
     return {
-      runid: row.runid, job: row.job, at: row.at, via: row.via, fileMissing: true,
+      runid: row.runid, job: row.job, at: row.at, via: row.via, fileMissing: true, live: false, needs: null, stoppedAt: null,
     };
   }
   let summary;
@@ -707,17 +721,31 @@ function summarizeRow(row) {
   } catch (e) {
     return {
       runid: row.runid, job: row.job, at: row.at, via: row.via, fileMissing: false, readError: String(/** @type {Error} */ (e).message),
+      live: false, needs: null, stoppedAt: null,
     };
   }
   const line = summarizeForAllLine(summary);
   const death = deriveDeath(row, rawRecords, summary.outcome);
-  const { ended, status } = endedForRow(row, rawRecords, summary, death);
+  const { ended, status, resume } = endedForRow(row, rawRecords, summary, death);
+  // P9 v2: the server decides every state the runs list draws (the page works out nothing).
+  const live = !death.died && (summary.outcome === null || summary.outcome === undefined) && runIsAlive(row);
+  const stoppedAt = live ? null : (lastJobEndTs(rawRecords) ?? (death.died ? lastRecordTs(rawRecords) : null));
+  const legs = legsOf(rawRecords);
+  const priorWall = legs.length <= 1 ? { ms: 0, complete: true } : legsWallMs(legs.slice(0, -1));
+  const liveStart = live ? legs.at(-1)?.startMs ?? null : null;
   return {
     runid: row.runid,
     job: row.job,
     at: row.at,
     via: row.via,
     fileMissing: false,
+    live,
+    needs: needsTag(resume, stoppedAt, nowMs),
+    stoppedAt,
+    // a live run's wall counts up from the start of its CURRENT leg; earlier legs add `priorWallMs` (the gap between legs is nobody's).
+    // `priorWallMs` is null when the earlier legs' wall is not exact: the card then shows this leg's wall only, and says so.
+    liveSince: liveStart === null ? (live && typeof row.at === 'string' ? row.at : null) : new Date(liveStart).toISOString(),
+    priorWallMs: live ? (priorWall.complete ? priorWall.ms : null) : null,
     died: death.died,
     endedLine: ended ? ended.line : null,
     // P5-R: one card per run — how many times it was resumed (a resumed run is the same run, never a second card)
@@ -818,6 +846,57 @@ function runNumbers(rows) {
   return out;
 }
 
+/** The named limits of the runs list, in ONE place (P9 v2 D.13): quiet after 30 days, 7 older runs shown, a Resume tag ages out after 7 days. Sent in `GET /api/runs`; the page reads them from there. */
+export const RUNS_LIST_LIMITS = Object.freeze({ quietDays: 30, olderRuns: 7, needsYouDays: 7 });
+
+/**
+ * The ONE rule for a run's Needs-you tag (P9 v2 E): `Resume` when the engine would accept a resume (the SAME `resumePlanFor` answer the Run
+ * tab's Resume card shows, already asked once per row by `endedForRow`), until the run has been stopped `needsYouDays` (exactly that old is out;
+ * no readable stop time stays in). `Accept` is never produced yet: the panel has no review-door state (P9 v2 E.3).
+ * @param {{ok?: boolean}|null|undefined} resume @param {string|null} stoppedAt @param {number} nowMs
+ * @returns {'Accept'|'Resume'|null}
+ */
+export function needsTag(resume, stoppedAt, nowMs) {
+  if (!resume || resume.ok !== true) return null;
+  const t = typeof stoppedAt === 'string' ? Date.parse(stoppedAt) : NaN;
+  if (Number.isFinite(t) && nowMs - t >= RUNS_LIST_LIMITS.needsYouDays * 86_400_000) return null;
+  return 'Resume';
+}
+
+/**
+ * One entry per job, newest activity first: `headRunid` is the job's newest run BY TIME (never "the first row in server order"), `activityMs` the
+ * newest KNOWN time over its runs (`stoppedAt`, else `at`), `quiet` only when that time is known and older than the quiet limit. A job with a live
+ * run is never quiet; an unknown age is never guessed into quiet.
+ * @param {any[]} rows `listRuns` rows @param {number} nowMs
+ * @returns {{job: string, headRunid: string|null, quiet: boolean, activityMs: number|null}[]}
+ */
+export function summarizeJobs(rows, nowMs) {
+  /** @type {Map<string, {head: any, headMs: number, act: number|null, live: boolean}>} */
+  const by = new Map();
+  const ms = (/** @type {any} */ x) => { const t = typeof x === 'string' ? Date.parse(x) : NaN; return Number.isFinite(t) ? t : null; };
+  for (const r of rows) {
+    if (!r || typeof r.job !== 'string') continue;
+    const e = by.get(r.job) ?? { head: null, headMs: -Infinity, act: null, live: false };
+    const at = ms(r.at);
+    if (e.head === null || (at !== null && at > e.headMs)) { e.head = r; e.headMs = at ?? -Infinity; }
+    const t = Math.max(at ?? -Infinity, ms(r.stoppedAt) ?? -Infinity);
+    if (t > -Infinity && (e.act === null || t > e.act)) e.act = t;
+    if (r.live === true) e.live = true;
+    by.set(r.job, e);
+  }
+  const quietMs = RUNS_LIST_LIMITS.quietDays * 86_400_000;
+  return [...by.entries()]
+    .map(([job, e]) => ({ job, headRunid: e.head ? e.head.runid : null, quiet: !e.live && e.act !== null && nowMs - e.act > quietMs, activityMs: e.act }))
+    .sort((a, b) => {
+      if (a.activityMs !== b.activityMs) {
+        if (a.activityMs === null) return 1;
+        if (b.activityMs === null) return -1;
+        return b.activityMs - a.activityMs;
+      }
+      return a.job < b.job ? -1 : a.job > b.job ? 1 : 0;
+    });
+}
+
 /**
  * `GET /api/runs` — every listed run, NEWEST FIRST BY `at` (never by file/
  * append order — a backfill scan appends rows in sorted-PATH order, which
@@ -831,16 +910,28 @@ function runNumbers(rows) {
  * SAME payload by job client-side (`groupRunsByJob` in `index.html`) rather
  * than a second server-side endpoint, so the glyph/checkType mapping is
  * still computed in exactly one place.
- * @param {{ home?: string }} [opts]
+ * @param {{ home?: string, now?: number }} [opts] `now` (ms) is injectable for the Needs-you age rule
  * @returns {any[]}
  */
 export function listRuns(opts = {}) {
   const { rows } = readRunList(opts);
+  const nowMs = typeof opts.now === 'number' ? opts.now : Date.now();
   const nos = runNumbers(rows);
   return rows
     .map((row, index) => ({ row, index })) // index: stable tie-break, see doc above
     .sort((a, b) => (atMs(b.row) - atMs(a.row)) || (a.index - b.index))
-    .map(({ row }) => ({ ...summarizeRow(row), runNo: nos.get(row.runid) }));
+    .map(({ row }) => ({ ...summarizeRow(row, nowMs), runNo: nos.get(row.runid) }));
+}
+
+/**
+ * `GET /api/runs` (P9 v2 F): `{runs, jobs, limits}`. The server decides every state the left list draws — `live`, `needs`, each job's head run and
+ * quiet flag, the limits — and the page works out nothing. `scheduled` joins with the triggers piece (PRD v1.99).
+ * @param {{ home?: string, now?: number }} [opts]
+ */
+export function runsListPayload(opts = {}) {
+  const nowMs = typeof opts.now === 'number' ? opts.now : Date.now();
+  const runs = listRuns({ ...opts, now: nowMs });
+  return { runs, jobs: summarizeJobs(runs, nowMs), limits: RUNS_LIST_LIMITS };
 }
 
 /**
@@ -2837,7 +2928,7 @@ export function handleRequest(req, res, opts) {
     return;
   }
 
-  if (pathname === '/api/runs') { send(200, { runs: listRuns({ home: opts.home }) }); return; }
+  if (pathname === '/api/runs') { send(200, runsListPayload({ home: opts.home })); return; }
 
   const runMatch = /^\/api\/runs\/([^/]+)(\/(audit|job|rounds))?$/.exec(pathname);
   if (runMatch) {
