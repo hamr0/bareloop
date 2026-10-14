@@ -150,14 +150,14 @@ test('tickSince: the wall counts up in place from the server\'s start time plus 
   assert.ok(m);
 });
 
-test('Must-fail: a job\'s 9th-newest run is not shown without a search: 9 runs = newest + 7 older, then the hint with the hidden run\'s date (am5 item 5)', () => {
+test('Must-fail: a job\'s 9th-newest run is not shown without a search: 9 runs = newest + 7 older, then the hint with the hidden run\'s day (am5 item 5, words per am7 item 4)', () => {
   const m = mount();
   const j = job('flights', 9);
   const mod = model(m, j.runs, [j.entry], { open: { flights: true } });
   const html = m.f.rlJobsHtml(mod);
   assert.equal(count(html, /data-rl-run=/g), 8, 'the newest + 7 older');
   assert.match(html, /older runs \(8\)/);
-  assert.match(html, /<div class="rl-hint">\(and 1 older &middot; 09\/01 to 09\/01 of those 1 &middot; search above\)<\/div>/);
+  assert.match(html, /<div class="rl-hint">1 more run on 09\/01\. Search to find one\.<\/div>/);
   assert.doesNotMatch(html, /data-rl-run="flights-1"/);
 });
 
@@ -199,12 +199,12 @@ test('search when the head also matches still opens the fold and shows the older
   assert.equal(both.older.open, true, 'the fold still opens when the head also matches');
 });
 
-test('300-run job, search `run`: only 7 older shown (am5 item 4: no extra newest match), the hint counts the rest (292 more matches)', () => {
+test('300-run job, search `run`: only 7 older shown (am5 item 4: no extra newest match), the hint counts the rest (292 more match, am7 item 4)', () => {
   const m = mount();
   const j = job('big', 300);
   const html = m.f.rlJobsHtml(model(m, j.runs, [j.entry], { filters: { ...FILTERS, search: 'run' } }));
   assert.equal(count(html, /data-rl-run=/g), 8, 'the newest + 7 older');
-  assert.match(html, /\(and 292 more matches &middot; add a day or a run\)/);
+  assert.match(html, /292 more match\. Add a date or run number to narrow it\./);
 });
 
 test('the selected run past the 7 is shown with the 7 matches (am5 item 4 replaces the "one newest match past the 7" rule): 30-run job, search `flights`, selected flights-3', () => {

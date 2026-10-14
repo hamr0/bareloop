@@ -749,9 +749,9 @@ test('item 1: the search input exists in the shared filter bar for both scopes, 
   assert.match(html, /state = \{ checkTypes: \[\], results: \[\], time: "all", search: "" \};/);
 });
 
-test('P9 v2 O item 5 (replaces D.11 "search jobs and runs…"): the Runs search placeholder is `job, run-23, or a day 10/12`', () => {
+test('P9 v2 O item 5 (replaces D.11 "search jobs and runs…"): the Runs search placeholder is `search: job name, run-23, or a date 10/13` (words per am7 item 4)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /placeholder="job, run-23, or a day 10\/12" /);
+  assert.match(html, /placeholder="search: job name, run-23, or a date 10\/13" /);
   assert.doesNotMatch(html, /placeholder="search jobs and runs/);
 });
 
