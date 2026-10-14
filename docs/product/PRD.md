@@ -826,6 +826,8 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     (hamr, 2026-09-10). **Interview first; nothing here is locked.** It re-opens item 26's
     2026-08-31 ruling, and its answers decide the final line between bareloop and fwdloop.
 
+    **Amended 2026-10-14 (v1.99, SIGNED): a signed bareloop job may now repeat on a clock or a queue. Still no human mid-run, no sending, no booking. See "Triggers" in v1.99 below.**
+
     **Why now.** The first soft-green job ever authored (run `mtv8jihy`, F159) showed the judge
     can grade exactly one thing: whether JS functions have good doc comments. Its rulebook is
     `has-doc`/`params`/`returns` (`src/judged.js:391`). hamr's bar was about error messages, so it
@@ -1458,7 +1460,7 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 - Rubric jobs read, search and write; they never act on the world. The browse gate (bareguard primitives) refuses clicks/presses on pay/book/buy/checkout/purchase/reserve/confirm and on send/submit/sign up/post, and typing into card fields; the only form left is a search box (hamr, 2026-10-12). Sending, booking and anything needing a person mid-job is fwdloop's; booking runs in fwdloop from a bareloop green.
 - bareloop requires Node 22 (barebrowse needs it; Node 20 is end-of-life).
 - README rewritten to the deterministic / rubric split and the bareloop / fwdloop line (hamr-approved text).
-- Backlog: scheduled watch jobs. The spec's `cadence` field (hour/day/week) exists, but nothing runs a job on a schedule yet; price and news watch jobs need it.
+- Backlog: scheduled watch jobs. The spec's `cadence` field (hour/day/week) exists, but nothing runs a job on a schedule yet; price and news watch jobs need it. → replaced by v1.99 Triggers (below).
 - Backlog, needs its own ruling: jobs that need the person's login or cookies (bank pages, members-only prices). Out of scope until ruled.
 
 ### Required facts for rubric jobs (v1.96 — 2026-10-12)
@@ -1485,3 +1487,50 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 - hamr ruling 2026-10-14: no per-page patches; test idea A on the most-used sites only.
 - Site reach: most of the busiest travel and shopping sites block barebrowse. A barebrowse matter, not patched in bareloop. See F227.
 - Work order (hamr, 2026-10-14; supersedes the order above where they differ): release `feat/rubric-search` as is (self-review, then branch-review, then release); then P9 runs list on its own branch; then idea A on its own branch after its spec is signed.
+
+### Triggers: jobs that start by themselves (v1.99 — 2026-10-14) — copied from fwdloop M9 — SIGNED 2026-10-14
+
+Status: SIGNED 2026-10-14. Nothing here is built. Rulings are marked RULED (hamr, 2026-10-14). Pointers are to fwdloop v0.19.1 (main 845b955), `docs/wiki/the-module-ladder.md` (M9, lines 2217-2273; M11 am3, line 2315) and its `src/`. Copy is by rewrite, never import (item 29). Amends item 33 (dated pointer added there); item 33's text is not rewritten.
+
+**Why (hamr, in his words).** "Helpful for deterministic issues to fix, or monitoring a queue to fix issues in a certain repo, for rubric, research on something or monitoring something everyday."
+
+**Work order (RULED).** P9 runs list, then triggers in full, then rubric work.
+
+**The line stays.** A signed job may repeat on a clock or a queue. No human mid-run. No sending, no booking. Asks and sends stay fwdloop's.
+
+T1. **Kinds (RULED).** Clock: daily, weekdays, one weekday, each at HH:MM local. Typed data, never cron text (fwdloop `src/trigger-line.js:29`, `src/trigger-clock.js:33`). Queue (a): a folder, new file arrives, or a file is updated (`src/trigger-files.js:128`, `docs/wiki/the-module-ladder.md:2233`). Queue (b): tickets, see T20, a later piece.
+T2. **One field (RULED, decided after reading code).** The spec already carries `cadence` `{unit, every}`: required by the validator (`src/job.js:281-289`, `JOB_FIELDS` at `src/job.js:171`), filled with a default day/1 by the panel (`src/panel/authorsession.js:948`) and the interview (`src/interviewrun.js:693`). Nothing reads it; nothing ever ran on it. It is REPLACED by `trigger` (null = by hand). RULED (hamr, 2026-10-14): old jobs keep `cadence` and read as "by hand"; new jobs write `trigger` instead; old signed specs never re-hash or need re-signing. One field, not two. The validator stops requiring `cadence`; an old signed spec that still carries it reads as by hand and is never written again.
+T3. **Gate (RULED).** A job takes a trigger only after one green run (fwdloop item 1, line 2228). A rubric job must have been ACCEPTED once at the review door first (`src/reviewdoor.js:48`, `doorRecordOf`). Cancel is never refused (RULED, copied from fwdloop).
+T4. **Signed (RULED).** The trigger is part of the signed hash. The agent never sets it. Changing or cancelling it is two clicks, $0, no drafter, the same plan re-signed (fwdloop item 2 and am5, lines 2229, 2257-2261; `src/panel/authortrigger.js:246`).
+T5. **Edit clears it (RULED).** Editing the job clears its trigger back to by hand. It can be set again only after the new job has a green run (fwdloop am1, line 2241).
+T6. **Only while the panel is open (RULED).** Nothing fires when it is closed. Missed slots collapse to ONE catch-up run, marked catch-up in history; a run more than 2 minutes late is a catch-up (fwdloop item 3, am2: `src/trigger-clock.js:24`, `:94`, lines 2230, 2242-2245).
+T7. **One live run at a time per job (RULED).** A fire while a live run exists starts nothing and writes a `busy` row. A rubric run waiting at the review door is NOT live: the next run starts anyway (differs from fwdloop, where a waiting ask blocks, `src/panel/authortrigger.js:308`).
+T8. **Money (RULED, hamr: "you set cap with schedule run and it uses that, don't complicate it").** The person sets the $ cap and time cap when scheduling. Every fire uses exactly those. Every fire is checked against the monthly $ limit like a hand run (`src/monthly.js:369`, `checkMonthlyRoom`; same check as `signRun`, `src/panel/authorroutes.js:374-394`). If the month cannot fund the cap: a `monthly-exhausted` row, nothing starts. No per-day counts. No new refusal of estimated prices beyond what a hand run already does.
+T9. **Source and Destination (RULED).** Set when the schedule is set, like Reuse's open fields (`src/panel/authorsession.js:233`, `REUSE_OPEN_FIELDS`). A scheduled run may read from a different source path than the green run. The destination may be the same. Delivered files keep the dated, never-overwrite name. For a folder queue, the arriving file is the input.
+T10. **Learning stays quarantined (RULED).** A scheduled green counts toward Reuse and learning only after the person's Accept, like today's rubric greens. Reuse's green check (`src/panel/authorroutes.js:265-269`) is unchanged.
+T11. **Files (copied).** File updated: runs when the sha256 changes, using the new version. New file: each new file runs once with that file as input. A sha that already ran never runs again. A file still being written waits until its size and mtime stop changing for 2 polls (`src/trigger-files.js:27`). What is there when the trigger is set never runs (fwdloop am2 item 2, line 2245). Baseline blocks by sha only, for good, on New file (`src/trigger-files.js:58`).
+T12. **Queue (copied).** Arrived files queue, oldest first, one run at a time. A file arriving while busy gets ONE `busy` row and waits. The ledger is on disk, so a restart keeps the queue. A queued file deleted or changed before its turn is dropped with a reason (fwdloop am3, lines 2246-2253; `src/trigger-files.js:64-82`).
+T13. **Kept fwdloop v0.19.1 fixes.** Content-hash only baseline. A refusal is told once per key sha|outcome|why (`src/panel/scheduler.js:46`). The last outcome counts only the current signing (fwdloop lines 2269-2272).
+T14. **Panel (RULED).** A `Scheduled (N)` section after Needs you in the runs list (signed design: the Scheduled section in `design/runs-list-mock-v2.html`; P9 leaves the empty slot; fwdloop `src/panel/data.js:1229`, `listScheduled`). A `Schedule run` button on the Run tab that becomes `Cancel / modify schedule` (M11 am3 item 1, line 2315). A SCHEDULED / NEXT block at the top of the run page (`src/summary-words.js:35`, `:89`, `:111`). All words come from code, never the model.
+T15. **Fire order (copied).** busy, then monthly, then refused (an input, the keys or the model is missing), then started through the one start path (`src/panel/authortrigger.js:291-337`). Each outcome is one row. A refused fire says why in plain words and spends nothing.
+
+**Built-in fixes. These are fwdloop bugs, not to be copied (RULED).** Each has a name in the fwdloop fix ledger, `.claude/remember/fix-ledger.md:31-46`.
+T16. Write the `ran` row only after the starter says it would accept, never before. fwdloop wrote it first (`src/panel/scheduler.js`, `beforeStart`; ladder line 2273), so a refused start marked the file run; its fix was reverted because a persistently refused start wrote about 7,200 rows an hour.
+T17. Skip a torn ledger line AND start each append on a fresh line, in ONE commit. Either alone is wrong: skip-only lets a torn line glue the next `ran` row and run a file twice (`src/trigger-clock.js:118-127`, `src/trigger-files.js:30-39`).
+T18. A trigger re-sign carries its queue over. fwdloop opened a new ledger folder per re-sign and orphaned waiting files (`src/panel/authortrigger.js:51`).
+T19. The busy check is cheap per tick: read the live pid in `runs.jsonl`, do not build a run context per run (fwdloop measured about 2 s of work per tick at 100 runs, `src/panel/scheduler.js:50`). "Since this signing" is keyed by the signature hash, never wall-clock (`src/panel/authortrigger.js:350`).
+
+T20. **Tickets, e.g. GitHub issues (NEW, not in fwdloop; its own later piece; OPEN).** Not designed here. Questions for hamr:
+ a. How are issues read: the tracker's API, or a barebrowse page?
+ b. Which ones: all open, a label, an assignee?
+ c. One run per issue, or one per batch?
+ d. What marks an issue done: a green run, the issue closing, a label?
+ e. Network and auth: a token from the environment only, never in the tree, spine or ledger (Hard lines).
+ f. Write-back to the tracker (comment, label, close): none unless hamr rules it. Default is none.
+ g. Where the fix lands: a work branch, as repo jobs do today. Merge stays human.
+
+**Tests (to build).** Mirror fwdloop's `test/m9-*.test.js` by name: `m9-trigger-grammar`, `m9-clock`, `m9-files`, `m9-trigger-set`, `m9-trigger-fire`, `m9-trigger-ledger-fixes`, `m9-am3-queue`, `m9-am5-schedule-buttons`, `m9-summary-words`, `m9-summary-card`. Plus two new: (1) a persistently refused start writes a bounded number of rows; (2) a torn line is skipped and the next append does not glue. Each must fail first.
+
+**Exit.** Self-review and branch-review run BEFORE any exit signature (fwdloop skipped them; ladder line 2266). Then a live walk on hamr's real panel: a clock fire, a folder file fire, a duplicate file ignored, busy, a monthly refusal, a catch-up, queue order, cancel. A rubric job walked through Accept, then scheduled. Not claimed done until hamr clicks through it himself.
+
+**Open for hamr's word.** (1) T2: drop `cadence` from the validator, so old specs re-hash? Proposed: tolerate and ignore. (2) T20 answers a-g, later. (3) T7: confirm a job waiting at the door lets the next scheduled run start while the earlier accept is still open.

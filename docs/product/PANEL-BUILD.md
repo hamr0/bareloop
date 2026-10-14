@@ -1272,62 +1272,151 @@ Each was answered by hamr in conversation on 2026-10-11; the batches that depend
 
 **Batch changes from these rulings.** Batch 4: Q2 (b) is built as "pick a Settings line at run/resume start" and Q3 (a) as `--model <id>` / `--provider <KEY>`; both are no longer stop points. Batch 5: table cell (off, 'unverified') is `{thinkingMode:'off'}`. Batch 6: #12 (`DEFAULT_TIER_MODELS`, tier aliases) goes per Q3; #18 (`STEP_MODELS`) STAYS on the allow-list per Q4; #19 bundle README text is generic per Q5. Batch 3: the page is read from the latest `m4d-am3` tip.
 
-## Addendum 2026-10-13 — P9: one runs list (Running now · Needs you · Jobs), DRAFT for hamr to sign
+## Addendum 2026-10-13 — P9: one runs list — SUPERSEDED by the 2026-10-14 addendum below
 
-hamr picked version **F** in a design lab on 2026-10-13 ("F is it"). Mockup: `design/runs-list-mock.html`, the wide
-box **F** at the top (desktop + 390 px phone). Boxes NOW and A–D in the same file are the options it was picked from,
-kept for reference only. Borrowed from sawt (`~/PycharmProjects/sawt` commit 82429a2: run cards folded under job
-cards, cap 7, "use search") and from lab version B (a "Running now" strip). Why: with many runs the list got busy,
-the job and its newest run shared one row, and it was hard to see what was running.
+The 2026-10-13 draft (box F of `design/runs-list-mock.html`) is replaced in full by "P9 v2" below. Its mockup stays on disk as history only. Its one RULED item (Accept is a label, the left list has no controls) is kept in P9 v2, item 4.
 
-### What the left list becomes (top to bottom; a section with 0 items is not shown at all)
+## Addendum 2026-10-14 — P9 v2: the runs list copied from fwdloop M11 (SIGNED 2026-10-14)
 
-1. **Running now (N)** — every live run, one card each: `[▶] job run-N · wall · $ so far` / its step line. Clicking it
-   selects that run and scrolls to its job card below. Not filtered, not searched.
-2. **Needs you (N)** — runs that stopped and can go on only with the person: a run whose Resume the engine would
-   accept (the same `readResume` answer the run page's Resume card uses today — ONE owner, never a second rule), tagged
-   `Resume`. Not filtered. Clicking it selects that run, opens the Run tab and scrolls to its job. The tag is a label,
-   never a button (open question 1).
-3. A dashed line, a faint line "filters below act on Jobs and quiet jobs only", then the EXISTING filter chips and
-   search box, moved here unchanged.
-4. **Jobs (N) · run in the last 30 days** — one job card per job, newest activity first:
-   - job card: `[sign] job  k runs · check type` / `word · reason` of its newest run;
-   - inside it, the newest run's card (2 lines, as today's expanded run rows);
-   - `▸ older runs (k)` fold; open shows at most **7** older runs, then `(and k older: use search)`; a selected run
-     beyond the 7 is still shown (sawt's rule).
-5. **`▸ quiet jobs (N) · no run in 30 days`** — one fold line; open shows those job cards, same shape as 4.
+hamr, 2026-10-14: "their cards look better, i want their shape and design, match their ui, their breakdown of tags; only exclusion is scheduled... build it until we get scheduled."
 
-### Rules
+So this is a COPY of fwdloop's FINISHED M11 runs list (fwdloop v0.19.0). The Scheduled section is drawn in the signed mockup; P9 builds the empty slot after Needs you; the triggers piece (PRD v1.99) fills it. Mockup: `design/runs-list-mock-v2.html` (desktop and 390 px phone), drawn from fwdloop's `docs/product/m11-runs-list-mock.html` with job names, run-N and signs from bareloop. fwdloop paths below are under `~/PycharmProjects/fwdloop`; "fwd spec" is `docs/wiki/the-module-ladder.md` "M11" (lines 2280-2329). bareloop never edits fwdloop. The old 2026-10-13 mockup is not touched.
 
-- Filters and search act on Jobs and quiet jobs only. A job shows if ANY of its runs match; when the match is an older
-  run, the job opens on it — the EXISTING `autoExpandJob` / `representedRun` rules, reused, not rewritten.
-- The **Workflows / History** switch is removed: one list. The flat History view goes; search covers it. (The Audit
-  tab's own Grouped / Flat switch is a different thing and stays.)
-- 30 days and 7 are named constants in one place.
-- Words, glyphs, run-N names, colours, font: unchanged (status words from `src/panel/status.js`). Selected card keeps
-  today's blue border + blue fill; hover shows the blue fill.
-- Phone: the same stacked list (F's phone column), not sawt's dropdowns. 44 px touch targets.
-- The server gives the page what it needs (`live`, a Needs-you flag from `readResume`, last-run time); the page never
-  derives status or resumability itself.
+### A. Hard rules (fwdloop paid for each one)
 
-### fwdloop
+1. **Build only what the mockup shows.** No invented tags, sections or behaviours. If the mockup does not draw it, it is not built. (fwd spec am1, 2321; hamr: "follow the design ui, do not invent anything outside of it and verify it".)
+2. **The server decides every state. The page derives nothing.** Live, Needs-you tag, job order, quiet split, limits all come in `GET /api/runs`. (fwd spec 2315; `src/panel/server.js:513-522`.)
+3. **One owner per answer.** `Resume` uses the SAME answer the Run page's Resume card uses (`resumePlanFor`, `src/panel/server.js:320`). No second rule.
+4. **Pill is a label, never a button.** The left list has no controls. (RULED by hamr 2026-10-13, kept; see item 4.)
+5. **Lines clip with an ellipsis** (nowrap). The full text is on the run page. (fwd `4214dbf`; CSS `.rl-l2`, `.rl-nm`, fwd `index.html:260-262`.)
+6. **One date format everywhere:** local `MM/DD HH:MM`. A date that cannot be read is shown raw, never blank. (fwd `rlShortDate`, `index.html:1791`; `runAtText`, 1797.)
+7. **Unknown is never zero.** A cost bareloop cannot price reads `unknown`, never `$0`. A job whose age cannot be read is never "quiet".
+8. **A repaint writes only when the markup changed**, so focus, scroll and fold state survive a poll. (fwd `rlLast`, `index.html:1846`, `paintRunsList` 1963.)
+9. **Search reads the whole visible row** (see item 12). fwd had to fix this after hamr said "search not working" (fwd spec am4 item 3, 2327).
+10. **Limits live on the server; the page has no literal 7 or 30 for them.** A test pins this. (fwd `RUNS_LIST_LIMITS`, `src/panel/data.js:1191`; test `m11-b-page.test.js:315`.)
 
-The same list applies to fwdloop, plus a **Scheduled (N)** section after Needs you (soonest first). bareloop never
-edits fwdloop: this spec is handed to fwdloop's own session.
+### B. What the left list becomes (top to bottom; a section with 0 items draws nothing, not even its header)
 
-### Proof and Done
+1. **Running now (N)**: every live run, one card each. Line 1: `[▶] job run-N  <wall> · <$>`. Line 2: the plain why (for example `step 2 of 3`), clipped. The wall counts up in place every 2 s from the server's start time, with no rebuild of the card. A cost that is not known reads `unknown`. Line 1 is never a long reason. Amber border (`.rl-live`). Click: select that run, open the Run tab, scroll to its job card (`rl-job-<job>`). Not filtered, not searched. (fwd `rlJumpCardHtml`, `index.html:1892`; `tickSince`, 1956; `rlJump`, 1976; fwd spec am1 item 1, 2319.)
+2. **Needs you (N)**: runs that need the person. Blue border (`.rl-need`). Line 1: `[sign] job run-N` and a pill at the right, `Accept` or `Resume`. Line 2: `why · MM/DD HH:MM`. Click: as Running now. Not filtered. (fwd spec am1 item 2, 2320; `rlJumpCardHtml` need branch.)
+3. **Scheduled is drawn in the signed mockup; P9 builds the empty slot after Needs you; the triggers piece (PRD v1.99) fills it.** The `Scheduled (N)` section (card: `[·] job  today 15:00` / `next in 3h · Every day at 15:00`, soonest first, a file trigger shows only its words and sorts last, a click opens the job's newest run on the Run tab) slots in right after Needs you. The code is shaped for it: the page model already takes `scheduled: []` from the payload and `rlTopHtml` draws its sections from one ordered list (Running now, Needs you, then any Scheduled). Adding it later is one more entry in that list plus one more draw function. It is never filtered, as in fwd. Until then the payload has no `scheduled` and nothing is drawn.
+4. **A dashed line** (`.rl-dash`), a faint line `filters below act on Jobs and quiet jobs only` (`.rl-faint`), then bareloop's existing filter bar (search box and chips), moved here. (fwd `index.html:1118-1122`.)
+5. **Jobs (N) · run in the last 30 days**: one card per job, newest activity first. The 30 is the server's `quietDays`.
+6. **`▸ quiet jobs (N) · no run in 30 days`**: one folded line; open shows those job cards, same shape as Jobs.
+7. **Section headers** are bold, normal case, 12 px, in the dim text colour, with the count: `Running now (2)`. `Jobs (N)` adds ` · run in the last 30 days`. NOT the small uppercase letter-spaced header of the old mockup. (fwd `.rl-sect`, `index.html:185`; fwd spec am3 item 3, 2325.)
 
-Tests for: section order and hiding; filters never hiding Running now / Needs you; cap 7 + hint; selected run beyond
-cap shown; search hit on an older run opens its job on it; quiet split at 30 days; Needs you uses the same answer as
-the Resume card. Orchestrator screenshots at 1280 and 780; hamr checks 390 and 320 in his own DevTools and clicks
-through before any done/release claim.
+### C. The cards (copy fwd's shapes)
 
-### Open questions for hamr
+1. **Job card**: a box, not clickable, id `rl-job-<job>`, testid `rl-job-<job>`.
+   - Line 1: `[sign] job · k runs · deterministic`. The count (`.rl-cnt`, faint) is the SAME size as the job name, with a ` · ` between. The sign is that of the job's head run (item 2 of section D). bareloop keeps its check type; it sits after the count, in the same faint `.rl-cnt` style. It is the head run's `checkType`; when that is `unknown` nothing is drawn. (fwd spec am3 item 2, 2324; `rlJobCardHtml`, 1925. The check type is the one thing bareloop adds to fwd's card, from the 2026-10-13 draft.)
+   - Line 2: `word · why` of the head run (the word bold). A passed run with no reason reads `goal met`.
+   - Highlighted (`.rl-sel`) when the selected run belongs to this job.
+   - A job with no run yet: one plain card with the server's sentence. Never a made-up row.
+2. **Run card** (inside a job, `.rl-runs`, indented, left rule): a button, testid `rl-run-<job>-<runid>`, `aria-pressed`.
+   - Line 1: `[sign] run-N  MM/DD HH:MM · model`.
+   - Line 2: `word — why · $cost · wall`. Unknown cost reads `unknown`. Resume count: the existing `resumed ×N` tag is dropped from the left list (it is on the Run tab); the mockup does not draw it.
+   - Selected: blue border and blue fill (`.rl-sel`). Click: `selectRun`, Run tab (the old click). (`rlRunCardHtml`, 1917.)
+   - A row whose spine is missing: line 2 reads `file missing`, no cost, no wall. A row still starting: `[▶]`, line 2 `starting…`. Both count in `k runs`.
+3. **Names** are the existing `job (run-N)` rule. `runNo` comes from the server (`runNumbers`, `src/panel/server.js`); the page never counts. Signs and words come from `src/panel/status.js` (one table: `[▶] running`, `[·] waiting`, `[✓] passed`, `[✗] failed`, `[✗] capped`, `[■] stopped`, `[?] died`). A died run is `[?]`, never `[✗]`.
+4. **CSS: copy fwd's block** (`index.html:248-277`), values unchanged. Names: `.rl-card`, `.rl-sel`, `.rl-live`, `.rl-need`, `.rl-l1`, `.rl-l2`, `.rl-nm`, `.rn`→`.rl-rn`, `.rl-cnt`, `.rl-runs`, `.rl-fold`, `.rl-hint`, `.rl-pill` and `.rl-pill-need`, `.rl-dash`, `.rl-faint`, `.rl-sect`, and the `:focus-visible` outline (2 px accent, 2 px offset). Phone: `.rl-fold{min-height:44px}` under 900 px; cards are 44 px tall at least.
+   - **One addition, not in fwd:** `.rl-hit` marks a run that matches the active search or filter (item 8 of section D). Style: the normal card plus a 3 px accent bar on the left (`box-shadow:inset 3px 0 0 var(--accent)`). It is not the selected look.
+5. **testids** (copied, flow→job): `rl-top`, `rl-filter-note`, `wf-list`, `rl-live-<job>-<runid>`, `rl-need-<job>-<runid>`, `rl-job-<job>`, `rl-run-<job>-<runid>`, `rl-fold-<job>`, `rl-fold-quiet`.
 
-1. **RULED (hamr 2026-10-13) — Accept.** Accept is the rubric job's end gate and lives only on the Run tab; the left
-   list has NO controls (avoids mistakes). The `Resume` / `Accept` tags on Needs you cards are LABELS saying what is
-   waiting, never buttons: clicking the card opens that run on the Run tab, where the real control is. A rubric run
-   waiting for Accept joins Needs you when the rubric Accept gate ships (rubric work); until then Needs you lists
-   resumable runs only.
-2. **When.** `feat/rubric-search` is still open (Part 1b live fixes + Part 1c). This is a separate module, so it gets
-   its own branch AFTER rubric-search is reviewed and released (one branch at a time, one builder per worktree).
+### D. The fold, the filters, the quiet split
+
+1. **Fold `▸ older runs (k)`**: k = all older runs of that job. Shut by default.
+2. **Job head = the job's newest run BY TIME**, picked explicitly on the server (`headRunid` per job). Never "the first row in server order". fwd's parked bug: an old stuck run led its job. Older runs follow newest first.
+3. **Open shows at most 7 older runs** (`limits.olderRuns`), then `(and k older: use search)` in `.rl-hint`.
+4. **RULED (A), fwd's wording, verbatim:** "show the 7 + the selected run + the ONE newest older match past the 7; the fold opens when any older run matches."
+5. **The fold opens by itself** when ANY older run matches an active search or filter (even if the head matches too), or when the selected run is an older one. A manual click wins over the automatic open. (fwd `564bb0a`, `070029d`; `rlModel`, `index.html:1851`.)
+6. **bareloop's `autoExpandJob`, `representedRun`, `activeOlderRun`, `wfExpanded`, `WF_SUB_CAP` and `capSubRuns` are REPLACED, not reused.** Their head-only rule ("open only when the head does not match") is the rule fwd proved wrong. `representedRun` goes too: a job card no longer stands for a matched older run. Selection changes only on a click.
+7. **"The job opens on the match" means exactly this:** the fold opens, and the matched older run is highlighted (`.rl-hit`). It is NOT selected. A matched run past the 7 (the one newest match) is shown and highlighted too. Other matches past the 7 stay hidden and are counted in the hint. fwd left the past-the-cap highlight as a gap; we close it.
+8. **Search reads the WHOLE visible row**: job name, `run-N`, `job (run-N)`, run id, model, the status word, the why, the date text and, for a job card, the check type. Case does not matter. Today bareloop's `matchesSearch` (`src/panel/index.html:1653`) reads job, run id, model and `run-N` only; it is widened to the rest. It is ONE function, used by both the match test and the highlight, so they cannot disagree. The word chips (D, R, ✓, ✗, ?, ▶, 7d, 30d) and `clear` stay as they are; they AND with search as today.
+9. **Filters act on Jobs and quiet jobs only.** Never on Running now or Needs you. A job shows if ANY of its runs match (`filterWorkflows` over `filterRuns`, kept: it is already correct against the job's full run list).
+10. **Chip order is an array**, declared once and sent/drawn in that order: `D, R, ✓, ✗, ?, ▶, 7d, 30d, all, clear`. Never object key order.
+11. **Search placeholder is short** so it never clips at 320 px: `search jobs and runs…` (replaces `search job, run-N, run id or model…`).
+12. **Quiet is the server's call.** A job is quiet only when its newest KNOWN activity time is more than 30 days old. Unknown age is never quiet. A job with a live run is never quiet. A quiet fold opens by itself if the selected run is inside it; a manual click wins.
+13. **Limits** `{quietDays: 30, olderRuns: 7, needsYouDays: 7}` are one frozen constant on the server (`RUNS_LIST_LIMITS`, new, `src/panel/server.js`) and travel in the `/api/runs` payload. The page reads `limits.*` only.
+14. **A live run moving between sections is fine.** It leaves Running now for Needs you or Jobs when the server says so on the next poll. The page only renders.
+
+### E. Needs you: the tag breakdown for bareloop
+
+1. **`Resume`** = a stopped run whose Resume the engine would accept: the plan `resumePlanFor` returns with `ok: true`. That is the answer the Run page's Resume card shows. The list row reuses the `resume` value `endedForRow` already computes inside `summarizeRow` (`src/panel/server.js:714`, `endedForRow` at 627), so the Resume rule is asked once per row, not twice. Which runs: any non-live run that is not green and whose ending a resume can apply to (stopped, capped, died, an escalation with a checkpoint). A stopped run with no Resume button (job edited, worktree gone, checkpoint expired) is not in Needs you; it shows only under Jobs.
+2. **Gate the work.** `resumePlanFor` reads spine records and spec files, so it is asked only for non-live, non-green rows that can be resumed, the same gate the Ended block uses (`maybeResumable`, `src/panel/server.js:629`). A live or green row never reads spec files.
+3. **`Accept`** = a run waiting at the review door for the person's Accept. **FINDING (looked at the source on 2026-10-14): the panel has no such state today.** The library opens the door as one `review-door` record on the run's spine (`doorRecordOf`, `src/reviewdoor.js:48`) and says whether it is still open with `doorAgeGate` (`src/reviewdoor.js:64`, 60-day TTL). The panel never reads either: there is no `#btn-accept` ("not in this part", this file, the mockup table at line 782) and no door code under `src/panel/`. The Run page therefore has no Accept answer to share.
+   - **RULED (hamr 2026-10-13), kept:** Accept lives only on the Run tab; the left list has NO controls; the `Accept` pill is a label.
+   - **So in P9 v2 the `Accept` pill is not built.** `needs` is `'Accept' | 'Resume' | null` in the payload shape, but only `Resume` is ever produced. When the Run tab gets its Accept control (rubric work), the SAME function that tells the Run tab "show Accept" (door record present, `doorAgeGate` ok, no `door-decision` record after it) fills `needs: 'Accept'` too. One owner. Accept never ages out of Needs you by the 7-day rule (the door has its own 60 days). The card line 2 for Accept reads `passed · waiting for your Accept · MM/DD HH:MM` (as in the mockup). The mockup draws Accept so hamr sees the final shape; the build leaves it out.
+4. **Resume ages out 7 days after the run stopped.** Exactly 7 days = out. A run with no readable stop time stays in. The stop time is the `ts` of the spine's last `job-end` record (`lastJobEndTs`, `src/panel/server.js:619`); a died run has no `job-end`, so it is the `ts` of its last record. Past 7 days the run leaves Needs you only. It stays under Jobs and its Run tab still has Resume. (fwd `needsYouTag`, `src/panel/data.js:1182`; fwd spec am3 item 5, 2327.)
+5. **fwd's stuck `[II]` / saved-answer rule (am4 item 1) does not apply.** bareloop has no saved-answer state and no `[II]` sign. Not copied.
+6. **Pill colour:** blue (`.rl-pill-need`), at the right of line 1 (`margin-left:auto`).
+
+### F. The payload (what the server sends)
+
+`GET /api/runs` (`src/panel/server.js:2840`, today `{runs}`) becomes `{runs, jobs, limits}`. (A `scheduled` array joins later.) The key `runs` stays so the other callers keep working; fwd's name is `rows`, bareloop's is not renamed.
+
+- Per run, new: `live` (true only when the run has no `job-end` and `runIsAlive`), `needs` (`'Accept'|'Resume'|null`), `stoppedAt` (the stop time of E.4, or null), `liveSince` (ISO start of the current leg, only when live) and `priorWallMs` (wall of earlier legs, so a resumed run's wall does not count the gap between legs). `model` already exists.
+- `jobs`: `[{job, headRunid, quiet, activityMs}]`, newest activity first. Activity = the newest known time over the job's runs (`stoppedAt` else `at`). Ties by job name.
+- `limits`: `RUNS_LIST_LIMITS`.
+- The page keeps ONE writer of the data (fwd `setRunsData`, 1848) and ONE reader of it (`rlModel`).
+
+### G. Refresh, memory, what goes away
+
+1. **Repaint only on change** (A.8). The top box (`#rl-top`) and the jobs box (`#wf-list`) each keep their last markup; an identical poll writes nothing. Focus is kept across a real repaint by testid (fwd `withFocusPreserved`, `index.html:3104`).
+2. **Fold state is in memory** (a plain object keyed by job; `__quiet` for the quiet fold). A page reload resets it. The filter bar keeps its own saved state as today.
+3. **Removed:** the Workflows / History switch, the flat History list (`renderHistory`, `#history-list`, `data-runs-view`), `runsViewMode`, and the `bareloop-panel-runs-view` localStorage key (no longer read or written; a leftover value is ignored). The Audit tab's own Grouped / Flat stays. The Import button and the imported-jobs list (`#wf-import`, `#import-list`) stay where they are, under the list, unchanged (P5 rulings).
+4. **Empty text** in the Run pane `#run-empty` (`src/panel/index.html:816` and `:1977`) changes from `select a run from Workflows or History` to `select a run from the Runs list`.
+5. **Empty list:** `no runs listed yet`.
+
+### H. Phone
+
+The same stacked list, not dropdowns. Cards are at least 44 px tall; the fold is 44 px under 900 px. No sideways scroll at 1280, 390 or 320 px. hamr checks 390 and 320 in his own DevTools (barebrowse cannot emulate a phone width; say so, never claim it).
+
+### I. Code shape (copy fwd's)
+
+A pure page model, separate draw functions, one painter, one delegated click handler. Names follow fwd: `setRunsData`, `rlModel(data, groups, filters, limits, sel, open)` (pure: payload in, cards out), `rlSectHtml`, `rlJumpCardHtml`, `rlTopHtml`, `rlRunCardHtml`, `rlJobCardHtml`, `rlJobsHtml`, `tickSince`, `paintRunsList`, `rlJump`, `rlClick`, `rlShortDate`, `runAtText`. `rlTopHtml` builds its sections from one ordered list so Scheduled can be added after Needs you without touching the rest. `groupRunsByJob` is rewritten to take `headRunid` from the server. One delegated click listener on `#panel-runs` handles fold, jump and run card. The sign is drawn from the dot class as everywhere on the page.
+
+### J. Tests (mirror fwd; they must fail first)
+
+New files `tests/panel-runs-list-a-server.test.js` and `tests/panel-runs-list-b-page.test.js`. Page functions are pulled out of `index.html` BY NAME with a brace-scan helper (fwd `m11-b-page.test.js:12-22`, `fnSrc`), never `indexOf('\n  }\n')`, which broke about 15 fwd tests silently. Tests run via `npm test` only.
+
+From fwd `test/m11-a-server.test.js` (server): 
+- `needsYouTag`: one rule, every sign. → bareloop: Resume only; Accept stays null until the door state exists (a test pins "no Accept today").
+- a Resume run leaves Needs you 7 days after it stopped (exactly 7 days = out); no readable time stays in.
+- `listRuns`: now is injectable; an old stopped run carries no tag but its Run tab still has Resume.
+- a stopped run with the Resume button carries Resume; once the job is edited (no button) it carries none. A cap-halted run that can continue carries Resume (same `resumePlanFor` answer).
+- every row carries the model its books name (null when none ran).
+- `summarizeJobs`: newest activity first; quiet only when known and older than 30 days; unknown age never quiet; a job with a live run never quiet.
+- `headRunid` is the newest run by time, not the first in server order (the fwd parked bug).
+- limits: 30 days, 7 runs and 7 days are named once on the server.
+- `GET /api/runs` carries runs, jobs and limits over real HTTP.
+- `resumePlanFor` is not asked for a live or green row (gate).
+
+From fwd `m11-b-page.test.js` (page): order and hiding (a 0-item section draws nothing); Must-fail: a filter or search hides a Running now or Needs you card; the tag is the server's (page works out nothing from the sign); cards: jump cards jump, the tag is a label, lines per section C; Running now unknown cost reads `unknown`; Must-fail: a job's 9th-newest run shows without search (9 runs = newest + 7 older, then `(and 1 older: use search)`); a selected run past the 7 is still shown; with the fold shut a selected older run opens it; search for an older run opens the fold with the match highlighted, and the job card still describes its newest run; search when the head also matches keeps the older match past the 7; 20-run job, search `run-2`; 300-run job, search `run`: only 7 shown, hint 292; the selected run past the 7 AND a different newest match past the 7: both shown (9); no search: 7 shown and not auto-opened; lines clip (nowrap + ellipsis); the quiet split is the server's; the limits are the server's (3 shown when the payload says 3); card shapes; a job with no run is one plain card; book text is escaped; the old view is gone (no switch, no History list, no saved view key, no second copy of the run card); no literal 7 or 30 in `rlModel` / `rlJobsHtml`; refresh writes nothing when nothing changed; a jump selects the run, opens the Run tab and scrolls to the job card.
+From fwd `m11-am3.test.js`: the header is one rule (bold, normal case, no letter-spacing); the count on a job card is the name's own size.
+From fwd `m11-am4.test.js`: the Runs search test is rewritten (we widen it, see D.8). Inbox items there do not apply.
+New for bareloop: search reads the whole row (word, why, model, check type, date); search and highlight use one function; a matched run past the 7 is highlighted; chip order is the declared array; the placeholder is under 24 characters; the check type shows on the job card and is omitted when unknown; a missing-file row and a starting row draw; `Accept` pill draws when the payload says so (draw-only test).
+Existing tests that read the old view get rewritten, not deleted blind: `tests/panel-history-filter-clicks.test.js`, `tests/panel-page.test.js`, `tests/p5r-page.test.js`, `tests/p5-import-page.test.js`, `tests/panel-status.test.js` (each names the old functions or the view switch).
+Proof by eye: orchestrator screenshots at 1280 and 780; hamr checks 390 and 320 and clicks through before any done or release claim.
+
+### K. fwd's known leftovers and what we do with them
+
+- Search placeholder clipped at 320 px: fixed here (D.11).
+- Head run chosen by server order: fixed here (D.2).
+- Matched run past the cap not highlighted: fixed here (D.7).
+- Chip order from object key order: fixed here (D.10).
+- fwd's "rerun / reran" chip wording and its Inbox search hint: Inbox only, do not apply.
+- fwd's exit notes say self-review and branch-review had not run at sign-off; ours get run before any release.
+
+### L. Not in P9 v2
+
+Scheduled section content (the slot is built, drawn in the mockup, filled by PRD v1.99); the Accept pill (until the Accept control exists); any change to runs on disk (display only, nothing deleted or archived); new filters; new tags; fwd's Inbox work; the Run tab.
+
+### M. Done when
+
+On hamr's real panel: a live run shows in Running now with its wall counting up; a stopped run with Resume shows in Needs you with the `Resume` pill and its click opens the Run tab on that run; a job with more than 8 runs shows 1 + 7 and "use search"; a search for an older run opens the fold with that run highlighted; no sideways scroll at 1280, 390, 320. Plus the tests of section J, each shown failing first.
+
+### N. Open items for hamr
+
+1. **Accept pill.** There is no Accept state in the panel yet (E.3). The pill joins when the Run tab gets its Accept control. Say if you want the Accept control built first.
+2. **Live wall for a resumed run** (F, `priorWallMs`): the wall must not count the gap between legs (ruling: "the gap between legs is not counted"). The build checks `legsOf` for what is available; if it is not exact, the card shows the current leg's wall and says so in words.
+3. **When.** A separate branch AFTER `feat/rubric-search` is reviewed and released; one branch at a time, one builder per worktree, sonnet.
