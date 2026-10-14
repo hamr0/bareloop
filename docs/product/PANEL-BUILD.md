@@ -1435,6 +1435,15 @@ Source: fwdloop `m11-am5` (59ffc7e signed text, c35aa40 red-first tests, 2a3fb04
 
 **Must fail when:** `run-2` shows run-20; `aging run-23` finds nothing when aging-live-4 has a run-23; `10/12` misses a run started that day or shows one from another day; a search shows a non-matching older run (other than the selected one); the fold shows more than 7 older runs plus the selected one; a date on a run card, or any text on line 1 of a Running now or Scheduled card, sits raised or smaller than the job/run name, or has no ` · ` before it.
 
+**am7 (from fwd M11 am7, fwdloop `m11-am5` e9b91d9, signed by hamr after his live walk of am5; REPLACES item 5's hint and placeholder words):**
+
+1. **Any day form.** A day can be typed `10/13`, `10-13` or `2026-10-13`; all three mean the same local day.
+2. **Brackets are ignored.** `aging-live-4 (run-2)`, as a run's title shows it, finds the same run as `aging-live-4 run-2`.
+3. **The date range comes from the hidden runs' real start days:** the oldest to the newest, whatever order they are listed in (the time the card shows, `at`).
+4. **Plainer words.** Search box: `search: job name, run-23, or a date 10/13`. Under the 7, no search, hidden runs over several days: `4 more older runs, 10/11 to 10/13. Search to find one.` Under the 7, no search, all on one day: `6 more runs on 10/11. Search to find one.` Under the 7, while searching: `3 more match. Add a date or run number to narrow it.` A hidden run with no date drops the date part: `k more older runs. Search to find one.` (bareloop singularises "run" for k=1 only: `1 more run on 10/11.`, `1 more older run.`; the searching line is fwd's verbatim for every k.)
+
+**Must fail when:** `10-13` and `10/13` give different results; `(run-2)` finds nothing where `run-2` does; the range misses a hidden run's day; one day shows as "10/11 to 10/11"; a hint still uses the old words.
+
 ## Addendum 2026-10-14 — T: triggers build spec (SIGNED 2026-10-14)
 
 Status: SIGNED 2026-10-14 (rulings below, marked RULED; hamr: "if a run missed, it retries when it's back up, if ai down, resume handles it, 5 files > 5 runs one after another. looks fine as long as you align with what fwd did"). Rule that follows: wherever this page differs from fwd without a stated bareloop reason, follow fwd. Nothing here was built at signing. The contract is PRD v1.99 "Triggers: jobs that start by themselves" (ticks T1-T20, SIGNED 2026-10-14); this page says HOW. hamr signed this page and `design/schedule-mock.html` before any builder starts. Work order (RULED): P9 runs list (this branch, `feat/runs-list`), then triggers on this same branch, then rubric work. fwdloop paths are under `~/PycharmProjects/fwdloop` (v0.19.1, main 845b955); "fwd ladder" is `docs/wiki/the-module-ladder.md` M9 (2217-2273) and M11 am3 (2315). Copy is by REWRITE, never import. bareloop never edits fwdloop. Builder: sonnet, strict pin, one part at a time, commit after every part, tests only through `npm test`.
