@@ -208,12 +208,12 @@
   .btn:disabled::before,.btn:disabled::after{color:var(--text-faint);opacity:0.4;}
   .btn.small{padding:0 9px;height:32px;min-height:0;font-size:12px;}
 
-  .wf-row,.hist-row{
+  .wf-row{
     display:flex;flex-direction:column;row-gap:4px;min-width:0;
     padding:8px 8px 8px 18px;position:relative;border:1px solid var(--border);margin-bottom:6px;background:var(--panel2);cursor:pointer;
   }
   .wf-row::before{content:" ";position:absolute;left:6px;top:8px;color:var(--accent);font-weight:700;}
-  .wf-row:hover,.hist-row:hover{border-color:var(--border-strong);}
+  .wf-row:hover{border-color:var(--border-strong);}
   .wf-row.selected::before{content:">";}
   /* line 1: glyph + name, kept on ONE line — truncated with an ellipsis
      (never wrapped) when the job/runid text is longer than the row; the
@@ -226,15 +226,41 @@
   .wf-meta{font-size:12px;color:var(--text-dim);}
   .wf-ended{display:block;font-size:12px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
   .wf-meta + .wf-meta::before{content:" · ";color:var(--text-faint);}
-  .wf-row.selected,.hist-row.selected{border:2px solid var(--accent);border-radius:4px;}
-  /* item 2 (2026-09-26 merge): a Workflows-view job row expands inline to
-     list ALL its runs (build spec's own design) — the caret glyph on the
-     job row, and the indent wrapper the expanded runs render into. */
-  .wf-job{margin-bottom:6px;}
-  .wf-job .wf-row{margin-bottom:0;}
+  .wf-row.selected{border:2px solid var(--accent);border-radius:4px;}
   .wf-caret{display:inline-block;width:11px;flex:none;color:var(--text-faint);font-size:10px;}
-  .wf-runs{margin:4px 0 8px 16px;padding-left:8px;border-left:2px solid var(--border);}
-  .wf-runs .hist-row{margin-bottom:4px;}
+
+  /* P9 v2: the one runs list. Copied from fwdloop M11 (index.html), values unchanged; only the class names carry the rl- prefix. A card's lines clip with an ellipsis (the full text is on the run page). */
+  :root{--rl-accent-bg:rgba(122,162,247,.12);--rl-accent-bg-strong:rgba(122,162,247,.2);}
+  .rl-card{display:block;width:100%;text-align:left;background:var(--panel2);border:1px solid var(--border);padding:6px 8px;margin:0 0 6px;cursor:pointer;min-height:44px;color:inherit;font:inherit;}
+  div.rl-card{cursor:default;}
+  .rl-card:hover{border-color:var(--accent);background:var(--rl-accent-bg);}
+  div.rl-card:hover{border-color:var(--border);background:var(--panel2);}
+  .rl-card.rl-sel,div.rl-card.rl-sel:hover{border:2px solid var(--accent);border-radius:4px;background:var(--rl-accent-bg-strong);}
+  .rl-card:focus-visible,.rl-fold:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .rl-card.rl-live{border-color:var(--amber);}
+  .rl-card.rl-need{border-color:var(--accent);}
+  .rl-l1{display:flex;gap:6px;align-items:center;min-width:0;overflow:hidden;}
+  .rl-nm{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+  .rl-rn{color:var(--accent);flex:none;}
+  .rl-l2{display:block;font-size:12px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .rl-l2 .st-word{color:var(--text);}
+  .rl-faint{color:var(--text-faint);font-size:12px;}
+  .rl-cnt{color:var(--text-faint);font-size:inherit;flex:none;}
+  .rl-runs{margin:6px 0 0 6px;padding-left:8px;border-left:2px solid var(--border);}
+  .rl-runs .rl-card{background:var(--bg);}
+  .rl-runs .rl-card.rl-sel{background:var(--rl-accent-bg-strong);}
+  .rl-fold{background:none;border:0;color:var(--text-dim);font:inherit;font-size:12px;padding:4px 0;cursor:pointer;min-height:32px;}
+  .rl-fold:hover{color:var(--accent);}
+  .rl-hint{font-size:12px;color:var(--text-faint);padding:2px 0 6px;}
+  .rl-pill{font-size:11px;border:1px solid var(--amber);color:var(--amber);padding:0 5px;margin-left:auto;flex:none;}
+  .rl-pill-need{border-color:var(--accent);color:var(--accent);}
+  .rl-dash{border-top:1px dashed var(--border-strong);margin:10px 0 6px;}
+  .rl-sect{font-size:12px;color:var(--text-dim);font-weight:700;margin:12px 0 6px;}
+  .rl-sect:first-child{margin-top:0;}
+  #panel-runs .rl-faint{margin-bottom:4px;}
+  @media (max-width:899px){ .rl-fold{min-height:44px;} }
+  /* the one thing P9 v2 adds to fwd: a run that matches the search or filter is marked, not selected */
+  .rl-card.rl-hit{box-shadow:inset 3px 0 0 var(--accent);}
 
   .rp-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:2px solid var(--border-strong);background:var(--panel);flex-wrap:wrap;gap:8px;}
   .rp-header h2{margin:0;font-size:15px;}
@@ -298,7 +324,6 @@
   .run-actions .stopping{color:var(--amber);font-size:13px;overflow-wrap:anywhere;}
   .resume-err{color:var(--red);white-space:pre-wrap;overflow-wrap:anywhere;}
   /* P5-R: a resumed run is ONE card; its legs are told apart by a divider line, a dotted map connector, a small tag */
-  .wf-resumed{color:var(--amber);}
   .audit-leg-divider{text-align:center;color:var(--text-dim);font-size:12px;margin:10px 0;overflow-wrap:anywhere;}
   .audit-leg-divider-row td{text-align:center;color:var(--text-dim);font-size:12px;background:var(--panel2);}
   .summary-box.red{border-color:var(--red);}
@@ -765,9 +790,7 @@
         </section>
 
         <section id="panel-runs" class="tabpanel" role="tabpanel" aria-labelledby="tab-runs" hidden>
-          <div class="chips" role="group" aria-label="Runs view" style="margin-bottom:8px;">
-            <button class="chip" type="button" aria-pressed="true" data-runs-view="workflows" data-testid="runs-view-workflows">Workflows</button>
-            <button class="chip" type="button" aria-pressed="false" data-runs-view="history" data-testid="runs-view-history">History</button>
+          <div style="margin-bottom:8px;">
             <button class="btn small" type="button" id="wf-import" data-testid="wf-import" title="look at an exported job folder (read only)">Import</button>
           </div>
           <div class="import-box" id="import-box" data-testid="import-box" hidden>
@@ -784,10 +807,12 @@
               <button class="btn" type="button" id="import-cancel" data-testid="import-cancel">Cancel</button>
             </div>
           </div>
+          <div id="rl-top" data-testid="rl-top"></div>
+          <div class="rl-dash"></div>
+          <div class="rl-faint" data-testid="rl-filter-note">filters below act on Jobs and quiet jobs only</div>
           <div id="runs-filterbar-anchor"></div>
           <div id="wf-list" data-testid="wf-list"></div>
           <div id="import-list" data-testid="import-list"></div>
-          <div id="history-list" data-testid="history-list" hidden></div>
         </section>
 
       </div>
@@ -813,7 +838,7 @@
 
         <section id="panel-run" class="tabpanel active" role="tabpanel" aria-labelledby="tab-run">
           <div class="import-view" id="import-view" data-testid="import-view" hidden></div>
-          <div id="run-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run from Workflows or History</div>
+          <div id="run-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run from the Runs list</div>
           <div id="run-content" hidden>
             <div class="run-actions" id="run-actions" data-testid="run-actions" hidden></div>
             <div class="counters" id="run-counters" data-testid="live-counters"></div>
@@ -1306,131 +1331,71 @@
     return statusWordHtml(detail.status, reason) + " \u00B7 " + escapeXml(when);
   }
 
-  // P5-R: a resumed run is the SAME run — one card, never two. This is only a small tag on it.
-  function resumedTagHtml(count, testid){
-    return (typeof count === "number" && count > 0)
-      ? '<span class="wf-meta wf-resumed" data-testid="' + escapeXml(testid) + '">resumed &times;' + count + '</span>' : '';
+  // ---- P9 v2: ONE runs list (PANEL-BUILD.md "P9 v2", copied from fwdloop M11). Top to bottom: Running now, Needs you (the Scheduled slot follows
+  // them once the triggers piece lands), a dashed line and the filters (they act on Jobs and quiet jobs only), Jobs, the quiet fold. The page works
+  // out NOTHING: `live`, `needs`, each job's head run and quiet flag, the order and the limits all come in GET /api/runs. `rlModel` is pure (payload
+  // in, cards out); the rl*Html functions only draw it; `paintRunsList` is the ONE painter.
+  var rlData = { runs: [], jobs: [], scheduled: [], limits: { quietDays: 0, olderRuns: 0, needsYouDays: 0 } };
+  // manual fold memory, keyed by job ("__quiet" is the quiet fold): a per-viewer convenience, reset on reload. A manual click wins over an automatic open.
+  var rlOpen = {};
+  // the last markup written into each box: an identical repaint (every poll) writes nothing, so focus, scroll and a half-read card survive it
+  var rlLast = { top: null, jobs: null };
+  // The ONE writer of `rlData`: the whole /api/runs payload, as the server sent it.
+  function setRunsData(r){
+    rlData = { runs: r.runs || [], jobs: r.jobs || [], scheduled: r.scheduled || [], limits: r.limits || rlData.limits };
   }
 
-  // ---- Runs tab: ONE run-row builder shared by History (flat) and the
-  // Workflows view's per-job expansion (item 2, 2026-09-26 merge) — the two
-  // never drift on how a run row reads.
-  function buildRunRowEl(r, compact){
-    var row = document.createElement("div");
-    // build item (2026-09-26 fix): compute selected state here, off the
-    // module's own `currentRunid`, so a row freshly built by a RE-RENDER
-    // (switching Runs view mode, or a Workflows parent auto-expanding onto
-    // an older run picked from History) shows selected without needing a
-    // click on this exact element — `selectRun`'s imperative class toggle
-    // (used when a click passes its own `rowEl`) stays layered on top of
-    // this, never replaced by it.
-    var selected = r.runid === currentRunid;
-    row.className = "hist-row" + (selected ? " selected" : "");
-    row.setAttribute("data-testid", "hist-row-" + r.runid);
-    row.setAttribute("tabindex", "0");
-    row.setAttribute("role", "button");
-    row.setAttribute("aria-pressed", selected ? "true" : "false");
-    var histFullName = runName(r.job, r.runNo, r.runid);
-    if(r.starting){
-      row.innerHTML =
-        '<span class="wf-line1"><span class="dot amber"></span>' +
-        '<span class="wf-name" title="' + escapeXml(histFullName) + '">' + escapeXml(histFullName) + '</span></span>' +
-        '<span class="wf-meta-line">' +
-        '<span class="wf-meta" data-testid="hist-starting-' + escapeXml(r.runid) + '">starting…</span>' +
-        '<span class="wf-meta">' + escapeXml((r.at || "").slice(0,10) || "unknown") + '</span>' +
-        '</span>';
-    } else if(r.fileMissing){
-      row.innerHTML =
-        '<span class="wf-line1"><span class="dot grey"></span>' +
-        '<span class="wf-name" title="' + escapeXml(histFullName) + '">' + escapeXml(histFullName) + '</span></span>' +
-        '<span class="wf-meta-line">' +
-        '<span class="wf-meta">file missing</span>' +
-        '<span class="wf-meta">' + escapeXml((r.at || "").slice(0,10) || "unknown") + '</span>' +
-        '</span>';
-    } else if(compact){
-      // an EXPANDED per-run row under a workflow (hamr 2026-10-06), 2 lines, left-aligned:
-      //   `[sign] (run-N)  **word** — reason` / `$ ($drafting) · wall · date`
-      row.innerHTML =
-        '<span class="wf-line1 wf-compact"><span class="dot ' + glyphClass(r.glyph) + '"></span>' +
-        '<span class="wf-name wf-runno" title="' + escapeXml(histFullName) + '" data-testid="hist-runno-' + escapeXml(r.runid) + '">(' + escapeXml(runLabel(r.runNo, r.runid)) + ')</span>' +
-        '<span class="wf-ended wf-ended-inline" data-testid="hist-ended-' + escapeXml(r.runid) + '">' + statusWordHtml(r.status, r.endedLine) + '</span></span>' +
-        '<span class="wf-meta-line">' +
-        '<span class="wf-meta">' + escapeXml(rowSpendText(r, true)) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(rowWallText(r)) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(r.date || "unknown") + '</span>' +
-        resumedTagHtml(r.resumedCount, "hist-resumed-" + r.runid) +
-        '</span>';
-    } else {
-      // History card: line 1 sign + job (run-N); line 2 **word** — reason; line 3 the facts
-      row.innerHTML =
-        '<span class="wf-line1"><span class="dot ' + glyphClass(r.glyph) + '"></span>' +
-        '<span class="wf-name" title="' + escapeXml(histFullName) + '">' + escapeXml(histFullName) + '</span></span>' +
-        (r.status ? '<span class="wf-ended" data-testid="hist-ended-' + escapeXml(r.runid) + '">' + statusWordHtml(r.status, r.endedLine) + '</span>' : '') +
-        '<span class="wf-meta-line">' +
-        '<span class="wf-meta">' + escapeXml(r.checkType) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(rowSpendText(r)) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(rowWallText(r)) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(r.date || "unknown") + '</span>' +
-        resumedTagHtml(r.resumedCount, "hist-resumed-" + r.runid) +
-        '</span>';
-    }
-    row.addEventListener("click", function(){ selectRun(r.runid, row, ".hist-row"); document.getElementById("tab-run").click(); scrollRunIntoViewMobile(); });
-    row.addEventListener("keydown", function(e){ if(e.key === "Enter" || e.key === " "){ e.preventDefault(); row.click(); } });
-    return row;
+  // The ONE date of every card in the list: local `MM/DD HH:MM`. An unparseable stamp is shown raw, never blank.
+  function rlShortDate(iso){
+    var d = new Date(iso);
+    if(isNaN(d.getTime())) return String(iso);
+    var t = function(n){ return ("0" + n).slice(-2); };
+    return t(d.getMonth() + 1) + "/" + t(d.getDate()) + " " + t(d.getHours()) + ":" + t(d.getMinutes());
+  }
+  function runAtText(r){
+    return r.at ? rlShortDate(r.at) : "unknown";
   }
 
-  // ---- History view ----
-  function renderHistory(runs){
-    var el = document.getElementById("history-list");
-    el.innerHTML = "";
-    var listed = (runs || []).filter(function(r){ return !r.fileMissing; });
-    if(!listed.length){
-      el.innerHTML = '<div class="hint">no runs listed yet</div>';
-      return;
-    }
-    (runs || []).forEach(function(r){ el.appendChild(buildRunRowEl(r)); });
+  // Everything a run card says, in ONE place: the card is drawn from it and the search reads it, so what you can see is what you can find.
+  function rlRunParts(r){
+    var rn = runLabel(r.runNo, r.runid);
+    var p = { rn: rn, name: r.job + " (" + rn + ")", date: runAtText(r), model: r.model || "", word: "", why: "", spend: "", wall: "" };
+    if(r.starting){ p.word = "running"; p.why = "starting…"; return p; }
+    if(r.fileMissing){ p.word = ""; p.why = "file missing"; return p; }
+    p.word = r.status && r.status.word ? r.status.word : "";
+    p.why = r.endedLine || (p.word === "passed" ? "goal met" : "");
+    p.spend = rowSpendText(r, true);
+    p.wall = rowWallText(r) || "";
+    return p;
+  }
+  // ONE function for "does this run match the search": the filter and the highlight both call it, so they cannot disagree.
+  function runMatchesSearch(r, query){
+    var q = String(query || "").trim().toLowerCase();
+    if(!q) return true;
+    var p = rlRunParts(r);
+    var text = [r.job, p.rn, p.name, r.runid, p.model, p.word, p.why, p.spend, p.wall, p.date, r.checkType || ""].join(" ").toLowerCase();
+    return text.indexOf(q) !== -1;
   }
 
-  // ---- Workflows view (item 2, 2026-09-26 merge): groups the ONE /api/runs
-  // payload by job name client-side — the sole owner of that grouping now
-  // (the old /api/workflows endpoint is gone; see src/panel/server.js). Runs
-  // arrive newest-first (server contract, see listRuns), so the FIRST run
-  // seen for a job is its latest — no re-sort needed, and job order (first-
-  // job-seen order) is already newest-first by construction.
-  function groupRunsByJob(runs){
+  // A job's runs, the server's head first, the rest in the server's order (newest first). The head is the server's call (`headRunid`), never "the first row".
+  function groupRunsByJob(runs, jobs){
     var byJob = {};
     var order = [];
+    var headOf = {};
+    (jobs || []).forEach(function(j){ headOf[j.job] = j.headRunid; if(!byJob[j.job]){ byJob[j.job] = []; order.push(j.job); } });
     (runs || []).forEach(function(r){
       if(!byJob[r.job]){ byJob[r.job] = []; order.push(r.job); }
       byJob[r.job].push(r);
     });
     return order.map(function(job){
-      var jobRuns = byJob[job];
-      var last = jobRuns[0];
-      return {
-        job: job,
-        runs: jobRuns,
-        runCount: jobRuns.length,
-        lastRunid: last.runid,
-        lastRunNo: last.runNo,
-        lastAt: last.at,
-        lastGlyph: last.glyph || "▶",
-        lastStatus: last.status || null,
-        lastEndedLine: last.endedLine || null,
-        lastResumedCount: last.resumedCount || 0,
-        lastCheckType: last.checkType || "unknown",
-        lastModel: last.model || null,
-        lastSpend: rowSpendText(last, true),
-        lastWall: rowWallText(last) || "unknown",
-        lastDate: last.date,
-      };
+      var all = byJob[job];
+      var head = all.filter(function(r){ return r.runid === headOf[job]; })[0] || all[0] || null;
+      return { job: job, runs: head ? [head].concat(all.filter(function(r){ return r !== head; })) : [], runCount: all.length, headRunid: head ? head.runid : null };
     });
   }
 
-  // Matches a job if ANY of its runs match the filters (not only the
-  // latest) — a one-line adapter over filterRuns (never a reimplementation
-  // of the AND/OR/time/search semantics), same posture as the old
-  // filterWorkflows but now correct against the job's FULL run list.
+  // Matches a job if ANY of its runs match the filters (not only the head): a one-line adapter over filterRuns, never a reimplementation of the
+  // AND/OR/time/search semantics.
   function filterWorkflows(jobs, filters, nowMs){
     return (jobs || []).filter(function(g){
       return filterRuns(g.runs, filters, nowMs).length > 0;
@@ -1446,166 +1411,187 @@
     ));
   }
 
-  // Pure rule (item 2 build spec): when filters/search are active, a job
-  // whose LATEST run doesn't match but an older one does auto-expands so the
-  // matching run is visible without an extra click; inactive filters never
-  // force an expand.
-  function autoExpandJob(group, matchingRuns, active){
-    if(!active || !matchingRuns.length) return false;
-    var latestId = group.runs.length ? group.runs[0].runid : null;
-    var latestIncluded = matchingRuns.some(function(r){ return r.runid === latestId; });
-    return !latestIncluded;
+  function rlModel(data, groups, filters, limits, sel, open){
+    var active = filtersActive(filters);
+    var place = {};
+    (data.jobs || []).forEach(function(j, i){ place[j.job] = { quiet: j.quiet === true, at: i }; });
+    var cards = groups.slice().sort(function(a, b){
+      return (place[a.job] ? place[a.job].at : Infinity) - (place[b.job] ? place[b.job].at : Infinity);
+    }).map(function(g){
+      var quiet = !!(place[g.job] && place[g.job].quiet);
+      if(g.headRunid === null) return { job: g.job, group: g, head: null, empty: true, quiet: quiet, selected: false, count: 0, sel: sel, hits: [], older: { open: false, shown: [], hidden: 0, total: 0 } };
+      var head = g.runs[0];
+      var matching = active ? filterRuns(g.runs, filters, Date.now()) : [];
+      var older = g.runs.slice(1);
+      var isSel = function(r){ return r.runid === sel.runid; };
+      // the fold is capped; past the cap only the selected run stays, plus (search or filter active) the ONE newest older run that matches (when it is past the cap)
+      var past = older.slice(limits.olderRuns);
+      var firstMatch = active ? older.filter(function(r){ return matching.indexOf(r) !== -1; })[0] : undefined;
+      var shown = older.slice(0, limits.olderRuns).concat(past.filter(function(r){ return isSel(r) || r === firstMatch; }));
+      // the fold opens by itself when any older run matches (even if the head matches too), or when the selected run is an older one
+      var auto = (active && older.some(function(r){ return matching.indexOf(r) !== -1; })) || older.some(isSel);
+      return {
+        job: g.job, group: g, head: head, empty: false, quiet: quiet, count: g.runCount, sel: sel,
+        selected: g.runs.some(isSel),
+        hits: matching.map(function(r){ return r.runid; }),
+        older: { open: Object.prototype.hasOwnProperty.call(open, g.job) ? open[g.job] : auto, shown: shown, hidden: older.length - shown.length, total: older.length },
+      };
+    });
+    var quietCards = cards.filter(function(c){ return c.quiet; });
+    return {
+      running: data.runs.filter(function(r){ return r.live === true; }),
+      needs: data.runs.filter(function(r){ return typeof r.needs === "string" && r.needs !== ""; }),
+      scheduled: data.scheduled || [],
+      jobs: cards.filter(function(c){ return !c.quiet; }),
+      quiet: quietCards,
+      quietOpen: Object.prototype.hasOwnProperty.call(open, "__quiet") ? open.__quiet : quietCards.some(function(c){ return c.selected; }),
+      limits: limits,
+      noRows: data.runs.length === 0,
+    };
   }
-
-  // build item (2026-09-26 fix, F: parent-row/older-run mismatch): ONE owner
-  // for "which run does this parent row stand for" — both its own selected
-  // state and what its click opens read this, never two separate rules that
-  // could drift. Unfiltered (or when the latest still matches), a job's
-  // parent always stands for its latest run, same as before this fix. With
-  // a filter/search that matches an OLDER run but excludes the latest, the
-  // parent stands for the newest MATCHING run instead — so its click opens
-  // the run the search actually found, and (once picked) the parent's own
-  // selected state follows that same run rather than silently reverting to
-  // the latest.
-  function representedRun(group, candidateRuns, active){
-    if(active && candidateRuns.length){
-      var latestIncluded = candidateRuns.some(function(r){ return r.runid === group.lastRunid; });
-      if(!latestIncluded) return candidateRuns[0].runid;
+  function rlSectHtml(label, n, note){
+    return '<div class="rl-sect">' + label + ' (' + n + ')' + (note ? ' ' + note : '') + '</div>';
+  }
+  // line 1 and 2 of a Running now / Needs you card; both jump to the run (rlJump). The tag is a label (a span), never a button.
+  function rlJumpCardHtml(r, need){
+    var rn = runLabel(r.runNo, r.runid);
+    var faint;
+    if(r.liveSince){
+      faint = '<span data-rl-since="' + escapeXml(r.liveSince) + '" data-rl-prior="' + (typeof r.priorWallMs === "number" ? r.priorWallMs : "leg") + '"></span>';
+    } else faint = 'time unknown';
+    var l2;
+    if(need){
+      var p = rlRunParts(r);
+      var why = r.needs === "Accept" ? "passed · waiting for your Accept" : [p.word, r.endedLine].filter(function(x){ return x; }).join(" · ");
+      l2 = escapeXml(why) + ' &middot; ' + escapeXml(r.stoppedAt ? rlShortDate(r.stoppedAt) : runAtText(r));
+    } else l2 = escapeXml(r.liveWhy || "running");
+    return '<button class="rl-card ' + (need ? 'rl-need' : 'rl-live') + '" type="button" data-rl-jump="' + escapeXml(r.runid) + '" data-testid="rl-' + (need ? 'need' : 'live') + '-' + escapeXml(r.job) + '-' + escapeXml(r.runid) + '">' +
+      '<span class="rl-l1"><span class="dot ' + glyphClass(r.glyph) + '"></span><span class="rl-nm" title="' + escapeXml(r.job) + '">' + escapeXml(r.job) + '</span> <span class="rl-rn">' + escapeXml(rn) + '</span>' +
+      (need ? '<span class="rl-pill rl-pill-need">' + escapeXml(r.needs) + '</span>' : ' <span class="rl-faint">' + faint + ' &middot; ' + escapeXml(rowSpendText(r, true)) + '</span>') + '</span>' +
+      '<span class="rl-l2">' + l2 + '</span></button>';
+  }
+  // The sections above the filters, from ONE ordered list: the Scheduled section (PRD v1.99) is one more entry here after Needs you, plus one draw function.
+  function rlTopHtml(m){
+    var sections = [
+      { label: "Running now", items: m.running, draw: function(r){ return rlJumpCardHtml(r, false); } },
+      { label: "Needs you", items: m.needs, draw: function(r){ return rlJumpCardHtml(r, true); } },
+    ];
+    return sections.map(function(s){
+      return s.items.length ? rlSectHtml(s.label, s.items.length) + s.items.map(s.draw).join("") : "";
+    }).join("");
+  }
+  // a run card inside a job: `[sign] run-N  MM/DD HH:MM · model` / `word — why · $cost · wall`
+  function rlRunCardHtml(r, selected, hit){
+    var p = rlRunParts(r);
+    var bits = [p.spend, p.wall].filter(function(b){ return b; });
+    var l2;
+    if(r.fileMissing) l2 = escapeXml(p.why);
+    else if(r.starting) l2 = '<b class="st-word">' + escapeXml(p.word) + '</b> — ' + escapeXml(p.why);
+    else l2 = (p.word ? '<b class="st-word">' + escapeXml(p.word) + '</b>' : '') + (p.why ? (p.word ? ' — ' : '') + escapeXml(p.why) : '') + (bits.length ? ' &middot; ' + escapeXml(bits.join(" · ")) : '');
+    return '<button class="rl-card' + (selected ? ' rl-sel' : '') + (hit ? ' rl-hit' : '') + (r.live ? ' rl-live' : '') + '" type="button" data-rl-run="' + escapeXml(r.runid) + '" data-testid="rl-run-' + escapeXml(r.job) + '-' + escapeXml(r.runid) + '" aria-pressed="' + (selected ? 'true' : 'false') + '" title="' + escapeXml(p.name) + '">' +
+      '<span class="rl-l1"><span class="dot ' + glyphClass(r.glyph) + '"></span><span class="rl-rn">' + escapeXml(p.rn) + '</span> <span class="rl-faint">' + escapeXml([p.date, p.model].filter(function(b){ return b; }).join(" · ")) + '</span></span>' +
+      '<span class="rl-l2">' + l2 + '</span></button>';
+  }
+  // a job card: `[sign] job · k runs · type` / `word · why` of its newest run, highlighted when the selected run is one of its runs; not clickable. Inside: the newest run's card, then the older-runs fold.
+  function rlJobCardHtml(c){
+    var h = c.head;
+    var top = '<div class="rl-card' + (c.selected ? ' rl-sel' : '') + '" id="rl-job-' + escapeXml(c.job) + '" data-testid="rl-job-' + escapeXml(c.job) + '">';
+    if(c.empty){
+      return top + '<span class="rl-l1"><span class="dot grey"></span><span class="rl-nm" title="' + escapeXml(c.job) + '">' + escapeXml(c.job) + '</span></span><span class="rl-l2">no runs yet</span></div>';
     }
-    return group.lastRunid;
-  }
-
-  // Is `currentRunid` one of this job's OLDER runs (i.e. a run that
-  // belongs to this job but isn't its latest)? Selecting a run from History
-  // and switching to Workflows lands here: the job must auto-expand and its
-  // matching child row must carry the selected marker even though no
-  // filter/search is active and no click happened inside Workflows itself.
-  function activeOlderRun(group){
-    if(!currentRunid || currentRunid === group.lastRunid) return null;
-    var found = group.runs.some(function(r){ return r.runid === currentRunid; });
-    return found ? currentRunid : null;
-  }
-
-  // manual expand/collapse memory, keyed by job name — survives a re-render
-  // triggered by a filter/search change within the same page load, reset on
-  // full page reload (per-viewer convenience only, never persisted). A
-  // manual collapse click still wins over auto-expand-for-selection on the
-  // next render (simplest rule: one flag, no "but selection forces it back
-  // open" special case) — collapsing a job you're not looking at any more
-  // is a normal, expected action.
-  var wfExpanded = {};
-
-  // hamr 2026-10-08 (display only, nothing deleted): with NO search/filter active an expanded job shows at most its
-  // latest WF_SUB_CAP other runs (g.runs is latest-first). A selected older run beyond the cap (picked from History) is
-  // appended after them rather than hidden. With search/filters active every matching sub-card shows.
-  var WF_SUB_CAP = 7;
-  function capSubRuns(childRuns, active, selectedRunid){
-    if(active || childRuns.length <= WF_SUB_CAP) return {shown: childRuns, more: false};
-    var shown = childRuns.slice(0, WF_SUB_CAP);
-    var sel = selectedRunid ? childRuns.slice(WF_SUB_CAP).filter(function(r){ return r.runid === selectedRunid; }) : [];
-    return {shown: shown.concat(sel), more: true};
-  }
-
-  function renderWorkflows(jobs){
-    var el = document.getElementById("wf-list");
-    el.innerHTML = "";
-    if(!jobs.length){
-      el.innerHTML = '<div class="hint">no runs listed yet — run `bareloop run-u` or `bareloop run`, or `bareloop runs backfill <dir>`</div>';
-      return;
-    }
-    var active = filtersActive(currentRunsFilters());
-    jobs.forEach(function(g){
-      // build item (2026-09-26 fix): the parent row IS the job's latest run
-      // (clicking it opens that run), so the inline child list must be the
-      // job's OTHER runs only — never repeat the latest as its own first
-      // child. Expand affordance (caret, aria-expanded, toggle) is gated on
-      // there being a child to actually show: with filters/search active,
-      // that's the FILTERED other-runs list, so a job whose only match is
-      // its own latest run gets no caret and never expands — clicking it
-      // still opens the run, same as any job row. With no filters active
-      // this is unchanged (childRuns = all other runs, same as runCount>1).
-      var candidateRuns = active ? filterRuns(g.runs, currentRunsFilters(), Date.now()) : g.runs;
-      var childRuns = candidateRuns.filter(function(r){ return r.runid !== g.lastRunid; });
-      var hasOtherRuns = childRuns.length > 0;
-      // build item (2026-09-26 fix): auto-expand for a filter/search match
-      // on an older run (existing rule) OR because the run picked elsewhere
-      // (e.g. History) IS one of this job's older runs — either way the
-      // matching child must be visible without an extra click.
-      var olderSelected = activeOlderRun(g);
-      var autoExpand = hasOtherRuns && (autoExpandJob(g, candidateRuns, active) || !!olderSelected);
-      var expanded = hasOtherRuns && (Object.prototype.hasOwnProperty.call(wfExpanded, g.job) ? wfExpanded[g.job] : autoExpand);
-      var targetRunid = representedRun(g, candidateRuns, active);
-
-      var wrap = document.createElement("div");
-      wrap.className = "wf-job";
-
-      var row = document.createElement("div");
-      // build item (2026-09-26): a job (parent) row also opens its latest
-      // run in the Run tab, same as a child row — so it carries the same
-      // "selected" visual state a child row gets from selectRun (the class
-      // is computed HERE, at render time, rather than left on the clicked
-      // element, since this function tears down and rebuilds every wf-row
-      // on every click — see below). `targetRunid` (see `representedRun`
-      // above) is normally the latest run, so this is unchanged in the
-      // common case; a filter/search that matched an older run instead
-      // makes the parent follow THAT run once it's the selected one.
-      var isSelected = currentRunid === targetRunid;
-      row.className = "wf-row" + (isSelected ? " selected" : "");
-      row.setAttribute("data-wf", g.job);
-      row.setAttribute("data-testid", "wf-row-" + g.job);
-      row.setAttribute("tabindex", "0");
-      row.setAttribute("role", "button");
-      row.setAttribute("aria-expanded", expanded ? "true" : "false");
-      row.setAttribute("aria-pressed", isSelected ? "true" : "false");
-      var wfFullName = runName(g.job, g.lastRunNo, g.lastRunid);
-      row.innerHTML =
-        '<span class="wf-line1 wf-compact"><span class="wf-caret">' + (hasOtherRuns ? (expanded ? "▼" : "▶") : "") + '</span><span class="dot ' + glyphClass(g.lastGlyph) + '"></span>' +
-        '<span class="wf-name" title="' + escapeXml(wfFullName) + '">' + escapeXml(wfFullName) + '</span>' +
-        (g.lastStatus ? '<span class="wf-ended wf-ended-inline" data-testid="wf-ended-' + escapeXml(g.job) + '">' + statusWordHtml(g.lastStatus, g.lastEndedLine) + '</span>' : '') + '</span>' +
-        '<span class="wf-meta-line">' +
-        '<span class="wf-meta">' + escapeXml(g.lastCheckType) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(g.lastSpend) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(g.lastWall) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(g.lastDate || "unknown") + '</span>' +
-        '</span>';
-      row.addEventListener("click", function(){
-        // a single-run job has nothing to expand — the click still opens
-        // the run, it just never toggles `wfExpanded` for it.
-        if(hasOtherRuns) wfExpanded[g.job] = !expanded;
-        // build item (2026-09-26): clicking the parent also opens its
-        // latest run (as it did before the Workflows/History merge) — pass
-        // rowEl null since renderWorkflows(jobs) below rebuilds every row
-        // right after, so a class set directly on this element would be
-        // discarded; the fresh render marks selection off `currentRunid`
-        // instead (see `isSelected` above). build item (2026-09-26 fix):
-        // opens `targetRunid`, not always `g.lastRunid` — with a filter/
-        // search active that excludes the latest but matches an older run,
-        // that's the run the search actually found (see `representedRun`).
-        selectRun(targetRunid, null, ".hist-row");
-        document.getElementById("tab-run").click();
-        scrollRunIntoViewMobile();
-        renderWorkflows(jobs);
-      });
-      row.addEventListener("keydown", function(e){ if(e.key === "Enter" || e.key === " "){ e.preventDefault(); row.click(); } });
-      wrap.appendChild(row);
-
-      if(expanded){
-        var runsWrap = document.createElement("div");
-        runsWrap.className = "wf-runs";
-        var capped = capSubRuns(childRuns, active, olderSelected);
-        capped.shown.forEach(function(r){ runsWrap.appendChild(buildRunRowEl(r, true)); });
-        if(capped.more){
-          var olderHint = document.createElement("div");
-          olderHint.className = "hint";
-          olderHint.setAttribute("data-testid", "wf-older-" + g.job);
-          olderHint.textContent = "older: use search.";
-          runsWrap.appendChild(olderHint);
-        }
-        wrap.appendChild(runsWrap);
+    var p = rlRunParts(h);
+    var isSel = function(r){ return r.runid === c.sel.runid; };
+    var isHit = function(r){ return c.hits.indexOf(r.runid) !== -1; };
+    var type = h.checkType && h.checkType !== "unknown" ? ' &middot; ' + escapeXml(h.checkType) : '';
+    var l2 = h.fileMissing ? escapeXml(p.why) : '<b class="st-word">' + escapeXml(p.word) + '</b>' + (p.why ? ' &middot; ' + escapeXml(p.why) : '');
+    var out = top + '<span class="rl-l1"><span class="dot ' + glyphClass(h.glyph) + '"></span><span class="rl-nm" title="' + escapeXml(c.job) + '">' + escapeXml(c.job) + '</span> <span class="rl-cnt">&middot; ' + c.count + ' run' + (c.count === 1 ? '' : 's') + type + '</span></span>' +
+      '<span class="rl-l2">' + l2 + '</span>' +
+      '<div class="rl-runs">' + rlRunCardHtml(h, isSel(h), isHit(h));
+    if(c.older.total > 0){
+      out += '<button class="rl-fold" type="button" data-rl-fold="' + escapeXml(c.job) + '" data-testid="rl-fold-' + escapeXml(c.job) + '" aria-expanded="' + (c.older.open ? 'true' : 'false') + '">' + (c.older.open ? '▾' : '▸') + ' older runs (' + c.older.total + ')</button>';
+      if(c.older.open){
+        out += c.older.shown.map(function(r){ return rlRunCardHtml(r, isSel(r), isHit(r)); }).join("");
+        if(c.older.hidden > 0) out += '<div class="rl-hint">(and ' + c.older.hidden + ' older: use search)</div>';
       }
-      el.appendChild(wrap);
+    }
+    return out + '</div></div>';
+  }
+  function rlJobsHtml(m){
+    var h = "";
+    if(m.jobs.length) h += rlSectHtml("Jobs", m.jobs.length, "· run in the last " + m.limits.quietDays + " days") + m.jobs.map(rlJobCardHtml).join("");
+    if(m.quiet.length){
+      h += '<button class="rl-fold" type="button" data-rl-fold="__quiet" data-testid="rl-fold-quiet" aria-expanded="' + (m.quietOpen ? 'true' : 'false') + '">' + (m.quietOpen ? '▾' : '▸') + ' quiet jobs (' + m.quiet.length + ') · no run in ' + m.limits.quietDays + ' days</button>';
+      if(m.quietOpen) h += m.quiet.map(rlJobCardHtml).join("");
+    }
+    if(h === "" && m.noRows) h = '<div class="hint">no runs listed yet</div>';
+    return h;
+  }
+  // Running now: the wall counts up IN PLACE from the server's start time (no rebuild): the page's 2 s tick calls this. Earlier legs add the server's
+  // `priorWallMs`; when that is not exact the card says it counts this leg only.
+  function tickSince(){
+    document.querySelectorAll("[data-rl-since]").forEach(function(el){
+      var t = Date.parse(el.getAttribute("data-rl-since"));
+      if(isNaN(t)){ el.textContent = "time unknown"; return; }
+      var prior = el.getAttribute("data-rl-prior");
+      var leg = prior === "leg";
+      el.textContent = duration(Math.max(0, Date.now() - t) + (leg ? 0 : Number(prior) || 0)) + (leg ? " this leg" : "");
     });
   }
+  // keep focus on the same card (by testid) across a real repaint of a box
+  function withFocusPreserved(box, fn){
+    var a = document.activeElement;
+    var tid = a && box.contains && box.contains(a) && a.getAttribute ? a.getAttribute("data-testid") : null;
+    fn();
+    if(!tid) return;
+    var nodes = box.querySelectorAll("[data-testid]");
+    for(var i = 0; i < nodes.length; i += 1){
+      if(nodes[i].getAttribute("data-testid") === tid){ if(nodes[i].focus) nodes[i].focus(); return; }
+    }
+  }
+  // The ONE painter of the list. Called by the filter bar (a poll, a chip, the search box) and by every select/click here; it writes a box only when its markup changed.
+  function paintRunsList(){
+    var filters = currentRunsFilters();
+    var groups = filterWorkflows(groupRunsByJob(rlData.runs, rlData.jobs), filters, Date.now());
+    var m = rlModel(rlData, groups, filters, rlData.limits, { runid: currentRunid }, rlOpen);
+    var topEl = document.getElementById("rl-top");
+    var listEl = document.getElementById("wf-list");
+    var top = rlTopHtml(m);
+    var jobs = rlJobsHtml(m);
+    if(top !== rlLast.top){ rlLast.top = top; withFocusPreserved(topEl, function(){ topEl.innerHTML = top; }); }
+    if(jobs !== rlLast.jobs){ rlLast.jobs = jobs; withFocusPreserved(listEl, function(){ listEl.innerHTML = jobs; }); }
+    tickSince();
+  }
+  function rlRowOf(runid){
+    return rlData.runs.filter(function(r){ return r.runid === runid; })[0] || null;
+  }
+  // Running now / Needs you click: select that run, show it on the Run tab and scroll its job card into view.
+  function rlJump(runid){
+    selectRun(runid);
+    document.getElementById("tab-run").click();
+    var row = rlRowOf(runid);
+    var card = row ? document.getElementById("rl-job-" + row.job) : null;
+    if(card && card.scrollIntoView) card.scrollIntoView({ block: "nearest" });
+  }
+  // one delegated click handler for the whole list: a fold, a jump card or a run card
+  function rlClick(ev){
+    var t = ev.target && ev.target.closest ? ev.target : null;
+    if(!t) return;
+    var fold = t.closest("[data-rl-fold]");
+    if(fold){
+      rlOpen[fold.getAttribute("data-rl-fold")] = fold.getAttribute("aria-expanded") !== "true";
+      paintRunsList();
+      return;
+    }
+    var jump = t.closest("[data-rl-jump]");
+    if(jump){ rlJump(jump.getAttribute("data-rl-jump")); return; }
+    var card = t.closest("[data-rl-run]");
+    if(card){
+      selectRun(card.getAttribute("data-rl-run"));
+      document.getElementById("tab-run").click();
+      scrollRunIntoViewMobile();
+    }
+  }
+  document.getElementById("panel-runs").addEventListener("click", rlClick);
 
   // ---- Filter bar (item 5 + hamr's 2026-09-25 live-panel feedback) ----
   // ONE component, ONE state shape ({checkTypes, results, time}), used by
@@ -1616,51 +1602,38 @@
   // "[ ]"; ".fchip" turns that off), time is a short label, then "clear".
   // No "unknown" check-type chip — runs/workflows with unknown type still
   // show whenever no type chip is selected (checkTypes stays empty).
+  // The chips, in the order they are drawn: ONE declared array, never object key order.
+  var RL_CHIPS = [
+    { group: "checkType", value: "deterministic", title: "deterministic", id: "ct-deterministic", label: "D" },
+    { group: "checkType", value: "rubric", title: "rubric", id: "ct-rubric", label: "R" },
+    { group: "result", value: "\u2713", title: "pass", id: "res-pass", label: "&#10003;" },
+    { group: "result", value: "\u2717", title: "fail", id: "res-fail", label: "&#10007;" },
+    { group: "result", value: "?", title: "died", id: "res-died", label: "?" },
+    { group: "result", value: "\u25B6", title: "running", id: "res-running", label: "&#9654;" },
+    { group: "time", value: "7d", title: "last 7 days", id: "time-7d", label: "7d" },
+    { group: "time", value: "30d", title: "last 30 days", id: "time-30d", label: "30d" },
+    { group: "time", value: "all", title: "all time", id: "time-all", label: "all", pressed: true },
+    { clear: true },
+  ];
   function filterBarHTML(scope){
     return (
       '<div class="filterbar" data-scope="' + scope + '" data-testid="' + scope + '-filters">' +
-        '<input type="text" class="search-input" placeholder="search job, run-N, run id or model…" ' +
+        '<input type="text" class="search-input" placeholder="search jobs and runs\u2026" ' +
           'id="' + scope + '-filter-search" data-testid="' + scope + '-filter-search" autocomplete="off">' +
         '<div class="chips" role="group" aria-label="Filter">' +
-          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="checkType" data-filter-value="deterministic" title="deterministic" data-testid="chip-' + scope + '-ct-deterministic">D</button>' +
-          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="checkType" data-filter-value="rubric" title="rubric" data-testid="chip-' + scope + '-ct-rubric">R</button>' +
-          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="result" data-filter-value="&#10003;" title="pass" data-testid="chip-' + scope + '-res-pass">&#10003;</button>' +
-          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="result" data-filter-value="&#10007;" title="fail" data-testid="chip-' + scope + '-res-fail">&#10007;</button>' +
-          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="result" data-filter-value="?" title="died" data-testid="chip-' + scope + '-res-died">?</button>' +
-          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="result" data-filter-value="&#9654;" title="running" data-testid="chip-' + scope + '-res-running">&#9654;</button>' +
-          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="time" data-filter-value="7d" title="last 7 days" data-testid="chip-' + scope + '-time-7d">7d</button>' +
-          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="time" data-filter-value="30d" title="last 30 days" data-testid="chip-' + scope + '-time-30d">30d</button>' +
-          '<button class="chip fchip" type="button" aria-pressed="true" data-filter-group="time" data-filter-value="all" title="all time" data-testid="chip-' + scope + '-time-all">all</button>' +
-          '<button class="chip fchip" type="button" id="' + scope + '-filter-clear" data-testid="' + scope + '-filter-clear">clear</button>' +
+          RL_CHIPS.map(function(c){
+            if(c.clear) return '<button class="chip fchip" type="button" id="' + scope + '-filter-clear" data-testid="' + scope + '-filter-clear">clear</button>';
+            return '<button class="chip fchip" type="button" aria-pressed="' + (c.pressed ? 'true' : 'false') + '" data-filter-group="' + c.group + '" data-filter-value="' + escapeXml(c.value) + '" title="' + c.title + '" data-testid="chip-' + scope + '-' + c.id + '">' + c.label + '</button>';
+          }).join("") +
         '</div>' +
         '<div class="hint" id="' + scope + '-filter-count" data-testid="' + scope + '-filter-count"></div>' +
       '</div>'
     );
   }
 
-  // Pure function: chips toggle on/off independently and combine AND across
-  // the three groups (checkType/result/time), OR within a group (an empty
-  // group array means "no filter" for that group — everything passes it).
-  // `time` is single-select, default "all". `nowMs` is injectable for tests.
-  // Field names (checkType/glyph/at) match a History run row's own shape.
-  // item 1 (2026-09-25): case-insensitive substring match on job name AND
-  // runid, combined AND with the chip groups (an empty/whitespace-only query
-  // means "no search filter" — everything passes it, same posture as an
-  // empty chip group). item C (2026-09-26): also matches the run's model
-  // name (e.g. "deepseek", "sonnet") — `model` is `null`/absent on an older
-  // archived run, same posture as a missing job/runid. Also the run's shown
-  // name: `run-N` and `job (run-N)` (N is the server's `runNo`, never counted here).
-  function matchesSearch(job, runid, model, query, runNo){
-    if(!query) return true;
-    var q = String(query).trim().toLowerCase();
-    if(!q) return true;
-    var j = String(job || "").toLowerCase();
-    var r = String(runid || "").toLowerCase();
-    var m = String(model || "").toLowerCase();
-    var label = typeof runNo === "number" ? "run-" + runNo : "";
-    var shown = label ? j + " (" + label + ")" : "";
-    return j.indexOf(q) !== -1 || r.indexOf(q) !== -1 || m.indexOf(q) !== -1 || (label !== "" && (label.indexOf(q) !== -1 || shown.indexOf(q) !== -1));
-  }
+  // Pure function: chips toggle on/off independently and combine AND across the three groups (checkType/result/time), OR within a group (an empty
+  // group array means "no filter" for that group — everything passes it). `time` is single-select, default "all". `nowMs` is injectable for tests.
+  // The search is `runMatchesSearch`: the whole visible row, case-insensitive; an empty query passes everything.
   function filterRuns(runs, filters, nowMs){
     nowMs = (typeof nowMs === "number") ? nowMs : Date.now();
     var ct = (filters && filters.checkTypes) || [];
@@ -1671,7 +1644,7 @@
       if(ct.length && ct.indexOf(r.checkType) === -1) return false;
       // a stopped run ([■]) was a [✗] before hamr's 2026-10-07 sign ruling — the fail chip still finds it
       if(rs.length && rs.indexOf(r.glyph) === -1 && !(r.glyph === "\u25A0" && rs.indexOf("\u2717") !== -1)) return false;
-      if(!matchesSearch(r.job, r.runid, r.model, q, r.runNo)) return false;
+      if(!runMatchesSearch(r, q)) return false;
       if(time !== "all"){
         var days = time === "7d" ? 7 : 30;
         var t = typeof r.at === "string" ? Date.parse(r.at) : NaN;
@@ -1686,13 +1659,12 @@
    * One filter-bar instance: its own localStorage key, its own DOM scope
    * (`.filterbar[data-scope="..."]`), its own item list — but the same
    * wiring as every other instance.
-   * @param {{scope:string, storageKey:string, filterFn:Function, applyFn:Function}} opts
+   * @param {{scope:string, storageKey:string, onChange:Function}} opts
    */
   function createFilterBar(opts){
     var scope = opts.scope;
     var storageKey = opts.storageKey;
     var state = { checkTypes: [], results: [], time: "all", search: "" };
-    var allItems = [];
 
     function load(){
       try{
@@ -1727,10 +1699,7 @@
       if(searchEl && searchEl.value !== state.search) searchEl.value = state.search;
     }
     function apply(){
-      var filtered = opts.filterFn(allItems, state, Date.now());
-      opts.applyFn(filtered);
-      var countEl = document.getElementById(scope + "-filter-count");
-      if(countEl) countEl.textContent = "showing " + filtered.length + " of " + allItems.length + " runs";
+      opts.onChange(state);
     }
     document.querySelectorAll('.filterbar[data-scope="' + scope + '"] .chip[data-filter-group]').forEach(function(chip){
       chip.addEventListener("click", function(){
@@ -1771,72 +1740,22 @@
     paint();
 
     return {
-      setItems: function(items){ allItems = items || []; apply(); },
       getState: function(){ return state; },
       refresh: function(){ apply(); },
     };
   }
 
-  // item 2 (2026-09-26 merge): Workflows/History view-mode memory — same
-  // per-viewer-convenience posture as every other localStorage read/write on
-  // this page (try/catch, never assumed available).
-  var RUNS_VIEW_KEY = "bareloop-panel-runs-view";
-  function loadRunsViewMode(){
-    try{
-      var v = localStorage.getItem(RUNS_VIEW_KEY);
-      if(v === "workflows" || v === "history") return v;
-    }catch(e){ /* per-viewer convenience only */ }
-    return "workflows";
-  }
-  function saveRunsViewMode(v){
-    try{ localStorage.setItem(RUNS_VIEW_KEY, v); }catch(e){ /* best-effort only */ }
-  }
-
-  // item 2 (2026-09-26 merge): ONE shared filter bar drives whichever view
-  // (Workflows/History) is currently on — one scope, one localStorage key,
-  // so switching views never loses the search/chip state.
+  // ONE filter bar drives the runs list (the Workflows / History switch is gone, P9 v2): one scope, one localStorage key.
   document.getElementById("runs-filterbar-anchor").innerHTML = filterBarHTML("runs");
 
-  var runsViewMode = loadRunsViewMode();
-  function runsFilterFn(items, filters, nowMs){
-    if(runsViewMode === "history") return filterRuns(items, filters, nowMs);
-    return filterWorkflows(groupRunsByJob(items), filters, nowMs);
-  }
-  function runsApplyFn(filtered){
-    if(runsViewMode === "history") renderHistory(filtered);
-    else renderWorkflows(filtered);
-  }
   var runsFilterBar = createFilterBar({
     scope: "runs",
     storageKey: "bareloop-panel-runs-filters",
-    filterFn: runsFilterFn,
-    applyFn: runsApplyFn,
+    onChange: function(){ paintRunsList(); },
   });
   function currentRunsFilters(){
     return runsFilterBar ? runsFilterBar.getState() : { checkTypes: [], results: [], time: "all", search: "" };
   }
-  function paintRunsViewToggle(){
-    document.querySelectorAll('.chip[data-runs-view]').forEach(function(c){
-      c.setAttribute("aria-pressed", c.getAttribute("data-runs-view") === runsViewMode ? "true" : "false");
-    });
-    document.getElementById("wf-list").hidden = runsViewMode !== "workflows";
-    document.getElementById("history-list").hidden = runsViewMode !== "history";
-    // P5 item 4: Import lives on the Workflows view only
-    document.getElementById("wf-import").hidden = runsViewMode !== "workflows";
-    document.getElementById("import-list").hidden = runsViewMode !== "workflows";
-    if(runsViewMode !== "workflows") document.getElementById("import-box").hidden = true;
-  }
-  document.querySelectorAll('.chip[data-runs-view]').forEach(function(chip){
-    chip.addEventListener("click", function(){
-      var next = chip.getAttribute("data-runs-view");
-      if(next === runsViewMode) return;
-      runsViewMode = next;
-      saveRunsViewMode(runsViewMode);
-      paintRunsViewToggle();
-      runsFilterBar.refresh();
-    });
-  });
-  paintRunsViewToggle();
 
   // item 4: phone-only "scroll the run view into view" on row select, and
   // the matching "↑ list" jump back. Desktop never runs either — both panes
@@ -1858,8 +1777,8 @@
     });
   }
 
-  function clearSelection(selector){
-    document.querySelectorAll(".wf-row, .hist-row").forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
+  function clearSelection(){
+    document.querySelectorAll(".wf-row").forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
   }
 
   // ---- P5 item 4: IMPORT (read only) — the folder browser, the imported rows, the view ----
@@ -1974,13 +1893,14 @@
     currentImportId = null;
     document.getElementById("import-view").hidden = true;
     document.getElementById("run-counters").hidden = false;
-    document.getElementById("run-empty").textContent = "select a run from Workflows or History";
+    document.getElementById("run-empty").textContent = "select a run from the Runs list";
     document.getElementById("audit-select-empty").textContent = "select a run first";
     document.querySelectorAll("#import-list .wf-row").forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed", "false"); });
   }
   function selectImport(id){
     clearSelection();
     currentRunid = null;
+    paintRunsList();
     runIsLive = false;
     currentImportId = id;
     document.querySelectorAll("#import-list .wf-row").forEach(function(r){
@@ -2487,7 +2407,7 @@
       if(currentRunid !== runid) return;
       getJSON("/api/runs/" + encodeURIComponent(runid)).then(function(d){
         if(currentRunid !== runid) return;
-        if(d.glyph === "▶" && !d.died){ selectRun(runid, null, ".hist-row"); return; }
+        if(d.glyph === "▶" && !d.died){ selectRun(runid); return; }
         if(tries > 0) afterResumeRefresh(runid, tries - 1);
       }).catch(function(){ if(tries > 0) afterResumeRefresh(runid, tries - 1); });
     }, 1500);
@@ -3322,12 +3242,11 @@
   // from the run's own `glyph`/`died` fields, same rule `renderRun` already
   // uses for `isLive` — never re-derived a second way).
   var runIsLive = false;
-  function selectRun(runid, rowEl, siblingSelector){
+  function selectRun(runid){
     hideImportView();
     clearSelection();
-    document.querySelectorAll(siblingSelector).forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
-    if(rowEl){ rowEl.classList.add("selected"); rowEl.setAttribute("aria-pressed","true"); }
     currentRunid = runid;
+    paintRunsList(); // the list marks the selected run itself (rl-sel); it writes only when the markup changed
     lastLegDividers = [];
     lastJobToolsList = null;
     lastRunDetailSig = null;
@@ -3389,6 +3308,7 @@
   var RUNS_LIST_POLL_MS = 10000;
   var pollTimer = null;
   var lastRunsSig = null;
+  var lastRunsPayloadSig = null;
   var lastRunDetailSig = null;
   var lastRunsListRefreshAt = 0;
   var pollFailStreak = 0;
@@ -3420,14 +3340,14 @@
     return getJSON("/api/runs").then(function(result){
       pollFailStreak = 0;
       var runs = result.runs || [];
-      var next = sig(runs);
-      if(next === lastRunsSig) return runs; // unchanged payload — never rebuild the DOM for nothing
-      lastRunsSig = next;
+      var next = sig(result);
+      if(next === lastRunsPayloadSig) return runs; // unchanged payload — never rebuild the DOM for nothing
+      lastRunsPayloadSig = next;
+      lastRunsSig = sig(runs);
       withScrollPreserved(["left-pane-body"], function(){
-        // setItems re-runs the SAME filter/search state and view mode
-        // (runsFilterFn/runsApplyFn close over runsViewMode and the filter
-        // bar's own state) — a poll tick never resets either.
-        runsFilterBar.setItems(runs);
+        // the painter re-runs the SAME filter/search state — a poll tick never resets it, and it writes a box only when its markup changed.
+        setRunsData(result);
+        runsFilterBar.refresh();
       });
       return runs;
     }).catch(function(){
@@ -3462,6 +3382,7 @@
 
   function pollTick(forceList){
     if(document.hidden) return;
+    tickSince(); // Running now: the wall counts up in place
     refreshRunsList(forceList);
     var wasLive = runIsLive;
     return refreshOpenRun().then(function(){
@@ -3487,25 +3408,17 @@
   getJSON("/api/runs").then(function(result){
     var runs = result.runs || [];
     lastRunsSig = sig(runs);
-    runsFilterBar.setItems(runs);
+    lastRunsPayloadSig = sig(result);
+    setRunsData(result);
+    runsFilterBar.refresh();
     if(runs.length && !runs[0].fileMissing){
-      // build item 5 — the LEFT pane opens on Chat by default; this no
-      // longer force-clicks "tab-runs" (it used to switch the left pane
-      // away from Chat on every load that had a run). The RIGHT pane still
-      // loads the newest run's details so they're ready the moment a
-      // person switches to the Runs tab themselves — the Workflows view
-      // starts collapsed, but its job row still renders "selected" (build
-      // item, 2026-09-26: a job row shows selected state like a child row)
-      // since `runsFilterBar.refresh()` re-renders AFTER `currentRunid` is
-      // set.
-      selectRun(runs[0].runid, null, ".hist-row");
+      // the LEFT pane opens on Chat by default; the RIGHT pane loads the newest run so it is ready when a person opens the Runs tab.
+      selectRun(runs[0].runid);
       document.getElementById("tab-run").click();
-      runsFilterBar.refresh();
     }
     startPolling();
   }).catch(function(e){
     document.getElementById("wf-list").innerHTML = '<div class="hint">failed to load: ' + escapeXml(e.message) + '</div>';
-    document.getElementById("history-list").innerHTML = '<div class="hint">failed to load: ' + escapeXml(e.message) + '</div>';
     startPolling(); // still start — a transient initial failure shouldn't block all future polling
   });
 
