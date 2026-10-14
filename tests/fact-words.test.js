@@ -147,3 +147,49 @@ test('M1: the ONE rulebook tells it, the brief and the confirm note carry it, an
   assert.deepEqual(reds.map((r) => r.code), ['rubric-fact-label-rare']);
   assert.match(proposalStopText({ reds }), /"Cheapest from" is in the input "Page" only 1 time, but this line asks for 3 results/);
 });
+
+// ── M4 (Part 1c full-run fixes): a "must say" phrase must repeat as often as results were asked for ────────────────────────────────
+const MV76_PAGE = '/home/hamr/.config/bareloop/panel-sessions/smv76hqei3xq2/source-seed/tree/input/flights.txt';
+const ph = (name, phrase) => ({ name, shape: 'phrase', phrase });
+
+test('M4: a phrase counted fewer times than the line asks for results is a red naming the words, count and N; count 1 or none allows it', () => {
+  const text = ['Flights from San Francisco to Los Angeles', ...Array.from({ length: 5 }, (_, i) => `Flight ${i}: Leaves San Francisco International Airport at 1${i}:00`)].join('\n');
+  const p3 = (f) => part(f, { count: { min: 3, max: 3 }, source: 'Page' });
+  const rare = checkFactWords({ part: p3([ph('Origin', 'from San Francisco')]), text, line: 1 });
+  assert.deepEqual(rare.map((r) => r.code), ['rubric-fact-phrase-rare']);
+  assert.match(rare[0].detail, /the words "from San Francisco" are in the input "Page" only 1 time, but this line asks for 3 results - each result's own quote must say them/);
+  assert.deepEqual(checkFactWords({ part: p3([ph('Origin', 'Leaves San Francisco International Airport')]), text, line: 1 }), []);
+  assert.deepEqual(checkFactWords({ part: part([ph('Origin', 'from San Francisco')], { count: { min: 1, max: 1 }, source: 'Page' }), text, line: 1 }), []);
+  assert.deepEqual(checkFactWords({ part: part([ph('Origin', 'from San Francisco')], { source: 'Page' }), text, line: 1 }), []);
+  // a phrase the input does not hold at all stays the old missing-word red
+  assert.deepEqual(checkFactWords({ part: p3([ph('X', 'to Mars')]), text, line: 1 }).map((r) => r.code), ['rubric-fact-word-missing']);
+});
+
+test('M4 on the REAL frozen page of run mv76jhj1 (copied to a temp dir, never committed): "from San Francisco"/"to Los Angeles" refused for 3 results, a phrase every flight says accepted', { skip: !existsSync(MV76_PAGE) }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'm4-page-'));
+  made.push(dir);
+  const copy = join(dir, 'flights.txt');
+  copyFileSync(MV76_PAGE, copy);
+  const text = readFileSync(copy, 'utf8');
+  const p = (f, min = 3) => part(f, { count: { min, max: min }, source: 'flights' });
+  // measured on the real page: "from San Francisco" 2, "to Los Angeles" 2, "Nonstop flight" 45, "Leaves San Francisco International Airport" 90
+  assert.equal(countPhrase(text, 'from San Francisco'), 2);
+  assert.equal(countPhrase(text, 'to Los Angeles'), 2);
+  const reds = checkFactWords({ part: p([ph('Origin', 'from San Francisco'), ph('Destination', 'to Los Angeles')]), text, line: 1 });
+  assert.deepEqual(reds.map((r) => r.code), ['rubric-fact-phrase-rare', 'rubric-fact-phrase-rare']);
+  assert.match(reds[0].detail, /"from San Francisco" are in the input "flights" only 2 times, but this line asks for 3 results/);
+  assert.deepEqual(checkFactWords({ part: p([ph('Origin', 'Leaves San Francisco International Airport'), ph('Kind', 'Nonstop flight')]), text, line: 1 }), []);
+  assert.deepEqual(checkFactWords({ part: p([ph('Origin', 'from San Francisco')], 2), text, line: 1 }), []);
+});
+
+test('M4: the ONE rulebook tells it and the red reaches the person in its own plain words', async () => {
+  const { RUBRIC_RULES, REQUIRED_FACTS_BRIEF } = await import('../src/authorflow.js');
+  const { proposalStopText } = await import('../src/authorreadout.js');
+  assert.match(RUBRIC_RULES, /"must say" \(phrase\) fact[\s\S]*at least N times for N results/);
+  assert.ok(REQUIRED_FACTS_BRIEF.includes(RUBRIC_RULES));
+  const decl = { stages: [{ kind: 'rubric-step', params: { step: 1, parts: [part([ph('Origin', 'from San Francisco')], { count: { min: 3, max: 3 }, source: 'Page' })] } }] };
+  const text = ['Flights from San Francisco', ...Array.from({ length: 4 }, (_, i) => `Flight ${i}`)].join('\n');
+  const reds = checkDeclarationWords(decl, { Page: text });
+  assert.deepEqual(reds.map((r) => r.code), ['rubric-fact-phrase-rare']);
+  assert.match(proposalStopText({ reds }), /"from San Francisco" are in the input "Page" only 1 time, but this line asks for 3 results/);
+});

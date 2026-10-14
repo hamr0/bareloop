@@ -74,7 +74,16 @@ export function checkFactWords({ part, text, line, scan = scanLabels(text) }) {
       }
     }
     if (f.until !== undefined && countExact(text, f.until) < 1) red('rubric-fact-word-missing', `${who}: ${JSON.stringify(f.until)} is not in the input "${src}". Copy the closing words from the input, or leave them out.`);
-    if (f.shape === 'phrase' && typeof f.phrase === 'string' && countPhrase(text, f.phrase) < 1) red('rubric-fact-word-missing', `${who}: ${JSON.stringify(f.phrase)} is not in the input "${src}". Copy the words the input really uses, or remove the check.`);
+    if (f.shape === 'phrase' && typeof f.phrase === 'string') {
+      const seen = countPhrase(text, f.phrase);
+      if (seen < 1) red('rubric-fact-word-missing', `${who}: ${JSON.stringify(f.phrase)} is not in the input "${src}". Copy the words the input really uses, or remove the check.`);
+      else if (Number.isInteger(part.count?.min) && seen < part.count.min) {
+        // M4: the words each result's quote must say must repeat as often as results were asked for; page-header words (counted
+        // once or twice) are in no result, so no one-result quote can say them
+        const n = part.count.min;
+        red('rubric-fact-phrase-rare', `${who}: the words ${JSON.stringify(f.phrase)} are in the input "${src}" only ${seen} time${seen === 1 ? '' : 's'}, but this line asks for ${n} results - each result's own quote must say them. Pick words every result says, or drop this check.`);
+      }
+    }
     if (typeof f.unit === 'string' && countPhrase(text, f.unit) < 1) red('rubric-fact-word-missing', `${who}: the unit ${JSON.stringify(f.unit)} is not in the input "${src}". Copy the words the input really uses.`);
   }
   return reds;

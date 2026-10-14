@@ -1416,7 +1416,8 @@ export const RUBRIC_RULES = 'THE RULES FOR TURNING THE PERSON\'S WORDS INTO CHEC
   + 'person\'s word (they wrote SFO, the input says San Francisco International Airport), use the words the input uses; never invent a '
   + 'word the input does not hold, and never add a code (like SFO) that the person did not write and the input does not hold.\n'
   + ' - A label for a line that asks for N results (a count of N) must sit in each result, so the label list must count it N or more times '
-  + '(the x-number beside it). A label counted fewer times is on the page once or twice (a sort tab, a switch) and is refused at $0 with its count.';
+  + '(the x-number beside it). A label counted fewer times is on the page once or twice (a sort tab, a switch) and is refused at $0 with its count.\n'
+  + ' - The same holds for the words a "must say" (phrase) fact makes each quote say: they must be in the input at least N times for N results. Words counted fewer times (page-header words like "from San Francisco" when each result says "Leaves San Francisco International Airport") are refused at $0 with their count; pick words every result says, or drop the check.';
 
 /**
  * REQUIRED FACTS, as the composer is told them (PART 1b, PRD item 33 RF1–RF17). The shape of the fact part is in the catalogue and the
