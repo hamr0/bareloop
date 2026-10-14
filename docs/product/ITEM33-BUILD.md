@@ -917,3 +917,67 @@ drafting session smv74rc6x1g2l (changelog, signing refused, $0.01).
   The one rulebook (`RUBRIC_RULES`) tells the drafter.
 
 Proof: $0 tests per item; then hamr re-runs Job 1 and Job 2 fully.
+
+## Addendum 2026-10-14 — Idea A: page words (DRAFT, not signed; build AFTER P9 on its own branch)
+
+Nothing here is signed. Rule v2 is not yet written or frozen. This records the idea, what the POC showed
+(FINDINGS F226-F228) and what is still open, so hamr can decide before any builder is launched.
+
+### Goal
+
+Today the drafter guesses the page's words (labels, units, place names) and a guess that is not on the page
+fails every try (run mv7qabx4: "$" where the page says "US dollars", anchor "at" three times per flight).
+Idea A: an AI reads the job lines and the `~` rules plus THIS page, and maps each one to the page's own words,
+per website. Code keeps only words really on the page and decides. The AI never grades. A check still needs a
+quote from the page for every claim; the AI's own summary is never the thing checked.
+
+### Frozen code rules (POC, verbatim from FROZEN-RULES.md, frozen 2026-10-14 before any new-page number)
+
+```
+R1 same-value: a value fact's labels are alternatives only if each reads the SAME SET of values across the page as the AI's first listed label; others dropped.
+R2 role: each place phrase is extended LEFT by up to 2 words while >=90% of its occurrences share that word (stop at tree markup chars " [ ] =).
+R2a: a kept phrase contained in another kept phrase is dropped.
+R2b same line: keep only place phrases that share >=90% of the lines of the longest kept phrase.
+R2c: ALL kept place phrases of a fact must be in the quote (AND).
+R3 page-once: a place phrase counted fewer times than the record proxy (min count of the usable money/time labels) is checked once on the page.
+N2 per-line: a label with max >=2 in one page line is unusable.
+Code keeps only words found on the page (count >= 1).
+Decision rule: rules HOLD on a page if honest pass >= 9/10 AND every planted cheat class is caught 10/10. Anything else = a finding, never a re-tune.
+```
+
+These were a POC only. They are scratch code, not product code. Rule v2 will be written after the open items below
+are decided, and frozen before any number is read.
+
+### What F226-F228 showed
+
+- F226: the AI finds the page's own words well. Google Flights SFO-LAX and JFK-MIA held with the rules on (but the
+  thresholds were chosen after seeing them). On an unseen Google Flights page (London Gatwick to Palma, 8 results,
+  small N) the rules held: honest 8/8, every cheat caught 8/8. On TUI Majorca holidays they did not: honest 0/10,
+  because the page writes "282 £ pp" (marker after the number) and our code reads label then number. Also that
+  page could not hold "7 nights" (every card was 3 nights). "Any one alternative works" widens a check: the AI offered
+  "Arrival time:" for "not a red-eye".
+- F227: Booking.com, Expedia, eBay and Skyscanner block barebrowse. Google Flights, Airbnb and Amazon load. Amazon's
+  only labeled price is the old "List Price".
+- F228: bareguard 0.24.0 reads "US dollars" as a unit and passes honest 10/10 on the mv7qabx4 capture, but a fact
+  carries one scalar unit or currency, so a signed spec cannot use lists. The "at" anchor still fails.
+
+### Open items for the spec (each is open, none decided)
+
+- (a) OPEN. Marker-after-number money form (Airbnb "€490 total", TUI "282 £ pp"). First step: ask the guard session
+  what 0.24 already reads, with evidence on the real captures, before any bareloop code.
+- (b) OPEN. Facts carrying currency and unit LISTS (a schema change in `src/facts.js`, `src/authorflow.js`,
+  `src/factwords.js`). Arbiter-adjacent. hamr's call.
+- (c) OPEN. N2 per-line label rule for time labels like "at" (bareguard's own anchor locate, measured 13 of 13 as
+  expected across 5 sources by the guard session). Built nowhere yet.
+- (d) OPEN. Page-level checks (a phrase the page must say once, not per result): a SECOND `cited` check over a
+  separate claims field (`pageClaims`) with a presence decide `{phrases}`. The guard's design, from the stash
+  `2026-10-14-idea-a-page-words-poc.md`. No new primitive.
+- (e) OPEN. Test pages must hold answers to the job (TUI could not meet "7 nights"). Check the page against the job
+  at $0 before reading any number from it.
+- (f) OPEN. Site reach (F227): barebrowse blocks the busiest travel sites. Filed to barebrowse's own session only if
+  hamr rules; not fixed here.
+
+### Next
+
+Next test pages: Google Flights, Airbnb, Amazon. Rule v2 is not yet written or frozen. Build comes AFTER P9, on its own
+branch, only after hamr signs a spec. Nothing in this addendum is signed.

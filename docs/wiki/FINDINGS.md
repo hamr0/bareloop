@@ -14370,3 +14370,54 @@ says a bundle's spec cannot be edited (`src/planrun.js`).
 - **Shape notes.** `values.d<j>` indexes the whole decides list, not the line's facts. `unit:"US dollars"` is value-many on whole blocks, while `currency:"$"` matches 44 of 44 (the reverse of what link rows showed in F224). A claim text with a leading zero ("09:27") reds on `numbers:09`.
 
 **Status:** hamr ruled the response 2026-10-12 (PRD item 33, RF15-RF17: three early tests at drafting, every `~` rule a check or a Not-checked line, AI-proposed numbers marked and "not a red-eye" as a between range). A text anchor (so route direction is checkable) is asked of the guard session. No product code changed.
+
+## F226 — idea A POC: the AI finds a page's own words well, but "any one alternative works" widens the check, and our code cannot read a currency written after the number (POC, 2026-10-14; open, no product code)
+
+**Grounded in:** the POC under the session scratchpad `/tmp/claude-1000/-home-hamr-PycharmProjects-bareloop/94ef7186-101f-4cfa-97b2-128f7d3957be/scratchpad/poc-m5` (`FROZEN-RULES.md`, `alt2a.json`, `alt3.out`, `altcheck2.mjs`, `alt2.log`), on real captured pages, DeepSeek `deepseek-flash`, thinking off. The idea (hamr's option 1): an AI reads the job lines and the `~` rules plus the page and maps each to THIS page's own words; code keeps only words really on the page and decides; the AI never grades.
+
+**Round 1 (6 pages, under $0.01):** Google Flights SFO-LAX and JFK-MIA, Kayak, npm, Hacker News, a changelog. The AI found the page's own words: "San Francisco International Airport", "From" with "US dollars", "Leaves John F. Kennedy International Airport at". On Kayak it honestly said the page has no times or stops. Four holes:
+- The AI listed "Arrival time:" as an alternative for "not a red-eye". Because any one alternative works, an arrival time could pass as a departure.
+- Bare "San Francisco" and "Los Angeles" are direction-blind: they match on a LAX to SFO page too.
+- On JFK-MIA the AI merged both places into one fact.
+- On npm and HN it listed item names instead of labels. Harmless: each appears once, so the count check stops them.
+
+**Code rules, frozen before any new-page number.** R1 same-value, R2 role-extend (R2a, R2b, R2c), R3 page-once and N2 per-line were written into `FROZEN-RULES.md` on 2026-10-14 before any unseen page was read. With them on the two Google pages, honest passed 10/10 and the cheats were caught 10/10 (arrival as departure, price+1, reversed direction, other route). The thresholds were chosen after seeing those two pages, and the cutter that makes the honest and cheat quotes is Google-only. So that result is a fit, not a test.
+
+**Unseen pages** (draft `alt2a.json`; the second draft run hung on the GitHub page with no deadline and was killed, exit 143; the GitHub page also gave 2 "socket hang up" casualties, so it was not graded):
+- **Google Flights London Gatwick to Palma, in pounds: HOLDS, small N.** The page held only 8 results, so N=8 is flagged and a proportional rule was applied (honest >= 90%, all cheats caught). Honest 8/8. Caught: arrival as departure 8/8, price+1 8/8, reversed direction 8/8 (and the other route, SFO-LAX page, 10/10).
+- **TUI Majorca holidays: FINDING.** Honest 0/10 (price+1 caught 10/10, which is the same refusal, not a value check).
+
+**Why TUI failed (traced).** The AI DID find the words: "£", "pp" (29 times), "Trip duration". Our code reads "label, then a number". TUI writes the number first ("282 £ pp"). Reading after "£" grabs the NEXT price, and R1 then drops the "£" label because it reads different values than "from". Second, every TUI card was 3 nights, so "7 nights" could not be met by that page at all: the page did not fit the job.
+
+**Lesson.** The AI side works. The code needs a "marker after the number" form; Airbnb's "€490 total" has the same shape (see F227). And a test page must actually hold answers to the job, or a red tells nothing.
+
+**Ruling and status.** hamr 2026-10-14: drop TUI, do not patch per page, test on the most-used sites (F227). Caveats: n=1 AI call per page; the nonstop, count and text kinds were not tried; honest/cheat tests are Google-only. Open, no product code changed. Rule v2 is not written or frozen.
+
+## F227 — most of the busiest travel and shopping sites block barebrowse (checked 2026-10-14, $0; open, a reach limit of barebrowse, nothing built here)
+
+**Grounded in:** barebrowse fetches on 2026-10-14 in the same POC (`/tmp/claude-1000/-home-hamr-PycharmProjects-bareloop/94ef7186-101f-4cfa-97b2-128f7d3957be/scratchpad/poc-m5/pages3`, `/tmp/claude-1000/-home-hamr-PycharmProjects-bareloop/94ef7186-101f-4cfa-97b2-128f7d3957be/scratchpad/poc-m5/pages2`), headless and headed.
+
+- **Blocked in headless AND headed mode:** Booking.com (empty page), Expedia ("We can't tell if you're a human or a bot."), eBay ("Something went wrong on our end"), Skyscanner ("Are you a person or a robot?").
+- **Loaded:** Google Flights; Airbnb (prices written "€490 total"); Amazon. On Amazon the current price reads "EUR 17.86" with no label, and the only labeled price is the OLD one, "List Price: EUR 178.65". A job asking for "the price" could quote the wrong one and look cited: a plausible wrong-quote trap.
+- Booking.com and Expedia are the top travel sites by traffic, so this limits which real jobs can run.
+
+**bareguard's reading (from the guard session, NOT run here):** "282 £ pp" may already read with `unit: ["£"]`; "€490 total" reads as money, but "total" after the value cannot be an anchor; "EUR 17.86" (code before the number) is not read (ruling #37 stands).
+
+**Status.** A barebrowse reach limit. If hamr rules, it is filed to barebrowse's own session, not fixed here. Open.
+
+## F228 — bareguard 0.24.0 (ruling #65, money currency and unit lists) validated at $0 on run mv7qabx4's real capture; bareloop's facts still carry one scalar, so a real run does not benefit yet (2026-10-14; bump landed, schema change open for hamr)
+
+**Grounded in:** `/tmp/claude-1000/-home-hamr-PycharmProjects-bareloop/94ef7186-101f-4cfa-97b2-128f7d3957be/scratchpad/poc-m5/v24check.mjs`, re-run on 2026-10-14 against `~/.config/bareloop/panel-sessions/smv7q1w53of5n/source-seed/tree/input/flights.txt` (the first 10 honest flights of run mv7qabx4, through bareloop's `gradeStep`, bareguard 0.24.0); `src/facts.js:21, :75, :77, :78, :115`; `src/authorflow.js:841-842`; `src/factwords.js:87`.
+
+| Case | Honest | Bad value |
+|---|---|---|
+| price as signed (anchor "From", currency "$") | 0/10 | price+1 "caught" 10/10, but for the same refusal, not a value check |
+| currency "$" + unit ["US dollars"] | 10/10 | price+1 caught 10/10, right reason ("44 is not 43") |
+| unit ["US dollars"] alone | 10/10 | price+1 caught 10/10, right reason |
+| departure as signed (anchor "at") | 0/10 | arrival-as-departure "caught" 10/10, same refusal |
+
+- The page writes "From 43 US dollars", so "$" never matches. The departure anchor "at" is in each quote more than once, so every honest quote is red. 0.24 does not change the second; the fix is the N2 per-line rule (F226), unbuilt.
+- **Bareloop side.** A fact carries one scalar `unit` or `currency` (`FACT_FIELDS` at `src/facts.js:21`; the exactly-one rule at :75; checks at :77-:78; the pass-through at :115; the drafter schema at `src/authorflow.js:841-842`; the unit presence check at `src/factwords.js:87`). So 0.24's lists cannot be reached through a signed spec. Note the case "currency + unit together" passed here only because the script calls `gradeStep` directly; `src/facts.js:75` refuses both together at signing.
+- A single string unit "US dollars" was ALREADY legal. mv7qabx4 failed because the drafter picked "$", not because the library lacked a form.
+- Allowing lists in facts is a schema change, arbiter-adjacent (it changes what a signed spec can express): hamr's call.
+- **Bump.** bareguard `^0.24.0` landed as 937ad19. The only break was the vocabulary text regex at `src/facts.js:280`. Gate 4079/4079.
