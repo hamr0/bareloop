@@ -150,14 +150,14 @@ test('tickSince: the wall counts up in place from the server\'s start time plus 
   assert.ok(m);
 });
 
-test('Must-fail: a job\'s 9th-newest run is not shown without a search: 9 runs = newest + 7 older, then `(and 1 older: use search)`', () => {
+test('Must-fail: a job\'s 9th-newest run is not shown without a search: 9 runs = newest + 7 older, then the hint with the hidden run\'s date (am5 item 5)', () => {
   const m = mount();
   const j = job('flights', 9);
   const mod = model(m, j.runs, [j.entry], { open: { flights: true } });
   const html = m.f.rlJobsHtml(mod);
   assert.equal(count(html, /data-rl-run=/g), 8, 'the newest + 7 older');
   assert.match(html, /older runs \(8\)/);
-  assert.match(html, /<div class="rl-hint">\(and 1 older: use search\)<\/div>/);
+  assert.match(html, /<div class="rl-hint">\(and 1 older &middot; 09\/01 to 09\/01 of those 1 &middot; search above\)<\/div>/);
   assert.doesNotMatch(html, /data-rl-run="flights-1"/);
 });
 
@@ -185,36 +185,37 @@ test('search for an older run opens the fold and MARKS it (rl-hit), never select
   assert.match(html, /id="rl-job-flights"[^]*<span class="rl-l2"><b class="st-word">failed<\/b> &middot; checks said no/);
 });
 
-test('search when the head also matches still opens the fold and keeps the older match past the 7; 20-run job, search `run-2`', () => {
+test('search when the head also matches still opens the fold and shows the older match; 20-run job, search `run-2` (am5 item 2: run-2 is exact, so the head run-20 does not match)', () => {
   const m = mount();
   const j = job('flights', 20);
   const f = { ...FILTERS, search: 'run-2' };
   const mod = model(m, j.runs, [j.entry], { filters: f });
   const c = mod.jobs[0];
   assert.equal(c.older.open, true);
-  const ids = c.older.shown.map((r) => r.runid);
-  assert.equal(ids.length, 8, '7 + the ONE newest match past them');
-  assert.ok(ids.includes('flights-2'), 'run-2 is the only older match and sits past the 7');
-  assert.equal(c.hits.includes('flights-20'), true, 'the head matches too');
+  assert.deepEqual(c.older.shown.map((r) => r.runid), ['flights-2'], 'run-2 is the only older match (item 4: matches only)');
+  assert.equal(c.hits.includes('flights-20'), false, 'run-20 is not run-2');
+  const both = model(m, j.runs, [j.entry], { filters: { ...FILTERS, search: 'flights' } }).jobs[0];
+  assert.equal(both.hits.includes('flights-20'), true, 'a plain word still matches the head');
+  assert.equal(both.older.open, true, 'the fold still opens when the head also matches');
 });
 
-test('300-run job, search `run`: only 7 older shown, the hint counts the rest (292)', () => {
+test('300-run job, search `run`: only 7 older shown (am5 item 4: no extra newest match), the hint counts the rest (292 more matches)', () => {
   const m = mount();
   const j = job('big', 300);
   const html = m.f.rlJobsHtml(model(m, j.runs, [j.entry], { filters: { ...FILTERS, search: 'run' } }));
-  assert.equal(count(html, /data-rl-run=/g), 8);
-  assert.match(html, /\(and 292 older: use search\)/);
+  assert.equal(count(html, /data-rl-run=/g), 8, 'the newest + 7 older');
+  assert.match(html, /\(and 292 more matches &middot; add a day or a run\)/);
 });
 
-test('the selected run past the 7 AND a different newest match past the 7: both are shown (9)', () => {
+test('the selected run past the 7 is shown with the 7 matches (am5 item 4 replaces the "one newest match past the 7" rule): 30-run job, search `flights`, selected flights-3', () => {
   const m = mount();
   const j = job('flights', 30);
-  // run-15 is the newest match past the 7 for "run-1" among older ones (run-29..run-23 are the first 7 older); selected: flights-3
-  const mod = model(m, j.runs, [j.entry], { filters: { ...FILTERS, search: 'run-1' }, sel: { runid: 'flights-3' } });
+  const mod = model(m, j.runs, [j.entry], { filters: { ...FILTERS, search: 'flights' }, sel: { runid: 'flights-3' } });
   const ids = mod.jobs[0].older.shown.map((r) => r.runid);
-  assert.equal(ids.length, 9);
-  assert.ok(ids.includes('flights-3'));
-  assert.ok(ids.some((id) => ['flights-19', 'flights-18', 'flights-17', 'flights-16', 'flights-15', 'flights-14', 'flights-13', 'flights-12', 'flights-11', 'flights-10', 'flights-1'].includes(id)));
+  assert.equal(ids.length, 8, '7 matches + the selected run');
+  assert.deepEqual(ids.slice(0, 7), ['flights-29', 'flights-28', 'flights-27', 'flights-26', 'flights-25', 'flights-24', 'flights-23']);
+  assert.equal(ids[7], 'flights-3');
+  assert.equal(mod.jobs[0].older.hidden, 21, '29 older matches - 7 shown - the selected one');
 });
 
 test('no search: 7 shown and the fold is not opened by itself', () => {

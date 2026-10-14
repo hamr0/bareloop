@@ -749,11 +749,10 @@ test('item 1: the search input exists in the shared filter bar for both scopes, 
   assert.match(html, /state = \{ checkTypes: \[\], results: \[\], time: "all", search: "" \};/);
 });
 
-test('P9 v2 D.11: the search placeholder is short (under 24 characters) so it never clips at 320 px', () => {
+test('P9 v2 O item 5 (replaces D.11 "search jobs and runs…"): the Runs search placeholder is `job, run-23, or a day 10/12`', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const m = html.match(/placeholder="(search jobs and runs[^"]*)"/);
-  assert.ok(m, 'expected the new placeholder');
-  assert.ok(m[1].replace('\\u2026', '…').length < 24, m[1]);
+  assert.match(html, /placeholder="job, run-23, or a day 10\/12" /);
+  assert.doesNotMatch(html, /placeholder="search jobs and runs/);
 });
 
 test('item 1: search state persists via the same localStorage key as the chip filters', () => {

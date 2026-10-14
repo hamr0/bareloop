@@ -245,6 +245,7 @@
   .rl-l2{display:block;font-size:12px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .rl-l2 .st-word{color:var(--text);}
   .rl-faint{color:var(--text-faint);font-size:12px;}
+  .rl-rest{color:var(--text-faint);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .rl-cnt{color:var(--text-faint);font-size:inherit;flex:none;}
   .rl-runs{margin:6px 0 0 6px;padding-left:8px;border-left:2px solid var(--border);}
   .rl-runs .rl-card{background:var(--bg);}
@@ -1401,13 +1402,31 @@
     p.wall = rowWallText(r) || "";
     return p;
   }
-  // ONE function for "does this run match the search": the filter and the highlight both call it, so they cannot disagree.
+  // ONE function for "does this run match the search": the filter and the highlight both call it, so they cannot disagree. M11 am5 (PANEL-BUILD.md P9 v2 O):
+  // the search splits at spaces and EVERY word must match, case-insensitive. A word shaped run-N is that run exactly; a word shaped MM/DD or YYYY-MM-DD (a real
+  // day) is the run's LOCAL start day, from the same `at` the card shows (MM/DD = any year; no date = no match); a part date (10/1, 10/) matches nothing, not even
+  // the card's date text; any other word is a substring of the whole visible row (job, run, run id, model, status word, why, spend, wall, date, check type).
   function runMatchesSearch(r, query){
-    var q = String(query || "").trim().toLowerCase();
-    if(!q) return true;
+    var words = String(query || "").trim().toLowerCase().split(/\s+/).filter(function(w){ return w; });
+    if(!words.length) return true;
     var p = rlRunParts(r);
-    var text = [r.job, p.rn, p.name, r.runid, p.model, p.word, p.why, p.spend, p.wall, p.date, r.checkType || ""].join(" ").toLowerCase();
-    return text.indexOf(q) !== -1;
+    var d = r.at ? new Date(r.at) : null;
+    var dated = !!d && !isNaN(d.getTime());
+    var rn = String(p.rn).toLowerCase();
+    var rest = [r.job, p.rn, p.name, r.runid, p.model, p.word, p.why, p.spend, p.wall, r.checkType || ""].join(" ").toLowerCase();
+    var whole = rest + " " + String(p.date).toLowerCase();
+    return words.every(function(w){
+      if(/^run-\d+$/.test(w)) return rn === w;
+      var day = /^(?:(\d{4})-)?(\d\d)[-\/](\d\d)$/.exec(w);
+      if(day && (day[1] ? w.charAt(4) === "-" && w.charAt(7) === "-" : w.charAt(2) === "/")){
+        var mo = Number(day[2]), da = Number(day[3]);
+        if(mo >= 1 && mo <= 12 && da >= 1 && da <= 31){
+          return dated && d.getMonth() + 1 === mo && d.getDate() === da && (!day[1] || d.getFullYear() === Number(day[1]));
+        }
+      }
+      if(/^[\d\/-]+$/.test(w) && /[\/-]/.test(w)) return rest.indexOf(w) !== -1;
+      return whole.indexOf(w) !== -1;
+    });
   }
 
   // A job's runs, the server's head first, the rest in the server's order (newest first). The head is the server's call (`headRunid`), never "the first row".
@@ -1452,22 +1471,23 @@
       return (place[a.job] ? place[a.job].at : Infinity) - (place[b.job] ? place[b.job].at : Infinity);
     }).map(function(g){
       var quiet = !!(place[g.job] && place[g.job].quiet);
-      if(g.headRunid === null) return { job: g.job, group: g, head: null, empty: true, quiet: quiet, selected: false, count: 0, sel: sel, hits: [], older: { open: false, shown: [], hidden: 0, total: 0 } };
+      if(g.headRunid === null) return { job: g.job, group: g, head: null, empty: true, quiet: quiet, selected: false, count: 0, sel: sel, hits: [], older: { open: false, shown: [], hidden: 0, left: [], active: active, total: 0 } };
       var head = g.runs[0];
       var matching = active ? filterRuns(g.runs, filters, Date.now()) : [];
       var older = g.runs.slice(1);
       var isSel = function(r){ return r.runid === sel.runid; };
-      // the fold is capped; past the cap only the selected run stays, plus (search or filter active) the ONE newest older run that matches (when it is past the cap)
-      var past = older.slice(limits.olderRuns);
-      var firstMatch = active ? older.filter(function(r){ return matching.indexOf(r) !== -1; })[0] : undefined;
-      var shown = older.slice(0, limits.olderRuns).concat(past.filter(function(r){ return isSel(r) || r === firstMatch; }));
+      // M11 am5 item 4: the fold is capped at limits.olderRuns, newest first. With a search or chip on, only the older runs that match count; the selected run stays shown either way.
+      var pool = active ? older.filter(function(r){ return matching.indexOf(r) !== -1; }) : older;
+      var top = pool.slice(0, limits.olderRuns);
+      var shown = top.concat(older.filter(function(r){ return isSel(r) && top.indexOf(r) === -1; }));
+      var left = pool.filter(function(r){ return shown.indexOf(r) === -1; });
       // the fold opens by itself when any older run matches (even if the head matches too), or when the selected run is an older one
       var auto = (active && older.some(function(r){ return matching.indexOf(r) !== -1; })) || older.some(isSel);
       return {
         job: g.job, group: g, head: head, empty: false, quiet: quiet, count: g.runCount, sel: sel,
         selected: g.runs.some(isSel),
         hits: matching.map(function(r){ return r.runid; }),
-        older: { open: Object.prototype.hasOwnProperty.call(open, g.job) ? open[g.job] : auto, shown: shown, hidden: older.length - shown.length, total: older.length },
+        older: { open: Object.prototype.hasOwnProperty.call(open, g.job) ? open[g.job] : auto, shown: shown, hidden: left.length, left: left, active: active, total: older.length },
       };
     });
     var quietCards = cards.filter(function(c){ return c.quiet; });
@@ -1500,7 +1520,7 @@
     } else l2 = escapeXml(r.liveWhy || "running");
     return '<button class="rl-card ' + (need ? 'rl-need' : 'rl-live') + '" type="button" data-rl-jump="' + escapeXml(r.runid) + '" data-testid="rl-' + (need ? 'need' : 'live') + '-' + escapeXml(r.job) + '-' + escapeXml(r.runid) + '">' +
       '<span class="rl-l1"><span class="dot ' + glyphClass(r.glyph) + '"></span><span class="rl-nm" title="' + escapeXml(r.job) + '">' + escapeXml(r.job) + '</span> <span class="rl-rn">' + escapeXml(rn) + '</span>' +
-      (need ? '<span class="rl-pill rl-pill-need">' + escapeXml(r.needs) + '</span>' : ' <span class="rl-faint">' + faint + ' &middot; ' + escapeXml(rowSpendText(r, true)) + '</span>') + '</span>' +
+      (need ? '<span class="rl-pill rl-pill-need">' + escapeXml(r.needs) + '</span>' : ' <span class="rl-rest">&middot; ' + faint + ' &middot; ' + escapeXml(rowSpendText(r, true)) + '</span>') + '</span>' +
       '<span class="rl-l2">' + l2 + '</span></button>';
   }
   // Scheduled card (T Part 7): `[·] job  today 15:00` / `next in 3h · Every day at 15:00`, all from the server. A file trigger has no clock time:
@@ -1508,7 +1528,7 @@
   // scrolls to its job). A job with no run to open stays a plain box. Never filtered or searched.
   function rlScheduledCardHtml(s){
     var body = '<span class="rl-l1"><span class="dot grey"></span><span class="rl-nm" title="' + escapeXml(s.job) + '">' + escapeXml(s.job) + '</span>' +
-      (s.at ? ' <span class="rl-faint">' + escapeXml(s.at) + '</span>' : '') + '</span>' +
+      (s.at ? ' <span class="rl-rest">&middot; ' + escapeXml(s.at) + '</span>' : '') + '</span>' +
       '<span class="rl-l2">' + escapeXml([s.in, s.words].filter(function(x){ return x; }).join(" · ")) + '</span>';
     if(typeof s.runId !== "string" || s.runId === "") return '<div class="rl-card" data-testid="rl-sched-' + escapeXml(s.job) + '">' + body + '</div>';
     return '<button class="rl-card" type="button" data-rl-jump="' + escapeXml(s.runId) + '" data-testid="rl-sched-' + escapeXml(s.job) + '">' + body + '</button>';
@@ -1533,7 +1553,7 @@
     else if(r.starting) l2 = '<b class="st-word">' + escapeXml(p.word) + '</b> — ' + escapeXml(p.why);
     else l2 = (p.word ? '<b class="st-word">' + escapeXml(p.word) + '</b>' : '') + (p.why ? (p.word ? ' — ' : '') + escapeXml(p.why) : '') + (bits.length ? ' &middot; ' + escapeXml(bits.join(" · ")) : '');
     return '<button class="rl-card' + (selected ? ' rl-sel' : '') + (hit ? ' rl-hit' : '') + (r.live ? ' rl-live' : '') + '" type="button" data-rl-run="' + escapeXml(r.runid) + '" data-testid="rl-run-' + escapeXml(r.job) + '-' + escapeXml(r.runid) + '" aria-pressed="' + (selected ? 'true' : 'false') + '" title="' + escapeXml(p.name) + '">' +
-      '<span class="rl-l1"><span class="dot ' + glyphClass(r.glyph) + '"></span><span class="rl-rn">' + escapeXml(p.rn) + '</span> <span class="rl-faint">' + escapeXml([p.date, p.model].filter(function(b){ return b; }).join(" · ")) + '</span></span>' +
+      '<span class="rl-l1"><span class="dot ' + glyphClass(r.glyph) + '"></span><span class="rl-rn">' + escapeXml(p.rn) + '</span> <span class="rl-rest">&middot; ' + escapeXml([p.date, p.model].filter(function(b){ return b; }).join(" · ")) + '</span></span>' +
       '<span class="rl-l2">' + l2 + '</span></button>';
   }
   // a job card: `[sign] job · k runs · type` / `word · why` of its newest run, highlighted when the selected run is one of its runs; not clickable. Inside: the newest run's card, then the older-runs fold.
@@ -1555,7 +1575,19 @@
       out += '<button class="rl-fold" type="button" data-rl-fold="' + escapeXml(c.job) + '" data-testid="rl-fold-' + escapeXml(c.job) + '" aria-expanded="' + (c.older.open ? 'true' : 'false') + '">' + (c.older.open ? '▾' : '▸') + ' older runs (' + c.older.total + ')</button>';
       if(c.older.open){
         out += c.older.shown.map(function(r){ return rlRunCardHtml(r, isSel(r), isHit(r)); }).join("");
-        if(c.older.hidden > 0) out += '<div class="rl-hint">(and ' + c.older.hidden + ' older: use search)</div>';
+        if(c.older.hidden > 0){
+          // M11 am5 item 5, the line after the 7: searching, `(and k more matches · add a day or a run)`; else `(and k older · <oldest> to <newest> of those k · search above)`,
+          // the dates (MM/DD, as the cards show them) of those k hidden runs (`left`, newest first). A hidden run with no date drops the range; nothing is made up.
+          var day = function(x){
+            var dd = x.at ? new Date(x.at) : null;
+            return dd && !isNaN(dd.getTime()) ? ("0" + (dd.getMonth() + 1)).slice(-2) + "/" + ("0" + dd.getDate()).slice(-2) : null;
+          };
+          var days = c.older.left.map(day);
+          var from = days[days.length - 1], to = days[0];
+          var ranged = days.every(function(x){ return x !== null; });
+          out += '<div class="rl-hint">' + (c.older.active ? '(and ' + c.older.hidden + ' more matches &middot; add a day or a run)' :
+            '(and ' + c.older.hidden + ' older &middot; ' + (ranged ? from + ' to ' + to + ' of those ' + c.older.hidden + ' &middot; ' : '') + 'search above)') + '</div>';
+        }
       }
     }
     return out + '</div></div>';
@@ -1662,7 +1694,7 @@
   function filterBarHTML(scope){
     return (
       '<div class="filterbar" data-scope="' + scope + '" data-testid="' + scope + '-filters">' +
-        '<input type="text" class="search-input" placeholder="search jobs and runs\u2026" ' +
+        '<input type="text" class="search-input" placeholder="job, run-23, or a day 10/12" ' +
           'id="' + scope + '-filter-search" data-testid="' + scope + '-filter-search" autocomplete="off">' +
         '<div class="chips" role="group" aria-label="Filter">' +
           RL_CHIPS.map(function(c){

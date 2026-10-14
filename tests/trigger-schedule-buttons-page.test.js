@@ -162,10 +162,11 @@ test('runs list: Scheduled is one more section after Needs you; a card jumps to 
   const clock = rlScheduledCardHtml({ job: 'changelog-a', at: 'today 15:00', in: 'next in 3h', words: 'Every day at 15:00', runId: 'r7' });
   assert.match(clock, /^<button class="rl-card" type="button" data-rl-jump="r7" data-testid="rl-sched-changelog-a">/);
   assert.match(clock, /class="dot grey"/);
-  assert.match(clock, /rl-faint">today 15:00</);
+  assert.match(clock, /rl-rest">&middot; today 15:00</, 'P9 v2 O item 7 (fwd am6): same size as the job name, after a middot');
+  assert.doesNotMatch(clock, /rl-faint/);
   assert.match(clock, /rl-l2">next in 3h · Every day at 15:00</);
   const file = rlScheduledCardHtml({ job: 'inbox', at: null, in: null, words: 'When a new file arrives in ~/reports/inbox/', runId: 'r8' });
-  assert.doesNotMatch(file, /rl-faint/, 'a file trigger has no clock time, nothing is made up');
+  assert.doesNotMatch(file, /rl-faint|rl-rest/, 'a file trigger has no clock time, nothing is made up');
   assert.match(file, /rl-l2">When a new file arrives in ~\/reports\/inbox\/</);
   const plain = rlScheduledCardHtml({ job: 'orphan', at: null, in: null, words: 'Every day at 09:00', runId: null });
   assert.match(plain, /^<div class="rl-card"/);
