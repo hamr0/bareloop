@@ -16,11 +16,11 @@ import {
   openSync, closeSync, writeFileSync, readFileSync, readdirSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { checkHumanGuard } from './authorroutes.js';
+import { checkHumanGuard, OLD_JOB_ACCEPT_WORDS } from './authorroutes.js';
 import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
 import { ConfigError } from '../config.js';
 import { keysForDoor } from '../keysfile.js';
-import { jobSpecHash } from '../job.js';
+import { jobSpecHash, validateJob } from '../job.js';
 import { stopFilePath } from '../legs.js';
 import { appendNeedsRemoved } from '../runlist.js';
 
@@ -125,6 +125,15 @@ export function createRunRoutes(opts) {
     if (ctx.live) { send(409, { ok: false, error: 'This run is still running, so there is nothing to accept yet.' }); return true; }
     if (!ctx.waiting) { send(409, { ok: false, error: 'This run is not waiting for your Accept (it opened no review door, the door was already answered, or it has expired).' }); return true; }
     if (!ctx.specPath || !ctx.specHash) { send(409, { ok: false, error: "The signed job this run was judged by cannot be found on disk, so its door cannot be answered from here. Nothing was recorded." }); return true; }
+    // RULED 2026-10-15: an old run whose saved job fails today's checks is refused at $0 in plain words, before any spawn
+    /** @type {any} */
+    let signed = null;
+    try { signed = JSON.parse(readFileSync(ctx.specPath, 'utf8')); } catch { signed = null; }
+    if (signed !== null) {
+      let jv;
+      try { jv = validateJob(signed, { shellCapUsd: signed.budgetUsd }); } catch { jv = { ok: false, reds: [] }; }
+      if (!jv.ok) { send(409, { ok: false, error: OLD_JOB_ACCEPT_WORDS, reds: jv.reds.map((r) => `${r.code} at ${r.path}`) }); return true; }
+    }
     const dir = dirname(ctx.specPath);
     const logFile = join(dir, `accept-${runid}-${Date.now()}.log`);
     const args = [

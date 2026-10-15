@@ -548,3 +548,25 @@ test('POST start with startFrom = a green or already-green run reuses the signed
   assert.equal(red.ok, true, 'Reuse / Resume read the red run\'s prefill through GET — never blocked');
   assert.equal(red.green, false);
 });
+
+// RULED 2026-10-15: an old run whose saved job fails today's checks gets plain words on Reuse, never raw validator text
+test('routes: Reuse workflow on a run whose saved job no longer passes validateJob answers plain words, no raw red code', async (t) => {
+  const real = await realSpec();
+  const spec = JSON.parse(JSON.stringify(real));
+  spec.job = 'p5-sf-old';
+  assert.ok(spec.closeDecl, 'the real spec carries a declared close');
+  spec.closeDecl = { ...spec.closeDecl, genre: 'RETIRED-GENRE' }; // a genre today's validator no longer admits (invalid-value at closeDecl.genre)
+  const home = keysHomeWith();
+  makeRun(home, { runid: 'old1', spec, card: baseCard({ jobName: spec.job, source: '/the/original/source' }) });
+  const { close, port, token } = await createPanelServer({ port: 0, env: {}, home, sessionsRoot: tmp('p5-sf-sess-') });
+  t.after(() => close());
+  const base = `http://127.0.0.1:${port}`;
+  const post = (p, body) => fetch(`${base}${p}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: JSON.stringify(body) });
+  const pre = await (await fetch(`${base}/api/author/start-from?runid=old1`, { headers: { 'x-bareloop-token': token } })).json();
+  assert.equal(pre.ok, true, JSON.stringify(pre));
+  const r = await post('/api/author/start', { ...pre.card, inputs: `repo: ${makeRepo()}`, destination: 'lib/', capUsd: 3, startFrom: 'old1' });
+  const body = await r.json();
+  assert.equal(r.status, 400, JSON.stringify(body));
+  assert.equal(body.error, "This run was made by an older bareloop. Its saved job doesn't pass today's checks, so it can't be reused. Start a new job instead.");
+  assert.doesNotMatch(body.error, /invalid-value|closeDecl|at \w+\./, 'no raw red code or path');
+});

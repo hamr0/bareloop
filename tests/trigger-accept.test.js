@@ -235,3 +235,17 @@ test('quarantine: a held scheduled green does not count as a good run for the sc
   addRec(w.sched.spine, decision({ decision: 'accept' }));
   assert.equal((await w.p.get('/api/runs/sched-g')).body.schedule.canSchedule, true, 'released');
 });
+
+// RULED 2026-10-15: Accept on an old run whose saved job fails today's checks refuses in plain words BEFORE any spawn
+test('POST /api/runs/:id/accept on a run whose saved job fails validateJob answers 409 plain words and spawns nothing', async () => {
+  const home = keysHome();
+  const spec = { ...specOf({ job: 'old-acc', files: true }), closeDecl: { genre: 'TYPES', stages: [] } }; // close + closeDecl: invalid today
+  const run = makeRun(home, { runid: 'o1', spec, outcome: 'green' });
+  addRec(run.spine, doorRec());
+  const spawnFn = engine();
+  const p = await panel({ home, spawnFn });
+  const r = await p.post('/api/runs/o1/accept', {});
+  assert.equal(r.status, 409, JSON.stringify(r.body));
+  assert.equal(r.body.error, "This run was made by an older bareloop. Its saved job doesn't pass today's checks, so it can't be accepted. Use Reuse workflow on a newer run, or start a new job.");
+  assert.equal(spawnFn.spawns.length, 0, 'the engine is never spawned');
+});
