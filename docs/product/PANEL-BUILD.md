@@ -1661,3 +1661,21 @@ Status: SIGNED 2026-10-14 (rulings below, marked RULED; hamr: "if a run missed, 
 9. T14 says "Schedule run button on the Run tab" and the SCHEDULED/NEXT block "at the top of the run page". bareloop's Run tab has no Run card (the Reuse card is the Chat tab's New job card) and its ENDED block is on the Audit tab; the schedule opens the Chat card in schedule mode and the block is new on the Run tab.
 10. The fwd ledger line "a scheduled job with no run renders a plain div" is largely closed here: a schedule needs a green run, and the card opens the job's head run by time.
 11. **RULED 2026-10-15: Fibonacci 1, 2, 3, 5, 8, 13, 21 min; stop at 60 min total; the schedule pauses and the job waits in Needs you (pill Check) until re-signed or cancelled.** (Replaces the first ruling of a flat 1 minute.) An `install-needed` refusal makes that job's next attempt wait the next step of `INSTALL_RETRY_STEPS_MS` (`src/panel/schedules.js`, injectable as `installRetrySteps`; ceiling `INSTALL_GIVE_UP_MS`, injectable). Attempts land at 0, 1, 3, 6, 11, 19, 32, 53 minutes; a wait that would pass 60 minutes in total is not taken: the door writes ONE `gave-up` row (the refusal words) under the current signature and the schedule is PAUSED, read from the ledger so a panel restart does not resume trying. Paused: no clock slot fires; folder files still queue as `arrived` but none runs. The count is in memory (a restart begins at 1 minute); a success, a cancel or a re-sign resets it. A re-sign through `Cancel / modify schedule` (the existing two clicks, no new button) writes a `resumed` row, so it unpauses even with an identical signature; queued files carry over by the existing same-folder rule. During a wait no row, no session, no copy and no install per tick; the refusal is told once. SCHEDULED / NEXT is red: `...Trying again in N minutes.` (`retryWords`, correct singular), and after giving up `Stopped trying after 60 minutes: <refusal words>. Fix it, then Cancel / modify schedule to start again.` (`gaveUpNextWords`, `src/schedulewords.js`). Needs you: `/api/runs` carries `gaveUp: [{job, pill, words, at, runId}]` (pill `Check`, hamr may reword, in `SCHEDULE_WORDS.gaveUpPill`; `at` = give-up date `MM/DD HH:MM`; `runId` = the job's newest run by time); the page draws it, never ages out. Tests: `tests/trigger-install-wait.test.js`.
+
+### Addendum 2026-10-15: the schedule on Run, Job and Audit (PRD v1.102, aligned with fwdloop M9 am7)
+
+Run tab, one block, same shape every time (frame red and the SCHEDULE row red when the last fire started nothing):
+
+```
+ENDED     10/15 13:40 · passed · Goal met.
+NEXT      Accept it, or Reuse workflow.
+SCHEDULE  When a new file arrives in ~/bareloop-inbox/
+          last 10/15 13:40 · run-4 · passed · next: waiting for a new file
+
+SCHEDULE  Every day at 08:15                               (problem: row and frame red)
+          last 10/15 13:25 · refused: the destination does not exist · next: fix it in Cancel / modify schedule
+
+SCHEDULE  By hand
+```
+
+Job tab, under Model: `Started  By the schedule: every day at 08:15 · 10/15 13:46` (hand run: `By hand · 10/15 13:46`) and `Schedule  every day at 08:15 · from run-7 · deepseek-flash · ~/bareloop-out` (or `none`). Audit: first row `started by the schedule · every day at 08:15 · slot 08:15 · from run-7`; on the origin run a folded `▸ schedule (k)` group of fires that started nothing, above drafting. The words live in `src/schedulewords.js`; `trigger.json` now also records `triggerKind`, `sessionId`, `originRunid`, `sig`, `lateMs`, `startedAt`; a `signed` ledger row records each signing's origin run.

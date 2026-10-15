@@ -1561,3 +1561,14 @@ Replaces v1.88's "five open boxes, the rest locked and refused by the server" an
 8. A new workflow still has no schedule until its own first green (`greenFor`); a schedule is never cleared by any of this. An imported job counts as a green origin (Import stays read-only, its one action is Reuse workflow). The schedule card alone keeps its job boxes locked.
 9. Already-green counts as green for Reuse (RULED 2026-10-15).
 10. Schedule run and Cancel / modify schedule never start a run; they only set or adjust the schedule (RULED 2026-10-15).
+
+### Schedule shown on Run, Job and Audit (v1.102 — 2026-10-15) — RULED
+
+Items 1-4 copied from fwdloop M9 am6 (signed 2026-10-15); item 5 is bareloop's one block. Aligned with fwdloop M9 am7 (signed 2026-10-15): the formats below are am7's.
+
+1. Job tab, **Started** row under Model: `By hand · 10/15 13:46`, `By the schedule: every day at 08:15 · catch-up, 10 min late · 10/15 13:46`, `By a new file: 8een.md · …`, `By a file update: aging.csv · …` (the run's local start time last), read from the run's own `trigger.json`.
+2. Job tab, **Schedule** row under Started: the job's schedule now and what it is bound to (`every day at 08:15 · from run-7 · deepseek-flash · ~/bareloop-out`, or `none`). Its first part is the Run tab's SCHEDULE line from the same word owner (`scheduledWords`), so they cannot disagree.
+3. Audit, first row of a run a schedule started: `started by the schedule · every day at 08:15 · slot 08:15 · from run-7` (+ ` · catch-up`), or `… · new file 8een.md · from run-3`. A hand run has none.
+4. Audit of the run the schedule was set from: a folded `▸ schedule (k)` group above drafting, the last 7 fires that started nothing (busy, month used up, refused), newest first, local `MM/DD HH:MM` and plain words. Scope: rows of every signing whose `signed` ledger row names this run as its origin (plus the current schedule's own origin).
+5. Run tab: ONE summary block, the same shape every time. `ENDED  MM/DD HH:MM · <outcome word> · <reason>` and `NEXT` (a finished run only), then `SCHEDULE`: line 1 the schedule words or `By hand`; line 2 (scheduled only) `last <MM/DD HH:MM> · run-N · <outcome>` (+ ` · catch-up`) `· next <Day MM/DD HH:MM>` (clock) or `· next: waiting for a new file`. A running run still shows SCHEDULE. The old SCHEDULED/NEXT twin block and the "why this run started" note are gone.
+6. A problem (the schedule's last fire started nothing: busy, month used up, refused) turns the SCHEDULE row (label and both lines) AND the block frame red, existing red token, both themes; line 2 becomes `last <MM/DD HH:MM> · <reason> · next: fix it in Cancel / modify schedule`. The next good start puts it back to normal.
