@@ -52,18 +52,14 @@ function fakeDom() {
 }
 
 // ------------------------------------------------------------------ markup: where things sit
-test('markup: ENDED moved to the Run tab; SCHEDULED is its twin directly below, both in ONE container ABOVE #run-actions; the Audit tab no longer holds ENDED', () => {
+test('markup: ONE summary block (ENDED, NEXT, SCHEDULE rows) in the Run tab container ABOVE #run-actions; no second sched block, no note; the Audit tab holds none of it', () => {
   const run = PAGE.slice(PAGE.indexOf('id="panel-run"'), PAGE.indexOf('id="panel-audit"'));
   const audit = PAGE.slice(PAGE.indexOf('id="panel-audit"'), PAGE.indexOf('id="panel-details"'));
   assert.match(run, /id="summary-blocks"/);
-  const ended = run.indexOf('id="ended-block"');
-  const sched = run.indexOf('id="sched-block"');
-  const note = run.indexOf('id="catchup-note"');
-  const actions = run.indexOf('id="run-actions"');
-  assert.ok(run.indexOf('id="summary-blocks"') < ended && ended < sched && sched < note && note < actions, 'ENDED, then SCHEDULED, then the note, then the action row');
+  assert.ok(run.indexOf('id="summary-blocks"') < run.indexOf('id="ended-block"') && run.indexOf('id="ended-block"') < run.indexOf('id="run-actions"'));
+  assert.doesNotMatch(run, /id="sched-block"|id="catchup-note"/, 'the twin block and the note are gone (RULED 2026-10-15)');
   assert.ok(run.indexOf('id="run-content"') < run.indexOf('id="summary-blocks"'), 'inside run-content');
   assert.doesNotMatch(audit, /ended-block/, 'gone from Audit');
-  assert.doesNotMatch(audit, /sched-block/);
 });
 
 test('markup: the When field sits between Destination and the cap row, hidden until the card is in schedule mode; its words are filled by the page from the server', () => {
@@ -130,30 +126,53 @@ test('Run tab: the button starts and signs NOTHING — it only asks the server f
 });
 
 // ------------------------------------------------------------------ the blocks
-test('SCHEDULED / NEXT paints the server\'s words in the ended-block frame; NEXT is red only when the server says nextRed; the note shows why the run started and the catch-up sentence', () => {
+const endedRender = (dom) => new Function('document', `${fnSrc('escapeXml')}\n${fnSrc('summaryRow')}\n${fnSrc('renderEnded')}\nvar lastEndedSig = null;\nreturn renderEnded;`)(dom.document);
+
+test('the ONE block: ENDED, NEXT, SCHEDULE in that order; ENDED paints the server\'s dated text; a schedule shows its words and its second line (RULED 2026-10-15)', () => {
   const dom = fakeDom();
-  const render = new Function('document', `${fnSrc('escapeXml')}\n${fnSrc('summaryRows')}\n${fnSrc('renderScheduled')}\nreturn renderScheduled;`)(dom.document);
-  const box = dom.document.getElementById('sched-block');
-  render({ schedule: { scheduled: true, text: 'Every day at 15:00', next: 'Next run Wed 14 Oct, 15:00.', nextRed: false, words: W }, startedBy: null, catchUp: null });
+  const render = endedRender(dom);
+  const box = dom.document.getElementById('ended-block');
+  render({
+    runid: 'a', glyph: '\u2713', ended: { reason: 'Goal met.', next: 'Accept it, or Reuse workflow.' }, endedText: '10/15 13:40 \u00b7 passed \u00b7 Goal met.', resume: null,
+    schedule: { scheduled: true, text: 'When a new file arrives in ~/bareloop-inbox/', line2: 'last 10/15 13:40 \u00b7 run-4 \u00b7 passed \u00b7 next: waiting for a new file', problem: false, words: W },
+  });
   assert.equal(box.hidden, false);
-  assert.match(box.innerHTML, />SCHEDULED<[\s\S]*data-testid="sched-text">Every day at 15:00</);
-  assert.match(box.innerHTML, />NEXT<[\s\S]*data-testid="sched-next">Next run Wed 14 Oct, 15:00\.</);
-  assert.equal(box.className, 'ended-block');
-  render({ schedule: { scheduled: true, text: 'Every day at 15:00', next: 'Paused: not enough money left this month ($0.12 left, a run needs up to $0.50). Raise the monthly limit in Settings, or it starts again on the 1st.', nextRed: true, words: W }, startedBy: null, catchUp: null });
-  assert.equal(box.className, 'ended-block red', 'the month used up reads as a red NEXT');
-  assert.deepEqual(dom.added, ['[data-testid="sched-next"]:is-red'], 'and the NEXT text itself is painted red');
-  const note = dom.document.getElementById('catchup-note');
-  render({ schedule: null, startedBy: 'Started by the schedule: Every day at 15:00 (catch-up)', catchUp: 'This run was a catch-up: it started more than 2 minutes after its set time (the panel was off).' });
-  assert.equal(box.hidden, true, 'a hand job has no SCHEDULED block');
-  assert.equal(note.hidden, false);
-  assert.match(note.textContent, /^Started by the schedule: Every day at 15:00 \(catch-up\) This run was a catch-up/);
-  render({ schedule: null, startedBy: null, catchUp: null });
-  assert.equal(note.hidden, true);
+  assert.match(box.innerHTML, />ENDED<[\s\S]*data-testid="ended-reason">10\/15 13:40 \u00b7 passed \u00b7 Goal met\.<[\s\S]*>NEXT<[\s\S]*>SCHEDULE<[\s\S]*data-testid="sched-text">When a new file arrives in ~\/bareloop-inbox\/<[\s\S]*data-testid="sched-line2">last 10\/15 13:40/);
+  assert.equal(box.className, 'ended-block green');
+  assert.doesNotMatch(box.innerHTML, /is-red/);
 });
 
-test('ENDED is painted by renderRun into the Run tab block, and renderRun paints SCHEDULED right after it', () => {
+test('no schedule: SCHEDULE By hand is still a row, for a finished run AND a running one (no ENDED yet)', () => {
+  const dom = fakeDom();
+  const render = endedRender(dom);
+  const box = dom.document.getElementById('ended-block');
+  render({ runid: 'a', glyph: '\u2713', ended: { reason: 'Goal met.', next: 'x' }, endedText: '10/15 13:40 \u00b7 passed \u00b7 Goal met.', schedule: { scheduled: false, canSchedule: true, words: W } });
+  assert.match(box.innerHTML, />SCHEDULE<[\s\S]*data-testid="sched-text">By hand</);
+  render({ runid: 'b', glyph: '\u25b6', ended: null, endedText: null, schedule: { scheduled: false, canSchedule: false, words: W } });
+  assert.equal(box.hidden, false);
+  assert.doesNotMatch(box.innerHTML, />ENDED<|>NEXT</);
+  assert.match(box.innerHTML, />SCHEDULE<[\s\S]*>By hand</);
+});
+
+test('a schedule problem: the SCHEDULE row (label and text) AND the frame are red; a fixed schedule goes back to the run\'s own colours', () => {
+  const dom = fakeDom();
+  const render = endedRender(dom);
+  const box = dom.document.getElementById('ended-block');
+  const base = { runid: 'a', glyph: '\u2713', ended: { reason: 'Goal met.', next: 'x' }, endedText: '10/15 13:40 \u00b7 passed \u00b7 Goal met.' };
+  render({ ...base, schedule: { scheduled: true, text: 'Every day at 08:15', line2: 'last 10/15 13:25 \u00b7 refused: the destination does not exist \u00b7 next: fix it in Cancel / modify schedule', problem: true, words: W } });
+  assert.equal(box.className, 'ended-block red');
+  const sched = box.innerHTML.slice(box.innerHTML.indexOf('>SCHEDULE<') - 80);
+  assert.match(sched, /^[^]*class="ended-row is-red"><span class="ended-label">SCHEDULE</, 'the whole row (label and both lines) is red');
+  assert.equal((box.innerHTML.match(/is-red/g) || []).length, 1, 'only the SCHEDULE row');
+  render({ ...base, schedule: { scheduled: true, text: 'Every day at 08:15', line2: 'last 10/15 13:50 \u00b7 run-5 \u00b7 passed \u00b7 next Thu 10/16 08:15', problem: false, words: W } });
+  assert.equal(box.className, 'ended-block green');
+  assert.doesNotMatch(box.innerHTML, /is-red/);
+});
+
+test('ENDED is painted by renderRun into the Run tab block; the old SCHEDULED twin renderer is gone', () => {
   const src = fnSrc('renderRun');
-  assert.ok(src.indexOf('renderEnded(detail);') !== -1 && src.indexOf('renderEnded(detail);') < src.indexOf('renderScheduled(detail);'));
+  assert.ok(src.indexOf('renderEnded(detail);') !== -1);
+  assert.doesNotMatch(PAGE, /renderScheduled|summaryRows\(/);
 });
 
 // ------------------------------------------------------------------ the runs list

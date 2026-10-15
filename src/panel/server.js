@@ -45,7 +45,9 @@ import { confirmProtections } from '../authorflow.js';
 import { createScheduleDoor } from './schedules.js';
 import { createStarter } from './schedulestart.js';
 import { createScheduler } from './scheduler.js';
-import { catchUpWords } from '../schedulewords.js';
+import {
+  catchUpWords, dateTimeWords, jobScheduleWords, skippedWords, startedAuditWords, startedWords, SCHEDULE_WORDS,
+} from '../schedulewords.js';
 import { doorWaiting, heldScheduled } from '../reviewdoor.js';
 import { createAuthorRoutes, mintToken, checkHostGuard, panelMoney2 } from './authorroutes.js';
 import { createRunRoutes } from './runroutes.js';
@@ -1060,7 +1062,60 @@ export function getRunDetail(runid, opts = {}) {
   const runNo = nos.get(runid);
   // T Part 7: what the Run tab shows of the job's schedule — the SERVER decides every state and word (the page works out nothing)
   const schedule = opts.schedules && typeof d.job === 'string' ? scheduleDetailFor(d.job, rows, nos, opts) : null;
-  return { ...d, ...(runNo === undefined ? {} : { runNo }), ...(schedule ? { schedule } : {}) };
+  const extra = opts.schedules && typeof d.job === 'string' ? scheduleExtrasFor(runid, d.job, rows, nos, opts, schedule) : {};
+  return { ...d, ...(runNo === undefined ? {} : { runNo }), ...(schedule ? { schedule: extra.schedule ?? schedule } : {}), ...(extra.audit ?? {}) };
+}
+
+/**
+ * Aligned with fwdloop M9 am7: the SCHEDULE row's second line and the Audit's schedule rows, made on the server from the door's data.
+ * `schedule` = the door's view with `line2`, `problem` (and no raw ledger row); `audit` = `{startedAudit, scheduleGroup}`.
+ * @param {string} runid @param {string} job @param {any[]} rows @param {Map<string, number>} nos @param {any} opts @param {any} view
+ * @returns {{schedule?: any, audit?: {startedAudit: string|null, scheduleGroup: {title: string, lines: string[]}|null}}}
+ */
+function scheduleExtrasFor(runid, job, rows, nos, opts, view) {
+  try {
+    const door = /** @type {ReturnType<typeof createScheduleDoor>} */ (opts.schedules);
+    /** @type {any} */
+    let schedule;
+    if (view) {
+      const { lastRow, nextWords, ...rest } = view;
+      schedule = { ...rest, line2: null };
+      if (view.scheduled) {
+        let lastWords = null;
+        if (lastRow) {
+          if (lastRow.kind === 'started') {
+            const mine = rows.filter((r) => r && r.job === job).sort((a, b) => atMs(b) - atMs(a)).slice(0, 25);
+            let hit = null; let fallback = null;
+            for (const r of mine) {
+              const rec = triggerRecordOf(r);
+              if (!rec) continue;
+              if (fallback === null) fallback = { r, rec };
+              if (rec.sessionId && rec.sessionId === lastRow.sessionId) { hit = { r, rec }; break; }
+            }
+            const got = hit ?? fallback;
+            const no = got ? nos.get(got.r.runid) : undefined;
+            const word = got ? summarizeRow(got.r).status?.word : undefined;
+            lastWords = `last ${dateTimeWords(Number(lastRow.at))}${no ? ` · run-${no}` : ''}${word ? ` · ${word}` : ''}${got?.rec.catchUp === true ? ' · catch-up' : ''}`;
+          } else {
+            lastWords = `last ${dateTimeWords(Number(lastRow.at))} · ${skippedWords(lastRow, true)}`;
+          }
+        }
+        schedule.line2 = [lastWords, nextWords].filter(Boolean).join(' · ');
+      }
+    }
+    const row = rows.find((r) => r && r.runid === runid);
+    const rec = row ? triggerRecordOf(row) : null;
+    let startedAudit = null;
+    if (rec) {
+      const origin = rec.originRunid ?? door.readSchedule(job)?.originRunid ?? null;
+      startedAudit = startedAuditWords(rec, origin ? (nos.get(origin) ?? null) : null);
+    }
+    const skipped = door.skippedFor(job, runid);
+    return {
+      ...(schedule ? { schedule } : {}),
+      audit: { startedAudit, scheduleGroup: skipped.length > 0 ? { title: `${SCHEDULE_WORDS.scheduleGroup} (${skipped.length})`, lines: skipped.map((x) => x.line) } : null },
+    };
+  } catch { return {}; }
 }
 
 /**
@@ -1257,6 +1312,12 @@ function getRunDetailBody(runid, opts) {
     // numbers the Resume confirm box prefills (the signed caps, spent so far); `null`
     // whenever Resume is not offered.
     ended,
+    // aligned with fwdloop M9 am7: `MM/DD HH:MM · <outcome word> · <reason>` (local end time); null while the run is live
+    endedText: (() => {
+      const ts = lastJobEndTs(rawSpineRecords) ?? (death.died ? lastRecordTs(rawSpineRecords) : null);
+      const ms = ts === null ? NaN : Date.parse(ts);
+      return ended && Number.isFinite(ms) ? `${dateTimeWords(ms)} · ${status.word} · ${ended.reason}` : null;
+    })(),
     // P5 item 5: is the run's LATEST leg live (the page offers Stop only then), and has a stop been asked for
     // (the request file exists beside the spine) — the page reads "stopping after this turn…" until the leg ends
     live: row.via !== 'import' && runIsAlive(row),
@@ -2358,10 +2419,33 @@ function jobsDir() {
  * from the resolved SPEC only (a) (b) (c) — a job-start record and `none()`
  * carry no close/writeScope/tools at all, so those stay `'not recorded'`.
  * @param {string} runid
- * @param {{ home?: string }} [opts]
+ * @param {{ home?: string, schedules?: ReturnType<typeof createScheduleDoor> }} [opts]
  * @returns {any|null}
  */
 export function getRunJob(runid, opts = {}) {
+  const body = getRunJobBody(runid, opts);
+  if (!body || !opts.schedules) return body;
+  try {
+    const door = /** @type {ReturnType<typeof createScheduleDoor>} */ (opts.schedules);
+    const { rows } = readRunList(opts);
+    const row = rows.find((r) => r && r.runid === runid);
+    const job = row ? row.job : body.job;
+    const nos = runNumbers(rows);
+    const cur = door.readSchedule(job);
+    const started = startedWords(row ? triggerRecordOf(row) : null, row ? atMs(row) : null);
+    const spec = cur ? cur.spec : null;
+    const schedule = jobScheduleWords({
+      trigger: cur ? cur.trigger : null, originNo: cur ? (nos.get(cur.originRunid) ?? null) : null,
+      model: spec && typeof spec.model === 'string' ? spec.model : null,
+      destination: cur ? (typeof cur.destination === 'string' && cur.destination !== '' ? cur.destination : (Array.isArray(spec?.writeScope) ? spec.writeScope.join(', ') : null)) : null,
+      home: door.userHome,
+    });
+    return { ...body, started, schedule };
+  } catch { return body; }
+}
+
+/** @param {string} runid @param {{ home?: string }} opts */
+function getRunJobBody(runid, opts) {
   const row = findRunRow(runid, opts);
   if (!row) return null;
 
@@ -3056,7 +3140,7 @@ export function handleRequest(req, res, opts) {
       return;
     }
     if (sub === 'job') {
-      const result = getRunJob(runid, { home: opts.home });
+      const result = getRunJob(runid, { home: opts.home, schedules: opts.schedules });
       if (!result) { sendText(res, 404, 'no such run'); return; }
       send(200, result);
       return;

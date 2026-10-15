@@ -32,14 +32,14 @@ test('a clock tick: due -> one `fire` and one `started`, the argv recorded; a se
   const w = await world();
   const s = createScheduler({ door: w.door, now: w.now, intervalMs: 0 });
   await s.tick();
-  assert.deepEqual(kinds(w), ['armed', 'fire', 'started']);
+  assert.deepEqual(kinds(w), ['signed', 'armed', 'fire', 'started']);
   assert.equal(w.spawnFn.spawns.length, 1);
   const args = w.spawnFn.spawns[0].args;
   assert.ok(args.includes('--review-door'));
   assert.equal(args[args.indexOf('--approve') + 1], w.sig);
   await s.tick();
   await s.tick();
-  assert.deepEqual(kinds(w), ['armed', 'fire', 'started']);
+  assert.deepEqual(kinds(w), ['signed', 'armed', 'fire', 'started']);
 });
 
 test('the panel was off across 4 slots: ONE catch-up fire for the latest slot, marked, and the old slots never fire later', async () => {
@@ -59,10 +59,10 @@ test('a tick that finds the slot refused (key gone) writes one told row, consume
   const s = createScheduler({ door: w.door, now: w.now, intervalMs: 0 });
   rmSync(join(w.home, '.env'));
   for (let i = 0; i < 40; i += 1) await s.tick();
-  assert.deepEqual(kinds(w), ['armed', 'refused']);
+  assert.deepEqual(kinds(w), ['signed', 'armed', 'refused']);
   writeFileSync(join(w.home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 });
   await s.tick();
-  assert.deepEqual(kinds(w), ['armed', 'refused', 'fire', 'started']);
+  assert.deepEqual(kinds(w), ['signed', 'armed', 'refused', 'fire', 'started']);
 });
 
 test('two ticks back to back (a start still preparing): the second fires nothing and writes no busy row', async () => {
@@ -72,7 +72,7 @@ test('two ticks back to back (a start still preparing): the second fires nothing
   const b = s.tick();
   await Promise.all([a, b]);
   assert.equal(w.spawnFn.spawns.length, 1);
-  assert.deepEqual(kinds(w), ['armed', 'fire', 'started']);
+  assert.deepEqual(kinds(w), ['signed', 'armed', 'fire', 'started']);
 });
 
 test('an unarmed schedule (a crash between the sign and the arm) is armed by the tick', async () => {
@@ -99,7 +99,7 @@ test('one job\'s exception is written once and never stops the other jobs', asyn
   const s = createScheduler({ door, now: w.now, intervalMs: 0 });
   await s.tick();
   await s.tick();
-  assert.deepEqual(kinds(w), ['armed', 'fire', 'started'], 'the good job fired');
+  assert.deepEqual(kinds(w), ['signed', 'armed', 'fire', 'started'], 'the good job fired');
   const ledger2 = readLedger(join(w.home, 'triggers', 'other-job', 'ledger.jsonl')).rows;
   assert.equal(ledger2.filter((r) => r.kind === 'refused').length, 1, 'told once, not per tick');
   assert.match(ledger2.find((r) => r.kind === 'refused').why, /disk gone/);

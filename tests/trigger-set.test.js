@@ -119,7 +119,7 @@ test('prepare writes nothing; set needs the hash it was shown (stale hash refuse
   assert.equal(sched.workflowKey, workflowKey(w.spec), 'the scheduled spec keeps the green run\'s workflow key');
   assert.equal(sched.spec.budgetUsd, 1.5);
   const rows = ledgerRows(w);
-  assert.deepEqual(rows.map((r) => r.kind), ['armed']);
+  assert.deepEqual(rows.map((r) => r.kind), ['signed', 'armed']);
   assert.equal(rows[0].sig, sched.specHash, 'every row carries the signature it was written under');
   // the cards' reader
   const got = await p.get(`/api/author/start-from?runid=${w.runid}&mode=schedule`);

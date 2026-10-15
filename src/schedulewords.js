@@ -42,7 +42,7 @@ export const SCHEDULE_WORDS = Object.freeze({
   // the When field and the blocks
   whenLabel: 'When',
   nowPrefix: 'Now: ',
-  scheduledLabel: 'SCHEDULED',
+  scheduledLabel: 'SCHEDULE',
   nextLabel: 'NEXT',
   options: Object.freeze({
     hand: 'By hand',
@@ -54,6 +54,9 @@ export const SCHEDULE_WORDS = Object.freeze({
   }),
   // RULED 2026-10-15: the Needs-you pill of a schedule that gave up (hamr may reword)
   gaveUpPill: 'Check',
+  // RULED 2026-10-15 (aligned with fwdloop M9 am7): the SCHEDULE row's second line when the last fire started nothing
+  problemNext: 'next: fix it in Cancel / modify schedule',
+  scheduleGroup: 'schedule',
   notGreen: 'This job has not had a good run yet. Run it by hand and get it right first; then you can set when it runs. A rubric job also needs your Accept once. Nothing was changed.',
   stale: 'What you were shown is not what is on the card now. Nothing was signed. Look again, then sign.',
 });
@@ -163,4 +166,92 @@ export function catchUpWords(rec) {
  */
 export function lateRefusalWords(why, tries, max) {
   return tries < max ? `${why} It will be tried again.` : `${why} It was tried ${max} times and is given up on.`;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// RULED 2026-10-15 (aligned with fwdloop M9 am7): the schedule on the Run, Job and Audit tabs. ONE owner of these sentences.
+
+/** "10/15 13:40" — local time. @param {number} ms */
+export const dateTimeWords = (ms) => gaveUpDateWords(ms);
+
+/** @param {string} s */
+export const lowerFirst = (s) => (s === '' ? s : s[0].toLowerCase() + s.slice(1));
+
+/** "Thu 10/16 08:15" — local time, fixed English day names. @param {number} ms */
+export function nextSlotShort(ms) {
+  const d = new Date(ms);
+  return `${DAY_SHORT[d.getDay()]} ${two(d.getMonth() + 1)}/${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`;
+}
+
+/** @param {any} rec a run's `trigger.json` @returns {boolean} */
+function isNewFile(rec) {
+  if (rec.triggerKind) return rec.triggerKind === 'new-file';
+  return typeof rec.trigger === 'string' && rec.trigger.startsWith('When a new file arrives');
+}
+
+/**
+ * Job tab, "Started": how the run began, then its local start time. `rec` = the run's `trigger.json` (null on a hand run).
+ * @param {any} rec @param {number|null} atMs the run's start
+ */
+export function startedWords(rec, atMs) {
+  const when = atMs === null ? '' : ` · ${dateTimeWords(atMs)}`;
+  if (!rec || typeof rec !== 'object') return `${SCHEDULE_WORDS.byHand}${when}`;
+  const trig = typeof rec.trigger === 'string' ? rec.trigger : '';
+  let how;
+  if (rec.kind === 'file') {
+    const name = basename(String(rec.file ?? ''));
+    how = isNewFile(rec) ? `By a new file: ${name}` : `By a file update: ${name}`;
+  } else {
+    how = `By the schedule: ${lowerFirst(trig)}`;
+    if (rec.catchUp === true) {
+      const min = typeof rec.lateMs === 'number' && rec.lateMs > 0 ? Math.round(rec.lateMs / 60_000) : null;
+      how += min === null ? ' · catch-up' : ` · catch-up, ${min} min late`;
+    }
+  }
+  return `${how}${when}`;
+}
+
+/**
+ * Audit, first row of a run a schedule started. @param {any} rec `trigger.json` @param {number|null} originNo the origin run's number
+ */
+export function startedAuditWords(rec, originNo) {
+  const from = originNo === null ? '' : ` · from run-${originNo}`;
+  if (rec.kind === 'file') return `started by the schedule · ${isNewFile(rec) ? 'new file' : 'file update'} ${basename(String(rec.file ?? ''))}${from}`;
+  const slot = typeof rec.slot === 'number' ? ` · slot ${two(new Date(rec.slot).getHours())}:${two(new Date(rec.slot).getMinutes())}` : '';
+  return `started by the schedule · ${lowerFirst(String(rec.trigger ?? ''))}${slot}${from}${rec.catchUp === true ? ' · catch-up' : ''}`;
+}
+
+/** a refusal's own words without its trailing "Nothing started." @param {unknown} why */
+function reasonOf(why) {
+  return String(why ?? '').replace(/\s*Nothing (started|spent)\.\s*$/, '').trim().replace(/\.$/, '');
+}
+
+/**
+ * A fire that started nothing, in plain words. `short` = the SCHEDULE row's `last` reason; else the Audit group's line.
+ * @param {any} row a ledger row (`busy` | `monthly-exhausted` | `refused` | `gave-up`) @param {boolean} [short]
+ */
+export function skippedWords(row, short = false) {
+  if (row.kind === 'busy') return short ? 'busy: a run was still going' : 'busy — a run of this job was still going. Nothing started.';
+  if (row.kind === 'monthly-exhausted') {
+    const left = typeof row.leftUsd === 'number' ? panelMoney2(row.leftUsd) : 'little';
+    const need = typeof row.needUsd === 'number' ? panelMoney2(row.needUsd) : 'more';
+    return short ? `month used up: ${left} left, needs ${need}` : `month used up — ${left} left, needs ${need}. Nothing spent.`;
+  }
+  const r = lowerFirst(reasonOf(row.why));
+  return short ? `refused: ${r}` : `refused: ${r}. Nothing started.`;
+}
+
+/**
+ * Job tab, "Schedule": the job's schedule NOW and what it is bound to. The first part IS the Run tab's line ({@link scheduledWords}),
+ * first letter lowered, so the two can never disagree.
+ * @param {{trigger: Trigger|null, originNo: number|null, model: string|null, destination: string|null, home?: string}} f
+ */
+export function jobScheduleWords(f) {
+  const w = f.trigger ? scheduledWords(f.trigger, f.home) : null;
+  if (w === null) return 'none';
+  const parts = [lowerFirst(w)];
+  if (f.originNo !== null) parts.push(`from run-${f.originNo}`);
+  if (f.model) parts.push(f.model);
+  if (f.destination) parts.push(tilde(f.destination, f.home));
+  return parts.join(' · ');
 }

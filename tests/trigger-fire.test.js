@@ -43,7 +43,7 @@ test('started: a clock fire runs the full order, one `fire` row then one `starte
   const w = await world();
   const r = await w.door.fire('sched-job', CLOCK({ catchUp: true, missed: 3 }));
   assert.equal(r.outcome, 'started', JSON.stringify(r));
-  assert.deepEqual(kinds(w), ['armed', 'fire', 'started']);
+  assert.deepEqual(kinds(w), ['signed', 'armed', 'fire', 'started']);
   const fire = w.rows().find((x) => x.kind === 'fire');
   assert.deepEqual([fire.slot, fire.catchUp, fire.missed, fire.sig], [SLOT, true, 3, w.sig]);
   assert.equal(w.spawnFn.spawns.length, 1);
@@ -79,14 +79,14 @@ test('busy: a live run of the job -> one `busy` row, nothing consumed, no sessio
   const w = await world();
   const runner = liveRunner(w.home);
   for (let i = 0; i < 5; i += 1) assert.equal((await w.door.fire('sched-job', CLOCK())).outcome, 'busy');
-  assert.deepEqual(kinds(w), ['armed', 'busy'], 'told once, not per tick');
+  assert.deepEqual(kinds(w), ['signed', 'armed', 'busy'], 'told once, not per tick');
   assert.equal(w.made.length, 0);
   assert.equal(w.spawnFn.spawns.length, 0);
   assert.equal(due(DAILY, w.rows(), SLOT + 60000).fire, true, 'the slot is NOT consumed: it retries when the run is done');
   runner.kill('SIGKILL');
   await new Promise((r) => { runner.once('exit', r); });
   assert.equal((await w.door.fire('sched-job', CLOCK())).outcome, 'started');
-  assert.deepEqual(kinds(w), ['armed', 'busy', 'fire', 'started']);
+  assert.deepEqual(kinds(w), ['signed', 'armed', 'busy', 'fire', 'started']);
 });
 
 test('a run waiting at its review door has ended, so it is NOT busy (T7)', async () => {
@@ -134,7 +134,7 @@ test('refused: the keys are gone -> a `refused` row in words, no session, no `fi
   const r = await w.door.fire('sched-job', CLOCK());
   assert.equal(r.outcome, 'refused');
   assert.match(r.why, /key for this job's model is not set up/);
-  assert.deepEqual(kinds(w), ['armed', 'refused']);
+  assert.deepEqual(kinds(w), ['signed', 'armed', 'refused']);
   assert.equal(w.made.length, 0, 'wouldAccept said no BEFORE any session');
   assert.equal(due(DAILY, w.rows(), SLOT + 1000).fire, true);
   writeFileSync(join(w.home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 });
@@ -173,7 +173,7 @@ test('a session that never reaches `prepared` (packages missing) is abandoned an
   assert.equal(r.outcome, 'refused');
   assert.match(r.why, /Packages are missing in the job's copy\. Nothing started\.$/);
   assert.equal(abandoned, 1);
-  assert.deepEqual(kinds(w), ['armed', 'refused']);
+  assert.deepEqual(kinds(w), ['signed', 'armed', 'refused']);
   assert.equal(due(DAILY, w.rows(), SLOT + 1000).fire, true);
 });
 
@@ -224,7 +224,7 @@ test('file cause: Inputs line 1 is the arriving file; the per-fire hash differs 
   recordArrived(w.ledger, { path: f, sha, size: 4 }, 100, w.sig);
   const r = await w.door.fire('sched-job', { kind: 'file', path: f, sha, size: 4 });
   assert.equal(r.outcome, 'started', JSON.stringify(r));
-  assert.deepEqual(kinds(w), ['armed', 'arrived', 'ran', 'started']);
+  assert.deepEqual(kinds(w), ['signed', 'armed', 'arrived', 'ran', 'started']);
   assert.equal(w.made[0].reuse.spec.inputs[0].value, f);
   assert.equal(w.made[0].card.inputs, `notes: ${f}`);
   const signed = JSON.parse(readFileSync(join(w.dir, 'schedule.json'), 'utf8'));

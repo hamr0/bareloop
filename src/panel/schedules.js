@@ -26,7 +26,7 @@ import { armTrigger, nextSlot, recordFire } from '../triggerclock.js';
 import { appendRow, readLedger, withoutReleased } from '../triggerledger.js';
 import { checkTarget, createFileTrigger, queueOf, readSeen, recordDropped, recordRan } from '../triggerfiles.js';
 import {
-  SCHEDULE_WORDS, gaveUpDateWords, lateRefusalWords, nextInWords, nextTimeWords, scheduledNextFor, scheduledWords,
+  SCHEDULE_WORDS, dateTimeWords, gaveUpDateWords, lateRefusalWords, nextInWords, nextSlotShort, nextTimeWords, scheduledNextFor, scheduledWords, skippedWords,
 } from '../schedulewords.js';
 import { buildReuseSpec, startDestinationProblem, validateReuseCard } from './authorsession.js';
 
@@ -40,6 +40,8 @@ export const PID_REUSE_SLACK_MS = 5000;
 const CLK_TCK = 100;
 const SLUG_RE = /^[a-z][a-z0-9-]*$/;
 /** the outcome rows a card's "last outcome" may be (clock and file alike) */
+/** the rows that are one FIRE's result (what the SCHEDULE row calls `last`) */
+const FIRE_KINDS = ['started', 'busy', 'monthly-exhausted', 'refused'];
 const OUTCOME_KINDS = ['started', 'busy', 'monthly-exhausted', 'refused', 'deleted', 'changed', 'gave-up'];
 /** RULED 2026-10-15: waits (ms) between consecutive `install-needed` refusals of a job: Fibonacci 1, 2, 3, 5, 8, 13, 21 minutes. A test injects its own via `deps.installRetrySteps`. */
 export const INSTALL_RETRY_STEPS_MS = Object.freeze([1, 2, 3, 5, 8, 13, 21].map((m) => m * 60_000));
@@ -341,6 +343,15 @@ export function createScheduleDoor(deps) {
     return pausedRow(withoutReleased(readLedger(ledgerOf(job)).rows).filter((r) => r.sig === schedule.specHash)) !== null;
   }
 
+  /**
+   * The newest fire of the CURRENT signing: a `started` row or one that started nothing (`busy`, `monthly-exhausted`, `refused`), or null.
+   * @param {string} job @param {Schedule} schedule
+   */
+  function lastFireRow(job, schedule) {
+    const rows = withoutReleased(readLedger(ledgerOf(job)).rows).filter((r) => r.sig === schedule.specHash && FIRE_KINDS.includes(r.kind));
+    return rows.length > 0 ? rows[rows.length - 1] : null;
+  }
+
   /** @type {Map<string, {key: string, green: ReturnType<typeof greenFor>}>} */
   const greenMemo = new Map();
   /**
@@ -366,6 +377,26 @@ export function createScheduleDoor(deps) {
 
     busy,
     paused,
+
+    /**
+     * RULED 2026-10-15: the fires that started NOTHING (busy, month used up, refused) of every signing that was made from `originRunid`
+     * (a `signed` row names the run it was set from; the CURRENT schedule.json's own originRunid covers a signing made before that row existed).
+     * Newest first, at most `limit`. Lines are `MM/DD HH:MM  <words>`.
+     * @param {string} job @param {string} originRunid @param {number} [limit]
+     * @returns {{at: number, line: string}[]}
+     */
+    skippedFor(job, originRunid, limit = 7) {
+      if (!SLUG_RE.test(job)) return [];
+      const rows = withoutReleased(readLedger(ledgerOf(job)).rows);
+      const sigs = new Set(rows.filter((r) => r.kind === 'signed' && r.originRunid === originRunid).map((r) => r.sig));
+      const cur = readSchedule(job);
+      if (cur && cur.originRunid === originRunid) sigs.add(cur.specHash);
+      return rows.map((r, i) => ({ r, i }))
+        .filter(({ r }) => (r.kind === 'busy' || r.kind === 'monthly-exhausted' || r.kind === 'refused') && sigs.has(/** @type {string} */ (r.sig)))
+        .sort((a, b) => (Number(b.r.at) - Number(a.r.at)) || (b.i - a.i))
+        .slice(0, limit)
+        .map(({ r }) => ({ at: Number(r.at), line: `${dateTimeWords(Number(r.at))}  ${skippedWords(r)}` }));
+    },
 
     /**
      * One fire, in this order (T15): busy, then monthly, then wouldAccept, then the starter (which calls `beforeSpawn`, the
@@ -492,6 +523,8 @@ export function createScheduleDoor(deps) {
         inputsText: s.inputsText, ...(s.destination === null ? {} : { destination: s.destination }), signedBy: userInfo().username, signedAt: new Date(now()).toISOString(),
       };
       writeSchedule(s.job, schedule);
+      // RULED 2026-10-15: which run this signing was set from, so the origin run's Audit can find every fire of every signing made from it
+      appendRow(ledgerOf(s.job), { kind: 'signed', sig: s.hash, at: now(), originRunid: s.originRunid });
       // a re-sign of a schedule that gave up unpauses it (the same signature included) and starts the install waits over
       if (paused(s.job)) appendRow(ledgerOf(s.job), { kind: 'resumed', sig: s.hash, at: now() });
       installWait.delete(s.job);
@@ -555,9 +588,16 @@ export function createScheduleDoor(deps) {
       const next = scheduledNextFor({
         trigger: st.schedule.trigger, armed: st.armed, nextSlotMs: st.nextSlotMs, lastOutcome: st.lastOutcome, waitingRunNo: o.waitingRunNo ?? null, now: now(), retryInMs: st.retryInMs, gaveUp: st.gaveUp,
       });
+      const last = lastFireRow(job, st.schedule);
+      const problem = (last !== null && last.kind !== 'started') || st.gaveUp !== null;
+      const nextWords = isClockTrigger(st.schedule.trigger)
+        ? (st.nextSlotMs === null ? 'next: not armed yet' : `next ${nextSlotShort(st.nextSlotMs)}`)
+        : (st.schedule.trigger.kind === 'new-file' ? 'next: waiting for a new file' : 'next: waiting for the file to change');
       return {
         scheduled: true, canSchedule: false, words: SCHEDULE_WORDS, fromRunid: st.schedule.originRunid,
         text: scheduledWords(st.schedule.trigger, userHome), next: next.text, nextRed: next.red,
+        // aligned with fwdloop M9 am7: the SCHEDULE row's second line is put together by the server from these
+        lastRow: last, problem, nextWords: problem ? SCHEDULE_WORDS.problemNext : nextWords,
       };
     },
 

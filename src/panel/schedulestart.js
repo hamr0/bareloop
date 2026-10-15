@@ -208,7 +208,9 @@ export function createStarter(deps) {
         const catchUp = cause.kind === 'clock' && cause.catchUp === true;
         writeFileSync(join(outDir, 'trigger.json'), `${JSON.stringify({
           kind: cause.kind, trigger: words, reason: `Started by the schedule: ${words}${catchUp ? ' (catch-up)' : ''}`, catchUp,
-          ...(cause.kind === 'clock' ? { slot: cause.slot, missed: cause.missed } : { file: cause.path, sha: cause.sha }),
+          ...(cause.kind === 'clock' ? { slot: cause.slot, missed: cause.missed, lateMs: Math.max(0, now() - cause.slot) } : { file: cause.path, sha: cause.sha }),
+          // RULED 2026-10-15: what the Job tab and Audit say about a scheduled start (older records lack these; the words fall back)
+          triggerKind: schedule.trigger.kind, sessionId: session.state.id, originRunid: schedule.originRunid, sig: schedule.specHash, startedAt: now(),
         }, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
         /** @type {Error|null} */
         let spawnError = null;

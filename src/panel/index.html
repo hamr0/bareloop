@@ -321,8 +321,9 @@
   .rw-picked span{overflow-wrap:anywhere;}
   .rw-picked a{font-size:12px;cursor:pointer;flex:none;}
   /* T Part 7: the SCHEDULED / NEXT twin of the ENDED block, and the note under both */
-  .ended-text.is-red{color:var(--red);}
-  #catchup-note{margin:-6px 0 14px;overflow-wrap:anywhere;}
+  /* RULED 2026-10-15 (aligned with fwdloop M9 am7): a schedule that started nothing turns its whole SCHEDULE row red; the frame turns red with `.ended-block.red` */
+  .ended-row.is-red .ended-label,.ended-row.is-red .ended-text,.ended-text.is-red{color:var(--red);}
+  .ended-text .sched-line2{display:block;}
   .run-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;}
   .run-actions[hidden]{display:none;}
   .run-actions .stopping{color:var(--amber);font-size:13px;overflow-wrap:anywhere;}
@@ -869,11 +870,9 @@
           <div class="import-view" id="import-view" data-testid="import-view" hidden></div>
           <div id="run-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run from the Runs list</div>
           <div id="run-content" hidden>
-            <!-- T Part 7 (RULED 2026-10-14): ENDED / NEXT moved here from the Audit tab; SCHEDULED / NEXT is its twin directly below it (fwd #summary-blocks) -->
+            <!-- RULED 2026-10-15: ONE summary block: ENDED, NEXT, SCHEDULE (fwd #summary-blocks, aligned with M9 am7) -->
             <div id="summary-blocks" data-testid="summary-blocks">
               <div id="ended-block" class="ended-block" data-testid="ended-block" hidden></div>
-              <div id="sched-block" class="ended-block" data-testid="sched-block" hidden></div>
-              <div class="hint" id="catchup-note" data-testid="catchup-note" hidden></div>
             </div>
             <div class="run-actions" id="run-actions" data-testid="run-actions" hidden></div>
             <div class="counters" id="run-counters" data-testid="live-counters"></div>
@@ -922,6 +921,8 @@
             <h4 id="details-title">Job card — signed</h4>
             <div class="field"><label>Check type</label><div class="ro-value" id="details-verdict">—</div></div>
             <div class="field"><label>Model</label><div class="ro-value" id="details-model">—</div></div>
+            <div class="field" id="details-started-field" hidden><label>Started</label><div class="ro-value" id="details-started" data-testid="details-started" style="overflow-wrap:anywhere;">—</div></div>
+            <div class="field" id="details-schedule-field" hidden><label>Schedule</label><div class="ro-value" id="details-schedule" data-testid="details-schedule" style="overflow-wrap:anywhere;">—</div></div>
             <div class="field" id="details-description-field"><label>Description</label><div class="ro-value" id="details-description">—</div></div>
             <div class="field"><label>The job</label><div class="ro-value" id="details-plan" data-testid="details-plan">—</div></div>
             <div class="field"><label>Inputs</label><div class="ro-value" id="details-inputs" data-testid="details-inputs">—</div></div>
@@ -2389,46 +2390,43 @@
   }
 
   // ---- P5: the ENDED block (Run tab, first block above the action row, every finished run) and Resume ----
-  // T Part 7 (RULED 2026-10-14): the block MOVED here from the Audit tab, and the SCHEDULED / NEXT block (renderScheduled) is its twin directly below it in the
-  // same container (#summary-blocks), built with the same `summaryRows`. The sentences are CODE-OWNED on the server (`endedFor`, src/panel/server.js;
-  // `detail.schedule`, src/schedulewords.js) — this only paints them. `detail.ended` is null while a run is live (no block while running).
   var lastEndedSig = null;
-  function summaryRows(a, b){
-    return '<div class="ended-row"><span class="ended-label">' + escapeXml(a[0]) + '</span><span class="ended-text" data-testid="' + a[2] + '">' + escapeXml(a[1]) + '</span></div>' +
-      '<div class="ended-row"><span class="ended-label">' + escapeXml(b[0]) + '</span><span class="ended-text" data-testid="' + b[2] + '">' + escapeXml(b[1]) + '</span></div>';
+  function summaryRow(label, text, testid, red, extraHtml){
+    return '<div class="ended-row' + (red ? " is-red" : "") + '"><span class="ended-label">' + escapeXml(label) + '</span><span class="ended-text" data-testid="' + testid + '">' + escapeXml(text) + (extraHtml || "") + '</span></div>';
   }
   // Resume (P5-R, hamr 2026-10-02: opened the run's own Job tab) MOVED to the left Chat card (hamr 2026-10-07): the card
   // in RESUME mode, only the money cap and the time cap open (applyResume / signResume). The Job tab is read-only on
   // every run — values only, no inputs, no buttons. A resume is the SAME run: no new card, no new job.
+  // RULED 2026-10-15 (aligned with fwdloop M9 am7): ONE block, the same shape every time: ENDED (a finished run), NEXT (a finished run), SCHEDULE
+  // (always: the schedule's words and a second line, or "By hand"). A schedule that started nothing turns the SCHEDULE row AND the frame red.
+  // The sentences are CODE-OWNED on the server (`endedFor`/`endedText` in src/panel/server.js, `detail.schedule` from src/schedulewords.js) — this only paints them.
   function renderEnded(detail){
     var box = document.getElementById("ended-block");
     var e = detail.ended;
-    if(!e){ box.hidden = true; box.innerHTML = ""; lastEndedSig = null; return; }
+    var sc = detail.schedule;
+    if(!e && !sc){ box.hidden = true; box.innerHTML = ""; lastEndedSig = null; return; }
     // rebuilt only when what it shows changed
-    var sig2 = detail.runid + "|" + JSON.stringify(e) + "|" + JSON.stringify(detail.resume);
+    var sig2 = detail.runid + "|" + JSON.stringify(e) + "|" + JSON.stringify(detail.resume) + "|" + (detail.endedText || "") + "|" + JSON.stringify(sc && [sc.scheduled, sc.text, sc.line2, sc.problem]);
     if(sig2 === lastEndedSig) return;
     lastEndedSig = sig2;
     box.hidden = false;
-    box.className = "ended-block " + (detail.died ? "magenta" : (detail.glyph === "✓" ? "green" : "red"));
-    // text only: the ONE place for [Stop] / [Resume] / [Reuse workflow] is the Run tab's top action row (renderRunActions)
-    box.innerHTML = summaryRows(["ENDED", e.reason, "ended-reason"], ["NEXT", e.next, "ended-next"]);
-  }
-  // SCHEDULED / NEXT (T Part 7): the job's schedule, painted from `detail.schedule` (the server's words); NEXT goes red when the server says `nextRed`.
-  // Under it, one note: why THIS run started (a scheduled start) and the catch-up sentence when it started late. Nothing is worked out here.
-  function renderScheduled(detail){
-    var box = document.getElementById("sched-block");
-    var note = document.getElementById("catchup-note");
-    var sc = detail.schedule;
-    if(sc && sc.scheduled){
+    var problem = !!(sc && sc.scheduled && sc.problem === true);
+    box.className = "ended-block " + (problem ? "red" : (!e ? "" : (detail.died ? "magenta" : (detail.glyph === "✓" ? "green" : "red"))));
+    var h = "";
+    if(e){
+      // text only: the ONE place for [Stop] / [Resume] / [Reuse workflow] is the Run tab's top action row (renderRunActions)
+      h += summaryRow("ENDED", detail.endedText || e.reason, "ended-reason", false) + summaryRow("NEXT", e.next, "ended-next", false);
+    }
+    if(sc){
       var w = sc.words || {};
-      box.hidden = false;
-      box.className = "ended-block" + (sc.nextRed === true ? " red" : "");
-      box.innerHTML = summaryRows([w.scheduledLabel || "SCHEDULED", sc.text, "sched-text"], [w.nextLabel || "NEXT", sc.next, "sched-next"]);
-      if(sc.nextRed === true) box.querySelector('[data-testid="sched-next"]').classList.add("is-red");
-    } else { box.hidden = true; box.innerHTML = ""; }
-    var lines = [detail.startedBy, detail.catchUp].filter(function(x){ return typeof x === "string" && x !== ""; });
-    note.hidden = lines.length === 0;
-    note.textContent = lines.join(" ");
+      var label = w.scheduledLabel || "SCHEDULE";
+      if(sc.scheduled){
+        h += summaryRow(label, sc.text, "sched-text", problem, sc.line2 ? '<span class="sched-line2" data-testid="sched-line2">' + escapeXml(sc.line2) + '</span>' : "");
+      } else {
+        h += summaryRow(label, w.byHand || "By hand", "sched-text", false);
+      }
+    }
+    box.innerHTML = h;
   }
   // ---- P5 item 5: the run's ACTION AREA (Run tab, above the counters) — Stop while the run is live, Resume once
   // it ended in a way the engine would accept (opens the Chat card's resume mode), Reuse workflow on every ending.
@@ -2589,7 +2587,6 @@
     document.getElementById("audit-select-empty").hidden = true;
     document.getElementById("audit-body").hidden = false;
     renderEnded(detail);
-    renderScheduled(detail);
 
     setRunHeader(detail.glyph, runName(detail.job, detail.runNo, detail.runid), runHeaderBody(detail));
 
@@ -3118,6 +3115,47 @@
     var isLiveRun = detail.glyph === "▶" && !detail.died;
     var boxes = buildOrderedBoxes(parts, isLiveRun);
     var numberMap = stepNumberIndices(boxes);
+    // RULED 2026-10-15: the first row of a run a schedule started, and (on the run the schedule was set from) the folded group of fires that started
+    // nothing, above the drafting group. Both worded on the server.
+    if(typeof detail.startedAudit === "string" && detail.startedAudit !== ""){
+      var startedEl = document.createElement("div");
+      startedEl.className = "hint";
+      startedEl.setAttribute("data-testid", "audit-started");
+      startedEl.style.overflowWrap = "anywhere";
+      startedEl.textContent = detail.startedAudit;
+      container.appendChild(startedEl);
+    }
+    if(detail.scheduleGroup && Array.isArray(detail.scheduleGroup.lines) && detail.scheduleGroup.lines.length){
+      var gWrap = document.createElement("div");
+      gWrap.className = "audit-part";
+      gWrap.setAttribute("data-testid", "audit-schedule-group");
+      var gBtn = document.createElement("button");
+      gBtn.type = "button";
+      gBtn.className = "btn audit-part-toggle";
+      gBtn.setAttribute("aria-expanded", "false");
+      gBtn.setAttribute("data-testid", "audit-schedule-toggle");
+      gBtn.textContent = "\u25B8 " + detail.scheduleGroup.title;
+      var gBody = document.createElement("div");
+      gBody.className = "audit-part-body";
+      gBody.hidden = true;
+      gBody.setAttribute("data-testid", "audit-schedule-body");
+      detail.scheduleGroup.lines.forEach(function(l){
+        var li = document.createElement("div");
+        li.style.overflowWrap = "anywhere";
+        li.style.whiteSpace = "pre-wrap";
+        li.textContent = l;
+        gBody.appendChild(li);
+      });
+      gBtn.addEventListener("click", function(){
+        var open = gBtn.getAttribute("aria-expanded") === "true";
+        gBtn.setAttribute("aria-expanded", open ? "false" : "true");
+        gBody.hidden = open;
+        gBtn.textContent = (open ? "\u25B8 " : "\u25BE ") + detail.scheduleGroup.title;
+      });
+      gWrap.appendChild(gBtn);
+      gWrap.appendChild(gBody);
+      container.appendChild(gWrap);
+    }
     // P5-R: a resumed run is ONE run — its legs are told apart by a divider line (code-owned text from the server)
     var dividers = Array.isArray(detail.legDividers) ? detail.legDividers : [];
     boxes.forEach(function(box, idx){
@@ -3350,6 +3388,12 @@
     var verdictEl = document.getElementById("details-verdict");
     if(job.checkTypeTitle){ verdictEl.title = job.checkTypeTitle; } else { verdictEl.removeAttribute("title"); }
     document.getElementById("details-model").textContent = job.model;
+    // RULED 2026-10-15: how the run began and the job's schedule NOW, both worded on the server (absent on an imported job)
+    [["started", job.started], ["schedule", job.schedule]].forEach(function(p){
+      var f = document.getElementById("details-" + p[0] + "-field");
+      if(typeof p[1] === "string" && p[1] !== ""){ f.hidden = false; document.getElementById("details-" + p[0]).textContent = p[1]; }
+      else { f.hidden = true; }
+    });
     var descField = document.getElementById("details-description-field");
     if(job.description){ descField.hidden = false; document.getElementById("details-description").textContent = job.description; }
     else { descField.hidden = true; }
