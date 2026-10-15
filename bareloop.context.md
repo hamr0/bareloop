@@ -3591,6 +3591,7 @@ key you want first (the panel picks the row by the Model menu).
   Chat card in RESUME mode (title `RESUME <job> (run-N)`, filled from `GET /api/author/start-from`, every box locked
   except the two caps, "spent so far" shown, Clear/Start drafting hidden) and `Sign & resume` on that card is the human
   click, posting this same route; the run's Job tab is read-only on every run.
+  **Remove from Needs you** → `POST /api/runs/:runid/needs-remove` (`src/panel/runroutes.js`, same `checkHumanGuard`, no body): appends ONE `{runid, type:'needs-removed', at}` row to `runs.jsonl` (`appendNeedsRemoved`; `readNeedsRemovals` reads it) and changes nothing else; 409 in plain words when the run is not in Needs you or waits for Accept. `readRunList` ignores the row type, so monthly accounting, the run counter and the scheduler never see it; a later stop (a newer `job-end`) puts the run back in Needs you. The run detail carries `canRemoveFromNeeds` and `needsAudit`.
   **Stop (item 5)** → `POST /api/runs/:runid/stop` (`src/panel/runroutes.js`, `checkHumanGuard`, no body).
   It writes the run's STOP REQUEST, a file `<spine>.stop` (`stopFilePath(spine)`, `src/legs.js` — the one
   spelling), and signals nothing. `404` unknown run; `409` when the run's LATEST leg is not live

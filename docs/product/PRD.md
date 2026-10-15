@@ -1573,3 +1573,15 @@ Items 1-4 copied from fwdloop M9 am6 (signed 2026-10-15); item 5 is bareloop's o
 5. Run tab: ONE summary block, the same shape every time. `ENDED  MM/DD HH:MM · <outcome word> · <reason>` and `NEXT` (a finished run only), then `SCHEDULE`: line 1 the schedule words or `By hand`; line 2 (scheduled only) `last <MM/DD HH:MM> · run-N · <outcome>` (+ ` · catch-up`) `· next <Day MM/DD HH:MM>` (clock) or `· next: waiting for a new file`. A running run still shows SCHEDULE. The old SCHEDULED/NEXT twin block and the "why this run started" note are gone.
 6. A problem (the schedule's last fire started nothing: busy, month used up, refused) turns the SCHEDULE row (label and both lines) AND the block frame red, existing red token, both themes; line 2 becomes `last <MM/DD HH:MM> · <reason> · next: fix it in Cancel / modify schedule`. The next good start puts it back to normal.
 7. (hamr "yes to all", 2026-10-15) SCHEDULE line 2 also says ` · waiting for your Accept (the next run does not wait)` after the `last` part when a run of the job waits for Accept (not red); month used up reads `last … · month used up: $0.01 left, needs $0.50 · next: raise the limit in Settings, or it starts on the 1st` (red). Busy is NOT a problem (`last … · busy: a run of this job was still going · next …`, normal colours). While the install back-off is still retrying the row is not red and ends `next: tries again in N min`. Only a refusal that is not retrying (`next: fix it in Cancel / modify schedule`), the 60-minute give-up and a used-up month are red; a later good start clears it. This supersedes item 6's "busy" in the problem list.
+8. Month used up is red only in the month it happened (RULED 2026-10-15).
+9. Busy says still working; before the first fire `no run yet`; unarmed ends `next: not armed yet` (matches fwdloop M9 am8, RULED 2026-10-15).
+
+### Remove from Needs you (v1.103 — 2026-10-15) — RULED
+
+Matches fwdloop DRAFT M11 am11 items 3-5 (bareloop keeps the Accept tag; no Reopen: an expired door cannot be reopened).
+
+1. A run in Needs you with the Resume tag shows **Remove from Needs you**, last in its Run tab action row; a run waiting for Accept never shows it; Check cards are unchanged.
+2. The click only takes the card out of Needs you (status, the runs-list row, Resume and Reuse workflow stay); one click, no confirm; it appends ONE `{runid, type:'needs-removed', at}` row to runs.jsonl that every reader ignores (run list, monthly accounting, scheduler busy, run counter); a second click or a stale page writes nothing.
+3. Audit says `removed from Needs you by you · MM/DD HH:MM` (local); the 7-day auto-leave stays and its Audit line is `removed from Needs you after 7 days`.
+4. A removal covers only the ending it was made on: a NEW stop after it brings the run back into Needs you.
+5. `POST /api/runs/<id>/needs-remove` behind the same human/token guard as the other run routes; 409 in plain words when the run is not in Needs you or waits for Accept.
