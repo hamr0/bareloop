@@ -3166,23 +3166,12 @@
       gBody.className = "audit-part-body";
       gBody.hidden = true;
       gBody.setAttribute("data-testid", "audit-schedule-body");
+      // same row look as the drafting/step tables: the `rounds-table` in the `audit-table-scroll` wrapper (label column, dotted row lines)
+      var schedRows = "";
       sec.rows.forEach(function(l){
-        var li = document.createElement("div");
-        li.className = "audit-sched-row";
-        li.style.display = "flex";
-        li.style.gap = "12px";
-        var lab = document.createElement("span");
-        lab.className = "hint";
-        lab.style.flex = "0 0 5.5em";
-        lab.textContent = l.label;
-        var tx = document.createElement("span");
-        tx.style.overflowWrap = "anywhere";
-        tx.style.whiteSpace = "pre-wrap";
-        tx.textContent = l.text;
-        li.appendChild(lab);
-        li.appendChild(tx);
-        gBody.appendChild(li);
+        schedRows += '<tr><td class="hint" style="white-space:nowrap">' + escapeXml(l.label) + '</td><td style="overflow-wrap:anywhere;white-space:pre-wrap">' + escapeXml(l.text) + '</td></tr>';
       });
+      gBody.innerHTML = '<div class="audit-table-scroll"><table class="rounds-table" data-testid="audit-schedule-table"><tbody>' + schedRows + '</tbody></table></div>';
       gBtn.addEventListener("click", function(){
         var open = gBtn.getAttribute("aria-expanded") === "true";
         gBtn.setAttribute("aria-expanded", open ? "false" : "true");

@@ -456,3 +456,11 @@ test('RULED 2026-10-15 (v1.104): the Audit draws the server\'s schedule section 
   assert.match(src, /gBody\.hidden = true/);
   assert.doesNotMatch(src, /scheduleGroup/);
 });
+
+test('live defect 2026-10-15 (mv9vzze6): the schedule section rows use the same table classes as the drafting/step rows (label column, dotted separators), not bare flex spans', () => {
+  const src = fnSrc('renderAuditGroups');
+  assert.match(src, /audit-table-scroll/, 'wrapped in the same scroll wrapper as the step tables');
+  assert.match(src, /<table class="rounds-table"[^>]*data-testid="audit-schedule-table"/, 'the same rounds-table class');
+  assert.match(src, /<tr><td class="hint"/, 'one table row per try, label in the first cell');
+  assert.doesNotMatch(src, /audit-sched-row/, 'no run-together flex rows');
+});
