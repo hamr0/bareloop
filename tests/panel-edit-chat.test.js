@@ -97,7 +97,7 @@ test('door: editInChat asks the EXISTING start-from reader, opens the Chat tab, 
   };
   const { editInChat } = build(['runLabel', 'editInChat'], scope);
   await editInChat({ runid: 'r 1', job: 'pulselog-digest', runNo: 3, status: { word: 'failed' } });
-  assert.deepEqual(urls, ['/api/author/start-from?runid=r%201'], 'no second reader, no model param');
+  assert.deepEqual(urls, ['/api/author/start-from?mode=edit&runid=r%201'], 'no second reader, no model param (only the edit-mode name prefill)');
   assert.deepEqual(clicks, ['tab-chat']);
   assert.equal(events[0].type, 'bareloop-edit');
   assert.equal(events[0].detail.origin, 'Copied from pulselog-digest (run-3) — failed. Every box is open. Change anything and it drafts as a new job; change nothing and it is another run of the same job.');
