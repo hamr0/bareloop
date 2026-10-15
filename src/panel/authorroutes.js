@@ -256,7 +256,7 @@ export function createAuthorRoutes(opts) {
         ok: true, origin: pre.origin, card, from: pre.from, note: pre.note,
         // ONE door (v1.101): `green` = the origin earned a real green (an imported job counts), so an unchanged job reuses the signed plan;
         // `nextName` = the Job name box once a job box changes (the box shows the origin's name until then). Nothing is locked.
-        green: pre.origin.importId !== undefined || pre.outcome === 'green',
+        green: pre.origin.importId !== undefined || pre.outcome === 'green' || pre.outcome === 'already-green',
         nextName: nextFreeJobName(pre.origin.job, opts.runJobNames ? opts.runJobNames() : [], { jobsDir: opts.jobsDir }),
         specHash: pre.specHash, workflowKey: pre.workflowKey, trackRecord: pre.trackRecord,
         line: pre.line, specNamesModel: pre.specNamesModel, specWorker: pre.specWorker,
@@ -306,7 +306,7 @@ export function createAuthorRoutes(opts) {
       // Reuse workflow, ONE DOOR (v1.101): every box is open; the CARD's job boxes (job text, check type, thinking) are compared with
       // the origin run's. A GREEN origin (or an imported job) with no job box changed signs the origin's plan verbatim, under the
       // origin's name, with no drafting. Any other start drafts: a changed job is a NEW workflow under the Job name box; an unchanged
-      // job from a run that is not green drafts again under the ORIGIN's name (another try of the same job). The name is decided
+      // job from a run that is neither green nor already-green drafts again under the ORIGIN's name (another try of the same job). The name is decided
       // here, before drafting, so the hash the person signs already covers it. The server never trusts the page.
       /** @type {{spec: any, workflowKey: string}|null} */
       let reuse = null;
@@ -330,7 +330,7 @@ export function createAuthorRoutes(opts) {
           // a scheduled run's green waits for the person's Accept (quarantine): its plan is neither reused nor re-drafted until then
           if (pre.outcome === 'green-held') { send(409, { ok: false, error: 'This run was started by a schedule and is waiting for your Accept. Accept it first, then it can be reused.' }); return true; }
           card.jobName = pre.origin.job; // an unchanged job keeps its name; a typed one is ignored
-          if (fromImport !== null || pre.outcome === 'green') {
+          if (fromImport !== null || pre.outcome === 'green' || pre.outcome === 'already-green') {
             const rv = validateReuseCard(card, { rows });
             if (!rv.ok) { send(400, { ok: false, error: rv.error }); return true; }
             const spec = buildReuseSpec(pre.spec, card, rows);

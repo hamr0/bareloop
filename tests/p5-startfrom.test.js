@@ -499,18 +499,18 @@ test('reuse-jobs: no green run at all -> an empty list, not an error', async () 
   assert.deepEqual(listReuseJobs({ home }), []);
 });
 
-test('reuse-jobs: an already-green run is NOT a reuse source — a job whose only runs are already-green is absent; an older real green still lists the job (A1)', async () => {
+test('reuse-jobs: an already-green run IS a reuse source (RULED 2026-10-15) — a job whose only runs are already-green is listed; the newest green or already-green run names the job', async () => {
   const spec = await realSpec();
   const home = homeWithTwoRows();
   const onlyAlready = { ...spec, job: 'p5-already-only', goal: 'check predates the run' };
   makeRun(home, { runid: 'g1', spec, outcome: 'green' });
   makeRun(home, { runid: 'x1', spec: onlyAlready, outcome: 'already-green' });
   makeRun(home, { runid: 'g2', spec, outcome: 'already-green' });
-  assert.deepEqual(listReuseJobs({ home }).map((j) => [j.job, j.runid]), [[spec.job, 'g1']]);
+  assert.deepEqual(listReuseJobs({ home }).map((j) => [j.job, j.runid]), [[spec.job, 'g2'], ['p5-already-only', 'x1']]);
 });
 
 // hamr 2026-10-08: the server enforces "reuse needs a real green" — the pickers filter, but a hand-made POST must not.
-test('POST start with startFrom = a green run reuses the signed plan; an already-green / red run with no job box changed DRAFTS (an unproven plan is never reused) under the origin name', async (t) => {
+test('POST start with startFrom = a green or already-green run reuses the signed plan; a red run with no job box changed DRAFTS (an unproven plan is never reused) under the origin name', async (t) => {
   const origin = await realSpec();
   const home = homeWithTwoRows();
   makeRun(home, { runid: 'g1', spec: origin, outcome: 'green' });
@@ -528,7 +528,14 @@ test('POST start with startFrom = a green run reuses the signed plan; an already
   assert.equal(ok.ok, true, JSON.stringify(ok));
   assert.equal(ok.reuse, true);
   await post(`/api/author/${ok.sessionId}/abandon`, {});
-  for (const id of ['ag1', 'red1']) {
+  const preAg = await get('/api/author/start-from?runid=ag1');
+  assert.equal(preAg.green, true, 'an already-green origin reads green: main button Sign & run');
+  const ag = await (await post('/api/author/start', { ...preAg.card, jobName: 'a-typed-name', source: makeRepo(), startFrom: 'ag1' })).json();
+  assert.equal(ag.ok, true, JSON.stringify(ag));
+  assert.equal(ag.reuse, true, 'an already-green origin with no job box changed reuses the signed plan, no drafting');
+  assert.equal(ag.state.card.jobName, origin.job);
+  await post(`/api/author/${ag.sessionId}/abandon`, {});
+  for (const id of ['red1']) {
     // eslint-disable-next-line no-await-in-loop
     const j = await (await post('/api/author/start', { ...pre.card, jobName: 'a-typed-name', inputs: `repo: ${makeRepo()}`, startFrom: id })).json();
     assert.equal(j.ok, true, `${id}: ${JSON.stringify(j)}`);

@@ -2720,7 +2720,7 @@ export function getStartFrom(runid, opts = {}) {
   return {
     ok: true,
     origin: { runid, job: row.job },
-    // the run's terminal outcome — the Reuse start (POST /api/author/start) refuses anything but a real green.
+    // the run's terminal outcome — the Reuse start (POST /api/author/start) reuses a green or already-green run only.
     // T D.2: a SCHEDULED run's green reads `green-held` until the person accepts it, so that same refusal holds it unchanged
     outcome: (() => {
       const o = legsOf(records).at(-1)?.outcome ?? null;
@@ -2788,9 +2788,8 @@ export function listReuseJobs(opts = {}) {
     let records;
     try { records = parseJsonl(row.spine).records; } catch { continue; }
     const outcome = legsOf(records).at(-1)?.outcome ?? null;
-    // only a REAL green (hamr 2026-10-08): `already-green` means the check passed before any work, so there is nothing to reuse
-    // (src/reuse.js 'green-predates-run'). Narrower than the Run tab's Reuse button on purpose.
-    if (outcome !== 'green') continue;
+    // a real green or an already-green (hamr 2026-10-15: if it is already fixed and nothing is to be done, it is green and can be reused)
+    if (outcome !== 'green' && outcome !== 'already-green') continue;
     if (heldScheduled(records, triggerRecordOf(row))) continue; // T D.2: a scheduled green waits for the person's Accept
     const signed = signedSpecForRun(row, records);
     if (!signed) continue;
