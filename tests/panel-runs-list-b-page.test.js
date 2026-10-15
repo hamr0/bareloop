@@ -21,7 +21,7 @@ function fnSrc(name) {
 }
 
 const NAMES = ['escapeXml', 'runLabel', 'glyphClass', 'panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText',
-  'rlShortDate', 'runAtText', 'rlRunParts', 'runMatchesSearch', 'groupRunsByJob', 'filterRuns', 'filterWorkflows', 'filtersActive', 'rlModel', 'rlSectHtml', 'rlJumpCardHtml', 'rlScheduledCardHtml', 'rlTopHtml',
+  'rlShortDate', 'runAtText', 'rlRunParts', 'runMatchesSearch', 'groupRunsByJob', 'filterRuns', 'filterWorkflows', 'filtersActive', 'rlModel', 'rlSectHtml', 'rlJumpCardHtml', 'rlRunTagHtml', 'rlScheduledCardHtml', 'rlTopHtml',
   'rlRunCardHtml', 'rlJobCardHtml', 'rlJobsHtml', 'tickSince', 'withFocusPreserved', 'paintRunsList', 'rlRowOf', 'rlJump', 'rlClick', 'setRunsData'];
 
 const LIMITS = { quietDays: 30, olderRuns: 7, needsYouDays: 7 };
@@ -120,6 +120,16 @@ test('draw-only: an Accept pill draws when the payload says so (the server produ
   const html = m.f.rlJumpCardHtml(row('c', 2, { needs: 'Accept', status: { sign: '✓', word: 'passed' }, glyph: '✓' }), true);
   assert.match(html, /rl-pill rl-pill-need">Accept</);
   assert.match(html, /passed · waiting for your Accept &middot; /);
+});
+
+test('RULED 2026-10-15: in Running now and Needs you a run\'s name reads `job · run-N` (job, space, middle dot, space, run-N); the Jobs list run card is unchanged', () => {
+  const m = mount();
+  const text = (html) => html.match(/<span class="rl-l1">([\s\S]*?)<\/span><span class="rl-l2">/)[1].replace(/<[^>]*>/g, '').replace(/&middot;/g, '\u00B7');
+  const need = row('change2', 2, { needs: 'Resume', status: { sign: '■', word: 'capped' }, endedLine: 'money cap $0.50', stoppedAt: '2026-10-11T16:40:00.000Z' });
+  assert.match(text(m.f.rlJumpCardHtml(need, true)), /^change2 \u00B7 run-2 ?Resume$/);
+  const live = row('change2', 2, { glyph: '▶', status: { sign: '▶', word: 'running' }, live: true, liveSince: '2026-10-14T11:58:00.000Z', priorWallMs: 0 });
+  assert.match(text(m.f.rlJumpCardHtml(live, false)), /^change2 \u00B7 run-2 \u00B7 /);
+  assert.match(m.f.rlRunCardHtml(need, false, false), /class="rl-rn">run-2<\/span>/, 'the Jobs list card still reads run-N alone');
 });
 
 test('Running now: line 1 carries the in-place wall (data-rl-since + the server\'s prior wall) and the cost, an unknown cost reads `unknown`; line 2 is the server\'s plain why', () => {

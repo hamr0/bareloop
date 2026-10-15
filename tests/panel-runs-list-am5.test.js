@@ -19,7 +19,7 @@ function fnSrc(name) {
   return PAGE.slice(start, i + 1);
 }
 const NAMES = ['escapeXml', 'runLabel', 'glyphClass', 'panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText',
-  'rlShortDate', 'runAtText', 'rlRunParts', 'runMatchesSearch', 'groupRunsByJob', 'filterRuns', 'filterWorkflows', 'filtersActive', 'rlModel', 'rlSectHtml', 'rlJumpCardHtml', 'rlScheduledCardHtml',
+  'rlShortDate', 'runAtText', 'rlRunParts', 'runMatchesSearch', 'groupRunsByJob', 'filterRuns', 'filterWorkflows', 'filtersActive', 'rlModel', 'rlSectHtml', 'rlJumpCardHtml', 'rlRunTagHtml', 'rlScheduledCardHtml',
   'rlRunCardHtml', 'rlJobCardHtml', 'rlJobsHtml', 'filterBarHTML'];
 const lib = new Function(`var RL_CHIPS = [];\n${NAMES.map(fnSrc).join('\n')}\nreturn {${NAMES.join(',')}};`)();
 const LIMITS = { quietDays: 30, olderRuns: 7, needsYouDays: 7 };
@@ -152,7 +152,7 @@ test('am6: Running now and Scheduled line 1: the time, cost and next-run text si
   const live = lib.rlJumpCardHtml(run('aging-live-4', 7, { glyph: '▶', status: { sign: '▶', word: 'running' }, live: true, liveSince: '2026-10-12T10:00:00.000Z', priorWallMs: 0 }), false);
   assert.doesNotMatch(l1(live), /rl-faint/);
   assert.match(l1(live), /<span class="rl-rest">&middot; /);
-  assert.equal(text(l1(live)).replace(/\s+/g, ' '), 'aging-live-4 run-7 · · $0.01', 'the since text is written into the empty span by the page at run time');
+  assert.equal(text(l1(live)).replace(/\s+/g, ' '), 'aging-live-4 · run-7 · · $0.01', 'the since text is written into the empty span by the page at run time');
   const sch = lib.rlScheduledCardHtml({ job: 'aging-live-4', at: 'Mon 09:00', in: 'in 2d', words: 'weekly', runId: 'aging-live-4-7' });
   assert.doesNotMatch(l1(sch), /rl-faint/);
   assert.equal(text(l1(sch)), 'aging-live-4 · Mon 09:00');

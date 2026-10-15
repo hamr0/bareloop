@@ -1521,13 +1521,15 @@
       l2 = escapeXml(why) + ' &middot; ' + escapeXml(r.stoppedAt ? rlShortDate(r.stoppedAt) : runAtText(r));
     } else l2 = escapeXml(r.liveWhy || "running");
     return '<button class="rl-card ' + (need ? 'rl-need' : 'rl-live') + '" type="button" data-rl-jump="' + escapeXml(r.runid) + '" data-testid="rl-' + (need ? 'need' : 'live') + '-' + escapeXml(r.job) + '-' + escapeXml(r.runid) + '">' +
-      '<span class="rl-l1"><span class="dot ' + glyphClass(r.glyph) + '"></span><span class="rl-nm" title="' + escapeXml(r.job) + '">' + escapeXml(r.job) + '</span> <span class="rl-rn">' + escapeXml(rn) + '</span>' +
+      '<span class="rl-l1"><span class="dot ' + glyphClass(r.glyph) + '"></span><span class="rl-nm" title="' + escapeXml(r.job) + '">' + escapeXml(r.job) + '</span> <span class="rl-rn">&middot; ' + escapeXml(rn) + '</span>' +
       (need ? '<span class="rl-pill rl-pill-need">' + escapeXml(r.needs) + '</span>' : ' <span class="rl-rest">&middot; ' + faint + ' &middot; ' + escapeXml(rowSpendText(r, true)) + '</span>') + '</span>' +
       '<span class="rl-l2">' + l2 + '</span></button>';
   }
+  // RULED 2026-10-15: `job · run-N` in the small lists; the server names the run a Scheduled / gave-up card opens (`runNo`), nothing is made up when it has none
+  function rlRunTagHtml(c){ return typeof c.runNo === "number" ? ' <span class="rl-rn">&middot; ' + escapeXml(runLabel(c.runNo, c.runId)) + '</span>' : ''; }
   // A schedule that gave up (RULED 2026-10-15): all words from the server (`pill`, `words`, `at`); a click opens the job's newest run, like the other cards.
   function rlGaveUpCardHtml(g){
-    var body = '<span class="rl-l1"><span class="dot grey"></span><span class="rl-nm" title="' + escapeXml(g.job) + '">' + escapeXml(g.job) + '</span> <span class="rl-pill rl-pill-need">' + escapeXml(g.pill) + '</span></span>' +
+    var body = '<span class="rl-l1"><span class="dot grey"></span><span class="rl-nm" title="' + escapeXml(g.job) + '">' + escapeXml(g.job) + '</span>' + rlRunTagHtml(g) + ' <span class="rl-pill rl-pill-need">' + escapeXml(g.pill) + '</span></span>' +
       '<span class="rl-l2">' + escapeXml(g.words) + ' &middot; ' + escapeXml(g.at) + '</span>';
     if(typeof g.runId !== "string" || g.runId === "") return '<div class="rl-card rl-need" data-testid="rl-gaveup-' + escapeXml(g.job) + '">' + body + '</div>';
     return '<button class="rl-card rl-need" type="button" data-rl-jump="' + escapeXml(g.runId) + '" data-testid="rl-gaveup-' + escapeXml(g.job) + '">' + body + '</button>';
@@ -1536,7 +1538,7 @@
   // `at` / `in` are null and nothing is made up. A click does what Running now does (rlJump to the job's HEAD run, `runId` from the server and
   // scrolls to its job). A job with no run to open stays a plain box. Never filtered or searched.
   function rlScheduledCardHtml(s){
-    var body = '<span class="rl-l1"><span class="dot grey"></span><span class="rl-nm" title="' + escapeXml(s.job) + '">' + escapeXml(s.job) + '</span>' +
+    var body = '<span class="rl-l1"><span class="dot grey"></span><span class="rl-nm" title="' + escapeXml(s.job) + '">' + escapeXml(s.job) + '</span>' + rlRunTagHtml(s) +
       (s.at ? ' <span class="rl-rest">&middot; ' + escapeXml(s.at) + '</span>' : '') + '</span>' +
       '<span class="rl-l2">' + escapeXml([s.in, s.words].filter(function(x){ return x; }).join(" · ")) + '</span>';
     if(typeof s.runId !== "string" || s.runId === "") return '<div class="rl-card" data-testid="rl-sched-' + escapeXml(s.job) + '">' + body + '</div>';

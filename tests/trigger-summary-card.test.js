@@ -139,6 +139,9 @@ test('GET /api/runs: scheduled[] soonest first, a file trigger (no clock time) a
   const list = (await p.get('/api/runs')).body.scheduled;
   assert.deepEqual(list.map((s) => s.job), ['b-job', 'a-job', 'm-files', 'z-files'], 'soonest clock first, file triggers last by name');
   assert.equal(list[0].runId, 'b-new', 'the job\'s newest run by time, not the first in file order');
+  assert.equal(typeof list[0].runNo, 'number', 'RULED 2026-10-15: the card names the run it opens (job · run-N); the number is the server\'s');
+  const runs = (await p.get('/api/runs')).body.runs;
+  assert.equal(list[0].runNo, runs.find((r) => r.runid === 'b-new').runNo);
   assert.deepEqual([list[0].at, list[0].in, list[0].words], ['today 09:00', 'next in 1h', 'Every day at 09:00']);
   assert.deepEqual([list[1].at, list[1].in, list[1].words], ['today 15:00', 'next in 7h', 'Every day at 15:00']);
   assert.equal(list[2].at, null);

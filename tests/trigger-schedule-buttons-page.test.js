@@ -177,13 +177,16 @@ test('ENDED is painted by renderRun into the Run tab block; the old SCHEDULED tw
 
 // ------------------------------------------------------------------ the runs list
 test('runs list: Scheduled is one more section after Needs you; a card jumps to the job\'s head run; a file trigger shows no clock time; a job with no run is a plain box', () => {
-  const rlScheduledCardHtml = new Function('escapeXml', `${fnSrc('rlScheduledCardHtml')}\nreturn rlScheduledCardHtml;`)((x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])));
+  const rlScheduledCardHtml = new Function('escapeXml', `${fnSrc('runLabel')}\n${fnSrc('rlRunTagHtml')}\n${fnSrc('rlScheduledCardHtml')}\nreturn rlScheduledCardHtml;`)((x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])));
   const clock = rlScheduledCardHtml({ job: 'changelog-a', at: 'today 15:00', in: 'next in 3h', words: 'Every day at 15:00', runId: 'r7' });
   assert.match(clock, /^<button class="rl-card" type="button" data-rl-jump="r7" data-testid="rl-sched-changelog-a">/);
   assert.match(clock, /class="dot grey"/);
   assert.match(clock, /rl-rest">&middot; today 15:00</, 'P9 v2 O item 7 (fwd am6): same size as the job name, after a middot');
   assert.doesNotMatch(clock, /rl-faint/);
   assert.match(clock, /rl-l2">next in 3h · Every day at 15:00</);
+  // RULED 2026-10-15: the name reads `job · run-N` when the server names the run the card opens
+  const named = rlScheduledCardHtml({ job: 'change2', at: 'today 15:00', in: 'next in 3h', words: 'w', runId: 'r7', runNo: 2 });
+  assert.equal(named.match(/<span class="rl-l1">([\s\S]*?)<\/span><span class="rl-l2">/)[1].replace(/<[^>]*>/g, '').replace(/&middot;/g, '\u00B7'), 'change2 \u00B7 run-2 \u00B7 today 15:00');
   const file = rlScheduledCardHtml({ job: 'inbox', at: null, in: null, words: 'When a new file arrives in ~/reports/inbox/', runId: 'r8' });
   assert.doesNotMatch(file, /rl-faint|rl-rest/, 'a file trigger has no clock time, nothing is made up');
   assert.match(file, /rl-l2">When a new file arrives in ~\/reports\/inbox\/</);
@@ -197,7 +200,7 @@ test('runs list: Scheduled is one more section after Needs you; a card jumps to 
 
 test('runs list: rlTopHtml draws Scheduled (N) with the cards, after Needs you', () => {
   const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const f = new Function('escapeXml', 'rlJumpCardHtml', `${fnSrc('rlSectHtml')}\n${fnSrc('rlScheduledCardHtml')}\n${fnSrc('rlTopHtml')}\nreturn rlTopHtml;`)(esc, (r) => `<j ${r.runid}>`);
+  const f = new Function('escapeXml', 'rlJumpCardHtml', `${fnSrc('rlSectHtml')}\n${fnSrc('runLabel')}\n${fnSrc('rlRunTagHtml')}\n${fnSrc('rlScheduledCardHtml')}\n${fnSrc('rlTopHtml')}\nreturn rlTopHtml;`)(esc, (r) => `<j ${r.runid}>`);
   const html = f({ running: [{ runid: 'a' }], needs: [{ runid: 'b' }], scheduled: [{ job: 'x', at: 'today 15:00', in: 'next in 1h', words: 'w', runId: 'r1' }, { job: 'y', at: null, in: null, words: 'v', runId: 'r2' }] });
   assert.match(html, /Running now \(1\)[\s\S]*Needs you \(1\)[\s\S]*Scheduled \(2\)[\s\S]*rl-sched-x[\s\S]*rl-sched-y/);
   assert.doesNotMatch(f({ running: [], needs: [], scheduled: [] }), /Scheduled/);

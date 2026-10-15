@@ -143,6 +143,8 @@ test('/api/runs carries the Needs-you entry for a gave-up job: pill Check, refus
   assert.match(g.at, /^\d\d\/\d\d \d\d:\d\d$/);
   assert.equal(g.at, `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
   assert.equal(g.runId, body.jobs.find((j) => j.job === 'sched-job').headRunid, 'the card opens the job\'s newest run');
+  assert.equal(g.runNo, body.runs.find((r) => r.runid === g.runId).runNo, 'RULED 2026-10-15: the card names that run (job · run-N)');
+  assert.equal(typeof g.runNo, 'number');
 });
 
 test('a re-sign (Cancel / modify) clears the pause, resets the count, and the next slot fires', async () => {
