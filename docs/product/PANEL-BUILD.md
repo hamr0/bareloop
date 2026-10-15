@@ -993,7 +993,7 @@ Rulings by hamr 2026-10-07/08, built on `feat/panel-run-page`.
 
 - **Edit in chat** on every non-green ending (`withEditAction`, `src/panel/server.js`): the page reads `GET /api/author/start-from`, opens the Chat card with every box open and the normal Start drafting; no reuse state. A code-owned origin line says where the card was copied from. (SUPERSEDED 2026-10-15 by v1.101.)
 - **Resume on the Chat card**: RESUME mode, signed job locked, only $ cap and Time cap open, `Sign & resume` posts the same `/api/runs/:id/resume`; the Job tab's resume mode is deleted and the tab is read-only everywhere.
-- **Signs and words**: stopped is `[■]` (red); the Ended block's NEXT line on a red run points at Edit in chat. (SUPERSEDED 2026-10-15 by v1.101.)
+- **Signs and words**: stopped is `[■]` (red); the Ended block's NEXT line on a red run points at Edit in chat. (SUPERSEDED 2026-10-15 by v1.101.) (SUPERSEDED 2026-10-15: stopped [■] is grey, PRD v1.104.)
 - **Reuse is for earned greens only**: an `already-green` run takes Edit in chat; `listReuseJobs` offers real `green` only; `POST /api/author/start` answers 409 for a reuse of any other local run (start-from carries `outcome`); a delivery-refused ending offers Reuse only when the run earned its green. (SUPERSEDED 2026-10-15 by v1.101.)
 - **Capped on every surface**: `capKindOf` (`src/legs.js`) is the one cap rule for the run status, a leg's stop reason and the open step of a single-leg run. A stop in the close-fix loop reads "during the fix phase".
 - **Picker and list**: the Reuse picker reads Loading… until its list arrives and a Check type radio never blanks typed boxes; an expanded job shows its latest 7 other runs, older ones by search.
