@@ -3614,7 +3614,7 @@ key you want first (the panel picks the row by the Model menu).
   scout, plan or close-fix phase is honoured at that phase's next round boundary, the same as in a step (it used to be read in
   step workers only). A stop in the close-fix loop reads "You stopped the run during the fix phase … a resume continues the
   run" (`ralph`'s `phase` option; the step loop keeps "a resume re-enters this step").
-  **Reuse workflow — ONE door on every run (2026-10-15, PRD v1.101; it replaced the green-only button and Edit in chat)** —
+  **Reuse workflow — ONE door on every run (2026-10-15, PRD v1.101; it replaced the green-only button and the old edit door)** —
   `ended.actions` carries `{id:'reuse', label:'Reuse workflow'}` on EVERY ending (green, failed, capped, stopped, died, every
   other red, already-green), after `resume` when both show, and on every imported job; a red row's next line is "Change the
   job: press Reuse workflow." The Chat card's Check type is one radio group of three

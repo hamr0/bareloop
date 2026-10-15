@@ -179,14 +179,14 @@ function pageActions() {
   const render = new Function('document', 'authorPost', `var stopAsked = {};\n${src('escapeXml')}\n${src('renderRunActions')}\nreturn renderRunActions;`)({ getElementById: () => bar }, () => Promise.resolve({ status: 200, body: {} }));
   return { render, bar, PAGE };
 }
-const RESUMABLE = { reason: 'x', next: 'y', actions: [{ id: 'resume' }, { id: 'edit' }, { id: 'reuse' }] };
+const RESUMABLE = { reason: 'x', next: 'y', actions: [{ id: 'resume' }, { id: 'reuse' }] };
 
-test('page: Accept shows only when the server says a door is open, right after Resume and before Edit in chat, and never on a live run', () => {
+test('page: Accept shows only when the server says a door is open, right after Resume and before Reuse workflow, and never on a live run', () => {
   const { render, bar } = pageActions();
   render({ runid: 'r', live: false, died: false, ended: RESUMABLE, resume: { budgetUsd: 1 }, accept: true, job: 'j' });
   const h = bar.innerHTML;
   assert.match(h, /data-testid="btn-accept-run">Accept</);
-  assert.ok(h.indexOf('btn-resume-run') < h.indexOf('btn-accept-run') && h.indexOf('btn-accept-run') < h.indexOf('btn-edit-chat') && h.indexOf('btn-edit-chat') < h.indexOf('btn-reuse'), 'order: Resume, Accept, Edit in chat, Reuse workflow');
+  assert.ok(h.indexOf('btn-resume-run') < h.indexOf('btn-accept-run') && h.indexOf('btn-accept-run') < h.indexOf('btn-reuse'), 'order: Resume, Accept, Reuse workflow');
   render({ runid: 'r', live: false, died: false, ended: RESUMABLE, resume: { budgetUsd: 1 }, accept: false, job: 'j' });
   assert.doesNotMatch(bar.innerHTML, /btn-accept-run/);
   render({ runid: 'r', live: true, died: false, ended: null, resume: null, accept: true, job: 'j' });

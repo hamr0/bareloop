@@ -327,6 +327,8 @@ export function createAuthorRoutes(opts) {
             return true;
           }
         } else {
+          // a scheduled run's green waits for the person's Accept (quarantine): its plan is neither reused nor re-drafted until then
+          if (pre.outcome === 'green-held') { send(409, { ok: false, error: 'This run was started by a schedule and is waiting for your Accept. Accept it first, then it can be reused.' }); return true; }
           card.jobName = pre.origin.job; // an unchanged job keeps its name; a typed one is ignored
           if (fromImport !== null || pre.outcome === 'green') {
             const rv = validateReuseCard(card, { rows });
