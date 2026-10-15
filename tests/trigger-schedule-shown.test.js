@@ -2,7 +2,7 @@
 // the page side (frame and row red, By hand, the one block) is in trigger-schedule-buttons-page.test.js. Each test below can FAIL.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appendRow } from '../src/triggerledger.js';
 import { dateTimeWords, lowerFirst } from '../src/schedulewords.js';
@@ -129,10 +129,10 @@ test('Run tab SCHEDULE: a last fire that started nothing is a problem (red) with
     assert.equal(s.problem, true, `${id}: a refused last is a problem`);
     assert.equal(s.line2, `last ${dateTimeWords(t)} · refused: the destination does not exist · next: fix it in Cancel / modify schedule`);
   }
-  appendRow(w.ledger, { kind: 'busy', sig: w.sig, at: t + 1000, told: 'b', why: 'A run of this job is still going. This one starts when it is done.' });
-  assert.equal((await detail(w.p, 'r1')).schedule.problem, true, 'busy started nothing too');
-  appendRow(w.ledger, { kind: 'monthly-exhausted', sig: w.sig, at: t + 2000, told: 'c', leftUsd: 0.01, needUsd: 0.03 });
-  assert.match((await detail(w.p, 'r1')).schedule.line2, /^last \d\d\/\d\d \d\d:\d\d · month used up: \$0\.01 left, needs \$0\.03 · next: fix it/);
+  appendRow(w.ledger, { kind: 'monthly-exhausted', sig: w.sig, at: t + 2000, told: 'c', leftUsd: 0.01, needUsd: 0.5 });
+  const month = (await detail(w.p, 'r1')).schedule;
+  assert.equal(month.problem, true, 'month used up is red');
+  assert.equal(month.line2, `last ${dateTimeWords(t + 2000)} · month used up: $0.01 left, needs $0.50 · next: raise the limit in Settings, or it starts on the 1st`);
   // the next fire works: a `started` row (with the session the run's trigger.json names) is the newest
   appendRow(w.ledger, { kind: 'started', sig: w.sig, at: t + 3000, key: 'k', sessionId: 's1', specHash: 'h' });
   const fixed = (await detail(w.p, 'r1')).schedule;
@@ -146,4 +146,28 @@ test('Run tab SCHEDULE: a catch-up start says so on the `last` line', async () =
   scheduledRun(w, 'r2', { ...CLOCK_REC, catchUp: true });
   appendRow(w.ledger, { kind: 'started', sig: w.sig, at: w.now(), key: 'k', sessionId: 's1', specHash: 'h' });
   assert.match((await detail(w.p, 'r1')).schedule.line2, /^last \d\d\/\d\d \d\d:\d\d · run-2 · passed · catch-up · next /);
+});
+
+test('Run tab SCHEDULE: busy is NOT a problem (normal colours, no "fix it"); the normal next for its kind follows; "at most" money is said', async () => {
+  const w = await fireWorld();
+  const t = w.now();
+  appendRow(w.ledger, { kind: 'busy', sig: w.sig, at: t, told: 'b', why: 'A run of this job is still going. This one starts when it is done.' });
+  const s = (await detail(w.p, 'r1')).schedule;
+  assert.equal(s.problem, false);
+  assert.match(s.line2, new RegExp(`^last ${dateTimeWords(t)} · busy: a run of this job was still going · next (Mon|Tue|Wed|Thu|Fri|Sat|Sun) \\d\\d/\\d\\d 09:00$`));
+  assert.doesNotMatch(s.line2, /fix it/);
+  appendRow(w.ledger, { kind: 'monthly-exhausted', sig: w.sig, at: t + 1000, told: 'm', leftUsd: 0.01, needUsd: 0.5, atLeast: true });
+  assert.match((await detail(w.p, 'r1')).schedule.line2, /· month used up: at most \$0\.01 left, needs \$0\.50 · next: raise the limit/);
+});
+
+test('Run tab SCHEDULE: a run waiting for the person\'s Accept is said inside line 2, after the last part, and is not red', async () => {
+  const w = await fireWorld();
+  const r2 = makeRun(w.home, { runid: 'r2', spec: w.spec, outcome: 'green', accepted: false, at: '2026-10-03T10:00:00.000Z' });
+  writeFileSync(join(r2.out, 'trigger.json'), JSON.stringify(CLOCK_REC));
+  appendFileSync(r2.spine, `${JSON.stringify({ type: 'review-door', outcome: 'green', ts: new Date().toISOString(), seq: 8 })}\n`);
+  const t = w.now();
+  appendRow(w.ledger, { kind: 'started', sig: w.sig, at: t, key: 'k', sessionId: 's1', specHash: 'h' });
+  const s = (await detail(w.p, 'r1')).schedule;
+  assert.equal(s.problem, false);
+  assert.match(s.line2, new RegExp(`^last ${dateTimeWords(t)} · run-2 · passed · waiting for your Accept \\(the next run does not wait\\) · next (Mon|Tue|Wed|Thu|Fri|Sat|Sun) `));
 });

@@ -1078,7 +1078,7 @@ function scheduleExtrasFor(runid, job, rows, nos, opts, view) {
     /** @type {any} */
     let schedule;
     if (view) {
-      const { lastRow, nextWords, ...rest } = view;
+      const { lastRow, nextWords, accept, ...rest } = view;
       schedule = { ...rest, line2: null };
       if (view.scheduled) {
         let lastWords = null;
@@ -1100,7 +1100,7 @@ function scheduleExtrasFor(runid, job, rows, nos, opts, view) {
             lastWords = `last ${dateTimeWords(Number(lastRow.at))} · ${skippedWords(lastRow, true)}`;
           }
         }
-        schedule.line2 = [lastWords, nextWords].filter(Boolean).join(' · ');
+        schedule.line2 = [lastWords, accept ? SCHEDULE_WORDS.acceptWaiting : null, nextWords].filter(Boolean).join(' · ');
       }
     }
     const row = rows.find((r) => r && r.runid === runid);

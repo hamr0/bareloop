@@ -56,6 +56,8 @@ export const SCHEDULE_WORDS = Object.freeze({
   gaveUpPill: 'Check',
   // RULED 2026-10-15 (aligned with fwdloop M9 am7): the SCHEDULE row's second line when the last fire started nothing
   problemNext: 'next: fix it in Cancel / modify schedule',
+  monthNext: 'next: raise the limit in Settings, or it starts on the 1st',
+  acceptWaiting: 'waiting for your Accept (the next run does not wait)',
   scheduleGroup: 'schedule',
   notGreen: 'This job has not had a good run yet. Run it by hand and get it right first; then you can set when it runs. A rubric job also needs your Accept once. Nothing was changed.',
   stale: 'What you were shown is not what is on the card now. Nothing was signed. Look again, then sign.',
@@ -231,9 +233,9 @@ function reasonOf(why) {
  * @param {any} row a ledger row (`busy` | `monthly-exhausted` | `refused` | `gave-up`) @param {boolean} [short]
  */
 export function skippedWords(row, short = false) {
-  if (row.kind === 'busy') return short ? 'busy: a run was still going' : 'busy — a run of this job was still going. Nothing started.';
+  if (row.kind === 'busy') return short ? 'busy: a run of this job was still going' : 'busy — a run of this job was still going. Nothing started.';
   if (row.kind === 'monthly-exhausted') {
-    const left = typeof row.leftUsd === 'number' ? panelMoney2(row.leftUsd) : 'little';
+    const left = typeof row.leftUsd === 'number' ? `${row.atLeast === true ? 'at most ' : ''}${panelMoney2(row.leftUsd)}` : 'little';
     const need = typeof row.needUsd === 'number' ? panelMoney2(row.needUsd) : 'more';
     return short ? `month used up: ${left} left, needs ${need}` : `month used up — ${left} left, needs ${need}. Nothing spent.`;
   }
@@ -254,4 +256,10 @@ export function jobScheduleWords(f) {
   if (f.model) parts.push(f.model);
   if (f.destination) parts.push(tilde(f.destination, f.home));
   return parts.join(' · ');
+}
+
+/** RULED 2026-10-15: the SCHEDULE row's `next` while an install-needed refusal is waiting to be tried again. @param {number} ms */
+export function retryNextWords(ms) {
+  const m = Math.max(1, Math.ceil(ms / 60_000));
+  return `next: tries again in ${m} min`;
 }

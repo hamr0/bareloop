@@ -26,7 +26,7 @@ import { armTrigger, nextSlot, recordFire } from '../triggerclock.js';
 import { appendRow, readLedger, withoutReleased } from '../triggerledger.js';
 import { checkTarget, createFileTrigger, queueOf, readSeen, recordDropped, recordRan } from '../triggerfiles.js';
 import {
-  SCHEDULE_WORDS, dateTimeWords, gaveUpDateWords, lateRefusalWords, nextInWords, nextSlotShort, nextTimeWords, scheduledNextFor, scheduledWords, skippedWords,
+  SCHEDULE_WORDS, dateTimeWords, gaveUpDateWords, lateRefusalWords, nextInWords, nextSlotShort, nextTimeWords, retryNextWords, scheduledNextFor, scheduledWords, skippedWords,
 } from '../schedulewords.js';
 import { buildReuseSpec, startDestinationProblem, validateReuseCard } from './authorsession.js';
 
@@ -589,15 +589,23 @@ export function createScheduleDoor(deps) {
         trigger: st.schedule.trigger, armed: st.armed, nextSlotMs: st.nextSlotMs, lastOutcome: st.lastOutcome, waitingRunNo: o.waitingRunNo ?? null, now: now(), retryInMs: st.retryInMs, gaveUp: st.gaveUp,
       });
       const last = lastFireRow(job, st.schedule);
-      const problem = (last !== null && last.kind !== 'started') || st.gaveUp !== null;
       const nextWords = isClockTrigger(st.schedule.trigger)
         ? (st.nextSlotMs === null ? 'next: not armed yet' : `next ${nextSlotShort(st.nextSlotMs)}`)
         : (st.schedule.trigger.kind === 'new-file' ? 'next: waiting for a new file' : 'next: waiting for the file to change');
+      // hamr 2026-10-15: only a refusal that is not retrying, the give-up and a used-up month are problems (red); busy and an install back-off are not
+      let problem = false;
+      let ended = nextWords;
+      if (st.gaveUp !== null) { problem = true; ended = SCHEDULE_WORDS.problemNext; }
+      else if (last !== null && last.kind === 'monthly-exhausted') { problem = true; ended = SCHEDULE_WORDS.monthNext; }
+      else if (last !== null && last.kind === 'refused') {
+        if (typeof st.retryInMs === 'number') ended = retryNextWords(st.retryInMs);
+        else { problem = true; ended = SCHEDULE_WORDS.problemNext; }
+      }
       return {
         scheduled: true, canSchedule: false, words: SCHEDULE_WORDS, fromRunid: st.schedule.originRunid,
         text: scheduledWords(st.schedule.trigger, userHome), next: next.text, nextRed: next.red,
         // aligned with fwdloop M9 am7: the SCHEDULE row's second line is put together by the server from these
-        lastRow: last, problem, nextWords: problem ? SCHEDULE_WORDS.problemNext : nextWords,
+        lastRow: last, problem, nextWords: ended, accept: o.waitingRunNo !== undefined && o.waitingRunNo !== null,
       };
     },
 

@@ -234,3 +234,17 @@ test('the page draws the Needs-you card from the server: pill, words and date, a
   assert.match(PAGE, /data-rl-jump="' \+ escapeXml\(g\.runId\)/);
   assert.match(PAGE, /m\.needs\.concat\(m\.gaveUp/);
 });
+
+// RULED 2026-10-15 (hamr "yes to all"): while the install back-off is still retrying the SCHEDULE row is NOT red and says when it tries again; only the give-up is red.
+test('SCHEDULE line 2 while retrying: not red, ends `next: tries again in N min`; after the 60-minute give-up: red, ends `next: fix it in Cancel / modify schedule`', async () => {
+  const w = await world(1e9);
+  const s = createScheduler({ door: w.door, now: w.now, intervalMs: 0 });
+  await s.tick();
+  const d1 = (await w.p.get('/api/runs/r1')).body.schedule;
+  assert.equal(d1.problem, false, 'still retrying is not a problem');
+  assert.match(d1.line2, /^last \d\d\/\d\d \d\d:\d\d · refused: .* · next: tries again in 1 min$/);
+  await attemptTimes(w, s, 200);
+  const d2 = (await w.p.get('/api/runs/r1')).body.schedule;
+  assert.equal(d2.problem, true, 'given up is red');
+  assert.match(d2.line2, / · next: fix it in Cancel \/ modify schedule$/);
+});
