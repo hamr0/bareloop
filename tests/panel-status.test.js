@@ -103,7 +103,7 @@ function fnSrc(name) {
 const fake = () => ({ innerHTML: '', className: '', textContent: '', attrs: {}, setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute() {}, addEventListener() {}, children: [], appendChild(c) { this.children.push(c); } });
 
 function listHarness() {
-  const names = ['escapeXml', 'runLabel', 'glyphClass', 'panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText', 'rlShortDate', 'runAtText', 'rlRunParts', 'rlRunCardHtml', 'rlJobCardHtml'];
+  const names = ['escapeXml', 'runLabel', 'glyphClass', 'dotPulses', 'dotClass', 'panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText', 'rlShortDate', 'runAtText', 'rlRunParts', 'rlRunCardHtml', 'rlJobCardHtml'];
   // eslint-disable-next-line no-new-func
   return new Function(`${names.map(fnSrc).join('\n')}\nreturn { rlRunCardHtml, rlJobCardHtml };`)();
 }
@@ -139,7 +139,7 @@ function headerHarness() {
   const els = {};
   const get = (id) => els[id] ?? (els[id] = fake());
   // eslint-disable-next-line no-new-func
-  const api = new Function('document', `${['escapeXml', 'runLabel', 'runName', 'glyphClass', 'statusWordHtml', 'fmtLocalDateTime', 'setRunHeader', 'liveStepText', 'runHeaderBody', 'realSteps'].map(fnSrc).join('\n')}\nreturn {setRunHeader, runHeaderBody};`)({ getElementById: get });
+  const api = new Function('document', `${['escapeXml', 'runLabel', 'runName', 'glyphClass', 'dotPulses', 'dotClass', 'statusWordHtml', 'fmtLocalDateTime', 'setRunHeader', 'liveStepText', 'runHeaderBody', 'realSteps'].map(fnSrc).join('\n')}\nreturn {setRunHeader, runHeaderBody};`)({ getElementById: get });
   return { els, ...api };
 }
 
@@ -175,7 +175,7 @@ test('2026-10-07: a STOPPED run wears [■] on the table, the run card, the head
   assert.match(fnSrc('renderRun'), /detail\.glyph === "■" \? "grey"/); // the summary box frame is grey, not red
   // step card + Audit row
   // eslint-disable-next-line no-new-func
-  const f = new Function(`${['escapeXml', 'boxStatusWord', 'boxStatusText', 'glyphClass', 'stepStateHTML'].map(fnSrc).join('\n')}\nreturn stepStateHTML;`)();
+  const f = new Function(`${['escapeXml', 'boxStatusWord', 'boxStatusText', 'glyphClass', 'dotPulses', 'dotClass', 'stepStateHTML'].map(fnSrc).join('\n')}\nreturn stepStateHTML;`)();
   assert.match(f({ state: 'stopped', status: { ...STATUS.stopped } }, 't'), /dot stopped"><\/span><b class="st-word">stopped</);
   // map box text
   const start = PAGE.indexOf('function escapeXml');
@@ -204,7 +204,7 @@ test('C8: NO capitals in the header — the job name is shown as written (the h2
 });
 
 test('C8: an imported header wears the word of its shown green + the imported tag; with no green, only the tag', () => {
-  const names = ['escapeXml', 'runLabel', 'runName', 'glyphClass', 'statusWordHtml', 'setRunHeader', 'importedHeader'];
+  const names = ['escapeXml', 'runLabel', 'runName', 'glyphClass', 'dotPulses', 'dotClass', 'statusWordHtml', 'setRunHeader', 'importedHeader'];
   const els = {};
   const get = (id) => els[id] ?? (els[id] = fake());
   // eslint-disable-next-line no-new-func
@@ -221,7 +221,7 @@ test('C8: an imported header wears the word of its shown green + the imported ta
 test('C9: MAP has no sign legend; each step card carries its own sign + the existing step-state word, bold', () => {
   assert.doesNotMatch(PAGE, /stepMapLegendHTML|map-legend/); // the line-style key is covered in panel-page.test.js
   assert.match(fnSrc('renderRun'), /stepStateHTML\(box, 'part-state-' \+ idx\)/);
-  assert.match(fnSrc('stepStateHTML'), /class="step-state"[^]*?<span class="dot ' \+ cls \+ '"><\/span><b class="st-word">' \+ escapeXml\(boxStatusWord\(box\)\)/);
+  assert.match(fnSrc('stepStateHTML'), /class="step-state"[^]*?<span class="dot ' \+ cls \+ \(cls === "amber" \? " pulse" : ""\) \+ '"><\/span><b class="st-word">' \+ escapeXml\(boxStatusWord\(box\)\)/);
 });
 
 import { createPanelServer } from '../src/panel/server.js';
@@ -309,4 +309,21 @@ test('2026-10-07: a part wears `[sign] word` from the ONE table — never the ra
   assert.match(svg, /title="\[✓\] passed"/);
   assert.match(svg, /title="\[✗\] capped"/);
   assert.doesNotMatch(svg, /title="done"|>done</);
+});
+
+test('RULED 2026-10-15 (matches fwdloop glyphPulses): a sign blinks when the run is running or waits for your Accept, steady otherwise; ONE rule function, reduced motion drops the animation', () => {
+  const rule = new Function(`${fnSrc('dotPulses')}\nreturn dotPulses;`)();
+  assert.equal(rule('▶', null), true, 'running');
+  assert.equal(rule('✓', 'Accept'), true, 'waiting for your Accept');
+  assert.equal(rule('·', 'Accept'), true);
+  for (const g of ['✓', '✗', '■', '·', '?']) assert.equal(rule(g, null), false, `${g} rests`);
+  assert.equal(rule('■', 'Resume'), false, 'a Resume tag is not waiting for Accept');
+  const dotClass = new Function(`${fnSrc('glyphClass')}\n${fnSrc('dotPulses')}\n${fnSrc('dotClass')}\nreturn dotClass;`)();
+  assert.equal(dotClass('▶', null), 'dot amber pulse');
+  assert.equal(dotClass('✓', 'Accept'), 'dot green pulse');
+  assert.equal(dotClass('·', null), 'dot grey', 'a schedule that is on and waiting stays steady');
+  // the animation hangs on `.pulse` alone, and reduced motion keeps the sign
+  assert.doesNotMatch(PAGE, /\.dot\.amber::before\{[^}]*animation/);
+  assert.match(PAGE, /\.dot\.pulse::before\{animation:pulse-glyph 1\.2s ease-in-out infinite;\}/);
+  assert.match(PAGE, /@media \(prefers-reduced-motion: reduce\)\{\s*\.dot\.pulse::before\{animation:none;\}/);
 });

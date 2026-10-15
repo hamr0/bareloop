@@ -170,9 +170,11 @@
      1.2s, matching design/panel-mockup.html's pulsing amber dot exactly —
      one fixed rhythm, never re-derived per call site. */
   @keyframes pulse-glyph{0%,100%{opacity:1;}50%{opacity:0.3;}}
-  .dot.amber::before{content:"[▶]";color:var(--amber);animation:pulse-glyph 1.2s ease-in-out infinite;}
+  .dot.amber::before{content:"[▶]";color:var(--amber);}
+  /* RULED 2026-10-15 (matches fwdloop glyphPulses): a sign blinks only while running or waiting for your Accept, keyed to `.pulse` (dotPulses decides) */
+  .dot.pulse::before{animation:pulse-glyph 1.2s ease-in-out infinite;}
   @media (prefers-reduced-motion: reduce){
-    .dot.amber::before{animation:none;}
+    .dot.pulse::before{animation:none;}
   }
   .dot.grey::before{content:"[·]";color:var(--grey-dot);}
   /* died (hamr's ruling B, 2026-09-25): no ending was ever recorded — a
@@ -1321,6 +1323,10 @@
   function realSteps(steps){ return steps.filter(function(s){ return !s.synthetic; }); }
 
   // ---- glyph/badge helpers (only [✓]/[✗]/[▶]/[·]/[?] — never the words green/red/soft-green/died) ----
+  // RULED 2026-10-15 (matches fwdloop glyphPulses): ONE rule for which sign blinks. Running blinks; a run waiting for the person's Accept blinks;
+  // everything else rests (a schedule that is on and waiting included). `needs` = the run's Needs-you tag.
+  function dotPulses(g, needs){ return g === "▶" || needs === "Accept"; }
+  function dotClass(g, needs){ return "dot " + glyphClass(g) + (dotPulses(g, needs) ? " pulse" : ""); }
   function glyphClass(g){
     if(g === "✓") return "green";
     if(g === "✗") return "red";
@@ -1347,9 +1353,9 @@
   // A run with no number (an imported bundle's run is not in the run list) falls back to its id.
   function runLabel(runNo, runid){ return typeof runNo === "number" ? "run-" + runNo : String(runid || ""); }
   function runName(job, runNo, runid){ return job + " (" + runLabel(runNo, runid) + ")"; }
-  function setRunHeader(sign, nameText, bodyHtml){
+  function setRunHeader(sign, nameText, bodyHtml, needs){
     document.getElementById("active-wf-name").textContent = nameText;
-    document.getElementById("active-wf-dot").className = "dot " + glyphClass(sign);
+    document.getElementById("active-wf-dot").className = dotClass(sign, needs);
     var st = document.getElementById("active-wf-verdict");
     st.innerHTML = bodyHtml ? '<span class="rp-sep">\u2502</span>' + bodyHtml : "";
     st.removeAttribute("title");
@@ -1523,7 +1529,7 @@
       l2 = escapeXml(why) + ' &middot; ' + escapeXml(r.stoppedAt ? rlShortDate(r.stoppedAt) : runAtText(r));
     } else l2 = escapeXml(r.liveWhy || "running");
     return '<button class="rl-card ' + (need ? 'rl-need' : 'rl-live') + '" type="button" data-rl-jump="' + escapeXml(r.runid) + '" data-testid="rl-' + (need ? 'need' : 'live') + '-' + escapeXml(r.job) + '-' + escapeXml(r.runid) + '">' +
-      '<span class="rl-l1"><span class="dot ' + glyphClass(r.glyph) + '"></span><span class="rl-nm" title="' + escapeXml(r.job) + '">' + escapeXml(r.job) + '</span> <span class="rl-rn">&middot; ' + escapeXml(rn) + '</span>' +
+      '<span class="rl-l1"><span class="' + dotClass(r.glyph, r.needs) + '"></span><span class="rl-nm" title="' + escapeXml(r.job) + '">' + escapeXml(r.job) + '</span> <span class="rl-rn">&middot; ' + escapeXml(rn) + '</span>' +
       (need ? '<span class="rl-pill rl-pill-need">' + escapeXml(r.needs) + '</span>' : ' <span class="rl-rest">&middot; ' + faint + ' &middot; ' + escapeXml(rowSpendText(r, true)) + '</span>') + '</span>' +
       '<span class="rl-l2">' + l2 + '</span></button>';
   }
@@ -1566,7 +1572,7 @@
     else if(r.starting) l2 = '<b class="st-word">' + escapeXml(p.word) + '</b> — ' + escapeXml(p.why);
     else l2 = (p.word ? '<b class="st-word">' + escapeXml(p.word) + '</b>' : '') + (p.why ? (p.word ? ' — ' : '') + escapeXml(p.why) : '') + (bits.length ? ' &middot; ' + escapeXml(bits.join(" · ")) : '');
     return '<button class="rl-card' + (selected ? ' rl-sel' : '') + (hit ? ' rl-hit' : '') + (r.live ? ' rl-live' : '') + '" type="button" data-rl-run="' + escapeXml(r.runid) + '" data-testid="rl-run-' + escapeXml(r.job) + '-' + escapeXml(r.runid) + '" aria-pressed="' + (selected ? 'true' : 'false') + '" title="' + escapeXml(p.name) + '">' +
-      '<span class="rl-l1"><span class="dot ' + glyphClass(r.glyph) + '"></span><span class="rl-rn">' + escapeXml(p.rn) + '</span> <span class="rl-rest">&middot; ' + escapeXml([p.date, p.model].filter(function(b){ return b; }).join(" · ")) + '</span></span>' +
+      '<span class="rl-l1"><span class="' + dotClass(r.glyph, r.needs) + '"></span><span class="rl-rn">' + escapeXml(p.rn) + '</span> <span class="rl-rest">&middot; ' + escapeXml([p.date, p.model].filter(function(b){ return b; }).join(" · ")) + '</span></span>' +
       '<span class="rl-l2">' + l2 + '</span></button>';
   }
   // a job card: `[sign] job · k runs · type` / `word · why` of its newest run, highlighted when the selected run is one of its runs; not clickable. Inside: the newest run's card, then the older-runs fold.
@@ -1581,7 +1587,7 @@
     var isHit = function(r){ return c.hits.indexOf(r.runid) !== -1; };
     var type = h.checkType && h.checkType !== "unknown" ? ' &middot; ' + escapeXml(h.checkType) : '';
     var l2 = h.fileMissing ? escapeXml(p.why) : '<b class="st-word">' + escapeXml(p.word) + '</b>' + (p.why ? ' &middot; ' + escapeXml(p.why) : '');
-    var out = top + '<span class="rl-l1"><span class="dot ' + glyphClass(h.glyph) + '"></span><span class="rl-nm" title="' + escapeXml(c.job) + '">' + escapeXml(c.job) + '</span> <span class="rl-cnt">&middot; ' + c.count + ' run' + (c.count === 1 ? '' : 's') + type + '</span></span>' +
+    var out = top + '<span class="rl-l1"><span class="' + dotClass(h.glyph, h.needs) + '"></span><span class="rl-nm" title="' + escapeXml(c.job) + '">' + escapeXml(c.job) + '</span> <span class="rl-cnt">&middot; ' + c.count + ' run' + (c.count === 1 ? '' : 's') + type + '</span></span>' +
       '<span class="rl-l2">' + l2 + '</span>' +
       '<div class="rl-runs">' + rlRunCardHtml(h, isSel(h), isHit(h));
     if(c.older.total > 0){
@@ -2607,7 +2613,7 @@
     document.getElementById("audit-body").hidden = false;
     renderEnded(detail);
 
-    setRunHeader(detail.glyph, runName(detail.job, detail.runNo, detail.runid), runHeaderBody(detail));
+    setRunHeader(detail.glyph, runName(detail.job, detail.runNo, detail.runid), runHeaderBody(detail), detail.accept ? "Accept" : null);
 
     document.getElementById("run-empty").hidden = true;
     document.getElementById("run-content").hidden = false;
@@ -2739,7 +2745,7 @@
   // ONE spelling of a step's state: its dot + the bold state word — read by the Run tab's step cards AND the Audit tab's grouped rows
   function stepStateHTML(box, testid){
     var cls = box.state === "done" ? "green" : (box.state === "stopped" ? (box.status && box.status.sign === "\u25A0" ? "stopped" : "red") : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
-    return '<span class="step-state" data-testid="' + testid + '"><span class="dot ' + cls + '"></span><b class="st-word">' + escapeXml(boxStatusWord(box)) + '</b></span>';
+    return '<span class="step-state" data-testid="' + testid + '"><span class="dot ' + cls + (cls === "amber" ? " pulse" : "") + '"></span><b class="st-word">' + escapeXml(boxStatusWord(box)) + '</b></span>';
   }
   // build item C: Audit tab attempt row -> its rounds (server-built,
   // lazy-fetched on expand via /api/runs/:runid/rounds?part=<i>&attempt=<n>).

@@ -20,7 +20,7 @@ function fnSrc(name) {
   return PAGE.slice(start, i + 1);
 }
 
-const NAMES = ['escapeXml', 'runLabel', 'glyphClass', 'panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText',
+const NAMES = ['escapeXml', 'runLabel', 'glyphClass', 'dotPulses', 'dotClass', 'panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText',
   'rlShortDate', 'runAtText', 'rlRunParts', 'runMatchesSearch', 'groupRunsByJob', 'filterRuns', 'filterWorkflows', 'filtersActive', 'rlModel', 'rlSectHtml', 'rlJumpCardHtml', 'rlRunTagHtml', 'rlScheduledCardHtml', 'rlTopHtml',
   'rlRunCardHtml', 'rlJobCardHtml', 'rlJobsHtml', 'tickSince', 'withFocusPreserved', 'paintRunsList', 'rlRowOf', 'rlJump', 'rlClick', 'setRunsData'];
 
@@ -129,6 +129,9 @@ test('RULED 2026-10-15: in Running now and Needs you a run\'s name reads `job ·
   assert.match(text(m.f.rlJumpCardHtml(need, true)), /^change2 \u00B7 run-2 ?Resume$/);
   const live = row('change2', 2, { glyph: '▶', status: { sign: '▶', word: 'running' }, live: true, liveSince: '2026-10-14T11:58:00.000Z', priorWallMs: 0 });
   assert.match(text(m.f.rlJumpCardHtml(live, false)), /^change2 \u00B7 run-2 \u00B7 /);
+  assert.doesNotMatch(m.f.rlJumpCardHtml(need, true), /dot [a-z]+ pulse/, 'a Resume card rests');
+  assert.match(m.f.rlJumpCardHtml(row('c', 2, { needs: 'Accept', status: { sign: '✓', word: 'passed' }, glyph: '✓' }), true), /class="dot green pulse"/, 'waiting for your Accept blinks');
+  assert.match(m.f.rlJumpCardHtml(live, false), /class="dot amber pulse"/, 'running blinks');
   assert.match(m.f.rlRunCardHtml(need, false, false), /class="rl-rn">run-2<\/span>/, 'the Jobs list card still reads run-N alone');
 });
 

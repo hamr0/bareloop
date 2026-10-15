@@ -26,7 +26,7 @@ const RUN = {
 };
 
 function cards() {
-  const names = ['escapeXml', 'runLabel', 'glyphClass', 'panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText', 'rlShortDate', 'runAtText', 'rlRunParts', 'rlRunCardHtml'];
+  const names = ['escapeXml', 'runLabel', 'glyphClass', 'dotPulses', 'dotClass', 'panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText', 'rlShortDate', 'runAtText', 'rlRunParts', 'rlRunCardHtml'];
   // eslint-disable-next-line no-new-func
   return new Function(`${names.map(fnSrc).join('\n')}\nreturn rlRunCardHtml;`)();
 }
@@ -54,7 +54,7 @@ test('run names: the right-side header reads job (run-N) on every branch of rend
   const render = new Function('document', `
     var lastEndedSig = null; var lastJobToolsList = null;
     ${stubs}
-    ${['escapeXml', 'runLabel', 'runName', 'glyphClass', 'statusWordHtml', 'fmtLocalDateTime', 'setRunHeader', 'liveStepText', 'runHeaderBody', 'panelMoney', 'panelMoneyWithDraft', 'duration', 'liveSpendText', 'liveWallPhrase', 'realSteps', 'renderEnded', 'renderRun'].map(fnSrc).join('\n')}
+    ${['escapeXml', 'runLabel', 'runName', 'glyphClass', 'dotPulses', 'dotClass', 'statusWordHtml', 'fmtLocalDateTime', 'setRunHeader', 'liveStepText', 'runHeaderBody', 'panelMoney', 'panelMoneyWithDraft', 'duration', 'liveSpendText', 'liveWallPhrase', 'realSteps', 'renderEnded', 'renderRun'].map(fnSrc).join('\n')}
     return renderRun;
   `)(document);
   render({ ...RUN, steps: [], parts: [], ended: null, model: null, budgetUsd: 8 });

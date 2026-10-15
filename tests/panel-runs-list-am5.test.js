@@ -18,7 +18,7 @@ function fnSrc(name) {
   }
   return PAGE.slice(start, i + 1);
 }
-const NAMES = ['escapeXml', 'runLabel', 'glyphClass', 'panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText',
+const NAMES = ['escapeXml', 'runLabel', 'glyphClass', 'dotPulses', 'dotClass', 'panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText',
   'rlShortDate', 'runAtText', 'rlRunParts', 'runMatchesSearch', 'groupRunsByJob', 'filterRuns', 'filterWorkflows', 'filtersActive', 'rlModel', 'rlSectHtml', 'rlJumpCardHtml', 'rlRunTagHtml', 'rlScheduledCardHtml',
   'rlRunCardHtml', 'rlJobCardHtml', 'rlJobsHtml', 'filterBarHTML'];
 const lib = new Function(`var RL_CHIPS = [];\n${NAMES.map(fnSrc).join('\n')}\nreturn {${NAMES.join(',')}};`)();

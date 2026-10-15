@@ -1192,14 +1192,14 @@ test('item 1: every attemptGlyph call site passes a boxIsLive argument (map titl
 // finished [✓]/[✗] run, so scoping the animation to this one CSS selector
 // alone already excludes every non-live state.
 // ---------------------------------------------------------------------------
-test('src/panel/index.html: .dot.amber (the live [▶] glyph) pulses via a keyframe animation, disabled under prefers-reduced-motion', () => {
+test('src/panel/index.html: .dot.pulse (the live [▶] glyph and a run waiting for Accept; RULED 2026-10-15) pulses via a keyframe animation, disabled under prefers-reduced-motion', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const amberRuleMatch = html.match(/\.dot\.amber::before\{[^}]*\}/);
-  assert.ok(amberRuleMatch, 'expected a .dot.amber::before rule');
-  assert.match(amberRuleMatch[0], /animation\s*:/, '.dot.amber::before must declare a pulsing animation');
+  const amberRuleMatch = html.match(/\.dot\.pulse::before\{[^}]*\}/);
+  assert.ok(amberRuleMatch, 'expected a .dot.pulse::before rule');
+  assert.match(amberRuleMatch[0], /animation\s*:/, '.dot.pulse::before must declare a pulsing animation');
   assert.match(html, /@keyframes\s+pulse-glyph\s*\{[^}]*0%[^}]*100%[^}]*opacity\s*:\s*1[\s\S]*?50%[^}]*opacity\s*:\s*0\.3/, 'expected a pulse-glyph keyframe going 1 -> 0.3 -> 1, matching the map dot\'s own rhythm');
-  const reducedMotionBlock = html.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([^}]*\.dot\.amber::before\s*\{[^}]*\})/);
-  assert.ok(reducedMotionBlock, 'expected prefers-reduced-motion: reduce to turn the .dot.amber pulse off');
+  const reducedMotionBlock = html.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([^}]*\.dot\.pulse::before\s*\{[^}]*\})/);
+  assert.ok(reducedMotionBlock, 'expected prefers-reduced-motion: reduce to turn the .dot.pulse pulse off');
   assert.match(reducedMotionBlock[1], /animation\s*:\s*none/);
   // never for a died [?] (magenta) or finished [✓]/[✗] (green/red) dot.
   ['green', 'red', 'magenta', 'grey'].forEach((cls) => {

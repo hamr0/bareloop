@@ -1592,5 +1592,7 @@ Matches fwdloop DRAFT M11 am11 items 3-5 (bareloop keeps the Accept tag; no Reop
 2. In Running now, Needs you and Scheduled only, a run's name reads `change2 · run-2` (job, middle dot, run-N); the Jobs list, Run tab title, Resume/Reuse text and search are unchanged.
 
 3. Stopped [■] is grey: you stopped it, it did not fail (matches fwdloop; supersedes 2026-10-08 red).
+4. Blink = running or waiting for your Accept; steady = resting (matches fwdloop glyphPulses; relayed from hamr via fwd 2026-10-15). The `schedule` head [·] is steady.
+
 
 fwdloop asked to match (2026-10-15).
