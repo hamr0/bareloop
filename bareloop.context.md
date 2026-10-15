@@ -3645,7 +3645,7 @@ key you want first (the panel picks the row by the Model menu).
   makes the card-compare decision above, so a hand-made POST cannot reuse a plan that did not earn its green. The old
   `POST /api/author/start-from-check` and the "Changed — new job" mode are gone. `GET /api/author/reuse-jobs[?model=<Name>]` →
   `{ok, jobs:[{job, runid, checkType:'deterministic'|'rubric', line}]}` is the Chat card's Reuse workflow picker list: one entry per
-  job (same `workflowKey`) with at least one real `green` local run (`already-green` is not a reuse source), `runid` = its newest green run (hand it to `start-from`), `line` =
+  job (same `workflowKey`) with at least one `green` or `already-green` local run (RULED 2026-10-15: an already-green run is a reuse source), `runid` = its newest such run (hand it to `start-from`), `line` =
   start-from's own estimate line, newest green first; imported jobs are not listed. **Identity, two keys:** the
   signature hash `jobSpecHash` is unchanged (it covers the caps and the write fence — what the person signs);
   `workflowKey(spec)` (`src/job.js`, not exported from the package root) is a sha256 over the signed spec WITHOUT
