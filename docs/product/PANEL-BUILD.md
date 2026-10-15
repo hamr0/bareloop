@@ -1685,3 +1685,16 @@ Note 2026-10-15 (hamr "yes to all", PRD v1.102 item 7): line 2 variants. `last 1
 Addendum 2026-10-15: Remove from Needs you (PRD v1.103; matches fwdloop DRAFT M11 am11 items 3-5). `needsStateFor` (`src/panel/server.js`) is the one rule for a run's Needs-you tag: `Accept` (a live door) is never removable; a `Resume` tag leaves after the person's removal that is at or after the stop it is for, or after 7 days. The click is `POST /api/runs/<id>/needs-remove` (`src/panel/runroutes.js`), which appends one `needs-removed` row through `appendNeedsRemoved` (`src/runlist.js`); `readRunList` skips it like any typed row, so the monthly limit, the run counter and the scheduler are unchanged (`tests/panel-needs-remove.test.js` proves the monthly figures byte-equal with and without the row). The Run detail carries `canRemoveFromNeeds` and `needsAudit`, worded on the server.
 
 Note 2026-10-15 (PRD v1.102 items 8-9): a `monthly-exhausted` last fire is red and ends `next: raise the limit in Settings` only in the calendar month it happened (`sameMonthAs`); busy reads `busy: a run of this job was still working`; before the first fire line 2 starts `no run yet`; a schedule not armed yet ends `next: not armed yet` in normal colour.
+
+Addendum 2026-10-15: Audit schedule section and run names in the small lists (PRD v1.104). `scheduleSection` on the Run detail (`scheduleExtrasFor`, `src/panel/server.js`): `{title, sign, head, rows:[{label,text}]}`, worded by `src/schedulewords.js` (`sectionThisRunWords`, `triesTailWords`, `scheduleSignFor`, `skippedWords`). Scope of `tries`: every busy / month-used-up / refused row in the job's own ledger (all signings), newest first, 7 shown, all counted in the head. Folded:
+```
+▸ schedule  [·] new file in ~/bareloop-inbox · from run-1 · 2 tries started nothing
+```
+Unfolded, a run the schedule started:
+```
+▾ schedule  [·] new file in ~/bareloop-inbox · from run-1
+    this run    10/15 20:43  started by the schedule · new file litectx.md
+    tries       10/15 20:57  refused: bareguard.md carries a known secret shape (sk- prefixed API key). Nothing started.
+                10/15 20:43  busy: a run of this job was still working. Nothing started.
+```
+A hand run: `this run    10/15 13:20  by hand.` (origin run: `by hand. The schedule was set from this run.`). No schedule now: no section (a run a cancelled schedule started keeps `detail.startedAudit`). Small lists: `change2 · run-2`; `/api/runs` `scheduled[]` and `gaveUp[]` carry `runNo`.
