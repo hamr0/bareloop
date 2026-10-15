@@ -118,9 +118,10 @@ export function createScheduler(opts) {
           for (const r of refused) door.tellOnce(job, sig, `refused|${r.path}|${r.why}`, `${r.path}: ${r.why}`);
           // THE writer of `arrived`: the arrival time is this clock, never the file's mtime
           for (const f of arrived) recordArrived(ledger, f, nowMs, sig);
-          runQueue(job, ledger, sig, nowMs, isBusy, pending);
+          // RULED 2026-10-15: a schedule that gave up is paused (read from the ledger): files still queue as `arrived`, none runs
+          if (!door.paused(job)) runQueue(job, ledger, sig, nowMs, isBusy, pending);
         } else if (isClockTrigger(trigger)) {
-          if (inflight.has(job)) continue;
+          if (inflight.has(job) || door.paused(job)) continue;
           const d = due(trigger, readLedger(ledger).rows, nowMs);
           if (d.fire) {
             pending.push(startFire(job, { kind: 'clock', slot: /** @type {number} */ (d.slot), catchUp: d.catchUp, missed: d.missed },

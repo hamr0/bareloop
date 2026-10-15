@@ -51,6 +51,8 @@ export const SCHEDULE_WORDS = Object.freeze({
     'file-updated': 'When <file> is updated',
     'new-file': 'When a new file arrives in <folder>',
   }),
+  // RULED 2026-10-15: the Needs-you pill of a schedule that gave up (hamr may reword)
+  gaveUpPill: 'Check',
   notGreen: 'This job has not had a good run yet. Run it by hand and get it right first; then you can set when it runs. A rubric job also needs your Accept once. Nothing was changed.',
   stale: 'What you were shown is not what is on the card now. Nothing was signed. Look again, then sign.',
 });
@@ -111,15 +113,16 @@ export function editClearsWords(t, home) {
  *  3. a clock kind with a next slot; 4. a file kind that is armed; 5. not armed yet.
  * A last outcome of `refused` goes in front of 3-5, so a trigger that cannot start is never silent.
  * `red` is the typed flag for "the person must act": the page paints it and never guesses from the text.
- * @param {{trigger: Trigger, armed: boolean, nextSlotMs: number|null, lastOutcome: any, waitingRunNo: number|null, now: number, retryInMs?: number|null}} f
+ * @param {{trigger: Trigger, armed: boolean, nextSlotMs: number|null, lastOutcome: any, waitingRunNo: number|null, now: number, retryInMs?: number|null, gaveUp?: any}} f
  *   `lastOutcome` = the newest outcome row of the CURRENT signing (`kind`, `at` in ms, `why`, `leftUsd`, `needUsd`, `atLeast`)
  * @returns {{text: string, red: boolean}}
  */
 export function scheduledNextFor(f) {
-  const { trigger, armed, nextSlotMs, lastOutcome, waitingRunNo, now, retryInMs = null } = f;
+  const { trigger, armed, nextSlotMs, lastOutcome, waitingRunNo, now, retryInMs = null, gaveUp = null } = f;
   /** @param {string} text @param {boolean} [red] */
   const say = (text, red = false) => ({ text, red });
   if (waitingRunNo !== null) return say(`Run ${waitingRunNo} is waiting for your Accept. The next scheduled run does not wait for it.`);
+  if (gaveUp && typeof gaveUp === 'object') return say(gaveUpNextWords(gaveUp.why), true);
   const last = lastOutcome && typeof lastOutcome === 'object' ? lastOutcome : null;
   const sameMonth = last !== null && typeof last.at === 'number' && Number.isFinite(last.at)
     && new Date(last.at).getFullYear() === new Date(now).getFullYear() && new Date(last.at).getMonth() === new Date(now).getMonth();
@@ -134,6 +137,18 @@ export function scheduledNextFor(f) {
   if (trigger.kind === 'new-file') return say(`${lead}Watching for it. A run starts for each new file.`, red);
   if (nextSlotMs === null) return say(`${lead}Not armed yet: the panel arms it on its next check.`, red);
   return say(`${lead}Next run ${slotWords(nextSlotMs)}.`, red);
+}
+
+/** RULED 2026-10-15: the red NEXT of a schedule that gave up. @param {unknown} why the refusal's own words */
+export function gaveUpNextWords(why) {
+  const w = typeof why === 'string' ? why.trim().replace(/\.$/, '') : '';
+  return `Stopped trying after 60 minutes: ${w}. Fix it, then Cancel / modify schedule to start again.`;
+}
+
+/** The give-up date on the Needs-you card, local `MM/DD HH:MM`. @param {number} ms */
+export function gaveUpDateWords(ms) {
+  const d = new Date(ms);
+  return `${two(d.getMonth() + 1)}/${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`;
 }
 
 /** RULED 2026-10-15: after an install-needed refusal, the wait that is left, in whole minutes rounded up; '' when no wait. @param {number|null|undefined} ms */

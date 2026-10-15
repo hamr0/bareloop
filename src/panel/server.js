@@ -956,7 +956,9 @@ export function runsListPayload(opts = {}) {
   const jobs = summarizeJobs(runs, nowMs);
   // T Part 7: the Scheduled section, `[{job, at, in, words, runId}]`; runId = the job's HEAD run by time (summarizeJobs), never the first in server order
   const scheduled = opts.schedules ? opts.schedules.listScheduled(new Map(jobs.map((j) => [j.job, j.headRunid]))) : [];
-  return { runs, jobs, scheduled, limits: RUNS_LIST_LIMITS };
+  // RULED 2026-10-15: schedules that gave up wait in Needs you; the server builds the cards (job, pill, words, date, the head run to open)
+  const gaveUp = opts.schedules ? opts.schedules.listGaveUp(new Map(jobs.map((j) => [j.job, j.headRunid]))) : [];
+  return { runs, jobs, scheduled, gaveUp, limits: RUNS_LIST_LIMITS };
 }
 
 /**

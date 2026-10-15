@@ -26,7 +26,7 @@ import { armTrigger, nextSlot, recordFire } from '../triggerclock.js';
 import { appendRow, readLedger, withoutReleased } from '../triggerledger.js';
 import { checkTarget, createFileTrigger, queueOf, readSeen, recordDropped, recordRan } from '../triggerfiles.js';
 import {
-  SCHEDULE_WORDS, editClearsWords, lateRefusalWords, nextInWords, nextTimeWords, scheduledNextFor, scheduledWords,
+  SCHEDULE_WORDS, editClearsWords, gaveUpDateWords, lateRefusalWords, nextInWords, nextTimeWords, scheduledNextFor, scheduledWords,
 } from '../schedulewords.js';
 import { buildReuseSpec, startDestinationProblem, validateReuseCard } from './authorsession.js';
 
@@ -40,7 +40,11 @@ export const PID_REUSE_SLACK_MS = 5000;
 const CLK_TCK = 100;
 const SLUG_RE = /^[a-z][a-z0-9-]*$/;
 /** the outcome rows a card's "last outcome" may be (clock and file alike) */
-const OUTCOME_KINDS = ['started', 'busy', 'monthly-exhausted', 'refused', 'deleted', 'changed'];
+const OUTCOME_KINDS = ['started', 'busy', 'monthly-exhausted', 'refused', 'deleted', 'changed', 'gave-up'];
+/** RULED 2026-10-15: waits (ms) between consecutive `install-needed` refusals of a job: Fibonacci 1, 2, 3, 5, 8, 13, 21 minutes. A test injects its own via `deps.installRetrySteps`. */
+export const INSTALL_RETRY_STEPS_MS = Object.freeze([1, 2, 3, 5, 8, 13, 21].map((m) => m * 60_000));
+/** RULED 2026-10-15: the total wait a slot or file gets. A wait that would pass it is not taken: the schedule gives up and pauses (the job waits in Needs you). */
+export const INSTALL_GIVE_UP_MS = 60 * 60_000;
 
 /**
  * When a process started, in epoch ms, from `/proc/<pid>/stat` field 22 (clock ticks since boot) and `/proc/stat` btime
@@ -92,8 +96,9 @@ export function runnerAlive(row, nowMs) {
  *   jobOfRun: (runid: string) => string|null,
  *   rowsFor: () => readonly import('../providerrows.js').KeyRow[],
  *   runRows?: () => any[],
+ *   installRetrySteps?: readonly number[], installGiveUpMs?: number,
  *   userHome?: string,
- * }} deps `userHome` = the folder shown as `~` in words (default the OS home). `runRows` = a test seam for the one run-list read the busy check does. `jobRuns(job)` = the job's listed runs, newest first, each with its signed spec when on disk and its terminal
+ * }} deps `userHome` = the folder shown as `~` in words (default the OS home). `installRetrySteps` (ms) and `installGiveUpMs` = the install-needed back-off (tests inject them). `runRows` = a test seam for the one run-list read the busy check does. `jobRuns(job)` = the job's listed runs, newest first, each with its signed spec when on disk and its terminal
  *   outcome off the spine; `startFrom(runid)` = the panel's `getStartFrom`; `jobOfRun` = the listed run's job name.
  */
 export function createScheduleDoor(deps) {
@@ -103,7 +108,9 @@ export function createScheduleDoor(deps) {
   let starter = null;
   /** job -> ms the headless start began: closes the gap between the spawn and the row run-u appends (T19) @type {Map<string, number>} */
   const starting = new Map();
-  /** job -> {key, until, why}: an `install-needed` refusal; the job's fire waits until `until` (RULED 2026-10-15). In memory: a restart tries at once. @type {Map<string, {key: string, until: number, why: string}>} */
+  const installSteps = deps.installRetrySteps ?? INSTALL_RETRY_STEPS_MS;
+  const giveUpMs = deps.installGiveUpMs ?? INSTALL_GIVE_UP_MS;
+  /** job -> {key, count, firstAt, until, why}: consecutive `install-needed` refusals; the job's fire waits until `until` (RULED 2026-10-15, Fibonacci waits). In memory: a restart begins at the first wait again. @type {Map<string, {key: string, count: number, firstAt: number, until: number, why: string}>} */
   const installWait = new Map();
   const triggersRoot = join(runlistHome(deps.home), 'triggers');
   /** @param {string} job */
@@ -304,7 +311,7 @@ export function createScheduleDoor(deps) {
    */
   function stateOf(job) {
     const schedule = readSchedule(job);
-    if (!schedule) return { schedule: null, trigger: null, armed: false, armedAt: null, nextSlotMs: null, lastOutcome: null, retryInMs: null };
+    if (!schedule) return { schedule: null, trigger: null, armed: false, armedAt: null, nextSlotMs: null, lastOutcome: null, retryInMs: null, gaveUp: null };
     const rows = withoutReleased(readLedger(ledgerOf(job)).rows).filter((r) => r.sig === schedule.specHash);
     const armed = rows.find((r) => r.kind === 'armed');
     const outcomes = rows.filter((r) => OUTCOME_KINDS.includes(r.kind));
@@ -313,7 +320,26 @@ export function createScheduleDoor(deps) {
       nextSlotMs: isClockTrigger(schedule.trigger) && armed ? nextSlot(/** @type {any} */ (schedule.trigger), now()) : null,
       lastOutcome: outcomes.length > 0 ? outcomes[outcomes.length - 1] : null,
       retryInMs: (() => { const w = installWait.get(job); return w && w.until > now() ? w.until - now() : null; })(),
+      gaveUp: pausedRow(rows),
     };
+  }
+
+  /**
+   * RULED 2026-10-15: the `gave-up` row that pauses a schedule, or null. Read from the ledger (a restart does not resume trying): the
+   * newest of the `gave-up` / `resumed` rows of the CURRENT signing is a `gave-up`. A re-sign writes `resumed` (so an identical re-sign unpauses too).
+   * @param {import('../triggerledger.js').LedgerRow[]} rows the live rows of the current signing
+   */
+  function pausedRow(rows) {
+    const marks = rows.filter((r) => r.kind === 'gave-up' || r.kind === 'resumed');
+    const last = marks.length > 0 ? marks[marks.length - 1] : null;
+    return last !== null && last.kind === 'gave-up' ? last : null;
+  }
+
+  /** Is this job's schedule paused (it gave up)? @param {string} job */
+  function paused(job) {
+    const schedule = readSchedule(job);
+    if (!schedule) return false;
+    return pausedRow(withoutReleased(readLedger(ledgerOf(job)).rows).filter((r) => r.sig === schedule.specHash)) !== null;
   }
 
   /** @type {Map<string, {key: string, green: ReturnType<typeof greenFor>}>} */
@@ -340,6 +366,7 @@ export function createScheduleDoor(deps) {
     attachStarter(s) { starter = s; },
 
     busy,
+    paused,
 
     /**
      * One fire, in this order (T15): busy, then monthly, then wouldAccept, then the starter (which calls `beforeSpawn`, the
@@ -366,6 +393,7 @@ export function createScheduleDoor(deps) {
         if (!seen) appendRow(ledger, { kind: outcome, sig, at: now(), told: tag, key, ...base, why, ...extra });
         return { outcome, why, told: !seen };
       };
+      if (paused(job)) return { outcome: 'refused', why: 'This schedule gave up and is waiting for you. Nothing started.', told: false };
       if (hooks.busy ?? busy(job)) return told('busy', 'A run of this job is still going. This one starts when it is done.');
       try {
         const room = checkMonthlyRoom({ capUsd: schedule.spec.budgetUsd, home: deps.home, sessionsRoot: deps.sessionsRoot });
@@ -397,7 +425,16 @@ export function createScheduleDoor(deps) {
         return { outcome: 'started', told: true, sessionId: r.sessionId };
       }
       starting.delete(job);
-      if (typeof r.retryAfterMs === 'number') installWait.set(job, { key, until: now() + r.retryAfterMs, why: r.why });
+      /** @type {string|null} set when this refusal is the one that gives up */
+      let gaveUpWhy = null;
+      if (r.installNeeded === true) {
+        const prev = installWait.get(job);
+        const count = (prev?.count ?? 0) + 1;
+        const firstAt = prev?.firstAt ?? now();
+        const step = installSteps[count - 1];
+        if (step === undefined || now() + step - firstAt > giveUpMs) { installWait.delete(job); gaveUpWhy = r.why; }
+        else installWait.set(job, { key, count, firstAt, until: now() + step, why: r.why });
+      }
       if (r.consumed) {
         // a spawn error AFTER the consuming row: release it so the slot or file is retryable, a bounded number of times
         const releases = readLedger(ledger).rows.filter((x) => x.kind === 'released' && x.of === consumeId).length;
@@ -407,7 +444,10 @@ export function createScheduleDoor(deps) {
         }
         return told('refused', lateRefusalWords(r.why, releases, MAX_RELEASES));
       }
-      return told('refused', r.why);
+      const out = told('refused', r.why);
+      // ONE `gave-up` row, written after the refusal row so it is the newest outcome; the paused ledger state is what stops every later fire
+      if (gaveUpWhy !== null) appendRow(ledger, { kind: 'gave-up', sig, at: now(), key, ...base, why: gaveUpWhy });
+      return out;
     },
 
     greenFor,
@@ -453,6 +493,9 @@ export function createScheduleDoor(deps) {
         inputsText: s.inputsText, ...(s.destination === null ? {} : { destination: s.destination }), signedBy: userInfo().username, signedAt: new Date(now()).toISOString(),
       };
       writeSchedule(s.job, schedule);
+      // a re-sign of a schedule that gave up unpauses it (the same signature included) and starts the install waits over
+      if (paused(s.job)) appendRow(ledgerOf(s.job), { kind: 'resumed', sig: s.hash, at: now() });
+      installWait.delete(s.job);
       let armed = true; let say = null;
       try { armFor(s.job, schedule, { baseline: !keep }); } catch (e) { armed = false; say = `The schedule is signed but not armed yet: ${/** @type {Error} */ (e).message}.`; }
       return { status: 200, body: { ok: true, job: s.job, words: s.words, hash: s.hash, armed, ...(say ? { say } : {}) } };
@@ -524,7 +567,7 @@ export function createScheduleDoor(deps) {
         return { scheduled: false, canSchedule: g.ok, words: SCHEDULE_WORDS, ...(g.ok ? { fromRunid: g.run.runid } : {}) };
       }
       const next = scheduledNextFor({
-        trigger: st.schedule.trigger, armed: st.armed, nextSlotMs: st.nextSlotMs, lastOutcome: st.lastOutcome, waitingRunNo: o.waitingRunNo ?? null, now: now(), retryInMs: st.retryInMs,
+        trigger: st.schedule.trigger, armed: st.armed, nextSlotMs: st.nextSlotMs, lastOutcome: st.lastOutcome, waitingRunNo: o.waitingRunNo ?? null, now: now(), retryInMs: st.retryInMs, gaveUp: st.gaveUp,
       });
       return {
         scheduled: true, canSchedule: false, words: SCHEDULE_WORDS, fromRunid: st.schedule.originRunid,
@@ -554,6 +597,26 @@ export function createScheduleDoor(deps) {
     editNoteFor(job) {
       const t = SLUG_RE.test(job) ? readSchedule(job)?.trigger : null;
       return t ? editClearsWords(t, userHome) : null;
+    },
+
+    /**
+     * RULED 2026-10-15: the jobs whose schedule gave up, for the runs list's Needs you section (the SERVER decides; the page works out nothing):
+     * `[{job, pill: 'Check', words, at: 'MM/DD HH:MM', runId}]`, newest give-up first. `runId` = the job's HEAD run by time. Never ages out.
+     * @param {Map<string, string|null>|Record<string, string|null>} heads
+     */
+    listGaveUp(heads) {
+      const headOf = (/** @type {string} */ job) => (heads instanceof Map ? heads.get(job) : heads[job]) ?? null;
+      const out = [];
+      for (const { job } of this.scan()) {
+        try {
+          const g = stateOf(job).gaveUp;
+          if (!g) continue;
+          const at = typeof g.at === 'number' ? g.at : now();
+          out.push({ job, pill: SCHEDULE_WORDS.gaveUpPill, words: String(g.why ?? ''), at: gaveUpDateWords(at), runId: headOf(job), _ms: at });
+        } catch { /* unreadable: absent */ }
+      }
+      out.sort((x, y) => y._ms - x._ms || (x.job < y.job ? -1 : 1));
+      return out.map(({ _ms, ...rest }) => rest);
     },
 
     /**

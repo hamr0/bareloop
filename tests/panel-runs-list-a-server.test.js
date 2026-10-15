@@ -146,7 +146,7 @@ test('GET /api/runs carries runs, jobs and limits over real HTTP', async (t) => 
   const { close, port } = await createPanelServer({ port: 0, home });
   t.after(() => close());
   const body = await (await fetch(`http://127.0.0.1:${port}/api/runs`)).json();
-  assert.deepEqual(Object.keys(body).sort(), ['jobs', 'limits', 'runs', 'scheduled']);
+  assert.deepEqual(Object.keys(body).sort(), ['gaveUp', 'jobs', 'limits', 'runs', 'scheduled']);
   assert.deepEqual(body.scheduled, [], 'no schedule on disk = an empty Scheduled list');
   assert.equal(body.runs.length, 2);
   assert.deepEqual(body.limits, { ...RUNS_LIST_LIMITS });

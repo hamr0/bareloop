@@ -1495,6 +1495,7 @@
       running: data.runs.filter(function(r){ return r.live === true; }),
       needs: data.runs.filter(function(r){ return typeof r.needs === "string" && r.needs !== ""; }),
       scheduled: data.scheduled || [],
+      gaveUp: data.gaveUp || [],
       jobs: cards.filter(function(c){ return !c.quiet; }),
       quiet: quietCards,
       quietOpen: Object.prototype.hasOwnProperty.call(open, "__quiet") ? open.__quiet : quietCards.some(function(c){ return c.selected; }),
@@ -1523,6 +1524,13 @@
       (need ? '<span class="rl-pill rl-pill-need">' + escapeXml(r.needs) + '</span>' : ' <span class="rl-rest">&middot; ' + faint + ' &middot; ' + escapeXml(rowSpendText(r, true)) + '</span>') + '</span>' +
       '<span class="rl-l2">' + l2 + '</span></button>';
   }
+  // A schedule that gave up (RULED 2026-10-15): all words from the server (`pill`, `words`, `at`); a click opens the job's newest run, like the other cards.
+  function rlGaveUpCardHtml(g){
+    var body = '<span class="rl-l1"><span class="dot grey"></span><span class="rl-nm" title="' + escapeXml(g.job) + '">' + escapeXml(g.job) + '</span> <span class="rl-pill rl-pill-need">' + escapeXml(g.pill) + '</span></span>' +
+      '<span class="rl-l2">' + escapeXml(g.words) + ' &middot; ' + escapeXml(g.at) + '</span>';
+    if(typeof g.runId !== "string" || g.runId === "") return '<div class="rl-card rl-need" data-testid="rl-gaveup-' + escapeXml(g.job) + '">' + body + '</div>';
+    return '<button class="rl-card rl-need" type="button" data-rl-jump="' + escapeXml(g.runId) + '" data-testid="rl-gaveup-' + escapeXml(g.job) + '">' + body + '</button>';
+  }
   // Scheduled card (T Part 7): `[·] job  today 15:00` / `next in 3h · Every day at 15:00`, all from the server. A file trigger has no clock time:
   // `at` / `in` are null and nothing is made up. A click does what Running now does (rlJump to the job's HEAD run, `runId` from the server and
   // scrolls to its job). A job with no run to open stays a plain box. Never filtered or searched.
@@ -1537,7 +1545,7 @@
   function rlTopHtml(m){
     var sections = [
       { label: "Running now", items: m.running, draw: function(r){ return rlJumpCardHtml(r, false); } },
-      { label: "Needs you", items: m.needs, draw: function(r){ return rlJumpCardHtml(r, true); } },
+      { label: "Needs you", items: m.needs.concat(m.gaveUp || []), draw: function(r){ return r.pill ? rlGaveUpCardHtml(r) : rlJumpCardHtml(r, true); } },
       { label: "Scheduled", items: m.scheduled, draw: rlScheduledCardHtml },
     ];
     return sections.map(function(s){
