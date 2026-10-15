@@ -473,7 +473,7 @@ function makePage({ currentRunid = 'run1' } = {}) {
     var lastEndedSig = null;
     var stopAsked = {};
     function reuseWorkflow() {}
-    ${fnSrc('summaryRows')}
+    ${fnSrc('summaryRow')}
     ${fnSrc('renderEnded')}
     ${fnSrc('renderRunActions')}
     ${fnSrc('afterResumeRefresh')}
