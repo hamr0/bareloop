@@ -1395,7 +1395,7 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 
 ### Panel: Reuse workflow replaces "Start from this" (v1.88 — 2026-10-03)
 
-- Reuse workflow is the same signed job on a new source: green runs and imported jobs only, five open boxes (Source, Destination, Model, $ cap, Time cap — Model opened 2026-10-04), the rest locked and refused by the server, never drafted.
+- Reuse workflow is the same signed job on a new source: green runs and imported jobs only, five open boxes (Source, Destination, Model, $ cap, Time cap — Model opened 2026-10-04), the rest locked and refused by the server, never drafted. (SUPERSEDED 2026-10-15 by v1.101.)
 - Same-job identity is `workflowKey` (the signed spec without source, fence, caps and the worker's provider/baseUrl/model); the signature hash is unchanged (it still covers all of them) and the person signs the new one.
 - Detail: `docs/product/PANEL-BUILD.md` addendum 2026-10-03 and the 2026-10-04 Model ruling.
 
@@ -1540,9 +1540,22 @@ T20. **Tickets, e.g. GitHub issues (NEW, not in fwdloop; its own later piece; OP
 Replaces T5 ("Edit clears it"). Same model as fwdloop M6 am5 (signed 2026-10-15). hamr's word: "go A".
 
 1. Editing a job NEVER clears its schedule. The old workflow's runs and schedule are untouched; old `edited` ledger rows still read, new ones are never written.
-2. Edit in chat opens the Job name box as `<origin-name>-N`, N the next free number from 2 (free = no run-list job of that name and not taken in the jobs dir). The box stays editable. An origin that already ends in `-<digits>` still gets the suffix appended (`x-2` becomes `x-2-2`); the base is never guessed.
-3. At sign, if the signed spec's workflow key (with the job name set back to the origin's) equals the origin's, the run signs under the ORIGIN name, a new run of the same workflow. If the keys differ it signs under the card's name, a new workflow. A card name already used by another panel job, or the origin's own name on a different workflow, is refused at $0 in plain words ("A job named "x" already exists and is a different job. Pick another name.").
+2. Edit in chat opens the Job name box as `<origin-name>-N`, N the next free number from 2 (free = no run-list job of that name and not taken in the jobs dir). The box stays editable. An origin that already ends in `-<digits>` still gets the suffix appended (`x-2` becomes `x-2-2`); the base is never guessed. (SUPERSEDED 2026-10-15 by v1.101.)
+3. At sign, if the signed spec's workflow key (with the job name set back to the origin's) equals the origin's, the run signs under the ORIGIN name, a new run of the same workflow. If the keys differ it signs under the card's name, a new workflow. A card name already used by another panel job, or the origin's own name on a different workflow, is refused at $0 in plain words ("A job named "x" already exists and is a different job. Pick another name."). (SUPERSEDED 2026-10-15 by v1.101.)
 4. A new workflow is not schedulable until its own first green: the T3 gate (`greenFor`) is per job name, so nothing is built for it.
-5. Reuse workflow (green runs) is unchanged and the two doors are not merged.
+5. Reuse workflow (green runs) is unchanged and the two doors are not merged. (SUPERSEDED 2026-10-15 by v1.101.)
 
-Two doors stay: Reuse on green ($0, no drafting, proven plan), Edit on non-green (drafts again).
+Two doors stay: Reuse on green ($0, no drafting, proven plan), Edit on non-green (drafts again). (SUPERSEDED 2026-10-15 by v1.101.)
+
+### One door: Reuse workflow on every run (v1.101 — 2026-10-15) — RULED
+
+Replaces v1.88's "five open boxes, the rest locked and refused by the server" and v1.100's Edit-in-chat door and key-compare fold. hamr's word: "go". Same model as fwdloop M6 am5; fwdloop told 2026-10-15 to align.
+
+1. ONE button on every run's Run tab action row, **Reuse workflow**. It replaces both the green-only Reuse workflow and Edit in chat. Edit in chat is removed from the page, the server and every code-owned word.
+2. It opens the Chat card with EVERY box open and prefilled from that run (job lines, `~` rules, check type, judge examples, thinking, inputs, destination, model, $ cap, time cap). Nothing is locked; the server no longer refuses a changed job box.
+3. The path is decided by comparing the CARD's job boxes with the origin run's, never the drafted spec. Job boxes = job text (numbered lines, `~` rules, `~ PASS`/`~ FAIL`), check type, thinking. Run boxes = inputs, destination, model, $ cap, time cap (they never decide it).
+4. Green origin and no job box changed: today's Reuse exactly (signed plan verbatim, no drafting, $0 before the run), signed under the ORIGIN name, a new run of the same workflow.
+5. Any job box changed (green or red origin): drafting runs, a NEW workflow named by the Job name box. Red origin and no job box changed: drafting runs (an unproven plan is never reused), signed under the ORIGIN name (another try of the same job).
+6. The Job name box shows the origin name while no job box is changed; the moment one changes it switches to the next free `<base>-N` (renamable); changing back restores the origin name. Base: when the origin ends in `-<digits>` and the part before is itself a job (run list or jobs/), that part (`x-2` suggests `x-3`, never `x-2-2`); else the origin. A name owned by a different job, or the origin's own name on a changed job, is refused at $0 in plain words. A name typed while nothing is changed is ignored: the origin name is forced.
+7. The cost shows before the click: the one main button reads **Sign & run** while the Reuse path applies and **Start drafting** otherwise, flipping live as the person types. The origin line says where the card came from ("Reuse: <job> (run-N)").
+8. A new workflow still has no schedule until its own first green (`greenFor`); a schedule is never cleared by any of this. An imported job counts as a green origin (Import stays read-only, its one action is Reuse workflow). The schedule card alone keeps its job boxes locked.
