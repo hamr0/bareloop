@@ -126,9 +126,9 @@ test('item 5 (words replaced by am7 item 4): no search: `k more older runs, <old
   assert.match(text(lib.rlJobsHtml(model(undated, { open: { g: true } }))), /4 more older runs\. Search to find one\./, 'a hidden run with no date drops the range');
 });
 
-test('item 5 (words replaced by am7 item 4): while searching: `k more match. Add a date or run number to narrow it.`; nothing hidden, no line', () => {
+test('item 5 (words replaced by am9): while searching the hint counts the rest (dates per am9); nothing hidden, no line', () => {
   const html = text(lib.rlJobsHtml(model(runsOf('f', 30), { filters: S('f') })));
-  assert.match(html, /22 more match\. Add a date or run number to narrow it\./, '29 older matches, 7 shown');
+  assert.match(html, /22 more matches on 10\/12\. Add a run number to narrow it\./, '29 older matches, 7 shown');
   assert.doesNotMatch(html, /search above|older ·/);
   assert.doesNotMatch(text(lib.rlJobsHtml(model(runsOf('f', 3), { filters: S('f') }))), /more match/);
 });
@@ -196,10 +196,9 @@ test('am7 item 4: all hidden runs on one day read `k more runs on MM/DD`, never 
   assert.match(text(lib.rlJobsHtml(model(runsOf('h', 9, () => ({ at: null })), { open: { h: true } }))), /1 more older run\. Search to find one\./);
 });
 
-test('am7 item 4: while searching `k more match. Add a date or run number to narrow it.`; the search box reads `job, run-23, or date 10/13` (words per am8); no old word is left', () => {
+test('am7 item 4: the search box reads `job, run-23, or date 10/13` (words per am8); no old word is left (the searching words are am9\'s)', () => {
   const html = text(lib.rlJobsHtml(model(runsOf('f', 30), { filters: S('f') })));
-  assert.match(html, /22 more match\. Add a date or run number to narrow it\./);
-  assert.doesNotMatch(html, /more matches|add a day|search above\)|\(and /);
+  assert.doesNotMatch(html, /more match\.|add a day|search above\)|\(and /);
   assert.match(lib.filterBarHTML('runs'), /placeholder="job, run-23, or date 10\/13"/);
   assert.doesNotMatch(lib.filterBarHTML('runs'), /a day 10\/12|search: job name/);
 });
@@ -209,4 +208,36 @@ test('M11 am8: the Runs placeholder fits a 320 px phone: at most 32 characters',
   const ph = lib.filterBarHTML('runs').match(/placeholder="([^"]*)"/)[1];
   assert.equal(ph, 'job, run-23, or date 10/13');
   assert.ok(ph.length <= 32, `placeholder is ${ph.length} chars: "${ph}"`);
+});
+
+// M11 am9 (fwd M11 am9, signed by hamr 2026-10-15): the searching line shows the hidden matches' real start days.
+test('am9: searching, hidden matches over several days: `k more matches, MM/DD to MM/DD. Add a date or run number to narrow it.` (min to max of the HIDDEN ones only)', () => {
+  const rows = runsOf('f', 12, (n) => ({ at: local(2026, 9, n) })); // run-n on 09/n; 11 older, 7 shown (run-11..run-5), hidden run-4..run-1
+  const html = text(lib.rlJobsHtml(model(rows, { filters: S('f') })));
+  assert.match(html, /4 more matches, 09\/01 to 09\/04\. Add a date or run number to narrow it\./);
+  assert.doesNotMatch(html, /more match\./, 'the am7 undated line is gone');
+});
+
+test('am9: searching, the range is the MIN to the MAX of the hidden matches whatever their order', () => {
+  const days = { 1: 20, 2: 3, 3: 28, 4: 11 };
+  const rows = runsOf('f', 12, (n) => ({ at: local(2026, 9, days[n] || n) }));
+  assert.match(text(lib.rlJobsHtml(model(rows, { filters: S('f') }))), /4 more matches, 09\/03 to 09\/28\. Add a date or run number to narrow it\./);
+});
+
+test('am9: searching, all hidden matches on one day: `k more matches on MM/DD. Add a run number to narrow it.` never "10/09 to 10/09"', () => {
+  const html = text(lib.rlJobsHtml(model(runsOf('f', 58, (n) => ({ at: n <= 50 ? local(2026, 10, 9) : local(2026, 10, 12) })), { filters: S('f') })));
+  assert.match(html, /50 more matches on 10\/09\. Add a run number to narrow it\./);
+  assert.doesNotMatch(html, /10\/09 to 10\/09/);
+});
+
+test('am9: searching, a hidden match with no date drops the date part: `k more matches. Add a date or run number to narrow it.`', () => {
+  const rows = runsOf('f', 12, (n) => ({ at: n === 2 ? null : local(2026, 9, n) }));
+  const html = text(lib.rlJobsHtml(model(rows, { filters: S('f') })));
+  assert.match(html, /4 more matches\. Add a date or run number to narrow it\./);
+  assert.doesNotMatch(html, /more matches[,]? ?(on )?\d\d\//);
+});
+
+test('am9: the no-search hint is unchanged by am9 (am7 item 4 words)', () => {
+  const rows = runsOf('f', 12, (n) => ({ at: local(2026, 9, n) }));
+  assert.match(text(lib.rlJobsHtml(model(rows, { open: { f: true } }))), /4 more older runs, 09\/01 to 09\/04\. Search to find one\./);
 });

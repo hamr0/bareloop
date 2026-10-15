@@ -1576,7 +1576,7 @@
       if(c.older.open){
         out += c.older.shown.map(function(r){ return rlRunCardHtml(r, isSel(r), isHit(r)); }).join("");
         if(c.older.hidden > 0){
-          // M11 am7 item 4, the line after the 7: searching, `k more match. Add a date or run number to narrow it.`; else the hidden runs' real start days (the time the card
+          // M11 am7 item 4 + am9, the line after the 7: the hidden runs' (searching: matches') real start days (the time the card
           // shows, `at`), the MIN to the MAX over ALL of `left` whatever its order: `k more older runs, MM/DD to MM/DD. Search to find one.`, or one day
           // `k more runs on MM/DD. Search to find one.`. A hidden run with no date drops the date part; nothing is made up. "run" is singular for k = 1.
           var days = c.older.left.map(function(x){
@@ -1587,9 +1587,14 @@
           var dated = days.length > 0 && days.indexOf(null) === -1;
           var lo = dated ? new Date(Math.min.apply(null, days)) : null, hi = dated ? new Date(Math.max.apply(null, days)) : null;
           var k = c.older.hidden, runWord = k === 1 ? "run" : "runs";
-          out += '<div class="rl-hint">' + (c.older.active ? k + ' more match. Add a date or run number to narrow it.' :
+          var one = dated && md(lo) === md(hi);
+          // am9 (fwd verbatim, `matches` for every k): searching, the same days as the no-search line
+          out += '<div class="rl-hint">' + (c.older.active ?
+            (!dated ? k + ' more matches. Add a date or run number to narrow it.' :
+              one ? k + ' more matches on ' + md(lo) + '. Add a run number to narrow it.' :
+              k + ' more matches, ' + md(lo) + ' to ' + md(hi) + '. Add a date or run number to narrow it.') :
             !dated ? k + ' more older ' + runWord + '. Search to find one.' :
-            md(lo) === md(hi) ? k + ' more ' + runWord + ' on ' + md(lo) + '. Search to find one.' :
+            one ? k + ' more ' + runWord + ' on ' + md(lo) + '. Search to find one.' :
             k + ' more older runs, ' + md(lo) + ' to ' + md(hi) + '. Search to find one.') + '</div>';
         }
       }

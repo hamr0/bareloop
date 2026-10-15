@@ -1450,6 +1450,12 @@ Source: fwdloop `m11-am5` (59ffc7e signed text, c35aa40 red-first tests, 2a3fb04
 
 **Must fail when:** the search-box words are cut off at 320 px; the placeholder is longer than 32 characters or reads other than the words above.
 
+**am9 (from fwd M11 am9, fwdloop `m11-am5` 39cb4b9 / 6e87c7b / 66da292, signed by hamr on fwdloop 2026-10-15 "sign m11 am9"; REPLACES am7 item 4's searching words only):**
+
+1. **Dates on the "more matches" line.** While searching, the line after the 7 shows the real start days of the matches it hides, the same min/max way as am7 item 3 (hidden ones only, whatever their order): several days `5 more matches, 10/11 to 10/12. Add a date or run number to narrow it.`; all on one day `50 more matches on 10/09. Add a run number to narrow it.`; a hidden match with no date drops the date part: `k more matches. Add a date or run number to narrow it.` ("matches" is fwd's verbatim for every k, including 1; the no-search words are unchanged.)
+
+**Must fail when:** the searching line has no dates when every hidden match has one; the range misses a hidden match's day; one day shows as "10/09 to 10/09".
+
 ## Addendum 2026-10-14 — T: triggers build spec (SIGNED 2026-10-14)
 
 Status: SIGNED 2026-10-14 (rulings below, marked RULED; hamr: "if a run missed, it retries when it's back up, if ai down, resume handles it, 5 files > 5 runs one after another. looks fine as long as you align with what fwd did"). Rule that follows: wherever this page differs from fwd without a stated bareloop reason, follow fwd. Nothing here was built at signing. The contract is PRD v1.99 "Triggers: jobs that start by themselves" (ticks T1-T20, SIGNED 2026-10-14); this page says HOW. hamr signed this page and `design/schedule-mock.html` before any builder starts. Work order (RULED): P9 runs list (this branch, `feat/runs-list`), then triggers on this same branch, then rubric work. fwdloop paths are under `~/PycharmProjects/fwdloop` (v0.19.1, main 845b955); "fwd ladder" is `docs/wiki/the-module-ladder.md` M9 (2217-2273) and M11 am3 (2315). Copy is by REWRITE, never import. bareloop never edits fwdloop. Builder: sonnet, strict pin, one part at a time, commit after every part, tests only through `npm test`.

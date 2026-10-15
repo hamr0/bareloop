@@ -199,12 +199,12 @@ test('search when the head also matches still opens the fold and shows the older
   assert.equal(both.older.open, true, 'the fold still opens when the head also matches');
 });
 
-test('300-run job, search `run`: only 7 older shown (am5 item 4: no extra newest match), the hint counts the rest (292 more match, am7 item 4)', () => {
+test('300-run job, search `run`: only 7 older shown (am5 item 4: no extra newest match), the hint counts the rest (292 more matches, dated per am9)', () => {
   const m = mount();
   const j = job('big', 300);
   const html = m.f.rlJobsHtml(model(m, j.runs, [j.entry], { filters: { ...FILTERS, search: 'run' } }));
   assert.equal(count(html, /data-rl-run=/g), 8, 'the newest + 7 older');
-  assert.match(html, /292 more match\. Add a date or run number to narrow it\./);
+  assert.match(html, /292 more matches( on \d\d\/\d\d\. Add a run number|, \d\d\/\d\d to \d\d\/\d\d\. Add a date or run number) to narrow it\./, 'am9: the hidden matches\' real days are shown');
 });
 
 test('the selected run past the 7 is shown with the 7 matches (am5 item 4 replaces the "one newest match past the 7" rule): 30-run job, search `flights`, selected flights-3', () => {
