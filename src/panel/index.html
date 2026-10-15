@@ -5072,7 +5072,15 @@
     }
     // is When changed from the signed value? The ONE reader; the main button is Sign schedule while it is.
     function whenChanged(){
-      return !!sched && !sched.refusal && whenCanon(whenTriggerFromBoxes()) !== whenCanon(sched.cur);
+      return !!sched && !sched.refusal && (whenCanon(whenTriggerFromBoxes()) !== whenCanon(sched.cur) || scheduledCardEdited());
+    }
+    // On a card opened by Cancel / modify schedule, a changed Inputs, Destination or cap is a change to the schedule too: the button is
+    // Sign schedule (a re-sign, nothing runs), never the Reuse card's Sign & run (a hand run the schedule does not know about).
+    function scheduledCardEdited(){
+      if(!sched || sched.scheduled !== true || !sched.base) return false;
+      var b = sched.base;
+      return byId("jf-inputs").value.trim() !== b.inputs || byId("jf-dest").value.trim() !== b.dest ||
+        byId("jf-cap-money").value.trim() !== b.capUsd || byId("jf-cap-time").value.trim() !== b.capTime;
     }
     function whenShowSubs(){
       var kind = byId("jf-when").value;
@@ -5122,8 +5130,8 @@
     }
     ["jf-when", "jf-when-day", "jf-when-time"].forEach(function(id){ byId(id).addEventListener("change", whenEdited); });
     byId("jf-when-path").addEventListener("input", whenEdited);
-    // the hash binds the WHOLE card (inputs, destination, caps), so a change to any of them drops it too
-    ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time"].forEach(function(id){ byId(id).addEventListener("input", function(){ if(sched && whenHash !== null) whenEdited(); }); });
+    // the hash binds the WHOLE card (inputs, destination, caps), so a change to any of them drops it too (and repaints the button: on a scheduled job a box edit is Sign schedule)
+    ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time"].forEach(function(id){ byId(id).addEventListener("input", function(){ if(!sched) return; if(whenHash !== null) whenEdited(); else renderMain(); }); });
     function doWhenSign(){
       if(!sched || whenBusy || whenLocked) return;
       var timeCapMin = byId("jf-cap-time").value.trim();
@@ -5169,7 +5177,8 @@
       if(sessionLive || resumeRun !== null){ errEl.textContent = "Finish or clear what is on the card first, then try again."; return; }
       applyReuse({runid: d.runid, prefill: d.prefill, lock: true});
       var sc = (d.prefill || {}).scheduleCard || {};
-      sched = {job: d.job, runid: d.runid, words: sc.words || {}, cur: sc.trigger || null, scheduled: sc.scheduled === true, refusal: sc.refusal || null, now: sc.now || null};
+      sched = {job: d.job, runid: d.runid, words: sc.words || {}, cur: sc.trigger || null, scheduled: sc.scheduled === true, refusal: sc.refusal || null, now: sc.now || null,
+        base: {inputs: byId("jf-inputs").value.trim(), dest: byId("jf-dest").value.trim(), capUsd: byId("jf-cap-money").value.trim(), capTime: byId("jf-cap-time").value.trim()}};
       whenHash = null; whenConfirm = null; whenBusy = false;
       paintWhen();
       refreshStartEnabled();

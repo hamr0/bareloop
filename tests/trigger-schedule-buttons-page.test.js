@@ -200,7 +200,7 @@ function card({ post } = {}) {
   const log = { reset: 0, failed: [], refreshed: 0, selected: [], renders: 0, timers: [] };
   const authorPost = (path, body) => { posts.push({ path, body }); return Promise.resolve(post ? post(path, body, posts) : { status: 200, body: { ok: true, words: 'Every day at 13:15', hash: 'h1', cancel: false } }); };
   const src = [
-    fnSrc('byId'), fnSrc('whenTriggerFromBoxes'), fnSrc('whenCanon'), fnSrc('whenChanged'), fnSrc('whenShowSubs'), fnSrc('paintWhen'),
+    fnSrc('byId'), fnSrc('whenTriggerFromBoxes'), fnSrc('whenCanon'), fnSrc('whenChanged'), PAGE.includes('function scheduledCardEdited(') ? fnSrc('scheduledCardEdited') : '', fnSrc('whenShowSubs'), fnSrc('paintWhen'),
     fnSrc('whenEdited'), fnSrc('doWhenSign'), fnSrc('mainButtonFor'),
   ].join('\n');
   const ctx = new Function('document', 'authorPost', 'resetCard', 'chatActionFailed', 'refreshRunsList', 'selectRun', 'renderMain', 'setTimeout', `
@@ -216,7 +216,7 @@ function card({ post } = {}) {
   return { ...ctx, dom, g, posts, log };
 }
 const SCHED_NONE = { job: 'j', runid: 'r1', words: W, cur: null, scheduled: false, refusal: null, now: null };
-const SCHED_DAILY = { job: 'j', runid: 'r1', words: W, cur: { kind: 'daily', hour: 9, minute: 0 }, scheduled: true, refusal: null, now: 'Every day at 09:00' };
+const SCHED_DAILY = { job: 'j', runid: 'r1', words: W, cur: { kind: 'daily', hour: 9, minute: 0 }, scheduled: true, refusal: null, now: 'Every day at 09:00', base: { inputs: 'notes: /in/n.txt', dest: '/out/', capUsd: '0.5', capTime: '20' } };
 const button = (c, extra = {}) => c.mainButtonFor({ session: false, startOk: true, when: { ...c.stateForButton(), ...extra } }, true, true);
 
 test('card: When options come from the server table; the first option reads Cancel schedule on a scheduled job, By hand otherwise; Now: shows the current words', () => {
@@ -271,6 +271,7 @@ test('main button: When unchanged = the Reuse card\'s own Sign & run; changed = 
   const d = card();
   d.setSched(SCHED_DAILY);
   d.paintWhen();
+  d.g('jf-inputs').value = 'notes: /in/n.txt'; d.g('jf-dest').value = '/out/'; d.g('jf-cap-money').value = '0.5'; d.g('jf-cap-time').value = '20'; // the boxes as the card opened
   assert.equal(button(d).text, 'Sign & run');
   d.g('jf-when').value = 'hand'; d.whenEdited();
   assert.deepEqual([button(d).text, button(d).action], ['Cancel schedule', 'when-sign-prepare']);
@@ -372,4 +373,37 @@ test('the scheduling words live in ONE table: the page types none of them', () =
   for (const w of ['Sign schedule', 'Schedule run', 'Cancel / modify schedule', 'Confirm: ', 'Every day at HH:MM']) {
     assert.equal(script.includes(`"${w}"`), false, `"${w}" must come from SCHEDULE_WORDS, not the page`);
   }
+});
+
+// hamr's live bug 2026-10-15 (run mv9euoam): on a card opened by Cancel / modify schedule he changed only Destination and Inputs, left When
+// as signed, pressed the main button and a plain hand run started; the schedule was not re-signed. Root cause: whenChanged() looked at
+// the When field alone, so the button stayed the Reuse card's Sign & run (action "start", POST /api/author/start).
+test('modify schedule: changing only Inputs / Destination / a cap (When as signed) makes the button Sign schedule and click 1 posts schedule-prepare, never the start route', async () => {
+  const c = card();
+  c.setSched(SCHED_DAILY);
+  c.paintWhen();
+  c.g('jf-inputs').value = 'notes: /in/n.txt'; c.g('jf-dest').value = '/out/'; c.g('jf-cap-money').value = '0.5'; c.g('jf-cap-time').value = '20';
+  assert.equal(button(c).text, 'Sign & run', 'nothing edited = the Reuse card\'s own button');
+  c.g('jf-dest').value = '/home/hamr/bareloop-out';
+  c.g('jf-inputs').value = 'changelog: /home/hamr/x/CHANGELOG.md';
+  assert.deepEqual([button(c).text, button(c).action], ['Sign schedule', 'when-sign-prepare']);
+  await c.doWhenSign();
+  assert.deepEqual(c.posts.map((x) => x.path), ['/api/author/schedule-prepare']);
+  assert.equal(c.posts[0].body.destination, '/home/hamr/bareloop-out');
+  assert.deepEqual(c.posts[0].body.when, { kind: 'daily', hour: 9, minute: 0 });
+  // putting the boxes back to the signed values is unchanged again
+  c.g('jf-dest').value = '/out/'; c.g('jf-inputs').value = 'notes: /in/n.txt';
+  assert.equal(button(c).text, 'Sign & run');
+  // a job with no schedule keeps Sign & run when only the boxes change (Schedule run on an unscheduled job)
+  const d = card();
+  d.setSched({ ...SCHED_NONE, base: { inputs: 'a: /x', dest: '/o/', capUsd: '1', capTime: '' } });
+  d.paintWhen();
+  d.g('jf-dest').value = '/elsewhere/';
+  assert.equal(button(d).text, 'Sign & run');
+});
+
+test('modify schedule: the page captures the card\'s starting boxes when it opens the schedule card, and any box edit repaints the main button', () => {
+  const open = fnSrc('applyScheduleCard');
+  assert.match(open, /base:\s*\{[^}]*jf-inputs[^}]*jf-dest/);
+  assert.match(PAGE, /\["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time"\]\.forEach\(function\(id\)\{ byId\(id\)\.addEventListener\("input", function\(\)\{ if\(!sched\) return; if\(whenHash !== null\) whenEdited\(\); else renderMain\(\); \}\); \}\);/);
 });
