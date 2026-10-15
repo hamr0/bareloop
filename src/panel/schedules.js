@@ -26,7 +26,7 @@ import { armTrigger, nextSlot, recordFire } from '../triggerclock.js';
 import { appendRow, readLedger, withoutReleased } from '../triggerledger.js';
 import { checkTarget, createFileTrigger, queueOf, readSeen, recordDropped, recordRan } from '../triggerfiles.js';
 import {
-  SCHEDULE_WORDS, editClearsWords, gaveUpDateWords, lateRefusalWords, nextInWords, nextTimeWords, scheduledNextFor, scheduledWords,
+  SCHEDULE_WORDS, gaveUpDateWords, lateRefusalWords, nextInWords, nextTimeWords, scheduledNextFor, scheduledWords,
 } from '../schedulewords.js';
 import { buildReuseSpec, startDestinationProblem, validateReuseCard } from './authorsession.js';
 
@@ -179,7 +179,7 @@ export function createScheduleDoor(deps) {
 
   /**
    * Every queued file gets one `dropped` row with its reason and one plain-words outcome row — never silent, never orphaned.
-   * @param {string} job @param {string} sig the signature the new rows are written under @param {'schedule-changed'|'schedule-cancelled'|'schedule-edited'} why
+   * @param {string} job @param {string} sig the signature the new rows are written under @param {'schedule-changed'|'schedule-cancelled'} why
    */
   function dropQueue(job, sig, why) {
     const ledger = ledgerOf(job);
@@ -187,17 +187,16 @@ export function createScheduleDoor(deps) {
       recordDropped(ledger, item, why, now(), sig);
       appendRow(ledger, {
         kind: 'changed', sig, at: now(), sha: item.sha, file: item.name, why,
-        say: `${item.name} was waiting to run and did not: ${why === 'schedule-changed' ? 'the schedule was changed to watch something else' : why === 'schedule-edited' ? 'the job was edited, which clears its schedule' : 'the schedule was cancelled'}.`,
+        say: `${item.name} was waiting to run and did not: ${why === 'schedule-changed' ? 'the schedule was changed to watch something else' : 'the schedule was cancelled'}.`,
       });
     }
   }
 
-  /** Remove a job's schedule, writing the plain rows first. @param {string} job @param {Schedule} cur @param {'cancelled'|'edited'} kind */
-  function removeSchedule(job, cur, kind) {
-    const why = kind === 'edited' ? 'schedule-edited' : 'schedule-cancelled';
+  /** Remove a job's schedule (a cancel), writing the plain rows first. An edit never does (v1.100); old `edited` rows still read. @param {string} job @param {Schedule} cur */
+  function removeSchedule(job, cur) {
     const sig = cur.specHash;
-    dropQueue(job, sig, why);
-    appendRow(ledgerOf(job), { kind, sig, at: now(), say: kind === 'edited' ? 'The job was edited, so its schedule was cleared. It is by hand again.' : 'The schedule was cancelled. The job is by hand again.' });
+    dropQueue(job, sig, 'schedule-cancelled');
+    appendRow(ledgerOf(job), { kind: 'cancelled', sig, at: now(), say: 'The schedule was cancelled. The job is by hand again.' });
     rmSync(scheduleFileOf(job), { force: true });
   }
 
@@ -481,7 +480,7 @@ export function createScheduleDoor(deps) {
       if (!s.ok) return s.reply;
       if (typeof body.hash !== 'string' || body.hash !== (s.cancel ? s.hash : s.bind)) return { status: 409, body: { ok: false, refused: 'stale-hash', say: SCHEDULE_WORDS.stale } };
       if (s.cancel) {
-        if (s.cur) removeSchedule(s.job, s.cur, 'cancelled');
+        if (s.cur) removeSchedule(s.job, s.cur);
         return { status: 200, body: { ok: true, job: s.job, cancelled: true, words: SCHEDULE_WORDS.cancelWords } };
       }
       const cur = s.cur;
@@ -506,20 +505,7 @@ export function createScheduleDoor(deps) {
       const cur = SLUG_RE.test(job) ? readSchedule(job) : null;
       installWait.delete(job);
       if (!cur) { rmSync(scheduleFileOf(job), { force: true }); return false; }
-      removeSchedule(job, cur, 'cancelled');
-      return true;
-    },
-
-    /**
-     * The edit rule (T5, D.7): a signed spec whose workflow key differs from the schedule's clears the schedule.
-     * A Reuse or a hand run of the same workflow has the same key and clears nothing.
-     * @param {string} job @param {string} key @returns {boolean} cleared
-     */
-    clearIfEdited(job, key) {
-      if (!SLUG_RE.test(job)) return false;
-      const cur = readSchedule(job);
-      if (!cur || cur.workflowKey === key) return false;
-      removeSchedule(job, cur, 'edited');
+      removeSchedule(job, cur);
       return true;
     },
 
@@ -588,15 +574,8 @@ export function createScheduleDoor(deps) {
       return {
         scheduled: st.schedule !== null, trigger: t, now: t ? scheduledWords(t, userHome) : null,
         refusal: green && !green.ok ? green.say : null,
-        editNote: t ? editClearsWords(t, userHome) : null,
         words: SCHEDULE_WORDS,
       };
-    },
-
-    /** The edit note for a job (Edit in chat shows it BEFORE signing, D.7), or null when the job is by hand. @param {string} job */
-    editNoteFor(job) {
-      const t = SLUG_RE.test(job) ? readSchedule(job)?.trigger : null;
-      return t ? editClearsWords(t, userHome) : null;
     },
 
     /**

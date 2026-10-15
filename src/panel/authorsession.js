@@ -198,6 +198,43 @@ export function jobNameTaken(name, opts = {}) {
   } catch { return false; }
 }
 
+/**
+ * Edit in chat (RULED 2026-10-15, v1.100): the Job name box opens as `<origin>-N`, N the next free number from 2.
+ * Free = no run-list job of that name and not taken per {@link jobNameTaken}. An origin that already ends in `-<digits>`
+ * still gets the suffix appended (`x-2` -> `x-2-2`): the base is never guessed.
+ * @param {string} origin
+ * @param {Iterable<string>} runJobs job names in the panel's run list
+ * @param {{jobsDir?: string}} [opts] test seam for {@link jobNameTaken}
+ * @returns {string}
+ */
+export function nextFreeJobName(origin, runJobs, opts = {}) {
+  const used = new Set(runJobs);
+  for (let n = 2; ; n += 1) {
+    const name = `${origin}-${n}`;
+    if (!used.has(name) && !jobNameTaken(name, opts)) return name;
+  }
+}
+
+/**
+ * Edit in chat at sign-prepare (RULED 2026-10-15, v1.100). The drafted spec carries the card's name, which is part of the
+ * workflow key, so the key is compared with the NAME set back to the origin's: equal means only source / destination / caps /
+ * model / inputs changed, and the run signs under the ORIGIN job name (a new run of the same workflow). A different key signs
+ * under the card's name (a new workflow) - unless that name IS the origin's, which would pass a different workflow off as the old one.
+ * @param {any} spec the drafted spec
+ * @param {string} cardName the Job name box
+ * @param {{job: string, workflowKey: string}|null|undefined} edit the origin job and its workflow key; none = not an edit
+ * @returns {{ok: true, spec: any}|{ok: false, error: string}}
+ */
+export function foldEditName(spec, cardName, edit) {
+  if (!edit) return { ok: true, spec };
+  const named = JSON.parse(JSON.stringify(spec));
+  named.job = edit.job;
+  if (typeof named.description === 'string' && named.description.startsWith(`${cardName} `)) named.description = `${edit.job}${named.description.slice(cardName.length)}`;
+  if (workflowKey(named) === edit.workflowKey) return { ok: true, spec: named };
+  if (cardName === edit.job) return { ok: false, error: `A job named "${cardName}" already exists and is a different job. Pick another name.` };
+  return { ok: true, spec };
+}
+
 /** the form's fields, in card order — what `card.json` stores, verbatim (P5 item 3) */
 export const CARD_FIELDS = Object.freeze(['jobName', 'checkType', 'provider', 'model', 'thinking', 'jobText', 'inputs', 'destination', 'capUsd', 'maxWallMs']);
 
@@ -388,7 +425,7 @@ export function validateJobCard(card, opts = {}) {
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
  *   scout?: any, generate?: Function, confirmGenerate?: Function, authorFn?: Function,
- *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
+ *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, edit?: {job: string, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
  * @returns {any} the session object
@@ -824,6 +861,10 @@ export function createSession(card, deps = {}) {
      */
     const finish = async (spec, seedRef) => {
       if (abandoned) return;
+      // Edit in chat: an unchanged workflow signs under the origin's name; a different one under the card's (a refused name stops here)
+      const folded = foldEditName(spec, card.jobName, deps.edit);
+      if (!folded.ok) { refuse(folded.error); return; }
+      spec = folded.spec;
       const specFile = join(outDir, 'resolved-spec.json');
       writeFileSync(specFile, `${JSON.stringify(spec, null, 2)}\n`);
       state.resolvedSpecPath = specFile;

@@ -217,7 +217,7 @@ export function createStarter(deps) {
         const spawnedAt = Date.now();
         const signed = signRun(session, session.state.specHash, {
           env: deps.envNow(), spawnFn: /** @type {any} */ (deps.spawnFn), bareloopBin: deps.bareloopBin, sessionsRoot: deps.sessionsRoot, home: deps.home,
-          schedules: deps.door, reviewDoor: true, onSpawnError: (e) => { spawnError = e; }, onExit: (code) => { exitCode = typeof code === 'number' ? code : 1; },
+          reviewDoor: true, onSpawnError: (e) => { spawnError = e; }, onExit: (code) => { exitCode = typeof code === 'number' ? code : 1; },
         });
         // a spawn failure is reported on the next turn of the event loop; give it that turn before calling this started
         await new Promise((r) => { setImmediate(r); });

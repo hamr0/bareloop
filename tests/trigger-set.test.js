@@ -220,20 +220,6 @@ test('T18: a re-sign with a different cap carries the queue; a changed folder dr
   assert.deepEqual(readLedger(ledger).rows.filter((r) => r.kind === 'dropped').map((r) => r.why).slice(-1), ['schedule-cancelled']);
 });
 
-test('clearIfEdited: a different workflow key clears the schedule (an edited row, queue dropped); the same key clears nothing', async () => {
-  const w = world();
-  const p = await panel({ home: w.home });
-  const pre = await p.post('/api/author/schedule-prepare', { runid: w.runid, when: DAILY, ...card() });
-  await p.post('/api/author/schedule', { runid: w.runid, when: DAILY, ...card(), hash: pre.body.hash });
-  const door = createScheduleDoor({ home: w.home, jobRuns: () => [], startFrom: () => null, jobOfRun: () => null, rowsFor: () => [] });
-  assert.equal(door.clearIfEdited('sched-job', workflowKey(w.spec)), false);
-  assert.ok(existsSync(join(w.triggers, 'schedule.json')));
-  assert.equal(door.clearIfEdited('sched-job', 'another-key'), true);
-  assert.equal(existsSync(join(w.triggers, 'schedule.json')), false);
-  assert.equal(ledgerRows(w).at(-1).kind, 'edited');
-  assert.equal(door.clearIfEdited('sched-job', 'another-key'), false);
-});
-
 test('the routes sit behind the human-click guard and take POST only', async () => {
   const w = world();
   const p = await panel({ home: w.home });

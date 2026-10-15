@@ -361,9 +361,9 @@ test('the main button\'s click handler routes the two schedule actions to doWhen
   assert.match(src, /mainAction === "when-sign-prepare" \|\| mainAction === "when-sign"\) doWhenSign\(\)/);
 });
 
-test('Edit in chat on a scheduled job shows the server\'s edit note BEFORE signing', () => {
-  assert.match(fnSrc('editInChat'), /r\.editNote/);
-  assert.match(fnSrc('editInChat'), /origin \+= " " \+ r\.editNote/);
+test('Edit in chat shows no edit note (v1.100: an edit never clears a schedule) and asks for the name prefill', () => {
+  assert.doesNotMatch(fnSrc('editInChat'), /editNote/);
+  assert.match(fnSrc('editInChat'), /mode=edit/);
 });
 
 test('the scheduling words live in ONE table: the page types none of them', () => {

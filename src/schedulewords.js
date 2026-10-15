@@ -2,7 +2,7 @@
 // functions: typed facts in, a fixed sentence out. No model text ever reaches a sentence (the only slot-fills are
 // numbers, a file or folder name and the person's own path). `home` is injected (never a default inside a test).
 // Rewritten from fwdloop src/summary-words.js (`scheduledWords`, `slotWords`, `nextTimeWords`, `nextInWords`,
-// `editClearsWords`, `scheduledNextFor`, `catchUpWords`), minus `endedWords` and every ask (bareloop has neither:
+// `scheduledNextFor`, `catchUpWords`), minus `endedWords` and every ask (bareloop has neither:
 // its ENDED block is `endedFor` in src/panel/server.js).
 import { basename } from 'node:path';
 import { panelMoney2 } from './panel/authorroutes.js';
@@ -97,13 +97,6 @@ export function nextInWords(ms, now) {
   if (mins < 60) return `next in ${mins}m`;
   const hours = Math.floor(mins / 60);
   return hours < 48 ? `next in ${hours}h` : `next in ${Math.floor(hours / 24)}d`;
-}
-
-/** Said BEFORE a person signs an edit of a job that has a trigger (D.7). `null` when the job is by hand. @param {Trigger|null|undefined} t @param {string} [home] */
-export function editClearsWords(t, home) {
-  const w = scheduledWords(t, home);
-  if (w === null) return null;
-  return `This job runs by itself (${w}). Signing this edit clears that back to By hand. You can set it again once the new job has had one good run.`;
 }
 
 /**

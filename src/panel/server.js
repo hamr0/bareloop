@@ -3166,6 +3166,7 @@ export function createPanelServer(opts = {}) {
       schedulesRef = schedules;
       authorRoutes = createAuthorRoutes({
         schedules,
+        runJobNames: () => readRunList({ home }).rows.flatMap((r) => (r && typeof r.job === 'string' ? [r.job] : [])),
         ...(opts.sessionDeps ? { sessionDeps: opts.sessionDeps } : {}),
         port: boundPort,
         token,

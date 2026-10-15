@@ -23,10 +23,10 @@ import { openSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { planMatchesClose } from '../rubricstep.js';
-import { createSession, validateJobCard, validateReuseCard, lockedFieldChanged, buildReuseSpec, cardFields, startDestinationProblem, STEP_LABELS } from './authorsession.js';
+import { createSession, validateJobCard, validateReuseCard, lockedFieldChanged, buildReuseSpec, cardFields, nextFreeJobName, startDestinationProblem, STEP_LABELS } from './authorsession.js';
 import { parseInputs } from '../jobblock.js';
 import { proveInputFiles, looksLikeRubricInput } from '../source.js';
-import { validateJob, workflowKey } from '../job.js';
+import { validateJob } from '../job.js';
 import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
 import { ConfigError } from '../config.js';
 import { keysForDoor, keysHome } from '../keysfile.js';
@@ -97,6 +97,7 @@ const TERMINAL_PHASES = new Set(['refused', 'abandoned', 'error', 'signed', 'sig
  *   jobsDir?: string, fetchImpl?: typeof fetch, home?: string,
  *   schedules?: ReturnType<typeof import('./schedules.js').createScheduleDoor>,
  *   sessionDeps?: Record<string, any>,
+ *   runJobNames?: () => string[],
  *   startFrom?: {get: (runid: string, o?: {model?: string}) => any, getImport: (id: string, o?: {model?: string}) => any, listJobs?: (o?: {model?: string}) => any[]} }} opts
  */
 export function createAuthorRoutes(opts) {
@@ -125,7 +126,7 @@ export function createAuthorRoutes(opts) {
    * @param {any} card the form (fields only)
    * @param {{spec: any, workflowKey: string}|null} reuse
    * @param {import('../jobblock.js').JobInput[]} inputs the parsed Inputs
-   * @param {{headless?: boolean, filesJob?: boolean}} [o]
+   * @param {{headless?: boolean, filesJob?: boolean, edit?: {job: string, workflowKey: string}}} [o]
    * @returns {Promise<{ok: true, session: ReturnType<typeof createSession>}|{ok: false, status: number, error: string}>}
    */
   function startSession(card, reuse, inputs, o = {}) {
@@ -136,7 +137,7 @@ export function createAuthorRoutes(opts) {
       const destProblem = startDestinationProblem(card);
       if (destProblem !== null) return { ok: /** @type {false} */ (false), status: 400, error: destProblem };
       const session = createSession(cardFields(card), {
-        env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}), ...(opts.sessionDeps ?? {}),
+        env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}), ...(o.edit ? { edit: o.edit } : {}), ...(opts.sessionDeps ?? {}),
       });
       (o.headless ? headless : sessions).set(session.id, session);
       return { ok: /** @type {true} */ (true), session };
@@ -250,15 +251,16 @@ export function createAuthorRoutes(opts) {
       if (!pre.ok) { send(409, pre); return true; }
       // the card of a SCHEDULED job opens with the folder that schedule delivers to (a plain-files job keeps it on the schedule, not in the spec)
       const sched = sp.get('mode') === 'schedule' && opts.schedules ? opts.schedules.readSchedule(pre.origin.job) : null;
+      // Edit in chat (`mode=edit`, v1.100): the Job name box opens as `<origin>-N`, N the next free number; the box stays editable
+      let card = typeof sched?.destination === 'string' ? { ...pre.card, destination: sched.destination } : pre.card;
+      if (sp.get('mode') === 'edit') card = { ...card, jobName: nextFreeJobName(pre.origin.job, opts.runJobNames ? opts.runJobNames() : [], { jobsDir: opts.jobsDir }) };
       send(200, {
-        ok: true, origin: pre.origin, card: typeof sched?.destination === 'string' ? { ...pre.card, destination: sched.destination } : pre.card, from: pre.from, note: pre.note,
+        ok: true, origin: pre.origin, card, from: pre.from, note: pre.note,
         locked: pre.locked, open: pre.open, specHash: pre.specHash, workflowKey: pre.workflowKey, trackRecord: pre.trackRecord,
         line: pre.line, specNamesModel: pre.specNamesModel, specWorker: pre.specWorker,
         // T Part 3: `mode=schedule` also returns the job's current schedule (data only) for the When field's prefill; Part 7 adds the
-        // card's own words (`scheduleCard`: now / refusal / editNote / the button table). Edit in chat on a scheduled job gets the
-        // fixed edit note to show BEFORE signing (D.7).
+        // card's own words (`scheduleCard`: now / refusal / the button table). An edit never touches a schedule (v1.100), so no edit note.
         ...(sp.get('mode') === 'schedule' && opts.schedules ? { schedule: opts.schedules.read(pre.origin.job), scheduleCard: opts.schedules.cardFor(pre.origin.job) } : {}),
-        ...(sp.get('mode') !== 'schedule' && opts.schedules && pre.origin?.job ? { editNote: opts.schedules.editNoteFor(pre.origin.job) } : {}),
       });
       return true;
     }
@@ -327,6 +329,21 @@ export function createAuthorRoutes(opts) {
         if (!jv.ok) { send(400, { ok: false, error: `the spec this reuse would sign is not valid (${jv.reds.map((r) => `${r.code} at ${r.path}`).join('; ')})` }); return true; }
         reuse = { spec, workflowKey: pre.workflowKey };
       }
+      // Edit in chat (v1.100): the page names the run it copied from. The origin's job and workflow key ride the session so the
+      // sign step can fold an unchanged workflow back under the origin's name. A card name already used by ANOTHER panel job is
+      // refused here at $0 (its workflow cannot be compared before drafting); the origin's own name is judged at sign-prepare.
+      /** @type {{job: string, workflowKey: string}|null} */
+      let edit = null;
+      if (reuse === null && typeof body?.editFrom === 'string' && opts.startFrom) {
+        const pre = opts.startFrom.get(body.editFrom);
+        if (pre?.ok) {
+          edit = { job: pre.origin.job, workflowKey: pre.workflowKey };
+          if (card.jobName !== edit.job && opts.runJobNames && opts.runJobNames().includes(card.jobName)) {
+            send(400, { ok: false, error: `A job named "${card.jobName}" already exists and is a different job. Pick another name.` });
+            return true;
+          }
+        }
+      }
       if (reuse === null) {
         const v = validateJobCard(card, { jobsDir: opts.jobsDir, rows });
         if (!v.ok) { send(400, { ok: false, error: v.error }); return true; }
@@ -338,7 +355,7 @@ export function createAuthorRoutes(opts) {
       // Part 1a: a rubric job whose first input is a local FILE has no repo to prove inputs against; the session proves every
       // line itself (`proveRubricInputs`), at $0, before any model call
       const filesJob = reuse === null && card?.checkType === 'rubric' && looksLikeRubricInput(ip.inputs[0].value);
-      startSession(card, reuse, ip.inputs, { filesJob }).then((r) => {
+      startSession(card, reuse, ip.inputs, { filesJob, ...(edit ? { edit } : {}) }).then((r) => {
         if (!r.ok) { send(r.status, { ok: false, error: r.error }); return; }
         send(200, { ok: true, sessionId: r.session.id, reuse: reuse !== null, state: r.session.state });
       });
@@ -426,7 +443,7 @@ export function panelMoney2(n) {
  * it to sign"), and this is where it is checked, not trusted.
  * @param {ReturnType<typeof createSession>} session
  * @param {string} claimedHash
- * @param {{env: any, spawnFn: typeof realSpawn, bareloopBin: string, sessionsRoot?: string, home?: string, schedules?: {clearIfEdited: (job: string, key: string) => boolean}, reviewDoor?: boolean, onSpawnError?: (e: Error) => void, onExit?: (code: number|null) => void}} o
+ * @param {{env: any, spawnFn: typeof realSpawn, bareloopBin: string, sessionsRoot?: string, home?: string, reviewDoor?: boolean, onSpawnError?: (e: Error) => void, onExit?: (code: number|null) => void}} o
  * @returns {{ok: boolean, error?: string, job?: string}}
  */
 export function signRun(session, claimedHash, o) {
@@ -491,14 +508,6 @@ export function signRun(session, claimedHash, o) {
   if (typeof child?.unref === 'function') child.unref();
   if (o.onSpawnError && typeof child?.once === 'function') child.once('error', o.onSpawnError);
   if (o.onExit && typeof child?.once === 'function') child.once('exit', o.onExit);
-  // T (D.7): signing an EDIT of a scheduled job clears its schedule back to by hand. A Reuse or a hand run of the same
-  // workflow has the same workflow key and clears nothing. After the spawn: a refusal above never reaches here.
-  if (o.schedules) {
-    try {
-      const signed = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
-      if (typeof signed?.job === 'string') o.schedules.clearIfEdited(signed.job, workflowKey(signed));
-    } catch { /* an unreadable spec was already refused above; the schedule stays */ }
-  }
   session.state.phase = 'signed';
   // hamr 2026-10-05: the sign shows as the last step of the one progress list, never as a thread bubble
   // hamr 2026-10-05 (option A): the drafting-spend line is that step's detail — nothing when there was no drafting spend (a Reuse)

@@ -159,7 +159,7 @@ test('GET /api/runs with no schedule: scheduled is an empty list, never missing'
 });
 
 // ---------------------------------------------------------------- the card
-test('start-from?mode=schedule: the card data — current words, no refusal when scheduled, the edit note; a job with no good run is refused in words; plain start-from carries the edit note on a scheduled job', async () => {
+test('start-from?mode=schedule: the card data — current words, no refusal when scheduled, no edit note (v1.100); a job with no good run is refused in words', async () => {
   const w = await fireWorld();
   const card = (await w.p.get('/api/author/start-from?mode=schedule&runid=r1')).body;
   assert.equal(card.ok, true);
@@ -167,10 +167,10 @@ test('start-from?mode=schedule: the card data — current words, no refusal when
   assert.equal(card.scheduleCard.now, 'Every day at 09:00');
   assert.equal(card.scheduleCard.refusal, null);
   assert.deepEqual(card.scheduleCard.trigger, DAILY);
-  assert.match(card.scheduleCard.editNote, /^This job runs by itself \(Every day at 09:00\)\. Signing this edit clears that back to By hand\./);
+  assert.equal('editNote' in card.scheduleCard, false);
   assert.equal(card.scheduleCard.words.cancelSchedule, 'Cancel schedule');
   const plain = (await w.p.get('/api/author/start-from?runid=r1')).body;
-  assert.equal(plain.editNote, card.scheduleCard.editNote, 'Edit in chat shows the note before signing');
+  assert.equal('editNote' in plain, false, 'an edit never clears a schedule, so there is nothing to say before signing');
   // an unscheduled green job: no note; scheduleCard.scheduled false
   const home = keysHome();
   makeRun(home, { runid: 'u1', spec: specOf({ job: 'u-job' }), outcome: 'green' });
@@ -178,8 +178,7 @@ test('start-from?mode=schedule: the card data — current words, no refusal when
   const u = (await p.get('/api/author/start-from?mode=schedule&runid=u1')).body;
   assert.equal(u.scheduleCard.scheduled, false);
   assert.equal(u.scheduleCard.refusal, null);
-  assert.equal(u.scheduleCard.editNote, null);
-  assert.equal((await p.get('/api/author/start-from?runid=u1')).body.editNote, null);
+  assert.equal('editNote' in u.scheduleCard, false);
 });
 
 // ---------------------------------------------------------------- a spawning fired run is [▶] starting, never [?]

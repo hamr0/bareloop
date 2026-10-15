@@ -33,7 +33,7 @@ test('doorAccepted: only an honoured accept counts', () => {
 
 // ---- T Part 6: the rest of the words module ----
 import {
-  nextTimeWords, nextInWords, editClearsWords, scheduledNextFor, catchUpWords, lateRefusalWords,
+  nextTimeWords, nextInWords, scheduledNextFor, catchUpWords, lateRefusalWords,
 } from '../src/schedulewords.js';
 
 const at = (d, h, m) => new Date(2026, 9, d, h, m).getTime();
@@ -53,11 +53,6 @@ test('nextInWords: whole units rounded down, never 0m', () => {
   assert.equal(nextInWords(now + 3 * 3600_000 + 1000, now), 'next in 3h');
   assert.equal(nextInWords(now + 47 * 3600_000, now), 'next in 47h');
   assert.equal(nextInWords(now + 72 * 3600_000, now), 'next in 3d');
-});
-
-test('editClearsWords: the fixed sentence for a scheduled job, null for by hand', () => {
-  assert.equal(editClearsWords(null), null);
-  assert.equal(editClearsWords({ kind: 'daily', hour: 9, minute: 0 }), 'This job runs by itself (Every day at 09:00). Signing this edit clears that back to By hand. You can set it again once the new job has had one good run.');
 });
 
 test('scheduledNextFor: first match wins; a refused lead and money-used-up are RED, typed, not guessed from text', () => {
