@@ -133,8 +133,8 @@ test('item 5 (words replaced by am7 item 4): while searching: `k more match. Add
   assert.doesNotMatch(text(lib.rlJobsHtml(model(runsOf('f', 3), { filters: S('f') }))), /more match/);
 });
 
-test('item 5 (words replaced by am7 item 4): the Runs search box reads `search: job name, run-23, or a date 10/13`', () => {
-  assert.match(lib.filterBarHTML('runs'), /placeholder="search: job name, run-23, or a date 10\/13"/);
+test('item 5 (words replaced by am8): the Runs search box reads `job, run-23, or date 10/13`', () => {
+  assert.match(lib.filterBarHTML('runs'), /placeholder="job, run-23, or date 10\/13"/);
 });
 
 test('item 6: run card line 1 is `run-2 · 10/12 13:46 · deepseek-flash` in the same-size .rl-rest span, never the small raised .rl-faint', () => {
@@ -196,10 +196,17 @@ test('am7 item 4: all hidden runs on one day read `k more runs on MM/DD`, never 
   assert.match(text(lib.rlJobsHtml(model(runsOf('h', 9, () => ({ at: null })), { open: { h: true } }))), /1 more older run\. Search to find one\./);
 });
 
-test('am7 item 4: while searching `k more match. Add a date or run number to narrow it.`; the search box reads `search: job name, run-23, or a date 10/13`; no old word is left', () => {
+test('am7 item 4: while searching `k more match. Add a date or run number to narrow it.`; the search box reads `job, run-23, or date 10/13` (words per am8); no old word is left', () => {
   const html = text(lib.rlJobsHtml(model(runsOf('f', 30), { filters: S('f') })));
   assert.match(html, /22 more match\. Add a date or run number to narrow it\./);
   assert.doesNotMatch(html, /more matches|add a day|search above\)|\(and /);
-  assert.match(lib.filterBarHTML('runs'), /placeholder="search: job name, run-23, or a date 10\/13"/);
-  assert.doesNotMatch(lib.filterBarHTML('runs'), /a day 10\/12/);
+  assert.match(lib.filterBarHTML('runs'), /placeholder="job, run-23, or date 10\/13"/);
+  assert.doesNotMatch(lib.filterBarHTML('runs'), /a day 10\/12|search: job name/);
+});
+
+test('M11 am8: the Runs placeholder fits a 320 px phone: at most 32 characters', () => {
+  // measured at 320 px: room about 270 px, 14px monospace about 8.4 px per character; 270 / 8.4 = 32.
+  const ph = lib.filterBarHTML('runs').match(/placeholder="([^"]*)"/)[1];
+  assert.equal(ph, 'job, run-23, or date 10/13');
+  assert.ok(ph.length <= 32, `placeholder is ${ph.length} chars: "${ph}"`);
 });

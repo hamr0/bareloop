@@ -1444,6 +1444,12 @@ Source: fwdloop `m11-am5` (59ffc7e signed text, c35aa40 red-first tests, 2a3fb04
 
 **Must fail when:** `10-13` and `10/13` give different results; `(run-2)` finds nothing where `run-2` does; the range misses a hidden run's day; one day shows as "10/11 to 10/11"; a hint still uses the old words.
 
+**am8 (from fwd M11 am8, fwdloop `m11-am5` 516f9f5 / a24633b / f6f3451, signed by hamr on fwdloop 2026-10-15; REPLACES am7 item 4's placeholder only):**
+
+1. **Search box words.** The Runs search box reads exactly `job, run-23, or date 10/13`. am7's `search: job name, run-23, or a date 10/13` clipped at 320 px (about 344 px wide against about 278 px of room). The other am7 hint words are unchanged.
+
+**Must fail when:** the search-box words are cut off at 320 px; the placeholder is longer than 32 characters or reads other than the words above.
+
 ## Addendum 2026-10-14 — T: triggers build spec (SIGNED 2026-10-14)
 
 Status: SIGNED 2026-10-14 (rulings below, marked RULED; hamr: "if a run missed, it retries when it's back up, if ai down, resume handles it, 5 files > 5 runs one after another. looks fine as long as you align with what fwd did"). Rule that follows: wherever this page differs from fwd without a stated bareloop reason, follow fwd. Nothing here was built at signing. The contract is PRD v1.99 "Triggers: jobs that start by themselves" (ticks T1-T20, SIGNED 2026-10-14); this page says HOW. hamr signed this page and `design/schedule-mock.html` before any builder starts. Work order (RULED): P9 runs list (this branch, `feat/runs-list`), then triggers on this same branch, then rubric work. fwdloop paths are under `~/PycharmProjects/fwdloop` (v0.19.1, main 845b955); "fwd ladder" is `docs/wiki/the-module-ladder.md` M9 (2217-2273) and M11 am3 (2315). Copy is by REWRITE, never import. bareloop never edits fwdloop. Builder: sonnet, strict pin, one part at a time, commit after every part, tests only through `npm test`.
