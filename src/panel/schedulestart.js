@@ -24,6 +24,8 @@ import { startDestinationProblem } from './authorsession.js';
 export const PREPARE_TIMEOUT_MS = 20 * 60_000;
 /** how long the starter listens for a child that refuses at once (run-u checks its spec and approve hash first thing) */
 export const CHILD_GRACE_MS = 1500;
+/** RULED 2026-10-15: after an `install-needed` refusal a job's next attempt waits this long (no copy, no install, no session, no row per tick) */
+export const INSTALL_RETRY_MS = 60_000;
 
 /**
  * The Destination a fire's session is given: the one the schedule was signed with (a plain-files job's per-run folder, which the
@@ -66,12 +68,12 @@ export function perFireSpec(schedule, cause) {
  *   spawnFn: Function, bareloopBin: string, sessionsRoot?: string, home?: string,
  *   rowsFor: () => readonly import('../providerrows.js').KeyRow[],
  *   startFrom: (runid: string) => any,
- *   now?: () => number, prepareTimeoutMs?: number, pollMs?: number, childGraceMs?: number,
+ *   now?: () => number, prepareTimeoutMs?: number, pollMs?: number, childGraceMs?: number, installRetryMs?: number,
  *   forgetSession?: (id: string) => void, ranSince?: (job: string, sinceMs: number) => boolean,
  * }} deps
  */
 export function createStarter(deps) {
-  const { now = Date.now, prepareTimeoutMs = PREPARE_TIMEOUT_MS, pollMs = 25, childGraceMs = CHILD_GRACE_MS } = deps;
+  const { now = Date.now, prepareTimeoutMs = PREPARE_TIMEOUT_MS, pollMs = 25, childGraceMs = CHILD_GRACE_MS, installRetryMs = INSTALL_RETRY_MS } = deps;
 
   /** Remove what a start that did not go through made: the session leaves the headless map and its folder is deleted. @param {any} session */
   function discard(session) {
@@ -152,7 +154,7 @@ export function createStarter(deps) {
      * @param {string} job
      * @param {{kind: 'clock', slot: number, catchUp: boolean, missed: number} | {kind: 'file', path: string, sha: string}} cause
      * @param {{beforeSpawn?: () => void}} [hooks]
-     * @returns {Promise<{ok: true, sessionId: string, specHash: string, consumed: true}|{ok: false, why: string, consumed: boolean}>}
+     * @returns {Promise<{ok: true, sessionId: string, specHash: string, consumed: true}|{ok: false, why: string, consumed: boolean, retryAfterMs?: number}>}
      */
     async start(job, cause, hooks = {}) {
       let consumed = false;
@@ -194,7 +196,8 @@ export function createStarter(deps) {
             : (!finished ? 'Getting the job ready took too long. Nothing started.' : `The job could not be made ready: ${String(session.state.error ?? phase)}. Nothing started.`);
           // a start that is refused leaves nothing behind. (A session still running when the time ran out is only abandoned: its pipeline may still be writing.)
           if (finished) discard(session);
-          return { ok: false, why, consumed };
+          // an install-needed refusal asks the caller to wait before the next attempt; every other refusal is tried again at once
+          return phase === 'install-needed' ? { ok: false, why, consumed, retryAfterMs: installRetryMs } : { ok: false, why, consumed };
         }
         // what the child checks first, checked here by the same owner: the saved copy must still hash to what the session signed
         const stale = specProblem(session);

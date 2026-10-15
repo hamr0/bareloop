@@ -103,6 +103,8 @@ export function createScheduleDoor(deps) {
   let starter = null;
   /** job -> ms the headless start began: closes the gap between the spawn and the row run-u appends (T19) @type {Map<string, number>} */
   const starting = new Map();
+  /** job -> {key, until, why}: an `install-needed` refusal; the job's fire waits until `until` (RULED 2026-10-15). In memory: a restart tries at once. @type {Map<string, {key: string, until: number, why: string}>} */
+  const installWait = new Map();
   const triggersRoot = join(runlistHome(deps.home), 'triggers');
   /** @param {string} job */
   const dirOf = (job) => {
@@ -302,7 +304,7 @@ export function createScheduleDoor(deps) {
    */
   function stateOf(job) {
     const schedule = readSchedule(job);
-    if (!schedule) return { schedule: null, trigger: null, armed: false, armedAt: null, nextSlotMs: null, lastOutcome: null };
+    if (!schedule) return { schedule: null, trigger: null, armed: false, armedAt: null, nextSlotMs: null, lastOutcome: null, retryInMs: null };
     const rows = withoutReleased(readLedger(ledgerOf(job)).rows).filter((r) => r.sig === schedule.specHash);
     const armed = rows.find((r) => r.kind === 'armed');
     const outcomes = rows.filter((r) => OUTCOME_KINDS.includes(r.kind));
@@ -310,6 +312,7 @@ export function createScheduleDoor(deps) {
       schedule, trigger: schedule.trigger, armed: armed !== undefined, armedAt: armed ? armed.at : null,
       nextSlotMs: isClockTrigger(schedule.trigger) && armed ? nextSlot(/** @type {any} */ (schedule.trigger), now()) : null,
       lastOutcome: outcomes.length > 0 ? outcomes[outcomes.length - 1] : null,
+      retryInMs: (() => { const w = installWait.get(job); return w && w.until > now() ? w.until - now() : null; })(),
     };
   }
 
@@ -377,6 +380,9 @@ export function createScheduleDoor(deps) {
       if (readLedger(ledger).rows.length > 0 && withoutReleased(readLedger(ledger).rows).some((r) => r.id === consumeId)) {
         return { outcome: 'refused', why: 'This one was already started or given up on.', told: false };
       }
+      // RULED 2026-10-15: inside an install-needed wait nothing is written, no session made, no copy or install run
+      const wait = installWait.get(job);
+      if (wait && wait.key === key && now() < wait.until) return { outcome: 'refused', why: wait.why, told: false };
       const accept = starter.wouldAccept(job, cause);
       if (!accept.ok) return told('refused', accept.why);
       const beforeSpawn = hooks.beforeSpawn ?? (() => {
@@ -386,10 +392,12 @@ export function createScheduleDoor(deps) {
       starting.set(job, now());
       const r = await starter.start(job, cause, { beforeSpawn });
       if (r.ok) {
+        installWait.delete(job);
         appendRow(ledger, { kind: 'started', sig, at: now(), key, ...base, sessionId: r.sessionId, specHash: r.specHash });
         return { outcome: 'started', told: true, sessionId: r.sessionId };
       }
       starting.delete(job);
+      if (typeof r.retryAfterMs === 'number') installWait.set(job, { key, until: now() + r.retryAfterMs, why: r.why });
       if (r.consumed) {
         // a spawn error AFTER the consuming row: release it so the slot or file is retryable, a bounded number of times
         const releases = readLedger(ledger).rows.filter((x) => x.kind === 'released' && x.of === consumeId).length;
@@ -453,6 +461,7 @@ export function createScheduleDoor(deps) {
     /** Cancel a job's schedule, never refused. @param {string} job @returns {boolean} there was one */
     cancel(job) {
       const cur = SLUG_RE.test(job) ? readSchedule(job) : null;
+      installWait.delete(job);
       if (!cur) { rmSync(scheduleFileOf(job), { force: true }); return false; }
       removeSchedule(job, cur, 'cancelled');
       return true;
@@ -515,7 +524,7 @@ export function createScheduleDoor(deps) {
         return { scheduled: false, canSchedule: g.ok, words: SCHEDULE_WORDS, ...(g.ok ? { fromRunid: g.run.runid } : {}) };
       }
       const next = scheduledNextFor({
-        trigger: st.schedule.trigger, armed: st.armed, nextSlotMs: st.nextSlotMs, lastOutcome: st.lastOutcome, waitingRunNo: o.waitingRunNo ?? null, now: now(),
+        trigger: st.schedule.trigger, armed: st.armed, nextSlotMs: st.nextSlotMs, lastOutcome: st.lastOutcome, waitingRunNo: o.waitingRunNo ?? null, now: now(), retryInMs: st.retryInMs,
       });
       return {
         scheduled: true, canSchedule: false, words: SCHEDULE_WORDS, fromRunid: st.schedule.originRunid,

@@ -111,12 +111,12 @@ export function editClearsWords(t, home) {
  *  3. a clock kind with a next slot; 4. a file kind that is armed; 5. not armed yet.
  * A last outcome of `refused` goes in front of 3-5, so a trigger that cannot start is never silent.
  * `red` is the typed flag for "the person must act": the page paints it and never guesses from the text.
- * @param {{trigger: Trigger, armed: boolean, nextSlotMs: number|null, lastOutcome: any, waitingRunNo: number|null, now: number}} f
+ * @param {{trigger: Trigger, armed: boolean, nextSlotMs: number|null, lastOutcome: any, waitingRunNo: number|null, now: number, retryInMs?: number|null}} f
  *   `lastOutcome` = the newest outcome row of the CURRENT signing (`kind`, `at` in ms, `why`, `leftUsd`, `needUsd`, `atLeast`)
  * @returns {{text: string, red: boolean}}
  */
 export function scheduledNextFor(f) {
-  const { trigger, armed, nextSlotMs, lastOutcome, waitingRunNo, now } = f;
+  const { trigger, armed, nextSlotMs, lastOutcome, waitingRunNo, now, retryInMs = null } = f;
   /** @param {string} text @param {boolean} [red] */
   const say = (text, red = false) => ({ text, red });
   if (waitingRunNo !== null) return say(`Run ${waitingRunNo} is waiting for your Accept. The next scheduled run does not wait for it.`);
@@ -127,13 +127,20 @@ export function scheduledNextFor(f) {
     const left = last.atLeast === true ? `at most ${panelMoney2(last.leftUsd)} left` : `${panelMoney2(last.leftUsd)} left`;
     return say(`Paused: not enough money left this month (${left}, a run needs up to ${panelMoney2(last.needUsd)}). Raise the monthly limit in Settings, or it starts again on the 1st.`, true);
   }
-  const lead = last !== null && last.kind === 'refused' && typeof last.why === 'string' && last.why !== '' ? `The last try did not start: ${last.why} ` : '';
+  const lead = last !== null && last.kind === 'refused' && typeof last.why === 'string' && last.why !== '' ? `The last try did not start: ${last.why} ${retryWords(retryInMs)}` : '';
   const red = lead !== '';
   if (!armed) return say(`${lead}Not armed yet: the panel arms it on its next check.`, red);
   if (trigger.kind === 'file-updated') return say(`${lead}Watching for it. A run starts when its contents change.`, red);
   if (trigger.kind === 'new-file') return say(`${lead}Watching for it. A run starts for each new file.`, red);
   if (nextSlotMs === null) return say(`${lead}Not armed yet: the panel arms it on its next check.`, red);
   return say(`${lead}Next run ${slotWords(nextSlotMs)}.`, red);
+}
+
+/** RULED 2026-10-15: after an install-needed refusal, the wait that is left, in whole minutes rounded up; '' when no wait. @param {number|null|undefined} ms */
+export function retryWords(ms) {
+  if (typeof ms !== 'number' || !(ms > 0)) return '';
+  const m = Math.ceil(ms / 60_000);
+  return `Trying again in ${m} minute${m === 1 ? '' : 's'}. `;
 }
 
 /** The fixed catch-up sentence from a run's `trigger.json`. @param {any} rec */
