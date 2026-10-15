@@ -145,7 +145,7 @@
   .dot.green::before{content:"[✓]";color:var(--green);}
   .dot.red::before{content:"[✗]";color:var(--red);}
   /* stopped (hamr 2026-10-07): the person pressed Stop — its own sign, same red as [✗] */
-  .dot.stopped::before{content:"[■]";color:var(--red);}
+  .dot.stopped::before{content:"[■]";color:var(--grey-dot);}
   /* Panel build P3 addition (2026-09-27, "yes, go"): the part cards below the
      step map (`partResultGlyph`/`attemptGlyph`) and the chat job card render
      their result glyph as PLAIN inline text inside a larger string (never
@@ -332,6 +332,7 @@
   .audit-leg-divider{text-align:center;color:var(--text-dim);font-size:12px;margin:10px 0;overflow-wrap:anywhere;}
   .audit-leg-divider-row td{text-align:center;color:var(--text-dim);font-size:12px;background:var(--panel2);}
   .summary-box.red{border-color:var(--red);}
+  .summary-box.grey{border-color:var(--grey-dot);}
   .summary-box.amber{border-color:var(--amber);}
   .summary-box.magenta{border-color:var(--magenta);}
   .summary-box::before{content:"┤ SUMMARY ├";position:absolute;top:-10px;left:10px;background:var(--panel2);padding:0 6px;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;}
@@ -361,6 +362,7 @@
   .map-chip.s-done{border-color:var(--green);color:var(--text);} .map-chip.s-done .chip-sign{color:#2e7d32;}
   .map-chip.s-running{border-color:var(--amber);color:var(--text);} .map-chip.s-running .chip-sign{color:#b8860b;}
   .map-chip.s-stopped{border-color:var(--red);color:var(--text);} .map-chip.s-stopped .chip-sign{color:var(--red);}
+  .map-chip.s-stopsign{border-color:var(--grey-dot);} .map-chip.s-stopsign .chip-sign{color:var(--grey-dot);} /* RULED 2026-10-15: a step you stopped is grey, not red */
   .map-chip.s-died{border-color:var(--magenta);color:var(--text);} .map-chip.s-died .chip-sign{color:var(--magenta);}
   .map-chip.retry{border-style:dashed;}
   .map-chip.resumed-next{border-right-style:dotted;}
@@ -1227,7 +1229,7 @@
       var sign = s.status && s.status.sign ? s.status.sign : "";
       var tries = boxRetryTry(s);
       var cls = "map-chip s-" + String(s.state).replace(/[^a-z-]/g, "") +
-        (tries ? " retry" : "") + (s.resumedNext ? " resumed-next" : "");
+        (tries ? " retry" : "") + (sign === "\u25A0" ? " s-stopsign" : "") + (s.resumedNext ? " resumed-next" : "");
       var label = escapeXml(stepTitleText(numIdx[idx], s));
       var blocked = s.blocked > 0 ? ' <span class="chip-blocked">' + s.blocked + ' blocked</span>' : '';
       var retry = tries ? '<span class="chip-retry">\u21bb' + tries + '</span> ' : '';
@@ -2657,7 +2659,7 @@
       " &middot; " + wallPhrase;
 
     var box = document.getElementById("run-summary");
-    box.className = "summary-box " + (detail.died ? "magenta" : ((detail.glyph === "✗" || detail.glyph === "■") ? "red" : (detail.glyph === "▶" ? "amber" : "")));
+    box.className = "summary-box " + (detail.died ? "magenta" : (detail.glyph === "✗" ? "red" : (detail.glyph === "■" ? "grey" : (detail.glyph === "▶" ? "amber" : ""))));
     // F196: a synthetic placeholder box (e.g. "died during planning") is a
     // LABEL, not a real step — excluded from this count so a run that died
     // before any step started reads "0 of 0 done" / "none started", never

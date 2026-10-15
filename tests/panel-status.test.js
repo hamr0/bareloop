@@ -165,8 +165,14 @@ test('2026-10-07: a STOPPED run wears [■] on the table, the run card, the head
   const h = headerHarness();
   h.setRunHeader('■', 'j (run-1)', '');
   assert.equal(h.els['active-wf-dot'].className, 'dot stopped'); // header
-  assert.match(PAGE, /\.dot\.stopped::before\{content:"\[■\]";color:var\(--red\);\}/); // the sign the class draws, still red
-  assert.match(fnSrc('renderRun'), /detail\.glyph === "■"/); // summary box keeps its red border
+  // RULED 2026-10-15 (supersedes 2026-10-08 red): stopped [■] is GREY, the same grey as [·]: you stopped it, it did not fail
+  assert.match(PAGE, /\.dot\.stopped::before\{content:"\[■\]";color:var\(--grey-dot\);\}/);
+  assert.match(PAGE, /\.dot::before\{content:"\[·\]";color:var\(--grey-dot\);\}/, 'the [·] grey it matches');
+  assert.doesNotMatch(PAGE, /\.dot\.stopped[^{]*\{[^}]*var\(--red\)/);
+  assert.match(PAGE, /\.map-chip\.s-stopsign \.chip-sign\{color:var\(--grey-dot\);\}/, 'the step-map chip of a stopped step');
+  assert.match(fnSrc('buildStepMapHTML'), /s-stopsign/);
+  assert.match(PAGE, /\.summary-box\.grey\{border-color:var\(--grey-dot\);\}/);
+  assert.match(fnSrc('renderRun'), /detail\.glyph === "■" \? "grey"/); // the summary box frame is grey, not red
   // step card + Audit row
   // eslint-disable-next-line no-new-func
   const f = new Function(`${['escapeXml', 'boxStatusWord', 'boxStatusText', 'glyphClass', 'stepStateHTML'].map(fnSrc).join('\n')}\nreturn stepStateHTML;`)();
