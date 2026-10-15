@@ -200,7 +200,7 @@ function card({ post } = {}) {
   const log = { reset: 0, failed: [], refreshed: 0, selected: [], renders: 0, timers: [] };
   const authorPost = (path, body) => { posts.push({ path, body }); return Promise.resolve(post ? post(path, body, posts) : { status: 200, body: { ok: true, words: 'Every day at 13:15', hash: 'h1', cancel: false } }); };
   const src = [
-    fnSrc('byId'), fnSrc('whenTriggerFromBoxes'), fnSrc('whenCanon'), fnSrc('whenChanged'), PAGE.includes('function scheduledCardEdited(') ? fnSrc('scheduledCardEdited') : '', fnSrc('whenShowSubs'), fnSrc('paintWhen'),
+    fnSrc('byId'), fnSrc('whenTriggerFromBoxes'), fnSrc('whenCanon'), fnSrc('whenChanged'), fnSrc('whenShowSubs'), fnSrc('paintWhen'),
     fnSrc('whenEdited'), fnSrc('doWhenSign'), fnSrc('mainButtonFor'),
   ].join('\n');
   const ctx = new Function('document', 'authorPost', 'resetCard', 'chatActionFailed', 'refreshRunsList', 'selectRun', 'renderMain', 'setTimeout', `
@@ -211,7 +211,7 @@ function card({ post } = {}) {
       mainButtonFor: mainButtonFor, doWhenSign: doWhenSign, paintWhen: paintWhen, whenEdited: whenEdited, whenChanged: whenChanged, whenTriggerFromBoxes: whenTriggerFromBoxes,
       get: function(){ return {sched: sched, whenHash: whenHash, whenConfirm: whenConfirm, whenBusy: whenBusy, whenLocked: whenLocked}; },
       setSched: function(s){ sched = s; }, setLocked: function(v){ whenLocked = v; },
-      stateForButton: function(){ return {changed: whenChanged(), cancel: byId("jf-when").value === "hand", confirm: whenConfirm, busy: whenBusy, words: sched.words}; },
+      stateForButton: function(){ return {changed: whenChanged(), refused: !!sched.refusal, cancel: byId("jf-when").value === "hand", confirm: whenConfirm, busy: whenBusy, words: sched.words}; },
     };`)(dom.document, authorPost, () => { log.reset += 1; }, (s) => log.failed.push(s), () => { log.refreshed += 1; }, (id) => log.selected.push(id), () => { log.renders += 1; }, (fn, ms) => { log.timers.push({ fn, ms }); });
   return { ...ctx, dom, g, posts, log };
 }
@@ -260,26 +260,27 @@ test('card: a refused job (no good run) disables the select and every sub-box an
   assert.equal(c.whenChanged(), false, 'a refused card never offers Sign schedule');
 });
 
-test('main button: When unchanged = the Reuse card\'s own Sign & run; changed = Sign schedule; By hand on a scheduled job = Cancel schedule', () => {
+test('main button: a schedule card never reads Sign & run: unchanged = disabled Sign schedule with the nothing-changed words; changed = Sign schedule; By hand on a scheduled job = Cancel schedule', () => {
   const c = card();
   c.setSched(SCHED_NONE);
   c.paintWhen();
-  assert.equal(button(c).text, 'Sign & run');
+  const idle = c.mainButtonFor({ session: false, startOk: true, when: c.stateForButton() }, true, true);
+  assert.deepEqual([idle.text, idle.action, idle.disabled, idle.hint], ['Sign schedule', 'none', true, W.nothingChanged]);
   c.g('jf-when').value = 'daily'; c.g('jf-when-time').value = '13:15'; c.whenEdited();
   assert.deepEqual([button(c).text, button(c).action], ['Sign schedule', 'when-sign-prepare']);
-  // a scheduled job: unchanged is Sign & run, By hand is Cancel schedule
+  // a scheduled job: unchanged is disabled, By hand is Cancel schedule
   const d = card();
   d.setSched(SCHED_DAILY);
   d.paintWhen();
   d.g('jf-inputs').value = 'notes: /in/n.txt'; d.g('jf-dest').value = '/out/'; d.g('jf-cap-money').value = '0.5'; d.g('jf-cap-time').value = '20'; // the boxes as the card opened
-  assert.equal(button(d).text, 'Sign & run');
+  assert.deepEqual([button(d).text, button(d).action, button(d).disabled], ['Sign schedule', 'none', true]);
   d.g('jf-when').value = 'hand'; d.whenEdited();
   assert.deepEqual([button(d).text, button(d).action], ['Cancel schedule', 'when-sign-prepare']);
   // a different time is a change too
   d.g('jf-when').value = 'daily'; d.g('jf-when-time').value = '10:30'; d.whenEdited();
   assert.equal(button(d).text, 'Sign schedule');
   d.g('jf-when-time').value = '09:00'; d.whenEdited();
-  assert.equal(button(d).text, 'Sign & run', 'back to the signed value = unchanged');
+  assert.deepEqual([button(d).text, button(d).action, button(d).disabled], ['Sign schedule', 'none', true], 'back to the signed value = unchanged = disabled');
   // every button word is the server\'s: a reword is one edit
   const e = card();
   e.setSched({ ...SCHED_NONE, words: { ...W, signSchedule: 'Lock it in' } });
@@ -383,7 +384,7 @@ test('modify schedule: changing only Inputs / Destination / a cap (When as signe
   c.setSched(SCHED_DAILY);
   c.paintWhen();
   c.g('jf-inputs').value = 'notes: /in/n.txt'; c.g('jf-dest').value = '/out/'; c.g('jf-cap-money').value = '0.5'; c.g('jf-cap-time').value = '20';
-  assert.equal(button(c).text, 'Sign & run', 'nothing edited = the Reuse card\'s own button');
+  assert.deepEqual([button(c).action, button(c).disabled], ['none', true], 'nothing edited = disabled, never the run button');
   c.g('jf-dest').value = '/home/hamr/bareloop-out';
   c.g('jf-inputs').value = 'changelog: /home/hamr/x/CHANGELOG.md';
   assert.deepEqual([button(c).text, button(c).action], ['Sign schedule', 'when-sign-prepare']);
@@ -393,13 +394,31 @@ test('modify schedule: changing only Inputs / Destination / a cap (When as signe
   assert.deepEqual(c.posts[0].body.when, { kind: 'daily', hour: 9, minute: 0 });
   // putting the boxes back to the signed values is unchanged again
   c.g('jf-dest').value = '/out/'; c.g('jf-inputs').value = 'notes: /in/n.txt';
-  assert.equal(button(c).text, 'Sign & run');
-  // a job with no schedule keeps Sign & run when only the boxes change (Schedule run on an unscheduled job)
+  assert.deepEqual([button(c).action, button(c).disabled], ['none', true]);
+  // a job with no schedule (Schedule run card): box edits alone give nothing to sign; the button is still never a run
   const d = card();
   d.setSched({ ...SCHED_NONE, base: { inputs: 'a: /x', dest: '/o/', capUsd: '1', capTime: '' } });
   d.paintWhen();
   d.g('jf-dest').value = '/elsewhere/';
-  assert.equal(button(d).text, 'Sign & run');
+  assert.deepEqual([button(d).action, button(d).disabled], ['none', true]);
+});
+
+test('schedule card: no state of the card ever yields the start or sign (run) actions', () => {
+  for (const base of [SCHED_NONE, SCHED_DAILY, { ...SCHED_NONE, refusal: 'no good run' }]) {
+    const c = card();
+    c.setSched(base);
+    c.paintWhen();
+    for (const kind of ['hand', 'daily', 'weekly', 'new-file']) {
+      c.g('jf-when').value = kind; c.g('jf-when-time').value = '10:00'; c.g('jf-when-path').value = '/p'; c.whenEdited();
+      for (const confirm of [null, 'every day at 10:00']) {
+        const b = c.mainButtonFor({ session: false, startOk: true, when: { ...c.stateForButton(), confirm } }, true, true);
+        assert.equal(['start', 'sign', 'sign-prepare'].includes(b.action), false, `${kind}/${confirm}: ${b.action}`);
+      }
+    }
+  }
+  const r = card();
+  r.setSched({ ...SCHED_NONE, refusal: 'no good run' });
+  assert.equal(r.mainButtonFor({ session: false, startOk: true, when: r.stateForButton() }, true, true).hint, '', 'a refused card shows its own reason, not the nothing-changed words');
 });
 
 test('modify schedule: the page captures the card\'s starting boxes when it opens the schedule card, and any box edit repaints the main button', () => {

@@ -4566,11 +4566,15 @@
         return {text: "Start drafting", action: "none", disabled: true, hint: ""};
       }
       // When changed from the signed value = the ONE button turns into Sign schedule (Cancel schedule when the choice is By hand): two clicks, $0, starts
-      // nothing. After click 1 it reads "Confirm: <words>". It never reaches the run routes. Unchanged = the Reuse card's own Sign & run.
-      if(!st.session && st.when && st.when.changed){
+      // nothing. After click 1 it reads "Confirm: <words>". It never reaches the run routes. Unchanged = disabled, with the plain words that nothing changed.
+      if(!st.session && st.when){
         var ww = st.when.words || {};
         var wtext = st.when.confirm ? (ww.confirmPrefix || "") + st.when.confirm : (st.when.cancel ? ww.cancelSchedule : ww.signSchedule);
-        return {text: wtext, action: st.when.confirm ? "when-sign" : "when-sign-prepare", disabled: !!st.when.busy, hint: ""};
+        if(st.when.changed){
+          return {text: wtext, action: st.when.confirm ? "when-sign" : "when-sign-prepare", disabled: !!st.when.busy, hint: ""};
+        }
+        // nothing changed: a schedule card has nothing to sign and NEVER falls through to the run button; the plain words say why (a refused card says its own reason)
+        return {text: ww.signSchedule, action: "none", disabled: true, hint: st.when.refused ? "" : (ww.nothingChanged || "")};
       }
       if(!st.session){
         return {text: reuse ? "Sign & run" : "Start drafting", action: "start", disabled: !st.startOk, hint: ""};
@@ -4601,7 +4605,7 @@
     }
     function renderMain(){
       var st = {session: sessionLive, startOk: startOk, signClicked: signClickedOnce, whenLocked: whenLocked};
-      if(sched){ st.when = {changed: whenChanged(), cancel: byId("jf-when").value === "hand", confirm: whenConfirm, busy: whenBusy, words: sched.words}; }
+      if(sched){ st.when = {changed: whenChanged(), refused: !!sched.refusal, cancel: byId("jf-when").value === "hand", confirm: whenConfirm, busy: whenBusy, words: sched.words}; }
       if(sessionLive && lastState){
         st.phase = lastState.phase; st.pendingAsk = lastState.pendingAsk;
         st.specHash = lastState.specHash;
@@ -5070,14 +5074,13 @@
       if(!t) return "hand";
       return [t.kind, t.hour === undefined ? "" : t.hour, t.minute === undefined ? "" : t.minute, t.day || "", t.path || t.folder || ""].join("|");
     }
-    // is When changed from the signed value? The ONE reader; the main button is Sign schedule while it is.
+    // Is the card changed from what was signed? The ONE reader. A schedule card (Schedule run, Cancel / modify schedule) never starts a run: the main
+    // button is Sign schedule while this is true and disabled while it is not. On a scheduled job any When, Inputs, Destination or cap edit counts
+    // (a re-sign); on an unscheduled job only When does (nothing to re-sign until a schedule is picked).
     function whenChanged(){
-      return !!sched && !sched.refusal && (whenCanon(whenTriggerFromBoxes()) !== whenCanon(sched.cur) || scheduledCardEdited());
-    }
-    // On a card opened by Cancel / modify schedule, a changed Inputs, Destination or cap is a change to the schedule too: the button is
-    // Sign schedule (a re-sign, nothing runs), never the Reuse card's Sign & run (a hand run the schedule does not know about).
-    function scheduledCardEdited(){
-      if(!sched || sched.scheduled !== true || !sched.base) return false;
+      if(!sched || sched.refusal) return false;
+      if(whenCanon(whenTriggerFromBoxes()) !== whenCanon(sched.cur)) return true;
+      if(sched.scheduled !== true || !sched.base) return false;
       var b = sched.base;
       return byId("jf-inputs").value.trim() !== b.inputs || byId("jf-dest").value.trim() !== b.dest ||
         byId("jf-cap-money").value.trim() !== b.capUsd || byId("jf-cap-time").value.trim() !== b.capTime;

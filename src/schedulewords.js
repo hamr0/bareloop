@@ -37,6 +37,7 @@ export const SCHEDULE_WORDS = Object.freeze({
   cancelModify: 'Cancel / modify schedule',
   // the one main button of the schedule card
   signSchedule: 'Sign schedule',
+  nothingChanged: 'Nothing changed yet. This card only sets or adjusts the schedule; it never runs the job.',
   confirmPrefix: 'Confirm: ',
   // the When field and the blocks
   whenLabel: 'When',
