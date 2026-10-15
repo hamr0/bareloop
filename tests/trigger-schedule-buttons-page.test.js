@@ -109,8 +109,8 @@ test('Run tab: the schedule button is LAST, right after Reuse workflow; Cancel /
   const { render, bar } = runActions();
   render({ ...GREEN, schedule: { scheduled: false, canSchedule: true, words: W } });
   assert.ok(bar.innerHTML.indexOf('btn-reuse') < bar.innerHTML.indexOf('run-schedule'));
-  render({ runid: 'r2', job: 'j', live: false, died: false, resume: null, ended: { reason: 'no', next: 'x', actions: [{ id: 'edit' }] }, schedule: { scheduled: true, canSchedule: false, words: W } });
-  assert.match(bar.innerHTML, /btn-edit-chat[\s\S]*run-cancel-schedule/, 'a red run of a scheduled job still has Cancel / modify, after Edit in chat');
+  render({ runid: 'r2', job: 'j', live: false, died: false, resume: null, ended: { reason: 'no', next: 'x', actions: [{ id: 'reuse' }] }, schedule: { scheduled: true, canSchedule: false, words: W } });
+  assert.match(bar.innerHTML, /btn-reuse[\s\S]*run-cancel-schedule/, 'a red run of a scheduled job still has Cancel / modify, after Reuse workflow');
   render({ runid: 'r3', job: 'j', live: true, died: false, resume: null, ended: null, schedule: { scheduled: true, canSchedule: false, words: W } });
   assert.match(bar.innerHTML, /btn-stop[\s\S]*run-cancel-schedule/, 'cancel is never refused, so it shows while a run is live');
 });
@@ -361,9 +361,9 @@ test('the main button\'s click handler routes the two schedule actions to doWhen
   assert.match(src, /mainAction === "when-sign-prepare" \|\| mainAction === "when-sign"\) doWhenSign\(\)/);
 });
 
-test('Edit in chat shows no edit note (v1.100: an edit never clears a schedule) and asks for the name prefill', () => {
-  assert.doesNotMatch(fnSrc('editInChat'), /editNote/);
-  assert.match(fnSrc('editInChat'), /mode=edit/);
+test('Edit in chat is gone from the page (v1.101): no editInChat, no btn-edit-chat, no bareloop-edit event; Reuse workflow never mentions an edit note', () => {
+  assert.doesNotMatch(PAGE, /Edit in chat|editInChat|btn-edit-chat|bareloop-edit|applyEdit|mode=edit/);
+  assert.doesNotMatch(fnSrc('reuseWorkflow'), /editNote/);
 });
 
 test('the scheduling words live in ONE table: the page types none of them', () => {

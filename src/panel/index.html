@@ -706,6 +706,7 @@
             <button class="btn card-clear" type="button" id="chat-clear-btn" data-testid="chat-clear">Clear</button>
             <div class="hint" id="chat-startfrom-note" data-testid="startfrom-note" hidden></div>
             <div class="origin-line" id="chat-origin-line" data-testid="origin-line" hidden></div>
+            <div class="startfrom-line" id="chat-startfrom-line" data-testid="startfrom-line" hidden></div>
 
             <div class="field">
               <label id="jf-verdict-label">Check type</label>
@@ -720,7 +721,6 @@
                   <ul class="rw-list" id="rw-list" data-testid="rw-list"></ul>
                 </div>
                 <div class="rw-picked" id="rw-picked" data-testid="rw-picked" hidden><span id="rw-picked-txt" data-testid="rw-picked-txt"></span><a id="rw-change" data-testid="rw-change" role="button" tabindex="0">change</a></div>
-                <div class="startfrom-line" id="chat-startfrom-line" data-testid="startfrom-line" hidden></div>
               </div>
             </div>
             <div class="field">
@@ -2431,17 +2431,17 @@
     note.textContent = lines.join(" ");
   }
   // ---- P5 item 5: the run's ACTION AREA (Run tab, above the counters) — Stop while the run is live, Resume once
-  // it ended in a way the engine would accept (opens the Chat card's resume mode), Edit in chat on every non-green ending.
+  // it ended in a way the engine would accept (opens the Chat card's resume mode), Reuse workflow on every ending.
   // The Ended block (Run tab, above this row) is text only and carries no buttons.
   var stopAsked = {};
   // Reuse workflow (replaces P5 item 3's Start from this) — ask the server for the prefill (the signed job), then
   // hand it to the Chat tab's New job card. The page decides nothing: the server owns what is locked and what is open.
   // `model` (optional) = the Chat card's Model box, when the picker asks: the estimate line then counts only that worker's runs.
-  function reuseWorkflow(runid, model){
+  function reuseWorkflow(runid, model, label){
     authorGet("/api/author/start-from?runid=" + encodeURIComponent(runid) + (model ? "&" + model : "")).then(function(r){
       if(!r || !r.ok){ window.alert((r && r.error) || "nothing to start from"); return; }
       document.getElementById("tab-chat").click();
-      document.dispatchEvent(new CustomEvent("bareloop-reuse", {detail: {runid: runid, prefill: r}}));
+      document.dispatchEvent(new CustomEvent("bareloop-reuse", {detail: {runid: runid, prefill: r, label: label || ""}}));
     }).catch(function(x){ window.alert("could not reach the panel: " + x.message); });
   }
   // Schedule run / Cancel / modify schedule (T Part 7): starts nothing and signs nothing. It opens the SAME Chat card as the neighbouring Reuse
@@ -2455,21 +2455,6 @@
     }).catch(function(x){
       document.getElementById("tab-chat").click();
       document.dispatchEvent(new CustomEvent("bareloop-schedule", {detail: {error: "could not reach the panel: " + x.message}}));
-    });
-  }
-  // Edit in chat (hamr 2026-10-07, option A) — the same prefill door as Reuse workflow (`start-from`, the ONE reader of a
-  // run's signed job), but the Chat card opens with EVERY box open and the normal [Start drafting] path: it drafts a new job.
-  // The origin line is code-owned fixed text; run name and status word come from the same helpers the run header uses.
-  function editInChat(detail){
-    var origin = "Copied from " + detail.job + " (" + runLabel(detail.runNo, detail.runid) + ") \u2014 " +
-      ((detail.status && detail.status.word) || "ended") +
-      ". Every box is open. Change anything and it drafts as a new job; change nothing and it is another run of the same job.";
-    authorGet("/api/author/start-from?mode=edit&runid=" + encodeURIComponent(detail.runid)).then(function(r){
-      document.getElementById("tab-chat").click();
-      document.dispatchEvent(new CustomEvent("bareloop-edit", {detail: (r && r.ok) ? {runid: detail.runid, prefill: r, origin: origin} : {error: (r && r.error) || "nothing to copy"}}));
-    }).catch(function(x){
-      document.getElementById("tab-chat").click();
-      document.dispatchEvent(new CustomEvent("bareloop-edit", {detail: {error: "could not reach the panel: " + x.message}}));
     });
   }
   // Resume (hamr 2026-10-07, option B — moved from the run's Job tab): the Chat card opens in RESUME mode, filled from the
@@ -2499,17 +2484,13 @@
       var canResume = !!detail.resume && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "resume"; });
       if(canResume) html = '<button class="btn primary" type="button" data-testid="btn-resume-run">Resume</button>';
     }
-    // Accept (T Part 8): right after Resume, before Edit in chat. Shown only when the SERVER says this run waits at its review door
+    // Accept (T Part 8): right after Resume, before Reuse workflow. Shown only when the SERVER says this run waits at its review door
     // (`detail.accept`: a door record, not expired, no honoured decision after it). It records the person's accept through the engine's own door.
     if(!live && detail.accept === true){
       html += '<button class="btn primary" type="button" data-testid="btn-accept-run">Accept</button>';
     }
-    // Edit in chat: every non-green ending (the server's Ended block says so) — a died run included
-    if(!live && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "edit"; })){
-      html += '<button class="btn" type="button" data-testid="btn-edit-chat">Edit in chat</button>';
-    }
-    // Reuse workflow: on a GREEN run only (the server's Ended block says so) — a new run of the same signed job
-    if(!live && !detail.died && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "reuse"; })){
+    // Reuse workflow: ONE door on every ending (v1.101), a died run included - the Chat card opens with every box open
+    if(!live && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "reuse"; })){
       html += '<button class="btn" type="button" data-testid="btn-reuse">Reuse workflow</button>';
     }
     // T Part 7: the schedule button is LAST, right after Reuse workflow. The SERVER decides (detail.schedule): `scheduled` shows
@@ -2527,9 +2508,7 @@
     var schedBtn = bar.querySelector('[data-testid="run-schedule"], [data-testid="run-cancel-schedule"]');
     if(schedBtn) schedBtn.addEventListener("click", function(){ scheduleInChat(detail); });
     var reuseBtn = bar.querySelector('[data-testid="btn-reuse"]');
-    if(reuseBtn) reuseBtn.addEventListener("click", function(){ reuseWorkflow(detail.runid); });
-    var editBtn = bar.querySelector('[data-testid="btn-edit-chat"]');
-    if(editBtn) editBtn.addEventListener("click", function(){ editInChat(detail); });
+    if(reuseBtn) reuseBtn.addEventListener("click", function(){ reuseWorkflow(detail.runid, "", runName(detail.job, detail.runNo, detail.runid)); });
     var stopBtn = bar.querySelector('[data-testid="btn-stop"]');
     if(stopBtn){
       stopBtn.addEventListener("click", function(){
@@ -4041,7 +4020,10 @@
     // Reuse workflow — set when the card was opened by [Reuse workflow]: the run (or imported job) it came from.
     // Only Source, Destination and the two caps are open on that card; the SERVER refuses any other change.
     var startFrom = null;
-    var editFrom = null; // Edit in chat: the run copied from (v1.100) - the server folds an unchanged workflow back under its job
+    // ONE door (v1.101): what the card was prefilled from, so the page can tell whether a JOB box changed. {card, green, name, nextName}
+    // `name` = the origin's job name (shown while no job box changed), `nextName` = the server's next free <base>-N (shown once one does).
+    var reuseOrigin = null;
+    var nameTouched = false; // the person typed their own name for a changed job
     // T Part 7: the card in SCHEDULE mode (opened by Schedule run / Cancel-modify schedule): the Reuse card plus the When field.
     // `sched` = {job, runid, words, cur, scheduled, refusal, now} while it is on, else null. `cur` = the signed trigger (the When field's
     // starting value); every word comes from `words` (the server's one table, src/schedulewords.js SCHEDULE_WORDS).
@@ -4092,7 +4074,7 @@
         NUMBERED_IDS.forEach(gutterSync);
         document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === "deterministic"); });
       }
-      startFrom = null; editFrom = null; reuseSession = false; autoSigned = false; reuseCheckType = "deterministic";
+      startFrom = null; reuseOrigin = null; nameTouched = false; reuseSession = false; autoSigned = false; reuseCheckType = "deterministic";
       scheduleOff();
       sfLine.hidden = true; sfNote.hidden = true; originLine.hidden = true;
       setReuseLocked(false);
@@ -4135,7 +4117,6 @@
       rwSearch.hidden = picked;
       rwPicked.hidden = !picked;
       rwPickedTxt.innerHTML = picked ? "<b>" + escapeXml(reusePickedName) + "</b>" : "";
-      if(!picked) sfLine.hidden = true;
     }
     function rwMark(name, q){
       var i = q ? name.toLowerCase().indexOf(q.toLowerCase()) : -1;
@@ -4210,7 +4191,6 @@
       document.querySelector(".chat-input-row").hidden = false;
     }
     function openNewCard(){
-      editFrom = null;
       card.hidden = false;
       originLine.hidden = true;
       exitResumeMode();
@@ -4322,13 +4302,18 @@
     // Check type: Deterministic / Rubric / Reuse workflow. Reuse opens the picker on an empty card; Deterministic or
     // Rubric while the picker is showing (picked or not) LEAVES reuse — boxes untouched (clearStartFrom(true)).
     function onVerdictChange(v){
-      if(v === "reuse"){ if(rwBox.hidden) openPicker(); return; }
+      if(v === "reuse"){
+        if(startFrom !== null){ clearStartFrom(true); setVerdict("reuse"); openPicker(); return; }
+        if(rwBox.hidden) openPicker();
+        return;
+      }
       if(!rwBox.hidden){
         clearStartFrom(true);
         setVerdict(v);
         renderPicker();
       }
       setJobPlaceholders(v);
+      syncReuseName();
       refreshStartEnabled();
     }
     document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){
@@ -4625,7 +4610,7 @@
       var open = askBoxOpenFor(st);
       msgInput.disabled = !open;
       if(!open) msgInput.value = "";
-      var b = mainButtonFor(st, !msgInput.value.trim(), !!startFrom || verdictValue() === "reuse");
+      var b = mainButtonFor(st, !msgInput.value.trim(), reusePathNow() || verdictValue() === "reuse");
       mainBtn.textContent = b.text;
       mainBtn.disabled = b.disabled;
       mainAction = b.action;
@@ -4755,7 +4740,6 @@
       refreshStartEnabled();
       var body = currentCard();
       if(startFrom) body.startFrom = startFrom.importId ? {importId: startFrom.importId} : startFrom.runid;
-      else if(editFrom) body.editFrom = editFrom;
       authorPost("/api/author/start", body).then(function(r){
         if(r.status !== 200 || !r.body.ok){
           errEl.textContent = (r.body && r.body.error) || "refused";
@@ -4819,7 +4803,7 @@
 
     // ---- Reuse workflow — the card opens filled from the SIGNED job: four open boxes, the rest greyed ----
     function setVal(id, v){ document.getElementById(id).value = (v === undefined || v === null) ? "" : String(v); }
-    // ONE owner of filling the card from a prefill (a re-attached session, Reuse, Edit in chat, Resume): the six boxes P7 left
+    // ONE owner of filling the card from a prefill (a re-attached session, Reuse, Resume): the six boxes P7 left
     // (the old Goal/Source/Success/Guardrails/Judge boxes are gone), then every box re-fits and its number gutter re-measures.
     function fillCard(c){
       setVal("jf-name", c.jobName); setVal("jf-job", c.jobText); setVal("jf-inputs", c.inputs);
@@ -4829,20 +4813,27 @@
       fitCardBoxes();
     }
     // ONE owner of the reuse fill: the Run tab's / Import view's button and the picker both arrive here (the
-    // `bareloop-reuse` event), so the card ends up in the same picked state whichever door was used.
+    // `bareloop-reuse` event). ONE DOOR (v1.101): every box is open and prefilled; nothing is locked. Only the schedule card
+    // (`d.lock`) keeps the job boxes locked - it signs the green run's plan as it is.
     function applyReuse(d){
       var pre = d.prefill || {};
       var c = pre.card || {};
+      var lock = d.lock === true;
       clearStartFrom();
       openNewCard();
       startFrom = d.importId ? {importId: d.importId} : {runid: d.runid};
       reuseCheckType = c.checkType === "rubric" ? "rubric" : "deterministic";
       reusePickedName = c.jobName || (pre.origin && pre.origin.job) || "job";
-      setVerdict("reuse");
+      setVerdict(lock ? "reuse" : reuseCheckType);
       if(c.model){ setPick(c); }
       fillCard(c);
-
-      setReuseLocked(true);
+      reuseOrigin = {card: c, green: pre.green === true, name: reusePickedName, nextName: pre.nextName || ""};
+      nameTouched = false;
+      setReuseLocked(lock);
+      if(!lock){
+        originLine.textContent = "Reuse: " + (d.label || reusePickedName);
+        originLine.hidden = false;
+      }
       renderPicker();
       sfLine.hidden = false;
       sfLine.textContent = pre.line ? rwMeta({checkType: reuseCheckType, line: pre.line}) : "";
@@ -4855,28 +4846,33 @@
       refreshStartEnabled();
     }
     document.addEventListener("bareloop-reuse", function(e){ applyReuse(e.detail || {}); });
-
-    // Edit in chat — the card opens filled from the SIGNED job with EVERY box open; the button stays the normal
-    // [Start drafting] (startFrom / reuse state are never set: no borrowed track record). A live drafting session is
-    // handled exactly as applyReuse does (clearStartFrom + openNewCard). A refused prefill opens nothing, error only.
-    function applyEdit(d){
-      if(d.error){ errEl.textContent = d.error; return; }
-      var c = (d.prefill || {}).card || {};
-      clearStartFrom();
-      openNewCard();
-      setVerdict(c.checkType === "rubric" ? "rubric" : "deterministic");
-      if(c.model){ setPick(c); }
-      fillCard(c);
-      editFrom = d.runid || null;
-
-      originLine.textContent = d.origin || "";
-      originLine.hidden = !d.origin;
-      renderPicker();
-      refreshModelStatus();
-      refreshCapNote();
-      refreshStartEnabled();
+    // Did a JOB box (the job text, the check type, the thinking tick) change from the run the card came from? The same comparison the
+    // server makes on the start (whitespace ignored): the Run boxes (Inputs, Destination, Model, caps) never count.
+    function jobBoxesChangedNow(){
+      if(reuseOrigin === null) return false;
+      var cur = currentCard(), o = reuseOrigin.card;
+      var t = function(v){ return typeof v === "string" ? v.replace(/\s+/g, "") : ""; };
+      return t(cur.jobText) !== t(o.jobText) || cur.checkType !== (o.checkType === "rubric" ? "rubric" : "deterministic") || (cur.thinking === true) !== (o.thinking === true);
     }
-    document.addEventListener("bareloop-edit", function(e){ applyEdit(e.detail || {}); });
+    // the reuse path (signed plan verbatim, no drafting, $0): a card made by Reuse workflow from a GREEN run with no job box changed
+    function reusePathNow(){
+      return startFrom !== null && (reuseOn || (reuseOrigin !== null && reuseOrigin.green === true && !jobBoxesChangedNow()));
+    }
+    // the Job name box: the origin's name while no job box changed; the next free <base>-N the moment one does (renamable); the origin's
+    // again when the boxes go back. A name typed while nothing changed is put back (the origin's name is forced).
+    function syncReuseName(){
+      if(reuseOrigin === null || reuseOn) return;
+      var nameEl = document.getElementById("jf-name");
+      if(!jobBoxesChangedNow()){ nameEl.value = reuseOrigin.name; nameTouched = false; }
+      else if(!nameTouched){ nameEl.value = reuseOrigin.nextName; }
+    }
+    function reuseBoxesEdited(){ syncReuseName(); renderMain(); }
+    document.getElementById("jf-job").addEventListener("input", reuseBoxesEdited);
+    thinkingBox.addEventListener("change", reuseBoxesEdited);
+    document.getElementById("jf-name").addEventListener("input", function(){
+      if(reuseOrigin === null || reuseOn) return;
+      if(jobBoxesChangedNow()) nameTouched = true; else syncReuseName();
+    });
 
     // Resume — the card in RESUME mode: the signed job filled and locked, only Cap $ and Time cap open (prefilled from the
     // engine's own resume plan, the values the Job tab used to show). A live drafting session is handled exactly as
@@ -5171,7 +5167,7 @@
     function applyScheduleCard(d){
       if(d.error){ errEl.textContent = d.error; return; }
       if(sessionLive || resumeRun !== null){ errEl.textContent = "Finish or clear what is on the card first, then try again."; return; }
-      applyReuse({runid: d.runid, prefill: d.prefill});
+      applyReuse({runid: d.runid, prefill: d.prefill, lock: true});
       var sc = (d.prefill || {}).scheduleCard || {};
       sched = {job: d.job, runid: d.runid, words: sc.words || {}, cur: sc.trigger || null, scheduled: sc.scheduled === true, refusal: sc.refusal || null, now: sc.now || null};
       whenHash = null; whenConfirm = null; whenBusy = false;

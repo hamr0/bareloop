@@ -15,7 +15,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { createPanelServer, getStartFrom, trackRecordFor, reuseLine, listReuseJobs, jobTextFromSpec } from '../src/panel/server.js';
 import { createAuthorRoutes } from '../src/panel/authorroutes.js';
 import {
-  createSession, cardFields, CARD_FIELDS, validateReuseCard, lockedFieldChanged, buildReuseSpec, REUSE_OPEN_FIELDS, REUSE_LOCKED_FIELDS,
+  createSession, cardFields, CARD_FIELDS, validateReuseCard, jobBoxesChanged, buildReuseSpec,
 } from '../src/panel/authorsession.js';
 import { classGuards } from '../src/authoring.js';
 import { keyRows } from '../src/providerrows.js';
@@ -158,8 +158,8 @@ test('prefill: the locked boxes are the SIGNED job read by the Job tab\'s own re
   const a = getStartFrom('withcard', { home });
   assert.equal(a.ok, true, JSON.stringify(a));
   assert.equal(a.from, 'signed job');
-  assert.deepEqual([...a.locked], [...REUSE_LOCKED_FIELDS]);
-  assert.deepEqual([...a.open], ['inputs', 'destination', 'model', 'capUsd', 'maxWallMs']);
+  assert.equal('locked' in a, false, 'v1.101: nothing is locked, so the prefill names no locked boxes');
+  assert.equal('open' in a, false);
   assert.equal(a.card.jobText, 'fix things\n~ no new deps\ntsc clean', 'the SIGNED job lines (with their ~ rule), not the typed text');
   assert.equal(a.card.jobText, jobTextFromSpec(spec));
   assert.equal(a.note, null, 'a job with numbered lines is not an older job');
@@ -194,17 +194,15 @@ test('prefill: a run whose signed job is not on disk is refused in words — not
   assert.match(r.error, /signed job is not on disk .* Clear the card/);
 });
 
-test('lockedFieldChanged: only the four open boxes may differ; every other box is refused BY NAME', () => {
-  const origin = baseCard({ jobName: 'j', maxWallMs: 600000 });
-  assert.deepEqual([...REUSE_OPEN_FIELDS].sort(), ['capUsd', 'destination', 'inputs', 'maxWallMs', 'model']);
-  assert.equal(lockedFieldChanged(origin, origin), null, 'nothing changed');
-  assert.equal(lockedFieldChanged({ ...origin, inputs: 'repo: /other', destination: 'lib/', capUsd: 9, maxWallMs: 1, model: 'deepseek-flash' }, origin), null, 'the five open boxes may all change');
-  for (const [field, value, label] of [
-    ['jobText', 'another job', 'The job'], ['checkType', 'rubric', 'Check type'], ['jobName', 'other', 'Job name'],
-  ]) {
-    assert.equal(lockedFieldChanged({ ...origin, [field]: value }, origin), label, `${field} is locked`);
-  }
-  assert.equal(lockedFieldChanged({ ...origin, jobText: ` ${origin.jobText.slice(0, 3)}\n${origin.jobText.slice(3)} ` }, origin), null, 'whitespace is not a change');
+test('jobBoxesChanged (v1.101): ONLY the job text, the check type and the thinking tick count; every run box may change; whitespace is not a change', () => {
+  const origin = { ...baseCard({ jobName: 'j', maxWallMs: 600000 }), thinking: false };
+  assert.equal(jobBoxesChanged(origin, origin), false, 'nothing changed');
+  assert.equal(jobBoxesChanged({ ...origin, inputs: 'repo: /other', destination: 'lib/', capUsd: 9, maxWallMs: 1, model: 'deepseek-flash', jobName: 'other' }, origin), false, 'the run boxes (and the name box) never decide it');
+  assert.equal(jobBoxesChanged({ ...origin, jobText: 'another job' }, origin), true, 'job text');
+  assert.equal(jobBoxesChanged({ ...origin, checkType: 'rubric' }, origin), true, 'check type');
+  assert.equal(jobBoxesChanged({ ...origin, thinking: true }, origin), true, 'thinking');
+  assert.equal(jobBoxesChanged({ ...origin, thinking: undefined }, origin), false, 'an absent tick reads as off');
+  assert.equal(jobBoxesChanged({ ...origin, jobText: ` ${origin.jobText.slice(0, 3)}\n${origin.jobText.slice(3)} ` }, origin), false, 'whitespace is not a change');
 });
 
 test('buildReuseSpec: a COPY of the signed spec with ONLY writeScope / inputs / budgetUsd / maxWallMs set — new jobSpecHash, SAME workflowKey', async () => {
@@ -307,7 +305,7 @@ test('validateReuseCard: The job box is NOT required (the signed job carries it)
 });
 
 // ── over a real socket: the routes ───────────────────────────────────────────────────────────────────────────
-test('routes: GET start-from (guarded) prefills with locked/open; POST start REFUSES a changed locked box by name and accepts the four open ones; start-from-check is gone', async (t) => {
+test('routes: GET start-from (guarded) prefills with nothing locked; POST start with a run box changed reuses, with a job box changed drafts a NEW workflow; start-from-check is gone', async (t) => {
   const spec = await realSpec();
   const home = keysHomeWith('ANTHROPIC_API_KEY=bad key'); // a malformed key: every session refuses at $0, nothing is reached
   const { out } = makeRun(home, { runid: 'origin1', spec, card: baseCard({ jobName: spec.job, source: '/the/original/source' }) });
@@ -322,23 +320,21 @@ test('routes: GET start-from (guarded) prefills with locked/open; POST start REF
   assert.equal((await get('/api/author/start-from?runid=nope')).status, 404);
   const pre = await (await get('/api/author/start-from?runid=origin1')).json();
   assert.equal(pre.ok, true);
-  assert.deepEqual(pre.open, ['inputs', 'destination', 'model', 'capUsd', 'maxWallMs']);
-  assert.ok(pre.locked.includes('jobText') && !pre.locked.includes('inputs') && !pre.locked.includes('capUsd'));
+  assert.equal('locked' in pre, false, 'v1.101: nothing is locked');
+  assert.equal(pre.green, true, 'the origin earned a green: an unchanged job reuses the signed plan');
+  assert.equal(pre.nextName, `${spec.job}-2`, 'the name the box takes once a job box changes');
   assert.equal(pre.workflowKey, workflowKey(spec));
   assert.match(pre.line, /^Same job — 1 green · 0 not green · about \$1\.00 and 5 min a run$/);
   assert.equal('sameJobAvailable' in pre, false);
 
   assert.equal((await post('/api/author/start-from-check', { runid: 'origin1', card: pre.card })).status, 404, 'the "changed — new job" check is gone');
 
-  // every locked box refused by name — the server never trusts the page
-  for (const [field, value, label] of [['jobText', 'smuggled', 'The job'], ['checkType', 'rubric', 'Check type'], ['jobName', 'other-name', 'Job name']]) {
-    // eslint-disable-next-line no-await-in-loop
-    const r = await post('/api/author/start', { ...pre.card, [field]: value, startFrom: 'origin1' });
-    // eslint-disable-next-line no-await-in-loop
-    const j = await r.json();
-    assert.equal(r.status, 400, field);
-    assert.equal(j.error, `${label} is locked on a reused workflow — Clear the card to change it`, field);
-  }
+  // a changed JOB box is no longer refused (v1.101): it starts a drafting session for a NEW workflow under the card's own name
+  const drafted = await (await post('/api/author/start', { ...pre.card, jobText: 'smuggled', jobName: 'other-name', inputs: `repo: ${makeRepo()}`, startFrom: 'origin1' })).json();
+  assert.equal(drafted.ok, true, JSON.stringify(drafted));
+  assert.equal(drafted.reuse, false, 'a changed job box drafts');
+  assert.equal(drafted.state.card.jobName, 'other-name');
+  await post(`/api/author/${drafted.sessionId}/abandon`, {});
 
   const ok = await (await post('/api/author/start', { ...pre.card, inputs: `repo: ${makeRepo()}`, destination: 'lib/', capUsd: 3, maxWallMs: 120000, startFrom: 'origin1' })).json();
   assert.equal(ok.ok, true);
@@ -514,7 +510,7 @@ test('reuse-jobs: an already-green run is NOT a reuse source — a job whose onl
 });
 
 // hamr 2026-10-08: the server enforces "reuse needs a real green" — the pickers filter, but a hand-made POST must not.
-test('POST start with startFrom = an already-green / red / running run is refused at $0 and signs nothing; a green run works; GET start-from (Edit in chat / Resume prefill) still serves the red run', async (t) => {
+test('POST start with startFrom = a green run reuses the signed plan; an already-green / red run with no job box changed DRAFTS (an unproven plan is never reused) under the origin name', async (t) => {
   const origin = await realSpec();
   const home = homeWithTwoRows();
   makeRun(home, { runid: 'g1', spec: origin, outcome: 'green' });
@@ -528,18 +524,20 @@ test('POST start with startFrom = an already-green / red / running run is refuse
   const get = (p) => fetch(`${base}${p}`, { headers: { 'x-bareloop-token': token } }).then((r) => r.json());
   const post = (p, body) => fetch(`${base}${p}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: JSON.stringify(body) });
   const pre = await get('/api/author/start-from?runid=g1');
-  for (const id of ['ag1', 'red1', 'run1']) {
-    // eslint-disable-next-line no-await-in-loop
-    const r = await post('/api/author/start', { ...pre.card, source: makeRepo(), startFrom: id });
-    // eslint-disable-next-line no-await-in-loop
-    const j = await r.json();
-    assert.equal(r.status, 409, id);
-    assert.equal(j.error, 'only a run that finished green can be reused — this one did not', id);
-  }
-  assert.equal((await get('/api/author/live')).sessionId, null, 'nothing was signed or started by the refusals');
   const ok = await (await post('/api/author/start', { ...pre.card, source: makeRepo(), startFrom: 'g1' })).json();
   assert.equal(ok.ok, true, JSON.stringify(ok));
   assert.equal(ok.reuse, true);
+  await post(`/api/author/${ok.sessionId}/abandon`, {});
+  for (const id of ['ag1', 'red1']) {
+    // eslint-disable-next-line no-await-in-loop
+    const j = await (await post('/api/author/start', { ...pre.card, jobName: 'a-typed-name', inputs: `repo: ${makeRepo()}`, startFrom: id })).json();
+    assert.equal(j.ok, true, `${id}: ${JSON.stringify(j)}`);
+    assert.equal(j.reuse, false, `${id}: a run that is not a real green is never reused, so it drafts`);
+    assert.equal(j.state.card.jobName, origin.job, `${id}: signed under the ORIGIN name, a typed one is ignored`);
+    // eslint-disable-next-line no-await-in-loop
+    await post(`/api/author/${j.sessionId}/abandon`, {});
+  }
   const red = await get('/api/author/start-from?runid=red1');
-  assert.equal(red.ok, true, 'Edit in chat / Resume read the red run\'s prefill through GET — never blocked');
+  assert.equal(red.ok, true, 'Reuse / Resume read the red run\'s prefill through GET — never blocked');
+  assert.equal(red.green, false);
 });

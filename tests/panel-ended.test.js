@@ -102,20 +102,20 @@ test('endedFor: the table — every outcome maps to its fixed reason, next line 
   assert.equal(live(null), null, 'no Ended block while a run is live');
   assert.deepEqual(live('green'), { reason: 'Goal met.', next: 'Nothing to do.', line: 'goal met', actions: [{ id: 'reuse', label: 'Reuse workflow' }] });
   assert.equal(live('already-green').reason, 'Goal met.');
-  assert.deepEqual(live('already-green').actions, [{ id: 'edit', label: 'Edit in chat' }], 'already-green is not a reuse source');
+  assert.deepEqual(live('already-green').actions, [{ id: 'reuse', label: 'Reuse workflow' }], 'already-green offers Reuse workflow too (one door; the card decides the path)');
   assert.equal(live('green', { o: { destinationRefused: 'folder is read only' } }).reason, 'Goal met, but the output could not be delivered.');
   // item 3 (hamr 2026-10-08): the delivery-refused ending follows the same reuse rule — only a green that earned it offers Reuse workflow
   assert.deepEqual(live('green', { o: { destinationRefused: 'folder is read only' } }).actions, [{ id: 'reuse', label: 'Reuse workflow' }]);
   for (const out of ['already-green', 'satisfied']) {
     const r = live(out, { o: { destinationRefused: 'folder is read only' } });
     assert.equal(r.reason, 'Goal met, but the output could not be delivered.', out);
-    assert.deepEqual(r.actions, [{ id: 'edit', label: 'Edit in chat' }], `${out}: Edit in chat, no Reuse`);
+    assert.deepEqual(r.actions, [{ id: 'reuse', label: 'Reuse workflow' }], `${out}: Reuse workflow on every ending`);
   }
 
   const cap = live('cap-halt', { o: { resume: ok } });
   assert.equal(cap.reason, 'Money cap reached ($8.00 of $8.00).');
   assert.equal(cap.next, 'Raise the cap, then Resume.');
-  assert.deepEqual(cap.actions, [{ id: 'resume', label: 'Resume' }, { id: 'edit', label: 'Edit in chat' }], 'Resume then Edit in chat');
+  assert.deepEqual(cap.actions, [{ id: 'resume', label: 'Resume' }, { id: 'reuse', label: 'Reuse workflow' }], 'Resume then Reuse workflow');
   assert.equal(cap.line, 'money cap — resume');
 
   const wall = live('wall-halt', { o: { resume: ok } });
@@ -130,25 +130,25 @@ test('endedFor: the table — every outcome maps to its fixed reason, next line 
 
   // Reuse workflow (2026-10-03): the button is for GREEN rows only; every red row says where to change the job
   const stalled = live('step-stalled', { o: { resume: ok } });
-  assert.deepEqual(stalled.actions, [{ id: 'resume', label: 'Resume' }, { id: 'edit', label: 'Edit in chat' }], 'stalled: Resume, Edit in chat');
-  assert.match(stalled.next, /^Resume, or change the job: press Edit in chat\.$/);
+  assert.deepEqual(stalled.actions, [{ id: 'resume', label: 'Resume' }, { id: 'reuse', label: 'Reuse workflow' }], 'stalled: Resume, Reuse workflow');
+  assert.match(stalled.next, /^Resume, or change the job: press Reuse workflow\.$/);
   assert.deepEqual(live('green', { o: { destinationRefused: 'folder is read only' } }).actions, [{ id: 'reuse', label: 'Reuse workflow' }], 'green + destination refused keeps Reuse workflow');
   assert.match(live('green', { o: { destinationRefused: 'x' } }).next, /Reuse workflow/);
   for (const o of ['cap-halt', 'wall-halt', 'stopped', 'provider-red']) {
-    assert.ok(!live(o, { o: { resume: ok } }).actions.some((a) => a.id === 'reuse'), `${o}: never Reuse workflow`);
-    assert.ok(!live(o, { o: { resume: no } }).actions.some((a) => a.id === 'reuse'), `${o} (not resumable): never Reuse workflow`);
+    assert.ok(live(o, { o: { resume: ok } }).actions.some((a) => a.id === 'reuse'), `${o}: one door: always Reuse workflow`);
+    assert.ok(live(o, { o: { resume: no } }).actions.some((a) => a.id === 'reuse'), `${o} (not resumable): one door: always Reuse workflow`);
   }
   for (const cat of ['wall-halt', 'provider-red']) {
     const e = endedFor({ outcome: 'escalated', stopReason: null, spentUsd: 1, budgetUsd: 8, lastEscalation: { category: cat } }, { died: false, lastThing: null }, {});
-    assert.deepEqual(e.actions, [ { id: 'edit', label: 'Edit in chat' }], `escalated ${cat}: Edit in chat only`);
-    assert.equal(e.next, 'Change the job: press Edit in chat.');
+    assert.deepEqual(e.actions, [ { id: 'reuse', label: 'Reuse workflow' }], `escalated ${cat}: Reuse workflow only`);
+    assert.equal(e.next, 'Change the job: press Reuse workflow.');
   }
 
   for (const o of ['plan-red', 'check-red', 'step-red', 'escalated']) {
     const r = live(o, { stopReason: 'tests failing' });
     assert.match(r.reason, /^Goal not met — the checks said no \(tests failing\)\.$/, o);
-    assert.deepEqual(r.actions, [ { id: 'edit', label: 'Edit in chat' }], `${o} offers Edit in chat only`);
-    assert.equal(r.next, 'Change the job: press Edit in chat.', o);
+    assert.deepEqual(r.actions, [ { id: 'reuse', label: 'Reuse workflow' }], `${o} offers Reuse workflow only`);
+    assert.equal(r.next, 'Change the job: press Reuse workflow.', o);
   }
   assert.match(live('close-red').reason, /^The check itself broke \(instrument fault\), not your goal\.$/);
   for (const o of ['pricing-red', 'unapproved-spec', 'job-red', 'branch-red', 'interpreter-red', 'recipe-stale', 'close-unsupported', 'smoke-red', 'runner-drained']) {
@@ -157,12 +157,12 @@ test('endedFor: the table — every outcome maps to its fixed reason, next line 
 
   const died = endedFor({ outcome: null, stopReason: null, spentUsd: null, budgetUsd: 8 }, { died: true, lastThing: 'a scout model call at 2026-10-01 10:02' }, { resume: ok });
   assert.match(died.reason, /^Stopped with no ending recorded \(last thing it did: a scout model call at 2026-10-01 10:02\)\.$/);
-  assert.deepEqual(died.actions, [{ id: 'resume', label: 'Resume' }, { id: 'edit', label: 'Edit in chat' }], 'died: Resume, Edit in chat (Reuse workflow is for green rows)');
+  assert.deepEqual(died.actions, [{ id: 'resume', label: 'Resume' }, { id: 'reuse', label: 'Reuse workflow' }], 'died: Resume, Reuse workflow');
 
   // never a button the engine would refuse
   const refused = live('cap-halt', { o: { resume: no } });
-  assert.deepEqual(refused.actions, [ { id: 'edit', label: 'Edit in chat' }], 'a refused Resume is never offered; Edit in chat still is');
-  assert.match(refused.next, /^Resume is not available for this run \(it is still running\)\. Change the job: press Edit in chat\.$/);
+  assert.deepEqual(refused.actions, [ { id: 'reuse', label: 'Reuse workflow' }], 'a refused Resume is never offered; Reuse workflow still is');
+  assert.match(refused.next, /^Resume is not available for this run \(it is still running\)\. Change the job: press Reuse workflow\.$/);
 });
 
 // the REAL escalation record of run mup3h70u (the strike governor filed under category cap-halt),
@@ -184,8 +184,8 @@ test('ITEM 1: an escalated run whose escalation is the STRIKE governor (category
   makeRun(home, { runid: 'strike1', outcome: 'escalated', spent: 0.28, spec: { ...SPEC, budgetUsd: 1.5 }, extra: [MUP3H70U_ESCALATION] });
   const d = getRunDetail('strike1', { home });
   assert.equal(d.ended.reason, 'The fix loop stopped improving (2 of 2 tries, no check got better).');
-  assert.equal(d.ended.next, 'Change the job: press Edit in chat.');
-  assert.deepEqual(d.ended.actions, [{ id: 'edit', label: 'Edit in chat' }]);
+  assert.equal(d.ended.next, 'Change the job: press Reuse workflow.');
+  assert.deepEqual(d.ended.actions, [{ id: 'reuse', label: 'Reuse workflow' }]);
   assert.doesNotMatch(d.ended.reason, /Money cap/);
   assert.equal(listRuns({ home }).find((r) => r.runid === 'strike1').endedLine, 'stopped improving');
 });
@@ -205,7 +205,7 @@ test('ITEM 2: a terminal outcome never says "Resume is not available" or leaks e
   assert.doesNotMatch(d.ended.next, /Resume is not available|answer, not a stop/);
   // a resumable class with no signed spec says so in plain words
   makeRun(home, { runid: 'cap2', hashOverride: 'nope' });
-  assert.match(getRunDetail('cap2', { home }).ended.next, /^Resume is not available for this run \(no signed job file beside this run matches the hash it ran under\)\. Change the job: press Edit in chat\.$/);
+  assert.match(getRunDetail('cap2', { home }).ended.next, /^Resume is not available for this run \(no signed job file beside this run matches the hash it ran under\)\. Change the job: press Reuse workflow\.$/);
 });
 
 test('ITEM 3: "stopped before or outside the work" shows the code only — raw engine detail (e.g. a retired hitl stage) never reaches the page', () => {
@@ -221,7 +221,7 @@ test('getRunDetail + listRuns: a cap-halt run carries the Ended block, the Resum
   makeRun(home, { runid: 'cap1' });
   const d = getRunDetail('cap1', { home });
   assert.equal(d.ended.reason, 'Money cap reached ($8.00 of $8.00).');
-  assert.deepEqual(d.ended.actions, [{ id: 'resume', label: 'Resume' }, { id: 'edit', label: 'Edit in chat' }]);
+  assert.deepEqual(d.ended.actions, [{ id: 'resume', label: 'Resume' }, { id: 'reuse', label: 'Reuse workflow' }]);
   assert.equal(d.resume.budgetUsd, 8);
   assert.equal(d.resume.maxWallMin, 60);
   assert.equal(d.resume.spentUsd, 8);
@@ -244,7 +244,7 @@ test('getRunDetail: a green run reads "Goal met." with no Resume; a died run rea
   const d = getRunDetail('died1', { home });
   assert.equal(d.glyph, '?', 'died is never [✗]');
   assert.match(d.ended.reason, /^Stopped with no ending recorded \(last thing it did: .+\)\.$/);
-  assert.deepEqual(d.ended.actions, [{ id: 'resume', label: 'Resume' }, { id: 'edit', label: 'Edit in chat' }]);
+  assert.deepEqual(d.ended.actions, [{ id: 'resume', label: 'Resume' }, { id: 'reuse', label: 'Reuse workflow' }]);
 });
 
 test('getRunDetail: a destination-refused record on a green names the delivery failure', () => {
@@ -256,11 +256,11 @@ test('getRunDetail: a destination-refused record on a green names the delivery f
 test('getRunDetail: a run with a job-end the engine would refuse to resume (plan-red) shows no Resume, and a missing signed spec hides it', () => {
   const home = tmp();
   makeRun(home, { runid: 'red1', outcome: 'plan-red' });
-  assert.deepEqual(getRunDetail('red1', { home }).ended.actions, [{ id: 'edit', label: 'Edit in chat' }], 'a red run has no Reuse workflow, only Edit in chat');
+  assert.deepEqual(getRunDetail('red1', { home }).ended.actions, [{ id: 'reuse', label: 'Reuse workflow' }], 'a red run offers Reuse workflow too (one door)');
   // cap-halt but the spec beside it is not the one the run was signed under
   makeRun(home, { runid: 'stale1', hashOverride: 'not-the-hash' });
   const s = getRunDetail('stale1', { home });
-  assert.deepEqual(s.ended.actions, [{ id: 'edit', label: 'Edit in chat' }], 'cap-halt with no usable signed spec: Resume is hidden, and Reuse workflow is not on the cap-halt row');
+  assert.deepEqual(s.ended.actions, [{ id: 'reuse', label: 'Reuse workflow' }], 'cap-halt with no usable signed spec: Resume is hidden, Reuse workflow stays');
   assert.match(s.ended.next, /no signed job file beside this run matches the hash/);
 });
 

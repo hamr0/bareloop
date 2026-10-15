@@ -90,25 +90,30 @@ test('pick: a job hands its newest-green runid and the card Model to the EXISTIN
   assert.match(PAGE, /document\.addEventListener\("bareloop-reuse", function\(e\)\{ applyReuse\(e\.detail \|\| \{\}\); \}\);/, 'the listener and the picker share applyReuse');
 });
 
-test('picked state: applyReuse (either door) puts the radio on Reuse workflow, takes checkType from the JOB, shows the name — and there is no origin line', () => {
+test('picked state: applyReuse (either door) puts the radio on the JOB\'s own check type, fills every box, locks NOTHING, remembers the origin card for the job-box compare, and shows the "Reuse: <job>" origin line (v1.101)', () => {
   const log = [];
   const sfLine = { hidden: true, textContent: '', className: '' };
   const sfNote = { hidden: true, textContent: '' };
+  const originLine = { hidden: true, textContent: '' };
   const api = build(['rwMeta', 'applyReuse'], {
     clearStartFrom: () => log.push('clear'), openNewCard: () => log.push('open'), modelSelect: { value: '' }, setPick() {},
     setVerdict: (v) => log.push(`verdict:${v}`), fillCard: (c) => log.push(`fill:${c.jobName}`), setReuseLocked: (on) => log.push(`lock:${on}`),
-    renderPicker: () => log.push('picker'), sfLine, sfNote, refreshModelStatus() {}, refreshReuseLine() {}, refreshCapNote() {}, refreshStartEnabled() {},
-  }, 'var startFrom = null, reuseCheckType = "deterministic", reusePickedName = "";', '__s: () => ({startFrom, reuseCheckType, reusePickedName})');
-  api.applyReuse({ runid: 'r3', prefill: { card: { checkType: 'rubric', jobName: 'doc-summary-weekly', model: '' }, origin: { job: 'doc-summary-weekly' }, line: 'Same job — 3 green · 2 not green' } });
-  assert.deepEqual(api.__s(), { startFrom: { runid: 'r3' }, reuseCheckType: 'rubric', reusePickedName: 'doc-summary-weekly' });
-  assert.ok(log.includes('verdict:reuse'), 'radio on Reuse workflow');
-  assert.ok(log.indexOf('picker') > log.indexOf('lock:true'));
-  assert.ok(log.includes('fill:doc-summary-weekly'), 'the card is filled through the one fillCard');
-  assert.equal(sfLine.textContent, 'rubric · 3 green · 2 not green', 'line under the picked box carries the check type, as in the list');
+    renderPicker: () => log.push('picker'), sfLine, sfNote, originLine, refreshModelStatus() {}, refreshReuseLine() {}, refreshCapNote() {}, refreshStartEnabled() {},
+  }, 'var startFrom = null, reuseCheckType = "deterministic", reusePickedName = "", reuseOrigin = null, nameTouched = true;', '__s: () => ({startFrom, reuseCheckType, reusePickedName, reuseOrigin, nameTouched})');
+  const card3 = { checkType: 'rubric', jobName: 'doc-summary-weekly', model: '' };
+  api.applyReuse({ runid: 'r3', label: 'doc-summary-weekly (run-3)', prefill: { card: card3, origin: { job: 'doc-summary-weekly' }, green: true, nextName: 'doc-summary-weekly-2', line: 'Same job — 3 green · 2 not green' } });
+  assert.deepEqual(api.__s(), { startFrom: { runid: 'r3' }, reuseCheckType: 'rubric', reusePickedName: 'doc-summary-weekly', reuseOrigin: { card: card3, green: true, name: 'doc-summary-weekly', nextName: 'doc-summary-weekly-2' }, nameTouched: false });
+  assert.ok(log.includes('verdict:rubric') && !log.includes('verdict:reuse'), 'the radio shows the job\'s own type, so the person can change it');
+  assert.ok(log.includes('lock:false') && !log.includes('lock:true'), 'nothing is locked');
+  assert.ok(log.indexOf('picker') > log.indexOf('lock:false'));
+  assert.deepEqual([originLine.hidden, originLine.textContent], [false, 'Reuse: doc-summary-weekly (run-3)']);
+  // the schedule card (lock) is the one place the job boxes stay locked, with the radio on Reuse
+  log.length = 0;
+  api.applyReuse({ runid: 'r3', lock: true, prefill: { card: card3, origin: { job: 'doc-summary-weekly' }, green: true } });
+  assert.ok(log.includes('lock:true') && log.includes('verdict:reuse'));
   // the import door (no runid) reaches the same state
   api.applyReuse({ importId: 'abc', prefill: { card: { checkType: 'deterministic', jobName: 'imp' }, line: '' } });
   assert.deepEqual(api.__s().startFrom, { importId: 'abc' });
-  assert.doesNotMatch(fnSrc('applyReuse'), /Reuse: /, 'no "Reuse: job (run …)" origin line');
 });
 
 test('renderPicker: hidden unless the radio is Reuse workflow; search box before a pick, the bold name + change after; a re-attached reuse session counts as picked', () => {
@@ -120,7 +125,7 @@ test('renderPicker: hidden unless the radio is Reuse workflow; search box before
   state('deterministic', null, false);
   assert.equal(rwBox.hidden, true);
   state('reuse', null, false);
-  assert.deepEqual([rwBox.hidden, rwSearch.hidden, rwPicked.hidden, sfLine.hidden], [false, false, true, true]);
+  assert.deepEqual([rwBox.hidden, rwSearch.hidden, rwPicked.hidden], [false, false, true]);
   state('reuse', { runid: 'r1' }, false);
   assert.deepEqual([rwBox.hidden, rwSearch.hidden, rwPicked.hidden], [false, true, false]);
   assert.equal(rwPickedTxt.innerHTML, '<b>a&lt;b</b>');
@@ -169,15 +174,15 @@ test('leaving reuse: Deterministic or Rubric while the picker shows (picked or n
   const mk = (hidden) => build(['onVerdictChange'], {
     rwBox: { hidden }, openPicker: () => log.push('openPicker'), clearStartFrom: (keep) => log.push(keep ? 'clearStartFrom(keep)' : 'clearStartFrom'), clearCardBoxes: () => log.push('boxes'),
     setVerdict: (v) => log.push(`verdict:${v}`), renderPicker: () => log.push('picker'), refreshStartEnabled: () => log.push('start'),
-    setJobPlaceholders: (v) => log.push(`ph:${v}`),
-  }).onVerdictChange;
+    setJobPlaceholders: (v) => log.push(`ph:${v}`), syncReuseName: () => log.push('name'),
+  }, 'var startFrom = null;').onVerdictChange;
   mk(false)('rubric');
-  assert.deepEqual(log.splice(0), ['clearStartFrom(keep)', 'verdict:rubric', 'picker', 'ph:rubric', 'start']);
+  assert.deepEqual(log.splice(0), ['clearStartFrom(keep)', 'verdict:rubric', 'picker', 'ph:rubric', 'name', 'start']);
   mk(false)('deterministic');
   assert.ok(log.includes('ph:deterministic'), 'the examples follow the radio');
   log.length = 0;
   mk(true)('rubric');
-  assert.deepEqual(log, ['ph:rubric', 'start'], 'det <-> rubric outside reuse clears nothing');
+  assert.deepEqual(log, ['ph:rubric', 'name', 'start'], 'det <-> rubric outside the picker clears nothing (a Reuse card keeps its origin and the name box follows the compare)');
   log.length = 0;
   mk(true)('reuse');
   assert.deepEqual(log, ['openPicker']);
@@ -213,7 +218,7 @@ test('Sign & run: disabled before a pick (startOk needs startFrom while the radi
   assert.equal(run('reuse', null), false, 'nothing picked');
   assert.equal(run('reuse', { runid: 'r1' }), true);
   assert.equal(run('deterministic', null), true, 'plain cards unchanged');
-  assert.match(fnSrc('renderMain'), /mainButtonFor\(st, !msgInput\.value\.trim\(\), !!startFrom \|\| verdictValue\(\) === "reuse"\)/);
+  assert.match(fnSrc('renderMain'), /mainButtonFor\(st, !msgInput\.value\.trim\(\), reusePathNow\(\) \|\| verdictValue\(\) === "reuse"\)/);
 });
 
 test('clearStartFrom(true) (a radio click leaving reuse) keeps the box values; plain clearStartFrom() still empties a picked job\'s values', () => {

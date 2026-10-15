@@ -23,7 +23,7 @@ import { openSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { planMatchesClose } from '../rubricstep.js';
-import { createSession, validateJobCard, validateReuseCard, lockedFieldChanged, buildReuseSpec, cardFields, nextFreeJobName, startDestinationProblem, STEP_LABELS } from './authorsession.js';
+import { createSession, validateJobCard, validateReuseCard, jobBoxesChanged, buildReuseSpec, cardFields, nextFreeJobName, startDestinationProblem, STEP_LABELS } from './authorsession.js';
 import { parseInputs } from '../jobblock.js';
 import { proveInputFiles, looksLikeRubricInput } from '../source.js';
 import { validateJob } from '../job.js';
@@ -126,7 +126,7 @@ export function createAuthorRoutes(opts) {
    * @param {any} card the form (fields only)
    * @param {{spec: any, workflowKey: string}|null} reuse
    * @param {import('../jobblock.js').JobInput[]} inputs the parsed Inputs
-   * @param {{headless?: boolean, filesJob?: boolean, edit?: {job: string, workflowKey: string}}} [o]
+   * @param {{headless?: boolean, filesJob?: boolean}} [o]
    * @returns {Promise<{ok: true, session: ReturnType<typeof createSession>}|{ok: false, status: number, error: string}>}
    */
   function startSession(card, reuse, inputs, o = {}) {
@@ -137,7 +137,7 @@ export function createAuthorRoutes(opts) {
       const destProblem = startDestinationProblem(card);
       if (destProblem !== null) return { ok: /** @type {false} */ (false), status: 400, error: destProblem };
       const session = createSession(cardFields(card), {
-        env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}), ...(o.edit ? { edit: o.edit } : {}), ...(opts.sessionDeps ?? {}),
+        env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}), ...(opts.sessionDeps ?? {}),
       });
       (o.headless ? headless : sessions).set(session.id, session);
       return { ok: /** @type {true} */ (true), session };
@@ -251,15 +251,17 @@ export function createAuthorRoutes(opts) {
       if (!pre.ok) { send(409, pre); return true; }
       // the card of a SCHEDULED job opens with the folder that schedule delivers to (a plain-files job keeps it on the schedule, not in the spec)
       const sched = sp.get('mode') === 'schedule' && opts.schedules ? opts.schedules.readSchedule(pre.origin.job) : null;
-      // Edit in chat (`mode=edit`, v1.100): the Job name box opens as `<origin>-N`, N the next free number; the box stays editable
-      let card = typeof sched?.destination === 'string' ? { ...pre.card, destination: sched.destination } : pre.card;
-      if (sp.get('mode') === 'edit') card = { ...card, jobName: nextFreeJobName(pre.origin.job, opts.runJobNames ? opts.runJobNames() : [], { jobsDir: opts.jobsDir }) };
+      const card = typeof sched?.destination === 'string' ? { ...pre.card, destination: sched.destination } : pre.card;
       send(200, {
         ok: true, origin: pre.origin, card, from: pre.from, note: pre.note,
-        locked: pre.locked, open: pre.open, specHash: pre.specHash, workflowKey: pre.workflowKey, trackRecord: pre.trackRecord,
+        // ONE door (v1.101): `green` = the origin earned a real green (an imported job counts), so an unchanged job reuses the signed plan;
+        // `nextName` = the Job name box once a job box changes (the box shows the origin's name until then). Nothing is locked.
+        green: pre.origin.importId !== undefined || pre.outcome === 'green',
+        nextName: nextFreeJobName(pre.origin.job, opts.runJobNames ? opts.runJobNames() : [], { jobsDir: opts.jobsDir }),
+        specHash: pre.specHash, workflowKey: pre.workflowKey, trackRecord: pre.trackRecord,
         line: pre.line, specNamesModel: pre.specNamesModel, specWorker: pre.specWorker,
         // T Part 3: `mode=schedule` also returns the job's current schedule (data only) for the When field's prefill; Part 7 adds the
-        // card's own words (`scheduleCard`: now / refusal / the button table). An edit never touches a schedule (v1.100), so no edit note.
+        // card's own words (`scheduleCard`: now / refusal / the button table). A reuse never touches a schedule (v1.100).
         ...(sp.get('mode') === 'schedule' && opts.schedules ? { schedule: opts.schedules.read(pre.origin.job), scheduleCard: opts.schedules.cardFor(pre.origin.job) } : {}),
       });
       return true;
@@ -301,11 +303,15 @@ export function createAuthorRoutes(opts) {
       if (hasLiveSession()) { send(409, { ok: false, error: 'an authoring session is already live — one at a time' }); return true; }
       const card = body ?? {};
       const rows = rowsForHome(keysHome(opts.home), envNow());
-      // Reuse workflow — started from a green run or an imported job: only Source, Destination and the two caps may
-      // differ from the signed workflow. The SERVER refuses any other change (the page greys those boxes, but is
-      // never trusted); the spec it signs is a copy of the origin's with just those four set. Nothing is drafted.
+      // Reuse workflow, ONE DOOR (v1.101): every box is open; the CARD's job boxes (job text, check type, thinking) are compared with
+      // the origin run's. A GREEN origin (or an imported job) with no job box changed signs the origin's plan verbatim, under the
+      // origin's name, with no drafting. Any other start drafts: a changed job is a NEW workflow under the Job name box; an unchanged
+      // job from a run that is not green drafts again under the ORIGIN's name (another try of the same job). The name is decided
+      // here, before drafting, so the hash the person signs already covers it. The server never trusts the page.
       /** @type {{spec: any, workflowKey: string}|null} */
       let reuse = null;
+      /** @type {string|undefined} */
+      let allowName;
       const from = card.startFrom;
       const fromRunid = typeof from === 'string' ? from : (typeof from?.runid === 'string' ? from.runid : null);
       const fromImport = typeof from?.importId === 'string' ? from.importId : null;
@@ -313,39 +319,27 @@ export function createAuthorRoutes(opts) {
         const pre = opts.startFrom ? (fromImport !== null ? opts.startFrom.getImport(fromImport) : opts.startFrom.get(fromRunid)) : null;
         if (pre === null || pre === undefined) { send(404, { ok: false, error: 'no such run to reuse' }); return true; }
         if (!pre.ok) { send(409, pre); return true; }
-        // only a run that earned a real green is a reuse source (hamr 2026-10-08) — the pickers already filter, but a
-        // hand-made POST must not sign a reuse of an already-green, red or still-running run. Imports are green by ruling;
-        // Edit in chat and Resume only READ start-from (GET) and never post a startFrom, so this gate never touches them.
-        if (fromImport === null && pre.outcome !== 'green') {
-          send(409, { ok: false, error: pre.outcome === 'green-held' ? 'This run was started by a schedule and is waiting for your Accept. Accept it first, then it can be reused.' : 'only a run that finished green can be reused — this one did not' });
-          return true;
-        }
-        const locked = lockedFieldChanged(card, pre.card);
-        if (locked !== null) { send(400, { ok: false, error: `${locked} is locked on a reused workflow — Clear the card to change it` }); return true; }
-        const rv = validateReuseCard(card, { rows });
-        if (!rv.ok) { send(400, { ok: false, error: rv.error }); return true; }
-        const spec = buildReuseSpec(pre.spec, card, rows);
-        const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
-        if (!jv.ok) { send(400, { ok: false, error: `the spec this reuse would sign is not valid (${jv.reds.map((r) => `${r.code} at ${r.path}`).join('; ')})` }); return true; }
-        reuse = { spec, workflowKey: pre.workflowKey };
-      }
-      // Edit in chat (v1.100): the page names the run it copied from. The origin's job and workflow key ride the session so the
-      // sign step can fold an unchanged workflow back under the origin's name. A card name already used by ANOTHER panel job is
-      // refused here at $0 (its workflow cannot be compared before drafting); the origin's own name is judged at sign-prepare.
-      /** @type {{job: string, workflowKey: string}|null} */
-      let edit = null;
-      if (reuse === null && typeof body?.editFrom === 'string' && opts.startFrom) {
-        const pre = opts.startFrom.get(body.editFrom);
-        if (pre?.ok) {
-          edit = { job: pre.origin.job, workflowKey: pre.workflowKey };
-          if (card.jobName !== edit.job && opts.runJobNames && opts.runJobNames().includes(card.jobName)) {
+        const changed = jobBoxesChanged(card, pre.card);
+        if (changed) {
+          // a NEW workflow: its name may not be any existing job's, the origin's included (a different job cannot pass for the old one)
+          if (typeof card.jobName === 'string' && (card.jobName === pre.origin.job || (opts.runJobNames && opts.runJobNames().includes(card.jobName)))) {
             send(400, { ok: false, error: `A job named "${card.jobName}" already exists and is a different job. Pick another name.` });
             return true;
           }
+        } else {
+          card.jobName = pre.origin.job; // an unchanged job keeps its name; a typed one is ignored
+          if (fromImport !== null || pre.outcome === 'green') {
+            const rv = validateReuseCard(card, { rows });
+            if (!rv.ok) { send(400, { ok: false, error: rv.error }); return true; }
+            const spec = buildReuseSpec(pre.spec, card, rows);
+            const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
+            if (!jv.ok) { send(400, { ok: false, error: `the spec this reuse would sign is not valid (${jv.reds.map((r) => `${r.code} at ${r.path}`).join('; ')})` }); return true; }
+            reuse = { spec, workflowKey: pre.workflowKey };
+          } else allowName = pre.origin.job;
         }
       }
       if (reuse === null) {
-        const v = validateJobCard(card, { jobsDir: opts.jobsDir, rows });
+        const v = validateJobCard(card, { jobsDir: opts.jobsDir, rows, ...(allowName !== undefined ? { allowName } : {}) });
         if (!v.ok) { send(400, { ok: false, error: v.error }); return true; }
       }
       // P7: the Inputs are proven at $0 before a session (so before any token): line 1 the repo, lines 2+ tracked files inside it.
@@ -355,7 +349,7 @@ export function createAuthorRoutes(opts) {
       // Part 1a: a rubric job whose first input is a local FILE has no repo to prove inputs against; the session proves every
       // line itself (`proveRubricInputs`), at $0, before any model call
       const filesJob = reuse === null && card?.checkType === 'rubric' && looksLikeRubricInput(ip.inputs[0].value);
-      startSession(card, reuse, ip.inputs, { filesJob, ...(edit ? { edit } : {}) }).then((r) => {
+      startSession(card, reuse, ip.inputs, { filesJob }).then((r) => {
         if (!r.ok) { send(r.status, { ok: false, error: r.error }); return; }
         send(200, { ok: true, sessionId: r.session.id, reuse: reuse !== null, state: r.session.state });
       });

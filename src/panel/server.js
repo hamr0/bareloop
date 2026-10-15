@@ -57,7 +57,6 @@ import { keysHome, keysForDoor } from '../keysfile.js';
 import { rowsForHome, findRow, modelChoiceFor, tickedLines, endpointOf } from '../providerrows.js';
 import { SHAPES } from '../providershapes.js';
 import { resolveProvider } from '../providers.js';
-import { REUSE_LOCKED_FIELDS, REUSE_OPEN_FIELDS } from './authorsession.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
 import { statusFor, partStatusFor, GOAL_MET_LINE } from './status.js';
 import { createSettingsRoutes } from './settingsroutes.js';
@@ -425,7 +424,7 @@ const GOAL_NOT_MET = new Set(['plan-red', 'check-red', 'step-red', 'escalated'])
  *
  * The table (outcome → reason / next / buttons) is PANEL-BUILD.md P5 item 1. The
  * Resume button appears only when `o.resume` says the engine would accept it; "Reuse workflow"
- * (replaces P5 item 3, 2026-10-03) is offered on green rows only, and starts a NEW run.
+ * (replaces P5 item 3, 2026-10-03; one door on every ending since 2026-10-15) starts a NEW run.
  * @param {{outcome: string|null, stopReason: string|null, spentUsd: number|null, budgetUsd: number|null, lastEscalation?: any}} summary
  * @param {{died: boolean, lastThing: string|null}} death
  * @param {{resume?: {ok: boolean, why?: string}|null, destinationRefused?: string|null, moneyHalt?: boolean,
@@ -434,7 +433,7 @@ const GOAL_NOT_MET = new Set(['plan-red', 'check-red', 'step-red', 'escalated'])
  * @returns {{reason: string, next: string, line: string, actions: {id: string, label: string}[]}|null}
  */
 export function endedFor(summary, death, o = {}) {
-  const base = withEditAction(endedBase(summary, death, o));
+  const base = withReuseAction(endedBase(summary, death, o));
   const wt = o.worktree;
   if (!base || !wt) return base;
   // P6 item 1 — the run worked on a worktree in the person's own repo. GREEN: the branch carries the work (the folder is
@@ -450,13 +449,13 @@ export function endedFor(summary, death, o = {}) {
 }
 
 /**
- * "Edit in chat" (hamr 2026-10-07): offered on EVERY non-green ending (failed, capped, stopped, died, every other red),
- * after Resume when both show; a green ending keeps Reuse workflow only. ONE place, so no ending branch can forget it.
+ * ONE door (hamr 2026-10-15, v1.101): "Reuse workflow" is offered on EVERY ending (green, failed, capped, stopped, died, every other
+ * red), after Resume when both show. ONE place, so no ending branch can forget it.
  * @param {{reason: string, next: string, line: string, actions: {id: string, label: string}[]}|null} ended
  */
-function withEditAction(ended) {
+function withReuseAction(ended) {
   if (!ended || ended.actions.some((a) => a.id === 'reuse')) return ended;
-  return { ...ended, actions: [...ended.actions, { id: 'edit', label: 'Edit in chat' }] };
+  return { ...ended, actions: [...ended.actions, { id: 'reuse', label: 'Reuse workflow' }] };
 }
 
 /** @param {any} summary @param {any} death @param {any} o */
@@ -465,9 +464,9 @@ function endedBase(summary, death, o) {
   /** @type {{id: string, label: string}[]} */
   const RESUME = [{ id: 'resume', label: 'Resume' }];
   /** Reuse workflow (replaces P5 item 3's Start from this, hamr 2026-10-03): the same signed job on a new source — a NEW
-   *  run, never a rerun. Offered on GREEN rows only; every red row says "Change the job: press Edit in chat" instead. */
+   *  run, never a rerun. Offered on GREEN rows only; every red row says "Change the job: press Reuse workflow" instead. */
   const REUSE = [{ id: 'reuse', label: 'Reuse workflow' }];
-  const CHANGE = 'Change the job: press Edit in chat.';
+  const CHANGE = 'Change the job: press Reuse workflow.';
   const detailOf = (/** @type {string|null} */ s) => {
     if (typeof s !== 'string' || s.length === 0) return '';
     return s.length > 120 ? `${s.slice(0, 120)}…` : s;
@@ -524,8 +523,8 @@ function endedBase(summary, death, o) {
 
   if (outcome === 'green' || outcome === 'already-green' || outcome === 'satisfied') {
     if (o.destinationRefused) {
-      // Reuse workflow only on a run that earned its green (hamr 2026-10-08, as below); the rest take Edit in chat
-      // (withEditAction adds it) and are told to change the job, not to reuse it
+      // Reuse workflow only on a run that earned its green (hamr 2026-10-08, as below); every ending offers Reuse workflow
+      // (withReuseAction adds it) and is told to change the job
       const earned = outcome === 'green';
       return {
         reason: 'Goal met, but the output could not be delivered.',
@@ -535,7 +534,7 @@ function endedBase(summary, death, o) {
       };
     }
     // hamr 2026-10-08: already-green (the check passed before any work) is not a reusable job — only a run that
-    // earned its green offers Reuse workflow; the rest take Edit in chat (withEditAction adds it). `satisfied` is a
+    // earned its green offers Reuse workflow; every ending offers Reuse workflow (withReuseAction adds it). `satisfied` is a
     // close VERDICT, never a run outcome (ralph and the job-end emitters write `green`), so it rides with already-green.
     if (outcome !== 'green') return { reason: 'Goal met.', next: CHANGE, line: GOAL_MET_LINE, actions: [] };
     return { reason: 'Goal met.', next: 'Nothing to do.', line: GOAL_MET_LINE, actions: REUSE };
@@ -579,7 +578,7 @@ function endedBase(summary, death, o) {
   if (outcome === 'step-stalled') {
     return {
       reason: 'A step stopped making progress.',
-      next: resumeOr('Resume, or change the job: press Edit in chat.'),
+      next: resumeOr('Resume, or change the job: press Reuse workflow.'),
       line: resumeOk ? 'step stalled — resume' : 'step stalled',
       actions: resumeOk ? RESUME : [],
     };
@@ -2671,14 +2670,14 @@ export function reuseLine(record) {
 
 /**
  * `start-from` (the route keeps its name) for one listed run: the card prefilled from the run's SIGNED job, which
- * boxes are locked and which are open, and the track record. Locked boxes carry the signed values, read by the
+ * the track record (v1.101: nothing is locked, every box is open). The job boxes carry the signed values, read by the
  * SAME readers the Job tab uses (`successFromSpec`/`guardrailsFromSpec`); the open four — Source, Destination, the
  * $ cap and the Time cap — start at what the run had. `ok:false` when the run's signed job is not on disk (nothing
  * to copy: change the job: Clear the card). `null` when the runid is not listed.
  * @param {string} runid
  * @param {{ home?: string, model?: string, provider?: string }} [opts] `model` = the Model box's current Name (the estimate counts only runs on that worker); absent = the card's own Model
  * @returns {{ok: true, origin: {runid: string, job: string}, outcome: string|null, card: Record<string, any>, from: 'signed job',
- *   locked: readonly string[], open: readonly string[], note: string|null,
+ *   note: string|null,
  *   specHash: string, workflowKey: string, spec: any, specPath: string, specNamesModel: boolean,
  *   specWorker: {provider: string, endpoint: string, label: string},
  *   trackRecord: ReturnType<typeof trackRecordFor>, line: string}|{ok: false, error: string}|null}
@@ -2729,8 +2728,6 @@ export function getStartFrom(runid, opts = {}) {
     })(),
     card,
     from: 'signed job',
-    locked: REUSE_LOCKED_FIELDS,
-    open: REUSE_OPEN_FIELDS,
     note: Array.isArray(spec.jobLines) && spec.jobLines.length ? null : 'older job — numbered lines were not saved',
     specHash: signed.specHash,
     workflowKey: key,
@@ -2821,6 +2818,7 @@ function reuseCardFromSpec(spec, extra) {
     checkType: spec.verdictType === 'soft-green' ? 'rubric' : 'deterministic',
     model: typeof spec.model === 'string' && spec.model && !extra.model ? spec.model : extra.model,
     jobText: jobTextFromSpec(spec),
+    thinking: spec.thinking === true,
     inputs: extra.inputs || inputsTextFromSpec(spec, extra.source),
     destination: extra.destination || writeScope.join(', '),
     capUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
@@ -2861,7 +2859,7 @@ function describeSpec(spec) {
  * @param {string} id
  * @param {{ home?: string, model?: string, provider?: string }} [opts] `model` as for {@link getStartFrom}
  * @returns {{ok: true, origin: {runid: null, job: string, importId: string}, card: Record<string, any>, from: 'imported job',
- *   locked: readonly string[], open: readonly string[], note: string|null, specHash: string, workflowKey: string, spec: any,
+ *   note: string|null, specHash: string, workflowKey: string, spec: any,
  *   specPath: null, trackRecord: ReturnType<typeof trackRecordFor>, line: string}|{ok: false, error: string}|null}
  */
 export function getStartFromImport(id, opts = {}) {
@@ -2887,8 +2885,6 @@ export function getStartFromImport(id, opts = {}) {
     origin: { runid: null, job: row.job, importId: id },
     card,
     from: 'imported job',
-    locked: REUSE_LOCKED_FIELDS,
-    open: REUSE_OPEN_FIELDS,
     note: 'a Source is needed — an exported job carries none; it is checked and signed on this machine',
     specHash: jobSpecHash(spec),
     workflowKey: key,
