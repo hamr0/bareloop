@@ -30,7 +30,7 @@ import {
   dirname, join, basename, relative, isAbsolute, sep,
 } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readRunList, DIED_MTIME_MS, runIsAlive } from '../runlist.js';
+import { readRunList, readNeedsRemovals, DIED_MTIME_MS, runIsAlive } from '../runlist.js';
 import { draftingPartFor } from '../draftspend.js';
 import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
@@ -720,14 +720,33 @@ function startingStub(row) {
 }
 
 /**
+ * RULED 2026-10-15 (Remove from Needs you): the ONE place a run's Needs-you state is decided. `Accept` (a live door) is never removable and never ages out.
+ * A `Resume` tag leaves when the person removed it AFTER (or at) the stop it is for — a removal covers only the ending it was made on, so a later stop
+ * brings the run back — or after `needsYouDays`. `removedMs` is the newest removal that covers the current ending (or null), `expired` is true when only
+ * the age rule took a Resume run out.
+ * @param {{live: boolean, records: any[], resume: {ok?: boolean}|null|undefined, stoppedAt: string|null, nowMs: number, removedMs?: number}} f
+ * @returns {{needs: 'Accept'|'Resume'|null, removedMs: number|null, expired: boolean}}
+ */
+export function needsStateFor(f) {
+  if (!f.live && doorWaiting(f.records, { now: () => f.nowMs })) return { needs: 'Accept', removedMs: null, expired: false };
+  const stopMs = typeof f.stoppedAt === 'string' ? Date.parse(f.stoppedAt) : NaN;
+  const covers = typeof f.removedMs === 'number' && (!Number.isFinite(stopMs) || f.removedMs >= stopMs);
+  const tag = needsTag(f.resume, f.stoppedAt, f.nowMs);
+  const canResume = !f.live && !!f.resume && f.resume.ok === true;
+  if (covers && canResume) return { needs: null, removedMs: /** @type {number} */ (f.removedMs), expired: false };
+  return { needs: tag, removedMs: null, expired: canResume && tag === null };
+}
+
+/**
  * One `/api/runs` row, or `{ ...row, fileMissing: true }` when the row's
  * spine no longer exists on disk — never silently listed as if it were
  * still there (the same rule {@link import('../runlist.js').formatRunRow}
  * already applies to the CLI's own listing).
  * @param {import('../runlist.js').RunRow} row
+ * @param {number} [nowMs] @param {Map<string, number>} [removals] `readNeedsRemovals`: when each run was taken out of Needs you
  * @returns {any}
  */
-function summarizeRow(row, nowMs = Date.now()) {
+function summarizeRow(row, nowMs = Date.now(), removals = undefined) {
   if (!existsSync(row.spine)) {
     if (runIsAlive(row)) return startingStub(row);
     return {
@@ -763,7 +782,7 @@ function summarizeRow(row, nowMs = Date.now()) {
     live,
     liveWhy: live ? liveStepWhy(rawRecords, summary) : null,
     // a run waiting at its review door needs the person's Accept (never ages out, T10); else the Resume rule
-    needs: !live && doorWaiting(rawRecords, { now: () => nowMs }) ? 'Accept' : needsTag(resume, stoppedAt, nowMs),
+    needs: needsStateFor({ live, records: rawRecords, resume, stoppedAt, nowMs, removedMs: removals ? removals.get(row.runid) : undefined }).needs,
     stoppedAt,
     // a live run's wall counts up from the start of its CURRENT leg; earlier legs add `priorWallMs` (the gap between legs is nobody's).
     // `priorWallMs` is null when the earlier legs' wall is not exact: the card then shows this leg's wall only, and says so.
@@ -833,6 +852,21 @@ export function getStopContext(runid, opts = {}) {
   const row = rows.find((r) => r && r.runid === runid);
   if (!row) return null;
   return { row, live: runIsAlive(row), spineExists: existsSync(row.spine) };
+}
+
+/**
+ * The Remove-from-Needs-you route's reader (RULED 2026-10-15): the listed row and the Needs-you tag the runs list shows for it right now
+ * (`summarizeRow`, the one rule). `null` when the runid is not listed.
+ * @param {string} runid
+ * @param {{ home?: string, now?: number }} [opts]
+ * @returns {{row: any, needs: 'Accept'|'Resume'|null}|null}
+ */
+export function getNeedsContext(runid, opts = {}) {
+  const { rows } = readRunList(opts);
+  const row = rows.find((r) => r && r.runid === runid);
+  if (!row) return null;
+  const nowMs = typeof opts.now === 'number' ? opts.now : Date.now();
+  return { row, needs: summarizeRow(row, nowMs, readNeedsRemovals(opts)).needs ?? null };
 }
 
 /**
@@ -940,10 +974,11 @@ export function listRuns(opts = {}) {
   const { rows } = readRunList(opts);
   const nowMs = typeof opts.now === 'number' ? opts.now : Date.now();
   const nos = runNumbers(rows);
+  const removals = readNeedsRemovals(opts);
   return rows
     .map((row, index) => ({ row, index })) // index: stable tie-break, see doc above
     .sort((a, b) => (atMs(b.row) - atMs(a.row)) || (a.index - b.index))
-    .map(({ row }) => ({ ...summarizeRow(row, nowMs), runNo: nos.get(row.runid) }));
+    .map(({ row }) => ({ ...summarizeRow(row, nowMs, removals), runNo: nos.get(row.runid) }));
 }
 
 /**
@@ -1120,7 +1155,7 @@ function scheduleExtrasFor(runid, job, rows, nos, opts, view) {
 
 /**
  * @param {string} runid
- * @param {{ home?: string }} opts
+ * @param {{ home?: string, now?: number }} opts
  * @returns {any|null}
  */
 function getRunDetailBody(runid, opts) {
@@ -1408,6 +1443,18 @@ function getRunDetailBody(runid, opts) {
     ...(() => {
       const trig = triggerRecordOf(row);
       return { startedBy: trig && typeof trig.reason === 'string' ? trig.reason : null, catchUp: catchUpWords(trig) };
+    })(),
+    // RULED 2026-10-15 (Remove from Needs you): the server says whether the button shows (a Resume card only, never a live Accept) and the Audit line
+    ...(() => {
+      const nowMs = typeof opts.now === 'number' ? opts.now : Date.now();
+      const live = !death.died && (summary.outcome === null || summary.outcome === undefined) && runIsAlive(row);
+      const stoppedAt = live ? null : (lastJobEndTs(rawSpineRecords) ?? (death.died ? lastRecordTs(rawSpineRecords) : null));
+      const st = needsStateFor({ live, records: rawSpineRecords, resume, stoppedAt, nowMs, removedMs: readNeedsRemovals(opts).get(row.runid) });
+      /** @type {string|null} */
+      let needsAudit = null;
+      if (st.removedMs !== null) needsAudit = `removed from Needs you by you · ${dateTimeWords(st.removedMs)}`;
+      else if (st.expired) needsAudit = `removed from Needs you after ${RUNS_LIST_LIMITS.needsYouDays} days`;
+      return { canRemoveFromNeeds: st.needs === 'Resume', needsAudit };
     })(),
   };
 }
@@ -3016,7 +3063,7 @@ export function handleRequest(req, res, opts) {
   function routesFor(o, p) {
     if (o.authorRoutes && p.startsWith('/api/author')) return o.authorRoutes;
     if (o.settingsRoutes && p.startsWith('/api/settings')) return o.settingsRoutes;
-    if (o.runRoutes && /^\/api\/runs\/[^/]+\/(resume|stop|accept)$/.test(p)) return o.runRoutes;
+    if (o.runRoutes && /^\/api\/runs\/[^/]+\/(resume|stop|accept|needs-remove)$/.test(p)) return o.runRoutes;
     if (o.importRoutes && (p === '/api/fs/list' || p === '/api/imports' || p.startsWith('/api/imports/'))) return o.importRoutes;
     return null;
   }
@@ -3287,6 +3334,7 @@ export function createPanelServer(opts = {}) {
         getResumeContext: (runid) => getResumeContext(runid, { home }),
         getStopContext: (runid) => getStopContext(runid, { home }),
         getAcceptContext: (runid) => getAcceptContext(runid, { home }),
+        getNeedsContext: (runid) => getNeedsContext(runid, { home }),
         ...(opts.acceptWaitMs !== undefined ? { acceptWaitMs: opts.acceptWaitMs } : {}),
       });
       importRoutes = createImportRoutes({

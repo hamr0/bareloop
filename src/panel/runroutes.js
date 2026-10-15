@@ -22,6 +22,7 @@ import { ConfigError } from '../config.js';
 import { keysForDoor } from '../keysfile.js';
 import { jobSpecHash } from '../job.js';
 import { stopFilePath } from '../legs.js';
+import { appendNeedsRemoved } from '../runlist.js';
 
 /** the tail of an engine log shown to the person when the engine refuses at start (bytes) */
 const LOG_TAIL_BYTES = 4000;
@@ -66,6 +67,7 @@ function readLogTail(file) {
  *   spawnFn?: typeof realSpawn, bareloopBin?: string, settleMs?: number,
  *   getResumeContext: (runid: string) => ({row: any, plan: any}|null),
  *   getStopContext?: (runid: string) => ({row: any, live: boolean, spineExists: boolean}|null),
+ *   getNeedsContext?: (runid: string) => ({row: any, needs: 'Accept'|'Resume'|null}|null),
  *   getAcceptContext?: (runid: string) => ({row: any, live: boolean, waiting: boolean, specPath: string|null, specHash: string|null}|null),
  *   acceptWaitMs?: number }} opts
  */
@@ -156,6 +158,31 @@ export function createRunRoutes(opts) {
   }
 
   /**
+   * RULED 2026-10-15 — `POST /api/runs/:runid/needs-remove`. Takes a stopped run's card out of Needs you and does nothing else: ONE
+   * `needs-removed` row appended to runs.jsonl (status, the run's row, Resume and Reuse workflow are untouched). Refused (409) unless the run
+   * is in Needs you with the Resume tag right now; a run waiting for the person's Accept is never removable. A second click finds it already out.
+   * @param {import('node:http').IncomingMessage} req
+   * @param {(code: number, obj: any) => void} send
+   * @param {string} runid
+   * @returns {boolean}
+   */
+  function handleNeedsRemove(req, send, runid) {
+    const guard = checkHumanGuard(req, { token: opts.token, port: opts.port });
+    if (!guard.ok) { send(403, { ok: false, error: `refused — ${guard.reason}` }); return true; }
+    if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
+    const ctx = opts.getNeedsContext ? opts.getNeedsContext(runid) : null;
+    if (!ctx) { send(404, { ok: false, error: 'no such run' }); return true; }
+    if (ctx.needs === 'Accept') { send(409, { ok: false, error: 'This run is waiting for your Accept, so it stays in Needs you until you answer it.' }); return true; }
+    if (ctx.needs !== 'Resume') { send(409, { ok: false, error: 'This run is not in Needs you, so there is nothing to remove.' }); return true; }
+    try { appendNeedsRemoved(runid, { home: opts.home }); } catch (e) {
+      send(500, { ok: false, error: `could not record it: ${/** @type {Error} */ (e).message}` });
+      return true;
+    }
+    send(200, { ok: true, runid, removed: true });
+    return true;
+  }
+
+  /**
    * @param {import('node:http').IncomingMessage} req
    * @param {import('node:http').ServerResponse} res
    * @param {string} pathname
@@ -166,7 +193,8 @@ export function createRunRoutes(opts) {
     const stopM = /^\/api\/runs\/([A-Za-z0-9._~-]+)\/stop$/.exec(pathname);
     const m = /^\/api\/runs\/([A-Za-z0-9._~-]+)\/resume$/.exec(pathname);
     const acceptM = /^\/api\/runs\/([A-Za-z0-9._~-]+)\/accept$/.exec(pathname);
-    if (!m && !stopM && !acceptM) return false;
+    const needsM = /^\/api\/runs\/([A-Za-z0-9._~-]+)\/needs-remove$/.exec(pathname);
+    if (!m && !stopM && !acceptM && !needsM) return false;
     const send = (/** @type {number} */ code, /** @type {any} */ obj) => {
       const text = JSON.stringify(obj);
       res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(text) });
@@ -174,6 +202,7 @@ export function createRunRoutes(opts) {
     };
     if (stopM) return handleStop(req, send, stopM[1]);
     if (acceptM) return handleAccept(req, send, acceptM[1]);
+    if (needsM) return handleNeedsRemove(req, send, needsM[1]);
     if (!m) return false;
     const guard = checkHumanGuard(req, { token: opts.token, port: opts.port });
     if (!guard.ok) { send(403, { ok: false, error: `refused — ${guard.reason}` }); return true; }

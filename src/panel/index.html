@@ -2501,8 +2501,23 @@
     } else if(sc && sc.canSchedule){
       html += '<button class="btn" type="button" data-testid="run-schedule">' + escapeXml(scw.scheduleRun || "") + '</button>';
     }
+    // RULED 2026-10-15: Remove from Needs you is LAST. The SERVER says when it shows (a stopped run in Needs you, never a live Accept, never a running run).
+    if(!live && detail.canRemoveFromNeeds === true){
+      html += '<button class="btn" type="button" data-testid="btn-needs-remove">Remove from Needs you</button>';
+    }
     bar.innerHTML = html;
     bar.hidden = html === "";
+    var needsBtn = bar.querySelector('[data-testid="btn-needs-remove"]');
+    if(needsBtn){
+      needsBtn.addEventListener("click", function(){
+        needsBtn.disabled = true;
+        authorPost("/api/runs/" + encodeURIComponent(detail.runid) + "/needs-remove", {}).then(function(res){
+          if(res.status === 200 && res.body && res.body.ok){ refreshRunsList(true); selectRun(detail.runid); return; }
+          needsBtn.disabled = false;
+          bar.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="needs-remove-err">' + escapeXml((res.body && res.body.error) || ("refused (" + res.status + ")")) + '</span>');
+        }).catch(function(x){ needsBtn.disabled = false; bar.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="needs-remove-err">could not reach the panel: ' + escapeXml(x.message) + '</span>'); });
+      });
+    }
     var schedBtn = bar.querySelector('[data-testid="run-schedule"], [data-testid="run-cancel-schedule"]');
     if(schedBtn) schedBtn.addEventListener("click", function(){ scheduleInChat(detail); });
     var reuseBtn = bar.querySelector('[data-testid="btn-reuse"]');
@@ -3124,6 +3139,15 @@
       startedEl.style.overflowWrap = "anywhere";
       startedEl.textContent = detail.startedAudit;
       container.appendChild(startedEl);
+    }
+    // RULED 2026-10-15: how the run left Needs you (by you, or after 7 days), worded on the server
+    if(typeof detail.needsAudit === "string" && detail.needsAudit !== ""){
+      var needsEl = document.createElement("div");
+      needsEl.className = "hint";
+      needsEl.setAttribute("data-testid", "audit-needs-removed");
+      needsEl.style.overflowWrap = "anywhere";
+      needsEl.textContent = detail.needsAudit;
+      container.appendChild(needsEl);
     }
     if(detail.scheduleGroup && Array.isArray(detail.scheduleGroup.lines) && detail.scheduleGroup.lines.length){
       var gWrap = document.createElement("div");
