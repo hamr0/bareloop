@@ -379,22 +379,17 @@ export function createScheduleDoor(deps) {
     paused,
 
     /**
-     * RULED 2026-10-15: the fires that started NOTHING (busy, month used up, refused) of every signing that was made from `originRunid`
-     * (a `signed` row names the run it was set from; the CURRENT schedule.json's own originRunid covers a signing made before that row existed).
-     * Newest first, at most `limit`. Lines are `MM/DD HH:MM  <words>`.
-     * @param {string} job @param {string} originRunid @param {number} [limit]
+     * RULED 2026-10-15 (v1.104): the fires that started NOTHING (busy, month used up, refused) of ALL signings of the job's schedule
+     * (the job's ledger is the job's, so every signing's rows are in it; cancelled-and-set-again rows stay). Newest first. Lines are
+     * `MM/DD HH:MM  <words>`. The caller shows the first 7 and counts them all.
+     * @param {string} job
      * @returns {{at: number, line: string}[]}
      */
-    skippedFor(job, originRunid, limit = 7) {
+    skippedFor(job) {
       if (!SLUG_RE.test(job)) return [];
-      const rows = withoutReleased(readLedger(ledgerOf(job)).rows);
-      const sigs = new Set(rows.filter((r) => r.kind === 'signed' && r.originRunid === originRunid).map((r) => r.sig));
-      const cur = readSchedule(job);
-      if (cur && cur.originRunid === originRunid) sigs.add(cur.specHash);
-      return rows.map((r, i) => ({ r, i }))
-        .filter(({ r }) => (r.kind === 'busy' || r.kind === 'monthly-exhausted' || r.kind === 'refused') && sigs.has(/** @type {string} */ (r.sig)))
+      return withoutReleased(readLedger(ledgerOf(job)).rows).map((r, i) => ({ r, i }))
+        .filter(({ r }) => r.kind === 'busy' || r.kind === 'monthly-exhausted' || r.kind === 'refused')
         .sort((a, b) => (Number(b.r.at) - Number(a.r.at)) || (b.i - a.i))
-        .slice(0, limit)
         .map(({ r }) => ({ at: Number(r.at), line: `${dateTimeWords(Number(r.at))}  ${skippedWords(r)}` }));
     },
 

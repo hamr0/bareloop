@@ -448,3 +448,11 @@ test('modify schedule: the page captures the card\'s starting boxes when it open
   assert.match(open, /base:\s*\{[^}]*jf-inputs[^}]*jf-dest/);
   assert.match(PAGE, /\["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time"\]\.forEach\(function\(id\)\{ byId\(id\)\.addEventListener\("input", function\(\)\{ if\(!sched\) return; if\(whenHash !== null\) whenEdited\(\); else renderMain\(\); \}\); \}\);/);
 });
+
+test('RULED 2026-10-15 (v1.104): the Audit draws the server\'s schedule section FIRST and FOLDED, with the drafting/step toggle look; the old folded group and first row are gone', () => {
+  const src = fnSrc('renderAuditGroups');
+  assert.ok(src.indexOf('detail.scheduleSection') !== -1 && src.indexOf('detail.scheduleSection') < src.indexOf('detail.needsAudit'), 'at the top, the Needs-you line stays after it');
+  assert.match(src, /gBtn\.className = "btn audit-part-toggle";\s*gBtn\.setAttribute\("aria-expanded", "false"\)/, 'same toggle class as the step sections; folded on open');
+  assert.match(src, /gBody\.hidden = true/);
+  assert.doesNotMatch(src, /scheduleGroup/);
+});

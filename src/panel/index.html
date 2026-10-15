@@ -3132,8 +3132,8 @@
     var isLiveRun = detail.glyph === "▶" && !detail.died;
     var boxes = buildOrderedBoxes(parts, isLiveRun);
     var numberMap = stepNumberIndices(boxes);
-    // RULED 2026-10-15: the first row of a run a schedule started, and (on the run the schedule was set from) the folded group of fires that started
-    // nothing, above the drafting group. Both worded on the server.
+    // RULED 2026-10-15 (v1.104): ONE `schedule` section at the top of the Audit of every run of a job that has a schedule now, always folded when the page
+    // opens, worded on the server (`detail.scheduleSection`: title, sign, head, rows [{label,text}]). A run a CANCELLED schedule started keeps its one old line.
     if(typeof detail.startedAudit === "string" && detail.startedAudit !== ""){
       var startedEl = document.createElement("div");
       startedEl.className = "hint";
@@ -3141,6 +3141,49 @@
       startedEl.style.overflowWrap = "anywhere";
       startedEl.textContent = detail.startedAudit;
       container.appendChild(startedEl);
+    }
+    var sec = detail.scheduleSection;
+    if(sec && Array.isArray(sec.rows) && sec.rows.length){
+      var gWrap = document.createElement("div");
+      gWrap.className = "audit-part";
+      gWrap.setAttribute("data-testid", "audit-schedule-group");
+      var gBtn = document.createElement("button");
+      gBtn.type = "button";
+      gBtn.className = "btn audit-part-toggle";
+      gBtn.setAttribute("aria-expanded", "false");
+      gBtn.setAttribute("data-testid", "audit-schedule-toggle");
+      var secHead = function(open){ return (open ? "\u25BE " : "\u25B8 ") + escapeXml(sec.title) + " [" + glyphSpan(sec.sign) + "] " + escapeXml(sec.head); };
+      gBtn.innerHTML = secHead(false);
+      var gBody = document.createElement("div");
+      gBody.className = "audit-part-body";
+      gBody.hidden = true;
+      gBody.setAttribute("data-testid", "audit-schedule-body");
+      sec.rows.forEach(function(l){
+        var li = document.createElement("div");
+        li.className = "audit-sched-row";
+        li.style.display = "flex";
+        li.style.gap = "12px";
+        var lab = document.createElement("span");
+        lab.className = "hint";
+        lab.style.flex = "0 0 5.5em";
+        lab.textContent = l.label;
+        var tx = document.createElement("span");
+        tx.style.overflowWrap = "anywhere";
+        tx.style.whiteSpace = "pre-wrap";
+        tx.textContent = l.text;
+        li.appendChild(lab);
+        li.appendChild(tx);
+        gBody.appendChild(li);
+      });
+      gBtn.addEventListener("click", function(){
+        var open = gBtn.getAttribute("aria-expanded") === "true";
+        gBtn.setAttribute("aria-expanded", open ? "false" : "true");
+        gBody.hidden = open;
+        gBtn.innerHTML = secHead(!open);
+      });
+      gWrap.appendChild(gBtn);
+      gWrap.appendChild(gBody);
+      container.appendChild(gWrap);
     }
     // RULED 2026-10-15: how the run left Needs you (by you, or after 7 days), worded on the server
     if(typeof detail.needsAudit === "string" && detail.needsAudit !== ""){
@@ -3150,37 +3193,6 @@
       needsEl.style.overflowWrap = "anywhere";
       needsEl.textContent = detail.needsAudit;
       container.appendChild(needsEl);
-    }
-    if(detail.scheduleGroup && Array.isArray(detail.scheduleGroup.lines) && detail.scheduleGroup.lines.length){
-      var gWrap = document.createElement("div");
-      gWrap.className = "audit-part";
-      gWrap.setAttribute("data-testid", "audit-schedule-group");
-      var gBtn = document.createElement("button");
-      gBtn.type = "button";
-      gBtn.className = "btn audit-part-toggle";
-      gBtn.setAttribute("aria-expanded", "false");
-      gBtn.setAttribute("data-testid", "audit-schedule-toggle");
-      gBtn.textContent = "\u25B8 " + detail.scheduleGroup.title;
-      var gBody = document.createElement("div");
-      gBody.className = "audit-part-body";
-      gBody.hidden = true;
-      gBody.setAttribute("data-testid", "audit-schedule-body");
-      detail.scheduleGroup.lines.forEach(function(l){
-        var li = document.createElement("div");
-        li.style.overflowWrap = "anywhere";
-        li.style.whiteSpace = "pre-wrap";
-        li.textContent = l;
-        gBody.appendChild(li);
-      });
-      gBtn.addEventListener("click", function(){
-        var open = gBtn.getAttribute("aria-expanded") === "true";
-        gBtn.setAttribute("aria-expanded", open ? "false" : "true");
-        gBody.hidden = open;
-        gBtn.textContent = (open ? "\u25B8 " : "\u25BE ") + detail.scheduleGroup.title;
-      });
-      gWrap.appendChild(gBtn);
-      gWrap.appendChild(gBody);
-      container.appendChild(gWrap);
     }
     // P5-R: a resumed run is ONE run — its legs are told apart by a divider line (code-owned text from the server)
     var dividers = Array.isArray(detail.legDividers) ? detail.legDividers : [];

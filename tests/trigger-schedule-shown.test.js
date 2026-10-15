@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appendRow } from '../src/triggerledger.js';
-import { dateTimeWords, lowerFirst } from '../src/schedulewords.js';
+import { dateTimeWords, lowerFirst, scheduleSignFor } from '../src/schedulewords.js';
 import { CLOCK, fireWorld, keysHome, makeRun, panel, specOf, SLOT } from './trigger-world.mjs';
 
 const detail = async (p, runid) => (await p.get(`/api/runs/${runid}`)).body;
@@ -59,42 +59,79 @@ test('Job tab Schedule: the job\'s schedule now, bound to its origin run (run-N)
   assert.equal((await job(w.p, 'r1')).schedule, 'none');
 });
 
-test('Audit: a scheduled run\'s first row says so (slot, origin run, catch-up); a file run names the file; a hand run has no such row', async () => {
-  const w = await fireWorld();
-  assert.equal((await detail(w.p, 'r1')).startedAudit, null);
-  scheduledRun(w, 'r2', { ...CLOCK_REC, catchUp: true });
-  assert.equal((await detail(w.p, 'r2')).startedAudit, 'started by the schedule · every day at 09:00 · slot 09:00 · from run-1 · catch-up');
-  scheduledRun(w, 'r3', { kind: 'file', trigger: 'When a new file arrives in /x/', triggerKind: 'new-file', file: '/x/8een.md', originRunid: 'r1' }, '2026-10-04T10:00:00.000Z');
-  assert.equal((await detail(w.p, 'r3')).startedAudit, 'started by the schedule · new file 8een.md · from run-1');
+const section = async (p, runid) => (await detail(p, runid)).scheduleSection;
+
+test('Audit section: the head sign is [▶] only while a run of the job runs, [✗] when the SCHEDULE row is red, else [·]', () => {
+  assert.equal(scheduleSignFor({ running: true, red: true }).sign, '▶');
+  assert.equal(scheduleSignFor({ running: false, red: true }).sign, '✗');
+  assert.equal(scheduleSignFor({ running: false, red: false }).sign, '·');
+  assert.equal(scheduleSignFor({ running: true, red: false }).sign, '▶');
 });
 
-test('Audit schedule group: fires that started NOTHING, newest first, at most 7, on the run the schedule was set from only, in plain words; other signings\' rows stay out', async () => {
+test('Audit section: every run of a scheduled job has ONE `schedule` section; a hand run says `by hand`, the origin run adds where the schedule was set', async () => {
+  const w = await fireWorld();
+  const o = await section(w.p, 'r1');
+  assert.equal(o.title, 'schedule');
+  assert.equal(o.sign, '·');
+  assert.equal(o.head, 'every day at 09:00 · from run-1');
+  assert.deepEqual(o.rows, [{ label: 'this run', text: `${dt('2026-10-01T10:00:00.000Z')}  by hand. The schedule was set from this run.` }, { label: 'tries', text: 'none' }]);
+  makeRun(w.home, { runid: 'r9', spec: w.spec, outcome: 'green', accepted: true, at: '2026-10-02T10:00:00.000Z' });
+  assert.equal((await section(w.p, 'r9')).rows[0].text, `${dt('2026-10-02T10:00:00.000Z')}  by hand.`);
+  assert.equal((await detail(w.p, 'r1')).startedAudit, undefined, 'the old first row is gone while the schedule is on');
+});
+
+test('Audit section: a run the schedule started says how (file named, catch-up with minutes late); the section is the same words on every run of the job', async () => {
+  const w = await fireWorld({ when: 'files' });
+  scheduledRun(w, 'r3', { kind: 'file', trigger: 'When a new file arrives in /x/', triggerKind: 'new-file', file: '/x/litectx.md', originRunid: 'r1' }, '2026-10-04T10:00:00.000Z');
+  const s = await section(w.p, 'r3');
+  assert.match(s.head, /^when a new file arrives in .*\/ · from run-1$/);
+  assert.equal(s.rows[0].label, 'this run');
+  assert.equal(s.rows[0].text, `${dt('2026-10-04T10:00:00.000Z')}  started by the schedule · new file litectx.md`);
+  assert.equal((await section(w.p, 'r1')).head, s.head);
+  const c = await fireWorld();
+  scheduledRun(c, 'r2', { ...CLOCK_REC, catchUp: true, lateMs: 600_000 });
+  assert.equal((await section(c.p, 'r2')).rows[0].text, `${dt('2026-10-03T10:00:00.000Z')}  started by the schedule · every day at 09:00 · catch-up, 10 min late`);
+});
+
+test('Audit section tries: fires that started NOTHING of ALL signings of the job, newest first, at most 7, in plain words; the folded head counts them; the SCHEDULE row red turns the sign to [✗]', async () => {
   const w = await fireWorld();
   const t = w.now();
   appendRow(w.ledger, { kind: 'refused', sig: w.sig, at: t, told: 'a', why: 'The destination does not exist. Nothing started.' });
-  appendRow(w.ledger, { kind: 'busy', sig: w.sig, at: t + 60_000, told: 'b', why: 'A run of this job is still going. This one starts when it is done.' });
+  appendRow(w.ledger, { kind: 'busy', sig: w.sig, at: t + 60_000, told: 'b', why: 'x' });
   appendRow(w.ledger, { kind: 'monthly-exhausted', sig: w.sig, at: t + 120_000, told: 'c', leftUsd: 0.01, needUsd: 0.03, atLeast: false });
-  appendRow(w.ledger, { kind: 'refused', sig: 'someone-elses-sig', at: t + 180_000, told: 'd', why: 'Not mine. Nothing started.' });
-  const g = (await detail(w.p, 'r1')).scheduleGroup;
-  assert.equal(g.title, 'schedule (3)');
-  assert.deepEqual(g.lines, [
-    `${dateTimeWords(t + 120_000)}  month used up — $0.01 left, needs $0.03. Nothing spent.`,
-    `${dateTimeWords(t + 60_000)}  busy — a run of this job was still going. Nothing started.`,
-    `${dateTimeWords(t)}  refused: the destination does not exist. Nothing started.`,
+  appendRow(w.ledger, { kind: 'refused', sig: 'an-older-signing', at: t + 180_000, told: 'd', why: 'Not mine. Nothing started.' });
+  const s = await section(w.p, 'r1');
+  assert.equal(s.sign, '✗');
+  assert.equal(s.head, 'every day at 09:00 · from run-1 · 4 tries started nothing');
+  assert.deepEqual(s.rows.slice(1).map((r) => [r.label, r.text]), [
+    ['tries', `${dateTimeWords(t + 180_000)}  refused: not mine. Nothing started.`],
+    ['', `${dateTimeWords(t + 120_000)}  month used up: $0.01 left, needs $0.03. Nothing spent.`],
+    ['', `${dateTimeWords(t + 60_000)}  busy: a run of this job was still working. Nothing started.`],
+    ['', `${dateTimeWords(t)}  refused: the destination does not exist. Nothing started.`],
   ]);
-  assert.equal((await detail(w.p, 'r1')).startedAudit, null);
-  // not on another run of the job
-  scheduledRun(w, 'r2', CLOCK_REC);
-  assert.equal((await detail(w.p, 'r2')).scheduleGroup, null, 'the group lives on the origin run only');
-  // a later signing set from the SAME origin run keeps the older rows (they point back to r1 through their `signed` row)
-  const b = { ...w.body, capUsd: 2 };
-  const pre = await w.p.post('/api/author/schedule-prepare', b);
-  assert.equal((await w.p.post('/api/author/schedule', { ...b, hash: pre.body.hash })).status, 200);
-  assert.equal((await detail(w.p, 'r1')).scheduleGroup.lines.length, 3, 'rows of the first signing still count');
-  // at most 7
+  // another signing from a different origin stays in (all signings), and the same section is on every run
+  makeRun(w.home, { runid: 'r8', spec: w.spec, outcome: 'green', accepted: true, at: '2026-10-02T10:00:00.000Z' });
+  assert.equal((await section(w.p, 'r8')).rows.length, 5);
   for (let i = 0; i < 9; i += 1) appendRow(w.ledger, { kind: 'busy', sig: w.sig, at: t + 1_000_000 + i * 1000, told: `n${i}`, why: 'x' });
-  assert.equal((await detail(w.p, 'r1')).scheduleGroup.lines.length, 7);
-  assert.equal((await detail(w.p, 'r1')).scheduleGroup.title, 'schedule (7)');
+  const m = await section(w.p, 'r1');
+  assert.equal(m.rows.length, 1 + 7);
+  assert.match(m.head, / · 13 tries started nothing$/);
+  // one try reads in the singular
+  const one = await fireWorld();
+  appendRow(one.ledger, { kind: 'busy', sig: one.sig, at: one.now(), told: 'b', why: 'x' });
+  assert.match((await section(one.p, 'r1')).head, / · 1 try started nothing$/);
+});
+
+test('Audit section: no schedule now = no section; a run a cancelled schedule started keeps its old single `started by the schedule` line', async () => {
+  const w = await fireWorld();
+  scheduledRun(w, 'r2', CLOCK_REC);
+  const c = await w.p.post('/api/author/schedule-prepare', { runid: 'r1', when: null });
+  await w.p.post('/api/author/schedule', { runid: 'r1', when: null, hash: c.body.hash });
+  assert.equal((await detail(w.p, 'r1')).scheduleSection, undefined);
+  assert.equal((await detail(w.p, 'r1')).startedAudit, undefined);
+  const d = await detail(w.p, 'r2');
+  assert.equal(d.scheduleSection, undefined);
+  assert.equal(d.startedAudit, 'started by the schedule · every day at 09:00 · slot 09:00 · from run-1');
 });
 
 test('Run tab: ENDED always starts with the run\'s end date and time, then the outcome word, then the reason', async () => {

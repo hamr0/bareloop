@@ -239,11 +239,11 @@ function reasonOf(why) {
  * @param {any} row a ledger row (`busy` | `monthly-exhausted` | `refused` | `gave-up`) @param {boolean} [short]
  */
 export function skippedWords(row, short = false) {
-  if (row.kind === 'busy') return short ? 'busy: a run of this job was still working' : 'busy — a run of this job was still going. Nothing started.';
+  if (row.kind === 'busy') return short ? 'busy: a run of this job was still working' : 'busy: a run of this job was still working. Nothing started.';
   if (row.kind === 'monthly-exhausted') {
     const left = typeof row.leftUsd === 'number' ? `${row.atLeast === true ? 'at most ' : ''}${panelMoney2(row.leftUsd)}` : 'little';
     const need = typeof row.needUsd === 'number' ? panelMoney2(row.needUsd) : 'more';
-    return short ? `month used up: ${left} left, needs ${need}` : `month used up — ${left} left, needs ${need}. Nothing spent.`;
+    return short ? `month used up: ${left} left, needs ${need}` : `month used up: ${left} left, needs ${need}. Nothing spent.`;
   }
   const r = lowerFirst(reasonOf(row.why));
   return short ? `refused: ${r}` : `refused: ${r}. Nothing started.`;
@@ -268,4 +268,29 @@ export function jobScheduleWords(f) {
 export function retryNextWords(ms) {
   const m = Math.max(1, Math.ceil(ms / 60_000));
   return `next: tries again in ${m} min`;
+}
+
+/**
+ * RULED 2026-10-15: the sign on the head of the Audit's `schedule` section. ONE small rule (hamr may still adjust it): [▶] only while a
+ * run of the job is running (as everywhere in the panel), [✗] when the SCHEDULE row is red, else [·] (on, waiting).
+ * @param {{running: boolean, red: boolean}} f @returns {{sign: string}}
+ */
+export function scheduleSignFor(f) {
+  return { sign: f.running ? '▶' : f.red ? '✗' : '·' };
+}
+
+/** Audit schedule section, the `this run` words of a run the schedule started (the head already says which schedule and from where). @param {any} rec `trigger.json` */
+export function sectionThisRunWords(rec) {
+  if (rec.kind === 'file') return `started by the schedule · ${isNewFile(rec) ? 'new file' : 'file update'} ${basename(String(rec.file ?? ''))}`;
+  let late = '';
+  if (rec.catchUp === true) {
+    const min = typeof rec.lateMs === 'number' && rec.lateMs > 0 ? Math.round(rec.lateMs / 60_000) : null;
+    late = min === null ? ' · catch-up' : ` · catch-up, ${min} min late`;
+  }
+  return `started by the schedule · ${lowerFirst(String(rec.trigger ?? ''))}${late}`;
+}
+
+/** Audit schedule section, folded tail: `1 try started nothing` / `N tries started nothing`; '' for none. @param {number} n */
+export function triesTailWords(n) {
+  return n > 0 ? `${n} ${n === 1 ? 'try' : 'tries'} started nothing` : '';
 }

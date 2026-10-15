@@ -46,7 +46,7 @@ import { createScheduleDoor } from './schedules.js';
 import { createStarter } from './schedulestart.js';
 import { createScheduler } from './scheduler.js';
 import {
-  catchUpWords, dateTimeWords, jobScheduleWords, skippedWords, startedAuditWords, startedWords, SCHEDULE_WORDS,
+  catchUpWords, dateTimeWords, jobScheduleWords, lowerFirst, scheduleSignFor, scheduledWords, sectionThisRunWords, skippedWords, startedAuditWords, startedWords, triesTailWords, SCHEDULE_WORDS,
 } from '../schedulewords.js';
 import { doorWaiting, heldScheduled } from '../reviewdoor.js';
 import { createAuthorRoutes, mintToken, checkHostGuard, panelMoney2 } from './authorroutes.js';
@@ -1107,9 +1107,9 @@ export function getRunDetail(runid, opts = {}) {
 
 /**
  * Aligned with fwdloop M9 am7: the SCHEDULE row's second line and the Audit's schedule rows, made on the server from the door's data.
- * `schedule` = the door's view with `line2`, `problem` (and no raw ledger row); `audit` = `{startedAudit, scheduleGroup}`.
+ * `schedule` = the door's view with `line2`, `problem` (and no raw ledger row); `audit` = `{scheduleSection}` or, for a run a cancelled schedule started, `{startedAudit}`.
  * @param {string} runid @param {string} job @param {any[]} rows @param {Map<string, number>} nos @param {any} opts @param {any} view
- * @returns {{schedule?: any, audit?: {startedAudit: string|null, scheduleGroup: {title: string, lines: string[]}|null}}}
+ * @returns {{schedule?: any, audit?: {startedAudit?: string, scheduleSection?: any}}}
  */
 function scheduleExtrasFor(runid, job, rows, nos, opts, view) {
   try {
@@ -1144,16 +1144,27 @@ function scheduleExtrasFor(runid, job, rows, nos, opts, view) {
     }
     const row = rows.find((r) => r && r.runid === runid);
     const rec = row ? triggerRecordOf(row) : null;
-    let startedAudit = null;
-    if (rec) {
-      const origin = rec.originRunid ?? door.readSchedule(job)?.originRunid ?? null;
-      startedAudit = startedAuditWords(rec, origin ? (nos.get(origin) ?? null) : null);
+    const cur = door.readSchedule(job);
+    if (!cur) {
+      // no schedule now: a run a cancelled schedule started keeps its one old line; a hand run has nothing
+      const origin = rec ? (rec.originRunid ?? null) : null;
+      return { ...(schedule ? { schedule } : {}), audit: rec ? { startedAudit: startedAuditWords(rec, origin ? (nos.get(origin) ?? null) : null) } : {} };
     }
-    const skipped = door.skippedFor(job, runid);
-    return {
-      ...(schedule ? { schedule } : {}),
-      audit: { startedAudit, scheduleGroup: skipped.length > 0 ? { title: `${SCHEDULE_WORDS.scheduleGroup} (${skipped.length})`, lines: skipped.map((x) => x.line) } : null },
+    // RULED 2026-10-15 (v1.104): ONE `schedule` section on every run of a job that has a schedule now, folded when the page opens
+    const originNo = nos.get(cur.originRunid) ?? null;
+    const tries = door.skippedFor(job);
+    const running = rows.some((r) => r && r.job === job && r.via !== 'import' && runIsAlive(r));
+    const { sign } = scheduleSignFor({ running, red: !!(view && view.problem) });
+    const words = scheduledWords(cur.trigger, door.userHome);
+    const head = [lowerFirst(words ?? ''), originNo === null ? null : `from run-${originNo}`, triesTailWords(tries.length) || null].filter(Boolean).join(' · ');
+    const when = row ? dateTimeWords(atMs(row)) : '';
+    const thisRun = rec ? sectionThisRunWords(rec) : `by hand.${runid === cur.originRunid ? ' The schedule was set from this run.' : ''}`;
+    const shown = tries.slice(0, 7).map((x, i) => ({ label: i === 0 ? 'tries' : '', text: x.line }));
+    const scheduleSection = {
+      title: SCHEDULE_WORDS.scheduleGroup, sign, head,
+      rows: [{ label: 'this run', text: `${when}  ${thisRun}` }, ...(shown.length > 0 ? shown : [{ label: 'tries', text: 'none' }])],
     };
+    return { ...(schedule ? { schedule } : {}), audit: { scheduleSection } };
   } catch { return {}; }
 }
 
