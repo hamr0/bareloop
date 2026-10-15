@@ -22,7 +22,7 @@ YOU (panel, or the CLI)
   ▼
 JOB CARD: goal · source · destination · check type · $ cap · time cap · model
   │  check type = Deterministic (a command decides) / Rubric (a judge model reads,
-  │  code decides) / Reuse workflow (re-run a job that went green before)
+  │  code decides). Reuse workflow is a button on every run, not a check type.
   ▼
 bareloop checks everything at $0, before any token:
   source and destination are real · the check runs · rubric: the judge must pass its
@@ -41,12 +41,14 @@ THE RUN, on a copy: a worktree in your repo, or a hidden-git copy of a plain fol
 ENDED:  passed · failed · capped · stopped · died
   passed           → your branch has the work (you merge, always) · Reuse workflow
                      (a plain folder gets a dated file in its destination instead)
-  not passed       → Edit in chat (fix the job, sign again)
+  not passed       → Reuse workflow (change the job or not, sign again)
   capped / stopped → Resume (only the $ and time caps can change)
   died             → Resume, if it can
   │
   ▼
-NEXT TIME: Reuse workflow runs the same plan again · Export runs it anywhere
+NEXT TIME: Reuse workflow, the one button on every run: a green run with the same job
+           runs its proven plan again with no drafting; anything else drafts · Export runs it
+           anywhere · Schedule run only sets a schedule, it never runs
 ```
 
 ---
@@ -84,9 +86,23 @@ human**. The agent can never touch it. Every layer runs inside it.
 ### Layer 3 — inheritance (reuse)
 
 - **Built on:** the green record. A road that went green is stored as it was executed, not as it was drafted.
-- **Does:** the next run starts from that road (Reuse workflow, or an exported bundle run elsewhere).
+- **Does:** the next run starts from that road (Reuse workflow, or an exported bundle run elsewhere). Reuse workflow is the one door on every run; what it does depends on the run and on whether the job changed:
+
 - **Survives:** runs. Green only; a red run inherits nothing, and an already-green run mints nothing.
 - **Status:** built and proven safe. Whether reuse actually saves money or time is **not yet proven**.
+
+| Run | Job | Result | Drafts a new plan? |
+|---|---|---|---|
+| red | changed | new workflow `<name>-N` | yes |
+| red | same | run-N | yes, the old plan failed |
+| green | changed | new workflow `<name>-N` | yes |
+| green | same | run-N | no, it reuses that run's proven plan |
+
+"Job" = the job lines, ~ rules, ~ PASS/~ FAIL, check type, thinking. The run boxes (source/inputs,
+destination, model, $ cap, time cap) never make a new workflow. An already-green run counts as
+green. The button reads Sign & run only in the green+same row, Start drafting otherwise. Editing
+never clears a schedule; a new workflow has no schedule until its own first green. Schedule run /
+Cancel / modify schedule only set or adjust a schedule, never run.
 
 | layer | wheels | arranged by | survives attempts (within one run) | survives runs |
 |---|---|---|---|---|
@@ -106,7 +122,7 @@ four inside the one shell.
 |---|---|---|---|
 | a step's check is red | feeds the gap to the next try | running | nobody; the wheel turns |
 | two strikes on one step | replans once (a second only if the run is clearly converging) | running | the shell |
-| replan cannot help, or no more strikes | stops, keeps the work on disk | failed | you: Edit in chat, or Resume if offered |
+| replan cannot help, or no more strikes | stops, keeps the work on disk | failed | you: Reuse workflow, or Resume if offered |
 | the signed check is red at the end | a bounded fix loop against the real check | running, then passed or failed | the shell, then you |
 | the check itself cannot run (`close-red`) | stops; an instrument fault, not a verdict on the work | failed | you: fix the check, sign again |
 | the check ran and said no (`plan-red`) | a judged no from a working check | failed | you |

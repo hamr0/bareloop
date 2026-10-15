@@ -1560,3 +1560,4 @@ Replaces v1.88's "five open boxes, the rest locked and refused by the server" an
 7. The cost shows before the click: the one main button reads **Sign & run** while the Reuse path applies and **Start drafting** otherwise, flipping live as the person types. The origin line says where the card came from ("Reuse: <job> (run-N)").
 8. A new workflow still has no schedule until its own first green (`greenFor`); a schedule is never cleared by any of this. An imported job counts as a green origin (Import stays read-only, its one action is Reuse workflow). The schedule card alone keeps its job boxes locked.
 9. Already-green counts as green for Reuse (RULED 2026-10-15).
+10. Schedule run and Cancel / modify schedule never start a run; they only set or adjust the schedule (RULED 2026-10-15).
