@@ -114,9 +114,9 @@ test('Run tab SCHEDULE: an unscheduled job says `By hand` (no second line); a sc
   const w = await fireWorld();
   const s = (await detail(w.p, 'r1')).schedule;
   assert.equal(s.problem, false);
-  assert.match(s.line2, /^next (Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d\d\/\d\d 09:00$/);
+  assert.match(s.line2, /^no run yet · next (Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d\d\/\d\d 09:00$/);
   const f = (await detail((await fireWorld({ when: 'files' })).p, 'r1')).schedule;
-  assert.equal(f.line2, 'next: waiting for a new file');
+  assert.equal(f.line2, 'no run yet · next: waiting for a new file');
 });
 
 test('Run tab SCHEDULE: a last fire that started nothing is a problem (red) with the reason in words; a later good start clears it; the same on every run page of the job', async () => {
@@ -154,7 +154,7 @@ test('Run tab SCHEDULE: busy is NOT a problem (normal colours, no "fix it"); the
   appendRow(w.ledger, { kind: 'busy', sig: w.sig, at: t, told: 'b', why: 'A run of this job is still going. This one starts when it is done.' });
   const s = (await detail(w.p, 'r1')).schedule;
   assert.equal(s.problem, false);
-  assert.match(s.line2, new RegExp(`^last ${dateTimeWords(t)} · busy: a run of this job was still going · next (Mon|Tue|Wed|Thu|Fri|Sat|Sun) \\d\\d/\\d\\d 09:00$`));
+  assert.match(s.line2, new RegExp(`^last ${dateTimeWords(t)} · busy: a run of this job was still working · next (Mon|Tue|Wed|Thu|Fri|Sat|Sun) \\d\\d/\\d\\d 09:00$`));
   assert.doesNotMatch(s.line2, /fix it/);
   appendRow(w.ledger, { kind: 'monthly-exhausted', sig: w.sig, at: t + 1000, told: 'm', leftUsd: 0.01, needUsd: 0.5, atLeast: true });
   assert.match((await detail(w.p, 'r1')).schedule.line2, /· month used up: at most \$0\.01 left, needs \$0\.50 · next: raise the limit/);
@@ -170,4 +170,29 @@ test('Run tab SCHEDULE: a run waiting for the person\'s Accept is said inside li
   const s = (await detail(w.p, 'r1')).schedule;
   assert.equal(s.problem, false);
   assert.match(s.line2, new RegExp(`^last ${dateTimeWords(t)} · run-2 · passed · waiting for your Accept \\(the next run does not wait\\) · next (Mon|Tue|Wed|Thu|Fri|Sat|Sun) `));
+});
+
+test('Run tab SCHEDULE: month used up is red only in the month it happened; a last one from an EARLIER month is not red and no "raise the limit" next follows (RULED 2026-10-15)', async () => {
+  const w = await fireWorld();
+  const earlier = w.now() - 40 * 86_400_000;
+  appendRow(w.ledger, { kind: 'monthly-exhausted', sig: w.sig, at: earlier, told: 'm', leftUsd: 0.01, needUsd: 0.5 });
+  const old = (await detail(w.p, 'r1')).schedule;
+  assert.equal(old.problem, false, 'an earlier month is not red');
+  assert.doesNotMatch(old.line2, /raise the limit/);
+  assert.match(old.line2, / · next (Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d\d\/\d\d 09:00$/);
+  appendRow(w.ledger, { kind: 'monthly-exhausted', sig: w.sig, at: w.now(), told: 'm2', leftUsd: 0.01, needUsd: 0.5 });
+  const cur = (await detail(w.p, 'r1')).schedule;
+  assert.equal(cur.problem, true, 'this month is red');
+  assert.match(cur.line2, /next: raise the limit in Settings/);
+});
+
+test('Run tab SCHEDULE: signed but not armed yet ends `next: not armed yet` in normal colour, for a clock and a file schedule alike; before the first fire it starts `no run yet`', async () => {
+  for (const when of [undefined, 'files']) {
+    const w = await fireWorld(when ? { when } : {});
+    const rows = readFileSync(w.ledger, 'utf8').split('\n').filter((l) => l && JSON.parse(l).kind !== 'armed');
+    writeFileSync(w.ledger, rows.length ? `${rows.join('\n')}\n` : '');
+    const s = (await detail(w.p, 'r1')).schedule;
+    assert.equal(s.problem, false, 'unarmed is not red');
+    assert.equal(s.line2, 'no run yet · next: not armed yet');
+  }
 });

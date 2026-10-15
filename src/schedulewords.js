@@ -123,8 +123,7 @@ export function scheduledNextFor(f) {
   if (waitingRunNo !== null) return say(`Run ${waitingRunNo} is waiting for your Accept. The next scheduled run does not wait for it.`);
   if (gaveUp && typeof gaveUp === 'object') return say(gaveUpNextWords(gaveUp.why), true);
   const last = lastOutcome && typeof lastOutcome === 'object' ? lastOutcome : null;
-  const sameMonth = last !== null && typeof last.at === 'number' && Number.isFinite(last.at)
-    && new Date(last.at).getFullYear() === new Date(now).getFullYear() && new Date(last.at).getMonth() === new Date(now).getMonth();
+  const sameMonth = last !== null && sameMonthAs(last.at, now);
   if (last !== null && last.kind === 'monthly-exhausted' && sameMonth && typeof last.leftUsd === 'number' && typeof last.needUsd === 'number') {
     const left = last.atLeast === true ? `at most ${panelMoney2(last.leftUsd)} left` : `${panelMoney2(last.leftUsd)} left`;
     return say(`Paused: not enough money left this month (${left}, a run needs up to ${panelMoney2(last.needUsd)}). Raise the monthly limit in Settings, or it starts again on the 1st.`, true);
@@ -136,6 +135,13 @@ export function scheduledNextFor(f) {
   if (trigger.kind === 'new-file') return say(`${lead}Watching for it. A run starts for each new file.`, red);
   if (nextSlotMs === null) return say(`${lead}Not armed yet: the panel arms it on its next check.`, red);
   return say(`${lead}Next run ${slotWords(nextSlotMs)}.`, red);
+}
+
+/** Is `atMs` in the same local calendar month as `nowMs`? A non-number is never. @param {unknown} atMs @param {number} nowMs */
+export function sameMonthAs(atMs, nowMs) {
+  if (typeof atMs !== 'number' || !Number.isFinite(atMs)) return false;
+  const a = new Date(atMs); const n = new Date(nowMs);
+  return a.getFullYear() === n.getFullYear() && a.getMonth() === n.getMonth();
 }
 
 /** RULED 2026-10-15: the red NEXT of a schedule that gave up. @param {unknown} why the refusal's own words */
@@ -233,7 +239,7 @@ function reasonOf(why) {
  * @param {any} row a ledger row (`busy` | `monthly-exhausted` | `refused` | `gave-up`) @param {boolean} [short]
  */
 export function skippedWords(row, short = false) {
-  if (row.kind === 'busy') return short ? 'busy: a run of this job was still going' : 'busy — a run of this job was still going. Nothing started.';
+  if (row.kind === 'busy') return short ? 'busy: a run of this job was still working' : 'busy — a run of this job was still going. Nothing started.';
   if (row.kind === 'monthly-exhausted') {
     const left = typeof row.leftUsd === 'number' ? `${row.atLeast === true ? 'at most ' : ''}${panelMoney2(row.leftUsd)}` : 'little';
     const need = typeof row.needUsd === 'number' ? panelMoney2(row.needUsd) : 'more';
