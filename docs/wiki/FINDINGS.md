@@ -14594,3 +14594,29 @@ The per-phase tables (median/min/max turns per run per phase, output tokens per 
 - **E5 instrument stop (cause explained in the medium prereg Step 0):** the slot-11 field-violation was a wrapper queue artefact after a transport retry, not a wrong thinking field on the wire; slot 11 stays counted as printed, digest cells in E5 stay at n=1 and n=2.
 - **RETRY is not built.** F232 and PRD L26 recommend it as the default (tick = think everywhere); the build waits for hamr's go after the release. The switch exists only inside the throwaway engine copy `.claude/scratch/poc-engine` (E7) and the outside wrapper (E3-E6); `src/` is untouched.
 - **Unreplicated:** the turns pattern (more turns, shorter turns) rests on four medium-cell comparisons and two small ones, all n <= 4, with no judge turns and one provider. A larger medium battery or a harder job would be the replication; none is proposed here.
+
+**Summary table (2026-10-16, as shown to hamr).**
+
+| Test | Job | Setup | Passed | Turns (median) | Extra turns (step retries + fix + replan, median) | Cost (median) | Time (median) |
+|---|---|---|---|---|---|---|---|
+| SPLIT contrast | change2 (changelog rubric) | ON | 3 of 4 | 12.5 | — | $0.017 | 1.3 min |
+| SPLIT contrast | change2 | SPLIT | 2 of 4 | 24 | — | $0.025 | 2.5 min |
+| SPLIT contrast | digest (code) | ON | 4 of 4 | 35 | — | $0.093 | 7.7 min |
+| SPLIT contrast | digest | SPLIT | 4 of 4 | 42 | — | $0.027 | 3.0 min |
+| RETRY contrast | change2 | ON | 4 of 4 | 12 | 0 | $0.017 | 1.5 min |
+| RETRY contrast | change2 | RETRY | 4 of 4 | 17.5 | 4.5 | $0.018 | 1.8 min |
+| Medium | p7small (code) | ON | 4 of 4 | 43.5 | 6.5 | $0.131 | 11.6 min |
+| Medium | p7small | RETRY | 4 of 4 | 61.5 | 24.5 | $0.084 | 9.7 min |
+| Medium | stoptest (code) | ON | 2 of 4 | 85.5 | 42 | $0.218 | 17.1 min |
+| Medium | stoptest | RETRY | 3 of 4 | 59.5 | 22 | $0.081 | 7.7 min |
+
+Turn size, medium test, step attempt 1 (median):
+
+| Job | Setup | Output tokens per turn | Seconds per turn |
+|---|---|---|---|
+| p7small | ON | 1,018 | 6.1 |
+| p7small | RETRY | 199 | 2.3 |
+| stoptest | ON | 717 | 4.2 |
+| stoptest | RETRY | 239 | 2.0 |
+
+Reading: less thinking = more turns, each much smaller and faster; on the code jobs that adds up to cheaper and faster, on the short changelog job it does not. Left out: the RETRY contrast's digest cells (n=1/2, stopped at slot 11) and the aborted first medium attempt. SPLIT-contrast extra turns not split out in this summary (see the per-phase tables above).

@@ -1602,3 +1602,18 @@ Matches fwdloop DRAFT M11 am11 items 3-5 (bareloop keeps the Accept tag; no Reop
 
 
 fwdloop asked to match (2026-10-15).
+
+### Next after this release (v1.105 — 2026-10-16) — RULED, PARKED until v0.4x ships
+
+These three items are the next work after the feat/runs-list release; none is built on this branch.
+
+1. **Thinking on retries as the default (from F230–F233).** Spec:
+   - Per model call, the engine decides from what it already knows (phase, attempt), at the worker Loop call sites in `src/planrun.js` (`mkWorker` ask/askFrom), passing bare-agent's per-call `thinkingMode`: planner (draft, redraft, replan) = no field (thinks); scout = 'off'; step attempt 1 = 'off'; step attempt 2+ = no field (thinks); close-fix = no field (thinks). Judge and drafter keep their own existing settings (off; the job's tick turns them on).
+   - The job's "Thinking on" tick = think everywhere (an override escape hatch for hard jobs; RULED 2026-10-16).
+   - Every call writes its decision to the spine (`thinking-decision {phase, iteration, mode}`), so a run's record shows what was sent; one test per phase/attempt plus a dropped-and-retried call.
+   - Default applies to every job (hamr: "the default if no differences"); measured gain is on longer code jobs; the short changelog rubric job showed no gain and no loss beyond n=4 noise.
+   - Proven only on DeepSeek deepseek-flash (n=4 per arm, 4 jobs). Other provider shapes (Anthropic, OpenAI reasoning_effort, Gemini) are untested: say so in the build and check each shape's off-value in bare-agent's thinking-mode ladder before claiming it.
+   - The POC lives in the throwaway copy `.claude/scratch/poc-engine` (src/planrun.js +14/-2): a graduation is a REWRITE in the product, not a copy.
+   - Evidence: F230 (SPLIT, no build), F231 (RETRY on changelog, no build), F232 (RETRY on medium code jobs, frozen rule met), F233 (full record, turns). Pointer: PRD item 34 L26.
+2. **Run tab summary shows the run's time.** The summary line `passed · $0.0047` becomes `passed · $0.0047 · 1m56s` (outcome · money · wall time of the run). Same time rule as elsewhere in the panel; an unknown time is shown as unknown, never 0. (hamr wrote "passed · $0.0047 1m56s"; the middle dot before the time follows the line's own separator — confirm with hamr when it is built.)
+3. **A filter/search for the Scheduled list.** The Scheduled list gets its own filter/search box, like the Runs search (P9 v2), so a person with many schedules can find one. Exact matching rules are designed at build time with hamr (interview first).
