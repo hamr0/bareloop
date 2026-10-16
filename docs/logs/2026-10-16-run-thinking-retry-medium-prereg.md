@@ -191,3 +191,5 @@ Launch (hamr's own foreground shell, NOT run by the builder):
 ## Results
 
 (empty; results get appended below in a later commit, the sections above never change)
+
+2026-10-16 delivery change before any counted number: first attempt aborted at slot 3 by the outside wrapper's field check (not counted, $0.1675); the battery reruns from slot 1 with the switch inside a throwaway engine copy (.claude/scratch/poc-engine), rules unchanged.
