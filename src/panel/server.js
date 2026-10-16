@@ -585,6 +585,16 @@ function endedBase(summary, death, o) {
       actions: resumeOk ? RESUME : [],
     };
   }
+  // hamr 2026-10-16: a replan answer cut off at its length limit is a bounded failed attempt in plain words, not the
+  // provider's fault and not "the checks said no" (the engine files it as a plan-red escalation with cause 'truncated')
+  if (outcome === 'plan-red' && esc?.cause === 'truncated' && esc?.phase === 'replan') {
+    return {
+      reason: 'The replan answer was cut off at its length limit, so no new plan came back.',
+      next: CHANGE,
+      line: 'replan cut off',
+      actions: [],
+    };
+  }
   if (GOAL_NOT_MET.has(outcome)) {
     const d = detailOf(summary.stopReason);
     return {

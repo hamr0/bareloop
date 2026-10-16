@@ -1016,6 +1016,31 @@ test('DRAFTER truncation: a plan-draft call cut off at the output cap is provide
 });
 
 
+test('REPLAN truncation (hamr 2026-10-16, run mv9gm796): a replan call cut off at max_tokens is a BOUNDED failed attempt in plain words, never provider-red', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([
+    { text: 'scout notes' },
+    { text: PLAN(wd) },
+    { text: 'thinking about it' },   // attempt 1: no write
+    { text: 'still thinking' },      // attempt 2: no write -> exhaustion -> the one replan
+    { text: 'a replan that never fini', stopReason: 'max_tokens', costUsd: 0.05 }, // the REPLAN call, cut off
+  ]);
+  const { outcome, events } = await go(wd, provider, { capRuns: 2 });
+  assert.equal(outcome, 'plan-red', 'a cut-off replan is a failed attempt, not the provider failing');
+  assert.equal(events.filter((e) => e.type === 'escalation' && e.category === 'provider-red').length, 0);
+  const b = events.filter((e) => e.type === 'attempt-bounded' && e.cause === undefined && /max_tokens/.test(e.reason ?? ''));
+  assert.equal(b.length, 1, 'the spine records the bounded attempt');
+  assert.equal(events.filter((e) => e.type === 'plan-validate' && /^replan/.test(e.phase ?? '')).length, 0, 'half an artifact is never validated');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'plan-red');
+  assert.equal(esc.phase, 'replan');
+  assert.equal(esc.cause, 'truncated');
+  assert.match(esc.decision, /replan answer was cut off at its length limit/);
+  assert.ok(events.some((e) => e.type === 'worker-round' && e.costUsd === 0.05), 'the cut round is booked');
+  assert.ok(events.find((e) => e.type === 'plan-executed'), 'plan-as-executed record never dangles');
+});
+
+
 test('REPLAN-DRAFTER casualty: a transport death during the replan draft is provider-red, and the spine still records that the replan was ATTEMPTED', async (t) => {
   const wd = makePatient(t);
   // Same fixture as the ONE-replan test: plan A's step writes nothing, so

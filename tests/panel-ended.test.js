@@ -578,3 +578,15 @@ test('Q2(b): start-from says whether the signed spec names a model; a resume car
   assert.deepEqual(args.slice(args.indexOf('--model'), args.indexOf('--model') + 4), ['--model', 'deepseek-flash', '--provider', 'DEEPSEEK_API_KEY']);
   assert.deepEqual(readdirSync(out).filter((n) => !n.startsWith('resume-')).sort(), ['resolved-spec.json', 'source-x'], 'no revision file');
 });
+
+test('a replan answer cut off at its length limit says so in plain words, never "model provider failed" or "checks said no" (hamr 2026-10-16, run mv9gm796)', () => {
+  const e = endedFor({
+    outcome: 'plan-red', stopReason: 'The replan answer was cut off at its length limit, so no new plan came back.', spentUsd: 1, budgetUsd: 8,
+    lastEscalation: { category: 'plan-red', cause: 'truncated', phase: 'replan' },
+  }, { died: false, lastThing: null }, {});
+  assert.equal(e.reason, 'The replan answer was cut off at its length limit, so no new plan came back.');
+  assert.doesNotMatch(`${e.reason} ${e.line}`, /provider|checks said no|truncated|max_tokens/);
+  // an ordinary plan-red keeps its words
+  const plain = endedFor({ outcome: 'plan-red', stopReason: 'x', spentUsd: 1, budgetUsd: 8, lastEscalation: null }, { died: false, lastThing: null }, {});
+  assert.match(plain.reason, /checks said no/);
+});

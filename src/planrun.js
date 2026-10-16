@@ -541,6 +541,8 @@ export const BOUND_REASON_MAX = 200;
 
 /** the recorded reason for a step attempt whose round was cut at the output cap (F122 2A b) */
 export const TRUNCATED_REASON = 'output cut at the token limit (max_tokens)';
+/** the plain sentence for a replan answer cut off at its length limit (hamr 2026-10-16, run mv9gm796) */
+export const REPLAN_CUT_WORDS = 'The replan answer was cut off at its length limit, so no new plan came back.';
 
 /**
  * What the NEXT attempt is told about the bound that cut the previous one.
@@ -2242,7 +2244,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    *   STRIKE LADDER (src/ladder.js), where that count does not exist by design — see
    *   the turn-allowance note below.
    */
-  async function mkWorker({ granted, phase, attemptRounds, attempts, writable, root = null, fence = null, workerProvider = null }) {
+  async function mkWorker({ granted, phase, attemptRounds, attempts, writable, root = null, fence = null, workerProvider = null, truncatedBounded = false }) {
     // THE HARD RULE, ENFORCED STRUCTURALLY (PRD v1.57 §3). This is the ONE seam
     // that grants write-class verbs — `writeScope` is empty for every other
     // worker, so a read-only phase cannot reach a file whatever it intends — and
@@ -2825,8 +2827,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // cut round's output is discarded (bare-agent already dropped it), its spend is booked
       // by the per-round meter, the tree is judged as it stands, and the step's strike
       // ladder (or the fix governor) applies unchanged (hamr ruling A extended it to `fix`
-      // after run muux1x96). Scout, drafter, replan keep the transport route below.
-      if (r.error && r.error.startsWith('truncated:') && (phase.startsWith('step:') || phase === 'fix')) {
+      // after run muux1x96). hamr 2026-10-16 (run mv9gm796) extended it to the REPLAN call: the
+      // replan drafter opts in with `truncatedBounded`. Scout and the first draft keep the
+      // transport route below (provider-red).
+      if (r.error && r.error.startsWith('truncated:') && (phase.startsWith('step:') || phase === 'fix' || truncatedBounded)) {
         attemptBounded = { iteration: roundIteration, cause: 'truncated', reason: TRUNCATED_REASON };
         emit('attempt-bounded', { phase, iteration: roundIteration, rounds: roundsThisAttempt, cap: attemptRounds, reason: TRUNCATED_REASON, stopReason: r.stopReason ?? null });
         return r;
@@ -3010,7 +3014,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * @param {string} phase @param {string|null} failure
    * @param {string} [progress] the meter's read, replan only (A's adaptation channel) */
   const obtainPlan = async (phase, failure, progress) => {
-    const drafter = await mkWorker({ granted: [], phase: 'plan', attemptRounds: 2, attempts: 3, writable: false });
+    const drafter = await mkWorker({ granted: [], phase: 'plan', attemptRounds: 2, attempts: 3, writable: false, truncatedBounded: phase === 'replan' });
+    /** a replan answer cut off at max_tokens: a bounded failed attempt, never provider-red (hamr 2026-10-16) */
+    let replanCut = false;
     // The BALANCE, read live at each draft — never a snapshot and never a rate
     // (addendum 2). At draft it is the whole budget (scale); at replan it is what
     // is actually left, which is the adaptation channel.
@@ -3040,6 +3046,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const draftPlan = async (/** @type {any[]|null} */ reds) => {
       drafter.setIteration(reds ? 'redraft' : 'draft');
       const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, starting, checkFacts, doorWords?.text ?? null, readShim), []);
+      if (phase === 'replan' && typeof r.error === 'string' && r.error.startsWith('truncated:')) {
+        replanCut = true;
+        return '';
+      }
       return extractArtifact(r.text).code ?? '';
     };
     // Scrubbed HERE, once, before any consumer reads them — the judge() precedent
@@ -3056,6 +3066,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       return { ...v, reds: v.reds.map((r) => (typeof r.detail === 'string' ? { ...r, detail: scrub(r.detail) } : r)) };
     };
     let text = await draftPlan(null);
+    // the cut-off text is never validated (judging half an artifact would mint a plan-red the
+    // drafter never earned) and there is no redraft: the cut answer WAS the bounded attempt
+    if (replanCut) return { ok: false, reds: [], truncated: true };
     let pv = validate(text);
     emit('plan-validate', { ok: pv.ok, reds: pv.reds, phase: `${phase}-1` });
     if (!pv.ok) {
@@ -3658,6 +3671,16 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       } catch (e) {
         planExecuted();
         return relay(e, 'replan');
+      }
+      if (pv.truncated) {
+        // a bounded failed attempt in plain words, filed as plan-red (a judged no, not a casualty)
+        // with the code-owned sentence on the escalation; the panel reads `cause` to say it
+        emit('escalation', {
+          category: 'plan-red', cause: 'truncated', decisionReady: true, phase: 'replan',
+          decision: REPLAN_CUT_WORDS, options: ['change the job and run it again', 'abandon the run'], detail: TRUNCATED_REASON,
+        });
+        planExecuted();
+        return 'plan-red';
       }
       if (!pv.ok) {
         for (const r of pv.reds) emit('plan-red', r);
