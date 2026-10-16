@@ -57,3 +57,4 @@
 ## [2026-10-08] apply-reorg | moved 0, skipped 0, 0 oversized split candidate(s), 0 link(s) rewritten, 0 sync failure(s), 0 empty dir(s) removed, CLAUDE.md updated: true
 ## [2026-10-08] reorg | discover+apply-reorg+lint over 50 doc(s), due reported
 ## [2026-10-13] index-flat | 64 row(s) (22 product, 39 logs, 3 archive)
+## [2026-10-16] index-flat | 67 row(s) (22 product, 42 logs, 3 archive)
