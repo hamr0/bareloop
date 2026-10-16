@@ -10,6 +10,7 @@ import {
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { jobSpecHash } from '../src/job.js';
+import { classGuards } from '../src/authoring.js';
 import { doorWaiting, heldScheduled } from '../src/reviewdoor.js';
 import { getStartFrom, listReuseJobs } from '../src/panel/server.js';
 import {
@@ -105,6 +106,56 @@ test('a refused accept (the tree moved: `door-accept-red`) answers 409 with the 
   const r = await w.p.post('/api/runs/a1/accept', {});
   assert.equal(r.status, 409);
   assert.equal(r.body.error, 'DOOR REFUSED (accept) — nothing was recorded and nothing was released.');
+});
+
+// RULED 2026-10-16 (A): a door-accept-red names each failed check by the panel's own plain question (stageQuestionText), never the stage id
+const declaredSpec = () => {
+  const { close, ...rest } = specOf({ job: 'acc-job', files: true });
+  void close;
+  return {
+    ...rest,
+    closeDecl: {
+      genre: 'TYPES', lang: 'js',
+      stages: [
+        { name: 'changed-from-seed', kind: 'files-changed', params: { allowPrefixes: ['output/'], requireNonEmpty: true } },
+        { name: 'tests-pass', kind: 'command-exit', params: { cmd: 'npm', args: ['test'], expectExit: 0 } },
+        ...classGuards({ verdictType: 'soft-green', lang: 'js' }).filter((g) => g.name === 'no-suppressions'),
+      ],
+    },
+  };
+};
+// the real shape of src/userrun.js's refusal: header, one `code:path — detail` line, then the mechanical re-run stage by stage
+const doorRedLog = (stage) => 'DOOR REFUSED (accept) — nothing was recorded and nothing was released.\n'
+  + `  door-accept-red:stage.${stage} — the close's mechanical stage "${stage}" no longer passes on this tree (red) — the tree moved under you\n`
+  + '  the mechanical re-run, stage by stage:\n    changed-from-seed  satisfied\n' + `    ${stage}  red\n`;
+
+test('a door-accept-red names the failed check by its plain question, not the stage id', async () => {
+  const home = keysHome();
+  const run = makeRun(home, { runid: 'a1', spec: declaredSpec(), outcome: 'green' });
+  addRec(run.spine, doorRec());
+  const p = await panel({ home, spawnFn: engine({ code: 2, say: doorRedLog('tests-pass') }) });
+  const r = await p.post('/api/runs/a1/accept', {});
+  assert.equal(r.status, 409, JSON.stringify(r.body));
+  assert.equal(r.body.error, 'Accept did not go through: the check "does the test suite pass?" said no. Nothing was recorded.');
+  assert.doesNotMatch(r.body.error, /tests-pass|door-accept-red|stage\./);
+});
+
+test('a door-accept-red whose stage has no plain question keeps the header sentence', async () => {
+  const home = keysHome();
+  const run = makeRun(home, { runid: 'a1', spec: specOf({ job: 'acc-job', files: true }), outcome: 'green' });
+  addRec(run.spine, doorRec());
+  const p = await panel({ home, spawnFn: engine({ code: 2, say: doorRedLog('suite-green') }) });
+  const r = await p.post('/api/runs/a1/accept', {});
+  assert.equal(r.body.error, 'DOOR REFUSED (accept) — nothing was recorded and nothing was released.');
+});
+
+test('engineRefusalWords: several red stages joined with "; ", at most 3, then "and N more"', async () => {
+  const { engineRefusalWords } = await import('../src/panel/runroutes.js');
+  const q = new Map([['a', 'qa?'], ['b', 'qb?'], ['c', 'qc?'], ['d', 'qd?'], ['e', 'qe?']]);
+  const tail = 'DOOR REFUSED (accept) — nothing was recorded and nothing was released.\n  door-accept-red:stage.a — x\n  the mechanical re-run, stage by stage:\n'
+    + '    a  red\n    b  red\n    c  red\n    d  red\n    e  red\n';
+  assert.equal(engineRefusalWords(tail, 'accept', '/l', (n) => q.get(n) ?? null),
+    'Accept did not go through: the check "qa?"; "qb?"; "qc?" and 2 more said no. Nothing was recorded.');
 });
 
 // RULED 2026-10-16: raw engine output never reaches the page

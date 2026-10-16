@@ -67,17 +67,48 @@ function readLogTail(file) {
  * @param {string} tail the log tail
  * @param {'resume'|'accept'} kind
  * @param {string} logFile
+ * @param {(stage: string) => string|null} [questionOf] stage name to the panel's plain question (`null` = none)
  * @returns {string}
  */
-export function engineRefusalWords(tail, kind, logFile) {
+export function engineRefusalWords(tail, kind, logFile, questionOf = () => null) {
   const known = /(?:\bNothing (?:was )?spent\.|^DOOR REFUSED \(.*\) — nothing was recorded|^CHECKPOINT EXPIRED — )/;
   const raw = /validateJob|red\(s\)|exit status|node-\d|\bat \S+:\d+|\s--[a-z]|^\s*at |Error:/;
   for (const line of String(tail ?? '').split('\n').map((l) => l.trim())) {
-    if (line !== '' && known.test(line) && !raw.test(line)) return line;
+    if (line !== '' && known.test(line) && !raw.test(line)) {
+      // RULED 2026-10-16 (A): a refused Accept names each failed check by the panel's own plain question
+      const asked = kind === 'accept' ? doorRedStages(tail).map((n) => questionOf(n)).filter((q) => typeof q === 'string' && q !== '') : [];
+      if (asked.length > 0) {
+        const shown = asked.slice(0, 3).map((q) => `"${q}"`).join('; ');
+        const more = asked.length > 3 ? ` and ${asked.length - 3} more` : '';
+        return `Accept did not go through: the check ${shown}${more} said no. Nothing was recorded.`;
+      }
+      return line;
+    }
   }
   return kind === 'resume'
     ? `Resume did not start. Nothing was spent on it. The details are in ${logFile}.`
     : `Accept did not go through. Nothing was recorded. The details are in ${logFile}.`;
+}
+
+/**
+ * The stage names a door-accept-red refusal failed on, read from the engine's own refusal lines (src/userrun.js):
+ * the `door-accept-red:stage.<name> — ...` line and the `<name>  <verdict>` lines of "the mechanical re-run, stage by stage"
+ * whose verdict is not `satisfied`. Names only — the caller maps them to the panel's plain questions.
+ * @param {string} tail
+ * @returns {string[]}
+ */
+function doorRedStages(tail) {
+  /** @type {string[]} */
+  const names = [];
+  let inList = false;
+  for (const line of String(tail ?? '').split('\n')) {
+    const red = /^\s*door-accept-red:stage\.(.+?) — /.exec(line);
+    if (red) { names.push(red[1]); continue; }
+    if (/^\s*the mechanical re-run, stage by stage:/.test(line)) { inList = true; continue; }
+    const row = inList ? /^\s{4}(\S.*?)\s{2,}(\S+)\s*$/.exec(line) : null;
+    if (row && row[2] !== 'satisfied') names.push(row[1]);
+  }
+  return [...new Set(names)];
 }
 
 /**
@@ -90,6 +121,7 @@ export function engineRefusalWords(tail, kind, logFile) {
  *   getStopContext?: (runid: string) => ({row: any, live: boolean, spineExists: boolean}|null),
  *   getNeedsContext?: (runid: string) => ({row: any, needs: 'Accept'|'Resume'|null}|null),
  *   getAcceptContext?: (runid: string) => ({row: any, live: boolean, waiting: boolean, specPath: string|null, specHash: string|null}|null),
+ *   stageQuestionsOfSpec?: (spec: any) => Map<string, string|null>,
  *   acceptWaitMs?: number }} opts
  */
 export function createRunRoutes(opts) {
@@ -155,6 +187,7 @@ export function createRunRoutes(opts) {
       try { jv = validateJob(signed, { shellCapUsd: signed.budgetUsd }); } catch { jv = { ok: false, reds: [] }; }
       if (!jv.ok) { send(409, { ok: false, error: OLD_JOB_ACCEPT_WORDS, reds: jv.reds.map((r) => `${r.code} at ${r.path}`) }); return true; }
     }
+    const questionOf = (/** @type {string} */ n) => (signed !== null && opts.stageQuestionsOfSpec ? opts.stageQuestionsOfSpec(signed).get(n) ?? null : null);
     const dir = dirname(ctx.specPath);
     const logFile = join(dir, `accept-${runid}-${Date.now()}.log`);
     const args = [
@@ -177,7 +210,7 @@ export function createRunRoutes(opts) {
       child.once('exit', (/** @type {number|null} */ code) => {
         clearTimeout(timer);
         if (code === 0) finish(200, { ok: true, accepted: true, runid, log: logFile });
-        else finish(409, { ok: false, error: engineRefusalWords(readLogTail(logFile), 'accept', logFile), log: logFile });
+        else finish(409, { ok: false, error: engineRefusalWords(readLogTail(logFile), 'accept', logFile, questionOf), log: logFile });
       });
       child.once('error', (/** @type {Error} */ e) => {
         clearTimeout(timer);

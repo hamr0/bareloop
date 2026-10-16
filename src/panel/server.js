@@ -2261,6 +2261,15 @@ function stageKindMetaFromSpec(spec) {
 }
 
 /**
+ * Stage name to the panel's plain question, off a signed spec — the SAME owner ({@link stageKindMetaFromSpec}) the step map and Audit use.
+ * @param {any} spec
+ * @returns {Map<string, string|null>}
+ */
+function stageQuestionsOfSpec(spec) {
+  return new Map([...(stageKindMetaFromSpec(spec) ?? new Map())].map(([n, m]) => [n, m.question]));
+}
+
+/**
  * Attaches one stage's `{kind, direction, baselineKind, question}` (from
  * {@link stageKindMetaFromSpec}'s map) onto its already-recorded runtime
  * shape (`{name, verdict, value?, baseline?, …}`, straight off the spine) —
@@ -3349,6 +3358,7 @@ export function createPanelServer(opts = {}) {
         getResumeContext: (runid) => getResumeContext(runid, { home }),
         getStopContext: (runid) => getStopContext(runid, { home }),
         getAcceptContext: (runid) => getAcceptContext(runid, { home }),
+        stageQuestionsOfSpec,
         getNeedsContext: (runid) => getNeedsContext(runid, { home }),
         ...(opts.acceptWaitMs !== undefined ? { acceptWaitMs: opts.acceptWaitMs } : {}),
       });
