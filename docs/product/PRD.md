@@ -1596,6 +1596,7 @@ Matches fwdloop DRAFT M11 am11 items 3-5 (bareloop keeps the Accept tag; no Reop
 5. An old run whose saved job fails today's checks gets plain words on Reuse and Accept, never raw validator text (RULED 2026-10-15).
 6. Stopped run's Run tab frame is grey too (RULED 2026-10-16).
 7. Resume and Accept never show raw engine output: a known engine sentence or a fixed plain sentence with the log path (RULED 2026-10-16).
+8. An Accept refused by its final checks names each failed check by its plain question (RULED 2026-10-16).
 
 
 fwdloop asked to match (2026-10-15).
