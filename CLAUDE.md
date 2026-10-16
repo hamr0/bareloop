@@ -49,12 +49,15 @@ bareloop is a published JS library and follows `~/PycharmProjects/hamr0/LIBRARY_
   - `bare-agent` (`^0.52.0`) — provides the `Loop`/`Retry`/`wireGate`/`HaltError` primitives
     that drive every worker turn against a real provider (`src/planrun.js:48`); nothing in
     bareloop talks to a model API directly.
-  - `bareguard` (`^0.23.0`) — provides `Gate`, the budget/wall-clock enforcement primitive
+  - `bareguard` (`^0.24.0`) — provides `Gate`, the budget/wall-clock enforcement primitive
     the outer shell wraps every run in (`src/planrun.js:20`); this is the cap-not-estimate
     mechanism, not something bareloop reimplements.
   - `litectx` (`^0.32.0`) — provides `LiteCtx`, the per-job retrieval/recall store behind
     the read shim and the authoring scout (`src/planrun.js:21`); bareloop has no stdlib
     substitute for indexed code/fact recall at this scope.
+  - `barebrowse` (`^0.21.0`) — provides `connect`, the headless incognito browser session that
+    fetches a pasted URL input as page text at drafting and run start (`src/pagefetch.js`);
+    the worker never browses.
 - **`bareloop.context.md` is the adopter contract and ships** (README is the pitch only).
   Keep it current as rungs land — if an integrating agent would have to open the source,
   the answer belongs there.

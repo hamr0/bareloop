@@ -541,9 +541,9 @@ export const BOUND_REASON_MAX = 200;
 
 /** the recorded reason for a step attempt whose round was cut at the output cap (F122 2A b) */
 export const TRUNCATED_REASON = 'output cut at the token limit (max_tokens)';
-/** the plain sentence for a replan answer cut off at its length limit (hamr 2026-10-16, run mv9gm796) */
 /** the red fed to the redraft when the first replan answer was cut off (plain words, from code) */
-export const REPLAN_CUT_RED = 'Your previous answer was cut off at its length limit before the plan was complete. Answer again with a shorter plan that fits.';
+const REPLAN_CUT_RED = 'Your previous answer was cut off at its length limit before the plan was complete. Answer again with a shorter plan that fits.';
+/** the plain sentence for a replan answer cut off at its length limit (hamr 2026-10-16, run mv9gm796) */
 export const REPLAN_CUT_WORDS = 'The replan answer was cut off at its length limit, so no new plan came back.';
 
 /**
@@ -2236,7 +2236,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * denied, the wallet as its budget), granted tools only (the menu IS the
    * grant), per-attempt round bound via loop.stop() (F20), every round metered
    * with a phase label (F12).
-   * @param {{granted: string[], phase: string, attemptRounds: number, attempts: number|null, writable: boolean, root?: ReturnType<typeof createRoot>|null, fence?: string[]|null, workerProvider?: any}} o
+   * @param {{granted: string[], phase: string, attemptRounds: number, attempts: number|null, writable: boolean, root?: ReturnType<typeof createRoot>|null, fence?: string[]|null, workerProvider?: any, truncatedBounded?: boolean}} o
    *   `root` (Layer R): when present, the worker's write-class actions are teed
    *   for the within-run ratchet — staged before the gate decides, discarded on
    *   deny/halt, settled to landed-or-not after execution (the two axes, F43/F7).
@@ -3014,7 +3014,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * the hard line) — a drafter built once at full budget would let the replan
    * draft spend against money the steps had already consumed.
    * @param {string} phase @param {string|null} failure
-   * @param {string} [progress] the meter's read, replan only (A's adaptation channel) */
+   * @param {string} [progress] the meter's read, replan only (A's adaptation channel)
+   * @returns {Promise<{ok: boolean, reds: any[], plan?: any, truncated?: boolean}>} */
   const obtainPlan = async (phase, failure, progress) => {
     const drafter = await mkWorker({ granted: [], phase: 'plan', attemptRounds: 2, attempts: 3, writable: false, truncatedBounded: phase === 'replan' });
     /** the LAST draftPlan call was a replan answer cut off at max_tokens: a bounded failed attempt,

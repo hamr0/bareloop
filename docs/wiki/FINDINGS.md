@@ -14434,7 +14434,7 @@ says a bundle's spec cannot be edited (`src/planrun.js`).
 
 ## F230 — thinking SPLIT vs ON contrast: the frozen rule says NO BUILD (change2 SPLIT 2/4 vs ON 3/4 green; digest 4/4 both, SPLIT about 3.4x cheaper); separately, the run planner failed validation twice on 2 of 8 change2 runs with thinking on (2026-10-16; closed, thinking stays as today)
 
-**Grounded in:** the pre-registered battery, `docs/logs/2026-10-16-run-thinking-split-contrast-prereg.md` (rule frozen before any number; results appended there), and its output `.claude/scratch/poc-thinking/battery/paid/summary.txt` with `results.jsonl` and `spines/`. 16 counted runs on DeepSeek, total counted spend $0.7111 of the $2.00 hard stop; one casualty (slot 7 attempt 1, mvas306h, provider-red) replaced once by mvas5ty2.
+**Grounded in:** the pre-registered battery, `docs/logs/2026-10-16-run-thinking-split-contrast-prereg.md` (rule frozen before any number; results appended there), and its output `.claude/scratch/poc-thinking/battery/paid/summary.txt` with `results.jsonl` and `spines/`. 16 counted runs on DeepSeek, total spend $0.7111 of the $2.00 hard stop, which includes the casualty's $0.0142 (the 16 counted runs alone are about $0.697); one casualty (slot 7 attempt 1, mvas306h, provider-red) replaced once by mvas5ty2.
 
 - **Contrast.** SPLIT (thinking only where the arm field turns it on) against ON (thinking everywhere), 2 jobs x 2 arms x n=4.
 - **Verdict (frozen rule, verbatim):** "NO BUILD — SPLIT has fewer greens than ON on change2". Thinking stays as it is today; no split is built.
@@ -14455,10 +14455,10 @@ says a bundle's spec cannot be edited (`src/planrun.js`).
 - **digest (incomplete, report only):** ON 1/1 green at $0.0603; RETRY 2/2 green, median $0.0398.
 - **Observation:** RETRY on change2 spent heavily on retry thinking (slot 2 mvay8wbv: 19,565 retry output tokens, $0.0358).
 - **With F230:** neither SPLIT nor RETRY beat today's all-thinking on the changelog rubric job (change2), while on the code job (digest) both were cheaper at equal greens (small n, underpowered as declared).
-- **Instrument stop (open, POC wrapper only).** The battery halted at slot 11 (mvaz4l6k, digest RETRY) with `field-violation`: label disagreements tools 0, engine-record 2, unknown-phase 0. Unexplained; the run itself was green and is counted in the tables as the driver printed it, but its wire check failed. No product code is involved; open for the wrapper.
+- **Instrument stop (open, POC wrapper only).** The battery halted at slot 11 (mvaz4l6k, digest RETRY) with `field-violation`: label disagreements tools 0, engine-record 2, unknown-phase 0. Unexplained when written (explained 2026-10-16: see F233 §5, a wrapper FIFO queue after a transport retry, resting on spine inference and a $0 reproduction); the run itself was green and is counted in the tables as the driver printed it, but its wire check failed. No product code is involved.
 - **Status.** Closed as a result; nothing built. Full run list and turns analysis: see F233.
 
-## F232 — thinking RETRY vs ON on two medium code jobs: the frozen faster-or-cheaper rule is MET on both (p7small 4/4 vs 4/4, stoptest 3/4 vs 2/4); RETRY recommended as the default, build waits for hamr's go after the release (2026-10-16)
+## F232 — thinking RETRY vs ON on two medium code jobs: the frozen faster-or-cheaper rule is MET on both (p7small 4/4 vs 4/4, stoptest 3/4 vs 2/4); RETRY recommended as the default for code jobs only (hamr ruled 2026-10-16), build waits for hamr's go after the release (2026-10-16)
 
 **Grounded in:** the pre-registered battery, `docs/logs/2026-10-16-run-thinking-retry-medium-prereg.md` (rule frozen before any number; results appended there under `## Results`), and its output `.claude/scratch/poc-thinking/battery/retry-medium-2/battery.log` with `results.jsonl`. 16 of 16 slots ran on DeepSeek, total counted spend $1.9849 of the $4.00 hard stop, no casualties, every counted run passed the wire check.
 
@@ -14466,7 +14466,7 @@ says a bundle's spec cannot be edited (`src/planrun.js`).
 - **p7small:** greens 4/4 (RETRY) vs 4/4 (ON); median spent $0.0841 vs $0.1309; median wall 9.7 vs 11.6 min.
 - **stoptest:** greens 3/4 (RETRY) vs 2/4 (ON); median spent $0.0809 vs $0.2175; median wall 7.7 vs 17.1 min.
 - **Verdict (frozen rule):** "RECOMMEND making RETRY the default (tick = think everywhere): rule met on EACH job."
-- **With F230/F231:** on the short changelog rubric job neither arm beat all-thinking; the gain shows on the longer code jobs. n=4 per arm is underpowered (declared); "no worse at n=4" is not "proven equal"; quality beyond the close verdict is unmeasured. Five rows carry spendComplete=false (spend is a floor).
+- **With F230/F231:** on the short changelog rubric job (change2) neither arm beat all-thinking: in the RETRY vs ON contrast RETRY's median wall was 1.76 min vs ON 1.46 (ratio 1.20, over the 1.10 limit) and turns 17.5 vs 12 (F233), so the faster-or-cheaper rule says no for that job; the first rule (cheaper-only) had already failed on change2 in F231 before the 10%-tolerance rule was written (forking paths, named in the prereg and F233 §4). The gain shows on the longer code jobs, so the recommended default is for CODE jobs only (hamr ruled option A, 2026-10-16), not every job. n=4 per arm is underpowered (declared); "no worse at n=4" is not "proven equal"; quality beyond the close verdict is unmeasured. Five rows carry spendComplete=false (spend is a floor).
 - **Status.** The product build (a real per-phase switch: planner none, scout off, step attempt 1 off, attempt >= 2 none, fix none; tick = think everywhere) is NOT built. It waits for hamr's go after the release. Full run list and turns analysis: see F233.
 
 ## F233 — full record of the 2026-10-16 thinking experiments (seven experiments, every run, and a turns analysis); RETRY and SPLIT take MORE turns on three of four comparable cells but each turn is shorter, and the only cell with FEWER turns is stoptest (2026-10-16; read-only, $0)
@@ -14479,7 +14479,7 @@ says a bundle's spec cannot be edited (`src/planrun.js`).
 |---|---|---|---|---|---|---|
 | E1 | POC all-off, run mvao31e3, change2 | thinking off on every request, planner included | 1 | $0.0030 (plus $0.25 drafting ceiling mechanic) | plan-red: the plan was not valid with the planner's thinking off; 5 turns, 0.3 min. An anecdote, not a row | none (background in the SPLIT prereg) |
 | E2 | POC split, run mvaoagnq, change2 | planner thinks, scout/step/fix off | 1 | about $0.014 | green, 1.3 min, 15 turns. An anecdote, not a row | none (background in the SPLIT prereg) |
-| E3 | SPLIT vs ON contrast (F230) | SPLIT = planner thinks, scout/step/fix off | 2 jobs x 2 arms x 4 (+1 casualty replaced once) | $0.7111 counted of $2.00 (casualty $0.0142 not counted) | NO BUILD: change2 SPLIT 2/4 vs ON 3/4 green; digest 4/4 both, SPLIT about 3.4x cheaper | 07ec397 / 73809db |
+| E3 | SPLIT vs ON contrast (F230) | SPLIT = planner thinks, scout/step/fix off | 2 jobs x 2 arms x 4 (+1 casualty replaced once) | $0.7111 of $2.00 (includes the $0.0142 casualty) | NO BUILD: change2 SPLIT 2/4 vs ON 3/4 green; digest 4/4 both, SPLIT about 3.4x cheaper | 07ec397 / 73809db |
 | E4 | RETRY POC, change2, RETRY arm only | thinking off for scout and step attempt 1, on for step attempt >= 2 and fix; planner thinks | 4 | $0.0480 | 3/4 green (one plan-red), median spent $0.0097. Four runs of one arm is an anecdote; it motivated E5 | none (cited as background in the E5 prereg 32e892c) |
 | E5 | RETRY vs ON contrast (F231) | RETRY vs ON on change2 and digest | planned 16, ran 11 (stopped at slot 11 on a wrapper label check) | $0.2999 of $2.00 | NO BUILD: change2 4/4 vs 4/4 green but RETRY median $0.0178 not below ON $0.0171; digest incomplete (ON 1/1, RETRY 2/2) | 32e892c / 8cd22a4 |
 | E6 | medium attempt 1, p7small and stoptest (ABORTED, not counted) | same RETRY switch, delivered by the outside request wrapper | 3 slots ran | $0.1675 | aborted at slot 3 by the wrapper's field check (label disagreements: tools 25, engine-record 1); not counted anywhere; its 3 runs are listed below for completeness only | prereg freeze b36514b (aborted note in 918a41b) |
@@ -14545,7 +14545,7 @@ Prereg docs: SPLIT `2026-10-16-run-thinking-split-contrast-prereg.md`, RETRY `20
 | E7 | 15 | stoptest | RETRY | mvba6nu7 | green | 0.0680* | 7.0 | 56 | 9/1/28/8/10 |
 | E7 | 16 | stoptest | ON | mvbafp5x | green | 0.0754 | 6.5 | 26 | 7/1/6/0/12 |
 
-Counted spend per experiment: E3 $0.7111 (plus the casualty $0.0142), E4 $0.0480, E5 $0.2999, E7 $1.9849; E6 $0.1675 uncounted. Wall times are the driver's job-start to job-end.
+Counted spend per experiment: E3 $0.7111 (includes the casualty $0.0142), E4 $0.0480, E5 $0.2999, E7 $1.9849; E6 $0.1675 uncounted. Wall times are the driver's job-start to job-end.
 
 ### 3. Turns analysis
 
@@ -14592,7 +14592,7 @@ The per-phase tables (median/min/max turns per run per phase, output tokens per 
 - **Planner plan-reds (F230), unchanged:** change2 had 2 of 8 plans fail validation twice with thinking on in the planner (mvaroz1h SPLIT, mvas7oi6 ON); E4 added a third (mvaxkvsj, RETRY: planner thinks in every arm). E1 plan-red with the planner's thinking off is one run. No code change, open.
 - **spendComplete=false floors:** E3 mvarsueu, mvatgj1w (and casualty mvas306h); E5 mvaycllr, mvaz4l6k; E7 mvb4t0bm, mvb6pbvj, mvb786wd, mvb8cxia, mvba6nu7. Any spend comparison that includes them is a floor-vs-exact comparison.
 - **E5 instrument stop (cause explained in the medium prereg Step 0):** the slot-11 field-violation was a wrapper queue artefact after a transport retry, not a wrong thinking field on the wire; slot 11 stays counted as printed, digest cells in E5 stay at n=1 and n=2.
-- **RETRY is not built.** F232 and PRD L26 recommend it as the default (tick = think everywhere); the build waits for hamr's go after the release. The switch exists only inside the throwaway engine copy `.claude/scratch/poc-engine` (E7) and the outside wrapper (E3-E6); `src/` is untouched.
+- **RETRY is not built.** F232 and PRD L26 recommend it as the default for code jobs only (RULED 2026-10-16, option A; PRD v1.105 item 1) (tick = think everywhere); the build waits for hamr's go after the release. The switch exists only inside the throwaway engine copy `.claude/scratch/poc-engine` (E7) and the outside wrapper (E3-E6); `src/` is untouched.
 - **Unreplicated:** the turns pattern (more turns, shorter turns) rests on four medium-cell comparisons and two small ones, all n <= 4, with no judge turns and one provider. A larger medium battery or a harder job would be the replication; none is proposed here.
 
 **Summary table (2026-10-16, as shown to hamr).**

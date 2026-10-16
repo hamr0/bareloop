@@ -9,7 +9,7 @@
 //
 // This module is also THE one owner of "model -> key + shape + URL": Chat's Model menu,
 // the author doors and the run doors all resolve through `findRow` / `keyNameFor` /
-// `applyConfiguredKey` / `modelChoiceFor` below — no second lookup exists. Key VALUES
+// `keyValueOf` / `modelChoiceFor` below — no second lookup exists. Key VALUES
 // never pass through here — only names.
 import { readConfig } from './config.js';
 import { filledKeyNames } from './keysfile.js';
@@ -388,8 +388,8 @@ export function judgeRowFor(rows, judge, workerProvider, workerRow) {
  * the worker's own provider it calls the worker's endpoint, so a row on that endpoint with a line
  * NAMED for the judge's model prices it ({@link ratesFor}); a judge model that is absent or names
  * no line there keeps the worker's price (the worker's row, or none = the guess). A different
- * provider resolves with no endpoint. The judge's KEY is chosen elsewhere (`applyConfiguredKey`,
- * by the worker's model), so the two can come from different rows.
+ * provider resolves with no endpoint. The judge's KEY is chosen elsewhere (`judgeRowFor`:
+ * the worker's own row when the judge shares its provider), so the two can come from different rows.
  * @param {{ provider: string, model?: string|null }} judge
  * @param {string|null|undefined} workerProvider
  * @param {string|null|undefined} workerBaseUrl
