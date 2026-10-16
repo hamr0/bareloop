@@ -42,3 +42,14 @@ test('a child that refuses right after the spawn: the starter removes what it ma
   assert.match(w.rows().filter((r) => r.kind === 'refused').at(-1).why, /given up on/);
 });
 
+
+test('the starter reads the SCHEDULER\'s clock: trigger.json lateMs is the injected clock minus the slot, not the wall clock', async () => {
+  const w = await realWorld({ relative: false });
+  const s = createScheduler({ door: w.p.schedules, now: w.now, intervalMs: 0 });
+  await s.tick();
+  const dirs = readdirSync(w.sessions).map((d) => join(w.sessions, d, 'trigger.json')).filter((f) => existsSync(f));
+  assert.equal(dirs.length >= 1, true, 'a scheduled start wrote trigger.json');
+  const trig = JSON.parse(readFileSync(dirs[0], 'utf8'));
+  assert.equal(trig.lateMs, 60_000, 'late by exactly the injected clock\'s minute');
+  assert.equal(trig.startedAt, w.now(), 'startedAt is the injected clock, not Date.now');
+});

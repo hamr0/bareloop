@@ -3346,6 +3346,7 @@ export function createPanelServer(opts = {}) {
         door: schedules, startSession: authorRoutes.startSession, envNow: authorRoutes.envNow, spawnFn: authorRoutes.spawnFn,
         bareloopBin: authorRoutes.bareloopBin, sessionsRoot: opts.sessionsRoot, home, rowsFor, startFrom: (runid) => getStartFrom(runid, { home }),
         forgetSession: authorRoutes.forgetHeadless,
+        ...(opts.scheduleNow ? { now: opts.scheduleNow } : {}), // the SAME clock the scheduler reads, so lateMs and startedAt agree with the slot
         ranSince: (job, sinceMs) => readRunList({ home }).rows.some((r) => r && r.job === job && Date.parse(r.at) >= sinceMs - 1000),
       }));
       // T Part 5: the scheduler runs the clock and the folder watch while THIS server is up (panel only, T6); stopped on close
