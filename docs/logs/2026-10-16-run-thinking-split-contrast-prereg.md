@@ -116,3 +116,63 @@ None of these decides the build. They are reported as observed, with the underpo
 ## Results
 
 Results get appended below this heading in a later commit; the sections above never change.
+
+### 2026-10-16 — battery results
+
+Source: `.claude/scratch/poc-thinking/battery/paid/summary.txt` (with `results.jsonl`, `battery.log`, `spines/`).
+Total counted spend **$0.7111 of the $2.00** hard stop. One casualty: slot 7 attempt 1, run mvas306h, provider-red (transport), replaced once in the same slot by mvas5ty2 (green); the casualty is excluded from every count below.
+
+**Per-run rows** (slot 7 attempt 1 is the casualty, marked C)
+
+| slot | job | arm | att | run | outcome | spent $ | wall min | planOK1 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | change2 | ON | 1 | mvarngk9 | green | 0.0149 | 1.2 | false |
+| 2 | change2 | SPLIT | 1 | mvaroz1h | plan-red | 0.0405 | 3.0 | false |
+| 3 | change2 | SPLIT | 1 | mvarsueu | escalated | 0.0240 | 3.0 | true |
+| 4 | change2 | ON | 1 | mvarwp6u | green | 0.0254 | 2.0 | true |
+| 5 | change2 | ON | 1 | mvarz9x4 | green | 0.0102 | 0.8 | true |
+| 6 | change2 | SPLIT | 1 | mvas0dh9 | green | 0.0255 | 2.0 | true |
+| 7 | change2 | SPLIT | 1C | mvas306h | provider-red (casualty) | 0.0142 | 2.1 | true |
+| 7 | change2 | SPLIT | 2 | mvas5ty2 | green | 0.0160 | 1.3 | true |
+| 8 | change2 | ON | 1 | mvas7oi6 | plan-red | 0.0194 | 1.5 | false |
+| 9 | digest | ON | 1 | mvas9mbb | green | 0.0596 | 5.5 | true |
+| 10 | digest | SPLIT | 1 | mvasgqur | green | 0.0300 | 3.2 | true |
+| 11 | digest | SPLIT | 1 | mvaskwtk | green | 0.0187 | 2.2 | true |
+| 12 | digest | ON | 1 | mvasnt5v | green | 0.0734 | 6.3 | true |
+| 13 | digest | ON | 1 | mvasvwzr | green | 0.1574 | 13.3 | true |
+| 14 | digest | SPLIT | 1 | mvatd35f | green | 0.0244 | 2.7 | true |
+| 15 | digest | SPLIT | 1 | mvatgj1w | green | 0.0453 | 5.5 | false |
+| 16 | digest | ON | 1 | mvatnmjk | green | 0.1124 | 9.1 | true |
+
+No answer was cut off at max_tokens in any counted run (cutoffs 0); the arm field was correct on every run.
+
+**Per job x arm** (n = counted runs; the frozen primary is the green count)
+
+| job | arm | n | green | median spent $ | median wall min | planOK1 | cutoffs |
+|---|---|---|---|---|---|---|---|
+| change2 | ON | 4 | 3 | 0.0171 | 1.3 | 2 | 0 |
+| change2 | SPLIT | 4 | 2 | 0.0247 | 2.5 | 3 | 0 |
+| digest | ON | 4 | 4 | 0.0929 | 7.7 | 4 | 0 |
+| digest | SPLIT | 4 | 4 | 0.0272 | 3.0 | 3 | 0 |
+
+**Secondary, report-only** (not in the frozen rule)
+
+| job | arm | mean step attempts | strikes | fix rounds | replans | tokens retry / first |
+|---|---|---|---|---|---|---|
+| change2 | ON | 1.00 | 0 | 0 | 0 | 0 / 17647 |
+| change2 | SPLIT | 1.67 | 2 | 28 | 0 | 6220 / 18306 |
+| digest | ON | 1.86 | 0 | 15 | 1 | 57740 / 174138 |
+| digest | SPLIT | 2.17 | 0 | 16 | 0 | 13061 / 33164 |
+
+**Frozen rule's verdict (verbatim):**
+
+- change2: greens SPLIT>=ON NO; SPLIT median spent < ON NO
+- digest: greens SPLIT>=ON yes; SPLIT median spent < ON yes
+- => **NO BUILD — SPLIT has fewer greens than ON on change2**; log the result as a finding.
+
+**Reading (not a result, the verdict stands).**
+
+- The planner is identical in both arms (thinking on). change2 had 2 plan-reds, one per arm: mvaroz1h (SPLIT; draft-1 check-passes without tree-changed, draft-2 a pattern that does not compile as a RegExp) and mvas7oi6 (ON; draft-1 field `exits` instead of `exit`, draft-2 JSON parse error). So 2 of 8 change2 plans failed validation twice with thinking ON in the planner.
+- The other change2 SPLIT non-green, mvarsueu, escalated after 2 strikes and 28 fix rounds.
+- digest: 4/4 green in both arms; SPLIT median $0.0272 vs ON $0.0929 (about 3.4x cheaper), median wall 3.0 vs 7.7 min.
+- n=4 per arm is underpowered, as declared.
