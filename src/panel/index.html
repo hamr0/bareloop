@@ -144,7 +144,7 @@
   .dot::before{content:"[·]";color:var(--grey-dot);}
   .dot.green::before{content:"[✓]";color:var(--green);}
   .dot.red::before{content:"[✗]";color:var(--red);}
-  /* stopped (hamr 2026-10-07): the person pressed Stop — its own sign, same red as [✗] */
+  /* stopped (hamr 2026-10-07): the person pressed Stop — its own sign, grey (RULED 2026-10-15) */
   .dot.stopped::before{content:"[■]";color:var(--grey-dot);}
   /* Panel build P3 addition (2026-09-27, "yes, go"): the part cards below the
      step map (`partResultGlyph`/`attemptGlyph`) and the chat job card render
@@ -286,6 +286,7 @@
   .ended-block.magenta{border-color:var(--magenta);}
   .ended-block.red{border-color:var(--red);}
   .ended-block.green{border-color:var(--green);}
+  .ended-block.grey{border-color:var(--grey-dot);}
   .ended-row{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px;}
   .ended-label{color:var(--text-faint);font-size:11px;letter-spacing:0.08em;min-width:52px;}
   .ended-text{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;}
@@ -2421,7 +2422,7 @@
     lastEndedSig = sig2;
     box.hidden = false;
     var problem = !!(sc && sc.scheduled && sc.problem === true);
-    box.className = "ended-block " + (problem ? "red" : (!e ? "" : (detail.died ? "magenta" : (detail.glyph === "✓" ? "green" : "red"))));
+    box.className = "ended-block " + (problem ? "red" : (!e ? "" : (detail.died ? "magenta" : (detail.glyph === "✓" ? "green" : (detail.glyph === "■" ? "grey" : "red")))));
     var h = "";
     if(e){
       // text only: the ONE place for [Stop] / [Resume] / [Reuse workflow] is the Run tab's top action row (renderRunActions)

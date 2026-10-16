@@ -169,6 +169,20 @@ test('a schedule problem: the SCHEDULE row (label and text) AND the frame are re
   assert.doesNotMatch(box.innerHTML, /is-red/);
 });
 
+test('a stopped run\'s frame is grey (RULED 2026-10-16); a schedule problem still wins red; a failed run stays red', () => {
+  const dom = fakeDom();
+  const render = endedRender(dom);
+  const box = dom.document.getElementById('ended-block');
+  const base = { runid: 's', ended: { reason: 'You stopped it.', next: 'x' }, endedText: 'stopped', schedule: { scheduled: false, canSchedule: false, words: W } };
+  render({ ...base, glyph: '\u25a0' });
+  assert.equal(box.className, 'ended-block grey');
+  assert.match(PAGE, /\.ended-block\.grey\{border-color:var\(--grey-dot\);\}/);
+  render({ ...base, runid: 's2', glyph: '\u2717' });
+  assert.equal(box.className, 'ended-block red');
+  render({ ...base, runid: 's3', glyph: '\u25a0', schedule: { scheduled: true, text: 'Every day', line2: 'refused', problem: true, words: W } });
+  assert.equal(box.className, 'ended-block red', 'a schedule problem wins');
+});
+
 test('ENDED is painted by renderRun into the Run tab block; the old SCHEDULED twin renderer is gone', () => {
   const src = fnSrc('renderRun');
   assert.ok(src.indexOf('renderEnded(detail);') !== -1);
