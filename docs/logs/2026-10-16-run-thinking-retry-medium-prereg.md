@@ -193,3 +193,72 @@ Launch (hamr's own foreground shell, NOT run by the builder):
 (empty; results get appended below in a later commit, the sections above never change)
 
 2026-10-16 delivery change before any counted number: first attempt aborted at slot 3 by the outside wrapper's field check (not counted, $0.1675); the battery reruns from slot 1 with the switch inside a throwaway engine copy (.claude/scratch/poc-engine), rules unchanged.
+
+### Battery results (frozen medium battery, 16 slots, appended 2026-10-16)
+
+Source: `.claude/scratch/poc-thinking/battery/retry-medium-2/battery.log` and `results.jsonl`. Delivered by the switch inside the throwaway engine copy (`.claude/scratch/poc-engine`, original src untouched). All 16 slots ran; counted = non-casualty.
+
+Per-run rows (`*` = spendComplete=false, spent is a floor):
+
+```
+== per-run rows (counted = non-casualty) ==
+slot job     arm    att runid     outcome       spent$   wallMin planOK1 cut  outTok(scout/plan/step/fix/judge)  fieldOk  | secondary: stepAtt strikes fixRnd replans tokFirst/Retry
+  1 p7small ON      1  mvb4d2ai  green          0.0438      4.4    true   0 15963/8726/11582/0/0               yes |     1+1       0      0       0 11582/0
+  2 p7small RETRY   1  mvb4iq1k  green          0.0629      8.0    true   0 3573/9860/10809/27123/0            yes |   1+1+2       0     16       0 37932/0
+  3 p7small RETRY   1  mvb4t0bm  green          0.1018*    12.0    true   0 2432/4650/20091/56251/0            yes |     1+3       0     20       0 68273/8069
+  4 p7small ON      1  mvb58hos  green          0.1357     11.7    true   0 21649/5048/85400/0/0               yes |   2+1+1       0      0       0 81047/4353
+  5 p7small ON      1  mvb5nidq  green          0.1262     11.6    true   0 16355/22316/65440/0/0              yes |   2+1+1       0      0       1 57006/8434
+  6 p7small RETRY   1  mvb62dnf  green          0.1311     11.4   false   0 2757/9899/66400/29106/0            yes |     2+3       0      8       0 36976/58530
+  7 p7small RETRY   1  mvb6h0cm  green          0.0664      6.5    true   0 2968/4344/14977/32118/0            yes |   1+1+4       0     13       0 39208/7887
+  8 p7small ON      1  mvb6pbvj  green          0.1751*    14.7   false   0 17189/9780/117472/0/0              yes |   1+1+2       0      0       0 114718/2754
+  9 stoptest ON      1  mvb786wd  green          0.2486*    18.6   false   0 12750/14490/123253/54108/0         yes |   1+1+3       0     25       0 164078/13283
+ 10 stoptest RETRY   1  mvb7w67h  step-red       0.0513      4.5    true   0 3161/20605/18120/0/0               yes | 1+2+2+2       0      0       1 6145/11975
+ 11 stoptest RETRY   1  mvb820t1  green          0.0938      8.5    true   0 2303/18227/46923/9331/0            yes |   2+2+3       0      7       1 21214/35040
+ 12 stoptest ON      1  mvb8cxia  escalated      0.2632*    22.4   false   1 8251/11573/91892/104134/0          yes |     2+9       6     75       0 78811/117215
+ 13 stoptest ON      1  mvb95s5o  escalated      0.1863     15.5   false   0 7882/12776/87906/44535/0           yes |     1+7       5     51       0 92692/39749
+ 14 stoptest RETRY   1  mvb9pqrj  green          0.1552     13.1    true   0 1898/4588/11331/109514/0           yes |       3       1     26       0 44616/76229
+ 15 stoptest RETRY   1  mvba6nu7  green          0.0680*     7.0    true   0 3021/10262/26948/15012/0           yes |     1+3       0     10       0 33175/8785
+ 16 stoptest ON      1  mvbafp5x  green          0.0754      6.5    true   0 27848/8097/14908/11611/0           yes |       2       0     12       0 26519/0
+
+```
+
+Per job x arm (n = counted runs; frozen primary = green count):
+
+```
+== per job x arm (n = counted runs; frozen primary = green count) ==
+job     arm    n  green  medSpent$  medWallMin  planOK1  cutoffs
+p7small  ON      4      4     0.1309        11.6         3         0
+p7small  RETRY   4      4     0.0841         9.7         3         0
+stoptest  ON      4      2     0.2175        17.1         1         1
+stoptest  RETRY   4      3     0.0809         7.7         4         0
+
+```
+
+Secondary, report-only (not in the frozen rule): do B-arm runs retry more?
+
+```
+== SECONDARY, REPORT-ONLY (not in the frozen rule): do B-arm runs retry more? ==
+job     arm    meanStepAttempts  strikes  fixRounds  replans  tokRetry/tokFirst
+p7small  ON                  1.27         0           0         1        15541/264353
+p7small  RETRY               1.90         0          57         0        74486/182389
+stoptest  ON                  3.25        11         163         0       170247/362100
+stoptest  RETRY               2.10         1          43         2       132029/105150
+
+```
+
+Frozen decision rule output (verbatim):
+
+```
+== frozen decision rule == 
+  p7small: (1) greens RETRY>=ON yes; (2) strictly lower wall yes / spent yes => yes; (3) ratios RETRY/ON wall 0.83 spent 0.64 (<=1.10) yes
+  stoptest: (1) greens RETRY>=ON yes; (2) strictly lower wall yes / spent yes => yes; (3) ratios RETRY/ON wall 0.45 spent 0.37 (<=1.10) yes
+  => RECOMMEND making RETRY the default (tick = think everywhere): rule met on EACH job.
+  Declared: n=4 per arm is underpowered; "no worse at n=4" is not "proven equal"; full-run quality beyond the close verdict is unmeasured; planner plan-reds count as non-green in whichever arm (no exclusions); spendComplete=false rows are reported as such.
+total counted spend $1.9849 of $4.00 hard stop
+```
+
+- Verdict line: "RECOMMEND making RETRY the default (tick = think everywhere): rule met on EACH job."
+- Total counted spend $1.9849 of the $4.00 hard stop.
+- Casualties: none (0 casualty rows, no replacements).
+- Every counted run (16 of 16) passed the engine-decision wire check (fieldOk=true).
+- spendComplete=false rows (spent is a floor): slots 3, 8, 9, 12, 15 (marked `*`).

@@ -14457,3 +14457,14 @@ says a bundle's spec cannot be edited (`src/planrun.js`).
 - **With F230:** neither SPLIT nor RETRY beat today's all-thinking on the changelog rubric job (change2), while on the code job (digest) both were cheaper at equal greens (small n, underpowered as declared).
 - **Instrument stop (open, POC wrapper only).** The battery halted at slot 11 (mvaz4l6k, digest RETRY) with `field-violation`: label disagreements tools 0, engine-record 2, unknown-phase 0. Unexplained; the run itself was green and is counted in the tables as the driver printed it, but its wire check failed. No product code is involved; open for the wrapper.
 - **Status.** Closed as a result; nothing built.
+
+## F232 — thinking RETRY vs ON on two medium code jobs: the frozen faster-or-cheaper rule is MET on both (p7small 4/4 vs 4/4, stoptest 3/4 vs 2/4); RETRY recommended as the default, build waits for hamr's go after the release (2026-10-16)
+
+**Grounded in:** the pre-registered battery, `docs/logs/2026-10-16-run-thinking-retry-medium-prereg.md` (rule frozen before any number; results appended there under `## Results`), and its output `.claude/scratch/poc-thinking/battery/retry-medium-2/battery.log` with `results.jsonl`. 16 of 16 slots ran on DeepSeek, total counted spend $1.9849 of the $4.00 hard stop, no casualties, every counted run passed the wire check.
+
+- **Delivery.** RETRY (thinking off on first tries, on for step retries) was delivered by a switch inside a throwaway engine copy (`.claude/scratch/poc-engine`); the original src is untouched.
+- **p7small:** greens 4/4 (RETRY) vs 4/4 (ON); median spent $0.0841 vs $0.1309; median wall 9.7 vs 11.6 min.
+- **stoptest:** greens 3/4 (RETRY) vs 2/4 (ON); median spent $0.0809 vs $0.2175; median wall 7.7 vs 17.1 min.
+- **Verdict (frozen rule):** "RECOMMEND making RETRY the default (tick = think everywhere): rule met on EACH job."
+- **With F230/F231:** on the short changelog rubric job neither arm beat all-thinking; the gain shows on the longer code jobs. n=4 per arm is underpowered (declared); "no worse at n=4" is not "proven equal"; quality beyond the close verdict is unmeasured. Five rows carry spendComplete=false (spend is a floor).
+- **Status.** The product build (a real per-phase switch: planner none, scout off, step attempt 1 off, attempt >= 2 none, fix none; tick = think everywhere) is NOT built. It waits for hamr's go after the release.
