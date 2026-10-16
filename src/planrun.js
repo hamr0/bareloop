@@ -542,6 +542,8 @@ export const BOUND_REASON_MAX = 200;
 /** the recorded reason for a step attempt whose round was cut at the output cap (F122 2A b) */
 export const TRUNCATED_REASON = 'output cut at the token limit (max_tokens)';
 /** the plain sentence for a replan answer cut off at its length limit (hamr 2026-10-16, run mv9gm796) */
+/** the red fed to the redraft when the first replan answer was cut off (plain words, from code) */
+export const REPLAN_CUT_RED = 'Your previous answer was cut off at its length limit before the plan was complete. Answer again with a shorter plan that fits.';
 export const REPLAN_CUT_WORDS = 'The replan answer was cut off at its length limit, so no new plan came back.';
 
 /**
@@ -3015,7 +3017,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * @param {string} [progress] the meter's read, replan only (A's adaptation channel) */
   const obtainPlan = async (phase, failure, progress) => {
     const drafter = await mkWorker({ granted: [], phase: 'plan', attemptRounds: 2, attempts: 3, writable: false, truncatedBounded: phase === 'replan' });
-    /** a replan answer cut off at max_tokens: a bounded failed attempt, never provider-red (hamr 2026-10-16) */
+    /** the LAST draftPlan call was a replan answer cut off at max_tokens: a bounded failed attempt,
+     * never provider-red (hamr 2026-10-16); reset at the start of every call */
     let replanCut = false;
     // The BALANCE, read live at each draft — never a snapshot and never a rate
     // (addendum 2). At draft it is the whole budget (scale); at replan it is what
@@ -3045,6 +3048,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     };
     const draftPlan = async (/** @type {any[]|null} */ reds) => {
       drafter.setIteration(reds ? 'redraft' : 'draft');
+      replanCut = false;
       const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, starting, checkFacts, doorWords?.text ?? null, readShim), []);
       if (phase === 'replan' && typeof r.error === 'string' && r.error.startsWith('truncated:')) {
         replanCut = true;
@@ -3066,13 +3070,17 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       return { ...v, reds: v.reds.map((r) => (typeof r.detail === 'string' ? { ...r, detail: scrub(r.detail) } : r)) };
     };
     let text = await draftPlan(null);
-    // the cut-off text is never validated (judging half an artifact would mint a plan-red the
-    // drafter never earned) and there is no redraft: the cut answer WAS the bounded attempt
-    if (replanCut) return { ok: false, reds: [], truncated: true };
-    let pv = validate(text);
+    // A cut-off replan answer is treated like a BAD one: its half text is never validated (judging
+    // half an artifact would mint a plan-red the drafter never earned), it becomes one plain-words
+    // red fed to the redraft, and a cut REDRAFT (whatever the first answer was) is the bounded
+    // failed attempt the caller escalates in words.
+    let pv = replanCut
+      ? { ok: false, reds: [{ code: 'parse-error', path: '$', detail: REPLAN_CUT_RED }], plan: null }
+      : validate(text);
     emit('plan-validate', { ok: pv.ok, reds: pv.reds, phase: `${phase}-1` });
     if (!pv.ok) {
       text = await draftPlan(pv.reds);
+      if (replanCut) return { ok: false, reds: [], truncated: true };
       pv = validate(text);
       emit('plan-validate', { ok: pv.ok, reds: pv.reds, phase: `${phase}-2` });
     }

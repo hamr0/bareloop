@@ -1024,13 +1024,14 @@ test('REPLAN truncation (hamr 2026-10-16, run mv9gm796): a replan call cut off a
     { text: 'thinking about it' },   // attempt 1: no write
     { text: 'still thinking' },      // attempt 2: no write -> exhaustion -> the one replan
     { text: 'a replan that never fini', stopReason: 'max_tokens', costUsd: 0.05 }, // the REPLAN call, cut off
+    { text: 'and the redraft never fini', stopReason: 'max_tokens', costUsd: 0.05 }, // the one redraft (F229), cut off too
   ]);
   const { outcome, events } = await go(wd, provider, { capRuns: 2 });
   assert.equal(outcome, 'plan-red', 'a cut-off replan is a failed attempt, not the provider failing');
   assert.equal(events.filter((e) => e.type === 'escalation' && e.category === 'provider-red').length, 0);
   const b = events.filter((e) => e.type === 'attempt-bounded' && e.cause === undefined && /max_tokens/.test(e.reason ?? ''));
-  assert.equal(b.length, 1, 'the spine records the bounded attempt');
-  assert.equal(events.filter((e) => e.type === 'plan-validate' && /^replan/.test(e.phase ?? '')).length, 0, 'half an artifact is never validated');
+  assert.equal(b.length, 2, 'the spine records each bounded attempt (the cut answer and the cut redraft)');
+  assert.equal(events.filter((e) => e.type === 'plan-validate' && /^replan/.test(e.phase ?? '')).length, 1, 'only the plain-words cut red is recorded, half an artifact is never validated');
   const esc = events.filter((e) => e.type === 'escalation').at(-1);
   assert.equal(esc.category, 'plan-red');
   assert.equal(esc.phase, 'replan');
@@ -1038,6 +1039,61 @@ test('REPLAN truncation (hamr 2026-10-16, run mv9gm796): a replan call cut off a
   assert.match(esc.decision, /replan answer was cut off at its length limit/);
   assert.ok(events.some((e) => e.type === 'worker-round' && e.costUsd === 0.05), 'the cut round is booked');
   assert.ok(events.find((e) => e.type === 'plan-executed'), 'plan-as-executed record never dangles');
+});
+
+
+const CUT = (cost) => ({ text: 'cut fini', stopReason: 'max_tokens', costUsd: cost });
+const replanPrelude = (wd) => [{ text: 'scout notes' }, { text: PLAN(wd) }, { text: 'thinking about it' }, { text: 'still thinking' }];
+
+test('REPLAN cut, both tries (F229): first answer cut, the redraft is cut too -> plan-red in cut words, the redraft got the plain red, both rounds booked', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([...replanPrelude(wd), CUT(0.05), CUT(0.07)]);
+  const { outcome, events } = await go(wd, provider, { capRuns: 2 });
+  assert.equal(outcome, 'plan-red');
+  const v = events.filter((e) => e.type === 'plan-validate' && /^replan/.test(e.phase ?? ''));
+  assert.deepEqual(v.map((e) => e.phase), ['replan-1']);
+  assert.match(v[0].reds[0].detail, /cut off at its length limit/);
+  assert.ok(provider.calls.at(-1).includes('cut off at its length limit'), 'the redraft prompt carries the plain-words red');
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.cause, 'truncated');
+  assert.match(esc.decision, /replan answer was cut off at its length limit/);
+  for (const c of [0.05, 0.07]) assert.ok(events.some((e) => e.type === 'worker-round' && e.costUsd === c), `cut round ${c} booked`);
+});
+
+test('REPLAN bad then cut (F229, the leak): a validator-red first answer and a cut redraft is the cut words, never "Unexpected end of JSON input"', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([...replanPrelude(wd), { text: 'not a plan at all' }, CUT(0.05)]);
+  const { outcome, events } = await go(wd, provider, { capRuns: 2 });
+  assert.equal(outcome, 'plan-red');
+  assert.equal(events.filter((e) => e.type === 'plan-validate' && e.phase === 'replan-2').length, 0, 'the half redraft is never validated');
+  assert.ok(!JSON.stringify(events).includes('Unexpected end of JSON input'));
+  const esc = events.filter((e) => e.type === 'escalation').at(-1);
+  assert.equal(esc.category, 'plan-red');
+  assert.equal(esc.cause, 'truncated');
+  assert.ok(events.some((e) => e.type === 'worker-round' && e.costUsd === 0.05), 'the cut round is booked');
+});
+
+test('REPLAN cut then good (F229): the redraft after a cut answer is accepted and the run continues', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([...replanPrelude(wd), CUT(0.05), { text: PLAN(wd) }]);
+  const { events } = await go(wd, provider, { capRuns: 2 });
+  const v = events.filter((e) => e.type === 'plan-validate' && /^replan/.test(e.phase ?? ''));
+  assert.deepEqual(v.map((e) => [e.phase, e.ok]), [['replan-1', false], ['replan-2', true]]);
+  assert.equal(events.filter((e) => e.type === 'plan-accepted' && e.phase === 'replan').length, 1);
+  assert.equal(events.filter((e) => e.type === 'escalation' && e.cause === 'truncated').length, 0);
+  assert.ok(events.some((e) => e.type === 'worker-round' && e.costUsd === 0.05), 'the cut round is booked');
+});
+
+test('REPLAN cut then bad (F229): a redraft that is bad but not cut is the ordinary plan-red with its own reds', async (t) => {
+  const wd = makePatient(t);
+  const provider = scriptedProvider([...replanPrelude(wd), CUT(0.05), { text: 'not a plan at all' }]);
+  const { outcome, events } = await go(wd, provider, { capRuns: 2 });
+  assert.equal(outcome, 'plan-red');
+  const v = events.filter((e) => e.type === 'plan-validate' && e.phase === 'replan-2');
+  assert.equal(v.length, 1);
+  assert.equal(v[0].ok, false);
+  assert.ok(events.some((e) => e.type === 'plan-red'), 'the validator reds ride out as plan-red');
+  assert.equal(events.filter((e) => e.type === 'escalation' && e.cause === 'truncated').length, 0);
 });
 
 
