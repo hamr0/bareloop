@@ -518,8 +518,7 @@ export function createScheduleDoor(deps) {
         inputsText: s.inputsText, ...(s.destination === null ? {} : { destination: s.destination }), signedBy: userInfo().username, signedAt: new Date(now()).toISOString(),
       };
       writeSchedule(s.job, schedule);
-      // RULED 2026-10-15: which run this signing was set from, so the origin run's Audit can find every fire of every signing made from it
-      appendRow(ledgerOf(s.job), { kind: 'signed', sig: s.hash, at: now(), originRunid: s.originRunid });
+      appendRow(ledgerOf(s.job), { kind: 'signed', sig: s.hash, at: now() });
       // a re-sign of a schedule that gave up unpauses it (the same signature included) and starts the install waits over
       if (paused(s.job)) appendRow(ledgerOf(s.job), { kind: 'resumed', sig: s.hash, at: now() });
       installWait.delete(s.job);
