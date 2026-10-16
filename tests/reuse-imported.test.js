@@ -98,7 +98,7 @@ test('an imported job is refused in words — never reused — when it changed, 
   assert.equal(getStartFromImport('aaaaaaaaaaaa', { home: a.home }), null);
 });
 
-test('routes: the imported reuse refuses a changed locked box by name and accepts the four open ones; the session it starts is a reuse', async (t) => {
+test('routes: an imported job is a green origin: unchanged job boxes reuse the signed plan; a changed job box drafts a NEW workflow whose name may not be the import\'s own', async (t) => {
   const { home, id } = setup({ env: 'ANTHROPIC_API_KEY=bad key\n' }); // a malformed key: every session refuses at $0
   const { close, port, token } = await createPanelServer({ port: 0, env: {}, home, sessionsRoot: tmp('reuse-imp-sess-') });
   t.after(() => close());
@@ -107,12 +107,13 @@ test('routes: the imported reuse refuses a changed locked box by name and accept
   const post = (p, body) => fetch(`${base}${p}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: JSON.stringify(body) });
   const pre = await (await get(`/api/author/start-from?import=${id}`)).json();
   assert.equal(pre.ok, true, JSON.stringify(pre));
-  assert.deepEqual(pre.open, ['inputs', 'destination', 'model', 'capUsd', 'maxWallMs']);
+  assert.equal('locked' in pre, false, 'v1.101: nothing is locked');
+  assert.equal(pre.green, true, 'an import counts as a green origin');
   assert.equal((await get('/api/author/start-from?import=aaaaaaaaaaaa')).status, 404);
 
   const bad = await post('/api/author/start', { ...pre.card, inputs: 'repo: /x', jobText: 'smuggled', startFrom: { importId: id } });
   assert.equal(bad.status, 400);
-  assert.equal((await bad.json()).error, 'The job is locked on a reused workflow — Clear the card to change it');
+  assert.equal((await bad.json()).error, 'A job named "fixture-export-job" already exists and is a different job. Pick another name.', 'a changed job under the import\'s own name is refused at $0');
   const noSource = await post('/api/author/start', { ...pre.card, startFrom: { importId: id } });
   assert.equal(noSource.status, 400);
   assert.equal((await noSource.json()).error, 'Inputs is required');

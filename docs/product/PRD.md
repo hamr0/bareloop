@@ -826,6 +826,8 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     (hamr, 2026-09-10). **Interview first; nothing here is locked.** It re-opens item 26's
     2026-08-31 ruling, and its answers decide the final line between bareloop and fwdloop.
 
+    **Amended 2026-10-14 (v1.99, SIGNED): a signed bareloop job may now repeat on a clock or a queue. Still no human mid-run, no sending, no booking. See "Triggers" in v1.99 below.**
+
     **Why now.** The first soft-green job ever authored (run `mtv8jihy`, F159) showed the judge
     can grade exactly one thing: whether JS functions have good doc comments. Its rulebook is
     `has-doc`/`params`/`returns` (`src/judged.js:391`). hamr's bar was about error messages, so it
@@ -1116,6 +1118,7 @@ theme wiki pages, not here; the PRD keeps only the ruling, one paragraph each, a
     | L23 | Same live fire: a `questions` ambiguity the model raised honestly can be confirmed away on round 1 with no forced resolution, and the signed goal can drop a check both source answers asked for | PARTIAL FIX — the model's own `questions` now reach `accepted.openQuestions` on every accepting path (a related ledger bug fixed too), so the question is no longer silently dropped from the signed record; the confirm menu still lets "Confirm" bypass an unresolved question without forcing it (that half stays open). Fixed in code with tests, not yet proven live. | see F175 |
     | L24 | Same live fire: the revise ladder can keep a later revision that is structurally worse (a broken parser field) than the sound one it replaced | FIX — falls back to the newest measured-sound iteration (a real red/green verdict, never an instrument-stop) when the last one is unsound; `stop` unchanged; the swap is named in a new `fellBack` return field and shown at the readout. Fixed in code with tests, not yet proven live. | see F176 |
     | L25 | Exported bundles will be run on the same or a different repo: the resume / refusal wording for a bundle (`RAISE maxWallMs … that is a spec edit` and the preview's `RAISE the number(s) … first`, `src/userrun.js`) and what can change on an exported job | BACKLOG — designed when bundles are run that way; no code change now | |
+    | L26 | Thinking per phase. TODAY (2026-10-16): the "Thinking on" tick covers the drafter and the judge only (off unless ticked); the run's scout, planner, steps and fixes send no thinking field, so deepseek-flash thinks on all of them. POC: all-off run mvao31e3 ended plan-red (two invalid plans); split run mvaoagnq (planner thinks, scout/steps/fixes off) went green at about half the cost and time of the thinking-on greens. A pre-registered 16-run SPLIT vs ON contrast (`docs/logs/2026-10-16-run-thinking-split-contrast-prereg.md`) decides the split; it also records strikes, fix rounds, replans and first-try vs retry output tokens (report only). | BACKLOG — "thinking on for retries" (first try off, a strike or fix retry on; code decides, never the model; the signed cap never moves): test only if the contrast shows split runs retry or fail more. RULED 2026-10-16: if the split is built, the "Thinking on" tick stays as an override escape hatch that turns thinking on for every part of the run. Both tested 2026-10-16 (F230 SPLIT, F231 RETRY): frozen rule said NO BUILD both times; thinking stays as today. Medium code jobs 2026-10-16 (F232): RETRY met the frozen faster-or-cheaper rule on both jobs → RECOMMENDED as the default for code jobs only (RULED 2026-10-16, option A; see v1.105 item 1) (tick = think everywhere); build waits for hamr's go after the release. | — |
 
     Fix branch: L1, L2, L3 (doc note), L4, L16 (model swap), L17, L19, L20 — one branch,
     reviewed and released on its own, BEFORE the M3 build.
@@ -1393,7 +1396,7 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 
 ### Panel: Reuse workflow replaces "Start from this" (v1.88 — 2026-10-03)
 
-- Reuse workflow is the same signed job on a new source: green runs and imported jobs only, five open boxes (Source, Destination, Model, $ cap, Time cap — Model opened 2026-10-04), the rest locked and refused by the server, never drafted.
+- Reuse workflow is the same signed job on a new source: green runs and imported jobs only, five open boxes (Source, Destination, Model, $ cap, Time cap — Model opened 2026-10-04), the rest locked and refused by the server, never drafted. (SUPERSEDED 2026-10-15 by v1.101.)
 - Same-job identity is `workflowKey` (the signed spec without source, fence, caps and the worker's provider/baseUrl/model); the signature hash is unchanged (it still covers all of them) and the person signs the new one.
 - Detail: `docs/product/PANEL-BUILD.md` addendum 2026-10-03 and the 2026-10-04 Model ruling.
 
@@ -1458,7 +1461,7 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 - Rubric jobs read, search and write; they never act on the world. The browse gate (bareguard primitives) refuses clicks/presses on pay/book/buy/checkout/purchase/reserve/confirm and on send/submit/sign up/post, and typing into card fields; the only form left is a search box (hamr, 2026-10-12). Sending, booking and anything needing a person mid-job is fwdloop's; booking runs in fwdloop from a bareloop green.
 - bareloop requires Node 22 (barebrowse needs it; Node 20 is end-of-life).
 - README rewritten to the deterministic / rubric split and the bareloop / fwdloop line (hamr-approved text).
-- Backlog: scheduled watch jobs. The spec's `cadence` field (hour/day/week) exists, but nothing runs a job on a schedule yet; price and news watch jobs need it.
+- Backlog: scheduled watch jobs. The spec's `cadence` field (hour/day/week) exists, but nothing runs a job on a schedule yet; price and news watch jobs need it. → replaced by v1.99 Triggers (below).
 - Backlog, needs its own ruling: jobs that need the person's login or cookies (bank pages, members-only prices). Out of scope until ruled.
 
 ### Required facts for rubric jobs (v1.96 — 2026-10-12)
@@ -1485,3 +1488,132 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 - hamr ruling 2026-10-14: no per-page patches; test idea A on the most-used sites only.
 - Site reach: most of the busiest travel and shopping sites block barebrowse. A barebrowse matter, not patched in bareloop. See F227.
 - Work order (hamr, 2026-10-14; supersedes the order above where they differ): release `feat/rubric-search` as is (self-review, then branch-review, then release); then P9 runs list on its own branch; then idea A on its own branch after its spec is signed.
+
+### Triggers: jobs that start by themselves (v1.99 — 2026-10-14) — copied from fwdloop M9 — SIGNED 2026-10-14
+
+Status: SIGNED 2026-10-14. Nothing here is built. Rulings are marked RULED (hamr, 2026-10-14). Pointers are to fwdloop v0.19.1 (main 845b955), `docs/wiki/the-module-ladder.md` (M9, lines 2217-2273; M11 am3, line 2315) and its `src/`. Copy is by rewrite, never import (item 29). Amends item 33 (dated pointer added there); item 33's text is not rewritten.
+
+**Why (hamr, in his words).** "Helpful for deterministic issues to fix, or monitoring a queue to fix issues in a certain repo, for rubric, research on something or monitoring something everyday."
+
+**Work order (RULED).** P9 runs list, then triggers in full, then rubric work.
+
+**The line stays.** A signed job may repeat on a clock or a queue. No human mid-run. No sending, no booking. Asks and sends stay fwdloop's.
+
+T1. **Kinds (RULED).** Clock: daily, weekdays, one weekday, each at HH:MM local. Typed data, never cron text (fwdloop `src/trigger-line.js:29`, `src/trigger-clock.js:33`). Queue (a): a folder, new file arrives, or a file is updated (`src/trigger-files.js:128`, `docs/wiki/the-module-ladder.md:2233`). Queue (b): tickets, see T20, a later piece.
+T2. **One field (RULED, decided after reading code).** The spec already carries `cadence` `{unit, every}`: required by the validator (`src/job.js:281-289`, `JOB_FIELDS` at `src/job.js:171`), filled with a default day/1 by the panel (`src/panel/authorsession.js:948`) and the interview (`src/interviewrun.js:693`). Nothing reads it; nothing ever ran on it. It is REPLACED by `trigger` (null = by hand). RULED (hamr, 2026-10-14): old jobs keep `cadence` and read as "by hand"; new jobs write `trigger` instead; old signed specs never re-hash or need re-signing. One field, not two. The validator stops requiring `cadence`; an old signed spec that still carries it reads as by hand and is never written again.
+T3. **Gate (RULED).** A job takes a trigger only after one green run (fwdloop item 1, line 2228). A rubric job must have been ACCEPTED once at the review door first (`src/reviewdoor.js:48`, `doorRecordOf`). Cancel is never refused (RULED, copied from fwdloop).
+T4. **Signed (RULED).** The trigger is part of the signed hash. The agent never sets it. Changing or cancelling it is two clicks, $0, no drafter, the same plan re-signed (fwdloop item 2 and am5, lines 2229, 2257-2261; `src/panel/authortrigger.js:246`).
+T5. **Edit clears it (RULED).** Editing the job clears its trigger back to by hand. It can be set again only after the new job has a green run (fwdloop am1, line 2241). (SUPERSEDED 2026-10-15 by v1.100.)
+T6. **Only while the panel is open (RULED).** (added 2026-10-14 from fwd lessons: the page's visibilitychange catch-up tick is the PAGE poll, not the scheduler; provider-red retries for a fired run: none unless hamr rules, open choice 6.) Nothing fires when it is closed. Missed slots collapse to ONE catch-up run, marked catch-up in history; a run more than 2 minutes late is a catch-up (fwdloop item 3, am2: `src/trigger-clock.js:24`, `:94`, lines 2230, 2242-2245).
+T7. **One live run at a time per job (RULED).** (added 2026-10-14 from fwd lessons: with the door not counting as busy, a folder of N files starts N runs back to back, all waiting at the door, and only the monthly limit stops them. Asked of hamr; see the build spec, open choice 7.) A fire while a live run exists starts nothing and writes a `busy` row. A rubric run waiting at the review door is NOT live: the next run starts anyway (differs from fwdloop, where a waiting ask blocks, `src/panel/authortrigger.js:308`).
+T8. **Money (RULED, hamr: "you set cap with schedule run and it uses that, don't complicate it").** The person sets the $ cap and time cap when scheduling. Every fire uses exactly those. Every fire is checked against the monthly $ limit like a hand run (`src/monthly.js:369`, `checkMonthlyRoom`; same check as `signRun`, `src/panel/authorroutes.js:374-394`). If the month cannot fund the cap: a `monthly-exhausted` row, nothing starts. No per-day counts. No new refusal of estimated prices beyond what a hand run already does.
+T9. **Source and Destination (RULED).** Set when the schedule is set, like Reuse's open fields (`src/panel/authorsession.js:233`, `REUSE_OPEN_FIELDS`). A scheduled run may read from a different source path than the green run. The destination may be the same. Delivered files keep the dated, never-overwrite name. For a folder queue, the arriving file is the input.
+T10. **Learning stays quarantined (RULED).** A scheduled green counts toward Reuse and learning only after the person's Accept, like today's rubric greens. Reuse's green check (`src/panel/authorroutes.js:265-269`) is unchanged.
+T11. **Files (copied).** (added 2026-10-14 from fwd lessons: "Any content whose sha256 was in the folder at arm never runs, under any name." "A dropped queued file MAY re-arrive; only a RAN sha (and a baseline sha) is blocked for good." A poll watcher, never `fs.watch` (EMFILE on hamr's machine).) File updated: runs when the sha256 changes, using the new version. New file: each new file runs once with that file as input. A sha that already ran never runs again. A file still being written waits until its size and mtime stop changing for 2 polls (`src/trigger-files.js:27`). What is there when the trigger is set never runs (fwdloop am2 item 2, line 2245). Baseline blocks by sha only, for good, on New file (`src/trigger-files.js:58`).
+T12. **Queue (copied).** (added 2026-10-14 from fwd lessons: ONE append-only ledger per job, every row carrying the signature hash, never a new folder per re-sign. A re-sign that CHANGES the folder or the kind does not carry the queue: it is written as dropped-with-reason. It is carried over only when folder and kind are unchanged. The scheduler is the only writer of arrived/ran rows.) Arrived files queue, oldest first, one run at a time. A file arriving while busy gets ONE `busy` row and waits. The ledger is on disk, so a restart keeps the queue. A queued file deleted or changed before its turn is dropped with a reason (fwdloop am3, lines 2246-2253; `src/trigger-files.js:64-82`).
+T13. **Kept fwdloop v0.19.1 fixes.** (added 2026-10-14 from fwd lessons: told once = "once per sha|outcome|why"; last outcome = "only rows under the current signature hash".) Content-hash only baseline. A refusal is told once per key sha|outcome|why (`src/panel/scheduler.js:46`). The last outcome counts only the current signing (fwdloop lines 2269-2272).
+T14. **Panel (RULED).** (added 2026-10-14 from fwd lessons, found by hamr clicking: after a sign there is no Run / Run now button or invite; the two-click Sign / Confirm shows a visible change on each click and the card clears after click 2; a spawning fired run shows [▶] starting, never [?]; a used-up month turns NEXT red; the button placement and words are copied exactly, see PANEL-BUILD.md addendum 2026-10-14 T, Part 7.3.) A `Scheduled (N)` section after Needs you in the runs list (signed design: the Scheduled section in `design/runs-list-mock-v2.html`; P9 leaves the empty slot; fwdloop `src/panel/data.js:1229`, `listScheduled`). A `Schedule run` button on the Run tab that becomes `Cancel / modify schedule` (M11 am3 item 1, line 2315). A SCHEDULED / NEXT block at the top of the run page (`src/summary-words.js:35`, `:89`, `:111`). All words come from code, never the model.
+T15. **Fire order (copied).** busy, then monthly, then refused (an input, the keys or the model is missing), then started through the one start path (`src/panel/authortrigger.js:291-337`). Each outcome is one row. A refused fire says why in plain words and spends nothing.
+
+**Built-in fixes. These are fwdloop bugs, not to be copied (RULED).** Each has a name in the fwdloop fix ledger, `.claude/remember/fix-ledger.md:31-46`.
+T16. (added 2026-10-14 from fwd lessons: "the ran row is written only after the starter accepts; a refused start writes no ran row and at most one told row per key".) Write the `ran` row only after the starter says it would accept, never before. fwdloop wrote it first (`src/panel/scheduler.js`, `beforeStart`; ladder line 2273), so a refused start marked the file run; its fix was reverted because a persistently refused start wrote about 7,200 rows an hour.
+T17. Skip a torn ledger line AND start each append on a fresh line, in ONE commit. Either alone is wrong: skip-only lets a torn line glue the next `ran` row and run a file twice (`src/trigger-clock.js:118-127`, `src/trigger-files.js:30-39`).
+T18. A trigger re-sign carries its queue over. fwdloop opened a new ledger folder per re-sign and orphaned waiting files (`src/panel/authortrigger.js:51`).
+T19. (added 2026-10-14 from fwd lessons: a pid check must guard against pid reuse, by process start time or a heartbeat.) The busy check is cheap per tick: read the live pid in `runs.jsonl`, do not build a run context per run (fwdloop measured about 2 s of work per tick at 100 runs, `src/panel/scheduler.js:50`). "Since this signing" is keyed by the signature hash, never wall-clock (`src/panel/authortrigger.js:350`).
+
+T20. **Tickets, e.g. GitHub issues (NEW, not in fwdloop; its own later piece; OPEN).** Not designed here. Questions for hamr:
+ a. How are issues read: the tracker's API, or a barebrowse page?
+ b. Which ones: all open, a label, an assignee?
+ c. One run per issue, or one per batch?
+ d. What marks an issue done: a green run, the issue closing, a label?
+ e. Network and auth: a token from the environment only, never in the tree, spine or ledger (Hard lines).
+ f. Write-back to the tracker (comment, label, close): none unless hamr rules it. Default is none.
+ g. Where the fix lands: a work branch, as repo jobs do today. Merge stays human.
+
+**Tests (to build).** Mirror fwdloop's `test/m9-*.test.js` by name: `m9-trigger-grammar`, `m9-clock`, `m9-files`, `m9-trigger-set`, `m9-trigger-fire`, `m9-trigger-ledger-fixes`, `m9-am3-queue`, `m9-am5-schedule-buttons`, `m9-summary-words`, `m9-summary-card`. Plus two new: (1) a persistently refused start writes a bounded number of rows; (2) a torn line is skipped and the next append does not glue. Each must fail first.
+
+**Exit.** Self-review and branch-review run BEFORE any exit signature (fwdloop skipped them; ladder line 2266). Then a live walk on hamr's real panel: a clock fire, a folder file fire, a duplicate file ignored, busy, a monthly refusal, a catch-up, queue order, cancel. A rubric job walked through Accept, then scheduled. Not claimed done until hamr clicks through it himself.
+
+**Open for hamr's word.** (1) T2: drop `cadence` from the validator, so old specs re-hash? Proposed: tolerate and ignore. (2) T20 answers a-g, later. (3) T7: confirm a job waiting at the door lets the next scheduled run start while the earlier accept is still open.
+
+### Edit makes a new workflow; edit never clears a schedule (v1.100 — 2026-10-15) — RULED
+
+Replaces T5 ("Edit clears it"). Same model as fwdloop M6 am5 (signed 2026-10-15). hamr's word: "go A".
+
+1. Editing a job NEVER clears its schedule. The old workflow's runs and schedule are untouched; old `edited` ledger rows still read, new ones are never written.
+2. Edit in chat opens the Job name box as `<origin-name>-N`, N the next free number from 2 (free = no run-list job of that name and not taken in the jobs dir). The box stays editable. An origin that already ends in `-<digits>` still gets the suffix appended (`x-2` becomes `x-2-2`); the base is never guessed. (SUPERSEDED 2026-10-15 by v1.101.)
+3. At sign, if the signed spec's workflow key (with the job name set back to the origin's) equals the origin's, the run signs under the ORIGIN name, a new run of the same workflow. If the keys differ it signs under the card's name, a new workflow. A card name already used by another panel job, or the origin's own name on a different workflow, is refused at $0 in plain words ("A job named "x" already exists and is a different job. Pick another name."). (SUPERSEDED 2026-10-15 by v1.101.)
+4. A new workflow is not schedulable until its own first green: the T3 gate (`greenFor`) is per job name, so nothing is built for it.
+5. Reuse workflow (green runs) is unchanged and the two doors are not merged. (SUPERSEDED 2026-10-15 by v1.101.)
+
+Two doors stay: Reuse on green ($0, no drafting, proven plan), Edit on non-green (drafts again). (SUPERSEDED 2026-10-15 by v1.101.)
+
+### One door: Reuse workflow on every run (v1.101 — 2026-10-15) — RULED
+
+Replaces v1.88's "five open boxes, the rest locked and refused by the server" and v1.100's Edit-in-chat door and key-compare fold. hamr's word: "go". Same model as fwdloop M6 am5; fwdloop told 2026-10-15 to align.
+
+1. ONE button on every run's Run tab action row, **Reuse workflow**. It replaces both the green-only Reuse workflow and Edit in chat. Edit in chat is removed from the page, the server and every code-owned word.
+2. It opens the Chat card with EVERY box open and prefilled from that run (job lines, `~` rules, check type, judge examples, thinking, inputs, destination, model, $ cap, time cap). Nothing is locked; the server no longer refuses a changed job box.
+3. The path is decided by comparing the CARD's job boxes with the origin run's, never the drafted spec. Job boxes = job text (numbered lines, `~` rules, `~ PASS`/`~ FAIL`), check type, thinking. Run boxes = inputs, destination, model, $ cap, time cap (they never decide it).
+4. Green origin and no job box changed: today's Reuse exactly (signed plan verbatim, no drafting, $0 before the run), signed under the ORIGIN name, a new run of the same workflow.
+5. Any job box changed (green or red origin): drafting runs, a NEW workflow named by the Job name box. Red origin and no job box changed: drafting runs (an unproven plan is never reused), signed under the ORIGIN name (another try of the same job).
+6. The Job name box shows the origin name while no job box is changed; the moment one changes it switches to the next free `<base>-N` (renamable); changing back restores the origin name. Base: when the origin ends in `-<digits>` and the part before is itself a job (run list or jobs/), that part (`x-2` suggests `x-3`, never `x-2-2`); else the origin. A name owned by a different job, or the origin's own name on a changed job, is refused at $0 in plain words. A name typed while nothing is changed is ignored: the origin name is forced.
+7. The cost shows before the click: the one main button reads **Sign & run** while the Reuse path applies and **Start drafting** otherwise, flipping live as the person types. The origin line says where the card came from ("Reuse: <job> (run-N)").
+8. A new workflow still has no schedule until its own first green (`greenFor`); a schedule is never cleared by any of this. An imported job counts as a green origin (Import stays read-only, its one action is Reuse workflow). The schedule card alone keeps its job boxes locked.
+9. Already-green counts as green for Reuse (RULED 2026-10-15).
+10. Schedule run and Cancel / modify schedule never start a run; they only set or adjust the schedule (RULED 2026-10-15).
+
+### Schedule shown on Run, Job and Audit (v1.102 — 2026-10-15) — RULED
+
+Items 1-4 copied from fwdloop M9 am6 (signed 2026-10-15); item 5 is bareloop's one block. Aligned with fwdloop M9 am7 (signed 2026-10-15): the formats below are am7's.
+
+1. Job tab, **Started** row under Model: `By hand · 10/15 13:46`, `By the schedule: every day at 08:15 · catch-up, 10 min late · 10/15 13:46`, `By a new file: 8een.md · …`, `By a file update: aging.csv · …` (the run's local start time last), read from the run's own `trigger.json`.
+2. Job tab, **Schedule** row under Started: the job's schedule now and what it is bound to (`every day at 08:15 · from run-7 · deepseek-flash · ~/bareloop-out`, or `none`). Its first part is the Run tab's SCHEDULE line from the same word owner (`scheduledWords`), so they cannot disagree.
+3. Audit, first row of a run a schedule started: `started by the schedule · every day at 08:15 · slot 08:15 · from run-7` (+ ` · catch-up`), or `… · new file 8een.md · from run-3`. A hand run has none. (SUPERSEDED 2026-10-15 by v1.104.)
+4. Audit of the run the schedule was set from: a folded `▸ schedule (k)` group above drafting, the last 7 fires that started nothing (busy, month used up, refused), newest first, local `MM/DD HH:MM` and plain words. Scope: rows of every signing whose `signed` ledger row names this run as its origin (plus the current schedule's own origin). (SUPERSEDED 2026-10-15 by v1.104.)
+5. Run tab: ONE summary block, the same shape every time. `ENDED  MM/DD HH:MM · <outcome word> · <reason>` and `NEXT` (a finished run only), then `SCHEDULE`: line 1 the schedule words or `By hand`; line 2 (scheduled only) `last <MM/DD HH:MM> · run-N · <outcome>` (+ ` · catch-up`) `· next <Day MM/DD HH:MM>` (clock) or `· next: waiting for a new file`. A running run still shows SCHEDULE. The old SCHEDULED/NEXT twin block and the "why this run started" note are gone.
+6. A problem (the schedule's last fire started nothing: busy, month used up, refused) turns the SCHEDULE row (label and both lines) AND the block frame red, existing red token, both themes; line 2 becomes `last <MM/DD HH:MM> · <reason> · next: fix it in Cancel / modify schedule`. The next good start puts it back to normal.
+7. (hamr "yes to all", 2026-10-15) SCHEDULE line 2 also says ` · waiting for your Accept (the next run does not wait)` after the `last` part when a run of the job waits for Accept (not red); month used up reads `last … · month used up: $0.01 left, needs $0.50 · next: raise the limit in Settings, or it starts on the 1st` (red). Busy is NOT a problem (`last … · busy: a run of this job was still going · next …`, normal colours). While the install back-off is still retrying the row is not red and ends `next: tries again in N min`. Only a refusal that is not retrying (`next: fix it in Cancel / modify schedule`), the 60-minute give-up and a used-up month are red; a later good start clears it. This supersedes item 6's "busy" in the problem list.
+8. Month used up is red only in the month it happened (RULED 2026-10-15).
+9. Busy says still working; before the first fire `no run yet`; unarmed ends `next: not armed yet` (matches fwdloop M9 am8, RULED 2026-10-15).
+
+### Remove from Needs you (v1.103 — 2026-10-15) — RULED
+
+Matches fwdloop DRAFT M11 am11 items 3-5 (bareloop keeps the Accept tag; no Reopen: an expired door cannot be reopened).
+
+1. A run in Needs you with the Resume tag shows **Remove from Needs you**, last in its Run tab action row; a run waiting for Accept never shows it; Check cards are unchanged.
+2. The click only takes the card out of Needs you (status, the runs-list row, Resume and Reuse workflow stay); one click, no confirm; it appends ONE `{runid, type:'needs-removed', at}` row to runs.jsonl that every reader ignores (run list, monthly accounting, scheduler busy, run counter); a second click or a stale page writes nothing.
+3. Audit says `removed from Needs you by you · MM/DD HH:MM` (local); the 7-day auto-leave stays and its Audit line is `removed from Needs you after 7 days`.
+4. A removal covers only the ending it was made on: a NEW stop after it brings the run back into Needs you.
+5. `POST /api/runs/<id>/needs-remove` behind the same human/token guard as the other run routes; 409 in plain words when the run is not in Needs you or waits for Accept.
+
+### Audit schedule section; names in the small lists (v1.104 — 2026-10-15) — RULED
+
+1. The schedule is its own section at the top of the Audit of EVERY run of a job that has a schedule now, same look as the drafting and step sections, always folded when the page opens: `▸ schedule  [sign] new file in ~/bareloop-inbox · from run-1 · 2 tries started nothing` (the tail only when tries > 0). Unfolded: `this run  10/15 20:43  started by the schedule · new file litectx.md` (a hand run: `by hand.`; the origin run: `by hand. The schedule was set from this run.`; catch-up keeps ` · catch-up, N min late`) and `tries`, the schedule's fires that started nothing (busy, month used up, refused) of ALL signings of the job, newest first, at most 7, or `tries  none`. The head sign is [▶] only while a run of the job is running, [✗] when the SCHEDULE row is red, else [·] (one small rule, hamr may adjust). A job with no schedule now has no section; a run a cancelled schedule started keeps its one old `started by the schedule` line. Replaces items 3-4 of v1.102.
+2. In Running now, Needs you and Scheduled only, a run's name reads `change2 · run-2` (job, middle dot, run-N); the Jobs list, Run tab title, Resume/Reuse text and search are unchanged.
+
+3. Stopped [■] is grey: you stopped it, it did not fail (matches fwdloop; supersedes 2026-10-08 red).
+4. Blink = running or waiting for your Accept; steady = resting (matches fwdloop glyphPulses; relayed from hamr via fwd 2026-10-15). The `schedule` head [·] is steady.
+5. An old run whose saved job fails today's checks gets plain words on Reuse and Accept, never raw validator text (RULED 2026-10-15).
+6. Stopped run's Run tab frame is grey too (RULED 2026-10-16).
+7. Resume and Accept never show raw engine output: a known engine sentence or a fixed plain sentence with the log path (RULED 2026-10-16).
+8. An Accept refused by its final checks names each failed check by its plain question (RULED 2026-10-16).
+9. A replan answer cut off at its length limit is a bounded failed attempt in plain words, never "the model provider failed" and not resumable as provider-red; a cut answer is treated like a bad one on both tries (the first cut feeds the redraft one plain red, a cut redraft ends the run in the cut words); scout and the first draft are unchanged (RULED 2026-10-16, F229).
+
+
+fwdloop asked to match (2026-10-15).
+
+### Next after this release (v1.105 — 2026-10-16) — RULED, PARKED until v0.4x ships
+
+These three items are the next work after the feat/runs-list release; none is built on this branch.
+
+1. **Thinking on retries as the default (from F230–F233).** Spec:
+   - Per model call, the engine decides from what it already knows (phase, attempt), at the worker Loop call sites in `src/planrun.js` (`mkWorker` ask/askFrom), passing bare-agent's per-call `thinkingMode`: planner (draft, redraft, replan) = no field (thinks); scout = 'off'; step attempt 1 = 'off'; step attempt 2+ = no field (thinks); close-fix = no field (thinks). Judge and drafter keep their own existing settings (off; the job's tick turns them on).
+   - The job's "Thinking on" tick = think everywhere (an override escape hatch for hard jobs; RULED 2026-10-16).
+   - Every call writes its decision to the spine (`thinking-decision {phase, iteration, mode}`), so a run's record shows what was sent; one test per phase/attempt plus a dropped-and-retried call.
+   - Default applies to CODE jobs only (RULED 2026-10-16, option A), not every job: gain is measured on the longer code jobs. On the changelog job (change2) RETRY's median wall was 1.76 min vs ON 1.46 (ratio 1.20, over the 1.10 limit) with 17.5 turns vs 12, so the faster-or-cheaper rule says no there; the first rule (cheaper-only) had already failed on change2 in F231 before the 10%-tolerance rule was written (forking paths, named in the prereg and F233 §4). Other job kinds stay as today until measured.
+   - Proven only on DeepSeek deepseek-flash (n=4 per arm, 4 jobs). Other provider shapes (Anthropic, OpenAI reasoning_effort, Gemini) are untested: say so in the build and check each shape's off-value in bare-agent's thinking-mode ladder before claiming it.
+   - The POC lives in the throwaway copy `.claude/scratch/poc-engine` (src/planrun.js +14/-2): a graduation is a REWRITE in the product, not a copy.
+   - Evidence: F230 (SPLIT, no build), F231 (RETRY on changelog, no build), F232 (RETRY on medium code jobs, frozen rule met), F233 (full record, turns). Pointer: PRD item 34 L26.
+2. **Run tab summary shows the run's time.** The summary line `passed · $0.0047` becomes `passed · $0.0047 · 1m56s` (outcome · money · wall time of the run). Same time rule as elsewhere in the panel; an unknown time is shown as unknown, never 0. (hamr wrote "passed · $0.0047 1m56s"; the middle dot before the time follows the line's own separator — confirm with hamr when it is built.)
+3. **A filter/search for the Scheduled list.** The Scheduled list gets its own filter/search box, like the Runs search (P9 v2), so a person with many schedules can find one. Exact matching rules are designed at build time with hamr (interview first).

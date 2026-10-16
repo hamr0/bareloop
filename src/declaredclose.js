@@ -107,7 +107,7 @@ export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'note
 /** what a stored calibration set carries, ENUMERATED: the frozen cases and the judge
  * tier that graded them. Both are inside the spec, so `jobSpecHash` covers both — which
  * is the whole mechanism behind "a judge-model bump forces a full recalibration"
- * (src/judged.js, `JUDGE_MODEL`): the field moves, the hash moves, the signature dies,
+ * (src/judged.js, `resolveJudge`): the field moves, the hash moves, the signature dies,
  * and the re-sign re-runs the gate. Anything else in there is a field nobody reads. */
 export const CALIBRATION_FIELDS = Object.freeze(['cases', 'judgeModel']);
 
@@ -447,7 +447,7 @@ export function validateCloseDecl(closeDecl, opts = {}) {
       // WHICH TIER GRADED THIS SET, and it is REQUIRED rather than optional. A
       // stored set is only worth the judge that graded it (§4.2's safety argument
       // is BA-20's haiku-4.5 injection evidence and nothing else), so a set with
-      // no model beside it is a set nobody can attribute — and the `JUDGE_MODEL`
+      // no model beside it is a set nobody can attribute — and the `CALIBRATION_FIELDS`
       // docstring's promise that a bump forces recalibration has nothing to fire
       // on. Required HERE and not at the stage, for the same reason the SET's own
       // presence is the signing gate's call and not this validator's: this gate

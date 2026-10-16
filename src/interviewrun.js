@@ -690,7 +690,6 @@ export async function main(argv, deps = {}) {
     // endpoint on its own in that case (PRD item 28 ruling (d)).
     ...(baseUrlArg === null ? {} : { baseUrl: baseUrlArg }),
     ...(modelArg === null ? {} : { model: modelArg }),
-    cadence: { unit: 'day', every: 1 },
     budgetUsd,
     ...(wallMin === null ? {} : { maxWallMs: Math.round(wallMin * 60_000) }),
     // ABSENT for a plain folder (`writeScope === null`, D5/step S6) — never a

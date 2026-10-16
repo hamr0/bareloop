@@ -117,14 +117,14 @@ test('step-title is never truncated, exercised with a REAL long step id when the
 // visually with real headless screenshots (see the build report).
 // ---------------------------------------------------------------------------
 
-test('wf-row/hist-row markup: glyph+name are grouped in one nowrap/ellipsis line (wf-line1 > dot + wf-name), never split across the old row-break trick', () => {
+test('rl-card markup (P9 v2): glyph+name sit in one nowrap/ellipsis line (rl-l1 > dot + rl-nm), the name carries its full text as a title, and line 2 clips too', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   assert.ok(!html.includes('row-break'), 'the old flex-wrap row-break trick must be fully removed');
-  assert.ok(html.includes('class="wf-line1"'), 'expected a dedicated line1 container grouping the dot + name');
-  // both renderers must build the same wf-line1 > dot + wf-name[title] shape
-  const line1Occurrences = html.split('class="wf-line1"').length - 1;
-  assert.ok(line1Occurrences >= 3, `expected wf-line1 built by renderWorkflows and both renderHistory branches (found ${line1Occurrences})`);
-  assert.match(html, /wf-name" title="/, 'wf-name must carry a title attribute with the full, untruncated text');
+  assert.match(html, /<span class="rl-l1"><span class="dot [^]*<span class="rl-nm" title="/, 'the job card builds rl-l1 > dot + rl-nm[title]');
+  const css = html.match(/<style>[\s\S]*?<\/style>/)[0];
+  assert.match(css.match(/\.rl-nm\{[^}]*\}/)[0], /white-space:nowrap[^}]*text-overflow:ellipsis|text-overflow:ellipsis[^}]*white-space:nowrap/);
+  assert.match(css.match(/\.rl-l2\{[^}]*\}/)[0], /white-space:nowrap/);
+  assert.match(css.match(/\.rl-l2\{[^}]*\}/)[0], /text-overflow:ellipsis/);
 });
 
 test('wf-name and wf-meta-line CSS: single-line with ellipsis (never wrap) so a long job name/runid or meta string truncates instead of pushing onto extra lines', () => {
@@ -189,6 +189,8 @@ function extractFn(html, name) {
  * earlier in the page than its own callee still resolves it) and returns the
  * one named `returnName` as a callable, with its real dependency chain
  * intact (never a reimplementation/stub of the functions it calls). */
+// everything the list's search reads: the ONE row text (`rlRunParts`) and the ONE match test (`runMatchesSearch`)
+const SEARCH_FNS = ['runLabel', 'rowIsLive', 'rowWallText', 'rowSpendText', 'liveSpendText', 'liveWallPhrase', 'duration', 'panelMoney', 'panelMoneyWithDraft', 'escapeXml', 'rlShortDate', 'runAtText', 'rlRunParts', 'runMatchesSearch'];
 function loadFns(html, names, returnName) {
   const body = names.map((n) => extractFnSource(html, n)).join('\n');
   // eslint-disable-next-line no-new-func
@@ -386,6 +388,15 @@ test('item 7: cacheLine — not recorded when memoryCache is null; real numbers 
 // red before restoring — see the build report for the exact breaks used.
 // ---------------------------------------------------------------------------
 
+/** Like loadFns, but returns SEVERAL named functions at once as an object (one shared hoisted scope, so they can call each other). `extraSrc` is any additional verbatim source to prepend. */
+function fnSrcOf(html, name) { return extractFnSource(html, name); }
+function loadFns2(html, sourceNames, returnNames, extraSrc) {
+  const body = (extraSrc ? `${extraSrc}\n` : '') + sourceNames.map((n) => extractFnSource(html, n)).join('\n');
+  const returnObj = `{ ${returnNames.join(', ')} }`;
+  // eslint-disable-next-line no-new-func
+  return new Function(`${body}\nreturn ${returnObj};`)();
+}
+
 function loadMoneyFns(html) {
   return loadFns2(
     html,
@@ -486,11 +497,9 @@ test('item 4: row selection scrolls the run view into view on mobile only, gated
   assert.match(html, /function scrollRunIntoViewMobile\(\)\{/);
   assert.match(html, /getElementById\("right-pane-anchor"\)/);
   assert.match(html, /getElementById\("left-pane-anchor"\)/);
-  // the ONE shared run-row builder (item 2, 2026-09-26 merge: buildRunRowEl,
-  // used by both History and a Workflows job's inline expansion) calls it —
-  // a job row itself only expands/collapses now, it never selects a run.
-  const runRowClick = html.match(/selectRun\(r\.runid, row, "\.hist-row"\); document\.getElementById\("tab-run"\)\.click\(\); scrollRunIntoViewMobile\(\);/);
-  assert.ok(runRowClick, 'expected buildRunRowEl\'s click handler to call scrollRunIntoViewMobile()');
+  // the run card's click (the one delegated handler, `rlClick`) calls it
+  const runRowClick = fnSrcOf(html, 'rlClick').match(/selectRun\(card\.getAttribute\("data-rl-run"\)\);[^]*getElementById\("tab-run"\)\.click\(\);[^]*scrollRunIntoViewMobile\(\);/);
+  assert.ok(runRowClick, 'expected rlClick to open the Run tab and call scrollRunIntoViewMobile()');
 });
 
 test('item 5: filterRuns — no filters selected -> everything passes (each group empty = no filter for that group)', () => {
@@ -541,25 +550,28 @@ test('item 5: filterRuns — time is single-select (7d/30d/all), excludes older 
   assert.equal(rAll.length, 4);
 });
 
-test('item 5 + F-panel-chip-collision: ONE filter-bar component is shared by History AND Workflows — same checkType/result/time chip groups, a clear button, and a "showing N of M" count element, in each tab; no "unknown" check-type chip', () => {
+test('item 5 + F-panel-chip-collision: ONE filter-bar component feeds the one runs list — the checkType/result/time chip groups, a clear button, a count element; no "unknown" check-type chip', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const filterBarHTML = extractFn(html, 'filterBarHTML');
-  ['history', 'workflows'].forEach((scope) => {
-    const markup = filterBarHTML(scope);
-    assert.match(markup, new RegExp(`data-testid="${scope}-filters"`));
-    assert.match(markup, new RegExp(`id="${scope}-filter-clear"`));
-    assert.match(markup, new RegExp(`id="${scope}-filter-count"`));
-    assert.match(markup, /data-filter-group="checkType"/);
-    assert.match(markup, /data-filter-group="result"/);
-    assert.match(markup, /data-filter-group="time"/);
-    // single-letter checkType chips with tooltips, no "unknown" chip, and
-    // bare (bracket-free) result glyphs
-    assert.match(markup, /title="deterministic"[^>]*>D</);
-    assert.match(markup, /title="rubric"[^>]*>R</);
-    assert.doesNotMatch(markup, /data-filter-value="unknown"/);
-    assert.doesNotMatch(markup, /\[&#10003;\]/);
-  });
-  assert.match(html, /"showing " \+ filtered\.length \+ " of " \+ allItems\.length \+ " runs"/);
+  const filterBarHTML = loadFilterBarHTML(html);
+  const markup = filterBarHTML('runs');
+  assert.match(markup, /data-testid="runs-filters"/);
+  assert.match(markup, /id="runs-filter-clear"/);
+  assert.match(markup, /id="runs-filter-count"/);
+  assert.match(markup, /data-filter-group="checkType"/);
+  assert.match(markup, /data-filter-group="result"/);
+  assert.match(markup, /data-filter-group="time"/);
+  assert.match(markup, /title="deterministic"[^>]*>D</);
+  assert.match(markup, /title="rubric"[^>]*>R</);
+  assert.doesNotMatch(markup, /data-filter-value="unknown"/);
+  assert.doesNotMatch(markup, /\[&#10003;\]/);
+});
+
+test('P9 v2 D.10: the chip order is a declared array, drawn in that order: D, R, ✓, ✗, ?, ▶, 7d, 30d, all, clear', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const filterBarHTML = loadFilterBarHTML(html);
+  const labels = [...filterBarHTML('runs').matchAll(/<button class="chip fchip"[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]);
+  assert.deepEqual(labels, ['D', 'R', '&#10003;', '&#10007;', '?', '&#9654;', '7d', '30d', 'all', 'clear']);
+  assert.match(html, /var RL_CHIPS = \[/);
 });
 
 test('item 5 + F-panel-chip-collision: the shared filter-bar component wraps localStorage access in try/catch (per-viewer convenience only)', () => {
@@ -578,7 +590,7 @@ test('item 2 (2026-09-26 merge): filterWorkflows matches a job if ANY of its run
   // and filterRuns itself calls matchesSearch (item 1) — extract all three
   // (function declarations hoist, so extraction order doesn't matter) so the
   // real dependency chain is exercised rather than stubbed.
-  const filterWorkflows = loadFns(html, ['matchesSearch', 'filterRuns', 'filterWorkflows'], 'filterWorkflows');
+  const filterWorkflows = loadFns(html, [...SEARCH_FNS, 'filterRuns', 'filterWorkflows'], 'filterWorkflows');
   const now = Date.parse('2026-09-25T00:00:00.000Z');
   const jobA = {
     job: 'a',
@@ -596,7 +608,7 @@ test('item 2 (2026-09-26 merge): filterWorkflows matches a job if ANY of its run
 
 test('item 2 (2026-09-26 merge): filterWorkflows matches a job whose LATEST run fails a filter but an OLDER run in that same job passes it', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const filterWorkflows = loadFns(html, ['matchesSearch', 'filterRuns', 'filterWorkflows'], 'filterWorkflows');
+  const filterWorkflows = loadFns(html, [...SEARCH_FNS, 'filterRuns', 'filterWorkflows'], 'filterWorkflows');
   const now = Date.parse('2026-09-25T00:00:00.000Z');
   const job = {
     job: 'mixed',
@@ -625,63 +637,47 @@ test('item 6/build item B: the part card meta line carries a plain-language titl
 // above already uses) — never a reimplementation of the search predicate.
 // ---------------------------------------------------------------------------
 function loadFilterRunsWithSearch(html) {
-  const start = html.indexOf('function matchesSearch(');
-  const frStart = html.indexOf('function filterRuns(');
-  const braceStart = html.indexOf('{', frStart);
-  let depth = 0;
-  let i = braceStart;
-  for (; i < html.length; i += 1) {
-    if (html[i] === '{') depth += 1;
-    else if (html[i] === '}') { depth -= 1; if (depth === 0) break; }
-  }
-  const body = html.slice(start, i + 1);
-  // eslint-disable-next-line no-new-func
-  return new Function(`${body}\nreturn filterRuns;`)();
+  return loadFns(html, [...SEARCH_FNS, 'filterRuns'], 'filterRuns');
 }
 
-test('item 1: matchesSearch — case-insensitive substring on job name or runid; empty/whitespace query = no filter', () => {
-  const html = readFileSync(PAGE_PATH, 'utf8');
-  const start = html.indexOf('function matchesSearch(');
-  const end = html.indexOf('function filterRuns(');
-  const body = html.slice(start, end);
+function loadFilterBarHTML(html) {
+  const a = html.indexOf('var RL_CHIPS = [');
+  const b = html.indexOf('\n  ];', a) + 5;
   // eslint-disable-next-line no-new-func
-  const matchesSearch = new Function(`${body}\nreturn matchesSearch;`)();
-  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'deepseek-chat', 'PULSE'), true);
-  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'deepseek-chat', 'mu2p'), true);
-  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'deepseek-chat', 'nomatch'), false);
-  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'deepseek-chat', ''), true);
-  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'deepseek-chat', '   '), true);
+  return new Function(`${html.slice(a, b)}\n${extractFnSource(html, 'escapeXml')}\n${extractFnSource(html, 'filterBarHTML')}\nreturn filterBarHTML;`)();
+}
+const runMatches = (html) => loadFns(html, SEARCH_FNS, 'runMatchesSearch');
+
+test('item 1: runMatchesSearch — case-insensitive substring on job name or runid; empty/whitespace query = no filter', () => {
+  const m = runMatches(readFileSync(PAGE_PATH, 'utf8'));
+  const run = { job: 'pulselog-person', runid: 'mu2p83go', model: 'deepseek-chat' };
+  assert.equal(m(run, 'PULSE'), true);
+  assert.equal(m(run, 'mu2p'), true);
+  assert.equal(m(run, 'nomatch'), false);
+  assert.equal(m(run, ''), true);
+  assert.equal(m(run, '   '), true);
 });
 
-test('item C: matchesSearch — also matches the model field (case-insensitive substring), null model never crashes', () => {
-  const html = readFileSync(PAGE_PATH, 'utf8');
-  const start = html.indexOf('function matchesSearch(');
-  const end = html.indexOf('function filterRuns(');
-  const body = html.slice(start, end);
-  // eslint-disable-next-line no-new-func
-  const matchesSearch = new Function(`${body}\nreturn matchesSearch;`)();
-  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'deepseek-chat', 'deepseek'), true);
-  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'claude-sonnet-5', 'SONNET'), true);
-  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'claude-sonnet-5', 'deepseek'), false);
-  // matches job/runid still work when model doesn't
-  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', 'claude-sonnet-5', 'pulselog'), true);
-  // null/absent model (older archived run) never crashes, never false-matches
-  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', null, 'deepseek'), false);
-  assert.equal(matchesSearch('pulselog-person', 'mu2p83go', undefined, ''), true);
+test('item C: runMatchesSearch — also matches the model field, null model never crashes', () => {
+  const m = runMatches(readFileSync(PAGE_PATH, 'utf8'));
+  assert.equal(m({ job: 'j', runid: 'r', model: 'deepseek-chat' }, 'deepseek'), true);
+  assert.equal(m({ job: 'j', runid: 'r', model: 'claude-sonnet-5' }, 'SONNET'), true);
+  assert.equal(m({ job: 'j', runid: 'r', model: 'claude-sonnet-5' }, 'deepseek'), false);
+  assert.equal(m({ job: 'j', runid: 'r', model: null }, 'deepseek'), false);
+  assert.equal(m({ job: 'j', runid: 'r' }, ''), true);
 });
 
-test('matchesSearch — also finds the shown run name: `run-N` and `job (run-N)`, N from the row\'s runNo; no runNo never false-matches', () => {
-  const html = readFileSync(PAGE_PATH, 'utf8');
-  const start = html.indexOf('function matchesSearch(');
-  const end = html.indexOf('function filterRuns(');
-  // eslint-disable-next-line no-new-func
-  const matchesSearch = new Function(`${html.slice(start, end)}\nreturn matchesSearch;`)();
-  assert.equal(matchesSearch('pulselog', 'mu2p83go', 'deepseek-chat', 'run-2', 2), true);
-  assert.equal(matchesSearch('pulselog', 'mu2p83go', 'deepseek-chat', 'RUN-2', 2), true);
-  assert.equal(matchesSearch('pulselog', 'mu2p83go', 'deepseek-chat', 'pulselog (run-2)', 2), true);
-  assert.equal(matchesSearch('pulselog', 'mu2p83go', 'deepseek-chat', 'run-3', 2), false);
-  assert.equal(matchesSearch('pulselog', 'mu2p83go', 'deepseek-chat', 'run-2', undefined), false);
-  const filterRuns = loadFilterRunsWithSearch(html);
+test('P9 v2 D.8: search reads the WHOLE visible row — word, why, date text, cost, wall, model, check type, run-N and `job (run-N)`', () => {
+  const m = runMatches(readFileSync(PAGE_PATH, 'utf8'));
+  const run = {
+    job: 'pulselog', runid: 'mu2p83go', runNo: 2, at: '2026-10-04T10:00:00.000Z', model: 'deepseek-flash', checkType: 'rubric',
+    status: { sign: '✗', word: 'capped' }, endedLine: 'money cap $0.50', spentUsd: 0.41, spendComplete: true, wall: '20m00s',
+  };
+  for (const q of ['run-2', 'RUN-2', 'pulselog (run-2)', 'capped', 'money cap', '$0.41', '20m00s', 'rubric', 'deepseek-flash']) assert.equal(m(run, q), true, q);
+  assert.equal(m(run, '10/04'), true, 'the date as the card shows it (local MM/DD)');
+  assert.equal(m(run, 'run-3'), false);
+  assert.equal(m({ ...run, runNo: undefined }, 'run-2'), false, 'no runNo never false-matches');
+  const filterRuns = loadFilterRunsWithSearch(readFileSync(PAGE_PATH, 'utf8'));
   const runs = [{ job: 'a', runid: 'x1', runNo: 1 }, { job: 'a', runid: 'x2', runNo: 2 }];
   assert.deepEqual(filterRuns(runs, { search: 'run-2' }).map((r) => r.runid), ['x2']);
 });
@@ -723,7 +719,7 @@ test('item C: filterRuns — search also matches the run\'s model field', () => 
 
 test('item C: filterWorkflows — search matches a run\'s own model field, off the job\'s real per-run list', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const filterWorkflows = loadFns(html, ['matchesSearch', 'filterRuns', 'filterWorkflows'], 'filterWorkflows');
+  const filterWorkflows = loadFns(html, [...SEARCH_FNS, 'filterRuns', 'filterWorkflows'], 'filterWorkflows');
   const now = Date.parse('2026-09-25T00:00:00.000Z');
   const jobs = [
     {
@@ -745,19 +741,18 @@ test('item C: filterWorkflows — search matches a run\'s own model field, off t
 
 test('item 1: the search input exists in the shared filter bar for both scopes, and clear empties it', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const filterBarHTML = extractFn(html, 'filterBarHTML');
-  ['history', 'workflows'].forEach((scope) => {
-    const markup = filterBarHTML(scope);
-    assert.match(markup, new RegExp(`id="${scope}-filter-search"`));
-    assert.match(markup, new RegExp(`data-testid="${scope}-filter-search"`));
-  });
+  const filterBarHTML = loadFilterBarHTML(html);
+  const markup = filterBarHTML('runs');
+  assert.match(markup, /id="runs-filter-search"/);
+  assert.match(markup, /data-testid="runs-filter-search"/);
   // clear resets search to "" alongside the chip groups
   assert.match(html, /state = \{ checkTypes: \[\], results: \[\], time: "all", search: "" \};/);
 });
 
-test('item C: search placeholder mentions job, run id AND model', () => {
+test('P9 v2 O item 5 (replaces D.11 "search jobs and runs…"): the Runs search placeholder is `job, run-23, or date 10/13` (words per am8)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /placeholder="search job, run-N, run id or model…"/);
+  assert.match(html, /placeholder="job, run-23, or date 10\/13" /);
+  assert.doesNotMatch(html, /placeholder="search jobs and runs/);
 });
 
 test('item 1: search state persists via the same localStorage key as the chip filters', () => {
@@ -1197,14 +1192,14 @@ test('item 1: every attemptGlyph call site passes a boxIsLive argument (map titl
 // finished [✓]/[✗] run, so scoping the animation to this one CSS selector
 // alone already excludes every non-live state.
 // ---------------------------------------------------------------------------
-test('src/panel/index.html: .dot.amber (the live [▶] glyph) pulses via a keyframe animation, disabled under prefers-reduced-motion', () => {
+test('src/panel/index.html: .dot.pulse (the live [▶] glyph and a run waiting for Accept; RULED 2026-10-15) pulses via a keyframe animation, disabled under prefers-reduced-motion', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  const amberRuleMatch = html.match(/\.dot\.amber::before\{[^}]*\}/);
-  assert.ok(amberRuleMatch, 'expected a .dot.amber::before rule');
-  assert.match(amberRuleMatch[0], /animation\s*:/, '.dot.amber::before must declare a pulsing animation');
+  const amberRuleMatch = html.match(/\.dot\.pulse::before\{[^}]*\}/);
+  assert.ok(amberRuleMatch, 'expected a .dot.pulse::before rule');
+  assert.match(amberRuleMatch[0], /animation\s*:/, '.dot.pulse::before must declare a pulsing animation');
   assert.match(html, /@keyframes\s+pulse-glyph\s*\{[^}]*0%[^}]*100%[^}]*opacity\s*:\s*1[\s\S]*?50%[^}]*opacity\s*:\s*0\.3/, 'expected a pulse-glyph keyframe going 1 -> 0.3 -> 1, matching the map dot\'s own rhythm');
-  const reducedMotionBlock = html.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([^}]*\.dot\.amber::before\s*\{[^}]*\})/);
-  assert.ok(reducedMotionBlock, 'expected prefers-reduced-motion: reduce to turn the .dot.amber pulse off');
+  const reducedMotionBlock = html.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([^}]*\.dot\.pulse::before\s*\{[^}]*\})/);
+  assert.ok(reducedMotionBlock, 'expected prefers-reduced-motion: reduce to turn the .dot.pulse pulse off');
   assert.match(reducedMotionBlock[1], /animation\s*:\s*none/);
   // never for a died [?] (magenta) or finished [✓]/[✗] (green/red) dot.
   ['green', 'red', 'magenta', 'grey'].forEach((cls) => {
@@ -1264,491 +1259,21 @@ test('item 6: run-counters reads "took Xs" for a finished or died run, "Xs elaps
 // (bareagent-u-types, run mshcpdg4) wherever the build report names one.
 // ---------------------------------------------------------------------------
 
-test('item 2: left pane has ONE "Runs" tab (Workflows/History merged) — the old separate tab ids are gone', () => {
+test('item 2: left pane has ONE "Runs" tab — the old separate tab ids and the Workflows / History switch are gone (P9 v2)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   assert.match(html, /data-testid="left-tab-runs"/);
   assert.doesNotMatch(html, /data-testid="left-tab-workflows"/);
   assert.doesNotMatch(html, /data-testid="left-tab-history"/);
-  assert.match(html, /data-testid="runs-view-workflows"/);
-  assert.match(html, /data-testid="runs-view-history"/);
-  // Workflows is the markup default (aria-pressed="true" on load, before any JS runs)
-  assert.match(html, /data-runs-view="workflows" data-testid="runs-view-workflows">Workflows<\/button>/);
-  const wfBtn = html.match(/<button class="chip" type="button" aria-pressed="(true|false)" data-runs-view="workflows"/);
-  assert.ok(wfBtn && wfBtn[1] === 'true', 'expected the Workflows toggle button to start pressed in the raw markup');
+  assert.doesNotMatch(html, /runs-view-workflows|runs-view-history|data-runs-view/);
 });
 
-test('item 2: ONE shared filter bar anchor ("runs" scope) feeds both views — the old two-anchor/two-instance shape is gone', () => {
+test('item 2: ONE filter bar anchor ("runs" scope) feeds the one runs list', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   assert.match(html, /id="runs-filterbar-anchor"/);
-  assert.doesNotMatch(html, /workflows-filterbar-anchor/);
-  assert.doesNotMatch(html, /history-filterbar-anchor/);
+  assert.doesNotMatch(html, /workflows-filterbar-anchor|history-filterbar-anchor|var historyFilterBar|var workflowsFilterBar/);
   assert.match(html, /filterBarHTML\("runs"\)/);
-  assert.doesNotMatch(html, /var historyFilterBar/);
-  assert.doesNotMatch(html, /var workflowsFilterBar/);
 });
 
-test('item 2: loadRunsViewMode defaults to "workflows", round-trips through localStorage, and ignores garbage', () => {
-  const html = readFileSync(PAGE_PATH, 'utf8');
-  // RUNS_VIEW_KEY is a module-level const the two functions close over —
-  // must be extracted alongside them or they'd throw a ReferenceError
-  // (silently swallowed by their own try/catch, which would falsely read as
-  // "always defaults to workflows" instead of a real extraction bug).
-  const keyLine = html.match(/var RUNS_VIEW_KEY = "[^"]+";/);
-  assert.ok(keyLine, 'expected the RUNS_VIEW_KEY module const in src/panel/index.html');
-  const { loadRunsViewMode, saveRunsViewMode } = loadFns2(
-    html,
-    ['loadRunsViewMode', 'saveRunsViewMode'],
-    ['loadRunsViewMode', 'saveRunsViewMode'],
-    keyLine[0],
-  );
-  const store = {};
-  global.localStorage = {
-    getItem: (k) => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null),
-    setItem: (k, v) => { store[k] = String(v); },
-  };
-  try {
-    assert.equal(loadRunsViewMode(), 'workflows', 'no stored value at all -> default workflows');
-    saveRunsViewMode('history');
-    assert.equal(loadRunsViewMode(), 'history', 'persisted value round-trips');
-    store['bareloop-panel-runs-view'] = 'not-a-real-mode';
-    assert.equal(loadRunsViewMode(), 'workflows', 'garbage stored value falls back to the default, never crashes');
-  } finally {
-    delete global.localStorage;
-  }
-});
-
-/** Like loadFns, but returns SEVERAL named functions at once as an object
- * (still one shared hoisted scope, so they can call each other). `extraSrc`
- * is any additional verbatim source (e.g. a module-level const the
- * extracted functions close over) to prepend. */
-function loadFns2(html, sourceNames, returnNames, extraSrc) {
-  const body = (extraSrc ? `${extraSrc}\n` : '') + sourceNames.map((n) => extractFnSource(html, n)).join('\n');
-  const returnObj = `{ ${returnNames.join(', ')} }`;
-  // eslint-disable-next-line no-new-func
-  return new Function(`${body}\nreturn ${returnObj};`)();
-}
-
-test('item 2: groupRunsByJob groups the /api/runs payload by job, newest run per job wins as "last", full per-job run list preserved', () => {
-  const html = readFileSync(PAGE_PATH, 'utf8');
-  const groupRunsByJob = loadFns(html, ['panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText', 'groupRunsByJob'], 'groupRunsByJob');
-  const runs = [
-    {
-      runid: 'a2', job: 'alpha', at: '2026-09-02T00:00:00.000Z', glyph: '✓', checkType: 'deterministic', model: 'deepseek-chat', spend: '$0.60', wall: '2m00s', date: '2026-09-02',
-    },
-    {
-      runid: 'a1', job: 'alpha', at: '2026-09-01T00:00:00.000Z', glyph: '✗', checkType: 'deterministic', spend: '$0.50', wall: '1m00s', date: '2026-09-01',
-    },
-    {
-      runid: 'b1', job: 'beta', at: '2026-09-01T12:00:00.000Z', glyph: '✓', checkType: 'rubric', spend: '$0.10', wall: '0m30s', date: '2026-09-01',
-    },
-  ];
-  const jobs = groupRunsByJob(runs);
-  assert.deepEqual(jobs.map((j) => j.job), ['alpha', 'beta'], 'job order follows first-seen (already newest-first) run order');
-  const alpha = jobs.find((j) => j.job === 'alpha');
-  assert.equal(alpha.runCount, 2);
-  assert.equal(alpha.lastRunid, 'a2');
-  assert.equal(alpha.lastGlyph, '✓');
-  assert.deepEqual(alpha.runs.map((r) => r.runid), ['a2', 'a1'], 'the job\'s own full run list is preserved, newest-first');
-});
-
-test('item 2: workflow search matches a job if the query matches ANY of its runs (real job shape: bareagent-u-types, run mshcpdg4)', () => {
-  const html = readFileSync(PAGE_PATH, 'utf8');
-  const { groupRunsByJob, filterWorkflows } = loadFns2(
-    html,
-    ['panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText', 'matchesSearch', 'filterRuns', 'groupRunsByJob', 'filterWorkflows'],
-    ['groupRunsByJob', 'filterWorkflows'],
-  );
-  const runs = [
-    {
-      runid: 'mshzvkqw', job: 'bareagent-u-types', at: '2026-08-06T23:12:00.000Z', glyph: '✓', checkType: 'deterministic',
-    },
-    {
-      runid: 'mshcpdg4', job: 'bareagent-u-types', at: '2026-08-05T00:04:00.000Z', glyph: '✓', checkType: 'deterministic',
-    },
-    {
-      runid: 'other1', job: 'unrelated-job', at: '2026-08-01T00:00:00.000Z', glyph: '✓', checkType: 'deterministic',
-    },
-  ];
-  const jobs = groupRunsByJob(runs);
-  const now = Date.parse('2026-09-25T00:00:00.000Z');
-  const matched = filterWorkflows(jobs, {
-    checkTypes: [], results: [], time: 'all', search: 'mshcpdg4',
-  }, now);
-  assert.equal(matched.length, 1);
-  assert.equal(matched[0].job, 'bareagent-u-types');
-  assert.ok(matched[0].runs.some((r) => r.runid === 'mshcpdg4'), 'the matching OLDER run must still be in the job\'s own run list for the client to expand into');
-});
-
-test('item 2: a ✗ result filter keeps a job whose LATEST run is ✓ but an OLDER run of it is ✗ (match-any-run, not just-latest)', () => {
-  const html = readFileSync(PAGE_PATH, 'utf8');
-  const { groupRunsByJob, filterWorkflows } = loadFns2(
-    html,
-    ['panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText', 'matchesSearch', 'filterRuns', 'groupRunsByJob', 'filterWorkflows'],
-    ['groupRunsByJob', 'filterWorkflows'],
-  );
-  const runs = [
-    {
-      runid: 'newest', job: 'flaky-job', at: '2026-09-24T00:00:00.000Z', glyph: '✓', checkType: 'deterministic',
-    },
-    {
-      runid: 'older-red', job: 'flaky-job', at: '2026-09-01T00:00:00.000Z', glyph: '✗', checkType: 'deterministic',
-    },
-  ];
-  const jobs = groupRunsByJob(runs);
-  const now = Date.parse('2026-09-25T00:00:00.000Z');
-  const matched = filterWorkflows(jobs, {
-    checkTypes: [], results: ['✗'], time: 'all',
-  }, now);
-  assert.equal(matched.length, 1, 'flaky-job must still show up under the ✗ filter because an older run of it was ✗');
-  assert.equal(matched[0].lastGlyph, '✓', 'the job row itself still reports its TRUE latest glyph (✓), never overwritten by the filter match');
-});
-
-test('item 2: autoExpandJob — expands only when filters are active AND the matching run(s) exclude the job\'s own latest run', () => {
-  const html = readFileSync(PAGE_PATH, 'utf8');
-  const autoExpandJob = loadFns(html, ['autoExpandJob'], 'autoExpandJob');
-  const group = { runs: [{ runid: 'newest' }, { runid: 'older' }] };
-  assert.equal(autoExpandJob(group, [{ runid: 'newest' }], true), false, 'latest run itself matched -> no need to auto-expand');
-  assert.equal(autoExpandJob(group, [{ runid: 'older' }], true), true, 'only an older run matched -> auto-expand so it\'s visible');
-  assert.equal(autoExpandJob(group, [{ runid: 'older' }], false), false, 'filters not active at all -> never force an expand');
-  assert.equal(autoExpandJob(group, [], true), false, 'no matching runs at all -> nothing to expand (this job would not even render)');
-});
-
-// ---------------------------------------------------------------------------
-// build item (2026-09-26): clicking a Workflows job (PARENT) row must also
-// open that job's latest run in the Run tab and toggle its inline run list —
-// as before the Workflows/History merge. Before this fix the parent row's
-// click handler only toggled `wfExpanded`; e.g. job bareagent-u-types' latest
-// run msi0w2i5 (red) could not be opened from the parent row at all. Drives
-// the REAL `renderWorkflows` extracted verbatim out of the page (never a
-// reimplementation) against a tiny hand-rolled fake DOM (no jsdom — one-dep
-// budget), same posture as tests/panel-history-filter-clicks.test.js.
-// ---------------------------------------------------------------------------
-
-/** A fake DOM element: just enough surface for `renderWorkflows`'s own code
- * (className assignment, setAttribute/getAttribute, addEventListener/click,
- * appendChild, innerHTML assignment). `registry`, when given, gets every
- * created element pushed onto it — lets a fake `selectRun` reproduce the
- * real page's global `clearSelection()` (which clears `.selected` off every
- * `.wf-row`/`.hist-row` in the document, not just the clicked one). */
-function makeFakeEl(registry) {
-  const listeners = [];
-  const el = {
-    className: '',
-    children: [],
-    _attrs: {},
-    setAttribute(k, v) { this._attrs[k] = String(v); },
-    getAttribute(k) { return Object.prototype.hasOwnProperty.call(this._attrs, k) ? this._attrs[k] : null; },
-    addEventListener(type, fn) { listeners.push({ type, fn }); },
-    click() { listeners.filter((l) => l.type === 'click').forEach((l) => l.fn.call(this)); },
-    appendChild(c) { this.children.push(c); },
-  };
-  if (registry) registry.push(el);
-  // `el.innerHTML = ""` (the page's own clear-before-rebuild idiom) must
-  // actually clear the fake children array, or a re-render leaves the OLD
-  // row sitting at children[0] alongside the freshly appended one.
-  Object.defineProperty(el, 'innerHTML', {
-    get() { return this._innerHTML || ''; },
-    set(v) { this._innerHTML = v; if (v === '') this.children = []; },
-  });
-  return el;
-}
-
-/** Builds a fake `document` + the real `renderWorkflows` (and its
- * dependencies) extracted verbatim from the page, wired to hand-rolled
- * fakes for `selectRun`/scroll/filters — shared by every renderWorkflows
- * test below so none of them re-implement its logic. */
-function makeWorkflowsPage() {
-  const html = readFileSync(PAGE_PATH, 'utf8');
-  const src = [
-    extractFnSource(html, 'escapeXml'),
-    extractFnSource(html, 'runLabel'),
-    extractFnSource(html, 'runName'),
-    extractFnSource(html, 'glyphClass'),
-    extractFnSource(html, 'statusWordHtml'),
-    extractFnSource(html, 'groupRunsByJob'),
-    extractFnSource(html, 'filtersActive'),
-    extractFnSource(html, 'autoExpandJob'),
-    extractFnSource(html, 'representedRun'),
-    extractFnSource(html, 'activeOlderRun'),
-    // panelMoney/panelMoneyWithDraft/rowSpendText (2026-09-28) — buildRunRowEl
-    // and groupRunsByJob's own `lastSpend` both now render through
-    // rowSpendText, a real dependency, pulled in verbatim rather than faked.
-    extractFnSource(html, 'panelMoney'),
-    extractFnSource(html, 'panelMoneyWithDraft'),
-    extractFnSource(html, 'liveSpendText'),
-    extractFnSource(html, 'liveWallPhrase'),
-    extractFnSource(html, 'duration'),
-    extractFnSource(html, 'rowIsLive'),
-    extractFnSource(html, 'rowWallText'),
-    extractFnSource(html, 'rowSpendText'),
-    // P5-R: both row builders paint the "resumed ×N" tag through this one helper
-    extractFnSource(html, 'resumedTagHtml'),
-    extractFnSource(html, 'buildRunRowEl'),
-    'var WF_SUB_CAP = 7;',
-    extractFnSource(html, 'capSubRuns'),
-    extractFnSource(html, 'renderWorkflows'),
-  ].join('\n');
-
-  const elementsById = {};
-  const registry = []; // every element ever created — for global .selected clearing
-  const doc = {
-    getElementById(id) {
-      if (!elementsById[id]) elementsById[id] = makeFakeEl(registry);
-      return elementsById[id];
-    },
-    createElement() { return makeFakeEl(registry); },
-  };
-  const calls = { selectRun: [], scrolls: 0 };
-  let tabRunClicks = 0;
-  doc.getElementById('tab-run').addEventListener('click', () => { tabRunClicks += 1; });
-
-  let filters = { checkTypes: [], results: [], time: 'all', search: '' };
-  // filterRuns (and its own matchesSearch dependency) is a real dependency
-  // of the page too (used when filters are active) — pull it in verbatim
-  // rather than reimplementing its semantics.
-  const filterRunsSrc = [extractFnSource(html, 'matchesSearch'), extractFnSource(html, 'filterRuns')].join('\n');
-
-  // eslint-disable-next-line no-new-func
-  const factory = new Function('document', 'calls', 'getFilters', 'registry', `
-    var wfExpanded = {};
-    var currentRunid = null;
-    function selectRun(runid, rowEl, sel){
-      calls.selectRun.push(runid);
-      currentRunid = runid;
-      // reproduce the real page's clearSelection(): strip "selected" off
-      // every wf-row/hist-row element ever created, then mark just this one.
-      registry.forEach(function(el){
-        if (typeof el.className === 'string' && (el.className.indexOf('wf-row') === 0 || el.className.indexOf('hist-row') === 0)) {
-          el.className = el.className.replace(/ selected\\b/, '');
-        }
-      });
-      if (rowEl) rowEl.className = (rowEl.className + ' selected').trim();
-    }
-    function scrollRunIntoViewMobile(){ calls.scrolls += 1; }
-    function currentRunsFilters(){ return getFilters(); }
-    ${filterRunsSrc}
-    ${src}
-    return {
-      render: renderWorkflows,
-      getCurrentRunid: function(){ return currentRunid; },
-      setCurrentRunid: function(id){ currentRunid = id; },
-    };
-  `);
-  const page = factory(doc, calls, () => filters, registry);
-  return {
-    page,
-    doc,
-    calls,
-    getTabRunClicks: () => tabRunClicks,
-    setFilters(f) { filters = f; },
-  };
-}
-
-test('build item: clicking a Workflows job (parent) row opens its latest run in the Run tab, toggles its inline run list, and shows selected state like a child row', () => {
-  const { page, doc, calls, getTabRunClicks } = makeWorkflowsPage();
-
-  const jobs = groupRunsByJobFixture();
-  page.render(jobs);
-
-  const wfList = doc.getElementById('wf-list');
-  assert.equal(wfList.children.length, 1, 'expected one wf-job wrapper for the one job group');
-  let row = wfList.children[0].children[0];
-  assert.equal(row.className, 'wf-row', 'not selected before any click');
-  assert.equal(row.getAttribute('aria-expanded'), 'false');
-
-  row.click();
-
-  assert.deepEqual(calls.selectRun, ['msi0w2i5'], 'clicking the parent must open the JOB\'s latest run, same as a child row would');
-  assert.equal(page.getCurrentRunid(), 'msi0w2i5');
-  assert.equal(getTabRunClicks(), 1, 'the Run tab must be activated, same as clicking a child row');
-  assert.equal(calls.scrolls, 1, 'mobile scroll-into-view fires too, same as a child row');
-
-  // renderWorkflows was called again by the click handler itself — re-fetch
-  // the (rebuilt) row and check both the toggle and the selected state.
-  row = doc.getElementById('wf-list').children[0].children[0];
-  assert.equal(row.getAttribute('aria-expanded'), 'true', 'the inline run list must also toggle open, as before the merge');
-  assert.equal(row.className, 'wf-row selected', 'the parent row must show selected state like a child row');
-  assert.equal(row.getAttribute('aria-pressed'), 'true');
-
-  // build item (fix, 2026-09-26): the parent row IS the latest run
-  // (msi0w2i5) — its expanded child list must be the job's OTHER runs
-  // only, never repeating the latest as a duplicate first child.
-  const runsWrap = doc.getElementById('wf-list').children[0].children[1];
-  assert.ok(runsWrap, 'expanded child list must be rendered (job has an other run)');
-  assert.equal(runsWrap.children.length, 1, 'only the ONE other run, never the latest repeated');
-  assert.equal(
-    runsWrap.children[0].getAttribute('data-testid'),
-    'hist-row-older1',
-    'first (only) child must be the OTHER run, not a duplicate of the latest',
-  );
-});
-
-test('build item (fix): a job with only ONE run gets no expand caret and never expands, even when clicked', () => {
-  const { page, doc, calls } = makeWorkflowsPage();
-
-  const jobs = singleRunJobFixture();
-  page.render(jobs);
-
-  let row = doc.getElementById('wf-list').children[0].children[0];
-  assert.ok(!row.innerHTML.includes('▶') && !row.innerHTML.includes('▼'), 'no caret glyph for a single-run job');
-  assert.equal(row.getAttribute('aria-expanded'), 'false');
-
-  row.click();
-  assert.deepEqual(calls.selectRun, ['solo1'], 'clicking still opens the (only) run');
-
-  row = doc.getElementById('wf-list').children[0].children[0];
-  assert.equal(row.getAttribute('aria-expanded'), 'false', 'still nothing to expand after the click');
-  assert.ok(!row.innerHTML.includes('▶') && !row.innerHTML.includes('▼'), 'still no caret after the click');
-  assert.equal(doc.getElementById('wf-list').children[0].children.length, 1, 'no child-list wrapper appended at all');
-});
-
-test('build item (fix): when filters are active and the ONLY match is the latest run, the parent gets no expand affordance at all', () => {
-  const { page, doc, setFilters } = makeWorkflowsPage();
-  setFilters({ checkTypes: [], results: ['✓'], time: 'all', search: '' });
-
-  const jobs = groupRunsByJobFixture(); // latest msi0w2i5 is glyph '✗', older1 would need '✓' to match
-  // give the older run a passing glyph so it does NOT match the '✓' filter,
-  // leaving the latest (✗) as the only... wait — invert: latest matches.
-  jobs[0].runs[0].glyph = '✓'; // latest -> pass, matches filter
-  jobs[0].runs[1].glyph = '✗'; // older -> fail, does not match filter
-  jobs[0].lastGlyph = '✓';
-
-  page.render(jobs);
-
-  const wrap = doc.getElementById('wf-list').children[0];
-  assert.equal(wrap.children.length, 1, 'parent job row renders (it matches) but no child-list wrapper is appended');
-  const row = wrap.children[0];
-  assert.ok(!row.innerHTML.includes('▶') && !row.innerHTML.includes('▼'), 'no caret — with these filters active the job has no OTHER matching run to show');
-  assert.equal(row.getAttribute('aria-expanded'), 'false');
-
-  row.click();
-  const wrapAfter = doc.getElementById('wf-list').children[0];
-  assert.equal(wrapAfter.children.length, 1, 'still no child-list wrapper after click — nothing to expand');
-  assert.equal(row.getAttribute('aria-expanded'), 'false', 'still not expandable after the click');
-});
-
-test('build item (fix): selection highlight goes to the parent for the latest run, and to the child for an older run — never both, never a duplicate', () => {
-  const { page, doc } = makeWorkflowsPage();
-  const jobs = groupRunsByJobFixture();
-  page.render(jobs);
-
-  // expand so the child row exists to click
-  let row = doc.getElementById('wf-list').children[0].children[0];
-  row.click();
-
-  let wrap = doc.getElementById('wf-list').children[0];
-  row = wrap.children[0];
-  assert.equal(row.className, 'wf-row selected', 'latest run selected -> parent carries the highlight');
-  let runsWrap = wrap.children[1];
-  assert.equal(runsWrap.children.length, 1);
-  assert.equal(runsWrap.children[0].className, 'hist-row', 'the (only) child is not highlighted');
-
-  // now click that older child run directly
-  const olderChild = runsWrap.children[0];
-  olderChild.click();
-
-  wrap = doc.getElementById('wf-list').children[0];
-  row = wrap.children[0];
-  assert.ok(!row.className.includes('selected'), 'parent no longer selected once an older run is picked');
-});
-
-/** One job group ("bareagent-u-types") with two runs: latest "msi0w2i5"
- * (red) and one older run "older1" — lets tests exercise both the
- * expand/toggle path and the "child list excludes the latest" fix. */
-function groupRunsByJobFixture() {
-  return [{
-    job: 'bareagent-u-types',
-    runs: [
-      { runid: 'msi0w2i5', job: 'bareagent-u-types', glyph: '✗' },
-      { runid: 'older1', job: 'bareagent-u-types', glyph: '✓' },
-    ],
-    runCount: 2,
-    lastRunid: 'msi0w2i5',
-    lastAt: '2026-09-20T00:00:00.000Z',
-    lastGlyph: '✗',
-    lastCheckType: 'deterministic',
-    lastModel: null,
-    lastSpend: '$0.10',
-    lastWall: '1m00s',
-    lastDate: '2026-09-20',
-  }];
-}
-
-/** A job with exactly one run — no "other runs" exist at all. */
-function singleRunJobFixture() {
-  return [{
-    job: 'solo-job',
-    runs: [{ runid: 'solo1', job: 'solo-job', glyph: '✓' }],
-    runCount: 1,
-    lastRunid: 'solo1',
-    lastAt: '2026-09-20T00:00:00.000Z',
-    lastGlyph: '✓',
-    lastCheckType: 'deterministic',
-    lastModel: null,
-    lastSpend: '$0.10',
-    lastWall: '1m00s',
-    lastDate: '2026-09-20',
-  }];
-}
-
-// ---------------------------------------------------------------------------
-// build item (2026-09-26 fix, debrief): the parent row was hardwired to
-// `g.lastRunid` for both its own "selected" state and its click target —
-// two failures follow: (1) a search hit on an OLDER run auto-expands the
-// job but clicking the parent still opens the unrelated latest run with no
-// cue, and (2) picking an older run from History then switching to
-// Workflows leaves the job collapsed with nothing marked selected. Fixed
-// via ONE `representedRun`/`activeOlderRun` pair the parent's own selected
-// state, click target, and auto-expand all read from — see src/panel/
-// index.html. These tests fail without that fix (verified by reverting it
-// in a scratch copy): failure (1) reads `calls.selectRun` still landing on
-// 'msi0w2i5' instead of 'older1'; failure (2) reads the job collapsed
-// (`aria-expanded` "false") with no selected row anywhere.
-// ---------------------------------------------------------------------------
-
-test('build item (fix): search matching only an older run — clicking the parent opens THAT run, not the unrelated latest', () => {
-  const { page, doc, calls, setFilters } = makeWorkflowsPage();
-  setFilters({ checkTypes: [], results: [], time: 'all', search: 'older1' });
-
-  const jobs = groupRunsByJobFixture(); // latest 'msi0w2i5', older 'older1'
-  page.render(jobs);
-
-  const wrap = doc.getElementById('wf-list').children[0];
-  let row = wrap.children[0];
-  assert.equal(row.getAttribute('aria-expanded'), 'true', 'auto-expands: only an older run matches the search');
-
-  row.click();
-
-  assert.deepEqual(calls.selectRun, ['older1'], 'parent click must open the MATCHED older run, never the latest, when the latest is filtered out');
-  assert.equal(page.getCurrentRunid(), 'older1');
-
-  row = doc.getElementById('wf-list').children[0].children[0];
-  assert.equal(row.className, 'wf-row selected', 'parent follows the run it now stands for, not the (unmatched) latest');
-});
-
-test('build item (fix): picking an older run elsewhere (e.g. History) then rendering Workflows auto-expands the job and marks that child selected, not the parent', () => {
-  const { page, doc } = makeWorkflowsPage();
-
-  const jobs = groupRunsByJobFixture(); // latest 'msi0w2i5', older 'older1'
-  page.setCurrentRunid('older1'); // simulates a History-tab selection made before switching views
-  page.render(jobs);
-
-  const wrap = doc.getElementById('wf-list').children[0];
-  const row = wrap.children[0];
-  assert.equal(row.getAttribute('aria-expanded'), 'true', 'must auto-expand so the selected older run is visible, with no filter/search active at all');
-  assert.ok(!row.className.includes('selected'), 'parent (which stands for the latest run) must not be marked selected');
-
-  const runsWrap = wrap.children[1];
-  assert.ok(runsWrap, 'expanded child list must be rendered');
-  assert.equal(runsWrap.children.length, 1);
-  assert.equal(runsWrap.children[0].getAttribute('data-testid'), 'hist-row-older1');
-  assert.equal(runsWrap.children[0].className, 'hist-row selected', 'the matching child must carry the selected marker on render, with no click needed');
-});
-
-// retry loop on the step map: ported from design/panel-mockup.html — a
-// multi-attempt step or fix box draws a dashed grey self-loop ("try N") under
-// the box, using the SAME one-owner rule (box.attempts.length > 1) that
-// already drives partResultGlyph's multi-glyph join, never a duplicate check.
 test('boxRetryTry: the one shared rule — a box with >1 attempts reports its final try number, a single-attempt or no-verdict (attempts: []) box reports 0', () => {
   const { boxRetryTry } = loadStepMapGeometry();
   assert.equal(boxRetryTry({ attempts: [{ n: 1, outcome: 'red' }, { n: 2, outcome: 'red' }, { n: 3, outcome: 'green' }] }), 3);
@@ -1868,9 +1393,10 @@ function makePollHarness(getJSONImpl) {
   // eslint-disable-next-line no-new-func
   const factory = new Function('document', 'getJSONImpl', 'getJSONCalls', 'renderRunCalls', 'setItemsCalls', `
     function getJSON(path){ getJSONCalls.push(path); return getJSONImpl(path); }
+    function setRunsData(result){ setItemsCalls.push(result.runs); }
+    function tickSince(){}
     var runsFilterBar = {
-      setItems: function(runs){
-        setItemsCalls.push(runs);
+      refresh: function(){
         var el = document.getElementById("left-pane-body");
         if (el) el.scrollTop = 0; // simulates a real innerHTML rebuild resetting scroll
       }
@@ -1878,8 +1404,11 @@ function makePollHarness(getJSONImpl) {
     function renderRun(detail){ renderRunCalls.push(detail); }
     var currentRunid = null;
     var runIsLive = false;
+    var openIsScheduled = false;
+    var lastOpenFetchAt = 0;
     var selectToken = 0;
     var lastRunsSig = null;
+    var lastRunsPayloadSig = null;
     var lastRunDetailSig = null;
     var lastRunsListRefreshAt = 0;
     var RUNS_LIST_POLL_MS = 10000;
@@ -1981,7 +1510,7 @@ test('refreshOpenRun: does nothing (no fetch) when no run is selected, or the se
   assert.equal(calls, 0);
 });
 
-test('refreshRunsList: skips re-render (setItems) when the fetched payload is unchanged, still re-renders on a real change', async () => {
+test('refreshRunsList: skips re-render (setRunsData + repaint) when the fetched payload is unchanged, still re-renders on a real change', async () => {
   let payload = { runs: [{ runid: 'a' }] };
   const h = makePollHarness(() => Promise.resolve(payload));
   // force:true on every call here — this test is about the SIGNATURE dedup
@@ -2978,7 +2507,9 @@ test('M3: afterSignRefresh forces list refreshes past the throttle until a new r
       var document = { hidden: false, getElementById: function(){ return { scrollTop: 0 }; } };
       var setTimeout = function(fn){ timers.push(fn); };
       function getJSON(path){ calls.push(path); return Promise.resolve({ runs: listFor(calls.length) }); }
-      var runsFilterBar = { setItems: function(){} };
+      var runsFilterBar = { refresh: function(){} };
+      function setRunsData(){}
+      var lastRunsPayloadSig = null;
       var lastRunsSig = ${JSON.stringify(JSON.stringify([{ runid: 'old1' }]))};
       var lastRunsListRefreshAt = Date.now();
       var RUNS_LIST_POLL_MS = 10000;

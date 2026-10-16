@@ -30,7 +30,7 @@ import {
   dirname, join, basename, relative, isAbsolute, sep,
 } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readRunList, DIED_MTIME_MS, runIsAlive } from '../runlist.js';
+import { readRunList, readNeedsRemovals, DIED_MTIME_MS, runIsAlive } from '../runlist.js';
 import { draftingPartFor } from '../draftspend.js';
 import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
@@ -42,17 +42,23 @@ import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
 import { jobSpecHash, workflowKey } from '../job.js';
 import { confirmProtections } from '../authorflow.js';
+import { createScheduleDoor } from './schedules.js';
+import { createStarter } from './schedulestart.js';
+import { createScheduler } from './scheduler.js';
+import {
+  catchUpWords, dateTimeWords, jobScheduleWords, lowerFirst, scheduleSignFor, scheduledWords, sectionThisRunWords, skippedWords, startedAuditWords, startedWords, triesTailWords, SCHEDULE_WORDS,
+} from '../schedulewords.js';
+import { doorWaiting, heldScheduled } from '../reviewdoor.js';
 import { createAuthorRoutes, mintToken, checkHostGuard, panelMoney2 } from './authorroutes.js';
 import { createRunRoutes } from './runroutes.js';
 import { createImportRoutes, readImports, bundleStatus, IMPORT_CHANGED_LINE } from './importroutes.js';
 import { parseImportedRunId, safeSpinePath, spineStartedAt } from './importrun.js';
 import { checkBundleDeps, resolveBundleSpec } from '../bundle.js';
 import { checkCloseByteSignature } from '../close-integrity.js';
-import { keysHome } from '../keysfile.js';
+import { keysHome, keysForDoor } from '../keysfile.js';
 import { rowsForHome, findRow, modelChoiceFor, tickedLines, endpointOf } from '../providerrows.js';
 import { SHAPES } from '../providershapes.js';
 import { resolveProvider } from '../providers.js';
-import { REUSE_LOCKED_FIELDS, REUSE_OPEN_FIELDS } from './authorsession.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
 import { statusFor, partStatusFor, GOAL_MET_LINE } from './status.js';
 import { createSettingsRoutes } from './settingsroutes.js';
@@ -420,7 +426,7 @@ const GOAL_NOT_MET = new Set(['plan-red', 'check-red', 'step-red', 'escalated'])
  *
  * The table (outcome → reason / next / buttons) is PANEL-BUILD.md P5 item 1. The
  * Resume button appears only when `o.resume` says the engine would accept it; "Reuse workflow"
- * (replaces P5 item 3, 2026-10-03) is offered on green rows only, and starts a NEW run.
+ * (replaces P5 item 3, 2026-10-03; one door on every ending since 2026-10-15) starts a NEW run.
  * @param {{outcome: string|null, stopReason: string|null, spentUsd: number|null, budgetUsd: number|null, lastEscalation?: any}} summary
  * @param {{died: boolean, lastThing: string|null}} death
  * @param {{resume?: {ok: boolean, why?: string}|null, destinationRefused?: string|null, moneyHalt?: boolean,
@@ -429,7 +435,7 @@ const GOAL_NOT_MET = new Set(['plan-red', 'check-red', 'step-red', 'escalated'])
  * @returns {{reason: string, next: string, line: string, actions: {id: string, label: string}[]}|null}
  */
 export function endedFor(summary, death, o = {}) {
-  const base = withEditAction(endedBase(summary, death, o));
+  const base = withReuseAction(endedBase(summary, death, o));
   const wt = o.worktree;
   if (!base || !wt) return base;
   // P6 item 1 — the run worked on a worktree in the person's own repo. GREEN: the branch carries the work (the folder is
@@ -445,13 +451,13 @@ export function endedFor(summary, death, o = {}) {
 }
 
 /**
- * "Edit in chat" (hamr 2026-10-07): offered on EVERY non-green ending (failed, capped, stopped, died, every other red),
- * after Resume when both show; a green ending keeps Reuse workflow only. ONE place, so no ending branch can forget it.
+ * ONE door (hamr 2026-10-15, v1.101): "Reuse workflow" is offered on EVERY ending (green, failed, capped, stopped, died, every other
+ * red), after Resume when both show. ONE place, so no ending branch can forget it.
  * @param {{reason: string, next: string, line: string, actions: {id: string, label: string}[]}|null} ended
  */
-function withEditAction(ended) {
+function withReuseAction(ended) {
   if (!ended || ended.actions.some((a) => a.id === 'reuse')) return ended;
-  return { ...ended, actions: [...ended.actions, { id: 'edit', label: 'Edit in chat' }] };
+  return { ...ended, actions: [...ended.actions, { id: 'reuse', label: 'Reuse workflow' }] };
 }
 
 /** @param {any} summary @param {any} death @param {any} o */
@@ -460,9 +466,9 @@ function endedBase(summary, death, o) {
   /** @type {{id: string, label: string}[]} */
   const RESUME = [{ id: 'resume', label: 'Resume' }];
   /** Reuse workflow (replaces P5 item 3's Start from this, hamr 2026-10-03): the same signed job on a new source — a NEW
-   *  run, never a rerun. Offered on GREEN rows only; every red row says "Change the job: press Edit in chat" instead. */
+   *  run, never a rerun. Offered on GREEN rows only; every red row says "Change the job: press Reuse workflow" instead. */
   const REUSE = [{ id: 'reuse', label: 'Reuse workflow' }];
-  const CHANGE = 'Change the job: press Edit in chat.';
+  const CHANGE = 'Change the job: press Reuse workflow.';
   const detailOf = (/** @type {string|null} */ s) => {
     if (typeof s !== 'string' || s.length === 0) return '';
     return s.length > 120 ? `${s.slice(0, 120)}…` : s;
@@ -519,8 +525,8 @@ function endedBase(summary, death, o) {
 
   if (outcome === 'green' || outcome === 'already-green' || outcome === 'satisfied') {
     if (o.destinationRefused) {
-      // Reuse workflow only on a run that earned its green (hamr 2026-10-08, as below); the rest take Edit in chat
-      // (withEditAction adds it) and are told to change the job, not to reuse it
+      // Reuse workflow only on a run that earned its green (hamr 2026-10-08, as below); every ending offers Reuse workflow
+      // (withReuseAction adds it) and is told to change the job
       const earned = outcome === 'green';
       return {
         reason: 'Goal met, but the output could not be delivered.',
@@ -530,7 +536,7 @@ function endedBase(summary, death, o) {
       };
     }
     // hamr 2026-10-08: already-green (the check passed before any work) is not a reusable job — only a run that
-    // earned its green offers Reuse workflow; the rest take Edit in chat (withEditAction adds it). `satisfied` is a
+    // earned its green offers Reuse workflow; every ending offers Reuse workflow (withReuseAction adds it). `satisfied` is a
     // close VERDICT, never a run outcome (ralph and the job-end emitters write `green`), so it rides with already-green.
     if (outcome !== 'green') return { reason: 'Goal met.', next: CHANGE, line: GOAL_MET_LINE, actions: [] };
     return { reason: 'Goal met.', next: 'Nothing to do.', line: GOAL_MET_LINE, actions: REUSE };
@@ -574,9 +580,19 @@ function endedBase(summary, death, o) {
   if (outcome === 'step-stalled') {
     return {
       reason: 'A step stopped making progress.',
-      next: resumeOr('Resume, or change the job: press Edit in chat.'),
+      next: resumeOr('Resume, or change the job: press Reuse workflow.'),
       line: resumeOk ? 'step stalled — resume' : 'step stalled',
       actions: resumeOk ? RESUME : [],
+    };
+  }
+  // hamr 2026-10-16: a replan answer cut off at its length limit is a bounded failed attempt in plain words, not the
+  // provider's fault and not "the checks said no" (the engine files it as a plan-red escalation with cause 'truncated')
+  if (outcome === 'plan-red' && esc?.cause === 'truncated' && esc?.phase === 'replan') {
+    return {
+      reason: 'The replan answer was cut off at its length limit, so no new plan came back.',
+      next: CHANGE,
+      line: 'replan cut off',
+      actions: [],
     };
   }
   if (GOAL_NOT_MET.has(outcome)) {
@@ -624,6 +640,29 @@ function lastJobEndTs(/** @type {any[]} */ records) {
   return null;
 }
 
+/** the timestamp of the spine's LAST record that carries one, or null (a died run has no job-end: this is when it went quiet) */
+function lastRecordTs(/** @type {any[]} */ records) {
+  for (let i = records.length - 1; i >= 0; i -= 1) {
+    const r = records[i];
+    if (r && typeof r === 'object' && typeof r.ts === 'string') return r.ts;
+  }
+  return null;
+}
+
+/**
+ * A live run's plain "why" for the runs list: `step N of M` (the step it is on, of the plan's steps), or null while no plan is accepted yet
+ * (the card then says only `running`). Same words the Run tab's header uses.
+ * @param {any[]} records @param {any} summary
+ * @returns {string|null}
+ */
+function liveStepWhy(records, summary) {
+  const plan = records.findLast((r) => r && r.type === 'plan-accepted');
+  const total = Array.isArray(plan?.plan?.steps) ? plan.plan.steps.length : 0;
+  if (total === 0) return null;
+  const done = new Set((summary.steps ?? []).filter((/** @type {any} */ u) => u && u.outcome !== null && u.outcome !== undefined && !u.stopReason).map((/** @type {any} */ u) => u.id)).size;
+  return `step ${Math.min(done + 1, total)} of ${total}`;
+}
+
 function endedForRow(row, records, summary, death, withWorktree = false) {
   const out = summary.outcome;
   const maybeResumable = death.died || out === 'escalated' || (typeof out === 'string' && CHECKPOINT_OUTCOMES.includes(out));
@@ -659,6 +698,12 @@ function startingStub(row) {
     via: row.via,
     fileMissing: false,
     starting: true,
+    live: true,
+    liveWhy: null,
+    needs: null,
+    stoppedAt: null,
+    liveSince: typeof row.at === 'string' ? row.at : null,
+    priorWallMs: 0,
     died: false,
     glyph: '▶',
     status: statusFor({ outcome: null }),
@@ -685,18 +730,37 @@ function startingStub(row) {
 }
 
 /**
+ * RULED 2026-10-15 (Remove from Needs you): the ONE place a run's Needs-you state is decided. `Accept` (a live door) is never removable and never ages out.
+ * A `Resume` tag leaves when the person removed it AFTER (or at) the stop it is for — a removal covers only the ending it was made on, so a later stop
+ * brings the run back — or after `needsYouDays`. `removedMs` is the newest removal that covers the current ending (or null), `expired` is true when only
+ * the age rule took a Resume run out.
+ * @param {{live: boolean, records: any[], resume: {ok?: boolean}|null|undefined, stoppedAt: string|null, nowMs: number, removedMs?: number}} f
+ * @returns {{needs: 'Accept'|'Resume'|null, removedMs: number|null, expired: boolean}}
+ */
+export function needsStateFor(f) {
+  if (!f.live && doorWaiting(f.records, { now: () => f.nowMs })) return { needs: 'Accept', removedMs: null, expired: false };
+  const stopMs = typeof f.stoppedAt === 'string' ? Date.parse(f.stoppedAt) : NaN;
+  const covers = typeof f.removedMs === 'number' && (!Number.isFinite(stopMs) || f.removedMs >= stopMs);
+  const tag = needsTag(f.resume, f.stoppedAt, f.nowMs);
+  const canResume = !f.live && !!f.resume && f.resume.ok === true;
+  if (covers && canResume) return { needs: null, removedMs: /** @type {number} */ (f.removedMs), expired: false };
+  return { needs: tag, removedMs: null, expired: canResume && tag === null };
+}
+
+/**
  * One `/api/runs` row, or `{ ...row, fileMissing: true }` when the row's
  * spine no longer exists on disk — never silently listed as if it were
  * still there (the same rule {@link import('../runlist.js').formatRunRow}
  * already applies to the CLI's own listing).
  * @param {import('../runlist.js').RunRow} row
+ * @param {number} [nowMs] @param {Map<string, number>} [removals] `readNeedsRemovals`: when each run was taken out of Needs you
  * @returns {any}
  */
-function summarizeRow(row) {
+function summarizeRow(row, nowMs = Date.now(), removals = undefined) {
   if (!existsSync(row.spine)) {
     if (runIsAlive(row)) return startingStub(row);
     return {
-      runid: row.runid, job: row.job, at: row.at, via: row.via, fileMissing: true,
+      runid: row.runid, job: row.job, at: row.at, via: row.via, fileMissing: true, live: false, needs: null, stoppedAt: null,
     };
   }
   let summary;
@@ -707,17 +771,33 @@ function summarizeRow(row) {
   } catch (e) {
     return {
       runid: row.runid, job: row.job, at: row.at, via: row.via, fileMissing: false, readError: String(/** @type {Error} */ (e).message),
+      live: false, needs: null, stoppedAt: null,
     };
   }
   const line = summarizeForAllLine(summary);
   const death = deriveDeath(row, rawRecords, summary.outcome);
-  const { ended, status } = endedForRow(row, rawRecords, summary, death);
+  const { ended, status, resume } = endedForRow(row, rawRecords, summary, death);
+  // P9 v2: the server decides every state the runs list draws (the page works out nothing).
+  const live = !death.died && (summary.outcome === null || summary.outcome === undefined) && runIsAlive(row);
+  const stoppedAt = live ? null : (lastJobEndTs(rawRecords) ?? (death.died ? lastRecordTs(rawRecords) : null));
+  const legs = legsOf(rawRecords);
+  const priorWall = legs.length <= 1 ? { ms: 0, complete: true } : legsWallMs(legs.slice(0, -1));
+  const liveStart = live ? legs.at(-1)?.startMs ?? null : null;
   return {
     runid: row.runid,
     job: row.job,
     at: row.at,
     via: row.via,
     fileMissing: false,
+    live,
+    liveWhy: live ? liveStepWhy(rawRecords, summary) : null,
+    // a run waiting at its review door needs the person's Accept (never ages out, T10); else the Resume rule
+    needs: needsStateFor({ live, records: rawRecords, resume, stoppedAt, nowMs, removedMs: removals ? removals.get(row.runid) : undefined }).needs,
+    stoppedAt,
+    // a live run's wall counts up from the start of its CURRENT leg; earlier legs add `priorWallMs` (the gap between legs is nobody's).
+    // `priorWallMs` is null when the earlier legs' wall is not exact: the card then shows this leg's wall only, and says so.
+    liveSince: liveStart === null ? (live && typeof row.at === 'string' ? row.at : null) : new Date(liveStart).toISOString(),
+    priorWallMs: live ? (priorWall.complete ? priorWall.ms : null) : null,
     died: death.died,
     endedLine: ended ? ended.line : null,
     // P5-R: one card per run — how many times it was resumed (a resumed run is the same run, never a second card)
@@ -785,6 +865,21 @@ export function getStopContext(runid, opts = {}) {
 }
 
 /**
+ * The Remove-from-Needs-you route's reader (RULED 2026-10-15): the listed row and the Needs-you tag the runs list shows for it right now
+ * (`summarizeRow`, the one rule). `null` when the runid is not listed.
+ * @param {string} runid
+ * @param {{ home?: string, now?: number }} [opts]
+ * @returns {{row: any, needs: 'Accept'|'Resume'|null}|null}
+ */
+export function getNeedsContext(runid, opts = {}) {
+  const { rows } = readRunList(opts);
+  const row = rows.find((r) => r && r.runid === runid);
+  if (!row) return null;
+  const nowMs = typeof opts.now === 'number' ? opts.now : Date.now();
+  return { row, needs: summarizeRow(row, nowMs, readNeedsRemovals(opts)).needs ?? null };
+}
+
+/**
  * @param {any} r
  * @returns {number}
  */
@@ -818,6 +913,57 @@ function runNumbers(rows) {
   return out;
 }
 
+/** The named limits of the runs list, in ONE place (P9 v2 D.13): quiet after 30 days, 7 older runs shown, a Resume tag ages out after 7 days. Sent in `GET /api/runs`; the page reads them from there. */
+export const RUNS_LIST_LIMITS = Object.freeze({ quietDays: 30, olderRuns: 7, needsYouDays: 7 });
+
+/**
+ * The ONE rule for a run's Needs-you tag (P9 v2 E): `Resume` when the engine would accept a resume (the SAME `resumePlanFor` answer the Run
+ * tab's Resume card shows, already asked once per row by `endedForRow`), until the run has been stopped `needsYouDays` (exactly that old is out;
+ * no readable stop time stays in). `Accept` comes from {@link doorWaiting} (T Part 8), asked in `summarizeRow`, never here.
+ * @param {{ok?: boolean}|null|undefined} resume @param {string|null} stoppedAt @param {number} nowMs
+ * @returns {'Accept'|'Resume'|null}
+ */
+export function needsTag(resume, stoppedAt, nowMs) {
+  if (!resume || resume.ok !== true) return null;
+  const t = typeof stoppedAt === 'string' ? Date.parse(stoppedAt) : NaN;
+  if (Number.isFinite(t) && nowMs - t >= RUNS_LIST_LIMITS.needsYouDays * 86_400_000) return null;
+  return 'Resume';
+}
+
+/**
+ * One entry per job, newest activity first: `headRunid` is the job's newest run BY TIME (never "the first row in server order"), `activityMs` the
+ * newest KNOWN time over its runs (`stoppedAt`, else `at`), `quiet` only when that time is known and older than the quiet limit. A job with a live
+ * run is never quiet; an unknown age is never guessed into quiet.
+ * @param {any[]} rows `listRuns` rows @param {number} nowMs
+ * @returns {{job: string, headRunid: string|null, quiet: boolean, activityMs: number|null}[]}
+ */
+export function summarizeJobs(rows, nowMs) {
+  /** @type {Map<string, {head: any, headMs: number, act: number|null, live: boolean}>} */
+  const by = new Map();
+  const ms = (/** @type {any} */ x) => { const t = typeof x === 'string' ? Date.parse(x) : NaN; return Number.isFinite(t) ? t : null; };
+  for (const r of rows) {
+    if (!r || typeof r.job !== 'string') continue;
+    const e = by.get(r.job) ?? { head: null, headMs: -Infinity, act: null, live: false };
+    const at = ms(r.at);
+    if (e.head === null || (at !== null && at > e.headMs)) { e.head = r; e.headMs = at ?? -Infinity; }
+    const t = Math.max(at ?? -Infinity, ms(r.stoppedAt) ?? -Infinity);
+    if (t > -Infinity && (e.act === null || t > e.act)) e.act = t;
+    if (r.live === true) e.live = true;
+    by.set(r.job, e);
+  }
+  const quietMs = RUNS_LIST_LIMITS.quietDays * 86_400_000;
+  return [...by.entries()]
+    .map(([job, e]) => ({ job, headRunid: e.head ? e.head.runid : null, quiet: !e.live && e.act !== null && nowMs - e.act > quietMs, activityMs: e.act }))
+    .sort((a, b) => {
+      if (a.activityMs !== b.activityMs) {
+        if (a.activityMs === null) return 1;
+        if (b.activityMs === null) return -1;
+        return b.activityMs - a.activityMs;
+      }
+      return a.job < b.job ? -1 : a.job > b.job ? 1 : 0;
+    });
+}
+
 /**
  * `GET /api/runs` — every listed run, NEWEST FIRST BY `at` (never by file/
  * append order — a backfill scan appends rows in sorted-PATH order, which
@@ -831,16 +977,38 @@ function runNumbers(rows) {
  * SAME payload by job client-side (`groupRunsByJob` in `index.html`) rather
  * than a second server-side endpoint, so the glyph/checkType mapping is
  * still computed in exactly one place.
- * @param {{ home?: string }} [opts]
+ * @param {{ home?: string, now?: number }} [opts] `now` (ms) is injectable for the Needs-you age rule
  * @returns {any[]}
  */
 export function listRuns(opts = {}) {
   const { rows } = readRunList(opts);
+  const nowMs = typeof opts.now === 'number' ? opts.now : Date.now();
   const nos = runNumbers(rows);
+  const removals = readNeedsRemovals(opts);
   return rows
     .map((row, index) => ({ row, index })) // index: stable tie-break, see doc above
     .sort((a, b) => (atMs(b.row) - atMs(a.row)) || (a.index - b.index))
-    .map(({ row }) => ({ ...summarizeRow(row), runNo: nos.get(row.runid) }));
+    .map(({ row }) => ({ ...summarizeRow(row, nowMs, removals), runNo: nos.get(row.runid) }));
+}
+
+/**
+ * `GET /api/runs` (P9 v2 F): `{runs, jobs, limits}`. The server decides every state the left list draws — `live`, `needs`, each job's head run and
+ * quiet flag, the limits — and the page works out nothing. `scheduled` is the triggers piece (PRD v1.99, T Part 7).
+ * @param {{ home?: string, now?: number, schedules?: ReturnType<typeof createScheduleDoor> }} [opts]
+ */
+export function runsListPayload(opts = {}) {
+  const nowMs = typeof opts.now === 'number' ? opts.now : Date.now();
+  const runs = listRuns({ ...opts, now: nowMs });
+  const jobs = summarizeJobs(runs, nowMs);
+  // T Part 7: the Scheduled section, `[{job, at, in, words, runId}]`; runId = the job's HEAD run by time (summarizeJobs), never the first in server order
+  const scheduled0 = opts.schedules ? opts.schedules.listScheduled(new Map(jobs.map((j) => [j.job, j.headRunid]))) : [];
+  // RULED 2026-10-15: schedules that gave up wait in Needs you; the server builds the cards (job, pill, words, date, the head run to open)
+  const gaveUp0 = opts.schedules ? opts.schedules.listGaveUp(new Map(jobs.map((j) => [j.job, j.headRunid]))) : [];
+  // RULED 2026-10-15: both cards name the run they open (`job · run-N`), the number from the run list
+  const noOf = (/** @type {any} */ x) => { const r = runs.find((q) => q.runid === x.runId); return r && typeof r.runNo === 'number' ? { ...x, runNo: r.runNo } : x; };
+  const gaveUp = gaveUp0.map(noOf);
+  const scheduled = scheduled0.map(noOf);
+  return { runs, jobs, scheduled, gaveUp, limits: RUNS_LIST_LIMITS };
 }
 
 /**
@@ -881,25 +1049,138 @@ function findRunRow(runid, opts) {
 }
 
 /**
+ * T Part 7 — `detail.schedule`: `{scheduled, canSchedule, words, text?, next?, nextRed?}` from the schedule door's ONE read of the
+ * schedule files and ledger (A.12). `waitingRunNo` = the job's NEWEST run when it waits for the person's Accept: ONE spine parse,
+ * never a run context per run. A job that cannot be read has no schedule block.
+ * @param {string} job @param {any[]} rows the run list @param {Map<string, number>} nos @param {{ schedules?: ReturnType<typeof createScheduleDoor> }} opts
+ */
+function scheduleDetailFor(job, rows, nos, opts) {
+  try {
+    const door = /** @type {ReturnType<typeof createScheduleDoor>} */ (opts.schedules);
+    let newest = null;
+    for (const r of rows) if (r && r.job === job && (newest === null || atMs(r) >= atMs(newest))) newest = r;
+    let waitingRunNo = null;
+    if (newest && existsSync(newest.spine) && door.readSchedule(job) && !runIsAlive(newest)) {
+      const records = parseJsonl(newest.spine).records;
+      if (doorWaiting(records)) waitingRunNo = nos.get(newest.runid) ?? null;
+    }
+    return door.view(job, { waitingRunNo });
+  } catch { return null; }
+}
+
+/**
+ * The record `trigger.json` a SCHEDULED start wrote beside its signed spec (why the run started), or null for every hand run.
+ * @param {{ spine: string }} row @returns {any|null}
+ */
+function triggerRecordOf(row) {
+  const near = sourceNearSpine(row.spine);
+  if (!near.specPath) return null;
+  try { return JSON.parse(readFileSync(join(dirname(near.specPath), 'trigger.json'), 'utf8')); } catch { return null; }
+}
+
+/**
+ * T Part 8 — what the Accept route needs: the run's row, whether its runner is alive, whether it waits at its review door
+ * ({@link doorWaiting}), and the signed spec it was judged by (the file and hash `run-u --door --approve` takes).
+ * @param {string} runid @param {{ home?: string }} opts
+ * @returns {{row: any, live: boolean, waiting: boolean, specPath: string|null, specHash: string|null}|null}
+ */
+export function getAcceptContext(runid, opts = {}) {
+  const row = findRunRow(runid, opts);
+  if (!row || row.via === 'import') return null;
+  if (!existsSync(row.spine)) return { row, live: runIsAlive(row), waiting: false, specPath: null, specHash: null };
+  const records = parseJsonl(row.spine).records;
+  const signed = signedSpecForRun(row, records);
+  return { row, live: runIsAlive(row), waiting: doorWaiting(records), specPath: signed ? signed.specPath : null, specHash: signed ? signed.specHash : null };
+}
+
+/**
  * `GET /api/runs/:runid` — the full replay for the Run tab: steps (or
  * iterations), counters, summary-box fields. Looks `runid` up in the run
  * list FIRST and reads only the path stored there (path safety — see file
  * header); `null` when the runid is not in the list at all (caller renders
  * 404).
  * @param {string} runid
- * @param {{ home?: string }} [opts]
+ * @param {{ home?: string, schedules?: ReturnType<typeof createScheduleDoor> }} [opts]
  * @returns {any|null}
  */
 export function getRunDetail(runid, opts = {}) {
   const d = getRunDetailBody(runid, opts);
   if (!d) return d;
-  const runNo = runNumbers(readRunList(opts).rows).get(runid);
-  return runNo === undefined ? d : { ...d, runNo };
+  const { rows } = readRunList(opts);
+  const nos = runNumbers(rows);
+  const runNo = nos.get(runid);
+  // T Part 7: what the Run tab shows of the job's schedule — the SERVER decides every state and word (the page works out nothing)
+  const schedule = opts.schedules && typeof d.job === 'string' ? scheduleDetailFor(d.job, rows, nos, opts) : null;
+  const extra = opts.schedules && typeof d.job === 'string' ? scheduleExtrasFor(runid, d.job, rows, nos, opts, schedule) : {};
+  return { ...d, ...(runNo === undefined ? {} : { runNo }), ...(schedule ? { schedule: extra.schedule ?? schedule } : {}), ...(extra.audit ?? {}) };
+}
+
+/**
+ * Aligned with fwdloop M9 am7: the SCHEDULE row's second line and the Audit's schedule rows, made on the server from the door's data.
+ * `schedule` = the door's view with `line2`, `problem` (and no raw ledger row); `audit` = `{scheduleSection}` or, for a run a cancelled schedule started, `{startedAudit}`.
+ * @param {string} runid @param {string} job @param {any[]} rows @param {Map<string, number>} nos @param {any} opts @param {any} view
+ * @returns {{schedule?: any, audit?: {startedAudit?: string, scheduleSection?: any}}}
+ */
+function scheduleExtrasFor(runid, job, rows, nos, opts, view) {
+  try {
+    const door = /** @type {ReturnType<typeof createScheduleDoor>} */ (opts.schedules);
+    /** @type {any} */
+    let schedule;
+    if (view) {
+      const { lastRow, nextWords, accept, ...rest } = view;
+      schedule = { ...rest, line2: null };
+      if (view.scheduled) {
+        let lastWords = null;
+        if (lastRow) {
+          if (lastRow.kind === 'started') {
+            const mine = rows.filter((r) => r && r.job === job).sort((a, b) => atMs(b) - atMs(a)).slice(0, 25);
+            let hit = null; let fallback = null;
+            for (const r of mine) {
+              const rec = triggerRecordOf(r);
+              if (!rec) continue;
+              if (fallback === null) fallback = { r, rec };
+              if (rec.sessionId && rec.sessionId === lastRow.sessionId) { hit = { r, rec }; break; }
+            }
+            const got = hit ?? fallback;
+            const no = got ? nos.get(got.r.runid) : undefined;
+            const word = got ? summarizeRow(got.r).status?.word : undefined;
+            lastWords = `last ${dateTimeWords(Number(lastRow.at))}${no ? ` · run-${no}` : ''}${word ? ` · ${word}` : ''}${got?.rec.catchUp === true ? ' · catch-up' : ''}`;
+          } else {
+            lastWords = `last ${dateTimeWords(Number(lastRow.at))} · ${skippedWords(lastRow, true)}`;
+          }
+        }
+        schedule.line2 = [lastWords ?? 'no run yet', accept ? SCHEDULE_WORDS.acceptWaiting : null, nextWords].filter(Boolean).join(' · ');
+      }
+    }
+    const row = rows.find((r) => r && r.runid === runid);
+    const rec = row ? triggerRecordOf(row) : null;
+    const cur = door.readSchedule(job);
+    if (!cur) {
+      // no schedule now: a run a cancelled schedule started keeps its one old line; a hand run has nothing
+      const origin = rec ? (rec.originRunid ?? null) : null;
+      return { ...(schedule ? { schedule } : {}), audit: rec ? { startedAudit: startedAuditWords(rec, origin ? (nos.get(origin) ?? null) : null) } : {} };
+    }
+    // RULED 2026-10-15 (v1.104): ONE `schedule` section on every run of a job that has a schedule now, folded when the page opens
+    const originNo = nos.get(cur.originRunid) ?? null;
+    const tries = door.skippedFor(job);
+    const running = rows.some((r) => r && r.job === job && r.via !== 'import' && runIsAlive(r));
+    const { sign } = scheduleSignFor({ running, red: !!(view && view.problem) });
+    const words = scheduledWords(cur.trigger, door.userHome);
+    const head = [lowerFirst(words ?? ''), originNo === null ? null : `from run-${originNo}`, triesTailWords(tries.length) || null].filter(Boolean).join(' · ');
+    const when = row ? dateTimeWords(atMs(row)) : '';
+    const thisRun = rec ? sectionThisRunWords(rec) : `by hand.${runid === cur.originRunid ? ' The schedule was set from this run.' : ''}`;
+    const shown = tries.slice(0, 7).map((x, i) => ({ label: i === 0 ? 'tries' : '', text: x.line }));
+    const scheduleSection = {
+      title: SCHEDULE_WORDS.scheduleGroup, sign, head,
+      rows: [{ label: 'this run', text: `${when}  ${thisRun}` }, ...(shown.length > 0 ? shown : [{ label: 'tries', text: 'none' }])],
+    };
+    return { ...(schedule ? { schedule } : {}), audit: { scheduleSection } };
+  } catch { return {}; }
 }
 
 /**
  * @param {string} runid
- * @param {{ home?: string }} opts
+ * @param {{ home?: string, now?: number }} opts
  * @returns {any|null}
  */
 function getRunDetailBody(runid, opts) {
@@ -1091,6 +1372,12 @@ function getRunDetailBody(runid, opts) {
     // numbers the Resume confirm box prefills (the signed caps, spent so far); `null`
     // whenever Resume is not offered.
     ended,
+    // aligned with fwdloop M9 am7: `MM/DD HH:MM · <outcome word> · <reason>` (local end time); null while the run is live
+    endedText: (() => {
+      const ts = lastJobEndTs(rawSpineRecords) ?? (death.died ? lastRecordTs(rawSpineRecords) : null);
+      const ms = ts === null ? NaN : Date.parse(ts);
+      return ended && Number.isFinite(ms) ? `${dateTimeWords(ms)} · ${status.word} · ${ended.reason}` : null;
+    })(),
     // P5 item 5: is the run's LATEST leg live (the page offers Stop only then), and has a stop been asked for
     // (the request file exists beside the spine) — the page reads "stopping after this turn…" until the leg ends
     live: row.via !== 'import' && runIsAlive(row),
@@ -1175,6 +1462,25 @@ function getRunDetailBody(runid, opts) {
     // `memory-cache` record at all (never armed on this run).
     behaviour: scopedBehaviour(row, rawSpineRecords),
     memoryCache: summary.memoryCache,
+    // T Part 8: is this run waiting for the person's Accept? The SAME answer fills the runs list's Needs-you tag (`doorWaiting`, one owner)
+    accept: !runIsAlive(row) && doorWaiting(rawSpineRecords),
+    // T Part 7: why a SCHEDULED run started (the words `trigger.json` carried) and the fixed catch-up sentence; null on every hand run
+    ...(() => {
+      const trig = triggerRecordOf(row);
+      return { startedBy: trig && typeof trig.reason === 'string' ? trig.reason : null, catchUp: catchUpWords(trig) };
+    })(),
+    // RULED 2026-10-15 (Remove from Needs you): the server says whether the button shows (a Resume card only, never a live Accept) and the Audit line
+    ...(() => {
+      const nowMs = typeof opts.now === 'number' ? opts.now : Date.now();
+      const live = !death.died && (summary.outcome === null || summary.outcome === undefined) && runIsAlive(row);
+      const stoppedAt = live ? null : (lastJobEndTs(rawSpineRecords) ?? (death.died ? lastRecordTs(rawSpineRecords) : null));
+      const st = needsStateFor({ live, records: rawSpineRecords, resume, stoppedAt, nowMs, removedMs: readNeedsRemovals(opts).get(row.runid) });
+      /** @type {string|null} */
+      let needsAudit = null;
+      if (st.removedMs !== null) needsAudit = `removed from Needs you by you · ${dateTimeWords(st.removedMs)}`;
+      else if (st.expired) needsAudit = `removed from Needs you after ${RUNS_LIST_LIMITS.needsYouDays} days`;
+      return { canRemoveFromNeeds: st.needs === 'Resume', needsAudit };
+    })(),
   };
 }
 
@@ -1965,6 +2271,15 @@ function stageKindMetaFromSpec(spec) {
 }
 
 /**
+ * Stage name to the panel's plain question, off a signed spec — the SAME owner ({@link stageKindMetaFromSpec}) the step map and Audit use.
+ * @param {any} spec
+ * @returns {Map<string, string|null>}
+ */
+function stageQuestionsOfSpec(spec) {
+  return new Map([...(stageKindMetaFromSpec(spec) ?? new Map())].map(([n, m]) => [n, m.question]));
+}
+
+/**
  * Attaches one stage's `{kind, direction, baselineKind, question}` (from
  * {@link stageKindMetaFromSpec}'s map) onto its already-recorded runtime
  * shape (`{name, verdict, value?, baseline?, …}`, straight off the spine) —
@@ -2185,10 +2500,33 @@ function jobsDir() {
  * from the resolved SPEC only (a) (b) (c) — a job-start record and `none()`
  * carry no close/writeScope/tools at all, so those stay `'not recorded'`.
  * @param {string} runid
- * @param {{ home?: string }} [opts]
+ * @param {{ home?: string, schedules?: ReturnType<typeof createScheduleDoor> }} [opts]
  * @returns {any|null}
  */
 export function getRunJob(runid, opts = {}) {
+  const body = getRunJobBody(runid, opts);
+  if (!body || !opts.schedules) return body;
+  try {
+    const door = /** @type {ReturnType<typeof createScheduleDoor>} */ (opts.schedules);
+    const { rows } = readRunList(opts);
+    const row = rows.find((r) => r && r.runid === runid);
+    const job = row ? row.job : body.job;
+    const nos = runNumbers(rows);
+    const cur = door.readSchedule(job);
+    const started = startedWords(row ? triggerRecordOf(row) : null, row ? atMs(row) : null);
+    const spec = cur ? cur.spec : null;
+    const schedule = jobScheduleWords({
+      trigger: cur ? cur.trigger : null, originNo: cur ? (nos.get(cur.originRunid) ?? null) : null,
+      model: spec && typeof spec.model === 'string' ? spec.model : null,
+      destination: cur ? (typeof cur.destination === 'string' && cur.destination !== '' ? cur.destination : (Array.isArray(spec?.writeScope) ? spec.writeScope.join(', ') : null)) : null,
+      home: door.userHome,
+    });
+    return { ...body, started, schedule };
+  } catch { return body; }
+}
+
+/** @param {string} runid @param {{ home?: string }} opts */
+function getRunJobBody(runid, opts) {
   const row = findRunRow(runid, opts);
   if (!row) return null;
 
@@ -2497,14 +2835,14 @@ export function reuseLine(record) {
 
 /**
  * `start-from` (the route keeps its name) for one listed run: the card prefilled from the run's SIGNED job, which
- * boxes are locked and which are open, and the track record. Locked boxes carry the signed values, read by the
+ * the track record (v1.101: nothing is locked, every box is open). The job boxes carry the signed values, read by the
  * SAME readers the Job tab uses (`successFromSpec`/`guardrailsFromSpec`); the open four — Source, Destination, the
  * $ cap and the Time cap — start at what the run had. `ok:false` when the run's signed job is not on disk (nothing
  * to copy: change the job: Clear the card). `null` when the runid is not listed.
  * @param {string} runid
  * @param {{ home?: string, model?: string, provider?: string }} [opts] `model` = the Model box's current Name (the estimate counts only runs on that worker); absent = the card's own Model
  * @returns {{ok: true, origin: {runid: string, job: string}, outcome: string|null, card: Record<string, any>, from: 'signed job',
- *   locked: readonly string[], open: readonly string[], note: string|null,
+ *   note: string|null,
  *   specHash: string, workflowKey: string, spec: any, specPath: string, specNamesModel: boolean,
  *   specWorker: {provider: string, endpoint: string, label: string},
  *   trackRecord: ReturnType<typeof trackRecordFor>, line: string}|{ok: false, error: string}|null}
@@ -2537,6 +2875,9 @@ export function getStartFrom(runid, opts = {}) {
     source: typeof saved.source === 'string' && saved.source ? saved.source : (typeof manifest?.source === 'string' ? manifest.source : (typeof row.patient === 'string' ? row.patient : '')),
     // a card saved by P7 or later keeps the Inputs text the person typed
     inputs: typeof saved.inputs === 'string' && saved.inputs ? saved.inputs : '',
+    // a plain-files job delivers to an absolute folder the SPEC does not hold (its fence is `output/` inside the run's tree): the
+    // Destination opens with the folder the origin run was given, never with that fence
+    destination: [saved.destination, manifest?.destination].find((d) => typeof d === 'string' && /^(\/|[a-zA-Z]:[\\/])/.test(d)) ?? '',
     jobName: row.job,
   });
   const key = workflowKey(spec);
@@ -2544,12 +2885,14 @@ export function getStartFrom(runid, opts = {}) {
   return {
     ok: true,
     origin: { runid, job: row.job },
-    // the run's terminal outcome — the Reuse start (POST /api/author/start) refuses anything but a real green
-    outcome: legsOf(records).at(-1)?.outcome ?? null,
+    // the run's terminal outcome — the Reuse start (POST /api/author/start) reuses a green or already-green run only.
+    // T D.2: a SCHEDULED run's green reads `green-held` until the person accepts it, so that same refusal holds it unchanged
+    outcome: (() => {
+      const o = legsOf(records).at(-1)?.outcome ?? null;
+      return o === 'green' && heldScheduled(records, triggerRecordOf(row)) ? 'green-held' : o;
+    })(),
     card,
     from: 'signed job',
-    locked: REUSE_LOCKED_FIELDS,
-    open: REUSE_OPEN_FIELDS,
     note: Array.isArray(spec.jobLines) && spec.jobLines.length ? null : 'older job — numbered lines were not saved',
     specHash: signed.specHash,
     workflowKey: key,
@@ -2566,6 +2909,29 @@ export function getStartFrom(runid, opts = {}) {
     trackRecord,
     line: reuseLine(trackRecord),
   };
+}
+
+/**
+ * T Part 3: a job's listed runs, newest first, each with its signed spec (null when not on disk), its terminal outcome and
+ * its parsed spine. The schedule door's gate (`greenFor`) reads this; nothing here builds a run context.
+ * @param {string} job
+ * @param {{ home?: string }} [opts]
+ * @returns {{runid: string, outcome: string|null, spec: any, records: any[]}[]}
+ */
+export function jobRunsOf(job, opts = {}) {
+  const { rows } = readRunList(opts);
+  /** @type {{runid: string, outcome: string|null, spec: any, records: any[]}[]} */
+  const out = [];
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    const row = rows[i];
+    if (!row || row.job !== job || !existsSync(row.spine)) continue;
+    let records;
+    try { records = parseJsonl(row.spine).records; } catch { continue; }
+    const outcome = legsOf(records).at(-1)?.outcome ?? null;
+    // T D.2: a scheduled run's green is HELD until accepted, so it is not a good run for the schedule gate either
+    out.push({ runid: row.runid, outcome: outcome === 'green' && heldScheduled(records, triggerRecordOf(row)) ? 'green-held' : outcome, spec: signedSpecForRun(row, records)?.spec ?? null, records });
+  }
+  return out;
 }
 
 /**
@@ -2587,9 +2953,9 @@ export function listReuseJobs(opts = {}) {
     let records;
     try { records = parseJsonl(row.spine).records; } catch { continue; }
     const outcome = legsOf(records).at(-1)?.outcome ?? null;
-    // only a REAL green (hamr 2026-10-08): `already-green` means the check passed before any work, so there is nothing to reuse
-    // (src/reuse.js 'green-predates-run'). Narrower than the Run tab's Reuse button on purpose.
-    if (outcome !== 'green') continue;
+    // a real green or an already-green (hamr 2026-10-15: if it is already fixed and nothing is to be done, it is green and can be reused)
+    if (outcome !== 'green' && outcome !== 'already-green') continue;
+    if (heldScheduled(records, triggerRecordOf(row))) continue; // T D.2: a scheduled green waits for the person's Accept
     const signed = signedSpecForRun(row, records);
     if (!signed) continue;
     const key = workflowKey(signed.spec);
@@ -2606,7 +2972,7 @@ export function listReuseJobs(opts = {}) {
  * The reuse card for a signed spec: locked boxes from the spec through the Job tab's own readers, open boxes from
  * the spec's own fence and caps (Source and the saved text from the caller — a spec carries neither).
  * @param {any} spec
- * @param {{model: string, source: string, inputs?: string, jobName: string}} extra `inputs` = the Inputs text the person saved (else built from the spec's inputs, else `repo: <source>`)
+ * @param {{model: string, source: string, inputs?: string, jobName: string, destination?: string}} extra `destination` = an absolute per-run folder (a plain-files job), else the spec's fence; `inputs` = the Inputs text the person saved (else built from the spec's inputs, else `repo: <source>`)
  * @returns {Record<string, any>}
  */
 function reuseCardFromSpec(spec, extra) {
@@ -2616,8 +2982,9 @@ function reuseCardFromSpec(spec, extra) {
     checkType: spec.verdictType === 'soft-green' ? 'rubric' : 'deterministic',
     model: typeof spec.model === 'string' && spec.model && !extra.model ? spec.model : extra.model,
     jobText: jobTextFromSpec(spec),
+    thinking: spec.thinking === true,
     inputs: extra.inputs || inputsTextFromSpec(spec, extra.source),
-    destination: writeScope.join(', '),
+    destination: extra.destination || writeScope.join(', '),
     capUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
     maxWallMs: typeof spec.maxWallMs === 'number' ? spec.maxWallMs : undefined,
   };
@@ -2656,7 +3023,7 @@ function describeSpec(spec) {
  * @param {string} id
  * @param {{ home?: string, model?: string, provider?: string }} [opts] `model` as for {@link getStartFrom}
  * @returns {{ok: true, origin: {runid: null, job: string, importId: string}, card: Record<string, any>, from: 'imported job',
- *   locked: readonly string[], open: readonly string[], note: string|null, specHash: string, workflowKey: string, spec: any,
+ *   note: string|null, specHash: string, workflowKey: string, spec: any,
  *   specPath: null, trackRecord: ReturnType<typeof trackRecordFor>, line: string}|{ok: false, error: string}|null}
  */
 export function getStartFromImport(id, opts = {}) {
@@ -2682,8 +3049,6 @@ export function getStartFromImport(id, opts = {}) {
     origin: { runid: null, job: row.job, importId: id },
     card,
     from: 'imported job',
-    locked: REUSE_LOCKED_FIELDS,
-    open: REUSE_OPEN_FIELDS,
     note: 'a Source is needed — an exported job carries none; it is checked and signed on this machine',
     specHash: jobSpecHash(spec),
     workflowKey: key,
@@ -2723,7 +3088,7 @@ function sendText(res, code, text) {
  * only `createPanelServer` below always supplies one.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ home?: string, packageJsonPath?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes> }} opts
+ * @param {{ home?: string, packageJsonPath?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
  */
 export function handleRequest(req, res, opts) {
   /** the ONE writable route family for a path, or null — `/api/author/*` (authoring) or
@@ -2732,7 +3097,7 @@ export function handleRequest(req, res, opts) {
   function routesFor(o, p) {
     if (o.authorRoutes && p.startsWith('/api/author')) return o.authorRoutes;
     if (o.settingsRoutes && p.startsWith('/api/settings')) return o.settingsRoutes;
-    if (o.runRoutes && /^\/api\/runs\/[^/]+\/(resume|stop)$/.test(p)) return o.runRoutes;
+    if (o.runRoutes && /^\/api\/runs\/[^/]+\/(resume|stop|accept|needs-remove)$/.test(p)) return o.runRoutes;
     if (o.importRoutes && (p === '/api/fs/list' || p === '/api/imports' || p.startsWith('/api/imports/'))) return o.importRoutes;
     return null;
   }
@@ -2837,7 +3202,7 @@ export function handleRequest(req, res, opts) {
     return;
   }
 
-  if (pathname === '/api/runs') { send(200, { runs: listRuns({ home: opts.home }) }); return; }
+  if (pathname === '/api/runs') { send(200, runsListPayload({ home: opts.home, schedules: opts.schedules })); return; }
 
   const runMatch = /^\/api\/runs\/([^/]+)(\/(audit|job|rounds))?$/.exec(pathname);
   if (runMatch) {
@@ -2856,7 +3221,7 @@ export function handleRequest(req, res, opts) {
       return;
     }
     if (sub === 'job') {
-      const result = getRunJob(runid, { home: opts.home });
+      const result = getRunJob(runid, { home: opts.home, schedules: opts.schedules });
       if (!result) { sendText(res, 404, 'no such run'); return; }
       send(200, result);
       return;
@@ -2875,7 +3240,7 @@ export function handleRequest(req, res, opts) {
       send(200, result);
       return;
     }
-    const result = getRunDetail(runid, { home: opts.home });
+    const result = getRunDetail(runid, { home: opts.home, schedules: opts.schedules });
     if (!result) { sendText(res, 404, 'no such run'); return; }
     send(200, result);
     return;
@@ -2903,8 +3268,9 @@ export function handleRequest(req, res, opts) {
  * @param {{ port?: number, home?: string, env?: Record<string,string|undefined>,
  *   sessionsRoot?: string, spawnFn?: (...a: any[]) => any, bareloopBin?: string,
  *   fetchImpl?: typeof fetch, settleMs?: number, userHome?: string,
- *   openFolderSpawn?: (cmd: string, args: string[], o: object) => any, platform?: string, packageJsonPath?: string }} [opts]
- * @returns {Promise<{ server: import('node:http').Server, port: number, token: string, close: () => Promise<void> }>}
+ *   openFolderSpawn?: (cmd: string, args: string[], o: object) => any, platform?: string, packageJsonPath?: string,
+ *   scheduleNow?: () => number, sessionDeps?: Record<string, any>, schedulerIntervalMs?: number, acceptWaitMs?: number }} [opts] `scheduleNow`, `sessionDeps` and `schedulerIntervalMs` are TEST SEAMS (the schedule clock; createSession's stubs; the scheduler's timer, 0 = none)
+ * @returns {Promise<{ server: import('node:http').Server, port: number, token: string, schedules: ReturnType<typeof createScheduleDoor>, scheduler: ReturnType<typeof createScheduler>, close: () => Promise<void> }>}
  */
 export function createPanelServer(opts = {}) {
   const requestedPort = opts.port ?? DEFAULT_PORT;
@@ -2925,10 +3291,14 @@ export function createPanelServer(opts = {}) {
     let runRoutes;
     /** @type {ReturnType<typeof createImportRoutes>|undefined} */
     let importRoutes;
+    /** @type {ReturnType<typeof createScheduler>|undefined} */
+    let scheduler;
+    /** @type {ReturnType<typeof createScheduleDoor>|undefined} */
+    let schedulesRef;
     const server = createServer((req, res) => {
       try {
         handleRequest(req, res, {
-          home, port: boundPort, token, authorRoutes, settingsRoutes, runRoutes, importRoutes, packageJsonPath: opts.packageJsonPath,
+          home, port: boundPort, token, authorRoutes, settingsRoutes, runRoutes, importRoutes, packageJsonPath: opts.packageJsonPath, schedules: schedulesRef,
         });
       } catch (e) {
         sendText(res, 500, `internal error: ${/** @type {Error} */ (e).message}`);
@@ -2942,7 +3312,22 @@ export function createPanelServer(opts = {}) {
     server.listen(requestedPort, '127.0.0.1', () => {
       const addr = server.address();
       boundPort = typeof addr === 'object' && addr !== null ? addr.port : requestedPort;
+      const rowsFor = () => rowsForHome(keysHome(home), keysForDoor({ env: opts.env, keysHome: home }).env);
+      const schedules = createScheduleDoor({
+        home,
+        ...(opts.userHome ? { userHome: opts.userHome } : {}),
+        ...(opts.scheduleNow ? { now: opts.scheduleNow } : {}),
+        sessionsRoot: opts.sessionsRoot,
+        jobRuns: (job) => jobRunsOf(job, { home }),
+        startFrom: (runid) => getStartFrom(runid, { home }),
+        jobOfRun: (runid) => readRunList({ home }).rows.find((r) => r && r.runid === runid)?.job ?? null,
+        rowsFor,
+      });
+      schedulesRef = schedules;
       authorRoutes = createAuthorRoutes({
+        schedules,
+        runJobNames: () => readRunList({ home }).rows.flatMap((r) => (r && typeof r.job === 'string' ? [r.job] : [])),
+        ...(opts.sessionDeps ? { sessionDeps: opts.sessionDeps } : {}),
         port: boundPort,
         token,
         env: opts.env,
@@ -2957,6 +3342,18 @@ export function createPanelServer(opts = {}) {
           listJobs: (o = {}) => listReuseJobs({ home, ...o }),
         },
       });
+      schedules.attachStarter(createStarter({
+        door: schedules, startSession: authorRoutes.startSession, envNow: authorRoutes.envNow, spawnFn: authorRoutes.spawnFn,
+        bareloopBin: authorRoutes.bareloopBin, sessionsRoot: opts.sessionsRoot, home, rowsFor, startFrom: (runid) => getStartFrom(runid, { home }),
+        forgetSession: authorRoutes.forgetHeadless,
+        ...(opts.scheduleNow ? { now: opts.scheduleNow } : {}), // the SAME clock the scheduler reads, so lateMs and startedAt agree with the slot
+        ranSince: (job, sinceMs) => readRunList({ home }).rows.some((r) => r && r.job === job && Date.parse(r.at) >= sinceMs - 1000),
+      }));
+      // T Part 5: the scheduler runs the clock and the folder watch while THIS server is up (panel only, T6); stopped on close
+      scheduler = createScheduler({
+        door: schedules, ...(opts.scheduleNow ? { now: opts.scheduleNow } : {}), ...(opts.schedulerIntervalMs !== undefined ? { intervalMs: opts.schedulerIntervalMs } : {}),
+      });
+      scheduler.start();
       settingsRoutes = createSettingsRoutes({
         port: boundPort, token, home, env: opts.env, fetchImpl: opts.fetchImpl,
         openFolderSpawn: opts.openFolderSpawn, platform: opts.platform,
@@ -2971,6 +3368,10 @@ export function createPanelServer(opts = {}) {
         settleMs: opts.settleMs,
         getResumeContext: (runid) => getResumeContext(runid, { home }),
         getStopContext: (runid) => getStopContext(runid, { home }),
+        getAcceptContext: (runid) => getAcceptContext(runid, { home }),
+        stageQuestionsOfSpec,
+        getNeedsContext: (runid) => getNeedsContext(runid, { home }),
+        ...(opts.acceptWaitMs !== undefined ? { acceptWaitMs: opts.acceptWaitMs } : {}),
       });
       importRoutes = createImportRoutes({
         port: boundPort, token, home, userHome: opts.userHome, describeSpec,
@@ -2979,7 +3380,9 @@ export function createPanelServer(opts = {}) {
         server,
         port: boundPort,
         token,
-        close: () => new Promise((res2) => { server.close(() => res2(undefined)); }),
+        schedules,
+        scheduler: /** @type {ReturnType<typeof createScheduler>} */ (scheduler),
+        close: () => new Promise((res2) => { scheduler?.stop(); server.close(() => res2(undefined)); }),
       });
     });
   });

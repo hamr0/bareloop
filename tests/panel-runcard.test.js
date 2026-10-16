@@ -143,10 +143,22 @@ test('page: a live card reads "$X so far · running Ym" — the SAME strings the
   assert.equal(f.rowWallText(done), '4m00s');
 });
 
+test('page: short-form card money leads the bracket with "drafting" (finished + live, exact + floor); long form unchanged', () => {
+  const f = cardFns();
+  const done = { glyph: '✓', died: false, spentUsd: 0.22, spendComplete: true, spendFloorUsd: null, draftSpentUsd: 0.004, draftSpendComplete: true, wall: '4m00s' };
+  assert.equal(f.rowSpendText(done, true), '$0.22 (drafting <$0.01)');
+  assert.equal(f.rowSpendText(done), '$0.22 (<$0.01 drafting)');
+  const live = { glyph: '▶', died: false, spentUsd: null, spendFloorUsd: 0.75, wallFloorMs: 1000, draftSpentUsd: 0.08, draftSpendComplete: true, wall: 'unknown' };
+  assert.equal(f.rowSpendText(live, true), '$0.75 so far (drafting $0.08)');
+  assert.equal(f.rowSpendText(live), '$0.75 so far ($0.08 drafting)');
+  const liveFloor = { ...live, draftSpendComplete: false };
+  assert.equal(f.rowSpendText(liveFloor, true), '$0.75 so far (drafting at least $0.08)');
+});
+
 test('page: a starting row reads "starting…", and the card/pane have a starting branch', () => {
   const f = cardFns();
   assert.equal(f.rowSpendText({ starting: true, glyph: '▶' }), 'starting…');
-  assert.match(PAGE, /data-testid="hist-starting-/);
+  assert.match(fnSrc('rlRunParts'), /p\.why = "starting…"/);
   assert.match(fnSrc('renderRun'), /if\(detail\.starting\)\{/);
   assert.match(fnSrc('renderRun'), /starting… the run has not written its log yet/);
 });
@@ -161,13 +173,13 @@ test('page: a LIVE run\'s summary headline reads "running <duration>", never the
   // everything renderRun CALLS but this test is not about is a no-op stub; the functions that
   // build the strings under test (money, duration, live phrases, escapeXml) are the page's own
   const stubs = ['buildOrderedBoxes', 'stepNumberIndices'].map((n) => `function ${n}(){return [];}`)
-    .concat(['renderStepMap', 'partResultGlyph', 'partLine1Text', 'toolBreakdownLine', 'modelLine', 'toolsLine', 'cacheLine', 'paintOfferedRow', 'offeredLine', 'renderAuditGroups', 'renderJob', 'applyAuditFilter', 'renderRunActions']
+    .concat(['renderStepMap', 'partResultGlyph', 'partLine1Text', 'toolBreakdownLine', 'modelLine', 'toolsLine', 'cacheLine', 'paintOfferedRow', 'offeredLine', 'renderAuditGroups', 'renderJob', 'applyAuditFilter', 'renderRunActions', 'renderScheduled']
       .map((n) => `function ${n}(){return "";}`)).join('\n');
   // eslint-disable-next-line no-new-func
   const render = new Function('document', `
     var lastEndedSig = null; var lastJobToolsList = null;
     ${stubs}
-    ${['escapeXml', 'runLabel', 'runName', 'glyphClass', 'statusWordHtml', 'fmtLocalDateTime', 'setRunHeader', 'liveStepText', 'runHeaderBody', 'panelMoney', 'panelMoneyWithDraft', 'duration', 'liveSpendText', 'liveWallPhrase', 'realSteps', 'renderEnded', 'renderRun'].map(fnSrc).join('\n')}
+    ${['escapeXml', 'runLabel', 'runName', 'glyphClass', 'dotPulses', 'dotClass', 'statusWordHtml', 'fmtLocalDateTime', 'setRunHeader', 'liveStepText', 'runHeaderBody', 'panelMoney', 'panelMoneyWithDraft', 'duration', 'liveSpendText', 'liveWallPhrase', 'realSteps', 'renderEnded', 'renderRun'].map(fnSrc).join('\n')}
     return renderRun;
   `)(document);
   render({
@@ -187,13 +199,13 @@ test('page: the SUMMARY headline wears the status word from the status table rig
   });
   const document = { getElementById(id) { return els[id] ?? (els[id] = mk(id)); }, createElement() { return mk('c'); } };
   const stubs = ['buildOrderedBoxes', 'stepNumberIndices'].map((n) => `function ${n}(){return [];}`)
-    .concat(['renderStepMap', 'partResultGlyph', 'partLine1Text', 'toolBreakdownLine', 'modelLine', 'toolsLine', 'cacheLine', 'paintOfferedRow', 'offeredLine', 'renderAuditGroups', 'renderJob', 'applyAuditFilter', 'renderRunActions']
+    .concat(['renderStepMap', 'partResultGlyph', 'partLine1Text', 'toolBreakdownLine', 'modelLine', 'toolsLine', 'cacheLine', 'paintOfferedRow', 'offeredLine', 'renderAuditGroups', 'renderJob', 'applyAuditFilter', 'renderRunActions', 'renderScheduled']
       .map((n) => `function ${n}(){return "";}`)).join('\n');
   // eslint-disable-next-line no-new-func
   const render = new Function('document', `
     var lastEndedSig = null; var lastJobToolsList = null;
     ${stubs}
-    ${['escapeXml', 'runLabel', 'runName', 'glyphClass', 'statusWordHtml', 'fmtLocalDateTime', 'setRunHeader', 'liveStepText', 'runHeaderBody', 'panelMoney', 'panelMoneyWithDraft', 'duration', 'liveSpendText', 'liveWallPhrase', 'realSteps', 'renderEnded', 'renderRun'].map(fnSrc).join('\n')}
+    ${['escapeXml', 'runLabel', 'runName', 'glyphClass', 'dotPulses', 'dotClass', 'statusWordHtml', 'fmtLocalDateTime', 'setRunHeader', 'liveStepText', 'runHeaderBody', 'panelMoney', 'panelMoneyWithDraft', 'duration', 'liveSpendText', 'liveWallPhrase', 'realSteps', 'renderEnded', 'renderRun'].map(fnSrc).join('\n')}
     return renderRun;
   `)(document);
   render({

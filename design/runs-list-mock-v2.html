@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Runs list v2 (P9)</title>
+<style>
+  :root{
+    --bg:#1a1b26; --panel:#1f2335; --panel2:#24283b; --border:#292e42; --border-strong:#3b4261;
+    --text:#c0caf5; --text-dim:#a9b1d6; --text-faint:#565f89;
+    --green:#9ece6a; --red:#f7768e; --amber:#e0af68; --grey-dot:#878eac; --magenta:#bb9af7;
+    --accent:#7aa2f7; --rl-accent-bg:rgba(122,162,247,.12); --rl-accent-bg-strong:rgba(122,162,247,.2);
+    font:14px/1.5 "Courier Prime","Courier New",Courier,ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text)}
+  body{padding:16px;overflow-x:hidden}
+  button,input{font:inherit;color:inherit}
+  h1{font-size:18px;margin:0 0 4px}
+  .lead{color:var(--text-dim);font-size:13px;margin:0 0 8px;max-width:900px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(360px,100%),1fr));gap:20px;align-items:start}
+  .vbox{border:1px solid var(--accent);background:var(--panel);padding:12px}
+  .vtag{color:var(--accent);font-weight:700}
+  .why{font-size:12px;color:var(--text-dim)}
+  .diff{font-size:12px;color:var(--text-faint);margin:8px 0 0;padding-left:16px}
+  .side{background:var(--bg);border:1px solid var(--border);padding:8px;max-width:380px}
+  .phone{width:min(390px,100%);border:2px solid var(--border-strong);border-radius:14px;padding:10px;background:var(--bg);margin-top:12px}
+  .phone-cap{font-size:11px;color:var(--text-faint);margin:12px 0 4px}
+
+  /* the panel's own bits */
+  .chips{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px}
+  .chip{padding:3px 7px;min-height:28px;border:1px solid var(--border-strong);background:var(--panel2);font-size:12px;color:var(--text-dim)}
+  .chip[aria-pressed=true]{background:var(--panel);color:var(--accent);border-color:var(--accent);font-weight:700}
+  .search{width:100%;padding:6px 8px;border:1px solid var(--border-strong);background:var(--bg);margin-bottom:8px}
+  .g{font-weight:700;font-size:12px}
+  .g.passed{color:var(--green)} .g.failed,.g.capped,.g.stopped{color:var(--red)} .g.running{color:var(--amber)} .g.died{color:var(--magenta)} .g.waiting{color:var(--grey-dot)}
+  .g.running{animation:pulse 1.2s ease-in-out infinite}
+  @keyframes pulse{50%{opacity:.35}}
+  @media (prefers-reduced-motion:reduce){.g.running{animation:none}}
+  .w{font-weight:700;color:var(--text)}
+
+  /* fwdloop's M11 block (src/panel/index.html:185, 248-277), class names and values as built */
+  .rl-sect{font-size:12px;color:var(--text-dim);font-weight:700;margin:12px 0 6px;}
+  .rl-sect:first-child{margin-top:0;}
+  .rl-card{display:block;width:100%;text-align:left;background:var(--panel2);border:1px solid var(--border);padding:6px 8px;margin:0 0 6px;cursor:pointer;min-height:44px;color:inherit;font:inherit;}
+  div.rl-card{cursor:default;}
+  .rl-card:hover{border-color:var(--accent);background:var(--rl-accent-bg);}
+  div.rl-card:hover{border-color:var(--border);background:var(--panel2);}
+  .rl-card.rl-sel,div.rl-card.rl-sel:hover{border:2px solid var(--accent);border-radius:4px;background:var(--rl-accent-bg-strong);}
+  .rl-card:focus-visible,.rl-fold:focus-visible,.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .rl-card.rl-live{border-color:var(--amber);}
+  .rl-card.rl-need{border-color:var(--accent);}
+  .rl-l1{display:flex;gap:6px;align-items:center;min-width:0;overflow:hidden;}
+  .rl-nm{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+  .rl-rn{color:var(--accent);flex:none;}
+  .rl-l2{display:block;font-size:12px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .rl-faint{color:var(--text-faint);font-size:12px;}
+  .rl-cnt{color:var(--text-faint);font-size:inherit;flex:none;}
+  .rl-runs{margin:6px 0 0 6px;padding-left:8px;border-left:2px solid var(--border);}
+  .rl-runs .rl-card{background:var(--bg);}
+  .rl-runs .rl-card.rl-sel{background:var(--rl-accent-bg-strong);}
+  .rl-fold{background:none;border:0;color:var(--text-dim);font:inherit;font-size:12px;padding:4px 0;cursor:pointer;min-height:32px;}
+  .rl-fold:hover{color:var(--accent);}
+  .rl-hint{font-size:12px;color:var(--text-faint);padding:2px 0 6px;}
+  .rl-pill{font-size:11px;border:1px solid var(--amber);color:var(--amber);padding:0 5px;margin-left:auto;flex:none;}
+  .rl-pill-need{border-color:var(--accent);color:var(--accent);}
+  .rl-dash{border-top:1px dashed var(--border-strong);margin:10px 0 6px;}
+  @media (max-width:899px){ .rl-fold{min-height:44px;} }
+  /* the one thing P9 v2 adds to fwd: a run that matches the search is marked, not selected */
+  .rl-card.rl-hit{box-shadow:inset 3px 0 0 var(--accent);}
+</style>
+</head>
+<body>
+<h1>P9 v2: the runs list, copied from fwdloop M11 (with Scheduled)</h1>
+<p class="lead">Cards, colours, header style, date format, clipping and fold rules are fwdloop's as built (v0.19.0). Click a Running now or Needs you card to select its run and scroll to its job. Click a run card to select it. Open "older runs" on flights-b to see 7, then "use search". Type <b>run-2</b> in the search box: the fold opens and the matched run is marked with a blue bar (not selected). The Scheduled section is drawn after Needs you as fwdloop built it: click a card to open that job's newest run (the Run tab); filters and search never touch it. P9 builds only the empty slot; the triggers piece (PRD v1.99) fills it.</p>
+<div class="grid">
+<section class="vbox"><div><span class="vtag">Runs list</span> <span class="why">desktop</span></div>
+<div class="side" id="d"></div>
+<div class="phone-cap">phone (390px)</div><div class="phone" id="p"></div>
+<ul class="diff">
+<li>Header: bold, normal case, 12 px, with the count. Jobs adds "run in the last 30 days".</li>
+<li>Running now: line 1 <code>[&#9654;] job run-N  wall &middot; $</code> (wall counts up in place); line 2 the plain why.</li>
+<li>Needs you: blue border, pill at the right (label, not a button), line 2 <code>why &middot; MM/DD HH:MM</code>. <b>Accept</b> is drawn so the final shape is visible; it is built only when the Run tab has an Accept control. <b>Resume</b> is built now and ages out after 7 days.</li>
+<li>Job card: <code>[sign] job &middot; k runs &middot; check type</code> / <code>word &middot; why</code>; not clickable; blue when the selected run is inside it.</li>
+<li>Run card: <code>[sign] run-N  MM/DD HH:MM &middot; model</code> / <code>word &#8212; why &middot; $ &middot; wall</code>. Unknown cost reads "unknown".</li>
+<li>Scheduled (N), after Needs you: <code>[&middot;] job  &lt;today 15:00 | tomorrow 09:00 | Tue 20 Oct, 09:05&gt;</code> / <code>next in 3h &middot; schedule words</code>. Soonest first; a file-trigger job has no clock time, so it shows only its words and sorts last. A click opens the job's newest run on the Run tab. Not touched by filters or search. <b>Built with the triggers piece (PRD v1.99); P9 builds the empty slot.</b> No Workflows / History switch.</li>
+</ul></section>
+</div>
+<script>
+var NOW=Date.UTC(2026,9,14,12,0,0);
+var SIGN={running:"▶",waiting:"·",passed:"✓",failed:"✗",capped:"✗",stopped:"■",died:"?"};
+var WHY={passed:"goal met",failed:"price over $450 on result 2",capped:"money cap $0.50",stopped:"you stopped it",died:"runner gone"};
+function mk(n,k,date,extra){var r={n:n,k:k,date:date,why:WHY[k]||"",cost:"$0."+(10+n%80),wall:(n%9+1)+"m",model:"deepseek-flash"};for(var x in extra)r[x]=extra[x];return r}
+var KS=["failed","passed","failed","capped","failed","passed","stopped","failed","passed","failed","died","passed"];
+var FL=[mk(13,"running","10/14 11:58",{why:"step 2 of 3",cost:"$0.04",wall:"2m",live:1})];
+for(var i=12;i>=1;i--)FL.push(mk(i,KS[12-i],"10/"+(1+i<10?"0"+(1+i):(1+i))+" 11:"+(10+i)));
+var JOBS=[
+ {job:"flights-b",type:"rubric",runs:FL},
+ {job:"changelog-a",type:"rubric",runs:[mk(2,"passed","10/13 09:40",{why:"goal met",cost:"$0.03",wall:"2m",needs:"Accept"}),mk(1,"failed","10/12 14:03",{why:"line 2 over 30 words"})]},
+ {job:"p6-worktree",type:"deterministic",runs:[mk(3,"capped","10/11 16:20",{why:"time cap 20m",cost:"$0.41",wall:"20m",needs:"Resume",stopped:"10/11 16:40",resumeNote:"can resume from step 2"}),mk(2,"died","10/06 12:01",{cost:"unknown",wall:"unknown"}),mk(1,"stopped","10/05 18:44")]},
+ {job:"rubric-2",type:"rubric",runs:[mk(2,"passed","10/12 17:09",{why:"goal met"}),mk(1,"failed","10/12 14:03",{why:"line 2 over 30 words"})]}
+];
+var QUIET=[
+ {job:"jsdoc-rubric",type:"rubric",runs:[mk(4,"passed","08/30 10:12",{why:"goal met"}),mk(3,"failed","08/29 15:40",{why:"line 1 not quoted"})]},
+ {job:"litectx-maint",type:"deterministic",runs:[mk(9,"passed","08/12 09:01",{why:"goal met",cost:"unknown"})]}];
+var LIM={quietDays:30,olderRuns:7};
+/* Scheduled: fwdloop's card, soonest first; a file trigger has no clock time (at/in null) and sorts last */
+var SCHED=[
+ {job:"changelog-a",at:"today 15:00",inw:"next in 3h",words:"Every day at 15:00"},
+ {job:"rubric-2",at:"tomorrow 09:00",inw:"next in 21h",words:"Weekdays at 09:00"},
+ {job:"p6-worktree",at:null,inw:null,words:"When a new file arrives in ~/reports/inbox/"}];
+var st={sel:"flights-b|13",open:{},q:""};
+function e(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+function g(k){return '<span class="g '+k+'">['+SIGN[k]+']</span>'}
+function w(k){return '<span class="w">'+k+'</span>'}
+function sect(l,n,note){return '<div class="rl-sect">'+l+' ('+n+')'+(note?' '+note:'')+'</div>'}
+/* one function for the match test and the mark (whole visible row) */
+function rowText(j,r){return [j.job,"run-"+r.n,j.job+" (run-"+r.n+")",r.date,r.model,r.k,r.why,r.cost,j.type].join(" ").toLowerCase()}
+function hit(j,r){var q=st.q.trim().toLowerCase();return q!==""&&rowText(j,r).indexOf(q)!==-1}
+function runCard(j,r){var id=j.job+"|"+r.n,sel=st.sel===id;
+ return '<button class="rl-card'+(sel?" rl-sel":"")+(hit(j,r)?" rl-hit":"")+(r.live?" rl-live":"")+'" data-run="'+id+'" aria-pressed="'+sel+'"><span class="rl-l1">'+g(r.k)+'<span class="rl-rn">run-'+r.n+'</span> <span class="rl-faint">'+e(r.date)+' · '+e(r.model)+'</span></span><span class="rl-l2">'+w(r.k)+' — '+e(r.why||"")+' · '+e(r.cost)+' · '+e(r.wall)+'</span></button>'}
+function jobCard(j,pre){var head=j.runs[0],older=j.runs.slice(1),q=st.q.trim()!=="";
+ var selIn=st.sel.split("|")[0]===j.job, isSel=function(r){return st.sel===j.job+"|"+r.n};
+ var matches=older.filter(function(r){return hit(j,r)}),past=older.slice(LIM.olderRuns);
+ var first=matches.filter(function(r){return past.indexOf(r)!==-1})[0];
+ var shown=older.slice(0,LIM.olderRuns).concat(past.filter(function(r){return isSel(r)||r===first}));
+ var auto=(q&&matches.length>0)||older.some(isSel),open=st.open.hasOwnProperty(j.job)?st.open[j.job]:auto;
+ var h='<div class="rl-card'+(selIn?" rl-sel":"")+'" id="'+pre+'-'+j.job+'"><span class="rl-l1">'+g(head.k)+'<span class="rl-nm">'+e(j.job)+'</span> <span class="rl-cnt">· '+j.runs.length+' run'+(j.runs.length>1?"s":"")+' · '+j.type+'</span></span><span class="rl-l2">'+w(head.k)+' · '+e(head.why||"")+'</span>';
+ h+='<div class="rl-runs">'+runCard(j,head);
+ if(older.length){h+='<button class="rl-fold" data-fold="'+j.job+'" aria-expanded="'+open+'">'+(open?"▾":"▸")+' older runs ('+older.length+')</button>';
+  if(open){h+=shown.map(function(r){return runCard(j,r)}).join("");var hid=older.length-shown.length;if(hid>0)h+='<div class="rl-hint">(and '+hid+' older: use search)</div>'}}
+ return h+'</div></div>'}
+function visible(j){var q=st.q.trim()==="";return q||j.runs.some(function(r){return hit(j,r)})}
+function draw(pre){var h="",live=[],needs=[];
+ JOBS.forEach(function(j){j.runs.forEach(function(r){if(r.live)live.push([j,r]);else if(r.needs)needs.push([j,r])})});
+ if(live.length)h+=sect("Running now",live.length)+live.map(function(p){var j=p[0],r=p[1];return '<button class="rl-card rl-live" data-jump="'+j.job+'|'+r.n+'"><span class="rl-l1">'+g("running")+'<span class="rl-nm">'+e(j.job)+'</span> <span class="rl-rn">run-'+r.n+'</span> <span class="rl-faint"><span data-since>2m</span> · '+e(r.cost)+'</span></span><span class="rl-l2">'+e(r.why)+'</span></button>'}).join("");
+ if(needs.length)h+=sect("Needs you",needs.length)+needs.map(function(p){var j=p[0],r=p[1],why=r.needs==="Accept"?"passed · waiting for your Accept":r.k+" · "+(r.why)+(r.resumeNote?" · "+r.resumeNote:"");return '<button class="rl-card rl-need" data-jump="'+j.job+'|'+r.n+'"><span class="rl-l1">'+g(r.k)+'<span class="rl-nm">'+e(j.job)+'</span> <span class="rl-rn">run-'+r.n+'</span><span class="rl-pill rl-pill-need">'+r.needs+'</span></span><span class="rl-l2">'+e(why)+' · '+e(r.stopped||r.date)+'</span></button>'}).join("");
+ if(SCHED.length)h+=sect("Scheduled",SCHED.length)+SCHED.map(function(x){var jb=JOBS.filter(function(j){return j.job===x.job})[0],n=jb?jb.runs[0].n:null,body='<span class="rl-l1">'+g("waiting")+'<span class="rl-nm">'+e(x.job)+'</span>'+(x.at?' <span class="rl-faint">'+e(x.at)+'</span>':'')+'</span><span class="rl-l2">'+e([x.inw,x.words].filter(Boolean).join(" · "))+'</span>';return n===null?'<div class="rl-card">'+body+'</div>':'<button class="rl-card" data-jump="'+x.job+'|'+n+'">'+body+'</button>'}).join("");
+ h+='<div class="rl-dash"></div><div class="rl-faint" style="margin-bottom:4px">filters below act on Jobs and quiet jobs only</div>';
+ h+='<div class="chips"><button class="chip" aria-pressed="false">D</button><button class="chip" aria-pressed="false">R</button><button class="chip">✓</button><button class="chip">✗</button><button class="chip">?</button><button class="chip">▶</button><button class="chip">7d</button><button class="chip">30d</button><button class="chip" aria-pressed="true">all</button><button class="chip">clear</button></div><input class="search" data-q placeholder="search jobs and runs…" value="'+e(st.q)+'">';
+ var vj=JOBS.filter(visible);
+ h+=sect("Jobs",vj.length,"· run in the last "+LIM.quietDays+" days")+vj.map(function(j){return jobCard(j,pre)}).join("");
+ var qo=st.open.__quiet===true;
+ h+='<button class="rl-fold" data-fold="__quiet" aria-expanded="'+qo+'">'+(qo?"▾":"▸")+' quiet jobs ('+QUIET.length+') · no run in '+LIM.quietDays+' days</button>';
+ if(qo)h+=QUIET.filter(visible).map(function(j){return jobCard(j,pre)}).join("");
+ return h}
+function paint(){var act=document.activeElement,keep=act&&act.hasAttribute&&act.hasAttribute("data-q"),pos=keep?act.selectionStart:0;
+ document.getElementById("d").innerHTML=draw("d");document.getElementById("p").innerHTML=draw("p");
+ if(keep){var i=document.querySelector("#d [data-q]");if(i){i.focus();i.setSelectionRange(pos,pos)}}}
+document.addEventListener("click",function(ev){var t=ev.target.closest?ev.target:null;if(!t)return;
+ var f=t.closest("[data-fold]");if(f){var k=f.getAttribute("data-fold");st.open[k]=f.getAttribute("aria-expanded")!=="true";paint();return}
+ var j=t.closest("[data-jump]");if(j){st.sel=j.getAttribute("data-jump");var phone=!!j.closest(".phone");paint();var c=document.getElementById((phone?"p":"d")+"-"+st.sel.split("|")[0]);if(c&&c.scrollIntoView)c.scrollIntoView({block:"nearest"});return}
+ var r=t.closest("[data-run]");if(r){st.sel=r.getAttribute("data-run");paint()}});
+document.addEventListener("input",function(ev){if(ev.target.hasAttribute&&ev.target.hasAttribute("data-q")){st.q=ev.target.value;paint()}});
+var t0=Date.now();setInterval(function(){var s=Math.floor((Date.now()-t0)/1000)+120,txt=Math.floor(s/60)+"m"+("0"+s%60).slice(-2)+"s";document.querySelectorAll("[data-since]").forEach(function(x){x.textContent=txt})},2000);
+paint();
+</script>
+</body>
+</html>

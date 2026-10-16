@@ -144,8 +144,8 @@
   .dot::before{content:"[·]";color:var(--grey-dot);}
   .dot.green::before{content:"[✓]";color:var(--green);}
   .dot.red::before{content:"[✗]";color:var(--red);}
-  /* stopped (hamr 2026-10-07): the person pressed Stop — its own sign, same red as [✗] */
-  .dot.stopped::before{content:"[■]";color:var(--red);}
+  /* stopped (hamr 2026-10-07): the person pressed Stop — its own sign, grey (RULED 2026-10-15) */
+  .dot.stopped::before{content:"[■]";color:var(--grey-dot);}
   /* Panel build P3 addition (2026-09-27, "yes, go"): the part cards below the
      step map (`partResultGlyph`/`attemptGlyph`) and the chat job card render
      their result glyph as PLAIN inline text inside a larger string (never
@@ -170,9 +170,11 @@
      1.2s, matching design/panel-mockup.html's pulsing amber dot exactly —
      one fixed rhythm, never re-derived per call site. */
   @keyframes pulse-glyph{0%,100%{opacity:1;}50%{opacity:0.3;}}
-  .dot.amber::before{content:"[▶]";color:var(--amber);animation:pulse-glyph 1.2s ease-in-out infinite;}
+  .dot.amber::before{content:"[▶]";color:var(--amber);}
+  /* RULED 2026-10-15 (matches fwdloop glyphPulses): a sign blinks only while running or waiting for your Accept, keyed to `.pulse` (dotPulses decides) */
+  .dot.pulse::before{animation:pulse-glyph 1.2s ease-in-out infinite;}
   @media (prefers-reduced-motion: reduce){
-    .dot.amber::before{animation:none;}
+    .dot.pulse::before{animation:none;}
   }
   .dot.grey::before{content:"[·]";color:var(--grey-dot);}
   /* died (hamr's ruling B, 2026-09-25): no ending was ever recorded — a
@@ -208,12 +210,12 @@
   .btn:disabled::before,.btn:disabled::after{color:var(--text-faint);opacity:0.4;}
   .btn.small{padding:0 9px;height:32px;min-height:0;font-size:12px;}
 
-  .wf-row,.hist-row{
+  .wf-row{
     display:flex;flex-direction:column;row-gap:4px;min-width:0;
     padding:8px 8px 8px 18px;position:relative;border:1px solid var(--border);margin-bottom:6px;background:var(--panel2);cursor:pointer;
   }
   .wf-row::before{content:" ";position:absolute;left:6px;top:8px;color:var(--accent);font-weight:700;}
-  .wf-row:hover,.hist-row:hover{border-color:var(--border-strong);}
+  .wf-row:hover{border-color:var(--border-strong);}
   .wf-row.selected::before{content:">";}
   /* line 1: glyph + name, kept on ONE line — truncated with an ellipsis
      (never wrapped) when the job/runid text is longer than the row; the
@@ -226,15 +228,42 @@
   .wf-meta{font-size:12px;color:var(--text-dim);}
   .wf-ended{display:block;font-size:12px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
   .wf-meta + .wf-meta::before{content:" · ";color:var(--text-faint);}
-  .wf-row.selected,.hist-row.selected{border:2px solid var(--accent);border-radius:4px;}
-  /* item 2 (2026-09-26 merge): a Workflows-view job row expands inline to
-     list ALL its runs (build spec's own design) — the caret glyph on the
-     job row, and the indent wrapper the expanded runs render into. */
-  .wf-job{margin-bottom:6px;}
-  .wf-job .wf-row{margin-bottom:0;}
+  .wf-row.selected{border:2px solid var(--accent);border-radius:4px;}
   .wf-caret{display:inline-block;width:11px;flex:none;color:var(--text-faint);font-size:10px;}
-  .wf-runs{margin:4px 0 8px 16px;padding-left:8px;border-left:2px solid var(--border);}
-  .wf-runs .hist-row{margin-bottom:4px;}
+
+  /* P9 v2: the one runs list. Copied from fwdloop M11 (index.html), values unchanged; only the class names carry the rl- prefix. A card's lines clip with an ellipsis (the full text is on the run page). */
+  :root{--rl-accent-bg:rgba(122,162,247,.12);--rl-accent-bg-strong:rgba(122,162,247,.2);}
+  .rl-card{display:block;width:100%;text-align:left;background:var(--panel2);border:1px solid var(--border);padding:6px 8px;margin:0 0 6px;cursor:pointer;min-height:44px;color:inherit;font:inherit;}
+  div.rl-card{cursor:default;}
+  .rl-card:hover{border-color:var(--accent);background:var(--rl-accent-bg);}
+  div.rl-card:hover{border-color:var(--border);background:var(--panel2);}
+  .rl-card.rl-sel,div.rl-card.rl-sel:hover{border:2px solid var(--accent);border-radius:4px;background:var(--rl-accent-bg-strong);}
+  .rl-card:focus-visible,.rl-fold:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .rl-card.rl-live{border-color:var(--amber);}
+  .rl-card.rl-need{border-color:var(--accent);}
+  .rl-l1{display:flex;gap:6px;align-items:center;min-width:0;overflow:hidden;}
+  .rl-nm{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+  .rl-rn{color:var(--accent);flex:none;}
+  .rl-l2{display:block;font-size:12px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .rl-l2 .st-word{color:var(--text);}
+  .rl-faint{color:var(--text-faint);font-size:12px;}
+  .rl-rest{color:var(--text-faint);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .rl-cnt{color:var(--text-faint);font-size:inherit;flex:none;}
+  .rl-runs{margin:6px 0 0 6px;padding-left:8px;border-left:2px solid var(--border);}
+  .rl-runs .rl-card{background:var(--bg);}
+  .rl-runs .rl-card.rl-sel{background:var(--rl-accent-bg-strong);}
+  .rl-fold{background:none;border:0;color:var(--text-dim);font:inherit;font-size:12px;padding:4px 0;cursor:pointer;min-height:32px;}
+  .rl-fold:hover{color:var(--accent);}
+  .rl-hint{font-size:12px;color:var(--text-faint);padding:2px 0 6px;}
+  .rl-pill{font-size:11px;border:1px solid var(--amber);color:var(--amber);padding:0 5px;margin-left:auto;flex:none;}
+  .rl-pill-need{border-color:var(--accent);color:var(--accent);}
+  .rl-dash{border-top:1px dashed var(--border-strong);margin:10px 0 6px;}
+  .rl-sect{font-size:12px;color:var(--text-dim);font-weight:700;margin:12px 0 6px;}
+  .rl-sect:first-child{margin-top:0;}
+  #panel-runs .rl-faint{margin-bottom:4px;}
+  @media (max-width:899px){ .rl-fold{min-height:44px;} }
+  /* the one thing P9 v2 adds to fwd: a run that matches the search or filter is marked, not selected */
+  .rl-card.rl-hit{box-shadow:inset 3px 0 0 var(--accent);}
 
   .rp-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:2px solid var(--border-strong);background:var(--panel);flex-wrap:wrap;gap:8px;}
   .rp-header h2{margin:0;font-size:15px;}
@@ -257,6 +286,7 @@
   .ended-block.magenta{border-color:var(--magenta);}
   .ended-block.red{border-color:var(--red);}
   .ended-block.green{border-color:var(--green);}
+  .ended-block.grey{border-color:var(--grey-dot);}
   .ended-row{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px;}
   .ended-label{color:var(--text-faint);font-size:11px;letter-spacing:0.08em;min-width:52px;}
   .ended-text{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;}
@@ -293,15 +323,19 @@
   .rw-picked{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;padding:6px 8px;border:1px solid var(--accent);}
   .rw-picked span{overflow-wrap:anywhere;}
   .rw-picked a{font-size:12px;cursor:pointer;flex:none;}
+  /* T Part 7: the SCHEDULED / NEXT twin of the ENDED block, and the note under both */
+  /* RULED 2026-10-15 (aligned with fwdloop M9 am7): a schedule that started nothing turns its whole SCHEDULE row red; the frame turns red with `.ended-block.red` */
+  .ended-row.is-red .ended-label,.ended-row.is-red .ended-text,.ended-text.is-red{color:var(--red);}
+  .ended-text .sched-line2{display:block;}
   .run-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;}
   .run-actions[hidden]{display:none;}
   .run-actions .stopping{color:var(--amber);font-size:13px;overflow-wrap:anywhere;}
   .resume-err{color:var(--red);white-space:pre-wrap;overflow-wrap:anywhere;}
   /* P5-R: a resumed run is ONE card; its legs are told apart by a divider line, a dotted map connector, a small tag */
-  .wf-resumed{color:var(--amber);}
   .audit-leg-divider{text-align:center;color:var(--text-dim);font-size:12px;margin:10px 0;overflow-wrap:anywhere;}
   .audit-leg-divider-row td{text-align:center;color:var(--text-dim);font-size:12px;background:var(--panel2);}
   .summary-box.red{border-color:var(--red);}
+  .summary-box.grey{border-color:var(--grey-dot);}
   .summary-box.amber{border-color:var(--amber);}
   .summary-box.magenta{border-color:var(--magenta);}
   .summary-box::before{content:"┤ SUMMARY ├";position:absolute;top:-10px;left:10px;background:var(--panel2);padding:0 6px;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;}
@@ -331,6 +365,7 @@
   .map-chip.s-done{border-color:var(--green);color:var(--text);} .map-chip.s-done .chip-sign{color:#2e7d32;}
   .map-chip.s-running{border-color:var(--amber);color:var(--text);} .map-chip.s-running .chip-sign{color:#b8860b;}
   .map-chip.s-stopped{border-color:var(--red);color:var(--text);} .map-chip.s-stopped .chip-sign{color:var(--red);}
+  .map-chip.s-stopsign{border-color:var(--grey-dot);} .map-chip.s-stopsign .chip-sign{color:var(--grey-dot);} /* RULED 2026-10-15: a step you stopped is grey, not red */
   .map-chip.s-died{border-color:var(--magenta);color:var(--text);} .map-chip.s-died .chip-sign{color:var(--magenta);}
   .map-chip.retry{border-style:dashed;}
   .map-chip.resumed-next{border-right-style:dotted;}
@@ -401,6 +436,13 @@
   .job-card h4::before{content:"┤ ";color:var(--text-faint);}
   .job-card h4::after{content:" ├";color:var(--text-faint);}
   .field{margin-bottom:10px;}
+  /* T Part 7: the When field (sub-boxes show and hide; 44px controls) */
+  .when-sub{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;}
+  .when-sub[hidden]{display:none;}
+  .when-sub select,.when-sub input{flex:1 1 120px;min-width:0;width:auto;min-height:44px;}
+  #jf-when{min-height:44px;}
+  .jf-err{color:var(--red);font-size:12px;overflow-wrap:anywhere;}
+  .jf-err:empty{display:none;}
   .field input,.field select{width:100%;}
   label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:2px;text-transform:uppercase;letter-spacing:0.04em;}
   .ro-value{padding:6px 8px;min-height:32px;box-sizing:border-box;border:1px solid var(--border);background:var(--bg);color:var(--text-dim);}
@@ -670,6 +712,7 @@
             <button class="btn card-clear" type="button" id="chat-clear-btn" data-testid="chat-clear">Clear</button>
             <div class="hint" id="chat-startfrom-note" data-testid="startfrom-note" hidden></div>
             <div class="origin-line" id="chat-origin-line" data-testid="origin-line" hidden></div>
+            <div class="startfrom-line" id="chat-startfrom-line" data-testid="startfrom-line" hidden></div>
 
             <div class="field">
               <label id="jf-verdict-label">Check type</label>
@@ -684,7 +727,6 @@
                   <ul class="rw-list" id="rw-list" data-testid="rw-list"></ul>
                 </div>
                 <div class="rw-picked" id="rw-picked" data-testid="rw-picked" hidden><span id="rw-picked-txt" data-testid="rw-picked-txt"></span><a id="rw-change" data-testid="rw-change" role="button" tabindex="0">change</a></div>
-                <div class="startfrom-line" id="chat-startfrom-line" data-testid="startfrom-line" hidden></div>
               </div>
             </div>
             <div class="field">
@@ -718,6 +760,24 @@
             <div class="field">
               <label for="jf-dest">Destination</label>
               <textarea class="jf-wrap" id="jf-dest" rows="1" placeholder="the write fence — where in the repo this run may change files"></textarea>
+            </div>
+
+            <!-- T Part 7: the When field, only on the card opened by Schedule run / Cancel-modify schedule. Every word is filled from the server's table. -->
+            <div class="field" id="jf-when-field" data-testid="jf-when-field" hidden>
+              <label for="jf-when" id="jf-when-label">When</label>
+              <select id="jf-when" data-testid="jf-when" aria-label="When this job runs"></select>
+              <div class="when-sub" id="jf-when-clock" hidden>
+                <select id="jf-when-day" data-testid="jf-when-day" aria-label="Day of the week">
+                  <option value="mon">Monday</option><option value="tue">Tuesday</option><option value="wed">Wednesday</option><option value="thu">Thursday</option>
+                  <option value="fri">Friday</option><option value="sat">Saturday</option><option value="sun">Sunday</option>
+                </select>
+                <input id="jf-when-time" type="time" value="09:00" data-testid="jf-when-time" aria-label="Time, HH:MM">
+              </div>
+              <div class="when-sub" id="jf-when-filebox" hidden>
+                <input id="jf-when-path" type="text" autocomplete="off" spellcheck="false" data-testid="jf-when-path" aria-label="File or folder">
+              </div>
+              <div class="hint" id="jf-when-now" data-testid="jf-when-now"></div>
+              <div class="jf-err" id="jf-err-when" data-testid="jf-err-when"></div>
             </div>
 
             <div class="cap-row" data-testid="cap-row">
@@ -765,9 +825,7 @@
         </section>
 
         <section id="panel-runs" class="tabpanel" role="tabpanel" aria-labelledby="tab-runs" hidden>
-          <div class="chips" role="group" aria-label="Runs view" style="margin-bottom:8px;">
-            <button class="chip" type="button" aria-pressed="true" data-runs-view="workflows" data-testid="runs-view-workflows">Workflows</button>
-            <button class="chip" type="button" aria-pressed="false" data-runs-view="history" data-testid="runs-view-history">History</button>
+          <div style="margin-bottom:8px;">
             <button class="btn small" type="button" id="wf-import" data-testid="wf-import" title="look at an exported job folder (read only)">Import</button>
           </div>
           <div class="import-box" id="import-box" data-testid="import-box" hidden>
@@ -784,10 +842,12 @@
               <button class="btn" type="button" id="import-cancel" data-testid="import-cancel">Cancel</button>
             </div>
           </div>
+          <div id="rl-top" data-testid="rl-top"></div>
+          <div class="rl-dash"></div>
+          <div class="rl-faint" data-testid="rl-filter-note">filters below act on Jobs and quiet jobs only</div>
           <div id="runs-filterbar-anchor"></div>
           <div id="wf-list" data-testid="wf-list"></div>
           <div id="import-list" data-testid="import-list"></div>
-          <div id="history-list" data-testid="history-list" hidden></div>
         </section>
 
       </div>
@@ -813,8 +873,12 @@
 
         <section id="panel-run" class="tabpanel active" role="tabpanel" aria-labelledby="tab-run">
           <div class="import-view" id="import-view" data-testid="import-view" hidden></div>
-          <div id="run-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run from Workflows or History</div>
+          <div id="run-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run from the Runs list</div>
           <div id="run-content" hidden>
+            <!-- RULED 2026-10-15: ONE summary block: ENDED, NEXT, SCHEDULE (fwd #summary-blocks, aligned with M9 am7) -->
+            <div id="summary-blocks" data-testid="summary-blocks">
+              <div id="ended-block" class="ended-block" data-testid="ended-block" hidden></div>
+            </div>
             <div class="run-actions" id="run-actions" data-testid="run-actions" hidden></div>
             <div class="counters" id="run-counters" data-testid="live-counters"></div>
             <div class="summary-box" id="run-summary" data-testid="run-summary"></div>
@@ -826,7 +890,6 @@
         <section id="panel-audit" class="tabpanel" role="tabpanel" aria-labelledby="tab-audit" hidden>
           <div id="audit-select-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run first</div>
           <div id="audit-body" hidden>
-            <div id="ended-block" class="ended-block" data-testid="ended-block" hidden></div>
             <div class="audit-toolbar" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
               <div class="chips" role="group" aria-label="Filter audit rows" style="margin-bottom:0;">
                 <button class="chip" aria-pressed="true" data-filter="all" data-testid="chip-all">All</button>
@@ -863,6 +926,8 @@
             <h4 id="details-title">Job card — signed</h4>
             <div class="field"><label>Check type</label><div class="ro-value" id="details-verdict">—</div></div>
             <div class="field"><label>Model</label><div class="ro-value" id="details-model">—</div></div>
+            <div class="field" id="details-started-field" hidden><label>Started</label><div class="ro-value" id="details-started" data-testid="details-started" style="overflow-wrap:anywhere;">—</div></div>
+            <div class="field" id="details-schedule-field" hidden><label>Schedule</label><div class="ro-value" id="details-schedule" data-testid="details-schedule" style="overflow-wrap:anywhere;">—</div></div>
             <div class="field" id="details-description-field"><label>Description</label><div class="ro-value" id="details-description">—</div></div>
             <div class="field"><label>The job</label><div class="ro-value" id="details-plan" data-testid="details-plan">—</div></div>
             <div class="field"><label>Inputs</label><div class="ro-value" id="details-inputs" data-testid="details-inputs">—</div></div>
@@ -1167,7 +1232,7 @@
       var sign = s.status && s.status.sign ? s.status.sign : "";
       var tries = boxRetryTry(s);
       var cls = "map-chip s-" + String(s.state).replace(/[^a-z-]/g, "") +
-        (tries ? " retry" : "") + (s.resumedNext ? " resumed-next" : "");
+        (tries ? " retry" : "") + (sign === "\u25A0" ? " s-stopsign" : "") + (s.resumedNext ? " resumed-next" : "");
       var label = escapeXml(stepTitleText(numIdx[idx], s));
       var blocked = s.blocked > 0 ? ' <span class="chip-blocked">' + s.blocked + ' blocked</span>' : '';
       var retry = tries ? '<span class="chip-retry">\u21bb' + tries + '</span> ' : '';
@@ -1259,6 +1324,10 @@
   function realSteps(steps){ return steps.filter(function(s){ return !s.synthetic; }); }
 
   // ---- glyph/badge helpers (only [✓]/[✗]/[▶]/[·]/[?] — never the words green/red/soft-green/died) ----
+  // RULED 2026-10-15 (matches fwdloop glyphPulses): ONE rule for which sign blinks. Running blinks; a run waiting for the person's Accept blinks;
+  // everything else rests (a schedule that is on and waiting included). `needs` = the run's Needs-you tag.
+  function dotPulses(g, needs){ return g === "▶" || needs === "Accept"; }
+  function dotClass(g, needs){ return "dot " + glyphClass(g) + (dotPulses(g, needs) ? " pulse" : ""); }
   function glyphClass(g){
     if(g === "✓") return "green";
     if(g === "✗") return "red";
@@ -1285,9 +1354,9 @@
   // A run with no number (an imported bundle's run is not in the run list) falls back to its id.
   function runLabel(runNo, runid){ return typeof runNo === "number" ? "run-" + runNo : String(runid || ""); }
   function runName(job, runNo, runid){ return job + " (" + runLabel(runNo, runid) + ")"; }
-  function setRunHeader(sign, nameText, bodyHtml){
+  function setRunHeader(sign, nameText, bodyHtml, needs){
     document.getElementById("active-wf-name").textContent = nameText;
-    document.getElementById("active-wf-dot").className = "dot " + glyphClass(sign);
+    document.getElementById("active-wf-dot").className = dotClass(sign, needs);
     var st = document.getElementById("active-wf-verdict");
     st.innerHTML = bodyHtml ? '<span class="rp-sep">\u2502</span>' + bodyHtml : "";
     st.removeAttribute("title");
@@ -1306,131 +1375,89 @@
     return statusWordHtml(detail.status, reason) + " \u00B7 " + escapeXml(when);
   }
 
-  // P5-R: a resumed run is the SAME run — one card, never two. This is only a small tag on it.
-  function resumedTagHtml(count, testid){
-    return (typeof count === "number" && count > 0)
-      ? '<span class="wf-meta wf-resumed" data-testid="' + escapeXml(testid) + '">resumed &times;' + count + '</span>' : '';
+  // ---- P9 v2: ONE runs list (PANEL-BUILD.md "P9 v2", copied from fwdloop M11). Top to bottom: Running now, Needs you (the Scheduled slot follows
+  // them once the triggers piece lands), a dashed line and the filters (they act on Jobs and quiet jobs only), Jobs, the quiet fold. The page works
+  // out NOTHING: `live`, `needs`, each job's head run and quiet flag, the order and the limits all come in GET /api/runs. `rlModel` is pure (payload
+  // in, cards out); the rl*Html functions only draw it; `paintRunsList` is the ONE painter.
+  var rlData = { runs: [], jobs: [], scheduled: [], limits: { quietDays: 0, olderRuns: 0, needsYouDays: 0 } };
+  // manual fold memory, keyed by job ("__quiet" is the quiet fold): a per-viewer convenience, reset on reload. A manual click wins over an automatic open.
+  var rlOpen = {};
+  // the last markup written into each box: an identical repaint (every poll) writes nothing, so focus, scroll and a half-read card survive it
+  var rlLast = { top: null, jobs: null };
+  // The ONE writer of `rlData`: the whole /api/runs payload, as the server sent it.
+  function setRunsData(r){
+    rlData = { runs: r.runs || [], jobs: r.jobs || [], scheduled: r.scheduled || [], limits: r.limits || rlData.limits };
   }
 
-  // ---- Runs tab: ONE run-row builder shared by History (flat) and the
-  // Workflows view's per-job expansion (item 2, 2026-09-26 merge) — the two
-  // never drift on how a run row reads.
-  function buildRunRowEl(r, compact){
-    var row = document.createElement("div");
-    // build item (2026-09-26 fix): compute selected state here, off the
-    // module's own `currentRunid`, so a row freshly built by a RE-RENDER
-    // (switching Runs view mode, or a Workflows parent auto-expanding onto
-    // an older run picked from History) shows selected without needing a
-    // click on this exact element — `selectRun`'s imperative class toggle
-    // (used when a click passes its own `rowEl`) stays layered on top of
-    // this, never replaced by it.
-    var selected = r.runid === currentRunid;
-    row.className = "hist-row" + (selected ? " selected" : "");
-    row.setAttribute("data-testid", "hist-row-" + r.runid);
-    row.setAttribute("tabindex", "0");
-    row.setAttribute("role", "button");
-    row.setAttribute("aria-pressed", selected ? "true" : "false");
-    var histFullName = runName(r.job, r.runNo, r.runid);
-    if(r.starting){
-      row.innerHTML =
-        '<span class="wf-line1"><span class="dot amber"></span>' +
-        '<span class="wf-name" title="' + escapeXml(histFullName) + '">' + escapeXml(histFullName) + '</span></span>' +
-        '<span class="wf-meta-line">' +
-        '<span class="wf-meta" data-testid="hist-starting-' + escapeXml(r.runid) + '">starting…</span>' +
-        '<span class="wf-meta">' + escapeXml((r.at || "").slice(0,10) || "unknown") + '</span>' +
-        '</span>';
-    } else if(r.fileMissing){
-      row.innerHTML =
-        '<span class="wf-line1"><span class="dot grey"></span>' +
-        '<span class="wf-name" title="' + escapeXml(histFullName) + '">' + escapeXml(histFullName) + '</span></span>' +
-        '<span class="wf-meta-line">' +
-        '<span class="wf-meta">file missing</span>' +
-        '<span class="wf-meta">' + escapeXml((r.at || "").slice(0,10) || "unknown") + '</span>' +
-        '</span>';
-    } else if(compact){
-      // an EXPANDED per-run row under a workflow (hamr 2026-10-06), 2 lines, left-aligned:
-      //   `[sign] (run-N)  **word** — reason` / `$ ($drafting) · wall · date`
-      row.innerHTML =
-        '<span class="wf-line1 wf-compact"><span class="dot ' + glyphClass(r.glyph) + '"></span>' +
-        '<span class="wf-name wf-runno" title="' + escapeXml(histFullName) + '" data-testid="hist-runno-' + escapeXml(r.runid) + '">(' + escapeXml(runLabel(r.runNo, r.runid)) + ')</span>' +
-        '<span class="wf-ended wf-ended-inline" data-testid="hist-ended-' + escapeXml(r.runid) + '">' + statusWordHtml(r.status, r.endedLine) + '</span></span>' +
-        '<span class="wf-meta-line">' +
-        '<span class="wf-meta">' + escapeXml(rowSpendText(r, true)) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(rowWallText(r)) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(r.date || "unknown") + '</span>' +
-        resumedTagHtml(r.resumedCount, "hist-resumed-" + r.runid) +
-        '</span>';
-    } else {
-      // History card: line 1 sign + job (run-N); line 2 **word** — reason; line 3 the facts
-      row.innerHTML =
-        '<span class="wf-line1"><span class="dot ' + glyphClass(r.glyph) + '"></span>' +
-        '<span class="wf-name" title="' + escapeXml(histFullName) + '">' + escapeXml(histFullName) + '</span></span>' +
-        (r.status ? '<span class="wf-ended" data-testid="hist-ended-' + escapeXml(r.runid) + '">' + statusWordHtml(r.status, r.endedLine) + '</span>' : '') +
-        '<span class="wf-meta-line">' +
-        '<span class="wf-meta">' + escapeXml(r.checkType) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(rowSpendText(r)) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(rowWallText(r)) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(r.date || "unknown") + '</span>' +
-        resumedTagHtml(r.resumedCount, "hist-resumed-" + r.runid) +
-        '</span>';
-    }
-    row.addEventListener("click", function(){ selectRun(r.runid, row, ".hist-row"); document.getElementById("tab-run").click(); scrollRunIntoViewMobile(); });
-    row.addEventListener("keydown", function(e){ if(e.key === "Enter" || e.key === " "){ e.preventDefault(); row.click(); } });
-    return row;
+  // The ONE date of every card in the list: local `MM/DD HH:MM`. An unparseable stamp is shown raw, never blank.
+  function rlShortDate(iso){
+    var d = new Date(iso);
+    if(isNaN(d.getTime())) return String(iso);
+    var t = function(n){ return ("0" + n).slice(-2); };
+    return t(d.getMonth() + 1) + "/" + t(d.getDate()) + " " + t(d.getHours()) + ":" + t(d.getMinutes());
+  }
+  function runAtText(r){
+    return r.at ? rlShortDate(r.at) : "unknown";
   }
 
-  // ---- History view ----
-  function renderHistory(runs){
-    var el = document.getElementById("history-list");
-    el.innerHTML = "";
-    var listed = (runs || []).filter(function(r){ return !r.fileMissing; });
-    if(!listed.length){
-      el.innerHTML = '<div class="hint">no runs listed yet</div>';
-      return;
-    }
-    (runs || []).forEach(function(r){ el.appendChild(buildRunRowEl(r)); });
+  // Everything a run card says, in ONE place: the card is drawn from it and the search reads it, so what you can see is what you can find.
+  function rlRunParts(r){
+    var rn = runLabel(r.runNo, r.runid);
+    var p = { rn: rn, name: r.job + " (" + rn + ")", date: runAtText(r), model: r.model || "", word: "", why: "", spend: "", wall: "" };
+    if(r.starting){ p.word = "running"; p.why = "starting…"; return p; }
+    if(r.fileMissing){ p.word = ""; p.why = "file missing"; return p; }
+    p.word = r.status && r.status.word ? r.status.word : "";
+    p.why = r.endedLine || (p.word === "passed" ? "goal met" : "");
+    p.spend = rowSpendText(r, true);
+    p.wall = rowWallText(r) || "";
+    return p;
+  }
+  // ONE function for "does this run match the search": the filter and the highlight both call it, so they cannot disagree. M11 am5 (PANEL-BUILD.md P9 v2 O):
+  // the search splits at spaces and EVERY word must match, case-insensitive. A word shaped run-N is that run exactly; a word shaped MM/DD or YYYY-MM-DD (a real
+  // day) is the run's LOCAL start day, from the same `at` the card shows (MM/DD = any year; no date = no match); a part date (10/1, 10/) matches nothing, not even
+  // the card's date text; any other word is a substring of the whole visible row (job, run, run id, model, status word, why, spend, wall, date, check type).
+  function runMatchesSearch(r, query){
+    var words = String(query || "").toLowerCase().replace(/[()]/g, "").split(/\s+/).filter(function(w){ return w; });
+    if(!words.length) return true;
+    var p = rlRunParts(r);
+    var d = r.at ? new Date(r.at) : null;
+    var dated = !!d && !isNaN(d.getTime());
+    var rn = String(p.rn).toLowerCase();
+    var rest = [r.job, p.rn, p.name, r.runid, p.model, p.word, p.why, p.spend, p.wall, r.checkType || ""].join(" ").toLowerCase();
+    var whole = rest + " " + String(p.date).toLowerCase();
+    return words.every(function(w){
+      if(/^run-\d+$/.test(w)) return rn === w;
+      var day = /^(?:(\d{4})-)?(\d\d)[-\/](\d\d)$/.exec(w);
+      if(day && (day[1] ? w.charAt(4) === "-" && w.charAt(7) === "-" : w.charAt(2) === "/" || w.charAt(2) === "-")){
+        var mo = Number(day[2]), da = Number(day[3]);
+        if(mo >= 1 && mo <= 12 && da >= 1 && da <= 31){
+          return dated && d.getMonth() + 1 === mo && d.getDate() === da && (!day[1] || d.getFullYear() === Number(day[1]));
+        }
+      }
+      if(/^[\d\/-]+$/.test(w) && /[\/-]/.test(w)) return rest.indexOf(w) !== -1;
+      return whole.indexOf(w) !== -1;
+    });
   }
 
-  // ---- Workflows view (item 2, 2026-09-26 merge): groups the ONE /api/runs
-  // payload by job name client-side — the sole owner of that grouping now
-  // (the old /api/workflows endpoint is gone; see src/panel/server.js). Runs
-  // arrive newest-first (server contract, see listRuns), so the FIRST run
-  // seen for a job is its latest — no re-sort needed, and job order (first-
-  // job-seen order) is already newest-first by construction.
-  function groupRunsByJob(runs){
+  // A job's runs, the server's head first, the rest in the server's order (newest first). The head is the server's call (`headRunid`), never "the first row".
+  function groupRunsByJob(runs, jobs){
     var byJob = {};
     var order = [];
+    var headOf = {};
+    (jobs || []).forEach(function(j){ headOf[j.job] = j.headRunid; if(!byJob[j.job]){ byJob[j.job] = []; order.push(j.job); } });
     (runs || []).forEach(function(r){
       if(!byJob[r.job]){ byJob[r.job] = []; order.push(r.job); }
       byJob[r.job].push(r);
     });
     return order.map(function(job){
-      var jobRuns = byJob[job];
-      var last = jobRuns[0];
-      return {
-        job: job,
-        runs: jobRuns,
-        runCount: jobRuns.length,
-        lastRunid: last.runid,
-        lastRunNo: last.runNo,
-        lastAt: last.at,
-        lastGlyph: last.glyph || "▶",
-        lastStatus: last.status || null,
-        lastEndedLine: last.endedLine || null,
-        lastResumedCount: last.resumedCount || 0,
-        lastCheckType: last.checkType || "unknown",
-        lastModel: last.model || null,
-        lastSpend: rowSpendText(last, true),
-        lastWall: rowWallText(last) || "unknown",
-        lastDate: last.date,
-      };
+      var all = byJob[job];
+      var head = all.filter(function(r){ return r.runid === headOf[job]; })[0] || all[0] || null;
+      return { job: job, runs: head ? [head].concat(all.filter(function(r){ return r !== head; })) : [], runCount: all.length, headRunid: head ? head.runid : null };
     });
   }
 
-  // Matches a job if ANY of its runs match the filters (not only the
-  // latest) — a one-line adapter over filterRuns (never a reimplementation
-  // of the AND/OR/time/search semantics), same posture as the old
-  // filterWorkflows but now correct against the job's FULL run list.
+  // Matches a job if ANY of its runs match the filters (not only the head): a one-line adapter over filterRuns, never a reimplementation of the
+  // AND/OR/time/search semantics.
   function filterWorkflows(jobs, filters, nowMs){
     return (jobs || []).filter(function(g){
       return filterRuns(g.runs, filters, nowMs).length > 0;
@@ -1446,166 +1473,230 @@
     ));
   }
 
-  // Pure rule (item 2 build spec): when filters/search are active, a job
-  // whose LATEST run doesn't match but an older one does auto-expands so the
-  // matching run is visible without an extra click; inactive filters never
-  // force an expand.
-  function autoExpandJob(group, matchingRuns, active){
-    if(!active || !matchingRuns.length) return false;
-    var latestId = group.runs.length ? group.runs[0].runid : null;
-    var latestIncluded = matchingRuns.some(function(r){ return r.runid === latestId; });
-    return !latestIncluded;
+  function rlModel(data, groups, filters, limits, sel, open){
+    var active = filtersActive(filters);
+    var place = {};
+    (data.jobs || []).forEach(function(j, i){ place[j.job] = { quiet: j.quiet === true, at: i }; });
+    var cards = groups.slice().sort(function(a, b){
+      return (place[a.job] ? place[a.job].at : Infinity) - (place[b.job] ? place[b.job].at : Infinity);
+    }).map(function(g){
+      var quiet = !!(place[g.job] && place[g.job].quiet);
+      if(g.headRunid === null) return { job: g.job, group: g, head: null, empty: true, quiet: quiet, selected: false, count: 0, sel: sel, hits: [], older: { open: false, shown: [], hidden: 0, left: [], active: active, total: 0 } };
+      var head = g.runs[0];
+      var matching = active ? filterRuns(g.runs, filters, Date.now()) : [];
+      var older = g.runs.slice(1);
+      var isSel = function(r){ return r.runid === sel.runid; };
+      // M11 am5 item 4: the fold is capped at limits.olderRuns, newest first. With a search or chip on, only the older runs that match count; the selected run stays shown either way.
+      var pool = active ? older.filter(function(r){ return matching.indexOf(r) !== -1; }) : older;
+      var top = pool.slice(0, limits.olderRuns);
+      var shown = top.concat(older.filter(function(r){ return isSel(r) && top.indexOf(r) === -1; }));
+      var left = pool.filter(function(r){ return shown.indexOf(r) === -1; });
+      // the fold opens by itself when any older run matches (even if the head matches too), or when the selected run is an older one
+      var auto = (active && older.some(function(r){ return matching.indexOf(r) !== -1; })) || older.some(isSel);
+      return {
+        job: g.job, group: g, head: head, empty: false, quiet: quiet, count: g.runCount, sel: sel,
+        selected: g.runs.some(isSel),
+        hits: matching.map(function(r){ return r.runid; }),
+        older: { open: Object.prototype.hasOwnProperty.call(open, g.job) ? open[g.job] : auto, shown: shown, hidden: left.length, left: left, active: active, total: older.length },
+      };
+    });
+    var quietCards = cards.filter(function(c){ return c.quiet; });
+    return {
+      running: data.runs.filter(function(r){ return r.live === true; }),
+      needs: data.runs.filter(function(r){ return typeof r.needs === "string" && r.needs !== ""; }),
+      scheduled: data.scheduled || [],
+      gaveUp: data.gaveUp || [],
+      jobs: cards.filter(function(c){ return !c.quiet; }),
+      quiet: quietCards,
+      quietOpen: Object.prototype.hasOwnProperty.call(open, "__quiet") ? open.__quiet : quietCards.some(function(c){ return c.selected; }),
+      limits: limits,
+      noRows: data.runs.length === 0,
+    };
   }
-
-  // build item (2026-09-26 fix, F: parent-row/older-run mismatch): ONE owner
-  // for "which run does this parent row stand for" — both its own selected
-  // state and what its click opens read this, never two separate rules that
-  // could drift. Unfiltered (or when the latest still matches), a job's
-  // parent always stands for its latest run, same as before this fix. With
-  // a filter/search that matches an OLDER run but excludes the latest, the
-  // parent stands for the newest MATCHING run instead — so its click opens
-  // the run the search actually found, and (once picked) the parent's own
-  // selected state follows that same run rather than silently reverting to
-  // the latest.
-  function representedRun(group, candidateRuns, active){
-    if(active && candidateRuns.length){
-      var latestIncluded = candidateRuns.some(function(r){ return r.runid === group.lastRunid; });
-      if(!latestIncluded) return candidateRuns[0].runid;
+  function rlSectHtml(label, n, note){
+    return '<div class="rl-sect">' + label + ' (' + n + ')' + (note ? ' ' + note : '') + '</div>';
+  }
+  // line 1 and 2 of a Running now / Needs you card; both jump to the run (rlJump). The tag is a label (a span), never a button.
+  function rlJumpCardHtml(r, need){
+    var rn = runLabel(r.runNo, r.runid);
+    var faint;
+    if(r.liveSince){
+      faint = '<span data-rl-since="' + escapeXml(r.liveSince) + '" data-rl-prior="' + (typeof r.priorWallMs === "number" ? r.priorWallMs : "leg") + '"></span>';
+    } else faint = 'time unknown';
+    var l2;
+    if(need){
+      var p = rlRunParts(r);
+      var why = r.needs === "Accept" ? "passed · waiting for your Accept" : [p.word, r.endedLine].filter(function(x){ return x; }).join(" · ");
+      l2 = escapeXml(why) + ' &middot; ' + escapeXml(r.stoppedAt ? rlShortDate(r.stoppedAt) : runAtText(r));
+    } else l2 = escapeXml(r.liveWhy || "running");
+    return '<button class="rl-card ' + (need ? 'rl-need' : 'rl-live') + '" type="button" data-rl-jump="' + escapeXml(r.runid) + '" data-testid="rl-' + (need ? 'need' : 'live') + '-' + escapeXml(r.job) + '-' + escapeXml(r.runid) + '">' +
+      '<span class="rl-l1"><span class="' + dotClass(r.glyph, r.needs) + '"></span><span class="rl-nm" title="' + escapeXml(r.job) + '">' + escapeXml(r.job) + '</span> <span class="rl-rn">&middot; ' + escapeXml(rn) + '</span>' +
+      (need ? '<span class="rl-pill rl-pill-need">' + escapeXml(r.needs) + '</span>' : ' <span class="rl-rest">&middot; ' + faint + ' &middot; ' + escapeXml(rowSpendText(r, true)) + '</span>') + '</span>' +
+      '<span class="rl-l2">' + l2 + '</span></button>';
+  }
+  // RULED 2026-10-15: `job · run-N` in the small lists; the server names the run a Scheduled / gave-up card opens (`runNo`), nothing is made up when it has none
+  function rlRunTagHtml(c){ return typeof c.runNo === "number" ? ' <span class="rl-rn">&middot; ' + escapeXml(runLabel(c.runNo, c.runId)) + '</span>' : ''; }
+  // A schedule that gave up (RULED 2026-10-15): all words from the server (`pill`, `words`, `at`); a click opens the job's newest run, like the other cards.
+  function rlGaveUpCardHtml(g){
+    var body = '<span class="rl-l1"><span class="dot grey"></span><span class="rl-nm" title="' + escapeXml(g.job) + '">' + escapeXml(g.job) + '</span>' + rlRunTagHtml(g) + ' <span class="rl-pill rl-pill-need">' + escapeXml(g.pill) + '</span></span>' +
+      '<span class="rl-l2">' + escapeXml(g.words) + ' &middot; ' + escapeXml(g.at) + '</span>';
+    if(typeof g.runId !== "string" || g.runId === "") return '<div class="rl-card rl-need" data-testid="rl-gaveup-' + escapeXml(g.job) + '">' + body + '</div>';
+    return '<button class="rl-card rl-need" type="button" data-rl-jump="' + escapeXml(g.runId) + '" data-testid="rl-gaveup-' + escapeXml(g.job) + '">' + body + '</button>';
+  }
+  // Scheduled card (T Part 7): `[·] job  today 15:00` / `next in 3h · Every day at 15:00`, all from the server. A file trigger has no clock time:
+  // `at` / `in` are null and nothing is made up. A click does what Running now does (rlJump to the job's HEAD run, `runId` from the server and
+  // scrolls to its job). A job with no run to open stays a plain box. Never filtered or searched.
+  function rlScheduledCardHtml(s){
+    var body = '<span class="rl-l1"><span class="dot grey"></span><span class="rl-nm" title="' + escapeXml(s.job) + '">' + escapeXml(s.job) + '</span>' + rlRunTagHtml(s) +
+      (s.at ? ' <span class="rl-rest">&middot; ' + escapeXml(s.at) + '</span>' : '') + '</span>' +
+      '<span class="rl-l2">' + escapeXml([s.in, s.words].filter(function(x){ return x; }).join(" · ")) + '</span>';
+    if(typeof s.runId !== "string" || s.runId === "") return '<div class="rl-card" data-testid="rl-sched-' + escapeXml(s.job) + '">' + body + '</div>';
+    return '<button class="rl-card" type="button" data-rl-jump="' + escapeXml(s.runId) + '" data-testid="rl-sched-' + escapeXml(s.job) + '">' + body + '</button>';
+  }
+  // The sections above the filters, from ONE ordered list: the Scheduled section (PRD v1.99) is one more entry here after Needs you, plus one draw function.
+  function rlTopHtml(m){
+    var sections = [
+      { label: "Running now", items: m.running, draw: function(r){ return rlJumpCardHtml(r, false); } },
+      { label: "Needs you", items: m.needs.concat(m.gaveUp || []), draw: function(r){ return r.pill ? rlGaveUpCardHtml(r) : rlJumpCardHtml(r, true); } },
+      { label: "Scheduled", items: m.scheduled, draw: rlScheduledCardHtml },
+    ];
+    return sections.map(function(s){
+      return s.items.length ? rlSectHtml(s.label, s.items.length) + s.items.map(s.draw).join("") : "";
+    }).join("");
+  }
+  // a run card inside a job: `[sign] run-N  MM/DD HH:MM · model` / `word — why · $cost · wall`
+  function rlRunCardHtml(r, selected, hit){
+    var p = rlRunParts(r);
+    var bits = [p.spend, p.wall].filter(function(b){ return b; });
+    var l2;
+    if(r.fileMissing) l2 = escapeXml(p.why);
+    else if(r.starting) l2 = '<b class="st-word">' + escapeXml(p.word) + '</b> — ' + escapeXml(p.why);
+    else l2 = (p.word ? '<b class="st-word">' + escapeXml(p.word) + '</b>' : '') + (p.why ? (p.word ? ' — ' : '') + escapeXml(p.why) : '') + (bits.length ? ' &middot; ' + escapeXml(bits.join(" · ")) : '');
+    return '<button class="rl-card' + (selected ? ' rl-sel' : '') + (hit ? ' rl-hit' : '') + (r.live ? ' rl-live' : '') + '" type="button" data-rl-run="' + escapeXml(r.runid) + '" data-testid="rl-run-' + escapeXml(r.job) + '-' + escapeXml(r.runid) + '" aria-pressed="' + (selected ? 'true' : 'false') + '" title="' + escapeXml(p.name) + '">' +
+      '<span class="rl-l1"><span class="' + dotClass(r.glyph, r.needs) + '"></span><span class="rl-rn">' + escapeXml(p.rn) + '</span> <span class="rl-rest">&middot; ' + escapeXml([p.date, p.model].filter(function(b){ return b; }).join(" · ")) + '</span></span>' +
+      '<span class="rl-l2">' + l2 + '</span></button>';
+  }
+  // a job card: `[sign] job · k runs · type` / `word · why` of its newest run, highlighted when the selected run is one of its runs; not clickable. Inside: the newest run's card, then the older-runs fold.
+  function rlJobCardHtml(c){
+    var h = c.head;
+    var top = '<div class="rl-card' + (c.selected ? ' rl-sel' : '') + '" id="rl-job-' + escapeXml(c.job) + '" data-testid="rl-job-' + escapeXml(c.job) + '">';
+    if(c.empty){
+      return top + '<span class="rl-l1"><span class="dot grey"></span><span class="rl-nm" title="' + escapeXml(c.job) + '">' + escapeXml(c.job) + '</span></span><span class="rl-l2">no runs yet</span></div>';
     }
-    return group.lastRunid;
-  }
-
-  // Is `currentRunid` one of this job's OLDER runs (i.e. a run that
-  // belongs to this job but isn't its latest)? Selecting a run from History
-  // and switching to Workflows lands here: the job must auto-expand and its
-  // matching child row must carry the selected marker even though no
-  // filter/search is active and no click happened inside Workflows itself.
-  function activeOlderRun(group){
-    if(!currentRunid || currentRunid === group.lastRunid) return null;
-    var found = group.runs.some(function(r){ return r.runid === currentRunid; });
-    return found ? currentRunid : null;
-  }
-
-  // manual expand/collapse memory, keyed by job name — survives a re-render
-  // triggered by a filter/search change within the same page load, reset on
-  // full page reload (per-viewer convenience only, never persisted). A
-  // manual collapse click still wins over auto-expand-for-selection on the
-  // next render (simplest rule: one flag, no "but selection forces it back
-  // open" special case) — collapsing a job you're not looking at any more
-  // is a normal, expected action.
-  var wfExpanded = {};
-
-  // hamr 2026-10-08 (display only, nothing deleted): with NO search/filter active an expanded job shows at most its
-  // latest WF_SUB_CAP other runs (g.runs is latest-first). A selected older run beyond the cap (picked from History) is
-  // appended after them rather than hidden. With search/filters active every matching sub-card shows.
-  var WF_SUB_CAP = 7;
-  function capSubRuns(childRuns, active, selectedRunid){
-    if(active || childRuns.length <= WF_SUB_CAP) return {shown: childRuns, more: false};
-    var shown = childRuns.slice(0, WF_SUB_CAP);
-    var sel = selectedRunid ? childRuns.slice(WF_SUB_CAP).filter(function(r){ return r.runid === selectedRunid; }) : [];
-    return {shown: shown.concat(sel), more: true};
-  }
-
-  function renderWorkflows(jobs){
-    var el = document.getElementById("wf-list");
-    el.innerHTML = "";
-    if(!jobs.length){
-      el.innerHTML = '<div class="hint">no runs listed yet — run `bareloop run-u` or `bareloop run`, or `bareloop runs backfill <dir>`</div>';
-      return;
-    }
-    var active = filtersActive(currentRunsFilters());
-    jobs.forEach(function(g){
-      // build item (2026-09-26 fix): the parent row IS the job's latest run
-      // (clicking it opens that run), so the inline child list must be the
-      // job's OTHER runs only — never repeat the latest as its own first
-      // child. Expand affordance (caret, aria-expanded, toggle) is gated on
-      // there being a child to actually show: with filters/search active,
-      // that's the FILTERED other-runs list, so a job whose only match is
-      // its own latest run gets no caret and never expands — clicking it
-      // still opens the run, same as any job row. With no filters active
-      // this is unchanged (childRuns = all other runs, same as runCount>1).
-      var candidateRuns = active ? filterRuns(g.runs, currentRunsFilters(), Date.now()) : g.runs;
-      var childRuns = candidateRuns.filter(function(r){ return r.runid !== g.lastRunid; });
-      var hasOtherRuns = childRuns.length > 0;
-      // build item (2026-09-26 fix): auto-expand for a filter/search match
-      // on an older run (existing rule) OR because the run picked elsewhere
-      // (e.g. History) IS one of this job's older runs — either way the
-      // matching child must be visible without an extra click.
-      var olderSelected = activeOlderRun(g);
-      var autoExpand = hasOtherRuns && (autoExpandJob(g, candidateRuns, active) || !!olderSelected);
-      var expanded = hasOtherRuns && (Object.prototype.hasOwnProperty.call(wfExpanded, g.job) ? wfExpanded[g.job] : autoExpand);
-      var targetRunid = representedRun(g, candidateRuns, active);
-
-      var wrap = document.createElement("div");
-      wrap.className = "wf-job";
-
-      var row = document.createElement("div");
-      // build item (2026-09-26): a job (parent) row also opens its latest
-      // run in the Run tab, same as a child row — so it carries the same
-      // "selected" visual state a child row gets from selectRun (the class
-      // is computed HERE, at render time, rather than left on the clicked
-      // element, since this function tears down and rebuilds every wf-row
-      // on every click — see below). `targetRunid` (see `representedRun`
-      // above) is normally the latest run, so this is unchanged in the
-      // common case; a filter/search that matched an older run instead
-      // makes the parent follow THAT run once it's the selected one.
-      var isSelected = currentRunid === targetRunid;
-      row.className = "wf-row" + (isSelected ? " selected" : "");
-      row.setAttribute("data-wf", g.job);
-      row.setAttribute("data-testid", "wf-row-" + g.job);
-      row.setAttribute("tabindex", "0");
-      row.setAttribute("role", "button");
-      row.setAttribute("aria-expanded", expanded ? "true" : "false");
-      row.setAttribute("aria-pressed", isSelected ? "true" : "false");
-      var wfFullName = runName(g.job, g.lastRunNo, g.lastRunid);
-      row.innerHTML =
-        '<span class="wf-line1 wf-compact"><span class="wf-caret">' + (hasOtherRuns ? (expanded ? "▼" : "▶") : "") + '</span><span class="dot ' + glyphClass(g.lastGlyph) + '"></span>' +
-        '<span class="wf-name" title="' + escapeXml(wfFullName) + '">' + escapeXml(wfFullName) + '</span>' +
-        (g.lastStatus ? '<span class="wf-ended wf-ended-inline" data-testid="wf-ended-' + escapeXml(g.job) + '">' + statusWordHtml(g.lastStatus, g.lastEndedLine) + '</span>' : '') + '</span>' +
-        '<span class="wf-meta-line">' +
-        '<span class="wf-meta">' + escapeXml(g.lastCheckType) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(g.lastSpend) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(g.lastWall) + '</span>' +
-        '<span class="wf-meta">' + escapeXml(g.lastDate || "unknown") + '</span>' +
-        '</span>';
-      row.addEventListener("click", function(){
-        // a single-run job has nothing to expand — the click still opens
-        // the run, it just never toggles `wfExpanded` for it.
-        if(hasOtherRuns) wfExpanded[g.job] = !expanded;
-        // build item (2026-09-26): clicking the parent also opens its
-        // latest run (as it did before the Workflows/History merge) — pass
-        // rowEl null since renderWorkflows(jobs) below rebuilds every row
-        // right after, so a class set directly on this element would be
-        // discarded; the fresh render marks selection off `currentRunid`
-        // instead (see `isSelected` above). build item (2026-09-26 fix):
-        // opens `targetRunid`, not always `g.lastRunid` — with a filter/
-        // search active that excludes the latest but matches an older run,
-        // that's the run the search actually found (see `representedRun`).
-        selectRun(targetRunid, null, ".hist-row");
-        document.getElementById("tab-run").click();
-        scrollRunIntoViewMobile();
-        renderWorkflows(jobs);
-      });
-      row.addEventListener("keydown", function(e){ if(e.key === "Enter" || e.key === " "){ e.preventDefault(); row.click(); } });
-      wrap.appendChild(row);
-
-      if(expanded){
-        var runsWrap = document.createElement("div");
-        runsWrap.className = "wf-runs";
-        var capped = capSubRuns(childRuns, active, olderSelected);
-        capped.shown.forEach(function(r){ runsWrap.appendChild(buildRunRowEl(r, true)); });
-        if(capped.more){
-          var olderHint = document.createElement("div");
-          olderHint.className = "hint";
-          olderHint.setAttribute("data-testid", "wf-older-" + g.job);
-          olderHint.textContent = "older: use search.";
-          runsWrap.appendChild(olderHint);
+    var p = rlRunParts(h);
+    var isSel = function(r){ return r.runid === c.sel.runid; };
+    var isHit = function(r){ return c.hits.indexOf(r.runid) !== -1; };
+    var type = h.checkType && h.checkType !== "unknown" ? ' &middot; ' + escapeXml(h.checkType) : '';
+    var l2 = h.fileMissing ? escapeXml(p.why) : '<b class="st-word">' + escapeXml(p.word) + '</b>' + (p.why ? ' &middot; ' + escapeXml(p.why) : '');
+    var out = top + '<span class="rl-l1"><span class="' + dotClass(h.glyph, h.needs) + '"></span><span class="rl-nm" title="' + escapeXml(c.job) + '">' + escapeXml(c.job) + '</span> <span class="rl-cnt">&middot; ' + c.count + ' run' + (c.count === 1 ? '' : 's') + type + '</span></span>' +
+      '<span class="rl-l2">' + l2 + '</span>' +
+      '<div class="rl-runs">' + rlRunCardHtml(h, isSel(h), isHit(h));
+    if(c.older.total > 0){
+      out += '<button class="rl-fold" type="button" data-rl-fold="' + escapeXml(c.job) + '" data-testid="rl-fold-' + escapeXml(c.job) + '" aria-expanded="' + (c.older.open ? 'true' : 'false') + '">' + (c.older.open ? '▾' : '▸') + ' older runs (' + c.older.total + ')</button>';
+      if(c.older.open){
+        out += c.older.shown.map(function(r){ return rlRunCardHtml(r, isSel(r), isHit(r)); }).join("");
+        if(c.older.hidden > 0){
+          // M11 am7 item 4 + am9, the line after the 7: the hidden runs' (searching: matches') real start days (the time the card
+          // shows, `at`), the MIN to the MAX over ALL of `left` whatever its order: `k more older runs, MM/DD to MM/DD. Search to find one.`, or one day
+          // `k more runs on MM/DD. Search to find one.`. A hidden run with no date drops the date part; nothing is made up. "run" is singular for k = 1.
+          var days = c.older.left.map(function(x){
+            var dd = x.at ? new Date(x.at) : null;
+            return dd && !isNaN(dd.getTime()) ? new Date(dd.getFullYear(), dd.getMonth(), dd.getDate()) : null;
+          });
+          var md = function(dd){ return ("0" + (dd.getMonth() + 1)).slice(-2) + "/" + ("0" + dd.getDate()).slice(-2); };
+          var dated = days.length > 0 && days.indexOf(null) === -1;
+          var lo = dated ? new Date(Math.min.apply(null, days)) : null, hi = dated ? new Date(Math.max.apply(null, days)) : null;
+          var k = c.older.hidden, runWord = k === 1 ? "run" : "runs";
+          var one = dated && md(lo) === md(hi);
+          // am9 (fwd verbatim, `matches` for every k): searching, the same days as the no-search line
+          out += '<div class="rl-hint">' + (c.older.active ?
+            (!dated ? k + ' more matches. Add a date or run number to narrow it.' :
+              one ? k + ' more matches on ' + md(lo) + '. Add a run number to narrow it.' :
+              k + ' more matches, ' + md(lo) + ' to ' + md(hi) + '. Add a date or run number to narrow it.') :
+            !dated ? k + ' more older ' + runWord + '. Search to find one.' :
+            one ? k + ' more ' + runWord + ' on ' + md(lo) + '. Search to find one.' :
+            k + ' more older runs, ' + md(lo) + ' to ' + md(hi) + '. Search to find one.') + '</div>';
         }
-        wrap.appendChild(runsWrap);
       }
-      el.appendChild(wrap);
+    }
+    return out + '</div></div>';
+  }
+  function rlJobsHtml(m){
+    var h = "";
+    if(m.jobs.length) h += rlSectHtml("Jobs", m.jobs.length, "· run in the last " + m.limits.quietDays + " days") + m.jobs.map(rlJobCardHtml).join("");
+    if(m.quiet.length){
+      h += '<button class="rl-fold" type="button" data-rl-fold="__quiet" data-testid="rl-fold-quiet" aria-expanded="' + (m.quietOpen ? 'true' : 'false') + '">' + (m.quietOpen ? '▾' : '▸') + ' quiet jobs (' + m.quiet.length + ') · no run in ' + m.limits.quietDays + ' days</button>';
+      if(m.quietOpen) h += m.quiet.map(rlJobCardHtml).join("");
+    }
+    if(h === "" && m.noRows) h = '<div class="hint">no runs listed yet</div>';
+    return h;
+  }
+  // Running now: the wall counts up IN PLACE from the server's start time (no rebuild): the page's 2 s tick calls this. Earlier legs add the server's
+  // `priorWallMs`; when that is not exact the card says it counts this leg only.
+  function tickSince(){
+    document.querySelectorAll("[data-rl-since]").forEach(function(el){
+      var t = Date.parse(el.getAttribute("data-rl-since"));
+      if(isNaN(t)){ el.textContent = "time unknown"; return; }
+      var prior = el.getAttribute("data-rl-prior");
+      var leg = prior === "leg";
+      el.textContent = duration(Math.max(0, Date.now() - t) + (leg ? 0 : Number(prior) || 0)) + (leg ? " this leg" : "");
     });
   }
+  // keep focus on the same card (by testid) across a real repaint of a box
+  function withFocusPreserved(box, fn){
+    var a = document.activeElement;
+    var tid = a && box.contains && box.contains(a) && a.getAttribute ? a.getAttribute("data-testid") : null;
+    fn();
+    if(!tid) return;
+    var nodes = box.querySelectorAll("[data-testid]");
+    for(var i = 0; i < nodes.length; i += 1){
+      if(nodes[i].getAttribute("data-testid") === tid){ if(nodes[i].focus) nodes[i].focus(); return; }
+    }
+  }
+  // The ONE painter of the list. Called by the filter bar (a poll, a chip, the search box) and by every select/click here; it writes a box only when its markup changed.
+  function paintRunsList(){
+    var filters = currentRunsFilters();
+    var groups = filterWorkflows(groupRunsByJob(rlData.runs, rlData.jobs), filters, Date.now());
+    var m = rlModel(rlData, groups, filters, rlData.limits, { runid: currentRunid }, rlOpen);
+    var topEl = document.getElementById("rl-top");
+    var listEl = document.getElementById("wf-list");
+    var top = rlTopHtml(m);
+    var jobs = rlJobsHtml(m);
+    if(top !== rlLast.top){ rlLast.top = top; withFocusPreserved(topEl, function(){ topEl.innerHTML = top; }); }
+    if(jobs !== rlLast.jobs){ rlLast.jobs = jobs; withFocusPreserved(listEl, function(){ listEl.innerHTML = jobs; }); }
+    tickSince();
+  }
+  function rlRowOf(runid){
+    return rlData.runs.filter(function(r){ return r.runid === runid; })[0] || null;
+  }
+  // Running now / Needs you click: select that run, show it on the Run tab and scroll its job card into view.
+  function rlJump(runid){
+    selectRun(runid);
+    document.getElementById("tab-run").click();
+    var row = rlRowOf(runid);
+    var card = row ? document.getElementById("rl-job-" + row.job) : null;
+    if(card && card.scrollIntoView) card.scrollIntoView({ block: "nearest" });
+  }
+  // one delegated click handler for the whole list: a fold, a jump card or a run card
+  function rlClick(ev){
+    var t = ev.target && ev.target.closest ? ev.target : null;
+    if(!t) return;
+    var fold = t.closest("[data-rl-fold]");
+    if(fold){
+      rlOpen[fold.getAttribute("data-rl-fold")] = fold.getAttribute("aria-expanded") !== "true";
+      paintRunsList();
+      return;
+    }
+    var jump = t.closest("[data-rl-jump]");
+    if(jump){ rlJump(jump.getAttribute("data-rl-jump")); return; }
+    var card = t.closest("[data-rl-run]");
+    if(card){
+      selectRun(card.getAttribute("data-rl-run"));
+      document.getElementById("tab-run").click();
+      scrollRunIntoViewMobile();
+    }
+  }
+  document.getElementById("panel-runs").addEventListener("click", rlClick);
 
   // ---- Filter bar (item 5 + hamr's 2026-09-25 live-panel feedback) ----
   // ONE component, ONE state shape ({checkTypes, results, time}), used by
@@ -1616,51 +1707,38 @@
   // "[ ]"; ".fchip" turns that off), time is a short label, then "clear".
   // No "unknown" check-type chip — runs/workflows with unknown type still
   // show whenever no type chip is selected (checkTypes stays empty).
+  // The chips, in the order they are drawn: ONE declared array, never object key order.
+  var RL_CHIPS = [
+    { group: "checkType", value: "deterministic", title: "deterministic", id: "ct-deterministic", label: "D" },
+    { group: "checkType", value: "rubric", title: "rubric", id: "ct-rubric", label: "R" },
+    { group: "result", value: "\u2713", title: "pass", id: "res-pass", label: "&#10003;" },
+    { group: "result", value: "\u2717", title: "fail", id: "res-fail", label: "&#10007;" },
+    { group: "result", value: "?", title: "died", id: "res-died", label: "?" },
+    { group: "result", value: "\u25B6", title: "running", id: "res-running", label: "&#9654;" },
+    { group: "time", value: "7d", title: "last 7 days", id: "time-7d", label: "7d" },
+    { group: "time", value: "30d", title: "last 30 days", id: "time-30d", label: "30d" },
+    { group: "time", value: "all", title: "all time", id: "time-all", label: "all", pressed: true },
+    { clear: true },
+  ];
   function filterBarHTML(scope){
     return (
       '<div class="filterbar" data-scope="' + scope + '" data-testid="' + scope + '-filters">' +
-        '<input type="text" class="search-input" placeholder="search job, run-N, run id or model…" ' +
+        '<input type="text" class="search-input" placeholder="job, run-23, or date 10/13" ' +
           'id="' + scope + '-filter-search" data-testid="' + scope + '-filter-search" autocomplete="off">' +
         '<div class="chips" role="group" aria-label="Filter">' +
-          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="checkType" data-filter-value="deterministic" title="deterministic" data-testid="chip-' + scope + '-ct-deterministic">D</button>' +
-          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="checkType" data-filter-value="rubric" title="rubric" data-testid="chip-' + scope + '-ct-rubric">R</button>' +
-          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="result" data-filter-value="&#10003;" title="pass" data-testid="chip-' + scope + '-res-pass">&#10003;</button>' +
-          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="result" data-filter-value="&#10007;" title="fail" data-testid="chip-' + scope + '-res-fail">&#10007;</button>' +
-          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="result" data-filter-value="?" title="died" data-testid="chip-' + scope + '-res-died">?</button>' +
-          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="result" data-filter-value="&#9654;" title="running" data-testid="chip-' + scope + '-res-running">&#9654;</button>' +
-          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="time" data-filter-value="7d" title="last 7 days" data-testid="chip-' + scope + '-time-7d">7d</button>' +
-          '<button class="chip fchip" type="button" aria-pressed="false" data-filter-group="time" data-filter-value="30d" title="last 30 days" data-testid="chip-' + scope + '-time-30d">30d</button>' +
-          '<button class="chip fchip" type="button" aria-pressed="true" data-filter-group="time" data-filter-value="all" title="all time" data-testid="chip-' + scope + '-time-all">all</button>' +
-          '<button class="chip fchip" type="button" id="' + scope + '-filter-clear" data-testid="' + scope + '-filter-clear">clear</button>' +
+          RL_CHIPS.map(function(c){
+            if(c.clear) return '<button class="chip fchip" type="button" id="' + scope + '-filter-clear" data-testid="' + scope + '-filter-clear">clear</button>';
+            return '<button class="chip fchip" type="button" aria-pressed="' + (c.pressed ? 'true' : 'false') + '" data-filter-group="' + c.group + '" data-filter-value="' + escapeXml(c.value) + '" title="' + c.title + '" data-testid="chip-' + scope + '-' + c.id + '">' + c.label + '</button>';
+          }).join("") +
         '</div>' +
         '<div class="hint" id="' + scope + '-filter-count" data-testid="' + scope + '-filter-count"></div>' +
       '</div>'
     );
   }
 
-  // Pure function: chips toggle on/off independently and combine AND across
-  // the three groups (checkType/result/time), OR within a group (an empty
-  // group array means "no filter" for that group — everything passes it).
-  // `time` is single-select, default "all". `nowMs` is injectable for tests.
-  // Field names (checkType/glyph/at) match a History run row's own shape.
-  // item 1 (2026-09-25): case-insensitive substring match on job name AND
-  // runid, combined AND with the chip groups (an empty/whitespace-only query
-  // means "no search filter" — everything passes it, same posture as an
-  // empty chip group). item C (2026-09-26): also matches the run's model
-  // name (e.g. "deepseek", "sonnet") — `model` is `null`/absent on an older
-  // archived run, same posture as a missing job/runid. Also the run's shown
-  // name: `run-N` and `job (run-N)` (N is the server's `runNo`, never counted here).
-  function matchesSearch(job, runid, model, query, runNo){
-    if(!query) return true;
-    var q = String(query).trim().toLowerCase();
-    if(!q) return true;
-    var j = String(job || "").toLowerCase();
-    var r = String(runid || "").toLowerCase();
-    var m = String(model || "").toLowerCase();
-    var label = typeof runNo === "number" ? "run-" + runNo : "";
-    var shown = label ? j + " (" + label + ")" : "";
-    return j.indexOf(q) !== -1 || r.indexOf(q) !== -1 || m.indexOf(q) !== -1 || (label !== "" && (label.indexOf(q) !== -1 || shown.indexOf(q) !== -1));
-  }
+  // Pure function: chips toggle on/off independently and combine AND across the three groups (checkType/result/time), OR within a group (an empty
+  // group array means "no filter" for that group — everything passes it). `time` is single-select, default "all". `nowMs` is injectable for tests.
+  // The search is `runMatchesSearch`: the whole visible row, case-insensitive; an empty query passes everything.
   function filterRuns(runs, filters, nowMs){
     nowMs = (typeof nowMs === "number") ? nowMs : Date.now();
     var ct = (filters && filters.checkTypes) || [];
@@ -1671,7 +1749,7 @@
       if(ct.length && ct.indexOf(r.checkType) === -1) return false;
       // a stopped run ([■]) was a [✗] before hamr's 2026-10-07 sign ruling — the fail chip still finds it
       if(rs.length && rs.indexOf(r.glyph) === -1 && !(r.glyph === "\u25A0" && rs.indexOf("\u2717") !== -1)) return false;
-      if(!matchesSearch(r.job, r.runid, r.model, q, r.runNo)) return false;
+      if(!runMatchesSearch(r, q)) return false;
       if(time !== "all"){
         var days = time === "7d" ? 7 : 30;
         var t = typeof r.at === "string" ? Date.parse(r.at) : NaN;
@@ -1686,13 +1764,12 @@
    * One filter-bar instance: its own localStorage key, its own DOM scope
    * (`.filterbar[data-scope="..."]`), its own item list — but the same
    * wiring as every other instance.
-   * @param {{scope:string, storageKey:string, filterFn:Function, applyFn:Function}} opts
+   * @param {{scope:string, storageKey:string, onChange:Function}} opts
    */
   function createFilterBar(opts){
     var scope = opts.scope;
     var storageKey = opts.storageKey;
     var state = { checkTypes: [], results: [], time: "all", search: "" };
-    var allItems = [];
 
     function load(){
       try{
@@ -1727,10 +1804,7 @@
       if(searchEl && searchEl.value !== state.search) searchEl.value = state.search;
     }
     function apply(){
-      var filtered = opts.filterFn(allItems, state, Date.now());
-      opts.applyFn(filtered);
-      var countEl = document.getElementById(scope + "-filter-count");
-      if(countEl) countEl.textContent = "showing " + filtered.length + " of " + allItems.length + " runs";
+      opts.onChange(state);
     }
     document.querySelectorAll('.filterbar[data-scope="' + scope + '"] .chip[data-filter-group]').forEach(function(chip){
       chip.addEventListener("click", function(){
@@ -1771,72 +1845,22 @@
     paint();
 
     return {
-      setItems: function(items){ allItems = items || []; apply(); },
       getState: function(){ return state; },
       refresh: function(){ apply(); },
     };
   }
 
-  // item 2 (2026-09-26 merge): Workflows/History view-mode memory — same
-  // per-viewer-convenience posture as every other localStorage read/write on
-  // this page (try/catch, never assumed available).
-  var RUNS_VIEW_KEY = "bareloop-panel-runs-view";
-  function loadRunsViewMode(){
-    try{
-      var v = localStorage.getItem(RUNS_VIEW_KEY);
-      if(v === "workflows" || v === "history") return v;
-    }catch(e){ /* per-viewer convenience only */ }
-    return "workflows";
-  }
-  function saveRunsViewMode(v){
-    try{ localStorage.setItem(RUNS_VIEW_KEY, v); }catch(e){ /* best-effort only */ }
-  }
-
-  // item 2 (2026-09-26 merge): ONE shared filter bar drives whichever view
-  // (Workflows/History) is currently on — one scope, one localStorage key,
-  // so switching views never loses the search/chip state.
+  // ONE filter bar drives the runs list (the Workflows / History switch is gone, P9 v2): one scope, one localStorage key.
   document.getElementById("runs-filterbar-anchor").innerHTML = filterBarHTML("runs");
 
-  var runsViewMode = loadRunsViewMode();
-  function runsFilterFn(items, filters, nowMs){
-    if(runsViewMode === "history") return filterRuns(items, filters, nowMs);
-    return filterWorkflows(groupRunsByJob(items), filters, nowMs);
-  }
-  function runsApplyFn(filtered){
-    if(runsViewMode === "history") renderHistory(filtered);
-    else renderWorkflows(filtered);
-  }
   var runsFilterBar = createFilterBar({
     scope: "runs",
     storageKey: "bareloop-panel-runs-filters",
-    filterFn: runsFilterFn,
-    applyFn: runsApplyFn,
+    onChange: function(){ paintRunsList(); },
   });
   function currentRunsFilters(){
     return runsFilterBar ? runsFilterBar.getState() : { checkTypes: [], results: [], time: "all", search: "" };
   }
-  function paintRunsViewToggle(){
-    document.querySelectorAll('.chip[data-runs-view]').forEach(function(c){
-      c.setAttribute("aria-pressed", c.getAttribute("data-runs-view") === runsViewMode ? "true" : "false");
-    });
-    document.getElementById("wf-list").hidden = runsViewMode !== "workflows";
-    document.getElementById("history-list").hidden = runsViewMode !== "history";
-    // P5 item 4: Import lives on the Workflows view only
-    document.getElementById("wf-import").hidden = runsViewMode !== "workflows";
-    document.getElementById("import-list").hidden = runsViewMode !== "workflows";
-    if(runsViewMode !== "workflows") document.getElementById("import-box").hidden = true;
-  }
-  document.querySelectorAll('.chip[data-runs-view]').forEach(function(chip){
-    chip.addEventListener("click", function(){
-      var next = chip.getAttribute("data-runs-view");
-      if(next === runsViewMode) return;
-      runsViewMode = next;
-      saveRunsViewMode(runsViewMode);
-      paintRunsViewToggle();
-      runsFilterBar.refresh();
-    });
-  });
-  paintRunsViewToggle();
 
   // item 4: phone-only "scroll the run view into view" on row select, and
   // the matching "↑ list" jump back. Desktop never runs either — both panes
@@ -1858,8 +1882,8 @@
     });
   }
 
-  function clearSelection(selector){
-    document.querySelectorAll(".wf-row, .hist-row").forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
+  function clearSelection(){
+    document.querySelectorAll(".wf-row").forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
   }
 
   // ---- P5 item 4: IMPORT (read only) — the folder browser, the imported rows, the view ----
@@ -1974,13 +1998,14 @@
     currentImportId = null;
     document.getElementById("import-view").hidden = true;
     document.getElementById("run-counters").hidden = false;
-    document.getElementById("run-empty").textContent = "select a run from Workflows or History";
+    document.getElementById("run-empty").textContent = "select a run from the Runs list";
     document.getElementById("audit-select-empty").textContent = "select a run first";
     document.querySelectorAll("#import-list .wf-row").forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed", "false"); });
   }
   function selectImport(id){
     clearSelection();
     currentRunid = null;
+    paintRunsList();
     runIsLive = false;
     currentImportId = id;
     document.querySelectorAll("#import-list .wf-row").forEach(function(r){
@@ -2164,8 +2189,9 @@
    * complete run whose drafting share is itself incomplete — hamr's ruling:
    * a reader summing the two must never read the leading number as exact
    * when the bracket next to it isn't). `draftSpendComplete === false` marks
-   * the bracket itself a floor. `budgetUsd` (when given) appends " of $X.XX". `shortForm` drops the word
-   * "drafting" (the Runs list cards only — "$5.00 ($0.08)").
+   * the bracket itself a floor. `budgetUsd` (when given) appends " of $X.XX". `shortForm` moves the word
+   * "drafting" to lead inside the bracket (the Runs list cards only — "$5.00 (drafting $0.08)",
+   * floor "(drafting at least $0.08)").
    */
   function panelMoneyWithDraft(spendCoreVal, spendCoreFloor, draftSpentUsd, draftSpendComplete, budgetUsd, shortForm){
     var hasDraft = typeof draftSpentUsd === "number" && draftSpentUsd !== null;
@@ -2173,7 +2199,7 @@
     var core = (spendCoreVal === null || spendCoreVal === undefined)
       ? "unknown"
       : ((spendCoreFloor || draftFloor) ? "at least " + panelMoney(spendCoreVal) : panelMoney(spendCoreVal));
-    var draftPart = hasDraft ? " (" + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + (shortForm ? ")" : " drafting)") : "";
+    var draftPart = hasDraft ? (shortForm ? " (drafting " : " (") + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + (shortForm ? ")" : " drafting)") : "";
     var capPart = (budgetUsd === undefined) ? "" : (" of " + panelMoney(budgetUsd));
     return core + draftPart + capPart;
   }
@@ -2231,7 +2257,7 @@
     if(spendFloorUsd === null || spendFloorUsd === undefined) return "unknown";
     var hasDraft = typeof draftSpentUsd === "number" && draftSpentUsd !== null;
     var draftFloor = hasDraft && draftSpendComplete === false;
-    var draftPart = hasDraft ? " (" + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + (shortForm ? ")" : " drafting)") : "";
+    var draftPart = hasDraft ? (shortForm ? " (drafting " : " (") + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + (shortForm ? ")" : " drafting)") : "";
     return panelMoney(spendFloorUsd) + " so far" + draftPart;
   }
   /** build item 6 — the matching wall-clock phrase: "running <duration>",
@@ -2374,55 +2400,70 @@
     else { row.hidden = true; val.textContent = ""; }
   }
 
-  // ---- P5: the ENDED block (Audit tab, first block, every finished run) and Resume ----
-  // The sentences are CODE-OWNED on the server (`endedFor`, src/panel/server.js) — this only
-  // paints them. `detail.ended` is null while a run is live (no block while running).
+  // ---- P5: the ENDED block (Run tab, first block above the action row, every finished run) and Resume ----
   var lastEndedSig = null;
+  function summaryRow(label, text, testid, red, extraHtml){
+    return '<div class="ended-row' + (red ? " is-red" : "") + '"><span class="ended-label">' + escapeXml(label) + '</span><span class="ended-text" data-testid="' + testid + '">' + escapeXml(text) + (extraHtml || "") + '</span></div>';
+  }
   // Resume (P5-R, hamr 2026-10-02: opened the run's own Job tab) MOVED to the left Chat card (hamr 2026-10-07): the card
   // in RESUME mode, only the money cap and the time cap open (applyResume / signResume). The Job tab is read-only on
   // every run — values only, no inputs, no buttons. A resume is the SAME run: no new card, no new job.
+  // RULED 2026-10-15 (aligned with fwdloop M9 am7): ONE block, the same shape every time: ENDED (a finished run), NEXT (a finished run), SCHEDULE
+  // (always: the schedule's words and a second line, or "By hand"). A schedule that started nothing turns the SCHEDULE row AND the frame red.
+  // The sentences are CODE-OWNED on the server (`endedFor`/`endedText` in src/panel/server.js, `detail.schedule` from src/schedulewords.js) — this only paints them.
   function renderEnded(detail){
     var box = document.getElementById("ended-block");
     var e = detail.ended;
-    if(!e){ box.hidden = true; box.innerHTML = ""; lastEndedSig = null; return; }
+    var sc = detail.schedule;
+    if(!e && !sc){ box.hidden = true; box.innerHTML = ""; lastEndedSig = null; return; }
     // rebuilt only when what it shows changed
-    var sig2 = detail.runid + "|" + JSON.stringify(e) + "|" + JSON.stringify(detail.resume);
+    var sig2 = detail.runid + "|" + JSON.stringify(e) + "|" + JSON.stringify(detail.resume) + "|" + (detail.endedText || "") + "|" + JSON.stringify(sc && [sc.scheduled, sc.text, sc.line2, sc.problem]);
     if(sig2 === lastEndedSig) return;
     lastEndedSig = sig2;
     box.hidden = false;
-    box.className = "ended-block " + (detail.died ? "magenta" : (detail.glyph === "✓" ? "green" : "red"));
-    // text only: the ONE place for [Stop] / [Resume] / [Reuse workflow] is the Run tab's top action row (renderRunActions)
-    box.innerHTML =
-      '<div class="ended-row"><span class="ended-label">ENDED</span><span class="ended-text" data-testid="ended-reason">' + escapeXml(e.reason) + '</span></div>' +
-      '<div class="ended-row"><span class="ended-label">NEXT</span><span class="ended-text" data-testid="ended-next">' + escapeXml(e.next) + '</span></div>';
+    var problem = !!(sc && sc.scheduled && sc.problem === true);
+    box.className = "ended-block " + (problem ? "red" : (!e ? "" : (detail.died ? "magenta" : (detail.glyph === "✓" ? "green" : (detail.glyph === "■" ? "grey" : "red")))));
+    var h = "";
+    if(e){
+      // text only: the ONE place for [Stop] / [Resume] / [Reuse workflow] is the Run tab's top action row (renderRunActions)
+      h += summaryRow("ENDED", detail.endedText || e.reason, "ended-reason", false) + summaryRow("NEXT", e.next, "ended-next", false);
+    }
+    if(sc){
+      var w = sc.words || {};
+      var label = w.scheduledLabel || "SCHEDULE";
+      if(sc.scheduled){
+        h += summaryRow(label, sc.text, "sched-text", problem, sc.line2 ? '<span class="sched-line2" data-testid="sched-line2">' + escapeXml(sc.line2) + '</span>' : "");
+      } else {
+        h += summaryRow(label, w.byHand || "By hand", "sched-text", false);
+      }
+    }
+    box.innerHTML = h;
   }
   // ---- P5 item 5: the run's ACTION AREA (Run tab, above the counters) — Stop while the run is live, Resume once
-  // it ended in a way the engine would accept (opens the Chat card's resume mode), Edit in chat on every non-green ending.
-  // The Ended block (Audit tab) is text only and carries no buttons.
+  // it ended in a way the engine would accept (opens the Chat card's resume mode), Reuse workflow on every ending.
+  // The Ended block (Run tab, above this row) is text only and carries no buttons.
   var stopAsked = {};
   // Reuse workflow (replaces P5 item 3's Start from this) — ask the server for the prefill (the signed job), then
   // hand it to the Chat tab's New job card. The page decides nothing: the server owns what is locked and what is open.
   // `model` (optional) = the Chat card's Model box, when the picker asks: the estimate line then counts only that worker's runs.
-  function reuseWorkflow(runid, model){
+  function reuseWorkflow(runid, model, label){
     authorGet("/api/author/start-from?runid=" + encodeURIComponent(runid) + (model ? "&" + model : "")).then(function(r){
       if(!r || !r.ok){ window.alert((r && r.error) || "nothing to start from"); return; }
       document.getElementById("tab-chat").click();
-      document.dispatchEvent(new CustomEvent("bareloop-reuse", {detail: {runid: runid, prefill: r}}));
+      document.dispatchEvent(new CustomEvent("bareloop-reuse", {detail: {runid: runid, prefill: r, label: label || ""}}));
     }).catch(function(x){ window.alert("could not reach the panel: " + x.message); });
   }
-  // Edit in chat (hamr 2026-10-07, option A) — the same prefill door as Reuse workflow (`start-from`, the ONE reader of a
-  // run's signed job), but the Chat card opens with EVERY box open and the normal [Start drafting] path: it drafts a new job.
-  // The origin line is code-owned fixed text; run name and status word come from the same helpers the run header uses.
-  function editInChat(detail){
-    var origin = "Copied from " + detail.job + " (" + runLabel(detail.runNo, detail.runid) + ") \u2014 " +
-      ((detail.status && detail.status.word) || "ended") +
-      ". Every box is open. Change anything and it drafts as a new job; change nothing and it is another run of the same job.";
-    authorGet("/api/author/start-from?runid=" + encodeURIComponent(detail.runid)).then(function(r){
+  // Schedule run / Cancel / modify schedule (T Part 7): starts nothing and signs nothing. It opens the SAME Chat card as the neighbouring Reuse
+  // workflow button, in schedule mode (the When field showing the current schedule). The run it copies from is the server's answer
+  // (`detail.schedule.fromRunid`: the green the schedule was made from), so a red run of a scheduled job still opens the card.
+  function scheduleInChat(detail){
+    var from = (detail.schedule && detail.schedule.fromRunid) || detail.runid;
+    authorGet("/api/author/start-from?mode=schedule&runid=" + encodeURIComponent(from)).then(function(r){
       document.getElementById("tab-chat").click();
-      document.dispatchEvent(new CustomEvent("bareloop-edit", {detail: (r && r.ok) ? {runid: detail.runid, prefill: r, origin: origin} : {error: (r && r.error) || "nothing to copy"}}));
+      document.dispatchEvent(new CustomEvent("bareloop-schedule", {detail: (r && r.ok) ? {runid: from, prefill: r, job: detail.job} : {error: (r && r.error) || "nothing to schedule"}}));
     }).catch(function(x){
       document.getElementById("tab-chat").click();
-      document.dispatchEvent(new CustomEvent("bareloop-edit", {detail: {error: "could not reach the panel: " + x.message}}));
+      document.dispatchEvent(new CustomEvent("bareloop-schedule", {detail: {error: "could not reach the panel: " + x.message}}));
     });
   }
   // Resume (hamr 2026-10-07, option B — moved from the run's Job tab): the Chat card opens in RESUME mode, filled from the
@@ -2452,20 +2493,46 @@
       var canResume = !!detail.resume && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "resume"; });
       if(canResume) html = '<button class="btn primary" type="button" data-testid="btn-resume-run">Resume</button>';
     }
-    // Edit in chat: every non-green ending (the server's Ended block says so) — a died run included
-    if(!live && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "edit"; })){
-      html += '<button class="btn" type="button" data-testid="btn-edit-chat">Edit in chat</button>';
+    // Accept (T Part 8): right after Resume, before Reuse workflow. Shown only when the SERVER says this run waits at its review door
+    // (`detail.accept`: a door record, not expired, no honoured decision after it). It records the person's accept through the engine's own door.
+    if(!live && detail.accept === true){
+      html += '<button class="btn primary" type="button" data-testid="btn-accept-run">Accept</button>';
     }
-    // Reuse workflow: on a GREEN run only (the server's Ended block says so) — a new run of the same signed job
-    if(!live && !detail.died && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "reuse"; })){
+    // Reuse workflow: ONE door on every ending (v1.101), a died run included - the Chat card opens with every box open
+    if(!live && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "reuse"; })){
       html += '<button class="btn" type="button" data-testid="btn-reuse">Reuse workflow</button>';
+    }
+    // T Part 7: the schedule button is LAST, right after Reuse workflow. The SERVER decides (detail.schedule): `scheduled` shows
+    // Cancel / modify schedule (every run of the job, also while one is live: cancel is never refused); else `canSchedule` shows
+    // Schedule run; else no button. The label never changes in place — a different state is a different button.
+    var sc = detail.schedule || null;
+    var scw = (sc && sc.words) || {};
+    if(sc && sc.scheduled){
+      html += '<button class="btn" type="button" data-testid="run-cancel-schedule">' + escapeXml(scw.cancelModify || "") + '</button>';
+    } else if(sc && sc.canSchedule){
+      html += '<button class="btn" type="button" data-testid="run-schedule">' + escapeXml(scw.scheduleRun || "") + '</button>';
+    }
+    // RULED 2026-10-15: Remove from Needs you is LAST. The SERVER says when it shows (a stopped run in Needs you, never a live Accept, never a running run).
+    if(!live && detail.canRemoveFromNeeds === true){
+      html += '<button class="btn" type="button" data-testid="btn-needs-remove">Remove from Needs you</button>';
     }
     bar.innerHTML = html;
     bar.hidden = html === "";
+    var needsBtn = bar.querySelector('[data-testid="btn-needs-remove"]');
+    if(needsBtn){
+      needsBtn.addEventListener("click", function(){
+        needsBtn.disabled = true;
+        authorPost("/api/runs/" + encodeURIComponent(detail.runid) + "/needs-remove", {}).then(function(res){
+          if(res.status === 200 && res.body && res.body.ok){ refreshRunsList(true); selectRun(detail.runid); return; }
+          needsBtn.disabled = false;
+          bar.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="needs-remove-err">' + escapeXml((res.body && res.body.error) || ("refused (" + res.status + ")")) + '</span>');
+        }).catch(function(x){ needsBtn.disabled = false; bar.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="needs-remove-err">could not reach the panel: ' + escapeXml(x.message) + '</span>'); });
+      });
+    }
+    var schedBtn = bar.querySelector('[data-testid="run-schedule"], [data-testid="run-cancel-schedule"]');
+    if(schedBtn) schedBtn.addEventListener("click", function(){ scheduleInChat(detail); });
     var reuseBtn = bar.querySelector('[data-testid="btn-reuse"]');
-    if(reuseBtn) reuseBtn.addEventListener("click", function(){ reuseWorkflow(detail.runid); });
-    var editBtn = bar.querySelector('[data-testid="btn-edit-chat"]');
-    if(editBtn) editBtn.addEventListener("click", function(){ editInChat(detail); });
+    if(reuseBtn) reuseBtn.addEventListener("click", function(){ reuseWorkflow(detail.runid, "", runName(detail.job, detail.runNo, detail.runid)); });
     var stopBtn = bar.querySelector('[data-testid="btn-stop"]');
     if(stopBtn){
       stopBtn.addEventListener("click", function(){
@@ -2474,6 +2541,21 @@
           if(res.body && res.body.ok){ stopAsked[detail.runid] = true; renderRunActions(detail); }
           else { stopBtn.disabled = false; bar.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="stop-err">' + escapeXml((res.body && res.body.error) || ("refused (" + res.status + ")")) + '</span>'); }
         }).catch(function(x){ stopBtn.disabled = false; bar.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="stop-err">could not reach the panel: ' + escapeXml(x.message) + '</span>'); });
+      });
+    }
+    var accBtn = bar.querySelector('[data-testid="btn-accept-run"]');
+    if(accBtn){
+      accBtn.addEventListener("click", function(){
+        accBtn.disabled = true;
+        authorPost("/api/runs/" + encodeURIComponent(detail.runid) + "/accept", {}).then(function(res){
+          if(res.status === 200 && res.body && res.body.ok){ refreshRunsList(true); selectRun(detail.runid); return; }
+          if(res.status === 202 && res.body && res.body.pending){
+            bar.insertAdjacentHTML("beforeend", '<span class="stopping" data-testid="accept-pending">still re-checking the tree; look again in a moment</span>');
+            return;
+          }
+          accBtn.disabled = false;
+          bar.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="accept-err">' + escapeXml((res.body && res.body.error) || ("refused (" + res.status + ")")) + '</span>');
+        }).catch(function(x){ accBtn.disabled = false; bar.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="accept-err">could not reach the panel: ' + escapeXml(x.message) + '</span>'); });
       });
     }
     var resBtn = bar.querySelector('[data-testid="btn-resume-run"]');
@@ -2487,7 +2569,7 @@
       if(currentRunid !== runid) return;
       getJSON("/api/runs/" + encodeURIComponent(runid)).then(function(d){
         if(currentRunid !== runid) return;
-        if(d.glyph === "▶" && !d.died){ selectRun(runid, null, ".hist-row"); return; }
+        if(d.glyph === "▶" && !d.died){ selectRun(runid); return; }
         if(tries > 0) afterResumeRefresh(runid, tries - 1);
       }).catch(function(){ if(tries > 0) afterResumeRefresh(runid, tries - 1); });
     }, 1500);
@@ -2532,7 +2614,7 @@
     document.getElementById("audit-body").hidden = false;
     renderEnded(detail);
 
-    setRunHeader(detail.glyph, runName(detail.job, detail.runNo, detail.runid), runHeaderBody(detail));
+    setRunHeader(detail.glyph, runName(detail.job, detail.runNo, detail.runid), runHeaderBody(detail), detail.accept ? "Accept" : null);
 
     document.getElementById("run-empty").hidden = true;
     document.getElementById("run-content").hidden = false;
@@ -2584,7 +2666,7 @@
       " &middot; " + wallPhrase;
 
     var box = document.getElementById("run-summary");
-    box.className = "summary-box " + (detail.died ? "magenta" : ((detail.glyph === "✗" || detail.glyph === "■") ? "red" : (detail.glyph === "▶" ? "amber" : "")));
+    box.className = "summary-box " + (detail.died ? "magenta" : (detail.glyph === "✗" ? "red" : (detail.glyph === "■" ? "grey" : (detail.glyph === "▶" ? "amber" : ""))));
     // F196: a synthetic placeholder box (e.g. "died during planning") is a
     // LABEL, not a real step — excluded from this count so a run that died
     // before any step started reads "0 of 0 done" / "none started", never
@@ -2664,7 +2746,7 @@
   // ONE spelling of a step's state: its dot + the bold state word — read by the Run tab's step cards AND the Audit tab's grouped rows
   function stepStateHTML(box, testid){
     var cls = box.state === "done" ? "green" : (box.state === "stopped" ? (box.status && box.status.sign === "\u25A0" ? "stopped" : "red") : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
-    return '<span class="step-state" data-testid="' + testid + '"><span class="dot ' + cls + '"></span><b class="st-word">' + escapeXml(boxStatusWord(box)) + '</b></span>';
+    return '<span class="step-state" data-testid="' + testid + '"><span class="dot ' + cls + (cls === "amber" ? " pulse" : "") + '"></span><b class="st-word">' + escapeXml(boxStatusWord(box)) + '</b></span>';
   }
   // build item C: Audit tab attempt row -> its rounds (server-built,
   // lazy-fetched on expand via /api/runs/:runid/rounds?part=<i>&attempt=<n>).
@@ -3059,6 +3141,57 @@
     var isLiveRun = detail.glyph === "▶" && !detail.died;
     var boxes = buildOrderedBoxes(parts, isLiveRun);
     var numberMap = stepNumberIndices(boxes);
+    // RULED 2026-10-15 (v1.104): ONE `schedule` section at the top of the Audit of every run of a job that has a schedule now, always folded when the page
+    // opens, worded on the server (`detail.scheduleSection`: title, sign, head, rows [{label,text}]). A run a CANCELLED schedule started keeps its one old line.
+    if(typeof detail.startedAudit === "string" && detail.startedAudit !== ""){
+      var startedEl = document.createElement("div");
+      startedEl.className = "hint";
+      startedEl.setAttribute("data-testid", "audit-started");
+      startedEl.style.overflowWrap = "anywhere";
+      startedEl.textContent = detail.startedAudit;
+      container.appendChild(startedEl);
+    }
+    var sec = detail.scheduleSection;
+    if(sec && Array.isArray(sec.rows) && sec.rows.length){
+      var gWrap = document.createElement("div");
+      gWrap.className = "audit-part";
+      gWrap.setAttribute("data-testid", "audit-schedule-group");
+      var gBtn = document.createElement("button");
+      gBtn.type = "button";
+      gBtn.className = "btn audit-part-toggle";
+      gBtn.setAttribute("aria-expanded", "false");
+      gBtn.setAttribute("data-testid", "audit-schedule-toggle");
+      var secHead = function(open){ return (open ? "\u25BE " : "\u25B8 ") + escapeXml(sec.title) + " [" + glyphSpan(sec.sign) + "] " + escapeXml(sec.head); };
+      gBtn.innerHTML = secHead(false);
+      var gBody = document.createElement("div");
+      gBody.className = "audit-part-body";
+      gBody.hidden = true;
+      gBody.setAttribute("data-testid", "audit-schedule-body");
+      // same row look as the drafting/step tables: the `rounds-table` in the `audit-table-scroll` wrapper (label column, dotted row lines)
+      var schedRows = "";
+      sec.rows.forEach(function(l){
+        schedRows += '<tr><td class="hint" style="white-space:nowrap">' + escapeXml(l.label) + '</td><td style="overflow-wrap:anywhere;white-space:pre-wrap">' + escapeXml(l.text) + '</td></tr>';
+      });
+      gBody.innerHTML = '<div class="audit-table-scroll"><table class="rounds-table" data-testid="audit-schedule-table"><tbody>' + schedRows + '</tbody></table></div>';
+      gBtn.addEventListener("click", function(){
+        var open = gBtn.getAttribute("aria-expanded") === "true";
+        gBtn.setAttribute("aria-expanded", open ? "false" : "true");
+        gBody.hidden = open;
+        gBtn.innerHTML = secHead(!open);
+      });
+      gWrap.appendChild(gBtn);
+      gWrap.appendChild(gBody);
+      container.appendChild(gWrap);
+    }
+    // RULED 2026-10-15: how the run left Needs you (by you, or after 7 days), worded on the server
+    if(typeof detail.needsAudit === "string" && detail.needsAudit !== ""){
+      var needsEl = document.createElement("div");
+      needsEl.className = "hint";
+      needsEl.setAttribute("data-testid", "audit-needs-removed");
+      needsEl.style.overflowWrap = "anywhere";
+      needsEl.textContent = detail.needsAudit;
+      container.appendChild(needsEl);
+    }
     // P5-R: a resumed run is ONE run — its legs are told apart by a divider line (code-owned text from the server)
     var dividers = Array.isArray(detail.legDividers) ? detail.legDividers : [];
     boxes.forEach(function(box, idx){
@@ -3291,6 +3424,12 @@
     var verdictEl = document.getElementById("details-verdict");
     if(job.checkTypeTitle){ verdictEl.title = job.checkTypeTitle; } else { verdictEl.removeAttribute("title"); }
     document.getElementById("details-model").textContent = job.model;
+    // RULED 2026-10-15: how the run began and the job's schedule NOW, both worded on the server (absent on an imported job)
+    [["started", job.started], ["schedule", job.schedule]].forEach(function(p){
+      var f = document.getElementById("details-" + p[0] + "-field");
+      if(typeof p[1] === "string" && p[1] !== ""){ f.hidden = false; document.getElementById("details-" + p[0]).textContent = p[1]; }
+      else { f.hidden = true; }
+    });
     var descField = document.getElementById("details-description-field");
     if(job.description){ descField.hidden = false; document.getElementById("details-description").textContent = job.description; }
     else { descField.hidden = true; }
@@ -3322,21 +3461,27 @@
   // from the run's own `glyph`/`died` fields, same rule `renderRun` already
   // uses for `isLive` — never re-derived a second way).
   var runIsLive = false;
-  function selectRun(runid, rowEl, siblingSelector){
+  // a FINISHED run of a scheduled job is still refetched on the list cadence: its SCHEDULED / NEXT block changes without the run
+  // changing (a refused fire turns NEXT red, a slot passes), and nothing else would repaint it
+  var openIsScheduled = false;
+  var lastOpenFetchAt = 0;
+  function selectRun(runid){
     hideImportView();
     clearSelection();
-    document.querySelectorAll(siblingSelector).forEach(function(r){ r.classList.remove("selected"); r.setAttribute("aria-pressed","false"); });
-    if(rowEl){ rowEl.classList.add("selected"); rowEl.setAttribute("aria-pressed","true"); }
     currentRunid = runid;
+    paintRunsList(); // the list marks the selected run itself (rl-sel); it writes only when the markup changed
     lastLegDividers = [];
     lastJobToolsList = null;
     lastRunDetailSig = null;
     runIsLive = false;
+    openIsScheduled = false;
+    lastOpenFetchAt = Date.now();
     var myToken = ++selectToken;
     getJSON("/api/runs/" + encodeURIComponent(runid)).then(function(detail){
       if(myToken !== selectToken) return; // a different run was selected before this resolved
       lastRunDetailSig = sig(detail);
       runIsLive = detail.glyph === "▶" && !detail.died;
+      openIsScheduled = !!(detail.schedule && detail.schedule.scheduled);
       renderRun(detail);
     }).catch(function(e){
       if(myToken !== selectToken) return;
@@ -3389,6 +3534,7 @@
   var RUNS_LIST_POLL_MS = 10000;
   var pollTimer = null;
   var lastRunsSig = null;
+  var lastRunsPayloadSig = null;
   var lastRunDetailSig = null;
   var lastRunsListRefreshAt = 0;
   var pollFailStreak = 0;
@@ -3420,14 +3566,14 @@
     return getJSON("/api/runs").then(function(result){
       pollFailStreak = 0;
       var runs = result.runs || [];
-      var next = sig(runs);
-      if(next === lastRunsSig) return runs; // unchanged payload — never rebuild the DOM for nothing
-      lastRunsSig = next;
+      var next = sig(result);
+      if(next === lastRunsPayloadSig) return runs; // unchanged payload — never rebuild the DOM for nothing
+      lastRunsPayloadSig = next;
+      lastRunsSig = sig(runs);
       withScrollPreserved(["left-pane-body"], function(){
-        // setItems re-runs the SAME filter/search state and view mode
-        // (runsFilterFn/runsApplyFn close over runsViewMode and the filter
-        // bar's own state) — a poll tick never resets either.
-        runsFilterBar.setItems(runs);
+        // the painter re-runs the SAME filter/search state — a poll tick never resets it, and it writes a box only when its markup changed.
+        setRunsData(result);
+        runsFilterBar.refresh();
       });
       return runs;
     }).catch(function(){
@@ -3443,7 +3589,10 @@
   }
 
   function refreshOpenRun(){
-    if(!currentRunid || !runIsLive) return Promise.resolve();
+    if(!currentRunid) return Promise.resolve();
+    var scheduleDue = openIsScheduled && (Date.now() - lastOpenFetchAt) >= RUNS_LIST_POLL_MS;
+    if(!runIsLive && !scheduleDue) return Promise.resolve();
+    lastOpenFetchAt = Date.now();
     var runid = currentRunid;
     var myToken = selectToken;
     return getJSON("/api/runs/" + encodeURIComponent(runid)).then(function(detail){
@@ -3454,6 +3603,7 @@
       var changed = next !== lastRunDetailSig;
       lastRunDetailSig = next;
       runIsLive = detail.glyph === "▶" && !detail.died;
+      openIsScheduled = !!(detail.schedule && detail.schedule.scheduled);
       if(changed){
         withScrollPreserved(["right-pane-body"], function(){ renderRun(detail); });
       }
@@ -3462,6 +3612,7 @@
 
   function pollTick(forceList){
     if(document.hidden) return;
+    tickSince(); // Running now: the wall counts up in place
     refreshRunsList(forceList);
     var wasLive = runIsLive;
     return refreshOpenRun().then(function(){
@@ -3487,25 +3638,17 @@
   getJSON("/api/runs").then(function(result){
     var runs = result.runs || [];
     lastRunsSig = sig(runs);
-    runsFilterBar.setItems(runs);
+    lastRunsPayloadSig = sig(result);
+    setRunsData(result);
+    runsFilterBar.refresh();
     if(runs.length && !runs[0].fileMissing){
-      // build item 5 — the LEFT pane opens on Chat by default; this no
-      // longer force-clicks "tab-runs" (it used to switch the left pane
-      // away from Chat on every load that had a run). The RIGHT pane still
-      // loads the newest run's details so they're ready the moment a
-      // person switches to the Runs tab themselves — the Workflows view
-      // starts collapsed, but its job row still renders "selected" (build
-      // item, 2026-09-26: a job row shows selected state like a child row)
-      // since `runsFilterBar.refresh()` re-renders AFTER `currentRunid` is
-      // set.
-      selectRun(runs[0].runid, null, ".hist-row");
+      // the LEFT pane opens on Chat by default; the RIGHT pane loads the newest run so it is ready when a person opens the Runs tab.
+      selectRun(runs[0].runid);
       document.getElementById("tab-run").click();
-      runsFilterBar.refresh();
     }
     startPolling();
   }).catch(function(e){
     document.getElementById("wf-list").innerHTML = '<div class="hint">failed to load: ' + escapeXml(e.message) + '</div>';
-    document.getElementById("history-list").innerHTML = '<div class="hint">failed to load: ' + escapeXml(e.message) + '</div>';
     startPolling(); // still start — a transient initial failure shouldn't block all future polling
   });
 
@@ -3957,6 +4100,18 @@
     // Reuse workflow — set when the card was opened by [Reuse workflow]: the run (or imported job) it came from.
     // Only Source, Destination and the two caps are open on that card; the SERVER refuses any other change.
     var startFrom = null;
+    // ONE door (v1.101): what the card was prefilled from, so the page can tell whether a JOB box changed. {card, green, name, nextName}
+    // `name` = the origin's job name (shown while no job box changed), `nextName` = the server's next free <base>-N (shown once one does).
+    var reuseOrigin = null;
+    var nameTouched = false; // the person typed their own name for a changed job
+    // T Part 7: the card in SCHEDULE mode (opened by Schedule run / Cancel-modify schedule): the Reuse card plus the When field.
+    // `sched` = {job, runid, words, cur, scheduled, refusal, now} while it is on, else null. `cur` = the signed trigger (the When field's
+    // starting value); every word comes from `words` (the server's one table, src/schedulewords.js SCHEDULE_WORDS).
+    var sched = null;
+    var whenHash = null;       // the hash click 1 returned; null = click 1 not done (or a When / card box was edited since)
+    var whenConfirm = null;    // the lower-cased words the label shows after click 1: "Confirm: every day at 13:15"
+    var whenBusy = false;      // a request is out: the main button dims and cannot be pressed
+    var whenLocked = false;    // ~1.5 s after click 2 the main button is dead (hamr clicked Run twice thinking it was the trigger)
     // the picked job's OWN check type: with the Check type radio on "Reuse workflow" the card's checkType comes from here, never from the radio
     var reuseCheckType = "deterministic";
     var reusePickedName = "";
@@ -3983,7 +4138,8 @@
       // the one exception on a resume card: an older spec that names no model leaves the Model box open (picked at resume)
       var modelOpen = resuming && resumeRun.pickModel === true;
       OPEN_IDS.forEach(function(id){ setLock(id, live || (resuming && CAP_IDS.indexOf(id) === -1 && !(modelOpen && id === "jf-model"))); });
-      document.getElementById("jf-model").disabled = live || (resuming && !modelOpen);
+      // a schedule card keeps the Model the green run had (T9): only Inputs, Destination, When and the two caps are open
+      document.getElementById("jf-model").disabled = live || (resuming && !modelOpen) || !!sched;
       // the Check type radios stay clickable on a reuse card (Deterministic / Rubric = leave reuse); a live session or a resume freezes them
       document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.disabled = live || resuming; });
       document.getElementById("job-card").classList.toggle("reuse", reuseOn);
@@ -3998,7 +4154,8 @@
         NUMBERED_IDS.forEach(gutterSync);
         document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === "deterministic"); });
       }
-      startFrom = null; reuseSession = false; autoSigned = false; reuseCheckType = "deterministic";
+      startFrom = null; reuseOrigin = null; nameTouched = false; reuseSession = false; autoSigned = false; reuseCheckType = "deterministic";
+      scheduleOff();
       sfLine.hidden = true; sfNote.hidden = true; originLine.hidden = true;
       setReuseLocked(false);
       renderPicker();
@@ -4040,7 +4197,6 @@
       rwSearch.hidden = picked;
       rwPicked.hidden = !picked;
       rwPickedTxt.innerHTML = picked ? "<b>" + escapeXml(reusePickedName) + "</b>" : "";
-      if(!picked) sfLine.hidden = true;
     }
     function rwMark(name, q){
       var i = q ? name.toLowerCase().indexOf(q.toLowerCase()) : -1;
@@ -4226,13 +4382,18 @@
     // Check type: Deterministic / Rubric / Reuse workflow. Reuse opens the picker on an empty card; Deterministic or
     // Rubric while the picker is showing (picked or not) LEAVES reuse — boxes untouched (clearStartFrom(true)).
     function onVerdictChange(v){
-      if(v === "reuse"){ if(rwBox.hidden) openPicker(); return; }
+      if(v === "reuse"){
+        if(startFrom !== null){ clearStartFrom(true); setVerdict("reuse"); openPicker(); return; }
+        if(rwBox.hidden) openPicker();
+        return;
+      }
       if(!rwBox.hidden){
         clearStartFrom(true);
         setVerdict(v);
         renderPicker();
       }
       setJobPlaceholders(v);
+      syncReuseName();
       refreshStartEnabled();
     }
     document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){
@@ -4479,6 +4640,22 @@
       var ask = st.pendingAsk;
       var atMenu = !!ask && ask.kind === "menu";
       var hint = "";
+      // T Part 7 (hamr found these by clicking fwdloop): after click 2 of a schedule the card is the empty New job card and the button is DEAD for ~1.5 s,
+      // reading "Start drafting" — never a Run / Sign & run invitation
+      if(!st.session && st.whenLocked){
+        return {text: "Start drafting", action: "none", disabled: true, hint: ""};
+      }
+      // When changed from the signed value = the ONE button turns into Sign schedule (Cancel schedule when the choice is By hand): two clicks, $0, starts
+      // nothing. After click 1 it reads "Confirm: <words>". It never reaches the run routes. Unchanged = disabled, with the plain words that nothing changed.
+      if(!st.session && st.when){
+        var ww = st.when.words || {};
+        var wtext = st.when.confirm ? (ww.confirmPrefix || "") + st.when.confirm : (st.when.cancel ? ww.cancelSchedule : ww.signSchedule);
+        if(st.when.changed){
+          return {text: wtext, action: st.when.confirm ? "when-sign" : "when-sign-prepare", disabled: !!st.when.busy, hint: ""};
+        }
+        // nothing changed: a schedule card has nothing to sign and NEVER falls through to the run button; the plain words say why (a refused card says its own reason)
+        return {text: ww.signSchedule, action: "none", disabled: true, hint: st.when.refused ? "" : (ww.nothingChanged || "")};
+      }
       if(!st.session){
         return {text: reuse ? "Sign & run" : "Start drafting", action: "start", disabled: !st.startOk, hint: ""};
       }
@@ -4507,7 +4684,8 @@
       return !!st.session && !!st.pendingAsk && st.pendingAsk.kind === "menu";
     }
     function renderMain(){
-      var st = {session: sessionLive, startOk: startOk, signClicked: signClickedOnce};
+      var st = {session: sessionLive, startOk: startOk, signClicked: signClickedOnce, whenLocked: whenLocked};
+      if(sched){ st.when = {changed: whenChanged(), refused: !!sched.refusal, cancel: byId("jf-when").value === "hand", confirm: whenConfirm, busy: whenBusy, words: sched.words}; }
       if(sessionLive && lastState){
         st.phase = lastState.phase; st.pendingAsk = lastState.pendingAsk;
         st.specHash = lastState.specHash;
@@ -4516,7 +4694,7 @@
       var open = askBoxOpenFor(st);
       msgInput.disabled = !open;
       if(!open) msgInput.value = "";
-      var b = mainButtonFor(st, !msgInput.value.trim(), !!startFrom || verdictValue() === "reuse");
+      var b = mainButtonFor(st, !msgInput.value.trim(), reusePathNow() || verdictValue() === "reuse");
       mainBtn.textContent = b.text;
       mainBtn.disabled = b.disabled;
       mainAction = b.action;
@@ -4709,7 +4887,7 @@
 
     // ---- Reuse workflow — the card opens filled from the SIGNED job: four open boxes, the rest greyed ----
     function setVal(id, v){ document.getElementById(id).value = (v === undefined || v === null) ? "" : String(v); }
-    // ONE owner of filling the card from a prefill (a re-attached session, Reuse, Edit in chat, Resume): the six boxes P7 left
+    // ONE owner of filling the card from a prefill (a re-attached session, Reuse, Resume): the six boxes P7 left
     // (the old Goal/Source/Success/Guardrails/Judge boxes are gone), then every box re-fits and its number gutter re-measures.
     function fillCard(c){
       setVal("jf-name", c.jobName); setVal("jf-job", c.jobText); setVal("jf-inputs", c.inputs);
@@ -4719,20 +4897,27 @@
       fitCardBoxes();
     }
     // ONE owner of the reuse fill: the Run tab's / Import view's button and the picker both arrive here (the
-    // `bareloop-reuse` event), so the card ends up in the same picked state whichever door was used.
+    // `bareloop-reuse` event). ONE DOOR (v1.101): every box is open and prefilled; nothing is locked. Only the schedule card
+    // (`d.lock`) keeps the job boxes locked - it signs the green run's plan as it is.
     function applyReuse(d){
       var pre = d.prefill || {};
       var c = pre.card || {};
+      var lock = d.lock === true;
       clearStartFrom();
       openNewCard();
       startFrom = d.importId ? {importId: d.importId} : {runid: d.runid};
       reuseCheckType = c.checkType === "rubric" ? "rubric" : "deterministic";
       reusePickedName = c.jobName || (pre.origin && pre.origin.job) || "job";
-      setVerdict("reuse");
+      setVerdict(lock ? "reuse" : reuseCheckType);
       if(c.model){ setPick(c); }
       fillCard(c);
-
-      setReuseLocked(true);
+      reuseOrigin = {card: c, green: pre.green === true, name: reusePickedName, nextName: pre.nextName || ""};
+      nameTouched = false;
+      setReuseLocked(lock);
+      if(!lock){
+        originLine.textContent = "Reuse: " + (d.label || reusePickedName);
+        originLine.hidden = false;
+      }
       renderPicker();
       sfLine.hidden = false;
       sfLine.textContent = pre.line ? rwMeta({checkType: reuseCheckType, line: pre.line}) : "";
@@ -4745,27 +4930,33 @@
       refreshStartEnabled();
     }
     document.addEventListener("bareloop-reuse", function(e){ applyReuse(e.detail || {}); });
-
-    // Edit in chat — the card opens filled from the SIGNED job with EVERY box open; the button stays the normal
-    // [Start drafting] (startFrom / reuse state are never set: no borrowed track record). A live drafting session is
-    // handled exactly as applyReuse does (clearStartFrom + openNewCard). A refused prefill opens nothing, error only.
-    function applyEdit(d){
-      if(d.error){ errEl.textContent = d.error; return; }
-      var c = (d.prefill || {}).card || {};
-      clearStartFrom();
-      openNewCard();
-      setVerdict(c.checkType === "rubric" ? "rubric" : "deterministic");
-      if(c.model){ setPick(c); }
-      fillCard(c);
-
-      originLine.textContent = d.origin || "";
-      originLine.hidden = !d.origin;
-      renderPicker();
-      refreshModelStatus();
-      refreshCapNote();
-      refreshStartEnabled();
+    // Did a JOB box (the job text, the check type, the thinking tick) change from the run the card came from? The same comparison the
+    // server makes on the start (whitespace ignored): the Run boxes (Inputs, Destination, Model, caps) never count.
+    function jobBoxesChangedNow(){
+      if(reuseOrigin === null) return false;
+      var cur = currentCard(), o = reuseOrigin.card;
+      var t = function(v){ return typeof v === "string" ? v.replace(/\s+/g, "") : ""; };
+      return t(cur.jobText) !== t(o.jobText) || cur.checkType !== (o.checkType === "rubric" ? "rubric" : "deterministic") || (cur.thinking === true) !== (o.thinking === true);
     }
-    document.addEventListener("bareloop-edit", function(e){ applyEdit(e.detail || {}); });
+    // the reuse path (signed plan verbatim, no drafting, $0): a card made by Reuse workflow from a GREEN run with no job box changed
+    function reusePathNow(){
+      return startFrom !== null && (reuseOn || (reuseOrigin !== null && reuseOrigin.green === true && !jobBoxesChangedNow()));
+    }
+    // the Job name box: the origin's name while no job box changed; the next free <base>-N the moment one does (renamable); the origin's
+    // again when the boxes go back. A name typed while nothing changed is put back (the origin's name is forced).
+    function syncReuseName(){
+      if(reuseOrigin === null || reuseOn) return;
+      var nameEl = document.getElementById("jf-name");
+      if(!jobBoxesChangedNow()){ nameEl.value = reuseOrigin.name; nameTouched = false; }
+      else if(!nameTouched){ nameEl.value = reuseOrigin.nextName; }
+    }
+    function reuseBoxesEdited(){ syncReuseName(); renderMain(); }
+    document.getElementById("jf-job").addEventListener("input", reuseBoxesEdited);
+    thinkingBox.addEventListener("change", reuseBoxesEdited);
+    document.getElementById("jf-name").addEventListener("input", function(){
+      if(reuseOrigin === null || reuseOn) return;
+      if(jobBoxesChangedNow()) nameTouched = true; else syncReuseName();
+    });
 
     // Resume — the card in RESUME mode: the signed job filled and locked, only Cap $ and Time cap open (prefilled from the
     // engine's own resume plan, the values the Job tab used to show). A live drafting session is handled exactly as
@@ -4940,12 +5131,150 @@
       });
     }
 
+    // ---- T Part 7: the schedule card (Schedule run / Cancel-modify schedule, PANEL-BUILD.md T addendum C.7, design/schedule-mock.html) ----
+    // The Reuse card plus the When field, copied from fwdloop's Run card (index.html:998-1019, 4690-4772). The page works out nothing: the
+    // server's words, refusals and hashes. Click 1 (schedule-prepare) is $0 and signs nothing; click 2 (schedule) signs; NOTHING runs.
+    function byId(id){ return document.getElementById(id); }
+    var WHEN_KINDS = ["hand", "daily", "weekdays", "weekly", "file-updated", "new-file"];
+    function whenTriggerFromBoxes(){
+      var kind = byId("jf-when").value;
+      if(kind === "hand") return null;
+      if(kind === "daily" || kind === "weekdays" || kind === "weekly"){
+        var m = /^(\d{2}):(\d{2})$/.exec(byId("jf-when-time").value);
+        var o = m ? {kind: kind, hour: Number(m[1]), minute: Number(m[2])} : {kind: kind};   // an empty time goes to the server, which says so
+        if(kind === "weekly") o.day = byId("jf-when-day").value;
+        return o;
+      }
+      var q = {kind: kind};
+      q[kind === "new-file" ? "folder" : "path"] = byId("jf-when-path").value.trim();
+      return q;
+    }
+    // one comparable spelling of a trigger (or By hand), so "changed" is a plain string compare
+    function whenCanon(t){
+      if(!t) return "hand";
+      return [t.kind, t.hour === undefined ? "" : t.hour, t.minute === undefined ? "" : t.minute, t.day || "", t.path || t.folder || ""].join("|");
+    }
+    // Is the card changed from what was signed? The ONE reader. A schedule card (Schedule run, Cancel / modify schedule) never starts a run: the main
+    // button is Sign schedule while this is true and disabled while it is not. On a scheduled job any When, Inputs, Destination or cap edit counts
+    // (a re-sign); on an unscheduled job only When does (nothing to re-sign until a schedule is picked).
+    function whenChanged(){
+      if(!sched || sched.refusal) return false;
+      if(whenCanon(whenTriggerFromBoxes()) !== whenCanon(sched.cur)) return true;
+      if(sched.scheduled !== true || !sched.base) return false;
+      var b = sched.base;
+      return byId("jf-inputs").value.trim() !== b.inputs || byId("jf-dest").value.trim() !== b.dest ||
+        byId("jf-cap-money").value.trim() !== b.capUsd || byId("jf-cap-time").value.trim() !== b.capTime;
+    }
+    function whenShowSubs(){
+      var kind = byId("jf-when").value;
+      byId("jf-when-clock").hidden = !(kind === "daily" || kind === "weekdays" || kind === "weekly");
+      byId("jf-when-day").hidden = kind !== "weekly";
+      byId("jf-when-filebox").hidden = !(kind === "file-updated" || kind === "new-file");
+      byId("jf-when-path").placeholder = kind === "new-file" ? "/full/path/to/folder" : "/full/path/to/file";
+    }
+    function paintWhen(){
+      var field = byId("jf-when-field");
+      field.hidden = !sched;
+      if(!sched) return;
+      var w = sched.words || {};
+      var opts = w.options || {};
+      byId("jf-when-label").textContent = w.whenLabel || "";
+      var sel = byId("jf-when");
+      sel.innerHTML = "";
+      WHEN_KINDS.forEach(function(k){
+        var op = document.createElement("option");
+        op.value = k;
+        // on a scheduled job the first option reads Cancel schedule instead of By hand
+        op.textContent = k === "hand" ? (sched.scheduled ? w.cancelSchedule : w.byHand) : (opts[k] || k);
+        sel.appendChild(op);
+      });
+      var t = sched.cur;
+      sel.value = t ? t.kind : "hand";
+      if(t && t.hour !== undefined){ byId("jf-when-time").value = ("0" + t.hour).slice(-2) + ":" + ("0" + t.minute).slice(-2); }
+      if(t && t.day) byId("jf-when-day").value = t.day;
+      byId("jf-when-path").value = t ? (t.path || t.folder || "") : "";
+      // refused = the select and every sub-box are DISABLED and the reason stands where "Now:" would be
+      var refused = !!sched.refusal;
+      sel.disabled = byId("jf-when-day").disabled = byId("jf-when-time").disabled = byId("jf-when-path").disabled = refused;
+      byId("jf-when-now").textContent = refused ? sched.refusal : (sched.now ? (w.nowPrefix || "") + sched.now : "");
+      byId("jf-err-when").textContent = "";
+      whenShowSubs();
+    }
+    function scheduleOff(){
+      sched = null; whenHash = null; whenConfirm = null; whenBusy = false;
+      paintWhen();
+    }
+    // editing any When box between the two clicks DROPS the hash: the label returns to Sign schedule
+    function whenEdited(){
+      whenHash = null; whenConfirm = null;
+      byId("jf-err-when").textContent = "";
+      whenShowSubs();
+      renderMain();
+    }
+    ["jf-when", "jf-when-day", "jf-when-time"].forEach(function(id){ byId(id).addEventListener("change", whenEdited); });
+    byId("jf-when-path").addEventListener("input", whenEdited);
+    // the hash binds the WHOLE card (inputs, destination, caps), so a change to any of them drops it too (and repaints the button: on a scheduled job a box edit is Sign schedule)
+    ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time"].forEach(function(id){ byId(id).addEventListener("input", function(){ if(!sched) return; if(whenHash !== null) whenEdited(); else renderMain(); }); });
+    function doWhenSign(){
+      if(!sched || whenBusy || whenLocked) return;
+      var timeCapMin = byId("jf-cap-time").value.trim();
+      var body = {
+        runid: sched.runid, when: whenTriggerFromBoxes(), inputs: byId("jf-inputs").value.trim(), destination: byId("jf-dest").value.trim(),
+        capUsd: Number(byId("jf-cap-money").value), maxWallMs: timeCapMin === "" ? undefined : Math.round(Number(timeCapMin) * 60000),
+      };
+      var second = whenHash !== null;
+      if(second) body.hash = whenHash;
+      whenBusy = true; renderMain();
+      authorPost(second ? "/api/author/schedule" : "/api/author/schedule-prepare", body).then(function(r){
+        whenBusy = false;
+        if(!(r.status >= 200 && r.status < 300 && r.body && r.body.ok === true)){
+          whenHash = null; whenConfirm = null;
+          byId("jf-err-when").textContent = (r.body && (r.body.say || r.body.error)) || ("refused (" + r.status + ")");
+          renderMain(); return;
+        }
+        var words = typeof r.body.words === "string" ? r.body.words : "";
+        if(!second){
+          whenHash = r.body.hash;
+          whenConfirm = words ? words.charAt(0).toLowerCase() + words.slice(1) : "";
+          byId("jf-err-when").textContent = "";
+          renderMain(); return;
+        }
+        // after click 2 the card clears to the empty New job card and NOTHING runs; the button is dead for 1.5 s
+        var say = typeof r.body.say === "string" ? r.body.say : "";
+        whenHash = null; whenConfirm = null;
+        whenLocked = true;
+        setTimeout(function(){ whenLocked = false; renderMain(); }, 1500);
+        resetCard();
+        if(say) chatActionFailed(say);
+        refreshRunsList(true);
+        if(currentRunid) selectRun(currentRunid);
+      }).catch(function(){
+        whenBusy = false; whenHash = null; whenConfirm = null;
+        byId("jf-err-when").textContent = "network error — could not reach the panel server, nothing was signed";
+        renderMain();
+      });
+    }
+    // the card opened by Schedule run / Cancel-modify schedule: the SAME Reuse fill (applyReuse), then the When field
+    function applyScheduleCard(d){
+      if(d.error){ errEl.textContent = d.error; return; }
+      if(sessionLive || resumeRun !== null){ errEl.textContent = "Finish or clear what is on the card first, then try again."; return; }
+      applyReuse({runid: d.runid, prefill: d.prefill, lock: true});
+      var sc = (d.prefill || {}).scheduleCard || {};
+      sched = {job: d.job, runid: d.runid, words: sc.words || {}, cur: sc.trigger || null, scheduled: sc.scheduled === true, refusal: sc.refusal || null, now: sc.now || null,
+        base: {inputs: byId("jf-inputs").value.trim(), dest: byId("jf-dest").value.trim(), capUsd: byId("jf-cap-money").value.trim(), capTime: byId("jf-cap-time").value.trim()}};
+      whenHash = null; whenConfirm = null; whenBusy = false;
+      paintWhen();
+      refreshStartEnabled();
+    }
+    document.addEventListener("bareloop-schedule", function(e){ applyScheduleCard(e.detail || {}); });
+
     mainBtn.addEventListener("click", function(){
       if(mainBtn.disabled) return;
       if(mainAction === "start") doStart();
       else if(mainAction === "check-deps") doCheckDeps();
       else if(mainAction === "send") doSend();
       else if(mainAction === "sign-prepare" || mainAction === "sign") doSign();
+      else if(mainAction === "when-sign-prepare" || mainAction === "when-sign") doWhenSign();
     });
 
     refreshStartEnabled();

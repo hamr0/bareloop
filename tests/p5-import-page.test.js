@@ -51,7 +51,7 @@ function importHarness({ currentImportId = 'aaaaaaaaaaaa', getJSON = () => Promi
   const doc = { getElementById: get };
   const calls = { jobs: [], clicks: [], runs: [], audits: [], fetched: [] };
   get('tab-run').click = () => calls.clicks.push('tab-run');
-  const names = ['escapeXml', 'runLabel', 'runName', 'panelMoney', 'glyphClass', 'statusWordHtml', 'setRunHeader', 'importedHeader', 'importedNoLog', 'paintImportedRun', 'paintImportedRunPlain', 'renderImportView'];
+  const names = ['escapeXml', 'runLabel', 'runName', 'panelMoney', 'glyphClass', 'dotPulses', 'dotClass', 'statusWordHtml', 'setRunHeader', 'importedHeader', 'importedNoLog', 'paintImportedRun', 'paintImportedRunPlain', 'renderImportView'];
   // eslint-disable-next-line no-new-func
   const api = new Function('document', 'reuseImportedWorkflow', 'renderJob', 'renderRun', 'renderAudit', 'getJSON', 'currentImportId',
     `var currentRunid = null;\n${names.map(fnSrc).join('\n')}\nreturn {render: renderImportView, rid: function(){ return currentRunid; }};`)(
@@ -178,12 +178,12 @@ test('page: renderRun reads "not recorded" — never 0 or a live floor — for t
   assert.match(fnSrc('hideImportView'), /run-counters"\)\.hidden = false/, 'a normal run brings the counters back');
 });
 
-test('page: the Import button lives on the Workflows toolbar, opens the folder browser + paste box, and Import posts the path to the guarded route', () => {
+test('page: the Import button sits at the top of the Runs list, opens the folder browser + paste box, and Import posts the path to the guarded route', () => {
   assert.match(PAGE, /id="wf-import" data-testid="wf-import"/);
   assert.match(PAGE, /id="import-path"/);
   assert.match(PAGE, /authorGet\("\/api\/fs\/list\?path=" \+ encodeURIComponent\(path \|\| ""\)\)/);
   assert.match(PAGE, /authorPost\("\/api\/imports", \{path: importPathEl\.value\}\)/);
-  assert.match(fnSrc('paintRunsViewToggle'), /wf-import"\)\.hidden = runsViewMode !== "workflows"/, 'Workflows view only');
+  assert.doesNotMatch(PAGE, /runsViewMode|paintRunsViewToggle/, 'the Workflows / History switch is gone (P9 v2): Import is always shown');
   assert.match(fnSrc('selectRun'), /hideImportView\(\)/, 'picking a run brings the run tabs back');
   assert.match(PAGE, /\.import-entries\{[^}]*overflow-x:hidden/, 'no horizontal scroll in the folder list');
 });

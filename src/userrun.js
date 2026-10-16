@@ -54,7 +54,8 @@ import { resolveJudge } from './judged.js';
 // path uses (never a second one) and keeps its patient the way it left it.
 import { readResume, resumeTreeGate, checkpointAgeGate, writeRunGreenRow, CHECKPOINT_OUTCOMES, PAUSE_TTL_MS } from './reuse.js';
 // PRD item 28's provider factory (src/providers.js): the WORKER provider's
-// ctor/envKey/tier-table/param-gating come from here now — one seam instead
+// ctor/param-gating come from here now (its key variable and price come from the
+// Settings row, src/providerrows.js) — one seam instead
 // of an `if (provider === …)` scattered across this script. PRD item 32.2
 // moved the JUDGE onto this SAME factory: it used to be separately pinned
 // below to a hardcoded Anthropic constructor at the judged tier because the
@@ -507,10 +508,8 @@ async function execute(ctx) {
   // and tested apart from this script. The JUDGE's model is resolved separately
   // (`resolveJudge`, below the key block): it defaults to this same resolved
   // worker model and a signed `judge` override wins over it.
-  // The provider's OWN tier table (src/providers.js) supplies the default —
-  // not the anthropic-only DEFAULT_TIER_MODELS above (that map is the
-  // `--model` FLAG's vocabulary only, sonnet/haiku, unrelated to which
-  // provider the spec names). `spec.provider` is not validateJob'd until
+  // There is no default model: a spec or flag that names none dies below with
+  // REFUSE_NAME_MODEL (the model is one ticked in Settings). `spec.provider` is not validateJob'd until
   // runJob below, so an unrecognized value dies here with the same operator-
   // facing message resolveWorkerModel's own errors use, rather than an
   // unhandled throw.
@@ -1405,8 +1404,8 @@ async function execute(ctx) {
   // token against. That made "provider-agnostic" half-true: you could run on
   // another provider only if you also held an Anthropic account.
   //
-  // The WORKER's key comes from the provider's own `envKey` (the factory's, so
-  // there is one table saying which provider reads which variable) and is
+  // The WORKER's key comes from its Settings row's own env name (`keyValueOf`, src/providerrows.js,
+  // so there is one place saying which row reads which variable) and is
   // ALWAYS required — the worker always runs.
   //
   // The JUDGE's key is required only when the close actually judges

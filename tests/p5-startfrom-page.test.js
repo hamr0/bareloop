@@ -35,13 +35,13 @@ test('page: Reuse workflow asks the server for the prefill, opens the Chat tab (
   assert.deepEqual(urls, ['/api/author/start-from?runid=run%201']);
   assert.deepEqual(clicks, ['tab-chat']);
   assert.equal(events[0].type, 'bareloop-reuse');
-  assert.deepEqual(events[0].detail, { runid: 'run 1', prefill });
+  assert.deepEqual(events[0].detail, { runid: 'run 1', prefill, label: '' });
 });
 
-test('page: Reuse workflow is in the action row only, where the server offers it (green rows) — never in the Ended block — "Start from this" is gone from the page', () => {
+test('page: Reuse workflow is in the action row only, where the server offers it (every ending, v1.101) — never in the Ended block — "Start from this" is gone from the page', () => {
   assert.match(fnSrc('renderRunActions'), /data-testid="btn-reuse">Reuse workflow</);
   assert.match(fnSrc('renderRunActions'), /a\.id === "reuse"/);
-  assert.match(fnSrc('renderRunActions'), /reuseWorkflow\(detail\.runid\)/);
+  assert.match(fnSrc('renderRunActions'), /reuseWorkflow\(detail\.runid, ""/);
   assert.doesNotMatch(fnSrc('renderEnded'), /<button|data-testid="btn-/, 'B5: the Ended block carries no buttons');
   assert.doesNotMatch(fnSrc('renderRunActions') + fnSrc('renderEnded'), /start-from|Start from this/);
 });
@@ -70,7 +70,7 @@ test('page: setReuseLocked greys Name and The job — and never Inputs, Destinat
   };
   const modelSelect = els['jf-model'];
   // eslint-disable-next-line no-new-func
-  const f = new Function('document', 'modelSelect', `var LOCKED_IDS = ["jf-name", "jf-job"]; var OPEN_IDS = ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var reuseOn = false; var sessionLive = false; var resumeRun = null; var CAP_IDS = ["jf-cap-money", "jf-cap-time"]; function syncThinking(){}\n${fnSrc('syncCardLock')}\n${fnSrc('setReuseLocked')}\nreturn setReuseLocked;`)(doc, modelSelect);
+  const f = new Function('document', 'modelSelect', `var LOCKED_IDS = ["jf-name", "jf-job"]; var OPEN_IDS = ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var reuseOn = false; var sessionLive = false; var resumeRun = null; var sched = null; var CAP_IDS = ["jf-cap-money", "jf-cap-time"]; function syncThinking(){}\n${fnSrc('syncCardLock')}\n${fnSrc('setReuseLocked')}\nreturn setReuseLocked;`)(doc, modelSelect);
   f(true);
   for (const id of ['jf-name', 'jf-job']) {
     assert.equal(els[id].readOnly, true, `${id} is read only`);

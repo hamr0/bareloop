@@ -129,6 +129,41 @@ export function appendRunEvent(event, opts = {}) {
 }
 
 /**
+ * RULED 2026-10-15 ("Remove from Needs you"): the person took a stopped run's card out of the Needs-you list. ONE row
+ * `{runid, type:'needs-removed', at}` appended beside the run rows; it is not a run, a claim or an event ({@link readRunList}
+ * ignores it, so the monthly limit, the run counter and the scheduler never see it). Nothing is rewritten.
+ * @param {string} runid
+ * @param {{ home?: string, now?: () => number }} [opts]
+ * @returns {string} the `at` written
+ */
+export function appendNeedsRemoved(runid, opts = {}) {
+  const at = new Date((opts.now ?? Date.now)()).toISOString();
+  const path = runlistPath(opts.home);
+  mkdirSync(runlistHome(opts.home), { recursive: true, mode: 0o700 });
+  appendFileSync(path, `${JSON.stringify({ runid, type: 'needs-removed', at })}\n`);
+  try { chmodSync(path, 0o600); } catch { /* best-effort perms */ }
+  return at;
+}
+
+/**
+ * The newest `needs-removed` time (ms) per run id. An absent file is an empty map; a row with no readable time is not a removal.
+ * @param {{ home?: string }} [opts]
+ * @returns {Map<string, number>}
+ */
+export function readNeedsRemovals(opts = {}) {
+  /** @type {Map<string, number>} */
+  const out = new Map();
+  const path = runlistPath(opts.home);
+  if (!existsSync(path)) return out;
+  for (const r of parseJsonl(path).records) {
+    if (!r || r.type !== 'needs-removed' || typeof r.runid !== 'string') continue;
+    const t = typeof r.at === 'string' ? Date.parse(r.at) : NaN;
+    if (Number.isFinite(t) && t >= (out.get(r.runid) ?? -Infinity)) out.set(r.runid, t);
+  }
+  return out;
+}
+
+/**
  * @typedef {{ type: 'leg-start', runid: string, leg: number, pid?: number, capUsd?: number, at: string }} LegStart
  * A resumed run's NEW claim (P5-R, hamr 2026-10-02: one run, one id, one row): appended beside the run's row
  * instead of a second row. {@link readRunList} folds it into the row.

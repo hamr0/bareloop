@@ -45,9 +45,9 @@ const PAGE_PATH = join(HERE, '..', 'src', 'panel', 'index.html');
 function extractChipWiringSource() {
   const html = readFileSync(PAGE_PATH, 'utf8');
 
-  const startA = html.indexOf('function filterBarHTML(scope){');
+  const startA = html.indexOf('var RL_CHIPS = [');
   const endA = html.indexOf('// item 4: phone-only');
-  assert.ok(startA !== -1 && endA !== -1 && endA > startA, 'expected the filter-bar component plus the runs-view-toggle wiring in src/panel/index.html');
+  assert.ok(startA !== -1 && endA !== -1 && endA > startA, 'expected the filter-bar component in src/panel/index.html');
   const regionA = html.slice(startA, endA);
 
   const startB = html.indexOf('document.querySelectorAll(".chip[data-filter]").forEach(function(chip){');
@@ -126,22 +126,9 @@ function makeFixtureElements() {
   const auditAll = makeEl({ classes: ['chip'], attrs: { 'data-filter': 'all', 'aria-pressed': 'true' } });
   const auditWrites = makeEl({ classes: ['chip'], attrs: { 'data-filter': 'write', 'aria-pressed': 'false' } });
   const countEl = makeEl({ tag: 'div', attrs: { id: 'runs-filter-count' } });
-  // the [Workflows]/[History] view toggle — its own chip group, disjoint
-  // from both the audit chips and the filter-bar's own chips (item 2 merge)
-  const wfViewChip = makeEl({ classes: ['chip'], attrs: { 'data-runs-view': 'workflows', 'aria-pressed': 'true' } });
-  const histViewChip = makeEl({ classes: ['chip'], attrs: { 'data-runs-view': 'history', 'aria-pressed': 'false' } });
-  const wfList = makeEl({ tag: 'div', attrs: { id: 'wf-list' } });
-  const historyList = makeEl({ tag: 'div', attrs: { id: 'history-list' } });
-  // P5 item 4: the view toggle also shows/hides the Import button, its list and its box (Workflows view only)
-  const importBtn = makeEl({ tag: 'button', attrs: { id: 'wf-import' } });
-  const importList = makeEl({ tag: 'div', attrs: { id: 'import-list' } });
-  const importBox = makeEl({ tag: 'div', attrs: { id: 'import-box' } });
-  const elements = [
-    detChip, allTimeChip, clearBtn, auditAll, auditWrites, countEl,
-    wfViewChip, histViewChip, wfList, historyList, importBtn, importList, importBox,
-  ];
+    const elements = [detChip, allTimeChip, clearBtn, auditAll, auditWrites, countEl];
   return {
-    elements, detChip, clearBtn, auditAll, wfViewChip, histViewChip,
+    elements, detChip, clearBtn, auditAll,
   };
 }
 
@@ -154,19 +141,11 @@ function runWiring(elements) {
     setItem(k, v) { this.store[k] = String(v); },
   };
   // eslint-disable-next-line no-new-func
-  const factory = new Function('document', 'localStorage', 'renderHistory', 'renderWorkflows', 'filterRuns', 'groupRunsByJob', 'filterWorkflows', `
+  const factory = new Function('document', 'localStorage', 'paintRunsList', 'escapeXml', `
     ${src}
     return { runsFilterBar: runsFilterBar };
   `);
-  return factory(
-    fakeDocument,
-    fakeLocalStorage,
-    function () {},
-    function () {},
-    function (runs) { return runs; },
-    function (runs) { return runs; },
-    function (jobs) { return jobs; },
-  );
+  return factory(fakeDocument, fakeLocalStorage, function () {}, (x) => String(x));
 }
 
 test('F-panel-chip-collision RED: no unscoped ".chip" selector left in src/panel/index.html (audit-tab wiring must be scoped, e.g. ".chip[data-filter]")', () => {
@@ -188,15 +167,11 @@ test('F-panel-chip-collision: clicking a Runs filter-bar checkType chip toggles 
   assert.equal(detChip.getAttribute('aria-pressed'), 'false', 'the chip must visually show OFF after the second click, not stay stuck pressed=true from a leaked audit-tab handler');
 });
 
-test('F-panel-chip-collision: the Runs filter-bar chip, the audit chip, and the runs-view-toggle chip each receive exactly ONE click listener (no leak between any of the three chip groups)', () => {
-  const {
-    elements, detChip, auditAll, wfViewChip, histViewChip,
-  } = makeFixtureElements();
+test('F-panel-chip-collision: the Runs filter-bar chip and the audit chip each receive exactly ONE click listener (no leak between the two chip groups)', () => {
+  const { elements, detChip, auditAll } = makeFixtureElements();
   runWiring(elements);
   assert.equal(detChip.listeners.filter((l) => l.type === 'click').length, 1, 'filter-bar chip should have exactly one click listener');
   assert.equal(auditAll.listeners.filter((l) => l.type === 'click').length, 1, 'Audit chip should have exactly one click listener (its own, only)');
-  assert.equal(wfViewChip.listeners.filter((l) => l.type === 'click').length, 1, 'Workflows view-toggle chip should have exactly one click listener');
-  assert.equal(histViewChip.listeners.filter((l) => l.type === 'click').length, 1, 'History view-toggle chip should have exactly one click listener');
 });
 
 test('F-panel-chip-collision: the Runs filter-bar "clear" button resets state and repaints a stuck-pressed chip back to off in one click', () => {
@@ -213,13 +188,7 @@ test('F-panel-chip-collision: the Runs filter-bar "clear" button resets state an
   assert.equal(detChip.getAttribute('aria-pressed'), 'false', 'clear must visibly un-press every chip it turned off in state');
 });
 
-test('item 2: clicking the History view-toggle chip flips runsViewMode and re-presses the toggle chips (never touching the filter-bar\'s OWN chip group)', () => {
-  const { elements, detChip, histViewChip, wfViewChip } = makeFixtureElements();
-  runWiring(elements);
-
-  histViewChip.click();
-  assert.equal(histViewChip.getAttribute('aria-pressed'), 'true');
-  assert.equal(wfViewChip.getAttribute('aria-pressed'), 'false');
-  // the filter-bar's own chip group is untouched by a view-toggle click
-  assert.equal(detChip.getAttribute('aria-pressed'), 'false');
+test('P9 v2: the Workflows / History view switch is gone (no view-toggle chips, no saved view key)', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  assert.doesNotMatch(html, /data-runs-view|runsViewMode|bareloop-panel-runs-view|history-list/);
 });

@@ -20,15 +20,8 @@ function fnSrc(name) {
 }
 
 // ---------------------------------------------------------------- the card
-test('page: a resumed run is ONE card with a small "resumed ×N" tag — on the history row and the sub-card (not the workflow card)', () => {
-  // eslint-disable-next-line no-new-func
-  const { resumedTagHtml } = new Function(`${fnSrc('escapeXml')}\n${fnSrc('resumedTagHtml')}\nreturn { resumedTagHtml: resumedTagHtml };`)();
-  assert.equal(resumedTagHtml(0, 'x'), '', 'a run nobody resumed carries no tag');
-  assert.equal(resumedTagHtml(undefined, 'x'), '');
-  assert.match(resumedTagHtml(2, 'hist-resumed-r1'), /data-testid="hist-resumed-r1">resumed &times;2</);
-  assert.match(fnSrc('buildRunRowEl'), /resumedTagHtml\(r\.resumedCount, "hist-resumed-" \+ r\.runid\)/, 'the history row builds the tag off the run\'s own count');
-  assert.doesNotMatch(fnSrc('renderWorkflows'), /resumedTagHtml/, 'the workflow card drops the tag (hamr 2026-10-06 layout); the history row and the sub-card keep it');
-  assert.match(fnSrc('groupRunsByJob'), /lastResumedCount: last\.resumedCount \|\| 0/);
+test('page: the left list no longer draws the "resumed ×N" tag (P9 v2: it is on the Run tab; the mockup does not draw it)', () => {
+  assert.doesNotMatch(PAGE, /resumedTagHtml|wf-resumed|hist-resumed/);
 });
 
 // ---------------------------------------------------------------- the map
@@ -137,27 +130,4 @@ test('page card: the stopped part says why, in words, beside its figures', () =>
     () => '', (ms) => `${ms}ms`, () => '', (n) => `$${n}`, () => '', (x) => x);
   assert.match(f({ kind: 'step', rounds: 1, toolCalls: 2, wallMs: 5, spentUsd: 3, unpricedRounds: 0, attempts: [], stopReason: 'money cap' }, {}), /stopped &mdash; money cap/);
   assert.doesNotMatch(f({ kind: 'step', rounds: 1, toolCalls: 2, wallMs: 5, spentUsd: 3, unpricedRounds: 0, attempts: [] }, {}), /stopped/);
-});
-
-// ---------------------------------------------------------------- Workflows sub-card cap (hamr 2026-10-08)
-test('page: an expanded job shows at most its latest 7 other runs when no search/filter is active; a selected older run beyond them is appended, never hidden; filters lift the cap', () => {
-  // eslint-disable-next-line no-new-func
-  const { capSubRuns } = new Function(`var WF_SUB_CAP = 7;\n${fnSrc('capSubRuns')}\nreturn { capSubRuns: capSubRuns };`)();
-  const runs = (n) => Array.from({ length: n }, (_, i) => ({ runid: `r${i}` })); // latest first
-  assert.equal(PAGE.match(/var WF_SUB_CAP = (\d+);/)[1], '7');
-  const few = capSubRuns(runs(7), false, null);
-  assert.deepEqual([few.shown.length, few.more], [7, false], '7 other runs look exactly as today');
-  const many = capSubRuns(runs(12), false, null);
-  assert.deepEqual(many.shown.map((r) => r.runid), ['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6'], 'the NEWEST seven');
-  assert.equal(many.more, true);
-  const sel = capSubRuns(runs(12), false, 'r10');
-  assert.deepEqual(sel.shown.map((r) => r.runid), ['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r10'], 'a selected older run is appended after the 7');
-  assert.equal(sel.more, true);
-  assert.equal(capSubRuns(runs(12), false, 'r3').shown.length, 7, 'a selected run already inside the 7 adds nothing');
-  const filtered = capSubRuns(runs(12), true, null);
-  assert.deepEqual([filtered.shown.length, filtered.more], [12, false], 'search/filters active: every matching sub-card, no cap, no line');
-  const src = fnSrc('renderWorkflows');
-  assert.match(src, /capSubRuns\(childRuns, active, olderSelected\)/);
-  assert.match(src, /"wf-older-" \+ g\.job/);
-  assert.match(src, /"older: use search\."/);
 });

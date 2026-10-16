@@ -14421,3 +14421,202 @@ says a bundle's spec cannot be edited (`src/planrun.js`).
 - A single string unit "US dollars" was ALREADY legal. mv7qabx4 failed because the drafter picked "$", not because the library lacked a form.
 - Allowing lists in facts is a schema change, arbiter-adjacent (it changes what a signed spec can express): hamr's call.
 - **Bump.** bareguard `^0.24.0` landed as 937ad19. The only break was the vocabulary text regex at `src/facts.js:280`. Gate 4079/4079.
+
+## F229 — a replan answer cut off at max_tokens was reported as "The model provider failed", though the provider did nothing wrong (run mv9gm796, 2026-10-15; fixed 2026-10-16, test-proven, not yet live)
+
+**Grounded in:** run mv9gm796's spine, `~/.config/bareloop/panel-sessions/smv9gm6t83bb8/source-seed/change2-bareloop/u-mv9gm796.jsonl` line 92: an `escalation` with `category: "provider-red"`, `phase: "replan"`, `detail: "worker loop: truncated:max_tokens"`; the panel showed "The model provider failed (The replan call failed (provider-red) … truncated:max_tokens)". Source: `src/planrun.js` (the step/fix-only truncation lane in `mkWorker`'s `ask`, and the fall-through that maps `truncated:*` to `provider-red`).
+
+- The F122 "2A b" rule already treated a step or fix round cut at max_tokens as a failed attempt. The replan call went through the drafter worker, which was not in that lane, so its cut-off fell through to `provider-red`: it blamed the provider and put the run in the resumable provider-red set.
+- **Ruling (hamr, 2026-10-16):** a replan cut off at max_tokens is a bounded failed attempt, not provider-red. Scout and the first draft are NOT changed (the existing "DRAFTER truncation" test still pins them to provider-red).
+- **Fix.** The replan drafter opts in (`truncatedBounded`); the cut round is booked and an `attempt-bounded` record is written; the half-answer is never validated and there is no redraft; the run ends `plan-red` with an `escalation` (`category: plan-red`, `cause: truncated`) carrying the code-owned sentence "The replan answer was cut off at its length limit, so no new plan came back." The panel shows that sentence, not "the model provider failed" or "the checks said no".
+- **2026-10-16, redraft gap closed.** Self-review found the first fix only caught the FIRST replan answer being cut: a bad first answer followed by a cut redraft made `draftPlan` return '' and `validate('')` minted a plan-red parse-error "Unexpected end of JSON input" in generic words, and a cut first answer skipped the redraft entirely. Closed with one path for both tries: a cut answer is treated like a bad one. A cut first answer is never validated; it emits `plan-validate` `replan-1` with one plain-words red ("cut off at its length limit ... shorter plan") that is fed to the redraft like a validator red. A cut redraft, whatever the first answer was, ends `plan-red` with `cause: truncated` and the cut sentence. Cut then good is accepted; cut then bad is the ordinary plan-red. No Resume, no extra tries, every cut round stays booked.
+- **Status.** Test-proven (`tests/planrun-variance.test.js`, `tests/panel-ended.test.js`; the engine tests fail with the fix reverted). Not exercised live.
+
+## F230 — thinking SPLIT vs ON contrast: the frozen rule says NO BUILD (change2 SPLIT 2/4 vs ON 3/4 green; digest 4/4 both, SPLIT about 3.4x cheaper); separately, the run planner failed validation twice on 2 of 8 change2 runs with thinking on (2026-10-16; closed, thinking stays as today)
+
+**Grounded in:** the pre-registered battery, `docs/logs/2026-10-16-run-thinking-split-contrast-prereg.md` (rule frozen before any number; results appended there), and its output `.claude/scratch/poc-thinking/battery/paid/summary.txt` with `results.jsonl` and `spines/`. 16 counted runs on DeepSeek, total spend $0.7111 of the $2.00 hard stop, which includes the casualty's $0.0142 (the 16 counted runs alone are about $0.697); one casualty (slot 7 attempt 1, mvas306h, provider-red) replaced once by mvas5ty2.
+
+- **Contrast.** SPLIT (thinking only where the arm field turns it on) against ON (thinking everywhere), 2 jobs x 2 arms x n=4.
+- **Verdict (frozen rule, verbatim):** "NO BUILD — SPLIT has fewer greens than ON on change2". Thinking stays as it is today; no split is built.
+- **change2:** ON 3/4 green, median $0.0171, 1.3 min; SPLIT 2/4 green, median $0.0247, 2.5 min.
+- **digest:** ON 4/4 green, median $0.0929, 7.7 min; SPLIT 4/4 green, median $0.0272, 3.0 min (about 3.4x cheaper).
+- **Secondary, report-only:** change2 SPLIT carried 2 strikes and 28 fix rounds (mvarsueu escalated after 2 strikes and 28 fix rounds); change2 ON had none. digest fix rounds were 15 (ON) and 16 (SPLIT).
+- **Underpowered, as declared:** n=4 per arm; only a large difference reads as a result; full-run quality beyond the close verdict is unmeasured.
+- **Separate observation (planner reliability, independent of the split).** The planner runs with thinking on in both arms. change2 had 2 plan-reds, one per arm: mvaroz1h (SPLIT; draft-1 check-passes without tree-changed, draft-2 a pattern that does not compile as a RegExp) and mvas7oi6 (ON; draft-1 field `exits` instead of `exit`, draft-2 JSON parse error). So 2 of 8 change2 plans failed validation twice with thinking on in the planner. Open; no code change.
+- **Status.** Closed as a result; nothing built. Full run list and turns analysis: see F233.
+
+
+## F231 — thinking RETRY vs ON contrast: the frozen rule says NO BUILD (change2 4/4 vs 4/4 green, RETRY median $0.0178 not below ON $0.0171); the battery stopped at slot 11 on an unexplained field-violation (2026-10-16; closed, thinking stays as today)
+
+**Grounded in:** the pre-registered battery, `docs/logs/2026-10-16-run-thinking-retry-contrast-prereg.md` (rule frozen before any number; results appended there under `## Results`), and its output `.claude/scratch/poc-thinking/battery/retry-contrast/battery.log` with `results.jsonl`. 11 of 16 slots ran on DeepSeek, total counted spend $0.2999 of the $2.00 hard stop.
+
+- **Contrast.** RETRY (thinking off on first tries, on for step retries; fix rounds and planner as in the prereg) against ON (thinking everywhere), 2 jobs x 2 arms x n=4 planned.
+- **Verdict (frozen AND-rule):** NO BUILD. change2 is complete: greens 4 vs 4, but RETRY median spent $0.0178 is not below ON $0.0171, so the rule fails and cannot be met whatever the unrun digest slots 12-16 would show. Thinking stays as today.
+- **digest (incomplete, report only):** ON 1/1 green at $0.0603; RETRY 2/2 green, median $0.0398.
+- **Observation:** RETRY on change2 spent heavily on retry thinking (slot 2 mvay8wbv: 19,565 retry output tokens, $0.0358).
+- **With F230:** neither SPLIT nor RETRY beat today's all-thinking on the changelog rubric job (change2), while on the code job (digest) both were cheaper at equal greens (small n, underpowered as declared).
+- **Instrument stop (open, POC wrapper only).** The battery halted at slot 11 (mvaz4l6k, digest RETRY) with `field-violation`: label disagreements tools 0, engine-record 2, unknown-phase 0. Unexplained when written (explained 2026-10-16: see F233 §5, a wrapper FIFO queue after a transport retry, resting on spine inference and a $0 reproduction); the run itself was green and is counted in the tables as the driver printed it, but its wire check failed. No product code is involved.
+- **Status.** Closed as a result; nothing built. Full run list and turns analysis: see F233.
+
+## F232 — thinking RETRY vs ON on two medium code jobs: the frozen faster-or-cheaper rule is MET on both (p7small 4/4 vs 4/4, stoptest 3/4 vs 2/4); RETRY recommended as the default for code jobs only (hamr ruled 2026-10-16), build waits for hamr's go after the release (2026-10-16)
+
+**Grounded in:** the pre-registered battery, `docs/logs/2026-10-16-run-thinking-retry-medium-prereg.md` (rule frozen before any number; results appended there under `## Results`), and its output `.claude/scratch/poc-thinking/battery/retry-medium-2/battery.log` with `results.jsonl`. 16 of 16 slots ran on DeepSeek, total counted spend $1.9849 of the $4.00 hard stop, no casualties, every counted run passed the wire check.
+
+- **Delivery.** RETRY (thinking off on first tries, on for step retries) was delivered by a switch inside a throwaway engine copy (`.claude/scratch/poc-engine`); the original src is untouched.
+- **p7small:** greens 4/4 (RETRY) vs 4/4 (ON); median spent $0.0841 vs $0.1309; median wall 9.7 vs 11.6 min.
+- **stoptest:** greens 3/4 (RETRY) vs 2/4 (ON); median spent $0.0809 vs $0.2175; median wall 7.7 vs 17.1 min.
+- **Verdict (frozen rule):** "RECOMMEND making RETRY the default (tick = think everywhere): rule met on EACH job."
+- **With F230/F231:** on the short changelog rubric job (change2) neither arm beat all-thinking: in the RETRY vs ON contrast RETRY's median wall was 1.76 min vs ON 1.46 (ratio 1.20, over the 1.10 limit) and turns 17.5 vs 12 (F233), so the faster-or-cheaper rule says no for that job; the first rule (cheaper-only) had already failed on change2 in F231 before the 10%-tolerance rule was written (forking paths, named in the prereg and F233 §4). The gain shows on the longer code jobs, so the recommended default is for CODE jobs only (hamr ruled option A, 2026-10-16), not every job. n=4 per arm is underpowered (declared); "no worse at n=4" is not "proven equal"; quality beyond the close verdict is unmeasured. Five rows carry spendComplete=false (spend is a floor).
+- **Status.** The product build (a real per-phase switch: planner none, scout off, step attempt 1 off, attempt >= 2 none, fix none; tick = think everywhere) is NOT built. It waits for hamr's go after the release. Full run list and turns analysis: see F233.
+
+## F233 — full record of the 2026-10-16 thinking experiments (seven experiments, every run, and a turns analysis); RETRY and SPLIT take MORE turns on three of four comparable cells but each turn is shorter, and the only cell with FEWER turns is stoptest (2026-10-16; read-only, $0)
+
+**Grounded in:** the five batteries under `.claude/scratch/poc-thinking/battery/` (`paid/`, `retry/`, `retry-contrast/`, `retry-medium/`, `retry-medium-2/`: each `results.jsonl`, `battery.log`, `summary.txt`, `spines/`), the two POC sessions (`session-paid/`, `session-split/` spines `u-mvao31e3.jsonl`, `u-mvaoagnq.jsonl`), the archive ON baselines (spines of mv76m82c and mv97ju82 via `~/.config/bareloop/runs.jsonl`, read only), the three prereg docs `docs/logs/2026-10-16-run-thinking-{split-contrast,retry-contrast,retry-medium}-prereg.md`, and the analysis scripts `.claude/scratch/poc-thinking/analysis/turns.mjs` (full per-cell output saved beside it as `turns-output.txt`) and `tables.mjs` (`tables-output.md`). Entries F229-F232 above are unchanged; this is the one place with every run and the turns.
+
+### 1. The experiments, in the order they ran (all DeepSeek deepseek-flash, scratch HOME, patients are copies)
+
+| # | what | what changed | n | spend | verdict | commits (freeze / results) |
+|---|---|---|---|---|---|---|
+| E1 | POC all-off, run mvao31e3, change2 | thinking off on every request, planner included | 1 | $0.0030 (plus $0.25 drafting ceiling mechanic) | plan-red: the plan was not valid with the planner's thinking off; 5 turns, 0.3 min. An anecdote, not a row | none (background in the SPLIT prereg) |
+| E2 | POC split, run mvaoagnq, change2 | planner thinks, scout/step/fix off | 1 | about $0.014 | green, 1.3 min, 15 turns. An anecdote, not a row | none (background in the SPLIT prereg) |
+| E3 | SPLIT vs ON contrast (F230) | SPLIT = planner thinks, scout/step/fix off | 2 jobs x 2 arms x 4 (+1 casualty replaced once) | $0.7111 of $2.00 (includes the $0.0142 casualty) | NO BUILD: change2 SPLIT 2/4 vs ON 3/4 green; digest 4/4 both, SPLIT about 3.4x cheaper | 07ec397 / 73809db |
+| E4 | RETRY POC, change2, RETRY arm only | thinking off for scout and step attempt 1, on for step attempt >= 2 and fix; planner thinks | 4 | $0.0480 | 3/4 green (one plan-red), median spent $0.0097. Four runs of one arm is an anecdote; it motivated E5 | none (cited as background in the E5 prereg 32e892c) |
+| E5 | RETRY vs ON contrast (F231) | RETRY vs ON on change2 and digest | planned 16, ran 11 (stopped at slot 11 on a wrapper label check) | $0.2999 of $2.00 | NO BUILD: change2 4/4 vs 4/4 green but RETRY median $0.0178 not below ON $0.0171; digest incomplete (ON 1/1, RETRY 2/2) | 32e892c / 8cd22a4 |
+| E6 | medium attempt 1, p7small and stoptest (ABORTED, not counted) | same RETRY switch, delivered by the outside request wrapper | 3 slots ran | $0.1675 | aborted at slot 3 by the wrapper's field check (label disagreements: tools 25, engine-record 1); not counted anywhere; its 3 runs are listed below for completeness only | prereg freeze b36514b (aborted note in 918a41b) |
+| E7 | medium rerun, p7small and stoptest (F232) | the RETRY switch inside a throwaway engine copy (`.claude/scratch/poc-engine`), rules unchanged | 2 jobs x 2 arms x 4 = 16 of 16 | $1.9849 of $4.00 | frozen faster-or-cheaper rule MET on both jobs: p7small 4/4 vs 4/4 green, stoptest 3/4 (RETRY) vs 2/4 (ON) | b36514b (freeze), 918a41b (delivery note) / c468066 |
+
+Prereg docs: SPLIT `2026-10-16-run-thinking-split-contrast-prereg.md`, RETRY `2026-10-16-run-thinking-retry-contrast-prereg.md`, medium `2026-10-16-run-thinking-retry-medium-prereg.md` (all under `docs/logs/`). Arms in one line: ON = no thinking field anywhere (DeepSeek thinks everywhere, today); SPLIT = planner on, scout/step/fix off; RETRY = planner on, scout off, step attempt 1 off, step attempt >= 2 on, fix on.
+
+### 2. Every run
+
+`*` after the spend = spendComplete=false (a transport retry happened; the spend is a floor). Slot `7b` is the E3 replacement of casualty mvas306h. E6 rows are the ABORTED medium attempt and are counted nowhere. E1 mvao31e3 (plan-red, $0.0030, 0.3 min, 5 turns) and E2 mvaoagnq (green, about $0.014, 1.3 min, 15 turns) are the POC rows and are not in this table. Turns = worker-round records (no judge-round record appears in any of these spines, so judge turns are 0 everywhere). The last column splits the turns by phase.
+
+| exp | slot | job | arm | run | outcome | spent $ | wall min | turns | scout/plan+replan/step a1/step a2+/fix |
+|---|---|---|---|---|---|---|---|---|---|
+| E3 | 1 | change2 | ON | mvarngk9 | green | 0.0149 | 1.2 | 13 | 3/2/8/0/0 |
+| E3 | 2 | change2 | SPLIT | mvaroz1h | plan-red | 0.0405 | 3.0 | 6 | 4/2/0/0/0 |
+| E3 | 3 | change2 | SPLIT | mvarsueu | escalated | 0.0240* | 3.0 | 45 | 4/1/12/0/28 |
+| E3 | 4 | change2 | ON | mvarwp6u | green | 0.0254 | 2.0 | 19 | 4/1/14/0/0 |
+| E3 | 5 | change2 | ON | mvarz9x4 | green | 0.0102 | 0.8 | 12 | 4/1/7/0/0 |
+| E3 | 6 | change2 | SPLIT | mvas0dh9 | green | 0.0255 | 2.0 | 27 | 9/1/8/9/0 |
+| E3 | 7 | change2 | SPLIT | mvas306h | provider-red (casualty) | 0.0142* | 2.1 | 17 | 3/1/12/0/1 |
+| E3 | 7b | change2 | SPLIT | mvas5ty2 | green | 0.0160 | 1.3 | 21 | 3/1/11/6/0 |
+| E3 | 8 | change2 | ON | mvas7oi6 | plan-red | 0.0194 | 1.5 | 6 | 4/2/0/0/0 |
+| E3 | 9 | digest | ON | mvas9mbb | green | 0.0596 | 5.5 | 30 | 9/1/3/6/11 |
+| E3 | 10 | digest | SPLIT | mvasgqur | green | 0.0300 | 3.2 | 59 | 5/1/31/22/0 |
+| E3 | 11 | digest | SPLIT | mvaskwtk | green | 0.0187 | 2.2 | 19 | 9/1/6/0/3 |
+| E3 | 12 | digest | ON | mvasnt5v | green | 0.0734 | 6.3 | 28 | 8/1/19/0/0 |
+| E3 | 13 | digest | ON | mvasvwzr | green | 0.1574 | 13.3 | 66 | 9/1/33/19/4 |
+| E3 | 14 | digest | SPLIT | mvatd35f | green | 0.0244 | 2.7 | 25 | 8/1/12/0/4 |
+| E3 | 15 | digest | SPLIT | mvatgj1w | green | 0.0453* | 5.5 | 95 | 9/2/25/50/9 |
+| E3 | 16 | digest | ON | mvatnmjk | green | 0.1124 | 9.1 | 40 | 9/2/16/13/0 |
+| E4 | 1 | change2 | RETRY | mvaxkvsj | plan-red | 0.0037 | 0.3 | 5 | 3/2/0/0/0 |
+| E4 | 2 | change2 | RETRY | mvaxlbdw | green | 0.0129 | 1.1 | 11 | 3/1/7/0/0 |
+| E4 | 3 | change2 | RETRY | mvaxmqcj | green | 0.0066 | 0.6 | 11 | 4/1/6/0/0 |
+| E4 | 4 | change2 | RETRY | mvaxniry | green | 0.0248 | 2.1 | 23 | 5/1/10/7/0 |
+| E5 | 1 | change2 | ON | mvay7f8d | green | 0.0131 | 1.1 | 11 | 4/1/6/0/0 |
+| E5 | 2 | change2 | RETRY | mvay8wbv | green | 0.0358 | 2.9 | 18 | 3/1/7/7/0 |
+| E5 | 3 | change2 | RETRY | mvaycllr | green | 0.0149* | 1.7 | 19 | 3/1/10/0/5 |
+| E5 | 4 | change2 | ON | mvayeqns | green | 0.0212 | 1.7 | 11 | 3/1/7/0/0 |
+| E5 | 5 | change2 | ON | mvaygzyv | green | 0.0131 | 1.2 | 13 | 4/1/8/0/0 |
+| E5 | 6 | change2 | RETRY | mvayijfe | green | 0.0207 | 1.9 | 17 | 3/1/9/4/0 |
+| E5 | 7 | change2 | RETRY | mvaykymc | green | 0.0146 | 1.3 | 12 | 3/2/7/0/0 |
+| E5 | 8 | change2 | ON | mvaympco | green | 0.0265 | 2.4 | 27 | 6/2/13/6/0 |
+| E5 | 9 | digest | ON | mvaypshx | green | 0.0603 | 7.3 | 53 | 9/2/13/13/16 |
+| E5 | 10 | digest | RETRY | mvayz98y | green | 0.0246 | 4.1 | 23 | 7/1/3/4/8 |
+| E5 | 11 | digest | RETRY | mvaz4l6k | green | 0.0550* | 6.5 | 45 | 7/1/20/10/7 |
+| E6 | 1 | p7small | ON | mvb152tq | green | 0.0663 | 8.1 | 29 | 7/1/15/0/6 |
+| E6 | 2 | p7small | RETRY | mvb1fitu | green | 0.0366 | 4.5 | 55 | 8/1/24/15/7 |
+| E6 | 3 | p7small | RETRY | mvb1lcdi | green | 0.0646* | 8.4 | 61 | 9/1/30/5/16 |
+| E7 | 1 | p7small | ON | mvb4d2ai | green | 0.0438 | 4.4 | 21 | 8/1/12/0/0 |
+| E7 | 2 | p7small | RETRY | mvb4iq1k | green | 0.0629 | 8.0 | 50 | 8/1/25/0/16 |
+| E7 | 3 | p7small | RETRY | mvb4t0bm | green | 0.1018* | 12.0 | 62 | 9/1/24/8/20 |
+| E7 | 4 | p7small | ON | mvb58hos | green | 0.1357 | 11.7 | 43 | 9/1/27/6/0 |
+| E7 | 5 | p7small | ON | mvb5nidq | green | 0.1262 | 11.6 | 44 | 9/2/25/8/0 |
+| E7 | 6 | p7small | RETRY | mvb62dnf | green | 0.1311 | 11.4 | 64 | 9/2/28/17/8 |
+| E7 | 7 | p7small | RETRY | mvb6h0cm | green | 0.0664 | 6.5 | 61 | 9/1/27/11/13 |
+| E7 | 8 | p7small | ON | mvb6pbvj | green | 0.1751* | 14.7 | 62 | 9/2/44/7/0 |
+| E7 | 9 | stoptest | ON | mvb786wd | green | 0.2486* | 18.6 | 84 | 9/2/40/8/25 |
+| E7 | 10 | stoptest | RETRY | mvb7w67h | step-red | 0.0513 | 4.5 | 47 | 9/2/20/16/0 |
+| E7 | 11 | stoptest | RETRY | mvb820t1 | green | 0.0938 | 8.5 | 69 | 8/2/26/26/7 |
+| E7 | 12 | stoptest | ON | mvb8cxia | escalated | 0.2632* | 22.4 | 127 | 9/2/21/20/75 |
+| E7 | 13 | stoptest | ON | mvb95s5o | escalated | 0.1863 | 15.5 | 87 | 9/2/25/0/51 |
+| E7 | 14 | stoptest | RETRY | mvb9pqrj | green | 0.1552 | 13.1 | 63 | 8/1/28/0/26 |
+| E7 | 15 | stoptest | RETRY | mvba6nu7 | green | 0.0680* | 7.0 | 56 | 9/1/28/8/10 |
+| E7 | 16 | stoptest | ON | mvbafp5x | green | 0.0754 | 6.5 | 26 | 7/1/6/0/12 |
+
+Counted spend per experiment: E3 $0.7111 (includes the casualty $0.0142), E4 $0.0480, E5 $0.2999, E7 $1.9849; E6 $0.1675 uncounted. Wall times are the driver's job-start to job-end.
+
+### 3. Turns analysis
+
+**What a turn is and how it was measured.** A turn is one model call, i.e. one `worker-round` spine record (a `judge-round` record would count too; none exist in these spines). Phase comes from the record's `phase`: `scout`; `plan` (draft and redraft); `replan` (plan-phase rounds after a `replan` record); `step:*` split by the record's `iteration` into attempt 1 and attempt >= 2; `fix`. Output tokens per turn are `usage.outputTokens`. Seconds per turn is the round record's `ts` minus the `ts` of the record immediately before it in the same spine (a round is written when the call returns). So it includes the call plus any local tool work since the previous record and, if a transport retry happened inside the call, the retry. It is an approximation, not a wire timer. Medians are over the turns of one cell; cells are experiment x job x arm and are never pooled across jobs or arms. The counted cells exclude the E3 casualty (listed separately in `turns-output.txt`: 17 turns) and E6. Cell columns: "extra turns" = step attempt >= 2 + fix + replan turns, i.e. the turns a run spends beyond a clean first pass.
+
+| exp | job | arm | n | green | turns per run median (min-max) | turns, green runs median | extra turns (a2+ + fix + replan): median per run (sum/all turns) | sec per turn median: a1 / a2+ / fix | output tokens per turn median: a1 / a2+ / fix |
+|---|---|---|---|---|---|---|---|---|---|
+| E3 | change2 | ON | 4 | 3 | 12.5 (6-19) | 13 | 0 (0/50) | 2.4 / - / - | 343 / 0 / 0 |
+| E3 | change2 | SPLIT | 4 | 2 | 24 (6-45) | 24 | 7.5 (43/99) | 1.8 / 2.0 / 1.9 | 181 / 180 / 194 |
+| E3 | digest | ON | 4 | 4 | 35 (28-66) | 35 | 15.5 (54/164) | 4.3 / 3.7 / 4.5 | 676 / 476 / 635 |
+| E3 | digest | SPLIT | 4 | 4 | 42 (19-95) | 42 | 13 (88/198) | 1.8 / 1.6 / 1.7 | 217 / 144 / 176 |
+| E4 | change2 | RETRY | 4 | 3 | 11 (5-23) | 11 | 0 (7/50) | 1.7 / 3.0 / - | 195 / 359 / 0 |
+| E5 | change2 | ON | 4 | 4 | 12 (11-27) | 12 | 0 (7/62) | 2.1 / 2.4 / - | 222 / 335 / 0 |
+| E5 | change2 | RETRY | 4 | 4 | 17.5 (12-19) | 17.5 | 4.5 (16/66) | 1.8 / 2.7 / 1.7 | 181 / 306 / 270 |
+| E5 | digest | ON | 1 | 1 | 53 (53-53) | 53 | 30 (30/53) | 1.9 / 3.9 / 3.7 | 203 / 540 / 434 |
+| E5 | digest | RETRY | 2 | 2 | 34 (23-45) | 34 | 14.5 (29/68) | 2.4 / 6.1 / 3.6 | 213 / 701 / 462 |
+| E7 | p7small | ON | 4 | 4 | 43.5 (21-62) | 43.5 | 6.5 (22/170) | 6.1 / 3.2 / - | 1018 / 355 / 0 |
+| E7 | p7small | RETRY | 4 | 4 | 61.5 (50-64) | 61.5 | 24.5 (93/237) | 2.3 / 4.0 / 4.0 | 199 / 513 / 504 |
+| E7 | stoptest | ON | 4 | 2 | 85.5 (26-127) | 55 | 42 (191/324) | 4.2 / 3.8 / 3.8 | 717 / 630 / 570 |
+| E7 | stoptest | RETRY | 4 | 3 | 59.5 (47-69) | 63 | 22 (95/235) | 2.0 / 3.1 / 6.4 | 239 / 427 / 1025 |
+
+The per-phase tables (median/min/max turns per run per phase, output tokens per turn median and p90, seconds per turn median, per-run phase counts, cut-offs, transport retries) for every cell, the two POCs, the two archive baselines, the casualty and E6 are in `turns-output.txt`.
+
+**Cut-offs, retries, strikes (counted cells).** The only answer cut off at max_tokens in any counted cell is one in E7 stoptest ON (mvb8cxia, escalated). Transport retries (the same runs carry spendComplete=false): E3 change2 SPLIT 2, E3 digest SPLIT 1, E5 change2 RETRY 1, E5 digest RETRY 1, E7 p7small ON 1, E7 p7small RETRY 2, E7 stoptest ON 2, E7 stoptest RETRY 2; none in E3 ON cells, E4, E5 ON cells. Strikes (ladder records that did not improve): E3 change2 SPLIT 2 (both in mvarsueu), E7 stoptest ON 11, E7 stoptest RETRY 1, zero elsewhere. Replans: E3 digest ON 1, E5 change2 ON 1, E5 digest ON 1, E7 p7small ON 1, E7 stoptest RETRY 2. `attempt-bounded` records (an attempt that reached its per-attempt round cap) exist in every cell, including ON; they are not cut-offs.
+
+**The plain answer.**
+
+- **RETRY and SPLIT runs take MORE turns, not fewer, on most cells.** change2: SPLIT 24 vs ON 12.5 (E3), RETRY 17.5 vs ON 12 (E5). digest: SPLIT 42 vs ON 35 (E3). p7small: RETRY 61.5 vs ON 43.5 (E7). The exception is stoptest (E7): RETRY 59.5 vs ON 85.5, because the two ON escalations spent 75 and 51 fix turns and 11 strikes. The digest RETRY cell (n=2, E5: 34) against its one ON run (53) is too small to read.
+- **First-pass turns are about the same; the extra turns are step attempt >= 2 and fix.** Step attempt 1 turns per run (median): p7small RETRY 26 vs ON 26, stoptest 27 vs 23, change2 E5 8 vs 7.5, digest E3 SPLIT 18.5 vs ON 17.5. The extra turns (step attempt >= 2 plus fix) are where the difference sits: p7small RETRY 24.5 median per run (93 of 237 turns) vs ON 6.5 (22 of 170); change2 E5 RETRY 4.5 vs ON 0; change2 E3 SPLIT 7.5 vs ON 0. In p7small ON had no fix turns at all (the thinking worker mostly resolved the close inside its steps) while RETRY spent 57 fix turns.
+- **Each turn is cheaper and faster when thinking is off.** Step attempt 1 output tokens per turn (median) with thinking off vs on: p7small 199 vs 1018, stoptest 239 vs 717, digest (SPLIT vs ON) 217 vs 676, change2 about 181-195 vs 222-343. Seconds per step-attempt-1 turn: p7small 2.3 vs 6.1, stoptest 2.0 vs 4.2, digest SPLIT 1.8 vs ON 4.3, change2 1.8 vs 2.1 (change2 turns are short either way). Retry-phase and fix turns, which think in RETRY, are larger than its first-pass turns (RETRY fix turns median 504 / 1025 output tokens in p7small / stoptest, step attempt >= 2 513 / 427); against ON's same-phase turns they are not clearly smaller (stoptest ON fix 570, attempt >= 2 630).
+- **So where the gain shows, it is shorter turns outweighing more turns.** p7small: 41% more turns (61.5 vs 43.5) yet median wall 9.7 vs 11.6 min and spent $0.0841 vs $0.1309. stoptest: fewer turns AND shorter ones: 7.7 vs 17.1 min, $0.0809 vs $0.2175. Where it does not show (change2, F230/F231), the job is so short (12 turns, about 1.5 min) that first-pass turns are already cheap and the extra retry/fix turns plus planner plan-reds cost more than they save.
+- **Not shown by these numbers:** that thinking-off turns are individually "worse" in a way that explains the extra turns. The extra turns coincide with thinking-off first passes, but the experiment cannot separate "more attempts because less thinking" from "the same repairs done as separate fix turns instead of inside one thinking attempt". Quality beyond the close verdict is unmeasured.
+
+### 4. Overall reading (only what the numbers support)
+
+- On the two short jobs (change2, digest) neither SPLIT nor RETRY beat all-thinking by the frozen rules (F230, F231). On digest, SPLIT was cheaper at equal greens (4/4 both, about 3.4x), and RETRY looked cheaper at n=2 against n=1 (not readable).
+- On the two medium code jobs (p7small, stoptest, E7) RETRY met the frozen faster-or-cheaper rule on both: p7small wall ratio 0.83, spend ratio 0.64; stoptest wall ratio 0.45, spend ratio 0.37; greens 4/4 vs 4/4 and 3/4 vs 2/4.
+- The stoptest advantage is partly ON's own failure: both ON escalations (mvb8cxia, mvb95s5o) are what inflate ON's median spend, wall and turns. With ON at 2/4 and RETRY at 3/4 green, the difference in greens is one run. The p7small advantage is not from fewer greens or escalations (all 8 green); it is the per-turn token and time difference.
+- n=4 per arm is underpowered (declared in every prereg); "no worse at n=4" is not "proven equal"; full-run quality beyond the close verdict is unmeasured; the medium jobs were a NEW question chosen after F230/F231 (forking paths, named in the E7 prereg); the earlier two results are not pooled into the E7 cells.
+- E7 five runs carry spendComplete=false (slots 3, 8, 9, 12, 15): their spend is a floor, and in the stoptest ON cell two of four are such rows (slots 9 and 12), so ON's median spend there is more likely understated than overstated.
+
+### 5. Open items
+
+- **Planner plan-reds (F230), unchanged:** change2 had 2 of 8 plans fail validation twice with thinking on in the planner (mvaroz1h SPLIT, mvas7oi6 ON); E4 added a third (mvaxkvsj, RETRY: planner thinks in every arm). E1 plan-red with the planner's thinking off is one run. No code change, open.
+- **spendComplete=false floors:** E3 mvarsueu, mvatgj1w (and casualty mvas306h); E5 mvaycllr, mvaz4l6k; E7 mvb4t0bm, mvb6pbvj, mvb786wd, mvb8cxia, mvba6nu7. Any spend comparison that includes them is a floor-vs-exact comparison.
+- **E5 instrument stop (cause explained in the medium prereg Step 0):** the slot-11 field-violation was a wrapper queue artefact after a transport retry, not a wrong thinking field on the wire; slot 11 stays counted as printed, digest cells in E5 stay at n=1 and n=2.
+- **RETRY is not built.** F232 and PRD L26 recommend it as the default for code jobs only (RULED 2026-10-16, option A; PRD v1.105 item 1) (tick = think everywhere); the build waits for hamr's go after the release. The switch exists only inside the throwaway engine copy `.claude/scratch/poc-engine` (E7) and the outside wrapper (E3-E6); `src/` is untouched.
+- **Unreplicated:** the turns pattern (more turns, shorter turns) rests on four medium-cell comparisons and two small ones, all n <= 4, with no judge turns and one provider. A larger medium battery or a harder job would be the replication; none is proposed here.
+
+**Summary table (2026-10-16, as shown to hamr).**
+
+| Test | Job | Setup | Passed | Turns (median) | Extra turns (step retries + fix + replan, median) | Cost (median) | Time (median) |
+|---|---|---|---|---|---|---|---|
+| SPLIT contrast | change2 (changelog rubric) | ON | 3 of 4 | 12.5 | — | $0.017 | 1.3 min |
+| SPLIT contrast | change2 | SPLIT | 2 of 4 | 24 | — | $0.025 | 2.5 min |
+| SPLIT contrast | digest (code) | ON | 4 of 4 | 35 | — | $0.093 | 7.7 min |
+| SPLIT contrast | digest | SPLIT | 4 of 4 | 42 | — | $0.027 | 3.0 min |
+| RETRY contrast | change2 | ON | 4 of 4 | 12 | 0 | $0.017 | 1.5 min |
+| RETRY contrast | change2 | RETRY | 4 of 4 | 17.5 | 4.5 | $0.018 | 1.8 min |
+| Medium | p7small (code) | ON | 4 of 4 | 43.5 | 6.5 | $0.131 | 11.6 min |
+| Medium | p7small | RETRY | 4 of 4 | 61.5 | 24.5 | $0.084 | 9.7 min |
+| Medium | stoptest (code) | ON | 2 of 4 | 85.5 | 42 | $0.218 | 17.1 min |
+| Medium | stoptest | RETRY | 3 of 4 | 59.5 | 22 | $0.081 | 7.7 min |
+
+Turn size, medium test, step attempt 1 (median):
+
+| Job | Setup | Output tokens per turn | Seconds per turn |
+|---|---|---|---|
+| p7small | ON | 1,018 | 6.1 |
+| p7small | RETRY | 199 | 2.3 |
+| stoptest | ON | 717 | 4.2 |
+| stoptest | RETRY | 239 | 2.0 |
+
+Reading: less thinking = more turns, each much smaller and faster; on the code jobs that adds up to cheaper and faster, on the short changelog job it does not. Left out: the RETRY contrast's digest cells (n=1/2, stopped at slot 11) and the aborted first medium attempt. SPLIT-contrast extra turns not split out in this summary (see the per-phase tables above).

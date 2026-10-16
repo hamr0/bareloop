@@ -51,6 +51,43 @@ export function doorRecordOf(events) {
 }
 
 /**
+ * Was this run's door ACCEPTED, honoured? A `door-decision` record with `decision: 'accept'` and `honoured: true`
+ * (written by {@link answerReviewDoor}, whichever surface asked: the CLI, or the panel's Accept). Pure, off the
+ * run's spine. A refused accept (`honoured: false`) does not count.
+ * @param {any[]} events the run's spine, parsed
+ * @returns {boolean}
+ */
+export function doorAccepted(events) {
+  return Array.isArray(events) && events.some((e) => e?.type === 'door-decision' && e.decision === 'accept' && e.honoured === true);
+}
+
+/**
+ * T D.2 — a SCHEDULED run's green is held until the person accepts it (T10): a run that carries a `trigger.json` (a scheduled
+ * start wrote it) and holds no honoured accept. One shared predicate: `getStartFrom` reads its outcome as `'green-held'` (so
+ * the Reuse start refuses it unchanged), `listReuseJobs` skips it, and the schedule gate does not count it. A hand run is never held.
+ * @param {any[]} events the run's spine, parsed @param {any} triggerRec the run's `trigger.json`, or null
+ * @returns {boolean}
+ */
+export function heldScheduled(events, triggerRec) {
+  return !!triggerRec && typeof triggerRec === 'object' && !doorAccepted(events);
+}
+
+/**
+ * Is this run WAITING for the person's Accept? Its spine holds a door record, the door has not expired ({@link doorAgeGate}),
+ * and no honoured `accept` or `rerun` decision follows it (a `pause` keeps the same three doors open). One owner: the runs
+ * list's Needs-you `Accept` tag, the Run tab's Accept button and the scheduled NEXT line all read this.
+ * @param {any[]} events the run's spine, parsed
+ * @param {{now?: () => number}} [opts]
+ * @returns {boolean}
+ */
+export function doorWaiting(events, opts = {}) {
+  const door = doorRecordOf(events);
+  if (!door || !doorAgeGate(door, opts.now ? { now: opts.now } : {}).ok) return false;
+  const at = events.lastIndexOf(door);
+  return !events.slice(at + 1).some((e) => e?.type === 'door-decision' && e.honoured === true && (e.decision === 'accept' || e.decision === 'rerun'));
+}
+
+/**
  * IS THE DOOR STILL OPEN? The same 60-day TTL a hitl checkpoint keeps
  * (`PAUSE_TTL_MS`) and deliberately the same NUMBER — the door replaced `cancel`
  * precisely because an unanswered door and an unresumed pause are one state, and

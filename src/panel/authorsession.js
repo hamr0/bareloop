@@ -198,6 +198,25 @@ export function jobNameTaken(name, opts = {}) {
   } catch { return false; }
 }
 
+/**
+ * The next free name for a NEW workflow made from `origin` (RULED 2026-10-15, v1.101): `<base>-N`, N the next free number from 2.
+ * Base: when the origin ends in `-<digits>` AND the part before it is itself a job (in the run list or jobs/), that part (so `x-2`
+ * suggests `x-3`, never `x-2-2`); else the origin's own name. Free = not a run-list job and not {@link jobNameTaken}.
+ * @param {string} origin
+ * @param {Iterable<string>} runJobs job names in the panel's run list
+ * @param {{jobsDir?: string}} [opts] test seam for {@link jobNameTaken}
+ * @returns {string}
+ */
+export function nextFreeJobName(origin, runJobs, opts = {}) {
+  const used = new Set(runJobs);
+  const m = /^(.+)-\d+$/.exec(origin);
+  const base = m && (used.has(m[1]) || jobNameTaken(m[1], opts)) ? m[1] : origin;
+  for (let n = 2; ; n += 1) {
+    const name = `${base}-${n}`;
+    if (!used.has(name) && !jobNameTaken(name, opts)) return name;
+  }
+}
+
 /** the form's fields, in card order — what `card.json` stores, verbatim (P5 item 3) */
 export const CARD_FIELDS = Object.freeze(['jobName', 'checkType', 'provider', 'model', 'thinking', 'jobText', 'inputs', 'destination', 'capUsd', 'maxWallMs']);
 
@@ -225,30 +244,25 @@ export function cardFields(card) {
 }
 
 /**
- * REUSE WORKFLOW (hamr 2026-10-03, replaces P5 item 3's same-job rule; Model opened 2026-10-04): a reuse card has exactly
- * FIVE open boxes — Inputs, Destination, Model, $ cap, Time cap — and every other box is the signed workflow, shown greyed and never
- * editable. The page greys them; THIS is what refuses (the server never trusts the page). Changing any locked box
- * is a different job: Clear the card, which drafts.
+ * REUSE WORKFLOW, ONE DOOR (RULED 2026-10-15, v1.101; replaces v1.88's five open boxes). Every box on the card is open. What decides
+ * the path is the CARD compared with the origin run's card, never the drafted spec: the JOB boxes are the job text (numbered lines,
+ * `~` rules, `~ PASS`/`~ FAIL`), the check type and the thinking tick. The RUN boxes (Inputs, Destination, Model, $ cap, Time cap)
+ * never decide it. A green origin with no job box changed reuses the signed plan verbatim (no drafting); anything else drafts.
  */
-export const REUSE_OPEN_FIELDS = Object.freeze(['inputs', 'destination', 'model', 'capUsd', 'maxWallMs']);
-/** every card field that is NOT open on a reuse card, in card order */
-export const REUSE_LOCKED_FIELDS = Object.freeze(CARD_FIELDS.filter((f) => !REUSE_OPEN_FIELDS.includes(f)));
-const REUSE_LABELS = Object.freeze(/** @type {Record<string, string>} */ ({
-  jobName: 'Job name', checkType: 'Check type', jobText: 'The job',
-}));
+export const JOB_BOXES = Object.freeze(['jobText', 'checkType', 'thinking']);
 
 /**
- * The first LOCKED box on `card` that differs from what the signed workflow prefilled (`origin`), or `null` when
- * every locked box is untouched. Blank and absent read alike; whitespace is not compared.
+ * Did any JOB box on `card` change from what the origin run prefilled (`origin`)? Whitespace is not compared (a one-line input drops
+ * a text's newlines); an absent thinking tick reads as off.
  * @param {Record<string, any>} card the form as it was submitted
  * @param {Record<string, any>} origin the form as the server prefilled it
- * @returns {string|null} the offending field's label
+ * @returns {boolean}
  */
-export function lockedFieldChanged(card, origin) {
-  // whitespace is ignored: a one-line <input> drops a goal's newlines, and the signed copy never takes text from the card anyway
-  const norm = (/** @type {any} */ v) => (v === undefined || v === null ? '' : (typeof v === 'string' ? v.replace(/\s+/g, '') : v));
-  const bad = REUSE_LOCKED_FIELDS.find((f) => norm(card?.[f]) !== norm(origin?.[f]));
-  return bad === undefined ? null : (REUSE_LABELS[bad] ?? bad);
+export function jobBoxesChanged(card, origin) {
+  const text = (/** @type {any} */ v) => (typeof v === 'string' ? v.replace(/\s+/g, '') : '');
+  return text(card?.jobText) !== text(origin?.jobText)
+    || (card?.checkType === 'rubric') !== (origin?.checkType === 'rubric')
+    || (card?.thinking === true) !== (origin?.thinking === true);
 }
 
 /**
@@ -267,7 +281,9 @@ export function lockedFieldChanged(card, origin) {
  */
 export function buildReuseSpec(originSpec, card, rows) {
   const spec = JSON.parse(JSON.stringify(originSpec));
-  spec.writeScope = String(card.destination ?? '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+  // an ABSOLUTE Destination is a per-run output folder (a plain-files job): it is never part of the signed spec, and the spec's own
+  // fence (inside the run's tree) stays as signed. A repo job's Destination is the fence and is relative (an absolute one is refused).
+  if (!isAbsoluteDestination(String(card.destination ?? '').trim())) spec.writeScope = String(card.destination ?? '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
   const ip = parseInputs(card.inputs);
   if (ip.ok) spec.inputs = ip.inputs; else delete spec.inputs;
   spec.budgetUsd = card.capUsd;
@@ -310,6 +326,27 @@ const isAbsoluteDestination = (destination) => /^(\/|[a-zA-Z]:[\\/])/.test(desti
 
 export { nonRepoSourceMessage };
 
+/** the refusal for a plain-files rubric job whose Destination is not an absolute folder (ends with the words the session start shows) */
+export const FILES_DESTINATION_WORDS = 'Destination must be the full path of a folder, like /home/me/out — the finished files are delivered there. Nothing spent.';
+
+/**
+ * THE ONE Destination check of a session start, at $0, before any session, copy or model call. The session's own pipeline, the HTTP
+ * start (`startSession`), the schedule's two clicks and a scheduled fire's `wouldAccept` all call THIS (never a copy of it), so a start
+ * that would be refused for its Destination is refused before anything is made.
+ * @param {{inputs?: unknown, destination?: unknown, checkType?: unknown}} card the Inputs text (line 1 = the source), the Destination and the check type
+ * @returns {string|null} the plain refusal, or null when the Destination is fine
+ */
+export function startDestinationProblem(card) {
+  const ip = parseInputs(card?.inputs);
+  const source = ip.ok ? (ip.inputs[0]?.value ?? '') : '';
+  const destination = typeof card?.destination === 'string' ? card.destination : '';
+  const isRepoLike = looksLikeRepoSource(source);
+  const repo = repoDestinationProblem(destination, isRepoLike);
+  if (repo !== null) return repo;
+  if (card?.checkType === 'rubric' && !isRepoLike && !isAbsoluteDestination(destination)) return FILES_DESTINATION_WORDS;
+  return null;
+}
+
 /**
  * The ONE Destination rule for a REPO source (fresh card and Reuse card alike): there Destination is the write fence,
  * relative to the repo, so an absolute path is refused — at $0, before any copy or model call. A FOLDER source (or a
@@ -327,14 +364,14 @@ export function repoDestinationProblem(destination, isRepoLike) {
  * creates a session or spends anything — never inside the async pipeline,
  * so a bad card refuses synchronously, in the same HTTP response.
  * @param {any} card
- * @param {{jobsDir?: string, rows?: readonly import('../providerrows.js').KeyRow[]}} [opts] `rows` = the Settings rows (the Model menu); jobsDir is a server-side test seam — NEVER read off the client card
+ * @param {{jobsDir?: string, allowName?: string, rows?: readonly import('../providerrows.js').KeyRow[]}} [opts] `rows` = the Settings rows (the Model menu); jobsDir is a server-side test seam — NEVER read off the client card; `allowName` = the origin job's own name on an unchanged red Reuse (it is the same job, not a collision)
  * @returns {{ok: true}|{ok: false, error: string}}
  */
 export function validateJobCard(card, opts = {}) {
   if (!card || typeof card !== 'object') return { ok: false, error: 'missing job card' };
   const { jobName, checkType, model, destination, capUsd } = card;
   if (!isSlug(jobName)) return { ok: false, error: 'Job name must be a kebab-case slug (letters, digits, dashes)' };
-  if (jobNameTaken(jobName, { jobsDir: opts.jobsDir })) {
+  if (jobName !== opts.allowName && jobNameTaken(jobName, { jobsDir: opts.jobsDir })) {
     return { ok: false, error: `a job named "${jobName}" already exists — P3 is new jobs only (Q4=A)` };
   }
   if (checkType !== 'deterministic' && checkType !== 'rubric') return { ok: false, error: 'Check type must be deterministic or rubric' };
@@ -685,7 +722,7 @@ export function createSession(card, deps = {}) {
     // line is one file, frozen by `proveRubricInputs`; there is no repo, no language and no scout (docs/product/ITEM33-BUILD.md)
     const RUBRIC_FILES = card.checkType === 'rubric' && !isRepoLike;
     // hamr's ruling B (2026-10-05): ONE rule for both a fresh card and a reuse card, at $0, before the copy and any model call
-    const destProblem = repoDestinationProblem(card.destination, isRepoLike);
+    const destProblem = startDestinationProblem(card);
     if (destProblem !== null) { refuse(destProblem); return; }
 
     state.phase = 'preparing-source';
@@ -707,10 +744,6 @@ export function createSession(card, deps = {}) {
     // fence read as a directory and refused as "not absolute" — hiding the real problem with the Source. A scope-shaped
     // (relative) Destination is therefore handed to the door only when the source is repo-like.
     const destIsDir = isAbsoluteDestination(card.destination);
-    if (RUBRIC_FILES && !destIsDir) {
-      refuse('Destination must be the full path of a folder, like /home/me/out — the finished files are delivered there. Nothing spent.');
-      return;
-    }
     /** @type {any} */
     let prep;
     if (RUBRIC_FILES) {
@@ -945,7 +978,6 @@ export function createSession(card, deps = {}) {
       model: modelChoice.name,
       // the "Thinking on" tick is signed ONLY when ticked (unticked writes no field: the hash stays what it would have been)
       ...(card.thinking === true && draftThinkingPlan?.support !== false ? { thinking: true } : {}),
-      cadence: { unit: 'day', every: 1 },
       budgetUsd: card.capUsd,
       ...(typeof card.maxWallMs === 'number' ? { maxWallMs: card.maxWallMs } : {}),
       writeScope,

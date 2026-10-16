@@ -1026,6 +1026,12 @@ export function assembleSpec(specDraft, { closeDecl, verdictType }) {
       + 'this fold writes it. Merging would drop or overwrite what the draft says, and a signed spec that does not '
       + 'contain what its author typed is the one failure nobody can see. Remove the field(s) from the draft');
   }
+  // T (PRD v1.99, the agent never sets a trigger): a schedule is the person's own two-click act in the panel, never a
+  // draft field. Refused by name, like the authored half.
+  if (draft.trigger !== undefined) {
+    throw new Error('the spec draft carries trigger — a schedule is set only by the person, in the panel\'s two-click schedule '
+      + 'door, never by a draft. Remove the field from the draft');
+  }
   return { ...draft, verdictType, closeDecl };
 }
 

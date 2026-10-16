@@ -153,7 +153,7 @@ minting claim, or the shell-owned retry cap — all unknown-field reds.
 | `description` | non-empty string | |
 | `provider` | `anthropic-api` \| `openai-api` \| `gemini-api` \| `clipipe-subscription` | menu (`PROVIDERS`): an API SHAPE (a wire protocol), part of the lineage key by definition. Only `anthropic-api` is guaranteed (F48); the shapes go through the provider factory (`src/providers.js`) — see "Worker surface" above for the `baseUrl` field and the row's old-max_tokens tick; `gemini-api` (PRD item 31.3) is ADMITTED-PENDING-PROBE — zero runs, and every launch says so (`PROBE_STATUS`/`probeWarningLines`); `clipipe-subscription` drives the worker natively and needs `opts.nativeProvider` |
 | `conditions` | `{ providerPath?, closeVerbosity?, taskFraming?, scaffold? }` | declared keys only, string values — the environment label (consumed by the N3 lineage key; recorded on spines from run one) |
-| `cadence` | `{ unit: hour\|day\|week, every: 1..30 }` | validated now, consumed at N5 (Scheduler) |
+| `cadence` | `{ unit: hour\|day\|week, every: 1..30 }` | still validated if present but IGNORED: it starts nothing (an old signed spec keeps it, never rewritten). Scheduling is the `trigger` field, panel-only (see "Triggers" below) |
 | `budgetUsd` | finite `0 < n <= shell cap` | ceiling chain: workflow ≤ job ≤ shell — each layer may tighten, never exceed |
 | `maxWallMs` | optional integer ms `>= MIN_WALL_MS` (one close timeout) | the run's wall clock. **NO DEFAULT, by ruling** — absent means time-unbounded *by explicit operator choice*, never by fallback (F45: a defaulted cap is a silent second ceiling). Enforcement is a BETWEEN-ROUND deadline, so the honest worst case is `maxWallMs + closeStages × closeTimeoutMs` — every stage of a staged close gets the FULL timeout — and all three numbers are reported (`loop.stop()` cannot cut an in-flight call — F61 measured 500ms→4,018ms). The `MIN_WALL_MS` floor is a ONE-stage, un-autoset-default number, so a spec with many stages OR a raised/autoset `closeTimeoutMs` can validate while its overshoot dwarfs its cap: `runPlan` adds a RUN-START check (PRD item 27/M3) that refuses `wall-under-close-timeout` at $0 once the EFFECTIVE per-stage ceiling is known (autoset or signed), rather than a silent clamp. Operator-only, tighten-only; adding or changing it changes the spec hash |
 | `closeTimeoutMs` | optional integer ms `>= CLOSE_TIMEOUT_FLOOR_MS` (120,000 — hamr's arbiter floor, 2026-09-07) | PRD item 27/M3's SIGNED override for the close's own per-stage wall-clock cap. Absent (the normal case): the run autosets it from a $0 seed timing pass — `max(FLOOR, K × slowest measured stage)`, `K = 5` (hamr, 2026-09-07: "2 and 5 are fine"). Present: the operator's own number wins outright and may legally sit ABOVE *or below* the autoset estimate (the rates-passthrough shape, F113 — never tighten-only). Arbiter territory exactly like `budgetUsd`/`maxWallMs`/`close[].sha256`: the authoring pipeline's `assembleSpec` refuses a draft carrying it |
@@ -1437,9 +1437,13 @@ ambiguity, not a merge. `resolveHumanRuling(fresh, held)` is the exported seam t
 `branch-red` is the WORK BRANCH refusing (below): the patient is not a git checkout, its
 branch namespace has no free name, or a resume's recorded branch is gone. Zero tokens, and
 never a fallback to working on the branch the run was handed. `provider-red` is a
-transport throw, or a scout/drafter/replan round the API cut off mid-generation
+transport throw, or a scout or first-draft round the API cut off mid-generation
 (`truncated:max_tokens`, BA-6 — before which it laundered into a clean finish, F25): no
-verdict exists and the failed round's spend is only partly known (F6). A STEP or FIX-loop
+verdict exists and the failed round's spend is only partly known (F6). A REPLAN answer cut
+off at `max_tokens` is NOT provider-red (hamr 2026-10-16, F229): the half answer is never
+validated, the redraft is told in plain words to answer shorter, and a second cut ends as
+`plan-red` with an escalation `cause: 'truncated'` and the code-owned sentence "The replan
+answer was cut off at its length limit, so no new plan came back." A STEP or FIX-loop
 worker round cut at `max_tokens` is NOT provider-red (F122 "2A" half b, hamr 2026-10-05, fix
 phase added by ruling A): it is a failed attempt — the round is booked, its output discarded,
 an `attempt-bounded` record carries the reason `output cut at the token limit (max_tokens)`,
@@ -3411,11 +3415,12 @@ key you want first (the panel picks the row by the Model menu).
 - **`bareloop panel [--port N]`** (PANEL-BUILD.md P1) → a READ-ONLY `node:http` server
   (no new dependency), bound to `127.0.0.1` ONLY, default port `4700`. Serves the panel's
   look (Tokyo Night box-drawing TUI style) over the run list's real data: `GET /` the page;
-  `GET /api/runs` (newest first, each row enriched with a glyph/check-type/spend/wall
-  summary, `fileMissing:true` when the listed spine is gone — the client groups this SAME
-  list by job for the left pane's "Workflows" view and renders it flat for "History", both
-  behind one `Runs` tab toggle; there is no separate `/api/workflows` endpoint, deleted in
-  the P1 Runs-tab merge); `GET /api/runs/:runid` (the full replay — parts/steps, counters,
+  `GET /api/runs` (P9 v2: `{runs, jobs, scheduled, gaveUp, limits}`; `runs` newest first, each row enriched with a glyph/check-type/spend/wall
+  summary, `fileMissing:true` when the listed spine is gone, and the states the left list draws, all decided by the server:
+  `live`, `liveWhy` (`step N of M`), `liveSince`/`priorWallMs`, `needs` (`'Resume'` while the engine would accept a resume and
+  the run stopped under 7 days ago and was not removed; `'Accept'` while the run waits at its review door, `doorWaiting`), `stoppedAt`; `jobs` = `[{job, headRunid, quiet, activityMs}]`
+  newest activity first; `scheduled` = the Scheduled section's cards and `gaveUp` = the Needs-you cards of schedules that gave up (both built by the schedule door, `listScheduled` / `listGaveUp`); `limits` = `{quietDays:30, olderRuns:7, needsYouDays:7}`. The page groups `runs` by `jobs` into Running now,
+  Needs you, Jobs and a quiet fold; there is no Workflows / History switch and no separate `/api/workflows` endpoint); `GET /api/runs/:runid` (the full replay — parts/steps, counters,
   summary, model/provider/judge). Every `GET /api/runs` row and the detail carry `runNo` (P6 item 7): runs of one job are numbered
   oldest `at` first by ONE server function (`runNumbers`), and the page names a run `job (run-N)`; the run id stays in the Audit
   tab and every command line. A run that came out of a panel drafting session also carries the DRAFTING part as the FIRST element of
@@ -3590,6 +3595,7 @@ key you want first (the panel picks the row by the Model menu).
   Chat card in RESUME mode (title `RESUME <job> (run-N)`, filled from `GET /api/author/start-from`, every box locked
   except the two caps, "spent so far" shown, Clear/Start drafting hidden) and `Sign & resume` on that card is the human
   click, posting this same route; the run's Job tab is read-only on every run.
+  **Remove from Needs you** → `POST /api/runs/:runid/needs-remove` (`src/panel/runroutes.js`, same `checkHumanGuard`, no body): appends ONE `{runid, type:'needs-removed', at}` row to `runs.jsonl` (`appendNeedsRemoved`; `readNeedsRemovals` reads it) and changes nothing else; 409 in plain words when the run is not in Needs you or waits for Accept. `readRunList` ignores the row type, so monthly accounting, the run counter and the scheduler never see it; a later stop (a newer `job-end`) puts the run back in Needs you. The run detail carries `canRemoveFromNeeds` and `needsAudit`.
   **Stop (item 5)** → `POST /api/runs/:runid/stop` (`src/panel/runroutes.js`, `checkHumanGuard`, no body).
   It writes the run's STOP REQUEST, a file `<spine>.stop` (`stopFilePath(spine)`, `src/legs.js` — the one
   spelling), and signals nothing. `404` unknown run; `409` when the run's LATEST leg is not live
@@ -3613,34 +3619,38 @@ key you want first (the panel picks the row by the Model menu).
   scout, plan or close-fix phase is honoured at that phase's next round boundary, the same as in a step (it used to be read in
   step workers only). A stop in the close-fix loop reads "You stopped the run during the fix phase … a resume continues the
   run" (`ralph`'s `phase` option; the step loop keeps "a resume re-enters this step").
-  **Edit in chat (2026-10-08)** — `ended.actions` carries `{id:'edit', label:'Edit in chat'}` on EVERY ending that is not a
-  real green (failed, capped, stopped, died, every other red, and an already-green or delivery-refused already-green),
-  after `resume` when both show. The button reads `GET /api/author/start-from` and opens the Chat card filled from the
-  signed job with EVERY box open and the normal Start drafting path (no reuse state, no borrowed track record), under a
-  code-owned origin line ("Copied from <job> (run-N) — <status word>. …").
-  **Reuse workflow (replaces P5 item 3's Start from this, 2026-10-03)** — a button on runs that EARNED their green only
-  (the Run tab's action row and the Ended block; `ended.actions` carries `{id:'reuse', label:'Reuse workflow'}` on `green`
-  and green-with-destination-refused `green` rows, and on no other: an `already-green` run (the check passed before any
-  work) offers Edit in chat instead, and a red row's next line is "Change the job: press Edit in chat."; stopped/capped/died
-  rows offer `resume` and `edit`) and on every imported job; the Chat card's Check type is one radio group of three
+  **Reuse workflow — ONE door on every run (2026-10-15, PRD v1.101; it replaced the green-only button and the old edit door)** —
+  `ended.actions` carries `{id:'reuse', label:'Reuse workflow'}` on EVERY ending (green, failed, capped, stopped, died, every
+  other red, already-green), after `resume` when both show, and on every imported job; a red row's next line is "Change the
+  job: press Reuse workflow." The Chat card's Check type is one radio group of three
   (Deterministic · Rubric · Reuse workflow), and the third opens a search picker over `GET /api/author/reuse-jobs` (below) that
-  fills the card through this same path (a pick, then `change` returns to the empty search; Deterministic or Rubric leaves reuse).
-  It opens the Chat tab's New job card
-  filled from the SIGNED job: a NEW run (new runid), never a rerun, nothing drafted ($0). **Only five boxes are
-  open — Inputs, Destination, Model, $ cap, Time cap**; every other box (check type, job name, The job) is the signed workflow, greyed, and the SERVER refuses a start that changed one
-  (`400 "<Field> is locked on a reused workflow — Clear the card to change it"`; the page is never trusted).
-  Changing a locked box is Clear (the Chat card's top-right button), which drafts. Routes, behind `checkHumanGuard`:
+  fills the card through this same path (a pick puts the radio on the job's own check type). The button opens the Chat tab's New
+  job card filled from the SIGNED job with EVERY box open (job lines and `~` rules, check type, judge examples, thinking, Inputs,
+  Destination, Model, $ cap, Time cap) under a code-owned origin line "Reuse: <job> (run-N)"; nothing is locked and the server
+  no longer refuses a changed job box. **The path is decided by the CARD, not the drafted spec** (`jobBoxesChanged(card, originCard)`
+  in `src/panel/authorsession.js`): the JOB boxes are the job text, the check type and the thinking tick; the RUN boxes (Inputs,
+  Destination, Model, $ cap, Time cap) never decide it. A GREEN origin (an imported job counts as green) with no job box changed is
+  today's reuse — the signed plan verbatim, nothing drafted ($0), a new run of the same workflow signed under the ORIGIN job name.
+  Any job box changed (green or red origin) drafts a NEW workflow named by the Job name box. A non-green origin with no job box
+  changed also drafts (an unproven plan is never reused), signed under the ORIGIN name (another try of the same job). The name is
+  fixed before drafting, so the hash the person signs already covers it. The Job name box shows the origin name until a job box
+  changes, then the next free `<base>-N` (`GET start-from` returns it as `nextName`; renamable; base = the part before a trailing
+  `-<digits>` when that part is itself a run-list or jobs/ job, so `x-2` suggests `x-3`); changing the boxes back restores the origin name. A name owned by a
+  different job, or the origin's own name on a changed job, is refused at $0 ("A job named "x" already exists and is a different job.
+  Pick another name."); a name typed while nothing is changed is ignored (the origin's is forced). The main button reads Sign & run on
+  the reuse path and Start drafting otherwise, flipping as the person types. A new workflow has no schedule until its own first green;
+  nothing here ever clears a schedule. Only the schedule card keeps its job boxes locked (it signs the green run's plan as it is).
+  Routes, behind `checkHumanGuard`:
   `GET /api/author/start-from?runid=<id>` or `?import=<id>` → `{ok, origin, card, from:'signed job'|'imported job',
-  note, locked:[…], open:['source','destination','model','capUsd','maxWallMs'], specHash, workflowKey, trackRecord:{runs,
+  note, green, nextName, specHash, workflowKey, trackRecord:{runs,
   green, notGreen, live, finished, avgSpendUsd, avgWallMs}, line}` (`404` unknown, `409` with an `error` when
   there is nothing to copy: no log, the run's signed job is not on disk, or an imported job that changed, lost its
   dependency or no longer matches its signed bytes); `POST /api/author/start` accepts `startFrom: <runid>` or
-  `startFrom: {importId}` beside the card and answers `{ok, sessionId, reuse, state}`; a local `startFrom: <runid>` whose
-  latest outcome is not `green` (`start-from` carries that `outcome`) is refused `409 "only a run that finished green can
-  be reused — this one did not"` — the server owns the rule, not just the pickers. The old
+  `startFrom: {importId}` beside the card and answers `{ok, sessionId, reuse, state}` (`reuse` false = drafting); the server
+  makes the card-compare decision above, so a hand-made POST cannot reuse a plan that did not earn its green. The old
   `POST /api/author/start-from-check` and the "Changed — new job" mode are gone. `GET /api/author/reuse-jobs[?model=<Name>]` →
   `{ok, jobs:[{job, runid, checkType:'deterministic'|'rubric', line}]}` is the Chat card's Reuse workflow picker list: one entry per
-  job (same `workflowKey`) with at least one real `green` local run (`already-green` is not a reuse source), `runid` = its newest green run (hand it to `start-from`), `line` =
+  job (same `workflowKey`) with at least one `green` or `already-green` local run (RULED 2026-10-15: an already-green run is a reuse source), `runid` = its newest such run (hand it to `start-from`), `line` =
   start-from's own estimate line, newest green first; imported jobs are not listed. **Identity, two keys:** the
   signature hash `jobSpecHash` is unchanged (it covers the caps and the write fence — what the person signs);
   `workflowKey(spec)` (`src/job.js`, not exported from the package root) is a sha256 over the signed spec WITHOUT
@@ -3651,7 +3661,7 @@ key you want first (the panel picks the row by the Model menu).
   when the Name is not the provider's default tier — spelled as authoring spells it; a RUBRIC origin with no `judge`
   first gets `judge` = its own resolved judge identity so the judge never follows the worker; an explicit judge is
   kept; deterministic jobs get none), and signs under a
-  NEW `jobSpecHash` with the SAME `workflowKey` (the session refuses a spec whose key moved). Locked boxes carry the
+  NEW `jobSpecHash` with the SAME `workflowKey` (the session refuses a spec whose key moved). The job boxes carry the
   signed values read by the Job tab's own readers. **Estimate line** above the card: "Same job — G green · N not
   green · about $X and M min a run", from every LISTED run whose signed spec has the same `workflowKey` AND ran the same worker (provider + baseUrl + model) as the Model box now names — `GET /api/author/start-from?…&model=<Name>` recomputes it when the box changes; none = "Same job — no runs yet on this model" (one run =
   one entry via `legsOf`; the averages read FINISHED runs with exact figures — spend from `chainSpend`, working time
@@ -4374,3 +4384,16 @@ Check what the person asked for, not what the worker chose to write. bareloop ne
 - **Web addresses as inputs (Part 1c, `src/pagefetch.js`, `src/source.js`).** An Inputs line may be `label: https://...` (also a rubric card's FIRST line; `looksLikeRubricInput`). `fetchPageText(url)` calls barebrowse `connect({ incognito: true, blockPrivateNetwork: true })` (`CONNECT_OPTIONS`) → `goto` → `waitForNetworkIdle({ idle: 1500, timeout: 20000 })` (bounded; a page that never settles is read as it stands) → `snapshot({ mode: 'act' })`, always closing the browser, with our own 90 s deadline (L1: a load-time `browse()` snapshot gave 77,951, 8,801 or 719 characters of the same results page; L2: a page whose text outside the banner / navigation / contentinfo landmarks is under `MIN_CONTENT_CHARS` = 100 (`pageContentChars`) is a stop too, "only the site's own header and menus", and an input with no content never reaches the look or an early ask: the survey is ABSENT, "holds nothing to read", nothing spent); an empty or under-200-character page (`MIN_PAGE_CHARS`), a bot challenge, an unreachable address, a credentialed or secret-shaped address, or a page carrying a secret shape is a plain-words $0 stop on its line. `proveRubricInputs({ ..., fetchUrl })` freezes the page text under `input/<label>.txt` and records `url` on the manifest input row. A FRESH `run-u --spec` start (not `--resume` / `--door` / `--decide`) calls `refreezeUrlInputs`: it fetches every recorded address again, writes that text into the prepared tree, commits it as the new seed and rewrites `source.json` (new `sha256` and `seed`, `draftSha256` keeps what the look saw) BEFORE the worker starts, so quotes are checked against the run's copy and the worker reads it, never the live page. A failed or empty fetch stops the run, "The run did not start. Nothing spent." Plan card (L3): `settlePersonsWords` (called in `authorClose` before validation) unmarks AI's proposal on a limit made of the person's own numbers, swaps in the one explicit positive time range the person wrote, and drops a `refused` entry for a `~` rule a part of its line carries; the look's fact may carry `forRule` (a rule it numbered from its own knowledge, marked AI's proposal), which removes that rule from the look's not-found list so it is not asked. Test seams: `fetchPageText(url, { connect })`, `deps.fetchUrl` (`run-u`), `deps.fetchUrl` / `deps.lookFn` (`createSession`).
 - **Ask at once, only about intent (I1).** A look not-found entry that names a `~` rule becomes a question worded by code (`ruleQuestions`: line and rule named), asked before the confirm turn through the existing question gate (`answerQuestions`; `normalizeQuestions` caps it at `MAX_QUESTIONS`); the answer is a new `~` rule on that line. A rubric job on files never offers the piecemeal try-3 question; its failed-draft stop (`draftStopText({ wholeJob: true })`) says to review the whole job and submit it again.
 - **Known limits (documented, not built around).** Airport codes like SFO have no stable label on a flight page: direction is checkable only through the full airport names the page uses. An unanchored `text` fact cannot tell which field a value sits in. `am` / `pm` in lower case and `9:27AM` are malformed times; `v0.41.0` is one token. A fact step's quote proves the value is in a real record, not that it is the RIGHT record: "the cheapest" and "the last 3" are Not checked. Verified on real files only; the live proof (DeepSeek, both jobs through the panel) has not been run.
+
+## Triggers — a job that starts by itself (panel-only; `src/trigger*.js`, `src/panel/schedules.js`, `schedulestart.js`, `scheduler.js`, `src/schedulewords.js`)
+
+- **The `trigger` field of a signed spec** is a typed object, never cron text: `{kind:'daily'|'weekdays', hour, minute}`, `{kind:'weekly', day:'mon'..'sun', hour, minute}`, `{kind:'new-file', folder}` or `{kind:'file-updated', path}` (absolute paths). By hand = the key is ABSENT, so a by-hand spec hashes as before. `workflowKey` ignores it. The agent never sets it: `assembleSpec` refuses a draft that carries it.
+- **Only the panel fires.** `createPanelServer` runs one 500 ms unref'd scheduler (poll only, never `fs.watch`); the CLI never fires. Panel off = nothing fires; slots missed collapse to ONE catch-up (marked when more than 2 minutes late). `createPanelServer` test seams: `scheduleNow`, `schedulerIntervalMs` (0 = no timer), `sessionDeps`, `acceptWaitMs`.
+- **Files live under `<config home>/triggers/<job>/`**: `schedule.json` (the current signed schedule) and ONE append-only `ledger.jsonl` (every row carries `sig`, the spec hash it was written under). A run that a schedule started carries `trigger.json` beside its `resolved-spec.json`.
+- **Setting one is two clicks, both $0** (`POST /api/author/schedule-prepare`, then `/api/author/schedule` with the hash). It needs a real green run of the job's CURRENT workflow (a rubric job also an honoured Accept). A file trigger is for plain-files jobs only. Cancel is never refused. A reuse never clears a schedule: Reuse workflow (the one door, v1.101) keeps the origin's name while no job box is changed and switches the Job name to the next free `<base>-N` once one is; a changed job is a new workflow that needs its own green before it can be scheduled.
+- **A fire goes busy, then monthly limit, then `wouldAccept`, then the one starter** (the same session start and `signRun` as a Reuse the person clicked, with `--review-door`). Busy, monthly and refused fires consume nothing and are told once per `key|outcome|why`, so they retry. A run is busy while its pid is alive AND its process started no later than 5 s after its run row was written (a recycled pid is not that run). A run waiting at its review door is not busy.
+- **An install-needed refusal backs off, then gives up.** When a fire's copy needs packages, that job's next attempt waits 1, 2, 3, 5, 8, 13, then 21 minutes (in memory: a restart begins at the first wait); a wait that would pass 60 minutes in total is not taken: the schedule writes ONE `gave-up` row and is paused (nothing fires; files still queue as `arrived`), and the job shows in Needs you with the pill `Check` (`listGaveUp`). Signing the schedule again writes `resumed` and clears it. Constants: `INSTALL_RETRY_STEPS_MS`, `INSTALL_GIVE_UP_MS` (`src/panel/schedules.js`).
+- **A scheduled green is held until accepted**: `getStartFrom` reads its outcome as `green-held` and the Reuse list skips it, until the spine holds an honoured accept.
+- **Accept** (`POST /api/runs/<id>/accept`) runs the engine's own door path (`run-u --spec <signed spec> --door <id> --decide accept --approve <hash>`): the mechanical stages re-run, a red is `door-accept-red`, the run's verdict is untouched. It shows only while `doorWaiting(events)` (`src/reviewdoor.js`) is true; the same answer fills the runs list's Needs-you `Accept`.
+- **Every word the page shows** comes from `src/schedulewords.js` (`SCHEDULE_WORDS` is the one button table the server sends).
+- **The schedule is shown on three tabs** (v1.102): the Run tab's one summary block (ENDED dated, NEXT, SCHEDULE with `last`/`next`; row and frame red when the last fire started nothing), the Job tab's Started and Schedule rows (`getRunJob`), and the Audit's own folded `schedule` section on every run of a scheduled job (v1.104: `detail.scheduleSection` `{title, sign, head, rows}`; a run a cancelled schedule started keeps `detail.startedAudit`). `/api/runs` `scheduled[]` and `gaveUp[]` carry `runNo` so the small lists read `job · run-N`. `trigger.json` carries `triggerKind`, `sessionId`, `originRunid`, `sig`, `lateMs`; each signing appends a `signed` ledger row naming its origin run.

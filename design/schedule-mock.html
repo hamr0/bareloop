@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Schedule run (triggers T)</title>
+<style>
+  :root{
+    --bg:#1a1b26; --panel:#1f2335; --panel2:#24283b; --border:#292e42; --border-strong:#3b4261;
+    --text:#c0caf5; --text-dim:#a9b1d6; --text-faint:#565f89;
+    --green:#9ece6a; --red:#f7768e; --amber:#e0af68; --grey-dot:#878eac; --magenta:#bb9af7;
+    --accent:#7aa2f7; --rl-accent-bg:rgba(122,162,247,.12); --rl-accent-bg-strong:rgba(122,162,247,.2);
+    --primary-bg:#7aa2f7; --primary-text:#1a1b26; --primary-border:#7aa2f7;
+    font:14px/1.5 "Courier Prime","Courier New",Courier,ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text)}
+  body{padding:16px;overflow-x:hidden}
+  button,input,select{font:inherit;color:inherit}
+  input,select{padding:6px 8px;border:1px solid var(--border-strong);border-radius:0;background:var(--bg);color:var(--text);min-width:0}
+  h1{font-size:18px;margin:0 0 4px}
+  .lead{color:var(--text-dim);font-size:13px;margin:0 0 8px;max-width:960px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(420px,100%),1fr));gap:20px;align-items:start}
+  .vbox{border:1px solid var(--accent);background:var(--panel);padding:12px;min-width:0}
+  .vtag{color:var(--accent);font-weight:700}
+  .why{font-size:12px;color:var(--text-dim)}
+  .diff{font-size:12px;color:var(--text-faint);margin:8px 0 0;padding-left:16px}
+  .side{background:var(--bg);border:1px solid var(--border);padding:8px}
+  .phone{width:min(390px,100%);border:2px solid var(--border-strong);border-radius:14px;padding:10px;background:var(--bg);margin-top:12px}
+  .phone-cap{font-size:11px;color:var(--text-faint);margin:12px 0 4px}
+  code{color:var(--text-dim)}
+
+  /* signs, copied from src/panel/index.html .dot */
+  .g{font-weight:700;font-size:12px}
+  .g.passed{color:var(--green)} .g.running{color:var(--amber)} .g.waiting{color:var(--grey-dot)}
+  .w{font-weight:700;color:var(--text)}
+  .hint{font-size:11px;color:var(--text-faint);margin-top:4px}
+  .hint.bad{color:var(--red)}
+
+  /* run page: header, tabs, action row, ended-block (src/panel/index.html:282-289, 322) */
+  .rp-title{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+  .rp-title h2{font-size:15px;margin:0}
+  .tabs{display:flex;gap:2px;border-bottom:1px solid var(--border-strong);margin-bottom:10px}
+  .tab{padding:6px 12px;border:1px solid transparent;border-bottom:0;color:var(--text-dim);background:none}
+  .tab[aria-selected=true]{border-color:var(--border-strong);background:var(--panel);color:var(--text)}
+  .ended-block{border:1px solid var(--border-strong);padding:14px 12px 12px;margin-bottom:14px;background:var(--panel2);font-size:13px}
+  .ended-block.red{border-color:var(--red)}
+  .ended-row{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px}
+  .ended-label{color:var(--text-faint);font-size:11px;letter-spacing:.08em;min-width:78px}
+  .ended-text{flex:1 1 220px;min-width:0;overflow-wrap:anywhere}
+  .ended-text.is-red{color:var(--red)}
+  .run-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+  .btn{padding:8px 14px;min-height:44px;border:1px solid var(--border-strong);background:var(--panel2);color:var(--text);white-space:nowrap;flex:none;position:relative;cursor:pointer}
+  .btn::before{content:"[ ";color:var(--text-faint)} .btn::after{content:" ]";color:var(--text-faint)}
+  .btn.primary{background:var(--primary-bg);color:var(--primary-text);border-color:var(--primary-border);font-weight:700}
+  .btn.primary::before,.btn.primary::after{color:var(--primary-text);opacity:.6}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.wide{width:100%;margin-top:10px;white-space:normal}
+  .counters{font-size:12px;color:var(--text-dim);border:1px solid var(--border);padding:8px;background:var(--bg)}
+
+  /* the Chat card in Reuse mode (src/panel/index.html:428-450, 697-758) */
+  .job-card{border:1px solid var(--border-strong);padding:10px;background:var(--panel)}
+  .job-card h4{margin:0 0 8px;font-size:13px}
+  .job-card h4::before{content:"┤ ";color:var(--text-faint)} .job-card h4::after{content:" ├";color:var(--text-faint)}
+  .field{margin-bottom:10px}
+  .field input,.field select{width:100%}
+  label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:2px;text-transform:uppercase;letter-spacing:.04em}
+  .dimmed{opacity:.55}
+  .ro-value{padding:6px 8px;min-height:32px;border:1px solid var(--border);background:var(--bg);color:var(--text-dim);overflow-wrap:anywhere}
+  .radio-row{display:flex;flex-wrap:wrap;gap:12px;font-size:13px}
+  .radio-row label{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--text);margin:0;text-transform:none;letter-spacing:0}
+  .cap-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-bottom:6px}
+  .when-sub{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+  .when-sub[hidden]{display:none}
+  .when-sub select,.when-sub input{flex:1 1 120px}
+  .origin{font-size:12px;color:var(--text-dim);border-left:3px solid var(--accent);padding:2px 8px;margin-bottom:10px}
+
+  /* fwdloop M11 runs-list block, class names and values as built (same as design/runs-list-mock-v2.html) */
+  .rl-sect{font-size:12px;color:var(--text-dim);font-weight:700;margin:12px 0 6px}
+  .rl-sect:first-child{margin-top:0}
+  .rl-card{display:block;width:100%;text-align:left;background:var(--panel2);border:1px solid var(--border);padding:6px 8px;margin:0 0 6px;cursor:pointer;min-height:44px;color:inherit;font:inherit}
+  div.rl-card{cursor:default}
+  .rl-card:hover{border-color:var(--accent);background:var(--rl-accent-bg)}
+  div.rl-card:hover{border-color:var(--border);background:var(--panel2)}
+  .rl-card.rl-sel{border:2px solid var(--accent);border-radius:4px;background:var(--rl-accent-bg-strong)}
+  .rl-card:focus-visible,.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .rl-card.rl-live{border-color:var(--amber)} .rl-card.rl-need{border-color:var(--accent)}
+  .rl-l1{display:flex;gap:6px;align-items:center;min-width:0;overflow:hidden}
+  .rl-nm{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .rl-rn{color:var(--accent);flex:none}
+  .rl-l2{display:block;font-size:12px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rl-faint{color:var(--text-faint);font-size:12px}
+  .rl-cnt{color:var(--text-faint);font-size:inherit;flex:none}
+  .rl-runs{margin:6px 0 0 6px;padding-left:8px;border-left:2px solid var(--border)}
+  .rl-runs .rl-card{background:var(--bg)}
+  .rl-fold{background:none;border:0;color:var(--text-dim);font-size:12px;padding:4px 0;cursor:pointer;min-height:32px}
+  .rl-pill{font-size:11px;border:1px solid var(--amber);color:var(--amber);padding:0 5px;margin-left:auto;flex:none}
+  .rl-pill-need{border-color:var(--accent);color:var(--accent)}
+  .rl-dash{border-top:1px dashed var(--border-strong);margin:10px 0 6px}
+  @media (max-width:899px){ .rl-fold{min-height:44px} }
+</style>
+</head>
+<body>
+<h1>Triggers (T): Schedule run, the schedule card, SCHEDULED / NEXT, Scheduled list</h1>
+<p class="lead">DRAFT for hamr to sign, before any code. Placement and behaviour are fwdloop's as built (v0.19.1), mapped to bareloop: fwd's "Run again" is bareloop's <b>Reuse workflow</b>, fwd's Run card is the Chat card in Reuse mode. Nothing here is invented beyond fwd's controls. Spec: <code>docs/product/PANEL-BUILD.md</code>, addendum 2026-10-14 T, Part 7. The page works out nothing; every word below comes from the server.</p>
+<div class="grid">
+<section class="vbox"><div><span class="vtag">(a) Run page of a green job, not scheduled</span> <span class="why">Run tab</span></div>
+<div class="side" id="a"></div><div class="phone-cap">phone (390px)</div><div class="phone" id="a2"></div>
+<ul class="diff">
+<li><b>Schedule run</b> is the LAST button of the Run tab's one action row, after Reuse workflow (fwd: right after Run again, <code>index.html:2353-2358</code>).</li>
+<li>It shows only when the server says the job can take a schedule: a real green with the job's current workflow key; a rubric job also needs your Accept once. No good run = no button.</li>
+<li>A click starts and signs nothing and its label never changes. It opens the Chat card in Reuse mode with the When field (box b).</li>
+</ul></section>
+
+<section class="vbox"><div><span class="vtag">(b) The schedule card</span> <span class="why">Chat tab, Reuse mode. Try it: change When, click the button twice</span></div>
+<div class="side" id="b"></div><div class="phone-cap">phone (390px)</div><div class="phone" id="b2"></div>
+<ul class="diff">
+<li>The boxes you can change: Inputs, Destination, <b>When</b>, Cap $, Time cap. Everything else is the signed job, greyed. The Model is the green run's.</li>
+<li>When sits between Destination and the caps (fwd: between Inputs and Cap, <code>index.html:998-1019</code>). Day box only for "Every &lt;day&gt;"; time box for the three clock kinds; path box only for the two file kinds.</li>
+<li>ONE main button. When unchanged it is the Reuse card's own <b>Sign &amp; run</b>. Changed to a schedule: <b>Sign schedule</b>. Click 1 ($0, signs nothing): <b>Confirm: every day at 09:00</b>. Click 2: signed; the card clears to the empty New job card and the button is dead for 1.5 s. Nothing runs. No Run button is offered after.</li>
+<li>On a scheduled job the first When option reads <b>Cancel schedule</b>; choosing it makes the button <b>Cancel schedule</b>, then <b>Confirm: cancel schedule</b>.</li>
+<li>Edit a When box between the clicks and the hash is dropped: the button goes back to Sign schedule.</li>
+</ul></section>
+
+<section class="vbox"><div><span class="vtag">(c) Run page of a scheduled job</span> <span class="why">Run tab</span></div>
+<div class="side" id="c"></div><div class="phone-cap">phone (390px)</div><div class="phone" id="c2"></div>
+<ul class="diff">
+<li>SCHEDULED / NEXT block at the top of the Run tab (fwd <code>index.html:1156-1157, 2223-2240</code>), above the action row. NEXT goes red when the month is used up.</li>
+<li><b>Cancel / modify schedule</b> takes the place of Schedule run, last in the row, on every run of the job. Same door: it opens the card in (b) showing the current schedule.</li>
+<li>A run waiting for your Accept does not hold the next scheduled run (RULED T7); the NEXT line says so.</li>
+</ul></section>
+
+<section class="vbox"><div><span class="vtag">(d) The runs list with Scheduled filled</span> <span class="why">left list</span></div>
+<div class="side" id="d"></div><div class="phone-cap">phone (390px)</div><div class="phone" id="d2"></div>
+<ul class="diff">
+<li>Scheduled (N) sits after Needs you: <code>[·] job  today 15:00</code> / <code>next in 3h · Every day at 15:00</code>. Soonest first; a file trigger has no clock time, shows only its words and sorts last. Never filtered or searched.</li>
+<li>A click opens the job's newest run (by time) on the Run tab and scrolls to its job. A schedule needs a green run, so a Scheduled job always has a run.</li>
+<li>A fired run that is starting shows <code>[▶]</code> under Running now, never <code>[?]</code>.</li>
+</ul></section>
+</div>
+
+<script>
+var E=function(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
+var sign=function(k,t){return '<span class="g '+k+'">['+t+']</span>'};
+
+function runPage(opts){
+  var h='<div class="rp-title"><span class="g passed">[✓]</span><h2>changelog-a (run-2)</h2><span class="why">passed</span></div>';
+  h+='<div class="tabs"><span class="tab" aria-selected="true">Run</span><span class="tab" aria-selected="false">Audit / logs</span><span class="tab" aria-selected="false">Job</span></div>';
+  if(opts.scheduled){
+    h+='<div class="ended-block'+(opts.red?' red':'')+'" data-testid="sched-block">'+
+       '<div class="ended-row"><span class="ended-label">SCHEDULED</span><span class="ended-text">Every day at 15:00</span></div>'+
+       '<div class="ended-row"><span class="ended-label">NEXT</span><span class="ended-text'+(opts.red?' is-red':'')+'">'+E(opts.next)+'</span></div></div>';
+  }
+  h+='<div class="run-actions" data-testid="run-actions"><button class="btn" type="button">Reuse workflow</button>'+
+     (opts.scheduled?'<button class="btn" type="button" data-testid="run-cancel-schedule">Cancel / modify schedule</button>':'<button class="btn" type="button" data-testid="run-schedule">Schedule run</button>')+'</div>';
+  h+='<div class="counters">passed · $0.03 · 2m · deepseek-flash · 2 of 2 steps</div>';
+  return h;
+}
+
+/* ---- (b) the card, with fwd's When behaviour ---- */
+var W={scheduled:false,kind:"hand",time:"09:00",day:"mon",path:"",hash:null,busy:false,locked:false,cleared:false,cur:null};
+var KINDS=[["hand","By hand"],["daily","Every day at HH:MM"],["weekdays","Weekdays at HH:MM"],["weekly","Every <day> at HH:MM"],["file-updated","When <file> is updated"],["new-file","When a new file arrives in <folder>"]];
+var DAYS=[["mon","Monday"],["tue","Tuesday"],["wed","Wednesday"],["thu","Thursday"],["fri","Friday"],["sat","Saturday"],["sun","Sunday"]];
+function words(k,t,d,p){
+  if(k==="daily")return "Every day at "+t; if(k==="weekdays")return "Weekdays at "+t;
+  if(k==="weekly")return DAYS.filter(function(x){return x[0]===d})[0][1]+"s at "+t;
+  if(k==="file-updated")return "When "+(p.split("/").pop()||"the file")+" is updated";
+  return "When a new file arrives in "+(p||"~/reports/inbox")+"/";
+}
+function changed(){return W.kind!==(W.cur?W.cur.kind:"hand")||(W.cur&&W.kind!=="hand"&&(W.time!==W.cur.time||W.day!==W.cur.day||W.path!==W.cur.path))}
+function cardHtml(pre){
+  if(W.cleared){
+    return '<div class="job-card"><h4>Job card</h4><div class="hint" style="font-size:13px;padding:6px 0">The card is empty again. The schedule is saved; nothing ran. See box (c) for the SCHEDULED / NEXT block.</div>'+
+      '<button class="btn primary wide" type="button" disabled>Start drafting</button></div>';
+  }
+  var cl=(W.kind==="daily"||W.kind==="weekdays"||W.kind==="weekly"), fl=(W.kind==="file-updated"||W.kind==="new-file");
+  var opts=KINDS.map(function(k,i){var t=(i===0&&W.scheduled)?"Cancel schedule":k[1];return '<option value="'+k[0]+'"'+(W.kind===k[0]?' selected':'')+'>'+E(t)+'</option>'}).join("");
+  var now=W.cur?'Now: '+E(words(W.cur.kind,W.cur.time,W.cur.day,W.cur.path)):'';
+  var text="Sign & run", act="run";
+  if(changed()){
+    if(W.hash!==null){text="Confirm: "+(W.kind==="hand"?"cancel schedule":words(W.kind,W.time,W.day,W.path).replace(/^./,function(c){return c.toLowerCase()}))}
+    else text=W.kind==="hand"?"Cancel schedule":"Sign schedule";
+  }
+  var dis=W.busy||W.locked||(!changed()&&false);
+  return '<div class="job-card" data-pre="'+pre+'"><h4>Job card</h4>'+
+   '<div class="origin">Copied from changelog-a (run-2) — passed. Only the boxes below can change; everything else is the signed job.</div>'+
+   '<div class="field dimmed"><label>Check type</label><div class="radio-row"><label><input type="radio" disabled> Deterministic</label><label><input type="radio" disabled> Rubric</label><label><input type="radio" checked disabled> Reuse workflow</label></div></div>'+
+   '<div class="field dimmed"><label>Model</label><div class="ro-value">deepseek-flash</div></div>'+
+   '<div class="field dimmed"><label>Job name</label><div class="ro-value">changelog-a</div></div>'+
+   '<div class="field dimmed"><label>The job</label><div class="ro-value">1. Write one short paragraph of what changed in this release. 2. Quote each claim from the changelog.</div></div>'+
+   '<div class="field"><label>Inputs</label><input type="text" value="file: /home/me/reports/inbox/release.md" aria-label="Inputs"></div>'+
+   '<div class="field"><label>Destination</label><input type="text" value="/home/me/reports/out" aria-label="Destination"></div>'+
+   '<div class="field" data-testid="jf-when-field"><label>When</label>'+
+     '<select data-w="kind" aria-label="When this job runs">'+opts+'</select>'+
+     '<div class="when-sub"'+(cl?'':' hidden')+'><select data-w="day" aria-label="Day of the week"'+(W.kind==="weekly"?'':' hidden')+'>'+DAYS.map(function(d){return '<option value="'+d[0]+'"'+(W.day===d[0]?' selected':'')+'>'+d[1]+'</option>'}).join("")+'</select><input type="time" data-w="time" value="'+W.time+'" aria-label="Time, HH:MM"></div>'+
+     '<div class="when-sub"'+(fl?'':' hidden')+'><input type="text" data-w="path" value="'+E(W.path)+'" placeholder="'+(W.kind==="new-file"?'/full/path/to/folder':'/full/path/to/file')+'" aria-label="File or folder"></div>'+
+     '<div class="hint">'+now+'</div></div>'+
+   '<div class="cap-row"><div class="field"><label>Cap $</label><input type="text" value="0.50"><div class="hint">Every fire uses this cap.</div></div><div class="field"><label>Time cap (min)</label><input type="text" value="20"></div></div>'+
+   '<button class="btn primary wide" type="button" data-w="main"'+(dis?' disabled':'')+'>'+E(text)+'</button>'+
+   '<div class="hint">'+(changed()?'Two clicks, $0. This saves the schedule and starts nothing.':'')+'</div></div>';
+}
+function paintB(){document.getElementById("b").innerHTML=cardHtml("b");document.getElementById("b2").innerHTML=cardHtml("b2")}
+document.addEventListener("change",function(ev){var t=ev.target,k=t.getAttribute&&t.getAttribute("data-w");if(!k||k==="main")return;
+  W[k]=t.value;W.hash=null;paintB()});
+document.addEventListener("input",function(ev){var t=ev.target;if(t.getAttribute&&t.getAttribute("data-w")==="path"){W.path=t.value;W.hash=null}});
+document.addEventListener("click",function(ev){var t=ev.target.closest?ev.target.closest('[data-w="main"]'):null;if(!t||W.busy||W.locked)return;
+  if(!changed())return;
+  if(W.hash===null){W.busy=true;paintB();setTimeout(function(){W.busy=false;W.hash="demo";paintB()},350);return}
+  W.busy=true;paintB();
+  setTimeout(function(){W.busy=false;W.hash=null;W.locked=true;W.cleared=true;paintB();setTimeout(function(){W.locked=false;
+     W.scheduled=W.kind!=="hand";W.cur=W.kind==="hand"?null:{kind:W.kind,time:W.time,day:W.day,path:W.path};
+     setTimeout(function(){W.cleared=false;W.kind=W.cur?W.cur.kind:"hand";paintB()},3500)},1500)},350)});
+
+/* ---- (d) the list ---- */
+function sched(pre){
+  var S=[["changelog-a","today 15:00","next in 3h","Every day at 15:00",true],["rubric-2","tomorrow 09:00","next in 21h","Weekdays at 09:00",true],["reports-inbox",null,null,"When a new file arrives in ~/reports/inbox/",true]];
+  var h='<div class="rl-sect">Running now (1)</div><button class="rl-card rl-live" type="button"><span class="rl-l1">'+sign("running","▶")+'<span class="rl-nm">changelog-a</span> <span class="rl-rn">run-3</span> <span class="rl-faint">4s · unknown</span></span><span class="rl-l2">starting…</span></button>';
+  h+='<div class="rl-sect">Needs you (1)</div><button class="rl-card rl-need" type="button"><span class="rl-l1">'+sign("passed","✓")+'<span class="rl-nm">rubric-2</span> <span class="rl-rn">run-4</span><span class="rl-pill rl-pill-need">Accept</span></span><span class="rl-l2">passed · waiting for your Accept · 10/14 09:00</span></button>';
+  h+='<div class="rl-sect">Scheduled ('+S.length+')</div>'+S.map(function(x){
+    return '<button class="rl-card" type="button" data-jump="'+x[0]+'"><span class="rl-l1">'+sign("waiting","·")+'<span class="rl-nm">'+E(x[0])+'</span>'+(x[1]?' <span class="rl-faint">'+E(x[1])+'</span>':'')+'</span><span class="rl-l2">'+E([x[2],x[3]].filter(Boolean).join(" · "))+'</span></button>'}).join("");
+  h+='<div class="rl-dash"></div><div class="rl-faint">filters below act on Jobs and quiet jobs only</div>';
+  h+='<div class="rl-sect">Jobs (2) · run in the last 30 days</div>'+
+     '<div class="rl-card"><span class="rl-l1">'+sign("running","▶")+'<span class="rl-nm">changelog-a</span> <span class="rl-cnt">· 3 runs · rubric</span></span><span class="rl-l2"><span class="w">running</span> · starting…</span></div>'+
+     '<div class="rl-card"><span class="rl-l1">'+sign("passed","✓")+'<span class="rl-nm">rubric-2</span> <span class="rl-cnt">· 4 runs · rubric</span></span><span class="rl-l2"><span class="w">passed</span> · goal met</span></div>';
+  return h;
+}
+
+document.getElementById("a").innerHTML=runPage({scheduled:false});
+document.getElementById("a2").innerHTML=runPage({scheduled:false});
+document.getElementById("c").innerHTML=runPage({scheduled:true,next:"Next run Wed 14 Oct, 15:00."});
+document.getElementById("c2").innerHTML=runPage({scheduled:true,red:true,next:"Paused: not enough money left this month ($0.12 left, a run needs up to $0.50). Raise the monthly limit in Settings, or it starts again on the 1st."});
+document.getElementById("d").innerHTML=sched("d");
+document.getElementById("d2").innerHTML=sched("d2");
+paintB();
+</script>
+</body>
+</html>
