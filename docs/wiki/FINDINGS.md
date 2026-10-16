@@ -14444,3 +14444,16 @@ says a bundle's spec cannot be edited (`src/planrun.js`).
 - **Underpowered, as declared:** n=4 per arm; only a large difference reads as a result; full-run quality beyond the close verdict is unmeasured.
 - **Separate observation (planner reliability, independent of the split).** The planner runs with thinking on in both arms. change2 had 2 plan-reds, one per arm: mvaroz1h (SPLIT; draft-1 check-passes without tree-changed, draft-2 a pattern that does not compile as a RegExp) and mvas7oi6 (ON; draft-1 field `exits` instead of `exit`, draft-2 JSON parse error). So 2 of 8 change2 plans failed validation twice with thinking on in the planner. Open; no code change.
 - **Status.** Closed as a result; nothing built.
+
+
+## F231 — thinking RETRY vs ON contrast: the frozen rule says NO BUILD (change2 4/4 vs 4/4 green, RETRY median $0.0178 not below ON $0.0171); the battery stopped at slot 11 on an unexplained field-violation (2026-10-16; closed, thinking stays as today)
+
+**Grounded in:** the pre-registered battery, `docs/logs/2026-10-16-run-thinking-retry-contrast-prereg.md` (rule frozen before any number; results appended there under `## Results`), and its output `.claude/scratch/poc-thinking/battery/retry-contrast/battery.log` with `results.jsonl`. 11 of 16 slots ran on DeepSeek, total counted spend $0.2999 of the $2.00 hard stop.
+
+- **Contrast.** RETRY (thinking off on first tries, on for step retries; fix rounds and planner as in the prereg) against ON (thinking everywhere), 2 jobs x 2 arms x n=4 planned.
+- **Verdict (frozen AND-rule):** NO BUILD. change2 is complete: greens 4 vs 4, but RETRY median spent $0.0178 is not below ON $0.0171, so the rule fails and cannot be met whatever the unrun digest slots 12-16 would show. Thinking stays as today.
+- **digest (incomplete, report only):** ON 1/1 green at $0.0603; RETRY 2/2 green, median $0.0398.
+- **Observation:** RETRY on change2 spent heavily on retry thinking (slot 2 mvay8wbv: 19,565 retry output tokens, $0.0358).
+- **With F230:** neither SPLIT nor RETRY beat today's all-thinking on the changelog rubric job (change2), while on the code job (digest) both were cheaper at equal greens (small n, underpowered as declared).
+- **Instrument stop (open, POC wrapper only).** The battery halted at slot 11 (mvaz4l6k, digest RETRY) with `field-violation`: label disagreements tools 0, engine-record 2, unknown-phase 0. Unexplained; the run itself was green and is counted in the tables as the driver printed it, but its wire check failed. No product code is involved; open for the wrapper.
+- **Status.** Closed as a result; nothing built.

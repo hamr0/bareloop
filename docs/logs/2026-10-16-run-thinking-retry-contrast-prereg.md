@@ -100,3 +100,56 @@ two-casualties stop.
 ## Results
 
 (empty; results get appended below in a later commit, the sections above never change)
+
+
+### 2026-10-16 — battery result (stopped at slot 11 of 16; instrument stop)
+
+Source: `.claude/scratch/poc-thinking/battery/retry-contrast/battery.log` and `results.jsonl`. 11 runs executed on DeepSeek, total counted spend $0.2999 of the $2.00 hard stop.
+
+**Stop row, verbatim:** `{"type":"stop","reason":"field-violation","slot":11,"attempt":1,"why":"label disagreements: tools 0, engine-record 2, unknown-phase 0","at":"2026-10-16T13:05:15.024Z"}` — field-violation at slot 11: engine-record label disagreements 2. This is an instrument stop; the battery halted as pre-registered. Slots 12-16 were not run.
+
+Slot 11 (mvaz4l6k) is counted in the tables below as printed by the driver, but its wire check failed (fieldOk=false). Slot 3 (mvaycllr) and slot 11 carry spendComplete=false.
+
+#### Per-run rows (slots 1-11)
+
+| slot | job | arm | att | runid | outcome | spent $ | wall min | planOK1 | cut | out tokens scout/plan/step/fix/judge | fieldOk | step att | strikes | fix rnd | replans | tok first/retry |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | change2 | ON | 1 | mvay7f8d | green | 0.0131 | 1.1 | true | 0 | 4100/4382/2302/0/0 | yes | 1+1 | 0 | 0 | 0 | 2302/0 |
+| 2 | change2 | RETRY | 1 | mvay8wbv | green | 0.0358 | 2.9 | true | 0 | 962/7291/21345/0/0 | yes | 1+2 | 0 | 0 | 0 | 1780/19565 |
+| 3 | change2 | RETRY | 1 | mvaycllr | green | 0.0149 | 1.7 | true | 0 | 1044/6176/2235/2604/0 | yes | 1+2 | 0 | 5 | 0 | 4839/0 |
+| 4 | change2 | ON | 1 | mvayeqns | green | 0.0212 | 1.7 | true | 0 | 11692/3457/2343/0/0 | yes | 1+1 | 0 | 0 | 0 | 2343/0 |
+| 5 | change2 | ON | 1 | mvaygzyv | green | 0.0131 | 1.2 | true | 0 | 4195/3462/3076/0/0 | yes | 1+1 | 0 | 0 | 0 | 3076/0 |
+| 6 | change2 | RETRY | 1 | mvayijfe | green | 0.0207 | 1.9 | true | 0 | 1162/9538/6344/0/0 | yes | 2+1 | 0 | 0 | 0 | 2619/3725 |
+| 7 | change2 | RETRY | 1 | mvaykymc | green | 0.0146 | 1.3 | false | 0 | 962/9777/1311/0/0 | yes | 1+1 | 0 | 0 | 0 | 1311/0 |
+| 8 | change2 | ON | 1 | mvaympco | green | 0.0265 | 2.4 | true | 0 | 5718/8991/7071/0/0 | yes | 1+2+1 | 0 | 0 | 1 | 4206/2865 |
+| 9 | digest | ON | 1 | mvaypshx | green | 0.0603 | 7.3 | true | 0 | 12568/7481/19689/9671/0 | yes | 2+3 | 0 | 16 | 1 | 16808/12552 |
+| 10 | digest | RETRY | 1 | mvayz98y | green | 0.0246 | 4.1 | true | 0 | 3335/8478/3703/4665/0 | yes | 3 | 0 | 8 | 0 | 5150/3218 |
+| 11 | digest | RETRY | 1 | mvaz4l6k | green | 0.0550 | 6.5 | true | 0 | 2735/8826/27827/5524/0 | NO | 1+3 | 0 | 7 | 0 | 13140/20211 |
+
+#### Per job x arm (n = counted runs; frozen primary = green count)
+
+| job | arm | n | green | median spent $ | median wall min | planOK1 | cutoffs |
+|---|---|---|---|---|---|---|---|
+| change2 | ON | 4 | 4 | 0.0171 | 1.5 | 4 | 0 |
+| change2 | RETRY | 4 | 4 | 0.0178 | 1.8 | 3 | 0 |
+| digest | ON | 1 | 1 | 0.0603 | 7.3 | 1 | 0 |
+| digest | RETRY | 2 | 2 | 0.0398 | 5.3 | 2 | 0 |
+
+#### Secondary, report-only (not in the frozen rule): do RETRY-arm runs retry more?
+
+| job | arm | mean step attempts | strikes | fix rounds | replans | tokRetry/tokFirst |
+|---|---|---|---|---|---|---|
+| change2 | ON | 1.11 | 0 | 0 | 1 | 2865/11927 |
+| change2 | RETRY | 1.38 | 0 | 5 | 0 | 23290/10549 |
+| digest | ON | 2.50 | 0 | 16 | 1 | 12552/16808 |
+| digest | RETRY | 2.33 | 0 | 15 | 0 | 23429/18290 |
+
+Observation: RETRY on change2 spent heavily on retry thinking. Slot 2 (mvay8wbv) produced 19,565 retry output tokens (21,345 step output tokens in all), which made it the most expensive change2 run at $0.0358.
+
+#### Verdict
+
+NO BUILD. The change2 cell is COMPLETE (4 ON, 4 RETRY): greens 4 vs 4, so the greens-not-worse clause holds, but the RETRY median spent $0.0178 is NOT below the ON median $0.0171. The frozen AND-rule therefore fails on change2 and cannot be met whatever the unrun digest slots 12-16 would show. Thinking stays as today.
+
+The digest cell is incomplete (ON 1, RETRY 2, all green; RETRY median $0.0398 vs ON $0.0603) and is reported only; it is not a decision. The driver's own line reads "INCOMPLETE battery: not every cell has n=4 — not a decision", and the rule line "RULE NOT MET — no build (greens not worse, but median spend not lower on change2)". Declared caveats stand: n=4 per arm is underpowered, and full-run quality beyond the close verdict is unmeasured.
+
+The slot 11 stop (engine-record label disagreements 2) is unexplained and open for the POC wrapper only; no product code is involved.
