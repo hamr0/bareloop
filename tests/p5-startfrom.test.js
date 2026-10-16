@@ -21,7 +21,7 @@ import { classGuards } from '../src/authoring.js';
 import { keyRows } from '../src/providerrows.js';
 import { ANTH_CFG } from './helpers.js';
 import { appendRun } from '../src/runlist.js';
-import { jobSpecHash, workflowKey } from '../src/job.js';
+import { jobSpecHash, workflowKey, validateJob } from '../src/job.js';
 
 /** @type {string[]} */ const dirs = [];
 /** @type {import('node:child_process').ChildProcess[]} */ const kids = [];
@@ -569,4 +569,27 @@ test('routes: Reuse workflow on a run whose saved job no longer passes validateJ
   assert.equal(r.status, 400, JSON.stringify(body));
   assert.equal(body.error, "This run was made by an older bareloop. Its saved job doesn't pass today's checks, so it can't be reused. Start a new job instead.");
   assert.doesNotMatch(body.error, /invalid-value|closeDecl|at \w+\./, 'no raw red code or path');
+});
+
+// a saved job that makes validateJob THROW (not red) must still answer the plain words, never a raw 500
+test('routes: Reuse workflow on a saved job that makes validateJob throw answers the plain words, not a raw 500', async (t) => {
+  const real = await realSpec();
+  const spec = JSON.parse(JSON.stringify(real));
+  spec.job = 'p5-sf-throw';
+  spec.closeDecl = { ...spec.closeDecl, lang: 'text' }; // the rubric-files genre carries a soft-green battery only; this spec's verdictType is not soft-green
+  spec.verdictType = 'green';
+  assert.throws(() => validateJob(spec, { shellCapUsd: 3 }), /rubric-files one/, 'precondition: this saved job makes today\'s validateJob THROW');
+  const home = keysHomeWith();
+  makeRun(home, { runid: 'thr1', spec, card: baseCard({ jobName: spec.job, source: '/the/original/source' }) });
+  const { close, port, token } = await createPanelServer({ port: 0, env: {}, home, sessionsRoot: tmp('p5-sf-sess-') });
+  t.after(() => close());
+  const base = `http://127.0.0.1:${port}`;
+  const post = (p, body) => fetch(`${base}${p}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-bareloop-token': token }, body: JSON.stringify(body) });
+  const pre = await (await fetch(`${base}/api/author/start-from?runid=thr1`, { headers: { 'x-bareloop-token': token } })).json();
+  assert.equal(pre.ok, true, JSON.stringify(pre));
+  const r = await post('/api/author/start', { ...pre.card, inputs: `repo: ${makeRepo()}`, destination: 'lib/', capUsd: 3, startFrom: 'thr1' });
+  const body = await r.json();
+  assert.equal(r.status, 400, JSON.stringify(body));
+  assert.equal(body.error, "This run was made by an older bareloop. Its saved job doesn't pass today's checks, so it can't be reused. Start a new job instead.");
+  assert.doesNotMatch(body.error, /internal error|rubric-files|battery/);
 });

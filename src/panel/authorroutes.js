@@ -339,9 +339,12 @@ export function createAuthorRoutes(opts) {
             const rv = validateReuseCard(card, { rows });
             if (!rv.ok) { send(400, { ok: false, error: rv.error }); return true; }
             const spec = buildReuseSpec(pre.spec, card, rows);
-            const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
+            // validateJob can THROW (not only red) on a saved job the guard-battery lookup no longer admits: same plain words, never a raw 500
+            /** @type {ReturnType<typeof validateJob>|null} */
+            let jv = null;
+            try { jv = validateJob(spec, { shellCapUsd: spec.budgetUsd }); } catch { jv = null; }
             // RULED 2026-10-15: an old run's saved job that fails today's checks gets plain words; the raw red codes ride in `reds`, which the page never shows
-            if (!jv.ok) { send(400, { ok: false, error: OLD_JOB_REUSE_WORDS, reds: jv.reds.map((r) => `${r.code} at ${r.path}`) }); return true; }
+            if (jv === null || !jv.ok) { send(400, { ok: false, error: OLD_JOB_REUSE_WORDS, reds: jv === null ? [] : jv.reds.map((r) => `${r.code} at ${r.path}`) }); return true; }
             reuse = { spec, workflowKey: pre.workflowKey };
           } else allowName = pre.origin.job;
         }
