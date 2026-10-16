@@ -14421,3 +14421,12 @@ says a bundle's spec cannot be edited (`src/planrun.js`).
 - A single string unit "US dollars" was ALREADY legal. mv7qabx4 failed because the drafter picked "$", not because the library lacked a form.
 - Allowing lists in facts is a schema change, arbiter-adjacent (it changes what a signed spec can express): hamr's call.
 - **Bump.** bareguard `^0.24.0` landed as 937ad19. The only break was the vocabulary text regex at `src/facts.js:280`. Gate 4079/4079.
+
+## F229 — a replan answer cut off at max_tokens was reported as "The model provider failed", though the provider did nothing wrong (run mv9gm796, 2026-10-15; fixed 2026-10-16, test-proven, not yet live)
+
+**Grounded in:** run mv9gm796's spine, `~/.config/bareloop/panel-sessions/smv9gm6t83bb8/source-seed/change2-bareloop/u-mv9gm796.jsonl` line 92: an `escalation` with `category: "provider-red"`, `phase: "replan"`, `detail: "worker loop: truncated:max_tokens"`; the panel showed "The model provider failed (The replan call failed (provider-red) … truncated:max_tokens)". Source: `src/planrun.js` (the step/fix-only truncation lane in `mkWorker`'s `ask`, and the fall-through that maps `truncated:*` to `provider-red`).
+
+- The F122 "2A b" rule already treated a step or fix round cut at max_tokens as a failed attempt. The replan call went through the drafter worker, which was not in that lane, so its cut-off fell through to `provider-red`: it blamed the provider and put the run in the resumable provider-red set.
+- **Ruling (hamr, 2026-10-16):** a replan cut off at max_tokens is a bounded failed attempt, not provider-red. Scout and the first draft are NOT changed (the existing "DRAFTER truncation" test still pins them to provider-red).
+- **Fix.** The replan drafter opts in (`truncatedBounded`); the cut round is booked and an `attempt-bounded` record is written; the half-answer is never validated and there is no redraft; the run ends `plan-red` with an `escalation` (`category: plan-red`, `cause: truncated`) carrying the code-owned sentence "The replan answer was cut off at its length limit, so no new plan came back." The panel shows that sentence, not "the model provider failed" or "the checks said no".
+- **Status.** Test-proven (`tests/planrun-variance.test.js`, `tests/panel-ended.test.js`; the engine test fails with the fix reverted). Not exercised live.

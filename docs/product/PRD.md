@@ -1597,6 +1597,7 @@ Matches fwdloop DRAFT M11 am11 items 3-5 (bareloop keeps the Accept tag; no Reop
 6. Stopped run's Run tab frame is grey too (RULED 2026-10-16).
 7. Resume and Accept never show raw engine output: a known engine sentence or a fixed plain sentence with the log path (RULED 2026-10-16).
 8. An Accept refused by its final checks names each failed check by its plain question (RULED 2026-10-16).
+9. A replan answer cut off at its length limit is a bounded failed attempt in plain words, never "the model provider failed" and not resumable as provider-red; scout and the first draft are unchanged (RULED 2026-10-16, F229).
 
 
 fwdloop asked to match (2026-10-15).
