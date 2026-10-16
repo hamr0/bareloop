@@ -100,12 +100,20 @@ test('POST /api/runs/:id/accept spawns the engine\'s OWN door path with the run\
   assert.equal(readFileSync(w.run.spine, 'utf8').includes('door-decision'), false);
 });
 
-test('a refused accept (the tree moved: `door-accept-red`) answers 409 with the ENGINE\'s own words, never a paraphrase', async () => {
+test('a refused accept (the tree moved: `door-accept-red`) answers 409 with the engine\'s own DOOR REFUSED sentence only, never the red lines', async () => {
   const w = await acceptWorld({ code: 2, say: 'DOOR REFUSED (accept) — nothing was recorded and nothing was released.\n  door-accept-red:stage.suite-green — the tree moved under the signer\n' });
   const r = await w.p.post('/api/runs/a1/accept', {});
   assert.equal(r.status, 409);
-  assert.match(r.body.error, /DOOR REFUSED \(accept\)/);
-  assert.match(r.body.error, /door-accept-red/);
+  assert.equal(r.body.error, 'DOOR REFUSED (accept) — nothing was recorded and nothing was released.');
+});
+
+// RULED 2026-10-16: raw engine output never reaches the page
+test('a refused accept whose log is raw engine text answers ONE fixed plain sentence with the log path', async () => {
+  const w = await acceptWorld({ code: 2, say: '--spec /x/resolved-spec.json fails validateJob — 1 red(s): invalid-value at closeDecl.genre\n/usr/bin/node-22 failed with exit status 2.\n' });
+  const r = await w.p.post('/api/runs/a1/accept', {});
+  assert.equal(r.status, 409);
+  assert.equal(r.body.error, `Accept did not go through. Nothing was recorded. The details are in ${r.body.log}.`);
+  assert.doesNotMatch(r.body.error, /validateJob|red\(s\)|exit status|node-22/);
 });
 
 test('an accept the engine is still checking answers 202 pending, never "accepted"', async () => {

@@ -30,6 +30,7 @@ import { validateJob } from '../job.js';
 
 /** plain words for a run whose saved job no longer passes today's `validateJob` (RULED 2026-10-15): never the raw red codes */
 export const OLD_JOB_REUSE_WORDS = "This run was made by an older bareloop. Its saved job doesn't pass today's checks, so it can't be reused. Start a new job instead.";
+export const OLD_JOB_RESUME_WORDS = "This run was made by an older bareloop. Its saved job doesn't pass today's checks, so it can't be resumed. Use Reuse workflow on a newer run, or start a new job.";
 export const OLD_JOB_ACCEPT_WORDS = "This run was made by an older bareloop. Its saved job doesn't pass today's checks, so it can't be accepted. Use Reuse workflow on a newer run, or start a new job.";
 import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
 import { ConfigError } from '../config.js';

@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { createPanelServer, endedFor, getRunDetail, getStartFrom, listRuns } from '../src/panel/server.js';
 import { appendRun } from '../src/runlist.js';
 import { jobSpecHash } from '../src/job.js';
+import { specOf } from './trigger-world.mjs';
 
 /** @type {string[]} */
 const tmpDirs = [];
@@ -28,7 +29,8 @@ function tmp() {
   return d;
 }
 
-const SPEC = { job: 'fix-types', description: 'p5 fixture', budgetUsd: 8, maxWallMs: 3_600_000, goal: 'make types clean' };
+// a job today's validateJob admits (Resume refuses an old one at $0 before it spawns)
+const SPEC = (({ model: _m, ...rest }) => ({ ...rest, description: 'p5 fixture', maxWallMs: 3_600_000 }))(specOf({ job: 'fix-types', goal: 'make types clean', cap: 8 })); // names no model, like the old fixture
 
 /**
  * One run on disk, laid out the way a panel-authored run is: the spine under
@@ -397,20 +399,45 @@ test('ITEM 5: a money cap at or below what is already spent, or a time cap at or
   assert.equal((await post('/api/runs/low1/resume', { budgetUsd: 8.01 })).status, 200);
 });
 
-test("resume route: the engine's own refusal text reaches the page", async (t) => {
+// RULED 2026-10-16: the person never sees raw engine output; a known engine sentence passes, anything else is ONE fixed sentence + the log path
+async function resumeSaying(t, runid, say) {
   const home = tmp();
-  const { out } = makeRun(home, { runid: 'eng1', spent: 5 });
-  const refusal = '--resume: that run reached its own terminal (step-red) — only a governance halt leaves work to continue.';
-  // the child's stdout/stderr is the run's log file: the stub writes where a real engine would
+  const { out } = makeRun(home, { runid, spent: 5 });
   const spawnFn = makeSpawn((child) => {
-    const log = readdirSync(out).find((n) => n.startsWith('resume-eng1-'));
-    appendFileSync(join(out, log), `${refusal}\n`);
+    const log = readdirSync(out).find((n) => n.startsWith(`resume-${runid}-`));
+    appendFileSync(join(out, log), say);
     child.emit('exit', 2);
   });
   const { post } = await startServer(t, { home, spawnFn });
-  const res = await post('/api/runs/eng1/resume', {});
-  assert.equal(res.status, 409);
-  assert.equal((await res.json()).error, refusal);
+  const res = await post(`/api/runs/${runid}/resume`, {});
+  return { status: res.status, body: await res.json(), out };
+}
+
+test("resume route: a known engine sentence reaches the page as is (just that sentence)", async (t) => {
+  const r = await resumeSaying(t, 'eng1', 'noise before\nNothing spent. Lower the cap, or raise the monthly limit in Settings.\n');
+  assert.equal(r.status, 409);
+  assert.equal(r.body.error, 'Nothing spent. Lower the cap, or raise the monthly limit in Settings.');
+});
+
+test('resume route: raw engine text (validator reds, exit status, --flags) never reaches the page: one fixed sentence with the log path', async (t) => {
+  const raw = '--spec /x/resolved-spec.json fails validateJob — 1 red(s): invalid-value at closeDecl.genre — menu: TYPES\n/usr/bin/node-22 failed with exit status 2.\n--resume: that run reached its own terminal (step-red)\n';
+  const r = await resumeSaying(t, 'eng2', raw);
+  assert.equal(r.status, 409);
+  assert.equal(r.body.error, `Resume did not start. Nothing was spent on it. The details are in ${r.body.log}.`);
+  assert.match(r.body.log, /resume-eng2-\d+\.log$/);
+  assert.doesNotMatch(r.body.error, /validateJob|red\(s\)|exit status|node-22|invalid-value/);
+});
+
+test('resume route: a run whose saved job fails today\'s checks is refused at $0 in plain words, nothing spawned (RULED 2026-10-16)', async (t) => {
+  const home = tmp();
+  makeRun(home, { runid: 'old3', spent: 5, spec: { ...SPEC, closeDecl: { genre: 'RETIRED-GENRE', stages: [] } } });
+  const spawnFn = makeSpawn();
+  const { post } = await startServer(t, { home, spawnFn });
+  const res = await post('/api/runs/old3/resume', {});
+  const body = await res.json();
+  assert.equal(res.status, 409, JSON.stringify(body));
+  assert.equal(body.error, "This run was made by an older bareloop. Its saved job doesn't pass today's checks, so it can't be resumed. Use Reuse workflow on a newer run, or start a new job.");
+  assert.equal(spawnFn.calls.length, 0);
 });
 
 test('resume route: the monthly $ limit refuses before anything is spawned', async (t) => {

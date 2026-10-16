@@ -16,7 +16,7 @@ import {
   openSync, closeSync, writeFileSync, readFileSync, readdirSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { checkHumanGuard, OLD_JOB_ACCEPT_WORDS } from './authorroutes.js';
+import { checkHumanGuard, OLD_JOB_ACCEPT_WORDS, OLD_JOB_RESUME_WORDS } from './authorroutes.js';
 import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
 import { ConfigError } from '../config.js';
 import { keysForDoor } from '../keysfile.js';
@@ -57,6 +57,27 @@ function readLogTail(file) {
     const text = readFileSync(file, 'utf8');
     return text.slice(Math.max(0, text.length - LOG_TAIL_BYTES)).trim();
   } catch { return ''; }
+}
+
+/**
+ * RULED 2026-10-16: the person never sees raw engine output. Of the engine's log tail, only a line it
+ * owns as a plain sentence passes through (a `Nothing spent.` / `Nothing was spent.` refusal, `DOOR REFUSED (...) — nothing was
+ * recorded...`, `CHECKPOINT EXPIRED — ...`); anything else (validator reds, exit statuses, stack traces, argv) becomes ONE fixed
+ * sentence naming the log. The one owner for the Resume and Accept routes.
+ * @param {string} tail the log tail
+ * @param {'resume'|'accept'} kind
+ * @param {string} logFile
+ * @returns {string}
+ */
+export function engineRefusalWords(tail, kind, logFile) {
+  const known = /(?:\bNothing (?:was )?spent\.|^DOOR REFUSED \(.*\) — nothing was recorded|^CHECKPOINT EXPIRED — )/;
+  const raw = /validateJob|red\(s\)|exit status|node-\d|\bat \S+:\d+|\s--[a-z]|^\s*at |Error:/;
+  for (const line of String(tail ?? '').split('\n').map((l) => l.trim())) {
+    if (line !== '' && known.test(line) && !raw.test(line)) return line;
+  }
+  return kind === 'resume'
+    ? `Resume did not start. Nothing was spent on it. The details are in ${logFile}.`
+    : `Accept did not go through. Nothing was recorded. The details are in ${logFile}.`;
 }
 
 /**
@@ -156,7 +177,7 @@ export function createRunRoutes(opts) {
       child.once('exit', (/** @type {number|null} */ code) => {
         clearTimeout(timer);
         if (code === 0) finish(200, { ok: true, accepted: true, runid, log: logFile });
-        else finish(409, { ok: false, error: readLogTail(logFile) || `the engine refused the accept (exit ${code}) and left no message`, log: logFile });
+        else finish(409, { ok: false, error: engineRefusalWords(readLogTail(logFile), 'accept', logFile), log: logFile });
       });
       child.once('error', (/** @type {Error} */ e) => {
         clearTimeout(timer);
@@ -221,6 +242,13 @@ export function createRunRoutes(opts) {
     if (!ctx) { send(404, { ok: false, error: 'no such run' }); return true; }
     const { plan } = ctx;
     if (!plan.ok) { send(409, { ok: false, error: `Resume is not available for this run (${plan.why}).` }); return true; }
+
+    // RULED 2026-10-16: like Accept, an old run whose saved job fails today's checks is refused at $0 in plain words, before any spawn
+    {
+      let jv;
+      try { jv = validateJob(plan.spec, { shellCapUsd: plan.spec.budgetUsd }); } catch { jv = { ok: false, reds: [] }; }
+      if (!jv.ok) { send(409, { ok: false, error: OLD_JOB_RESUME_WORDS, reds: jv.reds.map((r) => `${r.code} at ${r.path}`) }); return true; }
+    }
 
     // the caps: blank/absent = the signed ones. A raised (or lowered) cap is a new spec.
     /** @type {any} */
@@ -304,7 +332,7 @@ export function createRunRoutes(opts) {
             ok: true, runid: m[1], specHash, capsChanged: changed, log: logFile,
           });
         } else {
-          finish(409, { ok: false, error: readLogTail(logFile) || `the engine refused to resume (exit ${code}) and left no message`, log: logFile });
+          finish(409, { ok: false, error: engineRefusalWords(readLogTail(logFile), 'resume', logFile), log: logFile });
         }
       });
       child.once('error', (/** @type {Error} */ e) => {
