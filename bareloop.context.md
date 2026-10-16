@@ -1437,9 +1437,13 @@ ambiguity, not a merge. `resolveHumanRuling(fresh, held)` is the exported seam t
 `branch-red` is the WORK BRANCH refusing (below): the patient is not a git checkout, its
 branch namespace has no free name, or a resume's recorded branch is gone. Zero tokens, and
 never a fallback to working on the branch the run was handed. `provider-red` is a
-transport throw, or a scout/drafter/replan round the API cut off mid-generation
+transport throw, or a scout or first-draft round the API cut off mid-generation
 (`truncated:max_tokens`, BA-6 — before which it laundered into a clean finish, F25): no
-verdict exists and the failed round's spend is only partly known (F6). A STEP or FIX-loop
+verdict exists and the failed round's spend is only partly known (F6). A REPLAN answer cut
+off at `max_tokens` is NOT provider-red (hamr 2026-10-16, F229): the half answer is never
+validated, the redraft is told in plain words to answer shorter, and a second cut ends as
+`plan-red` with an escalation `cause: 'truncated'` and the code-owned sentence "The replan
+answer was cut off at its length limit, so no new plan came back." A STEP or FIX-loop
 worker round cut at `max_tokens` is NOT provider-red (F122 "2A" half b, hamr 2026-10-05, fix
 phase added by ruling A): it is a failed attempt — the round is booked, its output discarded,
 an `attempt-bounded` record carries the reason `output cut at the token limit (max_tokens)`,
@@ -3411,11 +3415,11 @@ key you want first (the panel picks the row by the Model menu).
 - **`bareloop panel [--port N]`** (PANEL-BUILD.md P1) → a READ-ONLY `node:http` server
   (no new dependency), bound to `127.0.0.1` ONLY, default port `4700`. Serves the panel's
   look (Tokyo Night box-drawing TUI style) over the run list's real data: `GET /` the page;
-  `GET /api/runs` (P9 v2: `{runs, jobs, limits}`; `runs` newest first, each row enriched with a glyph/check-type/spend/wall
+  `GET /api/runs` (P9 v2: `{runs, jobs, scheduled, gaveUp, limits}`; `runs` newest first, each row enriched with a glyph/check-type/spend/wall
   summary, `fileMissing:true` when the listed spine is gone, and the states the left list draws, all decided by the server:
   `live`, `liveWhy` (`step N of M`), `liveSince`/`priorWallMs`, `needs` (`'Resume'` while the engine would accept a resume and
-  the run stopped under 7 days ago; `'Accept'` is not produced yet), `stoppedAt`; `jobs` = `[{job, headRunid, quiet, activityMs}]`
-  newest activity first; `limits` = `{quietDays:30, olderRuns:7, needsYouDays:7}`. The page groups `runs` by `jobs` into Running now,
+  the run stopped under 7 days ago and was not removed; `'Accept'` while the run waits at its review door, `doorWaiting`), `stoppedAt`; `jobs` = `[{job, headRunid, quiet, activityMs}]`
+  newest activity first; `scheduled` = the Scheduled section's cards and `gaveUp` = the Needs-you cards of schedules that gave up (both built by the schedule door, `listScheduled` / `listGaveUp`); `limits` = `{quietDays:30, olderRuns:7, needsYouDays:7}`. The page groups `runs` by `jobs` into Running now,
   Needs you, Jobs and a quiet fold; there is no Workflows / History switch and no separate `/api/workflows` endpoint); `GET /api/runs/:runid` (the full replay — parts/steps, counters,
   summary, model/provider/judge). Every `GET /api/runs` row and the detail carry `runNo` (P6 item 7): runs of one job are numbered
   oldest `at` first by ONE server function (`runNumbers`), and the page names a run `job (run-N)`; the run id stays in the Audit
@@ -4388,6 +4392,7 @@ Check what the person asked for, not what the worker chose to write. bareloop ne
 - **Files live under `<config home>/triggers/<job>/`**: `schedule.json` (the current signed schedule) and ONE append-only `ledger.jsonl` (every row carries `sig`, the spec hash it was written under). A run that a schedule started carries `trigger.json` beside its `resolved-spec.json`.
 - **Setting one is two clicks, both $0** (`POST /api/author/schedule-prepare`, then `/api/author/schedule` with the hash). It needs a real green run of the job's CURRENT workflow (a rubric job also an honoured Accept). A file trigger is for plain-files jobs only. Cancel is never refused. A reuse never clears a schedule: Reuse workflow (the one door, v1.101) keeps the origin's name while no job box is changed and switches the Job name to the next free `<base>-N` once one is; a changed job is a new workflow that needs its own green before it can be scheduled.
 - **A fire goes busy, then monthly limit, then `wouldAccept`, then the one starter** (the same session start and `signRun` as a Reuse the person clicked, with `--review-door`). Busy, monthly and refused fires consume nothing and are told once per `key|outcome|why`, so they retry. A run is busy while its pid is alive AND its process started no later than 5 s after its run row was written (a recycled pid is not that run). A run waiting at its review door is not busy.
+- **An install-needed refusal backs off, then gives up.** When a fire's copy needs packages, that job's next attempt waits 1, 2, 3, 5, 8, 13, then 21 minutes (in memory: a restart begins at the first wait); a wait that would pass 60 minutes in total is not taken: the schedule writes ONE `gave-up` row and is paused (nothing fires; files still queue as `arrived`), and the job shows in Needs you with the pill `Check` (`listGaveUp`). Signing the schedule again writes `resumed` and clears it. Constants: `INSTALL_RETRY_STEPS_MS`, `INSTALL_GIVE_UP_MS` (`src/panel/schedules.js`).
 - **A scheduled green is held until accepted**: `getStartFrom` reads its outcome as `green-held` and the Reuse list skips it, until the spine holds an honoured accept.
 - **Accept** (`POST /api/runs/<id>/accept`) runs the engine's own door path (`run-u --spec <signed spec> --door <id> --decide accept --approve <hash>`): the mechanical stages re-run, a red is `door-accept-red`, the run's verdict is untouched. It shows only while `doorWaiting(events)` (`src/reviewdoor.js`) is true; the same answer fills the runs list's Needs-you `Accept`.
 - **Every word the page shows** comes from `src/schedulewords.js` (`SCHEDULE_WORDS` is the one button table the server sends).
