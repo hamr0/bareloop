@@ -1594,6 +1594,8 @@ Matches fwdloop DRAFT M11 am11 items 3-5 (bareloop keeps the Accept tag; no Reop
 3. Stopped [■] is grey: you stopped it, it did not fail (matches fwdloop; supersedes 2026-10-08 red).
 4. Blink = running or waiting for your Accept; steady = resting (matches fwdloop glyphPulses; relayed from hamr via fwd 2026-10-15). The `schedule` head [·] is steady.
 5. An old run whose saved job fails today's checks gets plain words on Reuse and Accept, never raw validator text (RULED 2026-10-15).
+6. Stopped run's Run tab frame is grey too (RULED 2026-10-16).
+7. Resume and Accept never show raw engine output: a known engine sentence or a fixed plain sentence with the log path (RULED 2026-10-16).
 
 
 fwdloop asked to match (2026-10-15).
