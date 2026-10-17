@@ -1654,4 +1654,4 @@ Branch `feat/thinking-retries`, one branch, two parts, built in this order. Supe
 - Must fail when: a separate Scheduled search box is drawn; a Scheduled card shows above the search box; a job-name search leaves a non-matching Scheduled card; a result or time chip hides a Scheduled card; ◷ leaves Jobs shown; ◷ pressed and the count line still counts runs; ◷ smaller than the other chip symbols; a search or chip hides a Running now or Needs you card; ◷ with no match shows an empty list with nothing said.
 - Check the words fit at 320 px (hamr's DevTools; barebrowse cannot emulate phone width).
 
-**Done when:** all two parts built with tests; `npm test`, typecheck and build:types exit 0; the two live runs above green; hamr's click-through of Part 2; then /self-review, /branch-review, /release.
+**Done when:** both parts built with tests; `npm test`, typecheck and build:types exit 0; the two live runs above green; hamr's click-through of Part 2; then /self-review, /branch-review, /release.
