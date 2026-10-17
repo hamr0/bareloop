@@ -1032,3 +1032,55 @@ the page". Changed or new:
 - A rule HOLDS on a page if honest passes >= 9 of 10 (proportional on a page with fewer results, flagged) AND every cheat
   class is caught 10 of 10. Anything else is a finding, never a re-tune.
 - After the $0 test: one live flights run on DeepSeek deepseek-flash, hamr's go first.
+
+## Addendum 2026-10-18 — Idea A rule v3 and its unseen-page test (SIGNED by hamr 2026-10-18; FROZEN before any unseen page is fetched)
+
+POC round 3. v3 = the frozen v2 (above) plus three rules written after the Airbnb v2 failure (FINDINGS F235). Because they were
+written after seeing that page, the Airbnb Lisbon smoke is a fit, not evidence. This test is the evidence. A failing page is a
+finding; no v4 is written on a page of this test.
+
+### The three added rules (verbatim definitions; the POC code is `.claude/scratch/idea-a-v2/rules-v3-candidate.mjs`, sha256
+8646a1fecc4421aa76db63fd0c9b282e976987badaa94a29e396950a985bf3fe, on top of `rules.mjs`, sha256
+1057f690ee79fe3c58d51624255477894d76f4a7222683c5cdd1d8531ef1b64f; neither file may change during this test)
+
+- value token = digits with optional thousands commas and decimals; a currency symbol next to it is not part of it.
+- "right before" a label = same line, the text before it (trailing whitespace removed) ends with a value token; no markup
+  character skipped. "right after" = after leading whitespace and ONE optional `$` `€` `£`, the text starts with a value token.
+- **U1** (money and number facts only). Per AI-listed label: no value right after and some right before -> the label becomes a
+  `unit` (read after the number), no longer an anchor; no value either side -> dropped; a value right after -> stays a label.
+- **R1L** (money and number facts, after U1). A unit form reads the value right before it; a currency form the value right
+  after it. PRIMARY = the first form left after U1, units before currencies. A form is kept only if it reads the same set of
+  values as the primary; the primary is always kept.
+- **R3U.** R3's record proxy = the minimum over v2's usable money/time labels AND the page count (`countPhrase`, src/factwords.js)
+  of every kept unit form; currency forms are not counted. R3 then applies to every place phrase left after R2/R2a/R2b.
+- Known limit, not a rule: when a place appears only page-once, no per-result place check remains (the quote must still be
+  word for word from that page).
+
+### Test set (fetched at $0 with src/pagefetch.js only AFTER this commit; nothing chosen after seeing a page)
+
+1. Airbnb Porto, 2026-11-12 to 2026-11-15, 2 adults, EUR, English:
+   `https://www.airbnb.com/s/Porto/homes?checkin=2026-11-12&checkout=2026-11-15&adults=2&currency=EUR&locale=en`
+   Job: "List 3 stays in Porto" `~ under €400 total`.
+2. Google Flights LAX -> JFK, one way, 2026-11-19, USD, English:
+   `https://www.google.com/travel/flights?q=Flights+from+LAX+to+JFK+on+2026-11-19+one+way&hl=en&curr=USD`
+   Job: "List 3 flights from Los Angeles to New York" `~ under $450` `~ not a red-eye` `~ nonstop`.
+3. Google Flights JFK -> LAX, same date and form (the reverse page, so direction is tested on unseen pages):
+   `https://www.google.com/travel/flights?q=Flights+from+JFK+to+LAX+on+2026-11-19+one+way&hl=en&curr=USD`
+   Job: "List 3 flights from New York to Los Angeles", same `~` rules.
+- "Not a red-eye" = departs between 05:00 and 20:59 local (fixed here, by the harness; the AI picks no number).
+- (e) first, at $0: each page must hold at least 3 answers to its job; the counts of rule-BREAKING results (over the price,
+  red-eye, with a stop) are recorded. A rule with zero breakers on a page is reported as "not tested", never as held.
+- One AI mapping call per page, DeepSeek deepseek-flash, thinking off; one retry on a transport error only; no JSON repair.
+
+### Cheats (made by code from the page) and decision rule
+
+- Flights: arrival time as departure; price + 1; reversed direction (each page's quotes graded against the other); another
+  route (ORD-DEN quotes); two flights glued; position-named facts; a bare `at` label; and NEW, real rule-breakers offered as
+  answers: a flight over $450, a red-eye, a flight with a stop (as many as the page holds, up to 10 each).
+- Airbnb: price + 1; another listing's price; two listings glued; a `Pay €0 today` quote with price 0 (if the page has one);
+  a real listing at or over €400 offered as an answer.
+- HOLDS on a page if honest passes >= 9 of 10 (proportional with fewer results, flagged), every cheat class is caught 10 of 10
+  (proportional when fewer exist, flagged), and every real rule-breaker offered is refused. Anything else is a finding.
+- All grading through the product's own `gradeStep` (src/rubricstep.js). The POC never edits product code.
+- After this test, and only on hamr's go: one live drafted run on a new flights page (real drafter, real worker), DeepSeek
+  deepseek-flash.
