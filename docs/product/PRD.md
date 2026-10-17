@@ -1617,3 +1617,41 @@ These three items are the next work after the feat/runs-list release; none is bu
    - Evidence: F230 (SPLIT, no build), F231 (RETRY on changelog, no build), F232 (RETRY on medium code jobs, frozen rule met), F233 (full record, turns). Pointer: PRD item 34 L26.
 2. **Run tab summary shows the run's time.** The summary line `passed · $0.0047` becomes `passed · $0.0047 · 1m56s` (outcome · money · wall time of the run). Same time rule as elsewhere in the panel; an unknown time is shown as unknown, never 0. (hamr wrote "passed · $0.0047 1m56s"; the middle dot before the time follows the line's own separator — confirm with hamr when it is built.)
 3. **A filter/search for the Scheduled list.** The Scheduled list gets its own filter/search box, like the Runs search (P9 v2), so a person with many schedules can find one. Exact matching rules are designed at build time with hamr (interview first).
+
+### One branch: thinking on retries, Scheduled search (v1.106 — 2026-10-17) — RULED
+
+Branch `feat/thinking-retries`, one branch, two parts, built in this order. Supersedes v1.105 items 1-3 where they differ.
+
+**Part 1 — thinking on retries, for every job (RULED 2026-10-17: one rule for all, replaces option A of 2026-10-16).**
+- Why one rule: thinking pays on hard calls, not every step; the planner is the hard part of a run, steps and fixes are mostly mechanical. One rule is simpler to explain and fwdloop can copy it.
+- What it costs, said plainly: on the short changelog rubric job (change2) RETRY was 1.76 min vs 1.46 (20% slower) and $0.0178 vs $0.0171, at equal greens (4/4); the frozen rule said no there. hamr chose one rule anyway (2026-10-17). On the two medium code jobs RETRY met the rule (F232). n=4 per arm, DeepSeek deepseek-flash only.
+- Per model call, decided in code from phase and attempt (never the model), at the worker Loop call sites in `src/planrun.js` (`mkWorker` ask/askFrom):
+  - planner (draft, redraft, replan): thinks
+  - run scout: off
+  - step attempt 1: off
+  - step attempt 2 and later: thinks
+  - close-fix: thinks
+  - drafter (drafting, before the run) and rubric judge: unchanged, off unless ticked
+- The job's "Thinking on" tick = think on EVERY call above, drafter and judge included (the escape hatch for hard jobs, RULED 2026-10-16).
+- Every call sends an explicit on or off through `src/thinking.js` (the one owner), the same mechanism drafting uses (RULED earlier, P8): bare-agent does its best to switch thinking per shape, and its `thinkingStatus` (applied | unsupported | ignored | unknown) is recorded per round, as drafting rounds record it. Only DeepSeek deepseek-flash is measured; other shapes say so through that status.
+- Every worker call writes `thinking-decision {phase, iteration, mode}` to the spine before the call, so a run's record shows what was sent.
+- An iteration that is not a whole number on a step or fix call is a thrown operator error, never a silent guess (closes the ledger idea on the POC's `roundIteration === 1`).
+- Tests: one per phase and attempt, the tick, a model that cannot switch, a dropped-and-retried call (the retry carries the same decision), the non-number iteration.
+- Out of scope: the planner plan-red rate (3 of 12 change2 plans, F230/F233) is measured, not fixed here; it stays an open ledger idea.
+- Graduation is a REWRITE of the POC in `.claude/scratch/poc-engine`, never a copy.
+- Proof: one live green code run and one live green rubric run on deepseek-flash, with their spine `thinking-decision` lines read back.
+
+**Part 2 — run time on the Run tab top line: DROPPED (hamr 2026-10-17, B).** The SUMMARY headline already shows the run's time after its money (`passed · deterministic · $0.0047 · 1m56s`); bareloop keeps its own wording (`unknown`, `running 3m12s`), unlike fwdloop am21/am22.
+
+**Part 2 — Scheduled is searched by the one search box, plus a ◷ chip (fwdloop M11 am17-am20, signed 2026-10-17).**
+- Order top to bottom: Running now, Needs you, then the faint line, search box and chips, then Scheduled, then Jobs and the quiet fold. Only never-filtered sections sit above the search box.
+- No separate Scheduled search box. The one search box narrows Scheduled cards by job name, along with Jobs; a run number or date narrows Jobs only.
+- The result chips and the 7d/30d/all chips never touch Scheduled.
+- New chip `◷` (hover and aria-label `scheduled jobs only`), the same size as ✓ and ✗: pressed, the list shows only Scheduled (Jobs and the quiet fold hide), the search narrows only Scheduled, and the count line says `showing N scheduled job(s)`; pressed again, back to normal.
+- Running now and Needs you are never filtered or searched.
+- Scheduled with no matching card draws nothing, header included; with ◷ pressed and no match, the list says `no scheduled job matches`.
+- The faint line above the search box reads `search also finds Scheduled; ◷ shows only Scheduled`.
+- Must fail when: a separate Scheduled search box is drawn; a Scheduled card shows above the search box; a job-name search leaves a non-matching Scheduled card; a result or time chip hides a Scheduled card; ◷ leaves Jobs shown; ◷ pressed and the count line still counts runs; ◷ smaller than the other chip symbols; a search or chip hides a Running now or Needs you card; ◷ with no match shows an empty list with nothing said.
+- Check the words fit at 320 px (hamr's DevTools; barebrowse cannot emulate phone width).
+
+**Done when:** all two parts built with tests; `npm test`, typecheck and build:types exit 0; the two live runs above green; hamr's click-through of Part 2; then /self-review, /branch-review, /release.
