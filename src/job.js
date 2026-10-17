@@ -345,7 +345,7 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
     red('invalid-value', 'model', 'non-empty string — the exact model id of a line ticked in Settings > Providers');
   }
   // THINKING (P8) — the job's "Thinking on" tick, OPTIONAL: absent means off (and an old spec keeps the hash it always had); present it is
-  // signed like `model`. It covers DRAFTING and the rubric JUDGE only — the worker is never handed a thinking option. A boolean, nothing else.
+  // signed like `model`. It covers DRAFTING and the rubric JUDGE, and makes every WORKER call think (src/thinking.js `workerThinkingMode`; without it the worker's mode is decided from phase and attempt). A boolean, nothing else.
   if (spec.thinking !== undefined && typeof spec.thinking !== 'boolean') {
     red('invalid-value', 'thinking', 'true or false — the job\'s "Thinking on" tick (absent = off)');
   }

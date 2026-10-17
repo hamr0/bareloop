@@ -42,6 +42,7 @@ import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { validateBridge, loadGate, newestEligibleVersion, reuseEligibility, quarantinesCredit, QUARANTINED_CODE } from './bridges.js';
 import { extractArtifact, rateSourceFields } from './text.js';
 import { defaultJudgeLoop } from './judged.js';
+import { workerThinkingMode, thinkingCallOptions } from './thinking.js';
 export { rateSourceFields };
 import { createClock, isWallTimeout } from './clock.js';
 import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade, HUMAN_PAUSE, HITL_PAUSE, HITL_DECISION_RED } from './declaredclose.js';
@@ -2773,6 +2774,27 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       self = new Loop({ provider: loopProvider, system, policy, onLlmResult: metered, onToolResult: onToolOutcome, ...(rates ? { rates } : {}) });
       return self;
     };
+    /**
+     * PRD v1.106 Part 1 — what THIS call sends for thinking. The decision is src/thinking.js `workerThinkingMode` (the one owner: phase,
+     * attempt, the job's tick); the per-call option is `thinkingCallOptions` (support-aware: a model bare-agent says cannot switch, a test
+     * double or a clipipe is sent nothing). The decision is written to the spine BEFORE the call. A step/fix iteration that is not a whole
+     * number throws here as a plain operator error, outside any category map. A transport/rate-limit retry inside the call reuses these
+     * very options (the Proxy retries `generate` with the same args), so it carries the same decision.
+     * @returns {{thinkingMode: 'on'|'off'} | {}}
+     */
+    const thinkingForCall = () => {
+      const mode = workerThinkingMode({ phase, iteration: roundIteration, tick: job.thinking === true });
+      emit('thinking-decision', { phase, iteration: roundIteration ?? null, mode });
+      thinkingSent = mode;
+      return thinkingCallOptions(workerProvider ?? provider, mode);
+    };
+    /** bare-agent's own per-call verdict (applied | unsupported | ignored | unknown), recorded as drafting rounds record it; absent when no switch was sent
+     * @param {any} r a Loop.run() result */
+    const noteThinkingStatus = (r) => {
+      if (typeof r?.thinkingStatus === 'string') emit('thinking-status', { phase, iteration: roundIteration ?? null, mode: thinkingSent, thinkingStatus: r.thinkingStatus });
+    };
+    /** @type {'on'|'off'|null} */
+    let thinkingSent = null;
     /** @param {string} prompt @param {typeof toolDefs} [defs] */
     /**
      * F59 — continue an EXISTING conversation for exactly one TOOLLESS round.
@@ -2784,6 +2806,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
      * @param {string} prompt
      */
     const askFrom = async (msgs, prompt) => {
+      const thinkOpts = thinkingForCall();
       try {
         // `msgs` is a prior `loop.run()`'s returned transcript, which already has
         // the Loop's `system` PREPENDED (bare-agent Loop.run, loop.js ~482-486).
@@ -2795,8 +2818,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         // bare-agent's own Loop.chat() (loop.js ~1321) strips a leading system
         // message before re-running for exactly this reason; do the same here.
         const rest = msgs[0]?.role === 'system' ? msgs.slice(1) : msgs;
-        const r = await stallWatch.watch((gen) => newLoop(gen).run([...rest, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000, ...callBounds() }));
+        const r = await stallWatch.watch((gen) => newLoop(gen).run([...rest, { role: 'user', content: prompt }], [], { cacheMessages: true, maxTokens: 32000, ...callBounds(), ...thinkOpts }));
         throwIfStopped();
+        noteThinkingStatus(r);
         return r;
       } catch (e) {
         throw categorize(e).err;
@@ -2804,9 +2828,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     };
     const ask = async (prompt, defs = toolDefs) => {
       let r;
+      const thinkOpts = thinkingForCall();
       try {
-        r = await stallWatch.watch((gen) => newLoop(gen).run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000, ...callBounds() }));
+        r = await stallWatch.watch((gen) => newLoop(gen).run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000, ...callBounds(), ...thinkOpts }));
         throwIfStopped();
+        noteThinkingStatus(r);
       } catch (e) {
         throw categorize(e).err;
       }

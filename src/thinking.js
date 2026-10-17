@@ -5,8 +5,9 @@
 // NOT switchable), `'unverified'` (not measured — the shape ladder is tried at runtime; if every shape fails with a client
 // validation error ONE plain request decides, and the call still runs, reported `thinkingStatus: 'unsupported'`).
 //
-// The tick is the person's, per job ("Thinking on", the signed optional `thinking` field; absent = off). It covers DRAFTING and the
-// rubric JUDGE; the WORKER is never handed a thinking option. PER-CALL options, never constructor options (the drafter's provider is
+// The tick is the person's, per job ("Thinking on", the signed optional `thinking` field; absent = off). It covers DRAFTING, the
+// rubric JUDGE and, as the think-everywhere override, every WORKER call. Without the tick the WORKER's mode is decided here too, in
+// code, from the phase and attempt (`workerThinkingMode`, PRD v1.106 Part 1) — never by the model. PER-CALL options, never constructor options (the drafter's provider is
 // the worker's instance, deliberately left as it was). The raw `thinking` option is never sent (bare-agent throws if both are set).
 import { createRequire } from 'node:module';
 
@@ -127,4 +128,33 @@ export function thinkingRowText({ mode, support, status }) {
   if (support === false) return "thinking on (this model can't change it)";
   if (support === 'unverified') return `thinking ${mode} (not verified for this model)`;
   return `thinking ${mode}`;
+}
+
+/**
+ * THE one decision for a worker model call (PRD v1.106 Part 1): from the phase label and attempt iteration `mkWorker` already holds,
+ * and the job's tick (`job.thinking === true`). Decided in code, never by the model.
+ *   tick on                                   -> 'on' for every call
+ *   plan (draft, redraft, replan)             -> 'on'   (the planner is the hard part of a run)
+ *   scout                                     -> 'off'
+ *   step:<id> attempt 1                       -> 'off'
+ *   step:<id> attempt >= 2                    -> 'on'
+ *   fix (close-fix)                           -> 'on'
+ * A step or fix iteration that is not a whole number >= 1 throws (operator error), as does an unknown phase — never a guess.
+ * @param {{ phase: unknown, iteration?: unknown, tick?: unknown }} o
+ * @returns {'on'|'off'}
+ */
+export function workerThinkingMode({ phase, iteration, tick }) {
+  if (typeof phase !== 'string') throw new Error(`[thinking] worker phase must be a string, got ${JSON.stringify(phase)}`);
+  const isStep = phase.startsWith('step:');
+  if (isStep || phase === 'fix') {
+    if (!Number.isInteger(iteration) || /** @type {number} */ (iteration) < 1) {
+      throw new Error(`[thinking] ${isStep ? 'step' : 'fix'} iteration must be a whole number >= 1, got ${JSON.stringify(iteration)} (phase "${phase}")`);
+    }
+  } else if (phase !== 'scout' && phase !== 'plan') {
+    throw new Error(`[thinking] unknown worker phase ${JSON.stringify(phase)}`);
+  }
+  if (tick === true) return 'on';
+  if (phase === 'scout') return 'off';
+  if (isStep) return iteration === 1 ? 'off' : 'on';
+  return 'on';
 }
