@@ -982,11 +982,12 @@ are decided, and frozen before any number is read.
 Next test pages: Google Flights, Airbnb, Amazon. Rule v2 is not yet written or frozen. Build comes AFTER P9, on its own
 branch, only after hamr signs a spec. Nothing in this addendum is signed.
 
-## Addendum 2026-10-17 — Idea A rule v2 (DRAFT for hamr's sign; frozen only after he signs, before any number is read)
+## Addendum 2026-10-17 — Idea A rule v2 (SIGNED by hamr 2026-10-17; FROZEN before any number is read)
 
 hamr's rulings 2026-10-17: every open item (a)-(f) is in v2 scope; facts may carry currency and unit LISTS; test pages are
 Google Flights only; (a) stays in v2 and is tested at $0 on a marker-after-number page; F234 (change3) folds in here, no
-stand-alone patch. Nothing below is built or frozen.
+stand-alone patch. hamr 2026-10-17: the marker-after-number page is Airbnb. Signed and frozen; nothing below is built.
+This is POC round 2 (round 1: F226-F228); a build spec follows only if the rules hold.
 
 ### How a check decides (unchanged, for reference)
 
@@ -1025,7 +1026,7 @@ the page". Changed or new:
 
 - Pages: the saved Google Flights captures copied to `.claude/scratch/idea-a-pages/` (LAX-SFO bc18145a, SFO-LAX
   fa50de61 and 1ee1341b, sha256 prefixes), plus ONE unseen Google Flights page fetched at $0 after the freeze. For (a):
-  one marker-after-number page fetched at $0 after the freeze (the saved TUI capture is gone; hamr picks TUI or Airbnb).
+  one Airbnb page (marker after the number, `€490 total`) fetched at $0 after the freeze (the saved TUI capture is gone).
 - Cheats, each must be caught: arrival time as departure, price + 1, reversed direction, other route, two flights glued
   into one quote, position-named facts (F234 shape), a repeating label.
 - A rule HOLDS on a page if honest passes >= 9 of 10 (proportional on a page with fewer results, flagged) AND every cheat
