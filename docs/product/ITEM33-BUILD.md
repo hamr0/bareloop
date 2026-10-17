@@ -981,3 +981,53 @@ are decided, and frozen before any number is read.
 
 Next test pages: Google Flights, Airbnb, Amazon. Rule v2 is not yet written or frozen. Build comes AFTER P9, on its own
 branch, only after hamr signs a spec. Nothing in this addendum is signed.
+
+## Addendum 2026-10-17 — Idea A rule v2 (DRAFT for hamr's sign; frozen only after he signs, before any number is read)
+
+hamr's rulings 2026-10-17: every open item (a)-(f) is in v2 scope; facts may carry currency and unit LISTS; test pages are
+Google Flights only; (a) stays in v2 and is tested at $0 on a marker-after-number page; F234 (change3) folds in here, no
+stand-alone patch. Nothing below is built or frozen.
+
+### How a check decides (unchanged, for reference)
+
+Drafting picks, per fact, a shape and a label copied from the page (the words right before the value). The worker writes,
+per result, one quote copied word for word from the page and the values. Code alone decides each result, one at a time:
+the quote is in the page word for word; the label is in that quote exactly once; the value read right after the label
+matches the worker's value; the value passes the fact's rule. The AI never grades.
+
+### Rules v2 (drafting, code only, $0, on the real saved page)
+
+Kept from the POC, unchanged: R1 same-value, R2 role-extend (R2a, R2b, R2c), R3 page-once, "code keeps only words found on
+the page". Changed or new:
+
+- **N2 per-line (now enforced).** A label that appears 2 or more times in any one line of the page is unusable. Drafting
+  first tries R2 (grow the label left by up to 2 words, e.g. `at` -> `Leaves San Francisco International Airport at`,
+  `-` -> `] -`); if no grown label appears at most once per line, drafting refuses that fact and asks the person.
+- **S1 one result, distinct facts (new, F234).** Two facts of one result may not have the same shape AND the same label:
+  they read the same value and can never differ. A fact name that counts results ("latest", "second", "third") is
+  refused with the words "one result is one record; ask for N results instead".
+- **(a) Marker after the number (new).** A money or count fact may sign its marker AFTER the value (`282 £ pp`,
+  `€490 total`). First step: ask the bareguard session what 0.24 already reads, with the real capture as evidence;
+  no bareloop code before that answer.
+- **(b) Lists (ruled B).** A money fact may carry currency and unit as lists (`$` or `US dollars`); the same amount
+  written two ways counts as one price (bareguard ruling #65). Schema change in `src/facts.js`, `src/authorflow.js`,
+  `src/factwords.js`.
+- **(c)** is N2 above.
+- **(d) Page-level checks.** A phrase the page must say once (not per result) is a second `cited` check over a separate
+  `pageClaims` field with a presence decide `{phrases}` (the guard's design, no new primitive).
+- **(e) Page fits the job (test protocol, not product).** Before a test page's numbers are read, check at $0 that the page
+  can hold an answer to the job (TUI held only 3-night trips for a 7-night job). A page that cannot is dropped, never
+  scored.
+- **(f) Site reach.** Booking, Expedia, eBay and Skyscanner block barebrowse (F227). Filed as an ask to the barebrowse
+  session, never patched in bareloop.
+
+### Test set and decision rule (frozen with the rules)
+
+- Pages: the saved Google Flights captures copied to `.claude/scratch/idea-a-pages/` (LAX-SFO bc18145a, SFO-LAX
+  fa50de61 and 1ee1341b, sha256 prefixes), plus ONE unseen Google Flights page fetched at $0 after the freeze. For (a):
+  one marker-after-number page fetched at $0 after the freeze (the saved TUI capture is gone; hamr picks TUI or Airbnb).
+- Cheats, each must be caught: arrival time as departure, price + 1, reversed direction, other route, two flights glued
+  into one quote, position-named facts (F234 shape), a repeating label.
+- A rule HOLDS on a page if honest passes >= 9 of 10 (proportional on a page with fewer results, flagged) AND every cheat
+  class is caught 10 of 10. Anything else is a finding, never a re-tune.
+- After the $0 test: one live flights run on DeepSeek deepseek-flash, hamr's go first.

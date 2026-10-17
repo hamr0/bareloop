@@ -14620,3 +14620,19 @@ Turn size, medium test, step attempt 1 (median):
 | stoptest | RETRY | 239 | 2.0 |
 
 Reading: less thinking = more turns, each much smaller and faster; on the code jobs that adds up to cheaper and faster, on the short changelog job it does not. Left out: the RETRY contrast's digest cells (n=1/2, stopped at slot 11) and the aborted first medium attempt. SPLIT-contrast extra turns not split out in this summary (see the per-phase tables above).
+
+## F234 — a changelog rubric draft signed a check no run could pass: six position-named facts per result, and a date label "-" that repeats inside one line (run mvcur592, change3, 2026-10-17; open, folded into idea A rule v2)
+
+**Grounded in:** spine `~/.config/bareloop/panel-sessions/smvcuptj3omft/source-seed/change3-bareloop/u-mvcur592.jsonl`; the signed facts in that session's `resolved-spec.json` (`stages[1].params.parts[0].facts`); the worker's last `output/steps/1.json`. DeepSeek `deepseek-flash`, drafter thinking off, worker on the new thinking-on-retries rule (feat/thinking-retries, d23042b). Input: `main`'s CHANGELOG.md (488 KB).
+
+**What was seen.** Job line 1 "Find the last 3 releases with their version and date" was drafted as exactly 3 results, each holding SIX facts: `latest version`, `latest date`, `second version`, `second date`, `third version`, `third date` (version label `## [`, date label `-`). The worker quoted each release header (`## [0.43.0] - 2026-10-16`) and could not satisfy the check: every try was red with `the label "-" is in the quote more than once` (the dash is in the header once and twice inside the date) plus missing or wrong position facts. Step 2 used 5 tries, a replan rewrote the quotes, step 2 used 4 more; job-end step-red, $0.2306 of $0.50, spendComplete true.
+
+**Why the run could not pass.** Two drafting defects, both signed before any money was spent:
+- **Shape:** one result is one release, so it holds one version and one date. Facts named by position across results ("second", "third") ask one quote to hold the other releases' values. Two facts with the same shape after the same label read the same value, so they can never differ.
+- **Repeating label:** `-` appears 3 times in the one header line. The label-then-value read refuses an ambiguous label (bareguard anchor locate, `anchor-ambiguous`). The same class as "at" on the flights pages (F228).
+
+**Why drafting let it through.** The look checks that a fact's words are found in the source; it does not check that a label appears at most once in any one line of the source, nor that the facts of one result can differ. The earlier change2 drafts (same job, thinking off) drew label `] -` and two facts, and passed.
+
+**Not the thinking rule.** Every worker call was sent its expected mode (scout off, plan on, step attempt 1 off, attempts 2 and later on, `thinkingStatus` applied); a worker cannot change a signed check.
+
+**Status.** Open. hamr 2026-10-17: fold both checks into idea A rule v2 (ITEM33-BUILD.md idea A addendum), no stand-alone patch; test on Google Flights, not the changelog.
