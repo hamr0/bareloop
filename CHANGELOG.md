@@ -5,6 +5,12 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Changed
+
+- **Thinking on retries, for every job (PRD v1.106 Part 1; F230-F233).** The worker's per-call thinking mode is now decided in code from the phase and attempt (`workerThinkingMode`, `src/thinking.js`): planner (draft, redraft, replan) on, run scout off, step attempt 1 off, step attempt 2 and later on, close-fix on. The job's "Thinking on" tick makes every worker call on (as it already did for drafting and the rubric judge). It is sent as bare-agent's per-call `thinkingMode` through `thinkingCallOptions` (nothing is sent to a model that cannot switch). New spine records: `thinking-decision {phase, iteration, mode}` before every worker call and `thinking-status {phase, iteration, mode, thinkingStatus}` after it. A step or fix iteration that is not a whole number throws. Measured on DeepSeek deepseek-flash only; on the short changelog job it was slower (1.76 vs 1.46 min), by hamr's one-rule ruling. Budgets, caps and the close are untouched.
+
 ## [0.43.0] - 2026-10-16
 
 ### Added

@@ -64,7 +64,7 @@ inherited rule carries the green that minted it and the contrast that attributed
   back to a default. The request-key spelling is the ROW's tick, never a model-id table: a server that ignores `max_completion_tokens` (F149) does not bind
   the output cap until the "old max_tokens" box is ticked, and an output cap that does not bind is a money hazard, so tick it on that row before a paid run
   (`makeProvider(shape, { legacyMaxTokens })`, forwarded for `openai-api` only). The judge's calls carry the per-call `thinkingMode` the job's signed "Thinking on" tick asks for
-  (`src/thinking.js`, applied by `defaultJudgeLoop`; F192: unticked = off, because a model's default thinking can eat the 4000-token locate budget); workers are untouched. A plan step's
+  (`src/thinking.js`, applied by `defaultJudgeLoop`; F192: unticked = off, because a model's default thinking can eat the 4000-token locate budget); the WORKER's per-call mode is decided in code from the phase and attempt (see "Thinking on" below). A plan step's
   `model: "sonnet"` is a documented schema token meaning "this job's worker model" (`STEP_MODELS`), not a model id. `gemini-api` (PRD item 31.3) is
   **ADMITTED-PENDING-PROBE**: it has ZERO runs, and the probe rule is not waived for it —
   `PROBE_STATUS` (`src/providers.js`) is the machine-readable form of that debt, and
@@ -158,7 +158,7 @@ minting claim, or the shell-owned retry cap — all unknown-field reds.
 | `maxWallMs` | optional integer ms `>= MIN_WALL_MS` (one close timeout) | the run's wall clock. **NO DEFAULT, by ruling** — absent means time-unbounded *by explicit operator choice*, never by fallback (F45: a defaulted cap is a silent second ceiling). Enforcement is a BETWEEN-ROUND deadline, so the honest worst case is `maxWallMs + closeStages × closeTimeoutMs` — every stage of a staged close gets the FULL timeout — and all three numbers are reported (`loop.stop()` cannot cut an in-flight call — F61 measured 500ms→4,018ms). The `MIN_WALL_MS` floor is a ONE-stage, un-autoset-default number, so a spec with many stages OR a raised/autoset `closeTimeoutMs` can validate while its overshoot dwarfs its cap: `runPlan` adds a RUN-START check (PRD item 27/M3) that refuses `wall-under-close-timeout` at $0 once the EFFECTIVE per-stage ceiling is known (autoset or signed), rather than a silent clamp. Operator-only, tighten-only; adding or changing it changes the spec hash |
 | `closeTimeoutMs` | optional integer ms `>= CLOSE_TIMEOUT_FLOOR_MS` (120,000 — hamr's arbiter floor, 2026-09-07) | PRD item 27/M3's SIGNED override for the close's own per-stage wall-clock cap. Absent (the normal case): the run autosets it from a $0 seed timing pass — `max(FLOOR, K × slowest measured stage)`, `K = 5` (hamr, 2026-09-07: "2 and 5 are fine"). Present: the operator's own number wins outright and may legally sit ABOVE *or below* the autoset estimate (the rates-passthrough shape, F113 — never tighten-only). Arbiter territory exactly like `budgetUsd`/`maxWallMs`/`close[].sha256`: the authoring pipeline's `assembleSpec` refuses a draft carrying it |
 | `model` | optional non-empty string, the exact model id of a line ticked in Settings > Providers | the WORKER's model. A job carries its own model (P8: bareloop has no default); a spec signed before that (no `model`, perhaps no `baseUrl`) runs on the line `--model <id>` names (plus `--provider <KEY>` when two keys tick it) — the signed hash is untouched. Present, it wins over a `--model` flag outright, and a flag naming a different id is refused (`resolveWorkerModel`, `src/job.js`) rather than silently overridden. Part of the signed hash like every other field. Worker only — the JUDGE's model comes from the `judge` row below, which DEFAULTS to this same worker model |
-| `thinking` | optional boolean | the job's "Thinking on" tick (P8): absent = off, and an old spec keeps the hash it always had; present it is signed like `model`. Covers DRAFTING and the rubric JUDGE only — the worker is never handed a thinking option (see "Thinking on" below) |
+| `thinking` | optional boolean | the job's "Thinking on" tick (P8): absent = off, and an old spec keeps the hash it always had; present it is signed like `model`. Covers DRAFTING and the rubric JUDGE, and makes every WORKER call think (see "Thinking on" below) |
 | `judge` | optional `{provider, model}`, both non-empty; `provider` from the `PROVIDERS` menu | the signed JUDGE override (PRD item 32). Absent, the judge resolves to this job's own `provider`/`model` (`resolveJudge`) — which is what lets a non-Anthropic job judge without a second account. Present, it pins a judge deliberately different from the worker (an independent reader). Both halves are required together: a judge with a provider and no model is an identity nobody signed. Part of the signed hash, so changing it kills the signature and forces recalibration. Unknown nested keys red — no smuggling level exists in a signed spec. The drafting agent cannot express it: naming your own examiner is arbiter territory |
 | `writeScope` | array of contained globs | the operator's outer fence; the plan's own scopes must fit inside it, same containment code |
 | `steps` | RETIRED | operator-authored `steps[]` was deleted (PRD v1.32); a spec carrying it reds `shape-retired:steps` by name rather than half-running |
@@ -646,7 +646,7 @@ are asked after two failed drafts, about a job line.
 
 **Thinking on (per job; hamr 2026-10-11).** The New job card has a "Thinking on" tick under Model, unticked by default, saved in the SIGNED job as the optional
 boolean `thinking` (absent = off; an old spec and any unticked job keep the hash they would have had; a ticked job's `jobSpecHash` and `workflowKey` differ). It
-covers DRAFTING (scout, confirm, author, revise, structure retries) AND the rubric JUDGE; the WORKER is never handed a thinking option. A Reuse card does not
+covers DRAFTING (scout, confirm, author, revise, structure retries) AND the rubric JUDGE, and as the think-everywhere override it makes every WORKER call think too (below). A Reuse card does not
 offer the tick: it never drafts and the judge follows the SIGNED value, so the 10/10 calibration gate runs with the same tick as the later grading
 (`defaultJudgeLoop({ ..., thinking })` takes it in all three constructors: the run, `run-author`, the panel's gate). bareloop keeps NO per-model thinking list and no
 vendor regex: bare-agent (>= 0.52) owns the request shapes, and `thinkingSupport(kind, model, { baseUrl })` (a pure lookup, no network) answers `true` (measured
@@ -667,6 +667,16 @@ AND unticks the box with `say` ("can't change this for this model"); `'unverifie
 with a code-owned `thinking` row (`thinkingRowText`, before "checking setup"): `thinking off` / `thinking on`; `thinking off (not verified for this model)`;
 `thinking on (this model can't change it)`; and, once a call reports a status, `thinking on (the model thought anyway)` (`'ignored'`), `thinking on (this model can't change it)`
 (`'unsupported'`) or `thinking off (not confirmed)` (`'unknown'`) — a `step-label` record in the draft log carries the change. A Reuse workflow session drafts nothing and has no row.
+
+**Thinking on retries (the worker; PRD v1.106 Part 1, hamr 2026-10-17, every job).** Without the tick, each worker model call's mode is decided in code, never by the model,
+by `workerThinkingMode({ phase, iteration, tick })` in `src/thinking.js` (the one owner) at the `mkWorker` ask/askFrom call sites in `src/planrun.js`:
+planner (draft, redraft, replan; phase `plan`) = on; run scout = off; step attempt 1 = off; step attempt 2 and later = on; close-fix (`fix`) = on. The job's tick makes
+every one of those on. The mode goes out as bare-agent's per-call `thinkingMode` through `thinkingCallOptions` (the same support-aware mechanism drafting uses: a
+model bare-agent measured as not switchable, a test double or a clipipe/native session is sent nothing). A step or fix iteration that is not a whole number >= 1
+throws (operator error, never a guess). Each call writes the spine record `thinking-decision {phase, iteration, mode}` BEFORE it is made (one per call, a transport
+or rate-limit retry inside it carries the same options), and, once the call returns, `thinking-status {phase, iteration, mode, thinkingStatus}` with bare-agent's own
+verdict (`applied` / `unsupported` / `ignored` / `unknown`; absent when nothing was sent). Measured only on DeepSeek deepseek-flash (n=4 per arm); other shapes report
+through `thinkingStatus`, and are not claimed. The close, budgets and caps are untouched.
 
 
 **D5 — the mandatory guards are SHOWN and FIXED, and the battery keys off the VERDICT
