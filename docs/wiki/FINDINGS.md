@@ -14650,3 +14650,15 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 **2-line quote (weak spot 6), $0.** A flight's honest quote is the link line plus the `Departure time:` line. bareguard collapses whitespace: verbatim, newline, CRLF and space-joined forms all pass 10/10; a quote with the in-between page markup removed fails (not word for word). Only a live run shows whether the worker copies both lines, whether the brief's "one result's own text" keeps it on one line, and whether the retry words help.
 
 **Status.** Open. hamr 2026-10-17/18: v3 signed and frozen with its test plan (ITEM33-BUILD.md, "Idea A rule v3") before any unseen page is fetched; a failing unseen page is a finding, never a v4 fitted to it. Lists (b) still need the schema change.
+
+## F236 — idea A rule v3, POC round 3 on unseen pages: holds on Google Flights LAX-JFK (real rule-breakers refused) and Airbnb Porto; FINDING on JFK-LAX, a time label one character off the page's word reads no value and is kept (2026-10-18; open)
+
+**Grounded in:** `.claude/scratch/idea-a-v2/` (apply-r3.out, grade-r3.out, grade-r3-results.json, spend.json); pages `.claude/scratch/idea-a-pages/{airbnb-porto,gflights-lax-jfk,gflights-jfk-lax}.txt` (sha256 prefixes 4c768665, eb85a6b4, 25a44526), fetched after the freeze. v3 frozen at f12ef3b (section sha256 1802f4b0…6c3a; rules files unchanged at start and end). One AI call per page, deepseek-flash, thinking off; grading through the product's `gradeStep`. Round spend $0.0007 (POC total $0.0018).
+
+**LAX-JFK: HOLDS.** 33 flights. Honest 10/10; arrival as departure, price + 1, reversed direction (JFK-LAX quotes, both variants), other route, glued, position-named and bare `at` all caught. Real rule-breakers offered as answers: over $450 refused 10/10, with a stop 3/3, red-eye 7/7 (only the 2 pure red-eyes refused by the time rule; 5 also over $450).
+
+**Porto: HOLDS, price limit not tested.** U1 made `total` a unit, R1L dropped `€` (it reads the 0 of "Pay €0 today", 10 lines), R3U sent "Homes in Porto" page-once. Honest 10/10; price + 1, other listing, glued, Pay-€0 quote caught 10/10. All 24 listings are under €400, so the price rule had no breaker.
+
+**JFK-LAX: FINDING.** The AI listed the time label `Departure time` (no colon); the page writes `Departure time:`. The words are on the page, so the found-on-page filter kept it; the colon sits right after it, so no time can be read: honest 0/10, and most cheat catches are that same refusal (worthless). v3's "no value either side -> dropped" (U1) covers money and number facts only; nothing drops a time label that reads no value. Note: the product's own drafting check `checkFactWords` (labels picked from the scanned label list, never typed) also refuses this label, so a real drafting session would refuse it; the POC applied the rules without that gate.
+
+**Status.** Open. No v4 fitted to this page (frozen rule). hamr 2026-10-18: next a live drafted run on a new flights page.
