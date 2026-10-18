@@ -7,6 +7,12 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **The page-word map replaces the search-and-read look (idea A core, items 1-6; `src/pagemap.js`, `src/pagerules.js`, ITEM33-BUILD.md "Addendum 2026-10-18").** For a rubric job on a page, ONE AI call per page input names the page's own words for the job; plain code keeps only words found on the page (found-on-page), drops a label written 2+ times inside one page line (N2), keeps a second label only if it reads the same values as the first (R1), turns a marker the page writes after the number ("EUR 490 total") into a unit and drops a label that reads no number (U1), compares unit and currency forms by the numbers they read (R1L), and refuses a fact named for a position or two facts with the same shape and label (S1). The AI never grades. A malformed or truncated answer is retried once, then a plain stop; the scrubbed answer is kept in `draft-log.jsonl`.
+- **Currency and unit lists on a money fact (idea A core, item 7; bareguard ruling #65).** A money fact may carry both `unit` and `currency`, each one value or a list (at most 3 currencies and 10 units). Old single-value specs keep their bytes and hash.
+- **No silent drop (idea A core, item 8; F238).** Every word, fact or `~` rule the page rules drop appears as Not checked with a plain reason from one table (`src/pagedropwords.js`), on the confirm card and on the signed plan; a dropped word cannot be signed by the drafter (`rubric-fact-word-dropped`).
+
 ### Changed
 
 - **Thinking on retries, for every job (PRD v1.106 Part 1; F230-F233).** The worker's per-call thinking mode is now decided in code from the phase and attempt (`workerThinkingMode`, `src/thinking.js`): planner (draft, redraft, replan) on, run scout off, step attempt 1 off, step attempt 2 and later on, close-fix on. The job's "Thinking on" tick makes every worker call on (as it already did for drafting and the rubric judge). It is sent as bare-agent's per-call `thinkingMode` through `thinkingCallOptions` (nothing is sent to a model that cannot switch). New spine records: `thinking-decision {phase, iteration, mode}` before every worker call and `thinking-status {phase, iteration, mode, thinkingStatus}` after it. A step or fix iteration that is not a whole number throws. Measured on DeepSeek deepseek-flash only; on the short changelog job it was slower (1.76 vs 1.46 min), by hamr's one-rule ruling. Budgets, caps and the close are untouched.
