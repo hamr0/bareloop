@@ -1465,6 +1465,9 @@ function getRunDetailBody(runid, opts) {
     // carries no contamination risk); `null` when the spine carries no
     // `memory-cache` record at all (never armed on this run).
     behaviour: scopedBehaviour(row, rawSpineRecords),
+    // PRD v1.106 Part 5 F: the two Run summary rows, worded here (the page prints them)
+    callsLine: callsLineOf(rawSpineRecords, scopedBehaviour(row, rawSpineRecords)),
+    checksLine: checksLineOf(rawSpineRecords, enrichedParts),
     memoryCache: summary.memoryCache,
     // T Part 8: is this run waiting for the person's Accept? The SAME answer fills the runs list's Needs-you tag (`doorWaiting`, one owner)
     accept: !runIsAlive(row) && doorWaiting(rawSpineRecords),
@@ -2456,6 +2459,69 @@ function enrichPartsWithStageKind(parts, kindMeta, spec = null) {
 
 /** the words for a try the wall (or a cap, or a stop) ended before any of its checks ran (D2) */
 const CUT_OFF_WORDS = 'cut off before its checks ran';
+
+/**
+ * "71 model · 91 tool · 0 denied" — the Run summary's `calls:` row (PRD v1.106 Part 5 F). Model calls are the run's own spend records
+ * (`worker-round`, `judge-round`; the attempt-level `worker-result` echoes are not rounds and drafting is not the run's), tool and denied come
+ * from the gate-audit rows scoped to this run (the same figure `tools:` shows). No tool log saved says so, never a zero.
+ * @param {any[]} records the run's raw spine @param {{totalCalls: number, denied: number}|null} behaviour
+ * @returns {string}
+ */
+export function callsLineOf(records, behaviour) {
+  const model = records.filter((r) => r && (r.type === 'worker-round' || r.type === 'judge-round')).length;
+  return behaviour
+    ? `${model} model · ${behaviour.totalCalls} tool · ${behaviour.denied} denied`
+    : `${model} model · tool calls: no log saved`;
+}
+
+/** "1-5", "2", "1-2, 4" from try numbers @param {number[]} ns */
+function tryRanges(ns) {
+  const out = [];
+  for (let i = 0; i < ns.length; i += 1) {
+    let j = i;
+    while (j + 1 < ns.length && ns[j + 1] === ns[j] + 1) j += 1;
+    out.push(j > i ? `${ns[i]}-${ns[j]}` : String(ns[i]));
+    i = j;
+  }
+  return out.join(', ');
+}
+
+/**
+ * "16 run · 8 passed · 8 failed (write-flight-facts tries 1-5, then tries 1-3)" — counts of what ran, never a fraction (the "checks N/M"
+ * headline stays withdrawn). Every `exit-eval` result plus every graded `outer-close` stage; the parenthesis names the steps and try ranges
+ * that failed, from the same `tries[]` the Audit reads. A run with neither says `not recorded`.
+ * @param {any[]} records the run's raw spine @param {any[]|null|undefined} parts the enriched parts
+ * @returns {string}
+ */
+export function checksLineOf(records, parts) {
+  let run = 0;
+  let passed = 0;
+  let outerFailed = false;
+  for (const r of records) {
+    if (!r) continue;
+    if (r.type === 'exit-eval' && Array.isArray(r.results)) {
+      for (const x of r.results) { run += 1; if (x && x.pass === true) passed += 1; }
+    } else if (r.type === 'outer-close' && Array.isArray(r.stages)) {
+      for (const x of r.stages) { run += 1; if (x && x.verdict === 'satisfied') passed += 1; else outerFailed = true; }
+    }
+  }
+  if (run === 0) return 'not recorded';
+  /** @type {string[]} */
+  const named = [];
+  /** @type {Set<string>} */
+  const seenLabel = new Set();
+  for (const p of parts ?? []) {
+    if (p.kind !== 'step' || !Array.isArray(p.tries)) continue;
+    const bad = p.tries.filter((/** @type {any} */ t) => t.failed > 0).map((/** @type {any} */ t) => t.n);
+    if (bad.length === 0) continue;
+    const text = `tries ${tryRanges(bad)}`;
+    named.push(seenLabel.has(p.label) ? `then ${text}` : `${p.label} ${text}`);
+    seenLabel.add(p.label);
+  }
+  if (outerFailed) named.push('the outer close');
+  const failed = run - passed;
+  return `${run} run · ${passed} passed · ${failed} failed${named.length ? ` (${named.join(', ')})` : ''}`;
+}
 
 /** tool kinds in the order the Audit tally lists them; anything else follows alphabetically */
 const TALLY_ORDER = ['read', 'grep', 'write', 'edit'];

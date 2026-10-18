@@ -2730,7 +2730,9 @@
       '<div class="summary-row"><span class="sum-label">why:</span><span class="sum-val">' + escapeXml(detail.stopReason || (detail.glyph === "✓" ? "run ended clean" : "not recorded")) + '</span></div>' +
       '<div class="summary-row"><span class="sum-label">close:</span><span class="sum-val">' + escapeXml(detail.close && detail.close.verdict ? detail.close.verdict : "none — the run ended before any close ran") + '</span></div>' +
       '<div class="summary-row" data-testid="summary-tools"><span class="sum-label">tools:</span><span class="sum-val">' + escapeXml(detail.fromBridge === true ? bridgeToolsLine(detail.toolsUsed) : toolsLine(detail.behaviour)) + '</span></div>' +
+      (detail.fromBridge !== true && typeof detail.callsLine === "string" ? '<div class="summary-row" data-testid="summary-calls"><span class="sum-label">calls:</span><span class="sum-val">' + escapeXml(detail.callsLine) + '</span></div>' : '') +
       '<div class="summary-row" data-testid="summary-offered" id="summary-offered-row" hidden><span class="sum-label">offered:</span><span class="sum-val" id="summary-offered-val"></span></div>' +
+      (detail.fromBridge !== true && typeof detail.checksLine === "string" ? '<div class="summary-row" data-testid="summary-checks"><span class="sum-label">checks:</span><span class="sum-val">' + escapeXml(detail.checksLine) + '</span></div>' : '') +
       '<div class="summary-row" data-testid="summary-cache"><span class="sum-label">cache:</span><span class="sum-val">' + escapeXml(cacheLine(detail.memoryCache)) + '</span></div>';
 
     paintOfferedRow();
