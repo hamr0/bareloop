@@ -14662,3 +14662,24 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 **JFK-LAX: FINDING.** The AI listed the time label `Departure time` (no colon); the page writes `Departure time:`. The words are on the page, so the found-on-page filter kept it; the colon sits right after it, so no time can be read: honest 0/10, and most cheat catches are that same refusal (worthless). v3's "no value either side -> dropped" (U1) covers money and number facts only; nothing drops a time label that reads no value. Note: the product's own drafting check `checkFactWords` (labels picked from the scanned label list, never typed) also refuses this label, so a real drafting session would refuse it; the POC applied the rules without that gate.
 
 **Status.** Open. No v4 fitted to this page (frozen rule). hamr 2026-10-18: next a live drafted run on a new flights page.
+
+## F237 — a rubric flights draft signed facts that no run could pass: the labels "StaticText" and "O" read no value, and "Departure time:" sits on a different line from the result (run mvdg1xo3, flights-bos-ord, 2026-10-18; open, supports idea A's pending v4 rule)
+
+**Grounded in:** spine `~/.config/bareloop/panel-sessions/smvdfyexzv0vm/source-seed/flights-bos-ord-bareloop/u-mvdg1xo3.jsonl`; the signed facts in that session's `resolved-spec.json` (the `line-1-flight-facts` rubric-step); the saved page `source-seed/tree/input/flights.txt`; the settled row in `~/.config/bareloop/runs.jsonl`. Job `flights-bos-ord` (run-1), rubric, DeepSeek `deepseek-flash`, Google Flights BOS to ORD, 2026-11-20 one way, drafted by today's product drafting (not idea A). Cap $0.50 and 20 min.
+
+**What was seen.** Job line 1 ("List 3 flights from Boston to Chicago", rule: under $450, not a red-eye, nonstop) was drafted as 3 results with five signed facts:
+- `MaxPrice` money, label "From", unit "US dollars", under 450: fine (the page writes "From 144 US dollars.").
+- `DepartureWindow` time, label "Departure time:", between 5:00 AM and 10:00 PM: the label is on its own tree line (`generic "Departure time: 12:12 PM."`), not on the result's link line, so one quote cannot hold both (the 2-line-quote weak spot of F235).
+- `Stops` number, label "StaticText", at most 0: "StaticText" is an accessibility-tree role word (369 times in flights.txt), and the page writes "Nonstop" (52 times), never a number after it.
+- `LeaveAirport` text, label "Leaves": repeats inside a quote.
+- `ArriveAirport` text, label "O": a fragment of "O'Hare" (the page has "Chicago O'Hare International Airport").
+
+**How it ended.** Every close was red; the trend `line-1-flight-facts` went 1 then 3 and stayed flat at 3. The first plan used 5 attempts and ended on the step ladder (2 strikes of 2; the exit output at iteration 5 repeated iteration 1). A replan ran 3 attempts (one with `attempt-bounded` at 14 rounds, one with a `socket hang up` transport retry, recovered) and ended on the step-variance meter (time share 0.521 against threshold 0.5, money share 0.255, trend flat). That is 8 attempts in all; the spine holds a 9th `iteration-start` that the meter stopped before it ran. Close gaps named the labels directly: "the label \"StaticText\" is not in the quote" or "is in the quote more than once", "the label \"O\" is in the quote more than once", "the value is not in the quote as a whole word", "the label \"Departure time:\" is not in the quote". job-end `step-red`.
+
+**Money.** The spine job-end says `spentUsd` $0.1804 with `spendComplete` false (the transport retry means attempt 1 of that call may already be billed). The settled row in `runs.jsonl` says $0.1869; that figure includes drafting, the spine job-end figure is the run alone.
+
+**Why the run could not pass.** The same class as F234 and F236: a label that reads no value (or repeats) is kept at drafting. `checkFactWords` found "StaticText" and "O" as words on the page and did not refuse them. No worker could satisfy a "number after StaticText" fact on a page that writes "Nonstop", or a text value after "O" that is not a whole word. This supports idea A's pending v4 rule "a label that reads no value is dropped".
+
+**The thinking rule held on a rubric job (PRD v1.106 Part 1).** Scout off; step attempt 1 off; attempts 2 and later on; plan and replan on; all 11 `thinking-status` records `applied`. A worker cannot change a signed check, so the rule is not the cause.
+
+**Status.** Open. Logged, not patched (PRD §8a); no fix built here. hamr approved logging 2026-10-18.
