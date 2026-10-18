@@ -21,7 +21,7 @@ import { buildSeedListing } from '../src/authorscout.js';
 import { checkDeclarationWords } from '../src/factwords.js';
 import { renderLookReport, lookFactOf } from '../src/inputlook.js';
 import { planFromSpec, planFromConfirm } from '../src/panel/jobplan.js';
-import { runConfirmTurn, CONFIRM_TOOL_NAME, GREEN_QUESTIONS, FIELD_LABELS, makeCostBook, authorClose, DECLARATION_TOOL_NAME } from '../src/authorflow.js';
+import { runConfirmTurn, CONFIRM_TOOL_NAME, GREEN_QUESTIONS, FIELD_LABELS, makeCostBook, authorClose, DECLARATION_TOOL_NAME, REQUIRED_FACTS_BRIEF } from '../src/authorflow.js';
 import { reply } from './helpers.js';
 import { loadFixture } from './idea-a-fixtures.js';
 
@@ -283,4 +283,9 @@ test('authorClose (the real drafting loop): a drafter that signs the dropped lab
   assert.ok(r.iterations[0].validation.reds.some((/** @type {any} */ x) => x.code === 'rubric-fact-word-dropped'), JSON.stringify(r.iterations[0].validation.reds));
   assert.match(seen[1], /the label "StaticText" cannot be used\. The page never shows a number right after or right before "StaticText"/);
   assert.equal(r.iterations[1].validation.ok, true);
+});
+
+test('the drafter is TOLD the drop rules in the same change: a NOT CHECKED / LEFT OUT word is never used, and code lists dropped rules itself', () => {
+  assert.match(REQUIRED_FACTS_BRIEF, /A word the look lists under NOT CHECKED or LEFT OUT is never used in a fact - not as a label, a closing label, a unit or a currency/);
+  assert.match(REQUIRED_FACTS_BRIEF, /code lists it under Not checked for the person, so you do not write it into "refused" yourself/);
 });

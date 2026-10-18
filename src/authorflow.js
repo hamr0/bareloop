@@ -1437,6 +1437,8 @@ export const REQUIRED_FACTS_BRIEF = 'REQUIRED FACTS — what a line that finds, 
   + ' - A money fact names at least one of "unit" (the words the input writes after the amount) or "currency" (a sign: $, € or £), and may name both. Each is one value or a list: '
   + 'at most 3 currencies and 10 units, none repeated, a unit at most 100 characters. A code like EUR is a unit (it is read after the number), never a currency. '
   + 'Copy the forms the look gives for the fact, in its order (the first is the main one); a form the look does not give is refused at $0.\n'
+  + ' - A word the look lists under NOT CHECKED or LEFT OUT is never used in a fact - not as a label, a closing label, a unit or a currency - and is refused at $0 with the reason if you do. '
+  + 'A fact or ~ rule listed under NOT CHECKED is not turned into a check: code lists it under Not checked for the person, so you do not write it into "refused" yourself.\n'
   + ' - When one result holds several values of one kind (leaves / arrives, subtotal / total) give the fact an anchor, the label that sits right before the value you mean.\n'
   + ' - Set aiProposal true on a fact whose number you made out of their words.\n'
   + RUBRIC_RULES + '\n'
