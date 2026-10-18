@@ -100,13 +100,33 @@ export function rubricGoal({ jobLines, files, confirmedGoal = null, closeDecl = 
   const inputs = files.map((f) => `  - ${f.label}: ${f.rel}`).join('\n');
   const lines = jobLines.map((l) => `${l.n}. ${l.text}${l.rule ? `\n   rule: ${l.rule}` : ''}`).join('\n');
   return [
-    'Do the job below from the input files, then write one JSON file per numbered line.',
+    RUBRIC_GOAL_HEAD,
     `The input files (label: file):\n${inputs}`,
     stepFileContract(),
     `The job, line by line:\n${lines}`,
     ...(closeDecl ? lineBriefs(closeDecl).map((b) => b.text) : []),
-    ...(confirmedGoal ? [`The plan the person confirmed: ${confirmedGoal}`] : []),
+    ...(confirmedGoal ? [`${CONFIRMED_GOAL_PREFIX}${confirmedGoal}`] : []),
   ].join('\n\n');
+}
+
+/**
+ * What a rubric job's goal text is: the worker brief `rubricGoal` builds. The Job tab's "AI's summary" is only the one
+ * sentence the person confirmed, never this brief, so the first line and the confirmed-sentence prefix have ONE spelling.
+ */
+export const RUBRIC_GOAL_HEAD = 'Do the job below from the input files, then write one JSON file per numbered line.';
+const CONFIRMED_GOAL_PREFIX = 'The plan the person confirmed: ';
+
+/**
+ * The sentence the person confirmed, out of a goal text: for a rubric brief the rest of the `CONFIRMED_GOAL_PREFIX` line,
+ * or null when the brief has none; any other goal (a code job's) comes back unchanged.
+ * @param {string} goal
+ * @returns {string|null}
+ */
+export function confirmedGoalOf(goal) {
+  if (!goal.startsWith(RUBRIC_GOAL_HEAD)) return goal;
+  const line = goal.split('\n').find((l) => l.startsWith(CONFIRMED_GOAL_PREFIX));
+  const sentence = line ? line.slice(CONFIRMED_GOAL_PREFIX.length).trim() : '';
+  return sentence || null;
 }
 
 // ── the `rubric-step` stage: its parameters, and the rubric they build ───────────────────────────────────────────────

@@ -1,0 +1,34 @@
+Do the job below from the input files, then write one JSON file per numbered line.
+
+The input files (label: file):
+  - flights: input/flights.txt
+
+For each numbered job line N, write ONE file output/steps/N.json: a JSON object with exactly these keys.
+  "text"  — your answer for that line, as a string.
+  "cites" — an object: for each input you drew on, its label as the key and a list of {"claim", "quote"} as the value.
+            "claim" is one thing your text relies on; "quote" is words copied EXACTLY from that input (spacing and
+            ** or __ marks do not matter). Every number in a claim must also appear in its quote.
+  In each claim, copy every number, time and price exactly as the input writes it (for example "9:27 AM", not "09:27"),
+  because the check matches the numbers in your claim against your quote.
+A job line the brief below marks as a FACTS line is different: its file holds ONLY {"results": [{"quote": "...", "values":
+{"<fact>": "<value>"}}]} — one result per thing found, one quote copied exactly from the text of that one result, the values written as the quote
+writes them; no "text" and no "cites". A line the brief marks as a TEXT line keeps "text" (free words), and every number in it
+must be copied from a quote of an earlier facts line.
+Write nothing outside output/, and never edit the files under input/. The file must be complete, valid JSON: a file cut
+off before its closing brace counts as not written.
+
+The job, line by line:
+1. List 3 flights from Boston to Chicago
+   rule: under $450; not a red-eye; nonstop
+
+Job line 1 is a FACTS line. Write output/steps/1.json as {"results": [{"quote": "...", "values": {...}}]} and nothing else — no "text", no "cites".
+  One result per thing you find in the input "flights": exactly 3 results.
+  "quote": ONE quote per result, copied exactly from that result's own text in the input (at most 4000 characters) — never joined from two results.
+  "values": one entry per fact below, written exactly as the quote writes it (for example "9:27 AM", not "09:27"; "389", not "389.00").
+    - MaxPrice — an amount in US dollars, right after "From", must be under 450 US dollars
+    - DepartureWindow — a time, right after "Departure time:", must be between 5:00 AM and 10:00 PM
+    - Stops — a number, right after "StaticText", must be at most 0
+    - LeaveAirport — words, right after "Leaves"
+    - ArriveAirport — words, right after "O"
+
+The plan the person confirmed: Three results, each with a price under 450 US dollars, a departure time in the AI's proposed range between 5:00 AM and 10:00 PM, a stop count of 0 or fewer as the AI's proposal, and quotes naming the departure and arrival airports as \"flights\" writes them.

@@ -11,7 +11,7 @@
 // `cls` is 'machine check' | 'judge' | null (null = not known yet: the confirm card's checks are the model's plan, the
 // stage kinds exist only after drafting). Pure; no file IO.
 import { KIND_CATALOGUE } from '../authoring.js';
-import { checksOfClose, proseNotChecked, lineRules } from '../rubricstep.js';
+import { checksOfClose, proseNotChecked, lineRules, confirmedGoalOf } from '../rubricstep.js';
 
 /** @typedef {{name: string, cls: 'machine check'|'judge'|null}} PlanCheck */
 /** @typedef {{n: number, text: string, rule: string, rules: string[], checks: PlanCheck[], refused: string[]}} PlanLine */
@@ -100,7 +100,9 @@ export function planFromSpec(spec) {
     if (line && typeof r.reason === 'string') line.refused.push(ruleText ? `"${ruleText}" — ${r.reason}` : r.reason);
   }
   // the model's signed goal sentence rides along: the page draws it as the "AI's summary" row (an older job shows it as line 1 instead)
-  return { lines, loose, notChecked: notes, alwaysOn, older: false, ...(typeof spec?.goal === 'string' && spec.goal ? { goal: spec.goal } : {}) };
+  // (a rubric job's signed goal is the whole worker brief: only the sentence the person confirmed is the summary)
+  const summary = typeof spec?.goal === 'string' && spec.goal ? confirmedGoalOf(spec.goal) : null;
+  return { lines, loose, notChecked: notes, alwaysOn, older: false, ...(summary ? { goal: summary } : {}) };
 }
 
 /**
