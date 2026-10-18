@@ -1164,14 +1164,14 @@ function scheduleExtrasFor(runid, job, rows, nos, opts, view) {
     const originNo = nos.get(cur.originRunid) ?? null;
     const tries = door.skippedFor(job);
     const running = rows.some((r) => r && r.job === job && r.via !== 'import' && runIsAlive(r));
-    const { sign } = scheduleSignFor({ running, red: !!(view && view.problem) });
+    const { sign, word } = scheduleSignFor({ running, red: !!(view && view.problem) });
     const words = scheduledWords(cur.trigger, door.userHome);
     const head = [lowerFirst(words ?? ''), originNo === null ? null : `from run-${originNo}`, triesTailWords(tries.length) || null].filter(Boolean).join(' · ');
     const when = row ? dateTimeWords(atMs(row)) : '';
     const thisRun = rec ? sectionThisRunWords(rec) : `by hand.${runid === cur.originRunid ? ' The schedule was set from this run.' : ''}`;
     const shown = tries.slice(0, 7).map((x, i) => ({ label: i === 0 ? 'tries' : '', text: x.line }));
     const scheduleSection = {
-      title: SCHEDULE_WORDS.scheduleGroup, sign, head,
+      title: SCHEDULE_WORDS.scheduleGroup, sign, word, head,
       rows: [{ label: 'this run', text: `${when}  ${thisRun}` }, ...(shown.length > 0 ? shown : [{ label: 'tries', text: 'none' }])],
     };
     return { ...(schedule ? { schedule } : {}), audit: { scheduleSection } };

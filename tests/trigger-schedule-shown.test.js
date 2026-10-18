@@ -6,6 +6,7 @@ import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appendRow } from '../src/triggerledger.js';
 import { dateTimeWords, lowerFirst, scheduleSignFor } from '../src/schedulewords.js';
+import { STATUS } from '../src/panel/status.js';
 import { CLOCK, fireWorld, keysHome, makeRun, panel, specOf, SLOT } from './trigger-world.mjs';
 
 const detail = async (p, runid) => (await p.get(`/api/runs/${runid}`)).body;
@@ -66,6 +67,16 @@ test('Audit section: the head sign is [▶] only while a run of the job runs, [�
   assert.equal(scheduleSignFor({ running: false, red: true }).sign, '✗');
   assert.equal(scheduleSignFor({ running: false, red: false }).sign, '·');
   assert.equal(scheduleSignFor({ running: true, red: false }).sign, '▶');
+});
+
+test('Part 4 (v1.106): the section carries the status table\'s word beside its sign: [▶] running, [✗] failed, [·] waiting', async () => {
+  assert.deepEqual(scheduleSignFor({ running: true, red: true }), { sign: STATUS.running.sign, word: STATUS.running.word });
+  assert.deepEqual(scheduleSignFor({ running: false, red: true }), { sign: STATUS.failed.sign, word: STATUS.failed.word });
+  assert.deepEqual(scheduleSignFor({ running: false, red: false }), { sign: STATUS.waiting.sign, word: STATUS.waiting.word });
+  const w = await fireWorld();
+  const o = await section(w.p, 'r1');
+  assert.equal(o.word, 'waiting');
+  assert.equal(o.sign, '·');
 });
 
 test('Audit section: every run of a scheduled job has ONE `schedule` section; a hand run says `by hand`, the origin run adds where the schedule was set', async () => {

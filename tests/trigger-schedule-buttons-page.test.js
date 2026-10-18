@@ -471,6 +471,16 @@ test('RULED 2026-10-15 (v1.104): the Audit draws the server\'s schedule section 
   assert.doesNotMatch(src, /scheduleGroup/);
 });
 
+test('Part 4 (v1.106): the schedule header reads `[sign] word schedule · head` — sign and word first, then the name, then the `·` parts; the word is the server\'s', () => {
+  const src = fnSrc('renderAuditGroups');
+  const m = /var secHead = function\(open\)\{ return (.*?); \};/.exec(src);
+  assert.ok(m, 'secHead exists');
+  const head = new Function('sec', 'open', 'escapeXml', 'glyphSpan', `return ${m[1]};`);
+  const out = head({ title: 'schedule', sign: '✗', word: 'failed', head: 'when a new file arrives in ~/bareloop-inbox/ · from run-1 · 5 tries started nothing' }, true, (x) => String(x), (g) => g);
+  assert.equal(out, '▾ [✗] failed schedule &middot; when a new file arrives in ~/bareloop-inbox/ · from run-1 · 5 tries started nothing');
+  assert.doesNotMatch(m[1], /failed|passed|running|waiting/, 'the page types no status word');
+});
+
 test('live defect 2026-10-15 (mv9vzze6): the schedule section rows use the same table classes as the drafting/step rows (label column, dotted separators), not bare flex spans', () => {
   const src = fnSrc('renderAuditGroups');
   assert.match(src, /audit-table-scroll/, 'wrapped in the same scroll wrapper as the step tables');
