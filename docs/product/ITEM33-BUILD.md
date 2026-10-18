@@ -1084,3 +1084,49 @@ finding; no v4 is written on a page of this test.
 - All grading through the product's own `gradeStep` (src/rubricstep.js). The POC never edits product code.
 - After this test, and only on hamr's go: one live drafted run on a new flights page (real drafter, real worker), DeepSeek
   deepseek-flash.
+
+## Addendum 2026-10-18 — Idea A rule v4 (a label that reads no value is dropped) and its test (SIGNED by hamr 2026-10-18; FROZEN before any number is read)
+
+POC round 4. v4 = the frozen v3 (above, section sha256 1802f4b0…6c3a) carried forward unchanged, plus ONE generic rule,
+written after FINDINGS F236 (JFK-LAX: time label `Departure time` one character off the page's `Departure time:`, kept,
+reads nothing) and F237 (run mvdg1xo3: labels `StaticText` and `O` read no value, signed anyway). The rule is not fitted to
+any one page. The POC code for it is `.claude/scratch/idea-a-v2/apply-v4.mjs`; it layers on `rules.mjs` (sha256
+1057f690ee79fe3c58d51624255477894d76f4a7222683c5cdd1d8531ef1b64f) and `rules-v3-candidate.mjs` (sha256
+8646a1fecc4421aa76db63fd0c9b282e976987badaa94a29e396950a985bf3fe), neither of which may change.
+
+### The added rule (verbatim, hamr's words)
+
+- **V4.** For every fact (price, time, number or text): code looks right after the label, inside the same result. If no value
+  of the fact's kind is there in any result, the label is dropped; that fact shows as Not checked, with the reason in plain words.
+
+### Definitions (chosen here, before any run)
+
+- "Right after" = after leading whitespace, the text starts with a value of the fact's kind; no markup character is skipped.
+  Kinds: money and number = v3's value token (one optional `$` `€` `£`, then digits with optional commas and decimals);
+  time = `h:mm` or `hh:mm`, optionally followed by whitespace and AM or PM; text = a word character (letter or digit).
+- "Inside the same result" is read by the harness as the same page line as the label (v3's convention). "In any result" =
+  at least one occurrence of the label on the page has a value right after it. No occurrence has one -> the label is dropped.
+- Carried from v3, not overridden: a money or number label with a value only right BEFORE it is a unit (U1), not a dropped
+  label. V4 therefore adds the drop for time labels and text labels; for money and number labels the drop is U1's.
+- Place and phrase facts are fixed words copied from the page, not labels followed by a value; V4 does not touch them.
+- A fact left with no label, unit or currency is not signed. It is listed as Not checked with the reason
+  `the page never shows a <time|price|number|text> right after "<label>"`, one line per dropped label.
+- Known limit, not a rule: V4 reads the page line, not the worker's quote span. A label whose value sits on another line
+  than the result's record (F237 `Departure time:` on its own tree line) reads a value and is kept; V4 does not solve it.
+
+### Test plan (stated before any data)
+
+- Pages: JFK-LAX (`gflights-jfk-lax.txt`, the F236 finding page), BOS-ORD (new: the page of run mvdg1xo3, copied from that
+  session's `source-seed/tree/input/flights.txt`; job "List 3 flights from Boston to Chicago", rules `under $450`,
+  `not a red-eye`, `nonstop`), and regression on every page v3 already held on: sfo1, sfo2, ORD-DEN, Airbnb Lisbon,
+  LAX-JFK, Airbnb Porto.
+- Saved AI maps are reused for every page but BOS-ORD ($0, no AI calls). BOS-ORD gets ONE AI mapping call made the way round 3
+  made it (`mapcall.mjs`: same prompt, DeepSeek deepseek-flash, thinking off, one retry on a transport error only, empty-key
+  guard); approved spend about $0.002, hard stop above $0.01.
+- Reported per page and fact: label, kept or dropped, values read, verdict against v3.
+
+### Decision rule
+
+v4 HOLDS iff (a) on JFK-LAX and BOS-ORD every label that reads no value is dropped and every kept label reads a real value,
+and (b) on every regression page no verdict that v3 got right changes and no real rule-breaker passes. Anything else is a
+FINDING, logged, never re-tuned (frozen rule).
