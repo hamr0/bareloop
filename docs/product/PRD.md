@@ -1871,3 +1871,34 @@ Every new block is text in the existing flow with `overflow-wrap:anywhere` (the 
 14. `output judged:` size and hash shown as `2.1 KB · sha256 674b…30` (recommended), or the path only with no hash.
 
 **Part 5 done when:** built with the tests above on this branch; D1-D3 fixed; one live deepseek-flash run with web input shows `fetching the page…` and the new `output-judged` lines, and a run with a confirm question shows its Q and answer in the Audit drafting part; hamr's click-through (mobile by his DevTools); then /self-review, /branch-review, /release.
+
+**Part 5b — the look reads, code asks (v1.107 — 2026-10-18; RULED by hamr: cap 3, more than 3 = rewrite the job, build now on this branch before Part 6; SIGNED by hamr 2026-10-18, all 3 design choices as recommended).**
+
+hamr's words: "we need to inject an ask to agent when checks/guardrails are not verifiable, and the ask would be around the spirit of can't check this, drop (yes/no) or propose vs or i can enhance this guardrail/or i understand redeye as... agree yes/no or propose." And: "more than 3 you need to redraft, agent may even suggest that." Replaces Part 5 Q3 T1, which the builder could not build (the look carried no number; the number was made later by the confirm model and the drafter, `src/inputlook.js:166`). Real run, read only: `mve5y8fa` (flight-idea1): the look tied `not a red-eye` to fact `departure time` with no bound (draft-log `page-map` raw); the confirm model chose to propose 06:00–21:00 and the person agreed. Nothing in code made that ask.
+
+**Shape.** The page map (src/pagemap.js `mapPrompt`/`parseMapAnswer`, the only look path, src/authorjob.js:475) sorts every `~` rule into one of three kinds, and code asks about two of them:
+- **page**: a kept page word carries the rule (`nonstop` → `Nonstop`). No ask (today's T2 tie, unchanged).
+- **reading**: the rule needs a reading the page cannot hold (`not a red-eye`). The map returns it ON the fact: optional `reading: {op, value | lo, hi}` on a `time` or `money` fact, the same `op` set as a signed fact rule (src/facts.js `ruleWords`). Code asks only when a bound is NOT in the words the person wrote (the same test as `rubric-fact-unmarked`, src/rubricstep.js:650, one shared function, never a second spelling).
+- **can't check**: no kept page word and no reading (today's T2).
+
+**The asks** (code-owned words, one function each in src/pagemap.js beside `askableFromLook`; through the existing gate `answerQuestions`, answer required, no skip):
+- reading: `Your line N says "<rule>". I read it as: <ruleWords of the reading, e.g. departure time between 06:00 and 21:00>. Agree?` Answers: `agree`, or the person types their own (`propose`). `agree` writes the reading as a `~` rule on that line in plain words (`departure time between 06:00 and 21:00`), so the bound is now in the person's own words: the drafter is told it, `rubric-fact-unmarked` stays quiet, and the fact signs plain (no `AI's proposal` mark). A typed answer becomes the `~` rule instead.
+- can't check: `Your line N says "<rule>". I can't check this on the page. Drop it?` Answers: `drop it` (today's `leave it Not checked` path: the rule goes on `look.dropped`, reason `person-left`, shows as Not checked), or the person types how to check it (`propose`), which becomes the `~` rule.
+- Answers are recorded as Part 5 Q1 (draft-log `human` rows, `source:'look'`); the Audit drafting rows show them.
+
+**Cap and rewrite.** `MAX_QUESTIONS` goes from 2 to 3 (src/authorflow.js:121; the try-3 questions share it). More than 3 asks: nothing is asked, nothing more is spent, and drafting stops before the confirm turn with code-owned words listing EVERY ask and its reading as the suggestion: `Your job has N rules I can't check or had to guess. Please rewrite it so each one says what to look for. My readings: line 1 "not a red-eye" → departure time between 06:00 and 21:00; …`. That list IS the agent's suggestion; no extra paid call. The person edits the job and drafts again.
+
+**Unchanged.** The confirm model's own questions (`forceAnsweredQuestions`) stay; try-3 stays the late backup; a bound the drafter still makes unasked keeps today's `AI's proposal — check it` mark (rubricstep.js:650 forces it).
+
+**Call site.** src/authorjob.js:653-654: `askableFromLook(look, jobLines)` returns both kinds, reading first in line order; the count check (>3 → stop) sits before `normalizeQuestions`. `lookFactOf`/`KeptFact` (src/pagerules.js:14) carry `reading` through so the ask and the confirm card see it.
+
+**Must fail when:** a reading whose bound is not in the person's words raises no ask; a reading whose bound IS in their words raises one; a page-tied rule raises one; `agree` leaves the `AI's proposal` mark or does not add the `~` rule; `drop it` adds a rule or leaves it checked; 4 asks ask anything or spend past the look; the stop words miss an ask or its reading; the same rule is asked twice; the map answer with a malformed `reading` is accepted (it is a malformed answer, no repair).
+
+**Tests.** The real `mve5y8fa` look and job as fixture (tests/fixtures/part5/), with the map answer re-shaped to carry the reading (the real one predates the field; say so in the test); each assertion shown failing first. Gate: npm test (hermetic), typecheck, build:types, exit codes quoted. Live: the flight-idea1 job on deepseek-flash, $0.50 / 20 min (hamr's go), must show the red-eye ask, the agreed `~` rule, and a plain signed fact.
+
+**Design choices for hamr (recommended first).**
+1. Agreed reading is stored as a `~` rule in plain words (recommended: no new signed field, the hash sees it as the person's words), or a new signed `confirmed` field on the fact.
+2. More than 3: stop with the list (recommended, $0), or one paid call that rewrites the job for the person to edit.
+3. The confirm model's own free questions: keep (recommended, unchanged), or turn off now that code asks.
+
+**Part 5b done when:** built and gated on this branch, the live run above shows the ask, hamr signs off; then Part 6.
