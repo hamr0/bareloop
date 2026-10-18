@@ -215,3 +215,15 @@ test('S1 (shape and label): the same label on a DIFFERENT shape is not a collisi
   ] };
   assert.deepEqual(applyPageRules(sfo.page, map, JOBS.flights).facts.map((f) => f.name), ['price', 'from number']);
 });
+
+// ── item 7/8: the list limits are applied by code and SAID ───────────────────────────────────────────────────────────────────
+
+test('list limits: a longer list is cut to the first 10 units (and a unit over 100 characters left out) by code, each cut said as a drop - never refused later', () => {
+  // inline text, not a page: the cut is a pure list rule that no saved page reaches (it needs 11 forms that read the same numbers)
+  const units = Array.from({ length: 11 }, (_, i) => `unitword${String.fromCharCode(97 + i)}`);
+  const long = 'u'.repeat(101);
+  const page = [...units, long].map((u) => `Price 12 ${u}`).join('\n');
+  const r = applyPageRules(page, { facts: [{ name: 'price', from: 'rule 1', shape: 'money', words: ['Price'], unit: [...units, long] }] }, JOBS.flights);
+  assert.deepEqual(r.facts[0].unit, units.slice(0, 10));
+  assert.deepEqual(said(r.dropped), [`price|${long}|unit-too-long`, 'price|unitwordk|limit-unit'].sort());
+});

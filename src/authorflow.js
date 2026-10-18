@@ -87,7 +87,8 @@ import {
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
 import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
-import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, withFactBindings, settlePersonsWords } from './rubricstep.js';
+import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, withFactBindings, settlePersonsWords, withDropNotes, lineRules } from './rubricstep.js';
+import { dropRows, dropLine } from './pagedropwords.js';
 import { factShapeGuide } from './facts.js';
 import { renderLookReport, labelListsOf } from './inputlook.js';
 import { checkDeclarationWords } from './factwords.js';
@@ -2429,7 +2430,10 @@ export async function runConfirmTurn({
     // the list the model was prompted with is byte-identical to the list
     // shown at confirm-done and recorded on acceptance. `notChecked` is the
     // model's own honest gap list, carried through unchanged.
+    // NO SILENT DROP (idea A core, spec 4.5): what the page rules removed is said HERE too, in the same words as the signed plan, before
+    // drafting is paid for. The words come from the one table (src/pagedropwords.js).
     const notChecked = [...(r.plan.notChecked ?? [])];
+    for (const row of dropRows(facts?.look?.dropped)) { const text = dropLine(row, jobLines, lineRules); if (!notChecked.includes(text)) notChecked.push(text); }
     const checkItems = normalizeChecks(r.plan.checks);
     r.plan = { ...r.plan, checks: checkItems.map((c) => c.text), checkItems };
     const plan = { ...r.plan, protections, notChecked };
@@ -2944,12 +2948,12 @@ export async function authorClose({
       previous = ask.declaration;
 
       // PART 1b: code puts the number tie on every prose step that follows a fact step, before anything is validated or signed
-      let v = validateDeclaration(withFactBindings(settlePersonsWords(ask.declaration, jobLines)), { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope, jobLines, inputLabels: inputLabelsOf(inputs) });
+      let v = validateDeclaration(withFactBindings(withDropNotes(settlePersonsWords(ask.declaration, jobLines), facts?.look?.dropped, jobLines)), { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope, jobLines, inputLabels: inputLabelsOf(inputs) });
       // PART 1c: code proves, at $0, that every label is PICKED from the input's own list and every word a fact depends on is really
       // in the source (white-space blind, once is enough). A word that is not found is a red naming the word and the input; the
       // drafter revises like it does for any validation red.
       if (v.ok && lang === RUBRIC_LANG) {
-        const words = checkDeclarationWords(v.declaration, inputTexts);
+        const words = checkDeclarationWords(v.declaration, inputTexts, facts?.look ?? null);
         if (words.length > 0) v = { ...v, ok: false, reds: [...v.reds, ...words], declaration: null };
       }
       // SCRUBBED HERE, once, where the reds enter this module's records — the same

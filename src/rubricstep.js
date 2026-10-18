@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { createRubric, checkStep, renderGaps, numbersInQuote } from 'bareguard';
+import { dropRows, dropLine } from './pagedropwords.js';
 import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem, factBrief } from './facts.js';
 
 // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES — what one job line leaves
@@ -685,6 +686,36 @@ export function withFactBindings(declaration) {
     return { ...st, params: { ...st.params, parts: [...rest, { text: `every number in the text is in a quote checked on line ${from.join(', ')}`, class: 'countable', check: 'numbersFromFacts', from }] } };
   });
   return { ...declaration, stages };
+}
+
+/**
+ * NO SILENT DROP (idea A core, spec 4.4): code writes the Not checked rows for what the page rules removed, before the declaration is validated.
+ *   - a dropped FACT that carries a `~` rule no part carries and no `refused` entry names -> `closeDecl.refused` gets {line, rule, reason}
+ *     (shown under that line in the person's own rule words by {@link ruleNotChecked});
+ *   - any other drop (a fact from the job line itself, a rule another fact carries, a word dropped from a fact that is still checked, so a
+ *     narrower check is still said) -> one line in `closeDecl.notes`, shown as Not checked (the AI's own reading).
+ * Never a line-level `refused` entry without `rule` (that would silence every other rule red on the line). A rule the drafter already listed
+ * itself is never listed twice, and running this twice adds nothing. Pure; the input is untouched.
+ * @param {any} declaration @param {import('./pagerules.js').Dropped[]|null|undefined} dropped @param {any[]|null|undefined} jobLines @returns {any}
+ */
+export function withDropNotes(declaration, dropped, jobLines) {
+  if (!isRec(declaration) || !Array.isArray(dropped) || dropped.length === 0) return declaration;
+  const stages = Array.isArray(declaration.stages) ? declaration.stages : [];
+  const carried = (/** @type {number} */ line, /** @type {number} */ n) => stages.some((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && st.params.step === line
+    && Array.isArray(st.params.parts) && st.params.parts.some((/** @type {any} */ x) => isRec(x) && Array.isArray(x.rules) && x.rules.includes(n)));
+  const refused = Array.isArray(declaration.refused) ? [...declaration.refused] : [];
+  const notes = Array.isArray(declaration.notes) ? [...declaration.notes] : [];
+  for (const row of dropRows(dropped)) {
+    const named = row.rule !== undefined && refused.some((/** @type {any} */ r) => isRec(r) && r.line === row.line && r.rule === row.rule);
+    if (named) continue;
+    if (row.full && row.rule !== undefined && !carried(row.line, row.rule)) {
+      refused.push({ line: row.line, rule: row.rule, reason: row.sentences.join(' ') });
+      continue;
+    }
+    const text = dropLine(row, jobLines, lineRules);
+    if (!notes.includes(text)) notes.push(text);
+  }
+  return { ...declaration, ...(refused.length ? { refused } : {}), ...(notes.length ? { notes } : {}) };
 }
 
 /**

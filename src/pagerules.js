@@ -4,6 +4,7 @@
 // rules-v3-candidate.mjs; sha256 recorded in commit 0bcc5fe), with the OUT branches (R2, R2a, R2b, R2c, R3, R3U, V4, pageClaims) deleted.
 
 import { lineRules } from './rubricstep.js';
+import { MAX_CURRENCIES, MAX_UNITS, MAX_UNIT_CHARS } from './facts.js';
 import { countExact, countPhrase, squash } from './factwords.js';
 import { normLabel } from './labelscan.js';
 
@@ -12,7 +13,7 @@ import { normLabel } from './labelscan.js';
  * @typedef {{facts: MapFact[]}} PageMap
  * @typedef {{line: number, name: string, shape: string, from: string, words: string[], unit?: string[], currency?: string[], forRule?: number}} KeptFact
  *   `words` = what the page proves: the labels of a money/number/time fact, or the alternative phrases of a phrase fact (a place is a phrase)
- * @typedef {{line: number, rule?: number, fact: string, word?: string, reason: string, other?: string}} Dropped  `other` = the fact an S1 drop would have read the same value as
+ * @typedef {{line: number, rule?: number, fact: string, word?: string, reason: string, other?: string}} Dropped  `other` = what the drop is compared to: the first label (R1), the primary form (R1L), the fact it would have repeated (S1)
  */
 
 /** @param {unknown} v @returns {v is Record<string, any>} */
@@ -205,7 +206,7 @@ export function applyPageRules(text, mapping, jobLines) {
           const read = (/** @type {{kind: string, w: string}} */ x) => (x.kind === 'unit' ? unitSet(lines, x.w) : curSet(lines, x.w));
           const ps = read(forms[0]);
           const keep = [forms[0]];
-          for (const x of forms.slice(1)) { if (sameSet(read(x), ps)) keep.push(x); else drop(f, x.w, 'r1l'); }
+          for (const x of forms.slice(1)) { if (sameSet(read(x), ps)) keep.push(x); else drop(f, x.w, 'r1l', forms[0].w); }
           uni = keep.filter((x) => x.kind === 'unit').map((x) => x.w);
           cur = keep.filter((x) => x.kind === 'currency').map((x) => x.w);
         }
@@ -213,6 +214,17 @@ export function applyPageRules(text, mapping, jobLines) {
         cur = cur.filter((c) => {
           if (CURRENCY_SYMBOLS.includes(c)) return true;
           drop(f, c, 'currency-not-symbol');
+          return false;
+        });
+        // the guard's list limits (src/facts.js), applied here so a longer list is cut by code and SAID, never refused later: the first forms stay
+        uni = uni.filter((u, i) => {
+          if (u.length > MAX_UNIT_CHARS) { drop(f, u, 'unit-too-long'); return false; }
+          if (i >= MAX_UNITS) { drop(f, u, 'limit-unit'); return false; }
+          return true;
+        });
+        cur = cur.filter((c, i) => {
+          if (i < MAX_CURRENCIES) return true;
+          drop(f, c, 'limit-currency');
           return false;
         });
       }
@@ -228,7 +240,7 @@ export function applyPageRules(text, mapping, jobLines) {
     p.kept = p.kept.filter((w) => {
       if (w === p.first) return true;
       if (sameSet(valueSet(lines, w, shape), ref)) return true;
-      drop(p.f, w, 'r1');
+      drop(p.f, w, 'r1', p.first ?? undefined);
       return false;
     });
   }
