@@ -170,3 +170,39 @@ export async function runPageMap({
     facts: { rubricFiles: true, inputs: inputs.map((i) => ({ n: i.n, label: i.label })), look: { facts, prose: [], notFound: [], dropped } },
   };
 }
+
+/** the answer that leaves a `~` rule unchecked: the person types it (any case, a closing full stop allowed) */
+export const LEAVE_UNCHECKED = 'leave it Not checked';
+/** @param {unknown} text @returns {boolean} */
+export const isLeaveUnchecked = (text) => String(text ?? '').trim().replace(/\.$/, '').toLowerCase() === LEAVE_UNCHECKED.toLowerCase();
+
+/**
+ * PRD v1.106 Part 5 Q3 (T2): the early questions CODE forces before any paid drafting, from the look's own result. A `~` rule the map could not tie
+ * to a kept page word (no kept fact carries it: `forRule`) is a guardrail that would otherwise reach a signed check unasked. One question per such rule,
+ * worded here and nowhere else, in line order; the same rule text on the same line is asked once. The caller applies the machine's cap
+ * (`normalizeQuestions`, MAX_QUESTIONS) and the existing answer gate. T1 (a number the AI made) cannot be asked here: the look carries no numbers.
+ * @param {{facts?: {line: number, forRule?: number}[]}|null|undefined} look
+ * @param {{n: number, text?: string, rule?: string, rules?: string[]}[]|null|undefined} jobLines
+ * @returns {{line: number, rule: number, source: 'look', question: string}[]}
+ */
+export function askableFromLook(look, jobLines) {
+  const facts = Array.isArray(look?.facts) ? look.facts : [];
+  /** @type {{line: number, rule: number, source: 'look', question: string}[]} */
+  const out = [];
+  /** @type {Set<string>} */
+  const seen = new Set();
+  for (const l of Array.isArray(jobLines) ? jobLines : []) {
+    lineRules(l).forEach((rule, k) => {
+      const n = k + 1;
+      if (facts.some((f) => f.line === l.n && f.forRule === n)) return;
+      const key = `${l.n}\u0000${rule.trim().toLowerCase()}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push({
+        line: l.n, rule: n, source: 'look',
+        question: `Your line ${l.n} says "${rule}". I found no word on the page for it. Check it how? Say it another way or give the numbers (your answer is added as a new ~ rule on line ${l.n}), or answer "${LEAVE_UNCHECKED}".`,
+      });
+    });
+  }
+  return out;
+}

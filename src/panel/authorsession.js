@@ -53,6 +53,7 @@ import { closeJudges } from '../kinds.js';
 import { RUBRIC_LANG } from '../authoring.js';
 import { rubricGoal, reconcileRubricPlan } from '../rubricstep.js';
 import { redactSecrets } from '../validate.js';
+import { isLeaveUnchecked } from '../pagemap.js';
 import { tallyCalls } from '../text.js';
 import { writeDraftSpend, appendDraftLog } from '../draftspend.js';
 import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, draftStopText, redsRecord, declarationRecord, calibrationSummary, tryRefusedText } from '../authorreadout.js';
@@ -539,7 +540,20 @@ export function createSession(card, deps = {}) {
    * @param {{kind: string, [k: string]: any}} step
    * @returns {Promise<string|null>}
    */
-  const ask = (step) => new Promise((resolveFn) => {
+  const ask = (step) => new Promise((resolveFn0) => {
+    // PRD v1.106 Part 5 Q1: every question the person answers (the confirm card's, the early look ask, the last-try ask) is one `human` row in the
+    // drafting log, with the answer secret-masked BEFORE it is written. Written only when the answer exists (a blank one re-asks and leaves nothing).
+    const resolveFn = step.kind !== 'answer' ? resolveFn0 : (/** @type {string|null} */ value) => {
+      const said = value === null ? '' : redactSecrets(String(value).trim());
+      if (said !== '' && typeof step.question === 'string') {
+        const running = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
+        appendDraftLog(outDir, {
+          kind: 'human', no: running === -1 ? Math.max(0, state.steps.length - 1) : running, source: typeof step.source === 'string' ? step.source : 'confirm',
+          question: redactSecrets(step.question), answer: said, ...(Number.isInteger(step.line) ? { line: step.line } : {}), at: new Date().toISOString(),
+        });
+      }
+      resolveFn0(value);
+    };
     state.pendingAsk = step;
     resolvePending = resolveFn;
     if (step.kind === 'language') say('bot', `${step.field?.prompt ?? 'Which language is this job about?'} (${(step.candidates ?? []).join(', ')})`);
@@ -1023,27 +1037,32 @@ export function createSession(card, deps = {}) {
     // ask path as every other (the chat box + Send); the answer is REQUIRED (a blank one asks again, there is no skip) and is
     // added WORD FOR WORD as a `~` rule on the job line it names — never rewritten. The lines are mutated in place, so the
     // signed `jobLines`, the answers text and the plan card all read the same words.
-    const answerQuestions = async (/** @type {{questions: {line: number, question: string}[], dropped: {reason: string, raw: any}[], confirmed: any}} */ o) => {
+    const answerQuestions = async (/** @type {{questions: {line: number, question: string, rule?: number, source?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}} */ o) => {
       if (o.dropped.length) appendDraftLog(outDir, { kind: 'questions-dropped', no: Math.max(0, state.steps.length - 1), dropped: o.dropped, at: new Date().toISOString() });
       const total = o.questions.length;
+      /** @type {{line: number, rule: number}[]} */
+      const left = [];
       for (let k = 0; k < total; k += 1) {
         const q = o.questions[k];
         let text = '';
         for (;;) {
-          const a = await ask({ kind: 'answer', index: k + 1, total, question: q.question, line: q.line });
+          const a = await ask({ kind: 'answer', source: typeof q.source === 'string' ? q.source : 'try-3', index: k + 1, total, question: q.question, line: q.line });
           if (a === null) return null;
           // one `~` line is one line: the person's own words, newlines folded to spaces, nothing else touched
           text = String(a).replace(/\s*\n\s*/g, ' ').trim();
           if (text) break;
           say('bot', 'An answer is needed here — there is no skip. Type it in the box below and press Send.');
         }
+        // PRD v1.106 Part 5 Q3: a code-forced look question about a `~` rule can be answered "leave it Not checked" - then NO rule is added; the
+        // caller puts that rule on the look's Not checked list
+        if (q.source === 'look' && Number.isInteger(q.rule) && isLeaveUnchecked(text)) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); continue; }
         const line = jobLines.find((l) => l.n === q.line);
         if (line) { line.rule = line.rule ? `${line.rule}; ${text}` : text; line.rules.push(text); }
       }
       draft.jobLines = signedJobLines(jobLines);
       answers[1] = renderJobLines(jobLines);
-      state.messages.push({ ...planMessage(o.confirmed ?? {}, jobLines), text: 'Your answers are in as ~ rules on those job lines. Drafting again.' });
-      return { jobLines, answers };
+      state.messages.push({ ...planMessage(o.confirmed ?? {}, jobLines), text: left.length === total ? 'Noted: those stay Not checked. Drafting.' : 'Your answers are in as ~ rules on those job lines. Drafting again.' });
+      return { jobLines, answers, left };
     };
 
     state.phase = 'drafting';

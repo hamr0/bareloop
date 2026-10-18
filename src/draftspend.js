@@ -25,6 +25,8 @@ export const DRAFT_LOG_FILE = 'draft-log.jsonl';
  *  - `step-start`  {no, id, label, at}
  *  - `step-end`    {no, status: 'done'|'failed', label, at}   (a re-opened step writes `step-reopen` {no, at} first)
  *  - `step-label`  {no, label, at}   (the step reads `label` from now on, status and times untouched: the thinking row's "the model thought anyway" / "can't change it" / "not confirmed")
+ *  - `human`       {no, source: 'confirm'|'try-3'|'look', question, answer, line?, at}: one question the person was asked and what they answered (the answer is secret-masked
+ *    before it is written; the row is written only when BOTH exist, so a question nobody answered leaves no row)
  *  - `call`        {no, step, label, model, thinking, thinkingSupport, thinkingStatus?, costUsd (null stays null), unpricedRounds, at}: one METERED model call
  *    (`thinking` = the tick's mode: off | on; `thinkingSupport` = bare-agent's lookup for the model: true | false | 'unverified';
  *    `thinkingStatus` = bare-agent's own verdict for the call's run: applied | unsupported | ignored | unknown, present only when thinkingMode was sent)
@@ -127,11 +129,25 @@ export function sessionDirForRow(row, opts = {}) {
 }
 
 /**
+ * PRD v1.106 Part 5 Q1: one answered question as the two lines the Audit's drafting table shows under its step. ONE place owns the words.
+ * @param {{question: string, answer: string, source?: string, line?: number, at?: string}} h
+ * @returns {{question: string, answer: string, source: string, line?: number, at?: string, askedText: string, saidText: string}}
+ */
+export function humanRowWords(h) {
+  return {
+    question: h.question, answer: h.answer, source: typeof h.source === 'string' ? h.source : 'confirm',
+    ...(Number.isInteger(h.line) ? { line: h.line } : {}), ...(h.at ? { at: h.at } : {}),
+    askedText: `you were asked: ${h.question}`, saidText: `you said: ${h.answer}`,
+  };
+}
+
+/**
  * Fold `<dir>/draft-log.jsonl` into one record per drafting step, each with its calls. A line that cannot be parsed is
  * skipped (a torn last line must not hide the rest).
  * @param {string} dir
  * @returns {{no: number, id: string, label: string, status: 'running'|'done'|'failed', startedAt: string, endedAt: string|null, wallMs: number|null,
- *   calls: {label: string, model: string|null, costUsd: number|null, unpricedRounds: number, at: string}[]}[]}
+ *   calls: {label: string, model: string|null, costUsd: number|null, unpricedRounds: number, at: string}[],
+ *   humans: ReturnType<typeof humanRowWords>[]}[]}
  */
 export function readDraftSteps(dir) {
   /** @type {string} */
@@ -145,7 +161,7 @@ export function readDraftSteps(dir) {
     try { ev = JSON.parse(line); } catch { continue; }
     if (!ev || typeof ev !== 'object' || !Number.isInteger(ev.no)) continue;
     if (ev.kind === 'step-start') {
-      byNo.set(ev.no, { no: ev.no, id: String(ev.id), label: String(ev.label), status: 'running', startedAt: ev.at, endedAt: null, wallMs: null, calls: [] });
+      byNo.set(ev.no, { no: ev.no, id: String(ev.id), label: String(ev.label), status: 'running', startedAt: ev.at, endedAt: null, wallMs: null, calls: [], humans: [] });
     } else if (ev.kind === 'step-end' && byNo.has(ev.no)) {
       const x = byNo.get(ev.no);
       x.status = ev.status === 'failed' ? 'failed' : 'done';
@@ -157,6 +173,8 @@ export function readDraftSteps(dir) {
       const x = byNo.get(ev.no);
       x.status = 'running';
       x.endedAt = null;
+    } else if (ev.kind === 'human' && byNo.has(ev.no) && typeof ev.question === 'string' && typeof ev.answer === 'string') {
+      byNo.get(ev.no).humans.push(humanRowWords({ question: ev.question, answer: ev.answer, source: ev.source, ...(Number.isInteger(ev.line) ? { line: ev.line } : {}), at: ev.at }));
     } else if (ev.kind === 'call') {
       const c = { label: String(ev.label), model: typeof ev.model === 'string' ? ev.model : null, costUsd: typeof ev.costUsd === 'number' ? ev.costUsd : null, unpricedRounds: Number(ev.unpricedRounds) || 0, at: String(ev.at) };
       byNo.get(ev.no)?.calls.push(c);

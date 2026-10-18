@@ -19,6 +19,7 @@ const WORDS = /** @type {Record<string, (d: Dropped) => string>} */ ({
   'limit-unit': (d) => `Only the first 10 units are used; "${d.word}" was left out.`,
   'unit-too-long': (d) => `"${d.word}" is longer than 100 characters, so it was not used.`,
   'currency-not-symbol': (d) => `"${d.word}" is not a currency sign ($, € or £); a word the page writes after the amount is read as a unit.`,
+  'person-left': () => 'You chose to leave it Not checked.',
   'bad-shape': (d) => `The AI named a kind of value for "${d.fact}" that a check cannot read.`,
 });
 

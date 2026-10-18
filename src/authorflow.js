@@ -159,10 +159,10 @@ export function linesNamedByReds(reds, declaration, lineNums) {
  * The machine's keep-or-drop of the try-3 questions. Kept only when its line is one the previous try's reds named and its
  * text is non-blank, at most {@link MAX_QUESTIONS}; every drop comes back with its reason, for the draft's log.
  * @param {any} raw @param {number[]} failedLines
- * @returns {{kept: {line: number, question: string}[], dropped: {reason: string, raw: any}[]}}
+ * @returns {{kept: {line: number, question: string, rule?: number, source?: string}[], dropped: {reason: string, raw: any}[]}}
  */
 export function normalizeQuestions(raw, failedLines) {
-  /** @type {{line: number, question: string}[]} */
+  /** @type {{line: number, question: string, rule?: number, source?: string}[]} */
   const kept = [];
   /** @type {{reason: string, raw: any}[]} */
   const dropped = [];
@@ -173,7 +173,11 @@ export function normalizeQuestions(raw, failedLines) {
     if (!failedLines.includes(q.line)) { dropped.push({ reason: `line ${q.line} is not a line the previous try's checks failed on`, raw: q }); continue; }
     if (typeof q.question !== 'string' || q.question.trim() === '') { dropped.push({ reason: 'blank question', raw: q }); continue; }
     if (kept.length >= MAX_QUESTIONS) { dropped.push({ reason: 'beyond the machine\'s limit', raw: q }); continue; }
-    kept.push({ line: q.line, question: redactSecrets(q.question.trim()) });
+    kept.push({
+      line: q.line, question: redactSecrets(q.question.trim()),
+      // PRD v1.106 Part 5 Q3: a code-forced question (the early look ask) names the `~` rule it is about and says so; a model's question has neither
+      ...(Number.isInteger(q.rule) ? { rule: q.rule } : {}), ...(typeof q.source === 'string' ? { source: q.source } : {}),
+    });
   }
   return { kept, dropped };
 }
@@ -2384,7 +2388,7 @@ export async function runConfirmTurn({
     for (let i = 0; i < qs.length; i += 1) {
       const question = qs[i];
       for (;;) {
-        const raw = await ask({ kind: 'answer', field: ANSWER_QUESTION_FIELD, question, index: i + 1, total: qs.length });
+        const raw = await ask({ kind: 'answer', source: 'confirm', field: ANSWER_QUESTION_FIELD, question, index: i + 1, total: qs.length });
         if (raw === null) return null;
         const trimmed = redactSecrets(String(raw).trim());
         if (trimmed === '') continue; // blank is not an answer — re-ask the same question

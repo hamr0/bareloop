@@ -3067,6 +3067,10 @@
         rows += "<tr><td>" + escapeXml(st.label) + " (" + escapeXml(c.label) + ")</td><td>–</td><td>1</td><td>" +
           (c.model ? escapeXml(c.model) : "–") + "</td><td>" + draftingCallCost(c) + "</td></tr>";
       });
+      // PRD v1.106 Part 5 Q1: each question the person answered, under its step, in the server's own words (asked, then said); wraps
+      (Array.isArray(st.humans) ? st.humans : []).forEach(function(h){
+        rows += '<tr class="human-row" data-testid="drafting-human"><td colspan="5" style="overflow-wrap:anywhere;white-space:pre-wrap">' + escapeXml(h.askedText) + "<br>" + escapeXml(h.saidText) + "</td></tr>";
+      });
     });
     rows += '<tr class="drafting-total"><td><b>total</b></td><td>' + (part.wallMs === null || part.wallMs === undefined ? "–" : duration(part.wallMs)) +
       "</td><td>" + (typeof part.rounds === "number" ? part.rounds : 0) + "</td><td>–</td><td>" + draftingMoneyText(part) + "</td></tr>";
