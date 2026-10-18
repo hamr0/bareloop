@@ -25,7 +25,10 @@
 // for every cap/threshold: a shell never widens what it was asked to do).
 
 import { createServer } from 'node:http';
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import {
+  readFileSync, existsSync, readdirSync, lstatSync,
+} from 'node:fs';
+import { createHash } from 'node:crypto';
 import {
   dirname, join, basename, relative, isAbsolute, sep,
 } from 'node:path';
@@ -62,7 +65,8 @@ import { resolveProvider } from '../providers.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
 import { statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER } from './status.js';
 import { thinkingJobText } from '../thinking.js';
-import { judgedFilesOf } from '../rubricstep.js';
+import { judgedFilesOf, lineRules } from '../rubricstep.js';
+import { factPartOf, factSentence } from '../facts.js';
 import { createSettingsRoutes } from './settingsroutes.js';
 import { planFromSpec } from './jobplan.js';
 
@@ -1096,6 +1100,171 @@ export function getAcceptContext(runid, opts = {}) {
   return { row, live: runIsAlive(row), waiting: doorWaiting(records), specPath: signed ? signed.specPath : null, specHash: signed ? signed.specHash : null };
 }
 
+// ── PRD v1.107 Part 6: the Result tab (rubric jobs only) ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The files a run delivered: its own `destination-written` spine records (userrun.js, on a minted green only), one per path, the last record of a
+ * path winning. This is the ONLY source of a delivered path anywhere in the panel — no request ever names one.
+ * @param {any[]} records
+ * @returns {{path: string, bytes: number|null, sha256: string|null}[]}
+ */
+export function deliveredOf(records) {
+  /** @type {Map<string, {path: string, bytes: number|null, sha256: string|null}>} */
+  const byPath = new Map();
+  for (const r of records) {
+    if (!r || r.type !== 'destination-written' || typeof r.path !== 'string' || !isAbsolute(r.path)) continue;
+    byPath.set(r.path, { path: r.path, bytes: typeof r.bytes === 'number' ? r.bytes : null, sha256: typeof r.sha256 === 'string' ? r.sha256 : null });
+  }
+  return [...byPath.values()];
+}
+
+/** @param {any} spec @returns {any[]} the signed close's rubric-step stages, in declared order */
+function rubricStagesOf(spec) {
+  const stages = Array.isArray(spec?.closeDecl?.stages) ? spec.closeDecl.stages : [];
+  return stages.filter((/** @type {any} */ s) => s && s.kind === 'rubric-step' && s.params && Number.isInteger(s.params.step));
+}
+
+/** the two sentences for a delivered file that is no longer what the run wrote (code-owned, one spelling) */
+export const RESULT_FILE_GONE = 'the saved file is gone';
+export const RESULT_FILE_CHANGED = 'the saved file changed after the run';
+
+/**
+ * One delivered file, read for the Result tab or a download: it must still be a regular file at the recorded path whose sha256 equals the
+ * record's. A mismatch or a missing file is a state, never content — stale bytes are never returned.
+ * @param {{path: string, sha256: string|null}} rec a record from {@link deliveredOf}
+ * @returns {{state: 'ok', buf: Buffer}|{state: 'gone'|'changed', buf: null}}
+ */
+function readDelivered(rec) {
+  let st;
+  try { st = lstatSync(rec.path); } catch { return { state: 'gone', buf: null }; }
+  if (!st.isFile()) return { state: 'gone', buf: null };
+  let buf;
+  try { buf = readFileSync(rec.path); } catch { return { state: 'gone', buf: null }; }
+  if (rec.sha256 === null || createHash('sha256').update(buf).digest('hex') !== rec.sha256) return { state: 'changed', buf: null };
+  return { state: 'ok', buf };
+}
+
+/** a delivered step file's job line: `steps/<n>-YYYY-MM-DD[-k].json` (copyOut's dated name of `output/steps/<n>.json`), else null */
+function stepOfDelivered(path) {
+  const m = /^(\d+)-\d{4}-\d{2}-\d{2}(?:-\d+)?\.json$/.exec(basename(path));
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * Did this stage's check pass in the run's own record? The latest `check-run` for the stage says `satisfied` AND the run's last job-end is green.
+ * Read only — the Result tab never decides anything.
+ * @param {any[]} records @param {string} stageName
+ * @returns {boolean}
+ */
+function stagePassedIn(records, stageName) {
+  const end = records.findLast((r) => r && r.type === 'job-end');
+  if (!end || end.outcome !== 'green') return false;
+  const run = records.findLast((r) => r && r.type === 'check-run' && r.name === stageName);
+  return !!run && run.verdict === 'satisfied';
+}
+
+/** a result value as the file wrote it, for a table cell */
+function cellText(v) {
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  return '';
+}
+
+/**
+ * `GET /api/runs/:runid/result` — the Result tab: for each rubric job line, its words and `~` rules from the signed spec, the facts it requires
+ * (worded by {@link factSentence}), and — read from the run's own delivered step file, sha256-checked against its `destination-written`
+ * record — one row per result with each fact's cell. `passed` is read from the run's own `check-run` record; the tab never re-decides. A red run
+ * delivers nothing, so it has no rows: it carries the check's own first gap instead. `null` = no such run or no result tab for it.
+ * @param {string} runid @param {{ home?: string }} opts
+ */
+export function getRunResult(runid, opts = {}) {
+  const row = findRunRow(runid, opts);
+  if (!row || row.via === 'import' || !existsSync(row.spine)) return null;
+  const records = parseJsonl(row.spine).records;
+  const spec = resolveSpecForRow(row);
+  const stages = rubricStagesOf(spec);
+  if (stages.length === 0) return null;
+  const delivered = deliveredOf(records);
+  const read = delivered.map((d) => readDelivered(d));
+  const jobLines = Array.isArray(spec?.jobLines) ? spec.jobLines : [];
+  const lines = stages.map((/** @type {any} */ st) => {
+    const n = st.params.step;
+    const jl = jobLines.find((/** @type {any} */ l) => l && l.n === n) ?? null;
+    const fp = factPartOf(st.params);
+    const di = delivered.map((d, i) => ({ d, i })).filter(({ d }) => stepOfDelivered(d.path) === n).pop() ?? null;
+    const passed = stagePassedIn(records, st.name);
+    /** @type {any} */
+    const out = {
+      n, text: jl && typeof jl.text === 'string' ? jl.text : '', rules: jl ? lineRules(jl) : [], kind: fp ? 'facts' : 'text', passed,
+      file: di ? { i: di.i, state: read[di.i].state, words: read[di.i].state === 'gone' ? RESULT_FILE_GONE : (read[di.i].state === 'changed' ? RESULT_FILE_CHANGED : null) } : null,
+    };
+    let obj = null;
+    if (di && read[di.i].buf) { try { obj = JSON.parse(/** @type {Buffer} */ (read[di.i].buf).toString('utf8')); } catch { obj = null; } }
+    if (fp) {
+      out.source = fp.source;
+      out.facts = fp.facts.map((/** @type {any} */ f) => ({ name: f.name, kind: f.shape === 'phrase' ? 'phrase' : 'value', sentence: factSentence(f, fp.source) }));
+      const results = obj && Array.isArray(obj.results) ? obj.results : null;
+      out.rows = results === null ? null : results.map((/** @type {any} */ r, /** @type {number} */ k) => {
+        const values = r && typeof r === 'object' && r.values && typeof r.values === 'object' ? r.values : {};
+        return {
+          n: k + 1,
+          quote: r && typeof r === 'object' && typeof r.quote === 'string' ? r.quote : '',
+          cells: fp.facts.map((/** @type {any} */ f) => (f.shape === 'phrase' ? String(f.phrase) : cellText(values[f.name]))),
+        };
+      });
+    } else if (obj && typeof obj === 'object') {
+      out.answer = typeof obj.text === 'string' ? obj.text : null;
+      const cites = obj.cites && typeof obj.cites === 'object' ? obj.cites : {};
+      out.cites = Object.entries(cites).filter(([, list]) => Array.isArray(list)).map(([label, list]) => ({
+        label,
+        items: /** @type {any[]} */ (list).map((c) => ({ claim: cellText(c?.claim), quote: cellText(c?.quote) })),
+      }));
+    }
+    return out;
+  });
+  const end = records.findLast((r) => r && r.type === 'job-end');
+  // a run that did not end green delivered nothing: say the check's own first gap (the Audit's try line words), never rows
+  let gap = null;
+  if (!end || end.outcome !== 'green') {
+    const ev = records.findLast((r) => r && r.type === 'exit-eval' && Array.isArray(r.results) && r.results.some((/** @type {any} */ x) => x && x.type === 'check-passes' && x.pass === false));
+    const bad = ev ? ev.results.find((/** @type {any} */ x) => x && x.type === 'check-passes' && x.pass === false) : null;
+    const g = bad ? gapOneLine(bad.detail) : null;
+    gap = g ? { line: g.line, more: g.more, moreText: g.more > 0 ? `(+${g.more} more)` : null } : null;
+  }
+  return {
+    runid,
+    lines,
+    notChecked: planFromSpec(spec).notChecked,
+    delivered: delivered.map((d, i) => ({
+      i, path: d.path, name: basename(d.path), bytes: d.bytes, state: read[i].state,
+      words: read[i].state === 'gone' ? RESULT_FILE_GONE : (read[i].state === 'changed' ? RESULT_FILE_CHANGED : null),
+    })),
+    gap,
+  };
+}
+
+/** download content types by extension; anything else is plain bytes */
+const DOWNLOAD_TYPES = { '.json': 'application/json', '.md': 'text/plain', '.txt': 'text/plain', '.csv': 'text/csv' };
+
+/**
+ * `GET /api/runs/:runid/download?i=<n>` — delivered file `n` (an index into the run's own `destination-written` list), or why not. The path is
+ * the record's, never the request's; the sha256 must still match the record.
+ * @param {string} runid @param {unknown} index @param {{ home?: string }} opts
+ * @returns {{ok: true, name: string, type: string, buf: Buffer}|{ok: false, code: number, error: string}}
+ */
+export function getRunDownload(runid, index, opts = {}) {
+  const row = findRunRow(runid, opts);
+  if (!row || row.via === 'import' || !existsSync(row.spine)) return { ok: false, code: 404, error: 'no such run' };
+  const delivered = deliveredOf(parseJsonl(row.spine).records);
+  const i = typeof index === 'string' && /^\d{1,6}$/.test(index) ? Number(index) : -1;
+  if (i < 0 || i >= delivered.length) return { ok: false, code: 404, error: 'this run saved no such file' };
+  const got = readDelivered(delivered[i]);
+  if (got.state !== 'ok') return { ok: false, code: 409, error: got.state === 'gone' ? RESULT_FILE_GONE : RESULT_FILE_CHANGED };
+  const name = basename(delivered[i].path);
+  const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')).toLowerCase() : '';
+  return { ok: true, name, type: Object.hasOwn(DOWNLOAD_TYPES, ext) ? /** @type {Record<string,string>} */ (DOWNLOAD_TYPES)[ext] : 'application/octet-stream', buf: got.buf };
+}
+
 /**
  * `GET /api/runs/:runid` — the full replay for the Run tab: steps (or
  * iterations), counters, summary-box fields. Looks `runid` up in the run
@@ -1471,6 +1640,10 @@ function getRunDetailBody(runid, opts) {
     memoryCache: summary.memoryCache,
     // T Part 8: is this run waiting for the person's Accept? The SAME answer fills the runs list's Needs-you tag (`doorWaiting`, one owner)
     accept: !runIsAlive(row) && doorWaiting(rawSpineRecords),
+    // PRD v1.107 Part 6: the Result tab shows for a rubric run whose signed close has a rubric-step stage, never otherwise; `delivered` is the
+    // files the run's own `destination-written` records name (the Result tab's downloads index into this list, never a path from a request)
+    hasResult: checkTypeLabel(summary.verdictType, row.at) === 'rubric' && rubricStagesOf(specForParts).length > 0,
+    delivered: deliveredOf(rawSpineRecords).map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })),
     // T Part 7: why a SCHEDULED run started (the words `trigger.json` carried) and the fixed catch-up sentence; null on every hand run
     ...(() => {
       const trig = triggerRecordOf(row);
@@ -3559,7 +3732,7 @@ export function handleRequest(req, res, opts) {
 
   if (pathname === '/api/runs') { send(200, runsListPayload({ home: opts.home, schedules: opts.schedules })); return; }
 
-  const runMatch = /^\/api\/runs\/([^/]+)(\/(audit|job|rounds))?$/.exec(pathname);
+  const runMatch = /^\/api\/runs\/([^/]+)(\/(audit|job|rounds|result|download))?$/.exec(pathname);
   if (runMatch) {
     const rawRunid = runMatch[1];
     const sub = runMatch[3] ?? null;
@@ -3579,6 +3752,26 @@ export function handleRequest(req, res, opts) {
       const result = getRunJob(runid, { home: opts.home, schedules: opts.schedules });
       if (!result) { sendText(res, 404, 'no such run'); return; }
       send(200, result);
+      return;
+    }
+    if (sub === 'result') {
+      const result = getRunResult(runid, { home: opts.home });
+      if (!result) { sendText(res, 404, 'no such run, or it has no result tab'); return; }
+      send(200, result);
+      return;
+    }
+    if (sub === 'download') {
+      const got = getRunDownload(runid, url.searchParams.get('i'), { home: opts.home });
+      if (!got.ok) { sendText(res, got.code, got.error); return; }
+      // the name is the delivered file's own basename; quotes and control characters never reach the header
+      const plain = got.name.replace(/[^A-Za-z0-9._-]/g, '_');
+      res.writeHead(200, {
+        'content-type': `${got.type}; charset=utf-8`,
+        'content-length': got.buf.length,
+        'content-disposition': `attachment; filename="${plain}"; filename*=UTF-8''${encodeURIComponent(got.name)}`,
+        'x-content-type-options': 'nosniff',
+      });
+      if (method === 'HEAD') res.end(); else res.end(got.buf);
       return;
     }
     if (sub === 'rounds') {
