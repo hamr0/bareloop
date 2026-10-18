@@ -1133,7 +1133,7 @@ FINDING, logged, never re-tuned (frozen rule).
 
 ## Addendum 2026-10-18 — Idea A core: build spec (SIGNED by hamr 2026-10-18, all 18 design choices as recommended)
 
-Nothing here is signed. No builder is launched until hamr signs.
+Signed by hamr 2026-10-18 (all 18 design choices as recommended); built on feat/thinking-retries in commits 9bf05ca..fd78723.
 hamr's ruling 2026-10-18: build idea A CORE ONLY, then learn from live runs.
 A rule is added back only when a live run fails without it (PRD §8a).
 The frozen records above (v2, v3, v4, FINDINGS F226-F238) stay as they are. This spec builds from them; it re-designs nothing.
