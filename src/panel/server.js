@@ -3625,7 +3625,7 @@ export function handleRequest(req, res, opts) {
   function routesFor(o, p) {
     if (o.authorRoutes && p.startsWith('/api/author')) return o.authorRoutes;
     if (o.settingsRoutes && p.startsWith('/api/settings')) return o.settingsRoutes;
-    if (o.runRoutes && /^\/api\/runs\/[^/]+\/(resume|stop|accept|needs-remove)$/.test(p)) return o.runRoutes;
+    if (o.runRoutes && /^\/api\/runs\/[^/]+\/(resume|stop|accept|rerun|pause|needs-remove)$/.test(p)) return o.runRoutes;
     if (o.importRoutes && (p === '/api/fs/list' || p === '/api/imports' || p.startsWith('/api/imports/'))) return o.importRoutes;
     return null;
   }

@@ -16,7 +16,9 @@ import {
   openSync, closeSync, writeFileSync, readFileSync, readdirSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { checkHumanGuard, OLD_JOB_ACCEPT_WORDS, OLD_JOB_RESUME_WORDS } from './authorroutes.js';
+import {
+  checkHumanGuard, OLD_JOB_ACCEPT_WORDS, OLD_JOB_RESUME_WORDS, OLD_JOB_RERUN_WORDS, OLD_JOB_PAUSE_WORDS,
+} from './authorroutes.js';
 import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
 import { ConfigError } from '../config.js';
 import { keysForDoor } from '../keysfile.js';
@@ -65,7 +67,7 @@ function readLogTail(file) {
  * recorded...`, `CHECKPOINT EXPIRED — ...`); anything else (validator reds, exit statuses, stack traces, argv) becomes ONE fixed
  * sentence naming the log. The one owner for the Resume and Accept routes.
  * @param {string} tail the log tail
- * @param {'resume'|'accept'} kind
+ * @param {'resume'|'accept'|'rerun'|'pause'} kind
  * @param {string} logFile
  * @param {(stage: string) => string|null} [questionOf] stage name to the panel's plain question (`null` = none)
  * @returns {string}
@@ -85,9 +87,10 @@ export function engineRefusalWords(tail, kind, logFile, questionOf = () => null)
       return line;
     }
   }
-  return kind === 'resume'
-    ? `Resume did not start. Nothing was spent on it. The details are in ${logFile}.`
-    : `Accept did not go through. Nothing was recorded. The details are in ${logFile}.`;
+  if (kind === 'resume') return `Resume did not start. Nothing was spent on it. The details are in ${logFile}.`;
+  if (kind === 'rerun') return `Rerun did not start. Nothing was spent on it. The details are in ${logFile}.`;
+  if (kind === 'pause') return `Pause did not go through. Nothing was recorded. The details are in ${logFile}.`;
+  return `Accept did not go through. Nothing was recorded. The details are in ${logFile}.`;
 }
 
 /**
@@ -159,24 +162,30 @@ export function createRunRoutes(opts) {
   }
 
   /**
-   * T Part 8 — `POST /api/runs/:runid/accept`. The person's Accept of a run waiting at its REVIEW DOOR, recorded through the
-   * library's own door path and nothing else: `run-u --spec <signed spec> --door <runid> --decide accept --approve <hash>`
+   * T Part 8 + PRD v1.107 Part 6 — the person's answer to a run waiting at its REVIEW DOOR: `accept`, `rerun` (with their words) or `pause`, recorded through
+   * the library's own door path and nothing else: `run-u --spec <signed spec> --door <runid> --decide <accept|rerun|pause> [--text …] --approve <hash>`
    * (src/userrun.js, `answerReviewDoor`, src/reviewdoor.js). The panel invents no verdict path: the engine re-runs the MECHANICAL
-   * stages against the tree as it stands, a red there is `door-accept-red` and refuses, and only then is the disposition written
+   * stages against the tree as it stands for an accept (a red there is `door-accept-red` and refuses), and only then is the disposition written
    * to the run's own spine. The verdict the run minted is untouched. The engine's own words are what the page shows.
+   * An accept and a pause end when the engine does; a RERUN launches a fresh engagement (a paid run), so it answers like Resume: started, or the engine's refusal.
    * @param {import('node:http').IncomingMessage} req
    * @param {(code: number, obj: any) => void} send
    * @param {string} runid
+   * @param {'accept'|'rerun'|'pause'} decide
+   * @param {any} body the request body (`text` for a rerun)
    * @returns {boolean}
    */
-  function handleAccept(req, send, runid) {
+  function handleDoor(req, send, runid, decide, body) {
     const guard = checkHumanGuard(req, { token: opts.token, port: opts.port });
     if (!guard.ok) { send(403, { ok: false, error: `refused — ${guard.reason}` }); return true; }
     if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
     const ctx = opts.getAcceptContext ? opts.getAcceptContext(runid) : null;
     if (!ctx) { send(404, { ok: false, error: 'no such run' }); return true; }
-    if (ctx.live) { send(409, { ok: false, error: 'This run is still running, so there is nothing to accept yet.' }); return true; }
-    if (!ctx.waiting) { send(409, { ok: false, error: 'This run is not waiting for your Accept (it opened no review door, the door was already answered, or it has expired).' }); return true; }
+    if (ctx.live) { send(409, { ok: false, error: decide === 'accept' ? 'This run is still running, so there is nothing to accept yet.' : `This run is still running, so there is nothing to ${decide} yet.` }); return true; }
+    if (!ctx.waiting) { send(409, { ok: false, error: decide === 'accept' ? 'This run is not waiting for your Accept (it opened no review door, the door was already answered, or it has expired).' : `This run is not waiting for your answer, so it cannot be ${decide === 'rerun' ? 'rerun' : 'paused'} (it opened no review door, the door was already answered, or it has expired).` }); return true; }
+    // a rerun's words ARE the gap the worker is given: empty words are refused here in plain words (the engine refuses them too, src/kinds.js normalizeHumanRuling)
+    const text = decide === 'rerun' && typeof body?.text === 'string' ? body.text.trim() : '';
+    if (decide === 'rerun' && text === '') { send(400, { ok: false, error: 'Write what you want done differently, then press Rerun. Your words are what the next attempt is given.' }); return true; }
     if (!ctx.specPath || !ctx.specHash) { send(409, { ok: false, error: "The signed job this run was judged by cannot be found on disk, so its door cannot be answered from here. Nothing was recorded." }); return true; }
     // RULED 2026-10-15: an old run whose saved job fails today's checks is refused at $0 in plain words, before any spawn
     /** @type {any} */
@@ -185,15 +194,21 @@ export function createRunRoutes(opts) {
     if (signed !== null) {
       let jv;
       try { jv = validateJob(signed, { shellCapUsd: signed.budgetUsd }); } catch { jv = { ok: false, reds: [] }; }
-      if (!jv.ok) { send(409, { ok: false, error: OLD_JOB_ACCEPT_WORDS, reds: jv.reds.map((r) => `${r.code} at ${r.path}`) }); return true; }
+      if (!jv.ok) {
+        const words = decide === 'accept' ? OLD_JOB_ACCEPT_WORDS : (decide === 'rerun' ? OLD_JOB_RERUN_WORDS : OLD_JOB_PAUSE_WORDS);
+        send(409, { ok: false, error: words, reds: jv.reds.map((r) => `${r.code} at ${r.path}`) });
+        return true;
+      }
     }
     const questionOf = (/** @type {string} */ n) => (signed !== null && opts.stageQuestionsOfSpec ? opts.stageQuestionsOfSpec(signed).get(n) ?? null : null);
     const dir = dirname(ctx.specPath);
-    const logFile = join(dir, `accept-${runid}-${Date.now()}.log`);
+    const logFile = join(dir, `${decide}-${runid}-${Date.now()}.log`);
     const args = [
-      '--wait', 'systemd-inhibit', '--why=bareloop panel accept',
+      '--wait', 'systemd-inhibit', `--why=bareloop panel ${decide}`,
       process.execPath, bareloopBin,
-      'run-u', '--spec', ctx.specPath, '--door', runid, '--decide', 'accept', '--approve', ctx.specHash,
+      'run-u', '--spec', ctx.specPath, '--door', runid, '--decide', decide, '--approve', ctx.specHash,
+      // last, so no flag lookup in the engine can land on the person's words
+      ...(decide === 'rerun' ? ['--text', text] : []),
     ];
     /** @type {number|null} */
     let logFd = null;
@@ -203,14 +218,18 @@ export function createRunRoutes(opts) {
     if (typeof child?.unref === 'function') child.unref();
     let done = false;
     const finish = (/** @type {number} */ code, /** @type {any} */ obj) => { if (!done) { done = true; send(code, obj); } };
-    // an accept that outlasts the wait is still going: say so (202), never claim it passed
-    const timer = setTimeout(() => finish(202, { ok: true, pending: true, runid, log: logFile }), opts.acceptWaitMs ?? DEFAULT_ACCEPT_WAIT_MS);
+    const answered = { accept: { accepted: true }, rerun: { rerunning: true }, pause: { paused: true } }[decide];
+    // an accept that outlasts the wait is still going: say so (202), never claim it passed. A rerun is a run: it is "started" once it outlives the settle window.
+    const timer = setTimeout(
+      () => (decide === 'rerun' ? finish(200, { ok: true, ...answered, runid, log: logFile }) : finish(202, { ok: true, pending: true, runid, log: logFile })),
+      decide === 'rerun' ? settleMs : (opts.acceptWaitMs ?? DEFAULT_ACCEPT_WAIT_MS),
+    );
     if (typeof timer.unref === 'function') timer.unref();
     if (typeof child?.once === 'function') {
       child.once('exit', (/** @type {number|null} */ code) => {
         clearTimeout(timer);
-        if (code === 0) finish(200, { ok: true, accepted: true, runid, log: logFile });
-        else finish(409, { ok: false, error: engineRefusalWords(readLogTail(logFile), 'accept', logFile, questionOf), log: logFile });
+        if (code === 0) finish(200, { ok: true, ...answered, runid, log: logFile });
+        else finish(409, { ok: false, error: engineRefusalWords(readLogTail(logFile), decide, logFile, questionOf), log: logFile });
       });
       child.once('error', (/** @type {Error} */ e) => {
         clearTimeout(timer);
@@ -256,15 +275,19 @@ export function createRunRoutes(opts) {
     const stopM = /^\/api\/runs\/([A-Za-z0-9._~-]+)\/stop$/.exec(pathname);
     const m = /^\/api\/runs\/([A-Za-z0-9._~-]+)\/resume$/.exec(pathname);
     const acceptM = /^\/api\/runs\/([A-Za-z0-9._~-]+)\/accept$/.exec(pathname);
+    const rerunM = /^\/api\/runs\/([A-Za-z0-9._~-]+)\/rerun$/.exec(pathname);
+    const pauseM = /^\/api\/runs\/([A-Za-z0-9._~-]+)\/pause$/.exec(pathname);
     const needsM = /^\/api\/runs\/([A-Za-z0-9._~-]+)\/needs-remove$/.exec(pathname);
-    if (!m && !stopM && !acceptM && !needsM) return false;
+    if (!m && !stopM && !acceptM && !needsM && !rerunM && !pauseM) return false;
     const send = (/** @type {number} */ code, /** @type {any} */ obj) => {
       const text = JSON.stringify(obj);
       res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(text) });
       res.end(text);
     };
     if (stopM) return handleStop(req, send, stopM[1]);
-    if (acceptM) return handleAccept(req, send, acceptM[1]);
+    if (acceptM) return handleDoor(req, send, acceptM[1], 'accept', body);
+    if (rerunM) return handleDoor(req, send, rerunM[1], 'rerun', body);
+    if (pauseM) return handleDoor(req, send, pauseM[1], 'pause', body);
     if (needsM) return handleNeedsRemove(req, send, needsM[1]);
     if (!m) return false;
     const guard = checkHumanGuard(req, { token: opts.token, port: opts.port });

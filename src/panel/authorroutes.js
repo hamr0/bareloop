@@ -32,6 +32,8 @@ import { validateJob } from '../job.js';
 export const OLD_JOB_REUSE_WORDS = "This run was made by an older bareloop. Its saved job doesn't pass today's checks, so it can't be reused. Start a new job instead.";
 export const OLD_JOB_RESUME_WORDS = "This run was made by an older bareloop. Its saved job doesn't pass today's checks, so it can't be resumed. Use Reuse workflow on a newer run, or start a new job.";
 export const OLD_JOB_ACCEPT_WORDS = "This run was made by an older bareloop. Its saved job doesn't pass today's checks, so it can't be accepted. Use Reuse workflow on a newer run, or start a new job.";
+export const OLD_JOB_RERUN_WORDS = "This run was made by an older bareloop. Its saved job doesn't pass today's checks, so it can't be rerun. Use Reuse workflow on a newer run, or start a new job.";
+export const OLD_JOB_PAUSE_WORDS = "This run was made by an older bareloop. Its saved job doesn't pass today's checks, so it can't be paused from here. Use Reuse workflow on a newer run, or start a new job.";
 import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
 import { ConfigError } from '../config.js';
 import { keysForDoor, keysHome } from '../keysfile.js';
