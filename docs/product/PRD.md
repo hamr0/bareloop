@@ -1654,4 +1654,16 @@ Branch `feat/thinking-retries`, one branch, two parts, built in this order. Supe
 - Must fail when: a separate Scheduled search box is drawn; a Scheduled card shows above the search box; a job-name search leaves a non-matching Scheduled card; a result or time chip hides a Scheduled card; ◷ leaves Jobs shown; ◷ pressed and the count line still counts runs; ◷ smaller than the other chip symbols; a search or chip hides a Running now or Needs you card; ◷ with no match shows an empty list with nothing said.
 - Check the words fit at 320 px (hamr's DevTools; barebrowse cannot emulate phone width).
 
-**Done when:** both parts built with tests; `npm test`, typecheck and build:types exit 0; the two live runs above green; hamr's click-through of Part 2; then /self-review, /branch-review, /release.
+**Part 3 — thinking shown in the Audit tab and the Job tab (RULED 2026-10-18).**
+- Each attempt line inside an Audit part says the thinking it was sent, e.g. `attempt 2 [✗] · thinking on`; a part with one call (plan, scout) says it on its header line.
+- The words are drafting's own (`thinkingRowText`, src/thinking.js, the one owner): `thinking on` / `thinking off`, and when bare-agent was not sure `thinking on (this model can't change it)`, `thinking off (the model thought anyway)`, `thinking off (not confirmed)`. Read from the run's `thinking-decision` and `thinking-status` spine records, never guessed.
+- The Job tab gets a row `Thinking: on retries` (the default) or `Thinking: on everywhere (ticked)`.
+- A run from before this branch has no thinking records and shows no thinking words.
+- Must fail when: an attempt line shows a mode its spine did not record; a run without records shows any thinking word; the words differ from drafting's.
+
+**Part 4 — the Audit schedule header matches the other part headers (RULED 2026-10-18).**
+- Today: `▾ schedule [✗] when a new file arrives in ~/bareloop-inbox/ · from run-1 · 5 tries started nothing`.
+- Becomes: `▾ [✗] failed schedule · when a new file arrives in ~/bareloop-inbox/ · from run-1 · 5 tries started nothing` (sign, word, name, then `·` parts), the word from the one status table (src/panel/status.js), never typed.
+- Must fail when: the sign or word sits after the name; the word is not the status table's.
+
+**Done when:** all parts built with tests; `npm test`, typecheck and build:types exit 0; the two live runs above green; hamr's click-through of Parts 2-4; then /self-review, /branch-review, /release.
