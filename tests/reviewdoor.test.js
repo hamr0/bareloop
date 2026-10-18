@@ -232,7 +232,7 @@ test('an ALREADY-GREEN run opens the door too, and says which verdict it is offe
 /** the door answer, wired the way the runner wires it */
 const answer = (r, over = {}) => answerReviewDoor({
   job: r.job, workdir: r.dir, events: r.events, closeTimeoutMs: 120_000,
-  at: '2026-08-19T12:00:00.000Z', ...over,
+  at: '2026-08-19T12:00:00.000Z', now: () => Date.parse('2026-08-19T12:00:00.000Z'), ...over,
 });
 
 test('ACCEPT re-runs the close\'s mechanical stages on the tree as it stands, and is honoured when they pass', async (t) => {
@@ -267,7 +267,7 @@ test('ACCEPT on an ALREADY-GREEN run mints nothing and releases nothing — slic
   t.after(() => rmSync(registryDir, { recursive: true, force: true }));
   const a = await answerReviewDoor({
     job, workdir: p.dir, events: readEvents(p.spine), closeTimeoutMs: 120_000, decision: 'accept',
-    registryDir, name: 'review-door', runid: 'ms1', at: 'a',
+    registryDir, name: 'review-door', runid: 'ms1', at: 'a', now: () => Date.parse('2026-08-19T12:00:00.000Z'),
   });
   assert.equal(a.ok, true, JSON.stringify(a.reds));
   assert.equal(a.released, false);
