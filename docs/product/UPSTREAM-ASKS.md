@@ -2803,3 +2803,25 @@ in `tests/fixtures/f192-*-real.json`) plus the leading-`* `-dropped `@returns` l
 invented or reordered quote not found. Consumed in `src/judged.js` (`unquoted`); `docBlockAbove`
 stays the authority on where the doc block sits. The $0 replay of the 8 legal archived cases
 reads 8/8.
+
+## BG-2 — FILED 2026-10-18: a rubric fact check does not say WHERE in the quote it read the anchor, the value or the phrase (PRD v1.107 Part 6, the Result tab proof)
+
+### Ask
+
+`checkStep`'s per-claim result (the `decideQuote` result per decide, `results[i]`) carries the spans it read: `spans: [{role: 'anchor'|'value'|'unit'|'currency'|'until'|'phrase', start, end}]`, offsets into ONE named text the result also returns (the quote after `normalizeForQuote`, e.g. `text`), so a caller highlights exactly what the check read and never re-finds it. On a red decide: the spans read so far (an anchor found, no value after it), never a guess. Bounded like `items`; no change to verdicts or existing fields.
+
+### Why
+
+hamr, 2026-10-18 (live-canvas, Result tab variant F): the proof under each result is the page's own words with the checked words highlighted. A panel-side substring search can highlight the WRONG spot: real pages repeat anchors (`Departure time:` 27 times on run `mve5y8fa`'s page; `at` and `$` defeated guesses in idea A, F226-F228). Only the check knows which one it read. Standing rule: a bareguard gap becomes an ask, never a local workaround.
+
+### Today in bareloop
+
+bareguard 0.24.0: `locateAnchor` computes `{p, end}` (src/primitives/rubric-locate.js ~618) and `extractValue` reads the value right after it, but `decideQuote` (~808) returns only `{index, type, ok, kind?, extracted?}`, and `rubric-locate.js` is not on the package `exports`. bareloop's Part 6 ships the proof fold WITHOUT highlight until this lands, then bumps bareguard on its own commit.
+
+### Disconfirming evidence, considered per this file's standing rule
+
+Offsets into the normalized text, not the raw quote: if bareguard prefers raw offsets it must map through `normalizeForQuote` itself. Either serves bareloop as long as the text the offsets index is returned beside them.
+
+### Status
+
+Relayed to the bareguard session ("guard") 2026-10-18.
