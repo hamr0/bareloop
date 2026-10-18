@@ -1673,3 +1673,201 @@ Branch `feat/thinking-retries`, one branch, two parts, built in this order. Supe
 - Idea A RULED CORE ONLY: the AI page-word map, code keeps only page words, N2, R1, U1/R1L, S1, currency and unit lists, and every drop shown as Not checked with a plain reason. V4, R2/R2a-c, R3/R3U and page-level checks (pageClaims) are left out of the build, kept as frozen records. Build spec in ITEM33-BUILD.md (signed 2026-10-18, built on this branch); see F237, F238.
 
 **Done when:** all parts built with tests; `npm test`, typecheck and build:types exit 0; the two live runs above green; hamr's click-through of Parts 2-4; then /self-review, /branch-review, /release.
+
+**Part 5 — fwdloop's Audit tries and rounds (C), Run summary lines (F), one-line step cards (G), plus three gaps hamr raised (RULED 2026-10-18; design choices below still await hamr's sign).**
+
+hamr's words: "copy fwd's C, F and G onto this branch — fit it in and adapt, what we have is good, cover the gaps, only the way they showed each try and calls was cleaner and other things on run summary, run cards below map." Source: fwd's `audit-rounds-lab` mock (A, B, D, E not picked). bareloop KEEPS its Audit/Run tab where it is good (part headers, status table, attempt thinking words, the Audit filter chips, legs, the schedule section, the drafting part). It ADOPTS: per-try lines with their checks and the files judged (C), two Run summary rows (F), a marker and one line on each step card (G). Words are bareloop's own: `src/panel/status.js` words and signs, `rubric`/`deterministic`, check questions from `stageQuestionText` (src/panel/server.js), thinking words from `thinkingRowText` (src/thinking.js). Real runs used below, read only: `mvdg1xo3` (red, flights-bos-ord, 71 model calls, 8 graded tries over two plan steps) and `mve5y8fa` (green, flight-idea1). Previews are drawn from the real code and spines (the panel server's own `getRunDetail`/`getRunRounds` output), not mocked.
+
+*Defects found in today's code while drawing BEFORE (to fix in this part; they are not in the plan):*
+- (D1) The Audit of a plan step with several tries prints every declared check as `· not run`, although the checks ran. `fullStageList` (src/panel/index.html, `buildAttemptsList`) zips `attempt.declaredStages` against `attempt.stages`, and for a plan step `stages` is always `null` (src/replay.js:1324 builds the attempt from `exitEvalDetail` only). So a try that ran both checks reads `#1 did it change any file? · not run`, `#2 line 1 — does its output pass the line's checks? · not run`. That is a false statement. Fixed by the per-try checks below.
+- (D2) The ninth try of `mvdg1xo3` (second occurrence, iteration 4) began (`iteration-start` seq 173) and was cut off by the wall before any check ran. The Audit lists only 3 attempts for that occurrence, but its 34 calls include the 4th try's calls. After this part the try is listed as `try 4 · cut off before its checks ran`.
+- (D3) The Run summary money reads `$0.18 (<$0.01 drafting)` and the run.log `spent $0.0054 ($0.0035 drafting)`: the bracket reads as "included", but the run's figure EXCLUDES drafting (run $0.0054 + drafting $0.0035 = $0.0089 in runs.jsonl, run `mve5y8fa`). See Q4.
+
+### C — each try, its checks, and the files judged (Audit tab)
+
+BEFORE (today, `mvdg1xo3`, step 1; Audit tab, part expanded; the CSS dot is shown as ●):
+```
+▾ ● failed  1 · write-flight-facts · 32 calls · 43 tools · 4m28s · $0.06 · ✗✗✗✗✗
+  grep 22 · read 16 · write 5
+  ▸ attempt 1 ✗ · thinking off
+  ▸ attempt 2 ✗ · thinking on
+  ▸ attempt 3 ✗ · thinking on
+  ▸ attempt 4 ✗
+  ▸ attempt 5 ✗
+ (attempt 1 opened:)
+  #1 did it change any file? · not run                  <- D1: false
+  #2 line 1 — does its output pass the line's checks? · not run
+  Round | Action     | Path             | Decision                   | Time
+  5     | model call | —                | <$0.01 · 1006 tokens · 1.4s | 06:28:22
+  5     | read       | input/flights.txt| allow                       | 06:28:22
+  5     | read       | input            | allow                       | 06:28:22
+  6     | model call | —                | <$0.01 · 3817 tokens · 1.1s | 06:28:23
+  6     | read       | input/flights.txt| allow                       | 06:28:23
+  7     | model call | —                | <$0.01 · 3378 tokens · 2.9s | 06:28:26
+  7     | write      | output/steps/1.json | allow                    | 06:28:26
+  8     | model call | —                | <$0.01 · 539 tokens · 2.2s  | 06:28:29
+  showing 1–4 of 4
+  check: red — check "line-1-flight-facts" red: close stage "line-1-flight-facts" failed:
+  close: line-1-flight-facts: line 1: result 1, fact "DepartureWindow": the label "Departure time:" is not in the quote
+  close: … (8 more lines of the same kind, all printed raw)
+```
+AFTER (adapted; rows marked `+` are new, everything above is still shown):
+```
+▾ ● failed  1 · write-flight-facts · 32 calls · 43 tools · 4m28s · $0.06 · ✗✗✗✗✗   [model]
+  grep 22 · read 16 · write 5
++ tools: read 16 · grep 22 · write 5 · denied 0
+  try 1 ✗ · thinking off · result 1, fact "DepartureWindow": the label "Departure time:" is not in the quote (+8 more)
++   1 ✓ did it change any file?  (1 file(s) changed under output/**)
++   2 ✗ line 1 — does its output pass the line's checks?  (9 reasons)  · from line 1 ~ under $450; not a red-eye; nonstop
++      ▸ the 9 reasons (the raw lines, one per row, wrapped)
++   output judged: output/steps/1.json · <size> · sha256 <first 4>…<last 2>     (new runs only)
+  try 2 ✗ · thinking on · result 1, fact "Stops": the label "StaticText" is in the quote more than once (+8 more)
+    …same shape (tries 3-5 folded alike)
+  Round | Try | Action          | Path                | Decision                    | Time
+  1     | 1   | model call      | —                   | <$0.01 · 1006 tokens · 1.4s | 06:28:22
+  1     | 1   | model · read    | input/flights.txt   | allow                       | 06:28:22
+  1     | 1   | model · read    | input               | allow                       | 06:28:22
+  2     | 1   | model call      | —                   | <$0.01 · 3817 tokens · 1.1s | 06:28:23
+  2     | 1   | model · read    | input/flights.txt   | allow                       | 06:28:23
+  3     | 1   | model call      | —                   | <$0.01 · 3378 tokens · 2.9s | 06:28:26
+  3     | 1   | model · write   | output/steps/1.json | allow                       | 06:28:26
+  4     | 1   | model call      | —                   | <$0.01 · 539 tokens · 2.2s  | 06:28:29
+  —     | 1   | check           | output/steps/1.json | ✗ 1 failed, 1 passed        | 06:28:29
+  5     | 2   | model call      | …
+  showing 1–20 of 80   [load more]
+```
+Green (`mve5y8fa`, step 1; one try, so no Try column noise is lost):
+```
+▾ ● passed  1 · write-line-1-flights-facts · 6 calls · 6 tools · 12.0s · <$0.01 · ✓   [model]
+  grep 2 · read 2 · write 2
++ tools: read 2 · grep 2 · write 2 · denied 0
+  try 1 ✓ · thinking off
++   1 ✓ did it change any file?  (1 file(s) changed under output/**)
++   2 ✓ line 1 — does its output pass the line's checks?  · from line 1
++   output judged: output/steps/1.json · <size> · sha256 <first 4>…<last 2>     (new runs only)
+  Round | Try | Action ... (6 model calls, 6 tool rows, 1 check row = 13 rows: showing 1–13 of 13)
+```
+Human rows (a run with a review door, `mve5y8fa` ends at one): a last fold `▾ ● passed door · waiting for you   [human · ask]` whose rows are `—|—|human|output/steps/1.json|paused for you|20:33:32` and, once decided, `you accepted`, or `you said rerun: "<text>"`, or `paused`. There is no `you cancelled`: cancel is deleted (doctrine). The words are code-owned, one table.
+
+*Data: what is already recorded, what is new.*
+- Already recorded and used as is: model calls and their cost/tokens/seconds (`worker-round`, gate-audit `llm` rows), tool calls and allow/deny (gate-audit sidecar, `getRunAudit`), thinking per try (`thinking-decision`/`thinking-status`, Part 3), each try's checks as they ran (`exit-eval {step, iteration, results:[{type, pass, detail}]}`, src/planrun.js:3443, detail already scrubbed), which check ran (`check-run {name, verdict}`, src/planrun.js:2206), the full reasons text (the `detail` of the failing `check-passes` result, one `close: …` line per reason), the job line a check serves (`fromLine` in the signed `closeDecl`, read by the server from the resolved spec like `declaredStages`), the question words (`stageQuestionText`), the tool/denied totals (`behaviour`), the door (`review-door`, `door-decision`, `door-rerun`).
+- Joined, not new: a try's checks = its `exit-eval` results in the order they ran; a `check-passes` result is named by the `check-run` record just before it (same iteration); a `tree-changed` result gets the code-owned words `did it change any file?` (the same words as the `files-changed` stage). The try line's gap = the first failing reason with its `close: <stage>: ` prefix removed (one function, `gapOneLine`, beside `stageQuestionText` in src/panel/server.js) plus `(+N more)`; the full list stays one click away, nothing dropped (today's raw `check: red — …` block moves under the failing check).
+- NEW, to record: `output-judged {step, iteration, path, bytes, sha256}`. Emitted in `src/planrun.js` in the step's `judge()` right before the `exit-eval` emit (line 3443), once per file the try's `check-passes` check reads (for a rubric stage the one file `output/steps/N.json`, path from `STEP_DIR`/`stepFileRel`, src/rubricstep.js); `sha256` over the bytes as the check read them, `createHash` as in src/bundle.js. The file is overwritten by later tries, so it cannot be recovered afterwards. Content is never written to the spine (hard line). One place owns the words: a new `judgedFileLine()` in src/panel/server.js.
+- NEW, derived from existing records but not shown today: the check row of the Round table (time and counts from `exit-eval`); the `cut off before its checks ran` try (an `iteration-start` with no `exit-eval`, D2); Try column and per-step round numbers.
+- Old runs: no `output-judged` record means no `output judged:` line at all, never a guess; no gate-audit sidecar means the tool rows say `tool calls: no log saved` as today. Per-try checks work on every old run that has `exit-eval` (it is old), so `mvdg1xo3` and `mve5y8fa` render the check lines; only the judged-file line is new-run-only.
+
+*Call sites.* `attemptsFor`/`enrichPartsWithStageKind` (src/panel/server.js) add `tries[]` with `checks[]` to each step part; `getRunRounds` (src/panel/server.js:1908) returns rows for the whole step with `try`, a step-local round number, a `check` row and `human` rows, 20 per page; `buildAttemptsList` and `renderRoundsPage` (src/panel/index.html) draw them; `renderAuditGroups` adds the `[model]`/`[human · ask]` marker and the tools tally row.
+
+### F — two Run summary rows
+
+BEFORE (today, `mvdg1xo3`, the SUMMARY box):
+```
+● failed · rubric · $0.18 (<$0.01 drafting) · 12m52s
+model:   deepseek-flash (openai-api)
+steps:   0 of 2 done · 1 replan
+why:     step-variance — A step consumed a large share of the run … (full sentence)
+close:   none — the run ended before any close ran
+tools:   91 calls — grep 54 · read 28 · write 9
+cache:   5 re-reads answered from memory · 34.7 KB not re-sent
+```
+AFTER:
+```
+● failed · rubric · $0.18 (<$0.01 drafting) · 12m52s
+model:   deepseek-flash (openai-api)
+steps:   0 of 2 done · 1 replan
+why:     …unchanged…
+close:   none — the run ended before any close ran
+tools:   91 calls — grep 54 · read 28 · write 9
++ calls:  71 model · 91 tool · 0 denied
++ checks: 16 run · 8 passed · 8 failed (write-flight-facts tries 1-5, then tries 1-3)
+cache:   5 re-reads answered from memory · 34.7 KB not re-sent
+```
+Green (`mve5y8fa`): `calls: 10 model · 9 tool · 0 denied` and `checks: 4 run · 4 passed · 0 failed` (two step checks, two outer-close stages). Nothing is removed: `tools:` stays (it names the tool kinds; `calls:` adds the model count and the denied count, which `tools:` never showed). `calls` counts spend-record rounds of the run's parts (`worker-round`, `judge-round`), not drafting. `checks` counts every `exit-eval` result plus every graded `outer-close` stage; the parenthesis names the steps and try ranges that failed, from the same `tries[]`. The old "checks N/M" headline stays withdrawn: this row says counts of what ran, passed and failed, never a fraction. Data: all already recorded; no new event. Call site: `renderRun` summary box (src/panel/index.html, the `box.innerHTML` block) fed by new `detail.callsLine`/`detail.checksLine` words made in `getRunDetailBody` (src/panel/server.js). Old runs without `exit-eval` show `checks: not recorded`.
+
+### G — one more line on each step card (Run tab, under the map)
+
+BEFORE (card of step 1 and step 2, `mvdg1xo3`):
+```
+1 · write-flight-facts   ● failed
+32 calls · 43 tools · 4m28s · $0.06 · ✗✗✗✗✗
+grep 22 · read 16 · write 5
+
+2 · write-flight-facts (try 2)   ● failed
+34 calls · 44 tools · 7m46s · $0.11 · ✗✗✗
+grep 31 · read 9 · write 4
+```
+AFTER:
+```
+1 · write-flight-facts   ● failed   [model]
+32 calls · 43 tools · 4m28s · $0.06 · check #2 line 1 — does its output pass the line's checks? · ✗✗✗✗✗
+grep 22 · read 16 · write 5
++ 5 tries · last try: 1 check passed, 1 failed
+
+2 · write-flight-facts (try 2)   ● failed   [model]
+34 calls · 44 tools · 7m46s · $0.11 · check #2 line 1 — does its output pass the line's checks? · ✗✗✗
+grep 31 · read 9 · write 4
++ 4 tries (the 4th cut off before its checks ran) · last try: no checks ran
+```
+Green: `1 · write-line-1-flights-facts  ● passed  [model]` / `6 calls · 6 tools · 12.0s · <$0.01 · ✓` / `grep 2 · read 2 · write 2` / `+ 1 try · last try: 2 checks passed`. The door card, when a door is open: `door · waiting for you   [human · ask]` / `last answer: none yet`, then `last answer: you accepted · 20:33`. fwd's `checks on the last try p/n` is NOT copied as a fraction (see the withdrawn "checks N/M" above); the words say passed and failed. The existing headline words already printed on line 1 (`check #2 …`) come from `attemptChecksLine`; today they are empty for a plan step because `stages` is `null` (D1), and they fill in once the attempt carries the per-try checks. Data: already recorded plus the C joins; no new event. Call site: `renderRun` card builder (src/panel/index.html, `listEl` loop) reading `part.tries`.
+
+### Q1 — the confirm-card questions and answers are recorded and shown
+
+What is true today: the questions the confirm model raises are answered one by one in `forceAnsweredQuestions` (src/authorflow.js:2380), handed to the drafter as `answeredQuestions` (`confirmedBlock`, line 1201) and written to `authored.json` `confirmed.answeredQuestions`, shown only by the CLI signing readout (`answeredQuestionLines`, src/authorreadout.js:138). They are NOT in the panel's `draft-log.jsonl`, so the Audit drafting part cannot show them (hamr's "recorded nowhere" is right for the panel and the log, wrong for `authored.json`). The try-3 answers (`answerQuestions`, src/panel/authorsession.js:1026) become `~` rules on their job line and are already signed in `jobLines` (`signedJobLines`), but the log keeps only `questions-dropped`.
+
+Change:
+- New draft-log events, `appendDraftLog` (src/draftspend.js): `human {no, kind:'human', question, answer, at, source:'confirm'|'try-3', line?}`, one per answered question, appended from the `ask` seam for `kind:'answer'` in src/panel/authorsession.js (the one place both paths pass) with the answer already redacted (`redactSecrets`). `readDraftSteps` folds them into the step's `humans[]`; `draftingTableHtml` (src/panel/index.html) draws a row per question under its drafting step: `you · <question>` and `you said: <answer>`. Wording code-owned, wraps (see phone).
+- BEFORE (Audit drafting part, `mve5y8fa`): `confirm · 1 call …`, no trace of the two questions. AFTER adds under the `confirm` row: `you were asked: <question 1>` / `you said: <answer 1>` / `you were asked: <question 2>` / `you said: <answer 2>`.
+- "you confirmed" on a fact: today a fact is marked `— AI's proposal — check it` when its number is the AI's (`aiProposal`, src/facts.js:215) and the mark is dropped by `settlePersonsWords` (src/rubricstep.js:636) only when every bound is in the person's line or `~` rules (its doc says "an answer they gave", but its code reads the line and rules only). A confirm answer is not passed to it. A confirm answer only counts for a fact if code can tie them: the model's `questions` are free strings with no fact name. So Q1 needs (a) the confirm schema's `questions` to carry an optional `forFact` (fact name) and `line` like `inputlook`'s `forRule`, validated by code against the facts, and (b) `settlePersonsWords` receiving the confirm answers as words the person said. A bound found in such an answer then loses the AI mark, and the fact row says `— you confirmed`. Two ways to carry the word (Design choice 4): a new signed fact field, or no new field.
+- Hash: verified order. The declaration is settled by `settlePersonsWords` inside the authoring loop (src/authorflow.js:2953) BEFORE validation, the spec is assembled from the settled declaration, and `prepareSigning` computes `specHash` over that spec (src/panel/authorsession.js ~900, `state.specHash = signing.specHash`). So the confirm answers already change what the person signs before hashing, and a settle that now reads them changes the signed fact BEFORE the hash, never after. The draft-log rows are NOT part of the spec and do not touch the hash. A new signed `confirmed` field on a fact (option 4a) changes the spec shape: `FACT_FIELDS` (src/facts.js:21) gains a field, specs signed before cannot carry it and verify as before (absent field), specs after hash differently by design; that is a schema change and hamr's call. Try-3 answers are already in the hash as `~` rules.
+- Must fail when: the drafting part shows a question with no answer or an answer with no question; an answer containing a secret shape is stored or shown unmasked; a fact is marked `you confirmed` when no recorded answer contains its bound; a fact whose bound only the AI made still reads `you confirmed`; an old session with no `human` rows shows any question row.
+
+### Q2 — "fetching the page…" while the run starts
+
+Today: Sign & run spawns `run-u` (src/panel/authorroutes.js:502); the runner lists its row (src/userrun.js:1572) and only then re-fetches each web input (`refreezeUrlInputs`, src/userrun.js:2606, src/source.js:1351; the commit message is "run start - fresh copy of the web inputs", line 1371) before the spine exists. During that 3-5 s the chat shows `signed hash` and the Run tab shows `starting… the run has not written its log yet` (`startingStub`, src/panel/server.js:694; index.html `renderRun`), saying nothing about the fetch.
+Change (words owned by code, one table beside `STEP_LABELS`, src/panel/authorsession.js:71):
+- Right after the sign, the progress list gets a step `fetching the page…` (pushed next to the `signed` step in src/panel/authorroutes.js:522), only when the signed copy has a web input (`source.json` `inputs[].url`).
+- The Run tab `starting` state says `fetching the page…` instead of the bare `starting…` while the same condition holds and `source.json` has no `refrozenAt` at or after the row's `at` (`refreezeUrlInputs` writes `refrozenAt` last, src/source.js:1388). The server decides the word in `startingStub`; the page prints it. A job without web inputs keeps `starting…`.
+- No new spine event (the spine does not exist yet). A refused fetch keeps its plain `The run did not start. Nothing spent.` text.
+- BEFORE: `starting… the run has not written its log yet`. AFTER: `fetching the page… the run has not started yet`, then the normal Run tab.
+- Must fail when: a file-only job says fetching; `fetching the page…` stays after `refrozenAt` is written; the words are typed in the page instead of coming from the server.
+
+### Q3 — the early "ask about intent" is dead; code forces it
+
+Verified: since idea A core, `lookFromMap` returns `look.notFound: []` always (src/pagemap.js:170) and the early question path (`ruleQuestions`, src/authorjob.js:653-654) reads only `look.notFound`, so it can never fire. The two questions in `mve5y8fa` came from the confirm model choosing to ask (`forceAnsweredQuestions`), not from code, and the model mostly does not ask (fwd/F218: 0/40, 0/8). So a guardrail can pass unasked into a signed check.
+Change: code asks BEFORE paid drafting, from the look's own result, through the existing question gate (`answerQuestions`: answer required, no skip, the answer becomes a `~` rule on its line, `normalizeQuestions` cap):
+- T1 = every fact the AI made a number for (`aiProposal` true, src/facts.js:215). Words (code-owned, one function): `Your line N says "<guardrail>". I turned it into: <factSentence words, e.g. departure between 5:00 AM and 10:00 PM>. Is that right?` Options: `yes` / `change the numbers` (the person types them; they become the `~` rule) / `leave it Not checked`.
+- T2 = every `~` guardrail the map could not tie to a kept page word (the map's `from` ties and its `dropped` list, src/pagemap.js/applyPageRules): `Your line N says "<guardrail>". I found no word on the page for it. Check it how? ` Options: `change the numbers`/`say it another way` (typed) / `leave it Not checked`.
+- Answers are recorded exactly as Q1 (draft-log `human` rows, `source:'look'`), so the Audit shows them and a `yes` on a T1 fact is what makes it read `you confirmed`.
+- Try-3 stays as the late backup (unchanged).
+- Call site: src/authorjob.js:653-654 replaces the `look.notFound` source with `askableFromLook(look, jobLines)`, a new pure function in src/pagemap.js; `answerQuestions` is the existing gate.
+- Must fail when: a fact with `aiProposal` raises no question; a `~` rule tied to a kept page word raises one; more than the cap are asked; `yes` leaves the AI mark; the same guardrail is asked twice; a run with no AI-made number and no untied guardrail asks nothing.
+
+### Q4 — the money wording
+
+The run.log line `spent $0.0054 ($0.0035 drafting)` (src/userrun.js:2057 via `moneyWithDraft`, src/replay.js:1615; the panel keeps a second spelling, `panelMoneyWithDraft`, src/panel/index.html:2231, printing `$0.18 (<$0.01 drafting)`) reads as if drafting were inside the first figure. The first figure is the run alone; drafting is on top; the total is their sum (run `mve5y8fa`: run $0.0054, drafting $0.0035, total $0.0089 in runs.jsonl). Fix, one line of words: `$0.0054 run + $0.0035 drafting = $0.0089 of $1.00` (floors keep `at least`); `moneyWithDraft` stays the one owner of the string and the panel reads it from the server instead of keeping its own copy. Must fail when: the sum is not the run plus drafting; a floor loses its `at least`; the two spellings differ.
+
+### Tests (real spines as fixtures)
+- Fixtures: copies of `u-mvdg1xo3.jsonl` (+ its gate-audit) and `u-mve5y8fa.jsonl` committed under `test/fixtures/`, never authored ones; the new `output-judged` is tested on a spine written by a live run on deepseek-flash after the build (a hand-written spine would prove nothing about the real shape).
+- Each assertion shown failing first (mutate, then restore from a scratch copy, never `git checkout`): D1 (`mvdg1xo3` attempt 1 lists check 2 as failed with 9 reasons, and is never `not run`); a try line names the first reason and `(+8 more)`; an `iteration-start` with no `exit-eval` reads `cut off`; the Round table has 80 rows for step 1 with page 20; step-local round numbers start at 1; `calls:`/`checks:` on both runs equal the counts from the raw spine; the card's last-try line equals the last try's checks; old spine without `output-judged` has no judged-file line; the `[model]`/`[human · ask]` marker; the Q1-Q4 "must fail when" lists above.
+- Gate: `npm test` (hermetic), typecheck, build:types, each exit code quoted; the live check is a real panel run, then hamr's click-through (a builder's report is not the sign-off).
+
+### Phone width
+Every new block is text in the existing flow with `overflow-wrap:anywhere` (the same rule `audit-started` uses): try lines, check lines and `output judged:` wrap to the next line; the numbered check rows wrap under their number; the Run summary rows already wrap (`sum-val`); the step-card line is plain text. The Round table keeps today's `audit-table-scroll` wrapper (its Time cell is already short, fix 2026-09-28) and gains one narrow Try column; hamr did not pick fwd's phone variants D/E, so no card layout. No page-level horizontal scroll is the rule; the 320 px check is hamr's own DevTools, barebrowse cannot emulate phone width.
+
+### Design choices for hamr (recommended answer first)
+1. Where do the two Run summary rows sit? After `tools:` (recommended; `calls:` sits beside the tool count and `checks:` before `cache:`), or at the end after `cache:`.
+2. Round numbers: per step from 1 with a Try column (recommended, as fwd and as the mock), or keep bareloop's run-wide numbers (5-8 today) so a number matches the flat view. If per step, the flat Audit view keeps run-wide numbers (two numberings; say so on screen).
+3. Round table page size: 20 rows, as fwd (recommended; `showing 1–20 of 80`, load more), or keep today's 50 rounds.
+4. How Q1's answers make a fact read `you confirmed`: (a) a new signed fact field set only by code (robust in the Job tab and every reuse, but a schema change that adds a hash-visible field: your call), or (b, recommended for now) no new field: the mark `AI's proposal` is dropped when a recorded answer holds the bound, the Job tab shows a plain fact, and `you confirmed` shows only where the session's draft-log still exists (the Audit drafting rows).
+5. How Q1's answers appear in the Audit: as `you were asked …` / `you said: …` rows under their drafting step in the drafting table (recommended), or as a separate `you` fold.
+6. Check numbering inside a step try: the order the exits ran in that try (recommended; nothing guessed, but it differs between runs: check-passes first in `mvdg1xo3`, tree-changed first in `mve5y8fa`), or the declared close position as the fix-loop attempts use (`declaredPosition`).
+7. Reason lines: show the first reason on the try line plus `(+N more)` and all reasons folded under the failing check (recommended), or all reasons always open.
+8. `checks on the last try`: reworded as `last try: 1 check passed, 1 failed` (recommended; "N/M" stays withdrawn), or fwd's `p/n ✓|✗`.
+9. Human rows and card: an Audit fold and a Run card for the review door only (recommended: it is the only human step bareloop has; no `you cancelled`), or no human row at all.
+10. The cut-off try (D2): listed as `try N · cut off before its checks ran` (recommended), or left unlisted as today.
+11. Q3 cap: the existing `MAX_QUESTIONS = 2` (src/authorflow.js:121) for T1 and T2 together (recommended, T1 first), or a higher cap for a job with several AI-made numbers (the questions after the cap stay `AI's proposal — check it` on the card, never silent).
+12. Q3 T3 = a page label whose meaning may differ ("From" = the starting fare, not the booked price): out until a live run needs it (recommended), or in.
+13. Q4 wording: `$0.0054 run + $0.0035 drafting = $0.0089 of $1.00` (recommended), or keep the bracket and add the sum after it.
+14. `output judged:` size and hash shown as `2.1 KB · sha256 674b…30` (recommended), or the path only with no hash.
+
+**Part 5 done when:** built with the tests above on this branch; D1-D3 fixed; one live deepseek-flash run with web input shows `fetching the page…` and the new `output-judged` lines, and a run with a confirm question shows its Q and answer in the Audit drafting part; hamr's click-through (mobile by his DevTools); then /self-review, /branch-review, /release.
