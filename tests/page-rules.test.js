@@ -82,18 +82,14 @@ test('found-on-page on the eight REAL saved maps: every word the code kept is wr
 
 // ── item 3: N2 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-test('N2: the label "at" is written many times inside one line of the real flights page, so it is dropped; "Departure time:" is written once per line, so it is kept', () => {
-  const map = { facts: [{ name: 'departure', from: 'rule 2', shape: 'time', words: ['at', 'Departure time:'] }] };
+test('N2: the label "at" is written many times inside one line of the real flights page, so it is dropped (and a fact left with no label is not kept); "Departure time:" is written once per line, so it is kept', () => {
+  const map = { facts: [
+    { name: 'departure', from: 'rule 2', shape: 'time', words: ['Departure time:'] },
+    { name: 'leaves at', from: 'rule 2', shape: 'time', words: ['at'] },
+  ] };
   const r = applyPageRules(sfo.page, map, JOBS.flights);
-  assert.deepEqual(r.facts[0].words, ['Departure time:']);
-  assert.deepEqual(said(r.dropped), ['departure|at|n2']);
-});
-
-test('N2: a fact whose every label repeats inside a line is not kept - its drop says the labels went, then the fact', () => {
-  const map = { facts: [{ name: 'departure', from: 'rule 2', shape: 'time', words: ['at', 'on'] }] };
-  const r = applyPageRules(sfo.page, map, JOBS.flights);
-  assert.deepEqual(r.facts, []);
-  assert.deepEqual(said(r.dropped), ['departure|(fact)|no-label', 'departure|at|n2', 'departure|on|n2']);
+  assert.deepEqual(r.facts.map((f) => [f.name, f.words]), [['departure', ['Departure time:']]]);
+  assert.deepEqual(said(r.dropped), ['leaves at|(fact)|no-label', 'leaves at|at|n2']);
 });
 
 test('N2 reads a LABEL that is followed by a value: a place or a phrase that repeats inside one line is kept (the rule is the value labels\')', () => {
@@ -102,4 +98,32 @@ test('N2 reads a LABEL that is followed by a value: a place or a phrase that rep
   const r = applyPageRules(sfo.page, { facts: [{ name: 'airport', from: 'line 1', shape: 'phrase', words: ['International Airport'] }, { name: 'airport place', from: 'line 1', shape: 'place', words: ['International Airport'] }] }, JOBS.flights);
   assert.deepEqual(r.facts.map((f) => f.words), [['International Airport'], ['International Airport']]);
   assert.deepEqual(r.dropped, []);
+});
+
+// ── item 4: R1 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+test('R1 on the REAL saved SFO map: the AI listed "From" and "from " for the price; "from" reads other values on the page, so it is dropped and the first stays', () => {
+  const price = factOf(sfo.map, 'price');
+  assert.deepEqual(price.words, ['From', 'from ']);
+  const r = applyPageRules(sfo.page, { facts: [price] }, JOBS.flights);
+  assert.deepEqual(r.facts[0].words, ['From']);
+  assert.deepEqual(said(r.dropped), ['price|from|r1']);
+});
+
+test('R1: it is the AI\'s FIRST listed label that stays - listed the other way round, "from" stays and "From" is the one that reads different values', () => {
+  const r = applyPageRules(sfo.page, { facts: [{ ...factOf(sfo.map, 'price'), words: ['from ', 'From'] }] }, JOBS.flights);
+  assert.deepEqual(r.facts[0].words, ['from']);
+  assert.deepEqual(said(r.dropped), ['price|From|r1']);
+});
+
+test('R1: the same label spelled twice reads the same values, so it is kept; time facts are compared by the times they read', () => {
+  const same = applyPageRules(sfo.page, { facts: [{ ...factOf(sfo.map, 'price'), words: ['From', 'From'] }] }, JOBS.flights);
+  assert.deepEqual(same.facts[0].words, ['From', 'From']);
+  assert.deepEqual(same.dropped, []);
+  const alt = applyPageRules(sfo.page, { facts: [{ name: 'departure', from: 'rule 2', shape: 'time', words: ['Departure time:', 'Leaves San Francisco International Airport at'] }] }, JOBS.flights);
+  assert.equal(alt.facts[0].words.length, 2, 'a second label that reads exactly the same times is a true alternative and is kept');
+  assert.deepEqual(alt.dropped, []);
+  const dep = applyPageRules(sfo.page, { facts: [{ name: 'departure', from: 'rule 2', shape: 'time', words: ['Departure time:', 'Arrival time:'] }] }, JOBS.flights);
+  assert.deepEqual(dep.facts[0].words, ['Departure time:'], 'a label that reads a different set of times than the first is dropped');
+  assert.deepEqual(said(dep.dropped), ['departure|Arrival time:|r1']);
 });

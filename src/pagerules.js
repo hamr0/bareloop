@@ -56,6 +56,33 @@ function maxPerLine(lines, phrase) {
   return max;
 }
 
+/** the value each shape reads right after a label: a money or number is digits (a sign may come first), a time is h:mm and AM/PM */
+const READ = {
+  money: /^\s*[$€£]?\s*(\d[\d,]*(?:\.\d+)?)/,
+  time: /^\s*(\d{1,2}:\d{2}[\s\u202f\u00a0]?[AaPp][Mm])/,
+  number: /^\s*(\d[\d,]*(?:\.\d+)?)/,
+};
+
+/**
+ * R1 reader: the set of values of a fact's shape written right after each occurrence of a label on the page.
+ * @param {string[]} lines @param {string} label @param {'money'|'time'|'number'} shape @returns {Set<string>}
+ */
+function valueSet(lines, label, shape) {
+  /** @type {Set<string>} */
+  const s = new Set();
+  const p = squash(label).trim();
+  if (!p) return s;
+  for (const ln of lines) {
+    for (let i = ln.indexOf(p); i !== -1; i = ln.indexOf(p, i + p.length)) {
+      const m = READ[shape].exec(ln.slice(i + p.length));
+      if (m) s.add(m[1]);
+    }
+  }
+  return s;
+}
+/** @param {Set<string>} a @param {Set<string>} b @returns {boolean} */
+const sameSet = (a, b) => a.size === b.size && [...a].every((x) => b.has(x));
+
 /** the symbols a currency may be (src/facts.js); a code like "EUR" is a word read after the number, so it is a unit */
 const CURRENCY_SYMBOLS = ['$', '€', '£'];
 /** the shapes that read a value after a label */
@@ -79,7 +106,7 @@ export function applyPageRules(text, mapping, jobLines) {
   };
 
   // ---- found-on-page: the code keeps only words the saved page really holds (count >= 1) ----
-  /** @type {{f: MapFact, kept: string[], cur: string[], uni: string[]}[]} */
+  /** @type {{f: MapFact, kept: string[], cur: string[], uni: string[], first?: string|null}[]} */
   const pending = [];
   for (const f of list) {
     const words = (Array.isArray(f.words) ? f.words : []).map((w) => String(w)).filter((w) => w.trim() !== '');
@@ -105,12 +132,25 @@ export function applyPageRules(text, mapping, jobLines) {
         if (countPhrase(text, u) < 1) { drop(f, u, 'not-on-page'); return false; }
         return true;
       });
-      pending.push({ f, kept, cur, uni });
+      pending.push({ f, kept, cur, uni, first: words.length ? normLabel(words[0]) : null });
     } else drop(f, undefined, 'bad-shape');
   }
 
-  // ---- N2, per line: a label written 2+ times inside one page line cannot say which value is meant, so it is unusable. (R2 grow-left is OUT.) ----
+  // ---- R1, same-value: the labels after the AI's FIRST listed one are kept only if they read the same set of values as it does ----
   const lines = linesOf(text);
+  for (const p of pending) {
+    if (!VALUE_SHAPES.includes(String(p.f.shape))) continue;
+    const shape = /** @type {'money'|'time'|'number'} */ (p.f.shape);
+    const ref = p.first ? valueSet(lines, p.first, shape) : new Set();
+    p.kept = p.kept.filter((w) => {
+      if (w === p.first) return true;
+      if (sameSet(valueSet(lines, w, shape), ref)) return true;
+      drop(p.f, w, 'r1');
+      return false;
+    });
+  }
+
+  // ---- N2, per line: a label written 2+ times inside one page line cannot say which value is meant, so it is unusable. (R2 grow-left is OUT.) ----
   for (const p of pending) {
     if (!VALUE_SHAPES.includes(String(p.f.shape))) continue;
     p.kept = p.kept.filter((w) => {
