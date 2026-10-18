@@ -105,6 +105,7 @@ import { runBehaviour, formatBehaviour } from './behaviour.js';
 import { shortSha } from './codeversion.js';
 import { SPEND_RECORD_TYPES, chainSpend } from './ledger.js';
 import { legsOf, capKindOf } from './legs.js';
+import { thinkingWordsFrom } from './thinking.js';
 
 /**
  * @param {unknown} e
@@ -1417,6 +1418,28 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
           jTsHi,
         ),
       });
+    }
+  }
+
+  // PRD v1.106 Part 3: the thinking each call was SENT, from the spine's own `thinking-decision` / `thinking-status` records, worded by
+  // src/thinking.js. A part with one attempt (plan, scout, replan, a single-attempt step) carries it as `part.thinking`; an attempt that made a
+  // worker call carries `attempt.thinking`. A spine with no such record gets no field at all (an older run shows no thinking word).
+  if (spine.some((e) => e.type === 'thinking-decision')) {
+    const firstStepSeq = stepStarts.reduce((m, ss) => (typeof ss.seq === 'number' && ss.seq < m ? ss.seq : m), Infinity);
+    for (const p of parts) {
+      const atts = Array.isArray(p.attempts) ? p.attempts : [];
+      for (const a of atts) {
+        let words = null;
+        if (p.kind === 'step') words = thinkingWordsFrom(spine, { phase: `step:${p.label}`, lo: a.startSeq, hi: a.endSeq });
+        else if (p.kind === 'fix') words = thinkingWordsFrom(spine, { phase: 'fix', lo: a.startSeq, hi: a.endSeq });
+        if (words !== null) a.thinking = words;
+      }
+      let part = null;
+      if (p.kind === 'scout') part = thinkingWordsFrom(spine, { phase: 'scout', hi: firstStepSeq });
+      else if (p.kind === 'plan') part = thinkingWordsFrom(spine, { phase: 'plan', hi: firstStepSeq });
+      else if (p.kind === 'replan' && atts[0]) part = thinkingWordsFrom(spine, { phase: 'plan', lo: atts[0].startSeq, hi: atts[0].endSeq });
+      else if ((p.kind === 'step' || p.kind === 'fix') && atts.length === 1) part = atts[0].thinking ?? null;
+      if (part !== null) p.thinking = part;
     }
   }
 

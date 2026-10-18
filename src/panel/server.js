@@ -61,6 +61,7 @@ import { SHAPES } from '../providershapes.js';
 import { resolveProvider } from '../providers.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
 import { statusFor, partStatusFor, GOAL_MET_LINE } from './status.js';
+import { thinkingJobText } from '../thinking.js';
 import { createSettingsRoutes } from './settingsroutes.js';
 import { planFromSpec } from './jobplan.js';
 
@@ -2504,7 +2505,7 @@ function jobsDir() {
  * @returns {any|null}
  */
 export function getRunJob(runid, opts = {}) {
-  const body = getRunJobBody(runid, opts);
+  const body = withThinkingRow(getRunJobBody(runid, opts), runid, opts);
   if (!body || !opts.schedules) return body;
   try {
     const door = /** @type {ReturnType<typeof createScheduleDoor>} */ (opts.schedules);
@@ -2522,6 +2523,25 @@ export function getRunJob(runid, opts = {}) {
       home: door.userHome,
     });
     return { ...body, started, schedule };
+  } catch { return body; }
+}
+
+/**
+ * PRD v1.106 Part 3 — the Job tab's `Thinking:` row, worded by src/thinking.js. It is added ONLY when the run's own spine carries
+ * `thinking-decision` records, so a run from before them shows no thinking word. The rule shown is the job's signed "Thinking on" tick.
+ * @param {any|null} body the Job tab body @param {string} runid @param {{ home?: string }} opts
+ * @returns {any|null}
+ */
+function withThinkingRow(body, runid, opts) {
+  if (!body) return body;
+  try {
+    const row = findRunRow(runid, opts);
+    if (!row || !existsSync(row.spine)) return body;
+    const { records } = parseJsonl(row.spine);
+    if (!records.some((r) => r && typeof r === 'object' && r.type === 'thinking-decision')) return body;
+    const { thinkingTick, ...rest } = body;
+    // an unresolved spec cannot say whether the tick was set, so it shows no row rather than a guess
+    return body.resolved === true ? { ...rest, thinking: thinkingJobText(thinkingTick === true) } : rest;
   } catch { return body; }
 }
 
@@ -2600,6 +2620,7 @@ function getRunJobBody(runid, opts) {
     guardrails: notRecorded(guardrailsFromSpec(spec)),
     tools: notRecorded(toolsFromSpec(spec)),
     toolsList: toolsListFromSpec(spec),
+    thinkingTick: spec.thinking === true,
     note,
   });
   const none = () => ({
@@ -2621,6 +2642,7 @@ function getRunJobBody(runid, opts) {
     guardrails: 'not recorded',
     tools: 'not recorded',
     toolsList: null,
+    thinkingTick: false,
     note: 'no resolvable spec for this run (only bareloop-run bundle-layout runs carry one; a run-u run has none on disk)',
   });
 

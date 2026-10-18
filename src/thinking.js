@@ -158,3 +158,29 @@ export function workerThinkingMode({ phase, iteration, tick }) {
   if (isStep) return iteration === 1 ? 'off' : 'on';
   return 'on';
 }
+
+/**
+ * PRD v1.106 Part 3 — the words one worker call carries in the Audit, READ from the run's own spine, never guessed. Finds the LAST
+ * `thinking-decision` of `phase` (and `iteration`, when given) whose seq lies strictly between `lo` and `hi`, pairs it with the first
+ * `thinking-status` of the same phase and iteration after it (before the next decision), and words both through {@link thinkingRowText}
+ * (drafting's own words). `null` when the window holds no decision: a run from before the records existed shows no thinking word.
+ * @param {any[]} spine the run's spine records (each with a numeric `seq`)
+ * @param {{ phase: string, lo?: number, hi?: number, iteration?: number|null }} q
+ * @returns {string|null}
+ */
+export function thinkingWordsFrom(spine, { phase, lo = -Infinity, hi = Infinity, iteration }) {
+  const seqOf = (/** @type {any} */ e) => (typeof e?.seq === 'number' ? e.seq : NaN);
+  const sameIteration = (/** @type {any} */ e) => iteration === undefined || e.iteration === iteration;
+  const decisions = spine.filter((e) => e?.type === 'thinking-decision' && e.phase === phase && sameIteration(e) && seqOf(e) > lo && seqOf(e) < hi && (e.mode === 'on' || e.mode === 'off'));
+  const dec = decisions[decisions.length - 1];
+  if (!dec) return null;
+  const nextDecision = spine.find((e) => e?.type === 'thinking-decision' && seqOf(e) > seqOf(dec));
+  const stop = nextDecision ? seqOf(nextDecision) : Infinity;
+  const st = spine.find((e) => e?.type === 'thinking-status' && e.phase === dec.phase && e.iteration === dec.iteration && seqOf(e) > seqOf(dec) && seqOf(e) < stop);
+  return thinkingRowText({ mode: dec.mode, status: typeof st?.thinkingStatus === 'string' ? st.thinkingStatus : undefined });
+}
+
+/** The Job tab's row words (PRD v1.106 Part 3): the default rule, or the job's "Thinking on" tick. @param {boolean} tick @returns {string} */
+export function thinkingJobText(tick) {
+  return tick ? 'on everywhere (ticked)' : 'on retries';
+}

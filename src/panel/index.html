@@ -927,6 +927,7 @@
             <h4 id="details-title">Job card — signed</h4>
             <div class="field"><label>Check type</label><div class="ro-value" id="details-verdict">—</div></div>
             <div class="field"><label>Model</label><div class="ro-value" id="details-model">—</div></div>
+            <div class="field" id="details-thinking-field" hidden><label>Thinking</label><div class="ro-value" id="details-thinking" data-testid="details-thinking">—</div></div>
             <div class="field" id="details-started-field" hidden><label>Started</label><div class="ro-value" id="details-started" data-testid="details-started" style="overflow-wrap:anywhere;">—</div></div>
             <div class="field" id="details-schedule-field" hidden><label>Schedule</label><div class="ro-value" id="details-schedule" data-testid="details-schedule" style="overflow-wrap:anywhere;">—</div></div>
             <div class="field" id="details-description-field"><label>Description</label><div class="ro-value" id="details-description">—</div></div>
@@ -2798,6 +2799,7 @@
       row.innerHTML =
         '<button class="btn small attempt-toggle" type="button" aria-expanded="false">' +
           'attempt ' + a.n + ' ' + attemptGlyph(a.outcome, boxIsLive) +
+          (a.thinking ? ' &middot; ' + escapeXml(a.thinking) : '') +
           (checksText ? ' &middot; ' + checksText : '') +
         '</button>' +
         (checksList ? '<div class="checks-list" data-testid="audit-attempt-checks-' + partIndex + '-' + a.n + '" hidden>' + checksList + '</div>' : '') +
@@ -3002,6 +3004,8 @@
     // MOST RECENT attempt's own declared-close grading (the opening
     // outer-close grade counts as attempt 1, same list `buildAttemptsList`
     // reads), in the withdrawn headline's place.
+    // PRD v1.106 Part 3: a part with one call (plan, scout, replan, a one-attempt step) says the thinking it was sent here; the server worded it
+    if(typeof part.thinking === "string" && part.thinking !== "") bits.push(escapeXml(part.thinking));
     var latestAttempt = Array.isArray(part.attempts) && part.attempts.length ? part.attempts[part.attempts.length - 1] : null;
     var headline = latestAttempt ? attemptChecksLine(latestAttempt) : "";
     if(headline) bits.push(headline);
@@ -3457,7 +3461,8 @@
     if(job.checkTypeTitle){ verdictEl.title = job.checkTypeTitle; } else { verdictEl.removeAttribute("title"); }
     document.getElementById("details-model").textContent = job.model;
     // RULED 2026-10-15: how the run began and the job's schedule NOW, both worded on the server (absent on an imported job)
-    [["started", job.started], ["schedule", job.schedule]].forEach(function(p){
+    // PRD v1.106 Part 3: the server words the row (src/thinking.js) and sends it only for a run that has thinking records
+    [["started", job.started], ["schedule", job.schedule], ["thinking", job.thinking]].forEach(function(p){
       var f = document.getElementById("details-" + p[0] + "-field");
       if(typeof p[1] === "string" && p[1] !== ""){ f.hidden = false; document.getElementById("details-" + p[0]).textContent = p[1]; }
       else { f.hidden = true; }
