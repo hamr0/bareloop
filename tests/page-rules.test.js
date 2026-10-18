@@ -101,9 +101,11 @@ test('N2: the label "at" is written many times inside one line of the real fligh
 test('N2 reads a LABEL that is followed by a value: a place or a phrase that repeats inside one line is kept (the rule is the value labels\')', () => {
   const rep = sfo.page.split('\n').find((l) => (l.match(/International Airport/g) ?? []).length >= 2);
   assert.ok(rep, 'the real page has a line that says "International Airport" twice (leaves ... arrives at ...)');
-  const r = applyPageRules(sfo.page, { facts: [{ name: 'airport', from: 'line 1', shape: 'phrase', words: ['International Airport'] }, { name: 'airport place', from: 'line 1', shape: 'place', words: ['International Airport'] }] }, JOBS.flights);
-  assert.deepEqual(r.facts.map((f) => f.words), [['International Airport'], ['International Airport']]);
-  assert.deepEqual(r.dropped, []);
+  for (const shape of ['phrase', 'place']) {
+    const r = applyPageRules(sfo.page, { facts: [{ name: 'airport', from: 'line 1', shape, words: ['International Airport'] }] }, JOBS.flights);
+    assert.deepEqual(r.facts.map((f) => f.words), [['International Airport']], shape);
+    assert.deepEqual(r.dropped, [], shape);
+  }
 });
 
 // ── item 4: R1 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -176,4 +178,40 @@ test('R1L on a REAL flights page: "$" (read after) and "US dollars" (read before
 
 test('U1/R1L: the TUI-style "282 £ pp" form is not tested - none of the eight real saved pages holds a "£ pp" (reported, never held)', () => {
   for (const k of ['airbnb-lisbon', 'airbnb-porto', 'sfo1', 'bos-ord']) assert.doesNotMatch(loadFixture(k).page, /£\s*pp/);
+});
+
+// ── item 6: S1 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+test('S1 (name): a fact whose name counts results - "second flight", "latest", "last" - is refused before anything reads it', () => {
+  const facts = ['second flight price', 'Latest price', 'last departure', 'price'].map((name) => ({ name, from: 'rule 1', shape: 'money', words: ['From'], unit: ['US dollars'] }));
+  const r = applyPageRules(sfo.page, { facts }, JOBS.flights);
+  assert.deepEqual(r.facts.map((f) => f.name), ['price']);
+  assert.deepEqual(said(r.dropped), ['Latest price|(fact)|s1-name', 'last departure|(fact)|s1-name', 'second flight price|(fact)|s1-name']);
+  assert.deepEqual(r.dropped.filter((d) => d.reason === 's1-name').map((d) => d.word), [undefined, undefined, undefined], 'a fact-level drop carries no word');
+});
+
+test('S1 (name): the ordinal must be a WORD of the name - "firstly" and "costnext" only contain the letters of one, so they are not refused', () => {
+  const r = applyPageRules(sfo.page, { facts: [{ name: 'firstly', from: 'line 1', shape: 'phrase', words: ['Nonstop'] }, { name: 'costnext', from: 'line 1', shape: 'phrase', words: ['Leaves'] }] }, JOBS.flights);
+  assert.deepEqual(r.facts.map((f) => f.name), ['firstly', 'costnext']);
+});
+
+test('S1 (shape and label): two facts of one result with the same shape AND the same label would read the same value - the first stays, the second is refused naming the first', () => {
+  const map = { facts: [
+    { name: 'price', from: 'rule 1', shape: 'money', words: ['From'], unit: ['US dollars'] },
+    { name: 'fare', from: 'rule 1', shape: 'money', words: ['From'], unit: ['US dollars'] },
+    { name: 'stops', from: 'rule 3', shape: 'phrase', words: ['Nonstop'] },
+    { name: 'direct', from: 'rule 3', shape: 'phrase', words: ['Nonstop'] },
+  ] };
+  const r = applyPageRules(sfo.page, map, JOBS.flights);
+  assert.deepEqual(r.facts.map((f) => f.name), ['price', 'stops']);
+  const s1 = r.dropped.filter((d) => d.reason === 's1').map((d) => `${d.fact}<-${d.other}`).sort();
+  assert.deepEqual(s1, ['direct<-stops', 'fare<-price']);
+});
+
+test('S1 (shape and label): the same label on a DIFFERENT shape is not a collision', () => {
+  const map = { facts: [
+    { name: 'price', from: 'rule 1', shape: 'money', words: ['From'], unit: ['US dollars'] },
+    { name: 'from number', from: 'rule 1', shape: 'number', words: ['From'] },
+  ] };
+  assert.deepEqual(applyPageRules(sfo.page, map, JOBS.flights).facts.map((f) => f.name), ['price', 'from number']);
 });

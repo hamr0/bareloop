@@ -12,7 +12,7 @@ import { normLabel } from './labelscan.js';
  * @typedef {{facts: MapFact[]}} PageMap
  * @typedef {{line: number, name: string, shape: string, from: string, words: string[], unit?: string[], currency?: string[], forRule?: number}} KeptFact
  *   `words` = what the page proves: the labels of a money/number/time fact, or the alternative phrases of a phrase fact (a place is a phrase)
- * @typedef {{line: number, rule?: number, fact: string, word?: string, reason: string}} Dropped
+ * @typedef {{line: number, rule?: number, fact: string, word?: string, reason: string, other?: string}} Dropped  `other` = the fact an S1 drop would have read the same value as
  */
 
 /** @param {unknown} v @returns {v is Record<string, any>} */
@@ -117,6 +117,9 @@ const unitSet = (lines, u) => new Set(occs(lines, u).map(([l, i]) => BEFORE.exec
 /** R1L: the numbers a CURRENCY form reads - the one right after each occurrence @param {string[]} lines @param {string} c @returns {Set<string>} */
 const curSet = (lines, c) => new Set(occs(lines, c).map(([l, i]) => AFTER_CUR.exec(l.slice(i + c.length))?.[1]).filter((v) => typeof v === 'string').map((v) => stripCommas(/** @type {string} */ (v))));
 
+/** S1: a fact name that counts results ("the second flight") cannot be checked per result - one result is one record, ask for N results instead */
+const ORDINALS = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth', 'latest', 'earliest', 'newest', 'oldest', 'last', 'next', 'previous', 'final', 'nth'];
+
 /** the symbols a currency may be (src/facts.js); a code like "EUR" is a word read after the number, so it is a unit */
 const CURRENCY_SYMBOLS = ['$', '€', '£'];
 /** the shapes that read a value after a label */
@@ -131,13 +134,21 @@ const VALUE_SHAPES = ['money', 'time', 'number'];
 export function applyPageRules(text, mapping, jobLines) {
   /** @type {Dropped[]} */
   const dropped = [];
-  const list = Array.isArray(mapping?.facts) ? mapping.facts.filter(isRec) : [];
+  const all = Array.isArray(mapping?.facts) ? mapping.facts.filter(isRec) : [];
   /** @type {Map<MapFact, {line: number, rule?: number}>} */
-  const ties = new Map(list.map((f) => [f, tieOf(f.from, jobLines)]));
-  const drop = (/** @type {MapFact} */ f, /** @type {string|undefined} */ word, /** @type {string} */ reason) => {
+  const ties = new Map(all.map((f) => [f, tieOf(f.from, jobLines)]));
+  const drop = (/** @type {MapFact} */ f, /** @type {string|undefined} */ word, /** @type {string} */ reason, /** @type {string|undefined} */ other = undefined) => {
     const t = /** @type {{line: number, rule?: number}} */ (ties.get(f));
-    dropped.push({ line: t.line, ...(t.rule === undefined ? {} : { rule: t.rule }), fact: String(f.name ?? ''), ...(word === undefined ? {} : { word }), reason });
+    dropped.push({ line: t.line, ...(t.rule === undefined ? {} : { rule: t.rule }), fact: String(f.name ?? ''), ...(word === undefined ? {} : { word }), reason, ...(other === undefined ? {} : { other }) });
   };
+
+  // ---- S1, name part: a fact whose name counts results is refused before anything else reads it ----
+  const list = all.filter((f) => {
+    const hit = String(f.name ?? '').toLowerCase().split(/[^a-z]+/).find((w) => ORDINALS.includes(w));
+    if (hit === undefined) return true;
+    drop(f, undefined, 's1-name');
+    return false;
+  });
 
   // ---- found-on-page, then U1 and R1L for the facts that read an amount ----
   const lines = linesOf(text);
@@ -258,6 +269,18 @@ export function applyPageRules(text, mapping, jobLines) {
       signed.push(make(p));
     }
   }
+  // ---- S1, shape and label part: two facts of one result may not share a shape AND a label (they would read the same value and can never differ).
+  // The first one stays; a fact with no label is keyed by its first unit or currency, so two different amounts are never confused. ----
+  /** @type {Map<string, string>} */
+  const seen = new Map();
+  const kept = signed.filter((k) => {
+    const key = `${k.shape}\u0000${k.words[0] ?? k.unit?.[0] ?? k.currency?.[0] ?? ''}`;
+    const first = seen.get(key);
+    if (first === undefined) { seen.set(key, k.name); return true; }
+    const f = /** @type {MapFact} */ (all.find((x) => String(x.name) === k.name));
+    drop(f, undefined, 's1', first);
+    return false;
+  });
   const order = list.map((f) => String(f.name));
-  return { facts: signed.sort((a, b) => order.findIndex((n) => a.name.startsWith(n)) - order.findIndex((n) => b.name.startsWith(n))), dropped };
+  return { facts: kept.sort((a, b) => order.findIndex((n) => a.name.startsWith(n)) - order.findIndex((n) => b.name.startsWith(n))), dropped };
 }
