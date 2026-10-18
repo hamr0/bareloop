@@ -1902,3 +1902,55 @@ hamr's words: "we need to inject an ask to agent when checks/guardrails are not 
 3. The confirm model's own free questions: keep (recommended, unchanged), or turn off now that code asks.
 
 **Part 5b done when:** built and gated on this branch, the live run above shows the ask, hamr signs off; then Part 6.
+
+**Part 6 — the Result tab, rubric jobs only (v1.107 — 2026-10-18; design RULED by hamr in a live-canvas session 2026-10-18, mock `design/result-tab-mock.html` variant F; SIGNED by hamr 2026-10-18: choices 1, 3, 4 as recommended; choice 2 = the bareguard ask (BG-2, UPSTREAM-ASKS.md), hamr: "ask it first and you will build everything until it delivers").**
+
+hamr's rulings (live-canvas, 2026-10-18): variant F = B's table + E's green ✓ chips; the proof (the page's words, checked words highlighted) folded per row; tab order `Run · Audit / logs · Job · Result`; Accept / Rerun with my words / Pause / Download live on Result; rubric jobs only. Real run, read only: `mve5y8fa` (flight-idea1, green, waiting at the Accept door; fixtures in tests/fixtures/part5/).
+
+*Found while citing (today's code, not in the mock):*
+- (R1) The panel has ONLY Accept. No Rerun-with-my-words, no Pause button anywhere (src/panel/index.html:2552-2554). The engine has both: `answerReviewDoor` (src/reviewdoor.js:145, `text` required for rerun, :131/:157) and `run-u --door <id> --decide rerun --text "…"` / `--decide pause` (src/userrun.js:626-640). No panel route calls them (src/panel/runroutes.js has only stop/resume/accept/needs-remove).
+- (R2) No Download route exists (src/panel/server.js serves JSON/text/HTML only). The delivered file IS recorded: spine `destination-written {path, declared, bytes, sha256}` (src/userrun.js:2184-2207; `mve5y8fa` seq 48: `.../live-flights/out/steps/1-2026-10-18.json`, 1473 bytes), but `getRunDetailBody` (server.js:1189-1495) does not expose it.
+- (R3) Nothing returns which page words a check read: bareguard's `decideQuote`/`locateAnchor` compute positions internally (node_modules/bareguard/src/primitives/rubric-locate.js ~618, 808) but neither is exported.
+
+### The tab
+- A fourth right tab `Result` after `Job`: button `#tab-result` (`data-testid="right-tab-result"`) in `.rp-tabrow` (index.html:877-881), section `#panel-result` placed AFTER `#panel-details` (never between `#panel-audit` and `#panel-details`: tests/trigger-schedule-buttons-page.test.js:57 slices there), id added to `wireTabs` (index.html:1085). Shown only when `detail.checkType === 'rubric'` (server.js:1360) AND the spec has a `rubric-step` stage; otherwise the button is absent (not disabled).
+- Opens on the Run tab as today; when a run is waiting at the Accept door, a line on the Run tab says `the result is on the Result tab` with a link that clicks `#tab-result`.
+
+### What it shows (top to bottom, as mock F)
+1. Head: the status sign + word, `rubric`, run name (existing `stateDotHTML`/`.st-word`, never a new mark), then money (Part 5 Q4 words from `moneyWithDraft`) and time.
+2. Per job line, in line order: the numbered line text and its `~` rules (from the signed spec, `lineRules`, rubricstep.js:605).
+   - FACTS line: a table, one row per result in the delivered file (`results[]`): `#`, one column per VALUE fact (name = the fact's `name`), one column per PHRASE fact group, a `checks` column `N of N ✓`. Each cell is the value as the quote writes it, in a chip, with `✓`. A fact's ✓ means the line's check passed (the step's `exit-eval` passed); the tab never re-decides and never shows a ✓ on a red run (a red run shows the rows with no ✓ and the step's own gap words from the Audit's try line).
+   - Under each row a fold `▸ proof — the page's own words`: the result's quote, with the anchor words, the value and every phrase highlighted (see choice 2).
+   - Under the table: `✓ = code checked it against the saved page. The rules: <factSentence of each fact>` (src/facts.js:201, one owner), with `(you confirmed)` on a fact whose bound came from a Part 5b answer.
+   - TEXT line: the text in a box, `▸ quotes from <input> (N)` fold with each claim and quote, and `Not checked: …` from the signed plan (`planFromSpec(spec).notChecked`, src/panel/jobplan.js ~51-105, the same list the Job tab shows).
+3. The door (only when `detail.accept === true`): `waiting for you — the checks passed; is this what you wanted?` and three buttons, in this order: `Accept` (primary, today's handler, index.html:2600-2612, same route), `Rerun with my words` (opens a textarea, required, then `Rerun`), `Pause`.
+4. `saved to: <path>` for each `destination-written` record, and `Download <file name>` per file (+ `Download all (zip)` only if choice 3 says so).
+
+### New server pieces
+- `getRunDetailBody` adds `delivered: [{path, bytes, sha256}]` from the run's `destination-written` records (pattern of server.js:673-677, `findLast` → `filter`).
+- `GET /api/runs/:id/result`: the signed line plan (lines, rules, facts per line from `closeDecl.stages[].params.parts`, `factPartOf`, src/facts.js:49) plus each delivered step file's parsed JSON. It reads ONLY paths in that run's own `destination-written` records, re-checks each file's sha256 against the record, and on a mismatch or missing file says in words `the saved file changed after the run` / `the saved file is gone`, never shows stale content.
+- `GET /api/runs/:id/download?i=<index>`: streams delivered file `i` (index into `delivered`), sha-checked as above, `Content-Disposition: attachment`. No path ever comes from the request; Host guard as today.
+- `POST /api/runs/:id/rerun {text}` and `POST /api/runs/:id/pause`: spawn the existing CLI door exactly as `handleAccept` does (runroutes.js:172-221, `run-u --spec … --door <id> --decide rerun --text … --approve <hash>` / `--decide pause`), refusals worded by `engineRefusalWords`. Empty rerun text is refused in the page AND by the engine.
+
+### Must fail when
+- the Result button shows on a deterministic run or a rubric run with no `rubric-step` stage;
+- a ✓ shows on a red run, or the tab re-runs a decide;
+- the table's rows differ from the delivered file's `results[]`, or a column name is not a signed fact name;
+- `/result` or `/download` reads a path not in that run's `destination-written` records, or serves a file whose sha256 no longer matches;
+- Rerun posts with empty text; Pause or Rerun shows when `detail.accept` is not true; the button order is not Accept < Rerun < Pause (and today's Resume < Accept < Reuse order in the Run action bar stays, tests/trigger-accept.test.js:247-252);
+- the Not checked list differs from the Job tab's;
+- a new id duplicates one (tests/panel-page.test.js:2446).
+
+### Tests
+Real `mve5y8fa` spine, spec and delivered step file as fixtures (the step file is copied from the real run's destination, sha-checked against seq 48); a red rubric spine (`mvdg1xo3`) for the no-✓ case. Each assertion shown failing first on a scratch copy. Gate: npm test (hermetic), typecheck, build:types, exit codes quoted. Then a live flight-idea1 run on deepseek-flash ($0.50 / 20 min, hamr's go) and hamr's click-through: Accept, Rerun with words, Pause, Download, phone width by his DevTools (barebrowse cannot emulate it).
+
+### Phone width
+Text in the existing flow with `overflow-wrap:anywhere`; the results table sits in the existing `audit-table-scroll` wrapper (scrolls inside itself, never the page); the four right tabs may wrap at `.rp-tabrow`'s narrow rules (index.html:126, 686), which is allowed; buttons keep 44 px height.
+
+### Design choices for hamr (recommended first)
+1. Rerun / Pause: build the two panel routes now, on Result only (recommended; the engine has them, R1), or Accept only for now.
+2. Proof highlight (R3): RULED = the bareguard ask BG-2 (spans returned by the check). A panel-side substring search was rejected: real pages repeat anchors (`Departure time:` 27 times on `mve5y8fa`'s page), so it can highlight the wrong spot. Until BG-2 lands the proof fold shows the quote with NO highlight; the highlight is its own commit with the bareguard bump. Must fail when: any highlight is drawn from a panel-side search.
+3. Download: one button per delivered file (recommended; no zip code, no new dependency), or also `Download all (zip)` (needs a zip writer: stdlib has none for zip archives).
+4. The Run-tab pointer `the result is on the Result tab` when waiting at the door: yes (recommended), or no.
+
+**Part 6 done when:** built and gated on this branch, the live run shows the table and proof, hamr's click-through passes; then /self-review, /branch-review, /release.
