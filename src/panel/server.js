@@ -1209,7 +1209,8 @@ function getRunDetailBody(runid, opts) {
   // the drafting part (see draftingFor) heads the parts list; the enrichment below touches the spine's own parts only
   const draftingPartHere = draftingFor(row, summary, opts);
   const draftingShiftHere = draftingShift(row, summary, opts);
-  const enrichedParts = enrichPartsWithStageKind(summary.parts, stageKindMetaFromSpec(resolveSpecForRow(row)));
+  const specForParts = resolveSpecForRow(row);
+  const enrichedParts = enrichPartsWithStageKind(summary.parts, stageKindMetaFromSpec(specForParts), specForParts);
   const death = deriveDeath(row, rawSpineRecords, summary.outcome);
   const { ended, resume, status } = endedForRow(row, rawSpineRecords, summary, death, true);
   // judgeModel (Summary box "judge:" line): the FIRST `judge-round`'s own
@@ -2237,7 +2238,7 @@ function stageQuestionText({
  * ran. `null` when the spec has no `closeDecl.stages` array at all (a
  * command-close spec, or no spec resolved).
  * @param {any} spec
- * @returns {Map<string, {kind: string|null, direction: string|null, baselineKind: 'seed'|0|null, question: string|null}>|null}
+ * @returns {Map<string, {kind: string|null, direction: string|null, baselineKind: 'seed'|0|null, question: string|null, fromLine: number[]}>|null}
  */
 function stageKindMetaFromSpec(spec) {
   if (!spec || typeof spec !== 'object' || !spec.closeDecl || !Array.isArray(spec.closeDecl.stages)) return null;
@@ -2253,7 +2254,7 @@ function stageKindMetaFromSpec(spec) {
       if (key !== null) suiteCmdKeys.add(key);
     }
   }
-  /** @type {Map<string, {kind: string|null, direction: string|null, baselineKind: 'seed'|0|null, question: string|null}>} */
+  /** @type {Map<string, {kind: string|null, direction: string|null, baselineKind: 'seed'|0|null, question: string|null, fromLine: number[]}>} */
   const map = new Map();
   for (const s of spec.closeDecl.stages) {
     if (!s || typeof s.name !== 'string' || s.name.length === 0) continue;
@@ -2265,7 +2266,7 @@ function stageKindMetaFromSpec(spec) {
       kind, params, genre, suiteCmdKeys,
     });
     map.set(s.name, {
-      kind, direction, baselineKind, question,
+      kind, direction, baselineKind, question, fromLine: Array.isArray(s.fromLine) ? s.fromLine.filter(Number.isInteger) : [],
     });
   }
   return map;
@@ -2335,21 +2336,106 @@ function attachStageKind(stage, kindMeta) {
  * @param {Map<string, any>|null} kindMeta
  * @returns {any[]|null|undefined}
  */
-function enrichPartsWithStageKind(parts, kindMeta) {
+function enrichPartsWithStageKind(parts, kindMeta, spec = null) {
   if (!Array.isArray(parts)) return parts;
   const declaredStagesTotal = kindMeta ? kindMeta.size : null;
   const declaredStages = kindMeta
     ? Array.from(kindMeta, ([name, meta]) => ({ name, question: meta.question }))
     : null;
-  return parts.map((part) => ({
-    ...part,
-    attempts: Array.isArray(part.attempts) ? part.attempts.map((a) => ({
-      ...a,
-      stages: (kindMeta && Array.isArray(a.stages)) ? a.stages.map((s) => attachStageKind(s, kindMeta)) : a.stages,
-      ...(declaredStagesTotal ? { declaredStagesTotal } : {}),
-      ...(declaredStages ? { declaredStages } : {}),
-    })) : part.attempts,
-  }));
+  return parts.map((part) => {
+    const attempts = Array.isArray(part.attempts) ? part.attempts.map((a) => {
+      // PRD v1.106 Part 5 (D1): a plan step's attempt carries the checks its try RAN (replay), worded here; they also stand in as the attempt's
+      // `stages`, which is what the page's headline and check list read (before this they were null, so every check read "not run")
+      const checks = Array.isArray(a.checks) ? tryChecksOf(a.checks, kindMeta, spec) : null;
+      return {
+        ...a,
+        ...(checks ? { checks, stages: checks.map(stageOfCheck) } : { stages: (kindMeta && Array.isArray(a.stages)) ? a.stages.map((s) => attachStageKind(s, kindMeta)) : a.stages }),
+        ...(declaredStagesTotal ? { declaredStagesTotal } : {}),
+        ...(declaredStages ? { declaredStages } : {}),
+      };
+    }) : part.attempts;
+    return { ...part, attempts };
+  });
+}
+
+/** the words for a `check-passes` result that no `check-run` named (an old spine), and the one tree-changed question, both code-owned here */
+const FILES_CHANGED_QUESTION = 'did it change any file?';
+
+/**
+ * A rule line's failing reasons, one per `close: <stage>: …` line of a check's detail, each with that prefix (and the `line N: ` the check row
+ * already names) removed. A detail with no `close:` lines is one reason: its own first line.
+ * @param {string|null|undefined} detail
+ * @returns {string[]}
+ */
+function reasonsOf(detail) {
+  if (typeof detail !== 'string' || detail.trim() === '') return [];
+  const lines = detail.split('\n').map((l) => l.trim()).filter((l) => l !== '');
+  const closeLines = lines.filter((l) => l.startsWith('close: '));
+  if (closeLines.length === 0) return [lines[0]];
+  return closeLines.map((l) => l.replace(/^close: [^:]+: /, '').replace(/^line \d+: /, ''));
+}
+
+/**
+ * The try line's gap: the first failing reason, and how many more there are (PRD v1.106 Part 5 C). ONE function, beside {@link stageQuestionText}.
+ * @param {string|null|undefined} detail
+ * @returns {{ line: string, more: number }|null}
+ */
+export function gapOneLine(detail) {
+  const reasons = reasonsOf(detail);
+  return reasons.length === 0 ? null : { line: reasons[0], more: reasons.length - 1 };
+}
+
+/**
+ * "from line 1 ~ under $450; not a red-eye" — the job line(s) a check serves and the `~` rules written under them (the signed `jobLines`).
+ * `null` when the stage serves no job line (a mandatory guard).
+ * @param {number[]} fromLine @param {any} spec
+ * @returns {string|null}
+ */
+export function fromLineText(fromLine, spec) {
+  if (!Array.isArray(fromLine) || fromLine.length === 0) return null;
+  const lines = Array.isArray(spec?.jobLines) ? spec.jobLines : [];
+  return fromLine.map((n) => {
+    const rule = lines.find((l) => l && l.n === n)?.rule;
+    return `from line ${n}` + (typeof rule === 'string' && rule !== '' ? ` ~ ${rule}` : '');
+  }).join(' · ');
+}
+
+/**
+ * One try's checks in the order they RAN (choice 6), worded: `{n, type, name, question, pass, detail, gap, more, reasons, from}`.
+ * A `tree-changed` result is the declared `files-changed` stage; a `check-passes` result is the stage its `check-run` named.
+ * @param {Array<{type: string, pass: boolean, detail: string|null, name: string|null}>} checks
+ * @param {Map<string, any>|null} kindMeta @param {any} spec
+ */
+function tryChecksOf(checks, kindMeta, spec) {
+  const metas = kindMeta ? [...kindMeta] : [];
+  const filesChanged = metas.find(([, m]) => m.kind === 'files-changed') ?? null;
+  const others = metas.filter(([, m]) => m.kind !== 'files-changed');
+  return checks.map((c, i) => {
+    let name = c.name;
+    let meta = name && kindMeta ? kindMeta.get(name) ?? null : null;
+    if (c.type === 'tree-changed' && filesChanged) { name = filesChanged[0]; meta = filesChanged[1]; }
+    if (c.type === 'check-passes' && !meta && others.length === 1) { name = others[0][0]; meta = others[0][1]; }
+    const reasons = c.pass ? [] : reasonsOf(c.detail);
+    const gap = c.pass ? null : gapOneLine(c.detail);
+    return {
+      n: i + 1,
+      type: c.type,
+      name: name ?? c.type,
+      question: c.type === 'tree-changed' ? FILES_CHANGED_QUESTION : (meta?.question ?? null),
+      pass: c.pass,
+      // a files-changed result names its count; a failing check-passes names its reasons (folded on the page), a passing one nothing
+      note: c.type === 'tree-changed' ? c.detail : (c.pass ? null : `${reasons.length} reason${reasons.length === 1 ? '' : 's'}`),
+      gap: gap ? gap.line : null,
+      more: gap ? gap.more : 0,
+      reasons,
+      from: meta ? fromLineText(meta.fromLine, spec) : null,
+    };
+  });
+}
+
+/** a worded check as the `{name, verdict, question}` stage shape the attempt headline reads */
+function stageOfCheck(c) {
+  return { name: c.name, verdict: c.pass ? 'satisfied' : 'needs_revision', question: c.question };
 }
 
 /**

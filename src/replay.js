@@ -587,6 +587,8 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
   // re-spelled so the two can never drift apart.
   const spendRecords = spine.filter((e) => SPEND_RECORD_TYPES.includes(e.type));
   const exitEvals = spine.filter((e) => e.type === 'exit-eval');
+  // PRD v1.106 Part 5 (D1): which check each `check-passes` result was — the `check-run` record just before its exit-eval
+  const checkRuns = spine.filter((e) => e.type === 'check-run');
 
   // F119: every `transport-retry` record on this spine, and the (derived,
   // never guessed) reason(s) behind a `spendComplete:false` job-end — see
@@ -801,7 +803,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     // `/api/runs/:runid/rounds` endpoint (`src/panel/server.js`) to slice
     // this attempt's own rounds/tool-calls out of the full spine+gate-audit,
     // never recomputed a second way there either.
-    /** @type {Array<{n: number, iteration: number|null, outcome: 'green'|'red', startSeq: number, endSeq: number, startTs: number|null, endTs: number|null, exitEvalDetail: string|null}>} */
+    /** @type {Array<{n: number, iteration: number|null, outcome: 'green'|'red', startSeq: number, endSeq: number, startTs: number|null, endTs: number|null, exitEvalDetail: string|null, checks: Array<{type: string, pass: boolean, detail: string|null, name: string|null}>}>} */
     const attemptWindows = [];
     const stepExitEvals = exitEvals
       .filter((ee) => ee.step === id && typeof ee.seq === 'number' && ee.seq > startSeq && ee.seq < endSeq)
@@ -828,6 +830,20 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
         iteration: typeof ee.iteration === 'number' ? ee.iteration : null,
         outcome: allPass ? 'green' : 'red',
       });
+      // the try's checks AS THEY RAN (D1): each exit-eval result in order; a `check-passes` result is named by the `check-run`
+      // record just before this exit-eval (same window), taken in order. `detail` is already scrubbed at capture.
+      const lo = prevBoundSeq;
+      const namesHere = checkRuns
+        .filter((c) => typeof c.seq === 'number' && c.seq > lo && c.seq < eeSeq && typeof c.name === 'string')
+        .sort((a, b) => a.seq - b.seq);
+      let nameAt = 0;
+      const tryChecks = results.map((r) => {
+        const type = typeof r.type === 'string' ? r.type : 'unknown';
+        const name = type === 'check-passes' ? (namesHere[nameAt++]?.name ?? null) : null;
+        return {
+          type, pass: r.pass === true, detail: typeof r.detail === 'string' ? r.detail : null, name,
+        };
+      });
       attemptWindows.push({
         n: attemptWindows.length + 1,
         iteration: typeof ee.iteration === 'number' ? ee.iteration : null,
@@ -837,6 +853,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
         startTs: prevBoundTs,
         endTs: eeTs,
         exitEvalDetail: detailSource && typeof detailSource.detail === 'string' ? detailSource.detail : null,
+        checks: tryChecks,
       });
       prevBoundSeq = eeSeq;
       prevBoundTs = eeTs ?? prevBoundTs;
@@ -1321,7 +1338,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
       // same as a scout/plan/replan/judge/run part already does.
       const stepAttempts = step.attemptWindows.length > 0
         ? step.attemptWindows.map((aw) => ({
-          n: aw.n, outcome: aw.outcome, verdict: null, stages: null, detail: aw.exitEvalDetail, startSeq: aw.startSeq, endSeq: aw.endSeq, startTs: aw.startTs, endTs: aw.endTs,
+          n: aw.n, outcome: aw.outcome, verdict: null, stages: null, detail: aw.exitEvalDetail, startSeq: aw.startSeq, endSeq: aw.endSeq, startTs: aw.startTs, endTs: aw.endTs, iteration: aw.iteration, checks: aw.checks,
         }))
         : wholePartAttempt(step.stepStartSeq, step.stepStartTs, step.stepEndSeq, step.stepEndTs);
       parts.push({
