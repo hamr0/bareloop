@@ -180,7 +180,12 @@ export function thinkingWordsFrom(spine, { phase, lo = -Infinity, hi = Infinity,
   return thinkingRowText({ mode: dec.mode, status: typeof st?.thinkingStatus === 'string' ? st.thinkingStatus : undefined });
 }
 
-/** The Job tab's row words (PRD v1.106 Part 3): the default rule, or the job's "Thinking on" tick. @param {boolean} tick @returns {string} */
-export function thinkingJobText(tick) {
+/**
+ * The Job tab's row words (PRD v1.106 Part 3): the default rule, or the job's "Thinking on" tick, but only for a run whose spine
+ * recorded a `thinking-decision`; a run from before the thinking rule reads `—`, never a guess from the job's tick (fwdloop M4d am28).
+ * @param {boolean} tick @param {boolean} recorded the run's spine holds at least one `thinking-decision` @returns {string}
+ */
+export function thinkingJobText(tick, recorded) {
+  if (!recorded) return '\u2014';
   return tick ? 'always on' : 'on retries';
 }

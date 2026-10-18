@@ -66,24 +66,27 @@ test('Part 3: thinkingWordsFrom reads a decision only inside its window and pair
   assert.equal(thinkingWordsFrom(spine, { phase: 'plan', lo: 6, hi: 20 }), null, 'an empty window');
 });
 
-test('Part 3: the Job tab row: the server always words it (on retries / always on), with or without spine records', async () => {
+test('Part 3: the Job tab row: always a row; the rule from the tick when the spine recorded decisions, an em dash on a run from before the rule', async () => {
   const home = keysHome();
   const p = await panel({ home });
   const ticked = { ...specOf({ job: 'tj' }), thinking: true };
   const a = makeRun(home, { runid: 'ra', spec: specOf({ job: 'tj' }) });
-  makeRun(home, { runid: 'rb', spec: ticked });
+  const b = makeRun(home, { runid: 'rb', spec: ticked });
   makeRun(home, { runid: 'rc', spec: specOf({ job: 'tj' }) });
+  makeRun(home, { runid: 'rc2', spec: ticked });
   const d = makeRun(home, { runid: 'rd', spec: ticked });
   rmSync(join(d.out, 'resolved-spec.json'));
   const rec = (phase) => `${JSON.stringify({ type: 'thinking-decision', phase, iteration: 1, mode: 'off', ts: '2026-10-01T10:02:00.000Z', seq: 9 })}\n`;
-  appendFileSync(a.spine, rec('scout'));
+  for (const r of [a, b, d]) appendFileSync(r.spine, rec('scout'));
   const job = async (id) => (await p.get(`/api/runs/${id}/job`)).body;
-  assert.equal((await job('ra')).thinking, thinkingJobText(false));
-  assert.equal((await job('ra')).thinking, 'on retries');
-  assert.equal((await job('rb')).thinking, 'always on', 'ticked, no spine records');
-  assert.equal((await job('rc')).thinking, 'on retries', 'no records: still a row');
+  assert.equal((await job('ra')).thinking, thinkingJobText(false, true));
+  assert.equal((await job('ra')).thinking, 'on retries', 'records, not ticked');
+  assert.equal((await job('rb')).thinking, 'always on', 'records, ticked');
+  assert.equal((await job('rc')).thinking, '\u2014', 'no records: an em dash, still a row');
+  assert.equal((await job('rc2')).thinking, '\u2014', 'no records and the job is ticked: still an em dash, never read from the tick');
   assert.equal((await job('rd')).thinking, 'on retries', 'a tick that cannot be read counts as not ticked, never an empty row');
   assert.equal('thinkingTick' in (await job('ra')), false, 'the internal flag is not sent');
+  
 });
 
 test('Part 3: the page draws the words it is handed: header bit, attempt line right after the glyph, a Job row; it types no thinking word', () => {
