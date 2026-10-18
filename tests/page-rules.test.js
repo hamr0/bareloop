@@ -33,14 +33,20 @@ test('found-on-page: a place is matched exactly (case counts); a phrase as whole
   assert.deepEqual(said(r.dropped), ['origin|(fact)|no-label', 'origin|san francisco|not-on-page', 'stops|Nonstopper|not-on-page']);
 });
 
-test('found-on-page: a money fact keeps the labels, currency signs and units the page holds; a code like "EUR" read as a currency is dropped as not a sign', () => {
-  const map = { facts: [{ name: 'price', from: 'rule 1', shape: 'money', words: ['From', 'Total price'], currency: ['$', '€', 'US dollars'], unit: ['US dollars', 'zorkmids'] }] };
+test('found-on-page: a money fact keeps the labels and units the page holds; a form it does not hold is dropped by name', () => {
+  const map = { facts: [{ name: 'price', from: 'rule 1', shape: 'money', words: ['From', 'Total price'], currency: ['€'], unit: ['US dollars', 'zorkmids'] }] };
   const r = applyPageRules(sfo.page, map, JOBS.flights);
-  const f = r.facts[0];
-  assert.deepEqual(f.words, ['From']);
-  assert.deepEqual(f.currency, ['$']);
-  assert.deepEqual(f.unit, ['US dollars']);
-  assert.deepEqual(said(r.dropped), ['price|Total price|not-on-page', 'price|US dollars|currency-not-symbol', 'price|zorkmids|not-on-page', 'price|€|not-on-page'].sort());
+  assert.deepEqual(r.facts[0].words, ['From']);
+  assert.deepEqual(r.facts[0].unit, ['US dollars']);
+  assert.equal(r.facts[0].currency, undefined);
+  assert.deepEqual(said(r.dropped), ['price|Total price|not-on-page', 'price|zorkmids|not-on-page', 'price|€|not-on-page']);
+});
+
+test('found-on-page: a currency that is a WORD ("US dollars") is no currency sign - dropped as such, and with no other form the money fact is not kept', () => {
+  const map = { facts: [{ name: 'price', from: 'rule 1', shape: 'money', words: ['From'], currency: ['US dollars'] }] };
+  const r = applyPageRules(sfo.page, map, JOBS.flights);
+  assert.deepEqual(r.facts, []);
+  assert.deepEqual(said(r.dropped), ['price|(fact)|no-label', 'price|US dollars|currency-not-symbol']);
 });
 
 test('found-on-page: a fact with NO word the page holds is not kept and says so once, as a fact-level drop (no word)', () => {
@@ -103,7 +109,7 @@ test('N2 reads a LABEL that is followed by a value: a place or a phrase that rep
 // ── item 4: R1 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 test('R1 on the REAL saved SFO map: the AI listed "From" and "from " for the price; "from" reads other values on the page, so it is dropped and the first stays', () => {
-  const price = factOf(sfo.map, 'price');
+  const price = { ...factOf(sfo.map, 'price'), currency: [] };
   assert.deepEqual(price.words, ['From', 'from ']);
   const r = applyPageRules(sfo.page, { facts: [price] }, JOBS.flights);
   assert.deepEqual(r.facts[0].words, ['From']);
@@ -111,13 +117,13 @@ test('R1 on the REAL saved SFO map: the AI listed "From" and "from " for the pri
 });
 
 test('R1: it is the AI\'s FIRST listed label that stays - listed the other way round, "from" stays and "From" is the one that reads different values', () => {
-  const r = applyPageRules(sfo.page, { facts: [{ ...factOf(sfo.map, 'price'), words: ['from ', 'From'] }] }, JOBS.flights);
+  const r = applyPageRules(sfo.page, { facts: [{ ...factOf(sfo.map, 'price'), currency: [], words: ['from ', 'From'] }] }, JOBS.flights);
   assert.deepEqual(r.facts[0].words, ['from']);
   assert.deepEqual(said(r.dropped), ['price|From|r1']);
 });
 
 test('R1: the same label spelled twice reads the same values, so it is kept; time facts are compared by the times they read', () => {
-  const same = applyPageRules(sfo.page, { facts: [{ ...factOf(sfo.map, 'price'), words: ['From', 'From'] }] }, JOBS.flights);
+  const same = applyPageRules(sfo.page, { facts: [{ ...factOf(sfo.map, 'price'), currency: [], words: ['From', 'From'] }] }, JOBS.flights);
   assert.deepEqual(same.facts[0].words, ['From', 'From']);
   assert.deepEqual(same.dropped, []);
   const alt = applyPageRules(sfo.page, { facts: [{ name: 'departure', from: 'rule 2', shape: 'time', words: ['Departure time:', 'Leaves San Francisco International Airport at'] }] }, JOBS.flights);
@@ -126,4 +132,48 @@ test('R1: the same label spelled twice reads the same values, so it is kept; tim
   const dep = applyPageRules(sfo.page, { facts: [{ name: 'departure', from: 'rule 2', shape: 'time', words: ['Departure time:', 'Arrival time:'] }] }, JOBS.flights);
   assert.deepEqual(dep.facts[0].words, ['Departure time:'], 'a label that reads a different set of times than the first is dropped');
   assert.deepEqual(said(dep.dropped), ['departure|Arrival time:|r1']);
+});
+
+// ── item 5: U1 + R1L ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+const lisbon = loadFixture('airbnb-lisbon');
+const price = (/** @type {any} */ over) => ({ name: 'total price', from: 'rule 1', shape: 'money', words: ['total'], currency: ['€'], unit: ['total'], ...over });
+
+test('U1 on the REAL Airbnb page: "total" is written AFTER the number ("€490 total"), so it moves from a label to a unit - and the unit stays in the signed fact', () => {
+  assert.match(lisbon.page, /€\d[\d,]* total/);
+  const r = applyPageRules(lisbon.page, { facts: [price({ currency: [], unit: [] })] }, JOBS.airbnb);
+  assert.deepEqual(r.facts.map((f) => [f.name, f.words, f.unit, f.currency]), [['total price', [], ['total'], undefined]], 'no label left, one unit, and the fact is kept');
+  assert.deepEqual(r.dropped, []);
+});
+
+test('U1 names no number on either side: a label with no number right before or right after it is dropped ("no-value"); a label with a number after it stays a label', () => {
+  const map = { facts: [{ name: 'price', from: 'rule 1', shape: 'money', words: ['Nonstop flight', 'From'], currency: [], unit: ['US dollars'] }] };
+  const r = applyPageRules(sfo.page, map, JOBS.flights);
+  assert.deepEqual(r.facts[0].words, ['From']);
+  assert.deepEqual(said(r.dropped), ['price|Nonstop flight|no-value']);
+});
+
+test('U1 touches money and number facts only: a time label with no number beside it is NOT dropped by U1', () => {
+  const r = applyPageRules(sfo.page, { facts: [{ name: 'departure', from: 'rule 2', shape: 'time', words: ['Departure time:'] }] }, JOBS.flights);
+  assert.deepEqual(r.facts[0].words, ['Departure time:']);
+  assert.deepEqual(r.dropped, []);
+});
+
+test('R1L on the REAL Airbnb page: the unit "total" is the primary form (units first); the currency "€" reads other numbers than "total" does, so it is dropped', () => {
+  const r = applyPageRules(lisbon.page, { facts: [price({})] }, JOBS.airbnb);
+  assert.deepEqual(r.facts[0].unit, ['total']);
+  assert.equal(r.facts[0].currency, undefined);
+  assert.deepEqual(said(r.dropped), ['total price|€|r1l']);
+});
+
+test('R1L on a REAL flights page: "$" (read after) and "US dollars" (read before) are not the same numbers, so the second form is dropped and the first (the unit) stays', () => {
+  const jfk = loadFixture('jfk-lax');
+  const r = applyPageRules(jfk.page, { facts: [factOf(jfk.map, 'price')] }, JOBS.flights);
+  assert.deepEqual(r.facts[0].unit, ['US dollars']);
+  assert.deepEqual(r.facts[0].currency, ['$'], '"$" reads the same numbers as the unit on this page, so it is a true second form');
+  assert.deepEqual(said(r.dropped), ['price|US dollars|r1l'], 'listed again as a currency, the word reads other numbers and is dropped');
+});
+
+test('U1/R1L: the TUI-style "282 £ pp" form is not tested - none of the eight real saved pages holds a "£ pp" (reported, never held)', () => {
+  for (const k of ['airbnb-lisbon', 'airbnb-porto', 'sfo1', 'bos-ord']) assert.doesNotMatch(loadFixture(k).page, /£\s*pp/);
 });

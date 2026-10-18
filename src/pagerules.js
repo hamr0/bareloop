@@ -83,6 +83,40 @@ function valueSet(lines, label, shape) {
 /** @param {Set<string>} a @param {Set<string>} b @returns {boolean} */
 const sameSet = (a, b) => a.size === b.size && [...a].every((x) => b.has(x));
 
+/** a number as the page writes it: digits, thousands commas, optional decimals (a currency sign next to it is not part of it) */
+const NUM = '\\d[\\d,]*(?:\\.\\d+)?';
+const BEFORE = new RegExp(`(${NUM})\\s*$`);
+const AFTER = new RegExp(`^\\s*(?:[$€£]\\s*)?(${NUM})`);
+const AFTER_CUR = new RegExp(`^\\s*(${NUM})`);
+const stripCommas = (/** @type {string} */ s) => s.replace(/,/g, '');
+
+/** @param {string[]} lines @param {string} w @returns {[string, number][]} every occurrence of w as [its line, where it starts] */
+function occs(lines, w) {
+  /** @type {[string, number][]} */
+  const out = [];
+  for (const l of lines) for (let i = l.indexOf(w); i !== -1; i = l.indexOf(w, i + w.length)) out.push([l, i]);
+  return out;
+}
+
+/**
+ * U1: how many times a label has a number right BEFORE it (whitespace only between) and right AFTER it (whitespace and one currency sign
+ * between). A marker the page writes after the number ("490 total") has B > 0 and A = 0.
+ * @param {string[]} lines @param {string} label @returns {{B: number, A: number}}
+ */
+function beforeAfter(lines, label) {
+  let B = 0;
+  let A = 0;
+  for (const [l, i] of occs(lines, label)) {
+    if (BEFORE.test(l.slice(0, i))) B += 1;
+    if (AFTER.test(l.slice(i + label.length))) A += 1;
+  }
+  return { B, A };
+}
+/** R1L: the numbers a UNIT form reads - the one right before each occurrence @param {string[]} lines @param {string} u @returns {Set<string>} */
+const unitSet = (lines, u) => new Set(occs(lines, u).map(([l, i]) => BEFORE.exec(l.slice(0, i))?.[1]).filter((v) => typeof v === 'string').map((v) => stripCommas(/** @type {string} */ (v))));
+/** R1L: the numbers a CURRENCY form reads - the one right after each occurrence @param {string[]} lines @param {string} c @returns {Set<string>} */
+const curSet = (lines, c) => new Set(occs(lines, c).map(([l, i]) => AFTER_CUR.exec(l.slice(i + c.length))?.[1]).filter((v) => typeof v === 'string').map((v) => stripCommas(/** @type {string} */ (v))));
+
 /** the symbols a currency may be (src/facts.js); a code like "EUR" is a word read after the number, so it is a unit */
 const CURRENCY_SYMBOLS = ['$', '€', '£'];
 /** the shapes that read a value after a label */
@@ -105,8 +139,9 @@ export function applyPageRules(text, mapping, jobLines) {
     dropped.push({ line: t.line, ...(t.rule === undefined ? {} : { rule: t.rule }), fact: String(f.name ?? ''), ...(word === undefined ? {} : { word }), reason });
   };
 
-  // ---- found-on-page: the code keeps only words the saved page really holds (count >= 1) ----
-  /** @type {{f: MapFact, kept: string[], cur: string[], uni: string[], first?: string|null}[]} */
+  // ---- found-on-page, then U1 and R1L for the facts that read an amount ----
+  const lines = linesOf(text);
+  /** @type {{f: MapFact, kept: string[], cur: string[], uni: string[], first?: string|null, anchorless?: boolean}[]} */
   const pending = [];
   for (const f of list) {
     const words = (Array.isArray(f.words) ? f.words : []).map((w) => String(w)).filter((w) => w.trim() !== '');
@@ -118,26 +153,63 @@ export function applyPageRules(text, mapping, jobLines) {
       }
       pending.push({ f, kept, cur: [], uni: [] });
     } else if (VALUE_SHAPES.includes(String(f.shape))) {
-      const kept = [];
+      const amount = f.shape === 'money' || f.shape === 'number';
+      /** labels the page holds (and, for an amount, that have a number right after them) */
+      const labels = [];
+      /** the AI's labels as U1 leaves them, a word the page does not hold included: the first of these is R1's reference */
+      const asListed = [];
+      /** U1: labels the page writes after the number */
+      const moved = [];
       for (const w0 of words) {
         const w = normLabel(w0);
-        if (countExact(text, w) >= 1) kept.push(w); else drop(f, w0, 'not-on-page');
+        if (!w) continue;
+        if (countExact(text, w) < 1) { asListed.push(w0); drop(f, w0, 'not-on-page'); continue; }
+        if (amount) {
+          const { B, A } = beforeAfter(lines, w);
+          if (A === 0 && B > 0) { moved.push(w); continue; }
+          if (A === 0 && B === 0) { drop(f, w, 'no-value'); continue; }
+        }
+        asListed.push(w0);
+        labels.push(w);
       }
-      const cur = (Array.isArray(f.currency) ? f.currency : []).filter((c) => {
-        if (countExact(text, c) < 1) { drop(f, c, 'not-on-page'); return false; }
-        if (!CURRENCY_SYMBOLS.includes(c)) { drop(f, c, 'currency-not-symbol'); return false; }
-        return true;
-      });
-      const uni = (Array.isArray(f.unit) ? f.unit : []).filter((u) => {
-        if (countPhrase(text, u) < 1) { drop(f, u, 'not-on-page'); return false; }
-        return true;
-      });
-      pending.push({ f, kept, cur, uni, first: words.length ? normLabel(words[0]) : null });
+      /** @type {string[]} */ let uni = [];
+      /** @type {string[]} */ let cur = [];
+      if (f.shape === 'money') {
+        // the forms: units first (the U1-moved words, then the AI's listed units), then currency signs
+        const listedUnits = (Array.isArray(f.unit) ? f.unit : []).map(String);
+        const units = [...new Set([...moved, ...listedUnits])].filter((u) => {
+          if (countPhrase(text, u) >= 1) return true;
+          drop(f, u, 'not-on-page');
+          return false;
+        });
+        const curs = (Array.isArray(f.currency) ? f.currency : []).map(String).filter((c) => {
+          if (countExact(text, c) >= 1) return true;
+          drop(f, c, 'not-on-page');
+          return false;
+        });
+        /** @type {{kind: 'unit'|'currency', w: string}[]} */
+        const forms = [...units.map((u) => /** @type {const} */ ({ kind: 'unit', w: u })), ...curs.map((c) => /** @type {const} */ ({ kind: 'currency', w: c }))];
+        if (forms.length) {
+          // R1L: every form reads the same set of numbers as the primary (the first form); one that reads more or fewer is dropped
+          const read = (/** @type {{kind: string, w: string}} */ x) => (x.kind === 'unit' ? unitSet(lines, x.w) : curSet(lines, x.w));
+          const ps = read(forms[0]);
+          const keep = [forms[0]];
+          for (const x of forms.slice(1)) { if (sameSet(read(x), ps)) keep.push(x); else drop(f, x.w, 'r1l'); }
+          uni = keep.filter((x) => x.kind === 'unit').map((x) => x.w);
+          cur = keep.filter((x) => x.kind === 'currency').map((x) => x.w);
+        }
+        // a currency that is a word ("US dollars") is read after the number, so it is a unit, never a currency sign
+        cur = cur.filter((c) => {
+          if (CURRENCY_SYMBOLS.includes(c)) return true;
+          drop(f, c, 'currency-not-symbol');
+          return false;
+        });
+      }
+      pending.push({ f, kept: labels, cur, uni, first: asListed.length ? normLabel(asListed[0]) : null, anchorless: amount && asListed.length === 0 });
     } else drop(f, undefined, 'bad-shape');
   }
 
   // ---- R1, same-value: the labels after the AI's FIRST listed one are kept only if they read the same set of values as it does ----
-  const lines = linesOf(text);
   for (const p of pending) {
     if (!VALUE_SHAPES.includes(String(p.f.shape))) continue;
     const shape = /** @type {'money'|'time'|'number'} */ (p.f.shape);
@@ -178,8 +250,11 @@ export function applyPageRules(text, mapping, jobLines) {
     for (const p of pending) {
       const isValue = VALUE_SHAPES.includes(String(p.f.shape));
       if (kind === 'value' ? !isValue : p.f.shape !== kind) continue;
-      // a fact with no label the page holds is dropped; a money fact also needs a currency or a unit the page holds
-      if (p.kept.length === 0 || (p.f.shape === 'money' && !p.cur.length && !p.uni.length)) { drop(p.f, undefined, 'no-label'); continue; }
+      // a fact left with no label is dropped, unless U1 moved every label to a unit/currency form of a money fact (it then reads that form
+      // alone); a money fact also needs a currency or a unit the page holds
+      const forms = p.cur.length + p.uni.length;
+      const ok = p.f.shape === 'money' ? forms > 0 && (p.kept.length > 0 || p.anchorless === true) : p.kept.length > 0;
+      if (!ok) { drop(p.f, undefined, 'no-label'); continue; }
       signed.push(make(p));
     }
   }
