@@ -14661,7 +14661,7 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 
 **JFK-LAX: FINDING.** The AI listed the time label `Departure time` (no colon); the page writes `Departure time:`. The words are on the page, so the found-on-page filter kept it; the colon sits right after it, so no time can be read: honest 0/10, and most cheat catches are that same refusal (worthless). v3's "no value either side -> dropped" (U1) covers money and number facts only; nothing drops a time label that reads no value. Note: the product's own drafting check `checkFactWords` (labels picked from the scanned label list, never typed) also refuses this label, so a real drafting session would refuse it; the POC applied the rules without that gate.
 
-**Status.** Open. No v4 fitted to this page (frozen rule). hamr 2026-10-18: next a live drafted run on a new flights page.
+**Status.** Open. No v4 fitted to this page (frozen rule). hamr 2026-10-18: next a live drafted run on a new flights page. 2026-10-18 update: see F238; hamr ruled idea A core only.
 
 ## F237 — a rubric flights draft signed facts that no run could pass: the labels "StaticText" and "O" read no value, and "Departure time:" sits on a different line from the result (run mvdg1xo3, flights-bos-ord, 2026-10-18; open, supports idea A's pending v4 rule)
 
@@ -14682,4 +14682,15 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 
 **The thinking rule held on a rubric job (PRD v1.106 Part 1).** Scout off; step attempt 1 off; attempts 2 and later on; plan and replan on; all 11 `thinking-status` records `applied`. A worker cannot change a signed check, so the rule is not the cause.
 
-**Status.** Open. Logged, not patched (PRD §8a); no fix built here. hamr approved logging 2026-10-18.
+**Status.** Open. Logged, not patched (PRD §8a); no fix built here. hamr approved logging 2026-10-18. 2026-10-18 update: see F238 (v4 run on this run's labels; drops are silent) and the core-only ruling.
+
+## F238 — idea A rule v4, POC round 4: HOLDS by its decision rule but its drop fired only on the page it was written after; on run mvdg1xo3's real labels the drops are silent (2026-10-18; open, hamr ruled idea A core only)
+
+**Grounded in:** `.claude/scratch/idea-a-v2/apply-v4.out` (v4 on JFK-LAX, BOS-ORD and the six regression pages), `.claude/scratch/idea-a-v2/apply-v4-f237.out` (v4 on the five labels run mvdg1xo3 signed, F237), `.claude/scratch/idea-a-v2/mapcall4-bosord.out` (the one BOS-ORD map call), and the frozen v4 section of `docs/product/ITEM33-BUILD.md` (commit e863f94, section sha256 `cd975facc0b3de57e60bebf317e3b9d1354148d111428d4e3eb26224d230b439`).
+
+**What was seen.**
+- **(i) The test.** v4 HOLDS by its frozen decision rule. But the V4 drop fired on one page only, JFK-LAX, the page it was written after: `V4 dropped: [{"fact":"departure time","label":"Departure time","shape":"time"}]`, `Not checked: departure time: the page never shows a time right after "Departure time"`. On BOS-ORD (a fresh deepseek-flash map, `cost(config rates) $0.000306`) the output reads `V4 dropped: none` and every kept label reads values (`From` 27 of 27, `Departure time:` 27 of 27), so V4 was untested there. The six regression pages print `v4 facts+pageClaims identical to v3 recomputed: true`.
+- **(ii) V4 on the real labels run mvdg1xo3 signed (F237).** `apply-v4-f237.out` prints `V4 dropped: []`: none of the five. `StaticText` (number) reads 0 numbers (`onPage 369, readsAfter 0`; the page lines are `StaticText "1"` and `StaticText "Nonstop"`), so it lost its anchor through v3's U1 and left `{"name":"Stops","shape":"number"}`, a fact with no anchor and no rule. `O` (text) reads 63 values (`"S","RD","ne"`, fragments of "O'Hare"), so V4 keeps it; v3 then drops it (`dropped/not-signed`). The good label `Leaves` (`readsAfter 54`, sample `Boston`) is also `dropped/not-signed` by v3's place rules. `refused (v3): []`.
+- **(iii) The finding.** The drops are SILENT. The "nonstop" ~ rule ends unchecked and nothing says why: no Not checked line, no refusal. That breaks the standing ruling that every ~ rule becomes a check or an explicit Not checked.
+
+**Status.** Open. hamr 2026-10-18 ruled idea A CORE ONLY: V4, R2/R2a-c, R3/R3U and page-level checks (pageClaims) are left out of the build and kept only as frozen records; every drop must show as Not checked with a plain reason. Build spec: ITEM33-BUILD.md (pending signature).
