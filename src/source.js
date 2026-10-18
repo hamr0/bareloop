@@ -1388,3 +1388,21 @@ export async function refreezeUrlInputs({ into, fetchUrl = (u) => fetchPageText(
   await writeFile(join(resolve(into), 'source.json'), `${JSON.stringify(next, null, 2)}\n`);
   return { ok: true, refreshed: rows.map((/** @type {any} */ r) => r.label), seed };
 }
+
+/**
+ * PRD v1.106 Part 5 Q2: what `source.json` says about web inputs, read synchronously and never throwing: whether the copy has any web input
+ * (`inputs[].url`) and when the run-start refetch last finished (`refrozenAt`, written last by {@link refreezeUrlInputs}). The panel decides
+ * "fetching the page..." from this: it applies while a web input exists and no refetch has finished at or after `sinceIso`.
+ * @param {string} sourceJsonPath @param {string|null|undefined} sinceIso
+ * @returns {{ hasWeb: boolean, fetching: boolean }}
+ */
+export function webFetchState(sourceJsonPath, sinceIso) {
+  try {
+    const m = JSON.parse(readFileSync(sourceJsonPath, 'utf8'));
+    const hasWeb = Array.isArray(m?.inputs) && m.inputs.some((/** @type {any} */ r) => r && typeof r.url === 'string' && r.url !== '');
+    if (!hasWeb) return { hasWeb: false, fetching: false };
+    const done = typeof m.refrozenAt === 'string' ? Date.parse(m.refrozenAt) : NaN;
+    const since = typeof sinceIso === 'string' ? Date.parse(sinceIso) : NaN;
+    return { hasWeb: true, fetching: !(Number.isFinite(done) && (!Number.isFinite(since) || done >= since)) };
+  } catch { return { hasWeb: false, fetching: false }; }
+}

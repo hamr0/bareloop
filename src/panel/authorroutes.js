@@ -19,13 +19,13 @@
 
 import { randomBytes } from 'node:crypto';
 import { spawn as realSpawn } from 'node:child_process';
-import { openSync } from 'node:fs';
+import { openSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { planMatchesClose } from '../rubricstep.js';
 import { createSession, validateJobCard, validateReuseCard, jobBoxesChanged, buildReuseSpec, cardFields, nextFreeJobName, startDestinationProblem, STEP_LABELS } from './authorsession.js';
 import { parseInputs } from '../jobblock.js';
-import { proveInputFiles, looksLikeRubricInput } from '../source.js';
+import { proveInputFiles, looksLikeRubricInput, webFetchState } from '../source.js';
 import { validateJob } from '../job.js';
 
 /** plain words for a run whose saved job no longer passes today's `validateJob` (RULED 2026-10-15): never the raw red codes */
@@ -90,6 +90,18 @@ export function checkHumanGuard(req, { token, port }) {
  * one; a terminal session is kept (so its chat/hash stay readable) but no
  * longer counts against the one-at-a-time rule.
  */
+/**
+ * PRD v1.106 Part 5 Q2: the "fetching the page..." step is done once the run's own refetch has written `refrozenAt` (source.json, written last).
+ * Settled when the state is read, so nothing polls and the step never stays running after the fetch.
+ * @param {any} state
+ */
+export function settleFetchingStep(state) {
+  const st = Array.isArray(state?.steps) ? state.steps.find((/** @type {any} */ x) => x.id === 'fetching') : null;
+  if (!st || st.status !== 'running') return;
+  const file = join(String(state.outDir), 'source-seed', 'source.json');
+  if (existsSync(file) && !webFetchState(file, st.since).fetching) st.status = 'done';
+}
+
 const TERMINAL_PHASES = new Set(['refused', 'abandoned', 'error', 'signed', 'signing-failed']);
 
 /**
@@ -299,6 +311,7 @@ export function createAuthorRoutes(opts) {
     if (pathname === '/api/author/live') {
       if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
       const live = [...sessions.values()].find((s) => !TERMINAL_PHASES.has(s.state.phase));
+      if (live) settleFetchingStep(live.state);
       send(200, { ok: true, sessionId: live ? live.state.id : null, state: live ? live.state : null });
       return true;
     }
@@ -375,6 +388,7 @@ export function createAuthorRoutes(opts) {
 
     if (sub === null) {
       if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
+      settleFetchingStep(session.state);
       send(200, { ok: true, state: session.state });
       return true;
     }
@@ -520,5 +534,10 @@ export function signRun(session, claimedHash, o) {
     ? `drafting spent ${draftIncomplete ? 'at least ' : ''}${panelMoney2(draftSpentUsd)} (folds out of the run's own cap)`
     : '';
   if (Array.isArray(session.state.steps)) session.state.steps.push({ id: 'signed', label: STEP_LABELS.signed, status: 'done', detail: draftLine });
+  // PRD v1.106 Part 5 Q2: a run with a web input fetches the page again before its log exists (3-5 s of silence): say so, next to the sign step
+  const sinceIso = new Date().toISOString();
+  if (Array.isArray(session.state.steps) && webFetchState(join(session.state.outDir, 'source-seed', 'source.json'), sinceIso).hasWeb) {
+    session.state.steps.push({ id: 'fetching', label: STEP_LABELS.fetching, status: 'running', since: sinceIso });
+  }
   return { ok: true, job: session.state.resolvedSpecPath };
 }

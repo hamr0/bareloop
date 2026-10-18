@@ -1,0 +1,24 @@
+{
+  "kind": "folder",
+  "source": "https://www.google.com/travel/flights?q=Flights+from+BOS+to+ORD+on+2026-11-20+one+way&hl=en&curr=USD",
+  "fetchedAt": "2026-10-18T18:26:52.543Z",
+  "files": [
+    {
+      "path": "flights.txt",
+      "bytes": 50243,
+      "sha256": "f322fb85921a7812667434e762d6335c2d3b36c1a4c57b6b9d326aaa5b20169c"
+    }
+  ],
+  "seed": "1896c43d40c80ad131e323084a7facb5ed0f650e",
+  "destination": "/home/hamr/PycharmProjects/bareloop/.claude/scratch/live-flights/out/",
+  "inputs": [
+    {
+      "label": "flights",
+      "rel": "input/flights.txt",
+      "sha256": "f322fb85921a7812667434e762d6335c2d3b36c1a4c57b6b9d326aaa5b20169c",
+      "url": "https://www.google.com/travel/flights?q=Flights+from+BOS+to+ORD+on+2026-11-20+one+way&hl=en&curr=USD",
+      "draftSha256": "2730b4733e9003afb1239c8b73f0fdb0f53545a512fc07fc5dcfa78977d79be2"
+    }
+  ],
+  "refrozenAt": "2026-10-18T18:33:04.261Z"
+}

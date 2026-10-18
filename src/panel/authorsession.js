@@ -86,6 +86,7 @@ export const STEP_LABELS = Object.freeze({
   gates: 'checking signing gates',
   hash: 'generating hash',
   signed: 'signed hash',
+  fetching: 'fetching the page…',
 });
 
 /**
