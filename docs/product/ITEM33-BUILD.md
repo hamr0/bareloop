@@ -1131,7 +1131,7 @@ v4 HOLDS iff (a) on JFK-LAX and BOS-ORD every label that reads no value is dropp
 and (b) on every regression page no verdict that v3 got right changes and no real rule-breaker passes. Anything else is a
 FINDING, logged, never re-tuned (frozen rule).
 
-## Addendum 2026-10-18 — Idea A core: build spec (DRAFT, awaiting hamr's signature)
+## Addendum 2026-10-18 — Idea A core: build spec (SIGNED by hamr 2026-10-18, all 18 design choices as recommended)
 
 Nothing here is signed. No builder is launched until hamr signs.
 hamr's ruling 2026-10-18: build idea A CORE ONLY, then learn from live runs.
@@ -1316,7 +1316,7 @@ Known gaps, listed not fixed:
 
 ### 11. Branch and order
 
-- Branch: `feat/idea-a-core`, cut from `main` AFTER `feat/thinking-retries` is released (the close-the-branch-before-the-next rule). Verify `git branch --show-current` before every commit.
+- Branch: `feat/thinking-retries` (hamr 2026-10-18: continue idea A on the same branch). Verify `git branch --show-current` before every commit.
 - Builders: sonnet, strict pin, no subagents, per-item commits (item 1 to 8 of section 2 in this order: map call, found-on-page, N2, R1, U1+R1L, S1, lists, no silent drop).
 - Files owned by one builder at a time (no two on `src/facts.js` or `src/authorflow.js`).
 - CHANGELOG and `bareloop.context.md` lines for the map call, the lists in the signed spec and the Not checked rows are part of the branch (the adopter contract).
