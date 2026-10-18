@@ -4,6 +4,8 @@
 // rules-v3-candidate.mjs; sha256 recorded in commit 0bcc5fe), with the OUT branches (R2, R2a, R2b, R2c, R3, R3U, V4, pageClaims) deleted.
 
 import { lineRules } from './rubricstep.js';
+import { countExact, countPhrase } from './factwords.js';
+import { normLabel } from './labelscan.js';
 
 /**
  * @typedef {{name: string, from?: string, shape: string, words?: string[], currency?: string[], unit?: string[]}} MapFact the AI's map, one fact
@@ -35,25 +37,82 @@ export function tieOf(from, jobLines) {
   return out;
 }
 
+/** the symbols a currency may be (src/facts.js); a code like "EUR" is a word read after the number, so it is a unit */
+const CURRENCY_SYMBOLS = ['$', '€', '£'];
+/** the shapes that read a value after a label */
+const VALUE_SHAPES = ['money', 'time', 'number'];
+
 /**
  * Apply the rules to the AI's map over one saved page. Returns the kept facts and, for everything a rule removed, one `dropped` entry.
+ * The order of the rules is the POC's (apply-v3.mjs): found-on-page, then the rules that read the page. A place is read as a phrase.
  * @param {string} text the frozen page text @param {PageMap} mapping @param {{n: number, text?: string, rule?: string, rules?: string[]}[]} jobLines
  * @returns {{facts: KeptFact[], dropped: Dropped[]}}
  */
 export function applyPageRules(text, mapping, jobLines) {
   /** @type {Dropped[]} */
   const dropped = [];
-  const list = Array.isArray(mapping?.facts) ? mapping.facts : [];
+  const list = Array.isArray(mapping?.facts) ? mapping.facts.filter(isRec) : [];
+  /** @type {Map<MapFact, {line: number, rule?: number}>} */
+  const ties = new Map(list.map((f) => [f, tieOf(f.from, jobLines)]));
+  const drop = (/** @type {MapFact} */ f, /** @type {string|undefined} */ word, /** @type {string} */ reason) => {
+    const t = /** @type {{line: number, rule?: number}} */ (ties.get(f));
+    dropped.push({ line: t.line, ...(t.rule === undefined ? {} : { rule: t.rule }), fact: String(f.name ?? ''), ...(word === undefined ? {} : { word }), reason });
+  };
+
+  // ---- found-on-page: the code keeps only words the saved page really holds (count >= 1) ----
+  /** @type {{f: MapFact, kept: string[], cur: string[], uni: string[]}[]} */
+  const pending = [];
+  for (const f of list) {
+    const words = (Array.isArray(f.words) ? f.words : []).map((w) => String(w)).filter((w) => w.trim() !== '');
+    if (f.shape === 'place' || f.shape === 'phrase') {
+      const kept = [];
+      for (const w of words) {
+        const n = f.shape === 'phrase' ? countPhrase(text, w) : countExact(text, w);
+        if (n >= 1) kept.push(w); else drop(f, w, 'not-on-page');
+      }
+      pending.push({ f, kept, cur: [], uni: [] });
+    } else if (VALUE_SHAPES.includes(String(f.shape))) {
+      const kept = [];
+      for (const w0 of words) {
+        const w = normLabel(w0);
+        if (countExact(text, w) >= 1) kept.push(w); else drop(f, w0, 'not-on-page');
+      }
+      const cur = (Array.isArray(f.currency) ? f.currency : []).filter((c) => {
+        if (countExact(text, c) < 1) { drop(f, c, 'not-on-page'); return false; }
+        if (!CURRENCY_SYMBOLS.includes(c)) { drop(f, c, 'currency-not-symbol'); return false; }
+        return true;
+      });
+      const uni = (Array.isArray(f.unit) ? f.unit : []).filter((u) => {
+        if (countPhrase(text, u) < 1) { drop(f, u, 'not-on-page'); return false; }
+        return true;
+      });
+      pending.push({ f, kept, cur, uni });
+    } else drop(f, undefined, 'bad-shape');
+  }
+
+  // ---- the kept facts, in the POC's order: places, phrases, then values ----
   /** @type {KeptFact[]} */
-  const facts = list.filter(isRec).map((f) => {
-    const tie = tieOf(f.from, jobLines);
+  const signed = [];
+  const make = (/** @type {{f: MapFact, kept: string[], cur: string[], uni: string[]}} */ p) => {
+    const t = /** @type {{line: number, rule?: number}} */ (ties.get(p.f));
     /** @type {KeptFact} */
-    const out = { line: tie.line, name: String(f.name ?? ''), shape: f.shape === 'place' ? 'phrase' : String(f.shape), from: String(f.from ?? ''), words: (Array.isArray(f.words) ? f.words : []).map(String) };
-    if (Array.isArray(f.unit) && f.unit.length) out.unit = f.unit.map(String);
-    if (Array.isArray(f.currency) && f.currency.length) out.currency = f.currency.map(String);
-    if (tie.rule !== undefined) out.forRule = tie.rule;
+    const out = { line: t.line, name: String(p.f.name), shape: p.f.shape === 'place' ? 'phrase' : String(p.f.shape), from: String(p.f.from ?? ''), words: [...p.kept] };
+    if (p.f.shape === 'money') {
+      if (p.uni.length) out.unit = [...p.uni];
+      if (p.cur.length) out.currency = [...p.cur];
+    }
+    if (t.rule !== undefined) out.forRule = t.rule;
     return out;
-  });
-  void text;
-  return { facts, dropped };
+  };
+  for (const kind of ['place', 'phrase', 'value']) {
+    for (const p of pending) {
+      const isValue = VALUE_SHAPES.includes(String(p.f.shape));
+      if (kind === 'value' ? !isValue : p.f.shape !== kind) continue;
+      // a fact with no label the page holds is dropped; a money fact also needs a currency or a unit the page holds
+      if (p.kept.length === 0 || (p.f.shape === 'money' && !p.cur.length && !p.uni.length)) { drop(p.f, undefined, 'no-label'); continue; }
+      signed.push(make(p));
+    }
+  }
+  const order = list.map((f) => String(f.name));
+  return { facts: signed.sort((a, b) => order.findIndex((n) => a.name.startsWith(n)) - order.findIndex((n) => b.name.startsWith(n))), dropped };
 }
