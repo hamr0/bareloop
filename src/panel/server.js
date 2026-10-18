@@ -2527,22 +2527,15 @@ export function getRunJob(runid, opts = {}) {
 }
 
 /**
- * PRD v1.106 Part 3 — the Job tab's `Thinking:` row, worded by src/thinking.js. It is added ONLY when the run's own spine carries
- * `thinking-decision` records, so a run from before them shows no thinking word. The rule shown is the job's signed "Thinking on" tick.
+ * PRD v1.106 Part 3 — the Job tab's `Thinking` row, worded by src/thinking.js and ALWAYS present (hamr 2026-10-18). The rule shown is
+ * the job's signed "Thinking on" tick; a tick that cannot be read counts as not ticked (the default), never an empty row.
  * @param {any|null} body the Job tab body @param {string} runid @param {{ home?: string }} opts
  * @returns {any|null}
  */
 function withThinkingRow(body, runid, opts) {
   if (!body) return body;
-  try {
-    const row = findRunRow(runid, opts);
-    if (!row || !existsSync(row.spine)) return body;
-    const { records } = parseJsonl(row.spine);
-    if (!records.some((r) => r && typeof r === 'object' && r.type === 'thinking-decision')) return body;
-    const { thinkingTick, ...rest } = body;
-    // an unresolved spec cannot say whether the tick was set, so it shows no row rather than a guess
-    return body.resolved === true ? { ...rest, thinking: thinkingJobText(thinkingTick === true) } : rest;
-  } catch { return body; }
+  const { thinkingTick, ...rest } = body;
+  return { ...rest, thinking: thinkingJobText(thinkingTick === true) };
 }
 
 /** @param {string} runid @param {{ home?: string }} opts */

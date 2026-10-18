@@ -682,8 +682,8 @@ through `thinkingStatus`, and are not claimed. The close, budgets and caps are u
 records (`thinkingWordsFrom`, `src/thinking.js`), never guessed: each attempt line reads `attempt 2 [glyph] · thinking on` (the decision whose seq lies in that attempt's window), and a part with one
 call (plan, scout, replan, a one-attempt step) carries it on its header line (`part.thinking`). The words are drafting's own (`thinkingRowText`): `thinking on` / `thinking off`, and
 `thinking on (this model can't change it)` / `thinking on (the model thought anyway)` / `thinking off (not confirmed)` when bare-agent was not sure. An attempt whose own call recorded nothing (the fix loop's
-opening precheck) and every part of a run from before the records show no thinking word. `GET /api/runs/:runid/job` adds `thinking` (`thinkingJobText`: `on retries`, or `on everywhere (ticked)` when
-the signed spec carries the tick) ONLY when the run's spine holds `thinking-decision` records and the spec resolved; the Job tab draws it as the `Thinking` row. The page types none of these words.
+opening precheck) and every part of a run from before the records show no thinking word. `GET /api/runs/:runid/job` adds `thinking` (`thinkingJobText`: `on retries`, or `always on` when
+the signed spec carries the tick; an unreadable tick counts as not ticked) for EVERY run, with or without spine records; the Job tab draws it as the `Thinking` row, beside Model on one row like the caps. The page types none of these words.
 
 
 **D5 — the mandatory guards are SHOWN and FIXED, and the battery keys off the VERDICT

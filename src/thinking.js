@@ -182,5 +182,5 @@ export function thinkingWordsFrom(spine, { phase, lo = -Infinity, hi = Infinity,
 
 /** The Job tab's row words (PRD v1.106 Part 3): the default rule, or the job's "Thinking on" tick. @param {boolean} tick @returns {string} */
 export function thinkingJobText(tick) {
-  return tick ? 'on everywhere (ticked)' : 'on retries';
+  return tick ? 'always on' : 'on retries';
 }

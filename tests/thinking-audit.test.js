@@ -3,7 +3,8 @@
 // the page half pulls the page's own drawing code out of src/panel/index.html by name.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendFileSync, readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { replayRun } from '../src/replay.js';
 import { thinkingJobText, thinkingRowText, thinkingWordsFrom } from '../src/thinking.js';
@@ -65,30 +66,33 @@ test('Part 3: thinkingWordsFrom reads a decision only inside its window and pair
   assert.equal(thinkingWordsFrom(spine, { phase: 'plan', lo: 6, hi: 20 }), null, 'an empty window');
 });
 
-test('Part 3: the Job tab row: the server words it (on retries / on everywhere (ticked)) only for a run whose spine has thinking records', async () => {
+test('Part 3: the Job tab row: the server always words it (on retries / always on), with or without spine records', async () => {
   const home = keysHome();
   const p = await panel({ home });
   const ticked = { ...specOf({ job: 'tj' }), thinking: true };
   const a = makeRun(home, { runid: 'ra', spec: specOf({ job: 'tj' }) });
-  const b = makeRun(home, { runid: 'rb', spec: ticked });
+  makeRun(home, { runid: 'rb', spec: ticked });
   makeRun(home, { runid: 'rc', spec: specOf({ job: 'tj' }) });
+  const d = makeRun(home, { runid: 'rd', spec: ticked });
+  rmSync(join(d.out, 'resolved-spec.json'));
   const rec = (phase) => `${JSON.stringify({ type: 'thinking-decision', phase, iteration: 1, mode: 'off', ts: '2026-10-01T10:02:00.000Z', seq: 9 })}\n`;
   appendFileSync(a.spine, rec('scout'));
-  appendFileSync(b.spine, rec('scout'));
   const job = async (id) => (await p.get(`/api/runs/${id}/job`)).body;
   assert.equal((await job('ra')).thinking, thinkingJobText(false));
   assert.equal((await job('ra')).thinking, 'on retries');
-  assert.equal((await job('rb')).thinking, 'on everywhere (ticked)');
-  assert.equal('thinking' in (await job('rc')), false, 'no records: no thinking row');
+  assert.equal((await job('rb')).thinking, 'always on', 'ticked, no spine records');
+  assert.equal((await job('rc')).thinking, 'on retries', 'no records: still a row');
+  assert.equal((await job('rd')).thinking, 'on retries', 'a tick that cannot be read counts as not ticked, never an empty row');
   assert.equal('thinkingTick' in (await job('ra')), false, 'the internal flag is not sent');
 });
 
 test('Part 3: the page draws the words it is handed: header bit, attempt line right after the glyph, a Job row; it types no thinking word', () => {
   assert.match(PAGE, /part\.thinking === "string"[\s\S]{0,120}bits\.push\(escapeXml\(part\.thinking\)\)/);
   assert.match(PAGE, /attemptGlyph\(a\.outcome, boxIsLive\) \+\s*\(a\.thinking \? ' &middot; ' \+ escapeXml\(a\.thinking\) : ''\) \+\s*\(checksText/);
-  assert.match(PAGE, /id="details-thinking-field" hidden/);
-  assert.match(PAGE, /\["thinking", job\.thinking\]/);
-  assert.doesNotMatch(PAGE, /thinking (on|off)|on retries|on everywhere/, 'every thinking word comes from src/thinking.js');
+  assert.match(PAGE, /<div class="field-row">\s*<div class="field"><label>Model<\/label>[^\n]*\n\s*<div class="field" id="details-thinking-field"><label>Thinking<\/label>/, 'Model then Thinking in one field-row, never hidden');
+  assert.doesNotMatch(PAGE, /id="details-thinking-field" hidden/);
+  assert.match(PAGE, /getElementById\("details-thinking"\)\.textContent = typeof job\.thinking === "string"/);
+  assert.doesNotMatch(PAGE, /thinking (on|off)|on retries|always on|on everywhere/, 'every thinking word comes from src/thinking.js');
 });
 
 /** the source of `function <name>(...) {...}` out of the page, brace-scanned */
