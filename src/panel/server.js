@@ -2354,8 +2354,31 @@ function enrichPartsWithStageKind(parts, kindMeta, spec = null) {
         ...(declaredStages ? { declaredStages } : {}),
       };
     }) : part.attempts;
-    return { ...part, attempts };
+    return { ...part, attempts, ...(part.kind === 'step' ? { tries: triesOf(attempts, part.cutOffTry) } : {}) };
   });
+}
+
+/**
+ * A step's tries in order: each graded try (it ran checks) and, last, the one cut off before its checks ran (D2). `ran` is how many checks ran,
+ * `passed`/`failed` how they went; a cut-off try ran none. The Audit, the step card and the Run summary all read this one list.
+ * @param {any[]} attempts @param {any} cutOffTry
+ * @returns {Array<{n: number, cutOff: boolean, outcome: string|null, iteration: number|null, ran: number, passed: number, failed: number, thinking: string|null}>}
+ */
+function triesOf(attempts, cutOffTry) {
+  const graded = (Array.isArray(attempts) ? attempts : []).filter((a) => Array.isArray(a.checks)).map((a) => ({
+    n: a.n,
+    cutOff: false,
+    outcome: a.outcome ?? null,
+    iteration: typeof a.iteration === 'number' ? a.iteration : null,
+    ran: a.checks.length,
+    passed: a.checks.filter((/** @type {any} */ c) => c.pass).length,
+    failed: a.checks.filter((/** @type {any} */ c) => !c.pass).length,
+    thinking: typeof a.thinking === 'string' ? a.thinking : null,
+  }));
+  if (!cutOffTry) return graded;
+  return [...graded, {
+    n: graded.length + 1, cutOff: true, outcome: null, iteration: typeof cutOffTry.iteration === 'number' ? cutOffTry.iteration : null, ran: 0, passed: 0, failed: 0, thinking: typeof cutOffTry.thinking === 'string' ? cutOffTry.thinking : null,
+  }];
 }
 
 /** the words for a `check-passes` result that no `check-run` named (an old spine), and the one tree-changed question, both code-owned here */

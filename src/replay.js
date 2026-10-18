@@ -589,6 +589,8 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
   const exitEvals = spine.filter((e) => e.type === 'exit-eval');
   // PRD v1.106 Part 5 (D1): which check each `check-passes` result was — the `check-run` record just before its exit-eval
   const checkRuns = spine.filter((e) => e.type === 'check-run');
+  // D2: the iterations that began (a try with an iteration-start and no exit-eval was cut off before its checks ran)
+  const iterationStarts = spine.filter((e) => e.type === 'iteration-start');
 
   // F119: every `transport-retry` record on this spine, and the (derived,
   // never guessed) reason(s) behind a `spendComplete:false` job-end — see
@@ -859,6 +861,23 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
       prevBoundTs = eeTs ?? prevBoundTs;
     }
 
+    // D2: a try that BEGAN (an `iteration-start` after the last exit-eval) in a step that has ended, and never reached its checks, was cut off
+    // (the wall, a cap, a stop). A step still running has an in-flight try, not a cut-off one. Never a numbered attempt: it ran no check.
+    const endedHere = end !== null || stopReason !== null;
+    const lastIter = iterationStarts
+      .filter((it) => typeof it.seq === 'number' && it.seq > prevBoundSeq && it.seq < endSeq)
+      .sort((a, b) => b.seq - a.seq)[0] ?? null;
+    const cutOffTry = endedHere && lastIter
+      ? {
+        n: attemptWindows.length + 1,
+        iteration: typeof lastIter.iteration === 'number' ? lastIter.iteration : null,
+        startSeq: prevBoundSeq,
+        endSeq: end && typeof end.seq === 'number' ? end.seq : (Number.isFinite(endSeq) ? endSeq : prevBoundSeq),
+        startTs: prevBoundTs,
+        endTs,
+      }
+      : null;
+
     idOccurrence.set(id, (idOccurrence.get(id) ?? 0) + 1);
     // the SAME step continuing across a leg boundary (the previous occurrence of this id was cut off by its leg's
     // halt, and this one starts in a later leg) is "continued", never a retry; `tryNumber` counts real retries only
@@ -877,6 +896,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
       treeChanged,
       attempts,
       attemptWindows,
+      cutOffTry,
       stepStartSeq: startSeq,
       stepEndSeq: endSeq,
       // `stepStartTs`/`stepEndTs` (panel item 2 follow-up, F195/F-audit-step):
@@ -895,7 +915,6 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
   // `phase` filter on the rounds: the seq window between one iteration-start
   // and the next close-verdict/run-end/escalation already isolates that
   // iteration's own rounds.
-  const iterationStarts = spine.filter((e) => e.type === 'iteration-start');
   const timelineKind = /** @type {'steps'|'iterations'} */ (stepStarts.length > 0 ? 'steps' : (iterationStarts.length > 0 ? 'iterations' : 'steps'));
   const boundaries = spine.filter((e) => e.type === 'close-verdict' || e.type === 'run-end' || e.type === 'escalation');
 
@@ -1358,6 +1377,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
         // P5-R (resumed runs only): why its leg's halt cut this step off, whether it is the same step continuing
         // from the leg before, and its retry count not counting continuations
         ...(step.stopReason === undefined ? {} : { stopReason: step.stopReason, continued: step.continued, tryNumber: step.tryNumber }),
+        ...(step.cutOffTry ? { cutOffTry: step.cutOffTry } : {}),
         attempts: step.stopReason ? stepAttempts.map((a) => (a.outcome === null || a.outcome === undefined ? { ...a, outcome: 'stopped' } : a)) : stepAttempts,
       });
     }
@@ -1450,6 +1470,10 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
         if (p.kind === 'step') words = thinkingWordsFrom(spine, { phase: `step:${p.label}`, lo: a.startSeq, hi: a.endSeq });
         else if (p.kind === 'fix') words = thinkingWordsFrom(spine, { phase: 'fix', lo: a.startSeq, hi: a.endSeq });
         if (words !== null) a.thinking = words;
+      }
+      if (p.kind === 'step' && p.cutOffTry) {
+        const words = thinkingWordsFrom(spine, { phase: `step:${p.label}`, lo: p.cutOffTry.startSeq, hi: p.cutOffTry.endSeq });
+        if (words !== null) p.cutOffTry.thinking = words;
       }
       let part = null;
       if (p.kind === 'scout') part = thinkingWordsFrom(spine, { phase: 'scout', hi: firstStepSeq });

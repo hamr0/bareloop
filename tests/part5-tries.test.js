@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { getRunDetail, gapOneLine, fromLineText } from '../src/panel/server.js';
 import { replayOne } from '../src/replayio.js';
+import { replayRun } from '../src/replay.js';
 import { makePart5World } from './part5-world.mjs';
 
 const world = makePart5World();
@@ -50,4 +51,25 @@ test('replay names each check-passes result by the check-run record before its e
   const parts = replayOne(world.spine('mvdg1xo3')).parts.filter((p) => p.kind === 'step');
   assert.deepEqual(parts.flatMap((p) => p.attempts).map((a) => a.checks.find((c) => c.type === 'check-passes').name), Array(8).fill('line-1-flight-facts'));
   assert.equal(parts.flatMap((p) => p.attempts).length, 8, 'eight graded tries over two steps');
+});
+
+test('D2: the ninth try of mvdg1xo3 (step 2, iteration 4) is listed as a try that was cut off before its checks ran', () => {
+  const [s1, s2] = stepParts(red);
+  assert.equal(s1.tries.length, 5);
+  assert.ok(s1.tries.every((t) => !t.cutOff && t.ran === 2), 'step 1: five graded tries, two checks each, none cut off');
+  assert.equal(s1.cutOffTry, undefined, 'a step whose last try was graded has no cut-off try');
+  assert.equal(s2.attempts.length, 3, 'attempts stay the graded ones (the glyphs stay ✗✗✗)');
+  assert.equal(s2.tries.length, 4);
+  const last = s2.tries[3];
+  assert.deepEqual([last.cutOff, last.n, last.iteration, last.ran, last.passed, last.failed], [true, 4, 4, 0, 0, 0]);
+  assert.ok(s2.tries.slice(0, 3).every((t) => !t.cutOff && t.passed === 1 && t.failed === 1));
+});
+
+test('D2: a green step and a step still running have no cut-off try', () => {
+  assert.equal(stepParts(green)[0].tries.length, 1);
+  assert.equal(stepParts(green)[0].tries[0].cutOff, false);
+  const lines = readFileSync(world.spine('mvdg1xo3'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const live = lines.filter((e) => e.seq <= 173); // the run as it was when step 2's 4th try had just begun: still running
+  const parts = replayRun(live).parts.filter((p) => p.kind === 'step');
+  assert.equal(parts[1].cutOffTry, undefined, 'an in-flight try is not cut off');
 });
