@@ -1130,3 +1130,215 @@ any one page. The POC code for it is `.claude/scratch/idea-a-v2/apply-v4.mjs`; i
 v4 HOLDS iff (a) on JFK-LAX and BOS-ORD every label that reads no value is dropped and every kept label reads a real value,
 and (b) on every regression page no verdict that v3 got right changes and no real rule-breaker passes. Anything else is a
 FINDING, logged, never re-tuned (frozen rule).
+
+## Addendum 2026-10-18 — Idea A core: build spec (DRAFT, awaiting hamr's signature)
+
+Nothing here is signed. No builder is launched until hamr signs.
+hamr's ruling 2026-10-18: build idea A CORE ONLY, then learn from live runs.
+A rule is added back only when a live run fails without it (PRD §8a).
+The frozen records above (v2, v3, v4, FINDINGS F226-F238) stay as they are. This spec builds from them; it re-designs nothing.
+
+### 1. What the core is, in plain words
+
+- Today the drafting look (`runInputLook`) reads the page with search tools and picks labels from a list code made.
+  A label the page writes AFTER the number ("€490 total") is never on that list. A label that reads no value is kept (F237).
+- The core replaces that look with ONE AI call that maps the job to the page's own words, then plain code rules that keep or drop each word.
+- The AI never grades. Code keeps only words that are on the saved page.
+- Every word, fact or `~` rule the rules drop is shown as Not checked, with a plain reason. Nothing is dropped silently (F238).
+
+### 2. What is IN the core (eight items)
+
+1. The AI page-word map at drafting (one call per page input).
+2. Code keeps only words found on the saved page (count >= 1).
+3. N2 per line: a label that appears 2+ times in one page line is unusable. The label is dropped. No grow-left (R2 is out).
+4. R1 same-value: label alternatives are kept only if they read the same set of values as the first listed label.
+5. U1 + R1L: a marker after the number (`€490 total`, `282 £ pp`) becomes a unit. Same value over currency and unit forms.
+6. S1: two facts of one result may not share shape AND label. A fact name that counts results is refused: "one result is one record; ask for N results instead".
+7. Currency and unit LISTS on a money fact (ruled B 2026-10-17, bareguard ruling #65: the same amount written two ways is one price).
+8. NO SILENT DROP: every label, fact or `~` rule a rule drops shows on the plan card as Not checked, with a plain reason from code.
+
+### 3. Ported verbatim, never re-designed
+
+The rules are ported from the frozen POC code. The sha256 prefixes are of the files as they stand on 2026-10-18.
+Neither POC file may change before the port. The builder records both hashes in its first commit.
+
+- `.claude/scratch/idea-a-v2/rules.mjs` (sha256 1057f690ee79fe3c...): `linesOf`, `normLabel` use, N2 (`maxPerLine`), R1 (`sameSet`), S1 (`s1Check` and the name part of `applyRules`), found-on-page.
+- `.claude/scratch/idea-a-v2/rules-v3-candidate.mjs` (sha256 8646a1fecc4421aa...): U1, R1L, `beforeAfter`, `unitSet`, `curSet`, `applyV3` money/number part.
+- `.claude/scratch/idea-a-v2/apply-v3.mjs` (sha256 bb50e6f4eb56ca9f...): the way the rules are driven over a map and a page (the order of the rules).
+- `.claude/scratch/idea-a-v2/mapcall.mjs` (sha256 aab07ea6ea434fe2...) and `mapcall4.mjs`: the map prompt and the call, ported verbatim into the product prompt (job line, `~` rules, "a result is one flight / stay", the JSON form, the shape meanings).
+  `airlib.mjs` (sha256 f9426dbe110c0356...) is a test helper only (Airbnb listing splitter); it is not product code.
+
+"Verbatim" means: the rule bodies are moved as they are; only imports, JSDoc types and the removal of the OUT branches change.
+The OUT branches are R2, R2a, R2b, R2c, R3, R3U, V4 and the `pageClaims` output (section 9). They are deleted from the port, not rewritten.
+Golden outputs are made first (section 8, test 1): the POC is run once with the OUT branches switched off in a scratch copy
+(`.claude/scratch/idea-a-core/`, its sha256 recorded), on every saved page. The product port must match those outputs exactly.
+
+### 4. Where it plugs in (the real call sites)
+
+Read from the product code on 2026-10-18. Every line below names a file that exists today.
+
+**4.1 The map call replaces the look.**
+- Today: `src/authorjob.js` around line 607-624, the branch `if (survey == null && lang === RUBRIC_LANG)`, calls `lookFn` (default `runInputLook`, `src/authorscout.js:690`). Inputs are read first by `readFrozenInputs` (`src/rubricstep.js`) from the frozen copy that `proveRubricInputs` (`src/source.js:1256`) wrote. For a web address, `proveRubricInputs` already fetched the page with `fetchPageText` (`src/pagefetch.js:78`) and froze it. The map reads that frozen text, never the network.
+- Core: a new default for `lookFn`, `runPageMap` in new `src/pagemap.js`. It takes the same arguments as `runInputLook` (`texts`, `inputs`, `jobLines`, `provider`, `ceilingUsd`, `onCall`, `rates`, `callOptions`) and returns the same envelope (`state`, `facts: {rubricFiles, inputs, look}`, `calls`, `raws`, `budgetStop`). So `onPhase('look')`, the spend booking and every downstream reader keep working.
+- `lookFn` stays an injectable seam (null = no look, $0), as today.
+- `runInputLook` and its tools (`src/inputlook.js` `lookReadTools`, `LOOK_REPORT_TOOL`) are unwired from the default path. They are deleted after the live proof passes (design choice 1), not before.
+
+**4.2 The rules run in code right after the map, before anything else sees the answer.**
+- New `src/pagerules.js` (pure, no I/O): `applyPageRules(text, mapping, jobLines)` returns `{ facts, dropped }`.
+- `runPageMap` calls it on the AI's JSON and the frozen page text. The result is shaped as the existing `LookReport` (`src/inputlook.js` typedef): `facts[]` as `LookFact`, plus ONE new field `dropped[]` (section 7). `notFound` and `prose` stay as they are.
+- `renderLookReport` (`src/inputlook.js:223`) renders `dropped[]` to the drafter as `NOT CHECKED (rule n): <reason>`, so the drafter does not write a check for a dropped word.
+
+**4.3 The drafter writes from the kept facts; code proves it did not bring a dropped word back.**
+- The drafter still writes the declaration (`src/authorflow.js`, validate loop at about line 2944).
+- `checkDeclarationWords` (`src/factwords.js:104`, called at `src/authorflow.js:2949`) becomes the second proof: every signed `anchor`, `until`, `unit` and `currency` of a fact part must be a word the map KEPT for that fact. A word that is not on the kept set is the existing red `rubric-fact-word-missing` family, with a new code `rubric-fact-word-dropped` and the drop's reason in the detail. This is what makes a dropped label unable to return through the drafter.
+- `checkFactWords` (`src/factwords.js:54`): the `labelOnList` test (`rubric-fact-label-off-list`) is replaced for page inputs by "the label is in the kept set". Today it requires the label to be on the code-made list (`src/labelscan.js`), and a marker after a number is never on that list. `countExact >= 1` stays (the found-on-page rule). `rubric-fact-label-rare` (M1) and `rubric-fact-phrase-rare` (M4) stay unchanged.
+- `src/labelscan.js` stays (the found-once proof and the plan words still use it). Only the picked-from-list test is replaced.
+
+**4.4 Code makes the Not checked rows, before validate.**
+- New `withDropNotes(declaration, dropped, jobLines)` in `src/rubricstep.js`, called next to `withFactBindings(settlePersonsWords(...))` at `src/authorflow.js:2944`.
+- A dropped item tied to a `~` rule (`forRule`) that no part carries and no `refused` entry names: code appends `{line, rule, reason}` to `closeDecl.refused`. The reader `ruleNotChecked` (`src/rubricstep.js:673`) and `planFromSpec` (`src/panel/jobplan.js`, the `refused` loop) already show it under that line, in the person's own rule words.
+- A dropped item tied to no `~` rule (a fact from the job line itself): code appends one line to `closeDecl.notes`. `planFromSpec` already shows `closeDecl.notes` as "Not checked (the AI's own reading)".
+- Never a line-level `refused` entry without `rule`: `checkRubricRules` (`src/rubricstep.js:572`) reads that as "the whole line is refused" and would silence every other rule red on the line.
+- The drafter may also write its own `refused` entry. Code adds one only when none exists for that rule, so a rule is never listed twice.
+
+**4.5 The confirm card shows the drops too.**
+- The confirm turn (`authorjob.js`, after the look, `planFromConfirm` in `src/panel/jobplan.js`) takes `plan.notChecked` from the confirm model (`src/authorflow.js` about line 2429). Code appends the same drop lines there, in the same words, so the person sees them BEFORE drafting is paid for and again on the signed plan. The builder confirms the exact append point in the code; the words come from the one table in 4.6.
+
+**4.6 The words are written in ONE place.**
+- New `src/pagedropwords.js` holds one table: reason code -> plain sentence (section 7). The card, the Job tab, the confirm card and the drafter block all read it. No other file writes a drop reason.
+- Words follow the standing rule: plain, from code, never a raw code, never model-written.
+
+**4.7 Lists (item 7).** See section 6.
+
+**4.8 What the signed spec carries.** The kept facts the drafter signs are the same `fact` part (`src/facts.js`), with the list fields of section 6. The map itself (the AI's raw JSON) is not signed. It is recorded in the drafting log (`draft-log.jsonl`, `src/draftspend.js`) next to the call's spend, scrubbed by the same masker as every raw, so a run can be replayed at $0.
+
+### 5. The map call
+
+- Provider and model: the job's drafter identity (the same provider row the look uses today). Thinking OFF (drafter rule, `thinkingCallOptions(provider, draftThinking)`).
+- Booked to draft-spend like every drafting call: through `onCall`, which writes `draft-spend.json` (`src/draftspend.js`). The cap folds it in: run ceiling = Cap - draftSpentUsd.
+- Reserve before the call; a call that would pass the ceiling is `cap-halt` before it is made, as `runInputLook` does (`capStop`).
+- One call per page input. A job with several page inputs makes one call per input; the facts from each carry `source` = that input's label.
+- Retry: one retry on a TRANSPORT error only (fetch-throw, ECONNRESET, ETIMEDOUT, socket hang up) or a 429 honouring the stated wait. `spendComplete=false` after a retry.
+- No JSON repair. A malformed answer (not JSON, or JSON of the wrong form) is retried ONCE with the same message. A second malformed answer is a plain-word stop: "The AI's answer about the page was not readable twice. Nothing was signed." No Resume. This is the existing "malformed is retried, never repaired" ruling.
+- A truncated answer (max_tokens) counts as malformed.
+- The answer form (from `mapcall.mjs`): `{"facts":[{"name","from","shape":"place|money|time|phrase","words":[...],"currency":[...],"unit":[...]}]}`. `from` names the job line or the `~` rule (by number), so code can tie a drop to its rule.
+- Empty-key guard and secret masking as every provider call. The page text goes to the provider; the prompt carries no key.
+
+### 6. Currency and unit lists (item 7)
+
+- Spec shape: on a money fact, `unit` and `currency` may each be a string (today) or a non-empty array of strings.
+  A string is read exactly as a one-element array. Nothing is rewritten when an old spec is loaded.
+- Old single-value specs still load and verify: their bytes and hash do not change, because the fields are not rewritten. The shape check accepts a string as before. No migration.
+- A fact may now carry BOTH `unit` and `currency` (R1L needs this: `€490 total` is currency "€" and unit "total").
+  Today `factShapeReds` (`src/facts.js:46`) reds "exactly one of unit or currency". bareguard 0.24 says "at least one" (see `factShapeFields`, which reads the guard's own words). The rule changes to: money names at least one of unit or currency.
+- Limits are the guard's, enforced by us before the guard is asked, so the red is ours and plain: at most 3 currencies, at most 10 units, each non-blank, unique (exact string, no trailing space), a unit at most 100 characters. A currency is `$`, `€` or `£` only (codes like `EUR` go in `unit`, read after the number).
+- Order is part of the signed hash. The map's order is kept; the primary form is the first.
+- Files changed: `src/facts.js` (`factShapeReds`, `factDecides`, `sayBound`, `factSentence`, `factBrief`: pass lists through to the guard; words use the primary form and say "or" for more), `src/authorflow.js` (the drafter's fact schema text and the fact form it shows), `src/factwords.js` (`checkFactWords`: every listed unit must be found as a phrase; every listed currency must be found as a symbol).
+- `factClaims` writes the claim text with the PRIMARY form, as today.
+- `FACT_FIELDS` stays the same names. `factShapeGuide` / `factShapeFields` keep reading the guard's own text, so the guide cannot drift from the guard.
+- The risk the guard named: every listed form WIDENS the check. A form is added only if the page uses it for that field (R1L). Known gap in section 10.
+
+### 7. No silent drop (item 8, F238)
+
+`applyPageRules` returns, for every word or fact it drops, one `dropped` entry:
+`{ line, rule?, fact, word?, reason }`, where `reason` is a code from the table below and `rule` is the `~` number when the fact came from a rule.
+
+Plain words (the one table, `src/pagedropwords.js`; `<label>` is the page's own word):
+
+- not on page: `"<label>" is not written on the page.`
+- no value either side (U1): `The page never shows a number right after or right before "<label>".`
+- N2: `"<label>" is written more than once inside one line of the page, so one result cannot show it once.`
+- R1: `"<label>" does not show the same values as "<first label>", so it was not used as a second way to read it.`
+- S1, counting name: `One result is one record; ask for N results instead.`
+- S1, same shape and label: `"<fact>" would read the same value as "<other fact>". The page gives no second label for it.`
+- all labels gone: `No word on this page reads "<fact>" safely.`
+- list over the limit: `Only the first 3 currencies / 10 units are used.`
+
+Rules for the Not checked row:
+- A fact whose every label was dropped is not signed. It is Not checked, with the reason of each dropped label (one line per label).
+- A `~` rule whose only fact is not signed is listed as `line N: "<rule as written>" — <reason>` (the existing `ruleNotChecked` form).
+- A drop that leaves the fact still checkable (one of two labels dropped) is shown too, as a note. A narrower check is still said.
+- Nothing is silent: a builder test fails if `dropped` is not equal to the set of words the rules removed (section 8, test 3).
+
+### 8. Tests
+
+All use REAL saved pages from `.claude/scratch/idea-a-pages/`, copied into `tests/fixtures/idea-a/` with their sha256 in the test. No authored page. A fixture is not edited.
+Saved AI maps (`.claude/scratch/idea-a-v2/map-*.raw.txt`) are the map inputs, so the suite spends $0 and calls no provider.
+Tests run only through `npm test` / `scripts/hermetic.mjs`; the builder reports `runs.jsonl` line count before and after.
+
+1. Golden port: for each page (sfo1, sfo2, ord-den, jfk-lax, lax-jfk, bos-ord, airbnb-lisbon, airbnb-porto), `applyPageRules` equals the scratch POC run with the OUT rules off. Must FAIL when one kept rule is switched off (mutation: copy to scratch, never `git checkout`).
+2. Each rule can fail, on a real page:
+   - found-on-page: a word absent from the page is dropped.
+   - N2: the `at` label on the flights page (many per line) is dropped.
+   - R1: a label that reads different values is dropped; the first stays.
+   - U1/R1L: Airbnb `€490 total` yields unit `total`; the TUI-style `282 £ pp` form is tested on the Airbnb page only if it holds one (else reported "not tested", never held).
+   - S1: a counting name ("second flight") is refused; two facts with the same shape and label are refused.
+3. No silent drop on run mvdg1xo3's real labels (F237/F238): feed the five labels it signed (`MaxPrice` From, `DepartureWindow` "Departure time:", `Stops` StaticText, `LeaveAirport` Leaves, `ArriveAirport` O) and the real BOS-ORD page. The test asserts every label the rules remove has a `dropped` entry with a reason; `StaticText` shows as Not checked (U1, no number either side) and the "nonstop" rule shows a `line 1: "nonstop" — ...` row. It must fail when `withDropNotes` is removed.
+4. Plan card words: `planFromSpec` and `planFromConfirm` show each reason from the one table; a test greps that no other file contains a drop sentence.
+5. Lists: an old single-value spec loads, signs the same hash as before (fixture from a signed spec in the repo), and runs. A list spec round-trips through `factShapeReds`, `factDecides` and the real `bareguard` `createRubric` (no stub): at most 3 currencies / 10 units; a 4th currency is a plain red; both unit and currency on one fact is accepted.
+6. Dropped word cannot return: a drafted declaration that signs a dropped label is a `rubric-fact-word-dropped` red.
+7. Map call (a fake provider at the `provider.generate` seam, plus one test against the recorded real answer): malformed twice = plain stop and no Resume; transport error once = retried and `spendComplete=false`; truncated = malformed; the cap is checked before the call; the call is booked to `draft-spend.json`.
+8. Real-seam rule (AGENT memory): at least one test runs the real `checkDeclarationWords` with the real `bareguard`, not a stub.
+9. Each new test names a mutation that makes it red, recorded in the builder's report.
+
+Gates: `npm run typecheck`, `npm run build:types`, `npm test` (quote each exit code and the last line, including `prompt-commit-check`).
+
+### 9. Live proof plan (hamr's go per run)
+
+Each run: DeepSeek `deepseek-flash`, cap $0.50, 20 min. Named in the first line of every proposal. A $0 archive read of the premise comes first.
+Before each run: check the patient for uncommitted work and the job against the saved page ($0).
+
+1. Google Flights, Boston to Chicago (the page of mvdg1xo3): "List 3 flights from Boston to Chicago", `~ under $450`, `~ not a red-eye`, `~ nonstop`. The run that failed in F237. Success is a green, or a red that shows a clear Not checked row for every dropped word and no signed fact that reads nothing.
+2. Airbnb, a stay search with `€N total` (marker after the number): "List 3 stays in Porto", `~ under €400 total`.
+3. A changelog page (non-travel regression): the job of the green run mv76m82c style (list 3 releases with version and date).
+
+Rules of the proof:
+- Each live failure is a FINDING first (FINDINGS entry, grounded in the spine). A rule is added back only for a live failure. n=1 per job is an anecdote either way.
+- A rule out of the core (V4, R2, R3, pageClaims) is built only if a live run fails for want of exactly it. A reading-derived defect is logged and parked.
+- No re-tune of a frozen rule from a failing page.
+
+### 10. Not in this spec
+
+OUT of the core (kept only as frozen records, F238):
+- V4 (a label that reads no value is dropped, for time and text labels).
+- R2, R2a, R2b, R2c (role grow-left of place phrases).
+- R3, R3U (page-once place phrases; the record proxy).
+- Page-level checks (`pageClaims`, a second `cited` check).
+
+Known gaps, listed not fixed:
+- The `€` currency lets a worker quote "Pay €0 today" with value 0 and pass "under 400" (the guard's answer, `.claude/scratch/idea-a-pages/guard-answers-2026-10-17.md`: 12 such lines on the Airbnb page). The guard says sign `unit: "total"` with NO currency; the core follows that advice only because R1L keeps units first. The currency form can still widen a check. A live run decides.
+- A two-line quote: F237's "Departure time:" sits on its own tree line, not on the result's line. The core's N2 and found-on-page rules read page lines. The label is kept and no per-result quote can hold it. V4 would not have caught this either (F238).
+- Text and time labels that read no value (F236 "Departure time", F237 "O" reading fragments of "O'Hare") are no longer dropped by V4. In the core they are caught only by the no-silent-drop shape (they are signed, then fail live). This is the first thing a live run may show.
+- A place that appears once on the page has no per-result place check (v3 known limit).
+- Site reach (F227): Booking, Expedia, eBay and Skyscanner block barebrowse. Not a bareloop fix.
+- Page-level phrases ("this page says X once") are not checked.
+- Text shapes of facts other than money/number get N2 and found-on-page only (no U1).
+
+### 11. Branch and order
+
+- Branch: `feat/idea-a-core`, cut from `main` AFTER `feat/thinking-retries` is released (the close-the-branch-before-the-next rule). Verify `git branch --show-current` before every commit.
+- Builders: sonnet, strict pin, no subagents, per-item commits (item 1 to 8 of section 2 in this order: map call, found-on-page, N2, R1, U1+R1L, S1, lists, no silent drop).
+- Files owned by one builder at a time (no two on `src/facts.js` or `src/authorflow.js`).
+- CHANGELOG and `bareloop.context.md` lines for the map call, the lists in the signed spec and the Not checked rows are part of the branch (the adopter contract).
+- When the build is green, ask hamr for `/branch-review` then `/release`, or park it, BEFORE the next branch.
+
+### Design choices for hamr
+
+1. Old look (`runInputLook`, `lookReadTools`): unwire now, delete after the live proof passes. Recommended: yes (delete in the same branch after proof; the tools are dead weight).
+2. The map call runs for every rubric input (web page or local file), one path. Recommended: yes (local files still get label words from the page text; one engine).
+3. Drops are kept apart from `notFound`, so a dropped `~` rule is Not checked and does NOT open a "which did you mean" question to the person. Recommended: yes (the standing ruling says Not checked, never ask piecemeal).
+4. A dropped `~` rule is written by code into `closeDecl.refused` with its rule number; a dropped fact with no rule goes into `closeDecl.notes`. Never a line-level refusal. Recommended: yes.
+5. The "label is on the code-made list" test is replaced by "label is in the kept set" for page inputs. Recommended: yes (the list cannot hold a marker after a number).
+6. A money fact may carry both `unit` and `currency` (today exactly one). Recommended: yes (bareguard 0.24 accepts at least one; R1L needs both).
+7. Old specs are not rewritten; a scalar `unit`/`currency` stays a scalar, so signatures keep verifying. Recommended: yes.
+8. Our own plain reds for the guard's list limits (3 currencies, 10 units, unique, unit <= 100 chars) instead of passing the guard's raw error. Recommended: yes.
+9. The primary form (first listed) is used in the claim text and in plan words; others say "or". Recommended: yes.
+10. The raw AI map is recorded in `draft-log.jsonl` (scrubbed) so a run can be replayed at $0, and is NOT signed. Recommended: yes.
+11. One call per page input when a job has several page inputs. Recommended: yes.
+12. Golden outputs come from the POC with the OUT rules switched off in a scratch copy, hashed, before the port. Recommended: yes (the only honest "ported verbatim" test).
+13. A fact whose every label drops is not signed and listed as Not checked, with one line per dropped label. A fact that keeps at least one label is signed and the other drops are noted. Recommended: yes.
+14. A drop that narrows a still-checkable fact is shown as a note too (a narrower check is still said). Recommended: yes.
+15. A truncated map answer counts as malformed (one retry, then a plain stop; no Resume). Recommended: yes.
+16. The confirm card (before drafting) shows the drops, not only the signed plan. Recommended: yes (the person sees them before money is spent on drafting).
+17. Local live proof order: Google Flights BOS-ORD, then Airbnb, then the changelog; stop the ladder on a failure and log it (build-ladder discipline). Recommended: yes.
+18. Text and time labels that read no value (V4's job) stay out; a live run decides if V4 comes back. Recommended: yes, as ruled.
