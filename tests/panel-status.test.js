@@ -175,7 +175,7 @@ test('2026-10-07: a STOPPED run wears [■] on the table, the run card, the head
   assert.match(fnSrc('renderRun'), /detail\.glyph === "■" \? "grey"/); // the summary box frame is grey, not red
   // step card + Audit row
   // eslint-disable-next-line no-new-func
-  const f = new Function(`${['escapeXml', 'boxStatusWord', 'boxStatusText', 'glyphClass', 'dotPulses', 'dotClass', 'stepStateHTML'].map(fnSrc).join('\n')}\nreturn stepStateHTML;`)();
+  const f = new Function(`${['escapeXml', 'boxStatusWord', 'boxStatusText', 'glyphClass', 'dotPulses', 'dotClass', 'stateDotHTML', 'stepStateHTML'].map(fnSrc).join('\n')}\nreturn stepStateHTML;`)();
   assert.match(f({ state: 'stopped', status: { ...STATUS.stopped } }, 't'), /dot stopped"><\/span><b class="st-word">stopped</);
   // map box text
   const start = PAGE.indexOf('function escapeXml');
@@ -221,7 +221,8 @@ test('C8: an imported header wears the word of its shown green + the imported ta
 test('C9: MAP has no sign legend; each step card carries its own sign + the existing step-state word, bold', () => {
   assert.doesNotMatch(PAGE, /stepMapLegendHTML|map-legend/); // the line-style key is covered in panel-page.test.js
   assert.match(fnSrc('renderRun'), /stepStateHTML\(box, 'part-state-' \+ idx\)/);
-  assert.match(fnSrc('stepStateHTML'), /class="step-state"[^]*?<span class="dot ' \+ cls \+ \(cls === "amber" \? " pulse" : ""\) \+ '"><\/span><b class="st-word">' \+ escapeXml\(boxStatusWord\(box\)\)/);
+  assert.match(fnSrc('stateDotHTML'), /class="step-state"[^]*?<span class="dot ' \+ cls \+ \(cls === "amber" \? " pulse" : ""\) \+ '"><\/span><b class="st-word">' \+ escapeXml\(word\)/);
+  assert.match(fnSrc('stepStateHTML'), /stateDotHTML\(cls, boxStatusWord\(box\), testid\)/);
 });
 
 import { createPanelServer } from '../src/panel/server.js';
@@ -251,7 +252,7 @@ test('C8: the header name carries no ┤ ├ frame (it would read "┤ name ├ 
 
 test('item 3: the Audit tab\'s grouped rows wear the SAME sign + bold word as the Run tab step cards (one stepStateHTML), no bracket badge', () => {
   // eslint-disable-next-line no-new-func
-  const f = new Function(`${['escapeXml', 'runLabel', 'runName', 'boxStatusWord', 'boxStatusText', 'stepStateHTML'].map(fnSrc).join('\n')}\nreturn stepStateHTML;`)();
+  const f = new Function(`${['escapeXml', 'runLabel', 'runName', 'boxStatusWord', 'boxStatusText', 'stateDotHTML', 'stepStateHTML'].map(fnSrc).join('\n')}\nreturn stepStateHTML;`)();
   const P = (k) => ({ ...STATUS[k] });
   assert.equal(f({ state: 'done', status: P('passed') }, 't'), '<span class="step-state" data-testid="t"><span class="dot green"></span><b class="st-word">passed</b></span>');
   assert.match(f({ state: 'stopped', status: P('capped') }, 't'), /dot red"><\/span><b class="st-word">capped</);
@@ -294,7 +295,7 @@ test('2026-10-07: a part wears `[sign] word` from the ONE table — never the ra
   assert.equal(txt({ state: 'done', status: STATUS.passed }), P('passed'));
   assert.equal(txt({ state: 'running', status: STATUS.running }), P('running'));
   assert.doesNotMatch(PAGE, /escapeXml\(s\.state\)/);
-  assert.doesNotMatch(fnSrc('stepStateHTML'), /boxStatusText|\[/); // the card/Audit state is the word only; the sign is the map's
+  for (const fn of ['stepStateHTML', 'stateDotHTML']) assert.doesNotMatch(fnSrc(fn), /boxStatusText|\[/); // the card/Audit state is the word only; the sign is the map's
   // end to end through the page's own buildOrderedBoxes + SVG: no bare "done" text
   const start = PAGE.indexOf('function escapeXml');
   const body = PAGE.slice(start, PAGE.indexOf('function renderStepMap('));
