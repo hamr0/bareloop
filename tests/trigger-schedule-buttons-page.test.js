@@ -209,12 +209,12 @@ test('runs list: Scheduled is one more section after Needs you; a card jumps to 
   assert.doesNotMatch(plain, /data-rl-jump/);
   // the section list order
   const top = fnSrc('rlTopHtml');
-  assert.ok(top.indexOf('"Running now"') < top.indexOf('"Needs you"') && top.indexOf('"Needs you"') < top.indexOf('"Scheduled"'));
+  assert.ok(top.indexOf('"Running now"') < top.indexOf('"Needs you"') && !top.includes('"Scheduled"'), 'Scheduled is below the search box now (rlSchedHtml)');
 });
 
-test('runs list: rlTopHtml draws Scheduled (N) with the cards, after Needs you', () => {
+test('runs list: rlSchedHtml draws Scheduled (N) with the cards; rlTopHtml no longer does', () => {
   const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const f = new Function('escapeXml', 'rlJumpCardHtml', `${fnSrc('rlSectHtml')}\n${fnSrc('runLabel')}\n${fnSrc('rlRunTagHtml')}\n${fnSrc('rlScheduledCardHtml')}\n${fnSrc('rlTopHtml')}\nreturn rlTopHtml;`)(esc, (r) => `<j ${r.runid}>`);
+  const f = new Function('escapeXml', 'rlJumpCardHtml', `${fnSrc('rlSectHtml')}\n${fnSrc('runLabel')}\n${fnSrc('rlRunTagHtml')}\n${fnSrc('rlScheduledCardHtml')}\n${fnSrc('rlTopHtml')}\n${fnSrc('rlSchedHtml')}\nreturn function(m){ return rlTopHtml(m) + rlSchedHtml(m); };`)(esc, (r) => `<j ${r.runid}>`);
   const html = f({ running: [{ runid: 'a' }], needs: [{ runid: 'b' }], scheduled: [{ job: 'x', at: 'today 15:00', in: 'next in 1h', words: 'w', runId: 'r1' }, { job: 'y', at: null, in: null, words: 'v', runId: 'r2' }] });
   assert.match(html, /Running now \(1\)[\s\S]*Needs you \(1\)[\s\S]*Scheduled \(2\)[\s\S]*rl-sched-x[\s\S]*rl-sched-y/);
   assert.doesNotMatch(f({ running: [], needs: [], scheduled: [] }), /Scheduled/);

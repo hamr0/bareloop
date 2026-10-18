@@ -21,7 +21,7 @@ function fnSrc(name) {
 }
 
 const NAMES = ['escapeXml', 'runLabel', 'glyphClass', 'dotPulses', 'dotClass', 'panelMoney', 'panelMoneyWithDraft', 'liveSpendText', 'liveWallPhrase', 'duration', 'rowIsLive', 'rowWallText', 'rowSpendText',
-  'rlShortDate', 'runAtText', 'rlRunParts', 'runMatchesSearch', 'groupRunsByJob', 'filterRuns', 'filterWorkflows', 'filtersActive', 'rlModel', 'rlSectHtml', 'rlJumpCardHtml', 'rlRunTagHtml', 'rlScheduledCardHtml', 'rlTopHtml',
+  'rlShortDate', 'runAtText', 'rlRunParts', 'runMatchesSearch', 'groupRunsByJob', 'filterRuns', 'filterWorkflows', 'filtersActive', 'rlModel', 'rlSectHtml', 'rlJumpCardHtml', 'rlRunTagHtml', 'rlScheduledCardHtml', 'rlTopHtml', 'rlScheduledMatches', 'rlSchedHtml', 'rlCountText',
   'rlRunCardHtml', 'rlJobCardHtml', 'rlJobsHtml', 'tickSince', 'withFocusPreserved', 'paintRunsList', 'rlRowOf', 'rlJump', 'rlClick', 'setRunsData'];
 
 const LIMITS = { quietDays: 30, olderRuns: 7, needsYouDays: 7 };
@@ -29,9 +29,11 @@ const FILTERS = { checkTypes: [], results: [], time: 'all', search: '' };
 
 /** the list's own functions in one scope, with a fake document: boxes count their writes, `selectRun` records, clicks are recorded */
 function mount({ filters = FILTERS, current = null } = {}) {
-  const writes = { top: 0, wf: 0 };
+  const writes = { top: 0, wf: 0, sched: 0 };
   const boxes = {
     'rl-top': { _h: '', set innerHTML(v) { this._h = v; writes.top += 1; }, get innerHTML() { return this._h; }, contains: () => false },
+    'rl-sched': { _h: '', set innerHTML(v) { this._h = v; writes.sched += 1; }, get innerHTML() { return this._h; }, contains: () => false },
+    'runs-filter-count': { textContent: '' },
     'wf-list': { _h: '', set innerHTML(v) { this._h = v; writes.wf += 1; }, get innerHTML() { return this._h; }, contains: () => false },
   };
   const log = [];
@@ -44,11 +46,11 @@ function mount({ filters = FILTERS, current = null } = {}) {
   // eslint-disable-next-line no-new-func
   const f = new Function('document', 'selectRun', 'scrollRunIntoViewMobile', 'currentFilters', 'state', `
     var rlData = { runs: [], jobs: [], scheduled: [], limits: { quietDays: 0, olderRuns: 0, needsYouDays: 0 } };
-    var rlOpen = {}; var rlLast = { top: null, jobs: null };
+    var rlOpen = {}; var rlLast = { top: null, sched: null, jobs: null };
     var currentRunid = state.current;
     function currentRunsFilters(){ return currentFilters(); }
     ${NAMES.map(fnSrc).join('\n')}
-    return { setRunsData: setRunsData, rlModel: rlModel, rlTopHtml: rlTopHtml, rlJobsHtml: rlJobsHtml, rlJobCardHtml: rlJobCardHtml, rlRunCardHtml: rlRunCardHtml, rlJumpCardHtml: rlJumpCardHtml,
+    return { setRunsData: setRunsData, rlModel: rlModel, rlTopHtml: rlTopHtml, rlSchedHtml: rlSchedHtml, rlJobsHtml: rlJobsHtml, rlJobCardHtml: rlJobCardHtml, rlRunCardHtml: rlRunCardHtml, rlJumpCardHtml: rlJumpCardHtml,
       groupRunsByJob: groupRunsByJob, filterWorkflows: filterWorkflows, paintRunsList: paintRunsList, rlJump: rlJump, rlClick: rlClick, tickSince: tickSince,
       setCurrent: function(v){ currentRunid = v; }, open: rlOpen };
   `)(document, (id) => log.push(`select:${id}`), () => log.push('mobile'), () => filters, { current });
@@ -340,7 +342,85 @@ test('the Scheduled section (T Part 7): the model takes `scheduled` from the pay
   const m = mount();
   const mod = model(m, [], []);
   assert.deepEqual(mod.scheduled, []);
-  assert.doesNotMatch(m.f.rlTopHtml(mod), /Scheduled/, 'an empty section draws nothing, not even its header');
-  assert.match(m.f.rlTopHtml({ ...mod, scheduled: [{ job: 'x', at: 'today 15:00', in: 'next in 3h', words: 'Every day at 15:00', runId: 'r1' }] }), /Scheduled \(1\)[\s\S]*rl-sched-x/);
+  assert.doesNotMatch(m.f.rlSchedHtml(mod), /Scheduled/, 'an empty section draws nothing, not even its header');
+  assert.match(m.f.rlSchedHtml({ ...mod, scheduled: [{ job: 'x', at: 'today 15:00', in: 'next in 3h', words: 'Every day at 15:00', runId: 'r1' }] }), /Scheduled \(1\)[\s\S]*rl-sched-x/);
+  assert.doesNotMatch(m.f.rlTopHtml({ ...mod, scheduled: [{ job: 'x' }] }), /Scheduled/, 'Scheduled is not above the search box');
   assert.match(fnSrc('rlTopHtml'), /var sections = \[/);
+});
+
+// ---- PRD v1.106 Part 2: Scheduled is searched by the one search box, plus the ◷ chip (fwd M11 am17-am20)
+const SCHED = [
+  { job: 'changelog-a', at: 'today 15:00', in: 'next in 3h', words: 'Every day at 15:00', runId: 'r1', runNo: 1 },
+  { job: 'flights', at: null, in: null, words: 'When a new file arrives', runId: 'r2', runNo: 4 },
+];
+/** a mounted list with two jobs, two Scheduled cards, one running and one needs-you run; paints with `filters` and returns both boxes' markup and the count line */
+function paintWith(filters) {
+  const m = mount({ filters: { ...FILTERS, ...filters } });
+  const a = job('changelog-a', 2);
+  const f = job('flights', 2);
+  const live = row('busy', 1, { live: true, liveSince: '2026-09-01T10:00:00Z', glyph: '▶', status: { sign: '▶', word: 'running' } });
+  const need = row('stuck', 1, { needs: 'Accept' });
+  m.f.setRunsData({ runs: [...a.runs, ...f.runs, live, need], jobs: [a.entry, f.entry], scheduled: SCHED, limits: LIMITS });
+  m.f.paintRunsList();
+  return { top: m.boxes['rl-top'].innerHTML, sched: m.boxes['rl-sched'].innerHTML, jobs: m.boxes['wf-list'].innerHTML, count: m.boxes['runs-filter-count'].textContent };
+}
+
+test('Part 2: Scheduled is drawn in its own box (below the search box), never in the top box; no separate search box exists', () => {
+  const r = paintWith({});
+  assert.match(r.sched, /Scheduled \(2\)[\s\S]*rl-sched-changelog-a[\s\S]*rl-sched-flights/);
+  assert.doesNotMatch(r.top, /Scheduled|rl-sched-/);
+  assert.match(r.top, /Running now \(1\)[\s\S]*Needs you \(1\)/);
+  const order = [PAGE.indexOf('id="rl-top"'), PAGE.indexOf('id="runs-filterbar-anchor"'), PAGE.indexOf('id="rl-sched"'), PAGE.indexOf('id="wf-list"')];
+  assert.deepEqual([...order].sort((x, y) => x - y), order, 'top box, search box, Scheduled box, Jobs box: in that order');
+  assert.equal(count(PAGE, /type="text" class="search-input"/g), 1, 'ONE search input in the page');
+  assert.match(PAGE, /search also finds Scheduled; &#9719; shows only Scheduled/);
+});
+
+test('Part 2: a job-name search narrows Scheduled; a run number or date narrows Jobs only; with no match Scheduled draws nothing, header included', () => {
+  const r = paintWith({ search: 'flig' });
+  assert.match(r.sched, /rl-sched-flights/);
+  assert.doesNotMatch(r.sched, /rl-sched-changelog-a/, 'a non-matching Scheduled card is gone');
+  assert.match(r.sched, /Scheduled \(1\)/);
+  assert.match(r.top, /Running now[\s\S]*Needs you/, 'Running now and Needs you are never searched');
+  assert.equal(paintWith({ search: 'zzz' }).sched, '', 'no match: nothing, not even the header');
+  const run3 = paintWith({ search: 'run-1' });
+  assert.match(run3.sched, /Scheduled \(2\)/, 'a run number does not narrow Scheduled');
+  assert.match(paintWith({ search: '09/01' }).sched, /Scheduled \(2\)/, 'a date does not narrow Scheduled');
+  assert.match(paintWith({ search: 'flig run-1' }).sched, /Scheduled \(1\)/, 'the job-name word still narrows beside a run number');
+});
+
+test('Part 2: the result and time chips never touch Scheduled, Running now or Needs you', () => {
+  const r = paintWith({ results: ['✓'], time: '7d', checkTypes: ['rubric'] });
+  assert.match(r.sched, /Scheduled \(2\)/);
+  assert.match(r.top, /Running now \(1\)[\s\S]*Needs you \(1\)/);
+});
+
+test('Part 2: the ◷ chip: only Scheduled shows (Jobs and the quiet fold hide), the count line says showing N scheduled job(s), the search narrows only Scheduled', () => {
+  const r = paintWith({ scheduledOnly: true });
+  assert.match(r.sched, /Scheduled \(2\)/);
+  assert.equal(r.jobs, '', 'Jobs and the quiet fold are hidden, and no "no runs listed yet"');
+  assert.equal(r.count, 'showing 2 scheduled jobs');
+  assert.equal(paintWith({ scheduledOnly: true, search: 'flig' }).count, 'showing 1 scheduled job');
+  assert.match(r.top, /Running now \(1\)[\s\S]*Needs you \(1\)/, 'the top sections stay');
+  assert.equal(paintWith({}).count, '', 'not pressed: the count line says nothing about Scheduled');
+  assert.match(paintWith({}).jobs, /rl-job-flights/, 'not pressed: Jobs are back');
+});
+
+test('Part 2: ◷ pressed with no matching card says so in words (never an empty list)', () => {
+  const r = paintWith({ scheduledOnly: true, search: 'zzz' });
+  assert.match(r.sched, /no scheduled job matches/);
+  assert.equal(r.count, 'showing 0 scheduled jobs');
+  const none = mount({ filters: { ...FILTERS, scheduledOnly: true } });
+  none.f.setRunsData({ runs: [], jobs: [], scheduled: [], limits: LIMITS });
+  none.f.paintRunsList();
+  assert.match(none.boxes['rl-sched'].innerHTML, /no scheduled job matches/);
+  assert.equal(none.boxes['wf-list'].innerHTML, '', 'not "no runs listed yet" either');
+});
+
+test('Part 2: the ◷ chip is drawn like ✓ and ✗ (same class, label and aria words), with its state kept and cleared like the others', () => {
+  assert.match(PAGE, /group: "view", value: "scheduled", title: "scheduled jobs only", id: "view-scheduled", label: "&#9719;", aria: "scheduled jobs only"/);
+  assert.match(PAGE, /aria-label="' \+ c\.aria \+ '"/);
+  assert.match(PAGE, /scheduledOnly: parsed\.scheduledOnly === true/);
+  assert.equal(count(PAGE, /time: "all", search: "", scheduledOnly: false/g), 3, 'initial state, clear and the default are all spelled the same');
+  assert.doesNotMatch(PAGE, /\[data-filter-value="scheduled"\]|chip-runs-view-scheduled\]/, 'no CSS gives the chip its own size');
 });

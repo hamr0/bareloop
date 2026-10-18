@@ -844,8 +844,9 @@
           </div>
           <div id="rl-top" data-testid="rl-top"></div>
           <div class="rl-dash"></div>
-          <div class="rl-faint" data-testid="rl-filter-note">filters below act on Jobs and quiet jobs only</div>
+          <div class="rl-faint" data-testid="rl-filter-note">search also finds Scheduled; &#9719; shows only Scheduled</div>
           <div id="runs-filterbar-anchor"></div>
+          <div id="rl-sched" data-testid="rl-sched"></div>
           <div id="wf-list" data-testid="wf-list"></div>
           <div id="import-list" data-testid="import-list"></div>
         </section>
@@ -1383,7 +1384,7 @@
   // manual fold memory, keyed by job ("__quiet" is the quiet fold): a per-viewer convenience, reset on reload. A manual click wins over an automatic open.
   var rlOpen = {};
   // the last markup written into each box: an identical repaint (every poll) writes nothing, so focus, scroll and a half-read card survive it
-  var rlLast = { top: null, jobs: null };
+  var rlLast = { top: null, sched: null, jobs: null };
   // The ONE writer of `rlData`: the whole /api/runs payload, as the server sent it.
   function setRunsData(r){
     rlData = { runs: r.runs || [], jobs: r.jobs || [], scheduled: r.scheduled || [], limits: r.limits || rlData.limits };
@@ -1473,8 +1474,19 @@
     ));
   }
 
+  // PRD v1.106 Part 2 (fwd M11 am17-am20): the one search box narrows Scheduled cards by JOB NAME only. A run number (run-3) or a date (10/13, 2026-10-13, 10/)
+  // narrows Jobs only, so those words are skipped here; every other word must be a substring of the job name. The result and time chips never touch Scheduled.
+  function rlScheduledMatches(card, query){
+    var name = String(card && card.job || "").toLowerCase();
+    var words = String(query || "").toLowerCase().replace(/[()]/g, "").split(/\s+/).filter(function(w){ return w; });
+    return words.every(function(w){
+      if(/^run-\d+$/.test(w) || (/^[\d\/-]+$/.test(w) && /[\/-]/.test(w))) return true;
+      return name.indexOf(w) !== -1;
+    });
+  }
   function rlModel(data, groups, filters, limits, sel, open){
     var active = filtersActive(filters);
+    var schedOnly = !!(filters && filters.scheduledOnly);
     var place = {};
     (data.jobs || []).forEach(function(j, i){ place[j.job] = { quiet: j.quiet === true, at: i }; });
     var cards = groups.slice().sort(function(a, b){
@@ -1504,10 +1516,11 @@
     return {
       running: data.runs.filter(function(r){ return r.live === true; }),
       needs: data.runs.filter(function(r){ return typeof r.needs === "string" && r.needs !== ""; }),
-      scheduled: data.scheduled || [],
+      scheduled: (data.scheduled || []).filter(function(c){ return rlScheduledMatches(c, filters && filters.search); }),
+      schedOnly: schedOnly,
       gaveUp: data.gaveUp || [],
-      jobs: cards.filter(function(c){ return !c.quiet; }),
-      quiet: quietCards,
+      jobs: schedOnly ? [] : cards.filter(function(c){ return !c.quiet; }),
+      quiet: schedOnly ? [] : quietCards,
       quietOpen: Object.prototype.hasOwnProperty.call(open, "__quiet") ? open.__quiet : quietCards.some(function(c){ return c.selected; }),
       limits: limits,
       noRows: data.runs.length === 0,
@@ -1545,7 +1558,7 @@
   }
   // Scheduled card (T Part 7): `[·] job  today 15:00` / `next in 3h · Every day at 15:00`, all from the server. A file trigger has no clock time:
   // `at` / `in` are null and nothing is made up. A click does what Running now does (rlJump to the job's HEAD run, `runId` from the server and
-  // scrolls to its job). A job with no run to open stays a plain box. Never filtered or searched.
+  // scrolls to its job). A job with no run to open stays a plain box. Drawn BELOW the search box (rlSchedHtml); the search and the \u25F7 chip narrow it by job name.
   function rlScheduledCardHtml(s){
     var body = '<span class="rl-l1"><span class="dot grey"></span><span class="rl-nm" title="' + escapeXml(s.job) + '">' + escapeXml(s.job) + '</span>' + rlRunTagHtml(s) +
       (s.at ? ' <span class="rl-rest">&middot; ' + escapeXml(s.at) + '</span>' : '') + '</span>' +
@@ -1553,16 +1566,24 @@
     if(typeof s.runId !== "string" || s.runId === "") return '<div class="rl-card" data-testid="rl-sched-' + escapeXml(s.job) + '">' + body + '</div>';
     return '<button class="rl-card" type="button" data-rl-jump="' + escapeXml(s.runId) + '" data-testid="rl-sched-' + escapeXml(s.job) + '">' + body + '</button>';
   }
-  // The sections above the filters, from ONE ordered list: the Scheduled section (PRD v1.99) is one more entry here after Needs you, plus one draw function.
+  // The sections above the search box, from ONE ordered list: only never-filtered sections live here (Scheduled is searched, so rlSchedHtml draws it below).
   function rlTopHtml(m){
     var sections = [
       { label: "Running now", items: m.running, draw: function(r){ return rlJumpCardHtml(r, false); } },
       { label: "Needs you", items: m.needs.concat(m.gaveUp || []), draw: function(r){ return r.pill ? rlGaveUpCardHtml(r) : rlJumpCardHtml(r, true); } },
-      { label: "Scheduled", items: m.scheduled, draw: rlScheduledCardHtml },
     ];
     return sections.map(function(s){
       return s.items.length ? rlSectHtml(s.label, s.items.length) + s.items.map(s.draw).join("") : "";
     }).join("");
+  }
+  // Scheduled sits BELOW the search box (PRD v1.106 Part 2). No match draws nothing, header included; with the \u25F7 chip pressed it says so in words.
+  function rlSchedHtml(m){
+    if(m.scheduled.length) return rlSectHtml("Scheduled", m.scheduled.length) + m.scheduled.map(rlScheduledCardHtml).join("");
+    return m.schedOnly ? '<div class="hint" data-testid="rl-sched-none">no scheduled job matches</div>' : "";
+  }
+  // the count line under the chips: only the \u25F7 view has one; "showing N scheduled job(s)". Empty otherwise.
+  function rlCountText(m){
+    return m.schedOnly ? "showing " + m.scheduled.length + " scheduled job" + (m.scheduled.length === 1 ? "" : "s") : "";
   }
   // a run card inside a job: `[sign] run-N  MM/DD HH:MM · model` / `word — why · $cost · wall`
   function rlRunCardHtml(r, selected, hit){
@@ -1622,6 +1643,7 @@
     return out + '</div></div>';
   }
   function rlJobsHtml(m){
+    if(m.schedOnly) return "";
     var h = "";
     if(m.jobs.length) h += rlSectHtml("Jobs", m.jobs.length, "· run in the last " + m.limits.quietDays + " days") + m.jobs.map(rlJobCardHtml).join("");
     if(m.quiet.length){
@@ -1660,9 +1682,14 @@
     var m = rlModel(rlData, groups, filters, rlData.limits, { runid: currentRunid }, rlOpen);
     var topEl = document.getElementById("rl-top");
     var listEl = document.getElementById("wf-list");
+    var schedEl = document.getElementById("rl-sched");
+    var countEl = document.getElementById("runs-filter-count");
+    var sched = rlSchedHtml(m);
     var top = rlTopHtml(m);
     var jobs = rlJobsHtml(m);
     if(top !== rlLast.top){ rlLast.top = top; withFocusPreserved(topEl, function(){ topEl.innerHTML = top; }); }
+    if(sched !== rlLast.sched){ rlLast.sched = sched; withFocusPreserved(schedEl, function(){ schedEl.innerHTML = sched; }); }
+    if(countEl && (rlCountText(m) !== "" || /^showing /.test(countEl.textContent || ""))) countEl.textContent = rlCountText(m);
     if(jobs !== rlLast.jobs){ rlLast.jobs = jobs; withFocusPreserved(listEl, function(){ listEl.innerHTML = jobs; }); }
     tickSince();
   }
@@ -1715,6 +1742,7 @@
     { group: "result", value: "\u2717", title: "fail", id: "res-fail", label: "&#10007;" },
     { group: "result", value: "?", title: "died", id: "res-died", label: "?" },
     { group: "result", value: "\u25B6", title: "running", id: "res-running", label: "&#9654;" },
+    { group: "view", value: "scheduled", title: "scheduled jobs only", id: "view-scheduled", label: "&#9719;", aria: "scheduled jobs only" },
     { group: "time", value: "7d", title: "last 7 days", id: "time-7d", label: "7d" },
     { group: "time", value: "30d", title: "last 30 days", id: "time-30d", label: "30d" },
     { group: "time", value: "all", title: "all time", id: "time-all", label: "all", pressed: true },
@@ -1728,7 +1756,7 @@
         '<div class="chips" role="group" aria-label="Filter">' +
           RL_CHIPS.map(function(c){
             if(c.clear) return '<button class="chip fchip" type="button" id="' + scope + '-filter-clear" data-testid="' + scope + '-filter-clear">clear</button>';
-            return '<button class="chip fchip" type="button" aria-pressed="' + (c.pressed ? 'true' : 'false') + '" data-filter-group="' + c.group + '" data-filter-value="' + escapeXml(c.value) + '" title="' + c.title + '" data-testid="chip-' + scope + '-' + c.id + '">' + c.label + '</button>';
+            return '<button class="chip fchip" type="button" aria-pressed="' + (c.pressed ? 'true' : 'false') + '" data-filter-group="' + c.group + '" data-filter-value="' + escapeXml(c.value) + '" title="' + c.title + '"' + (c.aria ? ' aria-label="' + c.aria + '"' : '') + ' data-testid="chip-' + scope + '-' + c.id + '">' + c.label + '</button>';
           }).join("") +
         '</div>' +
         '<div class="hint" id="' + scope + '-filter-count" data-testid="' + scope + '-filter-count"></div>' +
@@ -1769,7 +1797,7 @@
   function createFilterBar(opts){
     var scope = opts.scope;
     var storageKey = opts.storageKey;
-    var state = { checkTypes: [], results: [], time: "all", search: "" };
+    var state = { checkTypes: [], results: [], time: "all", search: "", scheduledOnly: false };
 
     function load(){
       try{
@@ -1782,6 +1810,7 @@
               results: Array.isArray(parsed.results) ? parsed.results : [],
               time: typeof parsed.time === "string" ? parsed.time : "all",
               search: typeof parsed.search === "string" ? parsed.search : "",
+              scheduledOnly: parsed.scheduledOnly === true,
             };
           }
         }
@@ -1796,6 +1825,7 @@
         var value = chip.getAttribute("data-filter-value");
         var active;
         if(group === "time"){ active = state.time === value; }
+        else if(group === "view"){ active = state.scheduledOnly === true; }
         else if(group === "checkType"){ active = state.checkTypes.indexOf(value) !== -1; }
         else { active = state.results.indexOf(value) !== -1; }
         chip.setAttribute("aria-pressed", active ? "true" : "false");
@@ -1812,6 +1842,8 @@
         var value = chip.getAttribute("data-filter-value");
         if(group === "time"){
           state.time = value; // single-select within time
+        } else if(group === "view"){
+          state.scheduledOnly = !state.scheduledOnly; // the \u25F7 chip: Scheduled only, a toggle
         } else if(group === "checkType"){
           var idx = state.checkTypes.indexOf(value);
           if(idx === -1) state.checkTypes.push(value); else state.checkTypes.splice(idx, 1);
@@ -1827,7 +1859,7 @@
     var clearBtn = document.getElementById(scope + "-filter-clear");
     if(clearBtn){
       clearBtn.addEventListener("click", function(){
-        state = { checkTypes: [], results: [], time: "all", search: "" };
+        state = { checkTypes: [], results: [], time: "all", search: "", scheduledOnly: false };
         paint();
         save();
         apply();
@@ -1859,7 +1891,7 @@
     onChange: function(){ paintRunsList(); },
   });
   function currentRunsFilters(){
-    return runsFilterBar ? runsFilterBar.getState() : { checkTypes: [], results: [], time: "all", search: "" };
+    return runsFilterBar ? runsFilterBar.getState() : { checkTypes: [], results: [], time: "all", search: "", scheduledOnly: false };
   }
 
   // item 4: phone-only "scroll the run view into view" on row select, and

@@ -566,11 +566,11 @@ test('item 5 + F-panel-chip-collision: ONE filter-bar component feeds the one ru
   assert.doesNotMatch(markup, /\[&#10003;\]/);
 });
 
-test('P9 v2 D.10: the chip order is a declared array, drawn in that order: D, R, ✓, ✗, ?, ▶, 7d, 30d, all, clear', () => {
+test('P9 v2 D.10: the chip order is a declared array, drawn in that order: D, R, ✓, ✗, ?, ▶, ◷, 7d, 30d, all, clear', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const filterBarHTML = loadFilterBarHTML(html);
   const labels = [...filterBarHTML('runs').matchAll(/<button class="chip fchip"[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]);
-  assert.deepEqual(labels, ['D', 'R', '&#10003;', '&#10007;', '?', '&#9654;', '7d', '30d', 'all', 'clear']);
+  assert.deepEqual(labels, ['D', 'R', '&#10003;', '&#10007;', '?', '&#9654;', '&#9719;', '7d', '30d', 'all', 'clear']);
   assert.match(html, /var RL_CHIPS = \[/);
 });
 
@@ -746,7 +746,7 @@ test('item 1: the search input exists in the shared filter bar for both scopes, 
   assert.match(markup, /id="runs-filter-search"/);
   assert.match(markup, /data-testid="runs-filter-search"/);
   // clear resets search to "" alongside the chip groups
-  assert.match(html, /state = \{ checkTypes: \[\], results: \[\], time: "all", search: "" \};/);
+  assert.match(html, /state = \{ checkTypes: \[\], results: \[\], time: "all", search: "", scheduledOnly: false \};/);
 });
 
 test('P9 v2 O item 5 (replaces D.11 "search jobs and runs…"): the Runs search placeholder is `job, run-23, or date 10/13` (words per am8)', () => {
