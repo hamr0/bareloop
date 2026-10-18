@@ -24,6 +24,22 @@ export const FACT_PART_FIELDS = Object.freeze(['source', 'facts', 'count']);
 /** a fact's name appears in the claim text bareguard scans for numbers, so it carries letters only (no digit can red the claim) */
 const NAME_RE = /^[A-Za-z][A-Za-z _-]{0,63}$/;
 
+/** the limits bareguard 0.24 puts on a money fact's lists (ruling #65), enforced here first so the red is ours and plain */
+export const MAX_CURRENCIES = 3;
+export const MAX_UNITS = 10;
+export const MAX_UNIT_CHARS = 100;
+const CURRENCY_SIGNS = ['$', '€', '£'];
+
+/**
+ * A money fact's `unit` / `currency` is ONE string (every spec signed before lists) or a non-empty list of them; a string is read exactly as a
+ * one-element list. Nothing is rewritten, so an old spec's bytes and hash stay as they were.
+ * @param {unknown} v @returns {string[]}
+ */
+export const asList = (v) => (Array.isArray(v) ? v.map(String) : (typeof v === 'string' ? [v] : []));
+
+/** @param {any} f a money fact @returns {string[]} every form the page writes the amount in: the units first (as R1L reads them), then the currency signs */
+export const moneyForms = (f) => [...asList(f.unit), ...asList(f.currency)];
+
 /** @param {unknown} v @returns {v is Record<string, any>} */
 const isRec = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 /** @param {unknown} v @returns {v is string} */
@@ -72,10 +88,27 @@ export function factShapeReds(part, w, red) {
       if (Object.hasOwn(f, 'aiProposal') && typeof f.aiProposal !== 'boolean') red('invalid-value', `${fw}.aiProposal`, 'true when the AI turned the person\'s words into this number');
       const has = (/** @type {string} */ k) => Object.hasOwn(f, k);
       if (f.shape === 'money') {
-        if (has('unit') === has('currency')) red('invalid-value', `${fw}.unit`, 'money names exactly one of unit (words the input writes after the amount, e.g. "US dollars") or currency ("$", "€" or "£")');
+        if (!has('unit') && !has('currency')) red('invalid-value', `${fw}.unit`, 'money names at least one of unit (words the input writes after the amount, e.g. "US dollars") or currency ("$", "€" or "£"); each may be one value or a list');
       } else if (has('unit') || has('currency')) red('invalid-value', `${fw}.${has('unit') ? 'unit' : 'currency'}`, 'only money has a unit or a currency');
-      if (has('unit') && !nonEmpty(f.unit)) red('invalid-value', `${fw}.unit`, 'a non-empty string copied from the input');
-      if (has('currency') && !['$', '€', '£'].includes(f.currency)) red('invalid-value', `${fw}.currency`, 'one of $ | € | £');
+      if (has('unit')) {
+        const us = f.unit;
+        if (Array.isArray(us) ? us.length === 0 || us.some((/** @type {unknown} */ u) => !nonEmpty(u)) : !nonEmpty(us)) red('invalid-value', `${fw}.unit`, 'a non-empty string copied from the input, or a non-empty list of them');
+        else {
+          const list = asList(us);
+          if (list.length > MAX_UNITS) red('invalid-value', `${fw}.unit`, `at most ${MAX_UNITS} units (${list.length} given)`);
+          else if (list.some((u) => u.length > MAX_UNIT_CHARS)) red('invalid-value', `${fw}.unit`, `a unit is at most ${MAX_UNIT_CHARS} characters`);
+          else if (new Set(list).size !== list.length) red('invalid-value', `${fw}.unit`, 'the units are not repeated');
+        }
+      }
+      if (has('currency')) {
+        const cs = f.currency;
+        if (Array.isArray(cs) ? cs.length === 0 || cs.some((/** @type {unknown} */ c) => !CURRENCY_SIGNS.includes(/** @type {string} */ (c))) : !CURRENCY_SIGNS.includes(cs)) red('invalid-value', `${fw}.currency`, 'one of $ | € | £, or a list of them');
+        else {
+          const list = asList(cs);
+          if (list.length > MAX_CURRENCIES) red('invalid-value', `${fw}.currency`, `at most ${MAX_CURRENCIES} currencies (${list.length} given)`);
+          else if (new Set(list).size !== list.length) red('invalid-value', `${fw}.currency`, 'the currencies are not repeated');
+        }
+      }
       if (f.shape === 'phrase') {
         if (!nonEmpty(f.phrase)) red('invalid-value', `${fw}.phrase`, 'the fixed words the quote must contain, copied from the input');
         for (const k of ['anchor', 'until', 'rule']) if (has(k)) red('invalid-value', `${fw}.${k}`, 'a phrase is fixed words the quote must contain; it has no anchor, until or rule');
@@ -112,7 +145,7 @@ export function factDecides(part) {
     if (f.shape === 'phrase') return { phrases: [f.phrase] };
     /** @type {Record<string, any>} */
     const d = { valueKind: f.shape };
-    if (f.shape === 'money') { if (f.unit !== undefined) d.unit = f.unit; else d.currency = f.currency; }
+    if (f.shape === 'money') { if (f.unit !== undefined) d.unit = f.unit; if (f.currency !== undefined) d.currency = f.currency; }
     if (f.anchor !== undefined) d.anchor = f.anchor;
     if (f.until !== undefined) d.until = f.until;
     if (f.rule) {
@@ -151,7 +184,7 @@ export function factClaims(part, results) {
 
 /** @param {unknown} n @param {string} shape @param {any} f @returns {string} one bound, as the person would say it */
 function sayBound(n, shape, f) {
-  if (shape === 'money') return f.unit !== undefined ? `${n} ${f.unit}` : `${f.currency}${n}`;
+  if (shape === 'money') return f.unit !== undefined ? `${n} ${asList(f.unit)[0]}` : `${asList(f.currency)[0]}${n}`;
   return String(n);
 }
 
@@ -173,7 +206,7 @@ export function factSentence(f, source) {
   const bits = [];
   if (f.shape === 'phrase') bits.push('phrase', `must say "${f.phrase}"`);
   else {
-    bits.push(f.shape === 'money' ? `money in ${f.unit !== undefined ? f.unit : f.currency}` : f.shape);
+    bits.push(f.shape === 'money' ? `money in ${moneyForms(f).join(' or ')}` : f.shape);
     if (f.rule) bits.push(ruleWords(f));
     else if (f.anchor === undefined) bits.push('as the quote writes it');
     if (f.anchor !== undefined) bits.push(f.until !== undefined ? `the words after "${f.anchor}" up to "${f.until}"` : `after "${f.anchor}"`);
@@ -190,7 +223,7 @@ export function factSentence(f, source) {
 export function factBrief(f) {
   if (f.shape === 'phrase') return `${f.name} — no value to write; the quote you copy must say "${f.phrase}"`;
   /** @type {string[]} */
-  const bits = [f.shape === 'money' ? `an amount in ${f.unit !== undefined ? f.unit : f.currency}` : `a ${f.shape}`];
+  const bits = [f.shape === 'money' ? `an amount in ${moneyForms(f).join(' or ')}` : `a ${f.shape}`];
   if (f.shape === 'text') bits[0] = 'words';
   if (f.anchor !== undefined) bits.push(f.until !== undefined ? `the words right after "${f.anchor}" up to "${f.until}"` : `right after "${f.anchor}"`);
   if (f.rule) bits.push(`must be ${ruleWords(f)}`);

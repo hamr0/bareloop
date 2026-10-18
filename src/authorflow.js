@@ -838,8 +838,8 @@ export const PARAM_SCHEMAS = Object.freeze({
             properties: {
               name: { type: 'string', minLength: 1, description: 'what the fact is called: letters and spaces only, no digits' },
               shape: { enum: ['money', 'number', 'date', 'time', 'phrase', 'text'], description: 'money / number / date / time may carry a rule; phrase = fixed words the quote must contain; text = words the quote holds, as it writes them' },
-              unit: { type: 'string', minLength: 1, description: 'money: the words the input writes after the amount, copied verbatim (or give currency instead)' },
-              currency: { enum: ['$', '€', '£'], description: 'money: the symbol the input writes before the amount (or give unit instead)' },
+              unit: { anyOf: [{ type: 'string', minLength: 1 }, { type: 'array', minItems: 1, maxItems: 10, uniqueItems: true, items: { type: 'string', minLength: 1 } }], description: 'money: the words the input writes after the amount, copied verbatim - one, or a list of up to 10 (give unit, currency, or both)' },
+              currency: { anyOf: [{ enum: ['$', '€', '£'] }, { type: 'array', minItems: 1, maxItems: 3, uniqueItems: true, items: { enum: ['$', '€', '£'] } }], description: 'money: the symbol the input writes before the amount - one, or a list of up to 3 (give unit, currency, or both)' },
               phrase: { type: 'string', minLength: 1, description: 'phrase only: the fixed words, copied verbatim from the input' },
               anchor: { type: 'string', minLength: 1, description: 'a label copied VERBATIM from the input that sits right before the value (picks the right one when a result holds several)' },
               until: { type: 'string', minLength: 1, description: 'text with an anchor: the label copied VERBATIM that ends the value' },
@@ -1433,6 +1433,9 @@ export const REQUIRED_FACTS_BRIEF = 'REQUIRED FACTS — what a line that finds, 
   + 'as the look gives it (the look\'s phrase facts become phrase facts with the same words), and say in "notes" when you used the input\'s '
   + 'words instead of the person\'s. A label (anchor) is PICKED from the labels the look found in the input, never typed; one that is not '
   + 'among them is refused at $0. What the look could not find is not checked: list it under "refused" in the person\'s words.\n'
+  + ' - A money fact names at least one of "unit" (the words the input writes after the amount) or "currency" (a sign: $, € or £), and may name both. Each is one value or a list: '
+  + 'at most 3 currencies and 10 units, none repeated, a unit at most 100 characters. A code like EUR is a unit (it is read after the number), never a currency. '
+  + 'Copy the forms the look gives for the fact, in its order (the first is the main one); a form the look does not give is refused at $0.\n'
   + ' - When one result holds several values of one kind (leaves / arrives, subtotal / total) give the fact an anchor, the label that sits right before the value you mean.\n'
   + ' - Set aiProposal true on a fact whose number you made out of their words.\n'
   + RUBRIC_RULES + '\n'

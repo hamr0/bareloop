@@ -7,6 +7,7 @@
 // page) is one space on both sides.
 
 import { labelOnList, normLabel, scanLabels } from './labelscan.js';
+import { asList } from './facts.js';
 
 const WS = /[\s   ]+/g;
 const escapeRe = (/** @type {string} */ s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -84,7 +85,9 @@ export function checkFactWords({ part, text, line, scan = scanLabels(text) }) {
         red('rubric-fact-phrase-rare', `${who}: the words ${JSON.stringify(f.phrase)} are in the input "${src}" only ${seen} time${seen === 1 ? '' : 's'}, but this line asks for ${n} results - each result's own quote must say them. Pick words every result says, or drop this check.`);
       }
     }
-    if (typeof f.unit === 'string' && countPhrase(text, f.unit) < 1) red('rubric-fact-word-missing', `${who}: the unit ${JSON.stringify(f.unit)} is not in the input "${src}". Copy the words the input really uses.`);
+    // a unit (one string, or every one of a list) must be found as whole words; a currency sign (each of a list) must be found as written
+    for (const u of asList(f.unit)) if (countPhrase(text, u) < 1) red('rubric-fact-word-missing', `${who}: the unit ${JSON.stringify(u)} is not in the input "${src}". Copy the words the input really uses.`);
+    for (const c of asList(f.currency)) if (countExact(text, c) < 1) red('rubric-fact-word-missing', `${who}: the currency ${JSON.stringify(c)} is not in the input "${src}". Copy the sign the input really uses.`);
   }
   return reds;
 }
