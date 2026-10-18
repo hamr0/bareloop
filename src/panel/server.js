@@ -2451,7 +2451,7 @@ function enrichPartsWithStageKind(parts, kindMeta, spec = null) {
     return {
       ...part,
       attempts,
-      ...(part.kind === 'step' ? { tries: triesOf(attempts, part.cutOffTry), marker: ACTOR_MARKER.model, tally: toolsTallyLine(part.byTool, part.blocked) } : {}),
+      ...(part.kind === 'step' ? (() => { const tries = triesOf(attempts, part.cutOffTry); return { tries, triesLine: triesLineOf(tries), marker: ACTOR_MARKER.model, tally: toolsTallyLine(part.byTool, part.blocked) }; })() : {}),
       ...(part.kind === 'door' && part.door ? { marker: ACTOR_MARKER.human, doorView: doorViewOf(part.door) } : {}),
     };
   });
@@ -2521,6 +2521,33 @@ export function checksLineOf(records, parts) {
   if (outerFailed) named.push('the outer close');
   const failed = run - passed;
   return `${run} run · ${passed} passed · ${failed} failed${named.length ? ` (${named.join(', ')})` : ''}`;
+}
+
+/** 1 -> "1st", 4 -> "4th", 12 -> "12th" @param {number} n */
+function ordinal(n) {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return `${n}th`;
+  return `${n}${({ 1: 'st', 2: 'nd', 3: 'rd' })[/** @type {1|2|3} */ (n % 10)] ?? 'th'}`;
+}
+
+/**
+ * The step card's extra line (PRD v1.106 Part 5 G): "5 tries · last try: 1 check passed, 1 failed", with the cut-off try named when there is one
+ * ("4 tries (the 4th cut off before its checks ran) · last try: no checks ran"). Words for what passed and failed, never a fraction. `null`
+ * when the step has no graded try (an old spine).
+ * @param {Array<{n: number, cutOff: boolean, passed: number, failed: number, ran: number}>} tries
+ * @returns {string|null}
+ */
+export function triesLineOf(tries) {
+  if (!Array.isArray(tries) || tries.length === 0) return null;
+  const last = tries[tries.length - 1];
+  const count = `${tries.length} ${tries.length === 1 ? 'try' : 'tries'}${last.cutOff ? ` (the ${ordinal(last.n)} ${CUT_OFF_WORDS})` : ''}`;
+  const checks = (/** @type {number} */ n) => `${n} ${n === 1 ? 'check' : 'checks'}`;
+  let lastWords;
+  if (last.cutOff || last.ran === 0) lastWords = 'no checks ran';
+  else if (last.failed === 0) lastWords = `${checks(last.passed)} passed`;
+  else if (last.passed === 0) lastWords = `${checks(last.failed)} failed`;
+  else lastWords = `${checks(last.passed)} passed, ${last.failed} failed`;
+  return `${count} · last try: ${lastWords}`;
 }
 
 /** tool kinds in the order the Audit tally lists them; anything else follows alphabetically */

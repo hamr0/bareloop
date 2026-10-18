@@ -2773,7 +2773,8 @@
           actorMarkHtml(part) +
         '</div>' +
         '<div class="step-meta" title="a part is one piece of the run (scout, plan, a step, replan, fix, judge); a call is one model round">' + line1Bits.join(" &middot; ") + '</div>' +
-        '<div class="step-meta">' + escapeXml(partLine2Text(box.part)) + '</div>';
+        '<div class="step-meta">' + escapeXml(partLine2Text(box.part)) + '</div>' +
+        (typeof part.triesLine === "string" ? '<div class="step-meta" data-testid="part-tries-' + idx + '">' + escapeXml(part.triesLine) + '</div>' : '');
       listEl.appendChild(card);
       var jumpToAudit = function(){
         document.getElementById("tab-audit").click();
