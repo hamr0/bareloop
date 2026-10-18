@@ -79,3 +79,27 @@ test('found-on-page on the eight REAL saved maps: every word the code kept is wr
     }
   }
 });
+
+// ── item 3: N2 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+test('N2: the label "at" is written many times inside one line of the real flights page, so it is dropped; "Departure time:" is written once per line, so it is kept', () => {
+  const map = { facts: [{ name: 'departure', from: 'rule 2', shape: 'time', words: ['at', 'Departure time:'] }] };
+  const r = applyPageRules(sfo.page, map, JOBS.flights);
+  assert.deepEqual(r.facts[0].words, ['Departure time:']);
+  assert.deepEqual(said(r.dropped), ['departure|at|n2']);
+});
+
+test('N2: a fact whose every label repeats inside a line is not kept - its drop says the labels went, then the fact', () => {
+  const map = { facts: [{ name: 'departure', from: 'rule 2', shape: 'time', words: ['at', 'on'] }] };
+  const r = applyPageRules(sfo.page, map, JOBS.flights);
+  assert.deepEqual(r.facts, []);
+  assert.deepEqual(said(r.dropped), ['departure|(fact)|no-label', 'departure|at|n2', 'departure|on|n2']);
+});
+
+test('N2 reads a LABEL that is followed by a value: a place or a phrase that repeats inside one line is kept (the rule is the value labels\')', () => {
+  const rep = sfo.page.split('\n').find((l) => (l.match(/International Airport/g) ?? []).length >= 2);
+  assert.ok(rep, 'the real page has a line that says "International Airport" twice (leaves ... arrives at ...)');
+  const r = applyPageRules(sfo.page, { facts: [{ name: 'airport', from: 'line 1', shape: 'phrase', words: ['International Airport'] }, { name: 'airport place', from: 'line 1', shape: 'place', words: ['International Airport'] }] }, JOBS.flights);
+  assert.deepEqual(r.facts.map((f) => f.words), [['International Airport'], ['International Airport']]);
+  assert.deepEqual(r.dropped, []);
+});

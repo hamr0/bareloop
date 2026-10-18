@@ -4,7 +4,7 @@
 // rules-v3-candidate.mjs; sha256 recorded in commit 0bcc5fe), with the OUT branches (R2, R2a, R2b, R2c, R3, R3U, V4, pageClaims) deleted.
 
 import { lineRules } from './rubricstep.js';
-import { countExact, countPhrase } from './factwords.js';
+import { countExact, countPhrase, squash } from './factwords.js';
 import { normLabel } from './labelscan.js';
 
 /**
@@ -35,6 +35,25 @@ export function tieOf(from, jobLines) {
   const out = { line: line ?? first };
   if (rule !== undefined && lineRules(jobLines.find((l) => l.n === out.line)).length >= rule) return { ...out, rule };
   return out;
+}
+
+/** @param {string} text @returns {string[]} the page's lines, white space squashed (the unit every per-line rule counts in) */
+export const linesOf = (text) => text.split('\n').map(squash);
+
+/**
+ * How many times a label occurs inside ONE page line, at most (plain indexOf on squashed lines, non-overlapping): the N2 measure.
+ * @param {string[]} lines @param {string} phrase @returns {number}
+ */
+function maxPerLine(lines, phrase) {
+  const p = squash(phrase).trim();
+  if (!p) return 0;
+  let max = 0;
+  for (const ln of lines) {
+    let n = 0;
+    for (let i = ln.indexOf(p); i !== -1; i = ln.indexOf(p, i + p.length)) n += 1;
+    if (n > max) max = n;
+  }
+  return max;
 }
 
 /** the symbols a currency may be (src/facts.js); a code like "EUR" is a word read after the number, so it is a unit */
@@ -88,6 +107,17 @@ export function applyPageRules(text, mapping, jobLines) {
       });
       pending.push({ f, kept, cur, uni });
     } else drop(f, undefined, 'bad-shape');
+  }
+
+  // ---- N2, per line: a label written 2+ times inside one page line cannot say which value is meant, so it is unusable. (R2 grow-left is OUT.) ----
+  const lines = linesOf(text);
+  for (const p of pending) {
+    if (!VALUE_SHAPES.includes(String(p.f.shape))) continue;
+    p.kept = p.kept.filter((w) => {
+      if (maxPerLine(lines, w) <= 1) return true;
+      drop(p.f, w, 'n2');
+      return false;
+    });
   }
 
   // ---- the kept facts, in the POC's order: places, phrases, then values ----
