@@ -117,8 +117,8 @@ export const AUTHOR_MAX_TOKENS = 32000;
 /** the one slot the model fills on an injected guard */
 export const FILL_MARKER = '<FILL IN>';
 
-/** P7 item 5 (fwdloop am24/25): the most questions the MACHINE keeps from the try-3 drafter. The drafter is never told this number. */
-export const MAX_QUESTIONS = 2;
+/** P7 item 5 (fwdloop am24/25): the most questions the MACHINE keeps from the try-3 drafter. The drafter is never told this number. PRD v1.107 Part 5b: three (hamr's ruling), shared with the code-forced early asks. */
+export const MAX_QUESTIONS = 3;
 
 /**
  * The model-visible words of the optional `questions` property — offered ONLY on the last drafting try and only after the
@@ -159,10 +159,10 @@ export function linesNamedByReds(reds, declaration, lineNums) {
  * The machine's keep-or-drop of the try-3 questions. Kept only when its line is one the previous try's reds named and its
  * text is non-blank, at most {@link MAX_QUESTIONS}; every drop comes back with its reason, for the draft's log.
  * @param {any} raw @param {number[]} failedLines
- * @returns {{kept: {line: number, question: string, rule?: number, source?: string}[], dropped: {reason: string, raw: any}[]}}
+ * @returns {{kept: {line: number, question: string, rule?: number, source?: string, ask?: 'reading'|'cant-check', reading?: string}[], dropped: {reason: string, raw: any}[]}}
  */
 export function normalizeQuestions(raw, failedLines) {
-  /** @type {{line: number, question: string, rule?: number, source?: string}[]} */
+  /** @type {{line: number, question: string, rule?: number, source?: string, ask?: 'reading'|'cant-check', reading?: string}[]} */
   const kept = [];
   /** @type {{reason: string, raw: any}[]} */
   const dropped = [];
@@ -177,6 +177,8 @@ export function normalizeQuestions(raw, failedLines) {
       line: q.line, question: redactSecrets(q.question.trim()),
       // PRD v1.106 Part 5 Q3: a code-forced question (the early look ask) names the `~` rule it is about and says so; a model's question has neither
       ...(Number.isInteger(q.rule) ? { rule: q.rule } : {}), ...(typeof q.source === 'string' ? { source: q.source } : {}),
+      // PRD v1.107 Part 5b: the kind of a code-forced ask, and (reading asks) the plain words `agree` writes as the `~` rule
+      ...(q.ask === 'reading' || q.ask === 'cant-check' ? { ask: q.ask } : {}), ...(q.ask === 'reading' && typeof q.reading === 'string' ? { reading: redactSecrets(q.reading) } : {}),
     });
   }
   return { kept, dropped };

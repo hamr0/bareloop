@@ -614,6 +614,16 @@ const boundSpellings = (b) => {
 };
 
 /**
+ * Is this rule bound in the words the person wrote? The ONE test for "a number the AI made" (`rubric-fact-unmarked`, the L3 settle, and
+ * the early ask of PRD v1.107 Part 5b all read it; never a second spelling).
+ * @param {unknown} b @param {string} said @returns {boolean}
+ */
+export const boundInWords = (b, said) => boundSpellings(b).some((sp) => said.includes(sp));
+
+/** @param {any} jl one job line @returns {string} the words the person wrote on it: the line and its `~` rules */
+export const wordsSaidOn = (jl) => `${jl.text ?? ''} ${lineRules(jl).join(' ')}`;
+
+/**
  * PART 1b, RF16 + RF17 — the rules that need the person's own job lines. Only a close built for REQUIRED FACTS is held to them (a
  * close with a fact part, or any part that says which `~` rules it carries out): an older Part 1a close is left as it was signed.
  *   - every `~` rule of every job line is carried out by a part (its number in the part's `rules`), or is listed in `refused` with
@@ -642,12 +652,12 @@ export function checkRubricRules(stages, { jobLines = null, refused = null, red 
     const fp = factPartOf(st.params);
     if (!fp || !Array.isArray(fp.facts)) continue;
     const jl = jobLines.find((l) => isRec(l) && l.n === st.params.step);
-    const said = jl ? `${jl.text ?? ''} ${lineRules(jl).join(' ')}` : null;
+    const said = jl ? wordsSaidOn(jl) : null;
     fp.facts.forEach((/** @type {any} */ f, /** @type {number} */ j) => {
       if (!isRec(f) || !isRec(f.rule)) return;
       const w = `stages[${i}].params.parts[${st.params.parts.indexOf(fp)}].facts[${j}]`;
       const bounds = f.rule.op === 'between' ? [f.rule.lo, f.rule.hi] : [f.rule.value];
-      if (said !== null && !f.aiProposal && bounds.some((b) => !boundSpellings(b).some((sp) => said.includes(sp)))) {
+      if (said !== null && !f.aiProposal && bounds.some((b) => !boundInWords(b, said))) {
         red('rubric-fact-unmarked', w, `line ${st.params.step}: the limit on fact "${f.name}" (${bounds.join(' to ')}) is not in the words the person wrote, so it is the AI's own number. Set "aiProposal": true on that fact so the card says "AI's proposal — check it". Nothing spent.`, { line: st.params.step });
       }
       if (f.aiProposal && f.shape === 'time' && f.rule.op !== 'between') {
@@ -681,12 +691,12 @@ export function settlePersonsWords(declaration, jobLines) {
     const jl = jobLines.find((l) => isRec(l) && l.n === st.params.step);
     if (!fp || !Array.isArray(fp.facts) || !jl) return st;
     const rules = lineRules(jl);
-    const said = `${jl.text ?? ''} ${rules.join(' ')}`;
+    const said = wordsSaidOn(jl);
     const ranges = rules.filter((r) => !NEGATING_RE.test(r)).map((r) => TIME_RANGE_RE.exec(r)).filter((m) => m !== null);
     const proposed = fp.facts.filter((/** @type {any} */ f) => isRec(f) && f.aiProposal === true && f.shape === 'time' && isRec(f.rule) && f.rule.op === 'between');
     const facts = fp.facts.map((/** @type {any} */ f) => {
       if (!isRec(f) || !isRec(f.rule) || f.aiProposal !== true) return f;
-      const own = (/** @type {unknown[]} */ bounds) => bounds.every((b) => boundSpellings(b).some((sp) => said.includes(sp)));
+      const own = (/** @type {unknown[]} */ bounds) => bounds.every((b) => boundInWords(b, said));
       const bounds = f.rule.op === 'between' ? [f.rule.lo, f.rule.hi] : [f.rule.value];
       const { aiProposal: _drop, ...rest } = f;
       if (own(bounds)) return rest;

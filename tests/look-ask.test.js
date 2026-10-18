@@ -43,9 +43,9 @@ test('ruleQuestions: only a look entry that names a ~ rule becomes a question, w
 });
 
 test('the existing caps apply: at most MAX_QUESTIONS are kept, each on a line the look named', () => {
-  const lines = [1, 2, 3].map((n) => ({ n, text: `l${n}`, rule: 'r', rules: ['r'] }));
-  const cands = ruleQuestions([1, 2, 3].map((n) => ({ line: n, rule: 1, words: 'w', why: 'y' })), lines);
-  const kept = normalizeQuestions(cands, [1, 2, 3]);
+  const lines = [1, 2, 3, 4].map((n) => ({ n, text: `l${n}`, rule: 'r', rules: ['r'] }));
+  const cands = ruleQuestions([1, 2, 3, 4].map((n) => ({ line: n, rule: 1, words: 'w', why: 'y' })), lines);
+  const kept = normalizeQuestions(cands, [1, 2, 3, 4]);
   assert.equal(kept.kept.length, MAX_QUESTIONS);
   assert.equal(kept.dropped.length, 1);
 });
@@ -86,7 +86,7 @@ test('authorCloseForJob: the early ask happens once, before the plan and the dra
   assert.equal(r.ok, true, JSON.stringify(r.reds ?? r.refusal));
   assert.deepEqual(order.filter((x) => ['lookFn', 'ask', 'authorFn'].includes(x)), ['lookFn', 'ask', 'authorFn'], 'look, then the one early ask, then the draft');
   assert.deepEqual(asked.questions.map((q) => q.line), [1]);
-  assert.match(asked.questions[0].question, /^Your line 1 says "one per week"\. I found no word on the page for it\. Check it how\?/);
+  assert.match(asked.questions[0].question, /^Your line 1 says "one per week"\. I can't check this on the page\. Drop it\?/);
   assert.deepEqual([asked.questions[0].rule, asked.questions[0].source], [2, 'look'], 'rule 1 is tied to a kept page word, so only rule 2 is asked');
   assert.equal(asked.confirmed, null);
   assert.match(seen.answers[1], /every Monday/, 'the answer reaches the drafter as a ~ rule');
@@ -125,7 +125,7 @@ test('the panel: the early ask goes through the ordinary ask path, required with
   const until = async (fn, ms = 8000) => { const t0 = Date.now(); while (!fn() && Date.now() - t0 < ms) await new Promise((r) => { setTimeout(r, 10); }); return fn(); };
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'), `${session.state.phase} / ${session.state.error}`);
   const said = () => session.state.messages.filter((/** @type {any} */ m) => m.role === 'bot').at(-1).text;
-  assert.match(said(), /about job line 1: Your line 1 says "one per week"\. I found no word on the page for it\./);
+  assert.match(said(), /about job line 1: Your line 1 says "one per week"\. I can't check this on the page\./);
   assert.equal(legs.length, 0, 'asked at once: nothing was drafted yet');
   session.send('   ');
   assert.ok(await until(() => session.state.messages.some((/** @type {any} */ m) => /An answer is needed/.test(m.text))));

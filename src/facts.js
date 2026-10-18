@@ -52,7 +52,7 @@ export function factPartOf(params) {
 }
 
 /** @param {any} v @returns {boolean} a rule bound has the type its shape needs: a number for number/money, a string for date/time */
-const boundOk = (/** @type {string} */ shape, /** @type {unknown} */ v) => (shape === 'number' || shape === 'money' ? typeof v === 'number' && Number.isFinite(v) : typeof v === 'string' && v !== '');
+export const boundOk = (/** @type {string} */ shape, /** @type {unknown} */ v) => (shape === 'number' || shape === 'money' ? typeof v === 'number' && Number.isFinite(v) : typeof v === 'string' && v !== '');
 
 /**
  * The SHAPE of a `fact` part (what it may carry), pushed as reds in the same form `rubricStepShapeReds` uses. Whether the
@@ -189,7 +189,7 @@ function sayBound(n, shape, f) {
 }
 
 /** @param {any} f a fact with a rule @returns {string} the rule in words, e.g. "at most 450 US dollars" */
-function ruleWords(f) {
+export function ruleWords(f) {
   const r = f.rule;
   return r.op === 'between' ? `between ${sayBound(r.lo, f.shape, f)} and ${sayBound(r.hi, f.shape, f)}`
     : `${{ lt: 'under', lte: 'at most', gt: 'over', gte: 'at least' }[/** @type {'lt'|'lte'|'gt'|'gte'} */ (r.op)]} ${sayBound(r.value, f.shape, f)}`;

@@ -53,7 +53,7 @@ import { closeJudges } from '../kinds.js';
 import { RUBRIC_LANG } from '../authoring.js';
 import { rubricGoal, reconcileRubricPlan } from '../rubricstep.js';
 import { redactSecrets } from '../validate.js';
-import { isLeaveUnchecked } from '../pagemap.js';
+import { isDropIt, isAgree } from '../pagemap.js';
 import { tallyCalls } from '../text.js';
 import { writeDraftSpend, appendDraftLog } from '../draftspend.js';
 import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, draftStopText, redsRecord, declarationRecord, calibrationSummary, tryRefusedText } from '../authorreadout.js';
@@ -1038,7 +1038,7 @@ export function createSession(card, deps = {}) {
     // ask path as every other (the chat box + Send); the answer is REQUIRED (a blank one asks again, there is no skip) and is
     // added WORD FOR WORD as a `~` rule on the job line it names — never rewritten. The lines are mutated in place, so the
     // signed `jobLines`, the answers text and the plan card all read the same words.
-    const answerQuestions = async (/** @type {{questions: {line: number, question: string, rule?: number, source?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}} */ o) => {
+    const answerQuestions = async (/** @type {{questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}} */ o) => {
       if (o.dropped.length) appendDraftLog(outDir, { kind: 'questions-dropped', no: Math.max(0, state.steps.length - 1), dropped: o.dropped, at: new Date().toISOString() });
       const total = o.questions.length;
       /** @type {{line: number, rule: number}[]} */
@@ -1054,9 +1054,11 @@ export function createSession(card, deps = {}) {
           if (text) break;
           say('bot', 'An answer is needed here — there is no skip. Type it in the box below and press Send.');
         }
-        // PRD v1.106 Part 5 Q3: a code-forced look question about a `~` rule can be answered "leave it Not checked" - then NO rule is added; the
-        // caller puts that rule on the look's Not checked list
-        if (q.source === 'look' && Number.isInteger(q.rule) && isLeaveUnchecked(text)) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); continue; }
+        // PRD v1.107 Part 5b: a code-forced look question about a `~` rule. A can't-check ask answered "drop it" adds NO rule; the caller puts that
+        // rule on the look's Not checked list. A reading ask answered "agree" adds the code's reading, in plain words, as the `~` rule (so the
+        // bound is now the person's own words); anything else typed is the person's own rule, word for word.
+        if (q.source === 'look' && q.ask === 'reading' && typeof q.reading === 'string' && isAgree(text)) text = q.reading;
+        if (q.source === 'look' && q.ask === 'cant-check' && Number.isInteger(q.rule) && isDropIt(text)) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); continue; }
         const line = jobLines.find((l) => l.n === q.line);
         if (line) { line.rule = line.rule ? `${line.rule}; ${text}` : text; line.rules.push(text); }
       }

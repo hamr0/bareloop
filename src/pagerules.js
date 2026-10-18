@@ -4,14 +4,15 @@
 // rules-v3-candidate.mjs; sha256 recorded in commit 0bcc5fe), with the OUT branches (R2, R2a, R2b, R2c, R3, R3U, V4, pageClaims) deleted.
 
 import { lineRules } from './rubricstep.js';
-import { MAX_CURRENCIES, MAX_UNITS, MAX_UNIT_CHARS } from './facts.js';
+import { MAX_CURRENCIES, MAX_UNITS, MAX_UNIT_CHARS, FACT_OPS, boundOk } from './facts.js';
 import { countExact, countPhrase, squash } from './factwords.js';
 import { normLabel } from './labelscan.js';
 
 /**
- * @typedef {{name: string, from?: string, shape: string, words?: string[], currency?: string[], unit?: string[]}} MapFact the AI's map, one fact
+ * @typedef {{op: string, value?: string|number, lo?: string|number, hi?: string|number}} Reading what a `~` rule means as a limit (PRD v1.107 Part 5b): the same shape as a signed fact rule
+ * @typedef {{name: string, from?: string, shape: string, words?: string[], currency?: string[], unit?: string[], reading?: Reading}} MapFact the AI's map, one fact
  * @typedef {{facts: MapFact[]}} PageMap
- * @typedef {{line: number, name: string, shape: string, from: string, words: string[], unit?: string[], currency?: string[], forRule?: number}} KeptFact
+ * @typedef {{line: number, name: string, shape: string, from: string, words: string[], unit?: string[], currency?: string[], forRule?: number, reading?: Reading}} KeptFact
  *   `words` = what the page proves: the labels of a money/number/time fact, or the alternative phrases of a phrase fact (a place is a phrase)
  * @typedef {{line: number, rule?: number, fact: string, word?: string, reason: string, other?: string}} Dropped  `other` = what the drop is compared to: the first label (R1), the primary form (R1L), the fact it would have repeated (S1)
  */
@@ -36,6 +37,18 @@ export function tieOf(from, jobLines) {
   const out = { line: line ?? first };
   if (rule !== undefined && lineRules(jobLines.find((l) => l.n === out.line)).length >= rule) return { ...out, rule };
   return out;
+}
+
+/**
+ * Is this a legal `reading` for a fact of this shape? Only a time or money fact carries one, with the op set and the bound types of a signed
+ * fact rule (src/facts.js): no other key, no missing bound. A malformed one makes the whole map answer malformed (no repair).
+ * @param {unknown} shape @param {unknown} r @returns {boolean}
+ */
+export function validReading(shape, r) {
+  if (shape !== 'time' && shape !== 'money') return false;
+  if (!isRec(r) || !FACT_OPS.includes(r.op)) return false;
+  const keys = Object.keys(r).sort().join();
+  return r.op === 'between' ? keys === 'hi,lo,op' && boundOk(shape, r.lo) && boundOk(shape, r.hi) : keys === 'op,value' && boundOk(shape, r.value);
 }
 
 /** @param {string} text @returns {string[]} the page's lines, white space squashed (the unit every per-line rule counts in) */
@@ -267,6 +280,7 @@ export function applyPageRules(text, mapping, jobLines) {
       if (p.cur.length) out.currency = [...p.cur];
     }
     if (t.rule !== undefined) out.forRule = t.rule;
+    if (validReading(out.shape, p.f.reading)) out.reading = /** @type {Reading} */ ({ ...p.f.reading });
     return out;
   };
   for (const kind of ['place', 'phrase', 'value']) {

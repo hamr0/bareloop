@@ -2530,17 +2530,17 @@ const greenDecl = (/** @type {string} */ note) => {
 const Q = (/** @type {number} */ line, /** @type {string} */ question) => ({ line, question });
 const offeredAt = (/** @type {any[]} */ calls) => calls.map((c) => Boolean(c.tools[0]?.parameters?.properties?.questions));
 
-test('P7 item 5 (fail-first): tries 1 and 2 both fail validation -> ONLY try 3 is offered `questions`; the machine keeps 2 on a failed line, drops the rest and logs them; nothing from try 3 is measured', async () => {
+test('P7 item 5 (fail-first): tries 1 and 2 both fail validation -> ONLY try 3 is offered `questions`; the machine keeps 3 on a failed line, drops the rest and logs them; nothing from try 3 is measured', async () => {
   const { generate, calls } = scriptGenerate([
     { declaration: redDecl('a') }, { declaration: redDecl('b') },
-    { declaration: { ...redDecl('c'), questions: [Q(2, 'what does tidy up mean?'), Q(9, 'about a line that does not exist'), Q(2, 'second on line 2'), Q(2, 'third on line 2'), Q(2, '   ')] } },
+    { declaration: { ...redDecl('c'), questions: [Q(2, 'what does tidy up mean?'), Q(9, 'about a line that does not exist'), Q(2, 'second on line 2'), Q(2, 'third on line 2'), Q(2, 'fourth on line 2'), Q(2, '   ')] } },
   ]);
   const seed = scriptSeedRead();
   const r = await authorClose({ ...baseArgs(), generate, seedReadFn: seed.fn, jobLines: JOB2, offerQuestions: true });
   assert.deepEqual(offeredAt(calls), [false, false, true], 'try 1 and try 2 carry no way to ask; only try 3 does');
   assert.equal(r.stop, 'questions-open');
   assert.equal(r.ok, false);
-  assert.deepEqual(r.questions, [Q(2, 'what does tidy up mean?'), Q(2, 'second on line 2')], 'two kept, in order');
+  assert.deepEqual(r.questions, [Q(2, 'what does tidy up mean?'), Q(2, 'second on line 2'), Q(2, 'third on line 2')], 'three kept, in order');
   const log = r.iterations[2];
   assert.deepEqual(log.droppedQuestions.map((/** @type {any} */ d) => d.reason).sort(), [
     "beyond the machine's limit", 'blank question', "line 9 is not a line the previous try's checks failed on",
@@ -2593,7 +2593,7 @@ test('P7 item 5: the schema carries `questions` only when asked for, the propert
   assert.equal(declarationSchema(undefined, { questions: true }).properties.questions.description, QUESTIONS_DESCRIPTION);
   assert.equal(JSON.stringify(declarationSchema()), JSON.stringify(declarationSchema(undefined, { questions: false })), 'absent = byte-identical');
   assert.doesNotMatch(QUESTIONS_DESCRIPTION, /\d|\b(one|two|three|four|five|both|single|pair|couple|few|several|up to|at most)\b/i, 'the drafter is never told a number');
-  assert.equal(MAX_QUESTIONS, 2);
+  assert.equal(MAX_QUESTIONS, 3);
   const reds = [
     { code: 'job-line-uncovered', path: 'stages', detail: 'job line 3 has no stage and no refusal' },
     { code: 'invalid-value', path: 'stages[1].fromLine', detail: 'stage "t" has fromLine [2, 4]' },

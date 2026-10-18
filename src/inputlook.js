@@ -150,7 +150,7 @@ export function lookPrompt({ jobLines, labels, lists }) {
     + `Report only through ${LOOK_REPORT_TOOL}.`;
 }
 
-/** @typedef {{line: number, name: string, shape: string, source: string, label?: string, labelId?: string, value?: string, phrase?: string, example: string, rule?: any, aiProposal?: boolean, forRule?: number,
+/** @typedef {{line: number, name: string, shape: string, source: string, label?: string, labelId?: string, value?: string, phrase?: string, example: string, rule?: any, aiProposal?: boolean, forRule?: number, reading?: import('./pagerules.js').Reading,
  *   words?: string[], labels?: string[], unit?: string[], currency?: string[]}} LookFact  `words` / `labels` / `unit` / `currency`: what the page-word map kept (idea A core) */
 /** @typedef {{line: number, rule?: number, words?: string, why: string}} LookNotFound */
 /** @typedef {{facts: LookFact[], prose: {line: number, text?: string}[], notFound: LookNotFound[], dropped?: import('./pagerules.js').Dropped[]}} LookReport */
@@ -171,6 +171,7 @@ export function lookFactOf(k, source) {
   if (k.unit) out.unit = [...k.unit];
   if (k.currency) out.currency = [...k.currency];
   if (k.forRule !== undefined) out.forRule = k.forRule;
+  if (k.reading) out.reading = { ...k.reading };
   return out;
 }
 

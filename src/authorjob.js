@@ -113,12 +113,12 @@ import {
 } from './authoring.js';
 import {
   QUESTION_SETS, questionsFor, requiredAnswersFor, authorClose, makeCostBook,
-  runConfirmTurn, LANGUAGE_PICK_FIELD, normalizeQuestions,
+  runConfirmTurn, LANGUAGE_PICK_FIELD, normalizeQuestions, MAX_QUESTIONS,
 } from './authorflow.js';
 import { thinkingCallOptions, assertThinkingMode } from './thinking.js';
 import { pageContentChars } from './pagefetch.js';
 import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
-import { runPageMap, askableFromLook } from './pagemap.js';
+import { runPageMap, askableFromLook, tooManyAsksText } from './pagemap.js';
 import {
   DECLARED_GAP_PREFIX, DECLARED_GENRES, guardNames, isDeclaredClose, validateCloseDecl,
 } from './declaredclose.js';
@@ -433,7 +433,7 @@ function composerRefusal(reds) {
  *   authorFn?: Function, authorOpts?: object, writeScope?: string[]|null,
  *   signerFix?: Function|any, proposeFn?: Function, compileOpts?: object,
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
- *   answerQuestions?: ((o: {questions: {line: number, question: string, rule?: number, source?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}) =>
+ *   answerQuestions?: ((o: {questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}) =>
  *     Promise<{jobLines: {n: number, text: string, rule?: string}[], answers: Record<string|number, any>, left?: {line: number, rule: number}[]}|null>)|null,
  *   confirmGenerate?: Function|null, isRepo?: boolean,
  *   langResult?: {kind: string, candidates?: string[], [k: string]: any}|null}} o
@@ -645,13 +645,18 @@ export async function authorCloseForJob({
     onPhase('scout-done', { state: survey?.state ?? null, facts: Object.keys(survey?.facts ?? {}).length });
   }
 
-  // PRD v1.106 Part 5 Q3 (T2): CODE forces the early ask, from the look's own result, before any plan or draft is paid for: every `~` rule the map
-  // could not tie to a kept page word is asked about (src/pagemap.js `askableFromLook`; the model never decides whether to ask). The question gate
-  // is the existing one (`answerQuestions`: answer required, no skip, the answer becomes a `~` rule on its line; `normalizeQuestions` keeps at most
-  // MAX_QUESTIONS). The answer "leave it Not checked" adds no rule: the rule is put on the look's own dropped list, so it reads Not checked on the
+  // PRD v1.106 Part 5 Q3 (T2) + v1.107 Part 5b: CODE forces the early asks, from the look's own result, before any plan or draft is paid for
+  // (src/pagemap.js `askableFromLook`; the model never decides whether to ask). Two kinds: a READING the code made of a `~` rule whose limit the
+  // person did not write (agree / type their own), and a rule the page cannot check (drop it / type how). More than MAX_QUESTIONS asks is a job to
+  // rewrite, not a questionnaire: nothing is asked, nothing more is spent, and the stop lists every ask with its reading. The question gate is the
+  // existing one (`answerQuestions`: answer required, no skip, the answer becomes a `~` rule on its line; `normalizeQuestions` keeps at most
+  // MAX_QUESTIONS). The answer "drop it" adds no rule: the rule is put on the look's own dropped list, so it reads Not checked on the
   // confirm card, in the signed plan and in the drafter's block, and can never be written back as a check.
   if (answerQuestions && lang === RUBRIC_LANG && survey?.state === 'PRESENT' && survey.facts?.look && typeof survey.facts.look === 'object' && Array.isArray(jobLines)) {
     const candidates = askableFromLook(survey.facts.look, jobLines);
+    if (candidates.length > MAX_QUESTIONS) {
+      return { ...base, interview, verdictType: picked, seedRef: seed, reds: [{ code: 'look-asks-too-many', path: 'jobLines', detail: tooManyAsksText(candidates) }], stop: 'look-asks-too-many', cost: null };
+    }
     const kept = normalizeQuestions(candidates, [...new Set(candidates.map((q) => q.line))]);
     if (kept.kept.length > 0) {
       onPhase('look-ask', { questions: kept.kept.length });

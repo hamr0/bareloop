@@ -8,7 +8,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSession } from '../src/panel/authorsession.js';
 import { readDraftSteps, DRAFT_LOG_FILE } from '../src/draftspend.js';
-import { askableFromLook, parseMapAnswer, isLeaveUnchecked, LEAVE_UNCHECKED } from '../src/pagemap.js';
+import { askableFromLook, parseMapAnswer, isDropIt, DROP_IT } from '../src/pagemap.js';
 import { applyPageRules } from '../src/pagerules.js';
 import { normalizeQuestions, MAX_QUESTIONS } from '../src/authorflow.js';
 import { dropRows, dropLine } from '../src/pagedropwords.js';
@@ -45,7 +45,7 @@ test('T2: a rule no kept fact carries is asked (line, rule, code-owned words); t
   const qs = askableFromLook(untied, spec.jobLines);
   assert.equal(qs.length, 1);
   assert.deepEqual([qs[0].line, qs[0].rule, qs[0].source], [1, 3, 'look']);
-  assert.equal(qs[0].question, `Your line 1 says "nonstop". I found no word on the page for it. Check it how? Say it another way or give the numbers (your answer is added as a new ~ rule on line 1), or answer "${LEAVE_UNCHECKED}".`);
+  assert.equal(qs[0].question, `Your line 1 says "nonstop". I can't check this on the page. Drop it? Answer "${DROP_IT}", or type how to check it (your answer is added as a new ~ rule on line 1).`);
   const twice = [{ n: 1, text: 'x', rule: 'nonstop; nonstop', rules: ['nonstop', 'Nonstop'] }];
   assert.equal(askableFromLook({ facts: [] }, twice).length, 1, 'the same guardrail on the same line is asked once');
   assert.deepEqual(askableFromLook({ facts: [] }, [{ n: 1, text: 'x' }]), [], 'a line with no ~ rule asks nothing');
@@ -58,15 +58,15 @@ test('T2: at most MAX_QUESTIONS are asked, the rest are logged as dropped, never
   assert.equal(cands.length, 4);
   const kept = normalizeQuestions(cands, [1, 2, 3, 4]);
   assert.equal(kept.kept.length, MAX_QUESTIONS);
-  assert.equal(kept.dropped.length, 2);
-  assert.deepEqual(kept.kept.map((q) => [q.line, q.rule, q.source]), [[1, 1, 'look'], [2, 1, 'look']], 'line order, rule and source survive the cap');
+  assert.equal(kept.dropped.length, 1);
+  assert.deepEqual(kept.kept.map((q) => [q.line, q.rule, q.source]), [[1, 1, 'look'], [2, 1, 'look'], [3, 1, 'look']], 'line order, rule and source survive the cap');
 });
 
-test('isLeaveUnchecked: the exact words, any case, a closing full stop; nothing else', () => {
-  assert.equal(isLeaveUnchecked('Leave it not checked.'), true);
-  assert.equal(isLeaveUnchecked('  leave it Not checked '), true);
-  assert.equal(isLeaveUnchecked('leave it'), false);
-  assert.equal(isLeaveUnchecked('please leave it Not checked, thanks'), false);
+test('isDropIt: the exact words, any case, a closing full stop; nothing else', () => {
+  assert.equal(isDropIt('Drop it.'), true);
+  assert.equal(isDropIt('  drop IT '), true);
+  assert.equal(isDropIt('drop'), false);
+  assert.equal(isDropIt('please drop it, thanks'), false);
 });
 
 /** a panel session over a look with one untied rule; the confirm model raises one question of its own */
@@ -91,7 +91,7 @@ function sessionWith({ lookFacts, confirmQuestions }) {
   return { session, legs, sessionDir, survey };
 }
 
-test('Q1 + Q3: the early ask and a confirm question are each recorded as a `human` row (source, question, answer); a blank answer leaves no row; a secret is masked; "leave it Not checked" adds no rule and lands on the look\'s Not checked list', async () => {
+test('Q1 + Q3: the early ask and a confirm question are each recorded as a `human` row (source, question, answer); a blank answer leaves no row; a secret is masked; "drop it" adds no rule and lands on the look\'s Not checked list', async () => {
   const secret = `sk-ant-api03-${'a'.repeat(40)}`;
   assert.notEqual(redactSecrets(secret), secret, 'precondition: the repo\'s own inventory masks this shape');
   const { session, legs, sessionDir, survey } = sessionWith({ lookFacts: [], confirmQuestions: ['Which airport do you mean?'] });
@@ -100,7 +100,7 @@ test('Q1 + Q3: the early ask and a confirm question are each recorded as a `huma
   session.send('   ');                                 // blank: re-asks, records nothing
   assert.ok(await until(() => session.state.messages.some((m) => /An answer is needed/.test(m.text))));
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'));
-  session.send('Leave it Not checked.');               // T2: no new rule
+  session.send('Drop it.');                            // T2: no new rule
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'), 'then the plan is confirmed as usual');
   session.signPrepare();
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer' && session.state.pendingAsk.source === 'confirm'), 'the confirm card\'s own question');
@@ -113,7 +113,7 @@ test('Q1 + Q3: the early ask and a confirm question are each recorded as a `huma
   assert.equal(humans.length, 2, 'two answered questions, the blank answer left nothing');
   assert.deepEqual(humans.map((h) => [h.source, h.line ?? null]), [['look', 1], ['confirm', null]]);
   assert.match(humans[0].question, /^Your line 1 says "one per week"\./);
-  assert.equal(humans[0].answer, 'Leave it Not checked.');
+  assert.equal(humans[0].answer, 'Drop it.');
   assert.match(humans[1].answer, /^LAX, and my key is \[REDACTED/);
   // the steps fold them in under the step that was running
   const steps = readDraftSteps(sessionDir());

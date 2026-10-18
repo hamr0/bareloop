@@ -662,6 +662,11 @@ const SCOUT_REASON_RE = /^the survey is [^(]*\((.*)\) — an absent facts/s;
  */
 export function draftStopText({ stop, reds = null, refusal = null, spend = null, wholeJob = false }) {
   const spent = spendText(spend);
+  // PRD v1.107 Part 5b: too many early asks - the code-owned list (every ask and its reading) is the whole message, quoted in full
+  if (stop === 'look-asks-too-many') {
+    const detail = (Array.isArray(reds) ? reds : []).find((r) => r?.code === 'look-asks-too-many')?.detail;
+    if (detail) return `${redactSecrets(String(detail))}\nSpent so far: ${spent ?? 'unknown'}.`;
+  }
   /** @type {Record<string, string>} */
   const heads = {
     'provider-red': 'The AI provider failed before a usable plan came back — a connection or service fault, not a problem with your job.',
