@@ -2779,7 +2779,11 @@
   // ONE spelling of a step's state: its dot + the bold state word — read by the Run tab's step cards AND the Audit tab's grouped rows
   function stepStateHTML(box, testid){
     var cls = box.state === "done" ? "green" : (box.state === "stopped" ? (box.status && box.status.sign === "\u25A0" ? "stopped" : "red") : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
-    return '<span class="step-state" data-testid="' + testid + '"><span class="dot ' + cls + (cls === "amber" ? " pulse" : "") + '"></span><b class="st-word">' + escapeXml(boxStatusWord(box)) + '</b></span>';
+    return stateDotHTML(cls, boxStatusWord(box), testid);
+  }
+  // ONE spelling of the dot + bold word every state header wears (part headers and the schedule header).
+  function stateDotHTML(cls, word, testid){
+    return '<span class="step-state" data-testid="' + testid + '"><span class="dot ' + cls + (cls === "amber" ? " pulse" : "") + '"></span><b class="st-word">' + escapeXml(word) + '</b></span>';
   }
   // build item C: Audit tab attempt row -> its rounds (server-built,
   // lazy-fetched on expand via /api/runs/:runid/rounds?part=<i>&attempt=<n>).
@@ -3197,7 +3201,7 @@
       gBtn.className = "btn audit-part-toggle";
       gBtn.setAttribute("aria-expanded", "false");
       gBtn.setAttribute("data-testid", "audit-schedule-toggle");
-      var secHead = function(open){ return (open ? "\u25BE " : "\u25B8 ") + "[" + glyphSpan(sec.sign) + "] " + escapeXml(sec.word) + " " + escapeXml(sec.title) + " &middot; " + escapeXml(sec.head); };
+      var secHead = function(open){ return (open ? "\u25BE " : "\u25B8 ") + stateDotHTML(glyphClass(sec.sign), sec.word, "audit-schedule-state") + " " + escapeXml(sec.title) + " &middot; " + escapeXml(sec.head); };
       gBtn.innerHTML = secHead(false);
       var gBody = document.createElement("div");
       gBody.className = "audit-part-body";
