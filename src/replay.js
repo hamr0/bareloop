@@ -1692,16 +1692,20 @@ function money2(n) {
  * @param {boolean|null} [draftSpendComplete] whether the drafting fold above was EXACT;
  *   `null`/`undefined`/`true` all read as exact (never a new enum value elsewhere) —
  *   only an explicit `false` triggers the floor wording.
+ * @param {number|null} [runUsd] the run's own spend as a number (excluding drafting), so the sum can be written
  * @returns {string}
  */
-export function moneyWithDraft(spendCore, draftSpentUsd, budgetUsd, draftSpendComplete) {
+export function moneyWithDraft(spendCore, draftSpentUsd, budgetUsd, draftSpendComplete, runUsd) {
   const hasDraft = draftSpentUsd !== null && draftSpentUsd !== undefined;
   const draftFloor = hasDraft && draftSpendComplete === false;
   const coreAlreadyFloor = /^(at least |≥)/.test(spendCore);
   const core = draftFloor && !coreAlreadyFloor ? `at least ${spendCore}` : spendCore;
-  const draftPart = hasDraft ? ` (${draftFloor ? 'at least ' : ''}${money(draftSpentUsd)} drafting)` : '';
   const capPart = budgetUsd === undefined ? '' : ` of ${money2(budgetUsd)}`;
-  return `${core}${draftPart}${capPart}`;
+  if (!hasDraft) return `${core}${capPart}`;
+  // PRD v1.106 Part 5 Q4: the run's figure EXCLUDES drafting, so the line says so and adds the sum — "$0.0054 run + $0.0035 drafting =
+  // $0.0089 of $1.00". A floor on either part makes the total a floor too ("at least"). Without the run's number the sum is left out.
+  const total = typeof runUsd === 'number' && Number.isFinite(runUsd) ? ` = ${draftFloor || coreAlreadyFloor ? 'at least ' : ''}${money(runUsd + draftSpentUsd)}` : '';
+  return `${core} run + ${draftFloor ? 'at least ' : ''}${money(draftSpentUsd)} drafting${total}${capPart}`;
 }
 
 /**
@@ -2150,7 +2154,7 @@ export function summarizeForAllLine(summary) {
     // shown on a run with zero retries.
     outcome: `${summary.outcome ?? 'unknown'}${summary.transportRetryCount > 0 ? ` ⟲${summary.transportRetryCount}` : ''}`,
     hadTransportRetries: summary.transportRetryCount > 0,
-    spend: moneyWithDraft(money(summary.spentUsd), summary.draftSpentUsd, undefined, summary.draftSpendComplete),
+    spend: moneyWithDraft(money(summary.spentUsd), summary.draftSpentUsd, undefined, summary.draftSpendComplete, summary.spentUsd),
     wall: duration(summary.wallMs),
     steps: stepsCol,
     reason,

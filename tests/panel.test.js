@@ -695,7 +695,7 @@ test('/api/runs row: carries spentUsd/spendComplete/draftSpentUsd/draftSpendComp
   // numeric fields above). This fixture's own draftSpendComplete:false
   // correctly reads as "at least" per moneyWithDraft's own (unrelated to
   // this task's scope-1 change) 2nd-addendum rule.
-  assert.equal(row.spend, 'at least $3.7100 (at least $0.8100 drafting)', 'the library\'s own 4-decimal money() text, unchanged in PRECISION by this build (still 4 decimals, never migrated to 2)');
+  assert.equal(row.spend, 'at least $3.7100 run + at least $0.8100 drafting = at least $4.5200', 'the library\'s own 4-decimal money() text, unchanged in PRECISION by this build (still 4 decimals, never migrated to 2)');
 });
 
 test('/api/runs/:runid job-detail: draftSpendComplete rides beside draftSpentUsd', async (t) => {

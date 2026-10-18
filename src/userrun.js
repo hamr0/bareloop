@@ -2054,7 +2054,7 @@ async function execute(ctx) {
   const legDraftSpentUsd = typeof jobStartRec?.draftSpentUsd === 'number' && jobStartRec.draftSpentUsd > 0 ? jobStartRec.draftSpentUsd : null;
   const legDraftSpendComplete = legDraftSpentUsd === null ? null : jobStartRec.draftSpendComplete !== false;
   const spendCore = je?.spentUsd == null ? 'UNKNOWN' : `${je.spendComplete === false ? '≥' : ''}$${je.spentUsd.toFixed(4)}`;
-  out(`spent     ${moneyWithDraft(spendCore, legDraftSpentUsd, spec.budgetUsd, legDraftSpendComplete)}`);
+  out(`spent     ${moneyWithDraft(spendCore, legDraftSpentUsd, spec.budgetUsd, legDraftSpendComplete, je?.spentUsd ?? null)}`);
   // FOLDED, exactly like the money line above it: on a resume the cap governs both legs
   // together, and a leg-only wall next to a folded spend is two framings on one cap with
   // no label to tell them apart (F83). The leg stays on the line beside it.

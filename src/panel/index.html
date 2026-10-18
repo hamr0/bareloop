@@ -2245,8 +2245,16 @@
     var core = (spendCoreVal === null || spendCoreVal === undefined)
       ? "unknown"
       : ((spendCoreFloor || draftFloor) ? "at least " + panelMoney(spendCoreVal) : panelMoney(spendCoreVal));
-    var draftPart = hasDraft ? (shortForm ? " (drafting " : " (") + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + (shortForm ? ")" : " drafting)") : "";
     var capPart = (budgetUsd === undefined) ? "" : (" of " + panelMoney(budgetUsd));
+    if(hasDraft && !shortForm){
+      // PRD v1.106 Part 5 Q4, the panel's spelling of src/replay.js moneyWithDraft: "$0.18 run + <$0.01 drafting = $0.18". The run's figure
+      // EXCLUDES drafting; each part keeps the panel's 2-decimal / "<$0.01" rule and the TOTAL is that rule applied to the true sum (so
+      // two shown parts can round to a total that differs by a cent). Without the run's number the sum is left out.
+      var haveRun = typeof spendCoreVal === "number";
+      var totalPart = haveRun ? " = " + ((spendCoreFloor || draftFloor) ? "at least " : "") + panelMoney(spendCoreVal + draftSpentUsd) : "";
+      return core + " run + " + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + " drafting" + totalPart + capPart;
+    }
+    var draftPart = hasDraft ? " (drafting " + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + ")" : "";
     return core + draftPart + capPart;
   }
   // P5 item 6: a LIVE row (no job-end yet, runner alive) reads the same running floors the

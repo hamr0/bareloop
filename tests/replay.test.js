@@ -1225,9 +1225,12 @@ test('replayRun: draftSpentUsd reads off job-start\'s own field, never priorSpen
   assert.equal(withoutDraft.draftSpentUsd, null, 'a run that never drafted carries no decorative 0');
 });
 
-test('moneyWithDraft: exact display strings — "$3.71 ($0.81 drafting) of $5.00" with a cap, "$3.71 ($0.81 drafting)" without, unchanged with no draft share', () => {
-  assert.equal(moneyWithDraft('$3.71', 0.81, 5), '$3.71 ($0.8100 drafting) of $5.00');
-  assert.equal(moneyWithDraft('$3.71', 0.81), '$3.71 ($0.8100 drafting)');
+test('moneyWithDraft (PRD v1.106 Part 5 Q4): "$3.71 run + $0.8100 drafting = $4.5200 of $5.00" with a cap, no cap without, the sum left out when the run\'s number is not given, unchanged with no draft share', () => {
+  assert.equal(moneyWithDraft('$3.71', 0.81, 5, true, 3.71), '$3.71 run + $0.8100 drafting = $4.5200 of $5.00');
+  assert.equal(moneyWithDraft('$3.71', 0.81, undefined, true, 3.71), '$3.71 run + $0.8100 drafting = $4.5200');
+  assert.equal(moneyWithDraft('$3.71', 0.81, 5), '$3.71 run + $0.8100 drafting of $5.00', 'no run number: no sum is invented');
+  // the real run mve5y8fa: run $0.0054, drafting $0.0035, total $0.0089 in runs.jsonl
+  assert.equal(moneyWithDraft('$0.0054', 0.0035, 1, true, 0.0054), '$0.0054 run + $0.0035 drafting = $0.0089 of $1.00');
   assert.equal(moneyWithDraft('$3.68', null, 5), '$3.68 of $5.00');
   assert.equal(moneyWithDraft('$3.68', null), '$3.68', 'a run without a drafting share prints exactly what it always did');
 });
@@ -1238,24 +1241,24 @@ test('moneyWithDraft: exact display strings — "$3.71 ($0.81 drafting) of $5.00
 // never take the leading number as exact when the bracket beside it isn't).
 test('moneyWithDraft: an incomplete draftSpendComplete:false reads "at least" on the bracket AND the leading spendCore', () => {
   assert.equal(
-    moneyWithDraft('$3.71', 0.81, 5, false),
-    'at least $3.71 (at least $0.8100 drafting) of $5.00',
+    moneyWithDraft('$3.71', 0.81, 5, false, 3.71),
+    'at least $3.71 run + at least $0.8100 drafting = at least $4.5200 of $5.00',
   );
   // a complete fold (true, or the parameter simply omitted) is UNCHANGED —
   // never a new enum value anywhere else in the string.
-  assert.equal(moneyWithDraft('$3.71', 0.81, 5, true), '$3.71 ($0.8100 drafting) of $5.00');
-  assert.equal(moneyWithDraft('$3.71', 0.81, 5, undefined), '$3.71 ($0.8100 drafting) of $5.00');
-  assert.equal(moneyWithDraft('$3.71', 0.81, 5, null), '$3.71 ($0.8100 drafting) of $5.00');
+  assert.equal(moneyWithDraft('$3.71', 0.81, 5, true, 3.71), '$3.71 run + $0.8100 drafting = $4.5200 of $5.00');
+  assert.equal(moneyWithDraft('$3.71', 0.81, 5, undefined, 3.71), '$3.71 run + $0.8100 drafting = $4.5200 of $5.00');
+  assert.equal(moneyWithDraft('$3.71', 0.81, 5, null, 3.71), '$3.71 run + $0.8100 drafting = $4.5200 of $5.00');
 });
 
 test('moneyWithDraft: an already-floor spendCore (e.g. a died run\'s "at least $X") never doubles the "at least" prefix when the draft is also incomplete', () => {
   assert.equal(
-    moneyWithDraft('at least $0.0182', 0.81, 5, false),
-    'at least $0.0182 (at least $0.8100 drafting) of $5.00',
+    moneyWithDraft('at least $0.0182', 0.81, 5, false, 0.0182),
+    'at least $0.0182 run + at least $0.8100 drafting = at least $0.8282 of $5.00',
   );
   assert.equal(
-    moneyWithDraft('≥$3.71', 0.81, 5, false),
-    '≥$3.71 (at least $0.8100 drafting) of $5.00',
+    moneyWithDraft('≥$3.71', 0.81, 5, false, 3.71),
+    '≥$3.71 run + at least $0.8100 drafting = at least $4.5200 of $5.00',
     'the run\'s own "≥" floor spelling is recognized too, never double-prefixed',
   );
 });
@@ -1269,7 +1272,7 @@ test('summarizeForAllLine: the spend column carries the drafting share for a run
     { type: 'job-start', seq: 1, ts: '2026-09-28T00:00:00.000Z', job: 'x', budgetUsd: 5, draftSpentUsd: 0.81, shape: 'plan' },
     { type: 'job-end', seq: 2, ts: '2026-09-28T00:00:01.000Z', outcome: 'green', spentUsd: 3.71, spendComplete: true },
   ], [], { runId: 'x' });
-  assert.match(summarizeForAllLine(withDraft).spend, /^\$3\.7100 \(\$0\.8100 drafting\)$/);
+  assert.match(summarizeForAllLine(withDraft).spend, /^\$3\.7100 run \+ \$0\.8100 drafting = \$4\.5200$/);
 
   const withoutDraft = replayRun([
     { type: 'job-start', seq: 1, ts: '2026-09-28T00:00:00.000Z', job: 'x', budgetUsd: 5, shape: 'plan' },
@@ -1306,5 +1309,5 @@ test('summarizeForAllLine: an INCOMPLETE drafting fold reads "at least" on both 
     { type: 'job-start', seq: 1, ts: '2026-09-28T00:00:00.000Z', job: 'x', budgetUsd: 5, draftSpentUsd: 0.81, draftSpendComplete: false, shape: 'plan' },
     { type: 'job-end', seq: 2, ts: '2026-09-28T00:00:01.000Z', outcome: 'green', spentUsd: 3.71, spendComplete: true },
   ], [], { runId: 'x' });
-  assert.equal(summarizeForAllLine(incomplete).spend, 'at least $3.7100 (at least $0.8100 drafting)');
+  assert.equal(summarizeForAllLine(incomplete).spend, 'at least $3.7100 run + at least $0.8100 drafting = at least $4.5200');
 });

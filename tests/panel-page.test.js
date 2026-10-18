@@ -440,7 +440,10 @@ test('panelMoney: null/undefined/non-finite keeps the honest "unknown" text, nev
 test('panelMoneyWithDraft: 2-decimal composite, matching src/replay.js\'s moneyWithDraft shape but at 2 decimals', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const { panelMoneyWithDraft } = loadMoneyFns(html);
-  assert.equal(panelMoneyWithDraft(3.71, false, 0.81, true, 5), '$3.71 ($0.81 drafting) of $5.00');
+  assert.equal(panelMoneyWithDraft(3.71, false, 0.81, true, 5), '$3.71 run + $0.81 drafting = $4.52 of $5.00');
+  // the real run mve5y8fa (run $0.0054, drafting $0.0035): the panel's 2-decimal rule turns every part into <$0.01, the sum is that rule on the true sum
+  assert.equal(panelMoneyWithDraft(0.0054, false, 0.0035, true, 1), '<$0.01 run + <$0.01 drafting = <$0.01 of $1.00');
+  assert.equal(panelMoneyWithDraft(0.1802, false, 0.0035, true, 0.5), '$0.18 run + <$0.01 drafting = $0.18 of $0.50');
   assert.equal(panelMoneyWithDraft(3.68, false, null, null, 5), '$3.68 of $5.00');
   assert.equal(panelMoneyWithDraft(3.68, false, null, null), '$3.68', 'no drafting share, no cap -> unchanged base render');
 });
@@ -450,7 +453,7 @@ test('panelMoneyWithDraft: an INCOMPLETE drafting fold reads "at least" on BOTH 
   const { panelMoneyWithDraft } = loadMoneyFns(html);
   assert.equal(
     panelMoneyWithDraft(3.71, false, 0.81, false, 5),
-    'at least $3.71 (at least $0.81 drafting) of $5.00',
+    'at least $3.71 run + at least $0.81 drafting = at least $4.52 of $5.00',
   );
 });
 
@@ -458,17 +461,17 @@ test('panelMoneyWithDraft: an already-floor leading figure (e.g. a died run\'s o
   const html = readFileSync(PAGE_PATH, 'utf8');
   const { panelMoneyWithDraft } = loadMoneyFns(html);
   assert.equal(panelMoneyWithDraft(0.018, true, null, null), 'at least $0.02');
-  assert.equal(panelMoneyWithDraft(0.018, true, 0.81, false), 'at least $0.02 (at least $0.81 drafting)');
+  assert.equal(panelMoneyWithDraft(0.018, true, 0.81, false), 'at least $0.02 run + at least $0.81 drafting = at least $0.83');
 });
 
 test('rowSpendText: a died row reads its own spend-floor as "at least $X"; a live row with an incomplete draft reads "at least" on both parts', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const { rowSpendText } = loadMoneyFns(html);
   assert.equal(rowSpendText({ died: true, spendFloorUsd: 0.018, spentUsd: null }), 'at least $0.02');
-  assert.equal(rowSpendText({ died: false, spentUsd: 3.71, draftSpentUsd: 0.81, draftSpendComplete: true }), '$3.71 ($0.81 drafting)');
+  assert.equal(rowSpendText({ died: false, spentUsd: 3.71, draftSpentUsd: 0.81, draftSpendComplete: true }), '$3.71 run + $0.81 drafting = $4.52');
   assert.equal(
     rowSpendText({ died: false, spentUsd: 3.71, draftSpentUsd: 0.81, draftSpendComplete: false }),
-    'at least $3.71 (at least $0.81 drafting)',
+    'at least $3.71 run + at least $0.81 drafting = at least $4.52',
   );
   assert.equal(rowSpendText({ died: false, spentUsd: 3.68, draftSpentUsd: null, draftSpendComplete: null }), '$3.68', 'no drafting share -> unchanged from the plain render');
 });
