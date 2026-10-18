@@ -4417,3 +4417,17 @@ Check what the person asked for, not what the worker chose to write. bareloop ne
 - **Accept** (`POST /api/runs/<id>/accept`) runs the engine's own door path (`run-u --spec <signed spec> --door <id> --decide accept --approve <hash>`): the mechanical stages re-run, a red is `door-accept-red`, the run's verdict is untouched. It shows only while `doorWaiting(events)` (`src/reviewdoor.js`) is true; the same answer fills the runs list's Needs-you `Accept`.
 - **Every word the page shows** comes from `src/schedulewords.js` (`SCHEDULE_WORDS` is the one button table the server sends).
 - **The schedule is shown on three tabs** (v1.102): the Run tab's one summary block (ENDED dated, NEXT, SCHEDULE with `last`/`next`; row and frame red when the last fire started nothing), the Job tab's Started and Schedule rows (`getRunJob`), and the Audit's own folded `schedule` section on every run of a scheduled job (v1.104: `detail.scheduleSection` `{title, sign, word, head, rows}`, drawn `[sign] word schedule · head` with the sign and word both from the status table, v1.106 Part 4; a run a cancelled schedule started keeps `detail.startedAudit`). `/api/runs` `scheduled[]` and `gaveUp[]` carry `runNo` so the small lists read `job · run-N`. `trigger.json` carries `triggerKind`, `sessionId`, `originRunid`, `sig`, `lateMs`; each signing appends a `signed` ledger row naming its origin run.
+
+
+## The Audit's tries, checks and answered questions (PRD v1.106 Part 5)
+
+For an integrating agent reading a run's record:
+
+- **`output-judged` spine record** `{step, iteration, path, bytes, sha256}`: written by `runPlan`'s step `judge()` right before the `exit-eval`, once per step file a `rubric-step` check reads (`outputJudgedRecords`, `src/rubricstep.js`, from the signed `closeDecl`). The file is overwritten by the next try, so this is the only trace; content is never written. Old runs have none, and show no judged-file line.
+- **Per-try checks** come from `exit-eval {step, iteration, results}`: a `check-passes` result is named by the `check-run` record just before it, a `tree-changed` result is the declared `files-changed` stage. A try that began (`iteration-start`) in a step that has ended and has no `exit-eval` was cut off (`part.cutOffTry`). `replayRun` step attempts carry `checks` and `outputJudged`; the panel server adds `tries[]`, `triesLine`, `tally` and `marker`.
+- **Run summary** words `callsLine` / `checksLine` (`callsLineOf`, `checksLineOf`, `src/panel/server.js`): counts from the raw spine, never a fraction.
+- **Review door part** (`kind: 'door'`) when the spine has `review-door`; words in `DOOR_WORDS` (`src/panel/status.js`).
+- **`GET /api/runs/:id/rounds?part=N&all=1`** returns a step's whole Round table as rows (`kind: model | tool | check`), 20 per page (`offset`).
+- **`draft-log.jsonl` `human` rows** `{no, source: confirm | look | try-3, question, answer, line?, at}`; the answer is secret-masked before it is written and the row exists only when the question was answered.
+- **Money line** `moneyWithDraft(spendCore, draftUsd, budgetUsd, draftComplete, runUsd)`: `$run run + $draft drafting = $total of $cap`; without `runUsd` the sum is omitted.
+- Not built from the signed spec (see the Part 5 commits): the early ask about a number the AI made (T1) and the Run tab's "fetching the page" state, because the data they need does not exist at that point.
