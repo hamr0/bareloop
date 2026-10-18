@@ -173,7 +173,7 @@ test('page: a LIVE run\'s summary headline reads "running <duration>", never the
   // everything renderRun CALLS but this test is not about is a no-op stub; the functions that
   // build the strings under test (money, duration, live phrases, escapeXml) are the page's own
   const stubs = ['buildOrderedBoxes', 'stepNumberIndices'].map((n) => `function ${n}(){return [];}`)
-    .concat(['renderStepMap', 'partResultGlyph', 'partLine1Text', 'toolBreakdownLine', 'modelLine', 'toolsLine', 'cacheLine', 'paintOfferedRow', 'offeredLine', 'renderAuditGroups', 'renderJob', 'applyAuditFilter', 'renderRunActions', 'renderScheduled']
+    .concat(['renderStepMap', 'partResultGlyph', 'partLine1Text', 'toolBreakdownLine', 'modelLine', 'toolsLine', 'cacheLine', 'paintOfferedRow', 'offeredLine', 'renderAuditGroups', 'renderJob', 'applyAuditFilter', 'renderRunActions', 'renderScheduled', 'syncResultTab']
       .map((n) => `function ${n}(){return "";}`)).join('\n');
   // eslint-disable-next-line no-new-func
   const render = new Function('document', `
@@ -199,7 +199,7 @@ test('page: the SUMMARY headline wears the status word from the status table rig
   });
   const document = { getElementById(id) { return els[id] ?? (els[id] = mk(id)); }, createElement() { return mk('c'); } };
   const stubs = ['buildOrderedBoxes', 'stepNumberIndices'].map((n) => `function ${n}(){return [];}`)
-    .concat(['renderStepMap', 'partResultGlyph', 'partLine1Text', 'toolBreakdownLine', 'modelLine', 'toolsLine', 'cacheLine', 'paintOfferedRow', 'offeredLine', 'renderAuditGroups', 'renderJob', 'applyAuditFilter', 'renderRunActions', 'renderScheduled']
+    .concat(['renderStepMap', 'partResultGlyph', 'partLine1Text', 'toolBreakdownLine', 'modelLine', 'toolsLine', 'cacheLine', 'paintOfferedRow', 'offeredLine', 'renderAuditGroups', 'renderJob', 'applyAuditFilter', 'renderRunActions', 'renderScheduled', 'syncResultTab']
       .map((n) => `function ${n}(){return "";}`)).join('\n');
   // eslint-disable-next-line no-new-func
   const render = new Function('document', `

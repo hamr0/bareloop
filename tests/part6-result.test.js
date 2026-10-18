@@ -98,6 +98,7 @@ test('/result (green, mve5y8fa): one row per delivered result, columns are the s
   });
   assert.deepEqual(line.file, { i: 0, state: 'ok', words: null });
   assert.equal(res.body.gap, null);
+  assert.deepEqual(res.body.door, { head: 'waiting for you', ask: 'the checks passed; is this what you wanted?' }, 'the door\'s words come from the server');
   assert.deepEqual(res.body.delivered, [{ i: 0, path: w.delivered, name: '1-2026-10-18.json', bytes: 1473, state: 'ok', words: null }]);
 });
 

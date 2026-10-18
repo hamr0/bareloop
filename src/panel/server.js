@@ -63,7 +63,9 @@ import { rowsForHome, findRow, modelChoiceFor, tickedLines, endpointOf } from '.
 import { SHAPES } from '../providershapes.js';
 import { resolveProvider } from '../providers.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
-import { statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER } from './status.js';
+import {
+  statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER, DOOR_WORDS,
+} from './status.js';
 import { thinkingJobText } from '../thinking.js';
 import { judgedFilesOf, lineRules } from '../rubricstep.js';
 import { factPartOf, factSentence } from '../facts.js';
@@ -1124,6 +1126,9 @@ function rubricStagesOf(spec) {
   return stages.filter((/** @type {any} */ s) => s && s.kind === 'rubric-step' && s.params && Number.isInteger(s.params.step));
 }
 
+/** what the Result tab's open door asks, after the door's own head words */
+export const RESULT_DOOR_ASK = 'the checks passed; is this what you wanted?';
+
 /** the two sentences for a delivered file that is no longer what the run wrote (code-owned, one spelling) */
 export const RESULT_FILE_GONE = 'the saved file is gone';
 export const RESULT_FILE_CHANGED = 'the saved file changed after the run';
@@ -1235,6 +1240,8 @@ export function getRunResult(runid, opts = {}) {
     runid,
     lines,
     notChecked: planFromSpec(spec).notChecked,
+    // the door's words, from the one table (src/panel/status.js DOOR_WORDS); the page types none of them
+    door: { head: DOOR_WORDS.waiting.head, ask: RESULT_DOOR_ASK },
     delivered: delivered.map((d, i) => ({
       i, path: d.path, name: basename(d.path), bytes: d.bytes, state: read[i].state,
       words: read[i].state === 'gone' ? RESULT_FILE_GONE : (read[i].state === 'changed' ? RESULT_FILE_CHANGED : null),

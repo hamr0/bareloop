@@ -272,7 +272,7 @@
      are already both on screen there, nothing to jump back to). */
   .back-to-list-link{display:none;font-size:12px;color:var(--accent);text-decoration:underline;background:none;border:none;padding:0;cursor:pointer;}
   @media (max-width: 899px){ .back-to-list-link{display:inline-block;} }
-  .rp-tabrow{display:flex;border-bottom:1px solid var(--border-strong);background:var(--panel2);counter-reset:rtabnum;}
+  .rp-tabrow{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--border-strong);background:var(--panel2);counter-reset:rtabnum;}
   .rp-tabrow button{padding:10px 14px;min-height:44px;background:transparent;border:none;border-right:1px dotted var(--border-strong);font-size:13px;color:var(--text-dim);counter-increment:rtabnum;}
   .rp-tabrow button::before{content:"[" counter(rtabnum) "] ";color:var(--text-faint);font-weight:700;}
   .tabrow button[aria-selected="true"],.rp-tabrow button[aria-selected="true"]{background:var(--panel);color:var(--accent);font-weight:700;box-shadow:inset 0 -2px 0 var(--accent);}
@@ -394,6 +394,23 @@
      one) covers every table inside that wrapper, Flat's included. */
   .audit-table-scroll table th{position:sticky;top:0;z-index:1;}
   .attempt-check{margin-top:4px;font-size:12px;}
+  /* PRD v1.107 Part 6: the Result tab. Text flows and wraps; the results table scrolls inside its own .audit-table-scroll wrapper, never the page. */
+  #result-body{min-width:0;overflow-wrap:anywhere;}
+  .rs-chip{border:1px solid var(--border-strong);padding:0 6px;font-size:12px;display:inline;margin-right:4px;overflow-wrap:break-word;}
+  .rs-ok{color:var(--green);font-weight:700;}
+  .rs-quote{border-left:2px solid var(--border-strong);padding:4px 8px;margin:4px 0;color:var(--text-dim);font-size:12px;overflow-wrap:anywhere;white-space:pre-wrap;}
+  .rs-box{border:1px solid var(--border-strong);padding:8px 10px;margin:8px 0;background:var(--panel2);overflow-wrap:anywhere;white-space:pre-wrap;}
+  .rs-door{border:1px solid var(--amber);background:var(--amber-bg);padding:8px 10px;margin:10px 0;}
+  .rs-door .st-word{color:var(--amber);}
+  .rs-door textarea{width:100%;min-height:60px;margin:6px 0;background:var(--bg);color:var(--text);border:1px solid var(--text-dim);font:inherit;padding:6px;}
+  .rs-path{font-size:12px;color:var(--text-dim);overflow-wrap:anywhere;margin-top:4px;}
+  #result-body details>summary{cursor:pointer;color:var(--text-dim);min-height:28px;}
+  #result-body details>summary{list-style:none;}
+  #result-body details>summary::-webkit-details-marker{display:none;}
+  #result-body td .rs-quote{margin:2px 0;}
+  .rs-link{background:none;border:none;padding:0;min-height:44px;color:var(--accent);text-decoration:underline;font:inherit;cursor:pointer;}
+  .rs-warn{color:var(--amber);overflow-wrap:anywhere;}
+  .rs-door .stopping{color:var(--amber);font-size:13px;overflow-wrap:anywhere;}
   /* PRD v1.106 Part 5 C: the Audit step fold (tries, their numbered checks, the Round table). Every line wraps; nothing forces a page-wide scroll. */
   .actor-mark{color:var(--text-faint);font-size:12px;margin-left:6px;white-space:nowrap;}
   .step-tally{font-size:12px;color:var(--text-dim);overflow-wrap:anywhere;margin:2px 0 6px;}
@@ -680,6 +697,7 @@
     .topbar{flex-direction:column;align-items:flex-start;}
     .topbar-right{width:100%;justify-content:space-between;}
     .btn.small{height:44px;min-height:44px;padding:0 12px;}
+    .rs-link{min-height:44px;}
     .chip{min-height:44px;}
     .chip.fchip{min-height:40px;min-width:40px;}
     .rp-header{margin:8px 8px 0;}
@@ -878,6 +896,7 @@
         <button role="tab" id="tab-run" aria-controls="panel-run" aria-selected="true" data-testid="right-tab-run">Run</button>
         <button role="tab" id="tab-audit" aria-controls="panel-audit" aria-selected="false" data-testid="right-tab-audit">Audit / logs</button>
         <button role="tab" id="tab-details" aria-controls="panel-details" aria-selected="false" data-testid="right-tab-details">Job</button>
+        <button role="tab" id="tab-result" aria-controls="panel-result" aria-selected="false" data-testid="right-tab-result" hidden>Result</button>
       </div>
 
       <div class="pane-body" id="right-pane-body">
@@ -891,6 +910,7 @@
               <div id="ended-block" class="ended-block" data-testid="ended-block" hidden></div>
             </div>
             <div class="run-actions" id="run-actions" data-testid="run-actions" hidden></div>
+            <div class="hint" id="result-pointer" data-testid="result-pointer" hidden></div>
             <div class="counters" id="run-counters" data-testid="live-counters"></div>
             <div class="summary-box" id="run-summary" data-testid="run-summary"></div>
             <div class="map-box" data-testid="step-map" id="map-box"><div id="map-mount"></div></div>
@@ -955,6 +975,11 @@
             <div class="field"><label>Signed</label><div class="ro-value" id="details-signed" data-testid="details-signed">—</div></div>
             <div class="hint" id="job-note"></div>
           </div>
+        </section>
+
+        <section id="panel-result" class="tabpanel" role="tabpanel" aria-labelledby="tab-result" hidden data-testid="panel-result">
+          <div id="result-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run first</div>
+          <div id="result-body" data-testid="result-body" hidden></div>
         </section>
 
       </div>
@@ -1082,7 +1107,7 @@
     });
   }
   wireTabs([document.getElementById("tab-chat"), document.getElementById("tab-runs")]);
-  wireTabs([document.getElementById("tab-run"), document.getElementById("tab-audit"), document.getElementById("tab-details")]);
+  wireTabs([document.getElementById("tab-run"), document.getElementById("tab-audit"), document.getElementById("tab-details"), document.getElementById("tab-result")]);
 
   // ---- fetch helpers ----
   function getJSON(path){
@@ -2532,6 +2557,19 @@
       document.dispatchEvent(new CustomEvent("bareloop-resume", {detail: {error: "could not reach the panel: " + x.message}}));
     });
   }
+  // ONE Accept handler for the Run tab's action bar and the Result tab's door (PRD v1.107 Part 6): same route, same words. `host` is where a refusal is written.
+  function acceptDoor(detail, accBtn, host){
+    accBtn.disabled = true;
+    authorPost("/api/runs/" + encodeURIComponent(detail.runid) + "/accept", {}).then(function(res){
+      if(res.status === 200 && res.body && res.body.ok){ refreshRunsList(true); selectRun(detail.runid); return; }
+      if(res.status === 202 && res.body && res.body.pending){
+        host.insertAdjacentHTML("beforeend", '<span class="stopping" data-testid="accept-pending">still re-checking the tree; look again in a moment</span>');
+        return;
+      }
+      accBtn.disabled = false;
+      host.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="accept-err">' + escapeXml((res.body && res.body.error) || ("refused (" + res.status + ")")) + '</span>');
+    }).catch(function(x){ accBtn.disabled = false; host.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="accept-err">could not reach the panel: ' + escapeXml(x.message) + '</span>'); });
+  }
   function renderRunActions(detail){
     var bar = document.getElementById("run-actions");
     var html = "";
@@ -2598,20 +2636,7 @@
       });
     }
     var accBtn = bar.querySelector('[data-testid="btn-accept-run"]');
-    if(accBtn){
-      accBtn.addEventListener("click", function(){
-        accBtn.disabled = true;
-        authorPost("/api/runs/" + encodeURIComponent(detail.runid) + "/accept", {}).then(function(res){
-          if(res.status === 200 && res.body && res.body.ok){ refreshRunsList(true); selectRun(detail.runid); return; }
-          if(res.status === 202 && res.body && res.body.pending){
-            bar.insertAdjacentHTML("beforeend", '<span class="stopping" data-testid="accept-pending">still re-checking the tree; look again in a moment</span>');
-            return;
-          }
-          accBtn.disabled = false;
-          bar.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="accept-err">' + escapeXml((res.body && res.body.error) || ("refused (" + res.status + ")")) + '</span>');
-        }).catch(function(x){ accBtn.disabled = false; bar.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="accept-err">could not reach the panel: ' + escapeXml(x.message) + '</span>'); });
-      });
-    }
+    if(accBtn) accBtn.addEventListener("click", function(){ acceptDoor(detail, accBtn, bar); });
     var resBtn = bar.querySelector('[data-testid="btn-resume-run"]');
     if(resBtn) resBtn.addEventListener("click", function(){ resumeInChat(detail); });
   }
@@ -2644,6 +2669,7 @@
 
   function renderRun(detail){
     if(detail.fileMissing){
+      syncResultTab({});
       setRunHeader("\u00B7", runName(detail.job, detail.runNo, detail.runid), "file missing");
       document.getElementById("run-empty").hidden = false;
       document.getElementById("run-empty").textContent = "spine file no longer on disk";
@@ -2655,6 +2681,7 @@
     }
 
     if(detail.starting){
+      syncResultTab({});
       setRunHeader("\u25B6", runName(detail.job, detail.runNo, detail.runid), statusWordHtml(detail.status, "starting\u2026") + " \u00B7 " + escapeXml("started " + fmtLocalDateTime(detail.at)));
       document.getElementById("run-empty").hidden = false;
       document.getElementById("run-empty").textContent = "starting… the run has not written its log yet";
@@ -2744,6 +2771,7 @@
       '<div class="summary-row" data-testid="summary-cache"><span class="sum-label">cache:</span><span class="sum-val">' + escapeXml(cacheLine(detail.memoryCache)) + '</span></div>';
 
     paintOfferedRow();
+    syncResultTab(detail);
 
     // build item B (2026-09-26 rewrite): the map AND the card list are both
     // built from ONE list — `detail.parts` (src/replay.js's own ordered part
@@ -3614,6 +3642,171 @@
     paintOfferedRow();
   }
 
+  // ---- Result tab (PRD v1.107 Part 6, rubric jobs only; signed visual design/result-tab-mock.html variant F) ----
+  // The server decides everything: `detail.hasResult` shows the tab, `/result` carries the signed lines, the facts' own sentences
+  // (src/facts.js factSentence), the rows of the delivered file (sha256-checked against the run's own record) and `passed` (read from the
+  // run's own check-run). The page only draws; it never decides a check and never searches a quote for a word.
+  var resultDetail = null;
+  var resultData = null;
+  function resultTabShown(){ return document.getElementById("tab-result").getAttribute("aria-selected") === "true"; }
+  function clearResult(){
+    resultDetail = null; resultData = null;
+    document.getElementById("result-body").hidden = true;
+    document.getElementById("result-body").innerHTML = "";
+    document.getElementById("result-empty").hidden = false;
+  }
+  // called by renderRun for every detail it draws: shows or removes the tab button, and the Run tab's pointer while the door is open
+  function syncResultTab(detail){
+    var btn = document.getElementById("tab-result");
+    var show = detail.hasResult === true;
+    if(!show && resultTabShown()) document.getElementById("tab-run").click();
+    btn.hidden = !show;
+    resultDetail = show ? detail : null;
+    var ptr = document.getElementById("result-pointer");
+    var waiting = show && detail.accept === true && !detail.live;
+    ptr.hidden = !waiting;
+    ptr.innerHTML = waiting ? 'the result is on the <button class="rs-link" type="button" data-testid="result-pointer-link">Result tab</button>' : "";
+    var link = ptr.querySelector("button");
+    if(link) link.addEventListener("click", function(){ btn.click(); });
+    if(show && resultData && resultData.runid === detail.runid) renderResult();
+    if(!show) clearResult();
+  }
+  function loadResult(runid){
+    return getJSON("/api/runs/" + encodeURIComponent(runid) + "/result").then(function(data){
+      if(runid !== currentRunid || !resultDetail || resultDetail.runid !== runid) return;
+      resultData = data;
+      renderResult();
+    }).catch(function(){ /* the tab keeps what it last drew */ });
+  }
+  document.getElementById("tab-result").addEventListener("click", function(){ if(currentRunid) loadResult(currentRunid); });
+
+  // a delivered-file state in words (from the server), or ""
+  function resultFileWords(file){
+    return file && file.words ? '<div class="rs-warn" data-testid="result-file-words">' + escapeXml(file.words) + '</div>' : "";
+  }
+  function resultFactsLine(line){
+    var facts = line.facts || [];
+    var h = "";
+    h += resultFileWords(line.file);
+    if(Array.isArray(line.rows) && line.rows.length){
+      var ok = line.passed === true ? ' <span class="rs-ok" data-testid="result-ok">✓</span>' : "";
+      var n = facts.length;
+      h += '<div class="audit-table-scroll" data-testid="result-table-wrap"><table data-testid="result-table"><thead><tr><th>#</th>' +
+        facts.map(function(f){ return '<th>' + escapeXml(f.name) + '</th>'; }).join("") + '<th>checks</th></tr></thead><tbody>';
+      line.rows.forEach(function(r){
+        h += '<tr data-testid="result-row"><td>' + r.n + '</td>' +
+          r.cells.map(function(c){ return '<td><span class="rs-chip">' + escapeXml(c) + '</span>' + ok + '</td>'; }).join("") +
+          '<td>' + (line.passed === true ? '<span class="rs-ok">' + n + ' of ' + n + ' ✓</span>' : "") + '</td></tr>' +
+          '<tr data-testid="result-proof-row"><td></td><td colspan="' + (n + 1) + '"><details data-testid="result-proof"><summary>▸ proof — the page\'s own words</summary><div class="rs-quote">' + escapeXml(r.quote) + '</div></details></td></tr>';
+      });
+      h += '</tbody></table></div>';
+    } else if(!line.file){
+      h += '<div class="hint" data-testid="result-nofile">no result was saved for this line</div>';
+    } else if(!line.file.words){
+      h += '<div class="hint" data-testid="result-nofile">the saved file does not hold results to show</div>';
+    }
+    if(facts.length){
+      h += '<div class="hint" data-testid="result-rules">' + (line.passed === true ? '✓ = code checked it against the saved page. ' : "") + 'The rules:' +
+        facts.map(function(f){ return '<div>' + escapeXml(f.sentence) + '</div>'; }).join("") + '</div>';
+    }
+    return h;
+  }
+  function resultTextLine(line){
+    var h = resultFileWords(line.file);
+    if(typeof line.answer === "string") h += '<div class="rs-box" data-testid="result-answer">' + escapeXml(line.answer) + '</div>';
+    else if(!line.file) h += '<div class="hint" data-testid="result-nofile">no result was saved for this line</div>';
+    (line.cites || []).forEach(function(c){
+      h += '<details data-testid="result-cites"><summary>▸ quotes from ' + escapeXml(c.label) + ' (' + c.items.length + ')</summary>' +
+        c.items.map(function(it){ return '<div class="rs-quote"><b>' + escapeXml(it.claim) + '</b>\n' + escapeXml(it.quote) + '</div>'; }).join("") + '</details>';
+    });
+    return h;
+  }
+  function resultDoorHtml(door){
+    return '<div class="rs-door" data-testid="result-door"><div><b class="st-word">' + escapeXml(door.head) + '</b> \u2014 ' + escapeXml(door.ask) + '</div>' +
+      '<div class="run-actions" style="margin:6px 0 0;"><button class="btn primary" type="button" data-testid="result-accept">Accept</button>' +
+      '<button class="btn" type="button" data-testid="result-rerun-open">Rerun with my words</button>' +
+      '<button class="btn" type="button" data-testid="result-pause">Pause</button></div>' +
+      '<div id="result-rerun-box" data-testid="result-rerun-box" hidden><textarea id="result-rerun-text" data-testid="result-rerun-text" aria-label="your words for the rerun" placeholder="e.g. only morning flights, and show the airline"></textarea>' +
+      '<button class="btn" type="button" data-testid="result-rerun" disabled>Rerun</button></div>' +
+      '<div id="result-door-msg" data-testid="result-door-msg"></div></div>';
+  }
+  function wireResultDoor(body, detail){
+    var msg = body.querySelector("#result-door-msg");
+    var accept = body.querySelector('[data-testid="result-accept"]');
+    if(!accept) return;
+    var say = function(cls, text, testid){ msg.innerHTML = '<span class="' + cls + '" data-testid="' + testid + '">' + escapeXml(text) + '</span>'; };
+    accept.addEventListener("click", function(){ msg.innerHTML = ""; acceptDoor(detail, accept, msg); });
+    var box = body.querySelector("#result-rerun-box");
+    var txt = body.querySelector("#result-rerun-text");
+    var go = body.querySelector('[data-testid="result-rerun"]');
+    body.querySelector('[data-testid="result-rerun-open"]').addEventListener("click", function(){ box.hidden = !box.hidden; if(!box.hidden) txt.focus(); });
+    // required: the button stays off while the words are empty, and the click re-checks (the engine refuses empty words too)
+    txt.addEventListener("input", function(){ go.disabled = txt.value.trim() === ""; });
+    go.addEventListener("click", function(){
+      var words = txt.value.trim();
+      if(words === ""){ say("resume-err", "Write what you want done differently, then press Rerun.", "result-door-err"); return; }
+      go.disabled = true;
+      authorPost("/api/runs/" + encodeURIComponent(detail.runid) + "/rerun", {text: words}).then(function(res){
+        if(res.status === 200 && res.body && res.body.ok){ refreshRunsList(true); selectRun(detail.runid); afterResumeRefresh(detail.runid, 6); return; }
+        go.disabled = false;
+        say("resume-err", (res.body && res.body.error) || ("refused (" + res.status + ")"), "result-door-err");
+      }).catch(function(x){ go.disabled = false; say("resume-err", "could not reach the panel: " + x.message, "result-door-err"); });
+    });
+    var pause = body.querySelector('[data-testid="result-pause"]');
+    pause.addEventListener("click", function(){
+      pause.disabled = true;
+      authorPost("/api/runs/" + encodeURIComponent(detail.runid) + "/pause", {}).then(function(res){
+        pause.disabled = false;
+        if(res.status === 200 && res.body && res.body.ok){ say("stopping", "Paused. Nothing was spent; this stays open for you to answer later.", "result-door-paused"); return; }
+        if(res.status === 202 && res.body && res.body.pending){ say("stopping", "still recording the pause; look again in a moment", "result-door-paused"); return; }
+        say("resume-err", (res.body && res.body.error) || ("refused (" + res.status + ")"), "result-door-err");
+      }).catch(function(x){ pause.disabled = false; say("resume-err", "could not reach the panel: " + x.message, "result-door-err"); });
+    });
+  }
+  function renderResult(){
+    var detail = resultDetail, data = resultData;
+    var body = document.getElementById("result-body");
+    if(!detail || !data || data.runid !== detail.runid){ return; }
+    document.getElementById("result-empty").hidden = true;
+    body.hidden = false;
+    // keep what the person is typing across a poll-driven redraw
+    var keepText = body.querySelector("#result-rerun-text");
+    var typed = keepText ? keepText.value : "";
+    var rerunOpen = !!body.querySelector("#result-rerun-box:not([hidden])");
+    var h = '<div class="rp-header-title" data-testid="result-head">' +
+      stateDotHTML(glyphClass(detail.glyph), detail.status && detail.status.word ? detail.status.word : "", "result-status") +
+      ' <span>· ' + escapeXml(detail.checkType) + ' · ' + escapeXml(runName(detail.job, detail.runNo, detail.runid)) + '</span></div>' +
+      '<div class="hint" data-testid="result-counters">' + document.getElementById("run-counters").innerHTML + '</div>';
+    if(data.gap){
+      h += '<div class="rs-warn" data-testid="result-gap">The check said: ' + escapeXml(data.gap.line) + (data.gap.moreText ? ' ' + escapeXml(data.gap.moreText) : "") + '</div>';
+    }
+    var hasText = false;
+    (data.lines || []).forEach(function(line){
+      h += '<div class="jp" data-testid="result-line"><div class="jl"><span class="num">' + escapeXml(String(line.n)) + '</span>' + escapeXml(line.text) +
+        (line.rules || []).map(function(r){ return '<div class="sub">~ ' + escapeXml(r) + '</div>'; }).join("") + '</div></div>';
+      if(line.kind === "facts") h += resultFactsLine(line);
+      else { hasText = true; h += resultTextLine(line); }
+    });
+    if((data.notChecked || []).length){
+      h += '<div class="hint" data-testid="result-notchecked">Not checked: ' + data.notChecked.map(escapeXml).join("; ") + '</div>';
+    }
+    void hasText;
+    if(detail.accept === true && !detail.live) h += resultDoorHtml(data.door);
+    (data.delivered || []).forEach(function(d){
+      h += '<div class="rs-path" data-testid="result-saved">saved to: ' + escapeXml(d.path) + '</div>';
+      h += d.words
+        ? '<div class="rs-warn" data-testid="result-file-words">' + escapeXml(d.name + ": " + d.words) + '</div>'
+        : '<div class="run-actions" style="margin:6px 0 0;"><a class="btn small" style="text-decoration:none;" data-testid="result-download" download href="/api/runs/' + encodeURIComponent(data.runid) + '/download?i=' + d.i + '">Download ' + escapeXml(d.name) + '</a></div>';
+    });
+    body.innerHTML = h;
+    var ta = body.querySelector("#result-rerun-text");
+    if(ta){
+      ta.value = typed;
+      if(rerunOpen){ body.querySelector("#result-rerun-box").hidden = false; body.querySelector('[data-testid="result-rerun"]').disabled = typed.trim() === ""; }
+      wireResultDoor(body, detail);
+    }
+  }
+
   // ---- selection + loading ----
   var currentRunid = null;
   // P2: guards a stale in-flight response (detail/audit/job, OR the poll
@@ -3640,6 +3833,7 @@
     runIsLive = false;
     openIsScheduled = false;
     lastOpenFetchAt = Date.now();
+    clearResult();
     var myToken = ++selectToken;
     getJSON("/api/runs/" + encodeURIComponent(runid)).then(function(detail){
       if(myToken !== selectToken) return; // a different run was selected before this resolved
@@ -3647,6 +3841,7 @@
       runIsLive = detail.glyph === "▶" && !detail.died;
       openIsScheduled = !!(detail.schedule && detail.schedule.scheduled);
       renderRun(detail);
+      if(detail.hasResult === true) loadResult(runid);
     }).catch(function(e){
       if(myToken !== selectToken) return;
       document.getElementById("run-empty").hidden = false;
