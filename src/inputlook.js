@@ -149,12 +149,29 @@ export function lookPrompt({ jobLines, labels, lists }) {
     + `Report only through ${LOOK_REPORT_TOOL}.`;
 }
 
-/** @typedef {{line: number, name: string, shape: string, source: string, label?: string, labelId?: string, value?: string, phrase?: string, example: string, rule?: any, aiProposal?: boolean, forRule?: number}} LookFact */
+/** @typedef {{line: number, name: string, shape: string, source: string, label?: string, labelId?: string, value?: string, phrase?: string, example: string, rule?: any, aiProposal?: boolean, forRule?: number,
+ *   words?: string[], labels?: string[], unit?: string[], currency?: string[]}} LookFact  `words` / `labels` / `unit` / `currency`: what the page-word map kept (idea A core) */
 /** @typedef {{line: number, rule?: number, words?: string, why: string}} LookNotFound */
-/** @typedef {{facts: LookFact[], prose: {line: number, text?: string}[], notFound: LookNotFound[]}} LookReport */
+/** @typedef {{facts: LookFact[], prose: {line: number, text?: string}[], notFound: LookNotFound[], dropped?: import('./pagerules.js').Dropped[]}} LookReport */
 
 /** @param {unknown} v @returns {v is Record<string, any>} */
 const isRec = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * A fact the page-word map kept (src/pagerules.js `KeptFact`), as the look report carries it: a phrase fact holds its alternative
+ * phrases; any other holds its labels (the first is the primary), and a money fact its units and currencies.
+ * @param {import('./pagerules.js').KeptFact} k @param {string} source @returns {LookFact}
+ */
+export function lookFactOf(k, source) {
+  /** @type {LookFact} */
+  const out = { line: k.line, name: k.name, shape: k.shape, source, example: '', words: [...k.words] };
+  if (k.shape === 'phrase') out.phrase = k.words[0];
+  else { out.labels = [...k.words]; if (k.words.length) out.label = k.words[0]; }
+  if (k.unit) out.unit = [...k.unit];
+  if (k.currency) out.currency = [...k.currency];
+  if (k.forRule !== undefined) out.forRule = k.forRule;
+  return out;
+}
 
 /**
  * Turn the AI's raw report into a VERIFIED one, by code, at $0. A fact is carried only when: its shape is a real shape, its source is

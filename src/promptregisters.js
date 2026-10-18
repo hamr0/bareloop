@@ -61,6 +61,10 @@ export const PROMPT_REGISTERS = Object.freeze([
   Object.freeze({ file: 'src/cardauthor.js', name: 'COMPILE_SYSTEM' }),
   Object.freeze({ file: 'src/cardauthor.js', name: 'cardCasesPrompt() (inline template, not a const)' }),
 
+  // src/pagemap.js - the page-word map call (idea A core): the AI names the page's own words for the person's job
+  Object.freeze({ file: 'src/pagemap.js', name: 'MAP_SYSTEM' }),
+  Object.freeze({ file: 'src/pagemap.js', name: 'mapPrompt() (inline template, not a const)' }),
+
   // src/readshim.js — the capped/deduplicating read shim's worker-facing strategy
   Object.freeze({ file: 'src/readshim.js', name: 'READ_SHIM_STRATEGY' }),
   Object.freeze({ file: 'src/readshim.js', name: 'READ_SHIM_DIFF_STRATEGY' }),

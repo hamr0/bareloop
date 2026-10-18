@@ -1,0 +1,58 @@
+{
+ "facts": [
+  {
+   "name": "origin",
+   "shape": "phrase",
+   "from": "job line",
+   "words": [
+    "San Francisco",
+    "SFO",
+    "San Francisco International Airport"
+   ]
+  },
+  {
+   "name": "destination",
+   "shape": "phrase",
+   "from": "job line",
+   "words": [
+    "Los Angeles",
+    "LAX",
+    "Los Angeles International Airport"
+   ]
+  },
+  {
+   "name": "price",
+   "shape": "money",
+   "from": "rule 1",
+   "words": [
+    "From"
+   ],
+   "unit": [
+    "US dollars"
+   ]
+  },
+  {
+   "name": "departure",
+   "shape": "time",
+   "from": "rule 2",
+   "words": [
+    "Departure time:"
+   ]
+  },
+  {
+   "name": "stops",
+   "shape": "phrase",
+   "from": "rule 3",
+   "words": [
+    "Nonstop"
+   ]
+  }
+ ],
+ "dropped": [
+  {
+   "fact": "price",
+   "word": "$",
+   "reason": "r1l"
+  }
+ ]
+}

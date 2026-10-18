@@ -118,7 +118,8 @@ import {
 import { ruleQuestions } from './inputlook.js';
 import { thinkingCallOptions, assertThinkingMode } from './thinking.js';
 import { pageContentChars } from './pagefetch.js';
-import { runAuthorScout, runInputLook, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
+import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
+import { runPageMap } from './pagemap.js';
 import {
   DECLARED_GAP_PREFIX, DECLARED_GENRES, guardNames, isDeclaredClose, validateCloseDecl,
 } from './declaredclose.js';
@@ -470,9 +471,9 @@ export async function authorCloseForJob({
   // callback back, and no decision in this file or below it depends on one.
   onPhase = () => {}, onCall = () => {},
   seedFn = seedAtHead, scoutFn = runAuthorScout, listingFn = buildSeedListing,
-  // PART 1c - the look at a rubric job's inputs (src/authorscout.js `runInputLook`). `null` is an explicit "no look" (a test seam, like
-  // a caller-supplied `scout`); the shipped default is the real, paid, read-only look.
-  lookFn = runInputLook,
+  // PART 1c / IDEA A CORE - the look at a rubric job's inputs: the default is the page-word map (src/pagemap.js `runPageMap`, one paid AI
+  // call per page input, its words kept by code). `null` is an explicit "no look" (a test seam, like a caller-supplied `scout`).
+  lookFn = runPageMap,
   authorFn = authorClose, authorOpts = {},
   // SOFTGREEN modules 4+5. `signerFix` is the D5 seam: a function (or a value)
   // carrying the SIGNER's corrected artifacts back. Absent means the proposal is

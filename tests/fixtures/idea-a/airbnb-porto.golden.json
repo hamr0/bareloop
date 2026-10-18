@@ -1,0 +1,29 @@
+{
+ "facts": [
+  {
+   "name": "location",
+   "shape": "phrase",
+   "from": "job line",
+   "words": [
+    "Porto",
+    "Homes in Porto"
+   ]
+  },
+  {
+   "name": "price",
+   "shape": "money",
+   "from": "rule 1",
+   "words": [],
+   "unit": [
+    "total"
+   ]
+  }
+ ],
+ "dropped": [
+  {
+   "fact": "price",
+   "word": "€",
+   "reason": "r1l"
+  }
+ ]
+}

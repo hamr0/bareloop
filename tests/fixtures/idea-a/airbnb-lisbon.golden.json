@@ -1,0 +1,37 @@
+{
+ "facts": [
+  {
+   "name": "place",
+   "shape": "phrase",
+   "from": "job line",
+   "words": [
+    "Lisbon",
+    "Homes in Lisbon"
+   ]
+  },
+  {
+   "name": "total price",
+   "shape": "money",
+   "from": "rule 1",
+   "words": [],
+   "unit": [
+    "total"
+   ]
+  },
+  {
+   "name": "guests",
+   "shape": "phrase",
+   "from": "rule 2",
+   "words": [
+    "2 guests"
+   ]
+  }
+ ],
+ "dropped": [
+  {
+   "fact": "total price",
+   "word": "€",
+   "reason": "r1l"
+  }
+ ]
+}

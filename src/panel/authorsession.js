@@ -639,6 +639,8 @@ export function createSession(card, deps = {}) {
       kind: 'call', no: callNo, step: state.steps[callNo]?.id ?? null, label: call.label, model: draftIdentity?.model ?? null,
       thinking: draftThinkingPlan === null ? null : draftThinkingPlan.mode, thinkingSupport: draftThinkingPlan === null ? null : draftThinkingPlan.support,
       ...(call.thinkingStatus === undefined ? {} : { thinkingStatus: call.thinkingStatus }),
+      // idea A core: the page-word map's scrubbed answer (src/pagemap.js) - unsigned, kept so a run can be replayed at $0
+      ...(typeof call.raw === 'string' ? { raw: call.raw } : {}),
       costUsd: call.costUsd ?? null, unpricedRounds: call.unpricedRounds ?? 0, at: nowIso,
     });
     try {

@@ -1,0 +1,62 @@
+{
+ "facts": [
+  {
+   "name": "Boston",
+   "shape": "phrase",
+   "from": "job line",
+   "words": [
+    "Boston Logan International Airport",
+    "BOS",
+    "Boston"
+   ]
+  },
+  {
+   "name": "Chicago",
+   "shape": "phrase",
+   "from": "job line",
+   "words": [
+    "Chicago O'Hare International Airport",
+    "ORD",
+    "Chicago"
+   ]
+  },
+  {
+   "name": "Price",
+   "shape": "money",
+   "from": "rule 1",
+   "words": [
+    "From"
+   ],
+   "unit": [
+    "US dollars"
+   ],
+   "currency": [
+    "$"
+   ]
+  },
+  {
+   "name": "Departure time",
+   "shape": "time",
+   "from": "rule 2",
+   "words": [
+    "Departure time:",
+    "Leaves Boston Logan International Airport at"
+   ]
+  },
+  {
+   "name": "Nonstop",
+   "shape": "phrase",
+   "from": "rule 3",
+   "words": [
+    "Nonstop"
+   ]
+  }
+ ],
+ "dropped": [
+  {
+   "fact": "Price",
+   "word": "from",
+   "reason": "r1"
+  }
+ ]
+}
