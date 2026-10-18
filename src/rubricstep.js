@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, lstat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { createRubric, checkStep, renderGaps, numbersInQuote } from 'bareguard';
 import { dropRows, dropLine } from './pagedropwords.js';
@@ -278,6 +278,46 @@ export function buildStepSpec(params, inputShas) {
 
 /** the sha256 of text, hex @param {string|Buffer} b @returns {string} */
 export const sha256Of = (b) => createHash('sha256').update(b).digest('hex');
+
+/**
+ * The files one named check READS, tree-relative: a `rubric-step` stage's own step file (`output/steps/N.json`). Any other kind reads
+ * none that a try's output can be told by, so `[]`. From the signed declaration, never guessed.
+ * @param {any} closeDecl @param {string|null|undefined} checkName
+ * @returns {string[]}
+ */
+export function judgedFilesOf(closeDecl, checkName) {
+  const stages = Array.isArray(closeDecl?.stages) ? closeDecl.stages : [];
+  const st = stages.find((/** @type {any} */ x) => x && x.name === checkName && x.kind === 'rubric-step');
+  return st && Number.isInteger(st.params?.step) ? [stepFileRel(st.params.step)] : [];
+}
+
+/**
+ * PRD v1.106 Part 5: what each file a try's `check-passes` checks read looked like WHEN it was judged: `{path, bytes, sha256}`. The step
+ * file is overwritten by the next try, so the spine's `output-judged` record is the only trace; the content itself is never written (hard
+ * line). A missing, non-regular or over-size file is skipped — nothing was judged there.
+ * @param {any} closeDecl @param {string} workdir @param {Array<{type?: string, name?: string}>} exits a step's declared exits
+ * @returns {Promise<Array<{path: string, bytes: number, sha256: string}>>}
+ */
+export async function outputJudgedRecords(closeDecl, workdir, exits) {
+  /** @type {Array<{path: string, bytes: number, sha256: string}>} */
+  const out = [];
+  const seen = new Set();
+  for (const e of Array.isArray(exits) ? exits : []) {
+    if (!e || e.type !== 'check-passes') continue;
+    for (const rel of judgedFilesOf(closeDecl, e.name)) {
+      if (seen.has(rel)) continue;
+      seen.add(rel);
+      try {
+        const abs = join(workdir, rel);
+        const ls = await lstat(abs);
+        if (!ls.isFile() || ls.size > STEP_MAX_BYTES) continue;
+        const buf = await readFile(abs);
+        out.push({ path: rel, bytes: buf.length, sha256: sha256Of(buf) });
+      } catch { /* not there: nothing was judged */ }
+    }
+  }
+  return out;
+}
 
 /**
  * The step file's bytes as the close reads them: the parsed JSON object, or WHY there is none. A file cut off mid-write

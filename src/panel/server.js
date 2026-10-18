@@ -200,6 +200,7 @@ function describeLastRecord(r) {
     'scout-start': () => 'starting the scout',
     'scout-result': () => 'the scout finishing',
     'check-run': () => 'a check run',
+    'output-judged': () => 'recording the file a check read',
     'check-preflight': () => 'a preflight check',
     'check-menu': () => 'building the check menu',
     'step-start': (rec) => `starting step ${rec.step ?? '?'}`,
@@ -2349,7 +2350,7 @@ function enrichPartsWithStageKind(parts, kindMeta, spec = null) {
       const checks = Array.isArray(a.checks) ? tryChecksOf(a.checks, kindMeta, spec) : null;
       return {
         ...a,
-        ...(checks ? { checks, stages: checks.map(stageOfCheck) } : { stages: (kindMeta && Array.isArray(a.stages)) ? a.stages.map((s) => attachStageKind(s, kindMeta)) : a.stages }),
+        ...(checks ? { checks, judged: (Array.isArray(a.outputJudged) ? a.outputJudged : []).map(judgedFileLine), stages: checks.map(stageOfCheck) } : { stages: (kindMeta && Array.isArray(a.stages)) ? a.stages.map((s) => attachStageKind(s, kindMeta)) : a.stages }),
         ...(declaredStagesTotal ? { declaredStagesTotal } : {}),
         ...(declaredStages ? { declaredStages } : {}),
       };
@@ -2454,6 +2455,18 @@ function tryChecksOf(checks, kindMeta, spec) {
       from: meta ? fromLineText(meta.fromLine, spec) : null,
     };
   });
+}
+
+/**
+ * "output judged: output/steps/1.json · 2.1 KB · sha256 674b…30" — the file a try's check read (PRD v1.106 Part 5 choice 14). ONE place owns
+ * these words. `size` is bytes under 1 KB, else KB with one decimal; the hash shows its first 4 and last 2 characters.
+ * @param {{path: string|null, bytes: number|null, sha256: string|null}} o
+ * @returns {string}
+ */
+export function judgedFileLine(o) {
+  const size = typeof o.bytes === 'number' ? (o.bytes < 1024 ? `${o.bytes} B` : `${(o.bytes / 1024).toFixed(1)} KB`) : null;
+  const sha = typeof o.sha256 === 'string' && o.sha256.length >= 8 ? `sha256 ${o.sha256.slice(0, 4)}…${o.sha256.slice(-2)}` : null;
+  return ['output judged:', [o.path ?? 'a file', size, sha].filter(Boolean).join(' · ')].join(' ');
 }
 
 /** a worded check as the `{name, verdict, question}` stage shape the attempt headline reads */

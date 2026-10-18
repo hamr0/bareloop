@@ -46,7 +46,7 @@ import { workerThinkingMode, thinkingCallOptions } from './thinking.js';
 export { rateSourceFields };
 import { createClock, isWallTimeout } from './clock.js';
 import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade, HUMAN_PAUSE, HITL_PAUSE, HITL_DECISION_RED } from './declaredclose.js';
-import { inputLabelsOf } from './rubricstep.js';
+import { inputLabelsOf, outputJudgedRecords } from './rubricstep.js';
 import {
   seedAtHead, seedListing, changedSet, GAP_TRIM_MARKER, GATE_AUDIT_FILE, ARBITER_BOOK_STORES,
   HUMAN_KIND, HUMAN_DECISIONS, normalizeHumanRuling, resolveHumanRuling,
@@ -3440,6 +3440,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // results makes the leak inexpressible; scrubbing each consumer makes it
       // something the next consumer has to remember.
       const results = raw.map((r) => (typeof r.detail === 'string' ? { ...r, detail: scrub(r.detail) } : r));
+      // PRD v1.106 Part 5: what the check just read (path, size, sha256 — never the content), recorded BEFORE the exit-eval because the next try
+      // overwrites the file. The worker is idle between its turn and this judge, so these are the bytes the check read.
+      for (const o of await outputJudgedRecords(job.closeDecl, workdir, step.exit)) emit('output-judged', { step: step.id, iteration: iterationNow, ...o });
       emit('exit-eval', { step: step.id, iteration: iterationNow, results });
       // an instrument fault rides out by its runClose verdict NAME: ralph
       // escalates it through CLOSE_FAULTS (or F32-routes a crash after writes)

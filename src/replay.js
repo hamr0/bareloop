@@ -589,6 +589,8 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
   const exitEvals = spine.filter((e) => e.type === 'exit-eval');
   // PRD v1.106 Part 5 (D1): which check each `check-passes` result was — the `check-run` record just before its exit-eval
   const checkRuns = spine.filter((e) => e.type === 'check-run');
+  // the file each try's check read (new runs only; an old spine has none, and then no judged-file line is shown)
+  const outputJudgedRecs = spine.filter((e) => e.type === 'output-judged');
   // D2: the iterations that began (a try with an iteration-start and no exit-eval was cut off before its checks ran)
   const iterationStarts = spine.filter((e) => e.type === 'iteration-start');
 
@@ -805,7 +807,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     // `/api/runs/:runid/rounds` endpoint (`src/panel/server.js`) to slice
     // this attempt's own rounds/tool-calls out of the full spine+gate-audit,
     // never recomputed a second way there either.
-    /** @type {Array<{n: number, iteration: number|null, outcome: 'green'|'red', startSeq: number, endSeq: number, startTs: number|null, endTs: number|null, exitEvalDetail: string|null, checks: Array<{type: string, pass: boolean, detail: string|null, name: string|null}>}>} */
+    /** @type {Array<{n: number, iteration: number|null, outcome: 'green'|'red', startSeq: number, endSeq: number, startTs: number|null, endTs: number|null, exitEvalDetail: string|null, checks: Array<{type: string, pass: boolean, detail: string|null, name: string|null}>, outputJudged: Array<{path: string|null, bytes: number|null, sha256: string|null}>}>} */
     const attemptWindows = [];
     const stepExitEvals = exitEvals
       .filter((ee) => ee.step === id && typeof ee.seq === 'number' && ee.seq > startSeq && ee.seq < endSeq)
@@ -846,6 +848,13 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
           type, pass: r.pass === true, detail: typeof r.detail === 'string' ? r.detail : null, name,
         };
       });
+      const judgedHere = outputJudgedRecs
+        .filter((o) => o.step === id && (typeof ee.iteration !== 'number' || o.iteration === ee.iteration) && typeof o.seq === 'number' && o.seq > lo && o.seq < eeSeq)
+        .map((o) => ({
+          path: typeof o.path === 'string' ? o.path : null,
+          bytes: typeof o.bytes === 'number' ? o.bytes : null,
+          sha256: typeof o.sha256 === 'string' ? o.sha256 : null,
+        }));
       attemptWindows.push({
         n: attemptWindows.length + 1,
         iteration: typeof ee.iteration === 'number' ? ee.iteration : null,
@@ -856,6 +865,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
         endTs: eeTs,
         exitEvalDetail: detailSource && typeof detailSource.detail === 'string' ? detailSource.detail : null,
         checks: tryChecks,
+        outputJudged: judgedHere,
       });
       prevBoundSeq = eeSeq;
       prevBoundTs = eeTs ?? prevBoundTs;
@@ -1357,7 +1367,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
       // same as a scout/plan/replan/judge/run part already does.
       const stepAttempts = step.attemptWindows.length > 0
         ? step.attemptWindows.map((aw) => ({
-          n: aw.n, outcome: aw.outcome, verdict: null, stages: null, detail: aw.exitEvalDetail, startSeq: aw.startSeq, endSeq: aw.endSeq, startTs: aw.startTs, endTs: aw.endTs, iteration: aw.iteration, checks: aw.checks,
+          n: aw.n, outcome: aw.outcome, verdict: null, stages: null, detail: aw.exitEvalDetail, startSeq: aw.startSeq, endSeq: aw.endSeq, startTs: aw.startTs, endTs: aw.endTs, iteration: aw.iteration, checks: aw.checks, outputJudged: aw.outputJudged,
         }))
         : wholePartAttempt(step.stepStartSeq, step.stepStartTs, step.stepEndSeq, step.stepEndTs);
       parts.push({
