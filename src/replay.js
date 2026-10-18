@@ -1468,6 +1468,37 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     }
   }
 
+  // PRD v1.106 Part 5 (C, choice 9): a run that reached its review door gets one more part, the only human step bareloop has. `door` carries what
+  // the spine recorded (when it opened, which files, what the person decided and when); the panel server words it (src/panel/status.js).
+  const doorRec = spine.findLast((e) => e.type === 'review-door');
+  if (doorRec) {
+    const decided = spine.findLast((e) => e.type === 'door-decision' && e.honoured === true && typeof e.seq === 'number' && typeof doorRec.seq === 'number' && e.seq > doorRec.seq);
+    const paths = Array.isArray(doorRec.changed?.paths) ? doorRec.changed.paths.filter((/** @type {any} */ x) => typeof x === 'string') : [];
+    parts.push({
+      id: 'door',
+      kind: 'door',
+      label: 'door',
+      number: null,
+      occurrence: null,
+      rounds: 0,
+      toolCalls: 0,
+      byTool: null,
+      blocked: 0,
+      wallMs: null,
+      spentUsd: 0,
+      unpricedRounds: 0,
+      outcome: null,
+      attempts: [],
+      door: {
+        at: typeof doorRec.ts === 'string' ? doorRec.ts : null,
+        paths,
+        decision: decided && typeof decided.decision === 'string' ? decided.decision : null,
+        text: decided && typeof decided.text === 'string' ? decided.text : null,
+        decidedAt: decided && typeof decided.ts === 'string' ? decided.ts : null,
+      },
+    });
+  }
+
   // PRD v1.106 Part 3: the thinking each call was SENT, from the spine's own `thinking-decision` / `thinking-status` records, worded by
   // src/thinking.js. A part with one attempt (plan, scout, replan, a single-attempt step) carries it as `part.thinking`; an attempt that made a
   // worker call carries `attempt.thinking`. A spine with no such record gets no field at all (an older run shows no thinking word).

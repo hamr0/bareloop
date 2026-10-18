@@ -60,8 +60,9 @@ import { rowsForHome, findRow, modelChoiceFor, tickedLines, endpointOf } from '.
 import { SHAPES } from '../providershapes.js';
 import { resolveProvider } from '../providers.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
-import { statusFor, partStatusFor, GOAL_MET_LINE } from './status.js';
+import { statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER } from './status.js';
 import { thinkingJobText } from '../thinking.js';
+import { judgedFilesOf } from '../rubricstep.js';
 import { createSettingsRoutes } from './settingsroutes.js';
 import { planFromSpec } from './jobplan.js';
 
@@ -1903,7 +1904,7 @@ export const ROUNDS_PAGE_MAX = 200;
  * resolve to a real window, or the spine file is missing — the caller
  * renders 404, same posture as {@link getRunAudit}/{@link getRunJob}.
  * @param {string} runid
- * @param {{ part?: number, attempt?: number, offset?: number, limit?: number }} query
+ * @param {{ all?: boolean, part?: number, attempt?: number, offset?: number, limit?: number }} query
  * @param {{ home?: string }} [opts]
  * @returns {any|null}
  */
@@ -1925,6 +1926,11 @@ export function getRunRounds(runid, query = {}, opts = {}) {
   if (shift && partIndex === 0) return null;
   const part = Array.isArray(summary.parts) ? summary.parts[partIndex - shift] : null;
   if (!part) return null;
+  // PRD v1.106 Part 5 (C): a plan step with graded tries shows ONE table for the whole step (a Try column, round numbers from 1 per step,
+  // a check row after each try, 20 rows a page); `all=1` asks for it. Every other part keeps its per-attempt table.
+  if (query.all === true && part.kind === 'step' && Array.isArray(part.attempts) && part.attempts.some((x) => Array.isArray(x.checks))) {
+    return stepRoundsPage(runid, row, part, { partIndex, offset, limit: Number.isInteger(query.limit) && /** @type {number} */ (query.limit) > 0 ? Math.min(/** @type {number} */ (query.limit), ROUNDS_PAGE_MAX) : STEP_ROWS_PAGE }, opts);
+  }
   const a = Array.isArray(part.attempts) ? part.attempts[attempt - 1] : null;
   if (!a) return null;
   /** @type {{startSeq: number, endSeq: number, outcome: string|null, detail: string|null}} */
@@ -1982,6 +1988,90 @@ export function getRunRounds(runid, query = {}, opts = {}) {
     offset,
     limit,
     check: { outcome: window.outcome, detail: window.detail },
+    toolLogSaved,
+  };
+}
+
+/** the Audit step table's page size (PRD v1.106 Part 5 choice 3): rows, not rounds */
+export const STEP_ROWS_PAGE = 20;
+
+/** the Round table's check row: the sign and the plain words, ONE place (PRD v1.106 Part 5 C) @param {number} passed @param {number} failed */
+export function checkRowWords(passed, failed) {
+  return failed > 0 ? { sign: '✗', text: `${failed} failed, ${passed} passed` } : { sign: '✓', text: `${passed} passed` };
+}
+
+/**
+ * One plan step's whole Round table (PRD v1.106 Part 5 C): every model call, every tool call and one check row per graded try, in order, each
+ * with its Try; round numbers restart at 1 inside the step (the flat Audit view keeps the run-wide numbers). A page is `limit` ROWS.
+ * @param {string} runid @param {any} row @param {any} part @param {{partIndex: number, offset: number, limit: number}} q @param {{ home?: string }} opts
+ */
+function stepRoundsPage(runid, row, part, q, opts) {
+  const attempts = part.attempts.filter((/** @type {any} */ x) => Array.isArray(x.checks));
+  const cut = part.cutOffTry ?? null;
+  /** @type {Array<{n: number, startSeq: number, endSeq: number, a: any}>} */
+  const windows = attempts.map((/** @type {any} */ a) => ({ n: a.n, startSeq: a.startSeq, endSeq: a.endSeq, a }));
+  if (cut) windows.push({ n: cut.n, startSeq: cut.startSeq, endSeq: cut.endSeq, a: null });
+  const lo = windows[0].startSeq;
+  const hi = windows[windows.length - 1].endSeq;
+  const tryOfSeq = (/** @type {number} */ seq) => windows.find((w) => seq > w.startSeq && seq <= w.endSeq)?.n ?? windows[windows.length - 1].n;
+  const { records: spineRecords } = parseJsonl(row.spine);
+  const roundOf = makeRoundLookup(spineRecords);
+  const spend = spineRecords
+    .filter((/** @type {any} */ r) => r && SPEND_RECORD_TYPES.includes(r.type) && typeof r.seq === 'number' && r.seq > lo && r.seq <= hi)
+    .sort((/** @type {any} */ a, /** @type {any} */ b) => a.seq - b.seq);
+  const auditResult = getRunAudit(runid, opts);
+  const toolLogSaved = !!auditResult && auditResult.reason !== 'no-sidecar';
+  /** @type {Map<number, any[]>} */
+  const toolsByRound = new Map();
+  if (toolLogSaved && auditResult) {
+    for (const r of auditResult.rows) {
+      if (r.kind !== 'tool-call' || typeof r.round !== 'number') continue;
+      const bucket = toolsByRound.get(r.round) ?? [];
+      bucket.push(r);
+      toolsByRound.set(r.round, bucket);
+    }
+  }
+  const spec = resolveSpecForRow(row);
+  const exitTs = new Map(spineRecords.filter((/** @type {any} */ r) => r && r.type === 'exit-eval' && typeof r.seq === 'number').map((/** @type {any} */ r) => [r.seq, r.ts]));
+  /** @type {Array<{seq: number, rows: any[]}>} */
+  const blocks = [];
+  spend.forEach((/** @type {any} */ r, i) => {
+    const runWide = roundOf(r.ts);
+    const tryN = tryOfSeq(r.seq);
+    const local = i + 1;
+    const modelCall = toolLogSaved && auditResult ? auditResult.rows.find((x) => x.kind === 'model-call' && x.round === runWide) : null;
+    const rows = [{
+      kind: 'model', round: local, try: tryN, time: typeof r.ts === 'string' ? r.ts : null,
+      costUsd: typeof r.costUsd === 'number' && Number.isFinite(r.costUsd) ? r.costUsd : null,
+      tokens: typeof r.tokens === 'number' && Number.isFinite(r.tokens) ? r.tokens : null,
+      durationMs: modelCall ? modelCall.durationMs : null,
+    }];
+    for (const tc of (runWide === null ? [] : (toolsByRound.get(runWide) ?? []))) rows.push({ ...tc, kind: 'tool', round: local, try: tryN });
+    blocks.push({ seq: r.seq, rows });
+  });
+  for (const w of windows) {
+    if (!w.a) continue; // a try cut off before its checks ran has no check row
+    const passed = w.a.checks.filter((/** @type {any} */ c) => c.pass).length;
+    const failed = w.a.checks.length - passed;
+    const named = w.a.checks.find((/** @type {any} */ c) => c.type === 'check-passes');
+    const judgedPath = named && named.name ? judgedFilesOf(spec?.closeDecl, named.name)[0] ?? null : null;
+    blocks.push({
+      seq: w.endSeq,
+      rows: [{ kind: 'check', round: null, try: w.n, time: exitTs.get(w.endSeq) ?? null, path: judgedPath, ...checkRowWords(passed, failed) }],
+    });
+  }
+  blocks.sort((a, b) => a.seq - b.seq);
+  const all = blocks.flatMap((b) => b.rows);
+  return {
+    runid,
+    part: q.partIndex,
+    partKind: 'step',
+    mode: 'step',
+    step: partDisplayLabel(part),
+    rows: all.slice(q.offset, q.offset + q.limit),
+    totalRows: all.length,
+    offset: q.offset,
+    limit: q.limit,
     toolLogSaved,
   };
 }
@@ -2355,15 +2445,43 @@ function enrichPartsWithStageKind(parts, kindMeta, spec = null) {
         ...(declaredStages ? { declaredStages } : {}),
       };
     }) : part.attempts;
-    return { ...part, attempts, ...(part.kind === 'step' ? { tries: triesOf(attempts, part.cutOffTry) } : {}) };
+    return {
+      ...part,
+      attempts,
+      ...(part.kind === 'step' ? { tries: triesOf(attempts, part.cutOffTry), marker: ACTOR_MARKER.model, tally: toolsTallyLine(part.byTool, part.blocked) } : {}),
+      ...(part.kind === 'door' && part.door ? { marker: ACTOR_MARKER.human, doorView: doorViewOf(part.door) } : {}),
+    };
   });
+}
+
+/** the words for a try the wall (or a cap, or a stop) ended before any of its checks ran (D2) */
+const CUT_OFF_WORDS = 'cut off before its checks ran';
+
+/** tool kinds in the order the Audit tally lists them; anything else follows alphabetically */
+const TALLY_ORDER = ['read', 'grep', 'write', 'edit'];
+
+/**
+ * "tools: read 16 · grep 22 · write 5 · denied 0" — the step's tool calls by kind, then how many the gate denied (PRD v1.106 Part 5 C). The
+ * `shell_`/`ctx_` prefixes are stripped like the rest of the page. `null` when no tool log was saved (nothing honest to count).
+ * @param {Record<string, number>|null|undefined} byTool @param {number|null|undefined} blocked
+ * @returns {string|null}
+ */
+export function toolsTallyLine(byTool, blocked) {
+  if (!byTool || typeof byTool !== 'object') return null;
+  const named = Object.entries(byTool).map(([k, n]) => [k.replace(/^shell_/, '').replace(/^ctx_/, ''), n]);
+  named.sort((a, b) => {
+    const ia = TALLY_ORDER.indexOf(String(a[0]));
+    const ib = TALLY_ORDER.indexOf(String(b[0]));
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || String(a[0]).localeCompare(String(b[0]));
+  });
+  return `tools: ${[...named.map(([k, n]) => `${k} ${n}`), `denied ${typeof blocked === 'number' ? blocked : 0}`].join(' · ')}`;
 }
 
 /**
  * A step's tries in order: each graded try (it ran checks) and, last, the one cut off before its checks ran (D2). `ran` is how many checks ran,
  * `passed`/`failed` how they went; a cut-off try ran none. The Audit, the step card and the Run summary all read this one list.
  * @param {any[]} attempts @param {any} cutOffTry
- * @returns {Array<{n: number, cutOff: boolean, outcome: string|null, iteration: number|null, ran: number, passed: number, failed: number, thinking: string|null}>}
+ * @returns {Array<{words?: string, n: number, cutOff: boolean, outcome: string|null, iteration: number|null, ran: number, passed: number, failed: number, thinking: string|null}>}
  */
 function triesOf(attempts, cutOffTry) {
   const graded = (Array.isArray(attempts) ? attempts : []).filter((a) => Array.isArray(a.checks)).map((a) => ({
@@ -2378,7 +2496,7 @@ function triesOf(attempts, cutOffTry) {
   }));
   if (!cutOffTry) return graded;
   return [...graded, {
-    n: graded.length + 1, cutOff: true, outcome: null, iteration: typeof cutOffTry.iteration === 'number' ? cutOffTry.iteration : null, ran: 0, passed: 0, failed: 0, thinking: typeof cutOffTry.thinking === 'string' ? cutOffTry.thinking : null,
+    words: CUT_OFF_WORDS, n: graded.length + 1, cutOff: true, outcome: null, iteration: typeof cutOffTry.iteration === 'number' ? cutOffTry.iteration : null, ran: 0, passed: 0, failed: 0, thinking: typeof cutOffTry.thinking === 'string' ? cutOffTry.thinking : null,
   }];
 }
 
@@ -2451,6 +2569,8 @@ function tryChecksOf(checks, kindMeta, spec) {
       note: c.type === 'tree-changed' ? c.detail : (c.pass ? null : `${reasons.length} reason${reasons.length === 1 ? '' : 's'}`),
       gap: gap ? gap.line : null,
       more: gap ? gap.more : 0,
+      moreText: gap && gap.more > 0 ? `(+${gap.more} more)` : null,
+      reasonsLabel: reasons.length > 1 ? `the ${reasons.length} reasons` : null,
       reasons,
       from: meta ? fromLineText(meta.fromLine, spec) : null,
     };
@@ -3372,6 +3492,7 @@ export function handleRequest(req, res, opts) {
       /** @param {string|null} v @returns {number|undefined} */
       const num = (v) => (v !== null && /^\d+$/.test(v) ? Number(v) : undefined);
       const query = {
+        all: url.searchParams.get('all') === '1',
         part: num(url.searchParams.get('part')),
         attempt: num(url.searchParams.get('attempt')),
         offset: num(url.searchParams.get('offset')),

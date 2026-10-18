@@ -394,6 +394,16 @@
      one) covers every table inside that wrapper, Flat's included. */
   .audit-table-scroll table th{position:sticky;top:0;z-index:1;}
   .attempt-check{margin-top:4px;font-size:12px;}
+  /* PRD v1.106 Part 5 C: the Audit step fold (tries, their numbered checks, the Round table). Every line wraps; nothing forces a page-wide scroll. */
+  .actor-mark{color:var(--text-faint);font-size:12px;margin-left:6px;white-space:nowrap;}
+  .step-tally{font-size:12px;color:var(--text-dim);overflow-wrap:anywhere;margin:2px 0 6px;}
+  .try-line{margin:10px 0 2px;overflow-wrap:anywhere;font-weight:700;}
+  .try-check,.try-judged{margin:2px 0 2px 12px;font-size:13px;overflow-wrap:anywhere;}
+  .try-judged{font-size:12px;color:var(--text-dim);}
+  .try-reasons{margin:2px 0 4px 12px;font-size:12px;color:var(--text-dim);}
+  .try-reasons summary{cursor:pointer;}
+  .try-reasons div{margin:2px 0 2px 8px;overflow-wrap:anywhere;}
+  .step-rounds-note{font-size:12px;color:var(--text-faint);margin:8px 0 2px;overflow-wrap:anywhere;}
   .rounds-page-info{margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 
   /* build item C: Audit tab grouped-by-part rows */
@@ -906,6 +916,7 @@
             <div id="audit-flat-wrap" hidden>
               <div id="audit-empty" class="hint" data-testid="audit-empty" style="font-size:13px;padding:24px 0;">select a run first</div>
               <div id="audit-content" data-testid="audit-content" hidden>
+                <div class="hint" data-testid="audit-flat-roundnote" style="overflow-wrap:anywhere;margin-bottom:6px;">Round numbers here count the whole run. In the Grouped view each step counts its own rounds from 1.</div>
                 <div class="audit-table-scroll">
                   <table data-testid="audit-table">
                     <thead><tr><th>Round</th><th>Step</th><th>Action</th><th>Path</th><th>Decision</th><th>Time</th></tr></thead>
@@ -1171,7 +1182,7 @@
   // result when nothing was ever judged there; `step`/`fix` (real attempts)
   // and `run` (its own real, non-null outcome) are the only kinds worth an
   // inline attempt/result glyph.
-  function partHasNoVerdict(part){ return part.kind === "scout" || part.kind === "plan" || part.kind === "replan" || part.kind === "judge"; }
+  function partHasNoVerdict(part){ return part.kind === "scout" || part.kind === "plan" || part.kind === "replan" || part.kind === "judge" || part.kind === "door"; }
   // ONE shared result-glyph rule for both the Run tab's cards and the Audit
   // tab's grouped-row headers — `null` (never a fabricated "?") for a
   // no-verdict part kind; a multi-attempt part (a step with retries, or the
@@ -2757,6 +2768,7 @@
         '<div class="step-head"><h4>' + titleText + '</h4>' +
           stepStateHTML(box, 'part-state-' + idx) +
           (box.blocked > 0 ? '<span class="badge red" data-testid="part-blocked-badge">' + box.blocked + ' blocked</span>' : '') +
+          actorMarkHtml(part) +
         '</div>' +
         '<div class="step-meta" title="a part is one piece of the run (scout, plan, a step, replan, fix, judge); a call is one model round">' + line1Bits.join(" &middot; ") + '</div>' +
         '<div class="step-meta">' + escapeXml(partLine2Text(box.part)) + '</div>';
@@ -2825,6 +2837,90 @@
           loadRounds(roundsEl, partIndex, a, 0);
         }
       });
+    });
+  }
+
+  // PRD v1.106 Part 5: who did a part's work, in the server's own words (`part.marker`: [model] or [human · ask]); nothing typed here
+  function actorMarkHtml(part){
+    return part && typeof part.marker === "string" && part.marker !== "" ? ' <span class="actor-mark" data-testid="actor-mark">' + escapeXml(part.marker) + '</span>' : "";
+  }
+  // PRD v1.106 Part 5 C: the review door's fold: one human row for the ask, one for the answer once there is one
+  function doorTableHtml(part){
+    var rows = (part.doorView && part.doorView.rows ? part.doorView.rows : []).map(function(r){
+      return "<tr><td>&mdash;</td><td>&mdash;</td><td>human</td><td>" + (r.path ? escapeXml(r.path) : "&mdash;") + "</td><td>" + escapeXml(r.text) + "</td><td>" +
+        auditTimeCellHtml({ time: r.time }) + "</td></tr>";
+    }).join("");
+    return '<div class="audit-table-scroll"><table class="rounds-table" data-testid="door-table"><thead><tr><th>Round</th><th>Try</th><th>Action</th><th>Path</th><th>Decision</th><th>Time</th></tr></thead><tbody>' + rows + "</tbody></table></div>";
+  }
+  // PRD v1.106 Part 5 C: one try, in the server's words: its line (result glyph, thinking, the first reason and how many more), its numbered checks
+  // in the order they ran (each with its result, a count or a folded reasons list, the job line it serves) and the file it judged
+  function tryBlockHtml(part, t, boxIsLive, partIndex){
+    var attempt = (part.attempts || []).filter(function(a){ return a.n === t.n; })[0] || null;
+    var testid = "audit-try-" + partIndex + "-" + t.n;
+    if(t.cutOff){
+      return '<div class="try-line" data-testid="' + testid + '">try ' + t.n + (t.thinking ? " &middot; " + escapeXml(t.thinking) : "") + " &middot; " + escapeXml(t.words || "") + "</div>";
+    }
+    var checks = attempt && Array.isArray(attempt.checks) ? attempt.checks : [];
+    var firstBad = checks.filter(function(c){ return !c.pass && c.gap; })[0] || null;
+    var html = '<div class="try-line" data-testid="' + testid + '">try ' + t.n + " " + glyphSpan(attemptGlyph(t.outcome, boxIsLive)) +
+      (t.thinking ? " &middot; " + escapeXml(t.thinking) : "") +
+      (firstBad ? " &middot; " + escapeXml(firstBad.gap) + (firstBad.moreText ? " " + escapeXml(firstBad.moreText) : "") : "") + "</div>";
+    checks.forEach(function(c){
+      var label = c.question || c.name || "unknown";
+      html += '<div class="try-check" data-testid="' + testid + '-check-' + c.n + '">' + c.n + " " + glyphSpan(c.pass ? "\u2713" : "\u2717") + " " + escapeXml(label) +
+        (c.note ? "  (" + escapeXml(c.note) + ")" : "") + (c.from ? " &middot; " + escapeXml(c.from) : "") + "</div>";
+      if(!c.pass && c.reasonsLabel){
+        html += '<details class="try-reasons" data-testid="' + testid + '-reasons-' + c.n + '"><summary>' + escapeXml(c.reasonsLabel) + "</summary>" +
+          c.reasons.map(function(r){ return "<div>" + escapeXml(r) + "</div>"; }).join("") + "</details>";
+      }
+    });
+    (attempt && Array.isArray(attempt.judged) ? attempt.judged : []).forEach(function(j){
+      html += '<div class="try-judged" data-testid="' + testid + '-judged">' + escapeXml(j) + "</div>";
+    });
+    return html;
+  }
+  // PRD v1.106 Part 5 C: a plan step's fold — tools tally, every try with its checks, then ONE Round table for the whole step (20 rows a page)
+  function buildStepFold(body, partIndex, part, boxIsLive){
+    var wrap = document.createElement("div");
+    wrap.className = "step-fold";
+    wrap.setAttribute("data-testid", "audit-step-fold-" + partIndex);
+    var html = part.tally ? '<div class="step-tally" data-testid="audit-tally-' + partIndex + '">' + escapeXml(part.tally) + "</div>" : "";
+    part.tries.forEach(function(t){ html += tryBlockHtml(part, t, boxIsLive, partIndex); });
+    html += '<div class="rounds-list" data-testid="audit-step-rounds-' + partIndex + '"></div>';
+    wrap.innerHTML = html;
+    body.appendChild(wrap);
+    loadStepRows(wrap.querySelector(".rounds-list"), partIndex, 0, false);
+  }
+  function stepRowHtml(r){
+    if(r.kind === "check"){
+      return "<tr><td>&mdash;</td><td>" + r.try + "</td><td>check</td><td>" + (r.path ? escapeXml(r.path) : "&mdash;") + "</td><td>" + glyphSpan(r.sign) + " " + escapeXml(r.text) + "</td><td>" + auditTimeCellHtml(r) + "</td></tr>";
+    }
+    if(r.kind === "model"){
+      var pseudo = { kind: "model-call", round: r.round, time: r.time, costUsd: r.costUsd, tokens: r.tokens, durationMs: r.durationMs };
+      return '<tr class="round-header-row"><td>' + r.round + "</td><td>" + r.try + "</td><td>" + auditActionCellHtml(pseudo) + "</td><td>" + auditPathCellHtml(pseudo) + "</td><td>" + auditDecisionCellHtml(pseudo) + "</td><td>" + auditTimeCellHtml(pseudo) + "</td></tr>";
+    }
+    var cls = auditRowClassName(r);
+    return "<tr" + (cls ? ' class="' + cls + '"' : "") + "><td>" + auditRoundCellHtml(r) + "</td><td>" + r.try + "</td><td>model &middot; " + auditActionCellHtml(r) + "</td><td>" + auditPathCellHtml(r) + "</td><td>" + auditDecisionCellHtml(r) + "</td><td>" + auditTimeCellHtml(r) + "</td></tr>";
+  }
+  function loadStepRows(el, partIndex, offset, appendMode){
+    if(!appendMode) el.innerHTML = '<div class="hint">loading…</div>';
+    getJSON("/api/runs/" + encodeURIComponent(currentRunid) + "/rounds?part=" + encodeURIComponent(partIndex) + "&all=1&offset=" + offset).then(function(data){
+      var rowsHtml = data.rows.map(stepRowHtml).join("");
+      var shownTo = data.offset + data.rows.length;
+      var info = '<div class="hint">showing ' + (data.offset + 1) + "&ndash;" + shownTo + " of " + data.totalRows + "</div>";
+      if(appendMode){
+        var oldInfo = el.querySelector(".rounds-page-info");
+        if(oldInfo) oldInfo.remove();
+        el.querySelector(".rounds-table tbody").insertAdjacentHTML("beforeend", rowsHtml);
+      } else {
+        el.innerHTML = (data.toolLogSaved ? "" : '<div class="hint">tool calls: no log saved</div>') +
+          '<div class="audit-table-scroll"><table class="rounds-table" data-testid="rounds-table"><thead><tr><th>Round</th><th>Try</th><th>Action</th><th>Path</th><th>Decision</th><th>Time</th></tr></thead><tbody>' + rowsHtml + "</tbody></table></div>";
+      }
+      el.insertAdjacentHTML("beforeend", '<div class="rounds-page-info">' + info + (shownTo < data.totalRows ? '<button class="btn small rounds-load-more" type="button">load more</button>' : "") + "</div>");
+      var more = el.querySelector(".rounds-load-more");
+      if(more) more.addEventListener("click", function(){ loadStepRows(el, partIndex, shownTo, true); });
+    }).catch(function(e){
+      el.innerHTML = '<div class="hint">failed to load rounds: ' + escapeXml(e.message) + "</div>";
     });
   }
 
@@ -2937,6 +3033,7 @@
   }
   // line 2 of a part's card / Audit body: the drafting step names, or a worker part's tool breakdown
   function partLine2Text(part){
+    if(part && part.kind === "door") return part.doorView ? "last answer: " + part.doorView.last : "";
     if(part && part.kind === "drafting") return (part.draftSteps || []).map(function(x){ return x.label; }).join(" · ");
     return toolBreakdownLine(part.byTool);
   }
@@ -2995,6 +3092,7 @@
    */
   function partLine1Text(part, detail){
     if(part && part.kind === "drafting") return draftingLine1Text(part);
+    if(part && part.kind === "door") return part.doorView ? escapeXml(part.doorView.head) : "";
     var isLiveRunPart = part && part.kind === "run" && detail && !detail.died && detail.spentUsd === null;
     var wallText = (isLiveRunPart && part.wallMs === null) ? liveWallPhrase(detail.wallFloorMs) : duration(part.wallMs);
     var spendText = (isLiveRunPart && part.spentUsd === null)
@@ -3255,7 +3353,8 @@
       headBtn.innerHTML =
         stepStateHTML(box, 'audit-part-state-' + idx) + ' ' + titleText + ' &middot; ' + partLine1Text(part, detail) +
         (groupResultGlyph !== null ? ' &middot; ' + groupResultGlyph : '') +
-        (box.blocked > 0 ? ' <span class="badge red" data-testid="audit-part-blocked-' + idx + '">' + box.blocked + ' blocked</span>' : '');
+        (box.blocked > 0 ? ' <span class="badge red" data-testid="audit-part-blocked-' + idx + '">' + box.blocked + ' blocked</span>' : '') +
+        actorMarkHtml(part);
       var body = document.createElement("div");
       body.className = "audit-part-body";
       body.hidden = !startExpanded;
@@ -3274,6 +3373,12 @@
           var draftingEl = document.createElement("div");
           draftingEl.innerHTML = draftingTableHtml(part);
           body.appendChild(draftingEl);
+        } else if(part.kind === "door"){
+          var doorEl = document.createElement("div");
+          doorEl.innerHTML = doorTableHtml(part);
+          body.appendChild(doorEl);
+        } else if(part.kind === "step" && Array.isArray(part.tries) && part.tries.length > 0){
+          buildStepFold(body, idx, part, box.state === "running");
         } else if(attempts.length > 1){
           // parts WITH an attempt sub-loop (a multi-attempt step, or the fix
           // loop) expand to attempt rows first — each attempt expands to its
