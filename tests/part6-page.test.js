@@ -152,7 +152,7 @@ test('red rows (fix 1): a judged file shows its note above bare rows (no ✓) an
   assert.equal(h.includes('✓'), false);
   assert.match(h, /result-row/);
   const f = src('renderResult');
-  assert.ok(f.indexOf('result-gap') > f.indexOf('resultLineCard(line)'), 'the gap words sit under the line cards');
+  assert.ok(f.indexOf('result-gap') > f.indexOf('resultLineCard(line,'), 'the gap words sit under the line cards');
 });
 
 test('confirmed (fix 2): the rules list adds the server\'s note after a fact\'s own sentence', () => {
@@ -168,13 +168,13 @@ test('Not checked per line (fix 5): each line card lists its own items (server l
   assert.ok(card.indexOf('result-line-notchecked') > card.indexOf('resultFactsLine(line)'));
   assert.match(card, /line\.notChecked/);
   const f = src('renderResult');
-  assert.ok(f.indexOf('result-notchecked') > f.indexOf('resultLineCard(line)'), 'the unlinked items come after the line cards');
+  assert.ok(f.indexOf('result-notchecked') > f.indexOf('resultLineCard(line,'), 'the unlinked items come after the line cards');
   assert.match(f, /resultNotChecked\("Not checked \(the AI's own reading\)", data\.notChecked/);
 });
 
 test('cards (signed look, variation B): Result, Line N, Your call, Saved — in the panel\'s own .job-card boxes; the "gone" words render once per file, in Saved only; no table', () => {
   const f = src('renderResult');
-  const at = ['<h4>Result</h4>', 'resultLineCard(line)', 'resultDoorHtml(data.door)', '<h4>Saved</h4>'].map((k) => f.indexOf(k));
+  const at = ['<h4>Result</h4>', 'resultLineCard(line,', 'resultDoorHtml(data.door)', '<h4>Saved</h4>'].map((k) => f.indexOf(k));
   assert.ok(at.every((n) => n >= 0) && at.every((n, i) => i === 0 || n > at[i - 1]), `order ${at}`);
   assert.match(f, /d\.words \? '<div class="rs-warn" data-testid="result-file-gone">'/);
   assert.equal([...PAGE.matchAll(/result-file-gone/g)].length, 1);
