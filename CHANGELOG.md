@@ -9,6 +9,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
+- **bareguard ^0.25.1.** Gap words now JSON-escape the extra-keys keys and end with " and N more" when more items exist than are shown; evidence and `cited` results are unchanged, and bareloop's own behaviour is unchanged.
 - **Result tab shows a money fact as the page wrote it.** The price box reads the value with its currency or unit exactly as the check located them on the page ("144 US dollars"), replacing the interim "$144"; with no evidence (an old run) the fact's own spelling stays.
 - **Result tab marks the words each check read.** Each result's proof fold marks, in the page's own quote, every word the check located (the anchors, the values, the unit and the phrases), using the offsets bareguard returned and the run's `rubric-evidence` record, never a search in the panel. A membership token that is not the result's own is not marked. Escaped throughout; an old run or a quote the check did not read shows the plain quote as before.
 - **`rubric-evidence` spine record (report-only).** A rubric step's `cited` checks now save what they read (bareguard 0.25 `full.evidence`: the quote and the spans of the words each check located) as `{step, iteration?, evidence}`, masked like every spine write; nothing in the verdict, governor or money paths reads it. The Result tab's highlights and money-as-written build on it.
