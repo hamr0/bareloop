@@ -787,9 +787,14 @@ export function ruleNotChecked(closeDecl, jobLines) {
  * @param {any} closeDecl @returns {string[]}
  */
 export function proseNotChecked(closeDecl) {
+  return proseNotCheckedItems(closeDecl).map((i) => i.text);
+}
+
+/** the same items as {@link proseNotChecked} with the job line each belongs to (the stage's own `step`) @param {any} closeDecl @returns {{line: number, text: string}[]} */
+export function proseNotCheckedItems(closeDecl) {
   const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
   return stages.filter((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts) && !factPartOf(st.params))
-    .map((/** @type {any} */ st) => `line ${st.params.step}: what the text says — you judge it at Accept`);
+    .map((/** @type {any} */ st) => ({ line: st.params.step, text: `line ${st.params.step}: what the text says — you judge it at Accept` }));
 }
 
 // ── the sign-vs-run invariant: the checks the person is SHOWN are the checks the signed close RUNS ───────────────────

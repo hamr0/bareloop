@@ -132,3 +132,10 @@ test('confirmed (fix 2): the rules list adds the server\'s note after a fact\'s 
   assert.equal([...h.matchAll(/\(you confirmed\)/g)].length, 1);
   assert.ok(h.includes(`${facts[1].sentence.replace(/"/g, '&quot;')} (you confirmed)`));
 });
+
+test('Not checked per line (fix 5): each line\'s items are drawn right after that line, one row per item, from the server\'s line.notChecked', () => {
+  const f = src('renderResult');
+  const at = f.indexOf('result-line-notchecked');
+  assert.ok(at > f.indexOf('resultFactsLine(line)') && at < f.indexOf('result-notchecked">'), 'inside the line loop, before the bottom list');
+  assert.match(f, /\(line\.notChecked \|\| \[\]\)\.forEach/);
+});

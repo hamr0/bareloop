@@ -102,14 +102,26 @@ test('/result (green, mve5y8fa): one row per delivered result, columns are the s
   assert.deepEqual(res.body.delivered, [{ i: 0, path: w.delivered, name: '1-2026-10-18.json', bytes: 1473, state: 'ok', words: null }]);
 });
 
-test('/result: the Not checked list is the Job tab\'s own list (planFromSpec(spec).notChecked)', async () => {
+test('/result: Not checked is split by the signed plan\'s line, and in total is exactly the Job tab\'s items (its per-line rows plus its fold)', async () => {
   const w = await world();
+  const sess = w.out('mve5y8fa');
+  // RE-SHAPE of the real spec (the real one has no refusals and no text line): a refusal on line 1, a prose line 2 with its own text stage
   const spec = JSON.parse(readFileSync(join(FX, 'mve5y8fa.resolved-spec.json'), 'utf8'));
+  spec.jobLines.push({ n: 2, text: 'Write a short summary', rule: 'one paragraph', rules: ['one paragraph'] });
+  spec.closeDecl.stages.push({ name: 'line-2-summary', kind: 'rubric-step', params: { step: 2, parts: [{ class: 'text', text: 'Write a short summary', rules: [1], covers: [1], check: 'maxLines', value: 1 }] }, fromLine: [2] });
+  spec.closeDecl.refused = [{ line: 1, rule: 3, reason: 'the page cannot say it' }, { line: 2, rule: 1, reason: 'a paragraph is not counted' }];
+  writeFileSync(join(sess, 'resolved-spec.json'), JSON.stringify(spec));
   const res = (await w.get('/api/runs/mve5y8fa/result')).body;
-  assert.deepEqual(res.notChecked, planFromSpec(spec).notChecked);
-  assert.ok(res.notChecked.length > 0);
-  const job = (await w.get('/api/runs/mve5y8fa/job')).body;
-  assert.deepEqual(res.notChecked, job.plan.notChecked, 'the same list the Job tab shows');
+  const job = (await w.get('/api/runs/mve5y8fa/job')).body.plan;
+  const l1 = res.lines.find((l) => l.n === 1); const l2 = res.lines.find((l) => l.n === 2);
+  assert.deepEqual(l1.notChecked, ['"nonstop" — the page cannot say it']);
+  assert.deepEqual(l2.notChecked, ['"one paragraph" — a paragraph is not counted', 'line 2: what the text says — you judge it at Accept']);
+  assert.equal(res.notChecked.some((t) => t.startsWith('line 2: what the text says')), false, 'a line-tied item is not repeated at the bottom');
+  const mine = [...res.lines.flatMap((l) => l.notChecked), ...res.notChecked].sort();
+  const theirs = [...job.lines.flatMap((l) => l.refused), ...job.notChecked].sort();
+  assert.deepEqual(mine, theirs, 'the same items as the Job tab in total');
+  assert.deepEqual(res.notChecked, planFromSpec(spec).notChecked.filter((t) => !t.startsWith('line 2: what the text says')));
+  assert.ok(res.notChecked.length > 0, 'the real spec\'s own notes tie to no line and stay at the bottom');
 });
 
 test('/result (red, mvdg1xo3): no rows and passed false on every line (no ✓ basis), and the check\'s own first gap words', async () => {

@@ -68,7 +68,7 @@ import {
   statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER, DOOR_WORDS,
 } from './status.js';
 import { thinkingJobText } from '../thinking.js';
-import { judgedFilesOf, lineRules, stepFileRel } from '../rubricstep.js';
+import { judgedFilesOf, lineRules, stepFileRel, proseNotCheckedItems } from '../rubricstep.js';
 import { factPartOf, factSentence, ruleWords, moneyAs } from '../facts.js';
 import { createSettingsRoutes } from './settingsroutes.js';
 import { planFromSpec } from './jobplan.js';
@@ -1254,6 +1254,15 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
   const delivered = deliveredOf(records);
   const read = delivered.map((d) => readDelivered(d));
   const jobLines = Array.isArray(spec?.jobLines) ? spec.jobLines : [];
+  // Not checked, split by the line the SIGNED plan ties each item to: a refusal carries its line (closeDecl.refused[].line, planFromSpec's
+  // `lines[].refused`), a prose step carries its stage's step. What the plan ties to no line stays in `notChecked` (the bottom). Together they are
+  // exactly the Job tab's items (its per-line "not checked" rows plus its Not checked fold) — never a second spelling.
+  const plan = planFromSpec(spec);
+  const proseByLine = proseNotCheckedItems(spec?.closeDecl);
+  const prosePool = proseByLine.map((i) => i.text);
+  const tiedToLine = (/** @type {number} */ n) => [...(plan.lines.find((l) => l.n === n)?.refused ?? []), ...proseByLine.filter((i) => i.line === n).map((i) => i.text)];
+  const bottom = [...plan.notChecked];
+  for (const t of prosePool) { const k = bottom.indexOf(t); if (k >= 0) bottom.splice(k, 1); }
   const greenEnd = records.findLast((r) => r && r.type === 'job-end')?.outcome === 'green';
   const lines = stages.map((/** @type {any} */ st) => {
     const n = st.params.step;
@@ -1263,6 +1272,7 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
     const passed = stagePassedIn(records, st.name);
     /** @type {any} */
     const out = {
+      notChecked: tiedToLine(n),
       n, text: jl && typeof jl.text === 'string' ? jl.text : '', rules: jl ? lineRules(jl) : [], kind: fp ? 'facts' : 'text', passed,
       file: di ? { i: di.i, state: read[di.i].state, words: read[di.i].state === 'gone' ? RESULT_FILE_GONE : (read[di.i].state === 'changed' ? RESULT_FILE_CHANGED : null) } : null,
     };
@@ -1314,7 +1324,7 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
   return {
     runid,
     lines,
-    notChecked: planFromSpec(spec).notChecked,
+    notChecked: bottom,
     // the door's words, from the one table (src/panel/status.js DOOR_WORDS); the page types none of them
     door: { head: DOOR_WORDS.waiting.head, ask: RESULT_DOOR_ASK },
     delivered: delivered.map((d, i) => ({

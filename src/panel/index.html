@@ -3784,6 +3784,7 @@
         (line.rules || []).map(function(r){ return '<div class="sub">~ ' + escapeXml(r) + '</div>'; }).join("") + '</div></div>';
       if(line.kind === "facts") h += resultFactsLine(line);
       else { hasText = true; h += resultTextLine(line); }
+      (line.notChecked || []).forEach(function(t){ h += '<div class="hint" data-testid="result-line-notchecked">Not checked: ' + escapeXml(t) + '</div>'; });
     });
     if(data.gap){
       h += '<div class="rs-warn" data-testid="result-gap">The check said: ' + escapeXml(data.gap.line) + (data.gap.moreText ? ' ' + escapeXml(data.gap.moreText) : "") + '</div>';
