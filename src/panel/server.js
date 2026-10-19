@@ -1255,18 +1255,31 @@ function pageUrlsByLabel(spinePath) {
 }
 
 /**
+ * bareguard's `normalizeForQuote`, step for step and in its order: remove every `**`, then every `__` from what is left, then collapse
+ * whitespace and trim ("a _**_ b" gives "a b": removing `**` leaves `__`, which the second step takes). Not exported from bareguard's package
+ * root, so this is a second spelling of it (node_modules/bareguard/src/primitives/rubric.js:1519, bareguard 0.25.1); the test compares it with
+ * the real function. The one owner would be an upstream export or a per-entry quote hash.
+ * @param {string} s
+ * @returns {string}
+ */
+export function normalizeQuote(s) {
+  return s.split('**').join('').split('__').join('').replace(/\s+/g, ' ').trim();
+}
+
+/**
  * What a result's check read, from the run's own `rubric-evidence` record (report-only; bareguard 0.25 `full.evidence`), for the proof fold.
  * `null` = no evidence (an old run, a malformed claim, or a quote that is not the one the check read): the page shows the plain quote.
  * `text` is bareguard's normalized quote; `marks` are `[start, end]` UTF-16 offsets into it, sorted, overlaps merged. Which spans: every span the
  * check read EXCEPT a bind-only membership token that is not this claim's (`canon` present, `matched` absent) - hamr 2026-10-19, ruled A.
- * The offsets are bareguard's; nothing here searches the quote for anything.
+ * The offsets are bareguard's and nothing here searches the quote for a word; the one thing computed here is the quote's normalized form,
+ * {@link normalizeQuote}, compared with `ev.text` to prove the entry is about THIS quote.
  * @param {any} ev one `evidence` entry @param {unknown} quote the result's own quote as the file holds it
  * @returns {{text: string, marks: number[][]}|null}
  */
 function proofOf(ev, quote) {
   if (!ev || typeof ev.text !== 'string' || !Array.isArray(ev.spans) || typeof quote !== 'string') return null;
-  // the entry must be about THIS quote (bareguard's normalization: marks removed, whitespace collapsed, trimmed), else it is another try's
-  if (quote.replace(/\*\*|__/g, '').replace(/\s+/g, ' ').trim() !== ev.text) return null;
+  // the entry must be about THIS quote, else it is another try's
+  if (normalizeQuote(quote) !== ev.text) return null;
   const spans = ev.spans
     .filter((/** @type {any} */ sp) => sp && Number.isInteger(sp.start) && Number.isInteger(sp.end) && sp.start >= 0 && sp.end > sp.start && sp.end <= ev.text.length
       && !(sp.canon !== undefined && sp.matched !== true))
