@@ -184,7 +184,7 @@ export function factClaims(part, results) {
 
 /** @param {unknown} n @param {string} shape @param {any} f @returns {string} one bound, as the person would say it */
 function sayBound(n, shape, f) {
-  if (shape === 'money') return moneyAs(f, n, false);
+  if (shape === 'money') return moneyAs(f, /** @type {string|number} */ (n), false);
   return String(n);
 }
 
