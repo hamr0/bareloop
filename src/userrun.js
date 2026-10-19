@@ -304,6 +304,7 @@ class ExitSignal extends Error {
  * @property {string} seed
  * @property {string} spineName
  * @property {string} [into] see `RunOpts.into`
+ * @property {boolean} [refreeze] a FRESH `--spec` run: fetch the web inputs again AFTER the run is listed (never on resume/door/decide)
  * @property {string|null} model
  * @property {string|null} providerKey
  * @property {string|null} readShim
@@ -493,7 +494,8 @@ async function execute(ctx) {
   const REGISTRY_TAIL = (ctx.registry ?? null) !== null ? ` --registry ${(ctx.registry ?? null)} --workflow ${(ctx.workflow ?? null) ?? spec.job}` : '';
 
   const WORKDIR = target.workdir;
-  const SEED = target.seed;
+  // `let`: a fresh run's refetch of its web inputs commits a NEW seed (below, after the run is listed)
+  let SEED = target.seed;
   const specHash = jobSpecHash(spec);
   // the re-invocation commands this engine prints: a bundle names its own door and hash,
   // every other caller gets today's byte-identical strings.
@@ -1584,6 +1586,24 @@ async function execute(ctx) {
     err(`WARNING: could not add this run to ~/.config/bareloop/runs.jsonl (${e.message}) — the run continues; the panel's list will be missing this row.`);
   }
 
+  // RUN START REFETCH (PART 1c RF22; moved here 2026-10-19, run mvez8s54: the ~18 s barebrowse fetch ran in main() BEFORE this run was
+  // listed, so Sign & run showed nothing for 18 s). The run is listed FIRST (row above, with its pid and cap = the monthly claim), THEN
+  // fetches: the Run tab reads "fetching the page…" while source.json has no refrozenAt at or after the row. A refusal cannot be a
+  // `released` row (that unlists the run and its words); it SETTLES the claim at $0 and keeps the plain reason for the panel.
+  if (ctx.refreeze === true && ctx.into !== undefined) {
+    const fresh = await refreezeUrlInputs({ into: ctx.into, ...(deps.fetchUrl ? { fetchUrl: deps.fetchUrl } : {}) });
+    if (!fresh.ok) {
+      const words = /did not start/.test(fresh.error) ? fresh.error : `${fresh.error}. The run did not start. Nothing spent.`;
+      err(`${SELECTOR}: ${fresh.error}`);
+      if (claimedRow) {
+        try { appendRunEvent({ runid, type: 'settled', by: runid, reason: 'refused before start', words, spentUsd: 0, spendComplete: true, at: new Date().toISOString() }, { home: claimedRow.home }); } catch { /* the exit stands; the dead pid's claim is closed by the next run */ }
+        claimedRow = null; // settled, not released: a released leg-1 row is unlisted, and the person must see why
+      }
+      throw new ExitSignal(2);
+    }
+    if (fresh.refreshed.length > 0 && typeof fresh.seed === 'string' && fresh.seed) SEED = fresh.seed;
+  }
+
   const git = (/** @type {string[]} */ a) => execFileSync('git', ['-C', wd, ...a], { encoding: 'utf8' }).trim();
   if (dead) {
     // A RESUME is the OPPOSITE case from a cold launch: the halted run's edits are work
@@ -2516,6 +2536,7 @@ export async function main(argv, deps = {}) {
     /** how a "go edit the spec" hint renders — `jobs/<file>` for `--job`, the
      * spec's own path for `--spec` (it has no `jobs/` home to point at). */
     let SPEC_DESC;
+    let refreeze = false;
     let spec;
 
     if (jobArg !== null) {
@@ -2592,24 +2613,16 @@ export async function main(argv, deps = {}) {
           + 'with exactly one source-*/ sibling.');
       }
       const into = candidates[0];
-      let manifestRead = await readSourceManifest(into);
+      const manifestRead = await readSourceManifest(into);
       if (manifestRead.stop !== null) {
         die(`--spec ${specPath}: ${manifestRead.code} — ${manifestRead.stop}`);
       }
       if (!manifestRead.present || !manifestRead.manifest) {
         die(`--spec ${specPath}: ${into} carries no source.json — not a prepared copy this runner can trust`);
       }
-      // PART 1c (RF22): a FRESH run of a rubric job with web inputs fetches each address again and makes that text the run's frozen
-      // input BEFORE the worker starts (the drafting copy was only for the look). A resume / door / decision keeps the copy its
-      // first start froze. A refusal is plain words, $0.
-      if (argFlag('resume') === null && argFlag('door') === null && argFlag('decide') === null) {
-        const fresh = await refreezeUrlInputs({ into, ...(deps.fetchUrl ? { fetchUrl: deps.fetchUrl } : {}) });
-        if (!fresh.ok) die(`--spec ${specPath}: ${fresh.error}`);
-        if (fresh.refreshed.length > 0) {
-          manifestRead = await readSourceManifest(into);
-          if (manifestRead.stop !== null || !manifestRead.manifest) die(`--spec ${specPath}: the run copy's record could not be read after the fresh fetch`);
-        }
-      }
+      // PART 1c (RF22): a FRESH run with web inputs fetches each address again before the worker starts. That happens in execute(),
+      // AFTER the run is listed (`ctx.refreeze`); a resume / door / decision keeps the copy its first start froze.
+      refreeze = argFlag('resume') === null && argFlag('door') === null && argFlag('decide') === null;
       const seed = manifestRead.manifest.seed;
       if (typeof seed !== 'string' || !seed) {
         die(`--spec ${specPath}: ${into}/source.json carries no seed commit — not a prepared copy this runner can trust`);
@@ -2647,6 +2660,7 @@ export async function main(argv, deps = {}) {
       seed: target.seed,
       spineName: target.spine,
       ...(target.into === undefined ? {} : { into: target.into }),
+      ...(refreeze ? { refreeze: true } : {}),
       model: argFlag('model'),
       providerKey: argFlag('provider'),
       readShim: argFlag('read-shim'),

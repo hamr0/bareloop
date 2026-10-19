@@ -34,6 +34,7 @@ import {
 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readRunList, readNeedsRemovals, DIED_MTIME_MS, runIsAlive } from '../runlist.js';
+import { webFetchState } from '../source.js';
 import { draftingPartFor, sessionDirForRow, readDraftSteps } from '../draftspend.js';
 import { readingOfQuestion, isAgree } from '../pagemap.js';
 import {
@@ -697,11 +698,17 @@ function endedForRow(row, records, summary, death, withWorktree = false) {
  * exist YET: the runner appends the row first, then opens the spine. It is `starting`,
  * never `file missing`. Carries the same field names a normal row/detail does so every
  * client reader (filters, groups) sees a live `▶` run, with every figure honestly null.
- * @param {{ runid: string, job: string, at: string, via: string }} row
+ * @param {{ runid: string, job: string, at: string, via: string, spine: string }} row
  * @returns {any}
  */
 function startingStub(row) {
+  // PRD v1.106 Part 5 Q2 (moved after the listing 2026-10-19, run mvez8s54): while the run's own refetch of a web input is still going
+  // (source.json has a web input and no refrozenAt at or after the row), the words are the server's: "fetching the page…"
+  const near = sourceNearSpine(row.spine);
+  const fetching = near.sourceJsonPath !== null && webFetchState(near.sourceJsonPath, row.at).fetching;
   return {
+    startingWord: fetching ? 'fetching the page…' : 'starting…',
+    startingNote: fetching ? 'the run has not started yet' : 'the run has not written its log yet',
     runid: row.runid,
     job: row.job,
     at: row.at,
@@ -740,6 +747,28 @@ function startingStub(row) {
 }
 
 /**
+ * A run that REFUSED before it started (its refetch of a web input was refused, run mvez8s54 shape): listed, settled at $0, no spine.
+ * The status word is the table's `failed` (statusFor: "refusals, instrument stops -> failed"); the plain words ride on `endedLine`.
+ * @param {{ runid: string, job: string, at: string, via: string }} row @param {string} words
+ * @returns {any}
+ */
+function refusedStub(row, words) {
+  return {
+    runid: row.runid, job: row.job, at: row.at, via: row.via, fileMissing: false, refused: true, live: false, needs: null, stoppedAt: null,
+    died: false, glyph: statusFor({ outcome: 'refused-before-start' }).sign, status: statusFor({ outcome: 'refused-before-start' }),
+    outcome: 'refused-before-start', endedLine: words, ended: null, resume: null, checkType: 'unknown', checkTypeTitle: null, model: null,
+    spend: '$0', wall: '', date: typeof row.at === 'string' ? row.at.slice(0, 10) : null, spentUsd: 0, spendComplete: true,
+    spendFloorUsd: null, wallFloorMs: null, draftSpentUsd: null, draftSpendComplete: null, budgetUsd: null, steps: [], parts: [],
+  };
+}
+
+/** the plain words of a run that settled as "refused before start" (leg 1), or null @param {any[]} events @param {{runid: string}} row */
+function refusalWordsOf(events, row) {
+  const e = events.find((x) => x && x.type === 'settled' && x.runid === row.runid && x.reason === 'refused before start' && !(x.leg > 1));
+  return e && typeof e.words === 'string' && e.words !== '' ? e.words : null;
+}
+
+/**
  * RULED 2026-10-15 (Remove from Needs you): the ONE place a run's Needs-you state is decided. `Accept` (a live door) is never removable and never ages out.
  * A `Resume` tag leaves when the person removed it AFTER (or at) the stop it is for — a removal covers only the ending it was made on, so a later stop
  * brings the run back — or after `needsYouDays`. `removedMs` is the newest removal that covers the current ending (or null), `expired` is true when only
@@ -764,10 +793,13 @@ export function needsStateFor(f) {
  * already applies to the CLI's own listing).
  * @param {import('../runlist.js').RunRow} row
  * @param {number} [nowMs] @param {Map<string, number>} [removals] `readNeedsRemovals`: when each run was taken out of Needs you
+ * @param {any[]} [events] the run list's settled/released events (a run that refused before it started has no spine; its words are here)
  * @returns {any}
  */
-function summarizeRow(row, nowMs = Date.now(), removals = undefined) {
+function summarizeRow(row, nowMs = Date.now(), removals = undefined, events = []) {
   if (!existsSync(row.spine)) {
+    const refusal = refusalWordsOf(events, row);
+    if (refusal !== null) return refusedStub(row, refusal);
     if (runIsAlive(row)) return startingStub(row);
     return {
       runid: row.runid, job: row.job, at: row.at, via: row.via, fileMissing: true, live: false, needs: null, stoppedAt: null,
@@ -991,14 +1023,14 @@ export function summarizeJobs(rows, nowMs) {
  * @returns {any[]}
  */
 export function listRuns(opts = {}) {
-  const { rows } = readRunList(opts);
+  const { rows, events } = readRunList(opts);
   const nowMs = typeof opts.now === 'number' ? opts.now : Date.now();
   const nos = runNumbers(rows);
   const removals = readNeedsRemovals(opts);
   return rows
     .map((row, index) => ({ row, index })) // index: stable tie-break, see doc above
     .sort((a, b) => (atMs(b.row) - atMs(a.row)) || (a.index - b.index))
-    .map(({ row }) => ({ ...summarizeRow(row, nowMs, removals), runNo: nos.get(row.runid) }));
+    .map(({ row }) => ({ ...summarizeRow(row, nowMs, removals, events), runNo: nos.get(row.runid) }));
 }
 
 /**
@@ -1456,6 +1488,8 @@ function getRunDetailBody(runid, opts) {
   const row = findRunRow(runid, opts);
   if (!row) return null;
   if (!existsSync(row.spine)) {
+    const refusal = refusalWordsOf(readRunList(opts).events, row);
+    if (refusal !== null) return refusedStub(row, refusal);
     if (runIsAlive(row)) return startingStub(row);
     return {
       runid, job: row.job, at: row.at, via: row.via, fileMissing: true,

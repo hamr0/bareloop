@@ -1437,7 +1437,7 @@
   function rlRunParts(r){
     var rn = runLabel(r.runNo, r.runid);
     var p = { rn: rn, name: r.job + " (" + rn + ")", date: runAtText(r), model: r.model || "", word: "", why: "", spend: "", wall: "" };
-    if(r.starting){ p.word = "running"; p.why = "starting…"; return p; }
+    if(r.starting){ p.word = "running"; p.why = r.startingWord || "starting…"; return p; }
     if(r.fileMissing){ p.word = ""; p.why = "file missing"; return p; }
     p.word = r.status && r.status.word ? r.status.word : "";
     p.why = r.endedLine || (p.word === "passed" ? "goal met" : "");
@@ -2665,14 +2665,29 @@
       return;
     }
 
-    if(detail.starting){
+    if(detail.refused){
+      // refused before it started (e.g. the page could not be fetched): the server's plain words, status word from the table
       syncResultTab({});
-      setRunHeader("\u25B6", runName(detail.job, detail.runNo, detail.runid), statusWordHtml(detail.status, "starting\u2026") + " \u00B7 " + escapeXml("started " + fmtLocalDateTime(detail.at)));
+      setRunHeader(detail.glyph, runName(detail.job, detail.runNo, detail.runid), statusWordHtml(detail.status, "") + " \u00B7 " + escapeXml("started " + fmtLocalDateTime(detail.at)));
       document.getElementById("run-empty").hidden = false;
-      document.getElementById("run-empty").textContent = "starting… the run has not written its log yet";
+      document.getElementById("run-empty").textContent = detail.endedLine || "";
       document.getElementById("run-content").hidden = true;
       document.getElementById("audit-select-empty").hidden = false;
-      document.getElementById("audit-select-empty").textContent = "starting… the run has not written its log yet";
+      document.getElementById("audit-select-empty").textContent = detail.endedLine || "";
+      document.getElementById("audit-body").hidden = true;
+      return;
+    }
+
+    if(detail.starting){
+      syncResultTab({});
+      // the words come from the server (startingWord / startingNote), never typed here
+      var startWords = (detail.startingWord || "starting…") + " " + (detail.startingNote || "the run has not written its log yet");
+      setRunHeader("\u25B6", runName(detail.job, detail.runNo, detail.runid), statusWordHtml(detail.status, detail.startingWord || "starting\u2026") + " \u00B7 " + escapeXml("started " + fmtLocalDateTime(detail.at)));
+      document.getElementById("run-empty").hidden = false;
+      document.getElementById("run-empty").textContent = startWords;
+      document.getElementById("run-content").hidden = true;
+      document.getElementById("audit-select-empty").hidden = false;
+      document.getElementById("audit-select-empty").textContent = startWords;
       document.getElementById("audit-body").hidden = true;
       return;
     }

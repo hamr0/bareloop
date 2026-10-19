@@ -2207,7 +2207,7 @@ test('build item 6: renderRun uses liveSpendText/liveWallPhrase exactly when liv
   const html = readFileSync(PAGE_PATH, 'utf8');
   const start = html.indexOf('function renderRun(detail){');
   const end = html.indexOf('function renderRun(', start + 1) === -1 ? html.indexOf('</script>', start) : html.length;
-  const src = html.slice(start, start + 4000);
+  const src = html.slice(start, start + 6000);
   assert.match(src, /var isLiveNoEnd = !detail\.died && detail\.spentUsd === null && detail\.fromBridge !== true;/);
   assert.match(src, /spendText = liveSpendText\(detail\.spendFloorUsd, detail\.draftSpentUsd, detail\.draftSpendComplete\);/);
   assert.match(src, /wallPhrase = liveWallPhrase\(detail\.wallFloorMs\);/);

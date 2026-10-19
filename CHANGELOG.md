@@ -24,6 +24,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Changed
 
+- **A fresh run lists itself before it fetches the page (run mvez8s54).** The run-start refetch of a web input (about 18 s on a flights page) used to finish before the run appeared in the Runs list, so Sign & run looked dead and the run then showed up already 10 s old. The run now lists its row first (pid and cap, the monthly claim), then fetches; the Run tab says "fetching the page… the run has not started yet" meanwhile (words from the server). A refused page settles the row at $0 (`failed`, plain words, monthly room freed) instead of leaving no trace. A resume, door or decision does not refetch, as before.
 - **Panel money keeps its decimals under a cent (PRD Part 6 rulings 2026-10-19, (3)).** An amount under $0.01 now reads with 4 decimals ("$0.0054 run + $0.0035 drafting = $0.0089 of $1.00") instead of "<$0.01"; $0.01 and up stay 2 decimals, zero stays "$0.00", "at least" floors keep "at least". One owner in Node, `src/panelmoney.js` (`panelMoney2`, re-exported by `src/panel/authorroutes.js`), replaces the second Node spelling in `src/authorreadout.js` and a raw `toFixed(2)` in the resume-cap refusal; the page keeps one browser copy (`panelMoney`) pinned to the Node one by a parity test. The CLI's 4-decimal money and the caps' display are unchanged.
 
 - **Money reads `run + drafting = total` (Part 5 Q4).** `$0.0054 run + $0.0035 drafting = $0.0089 of $1.00` in the run.log and the panel (2-decimal, `<$0.01`); a floor keeps `at least` on all three parts.

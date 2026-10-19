@@ -158,9 +158,9 @@ test('page: short-form card money leads the bracket with "drafting" (finished + 
 test('page: a starting row reads "starting…", and the card/pane have a starting branch', () => {
   const f = cardFns();
   assert.equal(f.rowSpendText({ starting: true, glyph: '▶' }), 'starting…');
-  assert.match(fnSrc('rlRunParts'), /p\.why = "starting…"/);
+  assert.match(fnSrc('rlRunParts'), /p\.why = r\.startingWord \|\| "starting…"/);
   assert.match(fnSrc('renderRun'), /if\(detail\.starting\)\{/);
-  assert.match(fnSrc('renderRun'), /starting… the run has not written its log yet/);
+  assert.match(fnSrc('renderRun'), /detail\.startingNote \|\| "the run has not written its log yet"/);
 });
 
 test('page: a LIVE run\'s summary headline reads "running <duration>", never the literal "undefined" (wallText was unset on the live branch)', () => {
