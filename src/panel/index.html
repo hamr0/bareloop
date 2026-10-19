@@ -3708,7 +3708,7 @@
     }
     if(facts.length){
       h += '<div class="hint" data-testid="result-rules">' + (line.passed === true ? '✓ = code checked it against the saved page. ' : "") + 'The rules:' +
-        facts.map(function(f){ return '<div>' + escapeXml(f.sentence) + '</div>'; }).join("") + '</div>';
+        facts.map(function(f){ return '<div>' + escapeXml(f.sentence) + (f.note ? ' ' + escapeXml(f.note) : "") + '</div>'; }).join("") + '</div>';
     }
     return h;
   }

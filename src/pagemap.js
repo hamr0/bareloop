@@ -187,6 +187,19 @@ export const isAgree = (text) => AGREE_WORDS.includes(String(text ?? '').trim().
 /** @typedef {{line: number, rule: number, source: 'look', question: string, ask: 'reading'|'cant-check', ruleText: string, reading?: string}} LookAsk
  *   `reading` = the plain words an `agree` writes as a `~` rule (a reading ask only) */
 
+/** the words of a reading ask: the ONE spelling, and {@link readingOfQuestion} reads it back (the Result tab's "(you confirmed)") */
+const READING_HEAD = ' I read it as: ';
+const READING_TAIL = '. Agree? Answer "agree"';
+/** @param {number} n @param {string} rule @param {string} reading @returns {string} */
+const readingQuestion = (n, rule, reading) => `Your line ${n} says "${rule}".${READING_HEAD}${reading}${READING_TAIL}, or type your own reading (your answer is added as a new ~ rule on line ${n}).`;
+/** @param {unknown} q a recorded question @returns {string|null} the reading a reading ask proposed, or null when it was another kind of question */
+export function readingOfQuestion(q) {
+  const s = String(q ?? '');
+  const a = s.indexOf(READING_HEAD);
+  const b = s.indexOf(READING_TAIL);
+  return a >= 0 && b > a ? s.slice(a + READING_HEAD.length, b) : null;
+}
+
 /**
  * PRD v1.107 Part 5b ("the look reads, code asks"): the early asks CODE forces before any paid drafting, from the look's own result. Every `~` rule is
  * one of three kinds:
@@ -222,7 +235,7 @@ export function askableFromLook(look, jobLines) {
         const reading = `${f.name} ${ruleWords({ shape: f.shape, unit: f.unit, currency: f.currency, rule: f.reading })}`;
         readings.push({
           line: l.n, rule: n, source: 'look', ask: 'reading', ruleText: rule, reading,
-          question: `Your line ${l.n} says "${rule}". I read it as: ${reading}. Agree? Answer "agree", or type your own reading (your answer is added as a new ~ rule on line ${l.n}).`,
+          question: readingQuestion(l.n, rule, reading),
         });
         return;
       }

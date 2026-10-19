@@ -124,3 +124,11 @@ test('red rows (fix 1): a judged file shows its note above bare rows (no ✓) an
   const f = src('renderResult');
   assert.ok(f.indexOf('result-gap') > f.indexOf('resultFactsLine(line)'), 'the gap words sit under the table');
 });
+
+test('confirmed (fix 2): the rules list adds the server\'s note after a fact\'s own sentence', () => {
+  const r = realResult().lines[0];
+  const facts = r.facts.map((f, i) => (i === 1 ? { ...f, note: '(you confirmed)' } : f));
+  const h = fns.resultFactsLine({ ...r, facts });
+  assert.equal([...h.matchAll(/\(you confirmed\)/g)].length, 1);
+  assert.ok(h.includes(`${facts[1].sentence.replace(/"/g, '&quot;')} (you confirmed)`));
+});

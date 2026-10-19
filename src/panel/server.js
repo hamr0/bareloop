@@ -34,7 +34,8 @@ import {
 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readRunList, readNeedsRemovals, DIED_MTIME_MS, runIsAlive } from '../runlist.js';
-import { draftingPartFor } from '../draftspend.js';
+import { draftingPartFor, sessionDirForRow, readDraftSteps } from '../draftspend.js';
+import { readingOfQuestion, isAgree } from '../pagemap.js';
 import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
 } from '../replayio.js';
@@ -68,7 +69,7 @@ import {
 } from './status.js';
 import { thinkingJobText } from '../thinking.js';
 import { judgedFilesOf, lineRules, stepFileRel } from '../rubricstep.js';
-import { factPartOf, factSentence } from '../facts.js';
+import { factPartOf, factSentence, ruleWords } from '../facts.js';
 import { createSettingsRoutes } from './settingsroutes.js';
 import { planFromSpec } from './jobplan.js';
 
@@ -1197,6 +1198,32 @@ function stagePassedIn(records, stageName) {
   return !!run && run.verdict === 'satisfied';
 }
 
+/** the words after a fact whose limit the person agreed to in a Part 5b look ask */
+export const RESULT_YOU_CONFIRMED = '(you confirmed)';
+
+/**
+ * The facts of line `n` whose limit came from a Part 5b `agree` answer, read from the drafting session's `human` rows (source 'look', this line,
+ * the answer `agree`): the ask proposed `<fact name> <ruleWords>`, and `agree` wrote exactly that as a `~` rule on the line. A fact is confirmed only
+ * when that proposal equals what the SIGNED fact says now AND the line's signed `~` rules hold it word for word. No draft log (a Reuse run, a CLI
+ * run, a deleted session) = nothing is confirmed; nothing is guessed.
+ * @param {any} row @param {any} jobLine the signed job line @param {any} fp the signed fact part @param {{ home?: string, sessionsRoot?: string }} opts
+ * @returns {Set<string>} fact names
+ */
+function confirmedFactNames(row, jobLine, fp, opts) {
+  const names = new Set();
+  const dir = sessionDirForRow(row, opts);
+  if (!dir || !jobLine) return names;
+  const written = lineRules(jobLine);
+  const humans = readDraftSteps(dir).flatMap((st) => st.humans);
+  for (const h of humans) {
+    if (h.source !== 'look' || h.line !== jobLine.n || !isAgree(h.answer)) continue;
+    const reading = readingOfQuestion(h.question);
+    if (reading === null || !written.includes(reading)) continue;
+    for (const f of fp.facts) if (f.rule && reading === `${f.name} ${ruleWords(f)}`) names.add(f.name);
+  }
+  return names;
+}
+
 /** a result value as the file wrote it, for a table cell */
 function cellText(v) {
   if (typeof v === 'string') return v;
@@ -1211,7 +1238,7 @@ function cellText(v) {
  * delivers nothing, so it has no rows: it carries the check's own first gap instead. `null` = no such run or no result tab for it.
  * @param {string} runid @param {{ home?: string }} opts
  */
-export function getRunResult(runid, opts = {}) {
+export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: string }} */ opts = {}) {
   const row = findRunRow(runid, opts);
   if (!row || row.via === 'import' || !existsSync(row.spine)) return null;
   const records = parseJsonl(row.spine).records;
@@ -1245,7 +1272,11 @@ export function getRunResult(runid, opts = {}) {
     }
     if (fp) {
       out.source = fp.source;
-      out.facts = fp.facts.map((/** @type {any} */ f) => ({ name: f.name, kind: f.shape === 'phrase' ? 'phrase' : 'value', sentence: factSentence(f, fp.source) }));
+      const confirmed = confirmedFactNames(row, jl, fp, opts);
+      out.facts = fp.facts.map((/** @type {any} */ f) => ({
+        name: f.name, kind: f.shape === 'phrase' ? 'phrase' : 'value', sentence: factSentence(f, fp.source),
+        ...(confirmed.has(f.name) ? { note: RESULT_YOU_CONFIRMED } : {}),
+      }));
       const results = obj && Array.isArray(obj.results) ? obj.results : null;
       out.rows = results === null ? null : results.map((/** @type {any} */ r, /** @type {number} */ k) => {
         const values = r && typeof r === 'object' && r.values && typeof r.values === 'object' ? r.values : {};
@@ -3661,7 +3692,7 @@ function sendText(res, code, text) {
  * only `createPanelServer` below always supplies one.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ home?: string, packageJsonPath?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
+ * @param {{ home?: string, sessionsRoot?: string, packageJsonPath?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
  */
 export function handleRequest(req, res, opts) {
   /** the ONE writable route family for a path, or null — `/api/author/*` (authoring) or
@@ -3800,7 +3831,7 @@ export function handleRequest(req, res, opts) {
       return;
     }
     if (sub === 'result') {
-      const result = getRunResult(runid, { home: opts.home });
+      const result = getRunResult(runid, { home: opts.home, sessionsRoot: opts.sessionsRoot });
       if (!result) { sendText(res, 404, 'no such run, or it has no result tab'); return; }
       send(200, result);
       return;
@@ -3892,7 +3923,7 @@ export function createPanelServer(opts = {}) {
     const server = createServer((req, res) => {
       try {
         handleRequest(req, res, {
-          home, port: boundPort, token, authorRoutes, settingsRoutes, runRoutes, importRoutes, packageJsonPath: opts.packageJsonPath, schedules: schedulesRef,
+          home, sessionsRoot: opts.sessionsRoot, port: boundPort, token, authorRoutes, settingsRoutes, runRoutes, importRoutes, packageJsonPath: opts.packageJsonPath, schedules: schedulesRef,
         });
       } catch (e) {
         sendText(res, 500, `internal error: ${/** @type {Error} */ (e).message}`);
