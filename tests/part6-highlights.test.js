@@ -123,3 +123,23 @@ test('a quote holding <script> stays escaped inside and around the marks', () =>
 test('the page never searches a quote for a word: the proof function only cuts the server\'s offsets', () => {
   assert.equal(/\.indexOf\(|\.includes\(|\.search\(|\.match\(|\.replace\(|new RegExp|\.test\(|\.exec\(/.test(src('resultProofHtml')), false);
 });
+
+test('money: the price box reads the way the page wrote it ("144 US dollars"); a foreign token, a malformed claim and no evidence keep today\'s text', async () => {
+  const ev = await realEvidence();
+  const file = JSON.parse(STEP);
+  const rows = result(ev).lines[0].rows;
+  rows.forEach((r, k) => {
+    assert.equal(r.cells[0], `${file.results[k].values.price} US dollars`);
+    assert.equal(r.cells[1], file.results[k].values['departure time'], 'a time is the file\'s own value');
+    assert.equal(r.cells[2], 'Nonstop', 'a phrase is the signed phrase');
+  });
+  const foreign = await realEvidence();
+  foreign[0].spans.push({ decide: 0, role: 'value', start: 300, end: 303, canon: '999' });
+  assert.equal(result(foreign).lines[0].rows[0].cells[0], '144 US dollars', 'a membership token that is not the claim\'s is not part of the amount');
+  const bad = await realEvidence();
+  bad[1] = { check: bad[1].check, claim: 1, spans: [] };
+  const mixed = result(bad).lines[0].rows;
+  assert.equal(mixed[0].cells[0], '144 US dollars');
+  assert.equal(mixed[1].cells[0], `$${file.results[1].values.price}`, 'malformed claim: today\'s text');
+  assert.ok(result().lines[0].rows.every((r, k) => r.cells[0] === `$${file.results[k].values.price}`), 'no evidence: today\'s text');
+});

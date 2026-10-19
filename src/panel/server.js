@@ -1282,6 +1282,22 @@ function proofOf(ev, quote) {
   return { text: ev.text, marks };
 }
 
+/**
+ * A money fact's amount exactly as the page wrote it ("144 US dollars", "€344"): the quote's text from the first to the last of the value's own
+ * currency/unit/value spans in bareguard's evidence for this claim (a membership token that is not the claim's own is left out). `null` = nothing
+ * located, or more than a short run: the caller keeps today's text. Offsets are bareguard's; nothing is searched.
+ * @param {any} ev one `evidence` entry (already known to be about this result's quote) @param {number} j the fact's index (bareguard's decide index)
+ * @returns {string|null}
+ */
+function moneyAsRead(ev, j) {
+  const own = ev.spans.filter((/** @type {any} */ sp) => sp && sp.decide === j && ['value', 'currency', 'unit'].includes(sp.role)
+    && Number.isInteger(sp.start) && Number.isInteger(sp.end) && sp.start >= 0 && sp.end > sp.start && sp.end <= ev.text.length
+    && !(sp.canon !== undefined && sp.matched !== true));
+  if (own.length === 0) return null;
+  const t = ev.text.slice(Math.min(...own.map((/** @type {any} */ sp) => sp.start)), Math.max(...own.map((/** @type {any} */ sp) => sp.end))).trim();
+  return t !== '' && t.length <= 40 ? t : null;
+}
+
 /** a fact's cell: a money amount in the fact's own signed currency/unit (src/facts.js moneyAs), anything else as the file wrote it */
 function resultCell(f, v) {
   const t = cellText(v);
@@ -1391,12 +1407,15 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
       out.rows = results === null ? null : results.map((/** @type {any} */ r, /** @type {number} */ k) => {
         const values = r && typeof r === 'object' && r.values && typeof r.values === 'object' ? r.values : {};
         const quote = r && typeof r === 'object' && typeof r.quote === 'string' ? r.quote : '';
-        const proof = evRec ? proofOf(evRec.evidence.find((/** @type {any} */ e) => e && e.check === evCheck && e.claim === k), quote) : null;
+        const ev = evRec ? evRec.evidence.find((/** @type {any} */ e) => e && e.check === evCheck && e.claim === k) : null;
+        const proof = proofOf(ev, quote);
         return {
           n: k + 1,
           quote,
           ...(proof ? { proof } : {}),
-          cells: fp.facts.map((/** @type {any} */ f) => (f.shape === 'phrase' ? String(f.phrase) : resultCell(f, values[f.name]))),
+          // a money amount is shown the way the check read it off the page; without evidence (or nothing located) it is the fact's own spelling
+          cells: fp.facts.map((/** @type {any} */ f, /** @type {number} */ j) => (f.shape === 'phrase' ? String(f.phrase)
+            : ((f.shape === 'money' && proof ? moneyAsRead(ev, j) : null) ?? resultCell(f, values[f.name])))),
         };
       });
     } else if (obj && typeof obj === 'object') {
