@@ -140,7 +140,7 @@ test('spend: unknown stays unknown, an unpriced call says "at least", and the cl
   const floor = proposalStopText({ stop: 'proposal-invalid', reds, spend: { knownUsd: 0.1, spendComplete: false } });
   assert.match(floor, /Spent so far: at least \$0\.10\./);
   const tiny = proposalStopText({ stop: 'proposal-invalid', reds, spend: { knownUsd: 0.001, spendComplete: true } });
-  assert.match(tiny, /Spent so far: <\$0\.01\./);
+  assert.match(tiny, /Spent so far: \$0\.0010\./);
 });
 
 test('the set-size sentence reads the live constant, and the one-sided sentence the real counts', () => {

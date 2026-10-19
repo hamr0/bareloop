@@ -32,9 +32,9 @@ test('the sum is always the run plus drafting, in both spellings', () => {
     assert.ok(m, lib);
     assert.equal(Number(m[1]), Number((run + draft).toFixed(4)), `library total for ${run}+${draft}`);
     const panel = panelMoneyWithDraft(run, false, draft, true, 50);
-    const p = /= (<?\$[\d.]+) of/.exec(panel);
+    const p = /= (\$[\d.]+) of/.exec(panel);
     assert.ok(p, panel);
-    assert.equal(p[1], run + draft < 0.01 ? '<$0.01' : `$${(Math.round((run + draft) * 100) / 100).toFixed(2)}`, `panel total for ${run}+${draft}: 2-decimal / "<$0.01" rule on the true sum`);
+    assert.equal(p[1], run + draft < 0.01 ? `$${(run + draft).toFixed(4)}` : `$${(Math.round((run + draft) * 100) / 100).toFixed(2)}`, `panel total for ${run}+${draft}: 2-decimal, 4 under a cent, on the true sum`);
   }
 });
 

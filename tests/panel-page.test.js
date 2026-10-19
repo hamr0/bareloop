@@ -414,12 +414,17 @@ test('panelMoney: exact amounts round half-up to 2 decimals', () => {
   assert.equal(panelMoney(0), '$0.00', 'a real exact zero prints $0.00, never "unknown"');
 });
 
-test('panelMoney: a real positive amount under a cent renders "<$0.01", never "$0.00"', () => {
+test('panelMoney: a real positive amount under a cent renders 4 decimals (hamr 2026-10-19), never "<$0.01" or "$0.00"', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const { panelMoney } = loadMoneyFns(html);
-  assert.equal(panelMoney(0.004), '<$0.01');
-  assert.equal(panelMoney(0.0001), '<$0.01');
-  assert.equal(panelMoney(0.01), '$0.01', 'exactly a cent is never "<$0.01"');
+  assert.equal(panelMoney(0.004), '$0.0040');
+  assert.equal(panelMoney(0.0054), '$0.0054');
+  assert.equal(panelMoney(0.0001), '$0.0001');
+  assert.equal(panelMoney(0.00001), '<$0.0001', 'too small for 4 decimals is still never $0.00');
+  assert.equal(panelMoney(0.00996), '$0.01', 'rounds up to a cent, never $0.0100');
+  assert.equal(panelMoney(0.00999, true), '$0.0099', 'a floor under a cent rounds DOWN at 4 decimals');
+  assert.equal(panelMoney(0.01), '$0.01');
+  assert.equal(panelMoney(0), '$0.00', 'zero stays $0.00');
 });
 
 test('panelMoney: floor mode rounds DOWN, never overstating a floor as exact-higher', () => {
@@ -437,13 +442,23 @@ test('panelMoney: null/undefined/non-finite keeps the honest "unknown" text, nev
   assert.equal(panelMoney(NaN), 'unknown');
 });
 
+test('panelMoney (page copy) and panelMoney2 (src/panelmoney.js, the Node owner) print identically', async () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { panelMoney } = loadMoneyFns(html);
+  const { panelMoney2 } = await import('../src/panelmoney.js');
+  for (const v of [0, 0.00001, 0.0001, 0.0035, 0.0054, 0.00996, 0.0099, 0.01, 0.0149, 0.815, 0.82, 3.71, 291.17, null, undefined, NaN]) {
+    assert.equal(panelMoney2(v), panelMoney(v), `value ${v}`);
+  }
+  assert.equal(panelMoney2(0.0054), '$0.0054');
+});
+
 test('panelMoneyWithDraft: 2-decimal composite, matching src/replay.js\'s moneyWithDraft shape but at 2 decimals', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const { panelMoneyWithDraft } = loadMoneyFns(html);
   assert.equal(panelMoneyWithDraft(3.71, false, 0.81, true, 5), '$3.71 run + $0.81 drafting = $4.52 of $5.00');
-  // the real run mve5y8fa (run $0.0054, drafting $0.0035): the panel's 2-decimal rule turns every part into <$0.01, the sum is that rule on the true sum
-  assert.equal(panelMoneyWithDraft(0.0054, false, 0.0035, true, 1), '<$0.01 run + <$0.01 drafting = <$0.01 of $1.00');
-  assert.equal(panelMoneyWithDraft(0.1802, false, 0.0035, true, 0.5), '$0.18 run + <$0.01 drafting = $0.18 of $0.50');
+  // the real run mve5y8fa (run $0.0054, drafting $0.0035): every part under a cent keeps 4 decimals (hamr 2026-10-19), the sum is the rule on the true sum
+  assert.equal(panelMoneyWithDraft(0.0054, false, 0.0035, true, 1), '$0.0054 run + $0.0035 drafting = $0.0089 of $1.00');
+  assert.equal(panelMoneyWithDraft(0.1802, false, 0.0035, true, 0.5), '$0.18 run + $0.0035 drafting = $0.18 of $0.50');
   assert.equal(panelMoneyWithDraft(3.68, false, null, null, 5), '$3.68 of $5.00');
   assert.equal(panelMoneyWithDraft(3.68, false, null, null), '$3.68', 'no drafting share, no cap -> unchanged base render');
 });

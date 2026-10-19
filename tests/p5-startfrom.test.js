@@ -246,7 +246,7 @@ test('reuseLine: what is unknown is SAID — never $0 or 0 min; a died run count
   assert.equal(reuseLine({ green: 1, notGreen: 0, finished: 1, avgSpendUsd: null, avgWallMs: null }), 'Same job — 1 green · 0 not green · cost and time not recorded');
   assert.equal(reuseLine({ green: 1, notGreen: 0, finished: 1, avgSpendUsd: 1.234, avgWallMs: null }), 'Same job — 1 green · 0 not green · about $1.23 a run, time not recorded');
   assert.equal(reuseLine({ green: 1, notGreen: 0, finished: 1, avgSpendUsd: null, avgWallMs: 19 * 60000 }), 'Same job — 1 green · 0 not green · about 19 min a run, cost not recorded');
-  assert.equal(reuseLine({ green: 1, notGreen: 0, finished: 1, avgSpendUsd: 0.004, avgWallMs: 20000 }), 'Same job — 1 green · 0 not green · about <$0.01 and <1 min a run');
+  assert.equal(reuseLine({ green: 1, notGreen: 0, finished: 1, avgSpendUsd: 0.004, avgWallMs: 20000 }), 'Same job — 1 green · 0 not green · about $0.0040 and <1 min a run');
   assert.equal(reuseLine(null), 'Same job');
   // no run of this workflow yet
   assert.deepEqual(trackRecordFor(workflowKey(spec), { home }), { runs: 0, green: 0, notGreen: 0, live: 0, finished: 0, avgSpendUsd: null, avgWallMs: null });

@@ -280,15 +280,15 @@ test('top tiles carry tokens: /api/settings/money returns totalTokens/monthToken
   assert.match(html, /"ml-tokens"\)\.textContent = tokensText\(r\.monthTokens\) \+ " \/ " \+ tokensText\(r\.totalTokens\)/);
 });
 
-test('breakdown table is exactly 4 columns and its cells format per the rules: 2-dec/<$0.01 money, ≥ on at-least, 1-dec minutes under 100 else thousands, unknown never 0, tokens k/M', () => {
+test('breakdown table is exactly 4 columns and its cells format per the rules: 2-dec money (4-dec under a cent), ≥ on at-least, 1-dec minutes under 100 else thousands, unknown never 0, tokens k/M', () => {
   const html = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
   assert.match(html, /<tr><th>Provider<\/th><th>\$ month \/ to date<\/th><th>minutes month \/ to date<\/th><th>tokens<\/th><\/tr>/);
   const fn = (name) => { const m = html.match(new RegExp(`    function ${name}\\([^)]*\\)\\{[\\s\\S]*?\\n    \\}\\n|    function ${name}\\([^)]*\\)\\{ return [^\\n]*\\}\\n`)); assert.ok(m, name); return m[0]; };
   const panelMoney = html.match(/  function panelMoney\(n, floor\)\{[\s\S]*?\n  \}\n/)[0];
   const cells = new Function(`${panelMoney}${fn('moneyCell')}${fn('minutesCell')}${fn('tokensText')}return { moneyCell, minutesCell, tokensText };`)();
   assert.equal(`${cells.moneyCell(0, false)} / ${cells.moneyCell(291.17, true)}`, '$0.00 / ≥$291.17');
-  assert.equal(cells.moneyCell(0.004, false), '<$0.01');
-  assert.equal(cells.moneyCell(0.004, true), '≥<$0.01');
+  assert.equal(cells.moneyCell(0.004, false), '$0.0040');
+  assert.equal(cells.moneyCell(0.004, true), '≥$0.0040');
   assert.equal(`${cells.minutesCell(0, false)} / ${cells.minutesCell(2969 * 60000, false)}`, '0.0 min / 2,969 min');
   assert.equal(cells.minutesCell(99.94 * 60000, false), '99.9 min');
   assert.equal(cells.minutesCell(100 * 60000, true), '≥100 min');

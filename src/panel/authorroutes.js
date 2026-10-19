@@ -39,6 +39,7 @@ import { ConfigError } from '../config.js';
 import { keysForDoor, keysHome } from '../keysfile.js';
 import { endpointOf, judgePick, keyValueOf, rowsForHome, tickedLines } from '../providerrows.js';
 import { thinkingForLine } from '../thinking.js';
+import { panelMoney2 } from '../panelmoney.js';
 import { apiKeyProblem, checkProviderReachable } from '../providers.js';
 
 /** @returns {string} a fresh per-process token — never persisted, never logged */
@@ -433,28 +434,7 @@ export function createAuthorRoutes(opts) {
   };
 }
 
-/**
- * The panel's OWN 2-decimal money render for a chat line — hamr's ruling
- * 2026-09-28 (2nd addendum, panel money 2-decimals): a positive amount below
- * a cent reads `<$0.01`, never `$0.00` (a real cost must never read as
- * free). This is the server-side (Node, chat-text) sibling of
- * `src/panel/index.html`'s own inline `panelMoney` — the two can't share
- * code (one runs in the browser as inlined script, the other in Node), the
- * same duplication `src/replay.js`'s `money()`/`index.html`'s `money()`
- * already carry, so both apply the identical rule rather than drift.
- * @param {number} n a non-negative dollar amount
- * @returns {string}
- */
-export function panelMoney2(n) {
-  if (n > 0 && n < 0.01) return '<$0.01';
-  // two-step rounding (matching index.html's own panelMoney): clean to
-  // 6-decimal precision first (the same precision src/text.js's tallyCalls
-  // sums to) before rounding to cents, so a summed float landing just under
-  // an exact cent boundary is never mis-rounded.
-  const clean = Math.round(n * 1e6) / 1e6;
-  const cents = Math.round(clean * 100 + 1e-6);
-  return `$${(cents / 100).toFixed(2)}`;
-}
+export { panelMoney2 };
 
 /**
  * THE ONLY function in this file (or anywhere in the panel) that spawns a

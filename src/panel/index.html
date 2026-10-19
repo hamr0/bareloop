@@ -2209,38 +2209,30 @@
   document.getElementById("tab-runs").addEventListener("click", function(){ loadImports(); });
 
   // ---- Run tab ----
-  // panelMoney — hamr's ruling 2026-09-28 ("panel money 2-decimals"): every
-  // money display in THIS page (Run tab summary/counters, Runs list rows,
-  // Audit header/part cards, Job tab, chat cost lines) renders through this
-  // ONE function — no per-site rounding. The CLI's own 4-decimal `money()`
-  // (src/replay.js) is UNCHANGED; this is the panel-only render, the
-  // browser-script sibling of `src/panel/authorroutes.js`'s own
-  // `panelMoney2` (same rule, can't share code — one runs in Node, one
-  // inlined in the page).
+  // panelMoney — the panel's ONE money render; every money display in THIS page (Run tab summary/
+  // counters, Runs list rows, Result/Audit/Job tabs, chat cost lines) goes through it, no per-site
+  // rounding. Browser-script copy of `src/panelmoney.js` `panelMoney2` (a page cannot import a
+  // module); tests/panel-page.test.js pins the two to identical output. hamr's ruling 2026-10-19
+  // (PRD "Part 6 rulings" (3)), superseding the 2026-09-28 "<$0.01" spelling:
   //   - null/undefined/non-finite -> "unknown" (never a fabricated $0).
-  //   - a REAL positive amount below a cent -> "<$0.01", never "$0.00" (a
-  //     tiny real cost must never read as free).
-  //   - `floor` (this is a FLOOR/"at least" figure, never exact) rounds DOWN
-  //     to 2 decimals — never overstates a floor as exact-higher.
-  //   - otherwise rounds half-up to 2 decimals (an exact zero prints
-  //     "$0.00" — nothing spent is a real number, not an unknown).
-  // Two-step rounding guards against float-representation noise on BOTH
-  // sides: dollar figures here are derived from at most 6-decimal-precision
-  // money (the same precision `src/text.js`'s `tallyCalls`/`priceOf` use),
-  // so rounding to 6 decimals first erases that noise (e.g. 0.815 really
-  // stored as 0.81499999999999995), and ONLY THEN is the value rounded/
-  // floored to cents — a value already exactly on a cent boundary (e.g.
-  // 0.82) can be stored as 81.99999999999999 cents post-multiply, and a
-  // floor there would wrongly drop a whole cent; the tiny `+1e-6` nudge (at
-  // dollar-cents scale, far below anything a real half-cent tie could be)
-  // corrects that without ever crossing a true half-cent boundary the wrong
-  // way.
+  //   - a REAL positive amount under a cent -> 4 decimals ("$0.0054"); one too small for 4
+  //     decimals reads "<$0.0001", never "$0.00"; one that rounds up to a cent reads "$0.01".
+  //   - $0.01 or more -> 2 decimals, half-up; an exact zero prints "$0.00".
+  //   - `floor` (a FLOOR/"at least" figure) rounds DOWN, at 2 decimals, or 4 under a cent.
+  // Rounding to 6 decimals first erases float noise (0.815 stored as 0.81499999999999995); the tiny
+  // `+1e-6` nudge corrects a value on an exact boundary stored just under it, without ever
+  // crossing a true half-unit tie the wrong way.
   function panelMoney(n, floor){
     if(n === null || n === undefined) return "unknown";
     var v = Number(n);
     if(!isFinite(v)) return "unknown";
-    if(v > 0 && v < 0.01) return "<$0.01";
     var clean = Math.round(v * 1e6) / 1e6;
+    if(clean > 0 && clean < 0.01){
+      var units = floor ? Math.floor(clean * 1e4 + 1e-6) : Math.round(clean * 1e4 + 1e-6);
+      if(units <= 0) return "<$0.0001";
+      if(units >= 100) return "$0.01";
+      return "$" + (units / 1e4).toFixed(4);
+    }
     var cents = floor ? Math.floor(clean * 100 + 1e-6) : Math.round(clean * 100 + 1e-6);
     if(cents < 0) cents = 0;
     return "$" + (cents / 100).toFixed(2);
@@ -2265,8 +2257,8 @@
       : ((spendCoreFloor || draftFloor) ? "at least " + panelMoney(spendCoreVal) : panelMoney(spendCoreVal));
     var capPart = (budgetUsd === undefined) ? "" : (" of " + panelMoney(budgetUsd));
     if(hasDraft && !shortForm){
-      // PRD v1.106 Part 5 Q4, the panel's spelling of src/replay.js moneyWithDraft: "$0.18 run + <$0.01 drafting = $0.18". The run's figure
-      // EXCLUDES drafting; each part keeps the panel's 2-decimal / "<$0.01" rule and the TOTAL is that rule applied to the true sum (so
+      // PRD v1.106 Part 5 Q4, the panel's spelling of src/replay.js moneyWithDraft: "$0.18 run + $0.0035 drafting = $0.18". The run's figure
+      // EXCLUDES drafting; each part keeps the panel's money rule (panelMoney) and the TOTAL is that rule applied to the true sum (so
       // two shown parts can round to a total that differs by a cent). Without the run's number the sum is left out.
       var haveRun = typeof spendCoreVal === "number";
       var totalPart = haveRun ? " = " + ((spendCoreFloor || draftFloor) ? "at least " : "") + panelMoney(spendCoreVal + draftSpentUsd) : "";

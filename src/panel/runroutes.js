@@ -24,6 +24,7 @@ import { ConfigError } from '../config.js';
 import { keysForDoor } from '../keysfile.js';
 import { jobSpecHash, validateJob } from '../job.js';
 import { stopFilePath } from '../legs.js';
+import { panelMoney2 } from '../panelmoney.js';
 import { appendNeedsRemoved } from '../runlist.js';
 
 /** the tail of an engine log shown to the person when the engine refuses at start (bytes) */
@@ -323,7 +324,7 @@ export function createRunRoutes(opts) {
     // tighten-only: a cap at or below what the run has ALREADY used buys an immediate re-halt
     // (the engine only warns), so it is refused here at $0, before anything is written or spawned
     if (typeof plan.spentUsd === 'number' && spec.budgetUsd <= plan.spentUsd) {
-      send(400, { ok: false, error: `The money cap must be above what is already spent (${plan.spendComplete ? '' : 'at least '}$${plan.spentUsd.toFixed(2)}) — raise it, then Resume.` });
+      send(400, { ok: false, error: `The money cap must be above what is already spent (${plan.spendComplete ? '' : 'at least '}${panelMoney2(plan.spentUsd)}) — raise it, then Resume.` });
       return true;
     }
     if (typeof plan.wallUsedMs === 'number' && typeof spec.maxWallMs === 'number' && spec.maxWallMs <= plan.wallUsedMs) {

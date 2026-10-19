@@ -21,7 +21,7 @@ function fnSrc(name) {
 const escapeXml = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const attemptGlyph = (o) => (o === 'green' ? '✓' : (o === null || o === undefined ? '?' : '✗'));
 const glyphSpan = (g) => (g === '✓' ? `<span class="glyph-green">${g}</span>` : (g === '✗' ? `<span class="glyph-red">${g}</span>` : g));
-const money = (v) => (typeof v === 'number' ? (v < 0.01 ? '<$0.01' : `$${v.toFixed(2)}`) : 'unknown');
+const money = (v) => (typeof v === 'number' ? (v > 0 && v < 0.01 ? `$${v.toFixed(4)}` : `$${v.toFixed(2)}`) : 'unknown');
 const dur = (ms) => (typeof ms === 'number' ? `${(ms / 1000).toFixed(1)}s` : 'unknown');
 const mk = (names, ...rest) => new Function(...names, `${rest.join('\n')}\nreturn ${rest.at(-1).match(/function (\w+)/)[1]};`);
 
