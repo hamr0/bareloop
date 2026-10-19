@@ -5,6 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyPageRules, tieOf } from '../src/pagerules.js';
+import { dropSentence } from '../src/pagedropwords.js';
 import { loadFixture, JOBS } from './idea-a-fixtures.js';
 
 const sfo = loadFixture('sfo1');
@@ -174,6 +175,19 @@ test('R1L on a REAL flights page: "$" (read after) and "US dollars" (read before
   assert.deepEqual(r.facts[0].unit, ['US dollars']);
   assert.deepEqual(r.facts[0].currency, ['$'], '"$" reads the same numbers as the unit on this page, so it is a true second form');
   assert.deepEqual(said(r.dropped), ['price|US dollars|r1l'], 'listed again as a currency, the word reads other numbers and is dropped');
+});
+
+test('R1L: a word listed as BOTH unit and currency (fwd F71: "US dollars") is never compared with itself - the unit stays, the person reads no self-compare line', () => {
+  const bos = loadFixture('bos-ord');
+  const price = { name: 'price', from: 'rule 1', shape: 'money', words: ['US dollars'], unit: ['US dollars'], currency: ['US dollars'] };
+  const r = applyPageRules(bos.page, { facts: [price] }, JOBS.flights);
+  assert.deepEqual(r.facts[0].unit, ['US dollars'], 'the kept fact still reads "144 US dollars"');
+  assert.equal(r.facts[0].currency, undefined);
+  assert.deepEqual(said(r.dropped), ['price|US dollars|r1l']);
+  const sentences = r.dropped.map((d) => dropSentence(d));
+  for (const s of sentences) assert.doesNotMatch(s, /does not show the same amounts as "US dollars"/, s);
+  assert.match(sentences[0], /listed twice, as a unit and as a currency/);
+  assert.equal(r.dropped[0].word, r.dropped[0].other);
 });
 
 test('U1/R1L: the TUI-style "282 £ pp" form is not tested - none of the eight real saved pages holds a "£ pp" (reported, never held)', () => {

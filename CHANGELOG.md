@@ -31,6 +31,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **A word the AI listed as both unit and currency no longer reads as "does not show the same amounts as" itself.** On a Google Flights page the page-word map listed `US dollars` under both `unit` and `currency` of the price; R1L compared the currency form with the same word and Not checked showed a nonsense sentence. The word is now never compared with itself: the unit (listed first) stays and the line says it was listed twice and is used once. The kept check ("144 US dollars") is unchanged.
 - **Result tab: a quote with nested bold/underline markers now matches bareguard's normalization.** The check that an evidence entry belongs to the result's own quote removed `**` and `__` in one pass, so a quote such as `a _**_ b` (bareguard: `a b`; panel: `a __ b`) lost its highlights and money-as-written; it now follows bareguard's `normalizeForQuote` step for step (`normalizeQuote`, compared with the real function in `tests/quote-normalization.test.js`). The proofOf doc comment says what the guard does.
 - **Reuse of a rubric job on a URL or file is no longer refused at $0 (run mvez8s54).** Reuse workflow -> Sign & run (and a scheduled fire) proved Inputs line 1 as a repo and refused a URL with "the repo must be an absolute path". `startSession` now decides rubric-on-files from the reused signed spec's verdict type, in one place for the click and the schedule; a repo job still proves line 1.
 

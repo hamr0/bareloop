@@ -219,7 +219,8 @@ export function applyPageRules(text, mapping, jobLines) {
           const read = (/** @type {{kind: string, w: string}} */ x) => (x.kind === 'unit' ? unitSet(lines, x.w) : curSet(lines, x.w));
           const ps = read(forms[0]);
           const keep = [forms[0]];
-          for (const x of forms.slice(1)) { if (sameSet(read(x), ps)) keep.push(x); else drop(f, x.w, 'r1l', forms[0].w); }
+          // the same word listed as both a unit and a currency is ONE form: it is never compared with itself, only said (the unit, listed first, stays)
+          for (const x of forms.slice(1)) { if (x.w !== forms[0].w && sameSet(read(x), ps)) keep.push(x); else drop(f, x.w, 'r1l', forms[0].w); }
           uni = keep.filter((x) => x.kind === 'unit').map((x) => x.w);
           cur = keep.filter((x) => x.kind === 'currency').map((x) => x.w);
         }
