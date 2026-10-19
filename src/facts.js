@@ -184,8 +184,20 @@ export function factClaims(part, results) {
 
 /** @param {unknown} n @param {string} shape @param {any} f @returns {string} one bound, as the person would say it */
 function sayBound(n, shape, f) {
-  if (shape === 'money') return f.unit !== undefined ? `${n} ${asList(f.unit)[0]}` : `${asList(f.currency)[0]}${n}`;
+  if (shape === 'money') return moneyAs(f, n, false);
   return String(n);
+}
+
+/**
+ * One amount of a money fact in the fact's OWN signed forms, never a hardcoded sign: `symbolFirst` puts the currency sign before the amount
+ * ("$144") when the fact has one, else the unit after it ("144 US dollars"); not `symbolFirst` (a rule's bound) prefers the unit.
+ * @param {any} f a money fact @param {string|number} n @param {boolean} symbolFirst @returns {string}
+ */
+export function moneyAs(f, n, symbolFirst) {
+  const cur = asList(f.currency)[0];
+  const uni = asList(f.unit)[0];
+  if (symbolFirst) return cur !== undefined ? `${cur}${n}` : `${n} ${uni}`;
+  return uni !== undefined ? `${n} ${uni}` : `${cur}${n}`;
 }
 
 /** @param {any} f a fact with a rule @returns {string} the rule in words, e.g. "at most 450 US dollars" */

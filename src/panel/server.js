@@ -69,7 +69,7 @@ import {
 } from './status.js';
 import { thinkingJobText } from '../thinking.js';
 import { judgedFilesOf, lineRules, stepFileRel } from '../rubricstep.js';
-import { factPartOf, factSentence, ruleWords } from '../facts.js';
+import { factPartOf, factSentence, ruleWords, moneyAs } from '../facts.js';
 import { createSettingsRoutes } from './settingsroutes.js';
 import { planFromSpec } from './jobplan.js';
 
@@ -1198,6 +1198,12 @@ function stagePassedIn(records, stageName) {
   return !!run && run.verdict === 'satisfied';
 }
 
+/** a fact's cell: a money amount in the fact's own signed currency/unit (src/facts.js moneyAs), anything else as the file wrote it */
+function resultCell(f, v) {
+  const t = cellText(v);
+  return f.shape === 'money' && /^\d[\d.,]*$/.test(t.trim()) ? moneyAs(f, t.trim(), true) : t;
+}
+
 /** the words after a fact whose limit the person agreed to in a Part 5b look ask */
 export const RESULT_YOU_CONFIRMED = '(you confirmed)';
 
@@ -1283,7 +1289,7 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
         return {
           n: k + 1,
           quote: r && typeof r === 'object' && typeof r.quote === 'string' ? r.quote : '',
-          cells: fp.facts.map((/** @type {any} */ f) => (f.shape === 'phrase' ? String(f.phrase) : cellText(values[f.name]))),
+          cells: fp.facts.map((/** @type {any} */ f) => (f.shape === 'phrase' ? String(f.phrase) : resultCell(f, values[f.name]))),
         };
       });
     } else if (obj && typeof obj === 'object') {

@@ -94,7 +94,7 @@ test('/result (green, mve5y8fa): one row per delivered result, columns are the s
   assert.equal(line.rows.length, file.results.length, 'the rows are the delivered file\'s results[]');
   file.results.forEach((r, i) => {
     assert.equal(line.rows[i].quote, r.quote);
-    assert.deepEqual(line.rows[i].cells, [r.values.price, r.values['departure time'], 'Nonstop', 'Boston Logan International Airport', "Chicago O'Hare International Airport"]);
+    assert.deepEqual(line.rows[i].cells, [`$${r.values.price}`, r.values['departure time'], 'Nonstop', 'Boston Logan International Airport', "Chicago O'Hare International Airport"]);
   });
   assert.deepEqual(line.file, { i: 0, state: 'ok', words: null });
   assert.equal(res.body.gap, null);
