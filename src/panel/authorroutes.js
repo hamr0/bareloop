@@ -146,11 +146,17 @@ export function createAuthorRoutes(opts) {
    * @param {any} card the form (fields only)
    * @param {{spec: any, workflowKey: string}|null} reuse
    * @param {import('../jobblock.js').JobInput[]} inputs the parsed Inputs
-   * @param {{headless?: boolean, filesJob?: boolean}} [o]
+   * @param {{headless?: boolean}} [o]
    * @returns {Promise<{ok: true, session: ReturnType<typeof createSession>}|{ok: false, status: number, error: string}>}
    */
   function startSession(card, reuse, inputs, o = {}) {
-    return (o.filesJob ? Promise.resolve(/** @type {{ok: true}} */ ({ ok: true })) : proveInputFiles(inputs)).then((proof) => {
+    // ONE owner of "is this a rubric job on files": a reuse (and so a scheduled fire) reads it from the signed spec's verdict type,
+    // never from the card; a fresh job reads the card. A rubric job whose line 1 is a file or URL has no repo to prove inputs against;
+    // the session proves every line itself (`proveRubricInputs`), at $0, before any model call.
+    const rubric = reuse ? reuse.spec?.verdictType === 'soft-green' : card?.checkType === 'rubric';
+    if (reuse) card = { ...card, checkType: rubric ? 'rubric' : 'deterministic' };
+    const filesJob = rubric && inputs.length > 0 && looksLikeRubricInput(inputs[0].value);
+    return (filesJob ? Promise.resolve(/** @type {{ok: true}} */ ({ ok: true })) : proveInputFiles(inputs)).then((proof) => {
       if (!proof.ok) return { ok: /** @type {false} */ (false), status: 400, error: proof.error };
       if (!o.headless && hasLiveSession()) return { ok: /** @type {false} */ (false), status: 409, error: 'an authoring session is already live — one at a time' };
       // the SAME Destination check the session runs, at $0, BEFORE the session (and its folder) exists
@@ -373,10 +379,7 @@ export function createAuthorRoutes(opts) {
       // A miss is a plain 400 naming the line, shown under the card exactly like every other refused start.
       const ip = parseInputs(card.inputs);
       if (!ip.ok) { send(400, { ok: false, error: ip.error }); return true; }
-      // Part 1a: a rubric job whose first input is a local FILE has no repo to prove inputs against; the session proves every
-      // line itself (`proveRubricInputs`), at $0, before any model call
-      const filesJob = reuse === null && card?.checkType === 'rubric' && looksLikeRubricInput(ip.inputs[0].value);
-      startSession(card, reuse, ip.inputs, { filesJob }).then((r) => {
+      startSession(card, reuse, ip.inputs).then((r) => {
         if (!r.ok) { send(r.status, { ok: false, error: r.error }); return; }
         send(200, { ok: true, sessionId: r.session.id, reuse: reuse !== null, state: r.session.state });
       });
