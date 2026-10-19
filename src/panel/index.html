@@ -3682,7 +3682,8 @@
 
   // a delivered-file state in words (from the server), or ""
   function resultFileWords(file){
-    return file && file.words ? '<div class="rs-warn" data-testid="result-file-words">' + escapeXml(file.words) + '</div>' : "";
+    var note = file && file.judged && file.note ? '<div class="hint" data-testid="result-judged-note">' + escapeXml(file.note) + '</div>' : "";
+    return note + (file && file.words ? '<div class="rs-warn" data-testid="result-file-words">' + escapeXml(file.words) + '</div>' : "");
   }
   function resultFactsLine(line){
     var facts = line.facts || [];
@@ -3777,9 +3778,6 @@
       stateDotHTML(glyphClass(detail.glyph), detail.status && detail.status.word ? detail.status.word : "", "result-status") +
       ' <span>· ' + escapeXml(detail.checkType) + ' · ' + escapeXml(runName(detail.job, detail.runNo, detail.runid)) + '</span></div>' +
       '<div class="hint" data-testid="result-counters">' + document.getElementById("run-counters").innerHTML + '</div>';
-    if(data.gap){
-      h += '<div class="rs-warn" data-testid="result-gap">The check said: ' + escapeXml(data.gap.line) + (data.gap.moreText ? ' ' + escapeXml(data.gap.moreText) : "") + '</div>';
-    }
     var hasText = false;
     (data.lines || []).forEach(function(line){
       h += '<div class="jp" data-testid="result-line"><div class="jl"><span class="num">' + escapeXml(String(line.n)) + '</span>' + escapeXml(line.text) +
@@ -3787,6 +3785,9 @@
       if(line.kind === "facts") h += resultFactsLine(line);
       else { hasText = true; h += resultTextLine(line); }
     });
+    if(data.gap){
+      h += '<div class="rs-warn" data-testid="result-gap">The check said: ' + escapeXml(data.gap.line) + (data.gap.moreText ? ' ' + escapeXml(data.gap.moreText) : "") + '</div>';
+    }
     if((data.notChecked || []).length){
       h += '<div class="hint" data-testid="result-notchecked">Not checked: ' + data.notChecked.map(escapeXml).join("; ") + '</div>';
     }

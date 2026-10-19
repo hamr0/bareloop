@@ -26,7 +26,7 @@
 
 import { createServer } from 'node:http';
 import {
-  readFileSync, existsSync, readdirSync, lstatSync,
+  readFileSync, existsSync, readdirSync, lstatSync, realpathSync,
 } from 'node:fs';
 import { createHash } from 'node:crypto';
 import {
@@ -67,7 +67,7 @@ import {
   statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER, DOOR_WORDS,
 } from './status.js';
 import { thinkingJobText } from '../thinking.js';
-import { judgedFilesOf, lineRules } from '../rubricstep.js';
+import { judgedFilesOf, lineRules, stepFileRel } from '../rubricstep.js';
 import { factPartOf, factSentence } from '../facts.js';
 import { createSettingsRoutes } from './settingsroutes.js';
 import { planFromSpec } from './jobplan.js';
@@ -1132,6 +1132,11 @@ export const RESULT_DOOR_ASK = 'the checks passed; is this what you wanted?';
 /** the two sentences for a delivered file that is no longer what the run wrote (code-owned, one spelling) */
 export const RESULT_FILE_GONE = 'the saved file is gone';
 export const RESULT_FILE_CHANGED = 'the saved file changed after the run';
+/** the same two states for a red run's file, which is the last one the check read (not a delivered file) */
+export const RESULT_JUDGED_GONE = 'the file is gone';
+export const RESULT_JUDGED_CHANGED = 'the file changed after the check';
+/** what a red run's rows are, said once above them */
+export const RESULT_JUDGED_NOTE = 'a red run delivers nothing; these rows are the last file the check read';
 
 /**
  * One delivered file, read for the Result tab or a download: it must still be a regular file at the recorded path whose sha256 equals the
@@ -1147,6 +1152,30 @@ function readDelivered(rec) {
   try { buf = readFileSync(rec.path); } catch { return { state: 'gone', buf: null }; }
   if (rec.sha256 === null || createHash('sha256').update(buf).digest('hex') !== rec.sha256) return { state: 'changed', buf: null };
   return { state: 'ok', buf };
+}
+
+/**
+ * A red run's rows: the file the LAST check judged for job line `n`, from the run's own `output-judged` spine record `{step, iteration, path,
+ * bytes, sha256}` (src/planrun.js, one per check run, written before the next try overwrites the file). The spine step id is a step NAME, so the
+ * line is matched by the path the signed close judges (`stepFileRel(n)`), never by a path taken from a record or a request. It is resolved against
+ * the run's own tree root (`treeRootForRun`: `row.patient`, else the source-seed `tree/`), must stay inside it, and must still match the record's
+ * sha256 — stale content is never returned. `none` = no such record (an old spine, or a try that never reached its check).
+ * @param {any[]} records @param {number} n @param {string|null} root
+ * @returns {{state: 'ok', buf: Buffer}|{state: 'gone'|'changed'|'none', buf: null}}
+ */
+function readJudged(records, n, root) {
+  const rel = stepFileRel(n);
+  const rec = records.findLast((r) => r && r.type === 'output-judged' && r.path === rel && typeof r.sha256 === 'string');
+  if (!rec) return { state: 'none', buf: null };
+  if (root === null) return { state: 'gone', buf: null };
+  let abs;
+  try {
+    abs = realpathSync(join(root, rel));
+    const base = realpathSync(root);
+    if (!abs.startsWith(base + sep)) return { state: 'gone', buf: null };
+  } catch { return { state: 'gone', buf: null }; }
+  const got = readDelivered({ path: abs, sha256: rec.sha256 });
+  return got.state === 'ok' ? got : { state: got.state, buf: null };
 }
 
 /** a delivered step file's job line: `steps/<n>-YYYY-MM-DD[-k].json` (copyOut's dated name of `output/steps/<n>.json`), else null */
@@ -1192,6 +1221,7 @@ export function getRunResult(runid, opts = {}) {
   const delivered = deliveredOf(records);
   const read = delivered.map((d) => readDelivered(d));
   const jobLines = Array.isArray(spec?.jobLines) ? spec.jobLines : [];
+  const greenEnd = records.findLast((r) => r && r.type === 'job-end')?.outcome === 'green';
   const lines = stages.map((/** @type {any} */ st) => {
     const n = st.params.step;
     const jl = jobLines.find((/** @type {any} */ l) => l && l.n === n) ?? null;
@@ -1205,6 +1235,14 @@ export function getRunResult(runid, opts = {}) {
     };
     let obj = null;
     if (di && read[di.i].buf) { try { obj = JSON.parse(/** @type {Buffer} */ (read[di.i].buf).toString('utf8')); } catch { obj = null; } }
+    if (!di && !greenEnd) {
+      // a red run: the last file the check judged (never a ✓: `passed` is false for it)
+      const j = readJudged(records, n, treeRootForRun(row));
+      if (j.state !== 'none') {
+        out.file = { i: null, state: j.state, words: j.state === 'gone' ? RESULT_JUDGED_GONE : (j.state === 'changed' ? RESULT_JUDGED_CHANGED : null), judged: true, note: RESULT_JUDGED_NOTE };
+        if (j.buf) { try { obj = JSON.parse(j.buf.toString('utf8')); } catch { obj = null; } }
+      }
+    }
     if (fp) {
       out.source = fp.source;
       out.facts = fp.facts.map((/** @type {any} */ f) => ({ name: f.name, kind: f.shape === 'phrase' ? 'phrase' : 'value', sentence: factSentence(f, fp.source) }));

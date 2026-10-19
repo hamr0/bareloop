@@ -114,3 +114,13 @@ test('the Result functions never search a quote or draw a highlight', () => {
   const all = ['resultFactsLine', 'resultTextLine', 'renderResult', 'resultDoorHtml', 'wireResultDoor', 'syncResultTab'].map(src).join('\n');
   assert.equal(/\.indexOf\(|\.includes\(|\.search\(|\.match\(|new RegExp|<mark|highlight/.test(all), false);
 });
+
+test('red rows (fix 1): a judged file shows its note above bare rows (no ✓) and the gap words render after the lines, under the table', () => {
+  const r = { ...realResult().lines[0], passed: false, file: { i: null, state: 'ok', words: null, judged: true, note: 'a red run delivers nothing; these rows are the last file the check read' } };
+  const h = fns.resultFactsLine(r);
+  assert.match(h, /data-testid="result-judged-note">a red run delivers nothing/);
+  assert.equal(h.includes('✓'), false);
+  assert.match(h, /result-row/);
+  const f = src('renderResult');
+  assert.ok(f.indexOf('result-gap') > f.indexOf('resultFactsLine(line)'), 'the gap words sit under the table');
+});
