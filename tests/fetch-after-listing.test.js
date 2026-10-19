@@ -32,6 +32,13 @@ const ok = (/** @type {string} */ text) => async (/** @type {string} */ url) => 
 function spawnRunner(/** @type {import('node:test').TestContext} */ t) {
   const c = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', 'run-u.mjs'], { stdio: 'ignore' });
   t.after(() => { try { process.kill(/** @type {number} */ (c.pid), 'SIGKILL'); } catch { /* gone */ } });
+  // spawn() returns when the pid has forked, not when exec has finished: for a moment /proc/<pid>/cmdline reads EMPTY, and isLiveRunner
+  // (src/runlist.js) rightly says "not a runner" to an empty argv. Under load that window is long enough to hit (~1% of spawns measured with
+  // 12 busy loops running), so wait here until the child's argv is readable and names the runner.
+  const until = Date.now() + 5000;
+  while (!readFileSync(`/proc/${c.pid}/cmdline`, 'utf8').includes('run-u.mjs')) {
+    if (Date.now() > until) throw new Error('the spawned runner never showed its argv in /proc');
+  }
   return /** @type {number} */ (c.pid);
 }
 
