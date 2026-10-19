@@ -35,6 +35,7 @@ import {
 import { fileURLToPath } from 'node:url';
 import { readRunList, readNeedsRemovals, DIED_MTIME_MS, runIsAlive } from '../runlist.js';
 import { webFetchState } from '../source.js';
+import { isWebUrl } from '../pagefetch.js';
 import { draftingPartFor, sessionDirForRow, readDraftSteps } from '../draftspend.js';
 import { readingOfQuestion, isAgree } from '../pagemap.js';
 import {
@@ -1230,6 +1231,28 @@ function stagePassedIn(records, stageName) {
   return !!run && run.verdict === 'satisfied';
 }
 
+/** the words beside a Result-tab page link: the page is read again from the web, so it can differ from what the run read */
+export const RESULT_PAGE_MAY_CHANGE = 'The page may have changed since this run.';
+
+/**
+ * The web address each input LABEL was read from, off the run's own `source.json` (`inputs[].url`, written at drafting and rewritten at run start).
+ * Only http(s) addresses; a file or repo input has no `url` and so no entry. No source.json beside the run = an empty map (no link, nothing guessed).
+ * @param {string} spinePath @returns {Map<string, string>}
+ */
+function pageUrlsByLabel(spinePath) {
+  /** @type {Map<string, string>} */
+  const out = new Map();
+  const { sourceJsonPath } = sourceNearSpine(spinePath);
+  if (sourceJsonPath === null) return out;
+  try {
+    const m = JSON.parse(readFileSync(sourceJsonPath, 'utf8'));
+    for (const r of Array.isArray(m?.inputs) ? m.inputs : []) {
+      if (r && typeof r.label === 'string' && typeof r.url === 'string' && isWebUrl(r.url)) out.set(r.label, r.url.trim());
+    }
+  } catch { /* unreadable record: no link */ }
+  return out;
+}
+
 /** a fact's cell: a money amount in the fact's own signed currency/unit (src/facts.js moneyAs), anything else as the file wrote it */
 function resultCell(f, v) {
   const t = cellText(v);
@@ -1295,6 +1318,7 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
   const tiedToLine = (/** @type {number} */ n) => [...(plan.lines.find((l) => l.n === n)?.refused ?? []), ...proseByLine.filter((i) => i.line === n).map((i) => i.text)];
   const bottom = [...plan.notChecked];
   for (const t of prosePool) { const k = bottom.indexOf(t); if (k >= 0) bottom.splice(k, 1); }
+  const pageUrls = pageUrlsByLabel(row.spine);
   const greenEnd = records.findLast((r) => r && r.type === 'job-end')?.outcome === 'green';
   const lines = stages.map((/** @type {any} */ st) => {
     const n = st.params.step;
@@ -1325,6 +1349,7 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
     }
     if (fp) {
       out.source = fp.source;
+      out.page = pageUrls.get(fp.source) ?? null;
       const confirmed = confirmedFactNames(row, jl, fp, opts);
       out.facts = fp.facts.map((/** @type {any} */ f) => ({
         name: f.name, kind: f.shape === 'phrase' ? 'phrase' : 'value', sentence: factSentence(f, fp.source),
@@ -1358,9 +1383,13 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
     const g = bad ? gapOneLine(bad.detail) : null;
     gap = g ? { line: g.line, more: g.more, moreText: g.more > 0 ? `(+${g.more} more)` : null } : null;
   }
+  // the distinct web pages the results read, in line order: ONE = the page draws a single link at the top, 2+ = each line carries its own `page`
+  const pages = [...new Set(lines.map((/** @type {any} */ l) => l.page).filter((/** @type {any} */ u) => typeof u === 'string'))];
   return {
     runid,
     lines,
+    pages,
+    pageNote: pages.length ? RESULT_PAGE_MAY_CHANGE : null,
     notChecked: bottom,
     // the door's words, from the one table (src/panel/status.js DOOR_WORDS); the page types none of them
     door: { head: DOOR_WORDS.waiting.head, ask: RESULT_DOOR_ASK },

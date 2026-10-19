@@ -3737,8 +3737,16 @@
     return resultField(label, '<div class="ro-value" data-testid="' + testid + '"><ul style="margin:0;padding-left:18px">' +
       items.map(function(t){ return '<li>' + escapeXml(t) + '</li>'; }).join("") + '</ul></div>');
   }
-  function resultLineCard(line){
+  // the web page a result was read from: a link (http/https only, new tab) and the server's words that the page may have moved on
+  function resultPageLink(url, note, testid){
+    if(typeof url !== "string" || !/^https?:\/\//i.test(url)) return "";
+    return resultField("Page read", '<div class="ro-value" data-testid="' + testid + '" style="overflow-wrap:anywhere"><a href="' + escapeXml(url) +
+      '" target="_blank" rel="noopener noreferrer">' + escapeXml(url) + '</a><div class="hint" data-testid="result-page-note">' + escapeXml(note || "") + '</div></div>');
+  }
+  // `own` = the Result tab read 2+ pages, so this line's box shows its own page
+  function resultLineCard(line, own, note){
     return '<div class="job-card" data-testid="result-line"><h4>Line ' + escapeXml(String(line.n)) + '</h4>' + resultLineBox(line) +
+      (own ? resultPageLink(line.page, note, "result-page-line") : "") +
       (line.kind === "facts" ? resultFactsLine(line) : resultTextLine(line)) +
       resultNotChecked("Not checked", line.notChecked, "result-line-notchecked") + '</div>';
   }
@@ -3799,8 +3807,10 @@
       resultField("Status", '<div class="ro-value">' + stateDotHTML(glyphClass(detail.glyph), detail.status && detail.status.word ? detail.status.word : "", "result-status") +
         ' \u00b7 ' + escapeXml(detail.checkType) + ' \u00b7 ' + escapeXml(runName(detail.job, detail.runNo, detail.runid)) + '</div>') +
       '<div class="field-row">' + resultField("Money", '<div class="ro-value" data-testid="result-counters">' + escapeXml(counters[0] || "") + '</div>') +
-      resultField("Time", '<div class="ro-value">' + escapeXml((counters[1] || "").replace(/^took /, "")) + '</div>') + '</div></div>';
-    (data.lines || []).forEach(function(line){ h += resultLineCard(line); });
+      resultField("Time", '<div class="ro-value">' + escapeXml((counters[1] || "").replace(/^took /, "")) + '</div>') + '</div>' +
+      ((data.pages || []).length === 1 ? resultPageLink(data.pages[0], data.pageNote, "result-page-top") : "") + '</div>';
+    var ownPages = (data.pages || []).length >= 2;
+    (data.lines || []).forEach(function(line){ h += resultLineCard(line, ownPages, data.pageNote); });
     if(data.gap){
       h += '<div class="rs-warn" data-testid="result-gap">The check said: ' + escapeXml(data.gap.line) + (data.gap.moreText ? ' ' + escapeXml(data.gap.moreText) : "") + '</div>';
     }
