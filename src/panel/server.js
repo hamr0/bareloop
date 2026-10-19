@@ -211,6 +211,7 @@ function describeLastRecord(r) {
     'scout-result': () => 'the scout finishing',
     'check-run': () => 'a check run',
     'output-judged': () => 'recording the file a check read',
+    'rubric-evidence': () => 'recording the words a check read',
     'check-preflight': () => 'a preflight check',
     'check-menu': () => 'building the check menu',
     'step-start': (rec) => `starting step ${rec.step ?? '?'}`,

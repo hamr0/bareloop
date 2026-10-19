@@ -9,6 +9,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
+- **`rubric-evidence` spine record (report-only).** A rubric step's `cited` checks now save what they read (bareguard 0.25 `full.evidence`: the quote and the spans of the words each check located) as `{step, iteration?, evidence}`, masked like every spine write; nothing in the verdict, governor or money paths reads it. The Result tab's highlights and money-as-written build on it.
 - **bareguard `^0.25.0` (ruling #66 evidence spans; dependency bump only, `full.evidence` not used yet).** Checked on the saved real Google Flights page: the dump is byte-identical to the 0.24-era evidence and the page check reads 27 blocks, 0 bad.
 
 - **Result tab links to the page each result read.** One web page read shows one link at the top of the Result tab; two or more pages show each result box's own page link, with "The page may have changed since this run." beside it. The address is the run's own `source.json` input url (http and https only, opens in a new tab with `rel="noopener noreferrer"`); file and repo inputs get no link. `/result` now carries `pages`, `pageNote` and each line's `page`.

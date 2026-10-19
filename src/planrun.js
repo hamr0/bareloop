@@ -1666,6 +1666,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * `null` for a command close, which has no baseline to measure against. */
   /** @type {{seedRef: string}|null} */
   let declaredCtx = null;
+  /** @type {number|null} the step try whose checks are running right now (the `rubric-evidence` record's `iteration`); null outside a step's judge */
+  let judgingIteration = null;
   /**
    * ONE close-execution seam, chosen once by which field the SIGNED spec carries.
    * Both executors return `runClose`'s verdict shape, so everything downstream —
@@ -1704,6 +1706,20 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // handed through as the FUNCTION (not a snapshot) so a retried locate call
       // re-reads the remaining time rather than reusing the first attempt's.
       callBounds,
+      // REPORT-ONLY: what a rubric-step stage's cited checks read (bareguard `full.evidence`), recorded as `rubric-evidence` for the Result
+      // tab's highlights. No verdict, gap, governor or money path reads it. Masked HERE with the run's one `scrub`: the `text` is a quote from
+      // the frozen page record, and the spine is append-only. Masking moves offsets, so an entry whose text changed keeps NO spans.
+      onRubricEvidence: (/** @type {any} */ e) => emit('rubric-evidence', {
+        step: e.step,
+        ...(judgingIteration !== null ? { iteration: judgingIteration } : {}),
+        evidence: e.evidence.map((/** @type {any} */ x) => {
+          if (typeof x?.text !== 'string') return x;
+          const text = scrub(x.text);
+          const spans = text === x.text && Array.isArray(x.spans) ? x.spans.map((/** @type {any} */ sp) => (typeof sp?.canon === 'string' ? { ...sp, canon: scrub(sp.canon) } : sp)) : [];
+          return { ...x, text, spans };
+        }),
+        ...(e.evidenceTotal !== undefined ? { evidenceTotal: e.evidenceTotal } : {}),
+      }),
       onJudgeCost: (/** @type {any} */ c) => emit('judge-round', {
         stage: c.stage, path: c.path, attempt: c.attempt, label: c.label, model: c.model,
         costUsd: c.costUsd, unpricedRounds: c.unpricedRounds,
@@ -3425,7 +3441,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     };
     let lastGap = '';
     const judge = async () => {
-      const { pass, results: raw } = await evalExits(step.exit, { dir: workdir, snapshot, runCheck });
+      judgingIteration = iterationNow;
+      /** @type {any} */
+      let evaled;
+      try { evaled = await evalExits(step.exit, { dir: workdir, snapshot, runCheck }); } finally { judgingIteration = null; }
+      const { pass, results: raw } = evaled;
       // Scrubbed HERE, once, before the results are read by anyone. An exit detail is
       // supposed to be names and counts, but `json-valid` embeds `JSON.parse`'s own
       // message and V8 quotes a window of the SOURCE inside it (a body of 20 chars or

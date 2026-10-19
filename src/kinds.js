@@ -304,6 +304,7 @@ export function mechanicalStages(stages) {
  *   onJudgeCost?: (c: {stage: string|null, kind: string|null, path: string, attempt: number,
  *     label: string, model: string, costUsd: number|null, unpricedRounds: number}) => void,
  *   callBounds?: () => {timeoutMs?: number, deadlineMs?: number},
+ *   onRubricEvidence?: (e: {step: number, evidence: any[], evidenceTotal?: number}) => void,
  *   onStage?: (row: {stage: string|null, kind: string|null, verdict: string, durationMs: number}) => void}} Ctx
  *   The arbiter's half of a stage run. Every field here is operator/runner
  *   territory: a declaration parameterises kinds, never the contracts.
@@ -1593,6 +1594,10 @@ async function runRubricStep(stage, ctx) {
   }
   const graded = await gradeStep({ params: p, bytes: notRegular ? null : bytes, outputBytes: notRegular ? null : bytes, inputs, factQuotes, factMissing }, inputShas);
   if (graded.verdict === 'stopped') return stop(`the rubric stopped: ${graded.fault}`, STOP_FAULTS.CRASHED);
+  // REPORT-ONLY: what each cited check read, handed to the runner's seam (the spine's `rubric-evidence`); nothing below reads it
+  if (graded.evidence && typeof ctx.onRubricEvidence === 'function') {
+    ctx.onRubricEvidence({ step, evidence: graded.evidence, ...(graded.evidenceTotal !== undefined ? { evidenceTotal: graded.evidenceTotal } : {}) });
+  }
   const gap = new Gap(ctx.gapKeep, ctx.gapCap);
   if (notRegular) gap.push(`${stage.name}: line ${step}: ${stepFileRel(step)} is not a regular file`);
   for (const l of graded.gapLines) gap.push(`${stage.name}: ${l}`);

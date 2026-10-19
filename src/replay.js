@@ -35,6 +35,8 @@
 //     `plan` / `fix` for the other worker phases — src/planrun.js:2735,2515,3359.
 //     `costUsd` is `arg?.costUsd ?? null` — a null is an HONEST unpriced round
 //     (F6), never summed as $0 by this module.
+//   rubric-evidence {step, iteration?, evidence, evidenceTotal?}  REPORT-ONLY: what a rubric step's cited checks read (bareguard
+//                  `full.evidence`); read by the Result tab only, by no verdict, governor or money path. src/planrun.js onRubricEvidence
 //   exit-eval      {step, iteration, results: [{type, pass, detail?}]}
 //                                                                  src/planrun.js:2897
 //     each `results[i].type` is one of plan.js's EXIT_TYPES; `check-passes`
