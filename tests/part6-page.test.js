@@ -19,7 +19,7 @@ const src = (name) => {
 };
 const ESC = 'function escapeXml(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}';
 const NONE = /var RESULT_NONE = "([^"]+)";/.exec(PAGE)[1];
-const names = ['resultFileWords', 'resultField', 'resultLineBox', 'resultFactsLine', 'resultTextLine', 'resultNotChecked', 'resultLineCard', 'resultDoorHtml'];
+const names = ['resultFileWords', 'resultField', 'resultLineBox', 'resultProofHtml', 'resultFactsLine', 'resultTextLine', 'resultNotChecked', 'resultLineCard', 'resultDoorHtml'];
 const fns = new Function(`${ESC}\nvar RESULT_NONE = ${JSON.stringify(NONE)};\n${names.map(src).join('\n')}\nreturn {${names.join(', ')}};`)();
 
 /** the real /result body of mve5y8fa, its delivered file placed in a scratch dir */

@@ -397,6 +397,7 @@
   /* PRD v1.107 Part 6: the Result tab. Boxes are the Job tab's own (.job-card, .field, .ro-value, .field-row); text wraps, nothing scrolls the page. */
   #result-body{min-width:0;overflow-wrap:anywhere;}
   .rs-ok{color:var(--green);font-weight:700;}
+  #result-body mark{background:var(--rl-accent-bg-strong);color:var(--text);border-radius:2px;padding:0 1px;}
   #result-door-card{border-color:var(--amber);}
   #result-door-card .st-word{color:var(--amber);}
   #result-door-card textarea{width:100%;min-height:60px;margin:6px 0;background:var(--bg);color:var(--text);border:1px solid var(--text-dim);font:inherit;padding:6px;}
@@ -3696,6 +3697,19 @@
   }
   // no saved result to show: one line, never the file-state words (those are in Saved)
   var RESULT_NONE = "no saved result to show";
+  // the proof quote, with the words the check read marked. The server sends the check's own text and offsets (`r.proof`: bareguard's
+  // `full.evidence`, spans already chosen and merged); the page only cuts the text at those offsets, escapes every piece and marks.
+  // It never searches a quote for a word. No proof (an old run, a quote the check did not read): the plain quote, unmarked.
+  function resultProofHtml(r){
+    var p = r.proof;
+    if(!p || typeof p.text !== "string" || !Array.isArray(p.marks)) return escapeXml(r.quote);
+    var h = "", at = 0;
+    p.marks.forEach(function(m){
+      h += escapeXml(p.text.slice(at, m[0])) + "<mark>" + escapeXml(p.text.slice(m[0], m[1])) + "</mark>";
+      at = m[1];
+    });
+    return h + escapeXml(p.text.slice(at));
+  }
   function resultFactsLine(line){
     var facts = line.facts || [];
     var n = facts.length;
@@ -3709,7 +3723,7 @@
           '<div class="field-row" style="margin-top:6px">' + r.cells.map(function(c, i){
             return '<div class="field"><label>' + escapeXml(facts[i] ? facts[i].name : "") + '</label><div class="ro-value" data-testid="result-cell">' + escapeXml(c) + ok + '</div></div>';
           }).join("") + '</div>' +
-          '<details data-testid="result-proof"><summary>proof \u2014 the page\'s own words</summary><div class="ro-value" data-testid="result-quote" style="overflow-wrap:anywhere">' + escapeXml(r.quote) + '</div></details></div>';
+          '<details data-testid="result-proof"><summary>proof \u2014 the page\'s own words</summary><div class="ro-value" data-testid="result-quote" style="overflow-wrap:anywhere">' + resultProofHtml(r) + '</div></details></div>';
       }).join("") + '</div>');
     } else if(!(line.file && line.file.judged && line.file.words)){
       h += '<div class="hint" data-testid="result-nofile">' + RESULT_NONE + '</div>';

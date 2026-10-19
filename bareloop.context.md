@@ -3448,7 +3448,7 @@ key you want first (the panel picks the row by the Model menu).
   the matching raw-log text windowed the same way — when one resolves); `GET
   /api/runs/:runid/rounds?part=&attempt=&offset=&limit=` (one attempt's rounds, lazily
   paged, for the Audit tab's Grouped view); `GET /api/runs/:runid/result` and `GET /api/runs/:runid/download?i=<n>` (PRD v1.107 Part 6, the Result tab of a rubric run: `result`
-  is the signed lines and fact sentences plus the rows of each delivered step file; both read ONLY the paths of the run's own `destination-written` records, re-check their
+  is the signed lines and fact sentences plus the rows of each delivered step file (a row carries `proof: {text, marks: [[start, end]]}` when the run's `rubric-evidence` record holds what the check read for that result: the words to mark, never found by searching; absent for an old run or a quote the check did not read); both read ONLY the paths of the run's own `destination-written` records, re-check their
   sha256, and answer in words when the file changed or is gone; the detail carries `hasResult` and `delivered`); `POST /api/runs/:runid/rerun {text}` and `/pause` (human-click
   guard, the engine's own `run-u --door --decide`, only while the run waits at its review door; empty rerun words are refused); `GET /api/runs/:runid/job` (the signed spec's
   own fields, ONLY when a bundle-layout run's `spec.json` is reachable — a run-u run has

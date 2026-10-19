@@ -1254,6 +1254,34 @@ function pageUrlsByLabel(spinePath) {
   return out;
 }
 
+/**
+ * What a result's check read, from the run's own `rubric-evidence` record (report-only; bareguard 0.25 `full.evidence`), for the proof fold.
+ * `null` = no evidence (an old run, a malformed claim, or a quote that is not the one the check read): the page shows the plain quote.
+ * `text` is bareguard's normalized quote; `marks` are `[start, end]` UTF-16 offsets into it, sorted, overlaps merged. Which spans: every span the
+ * check read EXCEPT a bind-only membership token that is not this claim's (`canon` present, `matched` absent) - hamr 2026-10-19, ruled A.
+ * The offsets are bareguard's; nothing here searches the quote for anything.
+ * @param {any} ev one `evidence` entry @param {unknown} quote the result's own quote as the file holds it
+ * @returns {{text: string, marks: number[][]}|null}
+ */
+function proofOf(ev, quote) {
+  if (!ev || typeof ev.text !== 'string' || !Array.isArray(ev.spans) || typeof quote !== 'string') return null;
+  // the entry must be about THIS quote (bareguard's normalization: marks removed, whitespace collapsed, trimmed), else it is another try's
+  if (quote.replace(/\*\*|__/g, '').replace(/\s+/g, ' ').trim() !== ev.text) return null;
+  const spans = ev.spans
+    .filter((/** @type {any} */ sp) => sp && Number.isInteger(sp.start) && Number.isInteger(sp.end) && sp.start >= 0 && sp.end > sp.start && sp.end <= ev.text.length
+      && !(sp.canon !== undefined && sp.matched !== true))
+    .map((/** @type {any} */ sp) => [sp.start, sp.end])
+    .sort((/** @type {number[]} */ x, /** @type {number[]} */ y) => x[0] - y[0] || x[1] - y[1]);
+  /** @type {number[][]} */
+  const marks = [];
+  for (const sp of spans) {
+    const last = marks[marks.length - 1];
+    if (last && sp[0] < last[1]) last[1] = Math.max(last[1], sp[1]);
+    else marks.push([sp[0], sp[1]]);
+  }
+  return { text: ev.text, marks };
+}
+
 /** a fact's cell: a money amount in the fact's own signed currency/unit (src/facts.js moneyAs), anything else as the file wrote it */
 function resultCell(f, v) {
   const t = cellText(v);
@@ -1357,11 +1385,17 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
         ...(confirmed.has(f.name) ? { note: RESULT_YOU_CONFIRMED } : {}),
       }));
       const results = obj && Array.isArray(obj.results) ? obj.results : null;
+      // what the check read, from the run's last `rubric-evidence` record for this line (the claim index IS the result's index in `results[]`)
+      const evRec = records.findLast((r) => r && r.type === 'rubric-evidence' && r.step === n && Array.isArray(r.evidence));
+      const evCheck = `p${st.params.parts.indexOf(fp) + 1}-facts`;
       out.rows = results === null ? null : results.map((/** @type {any} */ r, /** @type {number} */ k) => {
         const values = r && typeof r === 'object' && r.values && typeof r.values === 'object' ? r.values : {};
+        const quote = r && typeof r === 'object' && typeof r.quote === 'string' ? r.quote : '';
+        const proof = evRec ? proofOf(evRec.evidence.find((/** @type {any} */ e) => e && e.check === evCheck && e.claim === k), quote) : null;
         return {
           n: k + 1,
-          quote: r && typeof r === 'object' && typeof r.quote === 'string' ? r.quote : '',
+          quote,
+          ...(proof ? { proof } : {}),
           cells: fp.facts.map((/** @type {any} */ f) => (f.shape === 'phrase' ? String(f.phrase) : resultCell(f, values[f.name]))),
         };
       });
