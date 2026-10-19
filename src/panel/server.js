@@ -1285,6 +1285,11 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
         out.file = { i: null, state: j.state, words: j.state === 'gone' ? RESULT_JUDGED_GONE : (j.state === 'changed' ? RESULT_JUDGED_CHANGED : null), judged: true, note: RESULT_JUDGED_NOTE };
         if (j.buf) { try { obj = JSON.parse(j.buf.toString('utf8')); } catch { obj = null; } }
       }
+    } else if (di && !read[di.i].buf) {
+      // the delivered file is gone or changed: that is said ONCE, in the Saved card. The line shows the rows of the file the check read, if the
+      // run's own tree still holds exactly it (sha256 against the output-judged record), else the page says there is no saved result to show
+      const j = readJudged(records, n, treeRootForRun(row));
+      if (j.buf) { try { obj = JSON.parse(j.buf.toString('utf8')); out.fromCheck = true; } catch { obj = null; } }
     }
     if (fp) {
       out.source = fp.source;

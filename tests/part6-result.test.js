@@ -205,3 +205,21 @@ test('a line is passed only when the run ended green AND its own check-run said 
   writeFileSync(spine, orig.replace('"type":"job-end","outcome":"green"', '"type":"job-end","outcome":"step-red"'));
   assert.equal(await passedOf(), false, 'the run did not end green');
 });
+
+test('delivered file gone: the line shows the rows of the file the check read when the run\'s tree still holds exactly it, and says "gone" only in delivered[] (once per file)', async () => {
+  const w = await world();
+  // RE-SHAPE (no archived spine has an output-judged record): one record carrying the real step file's real sha, and that file in the run's tree
+  const spine = w.spine('mve5y8fa');
+  writeFileSync(spine, `${readFileSync(spine, 'utf8')}${JSON.stringify({ type: 'output-judged', step: 'x', iteration: 1, path: 'output/steps/1.json', bytes: 1473, sha256: STEP_SHA, seq: 9999 })}\n`);
+  const tree = join(w.out('mve5y8fa'), 'source-seed', 'tree', 'output', 'steps');
+  mkdirSync(tree, { recursive: true });
+  copyFileSync(STEP, join(tree, '1.json'));
+  rmSync(w.delivered);
+  const res = (await w.get('/api/runs/mve5y8fa/result')).body;
+  assert.equal(res.lines[0].rows.length, 3);
+  assert.equal(res.lines[0].fromCheck, true);
+  assert.deepEqual(res.delivered.map((d) => d.words), ['the saved file is gone']);
+  // changed in the tree too: no rows
+  writeFileSync(join(tree, '1.json'), readFileSync(STEP, 'utf8').replace('144', '145'));
+  assert.equal((await w.get('/api/runs/mve5y8fa/result')).body.lines[0].rows, null);
+});
