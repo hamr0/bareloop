@@ -202,13 +202,10 @@ export function applyPageRules(text, mapping, jobLines) {
       if (f.shape === 'money') {
         // the forms: units first (the U1-moved words, then the AI's listed units), then currency signs
         const listedCurrencies = (Array.isArray(f.currency) ? f.currency : []).map(String);
-        // a currency SIGN listed as a unit is a currency, not a unit: listed in both it is said once and the unit copy goes; listed only as a unit
-        // it moves to the currency list (src/facts.js: a sign is a currency, a code is a unit) and takes the normal currency path from there
-        const movedSigns = [];
+        // a currency SIGN listed in BOTH unit and currency is said once: the unit copy goes (fwd F71 drafts)
         const listedUnits = (Array.isArray(f.unit) ? f.unit : []).map(String).filter((u) => {
-          if (!CURRENCY_SYMBOLS.includes(u)) return true;
-          if (listedCurrencies.includes(u)) drop(f, u, 'sign-twice');
-          else { drop(f, u, 'sign-as-unit'); movedSigns.push(u); }
+          if (!(CURRENCY_SYMBOLS.includes(u) && listedCurrencies.includes(u))) return true;
+          drop(f, u, 'sign-twice');
           return false;
         });
         const units = [...new Set([...moved, ...listedUnits])].filter((u) => {
@@ -216,7 +213,7 @@ export function applyPageRules(text, mapping, jobLines) {
           drop(f, u, 'not-on-page');
           return false;
         });
-        const curs = [...new Set([...listedCurrencies, ...movedSigns])].filter((c) => {
+        const curs = listedCurrencies.filter((c) => {
           if (countExact(text, c) >= 1) return true;
           drop(f, c, 'not-on-page');
           return false;
