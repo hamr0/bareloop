@@ -394,23 +394,16 @@
      one) covers every table inside that wrapper, Flat's included. */
   .audit-table-scroll table th{position:sticky;top:0;z-index:1;}
   .attempt-check{margin-top:4px;font-size:12px;}
-  /* PRD v1.107 Part 6: the Result tab. Text flows and wraps; the results table scrolls inside its own .audit-table-scroll wrapper, never the page. */
+  /* PRD v1.107 Part 6: the Result tab. Boxes are the Job tab's own (.job-card, .field, .ro-value, .field-row); text wraps, nothing scrolls the page. */
   #result-body{min-width:0;overflow-wrap:anywhere;}
-  .rs-chip{border:1px solid var(--border-strong);padding:0 6px;font-size:12px;display:inline;margin-right:4px;overflow-wrap:break-word;}
   .rs-ok{color:var(--green);font-weight:700;}
-  .rs-quote{border-left:2px solid var(--border-strong);padding:4px 8px;margin:4px 0;color:var(--text-dim);font-size:12px;overflow-wrap:anywhere;white-space:pre-wrap;}
-  .rs-box{border:1px solid var(--border-strong);padding:8px 10px;margin:8px 0;background:var(--panel2);overflow-wrap:anywhere;white-space:pre-wrap;}
-  .rs-door{border:1px solid var(--amber);background:var(--amber-bg);padding:8px 10px;margin:10px 0;}
-  .rs-door .st-word{color:var(--amber);}
-  .rs-door textarea{width:100%;min-height:60px;margin:6px 0;background:var(--bg);color:var(--text);border:1px solid var(--text-dim);font:inherit;padding:6px;}
-  .rs-path{font-size:12px;color:var(--text-dim);overflow-wrap:anywhere;margin-top:4px;}
+  #result-door-card{border-color:var(--amber);}
+  #result-door-card .st-word{color:var(--amber);}
+  #result-door-card textarea{width:100%;min-height:60px;margin:6px 0;background:var(--bg);color:var(--text);border:1px solid var(--text-dim);font:inherit;padding:6px;}
   #result-body details>summary{cursor:pointer;color:var(--text-dim);min-height:28px;}
-  #result-body details>summary{list-style:none;}
-  #result-body details>summary::-webkit-details-marker{display:none;}
-  #result-body td .rs-quote{margin:2px 0;}
   .rs-link{background:none;border:none;padding:0;min-height:44px;color:var(--accent);text-decoration:underline;font:inherit;cursor:pointer;}
   .rs-warn{color:var(--amber);overflow-wrap:anywhere;}
-  .rs-door .stopping{color:var(--amber);font-size:13px;overflow-wrap:anywhere;}
+  #result-door-card .stopping{color:var(--amber);font-size:13px;overflow-wrap:anywhere;}
   /* PRD v1.106 Part 5 C: the Audit step fold (tries, their numbered checks, the Round table). Every line wraps; nothing forces a page-wide scroll. */
   .actor-mark{color:var(--text-faint);font-size:12px;margin-left:6px;white-space:nowrap;}
   .step-tally{font-size:12px;color:var(--text-dim);overflow-wrap:anywhere;margin:2px 0 6px;}
@@ -3680,50 +3673,70 @@
   }
   document.getElementById("tab-result").addEventListener("click", function(){ if(currentRunid) loadResult(currentRunid); });
 
-  // a delivered-file state in words (from the server), or ""
+  // a RED run's own file words (the last file its check judged: "the file is gone" / "the file changed after the check") and the one note that says
+  // what those rows are. A DELIVERED file's gone/changed words are said once, in the Saved card, never here.
   function resultFileWords(file){
     var note = file && file.judged && file.note ? '<div class="hint" data-testid="result-judged-note">' + escapeXml(file.note) + '</div>' : "";
-    return note + (file && file.words ? '<div class="rs-warn" data-testid="result-file-words">' + escapeXml(file.words) + '</div>' : "");
+    return note + (file && file.judged && file.words ? '<div class="rs-warn" data-testid="result-file-words">' + escapeXml(file.words) + '</div>' : "");
   }
+  function resultField(label, inner){
+    return '<div class="field"><label>' + escapeXml(label) + '</label>' + inner + '</div>';
+  }
+  // the numbered job line and its ~ rules, one box (the Job tab's "N. text" spelling, a space after the number)
+  function resultLineBox(line){
+    return resultField("The job line", '<div class="ro-value" data-testid="result-linetext">' + escapeXml(line.n + ". " + line.text) +
+      (line.rules || []).map(function(r){ return '<br>~ ' + escapeXml(r); }).join("") + '</div>');
+  }
+  // no saved result to show: one line, never the file-state words (those are in Saved)
+  var RESULT_NONE = "no saved result to show";
   function resultFactsLine(line){
     var facts = line.facts || [];
-    var h = "";
-    h += resultFileWords(line.file);
+    var n = facts.length;
+    var ok = line.passed === true ? ' <span class="rs-ok" data-testid="result-ok">\u2713</span>' : "";
+    var h = resultFileWords(line.file);
     if(Array.isArray(line.rows) && line.rows.length){
-      var ok = line.passed === true ? ' <span class="rs-ok" data-testid="result-ok">✓</span>' : "";
-      var n = facts.length;
-      h += '<div class="audit-table-scroll" data-testid="result-table-wrap"><table data-testid="result-table"><thead><tr><th>#</th>' +
-        facts.map(function(f){ return '<th>' + escapeXml(f.name) + '</th>'; }).join("") + '<th>checks</th></tr></thead><tbody>';
-      line.rows.forEach(function(r){
-        h += '<tr data-testid="result-row"><td>' + r.n + '</td>' +
-          r.cells.map(function(c){ return '<td><span class="rs-chip">' + escapeXml(c) + '</span>' + ok + '</td>'; }).join("") +
-          '<td>' + (line.passed === true ? '<span class="rs-ok">' + n + ' of ' + n + ' ✓</span>' : "") + '</td></tr>' +
-          '<tr data-testid="result-proof-row"><td></td><td colspan="' + (n + 1) + '"><details data-testid="result-proof"><summary>▸ proof — the page\'s own words</summary><div class="rs-quote">' + escapeXml(r.quote) + '</div></details></td></tr>';
-      });
-      h += '</tbody></table></div>';
-    } else if(!line.file){
-      h += '<div class="hint" data-testid="result-nofile">no result was saved for this line</div>';
-    } else if(!line.file.words){
-      h += '<div class="hint" data-testid="result-nofile">the saved file does not hold results to show</div>';
+      h += resultField("Results (" + line.rows.length + ")", '<div class="ro-value" data-testid="result-results">' + line.rows.map(function(r){
+        return '<div class="ro-value" data-testid="result-row" style="margin-bottom:8px">' +
+          '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px"><b style="color:var(--text)">Result ' + r.n + '</b>' +
+          (line.passed === true ? '<span class="rs-ok" data-testid="result-count">' + n + ' of ' + n + ' \u2713</span>' : "") + '</div>' +
+          '<div class="field-row" style="margin-top:6px">' + r.cells.map(function(c, i){
+            return '<div class="field"><label>' + escapeXml(facts[i] ? facts[i].name : "") + '</label><div class="ro-value" data-testid="result-cell">' + escapeXml(c) + ok + '</div></div>';
+          }).join("") + '</div>' +
+          '<details data-testid="result-proof"><summary>proof \u2014 the page\'s own words</summary><div class="ro-value" data-testid="result-quote" style="overflow-wrap:anywhere">' + escapeXml(r.quote) + '</div></details></div>';
+      }).join("") + '</div>');
+    } else if(!(line.file && line.file.judged && line.file.words)){
+      h += '<div class="hint" data-testid="result-nofile">' + RESULT_NONE + '</div>';
     }
     if(facts.length){
-      h += '<div class="hint" data-testid="result-rules">' + (line.passed === true ? '✓ = code checked it against the saved page. ' : "") + 'The rules:' +
-        facts.map(function(f){ return '<div>' + escapeXml(f.sentence) + (f.note ? ' ' + escapeXml(f.note) : "") + '</div>'; }).join("") + '</div>';
+      h += resultField("The checks", '<div class="ro-value" data-testid="result-rules">' +
+        facts.map(function(f){ return escapeXml(f.sentence) + (f.note ? ' ' + escapeXml(f.note) : ""); }).join("<br>") +
+        (line.passed === true && Array.isArray(line.rows) && line.rows.length ? '<br><span class="hint">\u2713 = code checked it against the saved page</span>' : "") + '</div>');
     }
     return h;
   }
   function resultTextLine(line){
     var h = resultFileWords(line.file);
-    if(typeof line.answer === "string") h += '<div class="rs-box" data-testid="result-answer">' + escapeXml(line.answer) + '</div>';
-    else if(!line.file) h += '<div class="hint" data-testid="result-nofile">no result was saved for this line</div>';
+    if(typeof line.answer === "string") h += resultField("Answer", '<div class="ro-value" data-testid="result-answer" style="color:var(--text);white-space:pre-wrap">' + escapeXml(line.answer) + '</div>');
+    else if(!(line.file && line.file.judged && line.file.words)) h += '<div class="hint" data-testid="result-nofile">' + RESULT_NONE + '</div>';
     (line.cites || []).forEach(function(c){
-      h += '<details data-testid="result-cites"><summary>▸ quotes from ' + escapeXml(c.label) + ' (' + c.items.length + ')</summary>' +
-        c.items.map(function(it){ return '<div class="rs-quote"><b>' + escapeXml(it.claim) + '</b>\n' + escapeXml(it.quote) + '</div>'; }).join("") + '</details>';
+      h += resultField("Quotes from " + c.label + " (" + c.items.length + ")", '<details data-testid="result-cites"><summary>show</summary><div class="ro-value" style="white-space:pre-wrap">' +
+        c.items.map(function(it){ return '<b>' + escapeXml(it.claim) + '</b>\n' + escapeXml(it.quote); }).join("\n\n") + '</div></details>');
     });
     return h;
   }
+  // a list, one row per item (the Job tab lists the same items one per row)
+  function resultNotChecked(label, items, testid){
+    if(!items || !items.length) return "";
+    return resultField(label, '<div class="ro-value" data-testid="' + testid + '"><ul style="margin:0;padding-left:18px">' +
+      items.map(function(t){ return '<li>' + escapeXml(t) + '</li>'; }).join("") + '</ul></div>');
+  }
+  function resultLineCard(line){
+    return '<div class="job-card" data-testid="result-line"><h4>Line ' + escapeXml(String(line.n)) + '</h4>' + resultLineBox(line) +
+      (line.kind === "facts" ? resultFactsLine(line) : resultTextLine(line)) +
+      resultNotChecked("Not checked", line.notChecked, "result-line-notchecked") + '</div>';
+  }
   function resultDoorHtml(door){
-    return '<div class="rs-door" data-testid="result-door"><div><b class="st-word">' + escapeXml(door.head) + '</b> \u2014 ' + escapeXml(door.ask) + '</div>' +
+    return '<div class="job-card" id="result-door-card" data-testid="result-door"><h4>Your call</h4><div class="field"><div class="ro-value"><b class="st-word">' + escapeXml(door.head) + '</b> \u2014 ' + escapeXml(door.ask) + '</div></div>' +
       '<div class="run-actions" style="margin:6px 0 0;"><button class="btn primary" type="button" data-testid="result-accept">Accept</button>' +
       '<button class="btn" type="button" data-testid="result-rerun-open">Rerun with my words</button>' +
       '<button class="btn" type="button" data-testid="result-pause">Pause</button></div>' +
@@ -3774,32 +3787,27 @@
     var keepText = body.querySelector("#result-rerun-text");
     var typed = keepText ? keepText.value : "";
     var rerunOpen = !!body.querySelector("#result-rerun-box:not([hidden])");
-    var h = '<div class="rp-header-title" data-testid="result-head">' +
-      stateDotHTML(glyphClass(detail.glyph), detail.status && detail.status.word ? detail.status.word : "", "result-status") +
-      ' <span>· ' + escapeXml(detail.checkType) + ' · ' + escapeXml(runName(detail.job, detail.runNo, detail.runid)) + '</span></div>' +
-      '<div class="hint" data-testid="result-counters">' + document.getElementById("run-counters").innerHTML + '</div>';
-    var hasText = false;
-    (data.lines || []).forEach(function(line){
-      h += '<div class="jp" data-testid="result-line"><div class="jl"><span class="num">' + escapeXml(String(line.n)) + '</span>' + escapeXml(line.text) +
-        (line.rules || []).map(function(r){ return '<div class="sub">~ ' + escapeXml(r) + '</div>'; }).join("") + '</div></div>';
-      if(line.kind === "facts") h += resultFactsLine(line);
-      else { hasText = true; h += resultTextLine(line); }
-      (line.notChecked || []).forEach(function(t){ h += '<div class="hint" data-testid="result-line-notchecked">Not checked: ' + escapeXml(t) + '</div>'; });
-    });
+    var counters = document.getElementById("run-counters").textContent.split(" \u00b7 ");
+    var h = '<div class="job-card" data-testid="result-head"><h4>Result</h4>' +
+      resultField("Status", '<div class="ro-value">' + stateDotHTML(glyphClass(detail.glyph), detail.status && detail.status.word ? detail.status.word : "", "result-status") +
+        ' \u00b7 ' + escapeXml(detail.checkType) + ' \u00b7 ' + escapeXml(runName(detail.job, detail.runNo, detail.runid)) + '</div>') +
+      '<div class="field-row">' + resultField("Money", '<div class="ro-value" data-testid="result-counters">' + escapeXml(counters[0] || "") + '</div>') +
+      resultField("Time", '<div class="ro-value">' + escapeXml((counters[1] || "").replace(/^took /, "")) + '</div>') + '</div></div>';
+    (data.lines || []).forEach(function(line){ h += resultLineCard(line); });
     if(data.gap){
       h += '<div class="rs-warn" data-testid="result-gap">The check said: ' + escapeXml(data.gap.line) + (data.gap.moreText ? ' ' + escapeXml(data.gap.moreText) : "") + '</div>';
     }
     if((data.notChecked || []).length){
-      h += '<div class="hint" data-testid="result-notchecked">Not checked: ' + data.notChecked.map(escapeXml).join("; ") + '</div>';
+      h += '<div class="job-card"><h4>Not checked</h4>' + resultNotChecked("Not checked (the AI's own reading)", data.notChecked, "result-notchecked") + '</div>';
     }
-    void hasText;
     if(detail.accept === true && !detail.live) h += resultDoorHtml(data.door);
-    (data.delivered || []).forEach(function(d){
-      h += '<div class="rs-path" data-testid="result-saved">saved to: ' + escapeXml(d.path) + '</div>';
-      h += d.words
-        ? '<div class="rs-warn" data-testid="result-file-words">' + escapeXml(d.name + ": " + d.words) + '</div>'
-        : '<div class="run-actions" style="margin:6px 0 0;"><a class="btn small" style="text-decoration:none;" data-testid="result-download" download href="/api/runs/' + encodeURIComponent(data.runid) + '/download?i=' + d.i + '">Download ' + escapeXml(d.name) + '</a></div>';
-    });
+    if((data.delivered || []).length){
+      h += '<div class="job-card" data-testid="result-saved"><h4>Saved</h4>' + data.delivered.map(function(d){
+        return resultField(d.name, '<div class="ro-value" data-testid="result-path" style="overflow-wrap:anywhere">' + escapeXml(d.path) + '</div>' +
+          (d.words ? '<div class="rs-warn" data-testid="result-file-gone">' + escapeXml(d.words) + '</div>'
+            : '<div class="run-actions" style="margin:6px 0 0;"><a class="btn" style="text-decoration:none;" data-testid="result-download" download href="/api/runs/' + encodeURIComponent(data.runid) + '/download?i=' + d.i + '">Download ' + escapeXml(d.name) + '</a></div>'));
+      }).join("") + '</div>';
+    }
     body.innerHTML = h;
     var ta = body.querySelector("#result-rerun-text");
     if(ta){
