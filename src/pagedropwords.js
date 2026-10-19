@@ -11,6 +11,8 @@ const WORDS = /** @type {Record<string, (d: Dropped) => string>} */ ({
   'no-value': (d) => `The page never shows a number right after or right before "${d.word}".`,
   'n2': (d) => `"${d.word}" is written more than once inside one line of the page, so one result cannot show it once.`,
   'r1': (d) => `"${d.word}" does not show the same values as "${d.other}", so it was not used as a second way to read it.`,
+  'sign-twice': (d) => `"${d.word}" was listed twice, as a unit and as a currency; it is used once, as the currency.`,
+  'sign-as-unit': (d) => `"${d.word}" is a currency sign, not a unit; it is used as the currency.`,
   'r1l': (d) => d.word === d.other
     ? `"${d.word}" was listed twice, as a unit and as a currency; it is used once, as the first way to write the price.`
     : `"${d.word}" does not show the same amounts as "${d.other}", so it was not used as a second way to write the price.`,

@@ -190,6 +190,33 @@ test('R1L: a word listed as BOTH unit and currency (fwd F71: "US dollars") is ne
   assert.equal(r.dropped[0].word, r.dropped[0].other);
 });
 
+test('a currency SIGN listed under unit (fwd F71 shape) is a currency: in both lists it is said once as the currency; only in unit it moves to currency - never "not written on the page"', () => {
+  const bos = loadFixture('bos-ord');
+  const mk = (/** @type {any} */ x) => applyPageRules(bos.page, { facts: [{ name: 'price', from: 'rule 1', shape: 'money', words: ['From'], ...x }] }, JOBS.flights);
+  const both = mk({ unit: ['US dollars', '$'], currency: ['$'] });
+  assert.deepEqual(both.facts[0].unit, ['US dollars'], 'the kept fact still reads "144 US dollars"');
+  assert.deepEqual(both.facts[0].currency, ['$']);
+  assert.deepEqual(said(both.dropped), ['price|$|sign-twice']);
+  assert.match(dropSentence(both.dropped[0]), /^"\$" was listed twice, as a unit and as a currency; it is used once, as the currency\.$/);
+  const empty = mk({ unit: ['US dollars', '$'], currency: [] });
+  assert.deepEqual(empty.facts[0].unit, ['US dollars']);
+  assert.deepEqual(empty.facts[0].currency, ['$'], 'moved to currency, then through the normal currency path');
+  assert.deepEqual(said(empty.dropped), ['price|$|sign-as-unit']);
+  assert.equal(dropSentence(empty.dropped[0]), '"$" is a currency sign, not a unit; it is used as the currency.');
+  const only = mk({ unit: ['$'] });
+  assert.equal(only.facts[0].unit, undefined);
+  assert.deepEqual(only.facts[0].currency, ['$'], 'the check still reads the real price');
+  assert.deepEqual(said(only.dropped), ['price|$|sign-as-unit']);
+  for (const r of [both, empty, only]) assert.ok(!r.dropped.some((d) => d.reason === 'not-on-page'));
+});
+
+test('a euro sign listed under unit on the REAL Airbnb page is a currency too, and the normal R1L still judges it', () => {
+  const r = applyPageRules(lisbon.page, { facts: [price({ unit: ['€'], currency: [] })] }, JOBS.airbnb);
+  assert.ok(r.dropped.some((d) => d.word === '€' && d.reason === 'sign-as-unit'));
+  assert.ok(!r.dropped.some((d) => d.reason === 'not-on-page'));
+  assert.ok(r.dropped.some((d) => d.word === '€' && d.reason === 'r1l'), 'as a currency it goes through R1L like any currency');
+});
+
 test('U1/R1L: the TUI-style "282 £ pp" form is not tested - none of the eight real saved pages holds a "£ pp" (reported, never held)', () => {
   for (const k of ['airbnb-lisbon', 'airbnb-porto', 'sfo1', 'bos-ord']) assert.doesNotMatch(loadFixture(k).page, /£\s*pp/);
 });
