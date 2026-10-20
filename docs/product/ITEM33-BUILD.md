@@ -1342,3 +1342,70 @@ Known gaps, listed not fixed:
 16. The confirm card (before drafting) shows the drops, not only the signed plan. Recommended: yes (the person sees them before money is spent on drafting).
 17. Local live proof order: Google Flights BOS-ORD, then Airbnb, then the changelog; stop the ladder on a failure and log it (build-ladder discipline). Recommended: yes.
 18. Text and time labels that read no value (V4's job) stay out; a live run decides if V4 comes back. Recommended: yes, as ruled.
+
+## Addendum 2026-10-21 — job-vs-source fit POC (SIGNED by hamr 2026-10-21; FROZEN before any number is read)
+
+### 1. The question
+Can one cheap AI call plus code say, before any run, whether a source fits a job as a whole? The four answers are: fits; partly (and which items are missing); mismatch (reversed route or wrong place); wrong-page. Evidence: F239, F240, F241 in docs/wiki/FINDINGS.md.
+
+### 2. The call
+- Model: deepseek-flash, thinking off (`thinkingMode: 'off'`), through a bare-agent Loop built like src/pagemap.js. One call per (job, page) pair, 3 calls per pair.
+- The AI is told the job's items. Each item is a VALUE item (the job gives a value, e.g. origin = Boston, destination = Chicago, place = Porto) or a FIELD item (the job names a field, e.g. price, departure time, version, date, ticket id).
+- For each item the AI returns JSON only, no prose: {item, role, jobValue|null, found:true|false, quote, pageValue|null}. The quote is the page line where that item sits in the job's role. For a value item, pageValue is the word that fills that role on the page.
+- The prompt text is part of the freeze. It says: the page is one saved web page; list every item; for each item copy ONE page line (character for character) where the item sits in the job's role; if the item is not on the page set found to false and quote to ""; for a value item, if the job's value appears in the quote in that role, pageValue must be the job's value exactly, otherwise pageValue is the words on the page that fill that role; answer with one JSON object {"items":[...]} and nothing else.
+- The page text is sent whole, unchanged.
+
+### 3. Code decides (the AI never grades)
+Normalize = collapse runs of whitespace to one space, compare case-insensitively.
+- quoteOk = the normalized quote is a substring of the normalized page. A found:true item whose quote is not on the page is counted as "fabricated" and treated as not found.
+- FIELD item matched = found && quoteOk.
+- VALUE item matched = found && quoteOk && pageValue equals jobValue && jobValue is in the quote.
+- VALUE item mismatch = found && quoteOk && pageValue non-empty && pageValue != jobValue && pageValue is in the quote.
+- Verdict, in this order:
+  1. any VALUE item mismatch gives "mismatch";
+  2. the job has value items and none of them is matched gives "wrong-page";
+  3. the job has no value items and 0 items are matched gives "wrong-page";
+  4. all items matched gives "fits";
+  5. otherwise "partly", listing the unmatched items.
+
+### 4. The 9 pairs and their frozen answers
+1. "List 3 flights from Boston to Chicago, with price and departure time" x P1 gives fits.
+2. The same job x P2 gives mismatch.
+3. "List 3 flights from Los Angeles to New York JFK, with price and departure time" x P3 (the file that leaves JFK) gives mismatch.
+4. "List 3 stays in Porto with total price" x P4 gives fits.
+5. The same Porto job x P5 gives mismatch.
+6. The job of pair 1 x P4 gives wrong-page.
+7. "List the last 3 releases with version and date" x P6 gives fits.
+8. "Get the ticket id, first name, last name and date of birth" x P6 gives wrong-page.
+9. "List 3 flights from Boston to Chicago with price, departure time, airline, wifi and meal" x P1 gives partly, with unmatched exactly {wifi, meal}.
+
+Item lists per job (frozen):
+- flights jobs: value items origin, destination; field items price, departure time (pair 9 adds airline, wifi, meal);
+- Porto: value item place; field item total price;
+- releases: field items version, date;
+- ticket: field items ticket id, first name, last name, date of birth.
+
+Why pair 9 says wifi and not seat class: the Phase A page check found "Economy" on P1 once, in the line `combobox "Change seating class. Economy (include Basic)"`. That is the page's seat-class selector, not a per-flight fact, and it would let a seat-class item match by accident. hamr chose to swap "seat class" for "wifi" (0 hits for "wifi" and "wi-fi" on P1; meal, food, snack also 0). Nothing else in the table changed.
+
+Pages (path, bytes, sha256):
+- P1 tests/fixtures/idea-a/bos-ord.page.txt, 50201, 2730b4733e9003afb1239c8b73f0fdb0f53545a512fc07fc5dcfa78977d79be2. "Leaves Boston" 54, "Leaves Chicago" 0.
+- P2 .claude/scratch/reversed-live/ord-bos-now.txt, 32372, 328679f41f68d071b366cfd297254a1cd5bdd40e9bfa88167b46c5bdac5c220d. "Leaves Chicago" 32, "Leaves Boston" 0.
+- P3 tests/fixtures/idea-a/jfk-lax.page.txt, 59511, 25a445265d6455b92e736a8c004b842e3bdfab10ca3cac55c2de758c8cb58c35. 64 x "Leaves John F. Kennedy International Airport at" (lax-jfk.page.txt is the other direction and is not used).
+- P4 .claude/scratch/airbnb-live/porto-now.txt, 26549, 77d073569a09e3bf7238e051acd64c56183bcb70467ef26fee7ae15d403870f7. Porto 68, Lisbon 0, 24 "€N total" forms.
+- P5 tests/fixtures/idea-a/airbnb-lisbon.page.txt, 27114, 440ede09fb76fdc85b041a47ba773d757569cdc3b80afa609e838df8e93d1c81. Lisbon 11, Porto 0.
+- P6 .claude/scratch/changelog-live/input/CHANGELOG.md, 52949, a34717cc048deec140abe4683e7c6696a01d930f34a228fa1b27137f9292082f. Headings like "## [0.44.0] - 2026-10-20".
+
+### 5. Pass rule (frozen)
+- Every mismatch and wrong-page pair gets its frozen verdict in 3 of 3 calls.
+- Every fits pair gets "fits" in 3 of 3 calls.
+- Pair 9 gets "partly" with exactly {wifi, meal} in 3 of 3.
+- Any miss means the POC FAILS and is logged as a finding.
+- No change to the prompt, items or rules after the first number is read.
+- Malformed JSON gets one retry; if still malformed, that call counts as a miss.
+- A truncated answer (finish reason length) is counted separately as "cut" and is a miss.
+
+### 6. Cost cap
+$0.25 hard. Price from ~/.config/bareloop/config.json `models.DEEPSEEK_API_KEY` entry "deepseek-flash": inPerM 0.6, outPerM 1.2; the row `keys.DEEPSEEK_API_KEY` gives shape openai-api, baseUrl https://api.deepseek.com/v1, legacyMaxTokens true. Cost is booked per call from the usage the provider returns. The run stops before a call if booked spend plus a conservative estimate of that call's input (page bytes / 3.5 tokens) would pass the cap. Calls run in rounds (call 1 of every pair, then call 2, then call 3). A cap stop leaves the POC incomplete and it cannot PASS.
+
+### 7. Scope
+POC only, in .claude/scratch/fit-poc/. Never product code. Product behaviour on "partly" is decided after the numbers.
