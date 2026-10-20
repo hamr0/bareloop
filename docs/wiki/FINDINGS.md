@@ -14708,3 +14708,31 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 **Also seen.** The stop words point the person the wrong way. They say the first look at the repo or input did not complete and to review the whole job. Nothing in them says a date or version cannot be named.
 
 **Status.** Open. Logged, not built. Adding date, number or text to the map is hamr's ruling (a schema and prompt change). The ladder stops at proof 3 (build-ladder discipline).
+
+## F240 — the drafter signed a route that goes against the person's own answer (run mvh7g2hc, flights-3, session smvh7bxou4win, 2026-10-20; open)
+
+**Grounded in:** the draft log `/home/hamr/.config/bareloop/panel-sessions/smvh7bxou4win/draft-log.jsonl` (`human` records); that session's `resolved-spec.json` (`closeDecl.stages` facts, `closeDecl.notes[0]`, `jobLines[0].rules`); `.claude/scratch/reversed-live/ord-bos-now.txt` (a $0 fetch of the same URL earlier the same day).
+
+**Set-up.** A deliberate flipped-page test. The job is `List 3 flights from Boston to Chicago` (`~ under $450; not a red-eye; nonstop`, `~ departure time between 05:00 and 21:59`). The input is the Google Flights URL `...q=Flights+from+ORD+to+BOS+on+2026-11-20+one+way&hl=en&curr=USD`; all 32 flights on the page read "Leaves Chicago ... arrives at Boston". deepseek-flash, thinking off.
+
+**What happened.** The confirm turn asked: "The input link you pointed at is written as "from ORD to BOS" — that is Chicago to Boston, the reverse of your line "Boston to Chicago". I've planned the facts using the input's own words (Chicago origin, Boston destination). Is that what you want, or should the line read Boston to Chicago (and the link change)?" The person answered: "the line stays Boston to Chicago and the link stays as it is; check that each flight leaves Boston and arrives at Chicago". The draft was signed anyway with origin phrase "Chicago" and destination phrase "Boston". The drafter's note[0] says: "The person's answer kept the link as it is while saying the line stays Boston to Chicago; the look found "Chicago" as origin and "Boston" as destination on the page, so the facts follow the input's own words." The explicit answer (each flight leaves Boston, arrives at Chicago) was overridden, not followed or refused.
+
+**Contrast (correct).** In run mvh72jo0 (session smvh6zycqcqjy) the person answered "no, keep this link as it is", and the drafter signed Chicago/Boston and said so in a note. hamr ruled that correct: it asked, he chose, it followed. The failure here is only the overriding of an explicit answer.
+
+**Also seen.** Even facts signed Boston/Chicago would be plain phrases (`shape: phrase`), which only test that both words appear. Every flight on this page has both words, so direction stays unchecked either way (see the R2 note in ITEM33-BUILD.md, idea A core section 10: R2 grow-left is OUT). Cosmetic: the look-ask "departure time between 05:00 and 21:59 ... I can't check this on the page. Drop it?" was answered "yes, check it as departure between 05:00 and 21:59"; that text was signed as a third `~` rule with the "yes," left on (`jobLines[0].rules[2]`).
+
+**Status.** Open. Logged, not built.
+
+## F241 — a price fact no result could pass was signed: currency "$" after label "From", on a page that writes "From 137 US dollars" (run mvh7g2hc, 2026-10-20; open; the same class as F237)
+
+**Grounded in:** the spine `/home/hamr/.config/bareloop/panel-sessions/smvh7bxou4win/source-seed/flights-3-bareloop/u-mvh7g2hc.jsonl` (`exit-eval`, `ladder`, `replan`, `job-end`); that session's `resolved-spec.json`; `.claude/scratch/reversed-live/ord-bos-now.txt`; `src/factwords.js` `checkFactWords`; session smvh6zycqcqjy, run mvh72jo0 (green) for contrast.
+
+**What happened.** The signed price fact was `{name "price", shape money, anchor "From", currency "$", rule lt 450}`. The page writes the price after "From" as "From N US dollars" (16 matches of `From [0-9]+ US dollars`, for example "From 137 US dollars"); "$N" appears elsewhere on the page (18 matches, for example "$130", "$137"), but not after "From". Every try failed only on price. The last exit-eval (iteration 4 of the second plan) read: `result 1..3, fact "price": the quote holds no money after "From"` (results 2 and 3 in the earlier tries; one try read `the label "From" is not in the quote`). Origin, destination, stops and departure time never reded.
+
+**Path (spine).** The step ladder ran 3 tries (strikes 2), then replan 1 (`step exhausted its attempts with exits still red`), then 4 more tries (strikes 2), then `job-end` outcome `step-red`. 7 tries in total, `spentUsd` 0.21281028 (`spendComplete` true).
+
+**Contrast.** Run mvh72jo0 on the same page signed `{anchor "From", unit "US dollars"}` and went green ($0.0295). The map's currency/unit pick is not stable between drafts of one page. The drafter's own note even records "US dollars" as not a second way to write "$", so it chose between them without a test.
+
+**Why drafting did not refuse it.** `checkFactWords` (`src/factwords.js:79-140`) checks, for an anchored non-phrase fact: the label is one the map kept (or on the code-made list), the label is in the text (`countExact(text, label) < 1`), and its count reaches the result count asked for (`rubric-fact-label-rare`). Separately it checks each unit is found as whole words (`countPhrase`, line 137) and each currency sign is found as written (`countExact`, line 138), each on its own anywhere in the text. No $0 check tests that a value of the signed form follows the label.
+
+**Status.** Open. Logged, not built.
