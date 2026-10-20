@@ -272,7 +272,7 @@
      are already both on screen there, nothing to jump back to). */
   .back-to-list-link{display:none;font-size:12px;color:var(--accent);text-decoration:underline;background:none;border:none;padding:0;cursor:pointer;}
   @media (max-width: 899px){ .back-to-list-link{display:inline-block;} }
-  .rp-tabrow{display:flex;border-bottom:1px solid var(--border-strong);background:var(--panel2);counter-reset:rtabnum;}
+  .rp-tabrow{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--border-strong);background:var(--panel2);counter-reset:rtabnum;}
   .rp-tabrow button{padding:10px 14px;min-height:44px;background:transparent;border:none;border-right:1px dotted var(--border-strong);font-size:13px;color:var(--text-dim);counter-increment:rtabnum;}
   .rp-tabrow button::before{content:"[" counter(rtabnum) "] ";color:var(--text-faint);font-weight:700;}
   .tabrow button[aria-selected="true"],.rp-tabrow button[aria-selected="true"]{background:var(--panel);color:var(--accent);font-weight:700;box-shadow:inset 0 -2px 0 var(--accent);}
@@ -394,6 +394,27 @@
      one) covers every table inside that wrapper, Flat's included. */
   .audit-table-scroll table th{position:sticky;top:0;z-index:1;}
   .attempt-check{margin-top:4px;font-size:12px;}
+  /* PRD v1.107 Part 6: the Result tab. Boxes are the Job tab's own (.job-card, .field, .ro-value, .field-row); text wraps, nothing scrolls the page. */
+  #result-body{min-width:0;overflow-wrap:anywhere;}
+  .rs-ok{color:var(--green);font-weight:700;}
+  #result-body mark{background:var(--rl-accent-bg-strong);color:var(--text);border-radius:2px;padding:0 1px;}
+  #result-door-card{border-color:var(--amber);}
+  #result-door-card .st-word{color:var(--amber);}
+  #result-door-card textarea{width:100%;min-height:60px;margin:6px 0;background:var(--bg);color:var(--text);border:1px solid var(--text-dim);font:inherit;padding:6px;}
+  #result-body details>summary{cursor:pointer;color:var(--text-dim);min-height:28px;}
+  .rs-link{background:none;border:none;padding:0;min-height:44px;color:var(--accent);text-decoration:underline;font:inherit;cursor:pointer;}
+  .rs-warn{color:var(--amber);overflow-wrap:anywhere;}
+  #result-door-card .stopping{color:var(--amber);font-size:13px;overflow-wrap:anywhere;}
+  /* PRD v1.106 Part 5 C: the Audit step fold (tries, their numbered checks, the Round table). Every line wraps; nothing forces a page-wide scroll. */
+  .actor-mark{color:var(--text-faint);font-size:12px;margin-left:6px;white-space:nowrap;}
+  .step-tally{font-size:12px;color:var(--text-dim);overflow-wrap:anywhere;margin:2px 0 6px;}
+  .try-line{margin:10px 0 2px;overflow-wrap:anywhere;font-weight:700;}
+  .try-check,.try-judged{margin:2px 0 2px 12px;font-size:13px;overflow-wrap:anywhere;}
+  .try-judged{font-size:12px;color:var(--text-dim);}
+  .try-reasons{margin:2px 0 4px 12px;font-size:12px;color:var(--text-dim);}
+  .try-reasons summary{cursor:pointer;}
+  .try-reasons div{margin:2px 0 2px 8px;overflow-wrap:anywhere;}
+  .step-rounds-note{font-size:12px;color:var(--text-faint);margin:8px 0 2px;overflow-wrap:anywhere;}
   .rounds-page-info{margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 
   /* build item C: Audit tab grouped-by-part rows */
@@ -670,6 +691,7 @@
     .topbar{flex-direction:column;align-items:flex-start;}
     .topbar-right{width:100%;justify-content:space-between;}
     .btn.small{height:44px;min-height:44px;padding:0 12px;}
+    .rs-link{min-height:44px;}
     .chip{min-height:44px;}
     .chip.fchip{min-height:40px;min-width:40px;}
     .rp-header{margin:8px 8px 0;}
@@ -844,8 +866,9 @@
           </div>
           <div id="rl-top" data-testid="rl-top"></div>
           <div class="rl-dash"></div>
-          <div class="rl-faint" data-testid="rl-filter-note">filters below act on Jobs and quiet jobs only</div>
+          <div class="rl-faint" data-testid="rl-filter-note">search also finds Scheduled; &#9719; shows only Scheduled</div>
           <div id="runs-filterbar-anchor"></div>
+          <div id="rl-sched" data-testid="rl-sched"></div>
           <div id="wf-list" data-testid="wf-list"></div>
           <div id="import-list" data-testid="import-list"></div>
         </section>
@@ -867,6 +890,7 @@
         <button role="tab" id="tab-run" aria-controls="panel-run" aria-selected="true" data-testid="right-tab-run">Run</button>
         <button role="tab" id="tab-audit" aria-controls="panel-audit" aria-selected="false" data-testid="right-tab-audit">Audit / logs</button>
         <button role="tab" id="tab-details" aria-controls="panel-details" aria-selected="false" data-testid="right-tab-details">Job</button>
+        <button role="tab" id="tab-result" aria-controls="panel-result" aria-selected="false" data-testid="right-tab-result" hidden>Result</button>
       </div>
 
       <div class="pane-body" id="right-pane-body">
@@ -880,6 +904,7 @@
               <div id="ended-block" class="ended-block" data-testid="ended-block" hidden></div>
             </div>
             <div class="run-actions" id="run-actions" data-testid="run-actions" hidden></div>
+            <div class="hint" id="result-pointer" data-testid="result-pointer" hidden></div>
             <div class="counters" id="run-counters" data-testid="live-counters"></div>
             <div class="summary-box" id="run-summary" data-testid="run-summary"></div>
             <div class="map-box" data-testid="step-map" id="map-box"><div id="map-mount"></div></div>
@@ -905,6 +930,7 @@
             <div id="audit-flat-wrap" hidden>
               <div id="audit-empty" class="hint" data-testid="audit-empty" style="font-size:13px;padding:24px 0;">select a run first</div>
               <div id="audit-content" data-testid="audit-content" hidden>
+                <div class="hint" data-testid="audit-flat-roundnote" style="overflow-wrap:anywhere;margin-bottom:6px;">Round numbers here count the whole run. In the Grouped view each step counts its own rounds from 1.</div>
                 <div class="audit-table-scroll">
                   <table data-testid="audit-table">
                     <thead><tr><th>Round</th><th>Step</th><th>Action</th><th>Path</th><th>Decision</th><th>Time</th></tr></thead>
@@ -925,7 +951,10 @@
           <div class="job-card" id="job-card-readonly" hidden data-testid="job-card-readonly">
             <h4 id="details-title">Job card — signed</h4>
             <div class="field"><label>Check type</label><div class="ro-value" id="details-verdict">—</div></div>
-            <div class="field"><label>Model</label><div class="ro-value" id="details-model">—</div></div>
+            <div class="field-row">
+              <div class="field"><label>Model</label><div class="ro-value" id="details-model">—</div></div>
+              <div class="field" id="details-thinking-field"><label>Thinking</label><div class="ro-value" id="details-thinking" data-testid="details-thinking">—</div></div>
+            </div>
             <div class="field" id="details-started-field" hidden><label>Started</label><div class="ro-value" id="details-started" data-testid="details-started" style="overflow-wrap:anywhere;">—</div></div>
             <div class="field" id="details-schedule-field" hidden><label>Schedule</label><div class="ro-value" id="details-schedule" data-testid="details-schedule" style="overflow-wrap:anywhere;">—</div></div>
             <div class="field" id="details-description-field"><label>Description</label><div class="ro-value" id="details-description">—</div></div>
@@ -940,6 +969,11 @@
             <div class="field"><label>Signed</label><div class="ro-value" id="details-signed" data-testid="details-signed">—</div></div>
             <div class="hint" id="job-note"></div>
           </div>
+        </section>
+
+        <section id="panel-result" class="tabpanel" role="tabpanel" aria-labelledby="tab-result" hidden data-testid="panel-result">
+          <div id="result-empty" class="hint" style="font-size:13px;padding:24px 0;">select a run first</div>
+          <div id="result-body" data-testid="result-body" hidden></div>
         </section>
 
       </div>
@@ -1067,7 +1101,7 @@
     });
   }
   wireTabs([document.getElementById("tab-chat"), document.getElementById("tab-runs")]);
-  wireTabs([document.getElementById("tab-run"), document.getElementById("tab-audit"), document.getElementById("tab-details")]);
+  wireTabs([document.getElementById("tab-run"), document.getElementById("tab-audit"), document.getElementById("tab-details"), document.getElementById("tab-result")]);
 
   // ---- fetch helpers ----
   function getJSON(path){
@@ -1167,7 +1201,7 @@
   // result when nothing was ever judged there; `step`/`fix` (real attempts)
   // and `run` (its own real, non-null outcome) are the only kinds worth an
   // inline attempt/result glyph.
-  function partHasNoVerdict(part){ return part.kind === "scout" || part.kind === "plan" || part.kind === "replan" || part.kind === "judge"; }
+  function partHasNoVerdict(part){ return part.kind === "scout" || part.kind === "plan" || part.kind === "replan" || part.kind === "judge" || part.kind === "door"; }
   // ONE shared result-glyph rule for both the Run tab's cards and the Audit
   // tab's grouped-row headers — `null` (never a fabricated "?") for a
   // no-verdict part kind; a multi-attempt part (a step with retries, or the
@@ -1383,7 +1417,7 @@
   // manual fold memory, keyed by job ("__quiet" is the quiet fold): a per-viewer convenience, reset on reload. A manual click wins over an automatic open.
   var rlOpen = {};
   // the last markup written into each box: an identical repaint (every poll) writes nothing, so focus, scroll and a half-read card survive it
-  var rlLast = { top: null, jobs: null };
+  var rlLast = { top: null, sched: null, jobs: null };
   // The ONE writer of `rlData`: the whole /api/runs payload, as the server sent it.
   function setRunsData(r){
     rlData = { runs: r.runs || [], jobs: r.jobs || [], scheduled: r.scheduled || [], limits: r.limits || rlData.limits };
@@ -1404,7 +1438,7 @@
   function rlRunParts(r){
     var rn = runLabel(r.runNo, r.runid);
     var p = { rn: rn, name: r.job + " (" + rn + ")", date: runAtText(r), model: r.model || "", word: "", why: "", spend: "", wall: "" };
-    if(r.starting){ p.word = "running"; p.why = "starting…"; return p; }
+    if(r.starting){ p.word = "running"; p.why = r.startingWord || "starting…"; return p; }
     if(r.fileMissing){ p.word = ""; p.why = "file missing"; return p; }
     p.word = r.status && r.status.word ? r.status.word : "";
     p.why = r.endedLine || (p.word === "passed" ? "goal met" : "");
@@ -1473,8 +1507,19 @@
     ));
   }
 
+  // PRD v1.106 Part 2 (fwd M11 am17-am20): the one search box narrows Scheduled cards by JOB NAME only. A run number (run-3) or a date (10/13, 2026-10-13, 10/)
+  // narrows Jobs only, so those words are skipped here; every other word must be a substring of the job name. The result and time chips never touch Scheduled.
+  function rlScheduledMatches(card, query){
+    var name = String(card && card.job || "").toLowerCase();
+    var words = String(query || "").toLowerCase().replace(/[()]/g, "").split(/\s+/).filter(function(w){ return w; });
+    return words.every(function(w){
+      if(/^run-\d+$/.test(w) || (/^[\d\/-]+$/.test(w) && /[\/-]/.test(w))) return true;
+      return name.indexOf(w) !== -1;
+    });
+  }
   function rlModel(data, groups, filters, limits, sel, open){
     var active = filtersActive(filters);
+    var schedOnly = !!(filters && filters.scheduledOnly);
     var place = {};
     (data.jobs || []).forEach(function(j, i){ place[j.job] = { quiet: j.quiet === true, at: i }; });
     var cards = groups.slice().sort(function(a, b){
@@ -1504,10 +1549,11 @@
     return {
       running: data.runs.filter(function(r){ return r.live === true; }),
       needs: data.runs.filter(function(r){ return typeof r.needs === "string" && r.needs !== ""; }),
-      scheduled: data.scheduled || [],
+      scheduled: (data.scheduled || []).filter(function(c){ return rlScheduledMatches(c, filters && filters.search); }),
+      schedOnly: schedOnly,
       gaveUp: data.gaveUp || [],
-      jobs: cards.filter(function(c){ return !c.quiet; }),
-      quiet: quietCards,
+      jobs: schedOnly ? [] : cards.filter(function(c){ return !c.quiet; }),
+      quiet: schedOnly ? [] : quietCards,
       quietOpen: Object.prototype.hasOwnProperty.call(open, "__quiet") ? open.__quiet : quietCards.some(function(c){ return c.selected; }),
       limits: limits,
       noRows: data.runs.length === 0,
@@ -1545,7 +1591,7 @@
   }
   // Scheduled card (T Part 7): `[·] job  today 15:00` / `next in 3h · Every day at 15:00`, all from the server. A file trigger has no clock time:
   // `at` / `in` are null and nothing is made up. A click does what Running now does (rlJump to the job's HEAD run, `runId` from the server and
-  // scrolls to its job). A job with no run to open stays a plain box. Never filtered or searched.
+  // scrolls to its job). A job with no run to open stays a plain box. Drawn BELOW the search box (rlSchedHtml); the search and the \u25F7 chip narrow it by job name.
   function rlScheduledCardHtml(s){
     var body = '<span class="rl-l1"><span class="dot grey"></span><span class="rl-nm" title="' + escapeXml(s.job) + '">' + escapeXml(s.job) + '</span>' + rlRunTagHtml(s) +
       (s.at ? ' <span class="rl-rest">&middot; ' + escapeXml(s.at) + '</span>' : '') + '</span>' +
@@ -1553,16 +1599,24 @@
     if(typeof s.runId !== "string" || s.runId === "") return '<div class="rl-card" data-testid="rl-sched-' + escapeXml(s.job) + '">' + body + '</div>';
     return '<button class="rl-card" type="button" data-rl-jump="' + escapeXml(s.runId) + '" data-testid="rl-sched-' + escapeXml(s.job) + '">' + body + '</button>';
   }
-  // The sections above the filters, from ONE ordered list: the Scheduled section (PRD v1.99) is one more entry here after Needs you, plus one draw function.
+  // The sections above the search box, from ONE ordered list: only never-filtered sections live here (Scheduled is searched, so rlSchedHtml draws it below).
   function rlTopHtml(m){
     var sections = [
       { label: "Running now", items: m.running, draw: function(r){ return rlJumpCardHtml(r, false); } },
       { label: "Needs you", items: m.needs.concat(m.gaveUp || []), draw: function(r){ return r.pill ? rlGaveUpCardHtml(r) : rlJumpCardHtml(r, true); } },
-      { label: "Scheduled", items: m.scheduled, draw: rlScheduledCardHtml },
     ];
     return sections.map(function(s){
       return s.items.length ? rlSectHtml(s.label, s.items.length) + s.items.map(s.draw).join("") : "";
     }).join("");
+  }
+  // Scheduled sits BELOW the search box (PRD v1.106 Part 2). No match draws nothing, header included; with the \u25F7 chip pressed it says so in words.
+  function rlSchedHtml(m){
+    if(m.scheduled.length) return rlSectHtml("Scheduled", m.scheduled.length) + m.scheduled.map(rlScheduledCardHtml).join("");
+    return m.schedOnly ? '<div class="hint" data-testid="rl-sched-none">no scheduled job matches</div>' : "";
+  }
+  // the count line under the chips: only the \u25F7 view has one; "showing N scheduled job(s)". Empty otherwise.
+  function rlCountText(m){
+    return m.schedOnly ? "showing " + m.scheduled.length + " scheduled job" + (m.scheduled.length === 1 ? "" : "s") : "";
   }
   // a run card inside a job: `[sign] run-N  MM/DD HH:MM · model` / `word — why · $cost · wall`
   function rlRunCardHtml(r, selected, hit){
@@ -1622,6 +1676,7 @@
     return out + '</div></div>';
   }
   function rlJobsHtml(m){
+    if(m.schedOnly) return "";
     var h = "";
     if(m.jobs.length) h += rlSectHtml("Jobs", m.jobs.length, "· run in the last " + m.limits.quietDays + " days") + m.jobs.map(rlJobCardHtml).join("");
     if(m.quiet.length){
@@ -1660,9 +1715,14 @@
     var m = rlModel(rlData, groups, filters, rlData.limits, { runid: currentRunid }, rlOpen);
     var topEl = document.getElementById("rl-top");
     var listEl = document.getElementById("wf-list");
+    var schedEl = document.getElementById("rl-sched");
+    var countEl = document.getElementById("runs-filter-count");
+    var sched = rlSchedHtml(m);
     var top = rlTopHtml(m);
     var jobs = rlJobsHtml(m);
     if(top !== rlLast.top){ rlLast.top = top; withFocusPreserved(topEl, function(){ topEl.innerHTML = top; }); }
+    if(sched !== rlLast.sched){ rlLast.sched = sched; withFocusPreserved(schedEl, function(){ schedEl.innerHTML = sched; }); }
+    if(countEl && (rlCountText(m) !== "" || /^showing /.test(countEl.textContent || ""))) countEl.textContent = rlCountText(m);
     if(jobs !== rlLast.jobs){ rlLast.jobs = jobs; withFocusPreserved(listEl, function(){ listEl.innerHTML = jobs; }); }
     tickSince();
   }
@@ -1715,6 +1775,7 @@
     { group: "result", value: "\u2717", title: "fail", id: "res-fail", label: "&#10007;" },
     { group: "result", value: "?", title: "died", id: "res-died", label: "?" },
     { group: "result", value: "\u25B6", title: "running", id: "res-running", label: "&#9654;" },
+    { group: "view", value: "scheduled", title: "scheduled jobs only", id: "view-scheduled", label: "&#9719;", aria: "scheduled jobs only" },
     { group: "time", value: "7d", title: "last 7 days", id: "time-7d", label: "7d" },
     { group: "time", value: "30d", title: "last 30 days", id: "time-30d", label: "30d" },
     { group: "time", value: "all", title: "all time", id: "time-all", label: "all", pressed: true },
@@ -1728,7 +1789,7 @@
         '<div class="chips" role="group" aria-label="Filter">' +
           RL_CHIPS.map(function(c){
             if(c.clear) return '<button class="chip fchip" type="button" id="' + scope + '-filter-clear" data-testid="' + scope + '-filter-clear">clear</button>';
-            return '<button class="chip fchip" type="button" aria-pressed="' + (c.pressed ? 'true' : 'false') + '" data-filter-group="' + c.group + '" data-filter-value="' + escapeXml(c.value) + '" title="' + c.title + '" data-testid="chip-' + scope + '-' + c.id + '">' + c.label + '</button>';
+            return '<button class="chip fchip" type="button" aria-pressed="' + (c.pressed ? 'true' : 'false') + '" data-filter-group="' + c.group + '" data-filter-value="' + escapeXml(c.value) + '" title="' + c.title + '"' + (c.aria ? ' aria-label="' + c.aria + '"' : '') + ' data-testid="chip-' + scope + '-' + c.id + '">' + c.label + '</button>';
           }).join("") +
         '</div>' +
         '<div class="hint" id="' + scope + '-filter-count" data-testid="' + scope + '-filter-count"></div>' +
@@ -1769,7 +1830,7 @@
   function createFilterBar(opts){
     var scope = opts.scope;
     var storageKey = opts.storageKey;
-    var state = { checkTypes: [], results: [], time: "all", search: "" };
+    var state = { checkTypes: [], results: [], time: "all", search: "", scheduledOnly: false };
 
     function load(){
       try{
@@ -1782,6 +1843,7 @@
               results: Array.isArray(parsed.results) ? parsed.results : [],
               time: typeof parsed.time === "string" ? parsed.time : "all",
               search: typeof parsed.search === "string" ? parsed.search : "",
+              scheduledOnly: parsed.scheduledOnly === true,
             };
           }
         }
@@ -1796,6 +1858,7 @@
         var value = chip.getAttribute("data-filter-value");
         var active;
         if(group === "time"){ active = state.time === value; }
+        else if(group === "view"){ active = state.scheduledOnly === true; }
         else if(group === "checkType"){ active = state.checkTypes.indexOf(value) !== -1; }
         else { active = state.results.indexOf(value) !== -1; }
         chip.setAttribute("aria-pressed", active ? "true" : "false");
@@ -1812,6 +1875,8 @@
         var value = chip.getAttribute("data-filter-value");
         if(group === "time"){
           state.time = value; // single-select within time
+        } else if(group === "view"){
+          state.scheduledOnly = !state.scheduledOnly; // the \u25F7 chip: Scheduled only, a toggle
         } else if(group === "checkType"){
           var idx = state.checkTypes.indexOf(value);
           if(idx === -1) state.checkTypes.push(value); else state.checkTypes.splice(idx, 1);
@@ -1827,7 +1892,7 @@
     var clearBtn = document.getElementById(scope + "-filter-clear");
     if(clearBtn){
       clearBtn.addEventListener("click", function(){
-        state = { checkTypes: [], results: [], time: "all", search: "" };
+        state = { checkTypes: [], results: [], time: "all", search: "", scheduledOnly: false };
         paint();
         save();
         apply();
@@ -1859,7 +1924,7 @@
     onChange: function(){ paintRunsList(); },
   });
   function currentRunsFilters(){
-    return runsFilterBar ? runsFilterBar.getState() : { checkTypes: [], results: [], time: "all", search: "" };
+    return runsFilterBar ? runsFilterBar.getState() : { checkTypes: [], results: [], time: "all", search: "", scheduledOnly: false };
   }
 
   // item 4: phone-only "scroll the run view into view" on row select, and
@@ -2145,38 +2210,30 @@
   document.getElementById("tab-runs").addEventListener("click", function(){ loadImports(); });
 
   // ---- Run tab ----
-  // panelMoney — hamr's ruling 2026-09-28 ("panel money 2-decimals"): every
-  // money display in THIS page (Run tab summary/counters, Runs list rows,
-  // Audit header/part cards, Job tab, chat cost lines) renders through this
-  // ONE function — no per-site rounding. The CLI's own 4-decimal `money()`
-  // (src/replay.js) is UNCHANGED; this is the panel-only render, the
-  // browser-script sibling of `src/panel/authorroutes.js`'s own
-  // `panelMoney2` (same rule, can't share code — one runs in Node, one
-  // inlined in the page).
+  // panelMoney — the panel's ONE money render; every money display in THIS page (Run tab summary/
+  // counters, Runs list rows, Result/Audit/Job tabs, chat cost lines) goes through it, no per-site
+  // rounding. Browser-script copy of `src/panelmoney.js` `panelMoney2` (a page cannot import a
+  // module); tests/panel-page.test.js pins the two to identical output. hamr's ruling 2026-10-19
+  // (PRD "Part 6 rulings" (3)), superseding the 2026-09-28 "<$0.01" spelling:
   //   - null/undefined/non-finite -> "unknown" (never a fabricated $0).
-  //   - a REAL positive amount below a cent -> "<$0.01", never "$0.00" (a
-  //     tiny real cost must never read as free).
-  //   - `floor` (this is a FLOOR/"at least" figure, never exact) rounds DOWN
-  //     to 2 decimals — never overstates a floor as exact-higher.
-  //   - otherwise rounds half-up to 2 decimals (an exact zero prints
-  //     "$0.00" — nothing spent is a real number, not an unknown).
-  // Two-step rounding guards against float-representation noise on BOTH
-  // sides: dollar figures here are derived from at most 6-decimal-precision
-  // money (the same precision `src/text.js`'s `tallyCalls`/`priceOf` use),
-  // so rounding to 6 decimals first erases that noise (e.g. 0.815 really
-  // stored as 0.81499999999999995), and ONLY THEN is the value rounded/
-  // floored to cents — a value already exactly on a cent boundary (e.g.
-  // 0.82) can be stored as 81.99999999999999 cents post-multiply, and a
-  // floor there would wrongly drop a whole cent; the tiny `+1e-6` nudge (at
-  // dollar-cents scale, far below anything a real half-cent tie could be)
-  // corrects that without ever crossing a true half-cent boundary the wrong
-  // way.
+  //   - a REAL positive amount under a cent -> 4 decimals ("$0.0054"); one too small for 4
+  //     decimals reads "<$0.0001", never "$0.00"; one that rounds up to a cent reads "$0.01".
+  //   - $0.01 or more -> 2 decimals, half-up; an exact zero prints "$0.00".
+  //   - `floor` (a FLOOR/"at least" figure) rounds DOWN, at 2 decimals, or 4 under a cent.
+  // Rounding to 6 decimals first erases float noise (0.815 stored as 0.81499999999999995); the tiny
+  // `+1e-6` nudge corrects a value on an exact boundary stored just under it, without ever
+  // crossing a true half-unit tie the wrong way.
   function panelMoney(n, floor){
     if(n === null || n === undefined) return "unknown";
     var v = Number(n);
     if(!isFinite(v)) return "unknown";
-    if(v > 0 && v < 0.01) return "<$0.01";
     var clean = Math.round(v * 1e6) / 1e6;
+    if(clean > 0 && clean < 0.01){
+      var units = floor ? Math.floor(clean * 1e4 + 1e-6) : Math.round(clean * 1e4 + 1e-6);
+      if(units <= 0) return "<$0.0001";
+      if(units >= 100) return "$0.01";
+      return "$" + (units / 1e4).toFixed(4);
+    }
     var cents = floor ? Math.floor(clean * 100 + 1e-6) : Math.round(clean * 100 + 1e-6);
     if(cents < 0) cents = 0;
     return "$" + (cents / 100).toFixed(2);
@@ -2199,8 +2256,16 @@
     var core = (spendCoreVal === null || spendCoreVal === undefined)
       ? "unknown"
       : ((spendCoreFloor || draftFloor) ? "at least " + panelMoney(spendCoreVal) : panelMoney(spendCoreVal));
-    var draftPart = hasDraft ? (shortForm ? " (drafting " : " (") + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + (shortForm ? ")" : " drafting)") : "";
     var capPart = (budgetUsd === undefined) ? "" : (" of " + panelMoney(budgetUsd));
+    if(hasDraft && !shortForm){
+      // PRD v1.106 Part 5 Q4, the panel's spelling of src/replay.js moneyWithDraft: "$0.18 run + $0.0035 drafting = $0.18". The run's figure
+      // EXCLUDES drafting; each part keeps the panel's money rule (panelMoney) and the TOTAL is that rule applied to the true sum (so
+      // two shown parts can round to a total that differs by a cent). Without the run's number the sum is left out.
+      var haveRun = typeof spendCoreVal === "number";
+      var totalPart = haveRun ? " = " + ((spendCoreFloor || draftFloor) ? "at least " : "") + panelMoney(spendCoreVal + draftSpentUsd) : "";
+      return core + " run + " + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + " drafting" + totalPart + capPart;
+    }
+    var draftPart = hasDraft ? " (drafting " + (draftFloor ? "at least " : "") + panelMoney(draftSpentUsd) + ")" : "";
     return core + draftPart + capPart;
   }
   // P5 item 6: a LIVE row (no job-end yet, runner alive) reads the same running floors the
@@ -2478,6 +2543,19 @@
       document.dispatchEvent(new CustomEvent("bareloop-resume", {detail: {error: "could not reach the panel: " + x.message}}));
     });
   }
+  // ONE Accept handler for the Run tab's action bar and the Result tab's door (PRD v1.107 Part 6): same route, same words. `host` is where a refusal is written.
+  function acceptDoor(detail, accBtn, host){
+    accBtn.disabled = true;
+    authorPost("/api/runs/" + encodeURIComponent(detail.runid) + "/accept", {}).then(function(res){
+      if(res.status === 200 && res.body && res.body.ok){ refreshRunsList(true); selectRun(detail.runid); return; }
+      if(res.status === 202 && res.body && res.body.pending){
+        host.insertAdjacentHTML("beforeend", '<span class="stopping" data-testid="accept-pending">still re-checking the tree; look again in a moment</span>');
+        return;
+      }
+      accBtn.disabled = false;
+      host.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="accept-err">' + escapeXml((res.body && res.body.error) || ("refused (" + res.status + ")")) + '</span>');
+    }).catch(function(x){ accBtn.disabled = false; host.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="accept-err">could not reach the panel: ' + escapeXml(x.message) + '</span>'); });
+  }
   function renderRunActions(detail){
     var bar = document.getElementById("run-actions");
     var html = "";
@@ -2544,20 +2622,7 @@
       });
     }
     var accBtn = bar.querySelector('[data-testid="btn-accept-run"]');
-    if(accBtn){
-      accBtn.addEventListener("click", function(){
-        accBtn.disabled = true;
-        authorPost("/api/runs/" + encodeURIComponent(detail.runid) + "/accept", {}).then(function(res){
-          if(res.status === 200 && res.body && res.body.ok){ refreshRunsList(true); selectRun(detail.runid); return; }
-          if(res.status === 202 && res.body && res.body.pending){
-            bar.insertAdjacentHTML("beforeend", '<span class="stopping" data-testid="accept-pending">still re-checking the tree; look again in a moment</span>');
-            return;
-          }
-          accBtn.disabled = false;
-          bar.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="accept-err">' + escapeXml((res.body && res.body.error) || ("refused (" + res.status + ")")) + '</span>');
-        }).catch(function(x){ accBtn.disabled = false; bar.insertAdjacentHTML("beforeend", '<span class="resume-err" data-testid="accept-err">could not reach the panel: ' + escapeXml(x.message) + '</span>'); });
-      });
-    }
+    if(accBtn) accBtn.addEventListener("click", function(){ acceptDoor(detail, accBtn, bar); });
     var resBtn = bar.querySelector('[data-testid="btn-resume-run"]');
     if(resBtn) resBtn.addEventListener("click", function(){ resumeInChat(detail); });
   }
@@ -2590,6 +2655,7 @@
 
   function renderRun(detail){
     if(detail.fileMissing){
+      syncResultTab({});
       setRunHeader("\u00B7", runName(detail.job, detail.runNo, detail.runid), "file missing");
       document.getElementById("run-empty").hidden = false;
       document.getElementById("run-empty").textContent = "spine file no longer on disk";
@@ -2600,13 +2666,29 @@
       return;
     }
 
-    if(detail.starting){
-      setRunHeader("\u25B6", runName(detail.job, detail.runNo, detail.runid), statusWordHtml(detail.status, "starting\u2026") + " \u00B7 " + escapeXml("started " + fmtLocalDateTime(detail.at)));
+    if(detail.refused){
+      // refused before it started (e.g. the page could not be fetched): the server's plain words, status word from the table
+      syncResultTab({});
+      setRunHeader(detail.glyph, runName(detail.job, detail.runNo, detail.runid), statusWordHtml(detail.status, "") + " \u00B7 " + escapeXml("started " + fmtLocalDateTime(detail.at)));
       document.getElementById("run-empty").hidden = false;
-      document.getElementById("run-empty").textContent = "starting… the run has not written its log yet";
+      document.getElementById("run-empty").textContent = detail.endedLine || "";
       document.getElementById("run-content").hidden = true;
       document.getElementById("audit-select-empty").hidden = false;
-      document.getElementById("audit-select-empty").textContent = "starting… the run has not written its log yet";
+      document.getElementById("audit-select-empty").textContent = detail.endedLine || "";
+      document.getElementById("audit-body").hidden = true;
+      return;
+    }
+
+    if(detail.starting){
+      syncResultTab({});
+      // the words come from the server (startingWord / startingNote), never typed here
+      var startWords = (detail.startingWord || "starting…") + " " + (detail.startingNote || "the run has not written its log yet");
+      setRunHeader("\u25B6", runName(detail.job, detail.runNo, detail.runid), statusWordHtml(detail.status, detail.startingWord || "starting\u2026") + " \u00B7 " + escapeXml("started " + fmtLocalDateTime(detail.at)));
+      document.getElementById("run-empty").hidden = false;
+      document.getElementById("run-empty").textContent = startWords;
+      document.getElementById("run-content").hidden = true;
+      document.getElementById("audit-select-empty").hidden = false;
+      document.getElementById("audit-select-empty").textContent = startWords;
       document.getElementById("audit-body").hidden = true;
       return;
     }
@@ -2684,10 +2766,13 @@
       '<div class="summary-row"><span class="sum-label">why:</span><span class="sum-val">' + escapeXml(detail.stopReason || (detail.glyph === "✓" ? "run ended clean" : "not recorded")) + '</span></div>' +
       '<div class="summary-row"><span class="sum-label">close:</span><span class="sum-val">' + escapeXml(detail.close && detail.close.verdict ? detail.close.verdict : "none — the run ended before any close ran") + '</span></div>' +
       '<div class="summary-row" data-testid="summary-tools"><span class="sum-label">tools:</span><span class="sum-val">' + escapeXml(detail.fromBridge === true ? bridgeToolsLine(detail.toolsUsed) : toolsLine(detail.behaviour)) + '</span></div>' +
+      (detail.fromBridge !== true && typeof detail.callsLine === "string" ? '<div class="summary-row" data-testid="summary-calls"><span class="sum-label">calls:</span><span class="sum-val">' + escapeXml(detail.callsLine) + '</span></div>' : '') +
       '<div class="summary-row" data-testid="summary-offered" id="summary-offered-row" hidden><span class="sum-label">offered:</span><span class="sum-val" id="summary-offered-val"></span></div>' +
+      (detail.fromBridge !== true && typeof detail.checksLine === "string" ? '<div class="summary-row" data-testid="summary-checks"><span class="sum-label">checks:</span><span class="sum-val">' + escapeXml(detail.checksLine) + '</span></div>' : '') +
       '<div class="summary-row" data-testid="summary-cache"><span class="sum-label">cache:</span><span class="sum-val">' + escapeXml(cacheLine(detail.memoryCache)) + '</span></div>';
 
     paintOfferedRow();
+    syncResultTab(detail);
 
     // build item B (2026-09-26 rewrite): the map AND the card list are both
     // built from ONE list — `detail.parts` (src/replay.js's own ordered part
@@ -2722,9 +2807,11 @@
         '<div class="step-head"><h4>' + titleText + '</h4>' +
           stepStateHTML(box, 'part-state-' + idx) +
           (box.blocked > 0 ? '<span class="badge red" data-testid="part-blocked-badge">' + box.blocked + ' blocked</span>' : '') +
+          actorMarkHtml(part) +
         '</div>' +
         '<div class="step-meta" title="a part is one piece of the run (scout, plan, a step, replan, fix, judge); a call is one model round">' + line1Bits.join(" &middot; ") + '</div>' +
-        '<div class="step-meta">' + escapeXml(partLine2Text(box.part)) + '</div>';
+        '<div class="step-meta">' + escapeXml(partLine2Text(box.part)) + '</div>' +
+        (typeof part.triesLine === "string" ? '<div class="step-meta" data-testid="part-tries-' + idx + '">' + escapeXml(part.triesLine) + '</div>' : '');
       listEl.appendChild(card);
       var jumpToAudit = function(){
         document.getElementById("tab-audit").click();
@@ -2746,7 +2833,11 @@
   // ONE spelling of a step's state: its dot + the bold state word — read by the Run tab's step cards AND the Audit tab's grouped rows
   function stepStateHTML(box, testid){
     var cls = box.state === "done" ? "green" : (box.state === "stopped" ? (box.status && box.status.sign === "\u25A0" ? "stopped" : "red") : (box.state === "running" ? "amber" : (box.state === "died" ? "magenta" : "grey")));
-    return '<span class="step-state" data-testid="' + testid + '"><span class="dot ' + cls + (cls === "amber" ? " pulse" : "") + '"></span><b class="st-word">' + escapeXml(boxStatusWord(box)) + '</b></span>';
+    return stateDotHTML(cls, boxStatusWord(box), testid);
+  }
+  // ONE spelling of the dot + bold word every state header wears (part headers and the schedule header).
+  function stateDotHTML(cls, word, testid){
+    return '<span class="step-state" data-testid="' + testid + '"><span class="dot ' + cls + (cls === "amber" ? " pulse" : "") + '"></span><b class="st-word">' + escapeXml(word) + '</b></span>';
   }
   // build item C: Audit tab attempt row -> its rounds (server-built,
   // lazy-fetched on expand via /api/runs/:runid/rounds?part=<i>&attempt=<n>).
@@ -2766,6 +2857,7 @@
       row.innerHTML =
         '<button class="btn small attempt-toggle" type="button" aria-expanded="false">' +
           'attempt ' + a.n + ' ' + attemptGlyph(a.outcome, boxIsLive) +
+          (a.thinking ? ' &middot; ' + escapeXml(a.thinking) : '') +
           (checksText ? ' &middot; ' + checksText : '') +
         '</button>' +
         (checksList ? '<div class="checks-list" data-testid="audit-attempt-checks-' + partIndex + '-' + a.n + '" hidden>' + checksList + '</div>' : '') +
@@ -2785,6 +2877,90 @@
           loadRounds(roundsEl, partIndex, a, 0);
         }
       });
+    });
+  }
+
+  // PRD v1.106 Part 5: who did a part's work, in the server's own words (`part.marker`: [model] or [human · ask]); nothing typed here
+  function actorMarkHtml(part){
+    return part && typeof part.marker === "string" && part.marker !== "" ? ' <span class="actor-mark" data-testid="actor-mark">' + escapeXml(part.marker) + '</span>' : "";
+  }
+  // PRD v1.106 Part 5 C: the review door's fold: one human row for the ask, one for the answer once there is one
+  function doorTableHtml(part){
+    var rows = (part.doorView && part.doorView.rows ? part.doorView.rows : []).map(function(r){
+      return "<tr><td>&mdash;</td><td>&mdash;</td><td>human</td><td>" + (r.path ? escapeXml(r.path) : "&mdash;") + "</td><td>" + escapeXml(r.text) + "</td><td>" +
+        auditTimeCellHtml({ time: r.time }) + "</td></tr>";
+    }).join("");
+    return '<div class="audit-table-scroll"><table class="rounds-table" data-testid="door-table"><thead><tr><th>Round</th><th>Try</th><th>Action</th><th>Path</th><th>Decision</th><th>Time</th></tr></thead><tbody>' + rows + "</tbody></table></div>";
+  }
+  // PRD v1.106 Part 5 C: one try, in the server's words: its line (result glyph, thinking, the first reason and how many more), its numbered checks
+  // in the order they ran (each with its result, a count or a folded reasons list, the job line it serves) and the file it judged
+  function tryBlockHtml(part, t, boxIsLive, partIndex){
+    var attempt = (part.attempts || []).filter(function(a){ return a.n === t.n; })[0] || null;
+    var testid = "audit-try-" + partIndex + "-" + t.n;
+    if(t.cutOff){
+      return '<div class="try-line" data-testid="' + testid + '">try ' + t.n + (t.thinking ? " &middot; " + escapeXml(t.thinking) : "") + " &middot; " + escapeXml(t.words || "") + "</div>";
+    }
+    var checks = attempt && Array.isArray(attempt.checks) ? attempt.checks : [];
+    var firstBad = checks.filter(function(c){ return !c.pass && c.gap; })[0] || null;
+    var html = '<div class="try-line" data-testid="' + testid + '">try ' + t.n + " " + glyphSpan(attemptGlyph(t.outcome, boxIsLive)) +
+      (t.thinking ? " &middot; " + escapeXml(t.thinking) : "") +
+      (firstBad ? " &middot; " + escapeXml(firstBad.gap) + (firstBad.moreText ? " " + escapeXml(firstBad.moreText) : "") : "") + "</div>";
+    checks.forEach(function(c){
+      var label = c.question || c.name || "unknown";
+      html += '<div class="try-check" data-testid="' + testid + '-check-' + c.n + '">' + c.n + " " + glyphSpan(c.pass ? "\u2713" : "\u2717") + " " + escapeXml(label) +
+        (c.note ? "  (" + escapeXml(c.note) + ")" : "") + (c.from ? " &middot; " + escapeXml(c.from) : "") + "</div>";
+      if(!c.pass && c.reasonsLabel){
+        html += '<details class="try-reasons" data-testid="' + testid + '-reasons-' + c.n + '"><summary>' + escapeXml(c.reasonsLabel) + "</summary>" +
+          c.reasons.map(function(r){ return "<div>" + escapeXml(r) + "</div>"; }).join("") + "</details>";
+      }
+    });
+    (attempt && Array.isArray(attempt.judged) ? attempt.judged : []).forEach(function(j){
+      html += '<div class="try-judged" data-testid="' + testid + '-judged">' + escapeXml(j) + "</div>";
+    });
+    return html;
+  }
+  // PRD v1.106 Part 5 C: a plan step's fold — tools tally, every try with its checks, then ONE Round table for the whole step (20 rows a page)
+  function buildStepFold(body, partIndex, part, boxIsLive){
+    var wrap = document.createElement("div");
+    wrap.className = "step-fold";
+    wrap.setAttribute("data-testid", "audit-step-fold-" + partIndex);
+    var html = part.tally ? '<div class="step-tally" data-testid="audit-tally-' + partIndex + '">' + escapeXml(part.tally) + "</div>" : "";
+    part.tries.forEach(function(t){ html += tryBlockHtml(part, t, boxIsLive, partIndex); });
+    html += '<div class="rounds-list" data-testid="audit-step-rounds-' + partIndex + '"></div>';
+    wrap.innerHTML = html;
+    body.appendChild(wrap);
+    loadStepRows(wrap.querySelector(".rounds-list"), partIndex, 0, false);
+  }
+  function stepRowHtml(r){
+    if(r.kind === "check"){
+      return "<tr><td>&mdash;</td><td>" + r.try + "</td><td>check</td><td>" + (r.path ? escapeXml(r.path) : "&mdash;") + "</td><td>" + glyphSpan(r.sign) + " " + escapeXml(r.text) + "</td><td>" + auditTimeCellHtml(r) + "</td></tr>";
+    }
+    if(r.kind === "model"){
+      var pseudo = { kind: "model-call", round: r.round, time: r.time, costUsd: r.costUsd, tokens: r.tokens, durationMs: r.durationMs };
+      return '<tr class="round-header-row"><td>' + r.round + "</td><td>" + r.try + "</td><td>" + auditActionCellHtml(pseudo) + "</td><td>" + auditPathCellHtml(pseudo) + "</td><td>" + auditDecisionCellHtml(pseudo) + "</td><td>" + auditTimeCellHtml(pseudo) + "</td></tr>";
+    }
+    var cls = auditRowClassName(r);
+    return "<tr" + (cls ? ' class="' + cls + '"' : "") + "><td>" + auditRoundCellHtml(r) + "</td><td>" + r.try + "</td><td>model &middot; " + auditActionCellHtml(r) + "</td><td>" + auditPathCellHtml(r) + "</td><td>" + auditDecisionCellHtml(r) + "</td><td>" + auditTimeCellHtml(r) + "</td></tr>";
+  }
+  function loadStepRows(el, partIndex, offset, appendMode){
+    if(!appendMode) el.innerHTML = '<div class="hint">loading…</div>';
+    getJSON("/api/runs/" + encodeURIComponent(currentRunid) + "/rounds?part=" + encodeURIComponent(partIndex) + "&all=1&offset=" + offset).then(function(data){
+      var rowsHtml = data.rows.map(stepRowHtml).join("");
+      var shownTo = data.offset + data.rows.length;
+      var info = '<div class="hint">showing ' + (data.offset + 1) + "&ndash;" + shownTo + " of " + data.totalRows + "</div>";
+      if(appendMode){
+        var oldInfo = el.querySelector(".rounds-page-info");
+        if(oldInfo) oldInfo.remove();
+        el.querySelector(".rounds-table tbody").insertAdjacentHTML("beforeend", rowsHtml);
+      } else {
+        el.innerHTML = (data.toolLogSaved ? "" : '<div class="hint">tool calls: no log saved</div>') +
+          '<div class="audit-table-scroll"><table class="rounds-table" data-testid="rounds-table"><thead><tr><th>Round</th><th>Try</th><th>Action</th><th>Path</th><th>Decision</th><th>Time</th></tr></thead><tbody>' + rowsHtml + "</tbody></table></div>";
+      }
+      el.insertAdjacentHTML("beforeend", '<div class="rounds-page-info">' + info + (shownTo < data.totalRows ? '<button class="btn small rounds-load-more" type="button">load more</button>' : "") + "</div>");
+      var more = el.querySelector(".rounds-load-more");
+      if(more) more.addEventListener("click", function(){ loadStepRows(el, partIndex, shownTo, true); });
+    }).catch(function(e){
+      el.innerHTML = '<div class="hint">failed to load rounds: ' + escapeXml(e.message) + "</div>";
     });
   }
 
@@ -2897,6 +3073,7 @@
   }
   // line 2 of a part's card / Audit body: the drafting step names, or a worker part's tool breakdown
   function partLine2Text(part){
+    if(part && part.kind === "door") return part.doorView ? "last answer: " + part.doorView.last : "";
     if(part && part.kind === "drafting") return (part.draftSteps || []).map(function(x){ return x.label; }).join(" · ");
     return toolBreakdownLine(part.byTool);
   }
@@ -2918,6 +3095,10 @@
       calls.slice(1).forEach(function(c){
         rows += "<tr><td>" + escapeXml(st.label) + " (" + escapeXml(c.label) + ")</td><td>–</td><td>1</td><td>" +
           (c.model ? escapeXml(c.model) : "–") + "</td><td>" + draftingCallCost(c) + "</td></tr>";
+      });
+      // PRD v1.106 Part 5 Q1: each question the person answered, under its step, in the server's own words (asked, then said); wraps
+      (Array.isArray(st.humans) ? st.humans : []).forEach(function(h){
+        rows += '<tr class="human-row" data-testid="drafting-human"><td colspan="5" style="overflow-wrap:anywhere;white-space:pre-wrap">' + escapeXml(h.askedText) + "<br>" + escapeXml(h.saidText) + "</td></tr>";
       });
     });
     rows += '<tr class="drafting-total"><td><b>total</b></td><td>' + (part.wallMs === null || part.wallMs === undefined ? "–" : duration(part.wallMs)) +
@@ -2955,6 +3136,7 @@
    */
   function partLine1Text(part, detail){
     if(part && part.kind === "drafting") return draftingLine1Text(part);
+    if(part && part.kind === "door") return part.doorView ? escapeXml(part.doorView.head) : "";
     var isLiveRunPart = part && part.kind === "run" && detail && !detail.died && detail.spentUsd === null;
     var wallText = (isLiveRunPart && part.wallMs === null) ? liveWallPhrase(detail.wallFloorMs) : duration(part.wallMs);
     var spendText = (isLiveRunPart && part.spentUsd === null)
@@ -2970,6 +3152,8 @@
     // MOST RECENT attempt's own declared-close grading (the opening
     // outer-close grade counts as attempt 1, same list `buildAttemptsList`
     // reads), in the withdrawn headline's place.
+    // PRD v1.106 Part 3: a part with one call (plan, scout, replan, a one-attempt step) says the thinking it was sent here; the server worded it
+    if(typeof part.thinking === "string" && part.thinking !== "") bits.push(escapeXml(part.thinking));
     var latestAttempt = Array.isArray(part.attempts) && part.attempts.length ? part.attempts[part.attempts.length - 1] : null;
     var headline = latestAttempt ? attemptChecksLine(latestAttempt) : "";
     if(headline) bits.push(headline);
@@ -3161,7 +3345,7 @@
       gBtn.className = "btn audit-part-toggle";
       gBtn.setAttribute("aria-expanded", "false");
       gBtn.setAttribute("data-testid", "audit-schedule-toggle");
-      var secHead = function(open){ return (open ? "\u25BE " : "\u25B8 ") + escapeXml(sec.title) + " [" + glyphSpan(sec.sign) + "] " + escapeXml(sec.head); };
+      var secHead = function(open){ return (open ? "\u25BE " : "\u25B8 ") + stateDotHTML(glyphClass(sec.sign), sec.word, "audit-schedule-state") + " " + escapeXml(sec.title) + " &middot; " + escapeXml(sec.head); };
       gBtn.innerHTML = secHead(false);
       var gBody = document.createElement("div");
       gBody.className = "audit-part-body";
@@ -3213,7 +3397,8 @@
       headBtn.innerHTML =
         stepStateHTML(box, 'audit-part-state-' + idx) + ' ' + titleText + ' &middot; ' + partLine1Text(part, detail) +
         (groupResultGlyph !== null ? ' &middot; ' + groupResultGlyph : '') +
-        (box.blocked > 0 ? ' <span class="badge red" data-testid="audit-part-blocked-' + idx + '">' + box.blocked + ' blocked</span>' : '');
+        (box.blocked > 0 ? ' <span class="badge red" data-testid="audit-part-blocked-' + idx + '">' + box.blocked + ' blocked</span>' : '') +
+        actorMarkHtml(part);
       var body = document.createElement("div");
       body.className = "audit-part-body";
       body.hidden = !startExpanded;
@@ -3232,6 +3417,12 @@
           var draftingEl = document.createElement("div");
           draftingEl.innerHTML = draftingTableHtml(part);
           body.appendChild(draftingEl);
+        } else if(part.kind === "door"){
+          var doorEl = document.createElement("div");
+          doorEl.innerHTML = doorTableHtml(part);
+          body.appendChild(doorEl);
+        } else if(part.kind === "step" && Array.isArray(part.tries) && part.tries.length > 0){
+          buildStepFold(body, idx, part, box.state === "running");
         } else if(attempts.length > 1){
           // parts WITH an attempt sub-loop (a multi-attempt step, or the fix
           // loop) expand to attempt rows first — each attempt expands to its
@@ -3424,6 +3615,8 @@
     var verdictEl = document.getElementById("details-verdict");
     if(job.checkTypeTitle){ verdictEl.title = job.checkTypeTitle; } else { verdictEl.removeAttribute("title"); }
     document.getElementById("details-model").textContent = job.model;
+    // PRD v1.106 Part 3: the server words the Thinking row (src/thinking.js); it is always shown
+    document.getElementById("details-thinking").textContent = typeof job.thinking === "string" ? job.thinking : "";
     // RULED 2026-10-15: how the run began and the job's schedule NOW, both worded on the server (absent on an imported job)
     [["started", job.started], ["schedule", job.schedule]].forEach(function(p){
       var f = document.getElementById("details-" + p[0] + "-field");
@@ -3448,6 +3641,211 @@
     document.getElementById("job-note").textContent = job.note || "";
     lastJobToolsList = Array.isArray(job.toolsList) ? job.toolsList : null;
     paintOfferedRow();
+  }
+
+  // ---- Result tab (PRD v1.107 Part 6, rubric jobs only; signed visual design/result-tab-mock.html variant F) ----
+  // The server decides everything: `detail.hasResult` shows the tab, `/result` carries the signed lines, the facts' own sentences
+  // (src/facts.js factSentence), the rows of the delivered file (sha256-checked against the run's own record) and `passed` (read from the
+  // run's own check-run). The page only draws; it never decides a check and never searches a quote for a word.
+  var resultDetail = null;
+  var resultData = null;
+  function resultTabShown(){ return document.getElementById("tab-result").getAttribute("aria-selected") === "true"; }
+  function clearResult(){
+    resultDetail = null; resultData = null;
+    document.getElementById("result-body").hidden = true;
+    document.getElementById("result-body").innerHTML = "";
+    document.getElementById("result-empty").hidden = false;
+  }
+  // called by renderRun for every detail it draws: shows or removes the tab button, and the Run tab's pointer while the door is open
+  function syncResultTab(detail){
+    var btn = document.getElementById("tab-result");
+    var show = detail.hasResult === true;
+    if(!show && resultTabShown()) document.getElementById("tab-run").click();
+    btn.hidden = !show;
+    resultDetail = show ? detail : null;
+    var ptr = document.getElementById("result-pointer");
+    var waiting = show && detail.accept === true && !detail.live;
+    ptr.hidden = !waiting;
+    ptr.innerHTML = waiting ? 'the result is on the <button class="rs-link" type="button" data-testid="result-pointer-link">Result tab</button>' : "";
+    var link = ptr.querySelector("button");
+    if(link) link.addEventListener("click", function(){ btn.click(); });
+    if(show && resultData && resultData.runid === detail.runid) renderResult();
+    if(!show) clearResult();
+  }
+  function loadResult(runid){
+    return getJSON("/api/runs/" + encodeURIComponent(runid) + "/result").then(function(data){
+      if(runid !== currentRunid || !resultDetail || resultDetail.runid !== runid) return;
+      resultData = data;
+      renderResult();
+    }).catch(function(){ /* the tab keeps what it last drew */ });
+  }
+  document.getElementById("tab-result").addEventListener("click", function(){ if(currentRunid) loadResult(currentRunid); });
+
+  // a RED run's own file words (the last file its check judged: "the file is gone" / "the file changed after the check") and the one note that says
+  // what those rows are. A DELIVERED file's gone/changed words are said once, in the Saved card, never here.
+  function resultFileWords(file){
+    var note = file && file.judged && file.note ? '<div class="hint" data-testid="result-judged-note">' + escapeXml(file.note) + '</div>' : "";
+    return note + (file && file.judged && file.words ? '<div class="rs-warn" data-testid="result-file-words">' + escapeXml(file.words) + '</div>' : "");
+  }
+  function resultField(label, inner){
+    return '<div class="field"><label>' + escapeXml(label) + '</label>' + inner + '</div>';
+  }
+  // the numbered job line and its ~ rules, one box (the Job tab's "N. text" spelling, a space after the number)
+  function resultLineBox(line){
+    return resultField("The job line", '<div class="ro-value" data-testid="result-linetext">' + escapeXml(line.n + ". " + line.text) +
+      (line.rules || []).map(function(r){ return '<br>~ ' + escapeXml(r); }).join("") + '</div>');
+  }
+  // no saved result to show: one line, never the file-state words (those are in Saved)
+  var RESULT_NONE = "no saved result to show";
+  // the proof quote, with the words the check read marked. The server sends the check's own text and offsets (`r.proof`: bareguard's
+  // `full.evidence`, spans already chosen and merged); the page only cuts the text at those offsets, escapes every piece and marks.
+  // It never searches a quote for a word. No proof (an old run, a quote the check did not read): the plain quote, unmarked.
+  function resultProofHtml(r){
+    var p = r.proof;
+    if(!p || typeof p.text !== "string" || !Array.isArray(p.marks)) return escapeXml(r.quote);
+    var h = "", at = 0;
+    p.marks.forEach(function(m){
+      h += escapeXml(p.text.slice(at, m[0])) + "<mark>" + escapeXml(p.text.slice(m[0], m[1])) + "</mark>";
+      at = m[1];
+    });
+    return h + escapeXml(p.text.slice(at));
+  }
+  function resultFactsLine(line){
+    var facts = line.facts || [];
+    var n = facts.length;
+    var ok = line.passed === true ? ' <span class="rs-ok" data-testid="result-ok">\u2713</span>' : "";
+    var h = resultFileWords(line.file);
+    if(Array.isArray(line.rows) && line.rows.length){
+      h += resultField("Results (" + line.rows.length + ")", '<div class="ro-value" data-testid="result-results">' + line.rows.map(function(r){
+        return '<div class="ro-value" data-testid="result-row" style="margin-bottom:8px">' +
+          '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px"><b style="color:var(--text)">Result ' + r.n + '</b>' +
+          (line.passed === true ? '<span class="rs-ok" data-testid="result-count">' + n + ' of ' + n + ' \u2713</span>' : "") + '</div>' +
+          '<div class="field-row" style="margin-top:6px">' + r.cells.map(function(c, i){
+            return '<div class="field"><label>' + escapeXml(facts[i] ? facts[i].name : "") + '</label><div class="ro-value" data-testid="result-cell">' + escapeXml(c) + ok + '</div></div>';
+          }).join("") + '</div>' +
+          '<details data-testid="result-proof"><summary>proof \u2014 the page\'s own words</summary><div class="ro-value" data-testid="result-quote" style="overflow-wrap:anywhere">' + resultProofHtml(r) + '</div></details></div>';
+      }).join("") + '</div>');
+    } else if(!(line.file && line.file.judged && line.file.words)){
+      h += '<div class="hint" data-testid="result-nofile">' + RESULT_NONE + '</div>';
+    }
+    if(facts.length){
+      h += resultField("The checks", '<div class="ro-value" data-testid="result-rules">' +
+        facts.map(function(f){ return escapeXml(f.sentence) + (f.note ? ' ' + escapeXml(f.note) : ""); }).join("<br>") +
+        (line.passed === true && Array.isArray(line.rows) && line.rows.length ? '<br><span class="hint">\u2713 = code checked it against the saved page</span>' : "") + '</div>');
+    }
+    return h;
+  }
+  function resultTextLine(line){
+    var h = resultFileWords(line.file);
+    if(typeof line.answer === "string") h += resultField("Answer", '<div class="ro-value" data-testid="result-answer" style="color:var(--text);white-space:pre-wrap">' + escapeXml(line.answer) + '</div>');
+    else if(!(line.file && line.file.judged && line.file.words)) h += '<div class="hint" data-testid="result-nofile">' + RESULT_NONE + '</div>';
+    (line.cites || []).forEach(function(c){
+      h += resultField("Quotes from " + c.label + " (" + c.items.length + ")", '<details data-testid="result-cites"><summary>show</summary><div class="ro-value" style="white-space:pre-wrap">' +
+        c.items.map(function(it){ return '<b>' + escapeXml(it.claim) + '</b>\n' + escapeXml(it.quote); }).join("\n\n") + '</div></details>');
+    });
+    return h;
+  }
+  // a list, one row per item (the Job tab lists the same items one per row)
+  function resultNotChecked(label, items, testid){
+    if(!items || !items.length) return "";
+    return resultField(label, '<div class="ro-value" data-testid="' + testid + '"><ul style="margin:0;padding-left:18px">' +
+      items.map(function(t){ return '<li>' + escapeXml(t) + '</li>'; }).join("") + '</ul></div>');
+  }
+  // the web page a result was read from: a link (http/https only, new tab) and the server's words that the page may have moved on
+  function resultPageLink(url, note, testid){
+    if(typeof url !== "string" || !/^https?:\/\//i.test(url)) return "";
+    return resultField("Page read", '<div class="ro-value" data-testid="' + testid + '" style="overflow-wrap:anywhere"><a href="' + escapeXml(url) +
+      '" target="_blank" rel="noopener noreferrer">' + escapeXml(url) + '</a><div class="hint" data-testid="result-page-note">' + escapeXml(note || "") + '</div></div>');
+  }
+  // `own` = the Result tab read 2+ pages, so this line's box shows its own page
+  function resultLineCard(line, own, note){
+    return '<div class="job-card" data-testid="result-line"><h4>Line ' + escapeXml(String(line.n)) + '</h4>' + resultLineBox(line) +
+      (own ? resultPageLink(line.page, note, "result-page-line") : "") +
+      (line.kind === "facts" ? resultFactsLine(line) : resultTextLine(line)) +
+      resultNotChecked("Not checked", line.notChecked, "result-line-notchecked") + '</div>';
+  }
+  function resultDoorHtml(door){
+    return '<div class="job-card" id="result-door-card" data-testid="result-door"><h4>Your call</h4><div class="field"><div class="ro-value"><b class="st-word">' + escapeXml(door.head) + '</b> \u2014 ' + escapeXml(door.ask) + '</div></div>' +
+      '<div class="run-actions" style="margin:6px 0 0;"><button class="btn primary" type="button" data-testid="result-accept">Accept</button>' +
+      '<button class="btn" type="button" data-testid="result-rerun-open">Rerun with my words</button>' +
+      '<button class="btn" type="button" data-testid="result-pause">Pause</button></div>' +
+      '<div id="result-rerun-box" data-testid="result-rerun-box" hidden><textarea id="result-rerun-text" data-testid="result-rerun-text" aria-label="your words for the rerun" placeholder="e.g. only morning flights, and show the airline"></textarea>' +
+      '<button class="btn" type="button" data-testid="result-rerun" disabled>Rerun</button></div>' +
+      '<div id="result-door-msg" data-testid="result-door-msg"></div></div>';
+  }
+  function wireResultDoor(body, detail){
+    var msg = body.querySelector("#result-door-msg");
+    var accept = body.querySelector('[data-testid="result-accept"]');
+    if(!accept) return;
+    var say = function(cls, text, testid){ msg.innerHTML = '<span class="' + cls + '" data-testid="' + testid + '">' + escapeXml(text) + '</span>'; };
+    accept.addEventListener("click", function(){ msg.innerHTML = ""; acceptDoor(detail, accept, msg); });
+    var box = body.querySelector("#result-rerun-box");
+    var txt = body.querySelector("#result-rerun-text");
+    var go = body.querySelector('[data-testid="result-rerun"]');
+    body.querySelector('[data-testid="result-rerun-open"]').addEventListener("click", function(){ box.hidden = !box.hidden; if(!box.hidden) txt.focus(); });
+    // required: the button stays off while the words are empty, and the click re-checks (the engine refuses empty words too)
+    txt.addEventListener("input", function(){ go.disabled = txt.value.trim() === ""; });
+    go.addEventListener("click", function(){
+      var words = txt.value.trim();
+      if(words === ""){ say("resume-err", "Write what you want done differently, then press Rerun.", "result-door-err"); return; }
+      go.disabled = true;
+      authorPost("/api/runs/" + encodeURIComponent(detail.runid) + "/rerun", {text: words}).then(function(res){
+        if(res.status === 200 && res.body && res.body.ok){ refreshRunsList(true); selectRun(detail.runid); afterResumeRefresh(detail.runid, 6); return; }
+        go.disabled = false;
+        say("resume-err", (res.body && res.body.error) || ("refused (" + res.status + ")"), "result-door-err");
+      }).catch(function(x){ go.disabled = false; say("resume-err", "could not reach the panel: " + x.message, "result-door-err"); });
+    });
+    var pause = body.querySelector('[data-testid="result-pause"]');
+    pause.addEventListener("click", function(){
+      pause.disabled = true;
+      authorPost("/api/runs/" + encodeURIComponent(detail.runid) + "/pause", {}).then(function(res){
+        pause.disabled = false;
+        if(res.status === 200 && res.body && res.body.ok){ say("stopping", "Paused. Nothing was spent; this stays open for you to answer later.", "result-door-paused"); return; }
+        if(res.status === 202 && res.body && res.body.pending){ say("stopping", "still recording the pause; look again in a moment", "result-door-paused"); return; }
+        say("resume-err", (res.body && res.body.error) || ("refused (" + res.status + ")"), "result-door-err");
+      }).catch(function(x){ pause.disabled = false; say("resume-err", "could not reach the panel: " + x.message, "result-door-err"); });
+    });
+  }
+  function renderResult(){
+    var detail = resultDetail, data = resultData;
+    var body = document.getElementById("result-body");
+    if(!detail || !data || data.runid !== detail.runid){ return; }
+    document.getElementById("result-empty").hidden = true;
+    body.hidden = false;
+    // keep what the person is typing across a poll-driven redraw
+    var keepText = body.querySelector("#result-rerun-text");
+    var typed = keepText ? keepText.value : "";
+    var rerunOpen = !!body.querySelector("#result-rerun-box:not([hidden])");
+    var counters = document.getElementById("run-counters").textContent.split(" \u00b7 ");
+    var h = '<div class="job-card" data-testid="result-head"><h4>Result</h4>' +
+      resultField("Status", '<div class="ro-value">' + stateDotHTML(glyphClass(detail.glyph), detail.status && detail.status.word ? detail.status.word : "", "result-status") +
+        ' \u00b7 ' + escapeXml(detail.checkType) + ' \u00b7 ' + escapeXml(runName(detail.job, detail.runNo, detail.runid)) + '</div>') +
+      '<div class="field-row">' + resultField("Money", '<div class="ro-value" data-testid="result-counters">' + escapeXml(counters[0] || "") + '</div>') +
+      resultField("Time", '<div class="ro-value">' + escapeXml((counters[1] || "").replace(/^took /, "")) + '</div>') + '</div>' +
+      ((data.pages || []).length === 1 ? resultPageLink(data.pages[0], data.pageNote, "result-page-top") : "") + '</div>';
+    var ownPages = (data.pages || []).length >= 2;
+    (data.lines || []).forEach(function(line){ h += resultLineCard(line, ownPages, data.pageNote); });
+    if(data.gap){
+      h += '<div class="rs-warn" data-testid="result-gap">The check said: ' + escapeXml(data.gap.line) + (data.gap.moreText ? ' ' + escapeXml(data.gap.moreText) : "") + '</div>';
+    }
+    if((data.notChecked || []).length){
+      h += '<div class="job-card"><h4>Not checked</h4>' + resultNotChecked("Not checked (the AI's own reading)", data.notChecked, "result-notchecked") + '</div>';
+    }
+    if(detail.accept === true && !detail.live) h += resultDoorHtml(data.door);
+    if((data.delivered || []).length){
+      h += '<div class="job-card" data-testid="result-saved"><h4>Saved</h4>' + data.delivered.map(function(d){
+        return resultField(d.name, '<div class="ro-value" data-testid="result-path" style="overflow-wrap:anywhere">' + escapeXml(d.path) + '</div>' +
+          (d.words ? '<div class="rs-warn" data-testid="result-file-gone">' + escapeXml(d.words) + '</div>'
+            : '<div class="run-actions" style="margin:6px 0 0;"><a class="btn" style="text-decoration:none;" data-testid="result-download" download href="/api/runs/' + encodeURIComponent(data.runid) + '/download?i=' + d.i + '">Download ' + escapeXml(d.name) + '</a></div>'));
+      }).join("") + '</div>';
+    }
+    body.innerHTML = h;
+    var ta = body.querySelector("#result-rerun-text");
+    if(ta){
+      ta.value = typed;
+      if(rerunOpen){ body.querySelector("#result-rerun-box").hidden = false; body.querySelector('[data-testid="result-rerun"]').disabled = typed.trim() === ""; }
+      wireResultDoor(body, detail);
+    }
   }
 
   // ---- selection + loading ----
@@ -3476,6 +3874,7 @@
     runIsLive = false;
     openIsScheduled = false;
     lastOpenFetchAt = Date.now();
+    clearResult();
     var myToken = ++selectToken;
     getJSON("/api/runs/" + encodeURIComponent(runid)).then(function(detail){
       if(myToken !== selectToken) return; // a different run was selected before this resolved
@@ -3483,6 +3882,7 @@
       runIsLive = detail.glyph === "▶" && !detail.died;
       openIsScheduled = !!(detail.schedule && detail.schedule.scheduled);
       renderRun(detail);
+      if(detail.hasResult === true) loadResult(runid);
     }).catch(function(e){
       if(myToken !== selectToken) return;
       document.getElementById("run-empty").hidden = false;

@@ -72,3 +72,36 @@ export function partStatusFor(part) {
   }
   return statusFor({ outcome: 'green' });
 }
+
+/**
+ * PRD v1.106 Part 5 (C, choice 9): the review door's words, ONE table. The door is the only human step bareloop has; there is no "you
+ * cancelled" (cancel is deleted). `decision` is the spine's `door-decision.decision`, or null while nothing has been decided.
+ */
+export const DOOR_WORDS = Object.freeze({
+  waiting: Object.freeze({ head: 'waiting for you', row: 'paused for you', last: 'none yet' }),
+  accept: Object.freeze({ head: 'you accepted', row: 'you accepted', last: 'you accepted' }),
+  rerun: Object.freeze({ head: 'you said rerun', row: 'you said rerun', last: 'you said rerun' }),
+  pause: Object.freeze({ head: 'paused', row: 'paused', last: 'paused' }),
+});
+
+/**
+ * The words one door wears: header phrase, the `last answer:` line (with the time `HH:MM` once decided) and the table rows.
+ * @param {{at: string|null, paths: string[], decision: string|null, text: string|null, decidedAt: string|null}} door
+ * @returns {{ head: string, last: string, rows: Array<{path: string|null, text: string, time: string|null}> }}
+ */
+export function doorViewOf(door) {
+  const key = door.decision === 'accept' || door.decision === 'rerun' || door.decision === 'pause' ? door.decision : 'waiting';
+  const w = DOOR_WORDS[key];
+  const path = door.paths.length === 0 ? null : door.paths.join(', ');
+  const hhmm = (/** @type {string|null} */ iso) => (iso && /T(\d\d:\d\d)/.exec(iso)?.[1]) || null;
+  const said = key === 'rerun' && door.text ? `${w.row}: "${door.text}"` : w.row;
+  /** @type {Array<{path: string|null, text: string, time: string|null}>} */
+  const rows = [{ path, text: DOOR_WORDS.waiting.row, time: door.at }];
+  if (key !== 'waiting') rows.push({ path, text: said, time: door.decidedAt });
+  const when = hhmm(door.decidedAt);
+  const last = key === 'waiting' ? w.last : `${key === 'rerun' && door.text ? said : w.last}${when ? ` · ${when}` : ''}`;
+  return { head: w.head, last, rows };
+}
+
+/** the marker a part wears for who did its work (PRD v1.106 Part 5 C/G): the model, or a person asked */
+export const ACTOR_MARKER = Object.freeze({ model: '[model]', human: '[human · ask]' });

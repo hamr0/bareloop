@@ -11,6 +11,7 @@
 import { scanLabels, labelOnList, renderLabelList, normLabel, LABEL_SHAPES } from './labelscan.js';
 import { FACT_SHAPES, FACT_OPS } from './facts.js';
 import { lineRules } from './rubricstep.js';
+import { dropRows, dropLine } from './pagedropwords.js';
 
 /** the name of the answer tool - the one place the AI's report enters */
 export const LOOK_REPORT_TOOL = 'report_look';
@@ -149,12 +150,30 @@ export function lookPrompt({ jobLines, labels, lists }) {
     + `Report only through ${LOOK_REPORT_TOOL}.`;
 }
 
-/** @typedef {{line: number, name: string, shape: string, source: string, label?: string, labelId?: string, value?: string, phrase?: string, example: string, rule?: any, aiProposal?: boolean, forRule?: number}} LookFact */
+/** @typedef {{line: number, name: string, shape: string, source: string, label?: string, labelId?: string, value?: string, phrase?: string, example: string, rule?: any, aiProposal?: boolean, forRule?: number, reading?: import('./pagerules.js').Reading,
+ *   words?: string[], labels?: string[], unit?: string[], currency?: string[]}} LookFact  `words` / `labels` / `unit` / `currency`: what the page-word map kept (idea A core) */
 /** @typedef {{line: number, rule?: number, words?: string, why: string}} LookNotFound */
-/** @typedef {{facts: LookFact[], prose: {line: number, text?: string}[], notFound: LookNotFound[]}} LookReport */
+/** @typedef {{facts: LookFact[], prose: {line: number, text?: string}[], notFound: LookNotFound[], dropped?: import('./pagerules.js').Dropped[]}} LookReport */
 
 /** @param {unknown} v @returns {v is Record<string, any>} */
 const isRec = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * A fact the page-word map kept (src/pagerules.js `KeptFact`), as the look report carries it: a phrase fact holds its alternative
+ * phrases; any other holds its labels (the first is the primary), and a money fact its units and currencies.
+ * @param {import('./pagerules.js').KeptFact} k @param {string} source @returns {LookFact}
+ */
+export function lookFactOf(k, source) {
+  /** @type {LookFact} */
+  const out = { line: k.line, name: k.name, shape: k.shape, source, example: '', words: [...k.words] };
+  if (k.shape === 'phrase') out.phrase = k.words[0];
+  else { out.labels = [...k.words]; if (k.words.length) out.label = k.words[0]; }
+  if (k.unit) out.unit = [...k.unit];
+  if (k.currency) out.currency = [...k.currency];
+  if (k.forRule !== undefined) out.forRule = k.forRule;
+  if (k.reading) out.reading = { ...k.reading };
+  return out;
+}
 
 /**
  * Turn the AI's raw report into a VERIFIED one, by code, at $0. A fact is carried only when: its shape is a real shape, its source is
@@ -225,7 +244,17 @@ export function renderLookReport(report) {
   const add = (/** @type {number} */ n, /** @type {string} */ s) => byLine.set(n, [...(byLine.get(n) ?? []), s]);
   for (const f of report.facts) {
     const bits = [`${f.name} - ${f.shape}`, `from "${f.source}"`];
-    if (f.phrase !== undefined) bits.push(`the quote must say ${JSON.stringify(f.phrase)}`);
+    if (Array.isArray(f.words)) {
+      // a fact the page-word map kept (idea A core): the words the page holds, each one proven by code; the first is the main one
+      const quote = (/** @type {string[]|undefined} */ a) => (a ?? []).map((w) => JSON.stringify(w)).join(' or ');
+      if (f.shape === 'phrase') bits.push(`the quote must say ${f.words.length > 1 ? 'ONE of these page words, copied exactly' : 'this page word'}: ${quote(f.words)}`);
+      else {
+        if (f.words.length) bits.push(`label ${quote(f.words)}${f.words.length > 1 ? ' (the first is the main one)' : ''}`);
+        else bits.push('no label (read by its unit or sign alone)');
+        if (f.unit?.length) bits.push(`unit ${quote(f.unit)}`);
+        if (f.currency?.length) bits.push(`currency ${quote(f.currency)}`);
+      }
+    } else if (f.phrase !== undefined) bits.push(`the quote must say ${JSON.stringify(f.phrase)}`);
     else if (f.label !== undefined) bits.push(`label ${JSON.stringify(f.label)} (id ${f.labelId})`);
     else bits.push('no label (the value as the quote writes it)');
     if (f.example) bits.push(`seen: ${JSON.stringify(f.example)}`);
@@ -233,6 +262,12 @@ export function renderLookReport(report) {
     if (f.aiProposal) bits.push("AI's proposal");
     if (f.forRule !== undefined) bits.push(`carries ~ rule ${f.forRule}`);
     add(f.line, `CAN CHECK: ${bits.join(', ')}`);
+  }
+  // NO SILENT DROP: a word, fact or rule the page rules removed is said to the drafter too, so it is never written back as a check
+  for (const row of dropRows(report.dropped)) {
+    add(row.line, row.full
+      ? `NOT CHECKED${row.rule !== undefined ? ` (rule ${row.rule})` : ''}: "${row.fact}" - ${row.sentences.join(' ')}`
+      : `LEFT OUT of "${row.fact}" (the rest is still checked): ${row.sentences.join(' ')}`);
   }
   for (const p of report.prose) add(p.line, 'WRITTEN TEXT (not looked up; keep its word/section counts)');
   for (const n of report.notFound) add(n.line, `NOT FOUND${n.rule ? ` (rule ${n.rule})` : ''}: ${n.words ? `${JSON.stringify(n.words)} - ` : ''}${n.why}`);

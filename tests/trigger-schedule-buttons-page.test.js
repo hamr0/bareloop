@@ -209,12 +209,12 @@ test('runs list: Scheduled is one more section after Needs you; a card jumps to 
   assert.doesNotMatch(plain, /data-rl-jump/);
   // the section list order
   const top = fnSrc('rlTopHtml');
-  assert.ok(top.indexOf('"Running now"') < top.indexOf('"Needs you"') && top.indexOf('"Needs you"') < top.indexOf('"Scheduled"'));
+  assert.ok(top.indexOf('"Running now"') < top.indexOf('"Needs you"') && !top.includes('"Scheduled"'), 'Scheduled is below the search box now (rlSchedHtml)');
 });
 
-test('runs list: rlTopHtml draws Scheduled (N) with the cards, after Needs you', () => {
+test('runs list: rlSchedHtml draws Scheduled (N) with the cards; rlTopHtml no longer does', () => {
   const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const f = new Function('escapeXml', 'rlJumpCardHtml', `${fnSrc('rlSectHtml')}\n${fnSrc('runLabel')}\n${fnSrc('rlRunTagHtml')}\n${fnSrc('rlScheduledCardHtml')}\n${fnSrc('rlTopHtml')}\nreturn rlTopHtml;`)(esc, (r) => `<j ${r.runid}>`);
+  const f = new Function('escapeXml', 'rlJumpCardHtml', `${fnSrc('rlSectHtml')}\n${fnSrc('runLabel')}\n${fnSrc('rlRunTagHtml')}\n${fnSrc('rlScheduledCardHtml')}\n${fnSrc('rlTopHtml')}\n${fnSrc('rlSchedHtml')}\nreturn function(m){ return rlTopHtml(m) + rlSchedHtml(m); };`)(esc, (r) => `<j ${r.runid}>`);
   const html = f({ running: [{ runid: 'a' }], needs: [{ runid: 'b' }], scheduled: [{ job: 'x', at: 'today 15:00', in: 'next in 1h', words: 'w', runId: 'r1' }, { job: 'y', at: null, in: null, words: 'v', runId: 'r2' }] });
   assert.match(html, /Running now \(1\)[\s\S]*Needs you \(1\)[\s\S]*Scheduled \(2\)[\s\S]*rl-sched-x[\s\S]*rl-sched-y/);
   assert.doesNotMatch(f({ running: [], needs: [], scheduled: [] }), /Scheduled/);
@@ -469,6 +469,22 @@ test('RULED 2026-10-15 (v1.104): the Audit draws the server\'s schedule section 
   assert.match(src, /gBtn\.className = "btn audit-part-toggle";\s*gBtn\.setAttribute\("aria-expanded", "false"\)/, 'same toggle class as the step sections; folded on open');
   assert.match(src, /gBody\.hidden = true/);
   assert.doesNotMatch(src, /scheduleGroup/);
+});
+
+test('Part 4 (v1.106): the schedule header reads `[sign] word schedule · head` — sign and word first, then the name, then the `·` parts; the word is the server\'s', () => {
+  const src = fnSrc('renderAuditGroups');
+  const m = /var secHead = function\(open\)\{ return (.*?); \};/.exec(src);
+  assert.ok(m, 'secHead exists');
+  const head = new Function('sec', 'open', 'escapeXml', 'glyphClass', 'stateDotHTML', `return ${m[1]};`);
+  const escapeXml = new Function(`${fnSrc('escapeXml')}\nreturn escapeXml;`)();
+  const glyphClass = new Function(`${fnSrc('glyphClass')}\nreturn glyphClass;`)();
+  const stateDotHTML = new Function('escapeXml', `${fnSrc('stateDotHTML')}\nreturn stateDotHTML;`)(escapeXml);
+  const out = head({ title: 'schedule', sign: '✗', word: 'failed', head: 'when a new file arrives in ~/bareloop-inbox/ · from run-1 · 5 tries started nothing' }, true, escapeXml, glyphClass, stateDotHTML);
+  assert.equal(out, '▾ <span class="step-state" data-testid="audit-schedule-state"><span class="dot red"></span><b class="st-word">failed</b></span> schedule &middot; when a new file arrives in ~/bareloop-inbox/ · from run-1 · 5 tries started nothing');
+  assert.doesNotMatch(out, /\[|glyph/, 'no hand-typed bracket sign');
+  assert.match(m[1], /stateDotHTML\(/, 'same helper the part headers use');
+  assert.match(fnSrc('stepStateHTML'), /stateDotHTML\(/, 'part headers use the same helper');
+  assert.doesNotMatch(m[1], /failed|passed|running|waiting/, 'the page types no status word');
 });
 
 test('live defect 2026-10-15 (mv9vzze6): the schedule section rows use the same table classes as the drafting/step rows (label column, dotted separators), not bare flex spans', () => {

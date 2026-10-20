@@ -1,0 +1,1 @@
+{"facts":[{"name":"place","from":"job line","shape":"place","words":["Lisbon","Homes in Lisbon"],"currency":[],"unit":[]},{"name":"total price","from":"rule 1","shape":"money","words":["total"],"currency":["€"],"unit":["total"]},{"name":"guests","from":"rule 2","shape":"phrase","words":["2 guests"],"currency":[],"unit":[]}]}

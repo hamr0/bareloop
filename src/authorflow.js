@@ -87,7 +87,8 @@ import {
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
 import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
-import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, withFactBindings, settlePersonsWords } from './rubricstep.js';
+import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, withFactBindings, settlePersonsWords, withDropNotes, lineRules } from './rubricstep.js';
+import { dropRows, dropLine } from './pagedropwords.js';
 import { factShapeGuide } from './facts.js';
 import { renderLookReport, labelListsOf } from './inputlook.js';
 import { checkDeclarationWords } from './factwords.js';
@@ -116,8 +117,8 @@ export const AUTHOR_MAX_TOKENS = 32000;
 /** the one slot the model fills on an injected guard */
 export const FILL_MARKER = '<FILL IN>';
 
-/** P7 item 5 (fwdloop am24/25): the most questions the MACHINE keeps from the try-3 drafter. The drafter is never told this number. */
-export const MAX_QUESTIONS = 2;
+/** P7 item 5 (fwdloop am24/25): the most questions the MACHINE keeps from the try-3 drafter. The drafter is never told this number. PRD v1.107 Part 5b: three (hamr's ruling), shared with the code-forced early asks. */
+export const MAX_QUESTIONS = 3;
 
 /**
  * The model-visible words of the optional `questions` property — offered ONLY on the last drafting try and only after the
@@ -158,10 +159,10 @@ export function linesNamedByReds(reds, declaration, lineNums) {
  * The machine's keep-or-drop of the try-3 questions. Kept only when its line is one the previous try's reds named and its
  * text is non-blank, at most {@link MAX_QUESTIONS}; every drop comes back with its reason, for the draft's log.
  * @param {any} raw @param {number[]} failedLines
- * @returns {{kept: {line: number, question: string}[], dropped: {reason: string, raw: any}[]}}
+ * @returns {{kept: {line: number, question: string, rule?: number, source?: string, ask?: 'reading'|'cant-check', reading?: string}[], dropped: {reason: string, raw: any}[]}}
  */
 export function normalizeQuestions(raw, failedLines) {
-  /** @type {{line: number, question: string}[]} */
+  /** @type {{line: number, question: string, rule?: number, source?: string, ask?: 'reading'|'cant-check', reading?: string}[]} */
   const kept = [];
   /** @type {{reason: string, raw: any}[]} */
   const dropped = [];
@@ -172,7 +173,13 @@ export function normalizeQuestions(raw, failedLines) {
     if (!failedLines.includes(q.line)) { dropped.push({ reason: `line ${q.line} is not a line the previous try's checks failed on`, raw: q }); continue; }
     if (typeof q.question !== 'string' || q.question.trim() === '') { dropped.push({ reason: 'blank question', raw: q }); continue; }
     if (kept.length >= MAX_QUESTIONS) { dropped.push({ reason: 'beyond the machine\'s limit', raw: q }); continue; }
-    kept.push({ line: q.line, question: redactSecrets(q.question.trim()) });
+    kept.push({
+      line: q.line, question: redactSecrets(q.question.trim()),
+      // PRD v1.106 Part 5 Q3: a code-forced question (the early look ask) names the `~` rule it is about and says so; a model's question has neither
+      ...(Number.isInteger(q.rule) ? { rule: q.rule } : {}), ...(typeof q.source === 'string' ? { source: q.source } : {}),
+      // PRD v1.107 Part 5b: the kind of a code-forced ask, and (reading asks) the plain words `agree` writes as the `~` rule
+      ...(q.ask === 'reading' || q.ask === 'cant-check' ? { ask: q.ask } : {}), ...(q.ask === 'reading' && typeof q.reading === 'string' ? { reading: redactSecrets(q.reading) } : {}),
+    });
   }
   return { kept, dropped };
 }
@@ -838,8 +845,8 @@ export const PARAM_SCHEMAS = Object.freeze({
             properties: {
               name: { type: 'string', minLength: 1, description: 'what the fact is called: letters and spaces only, no digits' },
               shape: { enum: ['money', 'number', 'date', 'time', 'phrase', 'text'], description: 'money / number / date / time may carry a rule; phrase = fixed words the quote must contain; text = words the quote holds, as it writes them' },
-              unit: { type: 'string', minLength: 1, description: 'money: the words the input writes after the amount, copied verbatim (or give currency instead)' },
-              currency: { enum: ['$', '€', '£'], description: 'money: the symbol the input writes before the amount (or give unit instead)' },
+              unit: { anyOf: [{ type: 'string', minLength: 1 }, { type: 'array', minItems: 1, maxItems: 10, uniqueItems: true, items: { type: 'string', minLength: 1 } }], description: 'money: the words the input writes after the amount, copied verbatim - one, or a list of up to 10 (give unit, currency, or both)' },
+              currency: { anyOf: [{ enum: ['$', '€', '£'] }, { type: 'array', minItems: 1, maxItems: 3, uniqueItems: true, items: { enum: ['$', '€', '£'] } }], description: 'money: the symbol the input writes before the amount - one, or a list of up to 3 (give unit, currency, or both)' },
               phrase: { type: 'string', minLength: 1, description: 'phrase only: the fixed words, copied verbatim from the input' },
               anchor: { type: 'string', minLength: 1, description: 'a label copied VERBATIM from the input that sits right before the value (picks the right one when a result holds several)' },
               until: { type: 'string', minLength: 1, description: 'text with an anchor: the label copied VERBATIM that ends the value' },
@@ -1433,6 +1440,11 @@ export const REQUIRED_FACTS_BRIEF = 'REQUIRED FACTS — what a line that finds, 
   + 'as the look gives it (the look\'s phrase facts become phrase facts with the same words), and say in "notes" when you used the input\'s '
   + 'words instead of the person\'s. A label (anchor) is PICKED from the labels the look found in the input, never typed; one that is not '
   + 'among them is refused at $0. What the look could not find is not checked: list it under "refused" in the person\'s words.\n'
+  + ' - A money fact names at least one of "unit" (the words the input writes after the amount) or "currency" (a sign: $, € or £), and may name both. Each is one value or a list: '
+  + 'at most 3 currencies and 10 units, none repeated, a unit at most 100 characters. A code like EUR is a unit (it is read after the number), never a currency. '
+  + 'Copy the forms the look gives for the fact, in its order (the first is the main one); a form the look does not give is refused at $0.\n'
+  + ' - A word the look lists under NOT CHECKED or LEFT OUT is never used in a fact - not as a label, a closing label, a unit or a currency - and is refused at $0 with the reason if you do. '
+  + 'A fact or ~ rule listed under NOT CHECKED is not turned into a check: code lists it under Not checked for the person, so you do not write it into "refused" yourself.\n'
   + ' - When one result holds several values of one kind (leaves / arrives, subtotal / total) give the fact an anchor, the label that sits right before the value you mean.\n'
   + ' - Set aiProposal true on a fact whose number you made out of their words.\n'
   + RUBRIC_RULES + '\n'
@@ -2378,7 +2390,7 @@ export async function runConfirmTurn({
     for (let i = 0; i < qs.length; i += 1) {
       const question = qs[i];
       for (;;) {
-        const raw = await ask({ kind: 'answer', field: ANSWER_QUESTION_FIELD, question, index: i + 1, total: qs.length });
+        const raw = await ask({ kind: 'answer', source: 'confirm', field: ANSWER_QUESTION_FIELD, question, index: i + 1, total: qs.length });
         if (raw === null) return null;
         const trimmed = redactSecrets(String(raw).trim());
         if (trimmed === '') continue; // blank is not an answer — re-ask the same question
@@ -2426,7 +2438,10 @@ export async function runConfirmTurn({
     // the list the model was prompted with is byte-identical to the list
     // shown at confirm-done and recorded on acceptance. `notChecked` is the
     // model's own honest gap list, carried through unchanged.
+    // NO SILENT DROP (idea A core, spec 4.5): what the page rules removed is said HERE too, in the same words as the signed plan, before
+    // drafting is paid for. The words come from the one table (src/pagedropwords.js).
     const notChecked = [...(r.plan.notChecked ?? [])];
+    for (const row of dropRows(facts?.look?.dropped)) { const text = dropLine(row, jobLines, lineRules); if (!notChecked.includes(text)) notChecked.push(text); }
     const checkItems = normalizeChecks(r.plan.checks);
     r.plan = { ...r.plan, checks: checkItems.map((c) => c.text), checkItems };
     const plan = { ...r.plan, protections, notChecked };
@@ -2941,12 +2956,12 @@ export async function authorClose({
       previous = ask.declaration;
 
       // PART 1b: code puts the number tie on every prose step that follows a fact step, before anything is validated or signed
-      let v = validateDeclaration(withFactBindings(settlePersonsWords(ask.declaration, jobLines)), { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope, jobLines, inputLabels: inputLabelsOf(inputs) });
+      let v = validateDeclaration(withFactBindings(withDropNotes(settlePersonsWords(ask.declaration, jobLines), facts?.look?.dropped, jobLines)), { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope, jobLines, inputLabels: inputLabelsOf(inputs) });
       // PART 1c: code proves, at $0, that every label is PICKED from the input's own list and every word a fact depends on is really
       // in the source (white-space blind, once is enough). A word that is not found is a red naming the word and the input; the
       // drafter revises like it does for any validation red.
       if (v.ok && lang === RUBRIC_LANG) {
-        const words = checkDeclarationWords(v.declaration, inputTexts);
+        const words = checkDeclarationWords(v.declaration, inputTexts, facts?.look ?? null);
         if (words.length > 0) v = { ...v, ok: false, reds: [...v.reds, ...words], declaration: null };
       }
       // SCRUBBED HERE, once, where the reds enter this module's records — the same

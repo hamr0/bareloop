@@ -414,12 +414,17 @@ test('panelMoney: exact amounts round half-up to 2 decimals', () => {
   assert.equal(panelMoney(0), '$0.00', 'a real exact zero prints $0.00, never "unknown"');
 });
 
-test('panelMoney: a real positive amount under a cent renders "<$0.01", never "$0.00"', () => {
+test('panelMoney: a real positive amount under a cent renders 4 decimals (hamr 2026-10-19), never "<$0.01" or "$0.00"', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const { panelMoney } = loadMoneyFns(html);
-  assert.equal(panelMoney(0.004), '<$0.01');
-  assert.equal(panelMoney(0.0001), '<$0.01');
-  assert.equal(panelMoney(0.01), '$0.01', 'exactly a cent is never "<$0.01"');
+  assert.equal(panelMoney(0.004), '$0.0040');
+  assert.equal(panelMoney(0.0054), '$0.0054');
+  assert.equal(panelMoney(0.0001), '$0.0001');
+  assert.equal(panelMoney(0.00001), '<$0.0001', 'too small for 4 decimals is still never $0.00');
+  assert.equal(panelMoney(0.00996), '$0.01', 'rounds up to a cent, never $0.0100');
+  assert.equal(panelMoney(0.00999, true), '$0.0099', 'a floor under a cent rounds DOWN at 4 decimals');
+  assert.equal(panelMoney(0.01), '$0.01');
+  assert.equal(panelMoney(0), '$0.00', 'zero stays $0.00');
 });
 
 test('panelMoney: floor mode rounds DOWN, never overstating a floor as exact-higher', () => {
@@ -437,10 +442,23 @@ test('panelMoney: null/undefined/non-finite keeps the honest "unknown" text, nev
   assert.equal(panelMoney(NaN), 'unknown');
 });
 
+test('panelMoney (page copy) and panelMoney2 (src/panelmoney.js, the Node owner) print identically', async () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const { panelMoney } = loadMoneyFns(html);
+  const { panelMoney2 } = await import('../src/panelmoney.js');
+  for (const v of [0, 0.00001, 0.0001, 0.0035, 0.0054, 0.00996, 0.0099, 0.01, 0.0149, 0.815, 0.82, 3.71, 291.17, null, undefined, NaN]) {
+    assert.equal(panelMoney2(v), panelMoney(v), `value ${v}`);
+  }
+  assert.equal(panelMoney2(0.0054), '$0.0054');
+});
+
 test('panelMoneyWithDraft: 2-decimal composite, matching src/replay.js\'s moneyWithDraft shape but at 2 decimals', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const { panelMoneyWithDraft } = loadMoneyFns(html);
-  assert.equal(panelMoneyWithDraft(3.71, false, 0.81, true, 5), '$3.71 ($0.81 drafting) of $5.00');
+  assert.equal(panelMoneyWithDraft(3.71, false, 0.81, true, 5), '$3.71 run + $0.81 drafting = $4.52 of $5.00');
+  // the real run mve5y8fa (run $0.0054, drafting $0.0035): every part under a cent keeps 4 decimals (hamr 2026-10-19), the sum is the rule on the true sum
+  assert.equal(panelMoneyWithDraft(0.0054, false, 0.0035, true, 1), '$0.0054 run + $0.0035 drafting = $0.0089 of $1.00');
+  assert.equal(panelMoneyWithDraft(0.1802, false, 0.0035, true, 0.5), '$0.18 run + $0.0035 drafting = $0.18 of $0.50');
   assert.equal(panelMoneyWithDraft(3.68, false, null, null, 5), '$3.68 of $5.00');
   assert.equal(panelMoneyWithDraft(3.68, false, null, null), '$3.68', 'no drafting share, no cap -> unchanged base render');
 });
@@ -450,7 +468,7 @@ test('panelMoneyWithDraft: an INCOMPLETE drafting fold reads "at least" on BOTH 
   const { panelMoneyWithDraft } = loadMoneyFns(html);
   assert.equal(
     panelMoneyWithDraft(3.71, false, 0.81, false, 5),
-    'at least $3.71 (at least $0.81 drafting) of $5.00',
+    'at least $3.71 run + at least $0.81 drafting = at least $4.52 of $5.00',
   );
 });
 
@@ -458,17 +476,17 @@ test('panelMoneyWithDraft: an already-floor leading figure (e.g. a died run\'s o
   const html = readFileSync(PAGE_PATH, 'utf8');
   const { panelMoneyWithDraft } = loadMoneyFns(html);
   assert.equal(panelMoneyWithDraft(0.018, true, null, null), 'at least $0.02');
-  assert.equal(panelMoneyWithDraft(0.018, true, 0.81, false), 'at least $0.02 (at least $0.81 drafting)');
+  assert.equal(panelMoneyWithDraft(0.018, true, 0.81, false), 'at least $0.02 run + at least $0.81 drafting = at least $0.83');
 });
 
 test('rowSpendText: a died row reads its own spend-floor as "at least $X"; a live row with an incomplete draft reads "at least" on both parts', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const { rowSpendText } = loadMoneyFns(html);
   assert.equal(rowSpendText({ died: true, spendFloorUsd: 0.018, spentUsd: null }), 'at least $0.02');
-  assert.equal(rowSpendText({ died: false, spentUsd: 3.71, draftSpentUsd: 0.81, draftSpendComplete: true }), '$3.71 ($0.81 drafting)');
+  assert.equal(rowSpendText({ died: false, spentUsd: 3.71, draftSpentUsd: 0.81, draftSpendComplete: true }), '$3.71 run + $0.81 drafting = $4.52');
   assert.equal(
     rowSpendText({ died: false, spentUsd: 3.71, draftSpentUsd: 0.81, draftSpendComplete: false }),
-    'at least $3.71 (at least $0.81 drafting)',
+    'at least $3.71 run + at least $0.81 drafting = at least $4.52',
   );
   assert.equal(rowSpendText({ died: false, spentUsd: 3.68, draftSpentUsd: null, draftSpendComplete: null }), '$3.68', 'no drafting share -> unchanged from the plain render');
 });
@@ -566,11 +584,11 @@ test('item 5 + F-panel-chip-collision: ONE filter-bar component feeds the one ru
   assert.doesNotMatch(markup, /\[&#10003;\]/);
 });
 
-test('P9 v2 D.10: the chip order is a declared array, drawn in that order: D, R, ✓, ✗, ?, ▶, 7d, 30d, all, clear', () => {
+test('P9 v2 D.10: the chip order is a declared array, drawn in that order: D, R, ✓, ✗, ?, ▶, ◷, 7d, 30d, all, clear', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const filterBarHTML = loadFilterBarHTML(html);
   const labels = [...filterBarHTML('runs').matchAll(/<button class="chip fchip"[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]);
-  assert.deepEqual(labels, ['D', 'R', '&#10003;', '&#10007;', '?', '&#9654;', '7d', '30d', 'all', 'clear']);
+  assert.deepEqual(labels, ['D', 'R', '&#10003;', '&#10007;', '?', '&#9654;', '&#9719;', '7d', '30d', 'all', 'clear']);
   assert.match(html, /var RL_CHIPS = \[/);
 });
 
@@ -746,7 +764,7 @@ test('item 1: the search input exists in the shared filter bar for both scopes, 
   assert.match(markup, /id="runs-filter-search"/);
   assert.match(markup, /data-testid="runs-filter-search"/);
   // clear resets search to "" alongside the chip groups
-  assert.match(html, /state = \{ checkTypes: \[\], results: \[\], time: "all", search: "" \};/);
+  assert.match(html, /state = \{ checkTypes: \[\], results: \[\], time: "all", search: "", scheduledOnly: false \};/);
 });
 
 test('P9 v2 O item 5 (replaces D.11 "search jobs and runs…"): the Runs search placeholder is `job, run-23, or date 10/13` (words per am8)', () => {
@@ -2189,7 +2207,7 @@ test('build item 6: renderRun uses liveSpendText/liveWallPhrase exactly when liv
   const html = readFileSync(PAGE_PATH, 'utf8');
   const start = html.indexOf('function renderRun(detail){');
   const end = html.indexOf('function renderRun(', start + 1) === -1 ? html.indexOf('</script>', start) : html.length;
-  const src = html.slice(start, start + 4000);
+  const src = html.slice(start, start + 6000);
   assert.match(src, /var isLiveNoEnd = !detail\.died && detail\.spentUsd === null && detail\.fromBridge !== true;/);
   assert.match(src, /spendText = liveSpendText\(detail\.spendFloorUsd, detail\.draftSpentUsd, detail\.draftSpendComplete\);/);
   assert.match(src, /wallPhrase = liveWallPhrase\(detail\.wallFloorMs\);/);

@@ -6,6 +6,7 @@
 // its ENDED block is `endedFor` in src/panel/server.js).
 import { basename } from 'node:path';
 import { panelMoney2 } from './panel/authorroutes.js';
+import { STATUS } from './panel/status.js';
 
 /** @typedef {import('./trigger.js').Trigger} Trigger */
 
@@ -272,11 +273,13 @@ export function retryNextWords(ms) {
 
 /**
  * RULED 2026-10-15: the sign on the head of the Audit's `schedule` section. ONE small rule (hamr may still adjust it): [▶] only while a
- * run of the job is running (as everywhere in the panel), [✗] when the SCHEDULE row is red, else [·] (on, waiting).
- * @param {{running: boolean, red: boolean}} f @returns {{sign: string}}
+ * run of the job is running (as everywhere in the panel), [✗] when the SCHEDULE row is red, else [·] (on, waiting). RULED 2026-10-18 (v1.106
+ * Part 4): the header reads `[sign] word schedule · ...`, the sign AND the word both from the one status table (src/panel/status.js), never typed here.
+ * @param {{running: boolean, red: boolean}} f @returns {{sign: string, word: string}}
  */
 export function scheduleSignFor(f) {
-  return { sign: f.running ? '▶' : f.red ? '✗' : '·' };
+  const { sign, word } = f.running ? STATUS.running : f.red ? STATUS.failed : STATUS.waiting;
+  return { sign, word };
 }
 
 /** Audit schedule section, the `this run` words of a run the schedule started (the head already says which schedule and from where). @param {any} rec `trigger.json` */

@@ -576,13 +576,14 @@ function translate(r, redact) {
  *   judgeLoop?: ((o: {system: string}) => any)|null,
  *   judgeModel?: string|null,
  *   onJudgeCost?: ((c: any) => void)|null,
+ *   onRubricEvidence?: ((e: any) => void)|null,
  *   callBounds?: (() => {timeoutMs?: number, deadlineMs?: number})|null}} [opts]
  * @returns {Promise<any>}
  */
 export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
   const {
     timeoutMs, cwd, seedRef, seedTrees: shared, gapCap, maxBuffer, baselineMode, humanRuling = null,
-    judgeLoop = null, judgeModel = null, onJudgeCost = null, callBounds = null,
+    judgeLoop = null, judgeModel = null, onJudgeCost = null, callBounds = null, onRubricEvidence = null,
   } = opts;
   if (!isNonEmptyString(cwd) || !isNonEmptyString(seedRef)) {
     // Refuse rather than guess. A declared close measures against a SEED; a
@@ -634,6 +635,8 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
     // the honest absence (an adopter/test that wires no clock through), never a
     // defaulted number invented here.
     callBounds,
+    // REPORT-ONLY seam: what a rubric-step stage's cited checks read (bareguard `full.evidence`); the runner records it, nothing here reads it
+    onRubricEvidence,
     seedTrees,
   };
   try {

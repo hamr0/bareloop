@@ -64,7 +64,7 @@ test('scheduledNextFor: first match wins; a refused lead and money-used-up are R
   // 2: the month is used up: RED, amounts two-decimal
   const month = { kind: 'monthly-exhausted', at: at(14, 9, 0), leftUsd: 0.12, needUsd: 0.5 };
   assert.deepEqual(scheduledNextFor({ ...base, lastOutcome: month }), { text: 'Paused: not enough money left this month ($0.12 left, a run needs up to $0.50). Raise the monthly limit in Settings, or it starts again on the 1st.', red: true });
-  assert.match(scheduledNextFor({ ...base, lastOutcome: { ...month, atLeast: true, leftUsd: 0.004 } }).text, /at most <\$0\.01 left/);
+  assert.match(scheduledNextFor({ ...base, lastOutcome: { ...month, atLeast: true, leftUsd: 0.004 } }).text, /at most \$0\.0040 left/);
   // waiting-for-Accept outranks the money line
   assert.equal(scheduledNextFor({ ...base, waitingRunNo: 2, lastOutcome: month }).red, false);
   // last month's exhausted row no longer paints this month red

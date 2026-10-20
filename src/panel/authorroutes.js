@@ -19,24 +19,27 @@
 
 import { randomBytes } from 'node:crypto';
 import { spawn as realSpawn } from 'node:child_process';
-import { openSync } from 'node:fs';
+import { openSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { planMatchesClose } from '../rubricstep.js';
 import { createSession, validateJobCard, validateReuseCard, jobBoxesChanged, buildReuseSpec, cardFields, nextFreeJobName, startDestinationProblem, STEP_LABELS } from './authorsession.js';
 import { parseInputs } from '../jobblock.js';
-import { proveInputFiles, looksLikeRubricInput } from '../source.js';
+import { proveInputFiles, looksLikeRubricInput, webFetchState } from '../source.js';
 import { validateJob } from '../job.js';
 
 /** plain words for a run whose saved job no longer passes today's `validateJob` (RULED 2026-10-15): never the raw red codes */
 export const OLD_JOB_REUSE_WORDS = "This run was made by an older bareloop. Its saved job doesn't pass today's checks, so it can't be reused. Start a new job instead.";
 export const OLD_JOB_RESUME_WORDS = "This run was made by an older bareloop. Its saved job doesn't pass today's checks, so it can't be resumed. Use Reuse workflow on a newer run, or start a new job.";
 export const OLD_JOB_ACCEPT_WORDS = "This run was made by an older bareloop. Its saved job doesn't pass today's checks, so it can't be accepted. Use Reuse workflow on a newer run, or start a new job.";
+export const OLD_JOB_RERUN_WORDS = "This run was made by an older bareloop. Its saved job doesn't pass today's checks, so it can't be rerun. Use Reuse workflow on a newer run, or start a new job.";
+export const OLD_JOB_PAUSE_WORDS = "This run was made by an older bareloop. Its saved job doesn't pass today's checks, so it can't be paused from here. Use Reuse workflow on a newer run, or start a new job.";
 import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
 import { ConfigError } from '../config.js';
 import { keysForDoor, keysHome } from '../keysfile.js';
 import { endpointOf, judgePick, keyValueOf, rowsForHome, tickedLines } from '../providerrows.js';
 import { thinkingForLine } from '../thinking.js';
+import { panelMoney2 } from '../panelmoney.js';
 import { apiKeyProblem, checkProviderReachable } from '../providers.js';
 
 /** @returns {string} a fresh per-process token — never persisted, never logged */
@@ -90,6 +93,18 @@ export function checkHumanGuard(req, { token, port }) {
  * one; a terminal session is kept (so its chat/hash stay readable) but no
  * longer counts against the one-at-a-time rule.
  */
+/**
+ * PRD v1.106 Part 5 Q2: the "fetching the page..." step is done once the run's own refetch has written `refrozenAt` (source.json, written last).
+ * Settled when the state is read, so nothing polls and the step never stays running after the fetch.
+ * @param {any} state
+ */
+export function settleFetchingStep(state) {
+  const st = Array.isArray(state?.steps) ? state.steps.find((/** @type {any} */ x) => x.id === 'fetching') : null;
+  if (!st || st.status !== 'running') return;
+  const file = join(String(state.outDir), 'source-seed', 'source.json');
+  if (existsSync(file) && !webFetchState(file, st.since).fetching) st.status = 'done';
+}
+
 const TERMINAL_PHASES = new Set(['refused', 'abandoned', 'error', 'signed', 'signing-failed']);
 
 /**
@@ -131,11 +146,17 @@ export function createAuthorRoutes(opts) {
    * @param {any} card the form (fields only)
    * @param {{spec: any, workflowKey: string}|null} reuse
    * @param {import('../jobblock.js').JobInput[]} inputs the parsed Inputs
-   * @param {{headless?: boolean, filesJob?: boolean}} [o]
+   * @param {{headless?: boolean}} [o]
    * @returns {Promise<{ok: true, session: ReturnType<typeof createSession>}|{ok: false, status: number, error: string}>}
    */
   function startSession(card, reuse, inputs, o = {}) {
-    return (o.filesJob ? Promise.resolve(/** @type {{ok: true}} */ ({ ok: true })) : proveInputFiles(inputs)).then((proof) => {
+    // ONE owner of "is this a rubric job on files": a reuse (and so a scheduled fire) reads it from the signed spec's verdict type,
+    // never from the card; a fresh job reads the card. A rubric job whose line 1 is a file or URL has no repo to prove inputs against;
+    // the session proves every line itself (`proveRubricInputs`), at $0, before any model call.
+    const rubric = reuse ? reuse.spec?.verdictType === 'soft-green' : card?.checkType === 'rubric';
+    if (reuse) card = { ...card, checkType: rubric ? 'rubric' : 'deterministic' };
+    const filesJob = rubric && inputs.length > 0 && looksLikeRubricInput(inputs[0].value);
+    return (filesJob ? Promise.resolve(/** @type {{ok: true}} */ ({ ok: true })) : proveInputFiles(inputs)).then((proof) => {
       if (!proof.ok) return { ok: /** @type {false} */ (false), status: 400, error: proof.error };
       if (!o.headless && hasLiveSession()) return { ok: /** @type {false} */ (false), status: 409, error: 'an authoring session is already live — one at a time' };
       // the SAME Destination check the session runs, at $0, BEFORE the session (and its folder) exists
@@ -299,6 +320,7 @@ export function createAuthorRoutes(opts) {
     if (pathname === '/api/author/live') {
       if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
       const live = [...sessions.values()].find((s) => !TERMINAL_PHASES.has(s.state.phase));
+      if (live) settleFetchingStep(live.state);
       send(200, { ok: true, sessionId: live ? live.state.id : null, state: live ? live.state : null });
       return true;
     }
@@ -357,10 +379,7 @@ export function createAuthorRoutes(opts) {
       // A miss is a plain 400 naming the line, shown under the card exactly like every other refused start.
       const ip = parseInputs(card.inputs);
       if (!ip.ok) { send(400, { ok: false, error: ip.error }); return true; }
-      // Part 1a: a rubric job whose first input is a local FILE has no repo to prove inputs against; the session proves every
-      // line itself (`proveRubricInputs`), at $0, before any model call
-      const filesJob = reuse === null && card?.checkType === 'rubric' && looksLikeRubricInput(ip.inputs[0].value);
-      startSession(card, reuse, ip.inputs, { filesJob }).then((r) => {
+      startSession(card, reuse, ip.inputs).then((r) => {
         if (!r.ok) { send(r.status, { ok: false, error: r.error }); return; }
         send(200, { ok: true, sessionId: r.session.id, reuse: reuse !== null, state: r.session.state });
       });
@@ -375,6 +394,7 @@ export function createAuthorRoutes(opts) {
 
     if (sub === null) {
       if (req.method !== 'GET') { send(405, { ok: false, error: 'GET only' }); return true; }
+      settleFetchingStep(session.state);
       send(200, { ok: true, state: session.state });
       return true;
     }
@@ -417,28 +437,7 @@ export function createAuthorRoutes(opts) {
   };
 }
 
-/**
- * The panel's OWN 2-decimal money render for a chat line — hamr's ruling
- * 2026-09-28 (2nd addendum, panel money 2-decimals): a positive amount below
- * a cent reads `<$0.01`, never `$0.00` (a real cost must never read as
- * free). This is the server-side (Node, chat-text) sibling of
- * `src/panel/index.html`'s own inline `panelMoney` — the two can't share
- * code (one runs in the browser as inlined script, the other in Node), the
- * same duplication `src/replay.js`'s `money()`/`index.html`'s `money()`
- * already carry, so both apply the identical rule rather than drift.
- * @param {number} n a non-negative dollar amount
- * @returns {string}
- */
-export function panelMoney2(n) {
-  if (n > 0 && n < 0.01) return '<$0.01';
-  // two-step rounding (matching index.html's own panelMoney): clean to
-  // 6-decimal precision first (the same precision src/text.js's tallyCalls
-  // sums to) before rounding to cents, so a summed float landing just under
-  // an exact cent boundary is never mis-rounded.
-  const clean = Math.round(n * 1e6) / 1e6;
-  const cents = Math.round(clean * 100 + 1e-6);
-  return `$${(cents / 100).toFixed(2)}`;
-}
+export { panelMoney2 };
 
 /**
  * THE ONLY function in this file (or anywhere in the panel) that spawns a
@@ -520,5 +519,10 @@ export function signRun(session, claimedHash, o) {
     ? `drafting spent ${draftIncomplete ? 'at least ' : ''}${panelMoney2(draftSpentUsd)} (folds out of the run's own cap)`
     : '';
   if (Array.isArray(session.state.steps)) session.state.steps.push({ id: 'signed', label: STEP_LABELS.signed, status: 'done', detail: draftLine });
+  // PRD v1.106 Part 5 Q2: a run with a web input fetches the page again before its log exists (3-5 s of silence): say so, next to the sign step
+  const sinceIso = new Date().toISOString();
+  if (Array.isArray(session.state.steps) && webFetchState(join(session.state.outDir, 'source-seed', 'source.json'), sinceIso).hasWeb) {
+    session.state.steps.push({ id: 'fetching', label: STEP_LABELS.fetching, status: 'running', since: sinceIso });
+  }
   return { ok: true, job: session.state.resolvedSpecPath };
 }

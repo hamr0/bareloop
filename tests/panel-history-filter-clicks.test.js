@@ -183,7 +183,7 @@ test('F-panel-chip-collision: the Runs filter-bar "clear" button resets state an
 
   clearBtn.click();
   assert.deepEqual(api.runsFilterBar.getState(), {
-    checkTypes: [], results: [], time: 'all', search: '',
+    checkTypes: [], results: [], time: 'all', search: '', scheduledOnly: false,
   });
   assert.equal(detChip.getAttribute('aria-pressed'), 'false', 'clear must visibly un-press every chip it turned off in state');
 });

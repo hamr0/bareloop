@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, lstat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { createRubric, checkStep, renderGaps, numbersInQuote } from 'bareguard';
+import { dropRows, dropLine } from './pagedropwords.js';
 import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem, factBrief } from './facts.js';
 
 // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES — what one job line leaves
@@ -100,13 +101,33 @@ export function rubricGoal({ jobLines, files, confirmedGoal = null, closeDecl = 
   const inputs = files.map((f) => `  - ${f.label}: ${f.rel}`).join('\n');
   const lines = jobLines.map((l) => `${l.n}. ${l.text}${l.rule ? `\n   rule: ${l.rule}` : ''}`).join('\n');
   return [
-    'Do the job below from the input files, then write one JSON file per numbered line.',
+    RUBRIC_GOAL_HEAD,
     `The input files (label: file):\n${inputs}`,
     stepFileContract(),
     `The job, line by line:\n${lines}`,
     ...(closeDecl ? lineBriefs(closeDecl).map((b) => b.text) : []),
-    ...(confirmedGoal ? [`The plan the person confirmed: ${confirmedGoal}`] : []),
+    ...(confirmedGoal ? [`${CONFIRMED_GOAL_PREFIX}${confirmedGoal}`] : []),
   ].join('\n\n');
+}
+
+/**
+ * What a rubric job's goal text is: the worker brief `rubricGoal` builds. The Job tab's "AI's summary" is only the one
+ * sentence the person confirmed, never this brief, so the first line and the confirmed-sentence prefix have ONE spelling.
+ */
+export const RUBRIC_GOAL_HEAD = 'Do the job below from the input files, then write one JSON file per numbered line.';
+const CONFIRMED_GOAL_PREFIX = 'The plan the person confirmed: ';
+
+/**
+ * The sentence the person confirmed, out of a goal text: for a rubric brief the rest of the `CONFIRMED_GOAL_PREFIX` line,
+ * or null when the brief has none; any other goal (a code job's) comes back unchanged.
+ * @param {string} goal
+ * @returns {string|null}
+ */
+export function confirmedGoalOf(goal) {
+  if (!goal.startsWith(RUBRIC_GOAL_HEAD)) return goal;
+  const line = goal.split('\n').find((l) => l.startsWith(CONFIRMED_GOAL_PREFIX));
+  const sentence = line ? line.slice(CONFIRMED_GOAL_PREFIX.length).trim() : '';
+  return sentence || null;
 }
 
 // ── the `rubric-step` stage: its parameters, and the rubric they build ───────────────────────────────────────────────
@@ -259,6 +280,46 @@ export function buildStepSpec(params, inputShas) {
 export const sha256Of = (b) => createHash('sha256').update(b).digest('hex');
 
 /**
+ * The files one named check READS, tree-relative: a `rubric-step` stage's own step file (`output/steps/N.json`). Any other kind reads
+ * none that a try's output can be told by, so `[]`. From the signed declaration, never guessed.
+ * @param {any} closeDecl @param {string|null|undefined} checkName
+ * @returns {string[]}
+ */
+export function judgedFilesOf(closeDecl, checkName) {
+  const stages = Array.isArray(closeDecl?.stages) ? closeDecl.stages : [];
+  const st = stages.find((/** @type {any} */ x) => x && x.name === checkName && x.kind === 'rubric-step');
+  return st && Number.isInteger(st.params?.step) ? [stepFileRel(st.params.step)] : [];
+}
+
+/**
+ * PRD v1.106 Part 5: what each file a try's `check-passes` checks read looked like WHEN it was judged: `{path, bytes, sha256}`. The step
+ * file is overwritten by the next try, so the spine's `output-judged` record is the only trace; the content itself is never written (hard
+ * line). A missing, non-regular or over-size file is skipped — nothing was judged there.
+ * @param {any} closeDecl @param {string} workdir @param {Array<{type?: string, name?: string}>} exits a step's declared exits
+ * @returns {Promise<Array<{path: string, bytes: number, sha256: string}>>}
+ */
+export async function outputJudgedRecords(closeDecl, workdir, exits) {
+  /** @type {Array<{path: string, bytes: number, sha256: string}>} */
+  const out = [];
+  const seen = new Set();
+  for (const e of Array.isArray(exits) ? exits : []) {
+    if (!e || e.type !== 'check-passes') continue;
+    for (const rel of judgedFilesOf(closeDecl, e.name)) {
+      if (seen.has(rel)) continue;
+      seen.add(rel);
+      try {
+        const abs = join(workdir, rel);
+        const ls = await lstat(abs);
+        if (!ls.isFile() || ls.size > STEP_MAX_BYTES) continue;
+        const buf = await readFile(abs);
+        out.push({ path: rel, bytes: buf.length, sha256: sha256Of(buf) });
+      } catch { /* not there: nothing was judged */ }
+    }
+  }
+  return out;
+}
+
+/**
  * The step file's bytes as the close reads them: the parsed JSON object, or WHY there is none. A file cut off mid-write
  * parses to nothing (reason `not-json`); text cut off INSIDE an otherwise valid JSON object cannot be told from a short
  * answer — that limit is documented, not hidden.
@@ -358,7 +419,9 @@ export function plainStepGap(step, why, g, params = null) {
  *   `inputs` maps each cited label to its frozen TEXT; its sha256 is taken here from that text, and bareguard compares it to
  *   the manifest's recorded sha via `inputShas`.
  * @param {Record<string, string>} inputShas the manifest's recorded sha256 per cited label
- * @returns {Promise<{verdict: 'green'|'red'|'stopped', gapLines: string[], fault: string|null, detail: Record<string, any>}>}
+ * @returns {Promise<{verdict: 'green'|'red'|'stopped', gapLines: string[], fault: string|null, detail: Record<string, any>,
+ *   evidence?: any[], evidenceTotal?: number}>} `evidence`/`evidenceTotal` are bareguard's `full.evidence` (what each `cited` check read), carried out
+ *   for the report-only `rubric-evidence` spine record; no verdict, gap or count above is derived from them
  */
 export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes = {}, factMissing = [] }, inputShas) {
   let rubric;
@@ -396,8 +459,12 @@ export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes
   const redCount = extraCount + r.full.gaps.reduce((/** @type {number} */ n, /** @type {any} */ g) => n + (g.check === 'cited' && g.kind === 'unsupported' && typeof g.measured === 'number' ? g.measured : 1), 0);
   const detail = { step: params.step, rubricSha: r.rubricSha, outputSha: r.outputSha, why: parsed.why, gaps: r.full.gaps.length, ...(r.verdict === 'red' || extra.length > 0 ? { redCount } : {}) };
   if (r.verdict === 'stopped') return { verdict: 'stopped', gapLines: [], fault: r.fault ? `${r.fault.kind}: ${r.fault.detail}` : 'the rubric stopped', detail };
-  if (r.verdict === 'green' && extra.length === 0) return { verdict: 'green', gapLines: [], fault: null, detail };
-  return { verdict: 'red', gapLines: [...extra, ...r.gaps.flatMap((g) => plainStepGap(params.step, parsed.why ?? 'empty', g, params).split('\n'))], fault: null, detail };
+  const seen = {
+    ...(Array.isArray(r.full.evidence) && r.full.evidence.length > 0 ? { evidence: r.full.evidence } : {}),
+    ...(typeof r.full.evidenceTotal === 'number' ? { evidenceTotal: r.full.evidenceTotal } : {}),
+  };
+  if (r.verdict === 'green' && extra.length === 0) return { verdict: 'green', gapLines: [], fault: null, detail, ...seen };
+  return { verdict: 'red', gapLines: [...extra, ...r.gaps.flatMap((g) => plainStepGap(params.step, parsed.why ?? 'empty', g, params).split('\n'))], fault: null, detail, ...seen };
 }
 
 // ── R11: the sorting rules, applied at DRAFTING ──────────────────────────────────────────────────────────────────────
@@ -553,6 +620,16 @@ const boundSpellings = (b) => {
 };
 
 /**
+ * Is this rule bound in the words the person wrote? The ONE test for "a number the AI made" (`rubric-fact-unmarked`, the L3 settle, and
+ * the early ask of PRD v1.107 Part 5b all read it; never a second spelling).
+ * @param {unknown} b @param {string} said @returns {boolean}
+ */
+export const boundInWords = (b, said) => boundSpellings(b).some((sp) => said.includes(sp));
+
+/** @param {any} jl one job line @returns {string} the words the person wrote on it: the line and its `~` rules */
+export const wordsSaidOn = (jl) => `${jl.text ?? ''} ${lineRules(jl).join(' ')}`;
+
+/**
  * PART 1b, RF16 + RF17 — the rules that need the person's own job lines. Only a close built for REQUIRED FACTS is held to them (a
  * close with a fact part, or any part that says which `~` rules it carries out): an older Part 1a close is left as it was signed.
  *   - every `~` rule of every job line is carried out by a part (its number in the part's `rules`), or is listed in `refused` with
@@ -581,12 +658,12 @@ export function checkRubricRules(stages, { jobLines = null, refused = null, red 
     const fp = factPartOf(st.params);
     if (!fp || !Array.isArray(fp.facts)) continue;
     const jl = jobLines.find((l) => isRec(l) && l.n === st.params.step);
-    const said = jl ? `${jl.text ?? ''} ${lineRules(jl).join(' ')}` : null;
+    const said = jl ? wordsSaidOn(jl) : null;
     fp.facts.forEach((/** @type {any} */ f, /** @type {number} */ j) => {
       if (!isRec(f) || !isRec(f.rule)) return;
       const w = `stages[${i}].params.parts[${st.params.parts.indexOf(fp)}].facts[${j}]`;
       const bounds = f.rule.op === 'between' ? [f.rule.lo, f.rule.hi] : [f.rule.value];
-      if (said !== null && !f.aiProposal && bounds.some((b) => !boundSpellings(b).some((sp) => said.includes(sp)))) {
+      if (said !== null && !f.aiProposal && bounds.some((b) => !boundInWords(b, said))) {
         red('rubric-fact-unmarked', w, `line ${st.params.step}: the limit on fact "${f.name}" (${bounds.join(' to ')}) is not in the words the person wrote, so it is the AI's own number. Set "aiProposal": true on that fact so the card says "AI's proposal — check it". Nothing spent.`, { line: st.params.step });
       }
       if (f.aiProposal && f.shape === 'time' && f.rule.op !== 'between') {
@@ -620,12 +697,12 @@ export function settlePersonsWords(declaration, jobLines) {
     const jl = jobLines.find((l) => isRec(l) && l.n === st.params.step);
     if (!fp || !Array.isArray(fp.facts) || !jl) return st;
     const rules = lineRules(jl);
-    const said = `${jl.text ?? ''} ${rules.join(' ')}`;
+    const said = wordsSaidOn(jl);
     const ranges = rules.filter((r) => !NEGATING_RE.test(r)).map((r) => TIME_RANGE_RE.exec(r)).filter((m) => m !== null);
     const proposed = fp.facts.filter((/** @type {any} */ f) => isRec(f) && f.aiProposal === true && f.shape === 'time' && isRec(f.rule) && f.rule.op === 'between');
     const facts = fp.facts.map((/** @type {any} */ f) => {
       if (!isRec(f) || !isRec(f.rule) || f.aiProposal !== true) return f;
-      const own = (/** @type {unknown[]} */ bounds) => bounds.every((b) => boundSpellings(b).some((sp) => said.includes(sp)));
+      const own = (/** @type {unknown[]} */ bounds) => bounds.every((b) => boundInWords(b, said));
       const bounds = f.rule.op === 'between' ? [f.rule.lo, f.rule.hi] : [f.rule.value];
       const { aiProposal: _drop, ...rest } = f;
       if (own(bounds)) return rest;
@@ -668,6 +745,36 @@ export function withFactBindings(declaration) {
 }
 
 /**
+ * NO SILENT DROP (idea A core, spec 4.4): code writes the Not checked rows for what the page rules removed, before the declaration is validated.
+ *   - a dropped FACT that carries a `~` rule no part carries and no `refused` entry names -> `closeDecl.refused` gets {line, rule, reason}
+ *     (shown under that line in the person's own rule words by {@link ruleNotChecked});
+ *   - any other drop (a fact from the job line itself, a rule another fact carries, a word dropped from a fact that is still checked, so a
+ *     narrower check is still said) -> one line in `closeDecl.notes`, shown as Not checked (the AI's own reading).
+ * Never a line-level `refused` entry without `rule` (that would silence every other rule red on the line). A rule the drafter already listed
+ * itself is never listed twice, and running this twice adds nothing. Pure; the input is untouched.
+ * @param {any} declaration @param {import('./pagerules.js').Dropped[]|null|undefined} dropped @param {any[]|null|undefined} jobLines @returns {any}
+ */
+export function withDropNotes(declaration, dropped, jobLines) {
+  if (!isRec(declaration) || !Array.isArray(dropped) || dropped.length === 0) return declaration;
+  const stages = Array.isArray(declaration.stages) ? declaration.stages : [];
+  const carried = (/** @type {number} */ line, /** @type {number} */ n) => stages.some((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && st.params.step === line
+    && Array.isArray(st.params.parts) && st.params.parts.some((/** @type {any} */ x) => isRec(x) && Array.isArray(x.rules) && x.rules.includes(n)));
+  const refused = Array.isArray(declaration.refused) ? [...declaration.refused] : [];
+  const notes = Array.isArray(declaration.notes) ? [...declaration.notes] : [];
+  for (const row of dropRows(dropped)) {
+    const named = row.rule !== undefined && refused.some((/** @type {any} */ r) => isRec(r) && r.line === row.line && r.rule === row.rule);
+    if (named) continue;
+    if (row.full && row.rule !== undefined && !carried(row.line, row.rule)) {
+      refused.push({ line: row.line, rule: row.rule, reason: row.sentences.join(' ') });
+      continue;
+    }
+    const text = dropLine(row, jobLines, lineRules);
+    if (!notes.includes(text)) notes.push(text);
+  }
+  return { ...declaration, ...(refused.length ? { refused } : {}), ...(notes.length ? { notes } : {}) };
+}
+
+/**
  * The ~ rules the drafter listed under Not checked (`refused` entries that name a `rule`), each as one line in the person's own
  * words: `line N: "<the rule as written>" — <the drafter's reason>` (PART 1b, RF6 / RF16).
  * @param {any} closeDecl @param {any[]|null|undefined} jobLines @returns {string[]}
@@ -686,9 +793,14 @@ export function ruleNotChecked(closeDecl, jobLines) {
  * @param {any} closeDecl @returns {string[]}
  */
 export function proseNotChecked(closeDecl) {
+  return proseNotCheckedItems(closeDecl).map((i) => i.text);
+}
+
+/** the same items as {@link proseNotChecked} with the job line each belongs to (the stage's own `step`) @param {any} closeDecl @returns {{line: number, text: string}[]} */
+export function proseNotCheckedItems(closeDecl) {
   const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
   return stages.filter((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts) && !factPartOf(st.params))
-    .map((/** @type {any} */ st) => `line ${st.params.step}: what the text says — you judge it at Accept`);
+    .map((/** @type {any} */ st) => ({ line: st.params.step, text: `line ${st.params.step}: what the text says — you judge it at Accept` }));
 }
 
 // ── the sign-vs-run invariant: the checks the person is SHOWN are the checks the signed close RUNS ───────────────────

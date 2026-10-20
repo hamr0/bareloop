@@ -25,13 +25,19 @@
 // for every cap/threshold: a shell never widens what it was asked to do).
 
 import { createServer } from 'node:http';
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import {
+  readFileSync, existsSync, readdirSync, lstatSync, realpathSync,
+} from 'node:fs';
+import { createHash } from 'node:crypto';
 import {
   dirname, join, basename, relative, isAbsolute, sep,
 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readRunList, readNeedsRemovals, DIED_MTIME_MS, runIsAlive } from '../runlist.js';
-import { draftingPartFor } from '../draftspend.js';
+import { webFetchState } from '../source.js';
+import { isWebUrl } from '../pagefetch.js';
+import { draftingPartFor, sessionDirForRow, readDraftSteps } from '../draftspend.js';
+import { readingOfQuestion, isAgree } from '../pagemap.js';
 import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
 } from '../replayio.js';
@@ -60,7 +66,12 @@ import { rowsForHome, findRow, modelChoiceFor, tickedLines, endpointOf } from '.
 import { SHAPES } from '../providershapes.js';
 import { resolveProvider } from '../providers.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
-import { statusFor, partStatusFor, GOAL_MET_LINE } from './status.js';
+import {
+  statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER, DOOR_WORDS,
+} from './status.js';
+import { thinkingJobText } from '../thinking.js';
+import { judgedFilesOf, lineRules, stepFileRel, proseNotCheckedItems } from '../rubricstep.js';
+import { factPartOf, factSentence, ruleWords, moneyAs } from '../facts.js';
 import { createSettingsRoutes } from './settingsroutes.js';
 import { planFromSpec } from './jobplan.js';
 
@@ -199,6 +210,8 @@ function describeLastRecord(r) {
     'scout-start': () => 'starting the scout',
     'scout-result': () => 'the scout finishing',
     'check-run': () => 'a check run',
+    'output-judged': () => 'recording the file a check read',
+    'rubric-evidence': () => 'recording the words a check read',
     'check-preflight': () => 'a preflight check',
     'check-menu': () => 'building the check menu',
     'step-start': (rec) => `starting step ${rec.step ?? '?'}`,
@@ -687,11 +700,17 @@ function endedForRow(row, records, summary, death, withWorktree = false) {
  * exist YET: the runner appends the row first, then opens the spine. It is `starting`,
  * never `file missing`. Carries the same field names a normal row/detail does so every
  * client reader (filters, groups) sees a live `▶` run, with every figure honestly null.
- * @param {{ runid: string, job: string, at: string, via: string }} row
+ * @param {{ runid: string, job: string, at: string, via: string, spine: string }} row
  * @returns {any}
  */
 function startingStub(row) {
+  // PRD v1.106 Part 5 Q2 (moved after the listing 2026-10-19, run mvez8s54): while the run's own refetch of a web input is still going
+  // (source.json has a web input and no refrozenAt at or after the row), the words are the server's: "fetching the page…"
+  const near = sourceNearSpine(row.spine);
+  const fetching = near.sourceJsonPath !== null && webFetchState(near.sourceJsonPath, row.at).fetching;
   return {
+    startingWord: fetching ? 'fetching the page…' : 'starting…',
+    startingNote: fetching ? 'the run has not started yet' : 'the run has not written its log yet',
     runid: row.runid,
     job: row.job,
     at: row.at,
@@ -730,6 +749,28 @@ function startingStub(row) {
 }
 
 /**
+ * A run that REFUSED before it started (its refetch of a web input was refused, run mvez8s54 shape): listed, settled at $0, no spine.
+ * The status word is the table's `failed` (statusFor: "refusals, instrument stops -> failed"); the plain words ride on `endedLine`.
+ * @param {{ runid: string, job: string, at: string, via: string }} row @param {string} words
+ * @returns {any}
+ */
+function refusedStub(row, words) {
+  return {
+    runid: row.runid, job: row.job, at: row.at, via: row.via, fileMissing: false, refused: true, live: false, needs: null, stoppedAt: null,
+    died: false, glyph: statusFor({ outcome: 'refused-before-start' }).sign, status: statusFor({ outcome: 'refused-before-start' }),
+    outcome: 'refused-before-start', endedLine: words, ended: null, resume: null, checkType: 'unknown', checkTypeTitle: null, model: null,
+    spend: '$0', wall: '', date: typeof row.at === 'string' ? row.at.slice(0, 10) : null, spentUsd: 0, spendComplete: true,
+    spendFloorUsd: null, wallFloorMs: null, draftSpentUsd: null, draftSpendComplete: null, budgetUsd: null, steps: [], parts: [],
+  };
+}
+
+/** the plain words of a run that settled as "refused before start" (leg 1), or null @param {any[]} events @param {{runid: string}} row */
+function refusalWordsOf(events, row) {
+  const e = events.find((x) => x && x.type === 'settled' && x.runid === row.runid && x.reason === 'refused before start' && !(x.leg > 1));
+  return e && typeof e.words === 'string' && e.words !== '' ? e.words : null;
+}
+
+/**
  * RULED 2026-10-15 (Remove from Needs you): the ONE place a run's Needs-you state is decided. `Accept` (a live door) is never removable and never ages out.
  * A `Resume` tag leaves when the person removed it AFTER (or at) the stop it is for — a removal covers only the ending it was made on, so a later stop
  * brings the run back — or after `needsYouDays`. `removedMs` is the newest removal that covers the current ending (or null), `expired` is true when only
@@ -754,10 +795,13 @@ export function needsStateFor(f) {
  * already applies to the CLI's own listing).
  * @param {import('../runlist.js').RunRow} row
  * @param {number} [nowMs] @param {Map<string, number>} [removals] `readNeedsRemovals`: when each run was taken out of Needs you
+ * @param {any[]} [events] the run list's settled/released events (a run that refused before it started has no spine; its words are here)
  * @returns {any}
  */
-function summarizeRow(row, nowMs = Date.now(), removals = undefined) {
+function summarizeRow(row, nowMs = Date.now(), removals = undefined, events = []) {
   if (!existsSync(row.spine)) {
+    const refusal = refusalWordsOf(events, row);
+    if (refusal !== null) return refusedStub(row, refusal);
     if (runIsAlive(row)) return startingStub(row);
     return {
       runid: row.runid, job: row.job, at: row.at, via: row.via, fileMissing: true, live: false, needs: null, stoppedAt: null,
@@ -981,14 +1025,14 @@ export function summarizeJobs(rows, nowMs) {
  * @returns {any[]}
  */
 export function listRuns(opts = {}) {
-  const { rows } = readRunList(opts);
+  const { rows, events } = readRunList(opts);
   const nowMs = typeof opts.now === 'number' ? opts.now : Date.now();
   const nos = runNumbers(rows);
   const removals = readNeedsRemovals(opts);
   return rows
     .map((row, index) => ({ row, index })) // index: stable tie-break, see doc above
     .sort((a, b) => (atMs(b.row) - atMs(a.row)) || (a.index - b.index))
-    .map(({ row }) => ({ ...summarizeRow(row, nowMs, removals), runNo: nos.get(row.runid) }));
+    .map(({ row }) => ({ ...summarizeRow(row, nowMs, removals, events), runNo: nos.get(row.runid) }));
 }
 
 /**
@@ -1093,6 +1137,346 @@ export function getAcceptContext(runid, opts = {}) {
   return { row, live: runIsAlive(row), waiting: doorWaiting(records), specPath: signed ? signed.specPath : null, specHash: signed ? signed.specHash : null };
 }
 
+// ── PRD v1.107 Part 6: the Result tab (rubric jobs only) ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The files a run delivered: its own `destination-written` spine records (userrun.js, on a minted green only), one per path, the last record of a
+ * path winning. This is the ONLY source of a delivered path anywhere in the panel — no request ever names one.
+ * @param {any[]} records
+ * @returns {{path: string, bytes: number|null, sha256: string|null}[]}
+ */
+export function deliveredOf(records) {
+  /** @type {Map<string, {path: string, bytes: number|null, sha256: string|null}>} */
+  const byPath = new Map();
+  for (const r of records) {
+    if (!r || r.type !== 'destination-written' || typeof r.path !== 'string' || !isAbsolute(r.path)) continue;
+    byPath.set(r.path, { path: r.path, bytes: typeof r.bytes === 'number' ? r.bytes : null, sha256: typeof r.sha256 === 'string' ? r.sha256 : null });
+  }
+  return [...byPath.values()];
+}
+
+/** @param {any} spec @returns {any[]} the signed close's rubric-step stages, in declared order */
+function rubricStagesOf(spec) {
+  const stages = Array.isArray(spec?.closeDecl?.stages) ? spec.closeDecl.stages : [];
+  return stages.filter((/** @type {any} */ s) => s && s.kind === 'rubric-step' && s.params && Number.isInteger(s.params.step));
+}
+
+/** what the Result tab's open door asks, after the door's own head words */
+export const RESULT_DOOR_ASK = 'the checks passed; is this what you wanted?';
+
+/** the two sentences for a delivered file that is no longer what the run wrote (code-owned, one spelling) */
+export const RESULT_FILE_GONE = 'the saved file is gone';
+export const RESULT_FILE_CHANGED = 'the saved file changed after the run';
+/** the same two states for a red run's file, which is the last one the check read (not a delivered file) */
+export const RESULT_JUDGED_GONE = 'the file is gone';
+export const RESULT_JUDGED_CHANGED = 'the file changed after the check';
+/** what a red run's rows are, said once above them */
+export const RESULT_JUDGED_NOTE = 'a red run delivers nothing; these rows are the last file the check read';
+
+/**
+ * One delivered file, read for the Result tab or a download: it must still be a regular file at the recorded path whose sha256 equals the
+ * record's. A mismatch or a missing file is a state, never content — stale bytes are never returned.
+ * @param {{path: string, sha256: string|null}} rec a record from {@link deliveredOf}
+ * @returns {{state: 'ok', buf: Buffer}|{state: 'gone'|'changed', buf: null}}
+ */
+function readDelivered(rec) {
+  let st;
+  try { st = lstatSync(rec.path); } catch { return { state: 'gone', buf: null }; }
+  if (!st.isFile()) return { state: 'gone', buf: null };
+  let buf;
+  try { buf = readFileSync(rec.path); } catch { return { state: 'gone', buf: null }; }
+  if (rec.sha256 === null || createHash('sha256').update(buf).digest('hex') !== rec.sha256) return { state: 'changed', buf: null };
+  return { state: 'ok', buf };
+}
+
+/**
+ * A red run's rows: the file the LAST check judged for job line `n`, from the run's own `output-judged` spine record `{step, iteration, path,
+ * bytes, sha256}` (src/planrun.js, one per check run, written before the next try overwrites the file). The spine step id is a step NAME, so the
+ * line is matched by the path the signed close judges (`stepFileRel(n)`), never by a path taken from a record or a request. It is resolved against
+ * the run's own tree root (`treeRootForRun`: `row.patient`, else the source-seed `tree/`), must stay inside it, and must still match the record's
+ * sha256 — stale content is never returned. `none` = no such record (an old spine, or a try that never reached its check).
+ * @param {any[]} records @param {number} n @param {string|null} root
+ * @returns {{state: 'ok', buf: Buffer}|{state: 'gone'|'changed'|'none', buf: null}}
+ */
+function readJudged(records, n, root) {
+  const rel = stepFileRel(n);
+  const rec = records.findLast((r) => r && r.type === 'output-judged' && r.path === rel && typeof r.sha256 === 'string');
+  if (!rec) return { state: 'none', buf: null };
+  if (root === null) return { state: 'gone', buf: null };
+  let abs;
+  try {
+    abs = realpathSync(join(root, rel));
+    const base = realpathSync(root);
+    if (!abs.startsWith(base + sep)) return { state: 'gone', buf: null };
+  } catch { return { state: 'gone', buf: null }; }
+  const got = readDelivered({ path: abs, sha256: rec.sha256 });
+  return got.state === 'ok' ? got : { state: got.state, buf: null };
+}
+
+/** a delivered step file's job line: `steps/<n>-YYYY-MM-DD[-k].json` (copyOut's dated name of `output/steps/<n>.json`), else null */
+function stepOfDelivered(path) {
+  const m = /^(\d+)-\d{4}-\d{2}-\d{2}(?:-\d+)?\.json$/.exec(basename(path));
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * Did this stage's check pass in the run's own record? The latest `check-run` for the stage says `satisfied` AND the run's last job-end is green.
+ * Read only — the Result tab never decides anything.
+ * @param {any[]} records @param {string} stageName
+ * @returns {boolean}
+ */
+function stagePassedIn(records, stageName) {
+  const end = records.findLast((r) => r && r.type === 'job-end');
+  if (!end || end.outcome !== 'green') return false;
+  const run = records.findLast((r) => r && r.type === 'check-run' && r.name === stageName);
+  return !!run && run.verdict === 'satisfied';
+}
+
+/** the words beside a Result-tab page link: the page is read again from the web, so it can differ from what the run read */
+export const RESULT_PAGE_MAY_CHANGE = 'The page may have changed since this run.';
+
+/**
+ * The web address each input LABEL was read from, off the run's own `source.json` (`inputs[].url`, written at drafting and rewritten at run start).
+ * Only http(s) addresses; a file or repo input has no `url` and so no entry. No source.json beside the run = an empty map (no link, nothing guessed).
+ * @param {string} spinePath @returns {Map<string, string>}
+ */
+function pageUrlsByLabel(spinePath) {
+  /** @type {Map<string, string>} */
+  const out = new Map();
+  const { sourceJsonPath } = sourceNearSpine(spinePath);
+  if (sourceJsonPath === null) return out;
+  try {
+    const m = JSON.parse(readFileSync(sourceJsonPath, 'utf8'));
+    for (const r of Array.isArray(m?.inputs) ? m.inputs : []) {
+      if (r && typeof r.label === 'string' && typeof r.url === 'string' && isWebUrl(r.url)) out.set(r.label, r.url.trim());
+    }
+  } catch { /* unreadable record: no link */ }
+  return out;
+}
+
+/**
+ * What a result's check read, from the run's own `rubric-evidence` record (report-only; bareguard 0.25 `full.evidence`), for the proof fold.
+ * `null` = no evidence (an old run, a malformed claim, or a quote that is not the one the check read): the page shows the plain quote.
+ * `text` is bareguard's normalized quote; `marks` are `[start, end]` UTF-16 offsets into it, sorted, overlaps merged. Which spans: every span the
+ * check read EXCEPT a bind-only membership token that is not this claim's (`canon` present, `matched` absent) - hamr 2026-10-19, ruled A.
+ * The offsets are bareguard's; nothing here searches the quote for anything.
+ * @param {any} ev one `evidence` entry @param {unknown} quote the result's own quote as the file holds it
+ * @returns {{text: string, marks: number[][]}|null}
+ */
+function proofOf(ev, quote) {
+  if (!ev || typeof ev.text !== 'string' || !Array.isArray(ev.spans) || typeof quote !== 'string') return null;
+  // the entry must be about THIS quote (bareguard's normalization: marks removed, whitespace collapsed, trimmed), else it is another try's
+  if (quote.replace(/\*\*|__/g, '').replace(/\s+/g, ' ').trim() !== ev.text) return null;
+  const spans = ev.spans
+    .filter((/** @type {any} */ sp) => sp && Number.isInteger(sp.start) && Number.isInteger(sp.end) && sp.start >= 0 && sp.end > sp.start && sp.end <= ev.text.length
+      && !(sp.canon !== undefined && sp.matched !== true))
+    .map((/** @type {any} */ sp) => [sp.start, sp.end])
+    .sort((/** @type {number[]} */ x, /** @type {number[]} */ y) => x[0] - y[0] || x[1] - y[1]);
+  /** @type {number[][]} */
+  const marks = [];
+  for (const sp of spans) {
+    const last = marks[marks.length - 1];
+    if (last && sp[0] < last[1]) last[1] = Math.max(last[1], sp[1]);
+    else marks.push([sp[0], sp[1]]);
+  }
+  return { text: ev.text, marks };
+}
+
+/**
+ * A money fact's amount exactly as the page wrote it ("144 US dollars", "€344"): the quote's text from the first to the last of the value's own
+ * currency/unit/value spans in bareguard's evidence for this claim (a membership token that is not the claim's own is left out). `null` = nothing
+ * located, or more than a short run: the caller keeps today's text. Offsets are bareguard's; nothing is searched.
+ * @param {any} ev one `evidence` entry (already known to be about this result's quote) @param {number} j the fact's index (bareguard's decide index)
+ * @returns {string|null}
+ */
+function moneyAsRead(ev, j) {
+  const own = ev.spans.filter((/** @type {any} */ sp) => sp && sp.decide === j && ['value', 'currency', 'unit'].includes(sp.role)
+    && Number.isInteger(sp.start) && Number.isInteger(sp.end) && sp.start >= 0 && sp.end > sp.start && sp.end <= ev.text.length
+    && !(sp.canon !== undefined && sp.matched !== true));
+  if (own.length === 0) return null;
+  const t = ev.text.slice(Math.min(...own.map((/** @type {any} */ sp) => sp.start)), Math.max(...own.map((/** @type {any} */ sp) => sp.end))).trim();
+  return t !== '' && t.length <= 40 ? t : null;
+}
+
+/** a fact's cell: a money amount in the fact's own signed currency/unit (src/facts.js moneyAs), anything else as the file wrote it */
+function resultCell(f, v) {
+  const t = cellText(v);
+  return f.shape === 'money' && /^\d[\d.,]*$/.test(t.trim()) ? moneyAs(f, t.trim(), true) : t;
+}
+
+/** the words after a fact whose limit the person agreed to in a Part 5b look ask */
+export const RESULT_YOU_CONFIRMED = '(you confirmed)';
+
+/**
+ * The facts of line `n` whose limit came from a Part 5b `agree` answer, read from the drafting session's `human` rows (source 'look', this line,
+ * the answer `agree`): the ask proposed `<fact name> <ruleWords>`, and `agree` wrote exactly that as a `~` rule on the line. A fact is confirmed only
+ * when that proposal equals what the SIGNED fact says now AND the line's signed `~` rules hold it word for word. No draft log (a Reuse run, a CLI
+ * run, a deleted session) = nothing is confirmed; nothing is guessed.
+ * @param {any} row @param {any} jobLine the signed job line @param {any} fp the signed fact part @param {{ home?: string, sessionsRoot?: string }} opts
+ * @returns {Set<string>} fact names
+ */
+function confirmedFactNames(row, jobLine, fp, opts) {
+  const names = new Set();
+  const dir = sessionDirForRow(row, opts);
+  if (!dir || !jobLine) return names;
+  const written = lineRules(jobLine);
+  const humans = readDraftSteps(dir).flatMap((st) => st.humans);
+  for (const h of humans) {
+    if (h.source !== 'look' || h.line !== jobLine.n || !isAgree(h.answer)) continue;
+    const reading = readingOfQuestion(h.question);
+    if (reading === null || !written.includes(reading)) continue;
+    for (const f of fp.facts) if (f.rule && reading === `${f.name} ${ruleWords(f)}`) names.add(f.name);
+  }
+  return names;
+}
+
+/** a result value as the file wrote it, for a table cell */
+function cellText(v) {
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  return '';
+}
+
+/**
+ * `GET /api/runs/:runid/result` — the Result tab: for each rubric job line, its words and `~` rules from the signed spec, the facts it requires
+ * (worded by {@link factSentence}), and — read from the run's own delivered step file, sha256-checked against its `destination-written`
+ * record — one row per result with each fact's cell. `passed` is read from the run's own `check-run` record; the tab never re-decides. A red run
+ * delivers nothing, so it has no rows: it carries the check's own first gap instead. `null` = no such run or no result tab for it.
+ * @param {string} runid @param {{ home?: string }} opts
+ */
+export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: string }} */ opts = {}) {
+  const row = findRunRow(runid, opts);
+  if (!row || row.via === 'import' || !existsSync(row.spine)) return null;
+  const records = parseJsonl(row.spine).records;
+  const spec = resolveSpecForRow(row);
+  const stages = rubricStagesOf(spec);
+  if (stages.length === 0) return null;
+  const delivered = deliveredOf(records);
+  const read = delivered.map((d) => readDelivered(d));
+  const jobLines = Array.isArray(spec?.jobLines) ? spec.jobLines : [];
+  // Not checked, split by the line the SIGNED plan ties each item to: a refusal carries its line (closeDecl.refused[].line, planFromSpec's
+  // `lines[].refused`), a prose step carries its stage's step. What the plan ties to no line stays in `notChecked` (the bottom). Together they are
+  // exactly the Job tab's items (its per-line "not checked" rows plus its Not checked fold) — never a second spelling.
+  const plan = planFromSpec(spec);
+  const proseByLine = proseNotCheckedItems(spec?.closeDecl);
+  const prosePool = proseByLine.map((i) => i.text);
+  const tiedToLine = (/** @type {number} */ n) => [...(plan.lines.find((l) => l.n === n)?.refused ?? []), ...proseByLine.filter((i) => i.line === n).map((i) => i.text)];
+  const bottom = [...plan.notChecked];
+  for (const t of prosePool) { const k = bottom.indexOf(t); if (k >= 0) bottom.splice(k, 1); }
+  const pageUrls = pageUrlsByLabel(row.spine);
+  const greenEnd = records.findLast((r) => r && r.type === 'job-end')?.outcome === 'green';
+  const lines = stages.map((/** @type {any} */ st) => {
+    const n = st.params.step;
+    const jl = jobLines.find((/** @type {any} */ l) => l && l.n === n) ?? null;
+    const fp = factPartOf(st.params);
+    const di = delivered.map((d, i) => ({ d, i })).filter(({ d }) => stepOfDelivered(d.path) === n).pop() ?? null;
+    const passed = stagePassedIn(records, st.name);
+    /** @type {any} */
+    const out = {
+      notChecked: tiedToLine(n),
+      n, text: jl && typeof jl.text === 'string' ? jl.text : '', rules: jl ? lineRules(jl) : [], kind: fp ? 'facts' : 'text', passed,
+      file: di ? { i: di.i, state: read[di.i].state, words: read[di.i].state === 'gone' ? RESULT_FILE_GONE : (read[di.i].state === 'changed' ? RESULT_FILE_CHANGED : null) } : null,
+    };
+    let obj = null;
+    if (di && read[di.i].buf) { try { obj = JSON.parse(/** @type {Buffer} */ (read[di.i].buf).toString('utf8')); } catch { obj = null; } }
+    if (!di && !greenEnd) {
+      // a red run: the last file the check judged (never a ✓: `passed` is false for it)
+      const j = readJudged(records, n, treeRootForRun(row));
+      if (j.state !== 'none') {
+        out.file = { i: null, state: j.state, words: j.state === 'gone' ? RESULT_JUDGED_GONE : (j.state === 'changed' ? RESULT_JUDGED_CHANGED : null), judged: true, note: RESULT_JUDGED_NOTE };
+        if (j.buf) { try { obj = JSON.parse(j.buf.toString('utf8')); } catch { obj = null; } }
+      }
+    } else if (di && !read[di.i].buf) {
+      // the delivered file is gone or changed: that is said ONCE, in the Saved card. The line shows the rows of the file the check read, if the
+      // run's own tree still holds exactly it (sha256 against the output-judged record), else the page says there is no saved result to show
+      const j = readJudged(records, n, treeRootForRun(row));
+      if (j.buf) { try { obj = JSON.parse(j.buf.toString('utf8')); out.fromCheck = true; } catch { obj = null; } }
+    }
+    if (fp) {
+      out.source = fp.source;
+      out.page = pageUrls.get(fp.source) ?? null;
+      const confirmed = confirmedFactNames(row, jl, fp, opts);
+      out.facts = fp.facts.map((/** @type {any} */ f) => ({
+        name: f.name, kind: f.shape === 'phrase' ? 'phrase' : 'value', sentence: factSentence(f, fp.source),
+        ...(confirmed.has(f.name) ? { note: RESULT_YOU_CONFIRMED } : {}),
+      }));
+      const results = obj && Array.isArray(obj.results) ? obj.results : null;
+      // what the check read, from the run's last `rubric-evidence` record for this line (the claim index IS the result's index in `results[]`)
+      const evRec = records.findLast((r) => r && r.type === 'rubric-evidence' && r.step === n && Array.isArray(r.evidence));
+      const evCheck = `p${st.params.parts.indexOf(fp) + 1}-facts`;
+      out.rows = results === null ? null : results.map((/** @type {any} */ r, /** @type {number} */ k) => {
+        const values = r && typeof r === 'object' && r.values && typeof r.values === 'object' ? r.values : {};
+        const quote = r && typeof r === 'object' && typeof r.quote === 'string' ? r.quote : '';
+        const ev = evRec ? evRec.evidence.find((/** @type {any} */ e) => e && e.check === evCheck && e.claim === k) : null;
+        const proof = proofOf(ev, quote);
+        return {
+          n: k + 1,
+          quote,
+          ...(proof ? { proof } : {}),
+          // a money amount is shown the way the check read it off the page; without evidence (or nothing located) it is the fact's own spelling
+          cells: fp.facts.map((/** @type {any} */ f, /** @type {number} */ j) => (f.shape === 'phrase' ? String(f.phrase)
+            : ((f.shape === 'money' && proof ? moneyAsRead(ev, j) : null) ?? resultCell(f, values[f.name])))),
+        };
+      });
+    } else if (obj && typeof obj === 'object') {
+      out.answer = typeof obj.text === 'string' ? obj.text : null;
+      const cites = obj.cites && typeof obj.cites === 'object' ? obj.cites : {};
+      out.cites = Object.entries(cites).filter(([, list]) => Array.isArray(list)).map(([label, list]) => ({
+        label,
+        items: /** @type {any[]} */ (list).map((c) => ({ claim: cellText(c?.claim), quote: cellText(c?.quote) })),
+      }));
+    }
+    return out;
+  });
+  const end = records.findLast((r) => r && r.type === 'job-end');
+  // a run that did not end green delivered nothing: say the check's own first gap (the Audit's try line words), never rows
+  let gap = null;
+  if (!end || end.outcome !== 'green') {
+    const ev = records.findLast((r) => r && r.type === 'exit-eval' && Array.isArray(r.results) && r.results.some((/** @type {any} */ x) => x && x.type === 'check-passes' && x.pass === false));
+    const bad = ev ? ev.results.find((/** @type {any} */ x) => x && x.type === 'check-passes' && x.pass === false) : null;
+    const g = bad ? gapOneLine(bad.detail) : null;
+    gap = g ? { line: g.line, more: g.more, moreText: g.more > 0 ? `(+${g.more} more)` : null } : null;
+  }
+  // the distinct web pages the results read, in line order: ONE = the page draws a single link at the top, 2+ = each line carries its own `page`
+  const pages = [...new Set(lines.map((/** @type {any} */ l) => l.page).filter((/** @type {any} */ u) => typeof u === 'string'))];
+  return {
+    runid,
+    lines,
+    pages,
+    pageNote: pages.length ? RESULT_PAGE_MAY_CHANGE : null,
+    notChecked: bottom,
+    // the door's words, from the one table (src/panel/status.js DOOR_WORDS); the page types none of them
+    door: { head: DOOR_WORDS.waiting.head, ask: RESULT_DOOR_ASK },
+    delivered: delivered.map((d, i) => ({
+      i, path: d.path, name: basename(d.path), bytes: d.bytes, state: read[i].state,
+      words: read[i].state === 'gone' ? RESULT_FILE_GONE : (read[i].state === 'changed' ? RESULT_FILE_CHANGED : null),
+    })),
+    gap,
+  };
+}
+
+/** download content types by extension; anything else is plain bytes */
+const DOWNLOAD_TYPES = { '.json': 'application/json', '.md': 'text/plain', '.txt': 'text/plain', '.csv': 'text/csv' };
+
+/**
+ * `GET /api/runs/:runid/download?i=<n>` — delivered file `n` (an index into the run's own `destination-written` list), or why not. The path is
+ * the record's, never the request's; the sha256 must still match the record.
+ * @param {string} runid @param {unknown} index @param {{ home?: string }} opts
+ * @returns {{ok: true, name: string, type: string, buf: Buffer}|{ok: false, code: number, error: string}}
+ */
+export function getRunDownload(runid, index, opts = {}) {
+  const row = findRunRow(runid, opts);
+  if (!row || row.via === 'import' || !existsSync(row.spine)) return { ok: false, code: 404, error: 'no such run' };
+  const delivered = deliveredOf(parseJsonl(row.spine).records);
+  const i = typeof index === 'string' && /^\d{1,6}$/.test(index) ? Number(index) : -1;
+  if (i < 0 || i >= delivered.length) return { ok: false, code: 404, error: 'this run saved no such file' };
+  const got = readDelivered(delivered[i]);
+  if (got.state !== 'ok') return { ok: false, code: 409, error: got.state === 'gone' ? RESULT_FILE_GONE : RESULT_FILE_CHANGED };
+  const name = basename(delivered[i].path);
+  const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')).toLowerCase() : '';
+  return { ok: true, name, type: Object.hasOwn(DOWNLOAD_TYPES, ext) ? /** @type {Record<string,string>} */ (DOWNLOAD_TYPES)[ext] : 'application/octet-stream', buf: got.buf };
+}
+
 /**
  * `GET /api/runs/:runid` — the full replay for the Run tab: steps (or
  * iterations), counters, summary-box fields. Looks `runid` up in the run
@@ -1164,14 +1548,14 @@ function scheduleExtrasFor(runid, job, rows, nos, opts, view) {
     const originNo = nos.get(cur.originRunid) ?? null;
     const tries = door.skippedFor(job);
     const running = rows.some((r) => r && r.job === job && r.via !== 'import' && runIsAlive(r));
-    const { sign } = scheduleSignFor({ running, red: !!(view && view.problem) });
+    const { sign, word } = scheduleSignFor({ running, red: !!(view && view.problem) });
     const words = scheduledWords(cur.trigger, door.userHome);
     const head = [lowerFirst(words ?? ''), originNo === null ? null : `from run-${originNo}`, triesTailWords(tries.length) || null].filter(Boolean).join(' · ');
     const when = row ? dateTimeWords(atMs(row)) : '';
     const thisRun = rec ? sectionThisRunWords(rec) : `by hand.${runid === cur.originRunid ? ' The schedule was set from this run.' : ''}`;
     const shown = tries.slice(0, 7).map((x, i) => ({ label: i === 0 ? 'tries' : '', text: x.line }));
     const scheduleSection = {
-      title: SCHEDULE_WORDS.scheduleGroup, sign, head,
+      title: SCHEDULE_WORDS.scheduleGroup, sign, word, head,
       rows: [{ label: 'this run', text: `${when}  ${thisRun}` }, ...(shown.length > 0 ? shown : [{ label: 'tries', text: 'none' }])],
     };
     return { ...(schedule ? { schedule } : {}), audit: { scheduleSection } };
@@ -1187,6 +1571,8 @@ function getRunDetailBody(runid, opts) {
   const row = findRunRow(runid, opts);
   if (!row) return null;
   if (!existsSync(row.spine)) {
+    const refusal = refusalWordsOf(readRunList(opts).events, row);
+    if (refusal !== null) return refusedStub(row, refusal);
     if (runIsAlive(row)) return startingStub(row);
     return {
       runid, job: row.job, at: row.at, via: row.via, fileMissing: true,
@@ -1208,7 +1594,8 @@ function getRunDetailBody(runid, opts) {
   // the drafting part (see draftingFor) heads the parts list; the enrichment below touches the spine's own parts only
   const draftingPartHere = draftingFor(row, summary, opts);
   const draftingShiftHere = draftingShift(row, summary, opts);
-  const enrichedParts = enrichPartsWithStageKind(summary.parts, stageKindMetaFromSpec(resolveSpecForRow(row)));
+  const specForParts = resolveSpecForRow(row);
+  const enrichedParts = enrichPartsWithStageKind(summary.parts, stageKindMetaFromSpec(specForParts), specForParts);
   const death = deriveDeath(row, rawSpineRecords, summary.outcome);
   const { ended, resume, status } = endedForRow(row, rawSpineRecords, summary, death, true);
   // judgeModel (Summary box "judge:" line): the FIRST `judge-round`'s own
@@ -1461,9 +1848,16 @@ function getRunDetailBody(runid, opts) {
     // carries no contamination risk); `null` when the spine carries no
     // `memory-cache` record at all (never armed on this run).
     behaviour: scopedBehaviour(row, rawSpineRecords),
+    // PRD v1.106 Part 5 F: the two Run summary rows, worded here (the page prints them)
+    callsLine: callsLineOf(rawSpineRecords, scopedBehaviour(row, rawSpineRecords)),
+    checksLine: checksLineOf(rawSpineRecords, enrichedParts),
     memoryCache: summary.memoryCache,
     // T Part 8: is this run waiting for the person's Accept? The SAME answer fills the runs list's Needs-you tag (`doorWaiting`, one owner)
     accept: !runIsAlive(row) && doorWaiting(rawSpineRecords),
+    // PRD v1.107 Part 6: the Result tab shows for a rubric run whose signed close has a rubric-step stage, never otherwise; `delivered` is the
+    // files the run's own `destination-written` records name (the Result tab's downloads index into this list, never a path from a request)
+    hasResult: checkTypeLabel(summary.verdictType, row.at) === 'rubric' && rubricStagesOf(specForParts).length > 0,
+    delivered: deliveredOf(rawSpineRecords).map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })),
     // T Part 7: why a SCHEDULED run started (the words `trigger.json` carried) and the fixed catch-up sentence; null on every hand run
     ...(() => {
       const trig = triggerRecordOf(row);
@@ -1900,7 +2294,7 @@ export const ROUNDS_PAGE_MAX = 200;
  * resolve to a real window, or the spine file is missing — the caller
  * renders 404, same posture as {@link getRunAudit}/{@link getRunJob}.
  * @param {string} runid
- * @param {{ part?: number, attempt?: number, offset?: number, limit?: number }} query
+ * @param {{ all?: boolean, part?: number, attempt?: number, offset?: number, limit?: number }} query
  * @param {{ home?: string }} [opts]
  * @returns {any|null}
  */
@@ -1922,6 +2316,11 @@ export function getRunRounds(runid, query = {}, opts = {}) {
   if (shift && partIndex === 0) return null;
   const part = Array.isArray(summary.parts) ? summary.parts[partIndex - shift] : null;
   if (!part) return null;
+  // PRD v1.106 Part 5 (C): a plan step with graded tries shows ONE table for the whole step (a Try column, round numbers from 1 per step,
+  // a check row after each try, 20 rows a page); `all=1` asks for it. Every other part keeps its per-attempt table.
+  if (query.all === true && part.kind === 'step' && Array.isArray(part.attempts) && part.attempts.some((x) => Array.isArray(x.checks))) {
+    return stepRoundsPage(runid, row, part, { partIndex, offset, limit: Number.isInteger(query.limit) && /** @type {number} */ (query.limit) > 0 ? Math.min(/** @type {number} */ (query.limit), ROUNDS_PAGE_MAX) : STEP_ROWS_PAGE }, opts);
+  }
   const a = Array.isArray(part.attempts) ? part.attempts[attempt - 1] : null;
   if (!a) return null;
   /** @type {{startSeq: number, endSeq: number, outcome: string|null, detail: string|null}} */
@@ -1979,6 +2378,90 @@ export function getRunRounds(runid, query = {}, opts = {}) {
     offset,
     limit,
     check: { outcome: window.outcome, detail: window.detail },
+    toolLogSaved,
+  };
+}
+
+/** the Audit step table's page size (PRD v1.106 Part 5 choice 3): rows, not rounds */
+export const STEP_ROWS_PAGE = 20;
+
+/** the Round table's check row: the sign and the plain words, ONE place (PRD v1.106 Part 5 C) @param {number} passed @param {number} failed */
+export function checkRowWords(passed, failed) {
+  return failed > 0 ? { sign: '✗', text: `${failed} failed, ${passed} passed` } : { sign: '✓', text: `${passed} passed` };
+}
+
+/**
+ * One plan step's whole Round table (PRD v1.106 Part 5 C): every model call, every tool call and one check row per graded try, in order, each
+ * with its Try; round numbers restart at 1 inside the step (the flat Audit view keeps the run-wide numbers). A page is `limit` ROWS.
+ * @param {string} runid @param {any} row @param {any} part @param {{partIndex: number, offset: number, limit: number}} q @param {{ home?: string }} opts
+ */
+function stepRoundsPage(runid, row, part, q, opts) {
+  const attempts = part.attempts.filter((/** @type {any} */ x) => Array.isArray(x.checks));
+  const cut = part.cutOffTry ?? null;
+  /** @type {Array<{n: number, startSeq: number, endSeq: number, a: any}>} */
+  const windows = attempts.map((/** @type {any} */ a) => ({ n: a.n, startSeq: a.startSeq, endSeq: a.endSeq, a }));
+  if (cut) windows.push({ n: cut.n, startSeq: cut.startSeq, endSeq: cut.endSeq, a: null });
+  const lo = windows[0].startSeq;
+  const hi = windows[windows.length - 1].endSeq;
+  const tryOfSeq = (/** @type {number} */ seq) => windows.find((w) => seq > w.startSeq && seq <= w.endSeq)?.n ?? windows[windows.length - 1].n;
+  const { records: spineRecords } = parseJsonl(row.spine);
+  const roundOf = makeRoundLookup(spineRecords);
+  const spend = spineRecords
+    .filter((/** @type {any} */ r) => r && SPEND_RECORD_TYPES.includes(r.type) && typeof r.seq === 'number' && r.seq > lo && r.seq <= hi)
+    .sort((/** @type {any} */ a, /** @type {any} */ b) => a.seq - b.seq);
+  const auditResult = getRunAudit(runid, opts);
+  const toolLogSaved = !!auditResult && auditResult.reason !== 'no-sidecar';
+  /** @type {Map<number, any[]>} */
+  const toolsByRound = new Map();
+  if (toolLogSaved && auditResult) {
+    for (const r of auditResult.rows) {
+      if (r.kind !== 'tool-call' || typeof r.round !== 'number') continue;
+      const bucket = toolsByRound.get(r.round) ?? [];
+      bucket.push(r);
+      toolsByRound.set(r.round, bucket);
+    }
+  }
+  const spec = resolveSpecForRow(row);
+  const exitTs = new Map(spineRecords.filter((/** @type {any} */ r) => r && r.type === 'exit-eval' && typeof r.seq === 'number').map((/** @type {any} */ r) => [r.seq, r.ts]));
+  /** @type {Array<{seq: number, rows: any[]}>} */
+  const blocks = [];
+  spend.forEach((/** @type {any} */ r, i) => {
+    const runWide = roundOf(r.ts);
+    const tryN = tryOfSeq(r.seq);
+    const local = i + 1;
+    const modelCall = toolLogSaved && auditResult ? auditResult.rows.find((x) => x.kind === 'model-call' && x.round === runWide) : null;
+    const rows = [{
+      kind: 'model', round: local, try: tryN, time: typeof r.ts === 'string' ? r.ts : null,
+      costUsd: typeof r.costUsd === 'number' && Number.isFinite(r.costUsd) ? r.costUsd : null,
+      tokens: typeof r.tokens === 'number' && Number.isFinite(r.tokens) ? r.tokens : null,
+      durationMs: modelCall ? modelCall.durationMs : null,
+    }];
+    for (const tc of (runWide === null ? [] : (toolsByRound.get(runWide) ?? []))) rows.push({ ...tc, kind: 'tool', round: local, try: tryN });
+    blocks.push({ seq: r.seq, rows });
+  });
+  for (const w of windows) {
+    if (!w.a) continue; // a try cut off before its checks ran has no check row
+    const passed = w.a.checks.filter((/** @type {any} */ c) => c.pass).length;
+    const failed = w.a.checks.length - passed;
+    const named = w.a.checks.find((/** @type {any} */ c) => c.type === 'check-passes');
+    const judgedPath = named && named.name ? judgedFilesOf(spec?.closeDecl, named.name)[0] ?? null : null;
+    blocks.push({
+      seq: w.endSeq,
+      rows: [{ kind: 'check', round: null, try: w.n, time: exitTs.get(w.endSeq) ?? null, path: judgedPath, ...checkRowWords(passed, failed) }],
+    });
+  }
+  blocks.sort((a, b) => a.seq - b.seq);
+  const all = blocks.flatMap((b) => b.rows);
+  return {
+    runid,
+    part: q.partIndex,
+    partKind: 'step',
+    mode: 'step',
+    step: partDisplayLabel(part),
+    rows: all.slice(q.offset, q.offset + q.limit),
+    totalRows: all.length,
+    offset: q.offset,
+    limit: q.limit,
     toolLogSaved,
   };
 }
@@ -2236,7 +2719,7 @@ function stageQuestionText({
  * ran. `null` when the spec has no `closeDecl.stages` array at all (a
  * command-close spec, or no spec resolved).
  * @param {any} spec
- * @returns {Map<string, {kind: string|null, direction: string|null, baselineKind: 'seed'|0|null, question: string|null}>|null}
+ * @returns {Map<string, {kind: string|null, direction: string|null, baselineKind: 'seed'|0|null, question: string|null, fromLine: number[]}>|null}
  */
 function stageKindMetaFromSpec(spec) {
   if (!spec || typeof spec !== 'object' || !spec.closeDecl || !Array.isArray(spec.closeDecl.stages)) return null;
@@ -2252,7 +2735,7 @@ function stageKindMetaFromSpec(spec) {
       if (key !== null) suiteCmdKeys.add(key);
     }
   }
-  /** @type {Map<string, {kind: string|null, direction: string|null, baselineKind: 'seed'|0|null, question: string|null}>} */
+  /** @type {Map<string, {kind: string|null, direction: string|null, baselineKind: 'seed'|0|null, question: string|null, fromLine: number[]}>} */
   const map = new Map();
   for (const s of spec.closeDecl.stages) {
     if (!s || typeof s.name !== 'string' || s.name.length === 0) continue;
@@ -2264,7 +2747,7 @@ function stageKindMetaFromSpec(spec) {
       kind, params, genre, suiteCmdKeys,
     });
     map.set(s.name, {
-      kind, direction, baselineKind, question,
+      kind, direction, baselineKind, question, fromLine: Array.isArray(s.fromLine) ? s.fromLine.filter(Number.isInteger) : [],
     });
   }
   return map;
@@ -2334,21 +2817,261 @@ function attachStageKind(stage, kindMeta) {
  * @param {Map<string, any>|null} kindMeta
  * @returns {any[]|null|undefined}
  */
-function enrichPartsWithStageKind(parts, kindMeta) {
+function enrichPartsWithStageKind(parts, kindMeta, spec = null) {
   if (!Array.isArray(parts)) return parts;
   const declaredStagesTotal = kindMeta ? kindMeta.size : null;
   const declaredStages = kindMeta
     ? Array.from(kindMeta, ([name, meta]) => ({ name, question: meta.question }))
     : null;
-  return parts.map((part) => ({
-    ...part,
-    attempts: Array.isArray(part.attempts) ? part.attempts.map((a) => ({
-      ...a,
-      stages: (kindMeta && Array.isArray(a.stages)) ? a.stages.map((s) => attachStageKind(s, kindMeta)) : a.stages,
-      ...(declaredStagesTotal ? { declaredStagesTotal } : {}),
-      ...(declaredStages ? { declaredStages } : {}),
-    })) : part.attempts,
+  return parts.map((part) => {
+    const attempts = Array.isArray(part.attempts) ? part.attempts.map((a) => {
+      // PRD v1.106 Part 5 (D1): a plan step's attempt carries the checks its try RAN (replay), worded here; they also stand in as the attempt's
+      // `stages`, which is what the page's headline and check list read (before this they were null, so every check read "not run")
+      const checks = Array.isArray(a.checks) ? tryChecksOf(a.checks, kindMeta, spec) : null;
+      return {
+        ...a,
+        ...(checks ? { checks, judged: (Array.isArray(a.outputJudged) ? a.outputJudged : []).map(judgedFileLine), stages: checks.map(stageOfCheck) } : { stages: (kindMeta && Array.isArray(a.stages)) ? a.stages.map((s) => attachStageKind(s, kindMeta)) : a.stages }),
+        ...(declaredStagesTotal ? { declaredStagesTotal } : {}),
+        ...(declaredStages ? { declaredStages } : {}),
+      };
+    }) : part.attempts;
+    return {
+      ...part,
+      attempts,
+      ...(part.kind === 'step' ? (() => { const tries = triesOf(attempts, part.cutOffTry); return { tries, triesLine: triesLineOf(tries), marker: ACTOR_MARKER.model, tally: toolsTallyLine(part.byTool, part.blocked) }; })() : {}),
+      ...(part.kind === 'door' && part.door ? { marker: ACTOR_MARKER.human, doorView: doorViewOf(part.door) } : {}),
+    };
+  });
+}
+
+/** the words for a try the wall (or a cap, or a stop) ended before any of its checks ran (D2) */
+const CUT_OFF_WORDS = 'cut off before its checks ran';
+
+/**
+ * "71 model · 91 tool · 0 denied" — the Run summary's `calls:` row (PRD v1.106 Part 5 F). Model calls are the run's own spend records
+ * (`worker-round`, `judge-round`; the attempt-level `worker-result` echoes are not rounds and drafting is not the run's), tool and denied come
+ * from the gate-audit rows scoped to this run (the same figure `tools:` shows). No tool log saved says so, never a zero.
+ * @param {any[]} records the run's raw spine @param {{totalCalls: number, denied: number}|null} behaviour
+ * @returns {string}
+ */
+export function callsLineOf(records, behaviour) {
+  const model = records.filter((r) => r && (r.type === 'worker-round' || r.type === 'judge-round')).length;
+  return behaviour
+    ? `${model} model · ${behaviour.totalCalls} tool · ${behaviour.denied} denied`
+    : `${model} model · tool calls: no log saved`;
+}
+
+/** "1-5", "2", "1-2, 4" from try numbers @param {number[]} ns */
+function tryRanges(ns) {
+  const out = [];
+  for (let i = 0; i < ns.length; i += 1) {
+    let j = i;
+    while (j + 1 < ns.length && ns[j + 1] === ns[j] + 1) j += 1;
+    out.push(j > i ? `${ns[i]}-${ns[j]}` : String(ns[i]));
+    i = j;
+  }
+  return out.join(', ');
+}
+
+/**
+ * "16 run · 8 passed · 8 failed (write-flight-facts tries 1-5, then tries 1-3)" — counts of what ran, never a fraction (the "checks N/M"
+ * headline stays withdrawn). Every `exit-eval` result plus every graded `outer-close` stage; the parenthesis names the steps and try ranges
+ * that failed, from the same `tries[]` the Audit reads. A run with neither says `not recorded`.
+ * @param {any[]} records the run's raw spine @param {any[]|null|undefined} parts the enriched parts
+ * @returns {string}
+ */
+export function checksLineOf(records, parts) {
+  let run = 0;
+  let passed = 0;
+  let outerFailed = false;
+  for (const r of records) {
+    if (!r) continue;
+    if (r.type === 'exit-eval' && Array.isArray(r.results)) {
+      for (const x of r.results) { run += 1; if (x && x.pass === true) passed += 1; }
+    } else if (r.type === 'outer-close' && Array.isArray(r.stages)) {
+      for (const x of r.stages) { run += 1; if (x && x.verdict === 'satisfied') passed += 1; else outerFailed = true; }
+    }
+  }
+  if (run === 0) return 'not recorded';
+  /** @type {string[]} */
+  const named = [];
+  /** @type {Set<string>} */
+  const seenLabel = new Set();
+  for (const p of parts ?? []) {
+    if (p.kind !== 'step' || !Array.isArray(p.tries)) continue;
+    const bad = p.tries.filter((/** @type {any} */ t) => t.failed > 0).map((/** @type {any} */ t) => t.n);
+    if (bad.length === 0) continue;
+    const text = `tries ${tryRanges(bad)}`;
+    named.push(seenLabel.has(p.label) ? `then ${text}` : `${p.label} ${text}`);
+    seenLabel.add(p.label);
+  }
+  if (outerFailed) named.push('the outer close');
+  const failed = run - passed;
+  return `${run} run · ${passed} passed · ${failed} failed${named.length ? ` (${named.join(', ')})` : ''}`;
+}
+
+/** 1 -> "1st", 4 -> "4th", 12 -> "12th" @param {number} n */
+function ordinal(n) {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return `${n}th`;
+  return `${n}${({ 1: 'st', 2: 'nd', 3: 'rd' })[/** @type {1|2|3} */ (n % 10)] ?? 'th'}`;
+}
+
+/**
+ * The step card's extra line (PRD v1.106 Part 5 G): "5 tries · last try: 1 check passed, 1 failed", with the cut-off try named when there is one
+ * ("4 tries (the 4th cut off before its checks ran) · last try: no checks ran"). Words for what passed and failed, never a fraction. `null`
+ * when the step has no graded try (an old spine).
+ * @param {Array<{n: number, cutOff: boolean, passed: number, failed: number, ran: number}>} tries
+ * @returns {string|null}
+ */
+export function triesLineOf(tries) {
+  if (!Array.isArray(tries) || tries.length === 0) return null;
+  const last = tries[tries.length - 1];
+  const count = `${tries.length} ${tries.length === 1 ? 'try' : 'tries'}${last.cutOff ? ` (the ${ordinal(last.n)} ${CUT_OFF_WORDS})` : ''}`;
+  const checks = (/** @type {number} */ n) => `${n} ${n === 1 ? 'check' : 'checks'}`;
+  let lastWords;
+  if (last.cutOff || last.ran === 0) lastWords = 'no checks ran';
+  else if (last.failed === 0) lastWords = `${checks(last.passed)} passed`;
+  else if (last.passed === 0) lastWords = `${checks(last.failed)} failed`;
+  else lastWords = `${checks(last.passed)} passed, ${last.failed} failed`;
+  return `${count} · last try: ${lastWords}`;
+}
+
+/** tool kinds in the order the Audit tally lists them; anything else follows alphabetically */
+const TALLY_ORDER = ['read', 'grep', 'write', 'edit'];
+
+/**
+ * "tools: read 16 · grep 22 · write 5 · denied 0" — the step's tool calls by kind, then how many the gate denied (PRD v1.106 Part 5 C). The
+ * `shell_`/`ctx_` prefixes are stripped like the rest of the page. `null` when no tool log was saved (nothing honest to count).
+ * @param {Record<string, number>|null|undefined} byTool @param {number|null|undefined} blocked
+ * @returns {string|null}
+ */
+export function toolsTallyLine(byTool, blocked) {
+  if (!byTool || typeof byTool !== 'object') return null;
+  const named = Object.entries(byTool).map(([k, n]) => [k.replace(/^shell_/, '').replace(/^ctx_/, ''), n]);
+  named.sort((a, b) => {
+    const ia = TALLY_ORDER.indexOf(String(a[0]));
+    const ib = TALLY_ORDER.indexOf(String(b[0]));
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || String(a[0]).localeCompare(String(b[0]));
+  });
+  return `tools: ${[...named.map(([k, n]) => `${k} ${n}`), `denied ${typeof blocked === 'number' ? blocked : 0}`].join(' · ')}`;
+}
+
+/**
+ * A step's tries in order: each graded try (it ran checks) and, last, the one cut off before its checks ran (D2). `ran` is how many checks ran,
+ * `passed`/`failed` how they went; a cut-off try ran none. The Audit, the step card and the Run summary all read this one list.
+ * @param {any[]} attempts @param {any} cutOffTry
+ * @returns {Array<{words?: string, n: number, cutOff: boolean, outcome: string|null, iteration: number|null, ran: number, passed: number, failed: number, thinking: string|null}>}
+ */
+function triesOf(attempts, cutOffTry) {
+  const graded = (Array.isArray(attempts) ? attempts : []).filter((a) => Array.isArray(a.checks)).map((a) => ({
+    n: a.n,
+    cutOff: false,
+    outcome: a.outcome ?? null,
+    iteration: typeof a.iteration === 'number' ? a.iteration : null,
+    ran: a.checks.length,
+    passed: a.checks.filter((/** @type {any} */ c) => c.pass).length,
+    failed: a.checks.filter((/** @type {any} */ c) => !c.pass).length,
+    thinking: typeof a.thinking === 'string' ? a.thinking : null,
   }));
+  if (!cutOffTry) return graded;
+  return [...graded, {
+    words: CUT_OFF_WORDS, n: graded.length + 1, cutOff: true, outcome: null, iteration: typeof cutOffTry.iteration === 'number' ? cutOffTry.iteration : null, ran: 0, passed: 0, failed: 0, thinking: typeof cutOffTry.thinking === 'string' ? cutOffTry.thinking : null,
+  }];
+}
+
+/** the words for a `check-passes` result that no `check-run` named (an old spine), and the one tree-changed question, both code-owned here */
+const FILES_CHANGED_QUESTION = 'did it change any file?';
+
+/**
+ * A rule line's failing reasons, one per `close: <stage>: …` line of a check's detail, each with that prefix (and the `line N: ` the check row
+ * already names) removed. A detail with no `close:` lines is one reason: its own first line.
+ * @param {string|null|undefined} detail
+ * @returns {string[]}
+ */
+function reasonsOf(detail) {
+  if (typeof detail !== 'string' || detail.trim() === '') return [];
+  const lines = detail.split('\n').map((l) => l.trim()).filter((l) => l !== '');
+  const closeLines = lines.filter((l) => l.startsWith('close: '));
+  if (closeLines.length === 0) return [lines[0]];
+  return closeLines.map((l) => l.replace(/^close: [^:]+: /, '').replace(/^line \d+: /, ''));
+}
+
+/**
+ * The try line's gap: the first failing reason, and how many more there are (PRD v1.106 Part 5 C). ONE function, beside {@link stageQuestionText}.
+ * @param {string|null|undefined} detail
+ * @returns {{ line: string, more: number }|null}
+ */
+export function gapOneLine(detail) {
+  const reasons = reasonsOf(detail);
+  return reasons.length === 0 ? null : { line: reasons[0], more: reasons.length - 1 };
+}
+
+/**
+ * "from line 1 ~ under $450; not a red-eye" — the job line(s) a check serves and the `~` rules written under them (the signed `jobLines`).
+ * `null` when the stage serves no job line (a mandatory guard).
+ * @param {number[]} fromLine @param {any} spec
+ * @returns {string|null}
+ */
+export function fromLineText(fromLine, spec) {
+  if (!Array.isArray(fromLine) || fromLine.length === 0) return null;
+  const lines = Array.isArray(spec?.jobLines) ? spec.jobLines : [];
+  return fromLine.map((n) => {
+    const rule = lines.find((l) => l && l.n === n)?.rule;
+    return `from line ${n}` + (typeof rule === 'string' && rule !== '' ? ` ~ ${rule}` : '');
+  }).join(' · ');
+}
+
+/**
+ * One try's checks in the order they RAN (choice 6), worded: `{n, type, name, question, pass, detail, gap, more, reasons, from}`.
+ * A `tree-changed` result is the declared `files-changed` stage; a `check-passes` result is the stage its `check-run` named.
+ * @param {Array<{type: string, pass: boolean, detail: string|null, name: string|null}>} checks
+ * @param {Map<string, any>|null} kindMeta @param {any} spec
+ */
+function tryChecksOf(checks, kindMeta, spec) {
+  const metas = kindMeta ? [...kindMeta] : [];
+  const filesChanged = metas.find(([, m]) => m.kind === 'files-changed') ?? null;
+  const others = metas.filter(([, m]) => m.kind !== 'files-changed');
+  return checks.map((c, i) => {
+    let name = c.name;
+    let meta = name && kindMeta ? kindMeta.get(name) ?? null : null;
+    if (c.type === 'tree-changed' && filesChanged) { name = filesChanged[0]; meta = filesChanged[1]; }
+    if (c.type === 'check-passes' && !meta && others.length === 1) { name = others[0][0]; meta = others[0][1]; }
+    const reasons = c.pass ? [] : reasonsOf(c.detail);
+    const gap = c.pass ? null : gapOneLine(c.detail);
+    return {
+      n: i + 1,
+      type: c.type,
+      name: name ?? c.type,
+      question: c.type === 'tree-changed' ? FILES_CHANGED_QUESTION : (meta?.question ?? null),
+      pass: c.pass,
+      // a files-changed result names its count; a failing check-passes names its reasons (folded on the page), a passing one nothing
+      note: c.type === 'tree-changed' ? c.detail : (c.pass ? null : `${reasons.length} reason${reasons.length === 1 ? '' : 's'}`),
+      gap: gap ? gap.line : null,
+      more: gap ? gap.more : 0,
+      moreText: gap && gap.more > 0 ? `(+${gap.more} more)` : null,
+      reasonsLabel: reasons.length > 1 ? `the ${reasons.length} reasons` : null,
+      reasons,
+      from: meta ? fromLineText(meta.fromLine, spec) : null,
+    };
+  });
+}
+
+/**
+ * "output judged: output/steps/1.json · 2.1 KB · sha256 674b…30" — the file a try's check read (PRD v1.106 Part 5 choice 14). ONE place owns
+ * these words. `size` is bytes under 1 KB, else KB with one decimal; the hash shows its first 4 and last 2 characters.
+ * @param {{path: string|null, bytes: number|null, sha256: string|null}} o
+ * @returns {string}
+ */
+export function judgedFileLine(o) {
+  const size = typeof o.bytes === 'number' ? (o.bytes < 1024 ? `${o.bytes} B` : `${(o.bytes / 1024).toFixed(1)} KB`) : null;
+  const sha = typeof o.sha256 === 'string' && o.sha256.length >= 8 ? `sha256 ${o.sha256.slice(0, 4)}…${o.sha256.slice(-2)}` : null;
+  return ['output judged:', [o.path ?? 'a file', size, sha].filter(Boolean).join(' · ')].join(' ');
+}
+
+/** a worded check as the `{name, verdict, question}` stage shape the attempt headline reads */
+function stageOfCheck(c) {
+  return { name: c.name, verdict: c.pass ? 'satisfied' : 'needs_revision', question: c.question };
 }
 
 /**
@@ -2504,7 +3227,7 @@ function jobsDir() {
  * @returns {any|null}
  */
 export function getRunJob(runid, opts = {}) {
-  const body = getRunJobBody(runid, opts);
+  const body = withThinkingRow(getRunJobBody(runid, opts), runid, opts);
   if (!body || !opts.schedules) return body;
   try {
     const door = /** @type {ReturnType<typeof createScheduleDoor>} */ (opts.schedules);
@@ -2523,6 +3246,23 @@ export function getRunJob(runid, opts = {}) {
     });
     return { ...body, started, schedule };
   } catch { return body; }
+}
+
+/**
+ * PRD v1.106 Part 3 — the Job tab's `Thinking` row, worded by src/thinking.js and ALWAYS present (hamr 2026-10-18). The rule shown is
+ * the job's signed "Thinking on" tick for a run whose spine recorded thinking decisions, `—` for a run from before the thinking rule; a tick that cannot be read counts as not ticked (the default), never an empty row.
+ * @param {any|null} body the Job tab body @param {string} runid @param {{ home?: string }} opts
+ * @returns {any|null}
+ */
+function withThinkingRow(body, runid, opts) {
+  if (!body) return body;
+  const { thinkingTick, ...rest } = body;
+  let recorded = false;
+  try {
+    const row = findRunRow(runid, opts);
+    recorded = !!row && existsSync(row.spine) && parseJsonl(row.spine).records.some((/** @type {any} */ r) => r?.type === 'thinking-decision');
+  } catch { /* an unreadable spine has no records: the row reads — */ }
+  return { ...rest, thinking: thinkingJobText(thinkingTick === true, recorded) };
 }
 
 /** @param {string} runid @param {{ home?: string }} opts */
@@ -2600,6 +3340,7 @@ function getRunJobBody(runid, opts) {
     guardrails: notRecorded(guardrailsFromSpec(spec)),
     tools: notRecorded(toolsFromSpec(spec)),
     toolsList: toolsListFromSpec(spec),
+    thinkingTick: spec.thinking === true,
     note,
   });
   const none = () => ({
@@ -2621,6 +3362,7 @@ function getRunJobBody(runid, opts) {
     guardrails: 'not recorded',
     tools: 'not recorded',
     toolsList: null,
+    thinkingTick: false,
     note: 'no resolvable spec for this run (only bareloop-run bundle-layout runs carry one; a run-u run has none on disk)',
   });
 
@@ -3088,7 +3830,7 @@ function sendText(res, code, text) {
  * only `createPanelServer` below always supplies one.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ home?: string, packageJsonPath?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
+ * @param {{ home?: string, sessionsRoot?: string, packageJsonPath?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
  */
 export function handleRequest(req, res, opts) {
   /** the ONE writable route family for a path, or null — `/api/author/*` (authoring) or
@@ -3097,7 +3839,7 @@ export function handleRequest(req, res, opts) {
   function routesFor(o, p) {
     if (o.authorRoutes && p.startsWith('/api/author')) return o.authorRoutes;
     if (o.settingsRoutes && p.startsWith('/api/settings')) return o.settingsRoutes;
-    if (o.runRoutes && /^\/api\/runs\/[^/]+\/(resume|stop|accept|needs-remove)$/.test(p)) return o.runRoutes;
+    if (o.runRoutes && /^\/api\/runs\/[^/]+\/(resume|stop|accept|rerun|pause|needs-remove)$/.test(p)) return o.runRoutes;
     if (o.importRoutes && (p === '/api/fs/list' || p === '/api/imports' || p.startsWith('/api/imports/'))) return o.importRoutes;
     return null;
   }
@@ -3204,7 +3946,7 @@ export function handleRequest(req, res, opts) {
 
   if (pathname === '/api/runs') { send(200, runsListPayload({ home: opts.home, schedules: opts.schedules })); return; }
 
-  const runMatch = /^\/api\/runs\/([^/]+)(\/(audit|job|rounds))?$/.exec(pathname);
+  const runMatch = /^\/api\/runs\/([^/]+)(\/(audit|job|rounds|result|download))?$/.exec(pathname);
   if (runMatch) {
     const rawRunid = runMatch[1];
     const sub = runMatch[3] ?? null;
@@ -3226,10 +3968,31 @@ export function handleRequest(req, res, opts) {
       send(200, result);
       return;
     }
+    if (sub === 'result') {
+      const result = getRunResult(runid, { home: opts.home, sessionsRoot: opts.sessionsRoot });
+      if (!result) { sendText(res, 404, 'no such run, or it has no result tab'); return; }
+      send(200, result);
+      return;
+    }
+    if (sub === 'download') {
+      const got = getRunDownload(runid, url.searchParams.get('i'), { home: opts.home });
+      if (!got.ok) { sendText(res, got.code, got.error); return; }
+      // the name is the delivered file's own basename; quotes and control characters never reach the header
+      const plain = got.name.replace(/[^A-Za-z0-9._-]/g, '_');
+      res.writeHead(200, {
+        'content-type': `${got.type}; charset=utf-8`,
+        'content-length': got.buf.length,
+        'content-disposition': `attachment; filename="${plain}"; filename*=UTF-8''${encodeURIComponent(got.name)}`,
+        'x-content-type-options': 'nosniff',
+      });
+      if (method === 'HEAD') res.end(); else res.end(got.buf);
+      return;
+    }
     if (sub === 'rounds') {
       /** @param {string|null} v @returns {number|undefined} */
       const num = (v) => (v !== null && /^\d+$/.test(v) ? Number(v) : undefined);
       const query = {
+        all: url.searchParams.get('all') === '1',
         part: num(url.searchParams.get('part')),
         attempt: num(url.searchParams.get('attempt')),
         offset: num(url.searchParams.get('offset')),
@@ -3298,7 +4061,7 @@ export function createPanelServer(opts = {}) {
     const server = createServer((req, res) => {
       try {
         handleRequest(req, res, {
-          home, port: boundPort, token, authorRoutes, settingsRoutes, runRoutes, importRoutes, packageJsonPath: opts.packageJsonPath, schedules: schedulesRef,
+          home, sessionsRoot: opts.sessionsRoot, port: boundPort, token, authorRoutes, settingsRoutes, runRoutes, importRoutes, packageJsonPath: opts.packageJsonPath, schedules: schedulesRef,
         });
       } catch (e) {
         sendText(res, 500, `internal error: ${/** @type {Error} */ (e).message}`);

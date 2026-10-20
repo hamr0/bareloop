@@ -1698,3 +1698,24 @@ Unfolded, a run the schedule started:
                 10/15 20:43  busy: a run of this job was still working. Nothing started.
 ```
 A hand run: `this run    10/15 13:20  by hand.` (origin run: `by hand. The schedule was set from this run.`). No schedule now: no section (a run a cancelled schedule started keeps `detail.startedAudit`). Small lists: `change2 · run-2`; `/api/runs` `scheduled[]` and `gaveUp[]` carry `runNo`.
+
+## Addendum 2026-10-19 — Part 6 highlights and money as the check read it (bareguard 0.25.0 `full.evidence`; RULED A by hamr 2026-10-19)
+
+Rulings it implements: PRD Part 6 amendment (signed B) and Part 6 rulings (2). bareguard contract: `node_modules/bareguard/bareguard.context.md` (`full.evidence`, RULED #66).
+
+**Pieces**
+
+1. SAVE (engine). `src/rubricstep.js` `gradeStep` calls `checkStep`; `r.full.evidence` was dropped. Write it to the run's spine as a NEW report-only record `rubric-evidence` `{step, iteration?, evidence, evidenceTotal?}` beside the existing `exit-eval`. Report-only: no verdict, gap, governor or money path reads it. Nothing written when `evidence` is empty. Masking: the `text` is a quote from the arbiter's own frozen page record; it goes through the same secret-shape masking every spine write uses.
+2. READ (server). `/result` attaches to each result its evidence entry (match by line/step, check id, claim index = the result's index in the step file's `results[]`). Last record of the step wins (the one the verdict read). Old runs (no record) and malformed claims (no `text`) get no evidence: today's plain quote, unmarked.
+3. SHOW (page). Proof fold shows `evidence.text` with `<mark>` on spans, escaped (offsets are UTF-16, half-open). Which spans: every span EXCEPT a bind-only membership token that is not this claim's (`canon` present and `matched` absent). Overlapping/duplicate spans merge. No panel-side substring search, ever (PRD Part 6 choice 2 must-fail).
+4. MONEY. A money fact box shows the value plus its currency/unit spans as the page wrote them, in page order ("144 US dollars", "€344"), replacing the interim "$144". No evidence: today's text.
+
+**Tests (each must be able to fail)**
+- the spine gets one `rubric-evidence` per checked step, the real shape from bareguard (no stub of `checkStep`).
+- mve5y8fa fixture: 3 results, each fold has 8 marks; "Departure time:" marked once per result, not 27 times.
+- a span with `canon` and no `matched` is not marked; with `matched` it is.
+- an old run (no record) and a malformed claim show the plain quote, no `<mark>`.
+- the money box reads "144 US dollars" on the flight fixture.
+- a quote holding `<script>` stays escaped inside and around marks.
+
+**Live proof.** One new DeepSeek (deepseek-flash) flight run via Reuse (about $0.02), the orchestrator's own screenshot, then hamr's click-through.

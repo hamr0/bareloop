@@ -35,6 +35,16 @@ const PRICES = /\b0\.000\d+\b|\b(?:inPerM|outPerM|cachedInPerM)\s*[:=]\s*[1-9]\d
  */
 const ALLOWED = [
   {
+    file: 'src/panelmoney.js',
+    re: /<\$0\.0001/g,
+    why: 'the panel money rule\'s own "smaller than the smallest shown amount" text — a display floor, not a token price.',
+  },
+  {
+    file: 'src/panel/index.html',
+    re: /<\$0\.0001/g,
+    why: 'the page copy of the same panel money rule (src/panelmoney.js) — a display floor, not a token price.',
+  },
+  {
     file: 'src/providershapes.js',
     re: /anthropic-api|openai-api|gemini-api|'Anthropic'|'OpenAI-compatible'|'Gemini'/g,
     why: 'the three API shapes: the ids saved in config.json and the labels in the Settings dropdown. A shape names a wire protocol, not a vendor address or a model.',

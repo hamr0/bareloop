@@ -14620,3 +14620,77 @@ Turn size, medium test, step attempt 1 (median):
 | stoptest | RETRY | 239 | 2.0 |
 
 Reading: less thinking = more turns, each much smaller and faster; on the code jobs that adds up to cheaper and faster, on the short changelog job it does not. Left out: the RETRY contrast's digest cells (n=1/2, stopped at slot 11) and the aborted first medium attempt. SPLIT-contrast extra turns not split out in this summary (see the per-phase tables above).
+
+## F234 — a changelog rubric draft signed a check no run could pass: six position-named facts per result, and a date label "-" that repeats inside one line (run mvcur592, change3, 2026-10-17; open, folded into idea A rule v2)
+
+**Grounded in:** spine `~/.config/bareloop/panel-sessions/smvcuptj3omft/source-seed/change3-bareloop/u-mvcur592.jsonl`; the signed facts in that session's `resolved-spec.json` (`stages[1].params.parts[0].facts`); the worker's last `output/steps/1.json`. DeepSeek `deepseek-flash`, drafter thinking off, worker on the new thinking-on-retries rule (feat/thinking-retries, d23042b). Input: `main`'s CHANGELOG.md (488 KB).
+
+**What was seen.** Job line 1 "Find the last 3 releases with their version and date" was drafted as exactly 3 results, each holding SIX facts: `latest version`, `latest date`, `second version`, `second date`, `third version`, `third date` (version label `## [`, date label `-`). The worker quoted each release header (`## [0.43.0] - 2026-10-16`) and could not satisfy the check: every try was red with `the label "-" is in the quote more than once` (the dash is in the header once and twice inside the date) plus missing or wrong position facts. Step 2 used 5 tries, a replan rewrote the quotes, step 2 used 4 more; job-end step-red, $0.2306 of $0.50, spendComplete true.
+
+**Why the run could not pass.** Two drafting defects, both signed before any money was spent:
+- **Shape:** one result is one release, so it holds one version and one date. Facts named by position across results ("second", "third") ask one quote to hold the other releases' values. Two facts with the same shape after the same label read the same value, so they can never differ.
+- **Repeating label:** `-` appears 3 times in the one header line. The label-then-value read refuses an ambiguous label (bareguard anchor locate, `anchor-ambiguous`). The same class as "at" on the flights pages (F228).
+
+**Why drafting let it through.** The look checks that a fact's words are found in the source; it does not check that a label appears at most once in any one line of the source, nor that the facts of one result can differ. The earlier change2 drafts (same job, thinking off) drew label `] -` and two facts, and passed.
+
+**Not the thinking rule.** Every worker call was sent its expected mode (scout off, plan on, step attempt 1 off, attempts 2 and later on, `thinkingStatus` applied); a worker cannot change a signed check.
+
+**Status.** Open. hamr 2026-10-17: fold both checks into idea A rule v2 (ITEM33-BUILD.md idea A addendum), no stand-alone patch; test on Google Flights, not the changelog.
+
+## F235 — idea A rule v2, POC round 2: holds on Google Flights (one unseen page), FAILS on Airbnb (a marker after the number is kept as a label); three candidate v3 rules fix Airbnb on the SEEN page only (2026-10-17/18; open, v3 signed and frozen for an unseen-page test)
+
+**Grounded in:** `.claude/scratch/idea-a-v2/` (rules.mjs frozen v2, rules-v3-candidate.mjs, grade-*.out, spend.json); pages in `.claude/scratch/idea-a-pages/` (sha256 prefixes fa50de61, 1ee1341b, bc18145a, cc8e4164, 440ede09); the guard session's measured answers in `guard-answers-2026-10-17.md`. Rules v2 frozen at bdb2410 (section sha256 12b50ccd…a319). One AI mapping call per page, DeepSeek deepseek-flash, thinking off; all grading through the product's own `gradeStep` (src/rubricstep.js) into bareguard 0.24. Total spend $0.0011 at config rates.
+
+**Google Flights (v2): HOLDS.** sfo1, sfo2 (same flight data as sfo1) and the unseen ORD-DEN page: honest 10/10; arrival as departure, price + 1, other route, two flights glued, position-named facts (S1) and a bare `at` label (N2) caught 10/10; reversed direction caught 10/10 on SFO (not testable on ORD-DEN: no reverse capture). Negative controls: without R2's grown place phrases, reversed direction is caught 0/10, so the rules (not the harness) do the catching. Limits: no flight on any page broke a `~` rule, so the rule checks never had to refuse; one unseen page, 19 flights; n=1 AI call per page.
+
+**Airbnb (v2): FINDING.** The AI listed `total` as a label; on the page `total` comes AFTER the price (`€344 total`), and v2 keeps a first label that reads nothing. Honest 0/10 (every cheat "caught" by the same refusal, so worthless). R1 never looks at currency/unit lists, so `€` was kept; guard measured that `€` alone lets a `Pay €0 today` quote (12 times on the page) pass a price rule. "For 2 guests" appears only once on the page (the search filter): excluded by (e), not invented.
+
+**v3 candidates (smoke on the SEEN page, not evidence).** U1 (a label with values only right before it becomes a unit), R1L (a currency/unit form reading extra values is dropped: `€` reads the 0s, `total` does not), R3U (units count toward R3's record proxy). Airbnb: honest 10/10, price + 1, other listing, glued, both Pay €0 forms caught 10/10; `Homes in Lisbon` becomes a page-once claim; no per-listing city check remains (a known limit). Flights: identical grading to v2 (R1L also drops `$`, keeping `US dollars`). These rules were written after the Airbnb failure, so these numbers are a fit.
+
+**2-line quote (weak spot 6), $0.** A flight's honest quote is the link line plus the `Departure time:` line. bareguard collapses whitespace: verbatim, newline, CRLF and space-joined forms all pass 10/10; a quote with the in-between page markup removed fails (not word for word). Only a live run shows whether the worker copies both lines, whether the brief's "one result's own text" keeps it on one line, and whether the retry words help.
+
+**Status.** Open. hamr 2026-10-17/18: v3 signed and frozen with its test plan (ITEM33-BUILD.md, "Idea A rule v3") before any unseen page is fetched; a failing unseen page is a finding, never a v4 fitted to it. Lists (b) still need the schema change.
+
+## F236 — idea A rule v3, POC round 3 on unseen pages: holds on Google Flights LAX-JFK (real rule-breakers refused) and Airbnb Porto; FINDING on JFK-LAX, a time label one character off the page's word reads no value and is kept (2026-10-18; open)
+
+**Grounded in:** `.claude/scratch/idea-a-v2/` (apply-r3.out, grade-r3.out, grade-r3-results.json, spend.json); pages `.claude/scratch/idea-a-pages/{airbnb-porto,gflights-lax-jfk,gflights-jfk-lax}.txt` (sha256 prefixes 4c768665, eb85a6b4, 25a44526), fetched after the freeze. v3 frozen at f12ef3b (section sha256 1802f4b0…6c3a; rules files unchanged at start and end). One AI call per page, deepseek-flash, thinking off; grading through the product's `gradeStep`. Round spend $0.0007 (POC total $0.0018).
+
+**LAX-JFK: HOLDS.** 33 flights. Honest 10/10; arrival as departure, price + 1, reversed direction (JFK-LAX quotes, both variants), other route, glued, position-named and bare `at` all caught. Real rule-breakers offered as answers: over $450 refused 10/10, with a stop 3/3, red-eye 7/7 (only the 2 pure red-eyes refused by the time rule; 5 also over $450).
+
+**Porto: HOLDS, price limit not tested.** U1 made `total` a unit, R1L dropped `€` (it reads the 0 of "Pay €0 today", 10 lines), R3U sent "Homes in Porto" page-once. Honest 10/10; price + 1, other listing, glued, Pay-€0 quote caught 10/10. All 24 listings are under €400, so the price rule had no breaker.
+
+**JFK-LAX: FINDING.** The AI listed the time label `Departure time` (no colon); the page writes `Departure time:`. The words are on the page, so the found-on-page filter kept it; the colon sits right after it, so no time can be read: honest 0/10, and most cheat catches are that same refusal (worthless). v3's "no value either side -> dropped" (U1) covers money and number facts only; nothing drops a time label that reads no value. Note: the product's own drafting check `checkFactWords` (labels picked from the scanned label list, never typed) also refuses this label, so a real drafting session would refuse it; the POC applied the rules without that gate.
+
+**Status.** Open. No v4 fitted to this page (frozen rule). hamr 2026-10-18: next a live drafted run on a new flights page. 2026-10-18 update: see F238; hamr ruled idea A core only.
+
+## F237 — a rubric flights draft signed facts that no run could pass: the labels "StaticText" and "O" read no value, and "Departure time:" sits on a different line from the result (run mvdg1xo3, flights-bos-ord, 2026-10-18; open, supports idea A's pending v4 rule)
+
+**Grounded in:** spine `~/.config/bareloop/panel-sessions/smvdfyexzv0vm/source-seed/flights-bos-ord-bareloop/u-mvdg1xo3.jsonl`; the signed facts in that session's `resolved-spec.json` (the `line-1-flight-facts` rubric-step); the saved page `source-seed/tree/input/flights.txt`; the settled row in `~/.config/bareloop/runs.jsonl`. Job `flights-bos-ord` (run-1), rubric, DeepSeek `deepseek-flash`, Google Flights BOS to ORD, 2026-11-20 one way, drafted by today's product drafting (not idea A). Cap $0.50 and 20 min.
+
+**What was seen.** Job line 1 ("List 3 flights from Boston to Chicago", rule: under $450, not a red-eye, nonstop) was drafted as 3 results with five signed facts:
+- `MaxPrice` money, label "From", unit "US dollars", under 450: fine (the page writes "From 144 US dollars.").
+- `DepartureWindow` time, label "Departure time:", between 5:00 AM and 10:00 PM: the label is on its own tree line (`generic "Departure time: 12:12 PM."`), not on the result's link line, so one quote cannot hold both (the 2-line-quote weak spot of F235).
+- `Stops` number, label "StaticText", at most 0: "StaticText" is an accessibility-tree role word (369 times in flights.txt), and the page writes "Nonstop" (52 times), never a number after it.
+- `LeaveAirport` text, label "Leaves": repeats inside a quote.
+- `ArriveAirport` text, label "O": a fragment of "O'Hare" (the page has "Chicago O'Hare International Airport").
+
+**How it ended.** Every close was red; the trend `line-1-flight-facts` went 1 then 3 and stayed flat at 3. The first plan used 5 attempts and ended on the step ladder (2 strikes of 2; the exit output at iteration 5 repeated iteration 1). A replan ran 3 attempts (one with `attempt-bounded` at 14 rounds, one with a `socket hang up` transport retry, recovered) and ended on the step-variance meter (time share 0.521 against threshold 0.5, money share 0.255, trend flat). That is 8 attempts in all; the spine holds a 9th `iteration-start` that the meter stopped before it ran. Close gaps named the labels directly: "the label \"StaticText\" is not in the quote" or "is in the quote more than once", "the label \"O\" is in the quote more than once", "the value is not in the quote as a whole word", "the label \"Departure time:\" is not in the quote". job-end `step-red`.
+
+**Money.** The spine job-end says `spentUsd` $0.1804 with `spendComplete` false (the transport retry means attempt 1 of that call may already be billed). The settled row in `runs.jsonl` says $0.1869; that figure includes drafting, the spine job-end figure is the run alone.
+
+**Why the run could not pass.** The same class as F234 and F236: a label that reads no value (or repeats) is kept at drafting. `checkFactWords` found "StaticText" and "O" as words on the page and did not refuse them. No worker could satisfy a "number after StaticText" fact on a page that writes "Nonstop", or a text value after "O" that is not a whole word. This supports idea A's pending v4 rule "a label that reads no value is dropped".
+
+**The thinking rule held on a rubric job (PRD v1.106 Part 1).** Scout off; step attempt 1 off; attempts 2 and later on; plan and replan on; all 11 `thinking-status` records `applied`. A worker cannot change a signed check, so the rule is not the cause.
+
+**Status.** Open. Logged, not patched (PRD §8a); no fix built here. hamr approved logging 2026-10-18. 2026-10-18 update: see F238 (v4 run on this run's labels; drops are silent) and the core-only ruling.
+
+## F238 — idea A rule v4, POC round 4: HOLDS by its decision rule but its drop fired only on the page it was written after; on run mvdg1xo3's real labels the drops are silent (2026-10-18; open, hamr ruled idea A core only)
+
+**Grounded in:** `.claude/scratch/idea-a-v2/apply-v4.out` (v4 on JFK-LAX, BOS-ORD and the six regression pages), `.claude/scratch/idea-a-v2/apply-v4-f237.out` (v4 on the five labels run mvdg1xo3 signed, F237), `.claude/scratch/idea-a-v2/mapcall4-bosord.out` (the one BOS-ORD map call), and the frozen v4 section of `docs/product/ITEM33-BUILD.md` (commit e863f94, section sha256 `cd975facc0b3de57e60bebf317e3b9d1354148d111428d4e3eb26224d230b439`).
+
+**What was seen.**
+- **(i) The test.** v4 HOLDS by its frozen decision rule. But the V4 drop fired on one page only, JFK-LAX, the page it was written after: `V4 dropped: [{"fact":"departure time","label":"Departure time","shape":"time"}]`, `Not checked: departure time: the page never shows a time right after "Departure time"`. On BOS-ORD (a fresh deepseek-flash map, `cost(config rates) $0.000306`) the output reads `V4 dropped: none` and every kept label reads values (`From` 27 of 27, `Departure time:` 27 of 27), so V4 was untested there. The six regression pages print `v4 facts+pageClaims identical to v3 recomputed: true`.
+- **(ii) V4 on the real labels run mvdg1xo3 signed (F237).** `apply-v4-f237.out` prints `V4 dropped: []`: none of the five. `StaticText` (number) reads 0 numbers (`onPage 369, readsAfter 0`; the page lines are `StaticText "1"` and `StaticText "Nonstop"`), so it lost its anchor through v3's U1 and left `{"name":"Stops","shape":"number"}`, a fact with no anchor and no rule. `O` (text) reads 63 values (`"S","RD","ne"`, fragments of "O'Hare"), so V4 keeps it; v3 then drops it (`dropped/not-signed`). The good label `Leaves` (`readsAfter 54`, sample `Boston`) is also `dropped/not-signed` by v3's place rules. `refused (v3): []`.
+- **(iii) The finding.** The drops are SILENT. The "nonstop" ~ rule ends unchecked and nothing says why: no Not checked line, no refusal. That breaks the standing ruling that every ~ rule becomes a check or an explicit Not checked.
+
+**Status.** Open. hamr 2026-10-18 ruled idea A CORE ONLY: V4, R2/R2a-c, R3/R3U and page-level checks (pageClaims) are left out of the build and kept only as frozen records; every drop must show as Not checked with a plain reason. Build spec: ITEM33-BUILD.md (pending signature).

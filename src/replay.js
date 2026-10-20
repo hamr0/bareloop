@@ -35,6 +35,8 @@
 //     `plan` / `fix` for the other worker phases — src/planrun.js:2735,2515,3359.
 //     `costUsd` is `arg?.costUsd ?? null` — a null is an HONEST unpriced round
 //     (F6), never summed as $0 by this module.
+//   rubric-evidence {step, iteration?, evidence, evidenceTotal?}  REPORT-ONLY: what a rubric step's cited checks read (bareguard
+//                  `full.evidence`); read by the Result tab only, by no verdict, governor or money path. src/planrun.js onRubricEvidence
 //   exit-eval      {step, iteration, results: [{type, pass, detail?}]}
 //                                                                  src/planrun.js:2897
 //     each `results[i].type` is one of plan.js's EXIT_TYPES; `check-passes`
@@ -105,6 +107,7 @@ import { runBehaviour, formatBehaviour } from './behaviour.js';
 import { shortSha } from './codeversion.js';
 import { SPEND_RECORD_TYPES, chainSpend } from './ledger.js';
 import { legsOf, capKindOf } from './legs.js';
+import { thinkingWordsFrom } from './thinking.js';
 
 /**
  * @param {unknown} e
@@ -586,6 +589,12 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
   // re-spelled so the two can never drift apart.
   const spendRecords = spine.filter((e) => SPEND_RECORD_TYPES.includes(e.type));
   const exitEvals = spine.filter((e) => e.type === 'exit-eval');
+  // PRD v1.106 Part 5 (D1): which check each `check-passes` result was — the `check-run` record just before its exit-eval
+  const checkRuns = spine.filter((e) => e.type === 'check-run');
+  // the file each try's check read (new runs only; an old spine has none, and then no judged-file line is shown)
+  const outputJudgedRecs = spine.filter((e) => e.type === 'output-judged');
+  // D2: the iterations that began (a try with an iteration-start and no exit-eval was cut off before its checks ran)
+  const iterationStarts = spine.filter((e) => e.type === 'iteration-start');
 
   // F119: every `transport-retry` record on this spine, and the (derived,
   // never guessed) reason(s) behind a `spendComplete:false` job-end — see
@@ -800,7 +809,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     // `/api/runs/:runid/rounds` endpoint (`src/panel/server.js`) to slice
     // this attempt's own rounds/tool-calls out of the full spine+gate-audit,
     // never recomputed a second way there either.
-    /** @type {Array<{n: number, iteration: number|null, outcome: 'green'|'red', startSeq: number, endSeq: number, startTs: number|null, endTs: number|null, exitEvalDetail: string|null}>} */
+    /** @type {Array<{n: number, iteration: number|null, outcome: 'green'|'red', startSeq: number, endSeq: number, startTs: number|null, endTs: number|null, exitEvalDetail: string|null, checks: Array<{type: string, pass: boolean, detail: string|null, name: string|null}>, outputJudged: Array<{path: string|null, bytes: number|null, sha256: string|null}>}>} */
     const attemptWindows = [];
     const stepExitEvals = exitEvals
       .filter((ee) => ee.step === id && typeof ee.seq === 'number' && ee.seq > startSeq && ee.seq < endSeq)
@@ -827,6 +836,27 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
         iteration: typeof ee.iteration === 'number' ? ee.iteration : null,
         outcome: allPass ? 'green' : 'red',
       });
+      // the try's checks AS THEY RAN (D1): each exit-eval result in order; a `check-passes` result is named by the `check-run`
+      // record just before this exit-eval (same window), taken in order. `detail` is already scrubbed at capture.
+      const lo = prevBoundSeq;
+      const namesHere = checkRuns
+        .filter((c) => typeof c.seq === 'number' && c.seq > lo && c.seq < eeSeq && typeof c.name === 'string')
+        .sort((a, b) => a.seq - b.seq);
+      let nameAt = 0;
+      const tryChecks = results.map((r) => {
+        const type = typeof r.type === 'string' ? r.type : 'unknown';
+        const name = type === 'check-passes' ? (namesHere[nameAt++]?.name ?? null) : null;
+        return {
+          type, pass: r.pass === true, detail: typeof r.detail === 'string' ? r.detail : null, name,
+        };
+      });
+      const judgedHere = outputJudgedRecs
+        .filter((o) => o.step === id && (typeof ee.iteration !== 'number' || o.iteration === ee.iteration) && typeof o.seq === 'number' && o.seq > lo && o.seq < eeSeq)
+        .map((o) => ({
+          path: typeof o.path === 'string' ? o.path : null,
+          bytes: typeof o.bytes === 'number' ? o.bytes : null,
+          sha256: typeof o.sha256 === 'string' ? o.sha256 : null,
+        }));
       attemptWindows.push({
         n: attemptWindows.length + 1,
         iteration: typeof ee.iteration === 'number' ? ee.iteration : null,
@@ -836,10 +866,29 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
         startTs: prevBoundTs,
         endTs: eeTs,
         exitEvalDetail: detailSource && typeof detailSource.detail === 'string' ? detailSource.detail : null,
+        checks: tryChecks,
+        outputJudged: judgedHere,
       });
       prevBoundSeq = eeSeq;
       prevBoundTs = eeTs ?? prevBoundTs;
     }
+
+    // D2: a try that BEGAN (an `iteration-start` after the last exit-eval) in a step that has ended, and never reached its checks, was cut off
+    // (the wall, a cap, a stop). A step still running has an in-flight try, not a cut-off one. Never a numbered attempt: it ran no check.
+    const endedHere = end !== null || stopReason !== null;
+    const lastIter = iterationStarts
+      .filter((it) => typeof it.seq === 'number' && it.seq > prevBoundSeq && it.seq < endSeq)
+      .sort((a, b) => b.seq - a.seq)[0] ?? null;
+    const cutOffTry = endedHere && lastIter
+      ? {
+        n: attemptWindows.length + 1,
+        iteration: typeof lastIter.iteration === 'number' ? lastIter.iteration : null,
+        startSeq: prevBoundSeq,
+        endSeq: end && typeof end.seq === 'number' ? end.seq : (Number.isFinite(endSeq) ? endSeq : prevBoundSeq),
+        startTs: prevBoundTs,
+        endTs,
+      }
+      : null;
 
     idOccurrence.set(id, (idOccurrence.get(id) ?? 0) + 1);
     // the SAME step continuing across a leg boundary (the previous occurrence of this id was cut off by its leg's
@@ -859,6 +908,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
       treeChanged,
       attempts,
       attemptWindows,
+      cutOffTry,
       stepStartSeq: startSeq,
       stepEndSeq: endSeq,
       // `stepStartTs`/`stepEndTs` (panel item 2 follow-up, F195/F-audit-step):
@@ -877,7 +927,6 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
   // `phase` filter on the rounds: the seq window between one iteration-start
   // and the next close-verdict/run-end/escalation already isolates that
   // iteration's own rounds.
-  const iterationStarts = spine.filter((e) => e.type === 'iteration-start');
   const timelineKind = /** @type {'steps'|'iterations'} */ (stepStarts.length > 0 ? 'steps' : (iterationStarts.length > 0 ? 'iterations' : 'steps'));
   const boundaries = spine.filter((e) => e.type === 'close-verdict' || e.type === 'run-end' || e.type === 'escalation');
 
@@ -1320,7 +1369,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
       // same as a scout/plan/replan/judge/run part already does.
       const stepAttempts = step.attemptWindows.length > 0
         ? step.attemptWindows.map((aw) => ({
-          n: aw.n, outcome: aw.outcome, verdict: null, stages: null, detail: aw.exitEvalDetail, startSeq: aw.startSeq, endSeq: aw.endSeq, startTs: aw.startTs, endTs: aw.endTs,
+          n: aw.n, outcome: aw.outcome, verdict: null, stages: null, detail: aw.exitEvalDetail, startSeq: aw.startSeq, endSeq: aw.endSeq, startTs: aw.startTs, endTs: aw.endTs, iteration: aw.iteration, checks: aw.checks, outputJudged: aw.outputJudged,
         }))
         : wholePartAttempt(step.stepStartSeq, step.stepStartTs, step.stepEndSeq, step.stepEndTs);
       parts.push({
@@ -1340,6 +1389,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
         // P5-R (resumed runs only): why its leg's halt cut this step off, whether it is the same step continuing
         // from the leg before, and its retry count not counting continuations
         ...(step.stopReason === undefined ? {} : { stopReason: step.stopReason, continued: step.continued, tryNumber: step.tryNumber }),
+        ...(step.cutOffTry ? { cutOffTry: step.cutOffTry } : {}),
         attempts: step.stopReason ? stepAttempts.map((a) => (a.outcome === null || a.outcome === undefined ? { ...a, outcome: 'stopped' } : a)) : stepAttempts,
       });
     }
@@ -1417,6 +1467,63 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
           jTsHi,
         ),
       });
+    }
+  }
+
+  // PRD v1.106 Part 5 (C, choice 9): a run that reached its review door gets one more part, the only human step bareloop has. `door` carries what
+  // the spine recorded (when it opened, which files, what the person decided and when); the panel server words it (src/panel/status.js).
+  const doorRec = spine.findLast((e) => e.type === 'review-door');
+  if (doorRec) {
+    const decided = spine.findLast((e) => e.type === 'door-decision' && e.honoured === true && typeof e.seq === 'number' && typeof doorRec.seq === 'number' && e.seq > doorRec.seq);
+    const paths = Array.isArray(doorRec.changed?.paths) ? doorRec.changed.paths.filter((/** @type {any} */ x) => typeof x === 'string') : [];
+    parts.push({
+      id: 'door',
+      kind: 'door',
+      label: 'door',
+      number: null,
+      occurrence: null,
+      rounds: 0,
+      toolCalls: 0,
+      byTool: null,
+      blocked: 0,
+      wallMs: null,
+      spentUsd: 0,
+      unpricedRounds: 0,
+      outcome: null,
+      attempts: [],
+      door: {
+        at: typeof doorRec.ts === 'string' ? doorRec.ts : null,
+        paths,
+        decision: decided && typeof decided.decision === 'string' ? decided.decision : null,
+        text: decided && typeof decided.text === 'string' ? decided.text : null,
+        decidedAt: decided && typeof decided.ts === 'string' ? decided.ts : null,
+      },
+    });
+  }
+
+  // PRD v1.106 Part 3: the thinking each call was SENT, from the spine's own `thinking-decision` / `thinking-status` records, worded by
+  // src/thinking.js. A part with one attempt (plan, scout, replan, a single-attempt step) carries it as `part.thinking`; an attempt that made a
+  // worker call carries `attempt.thinking`. A spine with no such record gets no field at all (an older run shows no thinking word).
+  if (spine.some((e) => e.type === 'thinking-decision')) {
+    const firstStepSeq = stepStarts.reduce((m, ss) => (typeof ss.seq === 'number' && ss.seq < m ? ss.seq : m), Infinity);
+    for (const p of parts) {
+      const atts = Array.isArray(p.attempts) ? p.attempts : [];
+      for (const a of atts) {
+        let words = null;
+        if (p.kind === 'step') words = thinkingWordsFrom(spine, { phase: `step:${p.label}`, lo: a.startSeq, hi: a.endSeq });
+        else if (p.kind === 'fix') words = thinkingWordsFrom(spine, { phase: 'fix', lo: a.startSeq, hi: a.endSeq });
+        if (words !== null) a.thinking = words;
+      }
+      if (p.kind === 'step' && p.cutOffTry) {
+        const words = thinkingWordsFrom(spine, { phase: `step:${p.label}`, lo: p.cutOffTry.startSeq, hi: p.cutOffTry.endSeq });
+        if (words !== null) p.cutOffTry.thinking = words;
+      }
+      let part = null;
+      if (p.kind === 'scout') part = thinkingWordsFrom(spine, { phase: 'scout', hi: firstStepSeq });
+      else if (p.kind === 'plan') part = thinkingWordsFrom(spine, { phase: 'plan', hi: firstStepSeq });
+      else if (p.kind === 'replan' && atts[0]) part = thinkingWordsFrom(spine, { phase: 'plan', lo: atts[0].startSeq, hi: atts[0].endSeq });
+      else if ((p.kind === 'step' || p.kind === 'fix') && atts.length === 1) part = atts[0].thinking ?? null;
+      if (part !== null) p.thinking = part;
     }
   }
 
@@ -1587,16 +1694,20 @@ function money2(n) {
  * @param {boolean|null} [draftSpendComplete] whether the drafting fold above was EXACT;
  *   `null`/`undefined`/`true` all read as exact (never a new enum value elsewhere) —
  *   only an explicit `false` triggers the floor wording.
+ * @param {number|null} [runUsd] the run's own spend as a number (excluding drafting), so the sum can be written
  * @returns {string}
  */
-export function moneyWithDraft(spendCore, draftSpentUsd, budgetUsd, draftSpendComplete) {
+export function moneyWithDraft(spendCore, draftSpentUsd, budgetUsd, draftSpendComplete, runUsd) {
   const hasDraft = draftSpentUsd !== null && draftSpentUsd !== undefined;
   const draftFloor = hasDraft && draftSpendComplete === false;
   const coreAlreadyFloor = /^(at least |≥)/.test(spendCore);
   const core = draftFloor && !coreAlreadyFloor ? `at least ${spendCore}` : spendCore;
-  const draftPart = hasDraft ? ` (${draftFloor ? 'at least ' : ''}${money(draftSpentUsd)} drafting)` : '';
   const capPart = budgetUsd === undefined ? '' : ` of ${money2(budgetUsd)}`;
-  return `${core}${draftPart}${capPart}`;
+  if (!hasDraft) return `${core}${capPart}`;
+  // PRD v1.106 Part 5 Q4: the run's figure EXCLUDES drafting, so the line says so and adds the sum — "$0.0054 run + $0.0035 drafting =
+  // $0.0089 of $1.00". A floor on either part makes the total a floor too ("at least"). Without the run's number the sum is left out.
+  const total = typeof runUsd === 'number' && Number.isFinite(runUsd) ? ` = ${draftFloor || coreAlreadyFloor ? 'at least ' : ''}${money(runUsd + draftSpentUsd)}` : '';
+  return `${core} run + ${draftFloor ? 'at least ' : ''}${money(draftSpentUsd)} drafting${total}${capPart}`;
 }
 
 /**
@@ -2045,7 +2156,7 @@ export function summarizeForAllLine(summary) {
     // shown on a run with zero retries.
     outcome: `${summary.outcome ?? 'unknown'}${summary.transportRetryCount > 0 ? ` ⟲${summary.transportRetryCount}` : ''}`,
     hadTransportRetries: summary.transportRetryCount > 0,
-    spend: moneyWithDraft(money(summary.spentUsd), summary.draftSpentUsd, undefined, summary.draftSpendComplete),
+    spend: moneyWithDraft(money(summary.spentUsd), summary.draftSpentUsd, undefined, summary.draftSpendComplete, summary.spentUsd),
     wall: duration(summary.wallMs),
     steps: stepsCol,
     reason,

@@ -1,0 +1,135 @@
+{
+  "schema": "job-v1",
+  "job": "flights-bos-ord",
+  "description": "flights-bos-ord — authored through the bareloop panel (soft-green, text)",
+  "jobLines": [
+    {
+      "n": 1,
+      "text": "List 3 flights from Boston to Chicago",
+      "rule": "under $450; not a red-eye; nonstop",
+      "rules": [
+        "under $450",
+        "not a red-eye",
+        "nonstop"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "n": 1,
+      "label": "flights",
+      "value": "https://www.google.com/travel/flights?q=Flights+from+BOS+to+ORD+on+2026-11-20+one+way&hl=en&curr=USD"
+    }
+  ],
+  "provider": "openai-api",
+  "baseUrl": "https://api.deepseek.com/v1",
+  "model": "deepseek-flash",
+  "budgetUsd": 0.5,
+  "maxWallMs": 1200000,
+  "writeScope": [
+    "output/"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  },
+  "goal": "Do the job below from the input files, then write one JSON file per numbered line.\n\nThe input files (label: file):\n  - flights: input/flights.txt\n\nFor each numbered job line N, write ONE file output/steps/N.json: a JSON object with exactly these keys.\n  \"text\"  — your answer for that line, as a string.\n  \"cites\" — an object: for each input you drew on, its label as the key and a list of {\"claim\", \"quote\"} as the value.\n            \"claim\" is one thing your text relies on; \"quote\" is words copied EXACTLY from that input (spacing and\n            ** or __ marks do not matter). Every number in a claim must also appear in its quote.\n  In each claim, copy every number, time and price exactly as the input writes it (for example \"9:27 AM\", not \"09:27\"),\n  because the check matches the numbers in your claim against your quote.\nA job line the brief below marks as a FACTS line is different: its file holds ONLY {\"results\": [{\"quote\": \"...\", \"values\":\n{\"<fact>\": \"<value>\"}}]} — one result per thing found, one quote copied exactly from the text of that one result, the values written as the quote\nwrites them; no \"text\" and no \"cites\". A line the brief marks as a TEXT line keeps \"text\" (free words), and every number in it\nmust be copied from a quote of an earlier facts line.\nWrite nothing outside output/, and never edit the files under input/. The file must be complete, valid JSON: a file cut\noff before its closing brace counts as not written.\n\nThe job, line by line:\n1. List 3 flights from Boston to Chicago\n   rule: under $450; not a red-eye; nonstop\n\nJob line 1 is a FACTS line. Write output/steps/1.json as {\"results\": [{\"quote\": \"...\", \"values\": {...}}]} and nothing else — no \"text\", no \"cites\".\n  One result per thing you find in the input \"flights\": exactly 3 results.\n  \"quote\": ONE quote per result, copied exactly from that result's own text in the input (at most 4000 characters) — never joined from two results.\n  \"values\": one entry per fact below, written exactly as the quote writes it (for example \"9:27 AM\", not \"09:27\"; \"389\", not \"389.00\").\n    - MaxPrice — an amount in US dollars, right after \"From\", must be under 450 US dollars\n    - DepartureWindow — a time, right after \"Departure time:\", must be between 5:00 AM and 10:00 PM\n    - Stops — a number, right after \"StaticText\", must be at most 0\n    - LeaveAirport — words, right after \"Leaves\"\n    - ArriveAirport — words, right after \"O\"\n\nThe plan the person confirmed: Three results, each with a price under 450 US dollars, a departure time in the AI's proposed range between 5:00 AM and 10:00 PM, a stop count of 0 or fewer as the AI's proposal, and quotes naming the departure and arrival airports as \\\"flights\\\" writes them.",
+  "verdictType": "soft-green",
+  "closeDecl": {
+    "genre": "TEXT",
+    "lang": "text",
+    "stages": [
+      {
+        "name": "changed-from-seed",
+        "kind": "files-changed",
+        "params": {
+          "requireNonEmpty": true,
+          "allowPrefixes": [
+            "output/"
+          ]
+        }
+      },
+      {
+        "name": "line-1-flight-facts",
+        "kind": "rubric-step",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "step": 1,
+          "parts": [
+            {
+              "text": "List 3 flights from Boston to Chicago — the input holds no ranking or cap that fixes the list at exactly 3, so only the facts per result are held",
+              "class": "fact",
+              "source": "flights",
+              "count": {
+                "min": 3,
+                "max": 3
+              },
+              "rules": [
+                1,
+                2,
+                3
+              ],
+              "covers": [
+                1,
+                2,
+                3,
+                4
+              ],
+              "facts": [
+                {
+                  "name": "MaxPrice",
+                  "shape": "money",
+                  "anchor": "From",
+                  "unit": "US dollars",
+                  "rule": {
+                    "op": "lt",
+                    "value": 450
+                  }
+                },
+                {
+                  "name": "DepartureWindow",
+                  "shape": "time",
+                  "anchor": "Departure time:",
+                  "rule": {
+                    "op": "between",
+                    "lo": "5:00 AM",
+                    "hi": "10:00 PM"
+                  },
+                  "aiProposal": true
+                },
+                {
+                  "name": "Stops",
+                  "shape": "number",
+                  "anchor": "StaticText",
+                  "rule": {
+                    "op": "lte",
+                    "value": 0
+                  }
+                },
+                {
+                  "name": "LeaveAirport",
+                  "shape": "text",
+                  "anchor": "Leaves"
+                },
+                {
+                  "name": "ArriveAirport",
+                  "shape": "text",
+                  "anchor": "O"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "notes": [
+      "The look's own labels were used instead of the person's words: \"Leaves\" for the departure airport (seen \"Boston Logan International Airport\") and \"O\" for the arrival airport (seen \"Hare International Airport\").",
+      "The person's rule \"not a red-eye\" is carried as a departure-time range between 5:00 AM and 10:00 PM — that range is my proposal for them to check; the input holds no \"red-eye\" word.",
+      "The person's rule \"nonstop\" is carried as a stop count of 0 or fewer read from the label \"StaticText\" — that number is my proposal for them to check; the input holds no \"nonstop\" word.",
+      "The price limit \"under $450\" is the person's own number, read from the label \"From\" in US dollars.",
+      "The count of 3 is enforced only as 3 results in output/steps/1.json; nothing in the input ranks or caps the list at exactly 3, so which 3 flights appear and in what order is not checked.",
+      "The input's origin/destination labels (\"Where from?\", \"Where to?\") were not found, so \"Boston to Chicago\" is only reflected through the quoted airport names."
+    ]
+  }
+}

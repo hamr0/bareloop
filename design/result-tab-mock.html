@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Result tab lab</title>
+<style>
+  :root{
+    --bg:#1a1b26; --panel:#1f2335; --panel2:#24283b; --border:#292e42; --border-strong:#3b4261;
+    --text:#c0caf5; --text-dim:#a9b1d6; --text-faint:#565f89;
+    --green:#9ece6a; --green-bg:#1c2b23; --red:#f7768e; --amber:#e0af68; --amber-bg:#2b2416;
+    --cyan:#7dcfff; --accent:#7aa2f7; --primary-bg:#7aa2f7; --primary-text:#1a1b26;
+    font: 14px/1.5 "Courier Prime","Courier New",Courier,ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;background:var(--bg);color:var(--text);}
+  body{overflow-x:hidden;padding:12px 16px 80px;}
+  h1{font-size:16px;margin:4px 0;}
+  .lab-head{max-width:1500px;margin:0 auto 12px;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:16px;max-width:1500px;margin:0 auto;}
+  @media (max-width:420px){.grid{grid-template-columns:1fr;}}
+  .variant{border:1px solid var(--border-strong);background:var(--panel);padding:0;min-width:0;}
+  .vhead{padding:8px 12px;border-bottom:1px solid var(--border);background:var(--panel2);}
+  .vhead b{color:var(--accent);} .why{color:var(--text-faint);font-size:12px;}
+  .tabs{display:flex;gap:2px;padding:8px 12px 0;border-bottom:1px solid var(--border-strong);flex-wrap:wrap;}
+  .tab{padding:6px 10px;color:var(--text-dim);border:1px solid transparent;border-bottom:none;}
+  .tab.on{color:var(--text);border-color:var(--border-strong);background:var(--panel);font-weight:700;}
+  .body{padding:12px;}
+  .hint{font-size:11px;color:var(--text-faint);}
+  .g{color:var(--green);} .r{color:var(--red);} .a{color:var(--amber);}
+  .st-word{font-weight:700;color:var(--text);}
+  .dot{font-weight:700;font-size:12px;margin-right:6px;}
+  .btn{padding:8px 14px;min-height:44px;border:1px solid var(--border-strong);background:var(--panel2);color:var(--text);font:inherit;cursor:pointer;}
+  .btn::before{content:"[ ";color:var(--text-faint);} .btn::after{content:" ]";color:var(--text-faint);}
+  .btn.primary{background:var(--primary-bg);color:var(--primary-text);border-color:var(--primary-bg);font-weight:700;}
+  .btn.primary::before,.btn.primary::after{color:var(--primary-text);opacity:.6;}
+  .btn.small{min-height:32px;padding:0 9px;font-size:12px;}
+  .btn:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .num{display:inline-block;min-width:1.6em;color:var(--accent);font-weight:700;}
+  .line{margin:10px 0 4px;font-weight:700;}
+  .rule{color:var(--text-faint);margin-left:1.6em;}
+  details{margin:4px 0;} summary{cursor:pointer;color:var(--text-dim);min-height:28px;}
+  .quote{border-left:2px solid var(--border-strong);padding:4px 8px;margin:4px 0;color:var(--text-dim);font-size:12px;overflow-wrap:anywhere;white-space:pre-wrap;}
+  mark{background:var(--amber-bg);color:var(--amber);padding:0 2px;}
+  .path{font-size:12px;color:var(--text-dim);overflow-wrap:anywhere;}
+  .box{border:1px solid var(--border-strong);padding:8px 10px;margin:8px 0;background:var(--panel2);}
+  .door{border:1px solid var(--amber);background:var(--amber-bg);padding:8px 10px;margin:10px 0;}
+  table{border-collapse:collapse;width:100%;font-size:12px;}
+  th,td{border-bottom:1px dotted var(--border-strong);padding:4px 6px;text-align:left;vertical-align:top;}
+  th{color:var(--text-faint);font-weight:400;}
+  .scroll{overflow-x:auto;}
+  .sticky{position:sticky;bottom:0;background:var(--panel2);border-top:1px solid var(--border-strong);padding:8px 12px;}
+  textarea{width:100%;min-height:60px;background:var(--bg);color:var(--text);border:1px solid var(--text-dim);font:inherit;padding:6px;}
+  .card{border:1px solid var(--border-strong);padding:8px 10px;margin:8px 0;}
+  .big{font-size:18px;font-weight:700;color:var(--text);}
+  .chip{border:1px solid var(--border-strong);padding:0 6px;font-size:12px;margin-right:4px;display:inline-block;}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;}}
+</style>
+</head>
+<body>
+<div class="lab-head">
+<div role="note" style="background:#fefce8;border:1px solid #facc15;border-radius:8px;padding:10px 14px;margin:12px 0;font-size:13px;line-height:1.5;color:#854d0e;">
+  <b>This is a temporary design lab.</b> Click any element → leave a comment → Save.
+  Your feedback goes to Claude; the lab is deleted on Finish. The overlay
+  badge (bottom-right) tells you whether feedback is streaming live or being
+  collected as JSON.
+</div>
+<h1>Result tab — PRD v1.106 Part 6 (rubric jobs only)</h1>
+<div class="hint">Real data: run mve5y8fa (flight-idea1, passed, waiting at the Accept door). Line 2 is an EXAMPLE text line (changelog-shaped) so you can see how a text answer reads. Every variant keeps: the result per job line, the page quotes, where the file was saved, Accept / Rerun with my words / Pause, Download. Comment on anything; tell me which pieces you like.</div>
+</div>
+
+<div style="max-width:900px;margin:0 auto 16px">
+  <section class="variant" data-variant="F"><div class="vhead"><b>F · B's table + E's proof</b> <span class="why">— one row per result with ✓ per checked fact; the proof (the page's words, checked words highlighted) folded under each row</span></div><div id="vF"></div></section>
+</div>
+<div class="hint" style="max-width:1500px;margin:0 auto 6px">The two it came from, for comparison:</div>
+<div class="grid">
+  <section class="variant" data-variant="B"><div class="vhead"><b>B · table</b> <span class="why">— a facts line is a table: one row per result, one column per checked fact</span></div><div id="vB"></div></section>
+  <section class="variant" data-variant="E"><div class="vhead"><b>E · proof in the quote</b> <span class="why">— each result is a card; the checked values are highlighted inside the page's own words</span></div><div id="vE"></div></section>
+</div>
+
+<script>
+var RUN = {name:"flight-idea1 (run-1)", word:"passed", check:"rubric", cost:"$0.0054 run + $0.0035 drafting = $0.0089 of $1.00", time:"28s",
+  saved:"/home/hamr/PycharmProjects/bareloop/.claude/scratch/live-flights/out/steps/1-2026-10-18.json"};
+var FACTS = ["price","departure time"];
+var CHECKS = ["price under 450 US dollars","departure between 06:00 and 21:00","says \"Nonstop\"","says \"Boston Logan International Airport\"","says \"Chicago O'Hare International Airport\""];
+var L1 = {n:1, text:"List 3 flights from Boston to Chicago", rules:["under $450","not a red-eye","nonstop"], results:[
+  {values:{"price":"144","departure time":"12:12 PM"}, quote:"From 144 US dollars. Nonstop flight with American. Leaves Boston Logan International Airport at 12:12 PM on Friday, November 20 and arrives at Chicago O'Hare International Airport at 2:22 PM on Friday, November 20. Total duration 3 hr 10 min.\nDeparture time: 12:12 PM."},
+  {values:{"price":"144","departure time":"1:29 PM"}, quote:"From 144 US dollars. Nonstop flight with United. Leaves Boston Logan International Airport at 1:29 PM on Friday, November 20 and arrives at Chicago O'Hare International Airport at 3:32 PM on Friday, November 20. Total duration 3 hr 3 min.\nDeparture time: 1:29 PM."},
+  {values:{"price":"144","departure time":"2:40 PM"}, quote:"From 144 US dollars. Nonstop flight with JetBlue. Leaves Boston Logan International Airport at 2:40 PM on Friday, November 20 and arrives at Chicago O'Hare International Airport at 4:40 PM on Friday, November 20. Total duration 3 hr.\nDeparture time: 2:40 PM."}
+]};
+var L2 = {n:2, text:"Write a short summary of what changed (EXAMPLE text line)", rules:["under 80 words","one paragraph"],
+  answer:"0.43.0 (2026-10-16) lets a job be scheduled from the panel and adds the panel's scheduler; 0.42.0 (2026-10-14) and 0.41.0 (2026-10-12) came before it.",
+  cites:[{claim:"0.43.0 dated 2026-10-16", quote:"## [0.43.0] - 2026-10-16"},{claim:"a job can be scheduled from the panel", quote:"A job can be scheduled from the panel (T, Part 3 of 8; panel-only, nothing fires yet)."}],
+  notChecked:["\"under 80 words\" and \"one paragraph\" are judged by you at Accept"]};
+
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];});}
+function tabs(on){return '<div class="tabs">'+["Run","Audit / logs","Job","Result"].map(function(t){return '<span class="tab'+(t===on?' on':'')+'">'+t+'</span>';}).join("")+'</div>';}
+function head(){return '<div class="row"><span class="dot g">[✓]</span><b class="st-word">'+RUN.word+'</b> · '+RUN.check+' · '+esc(RUN.name)+'</div><div class="hint">'+RUN.cost+' · '+RUN.time+'</div>';}
+function door(extra){return '<div class="door"><div><b class="st-word a">waiting for you</b> — the checks passed; is this what you wanted?</div>'+(extra||'')+'<div class="row" style="margin-top:6px"><button class="btn primary">Accept</button><button class="btn">Rerun with my words</button><button class="btn">Pause</button></div></div>';}
+function saved(){return '<div class="path">saved to: '+esc(RUN.saved)+'</div><div class="row" style="margin-top:6px"><button class="btn small">Download 1.json</button><button class="btn small">Download all (zip)</button></div>';}
+function lineHead(L){return '<div class="line"><span class="num">'+L.n+'</span>'+esc(L.text)+'</div>'+L.rules.map(function(r){return '<div class="rule">~ '+esc(r)+'</div>';}).join("");}
+function summaryOf(r){return '$'+r.values.price+' · departs '+r.values["departure time"]+' · nonstop · BOS → ORD';}
+function checksLine(){return '<div class="hint">checked on every result: '+CHECKS.map(esc).join(' · ')+' <span class="g">✓</span></div>';}
+function textLine(L,open){return lineHead(L)+'<div class="box">'+esc(L.answer)+'</div><details'+(open?' open':'')+'><summary>▸ quotes from changelog ('+L.cites.length+')</summary>'+L.cites.map(function(c){return '<div class="quote"><b>'+esc(c.claim)+'</b>\n'+esc(c.quote)+'</div>';}).join("")+'</details><div class="hint">Not checked: '+L.notChecked.map(esc).join("; ")+'</div>';}
+
+var vA = {}; vA.innerHTML = tabs("Result")+'<div class="body">'+head()+door()+lineHead(L1)+
+  '<ol style="margin:4px 0 0 1.6em;padding:0">'+L1.results.map(function(r){return '<li>'+esc(summaryOf(r))+'</li>';}).join("")+'</ol>'+checksLine()+
+  '<details><summary>▸ quotes from the page (3)</summary>'+L1.results.map(function(r,i){return '<div class="quote">'+(i+1)+'. '+esc(r.quote)+'</div>';}).join("")+'</details>'+
+  textLine(L2,false)+'<hr style="border:none;border-top:1px dotted var(--border-strong)">'+saved()+'</div>';
+
+// B
+document.getElementById("vB").innerHTML = tabs("Result")+'<div class="body">'+head()+lineHead(L1)+
+  '<div class="scroll"><table><thead><tr><th>#</th><th>price</th><th>departure time</th><th>nonstop</th><th>quote</th></tr></thead><tbody>'+
+  L1.results.map(function(r,i){return '<tr><td>'+(i+1)+'</td><td>$'+esc(r.values.price)+' <span class="g">✓</span></td><td>'+esc(r.values["departure time"])+' <span class="g">✓</span></td><td>Nonstop <span class="g">✓</span></td><td><details><summary>show</summary><div class="quote">'+esc(r.quote)+'</div></details></td></tr>';}).join("")+
+  '</tbody></table></div><div class="hint">✓ = the check passed on that result (code decided, quoted from the page)</div>'+textLine(L2,false)+door()+saved()+'</div>';
+
+var vC = {}; vC.innerHTML = tabs("Result")+'<div class="body">'+head()+
+  '<div class="line"><span class="num">1</span>List 3 flights from Boston to Chicago <span class="g">✓ 3 of 3</span></div>'+
+  L1.results.map(function(r,i){return '<details><summary>'+(i+1)+'. '+esc(summaryOf(r))+'</summary><div class="quote">'+esc(r.quote)+'</div></details>';}).join("")+
+  '<div class="line"><span class="num">2</span>Short summary <span class="hint">(example)</span></div><details><summary>'+esc(L2.answer.slice(0,70))+'…</summary><div class="box">'+esc(L2.answer)+'</div></details>'+
+  '<div class="row" style="margin-top:10px"><button class="btn primary">Accept</button><button class="btn">Rerun with my words</button><button class="btn">Pause</button><button class="btn small">Download</button></div><div class="path" style="margin-top:6px">'+esc(RUN.saved)+'</div></div>';
+
+var vD = {}; vD.innerHTML = tabs("Result")+'<div class="body" style="max-height:640px;overflow:auto">'+head()+lineHead(L1)+
+  L1.results.map(function(r,i){return '<div class="card"><b>'+(i+1)+'. '+esc(summaryOf(r))+'</b><details><summary>▸ the page says</summary><div class="quote">'+esc(r.quote)+'</div></details></div>';}).join("")+checksLine()+
+  textLine(L2,false)+saved()+'</div>'+
+  '<div class="sticky"><div><b class="st-word a">waiting for you</b> — Accept keeps this; Rerun sends your words back as the gap.</div>'+
+  '<details><summary>Rerun with my words</summary><textarea aria-label="your words for the rerun" placeholder="e.g. only morning flights, and show the airline"></textarea><button class="btn">Rerun</button></details>'+
+  '<div class="row"><button class="btn primary">Accept</button><button class="btn">Pause</button><button class="btn small">Download</button></div></div>';
+
+// E
+function marked(r){var q=esc(r.quote);["From 144 US dollars","Nonstop","Departure time: "+r.values["departure time"],"Boston Logan International Airport","Chicago O&#39;Hare International Airport","Chicago O'Hare International Airport"].forEach(function(w){q=q.split(esc(w)).join('<mark>'+esc(w)+'</mark>');});return q;}
+document.getElementById("vE").innerHTML = tabs("Result")+'<div class="body">'+head()+lineHead(L1)+
+  L1.results.map(function(r,i){return '<div class="card"><div class="row"><span class="big">$'+esc(r.values.price)+'</span><span class="chip">'+esc(r.values["departure time"])+'</span><span class="chip">nonstop</span><span class="chip">BOS → ORD</span></div><div class="quote">'+marked(r)+'</div><div class="hint"><span class="g">✓</span> 5 checks passed — highlighted words are what the checks read</div></div>';}).join("")+
+  textLine(L2,true)+door('<div class="hint">Accept only after you read it — the checks prove it is on the page, you judge if it is what you wanted.</div>')+saved()+'</div>';
+
+// F = B's table + E's proof, folded by default
+var ok = ' <span class="g">✓</span>';
+document.getElementById("vF").innerHTML = tabs("Result")+'<div class="body">'+head()+lineHead(L1)+
+  '<div class="scroll"><table><thead><tr><th>#</th><th>price</th><th>departure time</th><th>nonstop</th><th>from → to</th><th>checks</th></tr></thead><tbody>'+
+  L1.results.map(function(r,i){return '<tr><td>'+(i+1)+'</td><td><span class="chip">$'+esc(r.values.price)+'</span>'+ok+'</td><td><span class="chip">'+esc(r.values["departure time"])+'</span>'+ok+'</td><td><span class="chip">Nonstop</span>'+ok+'</td><td><span class="chip">BOS → ORD</span>'+ok+'</td><td class="g">5 of 5 ✓</td></tr>'+
+    '<tr><td></td><td colspan="5"><details><summary>▸ proof — the page\'s own words</summary><div class="quote">'+marked(r)+'</div><div class="hint">highlighted = the words the checks read</div></details></td></tr>';}).join("")+
+  '</tbody></table></div><div class="hint">✓ = code checked it against the saved page. The rules: under $450 · departs 06:00–21:00 (not a red-eye, you confirmed) · says "Nonstop"</div>'+
+  textLine(L2,false)+door()+saved()+'</div>';
+</script>
+<script src="overlay-vanilla.js"></script>
+<script>LiveCanvas.init({ target: 'ResultTab', batchEndpoint: 'http://localhost:8788/feedback-jsonl' });</script>
+</body>
+</html>

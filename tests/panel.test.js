@@ -13,8 +13,8 @@ import {
 import { tmpdir } from 'node:os';
 import { request as httpRequest } from 'node:http';
 import { spawn } from 'node:child_process';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join, dirname } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   createPanelServer, panelMain, glyphForOutcome, checkTypeLabel, checkTypeTitle, RUNID_RE, formatTimestamp,
 } from '../src/panel/server.js';
@@ -695,7 +695,7 @@ test('/api/runs row: carries spentUsd/spendComplete/draftSpentUsd/draftSpendComp
   // numeric fields above). This fixture's own draftSpendComplete:false
   // correctly reads as "at least" per moneyWithDraft's own (unrelated to
   // this task's scope-1 change) 2nd-addendum rule.
-  assert.equal(row.spend, 'at least $3.7100 (at least $0.8100 drafting)', 'the library\'s own 4-decimal money() text, unchanged in PRECISION by this build (still 4 decimals, never migrated to 2)');
+  assert.equal(row.spend, 'at least $3.7100 run + at least $0.8100 drafting = at least $4.5200', 'the library\'s own 4-decimal money() text, unchanged in PRECISION by this build (still 4 decimals, never migrated to 2)');
 });
 
 test('/api/runs/:runid job-detail: draftSpendComplete rides beside draftSpentUsd', async (t) => {
@@ -1437,8 +1437,8 @@ test(
 
 test('/api/runs/:runid/job: RED PROOF — with sourceNearSpine/successFromSpec/guardrailsFromSpec reverted, the new-shape fixture reads "not recorded" (mechanically proves these fields are not fabricated)', { skip: !havePersonFixture && `${REAL_PERSON_OUT} not present on this machine` }, async (t) => {
   const serverPath = fileURLToPath(new URL('../src/panel/server.js', import.meta.url));
-  const backup = `${serverPath}.redproof-bak`;
-  cpSync(serverPath, backup);
+  // a sibling COPY, never the shared server.js itself: rewriting server.js in place let any test file importing it in parallel load the neutered module
+  const patchedPath = join(dirname(serverPath), 'server.redproof-tmp.js');
   try {
     const src = readFileSync(serverPath, 'utf8');
     // neuter sourceNearSpine so it always reports "nothing near the spine" —
@@ -1451,10 +1451,9 @@ test('/api/runs/:runid/job: RED PROOF — with sourceNearSpine/successFromSpec/g
       'function sourceNearSpine(spinePath) { return { specPath: null, sourceJsonPath: null };',
     );
     assert.notEqual(patched, src, 'the patch must actually match sourceNearSpine\'s real source — otherwise this proves nothing');
-    writeFileSync(serverPath, patched);
+    writeFileSync(patchedPath, patched);
 
-    // fresh import with a cache-busting query so node re-reads the patched file
-    const { createPanelServer: patchedCreate } = await import(`../src/panel/server.js?redproof=${Date.now()}`);
+    const { createPanelServer: patchedCreate } = await import(pathToFileURL(patchedPath).href);
 
     const home = tmp();
     const out = tmp();
@@ -1478,8 +1477,7 @@ test('/api/runs/:runid/job: RED PROOF — with sourceNearSpine/successFromSpec/g
     assert.equal(body.guardrails, 'not recorded');
     void server;
   } finally {
-    cpSync(backup, serverPath);
-    rmSync(backup);
+    rmSync(patchedPath, { force: true });
   }
 });
 

@@ -3,11 +3,12 @@
 // "older job" fallback. Real readers, scratch homes only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { planFromSpec, planFromConfirm, checkClassOfKind } from '../src/panel/jobplan.js';
+import { RUBRIC_GOAL_HEAD, rubricGoal, confirmedGoalOf } from '../src/rubricstep.js';
 import { getRunJob, signedLine, jobTextFromSpec, inputsTextFromSpec, createPanelServer } from '../src/panel/server.js';
 import { appendRun } from '../src/runlist.js';
 import { jobSpecHash } from '../src/job.js';
@@ -169,4 +170,31 @@ test('plan lines carry each `~` rule on its own: from the line\'s rules array (a
   assert.deepEqual(withRules.lines.map((l) => l.rules), [['PASS: a; b', 'FAIL: c'], ['x', 'y'], []]);
   const c = planFromConfirm([{ n: 1, text: 'a', rule: 'p; q', rules: ['p', 'q'] }], { checkItems: [] });
   assert.deepEqual(c.lines[0].rules, ['p', 'q']);
+});
+
+// the Job tab's "AI's summary": a rubric job's signed goal is the whole worker brief (rubricGoal); only the sentence the
+// person confirmed is the summary. The two fixtures are the goals of real signed specs, copied byte for byte
+// (flights-bos-ord, run mvdg1xo3; change2 run-5).
+const rubricFixture = (/** @type {string} */ n) => readFileSync(new URL(`./fixtures/${n}`, import.meta.url), 'utf8');
+
+test("planFromSpec: a rubric job's AI's summary is the confirmed sentence, never the worker brief", () => {
+  const flights = planFromSpec({ ...NEW_SPEC, goal: rubricFixture('rubric-goal-flights-bos-ord.txt') });
+  assert.equal(flights.goal, 'Three results, each with a price under 450 US dollars, a departure time in the AI\'s proposed range between 5:00 AM and 10:00 PM, a stop count of 0 or fewer as the AI\'s proposal, and quotes naming the departure and arrival airports as \\"flights\\" writes them.');
+  const change = planFromSpec({ ...NEW_SPEC, goal: rubricFixture('rubric-goal-change2.txt') });
+  assert.equal(change.goal, 'The run writes output/steps/1.json with exactly 3 version facts and 3 date facts each copied from the changelog, and output/steps/2.json with a text of one paragraph under 80 words.');
+});
+
+test('planFromSpec: a rubric brief with no confirmed line shows no summary row; a code job keeps its goal', () => {
+  const brief = rubricFixture('rubric-goal-change2.txt');
+  const cut = brief.slice(0, brief.indexOf('\n\nThe plan the person confirmed: '));
+  assert.ok(cut.startsWith(RUBRIC_GOAL_HEAD) && cut.length < brief.length);
+  assert.equal('goal' in planFromSpec({ ...NEW_SPEC, goal: cut }), false);
+  const code = 'Fix slugify in src/slug.js so that `npm test` exits 0';
+  assert.equal(planFromSpec({ ...NEW_SPEC, goal: code }).goal, code);
+});
+
+test('confirmedGoalOf reads back what rubricGoal wrote with the same prefix', () => {
+  const g = rubricGoal({ jobLines: [{ n: 1, text: 'a', rule: '' }], files: [{ label: 'f', rel: 'input/f.txt' }], confirmedGoal: 'One sentence.' });
+  assert.equal(confirmedGoalOf(g), 'One sentence.');
+  assert.equal(confirmedGoalOf(rubricGoal({ jobLines: [{ n: 1, text: 'a', rule: '' }], files: [{ label: 'f', rel: 'input/f.txt' }] })), null);
 });

@@ -24,6 +24,7 @@
 // not because they are readouts: the runner is a script, and a rule no test can
 // reach is a rule nothing checks.
 import { scrubRaw } from './text.js';
+import { panelMoney2 } from './panelmoney.js';
 import { redactSecrets } from './validate.js';
 import { judgedStages } from './kinds.js';
 import { CALIBRATION_SIZE } from './judged.js';
@@ -560,11 +561,6 @@ export function plainReasons(reds, { cases = null } = {}) {
   });
 }
 
-/** @param {number} n @returns {string} the panel's money spelling: 2 decimals, "<$0.01" under a cent */
-function moneyText(n) {
-  return n > 0 && n < 0.005 ? '<$0.01' : `$${n.toFixed(2)}`;
-}
-
 /**
  * The money clause: the measured figure, "at least" when a call was unpriced,
  * and `null` when there is no honest figure (the caller then says unknown or
@@ -574,7 +570,7 @@ function moneyText(n) {
  */
 function spendText(spend) {
   if (!spend || typeof spend.knownUsd !== 'number' || !Number.isFinite(spend.knownUsd)) return null;
-  return `${spend.spendComplete === false ? 'at least ' : ''}${moneyText(spend.knownUsd)}`;
+  return `${spend.spendComplete === false ? 'at least ' : ''}${panelMoney2(spend.knownUsd)}`;
 }
 
 /**
@@ -662,6 +658,11 @@ const SCOUT_REASON_RE = /^the survey is [^(]*\((.*)\) — an absent facts/s;
  */
 export function draftStopText({ stop, reds = null, refusal = null, spend = null, wholeJob = false }) {
   const spent = spendText(spend);
+  // PRD v1.107 Part 5b: too many early asks - the code-owned list (every ask and its reading) is the whole message, quoted in full
+  if (stop === 'look-asks-too-many') {
+    const detail = (Array.isArray(reds) ? reds : []).find((r) => r?.code === 'look-asks-too-many')?.detail;
+    if (detail) return `${redactSecrets(String(detail))}\nSpent so far: ${spent ?? 'unknown'}.`;
+  }
   /** @type {Record<string, string>} */
   const heads = {
     'provider-red': 'The AI provider failed before a usable plan came back — a connection or service fault, not a problem with your job.',
