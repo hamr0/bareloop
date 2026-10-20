@@ -14694,3 +14694,17 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 - **(iii) The finding.** The drops are SILENT. The "nonstop" ~ rule ends unchecked and nothing says why: no Not checked line, no refusal. That breaks the standing ruling that every ~ rule becomes a check or an explicit Not checked.
 
 **Status.** Open. hamr 2026-10-18 ruled idea A CORE ONLY: V4, R2/R2a-c, R3/R3U and page-level checks (pageClaims) are left out of the build and kept only as frozen records; every drop must show as Not checked with a plain reason. Build spec: ITEM33-BUILD.md (pending signature).
+
+## F239 — the page-word map cannot name a date or a version: a changelog job ("version and date") stopped at drafting (session smvh5w0j2hdw0, 2026-10-20; open, needs hamr's ruling)
+
+**Grounded in:** the draft log `/home/hamr/.config/bareloop/panel-sessions/smvh5w0j2hdw0/draft-log.jsonl`; `src/pagemap.js` (`MAP_SHAPES`, `parseMapAnswer`, `MAP_UNREADABLE`); `src/facts.js` (`FACT_SHAPES`); bareguard ^0.25.1 `rubricVocabulary` (`valueKind`). Input: `.claude/scratch/changelog-live/input/CHANGELOG.md` (bareloop's own CHANGELOG from main, top 4 releases, 52,949 bytes). Job: `1. Find the last 3 releases with their version and date`. deepseek-flash, thinking off. Drafting spend $0.0097. Nothing signed and no run.
+
+**What happened.** Both page-map answers were refused. Call 1 ($0.0086928) wrapped its JSON in a ```json code fence, and `parseMapAnswer` runs `JSON.parse` on the trimmed text, so a fence fails. Call 2 ($0.00100608) was plain JSON but carried `"reading": null` on the version fact, and `f.reading !== undefined && !validReading(...)` makes a null reading a malformed answer. After the second, drafting stopped with "The AI's answer about the page was not readable twice. Nothing was signed."
+
+**The real cause (even a readable answer could not pass).** The map offers the AI only four shapes: `MAP_SHAPES = ['place','money','time','phrase']`. bareguard checks `number`, `money`, `date`, `time` and `text` values, and bareloop's `FACT_SHAPES = ['money','number','date','time','phrase','text']` has date, number and text too. The map leaves them out. So the AI filed the date as a `time`, and the version as a `phrase` whose page words were the punctuation around the heading (`## [` and `] -`), not a value. A release date or a version number has no shape in idea A's map. Idea A narrowed rubric facts from six shapes to four.
+
+**Why it was not caught before.** The green changelog run mv76m82c (2026-10-13) used the old look, from before idea A core. This run was the planned non-travel regression (ITEM33-BUILD.md idea A core section 9, proof 3), and it is the first live run of the map on a non-travel input. Proofs 1 and 2 (Google Flights mvfphtwl, Airbnb Porto mvh5brba) only needed place, money, time and phrase.
+
+**Also seen.** The stop words point the person the wrong way. They say the first look at the repo or input did not complete and to review the whole job. Nothing in them says a date or version cannot be named.
+
+**Status.** Open. Logged, not built. Adding date, number or text to the map is hamr's ruling (a schema and prompt change). The ladder stops at proof 3 (build-ladder discipline).
