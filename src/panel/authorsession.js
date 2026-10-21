@@ -51,7 +51,7 @@ import { resolveJobJudge, defaultJudgeLoop } from '../judged.js';
 import { assertThinkingMode, thinkingPlanFor, thinkingRowText } from '../thinking.js';
 import { closeJudges } from '../kinds.js';
 import { RUBRIC_LANG } from '../authoring.js';
-import { rubricGoal, reconcileRubricPlan } from '../rubricstep.js';
+import { rubricGoal, reconcileRubricPlan, signedFactNames } from '../rubricstep.js';
 import { redactSecrets } from '../validate.js';
 import { isDropIt, isAgree } from '../pagemap.js';
 import { FIT_ABSENT_NOTE } from '../fitcheck.js';
@@ -170,7 +170,7 @@ export const PLAN_FOOTER = 'Sign & run to confirm this plan, or Revise to edit t
  * The confirm turn's plan as a chat message (P7): a STRUCTURED `{role:'bot', kind:'plan', plan}` the page draws with the
  * same renderer the Job tab uses — each numbered job line, its `~` rule, its drafted checks folded; the AI's own "not
  * checked"; the always-on guards. `questions` (what the plan still asks) ride inside the plan. One owner of the shape.
- * @param {{goal?: string, checks?: string[], checkItems?: {text: string, fromLine: number[]|null}[], notChecked?: string[], questions?: string[], protections?: string[]}} p the confirm turn's plan
+ * @param {{goal?: string, checks?: string[], checkItems?: {text: string, fromLine: number[]|null}[], notChecked?: string[], questions?: string[], protections?: string[], signedFacts?: string[]}} p the confirm turn's plan
  * @param {{n: number, text: string, rule: string}[]|null} jobLines
  * @returns {{role: 'bot', kind: 'plan', text: string, plan: ReturnType<typeof planFromConfirm> & {goal: string, questions: string[]}}}
  */
@@ -1166,7 +1166,7 @@ export function createSession(card, deps = {}) {
       const rec = reconcileRubricPlan({
         confirmed: authored.confirmed?.checkItems ?? [], notChecked: authored.confirmed?.notChecked ?? [], closeDecl: spec.closeDecl, jobLines,
       });
-      state.finalPlan = { goal: String(draft.goal ?? ''), checkItems: rec.checkItems, notChecked: rec.notChecked, protections: authored.confirmed?.protections ?? [], moved: rec.moved };
+      state.finalPlan = { goal: String(draft.goal ?? ''), checkItems: rec.checkItems, notChecked: rec.notChecked, protections: authored.confirmed?.protections ?? [], moved: rec.moved, signedFacts: signedFactNames(spec.closeDecl) };
     }
     await finish(spec, authored.seedRef);
     if (state.finalPlan && state.phase === 'prepared') {
@@ -1175,7 +1175,7 @@ export function createSession(card, deps = {}) {
       // dropped, so drafter prose can never sit above (and be read instead of) the code's sentences (run mv5e1ktb).
       state.messages = state.messages.filter((/** @type {any} */ m) => m.kind !== 'plan');
       state.messages.push({
-        ...planMessage({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, protections: state.finalPlan.protections, questions: [] }, jobLines),
+        ...planMessage({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, protections: state.finalPlan.protections, signedFacts: state.finalPlan.signedFacts, questions: [] }, jobLines),
         text: 'These are the checks the signed close will run, and what it will not check. Sign & run to accept them, or Revise to edit the boxes and draft again.',
       });
     }

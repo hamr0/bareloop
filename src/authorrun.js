@@ -772,7 +772,7 @@ export async function main(argv, deps = {}) {
       for (const c of p.checks ?? []) out(`    · ${c}`);
       out('  protections (always-on guards, never named in the goal):');
       for (const g of p.protections ?? []) out(`    · ${g}`);
-      const { notChecked: unchecked, readNotes } = splitReadNotes(p.notChecked);
+      const { notChecked: unchecked, readNotes } = splitReadNotes(p.notChecked, p.signedFacts);
       if (unchecked.length) {
         out('  you asked for these, but nothing checks them:');
         for (const n of unchecked) out(`    · ${n}`);

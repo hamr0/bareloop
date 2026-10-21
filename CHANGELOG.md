@@ -9,6 +9,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
+- **An S1 copy of a signed fact is a read note.** When the AI proposes a second fact that would read the same value as a fact that is still signed, the note now shows under "How the page was read" instead of "Not checked" (the guardrail is checked by the other fact). With the other fact not signed it stays Not checked. The signed fact names reach the split from the signed spec (older specs too) and from the look at the confirm turn.
+
 - **A fit check before the look (F243, `src/fitcheck.js`).** For a rubric job in the panel, one AI call splits each job line into the short parts it asks for and quotes the saved page for each; code (not the AI) decides a part is found only when its quote is really on the page. If every part is found nothing changes; if some are not, the person gets one question ("I found X of Y of your asks on this page. Not found: ... Type go on to keep drafting, or anything else to stop...") before the look spends. "go on" continues; anything else stops with "Stopped before drafting: the page does not show everything the job asks for: ...". The answer changes nothing in the signed job. If the check cannot finish it fails open and drafting goes on. Its spend is booked as `fit-check` in the drafting part and its result is one `fit-check` row in the drafting log.
   A bare number in an ask (a count like the 3 in "list 3 flights") is ignored: not counted, not asked about, kept in the drafting log row flagged `ignored: number`. The stop line reads "...the job asks for: wifi (line 1), meal (line 1). Change the job...".
 

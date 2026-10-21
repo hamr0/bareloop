@@ -80,14 +80,30 @@ const SENTENCE_RE = (() => {
   return new RegExp(`^(?:(?:${alts.join('|')})(?: |$))+$`);
 })();
 
-/** @param {string} text one Not-checked line @returns {boolean} true when the line only says which written forms of a still-checked fact were not used */
-export function isReadNote(text) {
+/** the s1 sentence as a pattern whose one capture is the OTHER fact's name (the sentence is built from the one WORDS table) */
+const S1_RE = (() => {
+  const [F, O] = ['\u0001f\u0001', '\u0001o\u0001'];
+  return new RegExp(esc(WORDS['s1'](/** @type {any} */ ({ fact: F, other: O, reason: 's1', line: 0 }))).split(esc(F)).join('[^"]+').split(esc(O)).join('([^"]+)'), 'g');
+})();
+
+/**
+ * An `s1` drop (a second fact that would read the same value as one already kept) is a NOTE when that OTHER fact is still signed: the guardrail
+ * is checked by it. With the other fact not signed, or no signed list given, the sentence stays Not checked. Every sentence of a row must qualify.
+ * @param {string} text one Not-checked line @param {string[]|null|undefined} [signed] the names of the facts the plan signs
+ * @returns {boolean} true when the line only says which written forms of a still-checked fact were not used
+ */
+export function isReadNote(text, signed) {
   const m = /^line \d+: "[^"]*" \u2014 (.+)$/s.exec(String(text));
-  return m !== null && SENTENCE_RE.test(m[1]);
+  if (m === null) return false;
+  const names = new Set(Array.isArray(signed) ? signed : []);
+  let found = 0;
+  const rest = m[1].replace(S1_RE, (all, other) => { if (!names.has(other)) return all; found += 1; return ''; }).replace(/\s+/g, ' ').trim();
+  return rest === '' ? found > 0 : SENTENCE_RE.test(rest);
 }
 
-/** @param {string[]|null|undefined} items @returns {{notChecked: string[], readNotes: string[]}} the lines split: what is left unchecked, and how the page was read */
-export function splitReadNotes(items) {
+/** @param {string[]|null|undefined} items @param {string[]|null|undefined} [signed] names of the signed facts (see isReadNote)
+ * @returns {{notChecked: string[], readNotes: string[]}} the lines split: what is left unchecked, and how the page was read */
+export function splitReadNotes(items, signed) {
   const all = Array.isArray(items) ? items : [];
-  return { notChecked: all.filter((t) => !isReadNote(t)), readNotes: all.filter((t) => isReadNote(t)) };
+  return { notChecked: all.filter((t) => !isReadNote(t, signed)), readNotes: all.filter((t) => isReadNote(t, signed)) };
 }

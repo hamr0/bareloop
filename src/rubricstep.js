@@ -864,6 +864,17 @@ export function checksOfClose(closeDecl) {
 }
 
 /**
+ * The names of the facts a signed close checks (every fact part of every rubric-step stage). Pure.
+ * @param {any} closeDecl @returns {string[]}
+ */
+export function signedFactNames(closeDecl) {
+  const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
+  return stages.flatMap((/** @type {any} */ st) => (isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts)
+    ? st.params.parts.filter((/** @type {any} */ p) => isRec(p) && p.class === 'fact' && Array.isArray(p.facts)).flatMap((/** @type {any} */ p) => p.facts.filter((/** @type {any} */ f) => isRec(f) && typeof f.name === 'string').map((/** @type {any} */ f) => f.name))
+    : []));
+}
+
+/**
  * Reconcile the CONFIRMED plan with the close the composer actually wrote. The plan card after drafting shows exactly
  * the close's own checks (`checksOfClose`); every confirmed check that no part carries out (no part lists its number in
  * `covers`) is moved to Not checked, in the person's words, with the reason. A check can therefore never be shown and then
