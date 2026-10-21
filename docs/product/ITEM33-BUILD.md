@@ -2118,3 +2118,31 @@ $0.30 hard. Key and price as fit POC v5 section 6.
 
 ### Scope
 `.claude/scratch/money-poc4/`. Never product code.
+
+### Result — money POC 4 (2026-10-21)
+Source: `.claude/scratch/money-poc4/RESULTS.md`. **FAIL by the frozen rule.** $0.2235. 7 of 8 fixtures read every result on every completed try; cheat red on all 26 completed tries. F241 rescued 2 of 3: on try 3 the AI listed whole price strings ("$130", "137 US dollars") as forms, they reached the signed unit list and it read 0 of 16. Price strings instead of forms in 8 of 26 tries; 2 made-up forms (dropped as not on the page). sfo2 try 3 died on "socket hang up" (no retry in the script). fwd's live MAD→FCO failure (2026-10-21) has the same cause as F241: the AI put the word form in `currency`.
+
+## Addendum 2026-10-21 — money POC 5: the worker copies the whole price as the page writes it; code takes the number out (ordered by hamr 2026-10-21: "test it first ... a simple parsing to check when number starts/ends, take it out by code and calculate, pass it back in full"; FROZEN before any number is read)
+
+### The idea
+No currency/unit boxes for the AI. The worker writes the price exactly as the page shows it ("From 137 US dollars", "$134", "€533 total"). Code: (1) the price text must be inside the result's own quote; (2) code takes the number out (the first run of digits, with thousands commas and one decimal point, read whole: "134" never "34"); (3) code compares it with the person's limit; (4) the full text is shown in the results.
+
+### Part 1 — $0, code only, real pages
+- Every result line of money POC 1's Google Flights pages, the Airbnb "€N total" lines, and F241's page (same sha256 list).
+- Honest claim per line: price text = the shortest piece of the line that starts at the label (or the currency sign, or the number) and ends after the currency word or sign, as the page writes it; quote = the line. Code extracts the number and compares with a limit of 150 (and, for Airbnb, 600).
+- Checks per line: the text is in the quote; the number read equals the digits the page writes; pass/fail against the limit is right.
+- Cheats per page (each must be RED): (a) a price text that is not in the quote; (b) a number changed inside a copied text ("From 37 US dollars" when the line says 137); (c) a non-price text from the same line that holds a number ("4 hr 52 min", "0 checked bags") — reported: does any rule stop it? (d) a price copied from ANOTHER result line than its quote.
+### Part 2 — the worker, live (deepseek-flash, thinking off)
+- One call per page for the 4 Google Flights pages bos-den, jfk-mia, ord-bos-now (F241), lax-jfk and both Airbnb pages: the whole page and "List 3 results; for each copy one result's text as quote and its price exactly as the page writes it. JSON {results:[{quote, price}]}". 3 tries each.
+- Code applies Part 1's checks. Reported: how often the price text is in its quote, the number read, any made-up price.
+
+### Pass rule
+- Part 1: every honest line reads the right number and the right pass/fail; cheats (a), (b), (d) are red on every page. Cheat (c) is REPORTED (it is the open risk: a number that is not a price).
+- Part 2: at least 17 of 18 tries give 3 results whose price text is in its quote and reads the right number.
+- Any miss = FAIL and a finding. No change after the first number.
+
+### Cost cap
+$0.25 hard (Part 2 only). Key and price as fit POC v5.
+
+### Scope
+`.claude/scratch/money-poc5/`. Never product code.
