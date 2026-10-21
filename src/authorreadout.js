@@ -663,6 +663,11 @@ export function draftStopText({ stop, reds = null, refusal = null, spend = null,
     const detail = (Array.isArray(reds) ? reds : []).find((r) => r?.code === 'look-asks-too-many')?.detail;
     if (detail) return `${redactSecrets(String(detail))}\nSpent so far: ${spent ?? 'unknown'}.`;
   }
+  // F243: the fit check - the page does not show everything the job asks for; the not-found list (the code-made red detail) is the whole reason
+  if (stop === 'fit-stopped') {
+    const detail = (Array.isArray(reds) ? reds : []).find((r) => r?.code === 'fit-stopped')?.detail;
+    if (detail) return `Stopped before drafting: the page does not show everything the job asks for (${redactSecrets(String(detail))}). Change the job or the page and draft again. Spent so far: ${spent ?? 'unknown'}.`;
+  }
   /** @type {Record<string, string>} */
   const heads = {
     'provider-red': 'The AI provider failed before a usable plan came back — a connection or service fault, not a problem with your job.',
