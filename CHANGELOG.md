@@ -7,6 +7,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **A fit check before the look (F243, `src/fitcheck.js`).** For a rubric job in the panel, one AI call splits each job line into the short parts it asks for and quotes the saved page for each; code (not the AI) decides a part is found only when its quote is really on the page. If every part is found nothing changes; if some are not, the person gets one question ("I found X of Y of your asks on this page. Not found: ... Type go on to keep drafting, or anything else to stop...") before the look spends. "go on" continues; anything else stops with "Stopped before drafting: the page does not show everything the job asks for (...)". The answer changes nothing in the signed job. If the check cannot finish it fails open and drafting goes on. Its spend is booked as `fit-check` in the drafting part and its result is one `fit-check` row in the drafting log.
+
 ### Fixed
 
 - **A number the AI made up no longer passes as the person's own.** The test for "is this limit in the person's words" matched digits inside other words, so 5, 15 and 50 counted as said for "under $150 ... between 05:00 and 23:59". It now reads times, dates, amounts and bare numbers as whole items, and a limit counts as written only if it equals one of them (`boundInWords`, F242).
