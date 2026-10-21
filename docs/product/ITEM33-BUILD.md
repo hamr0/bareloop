@@ -2033,3 +2033,34 @@ Today (src/pagerules.js money branch) the AI lists a fact's labels, units and cu
 - An Airbnb page (tests/fixtures/idea-a/airbnb-porto.page.txt): the existing U1 behaviour is unchanged (golden tests keep passing).
 - A fact that reads fewer results than the job's count: dropped `dry-read-short`, shown Not checked.
 - Every existing pagerules golden test keeps passing; if one changes, STOP and report it (it may be a real behaviour change for hamr).
+
+### Result — search POC v2 (2026-10-21)
+Source: `.claude/scratch/search-poc2/RESULTS.md`. **FAIL by the frozen rule** (case 1 ask, case 2 fits). Spend $0.0754.
+- Code picked the box every time; English via `hl=en` / `kl=us-en` (barebrowse has no locale option).
+- Case 1 (google, BOS→DEN flights): 4 links opened (JetBlue "Book Flights" refused by the gate word "book"); Google Flights route page (no date, no times), Expedia 164 chars (silent block), Skyscanner 1404 chars (blocked), United deals page: none fit. Search-engine links for a dated listing are landing pages, not live results.
+- Case 2 (duckduckgo, last 3 Node.js releases): fits on link 2, nodejs.org/en/blog/release.
+- Case 3 (Porto, reported): ask; Booking refused by the gate; the other links were DuckDuckGo's own `site:` searches.
+- Case 4 (google, Node, reported): ask; three single-release pages.
+- Learning: search + open links works for information jobs; dated listing jobs (flights, stays) need the person's pasted results link, as today.
+
+### Rulings by hamr after it (2026-10-21)
+- Search: build it for information jobs (the v2 design that passed); listing jobs keep the pasted results link.
+- Money: the bigger build (family table, R-RES, dry read inside pagerules) is withdrawn (saved at `.claude/scratch/money-big-version/`, never committed): it added a second reader beside bareguard's checker and moved 11 tests. Instead: bring back only "can it read" — before signing, the real checker reads the saved page's results for each price rule; no limits, no count, no pass bar.
+- hamr's idea to test first: read ALL currency forms on the page and use all of them in the price checks.
+
+## Addendum 2026-10-21 — money POC 2: all the page's currency forms in the price rule, read by the real checker (ordered by hamr 2026-10-21; FROZEN before any number is read)
+
+### How ($0, no model call, the real checker)
+- Forms on a page = every sign `$`, `€`, `£` the page holds, plus every word from this list the page holds as whole words: `US dollars`, `USD`, `euros`, `EUR`, `pounds`, `GBP`. Nothing else, no mapping between them.
+- For each rule and page of money POC 1 (same pages, same sha256 check), replace the rule's money forms with ALL forms on that page (labels unchanged) and run the money POC 1 dry read (result lines, honest claims, `gradeStep`) and the cheat claim.
+- Also report, per page, which of those forms the existing R1L rule (src/pagerules.js) would drop if they were listed together — the product today drops a form whose whole-page number set differs from the first.
+
+### Pass rule
+- R-F241 with all forms reads every result on its page (the rule is rescued, not only caught).
+- Every Google Flights page: all forms read every result.
+- The cheat claim is red on every page.
+- Airbnb pages reported only.
+- Any miss = FAIL and a finding. No change after the first number.
+
+### Scope
+`.claude/scratch/money-poc2/`, reusing `.claude/scratch/money-poc/poc.mjs`. Never product code. $0.
