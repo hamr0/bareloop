@@ -261,7 +261,7 @@ test('authorClose (the real drafting loop): a drafter that drops the junk "Stops
 test('authorClose (the real drafting loop): a drafter that signs the dropped label "StaticText" gets a rubric-fact-word-dropped red with the reason, and the corrected try validates', async () => {
   const { prep, file, look } = await frozenFlights();
   const listing = await buildSeedListing({ workdir: prep.tree, seedRef: prep.manifest.seed, sourcePaths: undefined, testPaths: undefined });
-  const STOPS = { name: 'Stops', shape: 'number', anchor: 'StaticText', rule: { op: 'lte', value: 0 } };
+  const STOPS = { name: 'Stops', shape: 'number', anchor: 'StaticText', rule: { op: 'lte', value: 0 }, aiProposal: true };
   /** @type {string[]} */
   const seen = [];
   let calls = 0;
