@@ -14737,7 +14737,7 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 
 **Status.** Open. Logged, not built.
 
-## F243 — job-vs-source "fit check" POCs v1 to v5: the judge was right when it saw real results; every failure was in the evidence or in AI-written questions (2026-10-21; open, v6 running)
+## F243 — job-vs-source "fit check" POCs v1 to v5: the judge was right when it saw real results; every failure was in the evidence or in AI-written questions (2026-10-21; open, v6 PASSED on known pages, unseen pages untested)
 
 **Grounded in:** `docs/product/ITEM33-BUILD.md` (the addenda "job-vs-source fit POC" and "fit POC v2" to "v6", and each "### Result — fit POC vN" section); `.claude/scratch/fit-poc*/RESULTS.md` (untracked scratch, `fit-poc` to `fit-poc5`). Evidence that led here: F239, F240, F241.
 
@@ -14762,4 +14762,6 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 
 **Status.** Open. Logged, not built.
 
-v6: running, result to be added
+- v6 (8 pairs, 24 calls): the AI got the whole page and the job's own asks (hand-written, standing in for the job lines) and said found with a quote, or not found. Code checked each quote is on the page; all found gives RUN, anything not found gives ASK; no NO, no count. PASS by the frozen rule, not degenerate: bad pages ASK 15 of 15, right pages RUN 9 of 9 (pair 8 RUN by design, the count is left to Accept). The ASK lists named the real gap: the route on the flipped page, exactly wifi and meal on pair 7. Made-up quotes 0. Spend $0.1396. Limit: same pages as v2-v5 and the design came after reading their failures, so this is a fit on known pages, not proof on unseen pages.
+
+**Total spend v1 to v6: $0.5686.**

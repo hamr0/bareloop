@@ -1851,3 +1851,26 @@ $0.25 hard. Price, key and endpoint exactly as v5 section 6. Key never printed. 
 
 ### 6. Scope
 POC only, in .claude/scratch/fit-poc6/. Never product code. 24 calls, once, no rerun.
+
+### Result — fit POC v6 (2026-10-21)
+
+Source: `.claude/scratch/fit-poc6/RESULTS.md` and `calls.jsonl` (untracked scratch; FROZEN.sha256 checked OK after the run).
+
+**PASS by the frozen rule, not degenerate.** 8 pairs, 3 tries each, 24 calls.
+
+| pair | frozen | try1 | try2 | try3 | pass? |
+|---|---|---|---|---|---|
+| 1 | RUN | RUN | RUN | RUN | yes |
+| 2 | ASK | ASK | ASK | ASK | yes |
+| 3 | RUN | RUN | RUN | RUN | yes |
+| 4 | ASK | ASK | ASK | ASK | yes |
+| 5 | ASK | ASK | ASK | ASK | yes |
+| 6 | ASK | ASK | ASK | ASK | yes |
+| 7 | ASK | ASK | ASK | ASK | yes |
+| 8 | RUN | RUN | RUN | RUN | yes |
+
+- Pair 2 (flipped route) named "leaves from New York JFK" and "arrives in Miami" in all 3 tries; try 1 also named price and departure time.
+- Pair 7 named exactly "wifi" and "meal" in all 3 tries.
+- Pair 4 named "stay in Barcelona" (try 3 also "total price").
+- Made-up quotes 0. Retries 2 (malformed first answers). Cuts 0. Spend $0.1396 of the $0.25 cap.
+- Limit: these are the same pages v2-v5 used, and v6's design was chosen after reading their failures. This is a fit on known pages, not proof on unseen pages. n = 3 tries per pair.
