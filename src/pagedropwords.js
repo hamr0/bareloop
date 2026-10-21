@@ -62,3 +62,32 @@ export function dropLine(row, jobLines, rulesOf) {
   const rule = row.rule === undefined || !jl ? undefined : rulesOf(jl)[row.rule - 1];
   return `line ${row.line}: "${rule ?? row.fact}" — ${row.sentences.join(' ')}`;
 }
+
+// HOW THE PAGE WAS READ (run mvij7kuk, flight-c1): a drop of ONE WORD whose fact is still checked is a NOTE about the form code did not use, not
+// something left unchecked. The sentences for those reasons are WORD-level; every other sentence (a whole fact left out) keeps the line under
+// Not checked. Classified from the line's own words, so it holds for a signed spec already on disk.
+const WORD_REASONS = ['not-on-page', 'no-value', 'n2', 'r1', 'sign-twice', 'r1l', 'limit-currency', 'limit-unit', 'unit-too-long'];
+/** @param {string} s */
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const SENTENCE_RE = (() => {
+  const [W, O] = ['\u0001w\u0001', '\u0001o\u0001'];
+  /** @type {string[]} */
+  const alts = [];
+  for (const reason of WORD_REASONS) {
+    const probes = reason === 'r1l' ? [{ word: W, other: W }, { word: W, other: O }] : [{ word: W, other: O }];
+    for (const p of probes) alts.push(esc(WORDS[reason](/** @type {any} */ ({ ...p, reason, line: 0, fact: 'f' }))).split(esc(W)).join('[^"]+').split(esc(O)).join('[^"]+'));
+  }
+  return new RegExp(`^(?:(?:${alts.join('|')})(?: |$))+$`);
+})();
+
+/** @param {string} text one Not-checked line @returns {boolean} true when the line only says which written forms of a still-checked fact were not used */
+export function isReadNote(text) {
+  const m = /^line \d+: "[^"]*" \u2014 (.+)$/s.exec(String(text));
+  return m !== null && SENTENCE_RE.test(m[1]);
+}
+
+/** @param {string[]|null|undefined} items @returns {{notChecked: string[], readNotes: string[]}} the lines split: what is left unchecked, and how the page was read */
+export function splitReadNotes(items) {
+  const all = Array.isArray(items) ? items : [];
+  return { notChecked: all.filter((t) => !isReadNote(t)), readNotes: all.filter((t) => isReadNote(t)) };
+}

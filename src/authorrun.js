@@ -128,6 +128,7 @@ import { resolveProvider, buildRunnerProviders, apiKeyProblem } from './provider
 import { commandFor } from './invoke.js';
 import { readSourceManifest, missingDependencies, nonRepoSourceMessage, isRubricFilesManifest } from './source.js';
 import { tallyCalls } from './text.js';
+import { splitReadNotes } from './pagedropwords.js';
 import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
   openQuestionLines, answeredQuestionLines, fellBackLines, PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText,
@@ -771,9 +772,14 @@ export async function main(argv, deps = {}) {
       for (const c of p.checks ?? []) out(`    · ${c}`);
       out('  protections (always-on guards, never named in the goal):');
       for (const g of p.protections ?? []) out(`    · ${g}`);
-      if ((p.notChecked ?? []).length) {
+      const { notChecked: unchecked, readNotes } = splitReadNotes(p.notChecked);
+      if (unchecked.length) {
         out('  you asked for these, but nothing checks them:');
-        for (const n of p.notChecked ?? []) out(`    · ${n}`);
+        for (const n of unchecked) out(`    · ${n}`);
+      }
+      if (readNotes.length) {
+        out(`  how the page was read · ${readNotes.length}:`);
+        for (const n of readNotes) out(`    · ${n}`);
       }
       if ((p.questions ?? []).length) {
         out('  open questions:');
