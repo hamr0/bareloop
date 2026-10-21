@@ -1765,3 +1765,89 @@ $0.40 hard (8 pairs × 3 whole-page calls). Price from ~/.config/bareloop/config
 
 ### 7. Scope
 POC only, in .claude/scratch/fit-poc5/. Never product code. 24 calls, once, no rerun.
+
+### Result — fit POC v5 (2026-10-21)
+
+Source: `.claude/scratch/fit-poc5/RESULTS.md` (untracked scratch).
+
+**FAIL by the frozen rule, not degenerate.** 8 pairs, 3 tries each, 24 calls.
+
+| pair | frozen | try1 | try2 | try3 | pass? |
+|---|---|---|---|---|---|
+| 1 | YES | NO | YES | YES | NO |
+| 2 | NO | NO | NO | NO | yes |
+| 3 | YES | ASK | YES | YES | NO |
+| 4 | NO | NO | NO | NO | yes |
+| 5 | NO | NO | NO | NO | yes |
+| 6 | NO | NO | NO | NO | yes |
+| 7 | NO | NO | NO | NO | yes |
+| 8 | ASK | NO | NO | NO | NO |
+
+- Every not-fit pair was caught, 15 of 15 calls (flipped route, wrong city, wrong page, missing wifi and meal).
+- Pair 1 try 1: a made-up quote ("Flights from JFK to MIA", not on the page) turned a yes into an unproven no.
+- Pair 3 try 1: `matching` was 1, so ASK. The count is not stable: pair 1 gave 14, 14, 3.
+- Pair 8: the AI wrote its own count question ("3 flights with one stop?") and answered no, so the verdict was NO, never ASK.
+- Spend $0.1307 of the $0.40 cap. 0 retries, 0 cuts.
+- Learning: when the AI writes its own questions it adds ways to go wrong (made-up count questions); the count is unreliable.
+
+## Addendum 2026-10-21 — fit POC v6: v1's job items on the whole page, found-or-not, code says RUN or ASK (ordered by hamr 2026-10-21: "run the small last test first"; FROZEN before any number is read)
+
+Why: a person reads every result at Accept, so the fit check only has to stop a clearly wasted run before it spends. A wrong NO blocks a good run; a wrong YES costs one run the person rejects. So there is no NO and no count: anything not found becomes a question to the person.
+
+### 1. How it works
+- One call per try, 3 tries per pair. deepseek-flash, thinking off, maxTokens 4000.
+- The AI gets the WHOLE page text, the job, and the job's items (frozen below; in the product they would come from the job lines, here they are hand-written and stand in for that split).
+- System message: `You check whether ONE saved web page shows what a job asks for. You never invent words: every quote must be copied from the page, character for character.`
+- User message, exactly (angle-bracket parts filled by code; one `- ` line per item):
+
+```
+THE JOB: <job>
+
+THE JOB'S ASKS:
+- <item>
+
+THE PAGE:
+<full page text>
+
+For EACH ask, say whether the page shows it the way the job means it. A page that shows the opposite (for example a flight that arrives where the job says it leaves from, or a different city) does NOT show it. If found, copy a short piece of page text that shows it, character for character. If not found, quote is null. Reply with JSON only: {"asks":[{"ask":"<the ask, copied>","found":true|false,"quote":"<page text or null>"}]}
+```
+
+### 2. Code checks and decides
+- Normalize = collapse whitespace, case-insensitive.
+- A quote is on the page if its normalized text is a substring of the normalized page. No length rule.
+- An ask counts as found only if found is true AND the quote is on the page. A found:true with a quote not on the page counts as not found and is flagged "made-up".
+- Asks are matched to the frozen items by order; a reply with a different number of asks is malformed.
+- Verdict: every ask found gives RUN; otherwise ASK, with the list of not-found asks (this list is the question the person would see).
+- A malformed answer gets one retry, then a miss. A cut (finish reason length) is a miss.
+
+### 3. Pairs, items and frozen verdicts (pages as v5 section 4, same sha256)
+Items:
+- JFK: "leaves from New York JFK", "arrives in Miami", "price", "departure time"
+- BCN: "stay in Barcelona", "total price"
+- TICK: "ticket id", "first name", "last name", "date of birth"
+- JFK7: the JFK items plus "airline", "wifi", "meal"
+- JFK8: "one stop", "leaves from New York JFK", "arrives in Miami", "price"
+
+Pairs (jobs exactly as v5):
+1. JFK × jfk-mia → RUN
+2. JFK × mia-jfk → ASK
+3. BCN × barcelona → RUN
+4. BCN × madrid → ASK
+5. JFK × barcelona → ASK
+6. TICK × changelog → ASK
+7. JFK7 × jfk-mia → ASK
+8. JFK8 × jfk-mia → RUN (the page has exactly 1 one-stop flight; v6 does not count by design, the count is seen at Accept)
+
+### 4. Pass rule
+- Every ASK pair (2, 4, 5, 6, 7) gets ASK in 3 of 3 tries.
+- Every RUN pair (1, 3, 8) gets RUN in at least 2 of 3 tries.
+- Any miss means the POC FAILS.
+- DEGENERATE flag if all 24 verdicts are the same word.
+- Reported, not graded: the not-found list per try (pair 7: does it name wifi and meal? pair 2: does it name the route?), the made-up count.
+- No change to prompts, items or code after the first number is read.
+
+### 5. Cost cap
+$0.25 hard. Price, key and endpoint exactly as v5 section 6. Key never printed. A cap stop leaves the POC incomplete and it cannot PASS.
+
+### 6. Scope
+POC only, in .claude/scratch/fit-poc6/. Never product code. 24 calls, once, no rerun.
