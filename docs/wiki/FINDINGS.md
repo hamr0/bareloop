@@ -14736,3 +14736,13 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 **Why drafting did not refuse it.** `checkFactWords` (`src/factwords.js:79-140`) checks, for an anchored non-phrase fact: the label is one the map kept (or on the code-made list), the label is in the text (`countExact(text, label) < 1`), and its count reaches the result count asked for (`rubric-fact-label-rare`). Separately it checks each unit is found as whole words (`countPhrase`, line 137) and each currency sign is found as written (`countExact`, line 138), each on its own anywhere in the text. No $0 check tests that a value of the signed form follows the label.
 
 **Status.** Open. Logged, not built.
+
+## F242 — a bound the person never wrote passed as written: `boundInWords` matched digits inside "$150" and "05:00" (reported by fwdloop, verified at $0 2026-10-21; fixed on fix/bound-in-words)
+
+**Defect.** `boundInWords` (`src/rubricstep.js`) was a plain substring test over the person's words. On "List 3 flights under $150; departure time between 05:00 and 23:59; nonstop" it returned true for 5, 15 and 50, which are only pieces of "$150" and "05:00".
+
+**What it guards.** A bound the AI made, not the person, must carry `aiProposal: true` (`rubric-fact-unmarked`), and the L3 settle and the look reading's ask to the person (`askableFromLook`, `src/pagemap.js`) read the same function. A made-up 5, 15 or 50 skipped the mark and the ask.
+
+**Status of evidence.** Not seen in a live bareloop run; found by reading in fwdloop (65e3ce4 `numbersSaid`) and verified at $0.
+
+**Fix.** The words are read by kind (time, date, amount, bare number); a digit inside one token belongs to it only. A number bound is said only as a bare number or an amount's number; a time bound only as a time token (hour leading zero ignored); a date bound only as a date token. Same name and signature, no parallel function. Tests: `tests/bound-in-words.test.js` (red before the fix, green after).

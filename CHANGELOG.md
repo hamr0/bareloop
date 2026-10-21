@@ -5,6 +5,12 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Fixed
+
+- **A number the AI made up no longer passes as the person's own.** The test for "is this limit in the person's words" matched digits inside other words, so 5, 15 and 50 counted as said for "under $150 ... between 05:00 and 23:59". It now reads times, dates, amounts and bare numbers as whole items, and a limit counts as written only if it equals one of them (`boundInWords`, F242).
+
 ## [0.44.0] - 2026-10-20
 
 ### Added
