@@ -613,18 +613,37 @@ export function lineRules(l) {
   return isRec(l) && typeof l.rule === 'string' && l.rule ? l.rule.split('; ').filter(Boolean) : [];
 }
 
-/** @param {unknown} b @returns {string[]} the spellings a rule bound can have in the person's own words */
-const boundSpellings = (b) => {
-  const s = String(b);
-  return [s, s.replace(/^0+(?=\d)/, ''), s.replace(/\.0+$/, '')];
+/** @param {string} t @returns {string} a time token as compared: no spaces, lower case, no leading zero on the hour */
+const timeKey = (t) => t.replace(/\s+/g, '').toLowerCase().replace(/^0(?=\d:)/, '');
+
+/**
+ * The person's words read by KIND, so a digit inside a time, a date or an amount belongs to that token only (F242).
+ * @param {string} text @returns {{bare: Set<number>, amount: Set<number>, time: Set<string>, date: Set<string>}}
+ */
+const tokensSaid = (text) => {
+  const out = { bare: new Set(), amount: new Set(), time: new Set(), date: new Set() };
+  const re = /(\d{1,2}:\d{2}(?:\s?[AaPp][Mm])?)|(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[/.]\d{1,2}[/.]\d{2,4})|([$\u20ac\u00a3]\s?\d[\d,]*(?:\.\d+)?|\d[\d,]*(?:\.\d+)?\s?(?:US\s)?(?:dollars?|euros?|pounds?|USD|EUR|GBP)\b)|(\d[\d,]*(?:\.\d+)?)/gi;
+  for (const m of text.matchAll(re)) {
+    if (m[1]) out.time.add(timeKey(m[1]));
+    else if (m[2]) out.date.add(m[2]);
+    else if (m[3]) out.amount.add(Number(m[3].match(/\d[\d,]*(?:\.\d+)?/)?.[0].replace(/,/g, '')));
+    else out.bare.add(Number(m[4].replace(/,/g, '')));
+  }
+  return out;
 };
 
 /**
  * Is this rule bound in the words the person wrote? The ONE test for "a number the AI made" (`rubric-fact-unmarked`, the L3 settle, and
- * the early ask of PRD v1.107 Part 5b all read it; never a second spelling).
+ * the early ask of PRD v1.107 Part 5b all read it; never a second spelling). By kind: a number is said only as a bare number or an
+ * amount's number; a time only as a time token (hour leading zero ignored); a date only as a date token. Never a piece of a token.
  * @param {unknown} b @param {string} said @returns {boolean}
  */
-export const boundInWords = (b, said) => boundSpellings(b).some((sp) => said.includes(sp));
+export const boundInWords = (b, said) => {
+  const t = tokensSaid(said);
+  if (typeof b === 'number') return t.bare.has(b) || t.amount.has(b);
+  if (typeof b !== 'string') return false;
+  return /^\s*\d{1,2}:\d{2}/.test(b) ? t.time.has(timeKey(b)) : t.date.has(b.trim());
+};
 
 /** @param {any} jl one job line @returns {string} the words the person wrote on it: the line and its `~` rules */
 export const wordsSaidOn = (jl) => `${jl.text ?? ''} ${lineRules(jl).join(' ')}`;
