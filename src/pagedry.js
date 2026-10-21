@@ -87,3 +87,39 @@ export async function dryReadMoney(text, facts) {
   }
   return { facts: kept, dropped, reads, results };
 }
+
+/**
+ * The same "can it read" for PHRASE facts (hamr ruled 3a, run m10-walk-flights-3: "Rome" was on the page only in "Track prices from Madrid to
+ * Rome" switches, in none of the 18 result lines, so no result could ever say it). A kept phrase fact is read against the page's RESULT LINES =
+ * the lines the job's kept money facts read (`moneyResultLines`), each graded as an honest claim by the real `gradeStep` (quote = that line;
+ * a phrase has no value to write). A phrase that reads no result line is dropped whole as `phrase-no-result` and shows under Not checked.
+ * With no kept money fact the result lines are unknown, so phrase facts pass through untouched (nothing is guessed about what a result is).
+ * @param {string} text the frozen page text @param {KeptFact[]} facts what the money dry read kept
+ * @returns {Promise<{facts: KeptFact[], dropped: Dropped[], reads: Record<string, number>}>} `reads` = result lines that said the phrase, per fact name
+ */
+export async function dryReadPhrases(text, facts) {
+  const sha = createHash('sha256').update(text).digest('hex');
+  /** @type {Map<string, true>} */
+  const quotes = new Map();
+  for (const k of facts) if (k.shape === 'money') for (const r of moneyResultLines(text, k)) quotes.set(r.quote, true);
+  /** @type {KeptFact[]} */
+  const kept = [];
+  /** @type {Dropped[]} */
+  const dropped = [];
+  /** @type {Record<string, number>} */
+  const reads = {};
+  for (const k of facts) {
+    if (k.shape !== 'phrase' || quotes.size === 0 || !k.words.length) { kept.push(k); continue; }
+    const fact = { name: k.name, shape: 'phrase', phrase: k.words[0] };
+    let n = 0;
+    for (const quote of quotes.keys()) {
+      const params = { step: 1, parts: [{ text: 'dry read', class: 'fact', source: SOURCE, covers: [1], facts: [fact] }] };
+      const g = await gradeStep({ params, bytes: JSON.stringify({ results: [{ quote, values: {} }] }), outputBytes: null, inputs: { [SOURCE]: text } }, { [SOURCE]: sha });
+      if (g.verdict === 'green') n += 1;
+    }
+    reads[k.name] = n;
+    if (n > 0) { kept.push(k); continue; }
+    dropped.push({ line: k.line, ...(k.forRule === undefined ? {} : { rule: k.forRule }), fact: k.name, other: k.words[0], reason: 'phrase-no-result' });
+  }
+  return { facts: kept, dropped, reads };
+}
