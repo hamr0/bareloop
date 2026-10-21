@@ -408,7 +408,7 @@ export function validateJobCard(card, opts = {}) {
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
  *   scout?: any, generate?: Function, confirmGenerate?: Function, authorFn?: Function,
- *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
+ *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, fitFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
  * @returns {any} the session object
