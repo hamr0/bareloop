@@ -2090,3 +2090,31 @@ The signed price fact (labels, unit, currency) or Not checked; result lines read
 
 ### Scope
 `.claude/scratch/money-poc3/`. Never product code. $0.
+
+### Result — money POC 3 (2026-10-21)
+Source: `.claude/scratch/money-poc3/RESULTS.md`. $0, real `applyPageRules`, `parseMapAnswer`, `gradeStep`. By the frozen rule C (all forms + can it read) is preferred: on the 8 golden fixtures A, B and C sign the same reading fact (all results read; C's added USD/EUR always dropped by R1L); on F241, A reads 0 of 16, B goes Not checked, C reads 16 of 16. Cheat red everywhere. F241's cause: the AI put "US dollars" in `currency`, and `currency-not-symbol` dropped it. Limit: C's forms came from a fixed list written for the POC; a currency off the list (CHF, ¥) would be wiped, worse than today. hamr's ruling: no list — the AI names every way the page writes a currency.
+
+## Addendum 2026-10-21 — money POC 4: the AI lists every currency form on the page; code keeps those on the page and ADDS them (ordered by hamr 2026-10-21: "go, test it then build"; FROZEN before any number is read)
+
+### Arm D (deepseek-flash, thinking off, real product code, real checker)
+- One AI call per page: system `You read ONE saved web page. You never invent words: every form must be copied from the page.`; user: `THE PAGE:\n<page text>\n\nList every way this page writes a currency next to an amount: currency signs (like $) and currency words or codes (like US dollars or EUR). Copy each form exactly as the page writes it. Reply with JSON only: {"forms":["..."]}`.
+- Code keeps a form only if it is on the page (the existing found-on-page test). Signs ($, €, £) go to `currency`, every other form to `unit`. They are ADDED to each money fact's own lists (never replace).
+- Then the real `applyPageRules` and POC 1's dry read, exactly as money POC 3 arm C (reuse `.claude/scratch/money-poc3/poc3.mjs`, change only the form source).
+- 3 tries per input (the AI call is not deterministic); malformed = one retry, then that try counts as a miss.
+
+### Inputs
+Money POC 3's 9 inputs (8 golden fixtures + F241), same sha256 check.
+
+### Pass rule
+- On every try of every input, D signs a price fact that reads every result line (the F241 rescue included, 3 of 3).
+- The cheat claim is red on every try.
+- On the 8 fixtures, D's signed fact reads as many results as A.
+- Reported: the forms the AI listed per try, forms dropped as not-on-page (made up), forms R1L dropped.
+- Any miss = FAIL and a finding. No change after the first number.
+- Limit stated now: no saved page uses a currency other than USD or EUR, so "every currency works" is not tested here.
+
+### Cost cap
+$0.30 hard. Key and price as fit POC v5 section 6.
+
+### Scope
+`.claude/scratch/money-poc4/`. Never product code.
