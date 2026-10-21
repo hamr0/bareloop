@@ -580,6 +580,19 @@ export function createSession(card, deps = {}) {
   };
 
   let lastTryRefused = false;
+  // F243: the fit check's result is one drafting-log row (the asks, what was found, what the quote proved); an `absent` check says so in chat
+  // (a seam of its own - onPhase never posts a chat message)
+  const onFit = (/** @type {any} */ data) => {
+    const running = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
+    appendDraftLog(outDir, {
+      kind: 'fit-check', no: running === -1 ? Math.max(0, state.steps.length - 1) : running, state: String(data.state ?? 'absent'),
+      asks: (Array.isArray(data.asks) ? data.asks : []).map((/** @type {any} */ a) => ({
+        line: a.line, ask: redactSecrets(String(a.ask)), found: a.found === true, quote: typeof a.quote === 'string' ? redactSecrets(a.quote) : null, madeUp: a.madeUp === true,
+      })),
+      notFound: (Array.isArray(data.notFound) ? data.notFound : []).map((/** @type {any} */ x) => ({ line: x.line, ask: redactSecrets(String(x.ask)) })), at: new Date().toISOString(),
+    });
+    if (data.state === 'absent') say('bot', FIT_ABSENT_NOTE);
+  };
   const onPhase = (name, data = {}) => {
     // COLLAPSED INTO THE PROGRESS INDICATOR ONLY (build item 3) — this used
     // to also `say('system', `… ${name}`)`, one jargon chat bubble per
@@ -592,18 +605,6 @@ export function createSession(card, deps = {}) {
     if (PHASE_STEP[name]) stepStart(PHASE_STEP[name], PHASE_STEP[name] === 'draft' ? `${card.model}, $${card.capUsd.toFixed(2)} cap` : undefined);
     // WHY a try was refused: the drafting log keeps it beside the call that made it (it used to say only "retry 3 of 3"), and the
     // progress line shows it briefly, in code's words
-    // F243: the fit check's result is one drafting-log row (the asks, what was found, what the quote proved); an `absent` check says so in chat
-    if (name === 'fit-check-done') {
-      const running = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
-      appendDraftLog(outDir, {
-        kind: 'fit-check', no: running === -1 ? Math.max(0, state.steps.length - 1) : running, state: String(data.state ?? 'absent'),
-        asks: (Array.isArray(data.asks) ? data.asks : []).map((/** @type {any} */ a) => ({
-          line: a.line, ask: redactSecrets(String(a.ask)), found: a.found === true, quote: typeof a.quote === 'string' ? redactSecrets(a.quote) : null, madeUp: a.madeUp === true,
-        })),
-        notFound: (Array.isArray(data.notFound) ? data.notFound : []).map((/** @type {any} */ x) => ({ line: x.line, ask: redactSecrets(String(x.ask)) })), at: new Date().toISOString(),
-      });
-      if (data.state === 'absent') say('bot', FIT_ABSENT_NOTE);
-    }
     if (name === 'author-try-failed') {
       lastTryRefused = true;
       const no = state.steps.findLastIndex((/** @type {any} */ x) => x.id === 'draft');
@@ -1115,7 +1116,7 @@ export function createSession(card, deps = {}) {
       // PART 1c: a test that replaces the model boundary (`generate`) must not reach the real paid look; `deps.lookFn` brings its own
       ...(deps.lookFn !== undefined ? { lookFn: deps.lookFn } : (deps.generate ? { lookFn: null } : {})),
       // F243: the fit check asks through the ordinary ask path; like the look, a test that replaces the model boundary never reaches the real paid call
-      fitAsk,
+      fitAsk, onFit,
       ...(deps.fitFn !== undefined ? { fitFn: deps.fitFn } : (deps.generate ? { fitFn: null } : {})),
       ...(authorFnOverride ? { authorFn: authorFnOverride } : {}),
     });

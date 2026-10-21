@@ -53,17 +53,17 @@ async function job(/** @type {any} */ extra) {
   assert.equal(proved.ok, true);
   if (!proved.ok) throw new Error('inputs not proved');
   /** @type {string[]} */ const order = [];
-  /** @type {any[]} */ const phases = [];
+  /** @type {any[]} */ const fits = [];
   const r = await authorCloseForJob({
     answers: { 1: `1. ${JOB_TEXT}` }, verdictType: 'soft-green', repoPath: proved.prep.tree, lang: RUBRIC_LANG,
     jobLines: LINES(), inputs: [{ n: 1, label: 'Flights', value: file }], writeScope: ['output/'], provider: { fake: true }, ceilingUsd: 1,
-    onPhase: (/** @type {string} */ p, /** @type {any} */ d) => { phases.push([p, d]); },
+    onFit: (/** @type {any} */ f) => { fits.push(f); },
     lookFn: async () => { order.push('lookFn'); return survey(); },
     generate: async () => { throw new Error('no model call'); },
     authorFn: async () => { order.push('authorFn'); return draftOk; },
     ...extra(order),
   });
-  return { r, order, phases };
+  return { r, order, fits };
 }
 
 test('fits: the check runs once, BEFORE the look, nothing is asked and drafting goes on', async () => {
@@ -101,13 +101,13 @@ test('ask + no answer (the session was abandoned) = confirm-abandoned', async ()
   assert.deepEqual(order, ['fitFn']);
 });
 
-test('absent: nothing is asked, drafting goes on, and the phase carries state absent for the chat note', async () => {
+test('absent: nothing is asked, drafting goes on, and the result (state absent) reaches onFit for the chat note', async () => {
   /** @type {string[]} */ const asked = [];
-  const { r, order, phases } = await job((o) => ({ fitFn: async (/** @type {any} */ a) => { o.push('fitFn'); return ABSENT(a); }, fitAsk: async (/** @type {string} */ q) => { asked.push(q); return 'go on'; } }));
+  const { r, order, fits } = await job((o) => ({ fitFn: async (/** @type {any} */ a) => { o.push('fitFn'); return ABSENT(a); }, fitAsk: async (/** @type {string} */ q) => { asked.push(q); return 'go on'; } }));
   assert.equal(r.ok, true);
   assert.deepEqual(order.filter((x) => ['fitFn', 'lookFn', 'authorFn'].includes(x)), ['fitFn', 'lookFn', 'authorFn']);
   assert.deepEqual(asked, []);
-  assert.equal(phases.find((p) => p[0] === 'fit-check-done')[1].state, 'absent');
+  assert.deepEqual(fits.map((f) => f.state), ['absent']);
 });
 
 test('no answer seam (the CLI door, any test that does not inject one): the fit check does not run at all', async () => {

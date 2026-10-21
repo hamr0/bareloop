@@ -431,7 +431,7 @@ function composerRefusal(reds) {
  *   onPhase?: (phase: string, data?: any) => void,
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string}) => void,
  *   seedFn?: Function, scoutFn?: Function, listingFn?: Function, lookFn?: Function|null, fitFn?: Function|null,
- *   fitAsk?: ((question: string) => Promise<string|null>)|null,
+ *   fitAsk?: ((question: string) => Promise<string|null>)|null, onFit?: (fit: {state: string, asks: any[], notFound: any[]}) => void,
  *   authorFn?: Function, authorOpts?: object, writeScope?: string[]|null,
  *   signerFix?: Function|any, proposeFn?: Function, compileOpts?: object,
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
@@ -477,7 +477,7 @@ export async function authorCloseForJob({
   lookFn = runPageMap,
   // THE FIT CHECK (F243): one paid call BEFORE the look, rubric jobs only. It runs only when the caller supplies the answer seam `fitAsk` (the panel);
   // `fitFn` null is an explicit "no check" (a test seam). With no `fitAsk` (the CLI door) it never runs.
-  fitFn = runFitCheck, fitAsk = null,
+  fitFn = runFitCheck, fitAsk = null, onFit = () => {},
   authorFn = authorClose, authorOpts = {},
   // SOFTGREEN modules 4+5. `signerFix` is the D5 seam: a function (or a value)
   // carrying the SIGNER's corrected artifacts back. Absent means the proposal is
@@ -627,7 +627,8 @@ export async function authorCloseForJob({
           jobLines, texts: frozen.texts, provider, ceilingUsd, onCall, ...(rates ? { rates } : {}),
           ...(Object.keys(fitCallOptions).length ? { callOptions: fitCallOptions } : {}),
         });
-        onPhase('fit-check-done', { state: fit.state, asks: fit.asks, notFound: fit.notFound });
+        onPhase('fit-check-done', { state: fit.state });
+        onFit({ state: fit.state, asks: fit.asks, notFound: fit.notFound });
         if (fit.state === 'ask') {
           const answer = await fitAsk(fitQuestionText({ found: fit.asks.filter((/** @type {any} */ a) => a.found).length, total: fit.asks.length, notFound: fit.notFound }));
           if (answer === null) return { ...base, interview, verdictType: picked, seedRef: seed, reds: [], stop: 'confirm-abandoned', cost: null };
