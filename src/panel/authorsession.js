@@ -54,6 +54,7 @@ import { RUBRIC_LANG } from '../authoring.js';
 import { rubricGoal, reconcileRubricPlan } from '../rubricstep.js';
 import { redactSecrets } from '../validate.js';
 import { isDropIt, isAgree } from '../pagemap.js';
+import { FIT_ABSENT_NOTE } from '../fitcheck.js';
 import { tallyCalls } from '../text.js';
 import { writeDraftSpend, appendDraftLog } from '../draftspend.js';
 import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, draftStopText, redsRecord, declarationRecord, calibrationSummary, tryRefusedText } from '../authorreadout.js';
@@ -118,6 +119,9 @@ export const PHASE_STEP = Object.freeze({
   'scout-done': 'scout',
   look: 'look',
   'look-done': 'look',
+  // F243: the fit check's one call is counted in the look's line, like the look
+  'fit-check': 'look',
+  'fit-check-done': 'look',
   confirm: 'confirm',
   'confirm-turn-done': 'confirm',
   listing: 'listing',
@@ -560,7 +564,8 @@ export function createSession(card, deps = {}) {
     if (step.kind === 'language') say('bot', `${step.field?.prompt ?? 'Which language is this job about?'} (${(step.candidates ?? []).join(', ')})`);
     else if (step.kind === 'menu') {
       sayPlan(step.plan ?? {});
-    } else if (step.kind === 'answer') say('bot', `A question the plan raised (${step.index} of ${step.total})${Number.isInteger(step.line) ? `, about job line ${step.line}` : ''}: ${step.question}`);
+    } else if (step.kind === 'answer' && step.source === 'fit-check') say('bot', step.question);
+    else if (step.kind === 'answer') say('bot', `A question the plan raised (${step.index} of ${step.total})${Number.isInteger(step.line) ? `, about job line ${step.line}` : ''}: ${step.question}`);
     else if (step.kind === 'goal') say('bot', 'Type the goal sentence yourself.');
   });
 
@@ -587,6 +592,18 @@ export function createSession(card, deps = {}) {
     if (PHASE_STEP[name]) stepStart(PHASE_STEP[name], PHASE_STEP[name] === 'draft' ? `${card.model}, $${card.capUsd.toFixed(2)} cap` : undefined);
     // WHY a try was refused: the drafting log keeps it beside the call that made it (it used to say only "retry 3 of 3"), and the
     // progress line shows it briefly, in code's words
+    // F243: the fit check's result is one drafting-log row (the asks, what was found, what the quote proved); an `absent` check says so in chat
+    if (name === 'fit-check-done') {
+      const running = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
+      appendDraftLog(outDir, {
+        kind: 'fit-check', no: running === -1 ? Math.max(0, state.steps.length - 1) : running, state: String(data.state ?? 'absent'),
+        asks: (Array.isArray(data.asks) ? data.asks : []).map((/** @type {any} */ a) => ({
+          line: a.line, ask: redactSecrets(String(a.ask)), found: a.found === true, quote: typeof a.quote === 'string' ? redactSecrets(a.quote) : null, madeUp: a.madeUp === true,
+        })),
+        notFound: (Array.isArray(data.notFound) ? data.notFound : []).map((/** @type {any} */ x) => ({ line: x.line, ask: redactSecrets(String(x.ask)) })), at: new Date().toISOString(),
+      });
+      if (data.state === 'absent') say('bot', FIT_ABSENT_NOTE);
+    }
     if (name === 'author-try-failed') {
       lastTryRefused = true;
       const no = state.steps.findLastIndex((/** @type {any} */ x) => x.id === 'draft');
@@ -1068,6 +1085,16 @@ export function createSession(card, deps = {}) {
       return { jobLines, answers, left };
     };
 
+    // F243: the fit check's one question, through the same `ask` (the chat box + Send; a blank answer asks again, there is no skip)
+    const fitAsk = async (/** @type {string} */ question) => {
+      for (;;) {
+        const a = await ask({ kind: 'answer', source: 'fit-check', index: 1, total: 1, question });
+        if (a === null) return null;
+        if (String(a).trim()) return String(a);
+        say('bot', 'An answer is needed here — there is no skip. Type it in the box below and press Send.');
+      }
+    };
+
     state.phase = 'drafting';
     // no early "drafting" line: the real author phase (PHASE_STEP) starts it, carrying draftDetail (see onPhase)
     // build item 4 — the DISPLAY id (card.model, e.g. "deepseek-flash"), not
@@ -1087,6 +1114,9 @@ export function createSession(card, deps = {}) {
       ...(deps.scout ? { scout: deps.scout } : {}),
       // PART 1c: a test that replaces the model boundary (`generate`) must not reach the real paid look; `deps.lookFn` brings its own
       ...(deps.lookFn !== undefined ? { lookFn: deps.lookFn } : (deps.generate ? { lookFn: null } : {})),
+      // F243: the fit check asks through the ordinary ask path; like the look, a test that replaces the model boundary never reaches the real paid call
+      fitAsk,
+      ...(deps.fitFn !== undefined ? { fitFn: deps.fitFn } : (deps.generate ? { fitFn: null } : {})),
       ...(authorFnOverride ? { authorFn: authorFnOverride } : {}),
     });
 
