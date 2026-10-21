@@ -2166,3 +2166,37 @@ Cause, from money POC 3 and fwd's live MAD→FCO run: the AI puts a currency WOR
 - Airbnb (airbnb-porto): unchanged, reads its results through the no-label path.
 - Every existing pagerules / golden test: KEPT facts must stay the same. A drop reason that changes only because `currency-not-symbol` became a move is allowed and listed in the commit body. Any KEPT fact that changes = STOP and report.
 - Each new test must fail without the change.
+
+## Addendum 2026-10-21 — search build spec: `search: <site>` for information jobs (rulings by hamr 2026-10-21: "2a, build both on same branch", Q1 "1a", Q2 "2a"; built on fix/bound-in-words)
+
+From search POC v2 (PASS on the information case: Node.js releases fit on nodejs.org/en/blog/release; dated listings are landing pages). Listing jobs (flights, stays on a date) keep the pasted results link.
+
+### The input
+- A rubric Inputs line `search: <site>`; `<site>` is an http(s) address or a bare host (`duckduckgo.com` = `https://duckduckgo.com`). It replaces today's refusal in src/source.js (~1200 and ~1269) for rubric jobs only; repo jobs keep the refusal.
+- The same front-door refusals as a page address (credentials in the address, a secret shape).
+
+### Drafting flow (code decides; the AI only writes words and picks links)
+1. barebrowse (library, as src/pagefetch.js; same connect/snapshot options and timeouts): goto the site, snapshot.
+2. CODE picks the box: the first `searchbox`, else `combobox`, else `textbox` in the snapshot. None = stop: `<site> has no search box bareloop can use. Paste a results page link instead.`
+3. One AI call (drafting provider, drafter thinking rule = off) gets the job lines and returns `{"words": "..."}`; code types them into the box, presses Enter, waits for network idle, snapshots: the results page.
+4. Fit check (src/fitcheck.js `runFitCheck`, as is) on the results page. `fits` = this page is the evidence.
+5. Else one AI call gets the results-page snapshot and the job lines and returns up to 5 link refs, best first (`{"links":[...]}`). Code keeps only refs that are links in that snapshot and whose names hold none of the gate words (pay, book, buy, send, submit, sign up, sign in, checkout, card; case-insensitive; same list as the browse gate ruling v1.95). For each kept link in order: back to the results page if needed, click it, wait, snapshot, fit check. First `fits` = that page is the evidence. A page under the existing minimum size or with a bot challenge counts as not fitting.
+6. None fits (hamr Q1 "a"): the CLOSEST page = the opened page (results page included) with the most asks found (ties: the first). One question through the existing fit `ask` seam, words owned by code:
+   `No page fit every ask. Closest: <address>, found X of Y. Not found: <ask> (line N), ... Type go on to use it, or anything else to stop.`
+   "go on" = that page is the evidence; anything else = stop `search-stopped`: `Stopped before drafting: no page from <site> fit the job. Change the job or paste a results page link. Spent so far: $X.`
+7. The evidence page is saved exactly like a fetched page (input/<label>.txt, sha256). source.json records for that input: `search: {site, words, url, host}` where `url` is the evidence page's address and `host` its host.
+8. The later fit check before the look is NOT run again for an input whose page came from the search (its fit was just checked or answered); a second call would be paid twice for the same page.
+9. Every AI call is booked through `onCall` (labels `search-words`, `search-links`, `fit-check`) and cap-checked before it (`capStop`).
+
+### Run start (hamr Q2 "a")
+- `refreezeUrlInputs` (src/source.js) for a search input: run the same search (steps 1-5, no question). A fitting page whose host equals the recorded `host` = the run's page. Otherwise (no fit, or a fit on another host) fetch the recorded `url` again, as a pasted address is today. If that fails, the existing unreadable-input stop applies. The run's spend books these calls.
+
+### Language
+barebrowse has no locale option (POC v2 checked its source). No per-site language parameters in code (no hardcoding of sites). A page that comes back in another language is read as it is; logged when seen live, never patched per site.
+
+### Tests (real data where it exists)
+- Real snapshots from .claude/scratch/search-poc2/ copied into tests/fixtures/search/ with sha256: the DuckDuckGo site page (box pick: the combobox, not the `search` landmark), a results page (link filter: a "Book Flights" link refused), the nodejs.org release page (fit).
+- The flow with an injected barebrowse handle (as tests/url-inputs.test.js injects one): fits on the results page; fits on link 2; none fits → the closest question; "go on" → evidence saved with its url/host; other words → `search-stopped` with spend; no box → stop words.
+- Run start with an injected handle: same host fit → that page; other host → refetch of the recorded url.
+- The repo-job refusal of `search:` is unchanged.
+- Each test must fail without the change.
