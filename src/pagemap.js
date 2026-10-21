@@ -15,6 +15,7 @@ import { isOutputCutOff } from './authorflow.js';
 import { AUTHOR_CALL_TIMEOUT_MS, AUTHOR_SCOUT_MAX_TOKENS, SURVEY_CAUSES } from './authorscout.js';
 import { lineRules, boundInWords, wordsSaidOn } from './rubricstep.js';
 import { applyPageRules, validReading } from './pagerules.js';
+import { dryReadMoney } from './pagedry.js';
 import { ruleWords } from './facts.js';
 import { lookFactOf } from './inputlook.js';
 
@@ -164,8 +165,10 @@ export async function runPageMap({
       if (malformed >= 2) return absent(MAP_UNREADABLE, SURVEY_CAUSES.UNPARSEABLE);
     }
     const kept = applyPageRules(texts[label], mapping, jobLines);
-    for (const f of kept.facts) facts.push(lookFactOf(f, label));
-    for (const d of kept.dropped) dropped.push({ ...d, source: label });
+    // money build v2: "can it read" - a money fact whose forms read no result line of the page, by the run's own checker, is Not checked
+    const read = await dryReadMoney(texts[label], kept.facts);
+    for (const f of read.facts) facts.push(lookFactOf(f, label));
+    for (const d of [...kept.dropped, ...read.dropped]) dropped.push({ ...d, source: label });
     maps.push({ source: label, facts: mapping.facts.length });
     looks.push(label);
   }

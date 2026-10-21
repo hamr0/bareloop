@@ -21,7 +21,7 @@ const WORDS = /** @type {Record<string, (d: Dropped) => string>} */ ({
   'limit-currency': (d) => `Only the first 3 currencies are used; "${d.word}" was left out.`,
   'limit-unit': (d) => `Only the first 10 units are used; "${d.word}" was left out.`,
   'unit-too-long': (d) => `"${d.word}" is longer than 100 characters, so it was not used.`,
-  'currency-not-symbol': (d) => `"${d.word}" is not a currency sign ($, € or £); a word the page writes after the amount is read as a unit.`,
+  'reads-no-result': () => "the price rule could not read a price in the page's results, so it is not checked.",
   'person-left': () => 'You chose to leave it Not checked.',
   'bad-shape': (d) => `The AI named a kind of value for "${d.fact}" that a check cannot read.`,
 });

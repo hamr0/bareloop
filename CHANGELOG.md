@@ -14,6 +14,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **A currency word in the wrong box no longer kills the price check (F241).** Drafting now sorts the AI's currency forms by code: a sign ($, €, £) is the currency, any other form ("US dollars") is a unit, whichever box the AI put it in; `currency-not-symbol` is gone. Then a $0 dry read grades an honest claim on each result line with the run's own checker, and a price fact that reads no result line is left under Not checked (`reads-no-result`) instead of being signed to fail at the run.
 - **A number the AI made up no longer passes as the person's own.** The test for "is this limit in the person's words" matched digits inside other words, so 5, 15 and 50 counted as said for "under $150 ... between 05:00 and 23:59". It now reads times, dates, amounts and bare numbers as whole items, and a limit counts as written only if it equals one of them (`boundInWords`, F242).
 
 ## [0.44.0] - 2026-10-20
