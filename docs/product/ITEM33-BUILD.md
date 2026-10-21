@@ -1941,3 +1941,31 @@ $0.30 hard, deepseek-flash, key and price as fit POC v5 section 6.
 
 ### Scope
 POC only, in .claude/scratch/search-poc/. Never product code.
+
+## Addendum 2026-10-21 — money POC: read the price form from the results only, and prove it at $0 before signing (ordered by hamr 2026-10-21: "can you poc first?"; FROZEN before any number is read)
+
+Why: a page writes one currency several ways in several places (Google Flights: `$289` in filters, `From 289 US dollars` in each result). The look reads the whole page, so a signed price rule can mix places (F241: "$" after "From", while every result says "From 137 US dollars") and no run can pass. Only the results matter.
+
+### What it tests ($0, no model call, real saved pages, the real checker)
+- **Dry read.** For a signed price rule and a saved page: take every page line that is a RESULT (a line where the rule's anchor is followed by a number, as the page writes it); for each, build the claim an honest worker would write (quote = that line, value = the digits of the amount) and grade it with our own `gradeStep` (src/rubricstep.js, bareguard `checkStep`). Count reads = results graded green.
+- **Results-only rule.** Code (no AI) reads, from those result lines only, the currency word or symbol that sits next to the number, maps it through a per-currency list (USD: `$`, `US dollars`, `USD`; EUR: `€`, `EUR`, `euros`; GBP: `£`, `GBP`, `pounds`), and builds the rule {anchor, currency list}. Then the dry read on the same page.
+- **Cheat guard.** On each page, one claim whose value is NOT the amount in its quote must grade red under every rule.
+
+### Rules and pages (frozen)
+- R-F241: the signed price fact of run mvh7g2hc (spec in ~/.config/bareloop/panel-sessions/smvh7bxou4win/, read only) on its own saved page.
+- R-ok: the signed price fact of run mvif12u2 (session smvif0by4xpfx) on its own saved page.
+- R-code: the results-only rule, on every saved page: tests/fixtures/idea-a/*.page.txt, tests/fixtures/fit/*.txt, .claude/scratch/idea-a-pages/*.txt, .claude/scratch/reversed-live/ord-bos-now.txt, .claude/scratch/airbnb-live/porto-now.txt, the two session pages above. sha256 of each recorded before any number is read. For Google Flights pages the anchor is "From"; for Airbnb pages the anchor is "total" (the number comes BEFORE it: "€533 total") — this case is expected to expose the known number-before-label gap.
+
+### Pass rule
+- R-F241 reads fewer results than its page has (the dry read catches F241 before signing).
+- R-ok reads every result on its page.
+- R-code reads every result on every Google Flights page.
+- The cheat claim is red on every page under every rule.
+- Airbnb pages are reported, not graded (the number-before-label case belongs to bareguard's reader; a miss there is logged as an ask to bareguard, never patched).
+- Any miss = FAIL and a finding. No change after the first number.
+
+### Not tested here
+The worker brief line "a price is only the digits" (fwd's fix) needs a live model call; fwd's live re-walk result is awaited first.
+
+### Scope
+POC only, in .claude/scratch/money-poc/. Never product code. $0.
