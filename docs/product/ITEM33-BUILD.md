@@ -2064,3 +2064,29 @@ Source: `.claude/scratch/search-poc2/RESULTS.md`. **FAIL by the frozen rule** (c
 
 ### Scope
 `.claude/scratch/money-poc2/`, reusing `.claude/scratch/money-poc/poc.mjs`. Never product code. $0.
+
+### Result — money POC 2 (2026-10-21)
+Source: `.claude/scratch/money-poc2/RESULTS.md`. $0. R-F241 with all the page's forms read 16 of 16 (POC 1: 0 of 16) — rescued. Every Google Flights page read every result with `$`, `US dollars`, `USD`. Cheat red on all 26 pages. The script's FAIL is again `tests/fixtures/fit/barcelona.txt` (an Airbnb page its name sorter missed; 0 result lines). R1L, if the forms were listed together, keeps `US dollars` and drops `USD` everywhere and `$` on pages where `$` reads one more number than `US dollars` (F241's page among them); `US dollars` alone reads all of F241's results (money POC 1, R-code).
+
+## Addendum 2026-10-21 — money POC 3: the two designs through the real drafting rules, side by side (ordered by hamr 2026-10-21: "test your drafting idea too ... we need to decide/compare between both"; FROZEN before any number is read)
+
+### Arms ($0, real AI maps, real product code, real checker)
+- **A — today:** the real `applyPageRules` (src/pagerules.js) on the real AI map and page; the kept money facts are what would be signed.
+- **B — can it read:** A, then for each kept money fact the dry read (money POC 1: result lines, honest claims, `gradeStep`). Reads 0 = the fact goes to Not checked.
+- **C — all forms + can it read:** before `applyPageRules`, each money fact's unit and currency lists are replaced by ALL forms on the page (money POC 2's list; signs into `currency`, words into `unit`); then the real `applyPageRules` (U1, R1, R1L as they are); then B's dry read. Drops of forms that code added are counted separately (they would be silent in the product).
+
+### Inputs (real AI output only)
+- Every `tests/fixtures/idea-a/<name>.map.json` with its `<name>.page.txt` and job lines as the existing golden tests feed them (read tests/page-rules-golden.test.js for how).
+- F241: the real page-map reply in ~/.config/bareloop/panel-sessions/smvh7bxou4win/draft-log.jsonl (the `page-map` call's raw) with that session's saved page and job lines (read only).
+- sha256 of every input recorded before any number.
+
+### Report per input and arm
+The signed price fact (labels, unit, currency) or Not checked; result lines read of total; the cheat claim's colour; for C, which code-added forms were dropped and by which rule.
+
+### Decision rule (frozen)
+- C is preferred over B only if: C signs a reading price fact on every input where B signs one; C signs one on at least one input where B goes Not checked (a rescue); no cheat claim is green in any arm; and on every input where A already reads every result, C's signed fact reads every result too.
+- Otherwise B (the smaller change) is preferred.
+- Either way the result is a FINDING first; no build until hamr picks.
+
+### Scope
+`.claude/scratch/money-poc3/`. Never product code. $0.
