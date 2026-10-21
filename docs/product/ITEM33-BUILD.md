@@ -1874,3 +1874,39 @@ Source: `.claude/scratch/fit-poc6/RESULTS.md` and `calls.jsonl` (untracked scrat
 - Pair 4 named "stay in Barcelona" (try 3 also "total price").
 - Made-up quotes 0. Retries 2 (malformed first answers). Cuts 0. Spend $0.1396 of the $0.25 cap.
 - Limit: these are the same pages v2-v5 used, and v6's design was chosen after reading their failures. This is a fit on known pages, not proof on unseen pages. n = 3 tries per pair.
+
+## Addendum 2026-10-21 — fit check build spec (ordered by hamr 2026-10-21: "1, go build"; built on fix/bound-in-words)
+
+From fit POC v6 (PASS on known pages, F243). A person reads every result at Accept, so the fit check only stops a clearly wasted draft. There is no NO and no count: anything not found becomes one question to the person.
+
+### What it does
+1. Rubric jobs only, at drafting, once. It runs after the inputs are frozen and the content gate passes, and BEFORE the look (`lookFn`), so a wrong page stops before the look spends.
+2. One call (deepseek or whatever the drafting provider is; drafter thinking rule = off; same `callOptions` as the look). The AI gets the job lines (numbered, `~` rules NOT included) and the WHOLE text of every input, each under its label. For each job line it splits the line into the short parts it asks for, using only words copied from that line, and says found with a quote copied from the page, or not found.
+3. Code decides, never the AI:
+   - Normalize = collapse whitespace, lower case.
+   - Every ask's normalized text must be a substring of its own job line's normalized text, and every job line must have at least one ask. Otherwise the reply is malformed.
+   - An ask is found only if found is true AND its normalized quote is a substring of one input's normalized text. found:true with a quote not on the page = not found, flagged made-up.
+   - All asks found = `fits`: nothing is shown, drafting goes on exactly as today.
+   - Any ask not found = `ask`.
+4. Failure is OPEN (a wrong stop is the costly mistake): a malformed reply gets one retry; a second malformed reply, a cut (max_tokens), a call failure after the existing one-retry transport rule, or a cap stop before the call gives `absent`. On `absent` drafting goes on, and chat says in plain words: "The fit check did not finish; drafting goes on."
+5. On `ask`, one question through the existing panel `ask` seam (it already writes the `human` row to draft-log.jsonl), text owned by code:
+   `I found X of Y of your asks on this page. Not found: <ask> (line N), <ask> (line N). Type go on to keep drafting, or anything else to stop and change the job or the page.`
+   - Answer "go on" (normalized, also "go on." ) → drafting continues to the look.
+   - Any other answer → stop `fit-stopped`, plain words via `draftStopText`: "Stopped before drafting: the page does not show everything the job asks for (<not-found list>). Change the job or the page and draft again. Spent so far: $X."
+   - No answer (session abandoned) → existing `confirm-abandoned`.
+   - The answer is NOT a `~` rule and changes nothing in the signed job.
+6. Spend: booked through the existing `onCall` with label `fit-check`, cap-checked with `capStop` before the call, counted in the drafting part like the look.
+7. Record: one draft-log row `{kind:'fit-check', state, asks:[{line, ask, found, quote, madeUp}], notFound}`.
+8. Only when the caller supplies the answer seam (panel). With no seam (CLI door, tests that don't inject it) the fit check does not run.
+
+### Call sites
+- New `src/fitcheck.js`: pure `decideFit(reply, jobLines, texts)` and `runFitCheck({jobLines, texts, provider, rates, ceilingUsd, onCall, callOptions, createLoop})`, following `runPageMap`'s call/book/retry pattern (src/pagemap.js).
+- `src/authorjob.js`: call it after `readFrozenInputs` (:608) and the content gate (:611), before `lookFn` (:618), under `lang===RUBRIC_LANG` and the new seam present.
+- `src/panel/authorsession.js`: pass a `fitAsk` seam built on the existing `ask` seam (:536-566); fire `onPhase('fit-check')`.
+- `src/authorreadout.js` `draftStopText`: the `fit-stopped` head.
+
+### Tests (real data where it exists)
+- `decideFit` on real pages and real replies: use the fit POC v6 pages (copy jfk-mia, mia-jfk, barcelona into tests/fixtures/fit/ with their sha256) and quotes taken from `.claude/scratch/fit-poc6/calls.jsonl`; a made-up quote; an ask not copied from its line (malformed); a line with no ask (malformed); fits; ask.
+- `runFitCheck` with an injected loop: retry once on malformed, absent on the second, absent on cut, cap stop before the call, spend booked with label `fit-check`.
+- Wiring (panel-author style): fits → no question, look runs; ask + "go on" → look runs; ask + other words → `fit-stopped` with plain words and spend; absent → note and look runs; no seam → no call.
+- Each test must fail without the change.
