@@ -1690,3 +1690,78 @@ $0.20 hard, covering finds and judges. Price from ~/.config/bareloop/config.json
 
 ### 7. Scope
 POC only, in .claude/scratch/fit-poc4/. Never product code. 7 finds, then up to 21 judge calls, once, no rerun.
+
+### Result — fit POC v4 (2026-10-21)
+- Verdict: FAIL, and DEGENERATE (every answer was NO).
+
+| pair | frozen | call1 | call2 | call3 | pass? |
+|---|---|---|---|---|---|
+| 1 | YES | NO (code) | NO (code) | NO (code) | NO |
+| 2 | NO | NO (code) | NO (code) | NO (code) | yes |
+| 3 | YES | NO | NO | NO | NO |
+| 4 | NO | NO (code) | NO (code) | NO (code) | yes |
+| 5 | NO | NO (code) | NO (code) | NO (code) | yes |
+| 6 | NO | NO (code) | NO (code) | NO (code) | yes |
+| 7 | NO | NO | NO | NO | yes |
+
+- Cause, found by the orchestrator afterwards: the verifier's ">= 20 characters" substring rule dropped REAL page text as "made-up". The finder copied the text inside page lines (for example `11:20 AM`, `€533 total`), while the page lines carry markup (`- StaticText "11:20 AM" [ref=2851]`, `- StaticText "€533 total" [ref=578]`). Both are on the page (grep -c gives 1 each). So most pairs got a code NO with no judge call.
+- Pair 7 was judged NO, "wifi and meal", 3 of 3.
+- Spend $0.0393.
+- Learning across v1-v4: the binary judge answers right whenever it sees real results. Every failure was in how the evidence was collected (slot form, label lines, block cutter, verifier). hamr: "give the LLM the whole page and ask it the question".
+
+## Addendum 2026-10-21 — fit POC v5: whole page, the job broken into questions, code decides (SIGNED by hamr 2026-10-21; FROZEN before any number is read)
+
+### 1. How it works
+- One call per try, 3 tries per pair. deepseek-flash, thinking off, maxTokens 4000.
+- The AI gets the WHOLE page text and the job. No look, no finder, no code cutting of the page.
+- System message: `You answer questions about ONE saved web page. You never invent words: every quote must be copied from the page, character for character.`
+- User message, exactly (angle-bracket parts filled by code):
+
+```
+THE JOB: <job>
+
+THE PAGE:
+<full page text>
+
+Break THE JOB into short yes/no questions, one per thing the job asks for (for example: are there flights from X to Y; is a price shown; is a departure time shown). Answer each from the page only. Then count how many results on the page match ALL of the job's questions. Reply with JSON only: {"questions":[{"q":"<question>","answer":"yes"|"no","quote":"<a short piece of page text that shows the answer, copied exactly, or null>"}],"matching":<number>}
+```
+
+### 2. Code checks and decides
+- Normalize = collapse whitespace, case-insensitive.
+- A quote is on the page if its normalized text is a substring of the normalized page. There is no length rule.
+- A "yes" whose quote is null or not on the page is counted as "no" (unproven), and flagged.
+- jobCount = the first whole number written in the job (for example "List 3 ..." gives 3). If there is none, jobCount = 1.
+- Verdict, in order:
+  1. any question answered "no" (including an unproven yes) gives NO;
+  2. matching < jobCount gives ASK;
+  3. otherwise YES.
+- A malformed answer gets one retry, then a miss. A cut (finish reason length) is a miss. `matching` must be a whole number >= 0, else the answer is malformed.
+
+### 3. Pairs and frozen verdicts
+1. "List 3 flights from New York JFK to Miami with price and departure time" × jfk-mia → YES
+2. same job × mia-jfk → NO
+3. "List 3 stays in Barcelona with total price" × barcelona → YES
+4. same Barcelona job × madrid → NO
+5. the job of pair 1 × barcelona → NO
+6. "Get the ticket id, first name, last name and date of birth" × changelog → NO (jobCount 1)
+7. "List 3 flights from New York JFK to Miami with price, departure time, airline, wifi and meal" × jfk-mia → NO
+8. "List 3 flights with one stop from New York JFK to Miami with price" × jfk-mia → ASK (the page lists exactly 1 one-stop flight; Phase A count: `grep -c "1 stop flight"` gives 1)
+
+### 4. Pages (same sha256 values as v2 section 6)
+- jfk-mia ad00a9a9052c038d1afaed88a572cb6467778ef3988ed8948acd0d8a5aa2a980
+- mia-jfk e22e30d4dae6a8ee0f270366f4e831a43fea8eb3a60b7e0680ccf6cb8c1bfb0d
+- barcelona cb63e3860c1103408d6592fc31f949036adb0536044ccd80891a47f220495497
+- madrid bb3bacef065a05604ee66cfa96559beaaab5bc37272042d0f9bad879f76b4da1
+- changelog a34717cc048deec140abe4683e7c6696a01d930f34a228fa1b27137f9292082f
+
+### 5. Pass rule
+- Every pair gets its frozen verdict in 3 of 3 tries. Any miss means the POC FAILS.
+- DEGENERATE flag if all 24 verdicts are the same word.
+- Reported, not graded: the questions the AI wrote, the unproven-yes count, and the matching numbers (for pair 8: did it count 1?).
+- No change to prompts or code after the first number is read.
+
+### 6. Cost cap
+$0.40 hard (8 pairs × 3 whole-page calls). Price from ~/.config/bareloop/config.json `models.DEEPSEEK_API_KEY` entry "deepseek-flash" (0.6 in / 1.2 out per 1M). Key DEEPSEEK_API_KEY from ~/.config/bareloop/.env, never printed. baseUrl and shape from `keys.DEEPSEEK_API_KEY`. A cap stop leaves the POC incomplete and it cannot PASS.
+
+### 7. Scope
+POC only, in .claude/scratch/fit-poc5/. Never product code. 24 calls, once, no rerun.
