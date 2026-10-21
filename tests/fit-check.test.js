@@ -16,6 +16,7 @@ const SHA = {
   'jfk-mia': 'ad00a9a9052c038d1afaed88a572cb6467778ef3988ed8948acd0d8a5aa2a980',
   'mia-jfk': 'e22e30d4dae6a8ee0f270366f4e831a43fea8eb3a60b7e0680ccf6cb8c1bfb0d',
   barcelona: 'cb63e3860c1103408d6592fc31f949036adb0536044ccd80891a47f220495497',
+  'bos-den': 'b6b8c6bfd2571a96cdc62f070e78140dd9924b3338859cf32702d4764c62c1e9',
 };
 const page = (/** @type {keyof typeof SHA} */ k) => {
   const buf = readFileSync(join(HERE, 'fixtures', 'fit', `${k}.txt`));
@@ -183,4 +184,39 @@ test('runFitCheck: a cap already spent (here a zero ceiling) stops BEFORE the ca
   assert.equal(r.budgetStop, 'cap-halt');
   assert.equal(p.seen.calls, 0);
   assert.equal(booked.length, 0);
+});
+
+// F243 live (run mviepi4i, panel session smviejacde4qx): the job line "lis 3 flights" came back with the asks "3" and "flights"; the person was asked
+// "Not found: 3 (line 1)". A bare number is a count, not a thing the page shows: code ignores it. The reply and page below are the real ones.
+const LIS = [{ n: 1, text: 'lis 3 flights' }];
+const LIVE = '{"asks":[{"line":1,"ask":"3","found":false,"quote":null},{"line":1,"ask":"flights","found":true,"quote":"Top flights"}]}';
+
+test('decideFit: the real live reply for "lis 3 flights" fits - the bare "3" is ignored, kept in the asks with ignored: number', () => {
+  const d = decideFit(LIVE, LIS, { Page: page('bos-den') });
+  assert.equal(d.status, 'ok');
+  if (d.status !== 'ok') return;
+  assert.equal(d.state, 'fits');
+  assert.deepEqual(d.notFound, []);
+  assert.equal(d.asks.length, 2);
+  assert.equal(/** @type {any} */ (d.asks[0]).ignored, 'number');
+  assert.equal(/** @type {any} */ (d.asks[1]).ignored, undefined);
+});
+
+test('decideFit: a number-only ask is ignored in any spelling (1,000 / 10 / 1.5), but an ask that merely contains a number is a normal ask', () => {
+  for (const n of ['1,000', '10', '1.5', '3 000']) {
+    const d = decideFit(JSON.stringify({ asks: [{ line: 1, ask: n, found: false, quote: null }, { line: 1, ask: 'flights', found: true, quote: 'Top flights' }] }), [{ n: 1, text: `lis ${n} flights` }], { Page: page('bos-den') });
+    assert.equal(/** @type {any} */ (d).state, 'fits', n);
+    assert.equal(/** @type {any} */ (d).asks[0].ignored, 'number', n);
+  }
+  const d = decideFit(JSON.stringify({ asks: [{ line: 1, ask: '3 flights', found: false, quote: null }] }), LIS, { Page: page('bos-den') });
+  assert.equal(/** @type {any} */ (d).state, 'ask');
+  assert.equal(/** @type {any} */ (d).asks[0].ignored, undefined);
+  assert.deepEqual(/** @type {any} */ (d).notFound, [{ line: 1, ask: '3 flights' }]);
+});
+
+test('decideFit: a job line whose only ask is a bare number has nothing to check - fits, not malformed', () => {
+  const d = decideFit(JSON.stringify({ asks: [{ line: 1, ask: '3', found: false, quote: null }] }), LIS, { Page: page('bos-den') });
+  assert.equal(d.status, 'ok');
+  assert.equal(/** @type {any} */ (d).state, 'fits');
+  assert.deepEqual(/** @type {any} */ (d).notFound, []);
 });

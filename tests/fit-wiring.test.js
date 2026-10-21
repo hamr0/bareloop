@@ -118,7 +118,7 @@ test('no answer seam (the CLI door, any test that does not inject one): the fit 
 
 test('draftStopText: fit-stopped says what was not found, what to do, and what was spent, in the spec\'s words', () => {
   const t = draftStopText({ stop: 'fit-stopped', reds: [{ code: 'fit-stopped', path: 'jobLines', detail: 'to Miami (line 1), price (line 2)' }], spend: { knownUsd: 0.004, spendComplete: true }, wholeJob: true });
-  assert.equal(t, 'Stopped before drafting: the page does not show everything the job asks for (to Miami (line 1), price (line 2)). Change the job or the page and draft again. Spent so far: $0.0040.');
+  assert.equal(t, 'Stopped before drafting: the page does not show everything the job asks for: to Miami (line 1), price (line 2). Change the job or the page and draft again. Spent so far: $0.0040.');
   assert.equal(FIT_ABSENT_NOTE, 'The fit check did not finish; drafting goes on.');
 });
 
@@ -183,7 +183,7 @@ test('the panel: ask + other words stops with fit-stopped in plain words and the
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'));
   session.send('stop, wrong page');
   assert.ok(await until(() => session.state.phase === 'refused'), `${session.state.phase}`);
-  assert.equal(session.state.error, 'Stopped before drafting: the page does not show everything the job asks for (flights from New York JFK (line 1)). Change the job or the page and draft again. Spent so far: $0.0040.');
+  assert.equal(session.state.error, 'Stopped before drafting: the page does not show everything the job asks for: flights from New York JFK (line 1). Change the job or the page and draft again. Spent so far: $0.0040.');
   assert.deepEqual(order, ['fitFn']);
   assert.equal(legs.length, 0);
 });
@@ -200,4 +200,22 @@ test('the panel: with the model boundary replaced and no fitFn injected, the rea
   const { session, order } = panel(undefined);
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'), `${session.state.phase} / ${session.state.error}`);
   assert.deepEqual(order, ['lookFn']);
+});
+
+test('the panel: a bare-number ask ("3") is not counted, not listed in the question, and is kept in the drafting log row flagged ignored', async () => {
+  const reply3 = JSON.stringify({ asks: [{ line: 1, ask: '3', found: false, quote: null }, ...ASKS.map((ask, i) => (i === 0
+    ? { line: 1, ask, found: false, quote: null } : { line: 1, ask, found: true, quote: QUOTES[i] }))] });
+  const fitFn = async (/** @type {any} */ o) => {
+    o.onCall({ label: 'fit-check', costUsd: 0.004, unpricedRounds: 0, raw: reply3 });
+    const d = /** @type {any} */ (decideFit(reply3, o.jobLines, o.texts));
+    return { state: d.state, asks: d.asks, notFound: d.notFound, reason: null, cause: null, calls: [], budgetStop: null };
+  };
+  const { session, logRows } = panel(() => fitFn);
+  assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'), `${session.state.phase} / ${session.state.error}`);
+  assert.match(session.state.pendingAsk.question, /^I found 3 of 4 of your asks on this page\. Not found: flights from New York JFK \(line 1\)\. Type go on/);
+  const row = logRows().find((e) => e.kind === 'fit-check');
+  assert.equal(row.asks[0].ask, '3');
+  assert.equal(row.asks[0].ignored, 'number');
+  assert.equal(row.asks[1].ignored, undefined);
+  assert.deepEqual(row.notFound, [{ line: 1, ask: 'flights from New York JFK' }]);
 });

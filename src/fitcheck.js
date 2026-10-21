@@ -46,7 +46,10 @@ export function fitPrompt({ jobLines, texts }) {
     + 'Reply with JSON only, no prose, no code fence: {"asks":[{"line":<line number>,"ask":"<the part, copied from that line>","found":true|false,"quote":"<page text or null>"}]}';
 }
 
-/** @typedef {{line: number, ask: string, found: boolean, quote: string|null, madeUp: boolean}} FitAsk */
+/** @typedef {{line: number, ask: string, found: boolean, quote: string|null, madeUp: boolean, ignored?: 'number'}} FitAsk */
+
+/** an ask that is only a number (a count the job gives, not something the page shows): digits, optional spaces, commas, dots @param {string} ask @returns {boolean} */
+const isNumberOnly = (ask) => /^\d[\d\s,.]*$/.test(norm(ask));
 
 /**
  * Read the AI's reply and decide, all in code. Malformed (no repair): not JSON, another form, a line that is not a job line, an ask not copied from its own
@@ -75,10 +78,11 @@ export function decideFit(text, jobLines, texts) {
     if (quote !== null && typeof quote !== 'string') return { status: 'malformed' };
     const q = quote === null ? '' : norm(quote);
     const onPage = q !== '' && pages.some((p) => p.includes(q));
-    asks.push({ line: a.line, ask: a.ask, found: a.found && onPage, quote, madeUp: a.found && !onPage });
+    // a bare number is ignored: kept in the record (flagged), never counted, never asked about
+    asks.push({ line: a.line, ask: a.ask, found: a.found && onPage, quote, madeUp: a.found && !onPage, ...(isNumberOnly(a.ask) ? { ignored: /** @type {'number'} */ ('number') } : {}) });
   }
   if (!jobLines.every((l) => asks.some((a) => a.line === l.n))) return { status: 'malformed' };
-  const notFound = asks.filter((a) => !a.found).map((a) => ({ line: a.line, ask: a.ask }));
+  const notFound = asks.filter((a) => !a.ignored && !a.found).map((a) => ({ line: a.line, ask: a.ask }));
   return { status: 'ok', state: notFound.length === 0 ? 'fits' : 'ask', asks, notFound };
 }
 

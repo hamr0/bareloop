@@ -587,7 +587,7 @@ export function createSession(card, deps = {}) {
     appendDraftLog(outDir, {
       kind: 'fit-check', no: running === -1 ? Math.max(0, state.steps.length - 1) : running, state: String(data.state ?? 'absent'),
       asks: (Array.isArray(data.asks) ? data.asks : []).map((/** @type {any} */ a) => ({
-        line: a.line, ask: redactSecrets(String(a.ask)), found: a.found === true, quote: typeof a.quote === 'string' ? redactSecrets(a.quote) : null, madeUp: a.madeUp === true,
+        line: a.line, ask: redactSecrets(String(a.ask)), found: a.found === true, quote: typeof a.quote === 'string' ? redactSecrets(a.quote) : null, madeUp: a.madeUp === true, ...(a.ignored === 'number' ? { ignored: 'number' } : {}),
       })),
       notFound: (Array.isArray(data.notFound) ? data.notFound : []).map((/** @type {any} */ x) => ({ line: x.line, ask: redactSecrets(String(x.ask)) })), at: new Date().toISOString(),
     });
