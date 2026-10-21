@@ -2001,3 +2001,35 @@ $0.40 hard, deepseek-flash, thinking off, key and price as v1.
 
 ### Scope
 POC only, in .claude/scratch/search-poc2/. Never product code.
+
+### Result — money POC (2026-10-21)
+Source: `.claude/scratch/money-poc/RESULTS.md`. $0, real checker (`gradeStep`), sha256 of every page recorded first.
+- R-F241: read 0 of 16 results ("the quote holds no money after \"From\"") — the dry read catches F241 before signing. PASS.
+- R-ok (run mvif12u2): 14 of 14. PASS.
+- R-code: every Google Flights page read every result (14 to 45 each). The script reported FAIL on `tests/fixtures/fit/barcelona.txt`, which is an Airbnb page its file-name sorter missed; by the frozen text (Google Flights pages only) this line PASSES. Recorded as a harness classification error, not a read miss; nothing changed after the numbers.
+- Cheat claim: red on all 28 rule × page pairs. PASS.
+- Airbnb (reported): the POC built `anchor: "total"` and read 0 of 24 "€533 total". That is the POC's own shape: the product's U1 rule (src/pagerules.js) already moves a label written after the number into a unit, and the Airbnb live proof (2026-10-21) was green. No bareguard ask from this.
+- Proven on one site family (Google Flights) only.
+
+## Addendum 2026-10-21 — money build spec: forms that read the RESULTS, proven at $0 before signing (ordered by hamr 2026-10-21: "go"; built on fix/bound-in-words)
+
+Today (src/pagerules.js money branch) the AI lists a fact's labels, units and currency signs; code keeps the forms found on the page and R1L keeps forms that read the same set of numbers as the first one, across the WHOLE page. Nothing checks that a form reads a price in the results right after the label, so F241's "$ after From" was signed on a page whose every result says "From 137 US dollars". Lists of units and currencies already exist (src/facts.js).
+
+### What it does (drafting, code only, $0)
+1. **Same-currency family.** A small table owned by src/facts.js next to the sign list: USD = signs `$`, `US$`; words `US dollars`, `USD`. EUR = `€`; `EUR`, `euros`. GBP = `£`; `GBP`, `pounds`. When the AI lists any form of a currency, code adds that currency's other forms before the existing found-on-page filter (so only forms really on the page survive, and found-once stays honest). Forms of a currency not in the table are left as the AI listed them.
+2. **Result lines.** For a money fact with labels, a result line is a page line (the existing `lines` unit in pagerules) where a kept label is followed by a number as the page writes it, with at most one currency sign between (the existing BEFORE/AFTER readers).
+3. **Per-form result read (new rule, R-RES).** Each surviving form is kept only if it reads at least one result line: the amount right after the label is written in that form (a sign before the number, or a unit word after it). A form that reads no result line is dropped with reason `reads-no-result` (plain words: `"$" never appears next to the price after "From" in the page's results, so it was not used.`). Runs before R1L, so R1L compares only forms that read results.
+4. **Fact dry read.** After the rules, for every kept money fact: count the result lines it reads (any kept form). Needed = the job line's result count when the look has one (`exactly N` / `at least N`), else 1. Fewer than needed = the fact is dropped with reason `dry-read-short` and plain words `the price rule read N of the M prices the job needs in the page's results, so it is not checked.` A dropped fact shows under "Not checked" through the existing `look.dropped` path (never silent).
+5. Time and number facts are untouched in this change.
+
+### Call sites
+- src/facts.js: the currency family table (exported), one owner.
+- src/pagerules.js `applyPageRules` money branch: family expansion before the found-on-page filter; R-RES before R1L; the fact dry read after R1.
+- src/pagedropwords.js: the two new reasons' words.
+
+### Tests (real data)
+- The F241 page and spec (run mvh7g2hc, ~/.config/bareloop/panel-sessions/smvh7bxou4win/, copy the page into tests/fixtures/money/ with sha256; read only): "$" after "From" is dropped `reads-no-result`; with the family table "US dollars" is added and kept, and the fact reads every result. Must fail before the change.
+- The mvif12u2 page (tests/fixtures/fit/bos-den.txt): the price fact keeps "US dollars", reads all results.
+- An Airbnb page (tests/fixtures/idea-a/airbnb-porto.page.txt): the existing U1 behaviour is unchanged (golden tests keep passing).
+- A fact that reads fewer results than the job's count: dropped `dry-read-short`, shown Not checked.
+- Every existing pagerules golden test keeps passing; if one changes, STOP and report it (it may be a real behaviour change for hamr).
