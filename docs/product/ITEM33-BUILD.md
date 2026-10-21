@@ -1910,3 +1910,34 @@ From fit POC v6 (PASS on known pages, F243). A person reads every result at Acce
 - `runFitCheck` with an injected loop: retry once on malformed, absent on the second, absent on cut, cap stop before the call, spend booked with label `fit-check`.
 - Wiring (panel-author style): fits → no question, look runs; ask + "go on" → look runs; ask + other words → `fit-stopped` with plain words and spend; absent → note and look runs; no seam → no call.
 - Each test must fail without the change.
+
+## Addendum 2026-10-21 — search POC: can barebrowse search a named site and page through results? (rulings by hamr 2026-10-21; FROZEN before any number is read)
+
+hamr's rulings: an input `search: <url>` always names a site the person trusts (google.com, duckduckgo.com, ua.com ...); bareloop uses that site's own search box. The AI writes the search words its own way (no extra rule for the person). Match = the fit check (F243): all asks found = this page. Up to 5 results pages (page 1, then next, ...); none fits = ask the person. The results page itself is the evidence (saved like a fetched page). At run time it searches again with the same rule. The browse gate stays: read, type, click on search-box forms only; never pay/book/buy/send/submit/sign-up or card fields.
+
+### What the POC tests (the riskiest part only)
+Can barebrowse, as a library (connect, goto, snapshot, type, press, click), on a real site: find the search box, type the AI's words, submit, read the results page, and reach the next results page? And does the fit check (src/fitcheck.js on fix/bound-in-words, used as is) say fits on a results page that holds the answer?
+
+### How
+- One AI call (deepseek-flash, thinking off) gets the site's first snapshot and the job line and returns {"box": <ref>, "words": "<search words>"}. Code checks the ref is a searchbox / combobox / textbox in the snapshot, types the words, presses Enter, waits for network idle, snapshots.
+- Then the fit check on that snapshot. fits = stop. Else one AI call returns {"next": <ref>|null} for the next-results-page control; code checks the ref is a link or button in the snapshot; click, wait, snapshot, fit check. At most 5 results pages.
+- Code refuses any click whose name contains pay, book, buy, send, submit, sign up, sign in, checkout, card (case-insensitive); a refused click ends that case as "gate".
+- Per case recorded: each step, snapshot sizes, the words typed, refs used, fit result per page, cost.
+
+### Cases and frozen expectations
+1. google.com × "List 3 flights from Boston to Denver with price and departure time" → fits within 5 pages
+2. duckduckgo.com × the same job → reported only (no expectation)
+3. duckduckgo.com × "List the last 3 releases of Node.js with version and date" → fits within 5 pages
+4. duckduckgo.com × "List 3 stays in Porto with total price" → no fit after 5 pages (ask)
+5. ua.com × the flights job → expected to fail to search (From/To/Date form, not one box); logged as a site-reach finding, never patched
+
+### Pass rule
+- Mechanics PASS if cases 1 and 3 reach a results page and say fits, and case 4 ends in ask after paging (at least 2 results pages reached). Anything else is a FAIL and a finding.
+- Case 2 and case 5 are reported, not graded.
+- One run, no rerun, no change after the first number.
+
+### Cost cap
+$0.30 hard, deepseek-flash, key and price as fit POC v5 section 6.
+
+### Scope
+POC only, in .claude/scratch/search-poc/. Never product code.
