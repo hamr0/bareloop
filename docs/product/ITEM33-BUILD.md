@@ -1594,3 +1594,99 @@ $0.15 hard. Price from ~/.config/bareloop/config.json `models.DEEPSEEK_API_KEY` 
 
 ### 6. Scope
 POC only, in .claude/scratch/fit-poc3/. Never product code.
+
+### Result — fit POC v3 (2026-10-21)
+
+Source: `.claude/scratch/fit-poc3/RESULTS.md` (untracked scratch).
+
+**FAIL by the frozen rule, not degenerate.** 7 pairs, 3 calls each, 21 calls.
+
+| pair | frozen | call1 | call2 | call3 | pass? |
+|---|---|---|---|---|---|
+| 1 | YES | YES | YES | YES | yes |
+| 2 | NO | NO | NO | NO | yes |
+| 3 | YES | NO | NO | NO | NO |
+| 4 | NO | NO | NO | NO | yes |
+| 5 | NO | NO | NO | NO | yes |
+| 6 | NO | NO (part-not-in-job) | NO (part-not-in-job) | NO (part-not-in-job) | NO |
+| 7 | NO | NO | NO | NO | yes |
+
+- Pair 2 caught the flipped route 3 of 3. The part was "from New York JFK to Miami" and the quote was "Leaves Miami International Airport ... arrives at John F. Kennedy ...".
+- Pair 1 answered YES 3 of 3. Pair 7 named "wifi and meal" as the missing part.
+- Miss, pair 3: the look kept only "Barcelona" and no price words, so the 12-line blocks were page menus and filters, with no stays.
+- Miss, pair 6: the right NO, but the part was copied from the evidence line "nothing was found" instead of from the job, so it was flagged part-not-in-job.
+- Spend $0.0101.
+- Learning: the judge works on real whole results. The weak link is the evidence (the look's words and the block cutter).
+
+## Addendum 2026-10-21 — fit POC v4: AI finds 3 results, code verifies, binary judge (SIGNED by hamr 2026-10-21; FROZEN before any number is read)
+
+### 1. What is the same
+- The same 7 pairs, jobs and frozen answers (v2 section 6).
+- The same pages, with the same sha256 values as v2 section 6:
+  - jfk-mia ad00a9a9052c038d1afaed88a572cb6467778ef3988ed8948acd0d8a5aa2a980
+  - mia-jfk e22e30d4dae6a8ee0f270366f4e831a43fea8eb3a60b7e0680ccf6cb8c1bfb0d
+  - barcelona cb63e3860c1103408d6592fc31f949036adb0536044ccd80891a47f220495497
+  - madrid bb3bacef065a05604ee66cfa96559beaaab5bc37272042d0f9bad879f76b4da1
+  - changelog a34717cc048deec140abe4683e7c6696a01d930f34a228fa1b27137f9292082f
+- The look is NOT used in v4.
+- Model: deepseek-flash, thinking off, maxTokens 4000.
+
+### 2. Step 1: FIND (AI)
+- One call per pair, run once. 7 find calls.
+- System message: `You copy text from ONE saved web page. You never invent words: every line you return must be copied from the page, character for character.`
+- User message, exactly (angle-bracket parts filled by code):
+
+```
+THE JOB: <job text>
+
+THE PAGE:
+<full page text>
+
+Copy up to 3 results from this page that come closest to the job. A result is one item the page lists (one flight, one stay, one row). Copy each result as the page lines that make it up, character for character. If the page lists nothing like the job, return no results. Reply with JSON only: {"results":[{"lines":["<page line>", ...]}, ...]}
+```
+
+- A malformed answer gets one retry. If it is still malformed, the found set is empty and that is recorded.
+
+### 3. Step 2: VERIFY (code)
+- Normalize = trim each line, collapse whitespace, case-insensitive.
+- A returned line is kept only if it equals a normalized page line, OR is a substring of one with length >= 20 characters.
+- Any other line is dropped and counted as "made-up".
+- A result with no kept lines is dropped.
+- Keep at most 3 results, in order.
+
+### 4. Step 3: JUDGE
+- If 0 results survive, code records answer NO with part null and quote null, and makes NO judge call. This is frozen here, before any number.
+- Otherwise 3 judge calls on the same verified results.
+- System message: `You answer one yes/no question about what was found on ONE saved web page. You never invent words: every quote must be copied from the results, character for character.`
+- User message, exactly (angle-bracket parts filled by code; each RESULT's kept lines one per line):
+
+```
+THE JOB: <job text>
+
+THE RESULTS (copied from the saved page and checked by code):
+RESULT 1:
+<lines>
+
+RESULT 2:
+<lines>
+
+Do these results, together, answer the job? Reply with JSON only: {"answer":"YES"|"NO","part":<the job words that are missing or contradicted, copied exactly from THE JOB line and never reworded, or null>,"quote":<ONE line copied exactly from a RESULT, or null>}.
+```
+
+### 5. Code checks and pass rule (frozen, as in v3)
+- answer must be YES or NO; anything else (or unparseable JSON) is malformed: one retry, then a miss.
+- A non-null part must appear in the job (normalized), else the flag "part-not-in-job".
+- A non-null quote must appear in the page (normalized), else the flag "quote-not-on-page".
+- A finish reason of length is a cut, and a cut is a miss.
+- Every pair gets its frozen YES or NO in 3 of 3 calls, with no flags. Any miss means the POC FAILS.
+- A code-recorded NO (0 results) counts as 3 of 3 NO for that pair.
+- DEGENERATE flag: reported if every pair's answers are the same word.
+- Code never changes an answer. The content of `part` is reported, not graded.
+- Also reported, not graded: made-up line count per pair, results kept per pair.
+- No change to prompts or code after the first number is read.
+
+### 6. Cost cap
+$0.20 hard, covering finds and judges. Price from ~/.config/bareloop/config.json `models.DEEPSEEK_API_KEY` entry "deepseek-flash" (inPerM 0.6, outPerM 1.2). Key DEEPSEEK_API_KEY from ~/.config/bareloop/.env, parsed in the script and never printed. baseUrl and shape from `keys.DEEPSEEK_API_KEY`. A cap stop leaves the POC incomplete and it cannot PASS.
+
+### 7. Scope
+POC only, in .claude/scratch/fit-poc4/. Never product code. 7 finds, then up to 21 judge calls, once, no rerun.
