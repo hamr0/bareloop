@@ -1510,3 +1510,87 @@ $0.30 hard, covering looks and judges. Price from ~/.config/bareloop/config.json
 
 ### 9. Scope
 POC only, in .claude/scratch/fit-poc2/. Never product code. 7 looks, then 21 judge calls, once, no rerun.
+
+### Result — fit POC v2 (2026-10-21)
+
+Source: `.claude/scratch/fit-poc2/RESULTS.md` (untracked scratch).
+
+**FAIL by the frozen rule.** 7 pairs, 3 calls each, 21 calls.
+
+| pair | frozen | call1 | call2 | call3 | pass? |
+|---|---|---|---|---|---|
+| 1 | YES | NO (quote-not-on-page) | NO | NO | NO |
+| 2 | NO | NO | NO | NO | yes |
+| 3 | YES | NO | NO | NO | NO |
+| 4 | NO | NO | NO | NO | yes |
+| 5 | NO | NO | NO | NO | yes |
+| 6 | NO | NO | NO | NO | yes |
+| 7 | NO | NO | NO | NO (part-not-in-job) | NO |
+
+- The judge said NO on every call. So the 4 NO passes are not evidence: a judge that always says NO passes them too.
+- Cause: the found set showed at most 2 page lines per kept word, so it never showed 3 results. "3 flights" was always "missing". Pair 1 call 1 quoted a correct JFK to Miami flight and still said NO with part "3 flights". On Barcelona the total-price fact kept no words.
+- Two format artifacts: the judge copied the " || " joiner into a quote; and in pair 7 call 3 it reworded the job instead of copying it.
+- Spend $0.0465.
+
+## Addendum 2026-10-21 — fit POC v3: the judge sees 3 whole results (SIGNED by hamr 2026-10-21; FROZEN before any number is read)
+
+### 1. What is the same as v2
+- The same 7 pairs, jobs and frozen answers (v2 section 6).
+- The same pages, with the same sha256 values as v2 section 6.
+- The same looks. No new look call. The v2 look files are reused as they are:
+  - looks/1.json fada44a85bb58a6782b6c9db7e5fdbceb2ca95f72d1e66d87b2cb6782a602e84
+  - looks/2.json f20e86eed7a0e2f9cc428045c2073a9a7cd5ba16a8f0eb2270d9c2650f657568
+  - looks/3.json 76b6093d7f5224f31ac98688b11bbb1944efb3f6432d8c233026b954dba7032c
+  - looks/4.json a7ae30e86b89d52c34fc93394726cc5643ab86562634969e7812b4fe664b2115
+  - looks/5.json 9049ddfaaa7bf91cc62eb8bfc7c70402b842b34ed326ba9d429cbc77f369d79f
+  - looks/6.json aed4d2e034ddd061d951af2836e50fcbdfd83516285543f2b9318c361768ae70
+  - looks/7.json ff68dd6259ee4fdd5f17634096f7c58b1d79f33f292454ed4d55487af7417789
+  (all under .claude/scratch/fit-poc2/looks/)
+- The same judge model: deepseek-flash, thinking off, maxTokens 4000. 3 calls per pair, 21 calls, once, no rerun.
+- The change is only in what the judge sees.
+
+### 2. Result blocks (built by code)
+- Kept words = every kept word of every fact in the pair's look. A word that is empty after normalizing is dropped. A stopped look has no kept words.
+- Normalize = collapse runs of whitespace to one space, compare case-insensitively.
+- Split the page into lines. For each start line i, the block is lines i..i+11 (12 lines; fewer at the end of the page).
+- The score of a block = the number of distinct FACTS (not words) that have at least one kept word in the block.
+- Take the highest-scoring block. Ties go to the earliest line. Remove every block that overlaps it (start lines less than 12 apart). Repeat until 3 blocks are taken or no block scores >= 1.
+- If no block scores >= 1, the evidence is the single line "nothing was found".
+- Otherwise the evidence is the kept facts and their words (one line per fact: `- <fact name>: kept words "<w1>", "<w2>"`), then the blocks as "RESULT 1:", "RESULT 2:", "RESULT 3:", each followed by its 12 page lines verbatim, one per line. There is no other joiner.
+- Code: .claude/scratch/fit-poc3/blocks.mjs. Block files, printed before this freeze and not used to change anything: .claude/scratch/fit-poc3/blocks/<pair>.txt with sha256:
+  - blocks/1.txt 66a8d234dc004107b5c7478071a34f94e26f17e5985c00022d460003ec2db2b6
+  - blocks/2.txt 28d26cfd6956a4b4ace18c23998cda1b05ed5d47d67c1ec40eef88653c498cbd
+  - blocks/3.txt aa3a9ea002a00e3c2d11a196ed8d66660c275a3bba6bc29086b31e74e1861c1c
+  - blocks/4.txt ba13e5da32b2847f27ff6ec0c45e0cf48ab3ebea9e878264db9124e60771a5f1
+  - blocks/5.txt e4b544c356c29a25b8ae0a33073fc4e001b4ce5af413ba12cabf3cea41ecfc01
+  - blocks/6.txt 899b5beb52a90c30a643903d209d88a322c66c1b4b29c3ff0f05c8def6d9efca
+  - blocks/7.txt 06bff8a6506e9cc9e41b6466aa4224d810fc085f7e4364f74ba02140cc8f074a
+
+### 3. The judge prompt (final text)
+- System message: `You answer one yes/no question about what was found on ONE saved web page. You never invent words: every quote must be copied from the results, character for character.`
+- User message, exactly (the angle-bracket parts are filled by code):
+
+```
+THE JOB: <job text>
+
+<evidence: the kept facts and the RESULT blocks, or the line "nothing was found">
+
+Do the results below, together, answer the job? Reply with JSON only: {"answer":"YES"|"NO","part":<the job words that are missing or contradicted, copied exactly from the job and never reworded, or null>,"quote":<ONE page line copied exactly from a RESULT block that shows the contradiction, or null>}.
+```
+
+Note: the question sentence sits after the evidence, as in v2. "The results below" means the RESULT blocks above it in the message; this is the frozen wording, kept as written.
+
+### 4. Code checks and pass rule (same as v2 sections 5 and 7)
+- answer must be YES or NO; anything else (or unparseable JSON) is malformed: one retry, then a miss.
+- part, if not null, must appear in the job (normalized), else the flag "part-not-in-job".
+- quote, if not null, must appear in the page (normalized), else the flag "quote-not-on-page".
+- A finish reason of length is a cut, and a cut is a miss.
+- Every pair gets its frozen YES or NO in 3 of 3 calls, with no flags. Any miss means the POC FAILS. Code never changes an answer. The content of `part` is reported, not graded.
+- Anti-degenerate note (frozen): if every call answers the same word, the run is reported as DEGENERATE in addition to its pass or fail.
+- No change to prompts or code after the first number is read.
+
+### 5. Cost cap
+$0.15 hard. Price from ~/.config/bareloop/config.json `models.DEEPSEEK_API_KEY` entry "deepseek-flash" (inPerM 0.6, outPerM 1.2). Key DEEPSEEK_API_KEY from ~/.config/bareloop/.env, parsed in the script and never printed. baseUrl and shape from `keys.DEEPSEEK_API_KEY`. A cap stop leaves the POC incomplete and it cannot PASS.
+
+### 6. Scope
+POC only, in .claude/scratch/fit-poc3/. Never product code.
