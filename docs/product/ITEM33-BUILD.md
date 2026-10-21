@@ -1409,3 +1409,104 @@ $0.25 hard. Price from ~/.config/bareloop/config.json `models.DEEPSEEK_API_KEY` 
 
 ### 7. Scope
 POC only, in .claude/scratch/fit-poc/. Never product code. Product behaviour on "partly" is decided after the numbers.
+
+### Result — job-vs-source fit POC v1 (2026-10-21)
+
+Appended at the end of this file, after the v1 addendum above (found by its title, "Addendum 2026-10-21 — job-vs-source fit POC"). Source: `.claude/scratch/fit-poc/RESULTS.md` (untracked scratch).
+
+**FAIL by the frozen rule.** 9 pairs, 3 calls each, 27 calls.
+
+| pair | frozen | call1 | call2 | call3 | pass? |
+|---|---|---|---|---|---|
+| 1 | fits | fits | fits | fits | yes |
+| 2 | mismatch | wrong-page | mismatch | wrong-page | NO |
+| 3 | mismatch | wrong-page | wrong-page | wrong-page | NO |
+| 4 | fits | fits | fits | fits | yes |
+| 5 | mismatch | wrong-page | wrong-page | wrong-page | NO |
+| 6 | wrong-page | wrong-page | wrong-page | wrong-page | yes |
+| 7 | fits | fits | fits | fits | yes |
+| 8 | wrong-page | wrong-page | wrong-page | wrong-page | yes |
+| 9 | partly {wifi, meal} | partly {wifi, meal} | partly {airline, wifi, meal} | partly {wifi, meal} | NO |
+
+Why it failed:
+- Pairs 2, 3 and 5: the AI said found:false for the origin, destination or place instead of naming the other city. So code had nothing to compare and said wrong-page, not mismatch.
+- Pair 9 call 2: the AI made up an airline quote. Code caught it as fabricated (quote not on the page), so airline came out unmatched.
+- Fabricated quotes 1. Cut answers 0. Malformed after retry 0. Retries 0.
+
+Spend: $0.2024 of the $0.25 cap.
+
+A reading made AFTER the numbers, which is not a pass: fit versus not-fit came out right in 27 of 27 calls. Only the label of the not-fit kind (mismatch or wrong-page) and pair 9's one invented quote broke the frozen rule. The frozen rule stands; this is a reading, not a result.
+
+FINDINGS entry to follow after fix/bound-in-words merges (number clash).
+
+## Addendum 2026-10-21 — fit POC v2: does what the look found answer the job? (SIGNED by hamr 2026-10-21; FROZEN before any number is read)
+
+### 1. The idea
+- hamr's idea: run the look first, then put everything it found together and ask ONE binary question. LLMs are good at binary questions, not at assessment.
+- This is a judge, so it is rubric territory.
+- Its answer would be a question to the person before signing, never an automatic pass or fail. That product shape is decided after the numbers.
+
+### 2. Step 1: the look
+- The product's own page-word map: `runPageMap` from src/pagemap.js, called the way src/authorjob.js calls it (`texts`, `inputs`, `jobLines`, `provider`, `ceilingUsd`, `onCall`, `prove: proverOf(texts)`, `rates`, `callOptions: thinkingCallOptions(provider, 'off')`).
+- Model: deepseek-flash, thinking off.
+- Each job is one job line, given as jobLines [{n:1, text:<job>}], with no ~ rules. The page is the one input.
+- Run ONCE per pair. Output saved to .claude/scratch/fit-poc2/looks/<pair>.json.
+- If the look stops or throws, that is recorded and the found set is empty.
+
+### 3. Step 2: the found set (built by code)
+- For each fact the look kept: the fact name, its kept words, and for each kept word up to 2 page lines that contain it (the first matches, each trimmed to 200 characters).
+- Nothing else. If no facts were kept, the found set is the single line "nothing was found".
+- Exact text format, one block per fact:
+  `- <fact name>: kept words "<w1>", "<w2>"` then, per word, `    "<w>" is on the page in: <line1> || <line2>` (lines trimmed of leading and trailing whitespace; the page-line match is case-insensitive substring).
+
+### 4. Step 3: the judge
+- 3 calls per pair on the SAME found set. deepseek-flash, thinking off, maxTokens 4000, built like fit-poc/fit.mjs (bare-agent OpenAIProvider and Loop).
+- System message: `You answer one yes/no question about what was found on ONE saved web page. You never invent words: every quote must be copied from the found items, character for character.`
+- User message, exactly (the angle-bracket parts are filled by code):
+
+```
+THE JOB: <job text>
+
+FOUND ITEMS (what the look found on the saved page):
+<found set>
+
+Do these found items, together, answer the job? Reply with JSON only: {"answer":"YES"|"NO","part":<the job words that are missing or contradicted, copied from the job, or null>,"quote":<a page line from the found set that shows the contradiction, or null>}.
+```
+
+### 5. Code checks (the AI never grades; code never changes the answer)
+Normalize = collapse runs of whitespace to one space, compare case-insensitively.
+- answer must be YES or NO; anything else (or unparseable JSON) is malformed: one retry, then a miss.
+- if part is not null it must appear in the job text (normalized), else the flag "part-not-in-job".
+- if quote is not null it must appear in the page text (normalized), else the flag "quote-not-on-page".
+- a finish reason of length counts as cut, and a cut is a miss.
+
+### 6. The 7 pairs and their frozen answers
+1. "List 3 flights from New York JFK to Miami with price and departure time" x jfk-mia gives YES
+2. the same job x mia-jfk gives NO
+3. "List 3 stays in Barcelona with total price" x barcelona gives YES
+4. the same Barcelona job x madrid gives NO
+5. the job of pair 1 x barcelona gives NO
+6. "Get the ticket id, first name, last name and date of birth" x changelog gives NO
+7. "List 3 flights from New York JFK to Miami with price, departure time, airline, wifi and meal" x jfk-mia gives NO
+
+Pages (path, sha256):
+- jfk-mia: .claude/scratch/fit-poc2/pages/jfk-mia.txt, ad00a9a9052c038d1afaed88a572cb6467778ef3988ed8948acd0d8a5aa2a980
+- mia-jfk: .claude/scratch/fit-poc2/pages/mia-jfk.txt, e22e30d4dae6a8ee0f270366f4e831a43fea8eb3a60b7e0680ccf6cb8c1bfb0d
+- barcelona: .claude/scratch/fit-poc2/pages/barcelona.txt, cb63e3860c1103408d6592fc31f949036adb0536044ccd80891a47f220495497
+- madrid: .claude/scratch/fit-poc2/pages/madrid.txt, bb3bacef065a05604ee66cfa96559beaaab5bc37272042d0f9bad879f76b4da1
+- changelog: .claude/scratch/changelog-live/input/CHANGELOG.md, a34717cc048deec140abe4683e7c6696a01d930f34a228fa1b27137f9292082f
+
+### 7. Pass rule (frozen)
+- Every pair gets its frozen YES or NO in 3 of 3 calls.
+- Every non-null quote is on the page.
+- Every non-null part is in the job.
+- Any miss means the POC FAILS.
+- The content of `part` is reported but not graded.
+- No change to prompts or code after the first number is read.
+- A look that stops is reported. Its pair still needs NO (pairs 5 and 6) or counts as a miss (pairs 1-4 and 7 are judged on whatever found set code built, which for a stopped look is "nothing was found").
+
+### 8. Cost cap
+$0.30 hard, covering looks and judges. Price from ~/.config/bareloop/config.json `models.DEEPSEEK_API_KEY` entry "deepseek-flash" (inPerM 0.6, outPerM 1.2). Key DEEPSEEK_API_KEY from ~/.config/bareloop/.env, parsed in the script and never printed. baseUrl and shape from `keys.DEEPSEEK_API_KEY`. A cap stop leaves the POC incomplete and it cannot PASS.
+
+### 9. Scope
+POC only, in .claude/scratch/fit-poc2/. Never product code. 7 looks, then 21 judge calls, once, no rerun.
