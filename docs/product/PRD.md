@@ -2000,3 +2000,10 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 - **Later mappings:** bareloop's spine, fwdloop `runs/<id>/audit.jsonl`, multis `~/.multis/logs/audit.log`, relayfact `.relayfact-run.jsonl`, litectx WriteAudit.
 - **Review:** send the core and the bareguard mapping to the guard session, which checks them against real audit files. The audit line format is bareguard's 1.0 SemVer surface, and guard warns us before any audit change.
 - **Tests:** a real audit file round-trips (N objects → N logRecords); the traceId is stable across a family; gate and record lines with the same (run_id, aid) share a spanId; unknown and `_dropped*` fields survive in attributes; `{_dropped_core:true}` converts without throwing; the output is byte-stable for the same input.
+
+### Backlog: search as an input, not just one page (v1.109 — 2026-10-21) — BACKLOG, not ruled
+- hamr: search is plausible, not just one fetched page.
+- **Today:** a `search:` input line is refused at $0 ("a search, or an address that is not http or https, is not an input yet", `src/source.js` ~1270). An http(s) URL is fetched ONCE as one page's text (`src/pagefetch.js`) at drafting and again at run start. Nothing types, clicks or follows links, and the worker never browses. `https://google.com` is fetched as the home page (a search box, no results); a results URL is just that one results page.
+- **The wish:** a `search:` line runs a search (barebrowse: type into a search box, read the results, open result pages) and the job is checked across those pages, not one.
+- **Already ruled and still binding:** the browse gate allows read/type/click on search-box forms only, and never pay/book/buy/send/submit/sign-up or card fields (v1.95). Booking and acting stay fwdloop's.
+- **Open (interview before any spec):** which pages are opened and how many; what the run's saved evidence is when there are several pages; caps; site reach (Booking, Expedia, eBay and Skyscanner block barebrowse, F227).
