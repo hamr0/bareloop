@@ -14736,3 +14736,30 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 **Why drafting did not refuse it.** `checkFactWords` (`src/factwords.js:79-140`) checks, for an anchored non-phrase fact: the label is one the map kept (or on the code-made list), the label is in the text (`countExact(text, label) < 1`), and its count reaches the result count asked for (`rubric-fact-label-rare`). Separately it checks each unit is found as whole words (`countPhrase`, line 137) and each currency sign is found as written (`countExact`, line 138), each on its own anywhere in the text. No $0 check tests that a value of the signed form follows the label.
 
 **Status.** Open. Logged, not built.
+
+## F243 — job-vs-source "fit check" POCs v1 to v5: the judge was right when it saw real results; every failure was in the evidence or in AI-written questions (2026-10-21; open, v6 running)
+
+**Grounded in:** `docs/product/ITEM33-BUILD.md` (the addenda "job-vs-source fit POC" and "fit POC v2" to "v6", and each "### Result — fit POC vN" section); `.claude/scratch/fit-poc*/RESULTS.md` (untracked scratch, `fit-poc` to `fit-poc5`). Evidence that led here: F239, F240, F241.
+
+**Set-up.** Can one cheap AI call plus code say, before a run, whether a source fits the job? All five used deepseek-flash, thinking off, on saved real pages (flights JFK to Miami and the flipped Miami to JFK, Barcelona stays, Madrid, a changelog), 3 calls per pair, one run each, frozen rules signed by hamr before any number.
+
+**Per version**
+- v1 (9 pairs, 27 calls): the AI got the job's items (value items and field items) and the whole page, and returned a found flag, a quote and the page value per item. Code decided (quote on the page, value equals the job value). FAIL by the frozen rule. Spend $0.2024. Cause: on 3 not-fit pairs the AI said found:false instead of naming the other city, so code said wrong-page, not mismatch; on pair 9 the AI made up an airline quote and code caught it.
+- v2 (7 pairs, 21 calls): the AI got what the look (the page-word map) had found, built by code into a found set, and answered one binary question. FAIL, degenerate: NO on every call, so the 4 NO passes are not evidence. Spend $0.0465. Cause: the found set showed at most 2 page lines per kept word, so "3 flights" was always missing; on Barcelona the price fact kept no words. Also the " || " joiner was copied into a quote and a job was reworded.
+- v3 (7 pairs, 21 calls): same looks, but the judge saw 3 whole result blocks. FAIL by the rule, not degenerate: YES 3 of 3 on pair 1, the flipped route caught 3 of 3. Spend $0.0101. Cause: on Barcelona the look kept no price words, so the blocks were menus and filters; on pair 6 the right NO named a part copied from the evidence, not the job.
+- v4 (7 pairs, 21 calls): no look; the AI found 3 results, code verified the quotes, then a binary judge. FAIL, degenerate: every answer NO. Spend $0.0393. Cause: the verifier's ">= 20 characters" substring rule dropped real page text as made-up, because the page lines carry markup (`- StaticText "11:20 AM" [ref=2851]`) and the finder copied the text inside them. Most pairs got a code NO with no judge call.
+- v5 (8 pairs, 24 calls): the AI got the whole page and the job, broke the job into yes/no questions with quotes and counted matching results; code decided NO / ASK / YES. FAIL by the rule, not degenerate. Spend $0.1307. Not-fit pages: caught 15 of 15 calls. Right pages: YES only 4 of 6 calls (pair 1 try 1 had a made-up quote "Flights from JFK to MIA"; pair 3 try 1 counted 1, so ASK). The count was unstable (pair 1 gave 14, 14, 3). On pair 8 the AI wrote its own count question ("3 flights with one stop?") and answered no, so the verdict was NO, never ASK.
+
+**Total spend v1 to v5: $0.4290** (0.2024 + 0.0465 + 0.0101 + 0.0393 + 0.1307).
+
+**Learnings**
+- Fit versus not-fit was right in 27 of 27 calls in v1. This is a reading after the numbers, not a pass: only the not-fit label (mismatch or wrong-page) and one invented quote broke the frozen rule.
+- v2 and v4 were degenerate (always NO) because of how evidence was collected (line caps, block cutter, a >= 20 character verifier dropping real page text with markup), not because of the judge.
+- The binary judge answered right whenever it saw real results. hamr: "give the LLM the whole page and ask it the question".
+- v5: whole page plus AI-written questions caught every not-fit page 15 of 15, but right pages came out YES only 4 of 6 (one made-up quote, one bad count). The count was unstable (14, 14, 3), and on pair 8 the AI wrote its own count question so ASK never fired.
+- Letting the AI write its own questions adds ways to fail; the job's own items work better.
+- Design direction (hamr 2026-10-21): a person reads the results at Accept, so the fit check only has to stop a clearly wasted run. A wrong NO is the costly mistake (it blocks a good run); a wrong YES costs one run the person rejects. v6 tests RUN-or-ASK with no NO and no count.
+
+**Status.** Open. Logged, not built.
+
+v6: running, result to be added
