@@ -2146,3 +2146,23 @@ $0.25 hard (Part 2 only). Key and price as fit POC v5.
 
 ### Scope
 `.claude/scratch/money-poc5/`. Never product code.
+
+### Result — money POC 5 (2026-10-21)
+Source: `.claude/scratch/money-poc5/RESULTS.md`. **FAIL.** $0.1122. Part 1 ($0): code read the right number and the right pass/fail on every honest price line of 14 pages; cheats (a) not in quote, (b) changed number, (d) another result's price were red everywhere — but cheat (c), a non-price number from the same line ("4 hr 52 min" → 4, "0 checked bags" → 0), was GREEN 924 of 924: without the label and the currency form nothing tells code which number is the price. Part 2 (live, a thinner prompt than the product brief): 0 of 18 — quotes stopped before the price, prices written as "$137" from elsewhere on the page; no number made up. Learning: the label + currency pieces are what bind the value to its role; they stay. hamr's ruling: option 1.
+
+## Addendum 2026-10-21 — money build spec v2: code sorts the AI's currency forms into the right box, plus "can it read" (ordered by hamr 2026-10-21: "1, go build"; built on fix/bound-in-words; replaces the withdrawn v1 spec above)
+
+Cause, from money POC 3 and fwd's live MAD→FCO run: the AI puts a currency WORD ("US dollars") in `currency`, and `currency-not-symbol` drops it (or R1L drops it behind "$"). The box is position only: a sign before the number, a word after it. The AI should not have to pick.
+
+### What it does (drafting, code only, $0)
+1. **Sort, never drop for the box.** In src/pagerules.js money branch, every form the AI listed in `unit` or `currency` is pooled, then sorted by code: a sign (`$`, `€`, `£`, the existing CURRENCY_SYMBOLS) goes to `currency`; anything else goes to `unit`. The `currency-not-symbol` drop goes away (a word is moved, not dropped). The existing `sign-twice`, found-on-page, R1L and limit rules then run unchanged on the sorted lists (units first, as today).
+2. **Can it read.** After the page rules, for each kept money fact: result lines = page lines where a kept label is followed by a number (one sign between allowed); for a fact with no label (U1, e.g. Airbnb "€533 total"), lines where a number is followed by a kept unit. For each result line, an honest claim (quote = that line, value = the amount's digits) is graded by the REAL run-time checker (the same `checkStep` path `gradeStep` in src/rubricstep.js uses; one reader, never a copy of its logic). If no result line reads, the fact is dropped with reason `reads-no-result` (plain words, src/pagedropwords.js: `the price rule could not read a price in the page's results, so it is not checked.`) and shows under Not checked. No limits, no counts, no pass bar: only "can it read".
+3. Nothing else changes: no currency table, no new rule beside these two, no change to time or number facts.
+
+### Tests (real data)
+- F241: the real page-map reply and page of session smvh7bxou4win (copy page into tests/fixtures/money/, pin sha256; ~/.config read only) → the fact keeps `US dollars` as a unit and reads all 16 result lines. Must fail before the change.
+- fwd's shape: `$` and `US dollars` both listed as `currency`, label "From", on a real Google Flights page (bos-den) → `US dollars` sorted to unit, the fact reads every result.
+- A fact whose forms read no result line → `reads-no-result`, Not checked.
+- Airbnb (airbnb-porto): unchanged, reads its results through the no-label path.
+- Every existing pagerules / golden test: KEPT facts must stay the same. A drop reason that changes only because `currency-not-symbol` became a move is allowed and listed in the commit body. Any KEPT fact that changes = STOP and report.
+- Each new test must fail without the change.
