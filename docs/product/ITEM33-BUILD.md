@@ -1969,3 +1969,35 @@ The worker brief line "a price is only the digits" (fwd's fix) needs a live mode
 
 ### Scope
 POC only, in .claude/scratch/money-poc/. Never product code. $0.
+
+### Result — search POC v1 (2026-10-21)
+Source: `.claude/scratch/search-poc/RESULTS.md`. **FAIL by the frozen rule.** Spend $0.1542.
+- Mechanics worked: barebrowse found the box, typed, submitted and read results on google.com and duckduckgo.com; "More Results" paged 4 times on duckduckgo. No consent wall, bot check or block.
+- Case 1 (google, flights): ask. A search engine's results page holds links and snippets, not the flights; the list is one click deeper ("Find Cheap Flights from Boston to Denver" → google.com/travel).
+- Case 3 (duckduckgo, Node releases): the AI named the `search` landmark (ref 1335) instead of the combobox (ref 1446); code refused it, nothing was typed.
+- Case 4 (Porto): ask after 5 pages, as expected. Case 5 (ua.com): no single box, as expected (site-reach finding).
+- Google answered in Dutch (no language set). The harness started while a fwdloop test suite ran (no tracked change).
+- hamr's ruling after it (2026-10-21, "2a"): open the results, up to 5 links, fit check on each opened page.
+
+## Addendum 2026-10-21 — search POC v2: open the result links (ruling by hamr 2026-10-21; FROZEN before any number is read)
+
+### Changes from v1 (only these)
+- CODE picks the search box: the first searchbox, else the first combobox, else the first textbox in the site snapshot. The AI only writes the words (one call: {"words": "..."}).
+- Language: the browser asks for English (barebrowse/locale option or an `hl=en` style query only if barebrowse has no locale option; report which).
+- After the results page: one AI call gets the results-page snapshot and the job line and returns up to 5 refs of result LINKS, best first ({"links":[ref,...]}). Code keeps only refs that are links in the snapshot and whose names pass the gate words of v1. For each kept link in order: go back to the results page if needed, click (or goto the link's address if the snapshot carries one), wait, snapshot, fit check. First `fits` = stop, that opened page is the evidence. A page that is blocked, a bot check, or under 100 characters counts as not fitting. None fits after 5 = ask.
+- The results page itself is also fit-checked first (a site search like Airbnb can fit there); fits = stop.
+
+### Cases and frozen expectations
+1. google.com × "List 3 flights from Boston to Denver with price and departure time" → fits on an opened page within 5 links
+2. duckduckgo.com × "List the last 3 releases of Node.js with version and date" → fits on an opened page within 5 links
+3. duckduckgo.com × "List 3 stays in Porto with total price" → reported only
+4. google.com × "List the last 3 releases of Node.js with version and date" → reported only
+
+### Pass rule
+Cases 1 and 2 reach `fits`. Anything else is a FAIL and a finding. One run, no rerun, no change after the first number. Report per case: words typed, links chosen (names), each opened page's address, size, fit state and not-found list, cost.
+
+### Cost cap
+$0.40 hard, deepseek-flash, thinking off, key and price as v1.
+
+### Scope
+POC only, in .claude/scratch/search-poc2/. Never product code.
