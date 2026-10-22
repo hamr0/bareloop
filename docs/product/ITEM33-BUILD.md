@@ -2207,3 +2207,77 @@ Two rules, both from the live fwdloop run m10-walk-flights-3 (deepseek-flash). N
 
 1. S1 copy is a read note (hamr ruled 2a). When the AI proposes a second fact that would read the same value as a fact already kept (S1), and the OTHER fact is still signed, the guardrail IS checked by that other fact, so the note belongs under "How the page was read", not "Not checked". If the other fact is not signed, the note stays under Not checked. A row is a read note only if every sentence in it qualifies. The signed fact names are passed to the split; they are read from the signed spec (older specs too) or from the look at the confirm turn.
 2. Phrase facts get the dry read (hamr ruled 3a). A kept phrase fact (for example "destination city" = "Rome") is read against the page's RESULT LINES, which are the lines the same job's kept money facts read. Each line is graded as an honest claim by the real run-time checker. A phrase that reads no result line is dropped as a whole fact with the plain words `"Rome" is on the page but in none of its results, so it is not checked.` and stays under Not checked (not a read note). A job with no kept money fact has no known result lines, so its phrase facts pass through untouched.
+
+## Addendum 2026-10-22 — cross-run learnings build spec (PRD v1.108 item 1; rulings by hamr 2026-10-20 option A, 2026-10-22 (a)–(d), "next run pays", no Reject; spec + its 4 open choices OK'd by hamr 2026-10-22: "ok")
+
+Branch: `feat/learnings`, cut from main. Sonnet builders, one part at a time, a commit per part.
+
+### The flow, one picture
+
+```
+run-4 of pulselog-types settles   → L1 writes learn/runs/<runid>-leg<N>.json   ($0, code only)
+run-5 of pulselog-types starts:
+  drafting (panel, as today)
+  learnings  → L3: one AI call labels run-4's facts against the ledger; L2 code counts   (run-5 pays)
+  plan       → L4: code filters the ledger, the planner gets ≤2,000 chars of hot facts
+  steps…     → first replan gets the same block once; the worker never does
+```
+
+### Words
+
+- **workflow** = `workflowKey(job)` (src/job.js:972). A changed job is a new workflow, so its old workflow rows simply stop matching (the "expiry on change" rule, for free).
+- **place** (hamr 2026-10-22: "jobs place is fine"): repo job = the repo's real path; website job = the URL's host (`google.com`); plain folder or file job = the source path. Code derives it from the signed spec's `inputs[]` line 1 (src/job.js:757); nothing asks the person.
+- **trust**: `deterministic` (green verdict type) or `rubric` (soft-green).
+- **level**: `workflow` → `place` → `user`.
+
+### L1 — run facts file ($0, no model)
+
+- New `src/learnfacts.js`, pure `extractRunFacts({ row, spine, audit })` + a thin writer.
+- Hook: `src/userrun.js` right after the settled row and the audit rename (~:2011–:2029), only when the leg has its own `job-end` (never on `settleDeadClaims` rows — a died run has no facts). This covers panel runs, Accept/Rerun and scheduled fires (all spawn `run-u`). Bundle runs (`bundlerun.js`) are out of this branch.
+- File: `<runlistHome>/learn/runs/<runid>-leg<N>.json`, dir mode 0o700, atomic write.
+- Fields: `runid, leg, at, workflow, place{kind,value}, trust, provider, model, outcome, failingStage, closeReached, replans[{step,reason,trigger}], strikes, steps[{name, outcome}], closeStages[{stage, value}], filesWritten[] (gate audit, run_id-scoped, allow + write/edit), denied[{tool, reason}], spentUsd, spendComplete, accepted`.
+- `accepted` is read at fold time too: a rubric Accept lands after the run settles.
+- Every string goes through `redactSecrets` (src/validate.js:232), the one secret inventory.
+- Must fail when: the module imports any provider/Loop; a died run writes a file; a raw secret survives.
+
+### L2 — the ledger (pure code counts)
+
+- New `src/learnledger.js`: pure `countLedger(ledger, labels, runFacts, now)` that throws on malformed input, plus a thin read/write wrapper. File `<runlistHome>/learn/ledger.json`, one per person, never inside a repo.
+- Row: `id, rule, workflow, place, level, trust, status (observing|hot|expired|failed-wording…), attempts[{n, rule, adopted, outcome}], evidence{runs[], workflows[], places[], last_seen}, history[]`.
+- `folded[]` lists every `<runid>-leg<N>` already read — never read twice.
+- **Hot at 3** distinct runs that back it (deterministic: the backing run is green; rubric: the backing run has an honoured Accept). Born at 3+ = born hot.
+- **Climb at 3**: 3 distinct workflows on one place → `place`. 3 distinct places → `user` (same number, one level up — OK'd by hamr 2026-10-22).
+- **Decay**: `observing` with no new evidence for 56 days → `expired`, kept; new evidence wakes it. `hot` never expires by age.
+- **Failed wording**: a hot fact loaded on a run that still goes red the same way (same failing stage) counts a recurrence; 2 recurrences mark the wording failed; the AI may offer a new wording at the next fold; after 3 failed wordings the row stops being injected.
+- `new` labels with no rule → malformed, no row. Counting is never the AI's.
+
+### L3 — the learnings part (one AI call, the next run pays)
+
+- Runs inside `run-u` before the planner (`obtainPlan('draft')`, src/planrun.js:3199), shown in the step map as its own part: `drafting › learnings › plan › steps`, card text `learnings — N facts` (N = facts handed to the planner).
+- $0 skip: no unfolded files for this workflow → no call, part shows `learnings — N facts, nothing new`.
+- Input to the AI: this workflow's unfolded run files + the ledger rows for this place and user (id + rule only).
+- The AI's only job: per fact, `drop` | an existing row id | `new` + one-line rule. Facts, never model tips ("tests run with `npm test`", "results load after the first snapshot"; "X failed, Y worked" is fine).
+- Toolless, the job's own provider and model, thinking off, small max_tokens. Malformed or cut off → one retry, then skip learnings for this run (never stops the run, never provider-red).
+- Money: inside this run's cap. Booked as a `learn-round` spine record (`costUsd`, `unpricedRounds`); every spend reader (ledger.js `legSpend/runSpend/chainSpend`, monthly, panel money, Audit) must count it — a test lists every round type that spends.
+- Stop is honoured at this seam like the others.
+
+### L4 — what the planner gets
+
+- One render function prints the block from the ledger: `user` hot rows + `place` hot rows for this place + `workflow` hot rows for this workflow, most specific first, cut at 2,000 characters on a whole row.
+- Given to `planPrompt` (src/planrun.js:636) at draft, and at the replan where `replans === 1` only.
+- Spine record `learn-inject` carries the exact block and the row ids; a byte-equality check (render === injected) is a test.
+- Must fail when: any ledger text reaches the worker prompt (src/planrun.js:3428–3441, :4175–4185, `mkWorker` system :2266); a rubric fact counts before Accept; a row with no minting run id is injected; a `place` row reaches another place; the block exceeds 2,000 chars; a second replan gets it.
+
+### L5 — panel, read-only
+
+- Clicking the `learnings` part in Audit shows the exact facts the planner got on that run (from `learn-inject`), and what was new or dropped this fold. No edit, no Reject (hamr 2026-10-22).
+
+### Proof (before any default)
+
+- Ships OFF behind one setting until proven (OK'd by hamr 2026-10-22). $0 archive read first: run L1 over the archived spines and check the facts make sense on real runs.
+- Then an ON/OFF contrast on DeepSeek deepseek-flash, design frozen in a commit before any number. A fact that does not beat OFF is dropped.
+
+### Tests (real data)
+
+- L1 on real archived spines from `~/.config/bareloop` (read-only, copied to a scratch HOME).
+- Scratch HOME for every test; runs.jsonl line count reported before and after.
