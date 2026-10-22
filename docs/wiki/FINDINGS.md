@@ -14735,7 +14735,7 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 
 **Why drafting did not refuse it.** `checkFactWords` (`src/factwords.js:79-140`) checks, for an anchored non-phrase fact: the label is one the map kept (or on the code-made list), the label is in the text (`countExact(text, label) < 1`), and its count reaches the result count asked for (`rubric-fact-label-rare`). Separately it checks each unit is found as whole words (`countPhrase`, line 137) and each currency sign is found as written (`countExact`, line 138), each on its own anywhere in the text. No $0 check tests that a value of the signed form follows the label.
 
-**Status.** Open. Logged, not built.
+**Status.** Fixed on fix/bound-in-words. Drafting sorts the AI's currency forms by code (a sign is the currency, any other form a unit, whichever box the AI used; `currency-not-symbol` is gone), then a $0 dry read (`src/pagedry.js` `dryReadMoney`) grades an honest claim on each result line with the run's own checker; a price fact that reads no result line is dropped as `reads-no-result` and shows under Not checked. Tests: `tests/money-sort.test.js`.
 
 ## F242 — a bound the person never wrote passed as written: `boundInWords` matched digits inside "$150" and "05:00" (reported by fwdloop, verified at $0 2026-10-21; fixed on fix/bound-in-words)
 
