@@ -926,6 +926,11 @@
                 <button class="chip" aria-pressed="false" data-view="flat" data-testid="audit-view-flat">Flat</button>
               </div>
             </div>
+            <details id="audit-learnings" data-testid="audit-learnings" hidden style="margin-bottom:10px;">
+              <summary data-testid="audit-learnings-summary">What the planner was told from earlier runs</summary>
+              <div class="hint" style="margin:6px 0;overflow-wrap:anywhere;">Read-only. This is the exact text the planner was handed on this run (the draft, and the first replan); no worker ever sees it.</div>
+              <div id="audit-learnings-list"></div>
+            </details>
             <div id="audit-groups" data-testid="audit-groups"></div>
             <div id="audit-flat-wrap" hidden>
               <div id="audit-empty" class="hint" data-testid="audit-empty" style="font-size:13px;padding:24px 0;">select a run first</div>
@@ -2828,6 +2833,30 @@
     // fetch, wired separately in selectRun below).
     lastLegDividers = Array.isArray(detail.legDividers) ? detail.legDividers : [];
     renderAuditGroups(detail);
+    renderAuditLearnings(detail);
+  }
+
+  // Cross-run learnings, READ-ONLY: the exact block the planner was handed, one box per injection (draft, first replan).
+  // No edit, no Reject, no per-hint button. Absent (the setting was off, or nothing was readable) = the section stays hidden.
+  function renderAuditLearnings(detail){
+    var box = document.getElementById("audit-learnings");
+    var list = document.getElementById("audit-learnings-list");
+    if(!box || !list) return;
+    var items = detail && Array.isArray(detail.learnings) ? detail.learnings : [];
+    list.innerHTML = "";
+    items.forEach(function(it){
+      var h = document.createElement("div");
+      h.className = "hint";
+      h.style.cssText = "margin-top:6px;font-weight:600;";
+      h.textContent = (it.phase === "replan" ? "At the replan" : "At the draft") + " (" + it.chars + " characters)";
+      var pre = document.createElement("pre");
+      pre.setAttribute("data-testid", "audit-learnings-text");
+      pre.style.cssText = "white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0 0;";
+      pre.textContent = it.text;
+      list.appendChild(h);
+      list.appendChild(pre);
+    });
+    box.hidden = items.length === 0;
   }
 
   // ONE spelling of a step's state: its dot + the bold state word — read by the Run tab's step cards AND the Audit tab's grouped rows

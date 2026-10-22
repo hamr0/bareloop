@@ -1850,6 +1850,9 @@ function getRunDetailBody(runid, opts) {
     // carries no contamination risk); `null` when the spine carries no
     // `memory-cache` record at all (never armed on this run).
     behaviour: scopedBehaviour(row, rawSpineRecords),
+    // Cross-run learnings, READ-ONLY (ITEM33 rev 2, RULING 8): the exact block the planner was handed, as the spine recorded it at
+    // injection (the draft, and the first replan). Empty when the setting was off or nothing was readable.
+    learnings: rawSpineRecords.filter((e) => e?.type === 'learnings' && typeof e.text === 'string').map((e) => ({ phase: String(e.phase), text: e.text, chars: e.text.length, ids: Array.isArray(e.ids) ? e.ids : [] })),
     // PRD v1.106 Part 5 F: the two Run summary rows, worded here (the page prints them)
     callsLine: callsLineOf(rawSpineRecords, scopedBehaviour(row, rawSpineRecords)),
     checksLine: checksLineOf(rawSpineRecords, enrichedParts),

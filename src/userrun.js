@@ -82,6 +82,7 @@ import { keysForDoor } from './keysfile.js';
 import { parseJsonl } from './replayio.js';
 import { claimRun, monthlyRefusalText, legSpend, chainSpend } from './monthly.js';
 import { ConfigError } from './config.js';
+import { learnAtRunEnd, hintsForRun, releaseRun } from './learnstore.js';
 import { commandFor } from './invoke.js';
 import { judgeRatesFor, keyNameFor, keyValueOf, priceReadout, ratesFor, ratesOfLine, resolveWorker, judgeRowFor, rowsForHome, REFUSE_NAME_MODEL } from './providerrows.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
@@ -1306,6 +1307,11 @@ async function execute(ctx) {
     if (RULING.decision !== 'rerun') {
       out(`\n${RULING.decision === 'accept' ? 'ACCEPTED' : 'PAUSED'} — the verdict this run minted (${doorRecord.outcome}) is UNTOUCHED; what you answered is what happens to the work.`);
       if (RULING.decision === 'accept') {
+        // Cross-run learnings: the human Accept is what releases a held rubric run's lessons so they count (forward only; a rerun or a
+        // pause never does). Its own try/catch: a record, never a verdict.
+        if (cfgOn && DOOR !== null) {
+          try { releaseRun({ home: cfgHome, runid: DOOR.includes('/') || DOOR.endsWith('.jsonl') ? basename(DOOR).replace(/^u-/, '').replace(/\.jsonl$/, '') : DOOR }); } catch (/** @type {any} */ e) { err(`WARNING: could not release this run's lessons in the learnings ledger (${redactSecrets(String(e?.message ?? e)).split('\n')[0]}).`); }
+        }
         out(`  proved   ${ans.mechanical?.ran ?? 0} mechanical stage(s) re-ran on the tree as it stands, and passed — an accept is not a rubber stamp`);
         out(`  credit   ${ans.released ? 'RELEASED — this workflow is now eligible for reuse' : ((ctx.registry ?? null) === null ? 'not released: no --registry was named, so there is no entry to release (the answer is on the spine)' : (quarantinesCredit(spec.verdictType) ? 'nothing left to release — this row was already released by an earlier accept (a repeat answer records nothing new)' : 'nothing was held to release — a green-class row is minted born RELEASED (hamr, 2026-08-30): a machine proved it, so there was never a credit to quarantine'))}`);
         if (ans.note) out(`  note     ${ans.note}`);
@@ -1895,10 +1901,18 @@ async function execute(ctx) {
   // honours it, and the `finally` below clears whatever is left when the leg ends.
   const stopFile = stopFilePath(spineFile);
   try { rmSync(stopFile, { force: true }); } catch { /* best-effort — a stop surface must never kill the run */ }
+  // Cross-run learnings (src/learn.js): the PLANNER's block, made once from the ledger as it stood — empty when the one setting
+  // (`learningHints` in config.json) is off. A record read, never a verdict: a failure here is no hints, never a failed run.
+  /** @type {{text: string, ids: string[]}|null} */
+  let learnHints = null;
+  if (cfgOn) {
+    try { learnHints = hintsForRun({ home: cfgHome, spec, specHash }); } catch { learnHints = null; }
+  }
   let outcome;
   try {
     outcome = await runJob(spec, {
       stopFile,
+      ...(learnHints === null ? {} : { learnHints }),
       // PRD item 27/M3 — the SAME `emit` the pre-run close-timing reading above
       // used (never a second `makeSpine(spineFile)` here: two independent
       // emitters against one file would both start their seq counter at 0 and
@@ -2009,6 +2023,20 @@ async function execute(ctx) {
       const fin = legSpend(events);
       appendRunEvent({ runid, type: 'settled', by: runid, spentUsd: fin.usd, spendComplete: fin.complete, at: new Date().toISOString(), ...(LEG > 1 ? { leg: LEG } : {}) }, { home: cfgHome });
     } catch (/** @type {any} */ e) { err(`WARNING: could not settle this run's claim in ~/.config/bareloop/runs.jsonl (${e.message}) — the next run settles it once this process is gone.`); }
+  }
+  // The run-end tally of cross-run learnings ($0, code only, no model): the whole spine (all legs) and the gate audit become cards
+  // folded into the ONE ledger (a rubric job's are held until the human Accept). Its own try/catch, like the settle above: a
+  // record, never a verdict — a failure prints one WARNING line and can never change the outcome, the exit code or the spend.
+  // `execute` is shared by the panel, the CLI and the bundle runner, so this is the ONE call site. It runs with the hints setting
+  // on or off (OFF only means the planner is handed nothing). With no config home (a test with an injected env) it writes nothing.
+  if (je && cfgOn) {
+    try {
+      const filedAudit = ctx.bundle ? join(spineDir, 'gate-audit.jsonl') : join(spineDir, `u-${runid}-gate-audit.jsonl`);
+      learnAtRunEnd({
+        home: cfgHome, runid, events: allEvents, auditFiles: [filedAudit, join(wd, 'gate-audit.jsonl')], spec, specHash, workdir: wd,
+        trust: quarantinesCredit(spec.verdictType) ? 'rubric' : 'deterministic',
+      });
+    } catch (/** @type {any} */ e) { err(`WARNING: could not record this run's lessons in the learnings ledger (${redactSecrets(String(e?.message ?? e)).split('\n')[0]}) — the run itself is unaffected.`); }
   }
   // the ONE spelling of the text-side scan (src/validate.js) — a hand-rolled copy
   // here would be the ninth, and one that misses a shape leaks on the very output

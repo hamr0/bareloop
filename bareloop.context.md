@@ -3866,6 +3866,17 @@ provider but `anthropic-api`, spine bundling for `formatReplay` on the minting r
 `runid` is noted), and tarball packing — a bundle is a plain directory; use `npm pack` on it
 yourself if you want a tarball.
 
+### Cross-run learnings — a ledger of lessons, code only (`src/learn.js`, `src/learnstore.js`, `src/stagewords.js`; `docs/product/ITEM33-BUILD.md` "Addendum 2026-10-22 (rev 2)")
+
+No model is called anywhere in learnings (a test walks the import closure). Pure rules in `learn.js`; file IO in `learnstore.js`.
+
+- **Setting:** `learningHints` (`true`/`false`) in `config.json`, absent = OFF. OFF still writes the tally at run end; it only means the planner is handed nothing.
+- **Run end:** `execute` (`src/userrun.js`, shared by the panel, the CLI and the bundle runner) calls `learnAtRunEnd({ home, runid, events, auditFiles, spec, specHash, workdir, trust })` once, right after the claim settles, in its own try/catch: a failure prints one WARNING and never changes the verdict, exit code or spend. It writes nothing when the engine has no config home.
+- **Cards:** `buildCards({ runid, events, audit, workdir, spec, model, questions })` → `{ cards, suspect, thin, noise }`. FIXED = a check red then the same check passes later in the run; NEVER FIXED = still red at run end. Excluded and counted: noise runs (provider-red, close-crashed, worker-crash, no close spoke), CHECK-SUSPECT (a no-suppressions hit on a prose comment), TOO-THIN (no error kind and no fix files). Written files come from `attempt-diff` events and the gate audit's allow write/edit rows relative to the tree.
+- **Fold:** `cardsMatch` / `foldCards`: same job + check, a shared error kind (`other` never matches), Jaccard >= 60% on flagged-text tokens (a fit on known cards, not a proof).
+- **Ledger** `<config home>/learn/ledger.json` (mode 600, atomic, secrets masked): rows `{ id, lesson, count, sample, models, workflow, place, level, trust, runIds, firstSeen, lastSeen, status, specHash }`, plus `pending` (held rubric cards), `checkWide`, `suspect`, `health`. `countLedger` (+1 per run per row), `holdPending` / `releasePending` (rubric cards count only after the human Accept; `releaseRun` is called from the door's accept path), `climb`, `applyDecay` (56 days).
+- **Reading:** `hintsForRun({ home, spec, specHash })` renders once at run start; `runJob(..., { learnHints: { text, ids } })` → `runPlan` hands it to the PLANNER at the draft and the first replan only, and emits a `learnings` spine record with the exact text. `renderHints(ledger, { workflow, place, specHash, now })` is the one render (this job, then this place, then all-jobs, highest count first, 2,000 characters, a hint whole or not at all); `hintsMatchRecord` is the byte check. The Audit run detail carries `learnings` (read-only).
+
 ### Settings — the keys file, `config.json`, the monthly $ limit, the Providers tab (PANEL-BUILD.md P4a, `src/keysfile.js`, `src/config.js`, `src/monthly.js`, `src/providerrows.js`, `src/panel/settingsroutes.js`)
 
 Two files in `~/.config/bareloop/`, outside any repo:
@@ -3879,7 +3890,7 @@ Two files in `~/.config/bareloop/`, outside any repo:
   real one). The CLI (`run-u`, `interview`, `author`) and the panel both use it.
 - **`config.json` — every setting, never a key value.** `readConfig({ home })` /
   `updateConfig(patch, { home })` (atomic tmp + rename, mode 600, unknown fields kept).
-  Fields: `monthlyLimitUsd` (number above 0; absent or `null` = no limit; any other value present
+  Fields: `learningHints` (true/false; absent = off; see "Cross-run learnings"), `monthlyLimitUsd` (number above 0; absent or `null` = no limit; any other value present
   is a `ConfigError`, refused like an unreadable file), `keys.<ENV NAME>` = `{ shape, baseUrl, legacyMaxTokens }` (the Providers rows' settings: an API shape id, the typed Base URL,
   the "old max_tokens" tick), `models.<ENV NAME>` = a list of `{ model, use, inPerM?, outPerM? }` lines (replaced WHOLE on every save; the customer's own price below). Nothing is built
   in: a row with nothing saved is shape `openai-api`, no address, no lines. A secret-shaped

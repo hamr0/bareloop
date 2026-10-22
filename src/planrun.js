@@ -340,6 +340,17 @@ function materialsBlock(m) {
 }
 
 /**
+ * Cross-run learnings (ITEM33-BUILD.md rev 2, RULING 7): the block `renderHints` (src/learn.js) made, rendered verbatim into
+ * the PLANNER's prompt and nowhere else — a worker (scout, step, close-fix) is never handed ledger text. Absent or empty
+ * renders '' so every prompt without hints is byte-identical to what it was.
+ * @param {string|null|undefined} text
+ */
+function hintsBlock(text) {
+  if (typeof text !== 'string' || !text.trim()) return '';
+  return `\n${text}\n`;
+}
+
+/**
  * MODULE 8 — the signer's words, when this leg is a RERUN taken at a previous run's
  * review door (PRD v1.71 §3.4: *"redo/rerun comes with new authoring"*).
  *
@@ -633,8 +644,10 @@ export function boundedNote(bounded, rounds) {
  *   is STATED as well as enforced (the mailbox precedent again: a law only the validator
  *   knows costs a redraft per draft). The arms without it — `false` and `'diff'` — render
  *   byte-identically to the pre-shim prompt.
+ * @param {string|null} [hints] the cross-run learnings block (src/learn.js `renderHints`), verbatim; null/empty
+ *   renders byte-identically to the prompt without it. Only ever passed for the draft and the first replan.
  */
-export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null, checkFacts = {}, doorNote = null, readShim = false) {
+export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null, checkFacts = {}, doorNote = null, readShim = false, hints = null) {
   const scopeMenu = Array.isArray(scopes) && scopes.length ? scopes : legalScopes(job.writeScope ?? []);
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
   // The shape-lottery laws, stated where the check menu is offered (the mailbox
@@ -724,7 +737,7 @@ ${scopeMenu.map((s) => `  ${JSON.stringify(s)}`).join('\n')}
 
 Goal:
 ${job.goal}
-${doorNoteBlock(doorNote)}${materialsBlock(materials)}
+${doorNoteBlock(doorNote)}${materialsBlock(materials)}${hintsBlock(hints)}
 Repository survey (from a read-only scout):
 ${scoutBlob || '(no scout notes)'}`;
   let p = doc;
@@ -983,12 +996,16 @@ ${scoutBlob || '(no scout notes)'}`;
  *   the file, end the Loop after that round, and end the leg `stopped` (a checkpoint outcome, filed
  *   the way a mid-step cap-halt is; resume re-enters that step, or continues the phase). Nothing is in flight at that
  *   point, so the spend is exact. `null` = no stop surface (the default).
+ * @param {{text: string, ids: string[]}|null} [opts.learnHints=null] cross-run learnings (src/learn.js `renderHints`, made once at
+ *   run start from the ledger as it stood). Handed to the PLANNER only: the first draft and the FIRST replan. No worker ever
+ *   receives it, and a later replan gets nothing. Each injection is recorded on the spine as a `learnings` record (the exact
+ *   text) so the Audit can show it and the byte check can compare it with a fresh render. `null` = no hints (the default).
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
  *   'check-red' | 'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' |
  *   'branch-red' | 'cap-halt' | 'wall-halt' | 'stopped' | 'provider-red' | 'interpreter-red' |
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, rates = null, judgeRates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, rates = null, judgeRates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, learnHints = null }) {
   // MEMORY-CACHE: what the read shim (src/readshim.js) saved THIS run, summed across
   // every mkWorker's own shim instance (scout, drafter, each step's worker, the fix
   // worker) — one accumulator closed over by all of them, because the shim's ledger
@@ -3069,6 +3086,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // is actually left, which is the adaptation channel.
     const materials = { balanceUsd: remainingUsd(), remainingMs: clock.bounded ? clock.remainingMs() : null, ...(progress ? { progress } : {}) };
     emit('materials', { phase, ...materials });
+    // Cross-run learnings: the planner at the draft and at the FIRST replan, nobody else. The spine keeps the exact text it was
+    // handed (a record, never a verdict), so the Audit can show it and the byte check can compare it with a fresh render.
+    const hints = learnHints && learnHints.text && (phase === 'draft' || (phase === 'replan' && replans === 1)) ? learnHints : null;
+    if (hints) emit('learnings', { phase, text: hints.text, ids: hints.ids, chars: hints.text.length });
     // D5 — the bridge rides into the FIRST draft phase ONLY. A replan drafts from the
     // RUN'S OWN STATE (what failed, what is left): re-handing the recipe there would
     // answer the replan's question with the material the run just demonstrated does not
@@ -3093,7 +3114,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const draftPlan = async (/** @type {any[]|null} */ reds) => {
       drafter.setIteration(reds ? 'redraft' : 'draft');
       replanCut = false;
-      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, starting, checkFacts, doorWords?.text ?? null, readShim), []);
+      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, starting, checkFacts, doorWords?.text ?? null, readShim, hints?.text ?? null), []);
       if (phase === 'replan' && typeof r.error === 'string' && r.error.startsWith('truncated:')) {
         replanCut = true;
         return '';

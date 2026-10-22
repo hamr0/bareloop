@@ -5,10 +5,12 @@
 // scratch home and never create the real directory). It lives outside every person's repo, is written atomically
 // (temp file + rename) and mode 600, and every string in it passes the one secret inventory before it is written.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, chmodSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync, chmodSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { keysHome } from './keysfile.js';
-import { emptyLedger, redactDeep, countLedger, holdPending, releasePending, recordHealth } from './learn.js';
+import { readConfig } from './config.js';
+import { emptyLedger, redactDeep, countLedger, holdPending, releasePending, recordHealth, buildCards, placeOf, renderHints } from './learn.js';
+import { stageQuestionsByName } from './stagewords.js';
 
 /**
  * `<home>/learn/ledger.json`.
@@ -91,4 +93,62 @@ export function releaseRun({ home, runid, now = new Date() }) {
   const r = releasePending(cur.ledger, runid, now);
   if (r.ledger !== cur.ledger) writeLedger(r.ledger, home);
   return { released: r.released, problem: null };
+}
+
+/**
+ * The ONE setting: `learningHints` in config.json. Ships OFF (absent = off). OFF still writes the tally ($0) and the planner
+ * is simply handed nothing, so an ON/OFF contrast has data at once. An unreadable config reads as OFF.
+ * @param {string} [home]
+ * @returns {boolean}
+ */
+export function learningHintsOn(home) {
+  const c = readConfig({ home });
+  return c.problem === null && c.config.learningHints === true;
+}
+
+/** @param {string} p @returns {any[]} the parsed rows of a JSONL file; missing or torn lines are skipped */
+function readJsonl(p) {
+  if (!existsSync(p)) return [];
+  /** @type {any[]} */
+  const rows = [];
+  for (const l of readFileSync(p, 'utf8').split('\n')) {
+    if (!l) continue;
+    try { rows.push(JSON.parse(l)); } catch { /* a torn line is skipped, never a crash */ }
+  }
+  return rows;
+}
+
+/** a path resolved to its real location when it exists, else as written @param {string} p */
+const realOr = (p) => { try { return realpathSync(p); } catch { return p; } };
+
+/**
+ * THE RUN-END TALLY ($0, code only, no model): turn the finished run's whole record into cards and fold them into the
+ * ledger (a rubric job's are held until Accept). Called once from the one engine's run-end block (src/userrun.js
+ * `execute`, shared by the panel, the CLI and the bundle runner), inside its own try/catch: it is a record, never a verdict,
+ * and can never change a run's outcome, exit code or spend. It runs whether the hints setting is on or off.
+ * @param {{home?: string, runid: string, events: any[], auditFiles?: string[], spec: any, specHash: string|null, workdir: string|null, trust: 'deterministic'|'rubric', now?: Date}} o
+ * @returns {{wrote: boolean, counted: number, held: number, problem: string|null, noise: string|null, cards: number}}
+ */
+export function learnAtRunEnd({ home, runid, events, auditFiles = [], spec, specHash, workdir, trust, now = new Date() }) {
+  const audit = auditFiles.flatMap(readJsonl);
+  const build = buildCards({ runid, events, audit, workdir, spec, questions: stageQuestionsByName(spec) });
+  const at = events.findLast((e) => e?.type === 'job-end')?.ts ?? now.toISOString();
+  const r = foldRunIntoLedger({
+    home, runid, build, workflow: String(spec.job), place: placeOf(spec, realOr), specHash, trust, at, now,
+  });
+  return { ...r, noise: build.noise, cards: build.cards.length };
+}
+
+/**
+ * The block the planner is handed for this job, made ONCE at run start from the ledger as it stood — empty when the
+ * setting is off, when there is no ledger, or when nothing is readable. The one `renderHints` render, never a second.
+ * @param {{home?: string, spec: any, specHash: string|null, now?: Date}} o
+ * @returns {{text: string, ids: string[]}|null}
+ */
+export function hintsForRun({ home, spec, specHash, now = new Date() }) {
+  if (!learningHintsOn(home)) return null;
+  const cur = readLedger(home);
+  if (cur.problem) return null;
+  const r = renderHints(cur.ledger, { workflow: String(spec.job), place: placeOf(spec, realOr), specHash, now });
+  return r.text ? r : null;
 }
