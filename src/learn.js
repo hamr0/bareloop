@@ -475,3 +475,55 @@ export function buildCards({ runid, events, audit = null, workdir = null, spec =
   out.suspect = sus;
   return out;
 }
+
+// ── fold ─────────────────────────────────────────────────────────────────────────────────────────
+/** @param {{kinds: string[]}} a @param {{kinds: string[]}} b */
+export function sharedKind(a, b) {
+  return a.kinds[0] !== 'other' && b.kinds[0] !== 'other' && a.kinds.some((x) => b.kinds.includes(x));
+}
+
+/** Jaccard of two token arrays; an empty side scores 0. @param {string[]} a @param {string[]} b */
+export function jaccard(a, b) {
+  if (!a.length || !b.length) return 0;
+  const sb = new Set(b);
+  let n = 0;
+  for (const x of a) if (sb.has(x)) n += 1;
+  return n / (a.length + b.length - n);
+}
+
+/**
+ * Are two cards one lesson? Same check, a shared error kind (kind `other` never matches anything) and Jaccard >= 60%
+ * on flagged-text tokens. `sameJob: false` drops the job test (RULING 1: the cross-job rule for climbing).
+ * @param {Card} a @param {Card} b @param {{sameJob?: boolean}} [o]
+ * @returns {{match: boolean, score: number}}
+ */
+export function cardsMatch(a, b, { sameJob = true } = {}) {
+  if ((sameJob && a.job !== b.job) || a.check !== b.check || !sharedKind(a, b)) return { match: false, score: 0 };
+  const score = jaccard(a.tokens, b.tokens);
+  return { match: score >= JACCARD_MIN, score };
+}
+
+/**
+ * Group cards into lessons: single-link components over eligible pairs; every pair INSIDE a component is re-checked
+ * for a shared kind, and a component with any pair lacking one splits back to singletons.
+ * @param {Card[]} cards
+ * @returns {Card[][]} groups, in first-card order; each group in input order
+ */
+export function foldCards(cards) {
+  const n = cards.length;
+  const par = cards.map((_, i) => i);
+  const find = (/** @type {number} */ x) => { let r = x; while (par[r] !== r) r = par[r]; par[x] = r; return r; };
+  for (let i = 0; i < n; i += 1) for (let j = i + 1; j < n; j += 1) if (cardsMatch(cards[i], cards[j]).match) par[find(i)] = find(j);
+  /** @type {Map<number, number[]>} */
+  const comps = new Map();
+  for (let i = 0; i < n; i += 1) { const r = find(i); comps.set(r, [...(comps.get(r) ?? []), i]); }
+  /** @type {Card[][]} */
+  const groups = [];
+  for (const m of comps.values()) {
+    let ok = true;
+    for (let a = 0; a < m.length && ok; a += 1) for (let b = a + 1; b < m.length; b += 1) if (!sharedKind(cards[m[a]], cards[m[b]])) { ok = false; break; }
+    if (ok) groups.push(m.map((i) => cards[i]));
+    else for (const i of m) groups.push([cards[i]]);
+  }
+  return groups.sort((x, y) => cards.indexOf(x[0]) - cards.indexOf(y[0]));
+}
