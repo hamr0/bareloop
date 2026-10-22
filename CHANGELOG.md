@@ -5,6 +5,24 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.45.0] - 2026-10-22
+
+### Added
+
+- **Phrase facts get the dry read.** A kept phrase fact (for example "destination city" = "Rome") is read against the page's result lines (the lines the job's kept price facts read), by the same checker the run uses. A phrase found only outside the results (such as a "Track prices from Madrid to Rome" switch) is dropped whole as `phrase-no-result` and shows under Not checked: `"Rome" is on the page but in none of its results, so it is not checked.` A job with no kept price fact has no known result lines, so its phrase facts are left as they were.
+
+- **An S1 copy of a signed fact is a read note.** When the AI proposes a second fact that would read the same value as a fact that is still signed, the note now shows under "How the page was read" instead of "Not checked" (the guardrail is checked by the other fact). With the other fact not signed it stays Not checked. The signed fact names reach the split from the signed spec (older specs too) and from the look at the confirm turn.
+
+- **A fit check before the look (F243, `src/fitcheck.js`).** For a rubric job in the panel, one AI call splits each job line into the short parts it asks for and quotes the saved page for each; code (not the AI) decides a part is found only when its quote is really on the page. If every part is found nothing changes; if some are not, the person gets one question ("I found X of Y of your asks on this page. Not found: ... Type go on to keep drafting, or anything else to stop...") before the look spends. "go on" continues; anything else stops with "Stopped before drafting: the page does not show everything the job asks for: ...". The answer changes nothing in the signed job. If the check cannot finish it fails open and drafting goes on. Its spend is booked as `fit-check` in the drafting part and its result is one `fit-check` row in the drafting log.
+  A bare number in an ask (a count like the 3 in "list 3 flights") is ignored: not counted, not asked about, kept in the drafting log row flagged `ignored: number`. The stop line reads "...the job asks for: wifi (line 1), meal (line 1). Change the job...".
+
+### Fixed
+
+- **Code's notes about written forms it did not use no longer sit under Not checked.** A second label, unit or currency dropped from a fact that is still checked (listed twice, "does not show the same values", not on the page) now shows in its own fold, "How the page was read · N", right after Not checked and not counted in it; a whole fact left out stays under Not checked. Same wording per note, on the plan card, the Job tab, the Result tab and the CLI confirm menu (run mvij7kuk).
+
+- **A currency word in the wrong box no longer kills the price check (F241).** Drafting now sorts the AI's currency forms by code: a sign ($, €, £) is the currency, any other form ("US dollars") is a unit, whichever box the AI put it in; `currency-not-symbol` is gone. Then a $0 dry read grades an honest claim on each result line with the run's own checker, and a price fact that reads no result line is left under Not checked (`reads-no-result`) instead of being signed to fail at the run.
+- **A number the AI made up no longer passes as the person's own.** The test for "is this limit in the person's words" matched digits inside other words, so 5, 15 and 50 counted as said for "under $150 ... between 05:00 and 23:59". It now reads times, dates, amounts and bare numbers as whole items, and a limit counts as written only if it equals one of them (`boundInWords`, F242).
+
 ## [0.44.0] - 2026-10-20
 
 ### Added

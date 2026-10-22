@@ -2444,7 +2444,7 @@ export async function runConfirmTurn({
     for (const row of dropRows(facts?.look?.dropped)) { const text = dropLine(row, jobLines, lineRules); if (!notChecked.includes(text)) notChecked.push(text); }
     const checkItems = normalizeChecks(r.plan.checks);
     r.plan = { ...r.plan, checks: checkItems.map((c) => c.text), checkItems };
-    const plan = { ...r.plan, protections, notChecked };
+    const plan = { ...r.plan, protections, notChecked, signedFacts: (Array.isArray(facts?.look?.facts) ? facts.look.facts : []).map((/** @type {any} */ f) => String(f?.name)) };
     onPhase('confirm-done', { round, plan });
     const picked = await ask({ kind: 'menu', field: CONFIRM_MENU, plan });
     if (picked === null) return abandon(round);

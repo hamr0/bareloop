@@ -65,6 +65,10 @@ export const PROMPT_REGISTERS = Object.freeze([
   Object.freeze({ file: 'src/pagemap.js', name: 'MAP_SYSTEM' }),
   Object.freeze({ file: 'src/pagemap.js', name: 'mapPrompt() (inline template, not a const)' }),
 
+  // src/fitcheck.js - the fit check call (F243): the AI splits each job line into asks and quotes the page for each
+  Object.freeze({ file: 'src/fitcheck.js', name: 'FIT_SYSTEM' }),
+  Object.freeze({ file: 'src/fitcheck.js', name: 'fitPrompt() (inline template, not a const)' }),
+
   // src/readshim.js — the capped/deduplicating read shim's worker-facing strategy
   Object.freeze({ file: 'src/readshim.js', name: 'READ_SHIM_STRATEGY' }),
   Object.freeze({ file: 'src/readshim.js', name: 'READ_SHIM_DIFF_STRATEGY' }),

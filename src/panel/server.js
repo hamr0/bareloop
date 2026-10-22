@@ -1445,6 +1445,7 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
     pages,
     pageNote: pages.length ? RESULT_PAGE_MAY_CHANGE : null,
     notChecked: bottom,
+    readNotes: plan.readNotes,
     // the door's words, from the one table (src/panel/status.js DOOR_WORDS); the page types none of them
     door: { head: DOOR_WORDS.waiting.head, ask: RESULT_DOOR_ASK },
     delivered: delivered.map((d, i) => ({

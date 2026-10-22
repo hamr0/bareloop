@@ -41,6 +41,15 @@ test('renderJobPlan: legend, numbered lines with their rule, checks as "check ·
   assert.doesNotMatch(h, /<script|<input|<button/i);
 });
 
+test('renderJobPlan: "How the page was read" is its own fold right after Not checked, counted apart, same markup; none = no fold', () => {
+  const h = renderJobPlan({ ...PLAN, readNotes: ['line 1: "price" \u2014 "from" was not used.', 'second <note>'] });
+  assert.match(h, /<details[^>]*data-testid="plan-notchecked"><summary>Not checked \(the AI's own reading\) · 1</, 'the notes are not in the Not checked count');
+  assert.match(h, /<details class="fold" data-testid="plan-readnotes"><summary>How the page was read · 2<\/summary><ul><li>line 1/);
+  assert.match(h, /second &lt;note&gt;/);
+  assert.ok(h.indexOf('plan-notchecked') < h.indexOf('plan-readnotes') && h.indexOf('plan-readnotes') < h.indexOf('plan-alwayson'));
+  assert.doesNotMatch(renderJobPlan(PLAN), /plan-readnotes/);
+});
+
 test("renderJobPlan: the AI's summary is a labelled row under the legend (escaped); an older job shows no summary row (its goal is line 1)", () => {
   const h = renderJobPlan({ ...PLAN, goal: 'Fix <the> dates' });
   assert.match(h, /data-testid="plan-goal"><span class="lbl">AI's summary<\/span>Fix &lt;the&gt; dates</);

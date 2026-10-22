@@ -182,7 +182,7 @@ test('ONE table: no source file but src/pagedropwords.js writes a drop sentence'
     'is not written on the page', 'The page never shows a number right after or right before', 'is written more than once inside one line of the page',
     'does not show the same values as', 'does not show the same amounts as', 'One result is one record; ask for N results instead',
     'would read the same value as', 'The page gives no second label for it', 'No word on this page reads', 'Only the first 3 currencies are used',
-    'Only the first 10 units are used', 'is longer than 100 characters', 'is not a currency sign', 'that a check cannot read',
+    'Only the first 10 units are used', 'is longer than 100 characters', 'could not read a price in the page', 'that a check cannot read',
   ];
   const own = readFileSync(join(HERE, '..', 'src', 'pagedropwords.js'), 'utf8');
   for (const f of fragments) assert.ok(own.includes(f), `the table lacks: ${f}`);
@@ -261,7 +261,7 @@ test('authorClose (the real drafting loop): a drafter that drops the junk "Stops
 test('authorClose (the real drafting loop): a drafter that signs the dropped label "StaticText" gets a rubric-fact-word-dropped red with the reason, and the corrected try validates', async () => {
   const { prep, file, look } = await frozenFlights();
   const listing = await buildSeedListing({ workdir: prep.tree, seedRef: prep.manifest.seed, sourcePaths: undefined, testPaths: undefined });
-  const STOPS = { name: 'Stops', shape: 'number', anchor: 'StaticText', rule: { op: 'lte', value: 0 } };
+  const STOPS = { name: 'Stops', shape: 'number', anchor: 'StaticText', rule: { op: 'lte', value: 0 }, aiProposal: true };
   /** @type {string[]} */
   const seen = [];
   let calls = 0;

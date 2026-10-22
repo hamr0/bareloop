@@ -116,6 +116,7 @@ import {
   runConfirmTurn, LANGUAGE_PICK_FIELD, normalizeQuestions, MAX_QUESTIONS,
 } from './authorflow.js';
 import { thinkingCallOptions, assertThinkingMode } from './thinking.js';
+import { runFitCheck, fitQuestionText, notFoundList, isGoOn } from './fitcheck.js';
 import { pageContentChars } from './pagefetch.js';
 import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
 import { runPageMap, askableFromLook, tooManyAsksText } from './pagemap.js';
@@ -429,7 +430,8 @@ function composerRefusal(reds) {
  *   rates?: {in: number, out: number}|null, draftThinking?: 'on'|'off',
  *   onPhase?: (phase: string, data?: any) => void,
  *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string}) => void,
- *   seedFn?: Function, scoutFn?: Function, listingFn?: Function, lookFn?: Function|null,
+ *   seedFn?: Function, scoutFn?: Function, listingFn?: Function, lookFn?: Function|null, fitFn?: Function|null,
+ *   fitAsk?: ((question: string) => Promise<string|null>)|null, onFit?: (fit: {state: string, asks: any[], notFound: any[]}) => void,
  *   authorFn?: Function, authorOpts?: object, writeScope?: string[]|null,
  *   signerFix?: Function|any, proposeFn?: Function, compileOpts?: object,
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
@@ -473,6 +475,9 @@ export async function authorCloseForJob({
   // PART 1c / IDEA A CORE - the look at a rubric job's inputs: the default is the page-word map (src/pagemap.js `runPageMap`, one paid AI
   // call per page input, its words kept by code). `null` is an explicit "no look" (a test seam, like a caller-supplied `scout`).
   lookFn = runPageMap,
+  // THE FIT CHECK (F243): one paid call BEFORE the look, rubric jobs only. It runs only when the caller supplies the answer seam `fitAsk` (the panel);
+  // `fitFn` null is an explicit "no check" (a test seam). With no `fitAsk` (the CLI door) it never runs.
+  fitFn = runFitCheck, fitAsk = null, onFit = () => {},
   authorFn = authorClose, authorOpts = {},
   // SOFTGREEN modules 4+5. `signerFix` is the D5 seam: a function (or a value)
   // carrying the SIGNER's corrected artifacts back. Absent means the proposal is
@@ -613,6 +618,25 @@ export async function authorCloseForJob({
       // nothing to check a rule against. Plain words, before any model call.
       survey = { state: 'ABSENT', reason: 'your input holds nothing to read (it is empty, or only the site\'s own header and menus) - nothing was asked and nothing was spent', cause: 'call-failed', budgetStop: null, calls: [], raws: [], facts: null };
     } else if (frozen !== null && lookFn) {
+      if (fitAsk && fitFn) {
+        // F243: a page that does not show what the job asks for stops here, before the look spends. Failure is OPEN: an `absent` check
+        // (cut, unreadable twice, call failed, cap) asks nothing and drafting goes on; the answer is NOT a `~` rule and changes nothing in the job.
+        onPhase('fit-check', {});
+        const fitCallOptions = thinkingCallOptions(provider, draftThinking);
+        const fit = await fitFn({
+          jobLines, texts: frozen.texts, provider, ceilingUsd, onCall, ...(rates ? { rates } : {}),
+          ...(Object.keys(fitCallOptions).length ? { callOptions: fitCallOptions } : {}),
+        });
+        onPhase('fit-check-done', { state: fit.state });
+        onFit({ state: fit.state, asks: fit.asks, notFound: fit.notFound });
+        if (fit.state === 'ask') {
+          const answer = await fitAsk(fitQuestionText({ found: fit.asks.filter((/** @type {any} */ a) => !a.ignored && a.found).length, total: fit.asks.filter((/** @type {any} */ a) => !a.ignored).length, notFound: fit.notFound }));
+          if (answer === null) return { ...base, interview, verdictType: picked, seedRef: seed, reds: [], stop: 'confirm-abandoned', cost: null };
+          if (!isGoOn(answer)) {
+            return { ...base, interview, verdictType: picked, seedRef: seed, reds: [{ code: 'fit-stopped', path: 'jobLines', detail: notFoundList(fit.notFound) }], stop: 'fit-stopped', cost: null };
+          }
+        }
+      }
       onPhase('look', {});
       const lookCallOptions = thinkingCallOptions(provider, draftThinking);
       survey = await lookFn({
