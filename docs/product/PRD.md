@@ -2001,9 +2001,22 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 - **Review:** send the core and the bareguard mapping to the guard session, which checks them against real audit files. The audit line format is bareguard's 1.0 SemVer surface, and guard warns us before any audit change.
 - **Tests:** a real audit file round-trips (N objects → N logRecords); the traceId is stable across a family; gate and record lines with the same (run_id, aid) share a spanId; unknown and `_dropped*` fields survive in attributes; `{_dropped_core:true}` converts without throwing; the output is byte-stable for the same input.
 
-### Backlog: search as an input, not just one page (v1.109 — 2026-10-21) — BACKLOG, not ruled
+### Backlog: search as an input, not just one page (v1.109 — 2026-10-21) — RULED 2026-10-21, build after learnings (v1.110)
 - hamr: search is plausible, not just one fetched page.
 - **Today:** a `search:` input line is refused at $0 ("a search, or an address that is not http or https, is not an input yet", `src/source.js` ~1270). An http(s) URL is fetched ONCE as one page's text (`src/pagefetch.js`) at drafting and again at run start. Nothing types, clicks or follows links, and the worker never browses. `https://google.com` is fetched as the home page (a search box, no results); a results URL is just that one results page.
 - **The wish:** a `search:` line runs a search (barebrowse: type into a search box, read the results, open result pages) and the job is checked across those pages, not one.
 - **Already ruled and still binding:** the browse gate allows read/type/click on search-box forms only, and never pay/book/buy/send/submit/sign-up or card fields (v1.95). Booking and acting stay fwdloop's.
 - **Open (interview before any spec):** which pages are opened and how many; what the run's saved evidence is when there are several pages; caps; site reach (Booking, Expedia, eBay and Skyscanner block barebrowse, F227).
+
+### Work order after v0.45.0 (v1.110 — 2026-10-22) — RULED by hamr
+
+- **Shipped:** v0.45.0 on 2026-10-22: fit check (F243), money dry read (F241), phrase dry read, "How the page was read" read notes, S1 copy of a signed fact as a read note, F242 boundInWords by kind. Pointer: CHANGELOG [0.45.0].
+- **Order (hamr, 2026-10-22):**
+  1. Cross-run learnings (v1.108 item 1) on its own branch: interview hamr first, then the build spec, then the build.
+  2. Then search as an input (v1.109) on its own branch, built from the search build spec in `docs/product/ITEM33-BUILD.md` ("Addendum 2026-10-21 — search build spec", commit 812bf56).
+  3. The OTel converter (v1.108 item 2) stays after, only when a live caller exists.
+- **Search rulings already made (hamr 2026-10-21, in the build spec):**
+  - `search: <site url>` uses that site's own box; code picks the box, the AI writes the words.
+  - Up to 5 links are opened and the first that fits is the evidence. If none of the 5 fit, show the closest page and let the person type "go on" (Q1 a).
+  - At run time, search again on the SAME site only, else fall back to the page approved at drafting (Q2 a).
+  - Information jobs only; listing jobs keep the pasted link.
