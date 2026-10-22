@@ -48,7 +48,7 @@ test('run names: the right-side header reads job (run-N) on every branch of rend
   const els = {};
   const document = { getElementById: (id) => els[id] ?? (els[id] = mk(id)), createElement: () => mk('c') };
   const stubs = ['buildOrderedBoxes', 'stepNumberIndices'].map((n) => `function ${n}(){return [];}`)
-    .concat(['renderStepMap', 'partResultGlyph', 'partLine1Text', 'toolBreakdownLine', 'modelLine', 'toolsLine', 'cacheLine', 'paintOfferedRow', 'offeredLine', 'renderAuditGroups', 'renderJob', 'applyAuditFilter', 'renderRunActions', 'renderScheduled', 'syncResultTab']
+    .concat(['renderStepMap', 'partResultGlyph', 'partLine1Text', 'toolBreakdownLine', 'modelLine', 'toolsLine', 'cacheLine', 'paintOfferedRow', 'offeredLine', 'renderAuditGroups', 'renderAuditLearnings', 'renderJob', 'applyAuditFilter', 'renderRunActions', 'renderScheduled', 'syncResultTab']
       .map((n) => `function ${n}(){return "";}`)).join('\n');
   // eslint-disable-next-line no-new-func
   const render = new Function('document', `
