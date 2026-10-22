@@ -104,6 +104,48 @@ test('redactSecrets — the real redaction path the spine/close/prompt scrub rid
   assert.equal(redactSecrets(benign), benign, 'a non-matching near-miss must ride through byte-identical');
 });
 
+// A key right after a hyphen (`step-ghp_...`) is still a key: the distinctive prefixes drop only `-` from the left bound. Fixtures are
+// built by concatenation (no key-shaped literal in source), like GOOGLE_KEY above.
+const AFTER_HYPHEN = {
+  'ghp_': 'ghp_' + 'A'.repeat(24),
+  'github_pat_': 'github_pat_' + 'A'.repeat(24),
+  'AKIA': 'AKIA' + 'A'.repeat(16),
+  'AIza': GOOGLE_KEY,
+  'xox': 'xoxb-' + '1'.repeat(12),
+};
+
+for (const [name, key] of Object.entries(AFTER_HYPHEN)) {
+  test(`a ${name} key right after a hyphen is detected by the scan and masked by the redactor`, () => {
+    const raw = `deploy step-${key} done`;
+    assert.deepEqual(scanSecrets(raw), [key], 'the scan finds exactly the key, not the hyphen or the word before it');
+    const scrubbed = redactSecrets(raw);
+    assert.notEqual(scrubbed, raw);
+    assert.ok(!scrubbed.includes(key), 'the key does not survive the redactor');
+    assert.match(scrubbed, /^deploy step-\[REDACTED:/, 'the word and hyphen before the key are kept');
+    assert.deepEqual(scanSecrets(scrubbed), []);
+  });
+
+  test(`a ${name} key glued onto a word character or an underscore is still not matched (left bound kept)`, () => {
+    assert.deepEqual(scanSecrets(`x${key}`), []);
+    assert.deepEqual(scanSecrets(`step_${key}`), []);
+  });
+}
+
+test('KNOWN LIMIT: an sk- key directly after a hyphen is NOT found by the shape inventory (sk- ends real words, so its bound keeps the hyphen)', () => {
+  const key = 'sk-' + 'A'.repeat(24);
+  assert.equal(scanSecrets(`a ${key}`).length, 1, 'the same key on its own is caught, or the limit below proves nothing');
+  assert.deepEqual(scanSecrets(`step-${key}`), []);
+  // (redactSecrets happens to mask it anyway through bareguard's own built-in sk- shape: that is bareguard's behaviour, deliberately not pinned here)
+  // the reason: ordinary hyphenated words contain `sk-`
+  assert.deepEqual(scanSecrets('task-' + 'abcdefghijklmnopqrstuvwx'), []);
+});
+
+test('hyphenated ordinary words never red (flask-sqlalchemy, and look-alikes of every distinctive prefix)', () => {
+  const benign = 'pip install flask-sqlalchemy; dump-gh_token; my-AKIA-note; the-xox-club; some-AIza; step-github_pat';
+  assert.deepEqual(scanSecrets(benign), []);
+  assert.equal(redactSecrets(benign), benign);
+});
+
 test('scopeContained rejects every escape spelling and accepts the equivalent contained ones — the belt behind globToPrefix', () => {
   for (const bad of ['/abs/**', '../up/**', './../up/**', '/**']) {
     assert.equal(scopeContained(bad), false, `${JSON.stringify(bad)} must not be contained`);

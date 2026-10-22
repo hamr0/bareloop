@@ -167,14 +167,19 @@ export function closeScriptCandidateToken(cmd) {
 // redactor passes is a leak on the very output the validator was guarding.
 export const SECRET_PATTERNS = [
   /(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{16,}/,
-  /(?<![A-Za-z0-9_-])ghp_[A-Za-z0-9]{20,}/,
-  /(?<![A-Za-z0-9_-])github_pat_[A-Za-z0-9_]{20,}/,
-  /(?<![A-Za-z0-9_-])AKIA[0-9A-Z]{16}/,
-  /(?<![A-Za-z0-9_-])xox[bap]-[A-Za-z0-9-]{10,}/,
+  // The prefixes below are distinctive (an ordinary hyphenated word never starts with `ghp_`, `AKIA`, ...), so their left bound
+  // drops only the `-`: a key right after a hyphen (`step-ghp_...`) is still a key. `sk-` keeps the full bound above, because
+  // `sk-` ends real words (`task-`, `desk-`, `risk-`...). KNOWN LIMIT: an `sk-` key directly after a hyphen or word character
+  // (`step-sk-...`) is not found by THIS inventory, so the scan (validator, source door, pagefetch) misses it. (Measured: the
+  // redactor still masks it today, but through bareguard's own built-in `sk-` shape, not through this list.)
+  /(?<![A-Za-z0-9_])ghp_[A-Za-z0-9]{20,}/,
+  /(?<![A-Za-z0-9_])github_pat_[A-Za-z0-9_]{20,}/,
+  /(?<![A-Za-z0-9_])AKIA[0-9A-Z]{16}/,
+  /(?<![A-Za-z0-9_])xox[bap]-[A-Za-z0-9-]{10,}/,
   // Google/Gemini API key: `AIza` + 35 chars of [0-9A-Za-z_-] (39 total, fixed
   // length by Google's own issuance format). Admitted with the gemini-api
   // provider (PRD item 31.3, F160) — was missing on this branch until then.
-  /(?<![A-Za-z0-9_-])AIza[0-9A-Za-z_-]{35}/,
+  /(?<![A-Za-z0-9_])AIza[0-9A-Za-z_-]{35}/,
 ];
 const SECRET_RE = new RegExp(SECRET_PATTERNS.map((r) => r.source).join('|'));
 

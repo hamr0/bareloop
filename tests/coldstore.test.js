@@ -206,8 +206,9 @@ test('HARD LINE: a secret in the KEY is scrubbed too, and the store stays keyed 
   const wd = makePatient(t);
   const { lc, verb } = ctxVerbs(wd);
   // the token LEADS: SECRET_PATTERNS is left-bounded on purpose (so "flask-sqlalchemy"
-  // never reds), which means `dump-ghp_…` is not a match at all and a test built on it
-  // would pass while proving nothing.
+  // never reds). `dump-ghp_…` now matches (the distinctive prefixes drop only the hyphen from
+  // the bound), but a word character glued on (`dumpghp_…`) still does not, so the leading
+  // form stays the one that cannot pass while proving nothing.
   const dirtyId = `${GH_TOKEN}/dump`;
   const dirtyNoteId = `${GH_TOKEN}/note`;
   assert.equal(scanSecrets(dirtyId).length, 1, 'the fixture id really carries a token, or this test cannot fail');

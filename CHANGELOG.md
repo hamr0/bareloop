@@ -5,6 +5,12 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Fixed
+
+- **A key right after a hyphen is now found and masked.** The secret-shape inventory (`SECRET_PATTERNS`) refused to match a key whose previous character was `-`, so `step-ghp_...` slipped past the scan and the redactor. The distinctive prefixes `ghp_`, `github_pat_`, `AKIA`, `AIza` and `xox[bap]-` now drop only the hyphen from their left bound (a word character or `_` in front still blocks the match, so `flask-sqlalchemy` and look-alike words stay clean). `sk-` keeps the full bound because `sk-` ends ordinary words (`task-`...); a key directly after a hyphen there (`step-sk-...`) is a documented known limit of the shape list. Only adds matches.
+
 ## [0.45.0] - 2026-10-22
 
 ### Added
