@@ -527,3 +527,244 @@ export function foldCards(cards) {
   }
   return groups.sort((x, y) => cards.indexOf(x[0]) - cards.indexOf(y[0]));
 }
+
+// ── the ledger ───────────────────────────────────────────────────────────────────────────────────
+/**
+ * @typedef {object} Row
+ * @property {string} id
+ * @property {string} lesson        ONE sentence, template-only (see {@link lessonOf})
+ * @property {number} count         runs seen; STARTS AT 1
+ * @property {Card} sample          the LATEST card
+ * @property {Record<string, number>} models  per-model counts (read-only information; never a filter)
+ * @property {string} workflow
+ * @property {string|null} place
+ * @property {'workflow'|'place'|'user'} level
+ * @property {'deterministic'|'rubric'} trust
+ * @property {string[]} runIds
+ * @property {string} firstSeen
+ * @property {string} lastSeen
+ * @property {'active'|'expired'} status
+ * @property {'age'|'hash'|null} expiredBy
+ * @property {string|null} specHash  the signed hash the lesson was minted under (a workflow row expires when it changes)
+ * @property {string} key           check + sorted kinds (job-independent), for the check-wide count
+ */
+/**
+ * @typedef {object} Pending
+ * @property {string} runid @property {string} at @property {string} workflow @property {string|null} place
+ * @property {string|null} specHash @property {Card[]} cards
+ */
+/**
+ * @typedef {object} Ledger
+ * @property {1} version
+ * @property {Row[]} rows
+ * @property {Pending[]} pending     rubric cards held until a human Accept (NOT counted, NOT readable)
+ * @property {{key: string, jobs: string[]}[]} checkWide  keys set aside (a report, never an injection)
+ * @property {Card[]} suspect        CHECK-SUSPECT cards, listed, newest last
+ * @property {Record<string, {at: string, noise: string|null, cards: number, suspect: number, thin: number}>} health  per run (idempotent by run id)
+ */
+
+/** @returns {Ledger} */
+export function emptyLedger() {
+  return { version: 1, rows: [], pending: [], checkWide: [], suspect: [], health: {} };
+}
+
+/** The job-independent key of a card: check + sorted kinds. @param {{check: string, kinds: string[]}} c */
+export const keyOfCard = (c) => `${c.check}|${[...c.kinds].sort().join(',')}`;
+
+/**
+ * ONE sentence, rendered by code from the card's own fields (RULING 5, template-only).
+ * @param {Card} c @returns {string}
+ */
+export function lessonOf(c) {
+  const what = c.meaning ? ` (${c.meaning.replace(/[?.]+$/, '')})` : '';
+  const kinds = c.kinds[0] === 'other' ? '' : ` on ${c.kinds.join(' ')}`;
+  const file = c.files[0] ? ` in ${c.files.slice(0, 3).join(', ')}${c.files.length > 3 ? ` +${c.files.length - 3} more` : ''}` : '';
+  const end = c.kind === 'FIXED' ? 'fixed later in the same run' : 'got stuck here, never fixed';
+  return `check "${c.check}"${what} failed${kinds}${file}; ${end}.`;
+}
+
+const stem = (/** @type {string|undefined} */ f) => (f ?? '').split('/').at(-1)?.replace(/\.[^.]+$/, '') ?? '';
+
+/** Stable row id from the fold's shared fields: job + check + kinds + file stem. @param {Card} c */
+function rowId(c) {
+  return [c.job, c.check, [...c.kinds].sort().join('+'), stem(c.files[0]) || '-'].join('~').replace(/[^\w~+.@-]+/g, '_');
+}
+
+/**
+ * Hide every row untouched for 56 days (`expired`, kept in the file, never injected); a hash-expired row stays so.
+ * @param {Ledger} L @param {Date} now @returns {Ledger}
+ */
+export function applyDecay(L, now) {
+  const rows = L.rows.map((r) => {
+    if (r.status === 'expired') return r;
+    const t = Date.parse(r.lastSeen);
+    return Number.isFinite(t) && now.getTime() - t > DECAY_DAYS * DAY_MS ? { ...r, status: /** @type {const} */ ('expired'), expiredBy: /** @type {const} */ ('age') } : r;
+  });
+  return { ...L, rows };
+}
+
+/** Rank order for matching and reading: highest count, most recent lastSeen, then id. */
+const byRank = (/** @type {Row} */ a, /** @type {Row} */ b) => b.count - a.count || (a.lastSeen < b.lastSeen ? 1 : a.lastSeen > b.lastSeen ? -1 : 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
+/**
+ * Fold ONE run's cards into the ledger. Pure: returns a new ledger.
+ *
+ * +1 per RUN per row: the run's own cards are folded into lessons first, and a row whose `runIds` already holds the
+ * run id is never counted twice (a resumed run, one id, never double counts). A matching lesson replaces the row's
+ * sample, bumps the model count, appends the run id and reactivates an age-expired row; otherwise it opens a new row at
+ * count 1. NEVER FIXED cards count like FIXED ones (RULING 3). A workflow row minted under another signed hash is
+ * expired by hash when this run's hash differs.
+ * @param {Ledger} ledger
+ * @param {{runid: string, cards: Card[], workflow: string, place: string|null, specHash: string|null, trust: 'deterministic'|'rubric', now: Date}} o
+ * @returns {Ledger}
+ */
+export function countLedger(ledger, { runid, cards, workflow, place, specHash, trust, now }) {
+  let rows = ledger.rows.map((r) => ({ ...r, runIds: [...r.runIds], models: { ...r.models } }));
+  // expiry on change: this workflow's rows minted under a different signed hash are done
+  rows = rows.map((r) => (r.level === 'workflow' && r.workflow === workflow && r.status === 'active' && r.specHash !== null && specHash !== null && r.specHash !== specHash
+    ? { ...r, status: /** @type {const} */ ('expired'), expiredBy: /** @type {const} */ ('hash') } : r));
+  for (const group of foldCards(cards)) {
+    const rep = group.reduce((a, c) => (c.at >= a.at ? c : a));
+    const hit = [...rows].sort(byRank).find((r) => r.workflow === workflow && r.expiredBy !== 'hash' && cardsMatch(rep, r.sample).match);
+    if (hit) {
+      if (hit.runIds.includes(runid)) continue;
+      hit.count += 1;
+      hit.models[rep.model ?? 'unknown'] = (hit.models[rep.model ?? 'unknown'] ?? 0) + 1;
+      hit.runIds.push(runid);
+      hit.sample = rep;
+      hit.lesson = lessonOf(rep);
+      hit.key = keyOfCard(rep);
+      hit.lastSeen = rep.at;
+      hit.status = 'active';
+      hit.expiredBy = null;
+      hit.specHash = specHash;
+      hit.place = place ?? hit.place;
+    } else {
+      let id = rowId(rep);
+      for (let n = 2; rows.some((r) => r.id === id); n += 1) id = `${rowId(rep)}-${n}`;
+      rows.push({
+        id, lesson: lessonOf(rep), count: 1, sample: rep, models: { [rep.model ?? 'unknown']: 1 }, workflow, place, level: 'workflow',
+        trust, runIds: [runid], firstSeen: rep.at, lastSeen: rep.at, status: 'active', expiredBy: null, specHash, key: keyOfCard(rep),
+      });
+    }
+  }
+  return finish({ ...ledger, rows }, now);
+}
+
+/**
+ * Recompute the derived parts after any change: decay, climbing, the check-wide set-aside list, pending expiry.
+ * @param {Ledger} L @param {Date} now @returns {Ledger}
+ */
+function finish(L, now) {
+  const decayed = applyDecay(L, now);
+  const rows = climb(decayed.rows);
+  return {
+    ...decayed,
+    rows: rows.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+    checkWide: checkWideOf(rows),
+    pending: decayed.pending.filter((p) => now.getTime() - Date.parse(p.at) <= PENDING_DAYS * DAY_MS),
+  };
+}
+
+/**
+ * Keys (check + kinds) seen in >= 3 DISTINCT jobs: set aside, with the jobs that made them check-wide.
+ * @param {Row[]} rows @returns {{key: string, jobs: string[]}[]}
+ */
+export function checkWideOf(rows) {
+  /** @type {Map<string, Set<string>>} */
+  const m = new Map();
+  for (const r of rows) m.set(r.key, (m.get(r.key) ?? new Set()).add(r.workflow));
+  return [...m].filter(([, js]) => js.size >= CHECK_WIDE_JOBS).map(([key, js]) => ({ key, jobs: [...js].sort() })).sort((a, b) => (a.key < b.key ? -1 : 1));
+}
+
+const LEVEL_RANK = { workflow: 0, place: 1, user: 2 };
+
+/**
+ * Climbing (RULING 1): the same lesson across workflows — the section-3 rule with "same job" dropped — seen in 3
+ * distinct workflows on one place climbs to `place`; in 3 distinct places, to `user`. By changing the `level` tag
+ * only; a row never goes back down and keeps every run id.
+ * @param {Row[]} rows @returns {Row[]}
+ */
+export function climb(rows) {
+  const n = rows.length;
+  const par = rows.map((_, i) => i);
+  const find = (/** @type {number} */ x) => { let r = x; while (par[r] !== r) r = par[r]; return r; };
+  for (let i = 0; i < n; i += 1) for (let j = i + 1; j < n; j += 1) if (cardsMatch(rows[i].sample, rows[j].sample, { sameJob: false }).match) par[find(i)] = find(j);
+  /** @type {Map<number, number[]>} */
+  const fam = new Map();
+  for (let i = 0; i < n; i += 1) { const r = find(i); fam.set(r, [...(fam.get(r) ?? []), i]); }
+  const out = rows.map((r) => ({ ...r }));
+  for (const idx of fam.values()) {
+    if (idx.length < CLIMB_AT) continue;
+    /** @type {Map<string, Set<string>>} */
+    const perPlace = new Map();
+    for (const i of idx) {
+      const p = rows[i].place;
+      if (p !== null) perPlace.set(p, (perPlace.get(p) ?? new Set()).add(rows[i].workflow));
+    }
+    for (const i of idx) {
+      const p = rows[i].place;
+      /** @type {'workflow'|'place'|'user'} */
+      let level = out[i].level;
+      if (p !== null && (perPlace.get(p)?.size ?? 0) >= CLIMB_AT && LEVEL_RANK[level] < LEVEL_RANK.place) level = 'place';
+      if (perPlace.size >= CLIMB_AT && LEVEL_RANK[level] < LEVEL_RANK.user) level = 'user';
+      out[i].level = level;
+    }
+  }
+  return out;
+}
+
+/**
+ * A rubric run's cards are HELD, not counted, until a human Accept (the existing quarantine is the rule). Replaces
+ * an earlier hold for the same run id (a resumed run re-derives its cards). Pure.
+ * @param {Ledger} ledger
+ * @param {{runid: string, cards: Card[], workflow: string, place: string|null, specHash: string|null, at: string}} o
+ * @param {Date} now @returns {Ledger}
+ */
+export function holdPending(ledger, { runid, cards, workflow, place, specHash, at }, now) {
+  const pending = ledger.pending.filter((p) => p.runid !== runid);
+  if (cards.length) pending.push({ runid, at, workflow, place, specHash, cards });
+  return finish({ ...ledger, pending }, now);
+}
+
+/**
+ * The human Accept releases a held rubric run: its cards count now (trust `rubric`). Only forward, only here. A hold
+ * older than 60 days is dropped uncounted. Idempotent (no hold = nothing to do; run ids stop a double count).
+ * @param {Ledger} ledger @param {string} runid @param {Date} now
+ * @returns {{ledger: Ledger, released: number}}
+ */
+export function releasePending(ledger, runid, now) {
+  const p = ledger.pending.find((x) => x.runid === runid);
+  if (!p) return { ledger, released: 0 };
+  const rest = { ...ledger, pending: ledger.pending.filter((x) => x.runid !== runid) };
+  if (now.getTime() - Date.parse(p.at) > PENDING_DAYS * DAY_MS) return { ledger: finish(rest, now), released: 0 };
+  const counted = countLedger(rest, { runid, cards: p.cards, workflow: p.workflow, place: p.place, specHash: p.specHash, trust: 'rubric', now });
+  return { ledger: counted, released: p.cards.length };
+}
+
+/**
+ * Record the run's health line and CHECK-SUSPECT list (idempotent by run id). Pure.
+ * @param {Ledger} ledger @param {string} runid @param {CardBuild} build @param {string} at @param {Date} now
+ * @returns {Ledger}
+ */
+export function recordHealth(ledger, runid, build, at, now) {
+  const health = { ...ledger.health, [runid]: { at, noise: build.noise, cards: build.cards.length, suspect: build.suspect.length, thin: build.thin } };
+  const suspect = [...ledger.suspect.filter((c) => c.runid !== runid), ...build.suspect].slice(-SUSPECT_KEEP);
+  return finish({ ...ledger, health, suspect }, now);
+}
+
+// ── the place of a job ───────────────────────────────────────────────────────────────────────────
+/**
+ * Where a job lives, derived by code from the signed spec's inputs line 1: a website job = the URL host; a repo or
+ * plain folder/file job = that path (resolved by the caller). Null when the spec carries no inputs.
+ * @param {any} spec @param {(p: string) => string} [resolve] path resolver (the caller passes `realpath`)
+ * @returns {string|null}
+ */
+export function placeOf(spec, resolve = (p) => p) {
+  const v = Array.isArray(spec?.inputs) ? spec.inputs[0]?.value : null;
+  if (!isStr(v)) return null;
+  if (/^https?:\/\//i.test(v)) {
+    try { return new URL(v).host; } catch { return null; }
+  }
+  return resolve(v);
+}
