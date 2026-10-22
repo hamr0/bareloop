@@ -14723,7 +14723,7 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 
 **Status.** Open. Logged, not built.
 
-## F241 — a price fact no result could pass was signed: currency "$" after label "From", on a page that writes "From 137 US dollars" (run mvh7g2hc, 2026-10-20; open; the same class as F237)
+## F241 — a price fact no result could pass was signed: currency "$" after label "From", on a page that writes "From 137 US dollars" (run mvh7g2hc, 2026-10-20; fixed in v0.45.0; the same class as F237)
 
 **Grounded in:** the spine `/home/hamr/.config/bareloop/panel-sessions/smvh7bxou4win/source-seed/flights-3-bareloop/u-mvh7g2hc.jsonl` (`exit-eval`, `ladder`, `replan`, `job-end`); that session's `resolved-spec.json`; `.claude/scratch/reversed-live/ord-bos-now.txt`; `src/factwords.js` `checkFactWords`; session smvh6zycqcqjy, run mvh72jo0 (green) for contrast.
 
@@ -14747,7 +14747,7 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 
 **Fix.** The words are read by kind (time, date, amount, bare number); a digit inside one token belongs to it only. A number bound is said only as a bare number or an amount's number; a time bound only as a time token (hour leading zero ignored); a date bound only as a date token. Same name and signature, no parallel function. Tests: `tests/bound-in-words.test.js` (red before the fix, green after).
 
-## F243 — job-vs-source "fit check" POCs v1 to v5: the judge was right when it saw real results; every failure was in the evidence or in AI-written questions (2026-10-21; open, v6 PASSED on known pages, unseen pages untested)
+## F243 — job-vs-source "fit check" POCs v1 to v5: the judge was right when it saw real results; every failure was in the evidence or in AI-written questions (2026-10-21; built in v0.45.0, v6 PASSED on known pages, unseen pages untested)
 
 **Grounded in:** `docs/product/ITEM33-BUILD.md` (the addenda "job-vs-source fit POC" and "fit POC v2" to "v6", and each "### Result — fit POC vN" section); `.claude/scratch/fit-poc*/RESULTS.md` (untracked scratch, `fit-poc` to `fit-poc5`). Evidence that led here: F239, F240, F241.
 
@@ -14770,7 +14770,7 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 - Letting the AI write its own questions adds ways to fail; the job's own items work better.
 - Design direction (hamr 2026-10-21): a person reads the results at Accept, so the fit check only has to stop a clearly wasted run. A wrong NO is the costly mistake (it blocks a good run); a wrong YES costs one run the person rejects. v6 tests RUN-or-ASK with no NO and no count.
 
-**Status.** Open. Logged, not built.
+**Status.** Built in v0.45.0 (src/fitcheck.js, wired before the look; commits 2bbc546, 53fd2ea, 0c47408, 0769a06, 179778a, 720c4e7, cde2d95, 327ebe1, b5ee5ed). Unseen pages still untested; no live run on an unseen page yet.
 
 - v6 (8 pairs, 24 calls): the AI got the whole page and the job's own asks (hand-written, standing in for the job lines) and said found with a quote, or not found. Code checked each quote is on the page; all found gives RUN, anything not found gives ASK; no NO, no count. PASS by the frozen rule, not degenerate: bad pages ASK 15 of 15, right pages RUN 9 of 9 (pair 8 RUN by design, the count is left to Accept). The ASK lists named the real gap: the route on the flipped page, exactly wifi and meal on pair 7. Made-up quotes 0. Spend $0.1396. Limit: same pages as v2-v5 and the design came after reading their failures, so this is a fit on known pages, not proof on unseen pages.
 
