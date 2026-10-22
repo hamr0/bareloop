@@ -2290,3 +2290,16 @@ POC-B (paid, cents, DeepSeek deepseek-flash, hamr's word first): run the stage-5
 put each LLM fact beside its cluster. Score with frozen rules: readable, true, specific, not already in the job text.
 
 Status: nothing is built from this until POC-A (hamr reads the clusters) and POC-B (paid, his word) pass.
+
+
+## Addendum 2026-10-22 — per-try diff in the spine (attempt-diff)
+
+Signed by hamr. Learnings cards can say which files a passing try touched but never WHAT changed; POC-B2 showed a model then invents the fix. Neither the spine nor the gate audit keeps edit text (gate audit edit rows carry only `{path, args:{bytes}}`).
+
+- **What.** After every worker try the shell emits one spine event `attempt-diff`: `{phase, step, iteration, files:[{path, diff, truncated, cutLines}], binary:[path], truncated, gitError?}`. `path` is repo-relative; `diff` is unified, `-U1`. A try that changed nothing in scope emits NOTHING. If git itself fails the event IS emitted with `files:[]` and `gitError` (scrubbed message) — a record, never silent, never a verdict, never a run failure.
+- **How.** One owner: `src/attemptdiff.js` (`startAttemptDiff`). At try start it snapshots the working tree to a git TREE through a temporary `GIT_INDEX_FILE` (`git add -A` + `git write-tree`); at try end it does the same and diffs tree against tree (`git diff <t0> <t1>`). The work branch, HEAD, the real index and the stash list are never touched; the temp index is deleted. The only trace is loose objects in the object store (unreferenced, gc-able). Gitignored paths (node_modules, hidden installs) never appear.
+- **Call sites (both).** `src/planrun.js`: the step loop's `middle()` (around its `w.ask`, phase `step:<id>`, scope = the step's fence: `step.scope` else the signed writeScope) and the close-fix loop's `middle()` (phase `fix`, scope = the signed writeScope). Both are worker tries that edit files. Scout/plan/replan workers are read-only and are not covered. The capture runs in a `finally`, so a try cut by a bound or a throw still records what it wrote.
+- **Scope.** Only paths inside that fence (same prefixes the gate enforces). Nothing else, ever. Binary files are listed by path in `binary`, with no text.
+- **Caps.** 4 KB per file, 16 KB per event; cut at a line boundary (never mid-line), `truncated:true` and `cutLines` = lines dropped. Files past the event cap appear with an empty diff, `truncated:true`.
+- **Secrets.** Every diff and path runs through `redactSecrets` (the one inventory) BEFORE the cut and before the spine.
+- **Never shown to the worker:** spine only, which the worker's readScope denies; no prompt carries it. Not shown in the panel. The gate audit is not touched. $0, no model call.
