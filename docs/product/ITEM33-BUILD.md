@@ -2208,76 +2208,85 @@ Two rules, both from the live fwdloop run m10-walk-flights-3 (deepseek-flash). N
 1. S1 copy is a read note (hamr ruled 2a). When the AI proposes a second fact that would read the same value as a fact already kept (S1), and the OTHER fact is still signed, the guardrail IS checked by that other fact, so the note belongs under "How the page was read", not "Not checked". If the other fact is not signed, the note stays under Not checked. A row is a read note only if every sentence in it qualifies. The signed fact names are passed to the split; they are read from the signed spec (older specs too) or from the look at the confirm turn.
 2. Phrase facts get the dry read (hamr ruled 3a). A kept phrase fact (for example "destination city" = "Rome") is read against the page's RESULT LINES, which are the lines the same job's kept money facts read. Each line is graded as an honest claim by the real run-time checker. A phrase that reads no result line is dropped as a whole fact with the plain words `"Rome" is on the page but in none of its results, so it is not checked.` and stays under Not checked (not a read note). A job with no kept money fact has no known result lines, so its phrase facts pass through untouched.
 
-## Addendum 2026-10-22 — cross-run learnings build spec (PRD v1.108 item 1; rulings by hamr 2026-10-20 option A, 2026-10-22 (a)–(d), "next run pays", no Reject; spec + its 4 open choices OK'd by hamr 2026-10-22: "ok")
+## Addendum 2026-10-22 (rev) — cross-run learnings: friction-shaped pipeline (DRAFT, POC pending; replaces the L1–L5 spec of the same day)
 
-Branch: `feat/learnings`, cut from main. Sonnet builders, one part at a time, a commit per part.
+The L1–L5 spec of the same day is replaced. That build went straight from spec to code without a POC. Six $0 POCs (v1–v6) on the real archive then failed or were underpowered: the facts held check names and words but no ask, no trigger and no grouping. The build was withdrawn per hamr (2026-10-22).
 
-### The flow, one picture
+### How friction does it (all code until the last judgment)
 
-```
-run-4 of pulselog-types settles   → L1 writes learn/runs/<runid>-leg<N>.json   ($0, code only)
-run-5 of pulselog-types starts:
-  drafting (panel, as today)
-  learnings  → L3: one AI call labels run-4's facts against the ledger; L2 code counts   (run-5 pays)
-  plan       → L4: code filters the ledger, the planner gets ≤2,000 chars of hot facts
-  steps…     → first replan gets the same block once; the worker never does
-```
+1. extractSignals: code scans each session and tags timestamped signals.
+2. Anchor only on OBSERVED reactions (user_correction, curse, interrupt cascade). Machine signals
+   (errors, abandon, /stash) never seed; they only colour severity. No anchor = no candidate.
+3. analyzeBadSession, per anchor: a context window of 5 turns BEFORE the reaction gives:
+   - files touched, tool sequence (call:ok / call:error), errors (5)
+   - user messages (3, ≤500 chars, terminal pastes dropped), keywords
+   - `preceding` = the trigger: last 2 actions, their result, last error
+   - `self_suspect` (the user correcting themselves)
+4. Dedup: one conversation counts once (forks/resumes merged by shared message uuid).
+5. clusterCandidates: CODE groups candidates across sessions by content (word + phrase shingles,
+   overlap ≥ 0.5; files as the discriminating channel; path/filler words stopped). Per cluster it
+   computes recurrence (distinct sessions), severity, a 2×2 artifact (antigen/fact/episode/drop),
+   theme, contexts (quotes), preceding, top keywords. One-off + mild clusters are dropped.
+6. ONLY THEN the LLM: one call per batch of CLUSTERS, given contexts + preceding + errors + self_suspect
+   + the existing ledger rows (id, hints, rule, quotes). Output per cluster: drop | existing id | new + one-line rule.
+7. countLedger (code): identity, counting, promotion, decay, failed wordings, render.
 
-### Words
+So the LLM never sees a raw log line. It sees a pre-grouped, recurring, evidence-rich item with its
+trigger and context, and judges once.
 
-- **workflow** = `workflowKey(job)` (src/job.js:972). A changed job is a new workflow, so its old workflow rows simply stop matching (the "expiry on change" rule, for free).
-- **place** (hamr 2026-10-22: "jobs place is fine"): repo job = the repo's real path; website job = the URL's host (`google.com`); plain folder or file job = the source path. Code derives it from the signed spec's `inputs[]` line 1 (src/job.js:757); nothing asks the person.
-- **trust**: `deterministic` (green verdict type) or `rubric` (soft-green).
-- **level**: `workflow` → `place` → `user`.
+### The same pipeline for bareloop runs
 
-### L1 — run facts file ($0, no model)
+What a run log (spine) actually holds today, checked on u-msn0uccv:
+- job-start.goal (the job text)
+- plan-accepted.plan.steps[].action (what the step was told to do)
+- check-run / exit-eval / close-verdict per iteration (the arbiter's words and numbers)
+- ladder (strikes), escalation (cause category), replan (reason)
+- worker-round = cost only. There is NO worker reasoning text.
+- The gate audit holds the files written and the calls denied.
 
-- New `src/learnfacts.js`, pure `extractRunFacts({ row, spine, audit })` + a thin writer.
-- Hook: `src/userrun.js` right after the settled row and the audit rename (~:2011–:2029), only when the leg has its own `job-end` (never on `settleDeadClaims` rows — a died run has no facts). This covers panel runs, Accept/Rerun and scheduled fires (all spawn `run-u`). Bundle runs (`bundlerun.js`) are out of this branch.
-- File: `<runlistHome>/learn/runs/<runid>-leg<N>.json`, dir mode 0o700, atomic write.
-- Fields: `runid, leg, at, workflow, place{kind,value}, trust, provider, model, outcome, failingStage, closeReached, replans[{step,reason,trigger}], strikes, steps[{name, outcome}], closeStages[{stage, value}], filesWritten[] (gate audit, run_id-scoped, allow + write/edit), denied[{tool, reason}], spentUsd, spendComplete, accepted`.
-- `accepted` is read at fold time too: a rubric Accept lands after the run settles.
-- Every string goes through `redactSecrets` (src/validate.js:232), the one secret inventory.
-- Must fail when: the module imports any provider/Loop; a died run writes a file; a raw secret survives.
+Stage 1 — signals (code, per run, $0):
+- ANCHOR: a close stage whose LAST verdict in the leg is red, with words.
+- Corroboration only, never an anchor: strikes, cap-halt, wall-halt, replans, denied calls.
+- NOISE (dropped, but counted in a health line): provider-red, PR-review stop (hitl-close),
+  close-crashed, and runs where no close spoke.
 
-### L2 — the ledger (pure code counts)
+Stage 2 — candidate per anchor (code): the triad plus context.
+- CONTEXT (what was asked): job goal (cut to 400 chars), the failing step's id and action (300),
+  the job's signed rules if a spec exists.
+- TRIGGER (what the worker did, the `preceding` analogue): files written in that step (repo-relative),
+  denied calls, iteration count, strikes.
+- REACTION (what the arbiter said): stage name, latest gap words (≤250 per stage, line-cut, file:line and
+  error-code lines first), keys {stage, files, codes}.
+- TRAJECTORY: that stage's number across iterations (e.g. 67 → 6 → 6 = stuck), from check-run.
+- RESOLUTION: later in the same run (did this stage ever pass? replan reason), and the next run of the
+  same workflow (green? which stage failed next?). The red→green difference is where the PRD says the lesson lives.
 
-- New `src/learnledger.js`: pure `countLedger(ledger, labels, runFacts, now)` that throws on malformed input, plus a thin read/write wrapper. File `<runlistHome>/learn/ledger.json`, one per person, never inside a repo.
-- Row: `id, rule, workflow, place, level, trust, status (observing|hot|expired|failed-wording…), attempts[{n, rule, adopted, outcome}], evidence{runs[], workflows[], places[], last_seen}, history[]`.
-- `folded[]` lists every `<runid>-leg<N>` already read — never read twice.
-- **Hot at 3** distinct runs that back it (deterministic: the backing run is green; rubric: the backing run has an honoured Accept). Born at 3+ = born hot.
-- **Climb at 3**: 3 distinct workflows on one place → `place`. 3 distinct places → `user` (same number, one level up — OK'd by hamr 2026-10-22).
-- **Decay**: `observing` with no new evidence for 56 days → `expired`, kept; new evidence wakes it. `hot` never expires by age.
-- **Failed wording**: a hot fact loaded on a run that still goes red the same way (same failing stage) counts a recurrence; 2 recurrences mark the wording failed; the AI may offer a new wording at the next fold; after 3 failed wordings the row stops being injected.
-- `new` labels with no rule → malformed, no row. Counting is never the AI's.
+Stage 3 — dedup: one run = one source (all legs of a runid).
 
-### L3 — the learnings part (one AI call, the next run pays)
+Stage 4 — cluster (code), within one workflow and across workflows on one place:
+- key = stage name + error codes + files (stable parts only; never counts).
+- Recurrence = distinct runs.
+- Keep a cluster when it has ≥ 2 runs, OR 1 run with a resolution (a later green that changed something).
+- Drop other one-offs, counted in the health line.
 
-- Runs inside `run-u` before the planner (`obtainPlan('draft')`, src/planrun.js:3199), shown in the step map as its own part: `drafting › learnings › plan › steps`, card text `learnings — N facts` (N = facts handed to the planner).
-- $0 skip: no unfolded files for this workflow → no call, part shows `learnings — N facts, nothing new`.
-- Input to the AI: this workflow's unfolded run files + the ledger rows for this place and user (id + rule only).
-- The AI's only job: per fact, `drop` | an existing row id | `new` + one-line rule. Facts, never model tips ("tests run with `npm test`", "results load after the first snapshot"; "X failed, Y worked" is fine).
-- Toolless, the job's own provider and model, thinking off, small max_tokens. Malformed or cut off → one retry, then skip learnings for this run (never stops the run, never provider-red).
-- Money: inside this run's cap. Booked as a `learn-round` spine record (`costUsd`, `unpricedRounds`); every spend reader (ledger.js `legSpend/runSpend/chainSpend`, monthly, panel money, Audit) must count it — a test lists every round type that spends.
-- Stop is honoured at this seam like the others.
+Stage 5 — LLM, one call per fold, CLUSTERS only:
+- Input per cluster: context, trigger, reaction quotes (≤3 runs), trajectory, resolution,
+  plus the job goal and the existing ledger rows for this workflow/place/user.
+- Output: drop | existing row id | new + one-line fact.
+- Told: a fact about the job/place/check, never model advice; drop it if the job text already says it.
 
-### L4 — what the planner gets
+Stage 6 — count (code): exactly L2 as built.
 
-- One render function prints the block from the ledger: `user` hot rows + `place` hot rows for this place + `workflow` hot rows for this workflow, most specific first, cut at 2,000 characters on a whole row.
-- Given to `planPrompt` (src/planrun.js:636) at draft, and at the replan where `replans === 1` only.
-- Spine record `learn-inject` carries the exact block and the row ids; a byte-equality check (render === injected) is a test.
-- Must fail when: any ledger text reaches the worker prompt (src/planrun.js:3428–3441, :4175–4185, `mkWorker` system :2266); a rubric fact counts before Accept; a row with no minting run id is injected; a `place` row reaches another place; the block exceeds 2,000 chars; a second replan gets it.
+### What this means for the built branch
+L2 (count) and L4 (inject) match stages 6/7. L1 (facts) is stage 1 + half of stage 2: it has no context,
+trajectory, or resolution. Stages 2–4 (candidate building and code clustering) do not exist; L3 hands the
+LLM raw facts files. So L1 and L3 are the wrong shape. Nothing changes on the branch until the POC below passes.
 
-### L5 — panel, read-only
+### POC (free first, then cents)
+POC-A ($0): build stages 1–4 as a throwaway script over the snapshot (July excluded per hamr). Output ONE
+readable file: each cluster with its context, trigger, quotes, trajectory, resolution, as the LLM would see it.
+hamr reads it and judges: is there enough context to learn from?
+POC-B (paid, cents, DeepSeek deepseek-flash, hamr's word first): run the stage-5 prompt on those clusters and
+put each LLM fact beside its cluster. Score with frozen rules: readable, true, specific, not already in the job text.
 
-- Clicking the `learnings` part in Audit shows the exact facts the planner got on that run (from `learn-inject`), and what was new or dropped this fold. No edit, no Reject (hamr 2026-10-22).
-
-### Proof (before any default)
-
-- Ships OFF behind one setting until proven (OK'd by hamr 2026-10-22). $0 archive read first: run L1 over the archived spines and check the facts make sense on real runs.
-- Then an ON/OFF contrast on DeepSeek deepseek-flash, design frozen in a commit before any number. A fact that does not beat OFF is dropped.
-
-### Tests (real data)
-
-- L1 on real archived spines from `~/.config/bareloop` (read-only, copied to a scratch HOME).
-- Scratch HOME for every test; runs.jsonl line count reported before and after.
+Status: nothing is built from this until POC-A (hamr reads the clusters) and POC-B (paid, his word) pass.
