@@ -2444,15 +2444,31 @@ OTel converter; the worker reading anything; any edit / Reject UI; a model-writt
 
 ### 12. NOT decided (open, hamr to rule; nothing invented)
 
-1. Climbing across workflows: the fold requires SAME job, so a lesson in a second workflow is a different row. How code recognises "the same lesson" across workflows (same check + kind + file stem? the fitted 60% on text?) is not ruled, so climbing has no rule yet. The same gap holds for what makes a key "check-wide" without double-counting a job that was edited.
+1. Climbing across workflows: the fold requires SAME job, so a lesson in a second workflow is a different row. How code recognises "the same lesson" across workflows (same check + kind + file stem? the fitted 60% on text?) is not ruled, so climbing has no rule yet. The same gap holds for what makes a key "check-wide" without double-counting a job that was edited. → RULED, see below (ruling 1).
 2. Unseen-card proof of the fold (60%, shared kind): needs new real runs after the first build; how many and what failure rule is not set. Also whether to add What-changed tokens as a second channel.
-3. Whether a high-count row is exempt from the 56-day decay.
-4. What a loaded lesson that still recurs does (the old "failed wording" governor is superseded).
-5. Resumed runs: what a later leg changes in an already-counted card (replace, ignore, or count the leg).
-6. How long a pending rubric card waits for Accept.
-7. Whether the OFF setting stops the run-end write or only the reading.
-8. Two cards of one run matching one row: +1 per card or +1 per run (this spec says per card by RULING 5 wording, but one run with a loop of ten same-check reds would then count ten).
-9. Whether NEVER FIXED cards count the same as FIXED (the old text said a deterministic lesson counts once a green backs it).
-10. The 2,000-character hint wording / header the planner is shown (the render template), and the standing-instructions text for check-wide keys.
+3. Whether a high-count row is exempt from the 56-day decay. → RULED, see below (ruling 4).
+4. What a loaded lesson that still recurs does (the old "failed wording" governor is superseded). → RULED, see below (ruling 5).
+5. Resumed runs: what a later leg changes in an already-counted card (replace, ignore, or count the leg). → RULED, see below (ruling 8).
+6. How long a pending rubric card waits for Accept. → RULED, see below (ruling 7).
+7. Whether the OFF setting stops the run-end write or only the reading. → RULED, see below (ruling 6).
+8. Two cards of one run matching one row: +1 per card or +1 per run (this spec says per card by RULING 5 wording, but one run with a loop of ten same-check reds would then count ten). → RULED, see below (ruling 2).
+9. Whether NEVER FIXED cards count the same as FIXED (the old text said a deterministic lesson counts once a green backs it). → RULED, see below (ruling 3).
+10. The 2,000-character hint wording / header the planner is shown (the render template), and the standing-instructions text for check-wide keys. → RULED, see below (ruling 9).
 11. The ON/OFF contrast design (jobs, n, frozen rule); the contrast is not specced here.
-12. The setting's name and where it lives (Settings page / config.json).
+12. The setting's name and where it lives (Settings page / config.json). → RULED, see below (ruling 9).
+
+### RULED 2026-10-22 (hamr) — open items 1, 3-10 and 12 resolved
+
+OPEN items 2 (unseen-card proof of the fitted 60%) and 11 (ON/OFF contrast design) stay OPEN. Numbers in brackets are the section 12 item each ruling closes.
+
+1. [OPEN 1] Same lesson across jobs (for climbing, and for check-wide when a job was edited): the same match rule as section 3 (share at least one error code / kind AND Jaccard >= 60% on flagged-text tokens) with "same job" dropped. Climbing to `place` still requires the same place.
+2. [OPEN 8] Count is at most +1 per RUN per row: one run with ten same-check reds counts once.
+3. [OPEN 9] NEVER FIXED cards are kept as hints, rendered as "got stuck here, never fixed". The old "a deterministic lesson counts once a green backs it" no longer gates them.
+4. [OPEN 3] Decay: every row untouched for 56 days is hidden (`expired`), high-count rows included. New evidence brings it back.
+5. [OPEN 4] A hint that recurs while injected: no extra rule; it keeps counting. The ON/OFF contrast judges whether hints help (the failed-wording governor stays superseded).
+6. [OPEN 7] Setting OFF: the run-end tally still runs and writes the ledger ($0); the planner gets no hints. So ON/OFF has data at once.
+7. [OPEN 6] A rubric card pending Accept waits up to 60 days (same as the Accept door TTL), then is dropped uncounted.
+8. [OPEN 5] Resumed runs: counted under the same run id (one run = one id), so no double count.
+9. [OPEN 10, 12] Setting name / location and hint render wording (header, template, check-wide standing-instructions text): the builder proposes them; hamr sees them before they land.
+
+Also accepted: the two additions the spec writer made (idempotence by run id; `redactSecrets` on cards before the ledger).
