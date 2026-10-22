@@ -7,6 +7,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **Each worker try records what it changed (`attempt-diff`).** After every step try and every close-fix try the spine gets one `attempt-diff` event: the unified diff (-U1) of each changed file inside the try's write fence, secrets masked, capped at 4 KB per file and 16 KB per event (cut at a line boundary, with the count of cut lines), binary files by path only. Taken with throwaway git trees, so the branch, HEAD, index and stash are untouched; a try that changed nothing records nothing; a git failure records a `gitError` field and never fails the run. Spine only: no prompt, panel or gate-audit change, no model call.
+
 ### Fixed
 
 - **A key right after a hyphen is now found and masked.** The secret-shape inventory (`SECRET_PATTERNS`) refused to match a key whose previous character was `-`, so `step-ghp_...` slipped past the scan and the redactor. The distinctive prefixes `ghp_`, `github_pat_`, `AKIA`, `AIza` and `xox[bap]-` now drop only the hyphen from their left bound (a word character or `_` in front still blocks the match, so `flask-sqlalchemy` and look-alike words stay clean). `sk-` keeps the full bound because `sk-` ends ordinary words (`task-`...); a key directly after a hyphen there (`step-sk-...`) is a documented known limit of the shape list. Only adds matches.

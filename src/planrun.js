@@ -39,6 +39,7 @@ import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, str
 import { anySuppressionWarning } from './authoring.js';
 import { createReadShim, readShimArm, readShimStrategy } from './readshim.js';
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
+import { startAttemptDiff } from './attemptdiff.js';
 import { validateBridge, loadGate, newestEligibleVersion, reuseEligibility, quarantinesCredit, QUARANTINED_CODE } from './bridges.js';
 import { extractArtifact, rateSourceFields } from './text.js';
 import { defaultJudgeLoop } from './judged.js';
@@ -3425,7 +3426,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // read ONCE: the note and the "was it the attempt just before this one" test
       // are two questions about the same record, and two reads is how they drift
       const bound = w.wasBounded();
-      const r = await w.ask([
+      // attempt-diff: what THIS try changed, recorded to the spine only (never a prompt)
+      const tryDiff = await startAttemptDiff({ workdir, fence: step.scope !== undefined ? [resolve(workdir, globToPrefix(step.scope))] : fencePrefixes, redact: scrub });
+      let r;
+      try { r = await w.ask([
         step.action,
         `Repository root (absolute): ${workdir}\nEvery path you pass to a tool MUST be absolute and inside this root — a relative path resolves against a different directory and will be denied by the gate.`,
         step.target && `Write your deliverable to: ${resolve(workdir, step.target)}`,
@@ -3437,6 +3441,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         bound?.iteration === iteration - 1 && boundedNote(bound, step.rounds),
         rootInj && rootInj.note,
       ].filter(Boolean).join('\n\n'));
+      } finally {
+        const d = await tryDiff.finish();
+        if (d) emit('attempt-diff', { phase: `step:${step.id}`, step: step.id, iteration, ...d });
+      }
       lastText = scrub(r.text ?? '').slice(0, ARTIFACT_MAX);
     };
     let lastGap = '';
@@ -4172,7 +4180,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // same iteration numbering as the step loop: `w.setIteration(iteration)` above
       // stamps the bound, so "the attempt just before this one" is `iteration - 1`
       const bound = w.wasBounded();
-      await w.ask([
+      const tryDiff = await startAttemptDiff({ workdir, fence: fencePrefixes, redact: scrub });
+      try { await w.ask([
         'The job\'s final verification is failing. Fix the repository so it passes.',
         `Repository root (absolute): ${workdir}\nEvery path you pass to a tool MUST be absolute and inside this root.`,
         artifacts.length > 0 && `Working context (read-only) — the plan's steps produced:\n${artifacts.map((a) => `[${a.id}] ${a.text}`).join('\n\n')}`,
@@ -4182,6 +4191,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         bound?.iteration === iteration - 1 && boundedNote(bound, maxStepRounds),
         rootInj && rootInj.note,
       ].filter(Boolean).join('\n\n'));
+      } finally {
+        const d = await tryDiff.finish();
+        if (d) emit('attempt-diff', { phase: 'fix', step: null, iteration, ...d });
+      }
     };
     fixOutcome = await ralph({
       // the staged close rides in as the JUDGE seam (one verdict, every stage in
