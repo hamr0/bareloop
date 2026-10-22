@@ -1,0 +1,477 @@
+// Cross-run learnings, CODE ONLY (ITEM33-BUILD.md "Addendum 2026-10-22 (rev 2)"; hamr's RULING 1: no model call
+// anywhere in learnings — not to label, fold, rephrase, rank, judge or render). A lesson is a HINT made entirely by
+// code from a run's own record: every field below is COPIED from the spine / gate audit, never written by a model.
+//
+// This module is PURE: no file IO, no clock reads (the caller injects `now`), and it imports nothing that can reach
+// a provider (a static test walks its whole import closure). The thin reader/writer and the run-end call live in
+// src/learnstore.js.
+//
+// Shape of the whole thing:
+//   buildCards   one run's spine (+ gate audit) -> captioned cards (FIXED / NEVER FIXED), minus noise, suspect, thin
+//   foldCards    when are two cards one lesson (same job + check + a shared error kind + 60% token overlap)
+//   countLedger  fold a run's cards into the ONE ledger (+1 per run per row), climbing, check-wide set-aside, decay
+//   renderHints  the one function that turns the ledger into the block the PLANNER reads (2,000 chars, one render)
+//
+// Graduated from the proofs in .claude/scratch/poc-learn/ (pocA2 candidates, pocC cards, pocE2 fold) as a REWRITE.
+// The 60% threshold is FITTED on known cards (a fit, not a proof; the unseen-card proof is OPEN 2).
+
+import { redactSecrets } from './validate.js';
+
+// ── constants (every number here is a ruling, not a tuning knob) ─────────────────────────────────
+/** The block the planner reads is never longer than this many characters (RULING 7). */
+export const HINT_CHARS_MAX = 2000;
+/** A row untouched this long is hidden as `expired` (RULING 4: high-count rows included). */
+export const DECAY_DAYS = 56;
+/** A rubric lesson waits this long for the human Accept, then is dropped uncounted (ruling 7, = the door TTL). */
+export const PENDING_DAYS = 60;
+/** Fold threshold on flagged-text token overlap (FITTED on 87 known cards — see section 1 of the addendum). */
+export const JACCARD_MIN = 0.6;
+/** A key seen in this many DISTINCT jobs is check-wide and never a per-job hint (RULING 4). */
+export const CHECK_WIDE_JOBS = 3;
+/** Climbing: this many distinct workflows on one place -> place; this many distinct places -> user. */
+export const CLIMB_AT = 3;
+/** How many "It said" lines a card keeps. */
+export const SAID_LINES = 3;
+/** CHECK-SUSPECT cards are listed (not folded); the list keeps this many newest. */
+export const SUSPECT_KEEP = 100;
+
+const DAY_MS = 86_400_000;
+
+/**
+ * The no-suppressions tags an error kind may take (the closed list of `suppressions[].id` of the TYPES genre in
+ * src/authoring.js; a test fails if the two drift apart). Anything else in a bracket is NOT a kind.
+ */
+export const ALLOWED_KINDS = Object.freeze([
+  'ts-ignore', 'ts-expect-error', 'ts-nocheck', 'eslint-disable', 'any', 'any-star', 'cast', 'ignore', 'noqa', 'mypy-disable',
+]);
+
+// ── small text helpers ───────────────────────────────────────────────────────────────────────────
+/** @param {unknown} v @returns {v is string} */
+const isStr = (v) => typeof v === 'string' && v !== '';
+/** @template T @param {T[]} a @returns {T[]} */
+const uniq = (a) => [...new Set(a)];
+
+/** Path prefixes of a patient / worktree / hidden-git tree: stripped from every quote so a card names `src/a.js`. */
+const PREFIXES = [
+  /(?:\/[\w.@-]+)*\/bareloop-patients\/[^/\s]+\//g,
+  /(?:\/[\w.@-]+)*\.bareloop\/wt\/[^/\s]+\//g,
+  /(?:\.\/)?out\/source-[^/\s]+\/tree\//g,
+];
+
+/**
+ * Mask secrets and strip the working-tree prefix from a text. Pure.
+ * @param {string} text @param {string|null} workdir
+ * @returns {string}
+ */
+export function cleanText(text, workdir) {
+  let s = redactSecrets(text);
+  if (workdir) s = s.split(`${workdir}/`).join('');
+  for (const r of PREFIXES) s = s.replace(r, '');
+  return s;
+}
+
+/**
+ * A card/audit path made relative to the run's tree, or null when it is not inside it. The workdir is the
+ * authority; the patient-prefix shapes are the fallback for a spine read without one.
+ * @param {string} abs @param {string|null} workdir
+ * @returns {string|null}
+ */
+export function relPath(abs, workdir) {
+  if (typeof abs !== 'string') return null;
+  if (workdir && abs.startsWith(`${workdir}/`)) return abs.slice(workdir.length + 1);
+  let s = abs;
+  for (const r of PREFIXES) s = s.replace(r, '');
+  return s.startsWith('/') ? null : s;
+}
+
+/**
+ * Cut at a word / sentence edge, never mid-word where avoidable. Whitespace collapsed.
+ * @param {unknown} text @param {number} n @returns {string}
+ */
+export function cutText(text, n) {
+  const s = String(text ?? '').replace(/\s+/g, ' ').trim();
+  if (s.length <= n) return s;
+  const sl = s.slice(0, n - 1);
+  const sp = sl.lastIndexOf(' ');
+  return `${(sp >= n * 0.5 ? sl.slice(0, sp) : sl).replace(/[\s,;:]+$/, '')}…`;
+}
+
+/**
+ * Deep-redact every string of a plain JSON value through the ONE secret inventory (a secret in a person's repo must
+ * not enter an append-only record). Pure; returns a new value.
+ * @template T @param {T} v @returns {T}
+ */
+export function redactDeep(v) {
+  if (typeof v === 'string') return /** @type {any} */ (redactSecrets(v));
+  if (Array.isArray(v)) return /** @type {any} */ (v.map((x) => redactDeep(x)));
+  if (v && typeof v === 'object') {
+    /** @type {Record<string, any>} */
+    const o = {};
+    for (const [k, x] of Object.entries(v)) o[k] = redactDeep(x);
+    return /** @type {any} */ (o);
+  }
+  return v;
+}
+
+// ── error kinds, flagged text, tokens (pocE2 keyOf / stripFlag, ported) ─────────────────────────
+/** `any` inside a `{...}` JSDoc type position: a real type use, not prose. */
+function anyInBrace(/** @type {string} */ t) {
+  let d = 0;
+  const re = /[{}]|\bany\b/g;
+  let m;
+  while ((m = re.exec(t))) {
+    if (m[0] === '{') d += 1;
+    else if (m[0] === '}') d = Math.max(0, d - 1);
+    else if (d > 0) return true;
+  }
+  return false;
+}
+
+/**
+ * The flagged text of ONE quote line (wrapper stripped), or null when the line is not a flagged line.
+ * Flagged lines: `... added <id> - <text>` and `close: [<id>] <file>:<line>: <text>` (id in the allowed list), and
+ * lines with `error TS<digits>:` or `error:`.
+ * @param {string} line @returns {string|null}
+ */
+export function flaggedText(line) {
+  let am = line.match(/: added ([a-z-]+) [—-] (.*)$/);
+  if (am && ALLOWED_KINDS.includes(am[1])) return am[2];
+  am = line.match(/^close:\s+\[([a-z-]+)\]\s+\S+?:\d+: (.*)$/);
+  if (am && ALLOWED_KINDS.includes(am[1])) return am[2];
+  if (/\berror TS\d+:|\berror:/.test(line)) {
+    return line.replace(/^.*?\berror TS\d+:/, '').replace(/^.*?\berror:/, '').replace(/\[[a-z]+(?:-[a-z]+)*\]\s*$/, '');
+  }
+  return null;
+}
+
+/**
+ * The error-kind set of a quote: TS codes; `[id]` of `added <id>` and `close: [id]` lines; a mypy trailing bracket
+ * code; empty -> `other`. Also the files named, the first symbol, and whether the card is CHECK-SUSPECT.
+ * @param {string} text the (path-stripped) quote @param {string} [fullGap] the whole gap, for the suspect read
+ * @returns {{kinds: string[], files: string[], symbol: string|null, suspect: boolean}}
+ */
+export function errorKinds(text, fullGap = text) {
+  const kinds = [...text.matchAll(/\bTS\d+\b/g)].map((m) => m[0]);
+  for (const line of text.split('\n')) {
+    let am = line.match(/: added ([a-z-]+) [—-] (.*)$/);
+    if (!am) am = line.match(/^close:\s+\[([a-z-]+)\]\s+\S+?:\d+: (.*)$/);
+    if (am && ALLOWED_KINDS.includes(am[1])) kinds.push(`[${am[1]}]`);
+    if (/\berror:/.test(line)) {
+      const bm = line.match(/\[([a-z]+(?:-[a-z]+)*)\]\s*$/);
+      if (bm) kinds.push(`[${bm[1]}]`);
+    }
+  }
+  // CHECK-SUSPECT: a no-suppressions hit on `any`/`any-star` whose flagged text sits on a prose comment, not on a JSDoc
+  // type position. Read over the WHOLE gap (the quote is only a display cut), so a prose hit past the cut still counts.
+  let suspect = false;
+  for (const line of fullGap.split('\n')) {
+    let am = line.match(/: added ([a-z-]+) [—-] (.*)$/);
+    if (!am) am = line.match(/^close:\s+\[([a-z-]+)\]\s+\S+?:\d+: (.*)$/);
+    if (am && (am[1] === 'any' || am[1] === 'any-star') && /^(\/\/|\/\*|\*|#)/.test(am[2].trim()) && !anyInBrace(am[2])) suspect = true;
+  }
+  const kindSet = uniq(kinds).sort();
+  if (!kindSet.length) kindSet.push('other');
+  const files = uniq([...text.matchAll(/[\w@.\/-]+\.(?:mjs|js|ts|py)\b/g)].map((m) => m[0].replace(/^\.\//, ''))).sort();
+  const sm = text.match(/(?:Variable|Parameter|Property) '([^']+)'/) || text.match(/Name "([^"]+)"/) || text.match(/'([^']+)' is of type/);
+  return { kinds: kindSet, files, symbol: sm ? sm[1] : null, suspect };
+}
+
+/**
+ * The token set of a quote's flagged lines: lowercase runs of `[a-z0-9_]` of length >= 2, union over flagged lines.
+ * File paths, line numbers, `added <id> -`, `error TS<n>:` and the trailing mypy code are already stripped.
+ * @param {string} text @returns {string[]} sorted
+ */
+export function flaggedTokens(text) {
+  const s = new Set();
+  for (const line of text.split('\n')) {
+    const t = flaggedText(line);
+    if (t === null) continue;
+    for (const m of t.toLowerCase().matchAll(/[a-z0-9_]{2,}/g)) s.add(m[0]);
+  }
+  return [...s].sort();
+}
+
+// ── cards ────────────────────────────────────────────────────────────────────────────────────────
+/**
+ * @typedef {object} Card
+ * @property {string} id            `<runid>:<check>:<fixed|stuck>`
+ * @property {string} runid
+ * @property {string} at            the run's end (ISO)
+ * @property {string} date          YYYY-MM-DD of `at`
+ * @property {string} job           the workflow key
+ * @property {string|null} model
+ * @property {string} check         the check / close stage name
+ * @property {'FIXED'|'NEVER_FIXED'} kind
+ * @property {string} goal          Job (as written), cut
+ * @property {string|null} stepId
+ * @property {string|null} stepAction  Step (as planned), cut
+ * @property {string|null} meaning  the check's own catalogue sentence (code-owned)
+ * @property {string[]} said        It said: <= 3 lines, paths and prefixes stripped
+ * @property {number} saidMore      lines left out
+ * @property {string[]} kinds       error kinds, sorted; ['other'] when none
+ * @property {string[]} files       files the quote names, sorted
+ * @property {string|null} symbol
+ * @property {string[]} tokens      the flagged-text token set, sorted
+ * @property {string|null} nextCheck  the next failing check after this moment, if any
+ * @property {string} ended         how the run ended (job-end outcome, or its escalation word)
+ * @property {string[]} fixTouched  files written by the passing try (the try that followed the red, for NEVER FIXED)
+ * @property {{files: {path: string, diff: string, truncated: boolean, cutLines?: number}[], binary: string[], truncated: boolean}|null} whatChanged
+ *   the passing try's attempt-diff (FIXED only), as the spine capped it
+ * @property {string} key           the one-line machine key
+ */
+
+/**
+ * The one-line machine key of a card. Line numbers never appear in it.
+ * @param {{id: string, job: string, check: string, kinds: string[], files: string[], model: string|null, runid: string, date: string}} c
+ * @returns {string}
+ */
+export function cardKey(c) {
+  return `card=${c.id} job=${c.job} check=${c.check} kinds=${c.kinds.join(',')} file=${c.files[0] ?? '-'} model=${c.model ?? '-'} run=${c.runid} date=${c.date}`;
+}
+
+/** the check name inside a gap text */
+const nameOf = (/** @type {string} */ g) => (g.match(/check "([^"]+)"/)?.[1] ?? g.match(/close stage "([^"]+)"/)?.[1] ?? 'close');
+const CODE = /\bTS\d+\b|\[[a-z][a-z-]+\]|\bE[A-Z]{2,}\b|\bERR_[A-Z_0-9]+\b/g;
+
+/**
+ * The lines of a gap a card quotes: lines that carry a path:line or an error code come first, accumulated up to
+ * ~250 characters (the cut the fold was fitted on). Pure.
+ * @param {string} gap @returns {string[]}
+ */
+export function quoteLines(gap) {
+  const ls = gap.split('\n').filter((l) => l.trim());
+  if (!ls.length) return [];
+  const pri = ls.filter((l) => /\.\w+[:(]\d+/.test(l) || (l.match(CODE) || []).length);
+  const pick = pri.length ? pri : ls;
+  /** @type {string[]} */
+  const out = [];
+  let len = 0;
+  for (const l of pick) {
+    if (len + l.length + 1 > 250) break;
+    out.push(l);
+    len += l.length + 1;
+  }
+  if (!out.length) out.push(pick[0].slice(0, 250));
+  return out;
+}
+
+/** terminal words that mean the run ended well */
+const isGreen = (/** @type {unknown} */ o) => o === 'green' || o === 'already-green';
+/** escalation categories that make a run NOISE: the instrument, not the work, failed */
+const NOISE_CATEGORIES = new Set(['provider-red', 'close-crashed']);
+
+/**
+ * @typedef {object} CardBuild
+ * @property {Card[]} cards         foldable cards (FIXED and NEVER FIXED), suspect and too-thin removed
+ * @property {Card[]} suspect       CHECK-SUSPECT cards: listed, never folded
+ * @property {number} thin          TOO-THIN count: no error kind and no fix files
+ * @property {string|null} noise    why the whole run was set aside (provider-red, close-crashed, worker-crash, no-close-spoke, no-job-end), else null
+ */
+
+/**
+ * Turn one run's record into cards. Every field is COPIED from the spine / gate audit; nothing is generated.
+ *
+ * Candidates: FIXED = a check red, then the SAME check passes later in the same run; NEVER FIXED = a check still red
+ * at run end. At most one of each per check per run (the last red before the pass; the last red). Excluded, counted:
+ * noise runs, CHECK-SUSPECT, TOO-THIN.
+ *
+ * Written files come from `attempt-diff` events (rubric `output/steps/<n>.json` included: the diff force-adds the
+ * fence) and the REAL gate audit's allow write/edit rows relative to `workdir` — never `git status`, and never a
+ * reader that drops a path it cannot place under a known patient prefix (the POC defect: a rubric job's writes read
+ * as none).
+ * `questions` is the check catalogue (stage name -> plain question, src/stagewords.js) the caller resolved from the signed
+ * spec; a check with none reads `(not in the record)`.
+ * @param {{runid: string, events: any[], audit?: any[]|null, workdir?: string|null, spec?: any, model?: string|null, questions?: Map<string, string|null>}} o
+ * @returns {CardBuild}
+ */
+export function buildCards({ runid, events, audit = null, workdir = null, spec = null, model = null, questions = new Map() }) {
+  const ev = (Array.isArray(events) ? events : []).filter((e) => e && typeof e === 'object');
+  /** @type {CardBuild} */
+  const out = { cards: [], suspect: [], thin: 0, noise: null };
+  const jobEnd = ev.findLast((e) => e.type === 'job-end') ?? null;
+  if (!jobEnd) { out.noise = 'no-job-end'; return out; }
+  const jobStart = ev.find((e) => e.type === 'job-start' && isStr(e.goal)) ?? ev.find((e) => e.type === 'job-start') ?? null;
+  const job = isStr(spec?.job) ? spec.job : (isStr(jobStart?.job) ? jobStart.job : null);
+  if (job === null) { out.noise = 'no-job-start'; return out; }
+  const runModel = model ?? (isStr(jobStart?.model) ? jobStart.model : null);
+  const at = isStr(jobEnd.ts) ? jobEnd.ts : '';
+
+  // ── the walk: stage verdicts, red moments, red->pass pairs (pocA2, indexes instead of timestamps) ──
+  /** @type {Map<string, string>} */ const verdict = new Map();
+  /** @type {Map<string, any>} */ const gaps = new Map();
+  /** @type {Map<string, any>} */ const pend = new Map();
+  /** @type {Map<string, {red: any, pass: {i: number, note: string|null}}>} */ const pairs = new Map();
+  /** @type {{i: number, check: string}[]} */ const reds = [];
+  /** @type {[number, any[]][]} */ const plans = [];
+  /** @type {number[]} */ const iters = [];
+  let curStep = null;
+  let inFix = false;
+  for (let i = 0; i < ev.length; i += 1) {
+    const e = ev[i];
+    if (e.type === 'plan-accepted' && Array.isArray(e.plan?.steps)) plans.push([i, e.plan.steps]);
+    if (e.type === 'step-start') { curStep = isStr(e.step) ? e.step : null; inFix = false; }
+    if (e.type === 'fix-loop') inFix = true;
+    if (e.type === 'iteration-start') iters.push(i);
+    const sat = (/** @type {string} */ name, /** @type {unknown} */ note) => {
+      const g0 = pend.get(name);
+      if (g0) { pairs.set(name, { red: g0, pass: { i, note: isStr(note) ? note : null } }); pend.delete(name); }
+    };
+    const red = (/** @type {string} */ name, /** @type {any} */ g) => { pend.set(name, { ...g, i }); reds.push({ i, check: name }); };
+    if (e.type === 'check-run' && isStr(e.name)) {
+      verdict.set(e.name, e.verdict);
+      if (e.verdict === 'satisfied') sat(e.name, null);
+    }
+    if (e.type === 'close-verdict' || e.type === 'outer-close') {
+      const stageScoped = e.type === 'outer-close' || inFix;
+      if (Array.isArray(e.stages)) {
+        for (const st of e.stages) {
+          if (st && isStr(st.name)) {
+            verdict.set(st.name, st.verdict);
+            if (st.verdict === 'satisfied') sat(st.name, st.notes);
+          }
+        }
+      }
+      if (isStr(e.gap)) {
+        const n = nameOf(e.gap);
+        if (n === 'close' && !Array.isArray(e.stages)) verdict.set('close', e.verdict);
+        const gg = { gap: e.gap, step: stageScoped ? null : curStep, seq: e.seq };
+        gaps.set(n, gg);
+        red(n, gg);
+      } else if (!Array.isArray(e.stages)) {
+        verdict.set('close', e.verdict);
+        if (e.verdict === 'satisfied') sat('close', null);
+      }
+    }
+    if (e.type === 'exit-eval') {
+      for (const r of e.results || []) {
+        if (!r || typeof r !== 'object') continue;
+        if (r.type === 'check-passes') {
+          if (r.pass === false && isStr(r.detail)) {
+            const gg = { gap: r.detail, step: isStr(e.step) ? e.step : curStep, seq: e.seq };
+            gaps.set(nameOf(r.detail), gg);
+            red(nameOf(r.detail), gg);
+          }
+        } else if (isStr(r.type)) {
+          if (r.pass === true) { verdict.set(r.type, 'satisfied'); sat(r.type, null); }
+          else if (r.pass === false) {
+            verdict.set(r.type, 'needs_revision');
+            if (isStr(r.detail)) {
+              const gg = { gap: r.detail, step: isStr(e.step) ? e.step : curStep, seq: e.seq };
+              gaps.set(r.type, gg);
+              red(r.type, gg);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // ── noise runs: the instrument failed, so no lesson about the work can be read off them ──
+  const lastEsc = ev.findLast((e) => e.type === 'escalation') ?? null;
+  const cat = lastEsc && isStr(lastEsc.category) ? lastEsc.category : null;
+  if (cat !== null && NOISE_CATEGORIES.has(cat)) { out.noise = cat; return out; }
+  if (verdict.size === 0) { out.noise = cat === 'worker-crash' ? 'worker-crash' : 'no-close-spoke'; return out; }
+
+  const ended = isGreen(jobEnd.outcome) ? String(jobEnd.outcome) : (cat ?? (isStr(jobEnd.outcome) ? jobEnd.outcome : 'ended'));
+  const goal = isStr(jobStart?.goal) ? cutText(cleanText(jobStart.goal, workdir), 200) : '(not in the record)';
+  const date = at.slice(0, 10);
+
+  const writtenIn = (/** @type {{fromI: number, toI: number}} */ w) => {
+    /** @type {string[]} */
+    const files = [];
+    let diff = null;
+    for (let k = w.fromI; k <= w.toI && k < ev.length; k += 1) {
+      const e = ev[k];
+      if (e.type === 'attempt-diff') {
+        diff = e;
+        for (const f of e.files || []) if (f && isStr(f.path)) files.push(f.path);
+        for (const b of e.binary || []) if (isStr(b)) files.push(b);
+      }
+    }
+    if (Array.isArray(audit)) {
+      const t0 = Date.parse(ev[w.fromI]?.ts ?? '');
+      const t1 = Date.parse(ev[Math.min(w.toI, ev.length - 1)]?.ts ?? '');
+      if (Number.isFinite(t0) && Number.isFinite(t1)) {
+        for (const a of audit) {
+          if (!a || a.phase !== 'gate' || a.decision !== 'allow') continue;
+          if (a.action?.type !== 'write' && a.action?.type !== 'edit') continue;
+          const t = Date.parse(a.ts ?? '');
+          if (!Number.isFinite(t) || t < t0 || t > t1 + 1000) continue;
+          const p = relPath(a.action.path, workdir);
+          if (p !== null) files.push(p);
+        }
+      }
+    }
+    return { files: uniq(files), diff };
+  };
+
+  /**
+   * @param {string} check @param {any} g the red moment @param {'FIXED'|'NEVER_FIXED'} kind
+   * @param {{i: number, note: string|null}|null} pass
+   */
+  const mk = (check, g, kind, pass) => {
+    const lines = quoteLines(String(g.gap)).map((l) => cleanText(l, workdir));
+    const quote = lines.join('\n');
+    const full = cleanText(String(g.gap), workdir);
+    const k = errorKinds(quote, full);
+    // Step (as planned): the failing step's action text in the plan live at that moment
+    const stepId = isStr(g.step) ? g.step : null;
+    const plan = plans.filter(([pi]) => pi <= g.i).at(-1) ?? plans.at(-1) ?? null;
+    const step = stepId && plan ? plan[1].find((x) => x?.id === stepId) : null;
+    const stepAction = isStr(step?.action) ? cutText(cleanText(step.action, workdir), 300) : null;
+    // the passing try (FIXED) / the try that followed the red (NEVER FIXED)
+    let w;
+    if (kind === 'FIXED' && pass) {
+      const start = Math.max(iters.filter((x) => x <= pass.i).at(-1) ?? 0, g.i + 1);
+      w = { fromI: start, toI: pass.i };
+    } else {
+      const start = iters.find((x) => x > g.i);
+      const end = start === undefined ? -1 : (iters.find((x) => x > start) ?? ev.length) - 1;
+      w = start === undefined ? { fromI: 0, toI: -1 } : { fromI: start, toI: end };
+    }
+    const wr = writtenIn(w);
+    const fixTouched = wr.files.map((p) => cleanText(p, workdir));
+    const diffEv = kind === 'FIXED' ? wr.diff : null;
+    const afterI = kind === 'FIXED' && pass ? pass.i : g.i;
+    const nextRed = reds.find((r) => r.i > afterI && r.check !== check);
+    const said = lines.map((l) => l.replace(/^\s*close:\s*/, '').trim())
+      .filter((l) => l && !/^(check ".*" red: )?close stage ".*" failed:$/.test(l));
+    const id = `${runid}:${check}:${kind === 'FIXED' ? 'fixed' : 'stuck'}`;
+    const base = {
+      id, runid, at, date, job, model: runModel, check, kind, goal,
+      stepId, stepAction,
+      meaning: questions.get(check) ?? (check === 'tree-changed' ? 'did the step change a file in its scope?' : check === 'close' ? "does the job's close pass?" : null),
+      said: said.slice(0, SAID_LINES).map((l) => cutText(l, 220)), saidMore: Math.max(0, said.length - SAID_LINES),
+      kinds: k.kinds, files: k.files, symbol: k.symbol, tokens: flaggedTokens(quote),
+      nextCheck: nextRed ? nextRed.check : null, ended,
+      fixTouched,
+      whatChanged: diffEv
+        ? {
+          files: (diffEv.files || []).map((/** @type {any} */ f) => ({ path: String(f.path), diff: String(f.diff ?? ''), truncated: f.truncated === true, ...(Number.isInteger(f.cutLines) ? { cutLines: f.cutLines } : {}) })),
+          binary: (diffEv.binary || []).map(String),
+          truncated: diffEv.truncated === true,
+        }
+        : null,
+    };
+    /** @type {Card} */
+    const card = redactDeep({ ...base, key: cardKey(base) });
+    return { card, suspect: k.suspect };
+  };
+
+  /** @type {Card[]} */ const all = [];
+  /** @type {Card[]} */ const sus = [];
+  const push = (/** @type {{card: Card, suspect: boolean}} */ r) => {
+    if (r.suspect) sus.push(r.card);
+    else if (r.card.kinds[0] === 'other' && r.card.fixTouched.length === 0) out.thin += 1;
+    else all.push(r.card);
+  };
+  for (const [check, p] of pairs) push(mk(check, p.red, 'FIXED', p.pass));
+  for (const [check, g] of gaps) {
+    const v = verdict.get(check);
+    if (v === 'satisfied') continue;
+    if (v !== undefined || check === 'close') push(mk(check, pend.get(check) ?? { ...g, i: reds.findLast((r) => r.check === check)?.i ?? 0 }, 'NEVER_FIXED', null));
+  }
+  out.cards = all;
+  out.suspect = sus;
+  return out;
+}
