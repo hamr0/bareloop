@@ -1991,7 +1991,8 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
   - **Not reused:** friction's signal extraction (curses, corrections, interrupts in Claude chats), its session clustering, and the `/remember` episode narrative (OPEN (d)).
 - **Expiry on change (rule).** A `workflow` row expires when its job's signed hash changes or its close changes, the same way reuse bridges expire on a hash change. `place` and `user` rows follow the decay rule above.
 - **Facts over tips (rule).** A lesson is written as a fact about the job, place or check ("tests run with `npm test`", "the results load after the first snapshot"), never as model-specific prompt advice. On a worker-model change, the existing $0 dead-weight replay also covers the ledger.
-- **OPEN (interview hamr before the build spec):** (a) the N of distinct workflows needed to climb a level, and the promotion threshold; (b) the length cap of the injected block; (c) the planner plus the first replan only (recommended), or every replan; (d) the kinds of lessons: one kind of row, or `/remember`'s three (facts, antigens, episodes); (e) whether a person can see, and edit or veto (`rejected`), their own lessons in the panel.
+- **RULED 2026-10-22 (hamr's interview answers):** (a) a lesson goes from observing to hot at 3 distinct runs that back it (a deterministic lesson backed by a green; a rubric lesson backed by an Accept), and climbs from `workflow` to `place` when it shows up in 3 distinct workflows on the same place (friction used 5; bareloop people run far fewer jobs than chat sessions); (b) the injected block is capped at 2,000 characters, filled most-specific first; (c) the planner at draft, then the FIRST replan only; later replans do not get it again; (d) one kind of row: facts (no antigens, no episodes), matching the facts-over-tips rule; (e) the panel shows a person their own lessons as a read-only list with a Reject button; rejected = status `rejected`, never injected again; no text editing, the text stays code-rendered.
+- **Next:** the build spec goes in the build doc addendum and is shown to hamr before any builder starts.
 
 **2. OTel converter (RULED 2026-10-20 by hamr via the guard session: bareloop owns and builds it, not bareguard).**
 - **What:** a second, OpenTelemetry-shaped output (OTLP/JSON logs, for the collector's `otlpjsonfile` receiver). No change to any audit file or its writer.
@@ -2020,3 +2021,7 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
   - Up to 5 links are opened and the first that fits is the evidence. If none of the 5 fit, show the closest page and let the person type "go on" (Q1 a).
   - At run time, search again on the SAME site only, else fall back to the page approved at drafting (Q2 a).
   - Information jobs only; listing jobs keep the pasted link.
+
+### Learnings interview answers (v1.111 — 2026-10-22) — RULED by hamr
+
+- Answers (a)-(e) to the cross-run learnings interview are recorded in the v1.108 RULED 2026-10-22 bullet above; the build spec comes next and is shown to hamr first.
