@@ -2303,3 +2303,156 @@ Signed by hamr. Learnings cards can say which files a passing try touched but ne
 - **Caps.** 4 KB per file, 16 KB per event; cut at a line boundary (never mid-line), `truncated:true` and `cutLines` = lines dropped. Files past the event cap appear with an empty diff, `truncated:true`.
 - **Secrets.** Every diff and path runs through `redactSecrets` (the one inventory) BEFORE the cut and before the spine.
 - **Never shown to the worker:** spine only, which the worker's readScope denies; no prompt carries it. Not shown in the panel. The gate audit is not touched. $0, no model call.
+
+
+## Addendum 2026-10-22 (rev 2) — cross-run learnings, code only (supersedes the AI-labelling parts of rev)
+
+Rulings by hamr, 2026-10-22, this session. SPEC ONLY: nothing here is built. The rev addendum above (friction-shaped pipeline) stays as the record of the route taken; where it says an LLM labels, writes a rule, or "pays" for a fold, THIS addendum replaces it. Show hamr this spec before any builder is launched.
+
+### 1. Why the model is gone (evidence, all in `.claude/scratch/poc-learn/`)
+
+- POC-B (AI writes the facts): 7 of 42 made up. POC-B2: 17 of 36 made up. POC-D / POC-D2 (AI folds the facts): 75% / 67% right. All failed the frozen rules.
+- POC-E2 (code folds the cards, no model): PASS. Hand-check 10 of 10 multi-card sets truly one lesson; facts / cards folded = 58 / 74 = 0.78 (bar 0.80, so narrow). Prereg `pocE2-prereg.md`, result `pocE2-plain.md`, script `pocE2.mjs`.
+- HONEST LIMIT: the 60% threshold and the rule were chosen AFTER seeing those 87 cards and after seeing why POC-E missed 35+99 and wrongly joined 70+71+104. E2 is a FIT on known cards, not proof. Proof needs UNSEEN cards from new runs (see section 12).
+
+RULING 1: no model call anywhere in learnings: not to label, fold, rephrase, rank, judge or render. A lesson is a hint, made entirely by code from the run's own record.
+
+### 2. Cards (code, $0)
+
+Code turns each red-check moment into a captioned card, every field COPIED from the record (spine `job-start`, `plan-accepted`, `check-run` / `exit-eval` / `close-verdict`, `attempt-diff`, gate audit). Shape (as POC-C `pocC-cards.md`):
+
+- Job (as written): the job text.
+- Step (as planned): the failing step's action text (cut).
+- What failed: the check name + a one-line meaning of the check, from the check's own catalogue text (code-owned, never model-written).
+- It said: the arbiter's quote lines, paths and prefixes stripped, at most 3 lines.
+- Outcome: `fixed later in the same run` | `still failing at run end` + what came next (the next failing check, or green / escalation word).
+- Fix touched: files written by the passing try (or the try that followed the red, for NEVER FIXED).
+- Changed together: shown only when 2-4 files changed together.
+- What changed: the `attempt-diff` of the PASSING try (capped as attempt-diff already caps it), when present. Proven live on run mvk2e4uy (deepseek-flash, green, $0.2076): check `typecheck-target-zero-errors` red at seq 104, pass at seq 127, the passing try's diff at seq 125 (removed the `NodeJS.ErrnoException` cast, read `err.code` directly); the fix-loop diff at seq 158. Spine: `.claude/scratch/attemptdiff-live/session/source-seed/pulselog-panel-strict-bareloop/u-mvk2e4uy.jsonl`.
+- KEY line (machine, one line): card id, job (workflow key), check, error kind(s), file, model, run id, date. Line numbers never appear in any key.
+
+Candidates:
+- FIXED = a check red, then the SAME check passes later in the same run.
+- NEVER FIXED = a check still red at run end.
+
+Excluded, with a count in the run's health line:
+- noise runs: provider-red, crash (`close-crashed`, `worker-crash` with no usable close verdict), runs where no close spoke.
+- CHECK-SUSPECT: a `no-suppressions` hit whose flagged text sits on a prose comment, not a JSDoc type position. Listed separately, never folded.
+- TOO-THIN: no error kind AND no fix files.
+
+Error kind extractor (unchanged from POC-E, `pocE2.mjs`): TS codes; `[id]` from `added <id>` lines; `close: [id]` lines; mypy trailing bracket codes; empty -> `other`.
+
+Written-file source: the written files come from `attempt-diff` events and the REAL gate audit (run_id-scoped allow rows, write + edit actions), never `git status`. KNOWN POC DEFECT to avoid: in the POC the gate-audit reader missed a rubric job's writes (flights-2: `output/steps/<n>.json`). attempt-diff force-adds the fence, so it sees them; the card builder must test a rubric-job run (written files non-empty) before it is called done.
+
+### 3. Fold: when two cards are one lesson (RULING 3)
+
+Two cards are one lesson when ALL hold:
+1. same job (workflow key) AND same check (stage);
+2. they SHARE at least one error code / kind (overlap, not identical sets); kind `none` / `other` never matches anything, so such cards are always singletons;
+3. Jaccard similarity of their flagged-text token sets is >= 60%.
+
+Flagged text: the flagged lines of the quote (`... added <id> - <text>`, `close: [<id>] <file>:<line>: <text>`, lines with `error TS<digits>:` or `error:`), with wrapper words stripped (leading `<NAME> |`, `close:`, `[id]`, file path with any `out/source-*/tree/` prefix, `:<line>`, `(<line>,<col>)`, `added <id> -`, `error TS<digits>:`, `error:`, trailing mypy `[code]`). Lowercase; tokens = runs of `[a-z0-9_]`, length >= 2; card set = union over flagged lines; empty set on either side = score 0.
+
+Grouping: single-link (connected components of eligible pairs). Every pair INSIDE a component is re-checked for a shared kind; a component with any pair lacking one splits back to singletons (E2 result: 0 splits on 87 cards).
+
+The 60% is FITTED (see section 1). OPEN for later, not decided: also comparing the What-changed tokens as a second similarity channel.
+
+### 4. Check-wide keys (RULING 4)
+
+A key (job-independent: check + error kind) seen in >= 3 DISTINCT jobs (e.g. `tree-changed`, `close`) is SET ASIDE: it is not a per-job hint. It belongs in the check's own failure message or in the planner's standing instructions, written ONCE by hand through the normal doc / code route. It is never injected as a hint by the ledger. (POC-C: 18 groups were check-wide.) The set-aside list is kept in the ledger file as `checkWide[]` (key, the jobs that made it check-wide) so the reader can refuse it and a human can see it; it is a report, not an injection.
+
+### 5. ONE ledger per user (RULING 5)
+
+File: `~/.config/bareloop/learn/ledger.json` (in the KEYS / config home that `runlistHome` / `keys.home` already resolve; tests inject the home). Never inside a person's repo. Written atomically (temp file + rename).
+
+Row fields:
+- `id` (stable, derived from the fold's shared fields: job key + check + sorted shared kinds + file stem).
+- `lesson`: ONE sentence rendered by code from the fold's shared fields (check, kind(s), file, fix files, "fixed later" / "never fixed"). Template-only, no free text.
+- `count`: times seen. STARTS AT 1: a hint is kept after ONE run.
+- `sample`: ONE card, the LATEST (replaced on each new match).
+- `models`: per-model counts, e.g. `{ "deepseek-flash": 5, "sonnet": 1 }`, to see tendencies. Read-only information; never used to filter.
+- `workflow` (workflow key), `place`, `level` (workflow | place | user), `trust` (deterministic | rubric).
+- `runIds[]` (the runs that minted it), `firstSeen`, `lastSeen`.
+
+Counting: a new card that matches a row by the section 3 rule (against the row's `sample`) adds +1 to `count`, bumps its model count, appends its run id, and REPLACES the sample; otherwise it makes a new row at count 1. Idempotent by run id: a card whose run id is already in a row's `runIds` is not counted twice (a run is folded once).
+
+`place` (unchanged from v1.108): repo job = repo real path; website job = URL host; plain folder / file job = source path; derived by code from the signed spec's inputs line 1.
+
+What still applies from the earlier rulings, under count-from-1:
+- STILL APPLIES: climbing, 3 distinct workflows on one place -> `place`; 3 distinct places -> `user`; by changing the `level` tag; every row keeps its run ids. (But see OPEN 1: how "the same lesson" is recognised ACROSS workflows.)
+- STILL APPLIES: expiry on change. A `workflow` row expires when its job's signed hash changes or its close changes (as reuse bridges do). `place` and `user` rows are not tied to one hash.
+- STILL APPLIES, widened: the 56-day decay. Old text applied it to `observing` rows only and exempted `hot`. Under count-from-1 there is no `observing` stage, so the decay applies to EVERY row untouched (no new matching card) for 56 days: it becomes `expired`, is kept in the file, is never injected, and a new matching card reactivates it. OPEN 3: whether a high-count row should be exempt.
+- SUPERSEDED: the observing -> hot promotion at 3 distinct runs (rulings (a), v1.108). Replaced by count-from-1 + ORDER BY COUNT at read time (section 7). Row `status` is just `active` | `expired`; `observing`, `hot`, `escalated` are gone.
+- SUPERSEDED: ledger `folded[]` and "the AI only labels (drop | row id | new)" and the LLM `rule` text. The run-id list is the dedup record.
+- SUPERSEDED: the "failed wording" governor (a hot rule recurring twice while loaded marks the wording failed; three failed wordings escalate). Wording is code-rendered from fields, so there is no wording to fail. OPEN 4: what a loaded lesson that STILL recurs does (flag? lower rank?).
+
+### 6. When it runs, and the call site (RULING 6)
+
+At the END OF EVERY RUN. $0. Code only. No learn-round, no `learnings` cost part, no next-run payment (SUPERSEDES "the fold is paid by the next run of the same workflow", v1.111).
+
+Call site: `src/userrun.js`, the one engine's run-end block in `execute(ctx)`. It is the block that reads the run's own spine after the run ends, finds `job-end` (`events.findLast(e => e.type === 'job-end')`, around line 2003) and settles the run's claim on `runs.jsonl`. The learn step is called right after that settle, only when a `job-end` exists, inside its own try/catch so a failed learn can never change the exit code, the verdict, the run row or the outcome text (a record, never a verdict; it prints one WARNING line on failure, as the settle does). `execute` is shared by all three doors (panel, CLI, bundle runner), so panel and CLI both get it from this one place; no second call site, no copy in `src/panel/`.
+
+Input: the run's whole spine (all legs; ONE RUN = one id = one spine file), its gate audit, its signed spec. A resumed run re-derives its cards from the whole spine at each leg end; the run-id idempotence in section 5 stops a double count (OPEN 5: what a later leg changes in a card already counted).
+
+Code layout (a suggestion, builder to confirm with hamr): one new module `src/learn.js`, pure functions (`buildCards`, `foldCards`, `countLedger`, `renderHints`) with no file I/O and no model import, plus a thin reader / writer wrapper. A static test that `src/learn.js` imports nothing from `bare-agent` / providers is the proof of "no model call".
+
+Trust at run end:
+- deterministic job: the cards are folded and counted at run end.
+- rubric job: cards are held as `pending` (kept in the ledger file, NOT counted, NOT readable) until a human Accept at the review door; `accept` releases them to count. The existing quarantine is the rule: a judged green earns no learning credit until `accept` (`src/bridges.js` `recordDoor`, and the door-accept path in `src/userrun.js` `--door`). Rerun / pause do not release. OPEN 6: how long a pending card is kept (the Accept-waiting run lives 60 days, so 60 days is the natural fit, not decided).
+
+### 7. Reading (RULING 7)
+
+Who: the PLANNER at draft, and the FIRST replan only. Never the worker (scout, step, close-fix workers get nothing). Later replans get nothing. Call site: `draftPlan(...)` in `src/planrun.js` (phase `'plan'`, and phase `'replan'` on the first replan only); the block is added to the drafter prompt there.
+
+Order and cap:
+1. this JOB's hints first (rows whose `workflow` equals this job's workflow key);
+2. then this PLACE's (rows with `level` place on this place);
+3. then all-jobs (`level` user);
+4. inside each level, highest `count` first (ties: most recent `lastSeen`, then `id`, so the order is total and stable);
+5. stop at 2,000 characters; a hint is added whole or not at all (never cut mid-hint).
+
+Excluded from reading: `expired` rows, `pending` rows, check-wide keys, any row with no run id, and every row whose place is not this place.
+
+One render function (`renderHints(ledger, job, place)`) produces the block, byte-for-byte. A byte-check compares what the spine records the planner received with a fresh render from the ledger as it stood (the friction `check` shape).
+
+### 8. Audit, off-switch (RULING 8)
+
+- Audit shows, READ-ONLY, the exact hints the planner got on that run (the `learnings` part, v1.111, kept as a display of the injected block). The block is recorded on the spine at injection. No edit, no Reject, no per-hint button.
+- Ships OFF behind ONE setting. ON/OFF contrast (pre-registered and frozen before any number, deepseek-flash, hamr's word first, a $0 archive read first) decides whether it is turned on; a result inside the noise band or backwards closes the lever with no default flip.
+- Learning (the run-end fold, sections 5-6) may run with the setting off, since it is $0 and read-only to everything else. OPEN 7: whether the OFF setting also stops the run-end write.
+
+### 9. attempt-diff (RULING 9)
+
+attempt-diff (commits 112c858, bf6da11; `src/attemptdiff.js`; addendum 2026-10-22 per-try diff) is the source of "What changed". It is spine-only, secret-masked, capped (4 KB per file, 16 KB per event). Cards copy from the spine event; they re-mask nothing new but pass the whole card through the one `redactSecrets` inventory before it is written to the ledger (a secret in a person's repo must not enter an append-only record). A try that changed nothing in scope emits no event, so a card then has no What-changed block.
+
+### 10. Must-fail list (RULING 10) — each is a test that must be able to FAIL
+
+1. The worker prompt (any worker phase) contains any ledger text.
+2. A model call anywhere in learnings (static import check plus a run with the provider stubbed to throw).
+3. A rubric lesson counted before Accept.
+4. A check-wide key injected.
+5. The injected block is longer than 2,000 characters.
+6. A row with no run id is injected.
+7. A place row reaches a different place.
+8. A hint is ordered out of (level, count) order.
+
+Tests must run against REAL spines (e.g. mvk2e4uy and archived runs), not authored fixtures, and be able to fail on both a red-side and a fake-green side. Builders run only via `npm test` / `scripts/hermetic.mjs`, scratch HOME, and report the `runs.jsonl` line count before and after.
+
+### 11. Out of scope
+
+OTel converter; the worker reading anything; any edit / Reject UI; a model-written rule; Slack-style notifications; hints for non-code (doc-genre) jobs beyond what the cards already express.
+
+### 12. NOT decided (open, hamr to rule; nothing invented)
+
+1. Climbing across workflows: the fold requires SAME job, so a lesson in a second workflow is a different row. How code recognises "the same lesson" across workflows (same check + kind + file stem? the fitted 60% on text?) is not ruled, so climbing has no rule yet. The same gap holds for what makes a key "check-wide" without double-counting a job that was edited.
+2. Unseen-card proof of the fold (60%, shared kind): needs new real runs after the first build; how many and what failure rule is not set. Also whether to add What-changed tokens as a second channel.
+3. Whether a high-count row is exempt from the 56-day decay.
+4. What a loaded lesson that still recurs does (the old "failed wording" governor is superseded).
+5. Resumed runs: what a later leg changes in an already-counted card (replace, ignore, or count the leg).
+6. How long a pending rubric card waits for Accept.
+7. Whether the OFF setting stops the run-end write or only the reading.
+8. Two cards of one run matching one row: +1 per card or +1 per run (this spec says per card by RULING 5 wording, but one run with a loop of ten same-check reds would then count ten).
+9. Whether NEVER FIXED cards count the same as FIXED (the old text said a deterministic lesson counts once a green backs it).
+10. The 2,000-character hint wording / header the planner is shown (the render template), and the standing-instructions text for check-wide keys.
+11. The ON/OFF contrast design (jobs, n, frozen rule); the contrast is not specced here.
+12. The setting's name and where it lives (Settings page / config.json).
