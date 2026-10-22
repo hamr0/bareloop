@@ -13,6 +13,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **A green worktree run no longer fails its final commit when the repo gitignores `.smoke`, `.litectx` or `gate-audit.jsonl`.** `git add` exits 1 when an exclude names a path that exists and is gitignored (pulselog's `.*` rule: run mvk2e4uy), so the work never landed on the branch and the folder was kept. The commit now excludes only the books git would otherwise stage (an ignored path is never staged anyway); a genuine git failure still throws. The `node_modules` glob exclude and the attempt-diff snapshot (`add -f`) were not affected.
+
 - **A key right after a hyphen is now found and masked.** The secret-shape inventory (`SECRET_PATTERNS`) refused to match a key whose previous character was `-`, so `step-ghp_...` slipped past the scan and the redactor. The distinctive prefixes `ghp_`, `github_pat_`, `AKIA`, `AIza` and `xox[bap]-` now drop only the hyphen from their left bound (a word character or `_` in front still blocks the match, so `flask-sqlalchemy` and look-alike words stay clean). `sk-` keeps the full bound because `sk-` ends ordinary words (`task-`...); a key directly after a hyphen there (`step-sk-...`) is a documented known limit of the shape list. Only adds matches.
 
 ## [0.45.0] - 2026-10-22
