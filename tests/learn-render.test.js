@@ -1,0 +1,152 @@
+// Cross-run learnings, part 4: the one render the PLANNER reads (ITEM33-BUILD.md rev 2, section 7, RULING 7).
+// Order: this job, then this place, then all-jobs; highest count first inside each level; 2,000 characters; a hint is
+// added whole or not at all; one function, byte-for-byte. Rows come from real runs folded by the real ledger code;
+// where a row is edited (a level, a place, a run id list) the test says so.
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  emptyLedger, countLedger, holdPending, renderHints, readableRows, hintsMatchRecord, HINT_HEADER, HINT_CHARS_MAX, DECAY_DAYS,
+} from '../src/learn.js';
+import { cardsOf } from './learn-fixtures.js';
+
+const DAY = 86_400_000;
+const WF = 'aurora-u-spawner-types';
+const AURORA = ['ms2c0ls7', 'ms7flkok', 'mszi97jd', 'ms2ddxjc', 'mszcfaof'];
+const built = AURORA.map((id) => cardsOf(id));
+const lastAt = built.map((b) => b.cards[0].at).sort().at(-1) ?? '';
+const NOW = new Date(new Date(lastAt).getTime() + DAY);
+const ctx = { workflow: WF, place: '/p/aurora', specHash: 'h1', now: NOW };
+
+/** the real ledger of the five aurora runs: a typecheck lesson seen 5 times, a no-suppressions lesson seen 2 times */
+function auroraLedger() {
+  let L = emptyLedger();
+  AURORA.forEach((id, i) => { L = countLedger(L, { runid: id, cards: built[i].cards, workflow: WF, place: '/p/aurora', specHash: 'h1', trust: 'deterministic', now: NOW }); });
+  return L;
+}
+/** @param {any} L @param {string} check */
+const rowOf = (L, check) => L.rows.find((/** @type {any} */ r) => r.sample.check === check);
+/** an edited copy of a real row (the edit is the point of the test that calls this) */
+const rowLike = (/** @type {any} */ r, /** @type {any} */ over) => ({ ...r, ...over, sample: { ...r.sample, ...(over.sample ?? {}) } });
+const withRows = (/** @type {any} */ L, /** @type {any[]} */ rows) => ({ ...L, rows, checkWide: [] });
+
+test('the block for a real ledger: header, then the lesson seen most often first, each hint whole', () => {
+  const L = auroraLedger();
+  const r = renderHints(L, ctx);
+  const lines = r.text.split('\n');
+  assert.equal(lines[0], HINT_HEADER);
+  assert.match(lines[1], /^1\. \[this job, seen 5 times\] check "typecheck"/);
+  assert.ok(r.text.includes('[this job, seen 2 times] check "no-suppressions"'));
+  assert.ok(r.text.indexOf('seen 5 times') < r.text.indexOf('seen 2 times'));
+  assert.deepEqual(r.ids, [rowOf(L, 'typecheck').id, rowOf(L, 'no-suppressions').id]);
+  assert.match(r.text, /\n   It said: /);
+  assert.match(r.text, /\n   Fix touched: .*timeout_policy\.py/);
+  assert.ok(r.text.length <= HINT_CHARS_MAX);
+  // pure + byte-for-byte: the same ledger renders the same bytes
+  assert.equal(renderHints(L, ctx).text, r.text);
+  process.stdout.write(`\n--- SAMPLE HINT BLOCK (real aurora ledger) ---\n${r.text}\n--- ${r.text.length} chars ---\n`);
+});
+
+test('a NEVER FIXED lesson reads "got stuck here, never fixed"', () => {
+  const [stuck] = cardsOf('mshcpdg4').cards;
+  const L = countLedger(emptyLedger(), { runid: 'mshcpdg4', cards: [stuck], workflow: 'bareagent-u-types', place: null, specHash: null, trust: 'deterministic', now: new Date(stuck.at) });
+  const r = renderHints(L, { workflow: 'bareagent-u-types', place: null, specHash: null, now: new Date(stuck.at) });
+  assert.match(r.text, /\[this job, seen 1 time\] check "typecheck" failed on TS2322 .*; got stuck here, never fixed\./);
+  assert.ok(!r.text.includes('Fix touched'));
+});
+
+test('MUST-FAIL 8: hints are ordered by (level, count): this job, then this place, then all jobs, highest count first', () => {
+  const L = auroraLedger();
+  const tc = rowOf(L, 'typecheck');
+  const mk = (/** @type {string} */ id, /** @type {string} */ level, /** @type {number} */ count, extra = {}) => rowLike(tc, { id, level, count, workflow: level === 'workflow' ? WF : 'elsewhere', place: '/p/aurora', sample: { said: [], fixTouched: [] }, ...extra });
+  const rows = [mk('u7', 'user', 7), mk('p3', 'place', 3), mk('w2', 'workflow', 2), mk('p9', 'place', 9), mk('w5', 'workflow', 5)];
+  assert.deepEqual(renderHints(withRows(L, rows), ctx).ids, ['w5', 'w2', 'p9', 'p3', 'u7']);
+  assert.deepEqual(readableRows(withRows(L, rows), ctx).map((r) => r.id), ['w5', 'w2', 'p9', 'p3', 'u7']);
+  // ties: most recent lastSeen first, then id — the order is total and stable
+  const tied = [mk('b', 'workflow', 4, { lastSeen: '2026-07-01T00:00:00Z' }), mk('a', 'workflow', 4, { lastSeen: '2026-07-01T00:00:00Z' }), mk('c', 'workflow', 4, { lastSeen: lastAt })];
+  assert.deepEqual(renderHints(withRows(L, tied), ctx).ids, ['c', 'a', 'b']);
+  assert.deepEqual(renderHints(withRows(L, [...tied].reverse()), ctx).ids, ['c', 'a', 'b']);
+});
+
+test('MUST-FAIL 5: the block is never longer than 2,000 characters, and a hint is added whole or not at all', () => {
+  const L = auroraLedger();
+  const tc = rowOf(L, 'typecheck');
+  const many = Array.from({ length: 40 }, (_, i) => rowLike(tc, { id: `row-${String(i).padStart(2, '0')}`, count: 100 - i }));
+  const r = renderHints(withRows(L, many), ctx);
+  assert.ok(r.text.length <= HINT_CHARS_MAX, `${r.text.length} chars`);
+  assert.ok(r.ids.length >= 2 && r.ids.length < 40, 'some fit, not all');
+  assert.deepEqual(r.ids, many.slice(0, r.ids.length).map((x) => x.id), 'the highest counts won the room');
+  // the text is exactly the header plus whole hints: no hint was cut
+  const hintBlocks = r.text.slice(HINT_HEADER.length + 1).split(/\n(?=\d+\. \[)/);
+  assert.equal(hintBlocks.length, r.ids.length);
+  assert.ok(hintBlocks.every((h) => /^\d+\. \[this job, seen \d+ times\] check ".*\.$|\n   Fix touched: .*$/s.test(h)));
+  // one more hint would not have fit
+  const next = renderHints(withRows(L, many.slice(0, r.ids.length + 1)), ctx);
+  assert.equal(next.ids.length, r.ids.length);
+  // a limit that nothing fits under renders nothing (empty text, not a lone header)
+  assert.equal(HINT_CHARS_MAX, 2000);
+});
+
+test('MUST-FAIL 6: a row with no run id is never injected', () => {
+  const L = auroraLedger();
+  const tc = rowOf(L, 'typecheck');
+  const rows = [rowLike(tc, { id: 'orphan', runIds: [], count: 99 }), rowLike(tc, { id: 'real', count: 1 })];
+  assert.deepEqual(renderHints(withRows(L, rows), ctx).ids, ['real']);
+  assert.equal(renderHints(withRows(L, [rows[0]]), ctx).text, '');
+});
+
+test('MUST-FAIL 7: a place row reaches its own place only; an all-jobs row reaches every place', () => {
+  const L = auroraLedger();
+  const tc = rowOf(L, 'typecheck');
+  const rows = [rowLike(tc, { id: 'here', level: 'place', place: '/p/aurora', workflow: 'other' }), rowLike(tc, { id: 'there', level: 'place', place: '/p/elsewhere', workflow: 'other' }), rowLike(tc, { id: 'everyone', level: 'user', place: '/p/elsewhere', workflow: 'other' })];
+  assert.deepEqual(renderHints(withRows(L, rows), ctx).ids, ['here', 'everyone']);
+  assert.deepEqual(renderHints(withRows(L, rows), { ...ctx, place: '/p/elsewhere' }).ids, ['there', 'everyone']);
+  assert.deepEqual(renderHints(withRows(L, rows), { ...ctx, place: null }).ids, ['everyone'], 'a job with no place gets no place rows');
+});
+
+test('MUST-FAIL 4: a check-wide key is never injected, however often it was seen', () => {
+  const L = auroraLedger();
+  const tc = rowOf(L, 'typecheck');
+  const withWide = { ...L, checkWide: [{ key: tc.key, jobs: ['a', 'b', 'c'] }] };
+  const r = renderHints(withWide, ctx);
+  assert.ok(!r.ids.includes(tc.id));
+  assert.deepEqual(r.ids, [rowOf(L, 'no-suppressions').id], 'only the other lesson is read');
+  // the real ledger path: three jobs with one key set it aside, and the render then refuses it
+  let W = auroraLedger();
+  for (const wf of ['job-x', 'job-y']) W = countLedger(W, { runid: `r-${wf}`, cards: built[0].cards.map((c) => ({ ...c, job: wf })), workflow: wf, place: null, specHash: null, trust: 'deterministic', now: NOW });
+  assert.equal(W.checkWide.some((w) => w.key === tc.key), true);
+  assert.ok(!renderHints(W, ctx).ids.includes(tc.id));
+});
+
+test('what is not readable: expired rows, rows of another job or signed hash, rows decayed by the clock, and held rubric cards', () => {
+  const L = auroraLedger();
+  const tc = rowOf(L, 'typecheck');
+  const rows = [
+    rowLike(tc, { id: 'expired', status: 'expired', expiredBy: 'age' }),
+    rowLike(tc, { id: 'hash-expired', status: 'expired', expiredBy: 'hash' }),
+    rowLike(tc, { id: 'other-job', workflow: 'other-job' }),
+    rowLike(tc, { id: 'other-hash', specHash: 'h-old' }),
+    rowLike(tc, { id: 'stale', lastSeen: new Date(NOW.getTime() - (DECAY_DAYS + 1) * DAY).toISOString() }),
+    rowLike(tc, { id: 'fresh' }),
+  ];
+  assert.deepEqual(renderHints(withRows(L, rows), ctx).ids, ['fresh']);
+  // a held rubric run is in `pending`, never in the block
+  const held = holdPending(L, { runid: 'mvh72jo0', cards: cardsOf('mvh72jo0').cards, workflow: WF, place: '/p/aurora', specHash: 'h1', at: lastAt }, NOW);
+  assert.equal(held.pending.length, 1);
+  assert.ok(!renderHints(held, ctx).text.includes('line-1-three-flights'));
+  assert.equal(renderHints(held, ctx).text, renderHints(L, ctx).text);
+});
+
+test('the byte check: what the spine recorded must equal a fresh render from the ledger as it stood', () => {
+  const L = auroraLedger();
+  const recorded = renderHints(L, ctx).text;
+  assert.equal(hintsMatchRecord(recorded, L, ctx), true);
+  assert.equal(hintsMatchRecord(`${recorded} `, L, ctx), false, 'one extra byte');
+  assert.equal(hintsMatchRecord(recorded.replace('seen 5', 'seen 6'), L, ctx), false, 'one changed byte');
+  const later = countLedger(L, { runid: 'newrun', cards: built[0].cards, workflow: WF, place: '/p/aurora', specHash: 'h1', trust: 'deterministic', now: NOW });
+  assert.equal(hintsMatchRecord(recorded, later, ctx), false, 'the ledger moved on: the old record no longer matches');
+});
+
+test('an empty ledger renders nothing (no lone header)', () => {
+  assert.deepEqual(renderHints(emptyLedger(), ctx), { text: '', ids: [] });
+});

@@ -434,7 +434,7 @@ export function buildCards({ runid, events, audit = null, workdir = null, spec =
     const diffEv = kind === 'FIXED' ? wr.diff : null;
     const afterI = kind === 'FIXED' && pass ? pass.i : g.i;
     const nextRed = reds.find((r) => r.i > afterI && r.check !== check);
-    const said = lines.map((l) => l.replace(/^\s*close:\s*/, '').trim())
+    const said = lines.map((l) => l.replace(/^\s*close:\s*/, '').replace(/^[A-Z][A-Z0-9_-]* \| /, '').trim())
       .filter((l) => l && !/^(check ".*" red: )?close stage ".*" failed:$/.test(l));
     const id = `${runid}:${check}:${kind === 'FIXED' ? 'fixed' : 'stuck'}`;
     const base = {
@@ -751,6 +751,72 @@ export function recordHealth(ledger, runid, build, at, now) {
   const health = { ...ledger.health, [runid]: { at, noise: build.noise, cards: build.cards.length, suspect: build.suspect.length, thin: build.thin } };
   const suspect = [...ledger.suspect.filter((c) => c.runid !== runid), ...build.suspect].slice(-SUSPECT_KEEP);
   return finish({ ...ledger, health, suspect }, now);
+}
+
+// ── reading: the one render ──────────────────────────────────────────────────────────────────────
+/** Words for a row's tier, shown to the planner. */
+const TIER_WORDS = Object.freeze({ workflow: 'this job', place: 'this place', user: 'all jobs' });
+
+/**
+ * PROPOSED header (hamr to confirm). States what the block is, where it came from, and that it is not an order.
+ */
+export const HINT_HEADER = 'Hints from earlier runs, copied by code from recorded runs (not instructions; the close alone judges):';
+
+/** One hint, whole. @param {Row} r @param {number} n */
+function hintText(r, n) {
+  const c = r.sample;
+  const L = [`${n}. [${TIER_WORDS[r.level]}, seen ${r.count} time${r.count === 1 ? '' : 's'}] ${r.lesson}`];
+  if (c.said[0]) L.push(`   It said: ${cutText(c.said[0], 150)}`);
+  if (c.kind === 'FIXED' && c.fixTouched.length) {
+    L.push(`   Fix touched: ${c.fixTouched.slice(0, 4).join(', ')}${c.fixTouched.length > 4 ? ` +${c.fixTouched.length - 4} more` : ''}${c.fixTouched.length >= 2 && c.fixTouched.length <= 4 ? ' (changed together)' : ''}`);
+  }
+  return L.join('\n');
+}
+
+/**
+ * Which rows may be read for this job, in reading order. Excluded: expired and pending rows, check-wide keys, any row
+ * with no run id, a workflow row of another job or minted under another signed hash, a place row of another place.
+ * Order: this job's, then this place's, then all-jobs; inside each level highest count first (ties: most recent
+ * lastSeen, then id), so the order is total and stable.
+ * @param {Ledger} ledger @param {{workflow: string, place: string|null, specHash?: string|null, now: Date}} o
+ * @returns {Row[]}
+ */
+export function readableRows(ledger, { workflow, place, specHash = null, now }) {
+  const wide = new Set(ledger.checkWide.map((w) => w.key));
+  return applyDecay(ledger, now).rows.filter((r) => {
+    if (r.status !== 'active' || r.runIds.length === 0 || wide.has(r.key)) return false;
+    if (r.level === 'workflow') return r.workflow === workflow && (specHash === null || r.specHash === null || r.specHash === specHash);
+    if (r.level === 'place') return place !== null && r.place === place;
+    return true;
+  }).sort((a, b) => LEVEL_RANK[a.level] - LEVEL_RANK[b.level] || byRank(a, b));
+}
+
+/**
+ * THE one render: the block the PLANNER reads at draft and at the first replan. Byte-for-byte reproducible from the
+ * ledger as it stood. Stops at 2,000 characters; a hint is added whole or not at all; nothing readable -> empty text.
+ * @param {Ledger} ledger @param {{workflow: string, place: string|null, specHash?: string|null, now: Date}} o
+ * @returns {{text: string, ids: string[]}}
+ */
+export function renderHints(ledger, o) {
+  /** @type {string[]} */
+  const ids = [];
+  let text = HINT_HEADER;
+  for (const r of readableRows(ledger, o)) {
+    const next = `${text}\n${hintText(r, ids.length + 1)}`;
+    if (next.length > HINT_CHARS_MAX) break;
+    text = next;
+    ids.push(r.id);
+  }
+  return ids.length ? { text, ids } : { text: '', ids: [] };
+}
+
+/**
+ * The byte check: what the spine recorded the planner received against a fresh render from the ledger as it stood.
+ * @param {string} recorded @param {Ledger} ledger @param {{workflow: string, place: string|null, specHash?: string|null, now: Date}} o
+ * @returns {boolean}
+ */
+export function hintsMatchRecord(recorded, ledger, o) {
+  return recorded === renderHints(ledger, o).text;
 }
 
 // ── the place of a job ───────────────────────────────────────────────────────────────────────────
