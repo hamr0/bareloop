@@ -2200,3 +2200,10 @@ barebrowse has no locale option (POC v2 checked its source). No per-site languag
 - Run start with an injected handle: same host fit → that page; other host → refetch of the recorded url.
 - The repo-job refusal of `search:` is unchanged.
 - Each test must fail without the change.
+
+## Addendum 2026-10-21 — S1 read note and phrase dry read (ordered by hamr 2026-10-21)
+
+Two rules, both from the live fwdloop run m10-walk-flights-3 (deepseek-flash). Neither changes the arbiter, a budget or a verdict.
+
+1. S1 copy is a read note (hamr ruled 2a). When the AI proposes a second fact that would read the same value as a fact already kept (S1), and the OTHER fact is still signed, the guardrail IS checked by that other fact, so the note belongs under "How the page was read", not "Not checked". If the other fact is not signed, the note stays under Not checked. A row is a read note only if every sentence in it qualifies. The signed fact names are passed to the split; they are read from the signed spec (older specs too) or from the look at the confirm turn.
+2. Phrase facts get the dry read (hamr ruled 3a). A kept phrase fact (for example "destination city" = "Rome") is read against the page's RESULT LINES, which are the lines the same job's kept money facts read. Each line is graded as an honest claim by the real run-time checker. A phrase that reads no result line is dropped as a whole fact with the plain words `"Rome" is on the page but in none of its results, so it is not checked.` and stays under Not checked (not a read note). A job with no kept money fact has no known result lines, so its phrase facts pass through untouched.

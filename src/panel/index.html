@@ -3599,6 +3599,7 @@
         items.map(function(x){ return "<li>" + escapeXml(x) + "</li>"; }).join("") + "</ul></details>";
     };
     h += fold("Not checked (the AI's own reading)", plan.notChecked, "plan-notchecked");
+    h += fold("How the page was read", plan.readNotes, "plan-readnotes");
     h += fold("Always checked", plan.alwaysOn, "plan-alwayson");
     return h + "</div>";
   }
@@ -3830,6 +3831,9 @@
     }
     if((data.notChecked || []).length){
       h += '<div class="job-card"><h4>Not checked</h4>' + resultNotChecked("Not checked (the AI's own reading)", data.notChecked, "result-notchecked") + '</div>';
+    }
+    if((data.readNotes || []).length){
+      h += '<div class="job-card"><h4>How the page was read</h4>' + resultNotChecked("How the page was read \u00b7 " + data.readNotes.length, data.readNotes, "result-readnotes") + '</div>';
     }
     if(detail.accept === true && !detail.live) h += resultDoorHtml(data.door);
     if((data.delivered || []).length){

@@ -43,11 +43,11 @@ test('found-on-page: a money fact keeps the labels and units the page holds; a f
   assert.deepEqual(said(r.dropped), ['price|Total price|not-on-page', 'price|zorkmids|not-on-page', 'price|€|not-on-page']);
 });
 
-test('found-on-page: a currency that is a WORD ("US dollars") is no currency sign - dropped as such, and with no other form the money fact is not kept', () => {
-  const map = { facts: [{ name: 'price', from: 'rule 1', shape: 'money', words: ['From'], currency: ['US dollars'] }] };
+test('found-on-page: a currency that is a WORD ("US dollars") is MOVED to the unit box, not dropped (money build v2); one the page does not hold is dropped as not-on-page', () => {
+  const map = { facts: [{ name: 'price', from: 'rule 1', shape: 'money', words: ['From'], currency: ['US dollars', 'zorkmids'] }] };
   const r = applyPageRules(sfo.page, map, JOBS.flights);
-  assert.deepEqual(r.facts, []);
-  assert.deepEqual(said(r.dropped), ['price|(fact)|no-label', 'price|US dollars|currency-not-symbol']);
+  assert.deepEqual(r.facts.map((f) => [f.words, f.unit, f.currency]), [[['From'], ['US dollars'], undefined]]);
+  assert.deepEqual(said(r.dropped), ['price|zorkmids|not-on-page']);
 });
 
 test('found-on-page: a fact with NO word the page holds is not kept and says so once, as a fact-level drop (no word)', () => {

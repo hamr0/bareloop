@@ -21,7 +21,8 @@ const WORDS = /** @type {Record<string, (d: Dropped) => string>} */ ({
   'limit-currency': (d) => `Only the first 3 currencies are used; "${d.word}" was left out.`,
   'limit-unit': (d) => `Only the first 10 units are used; "${d.word}" was left out.`,
   'unit-too-long': (d) => `"${d.word}" is longer than 100 characters, so it was not used.`,
-  'currency-not-symbol': (d) => `"${d.word}" is not a currency sign ($, € or £); a word the page writes after the amount is read as a unit.`,
+  'reads-no-result': () => "the price rule could not read a price in the page's results, so it is not checked.",
+  'phrase-no-result': (d) => `"${d.other}" is on the page but in none of its results, so it is not checked.`,
   'person-left': () => 'You chose to leave it Not checked.',
   'bad-shape': (d) => `The AI named a kind of value for "${d.fact}" that a check cannot read.`,
 });
@@ -61,4 +62,49 @@ export function dropLine(row, jobLines, rulesOf) {
   const jl = (jobLines ?? []).find((/** @type {any} */ l) => l && l.n === row.line);
   const rule = row.rule === undefined || !jl ? undefined : rulesOf(jl)[row.rule - 1];
   return `line ${row.line}: "${rule ?? row.fact}" — ${row.sentences.join(' ')}`;
+}
+
+// HOW THE PAGE WAS READ (run mvij7kuk, flight-c1): a drop of ONE WORD whose fact is still checked is a NOTE about the form code did not use, not
+// something left unchecked. The sentences for those reasons are WORD-level; every other sentence (a whole fact left out) keeps the line under
+// Not checked. Classified from the line's own words, so it holds for a signed spec already on disk.
+const WORD_REASONS = ['not-on-page', 'no-value', 'n2', 'r1', 'sign-twice', 'r1l', 'limit-currency', 'limit-unit', 'unit-too-long'];
+/** @param {string} s */
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const SENTENCE_RE = (() => {
+  const [W, O] = ['\u0001w\u0001', '\u0001o\u0001'];
+  /** @type {string[]} */
+  const alts = [];
+  for (const reason of WORD_REASONS) {
+    const probes = reason === 'r1l' ? [{ word: W, other: W }, { word: W, other: O }] : [{ word: W, other: O }];
+    for (const p of probes) alts.push(esc(WORDS[reason](/** @type {any} */ ({ ...p, reason, line: 0, fact: 'f' }))).split(esc(W)).join('[^"]+').split(esc(O)).join('[^"]+'));
+  }
+  return new RegExp(`^(?:(?:${alts.join('|')})(?: |$))+$`);
+})();
+
+/** the s1 sentence as a pattern whose one capture is the OTHER fact's name (the sentence is built from the one WORDS table) */
+const S1_RE = (() => {
+  const [F, O] = ['\u0001f\u0001', '\u0001o\u0001'];
+  return new RegExp(esc(WORDS['s1'](/** @type {any} */ ({ fact: F, other: O, reason: 's1', line: 0 }))).split(esc(F)).join('[^"]+').split(esc(O)).join('([^"]+)'), 'g');
+})();
+
+/**
+ * An `s1` drop (a second fact that would read the same value as one already kept) is a NOTE when that OTHER fact is still signed: the guardrail
+ * is checked by it. With the other fact not signed, or no signed list given, the sentence stays Not checked. Every sentence of a row must qualify.
+ * @param {string} text one Not-checked line @param {string[]|null|undefined} [signed] the names of the facts the plan signs
+ * @returns {boolean} true when the line only says which written forms of a still-checked fact were not used
+ */
+export function isReadNote(text, signed) {
+  const m = /^line \d+: "[^"]*" \u2014 (.+)$/s.exec(String(text));
+  if (m === null) return false;
+  const names = new Set(Array.isArray(signed) ? signed : []);
+  let found = 0;
+  const rest = m[1].replace(S1_RE, (all, other) => { if (!names.has(other)) return all; found += 1; return ''; }).replace(/\s+/g, ' ').trim();
+  return rest === '' ? found > 0 : SENTENCE_RE.test(rest);
+}
+
+/** @param {string[]|null|undefined} items @param {string[]|null|undefined} [signed] names of the signed facts (see isReadNote)
+ * @returns {{notChecked: string[], readNotes: string[]}} the lines split: what is left unchecked, and how the page was read */
+export function splitReadNotes(items, signed) {
+  const all = Array.isArray(items) ? items : [];
+  return { notChecked: all.filter((t) => !isReadNote(t, signed)), readNotes: all.filter((t) => isReadNote(t, signed)) };
 }

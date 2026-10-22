@@ -14735,7 +14735,17 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 
 **Why drafting did not refuse it.** `checkFactWords` (`src/factwords.js:79-140`) checks, for an anchored non-phrase fact: the label is one the map kept (or on the code-made list), the label is in the text (`countExact(text, label) < 1`), and its count reaches the result count asked for (`rubric-fact-label-rare`). Separately it checks each unit is found as whole words (`countPhrase`, line 137) and each currency sign is found as written (`countExact`, line 138), each on its own anywhere in the text. No $0 check tests that a value of the signed form follows the label.
 
-**Status.** Open. Logged, not built.
+**Status.** Fixed on fix/bound-in-words. Drafting sorts the AI's currency forms by code (a sign is the currency, any other form a unit, whichever box the AI used; `currency-not-symbol` is gone), then a $0 dry read (`src/pagedry.js` `dryReadMoney`) grades an honest claim on each result line with the run's own checker; a price fact that reads no result line is dropped as `reads-no-result` and shows under Not checked. Tests: `tests/money-sort.test.js`.
+
+## F242 — a bound the person never wrote passed as written: `boundInWords` matched digits inside "$150" and "05:00" (reported by fwdloop, verified at $0 2026-10-21; fixed on fix/bound-in-words)
+
+**Defect.** `boundInWords` (`src/rubricstep.js`) was a plain substring test over the person's words. On "List 3 flights under $150; departure time between 05:00 and 23:59; nonstop" it returned true for 5, 15 and 50, which are only pieces of "$150" and "05:00".
+
+**What it guards.** A bound the AI made, not the person, must carry `aiProposal: true` (`rubric-fact-unmarked`), and the L3 settle and the look reading's ask to the person (`askableFromLook`, `src/pagemap.js`) read the same function. A made-up 5, 15 or 50 skipped the mark and the ask.
+
+**Status of evidence.** Not seen in a live bareloop run; found by reading in fwdloop (65e3ce4 `numbersSaid`) and verified at $0.
+
+**Fix.** The words are read by kind (time, date, amount, bare number); a digit inside one token belongs to it only. A number bound is said only as a bare number or an amount's number; a time bound only as a time token (hour leading zero ignored); a date bound only as a date token. Same name and signature, no parallel function. Tests: `tests/bound-in-words.test.js` (red before the fix, green after).
 
 ## F243 — job-vs-source "fit check" POCs v1 to v5: the judge was right when it saw real results; every failure was in the evidence or in AI-written questions (2026-10-21; open, v6 PASSED on known pages, unseen pages untested)
 

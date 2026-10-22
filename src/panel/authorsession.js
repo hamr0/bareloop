@@ -51,9 +51,10 @@ import { resolveJobJudge, defaultJudgeLoop } from '../judged.js';
 import { assertThinkingMode, thinkingPlanFor, thinkingRowText } from '../thinking.js';
 import { closeJudges } from '../kinds.js';
 import { RUBRIC_LANG } from '../authoring.js';
-import { rubricGoal, reconcileRubricPlan } from '../rubricstep.js';
+import { rubricGoal, reconcileRubricPlan, signedFactNames } from '../rubricstep.js';
 import { redactSecrets } from '../validate.js';
 import { isDropIt, isAgree } from '../pagemap.js';
+import { FIT_ABSENT_NOTE } from '../fitcheck.js';
 import { tallyCalls } from '../text.js';
 import { writeDraftSpend, appendDraftLog } from '../draftspend.js';
 import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, draftStopText, redsRecord, declarationRecord, calibrationSummary, tryRefusedText } from '../authorreadout.js';
@@ -118,6 +119,9 @@ export const PHASE_STEP = Object.freeze({
   'scout-done': 'scout',
   look: 'look',
   'look-done': 'look',
+  // F243: the fit check's one call is counted in the look's line, like the look
+  'fit-check': 'look',
+  'fit-check-done': 'look',
   confirm: 'confirm',
   'confirm-turn-done': 'confirm',
   listing: 'listing',
@@ -166,7 +170,7 @@ export const PLAN_FOOTER = 'Sign & run to confirm this plan, or Revise to edit t
  * The confirm turn's plan as a chat message (P7): a STRUCTURED `{role:'bot', kind:'plan', plan}` the page draws with the
  * same renderer the Job tab uses — each numbered job line, its `~` rule, its drafted checks folded; the AI's own "not
  * checked"; the always-on guards. `questions` (what the plan still asks) ride inside the plan. One owner of the shape.
- * @param {{goal?: string, checks?: string[], checkItems?: {text: string, fromLine: number[]|null}[], notChecked?: string[], questions?: string[], protections?: string[]}} p the confirm turn's plan
+ * @param {{goal?: string, checks?: string[], checkItems?: {text: string, fromLine: number[]|null}[], notChecked?: string[], questions?: string[], protections?: string[], signedFacts?: string[]}} p the confirm turn's plan
  * @param {{n: number, text: string, rule: string}[]|null} jobLines
  * @returns {{role: 'bot', kind: 'plan', text: string, plan: ReturnType<typeof planFromConfirm> & {goal: string, questions: string[]}}}
  */
@@ -404,7 +408,7 @@ export function validateJobCard(card, opts = {}) {
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
  *   scout?: any, generate?: Function, confirmGenerate?: Function, authorFn?: Function,
- *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
+ *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, fitFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
  * @returns {any} the session object
@@ -560,7 +564,8 @@ export function createSession(card, deps = {}) {
     if (step.kind === 'language') say('bot', `${step.field?.prompt ?? 'Which language is this job about?'} (${(step.candidates ?? []).join(', ')})`);
     else if (step.kind === 'menu') {
       sayPlan(step.plan ?? {});
-    } else if (step.kind === 'answer') say('bot', `A question the plan raised (${step.index} of ${step.total})${Number.isInteger(step.line) ? `, about job line ${step.line}` : ''}: ${step.question}`);
+    } else if (step.kind === 'answer' && step.source === 'fit-check') say('bot', step.question);
+    else if (step.kind === 'answer') say('bot', `A question the plan raised (${step.index} of ${step.total})${Number.isInteger(step.line) ? `, about job line ${step.line}` : ''}: ${step.question}`);
     else if (step.kind === 'goal') say('bot', 'Type the goal sentence yourself.');
   });
 
@@ -575,6 +580,19 @@ export function createSession(card, deps = {}) {
   };
 
   let lastTryRefused = false;
+  // F243: the fit check's result is one drafting-log row (the asks, what was found, what the quote proved); an `absent` check says so in chat
+  // (a seam of its own - onPhase never posts a chat message)
+  const onFit = (/** @type {any} */ data) => {
+    const running = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
+    appendDraftLog(outDir, {
+      kind: 'fit-check', no: running === -1 ? Math.max(0, state.steps.length - 1) : running, state: String(data.state ?? 'absent'),
+      asks: (Array.isArray(data.asks) ? data.asks : []).map((/** @type {any} */ a) => ({
+        line: a.line, ask: redactSecrets(String(a.ask)), found: a.found === true, quote: typeof a.quote === 'string' ? redactSecrets(a.quote) : null, madeUp: a.madeUp === true, ...(a.ignored === 'number' ? { ignored: 'number' } : {}),
+      })),
+      notFound: (Array.isArray(data.notFound) ? data.notFound : []).map((/** @type {any} */ x) => ({ line: x.line, ask: redactSecrets(String(x.ask)) })), at: new Date().toISOString(),
+    });
+    if (data.state === 'absent') say('bot', FIT_ABSENT_NOTE);
+  };
   const onPhase = (name, data = {}) => {
     // COLLAPSED INTO THE PROGRESS INDICATOR ONLY (build item 3) — this used
     // to also `say('system', `… ${name}`)`, one jargon chat bubble per
@@ -1068,6 +1086,16 @@ export function createSession(card, deps = {}) {
       return { jobLines, answers, left };
     };
 
+    // F243: the fit check's one question, through the same `ask` (the chat box + Send; a blank answer asks again, there is no skip)
+    const fitAsk = async (/** @type {string} */ question) => {
+      for (;;) {
+        const a = await ask({ kind: 'answer', source: 'fit-check', index: 1, total: 1, question });
+        if (a === null) return null;
+        if (String(a).trim()) return String(a);
+        say('bot', 'An answer is needed here — there is no skip. Type it in the box below and press Send.');
+      }
+    };
+
     state.phase = 'drafting';
     // no early "drafting" line: the real author phase (PHASE_STEP) starts it, carrying draftDetail (see onPhase)
     // build item 4 — the DISPLAY id (card.model, e.g. "deepseek-flash"), not
@@ -1087,6 +1115,9 @@ export function createSession(card, deps = {}) {
       ...(deps.scout ? { scout: deps.scout } : {}),
       // PART 1c: a test that replaces the model boundary (`generate`) must not reach the real paid look; `deps.lookFn` brings its own
       ...(deps.lookFn !== undefined ? { lookFn: deps.lookFn } : (deps.generate ? { lookFn: null } : {})),
+      // F243: the fit check asks through the ordinary ask path; like the look, a test that replaces the model boundary never reaches the real paid call
+      fitAsk, onFit,
+      ...(deps.fitFn !== undefined ? { fitFn: deps.fitFn } : (deps.generate ? { fitFn: null } : {})),
       ...(authorFnOverride ? { authorFn: authorFnOverride } : {}),
     });
 
@@ -1135,7 +1166,7 @@ export function createSession(card, deps = {}) {
       const rec = reconcileRubricPlan({
         confirmed: authored.confirmed?.checkItems ?? [], notChecked: authored.confirmed?.notChecked ?? [], closeDecl: spec.closeDecl, jobLines,
       });
-      state.finalPlan = { goal: String(draft.goal ?? ''), checkItems: rec.checkItems, notChecked: rec.notChecked, protections: authored.confirmed?.protections ?? [], moved: rec.moved };
+      state.finalPlan = { goal: String(draft.goal ?? ''), checkItems: rec.checkItems, notChecked: rec.notChecked, protections: authored.confirmed?.protections ?? [], moved: rec.moved, signedFacts: signedFactNames(spec.closeDecl) };
     }
     await finish(spec, authored.seedRef);
     if (state.finalPlan && state.phase === 'prepared') {
@@ -1144,7 +1175,7 @@ export function createSession(card, deps = {}) {
       // dropped, so drafter prose can never sit above (and be read instead of) the code's sentences (run mv5e1ktb).
       state.messages = state.messages.filter((/** @type {any} */ m) => m.kind !== 'plan');
       state.messages.push({
-        ...planMessage({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, protections: state.finalPlan.protections, questions: [] }, jobLines),
+        ...planMessage({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, protections: state.finalPlan.protections, signedFacts: state.finalPlan.signedFacts, questions: [] }, jobLines),
         text: 'These are the checks the signed close will run, and what it will not check. Sign & run to accept them, or Revise to edit the boxes and draft again.',
       });
     }

@@ -11,11 +11,12 @@
 // `cls` is 'machine check' | 'judge' | null (null = not known yet: the confirm card's checks are the model's plan, the
 // stage kinds exist only after drafting). Pure; no file IO.
 import { KIND_CATALOGUE } from '../authoring.js';
-import { checksOfClose, proseNotChecked, lineRules, confirmedGoalOf } from '../rubricstep.js';
+import { splitReadNotes } from '../pagedropwords.js';
+import { checksOfClose, signedFactNames, proseNotChecked, lineRules, confirmedGoalOf } from '../rubricstep.js';
 
 /** @typedef {{name: string, cls: 'machine check'|'judge'|null}} PlanCheck */
 /** @typedef {{n: number, text: string, rule: string, rules: string[], checks: PlanCheck[], refused: string[]}} PlanLine */
-/** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], alwaysOn: string[], older: boolean, goal?: string}} JobPlan */
+/** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], readNotes: string[], alwaysOn: string[], older: boolean, goal?: string}} JobPlan */
 
 /**
  * `machine check` for a kind a command decides, `judge` for one that needs judgement; `null` for a stage whose kind is
@@ -65,10 +66,12 @@ export function planFromSpec(spec) {
       .map((/** @type {any} */ s) => ({ name: s.name, cls: /** @type {'machine check'} */ ('machine check'), fromLine: null }));
   }
   // a prose step says what it does not check (PART 1b, RF5): the person judges the text at Accept
-  const notes = [
+  const allNotes = [
     ...(Array.isArray(spec?.closeDecl?.notes) ? spec.closeDecl.notes.filter((/** @type {any} */ n) => typeof n === 'string' && n) : []),
     ...proseNotChecked(spec?.closeDecl),
   ];
+  // code's notes on which written forms of a still-checked fact were not used are "How the page was read", not Not checked
+  const { notChecked: notes, readNotes } = splitReadNotes(allNotes, signedFactNames(spec?.closeDecl));
   const jl = Array.isArray(spec?.jobLines) ? spec.jobLines.filter((/** @type {any} */ l) => l && Number.isInteger(l.n) && typeof l.text === 'string') : [];
   if (jl.length === 0) {
     return {
@@ -76,7 +79,7 @@ export function planFromSpec(spec) {
         n: 1, text: typeof spec?.goal === 'string' && spec.goal ? spec.goal : '(no goal recorded)', rule: '', rules: [],
         checks: stages.map((s) => ({ name: s.name, cls: s.cls })), refused: [],
       }],
-      loose: [], notChecked: notes, alwaysOn: [], older: true,
+      loose: [], notChecked: notes, readNotes, alwaysOn: [], older: true,
     };
   }
   /** @type {PlanLine[]} */
@@ -102,14 +105,15 @@ export function planFromSpec(spec) {
   // the model's signed goal sentence rides along: the page draws it as the "AI's summary" row (an older job shows it as line 1 instead)
   // (a rubric job's signed goal is the whole worker brief: only the sentence the person confirmed is the summary)
   const summary = typeof spec?.goal === 'string' && spec.goal ? confirmedGoalOf(spec.goal) : null;
-  return { lines, loose, notChecked: notes, alwaysOn, older: false, ...(summary ? { goal: summary } : {}) };
+  return { lines, loose, notChecked: notes, readNotes, alwaysOn, older: false, ...(summary ? { goal: summary } : {}) };
 }
 
 /**
  * The plan of the confirm turn, before anything is drafted: the person's own job lines, the model's checks under the
  * line each names, its own "not checked" words, and the real protections (code-owned) as "Always checked".
  * @param {{n: number, text: string, rule: string, rules?: string[]}[]|null|undefined} jobLines
- * @param {{checkItems?: {text: string, fromLine: number[]|null}[], checks?: string[], notChecked?: string[], protections?: string[]}} plan
+ * @param {{checkItems?: {text: string, fromLine: number[]|null}[], checks?: string[], notChecked?: string[], protections?: string[], signedFacts?: string[]}} plan
+ * `signedFacts` = the names of the facts the look signs (so an S1 copy of a signed fact reads as a note, not Not checked)
  * @returns {JobPlan}
  */
 export function planFromConfirm(jobLines, plan) {
@@ -126,7 +130,8 @@ export function planFromConfirm(jobLines, plan) {
     for (const line of served) line.checks.push({ name: c.text, cls: null });
     if (served.length === 0) loose.push({ name: c.text, cls: null });
   }
+  const { notChecked, readNotes } = splitReadNotes(plan?.notChecked, plan?.signedFacts);
   return {
-    lines, loose, notChecked: [...(plan?.notChecked ?? [])], alwaysOn: [...(plan?.protections ?? [])], older: false,
+    lines, loose, notChecked, readNotes, alwaysOn: [...(plan?.protections ?? [])], older: false,
   };
 }
