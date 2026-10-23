@@ -170,8 +170,8 @@ export function endpointOf(provider, baseUrl) {
   if (raw === '') return '';
   try {
     const u = new URL(raw);
-    return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, '')}`;
-  } catch { return raw.replace(/\/+$/, ''); }
+    return `${u.protocol}//${u.host}${u.pathname.replace(/(?<!\/)\/+$/, '')}`;
+  } catch { return raw.replace(/(?<!\/)\/+$/, ''); }
 }
 
 /**
@@ -318,7 +318,7 @@ export function keyValueOf(env, envName) {
 function perMoney(n) {
   const shown = String(n);
   if (!shown.includes('e') && (shown.split('.')[1] ?? '').length >= 2) return `$${shown}`;
-  if (shown.includes('e')) return `$${n.toFixed(12).replace(/0+$/, '').replace(/\.$/, '')}`;
+  if (shown.includes('e')) return `$${n.toFixed(12).replace(/(?<!0)0+$/, '').replace(/\.$/, '')}`;
   return `$${n.toFixed(2)}`;
 }
 

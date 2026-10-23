@@ -1,7 +1,7 @@
 // T Part 3 (PANEL-BUILD.md T addendum, G.9): the words of a schedule, one owner. Part 6 extends this file.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { scheduledWords, slotWords, SCHEDULE_WORDS } from '../src/schedulewords.js';
+import { scheduledWords, slotWords, SCHEDULE_WORDS, skippedWords } from '../src/schedulewords.js';
 import { doorAccepted } from '../src/reviewdoor.js';
 
 test('scheduledWords: every kind, home shown as ~, by hand has no sentence', () => {
@@ -87,4 +87,11 @@ test('catchUpWords: only a catch-up run says so; lateRefusalWords: under the bou
   assert.match(catchUpWords({ catchUp: true }), /^This run was a catch-up: it started more than 2 minutes after its set time/);
   assert.equal(lateRefusalWords('Spawn failed.', 1, 3), 'Spawn failed. It will be tried again.');
   assert.equal(lateRefusalWords('Spawn failed.', 3, 3), 'Spawn failed. It was tried 3 times and is given up on.');
+});
+
+test('skippedWords on a refusal reason with 20000 spaces before a last character is linear (the "Nothing started." trim was quadratic), and still drops the trailing sentence', () => {
+  const t0 = performance.now();
+  assert.equal(skippedWords({ kind: 'refused', why: `${' '.repeat(20000)}x` }), 'refused: x. Nothing started.');
+  assert.equal(skippedWords({ kind: 'refused', why: 'No key for the model.  Nothing started.' }, true), 'refused: no key for the model');
+  assert.ok(performance.now() - t0 < 1000, `took ${performance.now() - t0} ms`);
 });

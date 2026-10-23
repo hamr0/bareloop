@@ -114,3 +114,11 @@ test('ratesFor reads the model LINE price (per 1M, /1000 for bare-agent); an unt
   assert.equal(ratesFor('openai-api', 'https://x.example/v1', rows, 'c'), null);
   assert.equal(ratesFor('openai-api', 'https://x.example/v1', rows, 'nope'), null);
 });
+
+test('cleanBaseUrl on a Base URL with 20000 slashes before a last character is linear (the trailing-slash regex was quadratic), and still drops only trailing slashes', () => {
+  const t0 = performance.now();
+  const mid = `https://x.example${'/'.repeat(20000)}v1`;
+  assert.equal(cleanBaseUrl(mid), mid);
+  assert.equal(cleanBaseUrl(`${mid}${'/'.repeat(20000)}`), mid);
+  assert.ok(performance.now() - t0 < 1000, `took ${performance.now() - t0} ms`);
+});

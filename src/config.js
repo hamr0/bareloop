@@ -92,7 +92,7 @@ export function providerFieldProblem(field, v) {
 }
 
 /** A Base URL as stored: trailing slashes dropped. @param {string} v @returns {string} */
-export const cleanBaseUrl = (v) => v.replace(/\/+$/, '');
+export const cleanBaseUrl = (v) => v.replace(/(?<!\/)\/+$/, '');
 
 /**
  * THE one rule for a row's model lines, used by config validation and the Settings routes. A price

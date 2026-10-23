@@ -9,7 +9,7 @@ import { mkdtempSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readConfig, updateConfig } from '../src/config.js';
-import { keyRows, keyNameFor, judgeRatesFor, priceReadout, ratesFor } from '../src/providerrows.js';
+import { keyRows, keyNameFor, judgeRatesFor, priceReadout, ratesFor, endpointOf } from '../src/providerrows.js';
 import { createPanelServer } from '../src/panel/server.js';
 
 /** @param {import('node:test').TestContext} t */
@@ -459,4 +459,13 @@ test('a judge round carries rateSource beside its cost: \'caller\' under a custo
   assert.equal(prov.vouched.rounds, workerRounds(priced.spine).length + judgeRounds(priced.spine).length);
   const expect = perRound(JUDGE_USAGE, price);
   for (const r of judgeRounds(priced.spine)) assert.ok(Math.abs(r.costUsd - expect) < 1e-12, 'dollars unchanged');
+});
+
+test('endpointOf on an unparseable Base URL with 20000 slashes before a last character is linear (the trailing-slash regex was quadratic), and a real URL still drops its trailing slashes', () => {
+  const t0 = performance.now();
+  const mid = `not a url${'/'.repeat(20000)}x`;
+  assert.equal(endpointOf('p', mid), mid);
+  assert.equal(endpointOf('p', `${mid}${'/'.repeat(20000)}`), mid);
+  assert.equal(endpointOf('p', 'HTTPS://Api.Example/v1//'), 'https://api.example/v1');
+  assert.ok(performance.now() - t0 < 1000, `took ${performance.now() - t0} ms`);
 });

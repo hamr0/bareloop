@@ -232,7 +232,7 @@ export function startedAuditWords(rec, originNo) {
 
 /** a refusal's own words without its trailing "Nothing started." @param {unknown} why */
 function reasonOf(why) {
-  return String(why ?? '').replace(/\s*Nothing (started|spent)\.\s*$/, '').trim().replace(/\.$/, '');
+  return String(why ?? '').replace(/(?<!\s)\s*Nothing (started|spent)\.\s*$/, '').trim().replace(/\.$/, '');
 }
 
 /**
