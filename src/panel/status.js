@@ -20,6 +20,17 @@ import { capKindOf } from '../legs.js';
 /** the sentence a passed run carries as its reason (the Ended block's `line`) */
 export const GOAL_MET_LINE = 'goal met';
 
+/**
+ * ONE spelling of "this run's outcome is a green that can be reused" (the Reuse picker, the Reuse start/prefill, the Ended block's
+ * next line). hamr 2026-10-15: an `already-green` (fixed before any work) counts. `satisfied` is a close verdict, never a run outcome.
+ * The SCHEDULE gate (schedules.js greenFor) deliberately stays on a real `green` only (T3).
+ * @param {string|null|undefined} outcome
+ * @returns {boolean}
+ */
+export function isReusableGreen(outcome) {
+  return outcome === 'green' || outcome === 'already-green';
+}
+
 /** @typedef {'running'|'waiting'|'passed'|'failed'|'capped'|'stopped'|'died'} StatusKey */
 
 /** the table: key -> sign + word */

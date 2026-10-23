@@ -68,7 +68,7 @@ import { SHAPES } from '../providershapes.js';
 import { resolveProvider } from '../providers.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
 import {
-  statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER, DOOR_WORDS,
+  statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER, DOOR_WORDS, isReusableGreen,
 } from './status.js';
 import { thinkingJobText } from '../thinking.js';
 import { judgedFilesOf, lineRules, stepFileRel, proseNotCheckedItems } from '../rubricstep.js';
@@ -542,7 +542,7 @@ function endedBase(summary, death, o) {
     if (o.destinationRefused) {
       // Reuse workflow only on a run that earned its green (hamr 2026-10-08, as below); every ending offers Reuse workflow
       // (withReuseAction adds it) and is told to change the job
-      const earned = outcome === 'green';
+      const earned = isReusableGreen(outcome);
       return {
         reason: 'Goal met, but the output could not be delivered.',
         next: earned ? 'Fix the destination, then Reuse workflow.' : CHANGE,
@@ -550,10 +550,9 @@ function endedBase(summary, death, o) {
         actions: earned ? REUSE : [],
       };
     }
-    // hamr 2026-10-08: already-green (the check passed before any work) is not a reusable job — only a run that
-    // earned its green offers Reuse workflow; every ending offers Reuse workflow (withReuseAction adds it). `satisfied` is a
-    // close VERDICT, never a run outcome (ralph and the job-end emitters write `green`), so it rides with already-green.
-    if (outcome !== 'green') return { reason: 'Goal met.', next: CHANGE, line: GOAL_MET_LINE, actions: [] };
+    // a reusable green (isReusableGreen: green or already-green, hamr 2026-10-15) says nothing is left to do; every ending offers
+    // Reuse workflow (withReuseAction adds it). `satisfied` is a close VERDICT, never a run outcome, so it is not one.
+    if (!isReusableGreen(outcome)) return { reason: 'Goal met.', next: CHANGE, line: GOAL_MET_LINE, actions: [] };
     return { reason: 'Goal met.', next: 'Nothing to do.', line: GOAL_MET_LINE, actions: REUSE };
   }
   if (outcome === 'cap-halt') {
@@ -3515,7 +3514,7 @@ export function getStartFrom(runid, opts = {}) {
     // T D.2: a SCHEDULED run's green reads `green-held` until the person accepts it, so that same refusal holds it unchanged
     outcome: (() => {
       const o = legsOf(records).at(-1)?.outcome ?? null;
-      return o === 'green' && heldScheduled(records, triggerRecordOf(row)) ? 'green-held' : o;
+      return isReusableGreen(o) && heldScheduled(records, triggerRecordOf(row)) ? 'green-held' : o;
     })(),
     card,
     from: 'signed job',
@@ -3580,7 +3579,7 @@ export function listReuseJobs(opts = {}) {
     try { records = parseJsonl(row.spine).records; } catch { continue; }
     const outcome = legsOf(records).at(-1)?.outcome ?? null;
     // a real green or an already-green (hamr 2026-10-15: if it is already fixed and nothing is to be done, it is green and can be reused)
-    if (outcome !== 'green' && outcome !== 'already-green') continue;
+    if (!isReusableGreen(outcome)) continue;
     if (heldScheduled(records, triggerRecordOf(row))) continue; // T D.2: a scheduled green waits for the person's Accept
     const signed = signedSpecForRun(row, records);
     if (!signed) continue;
