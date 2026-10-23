@@ -10,6 +10,7 @@ import { createPanelServer } from '../src/panel/server.js';
 import { keyRows, judgePick, chatLines, modelChoiceFor } from '../src/providerrows.js';
 import { validateJobCard, buildReuseSpec } from '../src/panel/authorsession.js';
 import { updateConfig } from '../src/config.js';
+import { listModels } from '../src/modellist.js';
 
 const KEY = 'sk-test-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 /** @param {import('node:test').TestContext} t */
@@ -79,4 +80,15 @@ test('GET /api/author/models: {ok, lines, say}; the empty text; model-check judg
   const stale = await get('/api/author/model-check?model=a-only&provider=B_KEY');
   assert.equal(stale.status, 400);
   assert.equal(stale.body.error, 'Pick a model. Nothing was spent.');
+});
+
+test('listModels on a Base URL with 30000 slashes before a last character is linear (the trailing-slash regex was quadratic), and still drops only trailing slashes', async () => {
+  const urls = /** @type {string[]} */ ([]);
+  const fetchImpl = /** @type {any} */ (async (/** @type {string} */ u) => { urls.push(u); return { ok: false, status: 500, text: async () => '', json: async () => ({}), headers: new Map() }; });
+  const t0 = performance.now();
+  const mid = `https://x.example${'/'.repeat(30000)}v1`;
+  await listModels({ shape: 'openai', baseUrl: `  ${mid}${'/'.repeat(30000)}`, key: 'k', fetchImpl });
+  await listModels({ shape: 'openai', baseUrl: mid, key: 'k', fetchImpl });
+  assert.deepEqual(urls, [`${mid}/models`, `${mid}/models`]);
+  assert.ok(performance.now() - t0 < 1000, `took ${performance.now() - t0} ms`);
 });
