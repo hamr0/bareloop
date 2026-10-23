@@ -141,7 +141,7 @@ test('a first-replan record renders a sub-heading and its hints in the same tabl
   assert.ok(h && h.className === 'audit-table-scroll');
   assert.equal(h.children[0].children[0].children[1].children[0].textContent, 'It said:');
   assert.ok(!list.find('audit-learnings-raw-replan'));
-  assert.equal(plain(els['audit-learnings-summary']), `learnings What the planner was told from earlier runs · ${r.ids.length} hints`, 'the header counts the draft hints');
+  assert.equal(plain(els['audit-learnings-summary']), `learnings What the planner was told from earlier runs · ${r.ids.length} hints`, 'the same hints handed at draft and replan count once');
 });
 
 test('parseHintBlock reads back what renderHints wrote: every hint, its fields, the same count as ids', () => {
@@ -181,4 +181,12 @@ test('parseHintBlock on a real archived block: levels, counts, check, codes, fix
   assert.deepEqual({ n: a.n, level: a.level, count: a.count, check: a.check, kinds: a.kinds, fixed: a.fixed, touched: a.touched, moreChanged: a.moreChanged }, { n: 1, level: 'this job', count: 2, check: 'no-suppressions', kinds: ['[cast]'], fixed: true, touched: 'checks.js', moreChanged: 18 });
   assert.equal(a.changed.length, 3);
   assert.deepEqual({ n: b.n, count: b.count, check: b.check, kinds: b.kinds }, { n: 3, count: 1, check: 'tree-changed', kinds: [] });
+});
+
+test('the header counts DISTINCT hints across draft and replan: a replan block with an extra hint adds it', () => {
+  const { r } = realBlock();
+  const replan = { ...record('replan', r), hints: [...parseHintBlock(r.text), { ...parseHintBlock(r.text)[0], n: r.ids.length + 1 }], ids: [...r.ids, 'extra-row'] };
+  const { els, render } = page();
+  render({ learnings: [record('draft', r), replan] });
+  assert.equal(plain(els['audit-learnings-summary']), `learnings What the planner was told from earlier runs · ${r.ids.length + 1} hints`);
 });

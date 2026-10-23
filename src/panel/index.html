@@ -2910,7 +2910,17 @@
       });
     });
     if(sum){
-      var first = items.length ? (Array.isArray(items[0].hints) ? items[0].hints.length : 0) : 0;
+      // count DISTINCT hints across the draft and replan blocks: the same ledger row (ids[i], parallel to hints[i]) handed twice is one hint
+      var seen = {};
+      var first = 0;
+      items.forEach(function(it){
+        var hs = Array.isArray(it.hints) ? it.hints : [];
+        var byId = Array.isArray(it.ids) && it.ids.length === hs.length;
+        hs.forEach(function(h, i){
+          var key = byId ? "id:" + it.ids[i] : "n:" + it.phase + ":" + h.n;
+          if(!seen[key]){ seen[key] = true; first += 1; }
+        });
+      });
       var label = items.length ? head + " \u00B7 " + first + (first === 1 ? " hint" : " hints") : head;
       // no arrow (hamr 2026-10-23): the state chip leads; aria-expanded carries open/closed. The same `[✓] word` state markup the schedule/step headers wear (stateDotHTML), then the plain-words title
       var paint = function(){ sum.innerHTML = stateDotHTML(glyphClass("\u2713"), "learnings", "audit-learnings-state") + " " + escapeXml(label); };
