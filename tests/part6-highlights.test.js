@@ -35,15 +35,17 @@ const realEvidence = async () => JSON.parse(JSON.stringify((await gradeStep(
 )).evidence));
 
 /** the real /result body of mve5y8fa; `evidence` (when given) is appended to its spine as the engine's `rubric-evidence` record */
-function result(evidence) {
+function result(evidence, stepText = null) {
   const w = makePart5World();
   const delivered = join(dirname(w.out('mve5y8fa')), 'delivered', 'steps', '1-2026-10-18.json');
   mkdirSync(dirname(delivered), { recursive: true });
-  copyFileSync(join(FX, 'mve5y8fa.step-1-2026-10-18.json'), delivered);
+  if (stepText === null) copyFileSync(join(FX, 'mve5y8fa.step-1-2026-10-18.json'), delivered); else writeFileSync(delivered, stepText);
   const spine = w.spine('mve5y8fa');
   const text = readFileSync(spine, 'utf8');
   const rec = JSON.parse(text.split('\n').find((l) => l.includes('"type":"destination-written"')));
-  writeFileSync(spine, text.replace(rec.path, delivered));
+  // a rewritten step file must still hash to what the run recorded: the recorded sha is replaced by the new file's
+  const recorded = stepText === null ? text : text.replaceAll(sha256Of(STEP), sha256Of(stepText));
+  writeFileSync(spine, recorded.replace(rec.path, delivered));
   if (evidence) appendFileSync(spine, `${JSON.stringify({ type: 'rubric-evidence', step: 1, iteration: 1, evidence })}\n`);
   const old = new Date(Date.now() - 3 * 3600 * 1000);
   utimesSync(spine, old, old);
@@ -142,4 +144,24 @@ test('money: the price box reads the way the page wrote it ("144 US dollars"); a
   assert.equal(mixed[0].cells[0], '144 US dollars');
   assert.equal(mixed[1].cells[0], `$${file.results[1].values.price}`, 'malformed claim: today\'s text');
   assert.ok(result().lines[0].rows.every((r, k) => r.cells[0] === `$${file.results[k].values.price}`), 'no evidence: today\'s text');
+});
+
+test('money: a symbol-first amount ("€144") is shown as the page wrote it; spans too far apart (over 40 characters) keep the fact\'s own spelling', async () => {
+  const file = JSON.parse(STEP);
+  const was = 'From 144 US dollars.';
+  assert.ok(file.results[0].quote.startsWith(was), 'the fixture quote this rewrites');
+  // the same real evidence and quote, laid out the way a page that writes the symbol first would be: "From €144."
+  file.results[0].quote = file.results[0].quote.replace(was, 'From \u20AC144.');
+  const stepText = JSON.stringify(file);
+  const ev = await realEvidence();
+  const shift = was.length - 'From \u20AC144.'.length; // 10
+  ev[0].text = ev[0].text.replace(was, 'From \u20AC144.');
+  ev[0].spans = ev[0].spans.filter((sp) => !(sp.decide === 0 && (sp.role === 'value' || sp.role === 'unit')))
+    .map((sp) => (sp.start >= 19 ? { ...sp, start: sp.start - shift, end: sp.end - shift } : sp));
+  ev[0].spans.push({ decide: 0, role: 'currency', start: 5, end: 6 }, { decide: 0, role: 'value', start: 6, end: 9 });
+  assert.equal(result(ev, stepText).lines[0].rows[0].cells[0], '\u20AC144', 'symbol first: the amount as the page wrote it');
+  // value and symbol more than 40 characters apart: not one short run, so today's text (the fact's own sign)
+  const far = JSON.parse(JSON.stringify(ev));
+  far[0].spans = far[0].spans.map((sp) => (sp.decide === 0 && sp.role === 'currency' ? { ...sp, start: 60, end: 61 } : sp));
+  assert.equal(result(far, stepText).lines[0].rows[0].cells[0], '$144', 'a far-apart layout falls back to the fact\'s own spelling');
 });
