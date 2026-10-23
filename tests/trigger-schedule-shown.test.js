@@ -2,9 +2,10 @@
 // the page side (frame and row red, By hand, the one block) is in trigger-schedule-buttons-page.test.js. Each test below can FAIL.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appendRow } from '../src/triggerledger.js';
+import { appendRunEvent } from '../src/runlist.js';
 import { dateTimeWords, lowerFirst, scheduleSignFor } from '../src/schedulewords.js';
 import { STATUS } from '../src/panel/status.js';
 import { CLOCK, fireWorld, keysHome, makeRun, panel, specOf, SLOT } from './trigger-world.mjs';
@@ -243,4 +244,13 @@ test('Run tab SCHEDULE: signed but not armed yet ends `next: not armed yet` in n
     assert.equal(s.problem, false, 'unarmed is not red');
     assert.equal(s.line2, 'no run yet · next: not armed yet');
   }
+});
+
+test('Run tab SCHEDULE: a scheduled fire whose run-start fetch was refused (no spine) still wears its status word', async () => {
+  const w = await fireWorld();
+  const run = scheduledRun(w, 'r2', CLOCK_REC);
+  rmSync(run.spine);
+  appendRunEvent({ runid: 'r2', type: 'settled', by: 'test', at: '2026-10-03T10:00:01.000Z', reason: 'refused before start', words: 'The page came back with no text. The run did not start. Nothing spent.', spentUsd: 0, spendComplete: true }, { home: w.home });
+  appendRow(w.ledger, { kind: 'started', sig: w.sig, at: w.now(), key: 'k', sessionId: 's1', specHash: 'h' });
+  assert.match((await detail(w.p, 'r1')).schedule.line2, new RegExp(`^last \\d\\d/\\d\\d \\d\\d:\\d\\d · run-2 · ${STATUS.failed.word} · next `));
 });

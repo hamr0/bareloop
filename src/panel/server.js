@@ -1530,7 +1530,8 @@ function scheduleExtrasFor(runid, job, rows, nos, opts, view) {
             }
             const got = hit ?? fallback;
             const no = got ? nos.get(got.r.runid) : undefined;
-            const word = got ? summarizeRow(got.r).status?.word : undefined;
+            // events: a fire refused at the run-start fetch has no spine, only its settled event; without them it has no status word
+            const word = got ? summarizeRow(got.r, Date.now(), undefined, readRunList(opts).events).status?.word : undefined;
             lastWords = `last ${dateTimeWords(Number(lastRow.at))}${no ? ` · run-${no}` : ''}${word ? ` · ${word}` : ''}${got?.rec.catchUp === true ? ' · catch-up' : ''}`;
           } else {
             lastWords = `last ${dateTimeWords(Number(lastRow.at))} · ${skippedWords(lastRow, true)}`;
