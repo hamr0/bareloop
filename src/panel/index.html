@@ -4939,6 +4939,8 @@
         var suffix = reach.modelListed === false ? " (model not listed)" : "";
         return { keyOk: true, ok: true, text: "[✓] " + r.envKey + " found · " + modelId + " reachable" + suffix };
       }
+      // a blank Base URL is nothing to probe, not flakiness: say the server's own plain sentence (src/modellist.js owns it)
+      if(reach.status === "no-base-url" && reach.note) return { keyOk: true, ok: false, text: "[✗] " + reach.note };
       return { keyOk: true, ok: false, text: reachStatusText(reach.status) };
     }
     function refreshModelStatus(){
