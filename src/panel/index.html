@@ -422,10 +422,6 @@
   .audit-part-toggle{width:100%;text-align:left;display:block;white-space:normal;min-height:44px;padding:8px 10px;}
   .audit-part-toggle::before,.audit-part-toggle::after{content:"";}
   .audit-part-body{padding:8px 10px 10px;border-top:1px dotted var(--border-strong);}
-  /* Audit "what the planner was told": the label/value rows inside an opened hint box (the box itself is .audit-part) */
-  .lh-row{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0;}
-  .lh-lab{flex:0 0 110px;color:var(--text-dim);}
-  .lh-val{flex:1 1 200px;min-width:0;margin:0;font:inherit;white-space:pre-wrap;overflow-wrap:anywhere;}
   .part-card{cursor:pointer;}
   .part-card:hover{border-color:var(--border-strong);}
 
@@ -930,10 +926,10 @@
                 <button class="chip" aria-pressed="false" data-view="flat" data-testid="audit-view-flat">Flat</button>
               </div>
             </div>
-            <details id="audit-learnings" data-testid="audit-learnings" hidden style="margin-bottom:10px;">
-              <summary id="audit-learnings-summary" data-testid="audit-learnings-summary">What the planner was told from earlier runs</summary>
-              <div id="audit-learnings-list"></div>
-            </details>
+            <div id="audit-learnings" class="audit-part" data-testid="audit-learnings" hidden>
+              <button type="button" id="audit-learnings-summary" class="btn audit-part-toggle" aria-expanded="false" data-testid="audit-learnings-summary">What the planner was told from earlier runs</button>
+              <div id="audit-learnings-list" class="audit-part-body" data-testid="audit-learnings-list" hidden></div>
+            </div>
             <div id="audit-groups" data-testid="audit-groups"></div>
             <div id="audit-flat-wrap" hidden>
               <div id="audit-empty" class="hint" data-testid="audit-empty" style="font-size:13px;padding:24px 0;">select a run first</div>
@@ -2839,48 +2835,24 @@
     renderAuditLearnings(detail);
   }
 
-  // Cross-run learnings, READ-ONLY: what the planner was handed, one group per injection (the draft, the first replan). Each hint is
-  // its own folded box (the Audit part box: .audit-part + .audit-part-toggle + .audit-part-body); the exact text sits in its own fold.
+  // Cross-run learnings, READ-ONLY: what the planner was handed, one group per injection (the draft, the first replan). ONE fold for the
+  // whole section (the <details> in the Audit tab); opened, every hint shows at once as a title line + labelled rows, no inner toggles.
   // The fields come from the server (learn.js parseHintBlock, the one reader of the block) - this page never splits the prose.
-  // No edit, no Reject, no button but the folds. Absent (the setting was off, or nothing was readable) = the section stays hidden.
-  function learnFold(testid, label, fill){
-    var wrap = document.createElement("div");
-    wrap.className = "audit-part";
-    wrap.setAttribute("data-testid", testid);
-    var btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "btn audit-part-toggle";
-    btn.setAttribute("aria-expanded", "false");
-    btn.setAttribute("data-testid", testid + "-toggle");
-    btn.textContent = "\u25B8 " + label;
-    var body = document.createElement("div");
-    body.className = "audit-part-body";
-    body.hidden = true;
-    body.setAttribute("data-testid", testid + "-body");
-    var built = false;
-    btn.addEventListener("click", function(){
-      var open = btn.getAttribute("aria-expanded") === "true";
-      btn.setAttribute("aria-expanded", open ? "false" : "true");
-      btn.textContent = (open ? "\u25B8 " : "\u25BE ") + label;
-      body.hidden = open;
-      if(!open && !built){ built = true; fill(body); }
-    });
-    wrap.appendChild(btn);
-    wrap.appendChild(body);
-    return wrap;
-  }
-  function learnRow(body, label, lines){
-    var row = document.createElement("div");
-    row.className = "lh-row";
-    var lab = document.createElement("div");
-    lab.className = "lh-lab";
+  // No edit, no Reject, no button. Absent (the setting was off, or nothing was readable) = the section stays hidden.
+  // one row of a hint's table: the same label cell + value cell the schedule section body uses
+  function learnRow(tbody, testid, label, lines){
+    var tr = document.createElement("tr");
+    tr.setAttribute("data-testid", testid);
+    var lab = document.createElement("td");
+    lab.className = "hint";
+    lab.style.cssText = "white-space:nowrap";
     lab.textContent = label;
-    var val = document.createElement("pre");
-    val.className = "lh-val";
+    var val = document.createElement("td");
+    val.style.cssText = "overflow-wrap:anywhere;white-space:pre-wrap";
     val.textContent = lines.join("\n");
-    row.appendChild(lab);
-    row.appendChild(val);
-    body.appendChild(row);
+    tr.appendChild(lab);
+    tr.appendChild(val);
+    tbody.appendChild(tr);
   }
   function learnHintLabel(h){
     var bits = [h.n, h.level, "seen " + h.count + (h.count === 1 ? " time" : " times")];
@@ -2911,26 +2883,45 @@
       var note = document.createElement("div");
       note.className = "hint";
       note.style.cssText = "margin:6px 0;overflow-wrap:anywhere;";
-      note.textContent = (gi === 0 ? "Read-only. " : "") + "The exact text the planner got at the " + when + " (" + Number(it.chars).toLocaleString("en-US") + " characters)." + (gi === 0 ? " No worker sees it." : "");
+      note.textContent = (gi === 0 ? "Read-only. " : "") + "Given to the planner at the " + when + " (" + Number(it.chars).toLocaleString("en-US") + " characters)." + (gi === 0 ? " No worker sees it." : "");
       list.appendChild(note);
       hints.forEach(function(h){
-        list.appendChild(learnFold("audit-learnings-hint-" + it.phase + "-" + h.n, learnHintLabel(h), function(body){
-          if(h.said) learnRow(body, "It said:", [h.said]);
-          if(h.touched) learnRow(body, "Fix touched:", [h.touched]);
-          if(h.changed && h.changed.length) learnRow(body, "What changed:", h.changed.concat(h.moreChanged ? ["(+" + h.moreChanged + " more)"] : []));
-        }));
+        var hint = document.createElement("div");
+        hint.className = "audit-table-scroll";
+        hint.setAttribute("data-testid", "audit-learnings-hint-" + it.phase + "-" + h.n);
+        var table = document.createElement("table");
+        table.className = "rounds-table";
+        var tbody = document.createElement("tbody");
+        var trT = document.createElement("tr");
+        var title = document.createElement("td");
+        title.setAttribute("colspan", "2");
+        title.style.cssText = "font-weight:600;overflow-wrap:anywhere";
+        title.setAttribute("data-testid", "audit-learnings-hint-" + it.phase + "-" + h.n + "-title");
+        title.textContent = learnHintLabel(h);
+        trT.appendChild(title);
+        tbody.appendChild(trT);
+        var t = "audit-learnings-hint-" + it.phase + "-" + h.n + "-";
+        if(h.said) learnRow(tbody, t + "said", "It said:", [h.said]);
+        if(h.touched) learnRow(tbody, t + "touched", "Fix touched:", [h.touched]);
+        if(h.changed && h.changed.length) learnRow(tbody, t + "changed", "What changed:", h.changed.concat(h.moreChanged ? ["(+" + h.moreChanged + " more)"] : []));
+        table.appendChild(tbody);
+        hint.appendChild(table);
+        list.appendChild(hint);
       });
-      list.appendChild(learnFold("audit-learnings-raw-" + it.phase, "Exact text the planner got", function(body){
-        var pre = document.createElement("pre");
-        pre.setAttribute("data-testid", "audit-learnings-text");
-        pre.className = "lh-val";
-        pre.textContent = it.text;
-        body.appendChild(pre);
-      }));
     });
     if(sum){
       var first = items.length ? (Array.isArray(items[0].hints) ? items[0].hints.length : 0) : 0;
-      sum.textContent = items.length ? head + " \u00B7 " + first + (first === 1 ? " hint" : " hints") : head;
+      var label = items.length ? head + " \u00B7 " + first + (first === 1 ? " hint" : " hints") : head;
+      // no arrow (hamr 2026-10-23): the state chip leads; aria-expanded carries open/closed. The same `[✓] word` state markup the schedule/step headers wear (stateDotHTML), then the plain-words title
+      var paint = function(){ sum.innerHTML = stateDotHTML(glyphClass("\u2713"), "learnings", "audit-learnings-state") + " " + escapeXml(label); };
+      paint();
+      // ONE fold, same as the other Audit sections: the header button toggles the body (wired once)
+      sum.onclick = function(){
+        var open = sum.getAttribute("aria-expanded") === "true";
+        sum.setAttribute("aria-expanded", open ? "false" : "true");
+        list.hidden = open;
+        paint();
+      };
     }
     box.hidden = items.length === 0;
   }

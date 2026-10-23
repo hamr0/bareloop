@@ -297,7 +297,10 @@ test('the Audit detail carries exactly what the spine recorded the planner was h
   const html = readFileSync(join(SRC, 'panel', 'index.html'), 'utf8');
   const block = html.slice(html.indexOf('id="audit-learnings"'), html.indexOf('id="audit-groups"'));
   assert.match(html.slice(html.indexOf('function renderAuditLearnings(')), /Read-only\. /);
-  assert.doesNotMatch(block, /<button|<input|<textarea|contenteditable/, 'no edit, no Reject, no per-hint button');
+  // the ONE <button> is the section's own fold header (the same box as the other Audit sections); nothing else is clickable or editable
+  assert.equal((block.match(/<button/g) ?? []).length, 1, 'exactly one button: the section fold');
+  assert.match(block, /<button type="button" id="audit-learnings-summary" class="btn audit-part-toggle"/);
+  assert.doesNotMatch(block, /<input|<textarea|contenteditable/, 'no edit, no Reject, no per-hint button');
 });
 
 // ── the Accept door releases a held rubric run ───────────────────────────────────────────────────
