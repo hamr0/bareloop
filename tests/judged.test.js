@@ -1019,3 +1019,10 @@ test('the case-proposal prompt tells the model that naming SOME fields of a dest
   const { cardCasesPrompt } = await import('../src/cardauthor.js');
   assert.match(cardCasesPrompt({ answers: {}, questions: {} }), /EVERY field must be named/);
 });
+
+test('a destructured parameter followed by 200000 spaces is read in linear time (the patternFields regex was quadratic), and a real pattern still reads', () => {
+  const t0 = performance.now();
+  assert.deepEqual(paramReds(synth(['{a}' + ' '.repeat(200000) + 'x'], ['opts'], [true])), []);
+  assert.deepEqual(paramReds(synth(['{ a, b } = {}'], ['a'], [true])), ['@param missing for field b of f\'s destructured parameter']);
+  assert.ok(performance.now() - t0 < 1000, `took ${performance.now() - t0} ms`);
+});

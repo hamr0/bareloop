@@ -323,7 +323,7 @@ export function docQuoteInBlock(text, declQuote, docQuote) {
  */
 function hasDocBlockDirectlyAbove(text, fn) {
   const n = fn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(`^(?:export\\s+)?(?:default\\s+)?(?:(?:async\\s+)?function\\s*\\*?\\s*${n}\\b`
+  const re = new RegExp(`^(?:export\\s+)?(?:default\\s+)?(?:(?:async\\s+)?function\\s*(?:\\*\\s*)?${n}\\b`
     + `|(?:const|let|var)\\s+${n}\\s*=|(?:static\\s+)?(?:async\\s+)?${n}\\s*\\()`);
   const hits = text.split('\n').map((l) => l.trim()).filter((l) => re.test(l));
   if (hits.length !== 1) return false;
@@ -401,7 +401,7 @@ function sharesPrefix(a, b) {
  * @param {string} text @returns {string[]}
  */
 function patternFields(text) {
-  const m = /^\s*\{([^{}[\]()]*)\}\s*(?:=\s*\{\s*\})?\s*$/.exec(text);
+  const m = /^\s*\{([^{}[\]()]*)\}(?:\s*=\s*\{\s*\})?\s*$/.exec(text);
   if (!m || m[1].includes('...')) return [];
   /** @type {string[]} */
   const out = [];
@@ -417,7 +417,7 @@ function patternFields(text) {
 /** a doc-block line with its comment decoration (opener, leading star, closer) removed
  * @param {string} line @returns {string} */
 function undecorated(line) {
-  return line.trim().replace(/^\/\*+/, '').replace(/\*+\/$/, '').replace(/^\*+/, '').trim();
+  return line.trim().replace(/^\/\*+/, '').replace(/(?<!\*)\*+\/$/, '').replace(/^\*+/, '').trim();
 }
 
 /**
