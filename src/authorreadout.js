@@ -657,6 +657,50 @@ export function proposalStopText({ stop, reds, cases = null, spend = null, sourc
 const SCOUT_REASON_RE = /^the survey is [^(]*\((.*)\) — an absent facts/s;
 
 /**
+ * ONE owner of the plain sentence for every drafting stop code (hamr 2026-10-09: "a user should get a reason they can
+ * understand and do something about"). What happened; `STOP_TODO` below overrides the default "draft again" where that is wrong.
+ * Used by `draftStopText` for every stop the panel and the CLI show; a code not listed reads `STOP_UNKNOWN`, never the raw code.
+ * @type {Record<string, string>}
+ */
+export const STOP_HEADS = {
+  'provider-red': 'The AI provider failed before a usable plan came back — a connection or service fault, not a problem with your job.',
+  'artifact-red': 'The AI answered, but its answer could not be used as a plan.',
+  'cap-halt': 'Drafting stopped on your cost cap.',
+  'pricing-red': 'Drafting stopped: the cost of a call could not be priced, so the cap cannot be enforced.',
+  'max-revisions': 'The AI used all its tries without a plan that passed the checks.',
+  precheck: 'Drafting stopped before any call: something it needs was missing.',
+  unchanged: 'Drafting stopped: the AI sent the same plan twice.',
+  'scout-absent': 'Drafting stopped: the first look at your repo or input did not complete.',
+  refused: 'Drafting stopped: something in the job or its inputs is not allowed.',
+  'interview-incomplete': 'Drafting stopped: the job form was not complete, so there was nothing to draft from.',
+  'calibration-missing': 'Drafting stopped: the practice cases that prove the rubric were missing, so the check could not be trusted.',
+  'invalid-set': 'Drafting stopped: the rubric and its practice cases do not fit together, so they could not be graded.',
+  'broken-close': 'Drafting stopped: the final check the model wrote could not run.',
+  'listing-absent': 'Drafting stopped: the list of your files was not available, so the checks could not name any.',
+  'listing-conflict': 'Drafting stopped: the list of your files was given twice and the two did not agree.',
+  'listing-unreadable': 'Drafting stopped: your repo\'s file list could not be read.',
+  'non-code-source': 'Drafting stopped: this source is not a code repo, and this kind of job only works on code.',
+  'authoring-failed': 'Drafting stopped for a reason that was not recorded.',
+  'confirm-abandoned': 'Drafting stopped: the confirm step ended before you answered, so nothing was signed.',
+  'confirm-restart': 'Drafting stopped: you chose to start over, so nothing was signed.',
+};
+
+/** the "What to do" for the stops where "draft again" is not the right advice */
+const STOP_TODO = /** @type {Record<string, string>} */ ({
+  refused: 'change what the message above names, then draft again.',
+  'interview-incomplete': 'fill in every line of the job form, then draft again.',
+  'calibration-missing': 'draft again; if it stops the same way twice, make your PASS/FAIL examples more concrete.',
+  'invalid-set': 'draft again; if it stops the same way twice, make your PASS/FAIL examples more concrete.',
+  'non-code-source': 'point the job at a code repo, or use a folder or file job instead.',
+  'listing-unreadable': 'check the repo is a readable git repo with at least one commit, then draft again.',
+  'confirm-abandoned': 'start a new draft when you are ready; nothing was spent beyond the figure above.',
+  'confirm-restart': 'change the answers you want and start the draft again.',
+});
+
+/** a stop code this table does not know: still plain words, never the code */
+const STOP_UNKNOWN = 'Drafting stopped for a reason this screen has no wording for.';
+
+/**
  * @param {{stop: string, reds?: PlainRed[]|null, refusal?: {detail?: string}|null,
  *   spend?: {knownUsd?: number|null, spendComplete?: boolean|null}|null, wholeJob?: boolean}} o `wholeJob` - a rubric job on the person's
  *   own inputs (PART 1c, I1): a failed draft asks nothing piecemeal; the person reviews the whole job and submits it again
@@ -674,23 +718,13 @@ export function draftStopText({ stop, reds = null, refusal = null, spend = null,
     const detail = (Array.isArray(reds) ? reds : []).find((r) => r?.code === 'fit-stopped')?.detail;
     if (detail) return `Stopped before drafting: the page does not show everything the job asks for: ${redactSecrets(String(detail))}. Change the job or the page and draft again. Spent so far: ${spent ?? 'unknown'}.`;
   }
-  /** @type {Record<string, string>} */
-  const heads = {
-    'provider-red': 'The AI provider failed before a usable plan came back — a connection or service fault, not a problem with your job.',
-    'artifact-red': 'The AI answered, but its answer could not be used as a plan.',
-    'cap-halt': 'Drafting stopped on your cost cap.',
-    'pricing-red': 'Drafting stopped: the cost of a call could not be priced, so the cap cannot be enforced.',
-    'max-revisions': 'The AI used all its tries without a plan that passed the checks.',
-    precheck: 'Drafting stopped before any call: something it needs was missing.',
-    unchanged: 'Drafting stopped: the AI sent the same plan twice.',
-    'scout-absent': 'Drafting stopped: the first look at your repo or input did not complete.',
-  };
+  const heads = STOP_HEADS;
   const redList = Array.isArray(reds) ? reds : [];
   // F217: the first look at the repo failing (a dropped connection, a timeout) arrives as a `precheck` stop with a
   // `scout-absent` red. That is NOT "something it needs was missing", and its reason sits past the 60-char quote bound
   // behind a fixed lead-in, so the person saw neither. Word it as the scout's stop and quote the reason in full (scrubbed).
   const scoutRed = stop === 'precheck' ? redList.find((r) => r?.code === 'scout-absent') : undefined;
-  const head = scoutRed ? heads['scout-absent'] : (heads[stop] ?? `Drafting stopped (${safeText(stop)}).`);
+  const head = scoutRed ? heads['scout-absent'] : (Object.hasOwn(heads, stop) ? heads[stop] : STOP_UNKNOWN);
   /** @type {string[]} */
   const said = scoutRed
     ? [SCOUT_REASON_RE.exec(String(scoutRed.detail ?? ''))?.[1]
@@ -705,6 +739,7 @@ export function draftStopText({ stop, reds = null, refusal = null, spend = null,
   }
   lines.push(stop === 'cap-halt' || stop === 'pricing-red'
     ? 'What to do: raise the cap or fix the price in Settings, then draft again.'
+    : Object.hasOwn(STOP_TODO, stop) ? `What to do: ${STOP_TODO[stop]}`
     : (wholeJob ? 'What to do: review the whole job - every line and its ~ rules, and the inputs - and submit it again.' : 'What to do: draft again.'));
   return lines.join('\n');
 }

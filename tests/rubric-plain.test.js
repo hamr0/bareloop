@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { plainReasons, signingReasons, redsRecord, draftStopText } from '../src/authorreadout.js';
+import { plainReasons, signingReasons, redsRecord, draftStopText, STOP_HEADS } from '../src/authorreadout.js';
 import { rubricStepShapeReds } from '../src/rubricstep.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -68,4 +68,17 @@ test('B3: every shape red the rubric-step validator can raise on a fact part is 
   assert.ok(seen >= 10, `the sweep raised ${seen} reds`);
   // a non-rubric invalid-value keeps the generic declaration wording
   assert.equal(signingReasons([{ code: 'invalid-value', path: 'stages[0].params.allowPrefixes', detail: 'x' }])[0].kind, 'declaration');
+});
+
+test('every drafting stop code reads as plain words: a sentence and a What to do, never the raw code; an unknown code gets the generic sentence', () => {
+  const codes = Object.keys(STOP_HEADS);
+  assert.ok(codes.length >= 20 - 1, 'the table covers every drafting stop code');
+  for (const stop of [...codes, 'some-new-code', 'toString']) {
+    const t = draftStopText({ stop, reds: [], spend: { knownUsd: 0.01, spendComplete: true } });
+    assert.doesNotMatch(t, new RegExp(`\\b${stop}\\b`), `${stop}: the raw code never shows`);
+    assert.match(t, /^[A-Z][^\n]*\.\s+Spent so far: \$0\.01/, `${stop}: starts with a sentence`);
+    assert.match(t, /What to do: /, `${stop}: says what to do`);
+  }
+  assert.match(draftStopText({ stop: 'some-new-code' }), /no wording for/);
+  assert.match(draftStopText({ stop: 'confirm-abandoned' }), /ended before you answered/);
 });

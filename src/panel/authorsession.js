@@ -1146,13 +1146,11 @@ export function createSession(card, deps = {}) {
         const no = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
         appendDraftLog(outDir, { kind: 'step-reds', no: no === -1 ? state.steps.length - 1 : no, stop: authored.stop ?? 'authoring-failed', reds: redsRecord(stopReds), at: new Date().toISOString() });
       }
-      refuse(authored.stop === 'confirm-abandoned' || authored.stop === 'confirm-restart'
-        ? `Stopped: ${authored.stop}${authored.refusal ? ` — ${authored.refusal.detail}` : ''}`
-        : draftStopText({
-          stop: String(authored.stop ?? 'authoring-failed'), reds: stopReds, refusal: authored.refusal,
-          spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete },
-          wholeJob: RUBRIC_FILES,
-        }), authored.stop === 'confirm-abandoned' ? 'abandoned' : 'refused');
+      refuse(draftStopText({
+        stop: String(authored.stop ?? 'authoring-failed'), reds: stopReds, refusal: authored.refusal,
+        spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete },
+        wholeJob: RUBRIC_FILES,
+      }), authored.stop === 'confirm-abandoned' ? 'abandoned' : 'refused');
       return;
     }
 
