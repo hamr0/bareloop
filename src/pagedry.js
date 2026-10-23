@@ -14,7 +14,8 @@ import { linesOf } from './pagerules.js';
 /** a number as the page writes it, thousands commas allowed */
 const NUM = '\\d[\\d,]*(?:\\.\\d+)?';
 const AFTER_LABEL = new RegExp(`^\\s*(?:[$€£]\\s*)?(${NUM})`);
-const BEFORE_UNIT = new RegExp(`(${NUM})\\s*$`);
+// (?<!\d): the leftmost match never starts after a digit (the digit before it would start the same match), so skipping those starts changes no result and keeps a long digit run linear
+const BEFORE_UNIT = new RegExp(`(?<!\\d)(${NUM})\\s*$`);
 /** the label every dry-read claim is made under (the checker only needs one name; the fact's own is not read) */
 const CLAIM = 'price';
 const SOURCE = 'page';
