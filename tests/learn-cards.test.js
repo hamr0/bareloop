@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildCards, ALLOWED_KINDS, errorKinds, flaggedTokens, quoteLines, cardKey } from '../src/learn.js';
+import { buildCards, ALLOWED_KINDS, errorKinds, flaggedTokens, quoteLines, cardKey, cleanText } from '../src/learn.js';
 import { stageQuestionsByName } from '../src/stagewords.js';
 import { TYPES_GENRE } from '../src/authoring.js';
 import { FIX, loadRun, cardsOf } from './learn-fixtures.js';
@@ -153,4 +153,14 @@ test('the allowed kinds are exactly the no-suppressions ids of the TYPES genre (
 
 test('building the same run twice gives the same cards (a pure function of the record)', () => {
   assert.deepEqual(cardsOf('mvk2e4uy', { spec, questions }), cardsOf('mvk2e4uy', { spec, questions }));
+});
+
+test('cleanText strips the patient and worktree prefixes in linear time: a 50000-character "/a/a/a/..." with no marker returns at once (the backtracking regexes took seconds)', () => {
+  const t0 = performance.now();
+  const long = '/a'.repeat(25000);
+  assert.equal(cleanText(long, null), long);
+  assert.equal(cleanText('/home/u/bareloop-patients/p1/src/a.js and /r/.bareloop/wt/s-1/b.js', null), 'src/a.js and /r/b.js');
+  // a second prefix right after the first one's tail (the first ends at its "/") is still found
+  assert.equal(cleanText('/bareloop-patients/x+/seg/bareloop-patients/y/z.js', null), 'segz.js');
+  assert.ok(performance.now() - t0 < 300, `took ${performance.now() - t0} ms`);
 });

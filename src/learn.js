@@ -50,9 +50,12 @@ const isStr = (v) => typeof v === 'string' && v !== '';
 const uniq = (a) => [...new Set(a)];
 
 /** Path prefixes of a patient / worktree / hidden-git tree: stripped from every quote so a card names `src/a.js`. */
+// The two leading lookarounds on the first two add no match and drop none. A start that directly follows a whole path segment ("/seg") is covered by the
+// start at that segment's "/" (the chain reads "/seg" and goes on to the same end), so it is skipped - unless that "/" is the last character of a
+// previous match's tail, which the global scan has already consumed (the inner lookbehind). Without them a long "/a/a/a/..." with no marker is quadratic.
 const PREFIXES = [
-  /(?:\/[\w.@-]+)*\/bareloop-patients\/[^/\s]+\//g,
-  /(?:\/[\w.@-]+)*\.bareloop\/wt\/[^/\s]+\//g,
+  /(?=\/)(?<!(?<!\/bareloop-patients\/[^/\s]+)\/[\w.@-]+)(?:\/[\w.@-]+)*\/bareloop-patients\/[^/\s]+\//g,
+  /(?:(?=\/)|(?=\.bareloop\/wt\/))(?<!(?<!\.bareloop\/wt\/[^/\s]+)\/[\w.@-]+)(?:\/[\w.@-]+)*\.bareloop\/wt\/[^/\s]+\//g,
   /(?:\.\/)?out\/source-[^/\s]+\/tree\//g,
 ];
 
