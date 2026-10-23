@@ -42,10 +42,12 @@ const FENCE_PREAMBLE_LINES = 5;
  */
 export function extractArtifact(t) {
   const text = String(t ?? '');
-  const m = text.match(/```[^\n`]*\n?([\s\S]*?)```/);
+  // (?=([^\n`]*))\1 reads the info string atomically: giving characters back can never find a closing fence the full read missed (a fence starts with a
+  // backtick, which the info string excludes), so an unclosed "```aaaa..." fails once instead of once per giveback (quadratic). The body is group 2.
+  const m = text.match(/```(?=([^\n`]*))\1\n?([\s\S]*?)```/);
   if (m) {
     if (text.slice(0, /** @type {number} */ (m.index)).split('\n').length - 1 < FENCE_PREAMBLE_LINES) {
-      const code = m[1].trim();
+      const code = m[2].trim();
       return code ? { code, red: null } : { code: null, red: 'empty fenced block' };
     }
     // deep fence = the artifact's own content: verbatim, NO fence strips — the

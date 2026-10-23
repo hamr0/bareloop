@@ -275,3 +275,10 @@ test('callCasualty (F217): an HTTP-status ProviderError and an unrelated raw cod
   assert.equal(callCasualty(new ProviderError('[OpenAIProvider] bad key', { status: 401 })), null);
   assert.equal(callCasualty(Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:1'), { code: 'ECONNREFUSED' })), null);
 });
+
+test('extractArtifact on an unclosed fence followed by 200000 characters is linear (the backtracking regex took seconds), and a closed fence still reads', () => {
+  const t0 = performance.now();
+  assert.deepEqual(extractArtifact('```' + 'a'.repeat(200000) + ' 1'), { code: '1', red: null });
+  assert.deepEqual(extractArtifact('```js\nconst a = 1;\n```'), { code: 'const a = 1;', red: null });
+  assert.ok(performance.now() - t0 < 300, `took ${performance.now() - t0} ms`);
+});
