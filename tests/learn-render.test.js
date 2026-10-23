@@ -134,18 +134,17 @@ test('R2: a lesson seen across jobs climbs to the place and is READ there (no ch
   assert.match(r.text, /\[this place, seen 1 time\]/);
 });
 
-test('what is not readable: expired rows, rows of another job or signed hash, rows decayed by the clock, and held rubric cards', () => {
+test('what is not readable: rows of another job or signed hash, rows decayed by the clock, and held rubric cards', () => {
   const L = auroraLedger();
   const tc = rowOf(L, 'typecheck');
   const rows = [
-    rowLike(tc, { id: 'expired', status: 'expired', expiredBy: 'age' }),
-    rowLike(tc, { id: 'hash-expired', status: 'expired', expiredBy: 'hash' }),
+    rowLike(tc, { id: 'old-flag', status: 'expired', expiredBy: 'age' }), // legacy stored fields are ignored: this one is fresh, so it IS read
     rowLike(tc, { id: 'other-job', workflow: 'other-job' }),
     rowLike(tc, { id: 'other-hash', specHash: 'h-old' }),
     rowLike(tc, { id: 'stale', lastSeen: new Date(NOW.getTime() - (DECAY_DAYS + 1) * DAY).toISOString() }),
     rowLike(tc, { id: 'fresh' }),
   ];
-  assert.deepEqual(renderHints(withRows(L, rows), ctx).ids, ['fresh']);
+  assert.deepEqual(renderHints(withRows(L, rows), ctx).ids.sort(), ['fresh', 'old-flag']);
   // a held rubric run is in `pending`, never in the block
   const held = holdPending(L, { runid: 'mvh72jo0', cards: cardsOf('mvh72jo0').cards, workflow: WF, place: '/p/aurora', specHash: 'h1', at: lastAt }, NOW);
   assert.equal(held.pending.length, 1);

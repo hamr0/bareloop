@@ -8,8 +8,8 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, existsSync, statSync, w
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  emptyLedger, countLedger, holdPending, releasePending, recordHealth, applyDecay, climb, lessonOf, renderHints,
-  DECAY_DAYS, PENDING_DAYS, PURGE_DAYS, purgeStale, placeOf,
+  emptyLedger, countLedger, holdPending, releasePending, recordHealth, readableRows, climb, lessonOf, renderHints,
+  DECAY_DAYS, PENDING_DAYS, placeOf,
 } from '../src/learn.js';
 import { readLedger, writeLedger, ledgerPath, foldRunIntoLedger, releaseRun } from '../src/learnstore.js';
 import { cardsOf } from './learn-fixtures.js';
@@ -45,7 +45,7 @@ test('a hint is kept after ONE run (count starts at 1); the same lesson in later
   const ns = L.rows.filter((r) => r.sample.check === 'no-suppressions');
   assert.equal(ns.length, 1);
   assert.equal(ns[0].count, 2);
-  assert.equal(L.rows.every((r) => r.level === 'workflow' && r.trust === 'deterministic' && r.status === 'active'), true);
+  assert.equal(L.rows.every((r) => r.level === 'workflow' && r.trust === 'deterministic'), true);
 });
 
 test('idempotent by run id: folding the same run again changes nothing (a resumed run is one id)', () => {
@@ -85,74 +85,76 @@ test('a card of another job never joins this job\'s row', () => {
   assert.equal(L.rows.filter((r) => r.sample.check === 'typecheck').length, 2);
 });
 
-test('decay: a row untouched for 56 days is hidden (kept in the file), high count or not; a new matching card brings it back', () => {
+test('keep-all: a row last seen 200 days ago stays in the ledger (count and run ids intact) but is NOT in the planner block; seen again it is the SAME row, count +1, and read again', () => {
   let L = emptyLedger();
   for (const id of sorted) L = fold(L, id);
   const top = L.rows.find((r) => r.sample.check === 'typecheck');
   assert.equal(top?.count, 5);
   const last = new Date(top?.lastSeen ?? '').getTime();
-  assert.equal(applyDecay(L, new Date(last + DECAY_DAYS * DAY)).rows.find((r) => r.id === top?.id)?.status, 'active', 'exactly 56 days is not yet old');
-  const old = applyDecay(L, new Date(last + DECAY_DAYS * DAY + 1000));
-  const t2 = old.rows.find((r) => r.id === top?.id);
-  assert.equal(t2?.status, 'expired');
-  assert.equal(t2?.expiredBy, 'age');
-  assert.equal(t2?.count, 5, 'kept in the file, count and run ids intact');
-  assert.equal(old.rows.length, L.rows.length);
-  // new evidence reactivates it: fold a fresh run (the record is edited: a new run id and date on a real card)
+  const ctx = (/** @type {Date} */ now) => ({ workflow: WF, place: '/p/aurora', specHash: 'h1', now });
+  assert.equal(readableRows(L, ctx(new Date(last + DECAY_DAYS * DAY))).some((r) => r.id === top?.id), true, 'exactly 56 days is not yet old');
+  const t200 = new Date(last + 200 * DAY);
+  assert.equal(readableRows(L, ctx(new Date(last + DECAY_DAYS * DAY + 1000))).some((r) => r.id === top?.id), false, 'past 56 days: not in memory');
+  assert.equal(renderHints(L, ctx(t200)).ids.includes(top?.id ?? ''), false, 'not in the block at 200 days');
+  // the ledger keeps it: a recompute (recordHealth runs `finish`) at 200 days deletes nothing and stamps nothing
+  const kept = recordHealth(L, 'h', { cards: [], suspect: [], thin: 0, noise: null }, t200.toISOString(), t200);
+  const row = kept.rows.find((r) => r.id === top?.id);
+  assert.equal(kept.rows.length, L.rows.length);
+  assert.equal(row?.count, 5);
+  assert.deepEqual(row?.runIds, top?.runIds);
+  assert.equal('status' in (row ?? {}) || 'expiredBy' in (row ?? {}), false, 'no expiry flag is written');
+  // seen again (the record is edited: a new run id and date on a real card): same row, count +1, back in the block
   const [c] = /** @type {any} */ (built.get('ms2c0ls7')).cards;
-  const later = new Date(last + 100 * DAY);
-  const fresh = { ...c, runid: 'newrun01', id: 'newrun01:typecheck:fixed', at: later.toISOString() };
-  const back = countLedger(old, { runid: 'newrun01', cards: [fresh], workflow: WF, place: '/p/aurora', specHash: 'h1', trust: 'deterministic', now: later });
-  const t3 = back.rows.find((r) => r.id === top?.id);
-  assert.equal(t3?.status, 'active');
-  assert.equal(t3?.count, 6);
+  const fresh = { ...c, runid: 'newrun01', id: 'newrun01:typecheck:fixed', at: t200.toISOString() };
+  const back = countLedger(kept, { runid: 'newrun01', cards: [fresh], workflow: WF, place: '/p/aurora', specHash: 'h1', trust: 'deterministic', now: t200 });
+  const tcs = back.rows.filter((r) => r.sample.check === 'typecheck');
+  assert.equal(tcs.length, 1, 'same row, not a new one');
+  assert.equal(tcs[0].id, top?.id);
+  assert.equal(tcs[0].count, 6);
+  assert.equal(tcs[0].lastSeen, t200.toISOString());
+  assert.equal(renderHints(back, ctx(t200)).ids.includes(top?.id ?? ''), true);
+  // and on disk: nothing is deleted by a later write
 });
 
-test('R4: a row hidden by the decay is DELETED once it has gone 112 days with no sighting; seen again before that, it is back with its count', (t) => {
-  assert.equal(PURGE_DAYS, 112);
-  let L = emptyLedger();
-  for (const id of sorted) L = fold(L, id);
-  const top = L.rows.find((r) => r.sample.check === 'typecheck');
-  const last = new Date(top?.lastSeen ?? '').getTime();
-  const at = (/** @type {number} */ days, ms = 0) => new Date(last + days * DAY + ms);
-  // the writer's own recompute (recordHealth runs `finish`): hidden at 56+, still in the ledger up to exactly 112 days
-  const health = (/** @type {Date} */ now) => recordHealth(L, 'h', { cards: [], suspect: [], thin: 0, noise: null }, now.toISOString(), now);
-  const hidden = health(at(DECAY_DAYS, 1000));
-  assert.equal(hidden.rows.find((r) => r.id === top?.id)?.status, 'expired');
-  assert.equal(health(at(PURGE_DAYS)).rows.find((r) => r.id === top?.id)?.status, 'expired', 'exactly 112 days: still kept (hidden, not deleted)');
-  const gone = health(at(PURGE_DAYS, 1000));
-  assert.equal(gone.rows.some((r) => r.id === top?.id), false, 'past 112 days: deleted');
-  assert.equal(purgeStale(applyDecay(L, at(PURGE_DAYS, 1000)), at(PURGE_DAYS, 1000)).rows.some((r) => r.id === top?.id), false);
-  // seen again before the delete: back, count kept (+1)
-  const [c] = /** @type {any} */ (built.get('ms2c0ls7')).cards;
-  const again = (/** @type {Date} */ when, /** @type {any} */ from) => countLedger(from, { runid: 'newrun01', cards: [{ ...c, runid: 'newrun01', id: 'newrun01:typecheck:fixed', at: when.toISOString() }], workflow: WF, place: '/p/aurora', specHash: 'h1', trust: 'deterministic', now: when });
-  const back = again(at(PURGE_DAYS - 1), L).rows.find((r) => r.id === top?.id);
-  assert.equal(back?.status, 'active');
-  assert.equal(back?.count, 6);
-  // the same lesson after the delete is a NEW row at count 1 (the old count is gone)
-  const fresh = again(at(PURGE_DAYS, 1000), L);
-  const tcs = fresh.rows.filter((r) => r.sample.check === 'typecheck');
-  assert.equal(tcs.length, 1);
-  assert.equal(tcs[0].count, 1);
-  // and on disk the row is gone from the file at the next write
-  const home = scratch(t);
-  writeLedger(L, home);
-  assert.equal(readLedger(home).ledger.rows.some((r) => r.id === top?.id), true);
-  foldRunIntoLedger({ home, runid: 'mvk2e4uy', build: cardsOf('mvk2e4uy'), workflow: 'pulselog-panel-strict', place: null, specHash: null, trust: 'deterministic', at: at(PURGE_DAYS, 1000).toISOString(), now: at(PURGE_DAYS, 1000) });
-  const onDisk = readLedger(home).ledger.rows;
-  assert.equal(onDisk.some((r) => r.id === top?.id), false);
-  assert.equal(onDisk.some((r) => r.workflow === 'pulselog-panel-strict'), true, 'the new run\'s own row is there');
-  // a hash-expired row is not an age decay: it is not deleted by this rule
-  const hashed = { ...L, rows: L.rows.map((r) => (r.id === top?.id ? { ...r, status: /** @type {const} */ ('expired'), expiredBy: /** @type {const} */ ('hash') } : r)) };
-  assert.equal(recordHealth(hashed, 'h', { cards: [], suspect: [], thin: 0, noise: null }, at(300).toISOString(), at(300)).rows.some((r) => r.id === top?.id), true);
-});
-
-test('expiry on change: a workflow row minted under another signed hash is done; the new hash makes a new row', () => {
+test('keep-all: a row from another job version stays in the ledger, is never in the block, and is never matched under the new hash', () => {
   let L = fold(emptyLedger(), sorted[0], { specHash: 'h1' });
   L = fold(L, sorted[1], { specHash: 'h2' });
   const tcs = L.rows.filter((r) => r.sample.check === 'typecheck');
-  assert.equal(tcs.length, 2);
-  assert.deepEqual(tcs.map((r) => [r.specHash, r.status, r.expiredBy]).sort(), [['h1', 'expired', 'hash'], ['h2', 'active', null]]);
+  assert.equal(tcs.length, 2, 'the new version opens its own row');
+  assert.deepEqual(tcs.map((r) => [r.specHash, r.count]).sort(), [['h1', 1], ['h2', 1]]);
+  assert.equal(tcs.some((r) => 'status' in r || 'expiredBy' in r), false, 'no flag stored');
+  const ids = (/** @type {string} */ h) => renderHints(L, { workflow: WF, place: '/p/aurora', specHash: h, now: NOW }).ids.filter((i) => tcs.some((r) => r.id === i));
+  assert.deepEqual(ids('h2'), [tcs.find((r) => r.specHash === 'h2')?.id]);
+  assert.deepEqual(ids('h1'), [tcs.find((r) => r.specHash === 'h1')?.id], 'going back to h1 reads h1 rows again: decided by the hash, not a stored flag');
+  // a third run under h2 counts the h2 row, never the h1 row
+  L = fold(L, sorted[2], { specHash: 'h2' });
+  assert.deepEqual(L.rows.filter((r) => r.sample.check === 'typecheck').map((r) => [r.specHash, r.count]).sort(), [['h1', 1], ['h2', 2]]);
+});
+
+test('keep-all: an old on-disk ledger carrying stored status/expiredBy loads and behaves by the new rules (age by lastSeen, version by hash); the fields are stripped at the next write', (t) => {
+  let L = fold(emptyLedger(), sorted[0], { specHash: 'h1' });
+  const row = L.rows.find((r) => r.sample.check === 'typecheck');
+  assert.ok(row);
+  // an old file: the fresh row wrongly flagged expired-by-age, another row flagged by hash but of THIS version
+  const old = { ...L, rows: L.rows.map((r) => ({ ...r, status: 'expired', expiredBy: 'age' })) };
+  const home = scratch(t);
+  const path = ledgerPath(home);
+  mkdirSync(join(path, '..'), { recursive: true });
+  writeFileSync(path, JSON.stringify(old));
+  const loaded = readLedger(home).ledger;
+  const ctx = { workflow: WF, place: '/p/aurora', specHash: 'h1', now: NOW };
+  assert.equal(renderHints(loaded, ctx).ids.includes(row.id), true, 'stored "expired" is ignored: lastSeen is fresh, hash matches');
+  // an old-flagged row truly 200 days old stays out; seen again it counts +1
+  const far = new Date(new Date(row.lastSeen).getTime() + 200 * DAY);
+  assert.equal(renderHints(loaded, { ...ctx, now: far }).ids.includes(row.id), false);
+  const [c] = /** @type {any} */ (built.get('ms2c0ls7')).cards;
+  const again = countLedger(loaded, { runid: 'newrun02', cards: [{ ...c, runid: 'newrun02', id: 'newrun02:typecheck:fixed', at: far.toISOString() }], workflow: WF, place: '/p/aurora', specHash: 'h1', trust: 'deterministic', now: far });
+  const r2 = again.rows.find((r) => r.id === row.id);
+  assert.equal(r2?.count, 2);
+  assert.equal('status' in (r2 ?? {}) || 'expiredBy' in (r2 ?? {}), false, 'legacy fields stripped on the next write');
+  // an old file's hash-flagged row of the CURRENT version is matched (the flag is not read)
+  const oldHash = { ...L, rows: L.rows.map((r) => ({ ...r, status: 'expired', expiredBy: 'hash' })) };
+  assert.equal(countLedger(oldHash, { runid: 'newrun03', cards: [{ ...c, runid: 'newrun03', id: 'newrun03:typecheck:fixed', at: NOW.toISOString() }], workflow: WF, place: '/p/aurora', specHash: 'h1', trust: 'deterministic', now: NOW }).rows.find((r) => r.id === row.id)?.count, 2);
 });
 
 test('rubric cards are HELD, not counted; the human Accept releases them; 60 days of waiting drops them uncounted', () => {
@@ -207,7 +209,7 @@ test('climbing: the same lesson in 3 workflows on one place -> place; on 3 place
   // the rows are edited copies of ONE real lesson placed in other workflows / places
   const row = (/** @type {string} */ wf, /** @type {string} */ place) => ({
     id: wf, lesson: lessonOf(c), count: 1, sample: { ...c, job: wf }, models: {}, workflow: wf, place, level: /** @type {const} */ ('workflow'),
-    trust: /** @type {const} */ ('deterministic'), runIds: [`run-${wf}`], firstSeen: c.at, lastSeen: c.at, status: /** @type {const} */ ('active'), expiredBy: null, specHash: null, key: 'k',
+    trust: /** @type {const} */ ('deterministic'), runIds: [`run-${wf}`], firstSeen: c.at, lastSeen: c.at, specHash: null, key: 'k',
   });
   const two = climb([row('a', 'P'), row('b', 'P')]);
   assert.deepEqual(two.map((r) => r.level), ['workflow', 'workflow'], 'two workflows do not climb');

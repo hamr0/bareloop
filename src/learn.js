@@ -20,10 +20,8 @@ import { redactSecrets } from './validate.js';
 // ── constants (every number here is a ruling, not a tuning knob) ─────────────────────────────────
 /** The block the planner reads is never longer than this many characters (RULING 7). */
 export const HINT_CHARS_MAX = 2000;
-/** A row untouched this long is hidden as `expired` (RULING 4: high-count rows included). */
+/** MEMORY filter only (hamr 2026-10-23): a row untouched this long is not handed to the planner. The ledger keeps every row. */
 export const DECAY_DAYS = 56;
-/** A row hidden by the decay is DELETED from the ledger file once its lastSeen is this old (R4, 2026-10-23). */
-export const PURGE_DAYS = 112;
 /** A rubric lesson waits this long for the human Accept, then is dropped uncounted (ruling 7, = the door TTL). */
 export const PENDING_DAYS = 60;
 /** Fold threshold on flagged-text token overlap (FITTED on 87 known cards — see section 1 of the addendum). */
@@ -554,9 +552,7 @@ export function foldCards(cards) {
  * @property {string[]} runIds
  * @property {string} firstSeen
  * @property {string} lastSeen
- * @property {'active'|'expired'} status
- * @property {'age'|'hash'|null} expiredBy
- * @property {string|null} specHash  the signed hash the lesson was minted under (a workflow row expires when it changes)
+ * @property {string|null} specHash  the signed hash the lesson was last seen under (a workflow row of another hash is never matched or read)
  * @property {string} key           check + sorted kinds (job-independent); information only since R2 removed the check-wide set-aside
  */
 /**
@@ -601,27 +597,20 @@ function rowId(c) {
 }
 
 /**
- * Hide every row untouched for 56 days (`expired`, kept in the file, never injected); a hash-expired row stays so.
- * @param {Ledger} L @param {Date} now @returns {Ledger}
+ * Memory filter: is this row older than 56 days at `now`? Decided from `lastSeen` alone, read-time, never stored.
+ * @param {Row} r @param {Date} now
  */
-export function applyDecay(L, now) {
-  const rows = L.rows.map((r) => {
-    if (r.status === 'expired') return r;
-    const t = Date.parse(r.lastSeen);
-    return Number.isFinite(t) && now.getTime() - t > DECAY_DAYS * DAY_MS ? { ...r, status: /** @type {const} */ ('expired'), expiredBy: /** @type {const} */ ('age') } : r;
-  });
-  return { ...L, rows };
-}
+export const isDecayed = (r, now) => { const t = Date.parse(r.lastSeen); return Number.isFinite(t) && now.getTime() - t > DECAY_DAYS * DAY_MS; };
 
 /**
- * Permanently delete every row the 56-day decay hid (`expiredBy: 'age'`) whose last sighting is more than 112 days old.
- * Strictly more: exactly 112 days is still kept. A hash-expired row is not an age decay and stays. Run on a ledger that
- * `applyDecay` already marked. Pure.
- * @param {Ledger} L @param {Date} now @returns {Ledger}
+ * Is this workflow row from another job version (a different signed hash than this run's)? Decided from the stored
+ * `specHash`, read-time, never stored. Unknown hash on either side is the same version.
+ * @param {Row} r @param {string} workflow @param {string|null} specHash
  */
-export function purgeStale(L, now) {
-  return { ...L, rows: L.rows.filter((r) => !(r.expiredBy === 'age' && now.getTime() - Date.parse(r.lastSeen) > PURGE_DAYS * DAY_MS)) };
-}
+export const otherJobVersion = (r, workflow, specHash) => r.level === 'workflow' && r.workflow === workflow && r.specHash !== null && specHash !== null && r.specHash !== specHash;
+
+/** Drop the retired stored `status`/`expiredBy` fields an older ledger file may carry (never read; stripped on the next write). @param {Row} r */
+const stripLegacy = (r) => { const { status: _s, expiredBy: _e, ...rest } = /** @type {Row & {status?: unknown, expiredBy?: unknown}} */ (r); return /** @type {Row} */ (rest); };
 
 /** Rank order for matching and reading: highest count, most recent lastSeen, then id. */
 const byRank = (/** @type {Row} */ a, /** @type {Row} */ b) => b.count - a.count || (a.lastSeen < b.lastSeen ? 1 : a.lastSeen > b.lastSeen ? -1 : 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
@@ -631,22 +620,18 @@ const byRank = (/** @type {Row} */ a, /** @type {Row} */ b) => b.count - a.count
  *
  * +1 per RUN per row: the run's own cards are folded into lessons first, and a row whose `runIds` already holds the
  * run id is never counted twice (a resumed run, one id, never double counts). A matching lesson replaces the row's
- * sample, bumps the model count, appends the run id and reactivates an age-expired row; otherwise it opens a new row at
- * count 1. NEVER FIXED cards count like FIXED ones (RULING 3). A workflow row minted under another signed hash is
- * expired by hash when this run's hash differs.
+ * sample, bumps the model count and appends the run id (a row last seen 56+ days ago counts +1 and is read again);
+ * otherwise it opens a new row at count 1. NEVER FIXED cards count like FIXED ones (RULING 3). A workflow row of
+ * another signed hash is never matched here: the new version opens its own rows. Nothing is ever deleted or stamped.
  * @param {Ledger} ledger
  * @param {{runid: string, cards: Card[], workflow: string, place: string|null, specHash: string|null, trust: 'deterministic'|'rubric', now: Date}} o
  * @returns {Ledger}
  */
 export function countLedger(ledger, { runid, cards, workflow, place, specHash, trust, now }) {
-  // a row 112 days stale is gone BEFORE matching: a lesson seen again after that opens a new row at count 1
-  let rows = purgeStale(applyDecay(ledger, now), now).rows.map((r) => ({ ...r, runIds: [...r.runIds], models: { ...r.models } }));
-  // expiry on change: this workflow's rows minted under a different signed hash are done
-  rows = rows.map((r) => (r.level === 'workflow' && r.workflow === workflow && r.status === 'active' && r.specHash !== null && specHash !== null && r.specHash !== specHash
-    ? { ...r, status: /** @type {const} */ ('expired'), expiredBy: /** @type {const} */ ('hash') } : r));
+  const rows = ledger.rows.map((r) => ({ ...stripLegacy(r), runIds: [...r.runIds], models: { ...r.models } }));
   for (const group of foldCards(cards)) {
     const rep = group.reduce((a, c) => (c.at >= a.at ? c : a));
-    const hit = [...rows].sort(byRank).find((r) => r.workflow === workflow && r.expiredBy !== 'hash' && cardsMatch(rep, r.sample).match);
+    const hit = [...rows].sort(byRank).find((r) => r.workflow === workflow && !otherJobVersion(r, workflow, specHash) && cardsMatch(rep, r.sample).match);
     if (hit) {
       if (hit.runIds.includes(runid)) continue;
       hit.count += 1;
@@ -656,8 +641,6 @@ export function countLedger(ledger, { runid, cards, workflow, place, specHash, t
       hit.lesson = lessonOf(rep);
       hit.key = keyOfCard(rep);
       hit.lastSeen = rep.at;
-      hit.status = 'active';
-      hit.expiredBy = null;
       hit.specHash = specHash;
       hit.place = place ?? hit.place;
     } else {
@@ -665,7 +648,7 @@ export function countLedger(ledger, { runid, cards, workflow, place, specHash, t
       for (let n = 2; rows.some((r) => r.id === id); n += 1) id = `${rowId(rep)}-${n}`;
       rows.push({
         id, lesson: lessonOf(rep), count: 1, sample: rep, models: { [rep.model ?? 'unknown']: 1 }, workflow, place, level: 'workflow',
-        trust, runIds: [runid], firstSeen: rep.at, lastSeen: rep.at, status: 'active', expiredBy: null, specHash, key: keyOfCard(rep),
+        trust, runIds: [runid], firstSeen: rep.at, lastSeen: rep.at, specHash, key: keyOfCard(rep),
       });
     }
   }
@@ -673,16 +656,15 @@ export function countLedger(ledger, { runid, cards, workflow, place, specHash, t
 }
 
 /**
- * Recompute the derived parts after any change: decay, permanent delete of 112-day-stale rows, climbing, pending expiry.
+ * Recompute the derived parts after any change: climbing, pending expiry. Ledger rows are never aged out or deleted.
  * @param {Ledger} L @param {Date} now @returns {Ledger}
  */
 function finish(L, now) {
-  const decayed = purgeStale(applyDecay(L, now), now);
-  const rows = climb(decayed.rows);
+  const rows = climb(L.rows.map(stripLegacy));
   return {
-    ...decayed,
+    ...L,
     rows: rows.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
-    pending: decayed.pending.filter((p) => now.getTime() - Date.parse(p.at) <= PENDING_DAYS * DAY_MS),
+    pending: L.pending.filter((p) => now.getTime() - Date.parse(p.at) <= PENDING_DAYS * DAY_MS),
   };
 }
 
@@ -851,16 +833,17 @@ function hintText(r, n) {
 }
 
 /**
- * Which rows may be read for this job, in reading order. Excluded: expired and pending rows, any row
- * with no run id, a workflow row of another job or minted under another signed hash, a place row of another place.
+ * Which rows may be read for this job, in reading order (THE memory filter; the ledger itself keeps every row).
+ * Excluded: pending rows, any row last seen more than 56 days ago, any row with no run id, a workflow row of another
+ * job or of another signed hash, a place row of another place.
  * Order: this job's, then this place's, then all-jobs LAST (R2: climbing wins, so an all-jobs hint only uses leftover
  * room); inside each level highest count first (ties: most recent lastSeen, then id), so the order is total and stable.
  * @param {Ledger} ledger @param {{workflow: string, place: string|null, specHash?: string|null, now: Date}} o
  * @returns {Row[]}
  */
 export function readableRows(ledger, { workflow, place, specHash = null, now }) {
-  return applyDecay(ledger, now).rows.filter((r) => {
-    if (r.status !== 'active' || r.runIds.length === 0) return false;
+  return ledger.rows.filter((r) => {
+    if (isDecayed(r, now) || r.runIds.length === 0) return false;
     if (r.level === 'workflow') return r.workflow === workflow && (specHash === null || r.specHash === null || r.specHash === specHash);
     if (r.level === 'place') return place !== null && r.place === place;
     return true;
