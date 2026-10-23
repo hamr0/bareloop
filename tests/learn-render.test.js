@@ -28,7 +28,7 @@ function auroraLedger() {
 const rowOf = (L, check) => L.rows.find((/** @type {any} */ r) => r.sample.check === check);
 /** an edited copy of a real row (the edit is the point of the test that calls this) */
 const rowLike = (/** @type {any} */ r, /** @type {any} */ over) => ({ ...r, ...over, sample: { ...r.sample, ...(over.sample ?? {}) } });
-const withRows = (/** @type {any} */ L, /** @type {any[]} */ rows) => ({ ...L, rows, checkWide: [] });
+const withRows = (/** @type {any} */ L, /** @type {any[]} */ rows) => ({ ...L, rows });
 
 test('the block for a real ledger: header, then the lesson seen most often first, each hint whole', () => {
   const L = auroraLedger();
@@ -104,18 +104,34 @@ test('MUST-FAIL 7: a place row reaches its own place only; an all-jobs row reach
   assert.deepEqual(renderHints(withRows(L, rows), { ...ctx, place: null }).ids, ['everyone'], 'a job with no place gets no place rows');
 });
 
-test('MUST-FAIL 4: a check-wide key is never injected, however often it was seen', () => {
+test('MUST-FAIL 4 (R2, replaces the check-wide item): an all-jobs hint never appears before a this-job or this-place hint, whatever its count', () => {
   const L = auroraLedger();
   const tc = rowOf(L, 'typecheck');
-  const withWide = { ...L, checkWide: [{ key: tc.key, jobs: ['a', 'b', 'c'] }] };
-  const r = renderHints(withWide, ctx);
-  assert.ok(!r.ids.includes(tc.id));
-  assert.deepEqual(r.ids, [rowOf(L, 'no-suppressions').id], 'only the other lesson is read');
-  // the real ledger path: three jobs with one key set it aside, and the render then refuses it
-  let W = auroraLedger();
-  for (const wf of ['job-x', 'job-y']) W = countLedger(W, { runid: `r-${wf}`, cards: built[0].cards.map((c) => ({ ...c, job: wf })), workflow: wf, place: null, specHash: null, trust: 'deterministic', now: NOW });
-  assert.equal(W.checkWide.some((w) => w.key === tc.key), true);
-  assert.ok(!renderHints(W, ctx).ids.includes(tc.id));
+  const mk = (/** @type {string} */ id, /** @type {string} */ level, /** @type {number} */ count) => rowLike(tc, { id, level, count, workflow: level === 'workflow' ? WF : 'elsewhere', place: '/p/aurora' });
+  const rows = [mk('all-99', 'user', 99), mk('all-50', 'user', 50), mk('place-1', 'place', 1), mk('job-1', 'workflow', 1)];
+  const ids = renderHints(withRows(L, rows), ctx).ids;
+  assert.deepEqual(ids, ['job-1', 'place-1', 'all-99', 'all-50']);
+  const lastLocal = Math.max(ids.indexOf('job-1'), ids.indexOf('place-1'));
+  const firstAll = Math.min(...ids.filter((i) => i.startsWith('all-')).map((i) => ids.indexOf(i)));
+  assert.ok(lastLocal < firstAll, `order was ${ids.join(',')}`);
+  // all-jobs hints only use leftover room: when the room is short, they are the ones left out
+  const fat = (/** @type {string} */ id, /** @type {string} */ level, /** @type {number} */ count) => rowLike(mk(id, level, count), { sample: { said: ['x'.repeat(150)], fixTouched: [] } });
+  const crowd = [...Array.from({ length: 6 }, (_, i) => fat(`job-${i}`, 'workflow', 1)), ...Array.from({ length: 6 }, (_, i) => fat(`all-${i}`, 'user', 90))];
+  const r = renderHints(withRows(L, crowd), ctx);
+  assert.ok(r.ids.length < 12, 'the cap bit');
+  assert.ok(r.ids.every((i, k) => k < 6 ? i.startsWith('job-') : i.startsWith('all-')), `order was ${r.ids.join(',')}`);
+  assert.equal(r.ids.filter((i) => i.startsWith('job-')).length, 6, 'every this-job hint was read before any all-jobs hint took room');
+});
+
+test('R2: a lesson seen across jobs climbs to the place and is READ there (no check-wide set-aside), after the reader\'s own job', () => {
+  const tc = built[0].cards.find((c) => c.check === 'typecheck');
+  assert.ok(tc);
+  let L = emptyLedger();
+  for (const wf of ['job-a', 'job-b', 'job-c']) L = countLedger(L, { runid: `r-${wf}`, cards: [{ ...tc, job: wf }], workflow: wf, place: '/p/shared', specHash: null, trust: 'deterministic', now: NOW });
+  assert.deepEqual(L.rows.map((r) => r.level), ['place', 'place', 'place']);
+  const r = renderHints(L, { workflow: 'job-d', place: '/p/shared', specHash: null, now: NOW });
+  assert.equal(r.ids.length, 3, 'a fourth job on that place reads the climbed lessons');
+  assert.match(r.text, /\[this place, seen 1 time\]/);
 });
 
 test('what is not readable: expired rows, rows of another job or signed hash, rows decayed by the clock, and held rubric cards', () => {

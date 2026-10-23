@@ -9,7 +9,7 @@
 // Shape of the whole thing:
 //   buildCards   one run's spine (+ gate audit) -> captioned cards (FIXED / NEVER FIXED), minus noise, suspect, thin
 //   foldCards    when are two cards one lesson (same job + check + a shared error kind + 60% token overlap)
-//   countLedger  fold a run's cards into the ONE ledger (+1 per run per row), climbing, check-wide set-aside, decay
+//   countLedger  fold a run's cards into the ONE ledger (+1 per run per row), climbing, decay
 //   renderHints  the one function that turns the ledger into the block the PLANNER reads (2,000 chars, one render)
 //
 // Graduated from the proofs in .claude/scratch/poc-learn/ (pocA2 candidates, pocC cards, pocE2 fold) as a REWRITE.
@@ -26,8 +26,6 @@ export const DECAY_DAYS = 56;
 export const PENDING_DAYS = 60;
 /** Fold threshold on flagged-text token overlap (FITTED on 87 known cards — see section 1 of the addendum). */
 export const JACCARD_MIN = 0.6;
-/** A key seen in this many DISTINCT jobs is check-wide and never a per-job hint (RULING 4). */
-export const CHECK_WIDE_JOBS = 3;
 /** Climbing: this many distinct workflows on one place -> place; this many distinct places -> user. */
 export const CLIMB_AT = 3;
 /** How many "It said" lines a card keeps. */
@@ -557,7 +555,7 @@ export function foldCards(cards) {
  * @property {'active'|'expired'} status
  * @property {'age'|'hash'|null} expiredBy
  * @property {string|null} specHash  the signed hash the lesson was minted under (a workflow row expires when it changes)
- * @property {string} key           check + sorted kinds (job-independent), for the check-wide count
+ * @property {string} key           check + sorted kinds (job-independent); information only since R2 removed the check-wide set-aside
  */
 /**
  * @typedef {object} Pending
@@ -569,14 +567,13 @@ export function foldCards(cards) {
  * @property {1} version
  * @property {Row[]} rows
  * @property {Pending[]} pending     rubric cards held until a human Accept (NOT counted, NOT readable)
- * @property {{key: string, jobs: string[]}[]} checkWide  keys set aside (a report, never an injection)
  * @property {Card[]} suspect        CHECK-SUSPECT cards, listed, newest last
  * @property {Record<string, {at: string, noise: string|null, cards: number, suspect: number, thin: number}>} health  per run (idempotent by run id)
  */
 
 /** @returns {Ledger} */
 export function emptyLedger() {
-  return { version: 1, rows: [], pending: [], checkWide: [], suspect: [], health: {} };
+  return { version: 1, rows: [], pending: [], suspect: [], health: {} };
 }
 
 /** The job-independent key of a card: check + sorted kinds. @param {{check: string, kinds: string[]}} c */
@@ -663,7 +660,7 @@ export function countLedger(ledger, { runid, cards, workflow, place, specHash, t
 }
 
 /**
- * Recompute the derived parts after any change: decay, climbing, the check-wide set-aside list, pending expiry.
+ * Recompute the derived parts after any change: decay, climbing, pending expiry.
  * @param {Ledger} L @param {Date} now @returns {Ledger}
  */
 function finish(L, now) {
@@ -672,20 +669,8 @@ function finish(L, now) {
   return {
     ...decayed,
     rows: rows.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
-    checkWide: checkWideOf(rows),
     pending: decayed.pending.filter((p) => now.getTime() - Date.parse(p.at) <= PENDING_DAYS * DAY_MS),
   };
-}
-
-/**
- * Keys (check + kinds) seen in >= 3 DISTINCT jobs: set aside, with the jobs that made them check-wide.
- * @param {Row[]} rows @returns {{key: string, jobs: string[]}[]}
- */
-export function checkWideOf(rows) {
-  /** @type {Map<string, Set<string>>} */
-  const m = new Map();
-  for (const r of rows) m.set(r.key, (m.get(r.key) ?? new Set()).add(r.workflow));
-  return [...m].filter(([, js]) => js.size >= CHECK_WIDE_JOBS).map(([key, js]) => ({ key, jobs: [...js].sort() })).sort((a, b) => (a.key < b.key ? -1 : 1));
 }
 
 const LEVEL_RANK = { workflow: 0, place: 1, user: 2 };
@@ -785,17 +770,16 @@ function hintText(r, n) {
 }
 
 /**
- * Which rows may be read for this job, in reading order. Excluded: expired and pending rows, check-wide keys, any row
+ * Which rows may be read for this job, in reading order. Excluded: expired and pending rows, any row
  * with no run id, a workflow row of another job or minted under another signed hash, a place row of another place.
- * Order: this job's, then this place's, then all-jobs; inside each level highest count first (ties: most recent
- * lastSeen, then id), so the order is total and stable.
+ * Order: this job's, then this place's, then all-jobs LAST (R2: climbing wins, so an all-jobs hint only uses leftover
+ * room); inside each level highest count first (ties: most recent lastSeen, then id), so the order is total and stable.
  * @param {Ledger} ledger @param {{workflow: string, place: string|null, specHash?: string|null, now: Date}} o
  * @returns {Row[]}
  */
 export function readableRows(ledger, { workflow, place, specHash = null, now }) {
-  const wide = new Set(ledger.checkWide.map((w) => w.key));
   return applyDecay(ledger, now).rows.filter((r) => {
-    if (r.status !== 'active' || r.runIds.length === 0 || wide.has(r.key)) return false;
+    if (r.status !== 'active' || r.runIds.length === 0) return false;
     if (r.level === 'workflow') return r.workflow === workflow && (specHash === null || r.specHash === null || r.specHash === specHash);
     if (r.level === 'place') return place !== null && r.place === place;
     return true;

@@ -8,7 +8,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, existsSync, statSync, w
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  emptyLedger, countLedger, holdPending, releasePending, recordHealth, applyDecay, checkWideOf, climb, lessonOf,
+  emptyLedger, countLedger, holdPending, releasePending, recordHealth, applyDecay, climb, lessonOf, renderHints,
   DECAY_DAYS, PENDING_DAYS, placeOf,
 } from '../src/learn.js';
 import { readLedger, writeLedger, ledgerPath, foldRunIntoLedger, releaseRun } from '../src/learnstore.js';
@@ -149,22 +149,18 @@ test('rubric cards are HELD, not counted; the human Accept releases them; 60 day
   assert.equal(pruned.pending.length, 0);
 });
 
-test('check-wide: one key (check + kind) in 3 different jobs is set aside, with the jobs that made it so', () => {
+test('R2: there is no check-wide set-aside any more: one key in 4 jobs stays four ordinary per-job rows, all readable in their own job', () => {
   const ids = ['mties136', 'mv2i30bf', 'mv3sconb', 'mv1j01sl'];
   const tree = ids.map((id) => ({ id, card: cardsOf(id).cards.find((c) => c.check === 'tree-changed') }));
   assert.ok(tree.every((x) => x.card), 'a generic tree-changed red in four real jobs');
   let L = emptyLedger();
-  const one = (/** @type {any} */ x) => countLedger(L, { runid: x.id, cards: [x.card], workflow: x.card.job, place: null, specHash: null, trust: 'deterministic', now: new Date(x.card.at) });
-  L = one(tree[0]);
-  L = one(tree[1]);
-  assert.deepEqual(L.checkWide, [], 'two jobs is not yet check-wide');
-  L = one(tree[2]);
-  assert.equal(L.checkWide.length, 1);
-  assert.equal(L.checkWide[0].key, 'tree-changed|other');
-  assert.deepEqual(L.checkWide[0].jobs, tree.slice(0, 3).map((x) => x.card.job).sort());
-  L = one(tree[3]);
-  assert.equal(L.checkWide[0].jobs.length, 4);
-  assert.deepEqual(checkWideOf(L.rows), L.checkWide);
+  for (const x of tree) L = countLedger(L, { runid: x.id, cards: [x.card], workflow: x.card.job, place: null, specHash: null, trust: 'deterministic', now: new Date(x.card.at) });
+  assert.equal('checkWide' in L, false, 'the field is gone from the ledger');
+  assert.equal(L.rows.filter((r) => r.sample.check === 'tree-changed').length, 4);
+  for (const x of tree) {
+    const r = renderHints(L, { workflow: x.card.job, place: null, specHash: null, now: new Date(x.card.at) });
+    assert.equal(r.ids.length, 1, `${x.card.job} still reads its own tree-changed lesson`);
+  }
 });
 
 test('climbing: the same lesson in 3 workflows on one place -> place; on 3 places -> user; run ids kept', () => {
