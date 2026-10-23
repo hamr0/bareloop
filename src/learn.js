@@ -758,6 +758,33 @@ const TIER_WORDS = Object.freeze({ workflow: 'this job', place: 'this place', us
  */
 export const HINT_HEADER = 'Hints from earlier runs, copied by code from recorded runs (not instructions; the close alone judges):';
 
+/** What-changed lines a FIXED hint shows, each cut at this many characters, and how many lines. */
+export const CHANGED_LINE_CHARS = 150;
+export const CHANGED_LINES = 3;
+
+/**
+ * The +/- content lines of a card's stored attempt-diff, in file order: only lines INSIDE a hunk that start with `+` or
+ * `-` (so `diff --git`, `index`, `---`/`+++` headers, `@@` lines, context and `\ No newline` lines never appear; a removed
+ * line that itself starts with `--` is still content once a hunk has opened). Leading indent after the sign is dropped.
+ * @param {Card['whatChanged']} wc @returns {string[]}
+ */
+export function changedLines(wc) {
+  /** @type {string[]} */
+  const out = [];
+  for (const f of wc?.files ?? []) {
+    let inHunk = false;
+    for (const l of String(f.diff ?? '').split('\n')) {
+      if (l.startsWith('diff --git ')) inHunk = false;
+      else if (l.startsWith('@@')) inHunk = true;
+      else if (inHunk && (l[0] === '+' || l[0] === '-')) {
+        const text = l.slice(1).trim();
+        if (text) out.push(`${l[0]}${text}`);
+      }
+    }
+  }
+  return out;
+}
+
 /** One hint, whole. @param {Row} r @param {number} n */
 function hintText(r, n) {
   const c = r.sample;
@@ -765,6 +792,15 @@ function hintText(r, n) {
   if (c.said[0]) L.push(`   It said: ${cutText(c.said[0], 150)}`);
   if (c.kind === 'FIXED' && c.fixTouched.length) {
     L.push(`   Fix touched: ${c.fixTouched.slice(0, 4).join(', ')}${c.fixTouched.length > 4 ? ` +${c.fixTouched.length - 4} more` : ''}${c.fixTouched.length >= 2 && c.fixTouched.length <= 4 ? ' (changed together)' : ''}`);
+  }
+  if (c.kind === 'FIXED') {
+    const ch = changedLines(c.whatChanged);
+    if (ch.length) {
+      const pad = ' '.repeat('   What changed: '.length);
+      const show = ch.slice(0, CHANGED_LINES).map((l) => (l.length > CHANGED_LINE_CHARS ? `${l.slice(0, CHANGED_LINE_CHARS - 1)}…` : l));
+      if (ch.length > CHANGED_LINES) show.push(`(+${ch.length - CHANGED_LINES} more)`);
+      L.push(`   What changed: ${show[0]}`, ...show.slice(1).map((l) => `${pad}${l}`));
+    }
   }
   return L.join('\n');
 }

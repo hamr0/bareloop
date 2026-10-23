@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  emptyLedger, countLedger, holdPending, renderHints, readableRows, hintsMatchRecord, HINT_HEADER, HINT_CHARS_MAX, DECAY_DAYS,
+  emptyLedger, countLedger, holdPending, renderHints, readableRows, hintsMatchRecord, changedLines, HINT_HEADER, HINT_CHARS_MAX, DECAY_DAYS,
 } from '../src/learn.js';
 import { cardsOf } from './learn-fixtures.js';
 
@@ -165,4 +165,58 @@ test('the byte check: what the spine recorded must equal a fresh render from the
 
 test('an empty ledger renders nothing (no lone header)', () => {
   assert.deepEqual(renderHints(emptyLedger(), ctx), { text: '', ids: [] });
+});
+
+// ── R3: a FIXED hint shows the first 3 +/- lines of "What changed" ───────────────────────────────
+const pulse = cardsOf('mvk2e4uy').cards[0];
+const pulseCtx = { workflow: pulse.job, place: null, specHash: null, now: new Date(new Date(pulse.at).getTime() + DAY) };
+const pulseLedger = (/** @type {any} */ card) => countLedger(emptyLedger(), { runid: card.runid, cards: [card], workflow: pulse.job, place: null, specHash: null, trust: 'deterministic', now: pulseCtx.now });
+
+test('R3: a FIXED hint shows the first 3 changed lines, each indented to align, then "(+N more)" - real run mvk2e4uy', () => {
+  assert.equal(pulse.kind, 'FIXED');
+  assert.ok(pulse.whatChanged, 'the real card carries the passing try\'s diff');
+  const all = changedLines(pulse.whatChanged);
+  assert.equal(all.length, 31);
+  const r = renderHints(pulseLedger(pulse), pulseCtx);
+  const pad = ' '.repeat(17);
+  assert.ok(r.text.endsWith([
+    '   What changed: -const e = /** @type {NodeJS.ErrnoException|undefined} */ (err);',
+    `${pad}-const exitCode = typeof e?.code === 'number' ? e.code : 1;`,
+    `${pad}+// execFile's error is an ExecFileException: \`code\` is a string|number exit code`,
+    `${pad}(+28 more)`,
+  ].join('\n')), r.text);
+  assert.ok(!/diff --git|^index |^@@|^---|^\+\+\+/m.test(r.text), 'no diff headers, hunk marks or file lines');
+  process.stdout.write(`\n--- R3 HINT (real mvk2e4uy) ---\n${r.text}\n--- ${r.text.length} chars ---\n`);
+});
+
+test('R3: headers, @@ and context lines are never shown; a removed line that starts with -- is content once a hunk is open; each line is cut at 150', () => {
+  const diff = ['diff --git a/x.js b/x.js', 'index 1..2 100644', '--- a/x.js', '+++ b/x.js', '@@ -1,3 +1,3 @@', ' context line', '--- a SQL comment removed', `+${'y'.repeat(300)}`, '\\ No newline at end of file', '+tail'].join('\n');
+  const wc = { files: [{ path: 'x.js', diff, truncated: false }], binary: [], truncated: false };
+  const got = changedLines(wc);
+  assert.deepEqual(got, ['--- a SQL comment removed', `+${'y'.repeat(300)}`, '+tail']);
+  const r = renderHints(pulseLedger({ ...pulse, whatChanged: wc }), pulseCtx);
+  const shown = r.text.split('\n').filter((l) => l.includes('y'.repeat(20)));
+  assert.equal(shown.length, 1);
+  assert.equal(shown[0].trim().length, 150, 'the long line is cut at 150 characters');
+  assert.ok(shown[0].endsWith('…'));
+  assert.ok(!r.text.includes('more)'), 'exactly 3 lines: no more-line');
+});
+
+test('R3: NEVER FIXED hints never show What changed, even when the card carries a diff', () => {
+  const stuck = { ...pulse, kind: 'NEVER_FIXED' };
+  assert.ok(stuck.whatChanged);
+  const r = renderHints(pulseLedger(stuck), pulseCtx);
+  assert.ok(r.text.includes('got stuck here'));
+  assert.ok(!r.text.includes('What changed'));
+});
+
+test('R3: whole hint or nothing - a hint whose What changed block no longer fits under 2,000 characters is left out entirely', () => {
+  const rows = Array.from({ length: 12 }, (_, i) => rowLike(pulseLedger(pulse).rows[0], { id: `p-${String(i).padStart(2, '0')}`, count: 50 - i }));
+  const L = withRows(emptyLedger(), rows);
+  const r = renderHints(L, pulseCtx);
+  assert.ok(r.text.length <= HINT_CHARS_MAX, `${r.text.length}`);
+  assert.ok(r.ids.length > 1 && r.ids.length < 12);
+  // every hint that made it is whole: it ends with its "(+28 more)" line
+  const blocks = r.text.slice(HINT_HEADER.length + 1).split(/\n(?=\d+\. \[)/);
+  assert.ok(blocks.every((b) => b.endsWith('(+28 more)')));
 });
