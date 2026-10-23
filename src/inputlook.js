@@ -8,7 +8,7 @@
 // not on the list is NOT carried into the report - it is moved to "could not check", named. Code never decides two words mean the
 // same: the AI proposes, the list and the source prove.
 
-import { scanLabels, labelOnList, renderLabelList, normLabel, LABEL_SHAPES } from './labelscan.js';
+import { scanLabels, labelOnList, renderLabelList, normLabel, LABEL_SHAPES, TAG } from './labelscan.js';
 import { FACT_SHAPES, FACT_OPS } from './facts.js';
 import { dropRows, dropLine } from './pagedropwords.js';
 
@@ -19,7 +19,6 @@ export const LOOK_MAX_HITS = 40;
 const SNIPPET = 220;
 const READ_LINE = 320;
 const READ_LINES = 40;
-const TAG = /\[[A-Za-z]+=[^\]\s]*\]/g;
 const WS = /[\s   ]+/g;
 
 /**

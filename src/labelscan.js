@@ -28,22 +28,31 @@ const MAX_GAP_LABEL = 24;
 const MIN_PHRASE = 3;
 /** how many repeated phrases are looked behind */
 const MAX_PHRASES = 20;
-/** a line is scanned up to this many characters, and for this many values (a minified page is one huge line; the bound keeps the scan linear) */
+/** a line is scanned up to this many characters, and for this many values (a minified page is one huge line; the bound caps the work per line, each finder's own regex is kept linear below) */
 const MAX_LINE = 20000;
 const MAX_VALUES_PER_LINE = 400;
 /** only this much of a source is scanned (a source over it is scanned up to a line end) */
 export const SCAN_MAX_CHARS = 2_000_000;
 
 const WS = /[\s   ]+/g;
-const TAG = /\[[A-Za-z]+=[^\]\s]*\]/g;
+/**
+ * The page reader's bracketed tag (`[ref=549]`), shared by the three places that strip it. The lookahead and lookbehind add no match and drop no
+ * match: a `[` that sits inside the run of an earlier `[letters=` (no `]` or white space between) is skipped, because that earlier start reads the same
+ * run to the same end - it matches (and consumes this one) or fails (and so does this one). Without them "[a=[a=[a=..." with no `]` is quadratic.
+ */
+export const TAG = /\[(?=[A-Za-z]+=)(?<!\[[A-Za-z]+=[^\]\s]*?)[A-Za-z]+=[^\]\s]*\]/g;
 const MONTH = '(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
 /** value finders in priority order: an earlier shape owns a span a later one would also match */
 const FINDERS = /** @type {[string, RegExp][]} */ ([
   ['date', new RegExp(`\\b\\d{4}-\\d{2}-\\d{2}\\b|\\b\\d{1,2}/\\d{1,2}/\\d{2,4}\\b|\\b${MONTH}\\.? \\d{1,2}(?:, \\d{4})?\\b|\\b\\d{1,2} ${MONTH}\\.? \\d{4}\\b`, 'g')],
   ['time', /\b\d{1,2}:\d{2}(?: ?[AaPp]\.?[Mm]\.?)?(?![\w:])/g],
-  ['money', /[$€£] ?\d[\d,]*(?:\.\d+)?|\b\d[\d,]*(?:\.\d+)? ?(?:US dollars?|dollars?|USD|euros?|EUR|pounds?|GBP)\b/g],
+  // the 2nd shape's leading lookbehind skips a start inside a digit/comma run that an earlier start of the run already covers (that start reads the same
+  // run to the same end, so it matches first or fails like this one); without it "1,1,1,...x" is quadratic. The covering start is never one right after
+  // a "." - the digits of a decimal can already belong to an earlier match ("$1.5,2 dollars" reads "2 dollars" as its own)
+  ['money', /[$€£] ?\d[\d,]*(?:\.\d+)?|(?<!(?<!\.)\b\d[\d,]*?)\b\d[\d,]*(?:\.\d+)? ?(?:US dollars?|dollars?|USD|euros?|EUR|pounds?|GBP)\b/g],
   ['number', /(?<![\w.,])\d[\d,]*(?:\.\d+)?(?![\w]|\.\d)/g],
-  ['text', /[A-Za-z]*\d[\w.\-]*/g],
+  // (?<![A-Za-z]): a start inside a run of letters is covered by the run's first letter (same match, earlier), so a long run of letters with no digit is linear
+  ['text', /(?<![A-Za-z])[A-Za-z]*\d[\w.\-]*/g],
 ]);
 const PHRASE = /\b[A-Z][a-z]+(?: [A-Z][a-z]+)+\b/g;
 

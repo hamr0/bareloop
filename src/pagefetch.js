@@ -10,6 +10,7 @@
 // fetch is a plain-words stop, never a silent empty input. Nothing here touches a model.
 
 import { SECRET_PATTERNS } from './validate.js';
+import { TAG } from './labelscan.js';
 
 /** the session options (incognito: no auth ever enters; blockPrivateNetwork: SSRF guard); ONE frozen object so a test can pin them */
 export const CONNECT_OPTIONS = Object.freeze({ incognito: true, blockPrivateNetwork: true });
@@ -59,7 +60,7 @@ export function pageContentChars(text) {
       skipIndent = -1;
     }
     if (m && CHROME_ROLES.has(m[2])) { skipIndent = indent; continue; }
-    n += raw.replace(/\[[A-Za-z]+=[^\]\s]*\]/g, ' ').replace(/^\s*-\s*/, '').replace(/\s+/g, ' ').trim().length;
+    n += raw.replace(TAG, ' ').replace(/^\s*-\s*/, '').replace(/\s+/g, ' ').trim().length;
   }
   return n;
 }

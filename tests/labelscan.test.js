@@ -104,3 +104,14 @@ test('a scan is bounded and never throws: an empty text, a huge line and a non-s
   const one = scanLabels('Invoice total: $389.00 due 2026-11-12');
   assert.ok(one.money.some((r) => r.label === 'Invoice total:' && r.count === 1), 'a one-page document keeps its single labels');
 });
+
+test('scanLabels stays linear on the three worst lines: letters only, "1,1,...x", and "[a=[a=..." with no closing bracket (the backtracking regexes took seconds each)', () => {
+  const lines = (/** @type {string} */ one) => `${one}\n`.repeat(10);
+  const t0 = performance.now();
+  assert.equal(scanLabels(lines('a'.repeat(20000))).text.length, 0);
+  assert.equal(scanLabels(lines('1,'.repeat(10000) + 'x')).money.length, 0);
+  assert.equal(scanLabels(lines('[a='.repeat(6666))).text.length, 0);
+  assert.ok(performance.now() - t0 < 1000, `took ${performance.now() - t0} ms`);
+  // the same shapes still read: a value after a comma run, a decimal's own tail, a tag removed
+  assert.equal(scanLabels('x1,5 dollars\nTotal [ref=7] 3 EUR').money.length > 0, true);
+});
