@@ -23,3 +23,16 @@ test('hermetic: real paths still run, and a --flag value that is not a path is n
   const r = run(['--test-name-pattern', 'zzz-no-match', 'tests/panel-ended.test.js']);
   assert.equal(r.status, 0, r.stderr);
 });
+
+test('hermetic: the separate value of a value-taking flag is never checked as a path, and the real file still runs', () => {
+  const r = run(['--test-name-pattern', 'a/b', 'tests/panel-ended.test.js']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /no such test path/);
+  assert.match(r.stdout, /# tests \d+/, 'the real file ran');
+});
+
+test('hermetic: a boolean flag does not swallow the next word - a mistyped path after it is still refused', () => {
+  const r = run(['--test-only', 'tests/nonexistent-typo.test.js']);
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /no such test path: tests\/nonexistent-typo\.test\.js/);
+});

@@ -30,6 +30,15 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+// node (v22) flags that take a separate value word (`--flag value`); `--flag=value` needs no entry.
+const VALUE_FLAGS = new Set([
+  '--test-name-pattern', '--test-skip-pattern', '--test-reporter', '--test-reporter-destination',
+  '--test-concurrency', '--test-timeout', '--test-shard', '--test-coverage-branches',
+  '--test-coverage-functions', '--test-coverage-lines', '--test-coverage-include', '--test-coverage-exclude',
+  '--experimental-test-isolation', '--import', '--require', '-r', '--env-file', '--env-file-if-exists',
+  '--loader', '--experimental-loader', '--conditions', '-C', '--input-type', '--watch-path', '--watch-kill-signal',
+]);
+
 if (process.env.NODE_TEST_CONTEXT) {
   console.error(
     'scripts/hermetic.mjs: refusing to run — discovered as a test file by node --test ' +
@@ -44,8 +53,10 @@ if (process.env.NODE_TEST_CONTEXT) {
 
 function main() {
   // a mistyped test path used to be silently skipped (`node --test` ignores it), so a green count could be missing a file.
-  // A path-looking argument (no leading `-`, no glob characters, a `/` or a js extension) that does not exist is a refusal.
-  const missing = process.argv.slice(2).filter((a) => !a.startsWith('-') && !/[*?[\]{}]/.test(a) && /(\/|\.[cm]?js$)/.test(a) && !existsSync(a));
+  // A path-looking argument (no leading `-`, no glob characters, a `/` or a js extension) that does not exist is a refusal,
+  // except the separate VALUE of a value-taking flag (`--test-name-pattern a/b`), which is never a path. Boolean flags take no value.
+  const args = process.argv.slice(2);
+  const missing = args.filter((a, i) => !a.startsWith('-') && !VALUE_FLAGS.has(args[i - 1]) && !/[*?[\]{}]/.test(a) && /(\/|\.[cm]?js$)/.test(a) && !existsSync(a));
   if (missing.length) {
     console.error(`scripts/hermetic.mjs: no such test path: ${missing.join(', ')}. Nothing was run - check the spelling.`);
     process.exitCode = 1;
