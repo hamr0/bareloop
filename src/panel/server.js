@@ -47,6 +47,7 @@ import { chainSpend } from '../ledger.js';
 import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
 import { jobSpecHash, workflowKey } from '../job.js';
+import { parseHintBlock } from '../learn.js';
 import { confirmProtections } from '../authorflow.js';
 import { createScheduleDoor } from './schedules.js';
 import { createStarter } from './schedulestart.js';
@@ -1851,8 +1852,8 @@ function getRunDetailBody(runid, opts) {
     // `memory-cache` record at all (never armed on this run).
     behaviour: scopedBehaviour(row, rawSpineRecords),
     // Cross-run learnings, READ-ONLY (ITEM33 rev 2, RULING 8): the exact block the planner was handed, as the spine recorded it at
-    // injection (the draft, and the first replan). Empty when the setting was off or nothing was readable.
-    learnings: rawSpineRecords.filter((e) => e?.type === 'learnings' && typeof e.text === 'string').map((e) => ({ phase: String(e.phase), text: e.text, chars: e.text.length, ids: Array.isArray(e.ids) ? e.ids : [] })),
+    // injection (the draft, and the first replan); `hints` = the same text split into fields by learn.js's parseHintBlock (the one reader). Empty when the setting was off or nothing was readable.
+    learnings: rawSpineRecords.filter((e) => e?.type === 'learnings' && typeof e.text === 'string').map((e) => ({ phase: String(e.phase), text: e.text, chars: e.text.length, ids: Array.isArray(e.ids) ? e.ids : [], hints: parseHintBlock(e.text) })),
     // PRD v1.106 Part 5 F: the two Run summary rows, worded here (the page prints them)
     callsLine: callsLineOf(rawSpineRecords, scopedBehaviour(row, rawSpineRecords)),
     checksLine: checksLineOf(rawSpineRecords, enrichedParts),

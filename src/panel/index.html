@@ -422,6 +422,10 @@
   .audit-part-toggle{width:100%;text-align:left;display:block;white-space:normal;min-height:44px;padding:8px 10px;}
   .audit-part-toggle::before,.audit-part-toggle::after{content:"";}
   .audit-part-body{padding:8px 10px 10px;border-top:1px dotted var(--border-strong);}
+  /* Audit "what the planner was told": the label/value rows inside an opened hint box (the box itself is .audit-part) */
+  .lh-row{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0;}
+  .lh-lab{flex:0 0 110px;color:var(--text-dim);}
+  .lh-val{flex:1 1 200px;min-width:0;margin:0;font:inherit;white-space:pre-wrap;overflow-wrap:anywhere;}
   .part-card{cursor:pointer;}
   .part-card:hover{border-color:var(--border-strong);}
 
@@ -927,8 +931,7 @@
               </div>
             </div>
             <details id="audit-learnings" data-testid="audit-learnings" hidden style="margin-bottom:10px;">
-              <summary data-testid="audit-learnings-summary">What the planner was told from earlier runs</summary>
-              <div class="hint" style="margin:6px 0;overflow-wrap:anywhere;">Read-only. This is the exact text the planner was handed on this run (the draft, and the first replan); no worker ever sees it.</div>
+              <summary id="audit-learnings-summary" data-testid="audit-learnings-summary">What the planner was told from earlier runs</summary>
               <div id="audit-learnings-list"></div>
             </details>
             <div id="audit-groups" data-testid="audit-groups"></div>
@@ -2836,26 +2839,99 @@
     renderAuditLearnings(detail);
   }
 
-  // Cross-run learnings, READ-ONLY: the exact block the planner was handed, one box per injection (draft, first replan).
-  // No edit, no Reject, no per-hint button. Absent (the setting was off, or nothing was readable) = the section stays hidden.
+  // Cross-run learnings, READ-ONLY: what the planner was handed, one group per injection (the draft, the first replan). Each hint is
+  // its own folded box (the Audit part box: .audit-part + .audit-part-toggle + .audit-part-body); the exact text sits in its own fold.
+  // The fields come from the server (learn.js parseHintBlock, the one reader of the block) - this page never splits the prose.
+  // No edit, no Reject, no button but the folds. Absent (the setting was off, or nothing was readable) = the section stays hidden.
+  function learnFold(testid, label, fill){
+    var wrap = document.createElement("div");
+    wrap.className = "audit-part";
+    wrap.setAttribute("data-testid", testid);
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn audit-part-toggle";
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("data-testid", testid + "-toggle");
+    btn.textContent = "\u25B8 " + label;
+    var body = document.createElement("div");
+    body.className = "audit-part-body";
+    body.hidden = true;
+    body.setAttribute("data-testid", testid + "-body");
+    var built = false;
+    btn.addEventListener("click", function(){
+      var open = btn.getAttribute("aria-expanded") === "true";
+      btn.setAttribute("aria-expanded", open ? "false" : "true");
+      btn.textContent = (open ? "\u25B8 " : "\u25BE ") + label;
+      body.hidden = open;
+      if(!open && !built){ built = true; fill(body); }
+    });
+    wrap.appendChild(btn);
+    wrap.appendChild(body);
+    return wrap;
+  }
+  function learnRow(body, label, lines){
+    var row = document.createElement("div");
+    row.className = "lh-row";
+    var lab = document.createElement("div");
+    lab.className = "lh-lab";
+    lab.textContent = label;
+    var val = document.createElement("pre");
+    val.className = "lh-val";
+    val.textContent = lines.join("\n");
+    row.appendChild(lab);
+    row.appendChild(val);
+    body.appendChild(row);
+  }
+  function learnHintLabel(h){
+    var bits = [h.n, h.level, "seen " + h.count + (h.count === 1 ? " time" : " times")];
+    if(h.check) bits.push(h.check);
+    if(h.kinds && h.kinds.length) bits.push(h.kinds.join(", "));
+    bits.push(h.fixed ? "fixed" : "never fixed");
+    return bits.join(" \u00B7 ");
+  }
   function renderAuditLearnings(detail){
     var box = document.getElementById("audit-learnings");
     var list = document.getElementById("audit-learnings-list");
+    var sum = document.getElementById("audit-learnings-summary");
     if(!box || !list) return;
     var items = detail && Array.isArray(detail.learnings) ? detail.learnings : [];
     list.innerHTML = "";
-    items.forEach(function(it){
-      var h = document.createElement("div");
-      h.className = "hint";
-      h.style.cssText = "margin-top:6px;font-weight:600;";
-      h.textContent = (it.phase === "replan" ? "At the replan" : "At the draft") + " (" + it.chars + " characters)";
-      var pre = document.createElement("pre");
-      pre.setAttribute("data-testid", "audit-learnings-text");
-      pre.style.cssText = "white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0 0;";
-      pre.textContent = it.text;
-      list.appendChild(h);
-      list.appendChild(pre);
+    var head = "What the planner was told from earlier runs";
+    items.forEach(function(it, gi){
+      var hints = Array.isArray(it.hints) ? it.hints : [];
+      var when = it.phase === "replan" ? "first replan" : "draft";
+      if(items.length > 1){
+        var g = document.createElement("div");
+        g.className = "hint";
+        g.style.cssText = "margin-top:10px;font-weight:600;";
+        g.setAttribute("data-testid", "audit-learnings-group-" + it.phase);
+        g.textContent = it.phase === "replan" ? "At the first replan" : "At the draft";
+        list.appendChild(g);
+      }
+      var note = document.createElement("div");
+      note.className = "hint";
+      note.style.cssText = "margin:6px 0;overflow-wrap:anywhere;";
+      note.textContent = (gi === 0 ? "Read-only. " : "") + "The exact text the planner got at the " + when + " (" + Number(it.chars).toLocaleString("en-US") + " characters)." + (gi === 0 ? " No worker sees it." : "");
+      list.appendChild(note);
+      hints.forEach(function(h){
+        list.appendChild(learnFold("audit-learnings-hint-" + it.phase + "-" + h.n, learnHintLabel(h), function(body){
+          if(h.said) learnRow(body, "It said:", [h.said]);
+          if(h.touched) learnRow(body, "Fix touched:", [h.touched]);
+          if(h.changed && h.changed.length) learnRow(body, "What changed:", h.changed.concat(h.moreChanged ? ["(+" + h.moreChanged + " more)"] : []));
+        }));
+      });
+      list.appendChild(learnFold("audit-learnings-raw-" + it.phase, "Exact text the planner got", function(body){
+        var pre = document.createElement("pre");
+        pre.setAttribute("data-testid", "audit-learnings-text");
+        pre.className = "lh-val";
+        pre.textContent = it.text;
+        body.appendChild(pre);
+      }));
     });
+    if(sum){
+      var first = items.length ? (Array.isArray(items[0].hints) ? items[0].hints.length : 0) : 0;
+      sum.textContent = items.length ? head + " \u00B7 " + first + (first === 1 ? " hint" : " hints") : head;
+    }
     box.hidden = items.length === 0;
   }
 

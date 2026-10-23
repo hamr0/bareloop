@@ -15,7 +15,7 @@ import { runPlan } from '../src/planrun.js';
 import { validateJob } from '../src/job.js';
 import { updateConfig, readConfig, ConfigError } from '../src/config.js';
 import { learnAtRunEnd, hintsForRun, learningHintsOn, readLedger, writeLedger } from '../src/learnstore.js';
-import { hintsMatchRecord, emptyLedger, holdPending, HINT_HEADER } from '../src/learn.js';
+import { hintsMatchRecord, emptyLedger, holdPending, HINT_HEADER, parseHintBlock } from '../src/learn.js';
 import { parseSpineText } from '../src/legs.js';
 import { readRunList } from '../src/runlist.js';
 import { scriptedProvider, initPatientRepo } from './helpers.js';
@@ -288,14 +288,15 @@ test('the Audit detail carries exactly what the spine recorded the planner was h
   const rec = r.events.find((e) => e.type === 'learnings');
   assert.ok(rec);
   const detail = getRunDetail(/** @type {string} */ (r.runid), { home });
-  assert.deepEqual(detail.learnings, [{ phase: 'draft', text: rec.text, chars: rec.text.length, ids: rec.ids }]);
+  assert.deepEqual(detail.learnings, [{ phase: 'draft', text: rec.text, chars: rec.text.length, ids: rec.ids, hints: parseHintBlock(rec.text) }]);
+  assert.equal(detail.learnings[0].hints.length, rec.ids.length, 'the hint fields number what the planner was handed');
   // a run that was handed nothing shows nothing
   updateConfig({ learningHints: false }, { home });
   const r3 = await runOnce(t, home);
   assert.deepEqual(getRunDetail(/** @type {string} */ (r3.runid), { home }).learnings, []);
   const html = readFileSync(join(SRC, 'panel', 'index.html'), 'utf8');
   const block = html.slice(html.indexOf('id="audit-learnings"'), html.indexOf('id="audit-groups"'));
-  assert.match(block, /Read-only/);
+  assert.match(html.slice(html.indexOf('function renderAuditLearnings(')), /Read-only\. /);
   assert.doesNotMatch(block, /<button|<input|<textarea|contenteditable/, 'no edit, no Reject, no per-hint button');
 });
 

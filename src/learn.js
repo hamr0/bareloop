@@ -887,6 +887,55 @@ export function renderHints(ledger, o) {
 }
 
 /**
+ * @typedef {object} HintParts one hint of a rendered block, split back into its fields (for the panel's Audit view)
+ * @property {number} n the hint's number in the block
+ * @property {string} level 'this job' | 'this place' | 'all jobs' (the words {@link renderHints} wrote)
+ * @property {number} count how many runs saw it
+ * @property {string} check the check's name
+ * @property {string[]} kinds the error codes (empty when the hint names none)
+ * @property {boolean} fixed true = fixed later in the same run, false = never fixed
+ * @property {string|null} said the "It said" line
+ * @property {string|null} touched the "Fix touched" text
+ * @property {string[]} changed the shown What-changed lines (+/- lines), without the "(+N more)" line
+ * @property {number} moreChanged N of "(+N more)", 0 when absent
+ */
+
+const HINT_HEAD_RE = /^(\d+)\. \[(this job|this place|all jobs), seen (\d+) times?\] (.*)$/;
+
+/**
+ * Split a block {@link renderHints} wrote back into its hints. The ONLY reader of that text: it lives beside the
+ * writer ({@link hintText}, {@link lessonOf}) and a test renders real blocks and parses them back. A hint it cannot
+ * read is returned with what it could read (never thrown, never invented). Pure.
+ * @param {string} text @returns {HintParts[]}
+ */
+export function parseHintBlock(text) {
+  /** @type {HintParts[]} */
+  const out = [];
+  /** @type {HintParts|null} */
+  let cur = null;
+  let inChanged = false;
+  for (const line of String(text).split('\n')) {
+    const m = HINT_HEAD_RE.exec(line);
+    if (m) {
+      const lesson = m[4];
+      const check = /^check "([^"]*)"/.exec(lesson)?.[1] ?? '';
+      const kinds = /(?:"|\)) failed on (.+?)(?: in |;)/.exec(lesson)?.[1]?.split(' ') ?? [];
+      cur = { n: Number(m[1]), level: m[2], count: Number(m[3]), check, kinds, fixed: /; fixed later in the same run\.$/.test(lesson), said: null, touched: null, changed: [], moreChanged: 0 };
+      out.push(cur);
+      inChanged = false;
+    } else if (cur && line.startsWith('   It said: ')) { cur.said = line.slice('   It said: '.length); inChanged = false; }
+    else if (cur && line.startsWith('   Fix touched: ')) { cur.touched = line.slice('   Fix touched: '.length); inChanged = false; }
+    else if (cur && line.startsWith('   What changed: ')) { inChanged = true; cur.changed.push(line.slice('   What changed: '.length)); }
+    else if (cur && inChanged && line.startsWith(' '.repeat('   What changed: '.length))) {
+      const t = line.slice('   What changed: '.length);
+      const more = /^\(\+(\d+) more\)$/.exec(t);
+      if (more) cur.moreChanged = Number(more[1]); else cur.changed.push(t);
+    }
+  }
+  return out;
+}
+
+/**
  * The byte check: what the spine recorded the planner received against a fresh render from the ledger as it stood.
  * @param {string} recorded @param {Ledger} ledger @param {{workflow: string, place: string|null, specHash?: string|null, now: Date}} o
  * @returns {boolean}
