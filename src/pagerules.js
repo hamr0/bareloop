@@ -14,7 +14,7 @@ import { normLabel } from './labelscan.js';
  * @typedef {{facts: MapFact[]}} PageMap
  * @typedef {{line: number, name: string, shape: string, from: string, words: string[], unit?: string[], currency?: string[], forRule?: number, reading?: Reading}} KeptFact
  *   `words` = what the page proves: the labels of a money/number/time fact, or the alternative phrases of a phrase fact (a place is a phrase)
- * @typedef {{line: number, rule?: number, fact: string, word?: string, reason: string, other?: string}} Dropped  `other` = what the drop is compared to: the first label (R1), the primary form (R1L), the fact it would have repeated (S1)
+ * @typedef {{line: number, rule?: number, fact: string, word?: string, reason: string, other?: string}} Dropped  `other` = what the drop is compared to: the first label (R1), the primary form (R1L), the fact it would have repeated (S1), the phrase it looked for (phrase-no-result)
  */
 
 /** @param {unknown} v @returns {v is Record<string, any>} */
