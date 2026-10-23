@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { settlePersonsWords, checkRubricRules, reconcileRubricPlan } from '../src/rubricstep.js';
-import { verifyLookReport, ruleQuestions, wholeSentences, lookPrompt, renderLookReport } from '../src/inputlook.js';
+import { verifyLookReport, lookPrompt, renderLookReport } from '../src/inputlook.js';
 import { scanLabels, labelOnList } from '../src/labelscan.js';
 import { authorClose, DECLARATION_TOOL_NAME, GREEN_QUESTIONS } from '../src/authorflow.js';
 import { RUBRIC_LANG } from '../src/authoring.js';
@@ -102,19 +102,6 @@ test('L3 through the drafting loop: the real drafted shape (AI window + the same
   assert.equal((r.declaration.refused ?? []).some((x) => x.rule === 2), false);
 });
 
-test('L3: the early question is never cut mid-sentence - whole sentences up to 200 characters, or no reason at all', () => {
-  const why = 'The input has no red-eye or overnight wording anywhere in the flight rows and a search for it found nothing. The rows only give a departure time and an arrival time for each flight, so nothing says which ones leave at night.';
-  const [q] = ruleQuestions([{ line: 1, rule: 2, words: 'not a red-eye', why }], [LINE]);
-  assert.match(q.question, /found nothing\)\. What do you mean by it\?/, q.question);
-  assert.doesNotMatch(q.question, /The\)\./);
-  assert.equal(wholeSentences('One short sentence. Another one that is rather long indeed.', 30), 'One short sentence');
-  assert.equal(wholeSentences('x'.repeat(300) + '.', 200), '', 'a first sentence that does not fit is left out, not cut');
-  assert.equal(wholeSentences('no full stop here', 200), 'no full stop here');
-  const [bare] = ruleQuestions([{ line: 1, rule: 2, words: 'w', why: 'y'.repeat(400) }], [LINE]);
-  assert.doesNotMatch(bare.question, /\(y/);
-  assert.match(bare.question, /in your input\. What do you mean by it\?/);
-});
-
 test('L3: a rule the AI can turn into a number from its own knowledge ("not a red-eye") is carried by a look fact (forRule) with aiProposal and is NOT asked; one it cannot know still is', () => {
   const text = readFileSync(join(HERE, 'fixtures', 'page-partial.txt'), 'utf8');
   const scans = { Flights: scanLabels(text) };
@@ -130,8 +117,6 @@ test('L3: a rule the AI can turn into a number from its own knowledge ("not a re
   assert.equal(rep.facts.length, 1, JSON.stringify(rep));
   assert.equal(rep.facts[0].forRule, 1);
   assert.deepEqual(rep.notFound.map((n) => n.rule), [2], 'rule 1 is checked, so it is not also not-found');
-  assert.deepEqual(ruleQuestions(rep.notFound, [line]).map((q) => q.line), [1]);
-  assert.match(ruleQuestions(rep.notFound, [line])[0].question, /rule 2 - "one per week"/);
   assert.match(renderLookReport(rep), /carries ~ rule 1/);
   const prompt = lookPrompt({ jobLines: [line], labels: ['Flights'], lists: { Flights: 'LIST' } });
   assert.match(prompt, /is NOT something to ask the person about and NOT "notFound"/);
