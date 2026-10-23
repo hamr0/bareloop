@@ -693,7 +693,7 @@ const STOP_TODO = /** @type {Record<string, string>} */ ({
   'invalid-set': 'draft again; if it stops the same way twice, make your PASS/FAIL examples more concrete.',
   'non-code-source': 'point the job at a code repo, or use a folder or file job instead.',
   'listing-unreadable': 'check the repo is a readable git repo with at least one commit, then draft again.',
-  'confirm-abandoned': 'start a new draft when you are ready; nothing was spent beyond the figure above.',
+  'confirm-abandoned': 'start a new draft when you are ready; nothing more was spent.',
   'confirm-restart': 'change the answers you want and start the draft again.',
 });
 
