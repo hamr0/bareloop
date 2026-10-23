@@ -15,7 +15,7 @@ import { runPlan } from '../src/planrun.js';
 import { validateJob } from '../src/job.js';
 import { updateConfig, readConfig, ConfigError } from '../src/config.js';
 import { learnAtRunEnd, hintsForRun, learningHintsOn, readLedger, writeLedger } from '../src/learnstore.js';
-import { hintsMatchRecord, emptyLedger, holdPending, HINT_HEADER, parseHintBlock } from '../src/learn.js';
+import { renderHints, emptyLedger, holdPending, HINT_HEADER, parseHintBlock } from '../src/learn.js';
 import { parseSpineText } from '../src/legs.js';
 import { readRunList } from '../src/runlist.js';
 import { scriptedProvider, initPatientRepo } from './helpers.js';
@@ -149,7 +149,7 @@ test('ON: the planner at the draft is handed the block; no worker is; the spine 
   assert.equal(rec[0].phase, 'draft');
   // byte check: the recorded text == a fresh render from the ledger as it stood at run start
   const ctx = { workflow: 'plan-patient', place: null, specHash: jobSpecHash(r2.spec), now: new Date() };
-  assert.equal(hintsMatchRecord(rec[0].text, before, ctx), true);
+  assert.equal(rec[0].text, renderHints(before, ctx).text);
   assert.ok(rec[0].text.includes(LESSON));
   // who saw it: the planner prompt (call 1) only. Scout (0) and every step/fix prompt (2+) did not, nor any system prompt
   const calls = r2.provider.calls;

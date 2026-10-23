@@ -922,15 +922,6 @@ export function parseHintBlock(text) {
   return out;
 }
 
-/**
- * The byte check: what the spine recorded the planner received against a fresh render from the ledger as it stood.
- * @param {string} recorded @param {Ledger} ledger @param {{workflow: string, place: string|null, specHash?: string|null, now: Date}} o
- * @returns {boolean}
- */
-export function hintsMatchRecord(recorded, ledger, o) {
-  return recorded === renderHints(ledger, o).text;
-}
-
 // ── the place of a job ───────────────────────────────────────────────────────────────────────────
 /**
  * Where a job lives, derived by code from the signed spec's inputs line 1: a website job = the URL host; a repo or

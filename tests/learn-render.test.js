@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  emptyLedger, countLedger, holdPending, renderHints, readableRows, hintsMatchRecord, changedLines, saidLine, HINT_HEADER, HINT_CHARS_MAX, DECAY_DAYS,
+  emptyLedger, countLedger, holdPending, renderHints, readableRows, changedLines, saidLine, HINT_HEADER, HINT_CHARS_MAX, DECAY_DAYS,
 } from '../src/learn.js';
 import { cardsOf } from './learn-fixtures.js';
 
@@ -166,11 +166,11 @@ test('what is not readable: rows of another job or signed hash, rows decayed by 
 test('the byte check: what the spine recorded must equal a fresh render from the ledger as it stood', () => {
   const L = auroraLedger();
   const recorded = renderHints(L, ctx).text;
-  assert.equal(hintsMatchRecord(recorded, L, ctx), true);
-  assert.equal(hintsMatchRecord(`${recorded} `, L, ctx), false, 'one extra byte');
-  assert.equal(hintsMatchRecord(recorded.replace('seen 5', 'seen 6'), L, ctx), false, 'one changed byte');
+  assert.equal(recorded, renderHints(L, ctx).text);
+  assert.notEqual(`${recorded} `, renderHints(L, ctx).text, 'one extra byte');
+  assert.notEqual(recorded.replace('seen 5', 'seen 6'), renderHints(L, ctx).text, 'one changed byte');
   const later = countLedger(L, { runid: 'newrun', cards: built[0].cards, workflow: WF, place: '/p/aurora', specHash: 'h1', trust: 'deterministic', now: NOW });
-  assert.equal(hintsMatchRecord(recorded, later, ctx), false, 'the ledger moved on: the old record no longer matches');
+  assert.notEqual(recorded, renderHints(later, ctx).text, 'the ledger moved on: the old record no longer matches');
 });
 
 test('an empty ledger renders nothing (no lone header)', () => {
