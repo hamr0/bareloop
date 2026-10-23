@@ -135,6 +135,17 @@ test('a secret in the person\'s repo is masked on the card (an append-only recor
   assert.ok(!JSON.stringify(b).includes(token), 'the token must not survive anywhere on a card');
 });
 
+test('the card-level mask: a secret in a field no earlier step masks (the fix diff) is still masked on the card', () => {
+  const token = `ghp_${'a1B2c3D4e5F6g7H8i9J0'.repeat(2)}`;
+  const r = loadRun('mvk2e4uy');
+  // the record is edited: the passing try's diff (seq 125) gains a line carrying the token
+  const passing = r.events.find((e) => e.type === 'attempt-diff' && e.seq === 125);
+  passing.files[0].diff += `+const k = '${token}';\n`;
+  const b = buildCards({ runid: 'mvk2e4uy', events: r.events, audit: r.audit, workdir: r.workdir, questions });
+  assert.match(b.cards[0].whatChanged?.files[0].diff ?? '', /const k = /, 'the edited diff IS the card\'s What changed (so the test can fail)');
+  assert.ok(!JSON.stringify(b).includes(token), 'the token must not survive in the card\'s fix diff');
+});
+
 test('the error-kind extractor, on real quote shapes', () => {
   assert.deepEqual(errorKinds("src/a.js(1,2): error TS7006: Parameter 'x' implicitly has an 'any' type.").kinds, ['TS7006']);
   assert.deepEqual(errorKinds('close:   [cast] src/checks.js:143: const e = /** @type {X} */ (err);').kinds, ['[cast]']);
