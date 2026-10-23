@@ -5,7 +5,7 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.46.0] - 2026-10-23
 
 ### Added
 
@@ -20,6 +20,12 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **A green worktree run no longer fails its final commit when the repo gitignores `.smoke`, `.litectx` or `gate-audit.jsonl`.** `git add` exits 1 when an exclude names a path that exists and is gitignored (pulselog's `.*` rule: run mvk2e4uy), so the work never landed on the branch and the folder was kept. The commit now excludes only the books git would otherwise stage (an ignored path is never staged anyway); a genuine git failure still throws. The `node_modules` glob exclude and the attempt-diff snapshot (`add -f`) were not affected.
 
 - **A key right after a hyphen is now found and masked.** The secret-shape inventory (`SECRET_PATTERNS`) refused to match a key whose previous character was `-`, so `step-ghp_...` slipped past the scan and the redactor. The distinctive prefixes `ghp_`, `github_pat_`, `AKIA`, `AIza` and `xox[bap]-` now drop only the hyphen from their left bound (a word character or `_` in front still blocks the match, so `flask-sqlalchemy` and look-alike words stay clean). `sk-` keeps the full bound because `sk-` ends ordinary words (`task-`...); a key directly after a hyphen there (`step-sk-...`) is a documented known limit of the shape list. Only adds matches.
+
+- **Quadratic and cubic regexes made linear (ReDoS audit; same matches, fuzz-proven).** A long run of one character in a pasted page, a model answer, a patient's source or a config value could make a backtracking regex rescan it from every start. Fixed in `labelscan`, `pagerules`/`pagedry` (the number before a label or unit is now a backward scan, one shared copy), `learn` (patient and worktree path prefixes, `PATH_RE`, the union-find in `climb()`), `text` (`extractArtifact` on an unclosed code fence), `ladder` (`normalizeGap`), `judged` (declaration and JSDoc finders), `authorreadout` (the miswrite sentence), `close-integrity` (the string-literal scan), the bundle import reader, and the trailing-slash, zero, dot and space trims in `config`, `providerrows`, `source`, `schedulewords`, `authorscout` and `modellist`. Each was checked against the old regex on 1M+ random and edge strings with 0 mismatches where a regex was replaced, and each has a regression test that fails on the old code. No change to any result, verdict or signed hash.
+
+### Changed
+
+- **Dead exports removed.** `ruleQuestions` and `wholeSentences` (`src/inputlook.js`; no caller since the asks became code-forced from the page map) and `hintsMatchRecord` (`src/learn.js`; no caller) are deleted. None is reachable from the package root (`src/index.js`).
 
 ## [0.45.0] - 2026-10-22
 
