@@ -46,6 +46,11 @@ export function perFireSpec(schedule, cause) {
   if (jobSpecHash(schedule.spec) !== schedule.specHash) return { ok: false, why: 'The saved schedule no longer matches what you signed. Nothing started.' };
   const spec = JSON.parse(JSON.stringify(schedule.spec));
   if (cause.kind === 'file') {
+    // the card text is `label: value` lines: a name holding a line break would read back as ANOTHER Inputs line, and edge whitespace
+    // is trimmed to a path that does not exist (a leading space in the file name sits mid-path and is harmless). Refused with its reason, never rewritten.
+    if (/[\r\n]/.test(cause.path) || cause.path !== cause.path.trim()) {
+      return { ok: false, why: `The file name ${JSON.stringify(cause.path)} has a line break or a space at its end, which the job form cannot carry. Rename the file. Nothing started.` };
+    }
     const first = Array.isArray(spec.inputs) ? spec.inputs[0] : null;
     if (!first) return { ok: false, why: 'The saved schedule has no input for the file to replace. Nothing started.' };
     spec.inputs = [{ ...first, value: cause.path }, ...spec.inputs.slice(1)];
