@@ -482,6 +482,17 @@ export function sharedKind(a, b) {
   return a.kinds[0] !== 'other' && b.kinds[0] !== 'other' && a.kinds.some((x) => b.kinds.includes(x));
 }
 
+/**
+ * Do two cards agree on kind? A shared error code / kind, OR (RULED 2026-10-23 R1) both carry NO code (`other`) and both
+ * have a non-empty flagged-text token set, so the text rule alone decides. A coded card never matches a code-less one.
+ * The 60% was fitted on cards WITH codes; the code-less use is UNTESTED on real data.
+ * @param {{kinds: string[], tokens: string[]}} a @param {{kinds: string[], tokens: string[]}} b
+ */
+export function kindAgrees(a, b) {
+  if (sharedKind(a, b)) return true;
+  return a.kinds[0] === 'other' && b.kinds[0] === 'other' && a.tokens.length > 0 && b.tokens.length > 0;
+}
+
 /** Jaccard of two token arrays; an empty side scores 0. @param {string[]} a @param {string[]} b */
 export function jaccard(a, b) {
   if (!a.length || !b.length) return 0;
@@ -492,13 +503,13 @@ export function jaccard(a, b) {
 }
 
 /**
- * Are two cards one lesson? Same check, a shared error kind (kind `other` never matches anything) and Jaccard >= 60%
- * on flagged-text tokens. `sameJob: false` drops the job test (RULING 1: the cross-job rule for climbing).
+ * Are two cards one lesson? Same check, kinds that agree ({@link kindAgrees}: a shared code, or both code-less with text
+ * on both sides) and Jaccard >= 60% on flagged-text tokens. `sameJob: false` drops the job test (RULING 1: the cross-job rule for climbing).
  * @param {Card} a @param {Card} b @param {{sameJob?: boolean}} [o]
  * @returns {{match: boolean, score: number}}
  */
 export function cardsMatch(a, b, { sameJob = true } = {}) {
-  if ((sameJob && a.job !== b.job) || a.check !== b.check || !sharedKind(a, b)) return { match: false, score: 0 };
+  if ((sameJob && a.job !== b.job) || a.check !== b.check || !kindAgrees(a, b)) return { match: false, score: 0 };
   const score = jaccard(a.tokens, b.tokens);
   return { match: score >= JACCARD_MIN, score };
 }
@@ -521,7 +532,7 @@ export function foldCards(cards) {
   const groups = [];
   for (const m of comps.values()) {
     let ok = true;
-    for (let a = 0; a < m.length && ok; a += 1) for (let b = a + 1; b < m.length; b += 1) if (!sharedKind(cards[m[a]], cards[m[b]])) { ok = false; break; }
+    for (let a = 0; a < m.length && ok; a += 1) for (let b = a + 1; b < m.length; b += 1) if (!kindAgrees(cards[m[a]], cards[m[b]])) { ok = false; break; }
     if (ok) groups.push(m.map((i) => cards[i]));
     else for (const i of m) groups.push([cards[i]]);
   }
