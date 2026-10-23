@@ -58,11 +58,11 @@ export const STRIKE_LIMIT = 2;
  */
 const VOLATILE = [
   // TAP's own timing line, dropped WHOLE: its value is the only thing on it
-  [/^[ \t]*#?[ \t]*duration_ms[ \t]*[:=].*$/gm, ''],
+  [/^[ \t]*(?:#[ \t]*)?duration_ms[ \t]*[:=].*$/gm, ''],
   // ISO-8601 stamps, wherever they appear in a close's output
   [/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/g, '<ts>'],
   // any millisecond figure (`(1.738ms)`, `took 12 ms`)
-  [/\d+(?:\.\d+)?[ \t]*ms\b/g, '<ms>'],
+  [/(?<!\d)\d+(?:\.\d+)?[ \t]*ms\b/g, '<ms>'],
 ];
 
 /**

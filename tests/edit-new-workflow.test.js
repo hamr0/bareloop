@@ -17,7 +17,7 @@ test('signing an edited spec (a DIFFERENT workflow key) leaves the job\'s schedu
   writeFileSync(resolvedSpecPath, JSON.stringify({ ...w.spec, goal: 'a different goal, so a different workflow' }));
   assert.notEqual(workflowKey(JSON.parse(readFileSync(resolvedSpecPath, 'utf8'))), workflowKey(w.spec));
   const session = { state: { phase: 'prepared', specHash: 'abc123', resolvedSpecPath, outDir, messages: [] } };
-  const r = signRun(session, 'abc123', { env: {}, spawnFn: () => ({ unref() {} }), bareloopBin: '/x/bareloop.mjs', home: w.home, schedules: w.door });
+  const r = signRun(session, 'abc123', { env: {}, spawnFn: () => ({ unref() {} }), bareloopBin: '/x/bareloop.mjs', home: w.home });
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.ok(existsSync(join(w.dir, 'schedule.json')), 'the schedule survives an edited sign');
   assert.equal(w.rows().some((x) => x.kind === 'edited'), false);

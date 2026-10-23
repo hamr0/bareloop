@@ -926,6 +926,10 @@
                 <button class="chip" aria-pressed="false" data-view="flat" data-testid="audit-view-flat">Flat</button>
               </div>
             </div>
+            <div id="audit-learnings" class="audit-part" data-testid="audit-learnings" hidden>
+              <button type="button" id="audit-learnings-summary" class="btn audit-part-toggle" aria-expanded="false" data-testid="audit-learnings-summary">What the planner was told from earlier runs</button>
+              <div id="audit-learnings-list" class="audit-part-body" data-testid="audit-learnings-list" hidden></div>
+            </div>
             <div id="audit-groups" data-testid="audit-groups"></div>
             <div id="audit-flat-wrap" hidden>
               <div id="audit-empty" class="hint" data-testid="audit-empty" style="font-size:13px;padding:24px 0;">select a run first</div>
@@ -2828,6 +2832,98 @@
     // fetch, wired separately in selectRun below).
     lastLegDividers = Array.isArray(detail.legDividers) ? detail.legDividers : [];
     renderAuditGroups(detail);
+    renderAuditLearnings(detail);
+  }
+
+  // Cross-run learnings, READ-ONLY: what the planner was handed, one group per injection (the draft, the first replan). ONE fold for the
+  // whole section (the <details> in the Audit tab); opened, every hint shows at once as a title line + labelled rows, no inner toggles.
+  // The fields come from the server (learn.js parseHintBlock, the one reader of the block) - this page never splits the prose.
+  // No edit, no Reject, no button. Absent (the setting was off, or nothing was readable) = the section stays hidden.
+  // one row of a hint's table: the same label cell + value cell the schedule section body uses
+  function learnRow(tbody, testid, label, lines){
+    var tr = document.createElement("tr");
+    tr.setAttribute("data-testid", testid);
+    var lab = document.createElement("td");
+    lab.className = "hint";
+    lab.style.cssText = "white-space:nowrap";
+    lab.textContent = label;
+    var val = document.createElement("td");
+    val.style.cssText = "overflow-wrap:anywhere;white-space:pre-wrap";
+    val.textContent = lines.join("\n");
+    tr.appendChild(lab);
+    tr.appendChild(val);
+    tbody.appendChild(tr);
+  }
+  function learnHintLabel(h){
+    var bits = [h.n, h.level, "seen " + h.count + (h.count === 1 ? " time" : " times")];
+    if(h.check) bits.push(h.check);
+    if(h.kinds && h.kinds.length) bits.push(h.kinds.join(", "));
+    bits.push(h.fixed ? "fixed" : "never fixed");
+    return bits.join(" \u00B7 ");
+  }
+  function renderAuditLearnings(detail){
+    var box = document.getElementById("audit-learnings");
+    var list = document.getElementById("audit-learnings-list");
+    var sum = document.getElementById("audit-learnings-summary");
+    if(!box || !list) return;
+    var items = detail && Array.isArray(detail.learnings) ? detail.learnings : [];
+    list.innerHTML = "";
+    var head = "What the planner was told from earlier runs";
+    items.forEach(function(it, gi){
+      var hints = Array.isArray(it.hints) ? it.hints : [];
+      var when = it.phase === "replan" ? "first replan" : "draft";
+      if(items.length > 1){
+        var g = document.createElement("div");
+        g.className = "hint";
+        g.style.cssText = "margin-top:10px;font-weight:600;";
+        g.setAttribute("data-testid", "audit-learnings-group-" + it.phase);
+        g.textContent = it.phase === "replan" ? "At the first replan" : "At the draft";
+        list.appendChild(g);
+      }
+      var note = document.createElement("div");
+      note.className = "hint";
+      note.style.cssText = "margin:6px 0;overflow-wrap:anywhere;";
+      note.textContent = (gi === 0 ? "Read-only. " : "") + "Given to the planner at the " + when + " (" + Number(it.chars).toLocaleString("en-US") + " characters)." + (gi === 0 ? " No worker sees it." : "");
+      list.appendChild(note);
+      hints.forEach(function(h){
+        var hint = document.createElement("div");
+        hint.className = "audit-table-scroll";
+        hint.setAttribute("data-testid", "audit-learnings-hint-" + it.phase + "-" + h.n);
+        var table = document.createElement("table");
+        table.className = "rounds-table";
+        var tbody = document.createElement("tbody");
+        var trT = document.createElement("tr");
+        var title = document.createElement("td");
+        title.setAttribute("colspan", "2");
+        title.style.cssText = "font-weight:600;overflow-wrap:anywhere";
+        title.setAttribute("data-testid", "audit-learnings-hint-" + it.phase + "-" + h.n + "-title");
+        title.textContent = learnHintLabel(h);
+        trT.appendChild(title);
+        tbody.appendChild(trT);
+        var t = "audit-learnings-hint-" + it.phase + "-" + h.n + "-";
+        if(h.said) learnRow(tbody, t + "said", "It said:", [h.said]);
+        if(h.touched) learnRow(tbody, t + "touched", "Fix touched:", [h.touched]);
+        if(h.changed && h.changed.length) learnRow(tbody, t + "changed", "What changed:", h.changed.concat(h.moreChanged ? ["(+" + h.moreChanged + " more)"] : []));
+        table.appendChild(tbody);
+        hint.appendChild(table);
+        list.appendChild(hint);
+      });
+    });
+    if(sum){
+      var first = items.length ? (Array.isArray(items[0].hints) ? items[0].hints.length : 0) : 0;
+      var label = items.length ? head + " \u00B7 " + first + (first === 1 ? " hint" : " hints") : head;
+      // no arrow (hamr 2026-10-23): the state chip leads; aria-expanded carries open/closed. The same `[✓] word` state markup the schedule/step headers wear (stateDotHTML), then the plain-words title
+      var paint = function(){ sum.innerHTML = stateDotHTML(glyphClass("\u2713"), "learnings", "audit-learnings-state") + " " + escapeXml(label); };
+      paint();
+      // ONE fold, same as the other Audit sections: the header button toggles the body (wired once)
+      sum.onclick = function(){
+        var open = sum.getAttribute("aria-expanded") === "true";
+        sum.setAttribute("aria-expanded", open ? "false" : "true");
+        list.hidden = open;
+        paint();
+      };
+    }
+    box.hidden = items.length === 0;
   }
 
   // ONE spelling of a step's state: its dot + the bold state word — read by the Run tab's step cards AND the Audit tab's grouped rows

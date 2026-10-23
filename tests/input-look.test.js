@@ -256,3 +256,11 @@ test('authorCloseForJob (L2): an input with nothing to read (empty, or only a si
     assert.match(seen.scout.reason, /holds nothing to read/, name);
   }
 });
+
+test('lookLines strips page-reader tags in linear time: ten lines of "[a=[a=..." with no closing bracket return at once (the backtracking regex took seconds)', () => {
+  const t0 = performance.now();
+  const out = lookLines(`${'[a='.repeat(6666)}\n`.repeat(10));
+  assert.equal(out.length, 11);
+  assert.deepEqual(lookLines('a [ref=1] b [x=y]c'), ['a b c']);
+  assert.ok(performance.now() - t0 < 1000, `took ${performance.now() - t0} ms`);
+});

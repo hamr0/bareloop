@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import {
-  addWorktree, hideBareloopDir, uncommittedCount, removeWorktree, worktreePath, shortHead, EXCLUDE_LINE, NODE_MODULES_LINE,
+  addWorktree, commitWork, hideBareloopDir, uncommittedCount, removeWorktree, worktreePath, shortHead, EXCLUDE_LINE, NODE_MODULES_LINE,
 } from '../src/worktree.js';
 
 /** @type {string[]} */
@@ -147,4 +147,51 @@ test('addWorktree: the person\'s git hooks never run (post-checkout writes a mar
   rmSync(marker);
   addWorktree(repo, worktreePath(repo, 'r7'));
   assert.equal(existsSync(marker), false, 'bareloop\'s worktree add runs none of the person\'s hooks');
+});
+
+/** a repo whose .gitignore default-denies dot-directories (pulselog's shape) and ignores gate-audit.jsonl + node_modules */
+function makeIgnoringRepo(ignore) {
+  const dir = mkdtempSync(join(tmpdir(), 'worktree-ignrepo-'));
+  tmpDirs.push(dir);
+  git(dir, ['init', '-q', '-b', 'main']);
+  writeFileSync(join(dir, '.gitignore'), ignore);
+  writeFileSync(join(dir, 'a.txt'), 'one\n');
+  git(dir, ['add', '-A']);
+  git(dir, ['commit', '-q', '-m', 'seed']);
+  return dir;
+}
+const plantBooks = (wt) => {
+  for (const d of ['.smoke', '.litectx', 'node_modules', join('pkg', 'node_modules')]) {
+    mkdirSync(join(wt, d), { recursive: true });
+    writeFileSync(join(wt, d, 'f'), 'x\n');
+  }
+  writeFileSync(join(wt, 'gate-audit.jsonl'), '{}\n');
+  writeFileSync(join(wt, 'work.txt'), 'the work\n');
+};
+const committedFiles = (wt) => git(wt, ['show', '--name-only', '--format=', 'HEAD']).trim().split('\n');
+
+test('commitWork: the books are gitignored AND present (run mvk2e4uy) -- the add still succeeds, the commit holds only the work', () => {
+  const repo = makeIgnoringRepo('.*\n!.gitignore\nnode_modules/\ngate-audit.jsonl\n');
+  const wt = worktreePath(repo, 'r8');
+  addWorktree(repo, wt);
+  plantBooks(wt);
+  const r = commitWork(wt, 'work');
+  assert.equal(r.committed, true);
+  assert.deepEqual(committedFiles(wt), ['work.txt']);
+});
+
+test('commitWork: the books present but NOT ignored are still never committed (the excludes keep doing their job)', () => {
+  const repo = makeIgnoringRepo('# nothing ignored\n');
+  const wt = worktreePath(repo, 'r9');
+  addWorktree(repo, wt);
+  plantBooks(wt);
+  const r = commitWork(wt, 'work');
+  assert.equal(r.committed, true);
+  assert.deepEqual(committedFiles(wt), ['work.txt']);
+});
+
+test('commitWork: a real git failure still throws (no swallowed error)', () => {
+  const notRepo = mkdtempSync(join(tmpdir(), 'worktree-notrepo-'));
+  tmpDirs.push(notRepo);
+  assert.throws(() => commitWork(notRepo, 'work'));
 });

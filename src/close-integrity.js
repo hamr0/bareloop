@@ -72,7 +72,44 @@ export const SYSTEM_PATH_PREFIXES = ['/usr/', '/bin/', '/sbin/', '/lib/', '/lib6
 // Every quoted string literal (single/double/backtick). Backtick literals
 // carrying `${…}` interpolation are filtered out below — they are not a
 // fixed literal, so they cannot be "a path baked into the script" at all.
-const STRING_LITERAL_RE = /'([^'\\]*(?:\\.[^'\\]*)*)'|"([^"\\]*(?:\\.[^"\\]*)*)"|`([^`\\]*(?:\\.[^`\\]*)*)`/g;
+const STRING_BODY = {
+  "'": /[^'\\]*(?:\\.[^'\\]*)*/y,
+  '"': /[^"\\]*(?:\\.[^"\\]*)*/y,
+  '`': /[^`\\]*(?:\\.[^`\\]*)*/y,
+};
+
+/**
+ * The quoted string literals of `source`, in order: each opening quote reads its body (backslash pairs taken
+ * whole, so an escaped quote does not close it) and is a literal only when its own quote closes it. An opening
+ * quote that never finds its closer would be retried by every later quote of the same kind inside what it
+ * read (each of them is an escaped one and would read the same body to the same dead end), so the end of the
+ * failed read is remembered and those retries are skipped, which keeps a long unterminated string linear.
+ * @param {string} source
+ * @returns {{ value: string, backtick: boolean }[]}
+ */
+function stringLiteralsOf(source) {
+  /** @type {{ value: string, backtick: boolean }[]} */
+  const out = [];
+  const deadUntil = { "'": 0, '"': 0, '`': 0 };
+  const opener = /['"`]/g;
+  let from = 0;
+  for (;;) {
+    opener.lastIndex = from;
+    const hit = opener.exec(source);
+    if (hit === null) return out;
+    const at = hit.index;
+    const quote = /** @type {"'"|'"'|'`'} */ (source[at]);
+    from = at + 1;
+    if (at < deadUntil[quote]) continue;
+    const body = STRING_BODY[quote];
+    body.lastIndex = at + 1;
+    body.exec(source);
+    const end = body.lastIndex;
+    if (source[end] !== quote) { deadUntil[quote] = end; continue; }
+    out.push({ value: source.slice(at + 1, end), backtick: quote === '`' });
+    from = end + 1;
+  }
+}
 
 /**
  * F8/F129 — a close judges the cwd the runner gives it, never a path baked
@@ -93,10 +130,7 @@ const STRING_LITERAL_RE = /'([^'\\]*(?:\\.[^'\\]*)*)'|"([^"\\]*(?:\\.[^"\\]*)*)"
 export function absolutePathLiteralsOf(source) {
   /** @type {string[]} */
   const hits = [];
-  for (const m of source.matchAll(STRING_LITERAL_RE)) {
-    const isBacktick = m[3] !== undefined;
-    const value = m[1] ?? m[2] ?? m[3];
-    if (value === undefined) continue;
+  for (const { value, backtick: isBacktick } of stringLiteralsOf(source)) {
     if (isBacktick && value.includes('${')) continue; // interpolated, not a fixed literal
     if (!value.startsWith('/')) continue;
     if (SYSTEM_PATH_PREFIXES.some((p) => value.startsWith(p))) continue;

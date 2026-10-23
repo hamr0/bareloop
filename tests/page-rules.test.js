@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyPageRules, tieOf } from '../src/pagerules.js';
+import { applyPageRules, tieOf, numberAtEnd } from '../src/pagerules.js';
 import { dropSentence } from '../src/pagedropwords.js';
 import { loadFixture, JOBS } from './idea-a-fixtures.js';
 
@@ -250,4 +250,13 @@ test('list limits: a longer list is cut to the first 10 units (and a unit over 1
   const r = applyPageRules(page, { facts: [{ name: 'price', from: 'rule 1', shape: 'money', words: ['Price'], unit: [...units, long] }] }, JOBS.flights);
   assert.deepEqual(r.facts[0].unit, units.slice(0, 10));
   assert.deepEqual(said(r.dropped), [`price|${long}|unit-too-long`, 'price|unitwordk|limit-unit'].sort());
+});
+
+test('numberAtEnd reads the number before a label in linear time: a 50000-char "1,1,...x" and "111...x" prefix returns at once (the backtracking regex took many seconds)', () => {
+  const t0 = performance.now();
+  assert.equal(numberAtEnd('1,'.repeat(25000) + 'x'), undefined);
+  assert.equal(numberAtEnd('1'.repeat(50000) + 'x'), undefined);
+  assert.equal(numberAtEnd('Total 1,234.50 '), '1,234.50');
+  assert.equal(numberAtEnd('x,5'), '5');
+  assert.ok(performance.now() - t0 < 1000, `took ${performance.now() - t0} ms`);
 });

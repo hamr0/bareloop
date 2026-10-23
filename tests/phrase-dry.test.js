@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dryReadMoney, dryReadPhrases } from '../src/pagedry.js';
+import { dryReadMoney, dryReadPhrases, moneyResultLines } from '../src/pagedry.js';
 import { dropSentence, dropRows, dropLine, isReadNote } from '../src/pagedropwords.js';
 import { lineRules } from '../src/rubricstep.js';
 
@@ -50,4 +50,12 @@ test('no kept money fact: the result lines are unknown, so a phrase fact passes 
   const r = await dryReadPhrases(page, [phrase('destination city', 'Rome')]);
   assert.deepEqual(r.facts.map((f) => f.name), ['destination city']);
   assert.deepEqual(r.dropped, []);
+});
+
+test('moneyResultLines reads the number before a unit in linear time: a 20000 x "1," line then "x EUR" returns well under a second (the backtracking regex took seconds)', () => {
+  const fact = { line: 1, name: 'price', shape: 'money', from: 'rule 1', words: [], unit: ['EUR'] };
+  const t0 = performance.now();
+  assert.deepEqual(moneyResultLines('1,'.repeat(20000) + 'x EUR', fact), []);
+  assert.deepEqual(moneyResultLines('Total 1,234.50 EUR', fact).map((r) => r.value), ['1234.50']);
+  assert.ok(performance.now() - t0 < 1000, `took ${performance.now() - t0} ms`);
 });

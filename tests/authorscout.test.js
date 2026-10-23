@@ -581,6 +581,14 @@ test('cleanEntry strips the surveyor\'s prose annotations off a path', () => {
   assert.equal(cleanEntry('  src  '), 'src');
 });
 
+test('cleanEntry on an entry with 30000 slashes before a last character is linear (the trailing-slash regex was quadratic), and still drops only trailing slashes', () => {
+  const t0 = performance.now();
+  const mid = `src${'/'.repeat(30000)}x`;
+  assert.equal(cleanEntry(mid), mid);
+  assert.equal(cleanEntry(`${mid}${'/'.repeat(30000)} (symlink)`), mid);
+  assert.ok(performance.now() - t0 < 1000, `took ${performance.now() - t0} ms`);
+});
+
 // ── the REAL surveyor: the fence, not the promise ────────────────────────────
 //
 // `defaultSurveyor` is the seam that builds the actual gate, and it needs NO

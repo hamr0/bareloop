@@ -9,7 +9,6 @@ import { mkdtempSync, writeFileSync, rmSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ruleQuestions } from '../src/inputlook.js';
 import { normalizeQuestions, MAX_QUESTIONS } from '../src/authorflow.js';
 import { draftStopText } from '../src/authorreadout.js';
 import { createSession } from '../src/panel/authorsession.js';
@@ -28,23 +27,8 @@ const keysHome = () => { const d = tmp('look-ask-home-'); writeFileSync(join(d, 
 
 const LINES = [{ n: 1, text: 'Find the last 3 releases', rule: 'released in October; one per week', rules: ['released in October', 'one per week'] }];
 
-test('ruleQuestions: only a look entry that names a ~ rule becomes a question, worded by code with its line and rule; anything else is not asked', () => {
-  const qs = ruleQuestions([
-    { line: 1, rule: 2, words: 'one per week', why: 'the input has no weekly grouping' },
-    { line: 1, rule: 2, words: 'dup', why: 'again' },
-    { line: 1, why: 'the input holds no flights at all' },
-    { line: 1, rule: 9, why: 'no such rule' },
-    { line: 4, rule: 1, why: 'no such line' },
-  ], LINES);
-  assert.equal(qs.length, 1);
-  assert.equal(qs[0].line, 1);
-  assert.match(qs[0].question, /^Line 1, rule 2 - "one per week": I could not find "one per week" \(from your words\) in your input \(the input has no weekly grouping\)\. What do you mean by it\? Your answer is added as a new ~ rule on line 1\.$/);
-  assert.deepEqual(ruleQuestions([], LINES), []);
-});
-
 test('the existing caps apply: at most MAX_QUESTIONS are kept, each on a line the look named', () => {
-  const lines = [1, 2, 3, 4].map((n) => ({ n, text: `l${n}`, rule: 'r', rules: ['r'] }));
-  const cands = ruleQuestions([1, 2, 3, 4].map((n) => ({ line: n, rule: 1, words: 'w', why: 'y' })), lines);
+  const cands = [1, 2, 3, 4].map((n) => ({ line: n, question: `Line ${n}, rule 1 - "r": what do you mean by it?` }));
   const kept = normalizeQuestions(cands, [1, 2, 3, 4]);
   assert.equal(kept.kept.length, MAX_QUESTIONS);
   assert.equal(kept.dropped.length, 1);

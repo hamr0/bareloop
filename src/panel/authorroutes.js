@@ -422,7 +422,7 @@ export function createAuthorRoutes(opts) {
     }
     if (sub === 'sign') {
       const claimedHash = String(body?.specHash ?? '');
-      const r = signRun(session, claimedHash, { env: envNow(), spawnFn, bareloopBin, sessionsRoot: opts.sessionsRoot, home: opts.home, ...(opts.schedules ? { schedules: opts.schedules } : {}) });
+      const r = signRun(session, claimedHash, { env: envNow(), spawnFn, bareloopBin, sessionsRoot: opts.sessionsRoot, home: opts.home });
       send(r.ok ? 200 : 400, r);
       return true;
     }

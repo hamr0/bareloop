@@ -298,3 +298,19 @@ test('proveRubricInputs: the refusal for an unreadable page ends in one full sto
   const r = await proveRubricInputs({ inputs: [{ n: 1, label: 'Flights', value: URL1 }], into: join(tmp(t, 'url-dots-'), 'seed'), fetchUrl: async () => ({ ok: false, error: 'blocked by the SSRF guard.' }) });
   assert.equal(!r.ok && r.error, 'line 1: blocked by the SSRF guard. Nothing spent.');
 });
+
+test('pageContentChars counts a 50000-character line of "[a=[a=..." (no closing bracket) in linear time, and still drops a real tag', () => {
+  const t0 = performance.now();
+  assert.equal(pageContentChars('[a='.repeat(16666)), 49998);
+  assert.equal(pageContentChars('- text [ref=12] more'), 'text   more'.replace(/\s+/g, ' ').length);
+  assert.ok(performance.now() - t0 < 300, `took ${performance.now() - t0} ms`);
+});
+
+test('proveRubricInputs: an unreadable-page reason made of 10000 ". " pairs before a last character is trimmed in linear time (the trailing-dots regex was quadratic)', async (t) => {
+  const t0 = performance.now();
+  const dir = tmp(t, 'url-refuse-long-');
+  const bad = await proveRubricInputs({ inputs: [{ n: 1, label: 'Flights', value: URL1 }], into: join(dir, 'a'), fetchUrl: async () => ({ ok: false, error: `no text${'. '.repeat(10000)}x. . ` }) });
+  assert.equal(!bad.ok && bad.code, 'input-url-unreadable');
+  assert.match(String(!bad.ok && bad.error), /x\. Nothing spent\.$/);
+  assert.ok(performance.now() - t0 < 1000, `took ${performance.now() - t0} ms`);
+});

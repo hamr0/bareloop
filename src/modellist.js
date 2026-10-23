@@ -55,7 +55,7 @@ export function idsOf(shape, body) {
  * @returns {Promise<ListResult>}
  */
 export async function listModels({ shape, baseUrl, key, fetchImpl = fetch, timeoutMs = LIST_TIMEOUT_MS }) {
-  const base = typeof baseUrl === 'string' ? baseUrl.trim().replace(/\/+$/, '') : '';
+  const base = typeof baseUrl === 'string' ? baseUrl.trim().replace(/(?<!\/)\/+$/, '') : '';
   if (base === '') return { ok: false, why: 'Type a Base URL.', status: 'no-base-url' };
   const url = `${base}/models`;
   const started = Date.now();

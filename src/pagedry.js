@@ -7,14 +7,13 @@
 
 import { createHash } from 'node:crypto';
 import { gradeStep } from './rubricstep.js';
-import { linesOf } from './pagerules.js';
+import { linesOf, numberAtEnd } from './pagerules.js';
 
 /** @typedef {import('./pagerules.js').KeptFact} KeptFact @typedef {import('./pagerules.js').Dropped} Dropped */
 
 /** a number as the page writes it, thousands commas allowed */
 const NUM = '\\d[\\d,]*(?:\\.\\d+)?';
 const AFTER_LABEL = new RegExp(`^\\s*(?:[$€£]\\s*)?(${NUM})`);
-const BEFORE_UNIT = new RegExp(`(${NUM})\\s*$`);
 /** the label every dry-read claim is made under (the checker only needs one name; the fact's own is not read) */
 const CLAIM = 'price';
 const SOURCE = 'page';
@@ -39,7 +38,7 @@ export function moneyResultLines(text, k) {
       }
     } else {
       for (const u of k.unit ?? []) {
-        for (let at = ln.indexOf(u); at !== -1 && amount === undefined; at = ln.indexOf(u, at + u.length)) amount = BEFORE_UNIT.exec(ln.slice(0, at))?.[1];
+        for (let at = ln.indexOf(u); at !== -1 && amount === undefined; at = ln.indexOf(u, at + u.length)) amount = numberAtEnd(ln.slice(0, at));
         if (amount !== undefined) break;
       }
     }

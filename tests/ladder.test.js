@@ -194,3 +194,11 @@ test('the brief never names a file the close did not name — it carries counts 
   l.record({ iteration: 2, gap: 'src/secret-culprit.ts(3,1): error TS2322' });
   assert.doesNotMatch(l.brief(), /secret-culprit/, 'the close names the culprit to the worker; the brief names mechanism (F28)');
 });
+
+test('normalizeGap on 200000-character runs of spaces and digits is linear (the duration_ms and ms regexes were quadratic), and the stamps still go', () => {
+  const t0 = performance.now();
+  assert.equal(normalizeGap(' '.repeat(200000) + 'x'), 'x');
+  assert.equal(normalizeGap('1'.repeat(200000) + 'x').length, 200001);
+  assert.equal(normalizeGap('  # duration_ms: 1.5\n12 ms 3.4ms'), '<ms> <ms>');
+  assert.ok(performance.now() - t0 < 1000, `took ${performance.now() - t0} ms`);
+});

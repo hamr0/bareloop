@@ -778,7 +778,7 @@ export const COUNTS_ONLY_NAMES = 12;
  * `"src (also …)"`). Strip the annotation, keep the path.
  * @param {any} e
  */
-export const cleanEntry = (e) => String(e ?? '').split(' (')[0].trim().replace(/\/+$/, '');
+export const cleanEntry = (e) => String(e ?? '').split(' (')[0].trim().replace(/(?<!\/)\/+$/, '');
 
 /**
  * `git ls-tree -r --name-only <seed>` — the files as of the SEED COMMIT.
