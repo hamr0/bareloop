@@ -789,3 +789,13 @@ test('exportBundle F132: re-signed sha256 EQUALS the source signature when the r
   const specOut = JSON.parse(readFileSync(join(outDir, 'spec.json'), 'utf8'));
   assert.equal(specOut.close[0].sha256, sha256, 'no rewrite happened, so the re-signed hash must equal the source signature');
 });
+
+test('exportBundle reads a close script ending in "import" plus 2000 spaces in linear time (the import regex was cubic), and still verifies the real import', (t) => {
+  const t0 = performance.now();
+  const r = exportWithScript(t, `${CLOSE_SCRIPT_SOURCE}\nimport${' '.repeat(2000)}x\nimport ${'import '.repeat(2000)}`);
+  assert.equal(r.ok, true, JSON.stringify(r.reds));
+  const bad = exportWithScript(t, `${CLOSE_SCRIPT_SOURCE}\nimport${' '.repeat(2000)}x\nimport def from '../src/kinds.js';`);
+  assert.equal(bad.ok, false);
+  assert.equal(bad.reds[0].code, 'close-import-unparsed');
+  assert.ok(performance.now() - t0 < 500, `took ${performance.now() - t0} ms`);
+});

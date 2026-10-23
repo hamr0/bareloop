@@ -115,10 +115,95 @@ function isBareloopSrcImport(spec) {
   return spec === 'bareloop' || /^(\.\.?\/)+src\//.test(spec);
 }
 
-// Every STATIC import statement, clause captured whole (undefined when there
-// is no `from` — a bare side-effect `import 'x'`). Deliberately permissive:
-// the shape check below is what decides legality, not this regex.
-const STATIC_IMPORT_RE = /import\s+(?:([^'";]*?)\s+from\s+)?(['"])([^'"]+)\2/g;
+/**
+ * Every STATIC import statement, clause captured whole (undefined when there
+ * is no `from` — a bare side-effect `import 'x'`). Deliberately permissive:
+ * the shape check below is what decides legality, not this reader.
+ *
+ * It reads exactly what `/import\s+(?:([^'";]*?)\s+from\s+)?(['"])([^'"]+)\2/g`
+ * read (that regex was cubic on many `import` words or a long run of spaces,
+ * each start rescanning the text after it). After `import` and its whitespace
+ * the statement's specifier quote can only be the FIRST quote or semicolon
+ * that follows (the clause may hold neither), so the `from` before it, the
+ * clause before that and the closing quote after it are each found by one
+ * look at that spot, and the spot is remembered for the next `import` word.
+ * The one odd shape the regex also accepted is kept: `import  from 'x'` (two
+ * or more whitespace characters, `from` straight after them) reads with an
+ * empty clause, the regex having given one whitespace character back to it.
+ * @param {string} source
+ * @returns {{ raw: string, clause: string|undefined, spec: string }[]}
+ */
+function staticImportsOf(source) {
+  /** @type {{ raw: string, clause: string|undefined, spec: string }[]} */
+  const out = [];
+  const n = source.length;
+  const isSpace = (/** @type {number} */ i) => /\s/.test(source[i]);
+  const stops = /['";]/g;
+  const quotes = /['"]/g;
+  // first quote-or-semicolon at or after `stopFrom` (n when none), reused while the next word still lies before it
+  let stopFrom = 0;
+  let stopAt = -1;
+  const firstStop = (/** @type {number} */ i) => {
+    if (stopAt >= 0 && i >= stopFrom && i <= stopAt) return stopAt;
+    stops.lastIndex = i;
+    stopFrom = i;
+    stopAt = stops.exec(source)?.index ?? n;
+    return stopAt;
+  };
+  // what follows the specifier quote at `q`, read once per quote: the end of the statement, or -1
+  let tailQuote = -1;
+  let tailEnd = -1;
+  let closerFrom = 0;
+  let closerAt = -1;
+  const tailOf = (/** @type {number} */ q) => {
+    if (q === tailQuote) return tailEnd;
+    tailQuote = q;
+    if (!(closerAt >= 0 && q + 1 >= closerFrom && q + 1 <= closerAt)) {
+      quotes.lastIndex = q + 1;
+      closerFrom = q + 1;
+      closerAt = quotes.exec(source)?.index ?? n;
+    }
+    tailEnd = closerAt > q + 1 && closerAt < n && source[closerAt] === source[q] ? closerAt + 1 : -1;
+    return tailEnd;
+  };
+  // the `from` standing just before the whitespace before quote `q`: its start, or -1; read once per quote
+  let fromQuote = -1;
+  let fromStart = -1;
+  const fromBefore = (/** @type {number} */ q) => {
+    if (q === fromQuote) return fromStart;
+    fromQuote = q;
+    let k = q;
+    while (k > 0 && isSpace(k - 1)) k -= 1;
+    fromStart = k < q && k >= 4 && source.startsWith('from', k - 4) ? k - 4 : -1;
+    return fromStart;
+  };
+  let from = 0;
+  for (;;) {
+    const at = source.indexOf('import', from);
+    if (at === -1) return out;
+    from = at + 1;
+    let b = at + 6;
+    while (b < n && isSpace(b)) b += 1;
+    const blanks = b - (at + 6);
+    if (blanks === 0 || b >= n) continue;
+    const q = firstStop(b);
+    if (q >= n || (source[q] !== '"' && source[q] !== "'")) continue;
+    const end = tailOf(q);
+    if (end === -1) continue;
+    const f = fromBefore(q);
+    /** @type {string|undefined} */
+    let clause;
+    if (q === b) clause = undefined; // `import 'x'`, no clause
+    else if (f === b && blanks >= 2) clause = ''; // `import  from 'x'`
+    else if (f > b && isSpace(f - 1)) {
+      let j = f - 1;
+      while (isSpace(j - 1)) j -= 1;
+      clause = source.slice(b, j);
+    } else continue;
+    out.push({ raw: source.slice(at, end), clause, spec: source.slice(q + 1, end - 1) });
+    from = end;
+  }
+}
 // Dynamic `import('x')` (and `await import('x')`, `import ('x')`, …) — no
 // clause exists for this form at all, so it is ALWAYS unparsed when it
 // targets something this bundle would otherwise have to check.
@@ -146,8 +231,7 @@ function isRelative(spec) {
 function relevantImportsOf(source) {
   /** @type {{ raw: string, spec: string, clause: string|null, dynamic: boolean }[]} */
   const out = [];
-  for (const m of source.matchAll(STATIC_IMPORT_RE)) {
-    const [raw, clause, , spec] = m;
+  for (const { raw, clause, spec } of staticImportsOf(source)) {
     if (!isRelative(spec) && spec !== 'bareloop') continue;
     out.push({ raw: raw.trim(), spec, clause: clause === undefined ? null : clause.trim(), dynamic: false });
   }
