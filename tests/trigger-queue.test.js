@@ -45,8 +45,8 @@ test('arrival order beats name order when the arrival times differ', async () =>
   const f = await qWorld();
   f.drop('first.txt'); await f.polls();
   assert.deepEqual(f.started(), ['first.txt']);
-  f.now.add(60_000); f.drop('z.txt'); await f.polls();
-  f.now.add(60_000); f.drop('a.txt'); await f.polls();
+  f.now.add(20_000); f.drop('z.txt'); await f.polls();
+  f.now.add(20_000); f.drop('a.txt'); await f.polls();
   f.endRun(); await f.polls();
   f.endRun(); await f.polls();
   assert.deepEqual(f.started(), ['first.txt', 'z.txt', 'a.txt'], 'z arrived before a');
