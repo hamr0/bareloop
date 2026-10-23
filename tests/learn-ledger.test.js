@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   emptyLedger, countLedger, holdPending, releasePending, recordHealth, applyDecay, climb, lessonOf, renderHints,
-  DECAY_DAYS, PENDING_DAYS, placeOf,
+  DECAY_DAYS, PENDING_DAYS, PURGE_DAYS, purgeStale, placeOf,
 } from '../src/learn.js';
 import { readLedger, writeLedger, ledgerPath, foldRunIntoLedger, releaseRun } from '../src/learnstore.js';
 import { cardsOf } from './learn-fixtures.js';
@@ -106,6 +106,45 @@ test('decay: a row untouched for 56 days is hidden (kept in the file), high coun
   const t3 = back.rows.find((r) => r.id === top?.id);
   assert.equal(t3?.status, 'active');
   assert.equal(t3?.count, 6);
+});
+
+test('R4: a row hidden by the decay is DELETED once it has gone 112 days with no sighting; seen again before that, it is back with its count', (t) => {
+  assert.equal(PURGE_DAYS, 112);
+  let L = emptyLedger();
+  for (const id of sorted) L = fold(L, id);
+  const top = L.rows.find((r) => r.sample.check === 'typecheck');
+  const last = new Date(top?.lastSeen ?? '').getTime();
+  const at = (/** @type {number} */ days, ms = 0) => new Date(last + days * DAY + ms);
+  // the writer's own recompute (recordHealth runs `finish`): hidden at 56+, still in the ledger up to exactly 112 days
+  const health = (/** @type {Date} */ now) => recordHealth(L, 'h', { cards: [], suspect: [], thin: 0, noise: null }, now.toISOString(), now);
+  const hidden = health(at(DECAY_DAYS, 1000));
+  assert.equal(hidden.rows.find((r) => r.id === top?.id)?.status, 'expired');
+  assert.equal(health(at(PURGE_DAYS)).rows.find((r) => r.id === top?.id)?.status, 'expired', 'exactly 112 days: still kept (hidden, not deleted)');
+  const gone = health(at(PURGE_DAYS, 1000));
+  assert.equal(gone.rows.some((r) => r.id === top?.id), false, 'past 112 days: deleted');
+  assert.equal(purgeStale(applyDecay(L, at(PURGE_DAYS, 1000)), at(PURGE_DAYS, 1000)).rows.some((r) => r.id === top?.id), false);
+  // seen again before the delete: back, count kept (+1)
+  const [c] = /** @type {any} */ (built.get('ms2c0ls7')).cards;
+  const again = (/** @type {Date} */ when, /** @type {any} */ from) => countLedger(from, { runid: 'newrun01', cards: [{ ...c, runid: 'newrun01', id: 'newrun01:typecheck:fixed', at: when.toISOString() }], workflow: WF, place: '/p/aurora', specHash: 'h1', trust: 'deterministic', now: when });
+  const back = again(at(PURGE_DAYS - 1), L).rows.find((r) => r.id === top?.id);
+  assert.equal(back?.status, 'active');
+  assert.equal(back?.count, 6);
+  // the same lesson after the delete is a NEW row at count 1 (the old count is gone)
+  const fresh = again(at(PURGE_DAYS, 1000), L);
+  const tcs = fresh.rows.filter((r) => r.sample.check === 'typecheck');
+  assert.equal(tcs.length, 1);
+  assert.equal(tcs[0].count, 1);
+  // and on disk the row is gone from the file at the next write
+  const home = scratch(t);
+  writeLedger(L, home);
+  assert.equal(readLedger(home).ledger.rows.some((r) => r.id === top?.id), true);
+  foldRunIntoLedger({ home, runid: 'mvk2e4uy', build: cardsOf('mvk2e4uy'), workflow: 'pulselog-panel-strict', place: null, specHash: null, trust: 'deterministic', at: at(PURGE_DAYS, 1000).toISOString(), now: at(PURGE_DAYS, 1000) });
+  const onDisk = readLedger(home).ledger.rows;
+  assert.equal(onDisk.some((r) => r.id === top?.id), false);
+  assert.equal(onDisk.some((r) => r.workflow === 'pulselog-panel-strict'), true, 'the new run\'s own row is there');
+  // a hash-expired row is not an age decay: it is not deleted by this rule
+  const hashed = { ...L, rows: L.rows.map((r) => (r.id === top?.id ? { ...r, status: /** @type {const} */ ('expired'), expiredBy: /** @type {const} */ ('hash') } : r)) };
+  assert.equal(recordHealth(hashed, 'h', { cards: [], suspect: [], thin: 0, noise: null }, at(300).toISOString(), at(300)).rows.some((r) => r.id === top?.id), true);
 });
 
 test('expiry on change: a workflow row minted under another signed hash is done; the new hash makes a new row', () => {
