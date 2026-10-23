@@ -14,8 +14,30 @@ import { linesOf } from './pagerules.js';
 /** a number as the page writes it, thousands commas allowed */
 const NUM = '\\d[\\d,]*(?:\\.\\d+)?';
 const AFTER_LABEL = new RegExp(`^\\s*(?:[$€£]\\s*)?(${NUM})`);
-// (?<!\d): the leftmost match never starts after a digit (the digit before it would start the same match), so skipping those starts changes no result and keeps a long digit run linear
-const BEFORE_UNIT = new RegExp(`(?<!\\d)(${NUM})\\s*$`);
+/**
+ * The number written at the very end of `s` (only whitespace after it): the leftmost match of NUM followed by `\s*$`. Scans back from the end, so a
+ * long run of digits and commas costs O(n) where a backtracking regex is quadratic.
+ * @param {string} s @returns {string|undefined}
+ */
+function numberAtEnd(s) {
+  let e = s.length;
+  while (e > 0 && /\s/.test(s[e - 1])) e--;
+  /** the first digit of the digit/comma run ending at `end`, or -1 if the run holds none; a start never follows a digit, so it is the run's first digit */
+  const firstDigit = (/** @type {number} */ end) => {
+    let l = end;
+    while (l > 0 && /[\d,]/.test(s[l - 1])) l--;
+    while (l < end && s[l] === ',') l++;
+    return l < end ? l : -1;
+  };
+  let d = e;
+  while (d > 0 && /\d/.test(s[d - 1])) d--;
+  if (d < e && s[d - 1] === '.') {
+    const p = firstDigit(d - 1);
+    if (p !== -1) return s.slice(p, e);
+  }
+  const p = firstDigit(e);
+  return p === -1 ? undefined : s.slice(p, e);
+}
 /** the label every dry-read claim is made under (the checker only needs one name; the fact's own is not read) */
 const CLAIM = 'price';
 const SOURCE = 'page';
@@ -40,7 +62,7 @@ export function moneyResultLines(text, k) {
       }
     } else {
       for (const u of k.unit ?? []) {
-        for (let at = ln.indexOf(u); at !== -1 && amount === undefined; at = ln.indexOf(u, at + u.length)) amount = BEFORE_UNIT.exec(ln.slice(0, at))?.[1];
+        for (let at = ln.indexOf(u); at !== -1 && amount === undefined; at = ln.indexOf(u, at + u.length)) amount = numberAtEnd(ln.slice(0, at));
         if (amount !== undefined) break;
       }
     }
