@@ -801,3 +801,12 @@ test('MUTATION PROOF: disabling the byte-signature compare inside runCloseStages
   assert.ok(provider.calls.length > 0,
     'with the run-start guard excised, the provider WAS called for a tampered close script — this proves the REAL guard (still in place in src/) is what stops it');
 });
+
+test('absolutePathLiteralsOf on an unterminated string of 30000 escaped quotes is linear (every escaped quote retried the same dead-end read), and the literals around it still read', () => {
+  const t0 = performance.now();
+  const longDead = `"${'\\"'.repeat(30000)}`;
+  assert.deepEqual(absolutePathLiteralsOf(longDead), []);
+  assert.deepEqual(absolutePathLiteralsOf(`${longDead}\nconst a = '/'; const b = "x\\"y"; const c = \`/\`;`), ['/']);
+  assert.deepEqual(absolutePathLiteralsOf(`const a = '/'; const b = "x\\"y"; const c = \`/\`; const d = "/\\"";`), ['/', '/']);
+  assert.ok(performance.now() - t0 < 500, `took ${performance.now() - t0} ms`);
+});
