@@ -7,37 +7,13 @@
 
 import { createHash } from 'node:crypto';
 import { gradeStep } from './rubricstep.js';
-import { linesOf } from './pagerules.js';
+import { linesOf, numberAtEnd } from './pagerules.js';
 
 /** @typedef {import('./pagerules.js').KeptFact} KeptFact @typedef {import('./pagerules.js').Dropped} Dropped */
 
 /** a number as the page writes it, thousands commas allowed */
 const NUM = '\\d[\\d,]*(?:\\.\\d+)?';
 const AFTER_LABEL = new RegExp(`^\\s*(?:[$€£]\\s*)?(${NUM})`);
-/**
- * The number written at the very end of `s` (only whitespace after it): the leftmost match of NUM followed by `\s*$`. Scans back from the end, so a
- * long run of digits and commas costs O(n) where a backtracking regex is quadratic.
- * @param {string} s @returns {string|undefined}
- */
-function numberAtEnd(s) {
-  let e = s.length;
-  while (e > 0 && /\s/.test(s[e - 1])) e--;
-  /** the first digit of the digit/comma run ending at `end`, or -1 if the run holds none; a start never follows a digit, so it is the run's first digit */
-  const firstDigit = (/** @type {number} */ end) => {
-    let l = end;
-    while (l > 0 && /[\d,]/.test(s[l - 1])) l--;
-    while (l < end && s[l] === ',') l++;
-    return l < end ? l : -1;
-  };
-  let d = e;
-  while (d > 0 && /\d/.test(s[d - 1])) d--;
-  if (d < e && s[d - 1] === '.') {
-    const p = firstDigit(d - 1);
-    if (p !== -1) return s.slice(p, e);
-  }
-  const p = firstDigit(e);
-  return p === -1 ? undefined : s.slice(p, e);
-}
 /** the label every dry-read claim is made under (the checker only needs one name; the fact's own is not read) */
 const CLAIM = 'price';
 const SOURCE = 'page';
