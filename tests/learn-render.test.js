@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  emptyLedger, countLedger, holdPending, renderHints, readableRows, hintsMatchRecord, changedLines, HINT_HEADER, HINT_CHARS_MAX, DECAY_DAYS,
+  emptyLedger, countLedger, holdPending, renderHints, readableRows, hintsMatchRecord, changedLines, saidLine, HINT_HEADER, HINT_CHARS_MAX, DECAY_DAYS,
 } from '../src/learn.js';
 import { cardsOf } from './learn-fixtures.js';
 
@@ -219,4 +219,57 @@ test('R3: whole hint or nothing - a hint whose What changed block no longer fits
   // every hint that made it is whole: it ends with its "(+28 more)" line
   const blocks = r.text.slice(HINT_HEADER.length + 1).split(/\n(?=\d+\. \[)/);
   assert.ok(blocks.every((b) => b.endsWith('(+28 more)')));
+});
+
+// ── R5: tidy the hint - the first real flagged line, and shorter paths ───────────────────────────
+test('R5: "It said" shows the flagged code line, not the summary wrapper line (real aurora no-suppressions card)', () => {
+  const L = auroraLedger();
+  const ns = rowOf(L, 'no-suppressions');
+  assert.match(ns.sample.said[0], /^SPAWNER red: \d+ suppression\(s\) added/, 'the stored quote starts with the summary line');
+  const hint = renderHints(L, ctx).text.split(/\n(?=\d+\. \[)/).find((h) => h.includes('no-suppressions')) ?? '';
+  assert.match(hint, /\n   It said: spawner\.py: added any — from typing import Any, Callable, cast\n/);
+  assert.ok(!hint.includes('SPAWNER red'));
+  // the red side: with the summary line only (no flagged line anywhere) it falls back to the first line
+  assert.equal(saidLine(['SPAWNER red: 3 suppression(s) added — nothing else']), 'SPAWNER red: 3 suppression(s) added — nothing else');
+  assert.equal(saidLine([]), undefined);
+  // a real tree-changed card has no flagged line at all: the summary stays
+  const [tree] = cardsOf('mv3sconb').cards.filter((c) => c.check === 'tree-changed');
+  assert.equal(saidLine(tree.said), tree.said[0]);
+  // a stripped `close: [id] file:line: text` line (a real card) counts as flagged
+  const cast = cardsOf('mv3sconb').cards.find((c) => c.check === 'no-suppressions');
+  assert.ok(cast && /^\[cast\] src\/fallback\.js:20:/.test(cast.said[0]));
+  assert.equal(saidLine(['no-suppressions red: 1 added', ...cast.said]), cast.said[0]);
+  // a flagged line second in the quote wins over a wrapper first line
+  assert.equal(saidLine(['wrapper line', 'src/a.ts(1,2): error TS2322: bad']), 'src/a.ts(1,2): error TS2322: bad');
+});
+
+test('R5: a file already shown in full earlier in the SAME hint is written by its basename; the first mention stays full', () => {
+  const L = auroraLedger();
+  const hints = renderHints(L, ctx).text.split(/\n(?=\d+\. \[)/);
+  const h2 = hints.find((h) => h.includes('no-suppressions')) ?? '';
+  const full = 'packages/spawner/src/aurora_spawner/spawner.py';
+  assert.equal(h2.split(full).length - 1, 1, 'the full path appears exactly once, in the lesson line');
+  assert.ok(h2.indexOf(full) < h2.indexOf('It said'));
+  assert.match(h2, /It said: spawner\.py: added any/);
+  assert.match(h2, /\n   Fix touched: spawner\.py\n?$/);
+  // the first hint: its first Fix touched file (not shown before) stays full; the same path on another hint is full again (per hint)
+  const h1 = hints.find((h) => h.includes('"typecheck"')) ?? '';
+  assert.match(h1, /Fix touched: packages\/spawner\/src\/aurora_spawner\/timeout_policy\.py, packages\/spawner\/src\/aurora_spawner\/circuit_breaker\.py/);
+  // a plain path that was never shown before is never shortened, whatever the hint
+  const cardEdit = { ...pulse, fixTouched: ['src/a.js', 'lib/b.js'], whatChanged: null };
+  const lone = renderHints(pulseLedger(cardEdit), pulseCtx).text;
+  assert.match(lone, /Fix touched: src\/a\.js, lib\/b\.js/);
+  // a first mention in the quote (the lesson names no file; the record is edited) stays full
+  const noFile = renderHints(pulseLedger({ ...cardEdit, files: [], fixTouched: [] }), pulseCtx).text;
+  assert.match(noFile, /It said: src\/checks\.js\(121,28\)/);
+  // the SAME path twice in one hint: lesson, said and fix-touched
+  const twice = renderHints(pulseLedger({ ...cardEdit, fixTouched: ['src/checks.js'] }), pulseCtx).text;
+  assert.equal(twice.split('src/checks.js').length - 1, 1);
+  assert.match(twice, /It said: checks\.js\(121,28\)/);
+  assert.match(twice, /Fix touched: checks\.js/);
+});
+
+test('R5: the leading "NAME | " wrapper stays stripped from the quote lines', () => {
+  const lines = auroraLedger().rows.flatMap((r) => r.sample.said);
+  assert.ok(lines.length > 0 && lines.every((l) => !/^[A-Z][A-Z0-9_-]* \| /.test(l)));
 });

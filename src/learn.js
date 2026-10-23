@@ -798,13 +798,45 @@ export function changedLines(wc) {
   return out;
 }
 
+/**
+ * The line "It said:" shows (R5): the first REAL flagged source/error line of the stored quote (the same lines the fold's
+ * flagged-text rule reads, with or without the `close:` wrapper the card already stripped), else the first line when no
+ * line is flagged (a summary such as `SPAWNER red: 3 suppression(s) added ...` is only the fallback).
+ * @param {string[]} said @returns {string|undefined}
+ */
+export function saidLine(said) {
+  return said.find((l) => flaggedText(l) !== null || flaggedText(`close: ${l}`) !== null) ?? said[0];
+}
+
+const PATH_RE = /[\w@.\/-]+\.(?:mjs|js|ts|py)\b/g;
+const baseName = (/** @type {string} */ p) => p.split('/').at(-1) ?? p;
+
+/**
+ * Shorten file paths in a text (R5): a path already shown in full earlier in the SAME hint (`shown`, filled in reading
+ * order) is written by its basename; a first mention stays as written. Pure apart from filling `shown`.
+ * @param {string} text @param {Set<string>} shown @returns {string}
+ */
+function shortenPaths(text, shown) {
+  return text.replace(PATH_RE, (p) => {
+    if (shown.has(p) && p.includes('/')) return baseName(p);
+    shown.add(p);
+    return p;
+  });
+}
+
 /** One hint, whole. @param {Row} r @param {number} n */
 function hintText(r, n) {
   const c = r.sample;
-  const L = [`${n}. [${TIER_WORDS[r.level]}, seen ${r.count} time${r.count === 1 ? '' : 's'}] ${r.lesson}`];
-  if (c.said[0]) L.push(`   It said: ${cutText(c.said[0], 150)}`);
+  /** @type {Set<string>} */
+  const shown = new Set();
+  const lesson = `${n}. [${TIER_WORDS[r.level]}, seen ${r.count} time${r.count === 1 ? '' : 's'}] ${r.lesson}`;
+  for (const p of lesson.match(PATH_RE) ?? []) shown.add(p);
+  const L = [lesson];
+  const said = saidLine(c.said);
+  if (said) L.push(`   It said: ${cutText(shortenPaths(said, shown), 150)}`);
   if (c.kind === 'FIXED' && c.fixTouched.length) {
-    L.push(`   Fix touched: ${c.fixTouched.slice(0, 4).join(', ')}${c.fixTouched.length > 4 ? ` +${c.fixTouched.length - 4} more` : ''}${c.fixTouched.length >= 2 && c.fixTouched.length <= 4 ? ' (changed together)' : ''}`);
+    const touched = c.fixTouched.slice(0, 4).map((p) => { const out = shown.has(p) && p.includes('/') ? baseName(p) : p; shown.add(p); return out; });
+    L.push(`   Fix touched: ${touched.join(', ')}${c.fixTouched.length > 4 ? ` +${c.fixTouched.length - 4} more` : ''}${c.fixTouched.length >= 2 && c.fixTouched.length <= 4 ? ' (changed together)' : ''}`);
   }
   if (c.kind === 'FIXED') {
     const ch = changedLines(c.whatChanged);
