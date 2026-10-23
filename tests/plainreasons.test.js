@@ -457,3 +457,12 @@ test('PANEL: the calibrating line shows the gate\'s real result: x when it faile
   // the later gates line still fails on its own
   assert.equal(good.state.steps.find((/** @type {any} */ x) => x.id === 'gates')?.status, 'failed');
 });
+
+test('SIGNING: a miswrite detail repeating the expected-reds phrase 10000 times with no ending on its line reads in linear time, and a normal one still reads', () => {
+  const t0 = performance.now();
+  const long = { code: 'calibration-miswrite', path: 'calibration.cases.c', caseId: 'c', detail: 'case "c" was graded WRONG by the whole pipe — ' + 'expected red(s) the pipe did not raise: a'.repeat(10000) };
+  assert.equal(signingReasons([long]).length, 1);
+  const normal = { code: 'calibration-miswrite', path: 'calibration.cases.c', caseId: 'c', detail: 'case "c" was graded WRONG by the whole pipe — expected red(s) the pipe did not raise: has-doc (f) — x. The floor is 10/10' };
+  assert.equal(signingReasons([normal])[0].sentence, 'Case "c": the practice case says the rule "has-doc (f)" applies, but the check passed it.');
+  assert.ok(performance.now() - t0 < 500, `took ${performance.now() - t0} ms`);
+});

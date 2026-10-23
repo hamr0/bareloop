@@ -409,6 +409,12 @@ const PLAIN_MAX_BULLETS = 8;
 const RECORD_MAX_REDS = 40;
 const RECORD_STR_MAX = 600;
 
+// Each of these two finds its text on the FIRST line that has it, anchored to a line start: a lazy (.*?) that
+// fails runs to the end of its line, and the same pattern retried at every later start on that line fails the
+// same way (the later text is a part of the earlier one's), so retrying them only made the read quadratic.
+const MISSING_REDS_RE = /(?<=^|[\n\r\u2028\u2029])(?:(?!expected red\(s\) the pipe did not raise: )[^\n\r\u2028\u2029])*expected red\(s\) the pipe did not raise: (.*?)(?: — |\. The floor)/;
+const EXTRA_REDS_RE = /(?<=^|[\n\r\u2028\u2029])(?:(?!red\(s\) the pipe raised that nobody signed: )[^\n\r\u2028\u2029])*red\(s\) the pipe raised that nobody signed: (.*?)(?: — |\. The floor)/;
+
 /** a code-written sentence that carries the person's own words (a rubric-step sorting red): scrubbed and one line, bounded wide enough to stay whole
  * @param {unknown} s @returns {string} */
 function fullText(s) {
@@ -759,8 +765,8 @@ const ruleFns = (list) => list.split(';').map((x) => x.trim()).filter(Boolean).m
  */
 function miswriteSentences(r) {
   const who = `Case "${safeText(r.caseId ?? /^case "(.*?)" was graded/.exec(r.detail)?.[1] ?? '')}"`;
-  const missing = /expected red\(s\) the pipe did not raise: (.*?)(?: — |\. The floor)/.exec(r.detail)?.[1];
-  const extra = /red\(s\) the pipe raised that nobody signed: (.*?)(?: — |\. The floor)/.exec(r.detail)?.[1];
+  const missing = MISSING_REDS_RE.exec(r.detail)?.[1];
+  const extra = EXTRA_REDS_RE.exec(r.detail)?.[1];
   /** @type {string[]} */
   const out = [];
   for (const { rule, fn } of missing ? ruleFns(missing) : []) {
