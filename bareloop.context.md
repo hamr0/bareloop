@@ -2723,6 +2723,20 @@ is not a spend record and no spend-slicing instrument needs to account for it.
 prints the same line when handed the run's spine file as its optional third positional.
 
 
+#### `attempt-diff` — what each worker try changed (`src/attemptdiff.js`, `src/planrun.js`)
+
+One spine record per step try and per close-fix try that changed something inside the try's write fence:
+`{phase, step, iteration, files: [{path, diff, truncated, cutLines}], binary: [path], truncated, gitError?}`
+(`phase` is `step:<id>` or `fix`; `step` is `null` on a fix try). `diff` is one file's unified diff (`-U1`),
+cut at a line boundary at 4,096 bytes per file and 16,384 per event (`cutLines` = lines left out, `truncated`
+is the event-level flag); a binary file is listed by path only; every string passes the one secret inventory.
+It is read off two throwaway git trees (a temporary index at try start and at try end, then `git diff`
+between them), so the work branch, HEAD, the real index and the stash list are never touched; only
+unreferenced loose objects are left. Gitignored files inside the fence are seen (`add -f`, so a rubric job's
+`output/` shows); `.git`, `node_modules`, `.smoke`, `.litectx` and `gate-audit.jsonl` never are. A try that
+changed nothing in scope emits nothing, and a failed capture emits `gitError` with empty lists: a record,
+never a verdict, and it never throws. No prompt carries it; the learnings cards read it ("What changed").
+
 ### `replayRun(spineEvents, auditEvents?, { runId? })` / `formatReplay(summary)` / `summarizeForAllLine(summary)` / `formatAllLines(entries)` — `src/replay.js`
 
 `summarizeForAllLine(summary)` reduces one `replayRun` summary to one `--all`/directory-

@@ -2411,7 +2411,7 @@ Order and cap:
 4. inside each level, highest `count` first (ties: most recent `lastSeen`, then `id`, so the order is total and stable);
 5. stop at 2,000 characters; a hint is added whole or not at all (never cut mid-hint).
 
-Excluded from reading: rows last seen more than 56 days ago, rows of another job version (signed hash), `pending` rows, check-wide keys, any row with no run id, and every row whose place is not this place.
+Excluded from reading: rows last seen more than 56 days ago, rows of another job version (signed hash), `pending` rows, check-wide keys **[SUPERSEDED 2026-10-23 R2: there is no check-wide set-aside]**, any row with no run id, and every row whose place is not this place.
 
 One render function (`renderHints(ledger, job, place)`) produces the block, byte-for-byte. A byte-check compares what the spine records the planner received with a fresh render from the ledger as it stood (the friction `check` shape).
 
