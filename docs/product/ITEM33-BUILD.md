@@ -2348,7 +2348,7 @@ Written-file source: the written files come from `attempt-diff` events and the R
 
 Two cards are one lesson when ALL hold:
 1. same job (workflow key) AND same check (stage);
-2. they SHARE at least one error code / kind (overlap, not identical sets); kind `none` / `other` never matches anything, so such cards are always singletons;
+2. they SHARE at least one error code / kind (overlap, not identical sets); kind `none` / `other` never matches anything, so such cards are always singletons; **[SUPERSEDED 2026-10-23 R1: code-less cards may match on the text rule alone, see the RULED 2026-10-23 block]**
 3. Jaccard similarity of their flagged-text token sets is >= 60%.
 
 Flagged text: the flagged lines of the quote (`... added <id> - <text>`, `close: [<id>] <file>:<line>: <text>`, lines with `error TS<digits>:` or `error:`), with wrapper words stripped (leading `<NAME> |`, `close:`, `[id]`, file path with any `out/source-*/tree/` prefix, `:<line>`, `(<line>,<col>)`, `added <id> -`, `error TS<digits>:`, `error:`, trailing mypy `[code]`). Lowercase; tokens = runs of `[a-z0-9_]`, length >= 2; card set = union over flagged lines; empty set on either side = score 0.
@@ -2357,7 +2357,7 @@ Grouping: single-link (connected components of eligible pairs). Every pair INSID
 
 The 60% is FITTED (see section 1). OPEN for later, not decided: also comparing the What-changed tokens as a second similarity channel.
 
-### 4. Check-wide keys (RULING 4)
+### 4. Check-wide keys (RULING 4) — **[SUPERSEDED 2026-10-23 R2: the set-aside is removed, climbing wins]**
 
 A key (job-independent: check + error kind) seen in >= 3 DISTINCT jobs (e.g. `tree-changed`, `close`) is SET ASIDE: it is not a per-job hint. It belongs in the check's own failure message or in the planner's standing instructions, written ONCE by hand through the normal doc / code route. It is never injected as a hint by the ledger. (POC-C: 18 groups were check-wide.) The set-aside list is kept in the ledger file as `checkWide[]` (key, the jobs that made it check-wide) so the reader can refuse it and a human can see it; it is a report, not an injection.
 
@@ -2381,7 +2381,7 @@ Counting: a new card that matches a row by the section 3 rule (against the row's
 What still applies from the earlier rulings, under count-from-1:
 - STILL APPLIES: climbing, 3 distinct workflows on one place -> `place`; 3 distinct places -> `user`; by changing the `level` tag; every row keeps its run ids. (But see OPEN 1: how "the same lesson" is recognised ACROSS workflows.)
 - STILL APPLIES: expiry on change. A `workflow` row expires when its job's signed hash changes or its close changes (as reuse bridges do). `place` and `user` rows are not tied to one hash.
-- STILL APPLIES, widened: the 56-day decay. Old text applied it to `observing` rows only and exempted `hot`. Under count-from-1 there is no `observing` stage, so the decay applies to EVERY row untouched (no new matching card) for 56 days: it becomes `expired`, is kept in the file, is never injected, and a new matching card reactivates it. OPEN 3: whether a high-count row should be exempt.
+- STILL APPLIES, widened: the 56-day decay (**R4, 2026-10-23: a decay-hidden row is deleted 112 days after its last sighting**). Old text applied it to `observing` rows only and exempted `hot`. Under count-from-1 there is no `observing` stage, so the decay applies to EVERY row untouched (no new matching card) for 56 days: it becomes `expired`, is kept in the file, is never injected, and a new matching card reactivates it. OPEN 3: whether a high-count row should be exempt.
 - SUPERSEDED: the observing -> hot promotion at 3 distinct runs (rulings (a), v1.108). Replaced by count-from-1 + ORDER BY COUNT at read time (section 7). Row `status` is just `active` | `expired`; `observing`, `hot`, `escalated` are gone.
 - SUPERSEDED: ledger `folded[]` and "the AI only labels (drop | row id | new)" and the LLM `rule` text. The run-id list is the dedup record.
 - SUPERSEDED: the "failed wording" governor (a hot rule recurring twice while loaded marks the wording failed; three failed wordings escalate). Wording is code-rendered from fields, so there is no wording to fail. OPEN 4: what a loaded lesson that STILL recurs does (flag? lower rank?).
@@ -2430,7 +2430,7 @@ attempt-diff (commits 112c858, bf6da11; `src/attemptdiff.js`; addendum 2026-10-2
 1. The worker prompt (any worker phase) contains any ledger text.
 2. A model call anywhere in learnings (static import check plus a run with the provider stubbed to throw).
 3. A rubric lesson counted before Accept.
-4. A check-wide key injected.
+4. A check-wide key injected. **[SUPERSEDED 2026-10-23 R2: replaced by "an all-jobs hint never appears before a this-job or this-place hint"]**
 5. The injected block is longer than 2,000 characters.
 6. A row with no run id is injected.
 7. A place row reaches a different place.
@@ -2472,3 +2472,13 @@ OPEN items 2 (unseen-card proof of the fitted 60%) and 11 (ON/OFF contrast desig
 9. [OPEN 10, 12] Setting name / location and hint render wording (header, template, check-wide standing-instructions text): the builder proposes them; hamr sees them before they land.
 
 Also accepted: the two additions the spec writer made (idempotence by run id; `redactSecrets` on cards before the ledger).
+
+### RULED 2026-10-23 (hamr) — follow-up on the hint (R1-R5); built on `feat/learnings`
+
+Five rulings after seeing the real hint blocks from the fixture runs. Each is its own commit with tests proven by mutation.
+
+- **R1 (was 3a) — code-less cards fold on the text rule alone.** Cards with no error code (kind `other`) match when: same job + same check + Jaccard >= 60% on flagged-text tokens, ONLY when BOTH token sets are non-empty. Empty-token cards stay singletons; a coded card never joins a code-less one. SUPERSEDES section 3 rule 2's "`none`/`other` never matches". **Honest limit: the 60% was fitted on cards WITH codes; this use is untested on real data** (no real archived code-less card carries flagged text, the tests edit the token sets and say so). The one kind test is `kindAgrees` in `src/learn.js`.
+- **R2 (was 4a) — climbing wins.** The check-wide set-aside is gone: no key is kept out of injection for appearing in 3 or more jobs. `ledger.checkWide` and `CHECK_WIDE_JOBS` are DELETED (not kept as a report field; `Row.key` stays as information only). A lesson matching across jobs climbs to place / user by the existing climb rules; all-jobs hints come last in the render order, so they only use leftover room. SUPERSEDES section 4 and must-fail item 4, which is now: an all-jobs hint never appears before a this-job or this-place hint.
+- **R3 — FIXED hints show "What changed".** A line `   What changed: ` with the first 3 changed lines of the stored sample card's `whatChanged` diff: only `+`/`-` lines inside a hunk (no `diff --git`/`index`/`---`/`+++` headers, no `@@`, no context), indent after the sign dropped, each line cut at 150 characters, then `(+N more)`; continuation lines are indented to align. Never on NEVER FIXED hints. Still whole-hint-or-nothing under 2,000 characters.
+- **R4 — permanent delete.** A row hidden by the 56-day decay is deleted from the ledger file once its last sighting is more than 112 days old (`PURGE_DAYS`; exactly 112 days is still kept). Seen again before that: back, count kept. Seen again after: a new row at count 1. A hash-expired row is not an age decay and is not deleted by this rule.
+- **R5 — tidy.** "It said" shows the first real flagged source/error line of the stored quote (the lines the fold's flagged-text rule reads); the summary/wrapper line (e.g. `SPAWNER red: 3 suppression(s) added ...`) is only the fallback when no flagged line is in the quote. A file path shown in full earlier in the SAME hint (lesson line, then It said, then Fix touched) is shown by its basename; the first mention stays as the card has it (a quote path can be partial, e.g. `aurora_spawner/timeout_policy.py`; a later full repo-relative path is a different string and stays full). The leading `NAME | ` strip is kept.
