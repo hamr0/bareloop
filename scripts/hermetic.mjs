@@ -26,7 +26,7 @@
 // `hermetic.mjs` (matches none of node's default patterns) and guarded below so a future
 // rediscovery fails loudly instead of nesting silently.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -43,6 +43,14 @@ if (process.env.NODE_TEST_CONTEXT) {
 }
 
 function main() {
+  // a mistyped test path used to be silently skipped (`node --test` ignores it), so a green count could be missing a file.
+  // A path-looking argument (no leading `-`, no glob characters, a `/` or a js extension) that does not exist is a refusal.
+  const missing = process.argv.slice(2).filter((a) => !a.startsWith('-') && !/[*?[\]{}]/.test(a) && /(\/|\.[cm]?js$)/.test(a) && !existsSync(a));
+  if (missing.length) {
+    console.error(`scripts/hermetic.mjs: no such test path: ${missing.join(', ')}. Nothing was run - check the spelling.`);
+    process.exitCode = 1;
+    return;
+  }
   const tmpHome = mkdtempSync(join(tmpdir(), 'bareloop-hermetic-home-'));
 
   const env = { ...process.env, HOME: tmpHome };
