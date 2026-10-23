@@ -844,7 +844,7 @@ function hintText(r, n) {
 export function readableRows(ledger, { workflow, place, specHash = null, now }) {
   return ledger.rows.filter((r) => {
     if (isDecayed(r, now) || r.runIds.length === 0) return false;
-    if (r.level === 'workflow') return r.workflow === workflow && (specHash === null || r.specHash === null || r.specHash === specHash);
+    if (r.level === 'workflow') return r.workflow === workflow && !otherJobVersion(r, workflow, specHash);
     if (r.level === 'place') return place !== null && r.place === place;
     return true;
   }).sort((a, b) => LEVEL_RANK[a.level] - LEVEL_RANK[b.level] || byRank(a, b));
