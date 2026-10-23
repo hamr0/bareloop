@@ -29,6 +29,16 @@ const rowOf = (L, check) => L.rows.find((/** @type {any} */ r) => r.sample.check
 /** an edited copy of a real row (the edit is the point of the test that calls this) */
 const rowLike = (/** @type {any} */ r, /** @type {any} */ over) => ({ ...r, ...over, sample: { ...r.sample, ...(over.sample ?? {}) } });
 const withRows = (/** @type {any} */ L, /** @type {any[]} */ rows) => ({ ...L, rows });
+/**
+ * Rows that READ at `level` (the level is derived from the siblings, never stored): the row first, then, for `place`
+ * and `user`, two hidden sibling rows of the same lesson (no run id: never shown, but they count for climbing) in other
+ * workflows on the same place / on other places. Every id gets its own check, so lessons never merge across ids.
+ */
+const atLevel = (/** @type {any} */ tc, /** @type {string} */ id, /** @type {'workflow'|'place'|'user'} */ level, /** @type {number} */ count, /** @type {any} */ extra = {}) => {
+  const row = rowLike(tc, { id, level: 'workflow', count, workflow: level === 'workflow' ? WF : 'elsewhere', place: '/p/aurora', ...extra, sample: { check: `chk-${id}`, ...(extra.sample ?? {}) } });
+  const sib = (/** @type {number} */ n) => rowLike(row, { id: `${id}-sib${n}`, runIds: [], workflow: `${id}-wf${n}`, place: level === 'place' ? row.place : `/q/${id}/${n}`, sample: { job: `${id}-wf${n}` } });
+  return level === 'workflow' ? [row] : [row, sib(1), sib(2)];
+};
 
 test('the block for a real ledger: header, then the lesson seen most often first, each hint whole', () => {
   const L = auroraLedger();
@@ -58,12 +68,12 @@ test('a NEVER FIXED lesson reads "got stuck here, never fixed"', () => {
 test('MUST-FAIL 8: hints are ordered by (level, count): this job, then this place, then all jobs, highest count first', () => {
   const L = auroraLedger();
   const tc = rowOf(L, 'typecheck');
-  const mk = (/** @type {string} */ id, /** @type {string} */ level, /** @type {number} */ count, extra = {}) => rowLike(tc, { id, level, count, workflow: level === 'workflow' ? WF : 'elsewhere', place: '/p/aurora', sample: { said: [], fixTouched: [] }, ...extra });
-  const rows = [mk('u7', 'user', 7), mk('p3', 'place', 3), mk('w2', 'workflow', 2), mk('p9', 'place', 9), mk('w5', 'workflow', 5)];
+  const mk = (/** @type {string} */ id, /** @type {'workflow'|'place'|'user'} */ level, /** @type {number} */ count, extra = {}) => atLevel(tc, id, level, count, { sample: { said: [], fixTouched: [] }, ...extra });
+  const rows = [mk('u7', 'user', 7), mk('p3', 'place', 3), mk('w2', 'workflow', 2), mk('p9', 'place', 9), mk('w5', 'workflow', 5)].flat();
   assert.deepEqual(renderHints(withRows(L, rows), ctx).ids, ['w5', 'w2', 'p9', 'p3', 'u7']);
   assert.deepEqual(readableRows(withRows(L, rows), ctx).map((r) => r.id), ['w5', 'w2', 'p9', 'p3', 'u7']);
   // ties: most recent lastSeen first, then id — the order is total and stable
-  const tied = [mk('b', 'workflow', 4, { lastSeen: '2026-07-01T00:00:00Z' }), mk('a', 'workflow', 4, { lastSeen: '2026-07-01T00:00:00Z' }), mk('c', 'workflow', 4, { lastSeen: lastAt })];
+  const tied = [mk('b', 'workflow', 4, { lastSeen: '2026-07-01T00:00:00Z' }), mk('a', 'workflow', 4, { lastSeen: '2026-07-01T00:00:00Z' }), mk('c', 'workflow', 4, { lastSeen: lastAt })].flat();
   assert.deepEqual(renderHints(withRows(L, tied), ctx).ids, ['c', 'a', 'b']);
   assert.deepEqual(renderHints(withRows(L, [...tied].reverse()), ctx).ids, ['c', 'a', 'b']);
 });
@@ -98,7 +108,7 @@ test('MUST-FAIL 6: a row with no run id is never injected', () => {
 test('MUST-FAIL 7: a place row reaches its own place only; an all-jobs row reaches every place', () => {
   const L = auroraLedger();
   const tc = rowOf(L, 'typecheck');
-  const rows = [rowLike(tc, { id: 'here', level: 'place', place: '/p/aurora', workflow: 'other' }), rowLike(tc, { id: 'there', level: 'place', place: '/p/elsewhere', workflow: 'other' }), rowLike(tc, { id: 'everyone', level: 'user', place: '/p/elsewhere', workflow: 'other' })];
+  const rows = [...atLevel(tc, 'here', 'place', 1, { place: '/p/aurora' }), ...atLevel(tc, 'there', 'place', 1, { place: '/p/elsewhere' }), ...atLevel(tc, 'everyone', 'user', 1, { place: '/p/elsewhere' })];
   assert.deepEqual(renderHints(withRows(L, rows), ctx).ids, ['here', 'everyone']);
   assert.deepEqual(renderHints(withRows(L, rows), { ...ctx, place: '/p/elsewhere' }).ids, ['there', 'everyone']);
   assert.deepEqual(renderHints(withRows(L, rows), { ...ctx, place: null }).ids, ['everyone'], 'a job with no place gets no place rows');
@@ -107,16 +117,16 @@ test('MUST-FAIL 7: a place row reaches its own place only; an all-jobs row reach
 test('MUST-FAIL 4 (R2, replaces the check-wide item): an all-jobs hint never appears before a this-job or this-place hint, whatever its count', () => {
   const L = auroraLedger();
   const tc = rowOf(L, 'typecheck');
-  const mk = (/** @type {string} */ id, /** @type {string} */ level, /** @type {number} */ count) => rowLike(tc, { id, level, count, workflow: level === 'workflow' ? WF : 'elsewhere', place: '/p/aurora' });
-  const rows = [mk('all-99', 'user', 99), mk('all-50', 'user', 50), mk('place-1', 'place', 1), mk('job-1', 'workflow', 1)];
+  const mk = (/** @type {string} */ id, /** @type {'workflow'|'place'|'user'} */ level, /** @type {number} */ count, extra = {}) => atLevel(tc, id, level, count, extra);
+  const rows = [mk('all-99', 'user', 99), mk('all-50', 'user', 50), mk('place-1', 'place', 1), mk('job-1', 'workflow', 1)].flat();
   const ids = renderHints(withRows(L, rows), ctx).ids;
   assert.deepEqual(ids, ['job-1', 'place-1', 'all-99', 'all-50']);
   const lastLocal = Math.max(ids.indexOf('job-1'), ids.indexOf('place-1'));
   const firstAll = Math.min(...ids.filter((i) => i.startsWith('all-')).map((i) => ids.indexOf(i)));
   assert.ok(lastLocal < firstAll, `order was ${ids.join(',')}`);
   // all-jobs hints only use leftover room: when the room is short, they are the ones left out
-  const fat = (/** @type {string} */ id, /** @type {string} */ level, /** @type {number} */ count) => rowLike(mk(id, level, count), { sample: { said: ['x'.repeat(150)], fixTouched: [] } });
-  const crowd = [...Array.from({ length: 6 }, (_, i) => fat(`job-${i}`, 'workflow', 1)), ...Array.from({ length: 6 }, (_, i) => fat(`all-${i}`, 'user', 90))];
+  const fat = (/** @type {string} */ id, /** @type {'workflow'|'place'|'user'} */ level, /** @type {number} */ count) => mk(id, level, count, { sample: { said: ['x'.repeat(150)], fixTouched: [] } });
+  const crowd = [...Array.from({ length: 6 }, (_, i) => fat(`job-${i}`, 'workflow', 1)), ...Array.from({ length: 6 }, (_, i) => fat(`all-${i}`, 'user', 90))].flat();
   const r = renderHints(withRows(L, crowd), ctx);
   assert.ok(r.ids.length < 12, 'the cap bit');
   assert.ok(r.ids.every((i, k) => k < 6 ? i.startsWith('job-') : i.startsWith('all-')), `order was ${r.ids.join(',')}`);
@@ -128,7 +138,8 @@ test('R2: a lesson seen across jobs climbs to the place and is READ there (no ch
   assert.ok(tc);
   let L = emptyLedger();
   for (const wf of ['job-a', 'job-b', 'job-c']) L = countLedger(L, { runid: `r-${wf}`, cards: [{ ...tc, job: wf }], workflow: wf, place: '/p/shared', specHash: null, trust: 'deterministic', now: NOW });
-  assert.deepEqual(L.rows.map((r) => r.level), ['place', 'place', 'place']);
+  assert.deepEqual(L.rows.map((r) => r.level), ['workflow', 'workflow', 'workflow'], 'the file stores no climbed level');
+  assert.deepEqual(readableRows(L, { workflow: 'job-d', place: '/p/shared', specHash: null, now: NOW }).map((r) => r.level), ['place', 'place', 'place']);
   const r = renderHints(L, { workflow: 'job-d', place: '/p/shared', specHash: null, now: NOW });
   assert.equal(r.ids.length, 3, 'a fourth job on that place reads the climbed lessons');
   assert.match(r.text, /\[this place, seen 1 time\]/);
@@ -271,4 +282,56 @@ test('R5: a file already shown in full earlier in the SAME hint is written by it
 test('R5: the leading "NAME | " wrapper stays stripped from the quote lines', () => {
   const lines = auroraLedger().rows.flatMap((r) => r.sample.said);
   assert.ok(lines.length > 0 && lines.every((l) => !/^[A-Z][A-Z0-9_-]* \| /.test(l)));
+});
+
+// ── climbing follows the memory filter (ledger keeps all, memory filters): a level counts only rows not decayed at read time ──
+/** the same real lesson seen once in each workflow at `place`, at the dates given (one fold per workflow) */
+function siblings(/** @type {[string, string][]} */ seen, place = '/p/shared') {
+  const tc = built[0].cards.find((c) => c.check === 'typecheck');
+  assert.ok(tc);
+  let L = emptyLedger();
+  for (const [wf, at] of seen) L = countLedger(L, { runid: `r-${wf}`, cards: [{ ...tc, job: wf, at }], workflow: wf, place, specHash: null, trust: 'deterministic', now: new Date(at) });
+  return L;
+}
+const readFor = (/** @type {any} */ L, /** @type {Date} */ now, workflow = 'job-c') => ({ workflow, place: '/p/shared', specHash: null, now });
+
+test('climb follows memory: siblings from January do not make today\'s lesson a place lesson', () => {
+  const today = '2026-10-23T09:00:00Z';
+  const L = siblings([['job-a', '2026-01-10T09:00:00Z'], ['job-b', '2026-01-12T09:00:00Z'], ['job-c', today]]);
+  const now = new Date(today);
+  const rows = readableRows(L, readFor(L, now));
+  assert.deepEqual(rows.map((r) => [r.workflow, r.level]), [['job-c', 'workflow']], 'the two January rows are out of memory, so they do not count');
+  const text = renderHints(L, readFor(L, now)).text;
+  assert.match(text, /\[this job, seen 1 time\]/);
+  assert.doesNotMatch(text, /this place/);
+  // the ledger itself kept all three rows
+  assert.equal(L.rows.length, 3);
+});
+
+test('climb: three fresh siblings still climb to the place and are read there', () => {
+  const L = siblings([['job-a', '2026-10-20T09:00:00Z'], ['job-b', '2026-10-21T09:00:00Z'], ['job-c', '2026-10-22T09:00:00Z']]);
+  const rows = readableRows(L, readFor(L, new Date('2026-10-23T09:00:00Z'), 'job-d'));
+  assert.deepEqual(rows.map((r) => r.level), ['place', 'place', 'place']);
+});
+
+test('climb: a place-level lesson drops back to workflow when its siblings age past 56 days, with no write to the ledger', () => {
+  const L = siblings([['job-a', '2026-09-01T09:00:00Z'], ['job-b', '2026-09-02T09:00:00Z'], ['job-c', '2026-10-15T09:00:00Z']]);
+  const early = new Date('2026-10-15T09:00:00Z');
+  assert.deepEqual(readableRows(L, readFor(L, early)).map((r) => r.level), ['place', 'place', 'place'], 'all three seen within 56 days: place');
+  const later = new Date('2026-10-24T09:00:00Z'); // job-a is 53 days old, still in; job-b too
+  assert.equal(readableRows(L, readFor(L, later)).length, 3);
+  const aged = new Date('2026-10-30T09:00:00Z'); // job-a (59 days) and job-b (58 days) are decayed
+  assert.deepEqual(readableRows(L, readFor(L, aged)).map((r) => [r.workflow, r.level]), [['job-c', 'workflow']]);
+  assert.equal(readableRows(L, readFor(L, aged, 'job-z')).length, 0, 'and a workflow-level row is not read by another job');
+});
+
+test('climb: an old ledger file with a stored level loads; the stored value is ignored at read and reset at the next write', () => {
+  const L = siblings([['job-a', '2026-10-20T09:00:00Z']]);
+  const old = { ...L, rows: L.rows.map((r) => ({ ...r, level: 'user' })) };
+  assert.deepEqual(readableRows(old, readFor(old, new Date('2026-10-23T09:00:00Z'), 'job-a')).map((r) => r.level), ['workflow']);
+  assert.equal(readableRows(old, readFor(old, new Date('2026-10-23T09:00:00Z'), 'job-z')).length, 0, 'a stored user level does not reach another job');
+  const tc = built[0].cards.find((c) => c.check === 'typecheck');
+  assert.ok(tc);
+  const next = countLedger(old, { runid: 'r-next', cards: [{ ...tc, job: 'job-b', at: '2026-10-22T09:00:00Z' }], workflow: 'job-b', place: '/p/shared', specHash: null, trust: 'deterministic', now: NOW });
+  assert.deepEqual(next.rows.map((r) => r.level), ['workflow', 'workflow']);
 });

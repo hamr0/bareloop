@@ -547,7 +547,7 @@ export function foldCards(cards) {
  * @property {Record<string, number>} models  per-model counts (read-only information; never a filter)
  * @property {string} workflow
  * @property {string|null} place
- * @property {'workflow'|'place'|'user'} level
+ * @property {'workflow'|'place'|'user'} level  STORED as 'workflow' only; the level a reader sees is derived by {@link readableRows} from the rows memory still shows (an older file's stored value is ignored and reset on the next write)
  * @property {'deterministic'|'rubric'} trust
  * @property {string[]} runIds
  * @property {string} firstSeen
@@ -609,8 +609,8 @@ export const isDecayed = (r, now) => { const t = Date.parse(r.lastSeen); return 
  */
 export const otherJobVersion = (r, workflow, specHash) => r.level === 'workflow' && r.workflow === workflow && r.specHash !== null && specHash !== null && r.specHash !== specHash;
 
-/** Drop the retired stored `status`/`expiredBy` fields an older ledger file may carry (never read; stripped on the next write). @param {Row} r */
-const stripLegacy = (r) => { const { status: _s, expiredBy: _e, ...rest } = /** @type {Row & {status?: unknown, expiredBy?: unknown}} */ (r); return /** @type {Row} */ (rest); };
+/** Drop the retired stored `status`/`expiredBy` fields an older ledger file may carry, and reset a stored `level` (never read; stripped on the next write). @param {Row} r */
+const stripLegacy = (r) => { const { status: _s, expiredBy: _e, ...rest } = /** @type {Row & {status?: unknown, expiredBy?: unknown}} */ (r); return /** @type {Row} */ ({ ...rest, level: 'workflow' }); };
 
 /** Rank order for matching and reading: highest count, most recent lastSeen, then id. */
 const byRank = (/** @type {Row} */ a, /** @type {Row} */ b) => b.count - a.count || (a.lastSeen < b.lastSeen ? 1 : a.lastSeen > b.lastSeen ? -1 : 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
@@ -656,11 +656,12 @@ export function countLedger(ledger, { runid, cards, workflow, place, specHash, t
 }
 
 /**
- * Recompute the derived parts after any change: climbing, pending expiry. Ledger rows are never aged out or deleted.
+ * Recompute the derived parts after any change: pending expiry. Ledger rows are never aged out or deleted, and carry no
+ * climbed level (that is decided at read time, see {@link readableRows}).
  * @param {Ledger} L @param {Date} now @returns {Ledger}
  */
 function finish(L, now) {
-  const rows = climb(L.rows.map(stripLegacy));
+  const rows = L.rows.map(stripLegacy);
   return {
     ...L,
     rows: rows.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
@@ -672,8 +673,9 @@ const LEVEL_RANK = { workflow: 0, place: 1, user: 2 };
 
 /**
  * Climbing (RULING 1): the same lesson across workflows — the section-3 rule with "same job" dropped — seen in 3
- * distinct workflows on one place climbs to `place`; in 3 distinct places, to `user`. By changing the `level` tag
- * only; a row never goes back down and keeps every run id.
+ * distinct workflows on one place climbs to `place`; in 3 distinct places, to `user`. Derived from the rows handed in
+ * alone (every row starts at `workflow`, a stored level is ignored): {@link readableRows} hands it only the rows memory
+ * still shows, so a level drops back when siblings age out. Returns copies; keeps every run id.
  * @param {Row[]} rows @returns {Row[]}
  */
 export function climb(rows) {
@@ -684,7 +686,8 @@ export function climb(rows) {
   /** @type {Map<number, number[]>} */
   const fam = new Map();
   for (let i = 0; i < n; i += 1) { const r = find(i); fam.set(r, [...(fam.get(r) ?? []), i]); }
-  const out = rows.map((r) => ({ ...r }));
+  /** @type {Row[]} */
+  const out = rows.map((r) => ({ ...r, level: 'workflow' }));
   for (const idx of fam.values()) {
     if (idx.length < CLIMB_AT) continue;
     /** @type {Map<string, Set<string>>} */
@@ -835,15 +838,16 @@ function hintText(r, n) {
 /**
  * Which rows may be read for this job, in reading order (THE memory filter; the ledger itself keeps every row).
  * Excluded: pending rows, any row last seen more than 56 days ago, any row with no run id, a workflow row of another
- * job or of another signed hash, a place row of another place.
+ * job or of another signed hash, a place row of another place. The level (this job / this place / all jobs) is
+ * derived HERE by {@link climb} over the rows not decayed at `now` only; the stored level is never read.
  * Order: this job's, then this place's, then all-jobs LAST (R2: climbing wins, so an all-jobs hint only uses leftover
  * room); inside each level highest count first (ties: most recent lastSeen, then id), so the order is total and stable.
  * @param {Ledger} ledger @param {{workflow: string, place: string|null, specHash?: string|null, now: Date}} o
  * @returns {Row[]}
  */
 export function readableRows(ledger, { workflow, place, specHash = null, now }) {
-  return ledger.rows.filter((r) => {
-    if (isDecayed(r, now) || r.runIds.length === 0) return false;
+  return climb(ledger.rows.filter((r) => !isDecayed(r, now))).filter((r) => {
+    if (r.runIds.length === 0) return false;
     if (r.level === 'workflow') return r.workflow === workflow && !otherJobVersion(r, workflow, specHash);
     if (r.level === 'place') return place !== null && r.place === place;
     return true;
