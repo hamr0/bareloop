@@ -164,3 +164,11 @@ test('cleanText strips the patient and worktree prefixes in linear time: a 50000
   assert.equal(cleanText('/bareloop-patients/x+/seg/bareloop-patients/y/z.js', null), 'segz.js');
   assert.ok(performance.now() - t0 < 300, `took ${performance.now() - t0} ms`);
 });
+
+test('errorKinds reads the files a quote names in linear time: a 50000-character run of path characters with no extension returns at once (the backtracking regex took seconds)', () => {
+  const t0 = performance.now();
+  assert.deepEqual(errorKinds('a'.repeat(50000)).files, []);
+  assert.deepEqual(errorKinds('a/'.repeat(25000)).files, []);
+  assert.deepEqual(errorKinds('see ./src/a.js, x/b.mjs and c.jsx').files, ['src/a.js', 'x/b.mjs']);
+  assert.ok(performance.now() - t0 < 300, `took ${performance.now() - t0} ms`);
+});

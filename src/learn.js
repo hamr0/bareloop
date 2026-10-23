@@ -172,7 +172,7 @@ export function errorKinds(text, fullGap = text) {
   }
   const kindSet = uniq(kinds).sort();
   if (!kindSet.length) kindSet.push('other');
-  const files = uniq([...text.matchAll(/[\w@.\/-]+\.(?:mjs|js|ts|py)\b/g)].map((m) => m[0].replace(/^\.\//, ''))).sort();
+  const files = uniq([...text.matchAll(PATH_RE)].map((m) => m[0].replace(/^\.\//, ''))).sort();
   const sm = text.match(/(?:Variable|Parameter|Property) '([^']+)'/) || text.match(/Name "([^"]+)"/) || text.match(/'([^']+)' is of type/);
   return { kinds: kindSet, files, symbol: sm ? sm[1] : null, suspect };
 }
@@ -796,7 +796,8 @@ export function saidLine(said) {
   return said.find((l) => flaggedText(l) !== null || flaggedText(`close: ${l}`) !== null) ?? said[0];
 }
 
-const PATH_RE = /[\w@.\/-]+\.(?:mjs|js|ts|py)\b/g;
+// (?<![\w@.\/-]): a match is the last `.ext` in a run of path characters, so no start inside a run after its first character can match; skipping them keeps a long run linear
+const PATH_RE = /(?<![\w@.\/-])[\w@.\/-]+\.(?:mjs|js|ts|py)\b/g;
 const baseName = (/** @type {string} */ p) => p.split('/').at(-1) ?? p;
 
 /**
