@@ -681,7 +681,7 @@ const LEVEL_RANK = { workflow: 0, place: 1, user: 2 };
 export function climb(rows) {
   const n = rows.length;
   const par = rows.map((_, i) => i);
-  const find = (/** @type {number} */ x) => { let r = x; while (par[r] !== r) r = par[r]; return r; };
+  const find = (/** @type {number} */ x) => { let r = x; while (par[r] !== r) r = par[r]; par[x] = r; return r; };
   for (let i = 0; i < n; i += 1) for (let j = i + 1; j < n; j += 1) if (cardsMatch(rows[i].sample, rows[j].sample, { sameJob: false }).match) par[find(i)] = find(j);
   /** @type {Map<number, number[]>} */
   const fam = new Map();

@@ -223,6 +223,20 @@ test('climbing: the same lesson in 3 workflows on one place -> place; on 3 place
   assert.deepEqual(climb([row('a', 'P'), row('b', 'P'), other]).map((r) => r.level), ['workflow', 'workflow', 'workflow']);
 });
 
+test('climbing: 2000 identical-lesson rows form one family, quickly (union-find path compression)', () => {
+  const [c] = /** @type {any} */ (built.get('ms2c0ls7')).cards;
+  const rows = Array.from({ length: 2000 }, (_, i) => ({
+    id: `r${i}`, lesson: lessonOf(c), count: 1, sample: { ...c, job: `w${i}` }, models: {}, workflow: `w${i}`, place: `/p/${i % 7}`,
+    level: /** @type {const} */ ('workflow'), trust: /** @type {const} */ ('deterministic'), runIds: [`x${i}`], firstSeen: c.at, lastSeen: c.at, specHash: null, key: 'k',
+  }));
+  const t = performance.now();
+  const out = climb(rows);
+  const ms = performance.now() - t;
+  assert.equal(out.length, 2000);
+  assert.deepEqual([...new Set(out.map((r) => r.level))], ['user'], 'one family across 7 places climbs to user');
+  assert.ok(ms < 5000, `climb took ${Math.round(ms)} ms (bound 5000; path compression keeps it near 1 s)`);
+});
+
 test('the place of a job: a repo or folder path as written, a website\'s host, none when there are no inputs', () => {
   assert.equal(placeOf({ inputs: [{ n: 1, label: 'repo', value: '/home/x/proj' }] }), '/home/x/proj');
   assert.equal(placeOf({ inputs: [{ n: 1, label: 'page', value: 'https://www.google.com/travel/flights?q=1' }] }), 'www.google.com');
