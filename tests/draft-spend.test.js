@@ -223,6 +223,19 @@ test('a legacy-only session (draft-spend.json, no call lines) is still counted e
   assert.equal(monthSpend({ home, now: NOW }).usd, 2.5 + 0.5 + 0.25);
 });
 
+test('call lines with no identity (old shape) take provider/baseUrl/model from the legacy file; a call line that has them wins', (t) => {
+  const home = tmp(t);
+  const call = { kind: 'call', no: 0, label: 'a', costUsd: 0.25, unpricedRounds: 0, at: localIso(2026, 8, 10) };
+  const a = plantLegacy(home, 'sold', { spentUsd: 0.25, provider: 'openai-api', baseUrl: 'https://gw.example/v1', model: 'deepseek-flash' });
+  writeFileSync(join(a, LOG), `${JSON.stringify(call)}\n`);
+  const b = plantLegacy(home, 'snew', { spentUsd: 0.25, provider: 'openai-api', baseUrl: 'https://gw.example/v1', model: 'deepseek-flash' });
+  writeFileSync(join(b, LOG), `${JSON.stringify({ ...call, provider: 'anthropic-api', baseUrl: null, model: 'claude-sonnet-5' })}\n`);
+  const by = Object.fromEntries(readOrphanDraftSpends({ home }).map((d) => [d.sessionId, d]));
+  assert.deepEqual([by.sold.provider, by.sold.baseUrl, by.sold.model], ['openai-api', 'https://gw.example/v1', 'deepseek-flash']);
+  assert.equal(by.sold.spentUsd, 0.25);
+  assert.deepEqual([by.snew.provider, by.snew.model], ['anthropic-api', 'claude-sonnet-5']);
+});
+
 test('a corrupt log never reads low as exact: a torn line makes it "at least"; torn lines with no readable call are unknown spend', (t) => {
   const home = tmp(t);
   const dir = plantDraft(home, 'storn', { spentUsd: 0.4 });

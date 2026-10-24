@@ -151,6 +151,11 @@ export function readOrphanDraftSpends(opts = {}) {
       }
     }
     if (d === null && hasLegacy) d = spendFromLegacyFile(name, legacy);
+    else if (d !== null && hasLegacy) {
+      // call lines written before they carried the identity: the old file still names the provider row the money lands under
+      const old = spendFromLegacyFile(name, legacy);
+      d = { ...d, provider: d.provider ?? old.provider, baseUrl: d.baseUrl ?? old.baseUrl, model: d.model ?? old.model };
+    }
     if (d !== null) out.push(d);
   }
   return out;
