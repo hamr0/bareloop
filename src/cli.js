@@ -36,6 +36,8 @@ import { bundleMain } from './bundlerun.js';
 // rather than re-parsing argv a second time here keeps exactly one code
 // path for the flag grammar; `src/cli.js` only supplies the deps shape
 // (`out`/`err`/`env`) this command's own callers already use.
+import { startCmd, stopCmd, statusCmd, installCmd, menuCmd } from './launcher.js';
+import { makePaint } from './tty-colour.js';
 import { main as runUMain } from './userrun.js';
 // PANEL-BUILD.md P0 task 3/4 — `bareloop interview` and `bareloop author`
 // wrap the close-authoring interview and authoring-pipeline flows' own
@@ -272,50 +274,30 @@ function doRuns(args, { out, err, cwd }) {
 }
 
 /**
- * The bare `bareloop` menu: `1 export  2 run  3 history  q quit`, then the
- * SAME code path as the sub-command, asking its args line by line. `run-u`,
- * `interview`, `author` and `replay` are NOT wizarded here — a line-at-a-time
- * prompt for `run-u`'s 13 flags (or the others' own argv shapes) would be
- * inventing new interactive UX, not wiring, and that judgement stands. This
- * menu is fixed instead: it now says those four commands exist and how to
- * reach them, rather than implying only three commands do at all.
- * `keysHome` is the home `main` already resolved (`keysForDoor`), handed on so choice 2 reads the
- * SAME config.json (monthly limit, price, key row) as `bareloop run <bundle>` — never resolved twice.
- * @param {any} deps @param {{ out: (s: string) => void, err: (s: string) => void, cwd: string, env: any, now: () => number }} ctx @param {string|undefined} keysHome
+ * The launcher doors (L, PANEL-BUILD.md addendum 2026-10-24): the bare `bareloop` menu and `start | stop | status | install`. All logic is
+ * `src/launcher.js`; this only supplies the home (the SAME one `main` resolved for the keys file and config.json) and the line reader.
+ * `deps.launcher` is the test seam for every OS touch (ports, spawn, kill, opener, clock).
+ * @param {string} cmd 'menu' | 'start' | 'stop' | 'status' | 'install' @param {string[]} rest
+ * @param {any} deps @param {{ out: (s: string) => void, err: (s: string) => void }} io @param {string|undefined} home
+ * @returns {Promise<number>}
  */
-async function runMenu(deps, ctx, keysHome) {
-  const stdin = deps.stdin;
-  const stdout = deps.stdout;
-  const rl = createInterface({ input: stdin, output: stdout });
+async function runLauncher(cmd, rest, deps, io, home) {
+  const rl = createInterface({ input: deps.stdin ?? process.stdin, output: deps.stdout ?? process.stdout });
+  let closed = false;
+  rl.once('close', () => { closed = true; });
+  // a closed stdin answers '' (= the safe default: quit / "no"), never hangs
+  const ask = (/** @type {string} */ q) => (closed ? Promise.resolve('') : Promise.race([
+    rl.question(q),
+    new Promise((resolve) => { rl.once('close', () => resolve('')); }),
+  ]).then(String));
+  const rawEnv = deps.processEnv ?? process.env;
+  const d = { home, ask, paint: makePaint(deps.stdout ?? process.stdout, rawEnv), paintErr: makePaint(deps.stderr ?? process.stderr, rawEnv), ...(deps.launcher ?? {}) };
   try {
-    ctx.out('1 export  2 run  3 history  q quit');
-    ctx.out('(also on the command line, not wizarded here: run-u, interview, author, replay, runs, panel — run `bareloop <name>` with its own flags)');
-    const choice = (await rl.question('> ')).trim().toLowerCase();
-    if (choice === '' || choice === 'q' || choice === 'quit') return 0;
-    if (choice === '1') {
-      const specPath = (await rl.question('job spec path: ')).trim();
-      const registry = (await rl.question('registry dir: ')).trim();
-      const outDir = (await rl.question('out dir: ')).trim();
-      return doExport([specPath, '--registry', registry, '--out', outDir], ctx);
-    }
-    if (choice === '2') {
-      const bundleDir = (await rl.question('bundle dir: ')).trim();
-      const repo = (await rl.question('repo path: ')).trim();
-      const budget = (await rl.question('budget (blank to skip): ')).trim();
-      const wall = (await rl.question('wall minutes (blank to skip): ')).trim();
-      const approve = (await rl.question('approve hash (blank to skip): ')).trim();
-      const args = [bundleDir, '--repo', repo];
-      if (budget) args.push('--budget', budget);
-      if (wall) args.push('--wall', wall);
-      if (approve) args.push('--approve', approve);
-      return await bundleMain(args, { ...ctx, deps, keysHome, parseFlags, printReds });
-    }
-    if (choice === '3') {
-      const bundleDir = (await rl.question('bundle dir: ')).trim();
-      return doHistory([bundleDir], ctx);
-    }
-    ctx.err(`unknown choice ${JSON.stringify(choice)} — one of: 1, 2, 3, q`);
-    return 1;
+    if (cmd === 'start') return await startCmd(io, d);
+    if (cmd === 'stop') return await stopCmd(rest, io, d);
+    if (cmd === 'status') return await statusCmd(io, d);
+    if (cmd === 'install') return await installCmd(io, d);
+    return await menuCmd(io, d);
   } finally {
     rl.close();
   }
@@ -326,7 +308,7 @@ async function runMenu(deps, ctx, keysHome) {
  * code, so `bin/bareloop.mjs` can set `process.exitCode` and let node flush
  * queued stdout on its own (F-something: `process.exit()` can discard it).
  * @param {string[]} argv
- * @param {{ env?: Record<string,string|undefined>, stdout?: any, stderr?: any, cwd?: string, provider?: any, providerFor?: any, judgeProvider?: any, judgeModel?: string|null, now?: () => number, stdin?: any, runlistHome?: string, keysHome?: string }} deps
+ * @param {{ env?: Record<string,string|undefined>, stdout?: any, stderr?: any, cwd?: string, provider?: any, providerFor?: any, judgeProvider?: any, judgeModel?: string|null, now?: () => number, stdin?: any, runlistHome?: string, keysHome?: string, processEnv?: Record<string,string|undefined> }} deps
  * @returns {Promise<number>}
  */
 export async function main(argv, deps = {}) {
@@ -345,7 +327,9 @@ export async function main(argv, deps = {}) {
 
   const [cmd, ...rest] = argv;
   if (keys.warning && cmd && ['run', 'run-u', 'interview', 'author', 'panel'].includes(cmd)) err(`WARNING: ${keys.warning}`);
-  if (!cmd) return runMenu({ ...deps, stdin: deps.stdin ?? process.stdin, stdout }, ctx, keys.home);
+  const launcherHome = keys.home ?? deps.runlistHome;
+  if (!cmd) return runLauncher('menu', [], { ...deps, stdout }, ctx, launcherHome);
+  if (cmd === 'start' || cmd === 'stop' || cmd === 'status' || cmd === 'install') return runLauncher(cmd, rest, { ...deps, stdout }, ctx, launcherHome);
   if (cmd === 'export') return doExport(rest, ctx);
   if (cmd === 'run') return bundleMain(rest, { ...ctx, keysHome: keys.home, parseFlags, printReds });
   if (cmd === 'history') return doHistory(rest, ctx);
@@ -388,6 +372,6 @@ export async function main(argv, deps = {}) {
   // and spine/gate-audit reads over `127.0.0.1` only. `deps.runlistHome`
   // rides through the same injectable seam `run`/`run-u` already use.
   if (cmd === 'panel') return panelMain(rest, { out, err, runlistHome: deps.runlistHome, env: deps.env });
-  err(`unknown command ${JSON.stringify(cmd)} — one of: export, run, history, run-u, interview, author, replay, runs, panel`);
+  err(`unknown command ${JSON.stringify(cmd)} — one of: export, run, history, run-u, interview, author, replay, runs, panel, start, stop, status, install`);
   return 1;
 }

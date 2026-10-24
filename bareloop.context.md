@@ -3291,16 +3291,35 @@ real key check is skipped entirely — a scripted provider *is* the run, the
 same seam `tests/planrun-*.test.js` uses. `deps` also accepts `env`, `stdout`, `stderr`, `cwd`,
 `now`, `stdin` — omit any of them and the real `process.*` equivalent is used.
 
-Bare `bareloop` (no sub-command) prints a numbered menu — `1 export  2 run  3 history  q
-quit` — and asks each sub-command's arguments one line at a time over the SAME code paths
-below. `run-u`, `interview` and `author` (below) are not on this menu (PANEL-BUILD.md P0
-tasks 2/4-4/4): each one's own flag grammar is too wide for a line-at-a-time wizard, and the
-menu's job is to ask the SAME questions the sub-command below already answers, never to
-invent a new interview — this is doubly true for `interview`/`author`, which already ARE
-interviews of their own. Choice `2 run` is handed the SAME resolved keys home `bareloop run <bundle>` gets, so the
-monthly limit, your price and the key-row choice apply exactly as on the sub-command (before this it
-got none, and a run started from the menu skipped the limit). All three are dispatched by name only: `bareloop run-u <flags…>`,
-`bareloop interview <flags…>`, `bareloop author <flags…>`.
+Bare `bareloop` (no sub-command) is the **launcher menu** (PANEL-BUILD.md addendum L, `src/launcher.js`): two header lines, then
+`1 start   2 stop   3 status   4 install   q quit`. The header is printed first by EVERY call (menu and each of
+`bareloop start | stop | status | install`), from one function:
+
+```
+bareloop 0.47.0 · installed ✓ · panel running at http://127.0.0.1:4701
+runs: 1 running · 2 need you · 375 in all
+```
+
+Colour (`src/tty-colour.js`): on only when stdout is a terminal, `NO_COLOR` is empty/unset and `TERM` is not `dumb`; it wraps words and never
+changes them, and a piped or `NO_COLOR` run prints the plain words above (the thin `─` rules around the header appear only with colour).
+
+- `installed ✓` = `~/.config/bareloop/` exists, `config.json` is there and reads with no problem, `.env` exists with mode 600, node >= 22;
+  otherwise `not installed — <first missing thing>, pick 4 install`. The run counts use the panel's own status words and Needs-you rule over the
+  run list file ($0, works with the panel stopped).
+- **No pid file.** The panel is found by asking `127.0.0.1:4700..4709` for `GET /api/whoami` (300 ms each, in parallel); a reply with `app: "bareloop"` is a panel.
+  `GET /api/whoami` → `{ app: "bareloop", version, pid, port, drafts, schedules }` (open drafting sessions, jobs with a schedule), read-only, same Host guard as every
+  route, no token.
+- **`bareloop start`** → already running: says so, opens the page, starts nothing (if the running panel's version differs from this bareloop's it adds `It is version X; this bareloop is Y. Run bareloop stop, then bareloop start, to use Y.`). Else starts `bareloop panel --port N` DETACHED (`setsid`; log appended to
+  `~/.config/bareloop/panel.log`) on the first free port from 4700 (a taken port is skipped and named), waits up to 10 s for it to answer, opens the page with
+  `xdg-open`/`open` (no opener: prints the URL). `bareloop panel [--port N]` is unchanged (foreground, fixed port).
+- **`bareloop stop [--yes]`** → SIGTERM to the pid of EVERY panel the probe finds (one panel at a time; no which-one question), waits until each port is quiet. Open drafts (in memory, summed over all found panels) are warned about and a y/N is asked;
+  `--yes` skips it. Not running: `Panel not running.`, exit 0. Several found: all stopped, `N panels stopped.`. Any other option (e.g. `--port`) is refused in plain words. Runs are separate processes and keep going.
+- **`bareloop status`** → header plus `pid N · version X · N draft(s) open · N schedule(s) on`. Exit 0 running, 3 not running. A panel whose version differs from the CLI's shows `(version X — stop and start to use Y)` after its URL in the header (yellow on a terminal).
+- **`bareloop install`** → creates only what is missing (folder mode 700, `.env` with the keys-file comment lines, mode 600, `config.json`); never reads a key value;
+  `Already installed, nothing to do.` when there is nothing to add. Needs node >= 22.
+
+The old `1 export  2 run  3 history` menu is gone; `bareloop export|run|history` and the other sub-commands are unchanged. `run-u`, `interview` and `author` are dispatched
+by name only: `bareloop run-u <flags…>`, `bareloop interview <flags…>`, `bareloop author <flags…>`.
 
 When two key rows share one provider and endpoint, a CLI run uses the FIRST row in the keys list, so put the
 key you want first (the panel picks the row by the Model menu).
@@ -3890,7 +3909,7 @@ No model is called anywhere in learnings (a test walks the import closure). Pure
 - **Run end:** `execute` (`src/userrun.js`, shared by the panel, the CLI and the bundle runner) calls `learnAtRunEnd({ home, runid, events, auditFiles, spec, specHash, workdir, trust })` once, right after the claim settles, in its own try/catch: a failure prints one WARNING and never changes the verdict, exit code or spend. It writes nothing when the engine has no config home.
 - **Cards:** `buildCards({ runid, events, audit, workdir, spec, model, questions })` → `{ cards, suspect, thin, noise }`. FIXED = a check red then the same check passes later in the run; NEVER FIXED = still red at run end. Excluded and counted: noise runs (provider-red, close-crashed, worker-crash, no close spoke), CHECK-SUSPECT (a no-suppressions hit on a prose comment), TOO-THIN (no error kind and no fix files). Written files come from `attempt-diff` events and the gate audit's allow write/edit rows relative to the tree.
 - **Fold:** `cardsMatch` / `foldCards`: same job + check, a shared error kind, Jaccard >= 60% on flagged-text tokens (a fit on known cards, not a proof). Code-less cards (kind `other`) fold on the text rule alone, only when both token sets are non-empty (R1, 2026-10-23: UNTESTED on real data; the 60% was fitted on cards with codes). `kindAgrees` is the one kind test.
-- **Ledger** `<config home>/learn/ledger.json` (mode 600, atomic, secrets masked): rows `{ id, lesson, count, sample, models, workflow, place, level, trust, runIds, firstSeen, lastSeen, specHash }`, plus `pending` (held rubric cards), `suspect`, `health`. There is no check-wide set-aside (R2, 2026-10-23): a lesson seen in several jobs climbs by the climb rules and is read at its level; all-jobs hints come last. `countLedger` (+1 per run per row), `holdPending` / `releasePending` (rubric cards count only after the human Accept; `releaseRun` is called from the door's accept path), `climb` (the level of a lesson, derived at read time by `readableRows` from the rows not decayed at that moment: it can go back down when siblings age past 56 days; the file stores `workflow` only and ignores an older stored level). The ledger keeps EVERY row (nothing is deleted, no `expired` flag is stored; hamr 2026-10-23). Memory is the filter: `readableRows` / `renderHints` skip a row last seen more than 56 days ago (`isDecayed`) and a workflow row of another signed hash (`otherJobVersion`); a lesson seen again counts +1 on its old row. Old files with `status`/`expiredBy` still load; the fields are ignored and dropped at the next write.
+- **Ledger** `<config home>/learn/ledger.json` (mode 600, atomic, secrets masked): rows `{ id, lesson, count, sample, models, workflow, place, level, trust, runIds, firstSeen, lastSeen, specHash }`, plus `pending` (holds an older version wrote for rubric runs; new runs write none), `suspect`, `health`. There is no check-wide set-aside (R2, 2026-10-23): a lesson seen in several jobs climbs by the climb rules and is read at its level; all-jobs hints come last. `countLedger` (+1 per run per row), `releasePending` (an OLD hold, written by v0.46.x, counts on the human Accept; `releaseRun` is called from the door's accept path; a rubric run's lessons now count at run end like a deterministic run's, trust `rubric` kept, and `foldRunIntoLedger` returns `held: 0`; reuse/bridge credit still waits for the Accept). A row already holding the run id (a resumed leg, one id) is refreshed from the new card (sample, lesson, key, lastSeen, hash, place) but its count, model tally and run ids do not move, `climb` (the level of a lesson, derived at read time by `readableRows` from the rows not decayed at that moment: it can go back down when siblings age past 56 days; the file stores `workflow` only and ignores an older stored level). The ledger keeps EVERY row (nothing is deleted, no `expired` flag is stored; hamr 2026-10-23). Memory is the filter: `readableRows` / `renderHints` skip a row last seen more than 56 days ago (`isDecayed`) and a workflow row of another signed hash (`otherJobVersion`); a lesson seen again counts +1 on its old row. Old files with `status`/`expiredBy` still load; the fields are ignored and dropped at the next write.
 - **Reading:** `hintsForRun({ home, spec, specHash })` renders once at run start; `runJob(..., { learnHints: { text, ids } })` → `runPlan` hands it to the PLANNER at the draft and the first replan only, and emits a `learnings` spine record with the exact text. `renderHints(ledger, { workflow, place, specHash, now })` is the one render (this job, then this place, then all-jobs, highest count first, 2,000 characters, a hint whole or not at all; all-jobs hints last); a FIXED hint adds `What changed:` (first 3 `+`/`-` lines of the stored diff, 150 chars each, then `(+N more)`; never on NEVER FIXED) and a repeated path in a hint reads as its basename (R3, R5, 2026-10-23); the spine's recorded text is byte-equal to a fresh `renderHints(...).text` from the ledger as it stood. The Audit run detail carries `learnings` (read-only); its header counts DISTINCT hints (the same ledger row handed at the draft and the first replan counts once).
 
 ### Settings — the keys file, `config.json`, the monthly $ limit, the Providers tab (PANEL-BUILD.md P4a, `src/keysfile.js`, `src/config.js`, `src/monthly.js`, `src/providerrows.js`, `src/panel/settingsroutes.js`)

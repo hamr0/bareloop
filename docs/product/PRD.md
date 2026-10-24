@@ -2018,7 +2018,7 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
   1. Cross-run learnings (v1.108 item 1) on its own branch: interview hamr first, then the build spec, then the build.
   2. Then search as an input (v1.109) on its own branch, built from the search build spec in `docs/product/ITEM33-BUILD.md` ("Addendum 2026-10-21 — search build spec", commit 812bf56).
   3. The OTel converter (v1.108 item 2) stays after, only when a live caller exists.
-  - **UPDATE 2026-10-24 (v1.112):** the NEXT fix after v0.46.1, before search, is rubric lessons counting at run end (v1.108 RULED 2026-10-24 bullet). Today's code holds them: `src/learnstore.js` `foldRunIntoLedger` sends `trust === 'rubric'` to `holdPending`; `releasePending` (`src/learn.js`) runs on the door Accept (`src/userrun.js` `releaseRun` call).
+  - **UPDATE 2026-10-24 (v1.112):** the NEXT fix after v0.46.1, before search, is rubric lessons counting at run end (v1.108 RULED 2026-10-24 bullet). Before this fix the code held them: `src/learnstore.js` `foldRunIntoLedger` sent `trust === 'rubric'` to `holdPending`; `releasePending` (`src/learn.js`) runs on the door Accept (`src/userrun.js` `releaseRun` call). DONE on `fix/learn-run-end`: `foldRunIntoLedger` now counts every run (rubric too, trust kept on new rows), `holdPending` is no longer called, and `releasePending` stays only to release a hold an older version wrote.
 - **Search rulings already made (hamr 2026-10-21, in the build spec):**
   - `search: <site url>` uses that site's own box; code picks the box, the AI writes the words.
   - Up to 5 links are opened and the first that fits is the evidence. If none of the 5 fit, show the closest page and let the person type "go on" (Q1 a).
@@ -2035,3 +2035,7 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 
 - Option A, next fix after v0.46.1: see the v1.108 RULED 2026-10-24 bullet. Learnings fold at run end for rubric runs too; reuse/bridge credit still waits for the door Accept.
 - **Second item, same branch, RULED 2026-10-24 (hamr): a resumed leg updates its own run's ledger row.** Defect found by fwd while porting, test-proven (fwdloop `test/m8-am4-run-end.test.js` test 7), not live: `countLedger` (`src/learn.js:639` at v0.46.1) skips a row that already holds the run id, and the run-end tally runs at each leg end with ONE run id, so a NEVER FIXED card from leg 1 stays NEVER FIXED when leg 2 fixes it. Required: the leg may update its own run's row (sample card, lesson, kind) without counting +1 again; the count stays one per run. Both repos get the same fix.
+
+### The `bareloop` launcher (v1.113 — 2026-10-24) — SIGNED by hamr
+
+- Bare `bareloop` is a launcher menu (start | stop | status | install); the panel is found by `GET /api/whoami` on 127.0.0.1:4700..4709, no pid file; one panel at a time, `stop` stops every panel found. Contract and amendment: `docs/product/PANEL-BUILD.md` "Addendum 2026-10-24 — L" and "L amendment 2026-10-24 — one panel at a time"; adopter text in `bareloop.context.md` (CLI section).

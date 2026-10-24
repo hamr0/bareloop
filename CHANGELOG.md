@@ -5,6 +5,20 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.47.0] - 2026-10-24
+
+### Added
+
+- **`bareloop` is a launcher (PANEL-BUILD.md addendum L, hamr 2026-10-24).** Bare `bareloop` shows a menu (`1 start  2 stop  3 status  4 install  q quit`) under two header lines (installed or not, panel running or not, `runs: N running · N need you · N in all`); the same four work as `bareloop start | stop | status | install`. No pid file: the panel is found by asking ports 4700-4709 for the new read-only `GET /api/whoami`. `start` runs the panel detached on the first free port (log: `~/.config/bareloop/panel.log`) and opens the page; `stop` stops every panel it finds (one panel at a time; no `--port`, no which-one question), warns about open drafts summed over them and asks (`--yes` skips); `status` prints `Panel not running.` and exits 3 when no panel runs (0 from the menu); `install` creates only what is missing. The old `1 export / 2 run / 3 history` menu is gone (the sub-commands stay). `bareloop panel [--port N]` is unchanged. Coloured on a terminal (off when piped, `NO_COLOR` set or `TERM=dumb`). `status` and the header show the running panel's version, with a stop-and-start note when it differs from the CLI's. The header's `need you` count matches the panel's Needs-you list, schedules that gave up included. `GET /api/whoami` (app, version, pid, port, drafts, schedules) sits behind the Host guard and needs no token. The panel address has one owner (`panelUrl`); no address literal lives in the launcher, and the OS opener is shared with Settings.
+
+### Changed
+
+- **A rubric run's lessons count at run end, like a deterministic run's (hamr 2026-10-24, option A).** `foldRunIntoLedger` no longer holds a `rubric` run's cards in `pending` until the human Accept: they go through `countLedger` now, FIXED and NEVER FIXED alike, with `trust: 'rubric'` kept on new rows; `held` is always 0. A hold already in a ledger file (written by v0.46.x) still releases on the door Accept. Reuse and bridge credit is unchanged and still waits for the Accept. Noise runs stay dropped.
+
+### Fixed
+
+- **A resumed leg updates its own run's ledger row.** `countLedger` skipped a row that already held the run id, so a NEVER FIXED lesson from leg 1 stayed NEVER FIXED when leg 2 (same run id) fixed it. The row is now refreshed from the new card (sample, lesson, key, lastSeen, hash, place) while its count, model tally and run ids stay one per run; an older run's cards re-folded later never step a row back. Found by fwdloop.
+
 ## [0.46.1] - 2026-10-24
 
 ### Fixed

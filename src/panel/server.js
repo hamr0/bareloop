@@ -82,11 +82,22 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 /** bareloop's own version, from its package.json (read each time the page is served); 'unknown' if it cannot be read, never a guess
  * @param {string} [file] test seam: another package.json
  * @returns {string} */
-function packageVersion(file = join(HERE, '..', '..', 'package.json')) {
+export function packageVersion(file = join(HERE, '..', '..', 'package.json')) {
   try {
     const v = JSON.parse(readFileSync(file, 'utf8')).version;
     return typeof v === 'string' && v.length > 0 ? v : 'unknown';
   } catch { return 'unknown'; }
+}
+
+/**
+ * `GET /api/whoami` body. `drafts` counts the person's drafting sessions that are not finished (the headless scheduled ones are not drafts).
+ * @param {{ port: number, packageJsonPath?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
+ */
+function whoamiPayload(opts) {
+  const drafts = opts.authorRoutes ? opts.authorRoutes.openDrafts() : 0;
+  let schedules = 0;
+  try { schedules = opts.schedules ? opts.schedules.scan().length : 0; } catch { schedules = 0; }
+  return { app: 'bareloop', version: packageVersion(opts.packageJsonPath), pid: process.pid, port: opts.port, drafts, schedules };
 }
 
 /** Largest POST body the panel buffers (job cards are short prose); a bigger one is refused with 413. */
@@ -1054,6 +1065,25 @@ export function runsListPayload(opts = {}) {
   const gaveUp = gaveUp0.map(noOf);
   const scheduled = scheduled0.map(noOf);
   return { runs, jobs, scheduled, gaveUp, limits: RUNS_LIST_LIMITS };
+}
+
+/**
+ * The runs list as the panel builds it, for a caller with no panel running (the launcher header): the same `runsListPayload` over a
+ * schedule door built read-only (no scheduler, no timer), so Needs you = the rows tagged `needs` + the schedules that gave up, ONE owner.
+ * @param {{ home?: string, now?: number, env?: Record<string, string|undefined> }} [opts]
+ * @returns {{ runs: any[], gaveUp: any[] }}
+ */
+export function runsListForCount(opts = {}) {
+  const home = opts.home;
+  const schedules = createScheduleDoor({
+    ...(home ? { home } : {}),
+    jobRuns: (job) => jobRunsOf(job, { home }),
+    startFrom: (runid) => getStartFrom(runid, { home }),
+    jobOfRun: (runid) => readRunList({ home }).rows.find((r) => r && r.runid === runid)?.job ?? null,
+    rowsFor: () => rowsForHome(keysHome(home), keysForDoor({ env: opts.env ?? {}, keysHome: home }).env),
+  });
+  const { runs, gaveUp } = runsListPayload({ home, ...(opts.now !== undefined ? { now: opts.now } : {}), schedules });
+  return { runs, gaveUp };
 }
 
 /**
@@ -3827,6 +3857,13 @@ export function handleRequest(req, res, opts) {
     return;
   }
 
+  // L (PANEL-BUILD.md addendum 2026-10-24): who is answering here — the launcher's probe (`bareloop start|stop|status`). Read-only, no token;
+  // the Host guard above already holds. `drafts` = open drafting sessions (in memory, lost on stop); `schedules` = jobs with a schedule on.
+  if (pathname === '/api/whoami') {
+    send(200, whoamiPayload(opts));
+    return;
+  }
+
   if (pathname === '/api/runs') { send(200, runsListPayload({ home: opts.home, schedules: opts.schedules })); return; }
 
   const runMatch = /^\/api\/runs\/([^/]+)(\/(audit|job|rounds|result|download))?$/.exec(pathname);
@@ -3893,6 +3930,15 @@ export function handleRequest(req, res, opts) {
   }
 
   sendText(res, 404, 'not found');
+}
+
+/**
+ * The ONE spelling of the panel's own address (the launcher prints and opens it too).
+ * @param {number} boundPort
+ * @returns {string}
+ */
+export function panelUrl(boundPort) {
+  return `http://127.0.0.1:${boundPort}`;
 }
 
 /**
@@ -4057,7 +4103,7 @@ export async function panelMain(argv, ctx) {
   }
   try {
     const { port: boundPort } = await createPanelServer({ port, home: ctx.runlistHome, env: ctx.env });
-    ctx.out(`bareloop panel — read-only, http://127.0.0.1:${boundPort} (Ctrl-C to stop)`);
+    ctx.out(`bareloop panel — read-only, ${panelUrl(boundPort)} (Ctrl-C to stop)`);
     // never resolves on its own — the process stays up until killed, same
     // shape any other long-running dev server takes.
     await new Promise(() => {});

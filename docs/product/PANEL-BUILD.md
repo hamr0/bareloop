@@ -1778,3 +1778,12 @@ runs: 1 running · 2 need you · 375 in all
 - Tests use a scratch HOME and ports from a free range, never 4700 or hamr's panel; stop tests kill only the pid they started.
 - Done = full gate green + one real `bareloop` → start → page opens → status → stop on hamr's machine, screenshots of the menu, then hamr's own try.
 - Docs: `bareloop.context.md` CLI section, README "quick start" line, CHANGELOG.
+
+### L amendment 2026-10-24 — one panel at a time (RULED by hamr 2026-10-24)
+
+- One bareloop panel at a time; running several (one per home) is a later, separate feature if ever needed. hamr: "keep it simple … it's cleaner to focus on one screen at a time".
+- `start` with ANY bareloop panel answering: starts nothing, says `Panel already running at <url> — opening the page.` and opens it (option A).
+- `stop` stops EVERY bareloop panel the probe finds, no "which one?" question; the open-drafts warning sums drafts across them. `stop --port N` and the several-panels question are removed. `--yes` stays.
+- `status` lists every panel found (normally one).
+- `bareloop panel [--port N]` (foreground) is unchanged; a second panel started that way is found and stopped like any other.
+- SUPERSEDES in this addendum: "Several bareloop panels running … stop asks which", and the post-sign `--port N` stop flag.

@@ -68,6 +68,8 @@ building it.
 npm install bareloop
 ```
 
+Quick start: `npm install -g bareloop`, then `bareloop` — a menu to start the panel, stop it, see its status, and set up `~/.config/bareloop/`.
+
 ## Usage
 
 A signed job spec goes in. A verdict comes out.
