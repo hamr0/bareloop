@@ -21,7 +21,7 @@ import {
   readConfig, updateConfig, ConfigError, providerFieldProblem, cleanBaseUrl, modelsProblem,
 } from '../config.js';
 import { spendSummary, monthlyLimitOf } from '../monthly.js';
-import { spawn as realSpawn } from 'node:child_process';
+import { openInOs } from '../opener.js';
 import { loadKeysEnv, keysFilePath, keysHome, filledKeyNames, ensureKeysFile } from '../keysfile.js';
 import { SHAPES } from '../providershapes.js';
 import { keyRows, effectiveModels, usableKey, rowNamesOf } from '../providerrows.js';
@@ -208,24 +208,10 @@ export function createSettingsRoutes(opts) {
     }
     const dir = keysHome(opts.home);
     const cannot = () => reply(200, { ok: true, opened: false, path: dir });
-    const platform = opts.platform ?? process.platform;
-    const cmd = platform === 'linux' ? 'xdg-open' : (platform === 'darwin' ? 'open' : null);
     // under a test process (NODE_ENV=test or `node --test`) nothing is spawned unless a test injected an opener
     const underTest = process.env.NODE_ENV === 'test' || process.env.NODE_TEST_CONTEXT !== undefined;
-    const opener = opts.openFolderSpawn ?? (underTest ? null : realSpawn);
-    if (!cmd || !opener) return Promise.resolve(cannot());
-    return new Promise((resolve) => {
-      let child;
-      try { child = opener(cmd, [dir], { detached: true, stdio: 'ignore' }); } catch { resolve(cannot()); return; }
-      let settled = false;
-      child.once('error', () => { if (!settled) { settled = true; resolve(cannot()); } });
-      child.once('spawn', () => {
-        if (settled) return;
-        settled = true;
-        if (typeof child.unref === 'function') child.unref();
-        resolve(reply(200, { ok: true, opened: true, path: dir }));
-      });
-    });
+    return openInOs(dir, { platform: opts.platform, spawnFn: opts.openFolderSpawn, underTest })
+      .then((opened) => (opened ? reply(200, { ok: true, opened: true, path: dir }) : cannot()));
   }
 
   /**

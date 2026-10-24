@@ -82,7 +82,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 /** bareloop's own version, from its package.json (read each time the page is served); 'unknown' if it cannot be read, never a guess
  * @param {string} [file] test seam: another package.json
  * @returns {string} */
-function packageVersion(file = join(HERE, '..', '..', 'package.json')) {
+export function packageVersion(file = join(HERE, '..', '..', 'package.json')) {
   try {
     const v = JSON.parse(readFileSync(file, 'utf8')).version;
     return typeof v === 'string' && v.length > 0 ? v : 'unknown';
