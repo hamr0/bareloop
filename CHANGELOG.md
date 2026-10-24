@@ -5,6 +5,16 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Changed
+
+- **A rubric run's lessons count at run end, like a deterministic run's (hamr 2026-10-24, option A).** `foldRunIntoLedger` no longer holds a `rubric` run's cards in `pending` until the human Accept: they go through `countLedger` now, FIXED and NEVER FIXED alike, with `trust: 'rubric'` kept on new rows; `held` is always 0. A hold already in a ledger file (written by v0.46.x) still releases on the door Accept. Reuse and bridge credit is unchanged and still waits for the Accept. Noise runs stay dropped.
+
+### Fixed
+
+- **A resumed leg updates its own run's ledger row.** `countLedger` skipped a row that already held the run id, so a NEVER FIXED lesson from leg 1 stayed NEVER FIXED when leg 2 (same run id) fixed it. The row is now refreshed from the new card (sample, lesson, key, lastSeen, hash, place) while its count, model tally and run ids stay one per run; an older run's cards re-folded later never step a row back. Found by fwdloop.
+
 ## [0.46.1] - 2026-10-24
 
 ### Fixed

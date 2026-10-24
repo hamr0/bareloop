@@ -1307,7 +1307,7 @@ async function execute(ctx) {
     if (RULING.decision !== 'rerun') {
       out(`\n${RULING.decision === 'accept' ? 'ACCEPTED' : 'PAUSED'} — the verdict this run minted (${doorRecord.outcome}) is UNTOUCHED; what you answered is what happens to the work.`);
       if (RULING.decision === 'accept') {
-        // Cross-run learnings: the human Accept is what releases a held rubric run's lessons so they count (forward only; a rerun or a
+        // Cross-run learnings: the human Accept releases a hold an older version wrote for a rubric run (new runs count at run end) (forward only; a rerun or a
         // pause never does). Its own try/catch: a record, never a verdict.
         if (cfgOn && DOOR !== null) {
           try { releaseRun({ home: cfgHome, runid: DOOR.includes('/') || DOOR.endsWith('.jsonl') ? basename(DOOR).replace(/^u-/, '').replace(/\.jsonl$/, '') : DOOR }); } catch (/** @type {any} */ e) { err(`WARNING: could not release this run's lessons in the learnings ledger (${redactSecrets(String(e?.message ?? e)).split('\n')[0]}).`); }
@@ -2025,7 +2025,7 @@ async function execute(ctx) {
     } catch (/** @type {any} */ e) { err(`WARNING: could not settle this run's claim in ~/.config/bareloop/runs.jsonl (${e.message}) — the next run settles it once this process is gone.`); }
   }
   // The run-end tally of cross-run learnings ($0, code only, no model): the whole spine (all legs) and the gate audit become cards
-  // folded into the ONE ledger (a rubric job's are held until the human Accept). Its own try/catch, like the settle above: a
+  // folded into the ONE ledger (a rubric job's count at run end too). Its own try/catch, like the settle above: a
   // record, never a verdict — a failure prints one WARNING line and can never change the outcome, the exit code or the spend.
   // `execute` is shared by the panel, the CLI and the bundle runner, so this is the ONE call site. It runs with the hints setting
   // on or off (OFF only means the planner is handed nothing). With no config home (a test with an injected env) it writes nothing.

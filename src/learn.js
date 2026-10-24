@@ -567,7 +567,7 @@ export function foldCards(cards) {
  * @typedef {object} Ledger
  * @property {1} version
  * @property {Row[]} rows
- * @property {Pending[]} pending     rubric cards held until a human Accept (NOT counted, NOT readable)
+ * @property {Pending[]} pending     holds written by v0.46.x for rubric runs, released by the human Accept (NOT counted, NOT readable); new runs never write one
  * @property {Card[]} suspect        CHECK-SUSPECT cards, listed, newest last
  * @property {Record<string, {at: string, noise: string|null, cards: number, suspect: number, thin: number}>} health  per run (idempotent by run id)
  */
@@ -622,8 +622,9 @@ const byRank = (/** @type {Row} */ a, /** @type {Row} */ b) => b.count - a.count
  * Fold ONE run's cards into the ledger. Pure: returns a new ledger.
  *
  * +1 per RUN per row: the run's own cards are folded into lessons first, and a row whose `runIds` already holds the
- * run id is never counted twice (a resumed run, one id, never double counts). A matching lesson replaces the row's
- * sample, bumps the model count and appends the run id (a row last seen 56+ days ago counts +1 and is read again);
+ * run id is never counted twice (a resumed run, one id, never double counts) but IS refreshed: the resumed leg's card
+ * replaces the sample, lesson, key, lastSeen, hash and place (a leg-1 NEVER FIXED row becomes the leg-2 FIXED one). A
+ * matching lesson replaces the row's sample, bumps the model count and appends the run id (a row last seen 56+ days ago counts +1 and is read again);
  * otherwise it opens a new row at count 1. NEVER FIXED cards count like FIXED ones (RULING 3). A workflow row of
  * another signed hash is never matched here: the new version opens its own rows. Nothing is ever deleted or stamped.
  * @param {Ledger} ledger
@@ -636,16 +637,23 @@ export function countLedger(ledger, { runid, cards, workflow, place, specHash, t
     const rep = group.reduce((a, c) => (c.at >= a.at ? c : a));
     const hit = [...rows].sort(byRank).find((r) => r.workflow === workflow && !otherJobVersion(r, workflow, specHash) && cardsMatch(rep, r.sample).match);
     if (hit) {
-      if (hit.runIds.includes(runid)) continue;
-      hit.count += 1;
-      hit.models[rep.model ?? 'unknown'] = (hit.models[rep.model ?? 'unknown'] ?? 0) + 1;
-      hit.runIds.push(runid);
-      hit.sample = rep;
-      hit.lesson = lessonOf(rep);
-      hit.key = keyOfCard(rep);
-      hit.lastSeen = rep.at;
-      hit.specHash = specHash;
-      hit.place = place ?? hit.place;
+      // A row already holding this run id is the run's OWN row (a resumed leg re-reads the whole spine): refresh it from
+      // the new card, but the count, the model tally and the run id stay one per run.
+      const own = hit.runIds.includes(runid);
+      if (!own) {
+        hit.count += 1;
+        hit.models[rep.model ?? 'unknown'] = (hit.models[rep.model ?? 'unknown'] ?? 0) + 1;
+        hit.runIds.push(runid);
+      }
+      // a refresh never steps the row back: re-folding an older run's cards must not replace a newer run's sample
+      if (!own || rep.at >= hit.lastSeen) {
+        hit.sample = rep;
+        hit.lesson = lessonOf(rep);
+        hit.key = keyOfCard(rep);
+        hit.lastSeen = rep.at;
+        hit.specHash = specHash;
+        hit.place = place ?? hit.place;
+      }
     } else {
       let id = rowId(rep);
       for (let n = 2; rows.some((r) => r.id === id); n += 1) id = `${rowId(rep)}-${n}`;
@@ -712,8 +720,8 @@ export function climb(rows) {
 }
 
 /**
- * A rubric run's cards are HELD, not counted, until a human Accept (the existing quarantine is the rule). Replaces
- * an earlier hold for the same run id (a resumed run re-derives its cards). Pure.
+ * Hold a run's cards until a human Accept. NO LONGER CALLED for new runs (v1.112: a rubric run's lessons count at run
+ * end); kept so a hold already in a ledger file still has a writer for tests and a reader in {@link releasePending}. Pure.
  * @param {Ledger} ledger
  * @param {{runid: string, cards: Card[], workflow: string, place: string|null, specHash: string|null, at: string}} o
  * @param {Date} now @returns {Ledger}
@@ -725,7 +733,7 @@ export function holdPending(ledger, { runid, cards, workflow, place, specHash, a
 }
 
 /**
- * The human Accept releases a held rubric run: its cards count now (trust `rubric`). Only forward, only here. A hold
+ * The human Accept releases an OLD hold (written by v0.46.x; new runs write none): its cards count now (trust `rubric`). Only forward, only here. A hold
  * older than 60 days is dropped uncounted. Idempotent (no hold = nothing to do; run ids stop a double count).
  * @param {Ledger} ledger @param {string} runid @param {Date} now
  * @returns {{ledger: Ledger, released: number}}

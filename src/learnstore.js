@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFil
 import { join, dirname } from 'node:path';
 import { keysHome } from './keysfile.js';
 import { readConfig } from './config.js';
-import { emptyLedger, redactDeep, countLedger, holdPending, releasePending, recordHealth, buildCards, placeOf, renderHints } from './learn.js';
+import { emptyLedger, redactDeep, countLedger, releasePending, recordHealth, buildCards, placeOf, renderHints } from './learn.js';
 import { stageQuestionsByName } from './stagewords.js';
 
 /**
@@ -57,9 +57,8 @@ export function writeLedger(ledger, home) {
 }
 
 /**
- * Fold ONE finished run into the ledger on disk: a deterministic job's cards COUNT now; a rubric job's cards are HELD
- * until a human Accept (they are written to `pending`, never counted, never readable). The run's health line is recorded
- * either way. Never throws on a bad ledger file: it reports `problem` and writes nothing.
+ * Fold ONE finished run into the ledger on disk: every run's cards COUNT now, rubric jobs too (trust kept on new rows;
+ * v1.112). `held` is always 0 (kept in the shape for callers). The run's health line is recorded. Never throws on a bad ledger file: it reports `problem` and writes nothing.
  * @param {{home?: string, runid: string, build: import('./learn.js').CardBuild, workflow: string, place: string|null, specHash: string|null, trust: 'deterministic'|'rubric', at: string, now?: Date}} o
  * @returns {{wrote: boolean, counted: number, held: number, problem: string|null}}
  */
@@ -67,23 +66,16 @@ export function foldRunIntoLedger({ home, runid, build, workflow, place, specHas
   const cur = readLedger(home);
   if (cur.problem) return { wrote: false, counted: 0, held: 0, problem: cur.problem };
   let L = cur.ledger;
-  let counted = 0;
-  let held = 0;
-  if (trust === 'rubric') {
-    L = holdPending(L, { runid, cards: build.cards, workflow, place, specHash, at }, now);
-    held = build.cards.length;
-  } else {
-    const before = L.rows.reduce((n, r) => n + r.runIds.filter((x) => x === runid).length, 0);
-    L = countLedger(L, { runid, cards: build.cards, workflow, place, specHash, trust, now });
-    counted = L.rows.reduce((n, r) => n + r.runIds.filter((x) => x === runid).length, 0) - before;
-  }
+  const before = L.rows.reduce((n, r) => n + r.runIds.filter((x) => x === runid).length, 0);
+  L = countLedger(L, { runid, cards: build.cards, workflow, place, specHash, trust, now });
+  const counted = L.rows.reduce((n, r) => n + r.runIds.filter((x) => x === runid).length, 0) - before;
   L = recordHealth(L, runid, build, at, now);
   writeLedger(L, home);
-  return { wrote: true, counted, held, problem: null };
+  return { wrote: true, counted, held: 0, problem: null };
 }
 
 /**
- * The human Accept at the review door: release the run's held rubric cards so they count (only forward, only here).
+ * The human Accept at the review door: release a hold an older version wrote for the run so it counts (new runs write none; only forward, only here).
  * @param {{home?: string, runid: string, now?: Date}} o
  * @returns {{released: number, problem: string|null}}
  */
@@ -123,7 +115,7 @@ const realOr = (p) => { try { return realpathSync(p); } catch { return p; } };
 
 /**
  * THE RUN-END TALLY ($0, code only, no model): turn the finished run's whole record into cards and fold them into the
- * ledger (a rubric job's are held until Accept). Called once from the one engine's run-end block (src/userrun.js
+ * ledger (a rubric job's count too, trust kept). Called once from the one engine's run-end block (src/userrun.js
  * `execute`, shared by the panel, the CLI and the bundle runner), inside its own try/catch: it is a record, never a verdict,
  * and can never change a run's outcome, exit code or spend. It runs whether the hints setting is on or off.
  * @param {{home?: string, runid: string, events: any[], auditFiles?: string[], spec: any, specHash: string|null, workdir: string|null, trust: 'deterministic'|'rubric', now?: Date}} o
