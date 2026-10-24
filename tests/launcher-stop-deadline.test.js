@@ -32,7 +32,7 @@ test('stop gives up at the deadline in real time even when every probe answers j
   const t0 = performance.now();
   const rc = await stopCmd(['--yes'], io, {
     home: '/nonexistent-bareloop-home', ports: [port], timeoutMs: 400, deadlineMs: 500, nodeVersion: '22.1.0', version: '1.0.0',
-    kill: () => {},
+    kill: (_pid, sig) => { if (sig === 0) { const e = new Error('no such process'); /** @type {any} */ (e).code = 'ESRCH'; throw e; } }, // the pid goes at once; the port keeps answering slowly
   });
   const took = performance.now() - t0;
   assert.equal(rc, 1, lines.join(" / "));

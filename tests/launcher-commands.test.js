@@ -60,6 +60,14 @@ function fakePanel(port, body = {}) {
     s.listen(port, '127.0.0.1', () => { const close = () => new Promise((r) => { s.close(() => r(undefined)); }); closers.push(close); resolve({ port, close }); });
   });
 }
+/** an injected kill that behaves like a process table: a real signal runs `onSignal` and the pid is then gone (signal 0 throws ESRCH) */
+const mortal = (onSignal) => {
+  const dead = new Set();
+  return (pid, sig) => {
+    if (sig === 0) { if (dead.has(pid)) { const e = new Error('no such process'); e.code = 'ESRCH'; throw e; } return; }
+    onSignal(pid, sig); dead.add(pid);
+  };
+};
 const sink = () => { const lines = []; return { out: (s) => lines.push(s), err: (s) => lines.push(`ERR ${s}`), lines, text: () => lines.join('\n') }; };
 
 /** deps for a scratch run; spawn starts a REAL panel server in-process on the --port it is given */
@@ -171,7 +179,7 @@ test('stop: a running panel with no drafts -> SIGTERM to the pid it reported (in
   const kills = [];
   const io = sink();
   const rc = await stopCmd([], io, deps(home, base, {
-    kill: (pid, sig) => { kills.push([pid, sig]); panel.close(); },
+    kill: mortal((pid, sig) => { kills.push([pid, sig]); panel.close(); }),
     ask: async () => { throw new Error('must not ask when no draft is open'); },
   }));
   assert.equal(rc, 0, io.text());
@@ -184,7 +192,7 @@ test('stop: open drafts -> the warning, the ask; n leaves it running, y stops it
   const base = await freeBase();
   const panel = await fakePanel(base, { pid: 4243, drafts: 1 });
   const kills = [];
-  const kill = (pid, sig) => { kills.push([pid, sig]); panel.close(); };
+  const kill = mortal((pid, sig) => { kills.push([pid, sig]); panel.close(); });
   const asked = [];
   const no = sink();
   assert.equal(await stopCmd([], no, deps(home, base, { kill, ask: async (q) => { asked.push(q); return 'n'; } })), 0);
@@ -204,7 +212,7 @@ test('stop --yes: no question even with drafts open; plural wording for several 
   const base = await freeBase();
   const panel = await fakePanel(base, { pid: 4244, drafts: 2 });
   const io = sink();
-  const rc = await stopCmd(['--yes'], io, deps(home, base, { kill: () => { panel.close(); }, ask: async () => { throw new Error('--yes must not ask'); } }));
+  const rc = await stopCmd(['--yes'], io, deps(home, base, { kill: mortal(() => { panel.close(); }), ask: async () => { throw new Error('--yes must not ask'); } }));
   assert.equal(rc, 0, io.text());
   assert.equal(io.lines.at(-1), 'Panel stopped.');
 });
@@ -215,7 +223,7 @@ test('stop: two panels found -> both pids signalled, ONE ask with the summed dra
   const a = await fakePanel(base, { pid: 5001, drafts: 1 });
   const b = await fakePanel(base + 1, { pid: 5002, drafts: 2 });
   const kills = [];
-  const kill = (pid) => { kills.push(pid); (pid === 5001 ? a : b).close(); };
+  const kill = mortal((pid) => { kills.push(pid); (pid === 5001 ? a : b).close(); });
   const asked = [];
   const io = sink();
   assert.equal(await stopCmd([], io, deps(home, base, { kill, ask: async (q) => { asked.push(q); return 'y'; } })), 0, io.text());
@@ -231,7 +239,7 @@ test('stop: two panels, answer n -> nothing signalled; --yes -> no ask, both sto
   const a = await fakePanel(base, { pid: 5011, drafts: 1 });
   const b = await fakePanel(base + 1, { pid: 5012 });
   const kills = [];
-  const kill = (pid) => { kills.push(pid); (pid === 5011 ? a : b).close(); };
+  const kill = mortal((pid) => { kills.push(pid); (pid === 5011 ? a : b).close(); });
   const no = sink();
   assert.equal(await stopCmd([], no, deps(home, base, { kill, ask: async () => 'n' })), 0);
   assert.deepEqual(kills, []);
@@ -470,4 +478,22 @@ test('start: a taken port whose connection is refused after the free check is mo
   assert.equal(await startCmd(io, d), 0, io.text());
   assert.ok(performance.now() - t0 < 5000);
   assert.equal(io.lines.at(-1), `Panel started at http://127.0.0.1:${base + 1} — opening the page.`);
+});
+
+test('stop: a pid that is still alive at the deadline is named, exit 1, never "Panel stopped."; one that did stop is still named', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const a = await fakePanel(base, { pid: 5101 });
+  const b = await fakePanel(base + 1, { pid: 5102 });
+  const gone = new Set();
+  const kill = (pid, sig) => {
+    if (sig === 0) { if (gone.has(pid)) { const e = new Error('x'); e.code = 'ESRCH'; throw e; } return; }
+    if (pid === 5101) { gone.add(pid); a.close(); } else b.close(); // 5102: its port goes quiet but the process lingers
+  };
+  const io = sink();
+  const rc = await stopCmd(['--yes'], io, deps(home, base, { kill, deadlineMs: 500 }));
+  assert.equal(rc, 1, io.text());
+  assert.ok(io.lines.includes(`ERR The panel at http://127.0.0.1:${base + 1} (pid 5102) did not stop.`), io.text());
+  assert.ok(io.lines.includes(`The panel at http://127.0.0.1:${base} (pid 5101) stopped.`), io.text());
+  assert.ok(!io.text().includes('Panel stopped.') && !io.text().includes('panels stopped.'), io.text());
 });

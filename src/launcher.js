@@ -48,7 +48,7 @@ const RULE_WIDTH = 56;
  * @property {string} [nodeVersion] default process.versions.node
  * @property {typeof fetch} [fetchImpl]
  * @property {(cmd: string, args: string[], o: object) => any} [spawnFn] default node:child_process spawn
- * @property {(pid: number, sig: string) => void} [kill] default process.kill
+ * @property {(pid: number, sig: string|number) => void} [kill] default process.kill
  * @property {((target: string) => Promise<boolean>)} [open] default the shared OS opener
  * @property {(port: number) => Promise<boolean>} [portFree] default: try to bind 127.0.0.1:port
  * @property {(ms: number) => Promise<void>} [sleep]
@@ -421,6 +421,25 @@ export async function stopCmd(args, io, d, shown) {
       fail(io, d, `Could not stop the panel at ${p.url} (pid ${p.pid}): ${/** @type {Error} */ (e).message}`);
       return 1;
     }
+  }
+  // the pid being gone is the truth (signal 0: ESRCH = gone, EPERM = alive); the port going quiet is checked after, for those that went
+  const t0 = performance.now();
+  const limit = d.deadlineMs ?? WAIT_DEADLINE_MS;
+  const sleep = sleepOf(d);
+  let pending = panels.slice();
+  while (pending.length > 0) {
+    pending = pending.filter((p) => {
+      try { kill(p.pid, 0); return true; } catch (e) { return /** @type {any} */ (e)?.code !== 'ESRCH'; }
+    });
+    if (pending.length === 0 || performance.now() - t0 > limit) break;
+    await sleep(POLL_MS);
+  }
+  if (pending.length > 0) {
+    for (const p of panels) {
+      if (!pending.includes(p)) io.out(`The panel at ${p.url} (pid ${p.pid}) stopped.`);
+    }
+    for (const p of pending) fail(io, d, `The panel at ${p.url} (pid ${p.pid}) did not stop.`);
+    return 1;
   }
   for (const p of panels) {
     if (!(await waitFor(d, p.port, true))) {
