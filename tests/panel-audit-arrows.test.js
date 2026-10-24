@@ -1,4 +1,4 @@
-// Audit tab (Grouped view): every folded row wears the schedule header's arrow — ▾ open, ▸ closed — at the very start
+// Audit tab (Grouped view): every folded row wears the schedule header's arrow — ▼ open, ▶ closed — at the very start
 // of its button text, and it flips on every click. The page's own renderAuditGroups / renderAuditLearnings run against a small fake DOM.
 
 import { test } from 'node:test';
@@ -32,8 +32,8 @@ function mk(tag = 'div') {
   return el;
 }
 
-const OPEN = '▾ ';
-const CLOSED = '▸ ';
+const OPEN = '<span class="audit-caret">▼</span>';
+const CLOSED = '<span class="audit-caret">▶</span>';
 
 function groupsPage(boxes) {
   const els = { 'audit-groups': mk() };
@@ -54,13 +54,13 @@ function groupsPage(boxes) {
     function buildAttemptsList(){}
     function partLine2Text(){ return ""; }
     function applyAuditFilter(){}
-    ${['escapeXml', 'renderAuditGroups'].map(fnSrc).join('\n')}
+    ${['escapeXml', 'auditCaret', 'renderAuditGroups'].map(fnSrc).join('\n')}
     return renderAuditGroups;
   `)(document);
   return { els, render };
 }
 
-test('Audit part rows: ▸ while folded, ▾ once opened, flipping on every click; a running part starts open with ▾', () => {
+test('Audit part rows: ▶ while folded, ▼ once opened, flipping on every click; a running part starts open with ▾', () => {
   const boxes = [
     { kind: 'scout', title: 'scout', state: 'done', blocked: 0, part: { kind: 'scout', attempts: [] } },
     { kind: 'step', title: 'build', state: 'running', blocked: 0, part: { kind: 'step', attempts: [] } },
@@ -83,7 +83,7 @@ test('Audit part rows: ▸ while folded, ▾ once opened, flipping on every clic
   assert.ok(running.innerHTML.startsWith(CLOSED), 'and flips on click');
 });
 
-test('Audit learnings button: ▸ folded, ▾ open, same placement', () => {
+test('Audit learnings button: ▶ folded, ▼ open, same placement', () => {
   const els = { 'audit-learnings': mk(), 'audit-learnings-list': mk(), 'audit-learnings-summary': mk('button') };
   els['audit-learnings-summary'].attrs['aria-expanded'] = 'false';
   els['audit-learnings-list'].hidden = true;
@@ -94,7 +94,7 @@ test('Audit learnings button: ▸ folded, ▾ open, same placement', () => {
     function glyphClass(){ return "green"; }
     function learnRow(){}
     function learnHintLabel(){ return "x"; }
-    ${['escapeXml', 'renderAuditLearnings'].map(fnSrc).join('\n')}
+    ${['escapeXml', 'auditCaret', 'renderAuditLearnings'].map(fnSrc).join('\n')}
     return renderAuditLearnings;
   `)(document);
   render({ learnings: [{ phase: 'draft', chars: 10, ids: ['a'], hints: [{ n: 1 }] }] });

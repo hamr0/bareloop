@@ -43,7 +43,7 @@ function page() {
   els['audit-learnings-list'].hidden = true;
   const document = { getElementById: (id) => els[id] ?? null, createElement: (t) => mk(t) };
   // eslint-disable-next-line no-new-func
-  const render = new Function('document', `${['escapeXml', 'glyphClass', 'stateDotHTML', 'learnRow', 'learnHintLabel', 'renderAuditLearnings'].map(fnSrc).join('\n')}\nreturn renderAuditLearnings;`)(document);
+  const render = new Function('document', `${['escapeXml', 'auditCaret', 'glyphClass', 'stateDotHTML', 'learnRow', 'learnHintLabel', 'renderAuditLearnings'].map(fnSrc).join('\n')}\nreturn renderAuditLearnings;`)(document);
   return { els, render };
 }
 
@@ -77,7 +77,7 @@ test('the header counts the hints HANDED to the planner (the block), not the led
   assert.ok(ledger.rows.length >= r.ids.length);
   const { els, render } = page();
   render({ learnings: [padded] });
-  assert.equal(plain(els['audit-learnings-summary']), `\u25B8 learnings What the planner was told from earlier runs · ${r.ids.length} hints`);
+  assert.equal(plain(els['audit-learnings-summary']), `\u25B6learnings What the planner was told from earlier runs · ${r.ids.length} hints`);
   assert.equal(els['audit-learnings'].hidden, false);
   render({ learnings: [] });
   assert.equal(els['audit-learnings'].hidden, true, 'nothing handed = section hidden');
@@ -95,14 +95,14 @@ test('the section is ONE .audit-part box like the other Audit sections: one togg
   // the header wears the SAME `[sign] word` state markup as the schedule/step headers (stateDotHTML + glyphClass), sign ✓ word "learnings"
   assert.match(PAGE, /stateDotHTML\(glyphClass\("\\u2713"\), "learnings", "audit-learnings-state"\)/);
   assert.match(PAGE, /stateDotHTML\(glyphClass\(sec\.sign\), sec\.word, "audit-schedule-state"\)/, 'the schedule header uses the same helper');
-  assert.equal(btn.innerHTML.match(/^\u25B8 (<span class="step-state" data-testid="audit-learnings-state"><span class="dot green"><\/span><b class="st-word">learnings<\/b><\/span>) /)?.length, 2, 'dot green + st-word learnings in a step-state span');
+  assert.equal(btn.innerHTML.match(/^<span class="audit-caret">\u25B6<\/span>(<span class="step-state" data-testid="audit-learnings-state"><span class="dot green"><\/span><b class="st-word">learnings<\/b><\/span>) /)?.length, 2, 'dot green + st-word learnings in a step-state span');
   btn.click();
   assert.equal(btn.getAttribute('aria-expanded'), 'true');
   assert.equal(els['audit-learnings-list'].hidden, false, 'click opens the body');
-  assert.ok(plain(btn).startsWith('\u25BE learnings What the planner was told'));
+  assert.ok(plain(btn).startsWith('\u25BClearnings What the planner was told'));
   btn.click();
   assert.equal(els['audit-learnings-list'].hidden, true);
-  assert.ok(plain(btn).startsWith('\u25B8 learnings What the planner was told'), 'arrow back to closed');
+  assert.ok(plain(btn).startsWith('\u25B6learnings What the planner was told'), 'arrow back to closed');
   btn.click();
   const list = els['audit-learnings-list'];
   const hints = list.children.filter((c) => /^audit-learnings-hint-draft-\d+$/.test(c.attrs['data-testid']));
@@ -141,7 +141,7 @@ test('a first-replan record renders a sub-heading and its hints in the same tabl
   assert.ok(h && h.className === 'audit-table-scroll');
   assert.equal(h.children[0].children[0].children[1].children[0].textContent, 'It said:');
   assert.ok(!list.find('audit-learnings-raw-replan'));
-  assert.equal(plain(els['audit-learnings-summary']), `\u25B8 learnings What the planner was told from earlier runs · ${r.ids.length} hints`, 'the same hints handed at draft and replan count once');
+  assert.equal(plain(els['audit-learnings-summary']), `\u25B6learnings What the planner was told from earlier runs · ${r.ids.length} hints`, 'the same hints handed at draft and replan count once');
 });
 
 test('parseHintBlock reads back what renderHints wrote: every hint, its fields, the same count as ids', () => {
@@ -188,5 +188,5 @@ test('the header counts DISTINCT hints across draft and replan: a replan block w
   const replan = { ...record('replan', r), hints: [...parseHintBlock(r.text), { ...parseHintBlock(r.text)[0], n: r.ids.length + 1 }], ids: [...r.ids, 'extra-row'] };
   const { els, render } = page();
   render({ learnings: [record('draft', r), replan] });
-  assert.equal(plain(els['audit-learnings-summary']), `\u25B8 learnings What the planner was told from earlier runs · ${r.ids.length + 1} hints`);
+  assert.equal(plain(els['audit-learnings-summary']), `\u25B6learnings What the planner was told from earlier runs · ${r.ids.length + 1} hints`);
 });

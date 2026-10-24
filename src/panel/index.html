@@ -170,6 +170,8 @@
      1.2s, matching design/panel-mockup.html's pulsing amber dot exactly —
      one fixed rhythm, never re-derived per call site. */
   @keyframes pulse-glyph{0%,100%{opacity:1;}50%{opacity:0.3;}}
+  .audit-caret{flex:none;color:var(--text-faint);margin-right:.6em;}
+  @media (max-width: 640px){ .audit-caret{margin-right:.2em;} }
   .dot.amber::before{content:"[▶]";color:var(--amber);}
   /* RULED 2026-10-15 (matches fwdloop glyphPulses): a sign blinks only while running or waiting for your Accept, keyed to `.pulse` (dotPulses decides) */
   .dot.pulse::before{animation:pulse-glyph 1.2s ease-in-out infinite;}
@@ -1116,7 +1118,9 @@
   }
 
   // ---- step map renderer (buildStepMapHTML below — ONE renderer, no second hand-authored map anywhere on this page) ----
-  function escapeXml(s){
+  // The one Audit fold arrow (fwdloop's): \u25B6 closed, \u25BC open, faint, never shrinking; the gap after it is CSS (smaller on a phone).
+function auditCaret(open){ return '<span class="audit-caret">' + (open ? "\u25BC" : "\u25B6") + '</span>'; }
+function escapeXml(s){
     return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
   // s.noNumber (F196): a synthetic placeholder box (e.g. "died during
@@ -2922,8 +2926,8 @@
         });
       });
       var label = items.length ? head + " \u00B7 " + first + (first === 1 ? " hint" : " hints") : head;
-      // arrow back (hamr 2026-10-24, latest wins over 2026-10-23): \u25BE open / \u25B8 closed first, as the schedule header; then the same `[✓] word` state markup the schedule/step headers wear (stateDotHTML), then the plain-words title
-      var paint = function(){ sum.innerHTML = (sum.getAttribute("aria-expanded") === "true" ? "\u25BE " : "\u25B8 ") + stateDotHTML(glyphClass("\u2713"), "learnings", "audit-learnings-state") + " " + escapeXml(label); };
+      // arrow back (hamr 2026-10-24, latest wins over 2026-10-23): auditCaret (\u25BC open / \u25B6 closed) first, as the schedule header; then the same `[✓] word` state markup the schedule/step headers wear (stateDotHTML), then the plain-words title
+      var paint = function(){ sum.innerHTML = auditCaret(sum.getAttribute("aria-expanded") === "true") + stateDotHTML(glyphClass("\u2713"), "learnings", "audit-learnings-state") + " " + escapeXml(label); };
       paint();
       // ONE fold, same as the other Audit sections: the header button toggles the body (wired once)
       sum.onclick = function(){
@@ -3451,7 +3455,7 @@
       gBtn.className = "btn audit-part-toggle";
       gBtn.setAttribute("aria-expanded", "false");
       gBtn.setAttribute("data-testid", "audit-schedule-toggle");
-      var secHead = function(open){ return (open ? "\u25BE " : "\u25B8 ") + stateDotHTML(glyphClass(sec.sign), sec.word, "audit-schedule-state") + " " + escapeXml(sec.title) + " &middot; " + escapeXml(sec.head); };
+      var secHead = function(open){ return auditCaret(open) + stateDotHTML(glyphClass(sec.sign), sec.word, "audit-schedule-state") + " " + escapeXml(sec.title) + " &middot; " + escapeXml(sec.head); };
       gBtn.innerHTML = secHead(false);
       var gBody = document.createElement("div");
       gBody.className = "audit-part-body";
@@ -3500,9 +3504,9 @@
       headBtn.setAttribute("aria-expanded", startExpanded ? "true" : "false");
       headBtn.setAttribute("data-testid", "audit-part-toggle-" + idx);
       var groupResultGlyph = partResultGlyph(part, box);
-      // same arrow as the schedule section's secHead: \u25BE open, \u25B8 closed, at the very start of the button text
+      // same arrow as the schedule section's secHead (auditCaret): \u25BC open, \u25B6 closed, at the very start of the button text
       var partHead = function(open){
-        return (open ? "\u25BE " : "\u25B8 ") +
+        return auditCaret(open) +
           stepStateHTML(box, 'audit-part-state-' + idx) + ' ' + titleText + ' &middot; ' + partLine1Text(part, detail) +
           (groupResultGlyph !== null ? ' &middot; ' + groupResultGlyph : '') +
           (box.blocked > 0 ? ' <span class="badge red" data-testid="audit-part-blocked-' + idx + '">' + box.blocked + ' blocked</span>' : '') +
