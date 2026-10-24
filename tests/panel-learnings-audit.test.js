@@ -92,8 +92,8 @@ test('the section is ONE .audit-part box like the other Audit sections: one togg
   const btn = els['audit-learnings-summary'];
   assert.equal(btn.getAttribute('aria-expanded'), 'false');
   assert.equal(els['audit-learnings-list'].hidden, true, 'body hidden by default');
-  // the header wears the SAME `[sign] word` state markup as the schedule/step headers (stateDotHTML + glyphClass), sign ✓ word "learnings"
-  assert.match(PAGE, /stateDotHTML\(glyphClass\("\\u2713"\), "learnings", "audit-learnings-state"\)/);
+  // the header wears the SAME `[sign] word` state markup as the schedule/step headers (stateDotHTML + glyphClass), sign ✓ (hints handed) word "learnings"
+  assert.match(PAGE, /stateDotHTML\(glyphClass\(mark\), "learnings", "audit-learnings-state"\)/);
   assert.match(PAGE, /stateDotHTML\(glyphClass\(sec\.sign\), sec\.word, "audit-schedule-state"\)/, 'the schedule header uses the same helper');
   assert.equal(btn.innerHTML.match(/^<span class="audit-caret">\u25B6<\/span>(<span class="step-state" data-testid="audit-learnings-state"><span class="dot green"><\/span><b class="st-word">learnings<\/b><\/span>) /)?.length, 2, 'dot green + st-word learnings in a step-state span');
   btn.click();
@@ -199,4 +199,19 @@ test('a learnings file that could not be read shows ONE plain line in the box, a
   assert.equal(els['audit-learnings-list'].find('audit-learnings-error').textContent, line);
   render({ learnings: [], learningsError: null });
   assert.equal(els['audit-learnings'].hidden, true, 'no error and nothing handed = hidden, as before');
+});
+
+test('the header mark: error and nothing handed = red dot (the failed sign); hints handed = green dot; the word stays "learnings"', () => {
+  const { r } = realBlock();
+  const { els, render } = page();
+  const btn = els['audit-learnings-summary'];
+  const dot = () => btn.innerHTML.match(/<span class="dot (\w+)"><\/span><b class="st-word">(\w+)<\/b>/)?.slice(1);
+  render({ learnings: [], learningsError: 'The learnings file could not be read, so no lessons were given: x' });
+  assert.deepEqual(dot(), ['red', 'learnings']);
+  render({ learnings: [record('draft', r)], learningsError: null });
+  assert.deepEqual(dot(), ['green', 'learnings']);
+  render({ learnings: [record('draft', r)], learningsError: 'both at once (not expected): hints win' });
+  assert.deepEqual(dot(), ['green', 'learnings']);
+  render({ learnings: [], learningsError: null });
+  assert.equal(els['audit-learnings'].hidden, true);
 });

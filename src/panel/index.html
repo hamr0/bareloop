@@ -2873,6 +2873,9 @@ function escapeXml(s){
     var items = detail && Array.isArray(detail.learnings) ? detail.learnings : [];
     list.innerHTML = "";
     var head = "What the planner was told from earlier runs";
+    var errLine = detail && typeof detail.learningsError === "string" ? detail.learningsError : "";
+    // header mark (hamr 2026-10-24): \u2713 when lessons were handed to the planner, \u2717 when the learnings file could not be read and nothing was handed (hints win if both ever exist)
+    var mark = items.length === 0 && errLine ? "\u2717" : "\u2713";
     items.forEach(function(it, gi){
       var hints = Array.isArray(it.hints) ? it.hints : [];
       var when = it.phase === "replan" ? "first replan" : "draft";
@@ -2927,7 +2930,7 @@ function escapeXml(s){
       });
       var label = items.length ? head + " \u00B7 " + first + (first === 1 ? " hint" : " hints") : head;
       // arrow back (hamr 2026-10-24, latest wins over 2026-10-23): auditCaret (\u25BC open / \u25B6 closed) first, as the schedule header; then the same `[✓] word` state markup the schedule/step headers wear (stateDotHTML), then the plain-words title
-      var paint = function(){ sum.innerHTML = auditCaret(sum.getAttribute("aria-expanded") === "true") + stateDotHTML(glyphClass("\u2713"), "learnings", "audit-learnings-state") + " " + escapeXml(label); };
+      var paint = function(){ sum.innerHTML = auditCaret(sum.getAttribute("aria-expanded") === "true") + stateDotHTML(glyphClass(mark), "learnings", "audit-learnings-state") + " " + escapeXml(label); };
       paint();
       // ONE fold, same as the other Audit sections: the header button toggles the body (wired once)
       sum.onclick = function(){
@@ -2937,7 +2940,6 @@ function escapeXml(s){
         paint();
       };
     }
-    var errLine = detail && typeof detail.learningsError === "string" ? detail.learningsError : "";
     if(errLine){
       var en = document.createElement("div");
       en.className = "hint";
