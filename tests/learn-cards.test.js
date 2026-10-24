@@ -124,6 +124,29 @@ test('a resumed run (two legs, one id): a red in leg 1 fixed in leg 2 is one FIX
   assert.equal(b.cards[0].kind, 'FIXED');
 });
 
+test('a resumed run: "What changed" and "Fix touched" are the passing try\'s in leg 2, not the failed try\'s in leg 1', () => {
+  const r = loadRun('mvk2e4uy');
+  const redIdx = r.events.findIndex((e) => e.type === 'close-verdict' && e.verdict === 'needs_revision' && /typecheck-target-zero-errors/.test(e.gap ?? ''));
+  // the record is edited: the two tries' diffs get distinct text and files so the card can only have come from one of them;
+  // the real failed try (seq 102) sits in leg 1 and the real passing try (seq 125) sits after the inserted leg-resume
+  const events = JSON.parse(JSON.stringify(r.events));
+  const failing = events.find((/** @type {any} */ e) => e.type === 'attempt-diff' && e.seq === 102);
+  const passing = events.find((/** @type {any} */ e) => e.type === 'attempt-diff' && e.seq === 125);
+  failing.files = [{ path: 'src/leg1-failed.js', diff: '+LEG1-FAILED-TRY\n', truncated: false }];
+  passing.files = [{ path: 'src/leg2-passed.js', diff: '+LEG2-PASSING-TRY\n', truncated: false }];
+  const at = events.findIndex((/** @type {any} */ e) => e === events[redIdx]) + 1;
+  events.splice(at, 0, { type: 'leg-resume', leg: 2, after: 'died', seq: 999, ts: '2026-10-22T21:43:30.000Z' });
+  const iResume = events.findIndex((/** @type {any} */ e) => e.type === 'leg-resume');
+  assert.ok(events.findIndex((/** @type {any} */ e) => e === failing) < iResume && iResume < events.findIndex((/** @type {any} */ e) => e === passing), 'failed try in leg 1, passing try in leg 2');
+  const b = buildCards({ runid: 'mvk2e4uy', events, audit: r.audit, workdir: r.workdir, questions });
+  assert.equal(b.cards.length, 1);
+  const c = b.cards[0];
+  assert.equal(c.kind, 'FIXED');
+  assert.equal(c.whatChanged?.files[0].diff, '+LEG2-PASSING-TRY\n');
+  assert.ok(c.fixTouched.includes('src/leg2-passed.js'), JSON.stringify(c.fixTouched));
+  assert.ok(!c.fixTouched.includes('src/leg1-failed.js'), 'the failed try in leg 1 is not what fixed it');
+});
+
 test('a secret in the person\'s repo is masked on the card (an append-only record must never hold it)', () => {
   const token = `ghp_${'a1B2c3D4e5F6g7H8i9J0'.repeat(2)}`;
   const r = loadRun('mvk2e4uy');
