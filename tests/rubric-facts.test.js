@@ -37,6 +37,14 @@ const writeStep = (f, n, body) => {
 const releases = (text) => text.split('\n').map((l) => /^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})$/.exec(l)).filter(Boolean)
   .map((m) => ({ quote: m[0], version: m[1], date: m[2] }));
 
+/** n real releases whose dates AND versions are pairwise different (same-day releases would make a swapped date not wrong) */
+const distinctReleases = (text, n = 3) => {
+  const out = [];
+  for (const r of releases(text)) if (!out.some((o) => o.date === r.date || o.version === r.version)) out.push(r);
+  assert.ok(out.length >= n, `need ${n} releases with pairwise-different dates in CHANGELOG.md, found ${out.length}`);
+  return out.slice(0, n);
+};
+
 const factPart = (over = {}) => ({
   text: 'list the last 3 releases with their dates', class: 'fact', source: 'Changelog',
   facts: [
@@ -68,7 +76,7 @@ test('a fact step of real changelog headings is GREEN; the claim text is built b
 
 test('every red names the result and the fact: wrong value, value of another release, a rule broken, a quote not in the file', async () => {
   const f = await freeze();
-  const rel = releases(f.text).slice(0, 3);
+  const rel = distinctReleases(f.text);
   const run = async (results, part = factPart()) => { writeStep(f, 1, { results }); return runStage(stage([part]), ctxOf(f)); };
 
   let r = await run(rel.map((x, i) => (i === 1 ? { ...result(x), values: { version: x.version, released: rel[0].date } } : result(x))));
