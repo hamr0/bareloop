@@ -1719,3 +1719,62 @@ Rulings it implements: PRD Part 6 amendment (signed B) and Part 6 rulings (2). b
 - a quote holding `<script>` stays escaped inside and around marks.
 
 **Live proof.** One new DeepSeek (deepseek-flash) flight run via Reuse (about $0.02), the orchestrator's own screenshot, then hamr's click-through.
+
+## Addendum 2026-10-24 — L: the `bareloop` launcher menu (SIGNED by hamr 2026-10-24)
+
+Ruled by hamr 2026-10-24: 1B (bare `bareloop` shows a menu), 2A-then-A (no pid file: the panel is found by asking ports), 3A (install = set up `~/.config/bareloop/`, no autostart), port auto-pick from 4700. PRD v1.93 already names the CLI a "panel launcher".
+
+**Supersedes:** `bareloop panel`'s "port N is already in use — pass --port … (never picked automatically)" for `bareloop start` only. `bareloop panel [--port N]` stays as it is (foreground, fixed port, Ctrl-C), for scripts and demo panels.
+
+### What the person sees
+
+```
+$ bareloop
+bareloop 0.46.1 · installed ✓ · panel running at http://127.0.0.1:4701
+runs: 1 running · 2 need you · 375 in all
+
+1 start   2 stop   3 status   4 install   q quit
+>
+```
+
+- The top line prints on EVERY `bareloop` call (menu and each sub-command), from one function.
+  - `installed ✓` = `~/.config/bareloop/` exists, `config.json` reads with no problem, `.env` exists with mode 600, node >= 22.
+  - Otherwise `not installed — <the first missing thing in plain words>, pick 4 install` (e.g. "no keys file yet").
+  - Panel part: `panel running at http://127.0.0.1:<port>` or `panel not running`.
+  - Second line (added by hamr 2026-10-24): `runs: N running · N need you · N in all`, counted by the SAME code the panel uses (status words from `src/panel/status.js`, Needs you from the one place in `src/panel/server.js` ~775 that decides it) — never a second spelling. Reads the run list file only, $0, works with the panel stopped. A part that is 0 still shows (`0 running`).
+- The same four work as sub-commands: `bareloop start | stop | status | install`. The menu calls the same code.
+- Old menu choices (1 export, 2 run, 3 history) leave the menu; `bareloop export|run|history|…` sub-commands are unchanged.
+
+### start
+- Already running (found by the probe below): say `already running at <url>`, open the page, start nothing.
+- Else start the panel DETACHED (`setsid`, own log file `~/.config/bareloop/panel.log`, appended), so closing the terminal does not stop it.
+- Port: try 4700, then 4701 … 4709. A port answered by something that is not bareloop is skipped. All 10 taken: stop in plain words, start nothing.
+- Wait until the new panel answers the probe (deadline 10 s; past it, say so and point to `panel.log`).
+- Open `http://127.0.0.1:<port>` in the browser with the opener Settings already uses (`xdg-open`/`open`, argv, no shell). No opener: print the URL.
+
+### stop
+- Probe finds it → send SIGTERM to the pid it reported. Wait until the port stops answering (deadline 10 s), then `stopped`.
+- Not running: `panel not running`, exit 0.
+- WARN FIRST, ask y/N, when the probe reports open drafting sessions: "N drafts are open in the panel and will be lost." (sessions live in memory). Runs are separate processes and keep running; say "Runs keep going. Scheduled runs wait until the panel is started again."
+- `--yes` skips the question (scripts).
+
+### status
+- Prints the top line plus: url, pid, version, open drafts count, schedules on. Exit 0 running, 3 not running.
+
+### install
+- Creates only what is missing; never overwrites or reads key values:
+  - `~/.config/bareloop/` (mode 700),
+  - `.env` empty, mode 600,
+  - `config.json` in the shape Settings writes, only if missing.
+- Checks node >= 22; below it, says so and stops.
+- Prints what it created, or `already installed, nothing to do.`
+
+### The probe (no file)
+- New read-only route on the panel: `GET /api/whoami` → `{ app: "bareloop", version, pid, port, drafts: <open drafting sessions>, schedules: <on count> }`. Same Host guard as every route (127.0.0.1 only); no token (it changes nothing).
+- `status/stop/start` ask 127.0.0.1:4700..4709 in parallel, short timeout (300 ms each); the first reply with `app === "bareloop"` wins.
+- Several bareloop panels running (e.g. a demo on another port): status lists all; stop asks which.
+
+### Tests / done
+- Tests use a scratch HOME and ports from a free range, never 4700 or hamr's panel; stop tests kill only the pid they started.
+- Done = full gate green + one real `bareloop` → start → page opens → status → stop on hamr's machine, screenshots of the menu, then hamr's own try.
+- Docs: `bareloop.context.md` CLI section, README "quick start" line, CHANGELOG.
