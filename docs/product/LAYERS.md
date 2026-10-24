@@ -1,6 +1,7 @@
 # bareloop — the layer map (plain language)
 
-> What this page is: one short map of the flow, the layers, and what happens when things go wrong. Rewritten 2026-10-08.
+> What this page is: one short map of the flow, the layers, and what happens when things go wrong. Rewritten 2026-10-08. Updated 2026-10-24: cross-run learnings, the thinking rule,
+> rubric jobs on pages (page-word map, fit check, asks, Result tab), the launcher.
 > The PRD is the contract; this is the map. Status diaries live in the PRD and `docs/logs/FINDINGS.md`, not here.
 
 ---
@@ -17,16 +18,21 @@ green is **carried to the next run**, with receipts for which part earned it.
 ## The flow
 
 ```
-YOU (panel, or the CLI)
+YOU (the panel, started with `bareloop start`; or the CLI)
   │  describe the job in Chat; the drafter asks a few questions
   ▼
 JOB CARD: goal · source · destination · check type · $ cap · time cap · model
   │  check type = Deterministic (a command decides) / Rubric (a judge model reads,
   │  code decides). Reuse workflow is a button on every run, not a check type.
+  │  a web page can be an input: it is fetched at drafting and again at run start
+  │  rubric on a page: the AI maps the page's own words, code keeps only words really
+  │  on the page; a fit check asks one question if the page lacks something the job asks;
+  │  up to 3 more questions when a rule can't be tied to the page (never a NO)
   ▼
 bareloop checks everything at $0, before any token:
   source and destination are real · the check runs · rubric: the judge must pass its
   10-case test (calibration) · secrets refused or masked · the monthly $ limit has room
+  anything dropped from a rubric job shows as "Not checked", never silently
   │
   ▼
 YOU SIGN  (the hash covers the job, the check and the caps; any change = sign again)
@@ -35,10 +41,14 @@ YOU SIGN  (the hash covers the job, the check and the caps; any change = sign ag
 THE RUN, on a copy: a worktree in your repo, or a hidden-git copy of a plain folder
   scout → plan (steps) → each step is a wheel: try → check → gap → retry
      two strikes on a step → replan · the worker never sees money or time
+     thinking is set by code: planner on · scout off · first try of a step off ·
+     retries on · close-fix on (the job's "Thinking on" tick turns every call on)
+     learnings ON: the planner (draft + first replan only) reads earlier lessons
   → THE CLOSE: the signed check, run by bareloop, never by the agent
   │
   ▼
 ENDED:  passed · failed · capped · stopped · died
+  every run, at $0 and with no model: its lessons go into the ledger (see Learnings)
   passed           → your branch has the work (you merge, always) · Reuse workflow
                      (a plain folder gets a dated file in its destination instead)
   not passed       → Reuse workflow (change the job or not, sign again)
@@ -53,7 +63,7 @@ NEXT TIME: Reuse workflow, the one button on every run: a green run with the sam
 
 ---
 
-## The architecture: a shell and four layers
+## The architecture: a shell, four layers and a ledger of lessons
 
 ### The shell (not a layer)
 
@@ -104,15 +114,24 @@ green. The button reads Sign & run only in the green+same row, Start drafting ot
 never clears a schedule; a new workflow has no schedule until its own first green. Schedule run /
 Cancel / modify schedule only set or adjust a schedule, never run.
 
+### Learnings — lessons across runs (beside Layer 3)
+
+- **Built on:** the run's own record. Layer 3 carries a whole green road; this carries small lessons, red or green: a check that went red and was later fixed (with what the fixing try changed), or one still red at the end.
+- **Does:** at the end of every run, plain code (no model anywhere) turns the run's record into cards and folds cards that are the same lesson (same job, same check, same kind of error, mostly the same flagged words) into one row of one ledger. A lesson seen again counts up; seen in 3 jobs on one place it climbs to that place, in 3 places to you. A rubric run's lessons count at run end like any other; its reuse credit still waits for your Accept.
+- **Survives:** runs. The ledger keeps every row and deletes none; what gets read is filtered at read time (nothing older than 56 days, nothing from another signed version of the job).
+- **Who hears it:** only the planner, at the draft and the first replan, never the worker, and only if `learningHints` is on in `config.json`. It ships **off**; off still keeps the tally. The Audit tab shows exactly what the planner was told.
+- **Status:** built, off by default. Whether the hints help is **not yet proven** (an on/off contrast is the test).
+
 | layer | wheels | arranged by | survives attempts (within one run) | survives runs |
 |---|---|---|---|---|
 | **1** | one | human | the gap text + the files on disk | nothing |
 | **R** | one | human | + the root: what was tried, what it changed | nothing |
 | **2** | many small (the road) | the agent (validator-gated) | root + each step's output feeds the next | nothing |
 | **3** | many small | the agent | same as Layer 2 | the road that went green, with receipts |
+| **learnings** | (beside 3) | plain code | nothing | lessons from any run, counted, only if the planner is allowed to hear them |
 
 Layers are build stages, not modes. A user never picks one. The finished product composes all
-four inside the one shell.
+four, plus the ledger, inside the one shell.
 
 ---
 
@@ -145,7 +164,7 @@ gap between legs is not counted as time.
 | verdict | meaning |
 |---|---|
 | **green** | the signed check passed. The only thing that mints reuse. |
-| **soft-green** | a rubric job. The judge only extracts facts and quotes; code decides pass or fail. Unsure is red. Held out of reuse until you accept at the review door. |
+| **soft-green** | a rubric job. The judge only extracts facts and quotes; code decides pass or fail. Unsure is red. Held out of reuse until you accept at the review door. The Result tab shows each fact with the page words its check read. |
 | **already-green** | passed before any work. Mints nothing and is not reusable. |
 | **red** | failed; the gap feeds the next try. |
 
@@ -163,6 +182,8 @@ That never changes. Mom is the **shell**.
 - **Layer R — the notebook.** *"Already tried the blue piece; didn't work."* It lasts one day.
 - **Layer 2 — the plan.** Find pieces, sort, walls, tower. Each step is its own try-check-retry. The kid writes the plan; mom does all the checking.
 - **Layer 3 — the recipe box.** A finished castle's plan goes in the box. Failed plans never do.
+
+- **The sticky-note board.** After each build, mom jots what went wrong and what fixed it. Before planning the next one, the kid may read the board (if mom turned that on). Only the planner reads it, never the builder.
 
 Two more characters. The **ruler** is a check the kid may use mid-build on one wall. It settles
 nothing; mom's inspection is still the only verdict. For rubric jobs, mom has a **reader** who
@@ -192,6 +213,7 @@ pre-printed checklist. Mom signs it. Nothing is built until she does.
 | what we learned | `docs/logs/FINDINGS.md` |
 | why it is shaped this way | `docs/product/2026-07-10-agentic-automation-successor-design.md` |
 | the panel | `docs/product/PANEL-BUILD.md` |
+| the launcher (`bareloop start\|stop\|status\|install`) | `src/launcher.js` |
 
 The one place implementation names appear:
 
@@ -201,5 +223,9 @@ The one place implementation names appear:
 | the road (Layer 2) | `src/plan.js` (the plan's shape), `src/planrun.js` (scout, steps, replan, close) |
 | the root (Layer R) | `src/root.js` |
 | reuse (Layer 3) | `src/bridges.js`, `src/reuse.js`; export in `src/bundle.js` |
+| learnings | `src/learn.js` (cards, fold, climb, hints), `src/learnstore.js` (the ledger, the `learningHints` setting) |
+| thinking | `src/thinking.js` |
+| the page-word map, fit check | `src/pagemap.js`, `src/pagerules.js`, `src/fitcheck.js` |
+| web-page inputs | `src/pagefetch.js` |
 | the worker loop, the gate (fence, budget) | `bare-agent`, `bareguard` |
 | `recall` / `get` | `litectx` |
