@@ -2034,3 +2034,4 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 ### Rubric lessons count at run end (v1.112 — 2026-10-24) — RULED by hamr
 
 - Option A, next fix after v0.46.1: see the v1.108 RULED 2026-10-24 bullet. Learnings fold at run end for rubric runs too; reuse/bridge credit still waits for the door Accept.
+- **Second item, same branch, RULED 2026-10-24 (hamr): a resumed leg updates its own run's ledger row.** Defect found by fwd while porting, test-proven (fwdloop `test/m8-am4-run-end.test.js` test 7), not live: `countLedger` (`src/learn.js:639` at v0.46.1) skips a row that already holds the run id, and the run-end tally runs at each leg end with ONE run id, so a NEVER FIXED card from leg 1 stays NEVER FIXED when leg 2 fixes it. Required: the leg may update its own run's row (sample card, lesson, kind) without counting +1 again; the count stays one per run. Both repos get the same fix.
