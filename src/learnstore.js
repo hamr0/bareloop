@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFil
 import { join, dirname } from 'node:path';
 import { keysHome } from './keysfile.js';
 import { readConfig } from './config.js';
+import { redactSecrets } from './validate.js';
 import { emptyLedger, redactDeep, countLedger, releasePending, recordHealth, buildCards, placeOf, renderHints } from './learn.js';
 import { stageQuestionsByName } from './stagewords.js';
 
@@ -133,14 +134,29 @@ export function learnAtRunEnd({ home, runid, events, auditFiles = [], spec, spec
 
 /**
  * The block the planner is handed for this job, made ONCE at run start from the ledger as it stood — empty when the
- * setting is off, when there is no ledger, or when nothing is readable. The one `renderHints` render, never a second.
+ * setting is off, when there is no ledger, or when no lesson fits; an unreadable ledger THROWS (use {@link handedHints}, which
+ * hands nothing and keeps the reason). The one `renderHints` render, never a second.
  * @param {{home?: string, spec: any, specHash: string|null, now?: Date}} o
  * @returns {{text: string, ids: string[]}|null}
  */
 export function hintsForRun({ home, spec, specHash, now = new Date() }) {
   if (!learningHintsOn(home)) return null;
   const cur = readLedger(home);
-  if (cur.problem) return null;
+  if (cur.problem) throw new Error(cur.problem); // an unreadable ledger is never the same as "no lessons yet": the caller hands nothing AND records why
   const r = renderHints(cur.ledger, { workflow: String(spec.job), place: placeOf(spec, realOr), specHash, now });
   return r.text ? r : null;
+}
+
+/**
+ * {@link hintsForRun} for the engine: never throws. A broken ledger hands the planner nothing and the reason comes back
+ * (first line, secrets masked) so the run records it beside the hints; the run itself goes on.
+ * @param {{home?: string, spec: any, specHash: string|null, now?: Date}} o
+ * @returns {{hints: {text: string, ids: string[]}|null, error: string|null}}
+ */
+export function handedHints(o) {
+  try {
+    return { hints: hintsForRun(o), error: null };
+  } catch (/** @type {any} */ e) {
+    return { hints: null, error: redactSecrets(String(e?.message ?? e)).split('\n')[0] };
+  }
 }

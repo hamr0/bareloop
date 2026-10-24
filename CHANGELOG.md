@@ -15,6 +15,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **One `run.log` per run folder.** Accept, Rerun, Pause and Resume each made a new `accept-<id>-<ms>.log` / `resume-<id>-<ms>.log` file; they now append to the folder's `run.log` (the one the first run already writes) under a header line `== <action> <runid> at <time> ==`. A refusal shows only its own action's lines. The `log` field in the reply is now that path. Folders that already hold the old per-action files are left as they are.
 - **`bareloop start` on a silent taken port tells you how to find what holds it.** The stop line now reads "Port N is taken and not answering. To see what holds it: lsof -i :N. If it is a stuck bareloop, end it: kill <pid>" (the old advice, "stop it first", could not be followed: `bareloop stop` only finds a panel that answers).
 
+### Fixed
+
+- **A broken learnings file is no longer the same as "no lessons yet" (hamr's ruling, 2026-10-24, copied from fwdloop).** An unreadable or wrong-version ledger made the planner's hint block silently empty and recorded nothing. The planner still gets nothing and the run still goes on, but the run's `learnings` spine record now carries `hintsError` (first line, secrets masked), and the Audit learnings box prints one plain line: "The learnings file could not be read, so no lessons were given: ...". Hints off still reads nothing and records nothing.
+
 ## [0.47.1] - 2026-10-24
 
 ### Fixed

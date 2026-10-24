@@ -190,3 +190,13 @@ test('the header counts DISTINCT hints across draft and replan: a replan block w
   render({ learnings: [record('draft', r), replan] });
   assert.equal(plain(els['audit-learnings-summary']), `\u25B6learnings What the planner was told from earlier runs · ${r.ids.length + 1} hints`);
 });
+
+test('a learnings file that could not be read shows ONE plain line in the box, and the box shows even with no hints', () => {
+  const { els, render } = page();
+  const line = 'The learnings file could not be read, so no lessons were given: /h/learnings.json is not readable JSON (parse error) — fix or remove it';
+  render({ learnings: [], learningsError: line });
+  assert.equal(els['audit-learnings'].hidden, false);
+  assert.equal(els['audit-learnings-list'].find('audit-learnings-error').textContent, line);
+  render({ learnings: [], learningsError: null });
+  assert.equal(els['audit-learnings'].hidden, true, 'no error and nothing handed = hidden, as before');
+});

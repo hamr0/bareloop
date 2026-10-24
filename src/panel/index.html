@@ -2937,7 +2937,16 @@ function escapeXml(s){
         paint();
       };
     }
-    box.hidden = items.length === 0;
+    var errLine = detail && typeof detail.learningsError === "string" ? detail.learningsError : "";
+    if(errLine){
+      var en = document.createElement("div");
+      en.className = "hint";
+      en.style.cssText = "margin:6px 0;overflow-wrap:anywhere;";
+      en.setAttribute("data-testid", "audit-learnings-error");
+      en.textContent = errLine;
+      list.appendChild(en);
+    }
+    box.hidden = items.length === 0 && !errLine;
   }
 
   // ONE spelling of a step's state: its dot + the bold state word — read by the Run tab's step cards AND the Audit tab's grouped rows

@@ -82,7 +82,7 @@ import { keysForDoor } from './keysfile.js';
 import { parseJsonl } from './replayio.js';
 import { claimRun, monthlyRefusalText, legSpend, chainSpend } from './monthly.js';
 import { ConfigError } from './config.js';
-import { learnAtRunEnd, hintsForRun, releaseRun } from './learnstore.js';
+import { learnAtRunEnd, handedHints, releaseRun } from './learnstore.js';
 import { commandFor } from './invoke.js';
 import { judgeRatesFor, keyNameFor, keyValueOf, priceReadout, ratesFor, ratesOfLine, resolveWorker, judgeRowFor, rowsForHome, REFUSE_NAME_MODEL } from './providerrows.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
@@ -1906,7 +1906,10 @@ async function execute(ctx) {
   /** @type {{text: string, ids: string[]}|null} */
   let learnHints = null;
   if (cfgOn) {
-    try { learnHints = hintsForRun({ home: cfgHome, spec, specHash }); } catch { learnHints = null; }
+    // an unreadable ledger hands nothing but is never silent: the reason rides a `learnings` spine record (hintsError) the Audit prints
+    const handed = handedHints({ home: cfgHome, spec, specHash });
+    learnHints = handed.hints;
+    if (handed.error !== null) emit('learnings', { phase: 'draft', hintsError: handed.error });
   }
   let outcome;
   try {

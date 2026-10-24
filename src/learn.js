@@ -902,6 +902,14 @@ export function renderHints(ledger, o) {
 const HINT_HEAD_RE = /^(\d+)\. \[(this job|this place|all jobs), seen (\d+) times?\] (.*)$/;
 
 /**
+ * The one plain-words line for a learnings file that could not be read (the Audit prints it; the spine keeps only the reason).
+ * @param {string} reason @returns {string}
+ */
+export function hintsErrorLine(reason) {
+  return `The learnings file could not be read, so no lessons were given: ${reason}`;
+}
+
+/**
  * Split a block {@link renderHints} wrote back into its hints. The ONLY reader of that text: it lives beside the
  * writer ({@link hintText}, {@link lessonOf}) and a test renders real blocks and parses them back. A hint it cannot
  * read is returned with what it could read (never thrown, never invented). Pure.

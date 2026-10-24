@@ -358,3 +358,48 @@ test('source tripwires: ONE run-end call in execute right after the settle (own 
   assert.match(src, /\.\.\.\(learnHints === null \? \{\} : \{ learnHints \}\)/);
   assert.equal(readFileSync(join(SRC, 'panel', 'server.js'), 'utf8').includes('learnAtRunEnd'), false, 'no second call site in src/panel/');
 });
+
+// ── a broken ledger is never "no lessons yet" ────────────────────────────────────────────────────
+test('a corrupt ledger file: the planner gets nothing, the run goes on green, the reason rides the learnings record and the Audit line', async (t) => {
+  const { getRunDetail } = await import('../src/panel/server.js');
+  const { ledgerPath } = await import('../src/learnstore.js');
+  const { hintsErrorLine } = await import('../src/learn.js');
+  const home = scratch(t);
+  updateConfig({ learningHints: true }, { home });
+  mkdirSync(dirname(ledgerPath(home)), { recursive: true });
+  writeFileSync(ledgerPath(home), '{ torn');
+  const r = await runOnce(t, home);
+  assert.equal(r.outcome, 'green', 'a broken ledger never stops a run');
+  assert.ok(!r.provider.calls.some((c) => c.includes(HINT_HEADER)), 'the planner is handed nothing');
+  const rec = r.events.filter((e) => e.type === 'learnings');
+  assert.equal(rec.length, 1);
+  assert.equal(rec[0].phase, 'draft');
+  assert.equal('text' in rec[0], false);
+  assert.match(rec[0].hintsError, /is not readable JSON/);
+  assert.ok(!rec[0].hintsError.includes('\n'));
+  const detail = getRunDetail(/** @type {string} */ (r.runid), { home });
+  assert.deepEqual(detail.learnings, []);
+  assert.equal(detail.learningsError, hintsErrorLine(rec[0].hintsError));
+});
+
+test('handedHints: a broken ledger returns the reason and no hints; a healthy one is unchanged; OFF reads nothing and has no error', async (t) => {
+  const { ledgerPath, handedHints } = await import('../src/learnstore.js');
+  const home = scratch(t);
+  const spec = { job: 'plan-patient' };
+  // OFF: no read, no error (even over a corrupt file)
+  mkdirSync(dirname(ledgerPath(home)), { recursive: true });
+  writeFileSync(ledgerPath(home), '{ torn');
+  updateConfig({ learningHints: false }, { home });
+  assert.deepEqual(handedHints({ home, spec, specHash: 'h' }), { hints: null, error: null });
+  // ON + corrupt: nothing handed, the reason kept, 
+  updateConfig({ learningHints: true }, { home });
+  const bad = handedHints({ home, spec, specHash: 'h' });
+  assert.equal(bad.hints, null);
+  assert.match(String(bad.error), /not readable JSON/);
+  writeFileSync(ledgerPath(home), JSON.stringify({ version: 2, rows: [], pending: [] }));
+  const wrong = handedHints({ home, spec, specHash: 'h' });
+  assert.match(String(wrong.error), /not a version-1 learnings ledger/);
+  // healthy: same as hintsForRun, no error
+  writeLedger(emptyLedger(), home);
+  assert.deepEqual(handedHints({ home, spec, specHash: 'h' }), { hints: hintsForRun({ home, spec, specHash: 'h' }), error: null });
+});
