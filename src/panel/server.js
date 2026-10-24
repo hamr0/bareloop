@@ -89,6 +89,17 @@ function packageVersion(file = join(HERE, '..', '..', 'package.json')) {
   } catch { return 'unknown'; }
 }
 
+/**
+ * `GET /api/whoami` body. `drafts` counts the person's drafting sessions that are not finished (the headless scheduled ones are not drafts).
+ * @param {{ port: number, packageJsonPath?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
+ */
+function whoamiPayload(opts) {
+  const drafts = opts.authorRoutes ? opts.authorRoutes.openDrafts() : 0;
+  let schedules = 0;
+  try { schedules = opts.schedules ? opts.schedules.scan().length : 0; } catch { schedules = 0; }
+  return { app: 'bareloop', version: packageVersion(opts.packageJsonPath), pid: process.pid, port: opts.port, drafts, schedules };
+}
+
 /** Largest POST body the panel buffers (job cards are short prose); a bigger one is refused with 413. */
 const MAX_BODY_BYTES = 1024 * 1024;
 
@@ -3824,6 +3835,13 @@ export function handleRequest(req, res, opts) {
     }
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': Buffer.byteLength(html) });
     res.end(html);
+    return;
+  }
+
+  // L (PANEL-BUILD.md addendum 2026-10-24): who is answering here — the launcher's probe (`bareloop start|stop|status`). Read-only, no token;
+  // the Host guard above already holds. `drafts` = open drafting sessions (in memory, lost on stop); `schedules` = jobs with a schedule on.
+  if (pathname === '/api/whoami') {
+    send(200, whoamiPayload(opts));
     return;
   }
 

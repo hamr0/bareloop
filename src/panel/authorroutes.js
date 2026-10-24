@@ -432,7 +432,7 @@ export function createAuthorRoutes(opts) {
   }
 
   return {
-    handle, sessions, headless, startSession, envNow, spawnFn, bareloopBin,
+    handle, sessions, headless, openDrafts: () => [...sessions.values()].filter((s) => !TERMINAL_PHASES.has(s.state.phase)).length, startSession, envNow, spawnFn, bareloopBin,
     /** a headless session the starter has removed from disk leaves its map too @param {string} id */
     forgetHeadless: (id) => { headless.delete(id); },
   };
