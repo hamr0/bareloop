@@ -1,0 +1,322 @@
+// L (PANEL-BUILD.md addendum 2026-10-24) — start / stop / status / install / the menu. Scratch home, a free HIGH port range (never 4700-4709),
+// injected spawn / kill / opener / stdin: no real signal is ever sent and no real panel is launched. The "started" panel is a REAL
+// createPanelServer run in-process by the injected spawn, so the probe talks to the real /api/whoami.
+import { test, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
+import {
+  mkdtempSync, rmSync, existsSync, statSync, mkdirSync, writeFileSync, readFileSync, chmodSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createServer as netServer } from 'node:net';
+import { createServer as httpServer } from 'node:http';
+import { PassThrough } from 'node:stream';
+import {
+  startCmd, stopCmd, statusCmd, installCmd, menuCmd,
+} from '../src/launcher.js';
+import { createPanelServer } from '../src/panel/server.js';
+import { main } from '../src/cli.js';
+
+/** @type {string[]} */
+const dirs = [];
+/** @type {(() => Promise<void>)[]} */
+const closers = [];
+after(async () => {
+  for (const c of closers) { try { await c(); } catch { /* already closed */ } }
+  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+});
+const scratch = () => { const d = mkdtempSync(join(tmpdir(), 'launcher-cmd-')); dirs.push(d); return d; };
+
+/** @param {number} port @returns {Promise<boolean>} */
+const bindable = (port) => new Promise((res) => { const s = netServer(); s.once('error', () => res(false)); s.listen(port, '127.0.0.1', () => s.close(() => res(true))); });
+/** a base such that base..base+3 are free, in a high range */
+async function freeBase() {
+  for (let i = 0; i < 200; i += 1) {
+    const base = 41000 + Math.floor(Math.random() * 20000);
+    const all = await Promise.all([0, 1, 2, 3].map((k) => bindable(base + k)));
+    if (all.every(Boolean)) return base;
+  }
+  throw new Error('no free port range');
+}
+/** hold a port with something that is NOT bareloop */
+function squat(port) {
+  return new Promise((resolve) => {
+    const s = httpServer((_q, r) => { r.writeHead(200); r.end('hello'); });
+    s.listen(port, '127.0.0.1', () => { const close = () => new Promise((r) => { s.close(() => r(undefined)); }); closers.push(close); resolve(close); });
+  });
+}
+/** a fake bareloop panel (just /api/whoami) with settable pid/drafts/schedules; returns {port, close} */
+function fakePanel(port, body = {}) {
+  return new Promise((resolve) => {
+    const s = httpServer((req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ app: 'bareloop', version: '0.0.0', pid: 4242, port, drafts: 0, schedules: 0, ...body }));
+    });
+    s.listen(port, '127.0.0.1', () => { const close = () => new Promise((r) => { s.close(() => r(undefined)); }); closers.push(close); resolve({ port, close }); });
+  });
+}
+const sink = () => { const lines = []; return { out: (s) => lines.push(s), err: (s) => lines.push(`ERR ${s}`), lines, text: () => lines.join('\n') }; };
+
+/** deps for a scratch run; spawn starts a REAL panel server in-process on the --port it is given */
+function deps(home, base, extra = {}) {
+  const spawned = [];
+  return {
+    home, ports: [base, base + 1, base + 2, base + 3], timeoutMs: 300, deadlineMs: 3000, nodeVersion: '22.1.0', version: '0.46.1',
+    platform: 'linux', bareloopBin: '/x/bin/bareloop.mjs', spawned,
+    spawnFn: (cmd, args) => {
+      spawned.push({ cmd, args });
+      const port = Number(args[args.indexOf('--port') + 1]);
+      createPanelServer({ port, home, sessionsRoot: join(home, 'sessions'), schedulerIntervalMs: 0 }).then((p) => { closers.push(p.close); });
+      const child = new EventEmitter();
+      child.unref = () => {};
+      return child;
+    },
+    open: async () => true,
+    ...extra,
+  };
+}
+const installedHome = () => {
+  const home = join(scratch(), 'bl');
+  mkdirSync(home, { mode: 0o700 });
+  writeFileSync(join(home, 'config.json'), '{}');
+  writeFileSync(join(home, '.env'), '', { mode: 0o600 });
+  chmodSync(join(home, '.env'), 0o600);
+  return home;
+};
+
+test('start: nothing running -> a detached panel on the first free port, waits for it, opens the page; the log file is appended under the home', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const d = deps(home, base);
+  const opened = [];
+  d.open = async (u) => { opened.push(u); return true; };
+  const io = sink();
+  const rc = await startCmd(io, d);
+  assert.equal(rc, 0, io.text());
+  assert.equal(io.lines[0], `bareloop 0.46.1 · installed ✓ · panel not running`);
+  assert.equal(io.lines[1], 'runs: 0 running · 0 need you · 0 in all');
+  assert.equal(io.lines.at(-1), `Panel started at http://127.0.0.1:${base} — opening the page.`);
+  assert.deepEqual(opened, [`http://127.0.0.1:${base}`]);
+  assert.equal(d.spawned.length, 1);
+  assert.equal(d.spawned[0].cmd, 'setsid');
+  assert.deepEqual(d.spawned[0].args.slice(1), ['/x/bin/bareloop.mjs', 'panel', '--port', String(base)]);
+  assert.ok(existsSync(join(home, 'panel.log')));
+  // a second start finds it by asking the ports and starts nothing
+  const io2 = sink();
+  assert.equal(await startCmd(io2, d), 0);
+  assert.equal(d.spawned.length, 1, 'already running: nothing started');
+  assert.equal(io2.lines.at(-1), `Panel already running at http://127.0.0.1:${base} — opening the page.`);
+  assert.match(io2.lines[0], new RegExp(`panel running at http://127.0.0.1:${base}$`));
+});
+
+test('start: a port held by something that is not bareloop is skipped and said so', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  await squat(base);
+  const d = deps(home, base);
+  const io = sink();
+  assert.equal(await startCmd(io, d), 0, io.text());
+  assert.ok(io.lines.includes(`${base} is taken, using ${base + 1}.`), io.text());
+  assert.equal(io.lines.at(-1), `Panel started at http://127.0.0.1:${base + 1} — opening the page.`);
+});
+
+test('start: every port taken -> plain words, nothing started, exit 1', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  await squat(base); await squat(base + 1);
+  const d = deps(home, base, { ports: [base, base + 1] });
+  const io = sink();
+  assert.equal(await startCmd(io, d), 1);
+  assert.equal(d.spawned.length, 0);
+  assert.match(io.text(), /taken by something else, so the panel was not started/);
+});
+
+test('start: no opener available -> the URL is printed instead', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const d = deps(home, base, { open: async () => false });
+  const io = sink();
+  assert.equal(await startCmd(io, d), 0);
+  assert.equal(io.lines.at(-1), `Panel started at http://127.0.0.1:${base} — open it in your browser.`);
+});
+
+test('start: a panel that never answers -> deadline, says so and points at panel.log, exit 1', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const d = deps(home, base, { deadlineMs: 400, spawnFn: () => { const c = new EventEmitter(); c.unref = () => {}; return c; } });
+  const io = sink();
+  assert.equal(await startCmd(io, d), 1);
+  assert.match(io.text(), /did not answer within 0\.4 seconds\. See .*panel\.log/);
+});
+
+test('stop: not running -> "Panel not running." and exit 0, no kill', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const kills = [];
+  const io = sink();
+  assert.equal(await stopCmd([], io, deps(home, base, { kill: (p, s) => kills.push([p, s]) })), 0);
+  assert.equal(io.lines.at(-1), 'Panel not running.');
+  assert.deepEqual(kills, []);
+});
+
+test('stop: a running panel with no drafts -> SIGTERM to the pid it reported (injected kill), waits until the port is quiet, "Panel stopped."', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const panel = await fakePanel(base, { pid: 4242 });
+  const kills = [];
+  const io = sink();
+  const rc = await stopCmd([], io, deps(home, base, {
+    kill: (pid, sig) => { kills.push([pid, sig]); panel.close(); },
+    ask: async () => { throw new Error('must not ask when no draft is open'); },
+  }));
+  assert.equal(rc, 0, io.text());
+  assert.deepEqual(kills, [[4242, 'SIGTERM']]);
+  assert.equal(io.lines.at(-1), 'Panel stopped.');
+});
+
+test('stop: open drafts -> the warning, the ask; n leaves it running, y stops it; --yes skips the ask', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const panel = await fakePanel(base, { pid: 4243, drafts: 1 });
+  const kills = [];
+  const kill = (pid, sig) => { kills.push([pid, sig]); panel.close(); };
+  const asked = [];
+  const no = sink();
+  assert.equal(await stopCmd([], no, deps(home, base, { kill, ask: async (q) => { asked.push(q); return 'n'; } })), 0);
+  assert.deepEqual(kills, [], 'declined: nothing signalled');
+  assert.ok(no.lines.includes('1 draft is open in the panel and will be lost.'));
+  assert.ok(no.lines.includes('Runs keep going. Scheduled runs wait until the panel is started again.'));
+  assert.equal(asked[0], 'Stop the panel? [y/N] ');
+  assert.equal(no.lines.at(-1), 'Not stopped.');
+  const yes = sink();
+  assert.equal(await stopCmd([], yes, deps(home, base, { kill, ask: async () => 'y' })), 0);
+  assert.deepEqual(kills, [[4243, 'SIGTERM']]);
+  assert.equal(yes.lines.at(-1), 'Panel stopped.');
+});
+
+test('stop --yes: no question even with drafts open; plural wording for several drafts', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const panel = await fakePanel(base, { pid: 4244, drafts: 2 });
+  const io = sink();
+  const rc = await stopCmd(['--yes'], io, deps(home, base, { kill: () => { panel.close(); }, ask: async () => { throw new Error('--yes must not ask'); } }));
+  assert.equal(rc, 0, io.text());
+  assert.equal(io.lines.at(-1), 'Panel stopped.');
+});
+
+test('stop: several panels -> asks which (number), only that pid is signalled; with --yes and no --port it refuses to guess', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const a = await fakePanel(base, { pid: 5001 });
+  const b = await fakePanel(base + 1, { pid: 5002 });
+  const kills = [];
+  const kill = (pid) => { kills.push(pid); (pid === 5001 ? a : b).close(); };
+  const refuse = sink();
+  assert.equal(await stopCmd(['--yes'], refuse, deps(home, base, { kill })), 1);
+  assert.deepEqual(kills, []);
+  assert.match(refuse.text(), /Several panels are running\. Pick one with --port N/);
+  const io = sink();
+  assert.equal(await stopCmd([], io, deps(home, base, { kill, ask: async () => '2' })), 0, io.text());
+  assert.deepEqual(kills, [5002]);
+  const byPort = sink();
+  assert.equal(await stopCmd(['--port', String(base)], byPort, deps(home, base, { kill })), 0, byPort.text());
+  assert.deepEqual(kills, [5002, 5001]);
+});
+
+test('status: not running -> header only, exit 3; running -> pid, drafts, schedules, exit 0', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const none = sink();
+  assert.equal(await statusCmd(none, deps(home, base)), 3);
+  assert.equal(none.lines.length, 2);
+  assert.match(none.lines[0], /panel not running$/);
+  await fakePanel(base + 2, { pid: 48213, drafts: 1, schedules: 3 });
+  const io = sink();
+  assert.equal(await statusCmd(io, deps(home, base)), 0);
+  assert.match(io.lines[0], new RegExp(`panel running at http://127.0.0.1:${base + 2}$`));
+  assert.equal(io.lines[2], 'pid 48213 · 1 draft open · 3 schedules on');
+});
+
+test('install: creates what is missing (dir 700, .env 600, config.json), then says there is nothing to do; keys already in .env are untouched', async () => {
+  const home = join(scratch(), 'bl');
+  const io = sink();
+  const d = deps(home, 1);
+  assert.equal(await installCmd(io, d), 0, io.text());
+  assert.match(io.lines[0], /not installed — no bareloop folder yet, pick 4 install · panel not running/);
+  assert.ok(io.lines.some((l) => /^Installed\. Created:/.test(l)));
+  assert.equal(statSync(home).mode & 0o777, 0o700);
+  assert.equal(statSync(join(home, '.env')).mode & 0o777, 0o600);
+  assert.ok(existsSync(join(home, 'config.json')));
+  writeFileSync(join(home, '.env'), 'MY_KEY=abc\n', { mode: 0o600 });
+  const again = sink();
+  assert.equal(await installCmd(again, d), 0);
+  assert.equal(again.lines.at(-1), 'Already installed, nothing to do.');
+  assert.match(again.lines[0], /installed ✓/);
+  assert.equal(readFileSync(join(home, '.env'), 'utf8'), 'MY_KEY=abc\n');
+});
+
+test('install: a loose .env gets mode 600 and the config is never overwritten; node below 22 stops with nothing changed', async () => {
+  const home = installedHome();
+  writeFileSync(join(home, 'config.json'), '{"monthlyLimitUsd":5}\n');
+  chmodSync(join(home, '.env'), 0o644);
+  const io = sink();
+  assert.equal(await installCmd(io, deps(home, 1)), 0);
+  assert.equal(statSync(join(home, '.env')).mode & 0o777, 0o600);
+  assert.equal(readFileSync(join(home, 'config.json'), 'utf8'), '{"monthlyLimitUsd":5}\n');
+  const fresh = join(scratch(), 'bl');
+  const old = sink();
+  assert.equal(await installCmd(old, deps(fresh, 1, { nodeVersion: '20.11.0' })), 1);
+  assert.equal(existsSync(fresh), false, 'nothing created');
+  assert.match(old.text(), /needs node 22 or newer; this is node 20\.11\.0\. Nothing was changed\./);
+});
+
+test('menu (the approved layout): two header lines, a blank line, the four choices, then the prompt; q quits 0', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  await fakePanel(base + 1, { pid: 48213 });
+  const io = sink();
+  const asked = [];
+  const rc = await menuCmd(io, deps(home, base, { ask: async (q) => { asked.push(q); return 'q'; } }));
+  assert.equal(rc, 0);
+  assert.deepEqual(io.lines, [
+    `bareloop 0.46.1 · installed ✓ · panel running at http://127.0.0.1:${base + 1}`,
+    'runs: 0 running · 0 need you · 0 in all',
+    '',
+    '1 start   2 stop   3 status   4 install   q quit',
+  ]);
+  assert.deepEqual(asked, ['> ']);
+});
+
+test('menu: choice 3 runs status through the same code WITHOUT printing the header twice; an unknown choice is refused', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  await fakePanel(base, { pid: 48213, drafts: 1, schedules: 3 });
+  const io = sink();
+  assert.equal(await menuCmd(io, deps(home, base, { ask: async () => '3' })), 0);
+  assert.equal(io.lines.filter((l) => l.startsWith('bareloop 0.46.1')).length, 1);
+  assert.equal(io.lines.at(-1), 'pid 48213 · 1 draft open · 3 schedules on');
+  const bad = sink();
+  assert.equal(await menuCmd(bad, deps(home, base, { ask: async () => '9' })), 1);
+  assert.match(bad.text(), /unknown choice "9"/);
+});
+
+test('main: bare `bareloop` shows the new menu (the old export/run/history menu is gone); the sub-commands status|install go through main with the header first', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const stdin = new PassThrough();
+  const out = []; const err = [];
+  const stdout = { write: (s) => { out.push(s); return true; } };
+  const stderr = { write: (s) => { err.push(s); return true; } };
+  const launcher = { ports: [base, base + 1], timeoutMs: 300, nodeVersion: '22.1.0', version: '0.46.1' };
+  const run = main([], { stdin, stdout, stderr, cwd: process.cwd(), env: {}, keysHome: home, runlistHome: home, launcher });
+  await new Promise((r) => setTimeout(r, 300));
+  stdin.write('q\n');
+  assert.equal(await run, 0);
+  const text = out.join('');
+  assert.match(text, /^bareloop 0\.46\.1 · installed ✓ · panel not running\nruns: 0 running · 0 need you · 0 in all\n\n1 start   2 stop   3 status   4 install   q quit\n/);
+  assert.doesNotMatch(text, /1 export/);
+  const out2 = [];
+  assert.equal(await main(['status'], { stdout: { write: (s) => { out2.push(s); return true; } }, stderr, cwd: process.cwd(), env: {}, keysHome: home, runlistHome: home, launcher }), 3);
+  assert.match(out2.join(''), /^bareloop 0\.46\.1 · installed ✓ · panel not running\nruns: /);
+});
