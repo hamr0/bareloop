@@ -60,15 +60,15 @@ export function writeLedger(ledger, home) {
 /**
  * Fold ONE finished run into the ledger on disk: every run's cards COUNT now, rubric jobs too (trust kept on new rows;
  * v1.112). `held` is always 0 (kept in the shape for callers). The run's health line is recorded. Never throws on a bad ledger file: it reports `problem` and writes nothing.
- * @param {{home?: string, runid: string, build: import('./learn.js').CardBuild, workflow: string, place: string|null, specHash: string|null, trust: 'deterministic'|'rubric', at: string, now?: Date}} o
+ * @param {{home?: string, runid: string, build: import('./learn.js').CardBuild, workflow: string, place: string|null, specHash: string|null, workflowKey?: string|null, trust: 'deterministic'|'rubric', at: string, now?: Date}} o
  * @returns {{wrote: boolean, counted: number, held: number, problem: string|null}}
  */
-export function foldRunIntoLedger({ home, runid, build, workflow, place, specHash, trust, at, now = new Date() }) {
+export function foldRunIntoLedger({ home, runid, build, workflow, place, specHash, workflowKey = null, trust, at, now = new Date() }) {
   const cur = readLedger(home);
   if (cur.problem) return { wrote: false, counted: 0, held: 0, problem: cur.problem };
   let L = cur.ledger;
   const before = L.rows.reduce((n, r) => n + r.runIds.filter((x) => x === runid).length, 0);
-  L = countLedger(L, { runid, cards: build.cards, workflow, place, specHash, trust, now });
+  L = countLedger(L, { runid, cards: build.cards, workflow, place, specHash, workflowKey, trust, now });
   const counted = L.rows.reduce((n, r) => n + r.runIds.filter((x) => x === runid).length, 0) - before;
   L = recordHealth(L, runid, build, at, now);
   writeLedger(L, home);
@@ -119,15 +119,15 @@ const realOr = (p) => { try { return realpathSync(p); } catch { return p; } };
  * ledger (a rubric job's count too, trust kept). Called once from the one engine's run-end block (src/userrun.js
  * `execute`, shared by the panel, the CLI and the bundle runner), inside its own try/catch: it is a record, never a verdict,
  * and can never change a run's outcome, exit code or spend. It runs whether the hints setting is on or off.
- * @param {{home?: string, runid: string, events: any[], auditFiles?: string[], spec: any, specHash: string|null, workdir: string|null, trust: 'deterministic'|'rubric', now?: Date}} o
+ * @param {{home?: string, runid: string, events: any[], auditFiles?: string[], spec: any, specHash: string|null, workflowKey?: string|null, workdir: string|null, trust: 'deterministic'|'rubric', now?: Date}} o
  * @returns {{wrote: boolean, counted: number, held: number, problem: string|null, noise: string|null, cards: number}}
  */
-export function learnAtRunEnd({ home, runid, events, auditFiles = [], spec, specHash, workdir, trust, now = new Date() }) {
+export function learnAtRunEnd({ home, runid, events, auditFiles = [], spec, specHash, workflowKey = null, workdir, trust, now = new Date() }) {
   const audit = auditFiles.flatMap(readJsonl);
   const build = buildCards({ runid, events, audit, workdir, spec, questions: stageQuestionsByName(spec) });
   const at = events.findLast((e) => e?.type === 'job-end')?.ts ?? now.toISOString();
   const r = foldRunIntoLedger({
-    home, runid, build, workflow: String(spec.job), place: placeOf(spec, realOr), specHash, trust, at, now,
+    home, runid, build, workflow: String(spec.job), place: placeOf(spec, realOr), specHash, workflowKey, trust, at, now,
   });
   return { ...r, noise: build.noise, cards: build.cards.length };
 }
@@ -136,21 +136,21 @@ export function learnAtRunEnd({ home, runid, events, auditFiles = [], spec, spec
  * The block the planner is handed for this job, made ONCE at run start from the ledger as it stood — empty when the
  * setting is off, when there is no ledger, or when no lesson fits; an unreadable ledger THROWS (use {@link handedHints}, which
  * hands nothing and keeps the reason). The one `renderHints` render, never a second.
- * @param {{home?: string, spec: any, specHash: string|null, now?: Date}} o
+ * @param {{home?: string, spec: any, workflowKey?: string|null, now?: Date}} o
  * @returns {{text: string, ids: string[]}|null}
  */
-export function hintsForRun({ home, spec, specHash, now = new Date() }) {
+export function hintsForRun({ home, spec, workflowKey = null, now = new Date() }) {
   if (!learningHintsOn(home)) return null;
   const cur = readLedger(home);
   if (cur.problem) throw new Error(cur.problem); // an unreadable ledger is never the same as "no lessons yet": the caller hands nothing AND records why
-  const r = renderHints(cur.ledger, { workflow: String(spec.job), place: placeOf(spec, realOr), specHash, now });
+  const r = renderHints(cur.ledger, { workflow: String(spec.job), place: placeOf(spec, realOr), workflowKey, now });
   return r.text ? r : null;
 }
 
 /**
  * {@link hintsForRun} for the engine: never throws. A broken ledger hands the planner nothing and the reason comes back
  * (first line, secrets masked) so the run records it beside the hints; the run itself goes on.
- * @param {{home?: string, spec: any, specHash: string|null, now?: Date}} o
+ * @param {{home?: string, spec: any, workflowKey?: string|null, now?: Date}} o
  * @returns {{hints: {text: string, ids: string[]}|null, error: string|null}}
  */
 export function handedHints(o) {

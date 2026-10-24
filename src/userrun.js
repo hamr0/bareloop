@@ -32,7 +32,7 @@ import { commitWork, removeWorktree } from './worktree.js';
 import { moveFile } from './movefile.js';
 import { runJob } from './run.js';
 import { moneyWithDraft } from './replay.js';
-import { jobSpecHash, resolveWorkerModel, validateJob } from './job.js';
+import { jobSpecHash, resolveWorkerModel, validateJob, workflowKey } from './job.js';
 import { readShimArm } from './readshim.js';
 import { closeStagesOf } from './plan.js';
 import { resolveCloseTimeoutMs } from './closetimeout.js';
@@ -1907,7 +1907,7 @@ async function execute(ctx) {
   let learnHints = null;
   if (cfgOn) {
     // an unreadable ledger hands nothing but is never silent: the reason rides a `learnings` spine record (hintsError) the Audit prints
-    const handed = handedHints({ home: cfgHome, spec, specHash });
+    const handed = handedHints({ home: cfgHome, spec, workflowKey: workflowKey(spec) });
     learnHints = handed.hints;
     if (handed.error !== null) emit('learnings', { phase: 'draft', hintsError: handed.error });
   }
@@ -2036,7 +2036,7 @@ async function execute(ctx) {
     try {
       const filedAudit = ctx.bundle ? join(spineDir, 'gate-audit.jsonl') : join(spineDir, `u-${runid}-gate-audit.jsonl`);
       learnAtRunEnd({
-        home: cfgHome, runid, events: allEvents, auditFiles: [filedAudit, join(wd, 'gate-audit.jsonl')], spec, specHash, workdir: wd,
+        home: cfgHome, runid, events: allEvents, auditFiles: [filedAudit, join(wd, 'gate-audit.jsonl')], spec, specHash, workflowKey: workflowKey(spec), workdir: wd,
         trust: quarantinesCredit(spec.verdictType) ? 'rubric' : 'deterministic',
       });
     } catch (/** @type {any} */ e) { err(`WARNING: could not record this run's lessons in the learnings ledger (${redactSecrets(String(e?.message ?? e)).split('\n')[0]}) — the run itself is unaffected.`); }

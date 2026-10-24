@@ -56,16 +56,16 @@ function realBlock() {
   let L = emptyLedger();
   const NOW = new Date('2099-01-01T00:00:00Z');
   for (const id of ['ms2c0ls7', 'ms7flkok', 'mszi97jd', 'ms2ddxjc', 'mszcfaof']) {
-    L = countLedger(L, { runid: id, cards: cardsOf(id).cards, workflow: WF, place: '/p/aurora', specHash: 'h1', trust: 'deterministic', now: new Date(cardsOf(id).cards[0].at) });
+    L = countLedger(L, { runid: id, cards: cardsOf(id).cards, workflow: WF, place: '/p/aurora', workflowKey: 'k1', trust: 'deterministic', now: new Date(cardsOf(id).cards[0].at) });
   }
   // the archived aurora cards predate the stored diff: give the typecheck row one (an edit, said so) so What changed has lines to carry
   L = { ...L, rows: L.rows.map((r) => (r.sample.check === 'typecheck' && r.sample.kind === 'FIXED'
     ? { ...r, sample: { ...r.sample, whatChanged: { files: [{ diff: 'diff --git a/x.js b/x.js\n--- a/x.js\n+++ b/x.js\n@@ -1,2 +1,6 @@\n-old line\n+new one\n+new two\n+new three\n+new four\n context' }] } } }
     : r)) };
   const stuck = cardsOf('mshcpdg4').cards;
-  L = countLedger(L, { runid: 'mshcpdg4', cards: stuck, workflow: WF, place: '/p/aurora', specHash: 'h1', trust: 'deterministic', now: new Date(stuck[0].at) });
+  L = countLedger(L, { runid: 'mshcpdg4', cards: stuck, workflow: WF, place: '/p/aurora', workflowKey: 'k1', trust: 'deterministic', now: new Date(stuck[0].at) });
   const lastAt = L.rows.map((r) => r.lastSeen).sort().at(-1);
-  return { ledger: L, r: renderHints(L, { workflow: WF, place: '/p/aurora', specHash: 'h1', now: new Date(new Date(lastAt).getTime() + 86_400_000) }) };
+  return { ledger: L, r: renderHints(L, { workflow: WF, place: '/p/aurora', workflowKey: 'k1', now: new Date(new Date(lastAt).getTime() + 86_400_000) }) };
 }
 const record = (phase, r) => ({ phase, text: r.text, chars: r.text.length, ids: r.ids, hints: parseHintBlock(r.text) });
 

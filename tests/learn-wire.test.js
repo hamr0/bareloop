@@ -9,7 +9,7 @@ import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, existsSync
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { jobSpecHash } from '../src/job.js';
+import { jobSpecHash, workflowKey } from '../src/job.js';
 import { startRun, answerDoor } from '../src/userrun.js';
 import { runPlan } from '../src/planrun.js';
 import { validateJob } from '../src/job.js';
@@ -99,7 +99,7 @@ test('MUST-FAIL 2: no model call anywhere in learnings — the import closure re
   const r = loadRun('mvk2e4uy');
   const res = learnAtRunEnd({ home, runid: 'mvk2e4uy', events: r.events, auditFiles: [], spec: { job: 'pulselog-panel-strict' }, specHash: 'h', workdir: r.workdir, trust: 'deterministic' });
   assert.equal(res.wrote, true);
-  assert.equal(hintsForRun({ home, spec: { job: 'pulselog-panel-strict' }, specHash: 'h' }), null);
+  assert.equal(hintsForRun({ home, spec: { job: 'pulselog-panel-strict' }, workflowKey: 'h' }), null);
   assert.equal(called, 0);
 });
 
@@ -154,7 +154,7 @@ test('ON: the planner at the draft is handed the block; no worker is; the spine 
   assert.equal(rec.length, 1, 'recorded once, at the draft');
   assert.equal(rec[0].phase, 'draft');
   // byte check: the recorded text == a fresh render from the ledger as it stood at run start
-  const ctx = { workflow: 'plan-patient', place: null, specHash: jobSpecHash(r2.spec), now: new Date() };
+  const ctx = { workflow: 'plan-patient', place: null, workflowKey: workflowKey(r2.spec), now: new Date() };
   assert.equal(rec[0].text, renderHints(before, ctx).text);
   assert.ok(rec[0].text.includes(LESSON));
   // who saw it: the planner prompt (call 1) only. Scout (0) and every step/fix prompt (2+) did not, nor any system prompt
@@ -399,16 +399,16 @@ test('handedHints: a broken ledger returns the reason and no hints; a healthy on
   mkdirSync(dirname(ledgerPath(home)), { recursive: true });
   writeFileSync(ledgerPath(home), '{ torn');
   updateConfig({ learningHints: false }, { home });
-  assert.deepEqual(handedHints({ home, spec, specHash: 'h' }), { hints: null, error: null });
+  assert.deepEqual(handedHints({ home, spec, workflowKey: 'h' }), { hints: null, error: null });
   // ON + corrupt: nothing handed, the reason kept, 
   updateConfig({ learningHints: true }, { home });
-  const bad = handedHints({ home, spec, specHash: 'h' });
+  const bad = handedHints({ home, spec, workflowKey: 'h' });
   assert.equal(bad.hints, null);
   assert.match(String(bad.error), /not readable JSON/);
   writeFileSync(ledgerPath(home), JSON.stringify({ version: 2, rows: [], pending: [] }));
-  const wrong = handedHints({ home, spec, specHash: 'h' });
+  const wrong = handedHints({ home, spec, workflowKey: 'h' });
   assert.match(String(wrong.error), /not a version-1 learnings ledger/);
   // healthy: same as hintsForRun, no error
   writeLedger(emptyLedger(), home);
-  assert.deepEqual(handedHints({ home, spec, specHash: 'h' }), { hints: hintsForRun({ home, spec, specHash: 'h' }), error: null });
+  assert.deepEqual(handedHints({ home, spec, workflowKey: 'h' }), { hints: hintsForRun({ home, spec, workflowKey: 'h' }), error: null });
 });

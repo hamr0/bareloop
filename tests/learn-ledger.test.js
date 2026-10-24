@@ -13,6 +13,7 @@ import {
 } from '../src/learn.js';
 import { readLedger, writeLedger, ledgerPath, foldRunIntoLedger, releaseRun } from '../src/learnstore.js';
 import { cardsOf } from './learn-fixtures.js';
+import { jobSpecHash, workflowKey } from '../src/job.js';
 
 const DAY = 86_400_000;
 const AURORA = ['ms2c0ls7', 'ms7flkok', 'mszi97jd', 'ms2ddxjc', 'mszcfaof'];
@@ -22,7 +23,7 @@ const WF = 'aurora-u-spawner-types';
 const NOW = new Date(new Date(runAt('mszcfaof')).getTime() + DAY);
 const scratch = (/** @type {any} */ t) => { const d = mkdtempSync(join(tmpdir(), 'bareloop-learn-')); t.after(() => rmSync(d, { recursive: true, force: true })); return d; };
 const fold = (/** @type {any} */ L, /** @type {string} */ id, over = {}) => countLedger(L, {
-  runid: id, cards: /** @type {any} */ (built.get(id)).cards, workflow: WF, place: '/p/aurora', specHash: 'h1', trust: 'deterministic', now: NOW, ...over,
+  runid: id, cards: /** @type {any} */ (built.get(id)).cards, workflow: WF, place: '/p/aurora', workflowKey: 'k1', trust: 'deterministic', now: NOW, ...over,
 });
 const sorted = [...AURORA].sort((a, b) => (runAt(a) < runAt(b) ? -1 : 1));
 
@@ -91,7 +92,7 @@ test('keep-all: a row last seen 200 days ago stays in the ledger (count and run 
   const top = L.rows.find((r) => r.sample.check === 'typecheck');
   assert.equal(top?.count, 5);
   const last = new Date(top?.lastSeen ?? '').getTime();
-  const ctx = (/** @type {Date} */ now) => ({ workflow: WF, place: '/p/aurora', specHash: 'h1', now });
+  const ctx = (/** @type {Date} */ now) => ({ workflow: WF, place: '/p/aurora', workflowKey: 'k1', now });
   assert.equal(readableRows(L, ctx(new Date(last + DECAY_DAYS * DAY))).some((r) => r.id === top?.id), true, 'exactly 56 days is not yet old');
   const t200 = new Date(last + 200 * DAY);
   assert.equal(readableRows(L, ctx(new Date(last + DECAY_DAYS * DAY + 1000))).some((r) => r.id === top?.id), false, 'past 56 days: not in memory');
@@ -106,7 +107,7 @@ test('keep-all: a row last seen 200 days ago stays in the ledger (count and run 
   // seen again (the record is edited: a new run id and date on a real card): same row, count +1, back in the block
   const [c] = /** @type {any} */ (built.get('ms2c0ls7')).cards;
   const fresh = { ...c, runid: 'newrun01', id: 'newrun01:typecheck:fixed', at: t200.toISOString() };
-  const back = countLedger(kept, { runid: 'newrun01', cards: [fresh], workflow: WF, place: '/p/aurora', specHash: 'h1', trust: 'deterministic', now: t200 });
+  const back = countLedger(kept, { runid: 'newrun01', cards: [fresh], workflow: WF, place: '/p/aurora', workflowKey: 'k1', trust: 'deterministic', now: t200 });
   const tcs = back.rows.filter((r) => r.sample.check === 'typecheck');
   assert.equal(tcs.length, 1, 'same row, not a new one');
   assert.equal(tcs[0].id, top?.id);
@@ -117,22 +118,22 @@ test('keep-all: a row last seen 200 days ago stays in the ledger (count and run 
 });
 
 test('keep-all: a row from another job version stays in the ledger, is never in the block, and is never matched under the new hash', () => {
-  let L = fold(emptyLedger(), sorted[0], { specHash: 'h1' });
-  L = fold(L, sorted[1], { specHash: 'h2' });
+  let L = fold(emptyLedger(), sorted[0], { workflowKey: 'k1' });
+  L = fold(L, sorted[1], { workflowKey: 'k2' });
   const tcs = L.rows.filter((r) => r.sample.check === 'typecheck');
   assert.equal(tcs.length, 2, 'the new version opens its own row');
-  assert.deepEqual(tcs.map((r) => [r.specHash, r.count]).sort(), [['h1', 1], ['h2', 1]]);
+  assert.deepEqual(tcs.map((r) => [r.workflowKey, r.count]).sort(), [['k1', 1], ['k2', 1]]);
   assert.equal(tcs.some((r) => 'status' in r || 'expiredBy' in r), false, 'no flag stored');
-  const ids = (/** @type {string} */ h) => renderHints(L, { workflow: WF, place: '/p/aurora', specHash: h, now: NOW }).ids.filter((i) => tcs.some((r) => r.id === i));
-  assert.deepEqual(ids('h2'), [tcs.find((r) => r.specHash === 'h2')?.id]);
-  assert.deepEqual(ids('h1'), [tcs.find((r) => r.specHash === 'h1')?.id], 'going back to h1 reads h1 rows again: decided by the hash, not a stored flag');
+  const ids = (/** @type {string} */ h) => renderHints(L, { workflow: WF, place: '/p/aurora', workflowKey: h, now: NOW }).ids.filter((i) => tcs.some((r) => r.id === i));
+  assert.deepEqual(ids('k2'), [tcs.find((r) => r.workflowKey === 'k2')?.id]);
+  assert.deepEqual(ids('k1'), [tcs.find((r) => r.workflowKey === 'k1')?.id], 'going back to h1 reads h1 rows again: decided by the hash, not a stored flag');
   // a third run under h2 counts the h2 row, never the h1 row
-  L = fold(L, sorted[2], { specHash: 'h2' });
-  assert.deepEqual(L.rows.filter((r) => r.sample.check === 'typecheck').map((r) => [r.specHash, r.count]).sort(), [['h1', 1], ['h2', 2]]);
+  L = fold(L, sorted[2], { workflowKey: 'k2' });
+  assert.deepEqual(L.rows.filter((r) => r.sample.check === 'typecheck').map((r) => [r.workflowKey, r.count]).sort(), [['k1', 1], ['k2', 2]]);
 });
 
 test('keep-all: an old on-disk ledger carrying stored status/expiredBy loads and behaves by the new rules (age by lastSeen, version by hash); the fields are stripped at the next write', (t) => {
-  let L = fold(emptyLedger(), sorted[0], { specHash: 'h1' });
+  let L = fold(emptyLedger(), sorted[0], { workflowKey: 'k1' });
   const row = L.rows.find((r) => r.sample.check === 'typecheck');
   assert.ok(row);
   // an old file: the fresh row wrongly flagged expired-by-age, another row flagged by hash but of THIS version
@@ -142,19 +143,19 @@ test('keep-all: an old on-disk ledger carrying stored status/expiredBy loads and
   mkdirSync(join(path, '..'), { recursive: true });
   writeFileSync(path, JSON.stringify(old));
   const loaded = readLedger(home).ledger;
-  const ctx = { workflow: WF, place: '/p/aurora', specHash: 'h1', now: NOW };
+  const ctx = { workflow: WF, place: '/p/aurora', workflowKey: 'k1', now: NOW };
   assert.equal(renderHints(loaded, ctx).ids.includes(row.id), true, 'stored "expired" is ignored: lastSeen is fresh, hash matches');
   // an old-flagged row truly 200 days old stays out; seen again it counts +1
   const far = new Date(new Date(row.lastSeen).getTime() + 200 * DAY);
   assert.equal(renderHints(loaded, { ...ctx, now: far }).ids.includes(row.id), false);
   const [c] = /** @type {any} */ (built.get('ms2c0ls7')).cards;
-  const again = countLedger(loaded, { runid: 'newrun02', cards: [{ ...c, runid: 'newrun02', id: 'newrun02:typecheck:fixed', at: far.toISOString() }], workflow: WF, place: '/p/aurora', specHash: 'h1', trust: 'deterministic', now: far });
+  const again = countLedger(loaded, { runid: 'newrun02', cards: [{ ...c, runid: 'newrun02', id: 'newrun02:typecheck:fixed', at: far.toISOString() }], workflow: WF, place: '/p/aurora', workflowKey: 'k1', trust: 'deterministic', now: far });
   const r2 = again.rows.find((r) => r.id === row.id);
   assert.equal(r2?.count, 2);
   assert.equal('status' in (r2 ?? {}) || 'expiredBy' in (r2 ?? {}), false, 'legacy fields stripped on the next write');
   // an old file's hash-flagged row of the CURRENT version is matched (the flag is not read)
   const oldHash = { ...L, rows: L.rows.map((r) => ({ ...r, status: 'expired', expiredBy: 'hash' })) };
-  assert.equal(countLedger(oldHash, { runid: 'newrun03', cards: [{ ...c, runid: 'newrun03', id: 'newrun03:typecheck:fixed', at: NOW.toISOString() }], workflow: WF, place: '/p/aurora', specHash: 'h1', trust: 'deterministic', now: NOW }).rows.find((r) => r.id === row.id)?.count, 2);
+  assert.equal(countLedger(oldHash, { runid: 'newrun03', cards: [{ ...c, runid: 'newrun03', id: 'newrun03:typecheck:fixed', at: NOW.toISOString() }], workflow: WF, place: '/p/aurora', workflowKey: 'k1', trust: 'deterministic', now: NOW }).rows.find((r) => r.id === row.id)?.count, 2);
 });
 
 test('an OLD hold (v0.46.x wrote them) is not counted; the human Accept releases it; 60 days of waiting drops them uncounted', () => {
@@ -311,7 +312,7 @@ test('a resumed leg (same run id) turns its own NEVER FIXED row into the FIXED s
   const leg2 = { ...c, kind: 'FIXED', at: new Date(new Date(c.at).getTime() + 3600_000).toISOString(), model: 'deepseek-flash' };
   // real card shape: the leg-2 FIXED card matches the leg-1 row's sample
   assert.equal(cardsMatch(leg2, leg1).match, true);
-  const o = { runid: 'ms2c0ls7', workflow: WF, place: '/p/aurora', specHash: 'h1', trust: /** @type {const} */ ('deterministic'), now: NOW };
+  const o = { runid: 'ms2c0ls7', workflow: WF, place: '/p/aurora', workflowKey: 'k1', trust: /** @type {const} */ ('deterministic'), now: NOW };
   let L = countLedger(emptyLedger(), { ...o, cards: [leg1] });
   assert.equal(L.rows[0].sample.kind, 'NEVER_FIXED');
   L = countLedger(L, { ...o, cards: [leg2] });
@@ -327,4 +328,59 @@ test('a resumed leg (same run id) turns its own NEVER FIXED row into the FIXED s
   assert.equal(again.rows.length, 1);
   assert.equal(again.rows[0].count, 1);
   assert.deepEqual(again.rows[0].models, { 'deepseek-flash': 1 });
+});
+
+// ---- the job version is the WORKFLOW key (hamr 2026-10-24): Reuse's rule, not the signed hash ----
+// Real-shaped specs: the attempt-diff live session's resolved spec, with only the named field changed.
+const BASE_SPEC = JSON.parse(readFileSync(new URL('../.claude/scratch/attemptdiff-live/session/resolved-spec.json', import.meta.url), 'utf8'));
+const withCap = (/** @type {number} */ d) => ({ ...BASE_SPEC, budgetUsd: BASE_SPEC.budgetUsd + d });
+const keyOf = (/** @type {any} */ spec) => workflowKey(spec);
+const tcRows = (/** @type {any} */ L) => L.rows.filter((/** @type {any} */ r) => r.sample.check === 'typecheck');
+
+test('workflow key: a cap change moves the signed hash but not the workflow key (the premise of the ruling)', () => {
+  assert.notEqual(jobSpecHash(withCap(0.5)), jobSpecHash(BASE_SPEC));
+  assert.equal(keyOf(withCap(0.5)), keyOf(BASE_SPEC));
+});
+
+test('two runs of one workflow whose specs differ only in the cap: one row, count 2', () => {
+  let L = fold(emptyLedger(), sorted[0], { specHash: jobSpecHash(BASE_SPEC), workflowKey: keyOf(BASE_SPEC) });
+  L = fold(L, sorted[1], { specHash: jobSpecHash(withCap(0.5)), workflowKey: keyOf(withCap(0.5)) });
+  assert.equal(tcRows(L).length, 1);
+  assert.equal(tcRows(L)[0].count, 2);
+});
+
+test('a resume that raises the cap folds the same run id under a new hash: one row, count 1, refreshed', () => {
+  let L = fold(emptyLedger(), sorted[0], { specHash: jobSpecHash(BASE_SPEC), workflowKey: keyOf(BASE_SPEC) });
+  const leg2 = withCap(0.5);
+  L = fold(L, sorted[0], { specHash: jobSpecHash(leg2), workflowKey: keyOf(leg2) });
+  assert.equal(tcRows(L).length, 1, 'one run is never two rows');
+  assert.equal(tcRows(L)[0].count, 1);
+  assert.equal(tcRows(L)[0].specHash, jobSpecHash(leg2), 'specHash records the latest signed spec');
+});
+
+test('a row written under one cap is read by a run under another cap', () => {
+  const L = fold(emptyLedger(), sorted[0], { specHash: jobSpecHash(BASE_SPEC), workflowKey: keyOf(BASE_SPEC) });
+  const ids = (/** @type {any} */ spec) => renderHints(L, { workflow: WF, place: '/p/aurora', specHash: jobSpecHash(spec), workflowKey: keyOf(spec), now: NOW }).ids;
+  assert.deepEqual(ids(withCap(0.5)), ids(BASE_SPEC));
+  assert.equal(ids(withCap(0.5)).length > 0, true);
+});
+
+test('a real job change (another goal) opens its own row and is not read', () => {
+  const other = { ...BASE_SPEC, goal: `${BASE_SPEC.goal} and also something else entirely` };
+  assert.notEqual(keyOf(other), keyOf(BASE_SPEC));
+  let L = fold(emptyLedger(), sorted[0], { workflowKey: keyOf(BASE_SPEC) });
+  L = fold(L, sorted[1], { workflowKey: keyOf(other) });
+  assert.equal(tcRows(L).length, 2);
+  const ids = renderHints(L, { workflow: WF, place: '/p/aurora', workflowKey: keyOf(other), now: NOW }).ids;
+  assert.deepEqual(ids.filter((i) => tcRows(L).some((/** @type {any} */ r) => r.id === i)), [tcRows(L).find((/** @type {any} */ r) => r.workflowKey === keyOf(other))?.id]);
+});
+
+test('an old row with no workflowKey (only specHash) is still read and matched, then gains the key', () => {
+  let L = fold(emptyLedger(), sorted[0], { specHash: 'old-signed-hash', workflowKey: null });
+  assert.equal(tcRows(L)[0].workflowKey, null);
+  assert.equal(readableRows(L, { workflow: WF, place: '/p/aurora', workflowKey: keyOf(BASE_SPEC), now: NOW }).some((r) => r.sample.check === 'typecheck'), true);
+  L = fold(L, sorted[1], { specHash: jobSpecHash(BASE_SPEC), workflowKey: keyOf(BASE_SPEC) });
+  assert.equal(tcRows(L).length, 1);
+  assert.equal(tcRows(L)[0].count, 2);
+  assert.equal(tcRows(L)[0].workflowKey, keyOf(BASE_SPEC));
 });

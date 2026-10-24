@@ -16,12 +16,12 @@ const AURORA = ['ms2c0ls7', 'ms7flkok', 'mszi97jd', 'ms2ddxjc', 'mszcfaof'];
 const built = AURORA.map((id) => cardsOf(id));
 const lastAt = built.map((b) => b.cards[0].at).sort().at(-1) ?? '';
 const NOW = new Date(new Date(lastAt).getTime() + DAY);
-const ctx = { workflow: WF, place: '/p/aurora', specHash: 'h1', now: NOW };
+const ctx = { workflow: WF, place: '/p/aurora', workflowKey: 'k1', now: NOW };
 
 /** the real ledger of the five aurora runs: a typecheck lesson seen 5 times, a no-suppressions lesson seen 2 times */
 function auroraLedger() {
   let L = emptyLedger();
-  AURORA.forEach((id, i) => { L = countLedger(L, { runid: id, cards: built[i].cards, workflow: WF, place: '/p/aurora', specHash: 'h1', trust: 'deterministic', now: NOW }); });
+  AURORA.forEach((id, i) => { L = countLedger(L, { runid: id, cards: built[i].cards, workflow: WF, place: '/p/aurora', workflowKey: 'k1', trust: 'deterministic', now: NOW }); });
   return L;
 }
 /** @param {any} L @param {string} check */
@@ -151,13 +151,13 @@ test('what is not readable: rows of another job or signed hash, rows decayed by 
   const rows = [
     rowLike(tc, { id: 'old-flag', status: 'expired', expiredBy: 'age' }), // legacy stored fields are ignored: this one is fresh, so it IS read
     rowLike(tc, { id: 'other-job', workflow: 'other-job' }),
-    rowLike(tc, { id: 'other-hash', specHash: 'h-old' }),
+    rowLike(tc, { id: 'other-hash', workflowKey: 'k-old' }),
     rowLike(tc, { id: 'stale', lastSeen: new Date(NOW.getTime() - (DECAY_DAYS + 1) * DAY).toISOString() }),
     rowLike(tc, { id: 'fresh' }),
   ];
   assert.deepEqual(renderHints(withRows(L, rows), ctx).ids.sort(), ['fresh', 'old-flag']);
   // a held rubric run is in `pending`, never in the block
-  const held = holdPending(L, { runid: 'mvh72jo0', cards: cardsOf('mvh72jo0').cards, workflow: WF, place: '/p/aurora', specHash: 'h1', at: lastAt }, NOW);
+  const held = holdPending(L, { runid: 'mvh72jo0', cards: cardsOf('mvh72jo0').cards, workflow: WF, place: '/p/aurora', workflowKey: 'k1', at: lastAt }, NOW);
   assert.equal(held.pending.length, 1);
   assert.ok(!renderHints(held, ctx).text.includes('line-1-three-flights'));
   assert.equal(renderHints(held, ctx).text, renderHints(L, ctx).text);
@@ -169,7 +169,7 @@ test('the byte check: what the spine recorded must equal a fresh render from the
   assert.equal(recorded, renderHints(L, ctx).text);
   assert.notEqual(`${recorded} `, renderHints(L, ctx).text, 'one extra byte');
   assert.notEqual(recorded.replace('seen 5', 'seen 6'), renderHints(L, ctx).text, 'one changed byte');
-  const later = countLedger(L, { runid: 'newrun', cards: built[0].cards, workflow: WF, place: '/p/aurora', specHash: 'h1', trust: 'deterministic', now: NOW });
+  const later = countLedger(L, { runid: 'newrun', cards: built[0].cards, workflow: WF, place: '/p/aurora', workflowKey: 'k1', trust: 'deterministic', now: NOW });
   assert.notEqual(recorded, renderHints(later, ctx).text, 'the ledger moved on: the old record no longer matches');
 });
 
