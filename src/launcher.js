@@ -341,35 +341,23 @@ export async function startCmd(io, d, shown) {
 }
 
 /**
- * `bareloop stop [--yes] [--port N]` — SIGTERM the pid the probe reported, wait until the port stops answering.
- * Drafts are in memory: warn and ask y/N unless `--yes`.
+ * `bareloop stop [--yes]` — SIGTERM the pid of EVERY panel the probe finds (one panel at a time is the rule; no "which one"), wait until each
+ * port stops answering. Drafts are in memory: warn (summed over all found panels) and ask y/N unless `--yes`.
  * @param {string[]} args
  * @param {{out: (s: string) => void, err: (s: string) => void}} io @param {LauncherDeps & {version?: string}} d @param {{lines: string[], panels: Panel[]}} [shown]
  * @returns {Promise<number>}
  */
 export async function stopCmd(args, io, d, shown) {
+  const bad = args.find((a) => a !== '--yes');
+  if (bad !== undefined) {
+    fail(io, d, `Unknown option ${JSON.stringify(bad)} — bareloop stop takes only --yes. It stops every panel it finds.`);
+    return 1;
+  }
   const h = await headerOnce(io, d, shown);
   const yes = args.includes('--yes');
-  const pi = args.indexOf('--port');
-  const wantPort = pi >= 0 ? Number(args[pi + 1]) : null;
-  let panels = h.panels;
-  if (wantPort !== null) panels = panels.filter((p) => p.port === wantPort);
+  const panels = h.panels;
   if (panels.length === 0) { io.out('Panel not running.'); return 0; }
   const ask = d.ask;
-  if (panels.length > 1) {
-    if (!ask || yes) {
-      fail(io, d, 'Several panels are running. Pick one with --port N:');
-      for (const p of panels) fail(io, d, `  ${p.url} (pid ${p.pid})`);
-      return 1;
-    }
-    panels.forEach((p, i) => io.out(`${i + 1} ${p.url} (pid ${p.pid})`));
-    const a = (await ask('Stop which one? number, a for all, anything else to leave them > ')).trim().toLowerCase();
-    if (a !== 'a') {
-      const n = Number(a);
-      if (!Number.isInteger(n) || n < 1 || n > panels.length) { io.out('Not stopped.'); return 0; }
-      panels = [panels[n - 1]];
-    }
-  }
   const drafts = panels.reduce((n, p) => n + p.drafts, 0);
   if (drafts > 0 && !yes) {
     io.out(`${drafts === 1 ? '1 draft is' : `${drafts} drafts are`} open in the panel and will be lost.`);
@@ -391,7 +379,7 @@ export async function stopCmd(args, io, d, shown) {
       return 1;
     }
   }
-  io.out((d.paint ?? PLAIN).green(panels.length > 1 ? 'Panels stopped.' : 'Panel stopped.'));
+  io.out((d.paint ?? PLAIN).green(panels.length > 1 ? `${panels.length} panels stopped.` : 'Panel stopped.'));
   return 0;
 }
 

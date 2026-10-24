@@ -209,23 +209,71 @@ test('stop --yes: no question even with drafts open; plural wording for several 
   assert.equal(io.lines.at(-1), 'Panel stopped.');
 });
 
-test('stop: several panels -> asks which (number), only that pid is signalled; with --yes and no --port it refuses to guess', async () => {
+test('stop: two panels found -> both pids signalled, ONE ask with the summed draft count, "2 panels stopped."; no which-one question', async () => {
   const home = installedHome();
   const base = await freeBase();
-  const a = await fakePanel(base, { pid: 5001 });
-  const b = await fakePanel(base + 1, { pid: 5002 });
+  const a = await fakePanel(base, { pid: 5001, drafts: 1 });
+  const b = await fakePanel(base + 1, { pid: 5002, drafts: 2 });
   const kills = [];
   const kill = (pid) => { kills.push(pid); (pid === 5001 ? a : b).close(); };
-  const refuse = sink();
-  assert.equal(await stopCmd(['--yes'], refuse, deps(home, base, { kill })), 1);
-  assert.deepEqual(kills, []);
-  assert.match(refuse.text(), /Several panels are running\. Pick one with --port N/);
+  const asked = [];
   const io = sink();
-  assert.equal(await stopCmd([], io, deps(home, base, { kill, ask: async () => '2' })), 0, io.text());
-  assert.deepEqual(kills, [5002]);
-  const byPort = sink();
-  assert.equal(await stopCmd(['--port', String(base)], byPort, deps(home, base, { kill })), 0, byPort.text());
-  assert.deepEqual(kills, [5002, 5001]);
+  assert.equal(await stopCmd([], io, deps(home, base, { kill, ask: async (q) => { asked.push(q); return 'y'; } })), 0, io.text());
+  assert.deepEqual(kills, [5001, 5002]);
+  assert.deepEqual(asked, ['Stop the panel? [y/N] '], 'exactly one ask');
+  assert.ok(io.lines.includes('3 drafts are open in the panel and will be lost.'));
+  assert.equal(io.lines.at(-1), '2 panels stopped.');
+});
+
+test('stop: two panels, answer n -> nothing signalled; --yes -> no ask, both stopped', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const a = await fakePanel(base, { pid: 5011, drafts: 1 });
+  const b = await fakePanel(base + 1, { pid: 5012 });
+  const kills = [];
+  const kill = (pid) => { kills.push(pid); (pid === 5011 ? a : b).close(); };
+  const no = sink();
+  assert.equal(await stopCmd([], no, deps(home, base, { kill, ask: async () => 'n' })), 0);
+  assert.deepEqual(kills, []);
+  assert.equal(no.lines.at(-1), 'Not stopped.');
+  const yes = sink();
+  assert.equal(await stopCmd(['--yes'], yes, deps(home, base, { kill, ask: async () => { throw new Error('--yes must not ask'); } })), 0, yes.text());
+  assert.deepEqual(kills, [5011, 5012]);
+  assert.equal(yes.lines.at(-1), '2 panels stopped.');
+});
+
+test('stop --port N (and any unknown option) is refused in plain words; nothing signalled', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  await fakePanel(base, { pid: 5021 });
+  const kills = [];
+  const io = sink();
+  assert.equal(await stopCmd(['--port', String(base)], io, deps(home, base, { kill: (p) => kills.push(p) })), 1);
+  assert.deepEqual(kills, []);
+  assert.match(io.text(), /Unknown option "--port" — bareloop stop takes only --yes\. It stops every panel it finds\./);
+});
+
+test('start with two panels found -> starts nothing (no spawn), says already running, opens the first', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  await fakePanel(base, { pid: 5031 });
+  await fakePanel(base + 1, { pid: 5032 });
+  const d = deps(home, base);
+  const io = sink();
+  assert.equal(await startCmd(io, d), 0, io.text());
+  assert.equal(d.spawned.length, 0);
+  assert.ok(io.lines.some((l) => l.startsWith(`Panel already running at http://127.0.0.1:${base} `)), io.text());
+});
+
+test('status with two panels found -> one line per panel, each led by its url', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  await fakePanel(base, { pid: 5041 });
+  await fakePanel(base + 1, { pid: 5042 });
+  const io = sink();
+  assert.equal(await statusCmd(io, deps(home, base)), 0);
+  assert.ok(io.lines.includes(`http://127.0.0.1:${base} · pid 5041 · version ${V} · 0 drafts open · 0 schedules on`), io.text());
+  assert.ok(io.lines.includes(`http://127.0.0.1:${base + 1} · pid 5042 · version ${V} · 0 drafts open · 0 schedules on`), io.text());
 });
 
 test('status: not running -> header then "Panel not running.", exit 3 (the sub-command) but 0 from the menu; running -> pid, drafts, schedules, exit 0', async () => {
