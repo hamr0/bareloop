@@ -272,7 +272,9 @@ export async function statusCmd(io, d, shown) {
 async function waitFor(d, port, gone) {
   const sleep = sleepOf(d);
   const deadline = d.deadlineMs ?? WAIT_DEADLINE_MS;
-  for (let waited = 0; waited <= deadline; waited += POLL_MS) {
+  // real clock time (CLOCK_MONOTONIC): a probe can take up to its whole timeout, so counting POLL_MS a turn would overshoot the deadline many times over
+  const t0 = performance.now();
+  while (performance.now() - t0 <= deadline) {
     const found = await probePanels({ ports: [port], timeoutMs: d.timeoutMs, fetchImpl: d.fetchImpl });
     if (gone ? found.length === 0 : found.length > 0) return true;
     await sleep(POLL_MS);

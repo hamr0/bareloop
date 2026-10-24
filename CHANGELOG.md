@@ -13,6 +13,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **`whoami` (and the page topbar) report the version the panel runs, not the one on disk.** Both re-read `package.json` on every request, so a panel started on older code answered with the new version after an upgrade and the launcher's stop-and-start note could never fire. The version is now read once when the panel starts.
 - **The Audit tab's folded rows show an open/closed arrow.** Every part row in the Grouped view and the "What the planner was told from earlier runs" box now lead with an open/closed arrow, flipping on each click; a live run's running part starts open.
 - **The Audit fold arrows are the bigger ones fwdloop uses.** ▶ when folded and ▼ when open, faint, on the part rows, the learnings box and the schedule box alike; on a phone the gap after the arrow is smaller.
+- **`bareloop stop` and `start` give up after the stated time, not many times it.** The wait-until-gone loop counted 100 ms per poll, but a poll against a panel that answers slowly can take up to 2 seconds, so a 10-second wait could run for minutes. The deadline is now real clock time.
 
 ## [0.47.0] - 2026-10-24
 
