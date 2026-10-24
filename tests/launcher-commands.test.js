@@ -409,3 +409,65 @@ test('version: a panel on the CLI\'s own version gets no note and no extra start
   assert.match(s.lines[0], new RegExp(`panel running at http://127.0.0.1:${base}$`));
   assert.equal(s.lines.at(-1), `Panel already running at http://127.0.0.1:${base} — opening the page.`);
 });
+
+/** a server on `port` that takes the connection and never answers (a panel too loaded to reply, or a stuck one) */
+function silentServer(port) {
+  return new Promise((resolve) => {
+    const socks = new Set();
+    const s = httpServer(() => { /* never answers */ });
+    s.on('connection', (c) => { socks.add(c); c.on('close', () => socks.delete(c)); });
+    s.listen(port, '127.0.0.1', () => {
+      const close = () => new Promise((r) => { for (const c of socks) c.destroy(); s.close(() => r(undefined)); });
+      closers.push(close);
+      resolve(close);
+    });
+  });
+}
+
+test('start: a taken port that stays silent -> start waits, then says so, starts NOTHING, exit 1', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  await silentServer(base);
+  const d = deps(home, base, { timeoutMs: 200, silentWaitMs: 900 });
+  const io = sink();
+  const t0 = performance.now();
+  const rc = await startCmd(io, d);
+  const took = performance.now() - t0;
+  assert.equal(rc, 1, io.text());
+  assert.equal(d.spawned.length, 0, 'no second panel');
+  assert.equal(io.lines.at(-1), `ERR Port ${base} is taken and not answering. If it's a stuck bareloop, stop it first.`);
+  assert.ok(took >= 900, `waited only ${Math.round(took)} ms`);
+  assert.ok(took < 4000, `waited ${Math.round(took)} ms`);
+});
+
+test('start: a taken port that answers late as bareloop -> already running, nothing started', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const readyAt = performance.now() + 800;
+  const s = httpServer((_q, res) => {
+    if (performance.now() < readyAt) return; // loaded: no answer yet
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ app: 'bareloop', version: V, pid: 4242, port: base, drafts: 0, schedules: 0 }));
+  });
+  const socks = new Set();
+  s.on('connection', (c) => { socks.add(c); c.on('close', () => socks.delete(c)); });
+  await new Promise((r) => { s.listen(base, '127.0.0.1', r); });
+  closers.push(() => new Promise((r) => { for (const c of socks) c.destroy(); s.close(() => r(undefined)); }));
+  const d = deps(home, base, { timeoutMs: 200, silentWaitMs: 5000 });
+  const io = sink();
+  assert.equal(await startCmd(io, d), 0, io.text());
+  assert.equal(d.spawned.length, 0);
+  assert.equal(io.lines.at(-1), `Panel already running at http://127.0.0.1:${base} — opening the page.`);
+});
+
+test('start: a taken port whose connection is refused after the free check is moved past, not waited on', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  // portFree says busy for the first port, but nothing listens there: connection refused = a reply that is not bareloop
+  const d = deps(home, base, { portFree: async (p) => p !== base, silentWaitMs: 60000 });
+  const io = sink();
+  const t0 = performance.now();
+  assert.equal(await startCmd(io, d), 0, io.text());
+  assert.ok(performance.now() - t0 < 5000);
+  assert.equal(io.lines.at(-1), `Panel started at http://127.0.0.1:${base + 1} — opening the page.`);
+});

@@ -25,6 +25,8 @@ export const PORT_START = 4700;
 export const PORT_COUNT = 10;
 const PROBE_TIMEOUT_MS = 2000;
 const WAIT_DEADLINE_MS = 10_000;
+/** how long `start` keeps asking a TAKEN port that stays silent before it refuses to open another panel next to it */
+const SILENT_PORT_WAIT_MS = 10_000;
 const POLL_MS = 100;
 const MIN_NODE_MAJOR = 22;
 const RULE_WIDTH = 56;
@@ -42,6 +44,7 @@ const RULE_WIDTH = 56;
  * @property {number[]} [ports] an explicit port list (tests); wins over portStart/portCount
  * @property {number} [timeoutMs] probe timeout per port
  * @property {number} [deadlineMs] start/stop wait deadline
+ * @property {number} [silentWaitMs] how long start keeps asking a taken, silent port (default 10 s)
  * @property {string} [nodeVersion] default process.versions.node
  * @property {typeof fetch} [fetchImpl]
  * @property {(cmd: string, args: string[], o: object) => any} [spawnFn] default node:child_process spawn
@@ -98,30 +101,45 @@ export function installState(o) {
 }
 
 /**
- * Ask 127.0.0.1 across the ports in parallel; a reply with `app === "bareloop"` is a panel. Never throws.
- * @param {{ports: number[], timeoutMs?: number, fetchImpl?: typeof fetch}} o
- * @returns {Promise<Panel[]>} in port order
+ * Ask one port for `/api/whoami`. Never throws. `silent` = no reply inside the timeout (a loaded or stuck process may still be a
+ * panel); `other` = something replied (or refused) and it is not a bareloop whoami.
+ * @param {{port: number, timeoutMs?: number, fetchImpl?: typeof fetch}} o
+ * @returns {Promise<{state: 'panel', panel: Panel}|{state: 'other'}|{state: 'silent'}>}
  */
-export async function probePanels(o) {
+export async function probePort(o) {
   const f = o.fetchImpl ?? fetch;
   const ms = o.timeoutMs ?? PROBE_TIMEOUT_MS;
-  const answers = await Promise.all(o.ports.map(async (port) => {
-    try {
-      const res = await f(`${panelUrl(port)}/api/whoami`, { signal: AbortSignal.timeout(ms) });
-      if (!res.ok) return null;
-      const j = /** @type {any} */ (await res.json());
-      if (!j || j.app !== 'bareloop') return null;
-      return /** @type {Panel} */ ({
+  const port = o.port;
+  try {
+    const res = await f(`${panelUrl(port)}/api/whoami`, { signal: AbortSignal.timeout(ms) });
+    if (!res.ok) return { state: 'other' };
+    const j = /** @type {any} */ (await res.json());
+    if (!j || j.app !== 'bareloop') return { state: 'other' };
+    return {
+      state: 'panel',
+      panel: {
         port,
         pid: Number(j.pid),
         version: String(j.version ?? ''),
         drafts: Number(j.drafts) || 0,
         schedules: Number(j.schedules) || 0,
         url: panelUrl(port),
-      });
-    } catch { return null; }
-  }));
-  return /** @type {Panel[]} */ (answers.filter((a) => a !== null));
+      },
+    };
+  } catch (e) {
+    const name = /** @type {any} */ (e)?.name;
+    return name === 'TimeoutError' || name === 'AbortError' ? { state: 'silent' } : { state: 'other' };
+  }
+}
+
+/**
+ * Ask 127.0.0.1 across the ports in parallel; a reply with `app === "bareloop"` is a panel. Never throws.
+ * @param {{ports: number[], timeoutMs?: number, fetchImpl?: typeof fetch}} o
+ * @returns {Promise<Panel[]>} in port order
+ */
+export async function probePanels(o) {
+  const answers = await Promise.all(o.ports.map((port) => probePort({ port, timeoutMs: o.timeoutMs, fetchImpl: o.fetchImpl })));
+  return /** @type {Panel[]} */ (answers.flatMap((a) => (a.state === 'panel' ? [a.panel] : [])));
 }
 
 /** @param {LauncherDeps} d @returns {number[]} */
@@ -283,6 +301,24 @@ async function waitFor(d, port, gone) {
 }
 
 /**
+ * A taken port that no probe recognised: ask it again until it answers or ~10 s of real time pass. A bareloop whoami = a panel;
+ * any other reply = not ours (move on); still silent at the end = `silent`.
+ * @param {LauncherDeps} d @param {number} port
+ * @returns {Promise<{state: 'panel', panel: Panel}|{state: 'other'}|{state: 'silent'}>}
+ */
+async function askTakenPort(d, port) {
+  const sleep = sleepOf(d);
+  const limit = d.silentWaitMs ?? SILENT_PORT_WAIT_MS;
+  const t0 = performance.now();
+  for (;;) {
+    const r = await probePort({ port, timeoutMs: d.timeoutMs, fetchImpl: d.fetchImpl });
+    if (r.state !== 'silent') return r;
+    if (performance.now() - t0 >= limit) return r;
+    await sleep(POLL_MS);
+  }
+}
+
+/**
  * `bareloop start` — find a running panel first; else start one detached on the first free port 4700..4709, wait until it answers,
  * open the page.
  * @param {{out: (s: string) => void, err: (s: string) => void}} io @param {LauncherDeps & {version?: string}} d @param {{lines: string[], panels: Panel[]}} [shown]
@@ -298,17 +334,28 @@ export async function startCmd(io, d, shown) {
     io.out(opened ? `${said} — opening the page.` : `${said} — open it in your browser.`);
     return 0;
   };
-  if (h.panels.length > 0) {
-    const rc = await finish(h.panels[0].url, `Panel already running at ${P.cyan(h.panels[0].url)}`);
+  /** @param {Panel} found */
+  const alreadyRunning = async (found) => {
+    const rc = await finish(found.url, `Panel already running at ${P.cyan(found.url)}`);
     const mine = d.version ?? packageVersion();
-    if (h.panels[0].version !== mine) io.out(P.yellow(`It is version ${h.panels[0].version}; this bareloop is ${mine}. Run bareloop stop, then bareloop start, to use ${mine}.`));
+    if (found.version !== mine) io.out(P.yellow(`It is version ${found.version}; this bareloop is ${mine}. Run bareloop stop, then bareloop start, to use ${mine}.`));
     return rc;
-  }
+  };
+  if (h.panels.length > 0) return alreadyRunning(h.panels[0]);
   const free = d.portFree ?? bindFree;
   const ports = portsOf(d);
   /** @type {number|null} */
   let chosen = null;
-  for (const p of ports) { if (await free(p)) { chosen = p; break; } }
+  for (const p of ports) {
+    if (await free(p)) { chosen = p; break; }
+    // taken: if it is a loaded panel that missed the probe, a second panel next to it would double every scheduled run
+    const verdict = await askTakenPort(d, p);
+    if (verdict.state === 'panel') return alreadyRunning(verdict.panel);
+    if (verdict.state === 'silent') {
+      fail(io, d, `Port ${p} is taken and not answering. If it's a stuck bareloop, stop it first.`);
+      return 1;
+    }
+  }
   if (chosen === null) {
     fail(io, d, `Every port from ${ports[0]} to ${ports[ports.length - 1]} is taken by something else, so the panel was not started.`);
     return 1;
