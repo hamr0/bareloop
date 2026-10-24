@@ -33,7 +33,8 @@ import {
   dirname, join, basename, relative, isAbsolute, sep,
 } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readRunList, readNeedsRemovals, DIED_MTIME_MS, runIsAlive } from '../runlist.js';
+import { readRunList, readNeedsRemovals, DIED_MTIME_MS, runIsAlive, atMs, runNumbers } from '../runlist.js';
+import { sourceNearSpine, signedSpecForRun } from '../runfiles.js';
 import { webFetchState } from '../source.js';
 import { isWebUrl } from '../pagefetch.js';
 import { draftingPartFor, sessionDirForRow, readDraftSteps } from '../draftspend.js';
@@ -933,40 +934,6 @@ export function getNeedsContext(runid, opts = {}) {
   if (!row) return null;
   const nowMs = typeof opts.now === 'number' ? opts.now : Date.now();
   return { row, needs: summarizeRow(row, nowMs, readNeedsRemovals(opts)).needs ?? null };
-}
-
-/**
- * @param {any} r
- * @returns {number}
- */
-function atMs(r) {
-  const t = typeof r?.at === 'string' ? Date.parse(r.at) : NaN;
-  return Number.isFinite(t) ? t : 0;
-}
-
-/**
- * The ONE owner of run names (P6 item 7): runs of the same job (`row.job`) are numbered oldest `at` first, 1-based
- * (ties keep file order). A resume is one row, so it counts once; died and stopped runs are rows too. Every view
- * reads this number — the page never counts on its own.
- * @param {any[]} rows
- * @returns {Map<string, number>} runid → N
- */
-function runNumbers(rows) {
-  /** @type {Map<string, any[]>} */
-  const byJob = new Map();
-  rows.forEach((row, index) => {
-    if (!row || typeof row.runid !== 'string') return;
-    const g = byJob.get(row.job) || [];
-    g.push({ row, index });
-    byJob.set(row.job, g);
-  });
-  /** @type {Map<string, number>} */
-  const out = new Map();
-  for (const g of byJob.values()) {
-    g.sort((a, b) => (atMs(a.row) - atMs(b.row)) || (a.index - b.index));
-    g.forEach(({ row }, i) => out.set(row.runid, i + 1));
-  }
-  return out;
 }
 
 /** The named limits of the runs list, in ONE place (P9 v2 D.13): quiet after 30 days, 7 older runs shown, a Resume tag ages out after 7 days. Sent in `GET /api/runs`; the page reads them from there. */
@@ -2537,39 +2504,6 @@ function bundleDirForSpine(spinePath) {
 }
 
 /**
- * `<out>/source-<seed>/<job>-bareloop/u-<runid>.jsonl` -> the two files an
- * authoring session leaves BESIDE that layout — `<out>/resolved-spec.json`
- * (the signed spec `--spec`/a JOBS-table row ran) and
- * `<out>/source-<seed>/source.json` (the source front door's manifest) —
- * verified against `src/userrun.js`'s own construction (`specWorkdir = join(into,
- * 'tree')`, `spineDir = join(wd, '..', target.spine)`, both `--spec` and the
- * `pulselog-person-strict` JOBS-table row read `into` the same way) and a real
- * archived run (pulselog-person-live-2, run mu2p83go): `dirname(spine)` is
- * `<into>/<job>-bareloop`, `dirname(dirname(spine))` is `<into>` itself
- * (`source-<seed>`, carrying `source.json`), and `dirname(dirname(dirname(spine)))`
- * is `<out>` (carrying `resolved-spec.json`).
- *
- * Only resolves when `<into>`'s own name starts with `source-` — the one
- * shape marker this convention always carries — and each file is checked to
- * actually exist before being handed back; any other spine layout (the bundle
- * `spine.jsonl`, a JOBS-table row whose workdir has no source-seed copy, e.g.
- * `litectx-u`) returns both fields `null`, never a guessed path (build spec
- * item 2, 2026-09-25: "don't search the disk broadly — fall through").
- * @param {string} spinePath
- * @returns {{ specPath: string|null, sourceJsonPath: string|null }}
- */
-function sourceNearSpine(spinePath) {
-  const into = dirname(dirname(spinePath)); // <into>/<job>-bareloop/u-x.jsonl -> <into>
-  if (!basename(into).startsWith('source-')) return { specPath: null, sourceJsonPath: null };
-  const sourceJsonPath = join(into, 'source.json');
-  const specPath = join(dirname(into), 'resolved-spec.json'); // <into> -> <out>
-  return {
-    specPath: existsSync(specPath) ? specPath : null,
-    sourceJsonPath: existsSync(sourceJsonPath) ? sourceJsonPath : null,
-  };
-}
-
-/**
  * P6 item 1 — the worktree a run worked on in the person's own repo, read off the run's own `source.json` (the manifest
  * the source door wrote: `worktree` + `repo`) and its spine's `work-branch` record. `null` for every run that has none
  * (a copied-tree run, a bundle run, an import). `exists` is whether the folder is still on disk: a green run's folder is
@@ -3356,31 +3290,6 @@ function getRunJobBody(runid, opts) {
 // boxes are locked, (c) the track record. The page asks; it never decides. A reuse is a NEW run (a new runid).
 // Nothing here drafts: changing the goal, checks, guardrails, judge examples or model is Clear (then draft).
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-/**
- * The signed spec a run's LATEST leg ran under — the `resolved-spec*.json` beside the run whose hash is the one its
- * latest `job-start` carries (the same lookup `resumePlanFor` does). `null` = no such file.
- * @param {{ spine: string }} row
- * @param {any[]} records
- * @returns {{spec: any, specPath: string, specHash: string}|null}
- */
-function signedSpecForRun(row, records) {
-  const jobStart = (legsOf(records).findLast((l) => l.jobStart !== null) ?? null)?.jobStart ?? null;
-  if (!jobStart || typeof jobStart.specHash !== 'string') return null;
-  const near = sourceNearSpine(row.spine);
-  if (!near.specPath) return null;
-  const dir = dirname(near.specPath);
-  /** @type {string[]} */
-  let names = [];
-  try { names = readdirSync(dir).filter((n) => n === 'resolved-spec.json' || /^resolved-spec-r\d+\.json$/.test(n)); } catch { names = []; }
-  for (const n of names) {
-    let spec;
-    try { spec = JSON.parse(readFileSync(join(dir, n), 'utf8')); } catch { continue; }
-    if (!spec || typeof spec !== 'object') continue;
-    if (jobSpecHash(spec) === jobStart.specHash) return { spec, specPath: join(dir, n), specHash: jobStart.specHash };
-  }
-  return null;
-}
 
 /**
  * The worker a signed spec ran: provider, baseUrl and model ('' when an older spec names none: bareloop keeps no default).

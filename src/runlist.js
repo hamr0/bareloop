@@ -483,3 +483,37 @@ export function formatRunRow(row) {
   const missing = existsSync(row.spine) ? '' : ' — file missing';
   return `${row.job} (${row.runid}) · ${date} · ${row.spine}${missing}`;
 }
+
+/**
+ * @param {any} r
+ * @returns {number}
+ */
+export function atMs(r) {
+  const t = typeof r?.at === 'string' ? Date.parse(r.at) : NaN;
+  return Number.isFinite(t) ? t : 0;
+}
+
+/**
+ * The ONE owner of run names (P6 item 7): runs of the same job (`row.job`) are numbered oldest `at` first, 1-based
+ * (ties keep file order). A resume is one row, so it counts once; died and stopped runs are rows too. Every view
+ * reads this number — the page never counts on its own.
+ * @param {any[]} rows
+ * @returns {Map<string, number>} runid → N
+ */
+export function runNumbers(rows) {
+  /** @type {Map<string, any[]>} */
+  const byJob = new Map();
+  rows.forEach((row, index) => {
+    if (!row || typeof row.runid !== 'string') return;
+    const g = byJob.get(row.job) || [];
+    g.push({ row, index });
+    byJob.set(row.job, g);
+  });
+  /** @type {Map<string, number>} */
+  const out = new Map();
+  for (const g of byJob.values()) {
+    g.sort((a, b) => (atMs(a.row) - atMs(b.row)) || (a.index - b.index));
+    g.forEach(({ row }, i) => out.set(row.runid, i + 1));
+  }
+  return out;
+}

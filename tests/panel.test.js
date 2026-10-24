@@ -1446,11 +1446,12 @@ test('/api/runs/:runid/job: RED PROOF — with sourceNearSpine/successFromSpec/g
     // exist. A real bug here (e.g. success/guardrails silently fabricated
     // from somewhere else) would make this row STILL show real values; the
     // red proof is that it does not.
+    // (sourceNearSpine now lives in src/runfiles.js, imported by server.js: the copy imports signedSpecForRun only and defines a neutered local one)
     const patched = src.replace(
-      'function sourceNearSpine(spinePath) {',
-      'function sourceNearSpine(spinePath) { return { specPath: null, sourceJsonPath: null };',
+      "import { sourceNearSpine, signedSpecForRun } from '../runfiles.js';",
+      "import { signedSpecForRun } from '../runfiles.js';\nfunction sourceNearSpine() { return { specPath: null, sourceJsonPath: null }; }",
     );
-    assert.notEqual(patched, src, 'the patch must actually match sourceNearSpine\'s real source — otherwise this proves nothing');
+    assert.notEqual(patched, src, 'the patch must actually match server.js\'s sourceNearSpine import — otherwise this proves nothing');
     writeFileSync(patchedPath, patched);
 
     const { createPanelServer: patchedCreate } = await import(pathToFileURL(patchedPath).href);
