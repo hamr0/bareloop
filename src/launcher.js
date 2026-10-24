@@ -2,7 +2,7 @@
 //
 // No pid file: the panel is FOUND by asking 127.0.0.1:4700..4709 for `GET /api/whoami` (src/panel/server.js), several at once, 300 ms
 // each; a reply with `app === "bareloop"` is a panel. Every call prints the same two header lines first, from {@link buildHeader}.
-// The run counts are the panel's own (`listRuns` rows: `status.key`, `needs`) — never a second spelling of "running" or "needs you".
+// The run counts are the panel's own (`runsListForCount`: the `listRuns` rows' `status.key` and `needs`, plus the schedules that gave up) — never a second spelling of "running" or "needs you".
 // This file owns no arbiter state: it starts/stops the panel process and reads the run list at $0. Every OS touch (spawn, kill, open,
 // port bind, clock, stdin) comes through `deps` so tests inject all of them and never see a real panel.
 
@@ -17,7 +17,7 @@ import { readConfig, updateConfig, ConfigError } from './config.js';
 import { keysHome, keysFilePath, ensureKeysFile } from './keysfile.js';
 import { openInOs } from './opener.js';
 import { PLAIN } from './tty-colour.js';
-import { listRuns, packageVersion, panelUrl } from './panel/server.js';
+import { runsListForCount, packageVersion, panelUrl } from './panel/server.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** the first port tried, and how many in a row (4700..4709) */
@@ -61,11 +61,12 @@ const RULE_WIDTH = 56;
  * The run counts, from the panel's own `listRuns` rows. `status.key === 'running'` is the panel's word; `needs` is the one tag
  * {@link import('./panel/server.js').needsStateFor} decides. A part that is 0 still shows.
  * @param {any[]} rows
+ * @param {number} [gaveUp] schedules that gave up: the panel's Needs-you holds them too
  * @returns {{running: number, needYou: number, total: number}}
  */
-export function countRuns(rows) {
+export function countRuns(rows, gaveUp = 0) {
   let running = 0;
-  let needYou = 0;
+  let needYou = gaveUp;
   for (const r of rows) {
     if (r && r.status && r.status.key === 'running') running += 1;
     if (r && typeof r.needs === 'string' && r.needs !== '') needYou += 1;
@@ -153,7 +154,8 @@ export async function buildHeader(d) {
   const first = `${P.boldCyan('bareloop')} ${P.grey(version)}${sep}${state}${sep}${where}`;
   let second;
   try {
-    const c = countRuns(listRuns({ home: d.home }));
+    const l = runsListForCount({ home: d.home });
+    const c = countRuns(l.runs, l.gaveUp.length);
     second = `${P.grey('runs:')} ${c.running > 0 ? P.green(`${c.running} running`) : P.grey(`${c.running} running`)}${sep}`
       + `${c.needYou > 0 ? P.yellow(`${c.needYou} need you`) : P.grey(`${c.needYou} need you`)}${sep}${c.total} in all`;
   } catch {

@@ -1068,6 +1068,25 @@ export function runsListPayload(opts = {}) {
 }
 
 /**
+ * The runs list as the panel builds it, for a caller with no panel running (the launcher header): the same `runsListPayload` over a
+ * schedule door built read-only (no scheduler, no timer), so Needs you = the rows tagged `needs` + the schedules that gave up, ONE owner.
+ * @param {{ home?: string, now?: number, env?: Record<string, string|undefined> }} [opts]
+ * @returns {{ runs: any[], gaveUp: any[] }}
+ */
+export function runsListForCount(opts = {}) {
+  const home = opts.home;
+  const schedules = createScheduleDoor({
+    ...(home ? { home } : {}),
+    jobRuns: (job) => jobRunsOf(job, { home }),
+    startFrom: (runid) => getStartFrom(runid, { home }),
+    jobOfRun: (runid) => readRunList({ home }).rows.find((r) => r && r.runid === runid)?.job ?? null,
+    rowsFor: () => rowsForHome(keysHome(home), keysForDoor({ env: opts.env ?? {}, keysHome: home }).env),
+  });
+  const { runs, gaveUp } = runsListPayload({ home, ...(opts.now !== undefined ? { now: opts.now } : {}), schedules });
+  return { runs, gaveUp };
+}
+
+/**
  * The run's DRAFTING PART (hamr 2026-10-06, option A), or null: it exists only when the run came out of a panel
  * session whose drafting log carries a metered call (src/draftspend.js, `draftingPartFor`) and the spine carries the
  * drafting figure. It is the FIRST element of `detail.parts`, so EVERY index a reader is handed — `detail.parts`,
