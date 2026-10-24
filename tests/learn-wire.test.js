@@ -95,6 +95,7 @@ test('MUST-FAIL 2: no model call anywhere in learnings — the import closure re
   globalThis.fetch = /** @type {any} */ (() => { called += 1; throw new Error('a learnings step must never call a model'); });
   t.after(() => { globalThis.fetch = real; });
   const home = scratch(t);
+  updateConfig({ learningHints: false }, { home });
   const r = loadRun('mvk2e4uy');
   const res = learnAtRunEnd({ home, runid: 'mvk2e4uy', events: r.events, auditFiles: [], spec: { job: 'pulselog-panel-strict' }, specHash: 'h', workdir: r.workdir, trust: 'deterministic' });
   assert.equal(res.wrote, true);
@@ -103,9 +104,11 @@ test('MUST-FAIL 2: no model call anywhere in learnings — the import closure re
 });
 
 // ── the setting ──────────────────────────────────────────────────────────────────────────────────
-test('the ONE setting: learningHints in config.json, absent = OFF, only true/false accepted, an unreadable config reads OFF', (t) => {
+test('the ONE setting: learningHints in config.json, absent = ON, explicit false = OFF, explicit true = ON, only true/false accepted, an unreadable config reads OFF', (t) => {
   const home = scratch(t);
-  assert.equal(learningHintsOn(home), false);
+  assert.equal(learningHintsOn(home), true, 'absent means on');
+  updateConfig({ learningHints: false }, { home });
+  assert.equal(learningHintsOn(home), false, 'explicit false means off');
   updateConfig({ learningHints: true }, { home });
   assert.equal(learningHintsOn(home), true);
   assert.equal(readConfig({ home }).config.learningHints, true);
@@ -113,7 +116,8 @@ test('the ONE setting: learningHints in config.json, absent = OFF, only true/fal
   assert.equal(learningHintsOn(home), false);
   assert.throws(() => updateConfig({ learningHints: 'yes' }, { home }), ConfigError);
   updateConfig({ learningHints: null }, { home });
-  assert.equal('learningHints' in readConfig({ home }).config, false, 'null removes it: back to OFF');
+  assert.equal('learningHints' in readConfig({ home }).config, false, 'null removes it');
+  assert.equal(learningHintsOn(home), true, 'back to the default: on');
   writeFileSync(join(home, 'config.json'), '{ nope');
   assert.equal(learningHintsOn(home), false);
 });
@@ -121,6 +125,7 @@ test('the ONE setting: learningHints in config.json, absent = OFF, only true/fal
 // ── the engine: tally always, hints only when ON, planner only ──────────────────────────────────
 test('the run-end call site: a real run through execute tallies its lesson into the ledger at $0 (setting OFF), and the verdict is untouched', async (t) => {
   const home = scratch(t);
+  updateConfig({ learningHints: false }, { home });
   const r = await runOnce(t, home);
   assert.equal(r.threw, null, r.err);
   assert.equal(r.outcome, 'green');
@@ -139,6 +144,7 @@ test('the run-end call site: a real run through execute tallies its lesson into 
 
 test('ON: the planner at the draft is handed the block; no worker is; the spine records it byte-for-byte; OFF still keeps counting', async (t) => {
   const home = scratch(t);
+  updateConfig({ learningHints: false }, { home });
   await runOnce(t, home); // run 1 (OFF): the ledger now holds the lesson
   const before = readLedger(home).ledger;
   updateConfig({ learningHints: true }, { home });
@@ -282,6 +288,7 @@ test('a prompt without hints is byte-identical to what it was (the planner promp
 test('the Audit detail carries exactly what the spine recorded the planner was handed (and the page shows it with nothing editable)', async (t) => {
   const { getRunDetail } = await import('../src/panel/server.js');
   const home = scratch(t);
+  updateConfig({ learningHints: false }, { home });
   await runOnce(t, home);
   updateConfig({ learningHints: true }, { home });
   const r = await runOnce(t, home);

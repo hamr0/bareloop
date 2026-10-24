@@ -2418,7 +2418,7 @@ One render function (`renderHints(ledger, job, place)`) produces the block, byte
 ### 8. Audit, off-switch (RULING 8)
 
 - Audit shows, READ-ONLY, the exact hints the planner got on that run (the `learnings` part, v1.111, kept as a display of the injected block). The block is recorded on the spine at injection. No edit, no Reject, no per-hint button.
-- Ships OFF behind ONE setting. ON/OFF contrast (pre-registered and frozen before any number, deepseek-flash, hamr's word first, a $0 archive read first) decides whether it is turned on; a result inside the noise band or backwards closes the lever with no default flip.
+- [Default changed to ON, hamr 2026-10-24; see the PRD pointer. Text below is ruled history.] Ships OFF behind ONE setting. ON/OFF contrast (pre-registered and frozen before any number, deepseek-flash, hamr's word first, a $0 archive read first) decides whether it is turned on; a result inside the noise band or backwards closes the lever with no default flip.
 - Learning (the run-end fold, sections 5-6) may run with the setting off, since it is $0 and read-only to everything else. OPEN 7: whether the OFF setting also stops the run-end write.
 
 ### 9. attempt-diff (RULING 9)

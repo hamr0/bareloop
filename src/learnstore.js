@@ -88,14 +88,14 @@ export function releaseRun({ home, runid, now = new Date() }) {
 }
 
 /**
- * The ONE setting: `learningHints` in config.json. Ships OFF (absent = off). OFF still writes the tally ($0) and the planner
- * is simply handed nothing, so an ON/OFF contrast has data at once. An unreadable config reads as OFF.
+ * The ONE setting: `learningHints` in config.json. Ships ON (hamr 2026-10-24): absent = on; only an explicit `false` turns it off. OFF still writes
+ * the tally ($0) and the planner is simply handed nothing. An unreadable config reads as OFF (the safe side).
  * @param {string} [home]
  * @returns {boolean}
  */
 export function learningHintsOn(home) {
   const c = readConfig({ home });
-  return c.problem === null && c.config.learningHints === true;
+  return c.problem === null && c.config.learningHints !== false;
 }
 
 /** @param {string} p @returns {any[]} the parsed rows of a JSONL file; missing or torn lines are skipped */

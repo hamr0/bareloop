@@ -9,7 +9,7 @@
 //
 // Shape (unknown fields are kept, never dropped):
 //   { "monthlyLimitUsd": <number > 0>,          // absent = no limit, no check
-//     "learningHints": true|false,               // absent = false: the planner is handed cross-run learnings (src/learn.js); the tally is kept either way
+//     "learningHints": true|false,               // absent = true (ON by default; only false turns it off): the planner is handed cross-run learnings (src/learn.js); the tally is kept either way
 //     "keys":   { "<ENV NAME>": { "shape": "<shape id>", "baseUrl": "http(s)://…", "legacyMaxTokens": true|false } },
 //     "models": { "<ENV NAME>": [ { "model": "<id>", "use": true|false, "inPerM": n, "outPerM": n } ] } }
 // An older file's `keys.<ENV>.{name,priceInPerM,priceOutPerM}` is tolerated and read as ONE model
