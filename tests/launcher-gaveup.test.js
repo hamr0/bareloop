@@ -15,6 +15,8 @@ import { jobSpecHash } from '../src/job.js';
 import { fireWorld, makeRun, specOf, tmp } from './trigger-world.mjs';
 
 const MIN = 60_000;
+// the fixtures' own dates are 2026-10-01; the door's 60-day TTL is read against THIS clock, not the machine's
+const NOW = Number(process.env.GAVEUP_TEST_NOW) || Date.UTC(2026, 9, 2);
 test('launcher header: one run needing Accept plus one gave-up schedule reads "2 need you", the panel\'s own count', async () => {
   const w = await fireWorld({});
   let n = 0;
@@ -39,10 +41,10 @@ test('launcher header: one run needing Accept plus one gave-up schedule reads "2
   const other = specOf({ job: 'other-job', files: true, input: '/tw/in/o.txt' });
   const r2 = makeRun(w.home, { runid: 'r2', spec: other, accepted: false, at: '2026-10-02T10:00:00.000Z' });
   appendFileSync(r2.spine, `${JSON.stringify({ type: REVIEW_DOOR, outcome: 'green', ts: '2026-10-01T10:05:30.000Z', seq: 9 })}\n`);
-  const p = runsListPayload({ home: w.home, schedules: w.door });
+  const p = runsListPayload({ home: w.home, now: NOW, schedules: w.door });
   const panelCount = p.runs.filter((r) => typeof r.needs === 'string' && r.needs !== '').length + p.gaveUp.length;
   assert.equal(p.gaveUp.length, 1);
   assert.equal(panelCount, 2);
-  const h = await buildHeader({ home: w.home, ports: [1], version: '0.0.0', nodeVersion: '22.1.0', timeoutMs: 100 });
+  const h = await buildHeader({ home: w.home, ports: [1], version: '0.0.0', nodeVersion: '22.1.0', timeoutMs: 100, now: NOW });
   assert.match(h.lines.at(-1), /· 2 need you ·/);
 });

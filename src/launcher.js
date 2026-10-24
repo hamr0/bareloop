@@ -53,6 +53,7 @@ const RULE_WIDTH = 56;
  * @property {string} [bareloopBin] default bin/bareloop.mjs of this package
  * @property {import('./tty-colour.js').Paint} [paint] colour for stdout lines (default none); {@link makePaint} decides TTY / NO_COLOR / TERM
  * @property {import('./tty-colour.js').Paint} [paintErr] colour for stderr lines (default: `paint`)
+ * @property {number} [now] ms clock for the run list's age rules (default: real time); tests pass their own
  * @property {string} [platform]
  * @property {Record<string, string|undefined>} [env] raw env handed to the panel child (default process.env)
  */
@@ -154,7 +155,7 @@ export async function buildHeader(d) {
   const first = `${P.boldCyan('bareloop')} ${P.grey(version)}${sep}${state}${sep}${where}`;
   let second;
   try {
-    const l = runsListForCount({ home: d.home });
+    const l = runsListForCount({ home: d.home, ...(typeof d.now === 'number' ? { now: d.now } : {}) });
     const c = countRuns(l.runs, l.gaveUp.length);
     second = `${P.grey('runs:')} ${c.running > 0 ? P.green(`${c.running} running`) : P.grey(`${c.running} running`)}${sep}`
       + `${c.needYou > 0 ? P.yellow(`${c.needYou} need you`) : P.grey(`${c.needYou} need you`)}${sep}${c.total} in all`;
