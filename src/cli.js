@@ -37,6 +37,7 @@ import { bundleMain } from './bundlerun.js';
 // path for the flag grammar; `src/cli.js` only supplies the deps shape
 // (`out`/`err`/`env`) this command's own callers already use.
 import { startCmd, stopCmd, statusCmd, installCmd, menuCmd } from './launcher.js';
+import { makePaint } from './tty-colour.js';
 import { main as runUMain } from './userrun.js';
 // PANEL-BUILD.md P0 task 3/4 — `bareloop interview` and `bareloop author`
 // wrap the close-authoring interview and authoring-pipeline flows' own
@@ -289,7 +290,8 @@ async function runLauncher(cmd, rest, deps, io, home) {
     rl.question(q),
     new Promise((resolve) => { rl.once('close', () => resolve('')); }),
   ]).then(String));
-  const d = { home, ask, ...(deps.launcher ?? {}) };
+  const rawEnv = deps.processEnv ?? process.env;
+  const d = { home, ask, paint: makePaint(deps.stdout ?? process.stdout, rawEnv), paintErr: makePaint(deps.stderr ?? process.stderr, rawEnv), ...(deps.launcher ?? {}) };
   try {
     if (cmd === 'start') return await startCmd(io, d);
     if (cmd === 'stop') return await stopCmd(rest, io, d);
@@ -306,7 +308,7 @@ async function runLauncher(cmd, rest, deps, io, home) {
  * code, so `bin/bareloop.mjs` can set `process.exitCode` and let node flush
  * queued stdout on its own (F-something: `process.exit()` can discard it).
  * @param {string[]} argv
- * @param {{ env?: Record<string,string|undefined>, stdout?: any, stderr?: any, cwd?: string, provider?: any, providerFor?: any, judgeProvider?: any, judgeModel?: string|null, now?: () => number, stdin?: any, runlistHome?: string, keysHome?: string }} deps
+ * @param {{ env?: Record<string,string|undefined>, stdout?: any, stderr?: any, cwd?: string, provider?: any, providerFor?: any, judgeProvider?: any, judgeModel?: string|null, now?: () => number, stdin?: any, runlistHome?: string, keysHome?: string, processEnv?: Record<string,string|undefined> }} deps
  * @returns {Promise<number>}
  */
 export async function main(argv, deps = {}) {

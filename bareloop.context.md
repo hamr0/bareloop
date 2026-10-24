@@ -3300,6 +3300,9 @@ bareloop 0.46.1 · installed ✓ · panel running at http://127.0.0.1:4701
 runs: 1 running · 2 need you · 375 in all
 ```
 
+Colour (`src/tty-colour.js`): on only when stdout is a terminal, `NO_COLOR` is empty/unset and `TERM` is not `dumb`; it wraps words and never
+changes them, and a piped or `NO_COLOR` run prints the plain words above (the thin `─` rules around the header appear only with colour).
+
 - `installed ✓` = `~/.config/bareloop/` exists, `config.json` is there and reads with no problem, `.env` exists with mode 600, node >= 22;
   otherwise `not installed — <first missing thing>, pick 4 install`. The run counts use the panel's own status words and Needs-you rule over the
   run list file ($0, works with the panel stopped).

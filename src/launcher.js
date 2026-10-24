@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { readConfig, updateConfig, ConfigError } from './config.js';
 import { keysHome, keysFilePath, ensureKeysFile } from './keysfile.js';
 import { openInOs } from './opener.js';
+import { PLAIN } from './tty-colour.js';
 import { listRuns, packageVersion, panelUrl } from './panel/server.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -26,6 +27,7 @@ const PROBE_TIMEOUT_MS = 300;
 const WAIT_DEADLINE_MS = 10_000;
 const POLL_MS = 100;
 const MIN_NODE_MAJOR = 22;
+const RULE_WIDTH = 56;
 
 /**
  * @typedef {object} Panel one answered probe
@@ -49,6 +51,8 @@ const MIN_NODE_MAJOR = 22;
  * @property {(ms: number) => Promise<void>} [sleep]
  * @property {(question: string) => Promise<string>} [ask] the y/N and menu reader
  * @property {string} [bareloopBin] default bin/bareloop.mjs of this package
+ * @property {import('./tty-colour.js').Paint} [paint] colour for stdout lines (default none); {@link makePaint} decides TTY / NO_COLOR / TERM
+ * @property {import('./tty-colour.js').Paint} [paintErr] colour for stderr lines (default: `paint`)
  * @property {string} [platform]
  * @property {Record<string, string|undefined>} [env] raw env handed to the panel child (default process.env)
  */
@@ -140,18 +144,24 @@ export async function buildHeader(d) {
   const version = d.version ?? packageVersion();
   const panels = await probeAll(d);
   const inst = installState({ home: d.home, nodeVersion: d.nodeVersion });
+  const P = d.paint ?? PLAIN;
+  const sep = P.grey(' · ');
   const where = panels.length === 0
-    ? 'panel not running'
-    : `panel${panels.length > 1 ? 's' : ''} running at ${panels.map((p) => p.url).join(', ')}`;
-  const first = `bareloop ${version} · ${inst.ok ? 'installed ✓' : `not installed — ${inst.problem}, pick 4 install`} · ${where}`;
+    ? `panel ${P.grey('not running')}`
+    : `panel${panels.length > 1 ? 's' : ''} ${P.green('running')} at ${panels.map((p) => P.cyan(p.url)).join(', ')}`;
+  const state = inst.ok ? P.green('installed ✓') : `${P.red('not installed')} — ${inst.problem}, pick ${P.boldCyan('4')} install`;
+  const first = `${P.boldCyan('bareloop')} ${P.grey(version)}${sep}${state}${sep}${where}`;
   let second;
   try {
     const c = countRuns(listRuns({ home: d.home }));
-    second = `runs: ${c.running} running · ${c.needYou} need you · ${c.total} in all`;
+    second = `${P.grey('runs:')} ${c.running > 0 ? P.green(`${c.running} running`) : P.grey(`${c.running} running`)}${sep}`
+      + `${c.needYou > 0 ? P.yellow(`${c.needYou} need you`) : P.grey(`${c.needYou} need you`)}${sep}${c.total} in all`;
   } catch {
-    second = 'runs: the run list could not be read';
+    second = `${P.grey('runs:')} the run list could not be read`;
   }
-  return { lines: [first, second], panels };
+  // the thin rule frames the header only on a colour terminal (plain output keeps exactly the two lines)
+  const rule = P.on ? [P.grey('─'.repeat(RULE_WIDTH))] : [];
+  return { lines: [...rule, first, second, ...rule], panels };
 }
 
 /**
@@ -172,6 +182,9 @@ async function headerOnce(io, d, shown) {
   for (const l of h.lines) io.out(l);
   return h;
 }
+
+/** stderr line, red on a colour terminal @param {{err: (s: string) => void}} io @param {LauncherDeps} d @param {string} text */
+const fail = (io, d, text) => io.err((d.paintErr ?? d.paint ?? PLAIN).red(text));
 
 /** @param {number} n @param {string} one @param {string} many */
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -197,7 +210,7 @@ export async function installCmd(io, d, shown) {
   await headerOnce(io, d, shown);
   const major = Number((d.nodeVersion ?? process.versions.node).split('.')[0]);
   if (!(major >= MIN_NODE_MAJOR)) {
-    io.err(`bareloop needs node ${MIN_NODE_MAJOR} or newer; this is node ${d.nodeVersion ?? process.versions.node}. Nothing was changed.`);
+    fail(io, d, `bareloop needs node ${MIN_NODE_MAJOR} or newer; this is node ${d.nodeVersion ?? process.versions.node}. Nothing was changed.`);
     return 1;
   }
   const dir = keysHome(d.home);
@@ -213,13 +226,13 @@ export async function installCmd(io, d, shown) {
   }
   const cfg = readConfig({ home: d.home });
   if (cfg.problem) {
-    io.err(`${cfg.problem}. Install did not touch it.`);
+    fail(io, d, `${cfg.problem}. Install did not touch it.`);
     return 1;
   }
   if (!cfg.exists) {
     try { updateConfig({}, { home: d.home }); made.push(`${join(dir, 'config.json')} (your settings)`); } catch (e) {
       if (!(e instanceof ConfigError)) throw e;
-      io.err(`${e.message}. Install did not touch it.`);
+      fail(io, d, `${e.message}. Install did not touch it.`);
       return 1;
     }
   }
@@ -272,6 +285,7 @@ async function waitFor(d, port, gone) {
  */
 export async function startCmd(io, d, shown) {
   const h = await headerOnce(io, d, shown);
+  const P = d.paint ?? PLAIN;
   const open = d.open ?? ((/** @type {string} */ t) => openInOs(t, { platform: d.platform, underTest: false }));
   /** @param {string} url @param {string} said */
   const finish = async (url, said) => {
@@ -279,14 +293,14 @@ export async function startCmd(io, d, shown) {
     io.out(opened ? `${said} — opening the page.` : `${said} — open it in your browser.`);
     return 0;
   };
-  if (h.panels.length > 0) return finish(h.panels[0].url, `Panel already running at ${h.panels[0].url}`);
+  if (h.panels.length > 0) return finish(h.panels[0].url, `Panel already running at ${P.cyan(h.panels[0].url)}`);
   const free = d.portFree ?? bindFree;
   const ports = portsOf(d);
   /** @type {number|null} */
   let chosen = null;
   for (const p of ports) { if (await free(p)) { chosen = p; break; } }
   if (chosen === null) {
-    io.err(`Every port from ${ports[0]} to ${ports[ports.length - 1]} is taken by something else, so the panel was not started.`);
+    fail(io, d, `Every port from ${ports[0]} to ${ports[ports.length - 1]} is taken by something else, so the panel was not started.`);
     return 1;
   }
   if (chosen !== ports[0]) io.out(`${ports[0]} is taken, using ${chosen}.`);
@@ -306,16 +320,16 @@ export async function startCmd(io, d, shown) {
     if (child && typeof child.once === 'function') child.once('error', () => { /* seen as "never answered" below */ });
     if (child && typeof child.unref === 'function') child.unref();
   } catch (e) {
-    io.err(`Could not start the panel: ${/** @type {Error} */ (e).message}`);
+    fail(io, d, `Could not start the panel: ${/** @type {Error} */ (e).message}`);
     return 1;
   } finally {
     if (logFd !== null) { try { closeSync(logFd); } catch { /* the child holds its own copy */ } }
   }
   if (!(await waitFor(d, chosen, false))) {
-    io.err(`The panel did not answer within ${(d.deadlineMs ?? WAIT_DEADLINE_MS) / 1000} seconds. See ${logFile}.`);
+    fail(io, d, `The panel did not answer within ${(d.deadlineMs ?? WAIT_DEADLINE_MS) / 1000} seconds. See ${logFile}.`);
     return 1;
   }
-  return finish(panelUrl(chosen), `Panel started at ${panelUrl(chosen)}`);
+  return finish(panelUrl(chosen), `${P.green('Panel started')} at ${P.cyan(panelUrl(chosen))}`);
 }
 
 /**
@@ -336,8 +350,8 @@ export async function stopCmd(args, io, d, shown) {
   const ask = d.ask;
   if (panels.length > 1) {
     if (!ask || yes) {
-      io.err('Several panels are running. Pick one with --port N:');
-      for (const p of panels) io.err(`  ${p.url} (pid ${p.pid})`);
+      fail(io, d, 'Several panels are running. Pick one with --port N:');
+      for (const p of panels) fail(io, d, `  ${p.url} (pid ${p.pid})`);
       return 1;
     }
     panels.forEach((p, i) => io.out(`${i + 1} ${p.url} (pid ${p.pid})`));
@@ -357,19 +371,19 @@ export async function stopCmd(args, io, d, shown) {
   }
   const kill = d.kill ?? ((/** @type {number} */ pid, /** @type {string} */ sig) => process.kill(pid, /** @type {NodeJS.Signals} */ (sig)));
   for (const p of panels) {
-    if (!Number.isInteger(p.pid) || p.pid <= 1) { io.err(`The panel at ${p.url} reported no usable pid, so it was not stopped.`); return 1; }
+    if (!Number.isInteger(p.pid) || p.pid <= 1) { fail(io, d, `The panel at ${p.url} reported no usable pid, so it was not stopped.`); return 1; }
     try { kill(p.pid, 'SIGTERM'); } catch (e) {
-      io.err(`Could not stop the panel at ${p.url} (pid ${p.pid}): ${/** @type {Error} */ (e).message}`);
+      fail(io, d, `Could not stop the panel at ${p.url} (pid ${p.pid}): ${/** @type {Error} */ (e).message}`);
       return 1;
     }
   }
   for (const p of panels) {
     if (!(await waitFor(d, p.port, true))) {
-      io.err(`The panel at ${p.url} still answers after ${(d.deadlineMs ?? WAIT_DEADLINE_MS) / 1000} seconds (pid ${p.pid}).`);
+      fail(io, d, `The panel at ${p.url} still answers after ${(d.deadlineMs ?? WAIT_DEADLINE_MS) / 1000} seconds (pid ${p.pid}).`);
       return 1;
     }
   }
-  io.out(panels.length > 1 ? 'Panels stopped.' : 'Panel stopped.');
+  io.out((d.paint ?? PLAIN).green(panels.length > 1 ? 'Panels stopped.' : 'Panel stopped.'));
   return 0;
 }
 
@@ -382,15 +396,18 @@ export async function menuCmd(io, d) {
   const ask = d.ask;
   const h = await buildHeader(d);
   for (const l of h.lines) io.out(l);
-  io.out('');
-  io.out('1 start   2 stop   3 status   4 install   q quit');
-  const choice = ask ? (await ask('> ')).trim().toLowerCase() : 'q';
+  const P = d.paint ?? PLAIN;
+  if (!P.on) io.out('');
+  const n = (/** @type {string} */ k) => P.boldCyan(k);
+  const items = `${n('1')} start   ${n('2')} stop   ${n('3')} status   ${n('4')} install   ${n('q')} quit`;
+  io.out(P.on ? `  ${items}` : items);
+  const choice = ask ? (await ask(`${P.cyan('>')} `)).trim().toLowerCase() : 'q';
   // the header is already on screen: the chosen command reuses it instead of printing it a second time
   if (choice === '1' || choice === 'start') return startCmd(io, d, h);
   if (choice === '2' || choice === 'stop') return stopCmd([], io, d, h);
   if (choice === '3' || choice === 'status') return statusCmd(io, d, h);
   if (choice === '4' || choice === 'install') return installCmd(io, d, h);
   if (choice === '' || choice === 'q' || choice === 'quit') return 0;
-  io.err(`unknown choice ${JSON.stringify(choice)} — one of: 1, 2, 3, 4, q`);
+  fail(io, d, `unknown choice ${JSON.stringify(choice)} — one of: 1, 2, 3, 4, q`);
   return 1;
 }
