@@ -1731,6 +1731,7 @@ Ruled by hamr 2026-10-24: 1B (bare `bareloop` shows a menu), 2A-then-A (no pid f
 ```
 $ bareloop
 bareloop 0.46.1 · installed ✓ · panel running at http://127.0.0.1:4701
+runs: 1 running · 2 need you · 375 in all
 
 1 start   2 stop   3 status   4 install   q quit
 >
@@ -1740,6 +1741,7 @@ bareloop 0.46.1 · installed ✓ · panel running at http://127.0.0.1:4701
   - `installed ✓` = `~/.config/bareloop/` exists, `config.json` reads with no problem, `.env` exists with mode 600, node >= 22.
   - Otherwise `not installed — <the first missing thing in plain words>, pick 4 install` (e.g. "no keys file yet").
   - Panel part: `panel running at http://127.0.0.1:<port>` or `panel not running`.
+  - Second line (added by hamr 2026-10-24): `runs: N running · N need you · N in all`, counted by the SAME code the panel uses (status words from `src/panel/status.js`, Needs you from the one place in `src/panel/server.js` ~775 that decides it) — never a second spelling. Reads the run list file only, $0, works with the panel stopped. A part that is 0 still shows (`0 running`).
 - The same four work as sub-commands: `bareloop start | stop | status | install`. The menu calls the same code.
 - Old menu choices (1 export, 2 run, 3 history) leave the menu; `bareloop export|run|history|…` sub-commands are unchanged.
 
