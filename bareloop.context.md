@@ -3296,7 +3296,7 @@ Bare `bareloop` (no sub-command) is the **launcher menu** (PANEL-BUILD.md addend
 `bareloop start | stop | status | install`), from one function:
 
 ```
-bareloop 0.46.1 · installed ✓ · panel running at http://127.0.0.1:4701
+bareloop 0.47.0 · installed ✓ · panel running at http://127.0.0.1:4701
 runs: 1 running · 2 need you · 375 in all
 ```
 
