@@ -352,7 +352,7 @@ export async function startCmd(io, d, shown) {
     const verdict = await askTakenPort(d, p);
     if (verdict.state === 'panel') return alreadyRunning(verdict.panel);
     if (verdict.state === 'silent') {
-      fail(io, d, `Port ${p} is taken and not answering. If it's a stuck bareloop, stop it first.`);
+      fail(io, d, `Port ${p} is taken and not answering. To see what holds it: lsof -i :${p}. If it is a stuck bareloop, end it: kill <pid>`);
       return 1;
     }
   }

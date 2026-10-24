@@ -11,6 +11,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 - **One record of a session's drafting spend, not two.** Each metered drafting call already wrote a `call` line to `draft-log.jsonl` AND rewrote `draft-spend.json` with the running total. The `call` line now also carries the drafting `provider` and `baseUrl`, `draft-spend.json` is no longer written, and the monthly limit and Money tab fold the log's call lines (same `tallyCalls` reader as the session) for a session that never became a run. A session folder left by the old shape (the file, no call lines) is still read from the file, so old money is not lost; a torn log line makes the figure an "at least".
 - **One `run.log` per run folder.** Accept, Rerun, Pause and Resume each made a new `accept-<id>-<ms>.log` / `resume-<id>-<ms>.log` file; they now append to the folder's `run.log` (the one the first run already writes) under a header line `== <action> <runid> at <time> ==`. A refusal shows only its own action's lines. The `log` field in the reply is now that path. Folders that already hold the old per-action files are left as they are.
+- **`bareloop start` on a silent taken port tells you how to find what holds it.** The stop line now reads "Port N is taken and not answering. To see what holds it: lsof -i :N. If it is a stuck bareloop, end it: kill <pid>" (the old advice, "stop it first", could not be followed: `bareloop stop` only finds a panel that answers).
 
 ## [0.47.1] - 2026-10-24
 

@@ -443,7 +443,7 @@ test('start: a taken port that stays silent -> start waits, then says so, starts
   const took = performance.now() - t0;
   assert.equal(rc, 1, io.text());
   assert.equal(d.spawned.length, 0, 'no second panel');
-  assert.equal(io.lines.at(-1), `ERR Port ${base} is taken and not answering. If it's a stuck bareloop, stop it first.`);
+  assert.equal(io.lines.at(-1), `ERR Port ${base} is taken and not answering. To see what holds it: lsof -i :${base}. If it is a stuck bareloop, end it: kill <pid>`);
   assert.ok(took >= 900, `waited only ${Math.round(took)} ms`);
   assert.ok(took < 4000, `waited ${Math.round(took)} ms`);
 });
