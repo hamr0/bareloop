@@ -1,0 +1,36 @@
+{
+  "job": "fix-slugify",
+  "specHash": "6c298ec1a6a47a69f1d311f341916f97c99afaa24a858e5b04dbca77a4b6bbb6",
+  "runid": "muqrenrf",
+  "greenAt": "2026-10-02T09:27:34.233Z",
+  "plan": {
+    "schema": "plan-v1",
+    "steps": [
+      {
+        "id": "fix-slugify",
+        "action": "Repair the slugify() function in src/slug.js so every test in test/slug.test.js passes and `npm test` exits 0. First read src/slug.js and test/slug.test.js (grant read+recall+get; use get/recall to pull a symbol's full body if a read truncates). The tests require slugify to lowercase the input, drop punctuation, collapse runs of whitespace to a single separator, and trim leading/trailing separators, joining words with '-'. The current body is `return title.toLowerCase().replace(/ /g, '-');` which treats each literal space as a hyphen. Replace the function body (keep it an ES module named export: `export function slugify(title) { ... }`) with a normalisation pipeline equivalent to: lowercase, trim, replace any run of non-alphanumeric characters with a single '-', then strip leading/trailing '-'. Concretely the body should evaluate `title.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')`. Verify the trace by hand: 'Hello World'->'hello-world', 'Hello, World!'->'hello-world', 'a   b'->'a-b', '  Hi there  '->'hi-there'. Make an actual file write to src/slug.js (an unchanged tree is itself a failure). Do not add dependencies or change package.json: `node --test` already discovers test/*.test.js. Edit only src/slug.js unless the check output names another file that needs fixing, in which case fix that file too. Do not run any command; when the check output is returned to you, read it and adjust the source until it is green.",
+        "tools": [
+          "read",
+          "grep",
+          "write",
+          "edit",
+          "recall",
+          "get"
+        ],
+        "rounds": 8,
+        "target": "src/slug.js",
+        "scope": "src/**",
+        "exit": [
+          {
+            "type": "check-passes",
+            "name": "suite-green-exit"
+          },
+          {
+            "type": "tree-changed",
+            "scope": "src/**"
+          }
+        ]
+      }
+    ]
+  }
+}

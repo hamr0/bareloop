@@ -16,7 +16,8 @@
 // spec. `history.jsonl` records both hashes side by side (POC fact 2) so the pairing can
 // never drift silently.
 
-import { createInterface } from 'node:readline/promises';
+import { openAsker, askRequired } from './prompts.js';
+import { listGreenRuns, exportRun } from './runexport.js';
 import {
   existsSync, readFileSync,
 } from 'node:fs';
@@ -170,6 +171,43 @@ function doExport(args, { out, err, cwd }) {
 }
 
 /**
+ * `bareloop export ["<job> (run-N)"] [--out <dir>]` — a bundle from a green panel / run-u run (PRD v1.114). No name = pick from the numbered
+ * list of green runs; no `--out` = ask for the folder. A required prompt answered empty twice ends the command cleanly (exit 0).
+ * @param {string[]} args @param {{ out: (s: string) => void, err: (s: string) => void, cwd: string, ask: (q: string) => Promise<string>, deps: any }} ctx
+ * @returns {Promise<number>}
+ */
+async function doExportRun(args, { out, err, cwd, ask, deps }) {
+  const { positional, flags } = parseFlags(args);
+  const home = deps.runlistHome;
+  /** @type {string|undefined} */
+  let name = positional[0];
+  if (name === undefined) {
+    const runs = listGreenRuns(home === undefined ? {} : { home });
+    if (runs.length === 0) { out('No green runs to export yet.'); return 0; }
+    out('Green runs you can export:');
+    runs.forEach((r, i) => out(`  ${i + 1}  ${r.name}`));
+    const pick = await askRequired(ask, 'Number to export: ');
+    if (pick === null) { out('Nothing chosen, nothing exported.'); return 0; }
+    const hit = /^\d+$/.test(pick) ? runs[Number(pick) - 1] : runs.find((r) => r.name === pick);
+    if (!hit) { err(`"${pick}" is not one of the numbers above.`); return 1; }
+    name = hit.name;
+  }
+  /** @type {string|null} */
+  let outDirArg = typeof flags.out === 'string' ? flags.out : null;
+  if (outDirArg === null) {
+    outDirArg = await askRequired(ask, 'Output folder (new or empty): ');
+    if (outDirArg === null) { out('No folder given, nothing exported.'); return 0; }
+  }
+  const r = exportRun({ name, outDir: resolve(cwd, outDirArg), home, bareloopVersion: readPackageVersion() });
+  if (!r.ok) { err(r.why); return 1; }
+  out(`exported "${r.name}" to ${r.dir}`);
+  out(`bundleHash: ${r.bundleHash}`);
+  out(`next: cd ${r.dir} && npm install`);
+  out(`then: bareloop run "${r.name}" --repo <your repo>`);
+  return 0;
+}
+
+/**
  * `bareloop history <bundleDir>`
  * @param {string[]} args @param {{ out: (s: string) => void, err: (s: string) => void, cwd: string }} ctx
  */
@@ -278,29 +316,19 @@ function doRuns(args, { out, err, cwd }) {
  * `src/launcher.js`; this only supplies the home (the SAME one `main` resolved for the keys file and config.json) and the line reader.
  * `deps.launcher` is the test seam for every OS touch (ports, spawn, kill, opener, clock).
  * @param {string} cmd 'menu' | 'start' | 'stop' | 'status' | 'install' @param {string[]} rest
- * @param {any} deps @param {{ out: (s: string) => void, err: (s: string) => void }} io @param {string|undefined} home
+ * @param {any} deps @param {{ out: (s: string) => void, err: (s: string) => void, ask: (q: string) => Promise<string> }} io @param {string|undefined} home
  * @returns {Promise<number>}
  */
 async function runLauncher(cmd, rest, deps, io, home) {
-  const rl = createInterface({ input: deps.stdin ?? process.stdin, output: deps.stdout ?? process.stdout });
-  let closed = false;
-  rl.once('close', () => { closed = true; });
   // a closed stdin answers '' (= the safe default: quit / "no"), never hangs
-  const ask = (/** @type {string} */ q) => (closed ? Promise.resolve('') : Promise.race([
-    rl.question(q),
-    new Promise((resolve) => { rl.once('close', () => resolve('')); }),
-  ]).then(String));
+  const ask = io.ask;
   const rawEnv = deps.processEnv ?? process.env;
   const d = { home, ask, paint: makePaint(deps.stdout ?? process.stdout, rawEnv), paintErr: makePaint(deps.stderr ?? process.stderr, rawEnv), ...(deps.launcher ?? {}) };
-  try {
-    if (cmd === 'start') return await startCmd(io, d);
-    if (cmd === 'stop') return await stopCmd(rest, io, d);
-    if (cmd === 'status') return await statusCmd(io, d);
-    if (cmd === 'install') return await installCmd(io, d);
-    return await menuCmd(io, d);
-  } finally {
-    rl.close();
-  }
+  if (cmd === 'start') return startCmd(io, d);
+  if (cmd === 'stop') return stopCmd(rest, io, d);
+  if (cmd === 'status') return statusCmd(io, d);
+  if (cmd === 'install') return installCmd(io, d);
+  return menuCmd(io, d);
 }
 
 /**
@@ -312,6 +340,16 @@ async function runLauncher(cmd, rest, deps, io, home) {
  * @returns {Promise<number>}
  */
 export async function main(argv, deps = {}) {
+  /** @type {{ a: { ask: (q: string) => Promise<string>, close: () => void }|null }} */
+  const holder = { a: null };
+  try { return await mainInner(argv, deps, holder); } finally { holder.a?.close(); }
+}
+
+/**
+ * @param {string[]} argv @param {any} deps @param {{ a: { ask: (q: string) => Promise<string>, close: () => void }|null }} holder one readline for the whole command, opened on first use
+ * @returns {Promise<number>}
+ */
+async function mainInner(argv, deps, holder) {
   // P4a item 1 — the keys file (`~/.config/bareloop/.env`) fills what the shell leaves
   // unset; the shell wins. An injected `deps.env` skips the file (tests never read the
   // real one) unless `deps.keysHome` names a home.
@@ -323,14 +361,16 @@ export async function main(argv, deps = {}) {
   const now = deps.now ?? (() => Date.now());
   const out = (/** @type {string} */ s) => stdout.write(`${s}\n`);
   const err = (/** @type {string} */ s) => stderr.write(`${s}\n`);
-  const ctx = { out, err, cwd, env, now, deps };
+  const ask = (/** @type {string} */ q) => { holder.a ??= openAsker({ stdin: deps.stdin, stdout }); return holder.a.ask(q); };
+  const ctx = { out, err, cwd, env, now, deps, ask };
 
   const [cmd, ...rest] = argv;
   if (keys.warning && cmd && ['run', 'run-u', 'interview', 'author', 'panel'].includes(cmd)) err(`WARNING: ${keys.warning}`);
   const launcherHome = keys.home ?? deps.runlistHome;
   if (!cmd) return runLauncher('menu', [], { ...deps, stdout }, ctx, launcherHome);
   if (cmd === 'start' || cmd === 'stop' || cmd === 'status' || cmd === 'install') return runLauncher(cmd, rest, { ...deps, stdout }, ctx, launcherHome);
-  if (cmd === 'export') return doExport(rest, ctx);
+  // the old form (`export <jobs/x.json> --registry <dir> --out <dir>`) is the bench's; the new one is by run name
+  if (cmd === 'export') return rest.includes('--registry') ? doExport(rest, ctx) : doExportRun(rest, ctx);
   if (cmd === 'run') return bundleMain(rest, { ...ctx, keysHome: keys.home, parseFlags, printReds });
   if (cmd === 'history') return doHistory(rest, ctx);
   // `bareloop run-u` — the person-path run flow (PANEL-BUILD.md P0 task

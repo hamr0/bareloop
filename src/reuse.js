@@ -475,7 +475,7 @@ export async function selectBridge({ registry, job, ask, provider, pinned = null
 
 /** what the run's own spine says about a try, read back after it returns
  * @param {any[]} events @returns {any} */
-function readTry(events) {
+export function readTry(events) {
   const last = (/** @type {string} */ t) => events.filter((e) => e.type === t).at(-1) ?? null;
   const je = last('job-end');
   const oc = last('outer-close');

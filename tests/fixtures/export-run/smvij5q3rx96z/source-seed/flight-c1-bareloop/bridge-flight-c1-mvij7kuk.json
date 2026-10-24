@@ -1,0 +1,36 @@
+{
+  "job": "flight-c1",
+  "specHash": "c8ca4fa22aa710a291d985925e9a160b4ad762912d852b116c2da0f7a081f450",
+  "runid": "mvij7kuk",
+  "greenAt": "2026-10-21T19:56:19.407Z",
+  "plan": {
+    "schema": "plan-v1",
+    "steps": [
+      {
+        "id": "write-flights-json",
+        "action": "Create the deliverable file output/steps/1.json (creating the output/steps/ directory if needed) for job line 1 of the brief, which is a FACTS line. Use read/grep on input/page.txt to locate the three flight listitems whose link text begins 'From 204 US dollars', 'From 214 US dollars' and 'From 299 US dollars' (Boston Logan / BOS to Miami International / MIA, one way, 2026-11-20, USD; skip the $389 Delta option). Write exactly a JSON object {\"results\": [...]} with exactly 3 result objects — no \"text\" key and no \"cites\" key. Each result object has two keys: \"quote\" and \"values\". \"quote\" is the whole verbatim text of that single flight's listitem as it appears in input/page.txt (do not join text from two different results, do not insert ellipses or paraphrase), at most 4000 characters, and it must contain the words Boston and Miami, that result's 'From <price> US dollars' phrase, and that result's own 'Departure time: <time>.' line. \"values\" has exactly four entries: \"origin city\": \"Boston\", \"destination city\": \"Miami\", \"price\" written exactly as the page writes it after From (204, 214, 299 — no dollar sign, no decimals), and \"departure time\" written exactly as the page writes it after 'Departure time:' (4:56 PM, 11:48 AM, 6:00 AM — same spacing and capitalization). Emit complete, syntactically valid JSON with balanced braces and brackets and a closing brace (a file cut off before its closing brace counts as not written). Write nothing outside output/ and never modify anything under input/. If the flights-listed check output is handed back, read it carefully and fix the reported problem in whatever output file it names, including editing this file in place until the check reports success.",
+        "tools": [
+          "read",
+          "grep",
+          "write",
+          "edit",
+          "recall",
+          "get"
+        ],
+        "rounds": 10,
+        "target": "output/steps/1.json",
+        "scope": "output/**",
+        "exit": [
+          {
+            "type": "tree-changed",
+            "scope": "output/**"
+          },
+          {
+            "type": "check-passes",
+            "name": "flights-listed"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -165,6 +165,37 @@ export function readNeedsRemovals(opts = {}) {
 }
 
 /**
+ * @typedef {{ type: 'exported', runid: string, job: string, bundle: string, bundleHash: string, at: string }} ExportedRow
+ * RULED 2026-10-25 (PRD v1.114): `bareloop export` appends ONE of these per bundle it makes, so `bareloop run` can find the bundle by the
+ * run's name. Not a run, a claim or an event: {@link readRunList} ignores it (it has a `type`), so the monthly limit, the run counter and the
+ * scheduler never see it. Nothing is rewritten.
+ */
+
+/**
+ * Append one {@link ExportedRow}. THROWS on IO failure.
+ * @param {Omit<ExportedRow, 'type'>} row
+ * @param {{ home?: string }} [opts]
+ * @returns {void}
+ */
+export function appendExported(row, opts = {}) {
+  const path = runlistPath(opts.home);
+  mkdirSync(runlistHome(opts.home), { recursive: true, mode: 0o700 });
+  appendFileSync(path, `${JSON.stringify({ ...row, type: 'exported' })}\n`);
+  try { chmodSync(path, 0o600); } catch { /* best-effort perms */ }
+}
+
+/**
+ * Every `exported` row, in file order (a re-export of the same run is a later row). An absent file is an empty list.
+ * @param {{ home?: string }} [opts]
+ * @returns {ExportedRow[]}
+ */
+export function readExported(opts = {}) {
+  const path = runlistPath(opts.home);
+  if (!existsSync(path)) return [];
+  return parseJsonl(path).records.filter((r) => r && r.type === 'exported' && typeof r.bundle === 'string' && typeof r.runid === 'string');
+}
+
+/**
  * @typedef {{ type: 'leg-start', runid: string, leg: number, pid?: number, capUsd?: number, at: string }} LegStart
  * A resumed run's NEW claim (P5-R, hamr 2026-10-02: one run, one id, one row): appended beside the run's row
  * instead of a second row. {@link readRunList} folds it into the row.

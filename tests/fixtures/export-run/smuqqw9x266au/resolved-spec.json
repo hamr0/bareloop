@@ -1,0 +1,128 @@
+{
+  "schema": "job-v1",
+  "job": "fix-slugify",
+  "description": "fix-slugify — authored through the bareloop panel (green, js)",
+  "provider": "openai-api",
+  "baseUrl": "https://api.deepseek.com/v1",
+  "cadence": {
+    "unit": "day",
+    "every": 1
+  },
+  "budgetUsd": 0.5,
+  "maxWallMs": 600000,
+  "writeScope": [
+    "src/**"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  },
+  "goal": "npm test exits 0 with every test in test/slug.test.js passing, proving slugify lowercases, drops punctuation, collapses repeated spaces, and trims the ends.",
+  "verdictType": "green",
+  "closeDecl": {
+    "genre": "TYPES",
+    "lang": "js",
+    "stages": [
+      {
+        "name": "changed-from-seed",
+        "kind": "files-changed",
+        "params": {
+          "requireNonEmpty": true,
+          "allowPrefixes": [
+            "src/"
+          ]
+        }
+      },
+      {
+        "name": "suite-green-exit",
+        "kind": "command-exit",
+        "params": {
+          "cmd": "node",
+          "args": [
+            "--test"
+          ],
+          "expectExit": 0
+        }
+      },
+      {
+        "name": "suite-green-no-failures",
+        "kind": "count-not-worse",
+        "params": {
+          "cmd": "node",
+          "args": [
+            "--test"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^# fail (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "src/",
+              "test/"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": 0
+        }
+      },
+      {
+        "name": "no-suppressions",
+        "kind": "pattern-absent-in-diff",
+        "params": {
+          "patterns": [
+            {
+              "id": "ts-ignore",
+              "regex": "@ts-ignore"
+            },
+            {
+              "id": "ts-expect-error",
+              "regex": "@ts-expect-error"
+            },
+            {
+              "id": "ts-nocheck",
+              "regex": "@ts-nocheck"
+            },
+            {
+              "id": "eslint-disable",
+              "regex": "eslint-disable"
+            },
+            {
+              "id": "any",
+              "regex": "(?:[{<|(\\[:,]|\\bas)\\s*any\\b|\\bany\\[\\]"
+            },
+            {
+              "id": "any-star",
+              "regex": "@\\w+\\s*\\{\\s*[*?]\\s*\\}"
+            },
+            {
+              "id": "cast",
+              "regex": "@type\\s*\\{.*\\}\\s*\\*\\/\\s*\\("
+            }
+          ],
+          "extensions": [
+            ".js",
+            ".mjs",
+            ".cjs"
+          ]
+        }
+      }
+    ],
+    "notes": [
+      "Only one check was confirmed in the plan — `npm test` exits 0 with a green, zero-failure suite — so that is the whole work set: suite-green-exit (command-exit, exit 0) plus suite-green-no-failures (the fail-count assertion of the same suite). No other work stage was added.",
+      "No typecheck stage is composed: the facts object states there is no tsconfig/jsconfig, no TypeScript dependency, no `typecheck`/`lint`/`check` script and no `@ts-check` pragma anywhere, so any typecheck command would be invented. The confirmed plan did not ask for one either.",
+      "No tests-kept stage is composed: the plan asks only for exit 0 / zero failures, and a floor on executed tests is not part of the confirmed checks. (The runner does print `# tests N`, so it could be measured, but the genre template restricts tests-kept to checks the plan actually asked for.)",
+      "The suite invokes the package's own script semantics via the Node binary itself (`node --test`, exactly the `test` script in package.json), run from the repo root as package.json's script specifies — no bare or third-party runner, and nothing installed, since the repo has no dependencies.",
+      "The fail-count stage is scoped to the only two populations this repository's suite covers, `src/` (the implementation files) and `test/` (the test files); the TAP summary line `# fail N` names no path, so the scope filter cannot attribute it to a prefix — it is a suite-wide figure for exactly those two trees, which is the population being counted. This produced a benign 'no path could be judged, kept' notice in the seed read, not an instrument stop.",
+      "The piped TAP shape (`# tests N`, `# pass N`, `# fail N`) is the shape read here; the facts object notes Node prints the human spec reporter on a TTY and that no reporter is configured in the repo, so all patterns use the genre's measured piped spellings.",
+      "The seed read confirms this close discriminates: at the untouched seed, changed-from-seed is red (nothing changed), suite-green-exit is red (exit 1), suite-green-no-failures reads 3 against a baseline of 0, and only the always-on no-suppressions guard is green — i.e. the suite is not green at the start, matching the facts object's 1 pass / 3 fail expectation for the stub.",
+      "Not expressible mechanically and therefore left out: the interview's request that only files under src/ be edited and that the tests not be changed is enforced by the always-on write fence (`src/**`) rather than restated as a stage here; no stage can assert 'these tests still mean what they meant', so no such stage was approximated."
+    ]
+  }
+}

@@ -344,10 +344,18 @@ export function exportBundle({ spec, closeScripts, registryDir, outDir, bareloop
     red('invalid-value', 'spec.job', 'a job spec with a job slug is required');
     return fail();
   }
-  if (!Array.isArray(spec.close) || spec.close.length === 0) {
-    red('invalid-value', 'spec.close', 'a non-empty ordered close stage list is required to export');
+  // A panel job is signed with a declared close (`closeDecl`, no `close`): its checks are data the engine builds
+  // at run time, so there are no close scripts to relocate. `close` and `closeDecl` are alternatives (both is a red).
+  const declared = isObj(spec.closeDecl) && spec.close === undefined;
+  if (spec.close !== undefined && spec.closeDecl !== undefined) {
+    red('invalid-value', 'spec.closeDecl', 'close and closeDecl are alternatives — a spec declares one');
     return fail();
   }
+  if (!declared && (!Array.isArray(spec.close) || spec.close.length === 0)) {
+    red('invalid-value', 'spec.close', 'a non-empty ordered close stage list (or a closeDecl) is required to export');
+    return fail();
+  }
+  const closeStages = declared ? [] : spec.close;
   const scripts = isObj(closeScripts) ? closeScripts : {};
 
   // outDir: refuse a non-empty destination before any other check runs, since
@@ -389,7 +397,7 @@ export function exportBundle({ spec, closeScripts, registryDir, outDir, bareloop
   const byPath = new Map();
   /** @type {Map<string, string>} basename -> scriptPath (collision detection) */
   const byName = new Map();
-  spec.close.forEach((/** @type {any} */ stage, /** @type {number} */ i) => {
+  closeStages.forEach((/** @type {any} */ stage, /** @type {number} */ i) => {
     const at = `close.${i}.cmd`;
     const parsed = parseNodeCmd(isObj(stage) ? stage.cmd : undefined);
     if (!parsed.ok) { red('close-cmd-unrelocatable', at, `must be "node <absolute path>.mjs …" — got ${JSON.stringify(isObj(stage) ? stage.cmd : stage)}`); return; }
@@ -465,7 +473,7 @@ export function exportBundle({ spec, closeScripts, registryDir, outDir, bareloop
     relocatedSha.set(scriptPath, hash);
   }
 
-  const specOut = { ...spec, close: spec.close.map((/** @type {any} */ stage) => {
+  const specOut = declared ? spec : { ...spec, close: closeStages.map((/** @type {any} */ stage) => {
     const parsed = parseNodeCmd(stage.cmd);
     // unreachable: every stage's cmd already passed this same parse above, or
     // the function returned before reaching this write pass at all
