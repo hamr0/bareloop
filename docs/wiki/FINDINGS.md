@@ -14797,3 +14797,14 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 - Re-searching at run start cannot reproduce the drafting search while the AI writes the words fresh.
 
 **Status.** A failure, never a re-tune: the frozen rules stay as signed. Search as an input is PARKED by hamr; a pasted page link stays the input. Not built.
+
+
+## F245 — CLI export refuses every job made in the panel (2026-10-24; $0, read only; open)
+
+**Status.** Open; ruled path in PRD v1.114 (POC on one real green panel repo job first).
+
+- [MEASURED] `bareloop export <spec> --registry <empty dir> --out <dir>` on a real panel rubric spec (session smvh7axzsav1i, flights) and a real panel repo spec (session smuqqw9x266au, fix-slugify) both stop with `invalid-value at spec.close: a non-empty ordered close stage list is required to export`. Run in a scratch HOME; nothing written to ~/.config.
+- [MEASURED] Of 60 resolved-spec.json files in ~/.config/bareloop/panel-sessions, 59 carry `closeDecl` and no `close` (26 green, 33 soft-green); 1 carries `close`.
+- [CODE] `doExport` (src/cli.js:139) and `exportBundle` (src/bundle.js:337) read `spec.close` and require a registry row at the spec's hash (`no-bridge-at-hash`, src/bundle.js:383); grep finds no `closeDecl` in src/bundle.js, src/bundlerun.js or src/cli.js.
+- [CODE] Panel runs never pass `--registry` (no `--registry` in src/panel; the panel spawns `run-u --spec ... --approve ...`, src/panel/authorroutes.js:502, runroutes.js:229, :375). A panel green writes only a per-run bridge FILE `bridge-<job>-<runid>.json` next to its spine (src/userrun.js:2387), never a registry row.
+- [CODE] `bareloop run <bundleDir>` takes `--repo <path>` only and always makes a git worktree (src/bundlerun.js:50, :169); a plain-folder, page-link or rubric job has no way to run from a bundle.
