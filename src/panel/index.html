@@ -2922,8 +2922,8 @@
         });
       });
       var label = items.length ? head + " \u00B7 " + first + (first === 1 ? " hint" : " hints") : head;
-      // no arrow (hamr 2026-10-23): the state chip leads; aria-expanded carries open/closed. The same `[✓] word` state markup the schedule/step headers wear (stateDotHTML), then the plain-words title
-      var paint = function(){ sum.innerHTML = stateDotHTML(glyphClass("\u2713"), "learnings", "audit-learnings-state") + " " + escapeXml(label); };
+      // arrow back (hamr 2026-10-24, latest wins over 2026-10-23): \u25BE open / \u25B8 closed first, as the schedule header; then the same `[✓] word` state markup the schedule/step headers wear (stateDotHTML), then the plain-words title
+      var paint = function(){ sum.innerHTML = (sum.getAttribute("aria-expanded") === "true" ? "\u25BE " : "\u25B8 ") + stateDotHTML(glyphClass("\u2713"), "learnings", "audit-learnings-state") + " " + escapeXml(label); };
       paint();
       // ONE fold, same as the other Audit sections: the header button toggles the body (wired once)
       sum.onclick = function(){
@@ -3500,11 +3500,15 @@
       headBtn.setAttribute("aria-expanded", startExpanded ? "true" : "false");
       headBtn.setAttribute("data-testid", "audit-part-toggle-" + idx);
       var groupResultGlyph = partResultGlyph(part, box);
-      headBtn.innerHTML =
-        stepStateHTML(box, 'audit-part-state-' + idx) + ' ' + titleText + ' &middot; ' + partLine1Text(part, detail) +
-        (groupResultGlyph !== null ? ' &middot; ' + groupResultGlyph : '') +
-        (box.blocked > 0 ? ' <span class="badge red" data-testid="audit-part-blocked-' + idx + '">' + box.blocked + ' blocked</span>' : '') +
-        actorMarkHtml(part);
+      // same arrow as the schedule section's secHead: \u25BE open, \u25B8 closed, at the very start of the button text
+      var partHead = function(open){
+        return (open ? "\u25BE " : "\u25B8 ") +
+          stepStateHTML(box, 'audit-part-state-' + idx) + ' ' + titleText + ' &middot; ' + partLine1Text(part, detail) +
+          (groupResultGlyph !== null ? ' &middot; ' + groupResultGlyph : '') +
+          (box.blocked > 0 ? ' <span class="badge red" data-testid="audit-part-blocked-' + idx + '">' + box.blocked + ' blocked</span>' : '') +
+          actorMarkHtml(part);
+      };
+      headBtn.innerHTML = partHead(startExpanded);
       var body = document.createElement("div");
       body.className = "audit-part-body";
       body.hidden = !startExpanded;
@@ -3550,6 +3554,7 @@
         var expanded = headBtn.getAttribute("aria-expanded") === "true";
         headBtn.setAttribute("aria-expanded", expanded ? "false" : "true");
         body.hidden = expanded;
+        headBtn.innerHTML = partHead(!expanded);
         if(!expanded && !built) buildBody();
       });
       rowWrap.appendChild(headBtn);
