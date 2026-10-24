@@ -38,6 +38,7 @@ import { bundleMain } from './bundlerun.js';
 // path for the flag grammar; `src/cli.js` only supplies the deps shape
 // (`out`/`err`/`env`) this command's own callers already use.
 import { startCmd, stopCmd, statusCmd, installCmd, menuCmd } from './launcher.js';
+import { exportedBundles, resolveBundleRef } from './bundleref.js';
 import { makePaint } from './tty-colour.js';
 import { main as runUMain } from './userrun.js';
 // PANEL-BUILD.md P0 task 3/4 — `bareloop interview` and `bareloop author`
@@ -173,14 +174,15 @@ function doExport(args, { out, err, cwd }) {
 /**
  * `bareloop export ["<job> (run-N)"] [--out <dir>]` — a bundle from a green panel / run-u run (PRD v1.114). No name = pick from the numbered
  * list of green runs; no `--out` = ask for the folder. A required prompt answered empty twice ends the command cleanly (exit 0).
- * @param {string[]} args @param {{ out: (s: string) => void, err: (s: string) => void, cwd: string, ask: (q: string) => Promise<string>, deps: any }} ctx
+ * @param {string[]} args @param {{ out: (s: string) => void, err: (s: string) => void, cwd: string, ask: (q: string) => Promise<string>, canAsk: boolean, deps: any }} ctx
  * @returns {Promise<number>}
  */
-async function doExportRun(args, { out, err, cwd, ask, deps }) {
+async function doExportRun(args, { out, err, cwd, ask, canAsk, deps }) {
   const { positional, flags } = parseFlags(args);
   const home = deps.runlistHome;
   /** @type {string|undefined} */
   let name = positional[0];
+  if (name === undefined && !canAsk) { err('usage: bareloop export "<job> (run-N)" --out <dir>'); return 1; }
   if (name === undefined) {
     const runs = listGreenRuns(home === undefined ? {} : { home });
     if (runs.length === 0) { out('No green runs to export yet.'); return 0; }
@@ -194,6 +196,7 @@ async function doExportRun(args, { out, err, cwd, ask, deps }) {
   }
   /** @type {string|null} */
   let outDirArg = typeof flags.out === 'string' ? flags.out : null;
+  if (outDirArg === null && !canAsk) { err('usage: bareloop export "<job> (run-N)" --out <dir>'); return 1; }
   if (outDirArg === null) {
     outDirArg = await askRequired(ask, 'Output folder (new or empty): ');
     if (outDirArg === null) { out('No folder given, nothing exported.'); return 0; }
@@ -208,13 +211,28 @@ async function doExportRun(args, { out, err, cwd, ask, deps }) {
 }
 
 /**
- * `bareloop history <bundleDir>`
- * @param {string[]} args @param {{ out: (s: string) => void, err: (s: string) => void, cwd: string }} ctx
+ * `bareloop history [<bundle>]` — a bundle's run history. The bundle is a folder or the run name it was exported under; with none given
+ * it is asked (a number from the exported bundles, a name or a folder).
+ * @param {string[]} args @param {{ out: (s: string) => void, err: (s: string) => void, cwd: string, ask: (q: string) => Promise<string>, canAsk: boolean, deps: any }} ctx
+ * @returns {Promise<number>}
  */
-function doHistory(args, { out, err, cwd }) {
-  const bundleDirArg = args[0];
-  if (!bundleDirArg) { err('usage: bareloop history <bundleDir>'); return 1; }
-  const dir = resolve(cwd, bundleDirArg);
+async function doHistory(args, { out, err, cwd, ask, canAsk, deps }) {
+  const home = deps.runlistHome;
+  let bundleDirArg = args[0];
+  if (!bundleDirArg) {
+    if (!canAsk) { err('usage: bareloop history <bundle>'); return 1; }
+    const known = exportedBundles(home === undefined ? {} : { home });
+    if (known.length > 0) {
+      out('Exported bundles:');
+      known.forEach((b, i) => out(`  ${i + 1}  ${b.name}`));
+    }
+    const pick = await askRequired(ask, 'Bundle (a number, its run name, or a folder): ');
+    if (pick === null) { out('No bundle chosen, nothing shown.'); return 0; }
+    bundleDirArg = /^\d+$/.test(pick) && known[Number(pick) - 1] ? known[Number(pick) - 1].dir : pick;
+  }
+  const found = resolveBundleRef(bundleDirArg, { ...(home === undefined ? {} : { home }), cwd });
+  if (!found.ok) { err(found.why); return 1; }
+  const dir = found.dir;
   const historyFile = join(dir, 'history.jsonl');
   if (existsSync(historyFile)) {
     // PANEL-BUILD.md P0 — the one reader for `history.jsonl` (`src/replayio.js`'s
@@ -362,7 +380,9 @@ async function mainInner(argv, deps, holder) {
   const out = (/** @type {string} */ s) => stdout.write(`${s}\n`);
   const err = (/** @type {string} */ s) => stderr.write(`${s}\n`);
   const ask = (/** @type {string} */ q) => { holder.a ??= openAsker({ stdin: deps.stdin, stdout }); return holder.a.ask(q); };
-  const ctx = { out, err, cwd, env, now, deps, ask };
+  // something to ask: a terminal, or a stdin the caller handed in (tests, a pipe the caller owns); a bare uninjected pipe is never waited on
+  const canAsk = deps.stdin !== undefined || Boolean(process.stdin.isTTY);
+  const ctx = { out, err, cwd, env, now, deps, ask, canAsk };
 
   const [cmd, ...rest] = argv;
   if (keys.warning && cmd && ['run', 'run-u', 'interview', 'author', 'panel'].includes(cmd)) err(`WARNING: ${keys.warning}`);
@@ -372,6 +392,7 @@ async function mainInner(argv, deps, holder) {
   // the old form (`export <jobs/x.json> --registry <dir> --out <dir>`) is the bench's; the new one is by run name
   if (cmd === 'export') return rest.includes('--registry') ? doExport(rest, ctx) : doExportRun(rest, ctx);
   if (cmd === 'run') return bundleMain(rest, { ...ctx, keysHome: keys.home, parseFlags, printReds });
+
   if (cmd === 'history') return doHistory(rest, ctx);
   // `bareloop run-u` — the person-path run flow (PANEL-BUILD.md P0 task
   // 2/4). `rest` is handed straight to `src/userrun.js`'s own `main(argv,

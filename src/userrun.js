@@ -2143,8 +2143,9 @@ async function execute(ctx) {
     out(`  trend   ${mh.trend} — ${mh.reading}`);
     if (ctx.bundle) {
       // a bundle's spec is manifest-hashed: there is no budgetUsd to edit and no new hash to sign. The room that
-      // is left is the signed ceiling, and the ONLY way to use it is the person typing a larger --budget. The
-      // exhausted --budget is never echoed (pasted as printed it halts again at once: the chain folds prior spend),
+      // is left is the signed ceiling, and the way to use it is the person typing a larger --budget. Going PAST the
+      // signed ceiling is allowed only with the person's own yes (hamr 2026-10-25), shown back and recorded in the run.
+      // The exhausted --budget is never echoed (pasted as printed it halts again at once: the chain folds prior spend),
       // and nothing is filled in for them.
       const signed = ctx.bundle.signedBudgetUsd;
       const spentUsd = typeof mh.budgetUsd === 'number' && typeof mh.remainingUsd === 'number' ? mh.budgetUsd - mh.remainingUsd : null;
@@ -2155,12 +2156,12 @@ async function execute(ctx) {
       out(`  lever   ${lever}`);
       if (spentUsd !== null && spentUsd >= signed) {
         // the whole signed ceiling is spent: "more than spent, at most signed" is unsatisfiable, so no resume line is printed
-        out(`          · no room left under the signed ceiling: this run spent all of the signed $${signed}, and a bundle's ceiling cannot be raised`);
+        out(`          · no room left under the signed ceiling: this run spent all of the signed $${signed}, and raising a bundle's ceiling needs your typed yes (--yes)`);
         out('          · abandon the task');
       } else {
-        out(`          · choose a larger --budget on the resume line below (the room left is the signed $${signed}; it cannot be raised past that)`);
+        out(`          · choose a larger --budget on the resume line below (the room left is the signed $${signed}; going past it asks you to type yes)`);
         out('          · abandon the task');
-        out(`  resume  ${ctx.bundle.invoke}${WALL_FLAG} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --budget <more than ${spentTxt}, at most $${signed}> --approve ${PRINT_APPROVE}`);
+        out(`  resume  ${ctx.bundle.invoke}${WALL_FLAG} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --budget <more than ${spentTxt}, above $${signed} asks you to type yes> --approve ${PRINT_APPROVE}`);
         out('          (type the --budget number yourself — nothing here fills it in, so this line does not run as printed; nothing in the run may widen its own budget)');
       }
     } else {

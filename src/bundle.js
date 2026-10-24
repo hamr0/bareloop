@@ -570,10 +570,10 @@ export function exportBundle({ spec, closeScripts, registryDir, outDir, bareloop
     '   Every run creates a FRESH detached worktree under',
     '   <repo>/.bareloop/wt/<runid> and never reuses or deletes one for you;',
     '   your checkout is never touched.',
-    '4. Budget/wall (optional) — --budget <usd> and --wall <minutes> may only',
-    `   TIGHTEN this bundle's own signed ceiling${spec.maxWallMs != null ? 's' : ''} (budgetUsd ${spec.budgetUsd ?? '?'}`
-      + `${spec.maxWallMs != null ? `, maxWallMs ${spec.maxWallMs}` : ''}); raising either is a`,
-    '   re-export, never a runner flag.',
+    '4. Budget/wall (optional) — --budget <usd> and --wall <minutes> set this run\'s caps.',
+    `   Lowering the signed ceiling${spec.maxWallMs != null ? 's' : ''} (budgetUsd ${spec.budgetUsd ?? '?'}`
+      + `${spec.maxWallMs != null ? `, maxWallMs ${spec.maxWallMs}` : ''}) needs nothing; raising either shows the raise and needs you to type yes`,
+    '   (or pass --yes), and the approval is recorded in the run.',
     '',
   ].join('\n');
   writeFileSync(join(outDir, 'README.md'), readme);
@@ -705,10 +705,29 @@ export function checkEnvelope(spec, envelope = {}) {
       continue;
     }
     if (typeof s[field] === 'number' && e[field] > s[field]) {
-      reds.push({ code: 'envelope-widen', path: field, detail: `${e[field]} exceeds the bundle's signed ${field} (${s[field]}) — raising a ceiling is a re-export, never a runner flag` });
+      reds.push({ code: 'envelope-widen', path: field, detail: `${e[field]} exceeds the bundle's signed ${field} (${s[field]}) — a raise needs your yes: type yes when asked, or pass --yes` });
     }
   }
   return { ok: reds.length === 0, reds };
+}
+
+/**
+ * The caps a typed envelope would RAISE above the bundle's signed ones (hamr 2026-10-25: a raise is allowed, but only signed by the
+ * person typing `yes` or passing `--yes`). Same fields and test as {@link checkEnvelope}'s widen red; a field the spec has no ceiling
+ * for cannot be raised. Pure.
+ * @param {any} spec the (already `$BARELOOP_BUNDLE`-resolved) bundle spec
+ * @param {{ budgetUsd?: number, maxWallMs?: number }} envelope
+ * @returns {{ field: 'budgetUsd'|'maxWallMs', old: number, new: number }[]}
+ */
+export function capRaises(spec, envelope = {}) {
+  /** @type {{ field: 'budgetUsd'|'maxWallMs', old: number, new: number }[]} */
+  const out = [];
+  const s = isObj(spec) ? spec : {};
+  const e = isObj(envelope) ? envelope : {};
+  for (const field of /** @type {const} */ (['budgetUsd', 'maxWallMs'])) {
+    if (typeof e[field] === 'number' && Number.isFinite(e[field]) && typeof s[field] === 'number' && e[field] > s[field]) out.push({ field, old: s[field], new: e[field] });
+  }
+  return out;
 }
 
 /**
