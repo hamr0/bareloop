@@ -11,6 +11,9 @@ import { createServer } from 'node:http';
 import { countRuns, installState, probePanels, headerLines } from '../src/launcher.js';
 import { listRuns } from '../src/panel/server.js';
 import { appendRun } from '../src/runlist.js';
+import { packageVersion } from '../src/panel/server.js';
+const V = packageVersion();
+const VRE = V.replace(/\./g, '\\.');
 
 /** @type {string[]} */
 const dirs = [];
@@ -23,7 +26,7 @@ function fakePanel(body = {}, { app = 'bareloop' } = {}) {
     const server = createServer((req, res) => {
       if (req.url === '/api/whoami') {
         res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ app, version: '0.46.1', pid: 4242, drafts: 0, schedules: 0, ...body, port: server.address().port }));
+        res.end(JSON.stringify({ app, version: V, pid: 4242, drafts: 0, schedules: 0, ...body, port: server.address().port }));
       } else { res.writeHead(404); res.end('nope'); }
     });
     server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port, close: () => new Promise((r) => { server.close(() => r(undefined)); }) }));
@@ -87,16 +90,16 @@ test('headerLines: the two lines, installed + panel running; not installed + pan
   const home = join(root, 'bl');
   const p = await fakePanel();
   try {
-    const noHome = await headerLines({ home, ports: [1], version: '0.46.1', nodeVersion: '22.1.0', timeoutMs: 100 });
+    const noHome = await headerLines({ home, ports: [1], version: V, nodeVersion: '22.1.0', timeoutMs: 100 });
     assert.equal(noHome.length, 2);
-    assert.equal(noHome[0], 'bareloop 0.46.1 · not installed — no bareloop folder yet, pick 4 install · panel not running');
+    assert.equal(noHome[0], `bareloop ${V} · not installed — no bareloop folder yet, pick 4 install · panel not running`);
     assert.equal(noHome[1], 'runs: 0 running · 0 need you · 0 in all');
     mkdirSync(home, { mode: 0o700 });
     writeFileSync(join(home, 'config.json'), '{}');
     writeFileSync(join(home, '.env'), '', { mode: 0o600 });
     chmodSync(join(home, '.env'), 0o600);
-    const lines = await headerLines({ home, ports: [p.port], version: '0.46.1', nodeVersion: '22.1.0', timeoutMs: 300 });
-    assert.equal(lines[0], `bareloop 0.46.1 · installed ✓ · panel running at http://127.0.0.1:${p.port}`);
+    const lines = await headerLines({ home, ports: [p.port], version: V, nodeVersion: '22.1.0', timeoutMs: 300 });
+    assert.equal(lines[0], `bareloop ${V} · installed ✓ · panel running at http://127.0.0.1:${p.port}`);
     assert.equal(lines[1], 'runs: 0 running · 0 need you · 0 in all');
   } finally { await p.close(); }
 });

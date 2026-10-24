@@ -9,6 +9,9 @@ import { PassThrough } from 'node:stream';
 import { makePaint } from '../src/tty-colour.js';
 import { buildHeader, menuCmd } from '../src/launcher.js';
 import { main } from '../src/cli.js';
+import { packageVersion } from '../src/panel/server.js';
+const V = packageVersion();
+const VRE = V.replace(/\./g, '\\.');
 
 /** @type {string[]} */
 const dirs = [];
@@ -23,7 +26,7 @@ function fakePanel() {
   return new Promise((resolve) => {
     const server = createServer((_q, res) => {
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ app: 'bareloop', version: '0.46.1', pid: 4242, drafts: 0, schedules: 0 }));
+      res.end(JSON.stringify({ app: 'bareloop', version: V, pid: 4242, drafts: 0, schedules: 0 }));
     });
     server.listen(0, '127.0.0.1', () => {
       closers.push(() => new Promise((r) => { server.close(() => r(undefined)); }));
@@ -47,7 +50,7 @@ test('makePaint: on for a TTY with no NO_COLOR; off with NO_COLOR, off when not 
 test('header + menu: with colour the words are the same (stripped), the rule frames the header, the numbers are bold cyan', async () => {
   const home = join(scratch(), 'bl');
   const port = await fakePanel();
-  const base = { home, ports: [port], timeoutMs: 300, nodeVersion: '22.1.0', version: '0.46.1' };
+  const base = { home, ports: [port], timeoutMs: 300, nodeVersion: '22.1.0', version: V };
   const plain = await buildHeader({ ...base, paint: makePaint({ isTTY: false }, {}) });
   const col = await buildHeader({ ...base, paint: makePaint({ isTTY: true }, {}) });
   assert.equal(plain.lines.length, 2);
@@ -55,7 +58,7 @@ test('header + menu: with colour the words are the same (stripped), the rule fra
   assert.equal(strip(col.lines[0]), '─'.repeat(56));
   assert.equal(strip(col.lines[3]), '─'.repeat(56));
   assert.deepEqual(col.lines.slice(1, 3).map(strip), plain.lines);
-  assert.match(col.lines[1], /\x1b\[1;36mbareloop\x1b\[0m \x1b\[90m0\.46\.1/);
+  assert.match(col.lines[1], new RegExp(`\\x1b\\[1;36mbareloop\\x1b\\[0m \\x1b\\[90m${VRE}`));
   assert.match(col.lines[1], /\x1b\[31mnot installed\x1b\[0m — no bareloop folder yet, pick \x1b\[1;36m4\x1b\[0m install/);
   assert.match(col.lines[1], new RegExp(`panel \\x1b\\[32mrunning\\x1b\\[0m at \\x1b\\[36mhttp://127\\.0\\.0\\.1:${port}\\x1b\\[0m`));
   assert.match(col.lines[2], /\x1b\[90mruns:\x1b\[0m \x1b\[90m0 running\x1b\[0m/);
@@ -79,7 +82,7 @@ test('refusals are red on a colour terminal, plain words when stripped', async (
 
 test('main: stdout a TTY and no NO_COLOR -> coloured header; NO_COLOR set or not a TTY -> not a single escape code in it', async () => {
   const home = join(scratch(), 'bl');
-  const launcher = { ports: [], timeoutMs: 50, nodeVersion: '22.1.0', version: '0.46.1' };
+  const launcher = { ports: [], timeoutMs: 50, nodeVersion: '22.1.0', version: V };
   // the header is what bareloop wrote with out(); readline's own terminal codes (prompt echo) come after it and are not ours
   const run = async (isTTY, processEnv) => {
     const stdout = new PassThrough();
@@ -96,5 +99,5 @@ test('main: stdout a TTY and no NO_COLOR -> coloured header; NO_COLOR set or not
   assert.doesNotMatch(await run(true, { NO_COLOR: '1' }), /\x1b/);
   assert.doesNotMatch(await run(true, { TERM: 'dumb' }), /\x1b/);
   assert.doesNotMatch(await run(false, {}), /\x1b/);
-  assert.match(strip(on), /bareloop 0\.46\.1 · not installed — no bareloop folder yet, pick 4 install · panel not running/);
+  assert.match(strip(on), new RegExp(`bareloop ${VRE} · not installed — no bareloop folder yet, pick 4 install · panel not running`));
 });

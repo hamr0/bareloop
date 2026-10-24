@@ -18,6 +18,9 @@ import {
 import { createPanelServer } from '../src/panel/server.js';
 import { main } from '../src/cli.js';
 import { makePaint } from '../src/tty-colour.js';
+import { packageVersion } from '../src/panel/server.js';
+const V = packageVersion();
+const VRE = V.replace(/\./g, '\\.');
 
 /** @type {string[]} */
 const dirs = [];
@@ -52,7 +55,7 @@ function fakePanel(port, body = {}) {
   return new Promise((resolve) => {
     const s = httpServer((req, res) => {
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ app: 'bareloop', version: '0.46.1', pid: 4242, port, drafts: 0, schedules: 0, ...body }));
+      res.end(JSON.stringify({ app: 'bareloop', version: V, pid: 4242, port, drafts: 0, schedules: 0, ...body }));
     });
     s.listen(port, '127.0.0.1', () => { const close = () => new Promise((r) => { s.close(() => r(undefined)); }); closers.push(close); resolve({ port, close }); });
   });
@@ -63,7 +66,7 @@ const sink = () => { const lines = []; return { out: (s) => lines.push(s), err: 
 function deps(home, base, extra = {}) {
   const spawned = [];
   return {
-    home, ports: [base, base + 1, base + 2, base + 3], timeoutMs: 300, deadlineMs: 3000, nodeVersion: '22.1.0', version: '0.46.1',
+    home, ports: [base, base + 1, base + 2, base + 3], timeoutMs: 300, deadlineMs: 3000, nodeVersion: '22.1.0', version: V,
     platform: 'linux', bareloopBin: '/x/bin/bareloop.mjs', spawned,
     spawnFn: (cmd, args) => {
       spawned.push({ cmd, args });
@@ -95,7 +98,7 @@ test('start: nothing running -> a detached panel on the first free port, waits f
   const io = sink();
   const rc = await startCmd(io, d);
   assert.equal(rc, 0, io.text());
-  assert.equal(io.lines[0], `bareloop 0.46.1 · installed ✓ · panel not running`);
+  assert.equal(io.lines[0], `bareloop ${V} · installed ✓ · panel not running`);
   assert.equal(io.lines[1], 'runs: 0 running · 0 need you · 0 in all');
   assert.equal(io.lines.at(-1), `Panel started at http://127.0.0.1:${base} — opening the page.`);
   assert.deepEqual(opened, [`http://127.0.0.1:${base}`]);
@@ -240,7 +243,7 @@ test('status: not running -> header then "Panel not running.", exit 3 (the sub-c
   const io = sink();
   assert.equal(await statusCmd(io, deps(home, base)), 0);
   assert.match(io.lines[0], new RegExp(`panel running at http://127.0.0.1:${base + 2}$`));
-  assert.equal(io.lines[2], 'pid 48213 · version 0.46.1 · 1 draft open · 3 schedules on');
+  assert.equal(io.lines[2], `pid 48213 · version ${V} · 1 draft open · 3 schedules on`);
 });
 
 test('install: creates what is missing (dir 700, .env 600, config.json), then says there is nothing to do; keys already in .env are untouched', async () => {
@@ -285,7 +288,7 @@ test('menu (the approved layout): two header lines, a blank line, the four choic
   const rc = await menuCmd(io, deps(home, base, { ask: async (q) => { asked.push(q); return 'q'; } }));
   assert.equal(rc, 0);
   assert.deepEqual(io.lines, [
-    `bareloop 0.46.1 · installed ✓ · panel running at http://127.0.0.1:${base + 1}`,
+    `bareloop ${V} · installed ✓ · panel running at http://127.0.0.1:${base + 1}`,
     'runs: 0 running · 0 need you · 0 in all',
     '',
     '1 start   2 stop   3 status   4 install   q quit',
@@ -299,8 +302,8 @@ test('menu: choice 3 runs status through the same code WITHOUT printing the head
   await fakePanel(base, { pid: 48213, drafts: 1, schedules: 3 });
   const io = sink();
   assert.equal(await menuCmd(io, deps(home, base, { ask: async () => '3' })), 0);
-  assert.equal(io.lines.filter((l) => l.startsWith('bareloop 0.46.1')).length, 1);
-  assert.equal(io.lines.at(-1), 'pid 48213 · version 0.46.1 · 1 draft open · 3 schedules on');
+  assert.equal(io.lines.filter((l) => l.startsWith(`bareloop ${V}`)).length, 1);
+  assert.equal(io.lines.at(-1), `pid 48213 · version ${V} · 1 draft open · 3 schedules on`);
   const bad = sink();
   assert.equal(await menuCmd(bad, deps(home, base, { ask: async () => '9' })), 1);
   assert.match(bad.text(), /unknown choice "9"/);
@@ -313,37 +316,37 @@ test('main: bare `bareloop` shows the new menu (the old export/run/history menu 
   const out = []; const err = [];
   const stdout = { write: (s) => { out.push(s); return true; } };
   const stderr = { write: (s) => { err.push(s); return true; } };
-  const launcher = { ports: [base, base + 1], timeoutMs: 300, nodeVersion: '22.1.0', version: '0.46.1' };
+  const launcher = { ports: [base, base + 1], timeoutMs: 300, nodeVersion: '22.1.0', version: V };
   const run = main([], { stdin, stdout, stderr, cwd: process.cwd(), env: {}, keysHome: home, runlistHome: home, launcher });
   await new Promise((r) => setTimeout(r, 300));
   stdin.write('q\n');
   assert.equal(await run, 0);
   const text = out.join('');
-  assert.match(text, /^bareloop 0\.46\.1 · installed ✓ · panel not running\nruns: 0 running · 0 need you · 0 in all\n\n1 start   2 stop   3 status   4 install   q quit\n/);
+  assert.match(text, new RegExp(`^bareloop ${VRE} · installed ✓ · panel not running\nruns: 0 running · 0 need you · 0 in all\n\n1 start   2 stop   3 status   4 install   q quit\n`));
   assert.doesNotMatch(text, /1 export/);
   const out2 = [];
   assert.equal(await main(['status'], { stdout: { write: (s) => { out2.push(s); return true; } }, stderr, cwd: process.cwd(), env: {}, keysHome: home, runlistHome: home, launcher }), 3);
-  assert.match(out2.join(''), /^bareloop 0\.46\.1 · installed ✓ · panel not running\nruns: /);
+  assert.match(out2.join(''), new RegExp(`^bareloop ${VRE} · installed ✓ · panel not running\nruns: `));
 });
 
 test('version: status shows the panel\'s own version; a differing panel gets the header note and the start line; a matching one gets neither; colour words equal plain', async () => {
   const home = installedHome();
   const base = await freeBase();
-  await fakePanel(base, { version: '0.45.0', pid: 777, drafts: 2, schedules: 1 });
+  await fakePanel(base, { version: '0.0.0-old', pid: 777, drafts: 2, schedules: 1 });
   const st = sink();
   assert.equal(await statusCmd(st, deps(home, base)), 0);
-  assert.equal(st.lines.at(-1), 'pid 777 · version 0.45.0 · 2 drafts open · 1 schedule on');
-  assert.match(st.lines[0], new RegExp(`panel running at http://127.0.0.1:${base} \\(version 0\\.45\\.0 — stop and start to use 0\\.46\\.1\\)$`));
+  assert.equal(st.lines.at(-1), 'pid 777 · version 0.0.0-old · 2 drafts open · 1 schedule on');
+  assert.match(st.lines[0], new RegExp(`panel running at http://127.0.0.1:${base} \\(version 0\\.0\\.0-old — stop and start to use ${VRE}\\)$`));
   const open = [];
   const s = sink();
   assert.equal(await startCmd(s, deps(home, base, { open: async (u) => { open.push(u); return true; } })), 0);
   assert.equal(s.lines.at(-2), `Panel already running at http://127.0.0.1:${base} — opening the page.`);
-  assert.equal(s.lines.at(-1), 'It is version 0.45.0; this bareloop is 0.46.1. Run bareloop stop, then bareloop start, to use 0.46.1.');
+  assert.equal(s.lines.at(-1), `It is version 0.0.0-old; this bareloop is ${V}. Run bareloop stop, then bareloop start, to use ${V}.`);
   assert.equal(open.length, 1);
   const col = sink();
   await startCmd(col, deps(home, base, { paint: makePaint({ isTTY: true }, {}) }));
-  assert.match(col.lines.at(-1), /^\x1b\[33mIt is version 0\.45\.0/);
-  assert.ok(col.lines.some((l) => l.includes('\x1b[33m (version 0.45.0 — stop and start to use 0.46.1)\x1b[0m')));
+  assert.match(col.lines.at(-1), /^\x1b\[33mIt is version 0\.0\.0-old/);
+  assert.ok(col.lines.some((l) => l.includes(`\x1b[33m (version 0.0.0-old — stop and start to use ${V})\x1b[0m`)));
   const strip = (t) => t.replace(/\x1b\[[0-9;]*m/g, '');
   assert.equal(strip(col.lines.at(-1)), s.lines.at(-1));
 });
@@ -351,7 +354,7 @@ test('version: status shows the panel\'s own version; a differing panel gets the
 test('version: a panel on the CLI\'s own version gets no note and no extra start line', async () => {
   const home = installedHome();
   const base = await freeBase();
-  await fakePanel(base, { version: '0.46.1' });
+  await fakePanel(base, { version: V });
   const s = sink();
   assert.equal(await startCmd(s, deps(home, base)), 0);
   assert.doesNotMatch(s.text(), /stop and start to use|It is version/);
