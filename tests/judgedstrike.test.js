@@ -7,7 +7,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTrend, FIX_STRIKE_LIMIT } from '../src/trend.js';
-import { closeGrade } from '../src/declaredclose.js';
+import { closeGrade, runDeclaredStages } from '../src/declaredclose.js';
 import { runStage } from '../src/kinds.js';
 
 const JUDGE_MODEL = 'claude-haiku-4-5'; // a fixture id: the library keeps no pinned judge model (P8)
@@ -87,7 +87,12 @@ test('END TO END: a real judged stage that is unsure twice yields the same redSe
     assert.equal(r.verdict, 'red');
     assert.ok(Array.isArray(r.detail.redSet) && r.detail.redSet.length === 1, JSON.stringify(r.detail.redSet));
     seen.push(r.detail.redSet);
-    t.record(closeGrade({ declared: true, gap: 'g', stage: st.name, trendValue: new Set(r.detail.redSet).size }));
+    // the number the governor reads comes from the REAL declared-close path (trendValueOf), never recomputed here
+    const v = await runDeclaredStages([st], (x) => x, { cwd: wd, seedRef: 'HEAD', judgeModel: JUDGE_MODEL, judgeLoop });
+    assert.notEqual(v.verdict, 'satisfied', JSON.stringify(v).slice(0, 300));
+    assert.equal(v.declared, true);
+    assert.equal(v.trendValue, 1, 'a judged stage with one distinct red donates a count of 1 through runDeclaredStages');
+    t.record(closeGrade(v));
   }
   assert.deepEqual(seen[0], seen[3]);
   assert.match(seen[0][0], /^bin\/pulselog\.js\|unsure\|/);

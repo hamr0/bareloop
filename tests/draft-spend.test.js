@@ -243,41 +243,53 @@ test('a disk fault on the drafting log never stops the draft (best-effort like d
   assert.equal(existsSync(dir), false);
 });
 
-test('Revise at the plan menu (an abandon, then a fresh Start): the abandoned draft keeps its booked spend on disk and in the month', async (t) => {
-  const { home, session } = await (async () => {
-    const h = tmp(t);
-    writeFileSync(join(h, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 });
-    writeFileSync(join(h, 'config.json'), JSON.stringify(ANTH_CFG));
-    const repo = tmp(t);
-    git(repo, ['init', '-q', '-b', 'main']);
-    writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0' }));
-    mkdirSync(join(repo, 'src'));
-    writeFileSync(join(repo, 'src', 'mod.js'), '// nothing yet\n');
-    git(repo, ['add', '-A']);
-    git(repo, ['commit', '-q', '-m', 'seed']);
-    const s = createSession({
-      checkType: 'deterministic', model: 'claude-sonnet-5', jobName: 'revise-spend-job', jobText: 'fix things\n~ no new deps\ntsc clean', inputs: `repo: ${repo}`,
-      destination: 'src/', capUsd: 2,
-    }, {
-      env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: h, sessionsRoot: join(h, 'panel-sessions'),
-      scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
-      generate: async () => { throw new Error('unused'); },
-      confirmGenerate: async (_c, tools) => {
-        const plan = { goal: 'fix things', checks: ['tsc clean'], questions: [], notChecked: [] };
-        if (tools && tools[0] && typeof tools[0].execute === 'function') await tools[0].execute(plan);
-        return { text: JSON.stringify(plan), error: null, cost: 0.0005 };
-      },
-      authorFn: async () => { throw new Error('never reached: the person revised at the menu'); },
-    });
-    for (let i = 0; i < 500 && s.state.pendingAsk?.kind !== 'menu'; i += 1) await new Promise((r) => { setTimeout(r, 10); });
-    return { home: h, session: s };
-  })();
-  assert.equal(session.state.pendingAsk?.kind, 'menu');
-  assert.equal(session.abandon().ok, true);
-  assert.equal(session.state.phase, 'abandoned');
-  const file = JSON.parse(readFileSync(join(session.state.outDir, 'draft-spend.json'), 'utf8'));
-  assert.equal(file.spentUsd, 0.0005, 'the confirm call booked before the revise is still booked after it');
-  assert.equal(monthSpend({ home }).usd, 0.0005, 'and the month counts it');
+/** a REAL session parked at the plan menu in `home`, its confirm call booked at $0.0005 (no provider reachable) */
+async function sessionAtMenu(t, home, jobName) {
+  const repo = tmp(t);
+  git(repo, ['init', '-q', '-b', 'main']);
+  writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0' }));
+  mkdirSync(join(repo, 'src'));
+  writeFileSync(join(repo, 'src', 'mod.js'), '// nothing yet\n');
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-q', '-m', 'seed']);
+  const s = createSession({
+    checkType: 'deterministic', model: 'claude-sonnet-5', jobName, jobText: 'fix things\n~ no new deps\ntsc clean', inputs: `repo: ${repo}`,
+    destination: 'src/', capUsd: 2,
+  }, {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home, sessionsRoot: join(home, 'panel-sessions'),
+    scout: { state: 'PRESENT', facts: { sourcePaths: ['src/mod.js'], testPaths: [] }, calls: [], raws: [] },
+    generate: async () => { throw new Error('unused'); },
+    confirmGenerate: async (_c, tools) => {
+      const plan = { goal: 'fix things', checks: ['tsc clean'], questions: [], notChecked: [] };
+      if (tools && tools[0] && typeof tools[0].execute === 'function') await tools[0].execute(plan);
+      return { text: JSON.stringify(plan), error: null, cost: 0.0005 };
+    },
+    authorFn: async () => { throw new Error('never reached: the person revised at the menu'); },
+  });
+  for (let i = 0; i < 500 && s.state.pendingAsk?.kind !== 'menu'; i += 1) await new Promise((r) => { setTimeout(r, 10); });
+  assert.equal(s.state.pendingAsk?.kind, 'menu');
+  return s;
+}
+
+test('Revise at the plan menu (an abandon, then a fresh Start): the abandoned draft keeps its booked spend on disk and in the month, AFTER it has unwound and a second draft has run in the same home', async (t) => {
+  const home = tmp(t);
+  writeFileSync(join(home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 });
+  writeFileSync(join(home, 'config.json'), JSON.stringify(ANTH_CFG));
+  const first = await sessionAtMenu(t, home, 'revise-spend-job');
+  const firstFile = () => JSON.parse(readFileSync(join(first.state.outDir, 'draft-spend.json'), 'utf8'));
+  assert.equal(firstFile().spentUsd, 0.0005, 'booked before the abandon');
+  assert.equal(first.abandon().ok, true);
+  assert.equal(first.state.phase, 'abandoned');
+  // the unwinding (a parked ask released, the confirm turn ending as confirm-abandoned) and any late writer get their turn BEFORE we read
+  await new Promise((r) => { setTimeout(r, 150); });
+  assert.equal(first.state.phase, 'abandoned', 'the unwind never moves an abandoned session to another phase');
+  assert.equal(firstFile().spentUsd, 0.0005, 'the confirm call booked before the revise is still booked after it');
+  // the fresh Start the Revise button leads to: a second session in the same home books its own call, the first one's stays
+  const second = await sessionAtMenu(t, home, 'revise-spend-job-2');
+  assert.notEqual(second.state.outDir, first.state.outDir, 'a fresh session, its own folder');
+  assert.equal(firstFile().spentUsd, 0.0005, 'the second draft does not touch the abandoned one\'s figure');
+  assert.equal(monthSpend({ home }).usd, 0.001, 'and the month counts both drafts');
+  second.abandon();
 });
 
 test('readDraftSteps: a step-label record relabels the step without touching its status or times (the thinking row\'s "thought anyway")', (t) => {

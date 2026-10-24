@@ -2,6 +2,24 @@
 // src/panel/server.js (verbatim) so the Audit/step map AND the learnings cards read the same sentence from the same
 // code — a second spelling is how two screens come to disagree about one check. Pure; no file IO, no model.
 
+/** the genre-owned noun for the count a TYPES-genre typecheck stage measures (see {@link stageQuestionText}) */
+export const GENRE_WHAT = Object.freeze({ TYPES: 'type errors' });
+
+/** `cmd`+`args`, as a comparable key — the one signal (besides `kind`
+ * itself) that two stages measure the SAME command's output, used to tell a
+ * genuine typecheck stage apart from the TYPES genre's other `lower-is-
+ * better`/`baseline: 0` stage (the failing-test-count half of `suite-green`'s
+ * "two assertions"), which shares that stage's own shape but not its
+ * population. `null` for a stage whose `cmd` isn't a non-empty string —
+ * never matches anything, so it never falsely suppresses a real typecheck
+ * question.
+ * @param {any} params @returns {string|null} */
+export function cmdKey(params) {
+  if (!params || typeof params.cmd !== 'string' || params.cmd.length === 0) return null;
+  const args = Array.isArray(params.args) ? params.args : [];
+  return JSON.stringify([params.cmd, args]);
+}
+
 /**
  * THE PLAIN-QUESTION OWNER (plain-checks build, 2026-09-28, hamr's ruling:
  * the "checks N/M" headline is WITHDRAWN — "confusing, reads like 6 failed
@@ -64,23 +82,6 @@
  * @param {{kind: string|null, params: any, genre: string|null, suiteCmdKeys: Set<string>}} o
  * @returns {string|null}
  */
-export const GENRE_WHAT = Object.freeze({ TYPES: 'type errors' });
-
-/** `cmd`+`args`, as a comparable key — the one signal (besides `kind`
- * itself) that two stages measure the SAME command's output, used to tell a
- * genuine typecheck stage apart from the TYPES genre's other `lower-is-
- * better`/`baseline: 0` stage (the failing-test-count half of `suite-green`'s
- * "two assertions"), which shares that stage's own shape but not its
- * population. `null` for a stage whose `cmd` isn't a non-empty string —
- * never matches anything, so it never falsely suppresses a real typecheck
- * question.
- * @param {any} params @returns {string|null} */
-export function cmdKey(params) {
-  if (!params || typeof params.cmd !== 'string' || params.cmd.length === 0) return null;
-  const args = Array.isArray(params.args) ? params.args : [];
-  return JSON.stringify([params.cmd, args]);
-}
-
 export function stageQuestionText({
   kind, params, genre, suiteCmdKeys,
 }) {

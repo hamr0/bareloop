@@ -262,3 +262,19 @@ test('file cause: a file deleted before its turn is refused at wouldAccept (no `
   assert.equal(queueOf(readSeen(w.ledger)).length, 1);
   assert.equal(existsSync(join(w.dir, 'trigger.json')), false);
 });
+
+test('file cause: a name with a line break or edge whitespace is refused with a plain reason (no `ran`, no session, no extra Inputs line); a normal name still starts', async () => {
+  const { createHash } = await import('node:crypto');
+  for (const name of ['a.txt\nextra: other.txt', 'trail.csv ']) {
+    const w = await world({ when: 'files' });
+    const f = join(w.inbox, name);
+    writeFileSync(f, 'x\n');
+    const sha = createHash('sha256').update('x\n').digest('hex');
+    recordArrived(w.ledger, { path: f, sha, size: 2 }, 100, w.sig);
+    const r = await w.door.fire('sched-job', { kind: 'file', path: f, sha, size: 2 });
+    assert.equal(r.outcome, 'refused', name);
+    assert.match(r.why, /line break or a space at its end.*Rename the file\. Nothing started\./, name);
+    assert.equal(w.made.length, 0, 'no session was made');
+    assert.equal(readSeen(w.ledger).filter((x) => x.kind === 'ran').length, 0);
+  }
+});

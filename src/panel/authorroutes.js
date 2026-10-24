@@ -25,6 +25,7 @@ import { readFileSync } from 'node:fs';
 import { planMatchesClose } from '../rubricstep.js';
 import { createSession, validateJobCard, validateReuseCard, jobBoxesChanged, buildReuseSpec, cardFields, nextFreeJobName, startDestinationProblem, STEP_LABELS } from './authorsession.js';
 import { parseInputs } from '../jobblock.js';
+import { isReusableGreen } from './status.js';
 import { proveInputFiles, looksLikeRubricInput, webFetchState } from '../source.js';
 import { validateJob } from '../job.js';
 
@@ -282,7 +283,7 @@ export function createAuthorRoutes(opts) {
         ok: true, origin: pre.origin, card, from: pre.from, note: pre.note,
         // ONE door (v1.101): `green` = the origin earned a real green (an imported job counts), so an unchanged job reuses the signed plan;
         // `nextName` = the Job name box once a job box changes (the box shows the origin's name until then). Nothing is locked.
-        green: pre.origin.importId !== undefined || pre.outcome === 'green' || pre.outcome === 'already-green',
+        green: pre.origin.importId !== undefined || isReusableGreen(pre.outcome),
         nextName: nextFreeJobName(pre.origin.job, opts.runJobNames ? opts.runJobNames() : [], { jobsDir: opts.jobsDir }),
         specHash: pre.specHash, workflowKey: pre.workflowKey, trackRecord: pre.trackRecord,
         line: pre.line, specNamesModel: pre.specNamesModel, specWorker: pre.specWorker,
@@ -357,7 +358,7 @@ export function createAuthorRoutes(opts) {
           // a scheduled run's green waits for the person's Accept (quarantine): its plan is neither reused nor re-drafted until then
           if (pre.outcome === 'green-held') { send(409, { ok: false, error: 'This run was started by a schedule and is waiting for your Accept. Accept it first, then it can be reused.' }); return true; }
           card.jobName = pre.origin.job; // an unchanged job keeps its name; a typed one is ignored
-          if (fromImport !== null || pre.outcome === 'green' || pre.outcome === 'already-green') {
+          if (fromImport !== null || isReusableGreen(pre.outcome)) {
             const rv = validateReuseCard(card, { rows });
             if (!rv.ok) { send(400, { ok: false, error: rv.error }); return true; }
             const spec = buildReuseSpec(pre.spec, card, rows);

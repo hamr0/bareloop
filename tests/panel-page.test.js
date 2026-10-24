@@ -2561,3 +2561,15 @@ test('M3 call site: the chat poll calls afterSignRefresh when the session reache
   assert.match(html.slice(at, at + 300), /afterSignRefresh\(knownRunIdsAtSign \|\| currentRunIds\(\), 12\)/);
   assert.equal((html.match(/knownRunIdsAtSign = currentRunIds\(\)/g) ?? []).length, 2, 'both sign paths (click and Reuse auto-sign) capture the ids');
 });
+
+test('fix: modelStatusLine — a blank Base URL (status no-base-url) reads the server sentence, never the raw code or "flaky"', () => {
+  const html = readFileSync(PAGE_PATH, 'utf8');
+  const modelStatusLine = loadFns(html, ['reachStatusText', 'modelStatusLine'], 'modelStatusLine');
+  const r = {
+    ok: true, envKey: 'ANTHROPIC_API_KEY', keyStatus: 'found', keyProblem: null,
+    reachability: { checked: true, reachable: false, modelListed: null, status: 'no-base-url', note: 'Type a Base URL.' },
+  };
+  const line = modelStatusLine(r, 'm');
+  assert.equal(line.text, '[✗] Type a Base URL.');
+  assert.equal(line.keyOk, true);
+});

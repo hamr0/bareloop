@@ -5,6 +5,32 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.46.1] - 2026-10-24
+
+### Fixed
+
+- **A blank Base URL in the New job readiness line reads "Type a Base URL."** It showed `[✗] no-base-url — may be flaky, not blocking`; it now shows the server's own sentence (owned by `src/modellist.js`).
+
+- **The Audit learnings header counts distinct hints across the draft and the first replan.** It counted only the draft block (3 at draft, 5 at replan read "3 hints"). A hint handed at both draft and replan counts once (identity = ledger row id).
+
+- **A scheduled fire refused at the run-start fetch shows its status word on the schedule card.** The card read `last 10:30 · run-4` with no word because the run list's events were not passed to `summarizeRow`; the refused row now carries its `failed` status.
+
+- **Every drafting stop reads in plain words from one table.** `confirm-abandoned` and `confirm-restart` printed `Stopped: <code>`, and a code outside an 8-entry table fell back to `Drafting stopped (<code>).`. `STOP_HEADS` (with `STOP_TODO` where "draft again" is wrong) in `src/authorreadout.js` now covers about 20 stop codes and `authorsession` routes every stop through `draftStopText`; an unknown code gets a generic sentence, never the raw code. The confirm-abandoned stop now ends "nothing more was spent" (it promised a figure that reads "unknown" when spend is incomplete). Wording signed by hamr 2026-10-23.
+
+- **One `isReusableGreen` decides every Reuse-eligibility check.** The picker, `getStartFrom`, the start gate and prefill flag in `authorroutes`, and the Ended block each spelled it their own way, and the Ended block still treated an already-green as not reusable. An already-green now ends "Nothing to do." like a green, and a scheduled already-green run is held for Accept like a green. Scheduling itself still needs a real green (`greenFor` in `src/schedules.js` is unchanged).
+
+- **A watched-folder file whose name holds a line break or ends in whitespace is refused.** A newline in the name became extra Inputs lines in the fire's card text, and a trailing space trimmed to a path that does not exist. `perFireSpec` now refuses it through the ordinary refused-fire path ("Rename the file. Nothing started."; one refused row, no session) and never rewrites the name. A leading space is harmless and not refused.
+
+- **`scripts/hermetic.mjs` refuses a test path that does not exist.** A mistyped path was skipped and the run exited 0, so a green count could miss a file. A path-looking argument that does not exist now exits 1 with a plain message and runs nothing; `npm test` with no arguments, flags and globs are untouched. The value of a value-taking flag (`--test-name-pattern "a/b"`, `--test-reporter`, `--import`, `-r`, ...) is never checked as a path; a boolean flag followed by a mistyped path is still refused.
+
+### Changed
+
+- **Linear-time trailing trims in the reuse-preprobe `normPath` (`scripts/`, not shipped).** The `[.,;:)\]}'"`]+$` and `\/+$` trims were the quadratic class (about 1.2 s CPU on 30000 trailing dots); same results on 1.5M random strings, 0 mismatches.
+
+- **`stageQuestionText`'s JSDoc now sits on the function, not on `GENRE_WHAT`.** Comments and declaration order only.
+
+- **Tests strengthened (test-only, no source change).** A seeded differential test pins the linear `stringLiteralsOf` and `staticImportsOf` scanners against the old regexes; `buildCards`' card-level secret mask, the judged-strike trend number (read from the real `runDeclaredStages`), the Revise-at-menu spend figure (waits for the unwind, runs a second draft), and money-as-read in symbol-first and far-apart layouts each have a test that fails on a mutant.
+
 ## [0.46.0] - 2026-10-23
 
 ### Added

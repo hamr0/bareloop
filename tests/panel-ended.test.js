@@ -19,6 +19,7 @@ import { createPanelServer, endedFor, getRunDetail, getStartFrom, listRuns } fro
 import { appendRun } from '../src/runlist.js';
 import { jobSpecHash } from '../src/job.js';
 import { specOf } from './trigger-world.mjs';
+import { isReusableGreen } from '../src/panel/status.js';
 
 /** @type {string[]} */
 const tmpDirs = [];
@@ -589,4 +590,13 @@ test('a replan answer cut off at its length limit says so in plain words, never 
   // an ordinary plan-red keeps its words
   const plain = endedFor({ outcome: 'plan-red', stopReason: 'x', spentUsd: 1, budgetUsd: 8, lastEscalation: null }, { died: false, lastThing: null }, {});
   assert.match(plain.reason, /checks said no/);
+});
+
+test('isReusableGreen: one spelling - green and already-green reuse; satisfied, held and reds do not; the Ended block reads it', () => {
+  for (const o of ['green', 'already-green']) assert.equal(isReusableGreen(o), true, o);
+  for (const o of ['satisfied', 'green-held', 'plan-red', 'cap-halt', null, undefined]) assert.equal(isReusableGreen(o), false, String(o));
+  const at = (outcome, extra = {}) => endedFor({ outcome, stopReason: null, spentUsd: 1, budgetUsd: 8 }, { died: false, lastThing: null }, extra);
+  assert.equal(at('already-green').next, at('green').next, 'an already-green ends like a green: nothing left to do');
+  assert.equal(at('already-green', { destinationRefused: 'x' }).next, at('green', { destinationRefused: 'x' }).next);
+  assert.notEqual(at('satisfied').next, at('green').next);
 });

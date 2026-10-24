@@ -383,8 +383,8 @@ const PATH_WITH_SLASH = /(?:[\w@.-]+\/)+[\w@.*-]+/g;
 const BARE_FILENAME = /\b[\w-]+\.(?:js|mjs|cjs|ts|mts|cts|json|py|md|yml|yaml|toml)\b/g;
 /** normalise a path-shaped token to something `existsSync` can answer for */
 function normPath(/** @type {string} */ t) {
-  let p = t.trim().replace(/[.,;:)\]}'"`]+$/, '').replace(/^\.\//, '');
-  p = p.replace(/\/\*\*$/, '').replace(/\/\*$/, '').replace(/\/+$/, '');
+  let p = t.trim().replace(/(?<![.,;:)\]}'"`])[.,;:)\]}'"`]+$/, '').replace(/^\.\//, '');
+  p = p.replace(/\/\*\*$/, '').replace(/\/\*$/, '').replace(/(?<!\/)\/+$/, '');
   if (!p || p.includes('://') || p.startsWith('-') || p === '**' || p === '*') return null;
   return p;
 }
