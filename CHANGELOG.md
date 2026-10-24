@@ -19,6 +19,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 - **A broken learnings file is no longer the same as "no lessons yet" (hamr's ruling, 2026-10-24, copied from fwdloop).** An unreadable or wrong-version ledger made the planner's hint block silently empty and recorded nothing. The planner still gets nothing and the run still goes on, but the run's `learnings` spine record now carries `hintsError` (first line, secrets masked), and the Audit learnings box prints one plain line: "The learnings file could not be read, so no lessons were given: ..." with a red ✗ header mark instead of the green ✓ (✓ stays when lessons were handed). In the ✗ case the title reads "No lessons were given to the planner", and the shown line writes the home folder as `~` (the spine record keeps the full reason). Hints off still reads nothing and records nothing.
 
+- **Lessons follow the workflow, not the signed hash (hamr's ruling, 2026-10-24).** Learnings decided "same job version" by the signed hash, which moves with the money cap, time cap, source, destination, inputs and model. A Reuse with a new cap therefore read none of the earlier lessons, and a Resume that raised the cap counted one run twice (a second ledger row). The version is now the workflow key (the rule Reuse already uses). Rows and holds carry a new `workflowKey` beside `specHash`; rows an older version wrote have none and still match any version. Signing, approvals and bridges are unchanged.
+
 ## [0.47.1] - 2026-10-24
 
 ### Fixed
