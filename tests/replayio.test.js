@@ -17,7 +17,7 @@ import {
   parseJsonl, isSidecarByName, looksLikeSpine, resolveSiblings, replayOne, listSpines, readHistoryLog,
 } from '../src/replayio.js';
 import { formatReplay, formatAllLines, replayRun } from '../src/replay.js';
-import { main as cliMain } from '../src/cli.js';
+import { spawnSync } from 'node:child_process';
 
 const BAREAGENT_U = '/home/hamr/PycharmProjects/bareloop-patients/bareagent-u-bareloop';
 const LITECTX_TYPES = '/home/hamr/PycharmProjects/bareloop-patients/litectx-types-bareloop';
@@ -209,47 +209,48 @@ test('readHistoryLog: parses rows written by appendHistory-shaped lines and tole
 });
 
 // ---------------------------------------------------------------------------
-// `bareloop replay` CLI — wired through src/cli.js, real archived data
+// The replay command — `scripts/run-replay.mjs` now (it left the `bareloop` CLI, PRD v1.114), real archived data
 // ---------------------------------------------------------------------------
 
-/** @returns {{ write: (s:string)=>void, text: ()=>string }} */
-function sink() {
-  let buf = '';
-  return { write: (s) => { buf += s; }, text: () => buf };
+const REPLAY_SCRIPT = new URL('../scripts/run-replay.mjs', import.meta.url).pathname;
+/** @param {string[]} args @returns {{ code: number|null, out: string, err: string }} */
+function replayScript(args) {
+  const r = spawnSync(process.execPath, [REPLAY_SCRIPT, ...args], { encoding: 'utf8', cwd: process.cwd() });
+  return { code: r.status, out: r.stdout, err: r.stderr };
 }
 
-test('bareloop replay <spine.jsonl>: prints the real formatReplay report for an archived run and exits 0', { skip: !haveBareagent && 'no bareagent-u patient on this machine' }, async () => {
-  const out = sink(); const err = sink();
-  const rc = await cliMain(['replay', join(BAREAGENT_U, 'u-msdsmkid.jsonl')], { stdout: out, stderr: err, cwd: process.cwd() });
-  assert.equal(rc, 0);
-  assert.match(out.text(), /RUN msdsmkid/);
-  assert.match(out.text(), /step-red/);
+test('run-replay.mjs <spine.jsonl>: prints the real formatReplay report for an archived run and exits 0', { skip: !haveBareagent && 'no bareagent-u patient on this machine' }, () => {
+  const r = replayScript([join(BAREAGENT_U, 'u-msdsmkid.jsonl')]);
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.out, /RUN msdsmkid/);
+  assert.match(r.out, /step-red/);
 });
 
-test('bareloop replay --all <dir>: lists every real archived spine in the directory and exits 0', { skip: !haveBareagent && 'no bareagent-u patient on this machine' }, async () => {
-  const out = sink(); const err = sink();
-  const rc = await cliMain(['replay', '--all', BAREAGENT_U], { stdout: out, stderr: err, cwd: process.cwd() });
-  assert.equal(rc, 0);
-  assert.match(out.text(), /msdsmkid/);
-  assert.match(out.text(), /msf70nei/);
+test('run-replay.mjs --all <dir>: lists every real archived spine in the directory and exits 0', { skip: !haveBareagent && 'no bareagent-u patient on this machine' }, () => {
+  const r = replayScript(['--all', BAREAGENT_U]);
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.out, /msdsmkid/);
+  assert.match(r.out, /msf70nei/);
 });
 
-test('bareloop replay: a non-spine file errs and exits 1', { skip: !haveLitectxTypes && 'no litectx-types-bareloop patient on this machine' }, async () => {
-  const out = sink(); const err = sink();
-  const rc = await cliMain(['replay', join(LITECTX_TYPES, 'types-check-log.jsonl')], { stdout: out, stderr: err, cwd: process.cwd() });
-  assert.equal(rc, 1);
-  assert.match(err.text(), /does not look like a spine/);
+test('run-replay.mjs: a non-spine file errs and exits 1', { skip: !haveLitectxTypes && 'no litectx-types-bareloop patient on this machine' }, () => {
+  const r = replayScript([join(LITECTX_TYPES, 'types-check-log.jsonl')]);
+  assert.equal(r.code, 1);
+  assert.match(r.err, /does not look like a spine/);
 });
 
-test('bareloop replay: a missing file errs and exits 1', () => {
-  return cliMain(['replay', '/no/such/file.jsonl'], { stdout: sink(), stderr: sink(), cwd: process.cwd() }).then((rc) => {
-    assert.equal(rc, 1);
-  });
+test('run-replay.mjs: a missing file errs and exits 1', () => {
+  const r = replayScript(['/no/such/file.jsonl']);
+  assert.equal(r.code, 1);
+  assert.match(r.err, /no such file/);
 });
 
-test('bareloop replay: no args prints usage and exits 1', async () => {
-  const err = sink();
-  const rc = await cliMain(['replay'], { stdout: sink(), stderr: err, cwd: process.cwd() });
-  assert.equal(rc, 1);
-  assert.match(err.text(), /usage: bareloop replay/);
+test('run-replay.mjs: no args prints usage and exits 1; a spine in a scratch dir (this repo\'s own fixture) replays', () => {
+  const r = replayScript([]);
+  assert.equal(r.code, 1);
+  assert.match(r.err, /usage: node scripts\/run-replay\.mjs/);
+  const fixture = new URL('./fixtures/export-run/smuqqw9x266au/source-seed/fix-slugify-bareloop/u-muqrenrf.jsonl', import.meta.url).pathname;
+  const ok = replayScript([fixture]);
+  assert.equal(ok.code, 0, ok.err);
+  assert.match(ok.out, /RUN muqrenrf/);
 });

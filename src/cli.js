@@ -41,34 +41,17 @@ import { startCmd, stopCmd, statusCmd, installCmd, menuCmd } from './launcher.js
 import { exportedBundles, resolveBundleRef, listResumableBundleRuns } from './bundleref.js';
 import { makePaint } from './tty-colour.js';
 import { main as runUMain } from './userrun.js';
-// PANEL-BUILD.md P0 task 3/4 — `bareloop interview` and `bareloop author`
-// wrap the close-authoring interview and authoring-pipeline flows' own
-// argv-parsing entries (`src/interviewrun.js`/`src/authorrun.js`, lifted out
-// of `scripts/run-interview.mjs`/`scripts/run-author.mjs` the same way task
-// 1/2 lifted `scripts/run-u.mjs`). `scripts/run-interview.mjs`/`scripts/
-// run-author.mjs` call these SAME functions directly, so there is exactly
-// one place each flag grammar is parsed.
-import { main as interviewMain } from './interviewrun.js';
-import { main as authorMain } from './authorrun.js';
-// PANEL-BUILD.md P0 — the spine/gate-audit read side (`bareloop replay`,
-// and `doHistory`'s reader below), lifted out of `scripts/run-replay.mjs`
-// into `src/replayio.js` the same way tasks 1-3 lifted their own scripts.
-import {
-  parseJsonl, looksLikeSpine, replayOne, listSpines, readHistoryLog,
-} from './replayio.js';
-import { formatReplay, formatAllLines } from './replay.js';
 // PANEL-BUILD.md P1 — the read-only panel HTTP server (`bareloop panel`).
 // One more caller of the same `src/` library functions this file already
 // calls (the layering law, PANEL-BUILD.md §2) — `src/panel/server.js` never
 // re-implements the spine/run-list read side, it calls `src/replayio.js`/
 // `src/runlist.js` directly, in-process.
 import { panelMain } from './panel/server.js';
+import { readHistoryLog } from './replayio.js';
 // PANEL-BUILD.md P1 (2026-09-24 rulings) — the one run list
-// (`~/.config/bareloop/runs.jsonl`) and its backfill scan. `bareloop runs`
-// (list) and `bareloop runs backfill <dir>` (reconstruct rows from archived
-// spines already on disk) are this rung's only new commands.
+// (`~/.config/bareloop/runs.jsonl`); `bareloop runs` prints it. (`runs backfill` left the CLI, PRD v1.114; the library's `backfillRuns` stays.)
 import { keysForDoor } from './keysfile.js';
-import { readRunList, backfillRuns, formatRunRow } from './runlist.js';
+import { readRunList, formatRunRow } from './runlist.js';
 
 /** @param {unknown} v @returns {v is Record<string, any>} */
 const isObj = (v) => typeof v === 'object' && v !== null;
@@ -276,74 +259,13 @@ async function doHistory(args, { out, err, cwd, ask, canAsk, deps }) {
 }
 
 /**
- * `bareloop replay <spine.jsonl>` — one run's whole story, reconstructed
- * from its spine + gate-audit sidecar, printed as one page
- * ({@link formatReplay}). `bareloop replay --all <dir>` — every spine found
- * directly in `dir`, one aligned table row each ({@link formatAllLines}).
- * Read-only, $0, mints no verdict, writes nothing (PANEL-BUILD.md P0: this
- * is the CLI the gap table marked "No" for "Replay an archived run at $0").
- * Logic lifted verbatim from `scripts/run-replay.mjs` into
- * `src/replayio.js`; this command is that script's one caller now, the same
- * shape `bareloop history`/`bareloop run` already are over their own
- * library functions.
- * @param {string[]} args @param {{ out: (s: string) => void, err: (s: string) => void, cwd: string }} ctx
+ * `bareloop runs` — print the one run list, one line per row ({@link formatRunRow}). Read-only, $0: no run trigger, no key ever read.
+ * (`runs backfill` left the CLI, PRD v1.114.)
+ * @param {string[]} _args @param {{ out: (s: string) => void, deps: any }} ctx
  */
-function doReplay(args, { out, err, cwd }) {
-  if (args[0] === '--all') {
-    const dirArg = args[1];
-    if (!dirArg) { err('usage: bareloop replay --all <dir>'); return 1; }
-    const dir = resolve(cwd, dirArg);
-    if (!existsSync(dir)) { err(`no such directory: ${dir}`); return 1; }
-    const entries = listSpines(dir);
-    if (entries.length === 0) { out(`no .jsonl files found in ${dir}`); return 0; }
-    out(formatAllLines(entries));
-    return 0;
-  }
-  const spinePathArg = args[0];
-  if (!spinePathArg) {
-    err('usage: bareloop replay <spine.jsonl>');
-    err('       bareloop replay --all <dir>');
-    return 1;
-  }
-  const spinePath = resolve(cwd, spinePathArg);
-  if (!existsSync(spinePath)) { err(`no such file: ${spinePath}`); return 1; }
-  const spine = parseJsonl(spinePath);
-  if (!looksLikeSpine(spine.records)) {
-    err(`${spinePath} does not look like a spine (no job-start or run-start record found)`);
-    return 1;
-  }
-  const summary = replayOne(spinePath, { preParsedSpine: spine });
-  out(formatReplay(summary));
-  return 0;
-}
-
-/**
- * `bareloop runs` — print the one run list, one line per row
- * ({@link formatRunRow}). `bareloop runs backfill <dir>` — scan `dir` for
- * archived spines and add a row per one not already listed
- * ({@link backfillRuns}), printing the count added/already-listed/skipped
- * (never silent). Read-only, $0: no interview, no author, no run trigger, no
- * key ever read.
- * @param {string[]} args @param {{ out: (s: string) => void, err: (s: string) => void, cwd: string }} ctx
- */
-function doRuns(args, { out, err, cwd }) {
-  if (args[0] === 'backfill') {
-    const dirArg = args[1];
-    if (!dirArg) { err('usage: bareloop runs backfill <dir>'); return 1; }
-    const dir = resolve(cwd, dirArg);
-    if (!existsSync(dir)) { err(`no such directory: ${dir}`); return 1; }
-    let result;
-    try {
-      result = backfillRuns(dir);
-    } catch (e) {
-      err(`backfill failed: ${/** @type {Error} */ (e).message}`);
-      return 1;
-    }
-    out(`backfill ${dir}: added ${result.added}, already listed ${result.alreadyListed}, skipped ${result.skipped} (not a spine or unreadable)`);
-    return 0;
-  }
-  const { rows, skipped } = readRunList();
-  if (rows.length === 0) { out('runs: (none listed yet — see `bareloop runs backfill <dir>`)'); }
+function doRuns(_args, { out, deps }) {
+  const { rows, skipped } = readRunList(deps.runlistHome === undefined ? {} : { home: deps.runlistHome });
+  if (rows.length === 0) { out('runs: (none listed yet)'); }
   else for (const row of rows) out(formatRunRow(row));
   if (skipped > 0) out(`(${skipped} malformed line${skipped === 1 ? '' : 's'} skipped)`);
   return 0;
@@ -413,7 +335,7 @@ async function mainInner(argv, deps, holder) {
   const ctx = { out, err, cwd, env, now, deps, ask, canAsk, keysHome: keys.home };
 
   const [cmd, ...rest] = argv;
-  if (keys.warning && cmd && ['run', 'run-u', 'interview', 'author', 'panel'].includes(cmd)) err(`WARNING: ${keys.warning}`);
+  if (keys.warning && cmd && ['run', 'run-u', 'panel'].includes(cmd)) err(`WARNING: ${keys.warning}`);
   const launcherHome = keys.home ?? deps.runlistHome;
   if (!cmd) return runLauncher('menu', [], { ...deps, stdout }, ctx, launcherHome);
   if (cmd === 'start' || cmd === 'stop' || cmd === 'status' || cmd === 'install') return runLauncher(cmd, rest, { ...deps, stdout }, ctx, launcherHome);
@@ -432,35 +354,15 @@ async function mainInner(argv, deps, holder) {
   // then `env`/`out`/`err` are overridden to the SAME resolved values every
   // other command here prints through, so `run-u`'s output lands on the
   // `stdout`/`stderr` a caller of `main` actually passed.
+  // (dispatchable, not listed in the menu or the help: the panel spawns it, PRD v1.114)
   if (cmd === 'run-u') return runUMain(rest, { ...deps, env, out, err, keysHome: keys.home, invokedAs: 'bareloop run-u' });
-  // `bareloop interview` — the close-authoring interview (PANEL-BUILD.md P0
-  // task 3/4). This flow reads a TTY (or a piped stdin) directly rather than
-  // through the `out`/`err` line-functions every other command here uses, so
-  // it needs the raw streams, not the wrapped ones — `stdout`/`stderr` (both
-  // already resolved above) are handed through instead.
-  // `invokedAs: 'bareloop interview'` — the usage message names the command a
-  // person actually typed, never a script path they never invoked and may
-  // not have on disk (a branch-review nit; `scripts/run-interview.mjs` still
-  // supplies none, so it keeps naming itself when run directly).
-  if (cmd === 'interview') return interviewMain(rest, { ...deps, env, keysHome: keys.home, stdin: deps.stdin ?? process.stdin, stdout, stderr, invokedAs: 'bareloop interview' });
-  // `bareloop author` — the authoring pipeline (scout, declaration, D9's
-  // gates), same task. Same raw-stream reasoning: its one interactive seam
-  // (the confirm turn) reads stdin directly. Same `invokedAs` reasoning too.
-  if (cmd === 'author') return authorMain(rest, { ...deps, env, keysHome: keys.home, stdin: deps.stdin ?? process.stdin, stdout, stderr, invokedAs: 'bareloop author' });
-  // `bareloop replay` — the spine/gate-audit read side (PANEL-BUILD.md P0,
-  // last of the rung's four tasks). Synchronous, file-based, no interactive
-  // seam — same shape as `doHistory`/`doExport`, not the argv-owning
-  // `main(argv, deps)` modules the flows above delegate to.
-  if (cmd === 'replay') return doReplay(rest, ctx);
-  // `bareloop runs` / `bareloop runs backfill <dir>` — PANEL-BUILD.md P1's
-  // one run list. Read-only ($0): no interview, no author, no run trigger,
-  // no key ever read.
+  // `bareloop runs` — PANEL-BUILD.md P1's one run list. Read-only ($0): no run trigger, no key ever read.
   if (cmd === 'runs') return doRuns(rest, ctx);
   // `bareloop panel [--port N]` — PANEL-BUILD.md P1's read-only HTTP panel.
   // Never runs a job, spends money, or reads a key: it serves the run list
   // and spine/gate-audit reads over `127.0.0.1` only. `deps.runlistHome`
   // rides through the same injectable seam `run`/`run-u` already use.
   if (cmd === 'panel') return panelMain(rest, { out, err, runlistHome: deps.runlistHome, env: deps.env });
-  err(`unknown command ${JSON.stringify(cmd)} — one of: export, run, history, run-u, interview, author, replay, runs, panel, start, stop, status, install`);
+  err(`unknown command ${JSON.stringify(cmd)} — one of: export, run, history, runs, panel, start, stop, status, install`);
   return 1;
 }

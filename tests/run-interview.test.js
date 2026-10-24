@@ -48,7 +48,6 @@ import { cleanEnv } from './helpers.js';
 const CLASS = MENU_CLASSES.reduce((a, b) => (requiredAnswersFor(b).length > requiredAnswersFor(a).length ? b : a));
 
 const SCRIPT = new URL('../scripts/run-interview.mjs', import.meta.url).pathname;
-const BIN = new URL('../bin/bareloop.mjs', import.meta.url).pathname;
 // PANEL-BUILD.md P0 task 3/4 — the ORCHESTRATION this file's two source-text
 // tripwires (below) pin moved off scripts/run-interview.mjs (now a thin
 // adapter) into src/interviewrun.js's own `main(argv, deps)`; SCRIPT (above)
@@ -113,7 +112,7 @@ const envWithRows = (over) => {
 };
 
 const interview = ({
-  verdict = CLASS, out, budget = '2.50', provider = 'anthropic-api', baseUrl = null, key = '', lines, viaCli = false,
+  verdict = CLASS, out, budget = '2.50', provider = 'anthropic-api', baseUrl = null, key = '', lines,
 }) => {
   const args = [
     '--verdict', verdict, '--out', out,
@@ -121,8 +120,7 @@ const interview = ({
     ...(provider === null ? [] : ['--provider', provider, '--model', MODEL_FOR[provider] ?? 'claude-sonnet-5']),
     ...(baseUrl === null ? [] : ['--base-url', baseUrl]),
   ];
-  // viaCli: enter through the shipped `bareloop` bin (`bareloop interview ...`) instead of the script adapter.
-  const r = spawnSync(process.execPath, viaCli ? [BIN, 'interview', ...args] : [SCRIPT, ...args], {
+  const r = spawnSync(process.execPath, [SCRIPT, ...args], {
     encoding: 'utf8', timeout: 120_000, input: `${lines.join('\n')}\n`,
     // no key VALUE reaches this script and it must never need one. `key` only
     // ever targets ANTHROPIC_API_KEY (the fixture default provider); the other
@@ -698,12 +696,9 @@ test('the offer\'s key name is the Settings ROW\'s variable for the chosen provi
   assert.equal(JSON.parse(readFileSync(join(out, 'specdraft.json'), 'utf8')).model, 'gw-model');
 });
 
-test('the offer\'s printed run-author command is spelled the way the person entered: `bareloop author` via the CLI, the script via the adapter', () => {
-  const viaCli = interview({ out: outDir(), lines: session(CLASS), viaCli: true });
-  assert.equal(viaCli.code, 0, viaCli.out);
-  assert.match(viaCli.out, /ANTHROPIC_API_KEY=\.\.\. bareloop author --source /);
-  assert.doesNotMatch(viaCli.out, /node scripts\/run-author\.mjs/, 'the tarball ships no scripts/');
+test('the offer\'s printed run-author command is spelled the way the script adapter is entered (`bareloop interview` / `bareloop author` left the CLI, PRD v1.114)', () => {
   const viaScript = interview({ out: outDir(), lines: session(CLASS) });
+  assert.equal(viaScript.code, 0, viaScript.out);
   assert.match(viaScript.out, /ANTHROPIC_API_KEY=\.\.\. node scripts\/run-author\.mjs --source /);
 });
 
@@ -869,7 +864,7 @@ test('the paid step is OFFERED, never taken: the default is no, and saying nothi
   assert.match(r.out, /the two files are already on disk/);
 });
 
-test('a yes at the offer starts the PACKAGED door — bin/bareloop.mjs author with the same flags, never the unshipped scripts/ file', async () => {
+test('a yes at the offer starts scripts/run-author.mjs with the same flags (`bareloop author` left the CLI, PRD v1.114)', async () => {
   const out = outDir();
   /** @type {any[][]} */ const spawned = [];
   const sink = () => { let t = ''; return { write: (x) => { t += x; return true; }, text: () => t }; };
@@ -887,10 +882,9 @@ test('a yes at the offer starts the PACKAGED door — bin/bareloop.mjs author wi
   assert.equal(code, 0, so.text() + se.text());
   assert.equal(spawned.length, 1, 'the offer was taken once');
   const argv = spawned[0][1];
-  assert.equal(argv[0], BIN, 'the packaged bin, which ships');
-  assert.equal(argv[1], 'author');
+  assert.equal(argv[0], new URL('../scripts/run-author.mjs', import.meta.url).pathname, 'the script, now the only door');
+  assert.ok(!argv.includes('author'), 'no `bareloop author` subcommand any more');
   assert.ok(argv.includes('--source') && argv.includes('--answers') && argv.includes('--draft') && argv.includes('--out'), 'the same flags run-author takes');
-  assert.ok(!argv.some((x) => String(x).includes('run-author.mjs')), 'never the scripts/ file, which the tarball does not ship');
 });
 
 // ── AN OFFER THAT CAN ONLY BE REFUSED IS NOT PUT ──────────────────────────────

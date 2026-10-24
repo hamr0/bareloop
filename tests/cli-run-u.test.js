@@ -201,12 +201,20 @@ test('bareloop run-u: dispatch through src/cli.js matches src/userrun.js:main ca
 });
 
 // ---------------------------------------------------------------------------
-// the top-level command list now names run-u
+// the top-level command list: run-u stays dispatchable but is not listed (PRD v1.114, one menu); interview, author and replay are gone
 // ---------------------------------------------------------------------------
 
-test('bareloop: an unknown command\'s refusal now lists run-u alongside export/run/history', async () => {
+test('bareloop: an unknown command\'s refusal lists the commands, without run-u / interview / author / replay', async () => {
   const out = sink(); const err = sink();
   const rc = await main(['bogus'], { stdout: out, stderr: err });
   assert.equal(rc, 1);
-  assert.match(err.text(), /unknown command "bogus" — one of: export, run, history, run-u/);
+  assert.match(err.text(), /unknown command "bogus" — one of: export, run, history, runs, panel, start, stop, status, install/);
+  assert.doesNotMatch(err.text(), /run-u|interview|author|replay/);
+  for (const gone of ['interview', 'author', 'replay']) {
+    const e2 = sink();
+    assert.equal(await main([gone], { stdout: sink(), stderr: e2 }), 1, `${gone} is no longer a command`);
+    assert.match(e2.text(), /unknown command/);
+  }
+  const e3 = sink();
+  assert.equal(await main(['runs', 'backfill', '/tmp'], { stdout: sink(), stderr: e3, runlistHome: '/nonexistent-home-for-test' }), 0, 'runs takes no subcommand now: it just lists');
 });
