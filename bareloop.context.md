@@ -3318,20 +3318,37 @@ changes them, and a piped or `NO_COLOR` run prints the plain words above (the th
 - **`bareloop install`** → creates only what is missing (folder mode 700, `.env` with the keys-file comment lines, mode 600, `config.json`); never reads a key value;
   `Already installed, nothing to do.` when there is nothing to add. Needs node >= 22.
 
-The old `1 export  2 run  3 history` menu is gone; `bareloop export|run|history` and the other sub-commands are unchanged. `run-u`, `interview` and `author` are dispatched
-by name only: `bareloop run-u <flags…>`, `bareloop interview <flags…>`, `bareloop author <flags…>`.
+**One menu (PRD v1.114, F245).** Bare `bareloop` prints the header, then `panel: 1 start 2 stop 3 status 4 install`, `jobs: 5 export 6 run 7 resume 8 history` and `q quit`. Each job command asks for what it needs
+(typed flags skip the question): **export** lists the green runs as numbered `job (run-N)` names, then asks the output folder; **run** asks the bundle (a number from the exported bundles, a run name, or a folder), the repo, then
+the `$` cap and the time cap (Enter keeps the signed ones); **resume** lists the stopped / capped bundle runs the engine would resume, then offers more money / time; **history** asks the bundle and prints what `bareloop history <bundle>` prints.
+A required question answered with an empty Enter is asked once more; a second empty Enter ends that command with a plain line (nothing chosen, nothing run), exit `0`. `interview`, `author`, `replay` and `runs backfill` are no longer commands
+(`node scripts/run-replay.mjs`, `scripts/run-interview.mjs`, `scripts/run-author.mjs` run from a source checkout; the library functions the panel uses stay). `run-u` is still dispatched by name (`bareloop run-u <flags…>`: the panel spawns it) but is listed nowhere.
 
 When two key rows share one provider and endpoint, a CLI run uses the FIRST row in the keys list, so put the
 key you want first (the panel picks the row by the Model menu).
 
+- **`bareloop export ["<job> (run-N)"] [--out <dir>]`** (PRD v1.114; `src/runexport.js`) → a bundle from a GREEN panel / run-u run, by the name the panel shows. No name: the green runs are listed numbered and you pick;
+  no `--out`: the folder is asked. The bundle is the run's OWN signed spec (`closeDecl` kept as signed — no close scripts, nothing edited, same `jobSpecHash`) plus a bridge-v1 record minted with `mintBridge` from the run's saved plan
+  (`bridge-<job>-<runid>.json`, beside its spine) and the run's spine: cost (`job-end` `engagementSpentUsd`, else `spentUsd`), `spendComplete`, wall time (`legsWallMs`), rounds (`readTry`), and the run list's `patient`.
+  A value that cannot be read is refused in plain words naming it, never guessed. **Repo jobs only for now:** a rubric (judged) job, a job that reads a page link and a plain-folder job are refused at $0 with `only repo jobs can be exported for now`
+  and the reason. Each export appends ONE `{type:'exported', runid, job, bundle, bundleHash, at}` row to `runs.jsonl` (ignored by every run-list reader) so `bareloop run "<name>"` finds the bundle. Then `cd <bundle> && npm install`.
+  `exportBundle` takes a spec with `closeDecl` and no `close` (both is a red). Exit `0`, `1` on a refusal. The older form below (`--registry`) is unchanged.
 - **`bareloop export <jobs/x.json> --registry <dir> --out <dir>`** → resolves the spec's
   close-script paths against the spec file's own directory (never the process cwd), calls
   `exportBundle`. On success prints `bundleHash:`, the sorted file list, and "this bundle is
   unblessed until its first run greens on the importer's machine." Exit `1` on any red or
   missing flag, `0` on success.
 
-- **`bareloop run <bundleDir> --repo <path> [--budget N] [--wall MIN] [--approve <bundleHash>]`**
-  and **`bareloop run <bundleDir> --resume <runid> [--repo <path>] [...]`** — a thin door
+- **`bareloop run <bundle> --repo <path> [--model <id>] [--budget N] [--wall MIN] [--yes] [--approve <bundleHash>]`**
+  and **`bareloop run <bundle> --resume <runid> [--repo <path>] [...]`** — `<bundle>` is a folder OR the run name it was exported under (`job (run-N)`, found through the `exported` rows in `runs.jsonl`;
+  `src/bundleref.js`). **PRD v1.114 changes to the steps below:** (a) a missing bundle, repo or model is ASKED for (when stdin is a terminal or a caller-handed stream; a bare uninjected pipe gets the usage line, as before) —
+  the model from the Settings-ticked lines, only when the bundle's spec names none and no `--model` is given; an empty Enter asks once more, a second ends the command (exit `0`, nothing run). A guided run
+  (anything asked) also offers the optional `$` cap and time cap (Enter keeps the signed ones). (b) **A cap ABOVE the signed one is allowed with your yes**, at `run` and at `run --resume`: it prints
+  `This raises the $ cap from $X to $Y.` (or the time cap, in minutes), then `Type yes to sign it:`; only `yes` proceeds. With no terminal a raise needs `--yes`, else it is refused at $0 (`envelope-widen`,
+  the sentence says how). The approval is appended to `<bundleDir>/runs/<runid>/approvals.jsonl` as `{type:'cap-raise', who, field, old, new, at, bundleHash, approveHash}` once the engine accepts the run, and the
+  history row carries `capsRaised`. Lowering needs no confirm. A resume's ceiling still folds prior spend. (c) **A green run commits its work on its work branch** (`commitWork`, the panel's own call: everything
+  changed except the arbiter's books and `node_modules`; a green with nothing to commit says so), printed as a `commit` line before `branch`/`worktree`/`merge`. The folder is kept; the merge stays yours.
+  The first run of an UNBLESSED bundle still needs `--approve <bundleHash>` (typed flag; the menu has no field for it) — a thin door
   (`src/bundlerun.js`) to the same engine `bareloop run-u` drives (`src/userrun.js`): one
   runner, so providers, keys (any provider the bundle's spec names — the keys file or env), the
   judge, the monthly $ limit, the outside watchdog and the readout are that engine's. The door
@@ -3341,8 +3358,8 @@ key you want first (the panel picks the row by the Model menu).
      `require.resolve('bareloop')`? A red (`bundle-deps-missing`) prints the exact cure line
      (`cd <bundleDir> && npm install`) and stops, exit `1`, before the envelope check, the
      blessing check, any key, or any worktree.
-  3. `checkEnvelope(spec, { budgetUsd?, maxWallMs? })` — `--wall` is minutes, converted to ms.
-     A red (an invalid number, or a widen) stops here, exit `1`.
+  3. `checkEnvelope(spec, { budgetUsd?, maxWallMs? })` over the LOWERED / equal fields — `--wall` is minutes, converted to ms.
+     A red (an invalid number) stops here, exit `1`. A field above the signed one is a RAISE (`capRaises`): shown back and signed by `yes` / `--yes`, else `envelope-widen`, exit `1` (see the header above).
   4. Blessing — BEFORE any key is read. No `blessing.json` yet: print the bundle's `README.md`
      (the operator questions), the "first run" notice + the minting-run line (F128-corrected —
      see below), the `bundleHash`, and **require** `--approve <bundleHash>` to match exactly, or
@@ -3364,8 +3381,8 @@ key you want first (the panel picks the row by the Model menu).
      (P5-R): no new id, run dir or worktree. The resume command a halted leg prints carries that leg's own
      `--budget`/`--wall`, only if you passed them (a tightened ceiling never silently reverts to the signed
      one). After a MONEY halt the line does NOT repeat the exhausted `--budget` (chain spend is folded, so
-     it would halt again at once); it prints `--budget <more than $<spent so far>, at most $<signed
-     budgetUsd>>` for you to fill in, and is not runnable until you do. When the run spent the WHOLE signed
+     it would halt again at once); it prints `--budget <more than $<spent so far>, above $<signed
+     budgetUsd> asks you to type yes>` for you to fill in, and is not runnable until you do. When the run spent the WHOLE signed
      ceiling, that range is empty, so no resume line is printed: the block says no room is left under the signed ceiling. A bundle's spec is
      manifest-hashed, so its halt hint never asks you to edit `budgetUsd`.
   6. `resolveBundleSpec` (the `$BARELOOP_BUNDLE` substitution) → tighten `budgetUsd`/`maxWallMs`
@@ -3417,7 +3434,7 @@ key you want first (the panel picks the row by the Model menu).
   writes `JSON.stringify(row)` — `src/bundle.js`), then every bridge's `listingRow(b)` from
   `<bundleDir>/bridges`. Always exit `0`; "(no runs yet)" when `history.jsonl` doesn't exist.
 
-- **`bareloop replay <spine.jsonl>`** / **`bareloop replay --all <dir>`** (PANEL-BUILD.md
+- **`bareloop replay …` LEFT THE CLI (PRD v1.114): it is `node scripts/run-replay.mjs <spine.jsonl>` / `--all <dir>` now (same output, same exit codes; the library is unchanged).** Historical entry: **`bareloop replay <spine.jsonl>`** / **`bareloop replay --all <dir>`** (PANEL-BUILD.md
   P0, last of the rung's four tasks) → the read side for the panel's History/Run/Audit/Job
   tabs: point it at one run's spine (+ its `-gate-audit.jsonl` sidecar, resolved
   automatically) and get `formatReplay`'s one-page report; point `--all` at a directory and
@@ -3435,7 +3452,7 @@ key you want first (the panel picks the row by the Model menu).
   this command reports, it never grades), `1` on a missing file/directory or a non-spine
   file, `1` with a usage line on no args.
 
-- **`bareloop runs`** / **`bareloop runs backfill <dir>`** (PANEL-BUILD.md P1, 2026-09-24
+- **`bareloop runs`** still prints the run list; **`runs backfill` LEFT THE CLI (PRD v1.114)** (the library's `backfillRuns` stays). Historical entry: **`bareloop runs`** / **`bareloop runs backfill <dir>`** (PANEL-BUILD.md P1, 2026-09-24
   rulings — "one home for runs", hamr's option B) → the one run list, at `~/.config/bareloop/
   runs.jsonl` (the same directory the keys file, PRD §7d, lives in — outside any repo tree,
   never moved into one). This is a LIST, not a relocation: patient copies stay exactly where
@@ -3804,7 +3821,7 @@ key you want first (the panel picks the row by the Model menu).
   the source-tree adapters — the tarball ships no `scripts/`. One owner: `commandFor` (`src/invoke.js`),
   fed by each flow's `deps.invokedAs`.
 
-- **`bareloop interview <flags…>`** (PANEL-BUILD.md P0 task 3/4) → the close-authoring
+- **`bareloop interview` LEFT THE CLI (PRD v1.114): `node scripts/run-interview.mjs <flags…>` is the door; its "run it now" offer starts `scripts/run-author.mjs`.** Historical entry: **`bareloop interview <flags…>`** (PANEL-BUILD.md P0 task 3/4) → the close-authoring
   interview, at the terminal, one question at a time (D10; `docs/wiki/FINDINGS.md`'s
   interview surface). `src/cli.js`'s `interview` dispatch hands `rest` straight to
   **`src/interviewrun.js`'s own `main(argv, deps)`**, unparsed — the same one-owner shape
@@ -3823,7 +3840,7 @@ key you want first (the panel picks the row by the Model menu).
   `stderr` (the raw streams, not the wrapped `out`/`err` line-functions every other command
   here uses) rather than re-deriving them.
 
-- **`bareloop author <flags…>`** (PANEL-BUILD.md P0 task 4/4) → the authoring pipeline: a
+- **`bareloop author` LEFT THE CLI (PRD v1.114): `node scripts/run-author.mjs <flags…>`.** Historical entry: **`bareloop author <flags…>`** (PANEL-BUILD.md P0 task 4/4) → the authoring pipeline: a
   real scout over a real repository, a real model filling the close declaration, D9's three
   mechanical gates, stopping at `prepareSigning` (it never signs and never runs the job —
   signing and running are `run-u`'s territory). `src/cli.js`'s `author` dispatch hands `rest`
