@@ -311,7 +311,7 @@ test('resume route: unchanged caps spawn run-u with the SAME signed spec, --resu
   assert.deepEqual(args.slice(i, i + 7), ['run-u', '--spec', join(out, 'resolved-spec.json'), '--resume', 'same1', '--approve', specHash]);
   assert.ok(args.includes('systemd-inhibit'), 'held under the inhibitor, like Sign & run');
   assert.deepEqual(args.slice(args.indexOf('--draft-spent-usd'), args.indexOf('--draft-spent-usd') + 2), ['--draft-spent-usd', '0.5'], 'the drafting fold rides every leg');
-  assert.deepEqual(readdirSync(out).filter((n) => !n.startsWith('resume-')).sort(), ['resolved-spec.json', 'source-x'], 'no revision file when the caps did not change');
+  assert.deepEqual(readdirSync(out).filter((n) => n !== 'run.log').sort(), ['resolved-spec.json', 'source-x'], 'no revision file when the caps did not change');
 });
 
 test('resume route: an older spec\'s Settings line rides as --model / --provider (hash untouched); with none given, no such flags', async (t) => {
@@ -405,8 +405,7 @@ async function resumeSaying(t, runid, say) {
   const home = tmp();
   const { out } = makeRun(home, { runid, spent: 5 });
   const spawnFn = makeSpawn((child) => {
-    const log = readdirSync(out).find((n) => n.startsWith(`resume-${runid}-`));
-    appendFileSync(join(out, log), say);
+    appendFileSync(join(out, 'run.log'), say);
     child.emit('exit', 2);
   });
   const { post } = await startServer(t, { home, spawnFn });
@@ -425,7 +424,7 @@ test('resume route: raw engine text (validator reds, exit status, --flags) never
   const r = await resumeSaying(t, 'eng2', raw);
   assert.equal(r.status, 409);
   assert.equal(r.body.error, `Resume did not start. Nothing was spent on it. The details are in ${r.body.log}.`);
-  assert.match(r.body.log, /resume-eng2-\d+\.log$/);
+  assert.match(r.body.log, /[\\/]run\.log$/);
   assert.doesNotMatch(r.body.error, /validateJob|red\(s\)|exit status|node-22|invalid-value/);
 });
 
@@ -577,7 +576,7 @@ test('Q2(b): start-from says whether the signed spec names a model; a resume car
   assert.equal(args[args.indexOf('--approve') + 1], specHash);
   assert.equal(specHash, jobSpecHash(SPEC), 'the hash is the unchanged signed spec\'s');
   assert.deepEqual(args.slice(args.indexOf('--model'), args.indexOf('--model') + 4), ['--model', 'deepseek-flash', '--provider', 'DEEPSEEK_API_KEY']);
-  assert.deepEqual(readdirSync(out).filter((n) => !n.startsWith('resume-')).sort(), ['resolved-spec.json', 'source-x'], 'no revision file');
+  assert.deepEqual(readdirSync(out).filter((n) => n !== 'run.log').sort(), ['resolved-spec.json', 'source-x'], 'no revision file');
 });
 
 test('a replan answer cut off at its length limit says so in plain words, never "model provider failed" or "checks said no" (hamr 2026-10-16, run mv9gm796)', () => {

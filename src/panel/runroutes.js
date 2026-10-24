@@ -13,7 +13,7 @@
 
 import { spawn as realSpawn } from 'node:child_process';
 import {
-  openSync, closeSync, writeFileSync, readFileSync, readdirSync,
+  openSync, closeSync, writeFileSync, readFileSync, readdirSync, appendFileSync, statSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
@@ -51,13 +51,33 @@ function nextRevisionName(dir) {
 }
 
 /**
- * The tail of the engine's own log — its refusal text, verbatim.
+ * The folder's ONE `run.log` for an Accept / Rerun / Pause / Resume child (records ruling 2026-10-24: one log per folder, not a
+ * new file per action). One header line says which action's words follow; `offset` is the byte after it, so {@link readLogTail}
+ * shows this action's own output and never an older action's.
+ * @param {string} dir the run's folder (beside its spec)
+ * @param {string} action accept | rerun | pause | resume
+ * @param {string} runid
+ * @returns {{logFile: string, fd: number|null, offset: number}}
+ */
+function openActionLog(dir, action, runid) {
+  const logFile = join(dir, 'run.log');
+  try {
+    appendFileSync(logFile, `== ${action} ${runid} at ${new Date().toISOString()} ==\n`);
+    const offset = statSync(logFile).size;
+    return { logFile, fd: openSync(logFile, 'a'), offset };
+  } catch { return { logFile, fd: null, offset: 0 }; }
+}
+
+/**
+ * The tail of the engine's own log — its refusal text, verbatim — read only from `offset` (this action's own lines).
  * @param {string} file
+ * @param {number} [offset] byte to start from (0 = the whole file)
  * @returns {string}
  */
-function readLogTail(file) {
+function readLogTail(file, offset = 0) {
   try {
-    const text = readFileSync(file, 'utf8');
+    const buf = readFileSync(file);
+    const text = buf.subarray(offset).toString('utf8');
     return text.slice(Math.max(0, text.length - LOG_TAIL_BYTES)).trim();
   } catch { return ''; }
 }
@@ -203,7 +223,6 @@ export function createRunRoutes(opts) {
     }
     const questionOf = (/** @type {string} */ n) => (signed !== null && opts.stageQuestionsOfSpec ? opts.stageQuestionsOfSpec(signed).get(n) ?? null : null);
     const dir = dirname(ctx.specPath);
-    const logFile = join(dir, `${decide}-${runid}-${Date.now()}.log`);
     const args = [
       '--wait', 'systemd-inhibit', `--why=bareloop panel ${decide}`,
       process.execPath, bareloopBin,
@@ -211,9 +230,7 @@ export function createRunRoutes(opts) {
       // last, so no flag lookup in the engine can land on the person's words
       ...(decide === 'rerun' ? ['--text', text] : []),
     ];
-    /** @type {number|null} */
-    let logFd = null;
-    try { logFd = openSync(logFile, 'a'); } catch { logFd = null; }
+    const { logFile, fd: logFd, offset: logFrom } = openActionLog(dir, decide, runid);
     const child = spawnFn('setsid', args, { detached: true, stdio: ['ignore', logFd ?? 'ignore', logFd ?? 'ignore'], env: envNow() });
     if (logFd !== null) { try { closeSync(logFd); } catch { /* the child holds its own copy */ } }
     if (typeof child?.unref === 'function') child.unref();
@@ -230,7 +247,7 @@ export function createRunRoutes(opts) {
       child.once('exit', (/** @type {number|null} */ code) => {
         clearTimeout(timer);
         if (code === 0) finish(200, { ok: true, ...answered, runid, log: logFile });
-        else finish(409, { ok: false, error: engineRefusalWords(readLogTail(logFile), decide, logFile, questionOf), log: logFile });
+        else finish(409, { ok: false, error: engineRefusalWords(readLogTail(logFile, logFrom), decide, logFile, questionOf), log: logFile });
       });
       child.once('error', (/** @type {Error} */ e) => {
         clearTimeout(timer);
@@ -352,7 +369,6 @@ export function createRunRoutes(opts) {
       writeFileSync(specPath, `${JSON.stringify(spec, null, 2)}\n`, { flag: 'wx' });
     }
 
-    const logFile = join(dir, `resume-${m[1]}-${Date.now()}.log`);
     const args = [
       '--wait', 'systemd-inhibit', '--why=bareloop panel resume',
       process.execPath, bareloopBin,
@@ -363,9 +379,7 @@ export function createRunRoutes(opts) {
       // the drafting fold rides every leg of the chain (a leg that dropped it would widen the ceiling)
       ...(plan.draftSpentUsd !== null ? ['--draft-spent-usd', String(plan.draftSpentUsd), ...(plan.draftSpendComplete === false ? ['--draft-spend-incomplete'] : [])] : []),
     ];
-    /** @type {number|null} */
-    let logFd = null;
-    try { logFd = openSync(logFile, 'a'); } catch { logFd = null; }
+    const { logFile, fd: logFd, offset: logFrom } = openActionLog(dir, 'resume', m[1]);
     const child = spawnFn('setsid', args, {
       detached: true, stdio: ['ignore', logFd ?? 'ignore', logFd ?? 'ignore'], env: envNow(),
     });
@@ -389,7 +403,7 @@ export function createRunRoutes(opts) {
             ok: true, runid: m[1], specHash, capsChanged: changed, log: logFile,
           });
         } else {
-          finish(409, { ok: false, error: engineRefusalWords(readLogTail(logFile), 'resume', logFile), log: logFile });
+          finish(409, { ok: false, error: engineRefusalWords(readLogTail(logFile, logFrom), 'resume', logFile), log: logFile });
         }
       });
       child.once('error', (/** @type {Error} */ e) => {

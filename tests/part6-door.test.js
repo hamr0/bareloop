@@ -3,7 +3,7 @@
 // Recorded spawns only: no engine, no provider, a scratch home.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { appendFileSync, writeSync } from 'node:fs';
+import { appendFileSync, writeSync, readFileSync, readdirSync } from 'node:fs';
 import { jobSpecHash } from '../src/job.js';
 import { engineRefusalWords } from '../src/panel/runroutes.js';
 import {
@@ -14,10 +14,11 @@ const doorRec = { type: 'review-door', outcome: 'green', ts: new Date().toISOStr
 const addRec = (spine, rec) => appendFileSync(spine, `${JSON.stringify(rec)}\n`);
 
 /** a spawn that records argv and ends the way the engine would: exit `code` (null = still running), writing `say` to the log it was given */
-function engine({ code = 0, say = '' } = {}) {
+function engine({ code = 0, say = '', seq = null } = {}) {
   const spawns = [];
   const fn = (cmd, args, o) => {
     spawns.push({ cmd, args, o });
+    if (seq) ({ code, say } = seq[spawns.length - 1] ?? seq.at(-1));
     const handlers = {};
     if (say && typeof o?.stdio?.[1] === 'number') writeSync(o.stdio[1], say);
     const child = { unref() {}, once(ev, h) { handlers[ev] = h; return child; } };
@@ -97,9 +98,9 @@ test('a refused rerun / pause answers 409 with the engine\'s own plain sentence 
   const b = await doorWorld({ code: 1, say: 'Error: boom\n    at x (/y.js:1:1)\n' });
   const pr = await b.p.post('/api/runs/a1/pause', {});
   assert.equal(pr.status, 409);
-  assert.match(pr.body.error, /^Pause did not go through\. Nothing was recorded\. The details are in .+pause-a1-\d+\.log\.$/);
+  assert.match(pr.body.error, /^Pause did not go through\. Nothing was recorded\. The details are in .+run\.log\.$/);
   const rr = await b.p.post('/api/runs/a1/rerun', { text: 'again' });
-  assert.match(rr.body.error, /^Rerun did not start\. Nothing was spent on it\. The details are in .+rerun-a1-\d+\.log\.$/);
+  assert.match(rr.body.error, /^Rerun did not start\. Nothing was spent on it\. The details are in .+run\.log\.$/);
   assert.equal(engineRefusalWords('', 'accept', 'L'), 'Accept did not go through. Nothing was recorded. The details are in L.');
 });
 
@@ -110,5 +111,23 @@ test('Accept is unchanged by the shared door path: same argv, same log name, sam
   assert.equal(r.body.accepted, true);
   const { args } = w.spawnFn.spawns[0];
   assert.deepEqual(args.slice(args.indexOf('run-u') + 1), ['--spec', `${w.run.out}/resolved-spec.json`, '--door', 'a1', '--decide', 'accept', '--approve', jobSpecHash(w.spec)]);
-  assert.match(r.body.log, /accept-a1-\d+\.log$/);
+  assert.match(r.body.log, /[\\/]run\.log$/);
+});
+
+test('one run.log per folder: two actions append there under their own header, and the second refusal shows only the second action\'s words', async () => {
+  const known = 'DOOR REFUSED (accept) — nothing was recorded and nothing was released.';
+  const w = await doorWorld({ seq: [{ code: 2, say: `${known}\n` }, { code: 1, say: 'Error: boom\n    at x (/y.js:1:1)\n' }] });
+  const a = await w.p.post('/api/runs/a1/accept', {});
+  assert.equal(a.body.error, known);
+  const pr = await w.p.post('/api/runs/a1/pause', {});
+  assert.equal(pr.status, 409);
+  assert.match(pr.body.error, /^Pause did not go through\. Nothing was recorded\. The details are in .+run\.log\.$/, 'an older action\'s sentence never shows as this one\'s');
+  assert.equal(pr.body.log, a.body.log);
+  const text = readFileSync(a.body.log, 'utf8');
+  const heads = text.split('\n').filter((l) => l.startsWith('== '));
+  assert.equal(heads.length, 2);
+  assert.match(heads[0], /^== accept a1 at \d{4}-\d\d-\d\dT[\d:.]+Z ==$/);
+  assert.match(heads[1], /^== pause a1 at /);
+  assert.ok(text.indexOf(known) < text.indexOf('== pause a1'), 'accept\'s words sit above the pause header');
+  assert.deepEqual(readdirSync(w.run.out).filter((f) => f.endsWith('.log')), ['run.log'], 'no per-action file is made');
 });

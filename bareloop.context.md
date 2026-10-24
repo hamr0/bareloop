@@ -3641,7 +3641,7 @@ key you want first (the panel picks the row by the Model menu).
   started under is never overwritten, and a run resumed under `r<k>` is resumed again under the
   spec whose hash its `job-start` carries. The spawn is `setsid --wait systemd-inhibit node
   bin/bareloop.mjs run-u --spec <spec> --resume <runid> --approve <hash>` (array argv, detached,
-  log `resume-<runid>-<ms>.log` beside the spec; `--draft-spent-usd`/`--draft-spend-incomplete`
+  log appended to the folder's one `run.log` beside the spec, under a header line `== resume <runid> at <ISO> ==` (Accept, Rerun and Pause append there too; a refusal shows only its own action's lines, read from after the header); `--draft-spent-usd`/`--draft-spend-incomplete`
   ride along from the run's `job-start`, so the one cap still covers drafting). `--wait` hands back
   the engine's own exit code: an exit inside the settle window (6s) is the engine's own refusal and
   the log tail is returned as `error` verbatim; otherwise `{ok:true, runid, specHash, capsChanged,
