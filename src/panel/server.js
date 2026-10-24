@@ -3914,6 +3914,15 @@ export function handleRequest(req, res, opts) {
 }
 
 /**
+ * The ONE spelling of the panel's own address (the launcher prints and opens it too).
+ * @param {number} boundPort
+ * @returns {string}
+ */
+export function panelUrl(boundPort) {
+  return `http://127.0.0.1:${boundPort}`;
+}
+
+/**
  * Start the panel server. Binds `127.0.0.1` ONLY. A taken port is a LOUD,
  * non-zero-exit failure — this never falls back to another port (see file
  * header). Resolves once actually listening; rejects on a bind error
@@ -4075,7 +4084,7 @@ export async function panelMain(argv, ctx) {
   }
   try {
     const { port: boundPort } = await createPanelServer({ port, home: ctx.runlistHome, env: ctx.env });
-    ctx.out(`bareloop panel — read-only, http://127.0.0.1:${boundPort} (Ctrl-C to stop)`);
+    ctx.out(`bareloop panel — read-only, ${panelUrl(boundPort)} (Ctrl-C to stop)`);
     // never resolves on its own — the process stays up until killed, same
     // shape any other long-running dev server takes.
     await new Promise(() => {});

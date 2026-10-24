@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { readConfig, updateConfig, ConfigError } from './config.js';
 import { keysHome, keysFilePath, ensureKeysFile } from './keysfile.js';
 import { openInOs } from './opener.js';
-import { listRuns, packageVersion } from './panel/server.js';
+import { listRuns, packageVersion, panelUrl } from './panel/server.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** the first port tried, and how many in a row (4700..4709) */
@@ -101,7 +101,7 @@ export async function probePanels(o) {
   const ms = o.timeoutMs ?? PROBE_TIMEOUT_MS;
   const answers = await Promise.all(o.ports.map(async (port) => {
     try {
-      const res = await f(`http://127.0.0.1:${port}/api/whoami`, { signal: AbortSignal.timeout(ms) });
+      const res = await f(`${panelUrl(port)}/api/whoami`, { signal: AbortSignal.timeout(ms) });
       if (!res.ok) return null;
       const j = /** @type {any} */ (await res.json());
       if (!j || j.app !== 'bareloop') return null;
@@ -111,7 +111,7 @@ export async function probePanels(o) {
         version: String(j.version ?? ''),
         drafts: Number(j.drafts) || 0,
         schedules: Number(j.schedules) || 0,
-        url: `http://127.0.0.1:${port}`,
+        url: panelUrl(port),
       });
     } catch { return null; }
   }));
@@ -311,7 +311,7 @@ export async function startCmd(io, d, shown) {
     io.err(`The panel did not answer within ${(d.deadlineMs ?? WAIT_DEADLINE_MS) / 1000} seconds. See ${logFile}.`);
     return 1;
   }
-  return finish(`http://127.0.0.1:${chosen}`, `Panel started at http://127.0.0.1:${chosen}`);
+  return finish(panelUrl(chosen), `Panel started at ${panelUrl(chosen)}`);
 }
 
 /**
