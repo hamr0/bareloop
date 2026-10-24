@@ -2497,3 +2497,26 @@ Pointer: the 2026-10-21 search build spec's title says "built on fix/bound-in-wo
 
 Not changed: Audit (the `search-words`, `search-links` and `fit-check` calls already show as calls with their cost); Result tab (the saved evidence page with highlights, as for a pasted page).
 Tests: each line from code, checked against the real saved POC v2 snapshots (tests/fixtures/search/), each failing without the change; my own screenshot against these lines, then hamr's click-through.
+
+## Addendum 2026-10-24 — search PARKED: where it stands (resume from here)
+
+- **Status:** parked by hamr 2026-10-24. The 2026-10-21 search build spec and the 2026-10-24 screens are not built; a builder started and stopped, and its 2 commits were dropped.
+- **Design reached, ruled by hamr 2026-10-24:**
+  - Search runs once, at run start. There is no re-search at run start (v3: SAME HOST 1/5, a different site on the second search).
+  - Candidates: the results page plus up to 5 links the AI picks; code drops gate-word links.
+  - Design A: the numbered job line is the main ask and the `~` lines are checked later on claims.
+  - Vetting: ONE fit call over all candidates (asks split once); keep a page that holds at least one found ask's quote; the kept pages must cover the main line; only kept pages are saved (sha256).
+  - The worker cites kept pages. The same real checker (`gradeStep`) runs, unchanged, on the pages joined into one input under `=== page N: <address> ===` headers.
+  - Superlatives such as "cheapest" are Not checked and judged at Accept.
+  - Search is for open research. Flights and listings keep a pasted results link (search lands on landing and deal pages).
+- **Proven (POC v5, `docs/logs/search-poc-v5-RESULTS.md`):**
+  - The checker accepts a multi-line quote and still rejects a wrong value ($0, case1-saved.txt). Case 1 passed: three claims, each quote two lines, and both broken copies rejected.
+  - One fit call fixes the ask split (v4 cause 1 gone).
+  - The can-fail copies were rejected wherever they existed (2 of 2; the pass rule wanted at least 4).
+- **Open walls,** each with the POC v5 evidence:
+  1. Coverage across pages fails. Case 2 ("population of Portugal with the year of the figure"): missing "with the year of the figure". Case 4 (Node.js and Python): missing "version", "date". Case 6 (TypeScript and Rust): missing "latest Rust version". Only 2 of 6 cases reached candidates.
+  2. Google clicks stay on the results page. Case 6: candidates 2 and 3 opened a `google.com/search?...` address, not the site clicked.
+  3. Table quotes do not match the snapshot word for word. Case 3 (tallest buildings): all three claims red, "the quote is not found word for word in saved".
+  4. Cost: fit checks on big pages are about 75% of spend (v5: fit $0.2804 of $0.3753).
+- **Next step when resumed:** a POC v6 aimed at wall 1 only, with the pass rule frozen first. Don't build before a PASS.
+- **Records:** F244 (`docs/wiki/FINDINGS.md`) and the copies `docs/logs/search-poc-v3..v5-{PREREG,RESULTS}.md`. The scripts (run.mjs, grade.mjs, dry.mjs) are in `.claude/scratch/search-poc3..5/`, untracked.
