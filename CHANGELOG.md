@@ -5,6 +5,12 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Changed
+
+- **One record of a session's drafting spend, not two.** Each metered drafting call already wrote a `call` line to `draft-log.jsonl` AND rewrote `draft-spend.json` with the running total. The `call` line now also carries the drafting `provider` and `baseUrl`, `draft-spend.json` is no longer written, and the monthly limit and Money tab fold the log's call lines (same `tallyCalls` reader as the session) for a session that never became a run. A session folder left by the old shape (the file, no call lines) is still read from the file, so old money is not lost; a torn log line makes the figure an "at least".
+
 ## [0.47.1] - 2026-10-24
 
 ### Fixed

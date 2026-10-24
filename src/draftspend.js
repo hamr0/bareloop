@@ -3,21 +3,26 @@
 // A panel authoring session pays for model calls (survey, declaration, confirm turn) BEFORE any run exists.
 // That spend rode only in memory (`state.draftSpentUsd`) and reached disk when the session was signed and run
 // (`--draft-spent-usd` -> the run's spine). Abandon, a refusal, or a panel restart lost it, while the monthly
-// limit and the Money tab never counted it. So the session writes `<session dir>/draft-spend.json` after EVERY
-// metered call (one owner: the session's `onCall`, src/panel/authorsession.js), and the money readers
-// (`readLegs`, src/monthly.js) add every session folder that carries one and NEVER became a run.
+// limit and the Money tab never counted it. So the session appends one `call` line to `<session dir>/draft-log.jsonl`
+// after EVERY metered call (one owner: the session's `onCall`, src/panel/authorsession.js), and the money readers
+// (`readLegs`, src/monthly.js) fold those lines with `tallyCalls` for every session folder that NEVER became a run.
+// (Records ruling 2026-10-24: the total used to be a second file, `draft-spend.json`, rewritten beside the log. Things
+// written and read together live together, so the log is the only record. A session folder from before the change that
+// has the old file and no call lines is still read from that file, so old money is never lost.)
 //
 // "Became a run" = some run-list row's `spine` or `patient` path sits inside that session's folder: a signed run
-// already carries its drafting spend through `--draft-spent-usd`, so counting the file too would double it.
-// Month attribution is the file's `startedAt` (the first metered call): fixed once written, so a session's
+// already carries its drafting spend through `--draft-spent-usd`, so counting the log too would double it.
+// Month attribution is the first call's `at` (`startedAt`): fixed once written, so a session's
 // figure never moves between months as spend continues, the same start-date rule a run's leg uses.
 // `spendComplete: false` = "at least", never $0 (F6).
-import { appendFileSync, existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { readRunList, runlistHome } from './runlist.js';
+import { tallyCalls } from './text.js';
 
+/** the OLD per-session total, no longer written; read only for a session folder that predates the log's call lines carrying it */
 export const DRAFT_SPEND_FILE = 'draft-spend.json';
-/** the session's drafting LOG: an append-only JSONL beside draft-spend.json (one owner: the session, src/panel/authorsession.js). Three event kinds, see {@link DraftEvent}. */
+/** the session's drafting LOG: an append-only JSONL (one owner: the session, src/panel/authorsession.js). Three event kinds, see {@link DraftEvent}. */
 export const DRAFT_LOG_FILE = 'draft-log.jsonl';
 
 /**
@@ -27,7 +32,7 @@ export const DRAFT_LOG_FILE = 'draft-log.jsonl';
  *  - `step-label`  {no, label, at}   (the step reads `label` from now on, status and times untouched: the thinking row's "the model thought anyway" / "can't change it" / "not confirmed")
  *  - `human`       {no, source: 'confirm'|'try-3'|'look', question, answer, line?, at}: one question the person was asked and what they answered (the answer is secret-masked
  *    before it is written; the row is written only when BOTH exist, so a question nobody answered leaves no row)
- *  - `call`        {no, step, label, model, thinking, thinkingSupport, thinkingStatus?, costUsd (null stays null), unpricedRounds, at}: one METERED model call
+ *  - `call`        {no, step, label, model, provider, baseUrl, thinking, thinkingSupport, thinkingStatus?, costUsd (null stays null), unpricedRounds, at}: one METERED model call
  *    (`thinking` = the tick's mode: off | on; `thinkingSupport` = bare-agent's lookup for the model: true | false | 'unverified';
  *    `thinkingStatus` = bare-agent's own verdict for the call's run: applied | unsupported | ignored | unknown, present only when thinkingMode was sent)
  *    (no token counts: the call path does not carry them without reworking the library, so none are recorded)
@@ -35,7 +40,7 @@ export const DRAFT_LOG_FILE = 'draft-log.jsonl';
  */
 
 /**
- * Append one event to `<dir>/draft-log.jsonl`. Best-effort like draft-spend.json: a disk fault never stops the draft.
+ * Append one event to `<dir>/draft-log.jsonl`. Best-effort: a disk fault never stops the draft.
  * @param {string} dir the session's folder
  * @param {DraftEvent} ev
  * @returns {void}
@@ -56,24 +61,67 @@ export function appendDraftLog(dir, ev) {
  * @property {string} updatedAt ISO, the latest metered call
  */
 
-/**
- * (Re)write `<dir>/draft-spend.json` atomically (tmp + rename).
- * @param {string} dir the session's folder
- * @param {DraftSpend} rec
- * @returns {void}
- */
-export function writeDraftSpend(dir, rec) {
-  const file = join(dir, DRAFT_SPEND_FILE);
-  const tmp = `${file}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(rec, null, 2)}\n`);
-  renameSync(tmp, file);
-}
-
 /** @param {string} p @param {string} dir @returns {boolean} */
 const inside = (p, dir) => typeof p === 'string' && (resolve(p) === dir || resolve(p).startsWith(dir + sep));
 
 /**
- * Every session folder's drafting spend that never became a run.
+ * One session's drafting spend from its log's `call` lines (the same `tallyCalls` reader the session's `onCall` uses).
+ * `null` = the log holds no call and nothing unparseable. A line that cannot be parsed is skipped like in
+ * {@link readDraftSteps}, but it may have been a call, so it makes the figure an "at least" (a torn line never reads low as exact).
+ * @param {string} name the session folder name
+ * @param {string} text the log
+ * @returns {DraftSpend|null}
+ */
+function spendFromLog(name, text) {
+  /** @type {{costUsd: number|null, unpricedRounds: number}[]} */
+  const calls = [];
+  /** @type {any[]} */
+  const lines = [];
+  let torn = false;
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    let ev;
+    try { ev = JSON.parse(line); } catch { torn = true; continue; }
+    if (!ev || typeof ev !== 'object') { torn = true; continue; }
+    if (ev.kind !== 'call') continue;
+    calls.push({ costUsd: typeof ev.costUsd === 'number' ? ev.costUsd : null, unpricedRounds: Number(ev.unpricedRounds) || 0 });
+    lines.push(ev);
+  }
+  if (calls.length === 0) {
+    return torn ? { sessionId: name, spentUsd: 0, spendComplete: false, provider: null, baseUrl: null, model: null, startedAt: 'unreadable', updatedAt: 'unreadable' } : null;
+  }
+  const t = tallyCalls(calls);
+  /** @param {string} k @returns {string|null} the latest call line's value that has one */
+  const last = (k) => { for (let i = lines.length - 1; i >= 0; i -= 1) if (typeof lines[i][k] === 'string') return lines[i][k]; return null; };
+  return {
+    sessionId: name, spentUsd: t.knownUsd, spendComplete: t.spendComplete && !torn,
+    provider: last('provider'), baseUrl: last('baseUrl'), model: last('model'),
+    startedAt: String(lines[0].at), updatedAt: String(lines[lines.length - 1].at),
+  };
+}
+
+/**
+ * One session's LEGACY `draft-spend.json` (written before the log's call lines carried the total). An unreadable one is unknown
+ * spend: an "at least" of $0, dated unknown.
+ * @param {string} name @param {string} file @returns {DraftSpend}
+ */
+function spendFromLegacyFile(name, file) {
+  try {
+    const j = JSON.parse(readFileSync(file, 'utf8'));
+    if (!j || typeof j !== 'object' || !Number.isFinite(j.spentUsd)) throw new Error('unreadable');
+    return {
+      sessionId: String(j.sessionId ?? name), spentUsd: j.spentUsd, spendComplete: j.spendComplete === true,
+      provider: typeof j.provider === 'string' ? j.provider : null, baseUrl: typeof j.baseUrl === 'string' ? j.baseUrl : null,
+      model: typeof j.model === 'string' ? j.model : null, startedAt: String(j.startedAt), updatedAt: String(j.updatedAt),
+    };
+  } catch {
+    return { sessionId: name, spentUsd: 0, spendComplete: false, provider: null, baseUrl: null, model: null, startedAt: 'unreadable', updatedAt: 'unreadable' };
+  }
+}
+
+/**
+ * Every session folder's drafting spend that never became a run: folded from the log's `call` lines, else read from a legacy
+ * `draft-spend.json`; a folder with neither is skipped.
  * @param {{ home?: string, sessionsRoot?: string }} [opts] `home` = the bareloop config dir (as everywhere in src/monthly.js); the sessions live in `<home>/panel-sessions` unless `sessionsRoot` names them
  * @returns {DraftSpend[]}
  */
@@ -88,21 +136,22 @@ export function readOrphanDraftSpends(opts = {}) {
   const out = [];
   for (const name of names) {
     const dir = join(root, name);
-    const file = join(dir, DRAFT_SPEND_FILE);
-    if (!existsSync(file)) continue;
+    const logFile = join(dir, DRAFT_LOG_FILE);
+    const legacy = join(dir, DRAFT_SPEND_FILE);
+    const hasLog = existsSync(logFile);
+    const hasLegacy = existsSync(legacy);
+    if (!hasLog && !hasLegacy) continue;
     if (rows.some((r) => inside(r.spine, dir) || (r.patient && inside(r.patient, dir)))) continue;
-    try {
-      const j = JSON.parse(readFileSync(file, 'utf8'));
-      if (!j || typeof j !== 'object' || !Number.isFinite(j.spentUsd)) throw new Error('unreadable');
-      out.push({
-        sessionId: String(j.sessionId ?? name), spentUsd: j.spentUsd, spendComplete: j.spendComplete === true,
-        provider: typeof j.provider === 'string' ? j.provider : null, baseUrl: typeof j.baseUrl === 'string' ? j.baseUrl : null,
-        model: typeof j.model === 'string' ? j.model : null, startedAt: String(j.startedAt), updatedAt: String(j.updatedAt),
-      });
-    } catch {
-      // a file that names money but cannot be read is unknown spend: an "at least" of $0, dated unknown
-      out.push({ sessionId: name, spentUsd: 0, spendComplete: false, provider: null, baseUrl: null, model: null, startedAt: 'unreadable', updatedAt: 'unreadable' });
+    /** @type {DraftSpend|null} */
+    let d = null;
+    if (hasLog) {
+      try { d = spendFromLog(name, readFileSync(logFile, 'utf8')); } catch {
+        // a log that names money but cannot be read is unknown spend, unless the legacy file still has the figure
+        d = hasLegacy ? null : { sessionId: name, spentUsd: 0, spendComplete: false, provider: null, baseUrl: null, model: null, startedAt: 'unreadable', updatedAt: 'unreadable' };
+      }
     }
+    if (d === null && hasLegacy) d = spendFromLegacyFile(name, legacy);
+    if (d !== null) out.push(d);
   }
   return out;
 }
