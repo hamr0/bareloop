@@ -331,8 +331,8 @@ test('a resumed leg (same run id) turns its own NEVER FIXED row into the FIXED s
 });
 
 // ---- the job version is the WORKFLOW key (hamr 2026-10-24): Reuse's rule, not the signed hash ----
-// Real-shaped specs: the attempt-diff live session's resolved spec, with only the named field changed.
-const BASE_SPEC = JSON.parse(readFileSync(new URL('../.claude/scratch/attemptdiff-live/session/resolved-spec.json', import.meta.url), 'utf8'));
+// Real-shaped specs: the tracked mvk2e4uy spec (tests/fixtures/learn; same content as the attempt-diff live session's resolved spec), with only the named field changed.
+const BASE_SPEC = JSON.parse(readFileSync(new URL('./fixtures/learn/mvk2e4uy-spec.json', import.meta.url), 'utf8'));
 const withCap = (/** @type {number} */ d) => ({ ...BASE_SPEC, budgetUsd: BASE_SPEC.budgetUsd + d });
 const keyOf = (/** @type {any} */ spec) => workflowKey(spec);
 const tcRows = (/** @type {any} */ L) => L.rows.filter((/** @type {any} */ r) => r.sample.check === 'typecheck');
