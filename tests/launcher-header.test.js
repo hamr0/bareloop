@@ -23,7 +23,7 @@ function fakePanel(body = {}, { app = 'bareloop' } = {}) {
     const server = createServer((req, res) => {
       if (req.url === '/api/whoami') {
         res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ app, version: '9.9.9', pid: 4242, drafts: 0, schedules: 0, ...body, port: server.address().port }));
+        res.end(JSON.stringify({ app, version: '0.46.1', pid: 4242, drafts: 0, schedules: 0, ...body, port: server.address().port }));
       } else { res.writeHead(404); res.end('nope'); }
     });
     server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port, close: () => new Promise((r) => { server.close(() => r(undefined)); }) }));

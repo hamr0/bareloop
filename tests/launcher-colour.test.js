@@ -23,7 +23,7 @@ function fakePanel() {
   return new Promise((resolve) => {
     const server = createServer((_q, res) => {
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ app: 'bareloop', version: '0.0.0', pid: 4242, drafts: 0, schedules: 0 }));
+      res.end(JSON.stringify({ app: 'bareloop', version: '0.46.1', pid: 4242, drafts: 0, schedules: 0 }));
     });
     server.listen(0, '127.0.0.1', () => {
       closers.push(() => new Promise((r) => { server.close(() => r(undefined)); }));

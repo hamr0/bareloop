@@ -150,7 +150,7 @@ export async function buildHeader(d) {
   const sep = P.grey(' · ');
   const where = panels.length === 0
     ? `panel ${P.grey('not running')}`
-    : `panel${panels.length > 1 ? 's' : ''} ${P.green('running')} at ${panels.map((p) => P.cyan(p.url)).join(', ')}`;
+    : `panel${panels.length > 1 ? 's' : ''} ${P.green('running')} at ${panels.map((p) => P.cyan(p.url) + (p.version !== version ? P.yellow(` (version ${p.version} — stop and start to use ${version})`) : '')).join(', ')}`;
   const state = inst.ok ? P.green('installed ✓') : `${P.red('not installed')} — ${inst.problem}, pick ${P.boldCyan('4')} install`;
   const first = `${P.boldCyan('bareloop')} ${P.grey(version)}${sep}${state}${sep}${where}`;
   let second;
@@ -258,7 +258,7 @@ export async function statusCmd(io, d, shown) {
     return shown ? 0 : 3;
   }
   for (const p of h.panels) {
-    const body = `pid ${p.pid} · ${plural(p.drafts, 'draft', 'drafts')} open · ${plural(p.schedules, 'schedule', 'schedules')} on`;
+    const body = `pid ${p.pid} · version ${p.version} · ${plural(p.drafts, 'draft', 'drafts')} open · ${plural(p.schedules, 'schedule', 'schedules')} on`;
     io.out(h.panels.length > 1 ? `${p.url} · ${body}` : body);
   }
   return 0;
@@ -296,7 +296,12 @@ export async function startCmd(io, d, shown) {
     io.out(opened ? `${said} — opening the page.` : `${said} — open it in your browser.`);
     return 0;
   };
-  if (h.panels.length > 0) return finish(h.panels[0].url, `Panel already running at ${P.cyan(h.panels[0].url)}`);
+  if (h.panels.length > 0) {
+    const rc = await finish(h.panels[0].url, `Panel already running at ${P.cyan(h.panels[0].url)}`);
+    const mine = d.version ?? packageVersion();
+    if (h.panels[0].version !== mine) io.out(P.yellow(`It is version ${h.panels[0].version}; this bareloop is ${mine}. Run bareloop stop, then bareloop start, to use ${mine}.`));
+    return rc;
+  }
   const free = d.portFree ?? bindFree;
   const ports = portsOf(d);
   /** @type {number|null} */

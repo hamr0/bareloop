@@ -3309,12 +3309,12 @@ changes them, and a piped or `NO_COLOR` run prints the plain words above (the th
 - **No pid file.** The panel is found by asking `127.0.0.1:4700..4709` for `GET /api/whoami` (300 ms each, in parallel); a reply with `app: "bareloop"` is a panel.
   `GET /api/whoami` → `{ app: "bareloop", version, pid, port, drafts, schedules }` (open drafting sessions, jobs with a schedule), read-only, same Host guard as every
   route, no token.
-- **`bareloop start`** → already running: says so, opens the page, starts nothing. Else starts `bareloop panel --port N` DETACHED (`setsid`; log appended to
+- **`bareloop start`** → already running: says so, opens the page, starts nothing (if the running panel's version differs from this bareloop's it adds `It is version X; this bareloop is Y. Run bareloop stop, then bareloop start, to use Y.`). Else starts `bareloop panel --port N` DETACHED (`setsid`; log appended to
   `~/.config/bareloop/panel.log`) on the first free port from 4700 (a taken port is skipped and named), waits up to 10 s for it to answer, opens the page with
   `xdg-open`/`open` (no opener: prints the URL). `bareloop panel [--port N]` is unchanged (foreground, fixed port).
 - **`bareloop stop [--yes] [--port N]`** → SIGTERM to the pid the probe reported, waits until the port is quiet. Open drafts (in memory) are warned about and a y/N is asked;
   `--yes` skips it. Not running: `Panel not running.`, exit 0. Several panels: asks which (`--yes` without `--port` refuses to guess). Runs are separate processes and keep going.
-- **`bareloop status`** → header plus `pid N · N draft(s) open · N schedule(s) on`. Exit 0 running, 3 not running.
+- **`bareloop status`** → header plus `pid N · version X · N draft(s) open · N schedule(s) on`. Exit 0 running, 3 not running. A panel whose version differs from the CLI's shows `(version X — stop and start to use Y)` after its URL in the header (yellow on a terminal).
 - **`bareloop install`** → creates only what is missing (folder mode 700, `.env` with the keys-file comment lines, mode 600, `config.json`); never reads a key value;
   `Already installed, nothing to do.` when there is nothing to add. Needs node >= 22.
 
