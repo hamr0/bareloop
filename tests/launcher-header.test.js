@@ -78,10 +78,10 @@ test('probePanels: bareloop answers win, a non-bareloop answer and a closed port
   const other = await fakePanel({}, { app: 'something-else' });
   try {
     const ports = [a.port, other.port, b.port];
-    const found = await probePanels({ ports, timeoutMs: 300 });
+    const found = await probePanels({ ports, timeoutMs: 2000 });
     assert.deepEqual(found.map((f) => f.port).sort(), [a.port, b.port].sort());
     assert.equal(found.find((f) => f.port === a.port)?.drafts, 1);
-    assert.deepEqual(await probePanels({ ports: [other.port], timeoutMs: 300 }), []);
+    assert.deepEqual(await probePanels({ ports: [other.port], timeoutMs: 2000 }), []);
   } finally { await a.close(); await b.close(); await other.close(); }
 });
 
@@ -98,8 +98,26 @@ test('headerLines: the two lines, installed + panel running; not installed + pan
     writeFileSync(join(home, 'config.json'), '{}');
     writeFileSync(join(home, '.env'), '', { mode: 0o600 });
     chmodSync(join(home, '.env'), 0o600);
-    const lines = await headerLines({ home, ports: [p.port], version: V, nodeVersion: '22.1.0', timeoutMs: 300 });
+    const lines = await headerLines({ home, ports: [p.port], version: V, nodeVersion: '22.1.0', timeoutMs: 2000 });
     assert.equal(lines[0], `bareloop ${V} · installed ✓ · panel running at http://127.0.0.1:${p.port}`);
     assert.equal(lines[1], 'runs: 0 running · 0 need you · 0 in all');
   } finally { await p.close(); }
+});
+
+test('headerLines: a loaded panel that answers whoami after ~800 ms still counts as running with the default probe timeout', async () => {
+  const home = scratch();
+  mkdirSync(home, { mode: 0o700, recursive: true });
+  const server = createServer((_q, res) => {
+    setTimeout(() => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ app: 'bareloop', version: V, pid: 4242, drafts: 0, schedules: 0 }));
+    }, 800);
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', () => r(undefined)));
+  const port = /** @type {any} */ (server.address()).port;
+  try {
+    // no timeoutMs: the production default decides
+    const lines = await headerLines({ home, ports: [port], version: V, nodeVersion: '22.1.0' });
+    assert.match(lines[0], new RegExp(`panel running at http://127\\.0\\.0\\.1:${port}`));
+  } finally { await new Promise((r) => { server.closeAllConnections(); server.close(() => r(undefined)); }); }
 });

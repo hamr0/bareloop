@@ -475,12 +475,13 @@ test('Part 4 (v1.106): the schedule header reads `[sign] word schedule · head` 
   const src = fnSrc('renderAuditGroups');
   const m = /var secHead = function\(open\)\{ return (.*?); \};/.exec(src);
   assert.ok(m, 'secHead exists');
-  const head = new Function('sec', 'open', 'escapeXml', 'glyphClass', 'stateDotHTML', `return ${m[1]};`);
+  const head = new Function('sec', 'open', 'escapeXml', 'glyphClass', 'stateDotHTML', 'auditCaret', `return ${m[1]};`);
   const escapeXml = new Function(`${fnSrc('escapeXml')}\nreturn escapeXml;`)();
   const glyphClass = new Function(`${fnSrc('glyphClass')}\nreturn glyphClass;`)();
   const stateDotHTML = new Function('escapeXml', `${fnSrc('stateDotHTML')}\nreturn stateDotHTML;`)(escapeXml);
-  const out = head({ title: 'schedule', sign: '✗', word: 'failed', head: 'when a new file arrives in ~/bareloop-inbox/ · from run-1 · 5 tries started nothing' }, true, escapeXml, glyphClass, stateDotHTML);
-  assert.equal(out, '▾ <span class="step-state" data-testid="audit-schedule-state"><span class="dot red"></span><b class="st-word">failed</b></span> schedule &middot; when a new file arrives in ~/bareloop-inbox/ · from run-1 · 5 tries started nothing');
+  const auditCaret = new Function(`${fnSrc('auditCaret')}\nreturn auditCaret;`)();
+  const out = head({ title: 'schedule', sign: '✗', word: 'failed', head: 'when a new file arrives in ~/bareloop-inbox/ · from run-1 · 5 tries started nothing' }, true, escapeXml, glyphClass, stateDotHTML, auditCaret);
+  assert.equal(out, '<span class="audit-caret">▼</span><span class="step-state" data-testid="audit-schedule-state"><span class="dot red"></span><b class="st-word">failed</b></span> schedule &middot; when a new file arrives in ~/bareloop-inbox/ · from run-1 · 5 tries started nothing');
   assert.doesNotMatch(out, /\[|glyph/, 'no hand-typed bracket sign');
   assert.match(m[1], /stateDotHTML\(/, 'same helper the part headers use');
   assert.match(fnSrc('stepStateHTML'), /stateDotHTML\(/, 'part headers use the same helper');

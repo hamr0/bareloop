@@ -1,7 +1,7 @@
 // L (PANEL-BUILD.md addendum 2026-10-24) — `GET /api/whoami`, the launcher's probe route. Real socket, scratch home, port 0.
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { request } from 'node:http';
 import { join } from 'node:path';
@@ -47,5 +47,19 @@ test('GET /api/whoami is behind the same Host guard: a foreign Host is 403', asy
   try {
     const r = await get(p.port, '/api/whoami', 'evil.example:80');
     assert.equal(r.status, 403);
+  } finally { await p.close(); }
+});
+
+test('whoami and the page report the version the panel STARTED with, not what package.json says now', async () => {
+  const home = scratch();
+  const pkg = join(home, 'package.json');
+  writeFileSync(pkg, JSON.stringify({ version: '1.2.3' }));
+  const p = await createPanelServer({ port: 0, home, sessionsRoot: join(home, 'sessions'), schedulerIntervalMs: 0, packageJsonPath: pkg });
+  try {
+    assert.equal(JSON.parse((await get(p.port, '/api/whoami')).body).version, '1.2.3');
+    writeFileSync(pkg, JSON.stringify({ version: '9.9.9' })); // a bump on disk while the panel keeps running
+    assert.equal(JSON.parse((await get(p.port, '/api/whoami')).body).version, '1.2.3');
+    const page = (await get(p.port, '/')).body;
+    assert.ok(!page.includes('9.9.9'), 'the page must not show the on-disk version');
   } finally { await p.close(); }
 });

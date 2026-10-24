@@ -333,6 +333,9 @@ review rounds:
   a rounds table (lazy-fetched per attempt via `/api/runs/:runid/rounds`); "Flat" is the old
   single ungrouped row list. Three filter chips — All / Writes / Blocked — auto-open every
   matching group so a filtered result is never hidden behind a collapsed toggle.
+  Every fold header (each part row, the schedule box, the "What the planner was told from earlier runs" box) leads with the
+  one `auditCaret` arrow (fwdloop's): `▶` folded, `▼` open, faint, flipping on each click (hamr 2026-10-24; it replaces the
+  2026-10-23 "no arrow" on the learnings box).
 - **Short paths** (`pathShort`, relative to the run's own resolved tree root) apply only to
   runs recorded under this new layout; an older archived run with no resolvable tree root keeps
   showing the absolute path, honestly, rather than a guessed shortening.
@@ -1771,7 +1774,7 @@ runs: 1 running · 2 need you · 375 in all
 
 ### The probe (no file)
 - New read-only route on the panel: `GET /api/whoami` → `{ app: "bareloop", version, pid, port, drafts: <open drafting sessions>, schedules: <on count> }`. Same Host guard as every route (127.0.0.1 only); no token (it changes nothing).
-- `status/stop/start` ask 127.0.0.1:4700..4709 in parallel, short timeout (300 ms each); the first reply with `app === "bareloop"` wins.
+- `status/stop/start` ask 127.0.0.1:4700..4709 in parallel, short timeout (300 ms each); the first reply with `app === "bareloop"` wins. (2000 ms since 2026-10-24: 300 ms missed a loaded panel; see the "probe patience" amendment below)
 - Several bareloop panels running (e.g. a demo on another port): status lists all; stop asks which.
 
 ### Tests / done
@@ -1787,3 +1790,9 @@ runs: 1 running · 2 need you · 375 in all
 - `status` lists every panel found (normally one).
 - `bareloop panel [--port N]` (foreground) is unchanged; a second panel started that way is found and stopped like any other.
 - SUPERSEDES in this addendum: "Several bareloop panels running … stop asks which", and the post-sign `--port N` stop flag.
+
+### L amendment 2026-10-24 — probe patience, a silent taken port, and what `stop` proves (RULED by hamr 2026-10-24)
+- Each port gets 2000 ms per probe (was 300 ms), all ports still in parallel. The start/stop wait deadlines count real clock time, not 100 ms per poll.
+- `start`: a port that is taken but did not answer is asked again for about 10 s. A bareloop answer = `Panel already running`; any other reply (or a refused connection) = move on to the next port; still silent = stop with `Port N is taken and not answering. If it's a stuck bareloop, stop it first.`, exit 1, nothing started (never a second panel next to a silent port). This SUPERSEDES the start line above ("a port answered by something that is not bareloop is skipped") for the silent case only.
+- `stop`: after SIGTERM it checks each pid is really gone (`kill(pid, 0)`: ESRCH = gone, EPERM = alive) within the deadline, then that the port is quiet. `Panel stopped.` is printed only when every pid is gone; a pid still alive is named (`The panel at <url> (pid N) did not stop.`, exit 1) and the ones that did stop are still named. This SUPERSEDES "Wait until the port stops answering" above.
+- `whoami` and the page topbar report the version the panel STARTED with (read once at start), so a panel on old code after an upgrade still says so.
