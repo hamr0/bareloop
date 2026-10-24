@@ -45,14 +45,14 @@ const raiseWords = (/** @type {{ field: string, old: number, new: number }} */ r
  * @param {{
  *   out: (s: string) => void, err: (s: string) => void, cwd: string,
  *   env: Record<string,string|undefined>, now: () => number, deps: any, keysHome?: string,
- *   ask?: (q: string) => Promise<string>, canAsk?: boolean,
+ *   ask?: (q: string) => Promise<string>, canAsk?: boolean, guided?: boolean,
  *   parseFlags: (a: string[]) => { positional: string[], flags: Record<string, string|true> },
  *   printReds: (reds: import('./bundle.js').Red[], err: (s: string) => void) => void,
  * }} ctx
  * @returns {Promise<number>}
  */
 export async function bundleMain(args, {
-  out, err, cwd, env, now, deps, keysHome, ask, canAsk = false, parseFlags, printReds,
+  out, err, cwd, env, now, deps, keysHome, ask, canAsk = false, guided: guidedIn = false, parseFlags, printReds,
 }) {
   const { positional, flags } = parseFlags(args);
   const askable = canAsk && typeof ask === 'function';
@@ -70,7 +70,7 @@ export async function bundleMain(args, {
   };
   if (flags.resume === true) return usage();
   /** set once any required value had to be asked: the guided run also offers the optional caps */
-  let guided = false;
+  let guided = guidedIn;
   if (bundleDirArg === undefined) {
     if (!askable || !ask) return usage();
     const known = exportedBundles(home === undefined ? {} : { home });
@@ -110,10 +110,10 @@ export async function bundleMain(args, {
   const envelope = {};
   if (guided && askable && ask) {
     // a guided run offers the caps; Enter keeps the signed value
-    const budgetAns = (await ask(`$ cap (Enter keeps $${bundle.spec.budgetUsd}): `)).trim();
+    const budgetAns = (await ask(`$ cap (Enter keeps $${bundle.spec.budgetUsd}${resumeArg === undefined ? '' : '; a higher number adds money'}): `)).trim();
     if (budgetAns !== '') flags.budget = budgetAns;
     if (typeof bundle.spec.maxWallMs === 'number') {
-      const wallAns = (await ask(`Time cap in minutes (Enter keeps ${bundle.spec.maxWallMs / 60_000}): `)).trim();
+      const wallAns = (await ask(`Time cap in minutes (Enter keeps ${bundle.spec.maxWallMs / 60_000}${resumeArg === undefined ? '' : '; a higher number adds time'}): `)).trim();
       if (wallAns !== '') flags.wall = wallAns;
     }
   }

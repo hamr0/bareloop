@@ -38,7 +38,7 @@ import { bundleMain } from './bundlerun.js';
 // path for the flag grammar; `src/cli.js` only supplies the deps shape
 // (`out`/`err`/`env`) this command's own callers already use.
 import { startCmd, stopCmd, statusCmd, installCmd, menuCmd } from './launcher.js';
-import { exportedBundles, resolveBundleRef } from './bundleref.js';
+import { exportedBundles, resolveBundleRef, listResumableBundleRuns } from './bundleref.js';
 import { makePaint } from './tty-colour.js';
 import { main as runUMain } from './userrun.js';
 // PANEL-BUILD.md P0 task 3/4 — `bareloop interview` and `bareloop author`
@@ -211,6 +211,26 @@ async function doExportRun(args, { out, err, cwd, ask, canAsk, deps }) {
 }
 
 /**
+ * The menu's Resume: the stopped / capped `bareloop run` runs the engine would resume, numbered; pick one, then the optional more money /
+ * more time (a higher cap asks for the typed yes), then it resumes exactly as `bareloop run <bundle> --resume <runid>` does.
+ * @param {any} ctx the CLI context with `ask`
+ * @returns {Promise<number>}
+ */
+async function doResumeMenu(ctx) {
+  const { out, ask, deps } = ctx;
+  const home = deps.runlistHome;
+  const list = listResumableBundleRuns(home === undefined ? {} : { home });
+  if (list.length === 0) { out('No stopped runs to resume.'); return 0; }
+  out('Stopped runs you can resume:');
+  list.forEach((r, i) => out(`  ${i + 1}  ${r.label}`));
+  const pick = await askRequired(ask, 'Number to resume: ');
+  if (pick === null) { out('Nothing chosen, nothing resumed.'); return 0; }
+  const hit = /^\d+$/.test(pick) ? list[Number(pick) - 1] : undefined;
+  if (!hit) { ctx.err(`"${pick}" is not one of the numbers above.`); return 1; }
+  return bundleMain([hit.bundleDir, '--resume', hit.runid], { ...ctx, guided: true, parseFlags, printReds });
+}
+
+/**
  * `bareloop history [<bundle>]` — a bundle's run history. The bundle is a folder or the run name it was exported under; with none given
  * it is asked (a number from the exported bundles, a name or a folder).
  * @param {string[]} args @param {{ out: (s: string) => void, err: (s: string) => void, cwd: string, ask: (q: string) => Promise<string>, canAsk: boolean, deps: any }} ctx
@@ -341,7 +361,15 @@ async function runLauncher(cmd, rest, deps, io, home) {
   // a closed stdin answers '' (= the safe default: quit / "no"), never hangs
   const ask = io.ask;
   const rawEnv = deps.processEnv ?? process.env;
-  const d = { home, ask, paint: makePaint(deps.stdout ?? process.stdout, rawEnv), paintErr: makePaint(deps.stderr ?? process.stderr, rawEnv), ...(deps.launcher ?? {}) };
+  // the menu's job commands (PRD v1.114): each prompts for what it needs on the SAME asker as the menu
+  const jobCtx = /** @type {any} */ ({ ...io, canAsk: true }); // the full CLI context `main` passed as `io`
+  const jobs = {
+    export: () => doExportRun([], jobCtx),
+    run: () => bundleMain([], { ...jobCtx, guided: true, parseFlags, printReds }),
+    resume: () => doResumeMenu(jobCtx),
+    history: () => doHistory([], jobCtx),
+  };
+  const d = { home, jobs, ask, paint: makePaint(deps.stdout ?? process.stdout, rawEnv), paintErr: makePaint(deps.stderr ?? process.stderr, rawEnv), ...(deps.launcher ?? {}) };
   if (cmd === 'start') return startCmd(io, d);
   if (cmd === 'stop') return stopCmd(rest, io, d);
   if (cmd === 'status') return statusCmd(io, d);
@@ -382,7 +410,7 @@ async function mainInner(argv, deps, holder) {
   const ask = (/** @type {string} */ q) => { holder.a ??= openAsker({ stdin: deps.stdin, stdout }); return holder.a.ask(q); };
   // something to ask: a terminal, or a stdin the caller handed in (tests, a pipe the caller owns); a bare uninjected pipe is never waited on
   const canAsk = deps.stdin !== undefined || Boolean(process.stdin.isTTY);
-  const ctx = { out, err, cwd, env, now, deps, ask, canAsk };
+  const ctx = { out, err, cwd, env, now, deps, ask, canAsk, keysHome: keys.home };
 
   const [cmd, ...rest] = argv;
   if (keys.warning && cmd && ['run', 'run-u', 'interview', 'author', 'panel'].includes(cmd)) err(`WARNING: ${keys.warning}`);

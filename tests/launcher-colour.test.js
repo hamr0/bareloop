@@ -64,10 +64,15 @@ test('header + menu: with colour the words are the same (stripped), the rule fra
   assert.match(col.lines[2], /\x1b\[90mruns:\x1b\[0m \x1b\[90m0 running\x1b\[0m/);
   const io = sink();
   await menuCmd(io, { ...base, ask: async () => 'q', paint: makePaint({ isTTY: true }, {}) });
-  assert.equal(io.lines.at(-1), `  ${'\x1b[1;36m1\x1b[0m'} start   \x1b[1;36m2\x1b[0m stop   \x1b[1;36m3\x1b[0m status   \x1b[1;36m4\x1b[0m install   \x1b[1;36mq\x1b[0m quit`);
+  const c = (/** @type {string} */ k) => `\x1b[1;36m${k}\x1b[0m`;
+  assert.deepEqual(io.lines.slice(-3), [
+    `  panel: ${c('1')} start   ${c('2')} stop   ${c('3')} status   ${c('4')} install`,
+    `  jobs:  ${c('5')} export   ${c('6')} run   ${c('7')} resume   ${c('8')} history`,
+    `  ${c('q')} quit`,
+  ]);
   const ioPlain = sink();
   await menuCmd(ioPlain, { ...base, ask: async () => 'q', paint: makePaint({ isTTY: false }, {}) });
-  assert.equal(ioPlain.lines.at(-1), '1 start   2 stop   3 status   4 install   q quit');
+  assert.deepEqual(ioPlain.lines.slice(-3), ['panel: 1 start   2 stop   3 status   4 install', 'jobs:  5 export   6 run   7 resume   8 history', 'q quit']);
 });
 
 test('refusals are red on a colour terminal, plain words when stripped', async () => {

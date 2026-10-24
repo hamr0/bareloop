@@ -335,7 +335,7 @@ test('install: a loose .env gets mode 600 and the config is never overwritten; n
   assert.match(old.text(), /needs node 22 or newer; this is node 20\.11\.0\. Nothing was changed\./);
 });
 
-test('menu (the approved layout): two header lines, a blank line, the four choices, then the prompt; q quits 0', async () => {
+test('menu (the approved layout): two header lines, a blank line, the panel line, the jobs line, q quit, then the prompt; q quits 0', async () => {
   const home = installedHome();
   const base = await freeBase();
   await fakePanel(base + 1, { pid: 48213 });
@@ -347,7 +347,9 @@ test('menu (the approved layout): two header lines, a blank line, the four choic
     `bareloop ${V} · installed ✓ · panel running at http://127.0.0.1:${base + 1}`,
     'runs: 0 running · 0 need you · 0 in all',
     '',
-    '1 start   2 stop   3 status   4 install   q quit',
+    'panel: 1 start   2 stop   3 status   4 install',
+    'jobs:  5 export   6 run   7 resume   8 history',
+    'q quit',
   ]);
   assert.deepEqual(asked, ['> ']);
 });
@@ -363,6 +365,7 @@ test('menu: choice 3 runs status through the same code WITHOUT printing the head
   const bad = sink();
   assert.equal(await menuCmd(bad, deps(home, base, { ask: async () => '9' })), 1);
   assert.match(bad.text(), /unknown choice "9"/);
+  assert.match(bad.text(), /one of: 1, 2, 3, 4, 5, 6, 7, 8, q/);
 });
 
 test('main: bare `bareloop` shows the new menu (the old export/run/history menu is gone); the sub-commands status|install go through main with the header first', async () => {
@@ -378,7 +381,7 @@ test('main: bare `bareloop` shows the new menu (the old export/run/history menu 
   stdin.write('q\n');
   assert.equal(await run, 0);
   const text = out.join('');
-  assert.match(text, new RegExp(`^bareloop ${VRE} · installed ✓ · panel not running\nruns: 0 running · 0 need you · 0 in all\n\n1 start   2 stop   3 status   4 install   q quit\n`));
+  assert.match(text, new RegExp(`^bareloop ${VRE} · installed ✓ · panel not running\nruns: 0 running · 0 need you · 0 in all\n\npanel: 1 start   2 stop   3 status   4 install\njobs:  5 export   6 run   7 resume   8 history\nq quit\n`));
   assert.doesNotMatch(text, /1 export/);
   const out2 = [];
   assert.equal(await main(['status'], { stdout: { write: (s) => { out2.push(s); return true; } }, stderr, cwd: process.cwd(), env: {}, keysHome: home, runlistHome: home, launcher }), 3);

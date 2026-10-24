@@ -452,8 +452,10 @@ export async function stopCmd(args, io, d, shown) {
 }
 
 /**
- * The bare `bareloop` menu: header, the four choices, one question. Runs the chosen command and returns its exit code.
- * @param {{out: (s: string) => void, err: (s: string) => void}} io @param {LauncherDeps & {version?: string}} d
+ * The bare `bareloop` menu (PRD v1.114, one menu): the panel's four choices, the four job commands, one question. Runs the chosen command
+ * and returns its exit code. The job commands (5 export, 6 run, 7 resume, 8 history) are `d.jobs`, supplied by the CLI: each prompts for
+ * what it needs on the same asker this menu uses.
+ * @param {{out: (s: string) => void, err: (s: string) => void}} io @param {LauncherDeps & {version?: string, jobs?: {export: () => Promise<number>, run: () => Promise<number>, resume: () => Promise<number>, history: () => Promise<number>}}} d
  * @returns {Promise<number>}
  */
 export async function menuCmd(io, d) {
@@ -463,15 +465,19 @@ export async function menuCmd(io, d) {
   const P = d.paint ?? PLAIN;
   if (!P.on) io.out('');
   const n = (/** @type {string} */ k) => P.boldCyan(k);
-  const items = `${n('1')} start   ${n('2')} stop   ${n('3')} status   ${n('4')} install   ${n('q')} quit`;
-  io.out(P.on ? `  ${items}` : items);
+  const ind = P.on ? '  ' : '';
+  io.out(`${ind}panel: ${n('1')} start   ${n('2')} stop   ${n('3')} status   ${n('4')} install`);
+  io.out(`${ind}jobs:  ${n('5')} export   ${n('6')} run   ${n('7')} resume   ${n('8')} history`);
+  io.out(`${ind}${n('q')} quit`);
   const choice = ask ? (await ask(`${P.cyan('>')} `)).trim().toLowerCase() : 'q';
   // the header is already on screen: the chosen command reuses it instead of printing it a second time
   if (choice === '1' || choice === 'start') return startCmd(io, d, h);
   if (choice === '2' || choice === 'stop') return stopCmd([], io, d, h);
   if (choice === '3' || choice === 'status') return statusCmd(io, d, h);
   if (choice === '4' || choice === 'install') return installCmd(io, d, h);
+  const job = { 5: 'export', export: 'export', 6: 'run', run: 'run', 7: 'resume', resume: 'resume', 8: 'history', history: 'history' }[choice];
+  if (job !== undefined && d.jobs) return d.jobs[/** @type {'export'|'run'|'resume'|'history'} */ (job)]();
   if (choice === '' || choice === 'q' || choice === 'quit') return 0;
-  fail(io, d, `unknown choice ${JSON.stringify(choice)} — one of: 1, 2, 3, 4, q`);
+  fail(io, d, `unknown choice ${JSON.stringify(choice)} — one of: 1, 2, 3, 4, 5, 6, 7, 8, q`);
   return 1;
 }

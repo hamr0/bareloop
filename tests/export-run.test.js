@@ -186,3 +186,38 @@ test('CLI export old form (job.json --registry --out) still routes to the regist
   assert.equal(r.code, 1);
   assert.match(r.err, /cannot read job spec at \/no\/such\/job\.json/);
 });
+
+// --- the one menu: 5 export, 6 run, 7 resume, 8 history each prompt for what they need ---
+
+const MENU_LAUNCHER = { ports: [], timeoutMs: 50, nodeVersion: '22.1.0', version: '0.0.0-test' };
+
+test('menu 5 export: pick a green run from the numbered list, give a folder, the bundle is made; two empty Enters end it with exit 0', async (t) => {
+  const { root, home } = repoRun(t);
+  const outDir = join(root, 'from-menu');
+  const r = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, `5\n1\n${outDir}\n`);
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.out, /5 export {3}6 run {3}7 resume {3}8 history/);
+  assert.match(r.out, /Green runs you can export:\n {2}1 {2}fix-slugify \(run-1\)/);
+  assert.equal(readBundle(outDir).ok, true);
+  const none = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, '5\n\n\n');
+  assert.equal(none.code, 0);
+  assert.match(none.out, /Nothing chosen, nothing exported\./);
+  assert.equal(readExported({ home }).length, 1);
+});
+
+test('menu 8 history: pick an exported bundle by number and see its history; menu 6 run with two empty Enters runs nothing and exits 0', async (t) => {
+  const { root, home } = repoRun(t);
+  const outDir = join(root, 'b');
+  assert.equal(exportRun({ name: 'fix-slugify (run-1)', outDir, home, bareloopVersion: '0.47.1' }).ok, true);
+  const h = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, '8\n1\n');
+  assert.equal(h.code, 0, h.err);
+  assert.match(h.out, /Exported bundles:\n {2}1 {2}fix-slugify \(run-1\)/);
+  assert.match(h.out, /history: \(no runs yet\)/);
+  assert.match(h.out, /bridges:/);
+  const run = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, '6\n\n\n');
+  assert.equal(run.code, 0);
+  assert.match(run.out, /No bundle chosen, nothing run\./);
+  const resume = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, '7\n');
+  assert.equal(resume.code, 0);
+  assert.match(resume.out, /No stopped runs to resume\./);
+});

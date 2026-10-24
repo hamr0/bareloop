@@ -16,6 +16,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Readable } from 'node:stream';
 import { appendRun, appendExported } from '../src/runlist.js';
+import { bless } from '../src/bundle.js';
 import { jobSpecHash } from '../src/job.js';
 import { mintBridge } from '../src/bridges.js';
 import { main } from '../src/cli.js';
@@ -1120,4 +1121,40 @@ test('bareloop run: a bundle that names no model asks for one from the models ti
   const named = sink();
   await main(['run', bundleDir, '--repo', repo, '--model', 'test-model', '--approve', bundleHash], { stdout: named, stderr: sink(), cwd: process.cwd(), stdin: lines(''), runlistHome: home, keysHome: home });
   assert.doesNotMatch(named.text(), /This bundle names no model/);
+});
+
+test('menu 7 resume: lists the stopped bundle runs, takes a number, offers more money (a raise needs yes), then resumes as the same run', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t, { budgetUsd: 2 });
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const home = runlistHome(t);
+  const t1 = 1_700_001_000_000;
+  const id1 = t1.toString(36);
+  const worktree = join(repo, '.bareloop', 'wt', id1);
+  const rc1 = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash, '--budget', '0.0005'], {
+    stdout: sink(), stderr: sink(), cwd: process.cwd(), provider: greenScript(worktree), now: makeNow(t1), runlistHome: home, keysHome: home,
+  });
+  assert.equal(rc1, 1, 'leg 1 cap-halts');
+  // the menu has no --approve: a bundle blessed on this machine runs without one (an unblessed first run still needs the flag)
+  bless(bundleDir, { bundleHash, runid: 'earlier', outcome: 'green' });
+  const out = sink(); const err = sink();
+  const rc = await main([], {
+    stdout: out, stderr: err, cwd: process.cwd(), env: {}, runlistHome: home, keysHome: home,
+    launcher: { ports: [], timeoutMs: 50, nodeVersion: '22.1.0', version: '0.0.0-test' },
+    stdin: lines('7\n1\n9\n\nyes\n'),
+    provider: scriptedProvider([
+      { toolCalls: [tcall('t1', 'shell_write', { path: join(worktree, 'src', 'mod.mjs'), content: 'export const x = 1;\nMARKER_OK\n' })] },
+      { text: 'wrote the marker' },
+    ]),
+    now: makeNow(1_700_001_100_000),
+  });
+  assert.equal(rc, 0, `${out.text()}\n${err.text()}`);
+  assert.match(out.text(), new RegExp(`Stopped runs you can resume:\\n {2}1 {2}cli-fixture-job run ${id1} \\(cap-halt\\)`));
+  assert.match(out.text(), /\$ cap \(Enter keeps \$2; a higher number adds money\)/);
+  assert.match(out.text(), /This raises the \$ cap from \$2 to \$9\./);
+  assert.match(out.text(), /outcome {3}green/);
+  const rec = readFileSync(join(bundleDir, 'runs', id1, 'approvals.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(rec.map((r) => [r.field, r.old, r.new]), [['budgetUsd', 2, 9]]);
+  const spine = readFileSync(join(bundleDir, 'runs', id1, 'spine.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(spine.filter((e) => e.type === 'leg-resume').length, 1, 'the SAME run, a second leg');
 });
