@@ -81,7 +81,15 @@ test('getRunDetail: a green worktree run reads its branch off the spine and its 
   const home = tmp();
   makeWorktreeRun(home, { outcome: 'green', folderExists: false });
   const d = getRunDetail('run1', { home });
-  assert.match(d.ended.next, /^In .*\/repo: git merge bareloop-fix-types — or throw the work away: git branch -D bareloop-fix-types\.$/);
+  assert.match(d.ended.next, /^In .*\/repo: git merge bareloop-fix-types — or throw the work away: git branch -D bareloop-fix-types\. To keep it as a reusable bundle: bareloop export "[^"]+ \(run-1\)" --out <folder>$/);
+});
+
+test('endedFor: the export line (PRD v1.114) sits beside the merge text of a GREEN worktree run only, as text, with the panel\'s own run name', () => {
+  const e = endedFor(summary('green'), alive, { worktree: wt(), exportName: 'my-job (run-3)' });
+  assert.equal(e.next, 'In /r: git merge bareloop-job — or throw the work away: git branch -D bareloop-job. To keep it as a reusable bundle: bareloop export "my-job (run-3)" --out <folder>');
+  assert.deepEqual(e.actions, [{ id: 'reuse', label: 'Reuse workflow' }], 'text, never a button');
+  assert.doesNotMatch(endedFor(summary('cap-halt'), alive, { worktree: wt({ exists: true }), resume: { ok: true }, exportName: 'my-job (run-3)' }).next, /bareloop export/);
+  assert.equal(endedFor(summary('green'), alive, { exportName: 'my-job (run-3)' }).next, 'Nothing to do.', 'no worktree = not a repo job in the panel: nothing shown');
 });
 
 test('getRunDetail: a capped worktree run whose folder exists names the folder; Resume is withdrawn once the folder is gone', () => {

@@ -10,7 +10,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
-import { readRunList, runNumbers, appendExported } from './runlist.js';
+import { readRunList, runNumbers, runNameOf, appendExported } from './runlist.js';
 import { sourceNearSpine, signedSpecForRun } from './runfiles.js';
 import { parseJsonl } from './replayio.js';
 import { legsOf, legsWallMs } from './legs.js';
@@ -22,13 +22,6 @@ import { exportBundle } from './bundle.js';
 
 /** the one sentence every refusal of a job that is not a repo job starts with */
 const REPO_ONLY = 'only repo jobs can be exported for now';
-
-/**
- * The run's name for a person: `job (run-N)`, N from the panel's own numbering.
- * @param {string} job @param {number|undefined} n
- * @returns {string}
- */
-export function runNameOf(job, n) { return `${job} (run-${n})`; }
 
 /**
  * @param {string} name

@@ -525,6 +525,13 @@ export function atMs(r) {
 }
 
 /**
+ * A run's name for a person: `job (run-N)`, N from {@link runNumbers}. The ONE spelling (the panel, `bareloop export` and `bareloop run` all print it).
+ * @param {string} job @param {number|undefined} n
+ * @returns {string}
+ */
+export function runNameOf(job, n) { return `${job} (run-${n})`; }
+
+/**
  * The ONE owner of run names (P6 item 7): runs of the same job (`row.job`) are numbered oldest `at` first, 1-based
  * (ties keep file order). A resume is one row, so it counts once; died and stopped runs are rows too. Every view
  * reads this number — the page never counts on its own.

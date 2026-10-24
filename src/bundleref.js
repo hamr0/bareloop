@@ -5,11 +5,10 @@
 import { existsSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
-import { readRunList, readExported, runNumbers, runIsAlive } from './runlist.js';
+import { readRunList, readExported, runNumbers, runNameOf, runIsAlive } from './runlist.js';
 import { parseJsonl } from './replayio.js';
 import { legsOf } from './legs.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from './reuse.js';
-import { runNameOf } from './runexport.js';
 
 /** @param {string} p @returns {boolean} */
 const isDir = (p) => { try { return statSync(p).isDirectory(); } catch { return false; } };

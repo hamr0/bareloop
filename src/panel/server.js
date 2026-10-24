@@ -33,7 +33,7 @@ import {
   dirname, join, basename, relative, isAbsolute, sep,
 } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readRunList, readNeedsRemovals, DIED_MTIME_MS, runIsAlive, atMs, runNumbers } from '../runlist.js';
+import { readRunList, readNeedsRemovals, DIED_MTIME_MS, runIsAlive, atMs, runNumbers, runNameOf } from '../runlist.js';
 import { sourceNearSpine, signedSpecForRun } from '../runfiles.js';
 import { webFetchState } from '../source.js';
 import { isWebUrl } from '../pagefetch.js';
@@ -457,8 +457,9 @@ const GOAL_NOT_MET = new Set(['plan-red', 'check-red', 'step-red', 'escalated'])
  * @param {{outcome: string|null, stopReason: string|null, spentUsd: number|null, budgetUsd: number|null, lastEscalation?: any}} summary
  * @param {{died: boolean, lastThing: string|null}} death
  * @param {{resume?: {ok: boolean, why?: string}|null, destinationRefused?: string|null, moneyHalt?: boolean,
- *   worktree?: {folder: string, repo: string, branch: string|null, exists: boolean}|null}} [o]
+ *   worktree?: {folder: string, repo: string, branch: string|null, exists: boolean}|null, exportName?: string|null}} [o]
  *   `worktree` (P6 item 1): the run's worktree in the person's repo, from {@link worktreeOfRun}; absent for every other run
+ *   `exportName` (PRD v1.114): the run's `job (run-N)` name; a green worktree run (a repo job) shows the export command to copy beside the merge text
  * @returns {{reason: string, next: string, line: string, actions: {id: string, label: string}[]}|null}
  */
 export function endedFor(summary, death, o = {}) {
@@ -472,7 +473,8 @@ export function endedFor(summary, death, o = {}) {
   if (green) {
     if (!wt.branch) return base;
     const kept = wt.exists ? ` The worktree folder ${wt.folder} is still there.` : '';
-    return { ...base, next: `In ${wt.repo}: git merge ${wt.branch} — or throw the work away: git branch -D ${wt.branch}.${kept}` };
+    const exp = o.exportName ? ` To keep it as a reusable bundle: bareloop export "${o.exportName}" --out <folder>` : '';
+    return { ...base, next: `In ${wt.repo}: git merge ${wt.branch} — or throw the work away: git branch -D ${wt.branch}.${kept}${exp}` };
   }
   return wt.exists ? { ...base, next: `${base.next} Your work is in ${wt.folder}.` } : base;
 }
@@ -689,7 +691,7 @@ function liveStepWhy(records, summary) {
   return `step ${Math.min(done + 1, total)} of ${total}`;
 }
 
-function endedForRow(row, records, summary, death, withWorktree = false) {
+function endedForRow(row, records, summary, death, withWorktree = false, /** @type {string|null} */ exportName = null) {
   const out = summary.outcome;
   const maybeResumable = death.died || out === 'escalated' || (typeof out === 'string' && CHECKPOINT_OUTCOMES.includes(out));
   const resume = maybeResumable ? resumePlanFor(row, records) : null;
@@ -699,6 +701,7 @@ function endedForRow(row, records, summary, death, withWorktree = false) {
     moneyHalt: records.some((r) => r && r.type === 'money-halt'),
     destinationRefused: refused ? String(refused.detail ?? refused.code ?? 'the destination refused it') : null,
     worktree: withWorktree ? worktreeOfRun(row, records) : null,
+    exportName,
   });
   const esc = summary.lastEscalation;
   const status = statusFor({
@@ -1597,7 +1600,8 @@ function getRunDetailBody(runid, opts) {
   const specForParts = resolveSpecForRow(row);
   const enrichedParts = enrichPartsWithStageKind(summary.parts, stageKindMetaFromSpec(specForParts), specForParts);
   const death = deriveDeath(row, rawSpineRecords, summary.outcome);
-  const { ended, resume, status } = endedForRow(row, rawSpineRecords, summary, death, true);
+  const exportName = runNameOf(row.job, runNumbers(readRunList(opts).rows).get(row.runid));
+  const { ended, resume, status } = endedForRow(row, rawSpineRecords, summary, death, true, exportName);
   // judgeModel (Summary box "judge:" line): the FIRST `judge-round`'s own
   // `model` field (src/planrun.js:1704's `onJudgeCost` emit) — a soft-green
   // close's own paid judge seam, distinct from the worker `model` above.
