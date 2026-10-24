@@ -1415,7 +1415,7 @@ hamr amends the "rates are the customer's responsibility / no passthrough" rulin
 - Edit in chat is offered on every ending that is not a real green; it opens the Chat card filled from the signed job, every box open, drafting as a new job.
 - Resume moved from the run's Job tab to the left Chat card (RESUME mode, only the two caps open); the Job tab is read-only on every run.
 - A stopped run wears `[■]`; failed and capped stay `[✗]`, died stays `[?]`.
-- Only a run that earned its green is a reuse source: `already-green` offers Edit in chat, the Reuse picker lists real greens only, and the server refuses a reuse of any other run.
+- Only a run that earned its green is a reuse source: `already-green` offers Edit in chat, the Reuse picker lists real greens only, and the server refuses a reuse of any other run. (SUPERSEDED 2026-10-15 by v1.101, item 9: already-green counts for Reuse.)
 - One cap rule (`capKindOf`) reads capped on every surface, including a leg that ended `escalated` on a money or wall halt.
 - Detail: `docs/product/PANEL-BUILD.md` addendum 2026-10-08 run page.
 
