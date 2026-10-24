@@ -3291,16 +3291,32 @@ real key check is skipped entirely — a scripted provider *is* the run, the
 same seam `tests/planrun-*.test.js` uses. `deps` also accepts `env`, `stdout`, `stderr`, `cwd`,
 `now`, `stdin` — omit any of them and the real `process.*` equivalent is used.
 
-Bare `bareloop` (no sub-command) prints a numbered menu — `1 export  2 run  3 history  q
-quit` — and asks each sub-command's arguments one line at a time over the SAME code paths
-below. `run-u`, `interview` and `author` (below) are not on this menu (PANEL-BUILD.md P0
-tasks 2/4-4/4): each one's own flag grammar is too wide for a line-at-a-time wizard, and the
-menu's job is to ask the SAME questions the sub-command below already answers, never to
-invent a new interview — this is doubly true for `interview`/`author`, which already ARE
-interviews of their own. Choice `2 run` is handed the SAME resolved keys home `bareloop run <bundle>` gets, so the
-monthly limit, your price and the key-row choice apply exactly as on the sub-command (before this it
-got none, and a run started from the menu skipped the limit). All three are dispatched by name only: `bareloop run-u <flags…>`,
-`bareloop interview <flags…>`, `bareloop author <flags…>`.
+Bare `bareloop` (no sub-command) is the **launcher menu** (PANEL-BUILD.md addendum L, `src/launcher.js`): two header lines, then
+`1 start   2 stop   3 status   4 install   q quit`. The header is printed first by EVERY call (menu and each of
+`bareloop start | stop | status | install`), from one function:
+
+```
+bareloop 0.46.1 · installed ✓ · panel running at http://127.0.0.1:4701
+runs: 1 running · 2 need you · 375 in all
+```
+
+- `installed ✓` = `~/.config/bareloop/` exists, `config.json` is there and reads with no problem, `.env` exists with mode 600, node >= 22;
+  otherwise `not installed — <first missing thing>, pick 4 install`. The run counts use the panel's own status words and Needs-you rule over the
+  run list file ($0, works with the panel stopped).
+- **No pid file.** The panel is found by asking `127.0.0.1:4700..4709` for `GET /api/whoami` (300 ms each, in parallel); a reply with `app: "bareloop"` is a panel.
+  `GET /api/whoami` → `{ app: "bareloop", version, pid, port, drafts, schedules }` (open drafting sessions, jobs with a schedule), read-only, same Host guard as every
+  route, no token.
+- **`bareloop start`** → already running: says so, opens the page, starts nothing. Else starts `bareloop panel --port N` DETACHED (`setsid`; log appended to
+  `~/.config/bareloop/panel.log`) on the first free port from 4700 (a taken port is skipped and named), waits up to 10 s for it to answer, opens the page with
+  `xdg-open`/`open` (no opener: prints the URL). `bareloop panel [--port N]` is unchanged (foreground, fixed port).
+- **`bareloop stop [--yes] [--port N]`** → SIGTERM to the pid the probe reported, waits until the port is quiet. Open drafts (in memory) are warned about and a y/N is asked;
+  `--yes` skips it. Not running: `Panel not running.`, exit 0. Several panels: asks which (`--yes` without `--port` refuses to guess). Runs are separate processes and keep going.
+- **`bareloop status`** → header plus `pid N · N draft(s) open · N schedule(s) on`. Exit 0 running, 3 not running.
+- **`bareloop install`** → creates only what is missing (folder mode 700, `.env` with the keys-file comment lines, mode 600, `config.json`); never reads a key value;
+  `Already installed, nothing to do.` when there is nothing to add. Needs node >= 22.
+
+The old `1 export  2 run  3 history` menu is gone; `bareloop export|run|history` and the other sub-commands are unchanged. `run-u`, `interview` and `author` are dispatched
+by name only: `bareloop run-u <flags…>`, `bareloop interview <flags…>`, `bareloop author <flags…>`.
 
 When two key rows share one provider and endpoint, a CLI run uses the FIRST row in the keys list, so put the
 key you want first (the panel picks the row by the Model menu).

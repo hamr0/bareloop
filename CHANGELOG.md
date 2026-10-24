@@ -7,6 +7,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **`bareloop` is a launcher (PANEL-BUILD.md addendum L, hamr 2026-10-24).** Bare `bareloop` shows a menu (`1 start  2 stop  3 status  4 install  q quit`) under two header lines (installed or not, panel running or not, `runs: N running · N need you · N in all`); the same four work as `bareloop start | stop | status | install`. No pid file: the panel is found by asking ports 4700-4709 for the new read-only `GET /api/whoami`. `start` runs the panel detached on the first free port (log: `~/.config/bareloop/panel.log`) and opens the page; `stop` warns about open drafts and asks (`--yes` skips); `status` exits 3 when no panel runs; `install` creates only what is missing. The old `1 export / 2 run / 3 history` menu is gone (the sub-commands stay). `bareloop panel [--port N]` is unchanged.
+
 ### Changed
 
 - **A rubric run's lessons count at run end, like a deterministic run's (hamr 2026-10-24, option A).** `foldRunIntoLedger` no longer holds a `rubric` run's cards in `pending` until the human Accept: they go through `countLedger` now, FIXED and NEVER FIXED alike, with `trust: 'rubric'` kept on new rows; `held` is always 0. A hold already in a ledger file (written by v0.46.x) still releases on the door Accept. Reuse and bridge credit is unchanged and still waits for the Accept. Noise runs stay dropped.
