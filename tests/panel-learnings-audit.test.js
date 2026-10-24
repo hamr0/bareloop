@@ -201,6 +201,18 @@ test('a learnings file that could not be read shows ONE plain line in the box, a
   assert.equal(els['audit-learnings'].hidden, true, 'no error and nothing handed = hidden, as before');
 });
 
+test('the title: error and nothing handed = "No lessons were given to the planner"; hints handed keep the old title', () => {
+  const { r } = realBlock();
+  const { els, render } = page();
+  const btn = els['audit-learnings-summary'];
+  render({ learnings: [], learningsError: 'The learnings file could not be read, so no lessons were given: x' });
+  assert.equal(plain(btn), '\u25B6learnings No lessons were given to the planner');
+  assert.ok(!plain(btn).includes('What the planner was told'));
+  render({ learnings: [record('draft', r)], learningsError: null });
+  assert.ok(plain(btn).includes('What the planner was told from earlier runs'));
+  assert.ok(!plain(btn).includes('No lessons were given'));
+});
+
 test('the header mark: error and nothing handed = red dot (the failed sign); hints handed = green dot; the word stays "learnings"', () => {
   const { r } = realBlock();
   const { els, render } = page();

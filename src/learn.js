@@ -15,6 +15,7 @@
 // Graduated from the proofs in .claude/scratch/poc-learn/ (pocA2 candidates, pocC cards, pocE2 fold) as a REWRITE.
 // The 60% threshold is FITTED on known cards (a fit, not a proof; the unseen-card proof is OPEN 2).
 
+import { homedir } from 'node:os';
 import { redactSecrets } from './validate.js';
 
 // ── constants (every number here is a ruling, not a tuning knob) ─────────────────────────────────
@@ -902,11 +903,13 @@ export function renderHints(ledger, o) {
 const HINT_HEAD_RE = /^(\d+)\. \[(this job|this place|all jobs), seen (\d+) times?\] (.*)$/;
 
 /**
- * The one plain-words line for a learnings file that could not be read (the Audit prints it; the spine keeps only the reason).
- * @param {string} reason @returns {string}
+ * The one plain-words line for a learnings file that could not be read (the Audit prints it; the spine keeps the full
+ * reason). The person's home folder is written `~`, so the line stays short and the file can still be found.
+ * @param {string} reason @param {string} [userHome] defaults to the OS home @returns {string}
  */
-export function hintsErrorLine(reason) {
-  return `The learnings file could not be read, so no lessons were given: ${reason}`;
+export function hintsErrorLine(reason, userHome = homedir()) {
+  const short = userHome.length > 1 ? reason.split(`${userHome}/`).join('~/') : reason;
+  return `The learnings file could not be read, so no lessons were given: ${short}`;
 }
 
 /**

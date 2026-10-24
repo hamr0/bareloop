@@ -17,7 +17,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
-- **A broken learnings file is no longer the same as "no lessons yet" (hamr's ruling, 2026-10-24, copied from fwdloop).** An unreadable or wrong-version ledger made the planner's hint block silently empty and recorded nothing. The planner still gets nothing and the run still goes on, but the run's `learnings` spine record now carries `hintsError` (first line, secrets masked), and the Audit learnings box prints one plain line: "The learnings file could not be read, so no lessons were given: ..." with a red ✗ header mark instead of the green ✓ (✓ stays when lessons were handed). Hints off still reads nothing and records nothing.
+- **A broken learnings file is no longer the same as "no lessons yet" (hamr's ruling, 2026-10-24, copied from fwdloop).** An unreadable or wrong-version ledger made the planner's hint block silently empty and recorded nothing. The planner still gets nothing and the run still goes on, but the run's `learnings` spine record now carries `hintsError` (first line, secrets masked), and the Audit learnings box prints one plain line: "The learnings file could not be read, so no lessons were given: ..." with a red ✗ header mark instead of the green ✓ (✓ stays when lessons were handed). In the ✗ case the title reads "No lessons were given to the planner", and the shown line writes the home folder as `~` (the spine record keeps the full reason). Hints off still reads nothing and records nothing.
 
 ## [0.47.1] - 2026-10-24
 

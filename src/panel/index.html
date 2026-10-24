@@ -2872,8 +2872,9 @@ function escapeXml(s){
     if(!box || !list) return;
     var items = detail && Array.isArray(detail.learnings) ? detail.learnings : [];
     list.innerHTML = "";
-    var head = "What the planner was told from earlier runs";
     var errLine = detail && typeof detail.learningsError === "string" ? detail.learningsError : "";
+    // only the error and nothing handed: the title says so (hamr 2026-10-24); with hints it stays "What the planner was told ..."
+    var head = items.length === 0 && errLine ? "No lessons were given to the planner" : "What the planner was told from earlier runs";
     // header mark (hamr 2026-10-24): \u2713 when lessons were handed to the planner, \u2717 when the learnings file could not be read and nothing was handed (hints win if both ever exist)
     var mark = items.length === 0 && errLine ? "\u2717" : "\u2713";
     items.forEach(function(it, gi){

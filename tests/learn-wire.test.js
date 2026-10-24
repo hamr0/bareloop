@@ -382,6 +382,15 @@ test('a corrupt ledger file: the planner gets nothing, the run goes on green, th
   assert.equal(detail.learningsError, hintsErrorLine(rec[0].hintsError));
 });
 
+test('hintsErrorLine writes the home folder as ~ and leaves other paths alone', async () => {
+  const { hintsErrorLine } = await import('../src/learn.js');
+  const head = 'The learnings file could not be read, so no lessons were given: ';
+  assert.equal(hintsErrorLine('/home/zed/.config/bareloop/learn/ledger.json is not readable JSON (parse error) — fix or remove it', '/home/zed'),
+    `${head}~/.config/bareloop/learn/ledger.json is not readable JSON (parse error) — fix or remove it`);
+  assert.equal(hintsErrorLine('/srv/x/ledger.json is bad', '/home/zed'), `${head}/srv/x/ledger.json is bad`);
+  assert.equal(hintsErrorLine('/home/zedd/x is bad', '/home/zed'), `${head}/home/zedd/x is bad`);
+});
+
 test('handedHints: a broken ledger returns the reason and no hints; a healthy one is unchanged; OFF reads nothing and has no error', async (t) => {
   const { ledgerPath, handedHints } = await import('../src/learnstore.js');
   const home = scratch(t);
