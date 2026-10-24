@@ -2041,3 +2041,5 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 - Bare `bareloop` is a launcher menu (start | stop | status | install); the panel is found by `GET /api/whoami` on 127.0.0.1:4700..4709, no pid file; one panel at a time, `stop` stops every panel found. Contract and amendment: `docs/product/PANEL-BUILD.md` "Addendum 2026-10-24 — L" and "L amendment 2026-10-24 — one panel at a time"; adopter text in `bareloop.context.md` (CLI section).
 
 - **2026-10-24 (hamr): `learningHints` is now ON by default** (absent = on; `"learningHints": false` turns it off). Earlier "ships OFF" lines on learnings are ruled history.
+
+- **2026-10-24 (hamr): search as an input is PARKED** after POCs v3-v5 failed (F244); a pasted page link stays the input; the 2026-10-21 search build spec and 2026-10-24 search screens are not built.
