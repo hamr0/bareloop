@@ -1771,7 +1771,7 @@ runs: 1 running · 2 need you · 375 in all
 
 ### The probe (no file)
 - New read-only route on the panel: `GET /api/whoami` → `{ app: "bareloop", version, pid, port, drafts: <open drafting sessions>, schedules: <on count> }`. Same Host guard as every route (127.0.0.1 only); no token (it changes nothing).
-- `status/stop/start` ask 127.0.0.1:4700..4709 in parallel, short timeout (300 ms each); the first reply with `app === "bareloop"` wins.
+- `status/stop/start` ask 127.0.0.1:4700..4709 in parallel, short timeout (300 ms each); the first reply with `app === "bareloop"` wins. (2000 ms since 2026-10-24, 0.47.1: 300 ms missed a loaded panel)
 - Several bareloop panels running (e.g. a demo on another port): status lists all; stop asks which.
 
 ### Tests / done

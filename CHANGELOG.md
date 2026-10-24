@@ -5,6 +5,12 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Fixed
+
+- **The launcher no longer calls a loaded panel "not running".** The `GET /api/whoami` probe gave each port 300 ms; under machine load a live panel answered in 0.8 s, so `bareloop status` printed "panel not running" while it was up and `start` would have started a second one. Each port now gets 2000 ms (all ports are still asked in parallel; a closed port refuses at once, so a quiet machine is as fast as before).
+
 ## [0.47.0] - 2026-10-24
 
 ### Added

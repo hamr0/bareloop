@@ -1,6 +1,6 @@
 // L (PANEL-BUILD.md addendum 2026-10-24) — the `bareloop` launcher: the bare-`bareloop` menu and `bareloop start | stop | status | install`.
 //
-// No pid file: the panel is FOUND by asking 127.0.0.1:4700..4709 for `GET /api/whoami` (src/panel/server.js), several at once, 300 ms
+// No pid file: the panel is FOUND by asking 127.0.0.1:4700..4709 for `GET /api/whoami` (src/panel/server.js), several at once, 2000 ms
 // each; a reply with `app === "bareloop"` is a panel. Every call prints the same two header lines first, from {@link buildHeader}.
 // The run counts are the panel's own (`runsListForCount`: the `listRuns` rows' `status.key` and `needs`, plus the schedules that gave up) — never a second spelling of "running" or "needs you".
 // This file owns no arbiter state: it starts/stops the panel process and reads the run list at $0. Every OS touch (spawn, kill, open,
@@ -23,7 +23,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 /** the first port tried, and how many in a row (4700..4709) */
 export const PORT_START = 4700;
 export const PORT_COUNT = 10;
-const PROBE_TIMEOUT_MS = 300;
+const PROBE_TIMEOUT_MS = 2000;
 const WAIT_DEADLINE_MS = 10_000;
 const POLL_MS = 100;
 const MIN_NODE_MAJOR = 22;

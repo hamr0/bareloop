@@ -103,3 +103,21 @@ test('headerLines: the two lines, installed + panel running; not installed + pan
     assert.equal(lines[1], 'runs: 0 running · 0 need you · 0 in all');
   } finally { await p.close(); }
 });
+
+test('headerLines: a loaded panel that answers whoami after ~800 ms still counts as running with the default probe timeout', async () => {
+  const home = scratch();
+  mkdirSync(home, { mode: 0o700, recursive: true });
+  const server = createServer((_q, res) => {
+    setTimeout(() => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ app: 'bareloop', version: V, pid: 4242, drafts: 0, schedules: 0 }));
+    }, 800);
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', () => r(undefined)));
+  const port = /** @type {any} */ (server.address()).port;
+  try {
+    // no timeoutMs: the production default decides
+    const lines = await headerLines({ home, ports: [port], version: V, nodeVersion: '22.1.0' });
+    assert.match(lines[0], new RegExp(`panel running at http://127\\.0\\.0\\.1:${port}`));
+  } finally { await new Promise((r) => { server.closeAllConnections(); server.close(() => r(undefined)); }); }
+});
