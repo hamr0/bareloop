@@ -224,13 +224,17 @@ test('stop: several panels -> asks which (number), only that pid is signalled; w
   assert.deepEqual(kills, [5002, 5001]);
 });
 
-test('status: not running -> header only, exit 3; running -> pid, drafts, schedules, exit 0', async () => {
+test('status: not running -> header then "Panel not running.", exit 3 (the sub-command) but 0 from the menu; running -> pid, drafts, schedules, exit 0', async () => {
   const home = installedHome();
   const base = await freeBase();
   const none = sink();
   assert.equal(await statusCmd(none, deps(home, base)), 3);
-  assert.equal(none.lines.length, 2);
+  assert.equal(none.lines.length, 3);
   assert.match(none.lines[0], /panel not running$/);
+  assert.equal(none.lines[2], 'Panel not running.');
+  const viaMenu = sink();
+  assert.equal(await menuCmd(viaMenu, deps(home, base, { ask: async () => '3' })), 0, 'the menu worked: exit 0');
+  assert.equal(viaMenu.lines.at(-1), 'Panel not running.');
   await fakePanel(base + 2, { pid: 48213, drafts: 1, schedules: 3 });
   const io = sink();
   assert.equal(await statusCmd(io, deps(home, base)), 0);

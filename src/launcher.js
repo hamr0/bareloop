@@ -230,13 +230,17 @@ export async function installCmd(io, d, shown) {
 }
 
 /**
- * `bareloop status` — the header, then one line per panel. Exit 0 running, 3 not running.
+ * `bareloop status` — the header, then one line per panel (or `Panel not running.`). Exit 0 running, 3 not running; 0 when the menu ran it.
  * @param {{out: (s: string) => void}} io @param {LauncherDeps & {version?: string}} d @param {{lines: string[], panels: Panel[]}} [shown] header the menu already printed
  * @returns {Promise<number>}
  */
 export async function statusCmd(io, d, shown) {
   const h = await headerOnce(io, d, shown);
-  if (h.panels.length === 0) return 3;
+  if (h.panels.length === 0) {
+    io.out('Panel not running.');
+    // the sub-command's exit says "not running" (3); from the menu the menu itself worked (0)
+    return shown ? 0 : 3;
+  }
   for (const p of h.panels) {
     const body = `pid ${p.pid} · ${plural(p.drafts, 'draft', 'drafts')} open · ${plural(p.schedules, 'schedule', 'schedules')} on`;
     io.out(h.panels.length > 1 ? `${p.url} · ${body}` : body);
