@@ -3307,7 +3307,7 @@ changes them, and a piped or `NO_COLOR` run prints the plain words above (the th
   otherwise `not installed — <first missing thing>, pick 4 install`. The run counts use the panel's own status words and Needs-you rule over the
   run list file ($0, works with the panel stopped).
 - **No pid file.** The panel is found by asking `127.0.0.1:4700..4709` for `GET /api/whoami` (2000 ms each, in parallel — a loaded panel answered in 0.8 s; 300 ms missed it); a reply with `app: "bareloop"` is a panel.
-  `GET /api/whoami` → `{ app: "bareloop", version, pid, port, drafts, schedules }` (open drafting sessions, jobs with a schedule), read-only, same Host guard as every
+  `GET /api/whoami` → `{ app: "bareloop", version, pid, port, drafts, schedules }` (`version` is the version the panel STARTED with, read once at start, never re-read from package.json — so a panel on old code after a bump still reports the old one and the launcher's stop-and-start note can fire; the page topbar is the same) (open drafting sessions, jobs with a schedule), read-only, same Host guard as every
   route, no token.
 - **`bareloop start`** → already running: says so, opens the page, starts nothing (if the running panel's version differs from this bareloop's it adds `It is version X; this bareloop is Y. Run bareloop stop, then bareloop start, to use Y.`). Else starts `bareloop panel --port N` DETACHED (`setsid`; log appended to
   `~/.config/bareloop/panel.log`) on the first free port from 4700 (a taken port is skipped and named), waits up to 10 s for it to answer, opens the page with

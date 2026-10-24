@@ -79,7 +79,7 @@ import { stageQuestionsByName } from '../stagewords.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** bareloop's own version, from its package.json (read each time the page is served); 'unknown' if it cannot be read, never a guess
+/** bareloop's own version, from its package.json (read once when the panel starts); 'unknown' if it cannot be read, never a guess
  * @param {string} [file] test seam: another package.json
  * @returns {string} */
 export function packageVersion(file = join(HERE, '..', '..', 'package.json')) {
@@ -91,13 +91,13 @@ export function packageVersion(file = join(HERE, '..', '..', 'package.json')) {
 
 /**
  * `GET /api/whoami` body. `drafts` counts the person's drafting sessions that are not finished (the headless scheduled ones are not drafts).
- * @param {{ port: number, packageJsonPath?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
+ * @param {{ port: number, version?: string, packageJsonPath?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
  */
 function whoamiPayload(opts) {
   const drafts = opts.authorRoutes ? opts.authorRoutes.openDrafts() : 0;
   let schedules = 0;
   try { schedules = opts.schedules ? opts.schedules.scan().length : 0; } catch { schedules = 0; }
-  return { app: 'bareloop', version: packageVersion(opts.packageJsonPath), pid: process.pid, port: opts.port, drafts, schedules };
+  return { app: 'bareloop', version: opts.version ?? packageVersion(opts.packageJsonPath), pid: process.pid, port: opts.port, drafts, schedules };
 }
 
 /** Largest POST body the panel buffers (job cards are short prose); a bigger one is refused with 413. */
@@ -3743,7 +3743,7 @@ function sendText(res, code, text) {
  * only `createPanelServer` below always supplies one.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ home?: string, sessionsRoot?: string, packageJsonPath?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
+ * @param {{ home?: string, sessionsRoot?: string, version?: string, packageJsonPath?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
  */
 export function handleRequest(req, res, opts) {
   /** the ONE writable route family for a path, or null — `/api/author/*` (authoring) or
@@ -3839,9 +3839,9 @@ export function handleRequest(req, res, opts) {
       return;
     }
     html = html.replace(/__BARELOOP_PANEL_PORT__/g, String(opts.port));
-    // the topbar reads `bareloop · v<version> · ...`: the version is bareloop's OWN package.json, read when the page is served
+    // the topbar reads `bareloop · v<version> · ...`: the version is bareloop's OWN package.json, read once when the panel starts
     // and templated in exactly like the port — never written into the HTML
-    html = html.replace(/__BARELOOP_PANEL_VERSION__/g, packageVersion(opts.packageJsonPath));
+    html = html.replace(/__BARELOOP_PANEL_VERSION__/g, opts.version ?? packageVersion(opts.packageJsonPath));
     // PANEL-BUILD.md P3's human-click guard: a per-server-start token,
     // templated into the page exactly like the port — absent on every P1/P2
     // caller (no `opts.token`), which is fine: the page's own JS only reads
@@ -3968,6 +3968,8 @@ export function createPanelServer(opts = {}) {
   const requestedPort = opts.port ?? DEFAULT_PORT;
   const home = opts.home;
   const token = mintToken();
+  // the version THIS process runs, read once at start: package.json on disk can move on while the panel keeps running old code
+  const version = packageVersion(opts.packageJsonPath);
   return new Promise((resolve, reject) => {
     // Bound port is resolved from the live socket (`server.address().port`)
     // once listening starts, not the requested value — this is what makes
@@ -3990,7 +3992,7 @@ export function createPanelServer(opts = {}) {
     const server = createServer((req, res) => {
       try {
         handleRequest(req, res, {
-          home, sessionsRoot: opts.sessionsRoot, port: boundPort, token, authorRoutes, settingsRoutes, runRoutes, importRoutes, packageJsonPath: opts.packageJsonPath, schedules: schedulesRef,
+          home, sessionsRoot: opts.sessionsRoot, port: boundPort, token, authorRoutes, settingsRoutes, runRoutes, importRoutes, version, packageJsonPath: opts.packageJsonPath, schedules: schedulesRef,
         });
       } catch (e) {
         sendText(res, 500, `internal error: ${/** @type {Error} */ (e).message}`);
