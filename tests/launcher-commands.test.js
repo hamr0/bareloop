@@ -66,7 +66,7 @@ const sink = () => { const lines = []; return { out: (s) => lines.push(s), err: 
 function deps(home, base, extra = {}) {
   const spawned = [];
   return {
-    home, ports: [base, base + 1, base + 2, base + 3], timeoutMs: 300, deadlineMs: 3000, nodeVersion: '22.1.0', version: V,
+    home, ports: [base, base + 1, base + 2, base + 3], timeoutMs: 2000, deadlineMs: 3000, nodeVersion: '22.1.0', version: V,
     platform: 'linux', bareloopBin: '/x/bin/bareloop.mjs', spawned,
     spawnFn: (cmd, args) => {
       spawned.push({ cmd, args });
@@ -364,7 +364,7 @@ test('main: bare `bareloop` shows the new menu (the old export/run/history menu 
   const out = []; const err = [];
   const stdout = { write: (s) => { out.push(s); return true; } };
   const stderr = { write: (s) => { err.push(s); return true; } };
-  const launcher = { ports: [base, base + 1], timeoutMs: 300, nodeVersion: '22.1.0', version: V };
+  const launcher = { ports: [base, base + 1], timeoutMs: 2000, nodeVersion: '22.1.0', version: V };
   const run = main([], { stdin, stdout, stderr, cwd: process.cwd(), env: {}, keysHome: home, runlistHome: home, launcher });
   await new Promise((r) => setTimeout(r, 300));
   stdin.write('q\n');

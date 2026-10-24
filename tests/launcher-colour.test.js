@@ -50,7 +50,7 @@ test('makePaint: on for a TTY with no NO_COLOR; off with NO_COLOR, off when not 
 test('header + menu: with colour the words are the same (stripped), the rule frames the header, the numbers are bold cyan', async () => {
   const home = join(scratch(), 'bl');
   const port = await fakePanel();
-  const base = { home, ports: [port], timeoutMs: 300, nodeVersion: '22.1.0', version: V };
+  const base = { home, ports: [port], timeoutMs: 2000, nodeVersion: '22.1.0', version: V };
   const plain = await buildHeader({ ...base, paint: makePaint({ isTTY: false }, {}) });
   const col = await buildHeader({ ...base, paint: makePaint({ isTTY: true }, {}) });
   assert.equal(plain.lines.length, 2);

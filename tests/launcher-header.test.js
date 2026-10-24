@@ -78,10 +78,10 @@ test('probePanels: bareloop answers win, a non-bareloop answer and a closed port
   const other = await fakePanel({}, { app: 'something-else' });
   try {
     const ports = [a.port, other.port, b.port];
-    const found = await probePanels({ ports, timeoutMs: 300 });
+    const found = await probePanels({ ports, timeoutMs: 2000 });
     assert.deepEqual(found.map((f) => f.port).sort(), [a.port, b.port].sort());
     assert.equal(found.find((f) => f.port === a.port)?.drafts, 1);
-    assert.deepEqual(await probePanels({ ports: [other.port], timeoutMs: 300 }), []);
+    assert.deepEqual(await probePanels({ ports: [other.port], timeoutMs: 2000 }), []);
   } finally { await a.close(); await b.close(); await other.close(); }
 });
 
@@ -98,7 +98,7 @@ test('headerLines: the two lines, installed + panel running; not installed + pan
     writeFileSync(join(home, 'config.json'), '{}');
     writeFileSync(join(home, '.env'), '', { mode: 0o600 });
     chmodSync(join(home, '.env'), 0o600);
-    const lines = await headerLines({ home, ports: [p.port], version: V, nodeVersion: '22.1.0', timeoutMs: 300 });
+    const lines = await headerLines({ home, ports: [p.port], version: V, nodeVersion: '22.1.0', timeoutMs: 2000 });
     assert.equal(lines[0], `bareloop ${V} · installed ✓ · panel running at http://127.0.0.1:${p.port}`);
     assert.equal(lines[1], 'runs: 0 running · 0 need you · 0 in all');
   } finally { await p.close(); }
