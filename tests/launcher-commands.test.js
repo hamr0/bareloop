@@ -1,4 +1,4 @@
-// L (PANEL-BUILD.md addendum 2026-10-24) — start / stop / status / install / the menu. Scratch home, a free HIGH port range (never 4700-4709),
+// L (PANEL-BUILD.md addendum 2026-10-24) — start / stop / status / install / the menu. Scratch home, a free port range below the kernel's ephemeral range (never 4700-4709),
 // injected spawn / kill / opener / stdin: no real signal is ever sent and no real panel is launched. The "started" panel is a REAL
 // createPanelServer run in-process by the injected spawn, so the probe talks to the real /api/whoami.
 import { test, after } from 'node:test';
@@ -34,10 +34,10 @@ const scratch = () => { const d = mkdtempSync(join(tmpdir(), 'launcher-cmd-')); 
 
 /** @param {number} port @returns {Promise<boolean>} */
 const bindable = (port) => new Promise((res) => { const s = netServer(); s.once('error', () => res(false)); s.listen(port, '127.0.0.1', () => s.close(() => res(true))); });
-/** a base such that base..base+3 are free, in a high range */
+/** a base such that base..base+3 are free. Picked below the kernel's ephemeral range (32768-60999) so no other test's outgoing socket or listen(0) can be handed the port between this check and the start. */
 async function freeBase() {
   for (let i = 0; i < 200; i += 1) {
-    const base = 41000 + Math.floor(Math.random() * 20000);
+    const base = 20000 + Math.floor(Math.random() * 12000);
     const all = await Promise.all([0, 1, 2, 3].map((k) => bindable(base + k)));
     if (all.every(Boolean)) return base;
   }
