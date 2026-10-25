@@ -19,5 +19,7 @@ const code = await main(process.argv.slice(2), {
   stderr: process.stderr,
   cwd: process.cwd(),
   stdin: process.stdin,
+  // a pipe or </dev/null is read (the menu takes its choices from it) but never asked a missing argument
+  interactive: Boolean(process.stdin.isTTY),
 });
 process.exitCode = code;

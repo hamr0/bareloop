@@ -1076,6 +1076,27 @@ test('bareloop run: the bundle is found by the run name it was exported under (a
   assert.match(out.text(), /outcome {3}green/);
 });
 
+test('bareloop run --yes: the switch never swallows the next word, so the bundle positional is kept', async (t) => {
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const out = sink(); const err = sink();
+  const rc = await main(['run', '--yes', '/nowhere/not-a-bundle', '--repo', repo], { stdout: out, stderr: err, cwd: process.cwd(), stdin: lines('\n\n'), ...homes(t) });
+  assert.equal(rc, 1, `${out.text()}\n${err.text()}`);
+  assert.match(err.text(), /neither a bundle folder nor the name of a bundle you exported/, 'the typed word was read as the bundle');
+  assert.doesNotMatch(out.text(), /No exported bundles yet/, 'it did not fall into the pick-a-bundle question');
+});
+
+test('bareloop run at a non-terminal stdin (a pipe, </dev/null) with the bundle missing: the usage error and exit 1, never a question and exit 0', async (t) => {
+  const out = sink(); const err = sink();
+  const rc = await main(['run'], { stdout: out, stderr: err, cwd: process.cwd(), stdin: lines('\n\n'), interactive: false, ...homes(t) });
+  assert.equal(rc, 1);
+  assert.match(err.text(), /usage: bareloop run <bundle> --repo <path>/);
+  assert.equal(out.text(), '', 'nothing asked');
+  const err2 = sink();
+  assert.equal(await main(['export'], { stdout: sink(), stderr: err2, cwd: process.cwd(), stdin: lines('\n'), interactive: false, ...homes(t) }), 1);
+  assert.match(err2.text(), /usage: bareloop export/);
+});
+
 test('bareloop run with no bundle or repo asks for them; the optional caps are offered (Enter keeps the signed ones); a second empty Enter ends cleanly', async (t) => {
   const { bundleDir, bundleHash } = await exportFixture(t, { budgetUsd: 2, maxWallMs: 600_000 });
   const repo = tmp(t, 'cli-repo-');

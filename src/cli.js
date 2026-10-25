@@ -56,6 +56,9 @@ import { readRunList, formatRunRow } from './runlist.js';
 /** @param {unknown} v @returns {v is Record<string, any>} */
 const isObj = (v) => typeof v === 'object' && v !== null;
 
+/** The switches: flags that take no value, so the next word is never theirs (`run --yes <bundle>` keeps the bundle). */
+const SWITCHES = new Set(['yes']);
+
 /** @param {string[]} args @returns {{ positional: string[], flags: Record<string, string|true> }} */
 function parseFlags(args) {
   /** @type {string[]} */
@@ -67,7 +70,7 @@ function parseFlags(args) {
     if (a.startsWith('--')) {
       const key = a.slice(2);
       const next = args[i + 1];
-      if (next !== undefined && !next.startsWith('--')) { flags[key] = next; i++; } else flags[key] = true;
+      if (!SWITCHES.has(key) && next !== undefined && !next.startsWith('--')) { flags[key] = next; i++; } else flags[key] = true;
     } else positional.push(a);
   }
   return { positional, flags };
@@ -301,7 +304,7 @@ async function runLauncher(cmd, rest, deps, io, home) {
  * code, so `bin/bareloop.mjs` can set `process.exitCode` and let node flush
  * queued stdout on its own (F-something: `process.exit()` can discard it).
  * @param {string[]} argv
- * @param {{ env?: Record<string,string|undefined>, stdout?: any, stderr?: any, cwd?: string, provider?: any, providerFor?: any, judgeProvider?: any, judgeModel?: string|null, now?: () => number, stdin?: any, runlistHome?: string, keysHome?: string, processEnv?: Record<string,string|undefined> }} deps
+ * @param {{ env?: Record<string,string|undefined>, stdout?: any, stderr?: any, cwd?: string, provider?: any, providerFor?: any, judgeProvider?: any, judgeModel?: string|null, now?: () => number, stdin?: any, interactive?: boolean, runlistHome?: string, keysHome?: string, processEnv?: Record<string,string|undefined> }} deps
  * @returns {Promise<number>}
  */
 export async function main(argv, deps = {}) {
@@ -327,8 +330,10 @@ async function mainInner(argv, deps, holder) {
   const out = (/** @type {string} */ s) => stdout.write(`${s}\n`);
   const err = (/** @type {string} */ s) => stderr.write(`${s}\n`);
   const ask = (/** @type {string} */ q) => { holder.a ??= openAsker({ stdin: deps.stdin, stdout }); return holder.a.ask(q); };
-  // something to ask: a terminal, or a stdin the caller handed in (tests, a pipe the caller owns); a bare uninjected pipe is never waited on
-  const canAsk = deps.stdin !== undefined || Boolean(process.stdin.isTTY);
+  // something to ask: a terminal, or a stdin the caller handed in as interactive (tests; `deps.interactive` defaults to "an injected stdin is").
+  // bin/bareloop.mjs always hands process.stdin in (the menu reads its choices from it, piped or not) and says `interactive: isTTY`, so a
+  // pipe or </dev/null never gets a question: a missing argument is the usage error. The menu is unaffected: runLauncher sets canAsk itself.
+  const canAsk = deps.interactive ?? (deps.stdin !== undefined || Boolean(process.stdin.isTTY));
   const ctx = { out, err, cwd, env, now, deps, ask, canAsk, keysHome: keys.home };
 
   const [cmd, ...rest] = argv;
