@@ -208,7 +208,7 @@ test('bareloop: an unknown command\'s refusal lists the commands, without run-u 
   const out = sink(); const err = sink();
   const rc = await main(['bogus'], { stdout: out, stderr: err });
   assert.equal(rc, 1);
-  assert.match(err.text(), /unknown command "bogus" — one of: export, run, history, runs, panel, start, stop, status, install/);
+  assert.match(err.text(), /unknown command "bogus" — one of: export, run, history, runs, panel, start, stop, restart, status, install/);
   assert.doesNotMatch(err.text(), /run-u|interview|author|replay/);
   for (const gone of ['interview', 'author', 'replay']) {
     const e2 = sink();
