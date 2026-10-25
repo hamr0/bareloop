@@ -3238,6 +3238,7 @@ hash and needs re-approval, exactly like any other semantic edit.
 | `readBundle(dir)` | `dir` → `{ ok, reds, spec, manifest, bridges, blessing, history }` | never throws; every failure is a typed red. Runs the tamper check (below) whenever both a manifest and a spec parsed |
 | `resolveBundleSpec(bundle, bundleDir)` | a `readBundle` result + the bundle dir → `{ spec, approveHash }` | the in-memory `$BARELOOP_BUNDLE` → absolute `bundleDir` substitution; `approveHash` is `jobSpecHash` of the *substituted* spec, never the unresolved one |
 | `checkEnvelope(spec, envelope)` | `spec` (already resolved) + `{ budgetUsd?, maxWallMs? }` → `{ ok, reds }` | tighten-only: a given number must be ≤ the spec's own |
+| `capRaises(spec, envelope)` | `spec` + `{ budgetUsd?, maxWallMs? }` → `[{ field, old, new }]` | the caps an envelope would RAISE above the signed ones; `bareloop run` shows each and needs a typed `yes` / `--yes` (pure) |
 | `bless(dir, record)` | `dir` + `{ bundleHash, runid, outcome, host?, blessedAt? }` → the blessing object | writes/overwrites `blessing.json`; there is only ever one, for the bundle's current hash |
 | `verifyBlessing(bundle)` | a `readBundle` result → `{ ok, unblessed, reds }` | `unblessed: true` (no red) means never blessed here; a red means blessed-but-stale |
 | `appendHistory(dir, row)` | `dir` + a plain object → `void` | atomic append to `history.jsonl` (`appendFileSync`, same convention as `spine.js`/`ledger.js`) |
@@ -3265,7 +3266,7 @@ hash and needs re-approval, exactly like any other semantic edit.
 | `manifest-invalid` / `spec-invalid` | `readBundle` | `manifest.json`/`spec.json` could not be read or parsed |
 | `bundle-tampered` | `readBundle` | manifest and spec both parsed, but the recomputed `bundleHash` (from what's really on disk) does not match the stored one — **the load-bearing check, N4 below** |
 | `bundle-deps-missing` | `checkBundleDeps` (F128) | the bundle's own `close/` directory cannot resolve `require.resolve('bareloop')` — the bundle was installed the WRONG way (as someone else's dependency) instead of `cd <bundleDir> && npm install`. `bareloop run` calls this as literal step 1b, right after the tamper check, before the envelope check, the key, and any worktree |
-| `envelope-widen` | `checkEnvelope` | a given `budgetUsd`/`maxWallMs` exceeds the bundle's own signed ceiling — raising one is a re-export, never a runner flag |
+| `envelope-widen` | `checkEnvelope` | a given `budgetUsd`/`maxWallMs` exceeds the bundle's own signed ceiling and no yes was given (`bareloop run` offers the raise first: type `yes`, or pass `--yes`) |
 | `blessing-stale` | `verifyBlessing` | `blessing.json` exists but its `bundleHash` no longer matches the manifest's — the bundle was re-exported/edited since the run that blessed it; re-export and re-approve |
 
 **N4 — why `readBundle`'s tamper check must run before anything else touches the bundle.**
@@ -3322,7 +3323,7 @@ changes them, and a piped or `NO_COLOR` run prints the plain words above (the th
 **One menu (PRD v1.114, F245).** Bare `bareloop` prints the header, then `panel: 1 start 2 stop 3 restart 4 status 5 install`, `jobs: 6 export 7 run 8 resume 9 history` and `q quit`. Each job command asks for what it needs
 (typed flags skip the question): **export** lists the green runs as numbered `job (run-N)` names, then asks the output folder; **run** asks the bundle (the last 10 known bundles are listed newest first, numbered, as run name + folder; a number picks one, a run name or a folder reaches an older one; none known: `No exported bundles yet. Export one with 6.` and it ends), the repo, then
 the `$` cap and the time cap (Enter keeps the signed ones); **resume** lists the stopped / capped bundle runs the engine would resume, then offers more money / time; **history** asks the bundle and prints what `bareloop history <bundle>` prints.
-A required question answered with an empty Enter is asked once more; a second empty Enter ends that command with a plain line (nothing chosen, nothing run), exit `0`. `interview`, `author`, `replay` and `runs backfill` are no longer commands
+`q` at any question ends the command cleanly (nothing run, exit `0`). A required question answered with an empty Enter is asked once more; a second empty Enter ends that command with a plain line (nothing chosen, nothing run), exit `0`. `interview`, `author`, `replay` and `runs backfill` are no longer commands
 (`node scripts/run-replay.mjs`, `scripts/run-interview.mjs`, `scripts/run-author.mjs` run from a source checkout; the library functions the panel uses stay). `run-u` is still dispatched by name (`bareloop run-u <flags…>`: the panel spawns it) but is listed nowhere.
 
 When two key rows share one provider and endpoint, a CLI run uses the FIRST row in the keys list, so put the
@@ -3877,9 +3878,10 @@ key you want first (the panel picks the row by the Model menu).
   (`Cap $ − drafting spent`) as ITS own ceiling. Nothing here is left for a person to
   hand-compute or re-type, the same rule F185 set for `--spec`.
 
-**Tighten-only budget/wall.** `--budget`/`--wall` on `bareloop run` may only lower the
-bundle's own signed `budgetUsd`/`maxWallMs` — `checkEnvelope`'s `envelope-widen` red refuses
-anything higher. Raising a ceiling is a re-export (a new signed bundle), never a runner flag.
+**Lowering is free; raising needs your yes.** `--budget`/`--wall` on `bareloop run` may lower the
+bundle's own signed `budgetUsd`/`maxWallMs` freely (`checkEnvelope` stays tighten-only). A number above the signed one is a RAISE
+(`capRaises`): shown back in words and signed by typing `yes` at a terminal (or `--yes`), recorded as a `cap-raise` line in the run's
+`approvals.jsonl`; with no terminal and no `--yes` it is refused at `$0` as `envelope-widen`.
 
 **First-run approval, blessing, no-resign.** The bundle's own signed `bundleHash` is what a
 human reads and accepts with `--approve` on the run that first blesses it. That first GREEN
