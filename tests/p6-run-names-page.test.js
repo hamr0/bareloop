@@ -54,7 +54,7 @@ test('run names: the right-side header reads job (run-N) on every branch of rend
   const render = new Function('document', `
     var lastEndedSig = null; var lastJobToolsList = null;
     ${stubs}
-    ${['escapeXml', 'runLabel', 'runName', 'glyphClass', 'dotPulses', 'dotClass', 'statusWordHtml', 'fmtLocalDateTime', 'setRunHeader', 'liveStepText', 'runHeaderBody', 'panelMoney', 'panelMoneyWithDraft', 'duration', 'liveSpendText', 'liveWallPhrase', 'realSteps', 'renderEnded', 'renderRun'].map(fnSrc).join('\n')}
+    ${['escapeXml', 'runLabel', 'runName', 'glyphClass', 'dotPulses', 'dotClass', 'statusWordHtml', 'fmtLocalDateTime', 'setRunHeader', 'liveStepText', 'runHeaderBody', 'panelMoney', 'panelMoneyWithDraft', 'duration', 'liveSpendText', 'liveWallPhrase', 'realSteps', 'summaryRow', 'nextRow', 'renderEnded', 'renderRun'].map(fnSrc).join('\n')}
     return renderRun;
   `)(document);
   render({ ...RUN, steps: [], parts: [], ended: null, model: null, budgetUsd: 8 });

@@ -292,9 +292,10 @@
   .ended-row{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px;}
   .ended-label{color:var(--text-faint);font-size:11px;letter-spacing:0.08em;min-width:52px;}
   .ended-text{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;}
-  .ended-text .next-head,.ended-text .next-tail{display:block;}
-  .ended-text .next-grid{display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:1.5ch;margin-left:2ch;}
-  .ended-text .next-cmd{min-width:0;overflow-wrap:anywhere;}
+  /* a NEXT with several instructions is one per line: label muted, instructions in a second column (the shape fwdloop copied, 2026-10-25) */
+  .next-rows{display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:10px;row-gap:2px;}
+  .next-label{color:var(--text-faint);}
+  .next-text{min-width:0;overflow-wrap:anywhere;}
   .ended-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;}
   /* P5 item 4: Import (read only) — the folder browser, the imported rows, the view */
   .import-box{border:1px dashed var(--border-strong);padding:10px;margin-bottom:10px;display:grid;gap:8px;}
@@ -2487,15 +2488,11 @@ function escapeXml(s){
   // RULED 2026-10-15 (aligned with fwdloop M9 am7): ONE block, the same shape every time: ENDED (a finished run), NEXT (a finished run), SCHEDULE
   // (always: the schedule's words and a second line, or "By hand"). A schedule that started nothing turns the SCHEDULE row AND the frame red.
   // The sentences are CODE-OWNED on the server (`endedFor`/`endedText` in src/panel/server.js, `detail.schedule` from src/schedulewords.js) — this only paints them.
-  // NEXT: a green repo run's instructions come as parts (`nextParts`): each is its own label + command row in a grid inside the same
-  // cell, so a long command wraps under the command column. Copying a command selects only its own cell: the plain command.
+  // NEXT: `e.next` is one string; `e.rows` ([label, instruction] pairs, from endedFor) is there only when it holds several instructions
   function nextRow(e){
-    var p = e.nextParts;
-    if(!p || !Array.isArray(p.rows)) return summaryRow("NEXT", e.next, "ended-next", false);
-    var inner = '<span class="next-head">' + escapeXml(p.head) + '</span><span class="next-grid">' + p.rows.map(function(r){
-      return '<span class="next-lab">' + escapeXml(r.label) + '</span><span class="next-cmd">' + escapeXml(r.cmd) + '</span>';
-    }).join("") + '</span>' + (p.tail ? '<span class="next-tail">' + escapeXml(p.tail) + '</span>' : "");
-    return '<div class="ended-row"><span class="ended-label">NEXT</span><span class="ended-text" data-testid="ended-next">' + inner + '</span></div>';
+    if(!Array.isArray(e.rows) || e.rows.length < 2) return summaryRow("NEXT", e.next, "ended-next", false);
+    var grid = e.rows.map(function(r){ return '<span class="next-row" style="display:contents"><span class="next-label">' + escapeXml(r[0]) + '</span><span class="next-text">' + escapeXml(r[1]) + '</span></span>'; }).join("");
+    return '<div class="ended-row"><span class="ended-label">NEXT</span><span class="ended-text next-rows" data-testid="ended-next">' + grid + '</span></div>';
   }
   function renderEnded(detail){
     var box = document.getElementById("ended-block");

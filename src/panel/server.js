@@ -460,7 +460,7 @@ const GOAL_NOT_MET = new Set(['plan-red', 'check-red', 'step-red', 'escalated'])
  *   worktree?: {folder: string, repo: string, branch: string|null, exists: boolean}|null, exportName?: string|null}} [o]
  *   `worktree` (P6 item 1): the run's worktree in the person's repo, from {@link worktreeOfRun}; absent for every other run
  *   `exportName` (PRD v1.114): the run's `job (run-N)` name; a green worktree run (a repo job) shows the export command to copy beside the merge text
- * @returns {{reason: string, next: string, nextParts?: {head: string, rows: {label: string, cmd: string}[], tail: string|null}, line: string, actions: {id: string, label: string}[]}|null}
+ * @returns {{reason: string, next: string, rows?: [string, string][], line: string, actions: {id: string, label: string}[]}|null}
  */
 export function endedFor(summary, death, o = {}) {
   const base = withReuseAction(endedBase(summary, death, o));
@@ -472,27 +472,36 @@ export function endedFor(summary, death, o = {}) {
   const green = !death.died && (summary.outcome === 'green' || summary.outcome === 'already-green' || summary.outcome === 'satisfied');
   if (green) {
     if (!wt.branch) return base;
-    // one instruction per line (hamr 2026-10-25); labels are plain words from code, the commands are text to copy
-    const head = `In ${wt.repo}:`;
-    const rows = [
-      { label: 'keep the work:', cmd: `git merge ${wt.branch}` },
-      { label: 'throw it away:', cmd: `git branch -D ${wt.branch}` },
-      ...(o.exportName ? [{ label: 'reusable bundle:', cmd: `bareloop export "${o.exportName}" --out <folder>` }] : []),
-    ];
-    const tail = wt.exists ? `The worktree folder ${wt.folder} is still there.` : null;
-    const pad = 'reusable bundle:'.length + 3; // the plain text keeps one label column whichever rows show
-    // `next` is the plain-text form (one instruction per line); `nextParts` lets the page lay each instruction out as a label + command
-    // row, so a long command wraps under the command column (hanging indent) instead of back to column 0
-    const next = [head, ...rows.map((r) => `  ${r.label.padEnd(pad)}${r.cmd}`), ...(tail ? [tail] : [])].join('\n');
-    return { ...base, next, nextParts: { head, rows, tail } };
+    // one instruction per row (fwdloop's shape): `in:` names the repo as its own first row, then the commands, then the kept folder
+    return {
+      ...base,
+      ...splitNext([
+        ['in:', wt.repo],
+        ['keep the work:', `git merge ${wt.branch}`],
+        ['throw it away:', `git branch -D ${wt.branch}`],
+        ...(o.exportName ? [/** @type {[string, string]} */ (['reusable bundle:', `bareloop export "${o.exportName}" --out <folder>`])] : []),
+        ...(wt.exists ? [/** @type {[string, string]} */ (['folder still there:', wt.folder])] : []),
+      ]),
+    };
   }
+  // any other ending: the worktree folder stays (Resume needs it); a multi-instruction NEXT gets it as one more row
+  if (wt.exists && base.rows) return { ...base, ...splitNext([...base.rows, ['your work is in:', wt.folder]]) };
   return wt.exists ? { ...base, next: `${base.next} Your work is in ${wt.folder}.` } : base;
 }
 
 /**
+ * A NEXT with several instructions is `rows` of [label, instruction], one per line (label muted, instruction in a second column);
+ * `next` stays the one plain string every other reader gets: the rows joined "label instruction", one per line. The only writer of both
+ * (the shape fwdloop copied from bareloop 8cad363 and bareloop copied back, 2026-10-25).
+ * @param {[string, string][]} rows
+ * @returns {{next: string, rows: [string, string][]}}
+ */
+function splitNext(rows) { return { next: rows.map(([l, x]) => `${l} ${x}`).join('\n'), rows }; }
+
+/**
  * ONE door (hamr 2026-10-15, v1.101): "Reuse workflow" is offered on EVERY ending (green, failed, capped, stopped, died, every other
  * red), after Resume when both show. ONE place, so no ending branch can forget it.
- * @param {{reason: string, next: string, line: string, actions: {id: string, label: string}[]}|null} ended
+ * @param {{reason: string, next: string, rows?: [string, string][], line: string, actions: {id: string, label: string}[]}|null} ended
  */
 function withReuseAction(ended) {
   if (!ended || ended.actions.some((a) => a.id === 'reuse')) return ended;
@@ -513,12 +522,14 @@ function endedBase(summary, death, o) {
     return s.length > 120 ? `${s.slice(0, 120)}…` : s;
   };
   /** a resumable ending whose Resume the engine would refuse: say so, never offer the button */
-  const resumeOr = (/** @type {string} */ okNext) => (resumeOk ? okNext : `Resume is not available for this run${o.resume && o.resume.why ? ` (${o.resume.why})` : ''}. ${CHANGE}`);
+  const resumeOr = (/** @type {string} */ okNext) => ({ next: resumeOk ? okNext : `Resume is not available for this run${o.resume && o.resume.why ? ` (${o.resume.why})` : ''}. ${CHANGE}` });
+  /** the same, for a two-step ending: rows when the engine would accept the resume, else the one "not available" sentence */
+  const resumeRows = (/** @type {[string, string][]} */ rows) => (resumeOk ? splitNext(rows) : resumeOr(''));
 
   if (death.died) {
     return {
       reason: `Stopped with no ending recorded${death.lastThing ? ` (last thing it did: ${death.lastThing})` : ''}.`,
-      next: resumeOr('Resume.'),
+      ...resumeOr('Resume.'),
       line: resumeOk ? 'no ending recorded — resume' : 'no ending recorded',
       actions: resumeOk ? RESUME : [],
     };
@@ -569,7 +580,7 @@ function endedBase(summary, death, o) {
       const earned = isReusableGreen(outcome);
       return {
         reason: 'Goal met, but the output could not be delivered.',
-        next: earned ? 'Fix the destination, then Reuse workflow.' : CHANGE,
+        ...(earned ? splitNext([['fix the destination:', 'the Destination'], ['then:', 'press Reuse workflow']]) : { next: CHANGE }),
         line: `${GOAL_MET_LINE} — not delivered`,
         actions: earned ? REUSE : [],
       };
@@ -584,7 +595,7 @@ function endedBase(summary, death, o) {
       ? ` (${panelMoney2(summary.spentUsd)} of ${panelMoney2(summary.budgetUsd)})` : '';
     return {
       reason: `Money cap reached${money}.`,
-      next: resumeOr('Raise the cap, then Resume.'),
+      ...resumeRows([['raise the cap:', 'Cap $ on the Chat card'], ['then:', 'press Resume']]),
       line: resumeOk ? 'money cap — resume' : 'money cap',
       actions: resumeOk ? RESUME : [],
     };
@@ -592,7 +603,7 @@ function endedBase(summary, death, o) {
   if (outcome === 'wall-halt') {
     return {
       reason: 'Time cap reached.',
-      next: resumeOr('Raise the time, then Resume.'),
+      ...resumeRows([['raise the time:', 'Time cap (min) on the Chat card'], ['then:', 'press Resume']]),
       line: resumeOk ? 'time cap — resume' : 'time cap',
       actions: resumeOk ? RESUME : [],
     };
@@ -601,7 +612,7 @@ function endedBase(summary, death, o) {
     // P5 item 5: the PERSON ended the leg (Stop). Nothing failed; the finished steps stand.
     return {
       reason: 'You stopped it.',
-      next: resumeOr('Resume.'),
+      ...resumeOr('Resume.'),
       line: resumeOk ? 'you pressed Stop — resume' : 'you pressed Stop',
       actions: resumeOk ? RESUME : [],
     };
@@ -610,7 +621,7 @@ function endedBase(summary, death, o) {
     const d = detailOf(summary.stopReason);
     return {
       reason: `The model provider failed${d ? ` (${d})` : ''}.`,
-      next: resumeOr('Resume.'),
+      ...resumeOr('Resume.'),
       line: resumeOk ? 'provider failed — resume' : 'provider failed',
       actions: resumeOk ? RESUME : [],
     };
@@ -618,7 +629,7 @@ function endedBase(summary, death, o) {
   if (outcome === 'step-stalled') {
     return {
       reason: 'A step stopped making progress.',
-      next: resumeOr('Resume, or change the job: press Reuse workflow.'),
+      ...resumeRows([['resume:', 'press Resume'], ['or change the job:', 'press Reuse workflow']]),
       line: resumeOk ? 'step stalled — resume' : 'step stalled',
       actions: resumeOk ? RESUME : [],
     };

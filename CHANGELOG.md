@@ -15,6 +15,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Changed
 
+- **The Run tab's NEXT is one instruction per row.** A green repo run reads `in:` the repo, `keep the work:` `git merge …`, `throw it away:` `git branch -D …`, `reusable bundle:` `bareloop export "job (run-N)" --out <folder>` in two columns (muted labels), so a long command wraps under the command column. The two-step endings use the same shape with the panel's own names: `raise the cap:` Cap $ on the Chat card, `then:` press Resume; `raise the time:` Time cap (min) …; `resume:` press Resume, `or change the job:` press Reuse workflow; `fix the destination:` the Destination, `then:` press Reuse workflow. Single-instruction endings stay one line.
 - **`bareloop run` commits a green.** The bundle runner left a green run's work uncommitted on its branch; it now commits it on the work branch (the same call the panel uses) and prints a `commit` line. The merge stays yours.
 - **The first run of an unblessed bundle, typed at a terminal, is signed with a typed yes.** It shows the bundle hash and asks "Type yes to sign it:"; only `yes` proceeds, and the signing is written to the run's `approvals.jsonl`. With flags only, `--approve <hash>` is still how.
 - **Export lists only runs it can take.** A run that was already green (no saved plan), a judged, page-link or folder job, or one with no signed job file is not listed; a number it cannot read is still refused at export, in words.

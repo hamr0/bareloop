@@ -5,7 +5,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync,
+  mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync, readFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -51,25 +51,29 @@ const wt = (o = {}) => ({ folder: '/r/.bareloop/wt/s1', repo: '/r', branch: 'bar
 const summary = (outcome) => ({ outcome, stopReason: null, spentUsd: 8, budgetUsd: 8 });
 const alive = { died: false, lastThing: null };
 
-test('endedFor: a GREEN worktree run shows the two git commands as text, naming the repo and the branch', () => {
+test('endedFor: a GREEN worktree run is one instruction per row: the repo, then the two git commands as text', () => {
   const e = endedFor(summary('green'), alive, { worktree: wt() });
   assert.equal(e.reason, 'Goal met.');
-  assert.equal(e.next, 'In /r:\n  keep the work:     git merge bareloop-job\n  throw it away:     git branch -D bareloop-job');
+  assert.deepEqual(e.rows, [['in:', '/r'], ['keep the work:', 'git merge bareloop-job'], ['throw it away:', 'git branch -D bareloop-job']]);
+  assert.equal(e.next, 'in: /r\nkeep the work: git merge bareloop-job\nthrow it away: git branch -D bareloop-job', 'next is the plain text of the rows');
   assert.deepEqual(e.actions, [{ id: 'reuse', label: 'Reuse workflow' }], 'the buttons are unchanged — merge is never a button');
 });
 
-test('endedFor: a GREEN worktree run whose folder is still there says so; with no branch recorded it falls back to the plain text', () => {
-  assert.match(endedFor(summary('green'), alive, { worktree: wt({ exists: true }) }).next, /\nThe worktree folder \/r\/\.bareloop\/wt\/s1 is still there\.$/);
-  assert.equal(endedFor(summary('green'), alive, { worktree: wt({ branch: null }) }).next, 'Nothing to do.');
+test('endedFor: a GREEN worktree run whose folder is still there says so as a row; with no branch recorded it falls back to the plain text', () => {
+  assert.deepEqual(endedFor(summary('green'), alive, { worktree: wt({ exists: true }) }).rows.at(-1), ['folder still there:', '/r/.bareloop/wt/s1']);
+  const none = endedFor(summary('green'), alive, { worktree: wt({ branch: null }) });
+  assert.equal(none.next, 'Nothing to do.');
+  assert.equal(none.rows, undefined);
 });
 
 test('endedFor: stopped / capped / died name the worktree folder; a gone folder adds nothing', () => {
   const resume = { ok: true };
-  assert.equal(endedFor(summary('cap-halt'), alive, { worktree: wt({ exists: true }), resume }).next,
-    'Raise the cap, then Resume. Your work is in /r/.bareloop/wt/s1.');
+  const cap = endedFor(summary('cap-halt'), alive, { worktree: wt({ exists: true }), resume });
+  assert.deepEqual(cap.rows, [['raise the cap:', 'Cap $ on the Chat card'], ['then:', 'press Resume'], ['your work is in:', '/r/.bareloop/wt/s1']]);
   assert.equal(endedFor(summary('stopped'), alive, { worktree: wt({ exists: true }), resume }).next, 'Resume. Your work is in /r/.bareloop/wt/s1.');
   assert.match(endedFor(summary(null), { died: true, lastThing: 'a step' }, { worktree: wt({ exists: true }), resume }).next, /Your work is in \/r\/\.bareloop\/wt\/s1\.$/);
-  assert.equal(endedFor(summary('cap-halt'), alive, { worktree: wt({ exists: false }), resume }).next, 'Raise the cap, then Resume.');
+  const gone = endedFor(summary('cap-halt'), alive, { worktree: wt({ exists: false }), resume });
+  assert.deepEqual(gone.rows, [['raise the cap:', 'Cap $ on the Chat card'], ['then:', 'press Resume']]);
 });
 
 test('endedFor: no worktree = the sentences are exactly what they always were', () => {
@@ -81,12 +85,14 @@ test('getRunDetail: a green worktree run reads its branch off the spine and its 
   const home = tmp();
   makeWorktreeRun(home, { outcome: 'green', folderExists: false });
   const d = getRunDetail('run1', { home });
-  assert.match(d.ended.next, /^In .*\/repo:\n {2}keep the work: {5}git merge bareloop-fix-types\n {2}throw it away: {5}git branch -D bareloop-fix-types\n {2}reusable bundle: {3}bareloop export "[^"]+ \(run-1\)" --out <folder>$/);
+  assert.deepEqual(d.ended.rows.map((r) => r[0]), ['in:', 'keep the work:', 'throw it away:', 'reusable bundle:']);
+  assert.equal(d.ended.rows[1][1], 'git merge bareloop-fix-types');
+  assert.match(d.ended.rows[3][1], /^bareloop export "[^"]+ \(run-1\)" --out <folder>$/);
 });
 
-test('endedFor: the export line (PRD v1.114) sits beside the merge text of a GREEN worktree run only, as text, with the panel\'s own run name', () => {
+test('endedFor: the export row (PRD v1.114) sits with the merge rows of a GREEN worktree run only, as text, with the panel\'s own run name', () => {
   const e = endedFor(summary('green'), alive, { worktree: wt(), exportName: 'my-job (run-3)' });
-  assert.equal(e.next, 'In /r:\n  keep the work:     git merge bareloop-job\n  throw it away:     git branch -D bareloop-job\n  reusable bundle:   bareloop export "my-job (run-3)" --out <folder>');
+  assert.deepEqual(e.rows, [['in:', '/r'], ['keep the work:', 'git merge bareloop-job'], ['throw it away:', 'git branch -D bareloop-job'], ['reusable bundle:', 'bareloop export "my-job (run-3)" --out <folder>']]);
   assert.deepEqual(e.actions, [{ id: 'reuse', label: 'Reuse workflow' }], 'text, never a button');
   assert.doesNotMatch(endedFor(summary('cap-halt'), alive, { worktree: wt({ exists: true }), resume: { ok: true }, exportName: 'my-job (run-3)' }).next, /bareloop export/);
   assert.equal(endedFor(summary('green'), alive, { exportName: 'my-job (run-3)' }).next, 'Nothing to do.', 'no worktree = not a repo job in the panel: nothing shown');
@@ -96,7 +102,7 @@ test('getRunDetail: a capped worktree run whose folder exists names the folder; 
   const home = tmp();
   const { folder } = makeWorktreeRun(home, { outcome: 'cap-halt', folderExists: true });
   const d = getRunDetail('run1', { home });
-  assert.ok(d.ended.next.endsWith(`Your work is in ${folder}.`), d.ended.next);
+  assert.deepEqual(d.ended.rows.at(-1), ["your work is in:", folder], JSON.stringify(d.ended.rows));
 
   const home2 = tmp();
   makeWorktreeRun(home2, { outcome: 'cap-halt', folderExists: false });
@@ -105,26 +111,31 @@ test('getRunDetail: a capped worktree run whose folder exists names the folder; 
   assert.match(gone.ended.next, /its worktree folder .* is gone/);
 });
 
-// hamr 2026-10-25: a long command must wrap under the command column, not back to column 0. Each instruction is its own label + command
-// cell in a grid inside the NEXT cell; a command's own cell carries only the plain command (copy-paste gives it).
-test('NEXT page markup: a green repo run lays each instruction out as a label cell + command cell in one grid (hanging indent), commands plain', async () => {
-  const { readFileSync } = await import('node:fs');
-  const PAGE = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
-  const fnSrc = (name) => {
-    const start = PAGE.indexOf(`function ${name}(`);
-    let depth = 0; let i = PAGE.indexOf('{', start);
-    for (; i < PAGE.length; i += 1) { if (PAGE[i] === '{') depth += 1; else if (PAGE[i] === '}') { depth -= 1; if (depth === 0) break; } }
-    return PAGE.slice(start, i + 1);
-  };
-  // eslint-disable-next-line no-new-func
-  const nextRow = new Function(`${['escapeXml', 'summaryRow', 'nextRow'].map(fnSrc).join('\n')}\nreturn nextRow;`)();
+// fwdloop's shape (hamr 2026-10-25): NEXT with several instructions is a two-column grid of label + instruction rows inside the NEXT cell, so a
+// long command wraps under the instruction column; no rows = the old one-line row.
+const PAGE = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
+function pageFn(name) {
+  const start = PAGE.indexOf(`function ${name}(`);
+  let depth = 0; let i = PAGE.indexOf('{', start);
+  for (; i < PAGE.length; i += 1) { if (PAGE[i] === '{') depth += 1; else if (PAGE[i] === '}') { depth -= 1; if (depth === 0) break; } }
+  return PAGE.slice(start, i + 1);
+}
+// eslint-disable-next-line no-new-func
+const nextRow = new Function(`${['escapeXml', 'summaryRow', 'nextRow'].map(pageFn).join('\n')}\nreturn nextRow;`)();
+
+test('NEXT page markup: rows become label cells + instruction cells in one grid inside the NEXT cell; no rows keeps the one-line row', () => {
   const e = endedFor(summary('green'), alive, { worktree: wt(), exportName: 'pulselog-panel-strict (run-1)' });
   const html = nextRow(e);
-  assert.match(html, /<span class="next-head">In \/r:<\/span><span class="next-grid">/);
-  assert.match(html, /<span class="next-lab">keep the work:<\/span><span class="next-cmd">git merge bareloop-job<\/span>/);
-  assert.match(html, /<span class="next-lab">reusable bundle:<\/span><span class="next-cmd">bareloop export &quot;pulselog-panel-strict \(run-1\)&quot; --out &lt;folder&gt;<\/span>/);
-  assert.doesNotMatch(html, /next-cmd">\s/, 'no padding spaces inside a command cell');
-  assert.match(PAGE, /\.ended-text \.next-grid\{display:grid;grid-template-columns:max-content minmax\(0,1fr\)/);
-  // a NEXT with no parts (every other ending) is the unchanged single text row
+  assert.match(html, /^<div class="ended-row"><span class="ended-label">NEXT<\/span><span class="ended-text next-rows" data-testid="ended-next">/);
+  assert.match(html, /<span class="next-row" style="display:contents"><span class="next-label">keep the work:<\/span><span class="next-text">git merge bareloop-job<\/span><\/span>/);
+  assert.match(html, /<span class="next-label">reusable bundle:<\/span><span class="next-text">bareloop export &quot;pulselog-panel-strict \(run-1\)&quot; --out &lt;folder&gt;<\/span>/);
   assert.equal(nextRow({ next: 'Resume.' }), '<div class="ended-row"><span class="ended-label">NEXT</span><span class="ended-text" data-testid="ended-next">Resume.</span></div>');
+  assert.equal(nextRow({ next: 'x', rows: [['a:', 'b']] }), '<div class="ended-row"><span class="ended-label">NEXT</span><span class="ended-text" data-testid="ended-next">x</span></div>', 'fewer than two rows is the one-line row');
+});
+
+test('NEXT page CSS: the grid, the muted label token the ENDED/NEXT side labels use, and a text cell that wraps without spilling', () => {
+  assert.match(PAGE, /\.next-rows\{display:grid;grid-template-columns:max-content minmax\(0,1fr\);column-gap:10px;row-gap:2px;\}/);
+  assert.match(PAGE, /\.next-label\{color:var\(--text-faint\);\}/);
+  assert.match(PAGE, /\.next-text\{min-width:0;overflow-wrap:anywhere;\}/);
+  assert.match(PAGE, /\.ended-label\{color:var\(--text-faint\)/, 'the same token as the ENDED / NEXT / SCHEDULE side labels');
 });
