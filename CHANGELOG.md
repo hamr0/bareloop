@@ -16,6 +16,9 @@ feature lands, **patch** = docs, fixes, scaffolding.
 ### Changed
 
 - **`bareloop run` commits a green.** The bundle runner left a green run's work uncommitted on its branch; it now commits it on the work branch (the same call the panel uses) and prints a `commit` line. The merge stays yours.
+- **The first run of an unblessed bundle, typed at a terminal, is signed with a typed yes.** It shows the bundle hash and asks "Type yes to sign it:"; only `yes` proceeds, and the signing is written to the run's `approvals.jsonl`. With flags only, `--approve <hash>` is still how.
+- **Export lists only runs it can take.** A run that was already green (no saved plan), a judged, page-link or folder job, or one with no signed job file is not listed; a number it cannot read is still refused at export, in words.
+- **No line tells you to run `bareloop author` or `bareloop interview` any more** (they left the CLI). Messages name the panel's drafting or `scripts/run-author.mjs` / `scripts/run-interview.mjs`.
 - **`bareloop run` asks for what is missing.** No bundle, repo or model typed: it asks (the model from the ones ticked in Settings, only when the bundle names none). A bundle can be named by the run name it was exported under.
 - **`interview`, `author` and `runs backfill` are no longer commands; `replay` is `node scripts/run-replay.mjs`.** `run-u` still works by name (the panel starts runs with it) but is listed nowhere. `scripts/run-interview.mjs` and `scripts/run-author.mjs` are unchanged, and the interview's "run it now" offer starts the author script. The library functions the panel uses stay.
 - **A bundle's money-halt hint no longer says the ceiling cannot be raised.** The resume line reads `--budget <more than $X, above $Y asks you to type yes>`.

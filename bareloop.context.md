@@ -1247,7 +1247,7 @@ must never make an ordinary first run read as a resume. Belted like `priorSpentU
 non-finite or negative value reads as 0). Rides onto `job-start` as its own field,
 `draftSpentUsd`, only when > 0 — never inside `spentUsd`/`engagementSpentUsd`, which stay
 run-only. `bareloop run-u --draft-spent-usd <n>` is the CLI door (validated: finite, ≥ 0, else
-refused); `bareloop author` prints its own known drafting spend floor and the exact `run-u`
+refused); `scripts/run-author.mjs` prints its own known drafting spend floor and the exact `run-u`
 command including the flag; the panel's sign route passes the session's own tracked drafting
 spend the same way. `src/replay.js`'s `moneyWithDraft(spendCore, draftSpentUsd, budgetUsd?, draftSpendComplete?)` is
 the one shared display formatter: `"$3.71 ($0.81 drafting) of $5.00"`, unchanged
@@ -1391,7 +1391,7 @@ never greens with no registry row (F207).
 has no guard against being passed without `--draft-spent-usd` — alone it is inert (nothing is
 folded, so no `job-start` field is emitted). Every printed re-invocation tail carries it
 alongside `--draft-spent-usd` (only when drafting spend > 0), so a resumed leg never turns the
-floor back into an exact figure; `bareloop author` and the panel's sign route pass it when the
+floor back into an exact figure; `scripts/run-author.mjs` and the panel's sign route pass it when the
 session's drafting spend was incomplete.
 
 **`bareloop run-u --draft-spent-usd <n>`** (hamr's ruling 2026-09-28, "one cap covers drafting +
@@ -1401,7 +1401,7 @@ enforced ceiling and reading it as `Infinity` would silently narrow it into "no 
 names no drafting spend, so the signed `budgetUsd` is unaffected; this only shrinks THIS leg's
 own enforced remainder (`job.budgetUsd - draftSpentUsd - spentUsd`). Every printed
 resume/decide/door re-invocation carries `--draft-spent-usd` too, mirroring `--read-shim`'s own
-tail — a resumed leg that dropped it would silently widen its ceiling back up. `bareloop author`
+tail — a resumed leg that dropped it would silently widen its ceiling back up. `scripts/run-author.mjs`
 prints the exact `run-u` command including this flag, with its own known drafting spend (a floor,
 never $0 on an unpriced call — F6). The panel's sign route (`src/panel/authorroutes.js`)
 passes the same flag off the authoring session's own tracked spend.
@@ -3348,7 +3348,7 @@ key you want first (the panel picks the row by the Model menu).
   the sentence says how). The approval is appended to `<bundleDir>/runs/<runid>/approvals.jsonl` as `{type:'cap-raise', who, field, old, new, at, bundleHash, approveHash}` once the engine accepts the run, and the
   history row carries `capsRaised`. Lowering needs no confirm. A resume's ceiling still folds prior spend. (c) **A green run commits its work on its work branch** (`commitWork`, the panel's own call: everything
   changed except the arbiter's books and `node_modules`; a green with nothing to commit says so), printed as a `commit` line before `branch`/`worktree`/`merge`. The folder is kept; the merge stays yours.
-  The first run of an UNBLESSED bundle still needs `--approve <bundleHash>` (typed flag; the menu has no field for it) — a thin door
+  (d) The first run of an UNBLESSED bundle typed at a terminal (the menu) shows the `bundleHash` and asks `Type yes to sign it:`; only `yes` proceeds and counts as the approval, recorded as `{type:'bundle-approve', who, bundleHash, at}` in `approvals.jsonl`. Flags only keeps `--approve <bundleHash>` (`--yes` signs caps, not a bundle). Export's list shows only runs it can take (green with a saved plan, a signed spec, a repo job). — a thin door
   (`src/bundlerun.js`) to the same engine `bareloop run-u` drives (`src/userrun.js`): one
   runner, so providers, keys (any provider the bundle's spec names — the keys file or env), the
   judge, the monthly $ limit, the outside watchdog and the readout are that engine's. The door
@@ -3566,7 +3566,7 @@ key you want first (the panel picks the row by the Model menu).
   session is still non-terminal — one authoring session at a time) creates a session
   (`src/panel/authorsession.js`) that runs `prepareSource`/`detectLanguage`/`validateJob`/
   `authorCloseForJob`/`assembleSpec`/`prepareSigning` in-process, exactly the library calls
-  `bareloop interview`/`bareloop author` already make — never a script's own readline loop,
+  `scripts/run-interview.mjs`/`scripts/run-author.mjs` already make — never a script's own readline loop,
   never a reimplementation of any gate. `GET /api/author/model-check?provider=<KEY>&model=<id>` is the $0 readiness probe the job card runs
   before Start (`checkProviderReachable`, `src/providers.js` — a models-list GET only, never a
   completion; the page sees the key's NAME and a status word, never the value). `POST
@@ -3603,7 +3603,7 @@ key you want first (the panel picks the row by the Model menu).
   a test can drive the real ask()-channel/hash wiring without a live provider call;
   none of them are reachable from `authorroutes.js`'s real construction path. Sessions live
   under `~/.config/bareloop/panel-sessions/<id>/` (each one's own `resolved-spec.json` and
-  `signing.json`, the two files `bareloop author` itself already writes). Edit/re-sign, the
+  `signing.json`, the two files `scripts/run-author.mjs` itself already writes). Edit/re-sign, the
   `~/.config/bareloop/.env` keys-file loader, and Settings have landed (P4a/P4b — see "Settings" below).
 
 - **Panel P5 — the Ended block (`docs/product/PANEL-BUILD.md` Addendum 2026-10-02, item 1)** →
@@ -3817,8 +3817,9 @@ key you want first (the panel picks the row by the Model menu).
   over this same `src/userrun.js:main`, not rewired to go through `src/cli.js`.
   **Printed commands are spelled the way you entered:** every re-invocation these flows print (the approve
   line, resume, pause, reopen, the interview's run-author line, the author's run-u line) reads `bareloop
-  run-u …` / `bareloop author …` when reached through `bareloop`, and `node scripts/run-u.mjs …` only through
-  the source-tree adapters — the tarball ships no `scripts/`. One owner: `commandFor` (`src/invoke.js`),
+  run-u …` when reached through `bareloop`, and `node scripts/run-u.mjs …` only through
+  the source-tree adapters; `interview` and `author` left the CLI (PRD v1.114), so they are always spelled
+  `node scripts/run-interview.mjs` / `node scripts/run-author.mjs` — the tarball ships no `scripts/`. One owner: `commandFor` (`src/invoke.js`),
   fed by each flow's `deps.invokedAs`.
 
 - **`bareloop interview` LEFT THE CLI (PRD v1.114): `node scripts/run-interview.mjs <flags…>` is the door; its "run it now" offer starts `scripts/run-author.mjs`.** Historical entry: **`bareloop interview <flags…>`** (PANEL-BUILD.md P0 task 3/4) → the close-authoring

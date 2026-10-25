@@ -167,12 +167,12 @@ test('bareloop run-u: the printed re-invocation names `bareloop run-u`, never a 
   assert.match(direct.join('\n'), /node scripts\/run-u\.mjs --job aurora-spawner --approve /);
 });
 
-test('bareloop run-u: a --spec that does not exist points at `bareloop author`, not scripts/run-author.mjs', async () => {
+test('bareloop run-u: a --spec that does not exist points at the panel\'s drafting or scripts/run-author.mjs, never at a `bareloop author` command (it left the CLI)', async () => {
   const out = sink(); const err = sink();
   const rc = await main(['run-u', '--spec', '/tmp/no-such-resolved-spec.json'], { stdout: out, stderr: err, env: NO_KEYS, cwd: process.cwd() });
   assert.equal(rc, 2);
-  assert.match(err.text(), /\(bareloop author's own `out\/resolved-spec\.json`\)/);
-  assert.doesNotMatch(err.text(), /scripts\//);
+  assert.match(err.text(), /the panel's drafting session, or node scripts\/run-author\.mjs's own `out\/resolved-spec\.json`/);
+  assert.doesNotMatch(err.text(), /bareloop author|bareloop interview/);
 });
 
 // ---------------------------------------------------------------------------

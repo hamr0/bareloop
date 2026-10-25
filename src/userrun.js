@@ -2584,7 +2584,7 @@ export async function main(argv, deps = {}) {
       if (!existsSync(specPath)) {
         die(`--job ${jobArg}: there is no spec at ${specPath}.\n`
           + '  The table row is the runner\'s half of a job (patient, seed, spine); the SPEC is yours — authored through\n'
-          + `  ${commandFor('interview', deps.invokedAs)} and ${commandFor('author', deps.invokedAs)}, then signed. Nothing here can stand in for it: a job\n`
+          + '  the panel\'s drafting (or node scripts/run-interview.mjs and node scripts/run-author.mjs), then signed. Nothing here can stand in for it: a job\n'
           + '  with no spec has no goal, no close, no budget and no hash to approve.');
       }
       try { spec = JSON.parse(readFileSync(specPath, 'utf8')); } catch (e) {
@@ -2596,7 +2596,7 @@ export async function main(argv, deps = {}) {
       specPath = resolve(/** @type {string} */ (specArg));
       if (!existsSync(specPath)) {
         die(`--spec ${specPath} does not exist — a run needs the resolved-spec.json an authoring session actually wrote `
-          + `(${commandFor('author', deps.invokedAs)}'s own \`out/resolved-spec.json\`), never a path nobody authored`);
+          + '(the panel\'s drafting session, or node scripts/run-author.mjs\'s own `out/resolved-spec.json`), never a path nobody authored');
       }
       let raw;
       try { raw = readFileSync(specPath, 'utf8'); } catch (e) {
@@ -2636,8 +2636,8 @@ export async function main(argv, deps = {}) {
       if (candidates.length === 0) {
         die(`--spec ${specPath}: no prepared copy beside it — looked for a source-*/ directory carrying source.json in `
           + `${dirname(specPath)} and found none. A --spec run reads its workdir and seed off the copy the authoring `
-          + `session prepared; it is never typed or guessed. Prepare one first: ${commandFor('interview', deps.invokedAs)} (or `
-          + `${commandFor('author', deps.invokedAs)} directly against a --source) before running this spec.`);
+          + `session prepared; it is never typed or guessed. Prepare one first: draft the job in the panel (or node scripts/run-interview.mjs, `
+          + 'then node scripts/run-author.mjs against a --source) before running this spec.');
       }
       if (candidates.length > 1) {
         die(`--spec ${specPath}: ${candidates.length} prepared copies sit beside it (${candidates.join(', ')}) — `

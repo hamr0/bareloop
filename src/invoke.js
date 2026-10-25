@@ -16,7 +16,8 @@ const SCRIPT = /** @type {const} */ ({ 'run-u': 'run-u', interview: 'run-intervi
  * @returns {string}
  */
 export function commandFor(flow, invokedAs) {
-  return invokedAs !== undefined && /^bareloop(\s|$)/.test(invokedAs)
-    ? `bareloop ${flow}`
+  // `interview` and `author` left the `bareloop` CLI (PRD v1.114): they are only ever the source-tree scripts
+  return flow === 'run-u' && invokedAs !== undefined && /^bareloop(\s|$)/.test(invokedAs)
+    ? 'bareloop run-u'
     : `node scripts/${SCRIPT[flow]}.mjs`;
 }
