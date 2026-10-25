@@ -5,7 +5,7 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.48.0] - 2026-10-25
 
 ### Added
 
@@ -56,7 +56,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **`bareloop` is a launcher (PANEL-BUILD.md addendum L, hamr 2026-10-24).** Bare `bareloop` shows a menu (`1 start  2 stop  3 status  4 install  q quit`) under two header lines (installed or not, panel running or not, `runs: N running · N need you · N in all`); the same four work as `bareloop start | stop | status | install`. No pid file: the panel is found by asking ports 4700-4709 for the new read-only `GET /api/whoami`. `start` runs the panel detached on the first free port (log: `~/.config/bareloop/panel.log`) and opens the page; `stop` stops every panel it finds (one panel at a time; no `--port`, no which-one question), warns about open drafts summed over them and asks (`--yes` skips); `status` prints `Panel not running.` and exits 3 when no panel runs (0 from the menu); `install` creates only what is missing. The old `1 export / 2 run / 3 history` menu is gone (the sub-commands stay). `bareloop panel [--port N]` is unchanged. Coloured on a terminal (off when piped, `NO_COLOR` set or `TERM=dumb`). `status` and the header show the running panel's version, with a stop-and-start note when it differs from the CLI's. The header's `need you` count matches the panel's Needs-you list, schedules that gave up included. `GET /api/whoami` (app, version, pid, port, drafts, schedules) sits behind the Host guard and needs no token. The panel address has one owner (`panelUrl`); no address literal lives in the launcher, and the OS opener is shared with Settings.
 
 ### Changed
@@ -97,7 +96,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **Cross-run learnings, code only (`src/learn.js`, `src/learnstore.js`, `src/stagewords.js`; ships OFF).** At the end of every run ($0, no model call anywhere) the run's own spine and gate audit become cards: a check that went red and later passed in the same run (FIXED) or was still red at run end (NEVER FIXED), each field copied from the record (job, step, the check and its catalogue sentence, the arbiter's lines, what the passing try wrote and its `attempt-diff`). Two cards are one lesson when they share a job, a check, an error kind and 60% of their flagged-text words (code-less cards fold on the words alone when both sides have some; untested on real data). Lessons go into ONE ledger per user, `~/.config/bareloop/learn/ledger.json`, count starting at 1 (+1 per run per row, idempotent by run id), with per-model counts, the latest sample card, and climbing (a lesson in 3 jobs on one place, then 3 places, climbs; no check-wide set-aside, all-jobs hints are read last; the level is worked out when memory is read, from rows not older than 56 days only, so it can drop back, and the file stores none). The ledger keeps every row and deletes none; what the planner is handed is filtered at read time: a row last seen more than 56 days ago and a row of another signed job version are not shown (a new job version opens its own rows), and a lesson seen again after that counts +1 on its old row. No `expired` flag is stored. A rubric job's lessons are held until the human Accept at the review door (up to 60 days). With the new `learningHints` setting in `config.json` ON, the PLANNER (the draft and the first replan only, never a worker) is handed up to 2,000 characters: this job's lessons, then this place's, then all-jobs, highest count first; the exact text is recorded as a `learnings` spine record and shown read-only in the Audit tab. OFF still keeps the tally. A FIXED hint also shows the first 3 `+`/`-` lines of what the passing try changed (never on NEVER FIXED hints); "It said" shows the first real flagged line rather than a summary line, and a path already shown in the same hint is written by its basename. The check-catalogue sentences moved verbatim from `src/panel/server.js` to `src/stagewords.js`.
 
 - **Each worker try records what it changed (`attempt-diff`).** After every step try and every close-fix try the spine gets one `attempt-diff` event: the unified diff (-U1) of each changed file inside the try's write fence, secrets masked, capped at 4 KB per file and 16 KB per event (cut at a line boundary, with the count of cut lines), binary files by path only. Taken with throwaway git trees, so the branch, HEAD, index and stash are untouched; a try that changed nothing records nothing; a git failure records a `gitError` field and never fails the run. Spine only: no prompt, panel or gate-audit change, no model call.
@@ -120,7 +118,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **Phrase facts get the dry read.** A kept phrase fact (for example "destination city" = "Rome") is read against the page's result lines (the lines the job's kept price facts read), by the same checker the run uses. A phrase found only outside the results (such as a "Track prices from Madrid to Rome" switch) is dropped whole as `phrase-no-result` and shows under Not checked: `"Rome" is on the page but in none of its results, so it is not checked.` A job with no kept price fact has no known result lines, so its phrase facts are left as they were.
 
 - **An S1 copy of a signed fact is a read note.** When the AI proposes a second fact that would read the same value as a fact that is still signed, the note now shows under "How the page was read" instead of "Not checked" (the guardrail is checked by the other fact). With the other fact not signed it stays Not checked. The signed fact names reach the split from the signed spec (older specs too) and from the look at the confirm turn.
@@ -139,7 +136,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **bareguard ^0.25.1.** Gap words now JSON-escape the extra-keys keys and end with " and N more" when more items exist than are shown; evidence and `cited` results are unchanged, and bareloop's own behaviour is unchanged.
 - **Result tab shows a money fact as the page wrote it.** The price box reads the value with its currency or unit exactly as the check located them on the page ("144 US dollars"), replacing the interim "$144"; with no evidence (an old run) the fact's own spelling stays.
 - **Result tab marks the words each check read.** Each result's proof fold marks, in the page's own quote, every word the check located (the anchors, the values, the unit and the phrases), using the offsets bareguard returned and the run's `rubric-evidence` record, never a search in the panel. A membership token that is not the result's own is not marked. Escaped throughout; an old run or a quote the check did not read shows the plain quote as before.
@@ -182,7 +178,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **A job can be scheduled from the panel (T, Part 3 of 8; panel-only, nothing fires yet).** A signed spec may carry a `trigger` (`daily`, `weekdays`, `weekly`, `new-file` folder, `file-updated` file), set only by a two-click, $0 door (`POST /api/author/schedule-prepare`, then `POST /api/author/schedule` with the hash it showed; `when: null` cancels and is never refused). It needs a real green run of the job's current workflow (a rubric job also needs an honoured Accept). Files live under `~/.config/bareloop/triggers/<job>/` (`schedule.json`, one `ledger.jsonl` whose rows all carry the signature). The agent never writes a trigger: a draft that carries one is refused by name. `workflowKey` ignores `trigger`; `cadence` is no longer required (an old spec keeps it, still valid, same hash) and new specs no longer write it.
 - **One starter for a scheduled run (T, Part 4 of 8; still no timer).** A scheduled fire goes through the same session start and the same `signRun` as a Reuse the person clicked (headless sessions kept apart from the person's chat session; `--approve` is the hash derived by code; a scheduled spawn passes `--review-door`). Fire order: busy, monthly, `wouldAccept`, started; each outcome is one row, told once per slot-or-file, outcome and reason. A busy, monthly or refused fire consumes nothing, so it retries when things are back up; the `fire`/`ran` row is written only after every check said yes, and a launch error after it writes a `released` row (at most 3 times).
 - **The panel's scheduler (T, Part 5 of 8).** While the panel is up a 500 ms timer (unref'd, stopped when the server closes) arms each signed schedule, fires a due clock slot or a queued file through the one starter, and writes the `arrived` rows; poll only, never `fs.watch`. A run of the job is busy only while its pid is alive AND the process started no later than 5 s after its run row was written (a recycled pid is not that run). One job's failure is written once and never stops the others. Missed slots still collapse to one catch-up.
@@ -229,7 +224,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **Rubric jobs on local files, no judge yet (Part 1a).** A Rubric job whose first Input is the full path of a text file (`label: /abs/file`) no longer stops at "not a code project". `proveRubricInputs` (`src/source.js`) freezes each file into the hidden-git tree and records `inputs: [{ label, rel, sha256 }]` in `source.json`; a web address, search line, relative path, symlink, env file, over-5-MiB or non-UTF-8 file is refused at $0 in plain words ("line N: web inputs (URLs, search) arrive in a later build. Nothing spent."). There is no scout and no confirm turn: the worker's goal is written by code from the numbered job lines (`src/rubricstep.js`).
 - **One output per job line.** The worker writes `output/steps/<n>.json` (`{ text, cites: { <label>: [{ claim, quote }] } }`); `output/steps/` is delivered with the output.
 - **New close kind `rubric-step`** (text genre only, `closeDecl.lang: "text"`; a code job never sees it): one stage per job line, graded by bareguard's rubric primitive rebuilt every run from the input shas the source door recorded. Checks: the step file exists and is a JSON object (`happened`), `text` present, `cited` per input the step cites, and `maxWords` / `minWords` / `maxLines` / `sections` / `sectionWords` on `text`. A missing or cut-off file is red; a changed input, an unreadable record or a rubric that cannot be built is an instrument stop (97).
@@ -292,7 +286,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **Settings > Providers, rewritten from fwdloop's layout (P8).** One shared grid: a key row (API shape, Base URL, the "old max_tokens" tick, Tokens, `[ Test ] [ ⟳ Refresh ]`) with its model lines under it (Use tick, In / Out $/1M, tokens), a folded summary, `label : value` lines below 1280px, and the KEYS strip stacking below 900px. **Test** and **Refresh** are one free `GET <Base URL>/models` (`src/modellist.js`); `gemini-api` is now testable. `Open keys folder` stays in the KEYS strip.
 - **Model lines.** Config gains `models.<ENV>` — a list of `{ model, use, inPerM, outPerM }` — and `keys.<ENV>` becomes `{ shape, baseUrl, legacyMaxTokens }`. A price is a pair or nothing, a ticked line needs both, 0 / 0 is a chosen price. An older `keys.<ENV>.{name,priceInPerM,priceOutPerM}` still reads as one line until the row's first save.
 - **"Thinking on" tick (per job).** A tick under Model in the New job card, unticked by default, saved in the signed job as the optional `thinking` boolean (absent = off; an old spec and any unticked job keep their hash). It covers drafting and the rubric judge, never the worker. `src/thinking.js` is the one owner; bare-agent (^0.52.0) says what each model can switch and reports `thinkingStatus`, which the draft log and the drafting `thinking` row show.
@@ -326,7 +319,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **The job block (P7).** A job is now written as two numbered boxes, **The job** and **Inputs**, replacing Goal / Source / Success / Guardrails / Judge examples. A `~` line is a rule for the line above it; `~ PASS:` / `~ FAIL:` lines are a rubric's judge examples and keep their line number. Inputs are numbered `label: value`: line 1 is the repo, later lines are files inside it, proven at $0 before any session. One parser (`src/jobblock.js`) serves the panel and the CLI interview, which now asks The job and Inputs as multi-line answers.
 - **Every job line is covered.** The signed spec carries `jobLines` and `inputs`. Each stage the drafter writes names the job line(s) it serves (`fromLine`, an array, so one check may serve several lines), or the line is listed in `closeDecl.refused` with a reason; an uncovered line is a $0 red fed back through the revise loop. Signed `jobLines` carry `rules[]` beside `rule`, so Reuse never cuts an example at its own `; `. Only new jobs' hashes move; Inputs is open on a Reuse.
 - **Try-3 questions.** On the last drafting try, after two failed ones (validation red, seed-read failure or vacuous close, or an output cut-off), the drafter may ask up to 2 questions, each naming a job line. The panel asks each through the ordinary ask path (answer required, no Skip), adds the answer word for word as a `~` rule on that line, and drafts once more with no asking. Off unless the caller wires an asker (the CLI never does).
@@ -354,7 +346,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **Rubric judge rulebook (F192).** `says-what`: the doc description must say more than the function's own name; name words match by prefix (init/initialize; a shorter word of 4+ letters), and with no doc block `has-doc` alone owns the red. `params` also reds an extra `@param` that names no parameter, and a missing field of a destructured parameter once the doc names any field. `has-doc` checks the artifact itself: the judge only points at the declaration, code finds the `/**` block above it. Quote matching uses bareguard `quoteIn` with `wholeLines`, so a quote that dropped a leading `* ` still matches. The injection facts check shares `has-doc`'s acceptance, and every rule carries a plain-words `means` for the case-proposal prompt.
 - **A calibration case may not expect a red the rulebook cannot raise** (a `has-doc` red on a function that has a JSDoc block); it is refused before any locate call.
 - **Calibration record.** A per-case `diag` (locate facts, full reds, per-attempt cause) is recorded beside the graded rows, and each failing case gets one plain why-line. Grading, hashes and verdicts are untouched.
@@ -386,7 +377,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **Edit in chat on every run that did not finish green.** The Chat card opens filled from the run's signed job with every box open; Start drafting works as for any new job. The Ended block's NEXT line points at the button, and a refused Resume says so too.
 - **Resume moves to the left Chat card.** Resume mode locks the signed job and opens only the two caps (money and time); Sign & resume posts the same body as before.
 - **Expanded jobs show their latest 7 other runs;** older runs are reached by search.
@@ -408,7 +398,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **Reuse workflow picker.** The panel's Check type is one radio group of three, the third being Reuse workflow: a search list of jobs that have a green local run. Picking one goes through the existing reuse door (change and leave-reuse included); the Start button is gated on a pick. The origin line is retired. Backed by `GET /api/author/reuse-jobs`, one entry per job with its newest green run id and the same estimate line "Start from this" shows.
 
 ### Fixed
@@ -433,7 +422,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **Repo jobs run in a git worktree in the person's own repo.** A panel drafting session makes `<repo>/.bareloop/wt/<session>` (detached at HEAD, hidden through the repo's private exclude, with a notice for uncommitted changes) instead of copying the source. `git worktree add` and the green-end commit run none of the person's git hooks. `node_modules/` is hidden the same way as `/.bareloop/`, so installed packages never read as worker writes. A GREEN run commits its work to the work branch and removes the folder (kept only while a review door is open); any other end keeps it. The Ended block gives the `git merge` / `git branch -D` text on green and names the folder otherwise; Resume is withdrawn once the folder is gone. The bundle door shares the one worktree-making module.
 - **bareloop installs npm dependencies itself.** For an npm lock file, bareloop runs `npm ci --ignore-scripts` at $0, before any token, with a secret-stripped environment. Any failure, or another lock file (yarn, pnpm), falls back to the install-needed wait. `missingDependencies` now carries `dir` and `lockFile`. The panel step reads "installing packages" while it runs and "Installed packages (npm ci)." on success.
 - **Run names `job (run-N)`.** Runs are numbered per job, oldest first (`runNo` in the run list and run detail); rows, cards, the workflow row and the header use the name. The real run id stays in the Resume and Reuse texts. Runs search also finds `run-N` and `job (run-N)`.
@@ -461,7 +449,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **One run = one id (resume).** A resume now continues the SAME run: one runid, one spine file, a `leg-resume` marker opens each new leg (`legsOf` is the one owner of leg boundaries). Outcome is the last leg's, money is each leg's own spend summed once, wall is the sum of leg windows with the gap between legs excluded. The run list keeps one row; the panel shows one card (`resumed xN`), an Audit leg divider, and a dotted map connector. Resume readers (`readResume`, pause age gate, `deathAtOf`) read the latest leg.
 - **Panel Stop.** `POST /api/runs/:runid/stop` writes a stop request that is read at the round boundary where the money cap binds (not between steps), so a one-step run can be stopped. The leg ends as the resumable outcome `stopped` (`stopped` joins the checkpoint outcomes); resume re-enters the cut step. The page says "stopping after this turn...".
 - **Panel Resume.** `POST /api/runs/:runid/resume`, a Resume mode on the run's Job tab where only the money and time caps are inputs ("Money cap ($)", "Time cap (min)", Sign & resume). Changed caps write `resolved-spec-r<k>.json` beside the original. A cap at or below what is already spent or used is refused at $0.
@@ -509,7 +496,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **Your own price, per key row.** `config.json` `keys.<ENV NAME>.priceInPerM` / `priceOutPerM` (USD per
   1M tokens, in and out; both or neither, each a finite number 0 or more) set what the model behind a key
   costs. `ratesFor(provider, baseUrl, rows, model)` (`src/providerrows.js`) is the one lookup, on the same
@@ -589,7 +575,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **Panel Settings (P4a)** — `~/.config/bareloop/.env` keys-file loader (shell env wins; keys
   never reach the page), `config.json` (monthly $ limit, chosen key variables, Anthropic balance
   note), a monthly $ limit that refuses a run start with `Max $X (monthly limit)` at both
@@ -662,7 +647,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **Panel Chat authoring (P3)** — the Chat tab now drafts a job from the page: a job card
   (source, goal, Model, `Cap $` / Time cap), a chat thread, and Send / Revise / **Sign &
   run** actions, backed by new `POST /api/author/*` routes. Every POST needs the
@@ -745,7 +729,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **Panel step map draws the retry loop** — a multi-attempt step (and the post-step fix loop)
   now renders its "try N" curve and label on the map, alongside a pulsing amber dot on the
   live-running box (same geometry as `design/panel-mockup.html`).
@@ -796,7 +779,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **`bareloop` panel (N6/P0/P1)** — a read-only HTTP server (`bareloop panel`, bound to
   `127.0.0.1:4700`) serving a single-page app built from one run list
   (`~/.config/bareloop/runs.jsonl`, populated by `bareloop run`/`bareloop runs backfill`).
@@ -862,7 +844,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **`bareloop run-u`, `bareloop interview`, `bareloop author`, and `bareloop replay` (+
   `--all`)** — four new CLI commands giving the panel's (N6) planned History/Run/Audit
   surfaces, and any other adopter, a library-backed door onto machinery that previously
@@ -1134,7 +1115,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **Source and Destination replace `--patient` (PRD item 33 M3, ruling 2):**
   `scripts/run-interview.mjs` now asks Source and Destination as its own first two interactive
   questions, before the picked verdict class's frozen set — never a `--patient` flag. Each is
@@ -1452,7 +1432,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **The source front door** (PRD item 33/M2) — a plain folder, a plain file, or one
   `http(s)` URL now runs without a `--patient` git checkout: `prepareSource`
   (`src/source.js`) freezes it into a hidden, scratch git tree bareloop owns (the person
@@ -1551,7 +1530,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **`gemini-api` on the provider menu, ADMITTED-PENDING-PROBE** (PRD item 31.3;
   hamr, 2026-09-09: *"anthropic, openai, gemini drop ollama for now"*). Reads
   `GEMINI_API_KEY` and maps two genuinely different tiers — `sonnet` →
@@ -1672,7 +1650,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **`openai-api` on the provider menu, behind a provider FACTORY** (PRD item 28,
   F149/F150/F156/F157). `src/providers.js` holds one table — provider name →
   constructor, env key, tier models, per-model request-key gating — and both
@@ -1798,7 +1775,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **Close integrity M1** (`docs/product/CLOSE-INTEGRITY-BUILD.md`, PRD item 27, F129/F131).
   - `src/close-integrity.js`: the ONE `close-absolute-path` detector, shared by
     `src/bundle.js` (export time) and a new $0 run-start precheck in `runPlan`
@@ -1966,7 +1942,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **Export/run a bundle** (`docs/product/EXPORT-BUILD.md`, frozen 2026-09-05). New
   `src/bundle.js`: `exportBundle` mints a plain directory bundle (signed spec with
   `close[].cmd` rewritten under `$BARELOOP_BUNDLE`, the close scripts, and the job's
@@ -2034,7 +2009,6 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - Operator-only scout OFF switch (`docs/product/SCOUT-CONTRAST.md`): `runJob`/`runPlan`
   accept `scout` (boolean, default `true`); `false` on a fresh run skips the read-only
   survey and records `scout-skipped { reason: 'operator-off' }` instead — the planner
@@ -2068,7 +2042,6 @@ _Tagged 2026-09-02, never published: `publish.yml` failed on a machine-local tes
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **G3 bench row (the structural negative).** `scripts/u-pulselog-close.mjs`
   gains an additive `no-test-sniffing` close stage (planted-contradiction cheat catcher,
   modelled on `no-suppressions`) and `--workdir`/`--seed` argv flags so the same close
@@ -2098,7 +2071,6 @@ _Tagged 2026-09-02, never published: `publish.yml` failed on a machine-local tes
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **Close stages declare their comparison direction (F120).** `job-v1` close stages gain an
   optional `direction: 'up'|'down'` field; absent means `'down'` (unchanged behaviour for
   every existing close). `src/trend.js`'s close-fix governor hardcoded lower-is-better —
@@ -2137,7 +2109,6 @@ _Tagged 2026-09-02, never published: `publish.yml` failed on a machine-local tes
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **Publish workflow gates on the types being usable BY AN ADOPTER, not just internally.** `npm run typecheck` (`tsc --noEmit`) checks the *source*; it cannot see the generated `.d.ts` as an adopter resolves it from inside `node_modules`, which is the one thing consumers actually get. The publish workflow now packs the tarball, installs it into a clean consumer project, and compiles a quickstart against it, so a release whose published types are broken cannot reach the registry.  The consumer pins `@types/node` to the major this package builds against instead of floating to the newest, so a stricter DefinitelyTyped release cannot turn the publish gate red for reasons unrelated to the commit being published. Verified locally: the quickstart compiles green against a packed tarball, and a deliberately broken dereference fails it. CI only — no runtime or published-artifact change.
 
 - **Worker model name in the signed spec (build-list #3)**: `job-v1` gains an optional
@@ -2152,7 +2123,6 @@ _Tagged 2026-09-02, never published: `publish.yml` failed on a machine-local tes
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **`PROMPT_COMMIT_RANGE` covers every commit of a direct push (PRD #2b, #8)**:
   `scripts/prompt-commit-check.mjs` now honours an env var of that name (`--range` mode
   only — a commit-msg hook's `--message-file` path is never redirected by a stray env
@@ -2228,7 +2198,6 @@ _Tagged 2026-09-02, never published: `publish.yml` failed on a machine-local tes
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **Generic run replay** (PRD build-list #6): `replayRun`/`formatReplay` (`src/replay.js`)
   reconstruct one run's whole story from its spine JSONL + gate-audit sidecar. The single-run
   report is a signed layout (hamr, 2026-08-25): a header block (`goal:`/`shape:`/`signed:`/
@@ -2372,7 +2341,6 @@ _Tagged 2026-09-02, never published: `publish.yml` failed on a machine-local tes
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **One transport-class retry** (F115, hamr's ruling): the ONE worker-Loop seam in
   `src/planrun.js` now retries exactly once on a transport-only throw (TLS fault,
   `ECONNRESET`/`EPIPE`/`ETIMEDOUT`, `fetch failed` over a network cause — never an HTTP
@@ -2733,7 +2701,6 @@ _Tagged 2026-09-02, never published: `publish.yml` failed on a machine-local tes
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **N4 slice 1 — the `hitl` verdict class is ADMITTED, and the run PAUSES for a person.** A job
   whose *done* needs someone to say so now runs through the same signed spec, the same
   agent-authored plan and the same arbiter as a green job. The refusal was never one flag, so
@@ -3021,7 +2988,6 @@ already uses, and the seed is that copy's own HEAD (litectx v0.32.0, `115213d`).
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **The close-AUTHORING pipeline gets a money ceiling** (`--budget`, `ceilingUsd`) — the lever
   parked at v0.9.0 as arbiter territory, approved by hamr. Until now the flow **metered** spend
   and nothing **bounded** it: the runner printed a total and no number anywhere could stop a
@@ -3233,7 +3199,6 @@ no LLM validates another LLM's close, at any point (D9). Design record (D1–D13
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **M1 — `src/kinds.js`, the kind executor: four kinds under three inherited runtime
   contracts.** The four kinds (`command-exit`, `count-not-worse`, `pattern-absent-in-diff`,
   `files-changed`) are the small part; the CONTRACTS every kind inherits are the
@@ -5085,7 +5050,6 @@ forced, and three finder claims corrected in detail during the fixing.*
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **Layer 2 core — the plan-v1 flow (design record
   `docs/plans/2026-07-21-layer-2-plan-v1-design.md`; premise validated in F46).**
   The semantic converter, built:
@@ -5197,7 +5161,6 @@ forced, and three finder claims corrected in detail during the fixing.*
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **Layer R — the root, the within-run ratchet (`src/root.js`; design record
   `docs/plans/2026-07-19-layer-r-design.md`, interview-locked 2026-07-19).** The shell
   mechanically detects fixation — consecutive attempts rewriting the same file(s)
@@ -5326,7 +5289,6 @@ forced, and three finder claims corrected in detail during the fixing.*
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **`scanSecrets(raw)` — the ONE spelling of the raw-text secret scan (F40).** The scan
   was hand-rolled at seven call sites off `SECRET_PATTERNS`; detection and redaction
   must never disagree about what a secret looks like. Exported beside the inventory,
@@ -5344,7 +5306,6 @@ forced, and three finder claims corrected in detail during the fixing.*
 
 ### Added
 
-- **`bareloop restart`, and the panel's start time.** `restart` (menu item 3) is the existing stop (same open-drafts warning and ask; `--yes` skips it) then the existing start, on the port the panel had when it is free again, else the first free one; with no panel running it says so and just starts. `GET /api/whoami` now carries `startedAt`, and the header reads `panel running at http://127.0.0.1:4700 · started 10/24 21:40` (local time, the panel's own date style); `bareloop status` prints it too. An older panel that reports none shows nothing extra.
 - **F32 — worker-crash attribution: a close crash the worker caused is a gap, not a stop.**
   Battery pass 1 (F31) measured the gap: 4 of 7 rows whole-file-rewrote an orchestrator,
   broke imports, the close crashed under the judged floor, and the run **escalated** — the
