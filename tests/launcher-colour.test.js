@@ -59,20 +59,20 @@ test('header + menu: with colour the words are the same (stripped), the rule fra
   assert.equal(strip(col.lines[3]), '─'.repeat(56));
   assert.deepEqual(col.lines.slice(1, 3).map(strip), plain.lines);
   assert.match(col.lines[1], new RegExp(`\\x1b\\[1;36mbareloop\\x1b\\[0m \\x1b\\[90m${VRE}`));
-  assert.match(col.lines[1], /\x1b\[31mnot installed\x1b\[0m — no bareloop folder yet, pick \x1b\[1;36m4\x1b\[0m install/);
+  assert.match(col.lines[1], /\x1b\[31mnot installed\x1b\[0m — no bareloop folder yet, pick \x1b\[1;36m5\x1b\[0m install/);
   assert.match(col.lines[1], new RegExp(`panel \\x1b\\[32mrunning\\x1b\\[0m at \\x1b\\[36mhttp://127\\.0\\.0\\.1:${port}\\x1b\\[0m`));
   assert.match(col.lines[2], /\x1b\[90mruns:\x1b\[0m \x1b\[90m0 running\x1b\[0m/);
   const io = sink();
   await menuCmd(io, { ...base, ask: async () => 'q', paint: makePaint({ isTTY: true }, {}) });
   const c = (/** @type {string} */ k) => `\x1b[1;36m${k}\x1b[0m`;
   assert.deepEqual(io.lines.slice(-3), [
-    `  panel: ${c('1')} start   ${c('2')} stop   ${c('3')} status   ${c('4')} install`,
-    `  jobs:  ${c('5')} export   ${c('6')} run   ${c('7')} resume   ${c('8')} history`,
+    `  panel: ${c('1')} start   ${c('2')} stop   ${c('3')} restart   ${c('4')} status   ${c('5')} install`,
+    `  jobs:  ${c('6')} export   ${c('7')} run   ${c('8')} resume   ${c('9')} history`,
     `  ${c('q')} quit`,
   ]);
   const ioPlain = sink();
   await menuCmd(ioPlain, { ...base, ask: async () => 'q', paint: makePaint({ isTTY: false }, {}) });
-  assert.deepEqual(ioPlain.lines.slice(-3), ['panel: 1 start   2 stop   3 status   4 install', 'jobs:  5 export   6 run   7 resume   8 history', 'q quit']);
+  assert.deepEqual(ioPlain.lines.slice(-3), ['panel: 1 start   2 stop   3 restart   4 status   5 install', 'jobs:  6 export   7 run   8 resume   9 history', 'q quit']);
 });
 
 test('refusals are red on a colour terminal, plain words when stripped', async () => {
@@ -104,5 +104,5 @@ test('main: stdout a TTY and no NO_COLOR -> coloured header; NO_COLOR set or not
   assert.doesNotMatch(await run(true, { NO_COLOR: '1' }), /\x1b/);
   assert.doesNotMatch(await run(true, { TERM: 'dumb' }), /\x1b/);
   assert.doesNotMatch(await run(false, {}), /\x1b/);
-  assert.match(strip(on), new RegExp(`bareloop ${VRE} · not installed — no bareloop folder yet, pick 4 install · panel not running`));
+  assert.match(strip(on), new RegExp(`bareloop ${VRE} · not installed — no bareloop folder yet, pick 5 install · panel not running`));
 });

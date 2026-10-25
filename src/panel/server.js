@@ -92,13 +92,13 @@ export function packageVersion(file = join(HERE, '..', '..', 'package.json')) {
 
 /**
  * `GET /api/whoami` body. `drafts` counts the person's drafting sessions that are not finished (the headless scheduled ones are not drafts).
- * @param {{ port: number, version?: string, packageJsonPath?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
+ * @param {{ port: number, version?: string, startedAt?: string, packageJsonPath?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
  */
 function whoamiPayload(opts) {
   const drafts = opts.authorRoutes ? opts.authorRoutes.openDrafts() : 0;
   let schedules = 0;
   try { schedules = opts.schedules ? opts.schedules.scan().length : 0; } catch { schedules = 0; }
-  return { app: 'bareloop', version: opts.version ?? packageVersion(opts.packageJsonPath), pid: process.pid, port: opts.port, drafts, schedules };
+  return { app: 'bareloop', version: opts.version ?? packageVersion(opts.packageJsonPath), pid: process.pid, port: opts.port, drafts, schedules, ...(opts.startedAt ? { startedAt: opts.startedAt } : {}) };
 }
 
 /** Largest POST body the panel buffers (job cards are short prose); a bigger one is refused with 413. */
@@ -3679,7 +3679,7 @@ function sendText(res, code, text) {
  * only `createPanelServer` below always supplies one.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ home?: string, sessionsRoot?: string, version?: string, packageJsonPath?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
+ * @param {{ home?: string, sessionsRoot?: string, version?: string, startedAt?: string, packageJsonPath?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
  */
 export function handleRequest(req, res, opts) {
   /** the ONE writable route family for a path, or null — `/api/author/*` (authoring) or
@@ -3906,6 +3906,8 @@ export function createPanelServer(opts = {}) {
   const token = mintToken();
   // the version THIS process runs, read once at start: package.json on disk can move on while the panel keeps running old code
   const version = packageVersion(opts.packageJsonPath);
+  // when THIS process started, ISO, set once here (`GET /api/whoami`'s `startedAt`: the launcher shows it)
+  const startedAt = new Date().toISOString();
   return new Promise((resolve, reject) => {
     // Bound port is resolved from the live socket (`server.address().port`)
     // once listening starts, not the requested value — this is what makes
@@ -3928,7 +3930,7 @@ export function createPanelServer(opts = {}) {
     const server = createServer((req, res) => {
       try {
         handleRequest(req, res, {
-          home, sessionsRoot: opts.sessionsRoot, port: boundPort, token, authorRoutes, settingsRoutes, runRoutes, importRoutes, version, packageJsonPath: opts.packageJsonPath, schedules: schedulesRef,
+          home, sessionsRoot: opts.sessionsRoot, port: boundPort, token, authorRoutes, settingsRoutes, runRoutes, importRoutes, version, startedAt, packageJsonPath: opts.packageJsonPath, schedules: schedulesRef,
         });
       } catch (e) {
         sendText(res, 500, `internal error: ${/** @type {Error} */ (e).message}`);

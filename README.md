@@ -137,8 +137,8 @@ cd ./my-job.bareloop && npm install
 bareloop run "my-job (run-3)" --repo /path/to/checkout --approve <bundleHash printed above>
 ```
 
-Bare `bareloop` is one menu: the panel (1 start, 2 stop, 3 status, 4 install) and the jobs
-(5 export, 6 run, 7 resume, 8 history), each asking for what it needs. `export` only ships a run that
+Bare `bareloop` is one menu: the panel (1 start, 2 stop, 3 restart, 4 status, 5 install) and the jobs
+(6 export, 7 run, 8 resume, 9 history), each asking for what it needs. `export` only ships a run that
 already earned a real green, and only repo jobs for now. The first `run` on a new machine asks you to
 approve the bundle's printed hash; once that run goes green, later runs need no re-approval as long
 as the bundle stays unchanged. Every run works in its own fresh git worktree, commits a green on its

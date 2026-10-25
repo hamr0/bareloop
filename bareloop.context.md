@@ -3292,8 +3292,8 @@ same seam `tests/planrun-*.test.js` uses. `deps` also accepts `env`, `stdout`, `
 `now`, `stdin` — omit any of them and the real `process.*` equivalent is used.
 
 Bare `bareloop` (no sub-command) is the **launcher menu** (PANEL-BUILD.md addendum L, `src/launcher.js`): two header lines, then
-`1 start   2 stop   3 status   4 install   q quit`. The header is printed first by EVERY call (menu and each of
-`bareloop start | stop | status | install`), from one function:
+`panel: 1 start   2 stop   3 restart   4 status   5 install`, `jobs:  6 export   7 run   8 resume   9 history`, `q quit`. The header is printed first by EVERY call (menu and each of
+`bareloop start | stop | restart | status | install`), from one function:
 
 ```
 bareloop 0.47.0 · installed ✓ · panel running at http://127.0.0.1:4701
@@ -3304,7 +3304,7 @@ Colour (`src/tty-colour.js`): on only when stdout is a terminal, `NO_COLOR` is e
 changes them, and a piped or `NO_COLOR` run prints the plain words above (the thin `─` rules around the header appear only with colour).
 
 - `installed ✓` = `~/.config/bareloop/` exists, `config.json` is there and reads with no problem, `.env` exists with mode 600, node >= 22;
-  otherwise `not installed — <first missing thing>, pick 4 install`. The run counts use the panel's own status words and Needs-you rule over the
+  otherwise `not installed — <first missing thing>, pick 5 install`. The run counts use the panel's own status words and Needs-you rule over the
   run list file ($0, works with the panel stopped).
 - **No pid file.** The panel is found by asking `127.0.0.1:4700..4709` for `GET /api/whoami` (2000 ms each, in parallel — a loaded panel answered in 0.8 s; 300 ms missed it); a reply with `app: "bareloop"` is a panel. `start` never opens a second panel next to a silent one: a port that is taken but did not answer is asked again for about 10 s; a late bareloop answer counts as "already running", another kind of reply moves on to the next port, and still silent makes `start` stop with `Port 4700 is taken and not answering. If it's a stuck bareloop, stop it first.` (exit 1, nothing started). `stop` also checks each pid is really gone (signal 0) before it says "Panel stopped."; a pid still alive at the deadline is named (`did not stop`, exit 1) and the ones that did stop are still named.
   `GET /api/whoami` → `{ app: "bareloop", version, pid, port, drafts, schedules }` (`version` is the version the panel STARTED with, read once at start, never re-read from package.json — so a panel on old code after a bump still reports the old one and the launcher's stop-and-start note can fire; the page topbar is the same) (open drafting sessions, jobs with a schedule), read-only, same Host guard as every
@@ -3312,13 +3312,14 @@ changes them, and a piped or `NO_COLOR` run prints the plain words above (the th
 - **`bareloop start`** → already running: says so, opens the page, starts nothing (if the running panel's version differs from this bareloop's it adds `It is version X; this bareloop is Y. Run bareloop stop, then bareloop start, to use Y.`). Else starts `bareloop panel --port N` DETACHED (`setsid`; log appended to
   `~/.config/bareloop/panel.log`) on the first free port from 4700 (a taken port that replies as something else is skipped and named; one that stays silent for ~10 s stops `start` with `Port N is taken and not answering…`, nothing started), waits up to 10 s for it to answer, opens the page with
   `xdg-open`/`open` (no opener: prints the URL). `bareloop panel [--port N]` is unchanged (foreground, fixed port).
+- **`bareloop restart [--yes]`** (menu 3) → no panel running: `Panel not running — starting it.` and starts. Else the `stop` above (same open-drafts warning and y/N; `--yes` skips it), and only if the panel is really gone (a declined stop starts nothing) the `start` above, trying the port the panel had first (free again) and then the normal first-free-port rule. No new process model, no pid file. `GET /api/whoami` also carries `startedAt` (ISO, set once when the panel process starts); the header shows ` · started MM/DD HH:MM` (local, `dateTimeWords`) after the address and `status` ends its line with it; an older panel without it shows nothing extra.
 - **`bareloop stop [--yes]`** → SIGTERM to the pid of EVERY panel the probe finds (one panel at a time; no which-one question), waits until each pid is gone (signal 0) and each port is quiet; a pid still alive at the 10 s deadline is named and exits 1, never `Panel stopped.`. Open drafts (in memory, summed over all found panels) are warned about and a y/N is asked;
   `--yes` skips it. Not running: `Panel not running.`, exit 0. Several found: all stopped, `N panels stopped.`. Any other option (e.g. `--port`) is refused in plain words. Runs are separate processes and keep going.
 - **`bareloop status`** → header plus `pid N · version X · N draft(s) open · N schedule(s) on`. Exit 0 running, 3 not running. A panel whose version differs from the CLI's shows `(version X — stop and start to use Y)` after its URL in the header (yellow on a terminal).
 - **`bareloop install`** → creates only what is missing (folder mode 700, `.env` with the keys-file comment lines, mode 600, `config.json`); never reads a key value;
   `Already installed, nothing to do.` when there is nothing to add. Needs node >= 22.
 
-**One menu (PRD v1.114, F245).** Bare `bareloop` prints the header, then `panel: 1 start 2 stop 3 status 4 install`, `jobs: 5 export 6 run 7 resume 8 history` and `q quit`. Each job command asks for what it needs
+**One menu (PRD v1.114, F245).** Bare `bareloop` prints the header, then `panel: 1 start 2 stop 3 restart 4 status 5 install`, `jobs: 6 export 7 run 8 resume 9 history` and `q quit`. Each job command asks for what it needs
 (typed flags skip the question): **export** lists the green runs as numbered `job (run-N)` names, then asks the output folder; **run** asks the bundle (a number from the exported bundles, a run name, or a folder), the repo, then
 the `$` cap and the time cap (Enter keeps the signed ones); **resume** lists the stopped / capped bundle runs the engine would resume, then offers more money / time; **history** asks the bundle and prints what `bareloop history <bundle>` prints.
 A required question answered with an empty Enter is asked once more; a second empty Enter ends that command with a plain line (nothing chosen, nothing run), exit `0`. `interview`, `author`, `replay` and `runs backfill` are no longer commands

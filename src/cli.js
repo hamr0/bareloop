@@ -37,7 +37,7 @@ import { bundleMain } from './bundlerun.js';
 // rather than re-parsing argv a second time here keeps exactly one code
 // path for the flag grammar; `src/cli.js` only supplies the deps shape
 // (`out`/`err`/`env`) this command's own callers already use.
-import { startCmd, stopCmd, statusCmd, installCmd, menuCmd } from './launcher.js';
+import { startCmd, stopCmd, restartCmd, statusCmd, installCmd, menuCmd } from './launcher.js';
 import { exportedBundles, resolveBundleRef, listResumableBundleRuns } from './bundleref.js';
 import { makePaint } from './tty-colour.js';
 import { main as runUMain } from './userrun.js';
@@ -294,6 +294,7 @@ async function runLauncher(cmd, rest, deps, io, home) {
   const d = { home, jobs, ask, paint: makePaint(deps.stdout ?? process.stdout, rawEnv), paintErr: makePaint(deps.stderr ?? process.stderr, rawEnv), ...(deps.launcher ?? {}) };
   if (cmd === 'start') return startCmd(io, d);
   if (cmd === 'stop') return stopCmd(rest, io, d);
+  if (cmd === 'restart') return restartCmd(rest, io, d);
   if (cmd === 'status') return statusCmd(io, d);
   if (cmd === 'install') return installCmd(io, d);
   return menuCmd(io, d);
@@ -338,7 +339,7 @@ async function mainInner(argv, deps, holder) {
   if (keys.warning && cmd && ['run', 'run-u', 'panel'].includes(cmd)) err(`WARNING: ${keys.warning}`);
   const launcherHome = keys.home ?? deps.runlistHome;
   if (!cmd) return runLauncher('menu', [], { ...deps, stdout }, ctx, launcherHome);
-  if (cmd === 'start' || cmd === 'stop' || cmd === 'status' || cmd === 'install') return runLauncher(cmd, rest, { ...deps, stdout }, ctx, launcherHome);
+  if (cmd === 'start' || cmd === 'stop' || cmd === 'restart' || cmd === 'status' || cmd === 'install') return runLauncher(cmd, rest, { ...deps, stdout }, ctx, launcherHome);
   // the old form (`export <jobs/x.json> --registry <dir> --out <dir>`) is the bench's; the new one is by run name
   if (cmd === 'export') return rest.includes('--registry') ? doExport(rest, ctx) : doExportRun(rest, ctx);
   if (cmd === 'run') return bundleMain(rest, { ...ctx, keysHome: keys.home, parseFlags, printReds });
@@ -363,6 +364,6 @@ async function mainInner(argv, deps, holder) {
   // and spine/gate-audit reads over `127.0.0.1` only. `deps.runlistHome`
   // rides through the same injectable seam `run`/`run-u` already use.
   if (cmd === 'panel') return panelMain(rest, { out, err, runlistHome: deps.runlistHome, env: deps.env });
-  err(`unknown command ${JSON.stringify(cmd)} — one of: export, run, history, runs, panel, start, stop, status, install`);
+  err(`unknown command ${JSON.stringify(cmd)} — one of: export, run, history, runs, panel, start, stop, restart, status, install`);
   return 1;
 }

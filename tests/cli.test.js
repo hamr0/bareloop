@@ -1123,7 +1123,7 @@ test('bareloop run: a bundle that names no model asks for one from the models ti
   assert.doesNotMatch(named.text(), /This bundle names no model/);
 });
 
-test('menu 7 resume: lists the stopped bundle runs, takes a number, offers more money (a raise needs yes), then resumes as the same run', async (t) => {
+test('menu 8 resume: lists the stopped bundle runs, takes a number, offers more money (a raise needs yes), then resumes as the same run', async (t) => {
   const { bundleDir, bundleHash } = await exportFixture(t, { budgetUsd: 2 });
   const repo = tmp(t, 'cli-repo-');
   initRepo(repo);
@@ -1139,7 +1139,7 @@ test('menu 7 resume: lists the stopped bundle runs, takes a number, offers more 
   const rc = await main([], {
     stdout: out, stderr: err, cwd: process.cwd(), env: {}, runlistHome: home, keysHome: home,
     launcher: { ports: [], timeoutMs: 50, nodeVersion: '22.1.0', version: '0.0.0-test' },
-    stdin: lines('7\n1\n9\n\nyes\nyes\n'),
+    stdin: lines('8\n1\n9\n\nyes\nyes\n'),
     provider: scriptedProvider([
       { toolCalls: [tcall('t1', 'shell_write', { path: join(worktree, 'src', 'mod.mjs'), content: 'export const x = 1;\nMARKER_OK\n' })] },
       { text: 'wrote the marker' },
