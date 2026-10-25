@@ -43,9 +43,50 @@ function readSpineOutcome(spine) {
   return { records, outcome: legsOf(records).at(-1)?.outcome ?? null };
 }
 
+/** @param {unknown} v @returns {boolean} */
+const isUrl = (v) => typeof v === 'string' && /^https?:\/\//i.test(v.trim());
+
 /**
- * Every green panel / run-u run, oldest first, as `{name, runid, job, row}`. Green = the run's latest job-end is `green` or
- * `already-green`. Rows made by `bareloop run` (via 'bundle') or a backfill are not panel / run-u runs and are not listed.
+ * Everything knowable about a run before any number is read: green (a run that was already green at start saved no plan), a signed spec
+ * beside it, a repo job, a saved plan made under that spec. The one check the list and the export share, so the list never offers
+ * what export would refuse for one of these reasons.
+ * @param {any} row a run-list row @param {string} name its `job (run-N)` name
+ * @returns {{ ok: true, records: any[], signed: { spec: any, specHash: string }, bf: any } | { ok: false, why: string }}
+ */
+function checkExportable(row, name) {
+  if (typeof row.spine !== 'string' || !existsSync(row.spine)) return { ok: false, why: `"${name}" has no log file on this machine any more (${row.spine ?? 'none recorded'})` };
+  const { records, outcome } = readSpineOutcome(row.spine);
+  if (outcome !== 'green' && outcome !== 'already-green') return { ok: false, why: `"${name}" did not end green (${outcome ?? 'no ending recorded'}) — only a green run can be exported` };
+  const signed = signedSpecForRun(row, records);
+  if (!signed) return { ok: false, why: `the signed job file for "${name}" is not beside its log, or none matches the hash it ran under` };
+  const spec = signed.spec;
+  // repo jobs only for now ($0): say which kind this is
+  if (spec.verdictType !== 'green') return { ok: false, why: `${REPO_ONLY}: "${name}" is a rubric job, graded by a judge (${spec.verdictType ?? 'no class recorded'})` };
+  if (Array.isArray(spec.inputs) && spec.inputs.some((/** @type {any} */ i) => isUrl(i?.value))) return { ok: false, why: `${REPO_ONLY}: "${name}" reads a page link` };
+  const near = sourceNearSpine(row.spine);
+  /** @type {any} */
+  let source = null;
+  if (near.sourceJsonPath) { try { source = JSON.parse(readFileSync(near.sourceJsonPath, 'utf8')); } catch { source = null; } }
+  if (!source || typeof source.kind !== 'string') return { ok: false, why: `"${name}" has no record of what it worked on (source.json), so its kind cannot be told` };
+  if (source.kind !== 'repo') return { ok: false, why: `${REPO_ONLY}: "${name}" works on a plain ${source.kind}, not a repo` };
+  // the saved plan: the panel / run-u engine writes it beside the spine on a green
+  const bridgeFile = join(dirname(row.spine), `bridge-${spec.job}-${row.runid}.json`);
+  /** @type {any} */
+  let bf = null;
+  try { bf = JSON.parse(readFileSync(bridgeFile, 'utf8')); } catch { bf = null; }
+  if (!bf || typeof bf.plan !== 'object' || bf.plan === null) {
+    return { ok: false, why: `"${name}" saved no plan (${bridgeFile}) — a run that was already green at start has none, so it cannot be exported` };
+  }
+  if (bf.runid !== row.runid || bf.specHash !== signed.specHash || bf.specHash !== jobSpecHash(spec)) {
+    return { ok: false, why: `the plan saved by "${name}" was made under a different signed job file than the one beside it` };
+  }
+  return { ok: true, records, signed, bf };
+}
+
+/**
+ * The green panel / run-u runs export CAN take, oldest first, as `{name, runid, job}`. A run export would refuse for a reason knowable
+ * here (already green with no saved plan, a rubric / page-link / folder job, no signed spec) is not listed; a number it cannot read
+ * (cost, time, rounds, patient) is still refused at export, in words. Rows made by `bareloop run` or a backfill are not listed.
  * @param {{ home?: string }} [opts]
  * @returns {{ name: string, runid: string, job: string, at: string, outcome: string, row: any }[]}
  */
@@ -55,16 +96,13 @@ export function listGreenRuns(opts = {}) {
   /** @type {{ name: string, runid: string, job: string, at: string, outcome: string, row: any }[]} */
   const out = [];
   for (const row of rows) {
-    if (row.via !== 'run-u' || typeof row.spine !== 'string') continue;
-    const { outcome } = readSpineOutcome(row.spine);
-    if (outcome !== 'green' && outcome !== 'already-green') continue;
-    out.push({ name: runNameOf(row.job, nos.get(row.runid)), runid: row.runid, job: row.job, at: row.at, outcome, row });
+    if (row.via !== 'run-u') continue;
+    const name = runNameOf(row.job, nos.get(row.runid));
+    if (!checkExportable(row, name).ok) continue;
+    out.push({ name, runid: row.runid, job: row.job, at: row.at, outcome: 'green', row });
   }
   return out;
 }
-
-/** @param {unknown} v @returns {boolean} */
-const isUrl = (v) => typeof v === 'string' && /^https?:\/\//i.test(v.trim());
 
 /**
  * Build the bundle for one green run. Never throws for a run it cannot export: every stop is `{ok:false, why}` in plain words.
@@ -78,35 +116,10 @@ export function exportRun({ name, outDir, home, bareloopVersion, now = Date.now 
   const nos = runNumbers(rows);
   const row = rows.find((r) => r.job === want.job && nos.get(r.runid) === want.n && r.via === 'run-u') ?? null;
   if (!row) return { ok: false, why: `no run named "${name}" in the run list` };
-  if (typeof row.spine !== 'string' || !existsSync(row.spine)) return { ok: false, why: `"${name}" has no log file on this machine any more (${row.spine ?? 'none recorded'})` };
-  const { records, outcome } = readSpineOutcome(row.spine);
-  if (outcome !== 'green' && outcome !== 'already-green') return { ok: false, why: `"${name}" did not end green (${outcome ?? 'no ending recorded'}) — only a green run can be exported` };
-
-  const signed = signedSpecForRun(row, records);
-  if (!signed) return { ok: false, why: `the signed job file for "${name}" is not beside its log, or none matches the hash it ran under` };
+  const chk = checkExportable(row, name);
+  if (!chk.ok) return chk;
+  const { records, signed, bf } = chk;
   const spec = signed.spec;
-
-  // repo jobs only for now ($0): say which kind this is
-  if (spec.verdictType !== 'green') return { ok: false, why: `${REPO_ONLY}: "${name}" is a rubric job, graded by a judge (${spec.verdictType ?? 'no class recorded'})` };
-  if (Array.isArray(spec.inputs) && spec.inputs.some((/** @type {any} */ i) => isUrl(i?.value))) return { ok: false, why: `${REPO_ONLY}: "${name}" reads a page link` };
-  const near = sourceNearSpine(row.spine);
-  /** @type {any} */
-  let source = null;
-  if (near.sourceJsonPath) { try { source = JSON.parse(readFileSync(near.sourceJsonPath, 'utf8')); } catch { source = null; } }
-  if (!source || typeof source.kind !== 'string') return { ok: false, why: `"${name}" has no record of what it worked on (source.json), so its kind cannot be told` };
-  if (source.kind !== 'repo') return { ok: false, why: `${REPO_ONLY}: "${name}" works on a plain ${source.kind}, not a repo` };
-
-  // the saved plan: the panel / run-u engine writes it beside the spine on a green
-  const bridgeFile = join(dirname(row.spine), `bridge-${spec.job}-${row.runid}.json`);
-  /** @type {any} */
-  let bf = null;
-  try { bf = JSON.parse(readFileSync(bridgeFile, 'utf8')); } catch { bf = null; }
-  if (!bf || typeof bf.plan !== 'object' || bf.plan === null) {
-    return { ok: false, why: `"${name}" saved no plan (${bridgeFile}) — a run that was already green at start has none, so it cannot be exported` };
-  }
-  if (bf.runid !== row.runid || bf.specHash !== signed.specHash || bf.specHash !== jobSpecHash(spec)) {
-    return { ok: false, why: `the plan saved by "${name}" was made under a different signed job file than the one beside it` };
-  }
 
   // the numbers, all from the run's own spine; nothing guessed
   const legs = legsOf(records);

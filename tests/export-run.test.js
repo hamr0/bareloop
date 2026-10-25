@@ -93,7 +93,7 @@ test('exportRun: a real green repo run becomes a bundle that readBundle accepts,
 
 test('exportRun: a rubric (judged) page-link job is refused at $0 with the plain reason', (t) => {
   const { root, home } = rubricRun(t);
-  assert.equal(listGreenRuns({ home }).length, 1, 'it is a green run, just not an exportable one');
+  assert.deepEqual(listGreenRuns({ home }), [], 'the list offers only runs export can take: a rubric page-link job is not listed');
   const r = exportRun({ name: 'flight-c1 (run-1)', outDir: join(root, 'b'), home, bareloopVersion: '0.47.1' });
   assert.equal(r.ok, false);
   assert.match(r.ok ? '' : r.why, /only repo jobs can be exported for now/);
@@ -143,6 +143,7 @@ test('exportRun: an unknown name, a name that is not a name, and a missing saved
   assert.match(String(exportRun({ name: 'nope (run-9)', outDir: join(root, 'b'), home, bareloopVersion: '0.47.1' })['why']), /no run named/);
   assert.match(String(exportRun({ name: 'fix-slugify', outDir: join(root, 'b'), home, bareloopVersion: '0.47.1' })['why']), /not a run name/);
   rmSync(join(sess, 'source-seed', 'fix-slugify-bareloop', 'bridge-fix-slugify-muqrenrf.json'));
+  assert.deepEqual(listGreenRuns({ home }), [], 'a run with no saved plan (e.g. already green at start) is not listed either');
   assert.match(String(exportRun({ name: 'fix-slugify (run-1)', outDir: join(root, 'b'), home, bareloopVersion: '0.47.1' })['why']), /saved no plan/);
 });
 
