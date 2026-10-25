@@ -1193,3 +1193,41 @@ test('bareloop run: the first run of an UNBLESSED bundle typed at a terminal sho
   assert.deepEqual(rec.map((r) => [r.type, r.bundleHash]), [['bundle-approve', bundleHash]]);
   assert.equal(JSON.parse(readFileSync(join(bundleDir, 'blessing.json'), 'utf8')).runid, runid);
 });
+
+test('q at the cap, time, raise-yes and bundle-yes questions ends the run cleanly (exit 0, nothing created)', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t, { budgetUsd: 2, maxWallMs: 600_000 });
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const h = homes(t);
+  appendExported({ runid: 'e1', job: 'cli-fixture-job', bundle: bundleDir, bundleHash, at: '2026-10-02T00:00:00.000Z' }, { home: h.runlistHome });
+  const go = async (input, extra = []) => {
+    const out = sink(); const err = sink();
+    const rc = await main(['run', bundleDir, '--repo', repo, ...extra], { stdout: out, stderr: err, cwd: process.cwd(), stdin: lines(input), provider: scriptedProvider([{ text: 'never' }]), ...h });
+    return { rc, out: out.text(), err: err.text() };
+  };
+  // guided run (bundle not typed): q at the $ cap, then at the time cap
+  const guided = async (input) => {
+    const out = sink(); const err = sink();
+    const rc = await main(['run', '--repo', repo], { stdout: out, stderr: err, cwd: process.cwd(), stdin: lines(input), provider: scriptedProvider([{ text: 'never' }]), ...h });
+    return { rc, out: out.text(), err: err.text() };
+  };
+  let r = await guided('1\nq\n');
+  assert.equal(r.rc, 0, r.err);
+  assert.match(r.out, /\$ cap \(Enter keeps/);
+  assert.match(r.out, /Nothing chosen, nothing run\./);
+  r = await guided('1\n\nQ\n');
+  assert.equal(r.rc, 0, r.err);
+  assert.match(r.out, /Time cap in minutes/);
+  assert.match(r.out, /Nothing chosen, nothing run\./);
+  // q at the raise confirm and at the bundle sign
+  r = await go(' q \n', ['--budget', '9']);
+  assert.equal(r.rc, 0, r.err);
+  assert.match(r.out, /This raises the \$ cap from \$2 to \$9\./);
+  assert.match(r.out, /Not signed, nothing run\./);
+  r = await go('q\n');
+  assert.equal(r.rc, 0, r.err);
+  assert.match(r.out, /Type yes to sign it: /);
+  assert.match(r.out, /Not signed, nothing run\./);
+  assert.equal(existsSync(join(repo, '.bareloop')), false, 'nothing was created');
+  assert.equal(existsSync(join(bundleDir, 'runs')), false);
+});

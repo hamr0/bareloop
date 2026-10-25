@@ -250,3 +250,26 @@ test('bundle pick lists (history / run): the last 10, newest first, numbered, la
   const old = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, `9\n${join(root, 'bundle-01')}\n`);
   assert.match(old.out, /history: \(no runs yet\)/);
 });
+
+test('q (any case, trimmed) at a job question ends that command cleanly: plain "nothing chosen" line, exit 0, never a name or number', async (t) => {
+  const { root, home } = repoRun(t);
+  const b = join(root, 'b');
+  assert.equal(exportRun({ name: 'fix-slugify (run-1)', outDir: b, home, bareloopVersion: '0.47.1' }).ok, true);
+  const menu = (input) => cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, input);
+  const cases = [
+    ['7\nq\n', /No bundle chosen, nothing run\./],
+    ['9\n Q \n', /No bundle chosen, nothing shown\./],
+    ['6\nQ\n', /Nothing chosen, nothing exported\./],
+    ['6\n1\nq\n', /No folder given, nothing exported\./],
+  ];
+  for (const [input, want] of cases) {
+    const r = await menu(input);
+    assert.equal(r.code, 0, `${JSON.stringify(input)}: ${r.err}`);
+    assert.match(r.out, want, JSON.stringify(input));
+    assert.doesNotMatch(r.err, /neither a bundle folder nor/, JSON.stringify(input));
+  }
+  // run: q at the repo question
+  const repo = await menu(`7\n${b}\nq\n`);
+  assert.equal(repo.code, 0);
+  assert.match(repo.out, /No repo chosen, nothing run\./);
+});

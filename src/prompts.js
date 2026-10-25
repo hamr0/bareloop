@@ -31,8 +31,11 @@ export function openAsker(io = {}) {
   return { ask, close: () => rl.close() };
 }
 
+/** `q` (any case, trimmed) at a job question means "leave this command" (hamr 2026-10-25). @param {string} s @returns {boolean} */
+export const isQuit = (s) => s.trim().toLowerCase() === 'q';
+
 /**
- * A required prompt (hamr 2026-10-25): an empty Enter asks ONCE more; a second empty Enter gives up. `null` = nothing was chosen
+ * A required prompt (hamr 2026-10-25): an empty Enter asks ONCE more; a second empty Enter gives up; `q` gives up at once. `null` = nothing was chosen
  * (the caller ends its command cleanly: a plain line, nothing run, exit 0).
  * @param {(q: string) => Promise<string>} ask @param {string} question
  * @returns {Promise<string|null>}
@@ -40,6 +43,7 @@ export function openAsker(io = {}) {
 export async function askRequired(ask, question) {
   for (let i = 0; i < 2; i += 1) {
     const a = (await ask(question)).trim();
+    if (isQuit(a)) return null;
     if (a !== '') return a;
   }
   return null;

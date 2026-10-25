@@ -21,7 +21,7 @@ import { join, resolve } from 'node:path';
 import {
   readBundle, resolveBundleSpec, checkEnvelope, capRaises, bless, verifyBlessing, appendHistory, checkBundleDeps,
 } from './bundle.js';
-import { askRequired } from './prompts.js';
+import { askRequired, isQuit } from './prompts.js';
 import { askBundle, resolveBundleRef } from './bundleref.js';
 import { rowsForHome, chatLines } from './providerrows.js';
 import { jobSpecHash } from './job.js';
@@ -106,9 +106,11 @@ export async function bundleMain(args, {
   if (guided && askable && ask) {
     // a guided run offers the caps; Enter keeps the signed value
     const budgetAns = (await ask(`$ cap (Enter keeps $${bundle.spec.budgetUsd}${resumeArg === undefined ? '' : '; a higher number adds money'}): `)).trim();
+    if (isQuit(budgetAns)) { out('Nothing chosen, nothing run.'); return 0; }
     if (budgetAns !== '') flags.budget = budgetAns;
     if (typeof bundle.spec.maxWallMs === 'number') {
       const wallAns = (await ask(`Time cap in minutes (Enter keeps ${bundle.spec.maxWallMs / 60_000}${resumeArg === undefined ? '' : '; a higher number adds time'}): `)).trim();
+      if (isQuit(wallAns)) { out('Nothing chosen, nothing run.'); return 0; }
       if (wallAns !== '') flags.wall = wallAns;
     }
   }
@@ -135,6 +137,7 @@ export async function bundleMain(args, {
     if (flags.yes !== undefined) signedRaises = raises;
     else if (askable && ask) {
       const a = (await ask('Type yes to sign it: ')).trim().toLowerCase();
+      if (isQuit(a)) { out('Not signed, nothing run.'); return 0; }
       if (a !== 'yes') { err('Not signed (only "yes" signs a raise) — the caps stay as signed. Nothing ran.'); return 1; }
       signedRaises = raises;
     } else {
@@ -172,6 +175,7 @@ export async function bundleMain(args, {
       // Flags only: `--approve <hash>` is still the way (`--yes` signs caps, not a bundle).
       if (askable && ask && flags.approve === undefined) {
         const a = (await ask('Type yes to sign it: ')).trim().toLowerCase();
+        if (isQuit(a)) { out('Not signed, nothing run.'); return 0; }
         if (a !== 'yes') { err('Not signed (only "yes" signs a bundle) — nothing ran.'); return 1; }
         signedBundle = true;
       } else {
