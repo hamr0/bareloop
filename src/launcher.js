@@ -508,7 +508,8 @@ export async function menuCmd(io, d) {
   if (choice === '3' || choice === 'restart') return restartCmd([], io, d, h);
   if (choice === '4' || choice === 'status') return statusCmd(io, d, h);
   if (choice === '5' || choice === 'install') return installCmd(io, d, h);
-  const job = { 6: 'export', export: 'export', 7: 'run', run: 'run', 8: 'resume', resume: 'resume', 9: 'history', history: 'history' }[choice];
+  const jobChoices = { 6: 'export', export: 'export', 7: 'run', run: 'run', 8: 'resume', resume: 'resume', 9: 'history', history: 'history' };
+  const job = Object.hasOwn(jobChoices, choice) ? jobChoices[choice] : undefined; // never `constructor` / `__proto__`
   if (job !== undefined && d.jobs) return d.jobs[/** @type {'export'|'run'|'resume'|'history'} */ (job)]();
   if (choice === '' || choice === 'q' || choice === 'quit') return 0;
   fail(io, d, `unknown choice ${JSON.stringify(choice)} — one of: 1, 2, 3, 4, 5, 6, 7, 8, 9, q`);

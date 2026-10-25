@@ -187,6 +187,21 @@ test('stop: a running panel with no drafts -> SIGTERM to the pid it reported (in
   assert.equal(io.lines.at(-1), 'Panel stopped.');
 });
 
+test('stop: a panel reporting no usable pid (0, 1, or not a number) is never signalled: the refusal names it, exit 1', async () => {
+  for (const pid of [0, 1, 'x']) {
+    const home = installedHome();
+    const base = await freeBase();
+    const panel = await fakePanel(base, { pid });
+    const kills = [];
+    const io = sink();
+    const rc = await stopCmd(['--yes'], io, deps(home, base, { kill: (p, s) => kills.push([p, s]) }));
+    assert.equal(rc, 1, `pid ${pid}: ${io.text()}`);
+    assert.deepEqual(kills, [], `pid ${pid}: nothing signalled`);
+    assert.match(io.text(), /reported no usable pid, so it was not stopped/);
+    await panel.close();
+  }
+});
+
 test('stop: open drafts -> the warning, the ask; n leaves it running, y stops it; --yes skips the ask', async () => {
   const home = installedHome();
   const base = await freeBase();
@@ -366,6 +381,18 @@ test('menu: choice 4 runs status through the same code WITHOUT printing the head
   assert.equal(await menuCmd(bad, deps(home, base, { ask: async () => '9' })), 1);
   assert.match(bad.text(), /unknown choice "9"/);
   assert.match(bad.text(), /one of: 1, 2, 3, 4, 5, 6, 7, 8, 9, q/);
+});
+
+test('menu: `constructor` and `__proto__` are unknown choices, not a crash, even when the job doors are wired', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  await fakePanel(base, { pid: 48213 });
+  const jobs = { export: async () => 0, run: async () => 0, resume: async () => 0, history: async () => 0 };
+  for (const word of ['constructor', '__proto__']) {
+    const bad = sink();
+    assert.equal(await menuCmd(bad, deps(home, base, { jobs, ask: async () => word })), 1);
+    assert.match(bad.text(), new RegExp(`unknown choice "${word}"`));
+  }
 });
 
 test('main: bare `bareloop` shows the new menu (the old export/run/history menu is gone); the sub-commands status|install go through main with the header first', async () => {
