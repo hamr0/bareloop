@@ -500,3 +500,34 @@ test('stop: a pid that is still alive at the deadline is named, exit 1, never "P
   assert.ok(io.lines.includes(`The panel at http://127.0.0.1:${base} (pid 5101) stopped.`), io.text());
   assert.ok(!io.text().includes('Panel stopped.') && !io.text().includes('panels stopped.'), io.text());
 });
+
+// fwd's v0.47.1 bug: `echo q | bareloop` printed the header and choices but never the `> ` prompt. The line reader was made at start, the header
+// waited on the (slow) port probe, stdin delivered `q\n` and EOF with no question pending, the line was dropped, and the later ask('> ')
+// returned '' without printing. Reproduced exactly: stdin holds the answer and has ENDED before the probe resolves.
+async function pipedMenu(input) {
+  const home = installedHome();
+  const base = await freeBase();
+  const stdin = new PassThrough();
+  stdin.end(input); // the answer AND the end of input, before anything is asked
+  const out = []; const err = [];
+  const slowProbe = () => new Promise((_res, rej) => { setTimeout(() => rej(new Error('connection refused')), 400); });
+  const launcher = { ports: [base], timeoutMs: 2000, nodeVersion: '22.1.0', version: V, fetchImpl: slowProbe };
+  const rc = await main([], {
+    stdin, stdout: { write: (s) => { out.push(s); return true; } }, stderr: { write: (s) => { err.push(s); return true; } },
+    cwd: process.cwd(), env: {}, keysHome: home, runlistHome: home, launcher,
+  });
+  return { rc, text: out.join(''), err: err.join('') };
+}
+
+test('regression (v0.47.1): `echo q | bareloop` with a slow header probe still prints the `> ` prompt and honours q', async () => {
+  const r = await pipedMenu('q\n');
+  assert.equal(r.rc, 0);
+  assert.match(r.text, /q quit\n> $/, 'the prompt is printed after the choices');
+});
+
+test('regression (v0.47.1): `echo 3 | bareloop` with a slow header probe prompts, then runs status', async () => {
+  const r = await pipedMenu('3\n');
+  assert.match(r.text, /q quit\n> /);
+  assert.equal(r.rc, 0, r.text + r.err);
+  assert.match(r.text, /> Panel not running\./);
+});
