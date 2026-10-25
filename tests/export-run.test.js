@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { main } from '../src/cli.js';
+import { getRunDetail } from '../src/panel/server.js';
 import { appendRun, readRunList, readExported } from '../src/runlist.js';
 import { listGreenRuns, exportRun } from '../src/runexport.js';
 import { readBundle } from '../src/bundle.js';
@@ -272,4 +273,49 @@ test('q (any case, trimmed) at a job question ends that command cleanly: plain "
   const repo = await menu(`7\n${b}\nq\n`);
   assert.equal(repo.code, 0);
   assert.match(repo.out, /No repo chosen, nothing run\./);
+});
+
+// The Run tab NEXT "reusable bundle:" row (panel) is offered only for runs `checkExportable` takes (one owner), and its command is shell-safe.
+/** a repo run's panel detail: the fixture gets a work-branch record + a worktree in source.json so the green ending shows the merge rows */
+function panelDetail(sess, home, mutate = (/** @type {any[]} */ r) => r) {
+  const dir = join(sess, 'source-seed');
+  const src = JSON.parse(readFileSync(join(dir, 'source.json'), 'utf8'));
+  writeFileSync(join(dir, 'source.json'), JSON.stringify({ ...src, repo: src.repo ?? join(sess, 'repo'), worktree: join(sess, 'wt-gone') }));
+  const spine = join(dir, 'fix-slugify-bareloop', 'u-muqrenrf.jsonl');
+  const recs = readFileSync(spine, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  recs.splice(1, 0, { type: 'work-branch', branch: 'bareloop-fix-slugify', created: true, resumed: false, from: null, base: 'abc', repo: join(sess, 'wt-gone'), ts: recs[0].ts, seq: 0 });
+  writeFileSync(spine, `${mutate(recs).map((r) => JSON.stringify(r)).join('\n')}\n`);
+  return getRunDetail('muqrenrf', { home });
+}
+const exportRow = (/** @type {any} */ d) => (d.ended.rows ?? []).find((/** @type {string[]} */ r) => r[0] === 'reusable bundle:');
+
+test('panel NEXT: a green repo run with a saved plan gets the export row, and its command is shell-safe', (t) => {
+  const { home, sess } = repoRun(t);
+  const row = exportRow(panelDetail(sess, home));
+  assert.ok(row, 'offered');
+  assert.equal(row[1], 'bareloop export "fix-slugify (run-1)" --out "./fix-slugify-bundle"');
+  assert.doesNotMatch(row[1], /[<>]/);
+});
+
+test('panel NEXT: an already-green run (no saved plan) gets NO export row', (t) => {
+  const { home, sess } = repoRun(t);
+  rmSync(join(sess, 'source-seed', 'fix-slugify-bareloop', 'bridge-fix-slugify-muqrenrf.json'));
+  const d = panelDetail(sess, home, (recs) => recs.map((r) => (r.type === 'job-end' ? { ...r, outcome: 'already-green' } : r)));
+  assert.ok(d.ended.rows.some((/** @type {string[]} */ r) => r[0] === 'keep the work:'), 'the merge rows still show');
+  assert.equal(exportRow(d), undefined);
+});
+
+test('panel NEXT: a soft-green (rubric) repo run gets NO export row', (t) => {
+  const { home, sess } = repoRun(t);
+  // re-record the spec as a judged class, hash re-pinned in the spine and the saved plan (as the folder/link test does)
+  const specFile = join(sess, 'resolved-spec.json');
+  const spec = JSON.parse(readFileSync(specFile, 'utf8'));
+  const oldHash = jobSpecHash(spec);
+  const next = { ...spec, verdictType: 'softgreen' };
+  writeFileSync(specFile, JSON.stringify(next));
+  const bridge = join(sess, 'source-seed', 'fix-slugify-bareloop', 'bridge-fix-slugify-muqrenrf.json');
+  writeFileSync(bridge, readFileSync(bridge, 'utf8').split(oldHash).join(jobSpecHash(next)));
+  const d = panelDetail(sess, home, (recs) => JSON.parse(JSON.stringify(recs).split(oldHash).join(jobSpecHash(next))));
+  assert.ok(d.ended.rows.some((/** @type {string[]} */ r) => r[0] === 'keep the work:'));
+  assert.equal(exportRow(d), undefined);
 });

@@ -85,14 +85,13 @@ test('getRunDetail: a green worktree run reads its branch off the spine and its 
   const home = tmp();
   makeWorktreeRun(home, { outcome: 'green', folderExists: false });
   const d = getRunDetail('run1', { home });
-  assert.deepEqual(d.ended.rows.map((r) => r[0]), ['in:', 'keep the work:', 'throw it away:', 'reusable bundle:']);
+  assert.deepEqual(d.ended.rows.map((r) => r[0]), ['in:', 'keep the work:', 'throw it away:'], 'this fixture saved no plan, so export is not offered (tests/export-run.test.js covers the offered row)');
   assert.equal(d.ended.rows[1][1], 'git merge bareloop-fix-types');
-  assert.match(d.ended.rows[3][1], /^bareloop export "[^"]+ \(run-1\)" --out <folder>$/);
 });
 
 test('endedFor: the export row (PRD v1.114) sits with the merge rows of a GREEN worktree run only, as text, with the panel\'s own run name', () => {
   const e = endedFor(summary('green'), alive, { worktree: wt(), exportName: 'my-job (run-3)' });
-  assert.deepEqual(e.rows, [['in:', '/r'], ['keep the work:', 'git merge bareloop-job'], ['throw it away:', 'git branch -D bareloop-job'], ['reusable bundle:', 'bareloop export "my-job (run-3)" --out <folder>']]);
+  assert.deepEqual(e.rows, [['in:', '/r'], ['keep the work:', 'git merge bareloop-job'], ['throw it away:', 'git branch -D bareloop-job'], ['reusable bundle:', 'bareloop export "my-job (run-3)" --out "./my-job-bundle"']]);
   assert.deepEqual(e.actions, [{ id: 'reuse', label: 'Reuse workflow' }], 'text, never a button');
   assert.doesNotMatch(endedFor(summary('cap-halt'), alive, { worktree: wt({ exists: true }), resume: { ok: true }, exportName: 'my-job (run-3)' }).next, /bareloop export/);
   assert.equal(endedFor(summary('green'), alive, { exportName: 'my-job (run-3)' }).next, 'Nothing to do.', 'no worktree = not a repo job in the panel: nothing shown');
@@ -128,7 +127,7 @@ test('NEXT page markup: rows become label cells + instruction cells in one grid 
   const html = nextRow(e);
   assert.match(html, /^<div class="ended-row"><span class="ended-label">NEXT<\/span><span class="ended-text next-rows" data-testid="ended-next">/);
   assert.match(html, /<span class="next-row" style="display:contents"><span class="next-label">keep the work:<\/span><span class="next-text">git merge bareloop-job<\/span><\/span>/);
-  assert.match(html, /<span class="next-label">reusable bundle:<\/span><span class="next-text">bareloop export &quot;pulselog-panel-strict \(run-1\)&quot; --out &lt;folder&gt;<\/span>/);
+  assert.match(html, /<span class="next-label">reusable bundle:<\/span><span class="next-text">bareloop export &quot;pulselog-panel-strict \(run-1\)&quot; --out &quot;\.\/pulselog-panel-strict-bundle&quot;<\/span>/);
   assert.equal(nextRow({ next: 'Resume.' }), '<div class="ended-row"><span class="ended-label">NEXT</span><span class="ended-text" data-testid="ended-next">Resume.</span></div>');
   assert.equal(nextRow({ next: 'x', rows: [['a:', 'b']] }), '<div class="ended-row"><span class="ended-label">NEXT</span><span class="ended-text" data-testid="ended-next">x</span></div>', 'fewer than two rows is the one-line row');
 });

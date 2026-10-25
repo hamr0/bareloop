@@ -34,6 +34,7 @@ import {
 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readRunList, readNeedsRemovals, DIED_MTIME_MS, runIsAlive, atMs, runNumbers, runNameOf } from '../runlist.js';
+import { checkExportable } from '../runexport.js';
 import { sourceNearSpine, signedSpecForRun } from '../runfiles.js';
 import { webFetchState } from '../source.js';
 import { isWebUrl } from '../pagefetch.js';
@@ -479,7 +480,7 @@ export function endedFor(summary, death, o = {}) {
         ['in:', wt.repo],
         ['keep the work:', `git merge ${wt.branch}`],
         ['throw it away:', `git branch -D ${wt.branch}`],
-        ...(o.exportName ? [/** @type {[string, string]} */ (['reusable bundle:', `bareloop export "${o.exportName}" --out <folder>`])] : []),
+        ...(o.exportName ? [/** @type {[string, string]} */ (['reusable bundle:', `bareloop export "${o.exportName}" --out "${exportOutDefault(o.exportName)}"`])] : []),
         ...(wt.exists ? [/** @type {[string, string]} */ (['folder still there:', wt.folder])] : []),
       ]),
     };
@@ -487,6 +488,16 @@ export function endedFor(summary, death, o = {}) {
   // any other ending: the worktree folder stays (Resume needs it); a multi-instruction NEXT gets it as one more row
   if (wt.exists && base.rows) return { ...base, ...splitNext([...base.rows, ['your work is in:', wt.folder]]) };
   return wt.exists ? { ...base, next: `${base.next} Your work is in ${wt.folder}.` } : base;
+}
+
+/**
+ * A real relative folder for the export command, from the run's `job (run-N)` name: the job part with anything a shell would act on turned
+ * into `-`, so `--out "./<job>-bundle"` pastes as is; the person may change it. The name is quoted in the command too.
+ * @param {string} exportName
+ */
+function exportOutDefault(exportName) {
+  const job = exportName.replace(/ \(run-\d+\)$/, '').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'job';
+  return `./${job}-bundle`;
 }
 
 /**
@@ -1621,7 +1632,9 @@ function getRunDetailBody(runid, opts) {
   const specForParts = resolveSpecForRow(row);
   const enrichedParts = enrichPartsWithStageKind(summary.parts, stageKindMetaFromSpec(specForParts), specForParts);
   const death = deriveDeath(row, rawSpineRecords, summary.outcome);
-  const exportName = runNameOf(row.job, runNumbers(readRunList(opts).rows).get(row.runid));
+  const runName = runNameOf(row.job, runNumbers(readRunList(opts).rows).get(row.runid));
+  // the export row only for a run export would take — the one rule, `checkExportable`, never a copy of it
+  const exportName = checkExportable(row, runName).ok ? runName : null;
   const { ended, resume, status } = endedForRow(row, rawSpineRecords, summary, death, true, exportName);
   // judgeModel (Summary box "judge:" line): the FIRST `judge-round`'s own
   // `model` field (src/planrun.js:1704's `onJudgeCost` emit) — a soft-green

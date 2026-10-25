@@ -53,7 +53,7 @@ const isUrl = (v) => typeof v === 'string' && /^https?:\/\//i.test(v.trim());
  * @param {any} row a run-list row @param {string} name its `job (run-N)` name
  * @returns {{ ok: true, records: any[], signed: { spec: any, specHash: string }, bf: any } | { ok: false, why: string }}
  */
-function checkExportable(row, name) {
+export function checkExportable(row, name) {
   if (typeof row.spine !== 'string' || !existsSync(row.spine)) return { ok: false, why: `"${name}" has no log file on this machine any more (${row.spine ?? 'none recorded'})` };
   const { records, outcome } = readSpineOutcome(row.spine);
   if (outcome !== 'green' && outcome !== 'already-green') return { ok: false, why: `"${name}" did not end green (${outcome ?? 'no ending recorded'}) — only a green run can be exported` };
