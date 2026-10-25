@@ -1135,13 +1135,11 @@ test('menu 7 resume: lists the stopped bundle runs, takes a number, offers more 
     stdout: sink(), stderr: sink(), cwd: process.cwd(), provider: greenScript(worktree), now: makeNow(t1), runlistHome: home, keysHome: home,
   });
   assert.equal(rc1, 1, 'leg 1 cap-halts');
-  // the menu has no --approve: a bundle blessed on this machine runs without one (an unblessed first run still needs the flag)
-  bless(bundleDir, { bundleHash, runid: 'earlier', outcome: 'green' });
   const out = sink(); const err = sink();
   const rc = await main([], {
     stdout: out, stderr: err, cwd: process.cwd(), env: {}, runlistHome: home, keysHome: home,
     launcher: { ports: [], timeoutMs: 50, nodeVersion: '22.1.0', version: '0.0.0-test' },
-    stdin: lines('7\n1\n9\n\nyes\n'),
+    stdin: lines('7\n1\n9\n\nyes\nyes\n'),
     provider: scriptedProvider([
       { toolCalls: [tcall('t1', 'shell_write', { path: join(worktree, 'src', 'mod.mjs'), content: 'export const x = 1;\nMARKER_OK\n' })] },
       { text: 'wrote the marker' },
@@ -1154,7 +1152,37 @@ test('menu 7 resume: lists the stopped bundle runs, takes a number, offers more 
   assert.match(out.text(), /This raises the \$ cap from \$2 to \$9\./);
   assert.match(out.text(), /outcome {3}green/);
   const rec = readFileSync(join(bundleDir, 'runs', id1, 'approvals.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-  assert.deepEqual(rec.map((r) => [r.field, r.old, r.new]), [['budgetUsd', 2, 9]]);
+  assert.deepEqual(rec.filter((r) => r.type === 'cap-raise').map((r) => [r.field, r.old, r.new]), [['budgetUsd', 2, 9]]);
+  assert.equal(rec.filter((r) => r.type === 'bundle-approve').length, 1, 'the unblessed bundle was signed with a typed yes at the resume');
+  assert.match(out.text(), /Type yes to sign it: /);
   const spine = readFileSync(join(bundleDir, 'runs', id1, 'spine.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   assert.equal(spine.filter((e) => e.type === 'leg-resume').length, 1, 'the SAME run, a second leg');
+});
+
+test('bareloop run: the first run of an UNBLESSED bundle typed at a terminal shows the hash and needs a typed yes (recorded); flags-only still needs --approve', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t);
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  // flags only, no terminal: the old refusal, naming --approve
+  const flagsOnly = sink(); const flagsErr = sink();
+  assert.equal(await main(['run', bundleDir, '--repo', repo], { stdout: flagsOnly, stderr: flagsErr, cwd: process.cwd(), provider: scriptedProvider([{ text: 'never' }]), ...homes(t) }), 1);
+  assert.match(flagsErr.text(), new RegExp(`--approve ${bundleHash} is required`));
+  // a terminal, anything but yes: refused, nothing created
+  const no = sink(); const noErr = sink();
+  assert.equal(await main(['run', bundleDir, '--repo', repo], { stdout: no, stderr: noErr, cwd: process.cwd(), stdin: lines('later\n'), provider: scriptedProvider([{ text: 'never' }]), ...homes(t) }), 1);
+  assert.match(no.text(), new RegExp(`bundleHash: ${bundleHash}`));
+  assert.match(noErr.text(), /Not signed/);
+  assert.equal(existsSync(join(repo, '.bareloop')), false);
+  // yes: runs, blesses, records the signing
+  const t0 = 1_700_001_200_000;
+  const runid = t0.toString(36);
+  const out = sink(); const err = sink();
+  const rc = await main(['run', bundleDir, '--repo', repo], {
+    stdout: out, stderr: err, cwd: process.cwd(), stdin: lines('yes\n'), provider: greenScript(join(repo, '.bareloop', 'wt', runid)), now: makeNow(t0), ...homes(t),
+  });
+  assert.equal(rc, 0, `${out.text()}\n${err.text()}`);
+  assert.match(out.text(), /Type yes to sign it: /);
+  const rec = readFileSync(join(bundleDir, 'runs', runid, 'approvals.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(rec.map((r) => [r.type, r.bundleHash]), [['bundle-approve', bundleHash]]);
+  assert.equal(JSON.parse(readFileSync(join(bundleDir, 'blessing.json'), 'utf8')).runid, runid);
 });

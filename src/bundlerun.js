@@ -149,6 +149,7 @@ export async function bundleMain(args, {
   }
 
   // 3. blessing — BEFORE any key is read (the engine reads the key last).
+  let signedBundle = false;
   const { manifest } = bundle;
   if (!bundle.blessing) {
     // The runid that ACTUALLY minted this bundle's own signed spec — the bridge VERSION
@@ -172,8 +173,16 @@ export async function bundleMain(args, {
     out(mintRunid ? `minting run: ${mintRunid} (spine not bundled in v1)` : 'no version at this hash');
     out(`bundleHash: ${manifest.bundleHash}`);
     if (flags.approve !== manifest.bundleHash) {
-      err(`--approve ${manifest.bundleHash} is required for the first run of an unblessed bundle`);
-      return 1;
+      // typed at a terminal (the menu): show the hash and sign it with a typed yes, the cap raise's own confirm style (hamr 2026-10-25).
+      // Flags only: `--approve <hash>` is still the way (`--yes` signs caps, not a bundle).
+      if (askable && ask && flags.approve === undefined) {
+        const a = (await ask('Type yes to sign it: ')).trim().toLowerCase();
+        if (a !== 'yes') { err('Not signed (only "yes" signs a bundle) — nothing ran.'); return 1; }
+        signedBundle = true;
+      } else {
+        err(`--approve ${manifest.bundleHash} is required for the first run of an unblessed bundle`);
+        return 1;
+      }
     }
   } else {
     const vb = verifyBlessing(bundle);
@@ -259,6 +268,11 @@ export async function bundleMain(args, {
     }
     mkdirSync(runDir, { recursive: true });
     // a raised cap the person signed: who, old, new, at — appended beside the run's own records (never rewritten)
+    if (signedBundle) {
+      appendFileSync(join(runDir, 'approvals.jsonl'), `${JSON.stringify({
+        type: 'bundle-approve', who: userInfo().username, bundleHash: manifest.bundleHash, at: new Date(now()).toISOString(),
+      })}\n`);
+    }
     for (const r of signedRaises) {
       appendFileSync(join(runDir, 'approvals.jsonl'), `${JSON.stringify({
         type: 'cap-raise', who: userInfo().username, field: r.field, old: r.old, new: r.new, at: new Date(now()).toISOString(), bundleHash: manifest.bundleHash, approveHash,
