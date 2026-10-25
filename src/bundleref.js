@@ -14,26 +14,6 @@ import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from './reuse.js';
 /** @param {string} p @returns {boolean} */
 const isDir = (p) => { try { return statSync(p).isDirectory(); } catch { return false; } };
 
-/**
- * Every exported bundle whose folder still exists, newest export last, one per run name (a re-export of the same run replaces the older).
- * @param {{ home?: string }} [opts]
- * @returns {{ name: string, dir: string, runid: string, job: string }[]}
- */
-export function exportedBundles(opts = {}) {
-  const { rows } = readRunList(opts);
-  const nos = runNumbers(rows);
-  /** @type {Map<string, { name: string, dir: string, runid: string, job: string }>} */
-  const byName = new Map();
-  for (const x of readExported(opts)) {
-    if (!isDir(x.bundle)) continue;
-    const n = nos.get(x.runid);
-    const name = n === undefined ? `${x.job} (${x.runid})` : runNameOf(x.job, n);
-    byName.delete(name);
-    byName.set(name, { name, dir: x.bundle, runid: x.runid, job: x.job });
-  }
-  return [...byName.values()];
-}
-
 /** how many bundles a pick list shows; older ones stay reachable by typing their run name or folder */
 export const RECENT_BUNDLES = 10;
 
@@ -98,7 +78,7 @@ export function resolveBundleRef(ref, { home, cwd }) {
 }
 
 /**
- * The stopped / capped runs of `bareloop run` the engine would accept a resume for, newest last: not alive, no answer yet, an
+ * The stopped / capped runs of `bareloop run` the engine would accept a resume for, newest first: not alive, no answer yet, an
  * attempt to continue, checkpoint not expired, and the bundle folder still on disk.
  * @param {{ home?: string }} [opts]
  * @returns {{ runid: string, job: string, bundleDir: string, outcome: string, label: string }[]}
