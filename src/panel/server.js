@@ -1513,22 +1513,22 @@ export function getRunDownload(runid, index, opts = {}) {
 export function getRunDetail(runid, opts = {}) {
   const d = getRunDetailBody(runid, opts);
   if (!d) return d;
-  const { rows } = readRunList(opts);
+  const { rows, events } = readRunList(opts);
   const nos = runNumbers(rows);
   const runNo = nos.get(runid);
   // T Part 7: what the Run tab shows of the job's schedule — the SERVER decides every state and word (the page works out nothing)
   const schedule = opts.schedules && typeof d.job === 'string' ? scheduleDetailFor(d.job, rows, nos, opts) : null;
-  const extra = opts.schedules && typeof d.job === 'string' ? scheduleExtrasFor(runid, d.job, rows, nos, opts, schedule) : {};
+  const extra = opts.schedules && typeof d.job === 'string' ? scheduleExtrasFor(runid, d.job, rows, events, nos, opts, schedule) : {};
   return { ...d, ...(runNo === undefined ? {} : { runNo }), ...(schedule ? { schedule: extra.schedule ?? schedule } : {}), ...(extra.audit ?? {}) };
 }
 
 /**
  * Aligned with fwdloop M9 am7: the SCHEDULE row's second line and the Audit's schedule rows, made on the server from the door's data.
  * `schedule` = the door's view with `line2`, `problem` (and no raw ledger row); `audit` = `{scheduleSection}` or, for a run a cancelled schedule started, `{startedAudit}`.
- * @param {string} runid @param {string} job @param {any[]} rows @param {Map<string, number>} nos @param {any} opts @param {any} view
+ * @param {string} runid @param {string} job @param {any[]} rows @param {any[]} events @param {Map<string, number>} nos @param {any} opts @param {any} view
  * @returns {{schedule?: any, audit?: {startedAudit?: string, scheduleSection?: any}}}
  */
-function scheduleExtrasFor(runid, job, rows, nos, opts, view) {
+function scheduleExtrasFor(runid, job, rows, events, nos, opts, view) {
   try {
     const door = /** @type {ReturnType<typeof createScheduleDoor>} */ (opts.schedules);
     /** @type {any} */
@@ -1551,7 +1551,7 @@ function scheduleExtrasFor(runid, job, rows, nos, opts, view) {
             const got = hit ?? fallback;
             const no = got ? nos.get(got.r.runid) : undefined;
             // events: a fire refused at the run-start fetch has no spine, only its settled event; without them it has no status word
-            const word = got ? summarizeRow(got.r, Date.now(), undefined, readRunList(opts).events).status?.word : undefined;
+            const word = got ? summarizeRow(got.r, Date.now(), undefined, events).status?.word : undefined;
             lastWords = `last ${dateTimeWords(Number(lastRow.at))}${no ? ` · run-${no}` : ''}${word ? ` · ${word}` : ''}${got?.rec.catchUp === true ? ' · catch-up' : ''}`;
           } else {
             lastWords = `last ${dateTimeWords(Number(lastRow.at))} · ${skippedWords(lastRow, true)}`;
