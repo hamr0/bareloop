@@ -472,9 +472,15 @@ export function endedFor(summary, death, o = {}) {
   const green = !death.died && (summary.outcome === 'green' || summary.outcome === 'already-green' || summary.outcome === 'satisfied');
   if (green) {
     if (!wt.branch) return base;
-    const kept = wt.exists ? ` The worktree folder ${wt.folder} is still there.` : '';
-    const exp = o.exportName ? ` To keep it as a reusable bundle: bareloop export "${o.exportName}" --out <folder>` : '';
-    return { ...base, next: `In ${wt.repo}: git merge ${wt.branch} — or throw the work away: git branch -D ${wt.branch}.${kept}${exp}` };
+    // one instruction per line (hamr 2026-10-25); labels are plain words from code, the commands are text to copy
+    const lines = [
+      `In ${wt.repo}:`,
+      `  keep the work:     git merge ${wt.branch}`,
+      `  throw it away:     git branch -D ${wt.branch}`,
+      ...(o.exportName ? [`  reusable bundle:   bareloop export "${o.exportName}" --out <folder>`] : []),
+      ...(wt.exists ? [`The worktree folder ${wt.folder} is still there.`] : []),
+    ];
+    return { ...base, next: lines.join('\n') };
   }
   return wt.exists ? { ...base, next: `${base.next} Your work is in ${wt.folder}.` } : base;
 }
