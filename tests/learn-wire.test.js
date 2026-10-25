@@ -9,7 +9,7 @@ import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, existsSync
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { jobSpecHash } from '../src/job.js';
+import { jobSpecHash, workflowKey } from '../src/job.js';
 import { startRun, answerDoor } from '../src/userrun.js';
 import { runPlan } from '../src/planrun.js';
 import { validateJob } from '../src/job.js';
@@ -95,17 +95,20 @@ test('MUST-FAIL 2: no model call anywhere in learnings — the import closure re
   globalThis.fetch = /** @type {any} */ (() => { called += 1; throw new Error('a learnings step must never call a model'); });
   t.after(() => { globalThis.fetch = real; });
   const home = scratch(t);
+  updateConfig({ learningHints: false }, { home });
   const r = loadRun('mvk2e4uy');
   const res = learnAtRunEnd({ home, runid: 'mvk2e4uy', events: r.events, auditFiles: [], spec: { job: 'pulselog-panel-strict' }, specHash: 'h', workdir: r.workdir, trust: 'deterministic' });
   assert.equal(res.wrote, true);
-  assert.equal(hintsForRun({ home, spec: { job: 'pulselog-panel-strict' }, specHash: 'h' }), null);
+  assert.equal(hintsForRun({ home, spec: { job: 'pulselog-panel-strict' }, workflowKey: 'h' }), null);
   assert.equal(called, 0);
 });
 
 // ── the setting ──────────────────────────────────────────────────────────────────────────────────
-test('the ONE setting: learningHints in config.json, absent = OFF, only true/false accepted, an unreadable config reads OFF', (t) => {
+test('the ONE setting: learningHints in config.json, absent = ON, explicit false = OFF, explicit true = ON, only true/false accepted, an unreadable config reads OFF', (t) => {
   const home = scratch(t);
-  assert.equal(learningHintsOn(home), false);
+  assert.equal(learningHintsOn(home), true, 'absent means on');
+  updateConfig({ learningHints: false }, { home });
+  assert.equal(learningHintsOn(home), false, 'explicit false means off');
   updateConfig({ learningHints: true }, { home });
   assert.equal(learningHintsOn(home), true);
   assert.equal(readConfig({ home }).config.learningHints, true);
@@ -113,7 +116,8 @@ test('the ONE setting: learningHints in config.json, absent = OFF, only true/fal
   assert.equal(learningHintsOn(home), false);
   assert.throws(() => updateConfig({ learningHints: 'yes' }, { home }), ConfigError);
   updateConfig({ learningHints: null }, { home });
-  assert.equal('learningHints' in readConfig({ home }).config, false, 'null removes it: back to OFF');
+  assert.equal('learningHints' in readConfig({ home }).config, false, 'null removes it');
+  assert.equal(learningHintsOn(home), true, 'back to the default: on');
   writeFileSync(join(home, 'config.json'), '{ nope');
   assert.equal(learningHintsOn(home), false);
 });
@@ -121,6 +125,7 @@ test('the ONE setting: learningHints in config.json, absent = OFF, only true/fal
 // ── the engine: tally always, hints only when ON, planner only ──────────────────────────────────
 test('the run-end call site: a real run through execute tallies its lesson into the ledger at $0 (setting OFF), and the verdict is untouched', async (t) => {
   const home = scratch(t);
+  updateConfig({ learningHints: false }, { home });
   const r = await runOnce(t, home);
   assert.equal(r.threw, null, r.err);
   assert.equal(r.outcome, 'green');
@@ -139,6 +144,7 @@ test('the run-end call site: a real run through execute tallies its lesson into 
 
 test('ON: the planner at the draft is handed the block; no worker is; the spine records it byte-for-byte; OFF still keeps counting', async (t) => {
   const home = scratch(t);
+  updateConfig({ learningHints: false }, { home });
   await runOnce(t, home); // run 1 (OFF): the ledger now holds the lesson
   const before = readLedger(home).ledger;
   updateConfig({ learningHints: true }, { home });
@@ -148,7 +154,7 @@ test('ON: the planner at the draft is handed the block; no worker is; the spine 
   assert.equal(rec.length, 1, 'recorded once, at the draft');
   assert.equal(rec[0].phase, 'draft');
   // byte check: the recorded text == a fresh render from the ledger as it stood at run start
-  const ctx = { workflow: 'plan-patient', place: null, specHash: jobSpecHash(r2.spec), now: new Date() };
+  const ctx = { workflow: 'plan-patient', place: null, workflowKey: workflowKey(r2.spec), now: new Date() };
   assert.equal(rec[0].text, renderHints(before, ctx).text);
   assert.ok(rec[0].text.includes(LESSON));
   // who saw it: the planner prompt (call 1) only. Scout (0) and every step/fix prompt (2+) did not, nor any system prompt
@@ -282,6 +288,7 @@ test('a prompt without hints is byte-identical to what it was (the planner promp
 test('the Audit detail carries exactly what the spine recorded the planner was handed (and the page shows it with nothing editable)', async (t) => {
   const { getRunDetail } = await import('../src/panel/server.js');
   const home = scratch(t);
+  updateConfig({ learningHints: false }, { home });
   await runOnce(t, home);
   updateConfig({ learningHints: true }, { home });
   const r = await runOnce(t, home);
@@ -350,4 +357,58 @@ test('source tripwires: ONE run-end call in execute right after the settle (own 
   assert.match(src, /releaseRun\(\{ home: cfgHome/);
   assert.match(src, /\.\.\.\(learnHints === null \? \{\} : \{ learnHints \}\)/);
   assert.equal(readFileSync(join(SRC, 'panel', 'server.js'), 'utf8').includes('learnAtRunEnd'), false, 'no second call site in src/panel/');
+});
+
+// ── a broken ledger is never "no lessons yet" ────────────────────────────────────────────────────
+test('a corrupt ledger file: the planner gets nothing, the run goes on green, the reason rides the learnings record and the Audit line', async (t) => {
+  const { getRunDetail } = await import('../src/panel/server.js');
+  const { ledgerPath } = await import('../src/learnstore.js');
+  const { hintsErrorLine } = await import('../src/learn.js');
+  const home = scratch(t);
+  updateConfig({ learningHints: true }, { home });
+  mkdirSync(dirname(ledgerPath(home)), { recursive: true });
+  writeFileSync(ledgerPath(home), '{ torn');
+  const r = await runOnce(t, home);
+  assert.equal(r.outcome, 'green', 'a broken ledger never stops a run');
+  assert.ok(!r.provider.calls.some((c) => c.includes(HINT_HEADER)), 'the planner is handed nothing');
+  const rec = r.events.filter((e) => e.type === 'learnings');
+  assert.equal(rec.length, 1);
+  assert.equal(rec[0].phase, 'draft');
+  assert.equal('text' in rec[0], false);
+  assert.match(rec[0].hintsError, /is not readable JSON/);
+  assert.ok(!rec[0].hintsError.includes('\n'));
+  const detail = getRunDetail(/** @type {string} */ (r.runid), { home });
+  assert.deepEqual(detail.learnings, []);
+  assert.equal(detail.learningsError, hintsErrorLine(rec[0].hintsError));
+});
+
+test('hintsErrorLine writes the home folder as ~ and leaves other paths alone', async () => {
+  const { hintsErrorLine } = await import('../src/learn.js');
+  const head = 'The learnings file could not be read, so no lessons were given: ';
+  assert.equal(hintsErrorLine('/home/zed/.config/bareloop/learn/ledger.json is not readable JSON (parse error) — fix or remove it', '/home/zed'),
+    `${head}~/.config/bareloop/learn/ledger.json is not readable JSON (parse error) — fix or remove it`);
+  assert.equal(hintsErrorLine('/srv/x/ledger.json is bad', '/home/zed'), `${head}/srv/x/ledger.json is bad`);
+  assert.equal(hintsErrorLine('/home/zedd/x is bad', '/home/zed'), `${head}/home/zedd/x is bad`);
+});
+
+test('handedHints: a broken ledger returns the reason and no hints; a healthy one is unchanged; OFF reads nothing and has no error', async (t) => {
+  const { ledgerPath, handedHints } = await import('../src/learnstore.js');
+  const home = scratch(t);
+  const spec = { job: 'plan-patient' };
+  // OFF: no read, no error (even over a corrupt file)
+  mkdirSync(dirname(ledgerPath(home)), { recursive: true });
+  writeFileSync(ledgerPath(home), '{ torn');
+  updateConfig({ learningHints: false }, { home });
+  assert.deepEqual(handedHints({ home, spec, workflowKey: 'h' }), { hints: null, error: null });
+  // ON + corrupt: nothing handed, the reason kept, 
+  updateConfig({ learningHints: true }, { home });
+  const bad = handedHints({ home, spec, workflowKey: 'h' });
+  assert.equal(bad.hints, null);
+  assert.match(String(bad.error), /not readable JSON/);
+  writeFileSync(ledgerPath(home), JSON.stringify({ version: 2, rows: [], pending: [] }));
+  const wrong = handedHints({ home, spec, workflowKey: 'h' });
+  assert.match(String(wrong.error), /not a version-1 learnings ledger/);
+  // healthy: same as hintsForRun, no error
+  writeLedger(emptyLedger(), home);
+  assert.deepEqual(handedHints({ home, spec, workflowKey: 'h' }), { hints: hintsForRun({ home, spec, workflowKey: 'h' }), error: null });
 });

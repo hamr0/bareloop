@@ -14,6 +14,9 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Readable } from 'node:stream';
+import { appendRun, appendExported } from '../src/runlist.js';
+import { bless } from '../src/bundle.js';
 import { jobSpecHash } from '../src/job.js';
 import { mintBridge } from '../src/bridges.js';
 import { main } from '../src/cli.js';
@@ -336,7 +339,7 @@ test('bareloop run: after a MONEY halt the bundle resume line never carries the 
   assert.ok(m, text);
   const spent = (Number(m[2]) - Number(m[1])).toFixed(4);
   assert.ok(line.includes(` --wall 20 --resume `), `the person's --wall still rides: ${line}`);
-  assert.ok(line.includes(`--budget <more than $${spent}, at most $2> --approve ${bundleHash}`), `placeholder with real spent and the SIGNED budget: ${line}`);
+  assert.ok(line.includes(`--budget <more than $${spent}, above $2 asks you to type yes> --approve ${bundleHash}`), `placeholder with real spent and the SIGNED budget: ${line}`);
   const block = text.slice(text.indexOf('MONEY HALT'), text.indexOf('BEHAVIOUR'));
   assert.ok(block.length > 40, block);
   assert.doesNotMatch(block, /budgetUsd|spec edit|re-approval/, 'a bundle is never told to edit its spec');
@@ -921,4 +924,331 @@ test('bareloop: an unknown command errs and exits 1', async () => {
   const rc = await main(['bogus'], { stdout: out, stderr: err });
   assert.equal(rc, 1);
   assert.match(err.text(), /unknown command/);
+});
+
+// ---------------------------------------------------------------------------
+// PRD v1.114 / F245 — a green commits; a raised cap needs a typed yes; the run is found by name; missing values are asked
+// ---------------------------------------------------------------------------
+
+/** a piped stdin the test owns (a caller-injected stdin is "something to ask") */
+const lines = (/** @type {string} */ s) => Readable.from([s]);
+
+test('bareloop run: a GREEN run commits its work on its work branch (like the panel), and the readout says so', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t);
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const runid = (1_700_000_400_000).toString(36);
+  const worktree = join(repo, '.bareloop', 'wt', runid);
+  const out = sink(); const err = sink();
+  const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], {
+    stdout: out, stderr: err, cwd: process.cwd(), provider: greenScript(worktree), now: makeNow(1_700_000_400_000), ...homes(t),
+  });
+  assert.equal(rc, 0, `${out.text()}\n${err.text()}`);
+  assert.equal(git(worktree, ['status', '--porcelain']).replace(/.*(\.smoke|\.litectx|gate-audit).*\n?/g, '').trim(), '', 'nothing of the work is left uncommitted');
+  assert.equal(git(worktree, ['log', '-1', '--format=%s']), `bareloop: cli-fixture-job (run ${runid})`);
+  assert.match(git(worktree, ['show', 'HEAD:src/mod.mjs']), /MARKER_OK/);
+  assert.match(out.text(), /commit {4}final commit [0-9a-f]+/);
+});
+
+test('bareloop run: a cap ABOVE the signed one with no terminal and no --yes refuses at $0 in words, creating nothing', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t, { budgetUsd: 2 });
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const out = sink(); const err = sink();
+  const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash, '--budget', '10'], {
+    stdout: out, stderr: err, cwd: process.cwd(), provider: scriptedProvider([{ text: 'never reached' }]), ...homes(t),
+  });
+  assert.equal(rc, 1);
+  assert.match(out.text(), /This raises the \$ cap from \$2 to \$10\./);
+  assert.match(err.text(), /envelope-widen.*pass --yes/);
+  assert.equal(existsSync(join(repo, '.bareloop')), false);
+  assert.equal(existsSync(join(bundleDir, 'runs')), false);
+});
+
+test('bareloop run: a raise typed at a terminal is shown back; anything but "yes" refuses, "yes" signs it and the approval is recorded in the run', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t, { budgetUsd: 2, maxWallMs: 600_000 });
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const no = sink(); const noErr = sink();
+  const rcNo = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash, '--budget', '10', '--wall', '20'], {
+    stdout: no, stderr: noErr, cwd: process.cwd(), stdin: lines('maybe\n'), provider: scriptedProvider([{ text: 'never reached' }]), ...homes(t),
+  });
+  assert.equal(rcNo, 1);
+  assert.match(no.text(), /This raises the \$ cap from \$2 to \$10\./);
+  assert.match(no.text(), /This raises the time cap from 10 min to 20 min\./);
+  assert.match(noErr.text(), /Not signed/);
+  assert.equal(existsSync(join(repo, '.bareloop')), false, 'a refused raise creates nothing');
+
+  const t0 = 1_700_000_500_000;
+  const runid = t0.toString(36);
+  const worktree = join(repo, '.bareloop', 'wt', runid);
+  const out = sink(); const err = sink();
+  const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash, '--budget', '10', '--wall', '20'], {
+    stdout: out, stderr: err, cwd: process.cwd(), stdin: lines('YES\n'), provider: greenScript(worktree), now: makeNow(t0), ...homes(t),
+  });
+  assert.equal(rc, 0, `${out.text()}\n${err.text()}`);
+  const rec = readFileSync(join(bundleDir, 'runs', runid, 'approvals.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(rec.map((r) => [r.type, r.field, r.old, r.new]), [['cap-raise', 'budgetUsd', 2, 10], ['cap-raise', 'maxWallMs', 600_000, 1_200_000]]);
+  assert.ok(rec.every((r) => typeof r.who === 'string' && r.who !== '' && typeof r.at === 'string' && /^[0-9a-f]{64}$/.test(r.approveHash)));
+  const hist = JSON.parse(readFileSync(join(bundleDir, 'history.jsonl'), 'utf8').trim().split('\n')[0]);
+  assert.equal(hist.budgetUsd, 10);
+  assert.deepEqual(hist.capsRaised.map((/** @type {any} */ r) => r.field), ['budgetUsd', 'maxWallMs']);
+});
+
+test('bareloop run: --yes signs a raise without a terminal, and a LOWER cap needs no confirm', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t, { budgetUsd: 2 });
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const t0 = 1_700_000_600_000;
+  const runid = t0.toString(36);
+  const out = sink(); const err = sink();
+  const rc = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash, '--budget', '5', '--yes'], {
+    stdout: out, stderr: err, cwd: process.cwd(), provider: greenScript(join(repo, '.bareloop', 'wt', runid)), now: makeNow(t0), ...homes(t),
+  });
+  assert.equal(rc, 0, `${out.text()}\n${err.text()}`);
+  assert.match(readFileSync(join(bundleDir, 'runs', runid, 'approvals.jsonl'), 'utf8'), /"new":5/);
+  const { bundleDir: b2, bundleHash: h2 } = await exportFixture(t, { budgetUsd: 2 });
+  const repo2 = tmp(t, 'cli-repo-');
+  initRepo(repo2);
+  const t1 = 1_700_000_700_000;
+  const out2 = sink();
+  const rc2 = await main(['run', b2, '--repo', repo2, '--approve', h2, '--budget', '1'], {
+    stdout: out2, stderr: sink(), cwd: process.cwd(), provider: greenScript(join(repo2, '.bareloop', 'wt', t1.toString(36))), now: makeNow(t1), ...homes(t),
+  });
+  assert.equal(rc2, 0);
+  assert.doesNotMatch(out2.text(), /This raises/);
+  assert.equal(existsSync(join(b2, 'runs', t1.toString(36), 'approvals.jsonl')), false, 'a lowered cap records no approval');
+});
+
+test('bareloop run --resume: a raise at resume is shown back and needs yes (--yes without a terminal), recorded in the run', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t, { budgetUsd: 2 });
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const home = runlistHome(t);
+  const t1 = 1_700_000_800_000;
+  const id1 = t1.toString(36);
+  const worktree = join(repo, '.bareloop', 'wt', id1);
+  const rc1 = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash, '--budget', '0.0005'], {
+    stdout: sink(), stderr: sink(), cwd: process.cwd(), provider: greenScript(worktree), now: makeNow(t1), runlistHome: home, keysHome: home,
+  });
+  assert.equal(rc1, 1, 'leg 1 cap-halts');
+  const resumeProvider = () => scriptedProvider([
+    { toolCalls: [tcall('t1', 'shell_write', { path: join(worktree, 'src', 'mod.mjs'), content: 'export const x = 1;\nMARKER_OK\n' })] },
+    { text: 'wrote the marker' },
+  ]);
+  // no terminal, no --yes: refused, the halted run stays as it was
+  const refused = sink(); const refusedErr = sink();
+  const rcR = await main(['run', bundleDir, '--resume', id1, '--approve', bundleHash, '--budget', '9'], {
+    stdout: refused, stderr: refusedErr, cwd: process.cwd(), provider: resumeProvider(), runlistHome: home, keysHome: home,
+  });
+  assert.equal(rcR, 1);
+  assert.match(refused.text(), /This raises the \$ cap from \$2 to \$9\./);
+  assert.match(refusedErr.text(), /envelope-widen/);
+  assert.equal(existsSync(join(bundleDir, 'runs', id1, 'approvals.jsonl')), false);
+  const out2 = sink(); const err2 = sink();
+  const rc2 = await main(['run', bundleDir, '--resume', id1, '--approve', bundleHash, '--budget', '9', '--yes'], {
+    stdout: out2, stderr: err2, cwd: process.cwd(), now: makeNow(1_700_000_900_000), provider: resumeProvider(), runlistHome: home, keysHome: home,
+  });
+  assert.equal(rc2, 0, `${out2.text()}\n${err2.text()}`);
+  const rec = readFileSync(join(bundleDir, 'runs', id1, 'approvals.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(rec.map((r) => [r.field, r.old, r.new]), [['budgetUsd', 2, 9]]);
+  const spine = readFileSync(join(bundleDir, 'runs', id1, 'spine.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.ok(spine.filter((e) => e.type === 'job-start')[1].priorSpentUsd > 0, 'prior spend still folds into the raised ceiling');
+});
+
+test('bareloop run: the bundle is found by the run name it was exported under (an `exported` row), and a name nobody exported is refused', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t);
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const home = runlistHome(t);
+  appendRun({ at: '2026-10-01T00:00:00.000Z', runid: 'earlier1', job: 'cli-fixture-job', spine: '/nowhere/u-earlier1.jsonl', patient: null, via: 'run-u' }, { home });
+  appendExported({ runid: 'earlier1', job: 'cli-fixture-job', bundle: bundleDir, bundleHash, at: '2026-10-02T00:00:00.000Z' }, { home });
+  const bad = sink(); const badErr = sink();
+  const rcBad = await main(['run', 'nobody (run-7)', '--repo', repo], { stdout: bad, stderr: badErr, cwd: process.cwd(), ...homes(t), runlistHome: home });
+  assert.equal(rcBad, 1);
+  assert.match(badErr.text(), /neither a bundle folder nor the name of a bundle you exported/);
+  const t0 = 1_700_000_950_000;
+  const out = sink(); const err = sink();
+  const rc = await main(['run', 'cli-fixture-job (run-1)', '--repo', repo, '--approve', bundleHash], {
+    stdout: out, stderr: err, cwd: process.cwd(), provider: greenScript(join(repo, '.bareloop', 'wt', t0.toString(36))), now: makeNow(t0), runlistHome: home, keysHome: home,
+  });
+  assert.equal(rc, 0, `${out.text()}\n${err.text()}`);
+  assert.match(out.text(), /outcome {3}green/);
+});
+
+test('bareloop run --yes: the switch never swallows the next word, so the bundle positional is kept', async (t) => {
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const out = sink(); const err = sink();
+  const rc = await main(['run', '--yes', '/nowhere/not-a-bundle', '--repo', repo], { stdout: out, stderr: err, cwd: process.cwd(), stdin: lines('\n\n'), ...homes(t) });
+  assert.equal(rc, 1, `${out.text()}\n${err.text()}`);
+  assert.match(err.text(), /neither a bundle folder nor the name of a bundle you exported/, 'the typed word was read as the bundle');
+  assert.doesNotMatch(out.text(), /No exported bundles yet/, 'it did not fall into the pick-a-bundle question');
+});
+
+test('bareloop run at a non-terminal stdin (a pipe, </dev/null) with the bundle missing: the usage error and exit 1, never a question and exit 0', async (t) => {
+  const out = sink(); const err = sink();
+  const rc = await main(['run'], { stdout: out, stderr: err, cwd: process.cwd(), stdin: lines('\n\n'), interactive: false, ...homes(t) });
+  assert.equal(rc, 1);
+  assert.match(err.text(), /usage: bareloop run <bundle> --repo <path>/);
+  assert.equal(out.text(), '', 'nothing asked');
+  const err2 = sink();
+  assert.equal(await main(['export'], { stdout: sink(), stderr: err2, cwd: process.cwd(), stdin: lines('\n'), interactive: false, ...homes(t) }), 1);
+  assert.match(err2.text(), /usage: bareloop export/);
+});
+
+test('bareloop run with no bundle or repo asks for them; the optional caps are offered (Enter keeps the signed ones); a second empty Enter ends cleanly', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t, { budgetUsd: 2, maxWallMs: 600_000 });
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const t0 = 1_700_000_960_000;
+  const h = homes(t);
+  appendExported({ runid: 'e1', job: 'cli-fixture-job', bundle: bundleDir, bundleHash, at: '2026-10-02T00:00:00.000Z' }, { home: h.runlistHome });
+  const out = sink(); const err = sink();
+  const rc = await main(['run', '--approve', bundleHash], {
+    stdout: out, stderr: err, cwd: process.cwd(), stdin: lines(`\n${bundleDir}\n${repo}\n1.5\n\n`), provider: greenScript(join(repo, '.bareloop', 'wt', t0.toString(36))), now: makeNow(t0), ...h,
+  });
+  assert.equal(rc, 0, `${out.text()}\n${err.text()}`);
+  assert.equal((out.text().match(/Bundle \(a number above/g) ?? []).length, 2, 'the empty Enter asked the bundle once more');
+  assert.match(out.text(), /\$ cap \(Enter keeps \$2\)/);
+  assert.match(out.text(), /Time cap in minutes \(Enter keeps 10\)/);
+  const hist = JSON.parse(readFileSync(join(bundleDir, 'history.jsonl'), 'utf8').trim().split('\n')[0]);
+  assert.equal(hist.budgetUsd, 1.5, 'the typed $ cap tightened');
+  assert.equal(hist.maxWallMs, 600_000, 'Enter kept the signed time cap');
+  // two empty Enters: nothing chosen, nothing run, exit 0
+  const none = sink();
+  const rcNone = await main(['run'], { stdout: none, stderr: sink(), cwd: process.cwd(), stdin: lines('\n\n'), ...h });
+  assert.equal(rcNone, 0);
+  assert.match(none.text(), /No bundle chosen, nothing run\./);
+  // no bundle known at all: one plain line, ends cleanly, asks nothing
+  const empty = sink();
+  assert.equal(await main(['run'], { stdout: empty, stderr: sink(), cwd: process.cwd(), stdin: lines('\n\n'), ...homes(t) }), 0);
+  assert.match(empty.text(), /No exported bundles yet\. Export one with 6\.\n$/);
+  assert.doesNotMatch(empty.text(), /Bundle \(a number/);
+  const none2 = sink();
+  const rcNone2 = await main(['run', bundleDir], { stdout: none2, stderr: sink(), cwd: process.cwd(), stdin: lines('\n\n'), ...homes(t) });
+  assert.equal(rcNone2, 0);
+  assert.match(none2.text(), /No repo chosen, nothing run\./);
+});
+
+test('bareloop run: a bundle that names no model asks for one from the models ticked in Settings; none chosen ends cleanly', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t);
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const home = runlistHome(t);
+  writeFileSync(join(home, '.env'), 'TEST_KEY=not-a-real-key\n', { mode: 0o600 });
+  updateConfig({ keys: { TEST_KEY: { shape: 'openai-api', baseUrl: 'https://example.invalid/v1' } }, models: { TEST_KEY: [{ model: 'test-model', use: true, inPerM: 1, outPerM: 2 }] } }, { home });
+  const none = sink();
+  const rcNone = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash], { stdout: none, stderr: sink(), cwd: process.cwd(), stdin: lines('\n\n'), runlistHome: home, keysHome: home });
+  assert.equal(rcNone, 0);
+  assert.match(none.text(), /This bundle names no model\. Models ticked in Settings:/);
+  assert.match(none.text(), /1 {2}TEST_KEY · test-model/);
+  assert.match(none.text(), /No model chosen, nothing run\./);
+  assert.equal(existsSync(join(repo, '.bareloop')), false);
+  // a model named by the flag is not asked
+  const named = sink();
+  await main(['run', bundleDir, '--repo', repo, '--model', 'test-model', '--approve', bundleHash], { stdout: named, stderr: sink(), cwd: process.cwd(), stdin: lines(''), runlistHome: home, keysHome: home });
+  assert.doesNotMatch(named.text(), /This bundle names no model/);
+});
+
+test('menu 8 resume: lists the stopped bundle runs, takes a number, offers more money (a raise needs yes), then resumes as the same run', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t, { budgetUsd: 2 });
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const home = runlistHome(t);
+  const t1 = 1_700_001_000_000;
+  const id1 = t1.toString(36);
+  const worktree = join(repo, '.bareloop', 'wt', id1);
+  const rc1 = await main(['run', bundleDir, '--repo', repo, '--approve', bundleHash, '--budget', '0.0005'], {
+    stdout: sink(), stderr: sink(), cwd: process.cwd(), provider: greenScript(worktree), now: makeNow(t1), runlistHome: home, keysHome: home,
+  });
+  assert.equal(rc1, 1, 'leg 1 cap-halts');
+  const out = sink(); const err = sink();
+  const rc = await main([], {
+    stdout: out, stderr: err, cwd: process.cwd(), env: {}, runlistHome: home, keysHome: home,
+    launcher: { ports: [], timeoutMs: 50, nodeVersion: '22.1.0', version: '0.0.0-test' },
+    stdin: lines('8\n1\n9\n\nyes\nyes\n'),
+    provider: scriptedProvider([
+      { toolCalls: [tcall('t1', 'shell_write', { path: join(worktree, 'src', 'mod.mjs'), content: 'export const x = 1;\nMARKER_OK\n' })] },
+      { text: 'wrote the marker' },
+    ]),
+    now: makeNow(1_700_001_100_000),
+  });
+  assert.equal(rc, 0, `${out.text()}\n${err.text()}`);
+  assert.match(out.text(), new RegExp(`Stopped runs you can resume:\\n {2}1 {2}cli-fixture-job run ${id1} \\(cap-halt\\)`));
+  assert.match(out.text(), /\$ cap \(Enter keeps \$2; a higher number adds money\)/);
+  assert.match(out.text(), /This raises the \$ cap from \$2 to \$9\./);
+  assert.match(out.text(), /outcome {3}green/);
+  const rec = readFileSync(join(bundleDir, 'runs', id1, 'approvals.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(rec.filter((r) => r.type === 'cap-raise').map((r) => [r.field, r.old, r.new]), [['budgetUsd', 2, 9]]);
+  assert.equal(rec.filter((r) => r.type === 'bundle-approve').length, 1, 'the unblessed bundle was signed with a typed yes at the resume');
+  assert.match(out.text(), /Type yes to sign it: /);
+  const spine = readFileSync(join(bundleDir, 'runs', id1, 'spine.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(spine.filter((e) => e.type === 'leg-resume').length, 1, 'the SAME run, a second leg');
+});
+
+test('bareloop run: the first run of an UNBLESSED bundle typed at a terminal shows the hash and needs a typed yes (recorded); flags-only still needs --approve', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t);
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  // flags only, no terminal: the old refusal, naming --approve
+  const flagsOnly = sink(); const flagsErr = sink();
+  assert.equal(await main(['run', bundleDir, '--repo', repo], { stdout: flagsOnly, stderr: flagsErr, cwd: process.cwd(), provider: scriptedProvider([{ text: 'never' }]), ...homes(t) }), 1);
+  assert.match(flagsErr.text(), new RegExp(`--approve ${bundleHash} is required`));
+  // a terminal, anything but yes: refused, nothing created
+  const no = sink(); const noErr = sink();
+  assert.equal(await main(['run', bundleDir, '--repo', repo], { stdout: no, stderr: noErr, cwd: process.cwd(), stdin: lines('later\n'), provider: scriptedProvider([{ text: 'never' }]), ...homes(t) }), 1);
+  assert.match(no.text(), new RegExp(`bundleHash: ${bundleHash}`));
+  assert.match(noErr.text(), /Not signed/);
+  assert.equal(existsSync(join(repo, '.bareloop')), false);
+  // yes: runs, blesses, records the signing
+  const t0 = 1_700_001_200_000;
+  const runid = t0.toString(36);
+  const out = sink(); const err = sink();
+  const rc = await main(['run', bundleDir, '--repo', repo], {
+    stdout: out, stderr: err, cwd: process.cwd(), stdin: lines('yes\n'), provider: greenScript(join(repo, '.bareloop', 'wt', runid)), now: makeNow(t0), ...homes(t),
+  });
+  assert.equal(rc, 0, `${out.text()}\n${err.text()}`);
+  assert.match(out.text(), /Type yes to sign it: /);
+  const rec = readFileSync(join(bundleDir, 'runs', runid, 'approvals.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(rec.map((r) => [r.type, r.bundleHash]), [['bundle-approve', bundleHash]]);
+  assert.equal(JSON.parse(readFileSync(join(bundleDir, 'blessing.json'), 'utf8')).runid, runid);
+});
+
+test('q at the cap, time, raise-yes and bundle-yes questions ends the run cleanly (exit 0, nothing created)', async (t) => {
+  const { bundleDir, bundleHash } = await exportFixture(t, { budgetUsd: 2, maxWallMs: 600_000 });
+  const repo = tmp(t, 'cli-repo-');
+  initRepo(repo);
+  const h = homes(t);
+  appendExported({ runid: 'e1', job: 'cli-fixture-job', bundle: bundleDir, bundleHash, at: '2026-10-02T00:00:00.000Z' }, { home: h.runlistHome });
+  const go = async (input, extra = []) => {
+    const out = sink(); const err = sink();
+    const rc = await main(['run', bundleDir, '--repo', repo, ...extra], { stdout: out, stderr: err, cwd: process.cwd(), stdin: lines(input), provider: scriptedProvider([{ text: 'never' }]), ...h });
+    return { rc, out: out.text(), err: err.text() };
+  };
+  // guided run (bundle not typed): q at the $ cap, then at the time cap
+  const guided = async (input) => {
+    const out = sink(); const err = sink();
+    const rc = await main(['run', '--repo', repo], { stdout: out, stderr: err, cwd: process.cwd(), stdin: lines(input), provider: scriptedProvider([{ text: 'never' }]), ...h });
+    return { rc, out: out.text(), err: err.text() };
+  };
+  let r = await guided('1\nq\n');
+  assert.equal(r.rc, 0, r.err);
+  assert.match(r.out, /\$ cap \(Enter keeps/);
+  assert.match(r.out, /Nothing chosen, nothing run\./);
+  r = await guided('1\n\nQ\n');
+  assert.equal(r.rc, 0, r.err);
+  assert.match(r.out, /Time cap in minutes/);
+  assert.match(r.out, /Nothing chosen, nothing run\./);
+  // q at the raise confirm and at the bundle sign
+  r = await go(' q \n', ['--budget', '9']);
+  assert.equal(r.rc, 0, r.err);
+  assert.match(r.out, /This raises the \$ cap from \$2 to \$9\./);
+  assert.match(r.out, /Not signed, nothing run\./);
+  r = await go('q\n');
+  assert.equal(r.rc, 0, r.err);
+  assert.match(r.out, /Type yes to sign it: /);
+  assert.match(r.out, /Not signed, nothing run\./);
+  assert.equal(existsSync(join(repo, '.bareloop')), false, 'nothing was created');
+  assert.equal(existsSync(join(bundleDir, 'runs')), false);
 });

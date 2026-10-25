@@ -56,7 +56,7 @@ import { redactSecrets } from '../validate.js';
 import { isDropIt, isAgree } from '../pagemap.js';
 import { FIT_ABSENT_NOTE } from '../fitcheck.js';
 import { tallyCalls } from '../text.js';
-import { writeDraftSpend, appendDraftLog } from '../draftspend.js';
+import { appendDraftLog } from '../draftspend.js';
 import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, draftStopText, redsRecord, declarationRecord, calibrationSummary, tryRefusedText } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 import {
@@ -648,10 +648,9 @@ export function createSession(card, deps = {}) {
     state.cost = t.spendComplete ? `$${t.knownUsd.toFixed(4)}` : `≥$${t.knownUsd.toFixed(4)} (unpriced calls present)`;
     state.draftSpentUsd = t.knownUsd;
     state.draftSpendComplete = t.spendComplete;
-    // self-review 2026-10-05 (hamr's ruling A): the figure reaches DISK after every metered call, from this same
-    // tally, so an abandoned / refused / restarted session's drafting spend still counts (src/draftspend.js)
+    // self-review 2026-10-05 (hamr's ruling A): the call reaches DISK as a log line after every metered call, and the money
+    // readers fold those lines with this same `tallyCalls`, so an abandoned / refused / restarted session's drafting spend still counts (src/draftspend.js)
     const nowIso = new Date().toISOString();
-    draftStartedAt ??= nowIso;
     // the same call, one line in the drafting LOG (the part a run's views show first): the step running right now,
     // the call's label, the drafting model, its cost (null stays null: unpriced is never $0). One owner: this onCall.
     const runningNo = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
@@ -670,21 +669,14 @@ export function createSession(card, deps = {}) {
     }
     appendDraftLog(outDir, {
       kind: 'call', no: callNo, step: state.steps[callNo]?.id ?? null, label: call.label, model: draftIdentity?.model ?? null,
+      provider: draftIdentity?.provider ?? null, baseUrl: draftIdentity?.baseUrl ?? null,
       thinking: draftThinkingPlan === null ? null : draftThinkingPlan.mode, thinkingSupport: draftThinkingPlan === null ? null : draftThinkingPlan.support,
       ...(call.thinkingStatus === undefined ? {} : { thinkingStatus: call.thinkingStatus }),
       // idea A core: the page-word map's scrubbed answer (src/pagemap.js) - unsigned, kept so a run can be replayed at $0
       ...(typeof call.raw === 'string' ? { raw: call.raw } : {}),
       costUsd: call.costUsd ?? null, unpricedRounds: call.unpricedRounds ?? 0, at: nowIso,
     });
-    try {
-      writeDraftSpend(outDir, {
-        sessionId: id, spentUsd: t.knownUsd, spendComplete: t.spendComplete, provider: draftIdentity?.provider ?? null,
-        baseUrl: draftIdentity?.baseUrl ?? null, model: draftIdentity?.model ?? null, startedAt: draftStartedAt, updatedAt: nowIso,
-      });
-    } catch { /* money already spent stays in memory for a signed run; a disk fault never stops the draft */ }
   };
-  /** @type {string|null} */
-  let draftStartedAt = null;
   /** what the drafting calls will carry for thinking — the tick's mode and bare-agent's support answer — set once the Model resolves; null before
    * @type {ReturnType<typeof thinkingPlanFor>|null} */
   let draftThinkingPlan = null;

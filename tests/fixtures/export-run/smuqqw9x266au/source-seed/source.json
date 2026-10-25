@@ -1,0 +1,25 @@
+{
+  "kind": "repo",
+  "source": "/tmp/claude-1000/-home-hamr-PycharmProjects-hamr0/60194580-8f86-4ca2-8f23-5415612459db/scratchpad/toy-demo",
+  "sourceSubdir": "",
+  "fetchedAt": "2026-10-02T09:12:56.745Z",
+  "files": [
+    {
+      "path": "package.json",
+      "bytes": 99,
+      "sha256": "8cb366de33ecc7fefefcdc27e3a62bccfa33562c41ccd6fbe4c8c634b0b6465f"
+    },
+    {
+      "path": "src/slug.js",
+      "bytes": 170,
+      "sha256": "7e4c5ec1b504ecb47fb961eae73c5039073da04cb8878621c4f051e7ededfee5"
+    },
+    {
+      "path": "test/slug.test.js",
+      "bytes": 462,
+      "sha256": "a89524cfa318ba63acdce61925d13a0b140d96832377f2ad711a200dd61faf35"
+    }
+  ],
+  "seed": "10486ac5504f4b23787392635790890cf2ab91ff",
+  "destination": "src/**"
+}

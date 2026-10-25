@@ -15,6 +15,7 @@
 // Graduated from the proofs in .claude/scratch/poc-learn/ (pocA2 candidates, pocC cards, pocE2 fold) as a REWRITE.
 // The 60% threshold is FITTED on known cards (a fit, not a proof; the unseen-card proof is OPEN 2).
 
+import { homedir } from 'node:os';
 import { redactSecrets } from './validate.js';
 
 // ── constants (every number here is a ruling, not a tuning knob) ─────────────────────────────────
@@ -555,13 +556,14 @@ export function foldCards(cards) {
  * @property {string[]} runIds
  * @property {string} firstSeen
  * @property {string} lastSeen
- * @property {string|null} specHash  the signed hash the lesson was last seen under (a workflow row of another hash is never matched or read)
+ * @property {string|null} specHash  the signed hash the lesson was last seen under (a record only; the job version is `workflowKey`)
+ * @property {string|null} [workflowKey]  the workflow key (Reuse's rule: caps, time, source, destination, inputs and model do not move it) the lesson was last seen under; a workflow row of another key is never matched or read. Absent on rows an older version wrote: those match any version
  * @property {string} key           check + sorted kinds (job-independent); information only since R2 removed the check-wide set-aside
  */
 /**
  * @typedef {object} Pending
  * @property {string} runid @property {string} at @property {string} workflow @property {string|null} place
- * @property {string|null} specHash @property {Card[]} cards
+ * @property {string|null} specHash @property {string|null} [workflowKey] @property {Card[]} cards
  */
 /**
  * @typedef {object} Ledger
@@ -606,11 +608,12 @@ function rowId(c) {
 export const isDecayed = (r, now) => { const t = Date.parse(r.lastSeen); return Number.isFinite(t) && now.getTime() - t > DECAY_DAYS * DAY_MS; };
 
 /**
- * Is this workflow row from another job version (a different signed hash than this run's)? Decided from the stored
- * `specHash`, read-time, never stored. Unknown hash on either side is the same version.
- * @param {Row} r @param {string} workflow @param {string|null} specHash
+ * Is this workflow row from another job version (a different workflow key than this run's)? Decided from the stored
+ * `workflowKey`, read-time, never stored. The key ignores the Reuse-editable fields (caps, source, destination, inputs, model), so a
+ * Reuse with a new cap is the same version. An unknown key on either side (a row an older version wrote) is the same version.
+ * @param {Row} r @param {string} workflow @param {string|null|undefined} workflowKey
  */
-export const otherJobVersion = (r, workflow, specHash) => r.level === 'workflow' && r.workflow === workflow && r.specHash !== null && specHash !== null && r.specHash !== specHash;
+export const otherJobVersion = (r, workflow, workflowKey) => r.level === 'workflow' && r.workflow === workflow && r.workflowKey != null && workflowKey != null && r.workflowKey !== workflowKey;
 
 /** Drop the retired stored `status`/`expiredBy` fields an older ledger file may carry, and reset a stored `level` (never read; stripped on the next write). @param {Row} r */
 const stripLegacy = (r) => { const { status: _s, expiredBy: _e, ...rest } = /** @type {Row & {status?: unknown, expiredBy?: unknown}} */ (r); return /** @type {Row} */ ({ ...rest, level: 'workflow' }); };
@@ -623,19 +626,19 @@ const byRank = (/** @type {Row} */ a, /** @type {Row} */ b) => b.count - a.count
  *
  * +1 per RUN per row: the run's own cards are folded into lessons first, and a row whose `runIds` already holds the
  * run id is never counted twice (a resumed run, one id, never double counts) but IS refreshed: the resumed leg's card
- * replaces the sample, lesson, key, lastSeen, hash and place (a leg-1 NEVER FIXED row becomes the leg-2 FIXED one). A
+ * replaces the sample, lesson, key, lastSeen, hash, key and place (a leg-1 NEVER FIXED row becomes the leg-2 FIXED one). A
  * matching lesson replaces the row's sample, bumps the model count and appends the run id (a row last seen 56+ days ago counts +1 and is read again);
  * otherwise it opens a new row at count 1. NEVER FIXED cards count like FIXED ones (RULING 3). A workflow row of
- * another signed hash is never matched here: the new version opens its own rows. Nothing is ever deleted or stamped.
+ * another workflow key is never matched here: the new version opens its own rows. Nothing is ever deleted or stamped.
  * @param {Ledger} ledger
- * @param {{runid: string, cards: Card[], workflow: string, place: string|null, specHash: string|null, trust: 'deterministic'|'rubric', now: Date}} o
+ * @param {{runid: string, cards: Card[], workflow: string, place: string|null, specHash: string|null, workflowKey?: string|null, trust: 'deterministic'|'rubric', now: Date}} o
  * @returns {Ledger}
  */
-export function countLedger(ledger, { runid, cards, workflow, place, specHash, trust, now }) {
+export function countLedger(ledger, { runid, cards, workflow, place, specHash, workflowKey = null, trust, now }) {
   const rows = ledger.rows.map((r) => ({ ...stripLegacy(r), runIds: [...r.runIds], models: { ...r.models } }));
   for (const group of foldCards(cards)) {
     const rep = group.reduce((a, c) => (c.at >= a.at ? c : a));
-    const hit = [...rows].sort(byRank).find((r) => r.workflow === workflow && !otherJobVersion(r, workflow, specHash) && cardsMatch(rep, r.sample).match);
+    const hit = [...rows].sort(byRank).find((r) => r.workflow === workflow && !otherJobVersion(r, workflow, workflowKey) && cardsMatch(rep, r.sample).match);
     if (hit) {
       // A row already holding this run id is the run's OWN row (a resumed leg re-reads the whole spine): refresh it from
       // the new card, but the count, the model tally and the run id stay one per run.
@@ -652,6 +655,7 @@ export function countLedger(ledger, { runid, cards, workflow, place, specHash, t
         hit.key = keyOfCard(rep);
         hit.lastSeen = rep.at;
         hit.specHash = specHash;
+        hit.workflowKey = workflowKey;
         hit.place = place ?? hit.place;
       }
     } else {
@@ -659,7 +663,7 @@ export function countLedger(ledger, { runid, cards, workflow, place, specHash, t
       for (let n = 2; rows.some((r) => r.id === id); n += 1) id = `${rowId(rep)}-${n}`;
       rows.push({
         id, lesson: lessonOf(rep), count: 1, sample: rep, models: { [rep.model ?? 'unknown']: 1 }, workflow, place, level: 'workflow',
-        trust, runIds: [runid], firstSeen: rep.at, lastSeen: rep.at, specHash, key: keyOfCard(rep),
+        trust, runIds: [runid], firstSeen: rep.at, lastSeen: rep.at, specHash, workflowKey, key: keyOfCard(rep),
       });
     }
   }
@@ -723,12 +727,12 @@ export function climb(rows) {
  * Hold a run's cards until a human Accept. NO LONGER CALLED for new runs (v1.112: a rubric run's lessons count at run
  * end); kept so a hold already in a ledger file still has a writer for tests and a reader in {@link releasePending}. Pure.
  * @param {Ledger} ledger
- * @param {{runid: string, cards: Card[], workflow: string, place: string|null, specHash: string|null, at: string}} o
+ * @param {{runid: string, cards: Card[], workflow: string, place: string|null, specHash: string|null, workflowKey?: string|null, at: string}} o
  * @param {Date} now @returns {Ledger}
  */
-export function holdPending(ledger, { runid, cards, workflow, place, specHash, at }, now) {
+export function holdPending(ledger, { runid, cards, workflow, place, specHash, workflowKey = null, at }, now) {
   const pending = ledger.pending.filter((p) => p.runid !== runid);
-  if (cards.length) pending.push({ runid, at, workflow, place, specHash, cards });
+  if (cards.length) pending.push({ runid, at, workflow, place, specHash, workflowKey, cards });
   return finish({ ...ledger, pending }, now);
 }
 
@@ -743,7 +747,7 @@ export function releasePending(ledger, runid, now) {
   if (!p) return { ledger, released: 0 };
   const rest = { ...ledger, pending: ledger.pending.filter((x) => x.runid !== runid) };
   if (now.getTime() - Date.parse(p.at) > PENDING_DAYS * DAY_MS) return { ledger: finish(rest, now), released: 0 };
-  const counted = countLedger(rest, { runid, cards: p.cards, workflow: p.workflow, place: p.place, specHash: p.specHash, trust: 'rubric', now });
+  const counted = countLedger(rest, { runid, cards: p.cards, workflow: p.workflow, place: p.place, specHash: p.specHash, workflowKey: p.workflowKey ?? null, trust: 'rubric', now });
   return { ledger: counted, released: p.cards.length };
 }
 
@@ -854,13 +858,13 @@ function hintText(r, n) {
  * derived HERE by {@link climb} over the rows not decayed at `now` only; the stored level is never read.
  * Order: this job's, then this place's, then all-jobs LAST (R2: climbing wins, so an all-jobs hint only uses leftover
  * room); inside each level highest count first (ties: most recent lastSeen, then id), so the order is total and stable.
- * @param {Ledger} ledger @param {{workflow: string, place: string|null, specHash?: string|null, now: Date}} o
+ * @param {Ledger} ledger @param {{workflow: string, place: string|null, workflowKey?: string|null, now: Date}} o
  * @returns {Row[]}
  */
-export function readableRows(ledger, { workflow, place, specHash = null, now }) {
+export function readableRows(ledger, { workflow, place, workflowKey = null, now }) {
   return climb(ledger.rows.filter((r) => !isDecayed(r, now))).filter((r) => {
     if (r.runIds.length === 0) return false;
-    if (r.level === 'workflow') return r.workflow === workflow && !otherJobVersion(r, workflow, specHash);
+    if (r.level === 'workflow') return r.workflow === workflow && !otherJobVersion(r, workflow, workflowKey);
     if (r.level === 'place') return place !== null && r.place === place;
     return true;
   }).sort((a, b) => LEVEL_RANK[a.level] - LEVEL_RANK[b.level] || byRank(a, b));
@@ -869,7 +873,7 @@ export function readableRows(ledger, { workflow, place, specHash = null, now }) 
 /**
  * THE one render: the block the PLANNER reads at draft and at the first replan. Byte-for-byte reproducible from the
  * ledger as it stood. Stops at 2,000 characters; a hint is added whole or not at all; nothing readable -> empty text.
- * @param {Ledger} ledger @param {{workflow: string, place: string|null, specHash?: string|null, now: Date}} o
+ * @param {Ledger} ledger @param {{workflow: string, place: string|null, workflowKey?: string|null, now: Date}} o
  * @returns {{text: string, ids: string[]}}
  */
 export function renderHints(ledger, o) {
@@ -900,6 +904,16 @@ export function renderHints(ledger, o) {
  */
 
 const HINT_HEAD_RE = /^(\d+)\. \[(this job|this place|all jobs), seen (\d+) times?\] (.*)$/;
+
+/**
+ * The one plain-words line for a learnings file that could not be read (the Audit prints it; the spine keeps the full
+ * reason). The person's home folder is written `~`, so the line stays short and the file can still be found.
+ * @param {string} reason @param {string} [userHome] defaults to the OS home @returns {string}
+ */
+export function hintsErrorLine(reason, userHome = homedir()) {
+  const short = userHome.length > 1 ? reason.split(`${userHome}/`).join('~/') : reason;
+  return `The learnings file could not be read, so no lessons were given: ${short}`;
+}
 
 /**
  * Split a block {@link renderHints} wrote back into its hints. The ONLY reader of that text: it lives beside the

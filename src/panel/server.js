@@ -33,7 +33,9 @@ import {
   dirname, join, basename, relative, isAbsolute, sep,
 } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readRunList, readNeedsRemovals, DIED_MTIME_MS, runIsAlive } from '../runlist.js';
+import { readRunList, readNeedsRemovals, DIED_MTIME_MS, runIsAlive, atMs, runNumbers, runNameOf } from '../runlist.js';
+import { checkExportable } from '../runexport.js';
+import { sourceNearSpine, signedSpecForRun } from '../runfiles.js';
 import { webFetchState } from '../source.js';
 import { isWebUrl } from '../pagefetch.js';
 import { draftingPartFor, sessionDirForRow, readDraftSteps } from '../draftspend.js';
@@ -47,7 +49,7 @@ import { chainSpend } from '../ledger.js';
 import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
 import { jobSpecHash, workflowKey } from '../job.js';
-import { parseHintBlock } from '../learn.js';
+import { parseHintBlock, hintsErrorLine } from '../learn.js';
 import { confirmProtections } from '../authorflow.js';
 import { createScheduleDoor } from './schedules.js';
 import { createStarter } from './schedulestart.js';
@@ -91,13 +93,13 @@ export function packageVersion(file = join(HERE, '..', '..', 'package.json')) {
 
 /**
  * `GET /api/whoami` body. `drafts` counts the person's drafting sessions that are not finished (the headless scheduled ones are not drafts).
- * @param {{ port: number, version?: string, packageJsonPath?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
+ * @param {{ port: number, version?: string, startedAt?: string, packageJsonPath?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
  */
 function whoamiPayload(opts) {
   const drafts = opts.authorRoutes ? opts.authorRoutes.openDrafts() : 0;
   let schedules = 0;
   try { schedules = opts.schedules ? opts.schedules.scan().length : 0; } catch { schedules = 0; }
-  return { app: 'bareloop', version: opts.version ?? packageVersion(opts.packageJsonPath), pid: process.pid, port: opts.port, drafts, schedules };
+  return { app: 'bareloop', version: opts.version ?? packageVersion(opts.packageJsonPath), pid: process.pid, port: opts.port, drafts, schedules, ...(opts.startedAt ? { startedAt: opts.startedAt } : {}) };
 }
 
 /** Largest POST body the panel buffers (job cards are short prose); a bigger one is refused with 413. */
@@ -456,9 +458,10 @@ const GOAL_NOT_MET = new Set(['plan-red', 'check-red', 'step-red', 'escalated'])
  * @param {{outcome: string|null, stopReason: string|null, spentUsd: number|null, budgetUsd: number|null, lastEscalation?: any}} summary
  * @param {{died: boolean, lastThing: string|null}} death
  * @param {{resume?: {ok: boolean, why?: string}|null, destinationRefused?: string|null, moneyHalt?: boolean,
- *   worktree?: {folder: string, repo: string, branch: string|null, exists: boolean}|null}} [o]
+ *   worktree?: {folder: string, repo: string, branch: string|null, exists: boolean}|null, exportName?: string|null}} [o]
  *   `worktree` (P6 item 1): the run's worktree in the person's repo, from {@link worktreeOfRun}; absent for every other run
- * @returns {{reason: string, next: string, line: string, actions: {id: string, label: string}[]}|null}
+ *   `exportName` (PRD v1.114): the run's `job (run-N)` name; a green worktree run (a repo job) shows the export command to copy beside the merge text
+ * @returns {{reason: string, next: string, rows?: [string, string][], line: string, actions: {id: string, label: string}[]}|null}
  */
 export function endedFor(summary, death, o = {}) {
   const base = withReuseAction(endedBase(summary, death, o));
@@ -470,16 +473,46 @@ export function endedFor(summary, death, o = {}) {
   const green = !death.died && (summary.outcome === 'green' || summary.outcome === 'already-green' || summary.outcome === 'satisfied');
   if (green) {
     if (!wt.branch) return base;
-    const kept = wt.exists ? ` The worktree folder ${wt.folder} is still there.` : '';
-    return { ...base, next: `In ${wt.repo}: git merge ${wt.branch} — or throw the work away: git branch -D ${wt.branch}.${kept}` };
+    // one instruction per row (fwdloop's shape): `in:` names the repo as its own first row, then the commands, then the kept folder
+    return {
+      ...base,
+      ...splitNext([
+        ['in:', wt.repo],
+        ['keep the work:', `git merge ${wt.branch}`],
+        ['throw it away:', `git branch -D ${wt.branch}`],
+        ...(o.exportName ? [/** @type {[string, string]} */ (['reusable bundle:', `bareloop export "${o.exportName}" --out "${exportOutDefault(o.exportName)}"`])] : []),
+        ...(wt.exists ? [/** @type {[string, string]} */ (['folder still there:', wt.folder])] : []),
+      ]),
+    };
   }
+  // any other ending: the worktree folder stays (Resume needs it); a multi-instruction NEXT gets it as one more row
+  if (wt.exists && base.rows) return { ...base, ...splitNext([...base.rows, ['your work is in:', wt.folder]]) };
   return wt.exists ? { ...base, next: `${base.next} Your work is in ${wt.folder}.` } : base;
 }
 
 /**
+ * A real relative folder for the export command, from the run's `job (run-N)` name: the job part with anything a shell would act on turned
+ * into `-`, so `--out "./<job>-bundle"` pastes as is; the person may change it. The name is quoted in the command too.
+ * @param {string} exportName
+ */
+function exportOutDefault(exportName) {
+  const job = exportName.replace(/ \(run-\d+\)$/, '').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'job';
+  return `./${job}-bundle`;
+}
+
+/**
+ * A NEXT with several instructions is `rows` of [label, instruction], one per line (label muted, instruction in a second column);
+ * `next` stays the one plain string every other reader gets: the rows joined "label instruction", one per line. The only writer of both
+ * (the shape fwdloop copied from bareloop 8cad363 and bareloop copied back, 2026-10-25).
+ * @param {[string, string][]} rows
+ * @returns {{next: string, rows: [string, string][]}}
+ */
+function splitNext(rows) { return { next: rows.map(([l, x]) => `${l} ${x}`).join('\n'), rows }; }
+
+/**
  * ONE door (hamr 2026-10-15, v1.101): "Reuse workflow" is offered on EVERY ending (green, failed, capped, stopped, died, every other
  * red), after Resume when both show. ONE place, so no ending branch can forget it.
- * @param {{reason: string, next: string, line: string, actions: {id: string, label: string}[]}|null} ended
+ * @param {{reason: string, next: string, rows?: [string, string][], line: string, actions: {id: string, label: string}[]}|null} ended
  */
 function withReuseAction(ended) {
   if (!ended || ended.actions.some((a) => a.id === 'reuse')) return ended;
@@ -500,12 +533,14 @@ function endedBase(summary, death, o) {
     return s.length > 120 ? `${s.slice(0, 120)}…` : s;
   };
   /** a resumable ending whose Resume the engine would refuse: say so, never offer the button */
-  const resumeOr = (/** @type {string} */ okNext) => (resumeOk ? okNext : `Resume is not available for this run${o.resume && o.resume.why ? ` (${o.resume.why})` : ''}. ${CHANGE}`);
+  const resumeOr = (/** @type {string} */ okNext) => ({ next: resumeOk ? okNext : `Resume is not available for this run${o.resume && o.resume.why ? ` (${o.resume.why})` : ''}. ${CHANGE}` });
+  /** the same, for a two-step ending: rows when the engine would accept the resume, else the one "not available" sentence */
+  const resumeRows = (/** @type {[string, string][]} */ rows) => (resumeOk ? splitNext(rows) : resumeOr(''));
 
   if (death.died) {
     return {
       reason: `Stopped with no ending recorded${death.lastThing ? ` (last thing it did: ${death.lastThing})` : ''}.`,
-      next: resumeOr('Resume.'),
+      ...resumeOr('Resume.'),
       line: resumeOk ? 'no ending recorded — resume' : 'no ending recorded',
       actions: resumeOk ? RESUME : [],
     };
@@ -556,7 +591,7 @@ function endedBase(summary, death, o) {
       const earned = isReusableGreen(outcome);
       return {
         reason: 'Goal met, but the output could not be delivered.',
-        next: earned ? 'Fix the destination, then Reuse workflow.' : CHANGE,
+        ...(earned ? splitNext([['fix the destination:', 'the Destination'], ['then:', 'press Reuse workflow']]) : { next: CHANGE }),
         line: `${GOAL_MET_LINE} — not delivered`,
         actions: earned ? REUSE : [],
       };
@@ -571,7 +606,7 @@ function endedBase(summary, death, o) {
       ? ` (${panelMoney2(summary.spentUsd)} of ${panelMoney2(summary.budgetUsd)})` : '';
     return {
       reason: `Money cap reached${money}.`,
-      next: resumeOr('Raise the cap, then Resume.'),
+      ...resumeRows([['raise the cap:', 'Cap $ on the Chat card'], ['then:', 'press Resume']]),
       line: resumeOk ? 'money cap — resume' : 'money cap',
       actions: resumeOk ? RESUME : [],
     };
@@ -579,7 +614,7 @@ function endedBase(summary, death, o) {
   if (outcome === 'wall-halt') {
     return {
       reason: 'Time cap reached.',
-      next: resumeOr('Raise the time, then Resume.'),
+      ...resumeRows([['raise the time:', 'Time cap (min) on the Chat card'], ['then:', 'press Resume']]),
       line: resumeOk ? 'time cap — resume' : 'time cap',
       actions: resumeOk ? RESUME : [],
     };
@@ -588,7 +623,7 @@ function endedBase(summary, death, o) {
     // P5 item 5: the PERSON ended the leg (Stop). Nothing failed; the finished steps stand.
     return {
       reason: 'You stopped it.',
-      next: resumeOr('Resume.'),
+      ...resumeOr('Resume.'),
       line: resumeOk ? 'you pressed Stop — resume' : 'you pressed Stop',
       actions: resumeOk ? RESUME : [],
     };
@@ -597,7 +632,7 @@ function endedBase(summary, death, o) {
     const d = detailOf(summary.stopReason);
     return {
       reason: `The model provider failed${d ? ` (${d})` : ''}.`,
-      next: resumeOr('Resume.'),
+      ...resumeOr('Resume.'),
       line: resumeOk ? 'provider failed — resume' : 'provider failed',
       actions: resumeOk ? RESUME : [],
     };
@@ -605,7 +640,7 @@ function endedBase(summary, death, o) {
   if (outcome === 'step-stalled') {
     return {
       reason: 'A step stopped making progress.',
-      next: resumeOr('Resume, or change the job: press Reuse workflow.'),
+      ...resumeRows([['resume:', 'press Resume'], ['or change the job:', 'press Reuse workflow']]),
       line: resumeOk ? 'step stalled — resume' : 'step stalled',
       actions: resumeOk ? RESUME : [],
     };
@@ -688,7 +723,7 @@ function liveStepWhy(records, summary) {
   return `step ${Math.min(done + 1, total)} of ${total}`;
 }
 
-function endedForRow(row, records, summary, death, withWorktree = false) {
+function endedForRow(row, records, summary, death, withWorktree = false, /** @type {string|null} */ exportName = null) {
   const out = summary.outcome;
   const maybeResumable = death.died || out === 'escalated' || (typeof out === 'string' && CHECKPOINT_OUTCOMES.includes(out));
   const resume = maybeResumable ? resumePlanFor(row, records) : null;
@@ -698,6 +733,7 @@ function endedForRow(row, records, summary, death, withWorktree = false) {
     moneyHalt: records.some((r) => r && r.type === 'money-halt'),
     destinationRefused: refused ? String(refused.detail ?? refused.code ?? 'the destination refused it') : null,
     worktree: withWorktree ? worktreeOfRun(row, records) : null,
+    exportName,
   });
   const esc = summary.lastEscalation;
   const status = statusFor({
@@ -933,40 +969,6 @@ export function getNeedsContext(runid, opts = {}) {
   if (!row) return null;
   const nowMs = typeof opts.now === 'number' ? opts.now : Date.now();
   return { row, needs: summarizeRow(row, nowMs, readNeedsRemovals(opts)).needs ?? null };
-}
-
-/**
- * @param {any} r
- * @returns {number}
- */
-function atMs(r) {
-  const t = typeof r?.at === 'string' ? Date.parse(r.at) : NaN;
-  return Number.isFinite(t) ? t : 0;
-}
-
-/**
- * The ONE owner of run names (P6 item 7): runs of the same job (`row.job`) are numbered oldest `at` first, 1-based
- * (ties keep file order). A resume is one row, so it counts once; died and stopped runs are rows too. Every view
- * reads this number — the page never counts on its own.
- * @param {any[]} rows
- * @returns {Map<string, number>} runid → N
- */
-function runNumbers(rows) {
-  /** @type {Map<string, any[]>} */
-  const byJob = new Map();
-  rows.forEach((row, index) => {
-    if (!row || typeof row.runid !== 'string') return;
-    const g = byJob.get(row.job) || [];
-    g.push({ row, index });
-    byJob.set(row.job, g);
-  });
-  /** @type {Map<string, number>} */
-  const out = new Map();
-  for (const g of byJob.values()) {
-    g.sort((a, b) => (atMs(a.row) - atMs(b.row)) || (a.index - b.index));
-    g.forEach(({ row }, i) => out.set(row.runid, i + 1));
-  }
-  return out;
 }
 
 /** The named limits of the runs list, in ONE place (P9 v2 D.13): quiet after 30 days, 7 older runs shown, a Resume tag ages out after 7 days. Sent in `GET /api/runs`; the page reads them from there. */
@@ -1522,22 +1524,22 @@ export function getRunDownload(runid, index, opts = {}) {
 export function getRunDetail(runid, opts = {}) {
   const d = getRunDetailBody(runid, opts);
   if (!d) return d;
-  const { rows } = readRunList(opts);
+  const { rows, events } = readRunList(opts);
   const nos = runNumbers(rows);
   const runNo = nos.get(runid);
   // T Part 7: what the Run tab shows of the job's schedule — the SERVER decides every state and word (the page works out nothing)
   const schedule = opts.schedules && typeof d.job === 'string' ? scheduleDetailFor(d.job, rows, nos, opts) : null;
-  const extra = opts.schedules && typeof d.job === 'string' ? scheduleExtrasFor(runid, d.job, rows, nos, opts, schedule) : {};
+  const extra = opts.schedules && typeof d.job === 'string' ? scheduleExtrasFor(runid, d.job, rows, events, nos, opts, schedule) : {};
   return { ...d, ...(runNo === undefined ? {} : { runNo }), ...(schedule ? { schedule: extra.schedule ?? schedule } : {}), ...(extra.audit ?? {}) };
 }
 
 /**
  * Aligned with fwdloop M9 am7: the SCHEDULE row's second line and the Audit's schedule rows, made on the server from the door's data.
  * `schedule` = the door's view with `line2`, `problem` (and no raw ledger row); `audit` = `{scheduleSection}` or, for a run a cancelled schedule started, `{startedAudit}`.
- * @param {string} runid @param {string} job @param {any[]} rows @param {Map<string, number>} nos @param {any} opts @param {any} view
+ * @param {string} runid @param {string} job @param {any[]} rows @param {any[]} events @param {Map<string, number>} nos @param {any} opts @param {any} view
  * @returns {{schedule?: any, audit?: {startedAudit?: string, scheduleSection?: any}}}
  */
-function scheduleExtrasFor(runid, job, rows, nos, opts, view) {
+function scheduleExtrasFor(runid, job, rows, events, nos, opts, view) {
   try {
     const door = /** @type {ReturnType<typeof createScheduleDoor>} */ (opts.schedules);
     /** @type {any} */
@@ -1560,7 +1562,7 @@ function scheduleExtrasFor(runid, job, rows, nos, opts, view) {
             const got = hit ?? fallback;
             const no = got ? nos.get(got.r.runid) : undefined;
             // events: a fire refused at the run-start fetch has no spine, only its settled event; without them it has no status word
-            const word = got ? summarizeRow(got.r, Date.now(), undefined, readRunList(opts).events).status?.word : undefined;
+            const word = got ? summarizeRow(got.r, Date.now(), undefined, events).status?.word : undefined;
             lastWords = `last ${dateTimeWords(Number(lastRow.at))}${no ? ` · run-${no}` : ''}${word ? ` · ${word}` : ''}${got?.rec.catchUp === true ? ' · catch-up' : ''}`;
           } else {
             lastWords = `last ${dateTimeWords(Number(lastRow.at))} · ${skippedWords(lastRow, true)}`;
@@ -1630,7 +1632,10 @@ function getRunDetailBody(runid, opts) {
   const specForParts = resolveSpecForRow(row);
   const enrichedParts = enrichPartsWithStageKind(summary.parts, stageKindMetaFromSpec(specForParts), specForParts);
   const death = deriveDeath(row, rawSpineRecords, summary.outcome);
-  const { ended, resume, status } = endedForRow(row, rawSpineRecords, summary, death, true);
+  const runName = runNameOf(row.job, runNumbers(readRunList(opts).rows).get(row.runid));
+  // the export row only for a run export would take — the one rule, `checkExportable`, never a copy of it
+  const exportName = checkExportable(row, runName).ok ? runName : null;
+  const { ended, resume, status } = endedForRow(row, rawSpineRecords, summary, death, true, exportName);
   // judgeModel (Summary box "judge:" line): the FIRST `judge-round`'s own
   // `model` field (src/planrun.js:1704's `onJudgeCost` emit) — a soft-green
   // close's own paid judge seam, distinct from the worker `model` above.
@@ -1884,6 +1889,8 @@ function getRunDetailBody(runid, opts) {
     // Cross-run learnings, READ-ONLY (ITEM33 rev 2, RULING 8): the exact block the planner was handed, as the spine recorded it at
     // injection (the draft, and the first replan); `hints` = the same text split into fields by learn.js's parseHintBlock (the one reader). Empty when the setting was off or nothing was readable.
     learnings: rawSpineRecords.filter((e) => e?.type === 'learnings' && typeof e.text === 'string').map((e) => ({ phase: String(e.phase), text: e.text, chars: e.text.length, ids: Array.isArray(e.ids) ? e.ids : [], hints: parseHintBlock(e.text) })),
+    // a learnings file that could not be read: the plain line (null when it could)
+    learningsError: ((r) => (r ? hintsErrorLine(String(r.hintsError)) : null))(rawSpineRecords.find((e) => e?.type === 'learnings' && typeof e.hintsError === 'string')),
     // PRD v1.106 Part 5 F: the two Run summary rows, worded here (the page prints them)
     callsLine: callsLineOf(rawSpineRecords, scopedBehaviour(row, rawSpineRecords)),
     checksLine: checksLineOf(rawSpineRecords, enrichedParts),
@@ -2532,39 +2539,6 @@ function bundleDirForSpine(spinePath) {
   const runsDir = dirname(dirname(spinePath)); // <x>/runs/<runid> -> <x>/runs
   if (basename(runsDir) !== 'runs') return null; // not actually the bundle layout
   return dirname(runsDir); // <x>/runs -> <x>
-}
-
-/**
- * `<out>/source-<seed>/<job>-bareloop/u-<runid>.jsonl` -> the two files an
- * authoring session leaves BESIDE that layout — `<out>/resolved-spec.json`
- * (the signed spec `--spec`/a JOBS-table row ran) and
- * `<out>/source-<seed>/source.json` (the source front door's manifest) —
- * verified against `src/userrun.js`'s own construction (`specWorkdir = join(into,
- * 'tree')`, `spineDir = join(wd, '..', target.spine)`, both `--spec` and the
- * `pulselog-person-strict` JOBS-table row read `into` the same way) and a real
- * archived run (pulselog-person-live-2, run mu2p83go): `dirname(spine)` is
- * `<into>/<job>-bareloop`, `dirname(dirname(spine))` is `<into>` itself
- * (`source-<seed>`, carrying `source.json`), and `dirname(dirname(dirname(spine)))`
- * is `<out>` (carrying `resolved-spec.json`).
- *
- * Only resolves when `<into>`'s own name starts with `source-` — the one
- * shape marker this convention always carries — and each file is checked to
- * actually exist before being handed back; any other spine layout (the bundle
- * `spine.jsonl`, a JOBS-table row whose workdir has no source-seed copy, e.g.
- * `litectx-u`) returns both fields `null`, never a guessed path (build spec
- * item 2, 2026-09-25: "don't search the disk broadly — fall through").
- * @param {string} spinePath
- * @returns {{ specPath: string|null, sourceJsonPath: string|null }}
- */
-function sourceNearSpine(spinePath) {
-  const into = dirname(dirname(spinePath)); // <into>/<job>-bareloop/u-x.jsonl -> <into>
-  if (!basename(into).startsWith('source-')) return { specPath: null, sourceJsonPath: null };
-  const sourceJsonPath = join(into, 'source.json');
-  const specPath = join(dirname(into), 'resolved-spec.json'); // <into> -> <out>
-  return {
-    specPath: existsSync(specPath) ? specPath : null,
-    sourceJsonPath: existsSync(sourceJsonPath) ? sourceJsonPath : null,
-  };
 }
 
 /**
@@ -3356,31 +3330,6 @@ function getRunJobBody(runid, opts) {
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * The signed spec a run's LATEST leg ran under — the `resolved-spec*.json` beside the run whose hash is the one its
- * latest `job-start` carries (the same lookup `resumePlanFor` does). `null` = no such file.
- * @param {{ spine: string }} row
- * @param {any[]} records
- * @returns {{spec: any, specPath: string, specHash: string}|null}
- */
-function signedSpecForRun(row, records) {
-  const jobStart = (legsOf(records).findLast((l) => l.jobStart !== null) ?? null)?.jobStart ?? null;
-  if (!jobStart || typeof jobStart.specHash !== 'string') return null;
-  const near = sourceNearSpine(row.spine);
-  if (!near.specPath) return null;
-  const dir = dirname(near.specPath);
-  /** @type {string[]} */
-  let names = [];
-  try { names = readdirSync(dir).filter((n) => n === 'resolved-spec.json' || /^resolved-spec-r\d+\.json$/.test(n)); } catch { names = []; }
-  for (const n of names) {
-    let spec;
-    try { spec = JSON.parse(readFileSync(join(dir, n), 'utf8')); } catch { continue; }
-    if (!spec || typeof spec !== 'object') continue;
-    if (jobSpecHash(spec) === jobStart.specHash) return { spec, specPath: join(dir, n), specHash: jobStart.specHash };
-  }
-  return null;
-}
-
-/**
  * The worker a signed spec ran: provider, baseUrl and model ('' when an older spec names none: bareloop keeps no default).
  * @param {any} spec
  * @returns {{provider: string, baseUrl?: string, model: string}}
@@ -3743,7 +3692,7 @@ function sendText(res, code, text) {
  * only `createPanelServer` below always supplies one.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ home?: string, sessionsRoot?: string, version?: string, packageJsonPath?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
+ * @param {{ home?: string, sessionsRoot?: string, version?: string, startedAt?: string, packageJsonPath?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
  */
 export function handleRequest(req, res, opts) {
   /** the ONE writable route family for a path, or null — `/api/author/*` (authoring) or
@@ -3970,6 +3919,8 @@ export function createPanelServer(opts = {}) {
   const token = mintToken();
   // the version THIS process runs, read once at start: package.json on disk can move on while the panel keeps running old code
   const version = packageVersion(opts.packageJsonPath);
+  // when THIS process started, ISO, set once here (`GET /api/whoami`'s `startedAt`: the launcher shows it)
+  const startedAt = new Date().toISOString();
   return new Promise((resolve, reject) => {
     // Bound port is resolved from the live socket (`server.address().port`)
     // once listening starts, not the requested value — this is what makes
@@ -3992,7 +3943,7 @@ export function createPanelServer(opts = {}) {
     const server = createServer((req, res) => {
       try {
         handleRequest(req, res, {
-          home, sessionsRoot: opts.sessionsRoot, port: boundPort, token, authorRoutes, settingsRoutes, runRoutes, importRoutes, version, packageJsonPath: opts.packageJsonPath, schedules: schedulesRef,
+          home, sessionsRoot: opts.sessionsRoot, port: boundPort, token, authorRoutes, settingsRoutes, runRoutes, importRoutes, version, startedAt, packageJsonPath: opts.packageJsonPath, schedules: schedulesRef,
         });
       } catch (e) {
         sendText(res, 500, `internal error: ${/** @type {Error} */ (e).message}`);

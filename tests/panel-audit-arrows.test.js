@@ -60,7 +60,7 @@ function groupsPage(boxes) {
   return { els, render };
 }
 
-test('Audit part rows: ▶ while folded, ▼ once opened, flipping on every click; a running part starts open with ▾', () => {
+test('Audit part rows: ▶ while folded, ▼ once opened, flipping on every click; a running part starts open with ▼', () => {
   const boxes = [
     { kind: 'scout', title: 'scout', state: 'done', blocked: 0, part: { kind: 'scout', attempts: [] } },
     { kind: 'step', title: 'build', state: 'running', blocked: 0, part: { kind: 'step', attempts: [] } },

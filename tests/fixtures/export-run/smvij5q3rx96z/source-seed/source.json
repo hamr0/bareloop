@@ -1,0 +1,24 @@
+{
+  "kind": "folder",
+  "source": "https://www.google.com/travel/flights?q=Flights+from+BOS+to+MIA+on+2026-11-20+one+way&hl=en&curr=USD",
+  "fetchedAt": "2026-10-21T19:54:11.348Z",
+  "files": [
+    {
+      "path": "page.txt",
+      "bytes": 43337,
+      "sha256": "5cc93415a3a89fc2743d3a006d6c1762bfd7cbba5832558d4e7b55a18e359995"
+    }
+  ],
+  "seed": "40d0cfc14e5445c9a50aef9ba84e293eb612a394",
+  "destination": "/home/hamr/PycharmProjects/bareloop/.claude/scratch/reversed-live/out",
+  "inputs": [
+    {
+      "label": "page",
+      "rel": "input/page.txt",
+      "sha256": "5cc93415a3a89fc2743d3a006d6c1762bfd7cbba5832558d4e7b55a18e359995",
+      "url": "https://www.google.com/travel/flights?q=Flights+from+BOS+to+MIA+on+2026-11-20+one+way&hl=en&curr=USD",
+      "draftSha256": "093f1c6d4e58a4fadaf0cb499edc3220acb6dbfc93d2988635abd862227711be"
+    }
+  ],
+  "refrozenAt": "2026-10-21T19:55:30.447Z"
+}

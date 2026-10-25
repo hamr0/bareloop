@@ -32,7 +32,7 @@ import { commitWork, removeWorktree } from './worktree.js';
 import { moveFile } from './movefile.js';
 import { runJob } from './run.js';
 import { moneyWithDraft } from './replay.js';
-import { jobSpecHash, resolveWorkerModel, validateJob } from './job.js';
+import { jobSpecHash, resolveWorkerModel, validateJob, workflowKey } from './job.js';
 import { readShimArm } from './readshim.js';
 import { closeStagesOf } from './plan.js';
 import { resolveCloseTimeoutMs } from './closetimeout.js';
@@ -82,7 +82,7 @@ import { keysForDoor } from './keysfile.js';
 import { parseJsonl } from './replayio.js';
 import { claimRun, monthlyRefusalText, legSpend, chainSpend } from './monthly.js';
 import { ConfigError } from './config.js';
-import { learnAtRunEnd, hintsForRun, releaseRun } from './learnstore.js';
+import { learnAtRunEnd, handedHints, releaseRun } from './learnstore.js';
 import { commandFor } from './invoke.js';
 import { judgeRatesFor, keyNameFor, keyValueOf, priceReadout, ratesFor, ratesOfLine, resolveWorker, judgeRowFor, rowsForHome, REFUSE_NAME_MODEL } from './providerrows.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
@@ -1906,7 +1906,10 @@ async function execute(ctx) {
   /** @type {{text: string, ids: string[]}|null} */
   let learnHints = null;
   if (cfgOn) {
-    try { learnHints = hintsForRun({ home: cfgHome, spec, specHash }); } catch { learnHints = null; }
+    // an unreadable ledger hands nothing but is never silent: the reason rides a `learnings` spine record (hintsError) the Audit prints
+    const handed = handedHints({ home: cfgHome, spec, workflowKey: workflowKey(spec) });
+    learnHints = handed.hints;
+    if (handed.error !== null) emit('learnings', { phase: 'draft', hintsError: handed.error });
   }
   let outcome;
   try {
@@ -2033,7 +2036,7 @@ async function execute(ctx) {
     try {
       const filedAudit = ctx.bundle ? join(spineDir, 'gate-audit.jsonl') : join(spineDir, `u-${runid}-gate-audit.jsonl`);
       learnAtRunEnd({
-        home: cfgHome, runid, events: allEvents, auditFiles: [filedAudit, join(wd, 'gate-audit.jsonl')], spec, specHash, workdir: wd,
+        home: cfgHome, runid, events: allEvents, auditFiles: [filedAudit, join(wd, 'gate-audit.jsonl')], spec, specHash, workflowKey: workflowKey(spec), workdir: wd,
         trust: quarantinesCredit(spec.verdictType) ? 'rubric' : 'deterministic',
       });
     } catch (/** @type {any} */ e) { err(`WARNING: could not record this run's lessons in the learnings ledger (${redactSecrets(String(e?.message ?? e)).split('\n')[0]}) — the run itself is unaffected.`); }
@@ -2140,8 +2143,9 @@ async function execute(ctx) {
     out(`  trend   ${mh.trend} — ${mh.reading}`);
     if (ctx.bundle) {
       // a bundle's spec is manifest-hashed: there is no budgetUsd to edit and no new hash to sign. The room that
-      // is left is the signed ceiling, and the ONLY way to use it is the person typing a larger --budget. The
-      // exhausted --budget is never echoed (pasted as printed it halts again at once: the chain folds prior spend),
+      // is left is the signed ceiling, and the way to use it is the person typing a larger --budget. Going PAST the
+      // signed ceiling is allowed only with the person's own yes (hamr 2026-10-25), shown back and recorded in the run.
+      // The exhausted --budget is never echoed (pasted as printed it halts again at once: the chain folds prior spend),
       // and nothing is filled in for them.
       const signed = ctx.bundle.signedBudgetUsd;
       const spentUsd = typeof mh.budgetUsd === 'number' && typeof mh.remainingUsd === 'number' ? mh.budgetUsd - mh.remainingUsd : null;
@@ -2152,12 +2156,12 @@ async function execute(ctx) {
       out(`  lever   ${lever}`);
       if (spentUsd !== null && spentUsd >= signed) {
         // the whole signed ceiling is spent: "more than spent, at most signed" is unsatisfiable, so no resume line is printed
-        out(`          · no room left under the signed ceiling: this run spent all of the signed $${signed}, and a bundle's ceiling cannot be raised`);
+        out(`          · no room left under the signed ceiling: this run spent all of the signed $${signed}, and raising a bundle's ceiling needs your typed yes (--yes)`);
         out('          · abandon the task');
       } else {
-        out(`          · choose a larger --budget on the resume line below (the room left is the signed $${signed}; it cannot be raised past that)`);
+        out(`          · choose a larger --budget on the resume line below (the room left is the signed $${signed}; going past it asks you to type yes)`);
         out('          · abandon the task');
-        out(`  resume  ${ctx.bundle.invoke}${WALL_FLAG} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --budget <more than ${spentTxt}, at most $${signed}> --approve ${PRINT_APPROVE}`);
+        out(`  resume  ${ctx.bundle.invoke}${WALL_FLAG} --resume ${runid}${SHIM_TAIL}${SCOUT_TAIL}${DRAFT_TAIL}${REGISTRY_TAIL} --budget <more than ${spentTxt}, above $${signed} asks you to type yes> --approve ${PRINT_APPROVE}`);
         out('          (type the --budget number yourself — nothing here fills it in, so this line does not run as printed; nothing in the run may widen its own budget)');
       }
     } else {
@@ -2580,7 +2584,7 @@ export async function main(argv, deps = {}) {
       if (!existsSync(specPath)) {
         die(`--job ${jobArg}: there is no spec at ${specPath}.\n`
           + '  The table row is the runner\'s half of a job (patient, seed, spine); the SPEC is yours — authored through\n'
-          + `  ${commandFor('interview', deps.invokedAs)} and ${commandFor('author', deps.invokedAs)}, then signed. Nothing here can stand in for it: a job\n`
+          + '  the panel\'s drafting (or node scripts/run-interview.mjs and node scripts/run-author.mjs), then signed. Nothing here can stand in for it: a job\n'
           + '  with no spec has no goal, no close, no budget and no hash to approve.');
       }
       try { spec = JSON.parse(readFileSync(specPath, 'utf8')); } catch (e) {
@@ -2592,7 +2596,7 @@ export async function main(argv, deps = {}) {
       specPath = resolve(/** @type {string} */ (specArg));
       if (!existsSync(specPath)) {
         die(`--spec ${specPath} does not exist — a run needs the resolved-spec.json an authoring session actually wrote `
-          + `(${commandFor('author', deps.invokedAs)}'s own \`out/resolved-spec.json\`), never a path nobody authored`);
+          + '(the panel\'s drafting session, or node scripts/run-author.mjs\'s own `out/resolved-spec.json`), never a path nobody authored');
       }
       let raw;
       try { raw = readFileSync(specPath, 'utf8'); } catch (e) {
@@ -2632,8 +2636,8 @@ export async function main(argv, deps = {}) {
       if (candidates.length === 0) {
         die(`--spec ${specPath}: no prepared copy beside it — looked for a source-*/ directory carrying source.json in `
           + `${dirname(specPath)} and found none. A --spec run reads its workdir and seed off the copy the authoring `
-          + `session prepared; it is never typed or guessed. Prepare one first: ${commandFor('interview', deps.invokedAs)} (or `
-          + `${commandFor('author', deps.invokedAs)} directly against a --source) before running this spec.`);
+          + `session prepared; it is never typed or guessed. Prepare one first: draft the job in the panel (or node scripts/run-interview.mjs, `
+          + 'then node scripts/run-author.mjs against a --source) before running this spec.');
       }
       if (candidates.length > 1) {
         die(`--spec ${specPath}: ${candidates.length} prepared copies sit beside it (${candidates.join(', ')}) — `

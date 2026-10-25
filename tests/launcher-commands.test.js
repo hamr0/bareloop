@@ -1,4 +1,4 @@
-// L (PANEL-BUILD.md addendum 2026-10-24) — start / stop / status / install / the menu. Scratch home, a free HIGH port range (never 4700-4709),
+// L (PANEL-BUILD.md addendum 2026-10-24) — start / stop / status / install / the menu. Scratch home, a free port range below the kernel's ephemeral range (never 4700-4709),
 // injected spawn / kill / opener / stdin: no real signal is ever sent and no real panel is launched. The "started" panel is a REAL
 // createPanelServer run in-process by the injected spawn, so the probe talks to the real /api/whoami.
 import { test, after } from 'node:test';
@@ -13,7 +13,7 @@ import { createServer as netServer } from 'node:net';
 import { createServer as httpServer } from 'node:http';
 import { PassThrough } from 'node:stream';
 import {
-  startCmd, stopCmd, statusCmd, installCmd, menuCmd,
+  startCmd, stopCmd, restartCmd, statusCmd, installCmd, menuCmd,
 } from '../src/launcher.js';
 import { createPanelServer } from '../src/panel/server.js';
 import { main } from '../src/cli.js';
@@ -34,10 +34,10 @@ const scratch = () => { const d = mkdtempSync(join(tmpdir(), 'launcher-cmd-')); 
 
 /** @param {number} port @returns {Promise<boolean>} */
 const bindable = (port) => new Promise((res) => { const s = netServer(); s.once('error', () => res(false)); s.listen(port, '127.0.0.1', () => s.close(() => res(true))); });
-/** a base such that base..base+3 are free, in a high range */
+/** a base such that base..base+3 are free. Picked below the kernel's ephemeral range (32768-60999) so no other test's outgoing socket or listen(0) can be handed the port between this check and the start. */
 async function freeBase() {
   for (let i = 0; i < 200; i += 1) {
-    const base = 41000 + Math.floor(Math.random() * 20000);
+    const base = 20000 + Math.floor(Math.random() * 12000);
     const all = await Promise.all([0, 1, 2, 3].map((k) => bindable(base + k)));
     if (all.every(Boolean)) return base;
   }
@@ -119,7 +119,7 @@ test('start: nothing running -> a detached panel on the first free port, waits f
   assert.equal(await startCmd(io2, d), 0);
   assert.equal(d.spawned.length, 1, 'already running: nothing started');
   assert.equal(io2.lines.at(-1), `Panel already running at http://127.0.0.1:${base} — opening the page.`);
-  assert.match(io2.lines[0], new RegExp(`panel running at http://127.0.0.1:${base}$`));
+  assert.match(io2.lines[0], new RegExp(`panel running at http://127.0.0.1:${base} · started \\d\\d/\\d\\d \\d\\d:\\d\\d$`));
 });
 
 test('start: a port held by something that is not bareloop is skipped and said so', async () => {
@@ -185,6 +185,21 @@ test('stop: a running panel with no drafts -> SIGTERM to the pid it reported (in
   assert.equal(rc, 0, io.text());
   assert.deepEqual(kills, [[4242, 'SIGTERM']]);
   assert.equal(io.lines.at(-1), 'Panel stopped.');
+});
+
+test('stop: a panel reporting no usable pid (0, 1, or not a number) is never signalled: the refusal names it, exit 1', async () => {
+  for (const pid of [0, 1, 'x']) {
+    const home = installedHome();
+    const base = await freeBase();
+    const panel = await fakePanel(base, { pid });
+    const kills = [];
+    const io = sink();
+    const rc = await stopCmd(['--yes'], io, deps(home, base, { kill: (p, s) => kills.push([p, s]) }));
+    assert.equal(rc, 1, `pid ${pid}: ${io.text()}`);
+    assert.deepEqual(kills, [], `pid ${pid}: nothing signalled`);
+    assert.match(io.text(), /reported no usable pid, so it was not stopped/);
+    await panel.close();
+  }
 });
 
 test('stop: open drafts -> the warning, the ask; n leaves it running, y stops it; --yes skips the ask', async () => {
@@ -293,7 +308,7 @@ test('status: not running -> header then "Panel not running.", exit 3 (the sub-c
   assert.match(none.lines[0], /panel not running$/);
   assert.equal(none.lines[2], 'Panel not running.');
   const viaMenu = sink();
-  assert.equal(await menuCmd(viaMenu, deps(home, base, { ask: async () => '3' })), 0, 'the menu worked: exit 0');
+  assert.equal(await menuCmd(viaMenu, deps(home, base, { ask: async () => '4' })), 0, 'the menu worked: exit 0');
   assert.equal(viaMenu.lines.at(-1), 'Panel not running.');
   await fakePanel(base + 2, { pid: 48213, drafts: 1, schedules: 3 });
   const io = sink();
@@ -307,7 +322,7 @@ test('install: creates what is missing (dir 700, .env 600, config.json), then sa
   const io = sink();
   const d = deps(home, 1);
   assert.equal(await installCmd(io, d), 0, io.text());
-  assert.match(io.lines[0], /not installed — no bareloop folder yet, pick 4 install · panel not running/);
+  assert.match(io.lines[0], /not installed — no bareloop folder yet, pick 5 install · panel not running/);
   assert.ok(io.lines.some((l) => /^Installed\. Created:/.test(l)));
   assert.equal(statSync(home).mode & 0o777, 0o700);
   assert.equal(statSync(join(home, '.env')).mode & 0o777, 0o600);
@@ -335,7 +350,7 @@ test('install: a loose .env gets mode 600 and the config is never overwritten; n
   assert.match(old.text(), /needs node 22 or newer; this is node 20\.11\.0\. Nothing was changed\./);
 });
 
-test('menu (the approved layout): two header lines, a blank line, the four choices, then the prompt; q quits 0', async () => {
+test('menu (the approved layout): two header lines, a blank line, the panel line, the jobs line, q quit, then the prompt; q quits 0', async () => {
   const home = installedHome();
   const base = await freeBase();
   await fakePanel(base + 1, { pid: 48213 });
@@ -347,22 +362,37 @@ test('menu (the approved layout): two header lines, a blank line, the four choic
     `bareloop ${V} · installed ✓ · panel running at http://127.0.0.1:${base + 1}`,
     'runs: 0 running · 0 need you · 0 in all',
     '',
-    '1 start   2 stop   3 status   4 install   q quit',
+    'panel: 1 start   2 stop   3 restart   4 status   5 install',
+    'jobs:  6 export   7 run   8 resume   9 history',
+    'q quit',
   ]);
   assert.deepEqual(asked, ['> ']);
 });
 
-test('menu: choice 3 runs status through the same code WITHOUT printing the header twice; an unknown choice is refused', async () => {
+test('menu: choice 4 runs status through the same code WITHOUT printing the header twice; an unknown choice is refused', async () => {
   const home = installedHome();
   const base = await freeBase();
   await fakePanel(base, { pid: 48213, drafts: 1, schedules: 3 });
   const io = sink();
-  assert.equal(await menuCmd(io, deps(home, base, { ask: async () => '3' })), 0);
+  assert.equal(await menuCmd(io, deps(home, base, { ask: async () => '4' })), 0);
   assert.equal(io.lines.filter((l) => l.startsWith(`bareloop ${V}`)).length, 1);
   assert.equal(io.lines.at(-1), `pid 48213 · version ${V} · 1 draft open · 3 schedules on`);
   const bad = sink();
   assert.equal(await menuCmd(bad, deps(home, base, { ask: async () => '9' })), 1);
   assert.match(bad.text(), /unknown choice "9"/);
+  assert.match(bad.text(), /one of: 1, 2, 3, 4, 5, 6, 7, 8, 9, q/);
+});
+
+test('menu: `constructor` and `__proto__` are unknown choices, not a crash, even when the job doors are wired', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  await fakePanel(base, { pid: 48213 });
+  const jobs = { export: async () => 0, run: async () => 0, resume: async () => 0, history: async () => 0 };
+  for (const word of ['constructor', '__proto__']) {
+    const bad = sink();
+    assert.equal(await menuCmd(bad, deps(home, base, { jobs, ask: async () => word })), 1);
+    assert.match(bad.text(), new RegExp(`unknown choice "${word}"`));
+  }
 });
 
 test('main: bare `bareloop` shows the new menu (the old export/run/history menu is gone); the sub-commands status|install go through main with the header first', async () => {
@@ -378,7 +408,7 @@ test('main: bare `bareloop` shows the new menu (the old export/run/history menu 
   stdin.write('q\n');
   assert.equal(await run, 0);
   const text = out.join('');
-  assert.match(text, new RegExp(`^bareloop ${VRE} · installed ✓ · panel not running\nruns: 0 running · 0 need you · 0 in all\n\n1 start   2 stop   3 status   4 install   q quit\n`));
+  assert.match(text, new RegExp(`^bareloop ${VRE} · installed ✓ · panel not running\nruns: 0 running · 0 need you · 0 in all\n\npanel: 1 start   2 stop   3 restart   4 status   5 install\njobs:  6 export   7 run   8 resume   9 history\nq quit\n`));
   assert.doesNotMatch(text, /1 export/);
   const out2 = [];
   assert.equal(await main(['status'], { stdout: { write: (s) => { out2.push(s); return true; } }, stderr, cwd: process.cwd(), env: {}, keysHome: home, runlistHome: home, launcher }), 3);
@@ -443,7 +473,7 @@ test('start: a taken port that stays silent -> start waits, then says so, starts
   const took = performance.now() - t0;
   assert.equal(rc, 1, io.text());
   assert.equal(d.spawned.length, 0, 'no second panel');
-  assert.equal(io.lines.at(-1), `ERR Port ${base} is taken and not answering. If it's a stuck bareloop, stop it first.`);
+  assert.equal(io.lines.at(-1), `ERR Port ${base} is taken and not answering. To see what holds it: lsof -i :${base}. If it is a stuck bareloop, end it: kill <pid>`);
   assert.ok(took >= 900, `waited only ${Math.round(took)} ms`);
   assert.ok(took < 4000, `waited ${Math.round(took)} ms`);
 });
@@ -496,4 +526,119 @@ test('stop: a pid that is still alive at the deadline is named, exit 1, never "P
   assert.ok(io.lines.includes(`ERR The panel at http://127.0.0.1:${base + 1} (pid 5102) did not stop.`), io.text());
   assert.ok(io.lines.includes(`The panel at http://127.0.0.1:${base} (pid 5101) stopped.`), io.text());
   assert.ok(!io.text().includes('Panel stopped.') && !io.text().includes('panels stopped.'), io.text());
+});
+
+// fwd's v0.47.1 bug: `echo q | bareloop` printed the header and choices but never the `> ` prompt. The line reader was made at start, the header
+// waited on the (slow) port probe, stdin delivered `q\n` and EOF with no question pending, the line was dropped, and the later ask('> ')
+// returned '' without printing. Reproduced exactly: stdin holds the answer and has ENDED before the probe resolves.
+async function pipedMenu(input) {
+  const home = installedHome();
+  const base = await freeBase();
+  const stdin = new PassThrough();
+  stdin.end(input); // the answer AND the end of input, before anything is asked
+  const out = []; const err = [];
+  const slowProbe = () => new Promise((_res, rej) => { setTimeout(() => rej(new Error('connection refused')), 400); });
+  const launcher = { ports: [base], timeoutMs: 2000, nodeVersion: '22.1.0', version: V, fetchImpl: slowProbe };
+  const rc = await main([], {
+    stdin, stdout: { write: (s) => { out.push(s); return true; } }, stderr: { write: (s) => { err.push(s); return true; } },
+    cwd: process.cwd(), env: {}, keysHome: home, runlistHome: home, launcher,
+  });
+  return { rc, text: out.join(''), err: err.join('') };
+}
+
+test('regression (v0.47.1): `echo q | bareloop` with a slow header probe still prints the `> ` prompt and honours q', async () => {
+  const r = await pipedMenu('q\n');
+  assert.equal(r.rc, 0);
+  assert.match(r.text, /q quit\n> $/, 'the prompt is printed after the choices');
+});
+
+test('regression (v0.47.1): `echo 4 | bareloop` with a slow header probe prompts, then runs status', async () => {
+  const r = await pipedMenu('4\n');
+  assert.match(r.text, /q quit\n> /);
+  assert.equal(r.rc, 0, r.text + r.err);
+  assert.match(r.text, /> Panel not running\./);
+});
+
+// --- panel start time and restart (hamr 2026-10-25) ---
+
+test('whoami: the real panel reports startedAt (ISO, set once at start)', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const before = Date.now();
+  const p = await createPanelServer({ port: base, home, sessionsRoot: join(home, 'sessions'), schedulerIntervalMs: 0 });
+  closers.push(p.close);
+  const j = await (await fetch(`http://127.0.0.1:${base}/api/whoami`)).json();
+  assert.match(j.startedAt, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
+  assert.ok(Date.parse(j.startedAt) >= before - 1000 && Date.parse(j.startedAt) <= Date.now());
+  await new Promise((r) => { setTimeout(r, 30); });
+  const j2 = await (await fetch(`http://127.0.0.1:${base}/api/whoami`)).json();
+  assert.equal(j2.startedAt, j.startedAt, 'set once, not per request');
+});
+
+test('header and status show the start time after the address (local, MM/DD HH:MM); an older panel without it shows nothing extra', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  await fakePanel(base, { pid: 6001, startedAt: '2026-10-24T21:40:00' }); // no zone = local time
+  await fakePanel(base + 1, { pid: 6002 }); // older panel: no startedAt
+  const io = sink();
+  assert.equal(await statusCmd(io, deps(home, base)), 0);
+  assert.match(io.lines[0], new RegExp(`panels running at http://127\\.0\\.0\\.1:${base} · started 10/24 21:40, http://127\\.0\\.0\\.1:${base + 1}$`));
+  assert.ok(io.lines.includes(`http://127.0.0.1:${base} · pid 6001 · version ${V} · 0 drafts open · 0 schedules on · started 10/24 21:40`), io.text());
+  assert.ok(io.lines.includes(`http://127.0.0.1:${base + 1} · pid 6002 · version ${V} · 0 drafts open · 0 schedules on`), 'no "started" for the older panel');
+});
+
+test('restart: no panel running -> says so and just starts', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const d = deps(home, base);
+  const io = sink();
+  assert.equal(await restartCmd([], io, d), 0, io.text());
+  assert.ok(io.lines.includes('Panel not running — starting it.'));
+  assert.equal(d.spawned.length, 1);
+  assert.equal(io.lines.at(-1), `Panel started at http://127.0.0.1:${base} — opening the page.`);
+});
+
+test('restart --yes: the running panel is stopped, then started again on the SAME port (not the first free one)', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const panel = await fakePanel(base + 1, { pid: 7001, drafts: 1 });
+  const kills = [];
+  const d = deps(home, base, { kill: mortal((pid) => { kills.push(pid); panel.close(); }), ask: async () => { throw new Error('--yes must not ask'); } });
+  const io = sink();
+  assert.equal(await restartCmd(['--yes'], io, d), 0, io.text());
+  assert.deepEqual(kills, [7001]);
+  assert.ok(io.lines.includes('Panel stopped.'));
+  assert.equal(d.spawned.length, 1);
+  assert.deepEqual(d.spawned[0].args.slice(-2), ['--port', String(base + 1)], 'the port the panel had, although the first port was free');
+  assert.equal(io.lines.at(-1), `Panel started at http://127.0.0.1:${base + 1} — opening the page.`);
+});
+
+test('restart: open drafts are warned about and asked like stop; a "no" signals nothing and starts nothing', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  await fakePanel(base, { pid: 7011, drafts: 2 });
+  const kills = [];
+  const asked = [];
+  const d = deps(home, base, { kill: (pid) => kills.push(pid), ask: async (q) => { asked.push(q); return 'n'; } });
+  const io = sink();
+  assert.equal(await restartCmd([], io, d), 0, io.text());
+  assert.ok(io.lines.includes('2 drafts are open in the panel and will be lost.'));
+  assert.deepEqual(asked, ['Stop the panel? [y/N] ']);
+  assert.deepEqual(kills, []);
+  assert.equal(d.spawned.length, 0, 'declined: nothing started');
+  assert.equal(io.lines.at(-1), 'Not stopped.');
+});
+
+test('restart through the menu (3) and the sub-command; an unknown option is refused like stop', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const d = deps(home, base, { ask: async () => '3' });
+  const io = sink();
+  assert.equal(await menuCmd(io, d), 0, io.text());
+  assert.ok(io.lines.some((l) => /panel: 1 start {3}2 stop {3}3 restart {3}4 status {3}5 install/.test(l)));
+  assert.ok(io.lines.includes('Panel not running — starting it.'));
+  assert.equal(d.spawned.length, 1);
+  const bad = sink();
+  assert.equal(await restartCmd(['--port', '1'], bad, deps(home, base)), 1);
+  assert.match(bad.text(), /Unknown option "--port"/);
 });

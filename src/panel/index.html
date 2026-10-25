@@ -292,6 +292,10 @@
   .ended-row{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px;}
   .ended-label{color:var(--text-faint);font-size:11px;letter-spacing:0.08em;min-width:52px;}
   .ended-text{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;}
+  /* a NEXT with several instructions is one per line: label muted, instructions in a second column (the shape fwdloop copied, 2026-10-25) */
+  .next-rows{display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:10px;row-gap:2px;}
+  .next-label{color:var(--text-faint);}
+  .next-text{min-width:0;overflow-wrap:anywhere;}
   .ended-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;}
   /* P5 item 4: Import (read only) — the folder browser, the imported rows, the view */
   .import-box{border:1px dashed var(--border-strong);padding:10px;margin-bottom:10px;display:grid;gap:8px;}
@@ -1117,12 +1121,13 @@
     });
   }
 
-  // ---- step map renderer (buildStepMapHTML below — ONE renderer, no second hand-authored map anywhere on this page) ----
   // The one Audit fold arrow (fwdloop's): \u25B6 closed, \u25BC open, faint, never shrinking; the gap after it is CSS (smaller on a phone).
-function auditCaret(open){ return '<span class="audit-caret">' + (open ? "\u25BC" : "\u25B6") + '</span>'; }
-function escapeXml(s){
+  function auditCaret(open){ return '<span class="audit-caret">' + (open ? "\u25BC" : "\u25B6") + '</span>'; }
+  function escapeXml(s){
     return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
+
+  // ---- step map renderer (buildStepMapHTML below — ONE renderer, no second hand-authored map anywhere on this page) ----
   // s.noNumber (F196): a synthetic placeholder box (e.g. "died during
   // planning") is a LABEL, never a real step — it renders without the
   // leading "<n> " step number a real step gets.
@@ -2484,6 +2489,12 @@ function escapeXml(s){
   // RULED 2026-10-15 (aligned with fwdloop M9 am7): ONE block, the same shape every time: ENDED (a finished run), NEXT (a finished run), SCHEDULE
   // (always: the schedule's words and a second line, or "By hand"). A schedule that started nothing turns the SCHEDULE row AND the frame red.
   // The sentences are CODE-OWNED on the server (`endedFor`/`endedText` in src/panel/server.js, `detail.schedule` from src/schedulewords.js) — this only paints them.
+  // NEXT: `e.next` is one string; `e.rows` ([label, instruction] pairs, from endedFor) is there only when it holds several instructions
+  function nextRow(e){
+    if(!Array.isArray(e.rows) || e.rows.length < 2) return summaryRow("NEXT", e.next, "ended-next", false);
+    var grid = e.rows.map(function(r){ return '<span class="next-row" style="display:contents"><span class="next-label">' + escapeXml(r[0]) + '</span><span class="next-text">' + escapeXml(r[1]) + '</span></span>'; }).join("");
+    return '<div class="ended-row"><span class="ended-label">NEXT</span><span class="ended-text next-rows" data-testid="ended-next">' + grid + '</span></div>';
+  }
   function renderEnded(detail){
     var box = document.getElementById("ended-block");
     var e = detail.ended;
@@ -2499,7 +2510,7 @@ function escapeXml(s){
     var h = "";
     if(e){
       // text only: the ONE place for [Stop] / [Resume] / [Reuse workflow] is the Run tab's top action row (renderRunActions)
-      h += summaryRow("ENDED", detail.endedText || e.reason, "ended-reason", false) + summaryRow("NEXT", e.next, "ended-next", false);
+      h += summaryRow("ENDED", detail.endedText || e.reason, "ended-reason", false) + nextRow(e);
     }
     if(sc){
       var w = sc.words || {};
@@ -2872,7 +2883,11 @@ function escapeXml(s){
     if(!box || !list) return;
     var items = detail && Array.isArray(detail.learnings) ? detail.learnings : [];
     list.innerHTML = "";
-    var head = "What the planner was told from earlier runs";
+    var errLine = detail && typeof detail.learningsError === "string" ? detail.learningsError : "";
+    // only the error and nothing handed: the title says so (hamr 2026-10-24); with hints it stays "What the planner was told ..."
+    var head = items.length === 0 && errLine ? "No lessons were given to the planner" : "What the planner was told from earlier runs";
+    // header mark (hamr 2026-10-24): \u2713 when lessons were handed to the planner, \u2717 when the learnings file could not be read and nothing was handed (hints win if both ever exist)
+    var mark = items.length === 0 && errLine ? "\u2717" : "\u2713";
     items.forEach(function(it, gi){
       var hints = Array.isArray(it.hints) ? it.hints : [];
       var when = it.phase === "replan" ? "first replan" : "draft";
@@ -2927,7 +2942,7 @@ function escapeXml(s){
       });
       var label = items.length ? head + " \u00B7 " + first + (first === 1 ? " hint" : " hints") : head;
       // arrow back (hamr 2026-10-24, latest wins over 2026-10-23): auditCaret (\u25BC open / \u25B6 closed) first, as the schedule header; then the same `[✓] word` state markup the schedule/step headers wear (stateDotHTML), then the plain-words title
-      var paint = function(){ sum.innerHTML = auditCaret(sum.getAttribute("aria-expanded") === "true") + stateDotHTML(glyphClass("\u2713"), "learnings", "audit-learnings-state") + " " + escapeXml(label); };
+      var paint = function(){ sum.innerHTML = auditCaret(sum.getAttribute("aria-expanded") === "true") + stateDotHTML(glyphClass(mark), "learnings", "audit-learnings-state") + " " + escapeXml(label); };
       paint();
       // ONE fold, same as the other Audit sections: the header button toggles the body (wired once)
       sum.onclick = function(){
@@ -2937,7 +2952,15 @@ function escapeXml(s){
         paint();
       };
     }
-    box.hidden = items.length === 0;
+    if(errLine){
+      var en = document.createElement("div");
+      en.className = "hint";
+      en.style.cssText = "margin:6px 0;overflow-wrap:anywhere;";
+      en.setAttribute("data-testid", "audit-learnings-error");
+      en.textContent = errLine;
+      list.appendChild(en);
+    }
+    box.hidden = items.length === 0 && !errLine;
   }
 
   // ONE spelling of a step's state: its dot + the bold state word — read by the Run tab's step cards AND the Audit tab's grouped rows

@@ -27,7 +27,7 @@ function load(code, name) {
 
 const closeSrc = read('../src/close-integrity.js');
 const bundleSrc = read('../src/bundle.js');
-const stringCode = strip(slice(closeSrc, 'const STRING_BODY = {', '/**\n * F8/F129'));
+const stringCode = strip(slice(closeSrc, 'const STRING_BODY = {', 'export function absolutePathLiteralsOf('));
 const importCode = strip(slice(bundleSrc, 'function staticImportsOf(source) {', '// Dynamic `import('));
 
 // the OLD readers, verbatim from the commits before 48a8d24 and 1a41097

@@ -2035,7 +2035,22 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 
 - Option A, next fix after v0.46.1: see the v1.108 RULED 2026-10-24 bullet. Learnings fold at run end for rubric runs too; reuse/bridge credit still waits for the door Accept.
 - **Second item, same branch, RULED 2026-10-24 (hamr): a resumed leg updates its own run's ledger row.** Defect found by fwd while porting, test-proven (fwdloop `test/m8-am4-run-end.test.js` test 7), not live: `countLedger` (`src/learn.js:639` at v0.46.1) skips a row that already holds the run id, and the run-end tally runs at each leg end with ONE run id, so a NEVER FIXED card from leg 1 stays NEVER FIXED when leg 2 fixes it. Required: the leg may update its own run's row (sample card, lesson, kind) without counting +1 again; the count stays one per run. Both repos get the same fix.
+- **2026-10-24 (hamr): learnings key the job version on the workflow key (Reuse's rule), so a cap, time, source, destination, inputs or model change keeps the lessons; a resume that raises the cap refreshes its own row.**
+
 
 ### The `bareloop` launcher (v1.113 — 2026-10-24) — SIGNED by hamr
 
 - Bare `bareloop` is a launcher menu (start | stop | status | install); the panel is found by `GET /api/whoami` on 127.0.0.1:4700..4709, no pid file; one panel at a time, `stop` stops every panel found. Contract and amendment: `docs/product/PANEL-BUILD.md` "Addendum 2026-10-24 — L" and "L amendment 2026-10-24 — one panel at a time"; adopter text in `bareloop.context.md` (CLI section).
+
+- **2026-10-24 (hamr): `learningHints` is now ON by default** (absent = on; `"learningHints": false` turns it off). Earlier "ships OFF" lines on learnings are ruled history.
+
+- **2026-10-24 (hamr): search as an input is PARKED** after POCs v3-v5 failed (F244); a pasted page link stays the input; the 2026-10-21 search build spec and 2026-10-24 search screens are not built.
+
+
+### The CLI: export and run only, one menu (v1.114 — 2026-10-24) — RULED by hamr
+
+- Supersedes the v1.93 (2026-10-12) "UI Export is MISSING ... built in part (3)" line, which stays as written: there is NO Export in the UI. The UI is the main panel for everything; you build, sign and polish a workflow there, then export it from the CLI and run it from the CLI. The "Open: the Export UI shape" item is closed.
+- Export is by run name: `bareloop export "<job> (run-N)" --out <dir>` finds the green run's signed spec and green plan itself (no spec path, no --registry). The panel's Run tab of a green run shows that export line to copy, beside the `git merge` line (text, not a button).
+- One launcher menu: line 1 panel (start, stop, restart, status, install), line 2 jobs (export, run, resume, history); each job command prompts for what it needs (export lists green runs by name; run asks bundle, inputs/destination, $ cap, time cap; resume lists stopped CLI runs and asks for more money/time; history picks a bundle). Each also works typed with its flags.
+- Cut from the CLI: `interview` and `author` (drafting is UI only), `runs backfill` (one-off migration). `replay` and the bench move to `scripts/` (closes the v1.93 "Open: the bench move" item). `run-u` stays as hidden plumbing (the panel spawns it for run, Accept, Rerun, Pause, Resume), out of the menu and help. `panel [--port N]` unchanged.
+- Found at $0 on 2026-10-24 before any spec (see F245): today's export refuses every panel-made job, so export and run must learn the panel's job shape. Order: a $0 POC on one real green panel REPO job first (export it, then a bundle run reaching already-green at $0 with no model call), then the spec shown to hamr, then the build; plain folders, page links and rubric jobs after repo jobs.

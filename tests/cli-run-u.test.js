@@ -167,12 +167,12 @@ test('bareloop run-u: the printed re-invocation names `bareloop run-u`, never a 
   assert.match(direct.join('\n'), /node scripts\/run-u\.mjs --job aurora-spawner --approve /);
 });
 
-test('bareloop run-u: a --spec that does not exist points at `bareloop author`, not scripts/run-author.mjs', async () => {
+test('bareloop run-u: a --spec that does not exist points at the panel\'s drafting or scripts/run-author.mjs, never at a `bareloop author` command (it left the CLI)', async () => {
   const out = sink(); const err = sink();
   const rc = await main(['run-u', '--spec', '/tmp/no-such-resolved-spec.json'], { stdout: out, stderr: err, env: NO_KEYS, cwd: process.cwd() });
   assert.equal(rc, 2);
-  assert.match(err.text(), /\(bareloop author's own `out\/resolved-spec\.json`\)/);
-  assert.doesNotMatch(err.text(), /scripts\//);
+  assert.match(err.text(), /the panel's drafting session, or node scripts\/run-author\.mjs's own `out\/resolved-spec\.json`/);
+  assert.doesNotMatch(err.text(), /bareloop author|bareloop interview/);
 });
 
 // ---------------------------------------------------------------------------
@@ -201,12 +201,20 @@ test('bareloop run-u: dispatch through src/cli.js matches src/userrun.js:main ca
 });
 
 // ---------------------------------------------------------------------------
-// the top-level command list now names run-u
+// the top-level command list: run-u stays dispatchable but is not listed (PRD v1.114, one menu); interview, author and replay are gone
 // ---------------------------------------------------------------------------
 
-test('bareloop: an unknown command\'s refusal now lists run-u alongside export/run/history', async () => {
+test('bareloop: an unknown command\'s refusal lists the commands, without run-u / interview / author / replay', async () => {
   const out = sink(); const err = sink();
   const rc = await main(['bogus'], { stdout: out, stderr: err });
   assert.equal(rc, 1);
-  assert.match(err.text(), /unknown command "bogus" — one of: export, run, history, run-u/);
+  assert.match(err.text(), /unknown command "bogus" — one of: export, run, history, runs, panel, start, stop, restart, status, install/);
+  assert.doesNotMatch(err.text(), /run-u|interview|author|replay/);
+  for (const gone of ['interview', 'author', 'replay']) {
+    const e2 = sink();
+    assert.equal(await main([gone], { stdout: sink(), stderr: e2 }), 1, `${gone} is no longer a command`);
+    assert.match(e2.text(), /unknown command/);
+  }
+  const e3 = sink();
+  assert.equal(await main(['runs', 'backfill', '/tmp'], { stdout: sink(), stderr: e3, runlistHome: '/nonexistent-home-for-test' }), 0, 'runs takes no subcommand now: it just lists');
 });

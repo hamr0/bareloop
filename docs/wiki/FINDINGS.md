@@ -14775,3 +14775,36 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 - v6 (8 pairs, 24 calls): the AI got the whole page and the job's own asks (hand-written, standing in for the job lines) and said found with a quote, or not found. Code checked each quote is on the page; all found gives RUN, anything not found gives ASK; no NO, no count. PASS by the frozen rule, not degenerate: bad pages ASK 15 of 15, right pages RUN 9 of 9 (pair 8 RUN by design, the count is left to Accept). The ASK lists named the real gap: the route on the flipped page, exactly wifi and meal on pair 7. Made-up quotes 0. Spend $0.1396. Limit: same pages as v2-v5 and the design came after reading their failures, so this is a fit on known pages, not proof on unseen pages.
 
 **Total spend v1 to v6: $0.5686.**
+
+## F244 — search as an input: three pre-registered POCs (v3, v4, v5) failed, so search is parked (2026-10-24; hamr ruled option A, park)
+
+**Grounded in:** `.claude/scratch/search-poc3/`, `search-poc4/`, `search-poc5/` (each `PREREG.md` frozen before any number, and `RESULTS.md`), and `.claude/scratch/search-poc2/RESULTS.md` for context (untracked scratch). Evidence that led here: F243 (the fit check the search POCs reuse).
+
+**Set-up.** Can the system take a search site plus a job, search it, open the result pages, and give claims the real checker passes? All used deepseek-flash on a real search site (Google or DuckDuckGo), 6 cases each, one run per case, frozen rules signed before any number. v3 cases: Node.js releases (on both sites), Python releases, the population of Portugal, the 3 tallest buildings, Firefox releases. v4 and v5 cases: Node.js releases, the population of Portugal, the tallest buildings, Node.js and Python latest releases (two sources), the populations of Portugal and Spain (two sources), TypeScript and Rust latest versions (two sources). Code picks the search box; the AI writes the search words and picks result links; the fit check and the real `gradeStep` judge the pages.
+
+**Per version**
+- v3: FIT (search 1) 5/6, need >= 5, ok. SAME HOST 1/5, need a miss of at most 1, FAIL. The same job searched a second time at run start landed on another site, because the AI writes fresh words each time. Spend $0.3751 of the $0.4 cap, cap hit, incomplete. Overall FAIL.
+- v4: CANDIDATES 1/6 (need >= 5), ANSWERS 0/6 (need >= 4); CAN FAIL 2/2 rejected. Spend $0.4022 (fit $0.3780, worker $0.0045). Two causes. (1) The per-page fit check splits the same main line into different ask strings on different pages, so no page holds every ask. (2) The values sit on separate snapshot lines, so a one-line quote misses the date (case 1 gaps: "the value is not in the quote as a whole word"). Overall FAIL.
+- v5: CANDIDATES 2/6, ANSWERS 1/6, CAN FAIL 2/2 rejected but fewer than the 4 copies required. Spend $0.3753 (fit $0.2804, worker $0.0761). Overall FAIL. The two v4 fixes worked: one fit call splits the asks once for all pages, and the real checker accepts a multi-line quote (checked at $0). Case 1 passed: three claims such as "26.12.1" with "21 Oct 2026", each quote two lines. Three walls remain: (1) the fit check does not find the whole main line across pages; (2) Google result clicks often stay on the Google results page; (3) table quotes do not match the snapshot text word for word.
+
+**Total about $1.15** (0.3751 + 0.4022 + 0.3753 = $1.1526 for v3 to v5), deepseek-flash. v2 ($0.0754, FAIL: cases 1 and 2 reach fits) is the earlier spend and is not in this sum.
+
+**Design A (hamr 2026-10-24).** The numbered job line is the main ask, and `~` lines are checked later on claims. This is the design the v5 run followed; it did not pass.
+
+**Learnings**
+- The original 2026-10-21 search spec was signed on POC v2, which itself said "Overall: FAIL by the frozen rule" (cases 1 and 2 reach fits). A builder was launched on it and stopped, and its 2 commits were dropped. A signed spec is not a proven premise.
+- Every failure sat in evidence collection (which ask strings, which lines, which click), not in the checker: the real checker passed a multi-line quote once the quote was whole.
+- Re-searching at run start cannot reproduce the drafting search while the AI writes the words fresh.
+
+**Status.** A failure, never a re-tune: the frozen rules stay as signed. Search as an input is PARKED by hamr; a pasted page link stays the input. Not built.
+
+
+## F245 — CLI export refuses every job made in the panel (2026-10-24; $0, read only; open)
+
+**Status.** Open; ruled path in PRD v1.114 (POC on one real green panel repo job first).
+
+- [MEASURED] `bareloop export <spec> --registry <empty dir> --out <dir>` on a real panel rubric spec (session smvh7axzsav1i, flights) and a real panel repo spec (session smuqqw9x266au, fix-slugify) both stop with `invalid-value at spec.close: a non-empty ordered close stage list is required to export`. Run in a scratch HOME; nothing written to ~/.config.
+- [MEASURED] Of 60 resolved-spec.json files in ~/.config/bareloop/panel-sessions, 59 carry `closeDecl` and no `close` (26 green, 33 soft-green); 1 carries `close`.
+- [CODE] `doExport` (src/cli.js:139) and `exportBundle` (src/bundle.js:337) read `spec.close` and require a registry row at the spec's hash (`no-bridge-at-hash`, src/bundle.js:383); grep finds no `closeDecl` in src/bundle.js, src/bundlerun.js or src/cli.js.
+- [CODE] Panel runs never pass `--registry` (no `--registry` in src/panel; the panel spawns `run-u --spec ... --approve ...`, src/panel/authorroutes.js:502, runroutes.js:229, :375). A panel green writes only a per-run bridge FILE `bridge-<job>-<runid>.json` next to its spine (src/userrun.js:2387), never a registry row.
+- [CODE] `bareloop run <bundleDir>` takes `--repo <path>` only and always makes a git worktree (src/bundlerun.js:50, :169); a plain-folder, page-link or rubric job has no way to run from a bundle.

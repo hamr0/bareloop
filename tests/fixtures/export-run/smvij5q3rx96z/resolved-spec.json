@@ -1,0 +1,109 @@
+{
+  "schema": "job-v1",
+  "job": "flight-c1",
+  "description": "flight-c1 — authored through the bareloop panel (soft-green, text)",
+  "jobLines": [
+    {
+      "n": 1,
+      "text": "List 3 flights from Boston to Miami with price and departure time",
+      "rule": ""
+    }
+  ],
+  "inputs": [
+    {
+      "n": 1,
+      "label": "page",
+      "value": "https://www.google.com/travel/flights?q=Flights+from+BOS+to+MIA+on+2026-11-20+one+way&hl=en&curr=USD"
+    }
+  ],
+  "provider": "openai-api",
+  "baseUrl": "https://api.deepseek.com/v1",
+  "model": "deepseek-flash",
+  "budgetUsd": 0.5,
+  "writeScope": [
+    "output/"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  },
+  "goal": "Do the job below from the input files, then write one JSON file per numbered line.\n\nThe input files (label: file):\n  - page: input/page.txt\n\nFor each numbered job line N, write ONE file output/steps/N.json: a JSON object with exactly these keys.\n  \"text\"  — your answer for that line, as a string.\n  \"cites\" — an object: for each input you drew on, its label as the key and a list of {\"claim\", \"quote\"} as the value.\n            \"claim\" is one thing your text relies on; \"quote\" is words copied EXACTLY from that input (spacing and\n            ** or __ marks do not matter). Every number in a claim must also appear in its quote.\n  In each claim, copy every number, time and price exactly as the input writes it (for example \"9:27 AM\", not \"09:27\"),\n  because the check matches the numbers in your claim against your quote.\nA job line the brief below marks as a FACTS line is different: its file holds ONLY {\"results\": [{\"quote\": \"...\", \"values\":\n{\"<fact>\": \"<value>\"}}]} — one result per thing found, one quote copied exactly from the text of that one result, the values written as the quote\nwrites them; no \"text\" and no \"cites\". A line the brief marks as a TEXT line keeps \"text\" (free words), and every number in it\nmust be copied from a quote of an earlier facts line.\nWrite nothing outside output/, and never edit the files under input/. The file must be complete, valid JSON: a file cut\noff before its closing brace counts as not written.\n\nThe job, line by line:\n1. List 3 flights from Boston to Miami with price and departure time\n\nJob line 1 is a FACTS line. Write output/steps/1.json as {\"results\": [{\"quote\": \"...\", \"values\": {...}}]} and nothing else — no \"text\", no \"cites\".\n  One result per thing you find in the input \"page\": exactly 3 results.\n  \"quote\": ONE quote per result, copied exactly from that result's own text in the input (at most 4000 characters) — never joined from two results.\n  \"values\": one entry per fact below, written exactly as the quote writes it (for example \"9:27 AM\", not \"09:27\"; \"389\", not \"389.00\").\n    - origin city — no value to write; the quote you copy must say \"Boston\"\n    - destination city — no value to write; the quote you copy must say \"Miami\"\n    - price — an amount in US dollars, right after \"From\"\n    - departure time — a time, right after \"Departure time:\"\n\nThe plan the person confirmed: List exactly 3 flights in output/steps/1.json, each with a quoted origin city (Boston), destination city (Miami), a price from the page's \"From\" label in US dollars, and a departure time from the page's \"Departure time:\" label.",
+  "verdictType": "soft-green",
+  "closeDecl": {
+    "genre": "TEXT",
+    "lang": "text",
+    "stages": [
+      {
+        "name": "changed-from-seed",
+        "kind": "files-changed",
+        "params": {
+          "requireNonEmpty": true,
+          "allowPrefixes": [
+            "output/"
+          ]
+        }
+      },
+      {
+        "name": "flights-listed",
+        "kind": "rubric-step",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "step": 1,
+          "parts": [
+            {
+              "text": "List 3 flights from Boston to Miami with price and departure time",
+              "class": "fact",
+              "source": "page",
+              "count": {
+                "min": 3,
+                "max": 3
+              },
+              "covers": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "facts": [
+                {
+                  "name": "origin city",
+                  "shape": "phrase",
+                  "phrase": "Boston"
+                },
+                {
+                  "name": "destination city",
+                  "shape": "phrase",
+                  "phrase": "Miami"
+                },
+                {
+                  "name": "price",
+                  "shape": "money",
+                  "anchor": "From",
+                  "unit": "US dollars"
+                },
+                {
+                  "name": "departure time",
+                  "shape": "time",
+                  "anchor": "Departure time:"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "notes": [
+      "Which 3 flights are listed is not checked: the person did not say how to choose among the page's flights, and choice is not a shape a fact can carry.",
+      "Whether the prices and departure times are accurate or current is not checked: that needs a read of the live page, which no stage can do.",
+      "Tone and quality of the listing text is not checked: line 1 is a facts line, so its file holds only results and quotes, no prose to judge.",
+      "Fact words were copied from the input's own labels rather than the person's words: the price label is \"From\" (not \"from\"), and the departure time label is \"Departure time:\" (not \"Leaves\").",
+      "Money fact uses unit \"US dollars\" only, as the look gives it; no currency sign was added, because \"$\" does not show the same amounts as \"US dollars\" per the look.",
+      "Origin and destination facts use the phrase form with a single page word per the look's first listed option (\"Boston\", \"Miami\"); the look offered alternatives (\"BOS\", \"Boston Logan International Airport\", \"MIA\", \"Miami International Airport\") that the schema cannot express as alternatives on one fact.",
+      "Count for line 1 is a fact count (min 3, max 3) rather than a minClaims/maxClaims part, because line 1 lists results and so carries one fact part and no claim-count parts.",
+      "line 1: \"price label\" — \"US dollars\" was listed twice, as a unit and as a currency; it is used once, as the first way to write the price. \"$\" does not show the same amounts as \"US dollars\", so it was not used as a second way to write the price. \"from\" does not show the same values as \"From\", so it was not used as a second way to read it.",
+      "line 1: \"departure time label\" — \"Leaves\" does not show the same values as \"Departure time:\", so it was not used as a second way to read it."
+    ]
+  }
+}

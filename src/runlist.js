@@ -165,6 +165,37 @@ export function readNeedsRemovals(opts = {}) {
 }
 
 /**
+ * @typedef {{ type: 'exported', runid: string, job: string, bundle: string, bundleHash: string, at: string }} ExportedRow
+ * RULED 2026-10-25 (PRD v1.114): `bareloop export` appends ONE of these per bundle it makes, so `bareloop run` can find the bundle by the
+ * run's name. Not a run, a claim or an event: {@link readRunList} ignores it (it has a `type`), so the monthly limit, the run counter and the
+ * scheduler never see it. Nothing is rewritten.
+ */
+
+/**
+ * Append one {@link ExportedRow}. THROWS on IO failure.
+ * @param {Omit<ExportedRow, 'type'>} row
+ * @param {{ home?: string }} [opts]
+ * @returns {void}
+ */
+export function appendExported(row, opts = {}) {
+  const path = runlistPath(opts.home);
+  mkdirSync(runlistHome(opts.home), { recursive: true, mode: 0o700 });
+  appendFileSync(path, `${JSON.stringify({ ...row, type: 'exported' })}\n`);
+  try { chmodSync(path, 0o600); } catch { /* best-effort perms */ }
+}
+
+/**
+ * Every `exported` row, in file order (a re-export of the same run is a later row). An absent file is an empty list.
+ * @param {{ home?: string }} [opts]
+ * @returns {ExportedRow[]}
+ */
+export function readExported(opts = {}) {
+  const path = runlistPath(opts.home);
+  if (!existsSync(path)) return [];
+  return parseJsonl(path).records.filter((r) => r && r.type === 'exported' && typeof r.bundle === 'string' && typeof r.runid === 'string');
+}
+
+/**
  * @typedef {{ type: 'leg-start', runid: string, leg: number, pid?: number, capUsd?: number, at: string }} LegStart
  * A resumed run's NEW claim (P5-R, hamr 2026-10-02: one run, one id, one row): appended beside the run's row
  * instead of a second row. {@link readRunList} folds it into the row.
@@ -482,4 +513,45 @@ export function formatRunRow(row) {
   const date = typeof row.at === 'string' ? row.at.slice(0, 10) : '(unknown date)';
   const missing = existsSync(row.spine) ? '' : ' — file missing';
   return `${row.job} (${row.runid}) · ${date} · ${row.spine}${missing}`;
+}
+
+/**
+ * @param {any} r
+ * @returns {number}
+ */
+export function atMs(r) {
+  const t = typeof r?.at === 'string' ? Date.parse(r.at) : NaN;
+  return Number.isFinite(t) ? t : 0;
+}
+
+/**
+ * A run's name for a person: `job (run-N)`, N from {@link runNumbers}. The ONE spelling (the panel, `bareloop export` and `bareloop run` all print it).
+ * @param {string} job @param {number|undefined} n
+ * @returns {string}
+ */
+export function runNameOf(job, n) { return `${job} (run-${n})`; }
+
+/**
+ * The ONE owner of run names (P6 item 7): runs of the same job (`row.job`) are numbered oldest `at` first, 1-based
+ * (ties keep file order). A resume is one row, so it counts once; died and stopped runs are rows too. Every view
+ * reads this number — the page never counts on its own.
+ * @param {any[]} rows
+ * @returns {Map<string, number>} runid → N
+ */
+export function runNumbers(rows) {
+  /** @type {Map<string, any[]>} */
+  const byJob = new Map();
+  rows.forEach((row, index) => {
+    if (!row || typeof row.runid !== 'string') return;
+    const g = byJob.get(row.job) || [];
+    g.push({ row, index });
+    byJob.set(row.job, g);
+  });
+  /** @type {Map<string, number>} */
+  const out = new Map();
+  for (const g of byJob.values()) {
+    g.sort((a, b) => (atMs(a.row) - atMs(b.row)) || (a.index - b.index));
+    g.forEach(({ row }, i) => out.set(row.runid, i + 1));
+  }
+  return out;
 }

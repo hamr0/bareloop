@@ -56,16 +56,16 @@ function realBlock() {
   let L = emptyLedger();
   const NOW = new Date('2099-01-01T00:00:00Z');
   for (const id of ['ms2c0ls7', 'ms7flkok', 'mszi97jd', 'ms2ddxjc', 'mszcfaof']) {
-    L = countLedger(L, { runid: id, cards: cardsOf(id).cards, workflow: WF, place: '/p/aurora', specHash: 'h1', trust: 'deterministic', now: new Date(cardsOf(id).cards[0].at) });
+    L = countLedger(L, { runid: id, cards: cardsOf(id).cards, workflow: WF, place: '/p/aurora', workflowKey: 'k1', trust: 'deterministic', now: new Date(cardsOf(id).cards[0].at) });
   }
   // the archived aurora cards predate the stored diff: give the typecheck row one (an edit, said so) so What changed has lines to carry
   L = { ...L, rows: L.rows.map((r) => (r.sample.check === 'typecheck' && r.sample.kind === 'FIXED'
     ? { ...r, sample: { ...r.sample, whatChanged: { files: [{ diff: 'diff --git a/x.js b/x.js\n--- a/x.js\n+++ b/x.js\n@@ -1,2 +1,6 @@\n-old line\n+new one\n+new two\n+new three\n+new four\n context' }] } } }
     : r)) };
   const stuck = cardsOf('mshcpdg4').cards;
-  L = countLedger(L, { runid: 'mshcpdg4', cards: stuck, workflow: WF, place: '/p/aurora', specHash: 'h1', trust: 'deterministic', now: new Date(stuck[0].at) });
+  L = countLedger(L, { runid: 'mshcpdg4', cards: stuck, workflow: WF, place: '/p/aurora', workflowKey: 'k1', trust: 'deterministic', now: new Date(stuck[0].at) });
   const lastAt = L.rows.map((r) => r.lastSeen).sort().at(-1);
-  return { ledger: L, r: renderHints(L, { workflow: WF, place: '/p/aurora', specHash: 'h1', now: new Date(new Date(lastAt).getTime() + 86_400_000) }) };
+  return { ledger: L, r: renderHints(L, { workflow: WF, place: '/p/aurora', workflowKey: 'k1', now: new Date(new Date(lastAt).getTime() + 86_400_000) }) };
 }
 const record = (phase, r) => ({ phase, text: r.text, chars: r.text.length, ids: r.ids, hints: parseHintBlock(r.text) });
 
@@ -92,8 +92,8 @@ test('the section is ONE .audit-part box like the other Audit sections: one togg
   const btn = els['audit-learnings-summary'];
   assert.equal(btn.getAttribute('aria-expanded'), 'false');
   assert.equal(els['audit-learnings-list'].hidden, true, 'body hidden by default');
-  // the header wears the SAME `[sign] word` state markup as the schedule/step headers (stateDotHTML + glyphClass), sign ✓ word "learnings"
-  assert.match(PAGE, /stateDotHTML\(glyphClass\("\\u2713"\), "learnings", "audit-learnings-state"\)/);
+  // the header wears the SAME `[sign] word` state markup as the schedule/step headers (stateDotHTML + glyphClass), sign ✓ (hints handed) word "learnings"
+  assert.match(PAGE, /stateDotHTML\(glyphClass\(mark\), "learnings", "audit-learnings-state"\)/);
   assert.match(PAGE, /stateDotHTML\(glyphClass\(sec\.sign\), sec\.word, "audit-schedule-state"\)/, 'the schedule header uses the same helper');
   assert.equal(btn.innerHTML.match(/^<span class="audit-caret">\u25B6<\/span>(<span class="step-state" data-testid="audit-learnings-state"><span class="dot green"><\/span><b class="st-word">learnings<\/b><\/span>) /)?.length, 2, 'dot green + st-word learnings in a step-state span');
   btn.click();
@@ -189,4 +189,41 @@ test('the header counts DISTINCT hints across draft and replan: a replan block w
   const { els, render } = page();
   render({ learnings: [record('draft', r), replan] });
   assert.equal(plain(els['audit-learnings-summary']), `\u25B6learnings What the planner was told from earlier runs · ${r.ids.length + 1} hints`);
+});
+
+test('a learnings file that could not be read shows ONE plain line in the box, and the box shows even with no hints', () => {
+  const { els, render } = page();
+  const line = 'The learnings file could not be read, so no lessons were given: /h/learnings.json is not readable JSON (parse error) — fix or remove it';
+  render({ learnings: [], learningsError: line });
+  assert.equal(els['audit-learnings'].hidden, false);
+  assert.equal(els['audit-learnings-list'].find('audit-learnings-error').textContent, line);
+  render({ learnings: [], learningsError: null });
+  assert.equal(els['audit-learnings'].hidden, true, 'no error and nothing handed = hidden, as before');
+});
+
+test('the title: error and nothing handed = "No lessons were given to the planner"; hints handed keep the old title', () => {
+  const { r } = realBlock();
+  const { els, render } = page();
+  const btn = els['audit-learnings-summary'];
+  render({ learnings: [], learningsError: 'The learnings file could not be read, so no lessons were given: x' });
+  assert.equal(plain(btn), '\u25B6learnings No lessons were given to the planner');
+  assert.ok(!plain(btn).includes('What the planner was told'));
+  render({ learnings: [record('draft', r)], learningsError: null });
+  assert.ok(plain(btn).includes('What the planner was told from earlier runs'));
+  assert.ok(!plain(btn).includes('No lessons were given'));
+});
+
+test('the header mark: error and nothing handed = red dot (the failed sign); hints handed = green dot; the word stays "learnings"', () => {
+  const { r } = realBlock();
+  const { els, render } = page();
+  const btn = els['audit-learnings-summary'];
+  const dot = () => btn.innerHTML.match(/<span class="dot (\w+)"><\/span><b class="st-word">(\w+)<\/b>/)?.slice(1);
+  render({ learnings: [], learningsError: 'The learnings file could not be read, so no lessons were given: x' });
+  assert.deepEqual(dot(), ['red', 'learnings']);
+  render({ learnings: [record('draft', r)], learningsError: null });
+  assert.deepEqual(dot(), ['green', 'learnings']);
+  render({ learnings: [record('draft', r)], learningsError: 'both at once (not expected): hints win' });
+  assert.deepEqual(dot(), ['green', 'learnings']);
+  render({ learnings: [], learningsError: null });
+  assert.equal(els['audit-learnings'].hidden, true);
 });

@@ -380,3 +380,17 @@ Bundle fires total is now 8 across the job's two bundle generations (fires 1–5
 **Read:** n=2 at $5 on this v2 bundle is 1 cap-halt / 1 green, consistent with the job's
 observed green-cost band topping near $4 — a $5 ceiling is tight, not broken. Full trace,
 read, and lesson: `docs/logs/FINDINGS.md` F134.
+
+## Addendum 2026-10-25 — export panel jobs by run name; one menu (PRD v1.114, F245)
+
+Rulings (hamr, 2026-10-25). The CLI is export + run only, with one menu. No Export in the UI.
+
+- Export by run name: `bareloop export "<job> (run-N)" --out <dir>`. With no name it lists the green panel/run-u runs (runs.jsonl rows plus their spines; green = job-end green or already-green) as numbered `job (run-N)` names and you pick a number. The `job (run-N)` naming comes from the same code the panel uses: one owner, never a second spelling.
+- The bundle is built from the run's own signed resolved spec (closeDecl kept as is, nothing hand-written or edited, no close scripts) plus a bridge-v1 record minted with `mintBridge` from the bridge file's plan, specHash and runid, and from the run's spine: costUsd (job-end engagementSpentUsd, else spentUsd), spendComplete, wallMs, rounds, patient. A value that cannot be read is refused in plain words naming it. Never guessed. `exportBundle` accepts a closeDecl spec. The old form `export <job.json> --registry <dir> --out <dir>` keeps working unchanged (bench depends on it).
+- Repo jobs only for now. A plain-folder, page-link or rubric (soft-green) job is refused at $0: "only repo jobs can be exported for now" plus the reason.
+- Each export appends one row `{type:'exported', runid, job, bundle, bundleHash, at}` to runs.jsonl, so `run` can find a bundle by name. Every reader of runs.jsonl handles the new type.
+- `bareloop run`: a green run commits its work on its work branch (`commitWork`), like the panel. Model: the one the bundle's spec names; if none, ask for it from the Settings rows.
+- Caps can go up with a confirm, at `run` and `run --resume`: "This raises the $ cap from $X to $Y. Type yes to sign it." Only `yes` proceeds; the raise is recorded as a signed approval in the run's own records (who, old, new, at). Without a terminal a raise needs `--yes`, else refused at $0. A resume's ceiling still folds prior spend. Lowering needs no confirm. `envelope-widen` stays the refusal when no confirm was given.
+- One menu: `panel: 1 start 2 stop 3 restart 4 status 5 install` / `jobs: 6 export 7 run 8 resume 9 history` / `q quit`. Each job command prompts for what it needs; typed flags skip the prompt. An empty Enter on a required prompt asks once more; a second empty Enter ends that command cleanly with a plain line (exit 0).
+- Cuts: `interview`, `author`, `runs backfill` leave the CLI; `replay` and the bench move to `scripts/`; `run-u` stays dispatchable but unlisted; `panel` unchanged. Only CLI entry points are removed; library functions the panel uses stay.
+- Panel: a green repo run's Run tab shows the export line to copy beside the `git merge` text. Text, not a button.

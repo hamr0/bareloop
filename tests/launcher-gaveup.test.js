@@ -16,7 +16,7 @@ import { fireWorld, makeRun, specOf, tmp } from './trigger-world.mjs';
 
 const MIN = 60_000;
 // the fixtures' own dates are 2026-10-01; the door's 60-day TTL is read against THIS clock, not the machine's
-const NOW = Number(process.env.GAVEUP_TEST_NOW) || Date.UTC(2026, 9, 2);
+const NOW = Date.UTC(2026, 9, 2);
 test('launcher header: one run needing Accept plus one gave-up schedule reads "2 need you", the panel\'s own count', async () => {
   const w = await fireWorld({});
   let n = 0;

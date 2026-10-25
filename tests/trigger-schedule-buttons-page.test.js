@@ -126,7 +126,7 @@ test('Run tab: the button starts and signs NOTHING — it only asks the server f
 });
 
 // ------------------------------------------------------------------ the blocks
-const endedRender = (dom) => new Function('document', `${fnSrc('escapeXml')}\n${fnSrc('summaryRow')}\n${fnSrc('renderEnded')}\nvar lastEndedSig = null;\nreturn renderEnded;`)(dom.document);
+const endedRender = (dom) => new Function('document', `${fnSrc('escapeXml')}\n${fnSrc("summaryRow")}\n${fnSrc("nextRow")}\n${fnSrc("renderEnded")}\nvar lastEndedSig = null;\nreturn renderEnded;`)(dom.document);
 
 test('the ONE block: ENDED, NEXT, SCHEDULE in that order; ENDED paints the server\'s dated text; a schedule shows its words and its second line (RULED 2026-10-15)', () => {
   const dom = fakeDom();

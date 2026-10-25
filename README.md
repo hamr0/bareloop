@@ -129,18 +129,21 @@ Find it once, keep it, reuse it. It is a seed of something bigger over time.
 
 ### Export a job
 
+When a job in the panel has gone green, keep it as a bundle you can run anywhere:
+
 ```bash
-bareloop export jobs/my-maintainer.json --registry ./bridges --out ./my-maintainer.bareloop
-bareloop run ./my-maintainer.bareloop --repo /path/to/checkout --approve <bundleHash printed above>
+bareloop export "my-job (run-3)" --out ./my-job.bareloop     # or just `bareloop export` and pick from the list
+cd ./my-job.bareloop && npm install
+bareloop run "my-job (run-3)" --repo /path/to/checkout --approve <bundleHash printed above>
 ```
 
-`export` only ships a job that has already earned a real green — it refuses to bundle an
-unproven draft. The first `run` on a new machine asks you to approve the bundle's printed
-hash; once that run goes green, later runs need no re-approval as long as the bundle stays
-unchanged. Every run works in its own fresh git worktree and leaves the merge to you. `bareloop
-run` is a door to the same engine as `bareloop run-u`, so it uses any provider your keys file
-has, honours the monthly limit, and a halted run can be continued with
-`bareloop run <bundle> --resume <runid>`. Full
+Bare `bareloop` is one menu: the panel (1 start, 2 stop, 3 restart, 4 status, 5 install) and the jobs
+(6 export, 7 run, 8 resume, 9 history), each asking for what it needs. `export` only ships a run that
+already earned a real green, and only repo jobs for now. The first `run` on a new machine asks you to
+approve the bundle's printed hash; once that run goes green, later runs need no re-approval as long
+as the bundle stays unchanged. Every run works in its own fresh git worktree, commits a green on its
+own branch and leaves the merge to you. A cap above the one signed is shown back and needs your
+typed `yes` (or `--yes`). A halted run continues with `bareloop run <bundle> --resume <runid>`. Full
 contract — flags, approval/blessing rules, exit codes — in
 [`bareloop.context.md`](bareloop.context.md).
 

@@ -4,12 +4,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { commandFor } from '../src/invoke.js';
 
-test('commandFor: reached through the bareloop CLI -> `bareloop <flow>`, for all three flows', () => {
+test('commandFor: run-u reached through the bareloop CLI -> `bareloop run-u`; interview and author left the CLI (PRD v1.114) so they are always the scripts', () => {
   assert.equal(commandFor('run-u', 'bareloop run-u'), 'bareloop run-u');
-  assert.equal(commandFor('interview', 'bareloop interview'), 'bareloop interview');
-  assert.equal(commandFor('author', 'bareloop author'), 'bareloop author');
-  // a sibling flow is spelled the same way its caller was entered
-  assert.equal(commandFor('run-u', 'bareloop author'), 'bareloop run-u');
+  assert.equal(commandFor('interview', 'bareloop run-u'), 'node scripts/run-interview.mjs');
+  assert.equal(commandFor('author', 'bareloop run-u'), 'node scripts/run-author.mjs');
+  assert.equal(commandFor('run-u', 'bareloop panel'), 'bareloop run-u');
 });
 
 test('commandFor: no invokedAs (the scripts/*.mjs adapters) -> the script spelling', () => {

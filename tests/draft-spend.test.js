@@ -1,15 +1,17 @@
 // Self-review 2026-10-05 (hamr's ruling A): a panel session's drafting spend reaches DISK after every metered call
-// (`<session dir>/draft-spend.json`) and the money readers count it when the session never became a run.
+// (one `call` line in `<session dir>/draft-log.jsonl`; records ruling 2026-10-24 retired draft-spend.json) and the money
+// readers count it when the session never became a run. A session folder left by the old shape (draft-spend.json, no call lines) still counts.
 // Real files in a scratch home; no fs mocks; no provider is ever reachable (a scripted authorFn calls `onCall`).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createSession } from '../src/panel/authorsession.js';
-import { writeDraftSpend } from '../src/draftspend.js';
+import { readOrphanDraftSpends, DRAFT_LOG_FILE as LOG } from '../src/draftspend.js';
+import { tallyCalls } from '../src/text.js';
 import { monthSpend, spendSummary, checkMonthlyRoom } from '../src/monthly.js';
 import { updateConfig } from '../src/config.js';
 import { appendRun } from '../src/runlist.js';
@@ -29,14 +31,26 @@ const git = (dir, args) => execFileSync('git', args, {
   env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' },
 });
 
-/** a session dir under `<home>/panel-sessions/<id>` carrying a draft-spend.json */
+/** a session dir under `<home>/panel-sessions/<id>` carrying ONE `call` line in its drafting log (the shape the session writes) */
 function plantDraft(home, id, over = {}) {
   const dir = join(home, 'panel-sessions', id);
   mkdirSync(dir, { recursive: true });
-  writeDraftSpend(dir, {
+  const o = { spentUsd: 1, spendComplete: true, provider: 'anthropic-api', baseUrl: null, model: 'claude-sonnet-5', startedAt: localIso(2026, 8, 10), ...over };
+  writeFileSync(join(dir, LOG), `${JSON.stringify({
+    kind: 'call', no: 0, step: 'draft', label: 'survey', model: o.model, provider: o.provider, baseUrl: o.baseUrl,
+    costUsd: o.spentUsd, unpricedRounds: o.spendComplete ? 0 : 1, at: o.startedAt,
+  })}\n`);
+  return dir;
+}
+
+/** a session dir left by the OLD shape: a draft-spend.json and no call lines */
+function plantLegacy(home, id, over = {}) {
+  const dir = join(home, 'panel-sessions', id);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'draft-spend.json'), JSON.stringify({
     sessionId: id, spentUsd: 1, spendComplete: true, provider: 'anthropic-api', baseUrl: null, model: 'claude-sonnet-5',
     startedAt: localIso(2026, 8, 10), updatedAt: localIso(2026, 8, 10), ...over,
-  });
+  }, null, 2));
   return dir;
 }
 
@@ -71,7 +85,7 @@ async function draftSession(t, calls, gapMs = 0) {
       for (const c of calls) {
         if (gapMs > 0) await new Promise((r) => { setTimeout(r, gapMs); });
         o.onCall(c);
-        seen.push(JSON.parse(readFileSync(join(sessionDir, 'draft-spend.json'), 'utf8')));
+        seen.push(readOrphanDraftSpends({ home, sessionsRoot: join(home, 'panel-sessions') }).find((d) => d.sessionId === basename(sessionDir)));
       }
       return { ok: false, stop: 'authoring-failed', refusal: { detail: 'scripted' } };
     },
@@ -84,7 +98,7 @@ async function draftSession(t, calls, gapMs = 0) {
   return { home, session, seen, sessionDir };
 }
 
-test('onCall writes draft-spend.json with the running total after EVERY call; an unpriced call makes it "at least"', async (t) => {
+test('onCall books the running total in the log after EVERY call; an unpriced call makes it "at least"; no draft-spend.json is written', async (t) => {
   const { session, seen, sessionDir } = await draftSession(t, [
     { label: 'survey', costUsd: 0.25, unpricedRounds: 0 },
     { label: 'declare', costUsd: 0.5, unpricedRounds: 0 },
@@ -93,13 +107,18 @@ test('onCall writes draft-spend.json with the running total after EVERY call; an
   assert.equal(session.state.phase, 'refused', String(session.state.error));
   assert.equal(seen.length, 3);
   assert.deepEqual(seen.map((s) => [s.spentUsd, s.spendComplete]), [[0.2505, true], [0.7505, true], [0.7505, false]]);
-  assert.equal(seen[0].sessionId, session.state.id);
+  assert.equal(seen[0].sessionId, basename(sessionDir));
   assert.equal(seen[0].provider, 'anthropic-api');
   assert.equal(seen[0].model, 'claude-sonnet-5');
   assert.equal(seen[2].startedAt, seen[0].startedAt, 'startedAt is fixed at the first call');
   // (0.0005 = the real confirm-turn call the session booked before the authoring calls)
-  assert.equal(session.state.draftSpentUsd, 0.7505, 'one owner: the file carries the same figure state does');
-  assert.equal(existsSync(join(sessionDir, 'draft-spend.json.tmp')), false, 'the write is tmp + rename');
+  assert.equal(session.state.draftSpentUsd, 0.7505, 'one owner: the log folds to the same figure state carries');
+  assert.equal(existsSync(join(sessionDir, 'draft-spend.json')), false, 'the second record is retired');
+  assert.equal(existsSync(join(sessionDir, 'draft-spend.json.tmp')), false);
+  // the sum equals what the old file carried: the same tally over the same calls
+  const logged = readFileSync(join(sessionDir, LOG), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.kind === 'call');
+  assert.equal(seen[2].spentUsd, tallyCalls(logged).knownUsd);
+  assert.ok(logged.every((e) => e.provider === 'anthropic-api' && e.baseUrl === null), 'each call line carries the drafting identity');
 });
 
 test('startedAt keeps the FIRST metered call\'s timestamp across later calls (not re-dated to the last)', async (t) => {
@@ -122,7 +141,7 @@ test('monthSpend counts an abandoned/refused session\'s draft spend; a restart (
   assert.equal(live.usd, 0.4005); // 0.4 + the confirm turn's 0.0005
   assert.equal(live.atLeast, false);
   assert.equal(live.runs, 0, 'a draft is not a run');
-  // a file left by a panel that has since restarted: no live session object exists anywhere
+  // a folder left by a panel that has since restarted: no live session object exists anywhere
   plantDraft(home, 'srestarted', { spentUsd: 1.5 });
   const m = monthSpend({ home, now: NOW });
   assert.equal(m.usd, 1.5, 'only the Sep file is in Sep (the real session is in the real month)');
@@ -188,6 +207,58 @@ test('checkMonthlyRoom refuses when abandoned-draft spend pushes the month over'
   assert.equal(checkMonthlyRoom({ capUsd: 3.5, home, now: NOW }).ok, true);
 });
 
+test('a legacy-only session (draft-spend.json, no call lines) is still counted exactly as the file says; the log wins once it has call lines', (t) => {
+  const home = tmp(t);
+  plantLegacy(home, 'sold', { spentUsd: 2.5 });
+  plantLegacy(home, 'soldinc', { spentUsd: 0.5, spendComplete: false, provider: 'openai-api', baseUrl: 'https://gw.example/v1', model: 'deepseek-flash' });
+  const dir = plantLegacy(home, 'sboth', { spentUsd: 9 });
+  writeFileSync(join(dir, LOG), `${JSON.stringify({ kind: 'call', no: 0, label: 'a', costUsd: 0.25, unpricedRounds: 0, at: localIso(2026, 8, 10) })}\n`);
+  mkdirSync(join(home, 'panel-sessions', 'sneither'), { recursive: true });
+  const by = Object.fromEntries(readOrphanDraftSpends({ home }).map((d) => [d.sessionId, d]));
+  assert.deepEqual(Object.keys(by).sort(), ['sboth', 'sold', 'soldinc']);
+  assert.equal(by.sold.spentUsd, 2.5);
+  assert.equal(by.soldinc.spendComplete, false);
+  assert.equal(by.soldinc.model, 'deepseek-flash');
+  assert.equal(by.sboth.spentUsd, 0.25, 'call lines beat a stale file');
+  assert.equal(monthSpend({ home, now: NOW }).usd, 2.5 + 0.5 + 0.25);
+});
+
+test('call lines with no identity (old shape) take provider/baseUrl/model from the legacy file; a call line that has them wins', (t) => {
+  const home = tmp(t);
+  const call = { kind: 'call', no: 0, label: 'a', costUsd: 0.25, unpricedRounds: 0, at: localIso(2026, 8, 10) };
+  const a = plantLegacy(home, 'sold', { spentUsd: 0.25, provider: 'openai-api', baseUrl: 'https://gw.example/v1', model: 'deepseek-flash' });
+  writeFileSync(join(a, LOG), `${JSON.stringify(call)}\n`);
+  const b = plantLegacy(home, 'snew', { spentUsd: 0.25, provider: 'openai-api', baseUrl: 'https://gw.example/v1', model: 'deepseek-flash' });
+  writeFileSync(join(b, LOG), `${JSON.stringify({ ...call, provider: 'anthropic-api', baseUrl: null, model: 'claude-sonnet-5' })}\n`);
+  const by = Object.fromEntries(readOrphanDraftSpends({ home }).map((d) => [d.sessionId, d]));
+  assert.deepEqual([by.sold.provider, by.sold.baseUrl, by.sold.model], ['openai-api', 'https://gw.example/v1', 'deepseek-flash']);
+  assert.equal(by.sold.spentUsd, 0.25);
+  assert.deepEqual([by.snew.provider, by.snew.model], ['anthropic-api', 'claude-sonnet-5']);
+});
+
+test('a corrupt log never reads low as exact: a torn line makes it "at least"; torn lines with no readable call are unknown spend', (t) => {
+  const home = tmp(t);
+  const dir = plantDraft(home, 'storn', { spentUsd: 0.4 });
+  writeFileSync(join(dir, LOG), `${readFileSync(join(dir, LOG), 'utf8')}{"kind":"call","no":0,"cost`);
+  const onlyTorn = join(home, 'panel-sessions', 'sonlytorn');
+  mkdirSync(onlyTorn, { recursive: true });
+  writeFileSync(join(onlyTorn, LOG), '{"kind":"call","no"');
+  const by = Object.fromEntries(readOrphanDraftSpends({ home }).map((d) => [d.sessionId, d]));
+  assert.equal(by.storn.spentUsd, 0.4);
+  assert.equal(by.storn.spendComplete, false);
+  assert.equal(by.sonlytorn.spentUsd, 0);
+  assert.equal(by.sonlytorn.spendComplete, false);
+  assert.equal(monthSpend({ home }).atLeast, true);
+});
+
+test('a log of step events only (no call line, nothing torn) is no spend and is skipped', (t) => {
+  const home = tmp(t);
+  const dir = join(home, 'panel-sessions', 'ssteps');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, LOG), `${JSON.stringify({ kind: 'step-start', no: 0, id: 'x', label: 'x', at: localIso(2026, 8, 10) })}\n`);
+  assert.deepEqual(readOrphanDraftSpends({ home }), []);
+});
+
 test('an unreadable draft-spend.json is unknown spend ("at least"), never silently $0 or dropped', (t) => {
   const home = tmp(t);
   const dir = join(home, 'panel-sessions', 'sbad');
@@ -235,7 +306,7 @@ test('the log carries each step\'s start and end time; readDraftSteps folds them
   assert.ok(draft.wallMs >= 15, 'the draft step spans the 15 ms gap the scripted call waited');
 });
 
-test('a disk fault on the drafting log never stops the draft (best-effort like draft-spend.json)', async (t) => {
+test('a disk fault on the drafting log never stops the draft (best-effort)', async (t) => {
   const home = tmp(t);
   const dir = join(home, 'no-such-session');
   const { appendDraftLog } = await import('../src/draftspend.js');
@@ -276,7 +347,7 @@ test('Revise at the plan menu (an abandon, then a fresh Start): the abandoned dr
   writeFileSync(join(home, '.env'), 'ANTHROPIC_API_KEY=fake-not-a-real-key\n', { mode: 0o600 });
   writeFileSync(join(home, 'config.json'), JSON.stringify(ANTH_CFG));
   const first = await sessionAtMenu(t, home, 'revise-spend-job');
-  const firstFile = () => JSON.parse(readFileSync(join(first.state.outDir, 'draft-spend.json'), 'utf8'));
+  const firstFile = () => readOrphanDraftSpends({ home }).find((d) => d.sessionId === basename(first.state.outDir));
   assert.equal(firstFile().spentUsd, 0.0005, 'booked before the abandon');
   assert.equal(first.abandon().ok, true);
   assert.equal(first.state.phase, 'abandoned');

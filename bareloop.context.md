@@ -1247,7 +1247,7 @@ must never make an ordinary first run read as a resume. Belted like `priorSpentU
 non-finite or negative value reads as 0). Rides onto `job-start` as its own field,
 `draftSpentUsd`, only when > 0 — never inside `spentUsd`/`engagementSpentUsd`, which stay
 run-only. `bareloop run-u --draft-spent-usd <n>` is the CLI door (validated: finite, ≥ 0, else
-refused); `bareloop author` prints its own known drafting spend floor and the exact `run-u`
+refused); `scripts/run-author.mjs` prints its own known drafting spend floor and the exact `run-u`
 command including the flag; the panel's sign route passes the session's own tracked drafting
 spend the same way. `src/replay.js`'s `moneyWithDraft(spendCore, draftSpentUsd, budgetUsd?, draftSpendComplete?)` is
 the one shared display formatter: `"$3.71 ($0.81 drafting) of $5.00"`, unchanged
@@ -1391,7 +1391,7 @@ never greens with no registry row (F207).
 has no guard against being passed without `--draft-spent-usd` — alone it is inert (nothing is
 folded, so no `job-start` field is emitted). Every printed re-invocation tail carries it
 alongside `--draft-spent-usd` (only when drafting spend > 0), so a resumed leg never turns the
-floor back into an exact figure; `bareloop author` and the panel's sign route pass it when the
+floor back into an exact figure; `scripts/run-author.mjs` and the panel's sign route pass it when the
 session's drafting spend was incomplete.
 
 **`bareloop run-u --draft-spent-usd <n>`** (hamr's ruling 2026-09-28, "one cap covers drafting +
@@ -1401,7 +1401,7 @@ enforced ceiling and reading it as `Infinity` would silently narrow it into "no 
 names no drafting spend, so the signed `budgetUsd` is unaffected; this only shrinks THIS leg's
 own enforced remainder (`job.budgetUsd - draftSpentUsd - spentUsd`). Every printed
 resume/decide/door re-invocation carries `--draft-spent-usd` too, mirroring `--read-shim`'s own
-tail — a resumed leg that dropped it would silently widen its ceiling back up. `bareloop author`
+tail — a resumed leg that dropped it would silently widen its ceiling back up. `scripts/run-author.mjs`
 prints the exact `run-u` command including this flag, with its own known drafting spend (a floor,
 never $0 on an unpriced call — F6). The panel's sign route (`src/panel/authorroutes.js`)
 passes the same flag off the authoring session's own tracked spend.
@@ -3238,6 +3238,7 @@ hash and needs re-approval, exactly like any other semantic edit.
 | `readBundle(dir)` | `dir` → `{ ok, reds, spec, manifest, bridges, blessing, history }` | never throws; every failure is a typed red. Runs the tamper check (below) whenever both a manifest and a spec parsed |
 | `resolveBundleSpec(bundle, bundleDir)` | a `readBundle` result + the bundle dir → `{ spec, approveHash }` | the in-memory `$BARELOOP_BUNDLE` → absolute `bundleDir` substitution; `approveHash` is `jobSpecHash` of the *substituted* spec, never the unresolved one |
 | `checkEnvelope(spec, envelope)` | `spec` (already resolved) + `{ budgetUsd?, maxWallMs? }` → `{ ok, reds }` | tighten-only: a given number must be ≤ the spec's own |
+| `capRaises(spec, envelope)` | `spec` + `{ budgetUsd?, maxWallMs? }` → `[{ field, old, new }]` | the caps an envelope would RAISE above the signed ones; `bareloop run` shows each and needs a typed `yes` / `--yes` (pure) |
 | `bless(dir, record)` | `dir` + `{ bundleHash, runid, outcome, host?, blessedAt? }` → the blessing object | writes/overwrites `blessing.json`; there is only ever one, for the bundle's current hash |
 | `verifyBlessing(bundle)` | a `readBundle` result → `{ ok, unblessed, reds }` | `unblessed: true` (no red) means never blessed here; a red means blessed-but-stale |
 | `appendHistory(dir, row)` | `dir` + a plain object → `void` | atomic append to `history.jsonl` (`appendFileSync`, same convention as `spine.js`/`ledger.js`) |
@@ -3265,7 +3266,7 @@ hash and needs re-approval, exactly like any other semantic edit.
 | `manifest-invalid` / `spec-invalid` | `readBundle` | `manifest.json`/`spec.json` could not be read or parsed |
 | `bundle-tampered` | `readBundle` | manifest and spec both parsed, but the recomputed `bundleHash` (from what's really on disk) does not match the stored one — **the load-bearing check, N4 below** |
 | `bundle-deps-missing` | `checkBundleDeps` (F128) | the bundle's own `close/` directory cannot resolve `require.resolve('bareloop')` — the bundle was installed the WRONG way (as someone else's dependency) instead of `cd <bundleDir> && npm install`. `bareloop run` calls this as literal step 1b, right after the tamper check, before the envelope check, the key, and any worktree |
-| `envelope-widen` | `checkEnvelope` | a given `budgetUsd`/`maxWallMs` exceeds the bundle's own signed ceiling — raising one is a re-export, never a runner flag |
+| `envelope-widen` | `checkEnvelope` | a given `budgetUsd`/`maxWallMs` exceeds the bundle's own signed ceiling and no yes was given (`bareloop run` offers the raise first: type `yes`, or pass `--yes`) |
 | `blessing-stale` | `verifyBlessing` | `blessing.json` exists but its `bundleHash` no longer matches the manifest's — the bundle was re-exported/edited since the run that blessed it; re-export and re-approve |
 
 **N4 — why `readBundle`'s tamper check must run before anything else touches the bundle.**
@@ -3292,8 +3293,8 @@ same seam `tests/planrun-*.test.js` uses. `deps` also accepts `env`, `stdout`, `
 `now`, `stdin` — omit any of them and the real `process.*` equivalent is used.
 
 Bare `bareloop` (no sub-command) is the **launcher menu** (PANEL-BUILD.md addendum L, `src/launcher.js`): two header lines, then
-`1 start   2 stop   3 status   4 install   q quit`. The header is printed first by EVERY call (menu and each of
-`bareloop start | stop | status | install`), from one function:
+`panel: 1 start   2 stop   3 restart   4 status   5 install`, `jobs:  6 export   7 run   8 resume   9 history`, `q quit`. The header is printed first by EVERY call (menu and each of
+`bareloop start | stop | restart | status | install`), from one function:
 
 ```
 bareloop 0.47.0 · installed ✓ · panel running at http://127.0.0.1:4701
@@ -3304,7 +3305,7 @@ Colour (`src/tty-colour.js`): on only when stdout is a terminal, `NO_COLOR` is e
 changes them, and a piped or `NO_COLOR` run prints the plain words above (the thin `─` rules around the header appear only with colour).
 
 - `installed ✓` = `~/.config/bareloop/` exists, `config.json` is there and reads with no problem, `.env` exists with mode 600, node >= 22;
-  otherwise `not installed — <first missing thing>, pick 4 install`. The run counts use the panel's own status words and Needs-you rule over the
+  otherwise `not installed — <first missing thing>, pick 5 install`. The run counts use the panel's own status words and Needs-you rule over the
   run list file ($0, works with the panel stopped).
 - **No pid file.** The panel is found by asking `127.0.0.1:4700..4709` for `GET /api/whoami` (2000 ms each, in parallel — a loaded panel answered in 0.8 s; 300 ms missed it); a reply with `app: "bareloop"` is a panel. `start` never opens a second panel next to a silent one: a port that is taken but did not answer is asked again for about 10 s; a late bareloop answer counts as "already running", another kind of reply moves on to the next port, and still silent makes `start` stop with `Port 4700 is taken and not answering. If it's a stuck bareloop, stop it first.` (exit 1, nothing started). `stop` also checks each pid is really gone (signal 0) before it says "Panel stopped."; a pid still alive at the deadline is named (`did not stop`, exit 1) and the ones that did stop are still named.
   `GET /api/whoami` → `{ app: "bareloop", version, pid, port, drafts, schedules }` (`version` is the version the panel STARTED with, read once at start, never re-read from package.json — so a panel on old code after a bump still reports the old one and the launcher's stop-and-start note can fire; the page topbar is the same) (open drafting sessions, jobs with a schedule), read-only, same Host guard as every
@@ -3312,26 +3313,44 @@ changes them, and a piped or `NO_COLOR` run prints the plain words above (the th
 - **`bareloop start`** → already running: says so, opens the page, starts nothing (if the running panel's version differs from this bareloop's it adds `It is version X; this bareloop is Y. Run bareloop stop, then bareloop start, to use Y.`). Else starts `bareloop panel --port N` DETACHED (`setsid`; log appended to
   `~/.config/bareloop/panel.log`) on the first free port from 4700 (a taken port that replies as something else is skipped and named; one that stays silent for ~10 s stops `start` with `Port N is taken and not answering…`, nothing started), waits up to 10 s for it to answer, opens the page with
   `xdg-open`/`open` (no opener: prints the URL). `bareloop panel [--port N]` is unchanged (foreground, fixed port).
+- **`bareloop restart [--yes]`** (menu 3) → no panel running: `Panel not running — starting it.` and starts. Else the `stop` above (same open-drafts warning and y/N; `--yes` skips it), and only if the panel is really gone (a declined stop starts nothing) the `start` above, trying the port the panel had first (free again) and then the normal first-free-port rule. No new process model, no pid file. `GET /api/whoami` also carries `startedAt` (ISO, set once when the panel process starts); the header shows ` · started MM/DD HH:MM` (local, `dateTimeWords`) after the address and `status` ends its line with it; an older panel without it shows nothing extra.
 - **`bareloop stop [--yes]`** → SIGTERM to the pid of EVERY panel the probe finds (one panel at a time; no which-one question), waits until each pid is gone (signal 0) and each port is quiet; a pid still alive at the 10 s deadline is named and exits 1, never `Panel stopped.`. Open drafts (in memory, summed over all found panels) are warned about and a y/N is asked;
   `--yes` skips it. Not running: `Panel not running.`, exit 0. Several found: all stopped, `N panels stopped.`. Any other option (e.g. `--port`) is refused in plain words. Runs are separate processes and keep going.
 - **`bareloop status`** → header plus `pid N · version X · N draft(s) open · N schedule(s) on`. Exit 0 running, 3 not running. A panel whose version differs from the CLI's shows `(version X — stop and start to use Y)` after its URL in the header (yellow on a terminal).
 - **`bareloop install`** → creates only what is missing (folder mode 700, `.env` with the keys-file comment lines, mode 600, `config.json`); never reads a key value;
   `Already installed, nothing to do.` when there is nothing to add. Needs node >= 22.
 
-The old `1 export  2 run  3 history` menu is gone; `bareloop export|run|history` and the other sub-commands are unchanged. `run-u`, `interview` and `author` are dispatched
-by name only: `bareloop run-u <flags…>`, `bareloop interview <flags…>`, `bareloop author <flags…>`.
+**One menu (PRD v1.114, F245).** Bare `bareloop` prints the header, then `panel: 1 start 2 stop 3 restart 4 status 5 install`, `jobs: 6 export 7 run 8 resume 9 history` and `q quit`. Each job command asks for what it needs
+(typed flags skip the question): **export** lists the green runs as numbered `job (run-N)` names, then asks the output folder; **run** asks the bundle (the last 10 known bundles are listed newest first, numbered, as run name + folder; a number picks one, a run name or a folder reaches an older one; none known: `No exported bundles yet. Export one with 6.` and it ends), the repo, then
+the `$` cap and the time cap (Enter keeps the signed ones); **resume** lists the stopped / capped bundle runs the engine would resume, then offers more money / time; **history** asks the bundle and prints what `bareloop history <bundle>` prints.
+`q` at any question ends the command cleanly (nothing run, exit `0`). A required question answered with an empty Enter is asked once more; a second empty Enter ends that command with a plain line (nothing chosen, nothing run), exit `0`. `interview`, `author`, `replay` and `runs backfill` are no longer commands
+(`node scripts/run-replay.mjs`, `scripts/run-interview.mjs`, `scripts/run-author.mjs` run from a source checkout; the library functions the panel uses stay). `run-u` is still dispatched by name (`bareloop run-u <flags…>`: the panel spawns it) but is listed nowhere.
 
 When two key rows share one provider and endpoint, a CLI run uses the FIRST row in the keys list, so put the
 key you want first (the panel picks the row by the Model menu).
 
+- **`bareloop export ["<job> (run-N)"] [--out <dir>]`** (PRD v1.114; `src/runexport.js`) → a bundle from a GREEN panel / run-u run, by the name the panel shows. No name: the green runs are listed numbered and you pick;
+  no `--out`: the folder is asked. The bundle is the run's OWN signed spec (`closeDecl` kept as signed — no close scripts, nothing edited, same `jobSpecHash`) plus a bridge-v1 record minted with `mintBridge` from the run's saved plan
+  (`bridge-<job>-<runid>.json`, beside its spine) and the run's spine: cost (`job-end` `engagementSpentUsd`, else `spentUsd`), `spendComplete`, wall time (`legsWallMs`), rounds (`readTry`), and the run list's `patient`.
+  A value that cannot be read is refused in plain words naming it, never guessed. **Repo jobs only for now:** a rubric (judged) job, a job that reads a page link and a plain-folder job are refused at $0 with `only repo jobs can be exported for now`
+  and the reason. Each export appends ONE `{type:'exported', runid, job, bundle, bundleHash, at}` row to `runs.jsonl` (ignored by every run-list reader) so `bareloop run "<name>"` finds the bundle. Then `cd <bundle> && npm install`.
+  `exportBundle` takes a spec with `closeDecl` and no `close` (both is a red). Exit `0`, `1` on a refusal. The older form below (`--registry`) is unchanged.
 - **`bareloop export <jobs/x.json> --registry <dir> --out <dir>`** → resolves the spec's
   close-script paths against the spec file's own directory (never the process cwd), calls
   `exportBundle`. On success prints `bundleHash:`, the sorted file list, and "this bundle is
   unblessed until its first run greens on the importer's machine." Exit `1` on any red or
   missing flag, `0` on success.
 
-- **`bareloop run <bundleDir> --repo <path> [--budget N] [--wall MIN] [--approve <bundleHash>]`**
-  and **`bareloop run <bundleDir> --resume <runid> [--repo <path>] [...]`** — a thin door
+- **`bareloop run <bundle> --repo <path> [--model <id>] [--budget N] [--wall MIN] [--yes] [--approve <bundleHash>]`**
+  and **`bareloop run <bundle> --resume <runid> [--repo <path>] [...]`** — `<bundle>` is a folder OR the run name it was exported under (`job (run-N)`, found through the `exported` rows in `runs.jsonl`;
+  `src/bundleref.js`). **PRD v1.114 changes to the steps below:** (a) a missing bundle, repo or model is ASKED for (when stdin is a terminal or a caller-handed stream; a bare uninjected pipe gets the usage line, as before) —
+  the model from the Settings-ticked lines, only when the bundle's spec names none and no `--model` is given; an empty Enter asks once more, a second ends the command (exit `0`, nothing run). A guided run
+  (anything asked) also offers the optional `$` cap and time cap (Enter keeps the signed ones). (b) **A cap ABOVE the signed one is allowed with your yes**, at `run` and at `run --resume`: it prints
+  `This raises the $ cap from $X to $Y.` (or the time cap, in minutes), then `Type yes to sign it:`; only `yes` proceeds. With no terminal a raise needs `--yes`, else it is refused at $0 (`envelope-widen`,
+  the sentence says how). The approval is appended to `<bundleDir>/runs/<runid>/approvals.jsonl` as `{type:'cap-raise', who, field, old, new, at, bundleHash, approveHash}` once the engine accepts the run, and the
+  history row carries `capsRaised`. Lowering needs no confirm. A resume's ceiling still folds prior spend. (c) **A green run commits its work on its work branch** (`commitWork`, the panel's own call: everything
+  changed except the arbiter's books and `node_modules`; a green with nothing to commit says so), printed as a `commit` line before `branch`/`worktree`/`merge`. The folder is kept; the merge stays yours.
+  (d) The first run of an UNBLESSED bundle typed at a terminal (the menu) shows the `bundleHash` and asks `Type yes to sign it:`; only `yes` proceeds and counts as the approval, recorded as `{type:'bundle-approve', who, bundleHash, at}` in `approvals.jsonl`. Flags only keeps `--approve <bundleHash>` (`--yes` signs caps, not a bundle). Export's list shows only runs it can take (green with a saved plan, a signed spec, a repo job). — a thin door
   (`src/bundlerun.js`) to the same engine `bareloop run-u` drives (`src/userrun.js`): one
   runner, so providers, keys (any provider the bundle's spec names — the keys file or env), the
   judge, the monthly $ limit, the outside watchdog and the readout are that engine's. The door
@@ -3341,8 +3360,8 @@ key you want first (the panel picks the row by the Model menu).
      `require.resolve('bareloop')`? A red (`bundle-deps-missing`) prints the exact cure line
      (`cd <bundleDir> && npm install`) and stops, exit `1`, before the envelope check, the
      blessing check, any key, or any worktree.
-  3. `checkEnvelope(spec, { budgetUsd?, maxWallMs? })` — `--wall` is minutes, converted to ms.
-     A red (an invalid number, or a widen) stops here, exit `1`.
+  3. `checkEnvelope(spec, { budgetUsd?, maxWallMs? })` over the LOWERED / equal fields — `--wall` is minutes, converted to ms.
+     A red (an invalid number) stops here, exit `1`. A field above the signed one is a RAISE (`capRaises`): shown back and signed by `yes` / `--yes`, else `envelope-widen`, exit `1` (see the header above).
   4. Blessing — BEFORE any key is read. No `blessing.json` yet: print the bundle's `README.md`
      (the operator questions), the "first run" notice + the minting-run line (F128-corrected —
      see below), the `bundleHash`, and **require** `--approve <bundleHash>` to match exactly, or
@@ -3364,8 +3383,8 @@ key you want first (the panel picks the row by the Model menu).
      (P5-R): no new id, run dir or worktree. The resume command a halted leg prints carries that leg's own
      `--budget`/`--wall`, only if you passed them (a tightened ceiling never silently reverts to the signed
      one). After a MONEY halt the line does NOT repeat the exhausted `--budget` (chain spend is folded, so
-     it would halt again at once); it prints `--budget <more than $<spent so far>, at most $<signed
-     budgetUsd>>` for you to fill in, and is not runnable until you do. When the run spent the WHOLE signed
+     it would halt again at once); it prints `--budget <more than $<spent so far>, above $<signed
+     budgetUsd> asks you to type yes>` for you to fill in, and is not runnable until you do. When the run spent the WHOLE signed
      ceiling, that range is empty, so no resume line is printed: the block says no room is left under the signed ceiling. A bundle's spec is
      manifest-hashed, so its halt hint never asks you to edit `budgetUsd`.
   6. `resolveBundleSpec` (the `$BARELOOP_BUNDLE` substitution) → tighten `budgetUsd`/`maxWallMs`
@@ -3417,7 +3436,7 @@ key you want first (the panel picks the row by the Model menu).
   writes `JSON.stringify(row)` — `src/bundle.js`), then every bridge's `listingRow(b)` from
   `<bundleDir>/bridges`. Always exit `0`; "(no runs yet)" when `history.jsonl` doesn't exist.
 
-- **`bareloop replay <spine.jsonl>`** / **`bareloop replay --all <dir>`** (PANEL-BUILD.md
+- **`bareloop replay …` LEFT THE CLI (PRD v1.114): it is `node scripts/run-replay.mjs <spine.jsonl>` / `--all <dir>` now (same output, same exit codes; the library is unchanged).** Historical entry: **`bareloop replay <spine.jsonl>`** / **`bareloop replay --all <dir>`** (PANEL-BUILD.md
   P0, last of the rung's four tasks) → the read side for the panel's History/Run/Audit/Job
   tabs: point it at one run's spine (+ its `-gate-audit.jsonl` sidecar, resolved
   automatically) and get `formatReplay`'s one-page report; point `--all` at a directory and
@@ -3435,7 +3454,7 @@ key you want first (the panel picks the row by the Model menu).
   this command reports, it never grades), `1` on a missing file/directory or a non-spine
   file, `1` with a usage line on no args.
 
-- **`bareloop runs`** / **`bareloop runs backfill <dir>`** (PANEL-BUILD.md P1, 2026-09-24
+- **`bareloop runs`** still prints the run list; **`runs backfill` LEFT THE CLI (PRD v1.114)** (the library's `backfillRuns` stays). Historical entry: **`bareloop runs`** / **`bareloop runs backfill <dir>`** (PANEL-BUILD.md P1, 2026-09-24
   rulings — "one home for runs", hamr's option B) → the one run list, at `~/.config/bareloop/
   runs.jsonl` (the same directory the keys file, PRD §7d, lives in — outside any repo tree,
   never moved into one). This is a LIST, not a relocation: patient copies stay exactly where
@@ -3549,7 +3568,7 @@ key you want first (the panel picks the row by the Model menu).
   session is still non-terminal — one authoring session at a time) creates a session
   (`src/panel/authorsession.js`) that runs `prepareSource`/`detectLanguage`/`validateJob`/
   `authorCloseForJob`/`assembleSpec`/`prepareSigning` in-process, exactly the library calls
-  `bareloop interview`/`bareloop author` already make — never a script's own readline loop,
+  `scripts/run-interview.mjs`/`scripts/run-author.mjs` already make — never a script's own readline loop,
   never a reimplementation of any gate. `GET /api/author/model-check?provider=<KEY>&model=<id>` is the $0 readiness probe the job card runs
   before Start (`checkProviderReachable`, `src/providers.js` — a models-list GET only, never a
   completion; the page sees the key's NAME and a status word, never the value). `POST
@@ -3564,7 +3583,7 @@ key you want first (the panel picks the row by the Model menu).
   `{ok, sessionId, state}` of the ONE live (non-terminal) session, or `{sessionId:null, state:null}`: a refreshed page
   re-attaches to it from the server's session map (nothing is stored page-side). A panel restart mints a new token and
   loses the in-memory sessions: the page then shows one "reload this page" line and stops the Chat poll (no auto-reload;
-  drafting money already spent stays booked via `draft-spend.json`, below). `GET /api/author/:id` polls the session's state
+  drafting money already spent stays booked via the session's `draft-log.jsonl`, below). `GET /api/author/:id` polls the session's state
   (phase, chat messages, cost, `specHash` once prepared). `POST /api/author/
   :id/send {text}` answers whatever the confirm turn is currently asking (the `language` pick or a plan's
   own follow-up question — the old `worseThanBefore` ask is retired, 2026-09-28) — refused outright when the pending ask is the
@@ -3586,7 +3605,7 @@ key you want first (the panel picks the row by the Model menu).
   a test can drive the real ask()-channel/hash wiring without a live provider call;
   none of them are reachable from `authorroutes.js`'s real construction path. Sessions live
   under `~/.config/bareloop/panel-sessions/<id>/` (each one's own `resolved-spec.json` and
-  `signing.json`, the two files `bareloop author` itself already writes). Edit/re-sign, the
+  `signing.json`, the two files `scripts/run-author.mjs` itself already writes). Edit/re-sign, the
   `~/.config/bareloop/.env` keys-file loader, and Settings have landed (P4a/P4b — see "Settings" below).
 
 - **Panel P5 — the Ended block (`docs/product/PANEL-BUILD.md` Addendum 2026-10-02, item 1)** →
@@ -3641,7 +3660,7 @@ key you want first (the panel picks the row by the Model menu).
   started under is never overwritten, and a run resumed under `r<k>` is resumed again under the
   spec whose hash its `job-start` carries. The spawn is `setsid --wait systemd-inhibit node
   bin/bareloop.mjs run-u --spec <spec> --resume <runid> --approve <hash>` (array argv, detached,
-  log `resume-<runid>-<ms>.log` beside the spec; `--draft-spent-usd`/`--draft-spend-incomplete`
+  log appended to the folder's one `run.log` beside the spec, under a header line `== resume <runid> at <ISO> ==` (Accept, Rerun and Pause append there too; a refusal shows only its own action's lines, read from after the header); `--draft-spent-usd`/`--draft-spend-incomplete`
   ride along from the run's `job-start`, so the one cap still covers drafting). `--wait` hands back
   the engine's own exit code: an exit inside the settle window (6s) is the engine's own refusal and
   the log tail is returned as `error` verbatim; otherwise `{ok:true, runid, specHash, capsChanged,
@@ -3800,11 +3819,12 @@ key you want first (the panel picks the row by the Model menu).
   over this same `src/userrun.js:main`, not rewired to go through `src/cli.js`.
   **Printed commands are spelled the way you entered:** every re-invocation these flows print (the approve
   line, resume, pause, reopen, the interview's run-author line, the author's run-u line) reads `bareloop
-  run-u …` / `bareloop author …` when reached through `bareloop`, and `node scripts/run-u.mjs …` only through
-  the source-tree adapters — the tarball ships no `scripts/`. One owner: `commandFor` (`src/invoke.js`),
+  run-u …` when reached through `bareloop`, and `node scripts/run-u.mjs …` only through
+  the source-tree adapters; `interview` and `author` left the CLI (PRD v1.114), so they are always spelled
+  `node scripts/run-interview.mjs` / `node scripts/run-author.mjs` — the tarball ships no `scripts/`. One owner: `commandFor` (`src/invoke.js`),
   fed by each flow's `deps.invokedAs`.
 
-- **`bareloop interview <flags…>`** (PANEL-BUILD.md P0 task 3/4) → the close-authoring
+- **`bareloop interview` LEFT THE CLI (PRD v1.114): `node scripts/run-interview.mjs <flags…>` is the door; its "run it now" offer starts `scripts/run-author.mjs`.** Historical entry: **`bareloop interview <flags…>`** (PANEL-BUILD.md P0 task 3/4) → the close-authoring
   interview, at the terminal, one question at a time (D10; `docs/wiki/FINDINGS.md`'s
   interview surface). `src/cli.js`'s `interview` dispatch hands `rest` straight to
   **`src/interviewrun.js`'s own `main(argv, deps)`**, unparsed — the same one-owner shape
@@ -3823,7 +3843,7 @@ key you want first (the panel picks the row by the Model menu).
   `stderr` (the raw streams, not the wrapped `out`/`err` line-functions every other command
   here uses) rather than re-deriving them.
 
-- **`bareloop author <flags…>`** (PANEL-BUILD.md P0 task 4/4) → the authoring pipeline: a
+- **`bareloop author` LEFT THE CLI (PRD v1.114): `node scripts/run-author.mjs <flags…>`.** Historical entry: **`bareloop author <flags…>`** (PANEL-BUILD.md P0 task 4/4) → the authoring pipeline: a
   real scout over a real repository, a real model filling the close declaration, D9's three
   mechanical gates, stopping at `prepareSigning` (it never signs and never runs the job —
   signing and running are `run-u`'s territory). `src/cli.js`'s `author` dispatch hands `rest`
@@ -3858,9 +3878,10 @@ key you want first (the panel picks the row by the Model menu).
   (`Cap $ − drafting spent`) as ITS own ceiling. Nothing here is left for a person to
   hand-compute or re-type, the same rule F185 set for `--spec`.
 
-**Tighten-only budget/wall.** `--budget`/`--wall` on `bareloop run` may only lower the
-bundle's own signed `budgetUsd`/`maxWallMs` — `checkEnvelope`'s `envelope-widen` red refuses
-anything higher. Raising a ceiling is a re-export (a new signed bundle), never a runner flag.
+**Lowering is free; raising needs your yes.** `--budget`/`--wall` on `bareloop run` may lower the
+bundle's own signed `budgetUsd`/`maxWallMs` freely (`checkEnvelope` stays tighten-only). A number above the signed one is a RAISE
+(`capRaises`): shown back in words and signed by typing `yes` at a terminal (or `--yes`), recorded as a `cap-raise` line in the run's
+`approvals.jsonl`; with no terminal and no `--yes` it is refused at `$0` as `envelope-widen`.
 
 **First-run approval, blessing, no-resign.** The bundle's own signed `bundleHash` is what a
 human reads and accepts with `--approve` on the run that first blesses it. That first GREEN
@@ -3905,12 +3926,12 @@ yourself if you want a tarball.
 
 No model is called anywhere in learnings (a test walks the import closure). Pure rules in `learn.js`; file IO in `learnstore.js`.
 
-- **Setting:** `learningHints` (`true`/`false`) in `config.json`, absent = OFF. OFF still writes the tally at run end; it only means the planner is handed nothing.
-- **Run end:** `execute` (`src/userrun.js`, shared by the panel, the CLI and the bundle runner) calls `learnAtRunEnd({ home, runid, events, auditFiles, spec, specHash, workdir, trust })` once, right after the claim settles, in its own try/catch: a failure prints one WARNING and never changes the verdict, exit code or spend. It writes nothing when the engine has no config home.
+- **Setting:** `learningHints` (`true`/`false`) in `config.json`, absent = ON (default ON since 2026-10-24; only an explicit `false` turns it off). OFF still writes the tally at run end; it only means the planner is handed nothing.
+- **Run end:** `execute` (`src/userrun.js`, shared by the panel, the CLI and the bundle runner) calls `learnAtRunEnd({ home, runid, events, auditFiles, spec, specHash, workflowKey, workdir, trust })` once, right after the claim settles, in its own try/catch: a failure prints one WARNING and never changes the verdict, exit code or spend. It writes nothing when the engine has no config home.
 - **Cards:** `buildCards({ runid, events, audit, workdir, spec, model, questions })` → `{ cards, suspect, thin, noise }`. FIXED = a check red then the same check passes later in the run; NEVER FIXED = still red at run end. Excluded and counted: noise runs (provider-red, close-crashed, worker-crash, no close spoke), CHECK-SUSPECT (a no-suppressions hit on a prose comment), TOO-THIN (no error kind and no fix files). Written files come from `attempt-diff` events and the gate audit's allow write/edit rows relative to the tree.
 - **Fold:** `cardsMatch` / `foldCards`: same job + check, a shared error kind, Jaccard >= 60% on flagged-text tokens (a fit on known cards, not a proof). Code-less cards (kind `other`) fold on the text rule alone, only when both token sets are non-empty (R1, 2026-10-23: UNTESTED on real data; the 60% was fitted on cards with codes). `kindAgrees` is the one kind test.
-- **Ledger** `<config home>/learn/ledger.json` (mode 600, atomic, secrets masked): rows `{ id, lesson, count, sample, models, workflow, place, level, trust, runIds, firstSeen, lastSeen, specHash }`, plus `pending` (holds an older version wrote for rubric runs; new runs write none), `suspect`, `health`. There is no check-wide set-aside (R2, 2026-10-23): a lesson seen in several jobs climbs by the climb rules and is read at its level; all-jobs hints come last. `countLedger` (+1 per run per row), `releasePending` (an OLD hold, written by v0.46.x, counts on the human Accept; `releaseRun` is called from the door's accept path; a rubric run's lessons now count at run end like a deterministic run's, trust `rubric` kept, and `foldRunIntoLedger` returns `held: 0`; reuse/bridge credit still waits for the Accept). A row already holding the run id (a resumed leg, one id) is refreshed from the new card (sample, lesson, key, lastSeen, hash, place) but its count, model tally and run ids do not move, `climb` (the level of a lesson, derived at read time by `readableRows` from the rows not decayed at that moment: it can go back down when siblings age past 56 days; the file stores `workflow` only and ignores an older stored level). The ledger keeps EVERY row (nothing is deleted, no `expired` flag is stored; hamr 2026-10-23). Memory is the filter: `readableRows` / `renderHints` skip a row last seen more than 56 days ago (`isDecayed`) and a workflow row of another signed hash (`otherJobVersion`); a lesson seen again counts +1 on its old row. Old files with `status`/`expiredBy` still load; the fields are ignored and dropped at the next write.
-- **Reading:** `hintsForRun({ home, spec, specHash })` renders once at run start; `runJob(..., { learnHints: { text, ids } })` → `runPlan` hands it to the PLANNER at the draft and the first replan only, and emits a `learnings` spine record with the exact text. `renderHints(ledger, { workflow, place, specHash, now })` is the one render (this job, then this place, then all-jobs, highest count first, 2,000 characters, a hint whole or not at all; all-jobs hints last); a FIXED hint adds `What changed:` (first 3 `+`/`-` lines of the stored diff, 150 chars each, then `(+N more)`; never on NEVER FIXED) and a repeated path in a hint reads as its basename (R3, R5, 2026-10-23); the spine's recorded text is byte-equal to a fresh `renderHints(...).text` from the ledger as it stood. The Audit run detail carries `learnings` (read-only); its header counts DISTINCT hints (the same ledger row handed at the draft and the first replan counts once).
+- **Ledger** `<config home>/learn/ledger.json` (mode 600, atomic, secrets masked): rows `{ id, lesson, count, sample, models, workflow, place, level, trust, runIds, firstSeen, lastSeen, specHash, workflowKey }` (`workflowKey` is the job version; a row without it, written by an older version, matches any version), plus `pending` (holds an older version wrote for rubric runs; new runs write none), `suspect`, `health`. There is no check-wide set-aside (R2, 2026-10-23): a lesson seen in several jobs climbs by the climb rules and is read at its level; all-jobs hints come last. `countLedger` (+1 per run per row), `releasePending` (an OLD hold, written by v0.46.x, counts on the human Accept; `releaseRun` is called from the door's accept path; a rubric run's lessons now count at run end like a deterministic run's, trust `rubric` kept, and `foldRunIntoLedger` returns `held: 0`; reuse/bridge credit still waits for the Accept). A row already holding the run id (a resumed leg, one id) is refreshed from the new card (sample, lesson, key, lastSeen, hash, key, place) but its count, model tally and run ids do not move, `climb` (the level of a lesson, derived at read time by `readableRows` from the rows not decayed at that moment: it can go back down when siblings age past 56 days; the file stores `workflow` only and ignores an older stored level). The ledger keeps EVERY row (nothing is deleted, no `expired` flag is stored; hamr 2026-10-23). Memory is the filter: `readableRows` / `renderHints` skip a row last seen more than 56 days ago (`isDecayed`) and a workflow row of another workflow key (`otherJobVersion`; a cap, time, source, destination, inputs or model change keeps the lessons); a lesson seen again counts +1 on its old row. Old files with `status`/`expiredBy` still load; the fields are ignored and dropped at the next write.
+- **Reading:** `hintsForRun({ home, spec, workflowKey })` renders once at run start; `runJob(..., { learnHints: { text, ids } })` → `runPlan` hands it to the PLANNER at the draft and the first replan only, and emits a `learnings` spine record with the exact text. An unreadable ledger file hands the planner nothing, never stops the run, and is not silent: `handedHints` returns the reason and the engine emits a `learnings` record `{phase:'draft', hintsError}` (no `text`); the Audit run detail carries `learningsError` (the plain line from `hintsErrorLine`, home folder written `~`; the spine keeps the full reason) and the learnings box prints it under the title "No lessons were given to the planner" (with hints the title stays "What the planner was told from earlier runs"). `renderHints(ledger, { workflow, place, workflowKey, now })` is the one render (this job, then this place, then all-jobs, highest count first, 2,000 characters, a hint whole or not at all; all-jobs hints last); a FIXED hint adds `What changed:` (first 3 `+`/`-` lines of the stored diff, 150 chars each, then `(+N more)`; never on NEVER FIXED) and a repeated path in a hint reads as its basename (R3, R5, 2026-10-23); the spine's recorded text is byte-equal to a fresh `renderHints(...).text` from the ledger as it stood. The Audit run detail carries `learnings` (read-only); its header counts DISTINCT hints (the same ledger row handed at the draft and the first replan counts once).
 
 ### Settings — the keys file, `config.json`, the monthly $ limit, the Providers tab (PANEL-BUILD.md P4a, `src/keysfile.js`, `src/config.js`, `src/monthly.js`, `src/providerrows.js`, `src/panel/settingsroutes.js`)
 
@@ -3925,7 +3946,7 @@ Two files in `~/.config/bareloop/`, outside any repo:
   real one). The CLI (`run-u`, `interview`, `author`) and the panel both use it.
 - **`config.json` — every setting, never a key value.** `readConfig({ home })` /
   `updateConfig(patch, { home })` (atomic tmp + rename, mode 600, unknown fields kept).
-  Fields: `learningHints` (true/false; absent = off; see "Cross-run learnings"), `monthlyLimitUsd` (number above 0; absent or `null` = no limit; any other value present
+  Fields: `learningHints` (true/false; absent = on; see "Cross-run learnings"), `monthlyLimitUsd` (number above 0; absent or `null` = no limit; any other value present
   is a `ConfigError`, refused like an unreadable file), `keys.<ENV NAME>` = `{ shape, baseUrl, legacyMaxTokens }` (the Providers rows' settings: an API shape id, the typed Base URL,
   the "old max_tokens" tick), `models.<ENV NAME>` = a list of `{ model, use, inPerM?, outPerM? }` lines (replaced WHOLE on every save; the customer's own price below). Nothing is built
   in: a row with nothing saved is shape `openai-api`, no address, no lines. A secret-shaped
@@ -3956,14 +3977,15 @@ spends; the CLI prints it to stderr, exit 2) and at the panel's Sign & run (`sig
 same text under `#jf-cap-money` via `GET /api/author/monthly-check?cap=`. "This month" is the local
 calendar month; a died or incomplete-spend run makes the total an "at least" figure.
 
-*Drafting spend that never became a run* (2026-10-05, F213). A panel authoring session writes
-`<session dir>/draft-spend.json` (`{ sessionId, spentUsd, spendComplete, provider, baseUrl, model,
-startedAt, updatedAt }`, atomic) after every metered call, so an abandoned, refused or restarted session's
-drafting money is not lost. `readLegs` (hence `monthSpend`, `spendSummary`, `checkMonthlyRoom` and the Money
-tab) adds every `<home>/panel-sessions/<id>/` that has one and whose folder holds no listed run's `spine` or
+*Drafting spend that never became a run* (2026-10-05, F213). A panel authoring session appends one `call` line
+(`{ ..., model, provider, baseUrl, costUsd, unpricedRounds, at }`) to `<session dir>/draft-log.jsonl` after every
+metered call, so an abandoned, refused or restarted session's drafting money is not lost (there is no second
+total file: `draft-spend.json` is no longer written, and a folder left by the old shape that has the file and no call
+lines is still read from it). `readLegs` (hence `monthSpend`, `spendSummary`, `checkMonthlyRoom` and the Money
+tab) folds the call lines with `tallyCalls` for every `<home>/panel-sessions/<id>/` whose folder holds no listed run's `spine` or
 `patient` (a signed run already carries its drafting spend via `--draft-spent-usd`; no double count). It lands in
-the month of `startedAt` (the first call), under the provider row it was drafted on; `spendComplete: false` or an
-unreadable file makes the figure an "at least". It is not a run: no wall, not in the `runs` count.
+the month of the first call, under the provider row it was drafted on; an unpriced call, a torn log line or an
+unreadable log makes the figure an "at least". It is not a run: no wall, not in the `runs` count.
 
 *Hold until done.* A run CLAIMS the limit when it starts and holds it until it is done — no lock file,
 records only. `claimRun` (`src/monthly.js`) writes the run's row FIRST (it carries its `pid` and
@@ -4441,7 +4463,7 @@ Check what the person asked for, not what the worker chose to write. bareloop ne
 - **No record cutting (Part 1c).** A fact part carries no `record`, `tested` or `sample` (a `record` field is an unknown-field red). The worker's brief says "one quote per result, copied from that result's own text" (bareguard's quote cap of 4000 characters stays its own). Drafting does not grade: it only proves each fact CAN be checked (below).
 - **Repeat rule (Part 1c M1, M4).** On a fact line asking for N results (`count.min`), `checkFactWords` (`src/factwords.js`, the one owner) refuses at $0 an anchor label the label list counts fewer than N times (`rubric-fact-label-rare`) and a `phrase` fact whose words `countPhrase` finds in the input fewer than N times (`rubric-fact-phrase-rare`); count 1 or none keeps a once-only one legal. `RUBRIC_RULES` states both.
 - **The look, then the draft (Part 1c; the default look is now the page-word map, next bullet).** For a rubric job on files, `authorCloseForJob` runs the look (`lookFn`, default `runPageMap`; the older search-and-read `runInputLook` in `src/authorscout.js`, pure parts in `src/inputlook.js`, is unwired from the default path) on the frozen input text BEFORE the confirm turn and the draft, when a `provider` is present (`lookFn: null` = no look; a panel test that replaces `generate` gets none unless it passes `lookFn`). Read-only by construction: tools `search_input` / `read_input` over in-memory text, `LOOK_ROUNDS` 8, a reserved final round whose only tool is the strict answer form `report_look`, spend metered into the drafting book (`calls` absorbed like the repo scout's). Its report (facts with a label picked from the list, prose lines, not-found entries) is verified by code (`verifyLookReport`: a label off the list, an unknown shape/line/input, or a phrase not in the source is moved to not-found, named) and rendered into the drafter's prompt (`renderLookReport`); a failed or reportless look is an ABSENT survey and stops drafting at $0 (`scout-absent`, "the first look at your repo or input did not complete"). Every place, date or name in the job line is a fact too, bound to the label before it (a direction = phrase facts `Leaves <place>` / `arrives at <place>`); prose lines and their `~` limits are not looked up.
-- **The page-word map (idea A core, `src/pagemap.js`, `src/pagerules.js`, `docs/product/ITEM33-BUILD.md` "Addendum 2026-10-18 — Idea A core").** The default `lookFn` is `runPageMap`: ONE AI call per page input (the job's drafter identity, thinking off, booked per call into `draft-spend.json`, cap checked before each call) maps the job to the page's OWN words as `{"facts":[{name, from, shape: place|money|time|phrase, words, currency?, unit?}]}`; it takes the old look's arguments and returns the same envelope. Plain code then keeps or drops each word (`applyPageRules(text, mapping, jobLines)` -> `{ facts, dropped }`, pure, ported from the frozen POC): found-on-page (count >= 1), N2 (a label written 2+ times inside one page line is unusable), R1 (a second label stays only if it reads the same values as the first), U1 (a label the page writes AFTER the number, "EUR 490 total", becomes a unit; a label with no number either side is dropped), R1L (a unit/currency form stays only if it reads the same numbers as the primary form; units first; before R1L the forms are sorted by code - a sign is a currency, any other form a unit, whichever box the AI used), S1 (a fact name that counts results is refused; two facts may not share shape AND label). After the rules, `dryReadMoney` (`src/pagedry.js`, called by `runPageMap`) grades an honest claim on every result line with the run's own checker; a money fact that reads none is left under Not checked (`reads-no-result`); then `dryReadPhrases` reads each kept phrase fact against those same result lines (the lines the job's kept money facts read) and drops a phrase found in none of them whole as `phrase-no-result` (Not checked: `"Rome" is on the page but in none of its results, so it is not checked.`); with no kept money fact the result lines are unknown and phrase facts pass untouched. The AI never grades; the answer is read strictly (no JSON repair): a malformed or truncated answer is retried ONCE, twice is the plain stop "The AI's answer about the page was not readable twice. Nothing was signed." (an ABSENT survey; a draft is not a run, so no Resume); one retry on a transport error (booked unpriced, so `spendComplete=false`) or a 429 (the vendor's stated wait). The scrubbed raw answer rides each call into `draft-log.jsonl` (`call.raw`), unsigned, so a run can be replayed at $0. A drafted fact may use only words the map KEPT: a signed anchor, closing label, unit or currency that was dropped is the red `rubric-fact-word-dropped` with the drop's reason, and an anchor must be a kept label (`rubric-fact-label-off-list`, now against the kept set).
+- **The page-word map (idea A core, `src/pagemap.js`, `src/pagerules.js`, `docs/product/ITEM33-BUILD.md` "Addendum 2026-10-18 — Idea A core").** The default `lookFn` is `runPageMap`: ONE AI call per page input (the job's drafter identity, thinking off, booked per call into `draft-log.jsonl`, cap checked before each call) maps the job to the page's OWN words as `{"facts":[{name, from, shape: place|money|time|phrase, words, currency?, unit?}]}`; it takes the old look's arguments and returns the same envelope. Plain code then keeps or drops each word (`applyPageRules(text, mapping, jobLines)` -> `{ facts, dropped }`, pure, ported from the frozen POC): found-on-page (count >= 1), N2 (a label written 2+ times inside one page line is unusable), R1 (a second label stays only if it reads the same values as the first), U1 (a label the page writes AFTER the number, "EUR 490 total", becomes a unit; a label with no number either side is dropped), R1L (a unit/currency form stays only if it reads the same numbers as the primary form; units first; before R1L the forms are sorted by code - a sign is a currency, any other form a unit, whichever box the AI used), S1 (a fact name that counts results is refused; two facts may not share shape AND label). After the rules, `dryReadMoney` (`src/pagedry.js`, called by `runPageMap`) grades an honest claim on every result line with the run's own checker; a money fact that reads none is left under Not checked (`reads-no-result`); then `dryReadPhrases` reads each kept phrase fact against those same result lines (the lines the job's kept money facts read) and drops a phrase found in none of them whole as `phrase-no-result` (Not checked: `"Rome" is on the page but in none of its results, so it is not checked.`); with no kept money fact the result lines are unknown and phrase facts pass untouched. The AI never grades; the answer is read strictly (no JSON repair): a malformed or truncated answer is retried ONCE, twice is the plain stop "The AI's answer about the page was not readable twice. Nothing was signed." (an ABSENT survey; a draft is not a run, so no Resume); one retry on a transport error (booked unpriced, so `spendComplete=false`) or a 429 (the vendor's stated wait). The scrubbed raw answer rides each call into `draft-log.jsonl` (`call.raw`), unsigned, so a run can be replayed at $0. A drafted fact may use only words the map KEPT: a signed anchor, closing label, unit or currency that was dropped is the red `rubric-fact-word-dropped` with the drop's reason, and an anchor must be a kept label (`rubric-fact-label-off-list`, now against the kept set).
 - **Currency and unit lists (idea A core, `src/facts.js`).** A money fact's `unit` and `currency` may each be one string (every spec signed before lists) or a non-empty list: at most 3 currencies (`$ € £` only; a code like `EUR` is a unit) and 10 units, none repeated, a unit at most 100 characters, enforced by our own plain reds before bareguard is asked. A string reads exactly as a one-element list and is never rewritten, so an old signed spec keeps its bytes and hash. The first listed form is the primary one in the plan row and the worker brief; others read "or". `checkFactWords` requires EVERY listed unit and sign to be on the page.
 - **No silent drop (idea A core, `src/pagedropwords.js`, `withDropNotes` in `src/rubricstep.js`).** Every word, fact or `~` rule the page rules drop is shown as Not checked with a plain sentence from ONE table (no other file writes a drop reason). Before validation `withDropNotes` appends to the declaration: `closeDecl.refused` `{ line, rule, reason }` for a dropped fact whose `~` rule no part carries (never a line-level refusal; a rule the drafter already listed is not listed twice), and one line in `closeDecl.notes` for any other drop, including a word cut from a fact that is still checked. Those word-level lines are not "Not checked": `splitReadNotes` / `isReadNote` (`src/pagedropwords.js`) sort a row whose every sentence only says which written form of a still-checked fact was not used (not on the page, listed twice, not the same values, list limits, and an `s1` copy of a fact that is still signed) into `readNotes`, shown in their own fold "How the page was read · N" right after Not checked (plan card, Job tab, Result tab `readNotes`, CLI confirm menu) and not counted in it; a whole fact left out (`no-label`, `reads-no-result`, `phrase-no-result`, an `s1` copy of an unsigned fact) stays Not checked. The signed fact names come from `signedFactNames(closeDecl)` (older specs too) or the look at the confirm turn (`plan.signedFacts`). The confirm card gets the same lines (`plan.notChecked`) before drafting is paid for, and the drafter's look block says `NOT CHECKED (rule n)` / `LEFT OUT`. Nothing about this changes a signed spec's verdict rules; it is the Not checked list, in the person's words.
 - **Labels are picked, never typed (`src/labelscan.js`).** `scanLabels(text)` lists, per shape (money, number, date, time, text), the words right before each value with counts (top 40 per shape; one generic scan, no per-site table; a page reader's `[ref=N]` tags are ignored). `labelOnList(scan, shape, idOrText)` is the one test (id or exact words, white-space blind). The look and the drafter pick labels only from the list shown in the prompt (`renderLabelList`). Fact-line reds are plain sentences; the confirm step and the drafter share one rule text (`RUBRIC_RULES`), and the drafter's per-shape field guide is generated from bareguard's `rubricVocabulary`.

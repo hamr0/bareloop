@@ -18,6 +18,7 @@ import { keysHome, keysFilePath, ensureKeysFile } from './keysfile.js';
 import { openInOs } from './opener.js';
 import { PLAIN } from './tty-colour.js';
 import { runsListForCount, packageVersion, panelUrl } from './panel/server.js';
+import { dateTimeWords } from './schedulewords.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** the first port tried, and how many in a row (4700..4709) */
@@ -35,6 +36,7 @@ const RULE_WIDTH = 56;
  * @typedef {object} Panel one answered probe
  * @property {number} port @property {number} pid @property {string} version @property {number} drafts @property {number} schedules
  * @property {string} url
+ * @property {string|null} [startedAt] ISO time the panel process started (`whoami`); absent on an older panel
  */
 
 /**
@@ -124,6 +126,7 @@ export async function probePort(o) {
         drafts: Number(j.drafts) || 0,
         schedules: Number(j.schedules) || 0,
         url: panelUrl(port),
+        startedAt: typeof j.startedAt === 'string' && Number.isFinite(Date.parse(j.startedAt)) ? j.startedAt : null,
       },
     };
   } catch (e) {
@@ -141,6 +144,12 @@ export async function probePanels(o) {
   const answers = await Promise.all(o.ports.map((port) => probePort({ port, timeoutMs: o.timeoutMs, fetchImpl: o.fetchImpl })));
   return /** @type {Panel[]} */ (answers.flatMap((a) => (a.state === 'panel' ? [a.panel] : [])));
 }
+
+/**
+ * ` · started 10/24 21:40` (local, the panel's own date style: `dateTimeWords`); '' for an older panel that reports no start time.
+ * @param {Panel} p @returns {string}
+ */
+const startedWords = (p) => (p.startedAt ? ` · started ${dateTimeWords(Date.parse(p.startedAt))}` : '');
 
 /** @param {LauncherDeps} d @returns {number[]} */
 function portsOf(d) {
@@ -168,8 +177,8 @@ export async function buildHeader(d) {
   const sep = P.grey(' · ');
   const where = panels.length === 0
     ? `panel ${P.grey('not running')}`
-    : `panel${panels.length > 1 ? 's' : ''} ${P.green('running')} at ${panels.map((p) => P.cyan(p.url) + (p.version !== version ? P.yellow(` (version ${p.version} — stop and start to use ${version})`) : '')).join(', ')}`;
-  const state = inst.ok ? P.green('installed ✓') : `${P.red('not installed')} — ${inst.problem}, pick ${P.boldCyan('4')} install`;
+    : `panel${panels.length > 1 ? 's' : ''} ${P.green('running')} at ${panels.map((p) => P.cyan(p.url) + (p.startedAt ? P.grey(startedWords(p)) : '') + (p.version !== version ? P.yellow(` (version ${p.version} — stop and start to use ${version})`) : '')).join(', ')}`;
+  const state = inst.ok ? P.green('installed ✓') : `${P.red('not installed')} — ${inst.problem}, pick ${P.boldCyan('5')} install`;
   const first = `${P.boldCyan('bareloop')} ${P.grey(version)}${sep}${state}${sep}${where}`;
   let second;
   try {
@@ -276,7 +285,7 @@ export async function statusCmd(io, d, shown) {
     return shown ? 0 : 3;
   }
   for (const p of h.panels) {
-    const body = `pid ${p.pid} · version ${p.version} · ${plural(p.drafts, 'draft', 'drafts')} open · ${plural(p.schedules, 'schedule', 'schedules')} on`;
+    const body = `pid ${p.pid} · version ${p.version} · ${plural(p.drafts, 'draft', 'drafts')} open · ${plural(p.schedules, 'schedule', 'schedules')} on${startedWords(p)}`;
     io.out(h.panels.length > 1 ? `${p.url} · ${body}` : body);
   }
   return 0;
@@ -352,7 +361,7 @@ export async function startCmd(io, d, shown) {
     const verdict = await askTakenPort(d, p);
     if (verdict.state === 'panel') return alreadyRunning(verdict.panel);
     if (verdict.state === 'silent') {
-      fail(io, d, `Port ${p} is taken and not answering. If it's a stuck bareloop, stop it first.`);
+      fail(io, d, `Port ${p} is taken and not answering. To see what holds it: lsof -i :${p}. If it is a stuck bareloop, end it: kill <pid>`);
       return 1;
     }
   }
@@ -452,8 +461,33 @@ export async function stopCmd(args, io, d, shown) {
 }
 
 /**
- * The bare `bareloop` menu: header, the four choices, one question. Runs the chosen command and returns its exit code.
- * @param {{out: (s: string) => void, err: (s: string) => void}} io @param {LauncherDeps & {version?: string}} d
+ * `bareloop restart [--yes]` — the existing stop (same open-drafts warning and ask; `--yes` skips it), then the existing start, on the
+ * port the panel had when it is free again (else the normal first-free-port rule). No panel running: says so and just starts.
+ * No new process model, no pid file.
+ * @param {string[]} args
+ * @param {{out: (s: string) => void, err: (s: string) => void}} io @param {LauncherDeps & {version?: string}} d @param {{lines: string[], panels: Panel[]}} [shown]
+ * @returns {Promise<number>}
+ */
+export async function restartCmd(args, io, d, shown) {
+  const h = await headerOnce(io, d, shown);
+  if (h.panels.length === 0) {
+    io.out('Panel not running — starting it.');
+    return startCmd(io, d, { lines: h.lines, panels: [] });
+  }
+  const rc = await stopCmd(args, io, d, h);
+  if (rc !== 0) return rc;
+  // a declined "Stop the panel?" is exit 0 too: only start when the panel is really gone
+  if ((await probeAll(d)).length > 0) return 0;
+  const was = h.panels[0].port;
+  const ports = [was, ...portsOf(d).filter((p) => p !== was)];
+  return startCmd(io, { ...d, ports }, { lines: h.lines, panels: [] });
+}
+
+/**
+ * The bare `bareloop` menu (PRD v1.114, one menu): the panel's four choices, the four job commands, one question. Runs the chosen command
+ * and returns its exit code. The job commands (6 export, 7 run, 8 resume, 9 history) are `d.jobs`, supplied by the CLI: each prompts for
+ * what it needs on the same asker this menu uses.
+ * @param {{out: (s: string) => void, err: (s: string) => void}} io @param {LauncherDeps & {version?: string, jobs?: {export: () => Promise<number>, run: () => Promise<number>, resume: () => Promise<number>, history: () => Promise<number>}}} d
  * @returns {Promise<number>}
  */
 export async function menuCmd(io, d) {
@@ -463,15 +497,21 @@ export async function menuCmd(io, d) {
   const P = d.paint ?? PLAIN;
   if (!P.on) io.out('');
   const n = (/** @type {string} */ k) => P.boldCyan(k);
-  const items = `${n('1')} start   ${n('2')} stop   ${n('3')} status   ${n('4')} install   ${n('q')} quit`;
-  io.out(P.on ? `  ${items}` : items);
+  const ind = P.on ? '  ' : '';
+  io.out(`${ind}panel: ${n('1')} start   ${n('2')} stop   ${n('3')} restart   ${n('4')} status   ${n('5')} install`);
+  io.out(`${ind}jobs:  ${n('6')} export   ${n('7')} run   ${n('8')} resume   ${n('9')} history`);
+  io.out(`${ind}${n('q')} quit`);
   const choice = ask ? (await ask(`${P.cyan('>')} `)).trim().toLowerCase() : 'q';
   // the header is already on screen: the chosen command reuses it instead of printing it a second time
   if (choice === '1' || choice === 'start') return startCmd(io, d, h);
   if (choice === '2' || choice === 'stop') return stopCmd([], io, d, h);
-  if (choice === '3' || choice === 'status') return statusCmd(io, d, h);
-  if (choice === '4' || choice === 'install') return installCmd(io, d, h);
+  if (choice === '3' || choice === 'restart') return restartCmd([], io, d, h);
+  if (choice === '4' || choice === 'status') return statusCmd(io, d, h);
+  if (choice === '5' || choice === 'install') return installCmd(io, d, h);
+  const jobChoices = { 6: 'export', export: 'export', 7: 'run', run: 'run', 8: 'resume', resume: 'resume', 9: 'history', history: 'history' };
+  const job = Object.hasOwn(jobChoices, choice) ? jobChoices[choice] : undefined; // never `constructor` / `__proto__`
+  if (job !== undefined && d.jobs) return d.jobs[/** @type {'export'|'run'|'resume'|'history'} */ (job)]();
   if (choice === '' || choice === 'q' || choice === 'quit') return 0;
-  fail(io, d, `unknown choice ${JSON.stringify(choice)} — one of: 1, 2, 3, 4, q`);
+  fail(io, d, `unknown choice ${JSON.stringify(choice)} — one of: 1, 2, 3, 4, 5, 6, 7, 8, 9, q`);
   return 1;
 }

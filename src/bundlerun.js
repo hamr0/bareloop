@@ -13,45 +13,81 @@
 // spec — the equality stays a real check (the spec the engine sees is the spec hashed).
 // `bundleHash` never changes when the runner tightens; `history.jsonl` records both hashes.
 
-import { hostname } from 'node:os';
+import { hostname, userInfo } from 'node:os';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import {
-  readBundle, resolveBundleSpec, checkEnvelope, bless, verifyBlessing, appendHistory, checkBundleDeps,
+  readBundle, resolveBundleSpec, checkEnvelope, capRaises, bless, verifyBlessing, appendHistory, checkBundleDeps,
 } from './bundle.js';
+import { askRequired, isQuit } from './prompts.js';
+import { askBundle, resolveBundleRef } from './bundleref.js';
+import { rowsForHome, chatLines } from './providerrows.js';
 import { jobSpecHash } from './job.js';
-import { addWorktree, worktreePath } from './worktree.js';
+import { addWorktree, worktreePath, commitWork } from './worktree.js';
 import { parseJsonl } from './replayio.js';
 import { legsOf } from './legs.js';
 import { startRun, resumeRun } from './userrun.js';
 
+/** the plain sentences for a raised cap (ONE spelling: the prompt, the refusal and the record's reader all read them) */
+const raiseWords = (/** @type {{ field: string, old: number, new: number }} */ r) => (r.field === 'budgetUsd'
+  ? `This raises the $ cap from $${r.old} to $${r.new}.`
+  : `This raises the time cap from ${r.old / 60_000} min to ${r.new / 60_000} min.`);
+
 /**
- * `bareloop run <bundleDir> --repo <path> [--budget N] [--wall MIN] [--approve <bundleHash>]`
- * `bareloop run <bundleDir> --resume <runid> [--repo <path>] [--budget N] [--wall MIN] [--approve <bundleHash>]`
+ * `bareloop run <bundle> --repo <path> [--model <id>] [--budget N] [--wall MIN] [--yes] [--approve <bundleHash>]`
+ * `bareloop run <bundle> --resume <runid> [--repo <path>] [--budget N] [--wall MIN] [--yes] [--approve <bundleHash>]`
+ * `<bundle>` is a bundle folder or the run name it was exported under (`job (run-N)`). A missing bundle, repo or model is asked for
+ * (when there is something to ask: `canAsk`); a required answer left empty twice ends the command cleanly (exit 0, nothing run).
+ * A cap typed ABOVE the signed one is shown back and needs `yes` (or `--yes`); the approval is recorded in the run's own folder.
  * @param {string[]} args
  * @param {{
  *   out: (s: string) => void, err: (s: string) => void, cwd: string,
  *   env: Record<string,string|undefined>, now: () => number, deps: any, keysHome?: string,
+ *   ask?: (q: string) => Promise<string>, canAsk?: boolean, guided?: boolean,
  *   parseFlags: (a: string[]) => { positional: string[], flags: Record<string, string|true> },
  *   printReds: (reds: import('./bundle.js').Red[], err: (s: string) => void) => void,
  * }} ctx
  * @returns {Promise<number>}
  */
 export async function bundleMain(args, {
-  out, err, cwd, env, now, deps, keysHome, parseFlags, printReds,
+  out, err, cwd, env, now, deps, keysHome, ask, canAsk = false, guided: guidedIn = false, parseFlags, printReds,
 }) {
   const { positional, flags } = parseFlags(args);
-  const bundleDirArg = positional[0];
-  const repoArg = typeof flags.repo === 'string' ? flags.repo : undefined;
+  const askable = canAsk && typeof ask === 'function';
+  const home = deps?.runlistHome;
+  /** @type {string|undefined} */
+  let bundleDirArg = positional[0];
+  /** @type {string|undefined} */
+  let repoArg = typeof flags.repo === 'string' ? flags.repo : undefined;
   const resumeArg = typeof flags.resume === 'string' ? flags.resume : undefined;
-  if (flags.resume === true || (!bundleDirArg) || (resumeArg === undefined && !repoArg)) {
-    err('usage: bareloop run <bundleDir> --repo <path> [--budget N] [--wall MIN] [--approve <bundleHash>]\n'
-      + '       bareloop run <bundleDir> --resume <runid> [--repo <path>] [--budget N] [--wall MIN] [--approve <bundleHash>]');
+  const usage = () => {
+    err('usage: bareloop run <bundle> --repo <path> [--model <id>] [--budget N] [--wall MIN] [--yes] [--approve <bundleHash>]\n'
+      + '       bareloop run <bundle> --resume <runid> [--repo <path>] [--budget N] [--wall MIN] [--yes] [--approve <bundleHash>]\n'
+      + '       <bundle> is a bundle folder or the name you exported it under, e.g. "my-job (run-3)"');
     return 1;
+  };
+  if (flags.resume === true) return usage();
+  /** set once any required value had to be asked: the guided run also offers the optional caps */
+  let guided = guidedIn;
+  if (bundleDirArg === undefined) {
+    if (!askable || !ask) return usage();
+    const r = await askBundle({ ask, out, ...(home === undefined ? {} : { home }), none: 'No exported bundles yet. Export one with 6.', cancelled: 'No bundle chosen, nothing run.' });
+    if ('end' in r) return 0;
+    bundleDirArg = r.ref;
+    guided = true;
   }
-  const bundleDir = resolve(cwd, bundleDirArg);
+  const found = resolveBundleRef(bundleDirArg, { ...(home === undefined ? {} : { home }), cwd });
+  if (!found.ok) { err(found.why); return 1; }
+  const bundleDir = found.dir;
+  if (resumeArg === undefined && repoArg === undefined) {
+    if (!askable || !ask) return usage();
+    const r = await askRequired(ask, 'Repo (a folder that is a git repo with at least one commit): ');
+    if (r === null) { out('No repo chosen, nothing run.'); return 0; }
+    repoArg = r;
+    guided = true;
+  }
 
   // 1. readBundle — this must complete, clean, before anything else touches the bundle or
   // the repo. Any red (incl. bundle-tampered) stops here.
@@ -64,9 +100,20 @@ export async function bundleMain(args, {
   const depsCheck = checkBundleDeps(bundleDir);
   if (!depsCheck.ok) { printReds(depsCheck.reds, err); return 1; }
 
-  // 2. checkEnvelope — tighten-only, wall given in minutes -> ms.
+  // 2. the caps. Lowering needs nothing; a cap typed ABOVE the signed one is shown back and signed by `yes` (hamr 2026-10-25).
   /** @type {{ budgetUsd?: number, maxWallMs?: number }} */
   const envelope = {};
+  if (guided && askable && ask) {
+    // a guided run offers the caps; Enter keeps the signed value
+    const budgetAns = (await ask(`$ cap (Enter keeps $${bundle.spec.budgetUsd}${resumeArg === undefined ? '' : '; a higher number adds money'}): `)).trim();
+    if (isQuit(budgetAns)) { out('Nothing chosen, nothing run.'); return 0; }
+    if (budgetAns !== '') flags.budget = budgetAns;
+    if (typeof bundle.spec.maxWallMs === 'number') {
+      const wallAns = (await ask(`Time cap in minutes (Enter keeps ${bundle.spec.maxWallMs / 60_000}${resumeArg === undefined ? '' : '; a higher number adds time'}): `)).trim();
+      if (isQuit(wallAns)) { out('Nothing chosen, nothing run.'); return 0; }
+      if (wallAns !== '') flags.wall = wallAns;
+    }
+  }
   if (flags.budget !== undefined) {
     const n = Number(flags.budget);
     if (!Number.isFinite(n)) { err(`--budget must be a number, got ${JSON.stringify(flags.budget)}`); return 1; }
@@ -77,10 +124,30 @@ export async function bundleMain(args, {
     if (!Number.isFinite(n)) { err(`--wall must be a number of minutes, got ${JSON.stringify(flags.wall)}`); return 1; }
     envelope.maxWallMs = n * 60_000;
   }
-  const envCheck = checkEnvelope(bundle.spec, envelope);
+  const raises = capRaises(bundle.spec, envelope);
+  const tighten = { ...envelope };
+  for (const r of raises) delete tighten[r.field];
+  const envCheck = checkEnvelope(bundle.spec, tighten);
   if (!envCheck.ok) { printReds(envCheck.reds, err); return 1; }
+  /** the raises the person signed, recorded in the run's own folder once the engine has accepted the run */
+  /** @type {{ field: string, old: number, new: number }[]} */
+  let signedRaises = [];
+  if (raises.length > 0) {
+    for (const r of raises) out(raiseWords(r));
+    if (flags.yes !== undefined) signedRaises = raises;
+    else if (askable && ask) {
+      const a = (await ask('Type yes to sign it: ')).trim().toLowerCase();
+      if (isQuit(a)) { out('Not signed, nothing run.'); return 0; }
+      if (a !== 'yes') { err('Not signed (only "yes" signs a raise) — the caps stay as signed. Nothing ran.'); return 1; }
+      signedRaises = raises;
+    } else {
+      printReds(raises.map((r) => ({ code: 'envelope-widen', path: r.field, detail: `${r.new} exceeds the bundle's signed ${r.field} (${r.old}) — a raise needs your yes: run it at a terminal and type yes, or pass --yes` })), err);
+      return 1;
+    }
+  }
 
   // 3. blessing — BEFORE any key is read (the engine reads the key last).
+  let signedBundle = false;
   const { manifest } = bundle;
   if (!bundle.blessing) {
     // The runid that ACTUALLY minted this bundle's own signed spec — the bridge VERSION
@@ -104,8 +171,17 @@ export async function bundleMain(args, {
     out(mintRunid ? `minting run: ${mintRunid} (spine not bundled in v1)` : 'no version at this hash');
     out(`bundleHash: ${manifest.bundleHash}`);
     if (flags.approve !== manifest.bundleHash) {
-      err(`--approve ${manifest.bundleHash} is required for the first run of an unblessed bundle`);
-      return 1;
+      // typed at a terminal (the menu): show the hash and sign it with a typed yes, the cap raise's own confirm style (hamr 2026-10-25).
+      // Flags only: `--approve <hash>` is still the way (`--yes` signs caps, not a bundle).
+      if (askable && ask && flags.approve === undefined) {
+        const a = (await ask('Type yes to sign it: ')).trim().toLowerCase();
+        if (isQuit(a)) { out('Not signed, nothing run.'); return 0; }
+        if (a !== 'yes') { err('Not signed (only "yes" signs a bundle) — nothing ran.'); return 1; }
+        signedBundle = true;
+      } else {
+        err(`--approve ${manifest.bundleHash} is required for the first run of an unblessed bundle`);
+        return 1;
+      }
     }
   } else {
     const vb = verifyBlessing(bundle);
@@ -190,10 +266,36 @@ export async function bundleMain(args, {
       addWorktree(repo, worktree);
     }
     mkdirSync(runDir, { recursive: true });
+    // a raised cap the person signed: who, old, new, at — appended beside the run's own records (never rewritten)
+    if (signedBundle) {
+      appendFileSync(join(runDir, 'approvals.jsonl'), `${JSON.stringify({
+        type: 'bundle-approve', who: userInfo().username, bundleHash: manifest.bundleHash, at: new Date(now()).toISOString(),
+      })}\n`);
+    }
+    for (const r of signedRaises) {
+      appendFileSync(join(runDir, 'approvals.jsonl'), `${JSON.stringify({
+        type: 'cap-raise', who: userInfo().username, field: r.field, old: r.old, new: r.new, at: new Date(now()).toISOString(), bundleHash: manifest.bundleHash, approveHash,
+      })}\n`);
+    }
     writeFileSync(join(runDir, 'run.json'), `${JSON.stringify({
       runid, worktree, seed, repo, at: firstAt ?? new Date(now()).toISOString(),
     }, null, 2)}\n`);
   };
+
+  // 5b. the model: the one the bundle's spec names. A spec that names none takes the one the person picks from the Settings lines.
+  if (!bundle.spec.model && typeof flags.model !== 'string' && askable && ask) {
+    const lines = chatLines(rowsForHome(keysHome, env));
+    if (lines.length > 0) {
+      out('This bundle names no model. Models ticked in Settings:');
+      lines.forEach((l, i) => out(`  ${i + 1}  ${l.label}`));
+      const pick = await askRequired(ask, 'Model (a number): ');
+      if (pick === null) { out('No model chosen, nothing run.'); return 0; }
+      const hit = /^\d+$/.test(pick) ? lines[Number(pick) - 1] : undefined;
+      if (!hit) { err(`"${pick}" is not one of the numbers above.`); return 1; }
+      flags.model = hit.model;
+      flags.provider = hit.slot;
+    }
+  }
 
   // 6. the engine. `deps` passes through exactly as `bareloop run-u` passes it, so every
   // test seam (provider/providerFor/judgeProvider/runlistHome/keysHome) is the same one.
@@ -239,6 +341,18 @@ export async function bundleMain(args, {
   const outcome = je.outcome;
   const spentUsd = je.spentUsd ?? null;
   const spendComplete = je.spendComplete ?? null;
+  // a green's work is committed on its work branch, like the panel does (the folder is kept; the merge stays yours)
+  let commitLine = null;
+  let commitFailed = false;
+  if (outcome === 'green' || outcome === 'already-green') {
+    try {
+      const fin = commitWork(worktree, `bareloop: ${runSpec.job} (run ${runid})`);
+      commitLine = fin.committed ? `final commit ${fin.sha}` : 'nothing left to commit';
+    } catch (e) {
+      commitFailed = true;
+      commitLine = `the final commit FAILED, the work is still in the worktree uncommitted: ${String(/** @type {Error} */ (e).message).split('\n')[0]}`;
+    }
+  }
   let branch = null;
   try { branch = execFileSync('git', ['-C', worktree, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' }).trim(); } catch { /* leave null — reported honestly below */ }
   appendHistory(bundleDir, {
@@ -253,6 +367,7 @@ export async function bundleMain(args, {
     branch,
     bundleHash: manifest.bundleHash,
     approveHash,
+    ...(signedRaises.length > 0 ? { capsRaised: signedRaises } : {}),
     // one row per LEG of the one run; the first leg's row keeps the shape it always had
     ...(legs.length > 1 ? { leg: legs.length } : {}),
   });
@@ -265,10 +380,12 @@ export async function bundleMain(args, {
   // 8. the merge hints (the engine printed the outcome/spend readout).
   out(`branch    ${branch ?? 'UNKNOWN (could not read the worktree branch)'}`);
   out(`worktree  ${worktree}`);
+  if (commitLine) out(`commit    ${commitLine}`);
   if (branch) out(`merge     git merge ${branch}   (merge stays human — this CLI never merges)`);
   out(`the worktree is kept until you remove it: git worktree remove ${worktree}`);
   // exit 0 ONLY for a real green — every other outcome exits 1 so a caller scripting
   // `bareloop run` off its exit code cannot mistake a red for a success. The engine's own
   // 2 (refusal) / 3 (spine leak) are preserved.
+  if (commitFailed) return engineCode || 1;
   return engineCode || (outcome === 'green' || outcome === 'already-green' ? 0 : 1);
 }
