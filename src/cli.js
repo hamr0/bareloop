@@ -38,7 +38,7 @@ import { bundleMain } from './bundlerun.js';
 // path for the flag grammar; `src/cli.js` only supplies the deps shape
 // (`out`/`err`/`env`) this command's own callers already use.
 import { startCmd, stopCmd, restartCmd, statusCmd, installCmd, menuCmd } from './launcher.js';
-import { exportedBundles, resolveBundleRef, listResumableBundleRuns } from './bundleref.js';
+import { askBundle, resolveBundleRef, listResumableBundleRuns, RECENT_BUNDLES } from './bundleref.js';
 import { makePaint } from './tty-colour.js';
 import { main as runUMain } from './userrun.js';
 // PANEL-BUILD.md P1 — the read-only panel HTTP server (`bareloop panel`).
@@ -204,12 +204,13 @@ async function doResumeMenu(ctx) {
   const home = deps.runlistHome;
   const list = listResumableBundleRuns(home === undefined ? {} : { home });
   if (list.length === 0) { out('No stopped runs to resume.'); return 0; }
-  out('Stopped runs you can resume:');
-  list.forEach((r, i) => out(`  ${i + 1}  ${r.label}`));
-  const pick = await askRequired(ask, 'Number to resume: ');
+  const shown = list.slice(0, RECENT_BUNDLES);
+  out(list.length > shown.length ? `Stopped runs you can resume (the last ${shown.length} of ${list.length}; older ones by run id or folder):` : 'Stopped runs you can resume:');
+  shown.forEach((r, i) => out(`  ${i + 1}  ${r.label}`));
+  const pick = await askRequired(ask, 'Number to resume (or a run id, or a bundle folder): ');
   if (pick === null) { out('Nothing chosen, nothing resumed.'); return 0; }
-  const hit = /^\d+$/.test(pick) ? list[Number(pick) - 1] : undefined;
-  if (!hit) { ctx.err(`"${pick}" is not one of the numbers above.`); return 1; }
+  const hit = /^\d+$/.test(pick) ? shown[Number(pick) - 1] : list.find((r) => r.runid === pick || r.bundleDir === resolve(ctx.cwd, pick));
+  if (!hit) { ctx.err(`"${pick}" is not one of the numbers above, nor the run id or folder of a stopped run.`); return 1; }
   return bundleMain([hit.bundleDir, '--resume', hit.runid], { ...ctx, guided: true, parseFlags, printReds });
 }
 
@@ -224,14 +225,9 @@ async function doHistory(args, { out, err, cwd, ask, canAsk, deps }) {
   let bundleDirArg = args[0];
   if (!bundleDirArg) {
     if (!canAsk) { err('usage: bareloop history <bundle>'); return 1; }
-    const known = exportedBundles(home === undefined ? {} : { home });
-    if (known.length > 0) {
-      out('Exported bundles:');
-      known.forEach((b, i) => out(`  ${i + 1}  ${b.name}`));
-    }
-    const pick = await askRequired(ask, 'Bundle (a number, its run name, or a folder): ');
-    if (pick === null) { out('No bundle chosen, nothing shown.'); return 0; }
-    bundleDirArg = /^\d+$/.test(pick) && known[Number(pick) - 1] ? known[Number(pick) - 1].dir : pick;
+    const r = await askBundle({ ask, out, ...(home === undefined ? {} : { home }), none: 'No exported bundles yet. Export one with 6.', cancelled: 'No bundle chosen, nothing shown.' });
+    if ('end' in r) return 0;
+    bundleDirArg = r.ref;
   }
   const found = resolveBundleRef(bundleDirArg, { ...(home === undefined ? {} : { home }), cwd });
   if (!found.ok) { err(found.why); return 1; }

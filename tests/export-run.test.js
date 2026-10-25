@@ -212,7 +212,7 @@ test('menu 9 history: pick an exported bundle by number and see its history; men
   assert.equal(exportRun({ name: 'fix-slugify (run-1)', outDir, home, bareloopVersion: '0.47.1' }).ok, true);
   const h = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, '9\n1\n');
   assert.equal(h.code, 0, h.err);
-  assert.match(h.out, /Exported bundles:\n {2}1 {2}fix-slugify \(run-1\)/);
+  assert.match(h.out, /Bundles:\n {2}1 {2}fix-slugify \(run-1\) {2}\S+\/b\n/);
   assert.match(h.out, /history: \(no runs yet\)/);
   assert.match(h.out, /bridges:/);
   const run = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, '7\n\n\n');
@@ -221,4 +221,32 @@ test('menu 9 history: pick an exported bundle by number and see its history; men
   const resume = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, '8\n');
   assert.equal(resume.code, 0);
   assert.match(resume.out, /No stopped runs to resume\./);
+});
+
+test('bundle pick lists (history / run): the last 10, newest first, numbered, label = run name + folder; older by name or folder; deduped by folder; none = one plain line', async (t) => {
+  const { root, home } = repoRun(t);
+  const { mkdirSync } = await import('node:fs');
+  const { appendExported } = await import('../src/runlist.js');
+  // none known: one line, exit 0, nothing asked
+  const emptyHome = join(root, 'empty-home');
+  const none = await cli([], { runlistHome: emptyHome, keysHome: emptyHome, launcher: MENU_LAUNCHER }, '9\n');
+  assert.equal(none.code, 0);
+  assert.match(none.out, /No exported bundles yet\. Export one with 6\.\n/);
+  assert.doesNotMatch(none.out, /Bundle \(a number/);
+  // 12 bundles exported on 12 days; one of them listed twice (same folder, later row) is still one entry
+  for (let i = 1; i <= 12; i += 1) {
+    const dir = join(root, `bundle-${String(i).padStart(2, '0')}`);
+    mkdirSync(dir, { recursive: true });
+    appendExported({ runid: 'muqrenrf', job: 'fix-slugify', bundle: dir, bundleHash: 'h', at: `2026-10-${String(i).padStart(2, '0')}T10:00:00.000Z` }, { home });
+  }
+  appendExported({ runid: 'muqrenrf', job: 'fix-slugify', bundle: join(root, 'bundle-03'), bundleHash: 'h', at: '2026-10-03T11:00:00.000Z' }, { home });
+  const r = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, `9\n1\n`);
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.out, /Bundles \(the last 10 of 12; older ones by run name or folder\):/);
+  const listed = [...r.out.matchAll(/^ {2}(\d+) {2}fix-slugify \(run-1\) {2}(\S+)$/gm)].map((m) => [Number(m[1]), m[2].split('/').pop()]);
+  assert.deepEqual(listed, [[1, 'bundle-12'], [2, 'bundle-11'], [3, 'bundle-10'], [4, 'bundle-09'], [5, 'bundle-08'], [6, 'bundle-07'], [7, 'bundle-06'], [8, 'bundle-05'], [9, 'bundle-04'], [10, 'bundle-03']], 'newest first, 10 shown, a folder listed twice once');
+  assert.match(r.out, /history: \(no runs yet\)/, 'number 1 picked the newest');
+  // an older one by its folder (not shown) is still reachable
+  const old = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, `9\n${join(root, 'bundle-01')}\n`);
+  assert.match(old.out, /history: \(no runs yet\)/);
 });

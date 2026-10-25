@@ -3320,7 +3320,7 @@ changes them, and a piped or `NO_COLOR` run prints the plain words above (the th
   `Already installed, nothing to do.` when there is nothing to add. Needs node >= 22.
 
 **One menu (PRD v1.114, F245).** Bare `bareloop` prints the header, then `panel: 1 start 2 stop 3 restart 4 status 5 install`, `jobs: 6 export 7 run 8 resume 9 history` and `q quit`. Each job command asks for what it needs
-(typed flags skip the question): **export** lists the green runs as numbered `job (run-N)` names, then asks the output folder; **run** asks the bundle (a number from the exported bundles, a run name, or a folder), the repo, then
+(typed flags skip the question): **export** lists the green runs as numbered `job (run-N)` names, then asks the output folder; **run** asks the bundle (the last 10 known bundles are listed newest first, numbered, as run name + folder; a number picks one, a run name or a folder reaches an older one; none known: `No exported bundles yet. Export one with 6.` and it ends), the repo, then
 the `$` cap and the time cap (Enter keeps the signed ones); **resume** lists the stopped / capped bundle runs the engine would resume, then offers more money / time; **history** asks the bundle and prints what `bareloop history <bundle>` prints.
 A required question answered with an empty Enter is asked once more; a second empty Enter ends that command with a plain line (nothing chosen, nothing run), exit `0`. `interview`, `author`, `replay` and `runs backfill` are no longer commands
 (`node scripts/run-replay.mjs`, `scripts/run-interview.mjs`, `scripts/run-author.mjs` run from a source checkout; the library functions the panel uses stay). `run-u` is still dispatched by name (`bareloop run-u <flags…>`: the panel spawns it) but is listed nowhere.

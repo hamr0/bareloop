@@ -22,7 +22,7 @@ import {
   readBundle, resolveBundleSpec, checkEnvelope, capRaises, bless, verifyBlessing, appendHistory, checkBundleDeps,
 } from './bundle.js';
 import { askRequired } from './prompts.js';
-import { exportedBundles, resolveBundleRef } from './bundleref.js';
+import { askBundle, resolveBundleRef } from './bundleref.js';
 import { rowsForHome, chatLines } from './providerrows.js';
 import { jobSpecHash } from './job.js';
 import { addWorktree, worktreePath, commitWork } from './worktree.js';
@@ -73,14 +73,9 @@ export async function bundleMain(args, {
   let guided = guidedIn;
   if (bundleDirArg === undefined) {
     if (!askable || !ask) return usage();
-    const known = exportedBundles(home === undefined ? {} : { home });
-    if (known.length > 0) {
-      out('Exported bundles:');
-      known.forEach((b, i) => out(`  ${i + 1}  ${b.name}`));
-    }
-    const pick = await askRequired(ask, 'Bundle (a number, its run name, or a folder): ');
-    if (pick === null) { out('No bundle chosen, nothing run.'); return 0; }
-    bundleDirArg = /^\d+$/.test(pick) && known[Number(pick) - 1] ? known[Number(pick) - 1].dir : pick;
+    const r = await askBundle({ ask, out, ...(home === undefined ? {} : { home }), none: 'No exported bundles yet. Export one with 6.', cancelled: 'No bundle chosen, nothing run.' });
+    if ('end' in r) return 0;
+    bundleDirArg = r.ref;
     guided = true;
   }
   const found = resolveBundleRef(bundleDirArg, { ...(home === undefined ? {} : { home }), cwd });

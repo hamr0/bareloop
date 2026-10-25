@@ -1081,12 +1081,14 @@ test('bareloop run with no bundle or repo asks for them; the optional caps are o
   const repo = tmp(t, 'cli-repo-');
   initRepo(repo);
   const t0 = 1_700_000_960_000;
+  const h = homes(t);
+  appendExported({ runid: 'e1', job: 'cli-fixture-job', bundle: bundleDir, bundleHash, at: '2026-10-02T00:00:00.000Z' }, { home: h.runlistHome });
   const out = sink(); const err = sink();
   const rc = await main(['run', '--approve', bundleHash], {
-    stdout: out, stderr: err, cwd: process.cwd(), stdin: lines(`\n${bundleDir}\n${repo}\n1.5\n\n`), provider: greenScript(join(repo, '.bareloop', 'wt', t0.toString(36))), now: makeNow(t0), ...homes(t),
+    stdout: out, stderr: err, cwd: process.cwd(), stdin: lines(`\n${bundleDir}\n${repo}\n1.5\n\n`), provider: greenScript(join(repo, '.bareloop', 'wt', t0.toString(36))), now: makeNow(t0), ...h,
   });
   assert.equal(rc, 0, `${out.text()}\n${err.text()}`);
-  assert.equal((out.text().match(/Bundle \(a number/g) ?? []).length, 2, 'the empty Enter asked the bundle once more');
+  assert.equal((out.text().match(/Bundle \(a number above/g) ?? []).length, 2, 'the empty Enter asked the bundle once more');
   assert.match(out.text(), /\$ cap \(Enter keeps \$2\)/);
   assert.match(out.text(), /Time cap in minutes \(Enter keeps 10\)/);
   const hist = JSON.parse(readFileSync(join(bundleDir, 'history.jsonl'), 'utf8').trim().split('\n')[0]);
@@ -1094,9 +1096,14 @@ test('bareloop run with no bundle or repo asks for them; the optional caps are o
   assert.equal(hist.maxWallMs, 600_000, 'Enter kept the signed time cap');
   // two empty Enters: nothing chosen, nothing run, exit 0
   const none = sink();
-  const rcNone = await main(['run'], { stdout: none, stderr: sink(), cwd: process.cwd(), stdin: lines('\n\n'), ...homes(t) });
+  const rcNone = await main(['run'], { stdout: none, stderr: sink(), cwd: process.cwd(), stdin: lines('\n\n'), ...h });
   assert.equal(rcNone, 0);
   assert.match(none.text(), /No bundle chosen, nothing run\./);
+  // no bundle known at all: one plain line, ends cleanly, asks nothing
+  const empty = sink();
+  assert.equal(await main(['run'], { stdout: empty, stderr: sink(), cwd: process.cwd(), stdin: lines('\n\n'), ...homes(t) }), 0);
+  assert.match(empty.text(), /No exported bundles yet\. Export one with 6\.\n$/);
+  assert.doesNotMatch(empty.text(), /Bundle \(a number/);
   const none2 = sink();
   const rcNone2 = await main(['run', bundleDir], { stdout: none2, stderr: sink(), cwd: process.cwd(), stdin: lines('\n\n'), ...homes(t) });
   assert.equal(rcNone2, 0);
