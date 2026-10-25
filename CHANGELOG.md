@@ -5,6 +5,16 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Fixed
+
+- **A page fetch's browser no longer outlives bareloop.** If bareloop is killed or crashes while reading a web address, the browser it started now exits with it (barebrowse 0.24.1; Firefox needs `setpriv`, Chromium needs nothing). Old leftover browser folders in `/tmp` are cleaned on the next fetch.
+
+### Changed
+
+- **barebrowse `^0.21.0` to `^0.24.1`.** No change to how bareloop calls it.
+
 ## [0.48.0] - 2026-10-25
 
 ### Added
