@@ -460,7 +460,7 @@ const GOAL_NOT_MET = new Set(['plan-red', 'check-red', 'step-red', 'escalated'])
  *   worktree?: {folder: string, repo: string, branch: string|null, exists: boolean}|null, exportName?: string|null}} [o]
  *   `worktree` (P6 item 1): the run's worktree in the person's repo, from {@link worktreeOfRun}; absent for every other run
  *   `exportName` (PRD v1.114): the run's `job (run-N)` name; a green worktree run (a repo job) shows the export command to copy beside the merge text
- * @returns {{reason: string, next: string, line: string, actions: {id: string, label: string}[]}|null}
+ * @returns {{reason: string, next: string, nextParts?: {head: string, rows: {label: string, cmd: string}[], tail: string|null}, line: string, actions: {id: string, label: string}[]}|null}
  */
 export function endedFor(summary, death, o = {}) {
   const base = withReuseAction(endedBase(summary, death, o));
@@ -473,14 +473,18 @@ export function endedFor(summary, death, o = {}) {
   if (green) {
     if (!wt.branch) return base;
     // one instruction per line (hamr 2026-10-25); labels are plain words from code, the commands are text to copy
-    const lines = [
-      `In ${wt.repo}:`,
-      `  keep the work:     git merge ${wt.branch}`,
-      `  throw it away:     git branch -D ${wt.branch}`,
-      ...(o.exportName ? [`  reusable bundle:   bareloop export "${o.exportName}" --out <folder>`] : []),
-      ...(wt.exists ? [`The worktree folder ${wt.folder} is still there.`] : []),
+    const head = `In ${wt.repo}:`;
+    const rows = [
+      { label: 'keep the work:', cmd: `git merge ${wt.branch}` },
+      { label: 'throw it away:', cmd: `git branch -D ${wt.branch}` },
+      ...(o.exportName ? [{ label: 'reusable bundle:', cmd: `bareloop export "${o.exportName}" --out <folder>` }] : []),
     ];
-    return { ...base, next: lines.join('\n') };
+    const tail = wt.exists ? `The worktree folder ${wt.folder} is still there.` : null;
+    const pad = 'reusable bundle:'.length + 3; // the plain text keeps one label column whichever rows show
+    // `next` is the plain-text form (one instruction per line); `nextParts` lets the page lay each instruction out as a label + command
+    // row, so a long command wraps under the command column (hanging indent) instead of back to column 0
+    const next = [head, ...rows.map((r) => `  ${r.label.padEnd(pad)}${r.cmd}`), ...(tail ? [tail] : [])].join('\n');
+    return { ...base, next, nextParts: { head, rows, tail } };
   }
   return wt.exists ? { ...base, next: `${base.next} Your work is in ${wt.folder}.` } : base;
 }

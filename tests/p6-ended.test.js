@@ -104,3 +104,27 @@ test('getRunDetail: a capped worktree run whose folder exists names the folder; 
   assert.deepEqual(gone.ended.actions, [{ id: 'reuse', label: 'Reuse workflow' }], 'no Resume button for a worktree the engine would refuse to re-enter');
   assert.match(gone.ended.next, /its worktree folder .* is gone/);
 });
+
+// hamr 2026-10-25: a long command must wrap under the command column, not back to column 0. Each instruction is its own label + command
+// cell in a grid inside the NEXT cell; a command's own cell carries only the plain command (copy-paste gives it).
+test('NEXT page markup: a green repo run lays each instruction out as a label cell + command cell in one grid (hanging indent), commands plain', async () => {
+  const { readFileSync } = await import('node:fs');
+  const PAGE = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
+  const fnSrc = (name) => {
+    const start = PAGE.indexOf(`function ${name}(`);
+    let depth = 0; let i = PAGE.indexOf('{', start);
+    for (; i < PAGE.length; i += 1) { if (PAGE[i] === '{') depth += 1; else if (PAGE[i] === '}') { depth -= 1; if (depth === 0) break; } }
+    return PAGE.slice(start, i + 1);
+  };
+  // eslint-disable-next-line no-new-func
+  const nextRow = new Function(`${['escapeXml', 'summaryRow', 'nextRow'].map(fnSrc).join('\n')}\nreturn nextRow;`)();
+  const e = endedFor(summary('green'), alive, { worktree: wt(), exportName: 'pulselog-panel-strict (run-1)' });
+  const html = nextRow(e);
+  assert.match(html, /<span class="next-head">In \/r:<\/span><span class="next-grid">/);
+  assert.match(html, /<span class="next-lab">keep the work:<\/span><span class="next-cmd">git merge bareloop-job<\/span>/);
+  assert.match(html, /<span class="next-lab">reusable bundle:<\/span><span class="next-cmd">bareloop export &quot;pulselog-panel-strict \(run-1\)&quot; --out &lt;folder&gt;<\/span>/);
+  assert.doesNotMatch(html, /next-cmd">\s/, 'no padding spaces inside a command cell');
+  assert.match(PAGE, /\.ended-text \.next-grid\{display:grid;grid-template-columns:max-content minmax\(0,1fr\)/);
+  // a NEXT with no parts (every other ending) is the unchanged single text row
+  assert.equal(nextRow({ next: 'Resume.' }), '<div class="ended-row"><span class="ended-label">NEXT</span><span class="ended-text" data-testid="ended-next">Resume.</span></div>');
+});
