@@ -24,6 +24,10 @@ bareloop finds that path for you. Write your problem in plain language, as steps
 
 The harness (budget, time, what it may touch) and the judge both sit **outside** the agent loop. The agent can't judge itself. Every run is recorded, so you can audit it and replay it at $0 and see exactly what happened.
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/hamr0/bareloop/main/docs/media/panel-walkthrough.gif" alt="The bareloop panel: write a job, the runs list, a rubric run waiting for Accept, its Result, Audit and signed Job, then a repo run ready to merge" width="900">
+</p>
+
 ## Two kinds of jobs
 
 **Deterministic (code)**: code decides. Tests pass, the linter is quiet, the build exits clean. If no check exists yet, say what you need and the agent builds that check first.
