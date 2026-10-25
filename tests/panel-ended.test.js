@@ -501,6 +501,7 @@ function makePage({ currentRunid = 'run1' } = {}) {
     var stopAsked = {};
     function reuseWorkflow() {}
     ${fnSrc('summaryRow')}
+    ${fnSrc('nextRow')}
     ${fnSrc('renderEnded')}
     ${fnSrc('renderRunActions')}
     ${fnSrc('afterResumeRefresh')}
