@@ -1,0 +1,177 @@
+[
+ {
+  "id": "t01",
+  "verdict": "CONFIRMED",
+  "reason": "L23-24 Timetable link/text; also in url L1. Trivial control OK."
+ },
+ {
+  "id": "t02",
+  "verdict": "CONFIRMED",
+  "reason": "0 grep hits for Zorblax. Trivial control OK."
+ },
+ {
+  "id": "t03",
+  "verdict": "CONFIRMED",
+  "reason": "L1710 rowheader South Station."
+ },
+ {
+  "id": "t04",
+  "verdict": "CONFIRMED",
+  "reason": "0 Worcester hits; 18 rowheaders listed none Worcester."
+ },
+ {
+  "id": "t05",
+  "verdict": "CONFIRMED",
+  "reason": "Only 5:17 AM on page is L1411 (Ruggles row, rowheader L1404). Wickford row L205-240 has no Early Departure. Near-duplicate/contrast of t08."
+ },
+ {
+  "id": "t06",
+  "verdict": "CONFIRMED",
+  "reason": "Wickford row first cell L208 6:02 AM."
+ },
+ {
+  "id": "t07",
+  "verdict": "CONFIRMED",
+  "reason": "5:42 AM appears only at L1415 (Ruggles). Providence row L277-380 has none."
+ },
+ {
+  "id": "t08",
+  "verdict": "CONFIRMED",
+  "reason": "L1404 rowheader Ruggles; L1408-1411 Track Change / Early Departure / 5:17 AM."
+ },
+ {
+  "id": "t09",
+  "verdict": "CONFIRMED",
+  "reason": "Verified: 37 columnheaders (L53..), Providence row has 37 direct children; child 3 = L285 5:10 AM; trip 3 = 6004 (L59). Binding is positional only (cells carry no trip label) but fully derivable by counting. Paired with t10."
+ },
+ {
+  "id": "t10",
+  "verdict": "CONFIRMED",
+  "reason": "Child 3 of Providence = 5:10 AM (L285); 6:00 AM is child 5 (L290, Trip 6006). Contrast pair of t09."
+ },
+ {
+  "id": "t11",
+  "verdict": "CONFIRMED",
+  "reason": "Mansfield row (L589) 37 children; child 6 = L606 7:01 AM; 6:32 AM is child 5 (L602 = Trip 6006). Pair of t12."
+ },
+ {
+  "id": "t12",
+  "verdict": "CONFIRMED",
+  "reason": "Verified child 6 of Mansfield = L606 7:01 AM = Trip 6008 (L68)."
+ },
+ {
+  "id": "t13",
+  "verdict": "CONFIRMED",
+  "reason": "Providence child 2 = L284 \"Does not stop at Providence\" (Trip 6302, L56). Unambiguous."
+ },
+ {
+  "id": "t14",
+  "verdict": "CONFIRMED",
+  "reason": "South Station child 2 = L1717 5:54 AM; Trip 6302 is column 2. Row has 37 cells before page tail. Pair of t15."
+ },
+ {
+  "id": "t15",
+  "verdict": "CONFIRMED",
+  "reason": "Child 1 = L1713 5:29 AM, so 5:54 AM (L1717) is Trip 6302 not 6002."
+ },
+ {
+  "id": "t16",
+  "verdict": "CONFIRMED",
+  "reason": "Providence child 5 = L290 6:00 AM (Trip 6006); 6:32 AM is child 6 (L294)."
+ },
+ {
+  "id": "t17",
+  "verdict": "CONFIRMED",
+  "reason": "L1409-1411 consecutive. Correct but question restates the page text verbatim, so it is an easy string match, barely HARD (leak-ish)."
+ },
+ {
+  "id": "t18",
+  "verdict": "CONFIRMED",
+  "reason": "Wickford first cell L208 is 6:02 AM; 5:17 AM absent. Near-duplicate (opposite) of t19."
+ },
+ {
+  "id": "t19",
+  "verdict": "CONFIRMED",
+  "reason": "L208 6:02 AM. Easy; marked non-hard, fine. Near-duplicate of t18."
+ },
+ {
+  "id": "c01",
+  "verdict": "CONFIRMED",
+  "reason": "L65 link Sense and Sensibility."
+ },
+ {
+  "id": "c02",
+  "verdict": "CONFIRMED",
+  "reason": "L65 title, L68 3:20 PM before next block L70."
+ },
+ {
+  "id": "c03",
+  "verdict": "CONFIRMED",
+  "reason": "3:30 PM occurs only at L43 (Clayface) and L62 (You Can See Everything); S&S block L65-69. No untitled block holds 3:30 PM, so false is robust. Contrast of c04."
+ },
+ {
+  "id": "c04",
+  "verdict": "CONFIRMED",
+  "reason": "L58 title, L62 3:30 PM, block ends L64."
+ },
+ {
+  "id": "c05",
+  "verdict": "CONFIRMED",
+  "reason": "6:15 PM only at L45 in Clayface block (L39-47), before Street Fighter L48. No untitled block has 6:15."
+ },
+ {
+  "id": "c06",
+  "verdict": "CONFIRMED",
+  "reason": "Street Fighter L48, L52 6:00 PM. Pair with c05."
+ },
+ {
+  "id": "c07",
+  "verdict": "CONFIRMED",
+  "reason": "8:10 PM only at L108 under History of Concrete (L106); NAZA L109-111 only 6:10 PM."
+ },
+ {
+  "id": "c08",
+  "verdict": "CONFIRMED",
+  "reason": "L77 title, L78 duration, L79 7:00 PM; next heading L80. Title has no rating line, but times follow the title."
+ },
+ {
+  "id": "f01",
+  "verdict": "CONFIRMED",
+  "reason": "L190 Frontier. Wording \"operated by\" vs page \"flight with Frontier\" (marketing carrier): minor, a fair reader says yes."
+ },
+ {
+  "id": "f02",
+  "verdict": "CONFIRMED",
+  "reason": "0 Southwest hits."
+ },
+ {
+  "id": "f03",
+  "verdict": "CONFIRMED",
+  "reason": "L610 United $162 4:56 PM; sole $162 fare (price generic L620, evidence cites L621, off by one)."
+ },
+ {
+  "id": "f04",
+  "verdict": "CONFIRMED",
+  "reason": "$188 fares: L632 JetBlue 7:55 AM, L654 United 6:36 PM. No JetBlue 6:36 PM."
+ },
+ {
+  "id": "f05",
+  "verdict": "CONFIRMED",
+  "reason": "L190 Frontier $134 11:06 AM; only $134 fare (price generic L202, evidence cites L203, off by one)."
+ },
+ {
+  "id": "f06",
+  "verdict": "CONFIRMED",
+  "reason": "Delta 12:05 PM is $289 (L676). Delta $144 flights at 4:35 PM (L151), 7:30 AM (L280), 8:40 PM (L588). False robust."
+ },
+ {
+  "id": "f07",
+  "verdict": "CONFIRMED",
+  "reason": "L86 generic \"Departure time: 12:12 PM.\" True, but trivial: label-with-time pattern appears on every flight (27 occurrences). Marked HARD but is essentially easy and the question names the answer."
+ },
+ {
+  "id": "f08",
+  "verdict": "CONFIRMED",
+  "reason": "After L86 comes L87 StaticText 12:12 PM then L88 BOS; ORD is L91. False. Easy, not really HARD."
+ }
+]
