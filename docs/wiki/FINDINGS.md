@@ -14727,6 +14727,8 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 
 **Status.** Open. Logged, not built.
 
+*Update 2026-10-26: the small part is FIXED on fix/barebrowse-0241: an answer that opens with yes/agree and a comma, colon or dash ("yes, check it as departure between 05:00 and 21:59") is signed without the leading word (`stripAgreeLead`, `src/pagemap.js`). The reversed-route override above stays open.*
+
 ## F241 — a price fact no result could pass was signed: currency "$" after label "From", on a page that writes "From 137 US dollars" (run mvh7g2hc, 2026-10-20; fixed in v0.45.0; the same class as F237)
 
 **Grounded in:** the spine `/home/hamr/.config/bareloop/panel-sessions/smvh7bxou4win/source-seed/flights-3-bareloop/u-mvh7g2hc.jsonl` (`exit-eval`, `ladder`, `replan`, `job-end`); that session's `resolved-spec.json`; `.claude/scratch/reversed-live/ord-bos-now.txt`; `src/factwords.js` `checkFactWords`; session smvh6zycqcqjy, run mvh72jo0 (green) for contrast.
