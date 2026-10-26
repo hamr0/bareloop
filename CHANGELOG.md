@@ -7,6 +7,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **A launcher `6 update` option (and `bareloop update`).** It asks npm for the newest bareloop only when you press it (nothing goes online at start or in the background). Newest: `You have the newest bareloop (X).` A newer one: `bareloop Y is out. You have X.` and `Update now? (y/n)`; `y` runs `npm install -g bareloop@latest` and says to pick 3 restart, `n` leaves it. If npm cannot be reached: `Could not reach npm to check. Try again later.`
+
 ### Fixed
 
 - **A page fetch's browser no longer outlives bareloop.** If bareloop is killed or crashes while reading a web address, the browser it started now exits with it (barebrowse 0.24.1; Firefox needs `setpriv`, Chromium needs nothing). Old leftover browser folders in `/tmp` are cleaned on the next fetch.
@@ -16,6 +20,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Changed
 
+- **Menu numbers.** The panel line gains `6 update`; the job line is now `7 export   8 run   9 resume   10 history`. `5 install` with nothing to do now says `Already set up. This does not update bareloop. Pick 6 update for that.`
 - **barebrowse `^0.21.0` to `^0.24.1`.** No change to how bareloop calls it.
 - **bareguard `^0.25.1` to `^0.26.0`.** Its one break for bareloop is the money-unit rule above; the new table rules (`cells`, `table`, `diff`) are not used here.
 

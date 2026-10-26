@@ -2074,4 +2074,4 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
   2. It says either that this is the newest version, or names the new version and the exact command `npm install -g bareloop@latest`, and says the panel then needs `3 restart`.
   3. `5 install` keeps its job, and its words say that it does not update the package.
 - **Source:** the fwd session relayed this at hamr's request 2026-10-26; fwdloop parked the same text in its own PRD under "Parked, not scheduled".
-- **Status:** needs its own amendment signed by hamr before anything is built.
+- **Status:** SIGNED and BUILT (hamr 2026-10-26): `6 update` on the top line, jobs renumbered 7-10; it also asks "Update now?" and installs on `y`. See the CHANGELOG (Unreleased).

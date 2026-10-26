@@ -394,3 +394,5 @@ Rulings (hamr, 2026-10-25). The CLI is export + run only, with one menu. No Expo
 - One menu: `panel: 1 start 2 stop 3 restart 4 status 5 install` / `jobs: 6 export 7 run 8 resume 9 history` / `q quit`. Each job command prompts for what it needs; typed flags skip the prompt. An empty Enter on a required prompt asks once more; a second empty Enter ends that command cleanly with a plain line (exit 0).
 - Cuts: `interview`, `author`, `runs backfill` leave the CLI; `replay` and the bench move to `scripts/`; `run-u` stays dispatchable but unlisted; `panel` unchanged. Only CLI entry points are removed; library functions the panel uses stay.
 - Panel: a green repo run's Run tab shows the export line to copy beside the `git merge` text. Text, not a button.
+
+- 2026-10-26 addendum: the menu is now `panel: 1 start 2 stop 3 restart 4 status 5 install 6 update` / `jobs: 7 export 8 run 9 resume 10 history` (PRD v1.116); the numbers above are the earlier form.

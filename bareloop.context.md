@@ -3293,8 +3293,8 @@ same seam `tests/planrun-*.test.js` uses. `deps` also accepts `env`, `stdout`, `
 `now`, `stdin` — omit any of them and the real `process.*` equivalent is used.
 
 Bare `bareloop` (no sub-command) is the **launcher menu** (PANEL-BUILD.md addendum L, `src/launcher.js`): two header lines, then
-`panel: 1 start   2 stop   3 restart   4 status   5 install`, `jobs:  6 export   7 run   8 resume   9 history`, `q quit`. The header is printed first by EVERY call (menu and each of
-`bareloop start | stop | restart | status | install`), from one function:
+`panel: 1 start   2 stop   3 restart   4 status   5 install   6 update`, `jobs:  7 export   8 run   9 resume   10 history`, `q quit`. The header is printed first by EVERY call (menu and each of
+`bareloop start | stop | restart | status | install | update`), from one function:
 
 ```
 bareloop 0.47.0 · installed ✓ · panel running at http://127.0.0.1:4701
@@ -3318,10 +3318,11 @@ changes them, and a piped or `NO_COLOR` run prints the plain words above (the th
   `--yes` skips it. Not running: `Panel not running.`, exit 0. Several found: all stopped, `N panels stopped.`. Any other option (e.g. `--port`) is refused in plain words. Runs are separate processes and keep going.
 - **`bareloop status`** → header plus `pid N · version X · N draft(s) open · N schedule(s) on`. Exit 0 running, 3 not running. A panel whose version differs from the CLI's shows `(version X — stop and start to use Y)` after its URL in the header (yellow on a terminal).
 - **`bareloop install`** → creates only what is missing (folder mode 700, `.env` with the keys-file comment lines, mode 600, `config.json`); never reads a key value;
-  `Already installed, nothing to do.` when there is nothing to add. Needs node >= 22.
+  `Already set up. This does not update bareloop. Pick 6 update for that.` when there is nothing to add. Needs node >= 22.
+- **`bareloop update`** (menu 6; `updateCmd` in `src/launcher.js`, one function for both doors; PRD v1.116) → the ONLY launcher command that goes online, and only when pressed: `GET https://registry.npmjs.org/bareloop/latest` (global `fetch`, 5 s deadline; nothing goes online at start, in the panel or in the background). Versions compare numerically (major.minor.patch). Newest: `You have the newest bareloop (X).` Newer: `bareloop Y is out. You have X.` then `Update now? (y/n) ` on the menu's asker; `y`/`yes` runs `npm install -g bareloop@latest` (no shell, output shown) and prints `Updated to Y. Then pick 3 restart.`, or on a non-zero exit / spawn error `The update did not finish. Run it yourself: npm install -g bareloop@latest` (exit 1); `n`/`no`/`q` prints `Not updated. To update later: npm install -g bareloop@latest`; an empty Enter or other text asks once more, a second ends as `n`; with no asker (piped stdin without input) it never installs and prints `To update: npm install -g bareloop@latest`. Any registry failure (timeout, offline, non-200, bad JSON, no version): `Could not reach npm to check. Try again later.`, exit 1. Test seams: `deps.launcher.npmFetch`, `npmSpawn`.
 
-**One menu (PRD v1.114, F245).** Bare `bareloop` prints the header, then `panel: 1 start 2 stop 3 restart 4 status 5 install`, `jobs: 6 export 7 run 8 resume 9 history` and `q quit`. Each job command asks for what it needs
-(typed flags skip the question): **export** lists the green runs as numbered `job (run-N)` names, then asks the output folder; **run** asks the bundle (the last 10 known bundles are listed newest first, numbered, as run name + folder; a number picks one, a run name or a folder reaches an older one; none known: `No exported bundles yet. Export one with 6.` and it ends), the repo, then
+**One menu (PRD v1.114, F245).** Bare `bareloop` prints the header, then `panel: 1 start 2 stop 3 restart 4 status 5 install 6 update`, `jobs: 7 export 8 run 9 resume 10 history` and `q quit`. Each job command asks for what it needs
+(typed flags skip the question): **export** lists the green runs as numbered `job (run-N)` names, then asks the output folder; **run** asks the bundle (the last 10 known bundles are listed newest first, numbered, as run name + folder; a number picks one, a run name or a folder reaches an older one; none known: `No exported bundles yet. Export one with 7.` and it ends), the repo, then
 the `$` cap and the time cap (Enter keeps the signed ones); **resume** lists the stopped / capped bundle runs the engine would resume, then offers more money / time; **history** asks the bundle and prints what `bareloop history <bundle>` prints.
 `q` at any question ends the command cleanly (nothing run, exit `0`). A required question answered with an empty Enter is asked once more; a second empty Enter ends that command with a plain line (nothing chosen, nothing run), exit `0`. `interview`, `author`, `replay` and `runs backfill` are no longer commands
 (`node scripts/run-replay.mjs`, `scripts/run-interview.mjs`, `scripts/run-author.mjs` run from a source checkout; the library functions the panel uses stay). `run-u` is still dispatched by name (`bareloop run-u <flags…>`: the panel spawns it) but is listed nowhere.
