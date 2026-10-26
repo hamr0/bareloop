@@ -15,7 +15,7 @@ import { isOutputCutOff } from './authorflow.js';
 import { AUTHOR_CALL_TIMEOUT_MS, AUTHOR_SCOUT_MAX_TOKENS, SURVEY_CAUSES } from './authorscout.js';
 import { lineRules, boundInWords, wordsSaidOn } from './rubricstep.js';
 import { applyPageRules, validReading } from './pagerules.js';
-import { dryReadMoney, dryReadPhrases } from './pagedry.js';
+import { dryReadMoney, dryReadTimes, dryReadPhrases } from './pagedry.js';
 import { ruleWords } from './facts.js';
 import { lookFactOf } from './inputlook.js';
 
@@ -167,10 +167,12 @@ export async function runPageMap({
     const kept = applyPageRules(texts[label], mapping, jobLines);
     // money build v2: "can it read" - a money fact whose forms read no result line of the page, by the run's own checker, is Not checked
     const read = await dryReadMoney(texts[label], kept.facts);
+    // time dry read (F236/F237): a time fact whose label has no time the run's checker can read after it is Not checked
+    const tim = await dryReadTimes(texts[label], read.facts);
     // hamr 3a: a phrase fact is read against the same result lines (only when the job keeps a money fact)
-    const phr = await dryReadPhrases(texts[label], read.facts);
+    const phr = await dryReadPhrases(texts[label], tim.facts);
     for (const f of phr.facts) facts.push(lookFactOf(f, label));
-    for (const d of [...kept.dropped, ...read.dropped, ...phr.dropped]) dropped.push({ ...d, source: label });
+    for (const d of [...kept.dropped, ...read.dropped, ...tim.dropped, ...phr.dropped]) dropped.push({ ...d, source: label });
     maps.push({ source: label, facts: mapping.facts.length });
     looks.push(label);
   }
