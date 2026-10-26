@@ -5,6 +5,12 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Changed
+
+- **barebrowse `^0.24.1` to `^0.25.0`.** A consent popup that shows 1-3 seconds after load is now closed on the first read of a page, so a page behind a late popup reads as the page. bareloop still asks for the same `act` read; barebrowse's new data mode is not used yet.
+
 ## [0.49.0] - 2026-10-26
 
 ### Added
