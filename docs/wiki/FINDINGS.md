@@ -14808,3 +14808,12 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 - [CODE] `doExport` (src/cli.js:139) and `exportBundle` (src/bundle.js:337) read `spec.close` and require a registry row at the spec's hash (`no-bridge-at-hash`, src/bundle.js:383); grep finds no `closeDecl` in src/bundle.js, src/bundlerun.js or src/cli.js.
 - [CODE] Panel runs never pass `--registry` (no `--registry` in src/panel; the panel spawns `run-u --spec ... --approve ...`, src/panel/authorroutes.js:502, runroutes.js:229, :375). A panel green writes only a per-run bridge FILE `bridge-<job>-<runid>.json` next to its spine (src/userrun.js:2387), never a registry row.
 - [CODE] `bareloop run <bundleDir>` takes `--repo <path>` only and always makes a git worktree (src/bundlerun.js:50, :169); a plain-folder, page-link or rubric job has no way to run from a bundle.
+
+
+## F246 — a duplicate fact name's drop note names the kept fact's rule, not the dropped one (2026-10-26; found at $0 by reading code, NOT seen live)
+
+**Status.** Logged, not built (PRD §8a: a reading-derived defect is parked until a live failure shows it).
+
+- [CODE] When a map has two facts with the same name, `applyPageRules` keeps the first and drops the other as `s1`, but the drop note takes its rule from the kept fact: `all.find((x) => String(x.name) === k.name)` (src/pagerules.js:336, the S1 drop: `all.find` by name returns the first fact of that name, i.e. the kept one), so the note names the kept fact's rule, not the dropped one's.
+- [MEASURED] Seen on the recorded map of session smvh7bxou4win: two "departure time" facts (rules 1 and 2), where the drop note would name rule 1 for the dropped rule-2 fact.
+- Not seen in a live run; no fix built.

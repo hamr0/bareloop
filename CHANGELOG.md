@@ -10,10 +10,13 @@ feature lands, **patch** = docs, fixes, scaffolding.
 ### Fixed
 
 - **A page fetch's browser no longer outlives bareloop.** If bareloop is killed or crashes while reading a web address, the browser it started now exits with it (barebrowse 0.24.1; Firefox needs `setpriv`, Chromium needs nothing). Old leftover browser folders in `/tmp` are cleaned on the next fetch.
+- **"yes, " in front of your own reading is no longer signed.** When a question about a `~` rule is answered "yes, check it as departure between 05:00 and 21:59", the rule now reads "check it as departure between 05:00 and 21:59". A leading yes or agree (comma, colon, dash or space after it) is dropped and the rest is kept word for word; a bare "yes" or "agree" still accepts the reading, and a yes in the middle of a sentence is left alone. "yes, drop it" on a rule the page cannot check drops it. (F240)
+- **Two money units that differ only in spaces are one unit.** Page rules now trim and collapse spaces in each listed unit (so "US dollars" and " US dollars" become one), and a spec that still carries such a pair is refused at no cost in bareloop's own words ("the units are not repeated") instead of by bareguard 0.26.
 
 ### Changed
 
 - **barebrowse `^0.21.0` to `^0.24.1`.** No change to how bareloop calls it.
+- **bareguard `^0.25.1` to `^0.26.0`.** Its one break for bareloop is the money-unit rule above; the new table rules (`cells`, `table`, `diff`) are not used here.
 
 ## [0.48.0] - 2026-10-25
 
