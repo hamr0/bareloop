@@ -13,7 +13,7 @@ import { createServer as netServer } from 'node:net';
 import { createServer as httpServer } from 'node:http';
 import { PassThrough } from 'node:stream';
 import {
-  startCmd, stopCmd, restartCmd, statusCmd, installCmd, menuCmd,
+  startCmd, stopCmd, restartCmd, statusCmd, installCmd, updateCmd, menuCmd,
 } from '../src/launcher.js';
 import { createPanelServer } from '../src/panel/server.js';
 import { main } from '../src/cli.js';
@@ -330,7 +330,7 @@ test('install: creates what is missing (dir 700, .env 600, config.json), then sa
   writeFileSync(join(home, '.env'), 'MY_KEY=abc\n', { mode: 0o600 });
   const again = sink();
   assert.equal(await installCmd(again, d), 0);
-  assert.equal(again.lines.at(-1), 'Already installed, nothing to do.');
+  assert.equal(again.lines.at(-1), 'Already set up. This does not update bareloop. Pick 6 update for that.');
   assert.match(again.lines[0], /installed ✓/);
   assert.equal(readFileSync(join(home, '.env'), 'utf8'), 'MY_KEY=abc\n');
 });
@@ -362,8 +362,8 @@ test('menu (the approved layout): two header lines, a blank line, the panel line
     `bareloop ${V} · installed ✓ · panel running at http://127.0.0.1:${base + 1}`,
     'runs: 0 running · 0 need you · 0 in all',
     '',
-    'panel: 1 start   2 stop   3 restart   4 status   5 install',
-    'jobs:  6 export   7 run   8 resume   9 history',
+    'panel: 1 start   2 stop   3 restart   4 status   5 install   6 update',
+    'jobs:  7 export   8 run   9 resume   10 history',
     'q quit',
   ]);
   assert.deepEqual(asked, ['> ']);
@@ -378,9 +378,9 @@ test('menu: choice 4 runs status through the same code WITHOUT printing the head
   assert.equal(io.lines.filter((l) => l.startsWith(`bareloop ${V}`)).length, 1);
   assert.equal(io.lines.at(-1), `pid 48213 · version ${V} · 1 draft open · 3 schedules on`);
   const bad = sink();
-  assert.equal(await menuCmd(bad, deps(home, base, { ask: async () => '9' })), 1);
-  assert.match(bad.text(), /unknown choice "9"/);
-  assert.match(bad.text(), /one of: 1, 2, 3, 4, 5, 6, 7, 8, 9, q/);
+  assert.equal(await menuCmd(bad, deps(home, base, { ask: async () => '11' })), 1);
+  assert.match(bad.text(), /unknown choice "11"/);
+  assert.match(bad.text(), /one of: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, q/);
 });
 
 test('menu: `constructor` and `__proto__` are unknown choices, not a crash, even when the job doors are wired', async () => {
@@ -408,7 +408,7 @@ test('main: bare `bareloop` shows the new menu (the old export/run/history menu 
   stdin.write('q\n');
   assert.equal(await run, 0);
   const text = out.join('');
-  assert.match(text, new RegExp(`^bareloop ${VRE} · installed ✓ · panel not running\nruns: 0 running · 0 need you · 0 in all\n\npanel: 1 start   2 stop   3 restart   4 status   5 install\njobs:  6 export   7 run   8 resume   9 history\nq quit\n`));
+  assert.match(text, new RegExp(`^bareloop ${VRE} · installed ✓ · panel not running\nruns: 0 running · 0 need you · 0 in all\n\npanel: 1 start   2 stop   3 restart   4 status   5 install   6 update\njobs:  7 export   8 run   9 resume   10 history\nq quit\n`));
   assert.doesNotMatch(text, /1 export/);
   const out2 = [];
   assert.equal(await main(['status'], { stdout: { write: (s) => { out2.push(s); return true; } }, stderr, cwd: process.cwd(), env: {}, keysHome: home, runlistHome: home, launcher }), 3);
@@ -641,4 +641,114 @@ test('restart through the menu (3) and the sub-command; an unknown option is ref
   const bad = sink();
   assert.equal(await restartCmd(['--port', '1'], bad, deps(home, base)), 1);
   assert.match(bad.text(), /Unknown option "--port"/);
+});
+
+// --- update (PRD v1.116, signed 2026-10-26): 6 on the panel line, jobs 7-10; the only online step, only when pressed ---
+
+const npmOk = (version) => async () => ({ ok: true, json: async () => ({ version }) });
+const noNet = async () => { throw new Error('fetch must not be called outside update'); };
+
+test('update: newest and every failure say the exact words with the right exit code; neither spawns npm', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const spawns = [];
+  const npmSpawn = (...a) => { spawns.push(a); return fakeChild(0); };
+  const run = async (npmFetch, ask) => { const io = sink(); const err = []; const rc = await updateCmd({ out: io.out, err: (s) => err.push(s) }, deps(home, base, { npmFetch, npmSpawn, ask })); return { rc, lines: io.lines, err: err.join('') }; };
+  let r = await run(npmOk(V), async () => 'y');
+  assert.equal(r.rc, 0);
+  assert.equal(r.lines.at(-1), `You have the newest bareloop (${V}).`);
+  r = await run(npmOk('0.0.1'), async () => 'y');
+  assert.match(r.lines.at(-1), /newest/);
+  const bads = [
+    async () => { throw new Error('ENOTFOUND'); },
+    async () => ({ ok: false, status: 503, json: async () => ({}) }),
+    async () => ({ ok: true, json: async () => { throw new SyntaxError('bad json'); } }),
+    async () => ({ ok: true, json: async () => ({}) }),
+    async () => ({ ok: true, json: async () => ({ version: 'latest' }) }),
+  ];
+  for (const b of bads) {
+    r = await run(b, async () => 'y');
+    assert.equal(r.rc, 1);
+    assert.match(r.err, /Could not reach npm to check\. Try again later\./);
+    assert.doesNotMatch(r.err, /ENOTFOUND|503|SyntaxError/);
+  }
+  assert.equal(spawns.length, 0);
+});
+
+const fakeChild = (code, error) => { const c = new EventEmitter(); setImmediate(() => (error ? c.emit('error', new Error('ENOENT')) : c.emit('close', code))); return c; };
+
+test('update: newer asks; y installs (success and failure words), n / q / two empties / no asker never install', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const go = async (answers, { code = 0, error = false, noAsk = false } = {}) => {
+    const io = sink(); const err = []; const spawns = []; const asked = [];
+    const ask = noAsk ? undefined : async (q) => { asked.push(q); return answers.shift() ?? ''; };
+    const rc = await updateCmd({ out: io.out, err: (s) => err.push(s) }, deps(home, base, { npmFetch: npmOk('99.1.2'), ask, npmSpawn: (c, a, o) => { spawns.push([c, a, o]); return fakeChild(code, error); } }));
+    return { rc, lines: io.lines, err: err.join(''), spawns, asked };
+  };
+  const first = `bareloop 99.1.2 is out. You have ${V}.`;
+  let r = await go(['y']);
+  assert.equal(r.rc, 0);
+  assert.equal(r.lines.at(-2), first);
+  assert.equal(r.lines.at(-1), 'Updated to 99.1.2. Then pick 3 restart.');
+  assert.deepEqual(r.asked, ['Update now? (y/n) ']);
+  assert.deepEqual(r.spawns, [['npm', ['install', '-g', 'bareloop@latest'], { stdio: 'inherit' }]]);
+  r = await go(['yes'], { code: 1 });
+  assert.equal(r.rc, 1);
+  assert.match(r.err, /The update did not finish\. Run it yourself: npm install -g bareloop@latest/);
+  r = await go(['y'], { error: true });
+  assert.equal(r.rc, 1);
+  assert.match(r.err, /The update did not finish/);
+  for (const a of [['n'], ['no'], ['q'], ['', ''], ['', 'x'], ['', 'n']]) {
+    r = await go([...a]);
+    assert.equal(r.rc, 0, JSON.stringify(a));
+    assert.equal(r.lines.at(-1), 'Not updated. To update later: npm install -g bareloop@latest');
+    assert.equal(r.spawns.length, 0, JSON.stringify(a));
+  }
+  r = await go([], { noAsk: true });
+  assert.equal(r.rc, 0);
+  assert.equal(r.spawns.length, 0);
+  assert.deepEqual(r.lines.slice(-2), [first, 'To update: npm install -g bareloop@latest']);
+  r = await go(['', 'y']); // an empty Enter asks once more
+  assert.equal(r.spawns.length, 1);
+});
+
+test('update: versions compare numerically (0.9.0 < 0.10.0), not as text', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const io = sink();
+  assert.equal(await updateCmd(io, deps(home, base, { version: '0.9.0', npmFetch: npmOk('0.10.0') })), 0);
+  assert.match(io.lines.at(-2), /^bareloop 0\.10\.0 is out\. You have 0\.9\.0\.$/);
+});
+
+test('menu: 6 and `update` reach update; 7 export, 8 run, 9 resume, 10 history reach the job doors; nothing goes online at render or on any other choice', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const hit = [];
+  const jobs = { export: async () => { hit.push('export'); return 0; }, run: async () => { hit.push('run'); return 0; }, resume: async () => { hit.push('resume'); return 0; }, history: async () => { hit.push('history'); return 0; } };
+  for (const c of ['6', 'update']) {
+    const io = sink();
+    assert.equal(await menuCmd(io, deps(home, base, { jobs, npmFetch: npmOk('99.0.0'), ask: async (q) => (q === 'Update now? (y/n) ' ? 'n' : c) })), 0);
+    assert.match(io.text(), /bareloop 99\.0\.0 is out/);
+    assert.equal(io.lines.filter((l) => l.startsWith(`bareloop ${V}`)).length, 1);
+  }
+  for (const [c, want] of [['7', 'export'], ['export', 'export'], ['8', 'run'], ['9', 'resume'], ['10', 'history'], ['history', 'history']]) {
+    hit.length = 0;
+    assert.equal(await menuCmd(sink(), deps(home, base, { jobs, npmFetch: noNet, ask: async () => c })), 0);
+    assert.deepEqual(hit, [want]);
+  }
+  for (const c of ['q', '1', '4', '5']) {
+    assert.equal(await menuCmd(sink(), deps(home, base, { jobs, npmFetch: noNet, ask: async () => c })) >= 0, true);
+  }
+});
+
+test('main: `bareloop update` is a sub-command through the one function', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const out = [];
+  const launcher = { ports: [base, base + 1], timeoutMs: 2000, nodeVersion: '22.1.0', version: V, npmFetch: npmOk('99.0.0'), npmSpawn: () => { throw new Error('no npm'); } };
+  const stdin = new PassThrough(); stdin.end('n\n');
+  const rc = await main(['update'], { stdin, stdout: { write: (s) => { out.push(s); return true; } }, stderr: { write: () => true }, cwd: process.cwd(), env: {}, keysHome: home, runlistHome: home, launcher });
+  assert.equal(rc, 0);
+  assert.match(out.join(''), /bareloop 99\.0\.0 is out\. You have /);
 });

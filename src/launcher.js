@@ -49,6 +49,8 @@ const RULE_WIDTH = 56;
  * @property {number} [silentWaitMs] how long start keeps asking a taken, silent port (default 10 s)
  * @property {string} [nodeVersion] default process.versions.node
  * @property {typeof fetch} [fetchImpl]
+ * @property {(cmd: string, args: string[], o: object) => any} [npmSpawn] runs `npm install -g bareloop@latest` for `update` (default node:child_process spawn, no shell)
+ * @property {typeof fetch} [npmFetch] the registry check of `update` only (default the global fetch); nothing else ever goes online
  * @property {(cmd: string, args: string[], o: object) => any} [spawnFn] default node:child_process spawn
  * @property {(pid: number, sig: string|number) => void} [kill] default process.kill
  * @property {((target: string) => Promise<boolean>)} [open] default the shared OS opener
@@ -266,7 +268,7 @@ export async function installCmd(io, d, shown) {
       return 1;
     }
   }
-  if (made.length === 0) { io.out('Already installed, nothing to do.'); return 0; }
+  if (made.length === 0) { io.out('Already set up. This does not update bareloop. Pick 6 update for that.'); return 0; }
   io.out('Installed. Created:');
   for (const m of made) io.out(`  ${m}`);
   return 0;
@@ -288,6 +290,65 @@ export async function statusCmd(io, d, shown) {
     const body = `pid ${p.pid} · version ${p.version} · ${plural(p.drafts, 'draft', 'drafts')} open · ${plural(p.schedules, 'schedule', 'schedules')} on${startedWords(p)}`;
     io.out(h.panels.length > 1 ? `${p.url} · ${body}` : body);
   }
+  return 0;
+}
+
+/** @param {string} v @returns {number[]|null} major, minor, patch of `1.2.3` (a `-pre` tail is ignored); null when it is not that shape */
+function parseVersion(v) {
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(v);
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+
+/** @param {number[]} a @param {number[]} b @returns {boolean} a is newer than b */
+const isNewer = (a, b) => ((a[0] - b[0]) || (a[1] - b[1]) || (a[2] - b[2])) > 0;
+
+/**
+ * `bareloop update` — the only launcher command that goes online, and only when pressed: reads the newest published version from the npm
+ * registry (5 s deadline) and says whether there is a newer one. It installs nothing; it tells the person the command.
+ * @param {{out: (s: string) => void, err: (s: string) => void}} io @param {LauncherDeps & {version?: string}} d @param {{lines: string[], panels: Panel[]}} [shown]
+ * @returns {Promise<number>}
+ */
+export async function updateCmd(io, d, shown) {
+  await headerOnce(io, d, shown);
+  const mine = d.version ?? packageVersion();
+  /** @type {number[]|null} */
+  let latest = null;
+  /** @type {string} */
+  let latestText = '';
+  try {
+    const res = await (d.npmFetch ?? fetch)('https://registry.npmjs.org/bareloop/latest', { signal: AbortSignal.timeout(5000) });
+    if (res.ok) {
+      const j = await res.json();
+      latestText = typeof j?.version === 'string' ? j.version : '';
+      latest = parseVersion(latestText);
+    }
+  } catch { /* offline, timeout, bad JSON: the one plain line below */ }
+  const have = parseVersion(mine);
+  if (!latest || !have) {
+    fail(io, d, 'Could not reach npm to check. Try again later.');
+    return 1;
+  }
+  if (!isNewer(latest, have)) { io.out(`You have the newest bareloop (${mine}).`); return 0; }
+  const manual = 'npm install -g bareloop@latest';
+  io.out(`bareloop ${latestText} is out. You have ${mine}.`);
+  if (!d.ask) { io.out(`To update: ${manual}`); return 0; }
+  // an empty Enter or other text asks once more; a second one ends as "no"
+  let yes = false;
+  for (let i = 0; i < 2; i += 1) {
+    const a = (await d.ask('Update now? (y/n) ')).trim().toLowerCase();
+    if (a === 'y' || a === 'yes') { yes = true; break; }
+    if (a === 'n' || a === 'no' || a === 'q') break;
+  }
+  if (!yes) { io.out(`Not updated. To update later: ${manual}`); return 0; }
+  const ok = await new Promise((resolve) => {
+    try {
+      const child = (d.npmSpawn ?? realSpawn)('npm', ['install', '-g', 'bareloop@latest'], { stdio: 'inherit' });
+      child.once('error', () => resolve(false));
+      child.once('close', (code) => resolve(code === 0));
+    } catch { resolve(false); }
+  });
+  if (!ok) { fail(io, d, `The update did not finish. Run it yourself: ${manual}`); return 1; }
+  io.out(`Updated to ${latestText}. Then pick 3 restart.`);
   return 0;
 }
 
@@ -484,8 +545,8 @@ export async function restartCmd(args, io, d, shown) {
 }
 
 /**
- * The bare `bareloop` menu (PRD v1.114, one menu): the panel's four choices, the four job commands, one question. Runs the chosen command
- * and returns its exit code. The job commands (6 export, 7 run, 8 resume, 9 history) are `d.jobs`, supplied by the CLI: each prompts for
+ * The bare `bareloop` menu (PRD v1.114, one menu): the panel's six choices, the four job commands, one question. Runs the chosen command
+ * and returns its exit code. The job commands (7 export, 8 run, 9 resume, 10 history) are `d.jobs`, supplied by the CLI: each prompts for
  * what it needs on the same asker this menu uses.
  * @param {{out: (s: string) => void, err: (s: string) => void}} io @param {LauncherDeps & {version?: string, jobs?: {export: () => Promise<number>, run: () => Promise<number>, resume: () => Promise<number>, history: () => Promise<number>}}} d
  * @returns {Promise<number>}
@@ -498,8 +559,8 @@ export async function menuCmd(io, d) {
   if (!P.on) io.out('');
   const n = (/** @type {string} */ k) => P.boldCyan(k);
   const ind = P.on ? '  ' : '';
-  io.out(`${ind}panel: ${n('1')} start   ${n('2')} stop   ${n('3')} restart   ${n('4')} status   ${n('5')} install`);
-  io.out(`${ind}jobs:  ${n('6')} export   ${n('7')} run   ${n('8')} resume   ${n('9')} history`);
+  io.out(`${ind}panel: ${n('1')} start   ${n('2')} stop   ${n('3')} restart   ${n('4')} status   ${n('5')} install   ${n('6')} update`);
+  io.out(`${ind}jobs:  ${n('7')} export   ${n('8')} run   ${n('9')} resume   ${n('10')} history`);
   io.out(`${ind}${n('q')} quit`);
   const choice = ask ? (await ask(`${P.cyan('>')} `)).trim().toLowerCase() : 'q';
   // the header is already on screen: the chosen command reuses it instead of printing it a second time
@@ -508,10 +569,11 @@ export async function menuCmd(io, d) {
   if (choice === '3' || choice === 'restart') return restartCmd([], io, d, h);
   if (choice === '4' || choice === 'status') return statusCmd(io, d, h);
   if (choice === '5' || choice === 'install') return installCmd(io, d, h);
-  const jobChoices = { 6: 'export', export: 'export', 7: 'run', run: 'run', 8: 'resume', resume: 'resume', 9: 'history', history: 'history' };
+  if (choice === '6' || choice === 'update') return updateCmd(io, d, h);
+  const jobChoices = { 7: 'export', export: 'export', 8: 'run', run: 'run', 9: 'resume', resume: 'resume', 10: 'history', history: 'history' };
   const job = Object.hasOwn(jobChoices, choice) ? jobChoices[choice] : undefined; // never `constructor` / `__proto__`
   if (job !== undefined && d.jobs) return d.jobs[/** @type {'export'|'run'|'resume'|'history'} */ (job)]();
   if (choice === '' || choice === 'q' || choice === 'quit') return 0;
-  fail(io, d, `unknown choice ${JSON.stringify(choice)} — one of: 1, 2, 3, 4, 5, 6, 7, 8, 9, q`);
+  fail(io, d, `unknown choice ${JSON.stringify(choice)} — one of: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, q`);
   return 1;
 }
