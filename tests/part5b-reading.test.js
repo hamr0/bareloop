@@ -117,9 +117,8 @@ test('F240 stripAgreeLead: a leading agree word + separator goes, the rest stays
   assert.equal(stripAgreeLead('Yes, Departs by 7am'), 'Departs by 7am');
   assert.equal(stripAgreeLead('AGREE: departs by 7am'), 'departs by 7am');
   assert.equal(stripAgreeLead('yes - departs by 7am'), 'departs by 7am');
-  assert.equal(stripAgreeLead('yes departs by 7am'), 'departs by 7am');
   assert.equal(stripAgreeLead('yes, drop it'), 'drop it');
-  for (const a of ['yes', 'Yes', 'agree', 'yes.', 'agree!', 'say yes to a window seat', 'yesterday it left at 7am', 'agreed, departs by 7am']) assert.equal(stripAgreeLead(a), a, a);
+  for (const a of ['yes', 'Yes', 'agree', 'yes.', 'agree!', 'say yes to a window seat', 'yesterday it left at 7am', 'agreed, departs by 7am', 'yes departs by 7am', 'agree with the shown price', 'yes or no questions only']) assert.equal(stripAgreeLead(a), a, a);
 });
 
 test('tooManyAsksText lists EVERY ask and its reading, in code-owned words; a secret is masked; draftStopText prints it whole', () => {

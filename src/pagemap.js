@@ -191,13 +191,13 @@ const AGREE_WORDS = ['agree', 'yes'];
 /** @param {unknown} text @returns {boolean} */
 export const isAgree = (text) => AGREE_WORDS.includes(String(text ?? '').trim().replace(/[.!]$/, '').toLowerCase());
 /**
- * F240: an answer that opens with an agree word, a separator (comma, colon, dash or space) and more text ("yes, check it as ...") is the person's own
+ * F240: an answer that opens with an agree word, a separator (comma, colon or dash, spaces around allowed) and more text ("yes, check it as ...") is the person's own
  * reading with a courtesy word in front: the word and separator go, the rest stays word for word. A bare "yes"/"agree" (isAgree) and a text that
  * only contains the word later are returned untouched.
  * @param {string} text @returns {string}
  */
 export const stripAgreeLead = (text) => {
-  const m = String(text ?? '').match(new RegExp(`^(?:${AGREE_WORDS.join('|')})(?:\\s*[,:\\-\u2013\u2014]\\s*|\\s+)(\\S[\\s\\S]*)$`, 'i'));
+  const m = String(text ?? '').match(new RegExp(`^(?:${AGREE_WORDS.join('|')})\\s*[,:\\-\u2013\u2014]\\s*(\\S[\\s\\S]*)$`, 'i'));
   return m ? m[1].trim() : String(text ?? '');
 };
 
