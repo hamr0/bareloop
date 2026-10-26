@@ -228,7 +228,8 @@ export function applyPageRules(text, mapping, jobLines) {
         // form the AI listed in either box is pooled and moved to the box its own shape belongs to
         const listedCurrencies = (Array.isArray(f.currency) ? f.currency : []).map(String);
         // a currency SIGN listed in BOTH unit and currency is said once: the unit copy goes (fwd F71 drafts)
-        const listedUnits = (Array.isArray(f.unit) ? f.unit : []).map(String).filter((u) => {
+        // bareguard 0.26: two units equal after whitespace normalization are one form, so trim + collapse here and the twins collapse in the pool
+        const listedUnits = (Array.isArray(f.unit) ? f.unit : []).map((u) => String(u).replace(/\s+/g, ' ').trim()).filter((u) => {
           if (!(CURRENCY_SYMBOLS.includes(u) && listedCurrencies.includes(u))) return true;
           drop(f, u, 'sign-twice');
           return false;

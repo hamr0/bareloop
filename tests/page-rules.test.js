@@ -260,3 +260,14 @@ test('numberAtEnd reads the number before a label in linear time: a 50000-char "
   assert.equal(numberAtEnd('x,5'), '5');
   assert.ok(performance.now() - t0 < 1000, `took ${performance.now() - t0} ms`);
 });
+
+// bareguard 0.26: a unit list with two entries equal after whitespace normalization makes createRubric throw; the pool must say one form once
+test('units are pooled on their whitespace-normalized form: a leading-space or double-space twin collapses to one unit and the REAL createRubric (0.26) signs it', async () => {
+  const { createRubric } = await import('bareguard');
+  const { buildStepSpec } = await import('../src/rubricstep.js');
+  const map = { facts: [{ name: 'price', from: 'rule 1', shape: 'money', words: ['From'], unit: ['US dollars', ' US dollars', 'US  dollars '] }] };
+  const r = applyPageRules(sfo.page, map, JOBS.flights);
+  assert.deepEqual(r.facts[0].unit, ['US dollars']);
+  const part = { text: 'list 3 stays', class: 'fact', source: 'Page', facts: r.facts.map((f) => ({ name: f.name, shape: 'money', anchor: f.words[0], unit: f.unit })), count: { min: 3, max: 3 } };
+  assert.doesNotThrow(() => createRubric(buildStepSpec({ step: 1, parts: [part] }, { Page: '0'.repeat(64) })));
+});
