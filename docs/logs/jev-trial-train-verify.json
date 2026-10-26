@@ -1,0 +1,97 @@
+[
+ {
+  "id": "t01",
+  "verdict": "CONFIRMED",
+  "reason": "data line: link \"Timetable\" [ref=321] present."
+ },
+ {
+  "id": "t02",
+  "verdict": "CONFIRMED",
+  "reason": "Zorblax: 0 hits in data-mode page."
+ },
+ {
+  "id": "t03",
+  "verdict": "CONFIRMED",
+  "reason": "data: row \"South Station\" [ref=4905]: Trip 6002: 5:29 AM ..."
+ },
+ {
+  "id": "t04",
+  "verdict": "CONFIRMED",
+  "reason": "Worcester: 0 hits; rows are Wickford Junction ... South Station."
+ },
+ {
+  "id": "t05",
+  "verdict": "CONFIRMED",
+  "reason": "Wickford row lists only 6:02,7:02,8:38,11:57,2:25,4:35,6:46,7:42; 5:17 AM is Ruggles Trip 6002 \"Track Change Early Departure 5:17 AM\"."
+ },
+ {
+  "id": "t06",
+  "verdict": "CONFIRMED",
+  "reason": "data: Wickford Junction ... Trip 6008: 6:02 AM."
+ },
+ {
+  "id": "t07",
+  "verdict": "CONFIRMED",
+  "reason": "Providence row has no 5:42 AM (4:12,5:10,6:00,6:32...). 5:42 AM only in Ruggles Trip 6302."
+ },
+ {
+  "id": "t08",
+  "verdict": "CONFIRMED",
+  "reason": "data: row \"Ruggles No parking\": Trip 6002: Track Change Early Departure 5:17 AM."
+ },
+ {
+  "id": "t09",
+  "verdict": "CONFIRMED",
+  "reason": "data: Providence Trip 6004: 5:10 AM (explicit trip label)."
+ },
+ {
+  "id": "t10",
+  "verdict": "CONFIRMED",
+  "reason": "data: Providence Trip 6004 = 5:10 AM; 6:00 AM is Trip 6006."
+ },
+ {
+  "id": "t11",
+  "verdict": "CONFIRMED",
+  "reason": "data: Mansfield Trip 6008: 7:01 AM; 6:32 AM is Providence Trip 6008 / Mansfield Trip 6006."
+ },
+ {
+  "id": "t12",
+  "verdict": "CONFIRMED",
+  "reason": "data: Mansfield Trip 6008: 7:01 AM."
+ },
+ {
+  "id": "t13",
+  "verdict": "CONFIRMED",
+  "reason": "Trip 6302 absent from data-mode Providence row (Providence trips 6002,6004,6006,6008... no 6302); row says other 16 columns do not stop. Stoughton-branch trip."
+ },
+ {
+  "id": "t14",
+  "verdict": "CONFIRMED",
+  "reason": "data: South Station Trip 6302: 5:54 AM."
+ },
+ {
+  "id": "t15",
+  "verdict": "CONFIRMED",
+  "reason": "data: South Station Trip 6002: 5:29 AM; 5:54 AM is Trip 6302."
+ },
+ {
+  "id": "t16",
+  "verdict": "CONFIRMED",
+  "reason": "data: Providence Trip 6006: 6:00 AM; 6:32 AM is Trip 6008."
+ },
+ {
+  "id": "t17",
+  "verdict": "AMBIGUOUS",
+  "reason": "Item asks about three consecutive LINES. Data mode joins them into one cell string 'Track Change Early Departure 5:17 AM' (Ruggles Trip 6002): order and adjacency hold, but no separate lines exist. Answer true on the words, not literally on lines."
+ },
+ {
+  "id": "t18",
+  "verdict": "CONFIRMED",
+  "reason": "False either way: Wickford first listed time is Trip 6008 6:02 AM; 5:17 AM is not in that row."
+ },
+ {
+  "id": "t19",
+  "verdict": "AMBIGUOUS",
+  "reason": "Data mode drops 'Does not stop' cells (29 of 37 columns for Wickford) and lists 6:02 AM (Trip 6008) first, so first LISTED cell is 6:02 = true (matches the act page, which also compresses non-stop cells). But the first actual table column (Trip 6002) is a does-not-stop cell, so a literal 'first cell' reading is not 6:02. Positional wording is unsound on either page; Trip 6008 is right for 6:02 by time continuity (Wickford 6:02, TF Green 6:16, Providence 6:32, Pawtucket 6:38 ...)."
+ }
+]
