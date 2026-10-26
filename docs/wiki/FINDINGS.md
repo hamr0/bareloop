@@ -14727,7 +14727,7 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 
 **Status.** Open. Logged, not built.
 
-*Update 2026-10-26: the small part is FIXED on fix/barebrowse-0241: an answer that opens with yes/agree and a comma, colon or dash ("yes, check it as departure between 05:00 and 21:59") is signed without the leading word (`stripAgreeLead`, `src/pagemap.js`). The reversed-route override above stays open.*
+*Update 2026-10-26: the small part is FIXED on fix/barebrowse-0241: an answer that opens with yes/agree directly followed by a comma or colon ("yes, check it as departure between 05:00 and 21:59") is signed without the leading word (`stripAgreeLead`, `src/pagemap.js`). Correction 2026-10-26 (self-review): the first fix also took a bare space and then a dash as separators and cut real words ("yes-no questions only" became "no questions only"); only a comma or colon right after the word counts now. The reversed-route override above stays open.*
 
 ## F241 — a price fact no result could pass was signed: currency "$" after label "From", on a page that writes "From 137 US dollars" (run mvh7g2hc, 2026-10-20; fixed in v0.45.0; the same class as F237)
 

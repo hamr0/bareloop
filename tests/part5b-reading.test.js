@@ -111,14 +111,14 @@ test('isAgree: agree / yes, any case, a closing stop; a typed reading is not agr
   for (const a of ['agree, but 7am', 'no', 'drop it', '']) assert.equal(isAgree(a), false, a);
 });
 
-test('F240 stripAgreeLead: a leading agree word + separator goes, the rest stays word for word; bare, stop-closed and mid-sentence yes are untouched', () => {
+test('F240 stripAgreeLead: a leading agree word + comma or colon goes, the rest stays word for word; bare, stop-closed and mid-sentence yes are untouched', () => {
   const real = 'yes, check it as departure between 05:00 and 21:59';
   assert.equal(stripAgreeLead(real), 'check it as departure between 05:00 and 21:59');
   assert.equal(stripAgreeLead('Yes, Departs by 7am'), 'Departs by 7am');
   assert.equal(stripAgreeLead('AGREE: departs by 7am'), 'departs by 7am');
-  assert.equal(stripAgreeLead('yes - departs by 7am'), 'departs by 7am');
+  assert.equal(stripAgreeLead('Yes,drop it'), 'drop it');
   assert.equal(stripAgreeLead('yes, drop it'), 'drop it');
-  for (const a of ['yes', 'Yes', 'agree', 'yes.', 'agree!', 'say yes to a window seat', 'yesterday it left at 7am', 'agreed, departs by 7am', 'yes departs by 7am', 'agree with the shown price', 'yes or no questions only']) assert.equal(stripAgreeLead(a), a, a);
+  for (const a of ['yes', 'Yes', 'agree', 'yes.', 'agree!', 'say yes to a window seat', 'yesterday it left at 7am', 'agreed, departs by 7am', 'yes departs by 7am', 'agree with the shown price', 'yes or no questions only', 'yes-no questions only', 'agree-ment on price', 'yes - departs by 7am', 'yes \u2014 the outbound', 'yes\u2013the outbound', 'yesterday, the price']) assert.equal(stripAgreeLead(a), a, a);
 });
 
 test('tooManyAsksText lists EVERY ask and its reading, in code-owned words; a secret is masked; draftStopText prints it whole', () => {

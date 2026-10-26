@@ -191,13 +191,15 @@ const AGREE_WORDS = ['agree', 'yes'];
 /** @param {unknown} text @returns {boolean} */
 export const isAgree = (text) => AGREE_WORDS.includes(String(text ?? '').trim().replace(/[.!]$/, '').toLowerCase());
 /**
- * F240: an answer that opens with an agree word, a separator (comma, colon or dash, spaces around allowed) and more text ("yes, check it as ...") is the person's own
- * reading with a courtesy word in front: the word and separator go, the rest stays word for word. A bare "yes"/"agree" (isAgree) and a text that
+ * F240: an answer that opens with an agree word IMMEDIATELY followed by a comma or a colon (spaces allowed only after it) and more text
+ * ("yes, check it as ...", "agree: the outbound flight") is the person's own reading with a courtesy word in front: the word and the
+ * comma/colon go, the rest stays word for word. No hyphen or dash of any kind and no bare space counts, so "yes-no questions only",
+ * "agree-ment on price", "yes - departs", "yes departs" and "yesterday, ..." are kept whole. A bare "yes"/"agree" (isAgree) and a text that
  * only contains the word later are returned untouched.
  * @param {string} text @returns {string}
  */
 export const stripAgreeLead = (text) => {
-  const m = String(text ?? '').match(new RegExp(`^(?:${AGREE_WORDS.join('|')})\\s*[,:\\-\u2013\u2014]\\s*(\\S[\\s\\S]*)$`, 'i'));
+  const m = String(text ?? '').match(new RegExp(`^(?:${AGREE_WORDS.join('|')})[,:]\\s*(\\S[\\s\\S]*)$`, 'i'));
   return m ? m[1].trim() : String(text ?? '');
 };
 
