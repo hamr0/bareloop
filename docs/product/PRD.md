@@ -2063,3 +2063,15 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 - **Guard's caution:** a broad question ("does this page show a departure time at Wickford Junction?") likely says yes on the MBTA page, because the page DOES show departure times, just the wrong ones (bareguard's 2026-10-12 locate-judge POC: a made-up flight went green). The likely value is helping pick or verify the anchor label, which code then checks.
 - **Related:** barebrowse table pruning (browse session asked 2026-10-26; bareloop asked for an opt-in mode putting row and column headers on each cell's line) may solve the MBTA case in code with no classifier.
 - **Status:** PARKED as an option to optimize rubric. A $0.50-capped trial is pre-registered in `docs/logs/jev-trial-PREREG.md` (to be committed with its items).
+
+
+### Parked: a launcher "update" option (v1.116 — 2026-10-26) — PARKED, not scheduled, unsigned
+
+- **The problem** (seen in fwdloop, same in bareloop): the launcher's `5 install` only sets up folders, the keys file and settings. It never updates the package, and nothing in bareloop checks for a newer version. fwdloop's install printed "Already installed, nothing to do." while 0.25.1 was installed and 0.26.0 was on npm.
+- hamr picked option A for fwdloop (an update option the person presses) over B (an automatic check on every start).
+- **The shape, adapted to bareloop:**
+  1. The launcher menu gains an `update` choice. bareloop's menu is `panel: 1 start 2 stop 3 restart 4 status 5 install` / `jobs: 6 export 7 run 8 resume 9 history`, so the number is decided when the amendment is signed (renumbering is hamr's call). It asks the npm registry for the latest `bareloop` version ONLY when the person presses it; nothing goes online at start or in the background.
+  2. It says either that this is the newest version, or names the new version and the exact command `npm install -g bareloop@latest`, and says the panel then needs `3 restart`.
+  3. `5 install` keeps its job, and its words say that it does not update the package.
+- **Source:** the fwd session relayed this at hamr's request 2026-10-26; fwdloop parked the same text in its own PRD under "Parked, not scheduled".
+- **Status:** needs its own amendment signed by hamr before anything is built.
