@@ -97,7 +97,6 @@ export function factShapeReds(part, w, red) {
           const list = asList(us);
           if (list.length > MAX_UNITS) red('invalid-value', `${fw}.unit`, `at most ${MAX_UNITS} units (${list.length} given)`);
           else if (list.some((u) => u.length > MAX_UNIT_CHARS)) red('invalid-value', `${fw}.unit`, `a unit is at most ${MAX_UNIT_CHARS} characters`);
-          else if (new Set(list.map((u) => u.replace(/\s+/g, ' ').trim())).size !== list.length) red('invalid-value', `${fw}.unit`, 'the units are not repeated (two that differ only in spaces are the same unit)');
         }
       }
       if (has('currency')) {

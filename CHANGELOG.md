@@ -10,6 +10,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 ### Changed
 
 - **barebrowse `^0.24.1` to `^0.25.0`.** A consent popup that shows 1-3 seconds after load is now closed on the first read of a page, so a page behind a late popup reads as the page. bareloop still asks for the same `act` read; barebrowse's new data mode is not used yet.
+- **A money unit listed twice is refused in plain words.** Units that are the same once marks (`**`, `__`) and spaces are removed (`**pp**` and `pp`) now stop at the $0 signing pre-flight naming the fact and both units, instead of bareguard's raw error; bareloop's own partial copy of that rule is gone.
 
 ## [0.49.0] - 2026-10-26
 

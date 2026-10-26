@@ -60,16 +60,13 @@ test('lists: up to 3 currencies and 10 units pass shape AND the real bareguard; 
   assert.deepEqual(factDecides(part([money({ unit: 'a', currency: '$' })]))[0], { valueKind: 'money', unit: 'a', currency: '$', anchor: 'From' });
 });
 
-test('limits are bareguard\'s, and ours first: a 4th currency, an 11th unit, a repeat, a blank, an over-long unit and a currency CODE are each a plain red - and the guard refuses the same lists', () => {
+test('limits are bareguard\'s, and ours first: a 4th currency, an 11th unit, a repeated currency, a blank, an over-long unit and a currency CODE are each a plain red - and the guard refuses the same lists', () => {
   assert.equal(MAX_CURRENCIES, 3);
   const cases = [
     [money({ currency: ['$', '€', '£', '$'] }), /at most 3 currencies \(4 given\)/],
     [money({ currency: ['$', '€', '£', 'EUR'] }), /one of \$ \| € \| £, or a list/],
     [money({ unit: Array.from({ length: 11 }, (_, i) => `u${i}`) }), /at most 10 units \(11 given\)/],
-    [money({ unit: ['a', 'a'] }), /not repeated/],
     [money({ currency: ['$', '$'] }), /not repeated/],
-    [money({ unit: ['US dollars', ' US dollars'] }), /not repeated/],
-    [money({ unit: ['US dollars', 'US  dollars '] }), /not repeated/],
     [money({ unit: ['a', ' '] }), /non-empty string/],
     [money({ unit: [] }), /non-empty string/],
     [money({ unit: 'x'.repeat(101) }), /at most 100 characters/],
@@ -122,11 +119,23 @@ test('the drafter is TOLD the new rules in the same change: at least one of unit
   assert.match(REQUIRED_FACTS_BRIEF, /A code like EUR is a unit/);
 });
 
-test('bareguard 0.26 refuses a unit list with whitespace twins; our shape check says it first, in our own words, so the guard is never reached', () => {
-  const twins = [money({ unit: ['US dollars', ' US dollars'] })];
-  assert.throws(() => signs(twins), /whitespace normalization/);
-  const got = reds(twins);
-  assert.equal(got.length, 1);
-  assert.match(got[0], /facts\[0\]\.unit: the units are not repeated \(two that differ only in spaces are the same unit\)/);
+test('bareguard 0.26 refuses a unit list whose entries are equal once marks and spaces are removed; the signing pre-flight (real createRubric) says it in our words, naming the fact and both units', () => {
+  /** @type {Array<[any[], string, string]>} */
+  const cases = [
+    [[money({ unit: ['**pp**', 'pp'] })], '**pp**', 'pp'],
+    [[money({ unit: ['US dollars', ' US dollars'] })], 'US dollars', ' US dollars'],
+    [[money({ unit: ['a', 'a'] })], 'a', 'a'],
+    [[{ name: 'rooms', shape: 'number', anchor: 'Rooms' }, money({ unit: ['x', 'y', 'US  dollars ', 'US dollars'] })], 'US  dollars ', 'US dollars'],
+  ];
+  for (const [facts, a, b] of cases) {
+    assert.throws(() => signs(facts), /duplicates/, 'the guard itself refuses it');
+    assert.deepEqual(reds(facts), [], 'no shape red: the pre-flight owns this refusal');
+    /** @type {Array<{code: string, detail: string}>} */
+    const out = [];
+    checkRubricParts([{ kind: 'rubric-step', name: 's3', params: { step: 3, parts: [part(facts)] }, fromLine: [3] }], { inputLabels: ['Page'], red: (code, _p, detail) => out.push({ code, detail }) });
+    assert.equal(out.length, 1);
+    assert.equal(out[0].code, 'rubric-fact-invalid');
+    assert.equal(out[0].detail, `line 3: the fact 'price' lists the same unit twice ('${a}' and '${b}' are the same once marks and spaces are removed). Keep one. Nothing spent.`);
+  }
   assert.deepEqual(reds([money({ unit: ['US dollars', 'US dollar'] })]), [], 'different words are still two units');
 });

@@ -503,6 +503,26 @@ function wordRange(part) {
 }
 
 /**
+ * bareguard refuses a money unit list whose entries are equal once `**`, `__` and extra spaces are removed, naming the path
+ * `...checks[K].decides[N].unit`. K indexes buildStepSpec's checks (id `p<part>-facts`), N the fact within that part.
+ * @param {{step: number, parts: any[]}} p @param {unknown} path @returns {{name: string, a: string, b: string}|null} the fact and the two twin units, or null when the path is not that
+ */
+function dupUnitWords(p, path) {
+  const m = typeof path === 'string' ? /\.checks\[(\d+)\]\.decides\[(\d+)\]\.unit$/.exec(path) : null;
+  if (!m) return null;
+  const id = buildStepSpec(p, {}).checkpoints[String(p.step)].checks[Number(m[1])]?.id;
+  const pm = typeof id === 'string' ? /^p(\d+)-facts$/.exec(id) : null;
+  const fact = pm ? p.parts[Number(pm[1]) - 1]?.facts?.[Number(m[2])] : null;
+  if (!fact || !Array.isArray(fact.unit)) return null;
+  const key = (/** @type {string} */ u) => u.split('**').join('').split('__').join('').replace(/\s+/g, ' ').trim();
+  for (let i = 0; i < fact.unit.length; i += 1) {
+    const j = fact.unit.findIndex((/** @type {string} */ u, /** @type {number} */ k) => k > i && key(u) === key(fact.unit[i]));
+    if (j > i) return { name: String(fact.name), a: fact.unit[i], b: fact.unit[j] };
+  }
+  return null;
+}
+
+/**
  * R11 — the drafting-time rules for the `rubric-step` stages of a declaration, each a red in the person's plain words that
  * names the job line and ends "Nothing spent." where nothing was. Pure; never throws. Judged parts are RED in this build
  * (the judge arrives in the next one): the sorting is still asked for, so a part that needs the judge is named as such
@@ -591,7 +611,8 @@ export function checkRubricParts(stages, { inputLabels = null, red }) {
       // bareguard is the judge of whether a fact list is SIGNABLE (anchors, units, bounds): ask it at drafting, at $0, so a list
       // it would refuse at run time is a red the drafter can fix now
       try { createRubric(buildStepSpec(/** @type {{step: number, parts: any[]}} */ (p), Object.fromEntries(citedLabels(p).map((l) => [l, '0'.repeat(64)])))); } catch (e) {
-        red('rubric-fact-invalid', `${at}.params.parts`, `line ${line}: the facts cannot be signed: ${/** @type {Error} */ (e).message}`, { line: step, stage: label });
+        const twins = dupUnitWords(/** @type {{step: number, parts: any[]}} */ (p), /** @type {{path?: unknown}} */ (e).path);
+        red('rubric-fact-invalid', `${at}.params.parts`, twins ? `line ${line}: the fact '${twins.name}' lists the same unit twice ('${twins.a}' and '${twins.b}' are the same once marks and spaces are removed). Keep one. Nothing spent.` : `line ${line}: the facts cannot be signed: ${/** @type {Error} */ (e).message}`, { line: step, stage: label });
       }
     }
     for (let a = 0; a < ranges.length; a += 1) {
