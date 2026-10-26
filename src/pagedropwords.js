@@ -22,6 +22,7 @@ const WORDS = /** @type {Record<string, (d: Dropped) => string>} */ ({
   'limit-unit': (d) => `Only the first 10 units are used; "${d.word}" was left out.`,
   'unit-too-long': (d) => `"${d.word}" is longer than 100 characters, so it was not used.`,
   'reads-no-result': () => "the price rule could not read a price in the page's results, so it is not checked.",
+  'reads-no-time': (d) => `the page never shows a time right after "${d.other}", so it is not checked.`,
   'phrase-no-result': (d) => `"${d.other}" is on the page but in none of its results, so it is not checked.`,
   'person-left': () => 'You chose to leave it Not checked.',
   'bad-shape': (d) => `The AI named a kind of value for "${d.fact}" that a check cannot read.`,

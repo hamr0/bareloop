@@ -68,6 +68,8 @@ test('limits are bareguard\'s, and ours first: a 4th currency, an 11th unit, a r
     [money({ unit: Array.from({ length: 11 }, (_, i) => `u${i}`) }), /at most 10 units \(11 given\)/],
     [money({ unit: ['a', 'a'] }), /not repeated/],
     [money({ currency: ['$', '$'] }), /not repeated/],
+    [money({ unit: ['US dollars', ' US dollars'] }), /not repeated/],
+    [money({ unit: ['US dollars', 'US  dollars '] }), /not repeated/],
     [money({ unit: ['a', ' '] }), /non-empty string/],
     [money({ unit: [] }), /non-empty string/],
     [money({ unit: 'x'.repeat(101) }), /at most 100 characters/],
@@ -118,4 +120,13 @@ test('the drafter is TOLD the new rules in the same change: at least one of unit
   assert.match(REQUIRED_FACTS_BRIEF, /names at least one of "unit".*or "currency".*and may name both/);
   assert.match(REQUIRED_FACTS_BRIEF, /at most 3 currencies and 10 units, none repeated, a unit at most 100 characters/);
   assert.match(REQUIRED_FACTS_BRIEF, /A code like EUR is a unit/);
+});
+
+test('bareguard 0.26 refuses a unit list with whitespace twins; our shape check says it first, in our own words, so the guard is never reached', () => {
+  const twins = [money({ unit: ['US dollars', ' US dollars'] })];
+  assert.throws(() => signs(twins), /whitespace normalization/);
+  const got = reds(twins);
+  assert.equal(got.length, 1);
+  assert.match(got[0], /facts\[0\]\.unit: the units are not repeated \(two that differ only in spaces are the same unit\)/);
+  assert.deepEqual(reds([money({ unit: ['US dollars', 'US dollar'] })]), [], 'different words are still two units');
 });

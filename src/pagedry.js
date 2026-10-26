@@ -4,6 +4,7 @@
 // uses - no copy of its logic here. A fact that reads no result line is dropped as `reads-no-result` and shows under Not checked.
 // No limits, no counts, no pass bar: only "can it read". Async (gradeStep is), so it sits beside applyPageRules, not inside it: the caller is
 // src/pagemap.js `runPageMap`. No I/O, no clock, no model.
+// TIME DRY READ (docs/logs/time-dryread-poc-PREREG.md, F236/F237): the same "can it read" for TIME facts - `dryReadTimes` below.
 
 import { createHash } from 'node:crypto';
 import { gradeStep } from './rubricstep.js';
@@ -17,6 +18,23 @@ const AFTER_LABEL = new RegExp(`^\\s*(?:[$€£]\\s*)?(${NUM})`);
 /** the label every dry-read claim is made under (the checker only needs one name; the fact's own is not read) */
 const CLAIM = 'price';
 const SOURCE = 'page';
+const CLAIM_TIME = 'time';
+
+/**
+ * How many of `lines` the run's real checker reads green as an honest claim of `fact`: each line is graded alone by `gradeStep` (quote = the line,
+ * the claim named `claim` carrying the line's value). The one grading call money and time dry reads share.
+ * @param {string} text the frozen page text @param {string} sha its sha256 @param {object} fact the signed fact @param {string} claim the claim name inside `fact`
+ * @param {{quote: string, value: string}[]} lines @returns {Promise<number>}
+ */
+async function greenLines(text, sha, fact, claim, lines) {
+  let n = 0;
+  for (const r of lines) {
+    const params = { step: 1, parts: [{ text: 'dry read', class: 'fact', source: SOURCE, covers: [1], facts: [fact] }] };
+    const g = await gradeStep({ params, bytes: JSON.stringify({ results: [{ quote: r.quote, values: { [claim]: r.value } }] }), outputBytes: null, inputs: { [SOURCE]: text } }, { [SOURCE]: sha });
+    if (g.verdict === 'green') n += 1;
+  }
+  return n;
+}
 
 /**
  * The result lines of a kept money fact: with a label, every page line where a kept label is followed by a number (one sign between allowed);
@@ -73,12 +91,7 @@ export async function dryReadMoney(text, facts) {
     if (k.shape !== 'money') { kept.push(k); continue; }
     const fact = signedOf(k);
     const lines = moneyResultLines(text, k);
-    let n = 0;
-    for (const r of lines) {
-      const params = { step: 1, parts: [{ text: 'dry read', class: 'fact', source: SOURCE, covers: [1], facts: [fact] }] };
-      const g = await gradeStep({ params, bytes: JSON.stringify({ results: [{ quote: r.quote, values: { [CLAIM]: r.value } }] }), outputBytes: null, inputs: { [SOURCE]: text } }, { [SOURCE]: sha });
-      if (g.verdict === 'green') n += 1;
-    }
+    const n = await greenLines(text, sha, fact, CLAIM, lines);
     reads[k.name] = n;
     results[k.name] = lines.length;
     if (n > 0) { kept.push(k); continue; }
@@ -121,4 +134,62 @@ export async function dryReadPhrases(text, facts) {
     dropped.push({ line: k.line, ...(k.forRule === undefined ? {} : { rule: k.forRule }), fact: k.name, other: k.words[0], reason: 'phrase-no-result' });
   }
   return { facts: kept, dropped, reads };
+}
+
+/** a clock time as the page writes it: H:MM or HH:MM, then an optional AM/PM (any case, a space between allowed) */
+const CLOCK = /\d{1,2}:\d{2}(?:\s?[AaPp][Mm])?/;
+
+/**
+ * The candidate lines of a kept time fact: a LOOSE finder (it only collects). Every page line where a kept label word has a clock time anywhere
+ * after it; the value is that line's first time after the label. Whether the run's checker can read it is not decided here.
+ * @param {string} text @param {KeptFact} k @returns {{quote: string, value: string}[]}
+ */
+export function timeCandidateLines(text, k) {
+  const raw = text.split('\n');
+  const squashed = linesOf(text);
+  /** @type {{quote: string, value: string}[]} */
+  const out = [];
+  squashed.forEach((ln, i) => {
+    for (const w of k.words) {
+      for (let at = ln.indexOf(w); at !== -1; at = ln.indexOf(w, at + w.length)) {
+        const m = CLOCK.exec(ln.slice(at + w.length));
+        if (m) { out.push({ quote: raw[i].trim(), value: m[0] }); return; }
+      }
+    }
+  });
+  return out;
+}
+
+/**
+ * The same "can it read" for TIME facts (F236: the label "Departure time" sat on a page that writes "Departure time:", the colon right after it, so
+ * no time could ever be read after the label, and the fact was signed anyway). Each candidate line of a kept time fact is graded as an HONEST claim
+ * (quote = that line, value = its first time after the label) by the real `gradeStep`, signed like a run would sign it (name, shape, anchor = the
+ * primary label; no window, as dryReadMoney leaves the limits out). A fact with no green line is dropped whole as `reads-no-time`.
+ * No counts, no pass bar. A time fact with no label word has nothing to anchor a read to (a run could not sign it either), so it passes through untouched.
+ * Facts of other shapes pass through untouched. It catches an IMPOSSIBLE label only: a label that reads a WRONG time is kept (left to the person at Accept).
+ * @param {string} text the frozen page text @param {KeptFact[]} facts what the money dry read kept
+ * @returns {Promise<{facts: KeptFact[], dropped: Dropped[], reads: Record<string, number>, results: Record<string, number>}>}
+ *   `reads` / `results` = candidate lines the checker read / found, per fact name (for tests and reports; no verdict derives from the numbers)
+ */
+export async function dryReadTimes(text, facts) {
+  const sha = createHash('sha256').update(text).digest('hex');
+  /** @type {KeptFact[]} */
+  const kept = [];
+  /** @type {Dropped[]} */
+  const dropped = [];
+  /** @type {Record<string, number>} */
+  const reads = {};
+  /** @type {Record<string, number>} */
+  const results = {};
+  for (const k of facts) {
+    if (k.shape !== 'time' || !k.words.length) { kept.push(k); continue; }
+    const fact = { name: CLAIM_TIME, shape: 'time', anchor: k.words[0] };
+    const lines = timeCandidateLines(text, k);
+    const n = await greenLines(text, sha, fact, CLAIM_TIME, lines);
+    reads[k.name] = n;
+    results[k.name] = lines.length;
+    if (n > 0) { kept.push(k); continue; }
+    dropped.push({ line: k.line, ...(k.forRule === undefined ? {} : { rule: k.forRule }), fact: k.name, other: k.words[0], reason: 'reads-no-time' });
+  }
+  return { facts: kept, dropped, reads, results };
 }

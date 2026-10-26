@@ -10,7 +10,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSession } from '../src/panel/authorsession.js';
 import { DRAFT_LOG_FILE } from '../src/draftspend.js';
-import { askableFromLook, parseMapAnswer, tooManyAsksText, isAgree, mapPrompt } from '../src/pagemap.js';
+import { askableFromLook, parseMapAnswer, tooManyAsksText, isAgree, stripAgreeLead, mapPrompt } from '../src/pagemap.js';
 import { applyPageRules } from '../src/pagerules.js';
 import { lookFactOf } from '../src/inputlook.js';
 import { checkRubricRules } from '../src/rubricstep.js';
@@ -111,6 +111,16 @@ test('isAgree: agree / yes, any case, a closing stop; a typed reading is not agr
   for (const a of ['agree, but 7am', 'no', 'drop it', '']) assert.equal(isAgree(a), false, a);
 });
 
+test('F240 stripAgreeLead: a leading agree word + comma or colon goes, the rest stays word for word; bare, stop-closed and mid-sentence yes are untouched', () => {
+  const real = 'yes, check it as departure between 05:00 and 21:59';
+  assert.equal(stripAgreeLead(real), 'check it as departure between 05:00 and 21:59');
+  assert.equal(stripAgreeLead('Yes, Departs by 7am'), 'Departs by 7am');
+  assert.equal(stripAgreeLead('AGREE: departs by 7am'), 'departs by 7am');
+  assert.equal(stripAgreeLead('Yes,drop it'), 'drop it');
+  assert.equal(stripAgreeLead('yes, drop it'), 'drop it');
+  for (const a of ['yes', 'Yes', 'agree', 'yes.', 'agree!', 'say yes to a window seat', 'yesterday it left at 7am', 'agreed, departs by 7am', 'yes departs by 7am', 'agree with the shown price', 'yes or no questions only', 'yes-no questions only', 'agree-ment on price', 'yes - departs by 7am', 'yes \u2014 the outbound', 'yes\u2013the outbound', 'yesterday, the price']) assert.equal(stripAgreeLead(a), a, a);
+});
+
 test('tooManyAsksText lists EVERY ask and its reading, in code-owned words; a secret is masked; draftStopText prints it whole', () => {
   const full = lookOf();
   const asks = askableFromLook({ ...full, facts: full.facts.filter((f) => f.forRule !== 3) }, [{ ...spec.jobLines[0] }, { n: 2, text: 'y', rules: [`keep sk-ant-api03-${'a'.repeat(40)}`] }]);
@@ -171,6 +181,31 @@ test('session: a typed answer becomes the `~` rule instead; "drop it" on a readi
   session.signPrepare();
   assert.ok(await until(() => legs.length === 1));
   assert.equal(legs[0].jobLines[0].rules.at(-1), 'departs between 05:00 and 22:00');
+});
+
+test('F240 session: "yes, <own reading>" signs the reading without the leading "yes,"; the log keeps the answer as typed', async () => {
+  const { session, legs, sessionDir } = sessionOver({ lookFacts: lookOf().facts, jobText: JOB });
+  assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'));
+  session.send('yes, check it as departure between 05:00 and 21:59');
+  assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'));
+  session.signPrepare();
+  assert.ok(await until(() => legs.length === 1));
+  assert.equal(legs[0].jobLines[0].rules.at(-1), 'check it as departure between 05:00 and 21:59');
+  const human = readFileSync(join(sessionDir(), DRAFT_LOG_FILE), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.kind === 'human');
+  assert.equal(human[0].answer, 'yes, check it as departure between 05:00 and 21:59');
+});
+
+test('F240 session: "yes, drop it" on a can\'t-check ask drops it like "drop it"', async () => {
+  const facts = lookOf().facts.filter((f) => f.forRule !== 3);
+  const survey = sessionOver({ lookFacts: facts, jobText: JOB });
+  assert.ok(await until(() => survey.session.state.pendingAsk?.kind === 'answer'));
+  survey.session.send('agree');
+  assert.ok(await until(() => survey.session.state.pendingAsk?.kind === 'answer' && /nonstop/.test(survey.session.state.pendingAsk.question)));
+  survey.session.send('Yes, drop it.');
+  assert.ok(await until(() => survey.session.state.pendingAsk?.kind === 'menu'));
+  survey.session.signPrepare();
+  assert.ok(await until(() => survey.legs.length === 1));
+  assert.deepEqual(survey.legs[0].jobLines[0].rules, ['under $450', 'not a red-eye', 'nonstop', AGREED]);
 });
 
 test('session: "drop it" on a can\'t-check ask adds no rule and the rule lands on the look\'s Not checked list', async () => {

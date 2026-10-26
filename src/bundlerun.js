@@ -73,7 +73,7 @@ export async function bundleMain(args, {
   let guided = guidedIn;
   if (bundleDirArg === undefined) {
     if (!askable || !ask) return usage();
-    const r = await askBundle({ ask, out, ...(home === undefined ? {} : { home }), none: 'No exported bundles yet. Export one with 6.', cancelled: 'No bundle chosen, nothing run.' });
+    const r = await askBundle({ ask, out, ...(home === undefined ? {} : { home }), none: 'No exported bundles yet. Export one with 7.', cancelled: 'No bundle chosen, nothing run.' });
     if ('end' in r) return 0;
     bundleDirArg = r.ref;
     guided = true;

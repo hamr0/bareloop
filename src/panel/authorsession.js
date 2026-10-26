@@ -53,7 +53,7 @@ import { closeJudges } from '../kinds.js';
 import { RUBRIC_LANG } from '../authoring.js';
 import { rubricGoal, reconcileRubricPlan, signedFactNames } from '../rubricstep.js';
 import { redactSecrets } from '../validate.js';
-import { isDropIt, isAgree } from '../pagemap.js';
+import { isDropIt, isAgree, stripAgreeLead } from '../pagemap.js';
 import { FIT_ABSENT_NOTE } from '../fitcheck.js';
 import { tallyCalls } from '../text.js';
 import { appendDraftLog } from '../draftspend.js';
@@ -1067,6 +1067,8 @@ export function createSession(card, deps = {}) {
         // PRD v1.107 Part 5b: a code-forced look question about a `~` rule. A can't-check ask answered "drop it" adds NO rule; the caller puts that
         // rule on the look's Not checked list. A reading ask answered "agree" adds the code's reading, in plain words, as the `~` rule (so the
         // bound is now the person's own words); anything else typed is the person's own rule, word for word.
+        // F240: "yes, check it as ..." is the person's own words minus the leading "yes,"
+        if (q.source === 'look') text = stripAgreeLead(text);
         if (q.source === 'look' && q.ask === 'reading' && typeof q.reading === 'string' && isAgree(text)) text = q.reading;
         if (q.source === 'look' && q.ask === 'cant-check' && Number.isInteger(q.rule) && isDropIt(text)) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); continue; }
         const line = jobLines.find((l) => l.n === q.line);

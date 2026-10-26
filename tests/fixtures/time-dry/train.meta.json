@@ -1,0 +1,7 @@
+{
+ "kind": "train",
+ "url": "https://www.mbta.com/schedules/CR-Providence/timetable",
+ "fetchedAt": "2026-10-26T08:19:28.938Z",
+ "chars": 87087,
+ "sha256": "72c216fb2f5678b329755f3f4cd7cdfe011dbffea4dc9bf16c9a66fb8c0e9f13"
+}

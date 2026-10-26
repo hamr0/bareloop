@@ -2054,3 +2054,36 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 - One launcher menu: line 1 panel (start, stop, restart, status, install), line 2 jobs (export, run, resume, history); each job command prompts for what it needs (export lists green runs by name; run asks bundle, inputs/destination, $ cap, time cap; resume lists stopped CLI runs and asks for more money/time; history picks a bundle). Each also works typed with its flags.
 - Cut from the CLI: `interview` and `author` (drafting is UI only), `runs backfill` (one-off migration). `replay` and the bench move to `scripts/` (closes the v1.93 "Open: the bench move" item). `run-u` stays as hidden plumbing (the panel spawns it for run, Accept, Rerun, Pause, Resume), out of the menu and help. `panel [--port N]` unchanged.
 - Found at $0 on 2026-10-24 before any spec (see F245): today's export refuses every panel-made job, so export and run must learn the panel's job shape. Order: a $0 POC on one real green panel REPO job first (export it, then a bundle run reaching already-green at $0 with no model call), then the spec shown to hamr, then the build; plain folders, page links and rubric jobs after repo jobs.
+
+
+### Backlog: a drafting-time "can you see this?" classifier for rubric jobs (v1.115 — 2026-10-26) — PARKED by hamr
+
+- **What:** an optional classifier at DRAFTING, for RUBRIC jobs only (Jev from TypeSafe, pinned `jev-1.14.0`, or an open interface clone such as SemIf/Kev — unverified), chosen like any provider row in Settings. The drafting AI reads the job and the page as today and turns each fact into yes/no questions about the saved page. The classifier answers each with a probability. CODE uses the answers before signing: a confident yes keeps a check; a no or unsure makes the rule Not checked, or a question to the person.
+- **Lines** (guard session 2026-10-26 plus doctrine): it never reaches bareguard as a verdict (judges stay parked, bareguard ruling #50; hamr: AI judges can hallucinate, are slow and costly; if ever, Jev or SemIf). It may only make drafting MORE careful, never turn a red green. Code decides. Bareguard has no "not checked" state, so Not checked lives at drafting only. Calibration is measured on our own saved pages first. The pinned model id goes in the signed hash, never an alias. Open-source rule: Jev is closed and hosted, so it is only ever an optional row, never a dependency.
+- **Guard's caution:** a broad question ("does this page show a departure time at Wickford Junction?") likely says yes on the MBTA page, because the page DOES show departure times, just the wrong ones (bareguard's 2026-10-12 locate-judge POC: a made-up flight went green). The likely value is helping pick or verify the anchor label, which code then checks.
+- **Related:** barebrowse table pruning (browse session asked 2026-10-26; bareloop asked for an opt-in mode putting row and column headers on each cell's line) may solve the MBTA case in code with no classifier.
+- **Status:** PARKED as an option to optimize rubric. Trial run and passed; the layout, not the judge, was the hard part: see `docs/logs/jev-trial-RESULTS.md` and F248. Pre-registration: `docs/logs/jev-trial-PREREG.md`.
+
+
+### Parked: a launcher "update" option (v1.116 — 2026-10-26) — PARKED, not scheduled, unsigned
+
+- **The problem** (seen in fwdloop, same in bareloop): the launcher's `5 install` only sets up folders, the keys file and settings. It never updates the package, and nothing in bareloop checks for a newer version. fwdloop's install printed "Already installed, nothing to do." while 0.25.1 was installed and 0.26.0 was on npm.
+- hamr picked option A for fwdloop (an update option the person presses) over B (an automatic check on every start).
+- **The shape, adapted to bareloop:**
+  1. The launcher menu gains an `update` choice. bareloop's menu is `panel: 1 start 2 stop 3 restart 4 status 5 install` / `jobs: 6 export 7 run 8 resume 9 history`, so the number is decided when the amendment is signed (renumbering is hamr's call). It asks the npm registry for the latest `bareloop` version ONLY when the person presses it; nothing goes online at start or in the background.
+  2. It says either that this is the newest version, or names the new version and the exact command `npm install -g bareloop@latest`, and says the panel then needs `3 restart`.
+  3. `5 install` keeps its job, and its words say that it does not update the package.
+- **Source:** the fwd session relayed this at hamr's request 2026-10-26; fwdloop parked the same text in its own PRD under "Parked, not scheduled".
+- **Status:** SIGNED and BUILT (hamr 2026-10-26): `6 update` on the top line, jobs renumbered 7-10; it also asks "Update now?" and installs on `y`. See the CHANGELOG (0.49.0).
+
+
+### Parked: four rubric check gaps shared with fwdloop (v1.117 — 2026-10-26) — PARKED, discuss after the 0.49.0 release
+
+- **Source:** the fwd session compared bareloop's known gaps against fwdloop's code on 2026-10-26; four are shared. fwd relayed a ruling that bareloop solves them first and fwdloop copies from bareloop's released tag. hamr 2026-10-26: "keep all on prd, we start on them/discuss next after release". Unsigned, not scheduled.
+- **The four gaps:**
+  1. **Dates, plain numbers and free text on a page:** `MAP_SHAPES` has no date, number or text kind, so such a fact cannot be checked (F239). A dates POC was planned, not started.
+  2. **Money with the marker after the number** ("282 £ pp", "EUR 17.86"): page rules read label-then-number only, so these are unreadable until a marker-after-number rule is written and frozen.
+  3. **Sentence and paragraph counts:** bareguard has `maxWords`/`minWords`/`maxLines` only (`docs/product/rubric-rules.md` in bareguard). No live case yet.
+  4. **"Must not say" checks:** bareguard has no such rule today. No live case yet.
+- **Rules that apply:** gaps 1 and 2 each need a POC with a frozen rule on real unseen pages before any build. Gaps 3 and 4 have no live failure yet, so hamr decides at the discussion whether they are built (§8a). Any missing bareguard primitive becomes a change ask to bareguard, never a local patch.
+- **Status:** PARKED; discuss after the 0.49.0 release.

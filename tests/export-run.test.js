@@ -189,37 +189,37 @@ test('CLI export old form (job.json --registry --out) still routes to the regist
   assert.match(r.err, /cannot read job spec at \/no\/such\/job\.json/);
 });
 
-// --- the one menu: 6 export, 7 run, 8 resume, 9 history each prompt for what they need ---
+// --- the one menu: 7 export, 8 run, 9 resume, 10 history each prompt for what they need ---
 
 const MENU_LAUNCHER = { ports: [], timeoutMs: 50, nodeVersion: '22.1.0', version: '0.0.0-test' };
 
-test('menu 6 export: pick a green run from the numbered list, give a folder, the bundle is made; two empty Enters end it with exit 0', async (t) => {
+test('menu 7 export: pick a green run from the numbered list, give a folder, the bundle is made; two empty Enters end it with exit 0', async (t) => {
   const { root, home } = repoRun(t);
   const outDir = join(root, 'from-menu');
-  const r = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, `6\n1\n${outDir}\n`);
+  const r = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, `7\n1\n${outDir}\n`);
   assert.equal(r.code, 0, r.err);
-  assert.match(r.out, /6 export {3}7 run {3}8 resume {3}9 history/);
+  assert.match(r.out, /7 export {3}8 run {3}9 resume {3}10 history/);
   assert.match(r.out, /Green runs you can export:\n {2}1 {2}fix-slugify \(run-1\)/);
   assert.equal(readBundle(outDir).ok, true);
-  const none = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, '6\n\n\n');
+  const none = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, '7\n\n\n');
   assert.equal(none.code, 0);
   assert.match(none.out, /Nothing chosen, nothing exported\./);
   assert.equal(readExported({ home }).length, 1);
 });
 
-test('menu 9 history: pick an exported bundle by number and see its history; menu 7 run with two empty Enters runs nothing and exits 0', async (t) => {
+test('menu 10 history: pick an exported bundle by number and see its history; menu 8 run with two empty Enters runs nothing and exits 0', async (t) => {
   const { root, home } = repoRun(t);
   const outDir = join(root, 'b');
   assert.equal(exportRun({ name: 'fix-slugify (run-1)', outDir, home, bareloopVersion: '0.47.1' }).ok, true);
-  const h = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, '9\n1\n');
+  const h = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, '10\n1\n');
   assert.equal(h.code, 0, h.err);
   assert.match(h.out, /Bundles:\n {2}1 {2}fix-slugify \(run-1\) {2}\S+\/b\n/);
   assert.match(h.out, /history: \(no runs yet\)/);
   assert.match(h.out, /bridges:/);
-  const run = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, '7\n\n\n');
+  const run = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, '8\n\n\n');
   assert.equal(run.code, 0);
   assert.match(run.out, /No bundle chosen, nothing run\./);
-  const resume = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, '8\n');
+  const resume = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, '9\n');
   assert.equal(resume.code, 0);
   assert.match(resume.out, /No stopped runs to resume\./);
 });
@@ -230,9 +230,9 @@ test('bundle pick lists (history / run): the last 10, newest first, numbered, la
   const { appendExported } = await import('../src/runlist.js');
   // none known: one line, exit 0, nothing asked
   const emptyHome = join(root, 'empty-home');
-  const none = await cli([], { runlistHome: emptyHome, keysHome: emptyHome, launcher: MENU_LAUNCHER }, '9\n');
+  const none = await cli([], { runlistHome: emptyHome, keysHome: emptyHome, launcher: MENU_LAUNCHER }, '10\n');
   assert.equal(none.code, 0);
-  assert.match(none.out, /No exported bundles yet\. Export one with 6\.\n/);
+  assert.match(none.out, /No exported bundles yet\. Export one with 7\.\n/);
   assert.doesNotMatch(none.out, /Bundle \(a number/);
   // 12 bundles exported on 12 days; one of them listed twice (same folder, later row) is still one entry
   for (let i = 1; i <= 12; i += 1) {
@@ -241,14 +241,14 @@ test('bundle pick lists (history / run): the last 10, newest first, numbered, la
     appendExported({ runid: 'muqrenrf', job: 'fix-slugify', bundle: dir, bundleHash: 'h', at: `2026-10-${String(i).padStart(2, '0')}T10:00:00.000Z` }, { home });
   }
   appendExported({ runid: 'muqrenrf', job: 'fix-slugify', bundle: join(root, 'bundle-03'), bundleHash: 'h', at: '2026-10-03T11:00:00.000Z' }, { home });
-  const r = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, `9\n1\n`);
+  const r = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, `10\n1\n`);
   assert.equal(r.code, 0, r.err);
   assert.match(r.out, /Bundles \(the last 10 of 12; older ones by run name or folder\):/);
   const listed = [...r.out.matchAll(/^ {2}(\d+) {2}fix-slugify \(run-1\) {2}(\S+)$/gm)].map((m) => [Number(m[1]), m[2].split('/').pop()]);
   assert.deepEqual(listed, [[1, 'bundle-12'], [2, 'bundle-11'], [3, 'bundle-10'], [4, 'bundle-09'], [5, 'bundle-08'], [6, 'bundle-07'], [7, 'bundle-06'], [8, 'bundle-05'], [9, 'bundle-04'], [10, 'bundle-03']], 'newest first, 10 shown, a folder listed twice once');
   assert.match(r.out, /history: \(no runs yet\)/, 'number 1 picked the newest');
   // an older one by its folder (not shown) is still reachable
-  const old = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, `9\n${join(root, 'bundle-01')}\n`);
+  const old = await cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, `10\n${join(root, 'bundle-01')}\n`);
   assert.match(old.out, /history: \(no runs yet\)/);
 });
 
@@ -258,10 +258,10 @@ test('q (any case, trimmed) at a job question ends that command cleanly: plain "
   assert.equal(exportRun({ name: 'fix-slugify (run-1)', outDir: b, home, bareloopVersion: '0.47.1' }).ok, true);
   const menu = (input) => cli([], { runlistHome: home, keysHome: home, launcher: MENU_LAUNCHER }, input);
   const cases = [
-    ['7\nq\n', /No bundle chosen, nothing run\./],
-    ['9\n Q \n', /No bundle chosen, nothing shown\./],
-    ['6\nQ\n', /Nothing chosen, nothing exported\./],
-    ['6\n1\nq\n', /No folder given, nothing exported\./],
+    ['8\nq\n', /No bundle chosen, nothing run\./],
+    ['10\n Q \n', /No bundle chosen, nothing shown\./],
+    ['7\nQ\n', /Nothing chosen, nothing exported\./],
+    ['7\n1\nq\n', /No folder given, nothing exported\./],
   ];
   for (const [input, want] of cases) {
     const r = await menu(input);
@@ -270,7 +270,7 @@ test('q (any case, trimmed) at a job question ends that command cleanly: plain "
     assert.doesNotMatch(r.err, /neither a bundle folder nor/, JSON.stringify(input));
   }
   // run: q at the repo question
-  const repo = await menu(`7\n${b}\nq\n`);
+  const repo = await menu(`8\n${b}\nq\n`);
   assert.equal(repo.code, 0);
   assert.match(repo.out, /No repo chosen, nothing run\./);
 });

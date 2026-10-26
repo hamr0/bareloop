@@ -15,7 +15,7 @@ import { isOutputCutOff } from './authorflow.js';
 import { AUTHOR_CALL_TIMEOUT_MS, AUTHOR_SCOUT_MAX_TOKENS, SURVEY_CAUSES } from './authorscout.js';
 import { lineRules, boundInWords, wordsSaidOn } from './rubricstep.js';
 import { applyPageRules, validReading } from './pagerules.js';
-import { dryReadMoney, dryReadPhrases } from './pagedry.js';
+import { dryReadMoney, dryReadTimes, dryReadPhrases } from './pagedry.js';
 import { ruleWords } from './facts.js';
 import { lookFactOf } from './inputlook.js';
 
@@ -167,10 +167,12 @@ export async function runPageMap({
     const kept = applyPageRules(texts[label], mapping, jobLines);
     // money build v2: "can it read" - a money fact whose forms read no result line of the page, by the run's own checker, is Not checked
     const read = await dryReadMoney(texts[label], kept.facts);
+    // time dry read (F236/F237): a time fact whose label has no time the run's checker can read after it is Not checked
+    const tim = await dryReadTimes(texts[label], read.facts);
     // hamr 3a: a phrase fact is read against the same result lines (only when the job keeps a money fact)
-    const phr = await dryReadPhrases(texts[label], read.facts);
+    const phr = await dryReadPhrases(texts[label], tim.facts);
     for (const f of phr.facts) facts.push(lookFactOf(f, label));
-    for (const d of [...kept.dropped, ...read.dropped, ...phr.dropped]) dropped.push({ ...d, source: label });
+    for (const d of [...kept.dropped, ...read.dropped, ...tim.dropped, ...phr.dropped]) dropped.push({ ...d, source: label });
     maps.push({ source: label, facts: mapping.facts.length });
     looks.push(label);
   }
@@ -188,6 +190,18 @@ export const isDropIt = (text) => String(text ?? '').trim().replace(/\.$/, '').t
 const AGREE_WORDS = ['agree', 'yes'];
 /** @param {unknown} text @returns {boolean} */
 export const isAgree = (text) => AGREE_WORDS.includes(String(text ?? '').trim().replace(/[.!]$/, '').toLowerCase());
+/**
+ * F240: an answer that opens with an agree word IMMEDIATELY followed by a comma or a colon (spaces allowed only after it) and more text
+ * ("yes, check it as ...", "agree: the outbound flight") is the person's own reading with a courtesy word in front: the word and the
+ * comma/colon go, the rest stays word for word. No hyphen or dash of any kind and no bare space counts, so "yes-no questions only",
+ * "agree-ment on price", "yes - departs", "yes departs" and "yesterday, ..." are kept whole. A bare "yes"/"agree" (isAgree) and a text that
+ * only contains the word later are returned untouched.
+ * @param {string} text @returns {string}
+ */
+export const stripAgreeLead = (text) => {
+  const m = String(text ?? '').match(new RegExp(`^(?:${AGREE_WORDS.join('|')})[,:]\\s*(\\S[\\s\\S]*)$`, 'i'));
+  return m ? m[1].trim() : String(text ?? '');
+};
 
 /** @typedef {{line: number, rule: number, source: 'look', question: string, ask: 'reading'|'cant-check', ruleText: string, reading?: string}} LookAsk
  *   `reading` = the plain words an `agree` writes as a `~` rule (a reading ask only) */

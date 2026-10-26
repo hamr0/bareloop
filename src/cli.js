@@ -37,7 +37,7 @@ import { bundleMain } from './bundlerun.js';
 // rather than re-parsing argv a second time here keeps exactly one code
 // path for the flag grammar; `src/cli.js` only supplies the deps shape
 // (`out`/`err`/`env`) this command's own callers already use.
-import { startCmd, stopCmd, restartCmd, statusCmd, installCmd, menuCmd } from './launcher.js';
+import { startCmd, stopCmd, restartCmd, statusCmd, installCmd, updateCmd, menuCmd } from './launcher.js';
 import { askBundle, resolveBundleRef, listResumableBundleRuns, RECENT_BUNDLES } from './bundleref.js';
 import { makePaint } from './tty-colour.js';
 import { main as runUMain } from './userrun.js';
@@ -228,7 +228,7 @@ async function doHistory(args, { out, err, cwd, ask, canAsk, deps }) {
   let bundleDirArg = args[0];
   if (!bundleDirArg) {
     if (!canAsk) { err('usage: bareloop history <bundle>'); return 1; }
-    const r = await askBundle({ ask, out, ...(home === undefined ? {} : { home }), none: 'No exported bundles yet. Export one with 6.', cancelled: 'No bundle chosen, nothing shown.' });
+    const r = await askBundle({ ask, out, ...(home === undefined ? {} : { home }), none: 'No exported bundles yet. Export one with 7.', cancelled: 'No bundle chosen, nothing shown.' });
     if ('end' in r) return 0;
     bundleDirArg = r.ref;
   }
@@ -271,11 +271,11 @@ function doRuns(_args, { out, deps }) {
 }
 
 /**
- * The launcher doors (L, PANEL-BUILD.md addendum 2026-10-24): the bare `bareloop` menu and `start | stop | status | install`. All logic is
+ * The launcher doors (L, PANEL-BUILD.md addendum 2026-10-24): the bare `bareloop` menu and `start | stop | status | install | update`. All logic is
  * `src/launcher.js`; this only supplies the home (the SAME one `main` resolved for the keys file and config.json) and the line reader.
  * `deps.launcher` is the test seam for every OS touch (ports, spawn, kill, opener, clock).
- * @param {string} cmd 'menu' | 'start' | 'stop' | 'status' | 'install' @param {string[]} rest
- * @param {any} deps @param {{ out: (s: string) => void, err: (s: string) => void, ask: (q: string) => Promise<string> }} io @param {string|undefined} home
+ * @param {string} cmd 'menu' | 'start' | 'stop' | 'status' | 'install' | 'update' @param {string[]} rest
+ * @param {any} deps @param {{ out: (s: string) => void, err: (s: string) => void, ask: (q: string) => Promise<string>, canAsk: boolean }} io @param {string|undefined} home
  * @returns {Promise<number>}
  */
 async function runLauncher(cmd, rest, deps, io, home) {
@@ -290,12 +290,13 @@ async function runLauncher(cmd, rest, deps, io, home) {
     resume: () => doResumeMenu(jobCtx),
     history: () => doHistory([], jobCtx),
   };
-  const d = { home, jobs, ask, paint: makePaint(deps.stdout ?? process.stdout, rawEnv), paintErr: makePaint(deps.stderr ?? process.stderr, rawEnv), ...(deps.launcher ?? {}) };
+  const d = { home, jobs, ask, terminal: io.canAsk, paint: makePaint(deps.stdout ?? process.stdout, rawEnv), paintErr: makePaint(deps.stderr ?? process.stderr, rawEnv), ...(deps.launcher ?? {}) };
   if (cmd === 'start') return startCmd(io, d);
   if (cmd === 'stop') return stopCmd(rest, io, d);
   if (cmd === 'restart') return restartCmd(rest, io, d);
   if (cmd === 'status') return statusCmd(io, d);
   if (cmd === 'install') return installCmd(io, d);
+  if (cmd === 'update') return updateCmd(io, d);
   return menuCmd(io, d);
 }
 
@@ -340,7 +341,7 @@ async function mainInner(argv, deps, holder) {
   if (keys.warning && cmd && ['run', 'run-u', 'panel'].includes(cmd)) err(`WARNING: ${keys.warning}`);
   const launcherHome = keys.home ?? deps.runlistHome;
   if (!cmd) return runLauncher('menu', [], { ...deps, stdout }, ctx, launcherHome);
-  if (cmd === 'start' || cmd === 'stop' || cmd === 'restart' || cmd === 'status' || cmd === 'install') return runLauncher(cmd, rest, { ...deps, stdout }, ctx, launcherHome);
+  if (cmd === 'start' || cmd === 'stop' || cmd === 'restart' || cmd === 'status' || cmd === 'install' || cmd === 'update') return runLauncher(cmd, rest, { ...deps, stdout }, ctx, launcherHome);
   // the old form (`export <jobs/x.json> --registry <dir> --out <dir>`) is the bench's; the new one is by run name
   if (cmd === 'export') return rest.includes('--registry') ? doExport(rest, ctx) : doExportRun(rest, ctx);
   if (cmd === 'run') return bundleMain(rest, { ...ctx, keysHome: keys.home, parseFlags, printReds });
@@ -365,6 +366,6 @@ async function mainInner(argv, deps, holder) {
   // and spine/gate-audit reads over `127.0.0.1` only. `deps.runlistHome`
   // rides through the same injectable seam `run`/`run-u` already use.
   if (cmd === 'panel') return panelMain(rest, { out, err, runlistHome: deps.runlistHome, env: deps.env });
-  err(`unknown command ${JSON.stringify(cmd)} — one of: export, run, history, runs, panel, start, stop, restart, status, install`);
+  err(`unknown command ${JSON.stringify(cmd)} — one of: export, run, history, runs, panel, start, stop, restart, status, install, update`);
   return 1;
 }

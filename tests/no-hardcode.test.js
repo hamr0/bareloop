@@ -35,6 +35,11 @@ const PRICES = /\b0\.000\d+\b|\b(?:inPerM|outPerM|cachedInPerM)\s*[:=]\s*[1-9]\d
  */
 const ALLOWED = [
   {
+    file: 'src/launcher.js',
+    re: /https:\/\/registry\.npmjs\.org\/bareloop\/latest/g,
+    why: 'the npm registry address bareloop\'s own `update` choice reads the newest published version from (PRD v1.116); our own package, not a provider.',
+  },
+  {
     file: 'src/panelmoney.js',
     re: /<\$0\.0001/g,
     why: 'the panel money rule\'s own "smaller than the smallest shown amount" text — a display floor, not a token price.',

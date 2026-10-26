@@ -14663,6 +14663,8 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 
 **Status.** Open. No v4 fitted to this page (frozen rule). hamr 2026-10-18: next a live drafted run on a new flights page. 2026-10-18 update: see F238; hamr ruled idea A core only.
 
+*Update 2026-10-26: FIXED by the time dry read, see F247 ("Departure time" without the colon now reads no time and is dropped as Not checked).*
+
 ## F237 — a rubric flights draft signed facts that no run could pass: the labels "StaticText" and "O" read no value, and "Departure time:" sits on a different line from the result (run mvdg1xo3, flights-bos-ord, 2026-10-18; open, supports idea A's pending v4 rule)
 
 **Grounded in:** spine `~/.config/bareloop/panel-sessions/smvdfyexzv0vm/source-seed/flights-bos-ord-bareloop/u-mvdg1xo3.jsonl`; the signed facts in that session's `resolved-spec.json` (the `line-1-flight-facts` rubric-step); the saved page `source-seed/tree/input/flights.txt`; the settled row in `~/.config/bareloop/runs.jsonl`. Job `flights-bos-ord` (run-1), rubric, DeepSeek `deepseek-flash`, Google Flights BOS to ORD, 2026-11-20 one way, drafted by today's product drafting (not idea A). Cap $0.50 and 20 min.
@@ -14683,6 +14685,8 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 **The thinking rule held on a rubric job (PRD v1.106 Part 1).** Scout off; step attempt 1 off; attempts 2 and later on; plan and replan on; all 11 `thinking-status` records `applied`. A worker cannot change a signed check, so the rule is not the cause.
 
 **Status.** Open. Logged, not patched (PRD §8a); no fix built here. hamr approved logging 2026-10-18. 2026-10-18 update: see F238 (v4 run on this run's labels; drops are silent) and the core-only ruling.
+
+*Update 2026-10-26: the "Departure time:" part (a time label whose line holds no readable time) is FIXED by the time dry read, see F247; "StaticText" and "O" are not time facts and are not covered.*
 
 ## F238 — idea A rule v4, POC round 4: HOLDS by its decision rule but its drop fired only on the page it was written after; on run mvdg1xo3's real labels the drops are silent (2026-10-18; open, hamr ruled idea A core only)
 
@@ -14722,6 +14726,8 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 **Also seen.** Even facts signed Boston/Chicago would be plain phrases (`shape: phrase`), which only test that both words appear. Every flight on this page has both words, so direction stays unchecked either way (see the R2 note in ITEM33-BUILD.md, idea A core section 10: R2 grow-left is OUT). Cosmetic: the look-ask "departure time between 05:00 and 21:59 ... I can't check this on the page. Drop it?" was answered "yes, check it as departure between 05:00 and 21:59"; that text was signed as a third `~` rule with the "yes," left on (`jobLines[0].rules[2]`).
 
 **Status.** Open. Logged, not built.
+
+*Update 2026-10-26: the small part is FIXED on fix/barebrowse-0241: an answer that opens with yes/agree directly followed by a comma or colon ("yes, check it as departure between 05:00 and 21:59") is signed without the leading word (`stripAgreeLead`, `src/pagemap.js`). Correction 2026-10-26 (self-review): the first fix also took a bare space and then a dash as separators and cut real words ("yes-no questions only" became "no questions only"); only a comma or colon right after the word counts now. The reversed-route override above stays open.*
 
 ## F241 — a price fact no result could pass was signed: currency "$" after label "From", on a page that writes "From 137 US dollars" (run mvh7g2hc, 2026-10-20; fixed in v0.45.0; the same class as F237)
 
@@ -14808,3 +14814,43 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 - [CODE] `doExport` (src/cli.js:139) and `exportBundle` (src/bundle.js:337) read `spec.close` and require a registry row at the spec's hash (`no-bridge-at-hash`, src/bundle.js:383); grep finds no `closeDecl` in src/bundle.js, src/bundlerun.js or src/cli.js.
 - [CODE] Panel runs never pass `--registry` (no `--registry` in src/panel; the panel spawns `run-u --spec ... --approve ...`, src/panel/authorroutes.js:502, runroutes.js:229, :375). A panel green writes only a per-run bridge FILE `bridge-<job>-<runid>.json` next to its spine (src/userrun.js:2387), never a registry row.
 - [CODE] `bareloop run <bundleDir>` takes `--repo <path>` only and always makes a git worktree (src/bundlerun.js:50, :169); a plain-folder, page-link or rubric job has no way to run from a bundle.
+
+
+## F246 — a duplicate fact name's drop note names the kept fact's rule, not the dropped one (2026-10-26; found at $0 by reading code, NOT seen live)
+
+**Status.** Logged, not built (PRD §8a: a reading-derived defect is parked until a live failure shows it).
+
+- [CODE] When a map has two facts with the same name, `applyPageRules` keeps the first and drops the other as `s1`, but the drop note takes its rule from the kept fact: `all.find((x) => String(x.name) === k.name)` (src/pagerules.js:336, the S1 drop: `all.find` by name returns the first fact of that name, i.e. the kept one), so the note names the kept fact's rule, not the dropped one's.
+- [MEASURED] Seen on the recorded map of session smvh7bxou4win: two "departure time" facts (rules 1 and 2), where the drop note would name rule 1 for the dropped rule-2 fact.
+- Not seen in a live run; no fix built.
+
+## F247 — time dry read POC and build: a time label the run's checker cannot read after is Not checked (2026-10-26; built on fix/barebrowse-0241, fixes F236 and the "Departure time:" part of F237)
+
+**Grounded in:** `docs/logs/time-dryread-poc-PREREG.md` (frozen at 46574ab, sha256 8502f5a2217397b98a3581a3b306149d328909a3983101600eecb6d51cb008a9), `docs/logs/time-dryread-poc-RESULTS.md` (copy of the POC results); the build is `dryReadTimes` in `src/pagedry.js`, called by `runPageMap` between the money and phrase dry reads; the sentence is `reads-no-time` in `src/pagedropwords.js`; tests `tests/time-dry.test.js` on real pages (`tests/fixtures/time-dry`, `tests/fixtures/idea-a/jfk-lax.page.txt`).
+
+**What it does.** For each kept time fact with a label, every page line holding a label word and a clock time (H:MM or HH:MM, optional AM/PM) after it is a candidate (a loose finder). Each candidate is graded as an honest claim by the real `gradeStep` (no copy of the checker). No green line: the fact is dropped whole as `reads-no-time` and shows under Not checked. No counts, no pass bar. Other shapes, and a time fact with no label, pass through untouched.
+
+**POC results (all pre-registered, rule code unchanged between phases).**
+- R1 PASS: 10 of 10 time labels of green archived runs kept; the one drop ("at", 0 of 180 lines read) belonged to a step-red run.
+- R2 PASS: JFK-LAX "Departure time" 0 of 32 candidate lines read, dropped; "Departure time:" 32 of 32, kept.
+- R3 PASS: with the dry read off the F236 label is kept (the harness can tell the two apart).
+- R4 PASS on three unseen pages: cinema "3:30 PM" dropped (0 candidates), train "Departure" kept (74 of 74), events "kick off" kept (12 of 12); no good label dropped, no bad label kept.
+- Spend: $0.027464 for the three Data C map calls (deepseek-flash, thinking off); grading $0.
+
+**Honest limits.**
+- Data A and B are one site (Google Flights), and 14 of 15 archived specs share the one spelling "Departure time:".
+- Data C is n = 3 pages, one label each; a pass there is an anecdote. The cinema drop tests "no time follows" trivially (0 candidates).
+- It catches an IMPOSSIBLE label only. A label that reads a WRONG time is kept and left to the person at Accept: the train page's "Departure" matches track-change "Early Departure" alert lines, not the timetable, and the rule cannot see that.
+- It ignores signed windows (as the money dry read leaves limits out).
+
+**Status.** Built 2026-10-26. F236 (the "Departure time" label one character off the page's word) and the "Departure time:" on a different line part of F237 are fixed by it (the other F237 labels, "StaticText" and "O", are not time facts and are not covered). Their prose above is unchanged.
+
+## F248 — Jev drafting-classifier trial: perfect on every frozen rule, but the layout was the hard part, not the judge (2026-10-26; $0.0092 total, trial only, nothing built)
+
+**Grounded in:** `docs/logs/jev-trial-RESULTS.md` (with `jev-trial-PREREG.md`, `jev-trial-AMEND-1.md`, `jev-trial-AMEND-2.md`, frozen before any answer); raw files `.claude/scratch/jev-trial/` (untracked scratch).
+
+- [MEASURED] Cinema + flights on today's act pages: Jev `jev-1.14.0` 18 of 18, hard 10 of 10, all 18 confident and right, $0.001057. DeepSeek cinema 8 of 8; its flights call died on "socket hang up", so there is no flights comparison.
+- [MEASURED] The MBTA train page was refused on the act layout (87,087 chars, HTTP 400 `max_tokens_exceeded`). On barebrowse data mode (13,707 chars; unpublished, local branch `feat/data-mode` at 496260b) Jev got 17 of 17, hard 13 of 13, 16 confident and right plus one right at p 0.22, $0.000354. DeepSeek 17 of 17, $0.004060.
+- [READING] The new layout is what made the train page answerable; not measured, because DeepSeek was never run on the old act train layout.
+- Outcome: barebrowse data mode is the real win (adopt once published, after a $0 replay on saved pages). Jev stays PARKED: accurate and cheap, not needed for accuracy.
+- Honest limit: 35 questions on 3 pages is underpowered for a general claim.

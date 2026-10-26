@@ -66,13 +66,13 @@ test('header + menu: with colour the words are the same (stripped), the rule fra
   await menuCmd(io, { ...base, ask: async () => 'q', paint: makePaint({ isTTY: true }, {}) });
   const c = (/** @type {string} */ k) => `\x1b[1;36m${k}\x1b[0m`;
   assert.deepEqual(io.lines.slice(-3), [
-    `  panel: ${c('1')} start   ${c('2')} stop   ${c('3')} restart   ${c('4')} status   ${c('5')} install`,
-    `  jobs:  ${c('6')} export   ${c('7')} run   ${c('8')} resume   ${c('9')} history`,
+    `  panel: ${c('1')} start   ${c('2')} stop   ${c('3')} restart   ${c('4')} status   ${c('5')} install   ${c('6')} update`,
+    `  jobs:  ${c('7')} export   ${c('8')} run   ${c('9')} resume   ${c('10')} history`,
     `  ${c('q')} quit`,
   ]);
   const ioPlain = sink();
   await menuCmd(ioPlain, { ...base, ask: async () => 'q', paint: makePaint({ isTTY: false }, {}) });
-  assert.deepEqual(ioPlain.lines.slice(-3), ['panel: 1 start   2 stop   3 restart   4 status   5 install', 'jobs:  6 export   7 run   8 resume   9 history', 'q quit']);
+  assert.deepEqual(ioPlain.lines.slice(-3), ['panel: 1 start   2 stop   3 restart   4 status   5 install   6 update', 'jobs:  7 export   8 run   9 resume   10 history', 'q quit']);
 });
 
 test('refusals are red on a colour terminal, plain words when stripped', async () => {
