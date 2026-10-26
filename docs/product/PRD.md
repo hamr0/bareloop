@@ -2075,3 +2075,15 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
   3. `5 install` keeps its job, and its words say that it does not update the package.
 - **Source:** the fwd session relayed this at hamr's request 2026-10-26; fwdloop parked the same text in its own PRD under "Parked, not scheduled".
 - **Status:** SIGNED and BUILT (hamr 2026-10-26): `6 update` on the top line, jobs renumbered 7-10; it also asks "Update now?" and installs on `y`. See the CHANGELOG (Unreleased).
+
+
+### Parked: four rubric check gaps shared with fwdloop (v1.117 — 2026-10-26) — PARKED, discuss after the 0.49.0 release
+
+- **Source:** the fwd session compared bareloop's known gaps against fwdloop's code on 2026-10-26; four are shared. fwd relayed a ruling that bareloop solves them first and fwdloop copies from bareloop's released tag. hamr 2026-10-26: "keep all on prd, we start on them/discuss next after release". Unsigned, not scheduled.
+- **The four gaps:**
+  1. **Dates, plain numbers and free text on a page:** `MAP_SHAPES` has no date, number or text kind, so such a fact cannot be checked (F239). A dates POC was planned, not started.
+  2. **Money with the marker after the number** ("282 £ pp", "EUR 17.86"): page rules read label-then-number only, so these are unreadable until a marker-after-number rule is written and frozen.
+  3. **Sentence and paragraph counts:** bareguard has `maxWords`/`minWords`/`maxLines` only (`docs/product/rubric-rules.md` in bareguard). No live case yet.
+  4. **"Must not say" checks:** bareguard has no such rule today. No live case yet.
+- **Rules that apply:** gaps 1 and 2 each need a POC with a frozen rule on real unseen pages before any build. Gaps 3 and 4 have no live failure yet, so hamr decides at the discussion whether they are built (§8a). Any missing bareguard primitive becomes a change ask to bareguard, never a local patch.
+- **Status:** PARKED; discuss after the 0.49.0 release.
