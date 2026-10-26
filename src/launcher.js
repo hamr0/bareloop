@@ -318,7 +318,7 @@ export async function updateCmd(io, d, shown) {
   try {
     const res = await (d.npmFetch ?? fetch)('https://registry.npmjs.org/bareloop/latest', { signal: AbortSignal.timeout(5000) });
     if (res.ok) {
-      const j = await res.json();
+      const j = /** @type {{version?: unknown}} */ (await res.json());
       latestText = typeof j?.version === 'string' ? j.version : '';
       latest = parseVersion(latestText);
     }
