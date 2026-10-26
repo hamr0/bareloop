@@ -21,6 +21,22 @@ const SOURCE = 'page';
 const CLAIM_TIME = 'time';
 
 /**
+ * How many of `lines` the run's real checker reads green as an honest claim of `fact`: each line is graded alone by `gradeStep` (quote = the line,
+ * the claim named `claim` carrying the line's value). The one grading call money and time dry reads share.
+ * @param {string} text the frozen page text @param {string} sha its sha256 @param {object} fact the signed fact @param {string} claim the claim name inside `fact`
+ * @param {{quote: string, value: string}[]} lines @returns {Promise<number>}
+ */
+async function greenLines(text, sha, fact, claim, lines) {
+  let n = 0;
+  for (const r of lines) {
+    const params = { step: 1, parts: [{ text: 'dry read', class: 'fact', source: SOURCE, covers: [1], facts: [fact] }] };
+    const g = await gradeStep({ params, bytes: JSON.stringify({ results: [{ quote: r.quote, values: { [claim]: r.value } }] }), outputBytes: null, inputs: { [SOURCE]: text } }, { [SOURCE]: sha });
+    if (g.verdict === 'green') n += 1;
+  }
+  return n;
+}
+
+/**
  * The result lines of a kept money fact: with a label, every page line where a kept label is followed by a number (one sign between allowed);
  * with no label (U1 moved it to a unit, e.g. "€533 total"), every line where a number is followed by a kept unit.
  * @param {string} text @param {KeptFact} k @returns {{quote: string, value: string}[]}
@@ -75,12 +91,7 @@ export async function dryReadMoney(text, facts) {
     if (k.shape !== 'money') { kept.push(k); continue; }
     const fact = signedOf(k);
     const lines = moneyResultLines(text, k);
-    let n = 0;
-    for (const r of lines) {
-      const params = { step: 1, parts: [{ text: 'dry read', class: 'fact', source: SOURCE, covers: [1], facts: [fact] }] };
-      const g = await gradeStep({ params, bytes: JSON.stringify({ results: [{ quote: r.quote, values: { [CLAIM]: r.value } }] }), outputBytes: null, inputs: { [SOURCE]: text } }, { [SOURCE]: sha });
-      if (g.verdict === 'green') n += 1;
-    }
+    const n = await greenLines(text, sha, fact, CLAIM, lines);
     reads[k.name] = n;
     results[k.name] = lines.length;
     if (n > 0) { kept.push(k); continue; }
@@ -174,12 +185,7 @@ export async function dryReadTimes(text, facts) {
     if (k.shape !== 'time' || !k.words.length) { kept.push(k); continue; }
     const fact = { name: CLAIM_TIME, shape: 'time', anchor: k.words[0] };
     const lines = timeCandidateLines(text, k);
-    let n = 0;
-    for (const r of lines) {
-      const params = { step: 1, parts: [{ text: 'dry read', class: 'fact', source: SOURCE, covers: [1], facts: [fact] }] };
-      const g = await gradeStep({ params, bytes: JSON.stringify({ results: [{ quote: r.quote, values: { [CLAIM_TIME]: r.value } }] }), outputBytes: null, inputs: { [SOURCE]: text } }, { [SOURCE]: sha });
-      if (g.verdict === 'green') n += 1;
-    }
+    const n = await greenLines(text, sha, fact, CLAIM_TIME, lines);
     reads[k.name] = n;
     results[k.name] = lines.length;
     if (n > 0) { kept.push(k); continue; }
