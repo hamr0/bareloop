@@ -752,3 +752,19 @@ test('main: `bareloop update` is a sub-command through the one function', async 
   assert.equal(rc, 0);
   assert.match(out.join(''), /bareloop 99\.0\.0 is out\. You have /);
 });
+
+test('main: `bareloop update` with piped (non-interactive) stdin never installs, even when the pipe says y', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const spawns = [];
+  for (const argv of [['update'], []]) {
+    const out = [];
+    const launcher = { ports: [base, base + 1], timeoutMs: 2000, nodeVersion: '22.1.0', version: V, npmFetch: npmOk('99.0.0'), npmSpawn: (...a) => { spawns.push(a); return fakeChild(0); } };
+    const stdin = new PassThrough(); stdin.end(argv.length ? 'y\ny\n' : '6\ny\n');
+    const rc = await main(argv, { stdin, interactive: false, stdout: { write: (s) => { out.push(s); return true; } }, stderr: { write: () => true }, cwd: process.cwd(), env: {}, keysHome: home, runlistHome: home, launcher });
+    assert.equal(rc, 0);
+    assert.match(out.join(''), /To update: npm install -g bareloop@latest/);
+    assert.doesNotMatch(out.join(''), /Update now/);
+  }
+  assert.equal(spawns.length, 0);
+});

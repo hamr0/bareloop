@@ -290,7 +290,7 @@ async function runLauncher(cmd, rest, deps, io, home) {
     resume: () => doResumeMenu(jobCtx),
     history: () => doHistory([], jobCtx),
   };
-  const d = { home, jobs, ask, paint: makePaint(deps.stdout ?? process.stdout, rawEnv), paintErr: makePaint(deps.stderr ?? process.stderr, rawEnv), ...(deps.launcher ?? {}) };
+  const d = { home, jobs, ask, terminal: io.canAsk, paint: makePaint(deps.stdout ?? process.stdout, rawEnv), paintErr: makePaint(deps.stderr ?? process.stderr, rawEnv), ...(deps.launcher ?? {}) };
   if (cmd === 'start') return startCmd(io, d);
   if (cmd === 'stop') return stopCmd(rest, io, d);
   if (cmd === 'restart') return restartCmd(rest, io, d);

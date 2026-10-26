@@ -23,6 +23,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **Menu numbers.** The panel line gains `6 update`; the job line is now `7 export   8 run   9 resume   10 history`. `5 install` with nothing to do now says `Already set up. This does not update bareloop. Pick 6 update for that.`
 - **barebrowse `^0.21.0` to `^0.24.1`.** No change to how bareloop calls it.
 - **bareguard `^0.25.1` to `^0.26.0`.** Its one break for bareloop is the money-unit rule above; the new table rules (`cells`, `table`, `diff`) are not used here.
+- **Piped input never installs on `bareloop update`.** The rule was "no terminal never installs", but the command always had an asker, so `echo y | bareloop update` (or a pipe into the menu's `6`) ran `npm install -g`. When stdin is not a terminal it now prints `To update: npm install -g bareloop@latest` and exits 0.
 
 ## [0.48.0] - 2026-10-25
 

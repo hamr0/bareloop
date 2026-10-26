@@ -50,6 +50,7 @@ const RULE_WIDTH = 56;
  * @property {string} [nodeVersion] default process.versions.node
  * @property {typeof fetch} [fetchImpl]
  * @property {(cmd: string, args: string[], o: object) => any} [npmSpawn] runs `npm install -g bareloop@latest` for `update` (default node:child_process spawn, no shell)
+ * @property {boolean} [terminal] false = no person at a terminal (piped / redirected stdin): `update` then never installs, it prints the command (absent = ask)
  * @property {typeof fetch} [npmFetch] the registry check of `update` only (default the global fetch); nothing else ever goes online
  * @property {(cmd: string, args: string[], o: object) => any} [spawnFn] default node:child_process spawn
  * @property {(pid: number, sig: string|number) => void} [kill] default process.kill
@@ -331,7 +332,7 @@ export async function updateCmd(io, d, shown) {
   if (!isNewer(latest, have)) { io.out(`You have the newest bareloop (${mine}).`); return 0; }
   const manual = 'npm install -g bareloop@latest';
   io.out(`bareloop ${latestText} is out. You have ${mine}.`);
-  if (!d.ask) { io.out(`To update: ${manual}`); return 0; }
+  if (!d.ask || d.terminal === false) { io.out(`To update: ${manual}`); return 0; }
   // an empty Enter or other text asks once more; a second one ends as "no"
   let yes = false;
   for (let i = 0; i < 2; i += 1) {
