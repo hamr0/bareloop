@@ -29,6 +29,8 @@ const WAIT_DEADLINE_MS = 10_000;
 /** how long `start` keeps asking a TAKEN port that stays silent before it refuses to open another panel next to it */
 const SILENT_PORT_WAIT_MS = 10_000;
 const POLL_MS = 100;
+/** not in the signed text: how long `npm install -g` may run before its own child is killed */
+const NPM_DEADLINE_MS = 300_000;
 const MIN_NODE_MAJOR = 22;
 const RULE_WIDTH = 56;
 
@@ -50,6 +52,7 @@ const RULE_WIDTH = 56;
  * @property {string} [nodeVersion] default process.versions.node
  * @property {typeof fetch} [fetchImpl]
  * @property {(cmd: string, args: string[], o: object) => any} [npmSpawn] runs `npm install -g bareloop@latest` for `update` (default node:child_process spawn, no shell)
+ * @property {number} [npmDeadlineMs] how long `update`'s npm install may run before its child is killed (default 300 s)
  * @property {boolean} [terminal] false = no person at a terminal (piped / redirected stdin): `update` then never installs, it prints the command (absent = ask)
  * @property {typeof fetch} [npmFetch] the registry check of `update` only (default the global fetch); nothing else ever goes online
  * @property {(cmd: string, args: string[], o: object) => any} [spawnFn] default node:child_process spawn
@@ -342,11 +345,15 @@ export async function updateCmd(io, d, shown) {
   }
   if (!yes) { io.out(`Not updated. To update later: ${manual}`); return 0; }
   const ok = await new Promise((resolve) => {
+    let timer;
+    const end = (/** @type {boolean} */ v) => { clearTimeout(timer); resolve(v); };
     try {
       const child = (d.npmSpawn ?? realSpawn)('npm', ['install', '-g', 'bareloop@latest'], { stdio: 'inherit' });
-      child.once('error', () => resolve(false));
-      child.once('close', (code) => resolve(code === 0));
-    } catch { resolve(false); }
+      // not in the signed text: npm may run this long, then its own child is ended (aligned with fwdloop)
+      timer = setTimeout(() => { try { child.kill('SIGTERM'); } catch { /* already gone */ } end(false); }, d.npmDeadlineMs ?? NPM_DEADLINE_MS);
+      child.once('error', () => end(false));
+      child.once('close', (code) => end(code === 0));
+    } catch { end(false); }
   });
   if (!ok) { fail(io, d, `The update did not finish. Run it yourself: ${manual}`); return 1; }
   io.out(`Updated to ${latestText}. Then ${shown ? 'pick 3 restart' : 'run bareloop restart'}.`); // the menu door (shown) has the menu; the subcommand door has none

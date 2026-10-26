@@ -677,6 +677,27 @@ test('update: newest and every failure say the exact words with the right exit c
 
 const fakeChild = (code, error) => { const c = new EventEmitter(); setImmediate(() => (error ? c.emit('error', new Error('ENOENT')) : c.emit('close', code))); return c; };
 
+test('update: npm install past the deadline is killed (SIGTERM), says the failure words, exit 1; a normal exit never kills', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const go = async (child, npmDeadlineMs) => {
+    const io = sink(); const err = [];
+    const rc = await updateCmd({ out: io.out, err: (s) => err.push(s) }, deps(home, base, { npmFetch: npmOk('99.1.2'), ask: async () => 'y', npmSpawn: () => child, npmDeadlineMs }));
+    return { rc, err: err.join('') };
+  };
+  const hung = Object.assign(new EventEmitter(), { killed: [], kill(sig) { this.killed.push(sig); } });
+  let r = await go(hung, 20);
+  assert.equal(r.rc, 1);
+  assert.deepEqual(hung.killed, ['SIGTERM']);
+  assert.match(r.err, /The update did not finish\. Run it yourself: npm install -g bareloop@latest/);
+  const fine = Object.assign(new EventEmitter(), { killed: [], kill(sig) { this.killed.push(sig); } });
+  setImmediate(() => fine.emit('close', 0));
+  r = await go(fine, 50);
+  assert.equal(r.rc, 0);
+  await new Promise((res) => { setTimeout(res, 120); });
+  assert.deepEqual(fine.killed, []);
+});
+
 test('update: newer asks; y installs (success and failure words), n / q / two empties / no asker never install', async () => {
   const home = installedHome();
   const base = await freeBase();

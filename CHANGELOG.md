@@ -9,7 +9,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
-- **A launcher `6 update` option (and `bareloop update`).** It asks npm for the newest bareloop only when you press it (nothing goes online at start or in the background). Newest: `You have the newest bareloop (X).` A newer one: `bareloop Y is out. You have X.` and `Update now? (y/n)`; `y` runs `npm install -g bareloop@latest` and says to pick 3 restart (from the menu) or to run `bareloop restart` (typed as `bareloop update`), `n` leaves it. If npm cannot be reached: `Could not reach npm to check. Try again later.`
+- **A launcher `6 update` option (and `bareloop update`).** It asks npm for the newest bareloop only when you press it (nothing goes online at start or in the background). Newest: `You have the newest bareloop (X).` A newer one: `bareloop Y is out. You have X.` and `Update now? (y/n)`; `y` runs `npm install -g bareloop@latest` and says to pick 3 restart (from the menu) or to run `bareloop restart` (typed as `bareloop update`), `n` leaves it. The install gives up after 5 minutes: its npm child is ended and the same "The update did not finish" line shows. If npm cannot be reached: `Could not reach npm to check. Try again later.`
 
 ### Fixed
 
