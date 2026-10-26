@@ -2062,7 +2062,7 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 - **Lines** (guard session 2026-10-26 plus doctrine): it never reaches bareguard as a verdict (judges stay parked, bareguard ruling #50; hamr: AI judges can hallucinate, are slow and costly; if ever, Jev or SemIf). It may only make drafting MORE careful, never turn a red green. Code decides. Bareguard has no "not checked" state, so Not checked lives at drafting only. Calibration is measured on our own saved pages first. The pinned model id goes in the signed hash, never an alias. Open-source rule: Jev is closed and hosted, so it is only ever an optional row, never a dependency.
 - **Guard's caution:** a broad question ("does this page show a departure time at Wickford Junction?") likely says yes on the MBTA page, because the page DOES show departure times, just the wrong ones (bareguard's 2026-10-12 locate-judge POC: a made-up flight went green). The likely value is helping pick or verify the anchor label, which code then checks.
 - **Related:** barebrowse table pruning (browse session asked 2026-10-26; bareloop asked for an opt-in mode putting row and column headers on each cell's line) may solve the MBTA case in code with no classifier.
-- **Status:** PARKED as an option to optimize rubric. A $0.50-capped trial is pre-registered in `docs/logs/jev-trial-PREREG.md` (to be committed with its items).
+- **Status:** PARKED as an option to optimize rubric. Trial run and passed; the layout, not the judge, was the hard part: see `docs/logs/jev-trial-RESULTS.md` and F248. Pre-registration: `docs/logs/jev-trial-PREREG.md`.
 
 
 ### Parked: a launcher "update" option (v1.116 — 2026-10-26) — PARKED, not scheduled, unsigned

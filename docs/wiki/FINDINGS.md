@@ -14842,3 +14842,13 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 - It ignores signed windows (as the money dry read leaves limits out).
 
 **Status.** Built 2026-10-26. F236 (the "Departure time" label one character off the page's word) and the "Departure time:" on a different line part of F237 are fixed by it (the other F237 labels, "StaticText" and "O", are not time facts and are not covered). Their prose above is unchanged.
+
+## F248 — Jev drafting-classifier trial: perfect on every frozen rule, but the layout was the hard part, not the judge (2026-10-26; $0.0092 total, trial only, nothing built)
+
+**Grounded in:** `docs/logs/jev-trial-RESULTS.md` (with `jev-trial-PREREG.md`, `jev-trial-AMEND-1.md`, `jev-trial-AMEND-2.md`, frozen before any answer); raw files `.claude/scratch/jev-trial/` (untracked scratch).
+
+- [MEASURED] Cinema + flights on today's act pages: Jev `jev-1.14.0` 18 of 18, hard 10 of 10, all 18 confident and right, $0.001057. DeepSeek cinema 8 of 8; its flights call died on "socket hang up", so there is no flights comparison.
+- [MEASURED] The MBTA train page was refused on the act layout (87,087 chars, HTTP 400 `max_tokens_exceeded`). On barebrowse data mode (13,707 chars; unpublished, local branch `feat/data-mode` at 496260b) Jev got 17 of 17, hard 13 of 13, 16 confident and right plus one right at p 0.22, $0.000354. DeepSeek 17 of 17, $0.004060.
+- [READING] The new layout is what made the train page answerable; not measured, because DeepSeek was never run on the old act train layout.
+- Outcome: barebrowse data mode is the real win (adopt once published, after a $0 replay on saved pages). Jev stays PARKED: accurate and cheap, not needed for accuracy.
+- Honest limit: 35 questions on 3 pages is underpowered for a general claim.
