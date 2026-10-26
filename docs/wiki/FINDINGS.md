@@ -14663,6 +14663,8 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 
 **Status.** Open. No v4 fitted to this page (frozen rule). hamr 2026-10-18: next a live drafted run on a new flights page. 2026-10-18 update: see F238; hamr ruled idea A core only.
 
+*Update 2026-10-26: FIXED by the time dry read, see F247 ("Departure time" without the colon now reads no time and is dropped as Not checked).*
+
 ## F237 — a rubric flights draft signed facts that no run could pass: the labels "StaticText" and "O" read no value, and "Departure time:" sits on a different line from the result (run mvdg1xo3, flights-bos-ord, 2026-10-18; open, supports idea A's pending v4 rule)
 
 **Grounded in:** spine `~/.config/bareloop/panel-sessions/smvdfyexzv0vm/source-seed/flights-bos-ord-bareloop/u-mvdg1xo3.jsonl`; the signed facts in that session's `resolved-spec.json` (the `line-1-flight-facts` rubric-step); the saved page `source-seed/tree/input/flights.txt`; the settled row in `~/.config/bareloop/runs.jsonl`. Job `flights-bos-ord` (run-1), rubric, DeepSeek `deepseek-flash`, Google Flights BOS to ORD, 2026-11-20 one way, drafted by today's product drafting (not idea A). Cap $0.50 and 20 min.
@@ -14683,6 +14685,8 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 **The thinking rule held on a rubric job (PRD v1.106 Part 1).** Scout off; step attempt 1 off; attempts 2 and later on; plan and replan on; all 11 `thinking-status` records `applied`. A worker cannot change a signed check, so the rule is not the cause.
 
 **Status.** Open. Logged, not patched (PRD §8a); no fix built here. hamr approved logging 2026-10-18. 2026-10-18 update: see F238 (v4 run on this run's labels; drops are silent) and the core-only ruling.
+
+*Update 2026-10-26: the "Departure time:" part (a time label whose line holds no readable time) is FIXED by the time dry read, see F247; "StaticText" and "O" are not time facts and are not covered.*
 
 ## F238 — idea A rule v4, POC round 4: HOLDS by its decision rule but its drop fired only on the page it was written after; on run mvdg1xo3's real labels the drops are silent (2026-10-18; open, hamr ruled idea A core only)
 
@@ -14817,3 +14821,24 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 - [CODE] When a map has two facts with the same name, `applyPageRules` keeps the first and drops the other as `s1`, but the drop note takes its rule from the kept fact: `all.find((x) => String(x.name) === k.name)` (src/pagerules.js:336, the S1 drop: `all.find` by name returns the first fact of that name, i.e. the kept one), so the note names the kept fact's rule, not the dropped one's.
 - [MEASURED] Seen on the recorded map of session smvh7bxou4win: two "departure time" facts (rules 1 and 2), where the drop note would name rule 1 for the dropped rule-2 fact.
 - Not seen in a live run; no fix built.
+
+## F247 — time dry read POC and build: a time label the run's checker cannot read after is Not checked (2026-10-26; built on fix/barebrowse-0241, fixes F236 and the "Departure time:" part of F237)
+
+**Grounded in:** `docs/logs/time-dryread-poc-PREREG.md` (frozen at 46574ab, sha256 8502f5a2217397b98a3581a3b306149d328909a3983101600eecb6d51cb008a9), `docs/logs/time-dryread-poc-RESULTS.md` (copy of the POC results); the build is `dryReadTimes` in `src/pagedry.js`, called by `runPageMap` between the money and phrase dry reads; the sentence is `reads-no-time` in `src/pagedropwords.js`; tests `tests/time-dry.test.js` on real pages (`tests/fixtures/time-dry`, `tests/fixtures/idea-a/jfk-lax.page.txt`).
+
+**What it does.** For each kept time fact with a label, every page line holding a label word and a clock time (H:MM or HH:MM, optional AM/PM) after it is a candidate (a loose finder). Each candidate is graded as an honest claim by the real `gradeStep` (no copy of the checker). No green line: the fact is dropped whole as `reads-no-time` and shows under Not checked. No counts, no pass bar. Other shapes, and a time fact with no label, pass through untouched.
+
+**POC results (all pre-registered, rule code unchanged between phases).**
+- R1 PASS: 10 of 10 time labels of green archived runs kept; the one drop ("at", 0 of 180 lines read) belonged to a step-red run.
+- R2 PASS: JFK-LAX "Departure time" 0 of 32 candidate lines read, dropped; "Departure time:" 32 of 32, kept.
+- R3 PASS: with the dry read off the F236 label is kept (the harness can tell the two apart).
+- R4 PASS on three unseen pages: cinema "3:30 PM" dropped (0 candidates), train "Departure" kept (74 of 74), events "kick off" kept (12 of 12); no good label dropped, no bad label kept.
+- Spend: $0.027464 for the three Data C map calls (deepseek-flash, thinking off); grading $0.
+
+**Honest limits.**
+- Data A and B are one site (Google Flights), and 14 of 15 archived specs share the one spelling "Departure time:".
+- Data C is n = 3 pages, one label each; a pass there is an anecdote. The cinema drop tests "no time follows" trivially (0 candidates).
+- It catches an IMPOSSIBLE label only. A label that reads a WRONG time is kept and left to the person at Accept: the train page's "Departure" matches track-change "Early Departure" alert lines, not the timetable, and the rule cannot see that.
+- It ignores signed windows (as the money dry read leaves limits out).
+
+**Status.** Built 2026-10-26. F236 (the "Departure time" label one character off the page's word) and the "Departure time:" on a different line part of F237 are fixed by it (the other F237 labels, "StaticText" and "O", are not time facts and are not covered). Their prose above is unchanged.
