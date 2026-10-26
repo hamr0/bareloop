@@ -275,7 +275,7 @@ function doRuns(_args, { out, deps }) {
  * `src/launcher.js`; this only supplies the home (the SAME one `main` resolved for the keys file and config.json) and the line reader.
  * `deps.launcher` is the test seam for every OS touch (ports, spawn, kill, opener, clock).
  * @param {string} cmd 'menu' | 'start' | 'stop' | 'status' | 'install' | 'update' @param {string[]} rest
- * @param {any} deps @param {{ out: (s: string) => void, err: (s: string) => void, ask: (q: string) => Promise<string> }} io @param {string|undefined} home
+ * @param {any} deps @param {{ out: (s: string) => void, err: (s: string) => void, ask: (q: string) => Promise<string>, canAsk: boolean }} io @param {string|undefined} home
  * @returns {Promise<number>}
  */
 async function runLauncher(cmd, rest, deps, io, home) {
