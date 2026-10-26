@@ -690,7 +690,7 @@ test('update: newer asks; y installs (success and failure words), n / q / two em
   let r = await go(['y']);
   assert.equal(r.rc, 0);
   assert.equal(r.lines.at(-2), first);
-  assert.equal(r.lines.at(-1), 'Updated to 99.1.2. Then pick 3 restart.');
+  assert.equal(r.lines.at(-1), 'Updated to 99.1.2. Then run bareloop restart.');
   assert.deepEqual(r.asked, ['Update now? (y/n) ']);
   assert.deepEqual(r.spawns, [['npm', ['install', '-g', 'bareloop@latest'], { stdio: 'inherit' }]]);
   r = await go(['yes'], { code: 1 });
@@ -767,4 +767,17 @@ test('main: `bareloop update` with piped (non-interactive) stdin never installs,
     assert.doesNotMatch(out.join(''), /Update now/);
   }
   assert.equal(spawns.length, 0);
+});
+
+test('update: the menu door says "pick 3 restart", the subcommand door says "run bareloop restart"', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const answers = { menu: ['6', 'y'], sub: ['y'] };
+  const mk = (k) => deps(home, base, { npmFetch: npmOk('99.1.2'), ask: async () => answers[k].shift() ?? '', npmSpawn: () => fakeChild(0) });
+  const menu = sink();
+  assert.equal(await menuCmd(menu, mk('menu')), 0);
+  assert.equal(menu.lines.at(-1), 'Updated to 99.1.2. Then pick 3 restart.');
+  const sub = sink();
+  assert.equal(await updateCmd(sub, mk('sub')), 0);
+  assert.equal(sub.lines.at(-1), 'Updated to 99.1.2. Then run bareloop restart.');
 });

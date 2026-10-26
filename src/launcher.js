@@ -349,7 +349,7 @@ export async function updateCmd(io, d, shown) {
     } catch { resolve(false); }
   });
   if (!ok) { fail(io, d, `The update did not finish. Run it yourself: ${manual}`); return 1; }
-  io.out(`Updated to ${latestText}. Then pick 3 restart.`);
+  io.out(`Updated to ${latestText}. Then ${shown ? 'pick 3 restart' : 'run bareloop restart'}.`); // the menu door (shown) has the menu; the subcommand door has none
   return 0;
 }
 
