@@ -342,14 +342,23 @@ export function applyPageRules(text, mapping, jobLines) {
         });
         /** @type {{kind: 'unit'|'currency', w: string}[]} */
         const forms = [...units.map((u) => /** @type {const} */ ({ kind: 'unit', w: u })), ...curs.map((c) => /** @type {const} */ ({ kind: 'currency', w: c }))];
+        // A page read where the form is written (see R1L): a sign after its number reads the number before it, before its number the one after
+        const read = (/** @type {{kind: string, w: string}} */ x) => {
+          if (!CURRENCY_SYMBOLS.includes(x.w)) return x.kind === 'unit' ? unitSet(lines, x.w) : curSet(lines, x.w);
+          const fm = signForms(lines, x.w);
+          return x.kind === 'unit' || fm.glued || !fm.before ? unitSet(lines, x.w) : curSet(lines, x.w);
+        };
+        // a form that reads NO amount anywhere on the page ("ohne MwSt." alone on its own line) is dropped BEFORE R1L, so R1L never takes it as the
+        // reference and then drops the form that does read. When no form reads anything, nothing is dropped here and the later rules speak.
+        if (forms.some((x) => read(x).size > 0)) {
+          for (let i = forms.length - 1; i >= 0; i -= 1) {
+            if (read(forms[i]).size > 0) continue;
+            drop(f, forms[i].w, 'reads-no-amount');
+            forms.splice(i, 1);
+          }
+        }
         if (forms.length) {
-          // R1L: every form reads the same set of numbers as the primary (the first form); one that reads more or fewer is dropped. A sign is read
-          // where the page puts it: after its number (the number right before it) or before it (the number right after it)
-          const read = (/** @type {{kind: string, w: string}} */ x) => {
-            if (!CURRENCY_SYMBOLS.includes(x.w)) return x.kind === 'unit' ? unitSet(lines, x.w) : curSet(lines, x.w);
-            const fm = signForms(lines, x.w);
-            return x.kind === 'unit' || fm.glued || !fm.before ? unitSet(lines, x.w) : curSet(lines, x.w);
-          };
+          // R1L: every form reads the same set of numbers as the primary (the first form that reads); one that reads more or fewer is dropped.
           const ps = read(forms[0]);
           const keep = [forms[0]];
           // one SIGN filed in both boxes by its page forms is ONE symbol read in two forms (bareguard 0.27 counts the same amount as one price): it is

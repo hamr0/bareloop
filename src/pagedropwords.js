@@ -11,6 +11,7 @@ import { FACT_LANGS } from './facts.js';
 const WORDS = /** @type {Record<string, (d: Dropped) => string>} */ ({
   'not-on-page': (d) => `"${d.word}" is not written on the page.`,
   'no-value': (d) => `The page never shows a number right after or right before "${d.word}".`,
+  'reads-no-amount': (d) => `The page never shows an amount next to "${d.word}", so it was not used to write the price.`,
   'n2': (d) => `"${d.word}" is written more than once inside one line of the page, so one result cannot show it once.`,
   'r1': (d) => `"${d.word}" does not show the same values as "${d.other}", so it was not used as a second way to read it.`,
   'sign-twice': (d) => `"${d.word}" was listed twice, as a unit and as a currency; it is used once, as the ${d.other === 'unit' ? 'unit' : 'currency'}.`,
@@ -72,7 +73,7 @@ export function dropLine(row, jobLines, rulesOf) {
 // HOW THE PAGE WAS READ (run mvij7kuk, flight-c1): a drop of ONE WORD whose fact is still checked is a NOTE about the form code did not use, not
 // something left unchecked. The sentences for those reasons are WORD-level; every other sentence (a whole fact left out) keeps the line under
 // Not checked. Classified from the line's own words, so it holds for a signed spec already on disk.
-const WORD_REASONS = ['not-on-page', 'no-value', 'n2', 'r1', 'sign-twice', 'r1l', 'limit-currency', 'limit-unit', 'unit-too-long'];
+const WORD_REASONS = ['not-on-page', 'no-value', 'reads-no-amount', 'n2', 'r1', 'sign-twice', 'r1l', 'limit-currency', 'limit-unit', 'unit-too-long'];
 /** @param {string} s */
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const SENTENCE_RE = (() => {

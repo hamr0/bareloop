@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { applyPageRules } from '../src/pagerules.js';
 import { dryReadMoney } from '../src/pagedry.js';
+import { dropSentence } from '../src/pagedropwords.js';
 
 const dell = readFileSync(new URL('./fixtures/pageforms/dell-de.txt', import.meta.url), 'utf8');
 const jobLines = [{ n: 1, text: 'List every laptop on the page with its name and price.', rules: ['price is under 1500 euros'] }];
@@ -43,4 +44,25 @@ test('decimal: a clear-dot page is unchanged', () => {
   const t = lines(['€29.99', '€1,058.47']);
   assert.equal(run(t, fact()).facts[0].decimal, undefined);
   assert.equal(run(t, fact({ decimal: '.' })).facts[0].decimal, '.');
+});
+
+// ── a price form that reads no amount is dropped BEFORE R1L (hamr, 2026-10-27, session smvqxvtrl36vc: unit "ohne MwSt." sits alone on its own line) ──
+test('reads-no-amount: Dell\'s exact AI fact (unit "ohne MwSt.") keeps "€", drops "ohne MwSt." by name, and dry-reads its prices', async () => {
+  const r = run(dell, fact({ unit: ['ohne MwSt.'], lang: 'de', decimal: ',' }));
+  assert.equal(r.facts.length, 1);
+  assert.deepEqual([...(r.facts[0].unit ?? []), ...(r.facts[0].currency ?? [])], ['€'], 'the page writes "1.058,47 €" (spaced), so "€" is kept, filed as the unit');
+  const d = r.dropped.filter((x) => x.word === 'ohne MwSt.');
+  assert.deepEqual(d.map((x) => x.reason), ['reads-no-amount']);
+  assert.match(dropSentence(d[0]), /never shows an amount next to "ohne MwSt\."/);
+  const dry = await dryReadMoney(dell, r.facts);
+  assert.deepEqual(dry.dropped, []);
+});
+
+test('reads-no-amount: a unit that DOES read ("490 total") is unchanged, and when no form reads anything nothing is dropped by this rule', () => {
+  const page = '  - StaticText "Preis" [ref=1]\n  - StaticText "490 total" [ref=2]\n  - StaticText "Preis" [ref=3]\n  - StaticText "12 total" [ref=4]';
+  const r = run(page, fact({ words: ['Preis'], currency: [], unit: ['total'] }));
+  assert.deepEqual(r.facts[0].unit, ['total']);
+  assert.ok(!r.dropped.some((x) => x.reason === 'reads-no-amount'));
+  const none = run('  - StaticText "Preis" [ref=1]\n  - StaticText "ohne MwSt." [ref=2]', fact({ words: ['Preis'], currency: [], unit: ['ohne MwSt.'] }));
+  assert.ok(!none.dropped.some((x) => x.reason === 'reads-no-amount'));
 });
