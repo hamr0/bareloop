@@ -2087,4 +2087,4 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
   4. **"Must not say" checks:** bareguard has no such rule today. No live case yet.
 - **Rules that apply:** gaps 1 and 2 each need a POC with a frozen rule on real unseen pages before any build. Gaps 3 and 4 have no live failure yet, so hamr decides at the discussion whether they are built (§8a). Any missing bareguard primitive becomes a change ask to bareguard, never a local patch.
 - **Status:** PARKED; discuss after the 0.49.0 release.
-- **Status 2026-10-27:** gaps 1 and 2 POC FAILED on frozen rules (F249); bareguard asks written, not yet sent; a second frozen POC follows. Gaps 3 and 4 stay parked (no live case).
+- **Status 2026-10-27:** gap 2 built on `fix/barebrowse-0250` and green live (F251); gap 1 code reader passes, AI label pick fails (POC v4 rule and v5 samples both 3/8, F251) — parked for later, candidates: a weekday between label and date, a number's thousands comma; gaps 3 and 4 stay parked (no live case).
