@@ -14,7 +14,7 @@ import { normLabel } from './labelscan.js';
  * @typedef {{facts: MapFact[]}} PageMap
  * @typedef {{line: number, name: string, shape: string, from: string, words: string[], unit?: string[], currency?: string[], forRule?: number, reading?: Reading, lang?: string, decimal?: string}} KeptFact
  *   `words` = what the page proves: the labels of a money/number/time fact, or the alternative phrases of a phrase fact (a place is a phrase)
- * @typedef {{line: number, rule?: number, fact: string, word?: string, reason: string, other?: string}} Dropped  `other` = what the drop is compared to: the first label (R1), the primary form (R1L), the fact it would have repeated (S1), the phrase it looked for (phrase-no-result)
+ * @typedef {{line: number, rule?: number, fact: string, word?: string, reason: string, other?: string}} Dropped  `other` = what the drop is compared to: the first label (R1), the primary form (R1L), the box a sign listed twice was kept in (sign-twice: unit or currency), the fact it would have repeated (S1), the phrase it looked for (phrase-no-result)
  */
 
 /** @param {unknown} v @returns {v is Record<string, any>} */
@@ -161,6 +161,22 @@ const ORDINALS = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seven
 
 /** the symbols a currency may be (src/facts.js); a code like "EUR" is a word read after the number, so it is a unit */
 const CURRENCY_SYMBOLS = ['$', '€', '£'];
+
+/**
+ * The page FORMS of a currency sign in `lines`: `glued` = right after a number ("29,99€"), `spaced` = after a number and one space ("29,99 €"),
+ * `before` = in front of a number it does not itself follow ("€399", "€ 399").
+ * @param {string[]} lines @param {string} sign @returns {{glued: boolean, spaced: boolean, before: boolean}}
+ */
+function signForms(lines, sign) {
+  let glued = false; let spaced = false; let before = false;
+  for (const [l, i] of occs(lines, sign)) {
+    const head = l.slice(0, i);
+    if (/\d$/.test(head)) glued = true;
+    else if (/\d $/.test(head)) spaced = true;
+    else if (/^ ?\d/.test(l.slice(i + sign.length))) before = true;
+  }
+  return { glued, spaced, before };
+}
 /** the shapes that read a value after a label */
 const VALUE_SHAPES = ['money', 'time', 'number', 'date'];
 
@@ -253,26 +269,36 @@ export function applyPageRules(text, mapping, jobLines) {
       /** @type {string[]} */ let uni = [];
       /** @type {string[]} */ let cur = [];
       if (f.shape === 'money') {
-        // the forms: units first (the U1-moved words, then the AI's listed units), then currency signs. SORT, never drop for the box (money
-        // build v2): the box is position only - a sign (before the number) is a currency, any other form (a word after it) is a unit - so every
-        // form the AI listed in either box is pooled and moved to the box its own shape belongs to
+        // the forms: units first (the U1-moved words, then the AI's listed units), then currency signs. SORT, never drop for the box: the box is
+        // position only. A WORD is a unit. A currency SIGN is filed by how the PAGE writes it next to the number (bareguard 0.27, ruling #68): glued
+        // to the number, after it or before it, is a currency; spaced after it is a unit; both boxes when the page writes both. The box the AI
+        // listed it in does not matter, and a sign listed in both boxes whose page form needs only one is said once ('sign-twice').
         const listedCurrencies = (Array.isArray(f.currency) ? f.currency : []).map(String);
-        // a currency SIGN listed in BOTH unit and currency is said once: the unit copy goes (fwd F71 drafts)
         // bareguard 0.26: two units equal after whitespace normalization are one form, so trim + collapse here and the twins collapse in the pool
-        const listedUnits = (Array.isArray(f.unit) ? f.unit : []).map((u) => String(u).replace(/\s+/g, ' ').trim()).filter((u) => {
-          if (!(CURRENCY_SYMBOLS.includes(u) && listedCurrencies.includes(u))) return true;
-          drop(f, u, 'sign-twice');
-          return false;
-        });
+        const listedUnits = (Array.isArray(f.unit) ? f.unit : []).map((u) => String(u).replace(/\s+/g, ' ').trim());
+        const plainUnits = listedUnits.filter((u) => !CURRENCY_SYMBOLS.includes(u));
+        const plainCurrencies = listedCurrencies.filter((c) => !CURRENCY_SYMBOLS.includes(c));
+        // the lines that hold this fact's label are where its sign sits next to ITS number; with no label (U1 moved it, or none) the whole page
+        const scope = labels.length ? lines.filter((l) => labels.some((w) => l.includes(w))) : lines;
+        /** @type {string[]} */ const signCur = [];
+        /** @type {string[]} */ const signUni = [];
+        for (const sgn of new Set([...listedCurrencies, ...listedUnits].filter((x) => CURRENCY_SYMBOLS.includes(x)))) {
+          let fm = signForms(scope, sgn);
+          if (!fm.glued && !fm.spaced && !fm.before) fm = signForms(lines, sgn);
+          const asCur = fm.glued || fm.before;
+          const asUni = fm.spaced;
+          if (asCur || !asUni) signCur.push(sgn); // a sign with no number next to it stays a currency: the not-on-page / reads-no-result rules speak
+          if (asUni) signUni.push(sgn);
+          if (listedCurrencies.includes(sgn) && listedUnits.includes(sgn) && !(asCur && asUni)) drop(f, sgn, 'sign-twice', asUni ? 'unit' : 'currency');
+        }
         // a WORD listed in both boxes is one form, said once (a record of the double listing is kept, as R1L always said it)
-        for (const w of new Set(listedCurrencies.filter((c) => !CURRENCY_SYMBOLS.includes(c) && listedUnits.includes(c)))) drop(f, w, 'r1l', w);
-        const pool = [...moved, ...listedUnits, ...listedCurrencies];
-        const units = [...new Set(pool.filter((w) => !CURRENCY_SYMBOLS.includes(w)))].filter((u) => {
-          if (countPhrase(text, u) >= 1) return true;
+        for (const w of new Set(plainCurrencies.filter((c) => plainUnits.includes(c)))) drop(f, w, 'r1l', w);
+        const units = [...new Set([...moved, ...plainUnits, ...plainCurrencies, ...signUni])].filter((u) => {
+          if (CURRENCY_SYMBOLS.includes(u) ? countExact(text, u) >= 1 : countPhrase(text, u) >= 1) return true;
           drop(f, u, 'not-on-page');
           return false;
         });
-        const curs = [...new Set(pool.filter((w) => CURRENCY_SYMBOLS.includes(w)))].filter((c) => {
+        const curs = [...new Set(signCur)].filter((c) => {
           if (countExact(text, c) >= 1) return true;
           drop(f, c, 'not-on-page');
           return false;
@@ -280,12 +306,22 @@ export function applyPageRules(text, mapping, jobLines) {
         /** @type {{kind: 'unit'|'currency', w: string}[]} */
         const forms = [...units.map((u) => /** @type {const} */ ({ kind: 'unit', w: u })), ...curs.map((c) => /** @type {const} */ ({ kind: 'currency', w: c }))];
         if (forms.length) {
-          // R1L: every form reads the same set of numbers as the primary (the first form); one that reads more or fewer is dropped
-          const read = (/** @type {{kind: string, w: string}} */ x) => (x.kind === 'unit' ? unitSet(lines, x.w) : curSet(lines, x.w));
+          // R1L: every form reads the same set of numbers as the primary (the first form); one that reads more or fewer is dropped. A sign is read
+          // where the page puts it: after its number (the number right before it) or before it (the number right after it)
+          const read = (/** @type {{kind: string, w: string}} */ x) => {
+            if (!CURRENCY_SYMBOLS.includes(x.w)) return x.kind === 'unit' ? unitSet(lines, x.w) : curSet(lines, x.w);
+            const fm = signForms(lines, x.w);
+            return x.kind === 'unit' || fm.glued || !fm.before ? unitSet(lines, x.w) : curSet(lines, x.w);
+          };
           const ps = read(forms[0]);
           const keep = [forms[0]];
-          // the same word listed as both a unit and a currency is ONE form: it is never compared with itself, only said (the unit, listed first, stays)
-          for (const x of forms.slice(1)) { if (x.w !== forms[0].w && sameSet(read(x), ps)) keep.push(x); else drop(f, x.w, 'r1l', forms[0].w); }
+          // one SIGN filed in both boxes by its page forms is ONE symbol read in two forms (bareguard 0.27 counts the same amount as one price): it is
+          // never compared with itself
+          for (const x of forms.slice(1)) {
+            if (CURRENCY_SYMBOLS.includes(x.w) && x.w === forms[0].w) keep.push(x);
+            else if (x.w !== forms[0].w && sameSet(read(x), ps)) keep.push(x);
+            else drop(f, x.w, 'r1l', forms[0].w);
+          }
           uni = keep.filter((x) => x.kind === 'unit').map((x) => x.w);
           cur = keep.filter((x) => x.kind === 'currency').map((x) => x.w);
         }

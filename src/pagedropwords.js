@@ -13,7 +13,7 @@ const WORDS = /** @type {Record<string, (d: Dropped) => string>} */ ({
   'no-value': (d) => `The page never shows a number right after or right before "${d.word}".`,
   'n2': (d) => `"${d.word}" is written more than once inside one line of the page, so one result cannot show it once.`,
   'r1': (d) => `"${d.word}" does not show the same values as "${d.other}", so it was not used as a second way to read it.`,
-  'sign-twice': (d) => `"${d.word}" was listed twice, as a unit and as a currency; it is used once, as the currency.`,
+  'sign-twice': (d) => `"${d.word}" was listed twice, as a unit and as a currency; it is used once, as the ${d.other === 'unit' ? 'unit' : 'currency'}.`,
   'r1l': (d) => d.word === d.other
     ? `"${d.word}" was listed twice, as a unit and as a currency; it is used once, as the first way to write the price.`
     : `"${d.word}" does not show the same amounts as "${d.other}", so it was not used as a second way to write the price.`,
@@ -80,7 +80,7 @@ const SENTENCE_RE = (() => {
   /** @type {string[]} */
   const alts = [];
   for (const reason of WORD_REASONS) {
-    const probes = reason === 'r1l' ? [{ word: W, other: W }, { word: W, other: O }] : [{ word: W, other: O }];
+    const probes = reason === 'r1l' ? [{ word: W, other: W }, { word: W, other: O }] : reason === 'sign-twice' ? [{ word: W, other: 'currency' }, { word: W, other: 'unit' }] : [{ word: W, other: O }];
     for (const p of probes) alts.push(esc(WORDS[reason](/** @type {any} */ ({ ...p, reason, line: 0, fact: 'f' }))).split(esc(W)).join('[^"]+').split(esc(O)).join('[^"]+'));
   }
   return new RegExp(`^(?:(?:${alts.join('|')})(?: |$))+$`);

@@ -157,3 +157,48 @@ test('drafter: the composer brief and the fact schema carry lang and decimal', a
   assert.match(REQUIRED_FACTS_BRIEF, /whose look line gives a "lang" is signed with that lang/);
   assert.match(REQUIRED_FACTS_BRIEF, /a date as YYYY-MM-DD/);
 });
+
+// ── pagerules.js: a currency sign is filed by how the page writes it next to the number ─────────────────────────────────────
+
+const money = (/** @type {string} */ name, /** @type {any} */ fact) => rules(name, { name: 'price', shape: 'money', words: [], ...fact });
+
+test('sign by page form: a sign GLUED after the number is a currency, whichever box the AI used (saturn "48,49€", ldlc "1 089€")', () => {
+  for (const name of ['saturn-de', 'ldlc-fr']) {
+    const cur = money(name, { currency: ['€'] });
+    assert.deepEqual([cur.facts[0].currency, cur.facts[0].unit], [['€'], undefined], name);
+    const uni = money(name, { unit: ['€'] });
+    assert.deepEqual([uni.facts[0].currency, uni.facts[0].unit], [['€'], undefined], `${name}: listed as a unit, filed as the currency it is`);
+  }
+});
+
+test('sign by page form: a sign SPACED after the number is a unit, whichever box the AI used (thomann "UVP: 429,99 €")', () => {
+  const uni = money('thomann-de', { words: ['UVP:'], unit: ['€'] });
+  assert.deepEqual([uni.facts[0].unit, uni.facts[0].currency], [['€'], undefined]);
+  const cur = money('thomann-de', { words: ['UVP:'], currency: ['€'] });
+  assert.deepEqual([cur.facts[0].unit, cur.facts[0].currency], [['€'], undefined], 'listed as a currency, filed as the unit it is');
+  assert.deepEqual(cur.dropped, []);
+});
+
+test('sign by page form: a sign listed in both boxes whose page form needs ONE box is said once, in the box the page form picks', () => {
+  const sp = money('thomann-de', { words: ['UVP:'], unit: ['€'], currency: ['€'] });
+  assert.deepEqual(sp.dropped.map((d) => [d.word, d.reason, d.other]), [['€', 'sign-twice', 'unit']]);
+  assert.equal(dropSentence(sp.dropped[0]), '"€" was listed twice, as a unit and as a currency; it is used once, as the unit.');
+  assert.deepEqual([sp.facts[0].unit, sp.facts[0].currency], [['€'], undefined]);
+  const gl = money('saturn-de', { unit: ['€'], currency: ['€'] });
+  assert.deepEqual(gl.dropped.map((d) => [d.word, d.reason, d.other]), [['€', 'sign-twice', 'currency']]);
+  assert.match(dropSentence(gl.dropped[0]), /used once, as the currency\.$/);
+  assert.deepEqual([gl.facts[0].unit, gl.facts[0].currency], [undefined, ['€']]);
+});
+
+test('sign by page form: a page that writes the sign BOTH ways (thomann: "UVP: 429,99 €" and "50€") files it in both boxes and keeps both', () => {
+  const r = money('thomann-de', { unit: ['€'], currency: ['€'] });
+  assert.deepEqual(r.dropped, [], 'a sign legally in both boxes is not sign-twice and not r1l');
+  assert.deepEqual([r.facts[0].unit, r.facts[0].currency], [['€'], ['€']]);
+  const one = money('thomann-de', { currency: ['€'] });
+  assert.deepEqual([one.facts[0].unit, one.facts[0].currency], [['€'], ['€']], 'listed in one box only, the page still writes both');
+});
+
+test('sign by page form: a sign before the number stays a currency (the earlier behaviour)', () => {
+  const r = applyPageRules('url: x\n1 chars\nTotal $144\nTotal $200\n', { facts: [{ name: 'price', from: 'line 1', shape: 'money', words: ['Total'], unit: ['$'] }] }, jobLines);
+  assert.deepEqual([r.facts[0].currency, r.facts[0].unit], [['$'], undefined]);
+});

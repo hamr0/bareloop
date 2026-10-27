@@ -10,6 +10,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 ### Added
 
 - **A date in a signed language and a decimal comma can be a fact (F249).** A `date` fact may sign `lang` (`en de fr es it pt nl`) and a `number` or `money` fact `decimal` (`","`); the page-word map may now name `date` and `number` and give `lang` / `decimal`, and is told a label must appear once on its page line and sit right before the value. A signed `lang` whose month names are not on the page, or a `decimal: ","` with no comma-decimal amount on the page, is left under Not checked with a plain reason.
+- **A currency sign is filed by how the page writes it (F249).** A sign glued to the number (`29,99€`, `€399`) is read as a currency, a sign after a space (`29,99 €`) as a unit, and both when the page writes both, whichever box the AI listed it in; a sign legally in both boxes is no longer dropped as listed twice, and a sign listed twice whose page form needs one box says which box it kept.
 
 ### Changed
 
