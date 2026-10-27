@@ -192,6 +192,27 @@ function signForms(lines, sign) {
   }
   return { glued, spaced, before };
 }
+/**
+ * How the page writes the decimals of the amounts a money fact's signs touch (a sign right after a number, spaced or glued, or right before one).
+ * A CLEAR comma amount ends in a comma and exactly two digits ("1.058,47", "17,00"), a CLEAR dot amount in a dot and exactly two ("29.99"); a comma or
+ * dot and exactly three digits ("1,299", "1.299") is ambiguous and counts as neither. Only one kind seen = that mark; both or neither = undefined.
+ * @param {string[]} lines @param {string[]} signs @returns {',' | '.' | undefined}
+ */
+function pageDecimal(lines, signs) {
+  let comma = false; let dot = false;
+  for (const sgn of signs) {
+    for (const [l, i] of occs(lines, sgn)) {
+      const before = /\d[\d.,]*$/.exec(l.slice(0, i).replace(/ $/, ''))?.[0];
+      const after = /^ ?(\d[\d.,]*)/.exec(l.slice(i + sgn.length))?.[1]?.replace(/[.,]+$/, '');
+      for (const n of [before, after]) {
+        if (n === undefined) continue;
+        if (/,\d{2}$/.test(n)) comma = true;
+        else if (/\.\d{2}$/.test(n)) dot = true;
+      }
+    }
+  }
+  return comma === dot ? undefined : comma ? ',' : '.';
+}
 /** the shapes that read a value after a label */
 const VALUE_SHAPES = ['money', 'time', 'number', 'date'];
 
@@ -393,6 +414,13 @@ export function applyPageRules(text, mapping, jobLines) {
     }
     if (p.f.shape === 'date' && p.f.lang !== undefined) out.lang = String(p.f.lang);
     if ((p.f.shape === 'number' || p.f.shape === 'money') && p.f.decimal !== undefined) out.decimal = String(p.f.decimal);
+    // CODE picks the decimal mark of a money fact from how the page writes the amounts its signs touch, over the AI's word when the page is clear
+    // (a "1.058,47 €" page read with "." would read wrong); both kinds or neither, the AI's word stands. A clear dot page keeps what was signed
+    // ("." is the reader's default, so no field is added).
+    if (p.f.shape === 'money') {
+      const mark = pageDecimal(lines, [...(out.currency ?? []), ...(out.unit ?? [])]);
+      if (mark === ',') out.decimal = ',';
+    }
     if (t.rule !== undefined) out.forRule = t.rule;
     if (validReading(out.shape, p.f.reading)) out.reading = /** @type {Reading} */ ({ ...p.f.reading });
     return out;
