@@ -192,6 +192,27 @@ function signForms(lines, sign) {
   }
   return { glued, spaced, before };
 }
+/** the char codes of the digits and of the "." and "," a number is written with */
+const isDigitCode = (/** @type {number} */ c) => c >= 48 && c <= 57;
+const isMarkCode = (/** @type {number} */ c) => c === 46 || c === 44;
+/**
+ * The number that ends a string: its last run of digits, "." and ",", from the run's first digit (undefined when the run holds no digit). One
+ * backward scan, the linear form of /\d[\d.,]*$/ (that one re-scans a long digit run from every digit).
+ * @param {string} s @returns {string | undefined}
+ */
+function numberBefore(s) {
+  let j = s.length;
+  while (j > 0 && (isDigitCode(s.charCodeAt(j - 1)) || isMarkCode(s.charCodeAt(j - 1)))) j--;
+  while (j < s.length && isMarkCode(s.charCodeAt(j))) j++;
+  return j < s.length ? s.slice(j) : undefined;
+}
+/** a number without the "." and "," marks that end it; the linear form of .replace(/[.,]+$/, '') (that one is quadratic on a long run of marks before a digit) @param {string | undefined} n */
+function trimMarks(n) {
+  if (n === undefined) return undefined;
+  let e = n.length;
+  while (e > 0 && isMarkCode(n.charCodeAt(e - 1))) e--;
+  return n.slice(0, e);
+}
 /**
  * How the page writes the decimals of the amounts a money fact's signs touch (a sign right after a number, spaced or glued, or right before one).
  * A CLEAR comma amount ends in a comma and exactly two digits ("1.058,47", "17,00"), a CLEAR dot amount in a dot and exactly two ("29.99"); a comma or
@@ -202,8 +223,8 @@ function pageDecimal(lines, signs) {
   let comma = false; let dot = false;
   for (const sgn of signs) {
     for (const [l, i] of occs(lines, sgn)) {
-      const before = /\d[\d.,]*$/.exec(l.slice(0, i).replace(/ $/, ''))?.[0];
-      const after = /^ ?(\d[\d.,]*)/.exec(l.slice(i + sgn.length))?.[1]?.replace(/[.,]+$/, '');
+      const before = numberBefore(l.slice(0, i).replace(/ $/, ''));
+      const after = trimMarks(/^ ?(\d[\d.,]*)/.exec(l.slice(i + sgn.length))?.[1]);
       for (const n of [before, after]) {
         if (n === undefined) continue;
         if (/,\d{2}$/.test(n)) comma = true;
@@ -227,10 +248,51 @@ const MONTHS_FULL = /** @type {Record<string, string[]>} */ ({
   nl: ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli', 'augustus', 'september', 'oktober', 'november', 'december'],
 });
 /**
- * A comma-decimal amount: a number that stands alone (no digit, comma or point before or after it), its whole part one run of digits or groups of
- * three joined by "." or a space, then a comma and one or two decimals. "133,330 chars" (a thousands-grouped count) is not one.
+ * Does the text hold a comma-decimal amount: a number that stands alone (no digit, comma or point before or after it), its whole part one run of
+ * digits or groups of three joined by "." or a space, then a comma and one or two decimals. "133,330 chars" (a thousands-grouped count) is not one.
+ * The linear form of /(?<![\d,.])\d{1,3}(?:[. ]\d{3})*,\d{1,2}(?![\d,]|\.\d)|(?<![\d,.])\d+,\d{1,2}(?![\d,]|\.\d)/ (that one re-scans a long
+ * run of groups from every group). A start is a digit with no digit, comma or point before it; its digit run is the whole part, or the first group
+ * when the run is up to three digits and groups of three follow, and only the end of that chain can carry the comma.
+ * @param {string} s @returns {boolean}
  */
-const COMMA_DECIMAL = /(?<![\d,.])\d{1,3}(?:[. ]\d{3})*,\d{1,2}(?![\d,]|\.\d)|(?<![\d,.])\d+,\d{1,2}(?![\d,]|\.\d)/;
+function hasCommaDecimal(s) {
+  const n = s.length;
+  const digitsAt = (/** @type {number} */ q) => { let e = q; while (e < n && isDigitCode(s.charCodeAt(e))) e++; return e; };
+  const decimals = (/** @type {number} */ q) => {
+    if (s[q] !== ',') return false;
+    let e = q + 1;
+    while (e < q + 4 && isDigitCode(s.charCodeAt(e))) e++;
+    if (e - q - 1 < 1 || e - q - 1 > 2) return false;
+    return s[e] !== ',' && !(s[e] === '.' && isDigitCode(s.charCodeAt(e + 1)));
+  };
+  /** where the chain of ([. ]\d{3}) groups that starts at a position ends; each position is walked once @type {Map<number, number>} */
+  const chainEnd = new Map();
+  const endOf = (/** @type {number} */ from) => {
+    /** @type {number[]} */
+    const path = [];
+    let q = from; let end;
+    for (;;) {
+      const seen = chainEnd.get(q);
+      if (seen !== undefined) { end = seen; break; }
+      path.push(q);
+      if ((s[q] === '.' || s[q] === ' ') && isDigitCode(s.charCodeAt(q + 1)) && isDigitCode(s.charCodeAt(q + 2)) && isDigitCode(s.charCodeAt(q + 3))) q += 4;
+      else { end = q; break; }
+    }
+    for (const x of path) chainEnd.set(x, end);
+    return end;
+  };
+  for (let p = 0; p < n;) {
+    if (!isDigitCode(s.charCodeAt(p))) { p++; continue; }
+    const d = digitsAt(p);
+    const prev = p === 0 ? 0 : s.charCodeAt(p - 1);
+    if (p === 0 || !(isDigitCode(prev) || isMarkCode(prev))) {
+      if (decimals(d)) return true;
+      if (d - p <= 3 && decimals(endOf(d))) return true;
+    }
+    p = d;
+  }
+  return false;
+}
 
 /**
  * Apply the rules to the AI's map over one saved page. Returns the kept facts and, for everything a rule removed, one `dropped` entry.
@@ -266,7 +328,7 @@ export function applyPageRules(text, mapping, jobLines) {
       const months = Object.hasOwn(MONTHS_FULL, String(f.lang)) ? MONTHS_FULL[String(f.lang)] : [];
       if (!months.some((m) => countPhrase(text, m) >= 1)) { drop(f, undefined, 'lang-not-on-page', String(f.lang)); return false; }
     }
-    if ((f.shape === 'number' || f.shape === 'money') && f.decimal === ',' && !COMMA_DECIMAL.test(squash(text))) { drop(f, undefined, 'decimal-not-on-page', ','); return false; }
+    if ((f.shape === 'number' || f.shape === 'money') && f.decimal === ',' && !hasCommaDecimal(squash(text))) { drop(f, undefined, 'decimal-not-on-page', ','); return false; }
     return true;
   });
 

@@ -24,6 +24,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **A page line with a very long run of digits no longer slows drafting.** The price-mark read, its trailing-mark trim and the comma-decimal page check are now linear (a 40,000-digit line took about 2 seconds, now milliseconds); what they return is unchanged.
 - **A page that loads only its menus, or times out, is fetched up to 3 times.** A web address whose page came back as just the site's header and menus (seen on a Dell laptop page, fine on the next try) used to stop drafting at once. Now the whole fetch is tried again, with a fresh browser and a 3 second pause, up to 3 attempts in all; only a menus-only page or a timeout is retried (a refused address, a bot check, any other load error or an empty page stops on the first try). If all 3 fail the stop reads the same with "(tried 3 times)" added. One attempt still waits at most 90 seconds, so a page that keeps timing out can take about 4.5 minutes before it stops.
 - **A money fact's decimal mark is picked by code from how the page writes its prices.** The mark comes from the amounts next to the fact's currency sign (a comma and two digits, like "1.058,47 €"), so a fact the page-map AI signed without a decimal, or with the wrong one, still reads (live: Dell de-de laptops).
 - **Panel: a `~` rule line in "The job" box shows `~` in the gutter, as fwdloop does.** Numbering is unchanged.
