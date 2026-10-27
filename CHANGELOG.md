@@ -11,6 +11,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 - **A date in a signed language and a decimal comma can be a fact (F249).** A `date` fact may sign `lang` (`en de fr es it pt nl`) and a `number` or `money` fact `decimal` (`","`); the page-word map may now name `date` and `number` and give `lang` / `decimal`, and is told a label must appear once on its page line and sit right before the value. A signed `lang` whose month names are not on the page, or a `decimal: ","` with no comma-decimal amount on the page, is left under Not checked with a plain reason.
 - **A currency sign is filed by how the page writes it (F249).** A sign glued to the number (`29,99€`, `€399`) is read as a currency, a sign after a space (`29,99 €`) as a unit, and both when the page writes both, whichever box the AI listed it in; a sign legally in both boxes is no longer dropped as listed twice, and a sign listed twice whose page form needs one box says which box it kept.
+- **A page-form fact's claim text is written as the quote spells the value (F249).** For a fact that signs `lang` or `decimal` the worker's value stays canonical (`2026-10-26`, `1057.65`, bareguard's typed binding) but the text bareguard scans for numbers is now the quote's own spelling (`26 October 2026`, `1.057,65`), taken from bareguard's evidence span, so a correct value is no longer red on "the number is not in the quote". Facts that sign neither are checked once, as before.
 
 ### Changed
 

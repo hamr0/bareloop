@@ -174,11 +174,17 @@ export function factDecides(part) {
  * from the values the worker gave (the worker writes no claim text): `name: value; name: value`. A phrase fact contributes its
  * own signed words. A result that is not an object, or has no string quote, still becomes a claim — an empty one — so
  * bareguard reds it by name rather than the result vanishing.
- * @param {any} part @param {unknown} results @returns {{claim: string, quote: string, values?: Record<string, string>}[]}
+ *
+ * A fact that signs a page form (`lang` or `decimal`) carries a CANONICAL value ("2026-10-26", "1057.65": bareguard's typed binding, `values.d<j>`),
+ * but bareguard's number scan compares the claim TEXT with the quote's own digits, so the text must spell the value the way the quote does
+ * ("26 October 2026", "1.057,65"). That spelling is `asWritten[result][fact index]`: the value span bareguard itself reported for that quote
+ * ({@link writtenSpans}); a fact with no span there reads the value the worker gave.
+ * @param {any} part @param {unknown} results @param {(Record<number, string>|undefined)[]} [asWritten]
+ * @returns {{claim: string, quote: string, values?: Record<string, string>}[]}
  */
-export function factClaims(part, results) {
+export function factClaims(part, results, asWritten = []) {
   const list = Array.isArray(results) ? results : [];
-  return list.map((/** @type {any} */ r) => {
+  return list.map((/** @type {any} */ r, /** @type {number} */ i) => {
     const given = isRec(r) && isRec(r.values) ? r.values : null;
     /** @type {Record<string, string>} */
     const values = {};
@@ -189,10 +195,34 @@ export function factClaims(part, results) {
       const v = given && Object.hasOwn(given, f.name) ? given[f.name] : undefined;
       // a JSON number is the value as written ("389"): converted, never repaired; anything else is left for bareguard to red
       const s = typeof v === 'number' && Number.isFinite(v) ? String(v) : v;
-      if (typeof s === 'string') { values[`d${j}`] = s; said.push(`${f.name}: ${s}`); } else if (s !== undefined) { /** @type {any} */ (values)[`d${j}`] = s; }
+      if (typeof s === 'string') { values[`d${j}`] = s; said.push(`${f.name}: ${asWritten[i]?.[j] ?? s}`); } else if (s !== undefined) { /** @type {any} */ (values)[`d${j}`] = s; }
     });
     return { claim: said.join('; '), quote: isRec(r) && typeof r.quote === 'string' ? r.quote : '', values };
   });
+}
+
+/**
+ * Where bareguard read each page-form fact's value inside each quote, as the quote spells it: from `checkStep`'s `full.evidence` (one entry per
+ * claim: `text` = the normalized quote the decides ran on, `spans` = where each decide read its anchor, value and unit/currency). Only a fact that
+ * signs `lang` or `decimal` is looked up; the span is the decide's `value` span (the one equal to the claim's own value when bareguard flags it).
+ * @param {any} part @param {any[]|undefined} evidence @returns {(Record<number, string>|undefined)[]} per claim index
+ */
+export function writtenSpans(part, evidence) {
+  /** @type {(Record<number, string>|undefined)[]} */
+  const out = [];
+  for (const e of Array.isArray(evidence) ? evidence : []) {
+    if (!isRec(e) || !Number.isInteger(e.claim) || typeof e.text !== 'string' || !Array.isArray(e.spans)) continue;
+    /** @type {Record<number, string>} */
+    const row = {};
+    part.facts.forEach((/** @type {any} */ f, /** @type {number} */ j) => {
+      if (f.lang === undefined && f.decimal === undefined) return;
+      const mine = e.spans.filter((/** @type {any} */ sp) => isRec(sp) && sp.decide === j && sp.role === 'value' && Number.isInteger(sp.start) && Number.isInteger(sp.end));
+      const sp = mine.find((/** @type {any} */ x) => x.matched === true) ?? mine[0];
+      if (sp) row[j] = e.text.slice(sp.start, sp.end);
+    });
+    if (Object.keys(row).length) out[e.claim] = row;
+  }
+  return out;
 }
 
 /** @param {unknown} n @param {string} shape @param {any} f @returns {string} one bound, as the person would say it */

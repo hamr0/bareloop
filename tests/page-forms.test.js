@@ -202,3 +202,74 @@ test('sign by page form: a sign before the number stays a currency (the earlier 
   const r = applyPageRules('url: x\n1 chars\nTotal $144\nTotal $200\n', { facts: [{ name: 'price', from: 'line 1', shape: 'money', words: ['Total'], unit: ['$'] }] }, jobLines);
   assert.deepEqual([r.facts[0].currency, r.facts[0].unit], [['$'], undefined]);
 });
+
+// ── the claim text is written as the quote writes the value; the typed value stays canonical (real bareguard 0.27.0) ──────────
+
+import { createHash } from 'node:crypto';
+import { factClaims, writtenSpans } from '../src/facts.js';
+import { gradeStep } from '../src/rubricstep.js';
+
+/** grade one result of a fact part over a fixture page with the real bareguard: `fact` is the signed fact, `quote` a page line, `value` what the worker wrote */
+async function grade(/** @type {string} */ name, /** @type {any} */ fact, /** @type {string} */ quote, /** @type {string} */ value) {
+  const text = page(name);
+  assert.ok(quote !== '' && text.includes(quote), `the quote is a real line of ${name}`);
+  const params = { step: 1, parts: [{ text: 'x', class: 'fact', source: 'page', covers: [1], facts: [{ name: 'fact', ...fact }] }] };
+  return gradeStep({ params, bytes: JSON.stringify({ results: [{ quote, values: { fact: value } }] }), outputBytes: null, inputs: { page: text } }, { page: createHash('sha256').update(text).digest('hex') });
+}
+const GOV = '- link "E5 Defence Ministers\' Statement: 26 October 2026" [ref=2434]';
+const DE = '- heading "Letzte Änderung: 16. Januar 2026" [level=4] [ref=50]';
+const ES = '- heading "Última actualización: 16 de enero de 2026" [level=4] [ref=50]';
+
+test('claims: a canonical date reads green against the quote\'s own spelling - govuk "26 October 2026", stripe-de "16. Januar 2026", stripe-es "16 de enero de 2026"', async () => {
+  const g = await grade('govuk-en', { shape: 'date', anchor: "E5 Defence Ministers' Statement:", lang: 'en' }, GOV, '2026-10-26');
+  assert.deepEqual([g.verdict, g.gapLines], ['green', []]);
+  const d = await grade('stripe-de', { shape: 'date', anchor: 'Letzte Änderung:', lang: 'de' }, DE, '2026-01-16');
+  assert.deepEqual([d.verdict, d.gapLines], ['green', []]);
+  const e = await grade('stripe-es', { shape: 'date', anchor: 'Última actualización:', lang: 'es' }, ES, '2026-01-16');
+  assert.deepEqual([e.verdict, e.gapLines], ['green', []]);
+});
+
+test('claims: a canonical amount reads green against a decimal comma - saturn "48,49€" (glued), thomann "1.057,65 €" (spaced, dot thousands), ldlc "1 089€" (space thousands)', async () => {
+  const lineOf = (/** @type {string} */ name, /** @type {string} */ part) => page(name).split('\n').find((l) => l.includes(part)) ?? '';
+  const sa = await grade('saturn-de', { shape: 'money', currency: ['€'], decimal: ',' }, lineOf('saturn-de', '48,49€').trim(), '48.49');
+  assert.deepEqual([sa.verdict, sa.gapLines], ['green', []]);
+  const th = await grade('thomann-de', { shape: 'money', anchor: 'UVP:', unit: ['€'], decimal: ',' }, lineOf('thomann-de', '1.057,65').trim(), '1057.65');
+  assert.deepEqual([th.verdict, th.gapLines], ['green', []]);
+  const ld = await grade('ldlc-fr', { shape: 'money', currency: ['€'], decimal: ',' }, lineOf('ldlc-fr', '089€').trim(), '1089');
+  assert.deepEqual([ld.verdict, ld.gapLines], ['green', []]);
+});
+
+test('claims: the typed binding is untouched - a wrong canonical value is red, and the value spelled as the quote writes it is not a canonical value', async () => {
+  const wrong = await grade('govuk-en', { shape: 'date', anchor: "E5 Defence Ministers' Statement:", lang: 'en' }, GOV, '2026-10-27');
+  assert.equal(wrong.verdict, 'red');
+  assert.match(wrong.gapLines.join('\n'), /the value is not what the quote holds/);
+  const spelled = await grade('govuk-en', { shape: 'date', anchor: "E5 Defence Ministers' Statement:", lang: 'en' }, GOV, '26 October 2026');
+  assert.equal(spelled.verdict, 'red');
+  assert.match(spelled.gapLines.join('\n'), /the value is not written as a value of this kind/);
+  const comma = await grade('thomann-de', { shape: 'money', anchor: 'UVP:', unit: ['€'], decimal: ',' }, page('thomann-de').split('\n').find((l) => l.includes('429,99'))?.trim() ?? '', '429,99');
+  assert.equal(comma.verdict, 'red', 'a comma in a claim value under decimal "," is never read');
+});
+
+test('claims: factClaims writes the text from the as-written span, values stay canonical; with no span, or a fact signing no page form, the text is the worker\'s value as before', () => {
+  const part = { facts: [{ name: 'when', shape: 'date', lang: 'de' }, { name: 'price', shape: 'money', unit: ['€'] }] };
+  const r = [{ quote: 'q', values: { when: '2026-01-16', price: '389' } }];
+  assert.deepEqual(factClaims(part, r, [{ 0: '16. Januar 2026' }])[0], { claim: 'when: 16. Januar 2026; price: 389', quote: 'q', values: { d0: '2026-01-16', d1: '389' } });
+  assert.equal(factClaims(part, r)[0].claim, 'when: 2026-01-16; price: 389');
+});
+
+test('claims: writtenSpans reads bareguard\'s evidence - the value span of a page-form fact, nothing for a fact with no page form or a quote bareguard could not read', () => {
+  const part = { facts: [{ name: 'when', shape: 'date', lang: 'de' }, { name: 'price', shape: 'money', unit: ['€'] }] };
+  const ev = [
+    { check: 'p1-facts', claim: 0, text: 'Letzte Änderung: 16. Januar 2026', spans: [{ decide: 0, role: 'anchor', start: 0, end: 16 }, { decide: 0, role: 'value', start: 17, end: 32, matched: true }, { decide: 1, role: 'value', start: 0, end: 3 }] },
+    { check: 'p1-facts', claim: 1, spans: [] },
+  ];
+  assert.deepEqual(writtenSpans(part, ev), [{ 0: '16. Januar 2026' }]);
+  assert.deepEqual(writtenSpans(part, undefined), []);
+});
+
+test('claims: a fact part with no page form is checked once and its claim text is the worker\'s value (no change to any earlier spec)', async () => {
+  const text = 'Total: $389 for 2';
+  const params = { step: 1, parts: [{ text: 'x', class: 'fact', source: 'page', covers: [1], facts: [{ name: 'fact', shape: 'money', anchor: 'Total:', currency: ['$'] }] }] };
+  const g = await gradeStep({ params, bytes: JSON.stringify({ results: [{ quote: text, values: { fact: '389' } }] }), outputBytes: null, inputs: { page: text } }, { page: createHash('sha256').update(text).digest('hex') });
+  assert.equal(g.verdict, 'green');
+});
