@@ -14854,3 +14854,25 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 - [READING] The new layout is what made the train page answerable; not measured, because DeepSeek was never run on the old act train layout.
 - Outcome: barebrowse data mode is the real win (adopt once published, after a $0 replay on saved pages). Jev stays PARKED: accurate and cheap, not needed for accuracy.
 - Honest limit: 35 questions on 3 pages is underpowered for a general claim.
+
+## F249 — rubric gaps 1 and 2 POC: both FAIL on their frozen rules (2026-10-27; $0.0292, 7 DeepSeek deepseek-flash calls, nothing built)
+
+**Grounded in:** the addendum "Addendum 2026-10-26 — rubric gaps 1 and 2: POC pre-registration (FROZEN)" in `docs/product/ITEM33-BUILD.md` (frozen at 9513c8a, nothing changed after); raw files `.claude/scratch/rubric-gaps/` (`FROZEN.md`, `key.json`, `stepA1.out.json`, `stepA2.out.json`, `stepB1.out.json`, `stepB1.calls.jsonl`; untracked scratch). Reader: bareguard 0.26.0 `evalDecide`; the product's own `applyPageRules` and `dryReadMoney`.
+
+**Verdicts (right / wrong / miss; pass = 5 of 6 right and zero wrong).**
+- [MEASURED] Gap 1, step A (code only, $0, the label I expected): 2 right / 1 wrong / 3 miss of 6 pages. FAIL.
+- [MEASURED] Gap 1, step B (AI map, 7 calls, $0.0292): 1 right / 2 wrong / 3 miss. FAIL.
+- [MEASURED] Gap 2 (money, sign after or code before the number): 0 read on every form, no wrong price. Sign after 0 of 16 key lines, decimal comma 0 of 10, code before 0 of 3 (one page, declared underpowered). FAIL on all three forms.
+
+**Causes, each from the outputs or source.**
+- [CODE] bareguard's date reader is ISO only (`readDate`, rubric-locate.js:429; "a string that is exactly one real ISO date", line 408). Only go.dev (written "2026-02-10") read. FOSDEM ("5 October 2026") and 40C3 ("13. Oktober 2026") read nothing, in both steps.
+- [MEASURED] Label and value sit on different page lines on 3 of the 6 gap-1 pages (ruby, fosdem, ccc). The reader takes one line, so step A reads `value-none` on each (stepA1 g1-ruby, g1-fosdem, g1-ccc). A layout limit, not a bug.
+- [MEASURED] The AI picks labels that are not unique or are headers. Step B go: "(released" matches 77 lines holding 28 different dates, so the answer is wrong. Step B steam: "of the" matches the recent-reviews line (2210) and the English-reviews line (174655), wrong. Ruby, fosdem and ccc: the AI named "Release Date" or the date text itself as the label, no value after it, miss. Goodreads "Average rating of" was the only right step B page.
+- [CODE] Our side: `applyPageRules` always sorts a currency sign into `currency`, even when it follows the number (the pool at src/pagerules.js:239-240 puts every `CURRENCY_SYMBOLS` entry in `curs`, never in units; a sign listed in both boxes is dropped as `sign-twice`, line 234). The marker-after fact is then dropped or kept with nothing to read (stepA2: ikea-de, lidl, ikea-es `reads-no-result`; kaufland kept but 0 of 18 read). The lidl-de diagnostic, outside the frozen rule and not scored, read 3 of 3 prices when "€" was filed as a unit.
+- [MEASURED] bareguard cannot read a glued sign (ikea-de "Preis 299.00€", ikea-es "29,99€"), a decimal comma (cdiscount, kaufland: `value-none` on "99,00 €", "149,99 €"), or a code before the number (ikea-ch "CHF 126.65": `no-value:Preis`, 0 of 3).
+
+**The addendum's slip.** The frozen addendum says four of the six gap 2 pages share a shop family. The true count is three IKEA locales (ikea-de, ikea-ch, ikea-es). Noted here; the frozen addendum is not edited.
+
+**Honest limits.** Six pages per gap is small N; the stated up-front expectation was a FAIL on the non-ISO and split-line pages, and that is the result. Step B did not get a fair label on the split-line pages. Code-before is one page.
+
+**Next.** Asks were sent to the bareguard session on 2026-10-27: non-ISO dates, decimal comma, glued sign, and code-before (reopens ruling #37). Our side, to be tested in a second frozen POC on new unseen pages: (1) a sign after the number filed as a unit; (2) the map prompt tells the AI to name a label that is unique on its line and sits right before the value. Nothing is built until that POC passes.
