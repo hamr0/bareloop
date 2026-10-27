@@ -53,7 +53,7 @@ const listOf = (shape) => /** @type {any} */ (['money', 'number', 'date', 'time'
  * What the page-word map (src/pagemap.js) KEPT and DROPPED for one input: the sets the second proof reads. A look from the old search-and-read
  * path has no `dropped` list, so it gives null and the label is proved against the code-made list as before.
  * @param {{facts?: any[], dropped?: (import('./pagerules.js').Dropped & {source?: string})[]}|null|undefined} look @param {string} source
- * @returns {{labels: Set<string>, units: Set<string>, currencies: Set<string>, words: Set<string>, dropped: Map<string, import('./pagerules.js').Dropped>}|null}
+ * @returns {{labels: Set<string>, units: Set<string>, currencies: Set<string>, words: Set<string>, dropped: Map<string, import('./pagerules.js').Dropped>, forms: {labels: Set<string>, lang?: string, decimal?: string}[]}|null}
  */
 export function keptSetOf(look, source) {
   if (!look || !Array.isArray(look.dropped)) return null;
@@ -68,6 +68,8 @@ export function keptSetOf(look, source) {
     currencies: set(facts.flatMap((f) => f.currency ?? [])),
     words: set(facts.flatMap((f) => [...f.words, ...(f.unit ?? []), ...(f.currency ?? [])])),
     dropped,
+    forms: facts.filter((f) => f.shape !== 'phrase' && (f.lang !== undefined || f.decimal !== undefined))
+      .map((f) => ({ labels: new Set(f.words.map((w) => normLabel(String(w)))), lang: f.lang, decimal: f.decimal })),
   };
 }
 
@@ -117,6 +119,15 @@ export function checkFactWords({ part, text, line, scan = scanLabels(text), kept
         // (a sort tab, a switch) is in no result, so no one-result quote can hold it
         const n = part.count.min;
         red('rubric-fact-label-rare', `${who}: the label ${JSON.stringify(row.label)} is in the input "${src}" only ${row.count} time${row.count === 1 ? '' : 's'}, but this line asks for ${n} results, so a label that sits in each result must be there at least ${n} times. Pick a label from the list that is counted ${n} or more times.`);
+      }
+    }
+    // a look fact that carries lang / decimal: the signed fact must sign the same, or a drafter that drops it signs a fact that reds at run time
+    if (kept && f.anchor !== undefined && f.shape !== 'phrase') {
+      const mine = kept.forms.filter((k) => k.labels.has(normLabel(String(f.anchor))));
+      if (mine.length && !mine.some((k) => (k.lang === undefined || k.lang === f.lang) && (k.decimal === undefined || k.decimal === (f.decimal ?? '.')))) {
+        const k = mine[0];
+        const [field, value] = k.lang !== undefined && k.lang !== f.lang ? ['lang', k.lang] : ['decimal', k.decimal];
+        reds.push({ code: 'rubric-fact-form-unsigned', detail: `line ${line}: the fact ${JSON.stringify(f.name)} must sign ${field} ${JSON.stringify(value)}, as the page look found. Nothing spent.` });
       }
     }
     if (f.until !== undefined) dropRed('closing label', f.until);

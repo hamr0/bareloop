@@ -9,6 +9,7 @@ import { FACT_LANGS, factShapeReds, factDecides, factSentence, factBrief } from 
 import { MAP_SHAPES, mapPrompt, parseMapAnswer } from '../src/pagemap.js';
 import { applyPageRules } from '../src/pagerules.js';
 import { dropSentence } from '../src/pagedropwords.js';
+import { checkDeclarationWords } from '../src/factwords.js';
 import { lookFactOf, renderLookReport } from '../src/inputlook.js';
 
 const page = (/** @type {string} */ name) => readFileSync(new URL(`./fixtures/pageforms/${name}.txt`, import.meta.url), 'utf8');
@@ -354,4 +355,39 @@ test('S1 name: "last updated" / "last modified" are allowed; "last flight" and e
   assert.equal(rules('stripe-de', { name: 'last updated', shape: 'date', words: ['Letzte Änderung:'], lang: 'de' }).facts.length, 1);
   assert.equal(rules('stripe-es', { name: 'last updated', shape: 'date', words: ['Última actualización:'], lang: 'es' }).facts.length, 1);
   assert.equal(rules('stripe-en', { name: 'last updated', shape: 'date', words: ['Last updated:'], lang: 'en' }).facts.length, 1);
+});
+
+// ── factwords.js: the drafter must copy lang / decimal from the look ─────────────────────────────────────────────────────────
+
+test('validation: a signed fact whose look fact carries lang or decimal must sign the same value, or it is red at $0 (the REAL checkDeclarationWords)', () => {
+  const text = page('stripe-de');
+  const look = {
+    facts: [
+      { line: 2, name: 'released', shape: 'date', source: 'page', words: ['Letzte Änderung:'], lang: 'de' },
+      { line: 3, name: 'price', shape: 'money', source: 'page', words: ['UVP:'], unit: ['€'], decimal: ',' },
+    ],
+    dropped: [],
+  };
+  const decl = (/** @type {any} */ fact) => ({ stages: [{ kind: 'rubric-step', params: { step: 2, parts: [{ class: 'fact', source: 'page', facts: [fact] }] } }] });
+  const run = (/** @type {any} */ fact, /** @type {string} */ t = text) => checkDeclarationWords(decl(fact), { page: t }, look).filter((r) => r.code === 'rubric-fact-form-unsigned');
+  const date = { name: 'released', shape: 'date', anchor: 'Letzte Änderung:' };
+  assert.deepEqual(run({ ...date, lang: 'de' }), [], 'copied: clean');
+  const dropped = run(date);
+  assert.equal(dropped.length, 1, 'a dropped lang is red');
+  assert.equal(dropped[0].detail, 'line 2: the fact "released" must sign lang "de", as the page look found. Nothing spent.');
+  assert.equal(run({ ...date, lang: 'fr' }).length, 1, 'a different lang is red');
+  const money = { name: 'price', shape: 'money', anchor: 'UVP:', unit: ['€'] };
+  const m = run(money, 'UVP: 1.057,65 €');
+  assert.equal(m.length, 1);
+  assert.match(m[0].detail, /must sign decimal ",", as the page look found\. Nothing spent\.$/);
+  assert.deepEqual(run({ ...money, decimal: ',' }, 'UVP: 1.057,65 €'), []);
+  // a look fact with neither field asks for nothing
+  const plain = { facts: [{ line: 2, name: 'released', shape: 'date', source: 'page', words: ['Letzte Änderung:'] }], dropped: [] };
+  assert.deepEqual(checkDeclarationWords(decl(date), { page: text }, plain).filter((r) => r.code === 'rubric-fact-form-unsigned'), []);
+});
+
+test('the drafter brief says what the red says: copy lang and decimal from the look', async () => {
+  const { REQUIRED_FACTS_BRIEF } = await import('../src/authorflow.js');
+  assert.match(REQUIRED_FACTS_BRIEF, /signed with that lang.*signed with that decimal; copy it exactly/s);
+  assert.match(REQUIRED_FACTS_BRIEF, /refused at \$0, nothing spent/);
 });

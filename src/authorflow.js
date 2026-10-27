@@ -1447,7 +1447,7 @@ export const REQUIRED_FACTS_BRIEF = 'REQUIRED FACTS — what a line that finds, 
   + 'Copy the forms the look gives for the fact, in its order (the first is the main one); a form the look does not give is refused at $0.\n'
   + ' - A word the look lists under NOT CHECKED or LEFT OUT is never used in a fact - not as a label, a closing label, a unit or a currency - and is refused at $0 with the reason if you do. '
   + 'A fact or ~ rule listed under NOT CHECKED is not turned into a check: code lists it under Not checked for the person, so you do not write it into "refused" yourself.\n'
-  + ' - A date fact whose look line gives a "lang" is signed with that lang, and a number or money fact whose look line gives a "decimal" is signed with that decimal; copy it exactly. "lang" goes on a date only and "decimal" on a number or money only. '
+  + ' - A date fact whose look line gives a "lang" is signed with that lang, and a number or money fact whose look line gives a "decimal" is signed with that decimal; copy it exactly (a fact that does not is refused at $0, nothing spent). "lang" goes on a date only and "decimal" on a number or money only. '
   + 'For such a fact the worker writes the value in one canonical form (a date as YYYY-MM-DD, an amount with a point before the decimals), not as the quote writes it. A fact the look lists under NOT CHECKED for its month names or its decimal comma is not signed.\n'
   + ' - When one result holds several values of one kind (leaves / arrives, subtotal / total) give the fact an anchor, the label that sits right before the value you mean.\n'
   + ' - Set aiProposal true on a fact whose number you made out of their words.\n'
