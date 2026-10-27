@@ -1250,8 +1250,8 @@ export function isRubricFilesManifest(manifest) {
  * so run start can fetch it again); a `search:` line is a named refusal (a later build); so is a relative path, a missing file, a folder, a file over
  * {@link RUBRIC_INPUT_MAX_BYTES}, and text that is not valid UTF-8. Every refusal is plain words naming the line and
  * ends "Nothing spent." — nothing here touches a model.
- * @param {{inputs: {n: number, label: string, value: string}[], into: string, destination?: string, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>}} o `fetchUrl` - how a web address is read (default barebrowse via `fetchPageText`; a test injects a stub, never the network)
- * @returns {Promise<{ok: true, prep: {stop: null, into: string, tree: string, manifestPath: string, manifest: Record<string, any>}}|{ok: false, error: string, code: string}>}
+ * @param {{inputs: {n: number, label: string, value: string}[], into: string, destination?: string, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string, attempts?: {chars: number, ms: number, head: string}[]}>}} o `fetchUrl` - how a web address is read (default barebrowse via `fetchPageText`; a test injects a stub, never the network)
+ * @returns {Promise<{ok: true, prep: {stop: null, into: string, tree: string, manifestPath: string, manifest: Record<string, any>}}|{ok: false, error: string, code: string, attempts?: {chars: number, ms: number, head: string}[]}>}
  */
 export async function proveRubricInputs({ inputs, into, destination, fetchUrl = (u) => fetchPageText(u) }) {
   /** @param {string} code @param {number} n @param {string} msg @returns {{ok: false, error: string, code: string}} */
@@ -1273,7 +1273,7 @@ export async function proveRubricInputs({ inputs, into, destination, fetchUrl = 
     labels.add(label.toLowerCase());
     if (isWebUrl(value)) {
       const got = await fetchUrl(value.trim());
-      if (!got.ok) return bad('input-url-unreadable', n, `${got.error.replace(/(?<![.\s])[.\s]+$/, '')}.`);
+      if (!got.ok) return { ...bad('input-url-unreadable', n, `${got.error.replace(/(?<![.\s])[.\s]+$/, '')}.`), ...(got.attempts?.length ? { attempts: got.attempts } : {}) };
       const pageBuf = Buffer.from(got.text, 'utf8');
       const leak = secretPatternNames(got.text);
       if (leak.length) return bad('input-url-secret', n, `the page at ${got.url} carries a known secret shape (${leak.join(', ')}) - refused, secrets never enter a job.`);

@@ -776,6 +776,8 @@ export function createSession(card, deps = {}) {
     if (RUBRIC_FILES) {
       const proved = await proveRubricInputs({ inputs: INPUTS, into, destination: card.destination, ...(deps.fetchUrl ? { fetchUrl: deps.fetchUrl } : {}) });
       prep = proved.ok ? proved.prep : { stop: proved.error, code: proved.code };
+      // what each header-only page read came back with (already secret-masked at capture), so the next live failure shows it
+      if (!proved.ok && proved.attempts?.length) appendDraftLog(outDir, { kind: 'page-fetch-attempts', no: Math.max(0, state.steps.length - 1), attempts: proved.attempts, at: new Date().toISOString() });
     } else {
       prep = await prepareSource({
         source: SOURCE, into, ...(isRepoLike || destIsDir ? { destination: card.destination } : {}),

@@ -93,7 +93,7 @@ test('fetchPageText: an empty or near-empty page, a bot challenge, a thrown erro
   /** @param {string|((b: any) => any)} snap @param {{timeoutMs?: number, gotoThrows?: Error}} [o] */
   const stop = async (snap, { timeoutMs = 1000, gotoThrows } = {}) => {
     const b = lateFillBrowser({ partial: String(snap), full: String(snap), gotoThrows });
-    const r = await fetchPageText(URL1, { connect: b.connect, timeoutMs, retryWaitMs: 0 });
+    const r = await fetchPageText(URL1, { connect: b.connect, timeoutMs, retryWaitMs: 0, settleMs: 0 });
     assert.equal(b.state.closed, 1, 'closed');
     return r;
   };
@@ -111,7 +111,7 @@ test('fetchPageText: an empty or near-empty page, a bot challenge, a thrown erro
   // a hang inside the page: the deadline fires and the browser is still closed
   /** @type {number} */
   let closed = 0;
-  const hang = await fetchPageText(URL1, { timeoutMs: 30, closeWaitMs: 200, retryWaitMs: 0, connect: async () => ({ goto: () => new Promise(() => {}), waitForNetworkIdle: async () => {}, snapshot: async () => '', close: async () => { closed += 1; } }) });
+  const hang = await fetchPageText(URL1, { timeoutMs: 30, closeWaitMs: 200, retryWaitMs: 0, settleMs: 0, connect: async () => ({ goto: () => new Promise(() => {}), waitForNetworkIdle: async () => {}, snapshot: async () => '', close: async () => { closed += 1; } }) });
   assert.match(String(!hang.ok && hang.error), /no answer inside .*\(tried 3 times\)/);
   assert.equal(closed, 3, 'each attempt closed its own browser');
 });
@@ -123,7 +123,7 @@ const PARTIAL = readFileSync(new URL('./fixtures/page-partial.txt', import.meta.
 test('fetchPageText (L2): a page that is only the site header and menus (the real 719-character fetch) is a plain-words stop even though it is over the 200-character floor; the real 8,801-character partial page is read', async () => {
   assert.ok(HEADER_ONLY.trim().length >= MIN_PAGE_CHARS, 'it passes the old size floor - that is the bug');
   assert.equal(pageContentChars(HEADER_ONLY), 0, 'nothing outside the banner');
-  const header = await fetchPageText(URL1, { connect: lateFillBrowser({ partial: HEADER_ONLY, full: HEADER_ONLY }).connect, retryWaitMs: 0 });
+  const header = await fetchPageText(URL1, { connect: lateFillBrowser({ partial: HEADER_ONLY, full: HEADER_ONLY }).connect, retryWaitMs: 0, settleMs: 0 });
   assert.equal(header.ok, false);
   assert.match(String(!header.ok && header.error), /only the site's own header and menus.*\(tried 3 times\)/);
   // the partial page has a search form and 3 flights outside the banner: it is content (a PARTIAL page is L1's job, not L2's)
@@ -158,31 +158,31 @@ test('fetchPageText (retry): header-only or a timeout is fetched again, up to 3 
   assert.equal(FETCH_ATTEMPTS, 3);
   assert.equal(RETRY_WAIT_MS, 3000);
   const a = scriptedBrowser([HEADER_ONLY, HEADER_ONLY, PARTIAL]);
-  const ok = await fetchPageText(URL1, { connect: a.connect, retryWaitMs: 0 });
+  const ok = await fetchPageText(URL1, { connect: a.connect, retryWaitMs: 0, settleMs: 0 });
   assert.equal(ok.ok, true);
   assert.equal(a.state.connects, 3);
   assert.equal(a.state.closed, 3);
   const b = scriptedBrowser([HEADER_ONLY]);
-  const bad = await fetchPageText(URL1, { connect: b.connect, retryWaitMs: 0 });
+  const bad = await fetchPageText(URL1, { connect: b.connect, retryWaitMs: 0, settleMs: 0 });
   assert.equal(bad.ok, false);
   assert.match(String(!bad.ok && bad.error), /only the site's own header and menus.*\(tried 3 times\)$/);
   assert.equal(b.state.connects, 3);
   assert.equal(b.state.closed, 3);
   const c = scriptedBrowser([new Error('Navigation timeout of 30000 ms exceeded'), PARTIAL]);
-  assert.equal((await fetchPageText(URL1, { connect: c.connect, retryWaitMs: 0 })).ok, true);
+  assert.equal((await fetchPageText(URL1, { connect: c.connect, retryWaitMs: 0, settleMs: 0 })).ok, true);
   assert.equal(c.state.connects, 2);
   assert.equal(c.state.closed, 2);
   // our own deadline is a timeout too
   let n = 0;
   const hangThenOk = async () => { n += 1; return n === 1 ? { goto: () => new Promise(() => {}), waitForNetworkIdle: async () => {}, snapshot: async () => '', close: async () => {} } : { goto: async () => {}, waitForNetworkIdle: async () => {}, snapshot: async () => PARTIAL, close: async () => {} }; };
-  assert.equal((await fetchPageText(URL1, { connect: hangThenOk, timeoutMs: 30, closeWaitMs: 50, retryWaitMs: 0 })).ok, true);
+  assert.equal((await fetchPageText(URL1, { connect: hangThenOk, timeoutMs: 30, closeWaitMs: 50, retryWaitMs: 0, settleMs: 0 })).ok, true);
   assert.equal(n, 2);
 });
 
 test('fetchPageText (retry): a refused or private address, another load error, a bot challenge and a near-empty page are tried once only', async () => {
   for (const step of [new Error('blocked: private network address refused'), new Error('net::ERR_NAME_NOT_RESOLVED'), `[BOT CHALLENGE DETECTED]\n${'x'.repeat(500)}`, 'x'.repeat(MIN_PAGE_CHARS - 1)]) {
     const b = scriptedBrowser([step, PARTIAL]);
-    const r = await fetchPageText(URL1, { connect: b.connect, retryWaitMs: 0 });
+    const r = await fetchPageText(URL1, { connect: b.connect, retryWaitMs: 0, settleMs: 0 });
     assert.equal(r.ok, false, String(step));
     assert.doesNotMatch(String(!r.ok && r.error), /tried 3 times/);
     assert.equal(b.state.connects, 1, String(step));
@@ -365,4 +365,76 @@ test('proveRubricInputs: an unreadable-page reason made of 10000 ". " pairs befo
   assert.equal(!bad.ok && bad.code, 'input-url-unreadable');
   assert.match(String(!bad.ok && bad.error), /x\. Nothing spent\.$/);
   assert.ok(performance.now() - t0 < 1000, `took ${performance.now() - t0} ms`);
+});
+
+/** a connect() whose pages' snapshot() is header-only for the first `emptyFor[k]` calls of attempt k, then PARTIAL (Infinity = never); records snapshots per attempt */
+function settlingBrowser(/** @type {number[]} */ emptyFor, content = PARTIAL) {
+  const state = { connects: 0, closed: 0, snaps: /** @type {number[]} */ ([]) };
+  const connect = async () => {
+    const k = state.connects;
+    state.connects += 1;
+    state.snaps.push(0);
+    return {
+      async goto() {},
+      async waitForNetworkIdle() {},
+      async snapshot() { state.snaps[k] += 1; return state.snaps[k] > (emptyFor[Math.min(k, emptyFor.length - 1)] ?? 0) ? content : HEADER_ONLY; },
+      async close() { state.closed += 1; },
+    };
+  };
+  return { connect, state };
+}
+
+test('fetchPageText (settle): a header-only snapshot is re-read on the same open page until content shows up - content on the 3rd snapshot of attempt 1 is ok with ONE connect', async () => {
+  const b = settlingBrowser([2]);
+  const r = await fetchPageText(URL1, { connect: b.connect, retryWaitMs: 0, settleMs: 5000, settleIntervalMs: 1 });
+  assert.equal(r.ok, true);
+  assert.equal(b.state.connects, 1);
+  assert.deepEqual(b.state.snaps, [3]);
+  assert.equal(b.state.closed, 1);
+});
+
+test('fetchPageText (settle): no content inside the settle budget moves to attempt 2, which may settle', async () => {
+  const b = settlingBrowser([Infinity, 1]);
+  const r = await fetchPageText(URL1, { connect: b.connect, retryWaitMs: 0, settleMs: 30, settleIntervalMs: 5 });
+  assert.equal(r.ok, true);
+  assert.equal(b.state.connects, 2);
+  assert.ok(b.state.snaps[0] >= 2, 'attempt 1 re-read its page');
+  assert.equal(b.state.closed, 2);
+});
+
+test('fetchPageText (settle): three header-only attempts are "(tried 3 times)", every page is closed, and attempts carries three short masked records', async () => {
+  const secret = 'sk-ant-api03-' + 'A'.repeat(40);
+  const page = HEADER_ONLY + `\n  - StaticText "token ${secret}"`;
+  const b = settlingBrowser([Infinity], page);
+  const r = await fetchPageText(URL1, { connect: b.connect, retryWaitMs: 0, settleMs: 20, settleIntervalMs: 5 });
+  assert.equal(r.ok, false);
+  assert.match(String(!r.ok && r.error), /only the site's own header and menus.*\(tried 3 times\)$/);
+  assert.equal(b.state.closed, 3);
+  const attempts = !r.ok ? r.attempts ?? [] : [];
+  assert.equal(attempts.length, 3);
+  for (const a of attempts) {
+    assert.equal(typeof a.chars, 'number');
+    assert.ok(a.ms >= 15, String(a.ms));
+    assert.ok(a.head.length > 0 && a.head.length <= 300);
+    assert.ok(!a.head.includes(secret));
+    assert.ok(!/^url: /.test(a.head));
+  }
+});
+
+test('fetchPageText (settle): the per-attempt hard bound still wins over a long settle budget', async () => {
+  const b = settlingBrowser([Infinity]);
+  const t0 = Date.now();
+  const r = await fetchPageText(URL1, { connect: b.connect, retryWaitMs: 0, timeoutMs: 60, settleMs: 60_000, settleIntervalMs: 5, closeWaitMs: 200 });
+  assert.ok(Date.now() - t0 < 2000, 'bounded by timeoutMs, not settleMs');
+  assert.equal(r.ok, false);
+  assert.match(String(!r.ok && r.error), /no answer inside .*\(tried 3 times\)/);
+  assert.equal(b.state.closed, 3);
+});
+
+test('proveRubricInputs (settle): the fetch attempts ride the refusal so the draft log can keep them', async (t) => {
+  const into = tmp(t, 'bl-settle-');
+  const rec = [{ chars: 0, ms: 5, head: 'Menu' }];
+  const r = await proveRubricInputs({ inputs: [{ n: 1, label: 'page', value: URL1 }], into, fetchUrl: async () => ({ ok: false, error: 'x came back with only the site\'s own header and menus (tried 3 times)', attempts: rec }) });
+  assert.equal(r.ok, false);
+  assert.deepEqual(!r.ok && r.attempts, rec);
 });
