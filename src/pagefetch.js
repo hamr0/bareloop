@@ -30,7 +30,11 @@ export const MIN_PAGE_CHARS = 200;
 export const MIN_CONTENT_CHARS = 100;
 /** the page reader's landmark roles for a site's own chrome (the ARIA names of header, menu and footer); everything under one is not the page's content */
 const CHROME_ROLES = new Set(['banner', 'navigation', 'contentinfo']);
-/** our own deadline around one whole fetch (a hung browser leaves no trace; this is the only thing that fires on the absence of an answer) */
+/** how many times one fetch is tried when it comes back header-only or times out (a real Dell page was header-only on one try and whole on the next) */
+export const FETCH_ATTEMPTS = 3;
+/** the pause between attempts (ms) */
+export const RETRY_WAIT_MS = 3000;
+/** our own deadline around ONE attempt (a fetch that retries can take up to FETCH_ATTEMPTS of these, plus the pauses); a hung browser leaves no trace, this is the only thing that fires on the absence of an answer */
 export const PAGE_FETCH_TIMEOUT_MS = 90_000;
 
 /** @param {unknown} v @returns {boolean} an http(s) address (the one spelling of "this Inputs value is a web address") */
@@ -72,11 +76,14 @@ export function pageContentChars(text) {
 
 /**
  * Fetch one page's text. `connect` is injected (a test never reaches the network); the default is barebrowse's own `connect`.
+ * The whole fetch (own browser, own page, closed each time) is tried up to FETCH_ATTEMPTS times, but ONLY when an attempt ends header-only (the page
+ * loaded its menus and not its content) or times out (our deadline, or the page load's own timeout). A bot challenge, a refused or private address, any
+ * other load error, a near-empty page and a non-text answer are final on the first attempt.
  * @param {string} url
- * @param {{connect?: (opts: Record<string, any>) => Promise<FetchPage>, timeoutMs?: number, idleMs?: number, idleTimeoutMs?: number, closeWaitMs?: number}} [o]
+ * @param {{connect?: (opts: Record<string, any>) => Promise<FetchPage>, timeoutMs?: number, idleMs?: number, idleTimeoutMs?: number, closeWaitMs?: number, retryWaitMs?: number}} [o] `retryWaitMs` - the pause between attempts (a test passes 0)
  * @returns {Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>} `error` is plain words, without a spend line
  */
-export async function fetchPageText(url, { connect, timeoutMs = PAGE_FETCH_TIMEOUT_MS, idleMs = NETWORK_IDLE_MS, idleTimeoutMs = NETWORK_IDLE_TIMEOUT_MS, closeWaitMs = 3000 } = {}) {
+export async function fetchPageText(url, { connect, timeoutMs = PAGE_FETCH_TIMEOUT_MS, idleMs = NETWORK_IDLE_MS, idleTimeoutMs = NETWORK_IDLE_TIMEOUT_MS, closeWaitMs = 3000, retryWaitMs = RETRY_WAIT_MS } = {}) {
   let u;
   try { u = new URL(url.trim()); } catch { return { ok: false, error: `${url} is not a web address bareloop can read` }; }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return { ok: false, error: `${url} is not an http or https address` };
@@ -88,6 +95,24 @@ export async function fetchPageText(url, { connect, timeoutMs = PAGE_FETCH_TIMEO
   else {
     try { open = /** @type {any} */ ((await import('barebrowse')).connect); } catch (e) { return { ok: false, error: `the page reader (barebrowse) could not be loaded: ${/** @type {Error} */ (e).message}` }; }
   }
+  /** @type {{ok: false, error: string}} */
+  let last = { ok: false, error: '' };
+  for (let attempt = 1; attempt <= FETCH_ATTEMPTS; attempt += 1) {
+    const r = await attemptOnce(u, open, { timeoutMs, idleMs, idleTimeoutMs, closeWaitMs });
+    if (r.ok || !r.retry) return r.ok ? r : { ok: false, error: r.error };
+    last = { ok: false, error: r.error };
+    if (attempt < FETCH_ATTEMPTS && retryWaitMs > 0) await new Promise((res) => setTimeout(res, retryWaitMs));
+  }
+  return { ok: false, error: `${last.error} (tried ${FETCH_ATTEMPTS} times)` };
+}
+
+/**
+ * ONE attempt: opens its own browser and page and always closes them. `retry: true` marks the two endings worth another go (header-only, timeout).
+ * @param {URL} u @param {(opts: Record<string, any>) => Promise<FetchPage>} open
+ * @param {{timeoutMs: number, idleMs: number, idleTimeoutMs: number, closeWaitMs: number}} o
+ * @returns {Promise<{ok: true, text: string, url: string}|{ok: false, error: string, retry: boolean}>}
+ */
+async function attemptOnce(u, open, { timeoutMs, idleMs, idleTimeoutMs, closeWaitMs }) {
   /** @type {NodeJS.Timeout|undefined} */
   let timer;
   /** @type {Promise<FetchPage>|undefined} */
@@ -103,16 +128,18 @@ export async function fetchPageText(url, { connect, timeoutMs = PAGE_FETCH_TIMEO
         try { await p.waitForNetworkIdle({ idle: idleMs, timeout: idleTimeoutMs }); } catch { /* read what is there */ }
         return p.snapshot({ ...SNAPSHOT_OPTIONS });
       })(),
-      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`no answer inside ${Math.round(timeoutMs / 1000)} seconds`)), timeoutMs); }),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error(`no answer inside ${Math.round(timeoutMs / 1000)} seconds`), { deadline: true })), timeoutMs); }),
     ]);
-    if (typeof text !== 'string') return { ok: false, error: `${u.href} did not come back as text` };
-    if (/\[BOT CHALLENGE DETECTED\]/.test(text)) return { ok: false, error: `${u.href} asked for a human check (a bot challenge), so the page could not be read` };
+    if (typeof text !== 'string') return { ok: false, retry: false, error: `${u.href} did not come back as text` };
+    if (/\[BOT CHALLENGE DETECTED\]/.test(text)) return { ok: false, retry: false, error: `${u.href} asked for a human check (a bot challenge), so the page could not be read` };
     const size = text.trim().length;
-    if (size < MIN_PAGE_CHARS) return { ok: false, error: `${u.href} came back with ${size === 0 ? 'no text' : `only ${size} characters of text`} (less than ${MIN_PAGE_CHARS}) - the page did not load, or holds nothing to read` };
-    if (pageContentChars(text) < MIN_CONTENT_CHARS) return { ok: false, error: `${u.href} came back with only the site's own header and menus - the page did not load its content, so there is nothing to read` };
+    if (size < MIN_PAGE_CHARS) return { ok: false, retry: false, error: `${u.href} came back with ${size === 0 ? 'no text' : `only ${size} characters of text`} (less than ${MIN_PAGE_CHARS}) - the page did not load, or holds nothing to read` };
+    if (pageContentChars(text) < MIN_CONTENT_CHARS) return { ok: false, retry: true, error: `${u.href} came back with only the site's own header and menus - the page did not load its content, so there is nothing to read` };
     return { ok: true, text, url: u.href };
   } catch (e) {
-    return { ok: false, error: `${u.href} could not be read: ${/** @type {Error} */ (e)?.message ?? String(e)}` };
+    const msg = /** @type {Error} */ (e)?.message ?? String(e);
+    const timedOut = /** @type {any} */ (e)?.deadline === true || /time[d ]?-?out/i.test(msg);
+    return { ok: false, retry: timedOut, error: `${u.href} could not be read: ${msg}` };
   } finally {
     if (timer !== undefined) clearTimeout(timer);
     // always close the browser, also when the deadline fired while it was still starting or loading
