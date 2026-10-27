@@ -273,3 +273,66 @@ test('claims: a fact part with no page form is checked once and its claim text i
   const g = await gradeStep({ params, bytes: JSON.stringify({ results: [{ quote: text, values: { fact: '389' } }] }), outputBytes: null, inputs: { page: text } }, { page: createHash('sha256').update(text).digest('hex') });
   assert.equal(g.verdict, 'green');
 });
+
+// ── pagedry.js: the dry read follows the forms the fact signs ─────────────────────────────────────────────────────────────────
+
+import { moneyResultLines, dryReadMoney } from '../src/pagedry.js';
+import { numberAtEndComma } from '../src/pagerules.js';
+
+/** a kept money fact as applyPageRules leaves it */
+const kept = (/** @type {any} */ f) => ({ line: 1, name: 'price', shape: 'money', from: 'line 1', words: [], ...f });
+const valuesOf = (/** @type {string} */ name, /** @type {any} */ f) => moneyResultLines(page(name), kept(f)).map((r) => r.value);
+
+test('dry read: a decimal comma is read as a comma - "48,49€" is 48.49, never 4849 (saturn, glued sign, no label)', () => {
+  assert.deepEqual(valuesOf('saturn-de', { currency: ['€'], decimal: ',' }), ['48.49', '39.99', '89.00', '29.99']);
+});
+
+test('dry read: dot thousands and spaced sign under a label (thomann "UVP: 1.057,65 €" is 1057.65, "UVP: 1.369 €" is 1369)', () => {
+  const v = valuesOf('thomann-de', { words: ['UVP:'], unit: ['€'], decimal: ',' });
+  assert.ok(v.includes('429.99') && v.includes('1369') && v.includes('529') && v.includes('1057.65'), v.join(' '));
+  assert.ok(!v.includes('105765') && !v.includes('1.057'), 'no grouping mark is left in a value');
+});
+
+test('dry read: space thousands with a glued sign and no label (ldlc "1 089€" with a no-break space is 1089)', () => {
+  assert.deepEqual(valuesOf('ldlc-fr', { currency: ['€'], decimal: ',' }), ['799', '1089', '1449', '1049']);
+});
+
+test('dry read: a page that writes the sign both ways is read in both - a glued "50€" and the spaced prices', () => {
+  const v = valuesOf('thomann-de', { unit: ['€'], currency: ['€'], decimal: ',' });
+  assert.ok(v.includes('50'), 'the glued form is a candidate line');
+  assert.ok(v.includes('429.99'), 'so is the spaced form');
+});
+
+test('dry read: a fact with no decimal is read as before (thousands commas, a point before the decimals)', () => {
+  const t = 'url: x\n1 chars\nTotal $1,299.50 for 2\nTotal $144\n';
+  assert.deepEqual(moneyResultLines(t, kept({ words: ['Total'], currency: ['$'] })).map((r) => r.value), ['1299.50', '144']);
+});
+
+test('dry read: the real checker reads every candidate line of each signed form (end to end, real bareguard 0.27.0)', async () => {
+  for (const [name, f, n] of /** @type {[string, any, number][]} */ ([
+    ['saturn-de', { currency: ['€'], decimal: ',' }, 4],
+    ['ldlc-fr', { currency: ['€'], decimal: ',' }, 4],
+    ['thomann-de', { words: ['UVP:'], unit: ['€'], decimal: ',' }, 4],
+  ])) {
+    const r = await dryReadMoney(page(name), [kept(f)]);
+    assert.deepEqual(r.dropped, [], name);
+    assert.equal(r.facts.length, 1, name);
+    assert.ok(r.reads.price >= n, `${name}: the checker read ${r.reads.price} lines, at least ${n} expected`);
+  }
+});
+
+test('dry read: without the signed decimal the same page reads nothing it can use - the fact is dropped as reads-no-result (the POC result)', async () => {
+  const r = await dryReadMoney(page('saturn-de'), [kept({ currency: ['€'] })]);
+  assert.deepEqual(r.dropped.map((d) => d.reason), ['reads-no-result']);
+});
+
+test('numberAtEndComma: the number at the end as the page writes it; a longer run is not cut; a long digit run costs nothing', () => {
+  assert.equal(numberAtEndComma('UVP: 1.057,65 '), '1.057,65');
+  assert.equal(numberAtEndComma('x 1 089'), '1 089');
+  assert.equal(numberAtEndComma('x 48,49'), '48,49');
+  assert.equal(numberAtEndComma('no number here'), undefined);
+  assert.equal(numberAtEndComma(`${'7'.repeat(40)}`), undefined, 'a run longer than any price is not one');
+  const t0 = Date.now();
+  assert.equal(numberAtEndComma(`${'1'.repeat(100000)} 12`), '12');
+  assert.ok(Date.now() - t0 < 200);
+});

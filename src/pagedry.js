@@ -8,13 +8,16 @@
 
 import { createHash } from 'node:crypto';
 import { gradeStep } from './rubricstep.js';
-import { linesOf, numberAtEnd } from './pagerules.js';
+import { linesOf, numberAtEnd, numberAtEndComma, NUM_COMMA } from './pagerules.js';
 
 /** @typedef {import('./pagerules.js').KeptFact} KeptFact @typedef {import('./pagerules.js').Dropped} Dropped */
 
 /** a number as the page writes it, thousands commas allowed */
 const NUM = '\\d[\\d,]*(?:\\.\\d+)?';
 const AFTER_LABEL = new RegExp(`^\\s*(?:[$€£]\\s*)?(${NUM})`);
+const AFTER_LABEL_COMMA = new RegExp(`^\\s*(?:[$€£]\\s*)?(${NUM_COMMA})`);
+/** the symbols a currency may be; one right before a number reads the number after it */
+const SIGNS = ['$', '€', '£'];
 /** the label every dry-read claim is made under (the checker only needs one name; the fact's own is not read) */
 const CLAIM = 'price';
 const SOURCE = 'page';
@@ -38,12 +41,20 @@ async function greenLines(text, sha, fact, claim, lines) {
 
 /**
  * The result lines of a kept money fact: with a label, every page line where a kept label is followed by a number (one sign between allowed);
- * with no label (U1 moved it to a unit, e.g. "€533 total"), every line where a number is followed by a kept unit.
+ * with no label (U1 moved it to a unit, e.g. "€533 total", or a sign alone, e.g. "48,49€"), every line where a number sits right before a kept
+ * unit or sign, or right after a kept sign. A fact that signs `decimal: ","` is read in that form: groups of three joined by "." or a space, a comma
+ * before the decimals. The value is always the CANONICAL amount ("1057.65"): the typed value a claim carries, never the page's spelling.
+ * A LOOSE finder (it only collects): whether the run's checker can read the line is `gradeStep`'s to say.
  * @param {string} text @param {KeptFact} k @returns {{quote: string, value: string}[]}
  */
 export function moneyResultLines(text, k) {
   const raw = text.split('\n');
   const squashed = linesOf(text);
+  const comma = k.decimal === ',';
+  const afterLabel = comma ? AFTER_LABEL_COMMA : AFTER_LABEL;
+  const endNumber = comma ? numberAtEndComma : numberAtEnd;
+  /** the page's amount as a canonical decimal string */
+  const canon = (/** @type {string} */ a) => (comma ? a.replace(/[. ]/g, '').replace(',', '.') : a.replace(/,/g, ''));
   /** @type {{quote: string, value: string}[]} */
   const out = [];
   squashed.forEach((ln, i) => {
@@ -51,16 +62,19 @@ export function moneyResultLines(text, k) {
     let amount;
     if (k.words.length) {
       for (const w of k.words) {
-        for (let at = ln.indexOf(w); at !== -1 && amount === undefined; at = ln.indexOf(w, at + w.length)) amount = AFTER_LABEL.exec(ln.slice(at + w.length))?.[1];
+        for (let at = ln.indexOf(w); at !== -1 && amount === undefined; at = ln.indexOf(w, at + w.length)) amount = afterLabel.exec(ln.slice(at + w.length))?.[1];
         if (amount !== undefined) break;
       }
     } else {
-      for (const u of k.unit ?? []) {
-        for (let at = ln.indexOf(u); at !== -1 && amount === undefined; at = ln.indexOf(u, at + u.length)) amount = numberAtEnd(ln.slice(0, at));
+      for (const u of [...(k.unit ?? []), ...(k.currency ?? [])]) {
+        for (let at = ln.indexOf(u); at !== -1 && amount === undefined; at = ln.indexOf(u, at + u.length)) {
+          amount = endNumber(ln.slice(0, at));
+          if (amount === undefined && SIGNS.includes(u)) amount = afterLabel.exec(ln.slice(at + u.length))?.[1];
+        }
         if (amount !== undefined) break;
       }
     }
-    if (amount !== undefined) out.push({ quote: raw[i].trim(), value: amount.replace(/,/g, '') });
+    if (amount !== undefined) out.push({ quote: raw[i].trim(), value: canon(amount) });
   });
   return out;
 }
@@ -69,7 +83,7 @@ export function moneyResultLines(text, k) {
  * The fact as a run would sign it, for the dry read: the primary label is the anchor (none when U1 moved every label), then the kept units and currencies.
  * @param {KeptFact} k @returns {Record<string, any>}
  */
-const signedOf = (k) => ({ name: CLAIM, shape: 'money', ...(k.words.length ? { anchor: k.words[0] } : {}), ...(k.currency ? { currency: k.currency } : {}), ...(k.unit ? { unit: k.unit } : {}) });
+const signedOf = (k) => ({ name: CLAIM, shape: 'money', ...(k.words.length ? { anchor: k.words[0] } : {}), ...(k.currency ? { currency: k.currency } : {}), ...(k.unit ? { unit: k.unit } : {}), ...(k.decimal === undefined ? {} : { decimal: k.decimal }) });
 
 /**
  * Dry-read every kept money fact; drop (as `reads-no-result`) the ones whose forms read no result line. Other facts pass through untouched.

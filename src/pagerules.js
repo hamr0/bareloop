@@ -125,6 +125,21 @@ export function numberAtEnd(s) {
   const p = firstDigit(e);
   return p === -1 ? undefined : s.slice(p, e);
 }
+/** a number as a page writes it where the decimal mark is a comma: groups of three joined by "." or a space (or none), then an optional comma and decimals */
+export const NUM_COMMA = '\\d{1,3}(?:[. ]\\d{3})+(?:,\\d+)?|\\d+(?:,\\d+)?';
+/**
+ * {@link numberAtEnd} for a comma-decimal page: the number written at the very end of `s` (only whitespace after it), as the page writes it
+ * ("1.057,65", "1 089", "48,49"). Only the last 24 characters are read (no price is longer), so a long run of digits cannot cost more than that.
+ * @param {string} s @returns {string|undefined}
+ */
+export function numberAtEndComma(s) {
+  const t = s.trimEnd();
+  const tail = t.slice(-24);
+  const m = new RegExp(`(?<![\\d,.])(?:${NUM_COMMA})$`).exec(tail);
+  // a match that starts the tail while the text goes on to the left of it may be the end of a longer run: not a number of its own
+  if (!m || (m.index === 0 && t.length > tail.length && /[\d,.]/.test(t[t.length - tail.length - 1]))) return undefined;
+  return m[0];
+}
 const AFTER = new RegExp(`^\\s*(?:[$€£]\\s*)?(${NUM})`);
 const AFTER_CUR = new RegExp(`^\\s*(${NUM})`);
 const stripCommas = (/** @type {string} */ s) => s.replace(/,/g, '');
