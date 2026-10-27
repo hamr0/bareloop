@@ -230,7 +230,8 @@ export function applyPageRules(text, mapping, jobLines) {
 
   // ---- S1, name part: a fact whose name counts results is refused before anything else reads it ----
   const named = all.filter((f) => {
-    const hit = String(f.name ?? '').toLowerCase().split(/[^a-z]+/).find((w) => ORDINALS.includes(w));
+    // "last" directly followed by a word ending in "ed" ("last updated", "last modified") names WHEN a thing changed, not which result: it is not a counting name
+    const hit = String(f.name ?? '').toLowerCase().split(/[^a-z]+/).find((w, i, ws) => ORDINALS.includes(w) && !(w === 'last' && /ed$/.test(ws[i + 1] ?? '')));
     if (hit === undefined) return true;
     drop(f, undefined, 's1-name');
     return false;

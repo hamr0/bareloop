@@ -336,3 +336,22 @@ test('numberAtEndComma: the number at the end as the page writes it; a longer ru
   assert.equal(numberAtEndComma(`${'1'.repeat(100000)} 12`), '12');
   assert.ok(Date.now() - t0 < 200);
 });
+
+// ── S1, name part: "last updated" is a date's name, not a count ───────────────────────────────────────────────────────────────
+
+test('S1 name: "last updated" / "last modified" are allowed; "last flight" and every other ordinal stay refused', () => {
+  const stripe = (/** @type {string} */ name) => rules('stripe-en', { name, shape: 'date', words: ['Last updated:'] });
+  for (const name of ['last updated', 'Last modified', 'last edited date']) {
+    const r = stripe(name);
+    assert.equal(r.dropped.some((d) => d.reason === 's1-name'), false, name);
+    assert.equal(r.facts.length, 1, name);
+  }
+  for (const name of ['last flight', 'last', 'the last', 'first updated', 'latest updated', 'next updated', 'last the updated', 'updated last']) {
+    const r = stripe(name);
+    assert.deepEqual(r.dropped.map((d) => d.reason), ['s1-name'], name);
+  }
+  // the real stripe pages: the fact a person means by "last updated" reads in en, de and es
+  assert.equal(rules('stripe-de', { name: 'last updated', shape: 'date', words: ['Letzte Änderung:'], lang: 'de' }).facts.length, 1);
+  assert.equal(rules('stripe-es', { name: 'last updated', shape: 'date', words: ['Última actualización:'], lang: 'es' }).facts.length, 1);
+  assert.equal(rules('stripe-en', { name: 'last updated', shape: 'date', words: ['Last updated:'], lang: 'en' }).facts.length, 1);
+});
