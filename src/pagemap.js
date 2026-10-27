@@ -65,6 +65,7 @@ export function parseMapAnswer(text) {
   /** @type {any} */
   let m;
   try { m = JSON.parse(String(text ?? '').trim()); } catch { return { ok: false }; }
+  const notBlank = (/** @type {string} */ w) => w.trim() !== '';
   const strs = (/** @type {unknown} */ v) => Array.isArray(v) && v.every((x) => typeof x === 'string');
   if (m === null || typeof m !== 'object' || Array.isArray(m) || !Array.isArray(m.facts)) return { ok: false };
   for (const f of m.facts) {
@@ -74,6 +75,10 @@ export function parseMapAnswer(text) {
     for (const k of ['currency', 'unit']) if (f[k] !== undefined && !strs(f[k])) return { ok: false };
     if (f.lang !== undefined && !(typeof f.lang === 'string' && MAP_LANGS.includes(f.lang))) return { ok: false };
     if (f.decimal !== undefined && !(f.decimal === '.' || f.decimal === ',')) return { ok: false };
+    // a blank entry (empty or only spaces) names nothing: it is left out here, with no note, and the rest of the fact stands. This is not a JSON
+    // repair - the answer was well-formed; a list left empty is absent (words stays a list, `[]`: the fact then reads by its signs alone)
+    f.words = f.words.filter(notBlank);
+    for (const k of ['currency', 'unit']) if (f[k] !== undefined) { f[k] = f[k].filter(notBlank); if (f[k].length === 0) delete f[k]; }
     // PRD v1.107 Part 5b: a `reading` is a limit of the signed-rule shape on a time or money fact; any other is a malformed answer (no repair)
     if (f.reading !== undefined && !validReading(f.shape, f.reading)) return { ok: false };
   }

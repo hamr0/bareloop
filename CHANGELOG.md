@@ -29,6 +29,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **Panel: a `~` rule line in "The job" box shows `~` in the gutter, as fwdloop does.** Numbering is unchanged.
 - **A price form that reads no amount on the page is dropped before the same-value rule.** A unit such as "ohne MwSt." sitting alone on its own line has no amount next to it, so it is now dropped first and the form that does read ("€") is kept, instead of the whole price fact falling to Not checked (seen live on Dell de-de laptops).
 - **A page that loads only its site menus is re-read on the same open page until it settles.** The page is read again every 2 seconds for up to 20 seconds before a try counts as failed. A failed fetch now records what each try saw (size, time, the first 300 characters, secret-masked) in the draft log.
+- **A blank word in the AI's page answer is left out.** An empty or spaces-only entry in a fact's words, currencies or units names nothing; it is dropped when the answer is read, with no note, and a list left empty counts as absent. It no longer shows as `"" is not written on the page.`.
+- **A `~` rule whose fact is checked no longer also shows under Not checked.** The blank unit above made the page-read note unreadable to the splitter, so a kept fact's word notes were listed as Not checked; they now sit under how the page was read. A rule whose fact really drops still shows under Not checked.
 
 ## [0.49.0] - 2026-10-26
 
