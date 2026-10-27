@@ -14876,3 +14876,24 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 **Honest limits.** Six pages per gap is small N; the stated up-front expectation was a FAIL on the non-ISO and split-line pages, and that is the result. Step B did not get a fair label on the split-line pages. Code-before is one page.
 
 **Next.** Asks written on 2026-10-27 in `.claude/scratch/rubric-gaps/GUARD-ASK.md`, NOT yet sent (no bareguard session open): non-ISO dates, decimal comma, glued sign, and code-before (reopens ruling #37). Our side, to be tested in a second frozen POC on new unseen pages: (1) a sign after the number filed as a unit; (2) the map prompt tells the AI to name a label that is unique on its line and sits right before the value. Nothing is built until that POC passes.
+
+## F250 — fit check said NO to a whole-list ask on a page full of laptops (2026-10-27; $0.0067 for the one fit-check call, DeepSeek deepseek-flash; nothing built)
+
+**Grounded in:** panel draft session `smvqz6h1bnc5k` (job `dell-price2`, page `https://www.dell.com/de-de/shop/laptops/scr/laptop`): `~/.config/bareloop/panel-sessions/smvqz6h1bnc5k/draft-log.jsonl`, the saved page `.../source-seed/tree/input/page.txt`, the run spine `.../source-seed/dell-price2-bareloop/u-mvr0vlrz.jsonl`, the output `/home/hamr/Documents/bareloop-out/steps/1-2026-10-27-2.json`. Code: `src/fitcheck.js` (`decideFit`). Untracked files outside the repo.
+
+**What happened.**
+- [MEASURED] The fit-check call (label `fit-check`, $0.0067) answered the ask "List every laptop on the page" with `found:false, quote:null`, and "with its name and price" with `found:true`, quote "Dell 15-Laptop".
+- [MEASURED] The person was shown: "I found 1 of 2 of your asks on this page. Not found: List every laptop on the page (line 1). Type go on to keep drafting, or anything else to stop and change the job or the page."
+- [MEASURED] That NO was wrong. The drafting copy of the page (read by the main session at about 17:46 UTC, before the run; the file was since overwritten by the run-start refetch) had 20 "€" lines and laptop headings such as "Alienware 18 Area-51 Gaming Laptop", "Dell 14 Plus-Laptop", "Dell 15-Laptop", "Dell 16-Laptop", "Dell Pro 16-Laptop". The current file (the run-start copy) has 16 "€" lines and 10 heading lines containing "Laptop".
+- [MEASURED] The same job on the same Dell page passed the fit check (`state: fits`, same ask wording) on 5 earlier drafts the same day: `smvqvq2r097my` (16:08 UTC), `smvqxav4j9l8y` (16:52), `smvqxvtrl36vc` (17:08), `smvqy4faa1kje` (17:15), `smvqyl9u3hzum` (17:15 to 17:45). So 1 wrong NO in 6 fit checks on this job. Those five quoted different page text for the same ask ("XPS 13-Laptop", "1 bis 12 von 72 Ergebnissen", "Laptops", or a list of headings).
+- [MEASURED] The person typed "go on"; drafting continued. Run `mvr0vlrz` (dell-price2 run-1) went green, $0.0529 on the spine. The output has 6 results, every price under 1500 (823.48 to 1449.00).
+
+**Cause read.**
+- [CODE] The fit-check AI is nondeterministic on a whole-list ask ("List every X") that names no single page word. Code takes `found:false` with no quote as not found: `src/fitcheck.js:82` sets `found: a.found && onPage` (a null quote gives `onPage` false), and `src/fitcheck.js:85` puts every such ask in `notFound`, which makes the state `ask`. Code does what it is built to do; the AI's answer is what varied.
+
+**Side note, same draft.**
+- [MEASURED] The page-map answer tagged the price limit `"from":"line 1 rule 1"` on the first try, so the re-tag follow-up (commit bacf421, `RETAG_CALL_LABEL` in `src/pagemap.js`) did not fire. That fix is still not seen live.
+
+**Honest limits.** n=6 on one job and one page. An anecdote of the miss rate, not a rate. One page-map answer is no evidence about the re-tag. The exact page the fit check saw is not kept: the run-start refetch overwrote it, so the 20 "€" lines and the headings above rest on the main session's grep, not on a file.
+
+**Next.** Logged only, nothing built (hamr's call). The person's "go on" is the designed escape and it worked here.
