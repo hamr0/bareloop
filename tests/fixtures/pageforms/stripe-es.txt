@@ -1,0 +1,5 @@
+url: https://stripe.com/es/privacy
+173,744 chars → 23,015 chars (87% pruned)
+    - main [ref=35]
+      - heading "Última actualización: 16 de enero de 2026" [level=4] [ref=50]
+      - heading "b. Cómo usamos y compartimos los datos personales de los Representantes " [level=4] [ref=122]

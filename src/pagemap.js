@@ -16,7 +16,7 @@ import { AUTHOR_CALL_TIMEOUT_MS, AUTHOR_SCOUT_MAX_TOKENS, SURVEY_CAUSES } from '
 import { lineRules, boundInWords, wordsSaidOn } from './rubricstep.js';
 import { applyPageRules, validReading } from './pagerules.js';
 import { dryReadMoney, dryReadTimes, dryReadPhrases } from './pagedry.js';
-import { ruleWords } from './facts.js';
+import { ruleWords, FACT_LANGS } from './facts.js';
 import { lookFactOf } from './inputlook.js';
 
 const require = createRequire(import.meta.url);
@@ -25,7 +25,9 @@ const { Loop } = require('bare-agent');
 /** the label of the one paid call, as the drafting book and the progress line see it */
 export const MAP_CALL_LABEL = 'page-map';
 /** the shapes the map may name; a `place` is read by code as a phrase */
-export const MAP_SHAPES = Object.freeze(['place', 'money', 'time', 'phrase']);
+export const MAP_SHAPES = Object.freeze(['place', 'money', 'time', 'date', 'number', 'phrase']);
+/** the languages a date's month names may be signed in (one list with src/facts.js) */
+const MAP_LANGS = Object.keys(FACT_LANGS);
 
 export const MAP_SYSTEM = 'You map a person\'s job to the exact words of ONE saved web page. You never grade and never invent words: every string you return must be copied from the page text, character for character.';
 
@@ -40,12 +42,15 @@ export function mapPrompt({ jobLines, label, text }) {
   return `THE JOB (each ~ rule applies to the line above it):\n${job}\n\n`
     + 'A "result" is one item the page lists (one flight, one stay, one row). For each job line and for each rule, say which fact(s) every result must carry, and give the PAGE\'S OWN WORDS for it.\n\n'
     + 'Return ONLY a JSON object, no prose, no code fence:\n'
-    + '{"facts":[{"name":"<letters and spaces only>","from":"<line N | line N rule M>","shape":"place|money|time|phrase","words":["<page words>", ...],"currency":["<symbol>"],"unit":["<words after the amount>"],"reading":<optional, see below>}]}\n\n'
+    + `{"facts":[{"name":"<letters and spaces only>","from":"<line N | line N rule M>","shape":"place|money|time|date|number|phrase","words":["<page words>", ...],"currency":["<symbol>"],"unit":["<words after the amount>"],"lang":"<${MAP_LANGS.join("|")}>","decimal":"<. or ,>","reading":<optional, see below>}]}\n\n`
     + 'shape meanings:\n'
     + '- place: words = ways the page writes the place (a city, an airport name), copied from the page.\n'
     + '- money: words = the label(s) written right BEFORE the amount, copied from the page. currency / unit = how the page writes the currency ("$") and/or the words after the amount ("US dollars"); give every spelling the page uses, as lists.\n'
     + '- time: words = the label(s) written right BEFORE the time that is the one the rule is about, copied from the page.\n'
+    + `- date: words = the label(s) written right BEFORE the date that is the one the rule is about, copied from the page. lang = the language the page writes the month name in (${MAP_LANGS.join(' ')}); leave lang out when the date is written 2026-10-26.\n`
+    + '- number: words = the label(s) written right BEFORE a plain number (a rating, a count), copied from the page. decimal = the mark the page writes before the decimals: "." or ",". Give decimal on a money fact too when the page writes a comma before the decimals.\n'
     + '- phrase: words = fixed words a result\'s text must contain, copied from the page.\n'
+    + 'A label must appear ONCE on its page line and sit right before the value; when the value stands alone on its line, give no label.\n'
     + 'Several words in one list are alternatives for the same fact. Put the best one first.\n'
     + 'reading (optional, only on a time or money fact): when a ~ rule is a limit on that fact that the page cannot hold in words (for example "not a red-eye" is a limit on the departure time), give your own best reading of the rule as that limit: {"op":"between","lo":<bound>,"hi":<bound>} or {"op":"lt|lte|gt|gte","value":<bound>}. A time bound is a "HH:MM" string on a 24-hour clock; a money bound is a number. Leave reading out when a page word already carries the rule.\n\n'
     + `PAGE TEXT (the input "${label}"):\n${text}`;
@@ -67,6 +72,8 @@ export function parseMapAnswer(text) {
     if (typeof f.name !== 'string' || !MAP_SHAPES.includes(f.shape) || !strs(f.words)) return { ok: false };
     if (f.from !== undefined && typeof f.from !== 'string') return { ok: false };
     for (const k of ['currency', 'unit']) if (f[k] !== undefined && !strs(f[k])) return { ok: false };
+    if (f.lang !== undefined && !(typeof f.lang === 'string' && MAP_LANGS.includes(f.lang))) return { ok: false };
+    if (f.decimal !== undefined && !(f.decimal === '.' || f.decimal === ',')) return { ok: false };
     // PRD v1.107 Part 5b: a `reading` is a limit of the signed-rule shape on a time or money fact; any other is a malformed answer (no repair)
     if (f.reading !== undefined && !validReading(f.shape, f.reading)) return { ok: false };
   }

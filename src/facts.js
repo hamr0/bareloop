@@ -18,7 +18,11 @@ export const FACT_OPS = Object.freeze(['lt', 'lte', 'gt', 'gte', 'between']);
 /** bareguard signs at most this many decides on one `cited` check */
 export const MAX_FACTS = 10;
 /** every field a fact may carry */
-const FACT_FIELDS = Object.freeze(['name', 'shape', 'unit', 'currency', 'phrase', 'anchor', 'until', 'rule', 'aiProposal']);
+const FACT_FIELDS = Object.freeze(['name', 'shape', 'unit', 'currency', 'phrase', 'anchor', 'until', 'rule', 'aiProposal', 'lang', 'decimal']);
+/** the languages whose month names bareguard 0.27 reads on a `date` fact (its `lang`), each with the name a person reads; absent `lang` = ISO YYYY-MM-DD only */
+export const FACT_LANGS = Object.freeze({ en: 'English', de: 'German', fr: 'French', es: 'Spanish', it: 'Italian', pt: 'Portuguese', nl: 'Dutch' });
+/** the decimal marks a number or money fact may sign (bareguard 0.27 `decimal`); absent = "." */
+export const FACT_DECIMALS = Object.freeze(['.', ',']);
 /** every field a part of class `fact` may carry (the shared ones are checked by rubricStepShapeReds) */
 export const FACT_PART_FIELDS = Object.freeze(['source', 'facts', 'count']);
 /** a fact's name appears in the claim text bareguard scans for numbers, so it carries letters only (no digit can red the claim) */
@@ -108,6 +112,14 @@ export function factShapeReds(part, w, red) {
           else if (new Set(list).size !== list.length) red('invalid-value', `${fw}.currency`, 'the currencies are not repeated');
         }
       }
+      if (has('lang')) {
+        if (f.shape !== 'date') red('invalid-value', `${fw}.lang`, 'only a date fact carries lang (the language the page writes its month names in); leave it out for a date written 2026-10-26');
+        else if (typeof f.lang !== 'string' || !Object.hasOwn(FACT_LANGS, f.lang)) red('invalid-value', `${fw}.lang`, `one of ${Object.keys(FACT_LANGS).join(' | ')}`);
+      }
+      if (has('decimal')) {
+        if (f.shape !== 'number' && f.shape !== 'money') red('invalid-value', `${fw}.decimal`, 'only a number or money fact carries decimal (the mark the page writes before the decimals)');
+        else if (!FACT_DECIMALS.includes(f.decimal)) red('invalid-value', `${fw}.decimal`, 'one of "." | ","');
+      }
       if (f.shape === 'phrase') {
         if (!nonEmpty(f.phrase)) red('invalid-value', `${fw}.phrase`, 'the fixed words the quote must contain, copied from the input');
         for (const k of ['anchor', 'until', 'rule']) if (has(k)) red('invalid-value', `${fw}.${k}`, 'a phrase is fixed words the quote must contain; it has no anchor, until or rule');
@@ -146,6 +158,8 @@ export function factDecides(part) {
     const d = { valueKind: f.shape };
     if (f.shape === 'money') { if (f.unit !== undefined) d.unit = f.unit; if (f.currency !== undefined) d.currency = f.currency; }
     if (f.anchor !== undefined) d.anchor = f.anchor;
+    if (f.lang !== undefined) d.lang = f.lang;
+    if (f.decimal !== undefined) d.decimal = f.decimal;
     if (f.until !== undefined) d.until = f.until;
     if (f.rule) {
       d.op = f.rule.op;
@@ -218,6 +232,8 @@ export function factSentence(f, source) {
   if (f.shape === 'phrase') bits.push('phrase', `must say "${f.phrase}"`);
   else {
     bits.push(f.shape === 'money' ? `money in ${moneyForms(f).join(' or ')}` : f.shape);
+    if (f.lang !== undefined) bits.push(`month names in ${FACT_LANGS[/** @type {keyof typeof FACT_LANGS} */ (f.lang)] ?? f.lang}`);
+    if (f.decimal === ',') bits.push('decimal comma');
     if (f.rule) bits.push(ruleWords(f));
     else if (f.anchor === undefined) bits.push('as the quote writes it');
     if (f.anchor !== undefined) bits.push(f.until !== undefined ? `the words after "${f.anchor}" up to "${f.until}"` : `after "${f.anchor}"`);
@@ -236,6 +252,9 @@ export function factBrief(f) {
   /** @type {string[]} */
   const bits = [f.shape === 'money' ? `an amount in ${moneyForms(f).join(' or ')}` : `a ${f.shape}`];
   if (f.shape === 'text') bits[0] = 'words';
+  // a fact that signs a page form is read in that form, but the value the worker writes is canonical (bareguard's typed binding): say so
+  if (f.lang !== undefined) bits.push(`write the date as YYYY-MM-DD (the quote writes it with ${FACT_LANGS[/** @type {keyof typeof FACT_LANGS} */ (f.lang)] ?? f.lang} month names)`);
+  if (f.decimal === ',') bits.push('write the amount with a point before the decimals and no thousands marks, e.g. 1057.65 (the quote writes a comma before the decimals)');
   if (f.anchor !== undefined) bits.push(f.until !== undefined ? `the words right after "${f.anchor}" up to "${f.until}"` : `right after "${f.anchor}"`);
   if (f.rule) bits.push(`must be ${ruleWords(f)}`);
   return `${f.name} — ${bits.join(', ')}`;

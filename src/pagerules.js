@@ -10,9 +10,9 @@ import { normLabel } from './labelscan.js';
 
 /**
  * @typedef {{op: string, value?: string|number, lo?: string|number, hi?: string|number}} Reading what a `~` rule means as a limit (PRD v1.107 Part 5b): the same shape as a signed fact rule
- * @typedef {{name: string, from?: string, shape: string, words?: string[], currency?: string[], unit?: string[], reading?: Reading}} MapFact the AI's map, one fact
+ * @typedef {{name: string, from?: string, shape: string, words?: string[], currency?: string[], unit?: string[], reading?: Reading, lang?: string, decimal?: string}} MapFact the AI's map, one fact
  * @typedef {{facts: MapFact[]}} PageMap
- * @typedef {{line: number, name: string, shape: string, from: string, words: string[], unit?: string[], currency?: string[], forRule?: number, reading?: Reading}} KeptFact
+ * @typedef {{line: number, name: string, shape: string, from: string, words: string[], unit?: string[], currency?: string[], forRule?: number, reading?: Reading, lang?: string, decimal?: string}} KeptFact
  *   `words` = what the page proves: the labels of a money/number/time fact, or the alternative phrases of a phrase fact (a place is a phrase)
  * @typedef {{line: number, rule?: number, fact: string, word?: string, reason: string, other?: string}} Dropped  `other` = what the drop is compared to: the first label (R1), the primary form (R1L), the fact it would have repeated (S1), the phrase it looked for (phrase-no-result)
  */
@@ -75,6 +75,8 @@ const READ = {
   money: /^\s*[$€£]?\s*(\d[\d,]*(?:\.\d+)?)/,
   time: /^\s*(\d{1,2}:\d{2}[\s\u202f\u00a0]?[AaPp][Mm])/,
   number: /^\s*(\d[\d,]*(?:\.\d+)?)/,
+  // R1 same-value only: the date words right after a label, up to the 4-digit year (a day, a month name, a year; or ISO)
+  date: /^\s*(\d{4}-\d{2}-\d{2}|\S+(?:\s\S+){0,3}\s\d{4})(?!\d)/,
 };
 
 /**
@@ -160,7 +162,23 @@ const ORDINALS = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seven
 /** the symbols a currency may be (src/facts.js); a code like "EUR" is a word read after the number, so it is a unit */
 const CURRENCY_SYMBOLS = ['$', '€', '£'];
 /** the shapes that read a value after a label */
-const VALUE_SHAPES = ['money', 'time', 'number'];
+const VALUE_SHAPES = ['money', 'time', 'number', 'date'];
+
+/** the full month names of each language a date may be signed in (bareguard 0.27 reads these and short forms; one full name on the page proves the language is the page's) */
+const MONTHS_FULL = /** @type {Record<string, string[]>} */ ({
+  en: ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'],
+  de: ['januar', 'februar', 'märz', 'april', 'mai', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'dezember'],
+  fr: ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'],
+  es: ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'],
+  it: ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'],
+  pt: ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'],
+  nl: ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli', 'augustus', 'september', 'oktober', 'november', 'december'],
+});
+/**
+ * A comma-decimal amount: a number that stands alone (no digit, comma or point before or after it), its whole part one run of digits or groups of
+ * three joined by "." or a space, then a comma and one or two decimals. "133,330 chars" (a thousands-grouped count) is not one.
+ */
+const COMMA_DECIMAL = /(?<![\d,.])\d{1,3}(?:[. ]\d{3})*,\d{1,2}(?![\d,]|\.\d)|(?<![\d,.])\d+,\d{1,2}(?![\d,]|\.\d)/;
 
 /**
  * Apply the rules to the AI's map over one saved page. Returns the kept facts and, for everything a rule removed, one `dropped` entry.
@@ -180,11 +198,23 @@ export function applyPageRules(text, mapping, jobLines) {
   };
 
   // ---- S1, name part: a fact whose name counts results is refused before anything else reads it ----
-  const list = all.filter((f) => {
+  const named = all.filter((f) => {
     const hit = String(f.name ?? '').toLowerCase().split(/[^a-z]+/).find((w) => ORDINALS.includes(w));
     if (hit === undefined) return true;
     drop(f, undefined, 's1-name');
     return false;
+  });
+
+  // ---- a signed `lang` / `decimal` must really be on the page, else the whole fact is Not checked: a date in a language the page does not
+  // write, or a decimal comma on a page with no comma-decimal amount, could only ever read nothing (or the wrong thing). A field on a shape that
+  // does not take it (lang off a date, decimal off a number or money) is not carried; the rest of the fact stands. ----
+  const list = named.filter((f) => {
+    if (f.shape === 'date' && f.lang !== undefined) {
+      const months = Object.hasOwn(MONTHS_FULL, String(f.lang)) ? MONTHS_FULL[String(f.lang)] : [];
+      if (!months.some((m) => countPhrase(text, m) >= 1)) { drop(f, undefined, 'lang-not-on-page', String(f.lang)); return false; }
+    }
+    if ((f.shape === 'number' || f.shape === 'money') && f.decimal === ',' && !COMMA_DECIMAL.test(squash(text))) { drop(f, undefined, 'decimal-not-on-page', ','); return false; }
+    return true;
   });
 
   // ---- found-on-page, then U1 and R1L for the facts that read an amount ----
@@ -309,6 +339,8 @@ export function applyPageRules(text, mapping, jobLines) {
       if (p.uni.length) out.unit = [...p.uni];
       if (p.cur.length) out.currency = [...p.cur];
     }
+    if (p.f.shape === 'date' && p.f.lang !== undefined) out.lang = String(p.f.lang);
+    if ((p.f.shape === 'number' || p.f.shape === 'money') && p.f.decimal !== undefined) out.decimal = String(p.f.decimal);
     if (t.rule !== undefined) out.forRule = t.rule;
     if (validReading(out.shape, p.f.reading)) out.reading = /** @type {Reading} */ ({ ...p.f.reading });
     return out;

@@ -3,6 +3,8 @@
 // block all read these words; no other file writes a drop reason (a test greps for it). Plain words, written by CODE from the drop's reason
 // code, never a raw code and never model-written. `<label>` is the page's own word.
 
+import { FACT_LANGS } from './facts.js';
+
 /** @typedef {import('./pagerules.js').Dropped} Dropped */
 
 /** reason code -> the plain sentence (`d.word` = the page's word, `d.fact` = the fact's name, `d.other` = what it was compared to) */
@@ -23,6 +25,8 @@ const WORDS = /** @type {Record<string, (d: Dropped) => string>} */ ({
   'unit-too-long': (d) => `"${d.word}" is longer than 100 characters, so it was not used.`,
   'reads-no-result': () => "the price rule could not read a price in the page's results, so it is not checked.",
   'reads-no-time': (d) => `the page never shows a time right after "${d.other}", so it is not checked.`,
+  'lang-not-on-page': (d) => `the page shows no month name in ${FACT_LANGS[/** @type {keyof typeof FACT_LANGS} */ (d.other ?? '')] ?? d.other}, so the date is not checked.`,
+  'decimal-not-on-page': () => 'the page shows no amount written with a comma before the decimals, so it is not checked.',
   'phrase-no-result': (d) => `"${d.other}" is on the page but in none of its results, so it is not checked.`,
   'person-left': () => 'You chose to leave it Not checked.',
   'bad-shape': (d) => `The AI named a kind of value for "${d.fact}" that a check cannot read.`,

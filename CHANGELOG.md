@@ -7,6 +7,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **A date in a signed language and a decimal comma can be a fact (F249).** A `date` fact may sign `lang` (`en de fr es it pt nl`) and a `number` or `money` fact `decimal` (`","`); the page-word map may now name `date` and `number` and give `lang` / `decimal`, and is told a label must appear once on its page line and sit right before the value. A signed `lang` whose month names are not on the page, or a `decimal: ","` with no comma-decimal amount on the page, is left under Not checked with a plain reason.
+
 ### Changed
 
 - **bareguard `^0.26.0` to `^0.27.0`.** Its page forms (a date in a signed language, a decimal comma, a currency sign glued after the number) are what the next changes here build on; nothing in bareloop reads them yet, and an existing signed spec reads as before.

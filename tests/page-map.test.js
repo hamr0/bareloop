@@ -37,7 +37,7 @@ test('the prompt ports the POC call: the numbered job, each ~ rule, "a result is
   const p = mapPrompt({ jobLines: JOBS.flights, label: 'Flights', text: 'PAGE-BODY' });
   assert.match(p, /LINE 1: List 3 flights from San Francisco to Los Angeles\n~ rule 1: under \$450\n~ rule 2: not a red-eye\n~ rule 3: nonstop/);
   assert.match(p, /A "result" is one item the page lists/);
-  assert.match(p, /\{"facts":\[\{"name":.*"shape":"place\|money\|time\|phrase","words":\[.*"currency":.*"unit":/);
+  assert.match(p, /\{"facts":\[\{"name":.*"shape":"place\|money\|time\|date\|number\|phrase","words":\[.*"currency":.*"unit":/);
   assert.match(p, /money: words = the label\(s\) written right BEFORE the amount/);
   assert.match(p, /PAGE TEXT \(the input "Flights"\):\nPAGE-BODY$/);
   assert.match(MAP_SYSTEM, /never grade and never invent words/);

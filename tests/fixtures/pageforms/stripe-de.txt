@@ -1,0 +1,5 @@
+url: https://stripe.com/de/privacy
+173,034 chars → 21,833 chars (87% pruned)
+    - main [ref=35]
+      - heading "Letzte Änderung: 16. Januar 2026" [level=4] [ref=50]
+      - heading "b. Wie wir personenbezogene Daten von Vertreter/innen verwenden und weitergeben " [level=4] [ref=119]

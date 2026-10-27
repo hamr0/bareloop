@@ -1,0 +1,14 @@
+url: https://www.saturn.de/de/category/aktenvernichter-zubeh%C3%B6r-12.html
+88,138 chars → 32,184 chars (63% pruned)
+              - StaticText "UVP" [ref=2585]
+              - StaticText " " [ref=2586]
+              - StaticText "48,49€" [ref=2588]
+            - button "Der hier angezeigte Preis ist die unverbindliche Preisempfehlung des Herstellers." [expanded=false] [ref=1692]
+            - StaticText "39,99€" [ref=2590]
+            - button "inkl. MwSt. zzgl. Versand" [ref=1698]
+              - StaticText " " [ref=2627]
+              - StaticText "89,00€" [ref=2629]
+            - button "Der hier angezeigte Preis ist die unverbindliche Preisempfehlung des Herstellers." [expanded=false] [ref=1766]
+              - StaticText " " [ref=2671]
+              - StaticText "29,99€" [ref=2673]
+            - button "Der hier angezeigte Preis ist die unverbindliche Preisempfehlung des Herstellers." [expanded=false] [ref=1844]

@@ -149,7 +149,7 @@ export function lookPrompt({ jobLines, labels, lists }) {
 }
 
 /** @typedef {{line: number, name: string, shape: string, source: string, label?: string, labelId?: string, value?: string, phrase?: string, example: string, rule?: any, aiProposal?: boolean, forRule?: number, reading?: import('./pagerules.js').Reading,
- *   words?: string[], labels?: string[], unit?: string[], currency?: string[]}} LookFact  `words` / `labels` / `unit` / `currency`: what the page-word map kept (idea A core) */
+ *   words?: string[], labels?: string[], unit?: string[], currency?: string[], lang?: string, decimal?: string}} LookFact  `words` / `labels` / `unit` / `currency`: what the page-word map kept (idea A core) */
 /** @typedef {{line: number, rule?: number, words?: string, why: string}} LookNotFound */
 /** @typedef {{facts: LookFact[], prose: {line: number, text?: string}[], notFound: LookNotFound[], dropped?: import('./pagerules.js').Dropped[]}} LookReport */
 
@@ -168,6 +168,8 @@ export function lookFactOf(k, source) {
   else { out.labels = [...k.words]; if (k.words.length) out.label = k.words[0]; }
   if (k.unit) out.unit = [...k.unit];
   if (k.currency) out.currency = [...k.currency];
+  if (k.lang !== undefined) out.lang = k.lang;
+  if (k.decimal !== undefined) out.decimal = k.decimal;
   if (k.forRule !== undefined) out.forRule = k.forRule;
   if (k.reading) out.reading = { ...k.reading };
   return out;
@@ -251,6 +253,9 @@ export function renderLookReport(report) {
         else bits.push('no label (read by its unit or sign alone)');
         if (f.unit?.length) bits.push(`unit ${quote(f.unit)}`);
         if (f.currency?.length) bits.push(`currency ${quote(f.currency)}`);
+        // a page form the page rules proved is on the page: the drafter signs it as given, never a guess (the run reads that form and no other)
+        if (f.lang !== undefined) bits.push(`lang ${JSON.stringify(f.lang)} (the page writes the month name in this language: sign it as the fact's lang)`);
+        if (f.decimal !== undefined) bits.push(`decimal ${JSON.stringify(f.decimal)} (the page writes this mark before the decimals: sign it as the fact's decimal)`);
       }
     } else if (f.phrase !== undefined) bits.push(`the quote must say ${JSON.stringify(f.phrase)}`);
     else if (f.label !== undefined) bits.push(`label ${JSON.stringify(f.label)} (id ${f.labelId})`);
