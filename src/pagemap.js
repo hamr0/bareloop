@@ -14,7 +14,7 @@ import { isRateLimited, rateLimitWaitMs } from './ratelimit.js';
 import { isOutputCutOff } from './authorflow.js';
 import { AUTHOR_CALL_TIMEOUT_MS, AUTHOR_SCOUT_MAX_TOKENS, SURVEY_CAUSES } from './authorscout.js';
 import { lineRules, boundInWords, wordsSaidOn } from './rubricstep.js';
-import { applyPageRules, validReading, tieOf } from './pagerules.js';
+import { applyPageRules, validReading } from './pagerules.js';
 import { dryReadMoney, dryReadTimes, dryReadPhrases } from './pagedry.js';
 import { ruleWords, FACT_LANGS } from './facts.js';
 import { lookFactOf } from './inputlook.js';
@@ -24,8 +24,6 @@ const { Loop } = require('bare-agent');
 
 /** the label of the one paid call, as the drafting book and the progress line see it */
 export const MAP_CALL_LABEL = 'page-map';
-/** the label of the ONE follow-up call that sends a limit tagged to a bare line back to the AI to re-tag */
-export const RETAG_CALL_LABEL = 'page-map-retag';
 /** the shapes the map may name; a `place` is read by code as a phrase */
 export const MAP_SHAPES = Object.freeze(['place', 'money', 'time', 'date', 'number', 'phrase']);
 /** the languages a date's month names may be signed in (one list with src/facts.js) */
@@ -91,28 +89,6 @@ export function parseMapAnswer(text) {
 const defaultLoop = (/** @type {any} */ { system, onLlmResult, provider, rates }) =>
   new Loop({ provider, system, onLlmResult, ...(rates ? { rates } : {}) });
 
-/**
- * The mechanical trigger of the re-tag call: a fact with a `reading` whose `from` is a BARE line N ("line N", no rule), and line N has a `~` rule
- * that no fact names in its `from`. One note per unanswered rule, the AI decides; code never guesses which rule a fact belongs to.
- * @param {any} mapping @param {{n: number, text?: string, rule?: string, rules?: string[]}[]} jobLines @returns {string[]}
- */
-export function retagNotes(mapping, jobLines) {
-  const facts = Array.isArray(mapping?.facts) ? mapping.facts : [];
-  const named = new Set(facts.map((/** @type {any} */ f) => tieOf(f.from, jobLines)).filter((/** @type {any} */ t) => t.rule !== undefined).map((/** @type {any} */ t) => `${t.line}:${t.rule}`));
-  /** @type {string[]} */
-  const notes = [];
-  for (const f of facts) {
-    if (f.reading === undefined || typeof f.from !== 'string' || !/^\s*line\s*\d+\s*$/i.test(f.from)) continue;
-    const t = tieOf(f.from, jobLines);
-    const lim = f.reading.op === 'between' ? `between ${f.reading.lo} and ${f.reading.hi}` : `${f.reading.op} ${f.reading.value}`;
-    lineRules(jobLines.find((l) => l.n === t.line)).forEach((rule, k) => {
-      if (named.has(`${t.line}:${k + 1}`)) return;
-      notes.push(`Your answer gave the fact "${f.name}" a limit (${lim}) with from: "line ${t.line}". Line ${t.line} has ~ rule ${k + 1}, "${rule}", and no fact answers it. If that limit comes from rule ${k + 1}, set from to "line ${t.line} rule ${k + 1}". If it does not, leave it as it is.`);
-    });
-  }
-  return notes;
-}
-
 /** the plain-word stop when the answer was not readable twice (no Resume: a draft is not a run) */
 export const MAP_UNREADABLE = 'The AI\'s answer about the page was not readable twice. Nothing was signed.';
 
@@ -140,10 +116,10 @@ export async function runPageMap({
   /** @type {ReturnType<typeof scrubRaw>[]} */
   const raws = [];
   let attempts = 0;
-  const record = (/** @type {any} */ r, /** @type {number} */ attempt, /** @type {string} */ label = MAP_CALL_LABEL) => {
-    const call = { label, ...priceOf(r) };
+  const record = (/** @type {any} */ r, /** @type {number} */ attempt) => {
+    const call = { label: MAP_CALL_LABEL, ...priceOf(r) };
     calls.push(call);
-    const raw = scrubRaw({ label, attempt, text: r?.text });
+    const raw = scrubRaw({ label: MAP_CALL_LABEL, attempt, text: r?.text });
     raws.push(raw);
     // the scrubbed answer rides the call, so the session's drafting log (draft-log.jsonl) keeps the AI's map and a run can be replayed at $0
     onCall({ ...call, raw: raw.text, ...(r?.thinkingStatus === undefined ? {} : { thinkingStatus: r.thinkingStatus }) });
@@ -161,38 +137,6 @@ export async function runPageMap({
   const facts = [];
   /** @type {any[]} */
   const maps = [];
-
-  /** the one follow-up call, in the same conversation (the map prompt, the AI's first answer, the note). Same transport-retry and 429 wait as
-   *  the map call; a failed call, a cut-off or an unreadable second answer returns null and the FIRST answer stands (no repair). */
-  const askRetag = async (/** @type {string} */ content, /** @type {any} */ first, /** @type {string[]} */ notes) => {
-    const messages = [{ role: 'user', content }, { role: 'assistant', content: JSON.stringify(first) }, { role: 'user', content: notes.join('\n') + '\nReturn the whole answer again.' }];
-    let transport = false;
-    let rate = false;
-    for (;;) {
-      if (halted()) return null;
-      attempts += 1;
-      const loop = createLoop({ system: MAP_SYSTEM, onLlmResult: undefined, provider, ...priced });
-      /** @type {any} */
-      let r;
-      try {
-        r = await loop.run(messages, [], { cacheMessages: true, maxTokens, timeoutMs: callTimeout, ...callOptions });
-      } catch (e) {
-        if (isRateLimited(e) && !rate) {
-          const wait = rateLimitWaitMs(e);
-          if (wait !== null) { rate = true; await sleep(wait); continue; }
-        }
-        const casualty = callCasualty(e) ?? (isTransportFailure(e) ? String(/** @type {any} */ (e)?.message ?? e) : null);
-        if (casualty === null) throw e;
-        record({ error: casualty }, attempts, RETAG_CALL_LABEL);
-        if (!transport) { transport = true; continue; }
-        return null;
-      }
-      record(r, attempts, RETAG_CALL_LABEL);
-      if (r?.error && !isOutputCutOff(r)) return null;
-      const parsed = isOutputCutOff(r) ? { ok: false } : parseMapAnswer(r?.text);
-      return parsed.ok ? /** @type {any} */ (parsed).mapping : null;
-    }
-  };
 
   for (const label of labels) {
     const content = mapPrompt({ jobLines, label, text: texts[label] });
@@ -231,12 +175,6 @@ export async function runPageMap({
       if (parsed.ok) { mapping = /** @type {any} */ (parsed).mapping; break; }
       malformed += 1;
       if (malformed >= 2) return absent(MAP_UNREADABLE, SURVEY_CAUSES.UNPARSEABLE);
-    }
-    // a limit tagged to the bare line while a `~` rule of that line has no fact: sent back to the AI ONCE; code never edits `from` itself
-    const notes = retagNotes(mapping, jobLines);
-    if (notes.length > 0 && !halted()) {
-      const again = await askRetag(content, mapping, notes);
-      if (again !== null) mapping = again;
     }
     const kept = applyPageRules(texts[label], mapping, jobLines);
     // money build v2: "can it read" - a money fact whose forms read no result line of the page, by the run's own checker, is Not checked
