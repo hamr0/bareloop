@@ -55,7 +55,7 @@ bareloop is a published JS library and follows `~/PycharmProjects/hamr0/LIBRARY_
   - `litectx` (`^0.32.0`) — provides `LiteCtx`, the per-job retrieval/recall store behind
     the read shim and the authoring scout (`src/planrun.js:21`); bareloop has no stdlib
     substitute for indexed code/fact recall at this scope.
-  - `barebrowse` (`^0.24.1`) — provides `connect`, the headless incognito browser session that
+  - `barebrowse` (`^0.25.0`) — provides `connect`, the headless incognito browser session that
     fetches a pasted URL input as page text at drafting and run start (`src/pagefetch.js`);
     the worker never browses.
 - **`bareloop.context.md` is the adopter contract and ships** (README is the pitch only).
