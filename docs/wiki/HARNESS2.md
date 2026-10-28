@@ -309,11 +309,85 @@ The ten interview questions, each with hamr's answer.
 10. Is the dependency weight of litectx embeddings acceptable under the one-dependency bar?
    **Answer.** No. bareloop never adds `@huggingface/transformers` (litectx 0.32.0 lists it as an OPTIONAL peer dependency, not installed today [CODE]). hamr, verbatim: "litectx default indexing and bm25 is really helpful to narrow down what agent needs to grep, no embedding needed". C1 is DROPPED.
 
-## 8. Status
+## 8. Where things stand (2026-10-28 evening)
 
-E0, E0b and E1 are done (results in F253). The F252 shim fix is built. Next, per hamr 2026-10-28, in this order:
-1. Planner fix: the drafter drops or misformats step exits (F254; root cause pending).
-2. Build the handoff properly (design pending hamr's OK).
-3. A new hint POC aimed at read-vs-recall selection, run on the new code.
+Built on `feat/online-dot` (pushed unless noted):
+- Online dot in the panel header (87f3083). Not harness2; it rides the branch. CI green on 87f3083.
+- F252 shim fix (2a81471): the delivered-ledger resets per `ask()`. Proven by a fail-first test. NOT seen live (no live run has retried a step yet).
+- Handoff note (1c26d45 code and tests, 6af57ef docs): `src/handoff.js`. Spec field `handoffNote`: absent = on, false = off. The switch enters the signed hash only when present (mirrors `thinking`; it is NOT like `learningHints`, which is a global `config.json` setting, `src/learnstore.js`). hamr ruled 2026-10-28: ON by default (1A), not in the panel (2B), old signed jobs get it without a re-sign, like learnings (A). Not proven live.
+- Planner exit fix: the POC PASSED (`docs/logs/PLANNER-EXIT-PREREG.md`, commit 9f88d5d; results `.claude/scratch/planner-poc/batch/results.jsonl`). First-draft refusals OLD 8/23 vs NEW 1/24, plan-red 1 vs 0, cost $1.55 DeepSeek. The product build is IN PROGRESS at the time of writing: `src/plan.js`, `src/planrun.js` and their tests are modified but uncommitted (git status at session start). No commit yet touches planPrompt "REQUIRED on EVERY step". Check `git log` and `git status` for it; root cause is the F254 line in `docs/logs/FINDINGS.md`.
+- Live product run u-mvsl1lof (2026-10-28, $0.0425): died plan-red at drafting (F254) before any step. It proved nothing about handoff or the shim (`.claude/scratch/handoff-live/RESULT.md`).
 
-The per-turn hint arm is dropped as built: there was little left for it to catch (the shim answers whole-file re-reads) and it leaks into the drafter through scout notes. Nothing else is built. harness2 work rides branch `feat/online-dot`. No further build starts without hamr's word.
+Done earlier: E0, E0b, E1 (results in F253; `.claude/scratch/e1-poc/battery/analysis/E1-RESULT.md`). The per-turn re-read hint arm was dropped (F253: about 20 fires in 18 runs, the shim already answers whole-file re-reads, and it leaks into scout notes and then the drafter).
+
+### NEXT (in order)
+1. Finish and verify the planner fix build (fail-first tests, `node scripts/prompt-commit-check.mjs`), then push.
+2. ONE live product run: DeepSeek `deepseek-flash`, template `pulselog-panel-strict` from `.claude/scratch/e1-poc/battery/templates/pulselog`, $1 ceiling via `--draft-spent-usd 4.0`, setup pattern in `.claude/scratch/handoff-live/`. It must prove together: the planner fix (no plan-red), the handoff note (it records, and new workers re-read less; E1 medians: OFF 30, HANDOFF 15), and the shim fix (no false pointer on a retry). If no step retries, say the shim fix is still unseen live.
+3. Then the full branch gate: full suite, hamr's `/code-review`, `/release`. The branch holds the dot and the harness2 work.
+
+No further build starts without hamr's word.
+
+## 9. Experiment backlog (not yet run)
+
+Each item: question, why, riskiest assumption, first $0 step, who rules. None has a number yet.
+
+H1. New hint POC: read-vs-recall SELECTION.
+- Question. Can a hint move workers from `shell_read` to `ctx_recall`/`ctx_get` where recall fits?
+- Why. Workers pick `shell_read` about 69 of 70 times over recall/get (F107; section 4 above). The per-turn re-read hint arm is dropped (F253). hamr 2026-10-28: "focus on hints" after the fixes.
+- Riskiest assumption. That selection, not retrieval quality, is the blocker, and that a hint wording changes it (a guard wording once moved a false-claim rate 5/10 to 0/10, so wording matters).
+- $0 first. Re-read the E1 and E0 archives for how often a recall would have fit. Run on the NEW code (planner fix and handoff in).
+- Rules. hamr (frozen prereg before any number).
+
+H2. Pointer or map in the shim message.
+- Question. Does replacing "you already hold all N bytes" with a map (symbols and line ranges, `ctx_get` for a part) help?
+- Why. Arize talk (section 4b) and hamr's question. True whether or not the model remembers. Complements the shim, does not replace it.
+- Riskiest assumption. That the map is cheaper than the re-read it prevents.
+- $0 first. Measure map size against file size on archived re-read cases.
+- Rules. hamr.
+
+H3. Repeated identical tool-call catcher at source.
+- Question. On the 3rd identical call, can code answer "asked 3 times, unchanged, here is the map"?
+- Why. The talk's "43 identical calls" point (section 4b).
+- Riskiest assumption. That identical-call runs really occur on our workers. Never rewrite history (cache-prefix cost; compaction is parked).
+- $0 first. Count identical-call runs in archived spines.
+- Rules. hamr.
+
+H4. Turns lever.
+- Question. What drives turn count?
+- Why. F253 showed cache reads are about 85-93% of tokens, so cost follows TURNS (each turn re-sends the conversation), not reads.
+- Riskiest assumption. That turns are controllable by anything we can hand the worker.
+- $0 first. Archive read of turns per run against step shape. Candidate levers TBD with hamr.
+- Rules. hamr.
+
+H5. Handoff at larger n.
+- Question. Does handoff alone show a cost effect under noise?
+- Why. E1 (n=3) showed about -60% new-worker re-reads but no turn, token or cost win. hamr: "try handoff separately". Pulselog OFF cost ranged $0.20-0.37, so n=3 is underpowered.
+- Riskiest assumption. That a real effect exists and is bigger than run-to-run noise.
+- $0 first. Power calculation from the E1 spread (`.claude/scratch/e1-poc/battery/analysis/stats.mjs`). Declare UNDERPOWERED before any data.
+- Rules. hamr (cap and n).
+
+H6. Per-turn nudges against the up-front list (hamr's idea, discussed 2026-10-28).
+- Question. Does a nudge only on a clear slip help?
+- Why. Costs only when it fires. Rule: say HOW to read, never WHERE to look.
+- Riskiest assumption. Anchoring: a nudge may fix the worker on the nudged path.
+- $0 first. Replay archived slips to count how often a nudge would fire.
+- Rules. hamr.
+
+H7. Drafter scope-escape. The one NEW-wording red in the planner POC was scope-escape (`steps.0.exit.0.path` outside the allowed folder); it recovered. Watch it, do not build.
+
+Also kept: C2-C6 as listed in section 6.5 (C1 dropped; the C2 spec draft has 8 open choices).
+
+Known gaps to keep in view: Kind A/B are keyed tool+path (the gate audit has no `ctx_get` range); hint conversion can only be approximated; the prompt text of notes is not in the spine, by design.
+
+## 10. Where the evidence lives
+
+Untracked scratch (survives `/clear`, not a fresh clone), all under `.claude/scratch/`:
+- `e0-read/`, `e0b-read/` (the $0 archive reads)
+- `e1-poc/` (`PHASE1.md`, `engine/`, `battery/` with `analysis/E1-RESULT.md` and `analysis/stats.mjs`, `templates/`)
+- `planner-exit/FINDINGS.md`
+- `planner-poc/` (`engine/`, `batch/`)
+- `handoff-live/RESULT.md`
+
+Tracked: `docs/logs/E0-PREREG.md`, `E0B-PREREG.md`, `E1-PREREG.md`, `PLANNER-EXIT-PREREG.md`; `docs/logs/FINDINGS.md` F252, F253, F254.
+
+Paid so far today (all DeepSeek deepseek-flash): E1 $4.72, observe $0.16, planner POC $1.55, live run $0.04.
