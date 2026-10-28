@@ -97,6 +97,7 @@ hamr ruled on the interview questions on 2026-10-28 (section 7); ruled numbers a
 - **Stop rule.** If a segment has fewer than 10 runs with an audit, that segment is "too few"; if no segment reaches 10, stop and report the gap.
 - **Provider / cap.** $0. No model call.
 - **Output.** A list: habits that cost money; habits that precede greens; which segment each claim covers.
+- **Frozen:** `docs/logs/E0-PREREG.md`, commit 9e1e9a88f97e6be4d878dc8fb6198fec62e5ac1e, sha256 0e935b084c153d001939c15d5112195ed252a2a0478bf676635b87df7b2b3f8a.
 
 ### E1 — tool guidance learned from run records (paid, only if E0 earns it)
 
