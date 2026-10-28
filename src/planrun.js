@@ -2633,6 +2633,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       const askFrom = async () => null;
       const ask = async (prompt, defs = toolDefs) => {
         let r;
+        shim.reset(); // each ask() is a fresh session: the model holds nothing earlier asks were handed
         try {
           r = await loop.run([{ role: 'user', content: prompt }], defs, { maxTokens: 32000 });
         } catch (e) {
@@ -2862,6 +2863,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     };
     const ask = async (prompt, defs = toolDefs) => {
       let r;
+      // A fresh Loop = a fresh transcript: the read shim's delivered-ledger resets with it, or a
+      // later attempt's re-read is answered with a pointer to bytes its model never saw (F252).
+      // askFrom (a continuation of a prior transcript) deliberately does NOT reset.
+      shim.reset();
       const thinkOpts = thinkingForCall();
       try {
         r = await stallWatch.watch((gen) => newLoop(gen).run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000, ...callBounds(), ...thinkOpts }));

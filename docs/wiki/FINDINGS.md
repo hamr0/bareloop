@@ -14929,3 +14929,18 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 - The pages are news and registry pages snapped on 2026-10-27; one page set per POC, no page reused between v4 and v5.
 
 **Next.** hamr ruled 2026-10-27: stop gap 1 here, release this branch, come back later. Gap 1 goes to the PRD backlog with causes (a) and (b) as the candidates. Any change to the reader is a bareguard ask, never a local patch. Nothing built for gap 1.
+
+## F252 — read shim ledger outlived the model's memory: a later attempt's re-read could get a pointer to bytes it never saw (2026-10-28; $0; read from code and archive, not seen live)
+
+**Grounded in:** `src/planrun.js` (`mkWorker`'s shim, `createReadShim` at ~2517; `ask()` builds a fresh `newLoop`/transcript each call), `src/readshim.js` (pointer branch, `seen.hash === hash && start >= total`), E0b archive read (`.claude/scratch/e0b-read/e0b-detail.json`, `crossattempt.mjs`).
+
+**Defect.**
+- [CODE] The shim's ledger ("what this worker was handed") lives per `mkWorker`; a step's worker is created once and `ask()` runs once per attempt, each with a fresh Loop and fresh transcript. On attempt 2, a re-read of a file attempt 1 fully received hit the pointer branch and returned "unchanged since you read it - you already hold all N bytes" - false for attempt 2's model. This is the untruthful-pointer class the shim's own header forbids (over-delivery is legal, a false "already delivered" is not).
+
+**Frequency (archive, not live).**
+- [MEASURED] In E0b's DeepSeek runs, later-attempt re-reads of a file an earlier attempt read, with no write between: TYPES 111 of 1098 read-class calls (10%), TEXT 85 of 385 (22%). Not every one got the pointer - only fully delivered files under an arm with the pointer lever. Pointer text is not in the spine, so the true pointer count is unknown. Example run: u-mujjtrvd (step strict-clean-whole-src, src/run.js read in attempt 1 and 2).
+- Not live-verified: no live run has shown the false pointer.
+
+**Fix.** `createReadShim` gains `reset()` (clears only the ledger); `mkWorker`'s `ask()` calls it first. `askFrom` does not (same transcript, ledger still true). MEMORY-CACHE counters and the run-level `onCount` sum are not reset (they record bytes withheld, not model memory). `serveStale` holds no ledger.
+
+**Test.** `tests/planrun-resume.test.js` "read shim: a LATER ATTEMPT re-read gets the bytes...": attempt 2's first read carries the bytes (red before the fix), a second read inside one attempt still gets the pointer.

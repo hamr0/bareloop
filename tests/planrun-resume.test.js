@@ -1645,6 +1645,51 @@ test('read shim ON: the second read of an unchanged big file is the NEXT UNSEEN 
 });
 
 
+// FRESH MODEL MEMORY: every attempt's ask() builds a fresh Loop with a fresh transcript, so the
+// shim's "what this worker was handed" ledger must reset with it. Otherwise attempt 2 re-reads a
+// file attempt 1 fully received and is told "you already hold all of it" — about bytes its model
+// never saw (FINDINGS F252). Within ONE attempt the pointer must still fire.
+const SMALL_BODY = 'export const SMALL_MARKER_7731 = 1;\n';
+const READ_ACROSS_ATTEMPTS = JSON.stringify({
+  schema: 'plan-v1',
+  steps: [{
+    id: 'read-then-write', action: 'Read src/small.txt, then write tests/test_x.mjs.',
+    tools: ['read', 'recall', 'get', 'write'], rounds: 6, target: 'tests/test_x.mjs',
+    exit: [{ type: 'tree-changed', scope: 'tests/**' }],
+  }],
+});
+
+test('read shim: a LATER ATTEMPT re-read gets the bytes (fresh transcript), while a same-attempt re-read still gets the pointer', async (t) => {
+  const wd = makePatient(t);
+  writeFileSync(join(wd, 'src', 'small.txt'), SMALL_BODY);
+  const jv = validateJob(JOB(wd, { tools: ['read', 'recall', 'get', 'write', 'edit'] }));
+  assert.deepEqual(jv.reds, []);
+  const rd = (id) => ({ toolCalls: [tcall(id, 'shell_read', { path: join(wd, 'src', 'small.txt') })] });
+  const provider = scriptedProvider([
+    { text: 'src/small.txt exists; tests/ is empty.' },   // scout
+    { text: READ_ACROSS_ATTEMPTS },                        // plan draft
+    rd('a1'),                                              // attempt 1: reads F in full
+    { text: 'read it, writing nothing' },                  // attempt 1 ends with no write -> exit red
+    rd('b1'),                                              // attempt 2: reads F again (index 5 sees result)
+    rd('b2'),                                              // attempt 2: reads F a SECOND time, same attempt
+    { toolCalls: [tcall('w', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { text: 'done' },
+  ]);
+  const { emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns: 3, readShim: 'cap', remainingUsd: () => 1.5 });
+  assert.equal(outcome, 'green');
+
+  // calls: 0 scout, 1 plan, 2 a1-ask, 3 after-a1-read, 4 attempt-2 ask, 5 after-b1, 6 after-b2, 7 after-write
+  const afterA1 = JSON.stringify(provider.calls[3]);
+  const afterB1 = JSON.stringify(provider.calls[5]);
+  const afterB2 = JSON.stringify(provider.calls[6]);
+  assert.ok(afterA1.includes('SMALL_MARKER_7731'), 'attempt 1 received the file');
+  assert.ok(afterB1.includes('SMALL_MARKER_7731'), "attempt 2's first read must carry the bytes: its model never saw attempt 1's transcript");
+  assert.ok(!/unchanged since you read it/.test(afterB1), 'and must NOT be told it already holds a file it never received');
+  assert.match(afterB2, /unchanged since you read it/, 'a second unchanged read inside ONE attempt still gets the pointer — the shim keeps its purpose');
+});
+
+
 test('read shim OFF (the default): the same run delivers the tool\'s own bytes, twice — the A0 guarantee', async (t) => {
   const wd = makePatient(t);
   writeFileSync(join(wd, 'src', 'big.txt'), BIG_BODY);

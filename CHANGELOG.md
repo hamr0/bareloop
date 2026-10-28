@@ -11,6 +11,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 - **An online/offline dot in the panel header, left of Settings.** When the panel's node process dies the open page used to look exactly like a live one; the Runs list read (already polled every 10 s) now paints a green "online" on any HTTP reply, even an error, and a red "offline" only when the read fails with no HTTP status. No new endpoint or timer. `getJSON` now tags its HTTP error with `.status` (message unchanged).
 
+### Fixed
+
+- **The read shim no longer tells a later attempt it already holds a file it never received.** Every `ask()` builds a fresh Loop with a fresh transcript, but the shim's delivered-ledger lived for the whole worker, so attempt 2 re-reading a file attempt 1 had fully received got "unchanged since you read it, you already hold all N bytes" about bytes its model never saw. The ledger now resets at the start of each `ask()` (not at `askFrom`, which continues the same transcript); the run-level MEMORY-CACHE counts are untouched. (F252)
+
 ## [0.50.0] - 2026-10-28
 
 ### Added
