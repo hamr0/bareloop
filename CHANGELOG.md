@@ -14,6 +14,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- **The planner is told `exit` is required on every step, with a legal example (F254).** The plan prompt called `exit` "1..2 form checks" and never said every step needs one, and a redraft got only the validator's rule. The prompt now says `REQUIRED on EVERY step` and shows two legal `exit` shapes, and the missing-exit red carries the same example. On deepseek-flash first drafts refused 8 of 23 before and 1 of 24 after; plan-red 1 before, 0 after.
 - **The read shim no longer tells a later attempt it already holds a file it never received.** Every `ask()` builds a fresh Loop with a fresh transcript, but the shim's delivered-ledger lived for the whole worker, so attempt 2 re-reading a file attempt 1 had fully received got "unchanged since you read it, you already hold all N bytes" about bytes its model never saw. The ledger now resets at the start of each `ask()` (not at `askFrom`, which continues the same transcript); the run-level MEMORY-CACHE counts are untouched. (F252)
 
 ## [0.50.0] - 2026-10-28

@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { runPlan } from '../src/planrun.js';
+import { EXIT_EXAMPLE } from '../src/plan.js';
 import { validateJob } from '../src/job.js';
 import { StallError, MAX_STALLS } from '../src/stall.js';
 import { scriptedProvider, scriptedNativeFactory } from './helpers.js';
@@ -1117,4 +1118,13 @@ test('T: with no maxWallMs the materials block carries money only — an absent 
   const draft = prompts.find((p) => p.includes('DRAFT-PLAN'));
   assert.match(draft, /money left for the whole run/);
   assert.doesNotMatch(draft, /time left for the whole run/, 'no cap means no time line — not "0 minutes", not "unlimited"');
+});
+
+test('F254: after a missing-exit red the redraft prompt carries the legal exit example', async (t) => {
+  const wd = makePatient(t);
+  const noExit = JSON.stringify({ schema: 'plan-v1', steps: [{ id: 'x', action: 'do', tools: ['read'], rounds: 6 }] });
+  const provider = scriptedProvider([{ text: 'scout notes' }, { text: noExit }, { text: noExit }]);
+  await go(wd, provider);
+  assert.match(provider.calls[2], /missing-required/);
+  assert.ok(provider.calls[2].includes(EXIT_EXAMPLE), 'the redraft prompt shows a legal exit');
 });

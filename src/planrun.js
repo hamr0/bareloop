@@ -28,7 +28,7 @@ import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
 import { runClose, runStages, ralph, CLOSE_FAULTS, boundGap } from './ralph.js';
 import { validatePlan, legalScopes, closeStagesOf } from './plan.js';
-import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, RETRIEVAL_PAIR } from './plan.js';
+import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, RETRIEVAL_PAIR, EXIT_EXAMPLE } from './plan.js';
 import { snapshotScope, evalExits, CHECK_GAP_MAX } from './exits.js';
 import { createRoot } from './root.js';
 import { createStallWatch, STALL_MS, MAX_STALLS } from './stall.js';
@@ -700,7 +700,7 @@ strictly in array order. Each step (no other fields exist):
   inside it, and a "tree-changed" exit's scope must not be disjoint from it (one that
   CONTAINS it is fine) — otherwise every write the step could make is denied, or the
   exit can never pass, on every attempt.
-- "exit": 1..${MAX_EXITS_PER_STEP} form checks that ALL must pass (AND), each one of:
+- "exit": REQUIRED on EVERY step — 1..${MAX_EXITS_PER_STEP} form checks that ALL must pass (AND), each one of:
     {"type":"artifact-written","path":"...","pattern":"optional regex"}
     {"type":"tree-changed","scope":"<copy one value from the offered scopes below>"}
     {"type":"json-valid","path":"..."}
@@ -709,6 +709,7 @@ strictly in array order. Each step (no other fields exist):
   it character for character. No other name exists, and you cannot add one.
   A check-passes on a write-granted step MUST be paired with a tree-changed exit
   (the repository starts green — a lone check would pass on the untouched tree).
+  ${EXIT_EXAMPLE}
   A check-passes may ONLY appear on a step whose tools include write or edit: a
   failing check is reported back to THAT step's worker for another attempt, so
   the step must be able to act on the report. Do not plan a separate read-only
