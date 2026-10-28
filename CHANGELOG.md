@@ -5,6 +5,34 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.50.0] - 2026-10-28
+
+### Added
+
+- **A date in a signed language and a decimal comma can be a fact (F249).** A `date` fact may sign `lang` (`en de fr es it pt nl`) and a `number` or `money` fact `decimal` (`","`); the page-word map may now name `date` and `number` and give `lang` / `decimal`, and is told a label must appear once on its page line and sit right before the value. A signed `lang` whose month names are not on the page, or a `decimal: ","` with no comma-decimal amount on the page, is left under Not checked with a plain reason.
+- **A currency sign is filed by how the page writes it (F249).** A sign glued to the number (`29,99€`, `€399`) is read as a currency, a sign after a space (`29,99 €`) as a unit, and both when the page writes both, whichever box the AI listed it in; a sign legally in both boxes is no longer dropped as listed twice, and a sign listed twice whose page form needs one box says which box it kept.
+- **A page-form fact's claim text is written as the quote spells the value (F249).** For a fact that signs `lang` or `decimal` the worker's value stays canonical (`2026-10-26`, `1057.65`, bareguard's typed binding) but the text bareguard scans for numbers is now the quote's own spelling (`26 October 2026`, `1.057,65`), taken from bareguard's evidence span, so a correct value is no longer red on "the number is not in the quote". Facts that sign neither are checked once, as before.
+- **The "can it read" check follows the forms a price fact signs (F249).** For a money fact that signs `decimal: ","` the check now finds its candidate lines with the comma, the `.` or space thousands marks and a glued or spaced sign (`48,49€`, `UVP: 1.057,65 €`, `1 089€`), and hands the checker the canonical amount (`48.49`, `1057.65`, `1089`); before, `48,49` read as 4849 and a good page was left under Not checked. Grading is still bareguard's own.
+- **A fact named "last updated" is no longer refused as a count (F249).** "One result is one record; ask for N results instead" fired on any name holding "last"; "last" followed directly by a word ending in "ed" ("last updated", "last modified") now passes. "last flight", "latest", "next" and every other counting name are refused as before.
+- **A drafter that drops a fact's `lang` or `decimal` is refused at $0 (F249).** When the page look gave a fact a `lang` or `decimal`, the signed fact must sign the same value; otherwise validation reds with `the fact "released" must sign lang "de", as the page look found. Nothing spent.`, instead of signing an ISO-only date or a point-decimal that reds at run time.
+
+### Changed
+
+- **bareguard `^0.26.0` to `^0.27.0`.** Its page forms (a date in a signed language, a decimal comma, a currency sign glued after the number) are what the Added entries above build on; an existing signed spec reads as before.
+- **barebrowse `^0.24.1` to `^0.25.0`.** A consent popup that shows 1-3 seconds after load is now closed on the first read of a page, so a page behind a late popup reads as the page. bareloop still asks for the same `act` read; barebrowse's new data mode is not used yet.
+- **A money unit listed twice is refused in plain words.** Units that are the same once marks (`**`, `__`) and spaces are removed (`**pp**` and `pp`) now stop at the $0 signing pre-flight naming the fact and both units, instead of bareguard's raw error; bareloop's own partial copy of that rule is gone.
+
+### Fixed
+
+- **A page line with a very long run of digits no longer slows drafting.** The price-mark read, its trailing-mark trim and the comma-decimal page check are now linear (a 40,000-digit line took about 2 seconds, now milliseconds); what they return is unchanged.
+- **A page that loads only its menus, or times out, is fetched up to 3 times.** A web address whose page came back as just the site's header and menus (seen on a Dell laptop page, fine on the next try) used to stop drafting at once. Now the whole fetch is tried again, with a fresh browser and a 3 second pause, up to 3 attempts in all; only a menus-only page or a timeout is retried (a refused address, a bot check, any other load error or an empty page stops on the first try). If all 3 fail the stop reads the same with "(tried 3 times)" added. One attempt still waits at most 90 seconds, so a page that keeps timing out can take about 4.5 minutes before it stops.
+- **A money fact's decimal mark is picked by code from how the page writes its prices.** The mark comes from the amounts next to the fact's currency sign (a comma and two digits, like "1.058,47 €"), so a fact the page-map AI signed without a decimal, or with the wrong one, still reads (live: Dell de-de laptops).
+- **Panel: a `~` rule line in "The job" box shows `~` in the gutter, as fwdloop does.** Numbering is unchanged.
+- **A price form that reads no amount on the page is dropped before the same-value rule.** A unit such as "ohne MwSt." sitting alone on its own line has no amount next to it, so it is now dropped first and the form that does read ("€") is kept, instead of the whole price fact falling to Not checked (seen live on Dell de-de laptops).
+- **A page that loads only its site menus is re-read on the same open page until it settles.** The page is read again every 2 seconds for up to 20 seconds before a try counts as failed. A failed fetch now records what each try saw (size, time, the first 300 characters, secret-masked) in the draft log.
+- **A blank word in the AI's page answer is left out.** An empty or spaces-only entry in a fact's words, currencies or units names nothing; it is dropped when the answer is read, with no note, and a list left empty counts as absent. It no longer shows as `"" is not written on the page.`.
+- **A `~` rule whose fact is checked no longer also shows under Not checked.** The blank unit above made the page-read note unreadable to the splitter, so a kept fact's word notes were listed as Not checked; they now sit under how the page was read. A rule whose fact really drops still shows under Not checked.
+
 ## [0.49.0] - 2026-10-26
 
 ### Added

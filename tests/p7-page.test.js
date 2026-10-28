@@ -113,9 +113,9 @@ function gutterHarness(id, value) {
   return [...gut.innerHTML.matchAll(/<div(?: style="height:(\d+)px")?>(.*?)<\/div>/g)].map((m) => [m[2], m[1] ? Number(m[1]) : null]);
 }
 
-test('gutter: a plain job line is numbered, a ~ line and an empty line are not; each row is as tall as its wrapped line', () => {
+test('gutter: a plain job line is numbered, a ~ line shows ~ (no number) and an empty line shows nothing; each row is as tall as its wrapped line', () => {
   const rows = gutterHarness('jf-job', 'Fix the failing date tests\n~ no tests\n\nKeep API\nMake npm test pass\n~ no deps');
-  assert.deepEqual(rows.map((r) => r[0]), ['1', '', '', '2', '3', '']);
+  assert.deepEqual(rows.map((r) => r[0]), ['1', '~', '', '2', '3', '~']);
   assert.deepEqual(rows.map((r) => r[1]), [42, 21, 21, 21, 42, 21], 'heights come from the mirror (a long line wraps to two rows)');
 });
 

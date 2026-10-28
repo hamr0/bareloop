@@ -5248,8 +5248,8 @@
       fitCardBoxes();
     }
     msgInput.addEventListener("input", renderMain);
-    // P7 — the numbered boxes. A plain job line is numbered 1, 2, 3; a line starting `~` is a rule for the line above and has no
-    // number; Inputs numbers every line; empty lines have none. A hidden mirror (same font/width/padding) measures each logical
+    // P7 — the numbered boxes. A plain job line is numbered 1, 2, 3; a line starting `~` is a rule for the line above: it shows `~` in
+    // the gutter and takes no number; Inputs numbers every line; empty lines have none. A hidden mirror (same font/width/padding) measures each logical
     // line's wrapped height so every number stays level with its own line — the same rules src/jobblock.js parses by.
     var NUMBERED_IDS = ["jf-job", "jf-inputs"];
     var FIT_IDS = ["jf-job", "jf-inputs", "jf-dest"];
@@ -5261,7 +5261,8 @@
       var n = 0;
       var nums = lines.map(function(l){
         var t = l.trim();
-        if(t === "" || (isJob && t.charAt(0) === "~")) return "";
+        if(t === "") return "";
+        if(isJob && t.charAt(0) === "~") return "~";
         n += 1; return String(n);
       });
       mir.style.width = ta.clientWidth ? ta.clientWidth + "px" : "";

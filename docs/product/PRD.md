@@ -2087,3 +2087,14 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
   4. **"Must not say" checks:** bareguard has no such rule today. No live case yet.
 - **Rules that apply:** gaps 1 and 2 each need a POC with a frozen rule on real unseen pages before any build. Gaps 3 and 4 have no live failure yet, so hamr decides at the discussion whether they are built (§8a). Any missing bareguard primitive becomes a change ask to bareguard, never a local patch.
 - **Status:** PARKED; discuss after the 0.49.0 release.
+- **Status 2026-10-27:** gap 2 built on `fix/barebrowse-0250` and green live (F251); gap 1 code reader passes, AI label pick fails (POC v4 rule and v5 samples both 3/8, F251) — parked for later, candidates: a weekday between label and date, a number's thousands comma; gaps 3 and 4 stay parked (no live case).
+- **Order 2026-10-28:** harness2 experiments come first; see v1.118.
+
+### Next after `fix/barebrowse-0250` ships: the harness2 experiments (v1.118 — 2026-10-28) — DRAFT, unsigned
+
+- **Source:** hamr 2026-10-28, after reading Google Research's harness2. The page is `docs/wiki/HARNESS2.md`.
+- **Order:** these experiments are NEXT once `fix/barebrowse-0250` ships. They come before the parked rubric gaps (v1.117, gap 1 and the rest).
+- **What:** tool guidance learned from run records, one lever at a time. E0 is a $0 archive read and comes first. E1 is a paid ON/OFF only if E0 earns it. Later levers (memory to worker, skills, subagents, system prompt) each need their own frozen POC.
+- **Out by law:** guardrails, the tool-call hook, `run`/scripts. The agent never authors its arbiter.
+- **Rules that apply:** no paid run before the E0 read; pre-register and freeze before any number; caps, n and pass margins are hamr's to set.
+- **Status:** DRAFT; nothing built; interview hamr before locking. Detail and open questions: `docs/wiki/HARNESS2.md`.

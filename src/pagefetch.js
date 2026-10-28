@@ -9,7 +9,7 @@
 // proven in step 0 ('read' and 'full' returned almost nothing from a results page). The text that comes back is the input. An empty
 // fetch is a plain-words stop, never a silent empty input. Nothing here touches a model.
 
-import { SECRET_PATTERNS } from './validate.js';
+import { SECRET_PATTERNS, redactSecrets } from './validate.js';
 import { TAG } from './labelscan.js';
 
 /** the session options (incognito: no auth ever enters; blockPrivateNetwork: SSRF guard); ONE frozen object so a test can pin them */
@@ -30,7 +30,18 @@ export const MIN_PAGE_CHARS = 200;
 export const MIN_CONTENT_CHARS = 100;
 /** the page reader's landmark roles for a site's own chrome (the ARIA names of header, menu and footer); everything under one is not the page's content */
 const CHROME_ROLES = new Set(['banner', 'navigation', 'contentinfo']);
-/** our own deadline around one whole fetch (a hung browser leaves no trace; this is the only thing that fires on the absence of an answer) */
+/** how many times one fetch is tried when it comes back header-only or times out (a real Dell page was header-only on one try and whole on the next) */
+export const FETCH_ATTEMPTS = 3;
+/** the pause between attempts (ms) */
+export const RETRY_WAIT_MS = 3000;
+/** a header-only snapshot is re-taken (same open page) every this many ms until content shows up (live: Dell de-de gave header-only 3 times in ~5 s
+ *  each, while its content arrived ~18-35 s after load; a fast refetch hits the same unsettled page) */
+export const SETTLE_INTERVAL_MS = 2000;
+/** the most one attempt keeps re-reading a header-only page (ms) before it counts as header-only; the per-attempt deadline below still bounds the whole attempt */
+export const SETTLE_BUDGET_MS = 20_000;
+/** how many characters of a header-only page's content (after the snapshot header) the failure record keeps */
+export const HEAD_KEEP_CHARS = 300;
+/** our own deadline around ONE attempt (a fetch that retries can take up to FETCH_ATTEMPTS of these, plus the pauses); a hung browser leaves no trace, this is the only thing that fires on the absence of an answer */
 export const PAGE_FETCH_TIMEOUT_MS = 90_000;
 
 /** @param {unknown} v @returns {boolean} an http(s) address (the one spelling of "this Inputs value is a web address") */
@@ -70,13 +81,18 @@ export function pageContentChars(text) {
  *   snapshot: (o?: {mode?: string}) => Promise<string>, close: () => Promise<void>}} FetchPage the part of barebrowse's page handle the fetch uses
  */
 
+/** @typedef {{chars: number, ms: number, head: string}} AttemptRecord what a header-only attempt saw: content characters, elapsed ms, the first characters of the content (secret-masked) */
+
 /**
  * Fetch one page's text. `connect` is injected (a test never reaches the network); the default is barebrowse's own `connect`.
+ * The whole fetch (own browser, own page, closed each time) is tried up to FETCH_ATTEMPTS times, but ONLY when an attempt ends header-only (the page
+ * loaded its menus and not its content) or times out (our deadline, or the page load's own timeout). A bot challenge, a refused or private address, any
+ * other load error, a near-empty page and a non-text answer are final on the first attempt.
  * @param {string} url
- * @param {{connect?: (opts: Record<string, any>) => Promise<FetchPage>, timeoutMs?: number, idleMs?: number, idleTimeoutMs?: number, closeWaitMs?: number}} [o]
- * @returns {Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>} `error` is plain words, without a spend line
+ * @param {{connect?: (opts: Record<string, any>) => Promise<FetchPage>, timeoutMs?: number, idleMs?: number, idleTimeoutMs?: number, closeWaitMs?: number, retryWaitMs?: number, settleMs?: number, settleIntervalMs?: number}} [o] `retryWaitMs` - the pause between attempts (a test passes 0); `settleMs`/`settleIntervalMs` - the in-attempt re-read budget and pace for a header-only page
+ * @returns {Promise<{ok: true, text: string, url: string}|{ok: false, error: string, attempts?: AttemptRecord[]}>} `error` is plain words, without a spend line
  */
-export async function fetchPageText(url, { connect, timeoutMs = PAGE_FETCH_TIMEOUT_MS, idleMs = NETWORK_IDLE_MS, idleTimeoutMs = NETWORK_IDLE_TIMEOUT_MS, closeWaitMs = 3000 } = {}) {
+export async function fetchPageText(url, { connect, timeoutMs = PAGE_FETCH_TIMEOUT_MS, idleMs = NETWORK_IDLE_MS, idleTimeoutMs = NETWORK_IDLE_TIMEOUT_MS, closeWaitMs = 3000, retryWaitMs = RETRY_WAIT_MS, settleMs = SETTLE_BUDGET_MS, settleIntervalMs = SETTLE_INTERVAL_MS } = {}) {
   let u;
   try { u = new URL(url.trim()); } catch { return { ok: false, error: `${url} is not a web address bareloop can read` }; }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return { ok: false, error: `${url} is not an http or https address` };
@@ -88,6 +104,30 @@ export async function fetchPageText(url, { connect, timeoutMs = PAGE_FETCH_TIMEO
   else {
     try { open = /** @type {any} */ ((await import('barebrowse')).connect); } catch (e) { return { ok: false, error: `the page reader (barebrowse) could not be loaded: ${/** @type {Error} */ (e).message}` }; }
   }
+  /** @type {{ok: false, error: string}} */
+  let last = { ok: false, error: '' };
+  /** @type {AttemptRecord[]} */
+  const attempts = [];
+  for (let attempt = 1; attempt <= FETCH_ATTEMPTS; attempt += 1) {
+    const r = await attemptOnce(u, open, { timeoutMs, idleMs, idleTimeoutMs, closeWaitMs, settleMs, settleIntervalMs });
+    if (r.ok) return r;
+    if (!r.retry) return { ok: false, error: r.error, ...(attempts.length || r.record ? { attempts: r.record ? [...attempts, r.record] : attempts } : {}) };
+    if (r.record) attempts.push(r.record);
+    last = { ok: false, error: r.error };
+    if (attempt < FETCH_ATTEMPTS && retryWaitMs > 0) await new Promise((res) => setTimeout(res, retryWaitMs));
+  }
+  return { ok: false, error: `${last.error} (tried ${FETCH_ATTEMPTS} times)`, ...(attempts.length ? { attempts } : {}) };
+}
+
+/**
+ * ONE attempt: opens its own browser and page and always closes them. `retry: true` marks the two endings worth another go (header-only, timeout).
+ * @param {URL} u @param {(opts: Record<string, any>) => Promise<FetchPage>} open
+ * @param {{timeoutMs: number, idleMs: number, idleTimeoutMs: number, closeWaitMs: number, settleMs: number, settleIntervalMs: number}} o
+ * @returns {Promise<{ok: true, text: string, url: string}|{ok: false, error: string, retry: boolean, record?: AttemptRecord}>}
+ */
+async function attemptOnce(u, open, { timeoutMs, idleMs, idleTimeoutMs, closeWaitMs, settleMs, settleIntervalMs }) {
+  const t0 = Date.now();
+  let stopped = false;
   /** @type {NodeJS.Timeout|undefined} */
   let timer;
   /** @type {Promise<FetchPage>|undefined} */
@@ -101,19 +141,31 @@ export async function fetchPageText(url, { connect, timeoutMs = PAGE_FETCH_TIMEO
         await p.goto(u.href, GOTO_TIMEOUT_MS);
         // bounded: a page that never goes quiet (polling, streaming) is read as it stands - the wait is for a page that is still filling
         try { await p.waitForNetworkIdle({ idle: idleMs, timeout: idleTimeoutMs }); } catch { /* read what is there */ }
-        return p.snapshot({ ...SNAPSHOT_OPTIONS });
+        let snap = await p.snapshot({ ...SNAPSHOT_OPTIONS });
+        // header-only: the page's scripts may still be filling it (network idle came early). Keep the page open and re-read it, up to settleMs;
+        // only then does this attempt count as header-only. The attempt's own deadline still bounds all of it.
+        const settleEnd = Date.now() + settleMs;
+        while (!stopped && Date.now() < settleEnd && isHeaderOnly(snap)) {
+          await new Promise((res) => setTimeout(res, Math.min(settleIntervalMs, Math.max(0, settleEnd - Date.now()))));
+          if (stopped) break;
+          snap = await p.snapshot({ ...SNAPSHOT_OPTIONS });
+        }
+        return snap;
       })(),
-      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`no answer inside ${Math.round(timeoutMs / 1000)} seconds`)), timeoutMs); }),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error(`no answer inside ${Math.round(timeoutMs / 1000)} seconds`), { deadline: true })), timeoutMs); }),
     ]);
-    if (typeof text !== 'string') return { ok: false, error: `${u.href} did not come back as text` };
-    if (/\[BOT CHALLENGE DETECTED\]/.test(text)) return { ok: false, error: `${u.href} asked for a human check (a bot challenge), so the page could not be read` };
+    if (typeof text !== 'string') return { ok: false, retry: false, error: `${u.href} did not come back as text` };
+    if (/\[BOT CHALLENGE DETECTED\]/.test(text)) return { ok: false, retry: false, error: `${u.href} asked for a human check (a bot challenge), so the page could not be read` };
     const size = text.trim().length;
-    if (size < MIN_PAGE_CHARS) return { ok: false, error: `${u.href} came back with ${size === 0 ? 'no text' : `only ${size} characters of text`} (less than ${MIN_PAGE_CHARS}) - the page did not load, or holds nothing to read` };
-    if (pageContentChars(text) < MIN_CONTENT_CHARS) return { ok: false, error: `${u.href} came back with only the site's own header and menus - the page did not load its content, so there is nothing to read` };
+    if (size < MIN_PAGE_CHARS) return { ok: false, retry: false, error: `${u.href} came back with ${size === 0 ? 'no text' : `only ${size} characters of text`} (less than ${MIN_PAGE_CHARS}) - the page did not load, or holds nothing to read` };
+    if (pageContentChars(text) < MIN_CONTENT_CHARS) return { ok: false, retry: true, error: `${u.href} came back with only the site's own header and menus - the page did not load its content, so there is nothing to read`, record: headerRecord(text, Date.now() - t0) };
     return { ok: true, text, url: u.href };
   } catch (e) {
-    return { ok: false, error: `${u.href} could not be read: ${/** @type {Error} */ (e)?.message ?? String(e)}` };
+    const msg = /** @type {Error} */ (e)?.message ?? String(e);
+    const timedOut = /** @type {any} */ (e)?.deadline === true || /time[d ]?-?out/i.test(msg);
+    return { ok: false, retry: timedOut, error: `${u.href} could not be read: ${msg}` };
   } finally {
+    stopped = true;
     if (timer !== undefined) clearTimeout(timer);
     // always close the browser, also when the deadline fired while it was still starting or loading
     if (opening) {
@@ -123,4 +175,15 @@ export async function fetchPageText(url, { connect, timeoutMs = PAGE_FETCH_TIMEO
       if (w !== undefined) clearTimeout(w);
     }
   }
+}
+
+/** @param {unknown} text @returns {boolean} text long enough to pass the near-empty floor, yet with no content outside the site's own chrome (the one case worth re-reading) */
+function isHeaderOnly(text) {
+  return typeof text === 'string' && !/\[BOT CHALLENGE DETECTED\]/.test(text) && text.trim().length >= MIN_PAGE_CHARS && pageContentChars(text) < MIN_CONTENT_CHARS;
+}
+
+/** the short failure record of a header-only attempt; the head is secret-masked (the log is append-only) @param {string} text @param {number} ms @returns {AttemptRecord} */
+function headerRecord(text, ms) {
+  const body = text.split('\n').filter((l) => !/^url: /.test(l) && !/^[\d,]+ chars → /.test(l) && !/^hint: /.test(l)).join(' ').replace(/\s+/g, ' ').trim();
+  return { chars: pageContentChars(text), ms, head: redactSecrets(body.slice(0, HEAD_KEEP_CHARS)) };
 }

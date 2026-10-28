@@ -18,7 +18,11 @@ export const FACT_OPS = Object.freeze(['lt', 'lte', 'gt', 'gte', 'between']);
 /** bareguard signs at most this many decides on one `cited` check */
 export const MAX_FACTS = 10;
 /** every field a fact may carry */
-const FACT_FIELDS = Object.freeze(['name', 'shape', 'unit', 'currency', 'phrase', 'anchor', 'until', 'rule', 'aiProposal']);
+const FACT_FIELDS = Object.freeze(['name', 'shape', 'unit', 'currency', 'phrase', 'anchor', 'until', 'rule', 'aiProposal', 'lang', 'decimal']);
+/** the languages whose month names bareguard 0.27 reads on a `date` fact (its `lang`), each with the name a person reads; absent `lang` = ISO YYYY-MM-DD only */
+export const FACT_LANGS = Object.freeze({ en: 'English', de: 'German', fr: 'French', es: 'Spanish', it: 'Italian', pt: 'Portuguese', nl: 'Dutch' });
+/** the decimal marks a number or money fact may sign (bareguard 0.27 `decimal`); absent = "." */
+export const FACT_DECIMALS = Object.freeze(['.', ',']);
 /** every field a part of class `fact` may carry (the shared ones are checked by rubricStepShapeReds) */
 export const FACT_PART_FIELDS = Object.freeze(['source', 'facts', 'count']);
 /** a fact's name appears in the claim text bareguard scans for numbers, so it carries letters only (no digit can red the claim) */
@@ -97,7 +101,6 @@ export function factShapeReds(part, w, red) {
           const list = asList(us);
           if (list.length > MAX_UNITS) red('invalid-value', `${fw}.unit`, `at most ${MAX_UNITS} units (${list.length} given)`);
           else if (list.some((u) => u.length > MAX_UNIT_CHARS)) red('invalid-value', `${fw}.unit`, `a unit is at most ${MAX_UNIT_CHARS} characters`);
-          else if (new Set(list.map((u) => u.replace(/\s+/g, ' ').trim())).size !== list.length) red('invalid-value', `${fw}.unit`, 'the units are not repeated (two that differ only in spaces are the same unit)');
         }
       }
       if (has('currency')) {
@@ -108,6 +111,14 @@ export function factShapeReds(part, w, red) {
           if (list.length > MAX_CURRENCIES) red('invalid-value', `${fw}.currency`, `at most ${MAX_CURRENCIES} currencies (${list.length} given)`);
           else if (new Set(list).size !== list.length) red('invalid-value', `${fw}.currency`, 'the currencies are not repeated');
         }
+      }
+      if (has('lang')) {
+        if (f.shape !== 'date') red('invalid-value', `${fw}.lang`, 'only a date fact carries lang (the language the page writes its month names in); leave it out for a date written 2026-10-26');
+        else if (typeof f.lang !== 'string' || !Object.hasOwn(FACT_LANGS, f.lang)) red('invalid-value', `${fw}.lang`, `one of ${Object.keys(FACT_LANGS).join(' | ')}`);
+      }
+      if (has('decimal')) {
+        if (f.shape !== 'number' && f.shape !== 'money') red('invalid-value', `${fw}.decimal`, 'only a number or money fact carries decimal (the mark the page writes before the decimals)');
+        else if (!FACT_DECIMALS.includes(f.decimal)) red('invalid-value', `${fw}.decimal`, 'one of "." | ","');
       }
       if (f.shape === 'phrase') {
         if (!nonEmpty(f.phrase)) red('invalid-value', `${fw}.phrase`, 'the fixed words the quote must contain, copied from the input');
@@ -147,6 +158,8 @@ export function factDecides(part) {
     const d = { valueKind: f.shape };
     if (f.shape === 'money') { if (f.unit !== undefined) d.unit = f.unit; if (f.currency !== undefined) d.currency = f.currency; }
     if (f.anchor !== undefined) d.anchor = f.anchor;
+    if (f.lang !== undefined) d.lang = f.lang;
+    if (f.decimal !== undefined) d.decimal = f.decimal;
     if (f.until !== undefined) d.until = f.until;
     if (f.rule) {
       d.op = f.rule.op;
@@ -161,11 +174,17 @@ export function factDecides(part) {
  * from the values the worker gave (the worker writes no claim text): `name: value; name: value`. A phrase fact contributes its
  * own signed words. A result that is not an object, or has no string quote, still becomes a claim — an empty one — so
  * bareguard reds it by name rather than the result vanishing.
- * @param {any} part @param {unknown} results @returns {{claim: string, quote: string, values?: Record<string, string>}[]}
+ *
+ * A fact that signs a page form (`lang` or `decimal`) carries a CANONICAL value ("2026-10-26", "1057.65": bareguard's typed binding, `values.d<j>`),
+ * but bareguard's number scan compares the claim TEXT with the quote's own digits, so the text must spell the value the way the quote does
+ * ("26 October 2026", "1.057,65"). That spelling is `asWritten[result][fact index]`: the value span bareguard itself reported for that quote
+ * ({@link writtenSpans}); a fact with no span there reads the value the worker gave.
+ * @param {any} part @param {unknown} results @param {(Record<number, string>|undefined)[]} [asWritten]
+ * @returns {{claim: string, quote: string, values?: Record<string, string>}[]}
  */
-export function factClaims(part, results) {
+export function factClaims(part, results, asWritten = []) {
   const list = Array.isArray(results) ? results : [];
-  return list.map((/** @type {any} */ r) => {
+  return list.map((/** @type {any} */ r, /** @type {number} */ i) => {
     const given = isRec(r) && isRec(r.values) ? r.values : null;
     /** @type {Record<string, string>} */
     const values = {};
@@ -176,10 +195,34 @@ export function factClaims(part, results) {
       const v = given && Object.hasOwn(given, f.name) ? given[f.name] : undefined;
       // a JSON number is the value as written ("389"): converted, never repaired; anything else is left for bareguard to red
       const s = typeof v === 'number' && Number.isFinite(v) ? String(v) : v;
-      if (typeof s === 'string') { values[`d${j}`] = s; said.push(`${f.name}: ${s}`); } else if (s !== undefined) { /** @type {any} */ (values)[`d${j}`] = s; }
+      if (typeof s === 'string') { values[`d${j}`] = s; said.push(`${f.name}: ${asWritten[i]?.[j] ?? s}`); } else if (s !== undefined) { /** @type {any} */ (values)[`d${j}`] = s; }
     });
     return { claim: said.join('; '), quote: isRec(r) && typeof r.quote === 'string' ? r.quote : '', values };
   });
+}
+
+/**
+ * Where bareguard read each page-form fact's value inside each quote, as the quote spells it: from `checkStep`'s `full.evidence` (one entry per
+ * claim: `text` = the normalized quote the decides ran on, `spans` = where each decide read its anchor, value and unit/currency). Only a fact that
+ * signs `lang` or `decimal` is looked up; the span is the decide's `value` span (the one equal to the claim's own value when bareguard flags it).
+ * @param {any} part @param {any[]|undefined} evidence @returns {(Record<number, string>|undefined)[]} per claim index
+ */
+export function writtenSpans(part, evidence) {
+  /** @type {(Record<number, string>|undefined)[]} */
+  const out = [];
+  for (const e of Array.isArray(evidence) ? evidence : []) {
+    if (!isRec(e) || !Number.isInteger(e.claim) || typeof e.text !== 'string' || !Array.isArray(e.spans)) continue;
+    /** @type {Record<number, string>} */
+    const row = {};
+    part.facts.forEach((/** @type {any} */ f, /** @type {number} */ j) => {
+      if (f.lang === undefined && f.decimal === undefined) return;
+      const mine = e.spans.filter((/** @type {any} */ sp) => isRec(sp) && sp.decide === j && sp.role === 'value' && Number.isInteger(sp.start) && Number.isInteger(sp.end));
+      const sp = mine.find((/** @type {any} */ x) => x.matched === true) ?? mine[0];
+      if (sp) row[j] = e.text.slice(sp.start, sp.end);
+    });
+    if (Object.keys(row).length) out[e.claim] = row;
+  }
+  return out;
 }
 
 /** @param {unknown} n @param {string} shape @param {any} f @returns {string} one bound, as the person would say it */
@@ -219,6 +262,8 @@ export function factSentence(f, source) {
   if (f.shape === 'phrase') bits.push('phrase', `must say "${f.phrase}"`);
   else {
     bits.push(f.shape === 'money' ? `money in ${moneyForms(f).join(' or ')}` : f.shape);
+    if (f.lang !== undefined) bits.push(`month names in ${FACT_LANGS[/** @type {keyof typeof FACT_LANGS} */ (f.lang)] ?? f.lang}`);
+    if (f.decimal === ',') bits.push('decimal comma');
     if (f.rule) bits.push(ruleWords(f));
     else if (f.anchor === undefined) bits.push('as the quote writes it');
     if (f.anchor !== undefined) bits.push(f.until !== undefined ? `the words after "${f.anchor}" up to "${f.until}"` : `after "${f.anchor}"`);
@@ -237,6 +282,9 @@ export function factBrief(f) {
   /** @type {string[]} */
   const bits = [f.shape === 'money' ? `an amount in ${moneyForms(f).join(' or ')}` : `a ${f.shape}`];
   if (f.shape === 'text') bits[0] = 'words';
+  // a fact that signs a page form is read in that form, but the value the worker writes is canonical (bareguard's typed binding): say so
+  if (f.lang !== undefined) bits.push(`write the date as YYYY-MM-DD (the quote writes it with ${FACT_LANGS[/** @type {keyof typeof FACT_LANGS} */ (f.lang)] ?? f.lang} month names)`);
+  if (f.decimal === ',') bits.push('write the amount with a point before the decimals and no thousands marks, e.g. 1057.65 (the quote writes a comma before the decimals)');
   if (f.anchor !== undefined) bits.push(f.until !== undefined ? `the words right after "${f.anchor}" up to "${f.until}"` : `right after "${f.anchor}"`);
   if (f.rule) bits.push(`must be ${ruleWords(f)}`);
   return `${f.name} — ${bits.join(', ')}`;

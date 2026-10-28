@@ -14854,3 +14854,78 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 - [READING] The new layout is what made the train page answerable; not measured, because DeepSeek was never run on the old act train layout.
 - Outcome: barebrowse data mode is the real win (adopt once published, after a $0 replay on saved pages). Jev stays PARKED: accurate and cheap, not needed for accuracy.
 - Honest limit: 35 questions on 3 pages is underpowered for a general claim.
+
+## F249 — rubric gaps 1 and 2 POC: both FAIL on their frozen rules (2026-10-27; $0.0292, 7 DeepSeek deepseek-flash calls, nothing built)
+
+**Grounded in:** the addendum "Addendum 2026-10-26 — rubric gaps 1 and 2: POC pre-registration (FROZEN)" in `docs/product/ITEM33-BUILD.md` (frozen at 9513c8a, nothing changed after); raw files `.claude/scratch/rubric-gaps/` (`FROZEN.md`, `key.json`, `stepA1.out.json`, `stepA2.out.json`, `stepB1.out.json`, `stepB1.calls.jsonl`; untracked scratch). Reader: bareguard 0.26.0 `evalDecide`; the product's own `applyPageRules` and `dryReadMoney`.
+
+**Verdicts (right / wrong / miss; pass = 5 of 6 right and zero wrong).**
+- [MEASURED] Gap 1, step A (code only, $0, the label I expected): 2 right / 1 wrong / 3 miss of 6 pages. FAIL.
+- [MEASURED] Gap 1, step B (AI map, 7 calls, $0.0292): 1 right / 2 wrong / 3 miss. FAIL.
+- [MEASURED] Gap 2 (money, sign after or code before the number): 0 read on every form, no wrong price. Sign after 0 of 16 key lines, decimal comma 0 of 10, code before 0 of 3 (one page, declared underpowered). FAIL on all three forms.
+
+**Causes, each from the outputs or source.**
+- [CODE] bareguard's date reader is ISO only (`readDate`, rubric-locate.js:429; "a string that is exactly one real ISO date", line 408). Only go.dev (written "2026-02-10") read. FOSDEM ("5 October 2026") and 40C3 ("13. Oktober 2026") read nothing, in both steps.
+- [MEASURED] Label and value sit on different page lines on 3 of the 6 gap-1 pages (ruby, fosdem, ccc). The reader takes one line, so step A reads `value-none` on each (stepA1 g1-ruby, g1-fosdem, g1-ccc). A layout limit, not a bug.
+- [MEASURED] The AI picks labels that are not unique or are headers. Step B go: "(released" matches 77 lines holding 28 different dates, so the answer is wrong. Step B steam: "of the" matches the recent-reviews line (2210) and the English-reviews line (174655), wrong. Ruby, fosdem and ccc: the AI named "Release Date" or the date text itself as the label, no value after it, miss. Goodreads "Average rating of" was the only right step B page.
+- [CODE] Our side: `applyPageRules` always sorts a currency sign into `currency`, even when it follows the number (the pool at src/pagerules.js:239-240 puts every `CURRENCY_SYMBOLS` entry in `curs`, never in units; a sign listed in both boxes is dropped as `sign-twice`, line 234). The marker-after fact is then dropped or kept with nothing to read (stepA2: ikea-de, lidl, ikea-es `reads-no-result`; kaufland: the fact was kept, but all 4 key lines read nothing (value-none)). The lidl-de diagnostic, outside the frozen rule and not scored, read 3 of 3 prices when "€" was filed as a unit (from the POC builder's report; no output file was saved, so it is unverified).
+- [MEASURED] bareguard cannot read a glued sign (ikea-de "Preis 299.00€", ikea-es "29,99€"), a decimal comma (cdiscount, kaufland: `value-none` on "99,00 €", "149,99 €"), or a code before the number (ikea-ch "CHF 126.65": `no-value:Preis`, 0 of 3).
+
+**The addendum's slip.** The frozen addendum says four of the six gap 2 pages share a shop family. The true count is three IKEA locales (ikea-de, ikea-ch, ikea-es). Noted here; the frozen addendum is not edited.
+
+**Honest limits.** Six pages per gap is small N; the stated up-front expectation was a FAIL on the non-ISO and split-line pages, and that is the result. Step B did not get a fair label on the split-line pages. Code-before is one page.
+
+**Next.** Asks written on 2026-10-27 in `.claude/scratch/rubric-gaps/GUARD-ASK.md`, NOT yet sent (no bareguard session open): non-ISO dates, decimal comma, glued sign, and code-before (reopens ruling #37). Our side, to be tested in a second frozen POC on new unseen pages: (1) a sign after the number filed as a unit; (2) the map prompt tells the AI to name a label that is unique on its line and sits right before the value. Nothing is built until that POC passes.
+
+**2026-10-27 update:** the asks were sent and answered in bareguard 0.27.0 (adopted in 4c7d8ee); see F251.
+
+## F250 — fit check said NO to a whole-list ask on a page full of laptops (2026-10-27; $0.0067 for the one fit-check call, DeepSeek deepseek-flash; nothing built)
+
+**Grounded in:** panel draft session `smvqz6h1bnc5k` (job `dell-price2`, page `https://www.dell.com/de-de/shop/laptops/scr/laptop`): `~/.config/bareloop/panel-sessions/smvqz6h1bnc5k/draft-log.jsonl`, the saved page `.../source-seed/tree/input/page.txt`, the run spine `.../source-seed/dell-price2-bareloop/u-mvr0vlrz.jsonl`, the output `/home/hamr/Documents/bareloop-out/steps/1-2026-10-27-2.json`. Code: `src/fitcheck.js` (`decideFit`). Untracked files outside the repo.
+
+**What happened.**
+- [MEASURED] The fit-check call (label `fit-check`, $0.0067) answered the ask "List every laptop on the page" with `found:false, quote:null`, and "with its name and price" with `found:true`, quote "Dell 15-Laptop".
+- [MEASURED] The person was shown: "I found 1 of 2 of your asks on this page. Not found: List every laptop on the page (line 1). Type go on to keep drafting, or anything else to stop and change the job or the page."
+- [MEASURED] That NO was wrong. The drafting copy of the page (read by the main session at about 17:46 UTC, before the run; the file was since overwritten by the run-start refetch) had 20 "€" lines and laptop headings such as "Alienware 18 Area-51 Gaming Laptop", "Dell 14 Plus-Laptop", "Dell 15-Laptop", "Dell 16-Laptop", "Dell Pro 16-Laptop". The current file (the run-start copy) has 16 "€" lines and 10 heading lines containing "Laptop".
+- [MEASURED] The same job on the same Dell page passed the fit check (`state: fits`, same ask wording) on 5 earlier drafts the same day: `smvqvq2r097my` (16:08 UTC), `smvqxav4j9l8y` (16:52), `smvqxvtrl36vc` (17:08), `smvqy4faa1kje` (17:15), `smvqyl9u3hzum` (17:15 to 17:45). So 1 wrong NO in 6 fit checks on this job. Those five quoted different page text for the same ask ("XPS 13-Laptop", "1 bis 12 von 72 Ergebnissen", "Laptops", or a list of headings).
+- [MEASURED] The person typed "go on"; drafting continued. Run `mvr0vlrz` (dell-price2 run-1) went green, $0.0529 on the spine. The output has 6 results, every price under 1500 (823.48 to 1449.00).
+
+**Cause read.**
+- [CODE] The fit-check AI is nondeterministic on a whole-list ask ("List every X") that names no single page word. Code takes `found:false` with no quote as not found: `src/fitcheck.js:82` sets `found: a.found && onPage` (a null quote gives `onPage` false), and `src/fitcheck.js:85` puts every such ask in `notFound`, which makes the state `ask`. Code does what it is built to do; the AI's answer is what varied.
+
+**Side note, same draft.**
+- [MEASURED] The page-map answer tagged the price limit `"from":"line 1 rule 1"` on the first try, so the re-tag follow-up (commit bacf421, `RETAG_CALL_LABEL` in `src/pagemap.js`) did not fire. That fix is still not seen live.
+
+**Honest limits.** n=6 on one job and one page. An anecdote of the miss rate, not a rate. One page-map answer is no evidence about the re-tag. The exact page the fit check saw is not kept: the run-start refetch overwrote it, so the 20 "€" lines and the headings above rest on the main session's grep, not on a file.
+
+**Next.** Logged only, nothing built (hamr's call). The person's "go on" is the designed escape and it worked here.
+
+## F251 — rubric gaps 1 and 2: where the work stands after F249; gap 2 built and seen live, gap 1 parked (2026-10-27; $0.0292 + $0.040 + $0.138 + $0.0983 + $0.0979 across the POCs, DeepSeek deepseek-flash; nothing built for gap 1)
+
+**Grounded in:** the addenda in `docs/product/ITEM33-BUILD.md` (second POC pre-registration at 887fdbd, third at bf352ac, fourth at df7b131, fifth at d9166a1); raw files `.claude/scratch/rubric-gaps-v2/` to `rubric-gaps-v5/` (`FROZEN.md`, `key.json`, `*.out.json`, `calls.jsonl`; untracked scratch); the session stash `.claude/stash/2026-10-27-rubric-page-forms-dell-live.md`. Live run: see F250 (job `dell-price2`).
+
+**POC v2 and v3 (the code reader and the page-form build).**
+- [MEASURED] v2 ($0.040, bareguard 0.27.0 from scratch copies): gap 1 step A (code only) 8 of 8 PASS; step B (AI picks the label) 5 of 8 FAIL, 0 wrong. Gap 2 step A failed only because bareloop's dot-only dry read dropped the pages (the reader itself was right on 72 of 72 lines). Gap 2 step B was not run. The claim text was written in a canonical form and went red; fixed in dfa8e55.
+- [MEASURED] v3 ($0.138, the real branch code at 85c2345): gap 1 step A 7 of 8 PASS, step B 3 of 8 FAIL. Gap 2 step A 32 of 32 PASS on every form; step B 6 of 8 pages. 0 wrong anywhere. The AI picked function words ("am", "le", "el"), empty labels, or the date itself as the label.
+
+**Gap 2: built on this branch, seen live GREEN.**
+- [CODE] Commits that belong to the page-form and money work: 5423ebc (a sign is filed by how the page writes it next to the number), ae6428e (the dry read follows the forms a price fact signs), db18541 ("last updated" is not a counting name), 02fa086 (code picks the decimal mark from how the page writes its prices), c1e0306 (a price form that reads no amount on the page is dropped before the same-value rule). Shared with gap 1: c1dd4da (lang and decimal are fact fields; the map names date and number), dfa8e55 (the claim text follows how the quote spells the value), b85b6d4 (a signed fact must copy the look's lang and decimal, or it is red at $0). Found by the live Dell draft: 95321e1 and 30ae20f (a page that shows only its menus is fetched or re-read again before a try counts as failed), d84e902 (a blank word in the AI's answer is left out at parse).
+- [MEASURED] Run `mvr0vlrz` (dell-price2 run-1, the session in F250) went green at $0.0529. The output has 6 results, all under 1500 euros. The page writes the euro sign after the number with a decimal comma, which is the form F249 could not read.
+
+**Gap 1: the AI label pick is the part that fails (POC v4 and v5).**
+- [MEASURED] POC v4 (frozen at df7b131, $0.0983): one RULE sentence added to the date and number lines of the map prompt. Treatment 3 of 8 right, 0 wrong, FAIL. Control (prompt unchanged) ran 3 pages and got 1 right; the other 5 were refused by the dollar cap, which is not a miss.
+- [MEASURED] POC v5 (frozen at d9166a1, $0.0979): hamr's idea, show samples instead of a rule. Four real sample lines (from earlier POC pages) with the right pick. Treatment 3 of 8 right, 0 wrong, FAIL. Control ran 7 pages and got 2 right; 1 was refused by the cap. Declared before the freeze: no old page had a weekday and a comma before the date, so no sample taught that shape.
+- [MEASURED] Reading across v3, v4 and v5: the AI's label pick lands about 3 of 8 with no change, with a rule, or with samples. It never gave a WRONG value, only misses, and a miss shows to the person as Not checked.
+- [MEASURED] Cause (a), a weekday between the label and the date. The label stops before the weekday and the reader reads nothing. v4 mainpost: the line says "am Sonntag, 25. Oktober 2026"; the AI answered `words:["am Sonntag"]`, `value-none`. v4 smh: "...Canberra on Monday..." with `words:["at Parliament House in Canberra on"]`, `value-none`. v5 globeandmail: "photographed in Toronto on Friday, October 16, 2026" with `words:["photographed in Toronto on"]`, `value-none`. v5 ruhrnachrichten: "Eurojackpot am Dienstag, 27. Oktober 2026" with `words:["Eurojackpot am"]`, `value-none`. (The v5 control once kept the weekday, "am Dienstag,", and read right.)
+- [MEASURED] Cause (b), a plain number with a thousands comma. The AI signs decimal "," and the product drops the fact as decimal-not-on-page. v4 jsr "Weekly downloads 263,182": answer `decimal:","`, dropped. v4 sitejabber "11,116": `decimal:","`, dropped. v5 genius "11,486": `decimal:","`, dropped in both arms. The one v4 control right was the same jsr page, where the AI happened to answer `decimal:"."`.
+- [CODE] For money the code already picks the decimal mark from the page (02fa086). Numbers do not get that.
+
+**Re-tag follow-up.** Commit bacf421 (send a limit tagged to the line instead of its `~` rule back to the AI once) was built, then reverted in 97810a9 on hamr's word. It was never seen live: the AI tagged the rule right itself on the Dell draft (F250).
+
+**Honest limits.**
+- n = 1 per page, one nondeterministic sample each, 8 pages per POC. No rate claim. "About 3 of 8" is a reading across three POCs, not a rate.
+- v4 and v5 controls are partial (3 and 7 of 8 pages) because of the dollar cap; they are a reference, not a comparison.
+- Booked rates are the config rates, above DeepSeek's real bill.
+- The pages are news and registry pages snapped on 2026-10-27; one page set per POC, no page reused between v4 and v5.
+
+**Next.** hamr ruled 2026-10-27: stop gap 1 here, release this branch, come back later. Gap 1 goes to the PRD backlog with causes (a) and (b) as the candidates. Any change to the reader is a bareguard ask, never a local patch. Nothing built for gap 1.

@@ -88,7 +88,7 @@ test('the declaration schema the model fills can say a fact part; the composer p
   const schema = declarationSchema(KIND_CATALOGUE, { verdictType: 'soft-green', kinds: Object.keys(catalogueForLang(RUBRIC_LANG)) });
   const parts = schema.properties.stages.items.oneOf.find((b) => b.title === 'rubric-step').properties.params.properties.parts.items.properties;
   assert.ok(parts.class.enum.includes('fact'));
-  assert.deepEqual(Object.keys(parts.facts.items.properties).sort(), ['aiProposal', 'anchor', 'currency', 'name', 'phrase', 'rule', 'shape', 'unit', 'until']);
+  assert.deepEqual(Object.keys(parts.facts.items.properties).sort(), ['aiProposal', 'anchor', 'currency', 'decimal', 'lang', 'name', 'phrase', 'rule', 'shape', 'unit', 'until']);
   assert.ok(parts.count && parts.rules);
   assert.equal(parts.record, undefined, 'no record cutting (Part 1c)');
   assert.deepEqual(Object.keys(schema.properties.refused.items.properties), ['line', 'rule', 'reason']);

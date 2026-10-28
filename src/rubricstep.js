@@ -3,7 +3,7 @@ import { readFile, lstat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { createRubric, checkStep, renderGaps, numbersInQuote } from 'bareguard';
 import { dropRows, dropLine } from './pagedropwords.js';
-import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem, factBrief } from './facts.js';
+import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem, factBrief, writtenSpans } from './facts.js';
 
 // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES — what one job line leaves
 // behind and how it is told to the worker.
@@ -340,9 +340,10 @@ export function parseStepFile(bytes) {
  * @param {Record<string, any>} obj
  * @param {string[]} [countLabels] labels whose claim COUNT a minClaims/maxClaims part reads
  * @param {any} [factPart] the step's `fact` part: its `results` become claims (text built by code) under `cites:<source>`
+ * @param {(Record<number, string>|undefined)[]} [asWritten] per result, the value spans a page-form fact's claim text is written with (see factClaims)
  * @returns {Record<string, any>}
  */
-export function flattenStep(obj, countLabels = [], factPart = null) {
+export function flattenStep(obj, countLabels = [], factPart = null, asWritten = []) {
   /** @type {Record<string, any>} */
   const fields = {};
   // the number of claims listed under each label a claim-count check names (0 when the label is absent): counted HERE, by
@@ -352,7 +353,7 @@ export function flattenStep(obj, countLabels = [], factPart = null) {
     fields[`claims:${label}`] = Array.isArray(list) ? list.length : 0;
   }
   if (factPart) {
-    const claims = factClaims(factPart, obj.results);
+    const claims = factClaims(factPart, obj.results, asWritten);
     fields[`claims:${factPart.source}`] = claims.length;
     fields[`cites:${factPart.source}`] = claims;
   }
@@ -430,9 +431,18 @@ export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes
   }
   const parsed = parseStepFile(bytes);
   const countLabels = [...new Set(params.parts.filter((/** @type {any} */ x) => x.class === 'countable' && (x.check === 'minClaims' || x.check === 'maxClaims')).map((/** @type {any} */ x) => String(x.source)))];
-  const r = await checkStep(rubric, String(params.step), parsed.obj === null ? null : flattenStep(parsed.obj, countLabels, factPartOf(params)), {
+  const factPart = factPartOf(params);
+  const check = (/** @type {(Record<number, string>|undefined)[]} */ asWritten = []) => checkStep(rubric, String(params.step), parsed.obj === null ? null : flattenStep(parsed.obj, countLabels, factPart, asWritten), {
     inputs, ...(outputBytes === null ? {} : { outputBytes }),
   });
+  let r = await check();
+  // a fact that signs a page form (`lang` / `decimal`) has a canonical value but its claim text must spell it as the quote does: bareguard's own
+  // evidence of where it read the value in each quote gives the spelling, and the same file is checked once more with the text written so. Both
+  // passes are the one bareguard reader; the verdict, gap and counts below come from the last.
+  if (factPart && Array.isArray(factPart.facts) && factPart.facts.some((/** @type {any} */ f) => isRec(f) && (f.lang !== undefined || f.decimal !== undefined))) {
+    const written = writtenSpans(factPart, r.full.evidence);
+    if (written.some(Boolean)) r = await check(written);
+  }
   // PART 1b: a prose step's numbers are tied to the checked facts of earlier lines (bareguard's `numbersInQuote`: token match on the
   // numbers, not a canonical compare — a documented limit). Words are free; a number that no checked quote holds is a red.
   /** @type {string[]} */
@@ -498,6 +508,26 @@ function wordRange(part) {
     const lo = Math.ceil(part.wordsPerSection * 0.8);
     const hi = Math.floor(part.wordsPerSection * 1.2);
     return { min: part.names.length * lo, max: null, say: `${part.names.length} section(s) of ${lo}-${hi} words each, so at least ${part.names.length * lo} words` };
+  }
+  return null;
+}
+
+/**
+ * bareguard refuses a money unit list whose entries are equal once `**`, `__` and extra spaces are removed, naming the path
+ * `...checks[K].decides[N].unit`. K indexes buildStepSpec's checks (id `p<part>-facts`), N the fact within that part.
+ * @param {{step: number, parts: any[]}} p @param {unknown} path @returns {{name: string, a: string, b: string}|null} the fact and the two twin units, or null when the path is not that
+ */
+function dupUnitWords(p, path) {
+  const m = typeof path === 'string' ? /\.checks\[(\d+)\]\.decides\[(\d+)\]\.unit$/.exec(path) : null;
+  if (!m) return null;
+  const id = buildStepSpec(p, {}).checkpoints[String(p.step)].checks[Number(m[1])]?.id;
+  const pm = typeof id === 'string' ? /^p(\d+)-facts$/.exec(id) : null;
+  const fact = pm ? p.parts[Number(pm[1]) - 1]?.facts?.[Number(m[2])] : null;
+  if (!fact || !Array.isArray(fact.unit)) return null;
+  const key = (/** @type {string} */ u) => u.split('**').join('').split('__').join('').replace(/\s+/g, ' ').trim();
+  for (let i = 0; i < fact.unit.length; i += 1) {
+    const j = fact.unit.findIndex((/** @type {string} */ u, /** @type {number} */ k) => k > i && key(u) === key(fact.unit[i]));
+    if (j > i) return { name: String(fact.name), a: fact.unit[i], b: fact.unit[j] };
   }
   return null;
 }
@@ -591,7 +621,8 @@ export function checkRubricParts(stages, { inputLabels = null, red }) {
       // bareguard is the judge of whether a fact list is SIGNABLE (anchors, units, bounds): ask it at drafting, at $0, so a list
       // it would refuse at run time is a red the drafter can fix now
       try { createRubric(buildStepSpec(/** @type {{step: number, parts: any[]}} */ (p), Object.fromEntries(citedLabels(p).map((l) => [l, '0'.repeat(64)])))); } catch (e) {
-        red('rubric-fact-invalid', `${at}.params.parts`, `line ${line}: the facts cannot be signed: ${/** @type {Error} */ (e).message}`, { line: step, stage: label });
+        const twins = dupUnitWords(/** @type {{step: number, parts: any[]}} */ (p), /** @type {{path?: unknown}} */ (e).path);
+        red('rubric-fact-invalid', `${at}.params.parts`, twins ? `line ${line}: the fact '${twins.name}' lists the same unit twice ('${twins.a}' and '${twins.b}' are the same once marks and spaces are removed). Keep one. Nothing spent.` : `line ${line}: the facts cannot be signed: ${/** @type {Error} */ (e).message}`, { line: step, stage: label });
       }
     }
     for (let a = 0; a < ranges.length; a += 1) {

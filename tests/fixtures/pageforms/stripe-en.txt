@@ -1,0 +1,5 @@
+url: https://stripe.com/en-nl/privacy
+146,673 chars → 21,060 chars (86% pruned)
+    - main [ref=34]
+      - heading "Last updated: January 16, 2025" [level=4] [ref=47]
+      - heading "b. How we use and share Personal Data of Representatives " [level=4] [ref=116]

@@ -29,6 +29,8 @@ test('every word-level sentence the drop table writes is a read note, built thro
     const row = dropRows([{ line: 1, fact: 'Price', word: 'US dollars', reason, other: 'From' }])[0];
     assert.equal(isReadNote(dropLine(row, jobLines, lineRules)), true, reason);
   }
+  const unitTwice = dropRows([{ line: 1, fact: 'Price', word: '€', reason: 'sign-twice', other: 'unit' }])[0];
+  assert.equal(isReadNote(dropLine(unitTwice, jobLines, lineRules)), true, 'sign-twice, kept as the unit');
   const whole = dropRows([{ line: 1, fact: 'Price', reason: 'reads-no-result' }])[0];
   assert.equal(isReadNote(dropLine(whole, jobLines, lineRules)), false);
 });

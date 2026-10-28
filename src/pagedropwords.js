@@ -3,15 +3,18 @@
 // block all read these words; no other file writes a drop reason (a test greps for it). Plain words, written by CODE from the drop's reason
 // code, never a raw code and never model-written. `<label>` is the page's own word.
 
+import { FACT_LANGS } from './facts.js';
+
 /** @typedef {import('./pagerules.js').Dropped} Dropped */
 
 /** reason code -> the plain sentence (`d.word` = the page's word, `d.fact` = the fact's name, `d.other` = what it was compared to) */
 const WORDS = /** @type {Record<string, (d: Dropped) => string>} */ ({
   'not-on-page': (d) => `"${d.word}" is not written on the page.`,
   'no-value': (d) => `The page never shows a number right after or right before "${d.word}".`,
+  'reads-no-amount': (d) => `The page never shows an amount next to "${d.word}", so it was not used to write the price.`,
   'n2': (d) => `"${d.word}" is written more than once inside one line of the page, so one result cannot show it once.`,
   'r1': (d) => `"${d.word}" does not show the same values as "${d.other}", so it was not used as a second way to read it.`,
-  'sign-twice': (d) => `"${d.word}" was listed twice, as a unit and as a currency; it is used once, as the currency.`,
+  'sign-twice': (d) => `"${d.word}" was listed twice, as a unit and as a currency; it is used once, as the ${d.other === 'unit' ? 'unit' : 'currency'}.`,
   'r1l': (d) => d.word === d.other
     ? `"${d.word}" was listed twice, as a unit and as a currency; it is used once, as the first way to write the price.`
     : `"${d.word}" does not show the same amounts as "${d.other}", so it was not used as a second way to write the price.`,
@@ -23,6 +26,8 @@ const WORDS = /** @type {Record<string, (d: Dropped) => string>} */ ({
   'unit-too-long': (d) => `"${d.word}" is longer than 100 characters, so it was not used.`,
   'reads-no-result': () => "the price rule could not read a price in the page's results, so it is not checked.",
   'reads-no-time': (d) => `the page never shows a time right after "${d.other}", so it is not checked.`,
+  'lang-not-on-page': (d) => `the page shows no month name in ${FACT_LANGS[/** @type {keyof typeof FACT_LANGS} */ (d.other ?? '')] ?? d.other}, so the date is not checked.`,
+  'decimal-not-on-page': () => 'the page shows no amount written with a comma before the decimals, so it is not checked.',
   'phrase-no-result': (d) => `"${d.other}" is on the page but in none of its results, so it is not checked.`,
   'person-left': () => 'You chose to leave it Not checked.',
   'bad-shape': (d) => `The AI named a kind of value for "${d.fact}" that a check cannot read.`,
@@ -68,7 +73,7 @@ export function dropLine(row, jobLines, rulesOf) {
 // HOW THE PAGE WAS READ (run mvij7kuk, flight-c1): a drop of ONE WORD whose fact is still checked is a NOTE about the form code did not use, not
 // something left unchecked. The sentences for those reasons are WORD-level; every other sentence (a whole fact left out) keeps the line under
 // Not checked. Classified from the line's own words, so it holds for a signed spec already on disk.
-const WORD_REASONS = ['not-on-page', 'no-value', 'n2', 'r1', 'sign-twice', 'r1l', 'limit-currency', 'limit-unit', 'unit-too-long'];
+const WORD_REASONS = ['not-on-page', 'no-value', 'reads-no-amount', 'n2', 'r1', 'sign-twice', 'r1l', 'limit-currency', 'limit-unit', 'unit-too-long'];
 /** @param {string} s */
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const SENTENCE_RE = (() => {
@@ -76,7 +81,7 @@ const SENTENCE_RE = (() => {
   /** @type {string[]} */
   const alts = [];
   for (const reason of WORD_REASONS) {
-    const probes = reason === 'r1l' ? [{ word: W, other: W }, { word: W, other: O }] : [{ word: W, other: O }];
+    const probes = reason === 'r1l' ? [{ word: W, other: W }, { word: W, other: O }] : reason === 'sign-twice' ? [{ word: W, other: 'currency' }, { word: W, other: 'unit' }] : [{ word: W, other: O }];
     for (const p of probes) alts.push(esc(WORDS[reason](/** @type {any} */ ({ ...p, reason, line: 0, fact: 'f' }))).split(esc(W)).join('[^"]+').split(esc(O)).join('[^"]+'));
   }
   return new RegExp(`^(?:(?:${alts.join('|')})(?: |$))+$`);

@@ -1,0 +1,14 @@
+url: https://www.ldlc.com/informatique/ordinateur-portable/pc-portable/c4265/
+133,330 chars → 64,161 chars (52% pruned)
+        - _promote [ref=275]
+          - StaticText "799€" [ref=3395]
+          - button "" [ref=954]
+        - _promote [ref=310]
+          - StaticText "1 089€" [ref=3440]
+          - button "" [ref=989]
+        - _promote [ref=321]
+          - StaticText "1 449€" [ref=3455]
+          - button "" [ref=1000]
+        - _promote [ref=342]
+          - StaticText "1 049€" [ref=3485]
+          - button "" [ref=1020]
