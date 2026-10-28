@@ -5,7 +5,7 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
-## [Unreleased]
+## [0.50.0] - 2026-10-28
 
 ### Added
 
@@ -18,7 +18,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Changed
 
-- **bareguard `^0.26.0` to `^0.27.0`.** Its page forms (a date in a signed language, a decimal comma, a currency sign glued after the number) are what the next changes here build on; nothing in bareloop reads them yet, and an existing signed spec reads as before.
+- **bareguard `^0.26.0` to `^0.27.0`.** Its page forms (a date in a signed language, a decimal comma, a currency sign glued after the number) are what the Added entries above build on; an existing signed spec reads as before.
 - **barebrowse `^0.24.1` to `^0.25.0`.** A consent popup that shows 1-3 seconds after load is now closed on the first read of a page, so a page behind a late popup reads as the page. bareloop still asks for the same `act` read; barebrowse's new data mode is not used yet.
 - **A money unit listed twice is refused in plain words.** Units that are the same once marks (`**`, `__`) and spaces are removed (`**pp**` and `pp`) now stop at the $0 signing pre-flight naming the fact and both units, instead of bareguard's raw error; bareloop's own partial copy of that rule is gone.
 
