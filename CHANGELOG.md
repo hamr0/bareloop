@@ -9,6 +9,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Added
 
+- **A handoff note: later workers are told which files earlier workers read (F253).** The next step or fix ask of a run (a retry of the same step too) gets a code-written map appended to its first prompt: one line per file an earlier ask read, with its line count and, from the LiteCtx index, its function names and line ranges. Capped at 8,000 characters (oldest paths dropped first, with a marker); arbiter books, `.git` and anything outside the job root are never named; scout and drafter prompts are unchanged. On by default; a signed spec's optional `handoffNote: false` turns it off (absent keeps the old hash). One report-only `handoff-note` spine record per note given. A resumed leg starts with an empty map.
 - **An online/offline dot in the panel header, left of Settings.** When the panel's node process dies the open page used to look exactly like a live one; the Runs list read (already polled every 10 s) now paints a green "online" on any HTTP reply, even an error, and a red "offline" only when the read fails with no HTTP status. No new endpoint or timer. `getJSON` now tags its HTTP error with `.status` (message unchanged).
 
 ### Fixed
