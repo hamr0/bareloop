@@ -1390,6 +1390,7 @@ function makePollHarness(getJSONImpl) {
   const src = [
     extractFnSource(html, 'sig'),
     extractFnSource(html, 'withScrollPreserved'),
+    extractFnSource(html, 'paintOnline'),
     extractFnSource(html, 'refreshRunsList'),
     extractFnSource(html, 'refreshOpenRun'),
     extractFnSource(html, 'pollTick'),
@@ -2514,7 +2515,7 @@ test('progress list: a signed session ends "signed hash" with a check and its ">
 test('M3: afterSignRefresh forces list refreshes past the throttle until a new run appears, then stops; bounded when none ever does', async () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   const src = [
-    extractFnSource(html, 'sig'), extractFnSource(html, 'withScrollPreserved'), extractFnSource(html, 'refreshRunsList'),
+    extractFnSource(html, 'sig'), extractFnSource(html, 'withScrollPreserved'), extractFnSource(html, 'paintOnline'), extractFnSource(html, 'refreshRunsList'),
     extractFnSource(html, 'afterSignRefresh'), extractFnSource(html, 'currentRunIds'),
   ].join('\n');
   const make = (listFor) => {

@@ -5,6 +5,12 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Added
+
+- **An online/offline dot in the panel header, left of Settings.** When the panel's node process dies the open page used to look exactly like a live one; the Runs list read (already polled every 10 s) now paints a green "online" on any HTTP reply, even an error, and a red "offline" only when the read fails with no HTTP status. No new endpoint or timer. `getJSON` now tags its HTTP error with `.status` (message unchanged).
+
 ## [0.50.0] - 2026-10-28
 
 ### Added
