@@ -1,0 +1,241 @@
+---
+type: reference
+title: "harness2 — what to learn from it, and the experiments"
+status: draft
+sources: [docs/wiki/FINDINGS.md, docs/product/PRD.md, docs/product/ITEM33-BUILD.md, docs/logs/2026-08-18-context-economy-package.md]
+---
+
+# harness2 — what to learn from it, and the experiments
+
+**Status: DRAFT. Nothing is built. No experiment has run.** This page is the plan. It takes precedence over the parked rubric gaps (PRD.md:2080) once `fix/barebrowse-0250` ships.
+
+Tags: [MEASURED] a number we measured and logged. [CODE] read in source today. [CLAIMED] said by someone else, not checked by us.
+
+## 1. What harness2 is
+
+Google Research's `harness2` (https://github.com/google-research/harness2), read from its README on 2026-10-28.
+
+- It keeps model weights frozen and improves the system around the model. [CLAIMED]
+- **Recursion 1, task level: Propose-Probe-Compose.** An editor proposes edits, a probe runs them on the same task, and a composer builds a refined harness "from behavioral contrasts between executions, without ground-truth feedback". [CLAIMED]
+- **Recursion 2, harnessing level:** a persistent improvement harness is updated with "adopted harnesses and evidence-supported lessons", and guides later tasks. [CLAIMED]
+- **Eight editable components:** system prompt, guardrails, memory, tool guidance, subagents, skills, scripts, plugins (a tool-call hook). [CLAIMED]
+- **Reported gains:** up to 11.5 points on WorkBuddy-Bench, 4.5 on JobBench, 11.8 percentage points on LAB partial pass. [CLAIMED]
+- **What the README does not say:** how a contrast becomes a keep or drop decision. Scoring is a separate, later judge step. No per-task cost is given (it says only that runs "incur API costs"). [CLAIMED]
+- **Its own warnings:** "Executor network access is unrestricted, and Codex runs with its sandbox disabled"; "Public benchmark rubrics may be accessible online". [CLAIMED]
+- An example from a video summary hamr pasted (not the README): a harness wrote a trace-every-figure guardrail, a reopen-and-check script and a reconciliation skill. [CLAIMED]
+
+## 2. Where bareloop already agrees
+
+- **The agent authors its workflow.** It writes a constrained declaration, never code (CLAUDE.md "bareloop doctrine" via PRD.md:46-48, law 1; `closeDecl` in bareloop.context.md:182). [CODE]
+- **The run loops.** A step has a strike ladder; two strikes force a replan (workflow-governance.md; PRD.md:1975 for where hints go). [CODE]
+- **Lessons carry across runs.** The learnings ledger keeps every row; memory filters at read time; hints go to the planner at draft and the first replan (PRD.md:1975, 1990-1995; bareloop.context.md:3935). [CODE]
+- **Whole plans carry across runs.** Reuse ships the signed plan verbatim; a bridge is minted only by a green (bareloop.context.md:94, 8; PRD.md:56-57 law 2 "run-as-executed"). [CODE]
+
+## 3. Where bareloop differs, and must keep differing
+
+harness2's composer works "without ground-truth feedback". bareloop does the opposite, by law.
+
+- **Only the close is truth.** A step passing its own check is never a verdict. No self-judged keep or drop. (PRD.md:44-68 laws 3 and 8.)
+- **The agent never authors its arbiter.** Budgets, caps, verdicts, the fence, merge live outside the emergent part, permanently. (PRD.md:46-47 law 1; CLAUDE.md hard lines.)
+- **`run` stays LOCKED forever.** A worker that can run commands can run its own close (bareloop.context.md:198). [CODE] This is harness2's `scripts`.
+- **No agent-picked thresholds.** A budget or threshold number is never picked by the agent from a small sample. (CLAUDE.md hard lines: "No self-adjusted budgets".)
+- **Our own evidence against AI-written lessons** [MEASURED]. Learnings POCs, 2026-10-22/23: AI writing the facts made up 7 of 42 (POC-B) and 17 of 36 (POC-B2); AI folding the facts was right 75% and 67% (POC-D, D2); all failed their frozen rules. A code-only fold (same job, same check, shared error kind, Jaccard >= 60%) passed the hand-check 10 of 10 (POC-E2). The AI "invents the fix when it sees changed files but not the diff". Sources: docs/product/ITEM33-BUILD.md:2297-2314; PRD.md:1990. Honest limit, same file: E2 is a fit on known cards, not proof on unseen ones.
+- **Windows into harness2's risk:** its executor runs with network open and sandbox off. bareloop's local-trust model is not a sandbox either (close-verdicts.md section 2), but its worker is fenced by the gate.
+
+### The eight components mapped
+
+| harness2 component | bareloop today | Allowed to the agent? | Owner |
+|---|---|---|---|
+| system prompt | Persona + strategy lines, assembled per grant (`PERSONA_TOOLS + strategyFor(granted)`, src/planrun.js:2590; registry src/promptregisters.js:72-86) [CODE] | No. The drafter writes the goal and steps; persona text is code. | bareloop code, changed by a committed edit |
+| guardrails | Mandatory guard battery, shown-and-fixed, signed (close-verdicts.md section 2) [CODE] | **Never.** Arbiter territory. | hamr signs |
+| memory | `stash`/`remember`/`forget` verbs (src/job.js:76); learnings ledger (src/learn.js, src/learnstore.js) [CODE] | The worker may `remember`; the ledger is written by code only. | code (ledger); worker (notes) |
+| tool guidance | Fixed strategy sentences per granted verb (src/tools.js:71, 81, 163) [CODE] | No. Fixed text, never learned from runs. | bareloop code |
+| subagents | None. | Not today. | n/a (a new verb would be a new signed spec) |
+| skills | None as a concept. Reuse replays a whole signed plan. | Not today. | n/a |
+| scripts | `run` verb, LOCKED (bareloop.context.md:198) | **Never.** | permanently locked |
+| plugins (tool-call hook) | bareguard `Gate` wraps every tool call (CLAUDE.md, src/planrun.js:20) | **Never.** The hook is the arbiter's fence. | bareguard |
+
+## 4. The gap: tool guidance
+
+hamr's reading: tool guidance today is "willy nilly". The record agrees that the worker's tool habits are costly and are not shaped by what past runs learned.
+
+### How tool guidance is given today [CODE]
+
+- One fixed sentence set per granted verb, built by `strategyFor(granted)` (src/tools.js:163). It names only tools the grant has (F19 inverted, src/tools.js:129-141).
+- `RETRIEVAL_STRATEGY`: "do NOT read its whole file: call ctx_recall ... then ctx_get" (src/tools.js:71-76).
+- `EDIT_STRATEGY`: prefer the edit tool over whole-file writes (src/tools.js:81-82).
+- Read-shim line: `READ_SHIM_STRATEGY` (src/readshim.js:119); native-surface line `NATIVE_READ_STRATEGY` (src/planrun.js:269).
+- Learnings hints reach the planner only, never the worker (PRD.md:1975; bareloop.context.md:3935). **Nothing learned from a run changes these sentences.**
+
+### Measured evidence
+
+- **Selection problem.** `ctx_recall` returns zero zero-hit results across 2,324 calls, yet an explicit tool declaration includes a litectx verb only 1.4% of the time (2 of 148), against `read` at 99.3%. [MEASURED] providers-context.md:87; docs/logs/2026-08-18-context-economy-package.md:131; F107 (FINDINGS.md:8853). The 99.3% figure is quoted as "standing" in these places; I found no table that derives it. Treat it as quoted, not re-derived.
+- **Re-reads.** 48% of reads re-read a file with nothing changed; one file was read 52 times in one run (~1.6M tokens). [MEASURED] FINDINGS.md:8311 (F107). A later call-level figure: median 56% exact-repeat share among read-class calls, 155/217 runs with gate audit, measured before the shim default (FINDINGS.md:~9996-10004, same addendum).
+- **Cost per call.** `shell_read` costs 5.4x per call what `ctx_get` costs. [MEASURED] context-economy-package.md:124; FINDINGS.md:10001.
+- **Where tool spend sits.** `shell_read` is 52.8% and `shell_grep` 21.3% of tool-call spend, so 74% together (3,559 and 2,212 calls, 150 runs, 6,775 rounds). [MEASURED] context-economy-package.md:112-125. Note: the brief and memory call this "74% of cache-write cost". The source says 74% of tool-call spend. F107 says `shell_read` alone is 52.8% of cache-write dollars (FINDINGS.md:8311). Two different bases.
+- **The ceiling for read hygiene.** Read-hygiene levers cut only about 10% of total spend (cache writes ~41%, cache reads ~35% untouchable). [MEASURED] F107 title and FINDINGS.md:8332-8359, 10001.
+- **Capability without strategy is inert.** A widened menu does nothing without a draft-time reason to reach for it (F19: retrieval verbs "work exactly as designed and moved the outcome ZERO", FINDINGS.md:612; FINDINGS.md:3933). Strategy as prose without enforcement is also inert (F37, FINDINGS.md:1610-1633). [MEASURED]
+- **A steer can move habits.** Under the read-shim A1 arm one worker used retrieval verbs 12 of 60 calls (20%). n=1, one job, one arm: consistent, not a lift (FINDINGS.md:8853-8858). [MEASURED]
+- **Instruments that exist [CODE]:** `runBehaviour` reads the gate audit and counts calls per tool, repeats and denials (src/behaviour.js:1-30, 89-105); `worker-round` spine records carry `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheCreationTokens` (src/planrun.js:2591-2612). F186 warns the gate audit can hold several `run_id`s: always scope by `run_id` (FINDINGS.md:12968-12985).
+
+What is NOT measured: whether any tool-sequence habit separates green from red. That is E0.
+
+## 5. Experiments (one lever at a time)
+
+Every number marked "hamr sets" is a proposal. Nothing here is decided. Provider for every paid run: DeepSeek, `deepseek-flash`. Freeze rules are committed before any number exists (PRD design practice; BATTERY-PREREG precedent: docs/logs/BENCH-PREREG.md).
+
+### E0 — $0 archive read (FIRST, mandatory before any paid run)
+
+- **Question.** In archived runs, which tool habits cost money, and which precede greens versus reds?
+- **Riskiest assumption.** That habits are readable at all from what was recorded. The gate audit may be missing for older runs, may mix `run_id`s (F186), and the read-shim arm leaves no spine footprint (arm known only from driver log or battery results).
+- **Design.** Read-only pass over archived spines and gate-audit sidecars. Per run: tool counts by class (`shell_read`, `shell_grep`, `ctx_recall`, `ctx_get`, `ctx_recent`, `edit`), exact-repeat reads, read-after-own-edit, tool sequence before the first green versus before each red, cost by tool class.
+- **Instrument.** Gate-audit rows `{run_id, phase, action:{type, args:{tool}}, decision}` (src/behaviour.js:8-17), scoped by `run_id`; spine `worker-round` rounds with the four token fields; `judge-round` and `worker-turn` rounds counted too (a slicer that omits a spending round type undercounts). Exclude `worker-result` echoes from any spend denominator.
+- **Corpus audit.** Segment by genre, by provider and model, and by shim arm before any aggregate. Never pool providers. State how many runs have a gate audit at all. A single-genre corpus cannot falsify a general claim.
+- **Arms.** None. Descriptive.
+- **Freeze rules.** Write the habit definitions and the green/red split in a prereg doc and commit it before the first run is read.
+- **Pass rule.** E0 passes if it yields at least one habit that (a) costs a measurable share of spend in a segment with enough runs and (b) differs between green and red runs in the same segment. Segment size threshold: hamr sets. Otherwise E1 is not justified and the result is the stop.
+- **Stop rule.** If fewer than the hamr-set count of runs per segment have an audit, stop and report the gap.
+- **Provider / cap.** $0. No model call.
+- **Output.** A list: habits that cost money; habits that precede greens; which segment each claim covers.
+
+### E1 — tool guidance learned from run records (paid, only if E0 earns it)
+
+- **Question.** Does a worker-facing tool hint, written by code from past run records, lower cost-to-green or shift the tool mix?
+- **Riskiest assumption.** That a delivered hint is acted on. F19 and F37 say prose alone is inert. So delivery and conversion are measured separately.
+- **Design.** Code only writes the hint, from a CLOSED list of hint kinds (for example: "you re-read file X N times; use ctx_get"). AI writes nothing, per the learnings POCs (section 3). Hint rides the worker persona as one more declared information channel (PRD law 5: a channel change is a lineage-key dimension, so it must be a declared job condition and enter the hash).
+- **Instrument.** Per arm: `worker-round` tokens and cost, gate-audit tool mix, repeat share, cost-to-green, tries-to-green. Delivery = hint text present in the worker prompt (a new report-only spine record, as the memory-cache record is). Conversion = the hinted tool's share of calls after delivery versus before.
+- **Arms.** ON (hint delivered) versus OFF (identical job, no hint). One lever only; read shim state is held fixed and recorded.
+- **Patients / jobs.** Candidates from existing frozen benches: `aurora-u-spawner-types`, `litectx-u-types`, and `aurora-testgen-cold` (G2, a negative row: a GREEN there is a red flag, never a pass) (docs/logs/BENCH-PREREG.md:25-29). Whether these jobs show the habit E0 found is checked at $0 first. A job where the habit never occurs cannot test the hint.
+- **Freeze rules.** Hint kinds, jobs, arms, the decision rule and the sha256 of the prereg file committed before any run. Frozen rules never loosen after data.
+- **Pass rule (proposal, hamr sets).** Both arms green on the same jobs, ON cheaper to green by a pre-set margin, and conversion shown. A result inside the noise band, or backwards, closes the lever with no default flip.
+- **Power, stated before data.** n=1 per job per arm is an anecdote either way. At n=1 the experiment can show only that delivery and conversion happen, not a lift. A cost claim needs a repeat count hamr sets; with a nondeterministic worker the base rate comes first.
+- **Stop rule.** A provider-red row is a casualty, not evidence. A repeating casualty class stops the battery and re-probes the provider. Any red at a lower cap that greens at a higher cap is a question about the ceiling, never a pass.
+- **Provider.** DeepSeek `deepseek-flash`. Name provider and model in the first line of the proposal.
+- **Cap.** Per run and total: hamr sets. A cap must fund the attempt plus its close.
+- **Arbiter note.** The hint changes only what the worker is told. Budgets, closes and verdicts are untouched; E1 never edits them.
+
+### E2 and later (only if E1 earns it; each its own frozen POC)
+
+| Lever | What bareloop already has | Riskiest assumption |
+|---|---|---|
+| memory / learnings reaching the worker | Learnings reach the planner only (PRD.md:1975); the worker may not read the arbiter's books | A worker given a lesson uses it. Also: a hint must never carry the culprit (the close must never name it). |
+| skills | Reuse replays a whole signed plan; no per-skill unit | A reusable sub-procedure exists that is smaller than a whole plan and still verifiable. Adding one is a new signed spec version. |
+| subagents | None | A second worker beats one worker on cost-to-green. New verb = new signed spec; money and wall must still be one cap. |
+| system-prompt edits | Persona text is code | A prompt edit learned from runs beats the fixed text. Dead-weight risk: unconditional per-run prompt cost. |
+| **guardrails** | Mandatory battery, signed | **OUT by law.** Arbiter territory. |
+| **plugins (tool-call hook)** | bareguard Gate | **OUT by law.** |
+| **scripts** | `run` locked | **OUT by law.** |
+
+## 6. Candidates after tool guidance
+
+hamr's goal behind E0/E1: expose MORE of our own bare-suite primitives to the worker and planner, and see how each works. Tool guidance goes first (section 5). Each candidate below is its own frozen POC, run only after E1 reports, one lever at a time. Every cap, n and pass margin is "hamr sets".
+
+### 6.1 What the packages actually export (read from node_modules, installed versions)
+
+Read from each `package.json` "exports" and the entry file on 2026-10-28, not from a README or a file count. [CODE]
+
+- **litectx 0.32.0** (package.json exports "." -> src/index.js). Classes and consts: `LiteCtx`, `ScopedView`, `Store`, `Embedder`, `StalePointerError`, `RipgrepMissingError`, `KINDS` = code/doc/fact/episode, `WRITE_KINDS` = fact/episode/doc (src/index.js:94,104), `PRIMITIVES`, `VERBS_BY_PRIMITIVE`, `ContextGraph`/`observe`, `compress`/`COMPRESS_LEVELS`, `assemble`/`summaryWindow`/`trim`, `liteCtxAsStore`, `WriteAudit`/`toWriteAction`/`WriteDeniedError`, `splitIdent`/`keywords`/`ftsMatch`, `cosine`. `LiteCtx` methods: `index`, `recall`, `impact`, `getNode`, `related`, `get`, `remember`, `forget`, `ingest`, `purge`, `stash`, `peek`, `evict`, `reviewCandidates`, `promotionCandidates`, `recentActivity`, `recentMemory`, `enumerate`, `scoped`, `size`, `count`, `close` (src/index.js:249-1491). Config includes `embeddings` (default false), `embedWeight`, `embedModel`, `embedder`, `owner`, `session` (src/index.js:154-159, 276-282).
+- **bare-agent 0.52.0** (exports "." plus ./errors ./providers ./stores ./transports ./tools ./mcp ./bareguard). Root index exports `Loop`, `Planner`, `Evaluator`, `refine`, `recurse`, `buildSearchTool`/`buildExactTool`/`buildScanTool`/`litectxCorpus` (src/recurse-retrieval.js), `remember`, `judge`/`calibrate`/`calibrateJev`, `SkillRegistry`, `createStashSkill`, `StateMachine`, `Scheduler`, `Checkpoint`, `Memory`, `Stream`, `Retry`, `runPlan`, `CircuitBreaker`, `wireGate`, unit helpers, errors incl. `HaltError` (index.js:51-90). `./tools` exports `createBrowsingTools`, `createMobileTools`, `createShellTools`, `createSpawnTool`, `spawnChild`, `createDeferTool`, `readDeferQueue`, `liteCtxMcpBridgeConfig` (src/tools.js:10-19). bareloop imports only `Loop`, `wireGate`, `HaltError`, providers and `createShellTools` today (grep of src/: authorscout.js:62-63, text.js:15, others).
+- **bareguard 0.27.0** (exports ".", "./types", "./primitives.json"). `Gate`, `routeAnnotation`, `addToGates`, `redact`, `SAFE_DEFAULT_DENY_PATTERNS`/`ASK_PATTERNS`, `classifyCommand` and pattern sets, `BudgetUnavailableError`, `defaultAuditPath`, glob helpers, and the rubric set `createRubric`, `rubricSha`, `tableSha`, `checkStep`, `renderGaps`, `quoteIn`, `numbersInQuote`, `rubricVocabulary` (src/index.js:37-61). All arbiter-side. None is a worker tool.
+- **barebrowse 0.25.0** (exports "." and "./bareagent"). `browse`, `connect`, `resolveEngine`, `applyBlocklist`, `isChallengePage` (src/index.js); `createBrowseTools` (src/bareagent.js:41) is the worker-tool adapter. bareloop uses `connect` only, at drafting and at run start; "the worker never browses" (CLAUDE.md).
+
+### 6.2 What bareloop wires today, and what is unused
+
+- **Where `LiteCtx` is built:** `new LiteCtx({ root })` with NO other option: src/planrun.js:2196, src/run.js:51, src/authorscout.js:338. So `embeddings` is off everywhere. [CODE] The index is built with `lc.index({ yield: true })` (src/planrun.js:2568; src/authorscout.js:339).
+- **Verbs the worker can be granted** (TOOL_MENU, 14, src/job.js:76): `read grep write edit recall get impact related recent compress peek stash remember forget`. `ctx_recall` calls `recall(kind:'code')` AND `recall(kind:'fact', body:true)` (src/tools.js:291-298); `get`, `impact`, `related`, `recentActivity`, `stash`, `peek`, `remember` (kind fact, by agent) and `forget` are wired (src/tools.js:334-601). `compress` is in the menu with a strategy line (src/tools.js:121, 191).
+- **Strategy lines per verb:** `RETRIEVAL_STRATEGY` (src/tools.js:71), `EDIT_STRATEGY` (src/tools.js:81), compress line (src/tools.js:191), read-shim lines (src/readshim.js:119, 157). `strategyFor(granted)` (src/tools.js:163) makes each sentence ride only with a verb in the grant (F19 inverted, src/tools.js:129-141).
+- **Unused from litectx** [CODE, by grep of src/]: the `episode` kind (no bareloop source writes or recalls it; the only `episode` hits in src/ are comments); `promotionCandidates`, `reviewCandidates`, `recentMemory`, `enumerate`, `ingest`, `scoped`, `purge`, `evict`; `assemble`/`summaryWindow`/`trim`; `liteCtxAsStore`; and the `embeddings` tier. Facts are reachable only through `ctx_recall`/`ctx_remember` and only if the worker writes them itself; nothing in a run seeds the fact store from earlier runs.
+- **Unused from bare-agent:** `SkillRegistry`, `createSpawnTool`/`spawnChild`, `createDeferTool`, `Memory`, `Checkpoint`, `refine`/`recurse`, `buildSearchTool`/`ExactTool`/`ScanTool`, `createBrowsingTools`. (I read these export names and the SkillRegistry header; I did not read the recurse tools' bodies.)
+
+### 6.3 Our own evidence on litectx (cite when designing)
+
+- Embeddings only re-rank a BM25-gated pool for `code` hits; KNN nomination is `fact`/`episode` only (FINDINGS.md:659-660). [MEASURED]
+- Flipping `embeddings` on an EXISTING index computes no vectors; a rebuild is required or the semantic tier stays silently inert (FINDINGS.md:649). [MEASURED]
+- `impact()` without ripgrep silently read 0 callers (litectx upstream ask LC-5). Fixed upstream in 0.32.0: it now throws `RipgrepMissingError` (node_modules/litectx/CHANGELOG.md:9-20). Whether bareloop catches that throw in `ctx_impact` (src/tools.js:388) is not checked here.
+- Store-class verbs (`stash`/`remember`/`forget`) are not read-capable, are excluded from the scout, and never count as tree writes (PRD doctrine, MEMORY.md "bareloop doctrine"). [CODE/MEASURED per memory; I did not re-open the code line]
+- Selection problem: recall drafted 1.4% vs read 99.3%; recall has zero zero-hit results (section 4).
+- Retrieval is navigation, never gifts: hook recall rarely carries the culprit; good lookups are worker-initiated from the failing symbol name (project memory, FINDINGS family around F19/F107).
+- **Is the newer indexing better? No evidence in this repo.** The litectx changelog for 0.30-0.32 lists warm-index, index-format stamp and rebuild fixes (CHANGELOG.md:7-117), not a ranking gain I could confirm. bareloop's last recorded recall-quality finding was taken at litectx 0.30.x (FINDINGS.md:2974). Measuring the current index is therefore part of C1.
+
+### 6.4 Doctrine every candidate must respect
+
+- **Menu is inventory:** an offered verb must map to an existing implementation (FINDINGS.md around 2974-2990; src/tools.js:86-92).
+- **The agent never widens its own menu.** A new verb is a new signed spec version hamr signs (`tools` is hashed; a `TOOL_MENU` widening flips an omitted-tools spec's hash, bareloop.context.md:184).
+- **Capability without strategy is inert** (F19, FINDINGS.md:612). A granted verb ships with a when-to-use line; strategy without enforcement is also inert (F37, FINDINGS.md:1610-1633).
+- **`run` stays LOCKED** (bareloop.context.md:198), so `createSpawnTool`/shell-like power is not offered.
+- **G1:** a step granting `read` must also grant `recall` and `get` (docs/logs/2026-08-18-context-economy-package.md:145).
+- **The worker never reads the arbiter's books** (gate audit, spine, `.smoke`): `fs.deny` in readScope. Anything written into the worker-visible fact store must not contain arbiter output (attempt-diff, close lines naming the culprit).
+- **Every information path into the worker is a declared job condition** (PRD.md law 5): each candidate's channel enters the lineage key.
+
+### 6.5 Candidates, in my recommended order
+
+Fields common to all: provider DeepSeek `deepseek-flash` for any paid arm; ON/OFF with everything else held fixed; freeze rules committed before any number; `$0` pre-step first; n=1 per cell is an anecdote; a result inside the noise band closes the lever with no default flip.
+
+**C1 — litectx embeddings ON for `ctx_recall` (rank-only). Run right after E1.**
+Reason: no new verb, no new spec surface, reuses a granted verb, and it tests hamr's "indexing improved" claim directly with a $0 first step.
+- Question. Does the current index, with and without embeddings, find the right function for the queries workers actually make?
+- Riskiest assumption. That a better ranker changes behaviour, when selection (1.4%) and not retrieval quality is the measured gap. Embeddings also cannot nominate code hits (FINDINGS.md:659).
+- Design. Step 1, $0: take recall queries from archived gate audits (`action.args.tool = ctx_recall`) and the file the worker then read or edited; replay against a fresh index, `embeddings` false vs true, rebuilt (not flipped, FINDINGS.md:649). Report hit-rank of the later-edited path. Step 2, paid, only if step 1 shows a rank gain: ON/OFF on the E1 job set.
+- Instrument. Rank of the first later-used path in the recall result; per-run `ctx_recall` and `ctx_get` share (gate audit); `worker-round` cost fields. Embeddings load a model (default Xenova/all-MiniLM-L6-v2, src/index.js:158): measure index time and install weight too, and check it against the dependency budget.
+- Arms. embeddings false vs true, same repo copy, index rebuilt in both.
+- Freeze. Query set, success definition and arms committed before replay.
+- Pass / stop. Pass: rank gain in the $0 step on queries from at least two genres. Stop: no gain at $0 means no paid run. Cap: hamr sets.
+
+**C2 — seed the fact store from earlier runs (facts/episodes reach the worker).**
+Reason: it is the real unused litectx capability and the direct answer to "learnings reach the planner only", but it touches the arbiter-adjacent boundary, so it comes after the cheap ones.
+- Question. Does a worker that can recall code-written lessons from past runs reach green cheaper?
+- Riskiest assumption. That a lesson is acted on once recalled (conversion), and that no recalled text leaks the arbiter's books or names the culprit. Learnings are code-written only (PRD.md:1990); AI-written facts failed (section 3).
+- Design. Code writes `kind:'fact'` notes into the run's store from the learnings ledger, using the same closed card fields; the worker finds them through the existing `ctx_recall` fact path (src/tools.js:298). A new `by:` tag marks them. Episodes (`kind:'episode'`) are a second step, only if facts help.
+- Instrument. Recalled-note ids per run; whether a later action touched the note's file; cost and tries to green; delivery (note appeared in a recall result) vs conversion (acted on).
+- Arms. Seeded vs empty fact store; learnings hints to the planner held fixed and recorded.
+- Freeze. Card-to-note template, jobs, hash rules (this is a new channel: it enters the lineage key).
+- Pass / stop. Pass: delivery and conversion shown, ON no costlier at equal green. Stop on any note found to carry a culprit file name. Cap: hamr sets. Needs hamr's explicit word (spec change to the worker's information).
+
+**C3 — `assemble` / `summaryWindow` from litectx for context compaction.**
+Reason: litectx ships it, but compaction is PARKED because clearing breaks the prompt-cache prefix and the net sign is unmeasured (project memory "context compaction is parked"). Measure the sign first.
+- Question. Does a summary window lower total cost, once the cache-prefix break is paid?
+- Riskiest assumption. Cache reads (35%) are untouchable and re-pricing after a clear costs more than it saves. Read hygiene as a class caps at ~10% (FINDINGS.md:8332-8359).
+- Design. $0 first: replay worker-round token fields from archived runs through a model of cache write/read rates, with a Customer-set price row; no live arm until the sign is positive. If ever built, compaction and the read-shim ledger must forget in ONE mechanism.
+- Instrument. `cacheReadTokens`, `cacheCreationTokens`, `inputTokens` per `worker-round`.
+- Arms/freeze/stop. Replay only; stop if the modelled saving is below the F107 ceiling. Cap: $0.
+
+**C4 — bare-agent `SkillRegistry` (progressive disclosure of sub-procedures).**
+Reason: closest to harness2's "skills", but bareloop has no per-skill unit smaller than a signed plan, and who writes a skill is the open issue.
+- Question. Does on-demand instruction injection (`skill_use`) beat always-on persona lines for cost?
+- Riskiest assumption. That a skill's instructions can be fixed text bareloop owns (not agent-written) and still help. "Skills affect discovery, never authorization" (src/skills.js header), so the gate is unchanged.
+- Design. Move one existing strategy block (for example `RETRIEVAL_STRATEGY`) into a registered skill, same words. Compare persona-always-on vs skill-on-demand.
+- Instrument. Prompt tokens per round; `skill_use` calls; tool mix; cost to green.
+- Arms. Same text always-on vs on-demand. Freeze: the text byte-identical in both. Cap: hamr sets. New menu verb `skill_use` means a new signed spec version.
+
+**C5 — bare-agent `buildSearchTool` / `buildExactTool` / `buildScanTool` + `litectxCorpus`.**
+Reason: an existing retrieval surface we have never tried, but I have not read its behaviour, so a read-only look comes first.
+- Question. Do these corpus tools beat `shell_grep` + `ctx_recall` on cost per found fact?
+- Riskiest assumption. That they are not a second read path that bypasses the read-shim's delivered-bytes ledger (a shim must ledger what was delivered).
+- Design. $0: read src/recurse-retrieval.js, map each tool to an existing bareloop verb. Only then a paid ON/OFF.
+- Stop. If a tool duplicates a granted verb, drop it (menu is inventory, no duplicates). Cap: hamr sets.
+
+**C6 — bare-agent `createSpawnTool` / subagents.**
+Reason: last. A spawned child is a second actor that can run commands or write outside the fence; `run` is LOCKED forever and money must stay one cap.
+- Question. Does a read-only subagent cut the main worker's context growth?
+- Riskiest assumption. That a child can be made read-only inside the same gate, with its spend booked into the same ledger (a round type left out of a spend slicer is undercounted).
+- Design. $0 reading of `createSpawnTool` and `spawnChild` first. No arm until the child's tool set is provably a subset of the parent's grant.
+- Stop. Any path to `run` or an unfenced write is an immediate stop. Cap: hamr sets. Needs hamr's explicit word.
+
+**Not candidates:** `createBrowsingTools` / `createBrowseTools` (the worker never browses; the page is fetched by code at run start); the bareguard rubric and `Gate` exports (arbiter-side); `createDeferTool` (a deferred action is a queue the worker does not own).
+
+## 7. Open questions for hamr (interview before any spec is locked)
+
+1. Is E0 the right first move, and what is the smallest segment (runs per genre and provider) you accept as enough to read?
+2. Which habits matter most to you: re-reads, read over recall, or something else?
+3. May hints name a specific file, or only a tool and a count? (A file name edges toward navigating for the worker.)
+4. Do hints go to the worker only, or also to the planner's step grants?
+5. Cap, n per job, and margin for E1: your numbers.
+6. Which frozen jobs are in, given the benches were frozen with the shim OFF (BENCH-PREREG.md:178)?
+7. Does a worker hint count as a "declared job condition" that enters the signed hash, or a report-only channel?
+8. Do you agree with the candidate order (C1 embeddings first after E1, C6 subagents last)?
+9. C2 (code-seeded facts to the worker) changes what the worker is told: do you want it specced at all before C1 reports?
+10. Is the dependency weight of litectx embeddings (a transformers.js model) acceptable under the one-dependency bar?
+
+## 8. Status
+
+Draft. Nothing built. Takes precedence over the four parked rubric gaps (PRD.md:2080) after `fix/barebrowse-0250` ships. No build starts before E0 is read and hamr rules (PRD practice: no build before a passing POC).
