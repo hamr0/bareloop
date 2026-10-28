@@ -38,6 +38,7 @@ import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, strategyFor } from './tools.js';
 import { anySuppressionWarning } from './authoring.js';
 import { createReadShim, readShimArm, readShimStrategy } from './readshim.js';
+import { createHandoffStore, trackReads } from './handoff.js';
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { startAttemptDiff } from './attemptdiff.js';
 import { validateBridge, loadGate, newestEligibleVersion, reuseEligibility, quarantinesCredit, QUARANTINED_CODE } from './bridges.js';
@@ -1022,6 +1023,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // would be wrong and would look fine). Only the guard runs here; the flag itself
   // is still threaded onward as written.
   readShimArm(readShim);
+  // THE HANDOFF NOTE (src/handoff.js): the paths earlier asks of THIS run read. In memory only, so a resumed leg starts empty.
+  // The switch is the signed spec's `handoffNote` (absent = on, only `false` turns it off).
+  const handoffOn = job.handoffNote !== false;
+  const handoff = createHandoffStore({ workdir });
   // The scout switch's guard, same class and same door: a mis-typed value
   // coerced by truthiness would run the scout under an "off" label (or skip it
   // under an "on" one) and no reading of the results afterwards could recover
@@ -2567,6 +2572,26 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // below anything a second/minute-scale timer can perceive. Store output is byte-identical.
     if (ctx.length) await lc.index({ yield: true });
     const toolDefs = [...shell, ...ctx];
+    // The handoff note: record what each ask READS (the allowed read-class calls), hand the next step/fix ask the map.
+    // Scout and drafter asks feed the store but are never given a note.
+    /** @type {Set<string>} */
+    let askReads = new Set();
+    if (handoffOn) trackReads(toolDefs, [TOOL_BY_VERB.read, TOOL_BY_VERB.get], (a) => askReads.add(a), workdir);
+    /** @param {(prompt: string, defs?: any) => Promise<any>} inner */
+    const withHandoff = (inner) => (!handoffOn ? inner : async (/** @type {string} */ prompt, /** @type {any} */ defs) => {
+      askReads = new Set();
+      let p = prompt;
+      if (phase === 'fix' || phase.startsWith('step:')) {
+        // The index is incremental: refreshing it here is what keeps the symbol ranges true to the files as they now are.
+        try { if (ctx.length) await lc.index({ yield: true }); } catch { /* the map falls back to line counts */ }
+        const note = handoff.render({ getNode: (rel) => lc.getNode(rel) });
+        if (note.text) {
+          p = `${prompt}\n\n${note.text}`;
+          emit('handoff-note', { phase, iteration: roundIteration, chars: note.text.length, paths: note.paths });
+        }
+      }
+      try { return await inner(p, defs); } finally { handoff.absorb(askReads); }
+    });
     // F19 per VERB (P, corrected 2026-07-31): a strategy SENTENCE rides only with
     // the verb it names. Gating per COMPONENT was close but over-reached — a
     // worker granted only `impact` must not be steered to tools it lacks, and the
@@ -2664,7 +2689,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         }
         return r;
       };
-      return { ask, askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };
+      return { ask: withHandoff(ask), askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };
     }
 
     // ── LOOP path: the injected provider (anthropic-api and every other
@@ -2938,7 +2963,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       }
       return r;
     };
-    return { ask, askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };
+    return { ask: withHandoff(ask), askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };
   }
 
   /** relay a throw from OUTSIDE ralph (scout/plan drafting/fix) as its honest

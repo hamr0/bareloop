@@ -170,7 +170,7 @@ export const CONDITION_KEYS = Object.freeze(['providerPath', 'closeVerbosity', '
 // `steps` stays in the field list ONLY so a retired spec reds by name
 // (`shape-retired`) instead of falling through to a generic unknown-field —
 // the operator gets told what happened, not just that something is wrong.
-const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'baseUrl', 'conditions', 'cadence', 'trigger', 'budgetUsd', 'maxWallMs', 'closeTimeoutMs', 'model', 'thinking', 'judge', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools', 'jobLines', 'inputs'];
+const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'baseUrl', 'conditions', 'cadence', 'trigger', 'budgetUsd', 'maxWallMs', 'closeTimeoutMs', 'model', 'thinking', 'handoffNote', 'judge', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools', 'jobLines', 'inputs'];
 /** the exact fields of a signed `judge` override — nested objects red unknown
  * keys too, because no smuggling level exists in a signed spec */
 const JUDGE_FIELDS = ['provider', 'model'];
@@ -348,6 +348,11 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
   // signed like `model`. It covers DRAFTING and the rubric JUDGE, and makes every WORKER call think (src/thinking.js `workerThinkingMode`; without it the worker's mode is decided from phase and attempt). A boolean, nothing else.
   if (spec.thinking !== undefined && typeof spec.thinking !== 'boolean') {
     red('invalid-value', 'thinking', 'true or false — the job\'s "Thinking on" tick (absent = off)');
+  }
+  // THE HANDOFF NOTE (src/handoff.js): a declared job condition, signed like `thinking`. A boolean; ABSENT = on (an old spec keeps its
+  // bytes, so its hash), only an explicit `false` turns the note off. The switch is hashed; the note's text never is.
+  if (spec.handoffNote !== undefined && typeof spec.handoffNote !== 'boolean') {
+    red('invalid-value', 'handoffNote', 'true or false (absent = on): whether the next step/fix worker is handed a map of the files earlier workers read');
   }
 
   // JUDGE — PRD item 32.1 (hamr, 2026-09-10: the judge "defaults to whatever
