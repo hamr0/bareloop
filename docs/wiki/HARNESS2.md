@@ -126,6 +126,13 @@ hamr ruled on the interview questions on 2026-10-28 (section 7); ruled numbers a
 - **Provider / cap.** $0. No model call.
 - **Output.** A list: habits that cost money; habits that precede greens; which segment each claim covers.
 - **Frozen:** `docs/logs/E0-PREREG.md`, commit 9e1e9a88f97e6be4d878dc8fb6198fec62e5ac1e, sha256 0e935b084c153d001939c15d5112195ed252a2a0478bf676635b87df7b2b3f8a.
+- **Result (2026-10-28): see F253.** PASS on both DeepSeek segments (TYPES 18.1% of spend, TEXT 25.1%), but it counted reads across fresh workers; E0b corrects that.
+
+### E0b — same worker vs new worker ($0 archive read)
+
+- **Question.** How much of E0's re-read cost is one worker repeating itself, and how much is a new worker re-reading what an earlier worker read?
+- **Frozen:** `docs/logs/E0B-PREREG.md`, commit 8dcd691, sha256 74f40398794277c30d2b53f1aac5d60b50706c159b4a6764a44faf1f38ff08f7.
+- **Result (2026-10-28): see F253.** Same-worker vs new-worker share of spend: TYPES 2.2% / 15.9%, TEXT 11.3% / 13.8% (estimated). Verdict PASS on TEXT only, by 0.4 points; TYPES fails. This is why E1 got a handoff arm: most of the mass was new workers.
 
 ### E1 — tool guidance learned from run records (paid, only if E0 earns it)
 
@@ -142,6 +149,11 @@ hamr ruled on the interview questions on 2026-10-28 (section 7); ruled numbers a
 - **Provider.** DeepSeek `deepseek-flash`. Name provider and model in the first line of the proposal.
 - **Cap.** $1 per run, $10 total (ruled 2026-10-28). A cap must fund the attempt plus its close; a red at $1 that would green higher is a question about the ceiling, never a pass.
 - **Arbiter note.** The hint changes only what the worker is told. Budgets, closes and verdicts are untouched; E1 never edits them.
+- **Result (2026-10-28): see F253.** 36 runs (3 jobs x 4 arms x 3), $4.72 booked, DeepSeek `deepseek-flash`.
+  - Frozen rule: 8 of 9 cells FAIL; 1 PASS (change2 BOTH, 24.2%, 3.4 vs 4.5 cents) is luck-sized.
+  - Proven: the handoff cuts new-worker re-reads about 60% (105 vs 272 Kind B reads in step and fix asks, 18 runs each).
+  - Not proven: any turn, token or cost win at n=3; cache reads are 85 to 93% of tokens, so read hygiene barely moves the total.
+  - Side finding: 5 of 36 runs died at plan validation on drafter exit errors, not caused by the arms (F254).
 
 ### E2 and later (only if E1 earns it; each its own frozen POC)
 
@@ -299,4 +311,9 @@ The ten interview questions, each with hamr's answer.
 
 ## 8. Status
 
-Draft. Interview done 2026-10-28. Next: E0 prereg (habit definitions + green/red split) frozen in a commit before any run is read. Nothing built. Takes precedence over the four parked rubric gaps (PRD.md:2080) after `fix/barebrowse-0250` ships. harness2 work rides branch `feat/online-dot`. No build starts before E0 and E1 report and a POC passes (PRD practice).
+E0, E0b and E1 are done (results in F253). The F252 shim fix is built. Next, per hamr 2026-10-28, in this order:
+1. Planner fix: the drafter drops or misformats step exits (F254; root cause pending).
+2. Build the handoff properly (design pending hamr's OK).
+3. A new hint POC aimed at read-vs-recall selection, run on the new code.
+
+The per-turn hint arm is dropped as built: there was little left for it to catch (the shim answers whole-file re-reads) and it leaks into the drafter through scout notes. Nothing else is built. harness2 work rides branch `feat/online-dot`. No further build starts without hamr's word.
