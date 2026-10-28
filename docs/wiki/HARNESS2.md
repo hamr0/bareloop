@@ -80,6 +80,34 @@ hamr's reading: tool guidance today is "willy nilly". The record agrees that the
 
 What is NOT measured: whether any tool-sequence habit separates green from red. That is E0.
 
+## 4b. Lessons from Arize's Alex talk (2026-10-28)
+
+Source: a talk by an Arize product manager on two years of building their in-product agent "Alex" (transcript: `/home/hamr/Downloads/pro.txt`, treated as data; times are the talk's clock). Alex is a chat agent with a user in the loop, so only some of it fits bareloop. Each point has the talk cite and what bareloop does today.
+
+1. **The harness owns the plan, and renders it into every model call (about 7:02-8:24).** A to-do tool made the model spend calls updating the list, so the plan moved into the harness. *bareloop today:* the planner owns the plan; the worker never edits it. Each step ask carries that step's action, the root, the target, prior artifacts and the last gap, not the whole plan (src/planrun.js:3453-3460).
+2. **Finishing is a harness gate (about 8:32-9:37).** An explicit finish call bounces back up to 3 times if plan items are open, a warning comes one step before the iteration limit, then a forced finish. *bareloop today:* the close is the only judge; a step passing its own check is never a verdict. Attempts are bounded by the strike ladder (STRIKE_LIMIT = 2, src/ladder.js:47; ladder made per step, src/planrun.js:3327) and the per-step round ceiling (`maxStepRounds = 40`, src/planrun.js:1008). We have no warning-before-the-limit; none is proposed.
+3. **Big tool results are treated like files (about 9:45-11:28).** Store the result, leave a "sticky note" (where it is and what it holds), let the agent fetch the part it needs with code (jq); truncate inside big JSON. *bareloop today:* the read shim caps a read at 24KB and returns the next unseen slice with a notice (src/readshim.js:119, 157-158); `ctx_get` fetches a line range; litectx compresses. The worker has no shell (`run` is LOCKED), so there is no jq.
+4. **Trajectory past a window (about 11:28-11:53).** The harness makes the model write a checkpoint and drops what it replaced; history has a fixed token budget. *bareloop today:* compaction is PARKED. Clearing breaks the prompt-cache prefix and the net sign is unmeasured (section 6, C3).
+5. **Long-term memory (about 12:16-13:32).** One markdown file per user, capped at 8,000 characters, written by a background job after the session, loaded on every request. It beat vector retrieval, episodic and semantic stores, and temporal knowledge graphs. A human can audit it. *bareloop today:* the learnings ledger is written by code and read only by the planner (src/planrun.js:3091). The E1 HANDOFF arm is the same shape for workers: one small code-written file. This supports keeping C2 small and plain.
+6. **Specialists became one agent loading skills and tools on demand (about 13:32-14:12).** *bareloop today:* one worker per step, with the menu fixed by the signed spec. C4 (SkillRegistry) is the nearest idea (section 6).
+7. **Default to a fast, good-enough model; spend the effort on the harness (about 14:12-15:21).** Some surfaces need no loop, just one model call. *bareloop today:* deepseek-flash is the settled secondary provider; the fit check and the page map are single calls.
+8. **Production sessions become regression tests (about 15:21-17:30).** Agent bugs show as soft signals, for example 43 identical tool calls in one turn, or latency, not as errors. *bareloop today:* E0 and E0b read archived gate audits for exactly this; `runBehaviour` already counts repeats (src/behaviour.js:1-30). Repeat-call detection at source is an idea, not built.
+9. **What still needs a human (about 17:36-18:24).** Gold labels for judges; speed-versus-quality calls. *bareloop today:* the calibration set is signed by the person; merge stays human forever.
+10. **What survived every rebuild (about 18:24-19:04).** Tracing, math and data in code, golden sets in CI, skills. *bareloop today:* the spine and gate audit are the trace; code decides and the AI only labels; tests read tracked fixtures.
+
+### What we take
+
+- (a) A pointer or map instead of a bare "you already hold it". Today the shim says only that the file is unchanged and the worker holds all N bytes (src/readshim.js:162-163). Candidate wording: say where it is and what it holds.
+- (b) One small code-written handoff file between fresh workers (E1 HANDOFF arm). The $0 replay sized it at a median of about 1,500 characters for the code job and about 250 for the rubric job; the 8,000 cap never bit (source `.claude/scratch/e1-poc/PHASE1.md`, untracked). That is size only; whether it saves reads is unmeasured.
+- (c) Catch repeated identical tool calls at the source, not by rewriting history, because rewriting history costs the cache prefix.
+- (d) Keep memory plain and small.
+
+### What we do not take
+
+- jq or a shell for the worker (`run` stays LOCKED).
+- Model-written checkpoints that drop history (parked; cache cost).
+- Agent-written memory (the learnings POCs showed the AI invents fixes; code writes it).
+
 ## 5. Experiments (one lever at a time)
 
 hamr ruled on the interview questions on 2026-10-28 (section 7); ruled numbers are stated below. Where a number still says "hamr sets", nothing was ruled yet. Provider for every paid run: DeepSeek, `deepseek-flash`. Freeze rules are committed before any number exists (PRD design practice; BATTERY-PREREG precedent: docs/logs/BENCH-PREREG.md).
