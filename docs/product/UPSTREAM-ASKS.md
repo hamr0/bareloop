@@ -2854,3 +2854,5 @@ F259, a $0 probe on the real Gate and the real `createShellTools`: `shell_read` 
 ### Status
 
 Filed with the guard session 2026-10-29; owner (bareguard vs bare-agent) pending its answer.
+
+2026-10-29 — SHIPPED in bare-agent 0.55.0 (owner: bare-agent, not bareguard). `createShellTools({ canRead })` is asked per directory (false prunes) and per file (false skips); a throw or non-boolean fails the grep loudly; the grep `timeout` bounds the whole call. bareloop wires it to `gate.allows()` plus `noFollowSymlinks: true` (`gatedShellOptions`, `src/tools.js`) on branch feat/audit-grid; F259 FIXED there. Nothing further asked of bareguard.
