@@ -27,7 +27,7 @@
     "check:lockfile": "node scripts/check-lockfile.mjs"
   },
   "dependencies": {
-    "bare-agent": "^0.52.0",
+    "bare-agent": "^0.55.0",
     "barebrowse": "^0.25.0",
     "bareguard": "^0.27.0",
     "litectx": "^0.32.0"
