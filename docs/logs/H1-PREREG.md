@@ -47,3 +47,18 @@ Known blind spot: the gate audit has no `ctx_get` range (HARNESS2 §9 known gaps
 - Cost: reported only. n=3 is UNDERPOWERED for cost (pulselog OFF ranged $0.20–0.37 in E1), declared now, before any data. A cost difference is never read as a win or a loss.
 - Provider-red rows are casualties, never evidence; probe the model with 2 consecutive 200s before firing.
 
+
+## Addendum 1 (2026-10-29, before any Phase 1 number; hamr: "A and p7, run p7 and create a new difficult job")
+
+Adds, loosens nothing.
+
+- Phase 0 result: PASS on the frozen gate (48 fit cases, 16 runs, TYPES/deepseek-flash, 45 runs; first count 37 had an ask-matching bug, fixed, v1 kept). Caveat: all 48 are reads of ONE file (`src/metrics.js`, 201 lines), 41 of them in `p7`. Result file: `.claude/scratch/h1/phase0/PHASE0-RESULT.md`.
+- Phase 1 jobs: `p7` (from Phase 0) PLUS one NEW job built for room: a copy of a real local repo with large files (at least one file of 400+ lines holding the defect), a planted defect fixable by a small edit (at most 60 lines) inside a large file, a deterministic close, red at seed and green with the known fix, proven at $0 before any paid run. The new job is reported as its own row; p7 and the new job are never pooled into one share.
+- The pass rule applies PER JOB. H1 is read as "works on job X" only for a job that passes; never as a general claim.
+- Hint text (fixed, both jobs, worker only, tool + count, no file), count taken from Phase 0:
+  "In past runs, workers read whole files 48 times where ctx_recall then ctx_get would have fetched only the part they changed. Before reading a large file you will change in one place, try ctx_recall."
+- Shown only when the step grants recall and get (G1); otherwise the arm is recorded as inert for that step.
+- Read-shim held at the product default (`cap`) in both arms and recorded.
+- Caps unchanged: $1 per run, $10 total across both jobs. Order: OFF/ON alternating per rep, p7 first.
+- New job `bigfile` (built and proven at $0, 2026-10-29): patient = copy of bareguard 0.28.0 at /home/hamr/PycharmProjects/bareloop-patients/h1-bigfile (seed 88f8f20). Plant: one character in `_resourceFromRule`, `src/gate.js` (2433 lines); other large files 500-2180 lines. Close: 5 stages (changed-from-seed under src/, npm test exits 0, `not ok` count vs baseline 0, test count kept at 1596, no-suppressions). Seed red 3/3 (same single failure), green with the known fix. The close never names the file or function. Template: .claude/scratch/h1/templates/bigfile/ (specHash 7b17f5e0…bf82c before the Fireworks baseUrl rewrite).
+- Steps and grants are drafted by the planner at run time for both jobs; a step without recall+get is recorded inert (already above), and a job whose ON arm is inert in every step reads INCONCLUSIVE, never a fail of the hint.

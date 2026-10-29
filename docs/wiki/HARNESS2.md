@@ -108,6 +108,22 @@ Source: a talk by an Arize product manager on two years of building their in-pro
 - Model-written checkpoints that drop history (parked; cache cost).
 - Agent-written memory (the learnings POCs showed the AI invents fixes; code writes it).
 
+## 4c. Lessons from an Arize post on tool selection (2026-10-29)
+
+Source: https://arize.com/blog/ai-agent-tool-selection-decision-tracing/ (October 2026). A vendor post on one small demo. [CLAIMED] None of it is checked by us.
+
+What it says:
+- A separate router model gives a probability for each tool. It is used only above confidence 0.7; below that, the chat model picks as usual.
+- Each pick is logged as a DECISION span that lists all the options, not only the one taken.
+- Results on their 5-tool demo, 100 messages, 3 runs: the right first tool was picked 78% as built, 95% when forced, 91% when gated. Forced gave 21 empty replies; gated gave 3.
+
+What we take:
+- Tool choice is fixed by structure, not by wording. That matches H1: a hint (wording) did not move the pick (section 9 H1).
+- The "decision tracing" idea: log what a pick could have been (the tools on offer, and which fit), so a wrong pick can be read afterwards. Not built; an idea only.
+
+What we do not take:
+- An AI router on every turn. It adds a model call per turn. Code decides, not the AI.
+
 ## 5. Experiments (one lever at a time)
 
 hamr ruled on the interview questions on 2026-10-28 (section 7); ruled numbers are stated below. Where a number still says "hamr sets", nothing was ruled yet. Provider for every paid run: DeepSeek, `deepseek-flash`. Freeze rules are committed before any number exists (PRD design practice; BATTERY-PREREG precedent: docs/logs/BENCH-PREREG.md).
@@ -315,7 +331,7 @@ Built on `feat/online-dot` (pushed unless noted):
 - Online dot in the panel header (87f3083). Not harness2; it rides the branch. A later fix (f08e5d9) stops a page render error painting it offline.
 - F252 shim fix (2a81471): the delivered-ledger resets per `ask()`. Proven by a fail-first test. Live: the shim was ARMED in run mvsmxgwm (one `memory-cache` record: capped 1, pointered 0). The pointer path (a later attempt told "you already hold it") was never served live, so the fix is still test-proven only.
 - Handoff note (1c26d45 code and tests, 6af57ef docs): `src/handoff.js`. Spec field `handoffNote`: absent = on, false = off. The switch enters the signed hash only when present (mirrors `thinking`; it is NOT like `learningHints`, which is a global `config.json` setting, `src/learnstore.js`). hamr ruled 2026-10-28: ON by default (1A), not in the panel (2B), old signed jobs get it without a re-sign, like learnings (A). Live: the note was emitted 10 times in mvsmxgwm (the F255 notes). It is NOT yet shown to cut re-reads live: mvsmxgwm had 26 new-worker re-reads against E1 medians OFF 30 / HANDOFF 15, which is not like-for-like and is n=1.
-- Planner exit fix (4455c0c): the POC PASSED (`docs/logs/PLANNER-EXIT-PREREG.md`, commit 9f88d5d; results `.claude/scratch/planner-poc/batch/results.jsonl`). First-draft refusals OLD 8/23 vs NEW 1/24, plan-red 1 vs 0, cost $1.55 DeepSeek. The build is DONE and held live in runs mvsmxgwm and mvtatlxw (no plan-red). Root cause is the F254 entry in `docs/logs/FINDINGS.md`.
+- Planner exit fix (4455c0c): the POC PASSED (`docs/logs/PLANNER-EXIT-PREREG.md`, commit 9f88d5d; results `.claude/scratch/planner-poc/batch/results.jsonl`). First-draft refusals OLD 8/23 vs NEW 1/24, plan-red 1 vs 0, cost $1.55 DeepSeek. The build is DONE and held live in runs mvsmxgwm and mvtatlxw (no plan-red). Root cause is the F254 entry in `docs/wiki/FINDINGS.md`.
 - F255 (drafter put a path in `lineMatch`, crashing a check at zero): found live in mvsmxgwm, POC run, fixed in 721ba33. Live green via panel run mvtatlxw (provider-red, then Resume gave already-green, $0.4510).
 - F256 (drafter adds a whole-repo exit-0 check beyond the job): logged in 1fd90b6, NOT built. The panel now names each command check by its own command (b0f5c52), so two commands never read the same question.
 - Full suite at b0f5c52: exit 0, 4970 tests, 4968 pass, 0 fail.
@@ -330,11 +346,60 @@ Done earlier: E0, E0b, E1 (results in F253; `.claude/scratch/e1-poc/battery/anal
 
 No further build starts without hamr's word.
 
+### 2026-10-29 — H1 result (paid, Fireworks)
+
+H1 ran (prereg `docs/logs/H1-PREREG.md` and Addendum 1). Phase 0 ($0) passed: 48 fit cases in 16 runs. The first count was 37; an ask-matching bug in the instrument was fixed (v1 kept). All 48 fit cases are reads of one file, `src/metrics.js` (201 lines), 41 of them in `p7`.
+
+Phase 1: provider Fireworks, model `accounts/fireworks/models/deepseek-v4p1-flash`, 12 runs (2 jobs, 3 per arm), booked $3.3329. The real `runs.jsonl` was untouched (385 lines before and after). Result file: `.claude/scratch/h1/battery/analysis/H1-RESULT.md`.
+
+- **p7: FAIL, and backwards.** Retrieval share ON 6.4% vs OFF 19.5%. Fit conversion ON 1/14 vs OFF 2/8. Greens ON 2/3 vs OFF 3/3 (ON run 1 hit the wall).
+- **bigfile: FAIL on the frozen 2x rule.** Share ON 47.4% vs OFF 31.5%: up, but under 2x. 0 fit cases, because no run reached an edit. Greens 0/3 vs 0/3; every run ended step-red.
+- The hint was shown in 10 step-times (p7) and 6 (bigfile). It was never inert.
+- Cost is reported only (n=3 was declared underpowered before any data).
+- Observation, not a claim: on the big-file repo, workers already pick recall/get about 31% of the time with no hint, against about 10% on small repos.
+
+Why bigfile ended step-red (read from run 07-bigfile-OFF-r1's spine): the planner gave the step 14 rounds; each try hit that round cap with no write; two strikes; the replan gave 8 rounds and did the same. That is F257 in `docs/wiki/FINDINGS.md`. A second gap, what a next try is handed, is F258.
+
+Also done today, $0: H2 sizing (`.claude/scratch/h2/H2-SIZING.md`, 82 archived runs). Findings:
+- Part 0: workers use plain shell tools (bare-agent `shell_*`) for 93.6% of calls and litectx `ctx_*` for 6.4%. Half of the `shell_read` calls are re-reads.
+- Part A (map instead of a whole-file read): a map is about 2% of the file's bytes (median 194 B vs 14.6 KB). A fallback was needed in 5% of cases at 200 lines or more (9 of 166). But the biggest "enough" class is enough-notouch: the worker read the file and never touched it again. That is probably reading to understand, which a map cannot replace, so "enough" is optimistic. One file (`src/metrics.js`) is 78 of the 166 cases.
+- Part B (hand an alternative from the last call): pair patterns are mostly not above the edit baseline; read then read is only 31. Weak.
+
+Where tools come from: `shell_read`, `shell_grep`, `shell_write`, `shell_edit` are from bare-agent `createShellTools` (`src/tools.js:21`); `ctx_*` are bareloop wrappers over litectx; bareguard gates every call (`src/tools.js:93-98`). [CODE]
+
+Nothing built from this. Next candidates (A, C, M1-M3) and wrinkles are in section 9. No build starts without hamr's word.
+
+### 2026-10-29 — Check C result ($0)
+
+Check C ran at $0 (no model calls, no keys). Result file: `.claude/scratch/memc/MEMC-SIZING.md`. Descriptive only; no pass/fail gate was applied.
+
+**Finding.** A new worker repeats reads that earlier workers in the same run already did. A repeat is a read-class call (shell_read, ctx_get, shell_grep, ctx_recall) whose key an earlier ask touched, with no write to it since. Grep repeats are path-only (the gate audit has no pattern), so they are an upper bound.
+- E0 deepseek-flash TYPES (23 runs): new step 50% (291/580), step retry after a bounded try 53% (91/172), fix first try 42% (149/353), fix retry 50% (164/327).
+- E1 TYPES, handoff OFF (12 runs): 38-60% (new step 38%, fix first 39%, fix retry 60%). Handoff ON (12 runs): 31-47% (new step 31%, fix first 32%, fix retry 47%). ON is lower in every row, but cells hold 3-13 asks and the arms are not like-for-like (the OFF arm pools the hint arm). The note maps files; it does not stop a re-read.
+- H1 bigfile (6 runs, 24 worker asks): step retry after a bounded try 66% (195/295), new step 72% (73/102). All 24 worker asks were bounded at the round cap and none wrote. Of 12 bounded-to-retry pairs, 2 were pure redo (no write, no new key) and 10 found at least one new key but none wrote. Hand-checked pair (07-bigfile-OFF-r1, step `recon-and-first-fix`): try 2 repeated 11 of 25 read-class calls and still found 14 new keys.
+- Read as per-run anecdote: H1 is n=6 per job and has no handoff-OFF arm.
+
+**What each new worker is handed (from code, `src/planrun.js`).**
+- Every worker `ask()` is a fresh transcript and a fresh read-shim ledger (`:2895-2898`). Only the prompt and system prompt carry anything over. The tree persists.
+- Step try prompt (`:3484-3495`): step action; repo root; target; earlier GREEN steps' final text, cut at 2000 chars each (`ARTIFACT_MAX`, pushed only on a green step, `:3500`, `:3605`); on a retry, the last check output (`lastGap`, `:3533`); `boundedNote` if the previous try was bounded (`:594-611`, `:3493`); Layer R note (off by default); the handoff note.
+- Fix try prompt (`:4236-4244`): fixed sentence; root; the same green-step texts; try 1 gets the final verification output, retries get the failed verification output; the close's own numbers so far; `boundedNote`; the handoff note.
+- Handoff note (`:2582-2595`, `src/handoff.js:8,12,69-100`): files earlier asks read, with line counts and symbol ranges. No greps, recall queries, edits or findings. Cap 8,000 chars. Starts empty on a resumed leg (`handoff.js:55-56`).
+- `boundedNote` is generic: it says reading ran out ("CUT OFF after N tool rounds"). It names no file, grep or finding.
+- A failed try's own final text is never passed on.
+
+**Size of a facts-only carry note** (files, greps, edits, from all earlier asks in the run): median about 200-1,400 chars, p90 up to about 2.5k, all at or under 8,000. Share at or under 1,500 chars: 58-100% by segment (lowest: E0 TYPES fix retry 58%). The grep pattern length (24 chars) and match counts are assumed, since the audit has neither. H1's shipped handoff note measured 968-2,325 chars median, so a facts-only note without symbol maps is smaller than what ships.
+
+**Dollar proxy, not a saving.** About 40% of E0 TYPES worker spend sits in repeat calls (about $6.5 of $16.55 over 23 runs). This assumes every call costs the same share. It is not a measured saving: cache reads dominate tokens and cost follows turns (F253), and a removed call does not remove a round.
+
+Verdict: the gap is real and sized. Whether handing facts closes it is untested. Next is M1 (section 9). Recorded in F258.
+
 ## 9. Experiment backlog (not yet run)
+
+Order (hamr, 2026-10-29): memory first. C (measure the carry-over gap, $0) then M1 (carry note built by code: a prereg hamr signs, then a POC on the bigfile job). A and B wait until memory is done; a good carry note may make them unneeded. Why: H1 showed workers already follow the menu's size rule (whole read for small files, recall/get for big ones: bigfile OFF 31.5%, ON 47.4%); the waste is what is lost between workers, not the tool pick. Guess, not proven (n=3): on p7 the hint's word 'large' may have read as permission to read a 201-line file whole.
 
 Each item: question, why, riskiest assumption, first $0 step, who rules. None has a number yet.
 
-H1. New hint POC: read-vs-recall SELECTION.
+H1. New hint POC: read-vs-recall SELECTION. **DONE 2026-10-29: FAIL on both jobs** (p7 backwards, bigfile under 2x; see section 8, `.claude/scratch/h1/battery/analysis/H1-RESULT.md`, prereg `docs/logs/H1-PREREG.md`).
 - Question. Can a hint move workers from `shell_read` to `ctx_recall`/`ctx_get` where recall fits?
 - Why. Workers pick `shell_read` about 69 of 70 times over recall/get (F107; section 4 above). The per-turn re-read hint arm is dropped (F253). hamr 2026-10-28: "focus on hints" after the fixes.
 - Riskiest assumption. That selection, not retrieval quality, is the blocker, and that a hint wording changes it (a guard wording once moved a false-claim rate 5/10 to 0/10, so wording matters).
@@ -380,6 +445,93 @@ H7. Drafter scope-escape. The one NEW-wording red in the planner POC was scope-e
 
 Also kept: C2-C6 as listed in section 6.5 (C1 dropped; the C2 spec draft has 8 open choices).
 
+Next candidates after H1 (added 2026-10-29). Same fields as above. Nothing here is built or run.
+
+A. Hand a map on a big-file read; the whole file on a second ask (the fallback). WAITS for memory (hamr 2026-10-29).
+- Question. Does a map (symbols and line ranges) in place of a first whole-file read cut reads without hurting greens?
+- Why. $0 sizing is done (section 8, H2 Part A): a map is about 2% of the file, fallback about 5% at 200 lines or more.
+- Riskiest assumption. That a worker who read a file and never touched it again (enough-notouch, the largest class) can do without the content. That read is probably to understand, so "enough" is optimistic.
+- $0 first. Two things. (1) A litectx index must exist: today it is built only when a ctx tool is granted (`src/planrun.js:2574`). (2) Measure index and map time on the bareguard copy at $0.
+- Rules. hamr. Next step: a frozen prereg.
+
+B. Hand an alternative based on the last call. SHELVED.
+- Weak at $0 (section 8, H2 Part B): pair patterns are mostly not above the edit baseline. Revisit only with new evidence.
+
+C. The carry-over gap, measured. **DONE 2026-10-29** ($0; see section 8, `.claude/scratch/memc/MEMC-SIZING.md`, F258).
+- Question. On try N+1 after a bounded try N, how many calls re-find what try N already found (same reads and greps)?
+- Why. F258: the next worker is not told what the last try found or ruled out. F257 shows runs where every try ends out of rounds.
+- Riskiest assumption. That re-finding is large enough to matter; the handoff note already cuts new-worker file re-reads.
+- $0 first. Count it in archived spines and gate audits, split at the try boundary. No paid run.
+- Rules. hamr.
+
+M1. Carry note built by code, like learnings. **Initial spec (agreed with hamr 2026-10-29; not built; POC next).**
+- Purpose. A code-written carry note so a new worker (retry, next step, fix try) does not re-find what earlier workers in the same run found.
+- Content. Facts only, written by code:
+  - Last try header: step, try n of m, why it ended (for example ran out of calls, N of N), files changed or none.
+  - Last check output (already handed today; keep one copy).
+  - Files read: path, line count, times read, line ranges actually read or symbol ranges when known. Never content.
+  - Searches: grep pattern, scope, match count and first match lines (file:line, capped); recall query and hit ranges.
+  - Edits made in the run: per file, changed-line count and hunks taken from the WORKING TREE (git diff against step start), capped at about 40 lines per file. Never from the spine's attempt-diff (an arbiter book, section 6.4).
+  - Earlier tries folded to one line each.
+- Fold. Repeated calls merged with the learnings Jaccard match (0.6 or more): "read 5x", not five lines.
+- Size. Grows within a run; newest try in full, older tries folded; hard cap about 3,000 chars (check C: most fit in 1,500).
+- Never. The worker's own words (that is option B, its own later test: the AI invents, per the learnings POCs). Arbiter books (spine, gate audit, `.smoke`). Secrets (masked by the one secret-shape inventory).
+- Persisted to disk per run, so a RESUME starts with it. This fixes the "handoff dies at resume" wrinkle.
+- Across runs. NOT in M1: a fresh run starts on a fresh tree, so old diffs and ranges go stale. Later, via learnings (planner).
+- Relation to today's handoff note. M1 extends or replaces it; decided after the POC.
+- Key point. A NEW worker starts with no prompt cache, so handing it a note costs no cache break. The reason compaction is parked (section 4b) does not apply.
+- Riskiest assumption. That code can write facts a worker finds useful. An AI-written summary invents, so code writes facts only.
+- Steps.
+  1. $0 POC: a note maker in a scratch copy replays archived runs and prints the note each new worker would have got. hamr reads real samples.
+  2. Prereg that hamr signs: today's handoff against handoff plus M1, jobs p7 and bigfile, Fireworks DeepSeek `deepseek-v4p1-flash`.
+  3. Build on a branch only if it passes.
+- Known data gap to resolve in the POC. The gate audit has no grep pattern and no `ctx_get` range (MEMC-SIZING caveats). The note maker must take these from the tool call args at the source, so the POC must say where each field comes from.
+- **v2 rules (agreed with hamr 2026-10-29; POC v2, $0).** These refine the content above; the v1 text stays as the record.
+  - Noise drop. Directory reads, and manifest, doc and config files, are not shown unless edited. They are counted in one line: "+N listings/config reads not shown".
+  - Ranking. Files are ordered by times read, then most recent. When the cap bites, lower-ranked lines drop first and the last try's own facts drop last.
+  - Heading. "Where earlier workers looked (N files)".
+  - The mark " · looked here, no fix made" goes ONLY on a file read 3 or more times in a try that ended red with no change (hamr picked A). On bigfile every file got the mark when it was unrestricted, which says nothing.
+  - Fold also by a shared 6-character prefix or by containment (for example `runMetric` and `runMetricsBatch`), besides the Jaccard match.
+  - Edits mean everything since the RUN started (hamr's default pick A), not since the step started.
+  - Live capture at the tool seam: grep pattern and matches, `ctx_get` range, recall hits. This closes the data gap above.
+  - Note state is persisted under `.smoke`. The worker's read of it is denied, but see F259: a root grep can reach it. The note holds facts only, so the harm is no more than F259 itself.
+- Illustrative layout, values shaped like the bigfile run, not real output:
+
+```
+== What earlier workers in this run did (facts from the record, written by code) ==
+
+Last try: step "recon-and-first-fix", try 1 of 2. Ran out of calls (14 of 14). Changed nothing.
+Last check said: not ok 113 - a resource halt routes through humanChannel topup end-to-end
+
+Files read (whole-file reads, line ranges where known):
+  test/budget-resources.test.js (612 lines) · read 2x · lines 380-450
+  src/gate.js (2433 lines) · read 3x · _haltDimension 2140-2160, _resourceFromRule 2185-2192
+  src/primitives/budget.js (501 lines) · read 1x
+
+Searches and what they matched:
+  grep "budget.resource" in src/  → 6 matches: src/gate.js:2188, :2201, :2240 (+3)
+  grep "_haltDimension" in src/   → 2 matches: src/gate.js:2141, :2310
+  recall "topup resource halt"    → src/gate.js 2140-2160, src/primitives/budget.js 88-120
+
+Edits made in this run: none.
+
+Earlier tries (folded): step "recon-and-first-fix" try 1: same reads as above, plus grep "topup" (11 matches).
+```
+
+M2. litectx context primitives (compress, peek, stash).
+- They are wired but used in about 0.7% of calls (H2 Part 0). Use them. A gap becomes an ask to litectx, never a local patch.
+
+M3. Head-and-tail compaction. A crude baseline only, to compare M1 against.
+
+Wrinkles to fix or try (each has a ledger bullet or a finding):
+- F257: the planner gives too few rounds per step on a big-file job.
+- The litectx index is built only when a ctx tool is granted (`src/planrun.js:2574`).
+- The attempt diff never reaches the next worker (spine only, `src/planrun.js`, "attempt-diff").
+- F259: a root `shell_grep` walks past `fs.deny` and can read the arbiter books (upstream ask BG-3; matters for where M1 keeps its state).
+- The handoff note dies at resume: it lives in memory, a resumed leg starts empty (`src/planrun.js:1027`).
+- The Phase 0 instrument had an ask-matching bug (fixed in scratch, v1 kept).
+- The p7 spec signature was rewritten for the Fireworks baseUrl; the driver recomputes the hash.
+
 Known gaps to keep in view: Kind A/B are keyed tool+path (the gate audit has no `ctx_get` range); hint conversion can only be approximated; the prompt text of notes is not in the spine, by design.
 
 ## 10. Where the evidence lives
@@ -390,7 +542,10 @@ Untracked scratch (survives `/clear`, not a fresh clone), all under `.claude/scr
 - `planner-exit/FINDINGS.md`
 - `planner-poc/` (`engine/`, `batch/`)
 - `handoff-live/RESULT.md`
+- `h1/` (`phase0/PHASE0-RESULT.md` and `.v1.md`, `battery/` with `analysis/H1-RESULT.md`, `results.jsonl`, `progress.log`, `runs/`)
+- `h2/H2-SIZING.md` (the $0 sizing)
+- `memc/` (check C, $0: `MEMC-SIZING.md` is the result; scripts `memc.mjs`, `agg.mjs`, `selfaudit.mjs`, `handcheck.mjs`; tables `memc-tables.md`, raw `memc.out.json`)
 
-Tracked: `docs/logs/E0-PREREG.md`, `E0B-PREREG.md`, `E1-PREREG.md`, `PLANNER-EXIT-PREREG.md`; `docs/logs/FINDINGS.md` F252, F253, F254, F255.
+Tracked: `docs/logs/E0-PREREG.md`, `E0B-PREREG.md`, `E1-PREREG.md`, `PLANNER-EXIT-PREREG.md`, `H1-PREREG.md`; `docs/wiki/FINDINGS.md` F252, F253, F254, F255.
 
-Paid so far today (all DeepSeek deepseek-flash): E1 $4.72, observe $0.16, planner POC $1.55, live run $0.04.
+Paid so far (DeepSeek deepseek-flash, 2026-10-28): E1 $4.72, observe $0.16, planner POC $1.55, live run $0.04. 2026-10-29: H1 $3.3329 (Fireworks deepseek-v4p1-flash).

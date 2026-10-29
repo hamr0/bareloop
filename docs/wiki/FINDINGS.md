@@ -15049,3 +15049,57 @@ Root cause: `planPrompt` (src/planrun.js, the `"exit"` line near 703) presented 
 **Also in this run.** The F255 fix held live: the path stayed out of `lineMatch`; `checks.js` reached 0 and read 0.
 
 **Status.** Logged only, not built (hamr, 2026-10-29). Cure undecided.
+
+## F257 — planner gives too few rounds per step on a big-file job; every try runs out of rounds while still exploring (2026-10-29; live; H1 battery, Fireworks deepseek-v4p1-flash; all 6 bigfile runs step-red, $0.16-0.41 each)
+
+**Grounded in:** the spine of run 07-bigfile-OFF-r1 (`.claude/scratch/h1/battery/runs/07-bigfile-OFF-r1/sess/source-seed/h1-bigfile-bareloop/u-mvtomt9s.jsonl`), `.claude/scratch/h1/battery/analysis/H1-RESULT.md`, `src/plan.js:390`, `src/planrun.js:1010`.
+
+**Job.** `bigfile`: a copy of bareguard 0.28.0 with one planted character in `_resourceFromRule` in `src/gate.js` (2433 lines). Close needs a change under `src/` and a passing `npm test`.
+
+**What the spine shows (run 07).** The planner's first plan gave step `recon-and-first-fix` 14 rounds. Try 1 hit the cap (`attempt-bounded`, rounds 14 of 14) with 0 files changed; strike 1. Try 2 did the same; strike 2; `cap-halt`. The replan gave the new step 8 rounds. Try 1 and try 2 each hit 8 of 8 with 0 files changed; two strikes; job-end step-red, $0.1914. No try ever wrote.
+
+**Why it matters.** Per-step rounds are the Gate's `maxTurns`. The planner may tighten the 40 ceiling, never exceed it (`src/plan.js:390`, `src/planrun.js:1010`). On a big file the planner picked 14, then 8, and the worker was still reading when the cap hit. The replan went lower, not higher. All 6 bigfile runs (OFF and ON) ended step-red, so this stopped H1 from ever seeing an edit on this job (0 fit cases).
+
+**Not shown.** Whether more rounds would have turned these runs green is untested. The run has no way to tell the planner "the last try ran out while still reading".
+
+**Status.** Logged only, nothing built. Fix ledger bullet added. Related: F258 (what a next try is told).
+
+## F258 — the next try or step worker is not told what the last try found or ruled out (2026-10-29; read from code; size not yet measured ($0 check C pending))
+
+**Grounded in:** `src/planrun.js` (step prompt build ~3453-3495; `boundedNote` at 594; attempt-diff emit 3481; handoff store 1027), `src/handoff.js`.
+
+**What a next-try or next-step worker gets today.** The step action, the root, the target, the final text of finished steps, the last gap, the bounded note (for example "your previous attempt was CUT OFF after N tool rounds"), the Layer R note (off by default), and the handoff note (file names and line ranges only, `src/handoff.js`; kept in memory per run, so a resumed leg starts empty, `src/planrun.js:1027`).
+
+**What it does not get.**
+- What the previous try found or ruled out.
+- What the previous try changed. The attempt diff goes to the spine only, "never a prompt" (`src/planrun.js:3481`).
+- Anything from a try that ran out of rounds, beyond "you ran out".
+- Anything across runs. Learnings reach the planner only, never the worker.
+
+**Fits.** The bigfile runs in F257: two tries, each out of rounds with no write, and the second starts from the same notes as the first.
+
+**Not measured.** How many calls a next try spends re-finding what the last try found. That is check C in `docs/wiki/HARNESS2.md` section 9, $0, not yet run.
+
+**Status.** Read from code; logged only, nothing built. Candidates M1 (code-written carry note) and C (measure it) are in HARNESS2 section 9.
+
+**Sized 2026-10-29 (check C, $0).** Result in `.claude/scratch/memc/MEMC-SIZING.md`; summary in HARNESS2 section 8. A new worker repeats reads earlier workers in the same run already did (grep repeats are path-only, so an upper bound). E0 deepseek-flash TYPES: new step 50%, step retry after a bounded try 53%, fix 42-50%. E1 TYPES: handoff OFF 38-60%, handoff ON 31-47% (cells of 3-13 asks, arms not like-for-like). H1 bigfile: retry after a bounded try 66%, new step 72%; all 24 worker asks were bounded at the round cap and none wrote.
+
+What is handed, checked against code. The check output (gap) IS handed: to every step retry and to fix try 1 (the final verification output). The final text of earlier GREEN steps is carried forward (cut at 2000 chars each), to later steps and fix tries. A failed try's own text is not handed to its retry, and `boundedNote` is generic (it says reading ran out, nothing about what was read or found). No greps, recall queries, edits or findings reach the next worker, and the handoff note is a read-path map only.
+
+A facts-only carry note (files, greps, edits) would be small: median about 200-1,400 chars, p90 up to about 2.5k, all at or under 8,000. The dollar proxy (about 40% of worker spend on E0 TYPES sits in repeat calls) is NOT a measured saving: cost follows turns (F253). Status: sized; the M1 initial spec is in HARNESS2 section 9, nothing built.
+
+## F259 — a directory grep escapes fs.deny: one allowed shell_grep on the repo root returned lines from the arbiter books (.smoke spine and attempt-diff, the gate audit, .litectx) (2026-10-29; $0 probe on the real Gate and real bare-agent `createShellTools`; not seen live)
+
+**Grounded in:** the probe `.claude/scratch/grepprobe/probe.mjs`, `src/tools.js:631` (`toolAction`), `src/planrun.js:2205` and `:2341` (the deny list), `src/kinds.js:576` (`isArbiterBook`), `node_modules/bare-agent/tools/shell.js` ~505-660 (the grep walk).
+
+**What happened.** A direct `shell_read` of `.smoke/spine.jsonl` and of the gate audit is denied. A `shell_grep` with `path` at `.smoke` or at `.litectx` is denied. A `shell_grep` with `path` at the repo root is allowed, and the walk read every file under it. The probe planted one marker line per book. The root grep returned the marker lines from `.litectx/x`, `.smoke/attempt-diff.jsonl`, `.smoke/spine.jsonl`, `gate-audit.jsonl` and `src/a.js` (24 files walked).
+
+**Why.** The gate judges only the one path the action names. `toolAction` turns `shell_grep` into `{type:'read', path: <the dir>}` (`src/tools.js:631`). `fs.deny` is a prefix match on that path, and the root is not under any denied entry. bare-agent's walk (`walk()`, shell.js ~537) has no per-file deny check and no dot-directory skip, so it reads files the gate never saw.
+
+**Reach.** Workers do grep the root in archived runs: the H2 sizing samples show grep with path ".". Whether any live run pulled book lines is NOT measured.
+
+**Severity.** It breaks the doctrine that the worker never reads the arbiter's books. No known path to fake a green: the books hold facts the worker mostly gets in other forms. Still a doctrine break.
+
+**Owner.** Upstream. Either bareguard gets a per-file check for walking reads, or bare-agent's walk honours a skip or deny list. Asked to the guard session 2026-10-29 (UPSTREAM-ASKS, BG-3). bareloop will not patch around it.
+
+**Status.** OPEN, parked for the upstream answer. Related: F258 and M1 (HARNESS2 section 9), whose note state lives under `.smoke`.
