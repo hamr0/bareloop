@@ -645,7 +645,7 @@ plan with the first leg's spend carried as prior spend and `offerQuestions: fals
 plan's open questions) are a separate, unchanged mechanism: they are asked before drafting, about the plan; try-3 questions
 are asked after two failed drafts, about a job line.
 
-**Handoff note (per job; hamr 2026-10-28, F253).** When a worker's ask ends, code records the files it READ (the allowed `shell_read` and `ctx_get` calls; scout, step and fix asks all feed it). The NEXT step or fix ask of the same run, a retry of the same step included, gets a note appended to its first user prompt under the fixed heading `== Files earlier workers in this run read (a map only; contents are not included; line ranges as ctx_recall prints them) ==`, one line per file: `- <path> (<N> lines): <symbol> <a>-<b>, ...`. Code writes it, never a model; it names files and carries no content. The symbol map is the LiteCtx index's named chunks, refreshed before the note is built when the worker holds a retrieval verb, and dropped for a plain line count when the index is missing (LiteCtx indexes git-tracked files only) or older than the file. The scout and the drafter are never handed a note. Capped at 8,000 characters (`HANDOFF_CAP`, src/handoff.js): the oldest paths go first with a `[trimmed: N older path(s)]` marker. The arbiter's books (`.smoke`, `.litectx`, the gate audit), `.git`, `.bareloop` and anything outside the job root are never named. The store lives in memory for one leg: a resumed leg starts empty, so its first ask gets no note and later ones do. Each note given is one report-only spine record `{type:'handoff-note', phase, iteration, chars, paths}` (a path COUNT, never a name). Switch: the signed spec's optional boolean `handoffNote`, absent = on, `false` = off (no note, no record).
+**Handoff note (per job; hamr 2026-10-28, F253).** When a worker's ask ends, code records the files it READ (the allowed `shell_read` and `ctx_get` calls; scout, step and fix asks all feed it). The NEXT step or fix ask of the same run, a retry of the same step included, gets a note appended to its first user prompt under the fixed heading `== Files earlier workers in this run read (a map only; contents are not included; line ranges as ctx_recall prints them) ==`, one line per file: `- <path> (<N> lines): <symbol> <a>-<b>, ...`. Code writes it, never a model; it names files and carries no content. The symbol map is the LiteCtx index's named chunks, refreshed before the note is built when the worker holds a retrieval verb, and dropped for a plain line count when the index is missing (LiteCtx indexes git-tracked files only) or older than the file. The scout and the drafter are never handed a note. Capped at 8,000 characters (`HANDOFF_CAP`, src/handoff.js): the oldest paths go first with a `[trimmed: N older path(s)]` marker. The arbiter's books (`.smoke`, `.litectx`, the gate audit), `.git`, `.bareloop` and anything outside the job root are never named. The store lives in memory for one leg: a resumed leg starts empty, so its first ask gets no note and later ones do. Each note given is one report-only spine record `{type:'handoff-note', phase, iteration, chars, paths}` (a path COUNT, never a name; catalogue entry `handoff-note` under the spine records). Switch: the signed spec's optional boolean `handoffNote`, absent = on, `false` = off (no note, no record).
 
 **Thinking on (per job; hamr 2026-10-11).** The New job card has a "Thinking on" tick under Model, unticked by default, saved in the SIGNED job as the optional
 boolean `thinking` (absent = off; an old spec and any unticked job keep the hash they would have had; a ticked job's `jobSpecHash` and `workflowKey` differ). It
@@ -2739,6 +2739,16 @@ unreferenced loose objects are left. Gitignored files inside the fence are seen 
 `output/` shows); `.git`, `node_modules`, `.smoke`, `.litectx` and `gate-audit.jsonl` never are. A try that
 changed nothing in scope emits nothing, and a failed capture emits `gitError` with empty lists: a record,
 never a verdict, and it never throws. No prompt carries it; the learnings cards read it ("What changed").
+
+#### `handoff-note` — a note handed to a worker ask (`src/handoff.js`, `src/planrun.js`)
+
+One report-only spine record per handoff note given: `{type:'handoff-note', phase, iteration, chars, paths}`.
+`phase` is `step:<id>` or `fix`; `iteration` is the round iteration at the ask; `chars` is the note's length in
+characters (at most 8,000); `paths` is a COUNT of the files the note lists after any trimming, never a name.
+`runPlan` writes it right before the ask runs, once per step or close-fix ask that actually receives a note: an
+ask with nothing yet read gets no note and no record, and the scout and the drafter are never handed one. It
+carries no cost fields (not a spend record) and no verdict. The switch is the signed spec's optional boolean
+`handoffNote`: absent = on, `false` = off (no note, no record). The prose rules are under "Handoff note".
 
 ### `replayRun(spineEvents, auditEvents?, { runId? })` / `formatReplay(summary)` / `summarizeForAllLine(summary)` / `formatAllLines(entries)` — `src/replay.js`
 
