@@ -52,7 +52,7 @@ import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
 import { seedListing, GATE_AUDIT_FILE, ARBITER_BOOK_STORES } from './kinds.js';
 import { TOOL_MENU, WRITE_VERBS, STORE_VERBS } from './job.js';
-import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, strategyFor } from './tools.js';
+import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, gatedShellOptions, strategyFor } from './tools.js';
 import { redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { extractArtifact, priceOf, scrubRaw, stampRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { PROVIDER_TIMEOUT_MS } from './clock.js';
@@ -331,7 +331,7 @@ export async function defaultSurveyor({ workdir, granted, auditPath = join(workd
   });
 
   const names = new Set(granted.map((v) => /** @type {Record<string,string>} */ (TOOL_BY_VERB)[v]));
-  const shell = createShellTools().tools.filter((/** @type {{name: string}} */ t) => names.has(t.name));
+  const shell = createShellTools(gatedShellOptions(gate, workdir)).tools.filter((/** @type {{name: string}} */ t) => names.has(t.name));
   /** @type {any[]} */
   let ctxTools = [];
   if (ctx && [...CTX_TOOLS].some((t) => names.has(t))) {

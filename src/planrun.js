@@ -35,7 +35,7 @@ import { createStallWatch, STALL_MS, MAX_STALLS } from './stall.js';
 import { createLadder, STRIKE_LIMIT } from './ladder.js';
 import { createTrend, FIX_STRIKE_LIMIT } from './trend.js';
 import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
-import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, strategyFor } from './tools.js';
+import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, gatedShellOptions, PERSONA_TOOLS, strategyFor } from './tools.js';
 import { anySuppressionWarning } from './authoring.js';
 import { createReadShim, readShimArm, readShimStrategy } from './readshim.js';
 import { createHandoffStore, trackReads } from './handoff.js';
@@ -2495,7 +2495,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       }
     };
     const grantedNames = new Set(granted.map((v) => /** @type {Record<string, string>} */ (TOOL_BY_VERB)[v]));
-    const shell = createShellTools().tools.filter((/** @type {{name: string}} */ t) => grantedNames.has(t.name));
+    const shell = createShellTools(gatedShellOptions(gate, workdir)).tools.filter((/** @type {{name: string}} */ t) => grantedNames.has(t.name));
     // THE READ SHIM (arm-gated, default OFF): a per-worker delivery ledger over the
     // read tool — cap at READ_SHIM_CAP, pointer only once the CURRENT content has been
     // delivered whole, next-unseen-slice otherwise, diff on a changed re-read. WHICH of
