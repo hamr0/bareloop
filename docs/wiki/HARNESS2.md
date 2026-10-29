@@ -486,6 +486,15 @@ M1. Carry note built by code, like learnings. **Initial spec (agreed with hamr 2
   2. Prereg that hamr signs: today's handoff against handoff plus M1, jobs p7 and bigfile, Fireworks DeepSeek `deepseek-v4p1-flash`.
   3. Build on a branch only if it passes.
 - Known data gap to resolve in the POC. The gate audit has no grep pattern and no `ctx_get` range (MEMC-SIZING caveats). The note maker must take these from the tool call args at the source, so the POC must say where each field comes from.
+- **v2 rules (agreed with hamr 2026-10-29; POC v2, $0).** These refine the content above; the v1 text stays as the record.
+  - Noise drop. Directory reads, and manifest, doc and config files, are not shown unless edited. They are counted in one line: "+N listings/config reads not shown".
+  - Ranking. Files are ordered by times read, then most recent. When the cap bites, lower-ranked lines drop first and the last try's own facts drop last.
+  - Heading. "Where earlier workers looked (N files)".
+  - The mark " · looked here, no fix made" goes ONLY on a file read 3 or more times in a try that ended red with no change (hamr picked A). On bigfile every file got the mark when it was unrestricted, which says nothing.
+  - Fold also by a shared 6-character prefix or by containment (for example `runMetric` and `runMetricsBatch`), besides the Jaccard match.
+  - Edits mean everything since the RUN started (hamr's default pick A), not since the step started.
+  - Live capture at the tool seam: grep pattern and matches, `ctx_get` range, recall hits. This closes the data gap above.
+  - Note state is persisted under `.smoke`. The worker's read of it is denied, but see F259: a root grep can reach it. The note holds facts only, so the harm is no more than F259 itself.
 - Illustrative layout, values shaped like the bigfile run, not real output:
 
 ```
@@ -518,6 +527,7 @@ Wrinkles to fix or try (each has a ledger bullet or a finding):
 - F257: the planner gives too few rounds per step on a big-file job.
 - The litectx index is built only when a ctx tool is granted (`src/planrun.js:2574`).
 - The attempt diff never reaches the next worker (spine only, `src/planrun.js`, "attempt-diff").
+- F259: a root `shell_grep` walks past `fs.deny` and can read the arbiter books (upstream ask BG-3; matters for where M1 keeps its state).
 - The handoff note dies at resume: it lives in memory, a resumed leg starts empty (`src/planrun.js:1027`).
 - The Phase 0 instrument had an ask-matching bug (fixed in scratch, v1 kept).
 - The p7 spec signature was rewritten for the Fireworks baseUrl; the driver recomputes the hash.

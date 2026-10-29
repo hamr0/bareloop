@@ -15087,3 +15087,19 @@ Root cause: `planPrompt` (src/planrun.js, the `"exit"` line near 703) presented 
 What is handed, checked against code. The check output (gap) IS handed: to every step retry and to fix try 1 (the final verification output). The final text of earlier GREEN steps is carried forward (cut at 2000 chars each), to later steps and fix tries. A failed try's own text is not handed to its retry, and `boundedNote` is generic (it says reading ran out, nothing about what was read or found). No greps, recall queries, edits or findings reach the next worker, and the handoff note is a read-path map only.
 
 A facts-only carry note (files, greps, edits) would be small: median about 200-1,400 chars, p90 up to about 2.5k, all at or under 8,000. The dollar proxy (about 40% of worker spend on E0 TYPES sits in repeat calls) is NOT a measured saving: cost follows turns (F253). Status: sized; the M1 initial spec is in HARNESS2 section 9, nothing built.
+
+## F259 — a directory grep escapes fs.deny: one allowed shell_grep on the repo root returned lines from the arbiter books (.smoke spine and attempt-diff, the gate audit, .litectx) (2026-10-29; $0 probe on the real Gate and real bare-agent `createShellTools`; not seen live)
+
+**Grounded in:** the probe `.claude/scratch/grepprobe/probe.mjs`, `src/tools.js:631` (`toolAction`), `src/planrun.js:2205` and `:2341` (the deny list), `src/kinds.js:576` (`isArbiterBook`), `node_modules/bare-agent/tools/shell.js` ~505-660 (the grep walk).
+
+**What happened.** A direct `shell_read` of `.smoke/spine.jsonl` and of the gate audit is denied. A `shell_grep` with `path` at `.smoke` or at `.litectx` is denied. A `shell_grep` with `path` at the repo root is allowed, and the walk read every file under it. The probe planted one marker line per book. The root grep returned the marker lines from `.litectx/x`, `.smoke/attempt-diff.jsonl`, `.smoke/spine.jsonl`, `gate-audit.jsonl` and `src/a.js` (24 files walked).
+
+**Why.** The gate judges only the one path the action names. `toolAction` turns `shell_grep` into `{type:'read', path: <the dir>}` (`src/tools.js:631`). `fs.deny` is a prefix match on that path, and the root is not under any denied entry. bare-agent's walk (`walk()`, shell.js ~537) has no per-file deny check and no dot-directory skip, so it reads files the gate never saw.
+
+**Reach.** Workers do grep the root in archived runs: the H2 sizing samples show grep with path ".". Whether any live run pulled book lines is NOT measured.
+
+**Severity.** It breaks the doctrine that the worker never reads the arbiter's books. No known path to fake a green: the books hold facts the worker mostly gets in other forms. Still a doctrine break.
+
+**Owner.** Upstream. Either bareguard gets a per-file check for walking reads, or bare-agent's walk honours a skip or deny list. Asked to the guard session 2026-10-29 (UPSTREAM-ASKS, BG-3). bareloop will not patch around it.
+
+**Status.** OPEN, parked for the upstream answer. Related: F258 and M1 (HARNESS2 section 9), whose note state lives under `.smoke`.

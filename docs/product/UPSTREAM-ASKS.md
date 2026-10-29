@@ -2829,3 +2829,28 @@ Relayed to the bareguard session ("guard") 2026-10-18.
 2026-10-18 — guard corrected the premise (bareguard main e33f692): `checkStep` returns no per-claim result today (`StepResult` = {verdict, checkpoint, rubricSha, outputSha, gaps, fault, full:{gaps,faults}, baselines, callerItems}); `decideQuote` results are used inside `runCited` (rubric.js ~772) and dropped. So BG-2 is a NEW field. Proposed shape, taken to hamr, no target version until he rules: `full.evidence`, per cited check per claim `{check, claim:i, text:<normalized quote>, spans:[{decide:j, role, start, end}]}` (UTF-16, half-open), on green and red; red = only located spans, quote-not-found = none; bounded; not in the audit line; no verdict or field change. bareloop checked it: the shape serves Part 6 (bareloop's `factClaims` makes one claim per result, so `claim:i` is result row i). bareloop side when it lands: the grade happens inside the run, so bareloop must write `full.evidence` into its own spine (a new report-only record beside `exit-eval`) for the panel to read after the run — that is bareloop's work, in the highlight commit.
 
 2026-10-18 — RULED by hamr (YES, bareguard 0.25.0, minor, additive); spec LOCKED with bareloop's answers; guard building on a branch. Pins: `claim:i` = index into the caller's claims array in the order passed, EVERY claim (green, red, quote-not-found with `spans: []`), so i = result row i; `check` = the check's `id` as signed in the rubric spec ((checkpoint, id) unique). Membership: all tokens + `canon`, `matched:true` on the claim's typed value (bareloop highlights matched only). Presence: first occurrence. Offsets index the normalized `text` (UTF-16, half-open). Bounds 100 claims / 50 spans with totals. Not on humanChannel, not in the audit line, nothing for checks without decides, no numbersInQuote spans in v1.
+
+## BG-3 — FILED 2026-10-29: a directory `shell_grep` is judged once on the directory path, so `fs.deny` never sees the files the walk reads (F259)
+
+### Ask
+
+A walking read (`shell_grep` on a directory) must not return lines from a path `fs.deny` names. Either bareguard gives a per-file check the tool can call for each file it opens, or bare-agent's grep walk takes a skip or deny list from its caller. The owner is the guard session's call.
+
+### Why
+
+F259, a $0 probe on the real Gate and the real `createShellTools`: `shell_read` of `.smoke/spine.jsonl` is denied, `shell_grep` at `.smoke` is denied, but `shell_grep` at the repo root is allowed and returned lines from `.smoke/spine.jsonl`, `.smoke/attempt-diff.jsonl`, the gate audit and `.litectx`. Doctrine: the worker never reads the arbiter's books. Standing rule: a suite gap becomes an ask, never a local workaround.
+
+### Today in bareloop
+
+`toolAction` (`src/tools.js:631`) maps `shell_grep` to `{type:'read', path:<dir>}`. The deny list is built at `src/planrun.js:2205` and `:2341` from the book stores (`isArbiterBook`, `src/kinds.js:576`). `fs.deny` is a prefix match on the one named path. The walk in bare-agent `tools/shell.js` (~537) opens every file with no per-file deny and no dot-directory skip. Not seen live; whether a live run pulled book lines is unmeasured.
+
+### Disconfirming evidence, considered per this file's standing rule
+
+- A gate decides before the tool runs, so it cannot see files the tool finds afterwards. A gate-side fix needs the tool to call back per file, which is a larger change.
+- A skip list in the walk may be the simpler owner (bare-agent), since only walking tools have the problem.
+- No path to a fake green is known: the books hold facts the worker mostly gets in other forms. This is a doctrine break, not a shown exploit.
+- bareloop could filter the grep output itself. That is a local workaround, so it is not done.
+
+### Status
+
+Filed with the guard session 2026-10-29; owner (bareguard vs bare-agent) pending its answer.
