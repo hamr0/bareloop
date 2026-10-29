@@ -22,7 +22,7 @@ contrast that attributed it.
   (F1–F23) and its cybernetics frame, closed records copied for reference. The evidence
   archive and analysis lenses live in adaptlearn v0.11.1 (`../adaptlearn`): the science
   behind this product.
-- `docs/logs/FINDINGS.md` — THIS repo's findings, starting at F1. No papering over: every
+- `docs/wiki/FINDINGS.md` — THIS repo's findings, starting at F1. No papering over: every
   friction point gets logged, grounded in source or event log.
 - `docs/product/UPSTREAM-ASKS.md` — lib gaps filed against the bare suite. Every request-red doubles
   as an upstream finding.

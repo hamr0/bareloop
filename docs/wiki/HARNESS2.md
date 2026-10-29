@@ -331,7 +331,7 @@ Built on `feat/online-dot` (pushed unless noted):
 - Online dot in the panel header (87f3083). Not harness2; it rides the branch. A later fix (f08e5d9) stops a page render error painting it offline.
 - F252 shim fix (2a81471): the delivered-ledger resets per `ask()`. Proven by a fail-first test. Live: the shim was ARMED in run mvsmxgwm (one `memory-cache` record: capped 1, pointered 0). The pointer path (a later attempt told "you already hold it") was never served live, so the fix is still test-proven only.
 - Handoff note (1c26d45 code and tests, 6af57ef docs): `src/handoff.js`. Spec field `handoffNote`: absent = on, false = off. The switch enters the signed hash only when present (mirrors `thinking`; it is NOT like `learningHints`, which is a global `config.json` setting, `src/learnstore.js`). hamr ruled 2026-10-28: ON by default (1A), not in the panel (2B), old signed jobs get it without a re-sign, like learnings (A). Live: the note was emitted 10 times in mvsmxgwm (the F255 notes). It is NOT yet shown to cut re-reads live: mvsmxgwm had 26 new-worker re-reads against E1 medians OFF 30 / HANDOFF 15, which is not like-for-like and is n=1.
-- Planner exit fix (4455c0c): the POC PASSED (`docs/logs/PLANNER-EXIT-PREREG.md`, commit 9f88d5d; results `.claude/scratch/planner-poc/batch/results.jsonl`). First-draft refusals OLD 8/23 vs NEW 1/24, plan-red 1 vs 0, cost $1.55 DeepSeek. The build is DONE and held live in runs mvsmxgwm and mvtatlxw (no plan-red). Root cause is the F254 entry in `docs/logs/FINDINGS.md`.
+- Planner exit fix (4455c0c): the POC PASSED (`docs/logs/PLANNER-EXIT-PREREG.md`, commit 9f88d5d; results `.claude/scratch/planner-poc/batch/results.jsonl`). First-draft refusals OLD 8/23 vs NEW 1/24, plan-red 1 vs 0, cost $1.55 DeepSeek. The build is DONE and held live in runs mvsmxgwm and mvtatlxw (no plan-red). Root cause is the F254 entry in `docs/wiki/FINDINGS.md`.
 - F255 (drafter put a path in `lineMatch`, crashing a check at zero): found live in mvsmxgwm, POC run, fixed in 721ba33. Live green via panel run mvtatlxw (provider-red, then Resume gave already-green, $0.4510).
 - F256 (drafter adds a whole-repo exit-0 check beyond the job): logged in 1fd90b6, NOT built. The panel now names each command check by its own command (b0f5c52), so two commands never read the same question.
 - Full suite at b0f5c52: exit 0, 4970 tests, 4968 pass, 0 fail.
@@ -370,6 +370,8 @@ Where tools come from: `shell_read`, `shell_grep`, `shell_write`, `shell_edit` a
 Nothing built from this. Next candidates (A, C, M1-M3) and wrinkles are in section 9. No build starts without hamr's word.
 
 ## 9. Experiment backlog (not yet run)
+
+Order (hamr, 2026-10-29): memory first. C (measure the carry-over gap, $0) then M1 (carry note built by code: a prereg hamr signs, then a POC on the bigfile job). A and B wait until memory is done; a good carry note may make them unneeded. Why: H1 showed workers already follow the menu's size rule (whole read for small files, recall/get for big ones: bigfile OFF 31.5%, ON 47.4%); the waste is what is lost between workers, not the tool pick. Guess, not proven (n=3): on p7 the hint's word 'large' may have read as permission to read a 201-line file whole.
 
 Each item: question, why, riskiest assumption, first $0 step, who rules. None has a number yet.
 
@@ -421,7 +423,7 @@ Also kept: C2-C6 as listed in section 6.5 (C1 dropped; the C2 spec draft has 8 o
 
 Next candidates after H1 (added 2026-10-29). Same fields as above. Nothing here is built or run.
 
-A. Hand a map on a big-file read; the whole file on a second ask (the fallback).
+A. Hand a map on a big-file read; the whole file on a second ask (the fallback). WAITS for memory (hamr 2026-10-29).
 - Question. Does a map (symbols and line ranges) in place of a first whole-file read cut reads without hurting greens?
 - Why. $0 sizing is done (section 8, H2 Part A): a map is about 2% of the file, fallback about 5% at 200 lines or more.
 - Riskiest assumption. That a worker who read a file and never touched it again (enough-notouch, the largest class) can do without the content. That read is probably to understand, so "enough" is optimistic.
@@ -473,6 +475,6 @@ Untracked scratch (survives `/clear`, not a fresh clone), all under `.claude/scr
 - `h1/` (`phase0/PHASE0-RESULT.md` and `.v1.md`, `battery/` with `analysis/H1-RESULT.md`, `results.jsonl`, `progress.log`, `runs/`)
 - `h2/H2-SIZING.md` (the $0 sizing)
 
-Tracked: `docs/logs/E0-PREREG.md`, `E0B-PREREG.md`, `E1-PREREG.md`, `PLANNER-EXIT-PREREG.md`, `H1-PREREG.md`; `docs/logs/FINDINGS.md` F252, F253, F254, F255.
+Tracked: `docs/logs/E0-PREREG.md`, `E0B-PREREG.md`, `E1-PREREG.md`, `PLANNER-EXIT-PREREG.md`, `H1-PREREG.md`; `docs/wiki/FINDINGS.md` F252, F253, F254, F255.
 
 Paid so far (DeepSeek deepseek-flash, 2026-10-28): E1 $4.72, observe $0.16, planner POC $1.55, live run $0.04. 2026-10-29: H1 $3.3329 (Fireworks deepseek-v4p1-flash).
