@@ -10,7 +10,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validatePlan, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, WRITE_VERBS, hasNestedQuantifier, legalScopes } from '../src/plan.js';
+import { validatePlan, EXIT_EXAMPLE, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, WRITE_VERBS, hasNestedQuantifier, legalScopes } from '../src/plan.js';
 import { planPrompt } from '../src/planrun.js';
 import { validateJob, STORE_VERBS, WRITE_VERBS as JOB_WRITE_VERBS } from '../src/job.js';
 
@@ -1162,4 +1162,17 @@ test('G1 names the SIGNED CEILING when it is the ceiling that lacks the retrieva
   assert.equal(r.ok, false);
   assert.equal(r.reds.filter((x) => x.code === 'read-blind').length, 1, `got ${JSON.stringify(r.reds)}`);
   assert.match(r.reds.find((x) => x.code === 'read-blind')?.detail ?? '', /signed ceiling/);
+});
+
+test('F254: planPrompt says exit is REQUIRED on EVERY step and shows a legal example', () => {
+  const p = planPrompt(JOB, 'survey', null, 40, null, legalScopes(['tests/**'], ['tests/unit']));
+  assert.match(p, /"exit": REQUIRED on EVERY step/);
+  assert.ok(p.includes(EXIT_EXAMPLE), 'the legal-example sentence is in the planner prompt');
+});
+
+test('F254: a step with no exit reds missing-required and the detail carries the legal example', () => {
+  const r = validatePlan(mut((p) => { delete p.steps[0].exit; }), OPTS);
+  assert.equal(r.reds.length, 1);
+  assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'missing-required:steps.0.exit');
+  assert.ok(r.reds[0].detail.includes(EXIT_EXAMPLE));
 });

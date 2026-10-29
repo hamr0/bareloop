@@ -555,7 +555,23 @@ export function createReadShim({ cap = READ_SHIM_CAP, arm = ARM_ALL, onCount = n
    * the diff lever (L2) is a different response shape and is not counted here. */
   const summary = () => ({ pointered, capped, bytesWithheld });
 
-  return { arm, cap, wrapRead, serveStale, summary };
+  /**
+   * A NEW ask() builds a fresh Loop with a fresh transcript — the model holds NONE of
+   * what earlier asks delivered — so the delivery ledger must forget with it. Left in
+   * place, attempt 2 re-reading a file attempt 1 fully received is answered "unchanged,
+   * you already hold all N bytes": untruthful, the one thing this module exists to
+   * prevent (FINDINGS F252). Over-delivery is the legal direction; a false pointer is not.
+   *
+   * It clears ONLY the ledger (what the model was handed). It does NOT touch the
+   * MEMORY-CACHE counters (`pointered`/`capped`/`bytesWithheld`, and the caller's run-level
+   * `onCount` sum): those are a record of bytes already withheld, not of what a model holds,
+   * and zeroing them would erase real savings from the readout. `serveStale` holds no ledger.
+   * Not called for a continuation (`askFrom` re-runs the SAME transcript — the model still
+   * holds everything, so its ledger stays true).
+   */
+  const reset = () => { ledger.clear(); };
+
+  return { arm, cap, wrapRead, serveStale, summary, reset };
 }
 
 /**

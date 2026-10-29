@@ -5,6 +5,21 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.51.0] - 2026-10-29
+
+### Added
+
+- **A handoff note: later workers are told which files earlier workers read (F253).** The next step or fix ask of a run (a retry of the same step too) gets a code-written map appended to its first prompt: one line per file an earlier ask read, with its line count and, from the LiteCtx index, its function names and line ranges. Capped at 8,000 characters (oldest paths dropped first, with a marker); arbiter books, `.git` and anything outside the job root are never named; scout and drafter prompts are unchanged. On by default; a signed spec's optional `handoffNote: false` turns it off (absent keeps the old hash). One report-only `handoff-note` spine record per note given. A resumed leg starts with an empty map.
+- **An online/offline dot in the panel header, left of Settings.** When the panel's node process dies the open page used to look exactly like a live one; the Runs list read (already polled every 10 s) now paints a green "online" on any HTTP reply, even an error, and a red "offline" only when the read fails with no HTTP status. No new endpoint or timer. `getJSON` now tags its HTTP error with `.status` (message unchanged).
+
+### Fixed
+
+- **A page render error no longer paints the online dot offline.** If drawing the Runs list threw after the fetch had succeeded, the error fell into the same handler as a failed read and the header showed "offline" while the panel was up. The render now has its own guard that logs the error to the browser console; only a real fetch failure (no HTTP reply) paints offline.
+- **A command check now names its own command in the panel (F256).** Every check that runs a command used to read "does the test suite pass?", so a whole-repo `npx tsc --noEmit --strict` check and the real test suite read the same question. It now quotes the signed command: `does "npm test" exit clean?`, `does "npx tsc --noEmit --strict" exit clean?`. A check with no command falls back to its own name, as before.
+- **The drafter is told to count one file with scope, never a path in `lineMatch` or a region anchor, with an example (F255).** The author prompt's parser description now says: to count lines about one file or folder, keep `lineMatch` general (e.g. `error TS\d+`) and put the file or folder in `scope.includePrefixes`, because a path in `lineMatch` stops matching once that file is clean and the check becomes a broken instrument instead of reading zero; it shows one legal `count-not-worse` example. Prompt-only; the validator is unchanged. Proven in a $0.73 drafter POC (path-in-parser 8/10 before, 0/10 after), not yet in a live run.
+- **The planner is told `exit` is required on every step, with a legal example (F254).** The plan prompt called `exit` "1..2 form checks" and never said every step needs one, and a redraft got only the validator's rule. The prompt now says `REQUIRED on EVERY step` and shows two legal `exit` shapes, and the missing-exit red carries the same example. On deepseek-flash first drafts refused 8 of 23 before and 1 of 24 after; plan-red 1 before, 0 after.
+- **The read shim no longer tells a later attempt it already holds a file it never received.** Every `ask()` builds a fresh Loop with a fresh transcript, but the shim's delivered-ledger lived for the whole worker, so attempt 2 re-reading a file attempt 1 had fully received got "unchanged since you read it, you already hold all N bytes" about bytes its model never saw. The ledger now resets at the start of each `ask()` (not at `askFrom`, which continues the same transcript); the run-level MEMORY-CACHE counts are untouched. (F252)
+
 ## [0.50.0] - 2026-10-28
 
 ### Added

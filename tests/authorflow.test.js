@@ -608,6 +608,16 @@ test('the catalogue and law blocks are rendered from the catalogue, not restated
   assert.match(lawsBlock(), /FIRST RED WINS/);
 });
 
+test('F255: the catalogue tells the drafter to count one file with scope, never a path in lineMatch, with an example', () => {
+  const b = catalogueBlock();
+  assert.match(b, /Never put a file path inside\s+lineMatch or inside a region anchor/);
+  assert.match(b, /put the file or folder in scope\.includePrefixes/);
+  const ex = b.slice(b.indexOf('{"kind": "count-not-worse"'));
+  assert.ok(ex.includes('"includePrefixes": ["src/target.js"]'), 'the example scopes the file');
+  assert.ok(ex.includes('"lineMatch": "error TS\\\\d+"'), 'the example lineMatch is general (JSON-escaped)');
+  assert.ok(!/"lineMatch": "[^"]*target\.js/.test(ex), 'no path in the example lineMatch');
+});
+
 // ── 3. the revise turn is byte-stable ───────────────────────────────────────
 
 test('REVISE_INSTRUCTION is FROZEN TEXT — its bytes are the gate-2 round-3 instruction', () => {

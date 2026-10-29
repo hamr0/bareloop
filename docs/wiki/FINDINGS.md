@@ -14929,3 +14929,123 @@ Reading: less thinking = more turns, each much smaller and faster; on the code j
 - The pages are news and registry pages snapped on 2026-10-27; one page set per POC, no page reused between v4 and v5.
 
 **Next.** hamr ruled 2026-10-27: stop gap 1 here, release this branch, come back later. Gap 1 goes to the PRD backlog with causes (a) and (b) as the candidates. Any change to the reader is a bareguard ask, never a local patch. Nothing built for gap 1.
+
+## F252 — read shim ledger outlived the model's memory: a later attempt's re-read could get a pointer to bytes it never saw (2026-10-28; $0; read from code and archive, not seen live)
+
+**Grounded in:** `src/planrun.js` (`mkWorker`'s shim, `createReadShim` at ~2517; `ask()` builds a fresh `newLoop`/transcript each call), `src/readshim.js` (pointer branch, `seen.hash === hash && start >= total`), E0b archive read (`.claude/scratch/e0b-read/e0b-detail.json`, `crossattempt.mjs`).
+
+**Defect.**
+- [CODE] The shim's ledger ("what this worker was handed") lives per `mkWorker`; a step's worker is created once and `ask()` runs once per attempt, each with a fresh Loop and fresh transcript. On attempt 2, a re-read of a file attempt 1 fully received hit the pointer branch and returned "unchanged since you read it - you already hold all N bytes" - false for attempt 2's model. This is the untruthful-pointer class the shim's own header forbids (over-delivery is legal, a false "already delivered" is not).
+
+**Frequency (archive, not live).**
+- [MEASURED] In E0b's DeepSeek runs, later-attempt re-reads of a file an earlier attempt read, with no write between: TYPES 111 of 1098 read-class calls (10%), TEXT 85 of 385 (22%). Not every one got the pointer - only fully delivered files under an arm with the pointer lever. Pointer text is not in the spine, so the true pointer count is unknown. Example run: u-mujjtrvd (step strict-clean-whole-src, src/run.js read in attempt 1 and 2).
+- Not live-verified: no live run has shown the false pointer.
+
+**Fix.** `createReadShim` gains `reset()` (clears only the ledger); `mkWorker`'s `ask()` calls it first. `askFrom` does not (same transcript, ledger still true). MEMORY-CACHE counters and the run-level `onCount` sum are not reset (they record bytes withheld, not model memory). `serveStale` holds no ledger.
+
+**Test.** `tests/planrun-resume.test.js` "read shim: a LATER ATTEMPT re-read gets the bytes...": attempt 2's first read carries the bytes (red before the fix), a second read inside one attempt still gets the pointer.
+
+## F253 — harness2 tool guidance: E0, E0b and E1 results; the handoff cuts new-worker re-reads but no cost win shows at n=3 (2026-10-28; $4.72 E1 battery + $0.16 two observe runs, DeepSeek deepseek-flash)
+
+**Grounded in:** `docs/logs/E0-PREREG.md`, `docs/logs/E0B-PREREG.md`, `docs/logs/E1-PREREG.md`, `.claude/scratch/e0-read/E0-RESULT.md`, `.claude/scratch/e0b-read/E0B-RESULT.md`, `.claude/scratch/e1-poc/battery/analysis/E1-RESULT.md`, `.claude/scratch/e1-poc/battery/results.jsonl`, `.claude/scratch/e1-poc/battery/analysis/stats.mjs` (turns and tokens). Money: battery booked $4.7241 (`battery/progress.log` last line). Observe runs: pulselog `mvs1n0ha` green $0.0898, change2 `mvs1to6y` green $0.0704 (no cross-attempt pointer seen, since no step retried; `OBSERVE.md` not on disk, figures from the orchestrator's note).
+
+**What was asked.** Does telling the worker about its own tool habits (re-reads) lower cost to green? Three steps: E0 reads the archive for a habit that costs money and splits green from red; E0b splits that habit into same-worker and new-worker; E1 tests two code-written switches on live runs (HINT: a one-line note on a re-read; HANDOFF: a map of files earlier workers read, added to the first prompt of a step or fix ask).
+
+**E0 (archive read, $0).** Frozen rules in `docs/logs/E0-PREREG.md`. Verdict PASS on both DeepSeek segments (`E0-RESULT.md` section 5-6): TYPES est. re-read cost 18.1% of spend, median re-read share FAIL 56.9% vs PASS 43.6% (gap 13.2); TEXT 25.1%, FAIL 63.8% vs PASS 33.5% (gap 30.3). Flaw: E0 counted a re-read whenever any worker had read the file before, so it counted reads across fresh workers (each ask has fresh model memory, `src/planrun.js:2863-2867`). Most of the 18.1% was not the same worker repeating itself.
+
+**E0b (same worker vs new worker, $0).** Frozen rules in `docs/logs/E0B-PREREG.md`. From `E0B-RESULT.md` section 3-4 (all estimated):
+- DeepSeek TYPES: same-worker 2.2% of spend, new-worker 15.9%. Median per-run same-worker share PASS 2.7% vs FAIL 5.8%. Fails the prereg rule.
+- DeepSeek TEXT: same-worker 11.3%, new-worker 13.8%. PASS 0.0% vs FAIL 10.4%, gap 10.4 points against a 10-point bar.
+- Verdict PASS on TEXT only, by 0.4 points. Fragile: 9 of 16 TEXT pass runs have zero re-reads.
+- Same-worker plus new-worker reproduces E0's totals (2.2 + 15.9 = 18.1; 11.3 + 13.8 = 25.1), so the split is consistent.
+
+**E1 battery (live).** 3 jobs (pulselog code, p7 code, change2 rubric) x 4 arms (OFF, HINT, HANDOFF, BOTH) x 3 runs = 36 runs, cap $1 per run, $10 total (HARNESS2 section 5). Frozen rule (green as often as OFF AND median cost-to-green at least 20% lower): 8 FAIL, 1 PASS (`E1-RESULT.md`, "Pass rule vs OFF").
+- The one PASS is change2 BOTH: 24.2% lower ($0.0344 vs OFF $0.0453), a gap of 3.4 vs 4.5 cents. OFF itself greened 2 of 3 on change2, so this is luck-sized, not a result.
+- Short form of the 9 verdicts (green rate, cost change vs OFF): pulselog HINT 1/3, -34.0%; HANDOFF 1/3, -1.9%; BOTH 1/3, +0.7%. p7 HINT 3/3, +19.2%; HANDOFF 2/3, +6.7%; BOTH 3/3, +5.6%. change2 HINT 3/3, +10.5%; HANDOFF 3/3, +0.5%; BOTH 3/3, +24.2%. (Minus means dearer.)
+- Greens by arm: OFF 8 of 9, HINT 7, HANDOFF 6, BOTH 7 (`results.jsonl`, outcome green).
+
+**Turns and tokens** (`analysis/stats.mjs`, run from `battery/`; medians over GREEN runs only; cache-write is 0 on this provider):
+
+| job arm | green | turns (all) | turns (step+fix) | total tokens | cache-read | output | cost |
+|---|---|---|---|---|---|---|---|
+| pulselog OFF | 3/3 | 85 | 74 | 2066k | 1803k | 82k | $0.316 |
+| pulselog HINT | 1/3 | 102 | 91 | 3002k | 2692k | 126k | $0.423 |
+| pulselog HANDOFF | 1/3 | 79 | 70 | 2500k | 2279k | 87k | $0.322 |
+| pulselog BOTH | 1/3 | 100 | 92 | 2644k | 2449k | 83k | $0.313 |
+| p7 OFF | 3/3 | 51 | 40 | 583k | 475k | 37k | $0.116 |
+| p7 HINT | 3/3 | 41 | 30 | 438k | 349k | 30k | $0.094 |
+| p7 HANDOFF | 2/3 | 44 | 34 | 636k | 539k | 29k | $0.108 |
+| p7 BOTH | 3/3 | 56 | 46 | 638k | 535k | 24k | $0.109 |
+| change2 OFF | 2/3 | 19 | 9 | 186k | 133k | 9k | $0.045 |
+| change2 HINT | 3/3 | 20 | 15 | 174k | 128k | 11k | $0.041 |
+| change2 HANDOFF | 3/3 | 20 | 16 | 184k | 136k | 12k | $0.045 |
+| change2 BOTH | 3/3 | 21 | 11 | 154k | 115k | 8k | $0.034 |
+
+**What is proven.**
+- The handoff cuts re-reads by new workers by about 60%: Kind B reads (a file another ask read, no write between) in step and fix asks, pooled over 18 runs per side: HANDOFF/BOTH 105 vs OFF/HINT 272 (`E1-RESULT.md`, "Conversion").
+- Notes are small: 1,338 to 16,374 chars per run in total (`handoffs (n, chars)` column), against the 8,000-char cap per note.
+
+**What is NOT proven.**
+- No turn, token or cost win at n=3. Cache reads are about 85 to 93% of all tokens in the table above: each turn re-sends the conversation, so fewer re-reads barely move the total. This fits F107's ~10% ceiling for read hygiene.
+- HINT fired 20 times in 18 runs (HINT and BOTH arms; `E1-RESULT.md` "Conversion"). The fixed shim (F252) already answers whole-file shell_read re-reads with a pointer, so HINT mostly had nothing to add. Follow-on re-reads per key re-read: HINT/BOTH 7 of 21, OFF/HANDOFF 12 of 25: no clear shift.
+- Code job pass rate: pulselog 3/3 OFF vs 1/3 in each switch arm. Of those six non-greens, plan-reds are not caused by the switch (F254, scripted byte diff). The rest are escalated runs (04, 13, 25), and n=3 cannot say if the switch caused them.
+- Power: n=3 per cell is an anecdote, as stated before the data in HARNESS2 section 5.
+
+**Next (hamr, 2026-10-28).** Build the handoff properly, fix the planner problem (F254), and run a new hint POC aimed at read-vs-recall selection instead of re-reads.
+
+## F254 — DeepSeek drafter drops or misformats step exits: 5 of 36 E1 runs died at plan validation (2026-10-28; live, E1 battery; $0.03 to $0.06 per dead run)
+
+**Grounded in:** `.claude/scratch/e1-poc/battery/results.jsonl`, the `plan-red` row of each run's spine, `.claude/scratch/e1-poc/engine/tests/e1poc-planner-bytes.test.js`.
+
+**Symptom.** 5 of 36 battery runs ended `plan-red` before any step ran (runs 08, 10, 16, 19, 33). The red classes, from each spine's `plan-red` row:
+- Run 08 (p7 HANDOFF) and run 10 (pulselog BOTH): `missing-required` at `steps.0.exit` - the drafter wrote a step with no exit list.
+- Run 16 (pulselog HANDOFF) and run 19 (pulselog BOTH): `exit-illegal` - a `check-passes` exit on a write step without the `tree-changed` conjunct (the already-green trap, F17/F46).
+- Run 33 (change2 OFF): `check-placement` - a whole-goal check put on an earlier step instead of the final write step.
+
+**Rates.**
+- Draft-1 red by arm, of 9 runs each: OFF 5, HINT 4, HANDOFF 5, BOTH 4. Plan-red (never recovered): OFF 1, HINT 0, HANDOFF 2, BOTH 2 (orchestrator's tally from the spines, 2026-10-28).
+- Archive: draft-1 red 5 of 19 (about 26%), all recovered. Battery: 18 of 36 (50%), 5 unrecovered.
+
+**Not caused by the switches.** A scripted-provider byte diff (`e1poc-planner-bytes.test.js`) shows HANDOFF does not reach the planner: scout calls and the drafter call are identical (drafter 5927 vs 5927 bytes); the first difference is the first step prompt. HINT appends its line to a scout re-read, so it can reach the drafter indirectly through scout notes; the draft-1 counts above do not show an effect (HINT 4 vs OFF 5). So the higher battery rate (50% vs ~26%) is not explained by the arms; OFF alone had 5 of 9. Why the battery rate is higher than the archive's is open.
+
+Root cause: `planPrompt` (src/planrun.js, the `"exit"` line near 703) presented `exit` as "1..N form checks" and never said it is REQUIRED on every step, and the redraft got only the validator's rule text (src/plan.js `validateExit`, missing-required at ~522), no legal example. POC (prereg docs/logs/PLANNER-EXIT-PREREG.md, commit 9f88d5d; deepseek-flash, $1.55): first-draft refusals OLD 8/23 vs NEW 1/24, plan-red OLD 1 vs NEW 0 — PASS. Fix: one `EXIT_EXAMPLE` constant in src/plan.js, used by the prompt ("REQUIRED on EVERY step" plus the example) and appended to the missing-exit red; validator logic unchanged. Fix commit: 4455c0c.
+
+## F255 — DeepSeek drafter puts the target file path into a count check's lineMatch (or a region anchor) instead of scope; the check reads at seed but crashes as INSTRUMENT once the target reaches zero (2026-10-28; live; panel sessions smvsm0nzoxoax, smvsmf1q2h3c4, smvsmtg3ofqmr; run mvsmxgwm step-red $0.3033)
+
+**Grounded in:** the three sessions' `draft-log.jsonl` under `~/.config/bareloop/panel-sessions/`, the spine and gate audit of run mvsmxgwm (`u-mvsmxgwm.jsonl`), `src/kinds.js` (~1340-1358), `src/authorflow.js` (3029, 3045, 1593-1613).
+
+**Job.** Pulselog strict typecheck. Patient copy `.claude/scratch/live-ui/pulselog`, seed 0e32c16. `npm run typecheck -- --strict` gives 21 errors in `src/checks.js` (67 total); plain `npm run typecheck` gives 0.
+
+**Session smvsm0nzoxoax.** The drafter used a parser region `{anchor:"src/checks\\.js\\(", capture:0}`. A region becomes the anchor text only, so the term's lineMatch `error TS\\d+` matched nothing, and the seed precheck refused: "npm exited 2 and its output matched none of the parser's terms" (`src/kinds.js` ~1340-1358). Same mistake on both revisions. The recorded revise reason was only "a check could not run at the starting point (<name>)" (`src/authorflow.js:3029`); the INSTRUMENT sentence appears only in the final `step-reds` record. The revise turn itself is `buildReviseTurn(renderSeedReadBlock(rows))` (`src/authorflow.js:3045`), and `renderSeedReadBlock` prints `instrument-stop: <detail.stop>` for a stopped row (`src/authorflow.js:1602`), so by source the INSTRUMENT sentence did reach the drafter. The revise turn text is not stored in the draft log (only its byte size, `iter.reviseTurn`), so this is read from source, not from a saved turn.
+
+**Session smvsmf1q2h3c4.** The job text said "strict-mode" but did not name the command. The drafter used plain `npm run typecheck` (0 errors at seed), so the refusal was "no check was failing at the starting point". The operator's job-text wording contributed. The first try also used a region anchor.
+
+**Session smvsmtg3ofqmr / run mvsmxgwm.** The job line named `npm run typecheck -- --strict`. Close stage `typecheck-errors-in-target` used lineMatch `src/checks\\.js\\(\\d+,\\d+\\): error TS\\d+` (the path inside lineMatch) with scope includePrefixes `src/checks.js`. At seed: 21 matches, signed. The worker fixed `checks.js` to 0 errors (other files stayed at 46, equal to seed). Then tsc exits 2 (other files' errors) with 0 matching lines, so the check reports INSTRUMENT and every attempt ended in `worker-crash`. The replan kept the same signed close stage as the step exit. Job-end: step-red, $0.30333456.
+
+**Cause class.** The signing gates test a check only on the seed output. A check whose matches vanish exactly at the finished state passes signing and can never read zero.
+
+**Comparison.** All 7 earlier pulselog drafts (sessions smul3ar4uzs8j 09-28; smuutgtvrvglg, smuuvkthctykl, smuux0kuveujn 10-05; smvcugcj7vwt4 10-17; smvki6og5nkna, smvkia2irbhg6 10-23) used lineMatch `error TS\\d+` plus scope: no path in lineMatch, no anchor. All 3 drafts on 10-28 put the path in. The earlier specs carry goal prose and no jobLines; today's carry jobLines (job block, P7). Drafter code changes since 10-23 in `src/authoring.js`, `src/authorflow.js`, `src/kinds.js`: only b85b6d4 and c1dd4da (rubric fact lang/decimal, F249). Whether this is a regression is UNPROVEN; open question for a POC.
+
+**Also observed.** The replanned action text named the repo root as `/home/amr/...` (real path `/home/hamr/...`). Drafter typo, harmless here, not seen to break anything.
+
+**Live evidence in the same run.** The planner fix (F254) held: first plan and replan were both valid, no plan-red. The handoff note was emitted 10 times. Re-reads: 62 reads, 10 same-worker, 26 new-worker (`.claude/scratch/live-ui/REREAD-RESULT.md`); not like-for-like with E1 (replan, two strike-exhausted steps). The spine has one `memory-cache` record (capped 1, pointered 0, 237611 bytes withheld) and no per-read shim record, so the shim fix is not observable here.
+
+**Status.** Logged; POC next (hamr, 2026-10-29). Cure ideas not decided (arbiter-adjacent; hamr's call).
+
+**POC + fix.** Option A (a rule sentence plus one legal example in the author prompt's parser description) passed its pre-registered POC (prereg 63a4c12, `docs/wiki/F255-OPTION-A-PREREG.md`): path-in-parser OLD 8/10 vs NEW 0/10; first-draft refusals 4 vs 0; $0.73. Fix commit 721ba33 (`src/authorflow.js` `catalogueBlock()`, test in `tests/authorflow.test.js`). Mechanism note: the NEW drafts copied the example's `lineMatch` verbatim, so the example does most of the work. Tested on the TYPES/pulselog job only; not yet proven in a live run.
+
+## F256 — DeepSeek drafter adds a whole-repo "typecheck exits 0" check the job never asked for; the worker then fixes every file (2026-10-29; live; run mvtatlxw, panel session smvtajlz28g16; green after resume, $0.4510)
+
+**Grounded in:** `~/.config/bareloop/panel-sessions/smvtajlz28g16/resolved-spec.json` (`jobLines`, `closeDecl`), the run's spine, and `git status` in the worktree `.claude/scratch/live-ui/pulselog-2/.bareloop/wt/smvtajlz28g16`.
+
+**Job.** Pulselog strict typecheck. Line 1: run `npm run typecheck -- --strict` and fix every error in `src/checks.js` until zero errors there. Line 2: the command must not report MORE errors in other `src/` files than it does now. Line 3: keep every test passing and the test count the same. Operator answer at the question turn: other `src/` files may change only to support the `checks.js` fix, and the change stays small.
+
+**What the drafter signed.** The close included a command-exit stage `typecheck-clean-exit` (`fromLine: [1]`, kind `command-exit`, `cmd: "npx"`, `args: ["tsc","--noEmit","--strict"]`, `expectExit: 0`). Exit 0 means zero errors in ALL files, not only `checks.js`. At seed there are 67 errors in total, 46 of them outside `checks.js`. It passed the seed-red gate because it was red at seed.
+
+**Effect.** The worker fixed all 67 errors across 9 files (`git status` in the worktree: M `src/backup.js`, `checks.js`, `digest.js`, `dumpers.js`, `email.js`, `fallback.js`, `metrics.js`, `run.js`, `sink.js`). Final strict tsc: exit 0, 0 errors. The run hit provider-red (socket hang up, fix phase, $0.4510, `spendComplete` false); Resume ran the $0 close precheck and read already-green.
+
+**Cause class.** The drafter over-tightens a line ("not more than now") into a stricter stage; the signing gates cannot see a check that is stricter than the job line it serves.
+
+**Also in this run.** The F255 fix held live: the path stayed out of `lineMatch`; `checks.js` reached 0 and read 0.
+
+**Status.** Logged only, not built (hamr, 2026-10-29). Cure undecided.

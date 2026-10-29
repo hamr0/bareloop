@@ -136,7 +136,7 @@ test('a door-accept-red names the failed check by its plain question, not the st
   const p = await panel({ home, spawnFn: engine({ code: 2, say: doorRedLog('tests-pass') }) });
   const r = await p.post('/api/runs/a1/accept', {});
   assert.equal(r.status, 409, JSON.stringify(r.body));
-  assert.equal(r.body.error, 'Accept did not go through: the check "does the test suite pass?" said no. Nothing was recorded.');
+  assert.equal(r.body.error, 'Accept did not go through: the check "does "npm test" exit clean?" said no. Nothing was recorded.');
   assert.doesNotMatch(r.body.error, /tests-pass|door-accept-red|stage\./);
 });
 

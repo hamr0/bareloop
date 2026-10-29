@@ -1072,7 +1072,16 @@ THE PARSER reads ONE number out of a command's output, as signed arithmetic over
   region      "whole-output", or {anchor, capture} to search only inside the part of the output the
               anchor locates. A region that cannot be located is a broken instrument.
   sign        ${SIGNS.join(' | ')}. Subtraction is how you exclude things that were reported but did
-              not actually happen.`;
+              not actually happen.
+
+To count lines about one file or folder, keep lineMatch general (match the error line itself, e.g.
+"error TS\\d+") and put the file or folder in scope.includePrefixes. Never put a file path inside
+lineMatch or inside a region anchor: once that file is clean the command still fails on other files,
+nothing matches, and the check stops as a broken instrument instead of reading zero.
+
+    {"kind": "count-not-worse", "params": {"cmd": "npm", "args": ["run", "typecheck", "--", "--strict"],
+      "parser": {"terms": [{"lineMatch": "error TS\\\\d+", "capture": null, "sign": 1, "aggregate": "sum", "region": "whole-output"}]},
+      "scope": {"includePrefixes": ["src/target.js"]}, "direction": "lower-is-better", "baseline": 0}}`;
 }
 
 /**

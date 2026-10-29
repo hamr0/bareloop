@@ -38,8 +38,13 @@ export function cmdKey(params) {
  *   - `pattern-absent-in-diff` is always the `no-suppressions` guard: "no
  *     casts or silencers added?"
  *   - `rubric-step` (Part 1a) is one job line's output file: "line N — does its output pass the line's checks?"
- *   - `command-exit` is the genre's `suite-green` stage (the only shipped use
- *     of this kind): "does the test suite pass?"
+ *   - `command-exit` quotes its OWN signed command verbatim:
+ *     `does "<cmd> <args joined by space>" exit clean?` (e.g. `does "npm test"
+ *     exit clean?`, `does "npx tsc --noEmit --strict" exit clean?`). It used
+ *     to read "does the test suite pass?" for every command, so F256's run
+ *     mvtatlxw showed two different commands (the real suite and a whole-repo
+ *     `tsc --strict`) reading the same question. A missing or non-string
+ *     `cmd` returns `null` (the caller falls back to the stage name).
  *   - `count-not-worse` splits three ways on its own declared
  *     `direction`/`baseline` (never the runtime number — see
  *     {@link stageKindMetaFromSpec}'s own doc for why the baseline KIND must
@@ -87,7 +92,11 @@ export function stageQuestionText({
 }) {
   if (kind === 'files-changed') return 'did it change any file?';
   if (kind === 'pattern-absent-in-diff') return 'no casts or silencers added?';
-  if (kind === 'command-exit') return 'does the test suite pass?';
+  if (kind === 'command-exit') {
+    if (!params || typeof params.cmd !== 'string' || params.cmd.length === 0) return null;
+    const args = Array.isArray(params.args) ? params.args.filter((a) => typeof a === 'string') : [];
+    return `does "${[params.cmd, ...args].join(' ')}" exit clean?`;
+  }
   // Part 1a: one rubric-step stage = one job line's output file
   if (kind === 'rubric-step') return params && Number.isInteger(params.step) ? `line ${params.step} — does its output pass the line's checks?` : null;
   if (kind !== 'count-not-worse' || !params || typeof params !== 'object') return null;

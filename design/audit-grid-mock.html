@@ -1,0 +1,3204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audit grid mock</title>
+<style>
+/* Tokens, fonts and component rules copied from src/panel/index.html (Tokyo Night TUI look). */
+:root{
+  --bg:#1a1b26; --panel:#1f2335; --panel2:#24283b; --border:#292e42; --border-strong:#3b4261;
+  --text:#c0caf5; --text-dim:#a9b1d6; --text-faint:#565f89;
+  --green:#9ece6a; --green-bg:#1c2b23; --red:#f7768e; --red-bg:#2b1822; --amber:#e0af68; --amber-bg:#2b2416;
+  --grey-dot:#878eac; --grey-bg:#20242f; --cyan:#7dcfff; --cyan-bg:#182634; --magenta:#bb9af7;
+  --accent:#7aa2f7; --plan:#7aa2f7; --btn-bg:#1f2335; --btn-text:#c0caf5;
+  font: 14px/1.5 "Courier Prime","Courier New",Courier,ui-monospace,monospace;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --bg:#e1e2e7; --panel:#d0d5e3; --panel2:#e9e9ed; --border:#c4c8da; --border-strong:#a8b0cc;
+    --text:#3760bf; --text-dim:#58679f; --text-faint:#848cb5;
+    --green:#567238; --green-bg:#dfe7d4; --red:#c92353; --red-bg:#fbe0e8; --amber:#82643a; --amber-bg:#f0e6d3;
+    --grey-dot:#626887; --grey-bg:#e2e2e8; --cyan:#007197; --cyan-bg:#d6ecf1; --magenta:#9854f1;
+    --accent:#2668c2; --plan:#2668c2; --btn-bg:#e9e9ed; --btn-text:#3760bf;
+  }
+}
+:root[data-theme="light"]{
+  --bg:#e1e2e7; --panel:#d0d5e3; --panel2:#e9e9ed; --border:#c4c8da; --border-strong:#a8b0cc;
+  --text:#3760bf; --text-dim:#58679f; --text-faint:#848cb5;
+  --green:#567238; --green-bg:#dfe7d4; --red:#c92353; --red-bg:#fbe0e8; --amber:#82643a; --amber-bg:#f0e6d3;
+  --grey-dot:#626887; --grey-bg:#e2e2e8; --cyan:#007197; --cyan-bg:#d6ecf1; --magenta:#9854f1;
+  --accent:#2668c2; --plan:#2668c2; --btn-bg:#e9e9ed; --btn-text:#3760bf;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);}
+body{overflow-x:hidden;}
+button{font:inherit;cursor:pointer;}
+a{color:var(--accent);}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+table{border-collapse:collapse;width:100%;}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px dotted var(--border-strong);font-size:12px;}
+th{color:var(--text-dim);font-weight:700;background:var(--panel2);text-transform:uppercase;letter-spacing:0.04em;font-size:11px;border-bottom:1px solid var(--border-strong);}
+td{border-right:1px dotted var(--border);}
+td:last-child{border-right:none;}
+.audit-table-scroll{overflow:auto;max-height:min(60vh,520px);max-width:100%;}
+.audit-table-scroll table th{position:sticky;top:0;z-index:1;}
+tr.round-header-row td{background:var(--panel2);font-weight:700;}
+.row-blocked{background:var(--red-bg);}
+
+.dot{display:inline-flex;align-items:center;justify-content:center;margin-right:6px;vertical-align:middle;font-weight:700;font-size:12px;}
+.dot::before{content:"[·]";color:var(--grey-dot);}
+.dot.green::before{content:"[✓]";color:var(--green);}
+.dot.red::before{content:"[✗]";color:var(--red);}
+.dot.amber::before{content:"[▶]";color:var(--amber);}
+.dot.magenta::before{content:"[?]";color:var(--magenta);}
+.dot.pulse::before{animation:pulse-glyph 1.2s ease-in-out infinite;}
+@keyframes pulse-glyph{0%,100%{opacity:1;}50%{opacity:0.3;}}
+@media (prefers-reduced-motion: reduce){ .dot.pulse::before{animation:none;} }
+.st-word{font-weight:700;color:var(--text);}
+.step-state{display:inline-flex;align-items:center;gap:2px;font-size:12px;}
+.glyph-green{color:var(--green);} .glyph-red{color:var(--red);}
+.glyph-q{color:var(--magenta);} .glyph-nr{color:var(--text-faint);}
+.badge{display:inline-block;font-size:11px;padding:1px 4px;color:var(--text-dim);font-weight:700;}
+.badge::before{content:"[";color:var(--text-faint);} .badge::after{content:"]";color:var(--text-faint);}
+.badge.green{color:var(--green);} .badge.red{color:var(--red);}
+.hint{font-size:11px;color:var(--text-faint);margin-top:4px;overflow-wrap:anywhere;}
+.btn{padding:8px 14px;min-height:44px;border:1px solid var(--border-strong);background:var(--panel2);color:var(--text);position:relative;}
+.btn::before{content:"[ ";color:var(--text-faint);} .btn::after{content:" ]";color:var(--text-faint);}
+.btn.small{padding:0 9px;height:32px;min-height:0;font-size:12px;}
+.audit-part{border:1px solid var(--border);margin-bottom:6px;background:var(--panel2);}
+.audit-part-toggle{width:100%;text-align:left;display:block;white-space:normal;min-height:44px;padding:8px 10px;}
+.audit-part-toggle::before,.audit-part-toggle::after{content:"";}
+.audit-part-body{padding:8px 10px 10px;border-top:1px dotted var(--border-strong);}
+.audit-caret{flex:none;color:var(--text-faint);margin-right:.6em;}
+@media (max-width:640px){ .audit-caret{margin-right:.2em;} }
+.actor-mark{color:var(--text-faint);font-size:12px;margin-left:6px;white-space:nowrap;}
+.step-tally{font-size:12px;color:var(--text-dim);overflow-wrap:anywhere;margin:2px 0 6px;}
+.try-line{margin:10px 0 2px;overflow-wrap:anywhere;font-weight:700;}
+.try-check,.try-judged{margin:2px 0 2px 12px;font-size:13px;overflow-wrap:anywhere;}
+.try-check.notrun{color:var(--text-faint);}
+.try-check .num{color:var(--text-dim);font-size:12px;}
+.try-reasons{margin:2px 0 4px 12px;font-size:12px;color:var(--text-dim);}
+.try-reasons summary{cursor:pointer;min-height:28px;}
+.try-reasons div{margin:2px 0 2px 8px;overflow-wrap:anywhere;}
+.rounds-list{margin:6px 0 6px 12px;padding-left:8px;border-left:2px solid var(--border-strong);}
+.step-rounds-note{font-size:12px;color:var(--text-faint);margin:8px 0 2px;overflow-wrap:anywhere;}
+.rounds-page-info{margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.rounds-fold{margin:4px 0 6px 12px;font-size:12px;}
+.rounds-fold>summary{cursor:pointer;color:var(--text-dim);min-height:28px;overflow-wrap:anywhere;}
+.rounds-fold .rf-body{margin-top:4px;padding-left:8px;border-left:2px solid var(--border-strong);}
+
+/* ---- lab chrome (not panel CSS) ---- */
+.lab{max-width:1000px;margin:0 auto;padding:12px 16px 48px;}
+.lab-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;}
+.lab h1{font-size:16px;margin:8px 0 4px;text-transform:uppercase;letter-spacing:0.06em;}
+.theme-toggle{padding:4px 9px;min-height:32px;border:1px solid var(--border-strong);background:var(--btn-bg);color:var(--text);}
+.brief{color:var(--text-dim);margin:4px 0 8px;overflow-wrap:anywhere;}
+.notes{font-size:12px;color:var(--text-dim);border:1px dotted var(--border-strong);padding:8px 10px;margin:8px 0 16px;overflow-wrap:anywhere;}
+.notes b{color:var(--text);} .notes ul{margin:4px 0 0;padding-left:18px;}
+.variant{border:1px solid var(--border-strong);background:var(--panel);margin:0 0 28px;}
+.variant-head{padding:10px 12px;border-bottom:1px dotted var(--border-strong);}
+.variant-head h2{margin:0;font-size:14px;text-transform:uppercase;letter-spacing:0.06em;}
+.variant-head p{margin:2px 0 0;color:var(--text-dim);font-size:13px;overflow-wrap:anywhere;}
+.variant-render{padding:12px;background:var(--bg);min-width:0;}
+.variant-diff{padding:8px 12px 10px;border-top:1px dotted var(--border-strong);font-size:12px;color:var(--text-dim);}
+.variant-diff b{color:var(--text);} .variant-diff ul{margin:4px 0 0;padding-left:18px;} .variant-diff li{overflow-wrap:anywhere;}
+.sub-label{font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.06em;margin:12px 0 4px;}
+
+/* B: check grid */
+.grid-wrap{overflow:auto;max-width:100%;}
+table.grid{width:100%;min-width:0;}
+table.grid th.q,table.grid td.q{min-width:170px;max-width:340px;white-space:normal;overflow-wrap:anywhere;font-size:12px;}
+table.grid th.t,table.grid td.c{text-align:center;width:64px;min-width:56px;white-space:nowrap;}
+table.grid th.t .hint{display:block;text-transform:none;letter-spacing:0;font-weight:400;margin:0;}
+table.grid td.c{padding:2px;}
+.cell{border:1px solid transparent;background:none;min-width:44px;min-height:32px;color:var(--text-faint);font-size:14px;font-weight:700;}
+.cell.fail{color:var(--red);border-color:var(--border-strong);background:var(--red-bg);}
+.cell.pass{color:var(--green);cursor:default;}
+.cell.notrun{color:var(--text-faint);cursor:default;}
+.cell.unk{color:var(--magenta);cursor:default;}
+.cell.fail[aria-expanded="true"]{outline:1px solid var(--red);}
+tr.gap-row td{background:var(--panel2);padding:6px 10px;}
+.gap-box{max-height:220px;overflow:auto;font-size:12px;color:var(--text-dim);}
+.gap-box div{margin:1px 0;overflow-wrap:anywhere;}
+.gap-title{font-size:12px;color:var(--text);font-weight:700;margin-bottom:4px;}
+table.grid tr.foot td{color:var(--text-dim);font-size:11px;}
+.fold-list{margin-top:10px;}
+
+/* C: compact */
+.c-try{border-top:1px dotted var(--border-strong);}
+.c-try:last-child{border-bottom:1px dotted var(--border-strong);}
+.c-try>summary{list-style:none;cursor:pointer;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:6px 4px;min-height:36px;}
+.c-try>summary::-webkit-details-marker{display:none;}
+.c-try>summary::before{content:"\25B6";color:var(--text-faint);font-size:11px;flex:none;}
+.c-try[open]>summary::before{content:"\25BC";}
+.c-try .ct-n{font-weight:700;flex:none;}
+.c-try .ct-think{color:var(--text-dim);font-size:12px;flex:none;}
+.c-try .ct-check{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;}
+.c-try .ct-meta{color:var(--text-dim);font-size:12px;flex:none;margin-left:auto;}
+.c-try .c-detail{padding:0 4px 8px;}
+
+/* D: first-red focus */
+.d-verdict{margin:2px 0 2px 12px;font-size:13px;overflow-wrap:anywhere;}
+.d-verdict .why{color:var(--text-faint);font-size:12px;}
+.d-gap{margin:2px 0 4px 12px;border-left:2px solid var(--red);padding:4px 8px;background:var(--red-bg);}
+.d-others{margin:2px 0 4px 12px;font-size:12px;color:var(--text-dim);}
+.d-others summary{cursor:pointer;min-height:28px;}
+.d-others div{margin:1px 0 1px 12px;overflow-wrap:anywhere;}
+
+/* F: grid for steps, errors like D */
+.fgrid .cell.fail[aria-expanded="true"]{outline:2px solid var(--red);outline-offset:1px;}
+.fgrid td.q .dup{color:var(--text-faint);font-size:11px;margin-left:6px;white-space:nowrap;}
+.fx-errors{margin:8px 0 4px;min-width:0;}
+.fx-label{font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px;}
+.fx-row{min-width:0;}
+.fx-rowhead{display:flex;align-items:baseline;gap:8px;width:100%;min-width:0;min-height:32px;padding:3px 4px;border:0;background:none;color:var(--text);font:inherit;font-size:12px;text-align:left;}
+button.fx-rowhead{cursor:pointer;}
+button.fx-rowhead:hover{background:var(--panel2);}
+button.fx-rowhead:focus-visible,.fx-more:focus-visible,.cell.fail:focus-visible{outline:2px solid var(--red);outline-offset:1px;}
+.fx-caret{flex:none;width:12px;color:var(--text-faint);}
+.fx-try{flex:none;font-weight:700;}
+.fx-chk{flex:none;white-space:nowrap;}
+.fx-first{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-dim);}
+.fx-faint,.fx-count{color:var(--text-faint);}
+.fx-count{flex:none;white-space:nowrap;}
+.fx-row.open>.fx-rowhead{background:var(--red-bg);}
+.fx-body{margin:0 0 6px 20px;border-left:2px solid var(--red);padding:4px 10px;background:var(--red-bg);min-width:0;}
+.fx-sub{font-size:12px;color:var(--text);font-weight:700;margin:6px 0 2px;overflow-wrap:anywhere;}
+.fx-lines{font-size:12px;color:var(--text-dim);}
+.fx-lines div{margin:1px 0;overflow-wrap:anywhere;}
+.fx-more{margin-top:4px;min-height:28px;padding:2px 8px;border:1px solid var(--border-strong);background:var(--panel2);color:var(--text);font-size:12px;}
+.e-gap{height:1px;}
+.e-caption{font-size:12px;color:var(--text-faint);margin:2px 0 10px;overflow-wrap:anywhere;}
+@media (max-width:640px){
+  .lab{padding:8px 16px 40px;}
+  .variant-render{padding:8px;}
+  .audit-part-body{padding:6px 6px 8px;}
+  .try-check,.try-judged,.try-reasons,.d-verdict,.d-gap,.d-others,.rounds-fold{margin-left:6px;}
+}
+
+</style>
+</head>
+<body>
+<main class="lab">
+<p class="signed" style="font-weight:600;margin:12px 0;">Signed: Variant F (hamr, 2026-10-29). A–E kept for context.</p>
+
+<div class="lab-top">
+  <h1>Audit tab: fix part</h1>
+  <button type="button" class="theme-toggle" id="theme-toggle">theme: auto</button>
+</div>
+<p class="brief">Fix part in the Audit tab, shaped like the step try view; real data from run mvtatlxw (pulselog-strict-live-3). The fix part has 4 tries over 8 close checks: the opening close, then 3 fix iterations, the last one cut off when the provider dropped the connection. Five ways to draw it, same data, same tokens and glyphs as the panel.</p>
+<div class="notes"><b>Data notes.</b>
+  <ul>
+    <li>Real panel wording is kept: the close's command-exit checks #3 (tsc exit 0) and #6 (npm test exit 0) now read "does \"npx tsc --noEmit --strict\" exit clean?" and "does \"npm test\" exit clean?" (Task 2 wording).</li>
+    <li>Try 1 is the opening close (no model call); tries 2 to 4 are fix iterations 1 to 3. Try 4 ended with no verdict (provider-red); its wording in the try line is lab-written, the panel has no words for it yet.</li>
+    <li>Check questions were hand-copied from the panel's stage wording for this signed close; gap lines are the verdict's own close lines, as the panel's reasons list cuts them.</li>
+    <li>Rounds tables use the run's gate-audit rows (model call rows, then its tool calls); 20 rows a page, load more.</li>
+  </ul>
+</div>
+
+<section class="variant" data-variant="F">
+  <div class="variant-head"><h2>F &mdash; grid for steps, errors like D</h2><p>Why: One grid look for every part; click a &#10007; to read its errors like D.</p></div>
+  <div class="variant-render"></div>
+  <div class="variant-diff"><b>Key differences</b><ul>
+    <li>Variant B's grid on step parts too: a green first-try step (typedef-and-helpers), a step with a red try (zero-target-errors) and the fix part.</li>
+    <li>Under each grid an "errors" list: one row per failed or verdict-less try (caret, try N, first failed check #K with "+J more checks", first error line ellipsised, faint "(+M more)"). All-pass tries get no row; a part with no failed try shows no list.</li>
+    <li>Rows are buttons and fold independently (several can be open); an open row shows the first 8 lines per failing check (sub-heading when several) and a "+N more lines" toggle. A grid red cell opens and focuses its row. The ? row (no verdict) is plain text, not clickable. On load only the last red try's row is open per part. Rounds fold per try under the list.</li>
+    <li>Check #3 carries a faint marker where the panel's wording duplicates #6 (lab-only marker).</li>
+  </ul></div>
+</section>
+
+<section class="variant" data-variant="A">
+  <div class="variant-head"><h2>A &middot; mirror</h2><p>Why: the fix part reads exactly like a step, so nobody learns a second view.</p></div>
+  <div class="variant-render"></div>
+  <div class="variant-diff"><b>Key differences</b><ul>
+    <li>Same try line, numbered checks in run order, folded "the N reasons", rounds fold per try.</li>
+    <li>Checks that never ran are listed as "&middot; not run" (the fix close declares 8, first red wins).</li>
+    <li>Cost, time and calls sit in the rounds fold summary, since a fix try pays for its own model calls.</li>
+  </ul></div>
+</section>
+
+<section class="variant" data-variant="B">
+  <div class="variant-head"><h2>B &middot; check grid</h2><p>Why: the question a fix part asks is "which check kept failing, and did it move?", which a grid answers at a glance.</p></div>
+  <div class="variant-render"></div>
+  <div class="variant-diff"><b>Key differences</b><ul>
+    <li>Rows are checks, columns are tries; click a red cell for that try's gap lines, which open under the row.</li>
+    <li>Cost, time and calls per try in the footer rows; rounds tables fold under the grid per try.</li>
+    <li>Departs from the step view: no try lines, no per-check wording like "(N reasons)".</li>
+  </ul></div>
+</section>
+
+<section class="variant" data-variant="C">
+  <div class="variant-head"><h2>C &middot; compact</h2><p>Why: a fix loop can run many tries; one line each keeps the part short until you pick one.</p></div>
+  <div class="variant-render"></div>
+  <div class="variant-diff"><b>Key differences</b><ul>
+    <li>One line per try: result, thinking, the first failing check, cost, time. Click to open A's detail.</li>
+    <li>The line names the failing check (its question), not the gap text; the gap sits in the folded reasons.</li>
+    <li>Everything folded by default, so the part is 4 lines tall closed.</li>
+  </ul></div>
+</section>
+
+<section class="variant" data-variant="D">
+  <div class="variant-head"><h2>D &middot; first-red focus</h2><p>Why: first red wins, so the one check that decided the try is the only one that matters; show it open.</p></div>
+  <div class="variant-render"></div>
+  <div class="variant-diff"><b>Key differences</b><ul>
+    <li>Each try shows only the check that rendered the verdict, its gap lines open (scrolls inside its own box).</li>
+    <li>The other checks are one summary, "2 passed, 5 not run", that unfolds to the list.</li>
+    <li>Rounds stay folded. Loses the full numbered list at a glance; keeps it one click away.</li>
+  </ul></div>
+</section>
+
+<section class="variant" data-variant="E">
+  <div class="variant-head"><h2>E &middot; step and fix unified</h2><p>Why: shows one try block drawn the same everywhere, a plan step above the fix part.</p></div>
+  <div class="variant-render"></div>
+  <div class="variant-diff"><b>Key differences</b><ul>
+    <li>The step (zero-target-errors, 2 tries, same run) and the fix part use the same function; same try line, same fold.</li>
+    <li>Both parts carry the tools tally line; the step has 2 checks per try, the fix close has 8.</li>
+    <li>Nothing special-cased for fix: the only fix-only text is the "opening close" label on try 1.</li>
+  </ul></div>
+</section>
+</main>
+
+<script>
+/* Real data: run mvtatlxw (pulselog-strict-live-3), read-only snapshot of its spine + gate-audit sidecar.
+   Questions are hand-copied from src/stagewords.js stageQuestionText applied to the signed close. */
+window.FIXTURES = {
+ "run": {
+  "id": "mvtatlxw",
+  "job": "pulselog-strict-live-3",
+  "snapshotAt": "2026-10-29T09:04:55.184Z",
+  "spineLines": 216,
+  "auditLines": 298,
+  "live": false,
+  "declared": [
+   {
+    "n": 1,
+    "name": "changed-from-seed",
+    "kind": "files-changed",
+    "question": "did it change any file?",
+    "direction": null,
+    "baseline": null
+   },
+   {
+    "n": 2,
+    "name": "typecheck-target-zero-errors",
+    "kind": "count-not-worse",
+    "question": "src/checks.js has 0 type errors?",
+    "direction": "lower-is-better",
+    "baseline": 0
+   },
+   {
+    "n": 3,
+    "name": "typecheck-clean-exit",
+    "kind": "command-exit",
+    "question": "does \"npx tsc --noEmit --strict\" exit clean?",
+    "direction": null,
+    "baseline": null
+   },
+   {
+    "n": 4,
+    "name": "typecheck-outside-checks-ceiling",
+    "kind": "count-not-worse",
+    "question": "other files didn't get more type errors?",
+    "direction": "lower-is-better",
+    "baseline": "seed"
+   },
+   {
+    "n": 5,
+    "name": "tests-kept",
+    "kind": "count-not-worse",
+    "question": "did all the old tests still exist?",
+    "direction": "higher-is-better",
+    "baseline": "seed"
+   },
+   {
+    "n": 6,
+    "name": "suite-green",
+    "kind": "command-exit",
+    "question": "does \"npm test\" exit clean?",
+    "direction": null,
+    "baseline": null
+   },
+   {
+    "n": 7,
+    "name": "suite-zero-failures",
+    "kind": "count-not-worse",
+    "question": "no failing tests?",
+    "direction": "lower-is-better",
+    "baseline": 0
+   },
+   {
+    "n": 8,
+    "name": "no-suppressions",
+    "kind": "pattern-absent-in-diff",
+    "question": "no casts or silencers added?",
+    "direction": null,
+    "baseline": null
+   }
+  ],
+  "jobLines": [
+   {
+    "n": 1,
+    "text": "Run npm run typecheck -- --strict and fix every error it reports in src/checks.js, until that command reports zero errors in src/checks.js."
+   },
+   {
+    "n": 2,
+    "text": "Running npm run typecheck -- --strict must not report more errors in other files under src/ than it does now."
+   },
+   {
+    "n": 3,
+    "text": "Keep every existing test passing, and keep the test count the same."
+   }
+  ]
+ },
+ "fix": {
+  "title": "fix",
+  "state": "failed",
+  "rounds": 47,
+  "toolCalls": 107,
+  "wallMs": 825128,
+  "costUsd": 0.31082916,
+  "tries": [
+   {
+    "n": 1,
+    "source": "opening close",
+    "iteration": null,
+    "thinking": null,
+    "outcome": "red",
+    "startTs": "2026-10-29T08:51:10.054Z",
+    "endTs": "2026-10-29T08:51:10.056Z",
+    "wallMs": 2,
+    "costUsd": 0,
+    "tokens": 0,
+    "rounds": 0,
+    "tally": null,
+    "breakdown": "no tools",
+    "toolCalls": 0,
+    "stopped": null,
+    "endTs2": null,
+    "checks": [
+     {
+      "n": 1,
+      "name": "changed-from-seed",
+      "question": "did it change any file?",
+      "status": "pass",
+      "number": null
+     },
+     {
+      "n": 2,
+      "name": "typecheck-target-zero-errors",
+      "question": "src/checks.js has 0 type errors?",
+      "status": "pass",
+      "number": "0 left, need 0"
+     },
+     {
+      "n": 3,
+      "name": "typecheck-clean-exit",
+      "question": "does \"npx tsc --noEmit --strict\" exit clean?",
+      "status": "fail",
+      "number": null,
+      "reasons": [
+       "\"npx tsc --noEmit --strict\" exited 2, expected 0",
+       "error TS7006: Parameter 'now' implicitly has an 'any' type.",
+       "error TS7006: Parameter 'n' implicitly has an 'any' type.",
+       "error TS7006: Parameter 'dir' implicitly has an 'any' type.",
+       "error TS7006: Parameter 'dir' implicitly has an 'any' type.",
+       "error TS7006: Parameter 'name' implicitly has an 'any' type.",
+       "error TS7006: Parameter 'keepLast' implicitly has an 'any' type.",
+       "error TS7006: Parameter 'keepDays' implicitly has an 'any' type.",
+       "error TS7006: Parameter 'now' implicitly has an 'any' type.",
+       "error TS7006: Parameter 'e' implicitly has an 'any' type.",
+       "error TS7006: Parameter 'n' implicitly has an 'any' type.",
+       "error TS18046: 'err' is of type 'unknown'.",
+       "error TS18046: 'err' is of type 'unknown'.",
+       "error TS7006: Parameter 'path' implicitly has an 'any' type.",
+       "error TS7006: Parameter 'm' implicitly has an 'any' type.",
+       "error TS7006: Parameter 'n' implicitly has an 'any' type.",
+       "error TS2554: Expected 2-3 arguments, but got 5.",
+       "error TS2339: Property 'app' does not exist on type 'object'.",
+       "error TS2339: Property 'name' does not exist on type 'object'.",
+       "error TS2339: Property 'name' does not exist on type 'object'.",
+       "error TS2339: Property 'type' does not exist on type 'object'.",
+       "error TS2339: Property 'logTail' does not exist on type 'object'.",
+       "error TS2339: Property 'logTail' does not exist on type 'object'.",
+       "error TS2339: Property 'logTail' does not exist on type 'object'.",
+       "error TS2339: Property 'name' does not exist on type 'object'.",
+       "error TS2339: Property 'type' does not exist on type 'object'.",
+       "error TS7006: Parameter 'cmd' implicitly has an 'any' type.",
+       "error TS7031: Binding element 'to' implicitly has an 'any' type.",
+       "error TS7031: Binding element 'from' implicitly has an 'any' type.",
+       "error TS7031: Binding element 'subject' implicitly has an 'any' type.",
+       "error TS7031: Binding element 'body' implicitly has an 'any' type.",
+       "error TS7006: Parameter 's' implicitly has an 'any' type.",
+       "error TS2339: Property 'message' does not exist on type '{}'.",
+       "error TS7006: Parameter 's' implicitly has an 'any' type.",
+       "error TS7006: Parameter 'n' implicitly has an 'any' type.",
+       "error TS7006: Parameter 's' implicitly has an 'any' type.",
+       "error TS7006: Parameter 'n' implicitly has an 'any' type.",
+       "error TS7006: Parameter 'ms' implicitly has an 'any' type.",
+       "error TS7006: Parameter 'v' implicitly has an 'any' type.",
+       "8 of 47 lines withheld — the cap is 40]"
+      ],
+      "gap": "\"npx tsc --noEmit --strict\" exited 2, expected 0",
+      "more": 39,
+      "moreText": "(+39 more)",
+      "reasonsLabel": "the 40 reasons"
+     },
+     {
+      "n": 4,
+      "name": "typecheck-outside-checks-ceiling",
+      "question": "other files didn't get more type errors?",
+      "status": "notrun"
+     },
+     {
+      "n": 5,
+      "name": "tests-kept",
+      "question": "did all the old tests still exist?",
+      "status": "notrun"
+     },
+     {
+      "n": 6,
+      "name": "suite-green",
+      "question": "does \"npm test\" exit clean?",
+      "status": "notrun"
+     },
+     {
+      "n": 7,
+      "name": "suite-zero-failures",
+      "question": "no failing tests?",
+      "status": "notrun"
+     },
+     {
+      "n": 8,
+      "name": "no-suppressions",
+      "question": "no casts or silencers added?",
+      "status": "notrun"
+     }
+    ],
+    "rows": [],
+    "retries": []
+   },
+   {
+    "n": 2,
+    "source": "iteration",
+    "iteration": 1,
+    "thinking": "thinking on",
+    "outcome": "red",
+    "startTs": "2026-10-29T08:51:10.177Z",
+    "endTs": "2026-10-29T08:58:01.485Z",
+    "wallMs": 411308,
+    "costUsd": 0.16409195999999998,
+    "tokens": 102737,
+    "rounds": 21,
+    "tally": "tools: read 23 · grep 4 · edit 29 · denied 0",
+    "breakdown": "edit 29 · read 23 · grep 4",
+    "toolCalls": 56,
+    "stopped": null,
+    "endTs2": null,
+    "checks": [
+     {
+      "n": 1,
+      "name": "changed-from-seed",
+      "question": "did it change any file?",
+      "status": "pass",
+      "number": null
+     },
+     {
+      "n": 2,
+      "name": "typecheck-target-zero-errors",
+      "question": "src/checks.js has 0 type errors?",
+      "status": "pass",
+      "number": "0 left, need 0"
+     },
+     {
+      "n": 3,
+      "name": "typecheck-clean-exit",
+      "question": "does \"npx tsc --noEmit --strict\" exit clean?",
+      "status": "fail",
+      "number": null,
+      "reasons": [
+       "\"npx tsc --noEmit --strict\" exited 2, expected 0",
+       "error TS1016: A required parameter cannot follow an optional parameter.",
+       "error TS18048: 'result' is possibly 'undefined'.",
+       "error TS2322: Type '{ ok: boolean; reason: string; detail?: Record<string, unknown> | undefined; cfg: Record<string, any>; } | undefined' is not assignable to type '{ cfg: Record<string, unknown>; ok: boolean; reason: string; detail?: Record<string, unknown> | undefined; }'.",
+       "Record<string, unknown>; ok: boolean; reason: string; detail?: Record<string, unknown> | undefined; }'."
+      ],
+      "gap": "\"npx tsc --noEmit --strict\" exited 2, expected 0",
+      "more": 4,
+      "moreText": "(+4 more)",
+      "reasonsLabel": "the 5 reasons"
+     },
+     {
+      "n": 4,
+      "name": "typecheck-outside-checks-ceiling",
+      "question": "other files didn't get more type errors?",
+      "status": "notrun"
+     },
+     {
+      "n": 5,
+      "name": "tests-kept",
+      "question": "did all the old tests still exist?",
+      "status": "notrun"
+     },
+     {
+      "n": 6,
+      "name": "suite-green",
+      "question": "does \"npm test\" exit clean?",
+      "status": "notrun"
+     },
+     {
+      "n": 7,
+      "name": "suite-zero-failures",
+      "question": "no failing tests?",
+      "status": "notrun"
+     },
+     {
+      "n": 8,
+      "name": "no-suppressions",
+      "question": "no casts or silencers added?",
+      "status": "notrun"
+     }
+    ],
+    "rows": [
+     {
+      "kind": "model",
+      "round": 1,
+      "time": "2026-10-29T08:51:12.715Z",
+      "costUsd": 0.002214,
+      "tokens": 6370,
+      "durationMs": 2475
+     },
+     {
+      "kind": "tool",
+      "round": 1,
+      "action": "read",
+      "path": ".",
+      "decision": "allow",
+      "time": "2026-10-29T08:51:12.717Z"
+     },
+     {
+      "kind": "tool",
+      "round": 1,
+      "action": "read",
+      "path": "tsconfig.json",
+      "decision": "allow",
+      "time": "2026-10-29T08:51:12.722Z"
+     },
+     {
+      "kind": "model",
+      "round": 2,
+      "time": "2026-10-29T08:51:14.331Z",
+      "costUsd": 0.0008899199999999999,
+      "tokens": 6924,
+      "durationMs": 1601
+     },
+     {
+      "kind": "tool",
+      "round": 2,
+      "action": "read",
+      "path": "src",
+      "decision": "allow",
+      "time": "2026-10-29T08:51:14.333Z"
+     },
+     {
+      "kind": "tool",
+      "round": 2,
+      "action": "read",
+      "path": "package.json",
+      "decision": "allow",
+      "time": "2026-10-29T08:51:14.338Z"
+     },
+     {
+      "kind": "model",
+      "round": 3,
+      "time": "2026-10-29T08:51:16.606Z",
+      "costUsd": 0.00109272,
+      "tokens": 7792,
+      "durationMs": 2260
+     },
+     {
+      "kind": "tool",
+      "round": 3,
+      "action": "read",
+      "path": "src/backup.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:51:16.608Z"
+     },
+     {
+      "kind": "tool",
+      "round": 3,
+      "action": "read",
+      "path": "src/digest.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:51:16.617Z"
+     },
+     {
+      "kind": "model",
+      "round": 4,
+      "time": "2026-10-29T08:51:31.347Z",
+      "costUsd": 0.0059028,
+      "tokens": 14201,
+      "durationMs": 14724
+     },
+     {
+      "kind": "tool",
+      "round": 4,
+      "action": "read",
+      "path": "src/email.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:51:31.351Z"
+     },
+     {
+      "kind": "tool",
+      "round": 4,
+      "action": "read",
+      "path": "src/fallback.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:51:31.354Z"
+     },
+     {
+      "kind": "tool",
+      "round": 4,
+      "action": "read",
+      "path": "src/run.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:51:31.357Z"
+     },
+     {
+      "kind": "model",
+      "round": 5,
+      "time": "2026-10-29T08:51:34.419Z",
+      "costUsd": 0.0034332,
+      "tokens": 18002,
+      "durationMs": 3058
+     },
+     {
+      "kind": "tool",
+      "round": 5,
+      "action": "read",
+      "path": "src/metrics.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:51:34.423Z"
+     },
+     {
+      "kind": "tool",
+      "round": 5,
+      "action": "read",
+      "path": "src/dumpers.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:51:34.426Z"
+     },
+     {
+      "kind": "model",
+      "round": 6,
+      "time": "2026-10-29T08:51:45.734Z",
+      "costUsd": 0.006149999999999999,
+      "tokens": 24535,
+      "durationMs": 11306
+     },
+     {
+      "kind": "tool",
+      "round": 6,
+      "action": "read",
+      "path": "src/deliver.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:51:45.736Z"
+     },
+     {
+      "kind": "tool",
+      "round": 6,
+      "action": "read",
+      "path": "src/sink.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:51:45.738Z"
+     },
+     {
+      "kind": "tool",
+      "round": 6,
+      "action": "read",
+      "path": "src/index.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:51:45.739Z"
+     },
+     {
+      "kind": "model",
+      "round": 7,
+      "time": "2026-10-29T08:51:49.474Z",
+      "costUsd": 0.00297888,
+      "tokens": 26429,
+      "durationMs": 3732
+     },
+     {
+      "kind": "tool",
+      "round": 7,
+      "action": "read",
+      "path": "output",
+      "decision": "allow",
+      "time": "2026-10-29T08:51:49.475Z"
+     },
+     {
+      "kind": "tool",
+      "round": 7,
+      "action": "grep",
+      "path": ".",
+      "decision": "allow",
+      "time": "2026-10-29T08:51:49.476Z"
+     },
+     {
+      "kind": "model",
+      "round": 8,
+      "time": "2026-10-29T08:52:19.385Z",
+      "costUsd": 0.0022138799999999997,
+      "tokens": 26967,
+      "durationMs": 29396
+     },
+     {
+      "kind": "tool",
+      "round": 8,
+      "action": "read",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:52:19.385Z"
+     },
+     {
+      "kind": "model",
+      "round": 9,
+      "time": "2026-10-29T08:53:45.157Z",
+      "costUsd": 0.022223399999999997,
+      "tokens": 45733,
+      "durationMs": 85771
+     },
+     {
+      "kind": "tool",
+      "round": 9,
+      "action": "grep",
+      "path": "src",
+      "decision": "allow",
+      "time": "2026-10-29T08:53:45.162Z"
+     },
+     {
+      "kind": "tool",
+      "round": 9,
+      "action": "grep",
+      "path": "src",
+      "decision": "allow",
+      "time": "2026-10-29T08:53:45.452Z"
+     },
+     {
+      "kind": "model",
+      "round": 10,
+      "time": "2026-10-29T08:55:04.055Z",
+      "costUsd": 0.02450916,
+      "tokens": 65443,
+      "durationMs": 78402
+     },
+     {
+      "kind": "tool",
+      "round": 10,
+      "action": "edit",
+      "path": "src/backup.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:04.060Z"
+     },
+     {
+      "kind": "tool",
+      "round": 10,
+      "action": "edit",
+      "path": "src/backup.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:04.063Z"
+     },
+     {
+      "kind": "tool",
+      "round": 10,
+      "action": "edit",
+      "path": "src/backup.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:04.066Z"
+     },
+     {
+      "kind": "tool",
+      "round": 10,
+      "action": "edit",
+      "path": "src/backup.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:04.070Z"
+     },
+     {
+      "kind": "tool",
+      "round": 10,
+      "action": "edit",
+      "path": "src/backup.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:04.073Z"
+     },
+     {
+      "kind": "tool",
+      "round": 10,
+      "action": "edit",
+      "path": "src/backup.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:04.078Z"
+     },
+     {
+      "kind": "tool",
+      "round": 10,
+      "action": "edit",
+      "path": "src/backup.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:04.081Z"
+     },
+     {
+      "kind": "tool",
+      "round": 10,
+      "action": "edit",
+      "path": "src/backup.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:04.084Z"
+     },
+     {
+      "kind": "model",
+      "round": 11,
+      "time": "2026-10-29T08:55:10.071Z",
+      "costUsd": 0.0062302799999999995,
+      "tokens": 67605,
+      "durationMs": 5982
+     },
+     {
+      "kind": "tool",
+      "round": 11,
+      "action": "edit",
+      "path": "src/digest.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:10.073Z"
+     },
+     {
+      "kind": "tool",
+      "round": 11,
+      "action": "edit",
+      "path": "src/digest.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:10.077Z"
+     },
+     {
+      "kind": "tool",
+      "round": 11,
+      "action": "edit",
+      "path": "src/run.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:10.086Z"
+     },
+     {
+      "kind": "tool",
+      "round": 11,
+      "action": "edit",
+      "path": "src/run.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:10.095Z"
+     },
+     {
+      "kind": "tool",
+      "round": 11,
+      "action": "edit",
+      "path": "src/run.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:10.108Z"
+     },
+     {
+      "kind": "tool",
+      "round": 11,
+      "action": "edit",
+      "path": "src/email.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:10.122Z"
+     },
+     {
+      "kind": "tool",
+      "round": 11,
+      "action": "edit",
+      "path": "src/email.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:10.136Z"
+     },
+     {
+      "kind": "tool",
+      "round": 11,
+      "action": "edit",
+      "path": "src/email.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:10.148Z"
+     },
+     {
+      "kind": "tool",
+      "round": 11,
+      "action": "edit",
+      "path": "src/email.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:10.154Z"
+     },
+     {
+      "kind": "model",
+      "round": 12,
+      "time": "2026-10-29T08:55:16.143Z",
+      "costUsd": 0.00627504,
+      "tokens": 69731,
+      "durationMs": 5987
+     },
+     {
+      "kind": "tool",
+      "round": 12,
+      "action": "edit",
+      "path": "src/fallback.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:16.149Z"
+     },
+     {
+      "kind": "tool",
+      "round": 12,
+      "action": "edit",
+      "path": "src/metrics.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:16.155Z"
+     },
+     {
+      "kind": "tool",
+      "round": 12,
+      "action": "edit",
+      "path": "src/dumpers.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:16.159Z"
+     },
+     {
+      "kind": "tool",
+      "round": 12,
+      "action": "edit",
+      "path": "src/sink.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:16.164Z"
+     },
+     {
+      "kind": "tool",
+      "round": 12,
+      "action": "edit",
+      "path": "src/sink.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:16.170Z"
+     },
+     {
+      "kind": "tool",
+      "round": 12,
+      "action": "edit",
+      "path": "src/sink.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:16.176Z"
+     },
+     {
+      "kind": "model",
+      "round": 13,
+      "time": "2026-10-29T08:55:26.480Z",
+      "costUsd": 0.006664919999999999,
+      "tokens": 71946,
+      "durationMs": 10302
+     },
+     {
+      "kind": "tool",
+      "round": 13,
+      "action": "read",
+      "path": "src/sink.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:26.482Z"
+     },
+     {
+      "kind": "tool",
+      "round": 13,
+      "action": "read",
+      "path": "src/email.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:26.483Z"
+     },
+     {
+      "kind": "model",
+      "round": 14,
+      "time": "2026-10-29T08:55:31.297Z",
+      "costUsd": 0.006248759999999999,
+      "tokens": 74448,
+      "durationMs": 4812
+     },
+     {
+      "kind": "tool",
+      "round": 14,
+      "action": "grep",
+      "path": "src",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:31.298Z"
+     },
+     {
+      "kind": "model",
+      "round": 15,
+      "time": "2026-10-29T08:55:48.587Z",
+      "costUsd": 0.009935879999999998,
+      "tokens": 80366,
+      "durationMs": 17151
+     },
+     {
+      "kind": "tool",
+      "round": 15,
+      "action": "edit",
+      "path": "src/backup.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:48.588Z"
+     },
+     {
+      "kind": "tool",
+      "round": 15,
+      "action": "read",
+      "path": "src/digest.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:55:48.590Z"
+     },
+     {
+      "kind": "model",
+      "round": 16,
+      "time": "2026-10-29T08:56:20.836Z",
+      "costUsd": 0.00751896,
+      "tokens": 82882,
+      "durationMs": 32246
+     },
+     {
+      "kind": "tool",
+      "round": 16,
+      "action": "read",
+      "path": "src/backup.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:56:20.840Z"
+     },
+     {
+      "kind": "model",
+      "round": 17,
+      "time": "2026-10-29T08:56:25.646Z",
+      "costUsd": 0.00682356,
+      "tokens": 85301,
+      "durationMs": 4801
+     },
+     {
+      "kind": "tool",
+      "round": 17,
+      "action": "read",
+      "path": "src/backup.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:56:25.649Z"
+     },
+     {
+      "kind": "model",
+      "round": 18,
+      "time": "2026-10-29T08:56:36.299Z",
+      "costUsd": 0.00894588,
+      "tokens": 89838,
+      "durationMs": 10647
+     },
+     {
+      "kind": "tool",
+      "round": 18,
+      "action": "edit",
+      "path": "src/dumpers.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:56:36.304Z"
+     },
+     {
+      "kind": "tool",
+      "round": 18,
+      "action": "read",
+      "path": "src/run.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:56:36.310Z"
+     },
+     {
+      "kind": "model",
+      "round": 19,
+      "time": "2026-10-29T08:57:23.406Z",
+      "costUsd": 0.016353479999999997,
+      "tokens": 99388,
+      "durationMs": 47090
+     },
+     {
+      "kind": "tool",
+      "round": 19,
+      "action": "edit",
+      "path": "src/email.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:57:23.410Z"
+     },
+     {
+      "kind": "tool",
+      "round": 19,
+      "action": "edit",
+      "path": "src/run.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:57:23.429Z"
+     },
+     {
+      "kind": "tool",
+      "round": 19,
+      "action": "edit",
+      "path": "src/run.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:57:23.437Z"
+     },
+     {
+      "kind": "tool",
+      "round": 19,
+      "action": "edit",
+      "path": "src/run.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:57:23.444Z"
+     },
+     {
+      "kind": "model",
+      "round": 20,
+      "time": "2026-10-29T08:57:38.352Z",
+      "costUsd": 0.00908208,
+      "tokens": 102088,
+      "durationMs": 14898
+     },
+     {
+      "kind": "tool",
+      "round": 20,
+      "action": "read",
+      "path": "src/run.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:57:38.353Z"
+     },
+     {
+      "kind": "model",
+      "round": 21,
+      "time": "2026-10-29T08:57:46.552Z",
+      "costUsd": 0.00840516,
+      "tokens": 104524,
+      "durationMs": 8194
+     }
+    ],
+    "retries": [
+     "read ECONNRESET",
+     "socket hang up"
+    ]
+   },
+   {
+    "n": 3,
+    "source": "iteration",
+    "iteration": 2,
+    "thinking": "thinking on",
+    "outcome": "red",
+    "startTs": "2026-10-29T08:58:01.487Z",
+    "endTs": "2026-10-29T08:59:28.703Z",
+    "wallMs": 87216,
+    "costUsd": 0.012971159999999999,
+    "tokens": 11153,
+    "rounds": 6,
+    "tally": "tools: read 3 · grep 2 · edit 2 · recall 1 · denied 0",
+    "breakdown": "read 3 · grep 2 · edit 2 · recall 1",
+    "toolCalls": 8,
+    "stopped": null,
+    "endTs2": null,
+    "checks": [
+     {
+      "n": 1,
+      "name": "changed-from-seed",
+      "question": "did it change any file?",
+      "status": "pass",
+      "number": null
+     },
+     {
+      "n": 2,
+      "name": "typecheck-target-zero-errors",
+      "question": "src/checks.js has 0 type errors?",
+      "status": "pass",
+      "number": "0 left, need 0"
+     },
+     {
+      "n": 3,
+      "name": "typecheck-clean-exit",
+      "question": "does \"npx tsc --noEmit --strict\" exit clean?",
+      "status": "pass",
+      "number": null
+     },
+     {
+      "n": 4,
+      "name": "typecheck-outside-checks-ceiling",
+      "question": "other files didn't get more type errors?",
+      "status": "pass",
+      "number": "0, limit 46"
+     },
+     {
+      "n": 5,
+      "name": "tests-kept",
+      "question": "did all the old tests still exist?",
+      "status": "pass",
+      "number": "67 of 67"
+     },
+     {
+      "n": 6,
+      "name": "suite-green",
+      "question": "does \"npm test\" exit clean?",
+      "status": "pass",
+      "number": null
+     },
+     {
+      "n": 7,
+      "name": "suite-zero-failures",
+      "question": "no failing tests?",
+      "status": "pass",
+      "number": "0 left, need 0"
+     },
+     {
+      "n": 8,
+      "name": "no-suppressions",
+      "question": "no casts or silencers added?",
+      "status": "fail",
+      "number": null,
+      "reasons": [
+       "11 forbidden pattern occurrence(s) in lines this run ADDED",
+       "close:   [cast] src/backup.js:175: const e = /** @type {Error} */ (err);",
+       "close:   [cast] src/checks.js:49: const knob = (value) => /** @type {T} */ (value);",
+       "close:   [cast] src/checks.js:63: const e = /** @type {NodeJS.ErrnoException & { killed?: boolean } | null} */ (err);",
+       "close:   [cast] src/checks.js:90: const e = /** @type {NodeJS.ErrnoException} */ (err);",
+       "close:   [cast] src/checks.js:239: const e = /** @type {NodeJS.ErrnoException} */ (err);",
+       "close:   [any] src/checks.js:264: * Escape hatch: any command that exits 0 is healthy.",
+       "close:   [cast] src/email.js:71: to = /** @type {string} */ (oneLine(to)); from = oneLine(from); subject = /** @type {string} */ (oneLine(subject));",
+       "close:   [cast] src/fallback.js:49: const e = /** @type {{ message?: string }} */ (err);",
+       "close:   [cast] src/run.js:52: const e = /** @type {Error} */ (err);",
+       "close:   [cast] src/sink.js:29: const dest = /** @type {string} */ (file);",
+       "close:   [cast] src/sink.js:54: const e = /** @type {NodeJS.ErrnoException} */ (err);"
+      ],
+      "gap": "11 forbidden pattern occurrence(s) in lines this run ADDED",
+      "more": 11,
+      "moreText": "(+11 more)",
+      "reasonsLabel": "the 12 reasons"
+     }
+    ],
+    "rows": [
+     {
+      "kind": "model",
+      "round": 1,
+      "time": "2026-10-29T08:58:03.625Z",
+      "costUsd": 0.0010776,
+      "tokens": 5661,
+      "durationMs": 1782
+     },
+     {
+      "kind": "tool",
+      "round": 1,
+      "action": "recall",
+      "path": ".",
+      "decision": "allow",
+      "time": "2026-10-29T08:58:03.628Z"
+     },
+     {
+      "kind": "tool",
+      "round": 1,
+      "action": "read",
+      "path": "src/backup.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:58:03.651Z"
+     },
+     {
+      "kind": "model",
+      "round": 2,
+      "time": "2026-10-29T08:58:06.151Z",
+      "costUsd": 0.0024373199999999998,
+      "tokens": 8797,
+      "durationMs": 2497
+     },
+     {
+      "kind": "tool",
+      "round": 2,
+      "action": "read",
+      "path": "src/run.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:58:06.153Z"
+     },
+     {
+      "kind": "model",
+      "round": 3,
+      "time": "2026-10-29T08:58:16.772Z",
+      "costUsd": 0.0035216399999999995,
+      "tokens": 11928,
+      "durationMs": 10613
+     },
+     {
+      "kind": "tool",
+      "round": 3,
+      "action": "grep",
+      "path": "src",
+      "decision": "allow",
+      "time": "2026-10-29T08:58:16.776Z"
+     },
+     {
+      "kind": "tool",
+      "round": 3,
+      "action": "read",
+      "path": "package.json",
+      "decision": "allow",
+      "time": "2026-10-29T08:58:17.004Z"
+     },
+     {
+      "kind": "model",
+      "round": 4,
+      "time": "2026-10-29T08:58:25.302Z",
+      "costUsd": 0.00310224,
+      "tokens": 14316,
+      "durationMs": 8289
+     },
+     {
+      "kind": "tool",
+      "round": 4,
+      "action": "edit",
+      "path": "src/backup.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:58:25.307Z"
+     },
+     {
+      "kind": "tool",
+      "round": 4,
+      "action": "edit",
+      "path": "src/run.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:58:25.314Z"
+     },
+     {
+      "kind": "model",
+      "round": 5,
+      "time": "2026-10-29T08:58:28.973Z",
+      "costUsd": 0.0015046799999999998,
+      "tokens": 14871,
+      "durationMs": 3653
+     },
+     {
+      "kind": "tool",
+      "round": 5,
+      "action": "grep",
+      "path": "src/run.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:58:28.974Z"
+     },
+     {
+      "kind": "model",
+      "round": 6,
+      "time": "2026-10-29T08:58:31.445Z",
+      "costUsd": 0.00132768,
+      "tokens": 15356,
+      "durationMs": 2325
+     }
+    ],
+    "retries": []
+   },
+   {
+    "n": 4,
+    "source": "iteration",
+    "iteration": 3,
+    "thinking": "thinking on",
+    "outcome": null,
+    "startTs": "2026-10-29T08:59:28.704Z",
+    "endTs": null,
+    "wallMs": 326480,
+    "costUsd": 0.13376604,
+    "tokens": 82604,
+    "rounds": 20,
+    "tally": "tools: read 16 · grep 11 · edit 16 · denied 0",
+    "breakdown": "read 16 · edit 16 · grep 11",
+    "toolCalls": 43,
+    "stopped": {
+     "category": "provider-red",
+     "words": "provider dropped (socket hang up), no check ran"
+    },
+    "endTs2": null,
+    "checks": null,
+    "rows": [
+     {
+      "kind": "model",
+      "round": 1,
+      "time": "2026-10-29T08:59:31.645Z",
+      "costUsd": 0.0015443999999999998,
+      "tokens": 6130,
+      "durationMs": 2757
+     },
+     {
+      "kind": "tool",
+      "round": 1,
+      "action": "read",
+      "path": "package.json",
+      "decision": "allow",
+      "time": "2026-10-29T08:59:31.648Z"
+     },
+     {
+      "kind": "tool",
+      "round": 1,
+      "action": "read",
+      "path": "tsconfig.json",
+      "decision": "allow",
+      "time": "2026-10-29T08:59:31.651Z"
+     },
+     {
+      "kind": "tool",
+      "round": 1,
+      "action": "read",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:59:31.669Z"
+     },
+     {
+      "kind": "model",
+      "round": 2,
+      "time": "2026-10-29T08:59:35.197Z",
+      "costUsd": 0.00337716,
+      "tokens": 10556,
+      "durationMs": 3521
+     },
+     {
+      "kind": "tool",
+      "round": 2,
+      "action": "read",
+      "path": ".",
+      "decision": "allow",
+      "time": "2026-10-29T08:59:35.199Z"
+     },
+     {
+      "kind": "tool",
+      "round": 2,
+      "action": "grep",
+      "path": "src",
+      "decision": "allow",
+      "time": "2026-10-29T08:59:35.202Z"
+     },
+     {
+      "kind": "model",
+      "round": 3,
+      "time": "2026-10-29T08:59:41.559Z",
+      "costUsd": 0.00408816,
+      "tokens": 15334,
+      "durationMs": 6121
+     },
+     {
+      "kind": "tool",
+      "round": 3,
+      "action": "read",
+      "path": "test",
+      "decision": "allow",
+      "time": "2026-10-29T08:59:41.561Z"
+     },
+     {
+      "kind": "tool",
+      "round": 3,
+      "action": "read",
+      "path": "output",
+      "decision": "allow",
+      "time": "2026-10-29T08:59:41.569Z"
+     },
+     {
+      "kind": "model",
+      "round": 4,
+      "time": "2026-10-29T08:59:48.793Z",
+      "costUsd": 0.00228372,
+      "tokens": 16498,
+      "durationMs": 7220
+     },
+     {
+      "kind": "tool",
+      "round": 4,
+      "action": "read",
+      "path": "CLAUDE.md",
+      "decision": "allow",
+      "time": "2026-10-29T08:59:48.795Z"
+     },
+     {
+      "kind": "model",
+      "round": 5,
+      "time": "2026-10-29T08:59:51.290Z",
+      "costUsd": 0.00219324,
+      "tokens": 18102,
+      "durationMs": 2490
+     },
+     {
+      "kind": "tool",
+      "round": 5,
+      "action": "grep",
+      "path": ".claude",
+      "decision": "allow",
+      "time": "2026-10-29T08:59:51.293Z"
+     },
+     {
+      "kind": "tool",
+      "round": 5,
+      "action": "grep",
+      "path": "docs",
+      "decision": "allow",
+      "time": "2026-10-29T08:59:51.626Z"
+     },
+     {
+      "kind": "model",
+      "round": 6,
+      "time": "2026-10-29T09:00:01.726Z",
+      "costUsd": 0.00366648,
+      "tokens": 20744,
+      "durationMs": 9842
+     },
+     {
+      "kind": "tool",
+      "round": 6,
+      "action": "read",
+      "path": "src/sink.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:00:01.733Z"
+     },
+     {
+      "kind": "tool",
+      "round": 6,
+      "action": "read",
+      "path": "src/email.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:00:01.739Z"
+     },
+     {
+      "kind": "tool",
+      "round": 6,
+      "action": "read",
+      "path": "src/fallback.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:00:01.743Z"
+     },
+     {
+      "kind": "tool",
+      "round": 6,
+      "action": "read",
+      "path": "src/run.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:00:01.749Z"
+     },
+     {
+      "kind": "model",
+      "round": 7,
+      "time": "2026-10-29T09:00:10.020Z",
+      "costUsd": 0.0054135599999999996,
+      "tokens": 26388,
+      "durationMs": 8269
+     },
+     {
+      "kind": "tool",
+      "round": 7,
+      "action": "grep",
+      "path": "src",
+      "decision": "allow",
+      "time": "2026-10-29T09:00:10.023Z"
+     },
+     {
+      "kind": "tool",
+      "round": 7,
+      "action": "read",
+      "path": "src/backup.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:00:10.317Z"
+     },
+     {
+      "kind": "model",
+      "round": 8,
+      "time": "2026-10-29T09:01:08.866Z",
+      "costUsd": 0.015906479999999997,
+      "tokens": 40632,
+      "durationMs": 58545
+     },
+     {
+      "kind": "tool",
+      "round": 8,
+      "action": "read",
+      "path": "bin/pulselog.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:01:08.870Z"
+     },
+     {
+      "kind": "tool",
+      "round": 8,
+      "action": "grep",
+      "path": "src",
+      "decision": "allow",
+      "time": "2026-10-29T09:01:08.878Z"
+     },
+     {
+      "kind": "model",
+      "round": 9,
+      "time": "2026-10-29T09:01:12.655Z",
+      "costUsd": 0.004649759999999999,
+      "tokens": 43795,
+      "durationMs": 3334
+     },
+     {
+      "kind": "tool",
+      "round": 9,
+      "action": "grep",
+      "path": "test",
+      "decision": "allow",
+      "time": "2026-10-29T09:01:12.659Z"
+     },
+     {
+      "kind": "tool",
+      "round": 9,
+      "action": "grep",
+      "path": "test",
+      "decision": "allow",
+      "time": "2026-10-29T09:01:12.950Z"
+     },
+     {
+      "kind": "model",
+      "round": 10,
+      "time": "2026-10-29T09:02:25.643Z",
+      "costUsd": 0.01931136,
+      "tokens": 58950,
+      "durationMs": 72464
+     },
+     {
+      "kind": "tool",
+      "round": 10,
+      "action": "read",
+      "path": "test/pulselog.test.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:02:25.649Z"
+     },
+     {
+      "kind": "tool",
+      "round": 10,
+      "action": "grep",
+      "path": "node_modules/@types/node/child_process.d.ts",
+      "decision": "allow",
+      "time": "2026-10-29T09:02:25.655Z"
+     },
+     {
+      "kind": "model",
+      "round": 11,
+      "time": "2026-10-29T09:02:28.269Z",
+      "costUsd": 0.0063528,
+      "tokens": 63360,
+      "durationMs": 2391
+     },
+     {
+      "kind": "tool",
+      "round": 11,
+      "action": "read",
+      "path": "node_modules/@types/node/child_process.d.ts",
+      "decision": "allow",
+      "time": "2026-10-29T09:02:28.271Z"
+     },
+     {
+      "kind": "model",
+      "round": 12,
+      "time": "2026-10-29T09:02:31.446Z",
+      "costUsd": 0.0044994,
+      "tokens": 64211,
+      "durationMs": 3172
+     },
+     {
+      "kind": "tool",
+      "round": 12,
+      "action": "grep",
+      "path": "node_modules/@types/node/child_process.d.ts",
+      "decision": "allow",
+      "time": "2026-10-29T09:02:31.447Z"
+     },
+     {
+      "kind": "model",
+      "round": 13,
+      "time": "2026-10-29T09:02:52.842Z",
+      "costUsd": 0.00851268,
+      "tokens": 68328,
+      "durationMs": 21165
+     },
+     {
+      "kind": "tool",
+      "round": 13,
+      "action": "read",
+      "path": "test/pulselog.test.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:02:52.845Z"
+     },
+     {
+      "kind": "model",
+      "round": 14,
+      "time": "2026-10-29T09:03:30.305Z",
+      "costUsd": 0.016715039999999997,
+      "tokens": 81218,
+      "durationMs": 37452
+     },
+     {
+      "kind": "tool",
+      "round": 14,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:03:30.306Z"
+     },
+     {
+      "kind": "tool",
+      "round": 14,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:03:30.308Z"
+     },
+     {
+      "kind": "model",
+      "round": 15,
+      "time": "2026-10-29T09:03:34.209Z",
+      "costUsd": 0.00569352,
+      "tokens": 81937,
+      "durationMs": 3899
+     },
+     {
+      "kind": "tool",
+      "round": 15,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:03:34.211Z"
+     },
+     {
+      "kind": "tool",
+      "round": 15,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:03:34.215Z"
+     },
+     {
+      "kind": "tool",
+      "round": 15,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:03:34.224Z"
+     },
+     {
+      "kind": "model",
+      "round": 16,
+      "time": "2026-10-29T09:03:37.613Z",
+      "costUsd": 0.005722799999999999,
+      "tokens": 82698,
+      "durationMs": 3384
+     },
+     {
+      "kind": "tool",
+      "round": 16,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:03:37.618Z"
+     },
+     {
+      "kind": "tool",
+      "round": 16,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:03:37.629Z"
+     },
+     {
+      "kind": "tool",
+      "round": 16,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:03:37.633Z"
+     },
+     {
+      "kind": "model",
+      "round": 17,
+      "time": "2026-10-29T09:03:40.707Z",
+      "costUsd": 0.005488679999999999,
+      "tokens": 83229,
+      "durationMs": 3072
+     },
+     {
+      "kind": "tool",
+      "round": 17,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:03:40.710Z"
+     },
+     {
+      "kind": "tool",
+      "round": 17,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:03:40.714Z"
+     },
+     {
+      "kind": "model",
+      "round": 18,
+      "time": "2026-10-29T09:03:45.539Z",
+      "costUsd": 0.006207,
+      "tokens": 84292,
+      "durationMs": 4822
+     },
+     {
+      "kind": "tool",
+      "round": 18,
+      "action": "edit",
+      "path": "src/backup.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:03:45.541Z"
+     },
+     {
+      "kind": "tool",
+      "round": 18,
+      "action": "edit",
+      "path": "src/run.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:03:45.547Z"
+     },
+     {
+      "kind": "tool",
+      "round": 18,
+      "action": "edit",
+      "path": "src/fallback.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:03:45.551Z"
+     },
+     {
+      "kind": "model",
+      "round": 19,
+      "time": "2026-10-29T09:03:50.835Z",
+      "costUsd": 0.00628164,
+      "tokens": 85379,
+      "durationMs": 5277
+     },
+     {
+      "kind": "tool",
+      "round": 19,
+      "action": "edit",
+      "path": "src/sink.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:03:50.837Z"
+     },
+     {
+      "kind": "tool",
+      "round": 19,
+      "action": "edit",
+      "path": "src/sink.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:03:50.842Z"
+     },
+     {
+      "kind": "tool",
+      "round": 19,
+      "action": "edit",
+      "path": "src/email.js",
+      "decision": "allow",
+      "time": "2026-10-29T09:03:50.849Z"
+     },
+     {
+      "kind": "model",
+      "round": 20,
+      "time": "2026-10-29T09:03:54.399Z",
+      "costUsd": 0.005858159999999999,
+      "tokens": 86087,
+      "durationMs": 3547
+     },
+     {
+      "kind": "tool",
+      "round": 20,
+      "action": "grep",
+      "path": "src",
+      "decision": "allow",
+      "time": "2026-10-29T09:03:54.401Z"
+     },
+     {
+      "kind": "tool",
+      "round": 20,
+      "action": "grep",
+      "path": "src",
+      "decision": "allow",
+      "time": "2026-10-29T09:03:54.664Z"
+     }
+    ],
+    "retries": [
+     "socket hang up"
+    ]
+   }
+  ],
+  "partTally": "tools: read 42 · grep 17 · edit 47 · recall 1 · denied 0",
+  "partBreakdown": "edit 47 · read 42 · grep 17 · recall 1"
+ },
+ "step": {
+  "title": "zero-target-errors",
+  "number": 3,
+  "state": "done",
+  "rounds": 28,
+  "toolCalls": 55,
+  "wallMs": 174767,
+  "costUsd": 0.07871064,
+  "tries": [
+   {
+    "n": 1,
+    "iteration": 1,
+    "thinking": "thinking off",
+    "outcome": "red",
+    "startTs": "2026-10-29T08:47:56.270Z",
+    "endTs": "2026-10-29T08:48:44.568Z",
+    "wallMs": 48298,
+    "costUsd": 0.039761279999999996,
+    "tokens": 25304,
+    "rounds": 21,
+    "tally": "tools: read 8 · grep 4 · edit 20 · denied 0",
+    "toolCalls": 32,
+    "checks": [
+     {
+      "n": 1,
+      "name": "changed-from-seed",
+      "question": "did it change any file?",
+      "status": "pass",
+      "note": "1 file(s) changed under src/**"
+     },
+     {
+      "n": 2,
+      "name": "typecheck-target-zero-errors",
+      "question": "src/checks.js has 0 type errors?",
+      "status": "fail",
+      "note": "11 reasons",
+      "from": "from line 1 ~ Do not add @ts-ignore, @ts-expect-error, or any casts to any.; Do not change tsconfig.json or package.json.",
+      "reasons": [
+       "term 0: 46 matching line(s) dropped by the scope filter",
+       "7 against a baseline of 0 (lower-is-better) — worse",
+       "close:   baseline declared 0",
+       "7 match(es), subtotal 7, contributes +7",
+       "error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string | URL | Request'.",
+       "error TS2769: No overload matches this call.",
+       "error TS2769: No overload matches this call.",
+       "error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.",
+       "error TS18048: 'maxAgeHours' is possibly 'undefined'.",
+       "error TS2322: Type 'string | undefined' is not assignable to type 'string'.",
+       "error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'."
+      ],
+      "gap": "term 0: 46 matching line(s) dropped by the scope filter",
+      "more": 10,
+      "moreText": "(+10 more)",
+      "reasonsLabel": "the 11 reasons"
+     }
+    ],
+    "rows": [
+     {
+      "kind": "model",
+      "round": 1,
+      "time": "2026-10-29T08:47:57.793Z",
+      "costUsd": 0.0013090799999999998,
+      "tokens": 3847,
+      "durationMs": 1497
+     },
+     {
+      "kind": "tool",
+      "round": 1,
+      "action": "read",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:47:57.794Z"
+     },
+     {
+      "kind": "tool",
+      "round": 1,
+      "action": "read",
+      "path": "tsconfig.json",
+      "decision": "allow",
+      "time": "2026-10-29T08:47:57.795Z"
+     },
+     {
+      "kind": "model",
+      "round": 2,
+      "time": "2026-10-29T08:47:59.162Z",
+      "costUsd": 0.0022589999999999997,
+      "tokens": 7069,
+      "durationMs": 1366
+     },
+     {
+      "kind": "tool",
+      "round": 2,
+      "action": "read",
+      "path": "src/run.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:47:59.163Z"
+     },
+     {
+      "kind": "tool",
+      "round": 2,
+      "action": "read",
+      "path": "src/index.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:47:59.165Z"
+     },
+     {
+      "kind": "model",
+      "round": 3,
+      "time": "2026-10-29T08:48:00.789Z",
+      "costUsd": 0.0015053999999999998,
+      "tokens": 8658,
+      "durationMs": 1621
+     },
+     {
+      "kind": "tool",
+      "round": 3,
+      "action": "grep",
+      "path": ".",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:00.790Z"
+     },
+     {
+      "kind": "tool",
+      "round": 3,
+      "action": "read",
+      "path": "package.json",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:00.932Z"
+     },
+     {
+      "kind": "model",
+      "round": 4,
+      "time": "2026-10-29T08:48:02.755Z",
+      "costUsd": 0.0032781599999999996,
+      "tokens": 12949,
+      "durationMs": 1822
+     },
+     {
+      "kind": "tool",
+      "round": 4,
+      "action": "grep",
+      "path": "test",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:02.756Z"
+     },
+     {
+      "kind": "tool",
+      "round": 4,
+      "action": "grep",
+      "path": "src",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:02.862Z"
+     },
+     {
+      "kind": "model",
+      "round": 5,
+      "time": "2026-10-29T08:48:04.445Z",
+      "costUsd": 0.0011062799999999999,
+      "tokens": 13345,
+      "durationMs": 1457
+     },
+     {
+      "kind": "tool",
+      "round": 5,
+      "action": "grep",
+      "path": "test/pulselog.test.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:04.446Z"
+     },
+     {
+      "kind": "model",
+      "round": 6,
+      "time": "2026-10-29T08:48:06.989Z",
+      "costUsd": 0.00226152,
+      "tokens": 15639,
+      "durationMs": 2436
+     },
+     {
+      "kind": "tool",
+      "round": 6,
+      "action": "read",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:06.991Z"
+     },
+     {
+      "kind": "model",
+      "round": 7,
+      "time": "2026-10-29T08:48:09.888Z",
+      "costUsd": 0.00157476,
+      "tokens": 16314,
+      "durationMs": 2893
+     },
+     {
+      "kind": "tool",
+      "round": 7,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:09.889Z"
+     },
+     {
+      "kind": "model",
+      "round": 8,
+      "time": "2026-10-29T08:48:12.248Z",
+      "costUsd": 0.0015262799999999999,
+      "tokens": 16720,
+      "durationMs": 2357
+     },
+     {
+      "kind": "tool",
+      "round": 8,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:12.250Z"
+     },
+     {
+      "kind": "tool",
+      "round": 8,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:12.252Z"
+     },
+     {
+      "kind": "model",
+      "round": 9,
+      "time": "2026-10-29T08:48:14.405Z",
+      "costUsd": 0.001488,
+      "tokens": 17153,
+      "durationMs": 2152
+     },
+     {
+      "kind": "tool",
+      "round": 9,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:14.406Z"
+     },
+     {
+      "kind": "tool",
+      "round": 9,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:14.407Z"
+     },
+     {
+      "kind": "model",
+      "round": 10,
+      "time": "2026-10-29T08:48:16.234Z",
+      "costUsd": 0.0015344399999999998,
+      "tokens": 17581,
+      "durationMs": 1826
+     },
+     {
+      "kind": "tool",
+      "round": 10,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:16.235Z"
+     },
+     {
+      "kind": "tool",
+      "round": 10,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:16.236Z"
+     },
+     {
+      "kind": "model",
+      "round": 11,
+      "time": "2026-10-29T08:48:18.589Z",
+      "costUsd": 0.0015807599999999998,
+      "tokens": 18064,
+      "durationMs": 2352
+     },
+     {
+      "kind": "tool",
+      "round": 11,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:18.590Z"
+     },
+     {
+      "kind": "tool",
+      "round": 11,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:18.591Z"
+     },
+     {
+      "kind": "model",
+      "round": 12,
+      "time": "2026-10-29T08:48:20.308Z",
+      "costUsd": 0.00131448,
+      "tokens": 18314,
+      "durationMs": 1716
+     },
+     {
+      "kind": "tool",
+      "round": 12,
+      "action": "read",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:20.311Z"
+     },
+     {
+      "kind": "model",
+      "round": 13,
+      "time": "2026-10-29T08:48:22.955Z",
+      "costUsd": 0.00338664,
+      "tokens": 21726,
+      "durationMs": 2643
+     },
+     {
+      "kind": "tool",
+      "round": 13,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:22.963Z"
+     },
+     {
+      "kind": "tool",
+      "round": 13,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:22.970Z"
+     },
+     {
+      "kind": "model",
+      "round": 14,
+      "time": "2026-10-29T08:48:25.258Z",
+      "costUsd": 0.0018859200000000001,
+      "tokens": 22234,
+      "durationMs": 2283
+     },
+     {
+      "kind": "tool",
+      "round": 14,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:25.261Z"
+     },
+     {
+      "kind": "tool",
+      "round": 14,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:25.264Z"
+     },
+     {
+      "kind": "model",
+      "round": 15,
+      "time": "2026-10-29T08:48:27.498Z",
+      "costUsd": 0.00189144,
+      "tokens": 22723,
+      "durationMs": 2230
+     },
+     {
+      "kind": "tool",
+      "round": 15,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:27.500Z"
+     },
+     {
+      "kind": "tool",
+      "round": 15,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:27.504Z"
+     },
+     {
+      "kind": "model",
+      "round": 16,
+      "time": "2026-10-29T08:48:29.559Z",
+      "costUsd": 0.0019107599999999998,
+      "tokens": 23214,
+      "durationMs": 2052
+     },
+     {
+      "kind": "tool",
+      "round": 16,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:29.563Z"
+     },
+     {
+      "kind": "tool",
+      "round": 16,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:29.566Z"
+     },
+     {
+      "kind": "model",
+      "round": 17,
+      "time": "2026-10-29T08:48:31.492Z",
+      "costUsd": 0.00171408,
+      "tokens": 23526,
+      "durationMs": 1922
+     },
+     {
+      "kind": "tool",
+      "round": 17,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:31.503Z"
+     },
+     {
+      "kind": "model",
+      "round": 18,
+      "time": "2026-10-29T08:48:33.261Z",
+      "costUsd": 0.00162564,
+      "tokens": 23692,
+      "durationMs": 1750
+     },
+     {
+      "kind": "tool",
+      "round": 18,
+      "action": "read",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:33.263Z"
+     },
+     {
+      "kind": "model",
+      "round": 19,
+      "time": "2026-10-29T08:48:35.631Z",
+      "costUsd": 0.0025013999999999995,
+      "tokens": 25150,
+      "durationMs": 2366
+     },
+     {
+      "kind": "tool",
+      "round": 19,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:35.632Z"
+     },
+     {
+      "kind": "model",
+      "round": 20,
+      "time": "2026-10-29T08:48:37.372Z",
+      "costUsd": 0.0019494,
+      "tokens": 25465,
+      "durationMs": 1739
+     },
+     {
+      "kind": "tool",
+      "round": 20,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:37.379Z"
+     },
+     {
+      "kind": "model",
+      "round": 21,
+      "time": "2026-10-29T08:48:40.903Z",
+      "costUsd": 0.0021578400000000003,
+      "tokens": 25969,
+      "durationMs": 3515
+     }
+    ]
+   },
+   {
+    "n": 2,
+    "iteration": 2,
+    "thinking": "thinking on",
+    "outcome": "green",
+    "startTs": "2026-10-29T08:48:44.572Z",
+    "endTs": "2026-10-29T08:50:50.995Z",
+    "wallMs": 126423,
+    "costUsd": 0.038949359999999995,
+    "tokens": 32483,
+    "rounds": 7,
+    "tally": "tools: read 4 · grep 1 · edit 18 · denied 0",
+    "toolCalls": 23,
+    "checks": [
+     {
+      "n": 1,
+      "name": "changed-from-seed",
+      "question": "did it change any file?",
+      "status": "pass",
+      "note": "1 file(s) changed under src/**"
+     },
+     {
+      "n": 2,
+      "name": "typecheck-target-zero-errors",
+      "question": "src/checks.js has 0 type errors?",
+      "status": "pass",
+      "note": null,
+      "from": "from line 1 ~ Do not add @ts-ignore, @ts-expect-error, or any casts to any.; Do not change tsconfig.json or package.json."
+     }
+    ],
+    "rows": [
+     {
+      "kind": "model",
+      "round": 1,
+      "time": "2026-10-29T08:48:46.200Z",
+      "costUsd": 0.0015250799999999996,
+      "tokens": 4211,
+      "durationMs": 1566
+     },
+     {
+      "kind": "tool",
+      "round": 1,
+      "action": "read",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:46.201Z"
+     },
+     {
+      "kind": "tool",
+      "round": 1,
+      "action": "read",
+      "path": "tsconfig.json",
+      "decision": "allow",
+      "time": "2026-10-29T08:48:46.204Z"
+     },
+     {
+      "kind": "model",
+      "round": 2,
+      "time": "2026-10-29T08:49:08.811Z",
+      "costUsd": 0.006771959999999999,
+      "tokens": 11198,
+      "durationMs": 22606
+     },
+     {
+      "kind": "tool",
+      "round": 2,
+      "action": "grep",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:49:08.817Z"
+     },
+     {
+      "kind": "tool",
+      "round": 2,
+      "action": "read",
+      "path": "src/run.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:49:09.023Z"
+     },
+     {
+      "kind": "model",
+      "round": 3,
+      "time": "2026-10-29T08:49:33.357Z",
+      "costUsd": 0.00745116,
+      "tokens": 17818,
+      "durationMs": 24322
+     },
+     {
+      "kind": "tool",
+      "round": 3,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:49:33.359Z"
+     },
+     {
+      "kind": "tool",
+      "round": 3,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:49:33.362Z"
+     },
+     {
+      "kind": "tool",
+      "round": 3,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:49:33.364Z"
+     },
+     {
+      "kind": "tool",
+      "round": 3,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:49:33.367Z"
+     },
+     {
+      "kind": "tool",
+      "round": 3,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:49:33.369Z"
+     },
+     {
+      "kind": "tool",
+      "round": 3,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:49:33.371Z"
+     },
+     {
+      "kind": "model",
+      "round": 4,
+      "time": "2026-10-29T08:50:23.910Z",
+      "costUsd": 0.011937119999999999,
+      "tokens": 27054,
+      "durationMs": 50538
+     },
+     {
+      "kind": "tool",
+      "round": 4,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:50:23.911Z"
+     },
+     {
+      "kind": "tool",
+      "round": 4,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:50:23.913Z"
+     },
+     {
+      "kind": "tool",
+      "round": 4,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:50:23.914Z"
+     },
+     {
+      "kind": "tool",
+      "round": 4,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:50:23.915Z"
+     },
+     {
+      "kind": "tool",
+      "round": 4,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:50:23.916Z"
+     },
+     {
+      "kind": "tool",
+      "round": 4,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:50:23.918Z"
+     },
+     {
+      "kind": "model",
+      "round": 5,
+      "time": "2026-10-29T08:50:28.523Z",
+      "costUsd": 0.00320568,
+      "tokens": 28543,
+      "durationMs": 4604
+     },
+     {
+      "kind": "tool",
+      "round": 5,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:50:28.524Z"
+     },
+     {
+      "kind": "tool",
+      "round": 5,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:50:28.527Z"
+     },
+     {
+      "kind": "tool",
+      "round": 5,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:50:28.530Z"
+     },
+     {
+      "kind": "tool",
+      "round": 5,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:50:28.534Z"
+     },
+     {
+      "kind": "tool",
+      "round": 5,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:50:28.538Z"
+     },
+     {
+      "kind": "tool",
+      "round": 5,
+      "action": "edit",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:50:28.542Z"
+     },
+     {
+      "kind": "model",
+      "round": 6,
+      "time": "2026-10-29T08:50:32.814Z",
+      "costUsd": 0.0026955599999999996,
+      "tokens": 29496,
+      "durationMs": 4270
+     },
+     {
+      "kind": "tool",
+      "round": 6,
+      "action": "read",
+      "path": "src/checks.js",
+      "decision": "allow",
+      "time": "2026-10-29T08:50:32.815Z"
+     },
+     {
+      "kind": "model",
+      "round": 7,
+      "time": "2026-10-29T08:50:42.054Z",
+      "costUsd": 0.0053628,
+      "tokens": 34099,
+      "durationMs": 9238
+     }
+    ]
+   }
+  ],
+  "partTally": "tools: read 12 · grep 5 · edit 38 · denied 0",
+  "partBreakdown": "edit 38 · read 12 · grep 5"
+ }
+};
+
+/* step 1 of run mvtatlxw (green first try). Source: spine u-mvtatlxw.jsonl (step-start/step-end/exit-eval, seq 43-64) + u-mvtatlxw-gate-audit.jsonl rows 2026-10-29T08:47:16.986Z..08:47:33.655Z, rows built the same way as the other steps. The step also has an artifact-written plan exit that has no panel question wording, so only the tree-changed check is shown. */
+window.FIXTURES.step2 = {
+ "title": "typedef-and-helpers",
+ "number": 1,
+ "state": "done",
+ "rounds": 5,
+ "toolCalls": 8,
+ "wallMs": 16686,
+ "costUsd": 0.00931032,
+ "tries": [
+  {
+   "n": 1,
+   "iteration": 1,
+   "thinking": "thinking off",
+   "outcome": "green",
+   "startTs": "2026-10-29T08:47:16.986Z",
+   "endTs": "2026-10-29T08:47:33.655Z",
+   "wallMs": 16686,
+   "costUsd": 0.00931032,
+   "tokens": 37145,
+   "rounds": 5,
+   "tally": "tools: read 7 · write 1 · denied 0",
+   "toolCalls": 8,
+   "checks": [
+    {
+     "n": 1,
+     "name": "changed-from-seed",
+     "question": "did it change any file?",
+     "status": "pass",
+     "note": "1 file(s) changed under src/**"
+    }
+   ],
+   "rows": [
+    {
+     "kind": "model",
+     "round": 1,
+     "time": "2026-10-29T08:47:18.597Z",
+     "costUsd": 0.00082608,
+     "tokens": 3097,
+     "durationMs": 1579
+    },
+    {
+     "kind": "tool",
+     "round": 1,
+     "action": "read",
+     "path": "src/checks.js",
+     "decision": "allow",
+     "time": "2026-10-29T08:47:18.598Z"
+    },
+    {
+     "kind": "tool",
+     "round": 1,
+     "action": "read",
+     "path": ".",
+     "decision": "allow",
+     "time": "2026-10-29T08:47:18.601Z"
+    },
+    {
+     "kind": "model",
+     "round": 2,
+     "time": "2026-10-29T08:47:20.124Z",
+     "costUsd": 0.00189132,
+     "tokens": 5734,
+     "durationMs": 1518
+    },
+    {
+     "kind": "tool",
+     "round": 2,
+     "action": "read",
+     "path": ".",
+     "decision": "allow",
+     "time": "2026-10-29T08:47:20.126Z"
+    },
+    {
+     "kind": "tool",
+     "round": 2,
+     "action": "read",
+     "path": ".",
+     "decision": "allow",
+     "time": "2026-10-29T08:47:20.134Z"
+    },
+    {
+     "kind": "tool",
+     "round": 2,
+     "action": "read",
+     "path": "src",
+     "decision": "allow",
+     "time": "2026-10-29T08:47:20.146Z"
+    },
+    {
+     "kind": "model",
+     "round": 3,
+     "time": "2026-10-29T08:47:21.814Z",
+     "costUsd": 0.0012283199999999998,
+     "tokens": 6977,
+     "durationMs": 1568
+    },
+    {
+     "kind": "tool",
+     "round": 3,
+     "action": "read",
+     "path": "src/checks.js",
+     "decision": "allow",
+     "time": "2026-10-29T08:47:21.815Z"
+    },
+    {
+     "kind": "tool",
+     "round": 3,
+     "action": "read",
+     "path": "src/run.js",
+     "decision": "allow",
+     "time": "2026-10-29T08:47:21.819Z"
+    },
+    {
+     "kind": "model",
+     "round": 4,
+     "time": "2026-10-29T08:47:31.044Z",
+     "costUsd": 0.004209119999999999,
+     "tokens": 10451,
+     "durationMs": 9224
+    },
+    {
+     "kind": "tool",
+     "round": 4,
+     "action": "write",
+     "path": "src/checks.js",
+     "decision": "allow",
+     "time": "2026-10-29T08:47:31.050Z"
+    },
+    {
+     "kind": "model",
+     "round": 5,
+     "time": "2026-10-29T08:47:33.625Z",
+     "costUsd": 0.0011554799999999997,
+     "tokens": 10886,
+     "durationMs": 2569
+    }
+   ]
+  }
+ ],
+ "partTally": "tools: read 7 · write 1 · denied 0",
+ "partBreakdown": "read 7 · write 1"
+};
+
+</script>
+<script>
+/* Lab renderer: vanilla JS, reads window.FIXTURES (real data from run mvtatlxw). Helper wording copied from src/panel/index.html. */
+(function () {
+  "use strict";
+  var F = window.FIXTURES;
+  var fix = F.fix, step = F.step;
+
+  /* ---------- helpers copied/adapted from the panel ---------- */
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+  function duration(ms) {
+    if (ms === null || ms === undefined || ms < 0) return "unknown";
+    var s = ms / 1000;
+    if (s < 60) return s.toFixed(1) + "s";
+    var m = Math.floor(s / 60), rem = Math.round(s - m * 60);
+    if (rem === 60) { m += 1; rem = 0; }
+    return m + "m" + String(rem).padStart(2, "0") + "s";
+  }
+  function panelMoney(n) {
+    if (n === null || n === undefined) return "unknown";
+    var v = Number(n);
+    if (!isFinite(v)) return "unknown";
+    var clean = Math.round(v * 1e6) / 1e6;
+    if (clean > 0 && clean < 0.01) {
+      var units = Math.round(clean * 1e4 + 1e-6);
+      if (units <= 0) return "<$0.0001";
+      if (units >= 100) return "$0.01";
+      return "$" + (units / 1e4).toFixed(4);
+    }
+    return "$" + clean.toFixed(2);
+  }
+  function glyphSpan(g) {
+    if (g === "\u2713") return '<span class="glyph-green">' + g + "</span>";
+    if (g === "\u2717") return '<span class="glyph-red">' + g + "</span>";
+    if (g === "?") return '<span class="glyph-q">' + g + "</span>";
+    if (g === "\u00B7") return '<span class="glyph-nr">' + g + "</span>";
+    return g;
+  }
+  function tryGlyph(t) { return t.outcome === "green" ? "\u2713" : (t.outcome === "red" ? "\u2717" : "?"); }
+  function caret(open) { return '<span class="audit-caret">' + (open ? "\u25BC" : "\u25B6") + "</span>"; }
+  function dot(cls, word) { return '<span class="step-state"><span class="dot ' + cls + '"></span><b class="st-word">' + esc(word) + "</b></span>"; }
+  function shortTime(iso) { var m = /T(\d\d:\d\d:\d\d)/.exec(String(iso)); return m ? m[1] : iso; }
+  function plural(n, w) { return n + " " + w + (n === 1 ? "" : "s"); }
+
+  /* ---------- part shell (header button + body), as the Audit tab draws it ---------- */
+  function partHeadHtml(open, p) {
+    var glyphs = p.tries.map(function (t) { return glyphSpan(tryGlyph(t)); }).join("");
+    return caret(open) + dot(p.dotCls, p.word) + " " + esc(p.titleText) + " &middot; " +
+      plural(p.rounds, "call") + " &middot; " + plural(p.toolCalls, "tool") + " &middot; " + duration(p.wallMs) + " &middot; " + panelMoney(p.costUsd) +
+      " &middot; " + glyphs + ' <span class="actor-mark">[model]</span>';
+  }
+  var fixPart = { dotCls: "red", word: "failed", titleText: "fix", rounds: fix.rounds, toolCalls: fix.toolCalls, wallMs: fix.wallMs, costUsd: fix.costUsd, tries: fix.tries };
+  var stepPart = { dotCls: "green", word: "passed", titleText: "3 \u00B7 " + step.title, rounds: step.rounds, toolCalls: step.toolCalls, wallMs: step.wallMs, costUsd: step.costUsd, tries: step.tries };
+  function partShell(p, bodyHtml, tallyText, breakdownText) {
+    return '<div class="audit-part"><button type="button" class="btn audit-part-toggle" aria-expanded="true" data-pk="' + (p === fixPart ? "fix" : "step") + '">' +
+      partHeadHtml(true, p) + "</button>" +
+      '<div class="audit-part-body"><div class="hint">' + esc(breakdownText) + "</div>" +
+      (tallyText ? '<div class="step-tally">' + esc(tallyText) + "</div>" : "") + bodyHtml + "</div></div>";
+  }
+
+  /* ---------- rounds table (lazy, 20 rows a page like the panel) ---------- */
+  var reg = {}, rid = 0;
+  function rowHtml(r, n) {
+    if (r.kind === "model") {
+      return '<tr class="round-header-row"><td>' + r.round + "</td><td>" + n + "</td><td>model call</td><td>&mdash;</td><td>" +
+        esc(panelMoney(r.costUsd) + " \u00B7 " + r.tokens + " tokens \u00B7 " + duration(r.durationMs)) + "</td><td>" + shortTime(r.time) + "</td></tr>";
+    }
+    var w = (r.action === "write" || r.action === "edit");
+    return "<tr" + (w ? ' class="row-write"' : "") + "><td>" + (r.round === null ? "&mdash;" : r.round) + "</td><td>" + n + "</td><td>model &middot; " + esc(r.action) +
+      "</td><td>" + esc(r.path) + '</td><td><span class="badge green">' + esc(r.decision) + "</span></td><td>" + shortTime(r.time) + "</td></tr>";
+  }
+  function roundsInto(body, id, offset) {
+    var d = reg[id], rows = d.t.rows, per = 20, end = Math.min(rows.length, offset + per);
+    var html = rows.slice(offset, end).map(function (r) { return rowHtml(r, d.t.n); }).join("");
+    var old = body.querySelector(".rounds-page-info"); if (old) old.remove();
+    if (offset === 0) {
+      body.innerHTML = '<div class="audit-table-scroll"><table class="rounds-table"><thead><tr><th>Round</th><th>Try</th><th>Action</th><th>Path</th><th>Decision</th><th>Time</th></tr></thead><tbody>' + html + "</tbody></table></div>";
+    } else {
+      body.querySelector("tbody").insertAdjacentHTML("beforeend", html);
+    }
+    body.insertAdjacentHTML("beforeend", '<div class="rounds-page-info"><div class="hint">showing 1&ndash;' + end + " of " + rows.length + "</div>" +
+      (end < rows.length ? '<button class="btn small rounds-load-more" type="button" data-rid="' + id + '" data-end="' + end + '">load more</button>' : "") + "</div>");
+  }
+  function roundsFold(t, label) {
+    if (!t.rows || !t.rows.length) {
+      return '<div class="step-rounds-note">' + (t.source === "opening close" ? "no rounds: the opening close ran before any model call" : "no rounds recorded") + "</div>";
+    }
+    var id = "rf" + (++rid); reg[id] = { t: t };
+    return '<details class="rounds-fold" data-rid="' + id + '"><summary>' + esc(label || roundsLabel(t)) + '</summary><div class="rf-body"><div class="hint">loading&hellip;</div></div></details>';
+  }
+  function roundsLabel(t) {
+    return "rounds \u00B7 " + plural(t.rounds, "call") + " \u00B7 " + plural(t.toolCalls, "tool") + " \u00B7 " + panelMoney(t.costUsd) + " \u00B7 " + duration(t.wallMs);
+  }
+
+  /* ---------- A: the step try block, reused by A, C, D(parts), E ---------- */
+  function firstBad(t) { return (t.checks || []).filter(function (c) { return c.status === "fail" && c.gap; })[0] || null; }
+  function thinkingBit(t) { return t.thinking ? t.thinking : (t.source === "opening close" ? "opening close (no model call)" : null); }
+  function tryLine(t) {
+    if (t.stopped) {
+      return '<div class="try-line">try ' + t.n + (thinkingBit(t) ? " &middot; " + esc(thinkingBit(t)) : "") + " &middot; " + esc(t.stopped.words) + "</div>";
+    }
+    var fb = firstBad(t);
+    return '<div class="try-line">try ' + t.n + " " + glyphSpan(tryGlyph(t)) + (thinkingBit(t) ? " &middot; " + esc(thinkingBit(t)) : "") +
+      (fb ? " &middot; " + esc(fb.gap) + (fb.moreText ? " " + esc(fb.moreText) : "") : "") + "</div>";
+  }
+  function checkMark(c) { return c.status === "pass" ? glyphSpan("\u2713") : (c.status === "fail" ? glyphSpan("\u2717") : glyphSpan("\u00B7")); }
+  function reasonsHtml(c, capped) {
+    if (!c.reasons || !c.reasonsLabel) return "";
+    return '<details class="try-reasons"><summary>' + esc(c.reasonsLabel) + "</summary>" + (capped ? '<div class="gap-box">' : "") +
+      c.reasons.map(function (r) { return "<div>" + esc(r) + "</div>"; }).join("") + (capped ? "</div>" : "") + "</details>";
+  }
+  function checkLine(c) {
+    var note = c.note ? c.note : (c.status === "fail" && c.reasons ? plural(c.reasons.length, "reason") : null);
+    var tail = "";
+    if (c.status === "notrun") tail = " &middot; not run";
+    else if (c.number) tail = ' &middot; <span class="num">' + esc(c.number) + "</span>";
+    else if (c.from) tail = " &middot; " + esc(c.from);
+    return '<div class="try-check' + (c.status === "notrun" ? " notrun" : "") + '">' + c.n + " " + checkMark(c) + " " + esc(c.question) +
+      (note ? "  (" + esc(note) + ")" : "") + tail + "</div>" + (c.status === "fail" ? reasonsHtml(c, false) : "");
+  }
+  function tryBlockA(t) {
+    var h = tryLine(t);
+    if (t.checks) h += t.checks.map(checkLine).join("");
+    return h + roundsFold(t);
+  }
+
+  /* ---------- variants ---------- */
+  function variantA() {
+    return partShell(fixPart, fix.tries.map(tryBlockA).join(""), fix.partTally, fix.partBreakdown);
+  }
+
+  function variantB() {
+    var tries = fix.tries, decl = F.run.declared;
+    var head = '<tr><th class="q">check</th>' + tries.map(function (t) {
+      return '<th class="t">' + t.n + " " + glyphSpan(tryGlyph(t)) + '<span class="hint">' + esc(t.source === "opening close" ? "opening" : (t.thinking || "")) + "</span></th>";
+    }).join("") + "</tr>";
+    var body = "";
+    decl.forEach(function (d) {
+      var tds = "", gaps = "";
+      tries.forEach(function (t) {
+        var c = t.checks ? t.checks[d.n - 1] : null;
+        if (!c) { tds += '<td class="c"><span class="cell unk" title="try ' + t.n + ': no verdict (provider stopped)">?</span></td>'; return; }
+        if (c.status === "pass") tds += '<td class="c"><span class="cell pass" title="passed' + (c.number ? ": " + esc(c.number) : "") + '">' + glyphSpan("\u2713") + "</span></td>";
+        else if (c.status === "notrun") tds += '<td class="c"><span class="cell notrun" title="not run (first-red-wins stopped the close)">' + glyphSpan("\u00B7") + "</span></td>";
+        else {
+          var key = "g" + t.n + "-" + d.n;
+          tds += '<td class="c"><button type="button" class="cell fail" aria-expanded="false" aria-controls="' + key + '" data-gap="' + key + '" title="try ' + t.n + ": failed - click for its gap lines (" + c.reasons.length + ')">' + glyphSpan("\u2717") + "</button></td>";
+          gaps += '<tr class="gap-row" id="' + key + '" hidden><td colspan="' + (tries.length + 1) + '"><div class="gap-title">try ' + t.n + " &middot; " + d.n + " " + esc(d.question) + " &middot; " + plural(c.reasons.length, "reason") + '</div><div class="gap-box">' +
+            c.reasons.map(function (r) { return "<div>" + esc(r) + "</div>"; }).join("") + "</div></td></tr>";
+        }
+      });
+      body += '<tr><td class="q">' + d.n + " " + esc(d.question) + "</td>" + tds + "</tr>" + gaps;
+    });
+    var foot = '<tr class="foot"><td class="q">cost</td>' + tries.map(function (t) { return '<td class="c">' + (t.rounds ? panelMoney(t.costUsd) : "&ndash;") + "</td>"; }).join("") + "</tr>" +
+      '<tr class="foot"><td class="q">time</td>' + tries.map(function (t) { return '<td class="c">' + duration(t.wallMs) + "</td>"; }).join("") + "</tr>" +
+      '<tr class="foot"><td class="q">calls</td>' + tries.map(function (t) { return '<td class="c">' + t.rounds + "</td>"; }).join("") + "</tr>";
+    var grid = '<div class="grid-wrap audit-table-scroll"><table class="grid"><thead>' + head + "</thead><tbody>" + body + foot + "</tbody></table></div>";
+    var stoppedNote = '<div class="step-rounds-note">try 4 &middot; ' + esc(tries[3].stopped.words) + " (the ? column).</div>";
+    var folds = '<div class="sub-label">rounds per try</div><div class="fold-list">' + tries.map(function (t) {
+      return t.rows.length ? '<div class="try-line" style="margin-top:6px">try ' + t.n + " " + (t.stopped ? "" : glyphSpan(tryGlyph(t))) + "</div>" + roundsFold(t) : "";
+    }).join("") + "</div>";
+    return partShell(fixPart, grid + stoppedNote + folds, fix.partTally, fix.partBreakdown);
+  }
+
+  function variantC() {
+    var rows = fix.tries.map(function (t) {
+      var fb = (t.checks || []).filter(function (c) { return c.status === "fail"; })[0] || null;
+      var what = t.stopped ? t.stopped.words : (fb ? fb.n + " " + fb.question : "");
+      var meta = t.rounds ? panelMoney(t.costUsd) + " \u00B7 " + duration(t.wallMs) : duration(t.wallMs);
+      var detail = (t.checks ? t.checks.map(checkLine).join("") : '<div class="step-rounds-note">' + esc(t.stopped.words) + "</div>") + roundsFold(t);
+      return '<details class="c-try"><summary><span class="ct-n">try ' + t.n + " " + (t.stopped ? glyphSpan("?") : glyphSpan(tryGlyph(t))) + '</span>' +
+        '<span class="ct-think">' + esc(thinkingBit(t) || "") + '</span><span class="ct-check">' + esc(what) + '</span><span class="ct-meta">' + esc(meta) + "</span></summary>" +
+        '<div class="c-detail">' + detail + "</div></details>";
+    }).join("");
+    return partShell(fixPart, rows, fix.partTally, fix.partBreakdown);
+  }
+
+  function variantD() {
+    var h = fix.tries.map(function (t) {
+      var out = tryLine(t);
+      if (t.stopped) {
+        out += '<div class="d-verdict"><span class="why">no check ran: the try was cut off before the close could grade it</span></div>' + roundsFold(t);
+        return out;
+      }
+      var red = (t.checks || []).filter(function (c) { return c.status === "fail"; })[0];
+      var passed = t.checks.filter(function (c) { return c.status === "pass"; });
+      var nr = t.checks.filter(function (c) { return c.status === "notrun"; });
+      out += '<div class="d-verdict">' + red.n + " " + glyphSpan("\u2717") + " " + esc(red.question) + ' <span class="why">&middot; rendered the verdict (first red wins) &middot; ' + plural(red.reasons.length, "reason") + "</span></div>";
+      out += '<div class="d-gap"><div class="gap-box">' + red.reasons.map(function (r) { return "<div>" + esc(r) + "</div>"; }).join("") + "</div></div>";
+      var others = passed.concat(nr).sort(function (a, b) { return a.n - b.n; });
+      var sum = [passed.length ? passed.length + " passed" : "", nr.length ? nr.length + " not run" : ""].filter(Boolean).join(", ");
+      out += '<details class="d-others"><summary>other checks: ' + esc(sum || "none") + "</summary>" + others.map(function (c) {
+        return "<div>" + c.n + " " + checkMark(c) + " " + esc(c.question) + (c.status === "notrun" ? " &middot; not run" : (c.number ? " &middot; " + esc(c.number) : "")) + "</div>";
+      }).join("") + "</details>";
+      return out + roundsFold(t);
+    }).join("");
+    return partShell(fixPart, h, fix.partTally, fix.partBreakdown);
+  }
+
+  function variantE() {
+    var stepHtml = partShell(stepPart, step.tries.map(tryBlockA).join(""), step.partTally, step.partBreakdown);
+    var fixHtml = partShell(fixPart, fix.tries.map(tryBlockA).join(""), fix.partTally, fix.partBreakdown);
+    return '<div class="e-caption">Part 3 (a plan step) and the fix part below it, both drawn by the same try block. A step carries 2 checks per try (files changed, then the check it serves); the fix close carries all 8, so its list is longer, nothing else differs.</div>' +
+      stepHtml + fixHtml;
+  }
+
+  /* ---------- F: grid for steps, errors like D ---------- */
+  var fxData = {};
+  var step1Part = { dotCls: "green", word: "passed", titleText: "1 \u00B7 " + F.step2.title, rounds: F.step2.rounds, toolCalls: F.step2.toolCalls, wallMs: F.step2.wallMs, costUsd: F.step2.costUsd, tries: F.step2.tries };
+  function fxGrid(pid, tries, checks) {
+    var dupOf = {};
+    checks.forEach(function (c) { checks.forEach(function (o) { if (o.n > c.n && o.question === c.question && !dupOf[c.n]) dupOf[c.n] = o.n; }); });
+    var head = '<tr><th class="q">check</th>' + tries.map(function (t) {
+      return '<th class="t">try ' + t.n + " " + glyphSpan(t.stopped ? "?" : tryGlyph(t)) + '<span class="hint">' + esc(t.source === "opening close" ? "opening close" : (t.thinking || "")) + "</span></th>";
+    }).join("") + "</tr>";
+    var body = checks.map(function (d) {
+      var tds = tries.map(function (t) {
+        var c = (t.checks || []).filter(function (x) { return x.n === d.n; })[0] || null;
+        if (t.stopped || (!c && !t.checks)) return '<td class="c"><span class="cell unk" title="try ' + t.n + ': no verdict (provider stopped)">?</span></td>';
+        if (!c || c.status === "notrun") return '<td class="c"><span class="cell notrun" title="not run (first-red-wins stopped the close)">' + glyphSpan("\u00B7") + "</span></td>";
+        if (c.status === "pass") return '<td class="c"><span class="cell pass" title="passed' + (c.number ? ": " + esc(c.number) : "") + '">' + glyphSpan("\u2713") + "</span></td>";
+        return '<td class="c"><button type="button" class="cell fail" aria-expanded="false" aria-controls="fxerr-' + pid + '" data-fx="' + pid + ":" + t.n + ":" + d.n + '" title="try ' + t.n + ", check #" + d.n + ': failed - click to read its errors">' + glyphSpan("\u2717") + "</button></td>";
+      }).join("");
+      return '<tr><td class="q">' + d.n + " " + esc(d.question) + "</td>" + tds + "</tr>";
+    }).join("");
+    return '<div class="grid-wrap audit-table-scroll"><table class="grid fgrid"><thead>' + head + "</thead><tbody>" + body + "</tbody></table></div>";
+  }
+  /* errors list: one row per failed (or verdict-less) try; state per part = open rows + expanded checks */
+  function fxFails(t) { return (t.checks || []).filter(function (c) { return c.status === "fail"; }); }
+  function fxRender(pid) {
+    var d = fxData[pid], host = document.getElementById("fxerr-" + pid);
+    if (!host) return;
+    var rows = d.tries.map(function (t) {
+      if (t.stopped) {
+        return '<div class="fx-row fx-row-q"><span class="fx-rowhead"><span class="fx-caret"></span><span class="fx-try">try ' + t.n + '</span><span class="fx-chk">' + glyphSpan("?") + '</span><span class="fx-first fx-faint">' + esc(t.stopped.words) + "</span></span></div>";
+      }
+      var fails = fxFails(t);
+      if (!fails.length) return "";
+      var first = fails[0], total = 0;
+      fails.forEach(function (c) { total += (c.reasons || []).length; });
+      var firstLine = (first.reasons && first.reasons[0]) || first.question;
+      var rest = Math.max(0, total - 1);
+      var open = !!d.open[t.n], key = pid + ":" + t.n;
+      var head = '<button type="button" class="fx-rowhead" id="fxrow-' + key.replace(":", "-") + '" data-fxrow="' + key + '" aria-expanded="' + (open ? "true" : "false") + '"><span class="fx-caret">' + (open ? "\u25BE" : "\u25B8") + '</span><span class="fx-try">try ' + t.n + '</span><span class="fx-chk">#' + first.n + " " + glyphSpan("\u2717") + (fails.length > 1 ? ' <span class="fx-faint">+' + (fails.length - 1) + " more check" + (fails.length > 2 ? "s" : "") + "</span>" : "") + '</span><span class="fx-first" title="' + esc(firstLine) + '">' + esc(firstLine) + "</span>" + (rest ? '<span class="fx-count">(+' + rest + " more)</span>" : "") + "</button>";
+      var body = "";
+      if (open) {
+        body = '<div class="fx-body">' + fails.map(function (c) {
+          var lines = c.reasons || [], cap = 8, ex = !!d.more[t.n + ":" + c.n], shown = ex ? lines : lines.slice(0, cap);
+          return (fails.length > 1 ? '<div class="fx-sub">#' + c.n + " " + esc(c.question) + "</div>" : "") +
+            '<div class="fx-lines">' + shown.map(function (r) { return "<div>" + esc(r) + "</div>"; }).join("") + "</div>" +
+            (lines.length > cap ? '<button type="button" class="fx-more" data-fxmore="' + pid + ":" + t.n + ":" + c.n + '">' + (ex ? "show first " + cap + " only" : "+" + (lines.length - cap) + " more lines") + "</button>" : "");
+        }).join("") + "</div>";
+      }
+      return '<div class="fx-row' + (open ? " open" : "") + '">' + head + body + "</div>";
+    }).join("");
+    host.hidden = !rows;
+    host.innerHTML = rows ? '<div class="fx-label">errors</div>' + rows : "";
+    var part = document.querySelector('[data-fxpart="' + pid + '"]');
+    Array.prototype.forEach.call(part.querySelectorAll("[data-fx]"), function (b) {
+      var q = b.getAttribute("data-fx").split(":");
+      b.setAttribute("aria-expanded", d.open[q[1]] ? "true" : "false");
+    });
+  }
+  function fxToggle(pid, tn, force, focusRow) {
+    var d = fxData[pid];
+    d.open[tn] = force === undefined ? !d.open[tn] : force;
+    fxRender(pid);
+    var el = document.getElementById("fxrow-" + pid + "-" + tn);
+    if (el && focusRow) { el.scrollIntoView({ block: "nearest" }); el.focus(); }
+    else if (el && !focusRow) el.focus();
+  }
+  function fxPart(pid, part, src, tallyText, breakdown, checks, extra) {
+    fxData[pid] = { tries: src.tries, open: {}, more: {} };
+    var folds = '<div class="sub-label">rounds per try</div><div class="fold-list">' + src.tries.map(function (t) {
+      return '<div class="try-line" style="margin-top:6px">try ' + t.n + " " + (t.stopped ? glyphSpan("?") : glyphSpan(tryGlyph(t))) + "</div>" +
+        roundsFold(t, "try " + t.n + " rounds (" + plural(t.rounds, "call") + ")");
+    }).join("") + "</div>";
+    var inner = fxGrid(pid, src.tries, checks) + '<div class="fx-errors" id="fxerr-' + pid + '" hidden></div>' + (extra || "") + folds;
+    return partShell(part, '<div data-fxpart="' + pid + '">' + inner + "</div>", tallyText, breakdown);
+  }
+  function stepChecks(tries) {
+    var seen = {}, out = [];
+    tries.forEach(function (t) { (t.checks || []).forEach(function (c) { if (!seen[c.n]) { seen[c.n] = 1; out.push({ n: c.n, question: c.question }); } }); });
+    return out.sort(function (a, b) { return a.n - b.n; });
+  }
+  function variantF() {
+    var s1 = F.step2;
+    var h = fxPart("step1", step1Part, s1, s1.partTally, s1.partBreakdown, stepChecks(s1.tries));
+    h += fxPart("step3", stepPart, step, step.partTally, step.partBreakdown, stepChecks(step.tries));
+    h += fxPart("fix", fixPart, fix, fix.partTally, fix.partBreakdown, F.run.declared,
+      '<div class="step-rounds-note">try 4 &middot; ' + esc(fix.tries[3].stopped.words) + " (the ? column).</div>");
+    return h;
+  }
+  function fxDefaults() {
+    Object.keys(fxData).forEach(function (pid) {
+      var last = null;
+      fxData[pid].tries.forEach(function (t) { if (!t.stopped && fxFails(t).length) last = t.n; });
+      if (last !== null) fxData[pid].open[last] = true;
+      fxRender(pid);
+    });
+  }
+
+  var builders = { A: variantA, B: variantB, C: variantC, D: variantD, E: variantE, F: variantF };
+  Object.keys(builders).forEach(function (k) {
+    var host = document.querySelector('[data-variant="' + k + '"] .variant-render');
+    if (host) host.innerHTML = builders[k]();
+  });
+  fxDefaults();
+
+  /* ---------- events ---------- */
+  document.addEventListener("click", function (e) {
+    var tgl = e.target.closest(".audit-part-toggle");
+    if (tgl) {
+      var open = tgl.getAttribute("aria-expanded") === "true";
+      tgl.setAttribute("aria-expanded", open ? "false" : "true");
+      tgl.nextElementSibling.hidden = open;
+      var c = tgl.querySelector(".audit-caret"); if (c) c.textContent = open ? "\u25B6" : "\u25BC";
+      return;
+    }
+    var fxm = e.target.closest("[data-fxmore]");
+    if (fxm) {
+      var mq = fxm.getAttribute("data-fxmore").split(":"), mk = mq[1] + ":" + mq[2];
+      fxData[mq[0]].more[mk] = !fxData[mq[0]].more[mk];
+      fxRender(mq[0]);
+      var again = document.querySelector('[data-fxmore="' + fxm.getAttribute("data-fxmore") + '"]'); if (again) again.focus();
+      return;
+    }
+    var fxr = e.target.closest("[data-fxrow]");
+    if (fxr) { var rq = fxr.getAttribute("data-fxrow").split(":"); fxToggle(rq[0], parseInt(rq[1], 10), undefined, false); return; }
+    var fxc = e.target.closest("[data-fx]");
+    if (fxc) {
+      var fp = fxc.getAttribute("data-fx").split(":"), ftn = parseInt(fp[1], 10);
+      fxToggle(fp[0], ftn, fxData[fp[0]].open[ftn] ? false : true, true);
+      return;
+    }
+    var cell = e.target.closest("[data-gap]");
+    if (cell) {
+      var row = document.getElementById(cell.getAttribute("data-gap"));
+      var o = cell.getAttribute("aria-expanded") === "true";
+      cell.setAttribute("aria-expanded", o ? "false" : "true");
+      if (row) row.hidden = o;
+      return;
+    }
+    var more = e.target.closest(".rounds-load-more");
+    if (more) {
+      var body = more.closest(".rf-body");
+      roundsInto(body, more.getAttribute("data-rid"), parseInt(more.getAttribute("data-end"), 10));
+    }
+  });
+  document.addEventListener("toggle", function (e) {
+    var d = e.target;
+    if (d.classList && d.classList.contains("rounds-fold") && d.open && !d.getAttribute("data-built")) {
+      d.setAttribute("data-built", "1");
+      roundsInto(d.querySelector(".rf-body"), d.getAttribute("data-rid"), 0);
+    }
+  }, true);
+
+  /* theme toggle: auto -> dark -> light */
+  var tb = document.getElementById("theme-toggle");
+  if (tb) tb.addEventListener("click", function () {
+    var cur = document.documentElement.getAttribute("data-theme");
+    var next = cur === "dark" ? "light" : (cur === "light" ? null : "dark");
+    if (next) document.documentElement.setAttribute("data-theme", next); else document.documentElement.removeAttribute("data-theme");
+    tb.textContent = "theme: " + (next || "auto");
+  });
+})();
+
+</script>
+</body>
+</html>

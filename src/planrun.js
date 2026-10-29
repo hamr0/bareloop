@@ -28,7 +28,7 @@ import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
 import { runClose, runStages, ralph, CLOSE_FAULTS, boundGap } from './ralph.js';
 import { validatePlan, legalScopes, closeStagesOf } from './plan.js';
-import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, RETRIEVAL_PAIR } from './plan.js';
+import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, RETRIEVAL_PAIR, EXIT_EXAMPLE } from './plan.js';
 import { snapshotScope, evalExits, CHECK_GAP_MAX } from './exits.js';
 import { createRoot } from './root.js';
 import { createStallWatch, STALL_MS, MAX_STALLS } from './stall.js';
@@ -38,6 +38,7 @@ import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, PERSONA_TOOLS, strategyFor } from './tools.js';
 import { anySuppressionWarning } from './authoring.js';
 import { createReadShim, readShimArm, readShimStrategy } from './readshim.js';
+import { createHandoffStore, trackReads } from './handoff.js';
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { startAttemptDiff } from './attemptdiff.js';
 import { validateBridge, loadGate, newestEligibleVersion, reuseEligibility, quarantinesCredit, QUARANTINED_CODE } from './bridges.js';
@@ -699,7 +700,7 @@ strictly in array order. Each step (no other fields exist):
   inside it, and a "tree-changed" exit's scope must not be disjoint from it (one that
   CONTAINS it is fine) — otherwise every write the step could make is denied, or the
   exit can never pass, on every attempt.
-- "exit": 1..${MAX_EXITS_PER_STEP} form checks that ALL must pass (AND), each one of:
+- "exit": REQUIRED on EVERY step — 1..${MAX_EXITS_PER_STEP} form checks that ALL must pass (AND), each one of:
     {"type":"artifact-written","path":"...","pattern":"optional regex"}
     {"type":"tree-changed","scope":"<copy one value from the offered scopes below>"}
     {"type":"json-valid","path":"..."}
@@ -708,6 +709,7 @@ strictly in array order. Each step (no other fields exist):
   it character for character. No other name exists, and you cannot add one.
   A check-passes on a write-granted step MUST be paired with a tree-changed exit
   (the repository starts green — a lone check would pass on the untouched tree).
+  ${EXIT_EXAMPLE}
   A check-passes may ONLY appear on a step whose tools include write or edit: a
   failing check is reported back to THAT step's worker for another attempt, so
   the step must be able to act on the report. Do not plan a separate read-only
@@ -1022,6 +1024,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // would be wrong and would look fine). Only the guard runs here; the flag itself
   // is still threaded onward as written.
   readShimArm(readShim);
+  // THE HANDOFF NOTE (src/handoff.js): the paths earlier asks of THIS run read. In memory only, so a resumed leg starts empty.
+  // The switch is the signed spec's `handoffNote` (absent = on, only `false` turns it off).
+  const handoffOn = job.handoffNote !== false;
+  const handoff = createHandoffStore({ workdir });
   // The scout switch's guard, same class and same door: a mis-typed value
   // coerced by truthiness would run the scout under an "off" label (or skip it
   // under an "on" one) and no reading of the results afterwards could recover
@@ -2567,6 +2573,26 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // below anything a second/minute-scale timer can perceive. Store output is byte-identical.
     if (ctx.length) await lc.index({ yield: true });
     const toolDefs = [...shell, ...ctx];
+    // The handoff note: record what each ask READS (the allowed read-class calls), hand the next step/fix ask the map.
+    // Scout and drafter asks feed the store but are never given a note.
+    /** @type {Set<string>} */
+    let askReads = new Set();
+    if (handoffOn) trackReads(toolDefs, [TOOL_BY_VERB.read, TOOL_BY_VERB.get], (a) => askReads.add(a), workdir);
+    /** @param {(prompt: string, defs?: any) => Promise<any>} inner */
+    const withHandoff = (inner) => (!handoffOn ? inner : async (/** @type {string} */ prompt, /** @type {any} */ defs) => {
+      askReads = new Set();
+      let p = prompt;
+      if (phase === 'fix' || phase.startsWith('step:')) {
+        // The index is incremental: refreshing it here is what keeps the symbol ranges true to the files as they now are.
+        try { if (ctx.length) await lc.index({ yield: true }); } catch { /* the map falls back to line counts */ }
+        const note = handoff.render({ getNode: (rel) => lc.getNode(rel) });
+        if (note.text) {
+          p = `${prompt}\n\n${note.text}`;
+          emit('handoff-note', { phase, iteration: roundIteration, chars: note.text.length, paths: note.paths });
+        }
+      }
+      try { return await inner(p, defs); } finally { handoff.absorb(askReads); }
+    });
     // F19 per VERB (P, corrected 2026-07-31): a strategy SENTENCE rides only with
     // the verb it names. Gating per COMPONENT was close but over-reached — a
     // worker granted only `impact` must not be steered to tools it lacks, and the
@@ -2633,6 +2659,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       const askFrom = async () => null;
       const ask = async (prompt, defs = toolDefs) => {
         let r;
+        shim.reset(); // each ask() is a fresh session: the model holds nothing earlier asks were handed
         try {
           r = await loop.run([{ role: 'user', content: prompt }], defs, { maxTokens: 32000 });
         } catch (e) {
@@ -2663,7 +2690,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         }
         return r;
       };
-      return { ask, askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };
+      return { ask: withHandoff(ask), askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };
     }
 
     // ── LOOP path: the injected provider (anthropic-api and every other
@@ -2862,6 +2889,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     };
     const ask = async (prompt, defs = toolDefs) => {
       let r;
+      // A fresh Loop = a fresh transcript: the read shim's delivered-ledger resets with it, or a
+      // later attempt's re-read is answered with a pointer to bytes its model never saw (F252).
+      // askFrom (a continuation of a prior transcript) deliberately does NOT reset.
+      shim.reset();
       const thinkOpts = thinkingForCall();
       try {
         r = await stallWatch.watch((gen) => newLoop(gen).run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000, ...callBounds(), ...thinkOpts }));
@@ -2933,7 +2964,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       }
       return r;
     };
-    return { ask, askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };
+    return { ask: withHandoff(ask), askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };
   }
 
   /** relay a throw from OUTSIDE ralph (scout/plan drafting/fix) as its honest

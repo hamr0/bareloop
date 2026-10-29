@@ -2374,7 +2374,19 @@ test('plain-checks: stageQuestionText — count-not-worse\'s three TYPES-genre s
   assert.equal(declaredByName.get('typecheck-target-multi'), 'type errors is 0?', 'more than one scoped file falls back to the generic zero-goal wording, never a guessed filename');
   assert.equal(declaredByName.get('typecheck-outside-not-worse'), "other files didn't get more type errors?");
   assert.equal(declaredByName.get('tests-kept'), 'did all the old tests still exist?');
-  assert.equal(declaredByName.get('suite-green'), 'does the test suite pass?');
+  assert.equal(declaredByName.get('suite-green'), 'does "npm test" exit clean?');
+});
+
+test('plain-checks (F256): two command-exit stages with different commands read DIFFERENT questions, each quoting its own command; a missing cmd returns null', async () => {
+  const { stageQuestionText } = await import('../src/stagewords.js');
+  const ask = (params) => stageQuestionText({ kind: 'command-exit', params, genre: 'types', suiteCmdKeys: new Set() });
+  const suite = ask({ cmd: 'npm', args: ['test'], expectExit: 0 });
+  const tsc = ask({ cmd: 'npx', args: ['tsc', '--noEmit', '--strict'], expectExit: 0 });
+  assert.equal(suite, 'does "npm test" exit clean?');
+  assert.equal(tsc, 'does "npx tsc --noEmit --strict" exit clean?');
+  assert.notEqual(suite, tsc);
+  assert.equal(ask({ args: ['test'] }), null);
+  assert.equal(ask({ cmd: 5 }), null);
 });
 
 test('plain-checks: stageQuestionText returns null (caller falls back to the stage\'s own name) for an unrecognised genre, a locked kind, and a count-not-worse shape none of the three TYPES rules cover', async (t) => {
@@ -2473,7 +2485,7 @@ test('plain-checks REGRESSION (found live on run mul5fofw\'s own scratch server)
   const fixPart = detail.parts.find((p) => p.kind === 'fix');
   const declaredByName = new Map(fixPart.attempts[0].declaredStages.map((s) => [s.name, s.question]));
   assert.equal(declaredByName.get('typecheck-target-zero-errors'), 'src/checks.js has 0 type errors?', 'a DIFFERENT cmd (typecheck) still gets its real question');
-  assert.equal(declaredByName.get('suite-green'), 'does the test suite pass?');
+  assert.equal(declaredByName.get('suite-green'), 'does "npm test" exit clean?');
   assert.equal(declaredByName.get('suite-zero-failing-tests'), 'no failing tests?', 'same cmd+args as the command-exit suite-green stage -> the failing-test-count half, never "type errors" and never the stage\'s raw name');
 });
 
@@ -2517,7 +2529,7 @@ test('plain-checks: declaredStages travels in DECLARED order and is omitted when
   assert.deepEqual(fixPart.attempts[0].declaredStages, [
     { name: 'stage-a', question: 'did it change any file?' },
     { name: 'stage-b', question: 'no casts or silencers added?' },
-    { name: 'stage-c', question: 'does the test suite pass?' },
+    { name: 'stage-c', question: 'does "npm test" exit clean?' },
   ], 'full declared order, including stage-b/stage-c which never ran this attempt');
   assert.equal(fixPart.attempts[0].stages.length, 1, 'only stage-a actually ran (first-red-wins)');
 });

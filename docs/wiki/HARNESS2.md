@@ -80,9 +80,37 @@ hamr's reading: tool guidance today is "willy nilly". The record agrees that the
 
 What is NOT measured: whether any tool-sequence habit separates green from red. That is E0.
 
+## 4b. Lessons from Arize's Alex talk (2026-10-28)
+
+Source: a talk by an Arize product manager on two years of building their in-product agent "Alex" (transcript: `/home/hamr/Downloads/pro.txt`, treated as data; times are the talk's clock). Alex is a chat agent with a user in the loop, so only some of it fits bareloop. Each point has the talk cite and what bareloop does today.
+
+1. **The harness owns the plan, and renders it into every model call (about 7:02-8:24).** A to-do tool made the model spend calls updating the list, so the plan moved into the harness. *bareloop today:* the planner owns the plan; the worker never edits it. Each step ask carries that step's action, the root, the target, prior artifacts and the last gap, not the whole plan (src/planrun.js:3453-3460).
+2. **Finishing is a harness gate (about 8:32-9:37).** An explicit finish call bounces back up to 3 times if plan items are open, a warning comes one step before the iteration limit, then a forced finish. *bareloop today:* the close is the only judge; a step passing its own check is never a verdict. Attempts are bounded by the strike ladder (STRIKE_LIMIT = 2, src/ladder.js:47; ladder made per step, src/planrun.js:3327) and the per-step round ceiling (`maxStepRounds = 40`, src/planrun.js:1008). We have no warning-before-the-limit; none is proposed.
+3. **Big tool results are treated like files (about 9:45-11:28).** Store the result, leave a "sticky note" (where it is and what it holds), let the agent fetch the part it needs with code (jq); truncate inside big JSON. *bareloop today:* the read shim caps a read at 24KB and returns the next unseen slice with a notice (src/readshim.js:119, 157-158); `ctx_get` fetches a line range; litectx compresses. The worker has no shell (`run` is LOCKED), so there is no jq.
+4. **Trajectory past a window (about 11:28-11:53).** The harness makes the model write a checkpoint and drops what it replaced; history has a fixed token budget. *bareloop today:* compaction is PARKED. Clearing breaks the prompt-cache prefix and the net sign is unmeasured (section 6, C3).
+5. **Long-term memory (about 12:16-13:32).** One markdown file per user, capped at 8,000 characters, written by a background job after the session, loaded on every request. It beat vector retrieval, episodic and semantic stores, and temporal knowledge graphs. A human can audit it. *bareloop today:* the learnings ledger is written by code and read only by the planner (src/planrun.js:3091). The E1 HANDOFF arm is the same shape for workers: one small code-written file. This supports keeping C2 small and plain.
+6. **Specialists became one agent loading skills and tools on demand (about 13:32-14:12).** *bareloop today:* one worker per step, with the menu fixed by the signed spec. C4 (SkillRegistry) is the nearest idea (section 6).
+7. **Default to a fast, good-enough model; spend the effort on the harness (about 14:12-15:21).** Some surfaces need no loop, just one model call. *bareloop today:* deepseek-flash is the settled secondary provider; the fit check and the page map are single calls.
+8. **Production sessions become regression tests (about 15:21-17:30).** Agent bugs show as soft signals, for example 43 identical tool calls in one turn, or latency, not as errors. *bareloop today:* E0 and E0b read archived gate audits for exactly this; `runBehaviour` already counts repeats (src/behaviour.js:1-30). Repeat-call detection at source is an idea, not built.
+9. **What still needs a human (about 17:36-18:24).** Gold labels for judges; speed-versus-quality calls. *bareloop today:* the calibration set is signed by the person; merge stays human forever.
+10. **What survived every rebuild (about 18:24-19:04).** Tracing, math and data in code, golden sets in CI, skills. *bareloop today:* the spine and gate audit are the trace; code decides and the AI only labels; tests read tracked fixtures.
+
+### What we take
+
+- (a) A pointer or map instead of a bare "you already hold it". Today the shim says only that the file is unchanged and the worker holds all N bytes (src/readshim.js:162-163). Candidate wording: say where it is and what it holds.
+- (b) One small code-written handoff file between fresh workers (E1 HANDOFF arm). The $0 replay sized it at a median of about 1,500 characters for the code job and about 250 for the rubric job; the 8,000 cap never bit (source `.claude/scratch/e1-poc/PHASE1.md`, untracked). That is size only; whether it saves reads is unmeasured.
+- (c) Catch repeated identical tool calls at the source, not by rewriting history, because rewriting history costs the cache prefix.
+- (d) Keep memory plain and small.
+
+### What we do not take
+
+- jq or a shell for the worker (`run` stays LOCKED).
+- Model-written checkpoints that drop history (parked; cache cost).
+- Agent-written memory (the learnings POCs showed the AI invents fixes; code writes it).
+
 ## 5. Experiments (one lever at a time)
 
-Every number marked "hamr sets" is a proposal. Nothing here is decided. Provider for every paid run: DeepSeek, `deepseek-flash`. Freeze rules are committed before any number exists (PRD design practice; BATTERY-PREREG precedent: docs/logs/BENCH-PREREG.md).
+hamr ruled on the interview questions on 2026-10-28 (section 7); ruled numbers are stated below. Where a number still says "hamr sets", nothing was ruled yet. Provider for every paid run: DeepSeek, `deepseek-flash`. Freeze rules are committed before any number exists (PRD design practice; BATTERY-PREREG precedent: docs/logs/BENCH-PREREG.md).
 
 ### E0 — $0 archive read (FIRST, mandatory before any paid run)
 
@@ -92,27 +120,40 @@ Every number marked "hamr sets" is a proposal. Nothing here is decided. Provider
 - **Instrument.** Gate-audit rows `{run_id, phase, action:{type, args:{tool}}, decision}` (src/behaviour.js:8-17), scoped by `run_id`; spine `worker-round` rounds with the four token fields; `judge-round` and `worker-turn` rounds counted too (a slicer that omits a spending round type undercounts). Exclude `worker-result` echoes from any spend denominator.
 - **Corpus audit.** Segment by genre, by provider and model, and by shim arm before any aggregate. Never pool providers. State how many runs have a gate audit at all. A single-genre corpus cannot falsify a general claim.
 - **Arms.** None. Descriptive.
-- **Freeze rules.** Write the habit definitions and the green/red split in a prereg doc and commit it before the first run is read.
-- **Pass rule.** E0 passes if it yields at least one habit that (a) costs a measurable share of spend in a segment with enough runs and (b) differs between green and red runs in the same segment. Segment size threshold: hamr sets. Otherwise E1 is not justified and the result is the stop.
-- **Stop rule.** If fewer than the hamr-set count of runs per segment have an audit, stop and report the gap.
+- **Freeze rules.** Write the habit definitions and the green/red split in a prereg doc and commit it before the first run is read. Habit order ruled 2026-10-28: re-reads first (a file read again with nothing changed), read over recall second.
+- **Pass rule.** E0 passes if it yields at least one habit that (a) costs a measurable share of spend in a segment with enough runs and (b) differs between green and red runs in the same segment. Segment size threshold: 10 runs per segment (same genre, same provider and model), ruled 2026-10-28; a segment with fewer than 10 runs is reported as "too few", never read. Otherwise E1 is not justified and the result is the stop.
+- **Stop rule.** If a segment has fewer than 10 runs with an audit, that segment is "too few"; if no segment reaches 10, stop and report the gap.
 - **Provider / cap.** $0. No model call.
 - **Output.** A list: habits that cost money; habits that precede greens; which segment each claim covers.
+- **Frozen:** `docs/logs/E0-PREREG.md`, commit 9e1e9a88f97e6be4d878dc8fb6198fec62e5ac1e, sha256 0e935b084c153d001939c15d5112195ed252a2a0478bf676635b87df7b2b3f8a.
+- **Result (2026-10-28): see F253.** PASS on both DeepSeek segments (TYPES 18.1% of spend, TEXT 25.1%), but it counted reads across fresh workers; E0b corrects that.
+
+### E0b — same worker vs new worker ($0 archive read)
+
+- **Question.** How much of E0's re-read cost is one worker repeating itself, and how much is a new worker re-reading what an earlier worker read?
+- **Frozen:** `docs/logs/E0B-PREREG.md`, commit 8dcd691, sha256 74f40398794277c30d2b53f1aac5d60b50706c159b4a6764a44faf1f38ff08f7.
+- **Result (2026-10-28): see F253.** Same-worker vs new-worker share of spend: TYPES 2.2% / 15.9%, TEXT 11.3% / 13.8% (estimated). Verdict PASS on TEXT only, by 0.4 points; TYPES fails. This is why E1 got a handoff arm: most of the mass was new workers.
 
 ### E1 — tool guidance learned from run records (paid, only if E0 earns it)
 
 - **Question.** Does a worker-facing tool hint, written by code from past run records, lower cost-to-green or shift the tool mix?
 - **Riskiest assumption.** That a delivered hint is acted on. F19 and F37 say prose alone is inert. So delivery and conversion are measured separately.
-- **Design.** Code only writes the hint, from a CLOSED list of hint kinds (for example: "you re-read file X N times; use ctx_get"). AI writes nothing, per the learnings POCs (section 3). Hint rides the worker persona as one more declared information channel (PRD law 5: a channel change is a lineage-key dimension, so it must be a declared job condition and enter the hash).
+- **Design.** Code only writes the hint, from a CLOSED list of hint kinds. A hint names only the tool and a count, never a file name (ruled 2026-10-28; a file name edges toward naming the culprit): for example "you re-read files N times; use ctx_get". The hint goes to the worker only, not the planner's step grants (ruled; one lever at a time). AI writes nothing, per the learnings POCs (section 3). Hint rides the worker persona as one more declared information channel (PRD law 5: a channel change is a lineage-key dimension, so it must be a declared job condition and enter the hash). Ruled 2026-10-28: the hint ON/OFF switch enters the signed hash, like learningHints; the hint TEXT does not (it changes per run and would split one job into many). I did not re-check here how learningHints is hashed today.
 - **Instrument.** Per arm: `worker-round` tokens and cost, gate-audit tool mix, repeat share, cost-to-green, tries-to-green. Delivery = hint text present in the worker prompt (a new report-only spine record, as the memory-cache record is). Conversion = the hinted tool's share of calls after delivery versus before.
 - **Arms.** ON (hint delivered) versus OFF (identical job, no hint). One lever only; read shim state is held fixed and recorded.
-- **Patients / jobs.** Candidates from existing frozen benches: `aurora-u-spawner-types`, `litectx-u-types`, and `aurora-testgen-cold` (G2, a negative row: a GREEN there is a red flag, never a pass) (docs/logs/BENCH-PREREG.md:25-29). Whether these jobs show the habit E0 found is checked at $0 first. A job where the habit never occurs cannot test the hint.
+- **Patients / jobs.** Ruled 2026-10-28: jobs are chosen AFTER E0, from jobs where re-reads really happen on DeepSeek. The read-shim setting is held fixed and recorded. `aurora-testgen-cold` (G2 negative row) is out: it says nothing about cost. The frozen bench rows are not required; earlier candidates were `aurora-u-spawner-types` and `litectx-u-types` (docs/logs/BENCH-PREREG.md:25-29). A job where the habit never occurs cannot test the hint.
 - **Freeze rules.** Hint kinds, jobs, arms, the decision rule and the sha256 of the prereg file committed before any run. Frozen rules never loosen after data.
-- **Pass rule (proposal, hamr sets).** Both arms green on the same jobs, ON cheaper to green by a pre-set margin, and conversion shown. A result inside the noise band, or backwards, closes the lever with no default flip.
-- **Power, stated before data.** n=1 per job per arm is an anecdote either way. At n=1 the experiment can show only that delivery and conversion happen, not a lift. A cost claim needs a repeat count hamr sets; with a nondeterministic worker the base rate comes first.
+- **Pass rule (ruled 2026-10-28).** Both arms green on the same jobs, ON at least 20% cheaper to green, and conversion shown. A result inside the noise band, or backwards, closes the lever with no default flip.
+- **Power, stated before data.** n=1 per job per arm is an anecdote either way. At n=1 the experiment can show only that delivery and conversion happen, not a lift. Ruled: 3 runs per job per arm (ON and OFF), which is enough to read a cost gap but still small; with a nondeterministic worker the base rate comes first.
 - **Stop rule.** A provider-red row is a casualty, not evidence. A repeating casualty class stops the battery and re-probes the provider. Any red at a lower cap that greens at a higher cap is a question about the ceiling, never a pass.
 - **Provider.** DeepSeek `deepseek-flash`. Name provider and model in the first line of the proposal.
-- **Cap.** Per run and total: hamr sets. A cap must fund the attempt plus its close.
+- **Cap.** $1 per run, $10 total (ruled 2026-10-28). A cap must fund the attempt plus its close; a red at $1 that would green higher is a question about the ceiling, never a pass.
 - **Arbiter note.** The hint changes only what the worker is told. Budgets, closes and verdicts are untouched; E1 never edits them.
+- **Result (2026-10-28): see F253.** 36 runs (3 jobs x 4 arms x 3), $4.72 booked, DeepSeek `deepseek-flash`.
+  - Frozen rule: 8 of 9 cells FAIL; 1 PASS (change2 BOTH, 24.2%, 3.4 vs 4.5 cents) is luck-sized.
+  - Proven: the handoff cuts new-worker re-reads about 60% (105 vs 272 Kind B reads in step and fix asks, 18 runs each).
+  - Not proven: any turn, token or cost win at n=3; cache reads are 85 to 93% of tokens, so read hygiene barely moves the total.
+  - Side finding: 5 of 36 runs died at plan validation on drafter exit errors, not caused by the arms (F254).
 
 ### E2 and later (only if E1 earns it; each its own frozen POC)
 
@@ -128,7 +169,7 @@ Every number marked "hamr sets" is a proposal. Nothing here is decided. Provider
 
 ## 6. Candidates after tool guidance
 
-hamr's goal behind E0/E1: expose MORE of our own bare-suite primitives to the worker and planner, and see how each works. Tool guidance goes first (section 5). Each candidate below is its own frozen POC, run only after E1 reports, one lever at a time. Every cap, n and pass margin is "hamr sets".
+hamr's goal behind E0/E1: expose MORE of our own bare-suite primitives to the worker and planner, and see how each works. Tool guidance goes first (section 5). Each candidate below is its own frozen POC, run only after E1 reports, one lever at a time. Every cap, n and pass margin is "hamr sets". Order kept by hamr 2026-10-28, with C1 dropped: C2 is now first after E1, then C3 to C6.
 
 ### 6.1 What the packages actually export (read from node_modules, installed versions)
 
@@ -171,7 +212,8 @@ Read from each `package.json` "exports" and the entry file on 2026-10-28, not fr
 
 Fields common to all: provider DeepSeek `deepseek-flash` for any paid arm; ON/OFF with everything else held fixed; freeze rules committed before any number; `$0` pre-step first; n=1 per cell is an anecdote; a result inside the noise band closes the lever with no default flip.
 
-**C1 — litectx embeddings ON for `ctx_recall` (rank-only). Run right after E1.**
+**C1 — litectx embeddings ON for `ctx_recall` (rank-only). DROPPED 2026-10-28 (hamr: BM25 default indexing is enough, no embedding needed).**
+Record of the dropped text follows. hamr's note, verbatim: "litectx default indexing and bm25 is really helpful to narrow down what agent needs to grep, no embedding needed". Also ruled: bareloop never adds `@huggingface/transformers`; litectx 0.32.0 lists it as an OPTIONAL peer dependency (peerDependenciesMeta, read from node_modules/litectx/package.json today) and it is not installed.
 Reason: no new verb, no new spec surface, reuses a granted verb, and it tests hamr's "indexing improved" claim directly with a $0 first step.
 - Question. Does the current index, with and without embeddings, find the right function for the queries workers actually make?
 - Riskiest assumption. That a better ranker changes behaviour, when selection (1.4%) and not retrieval quality is the measured gap. Embeddings also cannot nominate code hits (FINDINGS.md:659).
@@ -181,15 +223,34 @@ Reason: no new verb, no new spec surface, reuses a granted verb, and it tests ha
 - Freeze. Query set, success definition and arms committed before replay.
 - Pass / stop. Pass: rank gain in the $0 step on queries from at least two genres. Stop: no gain at $0 means no paid run. Cap: hamr sets.
 
-**C2 — seed the fact store from earlier runs (facts/episodes reach the worker).**
-Reason: it is the real unused litectx capability and the direct answer to "learnings reach the planner only", but it touches the arbiter-adjacent boundary, so it comes after the cheap ones.
+**C2 — seed the fact store from earlier runs (facts reach the worker). FIRST after E1. DRAFT SPEC (hamr 2026-10-28: spec it now; no build or run before E0 and E1 report and a POC passes).**
+Reason: it is the real unused litectx capability and the direct answer to "learnings reach the planner only", but it touches the arbiter-adjacent boundary, so it comes after tool guidance.
 - Question. Does a worker that can recall code-written lessons from past runs reach green cheaper?
 - Riskiest assumption. That a lesson is acted on once recalled (conversion), and that no recalled text leaks the arbiter's books or names the culprit. Learnings are code-written only (PRD.md:1990); AI-written facts failed (section 3).
-- Design. Code writes `kind:'fact'` notes into the run's store from the learnings ledger, using the same closed card fields; the worker finds them through the existing `ctx_recall` fact path (src/tools.js:298). A new `by:` tag marks them. Episodes (`kind:'episode'`) are a second step, only if facts help.
-- Instrument. Recalled-note ids per run; whether a later action touched the note's file; cost and tries to green; delivery (note appeared in a recall result) vs conversion (acted on).
-- Arms. Seeded vs empty fact store; learnings hints to the planner held fixed and recorded.
-- Freeze. Card-to-note template, jobs, hash rules (this is a new channel: it enters the lineage key).
-- Pass / stop. Pass: delivery and conversion shown, ON no costlier at equal green. Stop on any note found to carry a culprit file name. Cap: hamr sets. Needs hamr's explicit word (spec change to the worker's information).
+- Design. Code writes `kind:'fact'` notes into the run's store from the learnings ledger. The worker finds them through the existing `ctx_recall` fact path.
+  - Fact path today [CODE]: `ctx_recall` runs `lc.recall(q, { kind: 'fact', n: cap, body: true })` and returns each note inline as `memory\t<id>\t<body>`, body cut at 400 chars (recall at src/tools.js:298, output line at src/tools.js:304). The worker has no verb that dereferences a memory id, so a seeded note must carry its whole lesson inside 400 chars. A worker-written note is capped at 65536 bytes (ISOLATE_MAX_BYTES, src/tools.js:111).
+  - Write API [CODE]: `lc.remember(id, text, { kind, by, scope, meta, expiresAt })`; `kind` defaults to `fact`, `by` is `"human"` or `"agent"` only (node_modules/litectx/src/index.js:1023-1029). Re-remembering the same id and scope replaces the row (index.js:999 area). `meta` is stored but never searched or ranked (index.js:1014 area), so it cannot carry a "seeded by code" flag the worker could rank on.
+  - Only call site today [CODE]: the worker's own `ctx_remember` verb, `lc.remember(key, body, { kind: 'fact', by: 'agent' })` (src/tools.js:584). Nothing seeds the store from a ledger.
+  - Source fields [CODE]: the learnings card has job, check, kind FIXED/NEVER_FIXED, goal, stepId, stepAction, meaning, said (up to 3 lines), kinds (error kinds), files, symbol, tokens, nextCheck, ended, fixTouched, whatChanged (src/learn.js:200-222). The seeded note would be built from a closed subset only.
+  - `by:` limit: litectx accepts only `human` or `agent`, so a distinct tag such as "code-seeded" is not possible in `by`. A marker would go in the note id prefix (open choice below).
+  - Episodes (`kind:'episode'`) are a second step, only if facts help.
+- Instrument. Recalled-note ids per run (the `ctx-tool` spine record already carries `notes` count and `paths` for `ctx_recall`, src/tools.js:307); cost and tries to green; delivery (a seeded note appeared in a recall result) versus conversion (a later action followed the note's tool or check kind).
+- Arms. Seeded versus empty fact store; learnings hints to the planner held fixed and recorded; read-shim state held fixed and recorded.
+- Freeze rules. Card-to-note template, note id scheme, jobs, arms, decision rule and the sha256 of the prereg file committed before any run. The seed switch enters the signed hash (new channel, PRD law 5); note text does not (same reasoning as the E1 hint ruling). Frozen rules never loosen.
+- Leak rule (from ruling 3). A seeded note must not name a file: tool, check, error kind and count only, unless hamr rules otherwise. Never include `said` lines, `files`, `fixTouched`, `whatChanged` or `symbol` verbatim; these can name the culprit and attempt-diff is arbiter output (section 6.4).
+- Pass / stop. Pass: delivery and conversion shown, and ON at least no costlier at equal green. Stop on any note found to carry a culprit file name, or any arbiter output. A provider-red is a casualty, not evidence.
+- Cap. hamr sets (E1's $1 per run and $10 total is the natural starting point, not ruled for C2).
+- Needs hamr's explicit word before any build (it changes what the worker is told).
+- What I did not read: how the run's fact store is created and whether it persists between runs or is built fresh per run (so whether a seed must be written at each run start is unknown); the `scope` and `strictScope` behaviour as bareloop configures it; whether the `ctx_recall` fact ranking would surface a seeded note for the queries a worker actually makes (BM25 over note text, not checked); how `learnstore.js` exposes cards to a caller other than the planner hint.
+- **Open choices — ask hamr:**
+  1. Seeded note content: which closed fields (check name, error kind, count, outcome FIXED or NEVER_FIXED), and the exact sentence template.
+  2. Whether a seeded note may name a file at all (default in this draft: no, tool/check/error kind and count only).
+  3. Note id scheme and marker (litectx `by` is only human or agent, so a prefix in the id is the candidate).
+  4. Which ledger rows are eligible: age window, same workflow key only, or the climb levels (place, user).
+  5. How many notes per run, and whether notes are written fresh at each run start or kept in the store.
+  6. Whether FIXED cards only, or NEVER_FIXED too.
+  7. Jobs and the cap for the C2 experiment.
+  8. Hash rule for the seed switch (this draft: switch enters the hash, text does not).
 
 **C3 — `assemble` / `summaryWindow` from litectx for context compaction.**
 Reason: litectx ships it, but compaction is PARKED because clearing breaks the prompt-cache prefix and the net sign is unmeasured (project memory "context compaction is parked"). Measure the sign first.
@@ -223,19 +284,113 @@ Reason: last. A spawned child is a second actor that can run commands or write o
 
 **Not candidates:** `createBrowsingTools` / `createBrowseTools` (the worker never browses; the page is fetched by code at run start); the bareguard rubric and `Gate` exports (arbiter-side); `createDeferTool` (a deferred action is a queue the worker does not own).
 
-## 7. Open questions for hamr (interview before any spec is locked)
+## 7. Rulings (hamr, 2026-10-28)
+
+The ten interview questions, each with hamr's answer.
 
 1. Is E0 the right first move, and what is the smallest segment (runs per genre and provider) you accept as enough to read?
+   **Answer.** Yes, E0 is first. A segment is 10 runs (same genre, same provider and model). A segment with fewer than 10 runs is reported as "too few", never read.
 2. Which habits matter most to you: re-reads, read over recall, or something else?
-3. May hints name a specific file, or only a tool and a count? (A file name edges toward navigating for the worker.)
+   **Answer.** Re-reads first (a file read again with nothing changed). Read over recall second.
+3. May hints name a specific file, or only a tool and a count?
+   **Answer.** Only a tool and a count, never a file name (a file name edges toward naming the culprit; the close must never name it).
 4. Do hints go to the worker only, or also to the planner's step grants?
-5. Cap, n per job, and margin for E1: your numbers.
+   **Answer.** Worker only. One lever at a time.
+5. Cap, n per job, and margin for E1.
+   **Answer.** $1 cap per run, $10 total cap, 3 runs per job per arm (ON and OFF), pass margin: ON at least 20% cheaper to green. Provider DeepSeek `deepseek-flash`.
 6. Which frozen jobs are in, given the benches were frozen with the shim OFF (BENCH-PREREG.md:178)?
+   **Answer.** Chosen after E0, from jobs where re-reads really happen on DeepSeek. The read-shim setting is held fixed and recorded. `aurora-testgen-cold` (G2 negative row) is out, since it says nothing about cost. The frozen bench rows are not required.
 7. Does a worker hint count as a "declared job condition" that enters the signed hash, or a report-only channel?
+   **Answer.** The hint ON/OFF switch enters the signed hash (declared job condition, PRD law 5), like learningHints. The hint TEXT does not (it changes per run and would split one job into many).
 8. Do you agree with the candidate order (C1 embeddings first after E1, C6 subagents last)?
-9. C2 (code-seeded facts to the worker) changes what the worker is told: do you want it specced at all before C1 reports?
-10. Is the dependency weight of litectx embeddings (a transformers.js model) acceptable under the one-dependency bar?
+   **Answer.** Order kept, with C1 dropped (see 10). C2 is first after E1; C6 stays last.
+9. C2 (code-seeded facts to the worker): specced at all before C1 reports?
+   **Answer.** Yes, spec it now (hamr said 9A), as a draft. Still no build or run before E0 and E1 report and a POC passes. See section 6.5 C2.
+10. Is the dependency weight of litectx embeddings acceptable under the one-dependency bar?
+   **Answer.** No. bareloop never adds `@huggingface/transformers` (litectx 0.32.0 lists it as an OPTIONAL peer dependency, not installed today [CODE]). hamr, verbatim: "litectx default indexing and bm25 is really helpful to narrow down what agent needs to grep, no embedding needed". C1 is DROPPED.
 
-## 8. Status
+## 8. Where things stand (2026-10-29)
 
-Draft. Nothing built. Takes precedence over the four parked rubric gaps (PRD.md:2080) after `fix/barebrowse-0250` ships. No build starts before E0 is read and hamr rules (PRD practice: no build before a passing POC).
+Built on `feat/online-dot` (pushed unless noted):
+- Online dot in the panel header (87f3083). Not harness2; it rides the branch. A later fix (f08e5d9) stops a page render error painting it offline.
+- F252 shim fix (2a81471): the delivered-ledger resets per `ask()`. Proven by a fail-first test. Live: the shim was ARMED in run mvsmxgwm (one `memory-cache` record: capped 1, pointered 0). The pointer path (a later attempt told "you already hold it") was never served live, so the fix is still test-proven only.
+- Handoff note (1c26d45 code and tests, 6af57ef docs): `src/handoff.js`. Spec field `handoffNote`: absent = on, false = off. The switch enters the signed hash only when present (mirrors `thinking`; it is NOT like `learningHints`, which is a global `config.json` setting, `src/learnstore.js`). hamr ruled 2026-10-28: ON by default (1A), not in the panel (2B), old signed jobs get it without a re-sign, like learnings (A). Live: the note was emitted 10 times in mvsmxgwm (the F255 notes). It is NOT yet shown to cut re-reads live: mvsmxgwm had 26 new-worker re-reads against E1 medians OFF 30 / HANDOFF 15, which is not like-for-like and is n=1.
+- Planner exit fix (4455c0c): the POC PASSED (`docs/logs/PLANNER-EXIT-PREREG.md`, commit 9f88d5d; results `.claude/scratch/planner-poc/batch/results.jsonl`). First-draft refusals OLD 8/23 vs NEW 1/24, plan-red 1 vs 0, cost $1.55 DeepSeek. The build is DONE and held live in runs mvsmxgwm and mvtatlxw (no plan-red). Root cause is the F254 entry in `docs/logs/FINDINGS.md`.
+- F255 (drafter put a path in `lineMatch`, crashing a check at zero): found live in mvsmxgwm, POC run, fixed in 721ba33. Live green via panel run mvtatlxw (provider-red, then Resume gave already-green, $0.4510).
+- F256 (drafter adds a whole-repo exit-0 check beyond the job): logged in 1fd90b6, NOT built. The panel now names each command check by its own command (b0f5c52), so two commands never read the same question.
+- Full suite at b0f5c52: exit 0, 4970 tests, 4968 pass, 0 fail.
+- Self-review 2026-10-29 done; 7 items sit in the fix ledger.
+
+Done earlier: E0, E0b, E1 (results in F253; `.claude/scratch/e1-poc/battery/analysis/E1-RESULT.md`). The per-turn re-read hint arm was dropped (F253: about 20 fires in 18 runs, the shim already answers whole-file re-reads, and it leaks into scout notes and then the drafter). Live product run u-mvsl1lof (2026-10-28, $0.0425) died plan-red at drafting (F254) before any step and proved nothing about handoff or the shim.
+
+### NEXT (in order)
+1. `/branch-review`, then `/release` (the branch holds the dot and the harness2 work).
+2. Then the Audit grid branch (PRD addendum; the signed mock is `design/audit-grid-mock.html`).
+3. Then backlog H1 first (section 9).
+
+No further build starts without hamr's word.
+
+## 9. Experiment backlog (not yet run)
+
+Each item: question, why, riskiest assumption, first $0 step, who rules. None has a number yet.
+
+H1. New hint POC: read-vs-recall SELECTION.
+- Question. Can a hint move workers from `shell_read` to `ctx_recall`/`ctx_get` where recall fits?
+- Why. Workers pick `shell_read` about 69 of 70 times over recall/get (F107; section 4 above). The per-turn re-read hint arm is dropped (F253). hamr 2026-10-28: "focus on hints" after the fixes.
+- Riskiest assumption. That selection, not retrieval quality, is the blocker, and that a hint wording changes it (a guard wording once moved a false-claim rate 5/10 to 0/10, so wording matters).
+- $0 first. Re-read the E1 and E0 archives for how often a recall would have fit. Run on the NEW code (planner fix and handoff in).
+- Rules. hamr (frozen prereg before any number).
+
+H2. Pointer or map in the shim message.
+- Question. Does replacing "you already hold all N bytes" with a map (symbols and line ranges, `ctx_get` for a part) help?
+- Why. Arize talk (section 4b) and hamr's question. True whether or not the model remembers. Complements the shim, does not replace it.
+- Riskiest assumption. That the map is cheaper than the re-read it prevents.
+- $0 first. Measure map size against file size on archived re-read cases.
+- Rules. hamr.
+
+H3. Repeated identical tool-call catcher at source.
+- Question. On the 3rd identical call, can code answer "asked 3 times, unchanged, here is the map"?
+- Why. The talk's "43 identical calls" point (section 4b).
+- Riskiest assumption. That identical-call runs really occur on our workers. Never rewrite history (cache-prefix cost; compaction is parked).
+- $0 first. Count identical-call runs in archived spines.
+- Rules. hamr.
+
+H4. Turns lever.
+- Question. What drives turn count?
+- Why. F253 showed cache reads are about 85-93% of tokens, so cost follows TURNS (each turn re-sends the conversation), not reads.
+- Riskiest assumption. That turns are controllable by anything we can hand the worker.
+- $0 first. Archive read of turns per run against step shape. Candidate levers TBD with hamr.
+- Rules. hamr.
+
+H5. Handoff at larger n.
+- Question. Does handoff alone show a cost effect under noise?
+- Why. E1 (n=3) showed about -60% new-worker re-reads but no turn, token or cost win. hamr: "try handoff separately". Pulselog OFF cost ranged $0.20-0.37, so n=3 is underpowered.
+- Riskiest assumption. That a real effect exists and is bigger than run-to-run noise.
+- $0 first. Power calculation from the E1 spread (`.claude/scratch/e1-poc/battery/analysis/stats.mjs`). Declare UNDERPOWERED before any data.
+- Rules. hamr (cap and n).
+
+H6. Per-turn nudges against the up-front list (hamr's idea, discussed 2026-10-28).
+- Question. Does a nudge only on a clear slip help?
+- Why. Costs only when it fires. Rule: say HOW to read, never WHERE to look.
+- Riskiest assumption. Anchoring: a nudge may fix the worker on the nudged path.
+- $0 first. Replay archived slips to count how often a nudge would fire.
+- Rules. hamr.
+
+H7. Drafter scope-escape. The one NEW-wording red in the planner POC was scope-escape (`steps.0.exit.0.path` outside the allowed folder); it recovered. Watch it, do not build.
+
+Also kept: C2-C6 as listed in section 6.5 (C1 dropped; the C2 spec draft has 8 open choices).
+
+Known gaps to keep in view: Kind A/B are keyed tool+path (the gate audit has no `ctx_get` range); hint conversion can only be approximated; the prompt text of notes is not in the spine, by design.
+
+## 10. Where the evidence lives
+
+Untracked scratch (survives `/clear`, not a fresh clone), all under `.claude/scratch/`:
+- `e0-read/`, `e0b-read/` (the $0 archive reads)
+- `e1-poc/` (`PHASE1.md`, `engine/`, `battery/` with `analysis/E1-RESULT.md` and `analysis/stats.mjs`, `templates/`)
+- `planner-exit/FINDINGS.md`
+- `planner-poc/` (`engine/`, `batch/`)
+- `handoff-live/RESULT.md`
+
+Tracked: `docs/logs/E0-PREREG.md`, `E0B-PREREG.md`, `E1-PREREG.md`, `PLANNER-EXIT-PREREG.md`; `docs/logs/FINDINGS.md` F252, F253, F254, F255.
+
+Paid so far today (all DeepSeek deepseek-flash): E1 $4.72, observe $0.16, planner POC $1.55, live run $0.04.

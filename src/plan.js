@@ -36,6 +36,10 @@ export const EXIT_TYPES = Object.freeze(['artifact-written', 'tree-changed', 'js
 /** decision 8: AND-only conjunction, bounded — no OR (a weak arm would
  * launder the exit), no NOT */
 export const MAX_EXITS_PER_STEP = 2;
+/** a legal-example sentence for the exit menu — shown in the planner prompt and
+ * appended to the missing-required exit red, so a redraft sees a legal shape,
+ * not only the rule (F254: `exit` is required on EVERY step) */
+export const EXIT_EXAMPLE = 'Legal exit examples: a step with no check uses [{"type":"artifact-written","path":"<its target>"},{"type":"tree-changed","scope":"<an offered scope>"}]; a step with a check uses [{"type":"tree-changed","scope":"<an offered scope>"},{"type":"check-passes","name":"<a check name>"}].';
 /** plan size bound — per-step rounds bound the spend, but an unbounded step
  * COUNT is still an unbounded claim on the wallet; same 8 as loop.maxIterations */
 export const MAX_PLAN_STEPS = 8;
@@ -519,7 +523,7 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, seedRed, 
  */
 function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, toolsParsed, scopeMenu, stepScope, overlapsStepScope, seedRedNames, isFinalWrite }) {
   if (!Array.isArray(s.exit) || s.exit.length === 0) {
-    red('missing-required', `${at}.exit`, `non-empty array from the closed menu ${EXIT_TYPES.join('|')} — ALL listed exits must pass (AND-only); a step without an exit has no progress gate`);
+    red('missing-required', `${at}.exit`, `non-empty array from the closed menu ${EXIT_TYPES.join('|')} — ALL listed exits must pass (AND-only); a step without an exit has no progress gate — ${EXIT_EXAMPLE}`);
     return;
   }
   if (s.exit.length > MAX_EXITS_PER_STEP) {

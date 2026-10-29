@@ -118,6 +118,8 @@
   .topbar .version{flex:none;}
   @media (max-width: 600px){ .topbar .tagline{display:none;} }
   .topbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  #online-dot{font-size:12px;white-space:nowrap;flex:none;}
+  #online-dot.on{color:var(--green);} #online-dot.off{color:var(--red);}
 
   [hidden]{display:none !important;}
   .main{display:flex;flex:1;min-height:0;}
@@ -717,6 +719,7 @@
     </div>
     <div class="topbar-right">
       <span class="hint" id="host-line"></span>
+      <span id="online-dot" class="on" data-testid="online-dot" role="status">&#9679; online</span>
       <button class="btn small" type="button" id="btn-settings" data-testid="btn-settings">&#9881; Settings</button>
       <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme">&#9789;</button>
     </div>
@@ -1116,8 +1119,9 @@
   // ---- fetch helpers ----
   function getJSON(path){
     return fetch(path, { headers: { accept: "application/json" } }).then(function(r){
-      if(!r.ok) throw new Error(path + ": HTTP " + r.status);
-      return r.json();
+      // `.status` marks "node answered": an HTTP error, or a 200 whose body would not parse — the online dot reads it (only a status-less failure is offline).
+      if(!r.ok){ var err = new Error(path + ": HTTP " + r.status); err.status = r.status; throw err; }
+      return r.json().catch(function(e){ e.status = r.status; throw e; });
     });
   }
 
@@ -4101,24 +4105,37 @@
     });
   }
 
+  // The Runs list poll (every RUNS_LIST_POLL_MS) is the panel's heartbeat: ANY reply (even an HTTP error) = node answered = online; only a read that failed
+  // with no HTTP status (the network, a dead panel) = offline. ONE painter writes the dot; the served page starts online.
+  function paintOnline(isOnline){
+    var el = document.getElementById("online-dot");
+    el.className = isOnline ? "on" : "off";
+    el.textContent = isOnline ? "\u25CF online" : "\u25CF offline";
+  }
+
   function refreshRunsList(force){
     var now = Date.now();
     if(!force && (now - lastRunsListRefreshAt) < RUNS_LIST_POLL_MS) return Promise.resolve();
     lastRunsListRefreshAt = now;
     return getJSON("/api/runs").then(function(result){
       pollFailStreak = 0;
+      paintOnline(true);
       var runs = result.runs || [];
       var next = sig(result);
       if(next === lastRunsPayloadSig) return runs; // unchanged payload — never rebuild the DOM for nothing
       lastRunsPayloadSig = next;
       lastRunsSig = sig(runs);
-      withScrollPreserved(["left-pane-body"], function(){
-        // the painter re-runs the SAME filter/search state — a poll tick never resets it, and it writes a box only when its markup changed.
-        setRunsData(result);
-        runsFilterBar.refresh();
-      });
+      // a render throw is a page bug, not the panel being down: log it here so it never reaches the status catch below (which would paint "offline")
+      try {
+        withScrollPreserved(["left-pane-body"], function(){
+          // the painter re-runs the SAME filter/search state — a poll tick never resets it, and it writes a box only when its markup changed.
+          setRunsData(result);
+          runsFilterBar.refresh();
+        });
+      } catch(renderErr){ console.error("runs list render failed", renderErr); }
       return runs;
-    }).catch(function(){
+    }).catch(function(err){
+      paintOnline(!!(err && typeof err.status === "number"));
       pollFailStreak++;
       // Keep the last good render; a transient failure is invisible. Only a
       // PERSISTENT failure (3+ ticks, ~6s) gets a quiet, non-alarming note —
