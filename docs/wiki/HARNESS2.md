@@ -309,21 +309,24 @@ The ten interview questions, each with hamr's answer.
 10. Is the dependency weight of litectx embeddings acceptable under the one-dependency bar?
    **Answer.** No. bareloop never adds `@huggingface/transformers` (litectx 0.32.0 lists it as an OPTIONAL peer dependency, not installed today [CODE]). hamr, verbatim: "litectx default indexing and bm25 is really helpful to narrow down what agent needs to grep, no embedding needed". C1 is DROPPED.
 
-## 8. Where things stand (2026-10-28 evening)
+## 8. Where things stand (2026-10-29)
 
 Built on `feat/online-dot` (pushed unless noted):
-- Online dot in the panel header (87f3083). Not harness2; it rides the branch. CI green on 87f3083.
-- F252 shim fix (2a81471): the delivered-ledger resets per `ask()`. Proven by a fail-first test. NOT seen live (no live run has retried a step yet).
-- Handoff note (1c26d45 code and tests, 6af57ef docs): `src/handoff.js`. Spec field `handoffNote`: absent = on, false = off. The switch enters the signed hash only when present (mirrors `thinking`; it is NOT like `learningHints`, which is a global `config.json` setting, `src/learnstore.js`). hamr ruled 2026-10-28: ON by default (1A), not in the panel (2B), old signed jobs get it without a re-sign, like learnings (A). Not proven live.
-- Planner exit fix: the POC PASSED (`docs/logs/PLANNER-EXIT-PREREG.md`, commit 9f88d5d; results `.claude/scratch/planner-poc/batch/results.jsonl`). First-draft refusals OLD 8/23 vs NEW 1/24, plan-red 1 vs 0, cost $1.55 DeepSeek. The product build is DONE (commit 4455c0c) and held live in run mvsmxgwm (first plan and replan both valid, no plan-red; see F255). Root cause is the F254 entry in `docs/logs/FINDINGS.md`.
-- Live product run u-mvsl1lof (2026-10-28, $0.0425): died plan-red at drafting (F254) before any step. It proved nothing about handoff or the shim (`.claude/scratch/handoff-live/RESULT.md`).
+- Online dot in the panel header (87f3083). Not harness2; it rides the branch. A later fix (f08e5d9) stops a page render error painting it offline.
+- F252 shim fix (2a81471): the delivered-ledger resets per `ask()`. Proven by a fail-first test. Live: the shim was ARMED in run mvsmxgwm (one `memory-cache` record: capped 1, pointered 0). The pointer path (a later attempt told "you already hold it") was never served live, so the fix is still test-proven only.
+- Handoff note (1c26d45 code and tests, 6af57ef docs): `src/handoff.js`. Spec field `handoffNote`: absent = on, false = off. The switch enters the signed hash only when present (mirrors `thinking`; it is NOT like `learningHints`, which is a global `config.json` setting, `src/learnstore.js`). hamr ruled 2026-10-28: ON by default (1A), not in the panel (2B), old signed jobs get it without a re-sign, like learnings (A). Live: the note was emitted 10 times in mvsmxgwm (the F255 notes). It is NOT yet shown to cut re-reads live: mvsmxgwm had 26 new-worker re-reads against E1 medians OFF 30 / HANDOFF 15, which is not like-for-like and is n=1.
+- Planner exit fix (4455c0c): the POC PASSED (`docs/logs/PLANNER-EXIT-PREREG.md`, commit 9f88d5d; results `.claude/scratch/planner-poc/batch/results.jsonl`). First-draft refusals OLD 8/23 vs NEW 1/24, plan-red 1 vs 0, cost $1.55 DeepSeek. The build is DONE and held live in runs mvsmxgwm and mvtatlxw (no plan-red). Root cause is the F254 entry in `docs/logs/FINDINGS.md`.
+- F255 (drafter put a path in `lineMatch`, crashing a check at zero): found live in mvsmxgwm, POC run, fixed in 721ba33. Live green via panel run mvtatlxw (provider-red, then Resume gave already-green, $0.4510).
+- F256 (drafter adds a whole-repo exit-0 check beyond the job): logged in 1fd90b6, NOT built. The panel now names each command check by its own command (b0f5c52), so two commands never read the same question.
+- Full suite at b0f5c52: exit 0, 4970 tests, 4968 pass, 0 fail.
+- Self-review 2026-10-29 done; 7 items sit in the fix ledger.
 
-Done earlier: E0, E0b, E1 (results in F253; `.claude/scratch/e1-poc/battery/analysis/E1-RESULT.md`). The per-turn re-read hint arm was dropped (F253: about 20 fires in 18 runs, the shim already answers whole-file re-reads, and it leaks into scout notes and then the drafter).
+Done earlier: E0, E0b, E1 (results in F253; `.claude/scratch/e1-poc/battery/analysis/E1-RESULT.md`). The per-turn re-read hint arm was dropped (F253: about 20 fires in 18 runs, the shim already answers whole-file re-reads, and it leaks into scout notes and then the drafter). Live product run u-mvsl1lof (2026-10-28, $0.0425) died plan-red at drafting (F254) before any step and proved nothing about handoff or the shim.
 
 ### NEXT (in order)
-1. Finish and verify the planner fix build (fail-first tests, `node scripts/prompt-commit-check.mjs`), then push.
-2. ONE live product run: DeepSeek `deepseek-flash`, template `pulselog-panel-strict` from `.claude/scratch/e1-poc/battery/templates/pulselog`, $1 ceiling via `--draft-spent-usd 4.0`, setup pattern in `.claude/scratch/handoff-live/`. It must prove together: the planner fix (no plan-red), the handoff note (it records, and new workers re-read less; E1 medians: OFF 30, HANDOFF 15), and the shim fix (no false pointer on a retry). If no step retries, say the shim fix is still unseen live.
-3. Then the full branch gate: full suite, hamr's `/code-review`, `/release`. The branch holds the dot and the harness2 work.
+1. `/branch-review`, then `/release` (the branch holds the dot and the harness2 work).
+2. Then the Audit grid branch (PRD addendum; the signed mock is `design/audit-grid-mock.html`).
+3. Then backlog H1 first (section 9).
 
 No further build starts without hamr's word.
 
