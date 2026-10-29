@@ -91,7 +91,9 @@ test('Part 3: the Job tab row: always a row; the rule from the tick when the spi
 
 test('Part 3: the page draws the words it is handed: header bit, attempt line right after the glyph, a Job row; it types no thinking word', () => {
   assert.match(PAGE, /part\.thinking === "string"[\s\S]{0,120}bits\.push\(escapeXml\(part\.thinking\)\)/);
-  assert.match(PAGE, /attemptGlyph\(a\.outcome, boxIsLive\) \+\s*\(a\.thinking \? ' &middot; ' \+ escapeXml\(a\.thinking\) : ''\) \+\s*\(checksText/);
+  // the grid's column header carries the try's thinking words under its glyph: a fix try's own `thinking`, a step try's `t.thinking`
+  assert.match(PAGE, /hint: a\.source === "outer-close" \? "opening close" : \(a\.thinking \|\| ""\)/);
+  assert.match(PAGE, /hint: t\.thinking \|\| ""/);
   assert.match(PAGE, /<div class="field-row">\s*<div class="field"><label>Model<\/label>[^\n]*\n\s*<div class="field" id="details-thinking-field"><label>Thinking<\/label>/, 'Model then Thinking in one field-row, never hidden');
   assert.doesNotMatch(PAGE, /id="details-thinking-field" hidden/);
   assert.match(PAGE, /getElementById\("details-thinking"\)\.textContent = typeof job\.thinking === "string"/);
@@ -111,17 +113,18 @@ function fnSrc(name) {
   return PAGE.slice(start, i + 1);
 }
 
-test('Part 3: the real attempt-line and part-line drawing: `attempt 2 [glyph] · thinking on`, and a one-call part says it on its header', () => {
-  const rows = [];
-  const document = { createElement: () => { const el = { querySelector: () => ({ addEventListener() {} }), appendChild() {}, setAttribute() {}, set className(v) {}, set innerHTML(v) { el.html = v; } }; rows.push(el); return el; } };
-  const f = new Function('document', 'attemptChecksLine', 'fullStageList', 'stageLineHtml', 'attemptGlyph', 'escapeXml', 'loadRounds', `${fnSrc('buildAttemptsList')}\nreturn buildAttemptsList;`)(
-    document, () => '', () => [], () => '', () => '[X]', (x) => String(x), () => {});
-  f({ innerHTML: '', appendChild() {} }, 3, [{ n: 1, outcome: 'red', thinking: 'thinking off' }, { n: 2, outcome: 'red', thinking: "thinking on (this model can't change it)" }, { n: 3, outcome: 'green' }], false);
-  const text = rows.map((r) => r.html).filter(Boolean).join('|');
-  assert.match(text, /attempt 1 \[X\] &middot; thinking off</);
-  assert.match(text, /attempt 2 \[X\] &middot; thinking on \(this model can't change it\)</);
-  assert.match(text, /attempt 3 \[X\]</);
-  assert.doesNotMatch(text, /attempt 3 \[X\] &middot;/, 'an attempt with no record shows no thinking word');
+test('Part 3: the real grid header and part-line drawing: a try column says its thinking words under its glyph (the opening close says so instead), and a one-call part says it on its header', () => {
+  const g = new Function('escapeXml', 'attemptGlyph', 'stageQuestionText', 'stageNumberText', `${['gridGlyph', 'gridStepTryOf', 'gridFixTryOf', 'gridRowsOf', 'gridModelOf', 'gridCellOf', 'gridTableHtml'].map(fnSrc).join('\n')}\nreturn { gridModelOf, gridTableHtml };`)(
+    (x) => String(x), (o) => (o === 'green' ? '✓' : '✗'), () => 'q', () => '');
+  const stepPart = { kind: 'step', tries: [{ n: 1, outcome: 'red', thinking: 'thinking off' }, { n: 2, outcome: 'red', thinking: "thinking on (this model can't change it)" }, { n: 3, outcome: 'green' }], attempts: [{ n: 1, checks: [] }, { n: 2, checks: [] }, { n: 3, checks: [] }] };
+  const model = g.gridModelOf(stepPart, false);
+  model.rows = [{ n: 1, name: 'x', question: 'q' }];
+  const heads = [...g.gridTableHtml('p0', model).matchAll(/<th class="t">(.*?)<\/th>/g)].map((m) => m[1]);
+  assert.match(heads[0], /try 1 <span class="glyph-red">✗<\/span><span class="hint">thinking off<\/span>/);
+  assert.match(heads[1], /try 2 .*<span class="hint">thinking on \(this model can't change it\)<\/span>/);
+  assert.doesNotMatch(heads[2], /hint/, 'a try with no record shows no thinking word');
+  const opening = g.gridModelOf({ kind: 'fix', attempts: [{ n: 1, source: 'outer-close', outcome: 'red', stages: [{ name: 'x', verdict: 'needs_revision' }] }] }, false);
+  assert.match(g.gridTableHtml('p0', opening), /<span class="hint">opening close<\/span>/);
   const part = new Function('draftingLine1Text', 'duration', 'panelMoney', 'liveWallPhrase', 'liveSpendText', 'attemptChecksLine', 'escapeXml', `${fnSrc('partLine1Text')}\nreturn partLine1Text;`)(
     () => '', () => '1s', () => '$0.01', () => '', () => '', () => '', (x) => String(x));
   assert.match(part({ kind: 'plan', rounds: 1, toolCalls: 0, wallMs: 1000, spentUsd: 0.01, thinking: 'thinking on', attempts: [{ n: 1 }] }), /1s &middot; \$0\.01 &middot; thinking on$/);
