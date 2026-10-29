@@ -315,7 +315,7 @@ Built on `feat/online-dot` (pushed unless noted):
 - Online dot in the panel header (87f3083). Not harness2; it rides the branch. CI green on 87f3083.
 - F252 shim fix (2a81471): the delivered-ledger resets per `ask()`. Proven by a fail-first test. NOT seen live (no live run has retried a step yet).
 - Handoff note (1c26d45 code and tests, 6af57ef docs): `src/handoff.js`. Spec field `handoffNote`: absent = on, false = off. The switch enters the signed hash only when present (mirrors `thinking`; it is NOT like `learningHints`, which is a global `config.json` setting, `src/learnstore.js`). hamr ruled 2026-10-28: ON by default (1A), not in the panel (2B), old signed jobs get it without a re-sign, like learnings (A). Not proven live.
-- Planner exit fix: the POC PASSED (`docs/logs/PLANNER-EXIT-PREREG.md`, commit 9f88d5d; results `.claude/scratch/planner-poc/batch/results.jsonl`). First-draft refusals OLD 8/23 vs NEW 1/24, plan-red 1 vs 0, cost $1.55 DeepSeek. The product build is IN PROGRESS at the time of writing: `src/plan.js`, `src/planrun.js` and their tests are modified but uncommitted (git status at session start). No commit yet touches planPrompt "REQUIRED on EVERY step". Check `git log` and `git status` for it; root cause is the F254 line in `docs/logs/FINDINGS.md`.
+- Planner exit fix: the POC PASSED (`docs/logs/PLANNER-EXIT-PREREG.md`, commit 9f88d5d; results `.claude/scratch/planner-poc/batch/results.jsonl`). First-draft refusals OLD 8/23 vs NEW 1/24, plan-red 1 vs 0, cost $1.55 DeepSeek. The product build is DONE (commit 4455c0c) and held live in run mvsmxgwm (first plan and replan both valid, no plan-red; see F255). Root cause is the F254 entry in `docs/logs/FINDINGS.md`.
 - Live product run u-mvsl1lof (2026-10-28, $0.0425): died plan-red at drafting (F254) before any step. It proved nothing about handoff or the shim (`.claude/scratch/handoff-live/RESULT.md`).
 
 Done earlier: E0, E0b, E1 (results in F253; `.claude/scratch/e1-poc/battery/analysis/E1-RESULT.md`). The per-turn re-read hint arm was dropped (F253: about 20 fires in 18 runs, the shim already answers whole-file re-reads, and it leaks into scout notes and then the drafter).
@@ -388,6 +388,6 @@ Untracked scratch (survives `/clear`, not a fresh clone), all under `.claude/scr
 - `planner-poc/` (`engine/`, `batch/`)
 - `handoff-live/RESULT.md`
 
-Tracked: `docs/logs/E0-PREREG.md`, `E0B-PREREG.md`, `E1-PREREG.md`, `PLANNER-EXIT-PREREG.md`; `docs/logs/FINDINGS.md` F252, F253, F254.
+Tracked: `docs/logs/E0-PREREG.md`, `E0B-PREREG.md`, `E1-PREREG.md`, `PLANNER-EXIT-PREREG.md`; `docs/logs/FINDINGS.md` F252, F253, F254, F255.
 
 Paid so far today (all DeepSeek deepseek-flash): E1 $4.72, observe $0.16, planner POC $1.55, live run $0.04.
