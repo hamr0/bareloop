@@ -15049,3 +15049,35 @@ Root cause: `planPrompt` (src/planrun.js, the `"exit"` line near 703) presented 
 **Also in this run.** The F255 fix held live: the path stayed out of `lineMatch`; `checks.js` reached 0 and read 0.
 
 **Status.** Logged only, not built (hamr, 2026-10-29). Cure undecided.
+
+## F257 — planner gives too few rounds per step on a big-file job; every try runs out of rounds while still exploring (2026-10-29; live; H1 battery, Fireworks deepseek-v4p1-flash; all 6 bigfile runs step-red, $0.16-0.41 each)
+
+**Grounded in:** the spine of run 07-bigfile-OFF-r1 (`.claude/scratch/h1/battery/runs/07-bigfile-OFF-r1/sess/source-seed/h1-bigfile-bareloop/u-mvtomt9s.jsonl`), `.claude/scratch/h1/battery/analysis/H1-RESULT.md`, `src/plan.js:390`, `src/planrun.js:1010`.
+
+**Job.** `bigfile`: a copy of bareguard 0.28.0 with one planted character in `_resourceFromRule` in `src/gate.js` (2433 lines). Close needs a change under `src/` and a passing `npm test`.
+
+**What the spine shows (run 07).** The planner's first plan gave step `recon-and-first-fix` 14 rounds. Try 1 hit the cap (`attempt-bounded`, rounds 14 of 14) with 0 files changed; strike 1. Try 2 did the same; strike 2; `cap-halt`. The replan gave the new step 8 rounds. Try 1 and try 2 each hit 8 of 8 with 0 files changed; two strikes; job-end step-red, $0.1914. No try ever wrote.
+
+**Why it matters.** Per-step rounds are the Gate's `maxTurns`. The planner may tighten the 40 ceiling, never exceed it (`src/plan.js:390`, `src/planrun.js:1010`). On a big file the planner picked 14, then 8, and the worker was still reading when the cap hit. The replan went lower, not higher. All 6 bigfile runs (OFF and ON) ended step-red, so this stopped H1 from ever seeing an edit on this job (0 fit cases).
+
+**Not shown.** Whether more rounds would have turned these runs green is untested. The run has no way to tell the planner "the last try ran out while still reading".
+
+**Status.** Logged only, nothing built. Fix ledger bullet added. Related: F258 (what a next try is told).
+
+## F258 — the next try or step worker is not told what the last try found or ruled out (2026-10-29; read from code; size not yet measured ($0 check C pending))
+
+**Grounded in:** `src/planrun.js` (step prompt build ~3453-3495; `boundedNote` at 594; attempt-diff emit 3481; handoff store 1027), `src/handoff.js`.
+
+**What a next-try or next-step worker gets today.** The step action, the root, the target, the final text of finished steps, the last gap, the bounded note (for example "your previous attempt was CUT OFF after N tool rounds"), the Layer R note (off by default), and the handoff note (file names and line ranges only, `src/handoff.js`; kept in memory per run, so a resumed leg starts empty, `src/planrun.js:1027`).
+
+**What it does not get.**
+- What the previous try found or ruled out.
+- What the previous try changed. The attempt diff goes to the spine only, "never a prompt" (`src/planrun.js:3481`).
+- Anything from a try that ran out of rounds, beyond "you ran out".
+- Anything across runs. Learnings reach the planner only, never the worker.
+
+**Fits.** The bigfile runs in F257: two tries, each out of rounds with no write, and the second starts from the same notes as the first.
+
+**Not measured.** How many calls a next try spends re-finding what the last try found. That is check C in `docs/wiki/HARNESS2.md` section 9, $0, not yet run.
+
+**Status.** Read from code; logged only, nothing built. Candidates M1 (code-written carry note) and C (measure it) are in HARNESS2 section 9.

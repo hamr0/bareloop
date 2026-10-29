@@ -108,6 +108,22 @@ Source: a talk by an Arize product manager on two years of building their in-pro
 - Model-written checkpoints that drop history (parked; cache cost).
 - Agent-written memory (the learnings POCs showed the AI invents fixes; code writes it).
 
+## 4c. Lessons from an Arize post on tool selection (2026-10-29)
+
+Source: https://arize.com/blog/ai-agent-tool-selection-decision-tracing/ (October 2026). A vendor post on one small demo. [CLAIMED] None of it is checked by us.
+
+What it says:
+- A separate router model gives a probability for each tool. It is used only above confidence 0.7; below that, the chat model picks as usual.
+- Each pick is logged as a DECISION span that lists all the options, not only the one taken.
+- Results on their 5-tool demo, 100 messages, 3 runs: the right first tool was picked 78% as built, 95% when forced, 91% when gated. Forced gave 21 empty replies; gated gave 3.
+
+What we take:
+- Tool choice is fixed by structure, not by wording. That matches H1: a hint (wording) did not move the pick (section 9 H1).
+- The "decision tracing" idea: log what a pick could have been (the tools on offer, and which fit), so a wrong pick can be read afterwards. Not built; an idea only.
+
+What we do not take:
+- An AI router on every turn. It adds a model call per turn. Code decides, not the AI.
+
 ## 5. Experiments (one lever at a time)
 
 hamr ruled on the interview questions on 2026-10-28 (section 7); ruled numbers are stated below. Where a number still says "hamr sets", nothing was ruled yet. Provider for every paid run: DeepSeek, `deepseek-flash`. Freeze rules are committed before any number exists (PRD design practice; BATTERY-PREREG precedent: docs/logs/BENCH-PREREG.md).
@@ -330,11 +346,34 @@ Done earlier: E0, E0b, E1 (results in F253; `.claude/scratch/e1-poc/battery/anal
 
 No further build starts without hamr's word.
 
+### 2026-10-29 — H1 result (paid, Fireworks)
+
+H1 ran (prereg `docs/logs/H1-PREREG.md` and Addendum 1). Phase 0 ($0) passed: 48 fit cases in 16 runs. The first count was 37; an ask-matching bug in the instrument was fixed (v1 kept). All 48 fit cases are reads of one file, `src/metrics.js` (201 lines), 41 of them in `p7`.
+
+Phase 1: provider Fireworks, model `accounts/fireworks/models/deepseek-v4p1-flash`, 12 runs (2 jobs, 3 per arm), booked $3.3329. The real `runs.jsonl` was untouched (385 lines before and after). Result file: `.claude/scratch/h1/battery/analysis/H1-RESULT.md`.
+
+- **p7: FAIL, and backwards.** Retrieval share ON 6.4% vs OFF 19.5%. Fit conversion ON 1/14 vs OFF 2/8. Greens ON 2/3 vs OFF 3/3 (ON run 1 hit the wall).
+- **bigfile: FAIL on the frozen 2x rule.** Share ON 47.4% vs OFF 31.5%: up, but under 2x. 0 fit cases, because no run reached an edit. Greens 0/3 vs 0/3; every run ended step-red.
+- The hint was shown in 10 step-times (p7) and 6 (bigfile). It was never inert.
+- Cost is reported only (n=3 was declared underpowered before any data).
+- Observation, not a claim: on the big-file repo, workers already pick recall/get about 31% of the time with no hint, against about 10% on small repos.
+
+Why bigfile ended step-red (read from run 07-bigfile-OFF-r1's spine): the planner gave the step 14 rounds; each try hit that round cap with no write; two strikes; the replan gave 8 rounds and did the same. That is F257 in `docs/wiki/FINDINGS.md`. A second gap, what a next try is handed, is F258.
+
+Also done today, $0: H2 sizing (`.claude/scratch/h2/H2-SIZING.md`, 82 archived runs). Findings:
+- Part 0: workers use plain shell tools (bare-agent `shell_*`) for 93.6% of calls and litectx `ctx_*` for 6.4%. Half of the `shell_read` calls are re-reads.
+- Part A (map instead of a whole-file read): a map is about 2% of the file's bytes (median 194 B vs 14.6 KB). A fallback was needed in 5% of cases at 200 lines or more (9 of 166). But the biggest "enough" class is enough-notouch: the worker read the file and never touched it again. That is probably reading to understand, which a map cannot replace, so "enough" is optimistic. One file (`src/metrics.js`) is 78 of the 166 cases.
+- Part B (hand an alternative from the last call): pair patterns are mostly not above the edit baseline; read then read is only 31. Weak.
+
+Where tools come from: `shell_read`, `shell_grep`, `shell_write`, `shell_edit` are from bare-agent `createShellTools` (`src/tools.js:21`); `ctx_*` are bareloop wrappers over litectx; bareguard gates every call (`src/tools.js:93-98`). [CODE]
+
+Nothing built from this. Next candidates (A, C, M1-M3) and wrinkles are in section 9. No build starts without hamr's word.
+
 ## 9. Experiment backlog (not yet run)
 
 Each item: question, why, riskiest assumption, first $0 step, who rules. None has a number yet.
 
-H1. New hint POC: read-vs-recall SELECTION.
+H1. New hint POC: read-vs-recall SELECTION. **DONE 2026-10-29: FAIL on both jobs** (p7 backwards, bigfile under 2x; see section 8, `.claude/scratch/h1/battery/analysis/H1-RESULT.md`, prereg `docs/logs/H1-PREREG.md`).
 - Question. Can a hint move workers from `shell_read` to `ctx_recall`/`ctx_get` where recall fits?
 - Why. Workers pick `shell_read` about 69 of 70 times over recall/get (F107; section 4 above). The per-turn re-read hint arm is dropped (F253). hamr 2026-10-28: "focus on hints" after the fixes.
 - Riskiest assumption. That selection, not retrieval quality, is the blocker, and that a hint wording changes it (a guard wording once moved a false-claim rate 5/10 to 0/10, so wording matters).
@@ -380,6 +419,47 @@ H7. Drafter scope-escape. The one NEW-wording red in the planner POC was scope-e
 
 Also kept: C2-C6 as listed in section 6.5 (C1 dropped; the C2 spec draft has 8 open choices).
 
+Next candidates after H1 (added 2026-10-29). Same fields as above. Nothing here is built or run.
+
+A. Hand a map on a big-file read; the whole file on a second ask (the fallback).
+- Question. Does a map (symbols and line ranges) in place of a first whole-file read cut reads without hurting greens?
+- Why. $0 sizing is done (section 8, H2 Part A): a map is about 2% of the file, fallback about 5% at 200 lines or more.
+- Riskiest assumption. That a worker who read a file and never touched it again (enough-notouch, the largest class) can do without the content. That read is probably to understand, so "enough" is optimistic.
+- $0 first. Two things. (1) A litectx index must exist: today it is built only when a ctx tool is granted (`src/planrun.js:2574`). (2) Measure index and map time on the bareguard copy at $0.
+- Rules. hamr. Next step: a frozen prereg.
+
+B. Hand an alternative based on the last call. SHELVED.
+- Weak at $0 (section 8, H2 Part B): pair patterns are mostly not above the edit baseline. Revisit only with new evidence.
+
+C. The carry-over gap, measured.
+- Question. On try N+1 after a bounded try N, how many calls re-find what try N already found (same reads and greps)?
+- Why. F258: the next worker is not told what the last try found or ruled out. F257 shows runs where every try ends out of rounds.
+- Riskiest assumption. That re-finding is large enough to matter; the handoff note already cuts new-worker file re-reads.
+- $0 first. Count it in archived spines and gate audits, split at the try boundary. No paid run.
+- Rules. hamr.
+
+M1. Carry note built by code, like learnings.
+- Question. Does a code-written note of what the last try did help the next worker?
+- What. Per try, one compact JSON record: turns, tools called with a result summary, files read, changes (the diff), key outputs. Repeated tool calls are folded with the learnings Jaccard match (0.6 or more) so nothing repeats.
+- Key point. A NEW worker starts with no prompt cache, so handing it a note costs no cache break. The reason compaction is parked (section 4b) does not apply.
+- Riskiest assumption. That code can write facts a worker finds useful. An AI-written summary invents (the learnings POCs), so code writes facts only.
+- Caution. The attempt diff today goes to the spine, an arbiter book the worker must not read (section 6.4). The note would take the diff from the tree, not from the book.
+- $0 first. C above, then replay the note on archived tries.
+- Rules. hamr.
+
+M2. litectx context primitives (compress, peek, stash).
+- They are wired but used in about 0.7% of calls (H2 Part 0). Use them. A gap becomes an ask to litectx, never a local patch.
+
+M3. Head-and-tail compaction. A crude baseline only, to compare M1 against.
+
+Wrinkles to fix or try (each has a ledger bullet or a finding):
+- F257: the planner gives too few rounds per step on a big-file job.
+- The litectx index is built only when a ctx tool is granted (`src/planrun.js:2574`).
+- The attempt diff never reaches the next worker (spine only, `src/planrun.js`, "attempt-diff").
+- The handoff note dies at resume: it lives in memory, a resumed leg starts empty (`src/planrun.js:1027`).
+- The Phase 0 instrument had an ask-matching bug (fixed in scratch, v1 kept).
+- The p7 spec signature was rewritten for the Fireworks baseUrl; the driver recomputes the hash.
+
 Known gaps to keep in view: Kind A/B are keyed tool+path (the gate audit has no `ctx_get` range); hint conversion can only be approximated; the prompt text of notes is not in the spine, by design.
 
 ## 10. Where the evidence lives
@@ -390,7 +470,9 @@ Untracked scratch (survives `/clear`, not a fresh clone), all under `.claude/scr
 - `planner-exit/FINDINGS.md`
 - `planner-poc/` (`engine/`, `batch/`)
 - `handoff-live/RESULT.md`
+- `h1/` (`phase0/PHASE0-RESULT.md` and `.v1.md`, `battery/` with `analysis/H1-RESULT.md`, `results.jsonl`, `progress.log`, `runs/`)
+- `h2/H2-SIZING.md` (the $0 sizing)
 
-Tracked: `docs/logs/E0-PREREG.md`, `E0B-PREREG.md`, `E1-PREREG.md`, `PLANNER-EXIT-PREREG.md`; `docs/logs/FINDINGS.md` F252, F253, F254, F255.
+Tracked: `docs/logs/E0-PREREG.md`, `E0B-PREREG.md`, `E1-PREREG.md`, `PLANNER-EXIT-PREREG.md`, `H1-PREREG.md`; `docs/logs/FINDINGS.md` F252, F253, F254, F255.
 
-Paid so far today (all DeepSeek deepseek-flash): E1 $4.72, observe $0.16, planner POC $1.55, live run $0.04.
+Paid so far (DeepSeek deepseek-flash, 2026-10-28): E1 $4.72, observe $0.16, planner POC $1.55, live run $0.04. 2026-10-29: H1 $3.3329 (Fireworks deepseek-v4p1-flash).

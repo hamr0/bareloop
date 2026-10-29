@@ -2098,6 +2098,7 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 - **Out by law:** guardrails, the tool-call hook, `run`/scripts. The agent never authors its arbiter.
 - **Rules that apply:** no paid run before the E0 read; pre-register and freeze before any number; caps, n and pass margins are hamr's to set.
 - **Status:** DRAFT; nothing built; interview hamr before locking. Detail and open questions: `docs/wiki/HARNESS2.md`.
+- **2026-10-29:** H1 FAIL on both jobs; next candidates A, C, M1-M3 and wrinkles in `docs/wiki/HARNESS2.md` §8-§9.
 
 ### Audit grid (v1.119 — 2026-10-29; design RULED by hamr in a live-canvas session 2026-10-29, mock `design/audit-grid-mock.html` variant F; SIGNED by hamr 2026-10-29 ("ok"))
 
