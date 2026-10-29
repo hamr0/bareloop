@@ -4125,11 +4125,14 @@
       if(next === lastRunsPayloadSig) return runs; // unchanged payload — never rebuild the DOM for nothing
       lastRunsPayloadSig = next;
       lastRunsSig = sig(runs);
-      withScrollPreserved(["left-pane-body"], function(){
-        // the painter re-runs the SAME filter/search state — a poll tick never resets it, and it writes a box only when its markup changed.
-        setRunsData(result);
-        runsFilterBar.refresh();
-      });
+      // a render throw is a page bug, not the panel being down: log it here so it never reaches the status catch below (which would paint "offline")
+      try {
+        withScrollPreserved(["left-pane-body"], function(){
+          // the painter re-runs the SAME filter/search state — a poll tick never resets it, and it writes a box only when its markup changed.
+          setRunsData(result);
+          runsFilterBar.refresh();
+        });
+      } catch(renderErr){ console.error("runs list render failed", renderErr); }
       return runs;
     }).catch(function(err){
       paintOnline(!!(err && typeof err.status === "number"));

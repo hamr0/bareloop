@@ -24,7 +24,7 @@ function fnSrc(name) {
 function mount() {
   const dot = { className: 'on', textContent: '● online' };
   const document = { getElementById: (id) => (id === 'online-dot' ? dot : { textContent: '' }) };
-  const state = { mode: 'ok' };
+  const state = { mode: 'ok', renderThrows: false };
   const fetch = () => {
     if (state.mode === 'net') return Promise.reject(new TypeError('Failed to fetch'));
     if (state.mode === 'http500') return Promise.resolve({ ok: false, status: 500, json: async () => ({}) });
@@ -32,14 +32,14 @@ function mount() {
     return Promise.resolve({ ok: true, status: 200, json: async () => ({ runs: [] }) });
   };
   // eslint-disable-next-line no-new-func
-  const f = new Function('document', 'fetch', 'Date', `
+  const f = new Function('document', 'fetch', 'Date', 'state', `
     var RUNS_LIST_POLL_MS = 10000; var lastRunsListRefreshAt = 0; var pollFailStreak = 0; var lastRunsPayloadSig = null; var lastRunsSig = null;
     function sig(o){ return JSON.stringify(o); }
     function withScrollPreserved(ids, fn){ fn(); }
-    function setRunsData(){} var runsFilterBar = { refresh: function(){} };
+    function setRunsData(){ if (state.renderThrows) throw new Error('render boom'); } var console = { error: function(){} }; var runsFilterBar = { refresh: function(){} };
     ${['paintOnline', 'getJSON', 'refreshRunsList'].map(fnSrc).join('\n')}
     return { refreshRunsList: refreshRunsList, streak: function(){ return pollFailStreak; } };
-  `)(document, fetch, Date);
+  `)(document, fetch, Date, state);
   return { f, dot, state };
 }
 const read = (d) => `${d.textContent}|${d.className}`;
@@ -55,6 +55,16 @@ test('online on load; a network-failed read paints offline; the next good read p
   assert.equal(read(dot), '● offline|off');
   state.mode = 'http500'; await f.refreshRunsList(true);
   assert.equal(read(dot), '● online|on', 'node answered with an error: still online');
+});
+
+test('a render error after a good fetch keeps the dot online (node answered) and does not count as a failed read', async () => {
+  const { f, dot, state } = mount();
+  state.mode = 'net'; await f.refreshRunsList(true);
+  assert.equal(read(dot), '● offline|off');
+  state.mode = 'ok'; state.renderThrows = true;
+  await f.refreshRunsList(true);
+  assert.equal(read(dot), '● online|on', 'the fetch succeeded; a page render throw is not the panel being down');
+  assert.equal(f.streak(), 0);
 });
 
 test('a 200 whose body will not parse is node answering: online', async () => {
