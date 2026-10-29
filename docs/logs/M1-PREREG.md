@@ -18,7 +18,7 @@ Known so far (check C, $0 archive read, descriptive only):
 ## Already known (smoke, not evidence)
 
 2 live runs, notes ON only, on Fireworks: bigfile 01-bigfile-ON-r1 step-red $0.3711, p7 02-p7-ON-r1 green $0.3626; 4 notes each; real runs.jsonl untouched (385 lines before, 385 after).
-In bigfile, `src/primitives/rubric.js` was marked "looked here, no fix made" and was still read 7, then 14, then 19 times. n=1, anecdote. (That per-file read count is hamr's reading of the smoke; `progress.log` holds only the run lines above.)
+In bigfile, `src/primitives/rubric.js` was marked "looked here, no fix made" and was still read 7, then 14, then 19 times. n=1, anecdote. (Read counts from `.claude/scratch/m1poc/smoke/runs/01-bigfile-ON-r1/sess/source-seed/tree/.smoke/poc-m1/notes.log`, asks 4, 6 and 7.)
 
 ## Arms
 
@@ -55,7 +55,7 @@ After the test, the notes stay ON unless the GUARD fails. A primary FAIL is repo
 
 ## Known gaps, written up front
 
-- bigfile likely ends step-red on both arms (F257: the planner gives too few calls per step; 6 of 6 H1 bigfile runs were step-red with no write), so it tests repeat reads, not greens. The GUARD is then read on p7 only; bigfile greens, if any, are reported.
+- bigfile likely ends step-red on both arms (F257: the planner gives too few calls per step; 6 of 6 H1 bigfile runs were step-red with no write), so it tests repeat reads, not greens.
 - F259: a root `shell_grep` walks into `.smoke`, `gate-audit.jsonl` and `.litectx`. Open until bare-agent v0.55.0; it hits both arms equally. The carry note can echo a leaked file name (seen in the smoke: `gate-audit.jsonl`, `.smoke/poc-m1/notes.log`).
 - The gate audit has no grep pattern and no `ctx_get` range; the engine copy captures them at the tool seam (M1 v2 rules). Grep repeat stays path-keyed, so it is an upper bound (MEMC-SIZING caveat 1).
 - Provider-red rows are casualties, never evidence; probe the model with 2 consecutive 200s before firing.
