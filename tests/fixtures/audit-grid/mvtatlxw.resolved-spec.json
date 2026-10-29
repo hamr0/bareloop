@@ -1,0 +1,274 @@
+{
+  "schema": "job-v1",
+  "job": "pulselog-strict-live-3",
+  "description": "pulselog-strict-live-3 — authored through the bareloop panel (green, js)",
+  "jobLines": [
+    {
+      "n": 1,
+      "text": "Run npm run typecheck -- --strict and fix every error it reports in src/checks.js, until that command reports zero errors in src/checks.js.",
+      "rule": "Do not add @ts-ignore, @ts-expect-error, or any casts to any.; Do not change tsconfig.json or package.json.",
+      "rules": [
+        "Do not add @ts-ignore, @ts-expect-error, or any casts to any.",
+        "Do not change tsconfig.json or package.json."
+      ]
+    },
+    {
+      "n": 2,
+      "text": "Running npm run typecheck -- --strict must not report more errors in other files under src/ than it does now.",
+      "rule": ""
+    },
+    {
+      "n": 3,
+      "text": "Keep every existing test passing, and keep the test count the same.",
+      "rule": ""
+    }
+  ],
+  "inputs": [
+    {
+      "n": 1,
+      "label": "repo",
+      "value": "/home/hamr/PycharmProjects/bareloop/.claude/scratch/live-ui/pulselog-2"
+    }
+  ],
+  "provider": "openai-api",
+  "baseUrl": "https://api.deepseek.com/v1",
+  "model": "deepseek-flash",
+  "budgetUsd": 1,
+  "maxWallMs": 1800000,
+  "writeScope": [
+    "src/"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  },
+  "goal": "Make `npm run typecheck -- --strict` report zero errors in src/checks.js while introducing no @ts-ignore, @ts-expect-error, or any-casts in that file and leaving tsconfig.json and package.json untouched, keep the strict-mode error count in other src/ files no higher than it is now, and keep every existing test passing with the same test count.",
+  "verdictType": "green",
+  "closeDecl": {
+    "genre": "TYPES",
+    "lang": "js",
+    "stages": [
+      {
+        "name": "changed-from-seed",
+        "kind": "files-changed",
+        "params": {
+          "requireNonEmpty": true,
+          "allowPrefixes": [
+            "src/"
+          ]
+        }
+      },
+      {
+        "name": "typecheck-target-zero-errors",
+        "kind": "count-not-worse",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "cmd": "npx",
+          "args": [
+            "tsc",
+            "--noEmit",
+            "--strict"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "error TS\\d+",
+                "capture": null,
+                "sign": 1,
+                "aggregate": "sum",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "src/checks.js"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": 0
+        }
+      },
+      {
+        "name": "typecheck-clean-exit",
+        "kind": "command-exit",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "cmd": "npx",
+          "args": [
+            "tsc",
+            "--noEmit",
+            "--strict"
+          ],
+          "expectExit": 0
+        }
+      },
+      {
+        "name": "typecheck-outside-checks-ceiling",
+        "kind": "count-not-worse",
+        "fromLine": [
+          2
+        ],
+        "params": {
+          "cmd": "npx",
+          "args": [
+            "tsc",
+            "--noEmit",
+            "--strict"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "error TS\\d+",
+                "capture": null,
+                "sign": 1,
+                "aggregate": "sum",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "src/"
+            ],
+            "excludePrefixes": [
+              "src/checks.js"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": "seed"
+        }
+      },
+      {
+        "name": "tests-kept",
+        "kind": "count-not-worse",
+        "fromLine": [
+          3
+        ],
+        "params": {
+          "cmd": "npm",
+          "args": [
+            "test"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^# tests (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "test/"
+            ]
+          },
+          "direction": "higher-is-better",
+          "baseline": "seed"
+        }
+      },
+      {
+        "name": "suite-green",
+        "kind": "command-exit",
+        "fromLine": [
+          3
+        ],
+        "params": {
+          "cmd": "npm",
+          "args": [
+            "test"
+          ],
+          "expectExit": 0
+        }
+      },
+      {
+        "name": "suite-zero-failures",
+        "kind": "count-not-worse",
+        "fromLine": [
+          3
+        ],
+        "params": {
+          "cmd": "npm",
+          "args": [
+            "test"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^# fail (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "test/"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": 0
+        }
+      },
+      {
+        "name": "no-suppressions",
+        "kind": "pattern-absent-in-diff",
+        "params": {
+          "patterns": [
+            {
+              "id": "ts-ignore",
+              "regex": "@ts-ignore"
+            },
+            {
+              "id": "ts-expect-error",
+              "regex": "@ts-expect-error"
+            },
+            {
+              "id": "ts-nocheck",
+              "regex": "@ts-nocheck"
+            },
+            {
+              "id": "eslint-disable",
+              "regex": "eslint-disable"
+            },
+            {
+              "id": "any",
+              "regex": "(?:[{<|(\\[:,]|\\bas)\\s*any\\b|\\bany\\[\\]"
+            },
+            {
+              "id": "any-star",
+              "regex": "@\\w+\\s*\\{\\s*[*?]\\s*\\}"
+            },
+            {
+              "id": "cast",
+              "regex": "@type\\s*\\{.*\\}\\s*\\*\\/\\s*\\("
+            }
+          ],
+          "extensions": [
+            ".js",
+            ".mjs",
+            ".cjs"
+          ]
+        }
+      }
+    ],
+    "notes": [
+      "Line 1's zero-error check and line 2's outside-src/checks.js ceiling: tsc invoked as `npx tsc --noEmit --strict` (the repo's own binary through npx, plus the --strict flag the person asked for). Line 2's population is src/ minus src/checks.js, read through scope.excludePrefixes on that one file.",
+      "The typecheck parser is the genre's tsc-error-line pattern with aggregate sum (capture null tallies one per error line), so a clean target scope legitimately reads a counted zero; line 1 additionally proves the command itself exited 0.",
+      "Test floor (line 3) counts EXECUTED tests via ^# tests (\\d+)$ at seed baseline, so a skipped/deselected test cannot pad the count; suite-green proves both a clean exit and ^# fail 0. The 'reported test count (# pass / total) matches the seed' phrasing is covered as: executed total not below seed AND zero failures — I did not add a separate pass-count stage, since with zero failures pass==total.",
+      "no-suppressions (always-on) covers the confirmed check 'no @ts-ignore / @ts-expect-error / any casts added in the diff'; its 'any' pattern also flags legitimate uses of the word `any` in added lines of changed .js files, so a fix that legitimately needs `any` will fail that guard — that is the genre's fixed battery, not something I can loosen.",
+      "The confirmed check 'tsconfig.json and package.json are unchanged' is enforced by the always-on write fence (files-changed allowPrefixes [src/]) and is NOT composed again here, per the plan.",
+      "NOT CHECKED (the person asked for it but no stage measures it): a clean `npm run build:types` and the publish-time packed-tarball consumer install that type-checks published .d.ts files — outside the three numbered job lines.",
+      "The person's answer that other src/ files may change 'if needed, small' is not measurable as a magnitude; it is measured only as 'does not increase the error count outside src/checks.js' (line 2).",
+      "timeoutMs was left unset on every stage; I had no fact telling me typical typecheck/test durations for this repo."
+    ]
+  }
+}

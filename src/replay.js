@@ -377,6 +377,19 @@ function floorReasons(spine, jobStart, spendComplete) {
 }
 
 /**
+ * The failing stage's own output lines from a close record's `gap`: the lines after the `stageGap` header (`close stage "X" failed:`), each
+ * as the spine holds it (the panel words them). A gap that does not open with that header keeps every line. `[]` for no gap.
+ * @param {unknown} gap
+ * @returns {string[]}
+ */
+function gapLines(gap) {
+  if (typeof gap !== 'string' || gap === '') return [];
+  const lines = gap.split('\n');
+  if (/^close stage ".*" failed:$/.test(lines[0])) lines.shift();
+  return lines.filter((l) => l.trim() !== '');
+}
+
+/**
  * Which `close-verdict`/`outer-close` record is "the close" — the
  * OPERATOR's real, signed close, never a plan step's own exit-eval judge
  * loop (see the file header's `close-verdict` entry for why `stages` is the
@@ -1029,6 +1042,8 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
           iteration: null,
           verdict,
           stages: Array.isArray(oc.stages) ? oc.stages : null,
+          reasons: gapLines(oc.gap),
+          stop: null,
           outcome: /** @type {'green'|'red'} */ (verdict === 'satisfied' || verdict === 'green' || verdict === 'already-green' ? 'green' : 'red'),
           ...buildOccurrenceMetrics(prevSeq, prevTs, seq, ts, roundsInWindow),
           windowStartSeq: prevSeq,
@@ -1064,6 +1079,12 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
           iteration: typeof is.iteration === 'number' ? is.iteration : null,
           verdict,
           stages: end && end.type === 'close-verdict' && Array.isArray(end.stages) ? end.stages : null,
+          // the failing stage's output lines (a close-verdict's `gap`); a window a close did not end (an escalation, a run-end) says what
+          // ended it instead: no verdict exists for that try
+          reasons: end && end.type === 'close-verdict' ? gapLines(end.gap) : [],
+          stop: end && end.type !== 'close-verdict'
+            ? { by: end.type, what: (end.type === 'escalation' ? end.category : end.outcome) ?? null, detail: typeof end.detail === 'string' ? end.detail : null }
+            : null,
           // `end === null` means this iteration's own window hasn't closed
           // yet (no close-verdict/run-end/escalation boundary has landed on
           // the spine after its iteration-start) — a LIVE run reading this
@@ -1413,7 +1434,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
         unpricedRounds: fixLoop.unpricedRounds,
         outcome: fixLoop.attempts.length ? fixLoop.attempts[fixLoop.attempts.length - 1].outcome : null,
         attempts: fixLoop.attempts.map((a) => ({
-          n: a.n, outcome: a.outcome, verdict: a.verdict, stages: a.stages, detail: null, startSeq: a.windowStartSeq, endSeq: a.windowEndSeq, startTs: a.windowStartTs, endTs: a.windowEndTs,
+          n: a.n, outcome: a.outcome, verdict: a.verdict, stages: a.stages, source: a.source, reasons: a.reasons, stop: a.stop, detail: null, startSeq: a.windowStartSeq, endSeq: a.windowEndSeq, startTs: a.windowStartTs, endTs: a.windowEndTs,
         })),
       });
     }

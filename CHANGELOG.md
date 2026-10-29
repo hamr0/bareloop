@@ -5,6 +5,12 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Changed
+
+- **The Audit tab's fix loop and plan steps draw as a check grid (PRD v1.119).** Data first: each fix try now carries the failing check's own output lines (`reasons`), where it came from (`source`: the opening close or a fix try) and, for a try no close ended, what ended it (`stop`); the panel words them (`noVerdict`: "provider dropped (socket hang up), no check ran", "you stopped it, no check ran", "died, no check ran"). The rounds endpoint also serves a step's cut-off try.
+
 ## [0.51.0] - 2026-10-29
 
 ### Added

@@ -1860,7 +1860,7 @@ function getRunDetailBody(runid, opts) {
     // tabs still never disagree about order/counts/blocked-call figures.
     // a run that DIED (no job-end, runner gone — `death`, decided once above) leaves its last part in flight: that part reads
     // `died`, never the "happened, so passed" default. Replay alone cannot tell died from still running, so the verdict lives here.
-    parts: (draftingPartHere && Array.isArray(enrichedParts) ? [draftingPartHere, ...enrichedParts] : enrichedParts)?.map((p, i, all) => ({ ...p, status: partStatusFor(death.died && i === all.length - 1 && p.kind !== 'drafting' && p.outcome == null && !p.stopReason ? { ...p, stopReason: 'died' } : p) })),
+    parts: (draftingPartHere && Array.isArray(enrichedParts) ? [draftingPartHere, ...enrichedParts] : enrichedParts)?.map((p, i, all) => ({ ...(death.died && i === all.length - 1 ? diedFixTry(p) : p), status: partStatusFor(death.died && i === all.length - 1 && p.kind !== 'drafting' && p.outcome == null && !p.stopReason ? { ...p, stopReason: 'died' } : p) })),
     replans: summary.replans,
     close: summary.close,
     branch: summary.branch,
@@ -2364,7 +2364,10 @@ export function getRunRounds(runid, query = {}, opts = {}) {
   if (query.all === true && part.kind === 'step' && Array.isArray(part.attempts) && part.attempts.some((x) => Array.isArray(x.checks))) {
     return stepRoundsPage(runid, row, part, { partIndex, offset, limit: Number.isInteger(query.limit) && /** @type {number} */ (query.limit) > 0 ? Math.min(/** @type {number} */ (query.limit), ROUNDS_PAGE_MAX) : STEP_ROWS_PAGE }, opts);
   }
-  const a = Array.isArray(part.attempts) ? part.attempts[attempt - 1] : null;
+  // a step's cut-off try ran no check, so it is no attempt: its window is the one after the last graded try (the Audit grid folds its rounds too)
+  const graded = Array.isArray(part.attempts) ? part.attempts[attempt - 1] : null;
+  const a = graded
+    ?? (part.kind === 'step' && part.cutOffTry && part.cutOffTry.n === attempt ? { ...part.cutOffTry, outcome: null, verdict: null, stages: null, detail: null } : null);
   if (!a) return null;
   /** @type {{startSeq: number, endSeq: number, outcome: string|null, detail: string|null}} */
   const window = {
@@ -2420,7 +2423,7 @@ export function getRunRounds(runid, query = {}, opts = {}) {
     totalRounds,
     offset,
     limit,
-    check: { outcome: window.outcome, detail: window.detail },
+    check: graded ? { outcome: window.outcome, detail: window.detail } : null,
     toolLogSaved,
   };
 }
@@ -2717,6 +2720,7 @@ function enrichPartsWithStageKind(parts, kindMeta, spec = null) {
       const checks = Array.isArray(a.checks) ? tryChecksOf(a.checks, kindMeta, spec) : null;
       return {
         ...a,
+        ...(part.kind === 'fix' ? fixTryWords(a) : {}),
         ...(checks ? { checks, judged: (Array.isArray(a.outputJudged) ? a.outputJudged : []).map(judgedFileLine), stages: checks.map(stageOfCheck) } : { stages: (kindMeta && Array.isArray(a.stages)) ? a.stages.map((s) => attachStageKind(s, kindMeta)) : a.stages }),
         ...(declaredStagesTotal ? { declaredStagesTotal } : {}),
         ...(declaredStages ? { declaredStages } : {}),
@@ -2733,6 +2737,43 @@ function enrichPartsWithStageKind(parts, kindMeta, spec = null) {
 
 /** the words for a try the wall (or a cap, or a stop) ended before any of its checks ran (D2) */
 const CUT_OFF_WORDS = 'cut off before its checks ran';
+
+/** the words for a try no check ran in and that the person stopped, or that died (the Audit grid's "?" row) */
+const STOPPED_WORDS = 'you stopped it, no check ran';
+const DIED_WORDS = 'died, no check ran';
+
+/**
+ * The Audit grid's "?" row words for a fix try that ended with no verdict (`attempt.stop`, src/replay.js): ONE table, code-owned.
+ * A provider drop names its own cause; a stop by the person says so; anything else a try can end on without a close (a cap, the wall) reads
+ * the same words a cut-off step try does.
+ * @param {{by: string, what: string|null, detail: string|null}} stop
+ * @returns {string}
+ */
+function noVerdictWords(stop) {
+  if (stop.what === 'provider-red') return stop.detail ? `provider dropped (${stop.detail}), no check ran` : 'provider dropped, no check ran';
+  if (stop.by === 'run-end' && stop.what === 'stopped') return STOPPED_WORDS;
+  return CUT_OFF_WORDS;
+}
+
+/** a died run's fix part: its last try never got a verdict (the Audit grid's "?" row says it died) @param {any} part */
+function diedFixTry(part) {
+  if (part.kind !== 'fix' || !Array.isArray(part.attempts) || part.attempts.length === 0) return part;
+  const last = part.attempts[part.attempts.length - 1];
+  if (last.outcome != null) return part;
+  return { ...part, attempts: [...part.attempts.slice(0, -1), { ...last, noVerdict: DIED_WORDS }] };
+}
+
+/**
+ * A fix try's failing-check lines and its no-verdict words, worded for the page. The spine's gap lines carry the `close: <stage>: ` prefix the
+ * step reasons already lose ({@link reasonsOf}); a gap with no such line keeps every line as it is.
+ * @param {any} a a fix attempt (src/replay.js)
+ * @returns {{reasons: string[], noVerdict?: string}}
+ */
+function fixTryWords(a) {
+  const lines = Array.isArray(a.reasons) ? a.reasons : [];
+  const reasons = lines.some((/** @type {string} */ l) => l.startsWith('close: ')) ? reasonsOf(lines.join('\n')) : lines;
+  return { reasons, ...(a.stop ? { noVerdict: noVerdictWords(a.stop) } : {}) };
+}
 
 /**
  * "71 model · 91 tool · 0 denied" — the Run summary's `calls:` row (PRD v1.106 Part 5 F). Model calls are the run's own spend records
