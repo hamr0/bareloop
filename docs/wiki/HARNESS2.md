@@ -369,6 +369,30 @@ Where tools come from: `shell_read`, `shell_grep`, `shell_write`, `shell_edit` a
 
 Nothing built from this. Next candidates (A, C, M1-M3) and wrinkles are in section 9. No build starts without hamr's word.
 
+### 2026-10-29 — Check C result ($0)
+
+Check C ran at $0 (no model calls, no keys). Result file: `.claude/scratch/memc/MEMC-SIZING.md`. Descriptive only; no pass/fail gate was applied.
+
+**Finding.** A new worker repeats reads that earlier workers in the same run already did. A repeat is a read-class call (shell_read, ctx_get, shell_grep, ctx_recall) whose key an earlier ask touched, with no write to it since. Grep repeats are path-only (the gate audit has no pattern), so they are an upper bound.
+- E0 deepseek-flash TYPES (23 runs): new step 50% (291/580), step retry after a bounded try 53% (91/172), fix first try 42% (149/353), fix retry 50% (164/327).
+- E1 TYPES, handoff OFF (12 runs): 38-60% (new step 38%, fix first 39%, fix retry 60%). Handoff ON (12 runs): 31-47% (new step 31%, fix first 32%, fix retry 47%). ON is lower in every row, but cells hold 3-13 asks and the arms are not like-for-like (the OFF arm pools the hint arm). The note maps files; it does not stop a re-read.
+- H1 bigfile (6 runs, 24 worker asks): step retry after a bounded try 66% (195/295), new step 72% (73/102). All 24 worker asks were bounded at the round cap and none wrote. Of 12 bounded-to-retry pairs, 2 were pure redo (no write, no new key) and 10 found at least one new key but none wrote. Hand-checked pair (07-bigfile-OFF-r1, step `recon-and-first-fix`): try 2 repeated 11 of 25 read-class calls and still found 14 new keys.
+- Read as per-run anecdote: H1 is n=6 per job and has no handoff-OFF arm.
+
+**What each new worker is handed (from code, `src/planrun.js`).**
+- Every worker `ask()` is a fresh transcript and a fresh read-shim ledger (`:2895-2898`). Only the prompt and system prompt carry anything over. The tree persists.
+- Step try prompt (`:3484-3495`): step action; repo root; target; earlier GREEN steps' final text, cut at 2000 chars each (`ARTIFACT_MAX`, pushed only on a green step, `:3500`, `:3605`); on a retry, the last check output (`lastGap`, `:3533`); `boundedNote` if the previous try was bounded (`:594-611`, `:3493`); Layer R note (off by default); the handoff note.
+- Fix try prompt (`:4236-4244`): fixed sentence; root; the same green-step texts; try 1 gets the final verification output, retries get the failed verification output; the close's own numbers so far; `boundedNote`; the handoff note.
+- Handoff note (`:2582-2595`, `src/handoff.js:8,12,69-100`): files earlier asks read, with line counts and symbol ranges. No greps, recall queries, edits or findings. Cap 8,000 chars. Starts empty on a resumed leg (`handoff.js:55-56`).
+- `boundedNote` is generic: it says reading ran out ("CUT OFF after N tool rounds"). It names no file, grep or finding.
+- A failed try's own final text is never passed on.
+
+**Size of a facts-only carry note** (files, greps, edits, from all earlier asks in the run): median about 200-1,400 chars, p90 up to about 2.5k, all at or under 8,000. Share at or under 1,500 chars: 58-100% by segment (lowest: E0 TYPES fix retry 58%). The grep pattern length (24 chars) and match counts are assumed, since the audit has neither. H1's shipped handoff note measured 968-2,325 chars median, so a facts-only note without symbol maps is smaller than what ships.
+
+**Dollar proxy, not a saving.** About 40% of E0 TYPES worker spend sits in repeat calls (about $6.5 of $16.55 over 23 runs). This assumes every call costs the same share. It is not a measured saving: cache reads dominate tokens and cost follows turns (F253), and a removed call does not remove a round.
+
+Verdict: the gap is real and sized. Whether handing facts closes it is untested. Next is M1 (section 9). Recorded in F258.
+
 ## 9. Experiment backlog (not yet run)
 
 Order (hamr, 2026-10-29): memory first. C (measure the carry-over gap, $0) then M1 (carry note built by code: a prereg hamr signs, then a POC on the bigfile job). A and B wait until memory is done; a good carry note may make them unneeded. Why: H1 showed workers already follow the menu's size rule (whole read for small files, recall/get for big ones: bigfile OFF 31.5%, ON 47.4%); the waste is what is lost between workers, not the tool pick. Guess, not proven (n=3): on p7 the hint's word 'large' may have read as permission to read a 201-line file whole.
@@ -433,21 +457,57 @@ A. Hand a map on a big-file read; the whole file on a second ask (the fallback).
 B. Hand an alternative based on the last call. SHELVED.
 - Weak at $0 (section 8, H2 Part B): pair patterns are mostly not above the edit baseline. Revisit only with new evidence.
 
-C. The carry-over gap, measured.
+C. The carry-over gap, measured. **DONE 2026-10-29** ($0; see section 8, `.claude/scratch/memc/MEMC-SIZING.md`, F258).
 - Question. On try N+1 after a bounded try N, how many calls re-find what try N already found (same reads and greps)?
 - Why. F258: the next worker is not told what the last try found or ruled out. F257 shows runs where every try ends out of rounds.
 - Riskiest assumption. That re-finding is large enough to matter; the handoff note already cuts new-worker file re-reads.
 - $0 first. Count it in archived spines and gate audits, split at the try boundary. No paid run.
 - Rules. hamr.
 
-M1. Carry note built by code, like learnings.
-- Question. Does a code-written note of what the last try did help the next worker?
-- What. Per try, one compact JSON record: turns, tools called with a result summary, files read, changes (the diff), key outputs. Repeated tool calls are folded with the learnings Jaccard match (0.6 or more) so nothing repeats.
+M1. Carry note built by code, like learnings. **Initial spec (agreed with hamr 2026-10-29; not built; POC next).**
+- Purpose. A code-written carry note so a new worker (retry, next step, fix try) does not re-find what earlier workers in the same run found.
+- Content. Facts only, written by code:
+  - Last try header: step, try n of m, why it ended (for example ran out of calls, N of N), files changed or none.
+  - Last check output (already handed today; keep one copy).
+  - Files read: path, line count, times read, line ranges actually read or symbol ranges when known. Never content.
+  - Searches: grep pattern, scope, match count and first match lines (file:line, capped); recall query and hit ranges.
+  - Edits made in the run: per file, changed-line count and hunks taken from the WORKING TREE (git diff against step start), capped at about 40 lines per file. Never from the spine's attempt-diff (an arbiter book, section 6.4).
+  - Earlier tries folded to one line each.
+- Fold. Repeated calls merged with the learnings Jaccard match (0.6 or more): "read 5x", not five lines.
+- Size. Grows within a run; newest try in full, older tries folded; hard cap about 3,000 chars (check C: most fit in 1,500).
+- Never. The worker's own words (that is option B, its own later test: the AI invents, per the learnings POCs). Arbiter books (spine, gate audit, `.smoke`). Secrets (masked by the one secret-shape inventory).
+- Persisted to disk per run, so a RESUME starts with it. This fixes the "handoff dies at resume" wrinkle.
+- Across runs. NOT in M1: a fresh run starts on a fresh tree, so old diffs and ranges go stale. Later, via learnings (planner).
+- Relation to today's handoff note. M1 extends or replaces it; decided after the POC.
 - Key point. A NEW worker starts with no prompt cache, so handing it a note costs no cache break. The reason compaction is parked (section 4b) does not apply.
-- Riskiest assumption. That code can write facts a worker finds useful. An AI-written summary invents (the learnings POCs), so code writes facts only.
-- Caution. The attempt diff today goes to the spine, an arbiter book the worker must not read (section 6.4). The note would take the diff from the tree, not from the book.
-- $0 first. C above, then replay the note on archived tries.
-- Rules. hamr.
+- Riskiest assumption. That code can write facts a worker finds useful. An AI-written summary invents, so code writes facts only.
+- Steps.
+  1. $0 POC: a note maker in a scratch copy replays archived runs and prints the note each new worker would have got. hamr reads real samples.
+  2. Prereg that hamr signs: today's handoff against handoff plus M1, jobs p7 and bigfile, Fireworks DeepSeek `deepseek-v4p1-flash`.
+  3. Build on a branch only if it passes.
+- Known data gap to resolve in the POC. The gate audit has no grep pattern and no `ctx_get` range (MEMC-SIZING caveats). The note maker must take these from the tool call args at the source, so the POC must say where each field comes from.
+- Illustrative layout, values shaped like the bigfile run, not real output:
+
+```
+== What earlier workers in this run did (facts from the record, written by code) ==
+
+Last try: step "recon-and-first-fix", try 1 of 2. Ran out of calls (14 of 14). Changed nothing.
+Last check said: not ok 113 - a resource halt routes through humanChannel topup end-to-end
+
+Files read (whole-file reads, line ranges where known):
+  test/budget-resources.test.js (612 lines) · read 2x · lines 380-450
+  src/gate.js (2433 lines) · read 3x · _haltDimension 2140-2160, _resourceFromRule 2185-2192
+  src/primitives/budget.js (501 lines) · read 1x
+
+Searches and what they matched:
+  grep "budget.resource" in src/  → 6 matches: src/gate.js:2188, :2201, :2240 (+3)
+  grep "_haltDimension" in src/   → 2 matches: src/gate.js:2141, :2310
+  recall "topup resource halt"    → src/gate.js 2140-2160, src/primitives/budget.js 88-120
+
+Edits made in this run: none.
+
+Earlier tries (folded): step "recon-and-first-fix" try 1: same reads as above, plus grep "topup" (11 matches).
+```
 
 M2. litectx context primitives (compress, peek, stash).
 - They are wired but used in about 0.7% of calls (H2 Part 0). Use them. A gap becomes an ask to litectx, never a local patch.
@@ -474,6 +534,7 @@ Untracked scratch (survives `/clear`, not a fresh clone), all under `.claude/scr
 - `handoff-live/RESULT.md`
 - `h1/` (`phase0/PHASE0-RESULT.md` and `.v1.md`, `battery/` with `analysis/H1-RESULT.md`, `results.jsonl`, `progress.log`, `runs/`)
 - `h2/H2-SIZING.md` (the $0 sizing)
+- `memc/` (check C, $0: `MEMC-SIZING.md` is the result; scripts `memc.mjs`, `agg.mjs`, `selfaudit.mjs`, `handcheck.mjs`; tables `memc-tables.md`, raw `memc.out.json`)
 
 Tracked: `docs/logs/E0-PREREG.md`, `E0B-PREREG.md`, `E1-PREREG.md`, `PLANNER-EXIT-PREREG.md`, `H1-PREREG.md`; `docs/wiki/FINDINGS.md` F252, F253, F254, F255.
 

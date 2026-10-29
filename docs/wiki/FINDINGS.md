@@ -15081,3 +15081,9 @@ Root cause: `planPrompt` (src/planrun.js, the `"exit"` line near 703) presented 
 **Not measured.** How many calls a next try spends re-finding what the last try found. That is check C in `docs/wiki/HARNESS2.md` section 9, $0, not yet run.
 
 **Status.** Read from code; logged only, nothing built. Candidates M1 (code-written carry note) and C (measure it) are in HARNESS2 section 9.
+
+**Sized 2026-10-29 (check C, $0).** Result in `.claude/scratch/memc/MEMC-SIZING.md`; summary in HARNESS2 section 8. A new worker repeats reads earlier workers in the same run already did (grep repeats are path-only, so an upper bound). E0 deepseek-flash TYPES: new step 50%, step retry after a bounded try 53%, fix 42-50%. E1 TYPES: handoff OFF 38-60%, handoff ON 31-47% (cells of 3-13 asks, arms not like-for-like). H1 bigfile: retry after a bounded try 66%, new step 72%; all 24 worker asks were bounded at the round cap and none wrote.
+
+What is handed, checked against code. The check output (gap) IS handed: to every step retry and to fix try 1 (the final verification output). The final text of earlier GREEN steps is carried forward (cut at 2000 chars each), to later steps and fix tries. A failed try's own text is not handed to its retry, and `boundedNote` is generic (it says reading ran out, nothing about what was read or found). No greps, recall queries, edits or findings reach the next worker, and the handoff note is a read-path map only.
+
+A facts-only carry note (files, greps, edits) would be small: median about 200-1,400 chars, p90 up to about 2.5k, all at or under 8,000. The dollar proxy (about 40% of worker spend on E0 TYPES sits in repeat calls) is NOT a measured saving: cost follows turns (F253). Status: sized; the M1 initial spec is in HARNESS2 section 9, nothing built.
