@@ -39,6 +39,12 @@ test('panel: fix tries worded for the page: lines without the close prefix, the 
   assert.equal(fix.attempts[0].reasons[0], '"npx tsc --noEmit --strict" exited 2, expected 0');
   assert.equal(fix.attempts[0].reasons.length, 40);
   assert.equal(fix.attempts[2].reasons[0], '11 forbidden pattern occurrence(s) in lines this run ADDED');
+  assert.equal(fix.attempts[2].reasons[1], '[cast] src/backup.js:175: const e = /** @type {Error} */ (err);', 'only the close: prefix is cut');
+  assert.equal(fix.attempts[0].reasons[1], "src/backup.js(21,19): error TS7006: Parameter 'now' implicitly has an 'any' type.", 'a file path stays (a step\'s reasonsOf cut drops it)');
+  assert.ok(fix.attempts.every((a) => a.reasons.every((l) => !l.startsWith('close:'))), 'no line keeps its close: prefix');
+  const step = getRunDetail(RUNID, world.opts).parts.filter((p) => p.kind === 'step')[2];
+  const stepLines = step.attempts[0].checks.find((c) => !c.pass).reasons;
+  assert.ok(stepLines.some((l) => /^error TS\d+: /.test(l)) && !stepLines.some((l) => /^src\/checks\.js\(/.test(l)), 'step reasons are unchanged: their path-dropping cut stays');
   assert.equal(fix.attempts[0].noVerdict, undefined);
   assert.equal(fix.attempts[3].noVerdict, 'provider dropped (socket hang up), no check ran');
   assert.equal(fix.attempts[3].thinking, 'thinking on');

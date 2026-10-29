@@ -2764,14 +2764,17 @@ function diedFixTry(part) {
 }
 
 /**
- * A fix try's failing-check lines and its no-verdict words, worded for the page. The spine's gap lines carry the `close: <stage>: ` prefix the
- * step reasons already lose ({@link reasonsOf}); a gap with no such line keeps every line as it is.
+ * A fix try's failing-check lines and its no-verdict words, worded for the page. The spine's gap lines each open with `close: `, the first also with
+ * the failing stage's own name (`close: <stage>: `): those are cut and nothing else, so a file path stays (a step's {@link reasonsOf} cuts more, and
+ * is untouched).
  * @param {any} a a fix attempt (src/replay.js)
  * @returns {{reasons: string[], noVerdict?: string}}
  */
 function fixTryWords(a) {
   const lines = Array.isArray(a.reasons) ? a.reasons : [];
-  const reasons = lines.some((/** @type {string} */ l) => l.startsWith('close: ')) ? reasonsOf(lines.join('\n')) : lines;
+  const failing = Array.isArray(a.stages) ? a.stages.find((/** @type {any} */ st) => st && st.verdict !== 'satisfied') : null;
+  const stageHead = failing && typeof failing.name === 'string' ? `close: ${failing.name}: ` : null;
+  const reasons = lines.map((/** @type {string} */ l) => (stageHead && l.startsWith(stageHead) ? l.slice(stageHead.length) : l.replace(/^close:\s*/, '')));
   return { reasons, ...(a.stop ? { noVerdict: noVerdictWords(a.stop) } : {}) };
 }
 
