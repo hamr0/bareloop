@@ -7,6 +7,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Security
+
+- **A root `shell_grep` no longer reads the arbiter's books (F259, BG-3).** The loop gate judged a directory grep once, on the root path it named, so the walk read `.smoke/` (spine, attempt-diff), `gate-audit.jsonl` and `.litectx/` that a direct `shell_read` is denied. `bare-agent` is now `^0.55.0`, and the worker's and the authoring scout's shell tools are built with `canRead` (the gate's own `allows()` on the same read action, asked for every directory and file the walk would enter; a denied one is skipped) and `noFollowSymlinks: true`. One owner: `gatedShellOptions` in `src/tools.js`. Whole-call grep `timeout` (5000 ms default) now includes the walk.
+
 ### Changed
 
 - **The Audit tab's fix loop and plan steps draw as a check grid (PRD v1.119).** Data first: each fix try now carries the failing check's own output lines (`reasons`), where it came from (`source`: the opening close or a fix try) and, for a try no close ended, what ended it (`stop`); the panel words them (`noVerdict`: "provider dropped (socket hang up), no check ran", "you stopped it, no check ran", "died, no check ran"). The rounds endpoint also serves a step's cut-off try. The Audit body: one grid per part (rows = the part's checks in declared order, columns = tries), an errors list under it (one row per red or verdict-less try, the last red try open on load, first 8 lines per open row), and the rounds folded per try; it replaces the boxed fix-attempt view, the stacked step try blocks and the step's single Round table (the `?all=1` endpoint stays). Fix and step tries carry their model-call count (`rounds`) for the fold label. A try no close ended reads `?` in the part header and the map chip as in its grid column; fix-part error lines drop their `close:` prefix and keep file paths; a rubric step's `output judged:` line returns, one faint line per try under the errors list.
