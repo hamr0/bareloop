@@ -15033,3 +15033,19 @@ Root cause: `planPrompt` (src/planrun.js, the `"exit"` line near 703) presented 
 **Status.** Logged; POC next (hamr, 2026-10-29). Cure ideas not decided (arbiter-adjacent; hamr's call).
 
 **POC + fix.** Option A (a rule sentence plus one legal example in the author prompt's parser description) passed its pre-registered POC (prereg 63a4c12, `docs/wiki/F255-OPTION-A-PREREG.md`): path-in-parser OLD 8/10 vs NEW 0/10; first-draft refusals 4 vs 0; $0.73. Fix commit 721ba33 (`src/authorflow.js` `catalogueBlock()`, test in `tests/authorflow.test.js`). Mechanism note: the NEW drafts copied the example's `lineMatch` verbatim, so the example does most of the work. Tested on the TYPES/pulselog job only; not yet proven in a live run.
+
+## F256 — DeepSeek drafter adds a whole-repo "typecheck exits 0" check the job never asked for; the worker then fixes every file (2026-10-29; live; run mvtatlxw, panel session smvtajlz28g16; green after resume, $0.4510)
+
+**Grounded in:** `~/.config/bareloop/panel-sessions/smvtajlz28g16/resolved-spec.json` (`jobLines`, `closeDecl`), the run's spine, and `git status` in the worktree `.claude/scratch/live-ui/pulselog-2/.bareloop/wt/smvtajlz28g16`.
+
+**Job.** Pulselog strict typecheck. Line 1: run `npm run typecheck -- --strict` and fix every error in `src/checks.js` until zero errors there. Line 2: the command must not report MORE errors in other `src/` files than it does now. Line 3: keep every test passing and the test count the same. Operator answer at the question turn: other `src/` files may change only to support the `checks.js` fix, and the change stays small.
+
+**What the drafter signed.** The close included a command-exit stage `typecheck-clean-exit` (`fromLine: [1]`, kind `command-exit`, `cmd: "npx"`, `args: ["tsc","--noEmit","--strict"]`, `expectExit: 0`). Exit 0 means zero errors in ALL files, not only `checks.js`. At seed there are 67 errors in total, 46 of them outside `checks.js`. It passed the seed-red gate because it was red at seed.
+
+**Effect.** The worker fixed all 67 errors across 9 files (`git status` in the worktree: M `src/backup.js`, `checks.js`, `digest.js`, `dumpers.js`, `email.js`, `fallback.js`, `metrics.js`, `run.js`, `sink.js`). Final strict tsc: exit 0, 0 errors. The run hit provider-red (socket hang up, fix phase, $0.4510, `spendComplete` false); Resume ran the $0 close precheck and read already-green.
+
+**Cause class.** The drafter over-tightens a line ("not more than now") into a stricter stage; the signing gates cannot see a check that is stricter than the job line it serves.
+
+**Also in this run.** The F255 fix held live: the path stayed out of `lineMatch`; `checks.js` reached 0 and read 0.
+
+**Status.** Logged only, not built (hamr, 2026-10-29). Cure undecided.
