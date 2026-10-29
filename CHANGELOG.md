@@ -9,7 +9,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Changed
 
-- **The Audit tab's fix loop and plan steps draw as a check grid (PRD v1.119).** Data first: each fix try now carries the failing check's own output lines (`reasons`), where it came from (`source`: the opening close or a fix try) and, for a try no close ended, what ended it (`stop`); the panel words them (`noVerdict`: "provider dropped (socket hang up), no check ran", "you stopped it, no check ran", "died, no check ran"). The rounds endpoint also serves a step's cut-off try.
+- **The Audit tab's fix loop and plan steps draw as a check grid (PRD v1.119).** Data first: each fix try now carries the failing check's own output lines (`reasons`), where it came from (`source`: the opening close or a fix try) and, for a try no close ended, what ended it (`stop`); the panel words them (`noVerdict`: "provider dropped (socket hang up), no check ran", "you stopped it, no check ran", "died, no check ran"). The rounds endpoint also serves a step's cut-off try. The Audit body: one grid per part (rows = the part's checks in declared order, columns = tries), an errors list under it (one row per red or verdict-less try, the last red try open on load, first 8 lines per open row), and the rounds folded per try; it replaces the boxed fix-attempt view, the stacked step try blocks and the step's single Round table (the `?all=1` endpoint stays). Fix and step tries carry their model-call count (`rounds`) for the fold label.
 
 ## [0.51.0] - 2026-10-29
 
