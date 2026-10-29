@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { getRunDetail } from '../src/panel/server.js';
-import { makeAuditGridWorld, RUNID } from './audit-grid-world.mjs';
+import { makeAuditGridWorld, makeRubricGridWorld, RUNID, RUBRIC_RUNID } from './audit-grid-world.mjs';
 import { makePart5World } from './part5-world.mjs';
 
 const PAGE = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
@@ -21,7 +21,7 @@ function fnSrc(name) {
   }
   return PAGE.slice(start, i + 1);
 }
-const NAMES = ['escapeXml', 'attemptGlyph', 'tryGlyph', 'stageQuestionText', 'stageNumberText', 'gridGlyph', 'gridPlural', 'gridStepTryOf', 'gridFixTryOf', 'gridRowsOf', 'gridModelOf', 'gridCellOf', 'gridFailsOf', 'gridDefaultOpen', 'gridTableHtml', 'gridErrorsHtml', 'gridRoundsHtml'];
+const NAMES = ['escapeXml', 'attemptGlyph', 'tryGlyph', 'stageQuestionText', 'stageNumberText', 'gridGlyph', 'gridPlural', 'gridStepTryOf', 'gridFixTryOf', 'gridRowsOf', 'gridModelOf', 'gridCellOf', 'gridFailsOf', 'gridDefaultOpen', 'gridTableHtml', 'gridErrorsHtml', 'gridJudgedHtml', 'gridRoundsHtml', 'gridPartHtml'];
 const g = new Function(`${NAMES.map(fnSrc).join('\n')}\nreturn { ${NAMES.join(', ')} };`)();
 
 const grid = makeAuditGridWorld();
@@ -175,4 +175,22 @@ test('the part header, the step map chip and the grid column agree: a try with n
   assert.equal(heads.join(''), '✗✗✗?', 'the grid columns say the same');
   const step = partOf(run, 'step', 2);
   assert.equal(strip(H.partResultGlyph(step, { attempts: step.attempts, state: 'done' })), '✗✓', 'a step\'s header is unchanged');
+});
+
+test('rubric step: one faint "output judged:" line per try that has it (real run flight-c1), under the errors list and above "rounds per try"', () => {
+  const rubric = getRunDetail(RUBRIC_RUNID, makeRubricGridWorld().opts);
+  const model = g.gridModelOf(partOf(rubric, 'step', 0), false);
+  assert.equal(model.tries.length, 2);
+  const judged = g.gridJudgedHtml(model);
+  assert.deepEqual([...judged.matchAll(/<div class="hint fx-judged">(.*?)<\/div>/g)].map((m) => m[1]), [
+    'try 1 &middot; output judged: output/steps/1.json · 2.2 KB · sha256 abd5…5e',
+    'try 2 &middot; output judged: output/steps/1.json · 2.2 KB · sha256 156a…43',
+  ]);
+  const html = g.gridPartHtml('p2', model);
+  assert.ok(html.indexOf('id="fxerr-p2"') < html.indexOf('fx-judged') && html.indexOf('fx-judged') < html.indexOf('rounds per try'), 'order: errors, judged, rounds');
+});
+
+test('no judged line for a try with none (a code run, an old spine)', () => {
+  assert.equal(g.gridJudgedHtml(fixModel), '');
+  assert.doesNotMatch(g.gridPartHtml('p5', fixModel), /fx-judged/);
 });

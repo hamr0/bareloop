@@ -31,3 +31,27 @@ export function makeAuditGridWorld() {
   }, { home });
   return { home, opts: { home } };
 }
+
+const RUBRIC = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'export-run', 'smvij5q3rx96z');
+export const RUBRIC_RUNID = 'mvij7kuk';
+
+/**
+ * The committed REAL rubric run flight-c1 (tests/fixtures/export-run: two tries of one step, each with an `output-judged` record) in a scratch world.
+ * @returns {{ home: string, opts: { home: string } }}
+ */
+export function makeRubricGridWorld() {
+  const root = mkdtempSync(join(tmpdir(), 'audit-grid-rubric-'));
+  const home = join(root, 'home');
+  mkdirSync(home, { recursive: true });
+  const out = join(root, 'session');
+  const into = join(out, 'source-seed');
+  const dir = join(into, 'flight-c1-bareloop');
+  mkdirSync(dir, { recursive: true });
+  copyFileSync(join(RUBRIC, 'source-seed', 'source.json'), join(into, 'source.json'));
+  copyFileSync(join(RUBRIC, 'resolved-spec.json'), join(out, 'resolved-spec.json'));
+  copyFileSync(join(RUBRIC, 'source-seed', 'flight-c1-bareloop', `u-${RUBRIC_RUNID}.jsonl`), join(dir, `u-${RUBRIC_RUNID}.jsonl`));
+  appendRun({
+    at: '2026-10-21T19:50:00.000Z', runid: RUBRIC_RUNID, job: 'flight-c1', spine: join(dir, `u-${RUBRIC_RUNID}.jsonl`), patient: null, via: 'run-u',
+  }, { home });
+  return { home, opts: { home } };
+}

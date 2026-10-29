@@ -426,6 +426,7 @@
   .fx-sub{font-size:12px;color:var(--text);font-weight:700;margin:6px 0 2px;overflow-wrap:anywhere;}
   .fx-lines{font-size:12px;color:var(--text-dim);}
   .fx-lines div{margin:1px 0;overflow-wrap:anywhere;}
+  .fx-judged{overflow-wrap:anywhere;}
   .fx-more{margin-top:4px;min-height:28px;padding:2px 8px;border:1px solid var(--border-strong);background:var(--panel2);color:var(--text);font-size:12px;}
   /* item 1 (2026-09-26): a round's own model call renders as this table's
      header ROW (visually distinct from its tool-call rows below it). */
@@ -3040,7 +3041,7 @@
     var a = (part.attempts || []).filter(function(x){ return x.n === t.n; })[0] || null;
     var out = {
       n: t.n, glyph: t.cutOff ? "?" : attemptGlyph(t.outcome, boxIsLive), hint: t.thinking || "", noVerdict: t.cutOff ? (t.words || "") : null,
-      known: false, inflight: false, cells: {}, order: [], attempt: a || { n: t.n }, calls: a ? (typeof a.rounds === "number" ? a.rounds : null) : (t.cutOff && part.cutOffTry && typeof part.cutOffTry.rounds === "number" ? part.cutOffTry.rounds : null), opening: false
+      known: false, inflight: false, cells: {}, order: [], judged: a && Array.isArray(a.judged) ? a.judged : [], attempt: a || { n: t.n }, calls: a ? (typeof a.rounds === "number" ? a.rounds : null) : (t.cutOff && part.cutOffTry && typeof part.cutOffTry.rounds === "number" ? part.cutOffTry.rounds : null), opening: false
     };
     if(!t.cutOff && a && Array.isArray(a.checks)){
       out.known = true;
@@ -3056,7 +3057,7 @@
     var noVerdict = typeof a.noVerdict === "string" && a.noVerdict !== "" ? a.noVerdict : null;
     var out = {
       n: a.n, glyph: tryGlyph(a, boxIsLive), hint: a.source === "outer-close" ? "opening close" : (a.thinking || ""), noVerdict: noVerdict,
-      known: Array.isArray(a.stages), inflight: (a.outcome === null || a.outcome === undefined) && !!boxIsLive, cells: {}, order: [], attempt: a,
+      known: Array.isArray(a.stages), judged: [], inflight: (a.outcome === null || a.outcome === undefined) && !!boxIsLive, cells: {}, order: [], attempt: a,
       calls: typeof a.rounds === "number" ? a.rounds : null, opening: a.source === "outer-close"
     };
     if(out.known){
@@ -3190,8 +3191,14 @@
         '</summary><div class="rf-body"><div class="hint">loading&hellip;</div></div></details>';
     }).join("") + "</div>";
   }
+  // a rubric step's try names the file its check read (the server's `attempt.judged` words): one faint line per try that has one
+  function gridJudgedHtml(model){
+    return model.tries.map(function(t){
+      return (t.judged || []).map(function(j){ return '<div class="hint fx-judged">try ' + t.n + " &middot; " + escapeXml(j) + "</div>"; }).join("");
+    }).join("");
+  }
   function gridPartHtml(pid, model){
-    return gridTableHtml(pid, model) + '<div class="fx-errors" id="fxerr-' + pid + '" hidden></div>' + gridRoundsHtml(model);
+    return gridTableHtml(pid, model) + '<div class="fx-errors" id="fxerr-' + pid + '" hidden></div>' + gridJudgedHtml(model) + gridRoundsHtml(model);
   }
   function renderGridErrors(wrap, pid, model, st){
     var host = wrap.querySelector(".fx-errors");
