@@ -2098,3 +2098,16 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 - **Out by law:** guardrails, the tool-call hook, `run`/scripts. The agent never authors its arbiter.
 - **Rules that apply:** no paid run before the E0 read; pre-register and freeze before any number; caps, n and pass margins are hamr's to set.
 - **Status:** DRAFT; nothing built; interview hamr before locking. Detail and open questions: `docs/wiki/HARNESS2.md`.
+
+### Audit grid (v1.119 — 2026-10-29; design RULED by hamr in a live-canvas session 2026-10-29, mock `design/audit-grid-mock.html` variant F; NOT YET SIGNED as a build spec — hamr reads before it counts)
+
+- **Source:** hamr, live-canvas session 2026-10-29, real data from a live run (pointers: FINDINGS F255, F256). Variants A–E are kept in the mock for context only.
+- **One look for step parts AND fix-loop parts:** a check grid per part. Rows = the part's checks, numbered in run order, each with its plain question (code-owned wording, `stageQuestionText`). Columns = try 1..N with thinking on/off. Cells: ✓, ✗, · (not run), ? (no verdict). The grid scrolls inside its own box; no page side-scroll at phone width. It replaces the old boxed "[ attempt N ✗ · check #K … ]" fix view and the stacked step try blocks.
+- **Errors list under each grid:** one row per try that failed (✗) or has no verdict (?); all-pass tries get no row; no list when nothing failed. A row reads: try N · #K ✗ (first failing check, "+J more checks") · the first error line (one line, full text on hover) · (+M more).
+- **Open a row** (or click its ✗ cell; the cell is outlined while open): the first 8 error lines, then "+M more lines". Several failing checks in one try get a "#K <question>" sub-heading each. Rows open independently.
+- **Default on load:** only the LAST failed try's row is open per part; older rows are folded.
+- **"?" row wording:** "provider dropped (socket hang up), no check ran" (not clickable, faint).
+- **Unchanged:** per-try rounds tables stay, folded under the errors list; the panel part header and the tools summary lines.
+- **fwdloop** copies this from bareloop's RELEASED tag; tell fwd the tag at release.
+- **Build gate:** no POC needed (render-only over existing part data). The build spec must be diffed control-by-control against the mock, and hamr clicks through before it is called done.
+- **Status:** design ruled, spec unsigned, nothing built. No pending-UI list exists in the PRD to point from.
