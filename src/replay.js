@@ -601,6 +601,8 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
   // = `['worker-round', 'judge-round', 'worker-turn']`), imported rather than
   // re-spelled so the two can never drift apart.
   const spendRecords = spine.filter((e) => SPEND_RECORD_TYPES.includes(e.type));
+  // the model calls inside one try's window, counted the way the Audit rounds endpoint pages them (`seq` in (lo, hi])
+  const countRoundsIn = (/** @type {number} */ lo, /** @type {number} */ hi) => spendRecords.filter((r) => typeof r.seq === 'number' && r.seq > lo && r.seq <= hi).length;
   const exitEvals = spine.filter((e) => e.type === 'exit-eval');
   // PRD v1.106 Part 5 (D1): which check each `check-passes` result was — the `check-run` record just before its exit-eval
   const checkRuns = spine.filter((e) => e.type === 'check-run');
@@ -892,12 +894,14 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     const lastIter = iterationStarts
       .filter((it) => typeof it.seq === 'number' && it.seq > prevBoundSeq && it.seq < endSeq)
       .sort((a, b) => b.seq - a.seq)[0] ?? null;
+    const cutOffEndSeq = end && typeof end.seq === 'number' ? end.seq : (Number.isFinite(endSeq) ? endSeq : prevBoundSeq);
     const cutOffTry = endedHere && lastIter
       ? {
         n: attemptWindows.length + 1,
         iteration: typeof lastIter.iteration === 'number' ? lastIter.iteration : null,
         startSeq: prevBoundSeq,
-        endSeq: end && typeof end.seq === 'number' ? end.seq : (Number.isFinite(endSeq) ? endSeq : prevBoundSeq),
+        endSeq: cutOffEndSeq,
+        rounds: countRoundsIn(prevBoundSeq, cutOffEndSeq),
         startTs: prevBoundTs,
         endTs,
       }
@@ -1390,7 +1394,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
       // same as a scout/plan/replan/judge/run part already does.
       const stepAttempts = step.attemptWindows.length > 0
         ? step.attemptWindows.map((aw) => ({
-          n: aw.n, outcome: aw.outcome, verdict: null, stages: null, detail: aw.exitEvalDetail, startSeq: aw.startSeq, endSeq: aw.endSeq, startTs: aw.startTs, endTs: aw.endTs, iteration: aw.iteration, checks: aw.checks, outputJudged: aw.outputJudged,
+          n: aw.n, outcome: aw.outcome, verdict: null, stages: null, rounds: countRoundsIn(aw.startSeq, aw.endSeq), detail: aw.exitEvalDetail, startSeq: aw.startSeq, endSeq: aw.endSeq, startTs: aw.startTs, endTs: aw.endTs, iteration: aw.iteration, checks: aw.checks, outputJudged: aw.outputJudged,
         }))
         : wholePartAttempt(step.stepStartSeq, step.stepStartTs, step.stepEndSeq, step.stepEndTs);
       parts.push({
@@ -1434,7 +1438,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
         unpricedRounds: fixLoop.unpricedRounds,
         outcome: fixLoop.attempts.length ? fixLoop.attempts[fixLoop.attempts.length - 1].outcome : null,
         attempts: fixLoop.attempts.map((a) => ({
-          n: a.n, outcome: a.outcome, verdict: a.verdict, stages: a.stages, source: a.source, reasons: a.reasons, stop: a.stop, detail: null, startSeq: a.windowStartSeq, endSeq: a.windowEndSeq, startTs: a.windowStartTs, endTs: a.windowEndTs,
+          n: a.n, outcome: a.outcome, verdict: a.verdict, stages: a.stages, source: a.source, reasons: a.reasons, stop: a.stop, rounds: a.rounds, detail: null, startSeq: a.windowStartSeq, endSeq: a.windowEndSeq, startTs: a.windowStartTs, endTs: a.windowEndTs,
         })),
       });
     }
