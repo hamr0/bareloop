@@ -1197,7 +1197,8 @@ test('item 1: every attemptGlyph call site passes a boxIsLive argument (map titl
   assert.match(html, /var boxIsLive = box\.state === "running";/, 'partResultGlyph (part cards + Audit grouped headers) must derive boxIsLive from the box\'s own state');
   assert.match(html, /function gridStepTryOf\(part, t, boxIsLive\)\{/);
   assert.match(html, /attemptGlyph\(t\.outcome, boxIsLive\)/, 'a step try column');
-  assert.match(html, /attemptGlyph\(a\.outcome, boxIsLive\)/, 'a fix try column');
+  assert.match(html, /glyph: tryGlyph\(a, boxIsLive\)/, 'a fix try column (a try with no verdict reads ?)');
+  assert.match(html, /tryGlyph\(a, boxIsLive\)\); \}\)\.join\(""\)/, 'the part header joins each try\'s tryGlyph');
   assert.match(html, /buildGridBody\(body, idx, part, box\.state === "running"\)/, 'the Audit tab must pass its own box\'s live-ness into the grid builder');
 });
 

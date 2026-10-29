@@ -114,7 +114,7 @@ function fnSrc(name) {
 }
 
 test('Part 3: the real grid header and part-line drawing: a try column says its thinking words under its glyph (the opening close says so instead), and a one-call part says it on its header', () => {
-  const g = new Function('escapeXml', 'attemptGlyph', 'stageQuestionText', 'stageNumberText', `${['gridGlyph', 'gridStepTryOf', 'gridFixTryOf', 'gridRowsOf', 'gridModelOf', 'gridCellOf', 'gridTableHtml'].map(fnSrc).join('\n')}\nreturn { gridModelOf, gridTableHtml };`)(
+  const g = new Function('escapeXml', 'attemptGlyph', 'stageQuestionText', 'stageNumberText', `${['tryGlyph', 'gridGlyph', 'gridStepTryOf', 'gridFixTryOf', 'gridRowsOf', 'gridModelOf', 'gridCellOf', 'gridTableHtml'].map(fnSrc).join('\n')}\nreturn { gridModelOf, gridTableHtml };`)(
     (x) => String(x), (o) => (o === 'green' ? '✓' : '✗'), () => 'q', () => '');
   const stepPart = { kind: 'step', tries: [{ n: 1, outcome: 'red', thinking: 'thinking off' }, { n: 2, outcome: 'red', thinking: "thinking on (this model can't change it)" }, { n: 3, outcome: 'green' }], attempts: [{ n: 1, checks: [] }, { n: 2, checks: [] }, { n: 3, checks: [] }] };
   const model = g.gridModelOf(stepPart, false);

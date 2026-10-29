@@ -21,7 +21,7 @@ function fnSrc(name) {
   }
   return PAGE.slice(start, i + 1);
 }
-const NAMES = ['escapeXml', 'attemptGlyph', 'stageQuestionText', 'stageNumberText', 'gridGlyph', 'gridPlural', 'gridStepTryOf', 'gridFixTryOf', 'gridRowsOf', 'gridModelOf', 'gridCellOf', 'gridFailsOf', 'gridDefaultOpen', 'gridTableHtml', 'gridErrorsHtml', 'gridRoundsHtml'];
+const NAMES = ['escapeXml', 'attemptGlyph', 'tryGlyph', 'stageQuestionText', 'stageNumberText', 'gridGlyph', 'gridPlural', 'gridStepTryOf', 'gridFixTryOf', 'gridRowsOf', 'gridModelOf', 'gridCellOf', 'gridFailsOf', 'gridDefaultOpen', 'gridTableHtml', 'gridErrorsHtml', 'gridRoundsHtml'];
 const g = new Function(`${NAMES.map(fnSrc).join('\n')}\nreturn { ${NAMES.join(', ')} };`)();
 
 const grid = makeAuditGridWorld();
@@ -163,4 +163,16 @@ test('wiring: the part body calls the one grid builder for steps and the fix loo
   assert.match(PAGE, /loadRounds\(d\.querySelector\("\.rf-body"\), partIndex, t\.attempt, 0\);/);
   assert.doesNotMatch(PAGE, /function (buildAttemptsList|buildStepFold|tryBlockHtml|loadStepRows|stepRowHtml)\(/);
   assert.doesNotMatch(PAGE, /dupOf|\.dup\b/, 'the mock\'s lab-only duplicate-wording marker is not built');
+});
+
+test('the part header, the step map chip and the grid column agree: a try with no verdict is "?" everywhere (the fix header reads ✗✗✗?, not ✗✗✗✗)', () => {
+  const H = new Function(`${['glyphSpan', 'attemptGlyph', 'tryGlyph', 'attemptsInlineText', 'partHasNoVerdict', 'partResultGlyph'].map(fnSrc).join('\n')}\nreturn { partResultGlyph, attemptsInlineText };`)();
+  const fix = partOf(run, 'fix');
+  const box = { attempts: fix.attempts, state: 'stopped' };
+  assert.equal(strip(H.partResultGlyph(fix, box)), '✗✗✗?');
+  assert.equal(H.attemptsInlineText(fix.attempts, false), 'attempt 1 ✗ · attempt 2 ✗ · attempt 3 ✗ · attempt 4 ?');
+  const heads = [...g.gridTableHtml('p5', fixModel).matchAll(/<th class="t">try \d (<span[^>]*>.<\/span>)/g)].map((m) => strip(m[1]));
+  assert.equal(heads.join(''), '✗✗✗?', 'the grid columns say the same');
+  const step = partOf(run, 'step', 2);
+  assert.equal(strip(H.partResultGlyph(step, { attempts: step.attempts, state: 'done' })), '✗✓', 'a step\'s header is unchanged');
 });

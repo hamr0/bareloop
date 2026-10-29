@@ -1182,6 +1182,11 @@
     if(outcome === null || outcome === undefined) return boxIsLive ? "▶" : "?";
     return "✗";
   }
+  // a try that no close ended (the provider dropped it, the person stopped it, it died) has no verdict: "?", the same sign the Audit grid's column wears.
+  // `a.noVerdict` is the server's word for it (src/panel/server.js); every surface that draws a try's glyph reads this one rule.
+  function tryGlyph(a, boxIsLive){
+    return a && typeof a.noVerdict === "string" && a.noVerdict !== "" ? "?" : attemptGlyph(a ? a.outcome : null, boxIsLive);
+  }
   // P3 addition: colour ONLY [✓]/[✗] (the standing wording ruling's own
   // words/glyph vocabulary is unchanged — this wraps the same glyph
   // character in a plain inline colour span for the two result-carrying
@@ -1198,7 +1203,7 @@
   // part-card renderer below, never by this function.
   function attemptsInlineText(attempts, boxIsLive){
     if(!attempts || !attempts.length) return "";
-    return attempts.map(function(a){ return "attempt " + a.n + " " + attemptGlyph(a.outcome, boxIsLive); }).join(" · ");
+    return attempts.map(function(a){ return "attempt " + a.n + " " + tryGlyph(a, boxIsLive); }).join(" · ");
   }
   function stepTitleText(idx, s){
     var base = s.noNumber ? s.title : (idx + 1) + ' ' + s.title;
@@ -1258,7 +1263,8 @@
     if(part.kind === "drafting") return glyphSpan(attemptGlyph("green", false)); // [✓]: drafting is done once the run exists
     if(partHasNoVerdict(part)) return null;
     var boxIsLive = box.state === "running";
-    if(box.attempts.length > 1) return box.attempts.map(function(a){ return glyphSpan(attemptGlyph(a.outcome, boxIsLive)); }).join("");
+    if(box.attempts.length > 1) return box.attempts.map(function(a){ return glyphSpan(tryGlyph(a, boxIsLive)); }).join("");
+    if(box.attempts.length === 1 && box.attempts[0].noVerdict) return glyphSpan(tryGlyph(box.attempts[0], boxIsLive));
     var outcome = (part.outcome !== null && part.outcome !== undefined) ? part.outcome : (box.attempts[0] ? box.attempts[0].outcome : null);
     return glyphSpan(attemptGlyph(outcome, boxIsLive));
   }
@@ -3049,7 +3055,7 @@
   function gridFixTryOf(a, boxIsLive){
     var noVerdict = typeof a.noVerdict === "string" && a.noVerdict !== "" ? a.noVerdict : null;
     var out = {
-      n: a.n, glyph: noVerdict ? "?" : attemptGlyph(a.outcome, boxIsLive), hint: a.source === "outer-close" ? "opening close" : (a.thinking || ""), noVerdict: noVerdict,
+      n: a.n, glyph: tryGlyph(a, boxIsLive), hint: a.source === "outer-close" ? "opening close" : (a.thinking || ""), noVerdict: noVerdict,
       known: Array.isArray(a.stages), inflight: (a.outcome === null || a.outcome === undefined) && !!boxIsLive, cells: {}, order: [], attempt: a,
       calls: typeof a.rounds === "number" ? a.rounds : null, opening: a.source === "outer-close"
     };
