@@ -192,7 +192,7 @@ ships with the grant (`COMPONENT_STRATEGIES` — capability without strategy is 
 | component | verbs | class |
 |---|---|---|
 | write | `write` · `edit` | tree writes, judged by the signed `writeScope` fence — `edit` (BA-13) is the anchored exact-once replace and goes through that SAME fence, not a weaker one |
-| select | `read` · `grep` · `recall` · `get` · `impact` · `related` · `recent` | read-only; every one is judged as a `read` action by that same fence, so the deny list applies through every door |
+| select | `read` · `grep` · `recall` · `get` · `impact` · `related` · `recent` | read-only; every one is judged as a `read` action by that same fence, so the deny list applies through every door. A walking `grep` is judged per path too (F259): the worker's and the authoring scout's shell tools are built with `gatedShellOptions` (`src/tools.js`: bare-agent `canRead` = the gate's own `allows()`, plus `noFollowSymlinks`), so a root grep skips the arbiter's books instead of reading them |
 | compress | `compress` · `peek` | read-only (a signature tier; a stash's head/tail) |
 | isolate | `stash` · `remember` · `forget` | STORE writes (the `.litectx` store, never the tree) — their own gate action types, so a store park can never be counted as a tree write by the F32 `workerWrites` instrument. **Not read-capable** |
 
@@ -1943,7 +1943,7 @@ hand them to the one `Loop` that drives worker, scout and planner rounds; the ru
 them once. No price on the row = no `rates` key anywhere = the guesstimate above, byte-identical to
 before. bareloop keeps no price list of its own, ever.
 
-**The provenance is on the record, per round (`rateSource`).** The pinned bare-agent (`^0.52.0`)
+**The provenance is on the record, per round (`rateSource`).** The pinned bare-agent (`^0.55.0`)
 carries it on every metering payload, and bareloop forwards it VERBATIM (`rateSourceFields`,
 `src/planrun.js`): every API `worker-round` (worker, scout, planner, fix loop) carries it beside
 `pricing` today — `'caller'` when a customer price is on the key's row, else `'tier'`/`'default'`
