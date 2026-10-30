@@ -674,6 +674,7 @@
   .pv-mrow{border-top:1px dotted var(--border-strong);min-height:32px;}
   .pv-mrow:hover{background:var(--panel2);}
   .pv-mrow:focus-within,.pv-mrow:focus-within:hover{background:var(--rl-accent-bg-strong);box-shadow:inset 0 0 0 2px var(--accent);}
+  .pv-mrow:focus{outline:none;}
   .pv-um{grid-column:1;display:flex;align-items:center;gap:0;min-width:0;}
   .pv-uh,.pv-m-use{flex:0 0 44px;width:44px;display:flex;align-items:center;justify-content:center;}
   .pv-m-use{min-height:32px;}
@@ -4467,6 +4468,7 @@
     function buildModelLine(slot, m){
       var d = document.createElement("div");
       d.className = "pv-mrow";
+      d.tabIndex = -1;
       d.setAttribute("data-model", m.model);
       d.setAttribute("data-testid", "model-line");
       d.innerHTML =

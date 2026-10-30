@@ -102,3 +102,9 @@ test('a model row holding focus takes the Runs list\'s selected blue (hover stay
   assert.ok(html.includes('folds[row.slot] = false;'), 'a key starts folded');
   assert.ok(!html.includes('row.models.some(function(m){ return m.use === true; })'), 'a ticked model no longer opens its key');
 });
+
+test('clicking anywhere on a model row focuses the row (tabindex -1, not in the Tab order) with no second ring', async (t) => {
+  const html = await servedHtml(t);
+  assert.match(html, /d\.className = "pv-mrow";\s*d\.tabIndex = -1;/, 'the built row is click-focusable, so :focus-within matches');
+  assert.match(rule(html, '.pv-mrow:focus') ?? '', /outline:none/, 'no ring on top of the blue edge');
+});
