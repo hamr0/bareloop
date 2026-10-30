@@ -119,7 +119,7 @@ test('page Audit table: an unpriced call reads "unknown", never $0; an incomplet
 
 test('page Audit group: a drafting body shows the table instead of loading rounds; the flat view is untouched', () => {
   const body = fnSrc('renderAuditGroups');
-  assert.match(body, /if\(part\.kind === "drafting"\)\{[\s\S]*draftingTableHtml\(part\)[\s\S]*\} else if\(attempts\.length > 1\)/);
+  assert.match(body, /if\(part\.kind === "drafting"\)\{[\s\S]*draftingTableHtml\(part\)[\s\S]*\} else if\(\(part\.kind === "fix"/);
   assert.match(body, /loadRounds\(roundsEl, idx,/, 'every other part still lazy-loads its rounds by the shown index');
   assert.doesNotMatch(fnSrc('renderAudit'), /drafting/, 'drafting makes no tool calls: the flat table never mentions it');
   assert.match(PAGE, /\.audit-table-scroll\{overflow:auto/, 'the table scrolls inside its own box on a phone');

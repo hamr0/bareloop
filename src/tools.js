@@ -652,3 +652,20 @@ export const toolAction = (name, args, workdir) => {
   if (name === 'ctx_forget') return { type: name, args: { id: String(args?.id ?? '') } };
   return { type: name, args };
 };
+
+/**
+ * The `createShellTools()` options that keep a walking `shell_grep` inside the gate (F259).
+ * The loop policy judges a directory grep ONCE, on the root path it names, so `fs.deny`
+ * never saw the files the walk opened (the arbiter's books under the repo root). bare-agent
+ * 0.55.0's `canRead` asks this for every directory (false prunes it) and every file (false
+ * skips it); the answer is the gate's own pure `allows()` on the SAME read action
+ * `toolAction` builds, so the walk obeys the identical `fs.deny`/`readScope` the direct
+ * `shell_read` of that file does. `allows()` writes no audit line and books nothing.
+ * `noFollowSymlinks` closes the swap-after-vetting window bare-agent documents.
+ * @param {{allows: (action: any) => Promise<boolean>}} gate
+ * @param {string} workdir
+ */
+export const gatedShellOptions = (gate, workdir) => ({
+  noFollowSymlinks: true,
+  canRead: (/** @type {string} */ p, /** @type {{tool: string}} */ { tool }) => gate.allows(toolAction(tool, { path: p }, workdir)),
+});

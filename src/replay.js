@@ -377,6 +377,19 @@ function floorReasons(spine, jobStart, spendComplete) {
 }
 
 /**
+ * The failing stage's own output lines from a close record's `gap`: the lines after the `stageGap` header (`close stage "X" failed:`), each
+ * as the spine holds it (the panel words them). A gap that does not open with that header keeps every line. `[]` for no gap.
+ * @param {unknown} gap
+ * @returns {string[]}
+ */
+function gapLines(gap) {
+  if (typeof gap !== 'string' || gap === '') return [];
+  const lines = gap.split('\n');
+  if (/^close stage ".*" failed:$/.test(lines[0])) lines.shift();
+  return lines.filter((l) => l.trim() !== '');
+}
+
+/**
  * Which `close-verdict`/`outer-close` record is "the close" — the
  * OPERATOR's real, signed close, never a plan step's own exit-eval judge
  * loop (see the file header's `close-verdict` entry for why `stages` is the
@@ -588,6 +601,8 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
   // = `['worker-round', 'judge-round', 'worker-turn']`), imported rather than
   // re-spelled so the two can never drift apart.
   const spendRecords = spine.filter((e) => SPEND_RECORD_TYPES.includes(e.type));
+  // the model calls inside one try's window, counted the way the Audit rounds endpoint pages them (`seq` in (lo, hi])
+  const countRoundsIn = (/** @type {number} */ lo, /** @type {number} */ hi) => spendRecords.filter((r) => typeof r.seq === 'number' && r.seq > lo && r.seq <= hi).length;
   const exitEvals = spine.filter((e) => e.type === 'exit-eval');
   // PRD v1.106 Part 5 (D1): which check each `check-passes` result was — the `check-run` record just before its exit-eval
   const checkRuns = spine.filter((e) => e.type === 'check-run');
@@ -879,12 +894,14 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     const lastIter = iterationStarts
       .filter((it) => typeof it.seq === 'number' && it.seq > prevBoundSeq && it.seq < endSeq)
       .sort((a, b) => b.seq - a.seq)[0] ?? null;
+    const cutOffEndSeq = end && typeof end.seq === 'number' ? end.seq : (Number.isFinite(endSeq) ? endSeq : prevBoundSeq);
     const cutOffTry = endedHere && lastIter
       ? {
         n: attemptWindows.length + 1,
         iteration: typeof lastIter.iteration === 'number' ? lastIter.iteration : null,
         startSeq: prevBoundSeq,
-        endSeq: end && typeof end.seq === 'number' ? end.seq : (Number.isFinite(endSeq) ? endSeq : prevBoundSeq),
+        endSeq: cutOffEndSeq,
+        rounds: countRoundsIn(prevBoundSeq, cutOffEndSeq),
         startTs: prevBoundTs,
         endTs,
       }
@@ -1029,6 +1046,8 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
           iteration: null,
           verdict,
           stages: Array.isArray(oc.stages) ? oc.stages : null,
+          reasons: gapLines(oc.gap),
+          stop: null,
           outcome: /** @type {'green'|'red'} */ (verdict === 'satisfied' || verdict === 'green' || verdict === 'already-green' ? 'green' : 'red'),
           ...buildOccurrenceMetrics(prevSeq, prevTs, seq, ts, roundsInWindow),
           windowStartSeq: prevSeq,
@@ -1064,6 +1083,12 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
           iteration: typeof is.iteration === 'number' ? is.iteration : null,
           verdict,
           stages: end && end.type === 'close-verdict' && Array.isArray(end.stages) ? end.stages : null,
+          // the failing stage's output lines (a close-verdict's `gap`); a window a close did not end (an escalation, a run-end) says what
+          // ended it instead: no verdict exists for that try
+          reasons: end && end.type === 'close-verdict' ? gapLines(end.gap) : [],
+          stop: end && end.type !== 'close-verdict'
+            ? { by: end.type, what: (end.type === 'escalation' ? end.category : end.outcome) ?? null, detail: typeof end.detail === 'string' ? end.detail : null }
+            : null,
           // `end === null` means this iteration's own window hasn't closed
           // yet (no close-verdict/run-end/escalation boundary has landed on
           // the spine after its iteration-start) — a LIVE run reading this
@@ -1369,7 +1394,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
       // same as a scout/plan/replan/judge/run part already does.
       const stepAttempts = step.attemptWindows.length > 0
         ? step.attemptWindows.map((aw) => ({
-          n: aw.n, outcome: aw.outcome, verdict: null, stages: null, detail: aw.exitEvalDetail, startSeq: aw.startSeq, endSeq: aw.endSeq, startTs: aw.startTs, endTs: aw.endTs, iteration: aw.iteration, checks: aw.checks, outputJudged: aw.outputJudged,
+          n: aw.n, outcome: aw.outcome, verdict: null, stages: null, rounds: countRoundsIn(aw.startSeq, aw.endSeq), detail: aw.exitEvalDetail, startSeq: aw.startSeq, endSeq: aw.endSeq, startTs: aw.startTs, endTs: aw.endTs, iteration: aw.iteration, checks: aw.checks, outputJudged: aw.outputJudged,
         }))
         : wholePartAttempt(step.stepStartSeq, step.stepStartTs, step.stepEndSeq, step.stepEndTs);
       parts.push({
@@ -1413,7 +1438,7 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
         unpricedRounds: fixLoop.unpricedRounds,
         outcome: fixLoop.attempts.length ? fixLoop.attempts[fixLoop.attempts.length - 1].outcome : null,
         attempts: fixLoop.attempts.map((a) => ({
-          n: a.n, outcome: a.outcome, verdict: a.verdict, stages: a.stages, detail: null, startSeq: a.windowStartSeq, endSeq: a.windowEndSeq, startTs: a.windowStartTs, endTs: a.windowEndTs,
+          n: a.n, outcome: a.outcome, verdict: a.verdict, stages: a.stages, source: a.source, reasons: a.reasons, stop: a.stop, rounds: a.rounds, detail: null, startSeq: a.windowStartSeq, endSeq: a.windowEndSeq, startTs: a.windowStartTs, endTs: a.windowEndTs,
         })),
       });
     }

@@ -2112,3 +2112,12 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 - **fwdloop** copies this from bareloop's RELEASED tag; tell fwd the tag at release.
 - **Build gate:** no POC needed (render-only over existing part data). The build spec must be diffed control-by-control against the mock, and hamr clicks through before it is called done.
 - **Status:** design ruled and signed 2026-10-29; nothing built yet. Builds on its own branch after the feat/online-dot release. No pending-UI list exists in the PRD to point from.
+
+### Carry note ships ON; grep fence; Providers tweaks; README trust section (v1.120 — 2026-10-30; SIGNED by hamr 2026-10-30)
+
+- **The carry note:** each new step or fix worker gets a code-written note of what earlier workers in the run read, searched and changed, diffs first under a 3000-char cap. ON by default; `carryNote: false` in config.json gives the old behaviour (handoff note only). Evidence: F258 (2 rounds).
+- **F259 fixed:** shell_grep walks are gated per path (bare-agent ^0.55.0 `canRead` + `noFollowSymlinks`).
+- **Settings > Providers:** every key starts folded; the model row you click or edit is highlighted blue.
+- **README:** "The machine that makes machines" section (intent, guide rails, verification, evidence).
+- **Paid runs** from now use DeepSeek flash on Baseten (hamr 2026-10-30).
+- **Open:** F260 (pulselog wall in long fix tries), logged only.

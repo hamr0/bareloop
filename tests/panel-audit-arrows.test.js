@@ -50,8 +50,7 @@ function groupsPage(boxes) {
     function partHasWrites(){ return false; }
     function legDividerEl(){ return document.createElement("div"); }
     function loadRounds(){}
-    function buildStepFold(){}
-    function buildAttemptsList(){}
+    function buildGridBody(){}
     function partLine2Text(){ return ""; }
     function applyAuditFilter(){}
     ${['escapeXml', 'auditCaret', 'renderAuditGroups'].map(fnSrc).join('\n')}

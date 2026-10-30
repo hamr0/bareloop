@@ -1187,17 +1187,19 @@ test('item 1 RED-PROOF (real fixture mujjtrvd-midrun): the open attempt on step 
 // item 1 wiring check: every caller that can render an attempt glyph must
 // route through the ONE `attemptGlyph(outcome, boxIsLive)` rule with its own
 // box's live-ness — never re-derive live/died itself. Regex-checked against
-// the shipped source text (buildAttemptsList is DOM-only, not part of the
+// the shipped source text (the grid builder is DOM-only, not part of the
 // pure geometry block extracted above, so it can't be unit-called directly).
-test('item 1: every attemptGlyph call site passes a boxIsLive argument (map title, part cards / Audit headers via partResultGlyph, and the Audit attempt rows via buildAttemptsList)', () => {
+test('item 1: every attemptGlyph call site passes a boxIsLive argument (map title, part cards / Audit headers via partResultGlyph, and the Audit grid\'s try columns)', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
   assert.match(html, /function attemptGlyph\(outcome, boxIsLive\)\{/);
   assert.match(html, /attemptsInlineText\(attempts, boxIsLive\)/);
   assert.match(html, /attemptsInlineText\(s\.attempts, s\.state === "running"\)/, 'map title (stepTitleText) must derive boxIsLive from the box\'s own state');
   assert.match(html, /var boxIsLive = box\.state === "running";/, 'partResultGlyph (part cards + Audit grouped headers) must derive boxIsLive from the box\'s own state');
-  assert.match(html, /function buildAttemptsList\(container, partIndex, attempts, boxIsLive\)\{/);
-  assert.match(html, /attemptGlyph\(a\.outcome, boxIsLive\)/g);
-  assert.match(html, /buildAttemptsList\(attemptsWrap, idx, attempts, box\.state === "running"\)/, 'the Audit tab must pass its own box\'s live-ness into buildAttemptsList');
+  assert.match(html, /function gridStepTryOf\(part, t, boxIsLive\)\{/);
+  assert.match(html, /attemptGlyph\(t\.outcome, boxIsLive\)/, 'a step try column');
+  assert.match(html, /glyph: tryGlyph\(a, boxIsLive\)/, 'a fix try column (a try with no verdict reads ?)');
+  assert.match(html, /tryGlyph\(a, boxIsLive\)\); \}\)\.join\(""\)/, 'the part header joins each try\'s tryGlyph');
+  assert.match(html, /buildGridBody\(body, idx, part, box\.state === "running"\)/, 'the Audit tab must pass its own box\'s live-ness into the grid builder');
 });
 
 // ---------------------------------------------------------------------------
@@ -1239,7 +1241,8 @@ test('build item C: Audit tab grouped rows render collapsed-by-default part togg
   const html = readFileSync(PAGE_PATH, 'utf8');
   assert.match(html, /audit-part-toggle/);
   assert.match(html, /body\.className = "audit-part-body";\s*\n\s*body\.hidden = !startExpanded;/);
-  assert.match(html, /class="rounds-list"/);
+  assert.match(html, /roundsEl\.className = "rounds-list"/, 'a part with no sub-loop expands straight to its rounds table');
+  assert.match(html, /class="rounds-fold" data-fxrounds=/, 'the grid folds each try\'s rounds, fetched lazily on open');
   assert.match(html, /function loadRounds\(/);
   assert.match(html, /"part=" \+ encodeURIComponent\(partIndex\) \+ "&attempt=" \+ encodeURIComponent\(attempt\.n\) \+ "&offset=" \+ offset/);
   assert.match(html, /"\/api\/runs\/" \+ encodeURIComponent\(currentRunid\) \+ "\/rounds\?" \+ params/);
@@ -2384,79 +2387,6 @@ test('plain-checks: partLine1Text appends the LATEST attempt\'s plain checks lin
 
   const noAttemptsPart = { kind: 'step', rounds: 1, toolCalls: 1, wallMs: 100, spentUsd: 0.01, unpricedRounds: 0 };
   assert.doesNotMatch(partLine1Text(noAttemptsPart, null), /checks passed|check #/, 'no attempts, no stages -> no headline at all');
-});
-
-test('plain-checks: fullStageList/stageLineHtml — a numeric stage with no resolvable kind falls back to the spec\'s "N (baseline M)" wording verbatim; a value-less stage shows the mark alone', () => {
-  const html = readFileSync(PAGE_PATH, 'utf8');
-  const { fullStageList, stageLineHtml } = loadFns2(html, ['escapeXml', 'glyphSpan', 'stageQuestionText', 'stageNumberText', 'fullStageList', 'stageLineHtml'], ['fullStageList', 'stageLineHtml']);
-  const attempt = { stages: [{ name: 'typecheck-outside-not-worse', verdict: 'needs_revision', value: 47, baseline: 46 }] };
-  const lines = fullStageList(attempt).map(stageLineHtml);
-  assert.match(lines[0], /^#1 typecheck-outside-not-worse .*47 \(baseline 46\)$/);
-
-  const passAttempt = { stages: [{ name: 'no-suppressions', verdict: 'satisfied' }] };
-  const passLines = fullStageList(passAttempt).map(stageLineHtml);
-  assert.match(passLines[0], /^#1 no-suppressions /);
-  assert.doesNotMatch(passLines[0], /\(baseline/);
-});
-
-test('plain-checks: fullStageList/stageLineHtml — every declared stage in the expanded attempt row renders the SAME closed §3a wording the headline uses, "#N <question> <mark> <number>"', () => {
-  const html = readFileSync(PAGE_PATH, 'utf8');
-  const { fullStageList, stageLineHtml } = loadFns2(html, ['escapeXml', 'glyphSpan', 'stageQuestionText', 'stageNumberText', 'fullStageList', 'stageLineHtml'], ['fullStageList', 'stageLineHtml']);
-  const attempt = {
-    stages: [
-      {
-        name: 'typecheck-target-zero-errors', verdict: 'needs_revision', value: 12, baseline: 0, direction: 'lower-is-better', baselineKind: 0, question: 'src/checks.js has 0 type errors?',
-      },
-      {
-        name: 'tests-kept', verdict: 'satisfied', value: 40, baseline: 45, direction: 'higher-is-better', baselineKind: 'seed', question: 'did all the old tests still exist?',
-      },
-      {
-        name: 'typecheck-outside-not-worse', verdict: 'needs_revision', value: 47, baseline: 46, direction: 'lower-is-better', baselineKind: 'seed', question: "other files didn't get more type errors?",
-      },
-    ],
-  };
-  const lines = fullStageList(attempt).map(stageLineHtml);
-  assert.match(lines[0], /^#1 src\/checks\.js has 0 type errors\? .*12 left, need 0$/);
-  assert.match(lines[1], /^#2 did all the old tests still exist\? .*40 of 45$/);
-  assert.match(lines[2], /^#3 other files didn't get more type errors\? .*47, limit 46$/);
-});
-
-test('plain-checks: fullStageList pads a declared stage that never ran (first-red-wins stopped the close early) as a "not run" stub, matched by NAME against the server\'s declaredStages', () => {
-  const html = readFileSync(PAGE_PATH, 'utf8');
-  const { fullStageList, stageLineHtml } = loadFns2(html, ['escapeXml', 'glyphSpan', 'stageQuestionText', 'stageNumberText', 'fullStageList', 'stageLineHtml'], ['fullStageList', 'stageLineHtml']);
-  const attempt = {
-    stages: [{ name: 'changed-from-seed', verdict: 'satisfied' }],
-    declaredStages: [
-      { name: 'changed-from-seed', question: 'did it change any file?' },
-      { name: 'typecheck-target-zero-errors', question: 'src/checks.js has 0 type errors?' },
-      { name: 'no-suppressions', question: 'no casts or silencers added?' },
-    ],
-  };
-  const entries = fullStageList(attempt);
-  assert.equal(entries.length, 3, 'all 3 DECLARED stages render, not just the 1 that ran');
-  assert.equal(entries[0].ran, true);
-  assert.equal(entries[1].ran, false);
-  assert.equal(entries[2].ran, false);
-  const lines = entries.map(stageLineHtml);
-  assert.equal(lines[1], '#2 src/checks.js has 0 type errors? &middot; not run');
-  assert.equal(lines[2], '#3 no casts or silencers added? &middot; not run');
-});
-
-test('plain-checks: fullStageList falls back to whatever ran, unpadded, when no declaredStages travelled at all (no spec resolvable)', () => {
-  const html = readFileSync(PAGE_PATH, 'utf8');
-  const { fullStageList } = loadFns2(html, ['escapeXml', 'glyphSpan', 'stageQuestionText', 'stageNumberText', 'fullStageList', 'stageLineHtml'], ['fullStageList', 'stageLineHtml']);
-  const attempt = { stages: [{ name: 'some-stage', verdict: 'needs_revision', value: 5, baseline: 0 }] };
-  const entries = fullStageList(attempt);
-  assert.equal(entries.length, 1);
-  assert.equal(entries[0].ran, true);
-  assert.equal(entries[0].stage.name, 'some-stage');
-});
-
-test('plain-checks: the Audit Grouped attempt row (buildAttemptsList) wires attemptChecksLine into its button and fullStageList/stageLineHtml into an expandable checks-list, one owner with the Run-tab card', () => {
-  const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /var checksText = attemptChecksLine\(a\);/);
-  assert.match(html, /var checksList = fullStageList\(a\)\.map\(stageLineHtml\)\.join\("<br>"\);/);
-  assert.match(html, /checksText \? ' &middot; ' \+ checksText : ''/);
 });
 
 test('bug fix: no duplicate HTML "id" attributes in the panel page — a repeated id makes getElementById(...) silently resolve to the WRONG element (the Job tab bug: the Chat tab\'s draft `#job-card` shadowed the Details tab\'s readonly `#job-card`, leaving the Job tab permanently blank)', () => {

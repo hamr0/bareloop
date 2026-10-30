@@ -91,3 +91,20 @@ test('the page posts only the P8 routes, with the field names the server expects
   assert.match(html, /authorPost\("\/api\/settings\/model", payload\)/);
   assert.match(html, /var payload = \{ slot: key\.getAttribute\("data-slot"\), shape: key\.querySelector\("\[data-prov=shape\]"\)\.value, baseUrl: /);
 });
+
+test('a model row holding focus takes the Runs list\'s selected blue (hover stays faint), and every key starts folded', async (t) => {
+  const html = await servedHtml(t);
+  assert.match(rule(html, '.pv-mrow:hover'), /background:var\(--panel2\)/, 'hover stays the faint fill');
+  const focus = rule(html, '.pv-mrow:focus-within,.pv-mrow:focus-within:hover');
+  assert.match(focus ?? '', /background:var\(--rl-accent-bg-strong\)/, 'focus inside the row: the selected-run fill');
+  assert.match(focus ?? '', /var\(--accent\)/, 'and the accent edge');
+  assert.ok(!/\.pv-mrow:hover,\.pv-mrow:focus-within\{/.test(html), 'focus no longer shares the hover fill');
+  assert.ok(html.includes('folds[row.slot] = false;'), 'a key starts folded');
+  assert.ok(!html.includes('row.models.some(function(m){ return m.use === true; })'), 'a ticked model no longer opens its key');
+});
+
+test('clicking anywhere on a model row focuses the row (tabindex -1, not in the Tab order) with no second ring', async (t) => {
+  const html = await servedHtml(t);
+  assert.match(html, /d\.className = "pv-mrow";\s*d\.tabIndex = -1;/, 'the built row is click-focusable, so :focus-within matches');
+  assert.match(rule(html, '.pv-mrow:focus') ?? '', /outline:none/, 'no ring on top of the blue edge');
+});

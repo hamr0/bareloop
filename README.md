@@ -28,6 +28,18 @@ The harness (budget, time, what it may touch) and the judge both sit **outside**
   <img src="https://raw.githubusercontent.com/hamr0/bareloop/main/docs/media/panel-walkthrough.gif" alt="The bareloop panel: write a job, the runs list, a rubric run waiting for Accept, its Result, Audit and signed Job, then a repo run ready to merge" width="900">
 </p>
 
+## The machine that makes machines
+
+Like a CNC machine, bareloop builds the thing that does the work, then lets a gauge it can't touch decide if the work is good. Trust needs four things. Miss one and trust is zero. bareloop has all four.
+
+**Intent.** You write the job as plain numbered steps, and a `~` line under each says what success means and what it must never do. Every step gets a check or a written reason why not. You sign before a dollar is spent.
+
+**Guide rails, not just guardrails.** Guardrails stop the agent going off the road: a money cap, a time cap, and a read/write fence it can't move. Guide rails keep it on the road: each new worker hears what earlier tries read, searched and changed, diffs included; two misses redraw the plan; past lessons go to the planner; an unclear job gets up to 3 questions, not a guess.
+
+**Verification.** The check sits outside the agent's loop: code first, a judge only where code can't decide, and the judge only points while code makes the call. A red goes back with the real error to be fixed, until it's green or out of budget.
+
+**Evidence.** Every call, every allowed or blocked read and write, every check result and every cent is recorded. You can audit it in the panel and replay it at $0. Research facts are quoted from saved sources.
+
 ## Two kinds of jobs
 
 **Deterministic (code)**: code decides. Tests pass, the linter is quiet, the build exits clean. If no check exists yet, say what you need and the agent builds that check first.

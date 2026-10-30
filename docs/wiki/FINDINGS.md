@@ -15088,6 +15088,8 @@ What is handed, checked against code. The check output (gap) IS handed: to every
 
 A facts-only carry note (files, greps, edits) would be small: median about 200-1,400 chars, p90 up to about 2.5k, all at or under 8,000. The dollar proxy (about 40% of worker spend on E0 TYPES sits in repeat calls) is NOT a measured saving: cost follows turns (F253). Status: sized; the M1 initial spec is in HARNESS2 section 9, nothing built.
 
+2026-10-30 — M1 carry note tested live, 2 rounds, Fireworks deepseek-v4p1-flash, n=3 per job per arm. Round 1 (`docs/logs/M1-PREREG.md`; p7 and bigfile; $3.52): primary FAIL. Repeat share OFF 64.9% vs ON 48.6% (ratio 0.749 vs bar 0.667), with the repeats themselves the same (248 vs 250); ON read more new files. Guard PASS, 3 vs 2 greens. hamr ruled that re-reads cannot be judged a culprit, because a worker must re-read a file to edit it in its own conversation; the note's cap order then changed to keep diffs. Round 2 (`docs/logs/M1-ROUND2-PREREG.md`; change2, p7, pulselog; descriptive, no bar; $5.08): greens ON 7/9 vs OFF 6/9 (the difference is one pulselog run). Sums ON vs OFF: cost $2.39 vs $2.69, wall 6431 vs 7654 s, fix time 1806 vs 4575 s, turns 404 vs 380. 17 of the 19 notes with edits carried diff hunks. Retrieval share fell with notes ON (2.3% vs 8.2%), the opposite of round 1, so the note does not drive litectx use. The "looked here, no fix made" marker fired 0 times in round 2. Underpowered: a leaning, not proof. hamr ruled the carry note ships ON by default (2026-10-30). Results: `.claude/scratch/m1poc/battery/analysis/M1-RESULT.md`, `M1-FOLLOWUP.md`, `.claude/scratch/m1poc/battery2/analysis/M1-ROUND2-RESULT.md`.
+
 ## F259 — a directory grep escapes fs.deny: one allowed shell_grep on the repo root returned lines from the arbiter books (.smoke spine and attempt-diff, the gate audit, .litectx) (2026-10-29; $0 probe on the real Gate and real bare-agent `createShellTools`; not seen live)
 
 **Grounded in:** the probe `.claude/scratch/grepprobe/probe.mjs`, `src/tools.js:631` (`toolAction`), `src/planrun.js:2205` and `:2341` (the deny list), `src/kinds.js:576` (`isArbiterBook`), `node_modules/bare-agent/tools/shell.js` ~505-660 (the grep walk).
@@ -15103,3 +15105,22 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Owner.** Upstream. Either bareguard gets a per-file check for walking reads, or bare-agent's walk honours a skip or deny list. Asked to the guard session 2026-10-29 (UPSTREAM-ASKS, BG-3). bareloop will not patch around it.
 
 **Status.** OPEN, parked for the upstream answer. Related: F258 and M1 (HARNESS2 section 9), whose note state lives under `.smoke`.
+
+2026-10-29 — FIXED on branch feat/audit-grid. bare-agent 0.55.0 (v0.55.0, live on npm) added the per-path check as `createShellTools({ canRead })`; bareloop is now on `^0.55.0` and builds the worker's and the authoring scout's shell tools with `gatedShellOptions(gate, workdir)` (`src/tools.js`): `canRead` is the gate's own `allows()` on the same read action `toolAction` builds, asked for every directory and file the walk would enter, plus `noFollowSymlinks: true`. The $0 probe now returns only `src/a.js` for the root grep (was five files, 24 walked); fail-first test `tests/grep-canread.test.js`. Test-proven and probe-proven, not seen in a live run.
+
+## F260 — pulselog runs die at the 30-min wall in long fix tries: the outer close fails on `no-suppressions`, then fix tries run 12-20 min and end on a 32,000-output-token cut (2026-10-30; live; M1 round 2 runs 05, 06, 11 on Fireworks deepseek-v4p1-flash)
+
+**Grounded in:** `.claude/scratch/m1poc/battery2/analysis/M1-ROUND2-RESULT.md` section 9 (per-run timelines from the spines and gate audits of runs 05-pulselog-OFF-r1, 06-pulselog-ON-r1, 11-pulselog-OFF-r2).
+
+**Job.** `pulselog`, wall cap 30 min (1,800,000 ms).
+
+**Timelines (seconds after job-start).**
+- 05 OFF r1 (wall-halt at 1803 s, $0.5894): two steps done by ~307 s, each check satisfied. The outer close then failed on stage `no-suppressions` (4 forbidden pattern occurrences in lines the run added). Fix try 1: 760 s, 13 rounds, ended by `attempt-bounded` on the max_tokens cut (a 30,851-token round, then 13,507, 11,046, 32,000 last); still red on `no-suppressions`. Fix try 2: from 1067 s, 19 rounds in 736 s, `wall-bounded`; the close after it was red on `typecheck-target-zero-errors` (5 vs baseline 0). Fix try 3 began at 1803 s with 0 rounds, then `wall-halt`.
+- 06 ON r1 (wall-halt at 1943 s, $0.6143): step try 1 28/28 rounds, check red; step try 2 23 rounds over 1221 s, ended by the max_tokens cut (rounds of 17,300 and 20,353 tokens, last 32,000), check satisfied at ~1445 s. Outer close at ~1466 s red on `no-suppressions`. Fix try 1: 8 rounds in 477 s, `wall-bounded`, still `no-suppressions`. Fix try 2 began at 1943 s with 0 rounds.
+- 11 OFF r2 (wall-halt at 1854 s, $0.6466): five step tries over three steps took 812 s; outer close at ~931-946 s red on `no-suppressions`. Fix try 1: 727 s, 13 rounds, max_tokens cut (last 32,000), still `no-suppressions`. Fix try 2: 4 rounds in 181 s, `wall-bounded`. Fix try 3 began at 1854 s with 0 rounds.
+
+**Common.** Notes OFF and ON both. The outer close failed on `no-suppressions` in all three. Of the 4 attempts over 700 s in these runs (760, 736, 1221, 727 s), 3 ended on a max_tokens cut and 1 on the wall. Across all 18 round 2 runs, 4 attempts ended on a max_tokens cut (3 OFF, 1 ON). Two more runs also hit the wall without ending as wall-halt: 09-p7-OFF-r2 (green after fix try 2) and 12-pulselog-ON-r2 (escalated).
+
+**Not shown.** Why the first fix tries run so long, and why the output reaches 32,000 tokens. No cause is claimed.
+
+**Status.** Logged only, nothing built.
