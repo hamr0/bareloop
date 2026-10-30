@@ -518,6 +518,8 @@ Edits made in this run: none.
 Earlier tries (folded): step "recon-and-first-fix" try 1: same reads as above, plus grep "topup" (11 matches).
 ```
 
+2026-10-30 status: M1 was tested in 2 rounds on Fireworks `deepseek-v4p1-flash` (`docs/logs/M1-PREREG.md`, `docs/logs/M1-ROUND2-PREREG.md`; results in F258). The note's cap order changed to diff-first (hunks are cut last). Underpowered, a leaning not proof. It ships ON by default as `carryNote` in config.json (false = handoff note only) on branch feat/audit-grid.
+
 M2. litectx context primitives (compress, peek, stash).
 - They are wired but used in about 0.7% of calls (H2 Part 0). Use them. A gap becomes an ask to litectx, never a local patch.
 
@@ -548,4 +550,4 @@ Untracked scratch (survives `/clear`, not a fresh clone), all under `.claude/scr
 
 Tracked: `docs/logs/E0-PREREG.md`, `E0B-PREREG.md`, `E1-PREREG.md`, `PLANNER-EXIT-PREREG.md`, `H1-PREREG.md`; `docs/wiki/FINDINGS.md` F252, F253, F254, F255.
 
-Paid so far (DeepSeek deepseek-flash, 2026-10-28): E1 $4.72, observe $0.16, planner POC $1.55, live run $0.04. 2026-10-29: H1 $3.3329 (Fireworks deepseek-v4p1-flash).
+Paid so far (DeepSeek deepseek-flash, 2026-10-28): E1 $4.72, observe $0.16, planner POC $1.55, live run $0.04. 2026-10-29: H1 $3.3329 (Fireworks deepseek-v4p1-flash). 2026-10-29/30: M1 smoke $0.73, round 1 $3.52, round 2 $5.08 (Fireworks deepseek-v4p1-flash).
