@@ -7,6 +7,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **A carry note: each new step or fix worker is told what earlier workers of the run read, searched and changed (M1, F258).** Code writes it from the run's own record (facts only, never file content, never a worker's words, secrets masked): where earlier workers looked (files with times read and line ranges, listings and config reads counted not shown), what they searched and what it matched, the edits made in the run with their diff hunks taken from the working tree, how the last and earlier tries ended, and a "looked here, no fix made" mark on a file read 3 or more times in a try that ended red with no change. It is appended after the handoff note, capped at 3,000 characters with diffs cut LAST (files, then searches, then earlier tries, then hunks one edit at a time, oldest first), and its state lives in `<workdir>/.smoke/carry/state.json` so a resumed leg keeps it. One report-only `carry-note` spine record (counts only) per note. ON by default; `carryNote: false` in `config.json` gives today's behaviour exactly (the handoff note only). Tested live in 2 rounds, underpowered: a leaning, not proof (see FINDINGS F258). Library callers opt in with `runJob(..., { carryNote: true })`; the engine reads the config switch once per run, like `learningHints`.
+
 ### Security
 
 - **A root `shell_grep` no longer reads the arbiter's books (F259, BG-3).** The loop gate judged a directory grep once, on the root path it named, so the walk read `.smoke/` (spine, attempt-diff), `gate-audit.jsonl` and `.litectx/` that a direct `shell_read` is denied. `bare-agent` is now `^0.55.0`, and the worker's and the authoring scout's shell tools are built with `canRead` (the gate's own `allows()` on the same read action, asked for every directory and file the walk would enter; a denied one is skipped) and `noFollowSymlinks: true`. One owner: `gatedShellOptions` in `src/tools.js`. Whole-call grep `timeout` (5000 ms default) now includes the walk.

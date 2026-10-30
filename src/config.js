@@ -10,6 +10,7 @@
 // Shape (unknown fields are kept, never dropped):
 //   { "monthlyLimitUsd": <number > 0>,          // absent = no limit, no check
 //     "learningHints": true|false,               // absent = true (ON by default; only false turns it off): the planner is handed cross-run learnings (src/learn.js); the tally is kept either way
+//     "carryNote": true|false,                   // absent = true (ON by default; only false turns it off): a step/fix worker is handed a code-written, facts-only note of what earlier workers of the same run looked at, searched and changed (src/carrynote.js); off = the worker prompt is exactly as before
 //     "keys":   { "<ENV NAME>": { "shape": "<shape id>", "baseUrl": "http(s)://…", "legacyMaxTokens": true|false } },
 //     "models": { "<ENV NAME>": [ { "model": "<id>", "use": true|false, "inPerM": n, "outPerM": n } ] } }
 // An older file's `keys.<ENV>.{name,priceInPerM,priceOutPerM}` is tolerated and read as ONE model
@@ -130,6 +131,7 @@ export function modelsProblem(list) {
 function docProblem(doc) {
   // monthlyLimitUsd is NOT judged here: `monthlyLimitOf` (src/monthly.js) owns its read-time sentence
   if (doc.learningHints !== undefined && typeof doc.learningHints !== 'boolean') return 'learningHints must be true or false';
+  if (doc.carryNote !== undefined && typeof doc.carryNote !== 'boolean') return 'carryNote must be true or false';
   if (doc.keys !== undefined) {
     if (doc.keys === null || typeof doc.keys !== 'object' || Array.isArray(doc.keys)) return 'keys must be an object of key variable names';
     for (const [env, row] of Object.entries(doc.keys)) {
@@ -158,7 +160,7 @@ function docProblem(doc) {
  * `keys` merges per key variable name, then per field; `models.<ENV>` is REPLACED WHOLE (`null`
  * clears it). Validated before anything is written; nothing is written on a refusal.
  *
- * Patch fields understood: `monthlyLimitUsd` (finite > 0), `learningHints` (true | false), `keys.<ENV>.{shape,baseUrl,legacyMaxTokens}`,
+ * Patch fields understood: `monthlyLimitUsd` (finite > 0), `learningHints` (true | false), `carryNote` (true | false), `keys.<ENV>.{shape,baseUrl,legacyMaxTokens}`,
  * `models.<ENV>` (a list judged by {@link modelsProblem}). The first write of a row's `models` list
  * removes that row's older `name` / `priceInPerM` / `priceOutPerM` in the SAME write (never two
  * sources); a retired top-level `anthropicBalanceNote` is dropped on any write. Any other field is
@@ -179,6 +181,7 @@ export function updateConfig(patch, opts = {}) {
       throw new ConfigError('monthlyLimitUsd must be a number above 0 (remove the limit to have none)');
     }
     if (k === 'learningHints' && typeof v !== 'boolean') throw new ConfigError('learningHints must be true or false');
+    if (k === 'carryNote' && typeof v !== 'boolean') throw new ConfigError('carryNote must be true or false');
     next[k] = v;
   }
   delete next.anthropicBalanceNote;

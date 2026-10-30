@@ -83,6 +83,7 @@ import { parseJsonl } from './replayio.js';
 import { claimRun, monthlyRefusalText, legSpend, chainSpend } from './monthly.js';
 import { ConfigError } from './config.js';
 import { learnAtRunEnd, handedHints, releaseRun } from './learnstore.js';
+import { carryNoteOn } from './carrystore.js';
 import { commandFor } from './invoke.js';
 import { judgeRatesFor, keyNameFor, keyValueOf, priceReadout, ratesFor, ratesOfLine, resolveWorker, judgeRowFor, rowsForHome, REFUSE_NAME_MODEL } from './providerrows.js';
 // the banner's wall arithmetic, extracted so it is reachable by a test (F83): the
@@ -1916,6 +1917,8 @@ async function execute(ctx) {
     outcome = await runJob(spec, {
       stopFile,
       ...(learnHints === null ? {} : { learnHints }),
+      // the carry note's one switch, read once here exactly like `learningHints` above (absent = on, only `false` turns it off)
+      carryNote: cfgOn && carryNoteOn(cfgHome),
       // PRD item 27/M3 — the SAME `emit` the pre-run close-timing reading above
       // used (never a second `makeSpine(spineFile)` here: two independent
       // emitters against one file would both start their seq counter at 0 and
