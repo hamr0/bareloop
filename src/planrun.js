@@ -40,6 +40,7 @@ import { anySuppressionWarning } from './authoring.js';
 import { createReadShim, readShimArm, readShimStrategy } from './readshim.js';
 import { createHandoffStore, trackReads } from './handoff.js';
 import { createCarryStore } from './carrystore.js';
+import { buildSeedNote } from './seednote.js';
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { startAttemptDiff } from './attemptdiff.js';
 import { validateBridge, loadGate, newestEligibleVersion, reuseEligibility, quarantinesCredit, QUARANTINED_CODE } from './bridges.js';
@@ -352,6 +353,12 @@ function hintsBlock(text) {
   return `\n${text}\n`;
 }
 
+/** The seed note (src/seednote.js), verbatim, in the planner's first-draft prompt; absent or empty renders '' (byte-identical to the prompt without it). */
+function seedNoteBlock(text) {
+  if (typeof text !== 'string' || !text.trim()) return '';
+  return `\n${text}\n`;
+}
+
 /**
  * MODULE 8 — the signer's words, when this leg is a RERUN taken at a previous run's
  * review door (PRD v1.71 §3.4: *"redo/rerun comes with new authoring"*).
@@ -648,8 +655,9 @@ export function boundedNote(bounded, rounds) {
  *   byte-identically to the pre-shim prompt.
  * @param {string|null} [hints] the cross-run learnings block (src/learn.js `renderHints`), verbatim; null/empty
  *   renders byte-identically to the prompt without it. Only ever passed for the draft and the first replan.
+ * @param {string|null} [seedNote] the seed note (src/seednote.js), verbatim, after the hints; null/empty renders byte-identically to the prompt without it. First draft only.
  */
-export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null, checkFacts = {}, doorNote = null, readShim = false, hints = null) {
+export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null, checkFacts = {}, doorNote = null, readShim = false, hints = null, seedNote = null) {
   const scopeMenu = Array.isArray(scopes) && scopes.length ? scopes : legalScopes(job.writeScope ?? []);
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
   // The shape-lottery laws, stated where the check menu is offered (the mailbox
@@ -740,7 +748,7 @@ ${scopeMenu.map((s) => `  ${JSON.stringify(s)}`).join('\n')}
 
 Goal:
 ${job.goal}
-${doorNoteBlock(doorNote)}${materialsBlock(materials)}${hintsBlock(hints)}
+${doorNoteBlock(doorNote)}${materialsBlock(materials)}${hintsBlock(hints)}${seedNoteBlock(seedNote)}
 Repository survey (from a read-only scout):
 ${scoutBlob || '(no scout notes)'}`;
   let p = doc;
@@ -1031,6 +1039,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // THE HANDOFF NOTE (src/handoff.js): the paths earlier asks of THIS run read. In memory only, so a resumed leg starts empty.
   // The switch is the signed spec's `handoffNote` (absent = on, only `false` turns it off).
   const handoffOn = job.handoffNote !== false;
+  // THE SEED NOTE (src/seednote.js, EXPERIMENTAL): the signed spec's `seedNote`; absent = OFF, only `true` turns it on.
+  const seedNoteOn = job.seedNote === true;
+  /** @type {{ text: string, stages: string[] }|null} built once, after the preflight loop */
+  let seedNote = null;
+  let seedNoteWorkerSpent = false;
   const handoff = createHandoffStore({ workdir });
   // THE CARRY NOTE (src/carrynote.js, src/carrystore.js): facts the earlier asks of THIS run produced, handed after the handoff note.
   // The caller reads the one switch (`carryNote` in config.json) once; off builds no store, writes no state, emits nothing.
@@ -2163,6 +2176,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * is still the goal the plan exists to flip).
    * @type {string[]} */
   const seedRed = [];
+  // THE SEED NOTE (experimental, default off): the red-at-seed verdicts, with their stage's declared kind, for src/seednote.js.
+  // The kind is read off the signed close's own stage (a command close has none), never matched on a stage name.
+  /** @type {{stage: string|null|undefined, kind: string|null|undefined, gap: string|null|undefined}[]} */
+  const seedReds = [];
   emit('check-menu', {
     offered: menu.map((m) => m.name),
     ...(menu.length < stagedClose.length
@@ -2173,6 +2190,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const v = await runCloseStages(m.run);
     if (v.verdict === 'needs_revision') {
       seedRed.push(m.name);
+      if (seedNoteOn) seedReds.push({ stage: v.stage, kind: stagedClose.find((/** @type {any} */ s2) => s2?.name === v.stage)?.kind, gap: v.gap });
       // …and the preflight grade is a READING, for the same reason the precheck one
       // above is: it is the seed the run's work is measured against. The precheck
       // only ever reds at the close's FIRST failing stage (first-red-wins), so on
@@ -2197,6 +2215,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       return 'check-red';
     }
   }
+
+  if (seedNoteOn) seedNote = buildSeedNote(seedReds, scrub);
 
   // ── 0c, COLD. The seam and both halves of its placement ruling are stated
   // above, where a RESUME reaches it; this is where a run that is NOT resuming
@@ -3137,6 +3157,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // handed (a record, never a verdict), so the Audit can show it and the byte check can compare it with a fresh render.
     const hints = learnHints && learnHints.text && (phase === 'draft' || (phase === 'replan' && replans === 1)) ? learnHints : null;
     if (hints) emit('learnings', { phase, text: hints.text, ids: hints.ids, chars: hints.text.length });
+    // The seed note: the planner's FIRST draft only (and its redrafts). A record of counts and names, never the text.
+    const seedNoteForPlanner = seedNote && phase === 'draft' ? seedNote : null;
+    if (seedNoteForPlanner) emit('seed-note', { to: 'planner', chars: seedNoteForPlanner.text.length, stages: seedNoteForPlanner.stages });
     // D5 — the bridge rides into the FIRST draft phase ONLY. A replan drafts from the
     // RUN'S OWN STATE (what failed, what is left): re-handing the recipe there would
     // answer the replan's question with the material the run just demonstrated does not
@@ -3161,7 +3184,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const draftPlan = async (/** @type {any[]|null} */ reds) => {
       drafter.setIteration(reds ? 'redraft' : 'draft');
       replanCut = false;
-      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, starting, checkFacts, doorWords?.text ?? null, readShim, hints?.text ?? null), []);
+      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, starting, checkFacts, doorWords?.text ?? null, readShim, hints?.text ?? null, seedNoteForPlanner?.text ?? null), []);
       if (phase === 'replan' && typeof r.error === 'string' && r.error.startsWith('truncated:')) {
         replanCut = true;
         return '';
@@ -3494,6 +3517,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // read ONCE: the note and the "was it the attempt just before this one" test
       // are two questions about the same record, and two reads is how they drift
       const bound = w.wasBounded();
+      // the seed note: the FIRST worker of the FIRST step, once, and only while no gap exists yet
+      const seedNoteHere = seedNote && !seedNoteWorkerSpent && idx === 0 && iteration === 1 && !gap ? seedNote : null;
+      if (seedNoteHere) { seedNoteWorkerSpent = true; emit('seed-note', { to: 'worker', chars: seedNoteHere.text.length, stages: seedNoteHere.stages }); }
       // attempt-diff: what THIS try changed, recorded to the spine only (never a prompt)
       const tryDiff = await startAttemptDiff({ workdir, fence: step.scope !== undefined ? [resolve(workdir, globToPrefix(step.scope))] : fencePrefixes, redact: scrub });
       let r;
@@ -3502,6 +3528,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         `Repository root (absolute): ${workdir}\nEvery path you pass to a tool MUST be absolute and inside this root — a relative path resolves against a different directory and will be denied by the gate.`,
         step.target && `Write your deliverable to: ${resolve(workdir, step.target)}`,
         artifacts.length > 0 && `Working context (read-only) — prior steps' results:\n${artifacts.map((a) => `[${a.id}] ${a.text}`).join('\n\n')}`,
+        seedNoteHere && seedNoteHere.text,
         gap && `Previous attempt failed this step's checks:\n${gap}`,
         // the note names the bound that ACTUALLY fired — a deny streak and a spent
         // round cap are different diagnoses with different remedies, and telling a
