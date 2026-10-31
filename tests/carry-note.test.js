@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { orderEditsByRecency, RED_MARKER } from '../src/carrystore.js';
-import { HEADING, render, similarName, isNonSource, NO_FIX } from '../src/carrynote.js';
+import { HEADING, CAP, render, similarName, isNonSource, NO_FIX } from '../src/carrynote.js';
 
 test('renderer: noise dropped but counted, rank by times read, wrong-trail wording, fold', () => {
   const ev = (o) => ({ ask: 1, ...o });
@@ -53,9 +53,9 @@ test('cap order: over cap keeps the full hunk of the newest edit while file and 
   const n = capScenario({ nEdits: 2, hunk: 40 });
   const big = render(n, 1e9);
   assert.equal(big.capped, false);
-  const r = render(n); // CAP 3000
+  const r = render(n, CAP / 4); // a cap the scenario exceeds (the default CAP is bigger than this scenario's note)
   assert.equal(r.capped, true);
-  assert.ok(r.text.length <= 3000);
+  assert.ok(r.text.length <= CAP / 4);
   // the newest edit is the LAST in the edits array ('bb'); its whole (40 line) hunk survives, so does the older one's here
   assert.equal(hunkCount(r.text, 'bb'), 40);
   assert.equal(hunkCount(r.text, 'aa'), 40);
@@ -101,7 +101,7 @@ test('cap order: the edited file keeps its place longest in "where looked"; earl
   let checked = false;
   const r = render(n, 1e9);
   let prev = r.sections.earlier;
-  for (let cap = 3000; cap >= 300; cap -= 5) {
+  for (let cap = CAP / 4; cap >= 300; cap -= 5) {
     const t = render(n, cap);
     if (t.sections.earlier < prev && t.sections.earlier > 0) {
       const lines = t.text.split('\n').filter((l) => /fix loop try \d/.test(l));
@@ -133,4 +133,30 @@ test('edit recency: ordered by the latest settled ask whose changed list names t
   const settled = [{ changed: ['c.js'] }, { changed: ['a.js', 'c.js'] }, { changed: ['b.js'] }];
   assert.deepEqual(orderEditsByRecency(edits, settled).map((e) => e.path), ['d.js', 'a.js', 'c.js', 'b.js']);
   assert.deepEqual(orderEditsByRecency(edits, []).map((e) => e.path), ['a.js', 'b.js', 'c.js', 'd.js'], 'no history: alphabetical order kept');
+});
+
+// ---- earlier failures: cut order (hamr, 2026-10-31): files, searches, earlier tries, earlier failures oldest group first, then hunks
+test('cap order: earlier failures go after earlier tries, oldest group first, whole group, before any diff hunk', () => {
+  const n = capScenario({ nEdits: 2, hunk: 40 });
+  const words = ['quokka', 'lemur', 'ibex', 'tapir'];
+  n.failures = words.map((w, i) => ({ label: `fix loop try ${i + 1}`, text: `${w} ${w}wall ${w}zone failed\n${w} second line ${w}extra` }));
+  const full = render(n, 1e9);
+  assert.equal(full.sections.failures, 4);
+  assert.ok(full.text.indexOf('Earlier tries (folded):') < full.text.indexOf('Earlier failures (folded):'));
+  const seen = [];
+  for (let cap = full.text.length; cap >= 150; cap -= 1) {
+    const r = render(n, cap);
+    seen.push({ f: r.sections.failures, e: r.sections.earlier, h: hunkCount(r.text, 'bb'), text: r.text });
+  }
+  const gone = seen.filter((s) => s.f < 4 && s.f > 0);
+  assert.ok(gone.length, 'the failures stage was reached');
+  for (const s of gone) {
+    assert.equal(s.e, 0, 'earlier tries are gone before any failure group is');
+    assert.equal(s.h, 40, 'no hunk touched while failures are being cut');
+    // the survivors are the NEWEST groups; each shown whole (second line travels with its first)
+    const shown = words.filter((w) => s.text.includes(`${w} second line`));
+    assert.deepEqual(shown, words.slice(4 - s.f));
+    for (const w of shown) assert.ok(s.text.includes(`    ${w} ${w}wall ${w}zone failed\n    ${w} second line`));
+  }
+  assert.ok(seen.some((s) => s.f === 0 && s.h < 40), 'hunks are cut only after the failures are all gone');
 });

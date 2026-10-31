@@ -79,7 +79,7 @@ test('spine record is counts only (no note text, no paths), one per delivered no
   assert.deepEqual(Object.keys(recs[0]).sort(), ['capped', 'chars', 'iteration', 'phase', 'sections', 'seq', 'ts', 'type']);
   assert.equal(phase, 'step:real'); assert.equal(iteration, 1); assert.equal(capped, false);
   assert.ok(chars > 100);
-  assert.deepEqual(sections, { reads: 1, searches: 2, edits: 1, earlier: 0 });
+  assert.deepEqual(sections, { reads: 1, searches: 2, edits: 1, earlier: 0, failures: 0 });
   assert.ok(!JSON.stringify(recs[0]).includes('mod.mjs'));
   void type; void seq; void ts;
 });
@@ -121,3 +121,15 @@ test('wiring OFF: no note, no record, no state dir; the prompts are exactly the 
   assert.deepEqual(stripped, norm(r, 'off'), 'ON differs from OFF by the appended note and nothing else');
 });
 
+
+test('call site: a red step check hands its WHOLE failing text to the store, which persists it (and the retry prompt carries the same text)', async () => {
+  const wd = join(base, 'redtext');
+  const r = await runScripted(wd, { carryNote: true, redFirst: true });
+  assert.equal(r.outcome, 'green');
+  const st = JSON.parse(readFileSync(join(wd, '.smoke', 'carry', 'state.json'), 'utf8'));
+  const red = st.asks.find((a) => a.step === 'real' && a.iteration === 1);
+  assert.equal(red.result, 'red');
+  assert.match(red.failure, /FAILED tests\/test_x\.mjs missing/);
+  assert.ok(askPrompts(r).some((p) => p.includes(`Previous attempt failed this step's checks:\n`) && p.includes(red.failure)), 'the same text the retry prompt carries');
+  assert.equal(st.asks.find((a) => a.step === 'real' && a.iteration === 2).failure, undefined, 'a green try stores no failure');
+});

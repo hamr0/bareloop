@@ -7,7 +7,7 @@ import { jaccard, JACCARD_MIN } from './learn.js';
 import { redactSecrets } from './validate.js';
 import { isHandoffExcluded } from './handoff.js';
 
-export const CAP = 3000;
+export const CAP = 12000;
 export const HUNK_LINES = 40;
 export const HUNK_SHOW = 12;
 export const GAP_LINES = 8;
@@ -186,8 +186,12 @@ export function render(notes, cap = CAP) {
   const earlierG = fold((notes.earlier ?? []).slice().reverse(), (s) => s);
   /** @type {Entry[]} */
   const earlier = earlierG.map((g, i) => ({ text: '- ' + g.rep + (g.members.length > 1 ? ` · ${g.members.length - 1} similar` : ''), keys: [], tier: 2, count: 0, recency: -i }));
-  const rawEntries = events.filter((e) => ['read', 'get', 'grep', 'recall'].includes(e.tool)).length + edits.length + (notes.earlier ?? []).length;
-  const foldedEntries = files.length + searches.length + edits.length + earlier.length + (dropped ? 1 : 0);
+  // failed checks' whole texts, oldest first in; folded newest first with the SAME rule, the newest member represents its group
+  const failG = fold((notes.failures ?? []).slice().reverse(), (f) => f.text);
+  /** @type {Entry[]} */
+  const failures = failG.map((g, i) => ({ text: `- ${g.rep.label}${g.members.length > 1 ? ` · ${g.members.length - 1} similar` : ''}:\n` + String(g.rep.text).split('\n').map((l) => '    ' + l).join('\n'), keys: [], tier: 2, count: 0, recency: -i }));
+  const rawEntries = events.filter((e) => ['read', 'get', 'grep', 'recall'].includes(e.tool)).length + edits.length + (notes.earlier ?? []).length + (notes.failures ?? []).length;
+  const foldedEntries = files.length + searches.length + edits.length + earlier.length + failures.length + (dropped ? 1 : 0);
 
   const lt = notes.lastTry;
   const head = [HEADING];
@@ -196,6 +200,7 @@ export function render(notes, cap = CAP) {
 
   // Cap order (hamr, 2026-10-30): diffs matter most, so they are cut LAST.
   // 1 file lines (edited files protected, dropped last in the section), 2 search lines, 3 earlier tries oldest first,
+  // 3b earlier failures, the OLDEST group first (whole group), then
   // 4 diff hunks, one edit at a time oldest first: to HUNK_SHOW lines each, then to 0 each (newest edit's hunk is the last thing cut).
   // `notes.edits` must be ordered oldest to newest (the store does this: orderEditsByRecency in carrystore.js).
   // The last-try line and the heading are never dropped.
@@ -222,6 +227,7 @@ export function render(notes, cap = CAP) {
     const ke = edits.filter((_, i) => !goneEdits.has(i));
     if (edits.length) { L.push('Edits made in this run:'); edits.forEach((e, i) => { if (!goneEdits.has(i)) L.push(editLines(e, hunkCaps[i])); }); if (ke.length < edits.length) L.push(`- (+${edits.length - ke.length} older not shown)`); } else L.push('Edits made in this run: none');
     sec('Earlier tries (folded):', earlier);
+    sec('Earlier failures (folded):', failures);
     return L.join('\n');
   };
   let text = build();
@@ -232,6 +238,7 @@ export function render(notes, cap = CAP) {
     ...dropOrder(files, isEditedFile).map((e) => () => { gone.add(e); }),
     ...dropOrder(searches).map((e) => () => { gone.add(e); }),
     ...dropOrder(earlier).map((e) => () => { gone.add(e); }),
+    ...dropOrder(failures).map((e) => () => { gone.add(e); }),
     // 4: one edit at a time, oldest first (edits[] is newest first, so walk from the end): to HUNK_SHOW, then every edit to 0
     ...edits.map((_, i) => i).reverse().map((i) => () => { hunkCaps[i] = Math.min(hunkCaps[i], HUNK_SHOW); }),
     ...edits.map((_, i) => i).reverse().map((i) => () => { hunkCaps[i] = 0; }), // oldest edit first, newest last
@@ -257,6 +264,7 @@ export function render(notes, cap = CAP) {
     searches: searches.filter((x) => !gone.has(x)).length,
     edits: edits.length - goneEdits.size,
     earlier: earlier.filter((x) => !gone.has(x)).length,
+    failures: failures.filter((x) => !gone.has(x)).length,
   };
   return { text, capped, rawChars, rawEntries, foldedEntries, named, summarized, sections };
 }

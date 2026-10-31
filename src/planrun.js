@@ -3522,7 +3522,6 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       let evaled;
       try { evaled = await evalExits(step.exit, { dir: workdir, snapshot, runCheck }); } finally { judgingIteration = null; }
       const { pass, results: raw } = evaled;
-      carry?.settleAsk(raw.some((r) => r.fault) ? 'unknown' : pass ? 'green' : 'red'); // the carry note's outcome for this try, from the check itself
       // Scrubbed HERE, once, before the results are read by anyone. An exit detail is
       // supposed to be names and counts, but `json-valid` embeds `JSON.parse`'s own
       // message and V8 quotes a window of the SOURCE inside it (a body of 20 chars or
@@ -3537,6 +3536,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // results makes the leak inexpressible; scrubbing each consumer makes it
       // something the next consumer has to remember.
       const results = raw.map((r) => (typeof r.detail === 'string' ? { ...r, detail: scrub(r.detail) } : r));
+      // the carry note's outcome for this try, from the check itself; a red also hands over the whole failing text, the SAME text the next prompt's gap carries (lastGap below)
+      carry?.settleAsk(results.some((r) => r.fault) ? 'unknown' : pass ? 'green' : 'red', results.filter((r) => !r.pass).map((r) => r.detail).join('\n'));
       // PRD v1.106 Part 5: what the check just read (path, size, sha256 — never the content), recorded BEFORE the exit-eval because the next try
       // overwrites the file. The worker is idle between its turn and this judge, so these are the bytes the check read.
       for (const o of await outputJudgedRecords(job.closeDecl, workdir, step.exit)) emit('output-judged', { step: step.id, iteration: iterationNow, ...o });
@@ -4274,7 +4275,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // case the trend instrument is blind.
       middle, judge: async () => {
         const v = await judgeClose();
-        carry?.settleAsk(v.verdict === 'satisfied' ? 'green' : v.verdict === 'needs_revision' ? 'red' : 'unknown'); // the fix try's outcome, from the close itself
+        carry?.settleAsk(v.verdict === 'satisfied' ? 'green' : v.verdict === 'needs_revision' ? 'red' : 'unknown', v.verdict === 'needs_revision' ? v.gap : undefined); // the fix try's outcome and its whole failing text (the gap the next prompt carries), from the close itself
         return v;
       }, ladder: fixGovernor, emit: emitL, redact: scrub,
       closeTimeoutMs, cwd: workdir, workerWrites: w.workerWrites, closeDir, phase: 'fix',

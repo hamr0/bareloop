@@ -163,7 +163,12 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
 
   const snapOf = (/** @type {{path: string, lines: number}[]} */ edits) => Object.fromEntries(edits.map((e) => [e.path, e.lines]));
   const tryLabel = (/** @type {any} */ a) => (a.kind === 'fix' ? `fix loop try ${a.iteration}` : `step "${a.step}" try ${a.iteration}`);
-  const endedOf = (/** @type {any} */ a) => a.boundedText || (a.result === 'red' ? 'Its check failed.' : a.result === 'green' ? 'Its check passed.' : 'No check result was recorded for it.');
+  // how the try ended AND what its check said: a bounded try says both (the bound hides nothing)
+  const endedOf = (/** @type {any} */ a) => {
+    const res = a.result === 'red' ? 'Its check failed.' : a.result === 'green' ? 'Its check passed.' : null;
+    if (a.boundedText) return `${a.boundedText} ${res ?? 'Check not run.'}`;
+    return res ?? 'No check result was recorded for it.';
+  };
 
   /**
    * Called at the start of EVERY ask (scout and drafter included, so their finds feed the store).
@@ -193,11 +198,13 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
       lastCheck: null, // the failed check's text is already in the prompt today; one copy
       events: events.map((e) => ({ ...e })),
       edits: orderEditsByRecency(edits, settled),
+      // every failed check's whole text, oldest first, the NEWEST left out (the prompt already carries it, one copy)
+      failures: settled.filter((a) => a.failure).slice(0, -1).map((a) => ({ label: tryLabel(a), text: a.failure })),
       earlier: settled.slice(0, -1).map((a) => `${tryLabel(a)}: ${endedOf(a)} ${a.changed.length ? `Changed ${a.changed.join(', ')}.` : 'Changed nothing.'}`),
       lastAsk: lt ? lt.n : undefined,
     };
     asks.push({ n, kind, step, iteration, startSnap: snapOf(edits) });
-    const hasAny = notes.events.length || edits.length || notes.earlier.length || notes.lastTry;
+    const hasAny = notes.events.length || edits.length || notes.earlier.length || notes.failures.length || notes.lastTry;
     if (!hasAny) { save(); return ''; }
     const r = render(/** @type {any} */ (notes));
     emit('carry-note', { phase, iteration, chars: r.text.length, capped: r.capped, sections: r.sections }); // counts only
@@ -220,12 +227,14 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
   /**
    * The engine's own check result for the ask that just returned: 'green' (every check passed), 'red' (one failed) or
    * 'unknown' (the check hit an instrument fault, so no honest answer). Only the first result per ask counts.
-   * @param {'green'|'red'|'unknown'} result
+   * A red also hands over the check's WHOLE failing text (the gap the next prompt carries); it is stored masked, never clipped.
+   * @param {'green'|'red'|'unknown'} result @param {string} [text]
    */
-  const settleAsk = (result) => {
+  const settleAsk = (result, text) => {
     const a = asks[asks.length - 1];
     if (!a || a.n !== n || a.result !== undefined) return;
     a.result = result;
+    if (result === 'red' && typeof text === 'string' && text !== '') a.failure = redactSecrets(text);
     save();
   };
 

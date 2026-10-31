@@ -23,8 +23,8 @@ const job = () => ({
   tools: ALL, escalation: { mode: 'decision-ready' },
 });
 
-/** @param {string} wd fixed working dir (wiped first) @param {{ carryNote?: boolean }} o */
-export async function runScripted(wd, { carryNote = false } = {}) {
+/** @param {string} wd fixed working dir (wiped first) @param {{ carryNote?: boolean, redFirst?: boolean }} o */
+export async function runScripted(wd, { carryNote = false, redFirst = false } = {}) {
   rmSync(wd, { recursive: true, force: true });
   rmSync(wd + '-spine', { recursive: true, force: true });
   mkdirSync(join(wd, 'tests'), { recursive: true });
@@ -46,8 +46,9 @@ export async function runScripted(wd, { carryNote = false } = {}) {
     { toolCalls: [tcall('w1', 'shell_write', { path: join(wd, 'tests', 'a.txt'), content: `a-line ${SECRET}\n` })] },
     { text: 'warm done' },
     { toolCalls: [tcall('r2', 'shell_read', { path: join(wd, '.smoke', 'carry', 'state.json') })] },
-    { toolCalls: [tcall('w2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
+    { toolCalls: [tcall('w2', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: redFirst ? 'nope\n' : 'ok\n' })] },
     { text: 'real done' },
+    ...(redFirst ? [{ toolCalls: [tcall('w3', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] }, { text: 'real done again' }] : []),
   ]);
   const file = join(wd + '-spine', 'spine.jsonl');
   const j = job();
