@@ -2132,3 +2132,9 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 ### readMap built, off, parked for more runs (v1.122 — 2026-10-31; hamr ruling 2026-10-31)
 
 - **readMap** (first read of a big file returns a map of its parts): built as an experimental spec field, default OFF. First battery FAIL on the frozen rule, n=3 per arm (F263, `docs/logs/MAP-PREREG.md`); time and cost near parity. Parked: needs more runs before any default change (hamr 2026-10-31).
+
+### Notes to the AI named, handoff note to fold into carry memo (v1.123 — 2026-10-31; hamr ruling 2026-10-31)
+
+- **The 14 notes** to workers and the planner are named and listed in `docs/product/LAYERS.md`, section "Notes to the AI (2026-10-31)".
+- **Split rule:** by scope (one try / one run / across runs) and trigger (when sent).
+- **Planned, NOT built (next build):** handoff note folds into carry memo, one block, one switch; `handoffNote: false` meaning is an open point for hamr. Then one real run, then the memo proof battery (prereg first).

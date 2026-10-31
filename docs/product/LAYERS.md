@@ -135,6 +135,45 @@ four, plus the ledger, inside the one shell.
 
 ---
 
+## Notes to the AI (2026-10-31)
+
+Every extra block the AI is handed besides the job text is a "note". There are 14. They split by **scope** (one try / one run / across runs) and **trigger** (when it is sent). Code cites are `src/planrun.js` unless named.
+
+**To workers (step and fix tries)**
+
+| # | Note | What it carries | Sent when | Switch | Where |
+|---|---|---|---|---|---|
+| 1 | Handoff note | files earlier workers read, with function line ranges | every new try after the first | `handoffNote` (job spec, absent = on) | planrun 1041, 2611-2629; `src/handoff.js` |
+| 2 | Carry memo | reads, searches, edits, earlier failures (folded), the start failure (`at start`) | every new try after the first | `carryNote` (config.json, absent = on) | planrun 1051-1052, 2630-2637; `src/carrystore.js`, `src/carrynote.js` |
+| 3 | Last failure | "Previous attempt failed this step's checks" plus the check output (fix: the verification output) | the try before was red | always | planrun 3535 (step), 4289 (fix) |
+| 4 | Cut-off | ran out of turns, or repeated denied calls (the strike reason) | the try before was bounded | always | `boundedNote` planrun 602; used 3539, 4291 |
+| 5 | Numbers trend (fix only) | the close's own numbers so far, oldest first (checks passed, stage values) | fix tries | always | planrun 4275-4290 |
+| 6 | Step results | final text of each passed step, up to 2,000 chars (`ARTIFACT_MAX`) | an earlier step passed | always | planrun 279, 3533, 4286 |
+| 7 | Layer R note | the escalating fixation note | only when Layer R is on (off by default) | `rootInj` | planrun 3522, 3540; 4262-4269, 4292 |
+
+**To the planner**
+
+| # | Note | What it carries | Sent when | Switch | Where |
+|---|---|---|---|---|---|
+| 8 | Seed note | the job's own failing check at start | first draft only | `seedNote` (job spec, absent = on) | `seedNoteBlock` planrun 357; 1043, 2221, 3168 |
+| 9 | Learnings | lessons from earlier runs | draft + first replan | `learningHints` | `hintsBlock` planrun 351; 3165 |
+| 10 | Budget | money and time | every draft | always | `materialsBlock` planrun 333 |
+| 11 | Replan brief | why the step stopped (strikes / meter / stall), last exit state, close gap, steps done, money and time left | replan | always | planrun ~3790-3820; `closeGapBlock` 503 |
+| 12 | Trend line | "close trend so far" (numbers going up or down) | replan | always | planrun 3831-3833 |
+| 13 | Rerun words | what the person asked at the review door | rerun from Accept | always | `doorNoteBlock` planrun 375 |
+| 14 | Starting draft | the old passed plan as a start | Reuse | always | `startingDraftBlock` planrun 401 |
+
+Names we use: carry memo, last failure, cut-off, numbers trend, step results, seed note, learnings, replan brief (plus budget, trend line, rerun words, starting draft, Layer R note).
+
+**Planned fold (hamr ruling 2026-10-31: "carry memo + handoff note become one, learnings separate, last failure separate, we split on scope and trigger"). NOT BUILT.**
+
+- #1 handoff note folds INTO #2 carry memo: one block, one switch, keeping the handoff note's function line ranges.
+- Everything else stays separate. Learnings stay separate (across runs, planner only). Last failure stays in the prompt (the memo already leaves the newest failure out).
+- **Open design point for hamr:** old specs with `handoffNote: false` must still load. What it means after the fold (the memo's file list off, or the memo off) is not decided.
+- After the fold: one real run, then the memo proof battery (memo on/off, several jobs, prereg signed first).
+
+---
+
 ## When something goes wrong
 
 | what happened | what bareloop does | what you see | who decides |
