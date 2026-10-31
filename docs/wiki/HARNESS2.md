@@ -520,6 +520,8 @@ Earlier tries (folded): step "recon-and-first-fix" try 1: same reads as above, p
 
 2026-10-30 status: M1 was tested in 2 rounds on Fireworks `deepseek-v4p1-flash` (`docs/logs/M1-PREREG.md`, `docs/logs/M1-ROUND2-PREREG.md`; results in F258). The note's cap order changed to diff-first (hunks are cut last). Underpowered, a leaning not proof. It ships ON by default as `carryNote` in config.json (false = handoff note only) on branch feat/audit-grid.
 
+2026-10-31 status: SEEDGAP (tell the planner and first worker the job's own failing count check at start) ran 3 OFF / 3 ON on bigfile, Fireworks `deepseek-v4p1-flash`, carry note and handoff ON in all six: first step wrote ON 3 of 3, OFF 1 of 3 = SIGNAL by the frozen rule (`docs/logs/SEEDGAP-PREREG.md`, F262). Underpowered (n=3, one job). Ships ON by default as `seedNote` (false = off); delivery to workers shipped as the carry memo's `at start` entry, which the battery did not test.
+
 M2. litectx context primitives (compress, peek, stash).
 - They are wired but used in about 0.7% of calls (H2 Part 0). Use them. A gap becomes an ask to litectx, never a local patch.
 
@@ -550,4 +552,4 @@ Untracked scratch (survives `/clear`, not a fresh clone), all under `.claude/scr
 
 Tracked: `docs/logs/E0-PREREG.md`, `E0B-PREREG.md`, `E1-PREREG.md`, `PLANNER-EXIT-PREREG.md`, `H1-PREREG.md`; `docs/wiki/FINDINGS.md` F252, F253, F254, F255.
 
-Paid so far (DeepSeek deepseek-flash, 2026-10-28): E1 $4.72, observe $0.16, planner POC $1.55, live run $0.04. 2026-10-29: H1 $3.3329 (Fireworks deepseek-v4p1-flash). 2026-10-29/30: M1 smoke $0.73, round 1 $3.52, round 2 $5.08 (Fireworks deepseek-v4p1-flash).
+Paid so far (DeepSeek deepseek-flash, 2026-10-28): E1 $4.72, observe $0.16, planner POC $1.55, live run $0.04. 2026-10-29: H1 $3.3329 (Fireworks deepseek-v4p1-flash). 2026-10-29/30: M1 smoke $0.73, round 1 $3.52, round 2 $5.08 (Fireworks deepseek-v4p1-flash). 2026-10-31: live carry runs $0.70 + $0.56, SEEDGAP $1.40 (Fireworks deepseek-v4p1-flash).

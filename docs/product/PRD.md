@@ -2121,3 +2121,9 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 - **README:** "The machine that makes machines" section (intent, guide rails, verification, evidence).
 - **Paid runs** from now use DeepSeek flash on Baseten (hamr 2026-10-30).
 - **Open:** F260 (pulselog wall in long fix tries), logged only.
+
+### Carry memo: bigger, with check results and earlier failures; seed note ON (v1.121 — 2026-10-31; hamr rulings 2026-10-31)
+
+- **Carry note:** cap 12000 characters; each try line says how the try ended and its check result; an "Earlier failures (folded):" section carries each failed check's whole text, newest left out (the prompt carries it). F261.
+- **Seed note ON by default:** the job's own failing `count-not-worse` text at start goes to the planner's first draft and, as the memo's `at start` entry, to every step and fix worker. Spec field `seedNote`, absent = on, `false` = off. F262.
+- **Secret inventory:** left as known token shapes only; a `NAME=value` style secret is not masked (F261 ruling).

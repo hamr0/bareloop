@@ -15066,6 +15066,8 @@ Root cause: `planPrompt` (src/planrun.js, the `"exit"` line near 703) presented 
 
 2026-10-31 — $0 read (`.claude/scratch/bigfile-next/READ.md`, archived spines only): the round count is not the main cause. The worker never sees which test fails; 52 of 52 bounded bigfile tries wrote nothing; after such a step a replan gave fewer rounds in 7 of 13 runs and more in 6 (a coin flip, not a downshift).
 
+2026-10-31 — the start-failure part of this is tested in F262 (seed note: planner and first worker told the job's own failing count check).
+
 ## F258 — the next try or step worker is not told what the last try found or ruled out (2026-10-29; read from code; size not yet measured ($0 check C pending))
 
 **Grounded in:** `src/planrun.js` (step prompt build ~3453-3495; `boundedNote` at 594; attempt-diff emit 3481; handoff store 1027), `src/handoff.js`.
@@ -15138,3 +15140,28 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 2026-10-31 — hamr ruled to LEAVE the secret inventory as token shapes only. `SECRET_PATTERNS` in `src/validate.js` is known-token-shapes by design; a `DB_PASSWORD=` style value is not masked in any record, the carry note included.
 
 **Status.** Built (not yet seen live at the new cap).
+
+2026-10-31 — live run on b588305 (job pulselog-p7-small, Fireworks deepseek-v4p1-flash): run mvw4b4wj green, $0.56, 4 notes, largest 11,728 characters, none capped. The earlier-failures section was not seen live: the run had only one red, the newest, which is left out by design.
+
+## F262 — SEEDGAP: telling the planner and first worker the job's own failing count-check at start moves big-file workers to write (2026-10-31; live; SEEDGAP battery, Fireworks deepseek-v4p1-flash, bigfile; hamr ruled it ships ON)
+
+**Problem.** F257 read: 52 of 52 bounded tries on the big-file job wrote nothing. The failing test text the job's own count check produced at seed was thrown away; neither the planner nor the first worker ever saw it.
+
+**Change.** Code builds a "seed note" from the preflight's own stage results: the text of each `count-not-worse` stage that was red at seed (secret-masked; `command-exit` and `changed-from-seed` text never used). It goes to the planner's first draft. Spec field `seedNote`, absent = on, `false` = off (like `handoffNote`; enters the signed hash only when present, so old jobs get it with no re-sign).
+
+**Pre-registration.** `docs/logs/SEEDGAP-PREREG.md`, sha256 `a778d4e6ad374505e371e0d45424cef1031a2e663e502751af1c377e4faceeae`, frozen before any number.
+
+**Battery.** Fireworks deepseek-v4p1-flash, job bigfile, 3 OFF / 3 ON interleaved. Carry note ON (12000) and handoff note ON in all 6 runs (verified from each spine: `carry-note` and `handoff-note` records in all 6; `seed-note` planner and worker records in the 3 ON runs only). Results from `node .claude/scratch/seedgap/battery/driver.mjs --analyze`:
+- Primary (any try of the first plan step wrote a file, real gate audit): ON 3 of 3, OFF 1 of 3. Frozen rule: SIGNAL.
+- Greens: ON 2 of 3, OFF 1 of 3.
+- First write in `src/gate.js`: ON 3, OFF 1.
+- Rounds before first write: ON [6, 45, 16], OFF [29, -, -].
+- Cost per run: ON $0.21-0.33, OFF $0.10-0.26. Booked $1.4027. Real runs.jsonl 385 of 385 (no junk rows).
+
+**Caveats.** n=3, one job, one patient; underpowered by declaration, so it says "moves", never a rate. OFF run 1 was the first bigfile green ever (0 of 13 before): the 12000 carry note may have helped, or chance; untested. Not tested with memory off.
+
+**Delivery changed AFTER the battery.** Tested: planner block plus a hand-delivered block to the first worker of step 1. Shipped (hamr 2026-10-31, "every step needs to know what came before it in failure"): planner block plus the carry memo, which now carries the start failure as the oldest entry of "Earlier failures (folded):", labelled `at start`, to every step and fix worker (never left out, folds with later identical failures, kept across a resume). With the carry note off, workers get nothing from it. The memo form is not yet seen live.
+
+**Ruling.** hamr 2026-10-31: ships ON by default ("add it, it passed 2 of 3").
+
+**Status.** Built, ON by default; planner and memo delivery test-proven, not seen live.
