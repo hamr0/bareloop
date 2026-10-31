@@ -160,3 +160,15 @@ test('cap order: earlier failures go after earlier tries, oldest group first, wh
   }
   assert.ok(seen.some((s) => s.f === 0 && s.h < 40), 'hunks are cut only after the failures are all gone');
 });
+
+test('the start failure folds with a later identical failure: label `at start` only when it is the representative', async () => {
+  const { render } = await import('../src/carrynote.js');
+  const text = 'close: count-stage: 9 against a baseline of 0 (lower-is-better) — worse\nclose: ERR0 not ok 0 - title';
+  const only = render({ failures: [{ label: 'at start', text }] });
+  assert.match(only.text, /- at start:/);
+  assert.equal(only.sections.failures, 1);
+  const folded = render({ failures: [{ label: 'at start', text }, { label: 'step "s1" try 1', text }] });
+  assert.match(folded.text, /- step "s1" try 1 · 1 similar:/);
+  assert.ok(!folded.text.includes('- at start'));
+  assert.equal(folded.sections.failures, 1);
+});

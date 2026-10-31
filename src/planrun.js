@@ -1041,9 +1041,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   const handoffOn = job.handoffNote !== false;
   // THE SEED NOTE (src/seednote.js): the signed spec's `seedNote`; absent = ON, only `false` turns it off (like `handoffNote`).
   const seedNoteOn = job.seedNote !== false;
-  /** @type {{ text: string, stages: string[] }|null} built once, after the preflight loop */
+  /** @type {{ text: string, body: string, stages: string[] }|null} built once, after the preflight loop */
   let seedNote = null;
-  let seedNoteWorkerSpent = false;
   const handoff = createHandoffStore({ workdir });
   // THE CARRY NOTE (src/carrynote.js, src/carrystore.js): facts the earlier asks of THIS run produced, handed after the handoff note.
   // The caller reads the one switch (`carryNote` in config.json) once; off builds no store, writes no state, emits nothing.
@@ -2217,6 +2216,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   }
 
   if (seedNoteOn) seedNote = buildSeedNote(seedReds, scrub);
+  // every step/fix worker gets it through the carry memo (earlier failures, `at start`); the planner has its own block
+  if (seedNote) carry?.setStartFailure(seedNote.body);
 
   // ── 0c, COLD. The seam and both halves of its placement ruling are stated
   // above, where a RESUME reaches it; this is where a run that is NOT resuming
@@ -3517,9 +3518,6 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // read ONCE: the note and the "was it the attempt just before this one" test
       // are two questions about the same record, and two reads is how they drift
       const bound = w.wasBounded();
-      // the seed note: the FIRST worker of the FIRST step, once, and only while no gap exists yet
-      const seedNoteHere = seedNote && !seedNoteWorkerSpent && idx === 0 && iteration === 1 && !gap ? seedNote : null;
-      if (seedNoteHere) { seedNoteWorkerSpent = true; emit('seed-note', { to: 'worker', chars: seedNoteHere.text.length, stages: seedNoteHere.stages }); }
       // attempt-diff: what THIS try changed, recorded to the spine only (never a prompt)
       const tryDiff = await startAttemptDiff({ workdir, fence: step.scope !== undefined ? [resolve(workdir, globToPrefix(step.scope))] : fencePrefixes, redact: scrub });
       let r;
@@ -3528,7 +3526,6 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         `Repository root (absolute): ${workdir}\nEvery path you pass to a tool MUST be absolute and inside this root — a relative path resolves against a different directory and will be denied by the gate.`,
         step.target && `Write your deliverable to: ${resolve(workdir, step.target)}`,
         artifacts.length > 0 && `Working context (read-only) — prior steps' results:\n${artifacts.map((a) => `[${a.id}] ${a.text}`).join('\n\n')}`,
-        seedNoteHere && seedNoteHere.text,
         gap && `Previous attempt failed this step's checks:\n${gap}`,
         // the note names the bound that ACTUALLY fired — a deny streak and a spent
         // round cap are different diagnoses with different remedies, and telling a

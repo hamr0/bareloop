@@ -93,11 +93,13 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
   /** @type {any[]} one per WORK ask (step/fix): {n, kind, step, iteration, bounded, red, changed, startSnap} */
   let asks = [];
   let loaded = false;
+  /** @type {string|null} the job's own count-check text at start (the seed note's body), the oldest entry of the memo's earlier failures */
+  let startFailure = null;
   if (resume && existsSync(stateFile)) {
-    try { const s = JSON.parse(readFileSync(stateFile, 'utf8')); n = s.n ?? 0; events = s.events ?? []; asks = s.asks ?? []; base = s.base ?? null; loaded = true; } catch { /* a bad file starts empty */ }
+    try { const s = JSON.parse(readFileSync(stateFile, 'utf8')); n = s.n ?? 0; events = s.events ?? []; asks = s.asks ?? []; base = s.base ?? null; startFailure = s.startFailure ?? null; loaded = true; } catch { /* a bad file starts empty */ }
   }
   const save = () => {
-    try { mkdirSync(dir, { recursive: true }); writeFileSync(stateFile, JSON.stringify({ n, base, events, asks })); } catch { /* a record, never a verdict: a failed save never breaks a run */ }
+    try { mkdirSync(dir, { recursive: true }); writeFileSync(stateFile, JSON.stringify({ n, base, events, asks, startFailure })); } catch { /* a record, never a verdict: a failed save never breaks a run */ }
   };
   const rel = (/** @type {string} */ p) => (isAbsolute(p) ? relative(workdir, p) : p).split('\\').join('/') || '.';
   const diskLines = (/** @type {string} */ r, /** @type {string|undefined} */ fallback) => { try { return lineCount(readFileSync(resolve(workdir, r), 'utf8')); } catch { return fallback === undefined ? null : lineCount(fallback); } };
@@ -199,7 +201,8 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
       events: events.map((e) => ({ ...e })),
       edits: orderEditsByRecency(edits, settled),
       // every failed check's whole text, oldest first, the NEWEST left out (the prompt already carries it, one copy)
-      failures: settled.filter((a) => a.failure).slice(0, -1).map((a) => ({ label: tryLabel(a), text: a.failure })),
+      // plus the start failure, oldest of all: it is never in a prompt gap, so it is never the one left out
+      failures: [...(startFailure ? [{ label: 'at start', text: startFailure }] : []), ...settled.filter((a) => a.failure).slice(0, -1).map((a) => ({ label: tryLabel(a), text: a.failure }))],
       earlier: settled.slice(0, -1).map((a) => `${tryLabel(a)}: ${endedOf(a)} ${a.changed.length ? `Changed ${a.changed.join(', ')}.` : 'Changed nothing.'}`),
       lastAsk: lt ? lt.n : undefined,
     };
@@ -238,5 +241,8 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
     save();
   };
 
-  return { wrapTools, beginAsk, endAsk, settleAsk, setBase: (/** @type {string|null|undefined} */ b) => { if (!base && b) base = b; }, loaded: () => loaded, _state: () => ({ n, events, asks, base }) };
+  /** The seed note's body (already secret-masked), set once per run; a resume keeps the one it persisted. @param {string} text */
+  const setStartFailure = (text) => { if (!startFailure && text) { startFailure = text; save(); } };
+
+  return { wrapTools, beginAsk, setStartFailure, endAsk, settleAsk, setBase: (/** @type {string|null|undefined} */ b) => { if (!base && b) base = b; }, loaded: () => loaded, _state: () => ({ n, events, asks, base }) };
 }
