@@ -2128,3 +2128,7 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 - **Seed note ON by default:** the job's own failing `count-not-worse` text at start goes to the planner's first draft and, as the memo's `at start` entry, to every step and fix worker. Spec field `seedNote`, absent = on, `false` = off. F262.
 - **Secret inventory:** left as known token shapes only; a `NAME=value` style secret is not masked (F261 ruling).
 - **NEXT (hamr 2026-10-31), plan only:** A (map on a big-file read) tested with M2 after a $0 read and a signed prereg; litectx index plan (bump, `lc.indexed` fallback, index once at run start); then a larger ON/OFF proof of the memo. Details in `docs/wiki/HARNESS2.md` section 9.
+
+### readMap built, off, parked for more runs (v1.122 — 2026-10-31; hamr ruling 2026-10-31)
+
+- **readMap** (first read of a big file returns a map of its parts): built as an experimental spec field, default OFF. First battery FAIL on the frozen rule, n=3 per arm (F263, `docs/logs/MAP-PREREG.md`); time and cost near parity. Parked: needs more runs before any default change (hamr 2026-10-31).

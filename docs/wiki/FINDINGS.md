@@ -15190,3 +15190,5 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Verdict.** Lever closed for this job. `readMap` stays experimental and default OFF. The litectx `outline(path)` ask is NOT filed (hamr: only if it works).
 
 **Status.** FAIL; kept off.
+
+2026-10-31 hamr: keep it built, off; parked in PRD v1.122; needs more runs.
