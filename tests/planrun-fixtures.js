@@ -89,11 +89,11 @@ export const collector = () => {
 };
 
 
-export async function go(wd, provider, { job = JOB(wd), capRuns = 3, layerRoot = false, scoutRounds, now, providerFor, bridge, resumeSeed, resumeBranch, scout } = {}) {
+export async function go(wd, provider, { job = JOB(wd), capRuns = 3, layerRoot = false, scoutRounds, now, providerFor, bridge, resumeSeed, resumeBranch, scout, carryNote } = {}) {
   const jv = validateJob(job);
   assert.deepEqual(jv.reds, [], 'the test job must be validateJob-green');
   const { events, emit } = collector();
-  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns, layerRoot, remainingUsd: () => 1.5, ...(scoutRounds ? { scoutRounds } : {}), ...(now ? { now } : {}), ...(providerFor ? { providerFor } : {}), ...(bridge ? { bridge } : {}), ...(resumeSeed ? { resumeSeed } : {}), ...(resumeBranch ? { resumeBranch } : {}), ...(scout !== undefined ? { scout } : {}) });
+  const outcome = await runPlan(jv.job, { workdir: wd, provider, emit, capRuns, layerRoot, remainingUsd: () => 1.5, ...(scoutRounds ? { scoutRounds } : {}), ...(now ? { now } : {}), ...(providerFor ? { providerFor } : {}), ...(bridge ? { bridge } : {}), ...(resumeSeed ? { resumeSeed } : {}), ...(resumeBranch ? { resumeBranch } : {}), ...(scout !== undefined ? { scout } : {}), ...(carryNote !== undefined ? { carryNote } : {}) });
   return { outcome, events };
 }
 

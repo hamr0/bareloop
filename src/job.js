@@ -349,19 +349,19 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
   if (spec.thinking !== undefined && typeof spec.thinking !== 'boolean') {
     red('invalid-value', 'thinking', 'true or false — the job\'s "Thinking on" tick (absent = off)');
   }
-  // THE HANDOFF NOTE (src/handoff.js): a declared job condition, signed like `thinking`. A boolean; ABSENT = on (an old spec keeps its
-  // bytes, so its hash), only an explicit `false` turns the note off. The switch is hashed; the note's text never is.
+  // LEGACY `handoffNote` (the handoff note was folded into the carry memo, 2026-10-31): still accepted and hashed so an old signed spec
+  // verifies; `false` now means "carry memo off for this job" (src/planrun.js). A boolean; ABSENT = on. New specs and drafts never write it.
   if (spec.handoffNote !== undefined && typeof spec.handoffNote !== 'boolean') {
-    red('invalid-value', 'handoffNote', 'true or false (absent = on): whether the next step/fix worker is handed a map of the files earlier workers read');
+    red('invalid-value', 'handoffNote', 'true or false (legacy; absent = on): false turns the carry memo off for this job');
   }
 
-  // THE SEED NOTE (src/seednote.js): a declared job condition, signed like `handoffNote`. A boolean; ABSENT = on (an old spec keeps its
+  // THE SEED NOTE (src/seednote.js): a declared job condition, signed like `thinking`. A boolean; ABSENT = on (an old spec keeps its
   // bytes, so its hash), only an explicit `false` turns off handing the planner and the first worker what the job's own check said at start. The switch is hashed; the text never is.
   if (spec.seedNote !== undefined && typeof spec.seedNote !== 'boolean') {
     red('invalid-value', 'seedNote', 'true or false (absent = on): whether the planner and the first worker are told what the job\'s own count check said on the untouched tree');
   }
 
-  // THE FIRST-READ MAP (src/readshim.js, EXPERIMENTAL): a declared job condition, signed like `handoffNote`. A boolean; ABSENT = off (an old spec keeps
+  // THE FIRST-READ MAP (src/readshim.js, EXPERIMENTAL): a declared job condition, signed like `thinking`. A boolean; ABSENT = off (an old spec keeps
   // its bytes, so its hash), `true` makes the first shell_read of a big non-test file in an ask return a map of its parts. The switch is hashed.
   if (spec.readMap !== undefined && typeof spec.readMap !== 'boolean') {
     red('invalid-value', 'readMap', 'true or false (absent = off, experimental): whether the first read of a big file in an ask returns a map of its parts instead of the file');

@@ -1,5 +1,5 @@
 // The carry note in a run (src/carrystore.js, src/planrun.js): a scripted provider through runJob, real Loop, real Gate.
-// Note only on step/fix asks that have something to say, appended after the handoff note, no file content, secrets
+// Note only on step/fix asks that have something to say, appended to the prompt, no file content, secrets
 // masked, never to scout/drafter, counts-only spine record, state under .smoke the worker cannot read, resume loads,
 // and the `carryNote` switch in config.json (absent = on; OFF leaves the worker prompt untouched).
 import { test, after } from 'node:test';
@@ -11,7 +11,6 @@ import { runScripted, SECRET, CONTENT_MARK } from './carry-scenario.js';
 import { carryNoteOn, createCarryStore } from '../src/carrystore.js';
 import { readConfig, updateConfig, ConfigError } from '../src/config.js';
 import { HEADING } from '../src/carrynote.js';
-import { HANDOFF_HEADING } from '../src/handoff.js';
 
 const base = mkdtempSync(join(tmpdir(), 'carry-test-'));
 after(() => rmSync(base, { recursive: true, force: true }));
@@ -47,11 +46,12 @@ test('wiring ON: note only on the step ask that has facts; not scout, not drafte
   assert.ok(!ps.slice(0, 3).some((p) => p.includes('What earlier workers')), 'scout/drafter/first step never carry it');
 });
 
-test('note comes AFTER the handoff note, and is the last thing in the prompt', async () => {
+test('the note is the last thing in the prompt, and the only file-list block', async () => {
   const r = await runScripted(join(base, 'order'), { carryNote: true });
   const p = askPrompts(r).at(-1);
-  assert.ok(p.indexOf(HANDOFF_HEADING) >= 0 && p.indexOf(HANDOFF_HEADING) < p.indexOf(HEADING));
+  assert.equal(p.split(HEADING).length - 1, 1);
   assert.ok(p.trimEnd().endsWith(p.slice(p.indexOf(HEADING)).trimEnd()));
+  assert.ok(!p.includes('Files earlier workers in this run read'));
 });
 
 test('no file content: facts name paths and counts, never the text of a file that was read', async () => {

@@ -2,12 +2,24 @@
 // It says where earlier workers looked, what they searched, what they changed (with the diff hunks) and how earlier tries
 // ended. Never file content, never a worker's own words. PURE render: no I/O; the store that feeds it is src/carrystore.js.
 // Reuses `jaccard` (src/learn.js, the learnings fold rule), `redactSecrets` (src/validate.js, the one secret-shape
-// inventory) and `isHandoffExcluded` (src/handoff.js: arbiter books, .git, .bareloop, outside the root).
+// inventory) and `isCarryExcluded` (below: arbiter books, .git, .bareloop, outside the root).
 import { jaccard, JACCARD_MIN } from './learn.js';
 import { redactSecrets } from './validate.js';
-import { isHandoffExcluded } from './handoff.js';
+import { isAbsolute } from 'node:path';
+import { isArbiterBook } from './kinds.js';
 
 export const CAP = 12000;
+
+/**
+ * Is this repo-relative path off limits to the memo: outside the job root, an arbiter book (the one list,
+ * `isArbiterBook`: .smoke — spine, attempt-diff, bridges — .litectx, the gate audit), or inside `.git` / `.bareloop`.
+ * @param {string} rel
+ */
+export function isCarryExcluded(rel) {
+  if (rel === '' || rel === '..' || rel.startsWith('../') || isAbsolute(rel)) return true;
+  if (isArbiterBook(rel) !== null) return true;
+  return rel.split('/').some((seg) => seg === '.git' || seg === '.bareloop');
+}
 export const HUNK_LINES = 40;
 export const HUNK_SHOW = 12;
 export const GAP_LINES = 8;
@@ -88,7 +100,7 @@ export function fold(items, keyOf, near) {
 }
 
 const q = (v) => (v === undefined || v === null ? '?' : String(v));
-const ok = (p) => p != null && !isHandoffExcluded(p);
+const ok = (p) => p != null && !isCarryExcluded(p);
 
 /** merge overlapping / adjacent [a,b] line ranges, ascending; returns 'a-b' strings */
 export function mergeRanges(rs) {
@@ -105,10 +117,11 @@ export function mergeRanges(rs) {
  * @property {0|1|2} tier     0 = last try's own fact, 1 = edited file, 2 = the rest
  * @property {number} count   times read / searched
  * @property {number} recency index of the newest call
+ * @property {string} [fn]    the file's function line ranges (` · functions: a 1-5, b 7-9`), the FIRST thing the cap drops
  */
 
-/** @param {Ev[]} events @param {Set<string>} editedPaths @param {number|undefined} lastAsk */
-function filesSection(events, editedPaths, lastAsk) {
+/** @param {Ev[]} events @param {Set<string>} editedPaths @param {number|undefined} lastAsk @param {Record<string, string>} fnRanges */
+function filesSection(events, editedPaths, lastAsk, fnRanges) {
   /** @type {Map<string, {es: Ev[], last: number}>} */
   const byPath = new Map();
   let dropped = 0;
@@ -131,7 +144,7 @@ function filesSection(events, editedPaths, lastAsk) {
     const noFix = !edited && es.length >= NO_FIX_MIN_READS && es.some((e) => e.noFix); // hamr: only a file read 3+ times
     const text = `- ${p}${lc} · read ${es.length}x${ranges.length ? ` · lines ${ranges.join(', ')}` : ''}${noFix ? NO_FIX : ''}`;
     const inLast = lastAsk !== undefined && es.some((e) => e.ask === lastAsk);
-    entries.push({ text, keys: [`F\0${p}`], tier: inLast ? 0 : edited ? 1 : 2, count: es.length, recency: last });
+    entries.push({ text, keys: [`F\0${p}`], tier: inLast ? 0 : edited ? 1 : 2, count: es.length, recency: last, ...(fnRanges[p] ? { fn: fnRanges[p] } : {}) });
   }
   entries.sort(rank);
   return { entries, dropped, summarized };
@@ -174,14 +187,15 @@ function editLines(e, hunkCap) {
  * Render the carry note. PURE.
  * @param {{lastTry?: {step:string|null, kind:'step'|'fix', n:number|string|undefined, of?:number, ended:string, changed:string[]}|null,
  *   lastCheck?: string|null, events: Ev[], edits?: {path:string, lines:number, hunks:string[]}[],
- *   earlier?: string[], failures?: {label:string, text:string}[], lastAsk?: number}} notes
+ *   earlier?: string[], failures?: {label:string, text:string}[], lastAsk?: number,
+ *   fnRanges?: Record<string, string>}} notes `fnRanges`: path to its function line ranges (`a 1-5, b 7-9`), made by the store from the index
  * @param {number} [cap]
  */
 export function render(notes, cap = CAP) {
   const events = (notes.events ?? []).filter((e) => e);
   const edits = (notes.edits ?? []).filter((e) => ok(e.path)).slice().reverse(); // newest first
   const editedPaths = new Set(edits.map((e) => e.path));
-  const { entries: files, dropped, summarized } = filesSection(events, editedPaths, notes.lastAsk);
+  const { entries: files, dropped, summarized } = filesSection(events, editedPaths, notes.lastAsk, notes.fnRanges ?? {});
   const searches = searchSection(events, notes.lastAsk);
   const earlierG = fold((notes.earlier ?? []).slice().reverse(), (s) => s);
   /** @type {Entry[]} */
@@ -203,6 +217,7 @@ export function render(notes, cap = CAP) {
   // 3b earlier failures, the OLDEST group first (whole group), then
   // 4 diff hunks, one edit at a time oldest first: to HUNK_SHOW lines each, then to 0 each (newest edit's hunk is the last thing cut).
   // `notes.edits` must be ordered oldest to newest (the store does this: orderEditsByRecency in carrystore.js).
+  // 0 (before all of those, hamr 2026-10-31): the function line ranges on the file lines.
   // The last-try line and the heading are never dropped.
   const dropOrder = (/** @type {Entry[]} */ arr, /** @type {(e: Entry) => boolean} */ protect = () => false) =>
     arr.slice().sort((a, b) => Number(protect(a)) - Number(protect(b)) || b.tier - a.tier || a.count - b.count || a.recency - b.recency);
@@ -210,6 +225,8 @@ export function render(notes, cap = CAP) {
   /** @type {Set<Entry>} */
   const gone = new Set();
   const goneEdits = new Set();
+  let showFns = true;
+  const tx = (/** @type {Entry} */ x) => (showFns && x.fn ? `${x.text} · functions: ${x.fn}` : x.text);
   const hunkCaps = edits.map(() => HUNK_LINES); let gapCap = GAP_CHARS;
   const gapText = () => (gapFull ? 'Last check said: ' + (gapFull.length > gapCap ? gapFull.slice(0, gapCap) + '…' : gapFull) : null);
   const build = () => {
@@ -219,7 +236,7 @@ export function render(notes, cap = CAP) {
     const sec = (/** @type {string} */ title, /** @type {Entry[]} */ arr, /** @type {string[]} */ extra = []) => {
       const k = kept(arr);
       if (!k.length && !extra.length) return;
-      L.push(title); k.forEach((x) => L.push(x.text)); extra.forEach((x) => L.push(x));
+      L.push(title); k.forEach((x) => L.push(tx(x))); extra.forEach((x) => L.push(x));
       if (k.length < arr.length) L.push(`- (+${arr.length - k.length} lower-ranked not shown)`);
     };
     sec(`Where earlier workers looked (${files.length} file${files.length === 1 ? '' : 's'}):`, files, dropped ? [`- +${dropped} listings/config reads not shown`] : []);
@@ -235,6 +252,7 @@ export function render(notes, cap = CAP) {
   let capped = false;
   /** @type {(() => void)[]} */
   const steps = [
+    () => { showFns = false; },
     ...dropOrder(files, isEditedFile).map((e) => () => { gone.add(e); }),
     ...dropOrder(searches).map((e) => () => { gone.add(e); }),
     ...dropOrder(earlier).map((e) => () => { gone.add(e); }),

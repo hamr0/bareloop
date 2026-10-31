@@ -38,7 +38,6 @@ import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, gatedShellOptions, PERSONA_TOOLS, strategyFor } from './tools.js';
 import { anySuppressionWarning } from './authoring.js';
 import { createReadShim, readShimArm, readShimStrategy } from './readshim.js';
-import { createHandoffStore, trackReads } from './handoff.js';
 import { createCarryStore } from './carrystore.js';
 import { buildSeedNote } from './seednote.js';
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
@@ -1012,7 +1011,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   receives it, and a later replan gets nothing. Each injection is recorded on the spine as a `learnings` record (the exact
  *   text) so the Audit can show it and the byte check can compare it with a fresh render. `null` = no hints (the default).
  * @param {boolean} [opts.carryNote=false] THE CARRY NOTE (src/carrynote.js): the step/fix worker is handed a facts-only note of what earlier
- *   workers of this run looked at, searched and changed, after the handoff note. The caller reads the switch once; `false` builds no store
+ *   workers of this run looked at (with function line ranges), searched and changed. The caller reads the switch once; `false` builds no store
  *   and leaves the worker prompt byte-identical. One `carry-note` spine record (counts only) per note handed.
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
  *   'check-red' | 'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' |
@@ -1036,9 +1035,6 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // would be wrong and would look fine). Only the guard runs here; the flag itself
   // is still threaded onward as written.
   readShimArm(readShim);
-  // THE HANDOFF NOTE (src/handoff.js): the paths earlier asks of THIS run read. In memory only, so a resumed leg starts empty.
-  // The switch is the signed spec's `handoffNote` (absent = on, only `false` turns it off).
-  const handoffOn = job.handoffNote !== false;
   // THE SEED NOTE (src/seednote.js): the signed spec's `seedNote`; absent = ON, only `false` turns it off (like `handoffNote`).
   const seedNoteOn = job.seedNote !== false;
   // THE FIRST-READ MAP (src/readshim.js, EXPERIMENTAL): the signed spec's `readMap`; absent = OFF, only `true` turns it on. Needs the read shim on and `ctx_get` in the worker's grant.
@@ -1046,10 +1042,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   if (readMapOn && !readShimArm(readShim).on) emit('read-map-skip', { reason: 'shim-off' });
   /** @type {{ text: string, body: string, stages: string[] }|null} built once, after the preflight loop */
   let seedNote = null;
-  const handoff = createHandoffStore({ workdir });
-  // THE CARRY NOTE (src/carrynote.js, src/carrystore.js): facts the earlier asks of THIS run produced, handed after the handoff note.
-  // The caller reads the one switch (`carryNote` in config.json) once; off builds no store, writes no state, emits nothing.
-  const carry = carryNote === true ? createCarryStore({ workdir, emit, strikeLimit, resume: resumeBranch !== null && resumeBranch !== undefined }) : null;
+  // THE CARRY NOTE (src/carrynote.js, src/carrystore.js): facts the earlier asks of THIS run produced, files read with their function
+  // line ranges included (the old separate handoff note is folded in). The caller reads the one switch (`carryNote` in config.json)
+  // once; off builds no store, writes no state, emits nothing. A legacy spec's `handoffNote: false` also turns it off for that job.
+  const carry = carryNote === true && job.handoffNote !== false ? createCarryStore({ workdir, emit, strikeLimit, resume: resumeBranch !== null && resumeBranch !== undefined }) : null;
   // The scout switch's guard, same class and same door: a mis-typed value
   // coerced by truthiness would run the scout under an "off" label (or skip it
   // under an "on" one) and no reading of the results afterwards could recover
@@ -2608,32 +2604,14 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // …and with the first-read map on the index is built at run start too, so the map never waits on a ctx tool being granted.
     if (ctx.length || readMapOn) await lc.index({ yield: true });
     const toolDefs = [...shell, ...ctx];
-    // The handoff note: record what each ask READS (the allowed read-class calls), hand the next step/fix ask the map.
-    // Scout and drafter asks feed the store but are never given a note.
-    /** @type {Set<string>} */
-    let askReads = new Set();
-    if (handoffOn) trackReads(toolDefs, [TOOL_BY_VERB.read, TOOL_BY_VERB.get], (a) => askReads.add(a), workdir);
-    /** @param {(prompt: string, defs?: any) => Promise<any>} inner */
-    const withHandoff = (inner) => (!handoffOn ? inner : async (/** @type {string} */ prompt, /** @type {any} */ defs) => {
-      askReads = new Set();
-      let p = prompt;
-      if (phase === 'fix' || phase.startsWith('step:')) {
-        // The index is incremental: refreshing it here is what keeps the symbol ranges true to the files as they now are.
-        try { if (ctx.length) await lc.index({ yield: true }); } catch { /* the map falls back to line counts */ }
-        const note = handoff.render({ getNode: (rel) => lc.getNode(rel) });
-        if (note.text) {
-          p = `${prompt}\n\n${note.text}`;
-          emit('handoff-note', { phase, iteration: roundIteration, chars: note.text.length, paths: note.paths });
-        }
-      }
-      try { return await inner(p, defs); } finally { handoff.absorb(askReads); }
-    });
-    // The carry note: the same seam, one layer in. It records what each ask's read-class tools returned (a summary, never
-    // content) and hands the next step/fix ask the facts. It is the INNER wrapper, so its note lands after the handoff note.
+    // The carry note: records what each ask's read-class tools returned (a summary, never content) and hands the next
+    // step/fix ask the facts. Scout and drafter asks feed the store but are never given a note.
     if (carry) carry.wrapTools(toolDefs);
     /** @param {(prompt: string, defs?: any) => Promise<any>} inner */
     const withCarry = (inner) => (!carry ? inner : async (/** @type {string} */ prompt, /** @type {any} */ defs) => {
-      const text = await carry.beginAsk({ phase, iteration: roundIteration, prompt });
+      // The index is incremental: refreshing it here keeps the function ranges true to the files as they now are.
+      if (phase === 'fix' || phase.startsWith('step:')) { try { if (ctx.length) await lc.index({ yield: true }); } catch { /* ranges are left out */ } }
+      const text = await carry.beginAsk({ phase, iteration: roundIteration, prompt, getNode: (rel) => lc.getNode(rel) });
       try { return await inner(text ? `${prompt}\n\n${text}` : prompt, defs); } finally { carry.endAsk({ bounded: attemptBounded, iteration: roundIteration, rounds: attemptRounds }); }
     });
     // F19 per VERB (P, corrected 2026-07-31): a strategy SENTENCE rides only with
@@ -2733,7 +2711,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         }
         return r;
       };
-      return { ask: withHandoff(withCarry(ask)), askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };
+      return { ask: withCarry(ask), askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };
     }
 
     // ── LOOP path: the injected provider (anthropic-api and every other
@@ -3007,7 +2985,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       }
       return r;
     };
-    return { ask: withHandoff(withCarry(ask)), askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };
+    return { ask: withCarry(ask), askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };
   }
 
   /** relay a throw from OUTSIDE ralph (scout/plan drafting/fix) as its honest

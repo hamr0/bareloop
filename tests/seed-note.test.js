@@ -174,7 +174,7 @@ test('the switch enters the signed hash only when present; a non-boolean is a re
   assert.ok(!('seedNote' in base));
   assert.notEqual(jobSpecHash(base), jobSpecHash({ ...base, seedNote: true }));
   assert.notEqual(jobSpecHash(base), jobSpecHash({ ...base, seedNote: false }));
-  // pinned: the pre-field hash of a small spec (same value handoff-note.test.js pins) is unchanged by this field existing
+  // pinned: the pre-field hash of a small spec (same value carry-fold.test.js pins) is unchanged by this field existing
   assert.equal(jobSpecHash({ schema: 'job-v1', job: 'old-spec', thinking: false, budgetUsd: 1, writeScope: ['a/**'] }), 'e6ca118c3f6cf71646334ffc3b5fa67ea52e7e0d023d3e711f458237fa6aa96e');
   assert.equal(validateJob({ ...base, seedNote: 'yes' }).reds.some((r) => r.path === 'seedNote'), true);
   assert.equal(validateJob({ ...base, seedNote: true }, { shellCapUsd: base.budgetUsd }).reds.some((r) => r.path === 'seedNote'), false);

@@ -1,6 +1,6 @@
 // The carry note's store (M1, F258): the run-level record behind src/carrynote.js. It captures the worker's read-class tool
-// calls AT THE SOURCE (the same seam the handoff note uses: the worker's tool objects, result SUMMARIES only, never file
-// content), reads the run's edits from the WORKING TREE (git diff against the run's start commit, never the spine), renders
+// calls AT THE SOURCE (the worker's tool objects, result SUMMARIES only, never file
+ // content), reads the run's edits from the WORKING TREE (git diff against the run's start commit, never the spine), renders
 // the note and persists its state under `<workdir>/.smoke/carry/state.json` (an arbiter book: the worker's fs.deny covers
 // `.smoke`, so it cannot read it; the gate audit, spine and bridges live there too). The switch is `carryNote` in
 // config.json (absent = on; only `false` turns it off), read once per run by the engine's caller.
@@ -9,9 +9,8 @@ import { promisify } from 'node:util';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { SMOKE_STORE } from './kinds.js';
-import { isHandoffExcluded } from './handoff.js';
 import { redactSecrets } from './validate.js';
-import { render, HUNK_LINES } from './carrynote.js';
+import { render, isCarryExcluded, HUNK_LINES } from './carrynote.js';
 import { readConfig } from './config.js';
 
 const exec = promisify(execFile);
@@ -46,7 +45,7 @@ export async function workingEdits(workdir, base) {
   try {
     const { stdout: names } = await g(['diff', '--name-only', '-z', base]);
     for (const p of names.split('\0').filter(Boolean)) {
-      if (isHandoffExcluded(p)) continue;
+      if (isCarryExcluded(p)) continue;
       const { stdout } = await g(['diff', '-U1', '--no-color', '--no-ext-diff', base, '--', `:(literal)${p}`]);
       if (/^(Binary files .* differ|GIT binary patch)$/m.test(stdout)) { out.push({ path: p, lines: 0, hunks: ['(binary file changed)'] }); continue; }
       const body = stdout.split('\n').filter((l) => !/^(diff --git|index |--- |\+\+\+ |new file mode|deleted file mode)/.test(l));
@@ -54,7 +53,7 @@ export async function workingEdits(workdir, base) {
     }
     const { stdout: un } = await g(['ls-files', '--others', '--exclude-standard', '-z']);
     for (const p of un.split('\0').filter(Boolean)) {
-      if (isHandoffExcluded(p)) continue;
+      if (isCarryExcluded(p)) continue;
       try {
         const abs = resolve(workdir, p);
         if (!statSync(abs).isFile() || statSync(abs).size > 262144) continue;
@@ -163,6 +162,32 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
     }
   };
 
+  /** the per-entry cap on one file's function ranges, so one huge file cannot eat the memo */
+  const FN_CAP = 500;
+  /**
+   * Function line ranges per read file, from the LiteCtx index's named chunks (`name a-b, ...`). Fresh index only: a node whose
+   * last chunk ends past the file's current end is stale, and that file gets no ranges. Never throws.
+   * @param {any[]} evs @param {(rel: string) => any} getNode @returns {Record<string, string>}
+   */
+  const fnRangesOf = (evs, getNode) => {
+    /** @type {Record<string, string>} */ const out = {};
+    for (const p of new Set(evs.filter((e) => (e.tool === 'read' || e.tool === 'get') && !e.dir && e.path && !isCarryExcluded(e.path)).map((e) => e.path))) {
+      let node = null;
+      try { node = getNode(p); } catch { node = null; }
+      const n = diskLines(p, undefined);
+      const named = (node?.chunks ?? []).filter((/** @type {any} */ c) => c.symbol);
+      if (n === null || !named.length || !named.every((/** @type {any} */ c) => c.endLine <= n)) continue;
+      let map = ''; let more = 0;
+      for (let i = 0; i < named.length; i++) {
+        const piece = `${named[i].symbol} ${named[i].startLine}-${named[i].endLine}`;
+        if ((map ? map.length + 2 : 0) + piece.length > FN_CAP) { more = named.length - i; break; }
+        map += (map ? ', ' : '') + piece;
+      }
+      out[p] = map + (more ? `, +${more} more` : '');
+    }
+    return out;
+  };
+
   const snapOf = (/** @type {{path: string, lines: number}[]} */ edits) => Object.fromEntries(edits.map((e) => [e.path, e.lines]));
   const tryLabel = (/** @type {any} */ a) => (a.kind === 'fix' ? `fix loop try ${a.iteration}` : `step "${a.step}" try ${a.iteration}`);
   // how the try ended AND what its check said: a bounded try says both (the bound hides nothing)
@@ -175,9 +200,10 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
   /**
    * Called at the start of EVERY ask (scout and drafter included, so their finds feed the store).
    * Returns the note text for step/fix asks, '' otherwise.
-   * @param {{phase: string, iteration: number|string|undefined, prompt: string}} o
+   * `getNode`: the LiteCtx index's node for a path (its `chunks`), for the function ranges; absent = no ranges.
+   * @param {{phase: string, iteration: number|string|undefined, prompt: string, getNode?: (rel: string) => any}} o
    */
-  const beginAsk = async ({ phase, iteration, prompt }) => {
+  const beginAsk = async ({ phase, iteration, prompt, getNode }) => {
     n++;
     const work = phase === 'fix' || phase.startsWith('step:');
     if (!work) { save(); return ''; }
@@ -205,6 +231,7 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
       failures: [...(startFailure ? [{ label: 'at start', text: startFailure }] : []), ...settled.filter((a) => a.failure).slice(0, -1).map((a) => ({ label: tryLabel(a), text: a.failure }))],
       earlier: settled.slice(0, -1).map((a) => `${tryLabel(a)}: ${endedOf(a)} ${a.changed.length ? `Changed ${a.changed.join(', ')}.` : 'Changed nothing.'}`),
       lastAsk: lt ? lt.n : undefined,
+      fnRanges: getNode ? fnRangesOf(events, getNode) : {},
     };
     asks.push({ n, kind, step, iteration, startSnap: snapOf(edits) });
     const hasAny = notes.events.length || edits.length || notes.earlier.length || notes.failures.length || notes.lastTry;
