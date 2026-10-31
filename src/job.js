@@ -170,7 +170,7 @@ export const CONDITION_KEYS = Object.freeze(['providerPath', 'closeVerbosity', '
 // `steps` stays in the field list ONLY so a retired spec reds by name
 // (`shape-retired`) instead of falling through to a generic unknown-field —
 // the operator gets told what happened, not just that something is wrong.
-const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'baseUrl', 'conditions', 'cadence', 'trigger', 'budgetUsd', 'maxWallMs', 'closeTimeoutMs', 'model', 'thinking', 'handoffNote', 'seedNote', 'judge', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools', 'jobLines', 'inputs'];
+const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'baseUrl', 'conditions', 'cadence', 'trigger', 'budgetUsd', 'maxWallMs', 'closeTimeoutMs', 'model', 'thinking', 'handoffNote', 'seedNote', 'readMap', 'judge', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools', 'jobLines', 'inputs'];
 /** the exact fields of a signed `judge` override — nested objects red unknown
  * keys too, because no smuggling level exists in a signed spec */
 const JUDGE_FIELDS = ['provider', 'model'];
@@ -359,6 +359,12 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
   // bytes, so its hash), only an explicit `false` turns off handing the planner and the first worker what the job's own check said at start. The switch is hashed; the text never is.
   if (spec.seedNote !== undefined && typeof spec.seedNote !== 'boolean') {
     red('invalid-value', 'seedNote', 'true or false (absent = on): whether the planner and the first worker are told what the job\'s own count check said on the untouched tree');
+  }
+
+  // THE FIRST-READ MAP (src/readshim.js, EXPERIMENTAL): a declared job condition, signed like `handoffNote`. A boolean; ABSENT = off (an old spec keeps
+  // its bytes, so its hash), `true` makes the first shell_read of a big non-test file in an ask return a map of its parts. The switch is hashed.
+  if (spec.readMap !== undefined && typeof spec.readMap !== 'boolean') {
+    red('invalid-value', 'readMap', 'true or false (absent = off, experimental): whether the first read of a big file in an ask returns a map of its parts instead of the file');
   }
 
   // JUDGE — PRD item 32.1 (hamr, 2026-09-10: the judge "defaults to whatever

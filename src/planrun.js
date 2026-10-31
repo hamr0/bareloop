@@ -1041,6 +1041,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   const handoffOn = job.handoffNote !== false;
   // THE SEED NOTE (src/seednote.js): the signed spec's `seedNote`; absent = ON, only `false` turns it off (like `handoffNote`).
   const seedNoteOn = job.seedNote !== false;
+  // THE FIRST-READ MAP (src/readshim.js, EXPERIMENTAL): the signed spec's `readMap`; absent = OFF, only `true` turns it on. Needs the read shim on and `ctx_get` in the worker's grant.
+  const readMapOn = job.readMap === true;
+  if (readMapOn && !readShimArm(readShim).on) emit('read-map-skip', { reason: 'shim-off' });
   /** @type {{ text: string, body: string, stages: string[] }|null} built once, after the preflight loop */
   let seedNote = null;
   const handoff = createHandoffStore({ workdir });
@@ -2558,6 +2561,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         else memoryCacheCounts.capped++;
         memoryCacheCounts.bytesWithheld += bytes;
       },
+      // The first-read map (experimental, off unless the spec says `readMap: true`): this worker's index, and whether it holds ctx_get.
+      readMap: readMapOn ? { root: workdir, hasGet: grantedNames.has(TOOL_BY_VERB.get), getNode: (/** @type {string} */ rel) => lc.getNode(rel), refresh: () => lc.index({ yield: true }), emit: emitCtx } : null,
     });
     const rdTool = shell.find((/** @type {{name: string}} */ t) => t.name === TOOL_BY_VERB.read);
     // F48: on native, bound shell_read below the CLI's tool-result display cap and hand back a
@@ -2600,7 +2605,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // sampler all live here) for its full duration: measured 4.4s at 4.5% liveness on a
     // 155-file force pass. With yield:true the worst single block measured 189–252ms (n=4),
     // below anything a second/minute-scale timer can perceive. Store output is byte-identical.
-    if (ctx.length) await lc.index({ yield: true });
+    // …and with the first-read map on the index is built at run start too, so the map never waits on a ctx tool being granted.
+    if (ctx.length || readMapOn) await lc.index({ yield: true });
     const toolDefs = [...shell, ...ctx];
     // The handoff note: record what each ask READS (the allowed read-class calls), hand the next step/fix ask the map.
     // Scout and drafter asks feed the store but are never given a note.
