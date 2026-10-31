@@ -3522,6 +3522,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       let evaled;
       try { evaled = await evalExits(step.exit, { dir: workdir, snapshot, runCheck }); } finally { judgingIteration = null; }
       const { pass, results: raw } = evaled;
+      carry?.settleAsk(raw.some((r) => r.fault) ? 'unknown' : pass ? 'green' : 'red'); // the carry note's outcome for this try, from the check itself
       // Scrubbed HERE, once, before the results are read by anyone. An exit detail is
       // supposed to be names and counts, but `json-valid` embeds `JSON.parse`'s own
       // message and V8 quotes a window of the SOURCE inside it (a body of 20 chars or
@@ -4271,7 +4272,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // two exhaustion rules are alternatives and never both at once, so the count
       // is not passed — it survives only inside the governor, as the bound for the
       // case the trend instrument is blind.
-      middle, judge: async () => judgeClose(), ladder: fixGovernor, emit: emitL, redact: scrub,
+      middle, judge: async () => {
+        const v = await judgeClose();
+        carry?.settleAsk(v.verdict === 'satisfied' ? 'green' : v.verdict === 'needs_revision' ? 'red' : 'unknown'); // the fix try's outcome, from the close itself
+        return v;
+      }, ladder: fixGovernor, emit: emitL, redact: scrub,
       closeTimeoutMs, cwd: workdir, workerWrites: w.workerWrites, closeDir, phase: 'fix',
     });
   } catch (e) {

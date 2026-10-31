@@ -5,6 +5,12 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Fixed
+
+- **The carry note no longer says an earlier try's check passed when it failed or never ran.** A try's outcome was guessed from whether the NEXT prompt carried the retry marker, so a step's last red try followed by a replan or a new step (no marker) read "Its check passed." The engine now hands the store the check result it already knows (green, red, or unknown on an instrument fault) as each try is judged; a try with no result says "No check result was recorded for it." Note shape and the OFF path are unchanged.
+
 ## [0.52.0] - 2026-10-30
 
 ### Added

@@ -16,7 +16,7 @@ const mk = (name) => createCarryStore({ workdir: join(base, name), emit: () => {
 const ask = async (s, { phase, iteration, prompt, result, bounded, rounds = 6 }) => {
   const note = await s.beginAsk({ phase, iteration, prompt });
   s.endAsk({ bounded, iteration, rounds });
-  s.settleAsk?.(result);
+  s.settleAsk(result ?? "unknown");
   return note;
 };
 

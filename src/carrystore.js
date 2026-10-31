@@ -16,7 +16,7 @@ import { readConfig } from './config.js';
 
 const exec = promisify(execFile);
 export const CARRY_DIR = 'carry';
-/** the next prompt of a retried step / fix try carries this when the previous ask's check failed */
+/** the retry marker the next prompt of a retried step / fix try carries; kept as a pinned fact about the prompts, no longer read to decide an outcome */
 export const RED_MARKER = /Previous attempt failed (this step's checks|the verification):/;
 
 /**
@@ -163,7 +163,7 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
 
   const snapOf = (/** @type {{path: string, lines: number}[]} */ edits) => Object.fromEntries(edits.map((e) => [e.path, e.lines]));
   const tryLabel = (/** @type {any} */ a) => (a.kind === 'fix' ? `fix loop try ${a.iteration}` : `step "${a.step}" try ${a.iteration}`);
-  const endedOf = (/** @type {any} */ a) => a.boundedText || (a.red ? 'Its check failed.' : 'Its check passed.');
+  const endedOf = (/** @type {any} */ a) => a.boundedText || (a.result === 'red' ? 'Its check failed.' : a.result === 'green' ? 'Its check passed.' : 'No check result was recorded for it.');
 
   /**
    * Called at the start of EVERY ask (scout and drafter included, so their finds feed the store).
@@ -177,8 +177,9 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
     const edits = await workingEdits(workdir, base);
     const prev = asks[asks.length - 1];
     if (prev && prev.red === undefined) {
-      // settle the previous work ask: red = this prompt says the last attempt failed; changed = files whose changed-line count moved
-      prev.red = RED_MARKER.test(prompt);
+      // settle the previous work ask: red = the check result the engine handed to settleAsk (never this prompt's wording);
+      // changed = files whose changed-line count moved
+      prev.red = prev.result === 'red';
       const now = snapOf(edits);
       prev.changed = [...new Set([...Object.keys(now), ...Object.keys(prev.startSnap)])].filter((p) => now[p] !== prev.startSnap[p]).sort();
       for (const e of events) if (e.ask === prev.n) e.noFix = prev.changed.length === 0 && prev.red;
@@ -216,5 +217,17 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
     save();
   };
 
-  return { wrapTools, beginAsk, endAsk, setBase: (/** @type {string|null|undefined} */ b) => { if (!base && b) base = b; }, loaded: () => loaded, _state: () => ({ n, events, asks, base }) };
+  /**
+   * The engine's own check result for the ask that just returned: 'green' (every check passed), 'red' (one failed) or
+   * 'unknown' (the check hit an instrument fault, so no honest answer). Only the first result per ask counts.
+   * @param {'green'|'red'|'unknown'} result
+   */
+  const settleAsk = (result) => {
+    const a = asks[asks.length - 1];
+    if (!a || a.n !== n || a.result !== undefined) return;
+    a.result = result;
+    save();
+  };
+
+  return { wrapTools, beginAsk, endAsk, settleAsk, setBase: (/** @type {string|null|undefined} */ b) => { if (!base && b) base = b; }, loaded: () => loaded, _state: () => ({ n, events, asks, base }) };
 }
