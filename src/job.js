@@ -355,10 +355,10 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
     red('invalid-value', 'handoffNote', 'true or false (absent = on): whether the next step/fix worker is handed a map of the files earlier workers read');
   }
 
-  // THE SEED NOTE (src/seednote.js, EXPERIMENTAL): a declared job condition, signed like `handoffNote`. A boolean; ABSENT = off (an old spec keeps its
-  // bytes, so its hash), `true` hands the planner and the first worker what the job's own check said at start. The switch is hashed; the text never is.
+  // THE SEED NOTE (src/seednote.js): a declared job condition, signed like `handoffNote`. A boolean; ABSENT = on (an old spec keeps its
+  // bytes, so its hash), only an explicit `false` turns off handing the planner and the first worker what the job's own check said at start. The switch is hashed; the text never is.
   if (spec.seedNote !== undefined && typeof spec.seedNote !== 'boolean') {
-    red('invalid-value', 'seedNote', 'true or false (absent = off, experimental): whether the planner and the first worker are told what the job\'s own count check said on the untouched tree');
+    red('invalid-value', 'seedNote', 'true or false (absent = on): whether the planner and the first worker are told what the job\'s own count check said on the untouched tree');
   }
 
   // JUDGE — PRD item 32.1 (hamr, 2026-09-10: the judge "defaults to whatever

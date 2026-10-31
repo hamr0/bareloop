@@ -7,10 +7,9 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
-### Added
-
-- **EXPERIMENTAL, default off: a seed note, the job's own check at start (`seedNote`, docs/logs/SEEDGAP-PREREG.md).** With the signed spec field `seedNote: true`, the planner's first draft and the first worker of the first plan step are told, once and read-only, what the job's own `count-not-worse` check said on the untouched tree ("At start, the job's own check said:" plus that stage's text, secret-masked). `command-exit` and `changed-from-seed` text are never used. One report-only `seed-note` spine record per use (counts and stage names). Absent = off and byte-identical to before; the switch enters the signed hash only when present. Not a default, not proven: the pre-registered battery decides.
 ### Changed
+
+- **Seed note ON by default, part of the carry-over memory (`seedNote`, F262, docs/logs/SEEDGAP-PREREG.md).** The planner's first draft and the first worker of the first plan step are told, once and read-only, what the job's own `count-not-worse` check said on the untouched tree ("At start, the job's own check said:" plus that stage's text, secret-masked). Absent = on; `seedNote: false` turns it off and is byte-identical to before; the switch enters the signed hash only when present, so old signed jobs get it with no re-sign. Result: on the big-file job 3 of 3 ON runs wrote to the culprit file vs 1 of 3 OFF (n=3, one job, one patient; carry note on in all six).
 
 - **The carry note is bigger and says more about failures (F261).** Its cap rises from 3,000 to 12,000 characters (7 of 8 notes in a live run were capped). Each try line now says how the try ended and what its check said ("Ran out of calls (24 of 24). Its check failed."; "Check not run." when no check ran). A new "Earlier failures (folded):" section, after "Earlier tries (folded):", carries each failed check's whole text (secrets masked, kept in `state.json` so a resume has it), folded by the learnings rule with the newest member shown; the newest failure is left out because the prompt already carries it. Over the cap the order is files, searches, earlier tries, earlier failures (oldest group first), then diff hunks. The `carry-note` spine record's `sections` gains a `failures` count.
 

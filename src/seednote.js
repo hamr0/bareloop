@@ -1,6 +1,6 @@
-// THE SEED NOTE (EXPERIMENTAL, default OFF; docs/logs/SEEDGAP-PREREG.md): what the job's own check said on the untouched tree.
+// THE SEED NOTE (default ON; docs/logs/SEEDGAP-PREREG.md): what the job's own check said on the untouched tree.
 // Built by code from the preflight's own stage results — no extra close run, no model call, no verdict change. Read-only text for the
-// planner's first draft and the first worker of the first step. The switch is the signed spec's `seedNote` (absent = off, `true` = on).
+// planner's first draft and the first worker of the first step. The switch is the signed spec's `seedNote` (absent = on, only `false` turns it off).
 // Only a count-not-worse stage red at seed qualifies: a command-exit gap is capped noise that cannot carry the failure, and
 // changed-from-seed is the "nothing changed yet" fact every run starts with. The stage text is passed as the stage rendered it, masked.
 

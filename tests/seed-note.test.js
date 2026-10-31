@@ -1,4 +1,4 @@
-// The seed note (src/seednote.js; EXPERIMENTAL, default off; docs/logs/SEEDGAP-PREREG.md): what the job's own count check said on the
+// The seed note (src/seednote.js; default ON; docs/logs/SEEDGAP-PREREG.md): what the job's own count check said on the
 // untouched tree, handed to the planner's first draft and to the first worker of the first step, once. Real runJob, real declared close
 // executor, real preflight; only the model is scripted.
 import { test } from 'node:test';
@@ -126,15 +126,14 @@ test('ON: only the FIRST step\'s first try carries it (step 2 does not)', async 
   assert.ok(s2.every((p) => !p.includes(SEED_NOTE_HEADING)));
 });
 
-test('OFF (absent and false): no block anywhere, no record, and every prompt is byte-identical to ON with the block cut out', async (t) => {
+test('absent = ON (same bytes as true); false = OFF: no block anywhere, no record, every prompt byte-identical to ON with the block cut out', async (t) => {
   const on = await drive(t, { seedNote: true }, twoTries);
-  const off = await drive(t, {}, twoTries);
-  const offFalse = await drive(t, { seedNote: false }, twoTries);
-  for (const r of [off, offFalse]) {
-    assert.ok(r.prompts.every((p) => !p.includes(SEED_NOTE_HEADING)));
-    assert.equal(r.events.filter((e) => e.type === 'seed-note').length, 0);
-  }
-  assert.deepEqual(off.prompts, offFalse.prompts, 'absent and false are the same bytes');
+  const absent = await drive(t, {}, twoTries);
+  const off = await drive(t, { seedNote: false }, twoTries);
+  assert.deepEqual(absent.prompts, on.prompts, 'absent and true are the same bytes');
+  assert.equal(absent.events.filter((e) => e.type === 'seed-note').length, 2);
+  assert.ok(off.prompts.every((p) => !p.includes(SEED_NOTE_HEADING)));
+  assert.equal(off.events.filter((e) => e.type === 'seed-note').length, 0);
   const chars = on.events.find((e) => e.type === 'seed-note').chars;
   const text = on.prompts.find((p) => p.includes(SEED_NOTE_HEADING));
   const block = text.slice(text.indexOf(SEED_NOTE_HEADING), text.indexOf(SEED_NOTE_HEADING) + chars);

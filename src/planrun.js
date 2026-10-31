@@ -1039,8 +1039,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // THE HANDOFF NOTE (src/handoff.js): the paths earlier asks of THIS run read. In memory only, so a resumed leg starts empty.
   // The switch is the signed spec's `handoffNote` (absent = on, only `false` turns it off).
   const handoffOn = job.handoffNote !== false;
-  // THE SEED NOTE (src/seednote.js, EXPERIMENTAL): the signed spec's `seedNote`; absent = OFF, only `true` turns it on.
-  const seedNoteOn = job.seedNote === true;
+  // THE SEED NOTE (src/seednote.js): the signed spec's `seedNote`; absent = ON, only `false` turns it off (like `handoffNote`).
+  const seedNoteOn = job.seedNote !== false;
   /** @type {{ text: string, stages: string[] }|null} built once, after the preflight loop */
   let seedNote = null;
   let seedNoteWorkerSpent = false;
