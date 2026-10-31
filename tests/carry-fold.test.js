@@ -100,6 +100,16 @@ test('fold 5: carryNote off (the one switch) = nothing: no memo, no old block, n
   assert.equal(existsSync(join(wd, '.smoke', 'carry')), false);
 });
 
+test('fold 5b: runPlan with NO carryNote option builds the memo (library default ON, hamr 2026-10-31)', async (t) => {
+  const wd = patient(t);
+  const provider = scriptedProvider(script(wd));
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { tools: TOOLS }) });
+  assert.equal(outcome, 'green');
+  assert.ok(stepTwoOf(provider).includes(HEADING), 'the memo is in the prompt with the option absent');
+  assert.ok(events.some((e) => e.type === 'carry-note'));
+  assert.equal(existsSync(join(wd, '.smoke', 'carry')), true);
+});
+
 test('fold 6: an old spine with handoff-note records still replays', () => {
   const spine = readFileSync(new URL('./fixtures/audit-grid/u-mvtatlxw.jsonl', import.meta.url), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
   assert.ok(spine.some((e) => e.type === 'handoff-note'), 'the fixture really carries handoff-note records');

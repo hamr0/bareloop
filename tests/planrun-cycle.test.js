@@ -106,7 +106,9 @@ test('prompt contract (v1.12 §5): the worker sees the repo root and its action 
     { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
     { text: 'done' },
   ]);
-  await go(wd, provider);
+  // carryNote off: this fixture writes close.mjs/check.mjs into the workdir after its start commit, so the memo (default ON) would list them as
+  // run edits; this test pins the BASE prompt contract (the memo has its own tests, tests/carry-*.test.js)
+  await go(wd, provider, { carryNote: false });
   const stepPrompts = provider.calls.slice(2); // after scout + plan
   assert.ok(stepPrompts.length >= 1);
   for (const p of stepPrompts) {

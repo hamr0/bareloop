@@ -1010,7 +1010,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   run start from the ledger as it stood). Handed to the PLANNER only: the first draft and the FIRST replan. No worker ever
  *   receives it, and a later replan gets nothing. Each injection is recorded on the spine as a `learnings` record (the exact
  *   text) so the Audit can show it and the byte check can compare it with a fresh render. `null` = no hints (the default).
- * @param {boolean} [opts.carryNote=false] THE CARRY NOTE (src/carrynote.js): the step/fix worker is handed a facts-only note of what earlier
+ * @param {boolean} [opts.carryNote=true] THE CARRY NOTE (src/carrynote.js): the step/fix worker is handed a facts-only note of what earlier
  *   workers of this run looked at (with function line ranges), searched and changed. The caller reads the switch once; `false` builds no store
  *   and leaves the worker prompt byte-identical. One `carry-note` spine record (counts only) per note handed.
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
@@ -1018,7 +1018,7 @@ ${scoutBlob || '(no scout notes)'}`;
  *   'branch-red' | 'cap-halt' | 'wall-halt' | 'stopped' | 'provider-red' | 'interpreter-red' |
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, rates = null, judgeRates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, learnHints = null, carryNote = false }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, rates = null, judgeRates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, learnHints = null, carryNote = true }) {
   // MEMORY-CACHE: what the read shim (src/readshim.js) saved THIS run, summed across
   // every mkWorker's own shim instance (scout, drafter, each step's worker, the fix
   // worker) — one accumulator closed over by all of them, because the shim's ledger
@@ -1045,7 +1045,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // THE CARRY NOTE (src/carrynote.js, src/carrystore.js): facts the earlier asks of THIS run produced, files read with their function
   // line ranges included (the old separate handoff note is folded in). The caller reads the one switch (`carryNote` in config.json)
   // once; off builds no store, writes no state, emits nothing. A legacy spec's `handoffNote: false` also turns it off for that job.
-  const carry = carryNote === true && job.handoffNote !== false ? createCarryStore({ workdir, emit, strikeLimit, resume: resumeBranch !== null && resumeBranch !== undefined }) : null;
+  const carry = carryNote !== false && job.handoffNote !== false ? createCarryStore({ workdir, emit, strikeLimit, resume: resumeBranch !== null && resumeBranch !== undefined }) : null;
   // The scout switch's guard, same class and same door: a mis-typed value
   // coerced by truthiness would run the scout under an "off" label (or skip it
   // under an "on" one) and no reading of the results afterwards could recover
