@@ -2138,3 +2138,4 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 - **The 14 notes** to workers and the planner are named and listed in `docs/product/LAYERS.md`, section "Notes to the AI (2026-10-31)".
 - **Split rule:** by scope (one try / one run / across runs) and trigger (when sent).
 - **Planned, NOT built (next build):** handoff note folds into carry memo, one block, one switch; `handoffNote: false` meaning is an open point for hamr. Then one real run, then the memo proof battery (prereg first).
+- **Tick (2026-10-31): the fold is BUILT** (`b4e8021`): one block (function line ranges in the memo's files-read lines, dropped first at the cap), one switch (`carryNote`), legacy `handoffNote: false` = memo off for that job, `handoff-note` record no longer written. Real run and proof battery still to do.
