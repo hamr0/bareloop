@@ -15064,6 +15064,8 @@ Root cause: `planPrompt` (src/planrun.js, the `"exit"` line near 703) presented 
 
 **Status.** Logged only, nothing built. Fix ledger bullet added. Related: F258 (what a next try is told).
 
+2026-10-31 — $0 read (`.claude/scratch/bigfile-next/READ.md`, archived spines only): the round count is not the main cause. The worker never sees which test fails; 52 of 52 bounded bigfile tries wrote nothing; after such a step a replan gave fewer rounds in 7 of 13 runs and more in 6 (a coin flip, not a downshift).
+
 ## F258 — the next try or step worker is not told what the last try found or ruled out (2026-10-29; read from code; size not yet measured ($0 check C pending))
 
 **Grounded in:** `src/planrun.js` (step prompt build ~3453-3495; `boundedNote` at 594; attempt-diff emit 3481; handoff store 1027), `src/handoff.js`.
@@ -15124,3 +15126,15 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Not shown.** Why the first fix tries run so long, and why the output reaches 32,000 tokens. No cause is claimed.
 
 **Status.** Logged only, nothing built.
+
+## F261 — the carry note hit its 3,000-character cap on 7 of 8 notes in a live run, so diffs and failures were cut (2026-10-31; live; run mvw29hmk, Fireworks deepseek-v4p1-flash, job pulselog-p7-small)
+
+**Grounded in:** the spine `.claude/scratch/carry-live/runs/p7-carry-fireworks-2026-10-31T07-09-41-187Z/sess/source-seed/pulselog-p7-small-bareloop/u-mvw29hmk.jsonl` (`carry-note` records) and the size measurement `.claude/scratch/carry-size/SIZE.md` (shapes: `.claude/scratch/carry-size/SHAPE.md`).
+
+**What the record shows.** 7 of the 8 notes in run mvw29hmk were capped at 3,000 characters. Across the 57 archived notes the measurement found (SIZE.md): 30 of 57 capped (53%), none above 2,990; uncapped, the median is about 2.7-3.3k and the p90 about 7.3-7.8k, with the last ask of each run at a median of about 4.9-5.8k and a maximum of 14.5-16.1k (a range, because the edit hunks are reconstructed, not saved). The bulk of an over-cap note is searches and diff hunks, not the earlier-tries line. The failure text given to the worker is small on its own (median 613, p90 1,868, max 2,203 characters per failure); folding it by the existing rule cuts it about 30%, and 7 of 8 consecutive failures in the same step fold.
+
+**Change (hamr, 2026-10-31).** Cap 3,000 to 12,000; a try line says both how it ended and its check result; a new "Earlier failures (folded):" section carries each failed check's whole text, newest failure left out (the prompt carries it). See CHANGELOG [Unreleased].
+
+2026-10-31 — hamr ruled to LEAVE the secret inventory as token shapes only. `SECRET_PATTERNS` in `src/validate.js` is known-token-shapes by design; a `DB_PASSWORD=` style value is not masked in any record, the carry note included.
+
+**Status.** Built (not yet seen live at the new cap).
