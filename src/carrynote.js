@@ -174,7 +174,7 @@ function editLines(e, hunkCap) {
  * Render the carry note. PURE.
  * @param {{lastTry?: {step:string|null, kind:'step'|'fix', n:number|string|undefined, of?:number, ended:string, changed:string[]}|null,
  *   lastCheck?: string|null, events: Ev[], edits?: {path:string, lines:number, hunks:string[]}[],
- *   earlier?: string[], lastAsk?: number}} notes
+ *   earlier?: string[], failures?: {label:string, text:string}[], lastAsk?: number}} notes
  * @param {number} [cap]
  */
 export function render(notes, cap = CAP) {
