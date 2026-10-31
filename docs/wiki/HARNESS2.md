@@ -522,6 +522,12 @@ Earlier tries (folded): step "recon-and-first-fix" try 1: same reads as above, p
 
 2026-10-31 status: SEEDGAP (tell the planner and first worker the job's own failing count check at start) ran 3 OFF / 3 ON on bigfile, Fireworks `deepseek-v4p1-flash`, carry note and handoff ON in all six: first step wrote ON 3 of 3, OFF 1 of 3 = SIGNAL by the frozen rule (`docs/logs/SEEDGAP-PREREG.md`, F262). Underpowered (n=3, one job). Ships ON by default as `seedNote` (false = off); delivery to workers shipped as the carry memo's `at start` entry, which the battery did not test.
 
+NEXT (hamr 2026-10-31), plan only, nothing built:
+1. A (map on a big-file read), tested TOGETHER with M2 (compress, peek, stash; about 0.7% of calls, H2 Part 0). Now unblocked: the seed note tells the worker which test fails, so it knows what to look for. Map = litectx symbol list (names + line ranges) of a big file instead of the whole file on the first read; whole file on a second ask (fallback). $0 facts already measured (`.claude/scratch/bigfile-next/READ.md`): index of the bareguard copy 8.1-10.1 s cold, re-index 38-65 ms, gate.js map 51 symbols / 1,132 chars. Order: a $0 read of why the M2 tools go unused, then a prereg hamr signs (bigfile, map on/off), then build, then paid runs on Fireworks deepseek-v4p1-flash.
+2. litectx index plan (litectx design settled by hamr 2026-10-31 in the litectx session: MCP warm-on-boot skips the home dir; `index.db` created lazily on first `index()`/`remember()`; new boolean getter `lc.indexed`; `recall` still a plain array; `getNode`, `StalePointerError` and the incremental index unchanged). bareloop: (a) bump litectx when it ships and verify on a clean install; this ends the empty `.litectx` db made at `src/planrun.js` ~:2210; (b) read `lc.indexed` so the handoff map and the map fall back to line counts visibly when there is no index; (c) for A, index once at run start for every run (not only when a ctx tool is granted, `src/planrun.js` ~:2582); the re-index before each ask stays (about 6 ms with no change).
+3. Then: proof the memo helps (a larger ON/OFF across jobs). M3 (head-and-tail compaction) is dropped as low value unless hamr revives it.
+4. Side items, logged not experiments: F260 (fix tries hit the 30-minute wall); one worker stopped by "repeated denied calls" in run mvw29hmk (not investigated).
+
 M2. litectx context primitives (compress, peek, stash).
 - They are wired but used in about 0.7% of calls (H2 Part 0). Use them. A gap becomes an ask to litectx, never a local patch.
 

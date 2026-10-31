@@ -2127,3 +2127,4 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 - **Carry note:** cap 12000 characters; each try line says how the try ended and its check result; an "Earlier failures (folded):" section carries each failed check's whole text, newest left out (the prompt carries it). F261.
 - **Seed note ON by default:** the job's own failing `count-not-worse` text at start goes to the planner's first draft and, as the memo's `at start` entry, to every step and fix worker. Spec field `seedNote`, absent = on, `false` = off. F262.
 - **Secret inventory:** left as known token shapes only; a `NAME=value` style secret is not masked (F261 ruling).
+- **NEXT (hamr 2026-10-31), plan only:** A (map on a big-file read) tested with M2 after a $0 read and a signed prereg; litectx index plan (bump, `lc.indexed` fallback, index once at run start); then a larger ON/OFF proof of the memo. Details in `docs/wiki/HARNESS2.md` section 9.
