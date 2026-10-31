@@ -15164,4 +15164,6 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 
 **Ruling.** hamr 2026-10-31: ships ON by default ("add it, it passed 2 of 3").
 
-**Status.** Built, ON by default; planner and memo delivery test-proven, not seen live.
+**Status.** Built, ON by default; planner and memo delivery test-proven.
+
+2026-10-31 — memo `at start` form seen live. Run u-mvwok8nk, job bigfile, Fireworks deepseek-v4p1-flash, `seedNote` absent (= ON), carry and handoff ON; cost $0.2078 (spine, spendComplete=true); outcome step-red. 4 workers, 4 carry memos; all 4 carried the `at start` failure (sections.failures >= 1 with the stored startFailure, 464 chars), workers 2-4 included. Caveat: the spine keeps memo counts, never the text, so presence is read from sections.failures plus the stored startFailure (the product always puts it first, `src/carrystore.js:205`). All 4 memos show edits:0 (no worker wrote a file); not looked into. One run: it shows the delivery runs, not that it helps. Driver: `.claude/scratch/memo-atstart-live/driver.mjs`.
