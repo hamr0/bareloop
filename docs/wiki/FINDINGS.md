@@ -15167,3 +15167,26 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Status.** Built, ON by default; planner and memo delivery test-proven.
 
 2026-10-31 — memo `at start` form seen live. Run u-mvwok8nk, job bigfile, Fireworks deepseek-v4p1-flash, `seedNote` absent (= ON), carry and handoff ON; cost $0.2078 (spine, spendComplete=true); outcome step-red. 4 workers, 4 carry memos; all 4 carried the `at start` failure (sections.failures >= 1 with the stored startFailure, 464 chars), workers 2-4 included. Caveat: the spine keeps memo counts, never the text, so presence is read from sections.failures plus the stored startFailure (the product always puts it first, `src/carrystore.js:205`). All 4 memos show edits:0 (no worker wrote a file); not looked into. One run: it shows the delivery runs, not that it helps. Driver: `.claude/scratch/memo-atstart-live/driver.mjs`.
+
+## F263 — MAP: a first-read map of a big file did not cut the no-chunk rate (2026-10-31; live; MAP battery, Fireworks deepseek-v4p1-flash, bigfile; FAIL by the frozen rule)
+
+**Problem.** F257 and F262: workers on the big-file job open `src/gate.js` and then mistype `ctx_get` ranges (about 41% of archived `ctx_get` calls return no-chunk, 97 of 234). The idea: the first `shell_read` of a big file returns a map of named parts (`symbol start-end`) instead of file bytes, so the worker opens real ranges.
+
+**Change under test.** Experimental spec field `readMap` (default off, commit ad2badd). Delivery probe before the battery: OFF read 24,838 bytes, ON map 1,346 chars, 50 ranges, 0 bad, plant inside the map.
+
+**Pre-registration.** `docs/logs/MAP-PREREG.md`, signed and frozen before any number. Rule: SIGNAL needs the ON no-chunk rate at or under half the OFF rate.
+
+**Battery.** Fireworks deepseek-v4p1-flash, job bigfile, 3 OFF / 3 ON interleaved, head ad2badd, seed note, carry note and handoff ON in all six, learnings OFF. Booked $0.9455 (spine/ledger). Real runs.jsonl 385 of 385 (untouched). Results from `node .claude/scratch/map-battery/driver.mjs --analyze` ($0) and `.claude/scratch/map-battery/progress.log`:
+- PRIMARY pooled worker-ask `ctx_get` no-chunk rate: ON 36/105 = 34.3%, OFF 13/31 = 41.9%. Needed at most half of OFF. **FAIL.**
+- Secondary, rounds per ask until the first valid `ctx_get` on the plant: ON 6.75 (opened in 8 of 9 asks), OFF 6.25 (4 of 6).
+- Secondary, step turns per run: ON mean 52.7 [46, 65, 47], OFF mean 28.3 [14, 60, 11].
+- Secondary, booked cost per run: ON [$0.1467, $0.2238, $0.1516], OFF [$0.0786, $0.2645, $0.0804].
+- Report-only: greens 3/3 ON, 3/3 OFF. All six are green; the first time all OFF bigfile runs greened (earlier OFF runs mostly did not). The seed note and the carry memo are the likely reason, not proven. Maps served: 14 in total (ON 5, 5, 4). 5 of the 9 ON asks that read `gate.js` read it again after the map (the fallback).
+
+**Caveats.** n=3 per arm, one job, one patient, one model; underpowered by declaration. The secondaries never enter the rule.
+
+**Observation, not a claim.** The map did not stop workers mistyping ranges, and ON workers made about 3x more `ctx_get` calls (105 vs 31 in total, over three runs each).
+
+**Verdict.** Lever closed for this job. `readMap` stays experimental and default OFF. The litectx `outline(path)` ask is NOT filed (hamr: only if it works).
+
+**Status.** FAIL; kept off.
