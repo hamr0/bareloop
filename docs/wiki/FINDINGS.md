@@ -15230,6 +15230,8 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 
 **Status.** Open in bareloop; upstream half arrived.
 
+**2026-11-01 later.** Fixed upstream and on npm as bare-agent v0.58.0 (BA-29, PR #77; the bareloop replay passed 9 of 9, `.claude/scratch/ba29-replay/RESULT.md`, untracked scratch). The bareloop consumer (bump, `checkArgs` on for workers, the next-attempt note) is pending on the next branch: build spec section A, `docs/product/ITEM33-BUILD.md` addendum "Bad tool calls and the planning trap".
+
 ## F266 — cut-offs at max_tokens: 11 archived rounds, all exactly 32,000 tokens; the model is only told "CUT OFF ... discarded", and the malformed marker is lost on a cut round (2026-11-01; $0 archive read of 262 spines, 9,699 worker rounds)
 
 **Problem.** Round stopReason counts: tool_use 8,576, end_turn 1,112, max_tokens 11. All 11 max_tokens rounds are Fireworks `deepseek-v4p1-flash`, step (4 rounds, 3 runs) and fix (7 rounds, 5 runs) phases, each exactly 32,000 output tokens (`maxTokens: 32000`, `src/planrun.js:2900/2916`). Muse: 0 of 3 spines.
@@ -15245,6 +15247,8 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Fix.** BA-29 (v0.58.0) adds `cutOff`, `badCalls`, `reasoningTokens`. bareloop's next-try note built from them is pending (PRD v1.124).
 
 **Status.** Open; upstream half arrived.
+
+**2026-11-01 later.** Fixed upstream in bare-agent v0.58.0 (`cutOff`, `badCalls`, `usage.reasoningTokens`). bareloop consumer pending on the next branch: build spec section A.
 
 ## F267 — the audit's byte count is blind: an object reads 15, and "bytes" are UTF-16 units (2026-11-01; source read)
 
@@ -15300,6 +15304,8 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 
 **Status.** Open; named, not built.
 
+**2026-11-01 later (hamr ruling: "both ... we fix planner instructions and b2 patch it as needed").** The root is our own planner instructions: `EXIT_EXAMPLE` (`src/plan.js:42`) teaches every no-check step "artifact-written <its target> + tree-changed", and the write-only persona lines (`src/tools.js:60`, `:62`) say "make the change with the write tool". $0 inventory over 440 archived `plan-accepted` plans (real `validatePlan`, `.claude/scratch/writeedit-poc/SPEC-DRAFT.md`, untracked scratch): write-without-edit steps are DeepSeek 33 steps in 32 plans, all rubric steps writing a NEW `output/steps/N.json` (0 on any code job); Muse 20 steps in 15 plans, 15 on code files, 10 of those plans carry the gutting shape; claude-sonnet-5 96 steps in 22 plans (old era, ceiling unknown). Of 390 resolved specs on disk, 0 have an explicit `tools` list lacking `edit`. No signed hash covers a plan, so a plan-level change moves no signature. Ruling: (1) fix the planner instructions at the source, proven by a drafter-only POC before build; (2) B2 as the safety net: code pairs `edit` with a `write` grant on a code file, rubric `output/steps/` files exempt, only when the signed ceiling offers `edit`. B2 replay: 0 DeepSeek plans change, 10 of 51 Muse plans change, all 3 gutting plans gain `edit`. Build spec: sections B and C of the `docs/product/ITEM33-BUILD.md` addendum "Bad tool calls and the planning trap". Status after the ruling: spec written, not built.
+
 ## F272 — archive scan of whole-file wipes: 14 gutting writes in 13 runs of 451 audited, in 2 model families (2026-11-01; $0 archive read; re-surfaces F31)
 
 **Scan.** 533 deduped spines, 451 with a gate audit (82 had none, so they are blind spots: 7 scratch, 10 `u-*` and 65 older non-`u-`). 603 allowed whole-file `write` actions; 116 hit a file that existed at the seed (113 of them big: over 50 lines or 2 KB). "Shrink" = new bytes under 50% of old on a seed file over 50 lines or 2 KB. One false positive was dropped (u-mvy71nrt: a 299-byte append on `gate.js`, final 132,312 B).
@@ -15311,6 +15317,8 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Source.** `.claude/scratch/shrinkscan/RESULT.md`.
 
 **Status.** Open; upstream in build.
+
+**2026-11-01 later.** BA-30 is built on bare-agent `feat/ba30-shrink-guard` (a876cf8; plural fix 4400a5f, "1 byte (1 line)"). The bareloop harness (`.claude/scratch/ba30-harness/RESULT.md`, untracked scratch; $0, real Loop and real bareguard Gate, no model calls): all 14 gutting writes refused with the file unchanged and `context` numbers correct; 589 of 589 other writes passed, 0 false refusals; `guardPath` is required (without it 13 of the 589, worker-own earlier-output rewrites, would be refused). Closest call among passes: audit.js at ratio 0.549. The one borderline refusal (budget.js, 12,830 against a line of 12,839) counts audit chars, not bytes (F267). Release waits for bare-agent's branch-review and hamr's word. Wiring and fail-open spellings: F276; refused writes counting as writes: F275.
 
 ## F273 — the close ran worker-written code to earn a green (2026-11-01; live; run u-mvy4cd0d, Muse, bigfile) — PARKED for hamr, arbiter territory
 
@@ -15329,3 +15337,25 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Parked.** Persisting the memo text is for hamr to want or not; nothing built. Source: `.claude/scratch/memoproof-run/analysis/DEEP.md`.
 
 **Status.** Open, observation; persisting the text is hamr's call.
+
+## F275 — a write the tool refuses still counts as a worker write: the strike ladder reads a refused gutting write as "busy" (2026-11-01; source read plus BA-30 harness; arbiter-adjacent, PARKED for hamr)
+
+**Facts.** A write refused by the tool (the BA-30 shrink refusal is the case in hand, but any tool throw after the policy allowed it behaves the same) lands in the gate audit as `phase:"gate"`, `decision:"allow"`, `action.type:"write"`, plus a separate `phase:"record"` row carrying the error. `auditWrites` (`src/planrun.js:2411-2420`) counts exactly `phase==='gate' && decision==='allow' && type write|edit`, so a refused write counts in `workerWrites` and in `writeCount`. `createLadder` (`src/ladder.js:141-146`) reads `writeCount` as "the worker wrote this iteration" to decide the idle strike. `pendingProbe`/`settleWrite` (`src/planrun.js:2469-2482`) already handle it correctly (file hash unchanged, so landed is false).
+
+**Consequence.** A worker that repeats a refused gutting write looks busy to the ladder, not idle, until the loop stops it with `stuck:shell_write` (default `maxIdenticalToolErrors` 3). In the harness, 3 identical refusals ended the run that way with the file untouched, so the cost is bounded by that limit. The signal available to tell the two apart is `errorContext.shrink` on the record row.
+
+**Decision for hamr.** Whether refused writes should be excluded from `auditWrites` (the F32 instrument). It touches the strike governor and the Layer R/handoff inputs, so it is arbiter-adjacent and not proposed for build. Source: `.claude/scratch/ba30-harness/RESULT.md`, "Two bareloop-side findings".
+
+**Status.** Open; PARKED for hamr (build spec section F).
+
+## F276 — BA-30 guard fail-open spellings for the bareloop wiring: symlinked parent and C-quoted names (2026-11-01; $0 harness; `.claude/scratch/ba30-harness/nofollow.mjs`)
+
+**Facts.** `shrinkGuard: { guardPath }` receives the lexical `resolveToolPath` path (`path.resolve`, no realpath). bareloop builds "tracked at seed" from `seedAtHead` (`src/kinds.js:521`) and `seedListing` (`src/kinds.js:538`, `git ls-tree -r --name-only`). Two spellings miss that set, so the guard fails OPEN for that file: (1) a write spelled through a symlinked PARENT (the set holds `/real/f.js`, the write names `/link/f.js`; a 10,000 B file was cut to 1 byte in the harness; a final-component symlink is refused with ELOOP as designed, since bareloop sets `noFollowSymlinks`); (2) names `git ls-tree` returns C-quoted (non-ASCII or special characters), because `seedListing` does not pass `-z`. Neither was reachable in the 603 archived writes; named, not measured. Reach is low (the worker has no shell to make a link; only a link already tracked in the repo), and bareguard's `fs.writeScope` is lexical too.
+
+**bare-agent ruling.** `guardPath` stays lexical, no realpath in the guard; the caller may realpath inside its own predicate.
+
+**Choice for hamr.** Realpath in bareloop's `guardPath` predicate, or exempt own writes another way, or accept the lexical set. Build spec section D.
+
+**Other wiring gaps (same read).** The seed block at `src/planrun.js:2088-2122` runs only `if (declared)`, so command-close and rubric jobs need their own `seedAtHead` call; the set must be built on the WORKER tree (the worktree or the hidden-git copy), once per leg; a resume reads HEAD at leg start, so "tracked at seed" there is unverified.
+
+**Status.** Open; spec written (section D), not built.
