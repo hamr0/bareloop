@@ -143,7 +143,7 @@ Every extra block the AI is handed besides the job text is a "note". There are 1
 
 | # | Note | What it carries | Sent when | Switch | Where |
 |---|---|---|---|---|---|
-| 1 | Carry memo (the old handoff note is folded in, `b4e8021`) | files read WITH function line ranges, searches, edits, earlier failures (folded), the start failure (`at start`) | every new try after the first | `carryNote` (config.json, absent = on); a legacy spec `handoffNote: false` = memo off for that job | planrun `withCarry`; `src/carrystore.js`, `src/carrynote.js` |
+| 1 | Carry memo (the old handoff note is folded in, `b4e8021`) | files read WITH function line ranges, searches, edits, earlier failures (folded), the start failure (`at start`) | every new try after the first | always on, no switch (hamr 2026-11-01); the `carryNote` config key and a spec's `handoffNote` are ignored | planrun `withCarry`; `src/carrystore.js`, `src/carrynote.js` |
 | 2 | Last failure | "Previous attempt failed this step's checks" plus the check output (fix: the verification output) | the try before was red | always | planrun 3535 (step), 4289 (fix) |
 | 3 | Cut-off | ran out of turns, or repeated denied calls (the strike reason) | the try before was bounded | always | `boundedNote` planrun 602; used 3539, 4291 |
 | 4 | Numbers trend (fix only) | the close's own numbers so far, oldest first (checks passed, stage values) | fix tries | always | planrun 4275-4290 |
@@ -166,8 +166,8 @@ Names we use: carry memo, last failure, cut-off, numbers trend, step results, se
 
 **The fold is BUILT (hamr ruling 2026-10-31: "carry memo + handoff note become one, learnings separate, last failure separate, we split on scope and trigger"; commit `b4e8021`).**
 
-- The handoff note is part of the carry memo: one block, one switch (`carryNote`). The memo's files-read lines carry the function line ranges (` · functions: a 1-5, b 7-9`); at the 12,000-character cap the ranges are dropped FIRST, before search lines, earlier tries, failures and diff hunks.
-- A job spec's `handoffNote` is legacy: still accepted and hashed (old signed specs verify), never written by new drafts; `handoffNote: false` turns the memo off for that job.
+- The handoff note is part of the carry memo: one block, no switch (always on). The memo's files-read lines carry the function line ranges (` · functions: a 1-5, b 7-9`); at the 12,000-character cap the ranges are dropped FIRST, before search lines, earlier tries, failures and diff hunks.
+- A job spec's `handoffNote` is legacy: still accepted and hashed (old signed specs verify), never written by new drafts; it has no effect (the memo is always on).
 - The `handoff-note` spine record is no longer written; old spines that carry it replay unchanged (nothing reads it).
 - Everything else stays separate. Learnings (across runs, planner only) and last failure (stays in the prompt; the memo leaves the newest failure out) are unchanged.
 - Next: one real run, then the memo proof battery (memo on/off, several jobs, prereg signed first).
