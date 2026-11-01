@@ -2,8 +2,8 @@
 // calls AT THE SOURCE (the worker's tool objects, result SUMMARIES only, never file
  // content), reads the run's edits from the WORKING TREE (git diff against the run's start commit, never the spine), renders
 // the note and persists its state under `<workdir>/.smoke/carry/state.json` (an arbiter book: the worker's fs.deny covers
-// `.smoke`, so it cannot read it; the gate audit, spine and bridges live there too). The switch is `carryNote` in
-// config.json (absent = on; only `false` turns it off), read once per run by the engine's caller.
+// `.smoke`, so it cannot read it; the gate audit, spine and bridges live there too). There is no switch: the memo is
+// always on (hamr 2026-11-01).
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -11,23 +11,11 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { SMOKE_STORE } from './kinds.js';
 import { redactSecrets } from './validate.js';
 import { render, isCarryExcluded, HUNK_LINES } from './carrynote.js';
-import { readConfig } from './config.js';
 
 const exec = promisify(execFile);
 export const CARRY_DIR = 'carry';
 /** the retry marker the next prompt of a retried step / fix try carries; kept as a pinned fact about the prompts, no longer read to decide an outcome */
 export const RED_MARKER = /Previous attempt failed (this step's checks|the verification):/;
-
-/**
- * The ONE setting: `carryNote` in config.json, read exactly like `learningHints` (src/learnstore.js `learningHintsOn`).
- * Absent = on; only an explicit `false` turns it off. An unreadable config reads as OFF (the safe side).
- * @param {string} [home]
- * @returns {boolean}
- */
-export function carryNoteOn(home) {
-  const c = readConfig({ home });
-  return c.problem === null && c.config.carryNote !== false;
-}
 
 const lineCount = (/** @type {string} */ s) => (s === '' ? 0 : s.split('\n').length - (s.endsWith('\n') ? 1 : 0));
 const clip = (/** @type {unknown} */ s, n = 200) => redactSecrets(String(s ?? '')).slice(0, n);

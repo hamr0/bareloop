@@ -64,7 +64,7 @@ const wr = (dir, n, id) => ({ toolCalls: [{ id, name: 'shell_write', arguments: 
 /** the first user prompt of every ask (one array per ask) */
 const askPrompts = (provider) => [...new Set(provider.messagesLog)].map((m) => m.find((x) => x.role !== 'system').content);
 
-async function drive(t, over, script, runOpts = { carryNote: true }) {
+async function drive(t, over, script, runOpts = {}) {
   const { dir, spine } = makePatient(t);
   const job = jobOf(over);
   assert.deepEqual(validateJob(job, { shellCapUsd: job.budgetUsd }).reds, []);
@@ -129,11 +129,7 @@ test('ON: step 2 sees it too; step 1 try 1 carries it with no other events', asy
   assert.ok(s2.every((p) => p.includes('- at start:')), 'step 2 sees it');
 });
 
-test('carryNote OFF: the workers get nothing from it, the planner still has its block; seedNote false: nothing anywhere', async (t) => {
-  const noMemo = await drive(t, { seedNote: true }, twoTries, { carryNote: false });
-  const w = noMemo.prompts.filter((p) => p.startsWith('Lower src/count.txt (s1)'));
-  assert.ok(w.length >= 1 && w.every((p) => !p.includes('at start') && !p.includes(SEED_NOTE_HEADING)));
-  assert.ok(noMemo.prompts.some((p) => p.includes('"rounds"') && p.includes(SEED_NOTE_HEADING)));
+test('seedNote false: nothing anywhere', async (t) => {
   const none = await drive(t, { seedNote: false }, twoTries);
   assert.ok(none.prompts.every((p) => !p.includes('at start') && !p.includes(SEED_NOTE_HEADING)));
 });

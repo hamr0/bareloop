@@ -350,9 +350,9 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
     red('invalid-value', 'thinking', 'true or false — the job\'s "Thinking on" tick (absent = off)');
   }
   // LEGACY `handoffNote` (the handoff note was folded into the carry memo, 2026-10-31): still accepted and hashed so an old signed spec
-  // verifies; `false` now means "carry memo off for this job" (src/planrun.js). A boolean; ABSENT = on. New specs and drafts never write it.
+  // verifies; it has NO effect since 2026-11-01 (the carry memo is always on). A boolean if present. New specs and drafts never write it.
   if (spec.handoffNote !== undefined && typeof spec.handoffNote !== 'boolean') {
-    red('invalid-value', 'handoffNote', 'true or false (legacy; absent = on): false turns the carry memo off for this job');
+    red('invalid-value', 'handoffNote', 'true or false (legacy, ignored: the carry memo is always on)');
   }
 
   // THE SEED NOTE (src/seednote.js): a declared job condition, signed like `thinking`. A boolean; ABSENT = on (an old spec keeps its

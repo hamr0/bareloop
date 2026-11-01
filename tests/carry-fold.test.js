@@ -1,5 +1,5 @@
 // The fold (hamr 2026-10-31): the handoff note is part of the carry memo. ONE block (the memo's files-read lines carry the
-// function line ranges), ONE switch (`carryNote` in config.json; a legacy `handoffNote:false` in a job spec = memo off).
+// function line ranges), NO switch (hamr 2026-11-01: permanently on; the `carryNote` config key and a spec's `handoffNote` are legacy, ignored).
 // Scripted provider, real Loop, real Gate, real LiteCtx index.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -42,20 +42,22 @@ const script = (wd) => [
 ];
 const stepTwoOf = (provider) => askPrompts(provider).find((p) => p.includes('Write tests/test_y.mjs.'));
 
-test('fold 1: a job spec with handoffNote:false turns the memo off for that job', async (t) => {
+test('fold 1: a legacy job spec with handoffNote:false still gets the memo (no effect, no switch)', async (t) => {
   const wd = patient(t);
   const provider = scriptedProvider(script(wd));
-  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { tools: TOOLS, handoffNote: false }), carryNote: true });
+  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { tools: TOOLS, handoffNote: false }) });
   assert.equal(outcome, 'green');
-  assert.ok(askPrompts(provider).every((p) => !p.includes(HEADING) && !p.includes(OLD_HEADING)));
-  assert.equal(events.filter((e) => e.type === 'carry-note' || e.type === 'handoff-note').length, 0);
-  assert.equal(existsSync(join(wd, '.smoke', 'carry')), false, 'no state written');
+  assert.ok(stepTwoOf(provider).includes(HEADING), 'the memo is in the prompt');
+  assert.ok(askPrompts(provider).every((p) => !p.includes(OLD_HEADING)));
+  assert.ok(events.some((e) => e.type === 'carry-note'));
+  assert.equal(events.filter((e) => e.type === 'handoff-note').length, 0);
+  assert.equal(existsSync(join(wd, '.smoke', 'carry')), true, 'state written');
 });
 
 test('fold 2: the memo\'s files-read line carries the function line ranges', async (t) => {
   const wd = patient(t);
   const provider = scriptedProvider(script(wd));
-  const { outcome } = await go(wd, provider, { job: JOB(wd, { tools: TOOLS }), carryNote: true });
+  const { outcome } = await go(wd, provider, { job: JOB(wd, { tools: TOOLS }) });
   assert.equal(outcome, 'green');
   assert.match(stepTwoOf(provider), /^- src\/mod\.mjs \(\d+ lines\) · read 1x · functions: alpha \d+-\d+, beta \d+-\d+$/m);
 });
@@ -63,7 +65,7 @@ test('fold 2: the memo\'s files-read line carries the function line ranges', asy
 test('fold 3: the worker sees the file list exactly once (no second block)', async (t) => {
   const wd = patient(t);
   const provider = scriptedProvider(script(wd));
-  await go(wd, provider, { job: JOB(wd, { tools: TOOLS }), carryNote: true });
+  await go(wd, provider, { job: JOB(wd, { tools: TOOLS }) });
   const p = stepTwoOf(provider);
   assert.ok(!p.includes(OLD_HEADING), 'the separate handoff block is gone');
   assert.equal(p.split(HEADING).length - 1, 1);
@@ -90,17 +92,7 @@ test('fold 4: over the cap, the function ranges are dropped FIRST (failures, edi
   assert.ok(r.text.length <= CAP);
 });
 
-test('fold 5: carryNote off (the one switch) = nothing: no memo, no old block, no record, no state', async (t) => {
-  const wd = patient(t);
-  const provider = scriptedProvider(script(wd));
-  const { outcome, events } = await go(wd, provider, { job: JOB(wd, { tools: TOOLS }), carryNote: false });
-  assert.equal(outcome, 'green');
-  assert.ok(askPrompts(provider).every((p) => !p.includes(HEADING) && !p.includes(OLD_HEADING)));
-  assert.equal(events.filter((e) => e.type === 'carry-note' || e.type === 'handoff-note').length, 0);
-  assert.equal(existsSync(join(wd, '.smoke', 'carry')), false);
-});
-
-test('fold 5b: runPlan with NO carryNote option builds the memo (library default ON, hamr 2026-10-31)', async (t) => {
+test('fold 5: runPlan always builds the memo (no option, no switch; hamr 2026-11-01)', async (t) => {
   const wd = patient(t);
   const provider = scriptedProvider(script(wd));
   const { outcome, events } = await go(wd, provider, { job: JOB(wd, { tools: TOOLS }) });

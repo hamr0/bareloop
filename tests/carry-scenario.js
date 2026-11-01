@@ -23,8 +23,8 @@ const job = () => ({
   tools: ALL, escalation: { mode: 'decision-ready' },
 });
 
-/** @param {string} wd fixed working dir (wiped first) @param {{ carryNote?: boolean, redFirst?: boolean }} o */
-export async function runScripted(wd, { carryNote = false, redFirst = false } = {}) {
+/** @param {string} wd fixed working dir (wiped first) @param {{ redFirst?: boolean }} o */
+export async function runScripted(wd, { redFirst = false } = {}) {
   rmSync(wd, { recursive: true, force: true });
   rmSync(wd + '-spine', { recursive: true, force: true });
   mkdirSync(join(wd, 'tests'), { recursive: true });
@@ -52,6 +52,6 @@ export async function runScripted(wd, { carryNote = false, redFirst = false } = 
   ]);
   const file = join(wd + '-spine', 'spine.jsonl');
   const j = job();
-  const outcome = await runJob(j, { readShim: false, carryNote, approvals: [{ specHash: jobSpecHash(j), signer: 'hamr', ts: 'now' }], workdir: wd, provider, emit: makeSpine(file) });
+  const outcome = await runJob(j, { readShim: false, approvals: [{ specHash: jobSpecHash(j), signer: 'hamr', ts: 'now' }], workdir: wd, provider, emit: makeSpine(file) });
   return { outcome, provider, events: readSpine(file) };
 }

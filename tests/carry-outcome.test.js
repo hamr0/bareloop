@@ -50,7 +50,7 @@ test('a bounded try keeps its bound words; a try whose check never ran is not ca
 
 test('call site: the engine hands the check result to the store, so state.json records it per ask', async () => {
   const wd = join(base, 'wired');
-  const r = await runScripted(wd, { carryNote: true });
+  const r = await runScripted(wd, {});
   assert.equal(r.outcome, 'green');
   const st = JSON.parse(readFileSync(join(wd, '.smoke', 'carry', 'state.json'), 'utf8'));
   const real = st.asks.find((a) => a.step === 'real');
