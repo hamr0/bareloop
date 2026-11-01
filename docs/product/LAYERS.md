@@ -172,6 +172,8 @@ Names we use: carry memo, last failure, cut-off, numbers trend, step results, se
 - Everything else stays separate. Learnings (across runs, planner only) and last failure (stays in the prompt; the memo leaves the newest failure out) are unchanged.
 - Next: one real run, then the memo proof battery (memo on/off, several jobs, prereg signed first).
 
+2026-11-01 - the fold seen live once (run u-mvxjji5a; Fireworks deepseek-v4p1-flash, bigfile, HEAD e931c39, all note switches at product defaults). Step-red, $0.4795, 5 worker asks, 0 handoff-note records, 5 carry-note records (non-first carried reads 3-5, searches 11-27, failures 1-2, up to 7,465 chars, none capped). Caveat: the files-read lines carrying `functions:` ranges (e.g. `src/gate.js`) come from a re-render of the memo over the persisted state plus the run's index, not the delivered bytes (the text is never persisted); the containing class chunk `Gate 579-2212` still sits in the functions list, as in the old handoff note (not new). One run: it shows the fold runs, not that it helps. The memo proof battery is still to do.
+
 ---
 
 ## When something goes wrong

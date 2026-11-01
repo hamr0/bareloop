@@ -561,4 +561,4 @@ Untracked scratch (survives `/clear`, not a fresh clone), all under `.claude/scr
 
 Tracked: `docs/logs/E0-PREREG.md`, `E0B-PREREG.md`, `E1-PREREG.md`, `PLANNER-EXIT-PREREG.md`, `H1-PREREG.md`, `docs/logs/MAP-PREREG.md`; `docs/wiki/FINDINGS.md` F252, F253, F254, F255.
 
-Paid so far (DeepSeek deepseek-flash, 2026-10-28): E1 $4.72, observe $0.16, planner POC $1.55, live run $0.04. 2026-10-29: H1 $3.3329 (Fireworks deepseek-v4p1-flash). 2026-10-29/30: M1 smoke $0.73, round 1 $3.52, round 2 $5.08 (Fireworks deepseek-v4p1-flash). 2026-10-31: live carry runs $0.70 + $0.56, SEEDGAP $1.40, MAP $0.9455 (Fireworks deepseek-v4p1-flash).
+Paid so far (DeepSeek deepseek-flash, 2026-10-28): E1 $4.72, observe $0.16, planner POC $1.55, live run $0.04. 2026-10-29: H1 $3.3329 (Fireworks deepseek-v4p1-flash). 2026-10-29/30: M1 smoke $0.73, round 1 $3.52, round 2 $5.08 (Fireworks deepseek-v4p1-flash). 2026-10-31: live carry runs $0.70 + $0.56, SEEDGAP $1.40, MAP $0.9455 (Fireworks deepseek-v4p1-flash). 2026-11-01: fold live $0.0314 + $0.4795 (Fireworks deepseek-v4p1-flash).
