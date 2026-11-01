@@ -260,7 +260,7 @@ export function createScheduleDoor(deps) {
     if (workflowKey(spec) !== green.key) return reply(400, { refused: 'bad-spec', say: 'The job this would sign is not the one that had the good run. Nothing was changed.' });
     let monthlyNote = null;
     try {
-      const room = checkMonthlyRoom({ capUsd: spec.budgetUsd, home: deps.home, sessionsRoot: deps.sessionsRoot });
+      const room = checkMonthlyRoom({ capUsd: spec.budgetUsd, home: deps.home, sessionsRoot: deps.sessionsRoot, now });
       const refusal = monthlyRefusalText(room);
       if (refusal) monthlyNote = `${refusal}. Each run is checked against the monthly limit when it starts.`;
     } catch (e) {
@@ -421,7 +421,7 @@ export function createScheduleDoor(deps) {
       if (paused(job)) return { outcome: 'refused', why: 'This schedule gave up and is waiting for you. Nothing started.', told: false };
       if (hooks.busy ?? busy(job)) return told('busy', 'A run of this job is still going. This one starts when it is done.');
       try {
-        const room = checkMonthlyRoom({ capUsd: schedule.spec.budgetUsd, home: deps.home, sessionsRoot: deps.sessionsRoot });
+        const room = checkMonthlyRoom({ capUsd: schedule.spec.budgetUsd, home: deps.home, sessionsRoot: deps.sessionsRoot, now });
         if (!room.ok) {
           return told('monthly-exhausted', 'Not enough money left this month for this run.', { leftUsd: room.leftUsd, needUsd: schedule.spec.budgetUsd, atLeast: room.atLeast === true });
         }

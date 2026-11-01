@@ -119,6 +119,17 @@ test('monthly: not enough room -> `monthly-exhausted` with leftUsd/needUsd, once
   assert.equal((await w.door.fire('sched-job', CLOCK())).outcome, 'started');
 });
 
+test('monthly: the room check counts "this month" on the door\'s own clock, not the real one (a 2020 door clock sees only the 2020 run)', async () => {
+  const w = await world();
+  const cfgPath = join(w.home, 'config.json');
+  writeFileSync(cfgPath, JSON.stringify({ ...JSON.parse(readFileSync(cfgPath, 'utf8')), monthlyLimitUsd: 1 }));
+  makeRun(w.home, { runid: 'r2020', spec: w.spec, at: '2020-11-05T10:00:00.000Z' });
+  w.now.set(new Date(2020, 10, 14, 9, 0).getTime());
+  assert.equal((await w.door.fire('sched-job', CLOCK())).outcome, 'monthly-exhausted');
+  const row = w.rows().find((x) => x.kind === 'monthly-exhausted');
+  assert.deepEqual([row.needUsd, row.leftUsd], [1.5, 0.5], 'the fixture run of the door\'s month (0.5) counts; the Oct 2026 run and the real month do not');
+});
+
 test('monthly: an unreadable limit is a `refused` row that refuses rather than guess', async () => {
   const w = await world();
   const cfgPath = join(w.home, 'config.json');
