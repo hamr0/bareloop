@@ -15217,3 +15217,115 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Status.** Closed.
 
 2026-11-01 hamr: carry memo permanent ON, switch removed.
+
+## F265 — Muse sends JSON text as an object in `shell_write` content and `shell_edit` newText; the tool refuses with the wrong hint and the run goes stuck (2026-11-01; $0 replay of live runs; Baseten `meta-models/muse-spark-open-1026`; fixed upstream in BA-29)
+
+**Problem.** When the text to write is itself JSON, the worker's `content` (write) and `newText` (edit) arrive as a JSON object, not a string. `shell_write` refuses (`node_modules/bare-agent/tools/shell.js:354-364`, `typeof content !== 'string'`) and says "If your output was cut short, retry with the full content", which is the wrong hint. Three byte-identical failures end the attempt as `stuck:shell_write` (`loop.js:596-612`, default `maxIdenticalToolErrors` 3), which bareloop routes to the terminal `interpreter-red` (`src/planrun.js:2950-2957`). The panel then says "Stopped before or outside the work (code: interpreter-red)." (`src/panel/server.js:677`).
+
+**Evidence.** Job change2 went 0/3 on Muse (memo ON): u-mvxzrgwg (step-red), u-mvy0kgwu (interpreter-red), u-mvy15hmq (step-red). Gate-audit writes with `args.bytes` 15: 32 of 40 (u-mvxzrgwg), 3 of 3 (u-mvy0kgwu), 20 of 25 (u-mvy15hmq). Replay (real `OpenAIProvider` against a local server, real Loop and shell tools): content as a nested object reads `bytes:15` and no file is written; `shell_edit` with an object `newText` reads 15 and ends `stuck:shell_edit`; the model's workarounds that did write were a junk-prefixed string (` x{...}`, 297 bytes) and short non-JSON probes. Sources: `.claude/scratch/muse-json/RESULT.md`, `.claude/scratch/write-fail/RESULT.md` (`replay2.out`).
+
+**Unknown.** Whether Baseten's tool-call parser or the model creates the object. bare-agent never records the raw `function.arguments` string, and no live probe was run (one call, under a cent, needs hamr's word). DeepSeek sends strings (no `bytes:15` in its audits).
+
+**Fix.** Upstream, BA-29, released as bare-agent v0.58.0 (`badCalls`, `cutOff`, `checkArgs`, `reasoningTokens`, corrected shell hint). bareloop side is pending on its next branch (PRD v1.124). Open and parked for hamr: a stuck arg-fault loop is terminal `interpreter-red` today, not a bounded attempt (arbiter-adjacent).
+
+**Status.** Open in bareloop; upstream half arrived.
+
+## F266 — cut-offs at max_tokens: 11 archived rounds, all exactly 32,000 tokens; the model is only told "CUT OFF ... discarded", and the malformed marker is lost on a cut round (2026-11-01; $0 archive read of 262 spines, 9,699 worker rounds)
+
+**Problem.** Round stopReason counts: tool_use 8,576, end_turn 1,112, max_tokens 11. All 11 max_tokens rounds are Fireworks `deepseek-v4p1-flash`, step (4 rounds, 3 runs) and fix (7 rounds, 5 runs) phases, each exactly 32,000 output tokens (`maxTokens: 32000`, `src/planrun.js:2900/2916`). Muse: 0 of 3 spines.
+
+**Effect.** The cuts led to the red in 3 runs (u-mvw29hmk step stop, u-mvu33q9x fix budget, u-mvuvcqqt second strike), coincided with a wall-halt in 3 (u-mvuoi949, u-mvusa4ju, u-mvupkwk7), and the run recovered to green in 2 (u-mvu47a2f, u-mvuqu6cf). About $0.06 and 3.5 minutes per cut; 11 cuts about $0.68 and 38 minutes. "Led" means the cut filled the strike or fix budget, not that it was the only cause.
+
+**What the model is told.** In-run: nothing (the Loop ends the run on `truncated:max_tokens`). On the next attempt: `boundedNote` (`src/planrun.js:601-605`), "Your previous attempt was CUT OFF: output cut at the token limit (max_tokens). That response was discarded." It never says what was cut, that a write can be split, that `append:true` exists (`tools/shell.js:1026`), or that reasoning may have used the limit.
+
+**Records lost.** On a cut round the `truncated:*` return at `src/planrun.js:2943-2947` happens before the `r.malformedToolCall` check at `:2973`, so the malformed marker is never recorded (replay shape a). The dropped call's name and size are invisible, and reasoning tokens are recorded nowhere (bare-agent `usage` drops them, `provider-openai.js:245-256`).
+
+**Cause unproven, and the archive is inconsistent.** The scan `RESULT.md` says all 11 were thinking-ON asks (11 of 337 thinking-on asks, 0 of 341 thinking-off). The per-hit file `.claude/scratch/write-fail/hits.json` records `think` as on for 3, off for 3 and null for 5. The two do not agree; the association with thinking is not established, and whether any cut was a long write is not recoverable.
+
+**Fix.** BA-29 (v0.58.0) adds `cutOff`, `badCalls`, `reasoningTokens`. bareloop's next-try note built from them is pending (PRD v1.124).
+
+**Status.** Open; upstream half arrived.
+
+## F267 — the audit's byte count is blind: an object reads 15, and "bytes" are UTF-16 units (2026-11-01; source read)
+
+`src/tools.js:621` and `:626` count `String(args?.content ?? '').length` (write) and the newText equivalent (edit). An object `content` stringifies to "[object Object]", so the audit shows `bytes: 15` with no type kept; that is the only trace of F265 on disk. `.length` counts UTF-16 code units, not bytes, so non-ASCII content is under-counted. Same blind-instrument class as the earlier audit collapses (a reader of the audit cannot tell a refused object write from a real 15-byte write). Fix: the audit records the true type and size (PRD v1.124 item 5).
+
+**Status.** Open.
+
+## F268 — Muse base rate with the memo ON: bigfile 2/3, p7 3/3, pulselog 2/3, change2 0/3; Muse ignores thinking-off (2026-11-01; live; Baseten `meta-models/muse-spark-open-1026`)
+
+**Run.** 12 runs, product engine, $1 per run cap, memo ON; booked $4.8568 (cap $10). Source: `.claude/scratch/memoproof-base/BASERATE-MUSE.md`. Greens: bigfile 2/3 (green, cap-halt, green), p7 3/3, pulselog 2/3 (green, escalated, green), change2 0/3 (step-red, interpreter-red, step-red; see F265). No casualties. Median cost per run: bigfile $0.39, p7 $0.27, pulselog $0.30, change2 $0.47.
+
+**Thinking.** Muse ignores the thinking-off switch (the recorded thinkingStatus is ignored by the provider), so a thinking contrast on Muse is not available.
+
+**Smoke.** u-mvxx5ec8 green, $0.33, before the base round.
+
+**Caveat.** n=3 per job; a base rate with a wide band, not a rate. The same engine produced the "ON" arm in F269 and was the memo-ON base.
+
+**Status.** Closed (a base).
+
+## F269 — memo proof (MEMOPROOF): frozen verdict LOSE on greens, ON 7/16 vs OFF 10/16, read as a leaning; confounded by planning (2026-11-01; live; Baseten Muse; prereg `docs/logs/MEMOPROOF-PREREG.md` rev 2, signed `c9517ac`)
+
+**Design.** 32 runs, 16 interleaved pairs over bigfile, pulselog and p7, memo ON (always-on carry memo) against OFF (carry null, one line). Declared UNDERPOWERED up front (about a 30% false-WIN rate at no effect), so the verdict is read as a LEANING only. Booked $15.1702 (stop $20). Source: `.claude/scratch/memoproof-run/RESULT.md`, `analysis/DEEP.md`.
+
+**Result.** Frozen verdict LOSE (OFF needs >= ON + 3 greens): greens ON 7/16, OFF 10/16. Cost and wall: ON/OFF median job-normalised cost 0.733, wall 0.922, printed but not read (they only count when greens are SAME). Totals: ON $7.00, OFF $8.17. Passed runs only were leaner with ON: 43 vs 59 turns, $0.33 vs $0.49, 4.8 vs 5.5 min. Per job greens: bigfile ON 2/6, OFF 2/6; pulselog ON 2/6, OFF 4/6; p7 ON 3/4, OFF 4/4. Plan-reds (7 of 32, a result, not casualties) are F270.
+
+**Confound.** The planner's write-without-edit first step (F271) landed on ON bigfile 5 of 6 plans against OFF 0 of 4 that drafted a plan. The drafter never sees the memo (carry-note records exist only for step phases; the only code difference between arms is `src/planrun.js:1045`, `carry = createCarryStore(...)` vs `null`). The ON bigfile losses (cap-halts u-mvy52mc5, u-mvy8w58g and the rest) therefore trace to the plan, not the memo. The record also does not show any run ending because a worker followed a memo pointer into a dead end; the closest facts are u-mvy52mc5's re-reads of named files with no edit and u-mvy6dqro's repeated no-change tries, and neither shows the memo as the cause.
+
+**Ruling.** The memo stays always on (hamr 2026-11-01); this is not a reason to change it. The 5/6 vs 0/4 split was read as a draw plus small n (Fisher p about 0.015 if the arm mattered, but no mechanism exists), not proven either way.
+
+**Status.** Closed as a leaning LOSE, confounded; the planning trap is F271.
+
+## F270 — Muse planner plan-red at draft: 7 of 32 battery runs died after two refused drafts, against 0 of 12 in the base round (2026-11-01; live; Baseten Muse)
+
+**Data.** Runs: 06-p7-ON-r1 (u-mvy51mw0), 13-bigfile-OFF-r3 (u-mvy6awum), 15-pulselog-OFF-r3 (u-mvy6k3kg), 16-pulselog-ON-r3 (u-mvy6l9lk), 21-pulselog-ON-r4 (u-mvy7o3up), 28-pulselog-ON-r5 (u-mvy8v2gz), 30-bigfile-OFF-r6 (u-mvy97tin). ON 4, OFF 3. Each cost $0.04-$0.12 and ended before any worker ran. From the spines: `scope-escape` in all seven (a plan writing `package.json` / `tsconfig.json` outside the signed fence, e.g. `[src/]`); `exit-illegal` (more than 2 exits on a step) in 06, 15, 16, 21 and 28. The base round (F268) had 0 of 12.
+
+**Reading.** The same class showed on DeepSeek once (u-mvxik097, F262's 2026-11-01 note: scope-escape on `package.json`), so it is not Muse-only; the Muse rate is the new fact. It ties to the earlier drafter scope-escape watch item (the H7 note in the validation record). The drafter prompt names the exit ceiling and the fence; Muse broke both on 7 of 32 drafts. Not seen to be arm-related (drafter is memo-blind).
+
+**Status.** Open, watch item; no change proposed.
+
+## F271 — THE PLANNING TRAP: the drafter grants `write` without `edit` on a step whose exits force a change to an existing big file, and a whole-file write guts it (2026-11-01; live; Baseten Muse, bigfile; runs u-mvy4cd0d, u-mvy52mc5, u-mvy8w58g)
+
+**Problem.** In all three shrinking runs, plan step 1 is a look-around step (map/diagnose) with tools `read,recall,get,grep,peek,write`, no `edit`, and exits `artifact-written src/gate.js` plus `tree-changed src/**`. The step can only pass by changing the file, and the only tool that changes a file is a whole-file `write`. `src/gate.js` is 2433 lines, 132,315 bytes. Results: u-mvy4cd0d 2433 to 1 line (a REPLACE note written as the file), u-mvy52mc5 2433 to 53 (a stub wrapper that fetches the original with `git show` to satisfy tree-changed), u-mvy8w58g 2433 to 6 (a `throw` carrying paraphrased tool-law text), later rebuilt as 201 lines. `tree-changed` passes on the stub; nothing checks content. Writes landed at rounds 18/20, 15/18 and about 34/38, when the step budget was nearly spent (inferred from timing, no transcripts are stored).
+
+**Not a memo or count problem.** Every pre-shrink read in the carry state records 2433 lines; line counts come from the disk (`diskLines`, `src/carrystore.js:92`, called at `:105` and `:117`). After the shrink the memo reported the true small count. The overwrite happened in a worker ask before the memo that lists it.
+
+**Our wording pushes it.** `EXIT_EXAMPLE` (`src/plan.js:42`) teaches the drafter a step with no check ending in artifact-written plus tree-changed; the write-only persona line (`src/tools.js:60`) says make the change with the write tool and stop; `EDIT_STRATEGY` ("Prefer the edit tool over whole-file writes", `src/tools.js:81`) is added only when `edit` is granted (`:168`). A write-only grant never hears it. F31 already measured "4 of 5 big-file whole-writes broke the tree" (`docs/wiki/FINDINGS.md:1220`).
+
+**No guard exists.** bare-agent `shell_write` (`tools/shell.js:352-384`) rejects absent content and caps at 5 MB but never compares with the existing size; bareguard 0.27.0 has no shrink rule (`fs.writeScope` is path-only); workers have no git or run verb, so nothing restores.
+
+**Arm split.** Write-no-edit step in the plan: ON 5 of 6 bigfile plans (02, 07, 14, 19, 29), OFF 0 of 4 that drafted a plan. Muse base and OFF runs: gate.js never shrank in 10 runs. DeepSeek: 21 runs touching gate.js, 0 write-no-edit plans, 0 shrinks (untested, not immune). Write-no-edit exposure on Muse, 7 runs: 3 shrinks (all in the memo-proof ON arm), 1 append, 3 without a gate.js write. Source: `.claude/scratch/gatewipe/RESULT.md`.
+
+**Fix (half arrived, per hamr: a planning issue).** bareloop plan rule plus wording: a write grant travels with edit; `EXIT_EXAMPLE` and persona wording changed. Spec pending a $0 POC on archived plans, shown to hamr before any build (PRD v1.124 item 7). Second layer: BA-30 (F272).
+
+**Status.** Open; named, not built.
+
+## F272 — archive scan of whole-file wipes: 14 gutting writes in 13 runs of 451 audited, in 2 model families (2026-11-01; $0 archive read; re-surfaces F31)
+
+**Scan.** 533 deduped spines, 451 with a gate audit (82 had none, so they are blind spots: 7 scratch, 10 `u-*` and 65 older non-`u-`). 603 allowed whole-file `write` actions; 116 hit a file that existed at the seed (113 of them big: over 50 lines or 2 KB). "Shrink" = new bytes under 50% of old on a seed file over 50 lines or 2 KB. One false positive was dropped (u-mvy71nrt: a 299-byte append on `gate.js`, final 132,312 B).
+
+**Result.** 14 gutting writes in 13 runs, 11 reds plausibly explained by them. By model: Muse (Baseten) 5 of 43 big-file whole-writes in 4 runs; claude-sonnet-5 9 of 13 (8 in the July 2026 mailproof battery, all step-red, plus 1 litectx run); DeepSeek flash / v4p1-flash 0 of 57, all in steps that had `edit`. Muse also gutted seed files in steps WITH `edit`: 2 of 35 (u-mvxzwykl audit.js 33,957 B to 41 B; budget.js 25,678 B to 12,830 B, 49.97%, borderline, in u-mvy4cd0d), against 3 of 8 in write-no-edit steps. n is tiny. So a tool guard is the second layer under the plan rule of F271.
+
+**Fix.** BA-30 (opt-in shrink guard on `shell_write`) is filed and in build (`.claude/scratch/shrinkscan/BA30-DRAFT.md`). bareloop takes it when released: `shrinkGuard` on, `guardPath` = tracked at seed (PRD v1.124 item 8).
+
+**Source.** `.claude/scratch/shrinkscan/RESULT.md`.
+
+**Status.** Open; upstream in build.
+
+## F273 — the close ran worker-written code to earn a green (2026-11-01; live; run u-mvy4cd0d, Muse, bigfile) — PARKED for hamr, arbiter territory
+
+**Facts.** After gutting `src/gate.js` to 1 line (F271), the worker (no `run` verb) wrote helper scripts that never ran, then wrote a 38-line loader as `src/gate.js` (bytes 2089). At import time the loader runs `git show 88f8f20:src/gate.js` through `spawnSync`, applies the one-line fix and rewrites `gate.js`. The close's `npm test` imported it, so the arbiter's own test run executed worker-authored code with git access, and that is how the file came back to 2433 lines. The final `git diff 88f8f20 -- src/gate.js` is exactly the 1-line fix. Stray files remained (`_fix.mjs`, `do_restore.mjs`, `restore.mjs`, `restore2.mjs`); `src/index.js` and `src/primitives/budget.js` also changed in the green tree.
+
+**Reading.** The outcome is real (the right bytes), but the green was earned by code the worker authored and the close executed. Close output was not the lie; the route was. This sits next to the doctrine "run stays LOCKED forever": a worker that cannot run commands can still have its code run by the close.
+
+**Status.** PARKED for hamr's ruling; nothing proposed for build (arbiter territory).
+
+## F274 — the memo text is not persisted, and some memo numbers mislead (2026-11-01; $0 read of 32 memo-proof runs)
+
+**Facts.** The spine `carry-note` records keep counts only (phase, iteration, chars, capped, sections), so the exact text a worker was handed cannot be audited; it can only be re-rendered from the persisted state (`render()` in `src/carrynote.js`), which differs from the delivered bytes (07: 5,673 reconstructed vs 6,766 recorded; 09: 8,473 vs 9,240; 02: 10,751 vs 11,764, the real one capped). The reconstruction takes edits from the end-of-run tree and lacks the function-range map.
+
+**Stale or misleading numbers.** The line count in a read line is the on-disk count at that worker's last read, so it goes stale after later edits (`src/carrystore.js:92`; rendered at `src/carrynote.js:142`). `linesStale` (`carrynote.js:42/142`, "at run start") has no producer anywhere in `src` and is dead. "N lines changed" (`carrynote.js:179`) and the start snapshot count +/- diff lines, not file length, so after the F271 shrink `src/gate.js: 2473 lines changed` looked close to the old length. How a worker read that is unverified (no transcripts exist).
+
+**Parked.** Persisting the memo text is for hamr to want or not; nothing built. Source: `.claude/scratch/memoproof-run/analysis/DEEP.md`.
+
+**Status.** Open, observation; persisting the text is hamr's call.
