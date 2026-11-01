@@ -2913,3 +2913,59 @@ CASE 2: archive of 262 spines under `.claude/scratch`, 9,699 worker rounds, 11 r
 ### Process
 
 Filed 2026-11-01. hamr said "BA-29 go, build it" (relayed to the bare-agent session the same day). bare-agent builds and POCs with broken inputs first (Muse object args; a cut round with a complete call), then bareloop runs its replays on its branch. bareloop consumes by version bump; no local shim.
+
+## BA-30 (bare-agent) — an opt-in shrink guard on `shell_write`: refuse a whole-file write that would gut an existing file, and tell the model why (2026-11-01)
+
+Shape agreed with the bare-agent session. Evidence: `.claude/scratch/shrinkscan/RESULT.md` (untracked scratch) (the scan) and `.claude/scratch/gatewipe/RESULT.md` (the root-cause read of the gate.js wipe).
+
+### The defect
+
+`shell_write` replaces a whole file. When the model must change a large existing file and reaches for `write`, it can put a note or a stub into it. Nothing guards this today: `writeFile` has `maxBytes` and `append` only.
+
+Archive read ($0, `shrinkscan/RESULT.md`): 451 gate-audited runs, 14 gutting whole-file writes in 13 runs, 11 of those runs red. Per model, among whole-file writes to big files that existed at the seed:
+- Muse (`meta-models/muse-spark-open-1026`): 5 of 43 gutted. `src/gate.js` 132,315 B to 143 B / 519 B / 2,221 B; `src/primitives/audit.js` 33,957 B to 41 B; `budget.js` 25,678 B to 12,830 B (49.97%, borderline).
+- claude-sonnet-5 (July 2026 mailproof battery): 9 of 13.
+- DeepSeek flash / v4p1-flash: 0 of 57.
+
+`gatewipe/RESULT.md` traces the Muse gate.js wipes to a deliberate `write` on the whole file: no wrong count, no partial-read rebuild; the plan gave the step `write` and no `edit`, and the exit required the file to change.
+
+bareloop's planner granting write-without-edit is part of the cause and is fixed on bareloop's side. But Muse also gutted files in 2 of 35 steps that HAD `edit` (audit.js above is one), so a tool-level guard is the second layer.
+
+### Ask: `createShellTools({ shrinkGuard })`
+
+Per instance, a sibling of `noFollowSymlinks` and `canRead`. Unset means byte-identical behaviour.
+
+1. `shrinkGuard: true` means `{ minOldBytes: 2048, maxShrinkRatio: 0.5 }`. An object overrides either field, plus `guardPath(absPath) => boolean` (default: guard every existing file). The path passed is the `resolveToolPath`'d absolute path, same as `canRead`. A bad shape throws `ValidationError` at creation.
+2. Order of checks in `writeFile`: `append: true` skips; `content: ''` skips (the BA-4 deliberate empty); a new file skips. Otherwise stat (following `noFollowSymlinks`). If `old >= minOldBytes` and `new < old * maxShrinkRatio` and `guardPath` allows, refuse and do not write.
+3. Bytes trigger it; lines appear only in the message. Lines are counted only when refusing, with a bounded chunked read.
+4. No `replace: true` flag. An escape hatch the model controls is not a guard.
+5. The refusal is a `ToolError` throw, so `maxIdenticalToolErrors` bounds loops. It carries `context: { shrink: true, oldBytes, newBytes, oldLines, newLines }`: numbers only, no path, no content. It is NOT put in `badCalls`, because BA-29 keeps shell throws out of `badCalls` on purpose.
+6. Message: `refusing: this would replace <path> (<oldBytes> bytes, <oldLines> lines) with <newBytes> bytes (<newLines> lines). To change part of a file use shell_edit; to rebuild it in parts use append:true; to really empty it pass content:''.`
+7. `wireGate`'s `errorContext` allow-list gains the shrink context, so the refusal lands in the gate audit row (bareloop reads the audit, not `onToolResult`). Confirmed by bare-agent: `shrink` (boolean) plus oldBytes/newBytes/oldLines/newLines as finite numbers; wrong-typed values dropped, like the existing fields.
+8. `shell_edit` is untouched. Measured at call time; nothing stored or logged.
+
+bareloop side (one line): bareloop turns `shrinkGuard` on with `guardPath` = "tracked at seed", and separately fixes its planner (write grants travel with edit; `EXIT_EXAMPLE` / persona wording), spec pending hamr.
+
+### Acceptance (bare-agent POC on bareloop's archive cases)
+
+- `gate.js` 132,315 B replaced by 2,221 B: refused, file unchanged, context numbers correct.
+- A rubric JSON rewrite with `guardPath` returning false: passes.
+- `content: ''` on a big file: passes.
+- `append: true`: passes.
+- A new file: passes.
+- `shrinkGuard` unset: byte-identical behaviour to today.
+- Bad option shape: `ValidationError` at creation.
+- The refusal row appears in the gate audit with the shrink context and no path or content in it.
+
+### Disconfirming evidence, considered per this file's standing rule
+
+- 82 of the 533 spines had no gate audit, so their writes are unseen; the 451 are not the whole archive.
+- The July claude-sonnet-5 rows have no recorded tools (10 of the 13 big writes are pre-plan era), so the 9 of 13 cannot be split by write-without-edit versus edit.
+- 3 P3 rows are repeated draws of one case, so the Muse count is smaller than it looks. n is tiny (5 of 43).
+- A refusal may just make the model loop to the identical-error limit. Whether this message converts the model to `edit` or `append` is unmeasured; it needs an ON/OFF contrast, not an anecdote.
+- A legitimate big shrink (a deliberate rewrite) is now two calls (`content: ''` then `append`).
+- The scan counts bytes in the audit and diffs; 15 more shrinks were a worker rewriting its own earlier output (mostly rubric JSON), which the default guard would also refuse unless `guardPath` excludes them. bareloop's "tracked at seed" does.
+
+### Process
+
+Filed 2026-11-01. hamr said "BA-30 go, build it" (relayed to the bare-agent session the same day). bare-agent POCs on bareloop's archive cases first (the acceptance list above), then bareloop runs its harness on the branch before review. bareloop consumes by version bump; no local shim.
