@@ -2140,3 +2140,18 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 - **Planned, NOT built (next build):** handoff note folds into carry memo, one block, one switch; `handoffNote: false` meaning is an open point for hamr. Then one real run, then the memo proof battery (prereg first).
 - **Tick (2026-10-31): the fold is BUILT** (`b4e8021`): one block (function line ranges in the memo's files-read lines, dropped first at the cap), one switch (`carryNote`), legacy `handoffNote: false` = memo off for that job, `handoff-note` record no longer written. Real run and proof battery still to do.
 - **Tick (2026-11-01): the switch is removed** (hamr: "keep as permanent on by default, no optional config.json here, this is not something we want to turn off"): the carry memo is always on; `carryNote` (config.json, `runJob`/`runPlan`) is gone, a spec's `handoffNote` is accepted, hashed and ignored. OLD-vs-NEW fold check on p7: no regression seen (F264).
+
+### Bad tool calls and the planning trap: fix half arrived (v1.124 — 2026-11-01)
+
+- **Fix status:** BA-29 released as bare-agent v0.58.0 (`badCalls`, `cutOff`, `checkArgs`, `reasoningTokens`, shell hint fix); BA-30 shrink guard filed and in build. bareloop continues the fix on its NEXT branch, after `fix/carry-red` ships as v0.53.0. Findings: F265 (object-shaped tool args), F266 (cut-offs), F267 (blind audit bytes), F271 (planning trap), F272 (wipe scan).
+- **Next branch contents:**
+  1. Bump bare-agent to `^0.58.0`; check peer ranges in a clean install; grep tests for usage deep-equals.
+  2. The next-attempt note built from `badCalls`/`cutOff` (send JSON as text / write in parts with append when `hasAppend` / decide sooner when reasoning dominates); proven with one real ON/OFF run (F266).
+  3. Turn `checkArgs` on for workers (F265).
+  4. A spine record naming the bad-call kind, and keep the malformed marker on cut rounds (F266).
+  5. The audit records true type and size (F267).
+  6. Plain panel words instead of "interpreter-red" (F265).
+  7. The plan rule: a write grant travels with edit, plus `EXIT_EXAMPLE` / persona wording; spec pending the $0 POC on archived plans, shown to hamr before build (F271).
+  8. Take BA-30 when released: `shrinkGuard` on with `guardPath` = tracked at seed (F272).
+- **PARKED for hamr:** a stuck arg-fault loop routed as a bounded attempt instead of terminal `interpreter-red` (F265); the close executing worker-written code (F273); persisting the memo text, only if hamr wants it (F274).
+- **Memo proof:** a leaning LOSE, confounded by planning (F269, F271); the memo stays always on.
