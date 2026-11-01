@@ -15194,3 +15194,26 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Status.** FAIL; kept off.
 
 2026-10-31 hamr: keep it built, off; parked in PRD v1.122; needs more runs.
+
+## F264 — fold regression check: OLD (handoff note + carry memo) vs NEW (folded memo) on p7, no regression seen (2026-11-01; live; Fireworks deepseek-v4p1-flash, job p7)
+
+**Problem.** The handoff note was folded into the carry memo (`b4e8021`, two blocks and two switches became one block). A fold of two prompt blocks can silently break a job that was green before. Only a live run on a real job answers that.
+
+**Design.** Job p7, Fireworks deepseek-v4p1-flash. OLD engine d7cb479 (handoff note and carry memo separate) against NEW engine d61c0f2 (folded), interleaved, 2 runs per arm. Booked $0.7093 (spine/ledger); `runs.jsonl` untouched. Driver and log: `.claude/scratch/fold-regress/driver.mjs --analyze`, `progress.log`.
+
+**Result.**
+- Greens: OLD 2/2, NEW 2/2. The driver prints "NO REGRESSION SEEN". No casualties.
+- NEW wrote 0 handoff-note records (OLD 8, from 5 and 3 asks); NEW carry-note records 6, OLD 8.
+- OLD r1: $0.1333, 4:54, step turns 24, out 41,059 tokens. OLD r2: $0.1385, 4:23, step turns 27, out 34,982.
+- NEW r1: $0.0725, 1:49, step turns 9, out 11,293. NEW r2: $0.3650, 14:45, step turns 49, out 138,712 (the outlier: 1,062,188 cache-read tokens).
+- Per arm: OLD $0.2719, 9:17; NEW $0.4374, 16:34. The NEW total is driven by r2 alone; NEW r1 was the cheapest and fastest run of the four.
+
+**Caveats.** n=2 per arm is an anecdote. It can only catch a clear break (a run that stops greening); it says nothing about cost or time between the arms, and the NEW r2 spread (3 to 5 times the other NEW run) shows how wide the noise is.
+
+**Setup lesson.** The first launch aborted at $0: the engines were installed with `npm ci --ignore-scripts`, which leaves `better-sqlite3` without its native binding; the litectx known-answer smoke check refused all 4 runs (smoke-red) before any spend. Fixed with `npm rebuild better-sqlite3` in each engine copy. A fresh engine copy needs that step.
+
+**Verdict.** No regression seen from the fold.
+
+**Status.** Closed.
+
+2026-11-01 hamr: carry memo permanent ON, switch removed.
