@@ -2914,6 +2914,10 @@ CASE 2: archive of 262 spines under `.claude/scratch`, 9,699 worker rounds, 11 r
 
 Filed 2026-11-01. hamr said "BA-29 go, build it" (relayed to the bare-agent session the same day). bare-agent builds and POCs with broken inputs first (Muse object args; a cut round with a complete call), then bareloop runs its replays on its branch. bareloop consumes by version bump; no local shim.
 
+### Status
+
+2026-11-01 — **Released** in bare-agent v0.58.0 (PR #77; commits 36f7101 + 9f311ac): `badCalls`, `cutOff`, opt-in `checkArgs` (order checkpoint, policy, checkArgs, execute, kept as built), `usage.reasoningTokens` (number or null), the shell hint fix. bareloop replay 9/9 PASS (`.claude/scratch/ba29-replay/RESULT.md`, untracked scratch). Usage deep-equal risk in bareloop: none (`usageOf`, `src/planrun.js:2636`, copies 4 fields). Consumer pending on the next branch: `docs/product/ITEM33-BUILD.md`, addendum "Bad tool calls and the planning trap", section A.
+
 ## BA-30 (bare-agent) — an opt-in shrink guard on `shell_write`: refuse a whole-file write that would gut an existing file, and tell the model why (2026-11-01)
 
 Shape agreed with the bare-agent session. Evidence: `.claude/scratch/shrinkscan/RESULT.md` (untracked scratch) (the scan) and `.claude/scratch/gatewipe/RESULT.md` (the root-cause read of the gate.js wipe).
@@ -2969,3 +2973,7 @@ bareloop side (one line): bareloop turns `shrinkGuard` on with `guardPath` = "tr
 ### Process
 
 Filed 2026-11-01. hamr said "BA-30 go, build it" (relayed to the bare-agent session the same day). bare-agent POCs on bareloop's archive cases first (the acceptance list above), then bareloop runs its harness on the branch before review. bareloop consumes by version bump; no local shim.
+
+### Status
+
+2026-11-01 — **Built, not released.** On bare-agent `feat/ba30-shrink-guard` (a876cf8; plural fix 4400a5f, "1 byte (1 line)"). bareloop harness PASS (`.claude/scratch/ba30-harness/RESULT.md`, untracked scratch): 14/14 gutting writes refused, 589/589 others passed, 0 false refusals; `guardPath` required (13 would be refused without it). bare-agent rulings: `guardPath` stays lexical (no realpath in the guard; the caller may realpath inside its own predicate); check order kept. bare-agent suite 1807 tests, 0 fail. Release waits for bare-agent's branch-review and hamr's word. bareloop wiring spec: `docs/product/ITEM33-BUILD.md`, addendum "Bad tool calls and the planning trap", section D; findings F275, F276.
