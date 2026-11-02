@@ -644,3 +644,40 @@ function validateExit(s, at, red, { checkNames, fence, insideFence, writeStep, t
     red('exit-illegal', `${at}.exit`, `check-passes on a step with no write-class tool (${WRITE_VERBS.join('|')}) — the check's failure gap comes back to this step's own worker, which cannot edit; attach the check to the step that fixes (the operator's close already verifies the finished run)`);
   }
 }
+
+/**
+ * F271 (B2) — pair a `write` grant with `edit`. A look-around step the drafter gave `write` but not `edit`, whose exits force a
+ * change to an existing big file, can pass only by a whole-file `write` (u-mvy4cd0d: src/gate.js 2433 lines to 1). Code adds the
+ * verb; the agent never asks for it, and it is added only when the SIGNED ceiling (`job.tools`, absent = the full menu) already
+ * offers `edit`, so the agent still cannot widen its own menu. `edit` is judged by the same `writeScope` fence as `write`: no
+ * authority a whole-file write did not have. No signed hash covers a plan, so none moves.
+ *
+ * A rubric step-file step is exempt: every path it declares (`target` plus the `artifact-written`/`json-valid` paths) lies under
+ * `newFileDir` (`output/steps`, the engine-owned always-new-file directory), so there is nothing to edit.
+ *
+ * Pure: never mutates `plan`; returns the SAME reference when nothing changes. `validatePlan` is untouched — the runner applies this
+ * to the validated plan, so `plan-accepted` records the plan as executed.
+ * @param {any} plan a validated plan (`validatePlan(...).plan`)
+ * @param {any} job the validateJob-green plan shape spec (its `tools` is the signed ceiling)
+ * @param {string|null} [newFileDir] the always-new-file directory whose steps are exempt, or null for none
+ * @returns {any} the plan with `edit` appended to each write-without-edit step, or `plan` itself
+ */
+export function pairEditGrant(plan, job, newFileDir = null) {
+  if (!isObj(plan) || !Array.isArray(plan.steps)) return plan;
+  const ceiling = isObj(job) && Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
+  if (!ceiling.includes('edit')) return plan;
+  const dir = typeof newFileDir === 'string' && newFileDir.length > 0 ? `${newFileDir.replace(/\/+$/, '')}/` : null;
+  const inNewDir = (/** @type {any} */ s) => {
+    if (dir === null) return false;
+    const paths = [s.target, ...(Array.isArray(s.exit) ? s.exit : []).filter((/** @type {any} */ e) => e && (e.type === 'artifact-written' || e.type === 'json-valid')).map((/** @type {any} */ e) => e.path)]
+      .filter((/** @type {any} */ x) => typeof x === 'string' && x.length > 0);
+    return paths.length > 0 && paths.every((/** @type {string} */ x) => x.startsWith(dir));
+  };
+  let changed = false;
+  const steps = plan.steps.map((/** @type {any} */ s) => {
+    if (!isObj(s) || !Array.isArray(s.tools) || !s.tools.includes('write') || s.tools.includes('edit') || inNewDir(s)) return s;
+    changed = true;
+    return { ...s, tools: [...s.tools, 'edit'] };
+  });
+  return changed ? { ...plan, steps } : plan;
+}
