@@ -616,14 +616,27 @@ export function createCtxTools(lc, workdir, emit, { onStalePointer = null } = {}
 // cwd and reds at the fence, and the deny reason teaches the retry.
 /** @param {string} p */
 const expandHome = (p) => (p === '~' || p.startsWith('~/')) ? join(homedir(), p.slice(1)) : p;
+/**
+ * F267 — what the audit records for a write/edit payload: its JSON type and its UTF-8 BYTE length. The old
+ * `String(x).length` read an object as "[object Object]" (15) and counted UTF-16 units, so a refused object
+ * write looked like a real 15-byte write. A non-string is measured as the JSON it was sent as.
+ * @param {any} v
+ * @returns {{bytes: number, valueType: string}}
+ */
+function valueSize(v) {
+  const valueType = v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v;
+  if (v === undefined) return { bytes: 0, valueType };
+  const text = typeof v === 'string' ? v : (JSON.stringify(v) ?? '');
+  return { bytes: Buffer.byteLength(text), valueType };
+}
 /** @param {string} name @param {any} args @param {string} [workdir] */
 export const toolAction = (name, args, workdir) => {
-  if (name === 'shell_write') return { type: 'write', path: resolve(expandHome(String(args?.path ?? ''))), args: { bytes: String(args?.content ?? '').length } };
+  if (name === 'shell_write') return { type: 'write', path: resolve(expandHome(String(args?.path ?? ''))), args: valueSize(args?.content) };
   // shell_edit (BA-13) is judged as bareguard's own 'edit' action type — the SAME
   // fs.writeScope fence as write, decided upstream (bareguard FS_TYPES). `bytes` is
   // the replacement's size so the audit can read the edit economy (a 40-byte splice
   // vs an 8KB rewrite is the variable BA-13 exists to move — F18 blindness rule).
-  if (name === 'shell_edit') return { type: 'edit', path: resolve(expandHome(String(args?.path ?? ''))), args: { bytes: String(args?.newText ?? '').length } };
+  if (name === 'shell_edit') return { type: 'edit', path: resolve(expandHome(String(args?.path ?? ''))), args: valueSize(args?.newText) };
   // `tool` rides the action so the AUDIT can tell the read tools apart. Without it every
   // read tool collapses to {type:'read', path} and a whole-file shell_read is
   // indistinguishable from a bounded ctx_get chunk — the ledger cannot see the one

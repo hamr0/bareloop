@@ -44,6 +44,15 @@ test('select and compress verbs translate to read actions the fence judges', () 
   }
 });
 
+test('F267: the write/edit audit records the true value type and UTF-8 byte length — an object is not 15 and a non-ASCII char is not 1', () => {
+  const obj = { a: 1 };
+  assert.deepEqual(toolAction('shell_write', { path: '/w/a', content: obj }).args, { bytes: Buffer.byteLength(JSON.stringify(obj)), valueType: 'object' }, 'an object content reads its serialized size and its type, never "[object Object]" = 15');
+  assert.deepEqual(toolAction('shell_write', { path: '/w/a', content: 'h\u00e9llo' }).args, { bytes: 6, valueType: 'string' }, 'UTF-8 bytes, not UTF-16 units');
+  assert.deepEqual(toolAction('shell_write', { path: '/w/a' }).args, { bytes: 0, valueType: 'undefined' }, 'an absent content is zero bytes of type undefined');
+  assert.deepEqual(toolAction('shell_edit', { path: '/w/a', newText: [1, 2] }).args, { bytes: 5, valueType: 'array' });
+  assert.deepEqual(toolAction('shell_edit', { path: '/w/a', newText: '\u20ac' }).args, { bytes: 3, valueType: 'string' });
+});
+
 test('isolate verbs carry their OWN action types — store writes are never tree writes', () => {
   // The F32 workerWrites instrument counts write|edit actions; a stash judged as
   // 'write' would count as a tree write and corrupt worker-crash routing. Distinct
