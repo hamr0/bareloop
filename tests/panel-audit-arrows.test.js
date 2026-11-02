@@ -83,20 +83,9 @@ test('Audit part rows: ▶ while folded, ▼ once opened, flipping on every clic
   assert.ok(running.innerHTML.startsWith(CLOSED), 'and flips on click');
 });
 
-test('Audit memory and learnings folds: ▶ folded, ▼ open, same placement as the other folds', () => {
-  const document = { getElementById: () => null, createElement: (t) => mk(t) };
-  // eslint-disable-next-line no-new-func
-  const { memoFoldEl } = new Function('document', `
-    function stateDotHTML(){ return "DOT"; }
-    function glyphClass(){ return "green"; }
-    ${['escapeXml', 'auditCaret', 'handedFold', 'memoFoldEl'].map(fnSrc).join('\n')}
-    return { memoFoldEl };
-  `)(document);
-  const fold = memoFoldEl({ text: 'x', chars: 1, capped: false }, 'Try 1', 'm');
-  const btn = fold.find('m-toggle');
-  assert.ok(btn.innerHTML.startsWith(`${CLOSED}Try 1`), btn.innerHTML);
-  btn.click();
-  assert.ok(btn.innerHTML.startsWith(`${OPEN}Try 1`), btn.innerHTML);
-  btn.click();
-  assert.ok(btn.innerHTML.startsWith(CLOSED));
+test('Audit memory and learnings folds are native details/summary like the rounds fold: no hand-drawn caret, no box', () => {
+  const src = fnSrc('handedFold');
+  assert.match(src, /createElement\("details"\)/);
+  assert.match(src, /className = "rounds-fold"/);
+  assert.ok(!/auditCaret|audit-part-toggle|handed-fold/.test(src));
 });

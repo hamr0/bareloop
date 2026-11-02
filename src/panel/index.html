@@ -456,7 +456,7 @@
   .rounds-page-info{margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 
   /* build item C: Audit tab grouped-by-part rows */
-  .audit-part,.handed-fold{border:1px solid var(--border);margin-bottom:6px;background:var(--panel2);}
+  .audit-part{border:1px solid var(--border);margin-bottom:6px;background:var(--panel2);}
   .handed-text{margin:0;padding:8px 10px;background:var(--panel);border:1px solid var(--border);font:12px/1.45 ui-monospace,"Courier New",monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:28em;overflow:auto;}
   .audit-part-toggle{width:100%;text-align:left;display:block;white-space:normal;min-height:44px;padding:8px 10px;}
   .audit-part-toggle::before,.audit-part-toggle::after{content:"";}
@@ -2915,49 +2915,38 @@
     return bits.join(" \u00B7 ");
   }
   // The memory and the learnings are shown WHERE THEY WERE PASSED ON (ITEM33-BUILD addendum 2026-11-02): the server hangs `memo` on each
-  // worker try and `learnings` on the planner part that received them. One closed-by-default fold each, in the Audit's own box look
-  // (the .handed-fold box, .audit-part-toggle button, auditCaret); the text is set with textContent, never innerHTML.
+  // worker try and `learnings` on the planner part that received them. Each is one closed-by-default fold in the SAME light style as
+  // the "try N rounds" fold (details.rounds-fold, its summary caret, its .rf-body); the text is set with textContent, never innerHTML.
   function handedFold(testid, headHtml, bodyEl){
-    var wrap = document.createElement("div");
-    wrap.className = "handed-fold";
+    var wrap = document.createElement("details");
+    wrap.className = "rounds-fold";
     wrap.setAttribute("data-testid", testid);
-    var btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "btn audit-part-toggle";
-    btn.setAttribute("aria-expanded", "false");
-    btn.setAttribute("data-testid", testid + "-toggle");
+    var sum = document.createElement("summary");
+    sum.setAttribute("data-testid", testid + "-toggle");
+    sum.innerHTML = headHtml;
     var body = document.createElement("div");
-    body.className = "audit-part-body";
-    body.hidden = true;
+    body.className = "rf-body";
     body.setAttribute("data-testid", testid + "-body");
     body.appendChild(bodyEl);
-    var paint = function(){ btn.innerHTML = auditCaret(btn.getAttribute("aria-expanded") === "true") + headHtml; };
-    paint();
-    btn.addEventListener("click", function(){
-      var open = btn.getAttribute("aria-expanded") === "true";
-      btn.setAttribute("aria-expanded", open ? "false" : "true");
-      body.hidden = open;
-      paint();
-    });
-    wrap.appendChild(btn);
+    wrap.appendChild(sum);
     wrap.appendChild(body);
     return wrap;
   }
   // the carry memo one worker try was handed: a fold with the exact text, or one plain line when the run predates saving it
-  function memoFoldEl(memo, label, testid){
+  function memoFoldEl(memo, testid){
     if(memo.missing){
       var line = document.createElement("div");
       line.className = "hint";
-      line.style.cssText = "margin:4px 0;overflow-wrap:anywhere;";
+      line.style.cssText = "margin:4px 0 4px 12px;overflow-wrap:anywhere;";
       line.setAttribute("data-testid", testid + "-missing");
-      line.textContent = label + " · Memory this worker got: not saved (older run)";
+      line.textContent = "Memory this worker got: not saved (older run)";
       return line;
     }
     var pre = document.createElement("pre");
     pre.className = "handed-text";
     pre.setAttribute("data-testid", testid + "-text");
     pre.textContent = memo.text;
-    var head = escapeXml(label + " \u00B7 Memory this worker got (" + Number(memo.chars).toLocaleString("en-US") + " chars" + (memo.capped ? ", cut at cap" : "") + ")");
+    var head = escapeXml("Memory this worker got (" + Number(memo.chars).toLocaleString("en-US") + " chars" + (memo.capped ? ", cut at cap" : "") + ")");
     return handedFold(testid, head, pre);
   }
   // the learnings block the planner was handed at the draft or the first replan (hints split by the server's parseHintBlock), or the plain
@@ -3009,14 +2998,14 @@
     var head = stateDotHTML(glyphClass(failed ? "\u2717" : "\u2713"), "learnings", testid + "-state") + " " + escapeXml(title2);
     return handedFold(testid, head, list);
   }
-  // under a part's body: one memory fold per worker try that was handed one, and the learnings the planner part was handed
-  function appendHanded(body, part, idx){
-    var tries = (Array.isArray(part.attempts) ? part.attempts : []).slice();
-    if(part.cutOffTry) tries.push(Object.assign({}, part.cutOffTry, { cutOff: true }));
+  // under a part's body: the memory fold of every try the grid does not place (a part without a grid; the fix loop's cut-off try), and the
+  // learnings the planner part was handed. A grid part's tries carry their own memo fold right under their rounds fold (buildGridBody).
+  function appendHanded(body, part, idx, inGrid){
+    var tries = inGrid ? [] : (Array.isArray(part.attempts) ? part.attempts : []).slice();
+    if(part.cutOffTry && (!inGrid || part.kind === "fix")) tries.push(Object.assign({}, part.cutOffTry, { cutOff: true }));
     tries.forEach(function(a, i){
       if(!a || !a.memo) return;
-      var label = part.kind === "fix" ? "Fix try " + (a.iteration != null ? a.iteration : i) : "Try " + (a.n != null ? a.n : i + 1);
-      body.appendChild(memoFoldEl(a.memo, label + (a.cutOff ? " (cut off)" : ""), "audit-memo-" + idx + "-" + (i + 1)));
+      body.appendChild(memoFoldEl(a.memo, "audit-memo-" + idx + "-" + (i + 1)));
     });
     if(part.learnings || part.learningsError) body.appendChild(learningsFoldEl(part.learnings || null, part.learningsError || "", "audit-learnings-" + idx + "-" + (part.learnings ? part.learnings.phase : "draft")));
   }
@@ -3059,7 +3048,7 @@
     var a = (part.attempts || []).filter(function(x){ return x.n === t.n; })[0] || null;
     var out = {
       n: t.n, glyph: t.cutOff ? "?" : attemptGlyph(t.outcome, boxIsLive), hint: t.thinking || "", noVerdict: t.cutOff ? (t.words || "") : null,
-      known: false, inflight: false, cells: {}, order: [], judged: a && Array.isArray(a.judged) ? a.judged : [], attempt: a || { n: t.n }, calls: a ? (typeof a.rounds === "number" ? a.rounds : null) : (t.cutOff && part.cutOffTry && typeof part.cutOffTry.rounds === "number" ? part.cutOffTry.rounds : null), opening: false
+      known: false, inflight: false, cells: {}, order: [], judged: a && Array.isArray(a.judged) ? a.judged : [], attempt: a || { n: t.n }, memo: a ? a.memo : (t.cutOff && part.cutOffTry ? part.cutOffTry.memo : null), calls: a ? (typeof a.rounds === "number" ? a.rounds : null) : (t.cutOff && part.cutOffTry && typeof part.cutOffTry.rounds === "number" ? part.cutOffTry.rounds : null), opening: false
     };
     if(!t.cutOff && a && Array.isArray(a.checks)){
       out.known = true;
@@ -3075,7 +3064,7 @@
     var noVerdict = typeof a.noVerdict === "string" && a.noVerdict !== "" ? a.noVerdict : null;
     var out = {
       n: a.n, glyph: tryGlyph(a, boxIsLive), hint: a.source === "outer-close" ? "opening close" : (a.thinking || ""), noVerdict: noVerdict,
-      known: Array.isArray(a.stages), judged: [], inflight: (a.outcome === null || a.outcome === undefined) && !!boxIsLive, cells: {}, order: [], attempt: a,
+      known: Array.isArray(a.stages), memo: a.memo, judged: [], inflight: (a.outcome === null || a.outcome === undefined) && !!boxIsLive, cells: {}, order: [], attempt: a,
       calls: typeof a.rounds === "number" ? a.rounds : null, opening: a.source === "outer-close"
     };
     if(out.known){
@@ -3201,12 +3190,12 @@
   // the rounds, folded per try, lazy: each fold fetches its own try's rounds (the per-attempt endpoint) the first time it opens
   function gridRoundsHtml(model){
     return '<div class="sub-label">rounds per try</div><div class="fold-list">' + model.tries.map(function(t){
-      var line = '<div class="try-line" style="margin-top:6px">try ' + t.n + " " + gridGlyph(t.glyph) + "</div>";
+      var line = '<div data-fxtry="' + t.n + '"><div class="try-line" style="margin-top:6px">try ' + t.n + " " + gridGlyph(t.glyph) + "</div>";
       if(t.calls === 0){
-        return line + '<div class="step-rounds-note">' + (t.opening ? "no rounds: the opening close ran before any model call" : "no rounds recorded") + "</div>";
+        return line + '<div class="step-rounds-note">' + (t.opening ? "no rounds: the opening close ran before any model call" : "no rounds recorded") + "</div></div>";
       }
       return line + '<details class="rounds-fold" data-fxrounds="' + t.n + '"><summary>try ' + t.n + " rounds" + (t.calls === null ? "" : " (" + gridPlural(t.calls, "call") + ")") +
-        '</summary><div class="rf-body"><div class="hint">loading&hellip;</div></div></details>';
+        '</summary><div class="rf-body"><div class="hint">loading&hellip;</div></div></details></div>';
     }).join("") + "</div>";
   }
   // a rubric step's try names the file its check read (the server's `attempt.judged` words): one faint line per try that has one
@@ -3269,7 +3258,11 @@
         toggle(tn, st.open[tn] ? false : true, true);
       }
     });
-    Array.prototype.forEach.call(wrap.querySelectorAll("details.rounds-fold"), function(d){
+    model.tries.forEach(function(t){
+      var host = t.memo ? wrap.querySelector('[data-fxtry="' + t.n + '"]') : null;
+      if(host) host.appendChild(memoFoldEl(t.memo, "audit-memo-" + partIndex + "-" + t.n));
+    });
+    Array.prototype.forEach.call(wrap.querySelectorAll("details[data-fxrounds]"), function(d){
       var t = model.tries.filter(function(x){ return x.n === parseInt(d.getAttribute("data-fxrounds"), 10); })[0];
       var built = false;
       d.addEventListener("toggle", function(){
@@ -3678,6 +3671,7 @@
       var built = false;
       var buildBody = function(){
         built = true;
+        var gridBuilt = false;
         var toolsHeader = document.createElement("div");
         toolsHeader.className = "hint";
         toolsHeader.textContent = partLine2Text(part);
@@ -3694,6 +3688,7 @@
           body.appendChild(doorEl);
         } else if((part.kind === "fix" && attempts.length > 0) || (part.kind === "step" && ((Array.isArray(part.tries) && part.tries.length > 0) || attempts.length > 1))){
           // PRD v1.119: a plan step's tries and the fix loop's tries are ONE grid look: checks x tries, an errors list, the rounds folded per try
+          gridBuilt = true;
           buildGridBody(body, idx, part, box.state === "running");
         } else {
           // parts with NO sub-loop (scout, plan, replan, judge, run, or a
@@ -3703,7 +3698,7 @@
           body.appendChild(roundsEl);
           loadRounds(roundsEl, idx, attempts[0] || { n: 1 }, 0);
         }
-        appendHanded(body, part, idx);
+        appendHanded(body, part, idx, gridBuilt);
       };
       headBtn.addEventListener("click", function(){
         var expanded = headBtn.getAttribute("aria-expanded") === "true";

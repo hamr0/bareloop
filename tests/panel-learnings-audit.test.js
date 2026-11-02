@@ -69,29 +69,23 @@ test('the learnings fold counts the hints in the block HANDED at that injection'
   const { r } = realBlock();
   const { learningsFoldEl } = page();
   const fold = learningsFoldEl(record('draft', r), '', 'audit-learnings-3-draft');
-  assert.equal(plain(fold.find('audit-learnings-3-draft-toggle')), `\u25B6learnings Learnings the planner got (draft) · ${r.ids.length} hints`);
+  assert.equal(plain(fold.find('audit-learnings-3-draft-toggle')), `learnings Learnings the planner got (draft) · ${r.ids.length} hints`);
 });
 
-test('the fold is ONE box like the other Audit folds: one toggle button, body hidden until clicked, then every hint at once, no inner toggles', () => {
+test('the fold is the light rounds-fold style: one details, closed until opened, a summary head, then every hint at once, no inner toggles', () => {
   const { r } = realBlock();
   const { learningsFoldEl } = page();
   const fold = learningsFoldEl(record('draft', r), '', 'f');
-  assert.equal(fold.className, 'handed-fold');
+  assert.equal(fold.tag, 'details');
+  assert.equal(fold.className, 'rounds-fold');
   const btn = fold.find('f-toggle');
+  assert.equal(btn.tag, 'summary');
   const wrapBody = fold.find('f-body');
+  assert.equal(wrapBody.className, 'rf-body');
   const list = wrapBody.children[0];
-  assert.equal(btn.getAttribute('aria-expanded'), 'false');
-  assert.equal(wrapBody.hidden, true, 'body hidden by default');
-  assert.ok(!/<details/.test(PAGE.slice(PAGE.indexOf('function handedFold('), PAGE.indexOf('function appendHanded('))), 'no bare <details>');
+  assert.ok(!fold.open, 'closed by default');
   assert.match(PAGE, /stateDotHTML\(glyphClass\(failed \? "\\u2717" : "\\u2713"\), "learnings", testid \+ "-state"\)/);
-  assert.equal(btn.innerHTML.match(/^<span class="audit-caret">\u25B6<\/span>(<span class="step-state" data-testid="f-state"><span class="dot green"><\/span><b class="st-word">learnings<\/b><\/span>) /)?.length, 2, 'dot green + st-word learnings in a step-state span');
-  btn.click();
-  assert.equal(btn.getAttribute('aria-expanded'), 'true');
-  assert.equal(wrapBody.hidden, false, 'click opens the body');
-  assert.ok(plain(btn).startsWith('\u25BClearnings Learnings the planner got'));
-  btn.click();
-  assert.equal(wrapBody.hidden, true);
-  assert.ok(plain(btn).startsWith('\u25B6learnings Learnings the planner got'), 'arrow back to closed');
+  assert.equal(btn.innerHTML.match(/^(<span class="step-state" data-testid="f-state"><span class="dot green"><\/span><b class="st-word">learnings<\/b><\/span>) /)?.length, 2, 'dot green + st-word learnings in a step-state span');
   const hints = list.all().filter((c) => /^audit-learnings-hint-draft-\d+$/.test(c.attrs['data-testid']));
   assert.equal(hints.length, r.ids.length, 'all hints are in the DOM at once');
   assert.ok(!list.all().some((e) => e.tag === 'button' || e.className.includes('audit-part')), 'no inner toggles or boxes');
@@ -175,7 +169,7 @@ test('a learnings file that could not be read shows ONE plain line in a red fold
   const line = 'The learnings file could not be read, so no lessons were given: /h/learnings.json is not readable JSON (parse error) — fix or remove it';
   const fold = learningsFoldEl(null, line, 'e');
   const btn = fold.find('e-toggle');
-  assert.equal(plain(btn), '\u25B6learnings No lessons were given to the planner');
+  assert.equal(plain(btn), 'learnings No lessons were given to the planner');
   assert.deepEqual(btn.innerHTML.match(/<span class="dot (\w+)"><\/span><b class="st-word">(\w+)<\/b>/)?.slice(1), ['red', 'learnings']);
   assert.equal(fold.find('e-error').textContent, line);
 });
@@ -193,18 +187,16 @@ test('hints handed: green dot, the word stays "learnings", and an error beside h
 test('memo fold: closed by default; opened it shows the exact text in a pre via textContent (markup stays literal); header counts chars and says "cut at cap"', () => {
   const { memoFoldEl } = page();
   const text = '== What earlier workers in this run did ==\n<b>not markup</b> & more';
-  const fold = memoFoldEl({ text, chars: text.length, capped: true }, 'Try 2', 'm');
+  const fold = memoFoldEl({ text, chars: text.length, capped: true }, 'm');
   const btn = fold.find('m-toggle');
-  assert.equal(btn.getAttribute('aria-expanded'), 'false');
-  assert.equal(fold.find('m-body').hidden, true);
-  assert.equal(plain(btn), `\u25B6Try 2 · Memory this worker got (${text.length} chars, cut at cap)`);
+  assert.equal(fold.tag, 'details');
+  assert.equal(fold.className, 'rounds-fold');
+  assert.ok(!fold.open, 'closed by default');
+  assert.equal(plain(btn), `Memory this worker got (${text.length} chars, cut at cap)`);
   const pre = fold.find('m-text');
   assert.equal(pre.tag, 'pre');
   assert.equal(pre.textContent, text);
   assert.equal(pre.html, undefined, 'never set through innerHTML');
-  btn.click();
-  assert.equal(fold.find('m-body').hidden, false);
-  assert.ok(plain(btn).startsWith('\u25BCTry 2'));
   const src = fnSrc('memoFoldEl');
   assert.ok(!/memo\.text[^;\n]*innerHTML|innerHTML[^;\n]*memo\.text/.test(src), 'the memo text is never routed through innerHTML');
   assert.match(PAGE, /\.handed-text\{[^}]*white-space:pre-wrap;[^}]*overflow-wrap:anywhere;[^}]*overflow:auto/, 'wraps inside its own box: no horizontal page scroll');
@@ -212,28 +204,29 @@ test('memo fold: closed by default; opened it shows the exact text in a pre via 
 
 test('memo fold: an older run (no text) is one plain line "not saved (older run)", not a fold', () => {
   const { memoFoldEl } = page();
-  const line = memoFoldEl({ missing: true, chars: 2726, capped: false }, 'Try 1', 'm');
+  const line = memoFoldEl({ missing: true, chars: 2726, capped: false }, 'm');
   assert.equal(line.className, 'hint');
-  assert.equal(line.textContent, 'Try 1 · Memory this worker got: not saved (older run)');
+  assert.equal(line.textContent, 'Memory this worker got: not saved (older run)');
   assert.equal(line.all().length, 0);
 });
 
-test('appendHanded: one fold per try that has a memo, in try order, the fix part labelled by iteration, then the learnings; a try without a memo adds nothing', () => {
+test('appendHanded: a part with no grid gets one fold per try that has a memo, in try order; a grid part gets none here (its tries host them), but the fix loop\'s cut-off try and the learnings stay; a try without a memo adds nothing', () => {
   const { appendHanded } = page();
   const body = mk();
   const m = (t) => ({ text: t, chars: t.length, capped: false });
-  appendHanded(body, { kind: 'step', attempts: [{ n: 1, memo: m('a') }, { n: 2, memo: null }, { n: 3, memo: m('c') }] }, 4);
+  appendHanded(body, { kind: 'step', attempts: [{ n: 1, memo: m('a') }, { n: 2, memo: null }, { n: 3, memo: m('c') }] }, 4, false);
   assert.deepEqual(body.children.map((c) => c.attrs['data-testid']), ['audit-memo-4-1', 'audit-memo-4-3']);
-  assert.deepEqual(body.children.map((c) => plain(c.find(`${c.attrs['data-testid']}-toggle`)).split(' · ')[0]), ['\u25B6Try 1', '\u25B6Try 3']);
+  assert.ok(body.children.every((c) => c.className === 'rounds-fold'));
+  assert.deepEqual(body.children.map((c) => plain(c.find(`${c.attrs['data-testid']}-toggle`))), ['Memory this worker got (1 chars)', 'Memory this worker got (1 chars)']);
   const fixBody = mk();
-  appendHanded(fixBody, { kind: 'fix', attempts: [{ n: 1, source: 'outer-close', memo: null }, { n: 2, iteration: 1, memo: m('x') }] }, 9);
-  assert.equal(plain(fixBody.children[0].find('audit-memo-9-2-toggle')).split(' · ')[0], '\u25B6Fix try 1');
+  appendHanded(fixBody, { kind: 'fix', attempts: [{ n: 2, iteration: 1, memo: m('x') }], cutOffTry: { n: 3, memo: m('y') } }, 9, true);
+  assert.deepEqual(fixBody.children.map((c) => c.attrs['data-testid']), ['audit-memo-9-1'], 'only the cut-off try; the attempts are the grid\'s');
   const { r } = realBlock();
   const pb = mk();
-  appendHanded(pb, { kind: 'plan', attempts: [], learnings: record('draft', r) }, 1);
+  appendHanded(pb, { kind: 'plan', attempts: [], learnings: record('draft', r) }, 1, false);
   assert.deepEqual(pb.children.map((c) => c.attrs['data-testid']), ['audit-learnings-1-draft']);
+  assert.equal(pb.children[0].className, 'rounds-fold');
   const none = mk();
-  appendHanded(none, { kind: 'scout', attempts: [] }, 0);
+  appendHanded(none, { kind: 'scout', attempts: [] }, 0, false);
   assert.equal(none.children.length, 0);
 });
-
