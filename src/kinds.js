@@ -541,11 +541,13 @@ export async function seedAtHead(workdir) {
  * @returns {Promise<{stop: string, files: null}|{stop: null, files: string[]}>}
  */
 export async function seedListing(workdir, seedRef) {
-  const r = await git(workdir, ['ls-tree', '-r', '--name-only', seedRef]);
+  // `-z`: NUL-separated, names raw. Without it git C-quotes any name with a non-ASCII byte
+  // (`"caf\303\251.js"`), so a listing entry would never equal the path on disk (F276 gap c).
+  const r = await git(workdir, ['ls-tree', '-r', '-z', '--name-only', seedRef]);
   if (!r.ok) {
     return { stop: `INSTRUMENT: git ls-tree -r ${seedRef} failed in ${workdir}: ${String(r.err).trim()}`, files: null };
   }
-  return { stop: null, files: r.out.split('\n').map((s) => s.trim()).filter(Boolean) };
+  return { stop: null, files: r.out.split('\0').filter(Boolean) };
 }
 
 // ── contract (c): the changed-set primitive ──────────────────────────────────

@@ -13,7 +13,8 @@
 // axis goes blind (F3). The consumer (planrun) wires it at construction.
 
 import { createRequire } from 'node:module';
-import { join, resolve, sep } from 'node:path';
+import { join, resolve, sep, dirname, basename } from 'node:path';
+import { realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 
 const require = createRequire(import.meta.url);
@@ -677,8 +678,53 @@ export const toolAction = (name, args, workdir) => {
  * `noFollowSymlinks` closes the swap-after-vetting window bare-agent documents.
  * @param {{allows: (action: any) => Promise<boolean>}} gate
  * @param {string} workdir
+ * @param {(absPath: string) => boolean|Promise<boolean>} [guardPath] BA-30: true for a path tracked at the seed (`trackedAtSeedGuard`)
  */
-export const gatedShellOptions = (gate, workdir) => ({
+export const gatedShellOptions = (gate, workdir, guardPath) => ({
   noFollowSymlinks: true,
   canRead: (/** @type {string} */ p, /** @type {{tool: string}} */ { tool }) => gate.allows(toolAction(tool, { path: p }, workdir)),
+  // BA-30 (F272): a whole-file write that would gut a file tracked at the seed is refused,
+  // file unchanged. Opt-in per worker; the scout has no write tool and passes no guardPath.
+  ...(guardPath ? { shrinkGuard: { guardPath } } : {}),
 });
+
+/**
+ * The REAL path of `p`, for a path that may not exist yet: realpath the deepest existing
+ * ancestor and append the rest. bare-agent's guard hands its predicate the LEXICAL absolute
+ * path (it stays lexical by its own ruling), so a symlinked parent directory would otherwise
+ * read as "not tracked" and fail the guard open (F276 gap a).
+ * @param {string} p an absolute path
+ * @returns {Promise<string>}
+ */
+export async function realPathOrAncestor(p) {
+  /** @type {string[]} */ const rest = [];
+  let cur = p;
+  for (;;) {
+    try {
+      return join(await realpath(cur), ...rest);
+    } catch (e) {
+      const code = /** @type {NodeJS.ErrnoException} */ (e).code;
+      if (code !== 'ENOENT' && code !== 'ENOTDIR') throw e; // a fault is not "untracked": the guard throws and the write is refused
+      const up = dirname(cur);
+      if (up === cur) return p;
+      rest.unshift(basename(cur));
+      cur = up;
+    }
+  }
+}
+
+/**
+ * BA-30's `guardPath`: true only for a path tracked at the seed. Both sides are compared in
+ * the REAL form: the set is `realpath(workdir)` + each seed-listed name (a tracked path cannot
+ * lie beyond a symlink, git refuses it, so the join is already real), the candidate goes through
+ * `realPathOrAncestor`. Files the worker creates later are not in the set, so the guard is off
+ * for them (a rubric step file's own rewrite is not a gutting).
+ * @param {string} workdir the WORKER tree (panel worktree or hidden-git copy), never the source repo
+ * @param {string[]} files the seed listing (`seedListing().files`, repo-relative)
+ * @returns {Promise<(absPath: string) => Promise<boolean>>}
+ */
+export async function trackedAtSeedGuard(workdir, files) {
+  const root = await realpath(workdir);
+  const tracked = new Set(files.map((f) => join(root, f)));
+  return async (absPath) => tracked.has(await realPathOrAncestor(absPath));
+}

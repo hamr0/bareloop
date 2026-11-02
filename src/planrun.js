@@ -35,7 +35,7 @@ import { createStallWatch, STALL_MS, MAX_STALLS } from './stall.js';
 import { createLadder, STRIKE_LIMIT } from './ladder.js';
 import { createTrend, FIX_STRIKE_LIMIT } from './trend.js';
 import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
-import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, gatedShellOptions, PERSONA_TOOLS, strategyFor } from './tools.js';
+import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, gatedShellOptions, trackedAtSeedGuard, PERSONA_TOOLS, strategyFor } from './tools.js';
 import { anySuppressionWarning } from './authoring.js';
 import { createReadShim, readShimArm, readShimStrategy } from './readshim.js';
 import { createCarryStore } from './carrystore.js';
@@ -2274,6 +2274,24 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     if (stop !== null) return stop;
   }
 
+  // ── BA-30's `guardPath` (F272/F276): "tracked at seed" is HEAD at THIS LEG's start, read from
+  // the WORKER tree (`workdir`, never the source repo) once the work branch is prepared — a
+  // resumed leg therefore counts what earlier legs committed as tracked. It is read for EVERY job,
+  // declared or not (a command or rubric close has no `declaredCtx`). A fault is a stop, never an
+  // unguarded run: a write guard that silently fails open is the failure it exists to prevent.
+  const guardSeed = await seedAtHead(workdir);
+  const guardListing = guardSeed.stop === null ? await seedListing(workdir, guardSeed.seedRef) : null;
+  if (guardSeed.stop !== null || guardListing === null || guardListing.stop !== null) {
+    emit('escalation', {
+      category: 'interpreter-red', decisionReady: true,
+      decision: 'The write guard needs the files tracked at the start of this leg, and they could not be read. Nothing was spent.',
+      options: ['check the repository is a git checkout with at least one commit', 'retry the run', 'abandon the run'],
+      detail: scrub(String(guardSeed.stop ?? guardListing?.stop ?? '')),
+    });
+    return 'interpreter-red';
+  }
+  const shrinkGuardPath = await trackedAtSeedGuard(workdir, guardListing.files);
+
   const lc = new LiteCtx({ root: workdir });
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
   const fencePrefixes = job.writeScope.map((/** @type {string} */ g) => resolve(workdir, globToPrefix(g)));
@@ -2570,7 +2588,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       }
     };
     const grantedNames = new Set(granted.map((v) => /** @type {Record<string, string>} */ (TOOL_BY_VERB)[v]));
-    const shell = createShellTools(gatedShellOptions(gate, workdir)).tools.filter((/** @type {{name: string}} */ t) => grantedNames.has(t.name));
+    const shell = createShellTools(gatedShellOptions(gate, workdir, shrinkGuardPath)).tools.filter((/** @type {{name: string}} */ t) => grantedNames.has(t.name));
     // THE READ SHIM (arm-gated, default OFF): a per-worker delivery ledger over the
     // read tool — cap at READ_SHIM_CAP, pointer only once the CURRENT content has been
     // delivered whole, next-unseen-slice otherwise, diff on a changed re-read. WHICH of
