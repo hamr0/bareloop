@@ -17,12 +17,11 @@ ON3/ON6 still ended on job-line-uncovered. hamr ruled GO on option A (2026-11-02
   for lack of money makes the verdict UNDERPOWERED, never PASS).
 
 ## Definitions
-- guard duplicate: a stage whose kind duplicates a mandatory guard's kind (duplicate-kind red on files-changed or
-  pattern-absent-in-diff for a guard), or a stage carrying a guard's scope/params change (the "guard does not take scope" red).
+- guard duplicate: a stage whose kind duplicates a mandatory guard's kind (a `duplicate-kind` red on a guard's kind).
 - line-2 failure: duplicate-kind on a guard, `job-line-uncovered` for line 2, or a `refused` entry for line 2.
 - Counted over ALL tries of a draft (a red on any try counts), not only the final.
-- Other reds (invalid regex, signing gates / a check not running at the starting point, "no-suppressions does not take
-  scope" is counted ABOVE as a guard duplicate) are recorded but are NOT line-2 failures.
+- Other reds (invalid regex, signing gates / a check not running at the starting point, "the no-suppressions guard does not
+  take scope") are recorded but are NOT line-2 failures (hamr's rule, restated 2026-11-02; corrected here before any draft ran).
 
 ## Pass rule (FROZEN)
 PASS iff ALL of: (1) ON2 duplicate-kind on a guard kind: 0 of 6 drafts; AND (2) ON2 line-2 failures: 0 of 6; AND
