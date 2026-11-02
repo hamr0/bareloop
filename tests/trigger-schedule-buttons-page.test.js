@@ -216,7 +216,7 @@ test('runs list: rlSchedHtml draws Scheduled (N) with the cards; rlTopHtml no lo
   const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const f = new Function('escapeXml', 'rlJumpCardHtml', `${fnSrc('rlSectHtml')}\n${fnSrc('runLabel')}\n${fnSrc('rlRunTagHtml')}\n${fnSrc('rlScheduledCardHtml')}\n${fnSrc('rlTopHtml')}\n${fnSrc('rlSchedHtml')}\nreturn function(m){ return rlTopHtml(m) + rlSchedHtml(m); };`)(esc, (r) => `<j ${r.runid}>`);
   const html = f({ running: [{ runid: 'a' }], needs: [{ runid: 'b' }], scheduled: [{ job: 'x', at: 'today 15:00', in: 'next in 1h', words: 'w', runId: 'r1' }, { job: 'y', at: null, in: null, words: 'v', runId: 'r2' }] });
-  assert.match(html, /Running now \(1\)[\s\S]*Needs you \(1\)[\s\S]*Scheduled \(2\)[\s\S]*rl-sched-x[\s\S]*rl-sched-y/);
+  assert.match(html, /Running now <span class="rl-p">\(<\/span><span class="rl-n">1<\/span>[\s\S]*Needs you <span class="rl-p">\(<\/span><span class="rl-n">1<\/span>[\s\S]*Scheduled <span class="rl-p">\(<\/span><span class="rl-n">2<\/span>[\s\S]*rl-sched-x[\s\S]*rl-sched-y/);
   assert.doesNotMatch(f({ running: [], needs: [], scheduled: [] }), /Scheduled/);
 });
 
@@ -481,7 +481,7 @@ test('Part 4 (v1.106): the schedule header reads `[sign] word schedule · head` 
   const stateDotHTML = new Function('escapeXml', `${fnSrc('stateDotHTML')}\nreturn stateDotHTML;`)(escapeXml);
   const auditCaret = new Function(`${fnSrc('auditCaret')}\nreturn auditCaret;`)();
   const out = head({ title: 'schedule', sign: '✗', word: 'failed', head: 'when a new file arrives in ~/bareloop-inbox/ · from run-1 · 5 tries started nothing' }, true, escapeXml, glyphClass, stateDotHTML, auditCaret);
-  assert.equal(out, '<span class="audit-caret">▼</span><span class="step-state" data-testid="audit-schedule-state"><span class="dot red"></span><b class="st-word">failed</b></span> schedule &middot; when a new file arrives in ~/bareloop-inbox/ · from run-1 · 5 tries started nothing');
+  assert.equal(out, '<span class="audit-caret">▼<\/span><span class="step-state" data-testid="audit-schedule-state"><span class="dot red"><\/span><b class="st-word">failed</b><\/span> schedule &middot; when a new file arrives in ~/bareloop-inbox/ · from run-1 · 5 tries started nothing');
   assert.doesNotMatch(out, /\[|glyph/, 'no hand-typed bracket sign');
   assert.match(m[1], /stateDotHTML\(/, 'same helper the part headers use');
   assert.match(fnSrc('stepStateHTML'), /stateDotHTML\(/, 'part headers use the same helper');

@@ -36,3 +36,20 @@ test('3. field captions elsewhere are 12px bold accent; checkbox/radio labels ke
   assert.match(body('.pv-legacy{'), /color:var\(--text-dim\)/);
   assert.match(body('.radio-row label{display:flex'), /color:var\(--text\)/);
 });
+
+test('4. Runs tab section captions are colour bars with a count pill; tokens in all three blocks; the helper takes the cap', () => {
+  for (const t of ['w', 's', 'j', 'r']) {
+    assert.equal((PAGE.match(new RegExp(`--cap-${t}:#[0-9a-f]{6};`, 'g')) ?? []).length, 3, `--cap-${t} in dark, light-media and light-attr blocks`);
+    assert.match(PAGE, new RegExp(`\\.rl-cap\\.rl-cap-${t}\\{--cap-c:var\\(--cap-${t}\\)`));
+  }
+  const cap = body('.rl-cap{');
+  assert.match(cap, /border-left:5px solid var\(--cap-c\)/); assert.match(cap, /background:var\(--cap-bg\)/); assert.match(cap, /color:var\(--cap-ink\)/);
+  assert.match(body('.rl-cap .rl-n{'), /border-radius:10px/);
+  assert.match(body('.rl-cap .rl-p{'), /font-size:0/);
+  assert.match(PAGE, /\.rl-jobcard::before\{/);
+  assert.match(PAGE, /function rlSectHtml\(label, n, note, cap\)/);
+  assert.match(PAGE, /rlSectHtml\("Scheduled", m\.scheduled\.length, "", "s"\)/);
+  assert.match(PAGE, /rlSectHtml\("Jobs", m\.jobs\.length, .*, "j"\)/);
+  assert.match(PAGE, /label: "Running now", cap: "r"/);
+  assert.match(PAGE, /label: "Needs you", cap: "w"/);
+});
