@@ -32,7 +32,7 @@ function recFor(recs, phase, a) {
 /**
  * Every step part's and fix part's tries (and a cut-off try) gain `memo`: the carry-note record handed to that try, or null.
  * Parts and tries are copied, never mutated. An outer-close try (no model call) never has one.
- * @param {any[]|undefined} parts @param {any[]} records the run's spine records
+ * @param {any[]|null|undefined} parts @param {any[]} records the run's spine records
  */
 export function attachMemos(parts, records) {
   if (!Array.isArray(parts)) return parts;
@@ -71,8 +71,8 @@ export function learningsHanded(records) {
 /**
  * Put the learnings on the parts that received them: the draft block (and the error line) on the drafting part, else the `plan` part;
  * the first-replan block on the first `replan` part. `drafting` is the drafting part or null. Copies, never mutates.
- * @param {any[]|undefined} parts the spine's own parts @param {any|null} drafting @param {ReturnType<typeof learningsHanded>} l
- * @returns {{parts: any[]|undefined, drafting: any|null}}
+ * @param {any[]|null|undefined} parts the spine's own parts @param {any|null} drafting @param {ReturnType<typeof learningsHanded>} l
+ * @returns {{parts: any[]|null|undefined, drafting: any|null}}
  */
 export function attachLearnings(parts, drafting, l) {
   const draftExtra = { ...(l.draft ? { learnings: l.draft } : {}), ...(l.error ? { learningsError: l.error } : {}) };
