@@ -102,7 +102,7 @@ export const DECLARED_GENRES = Object.freeze([TYPES_GENRE.name, TEXT_GENRE]);
  * constrained to the names the genre OWNS, so it can never become an environment
  * channel of its own.
  */
-export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes', 'refused', 'genreEnv', 'calibration']);
+export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes', 'refused', 'guardLines', 'genreEnv', 'calibration']);
 
 /** what a stored calibration set carries, ENUMERATED: the frozen cases and the judge
  * tier that graded them. Both are inside the spec, so `jobSpecHash` covers both — which

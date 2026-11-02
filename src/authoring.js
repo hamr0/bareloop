@@ -1537,7 +1537,7 @@ export function validateDeclaration(declaration, opts = {}) {
 /**
  * P7 rules 1-3 of the job block, at $0, in the gate that can still revise: every `fromLine` is a non-empty, duplicate-free array of real job line numbers (one check may serve several lines);
  * every numbered job line has at least one stage OR a refusal reason in `refused` (a note in `notes` does NOT cover a
- * line); the mandatory guards serve no line and carry no `fromLine`. The SHAPE of `fromLine` / `refused` is checked
+ * line); a mandatory guard carries no `fromLine` (its object stays the genre's own) and names the lines it already covers in the separate `guardLines`. The SHAPE of `fromLine` / `refused` is checked
  * whenever they appear; the coverage half runs only when the person's `jobLines` were handed in.
  * @param {{declaration: any, stages: any[], jobLines: {n: number}[]|null|undefined,
  *   guards: {name: string}[], red: (c: string, p: string, d: string, e?: object) => void}} o
@@ -1554,7 +1554,7 @@ function checkJobLines({ declaration, stages, jobLines, guards, red }) {
     const guard = isNonEmptyString(s.name) && guardNames.has(s.name);
     if (Object.hasOwn(s, 'fromLine')) {
       if (guard) {
-        red('invalid-value', at, `stage "${label}" is a mandatory guard and serves no job line — remove its fromLine`);
+        red('invalid-value', at, `stage "${label}" is a mandatory guard and carries no fromLine — to say it covers a job line, list it in "guardLines" as {"guard": "${label}", "lines": [N]}`);
       } else if (!Array.isArray(s.fromLine) || s.fromLine.length === 0 || !s.fromLine.every((/** @type {any} */ x) => Number.isInteger(x) && x >= 1)) {
         red('invalid-value', at, `stage "${label}" has fromLine ${JSON.stringify(s.fromLine)} — a non-empty array of job line numbers, e.g. [1] or [1, 3]`);
       } else if (new Set(s.fromLine).size !== s.fromLine.length) {
@@ -1567,6 +1567,34 @@ function checkJobLines({ declaration, stages, jobLines, guards, red }) {
         + 'only a mandatory guard carries none');
     }
   });
+  // a mandatory guard says which job lines its always-on check already covers, beside the stage (the guard's own object stays
+  // byte-identical to the genre's): `guardLines: [{guard, lines: [N, ...]}]`. It counts as coverage for those lines, nothing more.
+  if (declaration.guardLines !== undefined) {
+    if (!Array.isArray(declaration.guardLines)) {
+      red('invalid-value', 'guardLines', 'an array of {guard, lines} — which job lines each always-on guard already covers, e.g. [{"guard": "<a mandatory guard name>", "lines": [2]}]');
+    } else {
+      /** @type {Set<string>} */
+      const seenGuards = new Set();
+      declaration.guardLines.forEach((/** @type {any} */ g, /** @type {number} */ j) => {
+        const at = `guardLines[${j}]`;
+        if (!isObj(g) || !isNonEmptyString(g.guard) || !Array.isArray(g.lines) || g.lines.length === 0
+            || !g.lines.every((/** @type {any} */ x) => Number.isInteger(x) && x >= 1)) {
+          red('invalid-value', at, '{guard, lines}: the name of a mandatory guard and a non-empty array of job line numbers, e.g. {"guard": "<a mandatory guard name>", "lines": [2]}');
+        } else if (!guardNames.has(g.guard)) {
+          red('invalid-value', `${at}.guard`, `"${g.guard}" is not a mandatory guard${guardNames.size ? ` — the always-on guards are ${[...guardNames].join(', ')}` : ''}`);
+        } else if (seenGuards.has(g.guard)) {
+          red('invalid-value', `${at}.guard`, `guard "${g.guard}" is listed twice in guardLines — give it one entry with all its lines`);
+        } else if (new Set(g.lines).size !== g.lines.length) {
+          red('invalid-value', `${at}.lines`, `guard "${g.guard}" lists a job line twice in ${JSON.stringify(g.lines)}`);
+        } else if (known !== null && g.lines.some((/** @type {number} */ x) => !known.includes(x))) {
+          red('invalid-value', `${at}.lines`, `guard "${g.guard}" has lines ${JSON.stringify(g.lines)}, but the job has lines ${known.join(', ')} only`);
+        } else {
+          seenGuards.add(g.guard);
+          for (const x of g.lines) served.add(x);
+        }
+      });
+    }
+  }
   /** @type {Set<number>} */
   const refused = new Set();
   if (declaration.refused !== undefined) {
