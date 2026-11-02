@@ -110,7 +110,7 @@ test('removeWorktree: the folder is gone, even with untracked scratch in it; the
   assert.equal(removeWorktree(repo, wt), true);
   assert.equal(existsSync(wt), false);
   assert.equal(git(repo, ['show', 'bareloop-x:a.txt']), 'edited\n', 'the branch stays');
-  assert.doesNotMatch(git(repo, ['worktree', 'list']), /r5/);
+  assert.equal(git(repo, ['worktree', 'list']).split('\n').some((l) => l.startsWith(wt)), false, 'the removed worktree is not listed');
 });
 
 test('hideBareloopDir: node_modules/ is hidden too (any depth) with no node_modules in the tracked .gitignore; each line checked separately', () => {
