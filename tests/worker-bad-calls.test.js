@@ -193,3 +193,16 @@ test('A.3 note: an object sent where a string was declared says send JSON as tex
   assert.match(note, /JSON/);
   assert.match(note, /as text|one string/);
 });
+
+// ── A.6: a stuck arg-fault loop ends as interpreter-red; the escalation carries the structured fault so the panel can say it in words ──
+test('A.6: three identical refused calls end stuck — the escalation carries the structured badCall', async (t) => {
+  const wd = makePatient(t);
+  const same = callReply('shell_write', JSON.stringify({ path: join(wd, 'tests/test_x.mjs'), content: { ok: true } }));
+  const { p } = await provider([textReply(PLAN()), same, same, same, same, same, textReply(PLAN())]);
+  const jv = validateJob(JOB(wd));
+  const { events, emit } = collector();
+  await run(jv, wd, p, emit);
+  const esc = events.find((e) => e.type === 'escalation' && e.category === 'interpreter-red');
+  assert.ok(esc, `an interpreter-red escalation: ${events.map((e) => e.type).join(',')}`);
+  assert.deepEqual(esc.badCall, { kind: 'arg-type', tool: 'shell_write', param: 'content', expected: 'string', got: 'object' });
+});

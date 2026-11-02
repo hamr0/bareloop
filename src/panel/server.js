@@ -551,6 +551,22 @@ function endedBase(summary, death, o) {
   const esc = summary.lastEscalation;
   const cat = typeof esc?.category === 'string' ? esc.category : null;
 
+  // F265: a stuck loop of refused tool arguments (bare-agent `checkArgs`): the engine recorded the fault in structured fields
+  // (`badCall`), so the sentence names what the model did instead of the raw code
+  const refused = esc?.badCall;
+  if (refused && typeof refused === 'object' && typeof refused.param === 'string' && (outcome === 'interpreter-red' || outcome === 'escalated')) {
+    const what = `${refused.param} of ${refused.tool ?? 'a tool'}`;
+    const how = refused.kind === 'arg-missing'
+      ? `leaving out the ${what}`
+      : `sending the ${what} as ${refused.got === 'object' || refused.got === 'array' ? `a JSON ${refused.got}` : `a ${refused.got ?? 'wrong type'}`}${refused.expected ? ` instead of ${/^[aeiou]/.test(refused.expected) ? 'an' : 'a'} ${refused.expected}` : ''}`;
+    return {
+      reason: `The model kept ${how}, and the tool refused it every time, so the step stopped.`,
+      next: CHANGE,
+      line: 'tool call refused',
+      actions: [],
+    };
+  }
+
   // `escalated` is a TERMINAL: its sentence may name the real governor, but it is never
   // resumable. Two governors, never mixed (F198): the STRIKE ladder (the fix loop stopped
   // improving) also files category `cap-halt` — it is the MONEY cap only when the spine

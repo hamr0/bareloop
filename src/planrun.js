@@ -307,7 +307,7 @@ const MONEY_MIN = 0.001;
  */
 const VARIANCE_THRESHOLD = 0.5;
 
-/** @typedef {Error & {category?: string, lib?: string}} CategorizedError */
+/** @typedef {Error & {category?: string, lib?: string, badCall?: {kind: string, tool: string|null, param?: string, expected?: string, got?: string}}} CategorizedError */
 
 /**
  * The materials block: what the run has to spend, as a BALANCE and nothing else.
@@ -3053,6 +3053,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
           : r.error.startsWith('truncated:') ? 'provider-red'
           : 'interpreter-red';
         err.lib = 'bare-agent';
+        // F265: a stuck loop of refused arguments says WHICH fault in structured words (the panel renders them); bare-agent's own fields, never prose
+        const refused = badFacts?.calls.find((c) => c.kind === 'arg-type' || c.kind === 'arg-missing');
+        if (refused && r.error.startsWith('stuck:')) {
+          err.badCall = { kind: refused.kind, tool: refused.tool, param: refused.param, ...(refused.expected ? { expected: refused.expected } : {}), ...(refused.got ? { got: refused.got } : {}) };
+        }
         throw err;
       }
       // F184 — bare-agent 0.43.0 (BA-27) returns a malformed final-turn tool

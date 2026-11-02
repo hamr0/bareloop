@@ -98,6 +98,21 @@ async function startServer(t, opts = {}) {
 // item 1 — the Ended block (code-owned sentences, one owner for card + detail)
 // ---------------------------------------------------------------------------
 
+test('F265: a stuck loop of refused tool arguments is said in plain words naming what the model did, never "(code: interpreter-red)"', () => {
+  const badCall = { kind: 'arg-type', tool: 'shell_write', param: 'content', expected: 'string', got: 'object' };
+  for (const outcome of ['interpreter-red', 'escalated']) {
+    const e = endedFor({ outcome, stopReason: 'worker loop: stuck:shell_write', spentUsd: 1, budgetUsd: 8, lastEscalation: { category: 'interpreter-red', badCall } }, { died: false, lastThing: null }, {});
+    assert.equal(e.reason, 'The model kept sending the content of shell_write as a JSON object instead of a string, and the tool refused it every time, so the step stopped.', outcome);
+    assert.equal(e.next, 'Change the job: press Reuse workflow.');
+    assert.doesNotMatch(e.reason, /interpreter-red/);
+  }
+  const missing = endedFor({ outcome: 'interpreter-red', stopReason: null, spentUsd: 1, budgetUsd: 8, lastEscalation: { category: 'interpreter-red', badCall: { kind: 'arg-missing', tool: 'shell_edit', param: 'newText' } } }, { died: false, lastThing: null }, {});
+  assert.equal(missing.reason, 'The model kept leaving out the newText of shell_edit, and the tool refused it every time, so the step stopped.');
+  // no structured fault: the old generic sentence stays
+  const plain = endedFor({ outcome: 'interpreter-red', stopReason: null, spentUsd: 1, budgetUsd: 8, lastEscalation: { category: 'interpreter-red' } }, { died: false, lastThing: null }, {});
+  assert.equal(plain.reason, 'Stopped before or outside the work (code: interpreter-red).');
+});
+
 test('endedFor: the table — every outcome maps to its fixed reason, next line and buttons', () => {
   const ok = { ok: true };
   const no = { ok: false, why: 'it is still running' };
