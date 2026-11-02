@@ -15348,6 +15348,8 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 
 **Status.** Open, observation; persisting the text is hamr's call.
 
+**2026-11-02 status: built on fix/bad-calls (0bc57d4, 636f4cd, 66e5d31).** The memo text is now persisted (secret-masked) on the carry-note record and shown in Audit under the try that received it. Old runs read "not saved (older run)". Size is up to 12,000 chars per ask. Closed.
+
 ## F275 — a write the tool refuses still counts as a worker write: the strike ladder reads a refused gutting write as "busy" (2026-11-01; source read plus BA-30 harness; arbiter-adjacent, PARKED for hamr)
 
 **Facts.** A write refused by the tool (the BA-30 shrink refusal is the case in hand, but any tool throw after the policy allowed it behaves the same) lands in the gate audit as `phase:"gate"`, `decision:"allow"`, `action.type:"write"`, plus a separate `phase:"record"` row carrying the error. `auditWrites` (`src/planrun.js:2411-2420`) counts exactly `phase==='gate' && decision==='allow' && type write|edit`, so a refused write counts in `workerWrites` and in `writeCount`. `createLadder` (`src/ladder.js:141-146`) reads `writeCount` as "the worker wrote this iteration" to decide the idle strike. `pendingProbe`/`settleWrite` (`src/planrun.js:2469-2482`) already handle it correctly (file hash unchanged, so landed is false).

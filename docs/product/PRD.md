@@ -2170,3 +2170,19 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
   4. Add a paid planted-ticket injection test WITH a write tool granted during the MCP POCs. A model that obeys the planted ticket is a finding for hamr, not a reason to restrict tools.
 - **Working notes:** `.claude/scratch/mcp-tickets/FWD-ANSWERS.md` and fwd's `docs/wiki/bareloop-exchange.md` (in `../fwdloop`).
 - **Next:** MCP + tickets is the next branch after `fix/bad-calls` ships (v0.54.0). The spec goes to hamr before any build.
+
+### Audit memo, MCP + tickets spec ruled (v1.126 — 2026-11-02)
+
+- **Audit shows the memo and learnings where they were passed — built on `fix/bad-calls`, F274 closed** (spec and status: the 2026-11-02 "Audit shows memo and learnings" addendum in `docs/product/ITEM33-BUILD.md`). hamr's click-through and phone width pending.
+- **hamr's MCP + tickets spec rulings (2026-11-02):**
+  1. One branch for all of it.
+  2. Ticket jobs for deterministic repo jobs AND rubric jobs.
+  3. Schedule exactly like fwd: on the card at job start, off until the first green, then on; a rubric ticket schedule arms at the honoured Accept.
+  4. The planner proposes `ticketFilter`, the person signs it.
+  5. No export for a job with `mcp`.
+  6. A secret in a ticket is masked, never refused.
+  7. Skipped is grey.
+  8. One Result grid for tickets from MCP or barebrowse.
+  9. `ticketWatch` kept as fwd built it.
+  10. PR verification checks out the PR head into the worktree in this branch; the run never pushes.
+- **Pointer:** the build spec is the "MCP + tickets (fwdloop exchange)" addendum in `docs/product/ITEM33-BUILD.md`. Next: branch `feat/mcp-tickets`, cut after `fix/bad-calls` ships as v0.54.0. The spec was shown to hamr and ruled.
