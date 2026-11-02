@@ -2765,7 +2765,7 @@ Report-only, counts and a reason, never text, no cost fields, not rounds (spend 
 
 #### `carry-note` — a carry note handed to a worker ask (`src/carrystore.js`, `src/planrun.js`)
 
-One report-only spine record per carry note given: `{type:'carry-note', phase, iteration, chars, capped, sections}`. `phase` is `step:<id>` or `fix`; `chars` is the note's length (at most 12,000); `capped` is true when the cap cut anything; `sections` is `{reads, searches, edits, earlier, failures}`, the COUNT of entries shown in each part, never a name or any text. Written right before the ask runs, only for an ask that receives a note; no cost fields, no verdict. Absent entirely when `carryNote` is `false` in `config.json`. The prose rules are under "Carry note".
+One report-only spine record per carry note given: `{type:'carry-note', phase, iteration, chars, capped, sections}`. `phase` is `step:<id>` or `fix`; `chars` is the note's length (at most 12,000); `capped` is true when the cap cut anything; `sections` is `{reads, searches, edits, earlier, failures}`, the COUNT of entries shown in each part, never a name or any text. Written right before the ask runs, only for an ask that receives a note; no cost fields, no verdict. Absent only for an ask that has no note to give; there is no switch (the carry memo is always on). The prose rules are under "Carry note".
 
 ### `replayRun(spineEvents, auditEvents?, { runId? })` / `formatReplay(summary)` / `summarizeForAllLine(summary)` / `formatAllLines(entries)` — `src/replay.js`
 

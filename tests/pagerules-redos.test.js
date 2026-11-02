@@ -1,6 +1,6 @@
 // ReDoS guard (/branch-review at 383fea3): pageDecimal's "number before a sign" read and the comma-decimal page check were quadratic on a long
 // run of digits / digit groups, and drafting runs on one event loop. Each test drives applyPageRules with one hostile line; the bound is well
-// above the fixed time even on a loaded machine and well below the old time (40,000 digits ~2 s, 40,000 groups several seconds). All $0.
+// above the fixed time even on a loaded machine and well below the old time (measured on the pre-fix reader: 80,000 digits or marks 4+ s, 40,000 groups 2.7+ s; the fixed reader takes under 150 ms on all three). The digit and mark lines are 80,000 long so the old time keeps a wide margin over the bound even on a faster machine. All $0.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,13 +15,13 @@ const timed = (/** @type {string} */ text, /** @type {any} */ f) => {
   return { ms: performance.now() - t0, r };
 };
 
-test('redos: a 40,000-digit run before a sign is read in linear time (pageDecimal, number before)', () => {
-  const { ms } = timed('Preis ' + '1'.repeat(40000) + 'x€', fact());
+test('redos: an 80,000-digit run before a sign is read in linear time (pageDecimal, number before)', () => {
+  const { ms } = timed('Preis ' + '1'.repeat(80000) + 'x€', fact());
   assert.ok(ms < BOUND_MS, `took ${Math.round(ms)} ms`);
 });
 
-test('redos: a 40,000-mark run inside the number after a sign is read in linear time (pageDecimal, trailing marks)', () => {
-  const { ms } = timed('Preis €1' + '.'.repeat(40000) + '1', fact());
+test('redos: an 80,000-mark run inside the number after a sign is read in linear time (pageDecimal, trailing marks)', () => {
+  const { ms } = timed('Preis €1' + '.'.repeat(80000) + '1', fact());
   assert.ok(ms < BOUND_MS, `took ${Math.round(ms)} ms`);
 });
 
