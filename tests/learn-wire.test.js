@@ -295,19 +295,20 @@ test('the Audit detail carries exactly what the spine recorded the planner was h
   const rec = r.events.find((e) => e.type === 'learnings');
   assert.ok(rec);
   const detail = getRunDetail(/** @type {string} */ (r.runid), { home });
-  assert.deepEqual(detail.learnings, [{ phase: 'draft', text: rec.text, chars: rec.text.length, ids: rec.ids, hints: parseHintBlock(rec.text) }]);
-  assert.equal(detail.learnings[0].hints.length, rec.ids.length, 'the hint fields number what the planner was handed');
+  const host = detail.parts.filter((p) => p.learnings);
+  assert.equal(host.length, 1, 'the block rides on exactly one part: the one the planner was handed it at');
+  assert.ok(['drafting', 'plan'].includes(host[0].kind));
+  assert.deepEqual(host[0].learnings, { phase: 'draft', text: rec.text, chars: rec.text.length, ids: rec.ids, hints: parseHintBlock(rec.text) });
+  assert.equal(host[0].learnings.hints.length, rec.ids.length, 'the hint fields number what the planner was handed');
   // a run that was handed nothing shows nothing
   updateConfig({ learningHints: false }, { home });
   const r3 = await runOnce(t, home);
-  assert.deepEqual(getRunDetail(/** @type {string} */ (r3.runid), { home }).learnings, []);
+  assert.deepEqual(getRunDetail(/** @type {string} */ (r3.runid), { home }).parts.filter((p) => p.learnings), []);
   const html = readFileSync(join(SRC, 'panel', 'index.html'), 'utf8');
-  const block = html.slice(html.indexOf('id="audit-learnings"'), html.indexOf('id="audit-groups"'));
-  assert.match(html.slice(html.indexOf('function renderAuditLearnings(')), /Read-only\. /);
-  // the ONE <button> is the section's own fold header (the same box as the other Audit sections); nothing else is clickable or editable
-  assert.equal((block.match(/<button/g) ?? []).length, 1, 'exactly one button: the section fold');
-  assert.match(block, /<button type="button" id="audit-learnings-summary" class="btn audit-part-toggle"/);
-  assert.doesNotMatch(block, /<input|<textarea|contenteditable/, 'no edit, no Reject, no per-hint button');
+  // the page shows it as a fold under the part (learningsFoldEl); nothing editable in it, no Reject, no per-hint button
+  const fold = html.slice(html.indexOf('function learningsFoldEl('), html.indexOf('function appendHanded('));
+  assert.match(fold, /Read-only\. /);
+  assert.doesNotMatch(fold, /<input|<textarea|contenteditable|createElement\("(button|input|textarea)"\)/, 'no edit, no Reject, no per-hint button');
 });
 
 // ── the Accept door releases a held rubric run ───────────────────────────────────────────────────
@@ -378,8 +379,10 @@ test('a corrupt ledger file: the planner gets nothing, the run goes on green, th
   assert.match(rec[0].hintsError, /is not readable JSON/);
   assert.ok(!rec[0].hintsError.includes('\n'));
   const detail = getRunDetail(/** @type {string} */ (r.runid), { home });
-  assert.deepEqual(detail.learnings, []);
-  assert.equal(detail.learningsError, hintsErrorLine(rec[0].hintsError));
+  assert.deepEqual(detail.parts.filter((p) => p.learnings), []);
+  const hostErr = detail.parts.filter((p) => p.learningsError);
+  assert.equal(hostErr.length, 1);
+  assert.equal(hostErr[0].learningsError, hintsErrorLine(rec[0].hintsError));
 });
 
 test('hintsErrorLine writes the home folder as ~ and leaves other paths alone', async () => {

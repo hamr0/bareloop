@@ -53,6 +53,7 @@ function groupsPage(boxes) {
     function buildGridBody(){}
     function partLine2Text(){ return ""; }
     function applyAuditFilter(){}
+    function appendHanded(){}
     ${['escapeXml', 'auditCaret', 'renderAuditGroups'].map(fnSrc).join('\n')}
     return renderAuditGroups;
   `)(document);
@@ -82,25 +83,20 @@ test('Audit part rows: ▶ while folded, ▼ once opened, flipping on every clic
   assert.ok(running.innerHTML.startsWith(CLOSED), 'and flips on click');
 });
 
-test('Audit learnings button: ▶ folded, ▼ open, same placement', () => {
-  const els = { 'audit-learnings': mk(), 'audit-learnings-list': mk(), 'audit-learnings-summary': mk('button') };
-  els['audit-learnings-summary'].attrs['aria-expanded'] = 'false';
-  els['audit-learnings-list'].hidden = true;
-  const document = { getElementById: (id) => els[id] ?? null, createElement: (t) => mk(t) };
+test('Audit memory and learnings folds: ▶ folded, ▼ open, same placement as the other folds', () => {
+  const document = { getElementById: () => null, createElement: (t) => mk(t) };
   // eslint-disable-next-line no-new-func
-  const render = new Function('document', `
+  const { memoFoldEl } = new Function('document', `
     function stateDotHTML(){ return "DOT"; }
     function glyphClass(){ return "green"; }
-    function learnRow(){}
-    function learnHintLabel(){ return "x"; }
-    ${['escapeXml', 'auditCaret', 'renderAuditLearnings'].map(fnSrc).join('\n')}
-    return renderAuditLearnings;
+    ${['escapeXml', 'auditCaret', 'handedFold', 'memoFoldEl'].map(fnSrc).join('\n')}
+    return { memoFoldEl };
   `)(document);
-  render({ learnings: [{ phase: 'draft', chars: 10, ids: ['a'], hints: [{ n: 1 }] }] });
-  const btn = els['audit-learnings-summary'];
-  assert.ok(btn.innerHTML.startsWith(`${CLOSED}DOT What the planner was told`), btn.innerHTML);
+  const fold = memoFoldEl({ text: 'x', chars: 1, capped: false }, 'Try 1', 'm');
+  const btn = fold.find('m-toggle');
+  assert.ok(btn.innerHTML.startsWith(`${CLOSED}Try 1`), btn.innerHTML);
   btn.click();
-  assert.ok(btn.innerHTML.startsWith(`${OPEN}DOT What the planner was told`), btn.innerHTML);
+  assert.ok(btn.innerHTML.startsWith(`${OPEN}Try 1`), btn.innerHTML);
   btn.click();
   assert.ok(btn.innerHTML.startsWith(CLOSED));
 });
