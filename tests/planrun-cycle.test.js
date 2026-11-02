@@ -6,12 +6,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { runPlan } from '../src/planrun.js';
 import { EXIT_EXAMPLE } from '../src/plan.js';
 import { validateJob } from '../src/job.js';
 import { StallError, MAX_STALLS } from '../src/stall.js';
-import { scriptedProvider, scriptedNativeFactory } from './helpers.js';
+import { scriptedProvider, scriptedNativeFactory, patientGitEnv } from './helpers.js';
 import { scanSecrets } from '../src/validate.js';
 import { hashCloseScriptBytes } from '../src/close-integrity.js';
 import { tcall, makePatient, JOB, PLAN, collector, go, fakeClock, stepIterations } from './planrun-fixtures.js';
@@ -106,6 +107,10 @@ test('prompt contract (v1.12 §5): the worker sees the repo root and its action 
     { toolCalls: [tcall('t1', 'shell_write', { path: join(wd, 'tests', 'test_x.mjs'), content: 'ok\n' })] },
     { text: 'done' },
   ]);
+  // this fixture writes close.mjs/check.mjs into the workdir after its start commit, so the (always-on) memo would list them as run edits:
+  // commit them first, so the memo has nothing to say and this test pins the BASE prompt contract (the memo has its own tests, tests/carry-*.test.js)
+  execFileSync('git', ['add', '-A'], { cwd: wd, env: patientGitEnv() });
+  execFileSync('git', ['commit', '-q', '-m', 'close scripts'], { cwd: wd, env: patientGitEnv() });
   await go(wd, provider);
   const stepPrompts = provider.calls.slice(2); // after scout + plan
   assert.ok(stepPrompts.length >= 1);

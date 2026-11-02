@@ -5,6 +5,25 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [0.53.0] - 2026-11-02
+
+### Added
+
+- **EXPERIMENTAL, default off: a first-read map (`readMap`, docs/logs/MAP-PREREG.md).** With the signed spec field `readMap: true`, the first `shell_read` of a 200+ line non-test file in an ask returns a map of its named parts (`symbol start-end`, openable with `ctx_get`) instead of file bytes; the second read of that path is today's read, and the file is never marked delivered by the map. No `ctx_get` in the step's grant, no index or no named chunk: today's read plus a report-only `read-map-skip` record. One report-only `read-map` spine record per map. Absent = off and byte-identical; the switch enters the signed hash only when present. Not proven: the pre-registered battery decides. Tested 2026-10-31: FAIL, stays off (F263).
+
+### Changed
+
+- **The carry memo is always on: no switch (hamr 2026-11-01).** The `carryNote` key in `config.json` is retired (ignored on read, dropped on any config write), a job spec's `handoffNote` is still accepted and hashed (old signed specs verify) but has no effect, and `runJob`/`runPlan` no longer take a `carryNote` option. A live OLD-vs-NEW check of the fold on one job found no regression (F264).
+- **The handoff note is folded into the carry memo.** One block (the memo's files-read lines now carry the function line ranges, dropped first at the cap) (the switch this fold left behind, `carryNote`, was removed the next day: see above); a job spec's `handoffNote` is legacy; the `handoff-note` spine record is no longer written (old spines replay unchanged).
+
+- **Seed note ON by default, part of the carry-over memory (`seedNote`, F262, docs/logs/SEEDGAP-PREREG.md).** The planner's first draft (its own block) and, through the carry memo's "Earlier failures (folded):" section labelled `at start`, every step and fix worker are told, read-only, what the job's own `count-not-worse` check said on the untouched tree ("At start, the job's own check said:" plus that stage's text, secret-masked). Absent = on; `seedNote: false` turns it off and is byte-identical to before; the switch enters the signed hash only when present, so old signed jobs get it with no re-sign. Result: on the big-file job 3 of 3 ON runs wrote to the culprit file vs 1 of 3 OFF (n=3, one job, one patient; carry note on in all six). The battery tested planner + first worker of step 1; the shipped delivery to workers is the memo (every worker; seen live once, run u-mvwok8nk, all 4 memos carried it).
+
+- **The carry note is bigger and says more about failures (F261).** Its cap rises from 3,000 to 12,000 characters (7 of 8 notes in a live run were capped). Each try line now says how the try ended and what its check said ("Ran out of calls (24 of 24). Its check failed."; "Check not run." when no check ran). A new "Earlier failures (folded):" section, after "Earlier tries (folded):", carries each failed check's whole text (secrets masked, kept in `state.json` so a resume has it), folded by the learnings rule with the newest member shown; the last try's failure is left out only when that try failed (its retry prompt already carries it); a failure from a try that was later passed stays. Over the cap the order is files, searches, earlier tries, earlier failures (oldest group first), then diff hunks. The `carry-note` spine record's `sections` gains a `failures` count.
+
+### Fixed
+
+- **The carry note no longer says an earlier try's check passed when it failed or never ran.** A try's outcome was guessed from whether the NEXT prompt carried the retry marker, so a step's last red try followed by a replan or a new step (no marker) read "Its check passed." The engine now hands the store the check result it already knows (green, red, or unknown on an instrument fault) as each try is judged; a try with no result says "No check result was recorded for it." Note shape and the OFF path are unchanged.
+
 ## [0.52.0] - 2026-10-30
 
 ### Added

@@ -38,8 +38,8 @@ import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, gatedShellOptions, PERSONA_TOOLS, strategyFor } from './tools.js';
 import { anySuppressionWarning } from './authoring.js';
 import { createReadShim, readShimArm, readShimStrategy } from './readshim.js';
-import { createHandoffStore, trackReads } from './handoff.js';
 import { createCarryStore } from './carrystore.js';
+import { buildSeedNote } from './seednote.js';
 import { globToPrefix, redactSecrets, SECRET_PATTERNS } from './validate.js';
 import { startAttemptDiff } from './attemptdiff.js';
 import { validateBridge, loadGate, newestEligibleVersion, reuseEligibility, quarantinesCredit, QUARANTINED_CODE } from './bridges.js';
@@ -352,6 +352,12 @@ function hintsBlock(text) {
   return `\n${text}\n`;
 }
 
+/** The seed note (src/seednote.js), verbatim, in the planner's first-draft prompt; absent or empty renders '' (byte-identical to the prompt without it). */
+function seedNoteBlock(text) {
+  if (typeof text !== 'string' || !text.trim()) return '';
+  return `\n${text}\n`;
+}
+
 /**
  * MODULE 8 — the signer's words, when this leg is a RERUN taken at a previous run's
  * review door (PRD v1.71 §3.4: *"redo/rerun comes with new authoring"*).
@@ -648,8 +654,9 @@ export function boundedNote(bounded, rounds) {
  *   byte-identically to the pre-shim prompt.
  * @param {string|null} [hints] the cross-run learnings block (src/learn.js `renderHints`), verbatim; null/empty
  *   renders byte-identically to the prompt without it. Only ever passed for the draft and the first replan.
+ * @param {string|null} [seedNote] the seed note (src/seednote.js), verbatim, after the hints; null/empty renders byte-identically to the prompt without it. First draft only.
  */
-export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null, checkFacts = {}, doorNote = null, readShim = false, hints = null) {
+export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes, materials, startingDraft = null, checkFacts = {}, doorNote = null, readShim = false, hints = null, seedNote = null) {
   const scopeMenu = Array.isArray(scopes) && scopes.length ? scopes : legalScopes(job.writeScope ?? []);
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
   // The shape-lottery laws, stated where the check menu is offered (the mailbox
@@ -740,7 +747,7 @@ ${scopeMenu.map((s) => `  ${JSON.stringify(s)}`).join('\n')}
 
 Goal:
 ${job.goal}
-${doorNoteBlock(doorNote)}${materialsBlock(materials)}${hintsBlock(hints)}
+${doorNoteBlock(doorNote)}${materialsBlock(materials)}${hintsBlock(hints)}${seedNoteBlock(seedNote)}
 Repository survey (from a read-only scout):
 ${scoutBlob || '(no scout notes)'}`;
   let p = doc;
@@ -1003,15 +1010,12 @@ ${scoutBlob || '(no scout notes)'}`;
  *   run start from the ledger as it stood). Handed to the PLANNER only: the first draft and the FIRST replan. No worker ever
  *   receives it, and a later replan gets nothing. Each injection is recorded on the spine as a `learnings` record (the exact
  *   text) so the Audit can show it and the byte check can compare it with a fresh render. `null` = no hints (the default).
- * @param {boolean} [opts.carryNote=false] THE CARRY NOTE (src/carrynote.js): the step/fix worker is handed a facts-only note of what earlier
- *   workers of this run looked at, searched and changed, after the handoff note. The caller reads the switch once; `false` builds no store
- *   and leaves the worker prompt byte-identical. One `carry-note` spine record (counts only) per note handed.
  * @returns {Promise<string>} 'green' | 'already-green' | 'escalated' | 'plan-red' |
  *   'check-red' | 'close-red' | 'close-unsupported' | 'recipe-stale' | 'pricing-red' |
  *   'branch-red' | 'cap-halt' | 'wall-halt' | 'stopped' | 'provider-red' | 'interpreter-red' |
  *   'step-stalled' | 'hitl-pause' | 'hitl-decision-red' | `step-red:<id>`
  */
-export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, rates = null, judgeRates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, learnHints = null, carryNote = false }) {
+export async function runPlan(job, { workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, rates = null, judgeRates = null, emit, remainingUsd, isUnpriced = () => false, spendComplete = () => true, capRuns = 3, strikeLimit = STRIKE_LIMIT, closeTimeoutMs, closeDir = null, maxStepRounds = 40, layerRoot = false, readShim = false, scout = true, scoutRounds = SCOUT_ROUNDS, bridge = null, now, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, priorSpentUsd = 0, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, learnHints = null }) {
   // MEMORY-CACHE: what the read shim (src/readshim.js) saved THIS run, summed across
   // every mkWorker's own shim instance (scout, drafter, each step's worker, the fix
   // worker) — one accumulator closed over by all of them, because the shim's ledger
@@ -1028,13 +1032,17 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   // would be wrong and would look fine). Only the guard runs here; the flag itself
   // is still threaded onward as written.
   readShimArm(readShim);
-  // THE HANDOFF NOTE (src/handoff.js): the paths earlier asks of THIS run read. In memory only, so a resumed leg starts empty.
-  // The switch is the signed spec's `handoffNote` (absent = on, only `false` turns it off).
-  const handoffOn = job.handoffNote !== false;
-  const handoff = createHandoffStore({ workdir });
-  // THE CARRY NOTE (src/carrynote.js, src/carrystore.js): facts the earlier asks of THIS run produced, handed after the handoff note.
-  // The caller reads the one switch (`carryNote` in config.json) once; off builds no store, writes no state, emits nothing.
-  const carry = carryNote === true ? createCarryStore({ workdir, emit, strikeLimit, resume: resumeBranch !== null && resumeBranch !== undefined }) : null;
+  // THE SEED NOTE (src/seednote.js): the signed spec's `seedNote`; absent = ON, only `false` turns it off (like the legacy `handoffNote`).
+  const seedNoteOn = job.seedNote !== false;
+  // THE FIRST-READ MAP (src/readshim.js, EXPERIMENTAL): the signed spec's `readMap`; absent = OFF, only `true` turns it on. Needs the read shim on and `ctx_get` in the worker's grant.
+  const readMapOn = job.readMap === true;
+  if (readMapOn && !readShimArm(readShim).on) emit('read-map-skip', { reason: 'shim-off' });
+  /** @type {{ text: string, body: string, stages: string[] }|null} built once, after the preflight loop */
+  let seedNote = null;
+  // THE CARRY NOTE (src/carrynote.js, src/carrystore.js): facts the earlier asks of THIS run produced, files read with their function
+  // line ranges included (the old separate handoff note is folded in). ALWAYS ON, no switch (hamr 2026-11-01); a legacy spec's
+  // `handoffNote` and the retired `carryNote` config key have no effect. One `carry-note` spine record (counts only) per note handed.
+  const carry = createCarryStore({ workdir, emit, strikeLimit, resume: resumeBranch !== null && resumeBranch !== undefined });
   // The scout switch's guard, same class and same door: a mis-typed value
   // coerced by truthiness would run the scout under an "off" label (or skip it
   // under an "on" one) and no reading of the results afterwards could recover
@@ -2163,6 +2171,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * is still the goal the plan exists to flip).
    * @type {string[]} */
   const seedRed = [];
+  // THE SEED NOTE (experimental, default off): the red-at-seed verdicts, with their stage's declared kind, for src/seednote.js.
+  // The kind is read off the signed close's own stage (a command close has none), never matched on a stage name.
+  /** @type {{stage: string|null|undefined, kind: string|null|undefined, gap: string|null|undefined}[]} */
+  const seedReds = [];
   emit('check-menu', {
     offered: menu.map((m) => m.name),
     ...(menu.length < stagedClose.length
@@ -2173,6 +2185,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const v = await runCloseStages(m.run);
     if (v.verdict === 'needs_revision') {
       seedRed.push(m.name);
+      if (seedNoteOn) seedReds.push({ stage: v.stage, kind: stagedClose.find((/** @type {any} */ s2) => s2?.name === v.stage)?.kind, gap: v.gap });
       // …and the preflight grade is a READING, for the same reason the precheck one
       // above is: it is the seed the run's work is measured against. The precheck
       // only ever reds at the close's FIRST failing stage (first-red-wins), so on
@@ -2197,6 +2210,10 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       return 'check-red';
     }
   }
+
+  if (seedNoteOn) seedNote = buildSeedNote(seedReds, scrub);
+  // every step/fix worker gets it through the carry memo (earlier failures, `at start`); the planner has its own block
+  if (seedNote) carry?.setStartFailure(seedNote.body);
 
   // ── 0c, COLD. The seam and both halves of its placement ruling are stated
   // above, where a RESUME reaches it; this is where a run that is NOT resuming
@@ -2537,6 +2554,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         else memoryCacheCounts.capped++;
         memoryCacheCounts.bytesWithheld += bytes;
       },
+      // The first-read map (experimental, off unless the spec says `readMap: true`): this worker's index, and whether it holds ctx_get.
+      readMap: readMapOn ? { root: workdir, hasGet: grantedNames.has(TOOL_BY_VERB.get), getNode: (/** @type {string} */ rel) => lc.getNode(rel), refresh: () => lc.index({ yield: true }), emit: emitCtx } : null,
     });
     const rdTool = shell.find((/** @type {{name: string}} */ t) => t.name === TOOL_BY_VERB.read);
     // F48: on native, bound shell_read below the CLI's tool-result display cap and hand back a
@@ -2579,34 +2598,17 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // sampler all live here) for its full duration: measured 4.4s at 4.5% liveness on a
     // 155-file force pass. With yield:true the worst single block measured 189–252ms (n=4),
     // below anything a second/minute-scale timer can perceive. Store output is byte-identical.
-    if (ctx.length) await lc.index({ yield: true });
+    // …and with the first-read map on the index is built at run start too, so the map never waits on a ctx tool being granted.
+    if (ctx.length || readMapOn) await lc.index({ yield: true });
     const toolDefs = [...shell, ...ctx];
-    // The handoff note: record what each ask READS (the allowed read-class calls), hand the next step/fix ask the map.
-    // Scout and drafter asks feed the store but are never given a note.
-    /** @type {Set<string>} */
-    let askReads = new Set();
-    if (handoffOn) trackReads(toolDefs, [TOOL_BY_VERB.read, TOOL_BY_VERB.get], (a) => askReads.add(a), workdir);
-    /** @param {(prompt: string, defs?: any) => Promise<any>} inner */
-    const withHandoff = (inner) => (!handoffOn ? inner : async (/** @type {string} */ prompt, /** @type {any} */ defs) => {
-      askReads = new Set();
-      let p = prompt;
-      if (phase === 'fix' || phase.startsWith('step:')) {
-        // The index is incremental: refreshing it here is what keeps the symbol ranges true to the files as they now are.
-        try { if (ctx.length) await lc.index({ yield: true }); } catch { /* the map falls back to line counts */ }
-        const note = handoff.render({ getNode: (rel) => lc.getNode(rel) });
-        if (note.text) {
-          p = `${prompt}\n\n${note.text}`;
-          emit('handoff-note', { phase, iteration: roundIteration, chars: note.text.length, paths: note.paths });
-        }
-      }
-      try { return await inner(p, defs); } finally { handoff.absorb(askReads); }
-    });
-    // The carry note: the same seam, one layer in. It records what each ask's read-class tools returned (a summary, never
-    // content) and hands the next step/fix ask the facts. It is the INNER wrapper, so its note lands after the handoff note.
+    // The carry note: records what each ask's read-class tools returned (a summary, never content) and hands the next
+    // step/fix ask the facts. Scout and drafter asks feed the store but are never given a note.
     if (carry) carry.wrapTools(toolDefs);
     /** @param {(prompt: string, defs?: any) => Promise<any>} inner */
     const withCarry = (inner) => (!carry ? inner : async (/** @type {string} */ prompt, /** @type {any} */ defs) => {
-      const text = await carry.beginAsk({ phase, iteration: roundIteration, prompt });
+      // The index is incremental: refreshing it here keeps the function ranges true to the files as they now are.
+      if (phase === 'fix' || phase.startsWith('step:')) { try { if (ctx.length) await lc.index({ yield: true }); } catch { /* ranges are left out */ } }
+      const text = await carry.beginAsk({ phase, iteration: roundIteration, prompt, getNode: (rel) => lc.getNode(rel) });
       try { return await inner(text ? `${prompt}\n\n${text}` : prompt, defs); } finally { carry.endAsk({ bounded: attemptBounded, iteration: roundIteration, rounds: attemptRounds }); }
     });
     // F19 per VERB (P, corrected 2026-07-31): a strategy SENTENCE rides only with
@@ -2706,7 +2708,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         }
         return r;
       };
-      return { ask: withHandoff(withCarry(ask)), askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };
+      return { ask: withCarry(ask), askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };
     }
 
     // ── LOOP path: the injected provider (anthropic-api and every other
@@ -2980,7 +2982,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       }
       return r;
     };
-    return { ask: withHandoff(withCarry(ask)), askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };
+    return { ask: withCarry(ask), askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };
   }
 
   /** relay a throw from OUTSIDE ralph (scout/plan drafting/fix) as its honest
@@ -3137,6 +3139,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // handed (a record, never a verdict), so the Audit can show it and the byte check can compare it with a fresh render.
     const hints = learnHints && learnHints.text && (phase === 'draft' || (phase === 'replan' && replans === 1)) ? learnHints : null;
     if (hints) emit('learnings', { phase, text: hints.text, ids: hints.ids, chars: hints.text.length });
+    // The seed note: the planner's FIRST draft only (and its redrafts). A record of counts and names, never the text.
+    const seedNoteForPlanner = seedNote && phase === 'draft' ? seedNote : null;
+    if (seedNoteForPlanner) emit('seed-note', { to: 'planner', chars: seedNoteForPlanner.text.length, stages: seedNoteForPlanner.stages });
     // D5 — the bridge rides into the FIRST draft phase ONLY. A replan drafts from the
     // RUN'S OWN STATE (what failed, what is left): re-handing the recipe there would
     // answer the replan's question with the material the run just demonstrated does not
@@ -3161,7 +3166,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const draftPlan = async (/** @type {any[]|null} */ reds) => {
       drafter.setIteration(reds ? 'redraft' : 'draft');
       replanCut = false;
-      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, starting, checkFacts, doorWords?.text ?? null, readShim, hints?.text ?? null), []);
+      const r = await drafter.ask(planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopeMenu, materials, starting, checkFacts, doorWords?.text ?? null, readShim, hints?.text ?? null, seedNoteForPlanner?.text ?? null), []);
       if (phase === 'replan' && typeof r.error === 'string' && r.error.startsWith('truncated:')) {
         replanCut = true;
         return '';
@@ -3536,6 +3541,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // results makes the leak inexpressible; scrubbing each consumer makes it
       // something the next consumer has to remember.
       const results = raw.map((r) => (typeof r.detail === 'string' ? { ...r, detail: scrub(r.detail) } : r));
+      // the carry note's outcome for this try, from the check itself; a red also hands over the whole failing text, the SAME text the next prompt's gap carries (lastGap below)
+      carry?.settleAsk(results.some((r) => r.fault) ? 'unknown' : pass ? 'green' : 'red', results.filter((r) => !r.pass).map((r) => r.detail).join('\n'));
       // PRD v1.106 Part 5: what the check just read (path, size, sha256 — never the content), recorded BEFORE the exit-eval because the next try
       // overwrites the file. The worker is idle between its turn and this judge, so these are the bytes the check read.
       for (const o of await outputJudgedRecords(job.closeDecl, workdir, step.exit)) emit('output-judged', { step: step.id, iteration: iterationNow, ...o });
@@ -4271,7 +4278,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // two exhaustion rules are alternatives and never both at once, so the count
       // is not passed — it survives only inside the governor, as the bound for the
       // case the trend instrument is blind.
-      middle, judge: async () => judgeClose(), ladder: fixGovernor, emit: emitL, redact: scrub,
+      middle, judge: async () => {
+        const v = await judgeClose();
+        carry?.settleAsk(v.verdict === 'satisfied' ? 'green' : v.verdict === 'needs_revision' ? 'red' : 'unknown', v.verdict === 'needs_revision' ? v.gap : undefined); // the fix try's outcome and its whole failing text (the gap the next prompt carries), from the close itself
+        return v;
+      }, ladder: fixGovernor, emit: emitL, redact: scrub,
       closeTimeoutMs, cwd: workdir, workerWrites: w.workerWrites, closeDir, phase: 'fix',
     });
   } catch (e) {

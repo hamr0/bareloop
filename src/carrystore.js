@@ -1,34 +1,21 @@
 // The carry note's store (M1, F258): the run-level record behind src/carrynote.js. It captures the worker's read-class tool
-// calls AT THE SOURCE (the same seam the handoff note uses: the worker's tool objects, result SUMMARIES only, never file
-// content), reads the run's edits from the WORKING TREE (git diff against the run's start commit, never the spine), renders
+// calls AT THE SOURCE (the worker's tool objects, result SUMMARIES only, never file
+ // content), reads the run's edits from the WORKING TREE (git diff against the run's start commit, never the spine), renders
 // the note and persists its state under `<workdir>/.smoke/carry/state.json` (an arbiter book: the worker's fs.deny covers
-// `.smoke`, so it cannot read it; the gate audit, spine and bridges live there too). The switch is `carryNote` in
-// config.json (absent = on; only `false` turns it off), read once per run by the engine's caller.
+// `.smoke`, so it cannot read it; the gate audit, spine and bridges live there too). There is no switch: the memo is
+// always on (hamr 2026-11-01).
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { SMOKE_STORE } from './kinds.js';
-import { isHandoffExcluded } from './handoff.js';
 import { redactSecrets } from './validate.js';
-import { render, HUNK_LINES } from './carrynote.js';
-import { readConfig } from './config.js';
+import { render, isCarryExcluded, HUNK_LINES } from './carrynote.js';
 
 const exec = promisify(execFile);
 export const CARRY_DIR = 'carry';
-/** the next prompt of a retried step / fix try carries this when the previous ask's check failed */
+/** the retry marker the next prompt of a retried step / fix try carries; kept as a pinned fact about the prompts, no longer read to decide an outcome */
 export const RED_MARKER = /Previous attempt failed (this step's checks|the verification):/;
-
-/**
- * The ONE setting: `carryNote` in config.json, read exactly like `learningHints` (src/learnstore.js `learningHintsOn`).
- * Absent = on; only an explicit `false` turns it off. An unreadable config reads as OFF (the safe side).
- * @param {string} [home]
- * @returns {boolean}
- */
-export function carryNoteOn(home) {
-  const c = readConfig({ home });
-  return c.problem === null && c.config.carryNote !== false;
-}
 
 const lineCount = (/** @type {string} */ s) => (s === '' ? 0 : s.split('\n').length - (s.endsWith('\n') ? 1 : 0));
 const clip = (/** @type {unknown} */ s, n = 200) => redactSecrets(String(s ?? '')).slice(0, n);
@@ -46,7 +33,7 @@ export async function workingEdits(workdir, base) {
   try {
     const { stdout: names } = await g(['diff', '--name-only', '-z', base]);
     for (const p of names.split('\0').filter(Boolean)) {
-      if (isHandoffExcluded(p)) continue;
+      if (isCarryExcluded(p)) continue;
       const { stdout } = await g(['diff', '-U1', '--no-color', '--no-ext-diff', base, '--', `:(literal)${p}`]);
       if (/^(Binary files .* differ|GIT binary patch)$/m.test(stdout)) { out.push({ path: p, lines: 0, hunks: ['(binary file changed)'] }); continue; }
       const body = stdout.split('\n').filter((l) => !/^(diff --git|index |--- |\+\+\+ |new file mode|deleted file mode)/.test(l));
@@ -54,7 +41,7 @@ export async function workingEdits(workdir, base) {
     }
     const { stdout: un } = await g(['ls-files', '--others', '--exclude-standard', '-z']);
     for (const p of un.split('\0').filter(Boolean)) {
-      if (isHandoffExcluded(p)) continue;
+      if (isCarryExcluded(p)) continue;
       try {
         const abs = resolve(workdir, p);
         if (!statSync(abs).isFile() || statSync(abs).size > 262144) continue;
@@ -93,11 +80,13 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
   /** @type {any[]} one per WORK ask (step/fix): {n, kind, step, iteration, bounded, red, changed, startSnap} */
   let asks = [];
   let loaded = false;
+  /** @type {string|null} the job's own count-check text at start (the seed note's body), the oldest entry of the memo's earlier failures */
+  let startFailure = null;
   if (resume && existsSync(stateFile)) {
-    try { const s = JSON.parse(readFileSync(stateFile, 'utf8')); n = s.n ?? 0; events = s.events ?? []; asks = s.asks ?? []; base = s.base ?? null; loaded = true; } catch { /* a bad file starts empty */ }
+    try { const s = JSON.parse(readFileSync(stateFile, 'utf8')); n = s.n ?? 0; events = s.events ?? []; asks = s.asks ?? []; base = s.base ?? null; startFailure = s.startFailure ?? null; loaded = true; } catch { /* a bad file starts empty */ }
   }
   const save = () => {
-    try { mkdirSync(dir, { recursive: true }); writeFileSync(stateFile, JSON.stringify({ n, base, events, asks })); } catch { /* a record, never a verdict: a failed save never breaks a run */ }
+    try { mkdirSync(dir, { recursive: true }); writeFileSync(stateFile, JSON.stringify({ n, base, events, asks, startFailure })); } catch { /* a record, never a verdict: a failed save never breaks a run */ }
   };
   const rel = (/** @type {string} */ p) => (isAbsolute(p) ? relative(workdir, p) : p).split('\\').join('/') || '.';
   const diskLines = (/** @type {string} */ r, /** @type {string|undefined} */ fallback) => { try { return lineCount(readFileSync(resolve(workdir, r), 'utf8')); } catch { return fallback === undefined ? null : lineCount(fallback); } };
@@ -161,24 +150,57 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
     }
   };
 
+  /** the per-entry cap on one file's function ranges, so one huge file cannot eat the memo */
+  const FN_CAP = 500;
+  /**
+   * Function line ranges per read file, from the LiteCtx index's named chunks (`name a-b, ...`). Fresh index only: a node whose
+   * last chunk ends past the file's current end is stale, and that file gets no ranges. Never throws.
+   * @param {any[]} evs @param {(rel: string) => any} getNode @returns {Record<string, string>}
+   */
+  const fnRangesOf = (evs, getNode) => {
+    /** @type {Record<string, string>} */ const out = {};
+    for (const p of new Set(evs.filter((e) => (e.tool === 'read' || e.tool === 'get') && !e.dir && e.path && !isCarryExcluded(e.path)).map((e) => e.path))) {
+      let node = null;
+      try { node = getNode(p); } catch { node = null; }
+      const n = diskLines(p, undefined);
+      const named = (node?.chunks ?? []).filter((/** @type {any} */ c) => c.symbol);
+      if (n === null || !named.length || !named.every((/** @type {any} */ c) => c.endLine <= n)) continue;
+      let map = ''; let more = 0;
+      for (let i = 0; i < named.length; i++) {
+        const piece = `${named[i].symbol} ${named[i].startLine}-${named[i].endLine}`;
+        if ((map ? map.length + 2 : 0) + piece.length > FN_CAP) { more = named.length - i; break; }
+        map += (map ? ', ' : '') + piece;
+      }
+      out[p] = map + (more ? `, +${more} more` : '');
+    }
+    return out;
+  };
+
   const snapOf = (/** @type {{path: string, lines: number}[]} */ edits) => Object.fromEntries(edits.map((e) => [e.path, e.lines]));
   const tryLabel = (/** @type {any} */ a) => (a.kind === 'fix' ? `fix loop try ${a.iteration}` : `step "${a.step}" try ${a.iteration}`);
-  const endedOf = (/** @type {any} */ a) => a.boundedText || (a.red ? 'Its check failed.' : 'Its check passed.');
+  // how the try ended AND what its check said: a bounded try says both (the bound hides nothing)
+  const endedOf = (/** @type {any} */ a) => {
+    const res = a.result === 'red' ? 'Its check failed.' : a.result === 'green' ? 'Its check passed.' : null;
+    if (a.boundedText) return `${a.boundedText} ${res ?? 'Check not run.'}`;
+    return res ?? 'No check result was recorded for it.';
+  };
 
   /**
    * Called at the start of EVERY ask (scout and drafter included, so their finds feed the store).
    * Returns the note text for step/fix asks, '' otherwise.
-   * @param {{phase: string, iteration: number|string|undefined, prompt: string}} o
+   * `getNode`: the LiteCtx index's node for a path (its `chunks`), for the function ranges; absent = no ranges.
+   * @param {{phase: string, iteration: number|string|undefined, prompt: string, getNode?: (rel: string) => any}} o
    */
-  const beginAsk = async ({ phase, iteration, prompt }) => {
+  const beginAsk = async ({ phase, iteration, prompt, getNode }) => {
     n++;
     const work = phase === 'fix' || phase.startsWith('step:');
     if (!work) { save(); return ''; }
     const edits = await workingEdits(workdir, base);
     const prev = asks[asks.length - 1];
     if (prev && prev.red === undefined) {
-      // settle the previous work ask: red = this prompt says the last attempt failed; changed = files whose changed-line count moved
-      prev.red = RED_MARKER.test(prompt);
+      // settle the previous work ask: red = the check result the engine handed to settleAsk (never this prompt's wording);
+      // changed = files whose changed-line count moved
+      prev.red = prev.result === 'red';
       const now = snapOf(edits);
       prev.changed = [...new Set([...Object.keys(now), ...Object.keys(prev.startSnap)])].filter((p) => now[p] !== prev.startSnap[p]).sort();
       for (const e of events) if (e.ask === prev.n) e.noFix = prev.changed.length === 0 && prev.red;
@@ -192,11 +214,16 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
       lastCheck: null, // the failed check's text is already in the prompt today; one copy
       events: events.map((e) => ({ ...e })),
       edits: orderEditsByRecency(edits, settled),
+      // every failed check's whole text, oldest first; the newest is left out only when it belongs to the last settled try
+      // (a red try being retried: the prompt carries it, one copy). A failure from a try that was later passed is in no prompt.
+      // plus the start failure, oldest of all: it is never in a prompt gap, so it is never the one left out
+      failures: [...(startFailure ? [{ label: 'at start', text: startFailure }] : []), ...settled.filter((a) => a.failure && a !== lt).map((a) => ({ label: tryLabel(a), text: a.failure }))],
       earlier: settled.slice(0, -1).map((a) => `${tryLabel(a)}: ${endedOf(a)} ${a.changed.length ? `Changed ${a.changed.join(', ')}.` : 'Changed nothing.'}`),
       lastAsk: lt ? lt.n : undefined,
+      fnRanges: getNode ? fnRangesOf(events, getNode) : {},
     };
     asks.push({ n, kind, step, iteration, startSnap: snapOf(edits) });
-    const hasAny = notes.events.length || edits.length || notes.earlier.length || notes.lastTry;
+    const hasAny = notes.events.length || edits.length || notes.earlier.length || notes.failures.length || notes.lastTry;
     if (!hasAny) { save(); return ''; }
     const r = render(/** @type {any} */ (notes));
     emit('carry-note', { phase, iteration, chars: r.text.length, capped: r.capped, sections: r.sections }); // counts only
@@ -216,5 +243,22 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
     save();
   };
 
-  return { wrapTools, beginAsk, endAsk, setBase: (/** @type {string|null|undefined} */ b) => { if (!base && b) base = b; }, loaded: () => loaded, _state: () => ({ n, events, asks, base }) };
+  /**
+   * The engine's own check result for the ask that just returned: 'green' (every check passed), 'red' (one failed) or
+   * 'unknown' (the check hit an instrument fault, so no honest answer). Only the first result per ask counts.
+   * A red also hands over the check's WHOLE failing text (the gap the next prompt carries); it is stored masked, never clipped.
+   * @param {'green'|'red'|'unknown'} result @param {string} [text]
+   */
+  const settleAsk = (result, text) => {
+    const a = asks[asks.length - 1];
+    if (!a || a.n !== n || a.result !== undefined) return;
+    a.result = result;
+    if (result === 'red' && typeof text === 'string' && text !== '') a.failure = redactSecrets(text);
+    save();
+  };
+
+  /** The seed note's body (already secret-masked), set once per run; a resume keeps the one it persisted. @param {string} text */
+  const setStartFailure = (text) => { if (!startFailure && text) { startFailure = text; save(); } };
+
+  return { wrapTools, beginAsk, setStartFailure, endAsk, settleAsk, setBase: (/** @type {string|null|undefined} */ b) => { if (!base && b) base = b; }, loaded: () => loaded, _state: () => ({ n, events, asks, base }) };
 }

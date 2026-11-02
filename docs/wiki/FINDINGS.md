@@ -15064,6 +15064,10 @@ Root cause: `planPrompt` (src/planrun.js, the `"exit"` line near 703) presented 
 
 **Status.** Logged only, nothing built. Fix ledger bullet added. Related: F258 (what a next try is told).
 
+2026-10-31 — $0 read (`.claude/scratch/bigfile-next/READ.md`, archived spines only): the round count is not the main cause. The worker never sees which test fails; 52 of 52 bounded bigfile tries wrote nothing; after such a step a replan gave fewer rounds in 7 of 13 runs and more in 6 (a coin flip, not a downshift).
+
+2026-10-31 — the start-failure part of this is tested in F262 (seed note: planner and first worker told the job's own failing count check).
+
 ## F258 — the next try or step worker is not told what the last try found or ruled out (2026-10-29; read from code; size not yet measured ($0 check C pending))
 
 **Grounded in:** `src/planrun.js` (step prompt build ~3453-3495; `boundedNote` at 594; attempt-diff emit 3481; handoff store 1027), `src/handoff.js`.
@@ -15124,3 +15128,234 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Not shown.** Why the first fix tries run so long, and why the output reaches 32,000 tokens. No cause is claimed.
 
 **Status.** Logged only, nothing built.
+
+## F261 — the carry note hit its 3,000-character cap on 7 of 8 notes in a live run, so diffs and failures were cut (2026-10-31; live; run mvw29hmk, Fireworks deepseek-v4p1-flash, job pulselog-p7-small)
+
+**Grounded in:** the spine `.claude/scratch/carry-live/runs/p7-carry-fireworks-2026-10-31T07-09-41-187Z/sess/source-seed/pulselog-p7-small-bareloop/u-mvw29hmk.jsonl` (`carry-note` records) and the size measurement `.claude/scratch/carry-size/SIZE.md` (shapes: `.claude/scratch/carry-size/SHAPE.md`).
+
+**What the record shows.** 7 of the 8 notes in run mvw29hmk were capped at 3,000 characters. Across the 57 archived notes the measurement found (SIZE.md): 30 of 57 capped (53%), none above 2,990; uncapped, the median is about 2.7-3.3k and the p90 about 7.3-7.8k, with the last ask of each run at a median of about 4.9-5.8k and a maximum of 14.5-16.1k (a range, because the edit hunks are reconstructed, not saved). The bulk of an over-cap note is searches and diff hunks, not the earlier-tries line. The failure text given to the worker is small on its own (median 613, p90 1,868, max 2,203 characters per failure); folding it by the existing rule cuts it about 30%, and 7 of 8 consecutive failures in the same step fold.
+
+**Change (hamr, 2026-10-31).** Cap 3,000 to 12,000; a try line says both how it ended and its check result; a new "Earlier failures (folded):" section carries each failed check's whole text, newest failure left out (the prompt carries it). See CHANGELOG [Unreleased].
+
+2026-10-31 — hamr ruled to LEAVE the secret inventory as token shapes only. `SECRET_PATTERNS` in `src/validate.js` is known-token-shapes by design; a `DB_PASSWORD=` style value is not masked in any record, the carry note included.
+
+**Status.** Built (not yet seen live at the new cap).
+
+2026-10-31 — live run on b588305 (job pulselog-p7-small, Fireworks deepseek-v4p1-flash): run mvw4b4wj green, $0.56, 4 notes, largest 11,728 characters, none capped. The earlier-failures section was not seen live: the run had only one red, the newest, which is left out by design.
+
+## F262 — SEEDGAP: telling the planner and first worker the job's own failing count-check at start moves big-file workers to write (2026-10-31; live; SEEDGAP battery, Fireworks deepseek-v4p1-flash, bigfile; hamr ruled it ships ON)
+
+**Problem.** F257 read: 52 of 52 bounded tries on the big-file job wrote nothing. The failing test text the job's own count check produced at seed was thrown away; neither the planner nor the first worker ever saw it.
+
+**Change.** Code builds a "seed note" from the preflight's own stage results: the text of each `count-not-worse` stage that was red at seed (secret-masked; `command-exit` and `changed-from-seed` text never used). It goes to the planner's first draft. Spec field `seedNote`, absent = on, `false` = off (like `handoffNote`; enters the signed hash only when present, so old jobs get it with no re-sign).
+
+**Pre-registration.** `docs/logs/SEEDGAP-PREREG.md`, sha256 `a778d4e6ad374505e371e0d45424cef1031a2e663e502751af1c377e4faceeae`, frozen before any number.
+
+**Battery.** Fireworks deepseek-v4p1-flash, job bigfile, 3 OFF / 3 ON interleaved. Carry note ON (12000) and handoff note ON in all 6 runs (verified from each spine: `carry-note` and `handoff-note` records in all 6; `seed-note` planner and worker records in the 3 ON runs only). Results from `node .claude/scratch/seedgap/battery/driver.mjs --analyze`:
+- Primary (any try of the first plan step wrote a file, real gate audit): ON 3 of 3, OFF 1 of 3. Frozen rule: SIGNAL.
+- Greens: ON 2 of 3, OFF 1 of 3.
+- First write in `src/gate.js`: ON 3, OFF 1.
+- Rounds before first write: ON [6, 45, 16], OFF [29, -, -].
+- Cost per run: ON $0.21-0.33, OFF $0.10-0.26. Booked $1.4027. Real runs.jsonl 385 of 385 (no junk rows).
+
+**Caveats.** n=3, one job, one patient; underpowered by declaration, so it says "moves", never a rate. OFF run 1 was the first bigfile green ever (0 of 13 before): the 12000 carry note may have helped, or chance; untested. Not tested with memory off.
+
+**Delivery changed AFTER the battery.** Tested: planner block plus a hand-delivered block to the first worker of step 1. Shipped (hamr 2026-10-31, "every step needs to know what came before it in failure"): planner block plus the carry memo, which now carries the start failure as the oldest entry of "Earlier failures (folded):", labelled `at start`, to every step and fix worker (never left out, folds with later identical failures, kept across a resume). With the carry note off, workers get nothing from it. The memo form is not yet seen live.
+
+**Ruling.** hamr 2026-10-31: ships ON by default ("add it, it passed 2 of 3").
+
+**Status.** Built, ON by default; planner and memo delivery test-proven.
+
+2026-10-31 — memo `at start` form seen live. Run u-mvwok8nk, job bigfile, Fireworks deepseek-v4p1-flash, `seedNote` absent (= ON), carry and handoff ON; cost $0.2078 (spine, spendComplete=true); outcome step-red. 4 workers, 4 carry memos; all 4 carried the `at start` failure (sections.failures >= 1 with the stored startFailure, 464 chars), workers 2-4 included. Caveat: the spine keeps memo counts, never the text, so presence is read from sections.failures plus the stored startFailure (the product always puts it first, `src/carrystore.js:205`). All 4 memos show edits:0 (no worker wrote a file); not looked into. One run: it shows the delivery runs, not that it helps. Driver: `.claude/scratch/memo-atstart-live/driver.mjs`.
+
+2026-11-01 - carry memo fold (`b4e8021`, handoff note folded in) seen live. Two tries, Fireworks deepseek-v4p1-flash, bigfile, HEAD e931c39, all note switches at product defaults. First try u-mvxik097: plan-red, $0.0314, code scope-escape: the planner drafted a plan writing `package.json` outside the signed fence `[src/]` twice, and the fence refused it before any worker ran (kept in `.claude/scratch/fold-live/run-1-planred`). Second try u-mvxjji5a: step-red, $0.4795, 5 worker asks, 0 handoff-note records, 5 carry-note records (non-first carried reads 3-5, searches 11-27, failures 1-2, up to 7,465 chars, none capped). Caveat: a re-render of the memo from persisted state plus the run's index (not the delivered bytes; the text is never persisted) shows the files-read lines carrying `functions:` ranges, e.g. `src/gate.js`; the containing class chunk `Gate 579-2212` still appears in that functions list (as in the old handoff note, not new). One run: it shows the fold runs, not that it helps. runs.jsonl untouched 385 of 385. Driver: `.claude/scratch/fold-live/driver.mjs --analyze`.
+
+## F263 — MAP: a first-read map of a big file did not cut the no-chunk rate (2026-10-31; live; MAP battery, Fireworks deepseek-v4p1-flash, bigfile; FAIL by the frozen rule)
+
+**Problem.** F257 and F262: workers on the big-file job open `src/gate.js` and then mistype `ctx_get` ranges (about 41% of archived `ctx_get` calls return no-chunk, 97 of 234). The idea: the first `shell_read` of a big file returns a map of named parts (`symbol start-end`) instead of file bytes, so the worker opens real ranges.
+
+**Change under test.** Experimental spec field `readMap` (default off, commit ad2badd). Delivery probe before the battery: OFF read 24,838 bytes, ON map 1,346 chars, 50 ranges, 0 bad, plant inside the map.
+
+**Pre-registration.** `docs/logs/MAP-PREREG.md`, signed and frozen before any number. Rule: SIGNAL needs the ON no-chunk rate at or under half the OFF rate.
+
+**Battery.** Fireworks deepseek-v4p1-flash, job bigfile, 3 OFF / 3 ON interleaved, head ad2badd, seed note, carry note and handoff ON in all six, learnings OFF. Booked $0.9455 (spine/ledger). Real runs.jsonl 385 of 385 (untouched). Results from `node .claude/scratch/map-battery/driver.mjs --analyze` ($0) and `.claude/scratch/map-battery/progress.log`:
+- PRIMARY pooled worker-ask `ctx_get` no-chunk rate: ON 36/105 = 34.3%, OFF 13/31 = 41.9%. Needed at most half of OFF. **FAIL.**
+- Secondary, rounds per ask until the first valid `ctx_get` on the plant: ON 6.75 (opened in 8 of 9 asks), OFF 6.25 (4 of 6).
+- Secondary, step turns per run: ON mean 52.7 [46, 65, 47], OFF mean 28.3 [14, 60, 11].
+- Secondary, booked cost per run: ON [$0.1467, $0.2238, $0.1516], OFF [$0.0786, $0.2645, $0.0804].
+- Report-only: greens 3/3 ON, 3/3 OFF. All six are green; the first time all OFF bigfile runs greened (earlier OFF runs mostly did not). The seed note and the carry memo are the likely reason, not proven. Maps served: 14 in total (ON 5, 5, 4). 5 of the 9 ON asks that read `gate.js` read it again after the map (the fallback).
+
+**Caveats.** n=3 per arm, one job, one patient, one model; underpowered by declaration. The secondaries never enter the rule.
+
+**Observation, not a claim.** The map did not stop workers mistyping ranges, and ON workers made about 3x more `ctx_get` calls (105 vs 31 in total, over three runs each).
+
+**Verdict.** Lever closed for this job. `readMap` stays experimental and default OFF. The litectx `outline(path)` ask is NOT filed (hamr: only if it works).
+
+**Status.** FAIL; kept off.
+
+2026-10-31 hamr: keep it built, off; parked in PRD v1.122; needs more runs.
+
+## F264 — fold regression check: OLD (handoff note + carry memo) vs NEW (folded memo) on p7, no regression seen (2026-11-01; live; Fireworks deepseek-v4p1-flash, job p7)
+
+**Problem.** The handoff note was folded into the carry memo (`b4e8021`, two blocks and two switches became one block). A fold of two prompt blocks can silently break a job that was green before. Only a live run on a real job answers that.
+
+**Design.** Job p7, Fireworks deepseek-v4p1-flash. OLD engine d7cb479 (handoff note and carry memo separate) against NEW engine d61c0f2 (folded), interleaved, 2 runs per arm. Booked $0.7093 (spine/ledger); `runs.jsonl` untouched. Driver and log: `.claude/scratch/fold-regress/driver.mjs --analyze`, `progress.log`.
+
+**Result.**
+- Greens: OLD 2/2, NEW 2/2. The driver prints "NO REGRESSION SEEN". No casualties.
+- NEW wrote 0 handoff-note records (OLD 8, from 5 and 3 asks); NEW carry-note records 6, OLD 8.
+- OLD r1: $0.1333, 4:54, step turns 24, out 41,059 tokens. OLD r2: $0.1385, 4:23, step turns 27, out 34,982.
+- NEW r1: $0.0725, 1:49, step turns 9, out 11,293. NEW r2: $0.3650, 14:45, step turns 49, out 138,712 (the outlier: 1,062,188 cache-read tokens).
+- Per arm: OLD $0.2719, 9:17; NEW $0.4374, 16:34. The NEW total is driven by r2 alone; NEW r1 was the cheapest and fastest run of the four.
+
+**Caveats.** n=2 per arm is an anecdote. It can only catch a clear break (a run that stops greening); it says nothing about cost or time between the arms, and the NEW r2 spread (3 to 5 times the other NEW run) shows how wide the noise is.
+
+**Setup lesson.** The first launch aborted at $0: the engines were installed with `npm ci --ignore-scripts`, which leaves `better-sqlite3` without its native binding; the litectx known-answer smoke check refused all 4 runs (smoke-red) before any spend. Fixed with `npm rebuild better-sqlite3` in each engine copy. A fresh engine copy needs that step.
+
+**Verdict.** No regression seen from the fold.
+
+**Status.** Closed.
+
+2026-11-01 hamr: carry memo permanent ON, switch removed.
+
+## F265 — Muse sends JSON text as an object in `shell_write` content and `shell_edit` newText; the tool refuses with the wrong hint and the run goes stuck (2026-11-01; $0 replay of live runs; Baseten `meta-models/muse-spark-open-1026`; fixed upstream in BA-29)
+
+**Problem.** When the text to write is itself JSON, the worker's `content` (write) and `newText` (edit) arrive as a JSON object, not a string. `shell_write` refuses (`node_modules/bare-agent/tools/shell.js:354-364`, `typeof content !== 'string'`) and says "If your output was cut short, retry with the full content", which is the wrong hint. Three byte-identical failures end the attempt as `stuck:shell_write` (`loop.js:596-612`, default `maxIdenticalToolErrors` 3), which bareloop routes to the terminal `interpreter-red` (`src/planrun.js:2950-2957`). The panel then says "Stopped before or outside the work (code: interpreter-red)." (`src/panel/server.js:677`).
+
+**Evidence.** Job change2 went 0/3 on Muse (memo ON): u-mvxzrgwg (step-red), u-mvy0kgwu (interpreter-red), u-mvy15hmq (step-red). Gate-audit writes with `args.bytes` 15: 32 of 40 (u-mvxzrgwg), 3 of 3 (u-mvy0kgwu), 20 of 25 (u-mvy15hmq). Replay (real `OpenAIProvider` against a local server, real Loop and shell tools): content as a nested object reads `bytes:15` and no file is written; `shell_edit` with an object `newText` reads 15 and ends `stuck:shell_edit`; the model's workarounds that did write were a junk-prefixed string (` x{...}`, 297 bytes) and short non-JSON probes. Sources: `.claude/scratch/muse-json/RESULT.md`, `.claude/scratch/write-fail/RESULT.md` (`replay2.out`).
+
+**Unknown.** Whether Baseten's tool-call parser or the model creates the object. bare-agent never records the raw `function.arguments` string, and no live probe was run (one call, under a cent, needs hamr's word). DeepSeek sends strings (no `bytes:15` in its audits).
+
+**Fix.** Upstream, BA-29, released as bare-agent v0.58.0 (`badCalls`, `cutOff`, `checkArgs`, `reasoningTokens`, corrected shell hint). bareloop side is pending on its next branch (PRD v1.124). Open and parked for hamr: a stuck arg-fault loop is terminal `interpreter-red` today, not a bounded attempt (arbiter-adjacent).
+
+**Status.** Open in bareloop; upstream half arrived.
+
+**2026-11-01 later.** Fixed upstream and on npm as bare-agent v0.58.0 (BA-29, PR #77; the bareloop replay passed 9 of 9, `.claude/scratch/ba29-replay/RESULT.md`, untracked scratch). The bareloop consumer (bump, `checkArgs` on for workers, the next-attempt note) is pending on the next branch: build spec section A, `docs/product/ITEM33-BUILD.md` addendum "Bad tool calls and the planning trap".
+
+## F266 — cut-offs at max_tokens: 11 archived rounds, all exactly 32,000 tokens; the model is only told "CUT OFF ... discarded", and the malformed marker is lost on a cut round (2026-11-01; $0 archive read of 262 spines, 9,699 worker rounds)
+
+**Problem.** Round stopReason counts: tool_use 8,576, end_turn 1,112, max_tokens 11. All 11 max_tokens rounds are Fireworks `deepseek-v4p1-flash`, step (4 rounds, 3 runs) and fix (7 rounds, 5 runs) phases, each exactly 32,000 output tokens (`maxTokens: 32000`, `src/planrun.js:2900/2916`). Muse: 0 of 3 spines.
+
+**Effect.** The cuts led to the red in 3 runs (u-mvw29hmk step stop, u-mvu33q9x fix budget, u-mvuvcqqt second strike), coincided with a wall-halt in 3 (u-mvuoi949, u-mvusa4ju, u-mvupkwk7), and the run recovered to green in 2 (u-mvu47a2f, u-mvuqu6cf). About $0.06 and 3.5 minutes per cut; 11 cuts about $0.68 and 38 minutes. "Led" means the cut filled the strike or fix budget, not that it was the only cause.
+
+**What the model is told.** In-run: nothing (the Loop ends the run on `truncated:max_tokens`). On the next attempt: `boundedNote` (`src/planrun.js:601-605`), "Your previous attempt was CUT OFF: output cut at the token limit (max_tokens). That response was discarded." It never says what was cut, that a write can be split, that `append:true` exists (`tools/shell.js:1026`), or that reasoning may have used the limit.
+
+**Records lost.** On a cut round the `truncated:*` return at `src/planrun.js:2943-2947` happens before the `r.malformedToolCall` check at `:2973`, so the malformed marker is never recorded (replay shape a). The dropped call's name and size are invisible, and reasoning tokens are recorded nowhere (bare-agent `usage` drops them, `provider-openai.js:245-256`).
+
+**Cause unproven, and the archive is inconsistent.** The scan `RESULT.md` says all 11 were thinking-ON asks (11 of 337 thinking-on asks, 0 of 341 thinking-off). The per-hit file `.claude/scratch/write-fail/hits.json` records `think` as on for 3, off for 3 and null for 5. The two do not agree; the association with thinking is not established, and whether any cut was a long write is not recoverable.
+
+**Fix.** BA-29 (v0.58.0) adds `cutOff`, `badCalls`, `reasoningTokens`. bareloop's next-try note built from them is pending (PRD v1.124).
+
+**Status.** Open; upstream half arrived.
+
+**2026-11-01 later.** Fixed upstream in bare-agent v0.58.0 (`cutOff`, `badCalls`, `usage.reasoningTokens`). bareloop consumer pending on the next branch: build spec section A.
+
+## F267 — the audit's byte count is blind: an object reads 15, and "bytes" are UTF-16 units (2026-11-01; source read)
+
+`src/tools.js:621` and `:626` count `String(args?.content ?? '').length` (write) and the newText equivalent (edit). An object `content` stringifies to "[object Object]", so the audit shows `bytes: 15` with no type kept; that is the only trace of F265 on disk. `.length` counts UTF-16 code units, not bytes, so non-ASCII content is under-counted. Same blind-instrument class as the earlier audit collapses (a reader of the audit cannot tell a refused object write from a real 15-byte write). Fix: the audit records the true type and size (PRD v1.124 item 5).
+
+**Status.** Open.
+
+## F268 — Muse base rate with the memo ON: bigfile 2/3, p7 3/3, pulselog 2/3, change2 0/3; Muse ignores thinking-off (2026-11-01; live; Baseten `meta-models/muse-spark-open-1026`)
+
+**Run.** 12 runs, product engine, $1 per run cap, memo ON; booked $4.8568 (cap $10). Source: `.claude/scratch/memoproof-base/BASERATE-MUSE.md`. Greens: bigfile 2/3 (green, cap-halt, green), p7 3/3, pulselog 2/3 (green, escalated, green), change2 0/3 (step-red, interpreter-red, step-red; see F265). No casualties. Median cost per run: bigfile $0.39, p7 $0.27, pulselog $0.30, change2 $0.47.
+
+**Thinking.** Muse ignores the thinking-off switch (the recorded thinkingStatus is ignored by the provider), so a thinking contrast on Muse is not available.
+
+**Smoke.** u-mvxx5ec8 green, $0.33, before the base round.
+
+**Caveat.** n=3 per job; a base rate with a wide band, not a rate. The same engine produced the "ON" arm in F269 and was the memo-ON base.
+
+**Status.** Closed (a base).
+
+## F269 — memo proof (MEMOPROOF): frozen verdict LOSE on greens, ON 7/16 vs OFF 10/16, read as a leaning; confounded by planning (2026-11-01; live; Baseten Muse; prereg `docs/logs/MEMOPROOF-PREREG.md` rev 2, signed `c9517ac`)
+
+**Design.** 32 runs, 16 interleaved pairs over bigfile, pulselog and p7, memo ON (always-on carry memo) against OFF (carry null, one line). Declared UNDERPOWERED up front (about a 30% false-WIN rate at no effect), so the verdict is read as a LEANING only. Booked $15.1702 (stop $20). Source: `.claude/scratch/memoproof-run/RESULT.md`, `analysis/DEEP.md`.
+
+**Result.** Frozen verdict LOSE (OFF needs >= ON + 3 greens): greens ON 7/16, OFF 10/16. Cost and wall: ON/OFF median job-normalised cost 0.733, wall 0.922, printed but not read (they only count when greens are SAME). Totals: ON $7.00, OFF $8.17. Passed runs only were leaner with ON: 43 vs 59 turns, $0.33 vs $0.49, 4.8 vs 5.5 min. Per job greens: bigfile ON 2/6, OFF 2/6; pulselog ON 2/6, OFF 4/6; p7 ON 3/4, OFF 4/4. Plan-reds (7 of 32, a result, not casualties) are F270.
+
+**Confound.** The planner's write-without-edit first step (F271) landed on ON bigfile 5 of 6 plans against OFF 0 of 4 that drafted a plan. The drafter never sees the memo (carry-note records exist only for step phases; the only code difference between arms is `src/planrun.js:1045`, `carry = createCarryStore(...)` vs `null`). The ON bigfile losses (cap-halts u-mvy52mc5, u-mvy8w58g and the rest) therefore trace to the plan, not the memo. The record also does not show any run ending because a worker followed a memo pointer into a dead end; the closest facts are u-mvy52mc5's re-reads of named files with no edit and u-mvy6dqro's repeated no-change tries, and neither shows the memo as the cause.
+
+**Ruling.** The memo stays always on (hamr 2026-11-01); this is not a reason to change it. The 5/6 vs 0/4 split was read as a draw plus small n (Fisher p about 0.015 if the arm mattered, but no mechanism exists), not proven either way.
+
+**Status.** Closed as a leaning LOSE, confounded; the planning trap is F271.
+
+## F270 — Muse planner plan-red at draft: 7 of 32 battery runs died after two refused drafts, against 0 of 12 in the base round (2026-11-01; live; Baseten Muse)
+
+**Data.** Runs: 06-p7-ON-r1 (u-mvy51mw0), 13-bigfile-OFF-r3 (u-mvy6awum), 15-pulselog-OFF-r3 (u-mvy6k3kg), 16-pulselog-ON-r3 (u-mvy6l9lk), 21-pulselog-ON-r4 (u-mvy7o3up), 28-pulselog-ON-r5 (u-mvy8v2gz), 30-bigfile-OFF-r6 (u-mvy97tin). ON 4, OFF 3. Each cost $0.04-$0.12 and ended before any worker ran. From the spines: `scope-escape` in all seven (a plan writing `package.json` / `tsconfig.json` outside the signed fence, e.g. `[src/]`); `exit-illegal` (more than 2 exits on a step) in 06, 15, 16, 21 and 28. The base round (F268) had 0 of 12.
+
+**Reading.** The same class showed on DeepSeek once (u-mvxik097, F262's 2026-11-01 note: scope-escape on `package.json`), so it is not Muse-only; the Muse rate is the new fact. It ties to the earlier drafter scope-escape watch item (the H7 note in the validation record). The drafter prompt names the exit ceiling and the fence; Muse broke both on 7 of 32 drafts. Not seen to be arm-related (drafter is memo-blind).
+
+**Status.** Open, watch item; no change proposed.
+
+## F271 — THE PLANNING TRAP: the drafter grants `write` without `edit` on a step whose exits force a change to an existing big file, and a whole-file write guts it (2026-11-01; live; Baseten Muse, bigfile; runs u-mvy4cd0d, u-mvy52mc5, u-mvy8w58g)
+
+**Problem.** In all three shrinking runs, plan step 1 is a look-around step (map/diagnose) with tools `read,recall,get,grep,peek,write`, no `edit`, and exits `artifact-written src/gate.js` plus `tree-changed src/**`. The step can only pass by changing the file, and the only tool that changes a file is a whole-file `write`. `src/gate.js` is 2433 lines, 132,315 bytes. Results: u-mvy4cd0d 2433 to 1 line (a REPLACE note written as the file), u-mvy52mc5 2433 to 53 (a stub wrapper that fetches the original with `git show` to satisfy tree-changed), u-mvy8w58g 2433 to 6 (a `throw` carrying paraphrased tool-law text), later rebuilt as 201 lines. `tree-changed` passes on the stub; nothing checks content. Writes landed at rounds 18/20, 15/18 and about 34/38, when the step budget was nearly spent (inferred from timing, no transcripts are stored).
+
+**Not a memo or count problem.** Every pre-shrink read in the carry state records 2433 lines; line counts come from the disk (`diskLines`, `src/carrystore.js:92`, called at `:105` and `:117`). After the shrink the memo reported the true small count. The overwrite happened in a worker ask before the memo that lists it.
+
+**Our wording pushes it.** `EXIT_EXAMPLE` (`src/plan.js:42`) teaches the drafter a step with no check ending in artifact-written plus tree-changed; the write-only persona line (`src/tools.js:60`) says make the change with the write tool and stop; `EDIT_STRATEGY` ("Prefer the edit tool over whole-file writes", `src/tools.js:81`) is added only when `edit` is granted (`:168`). A write-only grant never hears it. F31 already measured "4 of 5 big-file whole-writes broke the tree" (`docs/wiki/FINDINGS.md:1220`).
+
+**No guard exists.** bare-agent `shell_write` (`tools/shell.js:352-384`) rejects absent content and caps at 5 MB but never compares with the existing size; bareguard 0.27.0 has no shrink rule (`fs.writeScope` is path-only); workers have no git or run verb, so nothing restores.
+
+**Arm split.** Write-no-edit step in the plan: ON 5 of 6 bigfile plans (02, 07, 14, 19, 29), OFF 0 of 4 that drafted a plan. Muse base and OFF runs: gate.js never shrank in 10 runs. DeepSeek: 21 runs touching gate.js, 0 write-no-edit plans, 0 shrinks (untested, not immune). Write-no-edit exposure on Muse, 7 runs: 3 shrinks (all in the memo-proof ON arm), 1 append, 3 without a gate.js write. Source: `.claude/scratch/gatewipe/RESULT.md`.
+
+**Fix (half arrived, per hamr: a planning issue).** bareloop plan rule plus wording: a write grant travels with edit; `EXIT_EXAMPLE` and persona wording changed. Spec pending a $0 POC on archived plans, shown to hamr before any build (PRD v1.124 item 7). Second layer: BA-30 (F272).
+
+**Status.** Open; named, not built.
+
+**2026-11-01 later (hamr ruling: "both ... we fix planner instructions and b2 patch it as needed").** The root is our own planner instructions: `EXIT_EXAMPLE` (`src/plan.js:42`) teaches every no-check step "artifact-written <its target> + tree-changed", and the write-only persona lines (`src/tools.js:60`, `:62`) say "make the change with the write tool". $0 inventory over 440 archived `plan-accepted` plans (real `validatePlan`, `.claude/scratch/writeedit-poc/SPEC-DRAFT.md`, untracked scratch): write-without-edit steps are DeepSeek 33 steps in 32 plans, all rubric steps writing a NEW `output/steps/N.json` (0 on any code job); Muse 20 steps in 15 plans, 15 on code files, 10 of those plans carry the gutting shape; claude-sonnet-5 96 steps in 22 plans (old era, ceiling unknown). Of 390 resolved specs on disk, 0 have an explicit `tools` list lacking `edit`. No signed hash covers a plan, so a plan-level change moves no signature. Ruling: (1) fix the planner instructions at the source, proven by a drafter-only POC before build; (2) B2 as the safety net: code pairs `edit` with a `write` grant on a code file, rubric `output/steps/` files exempt, only when the signed ceiling offers `edit`. B2 replay: 0 DeepSeek plans change, 10 of 51 Muse plans change, all 3 gutting plans gain `edit`. Build spec: sections B and C of the `docs/product/ITEM33-BUILD.md` addendum "Bad tool calls and the planning trap". Status after the ruling: spec written, not built.
+
+## F272 — archive scan of whole-file wipes: 14 gutting writes in 13 runs of 451 audited, in 2 model families (2026-11-01; $0 archive read; re-surfaces F31)
+
+**Scan.** 533 deduped spines, 451 with a gate audit (82 had none, so they are blind spots: 7 scratch, 10 `u-*` and 65 older non-`u-`). 603 allowed whole-file `write` actions; 116 hit a file that existed at the seed (113 of them big: over 50 lines or 2 KB). "Shrink" = new bytes under 50% of old on a seed file over 50 lines or 2 KB. One false positive was dropped (u-mvy71nrt: a 299-byte append on `gate.js`, final 132,312 B).
+
+**Result.** 14 gutting writes in 13 runs, 11 reds plausibly explained by them. By model: Muse (Baseten) 5 of 43 big-file whole-writes in 4 runs; claude-sonnet-5 9 of 13 (8 in the July 2026 mailproof battery, all step-red, plus 1 litectx run); DeepSeek flash / v4p1-flash 0 of 57, all in steps that had `edit`. Muse also gutted seed files in steps WITH `edit`: 2 of 35 (u-mvxzwykl audit.js 33,957 B to 41 B; budget.js 25,678 B to 12,830 B, 49.97%, borderline, in u-mvy4cd0d), against 3 of 8 in write-no-edit steps. n is tiny. So a tool guard is the second layer under the plan rule of F271.
+
+**Fix.** BA-30 (opt-in shrink guard on `shell_write`) is filed and in build (`.claude/scratch/shrinkscan/BA30-DRAFT.md`). bareloop takes it when released: `shrinkGuard` on, `guardPath` = tracked at seed (PRD v1.124 item 8).
+
+**Source.** `.claude/scratch/shrinkscan/RESULT.md`.
+
+**Status.** Open; upstream in build.
+
+**2026-11-01 later.** BA-30 is built on bare-agent `feat/ba30-shrink-guard` (a876cf8; plural fix 4400a5f, "1 byte (1 line)"). The bareloop harness (`.claude/scratch/ba30-harness/RESULT.md`, untracked scratch; $0, real Loop and real bareguard Gate, no model calls): all 14 gutting writes refused with the file unchanged and `context` numbers correct; 589 of 589 other writes passed, 0 false refusals; `guardPath` is required (without it 13 of the 589, worker-own earlier-output rewrites, would be refused). Closest call among passes: audit.js at ratio 0.549. The one borderline refusal (budget.js, 12,830 against a line of 12,839) counts audit chars, not bytes (F267). Release waits for bare-agent's branch-review and hamr's word. Wiring and fail-open spellings: F276; refused writes counting as writes: F275.
+
+## F273 — the close ran worker-written code to earn a green (2026-11-01; live; run u-mvy4cd0d, Muse, bigfile) — PARKED for hamr, arbiter territory
+
+**Facts.** After gutting `src/gate.js` to 1 line (F271), the worker (no `run` verb) wrote helper scripts that never ran, then wrote a 38-line loader as `src/gate.js` (bytes 2089). At import time the loader runs `git show 88f8f20:src/gate.js` through `spawnSync`, applies the one-line fix and rewrites `gate.js`. The close's `npm test` imported it, so the arbiter's own test run executed worker-authored code with git access, and that is how the file came back to 2433 lines. The final `git diff 88f8f20 -- src/gate.js` is exactly the 1-line fix. Stray files remained (`_fix.mjs`, `do_restore.mjs`, `restore.mjs`, `restore2.mjs`); `src/index.js` and `src/primitives/budget.js` also changed in the green tree.
+
+**Reading.** The outcome is real (the right bytes), but the green was earned by code the worker authored and the close executed. Close output was not the lie; the route was. This sits next to the doctrine "run stays LOCKED forever": a worker that cannot run commands can still have its code run by the close.
+
+**Status.** PARKED for hamr's ruling; nothing proposed for build (arbiter territory).
+
+## F274 — the memo text is not persisted, and some memo numbers mislead (2026-11-01; $0 read of 32 memo-proof runs)
+
+**Facts.** The spine `carry-note` records keep counts only (phase, iteration, chars, capped, sections), so the exact text a worker was handed cannot be audited; it can only be re-rendered from the persisted state (`render()` in `src/carrynote.js`), which differs from the delivered bytes (07: 5,673 reconstructed vs 6,766 recorded; 09: 8,473 vs 9,240; 02: 10,751 vs 11,764, the real one capped). The reconstruction takes edits from the end-of-run tree and lacks the function-range map.
+
+**Stale or misleading numbers.** The line count in a read line is the on-disk count at that worker's last read, so it goes stale after later edits (`src/carrystore.js:92`; rendered at `src/carrynote.js:142`). `linesStale` (`carrynote.js:42/142`, "at run start") has no producer anywhere in `src` and is dead. "N lines changed" (`carrynote.js:179`) and the start snapshot count +/- diff lines, not file length, so after the F271 shrink `src/gate.js: 2473 lines changed` looked close to the old length. How a worker read that is unverified (no transcripts exist).
+
+**Parked.** Persisting the memo text is for hamr to want or not; nothing built. Source: `.claude/scratch/memoproof-run/analysis/DEEP.md`.
+
+**Status.** Open, observation; persisting the text is hamr's call.
+
+## F275 — a write the tool refuses still counts as a worker write: the strike ladder reads a refused gutting write as "busy" (2026-11-01; source read plus BA-30 harness; arbiter-adjacent, PARKED for hamr)
+
+**Facts.** A write refused by the tool (the BA-30 shrink refusal is the case in hand, but any tool throw after the policy allowed it behaves the same) lands in the gate audit as `phase:"gate"`, `decision:"allow"`, `action.type:"write"`, plus a separate `phase:"record"` row carrying the error. `auditWrites` (`src/planrun.js:2411-2420`) counts exactly `phase==='gate' && decision==='allow' && type write|edit`, so a refused write counts in `workerWrites` and in `writeCount`. `createLadder` (`src/ladder.js:141-146`) reads `writeCount` as "the worker wrote this iteration" to decide the idle strike. `pendingProbe`/`settleWrite` (`src/planrun.js:2469-2482`) already handle it correctly (file hash unchanged, so landed is false).
+
+**Consequence.** A worker that repeats a refused gutting write looks busy to the ladder, not idle, until the loop stops it with `stuck:shell_write` (default `maxIdenticalToolErrors` 3). In the harness, 3 identical refusals ended the run that way with the file untouched, so the cost is bounded by that limit. The signal available to tell the two apart is `errorContext.shrink` on the record row.
+
+**Decision for hamr.** Whether refused writes should be excluded from `auditWrites` (the F32 instrument). It touches the strike governor and the Layer R/handoff inputs, so it is arbiter-adjacent and not proposed for build. Source: `.claude/scratch/ba30-harness/RESULT.md`, "Two bareloop-side findings".
+
+**Status.** Open; PARKED for hamr (build spec section F).
+
+## F276 — BA-30 guard fail-open spellings for the bareloop wiring: symlinked parent and C-quoted names (2026-11-01; $0 harness; `.claude/scratch/ba30-harness/nofollow.mjs`)
+
+**Facts.** `shrinkGuard: { guardPath }` receives the lexical `resolveToolPath` path (`path.resolve`, no realpath). bareloop builds "tracked at seed" from `seedAtHead` (`src/kinds.js:521`) and `seedListing` (`src/kinds.js:538`, `git ls-tree -r --name-only`). Two spellings miss that set, so the guard fails OPEN for that file: (1) a write spelled through a symlinked PARENT (the set holds `/real/f.js`, the write names `/link/f.js`; a 10,000 B file was cut to 1 byte in the harness; a final-component symlink is refused with ELOOP as designed, since bareloop sets `noFollowSymlinks`); (2) names `git ls-tree` returns C-quoted (non-ASCII or special characters), because `seedListing` does not pass `-z`. Neither was reachable in the 603 archived writes; named, not measured. Reach is low (the worker has no shell to make a link; only a link already tracked in the repo), and bareguard's `fs.writeScope` is lexical too.
+
+**bare-agent ruling.** `guardPath` stays lexical, no realpath in the guard; the caller may realpath inside its own predicate.
+
+**Choice for hamr.** Realpath in bareloop's `guardPath` predicate, or exempt own writes another way, or accept the lexical set. Build spec section D.
+
+**Other wiring gaps (same read).** The seed block at `src/planrun.js:2088-2122` runs only `if (declared)`, so command-close and rubric jobs need their own `seedAtHead` call; the set must be built on the WORKER tree (the worktree or the hidden-git copy), once per leg; a resume reads HEAD at leg start, so "tracked at seed" there is unverified.
+
+**Status.** Open; spec written (section D), not built.

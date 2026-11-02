@@ -119,7 +119,7 @@ Cancel / modify schedule only set or adjust a schedule, never run.
 - **Built on:** the run's own record. Layer 3 carries a whole green road; this carries small lessons, red or green: a check that went red and was later fixed (with what the fixing try changed), or one still red at the end.
 - **Does:** at the end of every run, plain code (no model anywhere) turns the run's record into cards and folds cards that are the same lesson (same job, same check, same kind of error, mostly the same flagged words) into one row of one ledger. A lesson seen again counts up; seen in 3 jobs on one place it climbs to that place, in 3 places to you. A rubric run's lessons count at run end like any other; its reuse credit still waits for your Accept.
 - **Survives:** runs. The ledger keeps every row and deletes none; what gets read is filtered at read time (nothing older than 56 days, nothing from another signed version of the job).
-- **Who hears it:** only the planner, at the draft and the first replan, never the worker, and only if `learningHints` is on in `config.json`. It ships **off**; off still keeps the tally. The Audit tab shows exactly what the planner was told.
+- **Who hears it:** only the planner, at the draft and the first replan, never the worker, and only if `learningHints` is on in `config.json`. It ships **on** (absent = on; only an explicit `false` turns it off); off still keeps the tally. The Audit tab shows exactly what the planner was told.
 - **Status:** built, off by default. Whether the hints help is **not yet proven** (an on/off contrast is the test).
 
 | layer | wheels | arranged by | survives attempts (within one run) | survives runs |
@@ -132,6 +132,47 @@ Cancel / modify schedule only set or adjust a schedule, never run.
 
 Layers are build stages, not modes. A user never picks one. The finished product composes all
 four, plus the ledger, inside the one shell.
+
+---
+
+## Notes to the AI (2026-10-31)
+
+Every extra block the AI is handed besides the job text is a "note". There are 13 (the handoff note was folded into the carry memo, `b4e8021`). They split by **scope** (one try / one run / across runs) and **trigger** (when it is sent). Code cites are `src/planrun.js` unless named.
+
+**To workers (step and fix tries)**
+
+| # | Note | What it carries | Sent when | Switch | Where |
+|---|---|---|---|---|---|
+| 1 | Carry memo (the old handoff note is folded in, `b4e8021`) | files read WITH function line ranges, searches, edits, earlier failures (folded), the start failure (`at start`) | every new try after the first | always on, no switch (hamr 2026-11-01); the `carryNote` config key and a spec's `handoffNote` are ignored | planrun `withCarry`; `src/carrystore.js`, `src/carrynote.js` |
+| 2 | Last failure | "Previous attempt failed this step's checks" plus the check output (fix: the verification output) | the try before was red | always | planrun 3535 (step), 4289 (fix) |
+| 3 | Cut-off | ran out of turns, or repeated denied calls (the strike reason) | the try before was bounded | always | `boundedNote` planrun 602; used 3539, 4291 |
+| 4 | Numbers trend (fix only) | the close's own numbers so far, oldest first (checks passed, stage values) | fix tries | always | planrun 4275-4290 |
+| 5 | Step results | final text of each passed step, up to 2,000 chars (`ARTIFACT_MAX`) | an earlier step passed | always | planrun 279, 3533, 4286 |
+| 6 | Layer R note | the escalating fixation note | only when Layer R is on (off by default) | `rootInj` | planrun 3522, 3540; 4262-4269, 4292 |
+
+**To the planner**
+
+| # | Note | What it carries | Sent when | Switch | Where |
+|---|---|---|---|---|---|
+| 7 | Seed note | the job's own failing check at start | first draft only | `seedNote` (job spec, absent = on) | `seedNoteBlock` planrun 357; 1043, 2221, 3168 |
+| 8 | Learnings | lessons from earlier runs | draft + first replan | `learningHints` (config.json, absent=on) | `hintsBlock` planrun 351; 3165 |
+| 9 | Budget | money and time | every draft | always | `materialsBlock` planrun 333 |
+| 10 | Replan brief | why the step stopped (strikes / meter / stall), last exit state, close gap, steps done, money and time left | replan | always | planrun ~3790-3820; `closeGapBlock` 503 |
+| 11 | Trend line | "close trend so far" (numbers going up or down) | replan | always | planrun 3831-3833 |
+| 12 | Rerun words | what the person asked at the review door | rerun from Accept | always | `doorNoteBlock` planrun 375 |
+| 13 | Starting draft | the old passed plan as a start | Reuse | always | `startingDraftBlock` planrun 401 |
+
+Names we use: carry memo, last failure, cut-off, numbers trend, step results, seed note, learnings, replan brief (plus budget, trend line, rerun words, starting draft, Layer R note).
+
+**The fold is BUILT (hamr ruling 2026-10-31: "carry memo + handoff note become one, learnings separate, last failure separate, we split on scope and trigger"; commit `b4e8021`).**
+
+- The handoff note is part of the carry memo: one block, no switch (always on). The memo's files-read lines carry the function line ranges (` · functions: a 1-5, b 7-9`); at the 12,000-character cap the ranges are dropped FIRST, before search lines, earlier tries, failures and diff hunks.
+- A job spec's `handoffNote` is legacy: still accepted and hashed (old signed specs verify), never written by new drafts; it has no effect (the memo is always on).
+- The `handoff-note` spine record is no longer written; old spines that carry it replay unchanged (nothing reads it).
+- Everything else stays separate. Learnings (across runs, planner only) and last failure (stays in the prompt; the memo leaves the last try's failure out only when that try failed; a failure from a try later passed stays) are unchanged.
+- Next: one real run, then the memo proof battery (memo on/off, several jobs, prereg signed first).
+
+2026-11-01 - the fold seen live once (run u-mvxjji5a; Fireworks deepseek-v4p1-flash, bigfile, HEAD e931c39, all note switches at product defaults). Step-red, $0.4795, 5 worker asks, 0 handoff-note records, 5 carry-note records (non-first carried reads 3-5, searches 11-27, failures 1-2, up to 7,465 chars, none capped). Caveat: the files-read lines carrying `functions:` ranges (e.g. `src/gate.js`) come from a re-render of the memo over the persisted state plus the run's index, not the delivered bytes (the text is never persisted); the containing class chunk `Gate 579-2212` still sits in the functions list, as in the old handoff note (not new). One run: it shows the fold runs, not that it helps. The memo proof battery is still to do.
 
 ---
 

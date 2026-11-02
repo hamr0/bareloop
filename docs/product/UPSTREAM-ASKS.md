@@ -2856,3 +2856,124 @@ F259, a $0 probe on the real Gate and the real `createShellTools`: `shell_read` 
 Filed with the guard session 2026-10-29; owner (bareguard vs bare-agent) pending its answer.
 
 2026-10-29 — SHIPPED in bare-agent 0.55.0 (owner: bare-agent, not bareguard). `createShellTools({ canRead })` is asked per directory (false prunes) and per file (false skips); a throw or non-boolean fails the grep loudly; the grep `timeout` bounds the whole call. bareloop wires it to `gate.allows()` plus `noFollowSymlinks: true` (`gatedShellOptions`, `src/tools.js`) on branch feat/audit-grid; F259 FIXED there. Nothing further asked of bareguard.
+
+
+## BA-29 (bare-agent) — tell the caller what the model did when a tool call goes bad, and tell the model what went wrong so it can fix it (2026-11-01)
+
+ONE issue, not two (hamr): what did the LLM do, and how do we respond to it; both adapt to what we read, so we tell the LLM what went wrong so it can fix it. Each side holds its own goal: bare-agent READS what the model did and answers inside the attempt for argument faults; bareloop RESPONDS across attempts and owns the arbiter. Shape agreed with bare-agent, checked by bare-agent against its main @ 7d2d4d3 (v0.57.0).
+
+### The defect, in bare-agent's own words against its own code (bare-agent 0.55.0 cites; re-check against 0.57.0)
+
+Two different ways a model's tool call goes bad reach the same dead end.
+
+CASE 1, wrong shape. `tools/shell.js:354-364` (`writeFile`) refuses a non-string `content` with
+`shell_write requires a "content" string (pass content:"" to deliberately empty the file). Got content of type object — refusing to write, the file is unchanged. If your output was cut short, retry with the full content.`
+The last sentence is the BA-4 hint for an ABSENT content (a truncated call). For a present-but-object content it is the wrong hint: the model did not get cut short, it sent JSON as JSON. `editFile` (`tools/shell.js:425-439`) has the same wrong hint on `newText`; a wrong-typed `oldText` gets no hint. The model retries byte-identically; `Loop` `maxIdenticalToolErrors` default 3 (`loop.js:67`, `:325`, `recordToolFailure` `:596-612`) ends the run with `error: 'stuck:shell_write'` (or `stuck:shell_edit`). The return carries no field saying WHY it was stuck.
+
+CASE 2, the reply is cut at max_tokens. `loop.js:970-1031` classifies the round `truncated`, drops its tool calls, and returns `error: 'truncated:max_tokens'`, `stopReason: 'max_tokens'` with `toolCalls: []`. The run ends and the model is told nothing. Not visible to the caller:
+- which tool call was dropped (`droppedToolCalls` is only a count, in the `loop:done` / `loop:truncated` events, `:1018`, `:1030`);
+- whether the cut hit the tool-call JSON (arguments unterminated, `malformedToolCall` set) or hit a COMPLETE call that was merely last (replay shows `malformedToolCall: null`);
+- how many output tokens were reasoning. `OpenAIProvider._normalizeUsage` (`provider-openai.js:245-256`) keeps `outputTokens = completion_tokens` and discards `completion_tokens_details.reasoning_tokens`.
+
+### Ask: bare-agent owns READING what the model did, and the in-attempt reply for argument faults
+
+1. Bug fix, default ON. `tools/shell.js` hints (`writeFile` :358-363, `editFile` :436-440, `oldText` :426-430): name the received type; drop the "output was cut short, retry" text when the value is an object or array (keep it only for an absent argument); add a hint to `oldText`; add "to send JSON, encode it as one string". Messages change, behaviour does not.
+2. New generic Loop check `checkArgs: true`, opt-in, default off (many caller schemas are loose). Before `execute`, TOP-LEVEL only: a missing `required` param, or a JSON type mismatch on a declared primitive type (string, number, integer, boolean, object, array). No nested schemas, no `$ref`, no `oneOf`, no dependency, under 100 lines. On a mismatch the tool is NOT executed; the tool result is a refusal `<param> must be a <type>, got <type>` (plus "to send JSON, encode it as one string" for string-got-object/array). Same throw path, so `maxIdenticalToolErrors` still bounds it. bareloop turns it on for its workers.
+3. `usage.reasoningTokens`: a number when the vendor reports it, `null` when not, never 0. OpenAI wire `completion_tokens_details.reasoning_tokens`, Gemini `thoughtsTokenCount`, Anthropic `null`. Already inside `outputTokens`, so pricing is unchanged and it is never double-counted. Also in metrics.
+4. The Loop return gets `badCalls: [...]` (array; key absent when empty), each `{ kind: 'arg-type'|'arg-missing'|'cut-off'|'malformed-json', tool, param?, expected?, got?, argBytes?, parsed?, hasAppend?, round }`. `parsed: true|false` (not "complete"). `hasAppend` = whether that tool's schema has an `append` param, so a "write in parts" note is never a guess. Token facts live once on the run: `usage.reasoningTokens` plus `cutOff: { outputTokens, reasoningTokens, maxTokensRequested }` when cut. `error` and `malformedToolCall` stay byte-identical; a malformed-json call also appears in `badCalls`.
+5. Calls riding a cut round are exposed as data only (name, argBytes, parsed), NEVER executed (BA-4/BA-6 stand). Raw args are not included by default; opt-in like `exposeMalformedArgs`.
+6. No in-loop reply on a cut (BA-13 ends the run there). No repair, no coercion, no auto-continue.
+7. `badCalls` is on the run return only, not on per-round `onToolResult` / stream events (bareloop has no reader for those).
+
+bareloop-side companion work (next-attempt note from badCalls/cutOff, spine kind record, audit true size at src/tools.js:621/626, plain panel words) is bareloop's own and lands after the bare-agent version bump; routing a stuck arg-fault loop as a bounded attempt is PARKED for hamr.
+
+Acceptance criteria (each a $0 replay against a local http server with the real provider + Loop, as `.claude/scratch/write-fail/replay2.mjs` (untracked scratch)):
+- object `content` to `shell_write` (default `checkArgs` off): tool result has no "cut short", names the received type and the one-string fix; third identical call ends `stuck:shell_write`; file unchanged; no coercion anywhere. Same for `newText` / `oldText` on `shell_edit`.
+- same call with `checkArgs: true`: tool not executed, result is `content must be a string, got object` plus the encode-as-one-string text; `badCalls[0]` is `{ kind: 'arg-type', tool: 'shell_write', param: 'content', expected: 'string', got: 'object' }`.
+- missing required param under `checkArgs`: `kind: 'arg-missing'`, tool not executed.
+- `finish_reason: "length"` with unterminated args: `error: 'truncated:max_tokens'`, `malformedToolCall` set, `badCalls` has `cut-off` / `malformed-json` with `parsed: false`, `cutOff` present.
+- `finish_reason: "length"` with a complete 300 KB `shell_write` call: `parsed: true`, `argBytes` about 300000, `hasAppend: true`, `malformedToolCall` absent, the call not executed.
+- `finish_reason: "length"` with no tool call: no `badCalls` key.
+- vendor reporting reasoning tokens: `usage.reasoningTokens` equals it; vendor not reporting: `null`, never 0.
+
+### bareloop's own evidence
+
+CASE 1: Baseten `meta-models/muse-spark-open-1026`, Muse runs under `.claude/scratch/memoproof-base/runs/*change2*` (spines `u-mvxzrgwg`, `u-mvy0kgwu`, `u-mvy15hmq`). Gate audit `bytes:15` (the length of "[object Object]") on 32 of 40, 3 of 3 and 20 of 25 writes. `u-mvy0kgwu` ended `interpreter-red`, detail `worker loop: stuck:shell_write`. Replay (`.claude/scratch/muse-json/replay.mjs`, `.claude/scratch/write-fail/replay2.mjs`) reproduces the tool result text and the stuck ending for `shell_write` and `shell_edit`.
+
+CASE 2: archive of 262 spines under `.claude/scratch`, 9,699 worker rounds, 11 rounds ended `max_tokens` (all 11 on DeepSeek v4p1 flash on Fireworks, all exactly 32,000 output tokens). The thinking state of those 11 is unknown or inconsistent in the archive: `hits.json` marks 3 as think=on, 3 as think=off and 5 as null. 0 on the Muse runs. 0 `worker-malformed-tool-call` records in the whole archive. See RESULT.md.
+
+### Disconfirming evidence, considered per this file's standing rule
+
+- CASE 1 is not yet shown to be the model's doing. Nothing records the raw `function.arguments` string, so the disk evidence cannot separate "Muse emits a nested object" from "Baseten's tool-call parser turns the JSON string into an object". One live non-streaming call (under a cent, needs hamr's word) would settle it. If the server does it, the fix may be Baseten-side or request-side; the typed message is still correct but may not stop the loop.
+- A better message may not rescue the model. In run 04 the model found two workarounds on its own with the WRONG hint, but burned 32 refused writes first. Whether the correct text converts is unmeasured; it needs an ON/OFF contrast, not an anecdote.
+- CASE 2: the archive does NOT show that any cut was a long file write, and it cannot tell reasoning tokens from tool-call tokens (the cut output is discarded and `reasoningTokens` is dropped). F260 says plainly "No cause is claimed". Hence bareloop's note below keys on `cutOff` / `hasAppend` data rather than assuming.
+- CASE 2 on OpenAI-shape providers: `provider-openai.js:215-218` notes OpenAI 400s rather than emit a call it cannot finish, so on real OpenAI the dropped call may never exist; the replay serves a compat server that does. Whether Fireworks/DeepSeek ever emits a partial call on `length` is unmeasured (0 malformed records, and bareloop would not have recorded one on a cut round anyway, see bareloop item 2).
+- Parsing `Got content of type object` English out of `detail` instead of `badCalls` is the BA-26 anti-pattern (regexing prose), so it is not done.
+
+### Process
+
+Filed 2026-11-01. hamr said "BA-29 go, build it" (relayed to the bare-agent session the same day). bare-agent builds and POCs with broken inputs first (Muse object args; a cut round with a complete call), then bareloop runs its replays on its branch. bareloop consumes by version bump; no local shim.
+
+### Status
+
+2026-11-01 — **Released** in bare-agent v0.58.0 (PR #77; commits 36f7101 + 9f311ac): `badCalls`, `cutOff`, opt-in `checkArgs` (order checkpoint, policy, checkArgs, execute, kept as built), `usage.reasoningTokens` (number or null), the shell hint fix. bareloop replay 9/9 PASS (`.claude/scratch/ba29-replay/RESULT.md`, untracked scratch). Usage deep-equal risk in bareloop: none (`usageOf`, `src/planrun.js:2636`, copies 4 fields). Consumer pending on the next branch: `docs/product/ITEM33-BUILD.md`, addendum "Bad tool calls and the planning trap", section A.
+
+## BA-30 (bare-agent) — an opt-in shrink guard on `shell_write`: refuse a whole-file write that would gut an existing file, and tell the model why (2026-11-01)
+
+Shape agreed with the bare-agent session. Evidence: `.claude/scratch/shrinkscan/RESULT.md` (untracked scratch) (the scan) and `.claude/scratch/gatewipe/RESULT.md` (the root-cause read of the gate.js wipe).
+
+### The defect
+
+`shell_write` replaces a whole file. When the model must change a large existing file and reaches for `write`, it can put a note or a stub into it. Nothing guards this today: `writeFile` has `maxBytes` and `append` only.
+
+Archive read ($0, `shrinkscan/RESULT.md`): 451 gate-audited runs, 14 gutting whole-file writes in 13 runs, 11 of those runs red. Per model, among whole-file writes to big files that existed at the seed:
+- Muse (`meta-models/muse-spark-open-1026`): 5 of 43 gutted. `src/gate.js` 132,315 B to 143 B / 519 B / 2,221 B; `src/primitives/audit.js` 33,957 B to 41 B; `budget.js` 25,678 B to 12,830 B (49.97%, borderline).
+- claude-sonnet-5 (July 2026 mailproof battery): 9 of 13.
+- DeepSeek flash / v4p1-flash: 0 of 57.
+
+`gatewipe/RESULT.md` traces the Muse gate.js wipes to a deliberate `write` on the whole file: no wrong count, no partial-read rebuild; the plan gave the step `write` and no `edit`, and the exit required the file to change.
+
+bareloop's planner granting write-without-edit is part of the cause and is fixed on bareloop's side. But Muse also gutted files in 2 of 35 steps that HAD `edit` (audit.js above is one), so a tool-level guard is the second layer.
+
+### Ask: `createShellTools({ shrinkGuard })`
+
+Per instance, a sibling of `noFollowSymlinks` and `canRead`. Unset means byte-identical behaviour.
+
+1. `shrinkGuard: true` means `{ minOldBytes: 2048, maxShrinkRatio: 0.5 }`. An object overrides either field, plus `guardPath(absPath) => boolean` (default: guard every existing file). The path passed is the `resolveToolPath`'d absolute path, same as `canRead`. A bad shape throws `ValidationError` at creation.
+2. Order of checks in `writeFile`: `append: true` skips; `content: ''` skips (the BA-4 deliberate empty); a new file skips. Otherwise stat (following `noFollowSymlinks`). If `old >= minOldBytes` and `new < old * maxShrinkRatio` and `guardPath` allows, refuse and do not write.
+3. Bytes trigger it; lines appear only in the message. Lines are counted only when refusing, with a bounded chunked read.
+4. No `replace: true` flag. An escape hatch the model controls is not a guard.
+5. The refusal is a `ToolError` throw, so `maxIdenticalToolErrors` bounds loops. It carries `context: { shrink: true, oldBytes, newBytes, oldLines, newLines }`: numbers only, no path, no content. It is NOT put in `badCalls`, because BA-29 keeps shell throws out of `badCalls` on purpose.
+6. Message: `refusing: this would replace <path> (<oldBytes> bytes, <oldLines> lines) with <newBytes> bytes (<newLines> lines). To change part of a file use shell_edit; to rebuild it in parts use append:true; to really empty it pass content:''.`
+7. `wireGate`'s `errorContext` allow-list gains the shrink context, so the refusal lands in the gate audit row (bareloop reads the audit, not `onToolResult`). Confirmed by bare-agent: `shrink` (boolean) plus oldBytes/newBytes/oldLines/newLines as finite numbers; wrong-typed values dropped, like the existing fields.
+8. `shell_edit` is untouched. Measured at call time; nothing stored or logged.
+
+bareloop side (one line): bareloop turns `shrinkGuard` on with `guardPath` = "tracked at seed", and separately fixes its planner (write grants travel with edit; `EXIT_EXAMPLE` / persona wording), spec pending hamr.
+
+### Acceptance (bare-agent POC on bareloop's archive cases)
+
+- `gate.js` 132,315 B replaced by 2,221 B: refused, file unchanged, context numbers correct.
+- A rubric JSON rewrite with `guardPath` returning false: passes.
+- `content: ''` on a big file: passes.
+- `append: true`: passes.
+- A new file: passes.
+- `shrinkGuard` unset: byte-identical behaviour to today.
+- Bad option shape: `ValidationError` at creation.
+- The refusal row appears in the gate audit with the shrink context and no path or content in it.
+
+### Disconfirming evidence, considered per this file's standing rule
+
+- 82 of the 533 spines had no gate audit, so their writes are unseen; the 451 are not the whole archive.
+- The July claude-sonnet-5 rows have no recorded tools (10 of the 13 big writes are pre-plan era), so the 9 of 13 cannot be split by write-without-edit versus edit.
+- 3 P3 rows are repeated draws of one case, so the Muse count is smaller than it looks. n is tiny (5 of 43).
+- A refusal may just make the model loop to the identical-error limit. Whether this message converts the model to `edit` or `append` is unmeasured; it needs an ON/OFF contrast, not an anecdote.
+- A legitimate big shrink (a deliberate rewrite) is now two calls (`content: ''` then `append`).
+- The scan counts bytes in the audit and diffs; 15 more shrinks were a worker rewriting its own earlier output (mostly rubric JSON), which the default guard would also refuse unless `guardPath` excludes them. bareloop's "tracked at seed" does.
+
+### Process
+
+Filed 2026-11-01. hamr said "BA-30 go, build it" (relayed to the bare-agent session the same day). bare-agent POCs on bareloop's archive cases first (the acceptance list above), then bareloop runs its harness on the branch before review. bareloop consumes by version bump; no local shim.
+
+### Status
+
+2026-11-01 — **Built, not released.** On bare-agent `feat/ba30-shrink-guard` (a876cf8; plural fix 4400a5f, "1 byte (1 line)"). bareloop harness PASS (`.claude/scratch/ba30-harness/RESULT.md`, untracked scratch): 14/14 gutting writes refused, 589/589 others passed, 0 false refusals; `guardPath` required (13 would be refused without it). bare-agent rulings: `guardPath` stays lexical (no realpath in the guard; the caller may realpath inside its own predicate); check order kept. bare-agent suite 1807 tests, 0 fail. Release waits for bare-agent's branch-review and hamr's word. bareloop wiring spec: `docs/product/ITEM33-BUILD.md`, addendum "Bad tool calls and the planning trap", section D; findings F275, F276.

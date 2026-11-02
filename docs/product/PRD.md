@@ -2115,9 +2115,43 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 
 ### Carry note ships ON; grep fence; Providers tweaks; README trust section (v1.120 — 2026-10-30; SIGNED by hamr 2026-10-30)
 
-- **The carry note:** each new step or fix worker gets a code-written note of what earlier workers in the run read, searched and changed, diffs first under a 3000-char cap. ON by default; `carryNote: false` in config.json gives the old behaviour (handoff note only). Evidence: F258 (2 rounds).
+- **The carry note:** each new step or fix worker gets a code-written note of what earlier workers in the run read, searched and changed, diffs first under a 12000-char cap. ON by default; `carryNote: false` in config.json gives the old behaviour (handoff note only). Evidence: F258 (2 rounds).
 - **F259 fixed:** shell_grep walks are gated per path (bare-agent ^0.55.0 `canRead` + `noFollowSymlinks`).
 - **Settings > Providers:** every key starts folded; the model row you click or edit is highlighted blue.
 - **README:** "The machine that makes machines" section (intent, guide rails, verification, evidence).
 - **Paid runs** from now use DeepSeek flash on Baseten (hamr 2026-10-30).
 - **Open:** F260 (pulselog wall in long fix tries), logged only.
+
+### Carry memo: bigger, with check results and earlier failures; seed note ON (v1.121 — 2026-10-31; hamr rulings 2026-10-31)
+
+- **Carry note:** cap 12000 characters; each try line says how the try ended and its check result; an "Earlier failures (folded):" section carries each failed check's whole text; the last try's failure is left out only when that try failed (its retry prompt carries it), a failure from a try later passed stays. F261.
+- **Seed note ON by default:** the job's own failing `count-not-worse` text at start goes to the planner's first draft and, as the memo's `at start` entry, to every step and fix worker. Spec field `seedNote`, absent = on, `false` = off. F262.
+- **Secret inventory:** left as known token shapes only; a `NAME=value` style secret is not masked (F261 ruling).
+- **NEXT (hamr 2026-10-31), plan only:** A (map on a big-file read) tested with M2 after a $0 read and a signed prereg; litectx index plan (bump, `lc.indexed` fallback, index once at run start); then a larger ON/OFF proof of the memo. Details in `docs/wiki/HARNESS2.md` section 9.
+
+### readMap built, off, parked for more runs (v1.122 — 2026-10-31; hamr ruling 2026-10-31)
+
+- **readMap** (first read of a big file returns a map of its parts): built as an experimental spec field, default OFF. First battery FAIL on the frozen rule, n=3 per arm (F263, `docs/logs/MAP-PREREG.md`); time and cost near parity. Parked: needs more runs before any default change (hamr 2026-10-31).
+
+### Notes to the AI named, handoff note to fold into carry memo (v1.123 — 2026-10-31; hamr ruling 2026-10-31)
+
+- **The 14 notes** to workers and the planner are named and listed in `docs/product/LAYERS.md`, section "Notes to the AI (2026-10-31)".
+- **Split rule:** by scope (one try / one run / across runs) and trigger (when sent).
+- **Planned, NOT built (next build):** handoff note folds into carry memo, one block, one switch; `handoffNote: false` meaning is an open point for hamr. Then one real run, then the memo proof battery (prereg first).
+- **Tick (2026-10-31): the fold is BUILT** (`b4e8021`): one block (function line ranges in the memo's files-read lines, dropped first at the cap), one switch (`carryNote`), legacy `handoffNote: false` = memo off for that job, `handoff-note` record no longer written. Real run and proof battery still to do.
+- **Tick (2026-11-01): the switch is removed** (hamr: "keep as permanent on by default, no optional config.json here, this is not something we want to turn off"): the carry memo is always on; `carryNote` (config.json, `runJob`/`runPlan`) is gone, a spec's `handoffNote` is accepted, hashed and ignored. OLD-vs-NEW fold check on p7: no regression seen (F264).
+
+### Bad tool calls and the planning trap: hamr rules "both" (v1.124 — 2026-11-01)
+
+- **Ruling (hamr 2026-11-01):** "both ... we fix planner instructions and b2 patch it as needed": the planner instructions are fixed at the source (proven by a drafter-only POC first), and B2 (code pairs `edit` with a code-file `write` grant, ceiling-bounded) is the safety net. F271.
+- **Upstream status:** BA-29 is released as bare-agent v0.58.0 (replay 9/9 PASS). BA-30 (shrink guard on `shell_write`) is built and bareloop-harness-passed (a876cf8 / 4400a5f, 0 false refusals in 589); release waits on bare-agent's review and hamr's word.
+- **Build spec:** SPEC, not built, on a NEW branch after `fix/carry-red` ships as v0.53.0: `docs/product/ITEM33-BUILD.md`, addendum "Bad tool calls and the planning trap: next-branch build spec (2026-11-01)", sections A-F.
+- **Next branch contents:**
+  1. (A) Bump bare-agent to `^0.58.0`; peer ranges in a clean install; `checkArgs` on for workers; next-attempt note from `badCalls`/`cutOff` proven with one real ON/OFF run (F265, F266).
+  2. (A) A spine record naming the bad-call kind and the malformed marker kept on cut rounds (F266); the audit records true type and size (F267); plain panel words instead of "interpreter-red" (F265).
+  3. (B) Planner instructions fix (`EXIT_EXAMPLE`, persona lines) after a frozen-rule drafter-only POC (F271).
+  4. (C) B2 `pairEditGrant`, rubric `output/steps/` exempt, `validatePlan` unchanged, $0 replay: 0 DeepSeek plans change (F271).
+  5. (D) Take BA-30 when released: `shrinkGuard` with `guardPath` = tracked at seed; wiring gotchas and fail-open spellings (F272, F276).
+  6. (E) Live check on Muse bigfile: proves it runs, not that it helps.
+- **PARKED for hamr (section F):** a stuck arg-fault loop as a bounded attempt instead of `interpreter-red` (F265); refused writes counting as worker writes (F275); the close executing worker-written code (F273); persisting the memo text (F274). Open choices: the realpath choice for `guardPath` (F276), export of `pairEditGrant`.
+- **Memo proof:** a leaning LOSE, confounded by planning (F269, F271); the memo stays always on.

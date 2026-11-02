@@ -40,6 +40,7 @@
 
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { relative, resolve, sep } from 'node:path';
 
 /** The delivery cap, in bytes. Equal to `NATIVE_READ_CAP` by construction — the
  * native path's CLI display bound and this cap bound the SAME seam, so one
@@ -324,6 +325,58 @@ const stalePastEofNotice = (path, startLine, endLine, lines, detail) =>
 /** @typedef {{file: string, path: string, startLine: number, endLine: number, detail: string}} StaleReq */
 /** @typedef {{text: string, outcome: 'stale-served'|'stale-absent'|'stale-past-eof'}} StaleServe */
 
+// ── THE FIRST-READ MAP (EXPERIMENTAL, default off; docs/logs/MAP-PREREG.md) ─────────────────────────────────────────
+// With the signed spec field `readMap: true`, the FIRST shell_read of a big non-test file in an ask returns a map (one line
+// per named part: symbol and line range) instead of the file's bytes, so the worker can copy exact `ctx_get` handles instead
+// of computing a range ($0 archive read: 41% of ctx_get calls on a big-file job came back no-chunk). It delivers nothing, so
+// it never touches the delivery ledger: the SECOND read of the same path in the same ask is today's read, whole.
+
+/** a file this long (in lines) or longer gets a map on its first read in an ask */
+export const READ_MAP_MIN_LINES = 200;
+/** the map's size bound, in characters (header, parts, `+N more` line and footer together) */
+export const READ_MAP_CAP = 4000;
+
+/** a test file: a `test/`, `tests/` or `__tests__/` path segment, or a name `*.test.*` / `*.spec.*` */
+const isTestPath = (/** @type {string} */ rel) => rel.split('/').some((seg, i, a) => (i < a.length - 1 && (seg === 'test' || seg === 'tests' || seg === '__tests__')) || (i === a.length - 1 && /\.(test|spec)\./.test(seg)));
+
+/**
+ * The map text for one file, from the index's chunks. Pure. A chunk that CONTAINS another named chunk is left out (a class
+ * chunk would hand the whole class to `ctx_get`); the rest are listed by start line as `symbol start-end` in the index's own
+ * 0-based inclusive line space, the one `ctx_get` takes. Cut to READ_MAP_CAP characters with a `+N more` line.
+ * @param {{rel: string, lines: number, chunks: {symbol?: string|null, startLine: number, endLine: number}[]}} o
+ * @returns {{text: string, symbols: number}|null} null when the file has no named part
+ */
+export function buildReadMap({ rel, lines, chunks }) {
+  const named = chunks.filter((c) => typeof c.symbol === 'string' && c.symbol !== '' && Number.isInteger(c.startLine) && Number.isInteger(c.endLine));
+  const kept = named
+    .filter((c) => !named.some((d) => d !== c && c.startLine <= d.startLine && d.endLine <= c.endLine && (c.startLine !== d.startLine || c.endLine !== d.endLine)))
+    .sort((a, b) => a.startLine - b.startLine || a.endLine - b.endLine);
+  if (kept.length === 0) return null;
+  const head = `${rel} (${lines} lines) — map, not the file:`;
+  const foot = `Line numbers are 0-based, as ctx_recall prints them; copy them as printed. Open one part with ctx_get(path="${rel}", startLine=<start>, endLine=<end>) using a range from this list, or read the file again to get the whole file.`;
+  const rows = kept.map((c) => `${c.symbol} ${c.startLine}-${c.endLine}`);
+  const moreLine = (/** @type {number} */ n) => `+${n} more`;
+  let used = head.length + 1 + foot.length;
+  const shown = [];
+  for (let i = 0; i < rows.length; i++) {
+    // room for the `+N more` line is reserved while parts remain after this one
+    const reserve = i < rows.length - 1 ? moreLine(rows.length).length + 1 : 0;
+    if (used + rows[i].length + 1 + reserve > READ_MAP_CAP) break;
+    shown.push(rows[i]);
+    used += rows[i].length + 1;
+  }
+  const cut = rows.length - shown.length;
+  const text = [head, ...shown, ...(cut > 0 ? [moreLine(cut)] : []), foot].join('\n');
+  return { text, symbols: shown.length };
+}
+
+/**
+ * @typedef {{root: string, hasGet: boolean, getNode: (rel: string) => any, refresh?: (() => Promise<unknown>)|null, emit: (type: string, data: object) => void}} ReadMapOpts
+ *   `root`: the job root (paths are made relative to it); `hasGet`: this worker holds `ctx_get` (a map hands out handles only that tool opens);
+ *   `getNode`: the LiteCtx index's node for a path (its `chunks`); `refresh`: re-index first so the ranges are true to the file as it now is;
+ *   `emit`: the spine channel, for the report-only `read-map` / `read-map-skip` records (counts and a reason, never text).
+ */
+
 /**
  * Create the shim: one delivery ledger, and the two seams that speak for it.
  *
@@ -332,7 +385,7 @@ const stalePastEofNotice = (path, startLine, endLine, lines, detail) =>
  * reference to the ledger — see its own note. Both live in one object because
  * they are one worker's shim: the read seam and the retrieval seam the cap
  * steers a capped worker towards.
- * @param {{cap?: number, arm?: ReadShimArm, onCount?: ((kind: 'pointered'|'capped', bytesWithheld: number) => void)|null}} [opts]
+ * @param {{cap?: number, arm?: ReadShimArm, onCount?: ((kind: 'pointered'|'capped', bytesWithheld: number) => void)|null, readMap?: ReadMapOpts|null}} [opts]
  *   `cap`: delivery bound in bytes (the shipped value is `READ_SHIM_CAP`; the option
  *   exists so the native path can pin the two bounds to one number rather than two
  *   constants drifting apart). `arm`: which levers are live (`readShimArm`). Defaults to
@@ -343,7 +396,10 @@ const stalePastEofNotice = (path, startLine, endLine, lines, detail) =>
  *   for a diff response (L2 is its own lever, uncounted here) or a first read under the
  *   cap (nothing was withheld).
  */
-export function createReadShim({ cap = READ_SHIM_CAP, arm = ARM_ALL, onCount = null } = {}) {
+export function createReadShim({ cap = READ_SHIM_CAP, arm = ARM_ALL, onCount = null, readMap = null } = {}) {
+  /** the paths (absolute) this ask has had its map decision for: the second read of one is today's read
+   * @type {Set<string>} */
+  const mapTried = new Set();
   /** path → what the worker has been handed of the CURRENT content. `full` is
    * the delivered text itself, kept ONLY while the worker holds the whole file
    * (null otherwise) because that is the only state a diff is legal from.
@@ -456,6 +512,38 @@ export function createReadShim({ cap = READ_SHIM_CAP, arm = ARM_ALL, onCount = n
    * @param {{name: string, execute: (args: any) => Promise<any>}} tool the read tool
    * @returns {{name: string, execute: (args: any) => Promise<any>}} the same tool
    */
+  /** @param {string} path the path as the worker spelled it @returns {Promise<string|null>} the map text, or null for today's read */
+  const firstReadMap = async (path) => {
+    const o = /** @type {ReadMapOpts} */ (readMap);
+    const abs = resolve(o.root, path);
+    if (mapTried.has(abs)) return null;
+    mapTried.add(abs);
+    const rel = relative(resolve(o.root), abs).split(sep).join('/');
+    if (rel === '' || rel.startsWith('..') || isTestPath(rel)) return null;
+    let lines;
+    try {
+      const text = readFileSync(abs, 'utf8');
+      lines = text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
+    } catch { return null; }
+    if (lines < READ_MAP_MIN_LINES) return null;
+    /** @param {string} reason */
+    const skip = (reason) => { o.emit('read-map-skip', { path: rel, reason }); return null; };
+    if (!o.hasGet) return skip('no-ctx_get');
+    let chunks;
+    try {
+      if (o.refresh) await o.refresh();
+      chunks = o.getNode(rel)?.chunks;
+    } catch { return skip('no-index'); }
+    if (!Array.isArray(chunks)) return skip('no-index');
+    if (!chunks.some((/** @type {any} */ c) => c?.symbol)) return skip('no-named-chunks');
+    // an index older than the file: a named chunk ending past the file's last line
+    if (chunks.some((/** @type {any} */ c) => c?.symbol && c.endLine >= lines)) return skip('stale-index');
+    const built = buildReadMap({ rel, lines, chunks });
+    if (!built) return skip('no-named-chunks');
+    o.emit('read-map', { path: rel, lines, symbols: built.symbols, chars: built.text.length });
+    return built.text;
+  };
+
   const wrapRead = (tool) => {
     // An OFF arm wraps nothing at all — not a wrapper that passes through, which
     // would still be a `tool.execute` this module owns. A0 has to be the seam
@@ -470,6 +558,13 @@ export function createReadShim({ cap = READ_SHIM_CAP, arm = ARM_ALL, onCount = n
       // here at all: the worker gets the failure, and the ledger stays clean of a
       // path nobody ever received bytes for.
       if (path === null || typeof r !== 'string') return r;
+
+      // THE FIRST-READ MAP (experimental): the first read of a big non-test file in this ask returns the map, delivers nothing, and
+      // leaves the ledger untouched; every other read falls through to the code below unchanged.
+      if (readMap) {
+        const m = await firstReadMap(path);
+        if (m !== null) return m;
+      }
 
       const buf = Buffer.from(r, 'utf8');
       const total = buf.length;
@@ -569,7 +664,7 @@ export function createReadShim({ cap = READ_SHIM_CAP, arm = ARM_ALL, onCount = n
    * Not called for a continuation (`askFrom` re-runs the SAME transcript — the model still
    * holds everything, so its ledger stays true).
    */
-  const reset = () => { ledger.clear(); };
+  const reset = () => { ledger.clear(); mapTried.clear(); };
 
   return { arm, cap, wrapRead, serveStale, summary, reset };
 }
