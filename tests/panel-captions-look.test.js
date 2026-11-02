@@ -34,5 +34,5 @@ test('3. field captions elsewhere are 12px bold accent; checkbox/radio labels ke
   assert.match(body('\n  label{'), /text-transform:uppercase/, 'case kept');
   assert.match(body('.field label.jf-thinking{'), /color:var\(--text-dim\)/);
   assert.match(body('.pv-legacy{'), /color:var\(--text-dim\)/);
-  assert.match(body('.radio-row label{'), /color:var\(--text\)/);
+  assert.match(body('.radio-row label{display:flex'), /color:var\(--text\)/);
 });
