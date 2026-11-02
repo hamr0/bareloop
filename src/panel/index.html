@@ -302,11 +302,11 @@
   .ended-block.green{border-color:var(--green);}
   .ended-block.grey{border-color:var(--grey-dot);}
   .ended-row{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px;}
-  .ended-label{color:var(--text-faint);font-size:11px;letter-spacing:0.08em;min-width:52px;}
+  .ended-label{color:var(--accent);font-weight:700;font-size:11px;letter-spacing:0.08em;min-width:52px;}
   .ended-text{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;}
   /* a NEXT with several instructions is one per line: label muted, instructions in a second column (the shape fwdloop copied, 2026-10-25) */
   .next-rows{display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:10px;row-gap:2px;}
-  .next-label{color:var(--text-faint);}
+  .next-label{color:var(--accent);font-weight:700;}
   .next-text{min-width:0;overflow-wrap:anywhere;}
   .ended-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;}
   /* P5 item 4: Import (read only) — the folder browser, the imported rows, the view */
@@ -356,7 +356,7 @@
   .summary-box.grey{border-color:var(--grey-dot);}
   .summary-box.amber{border-color:var(--amber);}
   .summary-box.magenta{border-color:var(--magenta);}
-  .summary-box::before{content:"┤ SUMMARY ├";position:absolute;top:-10px;left:10px;background:var(--panel2);padding:0 6px;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;}
+  .summary-box::before{content:"┤ SUMMARY ├";position:absolute;top:-10px;left:10px;background:var(--panel2);padding:0 6px;font-size:12px;font-weight:700;color:var(--accent);letter-spacing:0.08em;}
   .summary-headline{font-weight:700;margin-bottom:8px;font-size:13px;}
   .summary-row{display:flex;gap:0;padding:2px 0;}
   .sum-label{flex:none;width:66px;color:var(--text-faint);}
@@ -368,7 +368,7 @@
   .imported-box .sum-val{flex:1 1 180px;min-width:0;overflow-wrap:anywhere;}
 
   .map-box{border:1px solid var(--border-strong);padding:10px;margin-top:16px;margin-bottom:14px;background:var(--panel2);}
-  .map-box::before{content:"┤ MAP ├";display:block;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;margin:-2px 0 8px 0;}
+  .map-box::before{content:"┤ MAP ├";display:block;font-size:12px;font-weight:700;color:var(--accent);letter-spacing:0.08em;margin:-2px 0 8px 0;}
   /* ruling 1A: chips as wide as their own text, side by side, wrapping — a name is never truncated */
   .map-chips{display:flex;flex-wrap:wrap;gap:8px 4px;align-items:flex-start;padding-left:1.4em;}
   /* ruling A: a step + its trailing arrow are ONE unit (the arrow never wraps alone); the lead arrow of a wrapped line

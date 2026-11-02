@@ -57,3 +57,14 @@ test('4. Runs tab section captions are colour bars with a count pill; tokens in 
 test('4b. a Jobs-list card carries rl-jobcard (the divider between job cards)', () => {
   assert.match(PAGE, /var top = '<div class="rl-card rl-jobcard'/);
 });
+
+test('5. Run tab ENDED/NEXT/SCHEDULE labels, Summary and Map captions are accent bold; a red state still wins', () => {
+  const lab = body('.ended-label{');
+  assert.match(lab, /color:var\(--accent\)/); assert.match(lab, /font-weight:700/); assert.match(lab, /font-size:11px/);
+  assert.match(body('.ended-row.is-red .ended-label,'), /color:var\(--red\)/);
+  assert.match(body('.next-label{'), /color:var\(--accent\);font-weight:700/);
+  for (const sel of ['.summary-box::before{', '.map-box::before{']) {
+    const r = body(sel);
+    assert.match(r, /font-size:12px/, sel); assert.match(r, /font-weight:700/, sel); assert.match(r, /color:var\(--accent\)/, sel);
+  }
+});
