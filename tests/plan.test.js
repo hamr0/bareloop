@@ -1172,6 +1172,14 @@ test('F254: planPrompt says exit is REQUIRED on EVERY step and shows a legal exa
   assert.ok(p.includes(EXIT_EXAMPLE), 'the legal-example sentence is in the planner prompt');
 });
 
+test('PLANWORDING B: EXIT_EXAMPLE teaches the read-only look-around shape and that shape validates', () => {
+  assert.match(EXIT_EXAMPLE, /read-only look-around step \(tools read, grep\) uses \[\{"type":"artifact-written","path":"<an existing file the step reads>"\}\]/);
+  const plan = clone(PLAN);
+  plan.steps.unshift({ id: 'look-around', action: 'Read and grep the orchestrator to learn its functions.', tools: ['read', 'grep'], rounds: 4, target: 'tests/notes.md', exit: [{ type: 'artifact-written', path: 'tests/notes.md' }] });
+  const r = validatePlan(plan, OPTS);
+  assert.equal(r.ok, true, `the taught shape must be legal: ${JSON.stringify(r.reds)}`);
+});
+
 test('F254: a step with no exit reds missing-required and the detail carries the legal example', () => {
   const r = validatePlan(mut((p) => { delete p.steps[0].exit; }), OPTS);
   assert.equal(r.reds.length, 1);

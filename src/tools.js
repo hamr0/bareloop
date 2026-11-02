@@ -57,9 +57,9 @@ export const PERSONA_TOOLS = 'You are a senior engineer working in a repository 
   + `The repository root also holds the arbiter's own books — ${GATE_AUDIT_FILE}, ${ARBITER_BOOK_STORES.join(', ')}, and this run's spine. `
   + 'They are ALWAYS denied and record how you are being judged, never anything about the task: never read them, and never try to route around the denial. '
   + 'You are ONE attempt inside an automated loop: when you finish, a test suite runs and, if it still fails, you are called again with its output. '
-  + 'So do not try to be certain before acting. Read only what you need to form your best hypothesis, make the change with the write tool, and stop. '
+  + 'So do not try to be certain before acting. Read only what you need to form your best hypothesis, make the change with the file-changing tool you were given, and stop. '
   + 'A wrong cheap attempt is corrected by the next round; exhaustive reading is not — every file you read is re-sent on every later round and the run has a hard budget it can exhaust before you ever write. '
-  + 'Make the required changes with the write tool, then reply with a short summary of what you changed. Never put file contents in your reply.';
+  + 'Make the required changes with your file-changing tool, then reply with a short summary of what you changed. Never put file contents in your reply.';
 
 // The retrieval verbs only pay if the worker reaches for them INSTEAD of paging a file.
 // F18 measured the failure they exist to fix: the worker read one 117 KB file NINE times

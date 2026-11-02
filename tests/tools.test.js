@@ -408,6 +408,15 @@ test('a FULL grant reads exactly as the component strategies do today — the fi
   assert.deepEqual(ungrantedNamed([...TOOL_MENU]), []);
 });
 
+test('PLANWORDING B: the persona never names a tool the step may not hold ("with the write tool")', () => {
+  // a look-around step may hold read/grep only, or edit without write; the persona
+  // named `write` for every worker, so the wording says "the file-changing tool you were given"
+  assert.ok(!PERSONA_TOOLS.includes('with the write tool'), 'the persona still names the write tool');
+  assert.ok(PERSONA_TOOLS.includes('make the change with the file-changing tool you were given, and stop'));
+  assert.ok(PERSONA_TOOLS.includes('Make the required changes with your file-changing tool'));
+  assert.deepEqual(ungrantedNamed(['read', 'grep']), [], 'a read-only grant is steered at nothing it lacks');
+});
+
 test('no granted verb, no strategy — an empty grant is steered nowhere', () => {
   assert.equal(strategyFor([]), '');
   assert.equal(strategyFor(['write']), '', 'write alone carries no component strategy (its own line is the persona\'s)');

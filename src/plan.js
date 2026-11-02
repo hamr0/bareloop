@@ -39,7 +39,7 @@ export const MAX_EXITS_PER_STEP = 2;
 /** a legal-example sentence for the exit menu — shown in the planner prompt and
  * appended to the missing-required exit red, so a redraft sees a legal shape,
  * not only the rule (F254: `exit` is required on EVERY step) */
-export const EXIT_EXAMPLE = 'Legal exit examples: a step with no check uses [{"type":"artifact-written","path":"<its target>"},{"type":"tree-changed","scope":"<an offered scope>"}]; a step with a check uses [{"type":"tree-changed","scope":"<an offered scope>"},{"type":"check-passes","name":"<a check name>"}].';
+export const EXIT_EXAMPLE = 'Legal exit examples: a read-only look-around step (tools read, grep) uses [{"type":"artifact-written","path":"<an existing file the step reads>"}]; a step that changes files and has no check uses [{"type":"artifact-written","path":"<its target>"},{"type":"tree-changed","scope":"<an offered scope>"}]; a step with a check uses [{"type":"tree-changed","scope":"<an offered scope>"},{"type":"check-passes","name":"<a check name>"}].';
 /** plan size bound — per-step rounds bound the spend, but an unbounded step
  * COUNT is still an unbounded claim on the wallet; same 8 as loop.maxIterations */
 export const MAX_PLAN_STEPS = 8;
