@@ -15411,3 +15411,13 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Caveat.** The drafter granted `edit` itself and drew no look-around write step, so `pairEditGrant` and the shrinkGuard refusal never fired. Both are test-proven only. n=1 on a nondeterministic worker is an anecdote. Evidence: `.claude/scratch/e-livecheck/result.json` (untracked scratch).
 
 **Status.** Closed as a run-without-harm check; the catching claim stays unproven (F271, F272).
+
+## F281 — a job line the always-on guards fully cover had no legal declaration, so a 2-line repo job failed drafting (2026-11-02; PAID drafting, Fireworks `accounts/fireworks/models/deepseek-v4p1-flash`; n=6 per arm)
+
+**Facts.** Panel draft session smvzn2krnxmyu ($0.04) went plan-red after three tries on a 2-line job (line 1 "Make npm test pass", line 2 "Fix the cause in the source code under src/" with "no suppression comments and no any annotations"). Every numbered line needs a stage or a refusal, and a mandatory guard may carry no `fromLine`, so line 2 (fully covered by changed-from-seed, no-suppressions and the write fence) had no legal declaration. Round 1 (`docs/logs/GUARDLINES-PREREG.md`): with only a `guardLines` link added, the drafter used it but declared a second `files-changed` stage on try 1 in 12 of 12 drafts and ON still ended on job-line-uncovered twice (verdict FAIL, nothing built). Round 2 (`docs/logs/GUARDLINES-PREREG-2.md`, results in `docs/logs/GUARDLINES-RESULTS.md`): the link plus a prompt paragraph naming the guards, "never declare them again", and a legal example gave 0/6 guard duplicates, 0/6 line-2 failures, 0/6 plan-red against OFF 3/6 plan-red and 6/6 duplicates (verdict PASS).
+
+**Fix.** `closeDecl.guardLines: [{guard, lines}]` beside the stages (the guard's own object stays the genre's); a line a link covers counts as covered; a link must name a real mandatory guard and real lines; the drafter prompt and the plan card ("check - always-on: <guard>") say so. Old specs without the field behave as before.
+
+**Caveats.** n=6 screening read, not a rate; OFF rows are from round 1. Round 2 still showed other reds (D5 "guard not in declaration" 3/6, scoped-count and no-suppressions-scope reds) that the pass rule does not count; the shipped wording differs from the tested wording by one clause ("keep those exactly as given", added against the D5 reds) and that clause is test-proven only, not seen live. The cure's render and validator are test-proven.
+
+**Status.** Built on branch fix/bad-calls.
