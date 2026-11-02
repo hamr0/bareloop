@@ -5,6 +5,19 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Added
+
+- **bare-agent `^0.59.0` bad-call handling (BA-29; F265, F266, F267).** The worker Loop turns on `checkArgs` (an object where a string was declared is refused before the tool runs, with the corrected hint). A new spine record `worker-bad-calls` names each bad call from bare-agent's structured `badCalls`/`cutOff` (kind, tool, param, expected, got, size, `hasAppend`, round); `worker-malformed-tool-call` is no longer lost on a round cut at the output cap. The next attempt's note says what was cut or refused (write in parts with `append`, decide sooner when reasoning dominates, send JSON as text). Test-proven only; not seen live.
+- **`pairEditGrant` (F271, B2 safety net).** A plan step granting `write` without `edit` is paired with `edit` by code at the draft, replan and resume sites, only when the signed ceiling offers `edit` and never for a rubric step-file step. Internal (not exported). Test-proven, including the three live gutting plans as a fixture; not seen live.
+
+### Changed
+
+- **Gate audit write/edit rows record `valueType` and UTF-8 `bytes`** (F267): an object content no longer reads as 15 bytes and non-ASCII text is no longer under-counted.
+- **Plain panel words for a stuck refused-argument loop**: the Ended block names what the model did instead of "(code: interpreter-red)"; the terminal outcome is unchanged (the escalation record gains `badCall`).
+- bare-agent pin `^0.55.0` to `^0.59.0` (clean-install peers checked: bareguard 0.27.0 deduped).
+
 ## [0.53.0] - 2026-11-02
 
 ### Added
