@@ -27,7 +27,7 @@ import { join, resolve, relative } from 'node:path';
 import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
 import { runClose, runStages, ralph, CLOSE_FAULTS, boundGap } from './ralph.js';
-import { validatePlan, legalScopes, closeStagesOf } from './plan.js';
+import { validatePlan, pairEditGrant, legalScopes, closeStagesOf } from './plan.js';
 import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, RETRIEVAL_PAIR, EXIT_EXAMPLE } from './plan.js';
 import { snapshotScope, evalExits, CHECK_GAP_MAX } from './exits.js';
 import { createRoot } from './root.js';
@@ -49,7 +49,7 @@ import { workerThinkingMode, thinkingCallOptions } from './thinking.js';
 export { rateSourceFields };
 import { createClock, isWallTimeout } from './clock.js';
 import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade, HUMAN_PAUSE, HITL_PAUSE, HITL_DECISION_RED } from './declaredclose.js';
-import { inputLabelsOf, outputJudgedRecords } from './rubricstep.js';
+import { inputLabelsOf, outputJudgedRecords, STEP_DIR } from './rubricstep.js';
 import {
   seedAtHead, seedListing, changedSet, GAP_TRIM_MARKER, GATE_AUDIT_FILE, ARBITER_BOOK_STORES,
   HUMAN_KIND, HUMAN_DECISIONS, normalizeHumanRuling, resolveHumanRuling,
@@ -3339,7 +3339,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       });
       return 'plan-red';
     }
-    plan = /** @type {any} */ (pv.plan);
+    // F271 (B2): a write grant is paired with edit when the SIGNED ceiling offers it; the reloaded plan is executed — and recorded — paired
+    plan = /** @type {any} */ (pairEditGrant(pv.plan, job, STEP_DIR));
     // The skip set is a PREFIX match on the plan's own step ids, never a count: a count
     // would skip whatever happens to sit at that index. Steps run strictly sequentially
     // and idx only advances on a satisfied exit, so the dead run's completions ARE a
@@ -3369,7 +3370,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         for (const r of pv.reds) emit('plan-red', r);
         return 'plan-red';
       }
-      plan = /** @type {any} */ (pv.plan);
+      plan = /** @type {any} */ (pairEditGrant(pv.plan, job, STEP_DIR)); // F271 (B2)
       emit('plan-accepted', { plan });
     } catch (e) {
       return relay(e, 'plan');
@@ -3922,7 +3923,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         planExecuted();
         return 'plan-red';
       }
-      plan = /** @type {any} */ (pv.plan);
+      plan = /** @type {any} */ (pairEditGrant(pv.plan, job, STEP_DIR)); // F271 (B2)
       emit('plan-accepted', { plan, phase: 'replan' });
       // the new plan's steps are NOT the old plan's steps — its abandoned greens
       // must not ride forward as this plan's "prior steps' results" (stale, and
