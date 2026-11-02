@@ -214,9 +214,10 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
       lastCheck: null, // the failed check's text is already in the prompt today; one copy
       events: events.map((e) => ({ ...e })),
       edits: orderEditsByRecency(edits, settled),
-      // every failed check's whole text, oldest first, the NEWEST left out (the prompt already carries it, one copy)
+      // every failed check's whole text, oldest first; the newest is left out only when it belongs to the last settled try
+      // (a red try being retried: the prompt carries it, one copy). A failure from a try that was later passed is in no prompt.
       // plus the start failure, oldest of all: it is never in a prompt gap, so it is never the one left out
-      failures: [...(startFailure ? [{ label: 'at start', text: startFailure }] : []), ...settled.filter((a) => a.failure).slice(0, -1).map((a) => ({ label: tryLabel(a), text: a.failure }))],
+      failures: [...(startFailure ? [{ label: 'at start', text: startFailure }] : []), ...settled.filter((a) => a.failure && a !== lt).map((a) => ({ label: tryLabel(a), text: a.failure }))],
       earlier: settled.slice(0, -1).map((a) => `${tryLabel(a)}: ${endedOf(a)} ${a.changed.length ? `Changed ${a.changed.join(', ')}.` : 'Changed nothing.'}`),
       lastAsk: lt ? lt.n : undefined,
       fnRanges: getNode ? fnRangesOf(events, getNode) : {},
