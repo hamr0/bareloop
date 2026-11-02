@@ -15232,6 +15232,8 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 
 **2026-11-01 later.** Fixed upstream and on npm as bare-agent v0.58.0 (BA-29, PR #77; the bareloop replay passed 9 of 9, `.claude/scratch/ba29-replay/RESULT.md`, untracked scratch). The bareloop consumer (bump, `checkArgs` on for workers, the next-attempt note) is pending on the next branch: build spec section A, `docs/product/ITEM33-BUILD.md` addendum "Bad tool calls and the planning trap".
 
+**2026-11-02 status: consumed in fix/bad-calls, test-proven (not yet seen live).** BA-29 arrived with bare-agent `^0.59.0` (5e7c6e1). `checkArgs` is on for every worker Loop, a `worker-bad-calls` record names the kind, and a stuck refused-argument loop reads in plain panel words (f6ac373, f92191c). Not done: the build spec's A.7 ON/OFF contrast of the next-attempt note wording, so whether the note converts the model is unmeasured. The bounded-attempt change stays PARKED for hamr (spec section F).
+
 ## F266 — cut-offs at max_tokens: 11 archived rounds, all exactly 32,000 tokens; the model is only told "CUT OFF ... discarded", and the malformed marker is lost on a cut round (2026-11-01; $0 archive read of 262 spines, 9,699 worker rounds)
 
 **Problem.** Round stopReason counts: tool_use 8,576, end_turn 1,112, max_tokens 11. All 11 max_tokens rounds are Fireworks `deepseek-v4p1-flash`, step (4 rounds, 3 runs) and fix (7 rounds, 5 runs) phases, each exactly 32,000 output tokens (`maxTokens: 32000`, `src/planrun.js:2900/2916`). Muse: 0 of 3 spines.
@@ -15250,11 +15252,15 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 
 **2026-11-01 later.** Fixed upstream in bare-agent v0.58.0 (`cutOff`, `badCalls`, `usage.reasoningTokens`). bareloop consumer pending on the next branch: build spec section A.
 
+**2026-11-02 status: cut-off note built, test-proven (not yet seen live).** The next-attempt note now says what was cut (large argument or reasoning share; `CUT_LARGE_ARG_BYTES=8000`, `CUT_REASONING_SHARE=0.5`, accepted by hamr) and the cut round's marker is kept (f6ac373). The A.7 ON/OFF run was not done.
+
 ## F267 — the audit's byte count is blind: an object reads 15, and "bytes" are UTF-16 units (2026-11-01; source read)
 
 `src/tools.js:621` and `:626` count `String(args?.content ?? '').length` (write) and the newText equivalent (edit). An object `content` stringifies to "[object Object]", so the audit shows `bytes: 15` with no type kept; that is the only trace of F265 on disk. `.length` counts UTF-16 code units, not bytes, so non-ASCII content is under-counted. Same blind-instrument class as the earlier audit collapses (a reader of the audit cannot tell a refused object write from a real 15-byte write). Fix: the audit records the true type and size (PRD v1.124 item 5).
 
 **Status.** Open.
+
+**2026-11-02 status: fixed (050fdd7).** The write/edit audit records the true value type and the UTF-8 byte length. Test-proven.
 
 ## F268 — Muse base rate with the memo ON: bigfile 2/3, p7 3/3, pulselog 2/3, change2 0/3; Muse ignores thinking-off (2026-11-01; live; Baseten `meta-models/muse-spark-open-1026`)
 
@@ -15306,6 +15312,8 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 
 **2026-11-01 later (hamr ruling: "both ... we fix planner instructions and b2 patch it as needed").** The root is our own planner instructions: `EXIT_EXAMPLE` (`src/plan.js:42`) teaches every no-check step "artifact-written <its target> + tree-changed", and the write-only persona lines (`src/tools.js:60`, `:62`) say "make the change with the write tool". $0 inventory over 440 archived `plan-accepted` plans (real `validatePlan`, `.claude/scratch/writeedit-poc/SPEC-DRAFT.md`, untracked scratch): write-without-edit steps are DeepSeek 33 steps in 32 plans, all rubric steps writing a NEW `output/steps/N.json` (0 on any code job); Muse 20 steps in 15 plans, 15 on code files, 10 of those plans carry the gutting shape; claude-sonnet-5 96 steps in 22 plans (old era, ceiling unknown). Of 390 resolved specs on disk, 0 have an explicit `tools` list lacking `edit`. No signed hash covers a plan, so a plan-level change moves no signature. Ruling: (1) fix the planner instructions at the source, proven by a drafter-only POC before build; (2) B2 as the safety net: code pairs `edit` with a `write` grant on a code file, rubric `output/steps/` files exempt, only when the signed ceiling offers `edit`. B2 replay: 0 DeepSeek plans change, 10 of 51 Muse plans change, all 3 gutting plans gain `edit`. Build spec: sections B and C of the `docs/product/ITEM33-BUILD.md` addendum "Bad tool calls and the planning trap". Status after the ruling: spec written, not built.
 
+**2026-11-02 status: wording and net built; the live check did not exercise them.** The planner wording shipped on hamr's word after the F277 POC (5a6177e), and `pairEditGrant` is built, internal and not exported, hamr's pick (a7f6017, 84e4334). The live check (build spec section E, Muse bigfile, run u-mvzeqrct) went green, but the drafter granted `edit` itself and drew no look-around write step, so neither the pairing nor the wording was shown to catch a case live. It proves they run without harm, not that they help.
+
 ## F272 — archive scan of whole-file wipes: 14 gutting writes in 13 runs of 451 audited, in 2 model families (2026-11-01; $0 archive read; re-surfaces F31)
 
 **Scan.** 533 deduped spines, 451 with a gate audit (82 had none, so they are blind spots: 7 scratch, 10 `u-*` and 65 older non-`u-`). 603 allowed whole-file `write` actions; 116 hit a file that existed at the seed (113 of them big: over 50 lines or 2 KB). "Shrink" = new bytes under 50% of old on a seed file over 50 lines or 2 KB. One false positive was dropped (u-mvy71nrt: a 299-byte append on `gate.js`, final 132,312 B).
@@ -15319,6 +15327,8 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Status.** Open; upstream in build.
 
 **2026-11-01 later.** BA-30 is built on bare-agent `feat/ba30-shrink-guard` (a876cf8; plural fix 4400a5f, "1 byte (1 line)"). The bareloop harness (`.claude/scratch/ba30-harness/RESULT.md`, untracked scratch; $0, real Loop and real bareguard Gate, no model calls): all 14 gutting writes refused with the file unchanged and `context` numbers correct; 589 of 589 other writes passed, 0 false refusals; `guardPath` is required (without it 13 of the 589, worker-own earlier-output rewrites, would be refused). Closest call among passes: audit.js at ratio 0.549. The one borderline refusal (budget.js, 12,830 against a line of 12,839) counts audit chars, not bytes (F267). Release waits for bare-agent's branch-review and hamr's word. Wiring and fail-open spellings: F276; refused writes counting as writes: F275.
+
+**2026-11-02 status: BA-30 wired (6daf87c), test-proven.** `shrinkGuard` is on every worker with the tracked-at-seed set in real-path form (see F276). The live check run (u-mvzeqrct) had no gutting write to refuse, so the refusal never fired live.
 
 ## F273 — the close ran worker-written code to earn a green (2026-11-01; live; run u-mvy4cd0d, Muse, bigfile) — PARKED for hamr, arbiter territory
 
@@ -15373,3 +15383,29 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Caveats.** (1) Reach: the persona lines (worker register) never reach the drafter, so the POC reads only the `EXIT_EXAMPLE` effect; the persona change shipped with it is untested by this POC. (2) Not tested: whether B's 16 read-only `artifact-written` steps hold up at the worker and close stage (no workers ran). (3) Validator cross-check mismatch: re-running `validatePlan` over the saved drafts WITHOUT the run's scope menu and seed facts disagrees with the recorded in-engine verdict on 4 of 14 drafts (A 3, B 1); the recorded verdict (the real validator with the run's real options) was used for every count, and the mismatch is reported, not resolved. (4) The lower first-draft red rate and A's scope-escape pattern are surprises outside the frozen rule: findings, not part of the verdict.
 
 **Status.** Wording shipped in fix/bad-calls (`src/plan.js` `EXIT_EXAMPLE`; `src/tools.js` persona lines) on hamr's ruling of 2026-11-02, test-proven plus this POC; the live check is build spec section E.
+
+## F278 — the gate audit is blind to tool outcomes: `runPlan` never wires `onToolResult` from `wireGate`, so a refused or failed tool call leaves no mark on the audit (2026-11-02; source read; PARKED for hamr, arbiter books)
+
+**Facts.** `runPlan` destructures only `policy` and `onLlmResult` from `wireGate` (`src/planrun.js:2513`) and hands the Loop its own `onToolResult: onToolOutcome` (`src/planrun.js:2922`). No tool failure and no `errorContext` (for example `errorContext.shrink` from the BA-30 refusal) reaches the gate audit. The audit shows only the "allow" row from the policy phase.
+
+**Consequence.** This is the mechanism under F275 (a refused write counted as a worker write). It is also why build spec D.5, a test of an audit row for the refusal, could not be written.
+
+**Decision for hamr.** Wiring `wireGate`'s `onToolResult` would add one audit row per tool call and changes the arbiter's books, so it is not proposed for build.
+
+**Status.** Open; PARKED for hamr.
+
+## F279 — test temp-dir leaks filled /tmp (tmpfs) inodes to 100% (2026-11-02; $0 read)
+
+**Facts.** About 4,277 `bareloop-test-home-*` directories (from `cleanEnv`, `tests/helpers.js`), plus mailproof's and Chromium's, filled the /tmp inodes to 100% on 2026-11-02 (378 free). `cleanEnv` is fixed (a5a7e51): the count stayed stable (236 to 236) across a full `npm test`.
+
+**Still open.** Other test files call `mkdtempSync` with no or partial cleanup (rough grep counts of creations to removals: run-author 25 vs 3, run-interview 13 vs 2, replay 7 vs 2, fact-words 4 vs 2, gate-audit-hygiene 3 vs 2). These have none or full cleanup: judged-stage, judge-model-pin, replay-live, part5-world, audit-grid-world, ledger, judgedstrike.
+
+**Status.** `cleanEnv` fixed; the rest open, in the fix ledger for `/refactor`.
+
+## F280 — live check E on Muse bigfile: green, and it proves the guard and pairing run without harm, not that they catch a case (2026-11-02; PAID, Baseten `meta-models/muse-spark-open-1026`; n=1)
+
+**Facts.** Run u-mvzeqrct, engine a69dd78, bigfile. Green. Cost $0.7600612 (spine), wall 518.7 s. The gate audit shows 0 write rows and 2 edit rows. `src/gate.js` ends at 2434 lines against 2433 at seed.
+
+**Caveat.** The drafter granted `edit` itself and drew no look-around write step, so `pairEditGrant` and the shrinkGuard refusal never fired. Both are test-proven only. n=1 on a nondeterministic worker is an anecdote. Evidence: `.claude/scratch/e-livecheck/result.json` (untracked scratch).
+
+**Status.** Closed as a run-without-harm check; the catching claim stays unproven (F271, F272).

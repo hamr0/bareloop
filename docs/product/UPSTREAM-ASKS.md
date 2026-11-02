@@ -2918,6 +2918,8 @@ Filed 2026-11-01. hamr said "BA-29 go, build it" (relayed to the bare-agent sess
 
 2026-11-01 — **Released** in bare-agent v0.58.0 (PR #77; commits 36f7101 + 9f311ac): `badCalls`, `cutOff`, opt-in `checkArgs` (order checkpoint, policy, checkArgs, execute, kept as built), `usage.reasoningTokens` (number or null), the shell hint fix. bareloop replay 9/9 PASS (`.claude/scratch/ba29-replay/RESULT.md`, untracked scratch). Usage deep-equal risk in bareloop: none (`usageOf`, `src/planrun.js:2636`, copies 4 fields). Consumer pending on the next branch: `docs/product/ITEM33-BUILD.md`, addendum "Bad tool calls and the planning trap", section A.
 
+2026-11-02 — **Consumed.** Released in bare-agent v0.59.0; bareloop takes it via `^0.59.0` (5e7c6e1) and wires `checkArgs`, the `worker-bad-calls` record and the next-attempt note in fix/bad-calls (f6ac373). Test-proven; the A.7 ON/OFF note-wording run is not done.
+
 ## BA-30 (bare-agent) — an opt-in shrink guard on `shell_write`: refuse a whole-file write that would gut an existing file, and tell the model why (2026-11-01)
 
 Shape agreed with the bare-agent session. Evidence: `.claude/scratch/shrinkscan/RESULT.md` (untracked scratch) (the scan) and `.claude/scratch/gatewipe/RESULT.md` (the root-cause read of the gate.js wipe).
@@ -2977,3 +2979,5 @@ Filed 2026-11-01. hamr said "BA-30 go, build it" (relayed to the bare-agent sess
 ### Status
 
 2026-11-01 — **Built, not released.** On bare-agent `feat/ba30-shrink-guard` (a876cf8; plural fix 4400a5f, "1 byte (1 line)"). bareloop harness PASS (`.claude/scratch/ba30-harness/RESULT.md`, untracked scratch): 14/14 gutting writes refused, 589/589 others passed, 0 false refusals; `guardPath` required (13 would be refused without it). bare-agent rulings: `guardPath` stays lexical (no realpath in the guard; the caller may realpath inside its own predicate); check order kept. bare-agent suite 1807 tests, 0 fail. Release waits for bare-agent's branch-review and hamr's word. bareloop wiring spec: `docs/product/ITEM33-BUILD.md`, addendum "Bad tool calls and the planning trap", section D; findings F275, F276.
+
+2026-11-02 — **Released and consumed.** Released in bare-agent v0.59.0 (PR #78, merge 1247efe, tag v0.59.0); consumed by bareloop fix/bad-calls (6daf87c), `shrinkGuard` on every worker with `guardPath` realpathed in bareloop's own predicate (F276). Test-proven; the live check (F280) had no gutting write to refuse.
