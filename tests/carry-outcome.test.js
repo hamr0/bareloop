@@ -113,3 +113,17 @@ test('state.json keeps failures across a resume; a v0.52.0 state (no failure tex
   const n2 = await ask(o, { phase: 'step:a', iteration: 3, prompt: RETRY, result: 'red' });
   assert.ok(n2.includes('Last try: step "a", try 2') && !n2.includes('Earlier failures'), n2);
 });
+
+test('a red try followed by a green one keeps its failure in the next memo; an all-red chain still leaves out only the newest', async () => {
+  const s = mk('red-then-green');
+  await ask(s, { phase: 'step:a', iteration: 1, prompt: 'base', result: 'red', failure: 'UNIQUE-FAILURE-F1 the check said X' });
+  await ask(s, { phase: 'step:a', iteration: 2, prompt: RETRY, result: 'green' });
+  const note = await ask(s, { phase: 'step:b', iteration: 1, prompt: 'next step prompt (no gap)', result: 'green' });
+  const at = note.indexOf('Earlier failures (folded):');
+  assert.ok(at >= 0 && note.indexOf('UNIQUE-FAILURE-F1', at) > at, `the passed-later try's failure is missing:\n${note}`);
+  const r = mk('all-red');
+  await ask(r, { phase: 'step:a', iteration: 1, prompt: 'base', result: 'red', failure: 'OLDER-FAILURE-ONE' });
+  await ask(r, { phase: 'step:a', iteration: 2, prompt: RETRY, result: 'red', failure: 'NEWEST-FAILURE-TWO' });
+  const n2 = await ask(r, { phase: 'step:a', iteration: 3, prompt: RETRY, result: 'red' });
+  assert.ok(n2.includes('OLDER-FAILURE-ONE') && !n2.includes('NEWEST-FAILURE-TWO'), n2);
+});
