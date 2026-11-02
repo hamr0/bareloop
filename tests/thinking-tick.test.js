@@ -194,7 +194,7 @@ test('page: the tick is a checkbox under Model with a note line, unticked by def
   assert.match(PAGE, /<label class="jf-thinking" id="jf-thinking-label"><input type="checkbox" id="jf-thinking" data-testid="jf-thinking"> Thinking on<\/label>/);
   assert.match(PAGE, /<div class="hint" id="jf-thinking-note" data-testid="jf-thinking-note"><\/div>/);
   assert.ok(!/id="jf-thinking"[^>]*checked/.test(PAGE), 'unticked by default');
-  assert.match(PAGE, /\.field label\.jf-thinking\{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:6px;margin-top:6px;font-size:12px;text-transform:none;letter-spacing:0;\}/);
+  assert.match(PAGE, /\.field label\.jf-thinking\{color:var\(--text-dim\);display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:6px;margin-top:6px;font-size:12px;text-transform:none;letter-spacing:0;\}/);
   assert.match(PAGE, /thinking: thinkingBox\.checked === true,/);
   assert.ok(PAGE.indexOf('id="jf-thinking"') > PAGE.indexOf('id="jf-model"') && PAGE.indexOf('id="jf-thinking"') < PAGE.indexOf('id="jf-name"'), 'directly under Model');
 });
