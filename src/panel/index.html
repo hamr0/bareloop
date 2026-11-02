@@ -500,7 +500,7 @@
   .jf-err{color:var(--red);font-size:12px;overflow-wrap:anywhere;}
   .jf-err:empty{display:none;}
   .field input,.field select{width:100%;}
-  label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:2px;text-transform:uppercase;letter-spacing:0.04em;}
+  label{display:block;font-size:12px;font-weight:700;color:var(--accent);margin-bottom:2px;text-transform:uppercase;letter-spacing:0.04em;}
   .ro-value{padding:6px 8px;min-height:32px;box-sizing:border-box;border:1px solid var(--border);background:var(--bg);color:var(--text-dim);}
   .ro-value.scroll{max-height:160px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;}
   .field-row{display:flex;flex-wrap:wrap;gap:10px;}
@@ -626,7 +626,7 @@
   .settings-header h2::after{content:" ├";color:var(--text-faint);}
   .money-strip{display:grid;grid-template-columns:repeat(3, 1fr);gap:12px;align-items:end;padding:10px;border:1px solid var(--border-strong);background:var(--panel2);}
   .money-item{min-width:0;}
-  .money-item label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:2px;}
+  .money-item label{display:block;font-size:12px;font-weight:700;color:var(--accent);margin-bottom:2px;}
   .money-value{font-size:16px;font-weight:700;padding:6px 0;overflow-wrap:anywhere;}
   .money-item input{width:100%;height:44px;box-sizing:border-box;}
   .keyfile-strip{position:relative;border:1px solid var(--border-strong);padding:12px 12px 8px;background:var(--panel2);margin:14px 0;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
@@ -654,7 +654,7 @@
   .pv-fold{border:0;background:none;color:var(--text);font:inherit;padding:0 4px 0 0;min-width:22px;min-height:24px;cursor:pointer;text-align:left;}
   .pv-krow select,.pv-krow input[type=text]{width:100%;max-width:100%;min-height:28px;box-sizing:border-box;}
   .pv-grid select,.pv-grid input[type=text]{font-size:12px;height:28px;padding:2px 6px;}
-  .pv-legacy{display:inline-flex;align-items:center;gap:6px;cursor:pointer;min-height:28px;text-transform:none;letter-spacing:0;font-weight:400;font-size:12px;}
+  .pv-legacy{color:var(--text-dim);display:inline-flex;align-items:center;gap:6px;cursor:pointer;min-height:28px;text-transform:none;letter-spacing:0;font-weight:400;font-size:12px;}
   .pv-legacy input,.pv-m-use input{width:16px;height:16px;margin:0;accent-color:var(--accent);cursor:pointer;}
   .pv-tok{text-align:right;font-variant-numeric:tabular-nums;}
   .pv-refcell{display:flex;justify-content:flex-end;}
@@ -696,7 +696,7 @@
   /* a refused Start (a $0 refusal, e.g. an Inputs line) is read like the red failure line of the progress list, not like a faint hint */
   .card-refusal:not(:empty){font-size:13px;margin-top:8px;line-height:1.4;}
   .card-refusal:empty{display:none;}
-  .field label.jf-thinking{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:6px;margin-top:6px;font-size:12px;text-transform:none;letter-spacing:0;}
+  .field label.jf-thinking{color:var(--text-dim);display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:6px;margin-top:6px;font-size:12px;text-transform:none;letter-spacing:0;}
   .field label.jf-thinking input{width:auto;min-height:0;margin:0;}
   .table-wrap{overflow-x:auto;border:1px solid var(--border-strong);background:var(--panel2);max-width:100%;}
   @media (max-width: 899px){

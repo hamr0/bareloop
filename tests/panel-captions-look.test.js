@@ -24,3 +24,15 @@ test('2. no [n] numbers on either tab row', () => {
   assert.doesNotMatch(PAGE, /\.(tabrow|rp-tabrow) button(\[aria-selected="true"\])?::before/);
   assert.doesNotMatch(PAGE, /counter\((tabnum|rtabnum)\)/);
 });
+
+test('3. field captions elsewhere are 12px bold accent; checkbox/radio labels keep their own colour', () => {
+  for (const sel of ['\n  label{', '.money-item label{']) {
+    const r = body(sel);
+    assert.match(r, /font-size:12px/, sel); assert.match(r, /font-weight:700/, sel); assert.match(r, /color:var\(--accent\)/, sel);
+    assert.doesNotMatch(r, /text-dim/, sel);
+  }
+  assert.match(body('\n  label{'), /text-transform:uppercase/, 'case kept');
+  assert.match(body('.field label.jf-thinking{'), /color:var\(--text-dim\)/);
+  assert.match(body('.pv-legacy{'), /color:var\(--text-dim\)/);
+  assert.match(body('.radio-row label{'), /color:var\(--text\)/);
+});
