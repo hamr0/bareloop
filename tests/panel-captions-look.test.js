@@ -53,3 +53,7 @@ test('4. Runs tab section captions are colour bars with a count pill; tokens in 
   assert.match(PAGE, /label: "Running now", cap: "r"/);
   assert.match(PAGE, /label: "Needs you", cap: "w"/);
 });
+
+test('4b. a Jobs-list card carries rl-jobcard (the divider between job cards)', () => {
+  assert.match(PAGE, /var top = '<div class="rl-card rl-jobcard'/);
+});

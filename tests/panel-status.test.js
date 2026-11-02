@@ -124,7 +124,7 @@ test('P9 v2 C7: a job card is `[sign] job · k runs · check type` / `**word** �
   const h = listHarness();
   const c = { job: 'job1', head: { ...RUN, glyph: '✓', status: { sign: '✓', word: 'passed' }, endedLine: 'goal met' }, empty: false, count: 2, sel: { runid: 'x' }, selected: false, hits: [], older: { open: false, shown: [], hidden: 0, total: 0 } };
   const html = h.rlJobCardHtml(c);
-  assert.match(html, /^<div class="rl-card" id="rl-job-job1"/);
+  assert.match(html, /^<div class="rl-card rl-jobcard" id="rl-job-job1"/);
   assert.match(html, /class="dot green"[^]*<span class="rl-nm"[^>]*>job1<\/span> <span class="rl-cnt">&middot; 2 runs &middot; deterministic<\/span>/);
   assert.match(html, /<span class="rl-l2"><b class="st-word">passed<\/b> &middot; goal met<\/span>/);
   assert.doesNotMatch(h.rlJobCardHtml({ ...c, head: { ...c.head, checkType: 'unknown' } }), /unknown/, 'an unknown check type draws nothing');

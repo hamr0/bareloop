@@ -1697,7 +1697,7 @@
   // a job card: `[sign] job · k runs · type` / `word · why` of its newest run, highlighted when the selected run is one of its runs; not clickable. Inside: the newest run's card, then the older-runs fold.
   function rlJobCardHtml(c){
     var h = c.head;
-    var top = '<div class="rl-card' + (c.selected ? ' rl-sel' : '') + '" id="rl-job-' + escapeXml(c.job) + '" data-testid="rl-job-' + escapeXml(c.job) + '">';
+    var top = '<div class="rl-card rl-jobcard' + (c.selected ? ' rl-sel' : '') + '" id="rl-job-' + escapeXml(c.job) + '" data-testid="rl-job-' + escapeXml(c.job) + '">';
     if(c.empty){
       return top + '<span class="rl-l1"><span class="dot grey"></span><span class="rl-nm" title="' + escapeXml(c.job) + '">' + escapeXml(c.job) + '</span></span><span class="rl-l2">no runs yet</span></div>';
     }
