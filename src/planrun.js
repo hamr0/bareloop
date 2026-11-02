@@ -568,6 +568,55 @@ const REPLAN_CUT_RED = 'Your previous answer was cut off at its length limit bef
 export const REPLAN_CUT_WORDS = 'The replan answer was cut off at its length limit, so no new plan came back.';
 
 /**
+ * @typedef {{ kind: string, tool: string|null, param?: string, expected?: string, got?: string, argBytes?: number, parsed?: boolean, hasAppend: boolean, round: number|null }} BadCallFact
+ * @typedef {{ calls: BadCallFact[], cutOff: {outputTokens: number|null, reasoningTokens: number|null, maxTokensRequested: number|null}|null }} BadCallFacts
+ *   bare-agent's STRUCTURED `badCalls`/`cutOff` for one attempt (BA-29); the only input of the two note sentences below
+ */
+
+/** a cut call at least this many bytes long is the reason the round hit the cap: the note teaches `append` (a bareloop choice, not bare-agent's) */
+export const CUT_LARGE_ARG_BYTES = 8000;
+/** a cut round whose reasoning tokens are more than this share of its output tokens was spent thinking, not writing */
+export const CUT_REASONING_SHARE = 0.5;
+
+/**
+ * F266 — what to add after the frozen cut-off sentence, from `cutOff`/`badCalls` fields only (never from
+ * the `detail` prose, BA-26). A large cut write that has an `append` option: write in parts. Reasoning
+ * dominating the cut round: decide sooner. Anything else known-or-unknown adds nothing.
+ * @param {BadCallFacts|undefined|null} bad
+ * @returns {string} '' or a sentence starting with a space
+ */
+function cutSentence(bad) {
+  if (!bad) return '';
+  const cut = bad.calls.find((c) => c.kind === 'cut-off');
+  if (cut && cut.hasAppend && typeof cut.argBytes === 'number' && cut.argBytes >= CUT_LARGE_ARG_BYTES) {
+    return ` The call that was cut was ${cut.tool ?? 'a write'}, about ${cut.argBytes} bytes. Write that file in parts: send the first part, then add each next part with append:true.`;
+  }
+  const co = bad.cutOff;
+  if (co && typeof co.reasoningTokens === 'number' && typeof co.outputTokens === 'number' && co.outputTokens > 0
+    && co.reasoningTokens / co.outputTokens > CUT_REASONING_SHARE) {
+    return ` Most of that output (${co.reasoningTokens} of ${co.outputTokens} tokens) was reasoning, before the call was finished. Decide sooner: make the change with a shorter call.`;
+  }
+  return '';
+}
+
+/**
+ * F265 — a refused tool argument (`checkArgs`): say what was wrong, from the structured `kind/param/expected/got`.
+ * An object or array sent where a string was declared is the JSON-as-object case: send JSON as text.
+ * @param {BadCallFacts|undefined|null} bad
+ * @returns {string} '' or a sentence starting with a space
+ */
+function badCallSentence(bad) {
+  const c = bad?.calls.find((x) => x.kind === 'arg-type' || x.kind === 'arg-missing');
+  if (!c || !c.param) return '';
+  const where = `${c.tool ?? 'a tool'} ${c.param}`;
+  if (c.kind === 'arg-missing') return ` A tool call was refused: ${where} was missing.`;
+  if (c.expected === 'string' && (c.got === 'object' || c.got === 'array')) {
+    return ` A tool call was refused: ${where} arrived as a JSON ${c.got}, not text. Send JSON as text: encode it as one string.`;
+  }
+  return ` A tool call was refused: ${where} must be ${c.expected ?? 'the declared type'}, got ${c.got ?? 'something else'}.`;
+}
+
+/**
  * What the NEXT attempt is told about the bound that cut the previous one.
  *
  * Two different bounds used to set the same bare `attemptBounded = roundIteration`
@@ -593,19 +642,20 @@ export const REPLAN_CUT_WORDS = 'The replan answer was cut off at its length lim
  * and announces the trim with the repo's ONE marker rather than a second spelling
  * of "this text was cut" (F90.2).
  *
- * @param {{iteration?: number|string|undefined, cause: string, reason: string|null}|null|undefined} bounded
+ * @param {{iteration?: number|string|undefined, cause: string, reason: string|null, bad?: BadCallFacts|null}|null|undefined} bounded
  *   the previous attempt's bound state, or nullish when it was not bounded
  * @param {number} rounds the step's round bound, as quoted by the frozen sentence
  * @returns {string|null} the note, or null when there is nothing to say
  */
 export function boundedNote(bounded, rounds) {
   if (!bounded) return null;
+  const bad = badCallSentence(bounded.bad);
   if (bounded.cause === 'truncated') {
-    return `Your previous attempt was CUT OFF: ${TRUNCATED_REASON}. That response was discarded.`;
+    return `Your previous attempt was CUT OFF: ${TRUNCATED_REASON}. That response was discarded.${cutSentence(bounded.bad)}${bad}`;
   }
   if (bounded.cause !== 'denied') {
     return `Your previous attempt was CUT OFF after ${rounds} tool rounds. `
-      + 'Reading is bounded; writing is not. Form a hypothesis EARLY and make the change.';
+      + `Reading is bounded; writing is not. Form a hypothesis EARLY and make the change.${bad}`;
   }
   const raw = String(bounded.reason ?? '');
   const shown = raw.length > BOUND_REASON_MAX
@@ -613,7 +663,7 @@ export function boundedNote(bounded, rounds) {
     : raw;
   return 'Your previous attempt was CUT OFF by the gate: it denied consecutive tool calls '
     + `until the streak guard ended the attempt. The gate recorded: ${shown}. `
-    + 'The round budget was not what stopped you — repeating a denied call ends this attempt the same way.';
+    + `The round budget was not what stopped you — repeating a denied call ends this attempt the same way.${bad}`;
 }
 
 /**
@@ -2499,7 +2549,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
      * `iteration` mirrors `roundIteration` exactly, undefined included: the bound
      * cannot know a label the run never set, and inventing one here would be the
      * only place in this file that claims to.
-     * @type {{iteration: number|string|undefined, cause: 'rounds'|'wall'|'denied'|'truncated', reason: string|null}|undefined}
+     * @type {{iteration: number|string|undefined, cause: 'rounds'|'wall'|'denied'|'truncated', reason: string|null, bad?: BadCallFacts|null}|undefined}
      */
     let attemptBounded;
     /**
@@ -2850,7 +2900,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         }
         return onLlmResult(arg);
       };
-      self = new Loop({ provider: loopProvider, system, policy, onLlmResult: metered, onToolResult: onToolOutcome, ...(rates ? { rates } : {}) });
+      // BA-29: checkArgs refuses a wrong-typed or missing top-level tool argument BEFORE the tool runs (F265: an object where a string was declared)
+      self = new Loop({ provider: loopProvider, system, policy, checkArgs: true, onLlmResult: metered, onToolResult: onToolOutcome, ...(rates ? { rates } : {}) });
       return self;
     };
     /**
@@ -2905,6 +2956,48 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         throw categorize(e).err;
       }
     };
+    /**
+     * BA-29 (F265/F266) — record what the model got wrong in ONE call, from bare-agent's STRUCTURED fields only
+     * (`r.badCalls`, `r.cutOff`, `r.malformedToolCall`; the `detail` prose is never read, the BA-26 anti-pattern).
+     * Two spine records: `worker-malformed-tool-call` (F184, now also on a cut round) and `worker-bad-calls`
+     * (kind, tool, param, expected, got, size, hasAppend, round; raw arguments never exist upstream). Returns the
+     * facts the next-attempt note is built from (`boundedNote`), or null when the round had none.
+     * @param {any} r a Loop.run() result
+     * @returns {BadCallFacts|null}
+     */
+    const noteBadCalls = (r) => {
+      if (r.malformedToolCall) {
+        const rawErr = String(r.malformedToolCall.error ?? '');
+        const scrubbedErr = scrub(rawErr);
+        const shownErr = scrubbedErr.length > BOUND_REASON_MAX
+          ? `${scrubbedErr.slice(0, BOUND_REASON_MAX)} [${GAP_TRIM_MARKER} ${scrubbedErr.length - BOUND_REASON_MAX} of ${scrubbedErr.length} characters withheld — the cap is ${BOUND_REASON_MAX}]`
+          : scrubbedErr;
+        emit('worker-malformed-tool-call', {
+          phase, iteration: roundIteration, name: scrub(String(r.malformedToolCall.name ?? '')), error: shownErr,
+        });
+      }
+      const calls = Array.isArray(r.badCalls) ? r.badCalls : [];
+      if (calls.length === 0) return null;
+      /** @type {BadCallFacts} */
+      const facts = {
+        calls: calls.map((/** @type {any} */ c) => ({
+          kind: String(c.kind),
+          tool: typeof c.tool === 'string' ? scrub(c.tool) : null,
+          ...(typeof c.param === 'string' ? { param: scrub(c.param) } : {}),
+          ...(typeof c.expected === 'string' ? { expected: c.expected } : {}),
+          ...(typeof c.got === 'string' ? { got: c.got } : {}),
+          ...(typeof c.argBytes === 'number' ? { argBytes: c.argBytes } : {}),
+          ...(typeof c.parsed === 'boolean' ? { parsed: c.parsed } : {}),
+          hasAppend: c.hasAppend === true,
+          round: typeof c.round === 'number' ? c.round : null,
+        })),
+        cutOff: r.cutOff && typeof r.cutOff === 'object'
+          ? { outputTokens: r.cutOff.outputTokens ?? null, reasoningTokens: r.cutOff.reasoningTokens ?? null, maxTokensRequested: r.cutOff.maxTokensRequested ?? null }
+          : null,
+      };
+      emit('worker-bad-calls', { phase, iteration: roundIteration, calls: facts.calls, ...(facts.cutOff ? { cutOff: facts.cutOff } : {}) });
+      return facts;
+    };
     const ask = async (prompt, defs = toolDefs) => {
       let r;
       // A fresh Loop = a fresh transcript: the read shim's delivered-ledger resets with it, or a
@@ -2919,6 +3012,12 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       } catch (e) {
         throw categorize(e).err;
       }
+      // BA-29 (F265/F266): what the model got wrong is read off bare-agent's structured `badCalls`/`cutOff`
+      // (never off prose) and recorded BEFORE any branch below returns or throws — a cut round used to
+      // return first and lose both this and the malformed marker.
+      const badFacts = noteBadCalls(r);
+      // a round/wall bound was set inside the Loop callbacks, before the facts existed: attach them to THIS attempt's bound
+      if (badFacts && attemptBounded && attemptBounded.iteration === roundIteration && !attemptBounded.bad) attemptBounded = { ...attemptBounded, bad: badFacts };
       // BA-11's deny streak is a BOUNDED ATTEMPT, not a terminal. It is the same
       // shape `loop.stop()` has at the round bound thirty lines up: the attempt
       // ran, produced real work, and was cut short by a governance bound doing
@@ -2929,7 +3028,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // takes the identical lane above — one doctrine, both surfaces.
       if (r.error && r.error.startsWith('denied:')) {
         const reason = scrub(r.error);
-        attemptBounded = { iteration: roundIteration, cause: 'denied', reason };
+        attemptBounded = { iteration: roundIteration, cause: 'denied', reason, bad: badFacts };
         emit('attempt-bounded', { phase, iteration: roundIteration, rounds: roundsThisAttempt, cap: attemptRounds, reason });
         return r;
       }
@@ -2942,7 +3041,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // replan drafter opts in with `truncatedBounded`. Scout and the first draft keep the
       // transport route below (provider-red).
       if (r.error && r.error.startsWith('truncated:') && (phase.startsWith('step:') || phase === 'fix' || truncatedBounded)) {
-        attemptBounded = { iteration: roundIteration, cause: 'truncated', reason: TRUNCATED_REASON };
+        attemptBounded = { iteration: roundIteration, cause: 'truncated', reason: TRUNCATED_REASON, bad: badFacts };
         emit('attempt-bounded', { phase, iteration: roundIteration, rounds: roundsThisAttempt, cap: attemptRounds, reason: TRUNCATED_REASON, stopReason: r.stopReason ?? null });
         return r;
       }
@@ -2970,16 +3069,6 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // marker before `ask()` returns it unexamined, so a distinct spine
       // record names the transport class here — the same honesty bar
       // F179/F180 set for the authoring path, applied to the worker path.
-      if (r.malformedToolCall) {
-        const rawErr = String(r.malformedToolCall.error ?? '');
-        const scrubbedErr = scrub(rawErr);
-        const shownErr = scrubbedErr.length > BOUND_REASON_MAX
-          ? `${scrubbedErr.slice(0, BOUND_REASON_MAX)} [${GAP_TRIM_MARKER} ${scrubbedErr.length - BOUND_REASON_MAX} of ${scrubbedErr.length} characters withheld — the cap is ${BOUND_REASON_MAX}]`
-          : scrubbedErr;
-        emit('worker-malformed-tool-call', {
-          phase, iteration: roundIteration, name: scrub(String(r.malformedToolCall.name ?? '')), error: shownErr,
-        });
-      }
       return r;
     };
     return { ask: withCarry(ask), askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };

@@ -165,7 +165,9 @@ test('a real malformed tool-call round on the worker path emits a distinct worke
   // reusing the step id and iteration numbering — not a second look at the
   // same malformed round).
   const markerIdx = events.findIndex((e) => e.type === 'worker-malformed-tool-call');
-  assert.equal(events[markerIdx + 1]?.type, 'middle-done', 'nothing — least of all a retried worker-round — runs between the marker and the attempt ending');
+  // BA-29: the same round now also records its `worker-bad-calls` (malformed-json) beside the marker; that record is not a round
+  const after = events.slice(markerIdx + 1).filter((e) => e.type !== 'worker-bad-calls');
+  assert.equal(after[0]?.type, 'middle-done', 'nothing — least of all a retried worker-round — runs between the marker and the attempt ending');
 
   // ORDINARY SHAPE UNCHANGED: the round wrote nothing (text came back
   // empty), so the step's own exit check still reds the ordinary way —
