@@ -17,3 +17,10 @@ test('1. Chat job card captions are 13px bold accent pills on a tint, no left ba
   assert.doesNotMatch(r, /border-left/);
   assert.match(PAGE, /#job-card \.cap-field > label/, 'the $ / time cap captions are pills too');
 });
+
+test('2. no [n] numbers on either tab row', () => {
+  assert.doesNotMatch(PAGE, /counter-reset:\s*(tabnum|rtabnum)/);
+  assert.doesNotMatch(PAGE, /counter-increment:\s*(tabnum|rtabnum)/);
+  assert.doesNotMatch(PAGE, /\.(tabrow|rp-tabrow) button(\[aria-selected="true"\])?::before/);
+  assert.doesNotMatch(PAGE, /counter\((tabnum|rtabnum)\)/);
+});
