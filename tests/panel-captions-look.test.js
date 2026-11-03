@@ -97,3 +97,14 @@ test('7. Audit tab caption words are accent, scoped to #audit-body; values, [ N 
   assert.match(body('.fx-label{'), /color:var\(--text-faint\)/);
   assert.doesNotMatch(body('.fx-more{'), /accent/, 'the [ +N more lines ] button keeps its own colour');
 });
+
+test('8. Runs tab search block is its own boxed section: accent dividers, SEARCH caption, accented input (fwdloop e5ba411)', () => {
+  assert.match(body('#panel-runs .rl-dash{'), /border-top:2px solid var\(--accent\)/);
+  const note = body('#panel-runs .rl-faint[data-testid="rl-filter-note"]{');
+  assert.match(note, /color:var\(--accent\)/); assert.match(note, /font-weight:700/);
+  assert.match(body('#panel-runs .rl-faint[data-testid="rl-filter-note"]::before{'), /content:"SEARCH  "/);
+  assert.match(body('#runs-filterbar-anchor input[type="search"]'), /border:2px solid var\(--accent\) !important/);
+  assert.match(body('#runs-filterbar-anchor input:focus{'), /outline:2px solid var\(--accent\)/);
+  assert.match(body('#runs-filterbar-anchor{'), /border-bottom:2px solid var\(--accent\)/);
+  assert.match(PAGE, /<div class="rl-dash"><\/div>\s*<div class="rl-faint" data-testid="rl-filter-note">/, 'hooks exist, no HTML change');
+});

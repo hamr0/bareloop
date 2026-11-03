@@ -277,6 +277,13 @@
   .rl-jobcard{position:relative;margin:14px 0 0;padding:10px;}
   .rl-jobcard::before{content:"";position:absolute;left:-1px;right:-1px;top:-9px;height:2px;background:var(--border-strong);}
   #panel-runs .rl-faint{margin-bottom:4px;}
+  /* Runs tab: the search block is its own boxed section (fwdloop e5ba411, hamr 2026-11-03) */
+  #panel-runs .rl-dash{border-top:2px solid var(--accent);margin:14px 0 8px;}
+  #panel-runs .rl-faint[data-testid="rl-filter-note"]{color:var(--accent);font-weight:700;font-size:12px;letter-spacing:.02em;}
+  #panel-runs .rl-faint[data-testid="rl-filter-note"]::before{content:"SEARCH  ";letter-spacing:.08em;}
+  #runs-filterbar-anchor input[type="search"],#runs-filterbar-anchor input[type="text"]{border:2px solid var(--accent) !important;background:var(--bg,#fff);font-size:14px;padding:8px 10px;}
+  #runs-filterbar-anchor input:focus{outline:2px solid var(--accent);outline-offset:1px;}
+  #runs-filterbar-anchor{padding-bottom:10px;border-bottom:2px solid var(--accent);margin-bottom:10px;}
   @media (max-width:899px){ .rl-fold{min-height:44px;} }
   /* the one thing P9 v2 adds to fwd: a run that matches the search or filter is marked, not selected */
   .rl-card.rl-hit{box-shadow:inset 3px 0 0 var(--accent);}
