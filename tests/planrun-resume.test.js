@@ -644,7 +644,7 @@ test('LADDER (e) CONTROL: the SAME converging ladder with time on the clock stil
 /** an IDLE-worker run: the worker writes nothing, so the ladder strikes twice and
  * ralph ends the step with the `cap-halt` (exhaustion) trigger — money untouched.
  * The clock jumps after the provider call named by `advanceAt`, which is iteration 2's
- * round: the deadline lands INSIDE the final attempt, so the meter's head check never
+ * first round (call 5: scout, plan, iteration 1 text + its nudge round): the deadline lands INSIDE the final attempt, so the meter's head check never
  * sees it and the LADDER is what names the stop. */
 async function idleLadderRun(t, { advanceAt, advanceBy }) {
   const wd = makeConvergingPatient(t);
@@ -653,7 +653,9 @@ async function idleLadderRun(t, { advanceAt, advanceBy }) {
     { text: 'scout notes' },
     { text: LADDER_PLAN(wd) },
     { text: 'thinking about it' },   // iteration 1: text only → strike 1
+    { text: 'still no file' },       // iteration 1: the text-only NUDGE round (F282) is text too
     { text: 'still thinking' },      // iteration 2: text only → strike 2, the step ends
+    { text: 'nudge reply two' },     // iteration 2's nudge round — bought only while the clock still has time (an expired wall skips it)
     { text: LADDER_PLAN(wd, { id: 'second-go' }) },  // OFFERED; bought only if a replan is funded
     { text: 'the replanned step is idle too' },
   ];
@@ -677,7 +679,7 @@ test('W-2 EXTENDED (cap-halt trigger): a step the LADDER ends past the wall is a
   // the deadline lands during iteration 2, so the ladder — not the meter — names the
   // stop, and the wallet is untouched (this is the money-left arm, the one that minted
   // `step-red` whatever the clock said)
-  const { outcome, events, bought } = await idleLadderRun(t, { advanceAt: 4, advanceBy: 700_000 });
+  const { outcome, events, bought } = await idleLadderRun(t, { advanceAt: 5, advanceBy: 700_000 });
 
   assert.equal(events.filter((e) => e.type === 'variance').length, 0,
     'the METER never fired — otherwise this exercises the variance path and proves nothing about its sibling');
@@ -699,7 +701,7 @@ test('W-2 EXTENDED (cap-halt trigger): a step the LADDER ends past the wall is a
 
 
 test('W-2 EXTENDED CONTROL (cap-halt trigger): the SAME idle ladder with time on the clock still replans and still ends step-red — the extension costs a healthy run nothing', async (t) => {
-  const { outcome, events, bought } = await idleLadderRun(t, { advanceAt: 4, advanceBy: 400_000 });
+  const { outcome, events, bought } = await idleLadderRun(t, { advanceAt: 5, advanceBy: 400_000 });
 
   assert.equal(events.filter((e) => e.type === 'replan').length, 1, 'exhaustion with funds and time left still buys the one replan');
   assert.equal(draftCalls(bought).length, 2, 'and the redraft IS bought');
