@@ -87,6 +87,39 @@ test('C6-C8: the list row and the run detail carry the status from the ONE table
   assert.equal(rows.m1.status.word, 'capped', 'a money-halt escalation reads capped');
 });
 
+// Mirrors real spine msi0w2i5 (bareagent-u-types, cap-halt): the cap's escalation lands, then the step's own step-end reads
+// `escalated`, then money-halt and job-end cap-halt. The step card must wear the cap word, not failed. A strike-limit step
+// that a replan part follows stays failed even on a run that ends capped.
+test('2026-11-03: the step a money cap escalated reads capped, not failed (spine msi0w2i5); a strike-limit step before a later step stays failed', () => {
+  const home = tmp();
+  makeRun(home, 'k1', 'cap-halt', { extra: [
+    { type: 'step-start', step: 'fix-types', ts: '2026-10-01T10:02:10.000Z', seq: 10 },
+    { type: 'cap-halt', category: 'cap-halt', detail: 'worker loop: halt:gate.terminated', ts: '2026-10-01T10:04:00.000Z', seq: 20 },
+    { type: 'escalation', category: 'cap-halt', ts: '2026-10-01T10:04:00.000Z', seq: 21 },
+    { type: 'step-end', step: 'fix-types', outcome: 'escalated', ts: '2026-10-01T10:04:00.000Z', seq: 22 },
+    { type: 'money-halt', ts: '2026-10-01T10:04:01.000Z', seq: 23 },
+  ] });
+  const d = getRunDetail('k1', { home });
+  assert.equal(d.status.word, 'capped');
+  const step = d.parts.filter((p) => p.kind === 'step').at(-1);
+  assert.equal(step.outcome, 'escalated');
+  assert.equal(step.status.word, 'capped', 'the step the cap escalated wears the run\'s cap word');
+  assert.equal(step.stopReason ?? null, null, 'the part itself is untouched; only its status word changes');
+  assert.equal(partStatusFor({ kind: 'step', outcome: 'escalated', stopReason: null }).word, 'failed', 'an escalated step alone stays failed');
+  assert.equal(partStatusFor({ kind: 'step', outcome: 'green', stopReason: 'money cap' }).word, 'passed');
+  // a strike-limit step ended before a later step; the run capped inside the later one: only the LAST part is the capped one
+  makeRun(home, 'k2', 'cap-halt', { extra: [
+    { type: 'step-start', step: 'fix-types', ts: '2026-10-01T10:02:10.000Z', seq: 10 },
+    { type: 'step-end', step: 'fix-types', outcome: 'escalated', ts: '2026-10-01T10:03:00.000Z', seq: 12 },
+    { type: 'step-start', step: 'fix-more', ts: '2026-10-01T10:03:10.000Z', seq: 13 },
+    { type: 'escalation', category: 'cap-halt', ts: '2026-10-01T10:04:00.000Z', seq: 21 },
+    { type: 'step-end', step: 'fix-more', outcome: 'escalated', ts: '2026-10-01T10:04:00.000Z', seq: 22 },
+    { type: 'money-halt', ts: '2026-10-01T10:04:01.000Z', seq: 23 },
+  ] });
+  const steps = getRunDetail('k2', { home }).parts.filter((p) => p.kind === 'step');
+  assert.deepEqual(steps.map((p) => p.status.word), ['failed', 'capped']);
+});
+
 // ── page ────────────────────────────────────────────────────────────────────────────────────────────────────
 const PAGE = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
 function fnSrc(name) {

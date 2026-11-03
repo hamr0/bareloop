@@ -1881,7 +1881,7 @@ function getRunDetailBody(runid, opts) {
     // tabs still never disagree about order/counts/blocked-call figures.
     // a run that DIED (no job-end, runner gone — `death`, decided once above) leaves its last part in flight: that part reads
     // `died`, never the "happened, so passed" default. Replay alone cannot tell died from still running, so the verdict lives here.
-    parts: (handed.drafting && Array.isArray(enrichedParts) ? [handed.drafting, ...enrichedParts] : enrichedParts)?.map((p, i, all) => ({ ...(death.died && i === all.length - 1 ? diedFixTry(p) : p), status: partStatusFor(death.died && i === all.length - 1 && p.kind !== 'drafting' && p.outcome == null && !p.stopReason ? { ...p, stopReason: 'died' } : p) })),
+    parts: (handed.drafting && Array.isArray(enrichedParts) ? [handed.drafting, ...enrichedParts] : enrichedParts)?.map((p, i, all) => ({ ...(death.died && i === all.length - 1 ? diedFixTry(p) : p), status: partStatusFor(death.died && i === all.length - 1 && p.kind !== 'drafting' && p.outcome == null && !p.stopReason ? { ...p, stopReason: 'died' } : cappedLastStep(p, i === all.length - 1, status.key)) })),
     replans: summary.replans,
     close: summary.close,
     branch: summary.branch,
@@ -2770,6 +2770,18 @@ function noVerdictWords(stop) {
   if (stop.what === 'provider-red') return stop.detail ? `provider dropped (${stop.detail}), no check ran` : 'provider dropped, no check ran';
   if (stop.by === 'run-end' && stop.what === 'stopped') return STOPPED_WORDS;
   return CUT_OFF_WORDS;
+}
+
+/**
+ * A run that ended capped (money or time) cut its LAST part, a step the cap escalated: that step's own `step-end` reads
+ * `escalated` and carries no `stopReason`, so its card said failed under a capped header (real spines msi0w2i5, msx87qqs: the
+ * cap-halt / wall-halt escalation lands just before the step-end). The verdict is known only here, like the died marking, so the
+ * LAST part alone gets the cap word; an earlier escalated step (strike limit, a later part follows) stays failed.
+ * @param {any} part @param {boolean} isLast @param {string} runStatusKey
+ */
+function cappedLastStep(part, isLast, runStatusKey) {
+  if (!isLast || runStatusKey !== 'capped' || part.kind !== 'step' || part.outcome !== 'escalated' || part.stopReason) return part;
+  return { ...part, stopReason: 'money cap' };
 }
 
 /** a died run's fix part: its last try never got a verdict (the Audit grid's "?" row says it died) @param {any} part */
