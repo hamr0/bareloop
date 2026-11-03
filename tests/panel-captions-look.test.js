@@ -98,13 +98,19 @@ test('7. Audit tab caption words are accent, scoped to #audit-body; values, [ N 
   assert.doesNotMatch(body('.fx-more{'), /accent/, 'the [ +N more lines ] button keeps its own colour');
 });
 
-test('8. Runs tab search block is its own boxed section: accent dividers, SEARCH caption, accented input (fwdloop e5ba411)', () => {
-  assert.match(body('#panel-runs .rl-dash{'), /border-top:2px solid var\(--accent\)/);
+test('8. Runs tab search block is a light card (fwdloop V1): tinted card, accent SEARCH caption, 1px accent input', () => {
+  assert.match(PAGE, /--accent:#7aa2f7; --plan:#7aa2f7;\s*--search-tint:var\(--panel2\);/);
+  assert.equal((PAGE.match(/--accent:#2668c2; --plan:#2668c2;\s*--search-tint:#f5f7fc;/g) || []).length, 2, 'both light blocks');
+  const dash = body('#panel-runs .rl-dash{');
+  assert.match(dash, /border:0/); assert.doesNotMatch(dash, /var\(--accent\)/);
   const note = body('#panel-runs .rl-faint[data-testid="rl-filter-note"]{');
   assert.match(note, /color:var\(--accent\)/); assert.match(note, /font-weight:700/);
+  assert.match(note, /background:var\(--search-tint\)/); assert.match(note, /border-radius:6px 6px 0 0/);
   assert.match(body('#panel-runs .rl-faint[data-testid="rl-filter-note"]::before{'), /content:"SEARCH  "/);
-  assert.match(body('#runs-filterbar-anchor input[type="search"]'), /border:2px solid var\(--accent\) !important/);
+  const anchor = body('#runs-filterbar-anchor{');
+  assert.match(anchor, /background:var\(--search-tint\)/); assert.match(anchor, /border-radius:0 0 6px 6px/);
+  assert.doesNotMatch(anchor, /border-bottom/);
+  assert.match(body('#runs-filterbar-anchor input[type="search"]'), /border:1px solid var\(--accent\)/);
   assert.match(body('#runs-filterbar-anchor input:focus{'), /outline:2px solid var\(--accent\)/);
-  assert.match(body('#runs-filterbar-anchor{'), /border-bottom:2px solid var\(--accent\)/);
   assert.match(PAGE, /<div class="rl-dash"><\/div>\s*<div class="rl-faint" data-testid="rl-filter-note">/, 'hooks exist, no HTML change');
 });
