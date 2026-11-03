@@ -5,7 +5,7 @@
 > facts with quotes from the real artifact, an arbiter-owned `decide()` renders pass/fail from
 > a signed rubric card, and *unsure* is a red, never a pass — bought by a signed calibration
 > gate (ten graded truths, five resisted lies, floor 10/10, itemized reds). A soft-green pass
-> mints its bridge row QUARANTINED: no learning credit until an `accept` releases it, forward
+> mints its bridge row QUARANTINED: no reuse credit until an `accept` releases it, forward
 > only; a rerun records a disposition and its outcome is a NEW run's own row, born held
 > again. Every run ends at the signer's **review door** — `accept` / `rerun` / `pause` — which
 > records a disposition and **never changes the loop's own verdict** (`runPlan` still returns
@@ -1903,7 +1903,7 @@ Loop path is untouched.
 **Resume-to-cap (close-first):** the job's close runs FIRST, before any tokens
 (`close-precheck` on the spine, output scrubbed at capture like every close). Already-green
 is a DISTINCT zero-token outcome, never plain `green`: nothing was done, so it mints no
-learning credit and runs no on-green retention. A close that cannot RUN is a `broken-close`
+reuse credit and runs no on-green retention. A close that cannot RUN is a `broken-close`
 escalation before any provider call. So the resume story is: a `cap-halt` or `wall-halt`
 stop IS the checkpoint (the workdir + the close), the human raises `budgetUsd` or
 `maxWallMs` (a new spec hash — re-sign), and the rerun picks up where the budget died,
@@ -2146,7 +2146,7 @@ a named `reason`: no `registryDir` (`no-registry` — the registry is operator-s
 conjured), `outcome !== 'green'` (`green-predates-run` for already-green — accept confirms a
 verdict, it never mints one — else `not-green`), and no executed `plan` (`no-plan-executed`,
 R1). Every green class mints (hamr's ruling 2026-08-30): a `soft-green` row is born HELD —
-its learning credit is quarantined until a signer accepts at the door — and a `green`-class
+its reuse credit is quarantined until a signer accepts at the door — and a `green`-class
 row is born RELEASED, because a machine's own close proved it and there was never a credit
 to quarantine; `quarantinesCredit(verdictType)` in `greenParts` is the one predicate, read
 off the record's own `verdictType`, never a flag. `door-accept` on a released row records
@@ -4486,7 +4486,7 @@ A **Rubric** job whose first Input is the full path of a FILE (not a repo folder
 - **Panel topbar.** `bareloop · v<version> · automate a job, verified`: the version is bareloop's own package.json, read once when the panel starts and templated into the page when it is served (`__BARELOOP_PANEL_VERSION__`), so it is the version the process runs, not what package.json says now. Right of the host line and left of Settings sits the online dot (`#online-dot`): the Runs list read (the 10 s poll, no new endpoint or timer) paints green `online` on any HTTP reply, even an error status or a 200 whose body will not parse, and red `offline` only when the read fails with no HTTP status (the panel process is gone); a page render error after a good read never paints it offline.
 - **After drafting, the code-worded card is the only plan on screen (run mv5e1ktb).** The confirm turn's plan bubble is the drafter's own prose (written before any close existed) and used to stay in the thread above the code-worded card; when the rubric card is ready the earlier `kind:'plan'` messages are dropped. `partSentence` now reads "1 line" / "1 word" for a count of one.
 - **Each `~` guardrail is its own row on the plan card.** `planFromSpec` / `planFromConfirm` lines carry `rules: string[]` (the line's own `rules`, else the joined `rule` split on "; "); `renderJobPlan` draws one `~ rule` row per rule under its numbered line, in the plan card and the Job tab alike (one renderer). Gutter numbers stay on job lines only.
-- **The review door's held line is true for a no-judge close.** Credit is held by VERDICT CLASS (`quarantinesCredit`: soft-green), whether or not a judge ran; the door now says "this is a rubric (soft-green) job, so its green earns NO reuse and NO learning credit until you accept it, whether or not a judge ran". Wording only; `bridges.js`/`reuse.js`/the Reuse refusal still say "rendered by the judged floor".
+- **The review door's held line is true for a no-judge close.** Credit is held by VERDICT CLASS (`quarantinesCredit`: soft-green), whether or not a judge ran; the door now says "this is a rubric (soft-green) job, so its green earns NO reuse credit until you accept it, whether or not a judge ran". Wording only; `bridges.js`/`reuse.js`/the Reuse refusal still say "rendered by the judged floor".
 - **A refused drafting try records why.** `authorClose` emits `onPhase('author-try-failed', { call, i, of, reds | reason, declaration? })` for a try refused by validation (the scrubbed reds), by a vacuous or stopped seed read (a `reason`), or by an all-cut-off reply; the panel writes `{kind:'try-refused', no, call, reason, reds?, declaration?}` to `draft-log.jsonl` (`tryRefusedText`, `src/authorreadout.js`, the code's own red details) and shows `<call>: refused — <reason>` on the drafting step's detail line. The CLI prints it via `phaseLine`. The refused declaration itself rides beside it (`declaration`, secrets masked; `declarationText` + `declarationCut` when over 60000 characters), so a failed draft can be read and replayed at $0 (`declarationRecord`).
 
 ### Required facts — a line that finds, lists or looks something up (Part 1b, `src/facts.js`, `docs/product/ITEM33-BUILD.md` "Addendum 2026-10-13" and "Part 1c", PRD item 33 RF1–RF22)

@@ -525,7 +525,7 @@ export function reuseEligibility(bridge) {
 /**
  * THE REVIEW DOOR, written down (PRD v1.71 §3). The person read the finished run
  * and said one of three things; this records that on the run's own row, and — for
- * `accept` on a HELD green — releases the learning credit that green has been
+ * `accept` on a HELD green — releases the reuse credit that green has been
  * carrying unspent.
  *
  * Three properties, and each is a ruling rather than a convenience:

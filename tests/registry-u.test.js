@@ -233,8 +233,8 @@ test('the accept door promises a CREDIT RELEASE only when a row is actually held
   const cmds = { rerun: 'r', accept: 'a', pause: 'p', ttlDays: 60 };
   const held = runDoorLines({ ...cmds, held: true }).join('\n');
   const bare = runDoorLines({ ...cmds, held: false }).join('\n');
-  assert.match(held, /releases this run's learning credit/);
-  assert.doesNotMatch(bare, /learning credit/, 'with nothing held there is nothing to release, and the door must not say there is');
+  assert.match(held, /releases this run's reuse credit/);
+  assert.doesNotMatch(bare, /reuse credit/, 'with nothing held there is nothing to release, and the door must not say there is');
 });
 
 test('a judged green with NO registry named leaves nothing to release, so the door does not promise one', () => {
@@ -244,5 +244,5 @@ test('a judged green with NO registry named leaves nothing to release, so the do
   // read off whether a row was minted — never off the verdict class alone.
   const w = writeRunGreenRow({ registryDir: null, job: job(), name: null, outcome: 'green', plan: PLAN, record: record() });
   const lines = runDoorLines({ rerun: 'r', accept: 'a', pause: 'p', ttlDays: 60, held: w.minted }).join('\n');
-  assert.doesNotMatch(lines, /learning credit/);
+  assert.doesNotMatch(lines, /reuse credit/);
 });

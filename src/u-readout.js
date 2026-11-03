@@ -202,7 +202,7 @@ export function reviewDoorPackage({ door, diff }) {
   const out = [];
   out.push(`REVIEW DOOR — this run's close minted ${String(d.outcome ?? 'a verdict')} and it STANDS. Nothing you do here changes it.`);
   if (held) {
-    out.push('  held     this is a rubric (soft-green) job, so its green earns NO reuse and NO learning credit until you accept it, whether or not a judge ran');
+    out.push('  held     this is a rubric (soft-green) job, so its green earns NO reuse credit until you accept it, whether or not a judge ran');
   }
   // the body: what the machine judged, what moved, and the lines themselves —
   // rendered by the SAME code the pause screen uses, off the same record shape.
@@ -273,7 +273,7 @@ export function doorTimingRedLines({ names }) {
 export function runDoorLines({ rerun, accept, pause, ttlDays, held }) {
   return threeDoors({
     rerun: '"I don\'t like it, go again" — your words become the requirement a FRESH engagement plans against (its own clock, what is left of the signed budget)',
-    accept: `${held ? 'releases this run\'s learning credit' : 'confirms it'} — and the close\'s MECHANICAL stages re-run first, because the tree can move after a run ends`,
+    accept: `${held ? 'releases this run\'s reuse credit' : 'confirms it'} — and the close\'s MECHANICAL stages re-run first, because the tree can move after a run ends`,
     pause: `not now. Nothing runs and nothing is spent; the door keeps for ${ttlDays} days and then expires on its own, which is all that "cancel" ever meant`,
   }, { rerun, accept, pause });
 }
