@@ -22,9 +22,11 @@
     --cyan:#7dcfff; --cyan-bg:#182634;
     --magenta:#bb9af7;
     --accent:#7aa2f7; --plan:#7aa2f7;
+    --search-tint:var(--panel2);
     --btn-bg:#1f2335; --btn-text:#c0caf5;
     --field-bg:var(--bg); --field-soft-bg:var(--bg); --field-border:var(--text-dim);
     --primary-bg:#7aa2f7; --primary-text:#1a1b26; --primary-border:#7aa2f7;
+    --cap-w:#b7791f; --cap-w-bg:#3a2e17; --cap-w-ink:#f0c987; --cap-s:#3d59a1; --cap-s-bg:#1f2a4d; --cap-s-ink:#a9c1f5; --cap-j:#6b7396; --cap-j-bg:#2a2f45; --cap-j-ink:#c0caf5; --cap-r:#2b8a7e; --cap-r-bg:#17332f; --cap-r-ink:#8fdccf; --req:#c9a85f;
     font: 14px/1.5 "Courier Prime", "Courier New", Courier, ui-monospace, monospace;
   }
   *{box-sizing:border-box;}
@@ -68,9 +70,11 @@
       --cyan:#007197; --cyan-bg:#d6ecf1;
       --magenta:#9854f1;
       --accent:#2668c2; --plan:#2668c2;
+      --search-tint:#f5f7fc;
       --btn-bg:#e9e9ed; --btn-text:#3760bf;
       --field-bg:#ffffff; --field-soft-bg:#f7f7f9;
       --primary-bg:#2668c2; --primary-text:#e1e2e7; --primary-border:#2668c2;
+      --cap-w:#b7791f; --cap-w-bg:#f6e7c8; --cap-w-ink:#7a4c0c; --cap-s:#2a4fa8; --cap-s-bg:#cfdaf3; --cap-s-ink:#1d3a80; --cap-j:#5b6680; --cap-j-bg:#c7cddb; --cap-j-ink:#333c52; --cap-r:#2b8a7e; --cap-r-bg:#cdeee8; --cap-r-ink:#14524a; --req:#8a6d2a;
     }
   }
   :root[data-theme="light"]{
@@ -83,9 +87,11 @@
     --cyan:#007197; --cyan-bg:#d6ecf1;
     --magenta:#9854f1;
     --accent:#2668c2; --plan:#2668c2;
+      --search-tint:#f5f7fc;
     --btn-bg:#e9e9ed; --btn-text:#3760bf;
     --field-bg:#ffffff; --field-soft-bg:#f7f7f9;
     --primary-bg:#2668c2; --primary-text:#e1e2e7; --primary-border:#2668c2;
+    --cap-w:#b7791f; --cap-w-bg:#f6e7c8; --cap-w-ink:#7a4c0c; --cap-s:#2a4fa8; --cap-s-bg:#cfdaf3; --cap-s-ink:#1d3a80; --cap-j:#5b6680; --cap-j-bg:#c7cddb; --cap-j-ink:#333c52; --cap-r:#2b8a7e; --cap-r-bg:#cdeee8; --cap-r-ink:#14524a; --req:#8a6d2a;
   }
   .theme-toggle{padding:4px 9px;min-height:32px;border:1px solid var(--border-strong);background:var(--btn-bg);color:var(--text);}
 
@@ -129,13 +135,11 @@
   @media (min-width: 1200px){ .left-pane{width:630px;} }
   .right-pane{flex:1;min-width:0;display:flex;flex-direction:column;}
 
-  .tabrow{display:flex;border-bottom:1px solid var(--border-strong);background:var(--panel2);counter-reset:tabnum;}
+  .tabrow{display:flex;border-bottom:1px solid var(--border-strong);background:var(--panel2);}
   .tabrow button{
     flex:1;padding:10px 6px;min-height:44px;background:transparent;border:none;
     border-right:1px dotted var(--border-strong);font-size:13px;color:var(--text-dim);
-    counter-increment:tabnum;
   }
-  .tabrow button::before{content:"[" counter(tabnum) "] ";color:var(--text-faint);font-weight:700;}
   .tabrow button:last-child{border-right:none;}
 
   .pane-body{padding:12px;overflow:auto;flex:1;min-height:0;}
@@ -264,7 +268,25 @@
   .rl-dash{border-top:1px dashed var(--border-strong);margin:10px 0 6px;}
   .rl-sect{font-size:12px;color:var(--text-dim);font-weight:700;margin:12px 0 6px;}
   .rl-sect:first-child{margin-top:0;}
+  /* hamr 2026-11-02 (as fwdloop aea2e1d, 5bd929a): the Runs tab section captions are colour bars with a count pill */
+  .rl-cap{display:flex;align-items:center;gap:8px;font-size:15px;margin:18px 0 8px;padding:7px 12px;border-left:5px solid var(--cap-c);background:var(--cap-bg);color:var(--cap-ink);}
+  .rl-cap.rl-cap-w{--cap-c:var(--cap-w);--cap-bg:var(--cap-w-bg);--cap-ink:var(--cap-w-ink);}
+  .rl-cap.rl-cap-s{--cap-c:var(--cap-s);--cap-bg:var(--cap-s-bg);--cap-ink:var(--cap-s-ink);}
+  .rl-cap.rl-cap-j{--cap-c:var(--cap-j);--cap-bg:var(--cap-j-bg);--cap-ink:var(--cap-j-ink);}
+  .rl-cap.rl-cap-r{--cap-c:var(--cap-r);--cap-bg:var(--cap-r-bg);--cap-ink:var(--cap-r-ink);}
+  .rl-cap .rl-n{font-size:12px;line-height:1.4;padding:1px 8px;border-radius:10px;background:var(--cap-c);color:#fff;}
+  .rl-cap .rl-p{font-size:0;}
+  .rl-cap .rl-note{font-size:11px;font-weight:400;}
+  .rl-jobcard{position:relative;margin:14px 0 0;padding:10px;}
+  .rl-jobcard::before{content:"";position:absolute;left:-1px;right:-1px;top:-9px;height:2px;background:var(--border-strong);}
   #panel-runs .rl-faint{margin-bottom:4px;}
+  /* Runs tab: the search block is a light card (V1), hamr 2026-11-03 */
+  #panel-runs .rl-dash{border:0;margin:12px 0 0;}
+  #panel-runs .rl-faint[data-testid="rl-filter-note"]{color:var(--accent);font-weight:700;font-size:12px;letter-spacing:.02em;background:var(--search-tint);padding:8px 10px 6px;margin-bottom:0;border-radius:6px 6px 0 0;}
+  #panel-runs .rl-faint[data-testid="rl-filter-note"]::before{content:"SEARCH  ";letter-spacing:.08em;}
+  #runs-filterbar-anchor{background:var(--search-tint);padding:4px 10px 10px;margin-bottom:12px;border-radius:0 0 6px 6px;}
+  #runs-filterbar-anchor input[type="search"],#runs-filterbar-anchor input[type="text"]{border:1px solid var(--accent) !important;background:var(--bg,#fff);font-size:14px;padding:8px 10px;}
+  #runs-filterbar-anchor input:focus{outline:2px solid var(--accent);outline-offset:1px;}
   @media (max-width:899px){ .rl-fold{min-height:44px;} }
   /* the one thing P9 v2 adds to fwd: a run that matches the search or filter is marked, not selected */
   .rl-card.rl-hit{box-shadow:inset 3px 0 0 var(--accent);}
@@ -276,11 +298,9 @@
      are already both on screen there, nothing to jump back to). */
   .back-to-list-link{display:none;font-size:12px;color:var(--accent);text-decoration:underline;background:none;border:none;padding:0;cursor:pointer;}
   @media (max-width: 899px){ .back-to-list-link{display:inline-block;} }
-  .rp-tabrow{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--border-strong);background:var(--panel2);counter-reset:rtabnum;}
-  .rp-tabrow button{padding:10px 14px;min-height:44px;background:transparent;border:none;border-right:1px dotted var(--border-strong);font-size:13px;color:var(--text-dim);counter-increment:rtabnum;}
-  .rp-tabrow button::before{content:"[" counter(rtabnum) "] ";color:var(--text-faint);font-weight:700;}
+  .rp-tabrow{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--border-strong);background:var(--panel2);}
+  .rp-tabrow button{padding:10px 14px;min-height:44px;background:transparent;border:none;border-right:1px dotted var(--border-strong);font-size:13px;color:var(--text-dim);}
   .tabrow button[aria-selected="true"],.rp-tabrow button[aria-selected="true"]{background:var(--panel);color:var(--accent);font-weight:700;box-shadow:inset 0 -2px 0 var(--accent);}
-  .tabrow button[aria-selected="true"]::before,.rp-tabrow button[aria-selected="true"]::before{color:var(--accent);}
 
   .counters{display:block;padding:9px 12px;border:none;border-bottom:2px solid var(--border-strong);background:var(--panel2);color:var(--text-dim);margin:-12px -12px 14px;font-size:12px;font-weight:700;white-space:normal;overflow-wrap:break-word;}
   .counters b,.counters span{color:var(--accent);}
@@ -292,11 +312,11 @@
   .ended-block.green{border-color:var(--green);}
   .ended-block.grey{border-color:var(--grey-dot);}
   .ended-row{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px;}
-  .ended-label{color:var(--text-faint);font-size:11px;letter-spacing:0.08em;min-width:52px;}
+  .ended-label{color:var(--accent);font-weight:700;font-size:11px;letter-spacing:0.08em;min-width:52px;}
   .ended-text{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;}
   /* a NEXT with several instructions is one per line: label muted, instructions in a second column (the shape fwdloop copied, 2026-10-25) */
   .next-rows{display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:10px;row-gap:2px;}
-  .next-label{color:var(--text-faint);}
+  .next-label{color:var(--accent);font-weight:700;}
   .next-text{min-width:0;overflow-wrap:anywhere;}
   .ended-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;}
   /* P5 item 4: Import (read only) — the folder browser, the imported rows, the view */
@@ -346,19 +366,21 @@
   .summary-box.grey{border-color:var(--grey-dot);}
   .summary-box.amber{border-color:var(--amber);}
   .summary-box.magenta{border-color:var(--magenta);}
-  .summary-box::before{content:"┤ SUMMARY ├";position:absolute;top:-10px;left:10px;background:var(--panel2);padding:0 6px;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;}
+  .summary-box::before{content:"┤ SUMMARY ├";position:absolute;top:-10px;left:10px;background:var(--panel2);padding:0 6px;font-size:12px;font-weight:700;color:var(--accent);letter-spacing:0.08em;}
   .summary-headline{font-weight:700;margin-bottom:8px;font-size:13px;}
   .summary-row{display:flex;gap:0;padding:2px 0;}
   .sum-label{flex:none;width:66px;color:var(--text-faint);}
   .sum-val{color:var(--text);}
   .summary-box .num{color:var(--accent);font-weight:700;}
   .summary-box.imported-box::before{content:"┤ IMPORTED ├";}
+  /* hamr 2026-11-03: Run summary row labels blue bold like ENDED/NEXT/SCHEDULE; scoped, the Import box keeps its faint labels */
+  #run-summary .sum-label{color:var(--accent);font-weight:700;}
   .imported-box .sum-label{width:104px;}
   .imported-box .summary-row{flex-wrap:wrap;}
   .imported-box .sum-val{flex:1 1 180px;min-width:0;overflow-wrap:anywhere;}
 
   .map-box{border:1px solid var(--border-strong);padding:10px;margin-top:16px;margin-bottom:14px;background:var(--panel2);}
-  .map-box::before{content:"┤ MAP ├";display:block;font-size:11px;color:var(--text-faint);letter-spacing:0.08em;margin:-2px 0 8px 0;}
+  .map-box::before{content:"┤ MAP ├";display:block;font-size:12px;font-weight:700;color:var(--accent);letter-spacing:0.08em;margin:-2px 0 8px 0;}
   /* ruling 1A: chips as wide as their own text, side by side, wrapping — a name is never truncated */
   .map-chips{display:flex;flex-wrap:wrap;gap:8px 4px;align-items:flex-start;padding-left:1.4em;}
   /* ruling A: a step + its trailing arrow are ONE unit (the arrow never wraps alone); the lead arrow of a wrapped line
@@ -417,6 +439,20 @@
   button.fx-rowhead:focus-visible,.fx-more:focus-visible,.cell.fail:focus-visible{outline:2px solid var(--red);outline-offset:1px;}
   .fx-caret{flex:none;width:12px;color:var(--text-faint);}
   .fx-try{flex:none;font-weight:700;}
+  /* hamr 2026-11-03: Audit tab caption words are accent (like the Run tab's); scoped to #audit-body. Values, the [ +N more lines ] buttons and the red/green glyph spans keep their own colours. */
+  #audit-body table th{color:var(--accent);font-weight:700;}
+  #audit-body .sub-label,#audit-body .fx-label,#audit-body td.hint{color:var(--accent);font-weight:700;}
+  #audit-body .fx-try{color:var(--accent);}
+  /* the "told in this run" row (fwdloop M14 p4 look): the caption is accent, the try buttons are small, the opened text sits on a quiet panel */
+  .btn.hints[aria-expanded="true"]{outline:2px solid var(--accent);outline-offset:1px;}
+  .btn.hints:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+  .cell.none{color:var(--text-faint);cursor:default;font-weight:400;}
+  tr.hint-row td{color:var(--text-faint);}
+  tr.hint-row td.q{color:var(--accent);}
+  .fx-row.hintrow.open>.fx-rowhead{background:var(--panel2);}
+  .fx-row.hintrow .fx-body{border-left-color:var(--accent);background:var(--panel2);}
+  .fx-row.hintrow .fx-try{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;}
+  .fx-lines div.ind{margin-left:16px;}
   .fx-chk{flex:none;white-space:nowrap;}
   .fx-first{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-dim);}
   .fx-faint,.fx-count{color:var(--text-faint);}
@@ -457,6 +493,7 @@
 
   /* build item C: Audit tab grouped-by-part rows */
   .audit-part{border:1px solid var(--border);margin-bottom:6px;background:var(--panel2);}
+  .handed-text{margin:0;padding:8px 10px;background:var(--panel);border:1px solid var(--border);font:12px/1.45 ui-monospace,"Courier New",monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:28em;overflow:auto;}
   .audit-part-toggle{width:100%;text-align:left;display:block;white-space:normal;min-height:44px;padding:8px 10px;}
   .audit-part-toggle::before,.audit-part-toggle::after{content:"";}
   .audit-part-body{padding:8px 10px 10px;border-top:1px dotted var(--border-strong);}
@@ -503,7 +540,7 @@
   .jf-err{color:var(--red);font-size:12px;overflow-wrap:anywhere;}
   .jf-err:empty{display:none;}
   .field input,.field select{width:100%;}
-  label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:2px;text-transform:uppercase;letter-spacing:0.04em;}
+  label{display:block;font-size:12px;font-weight:700;color:var(--accent);margin-bottom:2px;text-transform:uppercase;letter-spacing:0.04em;}
   .ro-value{padding:6px 8px;min-height:32px;box-sizing:border-box;border:1px solid var(--border);background:var(--bg);color:var(--text-dim);}
   .ro-value.scroll{max-height:160px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;}
   .field-row{display:flex;flex-wrap:wrap;gap:10px;}
@@ -522,6 +559,10 @@
   .radio-row label{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--text);margin:0;text-transform:none;}
   .cap-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-bottom:6px;}
   .cap-field label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:1px;}
+  /* hamr 2026-11-02 (as fwdloop 0ae68fb): the Chat job card captions are pills, no left bar; checkbox/radio labels are not captions */
+  #job-card .field > label:not(.jf-thinking),#job-card .cap-field > label{font-size:13px;font-weight:700;color:var(--accent);text-transform:none;letter-spacing:0;margin:8px 0 6px;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--accent) 16%,transparent);display:inline-block;}
+  /* hamr 2026-11-03 (fwdloop 0ae68fb): `required` rides inside the Chat card caption pill, small and grey; it marks what validateJobCard refuses when empty */
+  #job-card .req{font-size:11px;font-weight:400;color:var(--req);margin-left:8px;}
   .cap-field input{width:100%;padding:5px 6px;box-sizing:border-box;}
   .btn.primary{background:var(--primary-bg);color:var(--primary-text);border-color:var(--primary-border);font-weight:700;}
   .btn.primary::before,.btn.primary::after{color:var(--primary-text);opacity:0.6;}
@@ -627,7 +668,7 @@
   .settings-header h2::after{content:" ├";color:var(--text-faint);}
   .money-strip{display:grid;grid-template-columns:repeat(3, 1fr);gap:12px;align-items:end;padding:10px;border:1px solid var(--border-strong);background:var(--panel2);}
   .money-item{min-width:0;}
-  .money-item label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:2px;}
+  .money-item label{display:block;font-size:12px;font-weight:700;color:var(--accent);margin-bottom:2px;}
   .money-value{font-size:16px;font-weight:700;padding:6px 0;overflow-wrap:anywhere;}
   .money-item input{width:100%;height:44px;box-sizing:border-box;}
   .keyfile-strip{position:relative;border:1px solid var(--border-strong);padding:12px 12px 8px;background:var(--panel2);margin:14px 0;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
@@ -655,7 +696,7 @@
   .pv-fold{border:0;background:none;color:var(--text);font:inherit;padding:0 4px 0 0;min-width:22px;min-height:24px;cursor:pointer;text-align:left;}
   .pv-krow select,.pv-krow input[type=text]{width:100%;max-width:100%;min-height:28px;box-sizing:border-box;}
   .pv-grid select,.pv-grid input[type=text]{font-size:12px;height:28px;padding:2px 6px;}
-  .pv-legacy{display:inline-flex;align-items:center;gap:6px;cursor:pointer;min-height:28px;text-transform:none;letter-spacing:0;font-weight:400;font-size:12px;}
+  .pv-legacy{color:var(--text-dim);display:inline-flex;align-items:center;gap:6px;cursor:pointer;min-height:28px;text-transform:none;letter-spacing:0;font-weight:400;font-size:12px;}
   .pv-legacy input,.pv-m-use input{width:16px;height:16px;margin:0;accent-color:var(--accent);cursor:pointer;}
   .pv-tok{text-align:right;font-variant-numeric:tabular-nums;}
   .pv-refcell{display:flex;justify-content:flex-end;}
@@ -697,7 +738,7 @@
   /* a refused Start (a $0 refusal, e.g. an Inputs line) is read like the red failure line of the progress list, not like a faint hint */
   .card-refusal:not(:empty){font-size:13px;margin-top:8px;line-height:1.4;}
   .card-refusal:empty{display:none;}
-  .field label.jf-thinking{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:6px;margin-top:6px;font-size:12px;text-transform:none;letter-spacing:0;}
+  .field label.jf-thinking{color:var(--text-dim);display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:6px;margin-top:6px;font-size:12px;text-transform:none;letter-spacing:0;}
   .field label.jf-thinking input{width:auto;min-height:0;margin:0;}
   .table-wrap{overflow-x:auto;border:1px solid var(--border-strong);background:var(--panel2);max-width:100%;}
   @media (max-width: 899px){
@@ -803,25 +844,25 @@
               <div class="hint" id="jf-thinking-note" data-testid="jf-thinking-note"></div>
             </div>
             <div class="field">
-              <label for="jf-name">Job name</label>
+              <label for="jf-name">Job name <span class="req">required</span></label>
               <input id="jf-name" type="text" placeholder="kebab-case, unique">
             </div>
             <div class="field">
-              <label for="jf-job">The job</label>
+              <label for="jf-job">The job <span class="req">required</span></label>
               <div class="nbox" data-testid="nbox-job">
                 <div class="gut" id="jf-job-gut" aria-hidden="true"></div>
                 <div class="nbox-in"><textarea class="jf-wrap" id="jf-job" rows="3" data-testid="jf-job" spellcheck="false"></textarea><div class="nbox-mir" id="jf-job-mir" aria-hidden="true"></div></div>
               </div>
             </div>
             <div class="field">
-              <label for="jf-inputs">Inputs</label>
+              <label for="jf-inputs">Inputs <span class="req">required</span></label>
               <div class="nbox" data-testid="nbox-inputs">
                 <div class="gut" id="jf-inputs-gut" aria-hidden="true"></div>
                 <div class="nbox-in"><textarea class="jf-wrap" id="jf-inputs" rows="2" data-testid="jf-inputs" spellcheck="false"></textarea><div class="nbox-mir" id="jf-inputs-mir" aria-hidden="true"></div></div>
               </div>
             </div>
             <div class="field">
-              <label for="jf-dest">Destination</label>
+              <label for="jf-dest">Destination <span class="req">required</span></label>
               <textarea class="jf-wrap" id="jf-dest" rows="1" placeholder="the write fence — where in the repo this run may change files"></textarea>
             </div>
 
@@ -845,7 +886,7 @@
 
             <div class="cap-row" data-testid="cap-row">
               <div class="cap-field">
-                <label for="jf-cap-money">Cap $</label>
+                <label for="jf-cap-money">Cap $ <span class="req">required</span></label>
                 <input id="jf-cap-money" type="text">
                 <div class="hint" id="jf-cap-note" data-testid="cap-note"></div>
               </div>
@@ -966,10 +1007,6 @@
                 <button class="chip" aria-pressed="true" data-view="grouped" data-testid="audit-view-grouped">Grouped</button>
                 <button class="chip" aria-pressed="false" data-view="flat" data-testid="audit-view-flat">Flat</button>
               </div>
-            </div>
-            <div id="audit-learnings" class="audit-part" data-testid="audit-learnings" hidden>
-              <button type="button" id="audit-learnings-summary" class="btn audit-part-toggle" aria-expanded="false" data-testid="audit-learnings-summary">What the planner was told from earlier runs</button>
-              <div id="audit-learnings-list" class="audit-part-body" data-testid="audit-learnings-list" hidden></div>
             </div>
             <div id="audit-groups" data-testid="audit-groups"></div>
             <div id="audit-flat-wrap" hidden>
@@ -1614,8 +1651,8 @@
       noRows: data.runs.length === 0,
     };
   }
-  function rlSectHtml(label, n, note){
-    return '<div class="rl-sect">' + label + ' (' + n + ')' + (note ? ' ' + note : '') + '</div>';
+  function rlSectHtml(label, n, note, cap){
+    return '<div class="rl-sect rl-cap rl-cap-' + cap + '">' + label + ' <span class="rl-p">(</span><span class="rl-n">' + n + '</span><span class="rl-p">)</span>' + (note ? ' <span class="rl-note">' + note + '</span>' : '') + '</div>';
   }
   // line 1 and 2 of a Running now / Needs you card; both jump to the run (rlJump). The tag is a label (a span), never a button.
   function rlJumpCardHtml(r, need){
@@ -1657,16 +1694,16 @@
   // The sections above the search box, from ONE ordered list: only never-filtered sections live here (Scheduled is searched, so rlSchedHtml draws it below).
   function rlTopHtml(m){
     var sections = [
-      { label: "Running now", items: m.running, draw: function(r){ return rlJumpCardHtml(r, false); } },
-      { label: "Needs you", items: m.needs.concat(m.gaveUp || []), draw: function(r){ return r.pill ? rlGaveUpCardHtml(r) : rlJumpCardHtml(r, true); } },
+      { label: "Running now", cap: "r", items: m.running, draw: function(r){ return rlJumpCardHtml(r, false); } },
+      { label: "Needs you", cap: "w", items: m.needs.concat(m.gaveUp || []), draw: function(r){ return r.pill ? rlGaveUpCardHtml(r) : rlJumpCardHtml(r, true); } },
     ];
     return sections.map(function(s){
-      return s.items.length ? rlSectHtml(s.label, s.items.length) + s.items.map(s.draw).join("") : "";
+      return s.items.length ? rlSectHtml(s.label, s.items.length, "", s.cap) + s.items.map(s.draw).join("") : "";
     }).join("");
   }
   // Scheduled sits BELOW the search box (PRD v1.106 Part 2). No match draws nothing, header included; with the \u25F7 chip pressed it says so in words.
   function rlSchedHtml(m){
-    if(m.scheduled.length) return rlSectHtml("Scheduled", m.scheduled.length) + m.scheduled.map(rlScheduledCardHtml).join("");
+    if(m.scheduled.length) return rlSectHtml("Scheduled", m.scheduled.length, "", "s") + m.scheduled.map(rlScheduledCardHtml).join("");
     return m.schedOnly ? '<div class="hint" data-testid="rl-sched-none">no scheduled job matches</div>' : "";
   }
   // the count line under the chips: only the \u25F7 view has one; "showing N scheduled job(s)". Empty otherwise.
@@ -1688,7 +1725,7 @@
   // a job card: `[sign] job · k runs · type` / `word · why` of its newest run, highlighted when the selected run is one of its runs; not clickable. Inside: the newest run's card, then the older-runs fold.
   function rlJobCardHtml(c){
     var h = c.head;
-    var top = '<div class="rl-card' + (c.selected ? ' rl-sel' : '') + '" id="rl-job-' + escapeXml(c.job) + '" data-testid="rl-job-' + escapeXml(c.job) + '">';
+    var top = '<div class="rl-card rl-jobcard' + (c.selected ? ' rl-sel' : '') + '" id="rl-job-' + escapeXml(c.job) + '" data-testid="rl-job-' + escapeXml(c.job) + '">';
     if(c.empty){
       return top + '<span class="rl-l1"><span class="dot grey"></span><span class="rl-nm" title="' + escapeXml(c.job) + '">' + escapeXml(c.job) + '</span></span><span class="rl-l2">no runs yet</span></div>';
     }
@@ -1733,7 +1770,7 @@
   function rlJobsHtml(m){
     if(m.schedOnly) return "";
     var h = "";
-    if(m.jobs.length) h += rlSectHtml("Jobs", m.jobs.length, "· run in the last " + m.limits.quietDays + " days") + m.jobs.map(rlJobCardHtml).join("");
+    if(m.jobs.length) h += rlSectHtml("Jobs", m.jobs.length, "· run in the last " + m.limits.quietDays + " days", "j") + m.jobs.map(rlJobCardHtml).join("");
     if(m.quiet.length){
       h += '<button class="rl-fold" type="button" data-rl-fold="__quiet" data-testid="rl-fold-quiet" aria-expanded="' + (m.quietOpen ? 'true' : 'false') + '">' + (m.quietOpen ? '▾' : '▸') + ' quiet jobs (' + m.quiet.length + ') · no run in ' + m.limits.quietDays + ' days</button>';
       if(m.quietOpen) h += m.quiet.map(rlJobCardHtml).join("");
@@ -2889,7 +2926,6 @@
     // fetch, wired separately in selectRun below).
     lastLegDividers = Array.isArray(detail.legDividers) ? detail.legDividers : [];
     renderAuditGroups(detail);
-    renderAuditLearnings(detail);
   }
 
   // Cross-run learnings, READ-ONLY: what the planner was handed, one group per injection (the draft, the first replan). ONE fold for the
@@ -2918,91 +2954,100 @@
     bits.push(h.fixed ? "fixed" : "never fixed");
     return bits.join(" \u00B7 ");
   }
-  function renderAuditLearnings(detail){
-    var box = document.getElementById("audit-learnings");
-    var list = document.getElementById("audit-learnings-list");
-    var sum = document.getElementById("audit-learnings-summary");
-    if(!box || !list) return;
-    var items = detail && Array.isArray(detail.learnings) ? detail.learnings : [];
-    list.innerHTML = "";
-    var errLine = detail && typeof detail.learningsError === "string" ? detail.learningsError : "";
-    // only the error and nothing handed: the title says so (hamr 2026-10-24); with hints it stays "What the planner was told ..."
-    var head = items.length === 0 && errLine ? "No lessons were given to the planner" : "What the planner was told from earlier runs";
-    // header mark (hamr 2026-10-24): \u2713 when lessons were handed to the planner, \u2717 when the learnings file could not be read and nothing was handed (hints win if both ever exist)
-    var mark = items.length === 0 && errLine ? "\u2717" : "\u2713";
-    items.forEach(function(it, gi){
-      var hints = Array.isArray(it.hints) ? it.hints : [];
-      var when = it.phase === "replan" ? "first replan" : "draft";
-      if(items.length > 1){
-        var g = document.createElement("div");
-        g.className = "hint";
-        g.style.cssText = "margin-top:10px;font-weight:600;";
-        g.setAttribute("data-testid", "audit-learnings-group-" + it.phase);
-        g.textContent = it.phase === "replan" ? "At the first replan" : "At the draft";
-        list.appendChild(g);
-      }
+  // The memory and the learnings are shown WHERE THEY WERE PASSED ON (ITEM33-BUILD addendum 2026-11-02): the server hangs `memo` on each
+  // worker try and `learnings` on the planner part that received them. Each is one closed-by-default fold in the SAME light style as
+  // the "try N rounds" fold (details.rounds-fold, its summary caret, its .rf-body); the text is set with textContent, never innerHTML.
+  function handedFold(testid, headHtml, bodyEl){
+    var wrap = document.createElement("details");
+    wrap.className = "rounds-fold";
+    wrap.setAttribute("data-testid", testid);
+    var sum = document.createElement("summary");
+    sum.setAttribute("data-testid", testid + "-toggle");
+    sum.innerHTML = headHtml;
+    var body = document.createElement("div");
+    body.className = "rf-body";
+    body.setAttribute("data-testid", testid + "-body");
+    body.appendChild(bodyEl);
+    wrap.appendChild(sum);
+    wrap.appendChild(body);
+    return wrap;
+  }
+  // the carry memo one worker try was handed: a fold with the exact text, or one plain line when the run predates saving it
+  function memoFoldEl(memo, testid){
+    if(memo.missing){
+      var line = document.createElement("div");
+      line.className = "hint";
+      line.style.cssText = "margin:4px 0 4px 12px;overflow-wrap:anywhere;";
+      line.setAttribute("data-testid", testid + "-missing");
+      line.textContent = "Memory this worker got: not saved (older run)";
+      return line;
+    }
+    var pre = document.createElement("pre");
+    pre.className = "handed-text";
+    pre.setAttribute("data-testid", testid + "-text");
+    pre.textContent = memo.text;
+    var head = escapeXml("Memory this worker got (" + Number(memo.chars).toLocaleString("en-US") + " chars" + (memo.capped ? ", cut at cap" : "") + ")");
+    return handedFold(testid, head, pre);
+  }
+  // the learnings block the planner was handed at the draft or the first replan (hints split by the server's parseHintBlock), or the plain
+  // line when the learnings file could not be read and nothing was handed
+  function learningsFoldEl(it, errLine, testid){
+    var list = document.createElement("div");
+    var phase = it ? it.phase : "draft";
+    var hints = it && Array.isArray(it.hints) ? it.hints : [];
+    if(it){
       var note = document.createElement("div");
       note.className = "hint";
       note.style.cssText = "margin:6px 0;overflow-wrap:anywhere;";
-      note.textContent = (gi === 0 ? "Read-only. " : "") + "Given to the planner at the " + when + " (" + Number(it.chars).toLocaleString("en-US") + " characters)." + (gi === 0 ? " No worker sees it." : "");
+      note.textContent = "Read-only. Given to the planner at the " + (phase === "replan" ? "first replan" : "draft") + " (" + Number(it.chars).toLocaleString("en-US") + " characters). No worker sees it.";
       list.appendChild(note);
-      hints.forEach(function(h){
-        var hint = document.createElement("div");
-        hint.className = "audit-table-scroll";
-        hint.setAttribute("data-testid", "audit-learnings-hint-" + it.phase + "-" + h.n);
-        var table = document.createElement("table");
-        table.className = "rounds-table";
-        var tbody = document.createElement("tbody");
-        var trT = document.createElement("tr");
-        var title = document.createElement("td");
-        title.setAttribute("colspan", "2");
-        title.style.cssText = "font-weight:600;overflow-wrap:anywhere";
-        title.setAttribute("data-testid", "audit-learnings-hint-" + it.phase + "-" + h.n + "-title");
-        title.textContent = learnHintLabel(h);
-        trT.appendChild(title);
-        tbody.appendChild(trT);
-        var t = "audit-learnings-hint-" + it.phase + "-" + h.n + "-";
-        if(h.said) learnRow(tbody, t + "said", "It said:", [h.said]);
-        if(h.touched) learnRow(tbody, t + "touched", "Fix touched:", [h.touched]);
-        if(h.changed && h.changed.length) learnRow(tbody, t + "changed", "What changed:", h.changed.concat(h.moreChanged ? ["(+" + h.moreChanged + " more)"] : []));
-        table.appendChild(tbody);
-        hint.appendChild(table);
-        list.appendChild(hint);
-      });
-    });
-    if(sum){
-      // count DISTINCT hints across the draft and replan blocks: the same ledger row (ids[i], parallel to hints[i]) handed twice is one hint
-      var seen = {};
-      var first = 0;
-      items.forEach(function(it){
-        var hs = Array.isArray(it.hints) ? it.hints : [];
-        var byId = Array.isArray(it.ids) && it.ids.length === hs.length;
-        hs.forEach(function(h, i){
-          var key = byId ? "id:" + it.ids[i] : "n:" + it.phase + ":" + h.n;
-          if(!seen[key]){ seen[key] = true; first += 1; }
-        });
-      });
-      var label = items.length ? head + " \u00B7 " + first + (first === 1 ? " hint" : " hints") : head;
-      // arrow back (hamr 2026-10-24, latest wins over 2026-10-23): auditCaret (\u25BC open / \u25B6 closed) first, as the schedule header; then the same `[✓] word` state markup the schedule/step headers wear (stateDotHTML), then the plain-words title
-      var paint = function(){ sum.innerHTML = auditCaret(sum.getAttribute("aria-expanded") === "true") + stateDotHTML(glyphClass(mark), "learnings", "audit-learnings-state") + " " + escapeXml(label); };
-      paint();
-      // ONE fold, same as the other Audit sections: the header button toggles the body (wired once)
-      sum.onclick = function(){
-        var open = sum.getAttribute("aria-expanded") === "true";
-        sum.setAttribute("aria-expanded", open ? "false" : "true");
-        list.hidden = open;
-        paint();
-      };
     }
+    hints.forEach(function(h){
+      var hint = document.createElement("div");
+      hint.className = "audit-table-scroll";
+      hint.setAttribute("data-testid", "audit-learnings-hint-" + phase + "-" + h.n);
+      var table = document.createElement("table");
+      table.className = "rounds-table";
+      var tbody = document.createElement("tbody");
+      var trT = document.createElement("tr");
+      var title = document.createElement("td");
+      title.setAttribute("colspan", "2");
+      title.style.cssText = "font-weight:600;overflow-wrap:anywhere";
+      title.setAttribute("data-testid", "audit-learnings-hint-" + phase + "-" + h.n + "-title");
+      title.textContent = learnHintLabel(h);
+      trT.appendChild(title);
+      tbody.appendChild(trT);
+      var t = "audit-learnings-hint-" + phase + "-" + h.n + "-";
+      if(h.said) learnRow(tbody, t + "said", "It said:", [h.said]);
+      if(h.touched) learnRow(tbody, t + "touched", "Fix touched:", [h.touched]);
+      if(h.changed && h.changed.length) learnRow(tbody, t + "changed", "What changed:", h.changed.concat(h.moreChanged ? ["(+" + h.moreChanged + " more)"] : []));
+      table.appendChild(tbody);
+      hint.appendChild(table);
+      list.appendChild(hint);
+    });
     if(errLine){
       var en = document.createElement("div");
       en.className = "hint";
       en.style.cssText = "margin:6px 0;overflow-wrap:anywhere;";
-      en.setAttribute("data-testid", "audit-learnings-error");
+      en.setAttribute("data-testid", testid + "-error");
       en.textContent = errLine;
       list.appendChild(en);
     }
-    box.hidden = items.length === 0 && !errLine;
+    var failed = !it && !!errLine;
+    var title2 = failed ? "No lessons were given to the planner" : "Learnings the planner got (" + (phase === "replan" ? "first replan" : "draft") + ") · " + hints.length + (hints.length === 1 ? " hint" : " hints");
+    var head = stateDotHTML(glyphClass(failed ? "\u2717" : "\u2713"), "learnings", testid + "-state") + " " + escapeXml(title2);
+    return handedFold(testid, head, list);
+  }
+  // under a part's body: the memory fold of every try the grid does not place (a part without a grid; the fix loop's cut-off try), and the
+  // learnings the planner part was handed. A grid part's tries show their memo in the grid's `told in this run` row (gridTableHtml), not here.
+  function appendHanded(body, part, idx, inGrid){
+    var tries = inGrid ? [] : (Array.isArray(part.attempts) ? part.attempts : []).slice();
+    if(part.cutOffTry && (!inGrid || part.kind === "fix")) tries.push(Object.assign({}, part.cutOffTry, { cutOff: true }));
+    tries.forEach(function(a, i){
+      if(!a || !a.memo) return;
+      body.appendChild(memoFoldEl(a.memo, "audit-memo-" + idx + "-" + (i + 1)));
+    });
+    if(part.learnings || part.learningsError) body.appendChild(learningsFoldEl(part.learnings || null, part.learningsError || "", "audit-learnings-" + idx + "-" + (part.learnings ? part.learnings.phase : "draft")));
   }
 
   // ONE spelling of a step's state: its dot + the bold state word — read by the Run tab's step cards AND the Audit tab's grouped rows
@@ -3042,8 +3087,8 @@
   function gridStepTryOf(part, t, boxIsLive){
     var a = (part.attempts || []).filter(function(x){ return x.n === t.n; })[0] || null;
     var out = {
-      n: t.n, glyph: t.cutOff ? "?" : attemptGlyph(t.outcome, boxIsLive), hint: t.thinking || "", noVerdict: t.cutOff ? (t.words || "") : null,
-      known: false, inflight: false, cells: {}, order: [], judged: a && Array.isArray(a.judged) ? a.judged : [], attempt: a || { n: t.n }, calls: a ? (typeof a.rounds === "number" ? a.rounds : null) : (t.cutOff && part.cutOffTry && typeof part.cutOffTry.rounds === "number" ? part.cutOffTry.rounds : null), opening: false
+      n: t.n, glyph: t.cutOff ? "?" : attemptGlyph(t.outcome, boxIsLive), hint: t.thinking || "", nudged: !!(a && a.nudged), noVerdict: t.cutOff ? (t.words || "") : null,
+      known: false, inflight: false, cells: {}, order: [], judged: a && Array.isArray(a.judged) ? a.judged : [], attempt: a || { n: t.n }, memo: a ? a.memo : (t.cutOff && part.cutOffTry ? part.cutOffTry.memo : null), calls: a ? (typeof a.rounds === "number" ? a.rounds : null) : (t.cutOff && part.cutOffTry && typeof part.cutOffTry.rounds === "number" ? part.cutOffTry.rounds : null), opening: false
     };
     if(!t.cutOff && a && Array.isArray(a.checks)){
       out.known = true;
@@ -3058,8 +3103,8 @@
   function gridFixTryOf(a, boxIsLive){
     var noVerdict = typeof a.noVerdict === "string" && a.noVerdict !== "" ? a.noVerdict : null;
     var out = {
-      n: a.n, glyph: tryGlyph(a, boxIsLive), hint: a.source === "outer-close" ? "opening close" : (a.thinking || ""), noVerdict: noVerdict,
-      known: Array.isArray(a.stages), judged: [], inflight: (a.outcome === null || a.outcome === undefined) && !!boxIsLive, cells: {}, order: [], attempt: a,
+      n: a.n, glyph: tryGlyph(a, boxIsLive), hint: a.source === "outer-close" ? "opening close" : (a.thinking || ""), nudged: !!a.nudged, noVerdict: noVerdict,
+      known: Array.isArray(a.stages), memo: a.memo, judged: [], inflight: (a.outcome === null || a.outcome === undefined) && !!boxIsLive, cells: {}, order: [], attempt: a,
       calls: typeof a.rounds === "number" ? a.rounds : null, opening: a.source === "outer-close"
     };
     if(out.known){
@@ -3136,8 +3181,15 @@
   function gridTableHtml(pid, model){
     if(model.rows.length === 0) return "";
     var head = '<tr><th class="q">check</th>' + model.tries.map(function(t){
-      return '<th class="t">try ' + t.n + " " + gridGlyph(t.glyph) + (t.hint ? '<span class="hint">' + escapeXml(t.hint) + "</span>" : "") + "</th>";
+      return '<th class="t">try ' + t.n + " " + gridGlyph(t.glyph) + (t.hint ? '<span class="hint">' + escapeXml(t.hint) + "</span>" : "") + (t.nudged ? '<span class="hint">nudged</span>' : "") + "</th>";
     }).join("") + "</tr>";
+    // the memo one worker try was handed: `told in this run`, one button per try that got it (the exact saved text opens in the errors area)
+    var hrow = "";
+    if(model.tries.some(gridHasMemo)){
+      hrow = '<tr class="hint-row memo-row"><td class="q">told in this run</td>' + model.tries.map(function(t){
+        return '<td class="c">' + (gridHasMemo(t) ? '<button type="button" class="btn small hints" data-memo="' + t.n + '" aria-expanded="false" aria-controls="fxerr-' + pid + '" title="try ' + t.n + ' \u00B7 told in this run">' + gridMemoWord(t.memo) + "</button>" : '<span class="cell none">\u2014</span>') + "</td>";
+      }).join("") + "</tr>";
+    }
     var body = model.rows.map(function(r){
       var tds = model.tries.map(function(t){
         var c = gridCellOf(t, r);
@@ -3148,10 +3200,29 @@
       }).join("");
       return '<tr><td class="q">' + r.n + " " + escapeXml(r.question) + "</td>" + tds + "</tr>";
     }).join("");
-    return '<div class="grid-wrap audit-table-scroll"><table class="grid fgrid" data-testid="audit-grid-table"><thead>' + head + "</thead><tbody>" + body + "</tbody></table></div>";
+    return '<div class="grid-wrap audit-table-scroll"><table class="grid fgrid" data-testid="audit-grid-table"><thead>' + head + "</thead><tbody>" + hrow + body + "</tbody></table></div>";
   }
-  // the errors list: one row per try that failed or has no verdict; `st` = {open: {tryN: true}, more: {"tryN:checkN": true}}
+  // the memo's button word is its line count; "line"/"lines" are the page's own words, as in "+N more lines"
+  function gridHasMemo(t){ return !!t.memo && typeof t.memo.text === "string" && t.memo.text !== ""; }
+  function gridMemoLines(m){
+    var lines = String(m.text).split("\n");
+    while(lines.length && lines[lines.length - 1].trim() === "") lines.pop();
+    return lines;
+  }
+  function gridMemoWord(m){ var n = gridMemoLines(m).length; return n + (n === 1 ? " line" : " lines"); }
+  // text lines under an opened row, 8 then "+N more lines" (a leading indent is kept as an indent)
+  function gridLinesHtml(lines, more, attr, key){
+    var cap = 8;
+    var shown = more ? lines : lines.slice(0, cap);
+    return '<div class="fx-lines">' + shown.map(function(l){ return /^\s/.test(l) ? '<div class="ind">' + escapeXml(l.replace(/^\s+/, "")) + "</div>" : "<div>" + escapeXml(l) + "</div>"; }).join("") + "</div>" +
+      (lines.length > cap ? '<button type="button" class="fx-more" ' + attr + '="' + key + '">' + (more ? "show first " + cap + " only" : "+" + (lines.length - cap) + " more lines") + "</button>" : "");
+  }
+  // the errors area: the memo texts opened by their buttons, then one list row per red try; `st` = {open: {tryN: true}, more: {"tryN:checkN": true}, memo: {tryN: true}, mmore: {tryN: true}}
   function gridErrorsHtml(pid, model, st){
+    var mrows = model.tries.filter(function(t){ return gridHasMemo(t) && st.memo[t.n]; }).map(function(t){
+      return '<div class="fx-row hintrow open"><button type="button" class="fx-rowhead" id="fxmemo-' + pid + "-" + t.n + '" data-mrow="' + t.n + '" aria-expanded="true"><span class="fx-caret">\u25BE</span><span class="fx-try">try ' + t.n + " \u00B7 told in this run \u00B7 " + gridMemoWord(t.memo) + '</span></button><div class="fx-body">' +
+        gridLinesHtml(gridMemoLines(t.memo), !!st.mmore[t.n], "data-mmore", t.n) + "</div></div>";
+    }).join("");
     var rows = model.tries.map(function(t){
       if(t.noVerdict){
         return '<div class="fx-row fx-row-q"><span class="fx-rowhead"><span class="fx-caret"></span><span class="fx-try">try ' + t.n + '</span><span class="fx-chk">' + gridGlyph("?") + '</span><span class="fx-first fx-faint">' + escapeXml(t.noVerdict) + "</span></span></div>";
@@ -3180,17 +3251,17 @@
       }
       return '<div class="fx-row' + (open ? " open" : "") + '">' + head + body + "</div>";
     }).join("");
-    return rows ? '<div class="fx-label">errors</div>' + rows : "";
+    return mrows + rows ? '<div class="fx-label">errors</div>' + mrows + rows : "";
   }
   // the rounds, folded per try, lazy: each fold fetches its own try's rounds (the per-attempt endpoint) the first time it opens
   function gridRoundsHtml(model){
     return '<div class="sub-label">rounds per try</div><div class="fold-list">' + model.tries.map(function(t){
-      var line = '<div class="try-line" style="margin-top:6px">try ' + t.n + " " + gridGlyph(t.glyph) + "</div>";
+      var line = '<div data-fxtry="' + t.n + '"><div class="try-line" style="margin-top:6px">try ' + t.n + " " + gridGlyph(t.glyph) + "</div>";
       if(t.calls === 0){
-        return line + '<div class="step-rounds-note">' + (t.opening ? "no rounds: the opening close ran before any model call" : "no rounds recorded") + "</div>";
+        return line + '<div class="step-rounds-note">' + (t.opening ? "no rounds: the opening close ran before any model call" : "no rounds recorded") + "</div></div>";
       }
       return line + '<details class="rounds-fold" data-fxrounds="' + t.n + '"><summary>try ' + t.n + " rounds" + (t.calls === null ? "" : " (" + gridPlural(t.calls, "call") + ")") +
-        '</summary><div class="rf-body"><div class="hint">loading&hellip;</div></div></details>';
+        '</summary><div class="rf-body"><div class="hint">loading&hellip;</div></div></details></div>';
     }).join("") + "</div>";
   }
   // a rubric step's try names the file its check read (the server's `attempt.judged` words): one faint line per try that has one
@@ -3210,12 +3281,15 @@
     Array.prototype.forEach.call(wrap.querySelectorAll("[data-fx]"), function(b){
       b.setAttribute("aria-expanded", st.open[b.getAttribute("data-fx").split(":")[0]] ? "true" : "false");
     });
+    Array.prototype.forEach.call(wrap.querySelectorAll("[data-memo]"), function(b){
+      b.setAttribute("aria-expanded", st.memo[b.getAttribute("data-memo")] ? "true" : "false");
+    });
   }
   // a step's or the fix loop's body: tally (steps), then the grid, the errors list and the rounds folds
   function buildGridBody(body, partIndex, part, boxIsLive){
     var pid = "p" + partIndex;
     var model = gridModelOf(part, boxIsLive);
-    var st = { open: gridDefaultOpen(model), more: {} };
+    var st = { open: gridDefaultOpen(model), more: {}, memo: {}, mmore: {} };
     if(part.tally){
       var tally = document.createElement("div");
       tally.className = "step-tally";
@@ -3236,6 +3310,33 @@
       if(el && focusRow){ el.scrollIntoView({ block: "nearest" }); el.focus(); } else if(el){ el.focus(); }
     };
     wrap.addEventListener("click", function(e){
+      var mmore = e.target.closest("[data-mmore]");
+      if(mmore){
+        var mk = mmore.getAttribute("data-mmore");
+        st.mmore[mk] = !st.mmore[mk];
+        renderGridErrors(wrap, pid, model, st);
+        var magain = wrap.querySelector('[data-mmore="' + mk + '"]');
+        if(magain) magain.focus();
+        return;
+      }
+      var mrow = e.target.closest("[data-mrow]");
+      if(mrow){
+        var mn = mrow.getAttribute("data-mrow");
+        st.memo[mn] = false;
+        renderGridErrors(wrap, pid, model, st);
+        var mb = wrap.querySelector('[data-memo="' + mn + '"]');
+        if(mb) mb.focus();
+        return;
+      }
+      var memo = e.target.closest("[data-memo]");
+      if(memo){
+        var mn2 = memo.getAttribute("data-memo");
+        st.memo[mn2] = !st.memo[mn2];
+        renderGridErrors(wrap, pid, model, st);
+        var me = document.getElementById("fxmemo-" + pid + "-" + mn2);
+        if(me) me.scrollIntoView({ block: "nearest" });
+        return;
+      }
       var more = e.target.closest("[data-fxmore]");
       if(more){
         var key = more.getAttribute("data-fxmore");
@@ -3253,7 +3354,7 @@
         toggle(tn, st.open[tn] ? false : true, true);
       }
     });
-    Array.prototype.forEach.call(wrap.querySelectorAll("details.rounds-fold"), function(d){
+    Array.prototype.forEach.call(wrap.querySelectorAll("details[data-fxrounds]"), function(d){
       var t = model.tries.filter(function(x){ return x.n === parseInt(d.getAttribute("data-fxrounds"), 10); })[0];
       var built = false;
       d.addEventListener("toggle", function(){
@@ -3662,6 +3763,7 @@
       var built = false;
       var buildBody = function(){
         built = true;
+        var gridBuilt = false;
         var toolsHeader = document.createElement("div");
         toolsHeader.className = "hint";
         toolsHeader.textContent = partLine2Text(part);
@@ -3678,6 +3780,7 @@
           body.appendChild(doorEl);
         } else if((part.kind === "fix" && attempts.length > 0) || (part.kind === "step" && ((Array.isArray(part.tries) && part.tries.length > 0) || attempts.length > 1))){
           // PRD v1.119: a plan step's tries and the fix loop's tries are ONE grid look: checks x tries, an errors list, the rounds folded per try
+          gridBuilt = true;
           buildGridBody(body, idx, part, box.state === "running");
         } else {
           // parts with NO sub-loop (scout, plan, replan, judge, run, or a
@@ -3687,6 +3790,7 @@
           body.appendChild(roundsEl);
           loadRounds(roundsEl, idx, attempts[0] || { n: 1 }, 0);
         }
+        appendHanded(body, part, idx, gridBuilt);
       };
       headBtn.addEventListener("click", function(){
         var expanded = headBtn.getAttribute("aria-expanded") === "true";
@@ -3836,6 +3940,7 @@
       // one `~` row per rule (fwdloop's shape); an older plan that carries only the joined `rule` still shows it
       (l.rules && l.rules.length ? l.rules : (l.rule ? [l.rule] : [])).forEach(function(r){ h += '<div class="sub">~ ' + escapeXml(r) + "</div>"; });
       (l.checks || []).forEach(function(c){ h += checkLine(c); });
+      (l.always || []).forEach(function(g){ h += '<div class="fold" data-testid="plan-always"><span class="mk">\u203A</span> check \u00B7 always-on: ' + escapeXml(g) + "</div>"; });
       (l.refused || []).forEach(function(r){ h += '<div class="fold" data-testid="plan-refused"><span class="mk">\u203A</span> not checked \u00B7 ' + escapeXml(r) + "</div>"; });
       h += "</div>";
     });

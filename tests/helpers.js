@@ -7,7 +7,7 @@
 // undefined/null is the unpriced case (F6) and must never be laundered into
 // the priced default.
 
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -257,6 +257,17 @@ export const localBranches = (dir) => execFileSync('git', ['for-each-ref', '--fo
   .split('\n').map((s) => s.trim()).filter(Boolean).sort();
 
 
+/** every scratch home `cleanEnv` made in this process; removed when the test process ends (after its sync children are done) */
+const testHomes = [];
+let testHomesHooked = false;
+/** @param {string} home */
+function trackTestHome(home) {
+  testHomes.push(home);
+  if (testHomesHooked) return;
+  testHomesHooked = true;
+  process.on('exit', () => { for (const h of testHomes) { try { rmSync(h, { recursive: true, force: true }); } catch { /* best effort */ } } });
+}
+
 /**
  * The environment a test hands to a REAL child process (a spawned runner, the CLI, a script): safe BY CONSTRUCTION.
  * `HOME` (and the XDG/profile spellings) point at a fresh empty scratch dir, so a child can never read the real
@@ -268,6 +279,7 @@ export const localBranches = (dir) => execFileSync('git', ['for-each-ref', '--fo
  */
 export function cleanEnv(over = {}, { rows = false, config = false } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'bareloop-test-home-'));
+  trackTestHome(home);
   if (rows) seedRows(join(home, '.config', 'bareloop'));
   // `config`: the Settings config only (rows are named, models ticked) — the KEY VALUE then comes from the shell env a test passes in `over`
   if (config) { const d = join(home, '.config', 'bareloop'); mkdirSync(d, { recursive: true }); writeFileSync(join(d, 'config.json'), JSON.stringify(ANTH_CFG)); }

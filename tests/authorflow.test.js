@@ -2498,7 +2498,16 @@ test('P7: with jobLines the author prompt orders fromLine tagging and carries th
   const tagged = authorPrompt({
     ...args, jobLines: [{ n: 1 }, { n: 2 }], inputs: [{ n: 1, label: 'repo', value: '/r' }, { n: 2, label: 'spec', value: 'docs/spec.md' }],
   });
-  assert.ok(tagged.includes(jobLineTagBlock(2)));
+  assert.ok(tagged.includes(jobLineTagBlock(2, greenGuards('js').map((g) => g.name))));
+  // guardLines: the drafter is told the always-on checks exist, never to declare them again, and how to link a covered line (legal example)
+  const gnames = greenGuards('js').map((g) => g.name);
+  const gblock = jobLineTagBlock(2, gnames);
+  assert.match(gblock, /guardLines/);
+  assert.match(gblock, /NEVER declare any of them again as a stage/);
+  assert.match(gblock, /no second files-changed or scope stage/);
+  assert.ok(gblock.includes(`{"guard": "${gnames[0]}", "lines": [2]}`), 'a legal example links a guard to a line');
+  assert.ok(!/guardLines/.test(jobLineTagBlock(2)), 'no guards named = no guardLines paragraph (old callers byte-identical)');
+  assert.ok(!/guardLines/.test(plain));
   assert.match(tagged, /fromLine/);
   assert.match(tagged, /the person pointed at these inputs: 1 repo \/r · 2 spec docs\/spec\.md/);
   // the checks in the confirmed block carry their job line

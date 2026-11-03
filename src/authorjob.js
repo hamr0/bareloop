@@ -867,6 +867,10 @@ export async function authorCloseForJob({
     ...(authored.declaration.refused?.length
       ? { refused: authored.declaration.refused.map((/** @type {any} */ r) => ({ line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), reason: redactSecrets(String(r.reason)) })) }
       : {}),
+    // the lines the always-on guards cover (names and numbers only, nothing free-text)
+    ...(authored.declaration.guardLines?.length
+      ? { guardLines: authored.declaration.guardLines.map((/** @type {any} */ g) => ({ guard: g.guard, lines: [...g.lines] })) }
+      : {}),
   };
 
   // ── THE TWO SIGNED ARTIFACTS (softgreen module 4, wired here by module 5) ──

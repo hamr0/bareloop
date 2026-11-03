@@ -117,7 +117,9 @@ test('ON: the count-not-worse text reaches the planner (block) and every worker 
   assert.deepEqual(Object.keys(notes[0]).filter((k) => !['type', 'seq', 'ts', 'runId'].includes(k)).sort(), ['chars', 'stages', 'to'], 'counts and names only');
   const carry = events.filter((e) => e.type === 'carry-note');
   assert.ok(carry.length >= 2 && carry.every((e) => e.sections.failures >= 1), 'carry-note sections.failures counts the start failure');
-  assert.ok(!JSON.stringify([...notes, ...carry]).includes('failing title'), 'no text on the spine');
+  assert.ok(!JSON.stringify(notes).includes('failing title'), 'the seed-note record is counts and names only');
+  // the carry-note record now saves the memo text itself (F274), masked, so the start failure is there and the secret is not
+  assert.ok(carry.every((e) => e.text.includes('- at start:') && e.text.includes('failing title') && !e.text.includes(SECRET)), 'carry-note text holds the start failure, masked');
 });
 
 test('ON: step 2 sees it too; step 1 try 1 carries it with no other events', async (t) => {

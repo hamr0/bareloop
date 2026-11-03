@@ -27,7 +27,7 @@ import { join, resolve, relative } from 'node:path';
 import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
 import { runClose, runStages, ralph, CLOSE_FAULTS, boundGap } from './ralph.js';
-import { validatePlan, legalScopes, closeStagesOf } from './plan.js';
+import { validatePlan, pairEditGrant, legalScopes, closeStagesOf } from './plan.js';
 import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, RETRIEVAL_PAIR, EXIT_EXAMPLE } from './plan.js';
 import { snapshotScope, evalExits, CHECK_GAP_MAX } from './exits.js';
 import { createRoot } from './root.js';
@@ -35,7 +35,7 @@ import { createStallWatch, STALL_MS, MAX_STALLS } from './stall.js';
 import { createLadder, STRIKE_LIMIT } from './ladder.js';
 import { createTrend, FIX_STRIKE_LIMIT } from './trend.js';
 import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
-import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, gatedShellOptions, PERSONA_TOOLS, strategyFor } from './tools.js';
+import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, gatedShellOptions, trackedAtSeedGuard, PERSONA_TOOLS, strategyFor } from './tools.js';
 import { anySuppressionWarning } from './authoring.js';
 import { createReadShim, readShimArm, readShimStrategy } from './readshim.js';
 import { createCarryStore } from './carrystore.js';
@@ -49,7 +49,7 @@ import { workerThinkingMode, thinkingCallOptions } from './thinking.js';
 export { rateSourceFields };
 import { createClock, isWallTimeout } from './clock.js';
 import { isDeclaredClose, runDeclaredStages, validateCloseDecl, closeGrade, HUMAN_PAUSE, HITL_PAUSE, HITL_DECISION_RED } from './declaredclose.js';
-import { inputLabelsOf, outputJudgedRecords } from './rubricstep.js';
+import { inputLabelsOf, outputJudgedRecords, STEP_DIR } from './rubricstep.js';
 import {
   seedAtHead, seedListing, changedSet, GAP_TRIM_MARKER, GATE_AUDIT_FILE, ARBITER_BOOK_STORES,
   HUMAN_KIND, HUMAN_DECISIONS, normalizeHumanRuling, resolveHumanRuling,
@@ -307,7 +307,7 @@ const MONEY_MIN = 0.001;
  */
 const VARIANCE_THRESHOLD = 0.5;
 
-/** @typedef {Error & {category?: string, lib?: string}} CategorizedError */
+/** @typedef {Error & {category?: string, lib?: string, badCall?: {kind: string, tool: string|null, param?: string, expected?: string, got?: string}}} CategorizedError */
 
 /**
  * The materials block: what the run has to spend, as a BALANCE and nothing else.
@@ -559,6 +559,10 @@ export const FORBIDDEN_WRITE_SEGMENT_PATTERN = /"path":"(?:(?:[^"\\]|\\.)*\/)?(?
  * shipped path routinely rides through.
  */
 export const BOUND_REASON_MAX = 200;
+/** the one message a text-only worker ending is continued with (once per ask, no toolChoice) */
+export const TEXT_ONLY_NUDGE = 'You ended without writing any file. Make the change now with your write or edit tool; do not reply in text.';
+/** the stored text-only ending is capped here (report-only record, masked first) */
+export const TEXT_ONLY_MAX = 2000;
 
 /** the recorded reason for a step attempt whose round was cut at the output cap (F122 2A b) */
 export const TRUNCATED_REASON = 'output cut at the token limit (max_tokens)';
@@ -566,6 +570,55 @@ export const TRUNCATED_REASON = 'output cut at the token limit (max_tokens)';
 const REPLAN_CUT_RED = 'Your previous answer was cut off at its length limit before the plan was complete. Answer again with a shorter plan that fits.';
 /** the plain sentence for a replan answer cut off at its length limit (hamr 2026-10-16, run mv9gm796) */
 export const REPLAN_CUT_WORDS = 'The replan answer was cut off at its length limit, so no new plan came back.';
+
+/**
+ * @typedef {{ kind: string, tool: string|null, param?: string, expected?: string, got?: string, argBytes?: number, parsed?: boolean, hasAppend: boolean, round: number|null }} BadCallFact
+ * @typedef {{ calls: BadCallFact[], cutOff: {outputTokens: number|null, reasoningTokens: number|null, maxTokensRequested: number|null}|null }} BadCallFacts
+ *   bare-agent's STRUCTURED `badCalls`/`cutOff` for one attempt (BA-29); the only input of the two note sentences below
+ */
+
+/** a cut call at least this many bytes long is the reason the round hit the cap: the note teaches `append` (a bareloop choice, not bare-agent's) */
+export const CUT_LARGE_ARG_BYTES = 8000;
+/** a cut round whose reasoning tokens are more than this share of its output tokens was spent thinking, not writing */
+export const CUT_REASONING_SHARE = 0.5;
+
+/**
+ * F266 — what to add after the frozen cut-off sentence, from `cutOff`/`badCalls` fields only (never from
+ * the `detail` prose, BA-26). A large cut write that has an `append` option: write in parts. Reasoning
+ * dominating the cut round: decide sooner. Anything else known-or-unknown adds nothing.
+ * @param {BadCallFacts|undefined|null} bad
+ * @returns {string} '' or a sentence starting with a space
+ */
+function cutSentence(bad) {
+  if (!bad) return '';
+  const cut = bad.calls.find((c) => c.kind === 'cut-off');
+  if (cut && cut.hasAppend && typeof cut.argBytes === 'number' && cut.argBytes >= CUT_LARGE_ARG_BYTES) {
+    return ` The call that was cut was ${cut.tool ?? 'a write'}, about ${cut.argBytes} bytes. Write that file in parts: send the first part, then add each next part with append:true.`;
+  }
+  const co = bad.cutOff;
+  if (co && typeof co.reasoningTokens === 'number' && typeof co.outputTokens === 'number' && co.outputTokens > 0
+    && co.reasoningTokens / co.outputTokens > CUT_REASONING_SHARE) {
+    return ` Most of that output (${co.reasoningTokens} of ${co.outputTokens} tokens) was reasoning, before the call was finished. Decide sooner: make the change with a shorter call.`;
+  }
+  return '';
+}
+
+/**
+ * F265 — a refused tool argument (`checkArgs`): say what was wrong, from the structured `kind/param/expected/got`.
+ * An object or array sent where a string was declared is the JSON-as-object case: send JSON as text.
+ * @param {BadCallFacts|undefined|null} bad
+ * @returns {string} '' or a sentence starting with a space
+ */
+function badCallSentence(bad) {
+  const c = bad?.calls.find((x) => x.kind === 'arg-type' || x.kind === 'arg-missing');
+  if (!c || !c.param) return '';
+  const where = `${c.tool ?? 'a tool'} ${c.param}`;
+  if (c.kind === 'arg-missing') return ` A tool call was refused: ${where} was missing.`;
+  if (c.expected === 'string' && (c.got === 'object' || c.got === 'array')) {
+    return ` A tool call was refused: ${where} arrived as a JSON ${c.got}, not text. Send JSON as text: encode it as one string.`;
+  }
+  return ` A tool call was refused: ${where} must be ${c.expected ?? 'the declared type'}, got ${c.got ?? 'something else'}.`;
+}
 
 /**
  * What the NEXT attempt is told about the bound that cut the previous one.
@@ -593,19 +646,20 @@ export const REPLAN_CUT_WORDS = 'The replan answer was cut off at its length lim
  * and announces the trim with the repo's ONE marker rather than a second spelling
  * of "this text was cut" (F90.2).
  *
- * @param {{iteration?: number|string|undefined, cause: string, reason: string|null}|null|undefined} bounded
+ * @param {{iteration?: number|string|undefined, cause: string, reason: string|null, bad?: BadCallFacts|null}|null|undefined} bounded
  *   the previous attempt's bound state, or nullish when it was not bounded
  * @param {number} rounds the step's round bound, as quoted by the frozen sentence
  * @returns {string|null} the note, or null when there is nothing to say
  */
 export function boundedNote(bounded, rounds) {
   if (!bounded) return null;
+  const bad = badCallSentence(bounded.bad);
   if (bounded.cause === 'truncated') {
-    return `Your previous attempt was CUT OFF: ${TRUNCATED_REASON}. That response was discarded.`;
+    return `Your previous attempt was CUT OFF: ${TRUNCATED_REASON}. That response was discarded.${cutSentence(bounded.bad)}${bad}`;
   }
   if (bounded.cause !== 'denied') {
     return `Your previous attempt was CUT OFF after ${rounds} tool rounds. `
-      + 'Reading is bounded; writing is not. Form a hypothesis EARLY and make the change.';
+      + `Reading is bounded; writing is not. Form a hypothesis EARLY and make the change.${bad}`;
   }
   const raw = String(bounded.reason ?? '');
   const shown = raw.length > BOUND_REASON_MAX
@@ -613,7 +667,7 @@ export function boundedNote(bounded, rounds) {
     : raw;
   return 'Your previous attempt was CUT OFF by the gate: it denied consecutive tool calls '
     + `until the streak guard ended the attempt. The gate recorded: ${shown}. `
-    + 'The round budget was not what stopped you — repeating a denied call ends this attempt the same way.';
+    + `The round budget was not what stopped you — repeating a denied call ends this attempt the same way.${bad}`;
 }
 
 /**
@@ -2224,6 +2278,24 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     if (stop !== null) return stop;
   }
 
+  // ── BA-30's `guardPath` (F272/F276): "tracked at seed" is HEAD at THIS LEG's start, read from
+  // the WORKER tree (`workdir`, never the source repo) once the work branch is prepared — a
+  // resumed leg therefore counts what earlier legs committed as tracked. It is read for EVERY job,
+  // declared or not (a command or rubric close has no `declaredCtx`). A fault is a stop, never an
+  // unguarded run: a write guard that silently fails open is the failure it exists to prevent.
+  const guardSeed = await seedAtHead(workdir);
+  const guardListing = guardSeed.stop === null ? await seedListing(workdir, guardSeed.seedRef) : null;
+  if (guardSeed.stop !== null || guardListing === null || guardListing.stop !== null) {
+    emit('escalation', {
+      category: 'interpreter-red', decisionReady: true,
+      decision: 'The write guard needs the files tracked at the start of this leg, and they could not be read. Nothing was spent.',
+      options: ['check the repository is a git checkout with at least one commit', 'retry the run', 'abandon the run'],
+      detail: scrub(String(guardSeed.stop ?? guardListing?.stop ?? '')),
+    });
+    return 'interpreter-red';
+  }
+  const shrinkGuardPath = await trackedAtSeedGuard(workdir, guardListing.files);
+
   const lc = new LiteCtx({ root: workdir });
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
   const fencePrefixes = job.writeScope.map((/** @type {string} */ g) => resolve(workdir, globToPrefix(g)));
@@ -2499,7 +2571,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
      * `iteration` mirrors `roundIteration` exactly, undefined included: the bound
      * cannot know a label the run never set, and inventing one here would be the
      * only place in this file that claims to.
-     * @type {{iteration: number|string|undefined, cause: 'rounds'|'wall'|'denied'|'truncated', reason: string|null}|undefined}
+     * @type {{iteration: number|string|undefined, cause: 'rounds'|'wall'|'denied'|'truncated', reason: string|null, bad?: BadCallFacts|null}|undefined}
      */
     let attemptBounded;
     /**
@@ -2520,7 +2592,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       }
     };
     const grantedNames = new Set(granted.map((v) => /** @type {Record<string, string>} */ (TOOL_BY_VERB)[v]));
-    const shell = createShellTools(gatedShellOptions(gate, workdir)).tools.filter((/** @type {{name: string}} */ t) => grantedNames.has(t.name));
+    const shell = createShellTools(gatedShellOptions(gate, workdir, shrinkGuardPath)).tools.filter((/** @type {{name: string}} */ t) => grantedNames.has(t.name));
     // THE READ SHIM (arm-gated, default OFF): a per-worker delivery ledger over the
     // read tool — cap at READ_SHIM_CAP, pointer only once the CURRENT content has been
     // delivered whole, next-unseen-slice otherwise, diff on a changed re-read. WHICH of
@@ -2850,7 +2922,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         }
         return onLlmResult(arg);
       };
-      self = new Loop({ provider: loopProvider, system, policy, onLlmResult: metered, onToolResult: onToolOutcome, ...(rates ? { rates } : {}) });
+      // BA-29: checkArgs refuses a wrong-typed or missing top-level tool argument BEFORE the tool runs (F265: an object where a string was declared)
+      self = new Loop({ provider: loopProvider, system, policy, checkArgs: true, onLlmResult: metered, onToolResult: onToolOutcome, ...(rates ? { rates } : {}) });
       return self;
     };
     /**
@@ -2905,20 +2978,56 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         throw categorize(e).err;
       }
     };
-    const ask = async (prompt, defs = toolDefs) => {
-      let r;
-      // A fresh Loop = a fresh transcript: the read shim's delivered-ledger resets with it, or a
-      // later attempt's re-read is answered with a pointer to bytes its model never saw (F252).
-      // askFrom (a continuation of a prior transcript) deliberately does NOT reset.
-      shim.reset();
-      const thinkOpts = thinkingForCall();
-      try {
-        r = await stallWatch.watch((gen) => newLoop(gen).run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000, ...callBounds(), ...thinkOpts }));
-        throwIfStopped();
-        noteThinkingStatus(r);
-      } catch (e) {
-        throw categorize(e).err;
+    /**
+     * BA-29 (F265/F266) — record what the model got wrong in ONE call, from bare-agent's STRUCTURED fields only
+     * (`r.badCalls`, `r.cutOff`, `r.malformedToolCall`; the `detail` prose is never read, the BA-26 anti-pattern).
+     * Two spine records: `worker-malformed-tool-call` (F184, now also on a cut round) and `worker-bad-calls`
+     * (kind, tool, param, expected, got, size, hasAppend, round; raw arguments never exist upstream). Returns the
+     * facts the next-attempt note is built from (`boundedNote`), or null when the round had none.
+     * @param {any} r a Loop.run() result
+     * @returns {BadCallFacts|null}
+     */
+    const noteBadCalls = (r) => {
+      if (r.malformedToolCall) {
+        const rawErr = String(r.malformedToolCall.error ?? '');
+        const scrubbedErr = scrub(rawErr);
+        const shownErr = scrubbedErr.length > BOUND_REASON_MAX
+          ? `${scrubbedErr.slice(0, BOUND_REASON_MAX)} [${GAP_TRIM_MARKER} ${scrubbedErr.length - BOUND_REASON_MAX} of ${scrubbedErr.length} characters withheld — the cap is ${BOUND_REASON_MAX}]`
+          : scrubbedErr;
+        emit('worker-malformed-tool-call', {
+          phase, iteration: roundIteration, name: scrub(String(r.malformedToolCall.name ?? '')), error: shownErr,
+        });
       }
+      const calls = Array.isArray(r.badCalls) ? r.badCalls : [];
+      if (calls.length === 0) return null;
+      /** @type {BadCallFacts} */
+      const facts = {
+        calls: calls.map((/** @type {any} */ c) => ({
+          kind: String(c.kind),
+          tool: typeof c.tool === 'string' ? scrub(c.tool) : null,
+          ...(typeof c.param === 'string' ? { param: scrub(c.param) } : {}),
+          ...(typeof c.expected === 'string' ? { expected: c.expected } : {}),
+          ...(typeof c.got === 'string' ? { got: c.got } : {}),
+          ...(typeof c.argBytes === 'number' ? { argBytes: c.argBytes } : {}),
+          ...(typeof c.parsed === 'boolean' ? { parsed: c.parsed } : {}),
+          hasAppend: c.hasAppend === true,
+          round: typeof c.round === 'number' ? c.round : null,
+        })),
+        cutOff: r.cutOff && typeof r.cutOff === 'object'
+          ? { outputTokens: r.cutOff.outputTokens ?? null, reasoningTokens: r.cutOff.reasoningTokens ?? null, maxTokensRequested: r.cutOff.maxTokensRequested ?? null }
+          : null,
+      };
+      emit('worker-bad-calls', { phase, iteration: roundIteration, calls: facts.calls, ...(facts.cutOff ? { cutOff: facts.cutOff } : {}) });
+      return facts;
+    };
+    /** the post-round taxonomy of one worker Loop result (bad calls, bounds, error map); returns r or throws — shared by an ask's first round and its nudge round @param {any} r */
+    const settle = (r) => {
+      // BA-29 (F265/F266): what the model got wrong is read off bare-agent's structured `badCalls`/`cutOff`
+      // (never off prose) and recorded BEFORE any branch below returns or throws — a cut round used to
+      // return first and lose both this and the malformed marker.
+      const badFacts = noteBadCalls(r);
+      // a round/wall bound was set inside the Loop callbacks, before the facts existed: attach them to THIS attempt's bound
+      if (badFacts && attemptBounded && attemptBounded.iteration === roundIteration && !attemptBounded.bad) attemptBounded = { ...attemptBounded, bad: badFacts };
       // BA-11's deny streak is a BOUNDED ATTEMPT, not a terminal. It is the same
       // shape `loop.stop()` has at the round bound thirty lines up: the attempt
       // ran, produced real work, and was cut short by a governance bound doing
@@ -2929,7 +3038,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // takes the identical lane above — one doctrine, both surfaces.
       if (r.error && r.error.startsWith('denied:')) {
         const reason = scrub(r.error);
-        attemptBounded = { iteration: roundIteration, cause: 'denied', reason };
+        attemptBounded = { iteration: roundIteration, cause: 'denied', reason, bad: badFacts };
         emit('attempt-bounded', { phase, iteration: roundIteration, rounds: roundsThisAttempt, cap: attemptRounds, reason });
         return r;
       }
@@ -2942,7 +3051,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // replan drafter opts in with `truncatedBounded`. Scout and the first draft keep the
       // transport route below (provider-red).
       if (r.error && r.error.startsWith('truncated:') && (phase.startsWith('step:') || phase === 'fix' || truncatedBounded)) {
-        attemptBounded = { iteration: roundIteration, cause: 'truncated', reason: TRUNCATED_REASON };
+        attemptBounded = { iteration: roundIteration, cause: 'truncated', reason: TRUNCATED_REASON, bad: badFacts };
         emit('attempt-bounded', { phase, iteration: roundIteration, rounds: roundsThisAttempt, cap: attemptRounds, reason: TRUNCATED_REASON, stopReason: r.stopReason ?? null });
         return r;
       }
@@ -2954,6 +3063,11 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
           : r.error.startsWith('truncated:') ? 'provider-red'
           : 'interpreter-red';
         err.lib = 'bare-agent';
+        // F265: a stuck loop of refused arguments says WHICH fault in structured words (the panel renders them); bare-agent's own fields, never prose
+        const refused = badFacts?.calls.find((c) => c.kind === 'arg-type' || c.kind === 'arg-missing');
+        if (refused && r.error.startsWith('stuck:')) {
+          err.badCall = { kind: refused.kind, tool: refused.tool, param: refused.param, ...(refused.expected ? { expected: refused.expected } : {}), ...(refused.got ? { got: refused.got } : {}) };
+        }
         throw err;
       }
       // F184 — bare-agent 0.43.0 (BA-27) returns a malformed final-turn tool
@@ -2970,16 +3084,55 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // marker before `ask()` returns it unexamined, so a distinct spine
       // record names the transport class here — the same honesty bar
       // F179/F180 set for the authoring path, applied to the worker path.
-      if (r.malformedToolCall) {
-        const rawErr = String(r.malformedToolCall.error ?? '');
-        const scrubbedErr = scrub(rawErr);
-        const shownErr = scrubbedErr.length > BOUND_REASON_MAX
-          ? `${scrubbedErr.slice(0, BOUND_REASON_MAX)} [${GAP_TRIM_MARKER} ${scrubbedErr.length - BOUND_REASON_MAX} of ${scrubbedErr.length} characters withheld — the cap is ${BOUND_REASON_MAX}]`
-          : scrubbedErr;
-        emit('worker-malformed-tool-call', {
-          phase, iteration: roundIteration, name: scrub(String(r.malformedToolCall.name ?? '')), error: shownErr,
-        });
+      return r;
+    };
+    const ask = async (prompt, defs = toolDefs) => {
+      let r;
+      // A fresh Loop = a fresh transcript: the read shim's delivered-ledger resets with it, or a
+      // later attempt's re-read is answered with a pointer to bytes its model never saw (F252).
+      // askFrom (a continuation of a prior transcript) deliberately does NOT reset.
+      shim.reset();
+      const thinkOpts = thinkingForCall();
+      const writesBefore = writeCount();
+      try {
+        r = await stallWatch.watch((gen) => newLoop(gen).run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000, ...callBounds(), ...thinkOpts }));
+        throwIfStopped();
+        noteThinkingStatus(r);
+      } catch (e) {
+        throw categorize(e).err;
       }
+      r = settle(r);
+      // The text-only ending: a writeable step's (or the fix loop's) ask finished (end_turn) with text and the REAL gate audit holds no allowed
+      // write/edit for it. Continue the SAME conversation (`r.msgs`) ONCE with one code-written message; the round is inside this try, metered by
+      // the same seam, and honours the cap, wall, Stop and the round limit. Read-only steps are never nudged.
+      const writeable = (phase.startsWith('step:') || phase === 'fix') && WRITE_VERBS.some((v) => granted.includes(v));
+      const textOnly = writeable && r.stopReason === 'end_turn' && !r.error && typeof r.text === 'string' && r.text !== '' && writeCount() === writesBefore;
+      if (!textOnly) return r;
+      let lastText = r.text;
+      let nudged = false;
+      let nudgeWrote = false;
+      if (!attemptBounded && !stopHit && !clock.expired() && roundsThisAttempt < attemptRounds && Array.isArray(r.msgs)) {
+        nudged = true;
+        emit('worker-nudge', { phase, iteration: roundIteration, round: roundsThisAttempt });
+        let r2;
+        try {
+          const rest = r.msgs[0]?.role === 'system' ? r.msgs.slice(1) : r.msgs; // same strip as askFrom: the new Loop prepends `system` again
+          r2 = await stallWatch.watch((gen) => newLoop(gen).run([...rest, { role: 'user', content: TEXT_ONLY_NUDGE }], defs, { cacheMessages: true, maxTokens: 32000, ...callBounds(), ...thinkOpts }));
+          throwIfStopped();
+          noteThinkingStatus(r2);
+        } catch (e) {
+          throw categorize(e).err;
+        }
+        r2 = settle(r2);
+        nudgeWrote = writeCount() > writesBefore;
+        if (typeof r2.text === 'string' && r2.text !== '' && !nudgeWrote) lastText = r2.text;
+        r = r2;
+      }
+      const shown = scrub(String(lastText));
+      emit('worker-text-only', {
+        phase, iteration: roundIteration, nudged, nudgeWrote,
+        text: shown.length > TEXT_ONLY_MAX ? shown.slice(0, TEXT_ONLY_MAX) : shown, truncated: shown.length > TEXT_ONLY_MAX,
+      });
       return r;
     };
     return { ask: withCarry(ask), askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };
@@ -3245,7 +3398,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       });
       return 'plan-red';
     }
-    plan = /** @type {any} */ (pv.plan);
+    // F271 (B2): a write grant is paired with edit when the SIGNED ceiling offers it; the reloaded plan is executed — and recorded — paired
+    plan = /** @type {any} */ (pairEditGrant(pv.plan, job, STEP_DIR));
     // The skip set is a PREFIX match on the plan's own step ids, never a count: a count
     // would skip whatever happens to sit at that index. Steps run strictly sequentially
     // and idx only advances on a satisfied exit, so the dead run's completions ARE a
@@ -3275,7 +3429,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         for (const r of pv.reds) emit('plan-red', r);
         return 'plan-red';
       }
-      plan = /** @type {any} */ (pv.plan);
+      plan = /** @type {any} */ (pairEditGrant(pv.plan, job, STEP_DIR)); // F271 (B2)
       emit('plan-accepted', { plan });
     } catch (e) {
       return relay(e, 'plan');
@@ -3828,7 +3982,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         planExecuted();
         return 'plan-red';
       }
-      plan = /** @type {any} */ (pv.plan);
+      plan = /** @type {any} */ (pairEditGrant(pv.plan, job, STEP_DIR)); // F271 (B2)
       emit('plan-accepted', { plan, phase: 'replan' });
       // the new plan's steps are NOT the old plan's steps — its abandoned greens
       // must not ride forward as this plan's "prior steps' results" (stale, and

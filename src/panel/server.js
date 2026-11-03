@@ -49,7 +49,7 @@ import { chainSpend } from '../ledger.js';
 import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
 import { jobSpecHash, workflowKey } from '../job.js';
-import { parseHintBlock, hintsErrorLine } from '../learn.js';
+import { attachMemos, learningsHanded, attachLearnings } from './handed.js';
 import { confirmProtections } from '../authorflow.js';
 import { createScheduleDoor } from './schedules.js';
 import { createStarter } from './schedulestart.js';
@@ -550,6 +550,22 @@ function endedBase(summary, death, o) {
   const outcome = raw;
   const esc = summary.lastEscalation;
   const cat = typeof esc?.category === 'string' ? esc.category : null;
+
+  // F265: a stuck loop of refused tool arguments (bare-agent `checkArgs`): the engine recorded the fault in structured fields
+  // (`badCall`), so the sentence names what the model did instead of the raw code
+  const refused = esc?.badCall;
+  if (refused && typeof refused === 'object' && typeof refused.param === 'string' && (outcome === 'interpreter-red' || outcome === 'escalated')) {
+    const what = `${refused.param} of ${refused.tool ?? 'a tool'}`;
+    const how = refused.kind === 'arg-missing'
+      ? `leaving out the ${what}`
+      : `sending the ${what} as ${refused.got === 'object' || refused.got === 'array' ? `a JSON ${refused.got}` : `a ${refused.got ?? 'wrong type'}`}${refused.expected ? ` instead of ${/^[aeiou]/.test(refused.expected) ? 'an' : 'a'} ${refused.expected}` : ''}`;
+    return {
+      reason: `The model kept ${how}, and the tool refused it every time, so the step stopped.`,
+      next: CHANGE,
+      line: 'tool call refused',
+      actions: [],
+    };
+  }
 
   // `escalated` is a TERMINAL: its sentence may name the real governor, but it is never
   // resumable. Two governors, never mixed (F198): the STRIKE ladder (the fix loop stopped
@@ -1630,7 +1646,12 @@ function getRunDetailBody(runid, opts) {
   const draftingPartHere = draftingFor(row, summary, opts);
   const draftingShiftHere = draftingShift(row, summary, opts);
   const specForParts = resolveSpecForRow(row);
-  const enrichedParts = enrichPartsWithStageKind(summary.parts, stageKindMetaFromSpec(specForParts), specForParts);
+  // the memory and the learnings each part was handed, placed where they were passed on (src/panel/handed.js)
+  const handed = attachLearnings(
+    attachMemos(enrichPartsWithStageKind(summary.parts, stageKindMetaFromSpec(specForParts), specForParts), rawSpineRecords),
+    draftingPartHere, learningsHanded(rawSpineRecords),
+  );
+  const enrichedParts = handed.parts;
   const death = deriveDeath(row, rawSpineRecords, summary.outcome);
   const runName = runNameOf(row.job, runNumbers(readRunList(opts).rows).get(row.runid));
   // the export row only for a run export would take — the one rule, `checkExportable`, never a copy of it
@@ -1860,7 +1881,7 @@ function getRunDetailBody(runid, opts) {
     // tabs still never disagree about order/counts/blocked-call figures.
     // a run that DIED (no job-end, runner gone — `death`, decided once above) leaves its last part in flight: that part reads
     // `died`, never the "happened, so passed" default. Replay alone cannot tell died from still running, so the verdict lives here.
-    parts: (draftingPartHere && Array.isArray(enrichedParts) ? [draftingPartHere, ...enrichedParts] : enrichedParts)?.map((p, i, all) => ({ ...(death.died && i === all.length - 1 ? diedFixTry(p) : p), status: partStatusFor(death.died && i === all.length - 1 && p.kind !== 'drafting' && p.outcome == null && !p.stopReason ? { ...p, stopReason: 'died' } : p) })),
+    parts: (handed.drafting && Array.isArray(enrichedParts) ? [handed.drafting, ...enrichedParts] : enrichedParts)?.map((p, i, all) => ({ ...(death.died && i === all.length - 1 ? diedFixTry(p) : p), status: partStatusFor(death.died && i === all.length - 1 && p.kind !== 'drafting' && p.outcome == null && !p.stopReason ? { ...p, stopReason: 'died' } : p) })),
     replans: summary.replans,
     close: summary.close,
     branch: summary.branch,
@@ -1886,11 +1907,7 @@ function getRunDetailBody(runid, opts) {
     // carries no contamination risk); `null` when the spine carries no
     // `memory-cache` record at all (never armed on this run).
     behaviour: scopedBehaviour(row, rawSpineRecords),
-    // Cross-run learnings, READ-ONLY (ITEM33 rev 2, RULING 8): the exact block the planner was handed, as the spine recorded it at
-    // injection (the draft, and the first replan); `hints` = the same text split into fields by learn.js's parseHintBlock (the one reader). Empty when the setting was off or nothing was readable.
-    learnings: rawSpineRecords.filter((e) => e?.type === 'learnings' && typeof e.text === 'string').map((e) => ({ phase: String(e.phase), text: e.text, chars: e.text.length, ids: Array.isArray(e.ids) ? e.ids : [], hints: parseHintBlock(e.text) })),
-    // a learnings file that could not be read: the plain line (null when it could)
-    learningsError: ((r) => (r ? hintsErrorLine(String(r.hintsError)) : null))(rawSpineRecords.find((e) => e?.type === 'learnings' && typeof e.hintsError === 'string')),
+    // Cross-run learnings now ride on the part that received them (`part.learnings`, `part.learningsError`; src/panel/handed.js).
     // PRD v1.106 Part 5 F: the two Run summary rows, worded here (the page prints them)
     callsLine: callsLineOf(rawSpineRecords, scopedBehaviour(row, rawSpineRecords)),
     checksLine: checksLineOf(rawSpineRecords, enrichedParts),

@@ -1,0 +1,216 @@
+{
+ "note": "The three first-draft plans (plan-accepted records) of the live Muse bigfile runs that gutted src/gate.js (F271). Copied from the run spines; the job is the shape the replay validated them against.",
+ "job": {
+  "goal": "replay",
+  "verdictType": "green",
+  "writeScope": [
+   "src/",
+   "output/"
+  ],
+  "close": [
+   {
+    "name": "suite-zero-failures",
+    "cmd": "true",
+    "expect": {}
+   }
+  ]
+ },
+ "scopes": [
+  "src/**"
+ ],
+ "plans": {
+  "u-mvy4cd0d": {
+   "schema": "plan-v1",
+   "steps": [
+    {
+     "id": "map-halt-topup-flow",
+     "action": "Read the failing resource halt humanChannel topup test and trace gate haltContext plus related primitives to locate the broken routing",
+     "tools": [
+      "read",
+      "recall",
+      "get",
+      "grep",
+      "peek",
+      "related",
+      "write"
+     ],
+     "rounds": 20,
+     "target": "src/gate.js",
+     "scope": "src/**",
+     "exit": [
+      {
+       "type": "artifact-written",
+       "path": "src/gate.js"
+      },
+      {
+       "type": "tree-changed",
+       "scope": "src/**"
+      }
+     ]
+    },
+    {
+     "id": "repair-halt-routing",
+     "action": "Patch the source that breaks resource halt flow so the halt routes through humanChannel topup end to end without suppressions",
+     "tools": [
+      "read",
+      "recall",
+      "get",
+      "grep",
+      "peek",
+      "write",
+      "edit"
+     ],
+     "rounds": 25,
+     "target": "src/primitives/budget.js",
+     "scope": "src/**",
+     "exit": [
+      {
+       "type": "artifact-written",
+       "path": "src/primitives/budget.js"
+      },
+      {
+       "type": "tree-changed",
+       "scope": "src/**"
+      }
+     ]
+    },
+    {
+     "id": "finalize-suite-green",
+     "action": "Apply the complete fix across src so npm test exits zero with no failing tests and every changed file stays under src",
+     "tools": [
+      "read",
+      "recall",
+      "get",
+      "grep",
+      "peek",
+      "related",
+      "write",
+      "edit"
+     ],
+     "rounds": 35,
+     "target": "src/index.js",
+     "scope": "src/**",
+     "exit": [
+      {
+       "type": "tree-changed",
+       "scope": "src/**"
+      },
+      {
+       "type": "check-passes",
+       "name": "suite-zero-failures"
+      }
+     ]
+    }
+   ]
+  },
+  "u-mvy52mc5": {
+   "schema": "plan-v1",
+   "steps": [
+    {
+     "id": "map-human-channel-resource-halt",
+     "action": "Locate the failing test for resource halt routing through humanChannel topup and trace its path in src/gate.js plus budget and audit primitives to identify the missing routing",
+     "tools": [
+      "read",
+      "recall",
+      "get",
+      "grep",
+      "peek",
+      "write"
+     ],
+     "rounds": 20,
+     "target": "src/gate.js",
+     "scope": "src/**",
+     "exit": [
+      {
+       "type": "artifact-written",
+       "path": "src/gate.js"
+      },
+      {
+       "type": "tree-changed",
+       "scope": "src/**"
+      }
+     ]
+    },
+    {
+     "id": "fix-human-channel-topup-routing",
+     "action": "Fix src/gate.js so resource halts correctly route through humanChannel topup end-to-end preserving budget handling and audit behavior while keeping every changed file under src",
+     "tools": [
+      "read",
+      "recall",
+      "get",
+      "grep",
+      "write",
+      "edit"
+     ],
+     "rounds": 30,
+     "target": "src/gate.js",
+     "scope": "src/**",
+     "exit": [
+      {
+       "type": "tree-changed",
+       "scope": "src/**"
+      },
+      {
+       "type": "check-passes",
+       "name": "suite-zero-failures"
+      }
+     ]
+    }
+   ]
+  },
+  "u-mvy8w58g": {
+   "schema": "plan-v1",
+   "steps": [
+    {
+     "id": "diagnose-halt-flow",
+     "action": "Inspect src/gate.js orchestration and src/primitives audit budget rate handling to trace resource halt humanChannel topup routing and locate missing forwarding",
+     "tools": [
+      "read",
+      "recall",
+      "get",
+      "grep",
+      "write"
+     ],
+     "rounds": 18,
+     "target": "src/gate.js",
+     "scope": "src/**",
+     "exit": [
+      {
+       "type": "artifact-written",
+       "path": "src/gate.js"
+      },
+      {
+       "type": "tree-changed",
+       "scope": "src/**"
+      }
+     ]
+    },
+    {
+     "id": "fix-human-channel-topup-routing",
+     "action": "Repair resource halt handling so halt routes through humanChannel topup end-to-end across entire src tree editing every file needed to make npm test pass with no not ok lines",
+     "tools": [
+      "read",
+      "recall",
+      "get",
+      "grep",
+      "write",
+      "edit"
+     ],
+     "rounds": 35,
+     "target": "src/gate.js",
+     "scope": "src/**",
+     "exit": [
+      {
+       "type": "tree-changed",
+       "scope": "src/**"
+      },
+      {
+       "type": "check-passes",
+       "name": "suite-zero-failures"
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

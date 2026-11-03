@@ -226,7 +226,10 @@ export function createCarryStore({ workdir, emit, strikeLimit, resume = false })
     const hasAny = notes.events.length || edits.length || notes.earlier.length || notes.failures.length || notes.lastTry;
     if (!hasAny) { save(); return ''; }
     const r = render(/** @type {any} */ (notes));
-    emit('carry-note', { phase, iteration, chars: r.text.length, capped: r.capped, sections: r.sections }); // counts only
+    // counts plus the note text itself (F274, so the Audit can show it where it was handed). `render` masked the whole text with the one
+    // inventory; the second pass here is idempotent. `chars` = the length of this saved (masked) text.
+    const saved = redactSecrets(r.text);
+    emit('carry-note', { phase, iteration, chars: saved.length, capped: r.capped, sections: r.sections, text: saved });
     save();
     return r.text;
   };

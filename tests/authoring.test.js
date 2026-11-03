@@ -1894,6 +1894,52 @@ test('job lines: a fromLine naming no real line, an untagged non-guard stage and
   assert.ok(at(run(g, { jobLines: JOB_LINES }), 'invalid-value').some((r) => /mandatory guard/.test(r.detail)));
 });
 
+// ── guardLines: an always-on guard says which job lines it already covers (GUARDLINES-PREREG-2) ──────────────
+
+/** a tagged declaration with line 2's stage removed and the first mandatory guard linked to line 2 instead */
+function guardLinkedDeclaration() {
+  const d = taggedDeclaration();
+  d.stages = d.stages.filter((s) => s.name !== 'suite-green');
+  d.guardLines = [{ guard: d.stages[0].name, lines: [2] }];
+  return d;
+}
+
+test('guardLines: a line covered by a linked mandatory guard needs no stage and no refusal; the guard object itself is untouched', () => {
+  const d = guardLinkedDeclaration();
+  const before = JSON.stringify(d.stages[0]);
+  const res = run(d, { jobLines: JOB_LINES });
+  assert.equal(res.ok, true, JSON.stringify(res.reds));
+  assert.equal(JSON.stringify(d.stages[0]), before, 'the guard object carries no link of its own');
+  assert.equal('fromLine' in d.stages[0], false);
+});
+
+test('guardLines: without the link the same declaration is job-line-uncovered (fail-first: the link is what covers it)', () => {
+  const d = guardLinkedDeclaration();
+  delete d.guardLines;
+  assert.equal(at(run(d, { jobLines: JOB_LINES }), 'job-line-uncovered').length, 1);
+});
+
+test('guardLines: a link naming a non-guard, an unknown line, a duplicate guard or a duplicate line, or a bad shape, is a red', () => {
+  const nonGuard = guardLinkedDeclaration(); nonGuard.guardLines = [{ guard: 'typecheck', lines: [2] }];
+  assert.ok(at(run(nonGuard, { jobLines: JOB_LINES }), 'invalid-value').some((r) => /not a mandatory guard/.test(r.detail)));
+  const badLine = guardLinkedDeclaration(); badLine.guardLines[0].lines = [9];
+  assert.ok(at(run(badLine, { jobLines: JOB_LINES }), 'invalid-value').some((r) => /job has lines 1, 2 only/.test(r.detail)));
+  const twice = guardLinkedDeclaration(); twice.guardLines.push({ guard: twice.guardLines[0].guard, lines: [1] });
+  assert.ok(at(run(twice, { jobLines: JOB_LINES }), 'invalid-value').some((r) => /listed twice/.test(r.detail)));
+  const dupLine = guardLinkedDeclaration(); dupLine.guardLines[0].lines = [2, 2];
+  assert.ok(at(run(dupLine, { jobLines: JOB_LINES }), 'invalid-value').some((r) => /a job line twice/.test(r.detail)));
+  const shape = guardLinkedDeclaration(); shape.guardLines = 'changed-from-seed';
+  assert.ok(at(run(shape, { jobLines: JOB_LINES }), 'invalid-value').some((r) => r.path === 'guardLines'));
+  const empty = guardLinkedDeclaration(); empty.guardLines = [{ guard: empty.stages[0].name, lines: [] }];
+  assert.ok(at(run(empty, { jobLines: JOB_LINES }), 'invalid-value').length > 0);
+});
+
+test('guardLines: a mandatory guard still may not carry fromLine, and the red points at guardLines', () => {
+  const g = taggedDeclaration();
+  g.stages[0].fromLine = [1];
+  assert.ok(at(run(g, { jobLines: JOB_LINES }), 'invalid-value').some((r) => /mandatory guard/.test(r.detail) && /guardLines/.test(r.detail)));
+});
+
 test('job lines: a refusal naming a line the job does not have, or without a reason, is a red', () => {
   const d = taggedDeclaration();
   d.refused = [{ line: 7, reason: 'x' }, { line: 1 }];

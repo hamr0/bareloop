@@ -13,7 +13,8 @@
 // axis goes blind (F3). The consumer (planrun) wires it at construction.
 
 import { createRequire } from 'node:module';
-import { join, resolve, sep } from 'node:path';
+import { join, resolve, sep, dirname, basename } from 'node:path';
+import { realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 
 const require = createRequire(import.meta.url);
@@ -57,9 +58,9 @@ export const PERSONA_TOOLS = 'You are a senior engineer working in a repository 
   + `The repository root also holds the arbiter's own books — ${GATE_AUDIT_FILE}, ${ARBITER_BOOK_STORES.join(', ')}, and this run's spine. `
   + 'They are ALWAYS denied and record how you are being judged, never anything about the task: never read them, and never try to route around the denial. '
   + 'You are ONE attempt inside an automated loop: when you finish, a test suite runs and, if it still fails, you are called again with its output. '
-  + 'So do not try to be certain before acting. Read only what you need to form your best hypothesis, make the change with the write tool, and stop. '
+  + 'So do not try to be certain before acting. Read only what you need to form your best hypothesis, make the change with the file-changing tool you were given, and stop. '
   + 'A wrong cheap attempt is corrected by the next round; exhaustive reading is not — every file you read is re-sent on every later round and the run has a hard budget it can exhaust before you ever write. '
-  + 'Make the required changes with the write tool, then reply with a short summary of what you changed. Never put file contents in your reply.';
+  + 'Make the required changes with your file-changing tool, then reply with a short summary of what you changed. Never put file contents in your reply.';
 
 // The retrieval verbs only pay if the worker reaches for them INSTEAD of paging a file.
 // F18 measured the failure they exist to fix: the worker read one 117 KB file NINE times
@@ -616,14 +617,27 @@ export function createCtxTools(lc, workdir, emit, { onStalePointer = null } = {}
 // cwd and reds at the fence, and the deny reason teaches the retry.
 /** @param {string} p */
 const expandHome = (p) => (p === '~' || p.startsWith('~/')) ? join(homedir(), p.slice(1)) : p;
+/**
+ * F267 — what the audit records for a write/edit payload: its JSON type and its UTF-8 BYTE length. The old
+ * `String(x).length` read an object as "[object Object]" (15) and counted UTF-16 units, so a refused object
+ * write looked like a real 15-byte write. A non-string is measured as the JSON it was sent as.
+ * @param {any} v
+ * @returns {{bytes: number, valueType: string}}
+ */
+function valueSize(v) {
+  const valueType = v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v;
+  if (v === undefined) return { bytes: 0, valueType };
+  const text = typeof v === 'string' ? v : (JSON.stringify(v) ?? '');
+  return { bytes: Buffer.byteLength(text), valueType };
+}
 /** @param {string} name @param {any} args @param {string} [workdir] */
 export const toolAction = (name, args, workdir) => {
-  if (name === 'shell_write') return { type: 'write', path: resolve(expandHome(String(args?.path ?? ''))), args: { bytes: String(args?.content ?? '').length } };
+  if (name === 'shell_write') return { type: 'write', path: resolve(expandHome(String(args?.path ?? ''))), args: valueSize(args?.content) };
   // shell_edit (BA-13) is judged as bareguard's own 'edit' action type — the SAME
   // fs.writeScope fence as write, decided upstream (bareguard FS_TYPES). `bytes` is
   // the replacement's size so the audit can read the edit economy (a 40-byte splice
   // vs an 8KB rewrite is the variable BA-13 exists to move — F18 blindness rule).
-  if (name === 'shell_edit') return { type: 'edit', path: resolve(expandHome(String(args?.path ?? ''))), args: { bytes: String(args?.newText ?? '').length } };
+  if (name === 'shell_edit') return { type: 'edit', path: resolve(expandHome(String(args?.path ?? ''))), args: valueSize(args?.newText) };
   // `tool` rides the action so the AUDIT can tell the read tools apart. Without it every
   // read tool collapses to {type:'read', path} and a whole-file shell_read is
   // indistinguishable from a bounded ctx_get chunk — the ledger cannot see the one
@@ -664,8 +678,53 @@ export const toolAction = (name, args, workdir) => {
  * `noFollowSymlinks` closes the swap-after-vetting window bare-agent documents.
  * @param {{allows: (action: any) => Promise<boolean>}} gate
  * @param {string} workdir
+ * @param {(absPath: string) => boolean|Promise<boolean>} [guardPath] BA-30: true for a path tracked at the seed (`trackedAtSeedGuard`)
  */
-export const gatedShellOptions = (gate, workdir) => ({
+export const gatedShellOptions = (gate, workdir, guardPath) => ({
   noFollowSymlinks: true,
   canRead: (/** @type {string} */ p, /** @type {{tool: string}} */ { tool }) => gate.allows(toolAction(tool, { path: p }, workdir)),
+  // BA-30 (F272): a whole-file write that would gut a file tracked at the seed is refused,
+  // file unchanged. Opt-in per worker; the scout has no write tool and passes no guardPath.
+  ...(guardPath ? { shrinkGuard: { guardPath } } : {}),
 });
+
+/**
+ * The REAL path of `p`, for a path that may not exist yet: realpath the deepest existing
+ * ancestor and append the rest. bare-agent's guard hands its predicate the LEXICAL absolute
+ * path (it stays lexical by its own ruling), so a symlinked parent directory would otherwise
+ * read as "not tracked" and fail the guard open (F276 gap a).
+ * @param {string} p an absolute path
+ * @returns {Promise<string>}
+ */
+export async function realPathOrAncestor(p) {
+  /** @type {string[]} */ const rest = [];
+  let cur = p;
+  for (;;) {
+    try {
+      return join(await realpath(cur), ...rest);
+    } catch (e) {
+      const code = /** @type {NodeJS.ErrnoException} */ (e).code;
+      if (code !== 'ENOENT' && code !== 'ENOTDIR') throw e; // a fault is not "untracked": the guard throws and the write is refused
+      const up = dirname(cur);
+      if (up === cur) return p;
+      rest.unshift(basename(cur));
+      cur = up;
+    }
+  }
+}
+
+/**
+ * BA-30's `guardPath`: true only for a path tracked at the seed. Both sides are compared in
+ * the REAL form: the set is `realpath(workdir)` + each seed-listed name (a tracked path cannot
+ * lie beyond a symlink, git refuses it, so the join is already real), the candidate goes through
+ * `realPathOrAncestor`. Files the worker creates later are not in the set, so the guard is off
+ * for them (a rubric step file's own rewrite is not a gutting).
+ * @param {string} workdir the WORKER tree (panel worktree or hidden-git copy), never the source repo
+ * @param {string[]} files the seed listing (`seedListing().files`, repo-relative)
+ * @returns {Promise<(absPath: string) => Promise<boolean>>}
+ */
+export async function trackedAtSeedGuard(workdir, files) {
+  const root = await realpath(workdir);
+  const tracked = new Set(files.map((f) => join(root, f)));
+  return async (absPath) => tracked.has(await realPathOrAncestor(absPath));
+}

@@ -1,4 +1,4 @@
-// Audit tab, "What the planner was told from earlier runs": the page-eval of renderAuditLearnings. The block is a REAL
+// Audit tab, the folds that show the learnings and the memory where they were passed on: the page-eval of learningsFoldEl / memoFoldEl / appendHanded. The block is a REAL
 // renderHints output (the real aurora ledger, src/learn.js), split by the server's reader (parseHintBlock); the page's own
 // functions are extracted verbatim and run against a small fake DOM that records children, attributes and clicks.
 
@@ -36,15 +36,11 @@ function mk(tag = 'div') {
   return el;
 }
 
-/** the page's renderAuditLearnings over a fresh fake document; returns the pieces */
+/** the page's fold builders over a fresh fake document */
 function page() {
-  const els = { 'audit-learnings': mk(), 'audit-learnings-list': mk(), 'audit-learnings-summary': mk('button') };
-  els['audit-learnings-summary'].attrs['aria-expanded'] = 'false';
-  els['audit-learnings-list'].hidden = true;
-  const document = { getElementById: (id) => els[id] ?? null, createElement: (t) => mk(t) };
+  const document = { getElementById: () => null, createElement: (t) => mk(t) };
   // eslint-disable-next-line no-new-func
-  const render = new Function('document', `${['escapeXml', 'auditCaret', 'glyphClass', 'stateDotHTML', 'learnRow', 'learnHintLabel', 'renderAuditLearnings'].map(fnSrc).join('\n')}\nreturn renderAuditLearnings;`)(document);
-  return { els, render };
+  return new Function('document', `${['escapeXml', 'auditCaret', 'glyphClass', 'stateDotHTML', 'learnRow', 'learnHintLabel', 'handedFold', 'memoFoldEl', 'learningsFoldEl', 'appendHanded'].map(fnSrc).join('\n')}\nreturn { learningsFoldEl, memoFoldEl, appendHanded };`)(document);
 }
 
 /** a header button's innerHTML as plain text (tags dropped, entities left as written) */
@@ -69,49 +65,32 @@ function realBlock() {
 }
 const record = (phase, r) => ({ phase, text: r.text, chars: r.text.length, ids: r.ids, hints: parseHintBlock(r.text) });
 
-test('the header counts the hints HANDED to the planner (the block), not the ledger rows', () => {
-  const { ledger, r } = realBlock();
-  assert.ok(r.ids.length >= 2, 'the real block holds hints');
-  // the ledger holds MORE rows than the block was handed: the count must not follow the ledger
-  const padded = { ...record('draft', r), ids: [...r.ids, 'x1', 'x2', 'x3', 'x4', 'x5'] };
-  assert.ok(ledger.rows.length >= r.ids.length);
-  const { els, render } = page();
-  render({ learnings: [padded] });
-  assert.equal(plain(els['audit-learnings-summary']), `\u25B6learnings What the planner was told from earlier runs · ${r.ids.length} hints`);
-  assert.equal(els['audit-learnings'].hidden, false);
-  render({ learnings: [] });
-  assert.equal(els['audit-learnings'].hidden, true, 'nothing handed = section hidden');
+test('the learnings fold counts the hints in the block HANDED at that injection', () => {
+  const { r } = realBlock();
+  const { learningsFoldEl } = page();
+  const fold = learningsFoldEl(record('draft', r), '', 'audit-learnings-3-draft');
+  assert.equal(plain(fold.find('audit-learnings-3-draft-toggle')), `learnings Learnings the planner got (draft) · ${r.ids.length} hints`);
 });
 
-test('the section is ONE .audit-part box like the other Audit sections: one toggle button, body hidden until clicked, then every hint at once, no inner toggles', () => {
+test('the fold is the light rounds-fold style: one details, closed until opened, a summary head, then every hint at once, no inner toggles', () => {
   const { r } = realBlock();
-  const { els, render } = page();
-  render({ learnings: [record('draft', r)] });
-  assert.match(PAGE, /<div id="audit-learnings" class="audit-part"[^>]*hidden>\s*<button type="button" id="audit-learnings-summary" class="btn audit-part-toggle" aria-expanded="false"[^>]*>[^<]*<\/button>\s*<div id="audit-learnings-list" class="audit-part-body"[^>]*hidden><\/div>/);
-  assert.ok(!/<details id="audit-learnings"/.test(PAGE), 'no bare <details>');
-  const btn = els['audit-learnings-summary'];
-  assert.equal(btn.getAttribute('aria-expanded'), 'false');
-  assert.equal(els['audit-learnings-list'].hidden, true, 'body hidden by default');
-  // the header wears the SAME `[sign] word` state markup as the schedule/step headers (stateDotHTML + glyphClass), sign ✓ (hints handed) word "learnings"
-  assert.match(PAGE, /stateDotHTML\(glyphClass\(mark\), "learnings", "audit-learnings-state"\)/);
-  assert.match(PAGE, /stateDotHTML\(glyphClass\(sec\.sign\), sec\.word, "audit-schedule-state"\)/, 'the schedule header uses the same helper');
-  assert.equal(btn.innerHTML.match(/^<span class="audit-caret">\u25B6<\/span>(<span class="step-state" data-testid="audit-learnings-state"><span class="dot green"><\/span><b class="st-word">learnings<\/b><\/span>) /)?.length, 2, 'dot green + st-word learnings in a step-state span');
-  btn.click();
-  assert.equal(btn.getAttribute('aria-expanded'), 'true');
-  assert.equal(els['audit-learnings-list'].hidden, false, 'click opens the body');
-  assert.ok(plain(btn).startsWith('\u25BClearnings What the planner was told'));
-  btn.click();
-  assert.equal(els['audit-learnings-list'].hidden, true);
-  assert.ok(plain(btn).startsWith('\u25B6learnings What the planner was told'), 'arrow back to closed');
-  btn.click();
-  const list = els['audit-learnings-list'];
-  const hints = list.children.filter((c) => /^audit-learnings-hint-draft-\d+$/.test(c.attrs['data-testid']));
+  const { learningsFoldEl } = page();
+  const fold = learningsFoldEl(record('draft', r), '', 'f');
+  assert.equal(fold.tag, 'details');
+  assert.equal(fold.className, 'rounds-fold');
+  const btn = fold.find('f-toggle');
+  assert.equal(btn.tag, 'summary');
+  const wrapBody = fold.find('f-body');
+  assert.equal(wrapBody.className, 'rf-body');
+  const list = wrapBody.children[0];
+  assert.ok(!fold.open, 'closed by default');
+  assert.match(PAGE, /stateDotHTML\(glyphClass\(failed \? "\\u2717" : "\\u2713"\), "learnings", testid \+ "-state"\)/);
+  assert.equal(btn.innerHTML.match(/^(<span class="step-state" data-testid="f-state"><span class="dot green"><\/span><b class="st-word">learnings<\/b><\/span>) /)?.length, 2, 'dot green + st-word learnings in a step-state span');
+  const hints = list.all().filter((c) => /^audit-learnings-hint-draft-\d+$/.test(c.attrs['data-testid']));
   assert.equal(hints.length, r.ids.length, 'all hints are in the DOM at once');
   assert.ok(!list.all().some((e) => e.tag === 'button' || e.className.includes('audit-part')), 'no inner toggles or boxes');
-  assert.ok(!list.find('audit-learnings-raw-draft') && !list.find('audit-learnings-text'), 'no raw-text fold');
   assert.ok(!list.all().some((e) => ['input', 'textarea'].includes(e.tag)));
   assert.match(list.children[0].textContent, /^Read-only\. Given to the planner at the draft \([\d,]+ characters\)\. No worker sees it\.$/);
-  // each hint is ONE rounds-table in an audit-table-scroll (the schedule body's look): a bold title row, then label | value rows
   const tb = (h) => h.children[0].children[0];
   assert.ok(hints.every((h) => h.className === 'audit-table-scroll' && h.children[0].tag === 'table' && h.children[0].className === 'rounds-table'));
   const first = hints[0];
@@ -123,25 +102,27 @@ test('the section is ONE .audit-part box like the other Audit sections: one togg
   assert.ok(rows.every((tr) => tr.tag === 'tr' && tr.children[0].className === 'hint' && /nowrap/.test(tr.children[0].style.cssText) && /pre-wrap/.test(tr.children[1].style.cssText)));
   assert.deepEqual(rows.map((row) => row.children[0].textContent), ['It said:', 'Fix touched:', 'What changed:']);
   assert.equal(rows[2].children[1].textContent, '-old line\n+new one\n+new two\n(+2 more)');
-  // a never-fixed hint says so, and has only It said
   const never = hints.find((h) => /never fixed$/.test(tb(h).children[0].children[0].textContent));
   assert.ok(never, 'the block holds a never-fixed hint');
   assert.deepEqual(tb(never).children.slice(1).map((row) => row.children[0].textContent), ['It said:']);
   assert.ok(!/\.lh-/.test(PAGE), 'the old .lh-* free-row styles are gone');
 });
 
-test('a first-replan record renders a sub-heading and its hints in the same table look, inside the same fold', () => {
+test('the bottom "What the planner was told" box is gone: no #audit-learnings element, no renderAuditLearnings, so no text shows twice', () => {
+  assert.ok(!/id="audit-learnings/.test(PAGE), 'no bottom box markup');
+  assert.ok(!/renderAuditLearnings/.test(PAGE), 'no renderer for it');
+  assert.ok(!PAGE.includes('What the planner was told from earlier runs'));
+});
+
+test('a first-replan record is its own fold on the replan part, with the replan test ids and wording', () => {
   const { r } = realBlock();
-  const { els, render } = page();
-  render({ learnings: [record('draft', r), record('replan', r)] });
-  const list = els['audit-learnings-list'];
-  assert.equal(list.find('audit-learnings-group-draft').textContent, 'At the draft');
-  assert.equal(list.find('audit-learnings-group-replan').textContent, 'At the first replan');
-  const h = list.find('audit-learnings-hint-replan-1');
+  const { learningsFoldEl } = page();
+  const fold = learningsFoldEl(record('replan', r), '', 'audit-learnings-5-replan');
+  assert.match(plain(fold.find('audit-learnings-5-replan-toggle')), /Learnings the planner got \(first replan\)/);
+  assert.match(fold.find('audit-learnings-5-replan-body').children[0].children[0].textContent, /^Read-only\. Given to the planner at the first replan/);
+  const h = fold.find('audit-learnings-hint-replan-1');
   assert.ok(h && h.className === 'audit-table-scroll');
   assert.equal(h.children[0].children[0].children[1].children[0].textContent, 'It said:');
-  assert.ok(!list.find('audit-learnings-raw-replan'));
-  assert.equal(plain(els['audit-learnings-summary']), `\u25B6learnings What the planner was told from earlier runs · ${r.ids.length} hints`, 'the same hints handed at draft and replan count once');
 });
 
 test('parseHintBlock reads back what renderHints wrote: every hint, its fields, the same count as ids', () => {
@@ -183,47 +164,69 @@ test('parseHintBlock on a real archived block: levels, counts, check, codes, fix
   assert.deepEqual({ n: b.n, count: b.count, check: b.check, kinds: b.kinds }, { n: 3, count: 1, check: 'tree-changed', kinds: [] });
 });
 
-test('the header counts DISTINCT hints across draft and replan: a replan block with an extra hint adds it', () => {
-  const { r } = realBlock();
-  const replan = { ...record('replan', r), hints: [...parseHintBlock(r.text), { ...parseHintBlock(r.text)[0], n: r.ids.length + 1 }], ids: [...r.ids, 'extra-row'] };
-  const { els, render } = page();
-  render({ learnings: [record('draft', r), replan] });
-  assert.equal(plain(els['audit-learnings-summary']), `\u25B6learnings What the planner was told from earlier runs · ${r.ids.length + 1} hints`);
-});
-
-test('a learnings file that could not be read shows ONE plain line in the box, and the box shows even with no hints', () => {
-  const { els, render } = page();
+test('a learnings file that could not be read shows ONE plain line in a red fold titled "No lessons were given to the planner"', () => {
+  const { learningsFoldEl } = page();
   const line = 'The learnings file could not be read, so no lessons were given: /h/learnings.json is not readable JSON (parse error) — fix or remove it';
-  render({ learnings: [], learningsError: line });
-  assert.equal(els['audit-learnings'].hidden, false);
-  assert.equal(els['audit-learnings-list'].find('audit-learnings-error').textContent, line);
-  render({ learnings: [], learningsError: null });
-  assert.equal(els['audit-learnings'].hidden, true, 'no error and nothing handed = hidden, as before');
+  const fold = learningsFoldEl(null, line, 'e');
+  const btn = fold.find('e-toggle');
+  assert.equal(plain(btn), 'learnings No lessons were given to the planner');
+  assert.deepEqual(btn.innerHTML.match(/<span class="dot (\w+)"><\/span><b class="st-word">(\w+)<\/b>/)?.slice(1), ['red', 'learnings']);
+  assert.equal(fold.find('e-error').textContent, line);
 });
 
-test('the title: error and nothing handed = "No lessons were given to the planner"; hints handed keep the old title', () => {
+test('hints handed: green dot, the word stays "learnings", and an error beside hints keeps the hints title', () => {
   const { r } = realBlock();
-  const { els, render } = page();
-  const btn = els['audit-learnings-summary'];
-  render({ learnings: [], learningsError: 'The learnings file could not be read, so no lessons were given: x' });
-  assert.equal(plain(btn), '\u25B6learnings No lessons were given to the planner');
-  assert.ok(!plain(btn).includes('What the planner was told'));
-  render({ learnings: [record('draft', r)], learningsError: null });
-  assert.ok(plain(btn).includes('What the planner was told from earlier runs'));
-  assert.ok(!plain(btn).includes('No lessons were given'));
+  const { learningsFoldEl } = page();
+  const fold = learningsFoldEl(record('draft', r), 'both at once (not expected)', 'g');
+  const btn = fold.find('g-toggle');
+  assert.deepEqual(btn.innerHTML.match(/<span class="dot (\w+)"><\/span><b class="st-word">(\w+)<\/b>/)?.slice(1), ['green', 'learnings']);
+  assert.ok(plain(btn).includes('Learnings the planner got'));
 });
 
-test('the header mark: error and nothing handed = red dot (the failed sign); hints handed = green dot; the word stays "learnings"', () => {
+// ── the memory fold ─────────────────────────────────────────────────────────────────────────────────
+test('memo fold: closed by default; opened it shows the exact text in a pre via textContent (markup stays literal); header counts chars and says "cut at cap"', () => {
+  const { memoFoldEl } = page();
+  const text = '== What earlier workers in this run did ==\n<b>not markup</b> & more';
+  const fold = memoFoldEl({ text, chars: text.length, capped: true }, 'm');
+  const btn = fold.find('m-toggle');
+  assert.equal(fold.tag, 'details');
+  assert.equal(fold.className, 'rounds-fold');
+  assert.ok(!fold.open, 'closed by default');
+  assert.equal(plain(btn), `Memory this worker got (${text.length} chars, cut at cap)`);
+  const pre = fold.find('m-text');
+  assert.equal(pre.tag, 'pre');
+  assert.equal(pre.textContent, text);
+  assert.equal(pre.html, undefined, 'never set through innerHTML');
+  const src = fnSrc('memoFoldEl');
+  assert.ok(!/memo\.text[^;\n]*innerHTML|innerHTML[^;\n]*memo\.text/.test(src), 'the memo text is never routed through innerHTML');
+  assert.match(PAGE, /\.handed-text\{[^}]*white-space:pre-wrap;[^}]*overflow-wrap:anywhere;[^}]*overflow:auto/, 'wraps inside its own box: no horizontal page scroll');
+});
+
+test('memo fold: an older run (no text) is one plain line "not saved (older run)", not a fold', () => {
+  const { memoFoldEl } = page();
+  const line = memoFoldEl({ missing: true, chars: 2726, capped: false }, 'm');
+  assert.equal(line.className, 'hint');
+  assert.equal(line.textContent, 'Memory this worker got: not saved (older run)');
+  assert.equal(line.all().length, 0);
+});
+
+test('appendHanded: a part with no grid gets one fold per try that has a memo, in try order; a grid part gets none here (its tries host them), but the fix loop\'s cut-off try and the learnings stay; a try without a memo adds nothing', () => {
+  const { appendHanded } = page();
+  const body = mk();
+  const m = (t) => ({ text: t, chars: t.length, capped: false });
+  appendHanded(body, { kind: 'step', attempts: [{ n: 1, memo: m('a') }, { n: 2, memo: null }, { n: 3, memo: m('c') }] }, 4, false);
+  assert.deepEqual(body.children.map((c) => c.attrs['data-testid']), ['audit-memo-4-1', 'audit-memo-4-3']);
+  assert.ok(body.children.every((c) => c.className === 'rounds-fold'));
+  assert.deepEqual(body.children.map((c) => plain(c.find(`${c.attrs['data-testid']}-toggle`))), ['Memory this worker got (1 chars)', 'Memory this worker got (1 chars)']);
+  const fixBody = mk();
+  appendHanded(fixBody, { kind: 'fix', attempts: [{ n: 2, iteration: 1, memo: m('x') }], cutOffTry: { n: 3, memo: m('y') } }, 9, true);
+  assert.deepEqual(fixBody.children.map((c) => c.attrs['data-testid']), ['audit-memo-9-1'], 'only the cut-off try; the attempts are the grid\'s');
   const { r } = realBlock();
-  const { els, render } = page();
-  const btn = els['audit-learnings-summary'];
-  const dot = () => btn.innerHTML.match(/<span class="dot (\w+)"><\/span><b class="st-word">(\w+)<\/b>/)?.slice(1);
-  render({ learnings: [], learningsError: 'The learnings file could not be read, so no lessons were given: x' });
-  assert.deepEqual(dot(), ['red', 'learnings']);
-  render({ learnings: [record('draft', r)], learningsError: null });
-  assert.deepEqual(dot(), ['green', 'learnings']);
-  render({ learnings: [record('draft', r)], learningsError: 'both at once (not expected): hints win' });
-  assert.deepEqual(dot(), ['green', 'learnings']);
-  render({ learnings: [], learningsError: null });
-  assert.equal(els['audit-learnings'].hidden, true);
+  const pb = mk();
+  appendHanded(pb, { kind: 'plan', attempts: [], learnings: record('draft', r) }, 1, false);
+  assert.deepEqual(pb.children.map((c) => c.attrs['data-testid']), ['audit-learnings-1-draft']);
+  assert.equal(pb.children[0].className, 'rounds-fold');
+  const none = mk();
+  appendHanded(none, { kind: 'scout', attempts: [] }, 0, false);
+  assert.equal(none.children.length, 0);
 });

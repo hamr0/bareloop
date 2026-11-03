@@ -125,8 +125,8 @@ const wireMode = (/** @type {any} */ b) => (b.thinking?.type === 'disabled' ? 'o
 test('wire, real OpenAI-shaped provider: the sent field follows the decision for scout, plan, step attempts 1 and 2, replan; the decision is on the spine BEFORE each request', async (t) => {
   const wd = makePatient(t);
   const { events, emit } = collector();
-  const { provider, wire } = await wireProvider([
-    textReply('scout'), textReply(PLAN(wd)), textReply('nothing'), textReply('nothing'), textReply(PLAN(wd)), textReply('nothing'),
+  const { provider, wire: wireAll } = await wireProvider([
+    textReply('scout'), textReply(PLAN(wd)), textReply('nothing'), textReply('nudged nothing'), textReply('nothing'), textReply('nudged nothing'), textReply(PLAN(wd)), textReply('nothing'),
   ], { events });
   const jv = validateJob(WRITE_JOB(wd));
   assert.deepEqual(jv.reds, []);
@@ -137,7 +137,13 @@ test('wire, real OpenAI-shaped provider: the sent field follows the decision for
     ['scout', 1, 'off'], ['plan', 'draft', 'on'], [d[2].phase, 1, 'off'], [d[2].phase, 2, 'on'], ['plan', 'draft', 'on'],
   ]);
   assert.match(d[2].phase, /^step:/);
-  // one request per decision here (text-only replies), in order: the wire says what the spine says, and the record came first
+  // one request per decision here (text-only replies), in order: the wire says what the spine says, and the record came first.
+  // A text-only writeable-step ending is continued once with the F282 nudge — that request carries NO new decision (same try), so it is read apart.
+  const isNudge = (/** @type {any} */ w) => JSON.stringify(w.body.messages.at(-1)).includes('You ended without writing any file');
+  const wire = wireAll.filter((w) => !isNudge(w));
+  const nudges = wireAll.filter(isNudge);
+  assert.ok(nudges.length >= 1 && nudges.every((w) => wireMode(w.body) === 'off' || wireMode(w.body) === 'on'), 'the nudge round is sent');
+  assert.equal(wireMode(nudges[0].body), 'off', 'the nudge round reuses its try\'s decision (attempt 1: off)');
   assert.ok(wire.length >= 5);
   for (let i = 0; i < 5; i += 1) {
     assert.equal(wireMode(wire[i].body), d[i].mode, `request ${i} (${d[i].phase}/${d[i].iteration}) carries the decided mode`);

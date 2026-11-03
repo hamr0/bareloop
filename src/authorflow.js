@@ -149,6 +149,9 @@ export function linesNamedByReds(reds, declaration, lineNums) {
     if (st && Array.isArray(stages[Number(st[1])]?.fromLine)) {
       for (const n of stages[Number(st[1])].fromLine) if (Number.isInteger(n)) found.add(n);
     }
+    const gl = /^guardLines\[(\d+)\]/.exec(String(red?.path ?? ''));
+    const guardLines = Array.isArray(declaration?.guardLines) ? declaration.guardLines : [];
+    if (gl && Array.isArray(guardLines[Number(gl[1])]?.lines)) for (const n of guardLines[Number(gl[1])].lines) if (Number.isInteger(n)) found.add(n);
     const rf = /^refused\[(\d+)\]/.exec(String(red?.path ?? ''));
     if (rf && Number.isInteger(refused[Number(rf[1])]?.line)) found.add(refused[Number(rf[1])].line);
   }
@@ -1000,6 +1003,19 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
         },
         description: 'job lines (or single ~ rules of a line) you could not turn into a check, each with a reason in the person\'s words — a note does not cover a line or a rule',
       },
+      guardLines: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            guard: { type: 'string', minLength: 1, description: 'the name of a mandatory guard stage' },
+            lines: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'integer', minimum: 1 }, description: 'the number(s) of the job line(s) that guard already checks' },
+          },
+          required: ['guard', 'lines'],
+          additionalProperties: false,
+        },
+        description: 'optional: which job lines the always-on guards already cover (a line whose every ask a mandatory guard checks needs no stage of its own)',
+      },
       ...(questions ? {
         questions: {
           type: 'array',
@@ -1246,14 +1262,28 @@ export function confirmedBlock(confirmed, { numbered = false } = {}) {
  * names the ONE numbered job line it serves, or the line is refused with a reason; the mandatory guards serve no line.
  * The $0 validator (validateDeclaration, `jobLines`) enforces it and the revise loop feeds a miss back.
  * @param {number} count how many numbered job lines the person wrote
+ * @param {string[]} [guardNames] the mandatory guards' names; present = the block also tells how a line they already cover is covered
  */
-export function jobLineTagBlock(count) {
+export function jobLineTagBlock(count, guardNames = []) {
   return 'EVERY STAGE SERVES ONE JOB LINE\n\n'
     + `The person's job has ${count} numbered line${count === 1 ? '' : 's'} (the interview above). Tag every stage YOU write `
     + 'with "fromLine": [N, ...] — the number(s) of the job line(s) that stage checks (one stage may serve several lines, e.g. a judged stage that reads lines 1-3). A job line that no kind in the catalogue '
     + 'can check is not left out silently: list it in "refused" as {"line": N, "reason": "..."}, with a reason in plain '
     + 'words the person can read. Every numbered line needs at least one stage or one refusal — a note in "notes" does '
-    + 'NOT cover a line. The mandatory guards serve no job line and carry NO "fromLine".';
+    + 'NOT cover a line. The mandatory guards serve no job line and carry NO "fromLine".'
+    + (guardNames.length
+      ? '\n\nA job line whose every ask the always-on checks (the mandatory guards) already do needs no stage of its own and no refusal: '
+        + 'name the guard(s) that do it in "guardLines", beside "stages" — for example {"guardLines": [{"guard": "' + guardNames[0] + '", "lines": [N]}]}. '
+        + 'Never write a second stage that repeats a guard, and keep "refused" for a line nothing can check.'
+        + '\n\nTHE ALWAYS-ON CHECKS ALREADY EXIST in this close, in plain words: ' + guardNames.map((n) => n + ' (' + (GUARD_DESCRIPTIONS[n] ?? n) + ')').join('; ')
+        + '; and the write fence (changes stay inside the write scope). They are already among the guard stages you were given — keep those exactly as given, and NEVER declare any of them again as a stage of your own — '
+        + 'no second files-changed or scope stage, and no stage that adds scope or params to the suppression guard. A job line they already cover '
+        + '(for example "Fix the cause in the source code under src/" with the rule "no suppression comments") is linked to them with "guardLines", '
+        + 'not given a stage and not refused. Legal example for a two-line job whose line 1 is a test run and whose line 2 is covered by the guards: '
+        + '{"stages": [{"name": "suite-green", "kind": "command-exit", "fromLine": [1], "params": {"cmd": "npm", "args": ["test"], "expectExit": 0}}], '
+        + '"guardLines": [{"guard": "' + guardNames[0] + '", "lines": [2]}' + (guardNames[1] ? ', {"guard": "' + guardNames[1] + '", "lines": [2]}' : '') + ']} — '
+        + 'line 2 has no stage of its own and is not refused.'
+      : '');
 }
 
 /**
@@ -1375,7 +1405,7 @@ measure anything.`;
     `WHAT THE PERSON DECLARED "DONE" TO MEAN — their answer, not yours\n\n${statement}`,
     `THE INTERVIEW — the person's own words\n\n${interview}`
       + (inputs && inputs.length ? `\n\n${renderInputs(inputs)}` : ''),
-    ...(jobLines && jobLines.length ? [jobLineTagBlock(jobLines.length)] : []),
+    ...(jobLines && jobLines.length ? [jobLineTagBlock(jobLines.length, guards.map((g) => g.name))] : []),
     // Q2 IS GONE (PRD item 33 M3 piece 3) — what it used to carry (which files
     // change, which are read-only) is proven against the machine now, not typed,
     // and this is where that proof reaches the composer instead of vanishing.

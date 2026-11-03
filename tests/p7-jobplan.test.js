@@ -48,6 +48,14 @@ test('planFromSpec: each stage lands under the job line it names; stages with no
   assert.equal(p.goal, NEW_SPEC.goal, "the signed goal rides along for the AI's summary row");
 });
 
+test('planFromSpec: a guardLines link shows the guard under the line it covers; a spec without it is unchanged', () => {
+  const spec = { ...NEW_SPEC, closeDecl: { ...NEW_SPEC.closeDecl, guardLines: [{ guard: 'changed-from-seed', lines: [3] }, { guard: 'no-suppressions', lines: [3] }] } };
+  const p = planFromSpec(spec);
+  assert.deepEqual(p.lines.find((l) => l.n === 3).always, ['changed-from-seed', 'no-suppressions']);
+  assert.equal(p.lines.find((l) => l.n === 1).always, undefined);
+  assert.equal(planFromSpec(NEW_SPEC).lines.some((l) => l.always !== undefined), false);
+});
+
 test('planFromSpec: an OLDER spec shows the signed goal as line 1 and every stage name as a check, flagged older', () => {
   const { jobLines: _a, inputs: _b, ...older } = NEW_SPEC;
   const p = planFromSpec({ ...older, closeDecl: { ...older.closeDecl, stages: older.closeDecl.stages.map(({ fromLine: _f, ...s }) => s), refused: undefined } });

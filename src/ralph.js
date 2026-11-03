@@ -694,6 +694,8 @@ export async function ralph({ middle, close, judge, capRuns, ladder, emit, redac
         // loop → bare-agent): the ledger prefers the typed field over sniffing
         // this detail string for library names
         ...(e && typeof e.lib === 'string' ? { lib: e.lib } : {}),
+        // a stuck loop of refused tool arguments names the fault in structured fields (F265) so a reader renders it, never parses `detail`
+        ...(e && e.badCall && typeof e.badCall === 'object' ? { badCall: e.badCall } : {}),
         decision, options, detail: String(e.message || e),
       });
       emit('run-end', { outcome: 'escalated', iterations: iteration });

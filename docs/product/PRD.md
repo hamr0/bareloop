@@ -2155,3 +2155,40 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
   6. (E) Live check on Muse bigfile: proves it runs, not that it helps.
 - **PARKED for hamr (section F):** a stuck arg-fault loop as a bounded attempt instead of `interpreter-red` (F265); refused writes counting as worker writes (F275); the close executing worker-written code (F273); persisting the memo text (F274). Open choices: the realpath choice for `guardPath` (F276), export of `pairEditGrant`.
 - **Memo proof:** a leaning LOSE, confounded by planning (F269, F271); the memo stays always on.
+
+### fix/bad-calls built, hamr's MCP + tickets rulings (v1.125 — 2026-11-02)
+
+- **Built on `fix/bad-calls` (13 commits since v0.53.0, not yet released):** bare-agent `^0.59.0`; `checkArgs` on every worker, a bad-call record and a bad-call/cut-off next-attempt note (F265, F266); the audit records true type and size (F267); plain panel words for a stuck refused-argument loop; planner wording fix after a POC (F271, F277); `pairEditGrant`, internal (F271); BA-30 `shrinkGuard` on every worker, tracked at seed in real-path form (F272, F276); live check green, n=1 (F280).
+- **Not proven:** the A.7 ON/OFF contrast of the note wording was not run. `pairEditGrant` and the shrink refusal are test-proven only; the live check did not exercise them.
+- **Rulings (hamr 2026-11-02):** realpath for `guardPath`; `pairEditGrant` stays internal; F275 stays parked; the F276 gaps are fixed in the build; the drafter-only POC runs. Muse paid runs are allowed as needed to verify `fix/bad-calls`.
+- **PARKED for hamr:** the section F list (`docs/product/ITEM33-BUILD.md`), plus the gate audit's blindness to tool outcomes (F278). Open in the fix ledger: test temp-dir leaks (F279).
+- **Upstream:** BA-29 and BA-30 are released in bare-agent v0.59.0 and consumed (`docs/product/UPSTREAM-ASKS.md`).
+- **Rulings on fwdloop's MCP + tickets (hamr 2026-11-02):**
+  1. Take fwdloop's MCP and tickets (fwd tag v0.28.0): pieces 1-3 and 6-11, including the piece-4 code that piece 10 imports. Skip piece 4's list UI and piece 5. Piece-11 looks wait for fwd's next tag. Build the basic version as fwd built it first.
+  2. Goal: tickets, PRs and issues start a verification loop; email comes later. Later, not now: the ticket body as part of the step instructions.
+  3. ALL MCP tools are allowed, no read-only restriction.
+  4. Add a paid planted-ticket injection test WITH a write tool granted during the MCP POCs. A model that obeys the planted ticket is a finding for hamr, not a reason to restrict tools.
+- **Working notes:** `.claude/scratch/mcp-tickets/FWD-ANSWERS.md` and fwd's `docs/wiki/bareloop-exchange.md` (in `../fwdloop`).
+- **Next:** MCP + tickets is the next branch after `fix/bad-calls` ships (v0.54.0). The spec goes to hamr before any build.
+
+### Audit memo, MCP + tickets spec ruled (v1.126 — 2026-11-02)
+
+- **Audit shows the memo and learnings where they were passed — built on `fix/bad-calls`, F274 closed** (spec and status: the 2026-11-02 "Audit shows memo and learnings" addendum in `docs/product/ITEM33-BUILD.md`). hamr's click-through and phone width pending.
+- **hamr's MCP + tickets spec rulings (2026-11-02):**
+  1. One branch for all of it.
+  2. Ticket jobs for deterministic repo jobs AND rubric jobs.
+  3. Schedule exactly like fwd: on the card at job start, off until the first green, then on; a rubric ticket schedule arms at the honoured Accept.
+  4. The planner proposes `ticketFilter`, the person signs it.
+  5. No export for a job with `mcp`.
+  6. A secret in a ticket is masked, never refused.
+  7. Skipped is grey.
+  8. One Result grid for tickets from MCP or barebrowse.
+  9. `ticketWatch` kept as fwd built it.
+  10. PR verification checks out the PR head into the worktree in this branch; the run never pushes.
+- **Pointer:** the build spec is the "MCP + tickets (fwdloop exchange)" addendum in `docs/product/ITEM33-BUILD.md`. Next: branch `feat/mcp-tickets`, cut after `fix/bad-calls` ships as v0.54.0. The spec was shown to hamr and ruled.
+
+### Guard-covered job lines, text-only nudge, panel caption looks (v1.127 — 2026-11-03)
+
+- **Built on `fix/bad-calls`:** `closeDecl.guardLines` lets a job line the always-on guards fully cover count as covered (F281; screening read n=6, wording clause test-proven only); a worker that ends a writeable try in text with no gate-audited write is nudged once in the same conversation (F282; test-proven only, not seen live; base rate under 1%).
+- **Panel looks carried from fwdloop (hamr 2026-11-03):** accent captions, the Runs tab search card, the Audit "told in this run" row; no behaviour change. hamr's click-through and phone width pending.
+- **Contract pointers:** `bareloop.context.md` (closeDecl row, "Text-only ending nudge"), `docs/wiki/FINDINGS.md` F281, F282.

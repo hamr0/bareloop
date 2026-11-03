@@ -66,17 +66,26 @@ test('secret planted in a grep pattern and in a written file is masked everywher
   assert.ok(!JSON.stringify(r.events).includes(SECRET));
 });
 
-test('spine record is counts only (no note text, no paths), one per delivered note', async () => {
+test('spine record: counts plus the note text (masked, F274), no paths outside the text, one per delivered note', async () => {
   const r = await runScripted(join(base, 'spine'), {});
   const recs = r.events.filter((e) => e.type === 'carry-note');
   assert.equal(recs.length, 1);
   const { type, phase, iteration, chars, capped, sections, seq, ts } = recs[0];
-  assert.deepEqual(Object.keys(recs[0]).sort(), ['capped', 'chars', 'iteration', 'phase', 'sections', 'seq', 'ts', 'type']);
+  assert.deepEqual(Object.keys(recs[0]).sort(), ['capped', 'chars', 'iteration', 'phase', 'sections', 'seq', 'text', 'ts', 'type']);
+  assert.equal(recs[0].text.length, recs[0].chars, 'chars is the length of the saved (masked) text');
   assert.equal(phase, 'step:real'); assert.equal(iteration, 1); assert.equal(capped, false);
   assert.ok(chars > 100);
   assert.deepEqual(sections, { reads: 1, searches: 2, edits: 1, earlier: 0, failures: 0 });
-  assert.ok(!JSON.stringify(recs[0]).includes('mod.mjs'));
+  assert.ok(!JSON.stringify({ ...recs[0], text: '' }).includes('mod.mjs'));
   void type; void seq; void ts;
+});
+
+test('the saved memo text never carries a secret planted in a written file or a grep pattern (F274)', async () => {
+  const r = await runScripted(join(base, 'secret-text'), {});
+  const recs = r.events.filter((e) => e.type === 'carry-note');
+  assert.ok(recs.length >= 1 && recs.every((e) => typeof e.text === 'string' && e.text.startsWith(HEADING)));
+  assert.ok(recs.every((e) => !e.text.includes(SECRET)), 'no unmasked secret in any saved text');
+  assert.ok(recs.some((e) => e.text.includes('REDACTED')), 'the secret is there, masked');
 });
 
 test('state is persisted under .smoke (an arbiter book) and the worker cannot read it', async () => {

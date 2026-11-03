@@ -343,7 +343,7 @@ test('the Scheduled section (T Part 7): the model takes `scheduled` from the pay
   const mod = model(m, [], []);
   assert.deepEqual(mod.scheduled, []);
   assert.doesNotMatch(m.f.rlSchedHtml(mod), /Scheduled/, 'an empty section draws nothing, not even its header');
-  assert.match(m.f.rlSchedHtml({ ...mod, scheduled: [{ job: 'x', at: 'today 15:00', in: 'next in 3h', words: 'Every day at 15:00', runId: 'r1' }] }), /Scheduled \(1\)[\s\S]*rl-sched-x/);
+  assert.match(m.f.rlSchedHtml({ ...mod, scheduled: [{ job: 'x', at: 'today 15:00', in: 'next in 3h', words: 'Every day at 15:00', runId: 'r1' }] }), /Scheduled <span class="rl-p">\(<\/span><span class="rl-n">1<\/span>[\s\S]*rl-sched-x/);
   assert.doesNotMatch(m.f.rlTopHtml({ ...mod, scheduled: [{ job: 'x' }] }), /Scheduled/, 'Scheduled is not above the search box');
   assert.match(fnSrc('rlTopHtml'), /var sections = \[/);
 });
@@ -367,9 +367,9 @@ function paintWith(filters) {
 
 test('Part 2: Scheduled is drawn in its own box (below the search box), never in the top box; no separate search box exists', () => {
   const r = paintWith({});
-  assert.match(r.sched, /Scheduled \(2\)[\s\S]*rl-sched-changelog-a[\s\S]*rl-sched-flights/);
+  assert.match(r.sched, /Scheduled <span class="rl-p">\(<\/span><span class="rl-n">2<\/span>[\s\S]*rl-sched-changelog-a[\s\S]*rl-sched-flights/);
   assert.doesNotMatch(r.top, /Scheduled|rl-sched-/);
-  assert.match(r.top, /Running now \(1\)[\s\S]*Needs you \(1\)/);
+  assert.match(r.top, /Running now <span class="rl-p">\(<\/span><span class="rl-n">1<\/span>[\s\S]*Needs you <span class="rl-p">\(<\/span><span class="rl-n">1<\/span>/);
   const order = [PAGE.indexOf('id="rl-top"'), PAGE.indexOf('id="runs-filterbar-anchor"'), PAGE.indexOf('id="rl-sched"'), PAGE.indexOf('id="wf-list"')];
   assert.deepEqual([...order].sort((x, y) => x - y), order, 'top box, search box, Scheduled box, Jobs box: in that order');
   assert.equal(count(PAGE, /type="text" class="search-input"/g), 1, 'ONE search input in the page');
@@ -380,28 +380,28 @@ test('Part 2: a job-name search narrows Scheduled; a run number or date narrows 
   const r = paintWith({ search: 'flig' });
   assert.match(r.sched, /rl-sched-flights/);
   assert.doesNotMatch(r.sched, /rl-sched-changelog-a/, 'a non-matching Scheduled card is gone');
-  assert.match(r.sched, /Scheduled \(1\)/);
+  assert.match(r.sched, /Scheduled <span class="rl-p">\(<\/span><span class="rl-n">1<\/span>/);
   assert.match(r.top, /Running now[\s\S]*Needs you/, 'Running now and Needs you are never searched');
   assert.equal(paintWith({ search: 'zzz' }).sched, '', 'no match: nothing, not even the header');
   const run3 = paintWith({ search: 'run-1' });
-  assert.match(run3.sched, /Scheduled \(2\)/, 'a run number does not narrow Scheduled');
-  assert.match(paintWith({ search: '09/01' }).sched, /Scheduled \(2\)/, 'a date does not narrow Scheduled');
-  assert.match(paintWith({ search: 'flig run-1' }).sched, /Scheduled \(1\)/, 'the job-name word still narrows beside a run number');
+  assert.match(run3.sched, /Scheduled <span class="rl-p">\(<\/span><span class="rl-n">2<\/span>/, 'a run number does not narrow Scheduled');
+  assert.match(paintWith({ search: '09/01' }).sched, /Scheduled <span class="rl-p">\(<\/span><span class="rl-n">2<\/span>/, 'a date does not narrow Scheduled');
+  assert.match(paintWith({ search: 'flig run-1' }).sched, /Scheduled <span class="rl-p">\(<\/span><span class="rl-n">1<\/span>/, 'the job-name word still narrows beside a run number');
 });
 
 test('Part 2: the result and time chips never touch Scheduled, Running now or Needs you', () => {
   const r = paintWith({ results: ['✓'], time: '7d', checkTypes: ['rubric'] });
-  assert.match(r.sched, /Scheduled \(2\)/);
-  assert.match(r.top, /Running now \(1\)[\s\S]*Needs you \(1\)/);
+  assert.match(r.sched, /Scheduled <span class="rl-p">\(<\/span><span class="rl-n">2<\/span>/);
+  assert.match(r.top, /Running now <span class="rl-p">\(<\/span><span class="rl-n">1<\/span>[\s\S]*Needs you <span class="rl-p">\(<\/span><span class="rl-n">1<\/span>/);
 });
 
 test('Part 2: the ◷ chip: only Scheduled shows (Jobs and the quiet fold hide), the count line says showing N scheduled job(s), the search narrows only Scheduled', () => {
   const r = paintWith({ scheduledOnly: true });
-  assert.match(r.sched, /Scheduled \(2\)/);
+  assert.match(r.sched, /Scheduled <span class="rl-p">\(<\/span><span class="rl-n">2<\/span>/);
   assert.equal(r.jobs, '', 'Jobs and the quiet fold are hidden, and no "no runs listed yet"');
   assert.equal(r.count, 'showing 2 scheduled jobs');
   assert.equal(paintWith({ scheduledOnly: true, search: 'flig' }).count, 'showing 1 scheduled job');
-  assert.match(r.top, /Running now \(1\)[\s\S]*Needs you \(1\)/, 'the top sections stay');
+  assert.match(r.top, /Running now <span class="rl-p">\(<\/span><span class="rl-n">1<\/span>[\s\S]*Needs you <span class="rl-p">\(<\/span><span class="rl-n">1<\/span>/, 'the top sections stay');
   assert.equal(paintWith({}).count, '', 'not pressed: the count line says nothing about Scheduled');
   assert.match(paintWith({}).jobs, /rl-job-flights/, 'not pressed: Jobs are back');
 });

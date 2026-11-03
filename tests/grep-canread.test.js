@@ -97,7 +97,7 @@ test('F259: noFollowSymlinks is on - a symlinked root is refused loudly', async 
 test('F259: both call sites that build shell tools with a gate pass gatedShellOptions', () => {
   for (const f of ['../src/planrun.js', '../src/authorscout.js']) {
     const src = readFileSync(new URL(f, import.meta.url), 'utf8');
-    assert.match(src, /createShellTools\(gatedShellOptions\(gate, workdir\)\)/, `${f} builds shell tools with no canRead`);
+    assert.match(src, /createShellTools\(gatedShellOptions\(gate, workdir[,)]/, `${f} builds shell tools with no canRead`);
     assert.doesNotMatch(src, /createShellTools\(\)\.tools/, `${f} still has an un-wired createShellTools()`);
   }
 });

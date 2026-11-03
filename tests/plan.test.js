@@ -10,8 +10,10 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validatePlan, EXIT_EXAMPLE, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, WRITE_VERBS, hasNestedQuantifier, legalScopes } from '../src/plan.js';
+import { validatePlan, pairEditGrant, EXIT_EXAMPLE, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, WRITE_VERBS, hasNestedQuantifier, legalScopes } from '../src/plan.js';
 import { planPrompt } from '../src/planrun.js';
+import { readFileSync } from 'node:fs';
+import { STEP_DIR } from '../src/rubricstep.js';
 import { validateJob, STORE_VERBS, WRITE_VERBS as JOB_WRITE_VERBS } from '../src/job.js';
 
 // The signed side: a validateJob-green four-field spec (job #4's shape) — the
@@ -1170,9 +1172,82 @@ test('F254: planPrompt says exit is REQUIRED on EVERY step and shows a legal exa
   assert.ok(p.includes(EXIT_EXAMPLE), 'the legal-example sentence is in the planner prompt');
 });
 
+test('PLANWORDING B: EXIT_EXAMPLE teaches the read-only look-around shape and that shape validates', () => {
+  assert.match(EXIT_EXAMPLE, /read-only look-around step \(tools read, grep\) uses \[\{"type":"artifact-written","path":"<an existing file the step reads>"\}\]/);
+  const plan = clone(PLAN);
+  plan.steps.unshift({ id: 'look-around', action: 'Read and grep the orchestrator to learn its functions.', tools: ['read', 'grep'], rounds: 4, target: 'tests/notes.md', exit: [{ type: 'artifact-written', path: 'tests/notes.md' }] });
+  const r = validatePlan(plan, OPTS);
+  assert.equal(r.ok, true, `the taught shape must be legal: ${JSON.stringify(r.reds)}`);
+});
+
 test('F254: a step with no exit reds missing-required and the detail carries the legal example', () => {
   const r = validatePlan(mut((p) => { delete p.steps[0].exit; }), OPTS);
   assert.equal(r.reds.length, 1);
   assert.equal(`${r.reds[0].code}:${r.reds[0].path}`, 'missing-required:steps.0.exit');
   assert.ok(r.reds[0].detail.includes(EXIT_EXAMPLE));
+});
+
+
+// ─── C: pairEditGrant — a write grant is paired with edit (F271; the safety net under the planner-instructions fix) ───
+const wp = (steps) => ({ schema: 'plan-v1', steps });
+const wstep = (over) => ({ id: 's', action: 'a', tools: ['read', 'write'], rounds: 4, target: 'src/a.js', exit: [{ type: 'artifact-written', path: 'src/a.js' }, { type: 'tree-changed', scope: 'tests/**' }], ...over });
+
+test('pairEditGrant: a write-only step gains edit, a step already granting it and a read-only step are untouched', () => {
+  const plan = wp([wstep({ id: 'w' }), wstep({ id: 'both', tools: ['read', 'write', 'edit'] }), wstep({ id: 'ro', tools: ['read', 'grep'] })]);
+  const out = pairEditGrant(plan, JOB, STEP_DIR);
+  assert.deepEqual(out.steps[0].tools, ['read', 'write', 'edit'], 'edit appended after the drafted grant');
+  assert.deepEqual(out.steps[1].tools, ['read', 'write', 'edit'], 'not duplicated');
+  assert.deepEqual(out.steps[2].tools, ['read', 'grep']);
+  assert.equal(out.steps[1], plan.steps[1], 'untouched steps keep their identity');
+});
+
+test('pairEditGrant: the same reference comes back when nothing needs pairing', () => {
+  const plan = wp([wstep({ tools: ['read', 'write', 'edit'] }), wstep({ id: 'ro', tools: ['read'] })]);
+  assert.equal(pairEditGrant(plan, JOB, STEP_DIR), plan);
+});
+
+test('pairEditGrant: never mutates its input', () => {
+  const plan = wp([wstep()]);
+  const fresh = clone(plan);
+  const out = pairEditGrant(plan, JOB, STEP_DIR);
+  assert.notEqual(out, plan);
+  assert.deepEqual(plan, fresh, 'the drafted plan is byte-identical after pairing');
+});
+
+test('pairEditGrant: a signed ceiling WITHOUT edit pairs nothing (code never widens the signed menu)', () => {
+  const job = { ...clone(JOB), tools: ['read', 'write'] };
+  const plan = wp([wstep()]);
+  assert.equal(pairEditGrant(plan, job, STEP_DIR), plan);
+  // an absent ceiling means the full menu, which offers edit
+  const open = clone(JOB); delete open.tools;
+  assert.deepEqual(pairEditGrant(plan, open, STEP_DIR).steps[0].tools, ['read', 'write', 'edit']);
+});
+
+test('pairEditGrant: a rubric step-file step (every declared path under output/steps/) is left as drafted; a mixed step is paired', () => {
+  const rubric = wstep({ id: 'r', target: `${STEP_DIR}/1.json`, exit: [{ type: 'artifact-written', path: `${STEP_DIR}/1.json` }, { type: 'json-valid', path: `${STEP_DIR}/1.json` }] });
+  const mixed = wstep({ id: 'm', target: `${STEP_DIR}/1.json`, exit: [{ type: 'artifact-written', path: 'src/a.js' }, { type: 'tree-changed', scope: 'tests/**' }] });
+  const out = pairEditGrant(wp([rubric, mixed]), JOB, STEP_DIR);
+  assert.deepEqual(out.steps[0].tools, ['read', 'write'], 'rubric step file: always a new file, nothing to edit');
+  assert.deepEqual(out.steps[1].tools, ['read', 'write', 'edit']);
+  // with no exempt directory named, nothing is exempt
+  assert.deepEqual(pairEditGrant(wp([rubric]), JOB, null).steps[0].tools, ['read', 'write', 'edit']);
+});
+
+test('pairEditGrant: validatePlan is unchanged — it still echoes the plan by reference and does not pair', () => {
+  const plan = wp([wstep()]);
+  const v = validatePlan(plan, { job: JOB, scopes: ['tests/**', 'src/**'] });
+  if (v.ok) { assert.equal(v.plan, plan); assert.deepEqual(v.plan.steps[0].tools, ['read', 'write']); }
+  assert.equal(validatePlan(PLAN, OPTS).plan, PLAN);
+});
+
+test('pairEditGrant over the three LIVE gutting plans (F271 fixture): the first step ends with edit, the real validator is ok before and after', () => {
+  const f = JSON.parse(readFileSync(new URL('./fixtures/writeedit/gutting-plans.json', import.meta.url), 'utf8'));
+  for (const [run, plan] of Object.entries(f.plans)) {
+    const before = validatePlan(plan, { job: f.job, scopes: f.scopes });
+    assert.equal(before.ok, true, `${run}: the drafted plan validated`);
+    assert.ok(!plan.steps[0].tools.includes('edit'), `${run}: the first step was drafted write-without-edit`);
+    const paired = pairEditGrant(before.plan, f.job, STEP_DIR);
+    assert.equal(paired.steps[0].tools.at(-1), 'edit', `${run}: first step paired`);
+    assert.equal(validatePlan(paired, { job: f.job, scopes: f.scopes }).ok, true, `${run}: the paired plan still validates`);
+  }
 });

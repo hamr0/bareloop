@@ -15,7 +15,7 @@ import { splitReadNotes } from '../pagedropwords.js';
 import { checksOfClose, signedFactNames, proseNotChecked, lineRules, confirmedGoalOf } from '../rubricstep.js';
 
 /** @typedef {{name: string, cls: 'machine check'|'judge'|null}} PlanCheck */
-/** @typedef {{n: number, text: string, rule: string, rules: string[], checks: PlanCheck[], refused: string[]}} PlanLine */
+/** @typedef {{n: number, text: string, rule: string, rules: string[], checks: PlanCheck[], refused: string[], always?: string[]}} PlanLine */
 /** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], readNotes: string[], alwaysOn: string[], older: boolean, goal?: string}} JobPlan */
 
 /**
@@ -94,6 +94,11 @@ export function planFromSpec(spec) {
     const served = lines.filter((l) => /** @type {number[]} */ (s.fromLine).includes(l.n));
     for (const line of served) line.checks.push({ name: s.name, cls: s.cls });
     if (served.length === 0) loose.push({ name: s.name, cls: s.cls });
+  }
+  // an always-on guard that the drafter said covers a job line is shown under that line too ("› check · always-on: <guard>")
+  for (const g of Array.isArray(spec?.closeDecl?.guardLines) ? spec.closeDecl.guardLines : []) {
+    if (!g || typeof g.guard !== 'string' || !Array.isArray(g.lines)) continue;
+    for (const line of lines.filter((l) => g.lines.includes(l.n))) (line.always ??= []).push(g.guard);
   }
   const refused = Array.isArray(spec?.closeDecl?.refused) ? spec.closeDecl.refused : [];
   for (const r of refused) {

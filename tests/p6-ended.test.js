@@ -132,9 +132,9 @@ test('NEXT page markup: rows become label cells + instruction cells in one grid 
   assert.equal(nextRow({ next: 'x', rows: [['a:', 'b']] }), '<div class="ended-row"><span class="ended-label">NEXT</span><span class="ended-text" data-testid="ended-next">x</span></div>', 'fewer than two rows is the one-line row');
 });
 
-test('NEXT page CSS: the grid, the muted label token the ENDED/NEXT side labels use, and a text cell that wraps without spilling', () => {
+test('NEXT page CSS: the grid, the accent label token the ENDED/NEXT side labels use (hamr 2026-11-02), and a text cell that wraps without spilling', () => {
   assert.match(PAGE, /\.next-rows\{display:grid;grid-template-columns:max-content minmax\(0,1fr\);column-gap:10px;row-gap:2px;\}/);
-  assert.match(PAGE, /\.next-label\{color:var\(--text-faint\);\}/);
+  assert.match(PAGE, /\.next-label\{color:var\(--accent\);font-weight:700;\}/);
   assert.match(PAGE, /\.next-text\{min-width:0;overflow-wrap:anywhere;\}/);
-  assert.match(PAGE, /\.ended-label\{color:var\(--text-faint\)/, 'the same token as the ENDED / NEXT / SCHEDULE side labels');
+  assert.match(PAGE, /\.ended-label\{color:var\(--accent\)/, 'the same token as the ENDED / NEXT / SCHEDULE side labels');
 });
