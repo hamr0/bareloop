@@ -3084,7 +3084,7 @@
   function gridStepTryOf(part, t, boxIsLive){
     var a = (part.attempts || []).filter(function(x){ return x.n === t.n; })[0] || null;
     var out = {
-      n: t.n, glyph: t.cutOff ? "?" : attemptGlyph(t.outcome, boxIsLive), hint: t.thinking || "", noVerdict: t.cutOff ? (t.words || "") : null,
+      n: t.n, glyph: t.cutOff ? "?" : attemptGlyph(t.outcome, boxIsLive), hint: t.thinking || "", nudged: !!(a && a.nudged), noVerdict: t.cutOff ? (t.words || "") : null,
       known: false, inflight: false, cells: {}, order: [], judged: a && Array.isArray(a.judged) ? a.judged : [], attempt: a || { n: t.n }, memo: a ? a.memo : (t.cutOff && part.cutOffTry ? part.cutOffTry.memo : null), calls: a ? (typeof a.rounds === "number" ? a.rounds : null) : (t.cutOff && part.cutOffTry && typeof part.cutOffTry.rounds === "number" ? part.cutOffTry.rounds : null), opening: false
     };
     if(!t.cutOff && a && Array.isArray(a.checks)){
@@ -3100,7 +3100,7 @@
   function gridFixTryOf(a, boxIsLive){
     var noVerdict = typeof a.noVerdict === "string" && a.noVerdict !== "" ? a.noVerdict : null;
     var out = {
-      n: a.n, glyph: tryGlyph(a, boxIsLive), hint: a.source === "outer-close" ? "opening close" : (a.thinking || ""), noVerdict: noVerdict,
+      n: a.n, glyph: tryGlyph(a, boxIsLive), hint: a.source === "outer-close" ? "opening close" : (a.thinking || ""), nudged: !!a.nudged, noVerdict: noVerdict,
       known: Array.isArray(a.stages), memo: a.memo, judged: [], inflight: (a.outcome === null || a.outcome === undefined) && !!boxIsLive, cells: {}, order: [], attempt: a,
       calls: typeof a.rounds === "number" ? a.rounds : null, opening: a.source === "outer-close"
     };
@@ -3178,7 +3178,7 @@
   function gridTableHtml(pid, model){
     if(model.rows.length === 0) return "";
     var head = '<tr><th class="q">check</th>' + model.tries.map(function(t){
-      return '<th class="t">try ' + t.n + " " + gridGlyph(t.glyph) + (t.hint ? '<span class="hint">' + escapeXml(t.hint) + "</span>" : "") + "</th>";
+      return '<th class="t">try ' + t.n + " " + gridGlyph(t.glyph) + (t.hint ? '<span class="hint">' + escapeXml(t.hint) + "</span>" : "") + (t.nudged ? '<span class="hint">nudged</span>' : "") + "</th>";
     }).join("") + "</tr>";
     // the memo one worker try was handed: `told in this run`, one button per try that got it (the exact saved text opens in the errors area)
     var hrow = "";

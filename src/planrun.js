@@ -559,6 +559,10 @@ export const FORBIDDEN_WRITE_SEGMENT_PATTERN = /"path":"(?:(?:[^"\\]|\\.)*\/)?(?
  * shipped path routinely rides through.
  */
 export const BOUND_REASON_MAX = 200;
+/** the one message a text-only worker ending is continued with (once per ask, no toolChoice) */
+export const TEXT_ONLY_NUDGE = 'You ended without writing any file. Make the change now with your write or edit tool; do not reply in text.';
+/** the stored text-only ending is capped here (report-only record, masked first) */
+export const TEXT_ONLY_MAX = 2000;
 
 /** the recorded reason for a step attempt whose round was cut at the output cap (F122 2A b) */
 export const TRUNCATED_REASON = 'output cut at the token limit (max_tokens)';
@@ -3016,20 +3020,8 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       emit('worker-bad-calls', { phase, iteration: roundIteration, calls: facts.calls, ...(facts.cutOff ? { cutOff: facts.cutOff } : {}) });
       return facts;
     };
-    const ask = async (prompt, defs = toolDefs) => {
-      let r;
-      // A fresh Loop = a fresh transcript: the read shim's delivered-ledger resets with it, or a
-      // later attempt's re-read is answered with a pointer to bytes its model never saw (F252).
-      // askFrom (a continuation of a prior transcript) deliberately does NOT reset.
-      shim.reset();
-      const thinkOpts = thinkingForCall();
-      try {
-        r = await stallWatch.watch((gen) => newLoop(gen).run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000, ...callBounds(), ...thinkOpts }));
-        throwIfStopped();
-        noteThinkingStatus(r);
-      } catch (e) {
-        throw categorize(e).err;
-      }
+    /** the post-round taxonomy of one worker Loop result (bad calls, bounds, error map); returns r or throws — shared by an ask's first round and its nudge round @param {any} r */
+    const settle = (r) => {
       // BA-29 (F265/F266): what the model got wrong is read off bare-agent's structured `badCalls`/`cutOff`
       // (never off prose) and recorded BEFORE any branch below returns or throws — a cut round used to
       // return first and lose both this and the malformed marker.
@@ -3092,6 +3084,55 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // marker before `ask()` returns it unexamined, so a distinct spine
       // record names the transport class here — the same honesty bar
       // F179/F180 set for the authoring path, applied to the worker path.
+      return r;
+    };
+    const ask = async (prompt, defs = toolDefs) => {
+      let r;
+      // A fresh Loop = a fresh transcript: the read shim's delivered-ledger resets with it, or a
+      // later attempt's re-read is answered with a pointer to bytes its model never saw (F252).
+      // askFrom (a continuation of a prior transcript) deliberately does NOT reset.
+      shim.reset();
+      const thinkOpts = thinkingForCall();
+      const writesBefore = writeCount();
+      try {
+        r = await stallWatch.watch((gen) => newLoop(gen).run([{ role: 'user', content: prompt }], defs, { cacheMessages: true, maxTokens: 32000, ...callBounds(), ...thinkOpts }));
+        throwIfStopped();
+        noteThinkingStatus(r);
+      } catch (e) {
+        throw categorize(e).err;
+      }
+      r = settle(r);
+      // The text-only ending: a writeable step's (or the fix loop's) ask finished (end_turn) with text and the REAL gate audit holds no allowed
+      // write/edit for it. Continue the SAME conversation (`r.msgs`) ONCE with one code-written message; the round is inside this try, metered by
+      // the same seam, and honours the cap, wall, Stop and the round limit. Read-only steps are never nudged.
+      const writeable = (phase.startsWith('step:') || phase === 'fix') && WRITE_VERBS.some((v) => granted.includes(v));
+      const textOnly = writeable && r.stopReason === 'end_turn' && !r.error && typeof r.text === 'string' && r.text !== '' && writeCount() === writesBefore;
+      if (!textOnly) return r;
+      let lastText = r.text;
+      let nudged = false;
+      let nudgeWrote = false;
+      if (!attemptBounded && !stopHit && !clock.expired() && roundsThisAttempt < attemptRounds && Array.isArray(r.msgs)) {
+        nudged = true;
+        emit('worker-nudge', { phase, iteration: roundIteration, round: roundsThisAttempt });
+        let r2;
+        try {
+          const rest = r.msgs[0]?.role === 'system' ? r.msgs.slice(1) : r.msgs; // same strip as askFrom: the new Loop prepends `system` again
+          r2 = await stallWatch.watch((gen) => newLoop(gen).run([...rest, { role: 'user', content: TEXT_ONLY_NUDGE }], defs, { cacheMessages: true, maxTokens: 32000, ...callBounds(), ...thinkOpts }));
+          throwIfStopped();
+          noteThinkingStatus(r2);
+        } catch (e) {
+          throw categorize(e).err;
+        }
+        r2 = settle(r2);
+        nudgeWrote = writeCount() > writesBefore;
+        if (typeof r2.text === 'string' && r2.text !== '' && !nudgeWrote) lastText = r2.text;
+        r = r2;
+      }
+      const shown = scrub(String(lastText));
+      emit('worker-text-only', {
+        phase, iteration: roundIteration, nudged, nudgeWrote,
+        text: shown.length > TEXT_ONLY_MAX ? shown.slice(0, TEXT_ONLY_MAX) : shown, truncated: shown.length > TEXT_ONLY_MAX,
+      });
       return r;
     };
     return { ask: withCarry(ask), askFrom, workerWrites, writeCount, setIteration, wasBounded: () => attemptBounded };

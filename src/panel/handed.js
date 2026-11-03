@@ -30,21 +30,22 @@ function recFor(recs, phase, a) {
 }
 
 /**
- * Every step part's and fix part's tries (and a cut-off try) gain `memo`: the carry-note record handed to that try, or null.
+ * Every step part's and fix part's tries (and a cut-off try) gain `memo`: the carry-note record handed to that try, or null; a try whose text-only ending was nudged (spine `worker-text-only`, `nudged: true`) also gains `nudged: true`.
  * Parts and tries are copied, never mutated. An outer-close try (no model call) never has one.
  * @param {any[]|null|undefined} parts @param {any[]} records the run's spine records
  */
 export function attachMemos(parts, records) {
   if (!Array.isArray(parts)) return parts;
   const recs = records.filter((r) => r?.type === 'carry-note');
-  if (recs.length === 0) return parts.map((p) => (p.kind === 'step' || p.kind === 'fix' ? { ...p, attempts: (p.attempts ?? []).map((a) => ({ ...a, memo: null })) } : p));
+  const nudges = records.filter((r) => r?.type === 'worker-text-only' && r.nudged === true);
+  if (recs.length === 0 && nudges.length === 0) return parts.map((p) => (p.kind === 'step' || p.kind === 'fix' ? { ...p, attempts: (p.attempts ?? []).map((a) => ({ ...a, memo: null })) } : p));
   return parts.map((p) => {
     if (p.kind !== 'step' && p.kind !== 'fix') return p;
     const phase = p.kind === 'fix' ? 'fix' : `step:${p.label}`;
     const one = (/** @type {any} */ a) => {
       if (a.source === 'outer-close') return { ...a, memo: null };
       const r = recFor(recs, phase, a);
-      return { ...a, memo: r ? memoOf(r) : null };
+      return { ...a, memo: r ? memoOf(r) : null, ...(recFor(nudges, phase, a) ? { nudged: true } : {}) };
     };
     return {
       ...p,
