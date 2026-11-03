@@ -5,6 +5,14 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Fixed
+
+- **The review door's held line no longer says a rubric green earns no learning credit.** A rubric run's lessons count at run end (PRD v1.112); only reuse/bridge credit waits for Accept, so `src/u-readout.js` now says "NO reuse credit until you accept it", and `bareloop.context.md` says the same in its two places. The same wording is fixed where Accept's release is described elsewhere: the door's Accept line (`src/u-readout.js`), the run-u HELD line (`src/userrun.js`), the `bridges.js`/`reuse.js` door comments, and the tests pinning them. Also, the learn-ledger climb test's failure message no longer quotes a time figure.
+- **The step a money or time cap escalated reads capped, not failed.** A run that ended capped left its last step's card at `failed` because that step's own `step-end` says `escalated` and carries no stop reason (real spines msi0w2i5 and msx87qqs: the cap's escalation lands just before the step-end). `src/panel/server.js` now gives the run's LAST step part the cap word where the run's verdict is known; an earlier escalated step stays failed.
+- **`climb` no longer compares card pairs already in one family.** Same families and levels (checked identical against the old code on 4,000 random ledgers); 2,000 same-lesson rows take about 60 ms instead of about 400 ms, which removes the load flake in `tests/learn-ledger.test.js`. `tests/launcher-stop-deadline.test.js` now uses a fake clock through a new optional `clock` dep of the launcher (default `performance.now`, no change for real callers), so load can no longer flip it.
+
 ## [0.54.0] - 2026-11-03
 
 ### Added
