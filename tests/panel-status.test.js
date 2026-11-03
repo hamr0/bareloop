@@ -120,6 +120,31 @@ test('2026-11-03: the step a money cap escalated reads capped, not failed (spine
   assert.deepEqual(steps.map((p) => p.status.word), ['failed', 'capped']);
 });
 
+// Mirrors real spine msx87qqs (litectx-maintainer, wall-halt): the wall-halt escalation sits inside the step's window, so the step reads capped.
+// And real spine u-mshcpdg4 seq 185 (bareagent-u-bareloop): the step ladder's own stop is category `cap-halt` too, but its `spend` carries
+// `strikes`/`strikeLimit` and no `cap-halt` record precedes it; when the run then ends on the cap (money-halt, job-end cap-halt) the step
+// the LADDER escalated still reads failed.
+test('2026-11-03: the last step reads capped only when its own escalation was the cap or wall; a strike-limit step in a run that ended capped reads failed', () => {
+  const home = tmp();
+  makeRun(home, 'w1', 'wall-halt', { extra: [
+    { type: 'step-start', step: 'fix-types', ts: '2026-10-01T10:02:10.000Z', seq: 10 },
+    { type: 'escalation', category: 'wall-halt', ts: '2026-10-01T10:04:00.000Z', seq: 21 },
+    { type: 'step-end', step: 'fix-types', outcome: 'escalated', ts: '2026-10-01T10:04:00.000Z', seq: 22 },
+  ] });
+  const w = getRunDetail('w1', { home });
+  assert.equal(w.status.word, 'capped');
+  assert.equal(w.parts.filter((p) => p.kind === 'step').at(-1).status.word, 'capped', 'a wall-halt escalation is a cap');
+  makeRun(home, 'l1', 'cap-halt', { extra: [
+    { type: 'step-start', step: 'fix-types', ts: '2026-10-01T10:02:10.000Z', seq: 10 },
+    { type: 'escalation', category: 'cap-halt', spend: { runs: 2, strikes: 2, strikeLimit: 2 }, decision: '2/2 strikes — the step stopped making progress.', ts: '2026-10-01T10:03:00.000Z', seq: 21 },
+    { type: 'step-end', step: 'fix-types', outcome: 'escalated', ts: '2026-10-01T10:03:00.000Z', seq: 22 },
+    { type: 'money-halt', ts: '2026-10-01T10:03:01.000Z', seq: 23 },
+  ] });
+  const l = getRunDetail('l1', { home });
+  assert.equal(l.status.word, 'capped', 'the run itself ended on the cap');
+  assert.equal(l.parts.filter((p) => p.kind === 'step').at(-1).status.word, 'failed', 'the ladder escalated this step, not the cap');
+});
+
 // ── page ────────────────────────────────────────────────────────────────────────────────────────────────────
 const PAGE = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
 function fnSrc(name) {

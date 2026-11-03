@@ -2776,12 +2776,18 @@ function noVerdictWords(stop) {
  * A run that ended capped (money or time) cut its LAST part, a step the cap escalated: that step's own `step-end` reads
  * `escalated` and carries no `stopReason`, so its card said failed under a capped header (real spines msi0w2i5, msx87qqs: the
  * cap-halt / wall-halt escalation lands just before the step-end). The verdict is known only here, like the died marking, so the
- * LAST part alone gets the cap word; an earlier escalated step (strike limit, a later part follows) stays failed.
+ * LAST part alone gets the cap word, and only when the step's OWN escalation (`part.tripped`, src/replay.js) was the cap: `wall-halt`
+ * reads 'time cap', a `cap-halt` that is not the ladder's (`tripped.ladder`) reads 'money cap'. A step its strike limit escalated
+ * stays failed even if the run then ended on the cap (real spine u-mshcpdg4: the ladder's stop is also category `cap-halt`), and so
+ * does an earlier escalated step (a later part follows).
  * @param {any} part @param {boolean} isLast @param {string} runStatusKey
  */
 function cappedLastStep(part, isLast, runStatusKey) {
   if (!isLast || runStatusKey !== 'capped' || part.kind !== 'step' || part.outcome !== 'escalated' || part.stopReason) return part;
-  return { ...part, stopReason: 'money cap' };
+  const t = part.tripped;
+  if (t?.category === 'wall-halt') return { ...part, stopReason: 'time cap' };
+  if (t?.category === 'cap-halt' && !t.ladder) return { ...part, stopReason: 'money cap' };
+  return part;
 }
 
 /** a died run's fix part: its last try never got a verdict (the Audit grid's "?" row says it died) @param {any} part */

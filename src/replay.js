@@ -683,6 +683,9 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
     // occurrence is never left with just a bare category word when the
     // record actually explains itself.
     detail: trimTo(e.detail, TRIP_DETAIL_MAX) ?? trimTo(e.decision, TRIP_DETAIL_MAX),
+    // the step ladder's own stop is ALSO category `cap-halt` (real spine u-mshcpdg4 seq 185) but carries `spend.strikes`; a money cap's
+    // escalation does not (u-msi0w2i5 seq 143). An ADDED field, only when the ladder ended the step.
+    ...(typeof e.spend?.strikes === 'number' ? { ladder: true } : {}),
   } : null);
 
   /**
@@ -1411,6 +1414,9 @@ export function replayRun(spineEvents, auditEvents = [], { runId = null, auditAv
         spentUsd: step.spentUsd,
         unpricedRounds: step.unpricedRounds,
         outcome: step.outcome,
+        // the escalation inside the step's window (category/detail, `ladder` when its own strike limit ended it): the panel reads it to
+        // tell a step the cap escalated from a step the ladder escalated (src/panel/server.js cappedLastStep)
+        ...(step.tripped ? { tripped: step.tripped } : {}),
         // P5-R (resumed runs only): why its leg's halt cut this step off, whether it is the same step continuing
         // from the leg before, and its retry count not counting continuations
         ...(step.stopReason === undefined ? {} : { stopReason: step.stopReason, continued: step.continued, tryNumber: step.tryNumber }),
