@@ -2884,7 +2884,9 @@ shares the same seq counter, so it is an exact ordering where two same-milliseco
 are not), never pooled across every occurrence sharing the id. `rounds` counts real
 `worker-round` records (`phase === 'step:<id>'`), never the declared cap; `toolCalls` is the one
 thing still windowed by `ts` (the gate-audit carries no `step` or shared `seq`). `tripped` is the
-last `escalation` whose `seq` falls inside the occurrence's window — `{category, detail}`, with
+last `escalation` whose `seq` falls inside the occurrence's window — `{category, detail}` (plus `ladder: true`
+when the escalation is the step ladder's own strike-limit stop, which is also category `cap-halt` but carries
+`spend.strikes`; a money cap's escalation does not), with
 `detail` falling back to `decision` when the escalation site carries no `detail` at all (a
 ladder-exhaustion `cap-halt`, `src/ralph.js`, is the measured example — without the fallback the
 tripped line would print a bare category and hide the real reason).
@@ -3678,7 +3680,7 @@ key you want first (the panel picks the row by the Model menu).
   stopped runs are `no ending recorded` and `you pressed Stop` (each `— resume` when Resume is offered).
   Every PART of a run detail (`parts[]`) also carries its own `status` `{key, sign, word}` from the same table
   (`partStatusFor`, `src/panel/status.js`): drafting, a green outcome and a part with no verdict and no cut-off → passed; a red
-  outcome → its run-outcome word; a part its leg's halt cut off → capped (money cap / time cap — also a leg that ended `escalated` on a money-halt or wall-halt, and the open step of a single-leg run that ended on a cap), stopped (you stopped it),
+  outcome → its run-outcome word; a part its leg's halt cut off → capped (money cap / time cap — also a leg that ended `escalated` on a money-halt or wall-halt, and the open step of a single-leg run that ended on a cap; and the LAST step part of a run that ended capped when that step's OWN escalation was the cap — its `step-end` reads `escalated` with no stop reason, so `cappedLastStep` in `src/panel/server.js` gives it the cap word, a `wall-halt` escalation reading time cap and a `cap-halt` that is not the ladder's reading money cap; a step its own strike limit escalated, and any earlier escalated step, stays failed), stopped (you stopped it),
   died, else failed. A run that DIED (no `job-end`, runner gone) leaves its last part in flight: when that part has no outcome
   and no cut-off, the server marks it `died` (`[?] died`), never the "happened, so passed" default — replay alone cannot tell
   died from still running, so `getRunDetail` decides it from the same `death` verdict as the run's status. A live run's open
