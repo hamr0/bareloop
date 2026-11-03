@@ -429,6 +429,10 @@
   button.fx-rowhead:focus-visible,.fx-more:focus-visible,.cell.fail:focus-visible{outline:2px solid var(--red);outline-offset:1px;}
   .fx-caret{flex:none;width:12px;color:var(--text-faint);}
   .fx-try{flex:none;font-weight:700;}
+  /* hamr 2026-11-03: Audit tab caption words are accent (like the Run tab's); scoped to #audit-body. Values, the [ +N more lines ] buttons and the red/green glyph spans keep their own colours. */
+  #audit-body table th{color:var(--accent);font-weight:700;}
+  #audit-body .sub-label,#audit-body .fx-label,#audit-body td.hint{color:var(--accent);font-weight:700;}
+  #audit-body .fx-try{color:var(--accent);}
   .fx-chk{flex:none;white-space:nowrap;}
   .fx-first{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-dim);}
   .fx-faint,.fx-count{color:var(--text-faint);}

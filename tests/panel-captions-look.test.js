@@ -84,3 +84,16 @@ test('6. Chat job card pills carry a small grey `required` inside the label, for
   assert.deepEqual(marked, ['jf-name', 'jf-job', 'jf-inputs', 'jf-dest', 'jf-cap-money']);
   assert.doesNotMatch(card, /jf-cap-time">[^<]*<span class="req"/, 'the time cap is optional');
 });
+
+test('7. Audit tab caption words are accent, scoped to #audit-body; values, [ N lines ] buttons and glyph colours keep their own', () => {
+  const th = body('#audit-body table th{');
+  assert.match(th, /color:var\(--accent\)/); assert.match(th, /font-weight:700/);
+  const caps = body('#audit-body .sub-label,');
+  for (const sel of ['#audit-body .sub-label', '#audit-body .fx-label', '#audit-body td.hint']) assert.ok(caps.includes(sel), sel);
+  assert.match(caps, /color:var\(--accent\)/); assert.match(caps, /font-weight:700/);
+  assert.match(body('#audit-body .fx-try{'), /color:var\(--accent\)/);
+  assert.match(body('\n  th{'), /color:var\(--text-dim\)/, 'the global th rule (Settings tables) stays dim');
+  assert.match(body('.sub-label{'), /color:var\(--text-faint\)/, 'the shared .sub-label stays faint outside the Audit tab');
+  assert.match(body('.fx-label{'), /color:var\(--text-faint\)/);
+  assert.doesNotMatch(body('.fx-more{'), /accent/, 'the [ +N more lines ] button keeps its own colour');
+});
