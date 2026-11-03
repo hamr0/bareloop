@@ -433,6 +433,16 @@
   #audit-body table th{color:var(--accent);font-weight:700;}
   #audit-body .sub-label,#audit-body .fx-label,#audit-body td.hint{color:var(--accent);font-weight:700;}
   #audit-body .fx-try{color:var(--accent);}
+  /* the "told in this run" row (fwdloop M14 p4 look): the caption is accent, the try buttons are small, the opened text sits on a quiet panel */
+  .btn.hints[aria-expanded="true"]{outline:2px solid var(--accent);outline-offset:1px;}
+  .btn.hints:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+  .cell.none{color:var(--text-faint);cursor:default;font-weight:400;}
+  tr.hint-row td{color:var(--text-faint);}
+  tr.hint-row td.q{color:var(--accent);}
+  .fx-row.hintrow.open>.fx-rowhead{background:var(--panel2);}
+  .fx-row.hintrow .fx-body{border-left-color:var(--accent);background:var(--panel2);}
+  .fx-row.hintrow .fx-try{flex:1 1 auto;min-width:0;overflow-wrap:anywhere;}
+  .fx-lines div.ind{margin-left:16px;}
   .fx-chk{flex:none;white-space:nowrap;}
   .fx-first{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-dim);}
   .fx-faint,.fx-count{color:var(--text-faint);}
@@ -3019,7 +3029,7 @@
     return handedFold(testid, head, list);
   }
   // under a part's body: the memory fold of every try the grid does not place (a part without a grid; the fix loop's cut-off try), and the
-  // learnings the planner part was handed. A grid part's tries carry their own memo fold right under their rounds fold (buildGridBody).
+  // learnings the planner part was handed. A grid part's tries show their memo in the grid's `told in this run` row (gridTableHtml), not here.
   function appendHanded(body, part, idx, inGrid){
     var tries = inGrid ? [] : (Array.isArray(part.attempts) ? part.attempts : []).slice();
     if(part.cutOffTry && (!inGrid || part.kind === "fix")) tries.push(Object.assign({}, part.cutOffTry, { cutOff: true }));
@@ -3163,6 +3173,13 @@
     var head = '<tr><th class="q">check</th>' + model.tries.map(function(t){
       return '<th class="t">try ' + t.n + " " + gridGlyph(t.glyph) + (t.hint ? '<span class="hint">' + escapeXml(t.hint) + "</span>" : "") + "</th>";
     }).join("") + "</tr>";
+    // the memo one worker try was handed: `told in this run`, one button per try that got it (the exact saved text opens in the errors area)
+    var hrow = "";
+    if(model.tries.some(gridHasMemo)){
+      hrow = '<tr class="hint-row memo-row"><td class="q">told in this run</td>' + model.tries.map(function(t){
+        return '<td class="c">' + (gridHasMemo(t) ? '<button type="button" class="btn small hints" data-memo="' + t.n + '" aria-expanded="false" aria-controls="fxerr-' + pid + '" title="try ' + t.n + ' \u00B7 told in this run">' + gridMemoWord(t.memo) + "</button>" : '<span class="cell none">\u2014</span>') + "</td>";
+      }).join("") + "</tr>";
+    }
     var body = model.rows.map(function(r){
       var tds = model.tries.map(function(t){
         var c = gridCellOf(t, r);
@@ -3173,10 +3190,29 @@
       }).join("");
       return '<tr><td class="q">' + r.n + " " + escapeXml(r.question) + "</td>" + tds + "</tr>";
     }).join("");
-    return '<div class="grid-wrap audit-table-scroll"><table class="grid fgrid" data-testid="audit-grid-table"><thead>' + head + "</thead><tbody>" + body + "</tbody></table></div>";
+    return '<div class="grid-wrap audit-table-scroll"><table class="grid fgrid" data-testid="audit-grid-table"><thead>' + head + "</thead><tbody>" + hrow + body + "</tbody></table></div>";
   }
-  // the errors list: one row per try that failed or has no verdict; `st` = {open: {tryN: true}, more: {"tryN:checkN": true}}
+  // the memo's button word is its line count; "line"/"lines" are the page's own words, as in "+N more lines"
+  function gridHasMemo(t){ return !!t.memo && typeof t.memo.text === "string" && t.memo.text !== ""; }
+  function gridMemoLines(m){
+    var lines = String(m.text).split("\n");
+    while(lines.length && lines[lines.length - 1].trim() === "") lines.pop();
+    return lines;
+  }
+  function gridMemoWord(m){ var n = gridMemoLines(m).length; return n + (n === 1 ? " line" : " lines"); }
+  // text lines under an opened row, 8 then "+N more lines" (a leading indent is kept as an indent)
+  function gridLinesHtml(lines, more, attr, key){
+    var cap = 8;
+    var shown = more ? lines : lines.slice(0, cap);
+    return '<div class="fx-lines">' + shown.map(function(l){ return /^\s/.test(l) ? '<div class="ind">' + escapeXml(l.replace(/^\s+/, "")) + "</div>" : "<div>" + escapeXml(l) + "</div>"; }).join("") + "</div>" +
+      (lines.length > cap ? '<button type="button" class="fx-more" ' + attr + '="' + key + '">' + (more ? "show first " + cap + " only" : "+" + (lines.length - cap) + " more lines") + "</button>" : "");
+  }
+  // the errors area: the memo texts opened by their buttons, then one list row per red try; `st` = {open: {tryN: true}, more: {"tryN:checkN": true}, memo: {tryN: true}, mmore: {tryN: true}}
   function gridErrorsHtml(pid, model, st){
+    var mrows = model.tries.filter(function(t){ return gridHasMemo(t) && st.memo[t.n]; }).map(function(t){
+      return '<div class="fx-row hintrow open"><button type="button" class="fx-rowhead" id="fxmemo-' + pid + "-" + t.n + '" data-mrow="' + t.n + '" aria-expanded="true"><span class="fx-caret">\u25BE</span><span class="fx-try">try ' + t.n + " \u00B7 told in this run \u00B7 " + gridMemoWord(t.memo) + '</span></button><div class="fx-body">' +
+        gridLinesHtml(gridMemoLines(t.memo), !!st.mmore[t.n], "data-mmore", t.n) + "</div></div>";
+    }).join("");
     var rows = model.tries.map(function(t){
       if(t.noVerdict){
         return '<div class="fx-row fx-row-q"><span class="fx-rowhead"><span class="fx-caret"></span><span class="fx-try">try ' + t.n + '</span><span class="fx-chk">' + gridGlyph("?") + '</span><span class="fx-first fx-faint">' + escapeXml(t.noVerdict) + "</span></span></div>";
@@ -3205,7 +3241,7 @@
       }
       return '<div class="fx-row' + (open ? " open" : "") + '">' + head + body + "</div>";
     }).join("");
-    return rows ? '<div class="fx-label">errors</div>' + rows : "";
+    return mrows + rows ? '<div class="fx-label">errors</div>' + mrows + rows : "";
   }
   // the rounds, folded per try, lazy: each fold fetches its own try's rounds (the per-attempt endpoint) the first time it opens
   function gridRoundsHtml(model){
@@ -3235,12 +3271,15 @@
     Array.prototype.forEach.call(wrap.querySelectorAll("[data-fx]"), function(b){
       b.setAttribute("aria-expanded", st.open[b.getAttribute("data-fx").split(":")[0]] ? "true" : "false");
     });
+    Array.prototype.forEach.call(wrap.querySelectorAll("[data-memo]"), function(b){
+      b.setAttribute("aria-expanded", st.memo[b.getAttribute("data-memo")] ? "true" : "false");
+    });
   }
   // a step's or the fix loop's body: tally (steps), then the grid, the errors list and the rounds folds
   function buildGridBody(body, partIndex, part, boxIsLive){
     var pid = "p" + partIndex;
     var model = gridModelOf(part, boxIsLive);
-    var st = { open: gridDefaultOpen(model), more: {} };
+    var st = { open: gridDefaultOpen(model), more: {}, memo: {}, mmore: {} };
     if(part.tally){
       var tally = document.createElement("div");
       tally.className = "step-tally";
@@ -3261,6 +3300,33 @@
       if(el && focusRow){ el.scrollIntoView({ block: "nearest" }); el.focus(); } else if(el){ el.focus(); }
     };
     wrap.addEventListener("click", function(e){
+      var mmore = e.target.closest("[data-mmore]");
+      if(mmore){
+        var mk = mmore.getAttribute("data-mmore");
+        st.mmore[mk] = !st.mmore[mk];
+        renderGridErrors(wrap, pid, model, st);
+        var magain = wrap.querySelector('[data-mmore="' + mk + '"]');
+        if(magain) magain.focus();
+        return;
+      }
+      var mrow = e.target.closest("[data-mrow]");
+      if(mrow){
+        var mn = mrow.getAttribute("data-mrow");
+        st.memo[mn] = false;
+        renderGridErrors(wrap, pid, model, st);
+        var mb = wrap.querySelector('[data-memo="' + mn + '"]');
+        if(mb) mb.focus();
+        return;
+      }
+      var memo = e.target.closest("[data-memo]");
+      if(memo){
+        var mn2 = memo.getAttribute("data-memo");
+        st.memo[mn2] = !st.memo[mn2];
+        renderGridErrors(wrap, pid, model, st);
+        var me = document.getElementById("fxmemo-" + pid + "-" + mn2);
+        if(me) me.scrollIntoView({ block: "nearest" });
+        return;
+      }
       var more = e.target.closest("[data-fxmore]");
       if(more){
         var key = more.getAttribute("data-fxmore");
@@ -3277,10 +3343,6 @@
         var tn = parseInt(cell.getAttribute("data-fx").split(":")[0], 10);
         toggle(tn, st.open[tn] ? false : true, true);
       }
-    });
-    model.tries.forEach(function(t){
-      var host = t.memo ? wrap.querySelector('[data-fxtry="' + t.n + '"]') : null;
-      if(host) host.appendChild(memoFoldEl(t.memo, "audit-memo-" + partIndex + "-" + t.n));
     });
     Array.prototype.forEach.call(wrap.querySelectorAll("details[data-fxrounds]"), function(d){
       var t = model.tries.filter(function(x){ return x.n === parseInt(d.getAttribute("data-fxrounds"), 10); })[0];
