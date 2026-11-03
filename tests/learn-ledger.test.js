@@ -235,7 +235,7 @@ test('climbing: 2000 identical-lesson rows form one family, quickly (union-find 
   const ms = performance.now() - t;
   assert.equal(out.length, 2000);
   assert.deepEqual([...new Set(out.map((r) => r.level))], ['user'], 'one family across 7 places climbs to user');
-  assert.ok(ms < 5000, `climb took ${Math.round(ms)} ms (bound 5000; path compression keeps it near 1 s)`);
+  assert.ok(ms < 5000, `climb took ${Math.round(ms)} ms (bound 5000; the bound guards against a quadratic climb)`);
 });
 
 test('the place of a job: a repo or folder path as written, a website\'s host, none when there are no inputs', () => {
