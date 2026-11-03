@@ -2186,3 +2186,9 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
   9. `ticketWatch` kept as fwd built it.
   10. PR verification checks out the PR head into the worktree in this branch; the run never pushes.
 - **Pointer:** the build spec is the "MCP + tickets (fwdloop exchange)" addendum in `docs/product/ITEM33-BUILD.md`. Next: branch `feat/mcp-tickets`, cut after `fix/bad-calls` ships as v0.54.0. The spec was shown to hamr and ruled.
+
+### Guard-covered job lines, text-only nudge, panel caption looks (v1.127 — 2026-11-03)
+
+- **Built on `fix/bad-calls`:** `closeDecl.guardLines` lets a job line the always-on guards fully cover count as covered (F281; screening read n=6, wording clause test-proven only); a worker that ends a writeable try in text with no gate-audited write is nudged once in the same conversation (F282; test-proven only, not seen live; base rate under 1%).
+- **Panel looks carried from fwdloop (hamr 2026-11-03):** accent captions, the Runs tab search card, the Audit "told in this run" row; no behaviour change. hamr's click-through and phone width pending.
+- **Contract pointers:** `bareloop.context.md` (closeDecl row, "Text-only ending nudge"), `docs/wiki/FINDINGS.md` F281, F282.
