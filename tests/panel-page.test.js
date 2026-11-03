@@ -1730,7 +1730,7 @@ test('fix (2026-09-29): the cap-row is two equal full-width columns (Cap $ | Tim
 
 test('fix (2026-09-28): the cap-row labels read "Cap $" and "Time cap (min)"; no "Drafting cap $" label exists', () => {
   const html = readFileSync(PAGE_PATH, 'utf8');
-  assert.match(html, /<label for="jf-cap-money">Cap \$<\/label>/);
+  assert.match(html, /<label for="jf-cap-money">Cap \$ <span class="req">required<\/span><\/label>/);
   assert.match(html, /<label for="jf-cap-time">Time cap \(min\)<\/label>/);
   assert.doesNotMatch(html, /Drafting cap \$/);
 });

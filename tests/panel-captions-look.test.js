@@ -74,3 +74,13 @@ test('5. Run summary row labels are accent bold, scoped to #run-summary (the Imp
   assert.match(r, /color:var\(--accent\)/); assert.match(r, /font-weight:700/);
   assert.match(body('\n  .sum-label{'), /color:var\(--text-faint\)/, 'the shared rule stays faint for the Import box');
 });
+
+test('6. Chat job card pills carry a small grey `required` inside the label, for exactly the fields validateJobCard refuses when empty', () => {
+  assert.equal((PAGE.match(/--req:#[0-9a-f]{6};/g) ?? []).length, 3, 'a --req token in each of the three token blocks');
+  const r = body('#job-card .req{');
+  assert.match(r, /font-size:11px/); assert.match(r, /font-weight:400/); assert.match(r, /color:var\(--req\)/);
+  const card = PAGE.slice(PAGE.indexOf('id="job-card"'), PAGE.indexOf('id="chat-card-error"'));
+  const marked = [...card.matchAll(/<label for="([^"]+)">[^<]*<span class="req"[^>]*>required<\/span><\/label>/g)].map((m) => m[1]);
+  assert.deepEqual(marked, ['jf-name', 'jf-job', 'jf-inputs', 'jf-dest', 'jf-cap-money']);
+  assert.doesNotMatch(card, /jf-cap-time">[^<]*<span class="req"/, 'the time cap is optional');
+});

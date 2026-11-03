@@ -25,7 +25,7 @@
     --btn-bg:#1f2335; --btn-text:#c0caf5;
     --field-bg:var(--bg); --field-soft-bg:var(--bg); --field-border:var(--text-dim);
     --primary-bg:#7aa2f7; --primary-text:#1a1b26; --primary-border:#7aa2f7;
-    --cap-w:#b7791f; --cap-w-bg:#3a2e17; --cap-w-ink:#f0c987; --cap-s:#3d59a1; --cap-s-bg:#1f2a4d; --cap-s-ink:#a9c1f5; --cap-j:#6b7396; --cap-j-bg:#2a2f45; --cap-j-ink:#c0caf5; --cap-r:#2b8a7e; --cap-r-bg:#17332f; --cap-r-ink:#8fdccf;
+    --cap-w:#b7791f; --cap-w-bg:#3a2e17; --cap-w-ink:#f0c987; --cap-s:#3d59a1; --cap-s-bg:#1f2a4d; --cap-s-ink:#a9c1f5; --cap-j:#6b7396; --cap-j-bg:#2a2f45; --cap-j-ink:#c0caf5; --cap-r:#2b8a7e; --cap-r-bg:#17332f; --cap-r-ink:#8fdccf; --req:#c9a85f;
     font: 14px/1.5 "Courier Prime", "Courier New", Courier, ui-monospace, monospace;
   }
   *{box-sizing:border-box;}
@@ -72,7 +72,7 @@
       --btn-bg:#e9e9ed; --btn-text:#3760bf;
       --field-bg:#ffffff; --field-soft-bg:#f7f7f9;
       --primary-bg:#2668c2; --primary-text:#e1e2e7; --primary-border:#2668c2;
-      --cap-w:#b7791f; --cap-w-bg:#f6e7c8; --cap-w-ink:#7a4c0c; --cap-s:#2a4fa8; --cap-s-bg:#cfdaf3; --cap-s-ink:#1d3a80; --cap-j:#5b6680; --cap-j-bg:#c7cddb; --cap-j-ink:#333c52; --cap-r:#2b8a7e; --cap-r-bg:#cdeee8; --cap-r-ink:#14524a;
+      --cap-w:#b7791f; --cap-w-bg:#f6e7c8; --cap-w-ink:#7a4c0c; --cap-s:#2a4fa8; --cap-s-bg:#cfdaf3; --cap-s-ink:#1d3a80; --cap-j:#5b6680; --cap-j-bg:#c7cddb; --cap-j-ink:#333c52; --cap-r:#2b8a7e; --cap-r-bg:#cdeee8; --cap-r-ink:#14524a; --req:#8a6d2a;
     }
   }
   :root[data-theme="light"]{
@@ -88,7 +88,7 @@
     --btn-bg:#e9e9ed; --btn-text:#3760bf;
     --field-bg:#ffffff; --field-soft-bg:#f7f7f9;
     --primary-bg:#2668c2; --primary-text:#e1e2e7; --primary-border:#2668c2;
-    --cap-w:#b7791f; --cap-w-bg:#f6e7c8; --cap-w-ink:#7a4c0c; --cap-s:#2a4fa8; --cap-s-bg:#cfdaf3; --cap-s-ink:#1d3a80; --cap-j:#5b6680; --cap-j-bg:#c7cddb; --cap-j-ink:#333c52; --cap-r:#2b8a7e; --cap-r-bg:#cdeee8; --cap-r-ink:#14524a;
+    --cap-w:#b7791f; --cap-w-bg:#f6e7c8; --cap-w-ink:#7a4c0c; --cap-s:#2a4fa8; --cap-s-bg:#cfdaf3; --cap-s-ink:#1d3a80; --cap-j:#5b6680; --cap-j-bg:#c7cddb; --cap-j-ink:#333c52; --cap-r:#2b8a7e; --cap-r-bg:#cdeee8; --cap-r-ink:#14524a; --req:#8a6d2a;
   }
   .theme-toggle{padding:4px 9px;min-height:32px;border:1px solid var(--border-strong);background:var(--btn-bg);color:var(--text);}
 
@@ -537,6 +537,8 @@
   .cap-field label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:1px;}
   /* hamr 2026-11-02 (as fwdloop 0ae68fb): the Chat job card captions are pills, no left bar; checkbox/radio labels are not captions */
   #job-card .field > label:not(.jf-thinking),#job-card .cap-field > label{font-size:13px;font-weight:700;color:var(--accent);text-transform:none;letter-spacing:0;margin:8px 0 6px;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--accent) 16%,transparent);display:inline-block;}
+  /* hamr 2026-11-03 (fwdloop 0ae68fb): `required` rides inside the Chat card caption pill, small and grey; it marks what validateJobCard refuses when empty */
+  #job-card .req{font-size:11px;font-weight:400;color:var(--req);margin-left:8px;}
   .cap-field input{width:100%;padding:5px 6px;box-sizing:border-box;}
   .btn.primary{background:var(--primary-bg);color:var(--primary-text);border-color:var(--primary-border);font-weight:700;}
   .btn.primary::before,.btn.primary::after{color:var(--primary-text);opacity:0.6;}
@@ -818,25 +820,25 @@
               <div class="hint" id="jf-thinking-note" data-testid="jf-thinking-note"></div>
             </div>
             <div class="field">
-              <label for="jf-name">Job name</label>
+              <label for="jf-name">Job name <span class="req">required</span></label>
               <input id="jf-name" type="text" placeholder="kebab-case, unique">
             </div>
             <div class="field">
-              <label for="jf-job">The job</label>
+              <label for="jf-job">The job <span class="req">required</span></label>
               <div class="nbox" data-testid="nbox-job">
                 <div class="gut" id="jf-job-gut" aria-hidden="true"></div>
                 <div class="nbox-in"><textarea class="jf-wrap" id="jf-job" rows="3" data-testid="jf-job" spellcheck="false"></textarea><div class="nbox-mir" id="jf-job-mir" aria-hidden="true"></div></div>
               </div>
             </div>
             <div class="field">
-              <label for="jf-inputs">Inputs</label>
+              <label for="jf-inputs">Inputs <span class="req">required</span></label>
               <div class="nbox" data-testid="nbox-inputs">
                 <div class="gut" id="jf-inputs-gut" aria-hidden="true"></div>
                 <div class="nbox-in"><textarea class="jf-wrap" id="jf-inputs" rows="2" data-testid="jf-inputs" spellcheck="false"></textarea><div class="nbox-mir" id="jf-inputs-mir" aria-hidden="true"></div></div>
               </div>
             </div>
             <div class="field">
-              <label for="jf-dest">Destination</label>
+              <label for="jf-dest">Destination <span class="req">required</span></label>
               <textarea class="jf-wrap" id="jf-dest" rows="1" placeholder="the write fence — where in the repo this run may change files"></textarea>
             </div>
 
@@ -860,7 +862,7 @@
 
             <div class="cap-row" data-testid="cap-row">
               <div class="cap-field">
-                <label for="jf-cap-money">Cap $</label>
+                <label for="jf-cap-money">Cap $ <span class="req">required</span></label>
                 <input id="jf-cap-money" type="text">
                 <div class="hint" id="jf-cap-note" data-testid="cap-note"></div>
               </div>
