@@ -1,6 +1,6 @@
 // The carry note's store (M1, F258): the run-level record behind src/carrynote.js. It captures the worker's read-class tool
 // calls AT THE SOURCE (the worker's tool objects, result SUMMARIES only, never file
- // content), reads the run's edits from the WORKING TREE (git diff against the run's start commit, never the spine), renders
+// content), reads the run's edits from the WORKING TREE (git diff against the run's start commit, never the spine), renders
 // the note and persists its state under `<workdir>/.smoke/carry/state.json` (an arbiter book: the worker's fs.deny covers
 // `.smoke`, so it cannot read it; the gate audit, spine and bridges live there too). There is no switch: the memo is
 // always on (hamr 2026-11-01).

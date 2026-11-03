@@ -31,7 +31,7 @@ test('every word-level sentence the drop table writes is a read note, built thro
   }
   const unitTwice = dropRows([{ line: 1, fact: 'Price', word: '€', reason: 'sign-twice', other: 'unit' }])[0];
   const unitLine = dropLine(unitTwice, jobLines, lineRules);
-  assert.match(unitLine, /used once, as the unit\.$/, 'the sentence names the unit (the pre-branch text always said currency)');
+  assert.match(unitLine, /used once, as the unit\.$/, 'the sentence names the unit');
   assert.equal(isReadNote(unitLine), true, 'sign-twice, kept as the unit');
   const whole = dropRows([{ line: 1, fact: 'Price', reason: 'reads-no-result' }])[0];
   assert.equal(isReadNote(dropLine(whole, jobLines, lineRules)), false);
