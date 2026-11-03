@@ -15421,3 +15421,13 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Caveats.** n=6 screening read, not a rate; OFF rows are from round 1. Round 2 still showed other reds (D5 "guard not in declaration" 3/6, scoped-count and no-suppressions-scope reds) that the pass rule does not count; the shipped wording differs from the tested wording by one clause ("keep those exactly as given", added against the D5 reds) and that clause is test-proven only, not seen live. The cure's render and validator are test-proven.
 
 **Status.** Built on branch fix/bad-calls.
+
+## F282 — a worker ended a try in text without writing, and the try was spent (2026-11-03; $0 archive read, fix test-proven only)
+
+**Facts.** A $0 scan (`.claude/scratch/textonly-scan/RESULT.md`, 704 runs, 1,491 worker asks on writeable steps and fixes; the real gate audit, never `git status`) found 3 asks that finished (`end_turn`) with no allowed write or edit: Muse run u-mvzeqrct step final-fix-and-green try 1 (after 20 read rounds), and Fireworks deepseek-v4p1-flash run u-mvxsdk02 steps sink-jsdoc-param and final-typecheck-clean try 1. Rates: Muse 1/165, Fireworks 2/241, DeepSeek API 0/395. Each cost a full extra try; all three runs recovered and none ended red because of it. The worker's text was not recorded anywhere, so what it typed is unknown.
+
+**Fix.** In `ask()` (src/planrun.js), after a writeable step's or fix ask returns `end_turn` with text and `writeCount()` has not moved since the ask began, the same conversation (`result.msgs`, the seam `askFrom` already uses) is continued once with `TEXT_ONLY_NUDGE`, same tools, no `toolChoice`. Same try, no strike change, metered by the same per-round seam; skipped when the attempt is already bounded (round limit, wall, deny), Stop was honoured, or the wall expired. New spine record `worker-text-only` (`text` masked by the one scrub, 2,000 chars, `truncated`, `nudged`, `nudgeWrote`) and a "nudged" word in the Audit grid header. fwdloop's version also forces the tool choice; ours does not (several tools).
+
+**Caveats.** Test-proven only, not seen live (real Loop and real shell tools against a stubbed provider transport). The base rate is under 1% on the two providers that showed it, so the lift is unmeasured and may be small; whether the nudge text converts on a real model is unknown. The first-seen text is now recorded, so the next live case can be read.
+
+**Status.** Built on branch fix/bad-calls.
