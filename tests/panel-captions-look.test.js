@@ -68,3 +68,9 @@ test('5. Run tab ENDED/NEXT/SCHEDULE labels, Summary and Map captions are accent
     assert.match(r, /font-size:12px/, sel); assert.match(r, /font-weight:700/, sel); assert.match(r, /color:var\(--accent\)/, sel);
   }
 });
+
+test('5. Run summary row labels are accent bold, scoped to #run-summary (the Import box keeps its faint labels)', () => {
+  const r = body('#run-summary .sum-label{');
+  assert.match(r, /color:var\(--accent\)/); assert.match(r, /font-weight:700/);
+  assert.match(body('\n  .sum-label{'), /color:var\(--text-faint\)/, 'the shared rule stays faint for the Import box');
+});

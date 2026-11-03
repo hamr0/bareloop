@@ -363,6 +363,8 @@
   .sum-val{color:var(--text);}
   .summary-box .num{color:var(--accent);font-weight:700;}
   .summary-box.imported-box::before{content:"┤ IMPORTED ├";}
+  /* hamr 2026-11-03: Run summary row labels blue bold like ENDED/NEXT/SCHEDULE; scoped, the Import box keeps its faint labels */
+  #run-summary .sum-label{color:var(--accent);font-weight:700;}
   .imported-box .sum-label{width:104px;}
   .imported-box .summary-row{flex-wrap:wrap;}
   .imported-box .sum-val{flex:1 1 180px;min-width:0;overflow-wrap:anywhere;}
