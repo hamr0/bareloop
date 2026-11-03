@@ -1647,7 +1647,7 @@ export async function runReuse(opts) {
       // TERMINAL rather than on the absence of a plan. `already-green` means the
       // close was satisfied at the precheck — before this leg wrote a byte — so
       // whatever plan is on the spine did not produce it, and minting a version
-      // from one would be learning credit for work that did not happen.
+      // from one would be reuse credit for work that did not happen.
       //
       // It used to be covered by accident: a cold already-green never drafts, so
       // `read.plan` was null and the branch below caught it. N4 broke that
