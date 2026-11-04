@@ -115,6 +115,27 @@ export function removeWorktree(repo, dir) {
   return !existsSync(dir);
 }
 
+/** the private ref a PR job's fetched head lives under (piece 12): bareloop's own namespace, so no branch, tag or the person's refs are touched and the object survives gc during the run @param {number} n */
+export function prRefName(n) {
+  return `refs/bareloop/pr-${n}`;
+}
+
+/**
+ * Delete a PR job's private ref from `repo` (`git update-ref -d`). A leftover ref is harmless (one pointer into the object store) but is not left behind. Never throws.
+ * @param {string} repo @param {number} n
+ * @returns {boolean} true when the ref is gone afterwards (a ref that never existed counts)
+ */
+export function removePrRef(repo, n) {
+  const ref = prRefName(n);
+  try {
+    execFileSync('git', [...NO_HOOKS, '-C', repo, 'update-ref', '-d', ref], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    return true;
+  } catch { /* fall through: report what is there */ }
+  try {
+    return execFileSync('git', ['-C', repo, 'for-each-ref', ref], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() === '';
+  } catch { return false; }
+}
+
 /** a commit bareloop makes in the person's repo is authored by bareloop (never their global config), signs nothing, runs none of their hooks */
 const COMMIT_CONFIG = [
   '-c', 'user.name=bareloop', '-c', 'user.email=bareloop@localhost', '-c', 'commit.gpgsign=false',

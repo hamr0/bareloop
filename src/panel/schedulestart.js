@@ -19,6 +19,7 @@ import { recheck } from '../triggerfiles.js';
 import { scheduledWords } from '../schedulewords.js';
 import { signRun } from './authorroutes.js';
 import { startDestinationProblem } from './authorsession.js';
+import { removePrRef } from '../worktree.js';
 
 /** how long a headless session may take to reach `prepared` (copy, install, signing gates) */
 export const PREPARE_TIMEOUT_MS = 20 * 60_000;
@@ -81,6 +82,11 @@ export function createStarter(deps) {
   /** Remove what a start that did not go through made: the session leaves the headless map and its folder is deleted. @param {any} session */
   function discard(session) {
     try { deps.forgetSession?.(session.state.id); } catch { /* the map entry is gone or never was */ }
+    // a refused PR job's private ref (piece 12 item 13) goes with it: the child that checked the PR out recorded it in this folder's source.json
+    try {
+      const m = JSON.parse(readFileSync(join(session.state.outDir, 'source.json'), 'utf8'));
+      if (typeof m.repo === 'string' && Number.isSafeInteger(m.prNumber)) removePrRef(m.repo, m.prNumber);
+    } catch { /* no source.json, or no PR job: nothing to clean */ }
     try { if (typeof session.state.outDir === 'string' && session.state.outDir !== '') rmSync(session.state.outDir, { recursive: true, force: true }); } catch { /* already gone */ }
   }
 
