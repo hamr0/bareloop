@@ -14,6 +14,12 @@ import { mcpConfigFor } from './mcpsources.js';
 /** M13 item 9.5: the only parent env names an MCP gets (plus its own settings); the one list for every place bareloop starts an MCP, so no provider key reaches it */
 export const MCP_PASS_ENV = ['PATH', 'HOME'];
 
+/** how long a bridge waits to start and for one call (ms): the one number for the ticket read and a plan step's bridge */
+export const MCP_TIMEOUT_MS = 90000;
+
+/** the name bare-agent's bridge gives a server's tool: `<server>_<tool>` (the one spelling: the ticket read, a step's worker menu, the gate allowlist) @param {string} server @param {string} tool */
+export const mcpToolName = (server, tool) => `${server}_${tool}`;
+
 /** M13 design point 11 (F118): the one start option set for every place bareloop starts an MCP: no provider key (passEnv) and the home folder as the start folder (bare-agent bridge `cwd`; no `~` expansion, so the real path) */
 export const mcpStartOpts = () => ({ passEnv: MCP_PASS_ENV, cwd: homedir() });
 
@@ -48,7 +54,7 @@ export const isDeviceLogin = (text) => text.includes('github.com/login/device');
  * @returns {Promise<{ok: true, text: string, url: string, record: {server: string, exposed: string[], missing: Array<{server: string, tool: string}>, calls: Array<{tool: string, owner: string, repo: string, issue_number: number}>}} | {ok: false, error: string}>}
  *   `record` is what the run keeps (in its `run.json` input entry): what the server exposed and lacked, and each call made.
  */
-export async function readTicketMcp({ listUrl, number, mcp, configPath: explicitConfig, home, timeoutMs = 90000 }) {
+export async function readTicketMcp({ listUrl, number, mcp, configPath: explicitConfig, home, timeoutMs = MCP_TIMEOUT_MS }) {
   const list = parseTicketList(listUrl);
   if (!list.ok) return list;
   if (!isTicketNumber(number)) return { ok: false, error: `ticket number ${JSON.stringify(number)} is not ${TICKET_NUMBER_WORDS}` };
@@ -66,8 +72,7 @@ export async function readTicketMcp({ listUrl, number, mcp, configPath: explicit
     if (failed) return { ok: false, error: `${server} did not start: ${firstLine(failed.error)}` };
     const lacking = bridge.missing?.[0];
     if (lacking) return { ok: false, error: `${server} does not offer ${lacking.tool}` };
-    const prefix = `${server}_`;
-    const tool = bridge.tools.find((t) => t.name === `${prefix}issue_read`);
+    const tool = bridge.tools.find((t) => t.name === mcpToolName(server, 'issue_read'));
     if (!tool) return { ok: false, error: `${server} does not offer issue_read` };
     const call = { tool: 'issue_read', owner, repo, issue_number: number };
     const record = { server, exposed: bridge.tools.map((t) => t.name), missing: bridge.missing ?? [], calls: [call] };

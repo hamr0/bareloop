@@ -35,7 +35,8 @@ import { createStallWatch, STALL_MS, MAX_STALLS } from './stall.js';
 import { createLadder, STRIKE_LIMIT } from './ladder.js';
 import { createTrend, FIX_STRIKE_LIMIT } from './trend.js';
 import { TOOL_MENU, STORE_VERBS, checkMenu, flowTypeOf } from './job.js';
-import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, gatedShellOptions, trackedAtSeedGuard, PERSONA_TOOLS, strategyFor } from './tools.js';
+import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, gatedShellOptions, trackedAtSeedGuard, PERSONA_TOOLS, strategyFor, mcpStrategy } from './tools.js';
+import { startStepMcp, mcpAllowlist } from './stepmcp.js';
 import { anySuppressionWarning } from './authoring.js';
 import { createReadShim, readShimArm, readShimStrategy } from './readshim.js';
 import { createCarryStore } from './carrystore.js';
@@ -2384,7 +2385,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * denied, the wallet as its budget), granted tools only (the menu IS the
    * grant), per-attempt round bound via loop.stop() (F20), every round metered
    * with a phase label (F12).
-   * @param {{granted: string[], phase: string, attemptRounds: number, attempts: number|null, writable: boolean, root?: ReturnType<typeof createRoot>|null, fence?: string[]|null, workerProvider?: any, truncatedBounded?: boolean}} o
+   * @param {{granted: string[], phase: string, attemptRounds: number, attempts: number|null, writable: boolean, root?: ReturnType<typeof createRoot>|null, fence?: string[]|null, workerProvider?: any, truncatedBounded?: boolean, mcpRun?: Awaited<ReturnType<typeof startStepMcp>>|null}} o
    *   `root` (Layer R): when present, the worker's write-class actions are teed
    *   for the within-run ratchet — staged before the gate decides, discarded on
    *   deny/halt, settled to landed-or-not after execution (the two axes, F43/F7).
@@ -2394,7 +2395,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    *   STRIKE LADDER (src/ladder.js), where that count does not exist by design — see
    *   the turn-allowance note below.
    */
-  async function mkWorker({ granted, phase, attemptRounds, attempts, writable, root = null, fence = null, workerProvider = null, truncatedBounded = false }) {
+  async function mkWorker({ granted, phase, attemptRounds, attempts, writable, root = null, fence = null, workerProvider = null, truncatedBounded = false, mcpRun = null }) {
     // THE HARD RULE, ENFORCED STRUCTURALLY (PRD v1.57 §3). This is the ONE seam
     // that grants write-class verbs — `writeScope` is empty for every other
     // worker, so a read-only phase cannot reach a file whatever it intends — and
@@ -2453,7 +2454,14 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       // fs.writeScope/deny above (step 3's fsCheck runs first in the SAME `??`
       // chain, node_modules/bareguard/src/gate.js) — i.e. only the residual
       // case of an in-fence path that still carries one of these segments.
-      tools: { denyArgPatterns: { write: [FORBIDDEN_WRITE_SEGMENT_PATTERN], edit: [FORBIDDEN_WRITE_SEGMENT_PATTERN] } },
+      //
+      // R2c (MCP+tickets piece 6): a step that grants MCP tools ALSO gets `tools.allowlist` — and only such a step (every other step's gate is exactly as
+      // before). bareguard's allowlist is exclusive for EVERY action and matches the action TYPE (`read`/`write`/`edit`/`ctx_stash`..., see toolAction), so it
+      // lists the granted verbs' types plus the signed bridge names (src/stepmcp.js, proven against the real Gate): an unsigned bridge tool is denied by name.
+      tools: {
+        denyArgPatterns: { write: [FORBIDDEN_WRITE_SEGMENT_PATTERN], edit: [FORBIDDEN_WRITE_SEGMENT_PATTERN] },
+        ...(mcpRun ? { allowlist: mcpAllowlist(granted, mcpRun.server, mcpRun.mcpTools, workdir) } : {}),
+      },
       budget: { maxCostUsd: Math.max(remainingUsd(), 1e-4) },
       limits: { maxTurns },
       audit: { path: auditPath },
@@ -2682,7 +2690,9 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // below anything a second/minute-scale timer can perceive. Store output is byte-identical.
     // …and with the first-read map on the index is built at run start too, so the map never waits on a ctx tool being granted.
     if (ctx.length || readMapOn) await lc.index({ yield: true });
-    const toolDefs = [...shell, ...ctx];
+    // R2c: the step's bridge tools sit beside its shell and ctx tools. Only the GRANTED names exist in `mcpRun.tools` (the bridge was started with `allow` = the
+    // step's `mcpTools`), so an unsigned tool is not in the menu the Loop is given.
+    const toolDefs = [...shell, ...ctx, ...(mcpRun ? mcpRun.tools : [])];
     // The carry note: records what each ask's read-class tools returned (a summary, never content) and hands the next
     // step/fix ask the facts. Scout and drafter asks feed the store but are never given a note.
     if (carry) carry.wrapTools(toolDefs);
@@ -2713,7 +2723,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     const readLines = grantedNames.has(TOOL_BY_VERB.read)
       ? (native && !shimArm.cap ? NATIVE_READ_STRATEGY : '') + readShimStrategy(shimArm)
       : '';
-    const system = PERSONA_TOOLS + strategyFor(granted) + readLines + anySuppressionWarning(closeStagesOf(job));
+    const system = PERSONA_TOOLS + strategyFor(granted) + mcpStrategy(mcpRun ? mcpRun.names : []) + readLines + anySuppressionWarning(closeStagesOf(job));
     /** @param {any} u @returns {{inputTokens: number, outputTokens: number, cacheReadTokens: number, cacheCreationTokens: number}} */
     const usageOf = (u) => ({ inputTokens: u?.inputTokens ?? 0, outputTokens: u?.outputTokens ?? 0, cacheReadTokens: u?.cacheReadTokens ?? 0, cacheCreationTokens: u?.cacheCreationTokens ?? 0 });
 
@@ -3494,9 +3504,26 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
    * layer up. */
   let stepWallStop = null;
 
-  /** @param {any} step */
+  /**
+   * R2c (MCP+tickets piece 6): a step that grants MCP tools starts the bridge ONCE, before its worker is built, and closes it in a `finally` after the step's
+   * LAST try (green, red, thrown or halted): a leaked child is an orphan process. A start refusal (server not configured, will not start, lacks a signed tool)
+   * throws a plain-words `interpreter-red` from here, at $0 and before any token, which the step loop files as a step that could not be set up.
+   * @param {any} step
+   */
   const executeStep = async (step) => {
-    emit('step-start', { step: step.id, rounds: step.rounds, tools: step.tools });
+    const wanted = Array.isArray(step.mcpTools) && step.mcpTools.length > 0;
+    if (wanted && !(job.mcp && typeof job.mcp.server === 'string')) {
+      const err = /** @type {CategorizedError} */ (new Error(`step "${step.id}" grants MCP tools but the job signed no MCP server`));
+      err.category = 'interpreter-red';
+      throw err;
+    }
+    const mcpRun = wanted ? await startStepMcp({ mcp: job.mcp, mcpTools: step.mcpTools }) : null;
+    try { return await executeStepWith(step, mcpRun); } finally { await mcpRun?.close(); }
+  };
+
+  /** @param {any} step @param {Awaited<ReturnType<typeof startStepMcp>>|null} mcpRun */
+  const executeStepWith = async (step, mcpRun) => {
+    emit('step-start', { step: step.id, rounds: step.rounds, tools: step.tools, ...(mcpRun ? { mcpTools: step.mcpTools } : {}) });
     // the before-side of every tree-changed exit, taken at STEP start: the
     // step's cumulative work is what the exit judges (outcome, never intent)
     const snapshot = new Map();
@@ -3535,6 +3562,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
       granted: step.tools, phase: `step:${step.id}`, attemptRounds: step.rounds, attempts: null, writable: true, root,
       fence: step.scope !== undefined ? [resolve(workdir, globToPrefix(step.scope))] : null,
       workerProvider: step.model !== undefined && providerFor ? providerFor(step.model) : null,
+      mcpRun,
     });
     // ONE ladder per step: the seen-set and the strike count are this step's own
     // history, and a shared one would strike a fresh step for a gap an earlier step
