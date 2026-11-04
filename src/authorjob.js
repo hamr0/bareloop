@@ -1072,6 +1072,14 @@ export function assembleSpec(specDraft, { closeDecl, verdictType }) {
     throw new Error('the spec draft carries trigger — a schedule is set only by the person, in the panel\'s two-click schedule '
       + 'door, never by a draft. Remove the field from the draft');
   }
+  // MCP + tickets (piece 1): the MCP source, flow type, ticket filter and watch are set by CODE from the person's card pick, never by a draft
+  // (the agent never widens its own tool menu). Refused by name, like `trigger`.
+  for (const f of ['mcp', 'flowType', 'ticketFilter', 'ticketWatch']) {
+    if (draft[f] !== undefined) {
+      throw new Error(`the spec draft carries ${f} — the MCP source and ticket fields are set by code from the person's card pick, `
+        + 'and signed by the person, never by a draft. Remove the field from the draft');
+    }
+  }
   return { ...draft, verdictType, closeDecl };
 }
 
