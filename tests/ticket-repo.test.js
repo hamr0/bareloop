@@ -66,7 +66,7 @@ describe('proveInputFiles: the ticket line kind (R2b step 2)', () => {
     assert.match(await err(`repo: ${repo}\nissues: ${LIST}`, MCP), /line 2: github is not in ~\/\.mcp\.json/);
     assert.match(await err(`repo: ${repo}\nissues: ${LIST}`, { server: 'other', tools: ['list_issues'] }), /line 2: .*issue_read.*not among the tools this job signed/);
     assert.match(await err(`repo: ${repo}\na: ${LIST}\nb: https://github.com/o/r/issues`, { server: 'other', tools: ['issue_read'] }), /line 3: .*only one ticket address/);
-    assert.match(await err(`repo: ${repo}\nissues: https://github.com/o/r/pulls`, { server: 'other', tools: ['issue_read'] }), /line 2: only files inside the repo for now/);
+    assert.match(await err(`repo: ${repo}\nissues: https://github.com/o/r/pulls/3`, { server: 'other', tools: ['issue_read'] }), /line 2: only files inside the repo for now/);
   });
 });
 

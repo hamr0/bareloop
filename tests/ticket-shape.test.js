@@ -22,7 +22,16 @@ describe('the list address and the ticket number', () => {
     const r = parseTicketList('https://github.com/a/b/issues/');
     assert.equal(r.ok, true);
     assert.deepEqual([r.owner, r.repo, r.ticketUrl(7)], ['a', 'b', 'https://github.com/a/b/issues/7']);
-    for (const bad of ['https://github.com/a/b', 'https://github.com/a/b/pulls', 'http://github.com/a/b/issues', 'https://x.com/a/b/issues']) assert.equal(parseTicketList(bad).ok, false, bad);
+    assert.equal(r.kind, 'issue');
+    for (const bad of ['https://github.com/a/b', 'https://github.com/a/b/pull', 'https://github.com/a/b/pulls/7', 'http://github.com/a/b/pulls', 'http://github.com/a/b/issues', 'https://x.com/a/b/issues']) assert.equal(parseTicketList(bad).ok, false, bad);
+  });
+  test('the same parser reads a PULLS list: kind pull, ticketUrl is the /pull/<n> address; an issues list stays kind issue', () => {
+    const r = parseTicketList('https://github.com/a/b/pulls/');
+    assert.equal(r.ok, true);
+    assert.deepEqual([r.kind, r.owner, r.repo, r.ticketUrl(12)], ['pull', 'a', 'b', 'https://github.com/a/b/pull/12']);
+  });
+  test('ticketListsOf names issues lists only: a pulls list is not an issue look target', () => {
+    assert.deepEqual(ticketListsOf({ sources: [{ role: 'prs', kind: 'page', path: 'https://github.com/a/b/pulls' }] }), {});
   });
   test('isTicketNumber: 1 to TICKET_MAX whole numbers', () => {
     for (const ok of [1, 42, TICKET_MAX]) assert.equal(isTicketNumber(ok), true);
