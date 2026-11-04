@@ -3174,7 +3174,9 @@ Rule: each piece's ported tests are rewritten for bareloop's `tests/` + hermetic
 Branch `feat/mcp-tickets`, cut only after `fix/bad-calls` ships as v0.54.0 (PRD v1.125). One branch (hamr), so ordered rungs, each small, each ending in its own gate (full suite on the final commit of the rung, exit code and last line quoted; live smoke for UI or paid rungs; CHANGELOG line; `bareloop.context.md` and PRD tick). A rung that cannot meet its exit stops the ladder; the stop is a result. Push the branch after R2 and keep pushing once green (CI is the only different-machine gate). Offer `/branch-review` -> `/release` only at the end, never after one or two rungs.
 
 - R0 (no code): G0 script and fixtures; G0b in hamr's foreground. Exit: passEnv canary red-then-green. Stop if G0 fails.
+  - 2026-11-04 R0 done: G0 passEnv canary red-then-green ($0, scripts in .claude/scratch/mcp-tickets/g0/); G0b real github server read hamr0/hol-guard#7 and microsoft/vscode#1, PASS, server env PATH+HOME+its own token only, no orphans.
 - R1: Part-2 fix 2 (npm env), its own commit and fail-first test.
+  - 2026-11-04 R1 built: commit 786cdc3 (launcher update npm env via npmEnv; fail-first test in tests/launcher-commands.test.js).
 - R2: pieces 1 and 6 (spec fields `mcp`/`flowType`/`ticketFilter` validation and hash-stability, reader, source-neutral shape 1b, masking, run-start freeze for BOTH job kinds incl. 1a, `--ticket`/`--anyway`, passEnv, step tools, gate). Exit: both paid runs of piece 1 green, scrub grep clean.
 - R2b: the injection test (Part C). Report to hamr before R3. Not a gate on the build unless hamr says so.
 - R2c: piece 12 (PR head checkout into the worktree): $0 POC first on a real PR and a real fork PR, then `src/prcheckout.js`, the run-start call, refusal words, resume ancestor check, push-grep test. Exit: the $0 POC and the tests green, then one paid PR run. Depends on R2 only (needs the frozen PR record).

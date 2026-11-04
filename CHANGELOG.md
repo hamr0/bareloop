@@ -5,6 +5,12 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Fixed
+
+- **The launcher `6 update` no longer hands your shell's keys to npm.** `npm install -g bareloop@latest` now runs with the same credential-stripped environment as bareloop's own `npm ci`; the panel launch still gets its keys.
+
 ## [0.54.1] - 2026-11-04
 
 ### Fixed
