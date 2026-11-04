@@ -371,9 +371,9 @@ export function buildReadMap({ rel, lines, chunks }) {
 }
 
 /**
- * @typedef {{root: string, hasGet: boolean, getNode: (rel: string) => any, refresh?: (() => Promise<unknown>)|null, emit: (type: string, data: object) => void}} ReadMapOpts
+ * @typedef {{root: string, hasGet: boolean, getNode: (rel: string) => any, indexed?: (() => boolean)|null, refresh?: (() => Promise<unknown>)|null, emit: (type: string, data: object) => void}} ReadMapOpts
  *   `root`: the job root (paths are made relative to it); `hasGet`: this worker holds `ctx_get` (a map hands out handles only that tool opens);
- *   `getNode`: the LiteCtx index's node for a path (its `chunks`); `refresh`: re-index first so the ranges are true to the file as it now is;
+ *   `getNode`: the LiteCtx index's node for a path (its `chunks`); `indexed`: whether the job has an index at all (`lc.indexed`; false skips with `no-index`); `refresh`: re-index first so the ranges are true to the file as it now is;
  *   `emit`: the spine channel, for the report-only `read-map` / `read-map-skip` records (counts and a reason, never text).
  */
 
@@ -532,6 +532,7 @@ export function createReadShim({ cap = READ_SHIM_CAP, arm = ARM_ALL, onCount = n
     let chunks;
     try {
       if (o.refresh) await o.refresh();
+      if (o.indexed && !o.indexed()) return skip('no-index');
       chunks = o.getNode(rel)?.chunks;
     } catch { return skip('no-index'); }
     if (!Array.isArray(chunks)) return skip('no-index');
