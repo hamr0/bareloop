@@ -13,6 +13,7 @@ import { createServer } from 'node:net';
 import { spawn as realSpawn } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { npmEnv } from './npminstall.js';
 import { readConfig, updateConfig, ConfigError } from './config.js';
 import { keysHome, keysFilePath, ensureKeysFile } from './keysfile.js';
 import { openInOs } from './opener.js';
@@ -67,7 +68,7 @@ const RULE_WIDTH = 56;
  * @property {import('./tty-colour.js').Paint} [paintErr] colour for stderr lines (default: `paint`)
  * @property {number} [now] ms clock for the run list's age rules (default: real time); tests pass their own
  * @property {string} [platform]
- * @property {Record<string, string|undefined>} [env] raw env handed to the panel child (default process.env)
+ * @property {Record<string, string|undefined>} [env] raw env: handed whole to the panel child, stripped by npmEnv for the update npm child (default process.env)
  */
 
 /**
@@ -349,7 +350,7 @@ export async function updateCmd(io, d, shown) {
     let timer;
     const end = (/** @type {boolean} */ v) => { clearTimeout(timer); resolve(v); };
     try {
-      const child = (d.npmSpawn ?? realSpawn)('npm', ['install', '-g', 'bareloop@latest'], { stdio: 'inherit' });
+      const child = (d.npmSpawn ?? realSpawn)('npm', ['install', '-g', 'bareloop@latest'], { stdio: 'inherit', env: npmEnv(d.env ?? process.env) });
       // not in the signed text: npm may run this long, then its own child is ended (aligned with fwdloop)
       timer = setTimeout(() => { try { child.kill('SIGTERM'); } catch { /* already gone */ } end(false); }, d.npmDeadlineMs ?? NPM_DEADLINE_MS);
       child.once('error', () => end(false));
