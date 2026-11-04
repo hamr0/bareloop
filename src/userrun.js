@@ -32,7 +32,8 @@ import { commitWork, removeWorktree } from './worktree.js';
 import { moveFile } from './movefile.js';
 import { runJob } from './run.js';
 import { moneyWithDraft } from './replay.js';
-import { jobSpecHash, resolveWorkerModel, validateJob, workflowKey } from './job.js';
+import { jobSpecHash, resolveWorkerModel, validateJob, workflowKey, flowTypeOf } from './job.js';
+import { isTicketNumber, TICKET_NUMBER_WORDS } from './ticketshape.js';
 import { readShimArm } from './readshim.js';
 import { closeStagesOf } from './plan.js';
 import { resolveCloseTimeoutMs } from './closetimeout.js';
@@ -306,6 +307,8 @@ class ExitSignal extends Error {
  * @property {string} spineName
  * @property {string} [into] see `RunOpts.into`
  * @property {boolean} [refreeze] a FRESH `--spec` run: fetch the web inputs again AFTER the run is listed (never on resume/door/decide)
+ * @property {{number: number, mcp: {server: string, tools: string[]}}} [ticket] a FRESH run of a job that reads tickets (flow type Tickets): the ticket number `--ticket` named (per run, never signed) and the job's signed `mcp`
+ * @property {boolean} [anyway] `--anyway`: run this ticket even if the job's filter would skip it (inert until the filter exists; it needs --ticket)
  * @property {string|null} model
  * @property {string|null} providerKey
  * @property {string|null} readShim
@@ -1597,7 +1600,7 @@ async function execute(ctx) {
   // fetches: the Run tab reads "fetching the page…" while source.json has no refrozenAt at or after the row. A refusal cannot be a
   // `released` row (that unlists the run and its words); it SETTLES the claim at $0 and keeps the plain reason for the panel.
   if (ctx.refreeze === true && ctx.into !== undefined) {
-    const fresh = await refreezeUrlInputs({ into: ctx.into, ...(deps.fetchUrl ? { fetchUrl: deps.fetchUrl } : {}) });
+    const fresh = await refreezeUrlInputs({ into: ctx.into, ...(deps.fetchUrl ? { fetchUrl: deps.fetchUrl } : {}), ...(ctx.ticket ? { ticket: ctx.ticket } : {}) });
     if (!fresh.ok) {
       const words = /did not start/.test(fresh.error) ? fresh.error : `${fresh.error}. The run did not start. Nothing spent.`;
       err(`${SELECTOR}: ${fresh.error}`);
@@ -2569,6 +2572,7 @@ export async function main(argv, deps = {}) {
      * spec's own path for `--spec` (it has no `jobs/` home to point at). */
     let SPEC_DESC;
     let refreeze = false;
+    let worktreeJob = false;
     let spec;
 
     if (jobArg !== null) {
@@ -2662,6 +2666,7 @@ export async function main(argv, deps = {}) {
       // P6 item 1: a repo job's tree is a WORKTREE in the person's own repo, recorded in the manifest; every other prepared
       // copy keeps its tree at `<into>/tree`
       const worktreeRun = typeof manifestRead.manifest.worktree === 'string' && manifestRead.manifest.worktree !== '';
+      worktreeJob = worktreeRun;
       const specWorkdir = worktreeRun ? manifestRead.manifest.worktree : join(into, 'tree');
       if (!existsSync(specWorkdir) || !existsSync(join(specWorkdir, '.git'))) {
         die(worktreeRun
@@ -2683,6 +2688,24 @@ export async function main(argv, deps = {}) {
       SPEC_DESC = specPath;
     }
 
+    // MCP + tickets (piece 1): `--ticket <n>` names the ticket this run reads (per run, never signed); `--anyway` runs it past the job's filter. Judged here, at $0,
+    // before the approval gate. A resume or door keeps the copy its first start froze, so only a fresh run needs a ticket.
+    const ticketArg = argFlag('ticket');
+    const anyway = argv.includes('--anyway');
+    const tickets = flowTypeOf(spec) === 'tickets';
+    if (anyway && ticketArg === null) die('--anyway needs --ticket <number>: it runs that one ticket even when the job\'s filter would skip it.');
+    /** @type {number|undefined} */
+    let ticketNumber;
+    if (ticketArg !== null) {
+      ticketNumber = /^[1-9]\d{0,9}$/.test(ticketArg) ? Number(ticketArg) : undefined;
+      if (!isTicketNumber(ticketNumber)) die(`--ticket takes ${TICKET_NUMBER_WORDS}, not "${ticketArg}".`);
+      if (!tickets) die('--ticket is for a job that reads tickets, and this job has no ticket source.');
+    }
+    if (tickets && refreeze) {
+      if (worktreeJob) die('This job reads tickets and works on a code repository. Reading a ticket for a code repository job is not available yet - the run did not start. Nothing spent.');
+      if (ticketNumber === undefined) die('This job reads a ticket. Give the ticket to read with --ticket <number>. The run did not start. Nothing spent.');
+    }
+
     const ctx = {
       spec,
       specPath,
@@ -2693,6 +2716,8 @@ export async function main(argv, deps = {}) {
       spineName: target.spine,
       ...(target.into === undefined ? {} : { into: target.into }),
       ...(refreeze ? { refreeze: true } : {}),
+      ...(tickets && refreeze && ticketNumber !== undefined ? { ticket: { number: ticketNumber, mcp: spec.mcp } } : {}),
+      ...(anyway ? { anyway: true } : {}),
       model: argFlag('model'),
       providerKey: argFlag('provider'),
       readShim: argFlag('read-shim'),

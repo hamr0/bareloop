@@ -33,6 +33,8 @@ import { MAX_BUFFER } from './kinds.js';
 import { PROVIDER_TIMEOUT_MS } from './clock.js';
 import { scanSecrets, SECRET_PATTERNS, SECRET_PATTERN_NAMES } from './validate.js';
 import { fetchPageText, isWebUrl } from './pagefetch.js';
+import { parseTicketList } from './ticketshape.js';
+import { readTicket } from './ticket.js';
 
 /** @typedef {{stop: string, code: string}} SourceRefusal a named, non-throwing stop */
 
@@ -1345,10 +1347,16 @@ export function looksLikeRubricInput(value) {
  * copy. It is written into the prepared tree, committed as the new seed (so the page is never read as a worker write), and
  * `source.json` is rewritten (new sha256 per input, new seed, `draftSha256` keeps what the look saw). Nothing but the text of a
  * recorded web address is ever refetched; a job with only file inputs returns at once and changes nothing.
- * @param {{into: string, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>}} o `into` - the prepared copy (source.json + tree/)
+ *
+ * MCP + tickets (piece 1): with `ticket` (a job that reads tickets: `{number, mcp}`, the number per run from `--ticket`), the ONE input row whose address is a
+ * GitHub issues list is read through the person's MCP server instead of the page reader: the ticket's reply, MASKED with the one secret inventory before the sha
+ * (a secret in a ticket is masked, never refused; page rows keep their refusal), is the run's frozen input. The row keeps its signed `url` (the list address) and
+ * gains `mcp:{server,exposed,missing,calls}`, `ticket:{number,title,state,source}` and `masked:<count>`. Any refusal (server or tool missing, a device login,
+ * an empty reply, no list row or two) is the same plain `did not start` words at $0.
+ * @param {{into: string, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, ticket?: {number: number, mcp: {server: string, tools: string[]}}}} o `into` - the prepared copy (source.json + tree/)
  * @returns {Promise<{ok: true, refreshed: string[], seed: string|null}|{ok: false, error: string}>}
  */
-export async function refreezeUrlInputs({ into, fetchUrl = (u) => fetchPageText(u) }) {
+export async function refreezeUrlInputs({ into, fetchUrl = (u) => fetchPageText(u), ticket }) {
   const read = await readSourceManifest(into);
   if (read.stop !== null) return { ok: false, error: read.stop };
   if (!read.present || !read.manifest) return { ok: true, refreshed: [], seed: null };
@@ -1356,9 +1364,21 @@ export async function refreezeUrlInputs({ into, fetchUrl = (u) => fetchPageText(
   const rows = Array.isArray(manifest.inputs) ? manifest.inputs.filter((/** @type {any} */ r) => r && typeof r.url === 'string' && r.url !== '') : [];
   if (rows.length === 0) return { ok: true, refreshed: [], seed: null };
   const tree = join(resolve(into), 'tree');
-  /** @type {{row: any, buf: Buffer}[]} */
+  /** @type {{row: any, buf: Buffer, ticket?: import('./ticket.js').Ticket}[]} */
   const fresh = [];
+  const listRows = ticket === undefined ? [] : rows.filter((/** @type {any} */ r) => parseTicketList(r.url).ok);
+  if (ticket !== undefined && listRows.length !== 1) {
+    return { ok: false, error: listRows.length === 0
+      ? 'This job reads a ticket, but none of its Inputs is a GitHub issues address (https://github.com/<owner>/<repo>/issues). The run did not start. Nothing spent.'
+      : 'This job reads one ticket, but more than one of its Inputs is a GitHub issues address. The run did not start. Nothing spent.' };
+  }
   for (const row of rows) {
+    if (ticket !== undefined && listRows[0] === row) {
+      const t = await readTicket({ mcp: ticket.mcp, listUrl: row.url, number: ticket.number });
+      if (!t.ok) return { ok: false, error: `Input "${row.label}": ${t.error}. The run did not start. Nothing spent.` };
+      fresh.push({ row, buf: Buffer.from(t.ticket.text, 'utf8'), ticket: t.ticket });
+      continue;
+    }
     const got = await fetchUrl(row.url);
     if (!got.ok) return { ok: false, error: `Input "${row.label}": ${got.error}. The run did not start. Nothing spent.` };
     const leak = secretPatternNames(got.text);
@@ -1374,9 +1394,14 @@ export async function refreezeUrlInputs({ into, fetchUrl = (u) => fetchPageText(
   if (!head.ok) return { ok: false, error: `git rev-parse HEAD failed in ${tree}: ${head.err}. The run did not start. Nothing spent.` };
   const seed = head.out.trim();
   const byLabel = new Map(fresh.map((f) => [f.row.label, f.buf]));
+  const ticketByLabel = new Map(fresh.filter((f) => f.ticket !== undefined).map((f) => [f.row.label, /** @type {import('./ticket.js').Ticket} */ (f.ticket)]));
   const inputs = manifest.inputs.map((/** @type {any} */ r) => {
     const buf = byLabel.get(r.label);
-    return buf === undefined || typeof r.url !== 'string' ? r : { ...r, draftSha256: r.draftSha256 ?? r.sha256, sha256: sha256Hex(buf) };
+    if (buf === undefined || typeof r.url !== 'string') return r;
+    const next = { ...r, draftSha256: r.draftSha256 ?? r.sha256, sha256: sha256Hex(buf) };
+    const tk = ticketByLabel.get(r.label);
+    if (tk === undefined) return next;
+    return { ...next, mcp: tk.record, ticket: { number: tk.number, title: tk.title, state: tk.state, source: tk.source }, masked: tk.masked };
   });
   const files = Array.isArray(manifest.files) ? manifest.files.map((/** @type {any} */ m) => {
     const hit = inputs.find((/** @type {any} */ r) => typeof r.url === 'string' && r.rel === `input/${m.path}`);
