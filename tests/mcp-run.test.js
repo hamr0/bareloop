@@ -241,16 +241,6 @@ describe('run-u --spec --ticket: the engine', () => {
       const r = await engine(t, { argv: ['--ticket', '100047', '--anyway'] });
       assert.equal(r.rc, 0, `${r.out}\n${r.err}`);
     });
-    test('a ticket job on a code repo (a worktree run) is refused: that freeze is not built yet, and the run must not go on without its ticket', async (t) => {
-      const r = await engine(t, { edit: async (p) => {
-        const f = join(p.into, 'source.json');
-        const m = JSON.parse(readFileSync(f, 'utf8'));
-        writeFileSync(f, JSON.stringify({ ...m, worktree: p.prep.tree }));
-      } });
-      assert.notEqual(r.rc, 0);
-      assert.match(r.err, /code repository.*not available yet/);
-      assert.equal(r.provider.messagesLog.length, 0);
-    });
   });
 
   test('a RESUME does not ask for a ticket again: the ticket gate applies to a fresh start only (the run keeps the copy its first start froze)', async (t) => {

@@ -4,11 +4,15 @@
 // readScope), cannot write it (no signed write fence can contain a folder that is not in the job's listing; see the gate test), and the close never reads or names it.
 // This file: the $0 proof of the Inputs line, and the run-start freeze.
 import { discoverServers } from 'bare-agent/mcp';
+import { execFileSync } from 'node:child_process';
+import { lstatSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { parseTicketList } from './ticketshape.js';
 import { configForServer, remoteRefusal } from './ticketmcp.js';
+import { readTicket } from './ticket.js';
+import { hideTicketInput, TICKET_INPUT_DIR } from './worktree.js';
 
-/** the folder inside a repo job's worktree that holds a frozen ticket (one spelling; the private exclude line is derived from it) */
-export const TICKET_INPUT_DIR = '.bareloop-input';
+export { TICKET_INPUT_DIR };
 
 /** the file a ticket line freezes to, relative to the worktree: the label made file-safe, the way a rubric input is named @param {string} label @returns {string} */
 export function ticketInputRel(label) {
@@ -40,4 +44,49 @@ export function repoTicketLine(inputs) {
   if (lines.length === 0) return { ok: false, error: 'This job reads a ticket, but none of its Inputs (after the repo) is the issues page of a GitHub repository (owner/repo/issues).' };
   if (lines.length > 1) return { ok: false, error: 'This job reads one ticket, but more than one of its Inputs is a GitHub issues address.' };
   return { ok: true, line: lines[0] };
+}
+
+/**
+ * @typedef {object} RepoTicketRecord what the spine's `job-start` keeps of a repo job's ticket: metadata only, never the text
+ * @property {string} label @property {string} file the frozen file, relative to the worktree @property {string} url @property {number} number @property {string} title
+ * @property {'open'|'closed'|'unknown'} state @property {'mcp'|'page'} source @property {string} sha256 of the masked bytes @property {number} bytes
+ * @property {number} masked how many secret shapes were masked (a count, never the values)
+ * @property {{server: string, exposed: string[], missing: Array<{server: string, tool: string}>, calls: Array<Record<string, any>>}|null} mcp
+ */
+
+/**
+ * RUN START for a repo job that reads a ticket: read the ticket through the MCP, MASK it (before the sha), and write it to `<workdir>/.bareloop-input/<label>.txt`.
+ * The folder is hidden through git's private exclude BEFORE the file exists, so the ticket is never a worker write and never in the final commit; it sits inside the
+ * worker's readScope, and no write fence can contain it (a signed writeScope is a subfolder of the tracked listing). Nothing is committed and the seed does not move.
+ * A refusal is plain words at $0 ("The run did not start. Nothing spent.") and writes nothing.
+ * @param {{workdir: string, inputs: {n: number, label: string, value: string}[], ticket: {number: number, mcp: {server: string, tools: string[]}}}} o
+ * @returns {Promise<{ok: true, record: RepoTicketRecord}|{ok: false, error: string}>}
+ */
+export async function freezeRepoTicket({ workdir, inputs, ticket }) {
+  const tail = 'The run did not start. Nothing spent.';
+  const found = repoTicketLine(inputs);
+  if (!found.ok) return { ok: false, error: `${found.error} ${tail}` };
+  const { line } = found;
+  const fail = (/** @type {string} */ m) => ({ ok: /** @type {const} */ (false), error: `Input "${line.label}": ${m}. ${tail}` });
+  const rel = ticketInputRel(line.label);
+  // the folder name must be ours: a repo that tracks it (or links it out of the tree) would carry the write elsewhere
+  let tracked = '';
+  try { tracked = execFileSync('git', ['-C', workdir, 'ls-files', '--', TICKET_INPUT_DIR], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); } catch (e) { return fail(`git could not be read in ${workdir}: ${String(/** @type {any} */ (e)?.message ?? e).split('\n')[0]}`); }
+  const dir = join(workdir, TICKET_INPUT_DIR);
+  let st = null;
+  try { st = lstatSync(dir); } catch { st = null; }
+  if (tracked !== '' || (st !== null && !st.isDirectory())) return fail(`${TICKET_INPUT_DIR} is already in this repository, and bareloop keeps the ticket there - rename it, then start the run again`);
+  const proof = proveTicketLine(ticket.mcp);
+  if (!proof.ok) return fail(proof.error);
+  const t = await readTicket({ mcp: ticket.mcp, listUrl: line.value, number: ticket.number });
+  if (!t.ok) return fail(t.error);
+  try {
+    hideTicketInput(workdir);
+    mkdirSync(dir, { recursive: true });
+    const file = join(workdir, rel);
+    rmSync(file, { force: true }); // a leftover link or file from an earlier run of this worktree is replaced, never written through
+    writeFileSync(file, t.ticket.text);
+  } catch (e) { return fail(`the ticket could not be written (${String(/** @type {any} */ (e)?.message ?? e).split('\n')[0]})`); }
+  const k = t.ticket;
+  return { ok: true, record: { label: line.label, file: rel, url: k.url, number: /** @type {number} */ (k.number), title: k.title, state: k.state, source: k.source, sha256: k.sha256, bytes: k.bytes, masked: k.masked, mcp: k.record } };
 }

@@ -34,6 +34,7 @@ import { runJob } from './run.js';
 import { moneyWithDraft } from './replay.js';
 import { jobSpecHash, resolveWorkerModel, validateJob, workflowKey, flowTypeOf } from './job.js';
 import { isTicketNumber, TICKET_NUMBER_WORDS } from './ticketshape.js';
+import { freezeRepoTicket } from './ticketrepo.js';
 import { readShimArm } from './readshim.js';
 import { closeStagesOf } from './plan.js';
 import { resolveCloseTimeoutMs } from './closetimeout.js';
@@ -307,7 +308,7 @@ class ExitSignal extends Error {
  * @property {string} spineName
  * @property {string} [into] see `RunOpts.into`
  * @property {boolean} [refreeze] a FRESH `--spec` run: fetch the web inputs again AFTER the run is listed (never on resume/door/decide)
- * @property {{number: number, mcp: {server: string, tools: string[]}}} [ticket] a FRESH run of a job that reads tickets (flow type Tickets): the ticket number `--ticket` named (per run, never signed) and the job's signed `mcp`
+ * @property {{number: number, mcp: {server: string, tools: string[]}, repo?: true}} [ticket] a FRESH run of a job that reads tickets (flow type Tickets): the ticket number `--ticket` named (per run, never signed) and the job's signed `mcp`; `repo` = a code-repository (worktree) job, whose ticket is frozen into the worktree's private `.bareloop-input/` (src/ticketrepo.js) instead of the prepared copy's `input/`
  * @property {boolean} [anyway] `--anyway`: run this ticket even if the job's filter would skip it (inert until the filter exists; it needs --ticket)
  * @property {string|null} model
  * @property {string|null} providerKey
@@ -500,6 +501,8 @@ async function execute(ctx) {
   const WORKDIR = target.workdir;
   // `let`: a fresh run's refetch of its web inputs commits a NEW seed (below, after the run is listed)
   let SEED = target.seed;
+  /** @type {import('./ticketrepo.js').RepoTicketRecord|null} a code-repo job's frozen ticket (metadata), set at the run-start freeze; rides onto `job-start` */
+  let ticketRecord = null;
   const specHash = jobSpecHash(spec);
   // the re-invocation commands this engine prints: a bundle names its own door and hash,
   // every other caller gets today's byte-identical strings.
@@ -1600,7 +1603,17 @@ async function execute(ctx) {
   // fetches: the Run tab reads "fetching the page…" while source.json has no refrozenAt at or after the row. A refusal cannot be a
   // `released` row (that unlists the run and its words); it SETTLES the claim at $0 and keeps the plain reason for the panel.
   if (ctx.refreeze === true && ctx.into !== undefined) {
-    const fresh = await refreezeUrlInputs({ into: ctx.into, ...(deps.fetchUrl ? { fetchUrl: deps.fetchUrl } : {}), ...(ctx.ticket ? { ticket: ctx.ticket } : {}) });
+    // a CODE-REPO job's ticket (piece 1a) is frozen into the worktree's private `.bareloop-input/` (nothing committed, the seed does not move); every other job's
+    // ticket is the one Inputs row `refreezeUrlInputs` re-reads. The record rides onto this run's `job-start` (metadata only, never the text).
+    /** @type {{ok: true, refreshed: string[], seed: string|null}|{ok: false, error: string}} */
+    let fresh;
+    if (ctx.ticket?.repo === true) {
+      const frozen = await freezeRepoTicket({ workdir: wd, inputs: Array.isArray(spec.inputs) ? spec.inputs : [], ticket: ctx.ticket });
+      if (frozen.ok) ticketRecord = frozen.record;
+      fresh = frozen.ok ? { ok: true, refreshed: [], seed: null } : frozen;
+    } else {
+      fresh = await refreezeUrlInputs({ into: ctx.into, ...(deps.fetchUrl ? { fetchUrl: deps.fetchUrl } : {}), ...(ctx.ticket ? { ticket: ctx.ticket } : {}) });
+    }
     if (!fresh.ok) {
       const words = /did not start/.test(fresh.error) ? fresh.error : `${fresh.error}. The run did not start. Nothing spent.`;
       err(`${SELECTOR}: ${fresh.error}`);
@@ -1918,6 +1931,7 @@ async function execute(ctx) {
   try {
     outcome = await runJob(spec, {
       stopFile,
+      ...(ticketRecord === null ? {} : { ticketRecord }),
       ...(learnHints === null ? {} : { learnHints }),
       // PRD item 27/M3 — the SAME `emit` the pre-run close-timing reading above
       // used (never a second `makeSpine(spineFile)` here: two independent
@@ -2702,7 +2716,6 @@ export async function main(argv, deps = {}) {
       if (!tickets) die('--ticket is for a job that reads tickets, and this job has no ticket source.');
     }
     if (tickets && refreeze) {
-      if (worktreeJob) die('This job reads tickets and works on a code repository. Reading a ticket for a code repository job is not available yet - the run did not start. Nothing spent.');
       if (ticketNumber === undefined) die('This job reads a ticket. Give the ticket to read with --ticket <number>. The run did not start. Nothing spent.');
     }
 
@@ -2716,7 +2729,7 @@ export async function main(argv, deps = {}) {
       spineName: target.spine,
       ...(target.into === undefined ? {} : { into: target.into }),
       ...(refreeze ? { refreeze: true } : {}),
-      ...(tickets && refreeze && ticketNumber !== undefined ? { ticket: { number: ticketNumber, mcp: spec.mcp } } : {}),
+      ...(tickets && refreeze && ticketNumber !== undefined ? { ticket: { number: ticketNumber, mcp: spec.mcp, ...(worktreeJob ? { repo: /** @type {const} */ (true) } : {}) } } : {}),
       ...(anyway ? { anyway: true } : {}),
       model: argFlag('model'),
       providerKey: argFlag('provider'),

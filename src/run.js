@@ -206,6 +206,9 @@ async function primitiveSmoke(workdir) {
  *   collision walk would mint a `-2` beside the work the resume exists to continue. The
  *   fold's precedent exactly: the chain's state is DECLARED, never re-derived. Forwarded
  *   verbatim to the plan flow; absent is the cold path.
+ * @param {import('./ticketrepo.js').RepoTicketRecord|null} [opts.ticketRecord] MCP + tickets piece 1a: a CODE-REPO job's frozen ticket (metadata only: number, title,
+ *        state, source, sha256, bytes, masked count, the frozen file's relative path, the MCP record - never the text). Report-only: it rides onto `job-start` as `ticket`,
+ *        so the run's books name the exact bytes the worker could read. Absent = the job reads no ticket (or froze it in its prepared copy's `source.json`).
  * @param {boolean|'cap'|'diff'} [opts.readShim=false] THE READ SHIM (src/readshim.js) —
  *        WHICH ARM to run, threaded to the plan flow. The Phase 2 pre-registration's four:
  *          `false`  A0 — off (the default)
@@ -275,7 +278,7 @@ async function primitiveSmoke(workdir) {
  *   deliberately NOT in the resumable/checkpoint set (`src/reuse.js`) — an
  *   unknown in-flight state is not a known-safe resume point.
  */
-export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, rates = null, judgeRates = null, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, closeDir = null, layerRoot = false, readShim = false, scout = true, bridge = null, draftSpentUsd = 0, draftSpendComplete = true, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, learnHints = null }) {
+export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, rates = null, judgeRates = null, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, closeDir = null, layerRoot = false, readShim = false, scout = true, bridge = null, draftSpentUsd = 0, draftSpendComplete = true, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, learnHints = null, ticketRecord = null }) {
   // THE READ SHIM's ARM, resolved at the door — the FIRST thing this entry does,
   // before the ledger, before the approval gate, before a byte of the spec is read.
   // An unrecognised spelling throws here at zero cost instead of being coerced by
@@ -412,6 +415,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
     // (an absent baseUrl is the vendor's own host, not an unknown).
     provider: typeof job.provider === 'string' ? job.provider : null,
     ...(typeof job.baseUrl === 'string' ? { baseUrl: job.baseUrl } : {}),
+    ...(ticketRecord === null ? {} : { ticket: ticketRecord }),
     // F118: replay reads this; report-only. `dirty` is deliberately omitted —
     // it can't be known without a shell, and null = unknown, never faked.
     code: (() => { const { version, sha } = codeVersion(); return { version, sha }; })(),

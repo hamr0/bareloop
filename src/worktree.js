@@ -68,12 +68,33 @@ export function shortHead(repo) {
  * @returns {boolean} true when the line was added now
  */
 export function hideBareloopDir(repo) {
+  return addExcludeLines(repo, [EXCLUDE_LINE, NODE_MODULES_LINE]);
+}
+
+/** the folder inside a repo job's worktree that holds a frozen ticket (MCP + tickets piece 1a): one spelling */
+export const TICKET_INPUT_DIR = '.bareloop-input';
+
+/** the line that hides it (anchored at the top of each worktree) */
+export const TICKET_INPUT_EXCLUDE_LINE = `/${TICKET_INPUT_DIR}/`;
+
+/**
+ * Hide the frozen-ticket folder (`.bareloop-input/`) from `git status` and from `git add -A` in `dir` (a worktree) through the PRIVATE exclude:
+ * the COMMON git dir's `info/exclude`, which every linked worktree of that repo reads (a linked worktree has no `info/exclude` of its own). Never the tracked
+ * `.gitignore`. Idempotent.
+ * @param {string} dir a worktree (or repo) root @returns {boolean} true when the line was added now
+ */
+export function hideTicketInput(dir) {
+  return addExcludeLines(dir, [TICKET_INPUT_EXCLUDE_LINE]);
+}
+
+/** @param {string} repo @param {string[]} lines @returns {boolean} true when any line was added now */
+function addExcludeLines(repo, lines) {
   const common = execFileSync('git', ['-C', repo, 'rev-parse', '--git-common-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   const exclude = join(resolve(repo, common), 'info', 'exclude');
   mkdirSync(dirname(exclude), { recursive: true });
   const text = existsSync(exclude) ? readFileSync(exclude, 'utf8') : '';
   const have = new Set(text.split('\n').map((l) => l.trim()));
-  const missing = [EXCLUDE_LINE, NODE_MODULES_LINE].filter((l) => !have.has(l));
+  const missing = lines.filter((l) => !have.has(l));
   if (missing.length === 0) return false;
   const add = `${missing.join('\n')}\n`;
   if (text === '') writeFileSync(exclude, add);
