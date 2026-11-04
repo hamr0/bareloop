@@ -83,6 +83,18 @@ export function ticketFromMcp(rawText, url, number, record) {
 }
 
 /**
+ * The pull request a `pull_request_read` ticket froze, as the object the checkout reads (`head.sha`, `base.ref`, `base.sha`): the parsed, MASKED reply (the same bytes the
+ * sha256 covers - a sha is not a secret shape, so masking leaves it whole). Null when the text is not a JSON object.
+ * @param {Ticket} ticket @returns {Record<string, any>|null}
+ */
+export function prRecordOfTicket(ticket) {
+  try {
+    const doc = JSON.parse(ticket.text);
+    return doc !== null && typeof doc === 'object' && !Array.isArray(doc) ? doc : null;
+  } catch { return null; }
+}
+
+/**
  * Read one ticket, whatever its source. An MCP-backed row (`mcp` present) goes to the MCP reader; a page row to the page reader.
  * @param {{mcp?: {server: string, tools: string[]}, listUrl?: string, number?: number, url?: string}} row
  * @param {{configPath?: string, home?: string, timeoutMs?: number, fetchPage?: typeof fetchPageText}} [deps] test seams

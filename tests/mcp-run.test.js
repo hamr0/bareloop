@@ -137,12 +137,12 @@ describe('refreezeUrlInputs: a second fetcher for MCP ticket rows', () => {
     mcpHome(t);
     const none = await prepared(t, 'https://example.com/page');
     const r0 = await refreezeUrlInputs({ into: none.into, fetchUrl: never, ticket: { number: 1, mcp: MCP } });
-    assert.match(String(!r0.ok && r0.error), /reads a ticket.*none of its Inputs is the issues page of a GitHub repository.*Nothing spent/);
+    assert.match(String(!r0.ok && r0.error), /reads a ticket.*none of its Inputs is the issues or pulls page of a GitHub repository.*Nothing spent/);
     const dir = tmp(t, 'mcp-run-two-');
     const two = await proveRubricInputs({ inputs: [{ n: 1, label: 'A', value: LIST }, { n: 2, label: 'B', value: 'https://github.com/o/p/issues' }], into: join(dir, 's'), fetchUrl: async (u) => ({ ok: true, text: DRAFT_PAGE, url: u }) });
     assert.equal(two.ok, true);
     const r2 = await refreezeUrlInputs({ into: join(dir, 's'), fetchUrl: never, ticket: { number: 1, mcp: MCP } });
-    assert.match(String(!r2.ok && r2.error), /more than one of its Inputs is a GitHub issues address/);
+    assert.match(String(!r2.ok && r2.error), /more than one of its Inputs is a GitHub issues or pulls address/);
   });
 });
 

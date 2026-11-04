@@ -49,9 +49,23 @@ export const firstLine = (e) => redactSecrets(String(e?.message ?? e ?? '')).spl
 export const isDeviceLogin = (text) => text.includes('github.com/login/device');
 
 /**
- * Read ticket `number` of the list at `listUrl` with the job's `issue_read`.
+ * The one tool name a PR read uses. Like `issue_read`, it is the only PR tool name hardcoded: the rest of a job's tools come from the server's own list. The limit, said
+ * plainly (ITEM33-BUILD piece 1a, PR-verification job): this is GitHub's own server's spelling, measured against the real server 2026-11-04 (`pull_request_read`, method
+ * `get`, args owner/repo/pullNumber); a server that spells it differently is not read, and the person's GitHub server must enable the `pull_requests` toolset.
+ */
+export const PR_READ_TOOL = 'pull_request_read';
+
+/** the tool and the arguments one read of a list's kind makes @param {'issue'|'pull'} kind @param {string} owner @param {string} repo @param {number} number */
+export function readCall(kind, owner, repo, number) {
+  return kind === 'pull'
+    ? { tool: PR_READ_TOOL, args: { method: 'get', owner, repo, pullNumber: number }, what: 'a pull request' }
+    : { tool: 'issue_read', args: { method: 'get', owner, repo, issue_number: number }, what: 'a ticket' };
+}
+
+/**
+ * Read ticket (or pull request) `number` of the list at `listUrl` with the job's `issue_read` (an issues list) or `pull_request_read` (a pulls list).
  * @param {{listUrl: string, number: number, mcp: {server: string, tools: string[]}, configPath?: string, home?: string, timeoutMs?: number}} o
- * @returns {Promise<{ok: true, text: string, url: string, record: {server: string, exposed: string[], missing: Array<{server: string, tool: string}>, calls: Array<{tool: string, owner: string, repo: string, issue_number: number}>}} | {ok: false, error: string}>}
+ * @returns {Promise<{ok: true, text: string, url: string, record: {server: string, exposed: string[], missing: Array<{server: string, tool: string}>, calls: Array<Record<string, any>>}} | {ok: false, error: string}>}
  *   `record` is what the run keeps (in its `run.json` input entry): what the server exposed and lacked, and each call made.
  */
 export async function readTicketMcp({ listUrl, number, mcp, configPath: explicitConfig, home, timeoutMs = MCP_TIMEOUT_MS }) {
@@ -60,32 +74,34 @@ export async function readTicketMcp({ listUrl, number, mcp, configPath: explicit
   if (!isTicketNumber(number)) return { ok: false, error: `ticket number ${JSON.stringify(number)} is not ${TICKET_NUMBER_WORDS}` };
   const { owner, repo } = list;
   const { server, tools } = mcp;
-  // M13 piece 4: the frozen read starts the server with issue_read alone, whatever else the job lists (the job lists every tool of its server)
-  if (!tools.includes('issue_read')) return { ok: false, error: `the job does not list issue_read, the tool that reads a ticket` };
+  const { tool: toolId, args, what } = readCall(list.kind, owner, repo, number);
+  // M13 piece 4: the frozen read starts the server with the one read tool alone, whatever else the job lists (the job lists every tool of its server)
+  if (!tools.includes(toolId)) return { ok: false, error: `the job does not list ${toolId}, the tool that reads ${what}` };
   const { file: configPath, remote } = configForServer(server, explicitConfig, home);
   if (!discoverServers([configPath]).has(server)) return { ok: false, error: `${server} is not in ~/.mcp.json` };
   if (remote) return { ok: false, error: remoteRefusal(server) };
+  const notOffered = `${server} does not offer ${toolId}${list.kind === 'pull' ? ' (its GitHub server needs the pull_requests toolset enabled)' : ''}`;
   let bridge;
   try {
-    bridge = await createMCPBridge({ configPaths: [configPath], ...mcpStartOpts(), timeout: timeoutMs, callTimeout: timeoutMs, confirmServer: () => true, allow: { [server]: ['issue_read'] } });
+    bridge = await createMCPBridge({ configPaths: [configPath], ...mcpStartOpts(), timeout: timeoutMs, callTimeout: timeoutMs, confirmServer: () => true, allow: { [server]: [toolId] } });
     const failed = bridge.errors.find((e) => e.server === server);
     if (failed) return { ok: false, error: `${server} did not start: ${firstLine(failed.error)}` };
     const lacking = bridge.missing?.[0];
-    if (lacking) return { ok: false, error: `${server} does not offer ${lacking.tool}` };
-    const tool = bridge.tools.find((t) => t.name === mcpToolName(server, 'issue_read'));
-    if (!tool) return { ok: false, error: `${server} does not offer issue_read` };
-    const call = { tool: 'issue_read', owner, repo, issue_number: number };
+    if (lacking) return { ok: false, error: notOffered };
+    const tool = bridge.tools.find((t) => t.name === mcpToolName(server, toolId));
+    if (!tool) return { ok: false, error: notOffered };
+    const call = { tool: toolId, owner, repo, ...(list.kind === 'pull' ? { method: 'get', pullNumber: number } : { issue_number: number }) };
     const record = { server, exposed: bridge.tools.map((t) => t.name), missing: bridge.missing ?? [], calls: [call] };
     const url = list.ticketUrl(number);
     let reply;
     try {
-      reply = await tool.execute({ method: 'get', owner, repo, issue_number: number });
+      reply = await tool.execute(args);
     } catch (e) {
-      return { ok: false, error: `${server}: issue_read failed: ${firstLine(e)}` };
+      return { ok: false, error: `${server}: ${toolId} failed: ${firstLine(e)}` };
     }
     const text = typeof reply === 'string' ? reply : (Array.isArray(reply) ? reply : []).map((c) => c?.text ?? '').join('');
     if (isDeviceLogin(text)) return { ok: false, error: 'GitHub token unavailable — the server asked for a login (is pass locked?)' };
-    if (text.trim() === '') return { ok: false, error: `${server}: issue_read returned nothing for ${url}` };
+    if (text.trim() === '') return { ok: false, error: `${server}: ${toolId} returned nothing for ${url}` };
     return { ok: true, text, url, record };
   } catch (e) {
     return { ok: false, error: startRefusal(server, e) };

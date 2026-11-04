@@ -8,8 +8,8 @@ import { execFileSync } from 'node:child_process';
 import { lstatSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseTicketList } from './ticketshape.js';
-import { configForServer, remoteRefusal } from './ticketmcp.js';
-import { readTicket } from './ticket.js';
+import { configForServer, remoteRefusal, readCall } from './ticketmcp.js';
+import { readTicket, prRecordOfTicket } from './ticket.js';
 import { hideTicketInput, TICKET_INPUT_DIR } from './worktree.js';
 
 export { TICKET_INPUT_DIR };
@@ -22,27 +22,28 @@ export function ticketInputRel(label) {
 
 /**
  * The $0 proof of a repo job's ticket line: the job's server is named in the person's MCP config (a file is read; nothing is started), it is not a remote one,
- * and `issue_read` is among the tools the job signed. The address itself parsed already (the caller only asks for an issues address).
- * @param {{server: string, tools: string[]}} mcp @param {{configPath?: string}} [deps] test seam
+ * and the read tool is among the tools the job signed: `issue_read` for an issues address, `pull_request_read` for a pulls address. The address itself parsed already.
+ * @param {{server: string, tools: string[]}} mcp @param {{configPath?: string}} [deps] test seam @param {'issue'|'pull'} [kind]
  * @returns {{ok: true}|{ok: false, error: string}}
  */
-export function proveTicketLine(mcp, deps = {}) {
+export function proveTicketLine(mcp, deps = {}, kind = 'issue') {
   const { file, remote } = configForServer(mcp.server, deps.configPath);
   if (!discoverServers([file]).has(mcp.server)) return { ok: false, error: `${mcp.server} is not in ~/.mcp.json` };
   if (remote) return { ok: false, error: remoteRefusal(mcp.server) };
-  if (!mcp.tools.includes('issue_read')) return { ok: false, error: 'issue_read, the tool that reads a ticket, is not among the tools this job signed' };
+  const { tool, what } = readCall(kind, '', '', 1);
+  if (!mcp.tools.includes(tool)) return { ok: false, error: `${tool}, the tool that reads ${what}, is not among the tools this job signed` };
   return { ok: true };
 }
 
 /**
- * The ONE ticket line of a repo job's Inputs: a line 2+ whose value is a GitHub issues address.
+ * The ONE ticket line of a repo job's Inputs: a line 2+ whose value is a GitHub issues or pulls address.
  * @param {{n: number, label: string, value: string}[]} inputs
  * @returns {{ok: true, line: {n: number, label: string, value: string}}|{ok: false, error: string}}
  */
 export function repoTicketLine(inputs) {
   const lines = inputs.slice(1).filter((l) => parseTicketList(l.value).ok);
-  if (lines.length === 0) return { ok: false, error: 'This job reads a ticket, but none of its Inputs (after the repo) is the issues page of a GitHub repository (owner/repo/issues).' };
-  if (lines.length > 1) return { ok: false, error: 'This job reads one ticket, but more than one of its Inputs is a GitHub issues address.' };
+  if (lines.length === 0) return { ok: false, error: 'This job reads a ticket, but none of its Inputs (after the repo) is the issues or pulls page of a GitHub repository (owner/repo/issues or owner/repo/pulls).' };
+  if (lines.length > 1) return { ok: false, error: 'This job reads one ticket, but more than one of its Inputs is a GitHub issues or pulls address.' };
   return { ok: true, line: lines[0] };
 }
 
@@ -60,7 +61,9 @@ export function repoTicketLine(inputs) {
  * worker's readScope, and no write fence can contain it (a signed writeScope is a subfolder of the tracked listing). Nothing is committed and the seed does not move.
  * A refusal is plain words at $0 ("The run did not start. Nothing spent.") and writes nothing.
  * @param {{workdir: string, inputs: {n: number, label: string, value: string}[], ticket: {number: number, mcp: {server: string, tools: string[]}}}} o
- * @returns {Promise<{ok: true, record: RepoTicketRecord}|{ok: false, error: string}>}
+ * A PULLS address reads the pull request the same way (`pull_request_read`) and also returns `pr` = `{url, record, reread}` for piece 12's run-start checkout: `record` is the
+ * parsed MASKED reply (its `head.sha` is what the worktree is checked out at), `reread` reads it once more if the PR moved while the run was starting.
+ * @returns {Promise<{ok: true, record: RepoTicketRecord, pr?: {url: string, record: any, reread: () => Promise<any>}}|{ok: false, error: string}>}
  */
 export async function freezeRepoTicket({ workdir, inputs, ticket }) {
   const tail = 'The run did not start. Nothing spent.';
@@ -76,7 +79,8 @@ export async function freezeRepoTicket({ workdir, inputs, ticket }) {
   let st = null;
   try { st = lstatSync(dir); } catch { st = null; }
   if (tracked !== '' || (st !== null && !st.isDirectory())) return fail(`${TICKET_INPUT_DIR} is already in this repository, and bareloop keeps the ticket there - rename it, then start the run again`);
-  const proof = proveTicketLine(ticket.mcp);
+  const kind = /** @type {{kind: 'issue'|'pull'}} */ (parseTicketList(line.value)).kind;
+  const proof = proveTicketLine(ticket.mcp, {}, kind);
   if (!proof.ok) return fail(proof.error);
   const t = await readTicket({ mcp: ticket.mcp, listUrl: line.value, number: ticket.number });
   if (!t.ok) return fail(t.error);
@@ -88,5 +92,7 @@ export async function freezeRepoTicket({ workdir, inputs, ticket }) {
     writeFileSync(file, t.ticket.text);
   } catch (e) { return fail(`the ticket could not be written (${String(/** @type {any} */ (e)?.message ?? e).split('\n')[0]})`); }
   const k = t.ticket;
-  return { ok: true, record: { label: line.label, file: rel, url: k.url, number: /** @type {number} */ (k.number), title: k.title, state: k.state, source: k.source, sha256: k.sha256, bytes: k.bytes, masked: k.masked, mcp: k.record } };
+  /** @type {{url: string, record: any, reread: () => Promise<any>}|undefined} */
+  const pr = kind === 'pull' ? { url: k.url, record: prRecordOfTicket(k) ?? {}, reread: async () => { const again = await readTicket({ mcp: ticket.mcp, listUrl: line.value, number: ticket.number }); return again.ok ? prRecordOfTicket(again.ticket) : null; } } : undefined;
+  return { ok: true, ...(pr === undefined ? {} : { pr }), record: { label: line.label, file: rel, url: k.url, number: /** @type {number} */ (k.number), title: k.title, state: k.state, source: k.source, sha256: k.sha256, bytes: k.bytes, masked: k.masked, mcp: k.record } };
 }

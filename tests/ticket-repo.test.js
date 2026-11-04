@@ -159,7 +159,7 @@ describe('freezeRepoTicket: the ticket frozen outside the tracked tree (R2b step
     assert.equal(r1.ok, false);
     assert.match(String(!r1.ok && r1.error), /^Input "Issues": github is not in ~\/\.mcp\.json\. The run did not start\. Nothing spent\.$/);
     const r2 = await freezeRepoTicket({ workdir: j.wt, inputs: [{ n: 1, label: 'repo', value: j.repo }], ticket: { number: 1, mcp: { server: 'other', tools: ['issue_read'] } } });
-    assert.match(String(!r2.ok && r2.error), /none of its Inputs \(after the repo\) is the issues page.*The run did not start\. Nothing spent\./);
+    assert.match(String(!r2.ok && r2.error), /none of its Inputs \(after the repo\) is the issues or pulls page.*The run did not start\. Nothing spent\./);
     assert.equal(existsSync(join(j.wt, TICKET_INPUT_DIR)), false, 'nothing written by a refusal');
     // a repo that TRACKS the folder name as a symlink: writing through it would leave the tree
     const out = tmp(t, 'ticket-repo-out-');

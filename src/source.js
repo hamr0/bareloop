@@ -1206,8 +1206,9 @@ export async function proveInputFiles(inputs, opts = {}) {
   for (const inp of inputs.slice(1)) {
     const { n, label, value } = inp;
     if (opts.mcp !== undefined && parseTicketList(value).ok) {
-      if (++ticketLines > 1) return bad(n, 'only one ticket address per job - a second issues address is not read');
-      const proof = proveTicketLine(opts.mcp, opts.configPath === undefined ? {} : { configPath: opts.configPath });
+      if (++ticketLines > 1) return bad(n, 'only one ticket address per job - a second issues or pulls address is not read');
+      const listed = parseTicketList(value);
+      const proof = proveTicketLine(opts.mcp, opts.configPath === undefined ? {} : { configPath: opts.configPath }, listed.ok ? listed.kind : 'issue');
       if (!proof.ok) return bad(n, proof.error);
       continue;
     }
@@ -1381,8 +1382,8 @@ export async function refreezeUrlInputs({ into, fetchUrl = (u) => fetchPageText(
   const listRows = ticket === undefined ? [] : rows.filter((/** @type {any} */ r) => parseTicketList(r.url).ok);
   if (ticket !== undefined && listRows.length !== 1) {
     return { ok: false, error: listRows.length === 0
-      ? 'This job reads a ticket, but none of its Inputs is the issues page of a GitHub repository (owner/repo/issues). The run did not start. Nothing spent.'
-      : 'This job reads one ticket, but more than one of its Inputs is a GitHub issues address. The run did not start. Nothing spent.' };
+      ? 'This job reads a ticket, but none of its Inputs is the issues or pulls page of a GitHub repository (owner/repo/issues or owner/repo/pulls). The run did not start. Nothing spent.'
+      : 'This job reads one ticket, but more than one of its Inputs is a GitHub issues or pulls address. The run did not start. Nothing spent.' };
   }
   for (const row of rows) {
     if (ticket !== undefined && listRows[0] === row) {

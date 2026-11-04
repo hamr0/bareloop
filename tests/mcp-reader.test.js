@@ -51,7 +51,7 @@ describe('reads one ticket through only the job\'s tools', () => {
   test('a list address that is not owner/repo issues, or a bad ticket number, is refused before any server starts', async (t) => {
     const w = world(t);
     for (const [over, want] of [
-      [{ listUrl: 'https://example.com/a/b/issues' }, /not a GitHub issues address/],
+      [{ listUrl: 'https://example.com/a/b/issues' }, /not a GitHub issues or pull requests address/],
       [{ number: 0 }, /ticket number/],
       [{ number: 1.5 }, /ticket number/],
       [{ number: '7' }, /ticket number/],
