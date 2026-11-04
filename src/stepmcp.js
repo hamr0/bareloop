@@ -4,6 +4,7 @@
 // The start options are the one set every place bareloop starts an MCP uses (src/ticketmcp.js): PATH+HOME only, no provider key; cwd = the home folder.
 import { createMCPBridge, discoverServers } from 'bare-agent/mcp';
 import { TOOL_BY_VERB, toolAction } from './tools.js';
+import { redactSecrets } from './validate.js';
 import { configForServer, remoteRefusal, startRefusal, firstLine, mcpStartOpts, mcpToolName, MCP_TIMEOUT_MS } from './ticketmcp.js';
 
 /**
@@ -17,6 +18,32 @@ import { configForServer, remoteRefusal, startRefusal, firstLine, mcpStartOpts, 
 export function mcpAllowlist(granted, server, mcpTools, workdir) {
   const types = new Set(granted.map((v) => /** @type {string} */ (toolAction(/** @type {Record<string, string>} */ (TOOL_BY_VERB)[v], { path: workdir }, workdir).type)));
   return [...types, ...mcpTools.map((t) => mcpToolName(server, t))];
+}
+
+/**
+ * Mask every secret shape in a tool reply with the ONE inventory (`redactSecrets`, src/validate.js), at capture. A reply enters the worker's transcript and a
+ * model copies what it reads (into a file, into its reply): measured with a planted `ghp_` token, the raw reply reaches the model and every file the model copies
+ * it into, while the audit, the carry memo and the spine never carried it. Masking here, before the model sees it, closes that path at its source (the same rule
+ * the ticket freeze follows: a secret in a ticket is MASKED, never refused). Walks strings, arrays and plain objects; anything else passes through.
+ * @param {any} v @returns {any}
+ */
+export function maskReply(v) {
+  if (typeof v === 'string') return redactSecrets(v);
+  if (Array.isArray(v)) return v.map(maskReply);
+  if (v !== null && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, maskReply(x)]));
+  return v;
+}
+
+/** wrap a bridge tool so its reply, and the message of an error it throws, are masked before they leave the tool @param {any} tool */
+function maskedTool(tool) {
+  const inner = tool.execute;
+  tool.execute = async (/** @type {any} */ args, /** @type {any} */ ctx) => {
+    try { return maskReply(await inner.call(tool, args, ctx)); } catch (e) {
+      if (e instanceof Error) e.message = redactSecrets(e.message);
+      throw e;
+    }
+  };
+  return tool;
 }
 
 /**
@@ -40,7 +67,7 @@ export async function startStepMcp({ mcp, mcpTools, configPath: explicit, home, 
     const lacking = bridge.missing?.[0];
     if (lacking) throw refusal(`${server} does not offer ${lacking.tool}`);
     const names = mcpTools.map((t) => mcpToolName(server, t));
-    const tools = bridge.tools.filter((/** @type {{name: string}} */ t) => names.includes(t.name));
+    const tools = bridge.tools.filter((/** @type {{name: string}} */ t) => names.includes(t.name)).map(maskedTool);
     const absent = names.find((n) => !tools.some((/** @type {{name: string}} */ t) => t.name === n));
     if (absent) throw refusal(`${server} does not offer ${absent.slice(server.length + 1)}`);
     const b = bridge;

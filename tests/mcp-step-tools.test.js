@@ -13,8 +13,8 @@ import { validatePlan } from '../src/plan.js';
 import { planPrompt, runPlan } from '../src/planrun.js';
 import { validateJob } from '../src/job.js';
 import { toolAction, TOOL_BY_VERB, CTX_TOOLS, mcpStrategy } from '../src/tools.js';
-import { mcpAllowlist } from '../src/stepmcp.js';
-import { scriptedProvider } from './helpers.js';
+import { mcpAllowlist, maskReply } from '../src/stepmcp.js';
+import { scriptedProvider, reply } from './helpers.js';
 import { tcall, makePatient, JOB as PATIENT_JOB, PLAN, collector } from './planrun-fixtures.js';
 
 const JOB = {
@@ -274,4 +274,68 @@ test('a signed tool the server does not offer stops the step in plain words nami
   const esc = r.events.find((e) => e.type === 'escalation');
   assert.match(esc?.detail ?? '', /github does not offer issue_read/);
   assert.equal(stepCall(r.provider), -1);
+});
+
+// ---- scrub: an MCP tool RESULT enters the worker's transcript, and a model may copy it anywhere ------------------------------------------------------------
+const TOKEN = `ghp_${'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'}`;
+/** every file under `root` (the work tree, the .smoke books, the gate audit, the litectx store, the carry memo) that carries `needle`; git's own objects are compressed, ask git */
+function filesCarrying(root, needle, except = []) {
+  const hits = [];
+  const walk = (dir) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) { if (e.name !== '.git') walk(p); } else if (e.isFile() && !except.includes(e.name) && readFileSync(p).includes(needle)) hits.push(p);
+    }
+  };
+  walk(root);
+  return hits;
+}
+
+test('a ghp_ token a ticket carries never reaches the model, the work tree, the audit, the carry memo or any recorded event; the copy a model makes is masked', async (t) => {
+  // a model that does what a model does with a ticket: reads it through the tool and copies what it read into the file it was asked to write
+  let n = 0;
+  let seenByModel = '';
+  const wdBox = {};
+  const copycat = {
+    toolsOffered: [], systems: [], messagesLog: [], calls: [],
+    async generate(messages, tools) {
+      this.toolsOffered.push((tools ?? []).map((x) => x.name));
+      if (messages[0]?.role === 'system') this.systems.push(messages[0].content);
+      this.messagesLog.push(messages);
+      n += 1;
+      if (n === 1) return reply({ text: 'scout' });
+      if (n === 2) return reply({ text: PLAN(wdBox.wd, STEP()) });
+      if (n === 3) return reply({ toolCalls: [tcall('1', 'github_issue_read', ISSUE)] });
+      if (n === 4) {
+        seenByModel = String(messages.filter((m) => m.role === 'tool').at(-1)?.content ?? '');
+        return reply({ toolCalls: [tcall('2', 'shell_write', { path: join(wdBox.wd, 'tests', 'test_x.mjs'), content: `ok\n// ticket said: ${seenByModel}\n` })] });
+      }
+      return reply({ text: `done: ${seenByModel}` });
+    },
+  };
+  const h = mcpHome(t, { env: { FAKE_PLANT: TOKEN } });
+  const wd = makePatient(t);
+  wdBox.wd = wd;
+  const jv = validateJob(PATIENT_JOB(wd, { mcp: SIGNED, flowType: 'mcp' }));
+  const { events, emit } = collector();
+  const outcome = await runPlan(jv.job, { workdir: wd, provider: copycat, emit, capRuns: 3, remainingUsd: () => 1.5 });
+  assert.match(seenByModel, /Crash on tap/, 'the model did read the ticket through the tool');
+  assert.equal(outcome, 'green', JSON.stringify(events.filter((e) => e.type === 'escalation')));
+  const written = readFileSync(join(wd, 'tests', 'test_x.mjs'), 'utf8');
+  assert.match(written, /Tap the back arrow/, 'the model copied the ticket into the file (so the copy path is exercised)');
+  assert.equal(seenByModel.includes(TOKEN), false, 'the token never reached the model');
+  assert.equal(written.includes(TOKEN), false, 'the copy in the work tree is masked');
+  assert.deepEqual(filesCarrying(wd, TOKEN), [], 'no file under the patient (tree, books, audit, carry memo, index) carries the token');
+  assert.deepEqual(filesCarrying(h.home, TOKEN, ['.mcp.json']), [], 'nothing bareloop wrote under HOME carries it (the person\'s own MCP config, where the fixture planted it, is not bareloop\'s)');
+  assert.equal(JSON.stringify(events).includes(TOKEN), false, 'no spine event carries it');
+  assert.equal(JSON.stringify(copycat.messagesLog).includes(TOKEN), false, 'no later model call carries it');
+  assert.equal(JSON.stringify(auditRows(wd)).includes(TOKEN), false, 'the gate audit does not');
+});
+
+test('maskReply masks a secret shape in a string, in content parts, and in a nested object, and leaves the rest alone', () => {
+  assert.equal(maskReply(`see ${TOKEN} here`).includes(TOKEN), false);
+  assert.equal(JSON.stringify(maskReply([{ type: 'text', text: `a ${TOKEN}` }, { type: 'text', text: 'plain' }])).includes(TOKEN), false);
+  assert.equal(JSON.stringify(maskReply({ issue: { body: `x ${TOKEN}`, labels: ['P2'] } })).includes(TOKEN), false);
+  assert.deepEqual(maskReply({ n: 7, ok: true, none: null, s: 'plain' }), { n: 7, ok: true, none: null, s: 'plain' });
+  assert.match(maskReply('Tap the back arrow'), /^Tap the back arrow$/);
 });
