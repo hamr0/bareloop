@@ -1662,8 +1662,7 @@ async function execute(ctx) {
     }
     out(`patient   ${gate.detail ?? 'clean — the halted run left no uncommitted work'} (store kept: it is indexing this run already paid for)`);
     // piece 12 (item 12): a PR job resumes WITHOUT fetching; the work branch must still hold the PR's code, or it is the existing "gone branch" stop
-    const prSeen = await readSourceManifest(into);
-    const prHead = prSeen.stop === null && prSeen.present ? prSeen.manifest?.prHead : undefined;
+    const prHead = ((m) => (m.stop === null && m.present ? m.manifest?.prHead : undefined))(await readSourceManifest(into));
     if (typeof prHead === 'string' && !(await prHeadIsAncestor(wd, prHead))) {
       err(`PATIENT REFUSED — the pull request's code (${prHead.slice(0, 12)}) is no longer in this run's branch, so it cannot be resumed.`);
       err('This is a decision for you, not the harness: start the pull request again.');
