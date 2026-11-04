@@ -28,13 +28,13 @@ import { Gate } from 'bareguard';
 import { LiteCtx } from 'litectx';
 import { runClose, runStages, ralph, CLOSE_FAULTS, boundGap } from './ralph.js';
 import { validatePlan, pairEditGrant, legalScopes, closeStagesOf } from './plan.js';
-import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, RETRIEVAL_PAIR, EXIT_EXAMPLE } from './plan.js';
+import { WRITE_VERBS, EXIT_TYPES, MAX_EXITS_PER_STEP, MAX_PLAN_STEPS, MAX_SCOPE_MENU, RETRIEVAL_PAIR, EXIT_EXAMPLE, mcpToolsExample } from './plan.js';
 import { snapshotScope, evalExits, CHECK_GAP_MAX } from './exits.js';
 import { createRoot } from './root.js';
 import { createStallWatch, STALL_MS, MAX_STALLS } from './stall.js';
 import { createLadder, STRIKE_LIMIT } from './ladder.js';
 import { createTrend, FIX_STRIKE_LIMIT } from './trend.js';
-import { TOOL_MENU, STORE_VERBS, checkMenu } from './job.js';
+import { TOOL_MENU, STORE_VERBS, checkMenu, flowTypeOf } from './job.js';
 import { TOOL_BY_VERB, CTX_TOOLS, createCtxTools, toolAction, gatedShellOptions, trackedAtSeedGuard, PERSONA_TOOLS, strategyFor } from './tools.js';
 import { anySuppressionWarning } from './authoring.js';
 import { createReadShim, readShimArm, readShimStrategy } from './readshim.js';
@@ -739,6 +739,16 @@ export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes,
   // does not exist and neither does this sentence (the A0 and A2 renders). The
   // sentence also states the 24KB bound as its reason, which is the second
   // reason it cannot render for A2: that bound is not in force there.
+  // R2c (MCP+tickets piece 6): `mcpTools` exists only for a job that signed an MCP server, and ONLY then does the prompt say so (a plain job's render is
+  // byte-identical). A validator rule the drafter is not told about fails every draft, so the rule, the legal values and a legal example ride together;
+  // the same example line (`mcpToolsExample`) is what the validator's red carries.
+  const mcpLaw = (typeof job.mcp === 'object' && job.mcp !== null) && Array.isArray(job.mcp.tools) && job.mcp.tools.length > 0
+    ? `\n- "mcpTools" (optional): the MCP tools this step may call — a non-empty unique subset of ${JSON.stringify(job.mcp.tools)}, the tools of server "${job.mcp.server}" the person signed.
+  A tool outside that list is rejected: you may narrow a step to a subset, never reach beyond it. Example: ${mcpToolsExample(job.mcp)}.
+  The worker calls a granted tool by the name "${job.mcp.server}_<tool>". A step without "mcpTools" has no MCP tool at all.${flowTypeOf(job) === 'mcp'
+    ? `\n  This is an MCP job: at least one step must carry "mcpTools", or the plan is rejected.`
+    : `\n  The job's own ticket read needs no step; give "mcpTools" only to a step that must call a signed tool itself.`}`
+    : '';
   const readShimLaw = readShimArm(readShim).g1
     ? `\n  A step granting "read" must also grant "recall" and "get": a read of a large file
   returns only its next 24KB, and those two verbs are the only way to read a symbol in
@@ -754,7 +764,7 @@ Shape: { "schema": "plan-v1", "steps": [ ... 1..${MAX_PLAN_STEPS} steps ... ] } 
 strictly in array order. Each step (no other fields exist):
 - "id": kebab-case slug, unique
 - "action": the step's task, precise enough for a worker that sees ONLY this step
-- "tools": non-empty unique subset of ${JSON.stringify(ceiling)} (read/grep are the worker's ONLY way to see the tree — there is no shell; write/edit change the tree; recall/get/impact/related/recent search and navigate the repository index; compress/peek read cheaply; stash/remember/forget park and record notes across steps)${readShimLaw}
+- "tools": non-empty unique subset of ${JSON.stringify(ceiling)} (read/grep are the worker's ONLY way to see the tree — there is no shell; write/edit change the tree; recall/get/impact/related/recent search and navigate the repository index; compress/peek read cheaply; stash/remember/forget park and record notes across steps)${readShimLaw}${mcpLaw}
 - "rounds": integer 1..${maxStepRounds} — the step's per-attempt tool-round bound
 - "target": the step's deliverable path (REQUIRED when tools include write/edit), inside ${JSON.stringify(job.writeScope)}
 - "scope" (optional): narrow this step's WRITE fence — copy one value from the offered scopes below.

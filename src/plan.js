@@ -24,7 +24,7 @@
 // Like its siblings (validate.js, job.js) it never throws on JSON text or
 // plain parsed data; every failure is a named {code, path, detail} red.
 
-import { TOOL_MENU, LOCKED_TOOLS, WRITE_VERBS, checkMenu } from './job.js';
+import { TOOL_MENU, LOCKED_TOOLS, WRITE_VERBS, checkMenu, flowTypeOf } from './job.js';
 import { declaredStages } from './declaredclose.js';
 import { globToPrefix, scopeContained, isObj, isNonEmptyString, sweepSecretLiterals, hasNestedQuantifier } from './validate.js';
 import { READ_SHIM_CAP, readShimArm } from './readshim.js';
@@ -111,7 +111,13 @@ const PLAN_FIELDS = ['schema', 'steps'];
 // order; a field nothing consumes is a live-looking knob with zero effect
 // (the F16 inert-op class). The arbiter's own vocabulary (close, budget,
 // fence) is absent by construction — unknown-field at every depth.
-const STEP_FIELDS = ['id', 'action', 'tools', 'rounds', 'target', 'exit', 'model', 'attempts', 'scope'];
+const STEP_FIELDS = ['id', 'action', 'tools', 'rounds', 'target', 'exit', 'model', 'attempts', 'scope', 'mcpTools'];
+/**
+ * R2c (MCP+tickets piece 6): the legal-example line a drafter is shown for `mcpTools` and a red carries in its detail, spelled from the job's own signed
+ * list (never a made-up tool name) — one spelling for the prompt and the validator. Empty when the job signed no tools.
+ * @param {any} mcp the job's `mcp` block @returns {string}
+ */
+export const mcpToolsExample = (mcp) => (Array.isArray(mcp?.tools) && mcp.tools.length > 0 ? `"mcpTools": ${JSON.stringify([mcp.tools[0]])}` : '');
 /** P (design record 2026-07-28): the signed per-step model-tier menu. Closed by
  * construction — the agent picks a tier, never names an arbitrary model string
  * (the tier→model mapping and any effort params are the RUNNER's, per provider).
@@ -386,6 +392,22 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, seedRed, 
         }
       }
 
+      // R2c (piece 6): `mcpTools` ⊆ the SIGNED `mcp.tools`, validated like `tools` — a name outside the signed list is a verb-escape with the tool as
+      // structured data; the agent may narrow a step to a subset, never reach a tool the person did not sign. fwd's findMcpPlanRed (src/canrun.js@v0.28.0),
+      // the stray half; the generic-job half is after the step loop. A job that signed no server has nothing to grant, so any mcpTools there is an escape too.
+      if (s.mcpTools !== undefined) {
+        const signed = isObj(spec.mcp) && Array.isArray(spec.mcp.tools) ? /** @type {string[]} */ (spec.mcp.tools) : null;
+        if (!(Array.isArray(s.mcpTools) && s.mcpTools.length > 0 && s.mcpTools.every((/** @type {unknown} */ t) => typeof t === 'string') && new Set(s.mcpTools).size === s.mcpTools.length)) {
+          red('invalid-value', `${at}.mcpTools`, `non-empty unique list of tool names${signed ? ` from [${signed.join(', ')}], like ${mcpToolsExample(spec.mcp)}` : ''}`);
+        } else if (signed === null) {
+          reds.push({ code: 'verb-escape', path: `${at}.mcpTools`, verb: s.mcpTools[0], detail: 'this job signed no MCP server, so a step has no MCP tool to call — drop "mcpTools"' });
+        } else {
+          for (const t of s.mcpTools.filter((/** @type {string} */ t) => !signed.includes(t))) {
+            reds.push({ code: 'verb-escape', path: `${at}.mcpTools`, verb: t, detail: `"${t}" is not one of the job's signed tools for server "${spec.mcp.server}" [${signed.join(', ')}] — a step may narrow to a subset, never reach beyond it, like ${mcpToolsExample(spec.mcp)}` });
+          }
+        }
+      }
+
       // rounds ≤ the shell cap (cap-not-estimate; the step bound IS maxTurns)
       if (!(Number.isInteger(s.rounds) && s.rounds >= 1 && s.rounds <= maxStepRounds)) {
         red('bounds', `${at}.rounds`, `integer 1..${maxStepRounds} — the step bound is the Gate's maxTurns, it may tighten the shell cap, never exceed it`);
@@ -480,6 +502,13 @@ export function validatePlan(input, { job, maxStepRounds = 40, scopes, seedRed, 
 
       validateExit(s, at, red, { checkNames, fence: spec.writeScope, insideFence, writeStep, toolsParsed, scopeMenu, stepScope, overlapsStepScope, seedRedNames, isFinalWrite: i === lastWriteIdx });
     });
+
+    // R2c (piece 6), the generic-job half of fwd's findMcpPlanRed: a generic MCP job (flowType 'mcp') exists to call its tools, so at least one step must
+    // grant one. A Tickets job's own tools (issue_read, list_issues) belong to the job (the frozen read and the look), so no step has to name them.
+    if (isObj(spec.mcp) && flowTypeOf(spec) === 'mcp'
+      && !plan.steps.some((/** @type {any} */ s) => isObj(s) && Array.isArray(s.mcpTools) && s.mcpTools.length > 0)) {
+      red('missing-required', 'steps', `this is an MCP job (server "${spec.mcp.server}") and no step calls one of its tools [${Array.isArray(spec.mcp.tools) ? spec.mcp.tools.join(', ') : ''}] — give at least one step ${mcpToolsExample(spec.mcp)}`);
+    }
 
     // Rule B (`check-shed`, replan gate): the caller hands over the check names
     // the PREDECESSOR plan carried; a redraft that drops one is refused. Exits
