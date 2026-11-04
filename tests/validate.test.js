@@ -187,3 +187,12 @@ test('scopeContained still admits "node_modules"-like names that are not the who
     assert.equal(scopeContained(ok), true, `${JSON.stringify(ok)} is a look-alike, not node_modules itself — must stay admitted`);
   }
 });
+
+// R2b follow-up (hamr: fix it now, 2026-11-04): the frozen ticket folder is written by bareloop, never the worker — a signed fence naming it would let the Gate allow writes there.
+test('scopeContained rejects a fence naming the frozen-ticket folder ".bareloop-input", at any depth; src/** still passes', () => {
+  for (const bad of ['.bareloop-input/**', '.bareloop-input', '.bareloop-input/x.txt', 'a/.bareloop-input/**']) {
+    assert.equal(scopeContained(bad), false, `${JSON.stringify(bad)} must not be contained — the frozen ticket is arbiter territory`);
+  }
+  assert.equal(scopeContained('src/**'), true);
+  assert.equal(scopeContained('.bareloop-input-notes/**'), true);
+});

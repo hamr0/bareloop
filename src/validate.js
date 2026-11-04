@@ -11,6 +11,7 @@
 // housed here, they were never part of the dead schema.
 
 import { redact } from 'bareguard';
+import { TICKET_INPUT_DIR } from './worktree.js';
 
 /**
  * Map a schema writeScope entry to its enforcement prefix. bareguard
@@ -58,9 +59,10 @@ export function globToPrefix(scope) {
  * `.git` per repo, always at the workdir root, so its own runtime belt is a
  * single `fs.deny` entry). Both are inexpressible at declaration time, the
  * same law #1 already applies to `..`.
+ * The frozen-ticket folder (`.bareloop-input`, one spelling in worktree.js) is bareloop's own write, never the worker's: a fence naming it is refused the same way.
  * @type {readonly string[]}
  */
-export const FORBIDDEN_SCOPE_SEGMENTS = Object.freeze(['.git', 'node_modules']);
+export const FORBIDDEN_SCOPE_SEGMENTS = Object.freeze(['.git', 'node_modules', TICKET_INPUT_DIR]);
 
 /**
  * A scope may never reach the arbiter's inputs (design law #1): it must
