@@ -60,6 +60,7 @@ const RULE_WIDTH = 56;
  * @property {((target: string) => Promise<boolean>)} [open] default the shared OS opener
  * @property {(port: number) => Promise<boolean>} [portFree] default: try to bind 127.0.0.1:port
  * @property {(ms: number) => Promise<void>} [sleep]
+ * @property {() => number} [clock] monotonic ms clock for stop's wait-until-gone deadlines (default performance.now); tests pass a fake one so load cannot move a deadline
  * @property {(question: string) => Promise<string>} [ask] the y/N and menu reader
  * @property {string} [bareloopBin] default bin/bareloop.mjs of this package
  * @property {import('./tty-colour.js').Paint} [paint] colour for stdout lines (default none); {@link makePaint} decides TTY / NO_COLOR / TERM
@@ -369,8 +370,9 @@ async function waitFor(d, port, gone) {
   const sleep = sleepOf(d);
   const deadline = d.deadlineMs ?? WAIT_DEADLINE_MS;
   // real clock time (CLOCK_MONOTONIC): a probe can take up to its whole timeout, so counting POLL_MS a turn would overshoot the deadline many times over
-  const t0 = performance.now();
-  while (performance.now() - t0 <= deadline) {
+  const clock = d.clock ?? (() => performance.now());
+  const t0 = clock();
+  while (clock() - t0 <= deadline) {
     const found = await probePanels({ ports: [port], timeoutMs: d.timeoutMs, fetchImpl: d.fetchImpl });
     if (gone ? found.length === 0 : found.length > 0) return true;
     await sleep(POLL_MS);
@@ -501,7 +503,8 @@ export async function stopCmd(args, io, d, shown) {
     }
   }
   // the pid being gone is the truth (signal 0: ESRCH = gone, EPERM = alive); the port going quiet is checked after, for those that went
-  const t0 = performance.now();
+  const clock = d.clock ?? (() => performance.now());
+  const t0 = clock();
   const limit = d.deadlineMs ?? WAIT_DEADLINE_MS;
   const sleep = sleepOf(d);
   let pending = panels.slice();
@@ -509,7 +512,7 @@ export async function stopCmd(args, io, d, shown) {
     pending = pending.filter((p) => {
       try { kill(p.pid, 0); return true; } catch (e) { return /** @type {any} */ (e)?.code !== 'ESRCH'; }
     });
-    if (pending.length === 0 || performance.now() - t0 > limit) break;
+    if (pending.length === 0 || clock() - t0 > limit) break;
     await sleep(POLL_MS);
   }
   if (pending.length > 0) {

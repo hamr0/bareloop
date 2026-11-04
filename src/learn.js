@@ -526,10 +526,11 @@ export function foldCards(cards) {
   const n = cards.length;
   const par = cards.map((_, i) => i);
   const find = (/** @type {number} */ x) => { let r = x; while (par[r] !== r) r = par[r]; par[x] = r; return r; };
-  for (let i = 0; i < n; i += 1) for (let j = i + 1; j < n; j += 1) if (cardsMatch(cards[i], cards[j]).match) par[find(i)] = find(j);
+  // a pair already in one family cannot change the families, so its (Jaccard) test is skipped: one big family stays near-linear
+  for (let i = 0; i < n; i += 1) for (let j = i + 1; j < n; j += 1) if (find(i) !== find(j) && cardsMatch(cards[i], cards[j]).match) par[find(i)] = find(j);
   /** @type {Map<number, number[]>} */
   const comps = new Map();
-  for (let i = 0; i < n; i += 1) { const r = find(i); comps.set(r, [...(comps.get(r) ?? []), i]); }
+  for (let i = 0; i < n; i += 1) { const r = find(i); const f = comps.get(r); if (f) f.push(i); else comps.set(r, [i]); }
   /** @type {Card[][]} */
   const groups = [];
   for (const m of comps.values()) {
@@ -697,10 +698,11 @@ export function climb(rows) {
   const n = rows.length;
   const par = rows.map((_, i) => i);
   const find = (/** @type {number} */ x) => { let r = x; while (par[r] !== r) r = par[r]; par[x] = r; return r; };
-  for (let i = 0; i < n; i += 1) for (let j = i + 1; j < n; j += 1) if (cardsMatch(rows[i].sample, rows[j].sample, { sameJob: false }).match) par[find(i)] = find(j);
+  // a pair already in one family cannot change the families, so its (Jaccard) test is skipped: one big family stays near-linear
+  for (let i = 0; i < n; i += 1) for (let j = i + 1; j < n; j += 1) if (find(i) !== find(j) && cardsMatch(rows[i].sample, rows[j].sample, { sameJob: false }).match) par[find(i)] = find(j);
   /** @type {Map<number, number[]>} */
   const fam = new Map();
-  for (let i = 0; i < n; i += 1) { const r = find(i); fam.set(r, [...(fam.get(r) ?? []), i]); }
+  for (let i = 0; i < n; i += 1) { const r = find(i); const f = fam.get(r); if (f) f.push(i); else fam.set(r, [i]); }
   /** @type {Row[]} */
   const out = rows.map((r) => ({ ...r, level: 'workflow' }));
   for (const idx of fam.values()) {

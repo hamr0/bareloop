@@ -107,8 +107,8 @@ test('a HELD judged green says so on the screen — and the accept door only pro
   // and the preview is the same promise one invocation later. The screen says why.
   const bare = preview(['--door', f]);
   assert.equal(bare.code, 0, bare.out);
-  assert.match(bare.out, /held\s+this is a rubric \(soft-green\) job, so its green earns NO reuse and NO learning credit until you accept it, whether or not a judge ran/);
-  assert.doesNotMatch(bare.out, /accept\s+releases this run's learning credit/);
+  assert.match(bare.out, /held\s+this is a rubric \(soft-green\) job, so its green earns NO reuse credit until you accept it, whether or not a judge ran/);
+  assert.doesNotMatch(bare.out, /accept\s+releases this run's reuse credit/);
   assert.match(bare.out, /releases nothing/, 'the missing row is said in words, never silently dropped');
 
   // a registry HOLDING this run's green row: the promise is true, printed, and the
@@ -129,7 +129,7 @@ test('a HELD judged green says so on the screen — and the accept door only pro
   assert.equal(w.action, 'mint', JSON.stringify(w));
   const held = preview(['--door', f, '--registry', dir, '--workflow', 'bareagent-u-types']);
   assert.equal(held.code, 0, held.out);
-  assert.match(held.out, /accept\s+releases this run's learning credit/);
+  assert.match(held.out, /accept\s+releases this run's reuse credit/);
   assert.match(held.out, /--decide accept --registry .*--workflow bareagent-u-types --approve/, 'the registry rides the printed command');
 });
 

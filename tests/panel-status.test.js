@@ -87,6 +87,64 @@ test('C6-C8: the list row and the run detail carry the status from the ONE table
   assert.equal(rows.m1.status.word, 'capped', 'a money-halt escalation reads capped');
 });
 
+// Mirrors real spine msi0w2i5 (bareagent-u-types, cap-halt): the cap's escalation lands, then the step's own step-end reads
+// `escalated`, then money-halt and job-end cap-halt. The step card must wear the cap word, not failed. A strike-limit step
+// that a replan part follows stays failed even on a run that ends capped.
+test('2026-11-03: the step a money cap escalated reads capped, not failed (spine msi0w2i5); a strike-limit step before a later step stays failed', () => {
+  const home = tmp();
+  makeRun(home, 'k1', 'cap-halt', { extra: [
+    { type: 'step-start', step: 'fix-types', ts: '2026-10-01T10:02:10.000Z', seq: 10 },
+    { type: 'cap-halt', category: 'cap-halt', detail: 'worker loop: halt:gate.terminated', ts: '2026-10-01T10:04:00.000Z', seq: 20 },
+    { type: 'escalation', category: 'cap-halt', ts: '2026-10-01T10:04:00.000Z', seq: 21 },
+    { type: 'step-end', step: 'fix-types', outcome: 'escalated', ts: '2026-10-01T10:04:00.000Z', seq: 22 },
+    { type: 'money-halt', ts: '2026-10-01T10:04:01.000Z', seq: 23 },
+  ] });
+  const d = getRunDetail('k1', { home });
+  assert.equal(d.status.word, 'capped');
+  const step = d.parts.filter((p) => p.kind === 'step').at(-1);
+  assert.equal(step.outcome, 'escalated');
+  assert.equal(step.status.word, 'capped', 'the step the cap escalated wears the run\'s cap word');
+  assert.equal(step.stopReason ?? null, null, 'the part itself is untouched; only its status word changes');
+  assert.equal(partStatusFor({ kind: 'step', outcome: 'escalated', stopReason: null }).word, 'failed', 'an escalated step alone stays failed');
+  assert.equal(partStatusFor({ kind: 'step', outcome: 'green', stopReason: 'money cap' }).word, 'passed');
+  // a strike-limit step ended before a later step; the run capped inside the later one: only the LAST part is the capped one
+  makeRun(home, 'k2', 'cap-halt', { extra: [
+    { type: 'step-start', step: 'fix-types', ts: '2026-10-01T10:02:10.000Z', seq: 10 },
+    { type: 'step-end', step: 'fix-types', outcome: 'escalated', ts: '2026-10-01T10:03:00.000Z', seq: 12 },
+    { type: 'step-start', step: 'fix-more', ts: '2026-10-01T10:03:10.000Z', seq: 13 },
+    { type: 'escalation', category: 'cap-halt', ts: '2026-10-01T10:04:00.000Z', seq: 21 },
+    { type: 'step-end', step: 'fix-more', outcome: 'escalated', ts: '2026-10-01T10:04:00.000Z', seq: 22 },
+    { type: 'money-halt', ts: '2026-10-01T10:04:01.000Z', seq: 23 },
+  ] });
+  const steps = getRunDetail('k2', { home }).parts.filter((p) => p.kind === 'step');
+  assert.deepEqual(steps.map((p) => p.status.word), ['failed', 'capped']);
+});
+
+// Mirrors real spine msx87qqs (litectx-maintainer, wall-halt): the wall-halt escalation sits inside the step's window, so the step reads capped.
+// And real spine u-mshcpdg4 seq 185 (bareagent-u-bareloop): the step ladder's own stop is category `cap-halt` too, but its `spend` carries
+// `strikes`/`strikeLimit` and no `cap-halt` record precedes it; when the run then ends on the cap (money-halt, job-end cap-halt) the step
+// the LADDER escalated still reads failed.
+test('2026-11-03: the last step reads capped only when its own escalation was the cap or wall; a strike-limit step in a run that ended capped reads failed', () => {
+  const home = tmp();
+  makeRun(home, 'w1', 'wall-halt', { extra: [
+    { type: 'step-start', step: 'fix-types', ts: '2026-10-01T10:02:10.000Z', seq: 10 },
+    { type: 'escalation', category: 'wall-halt', ts: '2026-10-01T10:04:00.000Z', seq: 21 },
+    { type: 'step-end', step: 'fix-types', outcome: 'escalated', ts: '2026-10-01T10:04:00.000Z', seq: 22 },
+  ] });
+  const w = getRunDetail('w1', { home });
+  assert.equal(w.status.word, 'capped');
+  assert.equal(w.parts.filter((p) => p.kind === 'step').at(-1).status.word, 'capped', 'a wall-halt escalation is a cap');
+  makeRun(home, 'l1', 'cap-halt', { extra: [
+    { type: 'step-start', step: 'fix-types', ts: '2026-10-01T10:02:10.000Z', seq: 10 },
+    { type: 'escalation', category: 'cap-halt', spend: { runs: 2, strikes: 2, strikeLimit: 2 }, decision: '2/2 strikes — the step stopped making progress.', ts: '2026-10-01T10:03:00.000Z', seq: 21 },
+    { type: 'step-end', step: 'fix-types', outcome: 'escalated', ts: '2026-10-01T10:03:00.000Z', seq: 22 },
+    { type: 'money-halt', ts: '2026-10-01T10:03:01.000Z', seq: 23 },
+  ] });
+  const l = getRunDetail('l1', { home });
+  assert.equal(l.status.word, 'capped', 'the run itself ended on the cap');
+  assert.equal(l.parts.filter((p) => p.kind === 'step').at(-1).status.word, 'failed', 'the ladder escalated this step, not the cap');
+});
+
 // ── page ────────────────────────────────────────────────────────────────────────────────────────────────────
 const PAGE = readFileSync(fileURLToPath(new URL('../src/panel/index.html', import.meta.url)), 'utf8');
 function fnSrc(name) {

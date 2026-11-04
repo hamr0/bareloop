@@ -1,8 +1,8 @@
 // SOFTGREEN MODULE 6 — QUARANTINE, and the signer's accept as the release.
 //
 // The standing ruling (PRD v1.53, given its mechanism by v1.71 §3): *softgreen
-// passes are QUARANTINED from learning credit until the floor is proven*, and
-// **accept is what releases the run's learning credit**. The row is MINTED — a
+// passes are QUARANTINED from learning credit until the floor is proven* (learning credit = reuse/bridge credit), and
+// **accept is what releases the run's reuse credit**. The row is MINTED — a
 // judged green is a real run against a real workflow and the record says so — it
 // is simply worth NOTHING until a person takes the door. Never a deletion, never
 // a withheld row, and the unlock is FORWARD-ONLY: nothing walks the ledger

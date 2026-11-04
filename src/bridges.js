@@ -50,7 +50,8 @@ export const BRIDGE_SCHEMA = 'bridge-v1';
  * SOFTGREEN MODULE 6 — the verdict classes whose greens are minted QUARANTINED.
  *
  * The standing ruling (PRD v1.53, given a mechanism by v1.71 §3): *softgreen
- * passes are quarantined from learning credit until the judged floor is proven*,
+ * passes are quarantined from learning credit until the judged floor is proven*
+ * (learning credit = reuse/bridge credit),
  * and **the signer's `accept` at the review door is what releases it**.
  *
  * `soft-green` and NOT `hitl`: the hold is about the young JUDGE, not about every
@@ -65,7 +66,7 @@ export const QUARANTINED_VERDICTS = Object.freeze(['soft-green']);
  * spelling, because three literals is how a hold silently becomes a breakage. */
 export const QUARANTINED_CODE = 'quarantined';
 
-/** does a green under this verdict class earn its learning credit at the close, or
+/** does a green under this verdict class earn its reuse credit at the close, or
  * does it wait for a person? Absent/unknown means green's behaviour, byte for byte
  * — the pre-softgreen path is the default and stays untouched.
  * @param {unknown} verdictType @returns {boolean} */
@@ -525,7 +526,7 @@ export function reuseEligibility(bridge) {
 /**
  * THE REVIEW DOOR, written down (PRD v1.71 §3). The person read the finished run
  * and said one of three things; this records that on the run's own row, and — for
- * `accept` on a HELD green — releases the learning credit that green has been
+ * `accept` on a HELD green — releases the reuse credit that green has been
  * carrying unspent.
  *
  * Three properties, and each is a ruling rather than a convenience:

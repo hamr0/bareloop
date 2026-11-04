@@ -2311,7 +2311,7 @@ async function execute(ctx) {
     // still names (soft-green today) — a green-class row is born RELEASED, because a
     // machine proved it and there was never a credit to quarantine
     out(quarantinesCredit(spec.verdictType)
-      ? '  HELD: this green\'s learning credit is quarantined until you release it at the door below'
+      ? '  HELD: this green\'s reuse credit is quarantined until you release it at the door below'
       : '  RELEASED: a machine proved this green, so its row carries no credit to quarantine');
   } else if (REGISTRY_ROW.write !== null) {
     // a REFUSED write is said out loud rather than swallowed — the door below is about to

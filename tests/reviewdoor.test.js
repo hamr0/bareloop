@@ -298,7 +298,7 @@ function seedRegistry(t, { verdictType, runid = 'ms1' }) {
   return dir;
 }
 
-test('a SOFTGREEN accept RELEASES the run\'s learning credit and records the report card', async (t) => {
+test('a SOFTGREEN accept RELEASES the run\'s reuse credit and records the report card', async (t) => {
   const r = await greenRun(t, { verdictType: 'soft-green' });
   const registryDir = seedRegistry(t, { verdictType: 'soft-green' });
   const before = loadBridge(join(registryDir, 'review-door.json'));

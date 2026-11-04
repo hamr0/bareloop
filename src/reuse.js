@@ -1647,7 +1647,7 @@ export async function runReuse(opts) {
       // TERMINAL rather than on the absence of a plan. `already-green` means the
       // close was satisfied at the precheck — before this leg wrote a byte — so
       // whatever plan is on the spine did not produce it, and minting a version
-      // from one would be learning credit for work that did not happen.
+      // from one would be reuse credit for work that did not happen.
       //
       // It used to be covered by accident: a cold already-green never drafts, so
       // `read.plan` was null and the branch below caught it. N4 broke that
@@ -2150,7 +2150,7 @@ export function writeGreenRow({ registryDir, bridge = null, meta, record }) {
  * row, and if so, write it.
  *
  * `scripts/run-u.mjs` has always kept standalone bridge FILES and never a registry,
- * so its review door could describe a held learning credit it had no row to release:
+ * so its review door could describe a held reuse credit it had no row to release:
  * `--decide accept` reached `recordDoor`, found no green row for the runid and died
  * `no-row-for-run`. This is the row, and STORAGE IS ALL IT IS — selection, promotion
  * and reuse execution stay parked (layer-3-reuse). Nothing here reads a row back.
@@ -2207,7 +2207,7 @@ export function writeRunGreenRow({ registryDir, job, name, outcome, plan, record
 /**
  * Apply a signer's door decision to the workflow a run wrote its row against:
  * record the disposition, and — on `accept` over a HELD judged green — release the
- * learning credit that green has been carrying unspent (PRD v1.71 §3).
+ * reuse credit that green has been carrying unspent (PRD v1.71 §3).
  *
  * This is the ONE seam between a person's answer and the box. It is deliberately
  * separate from `runReuse`: the door opens AFTER the run has ended (a green run is

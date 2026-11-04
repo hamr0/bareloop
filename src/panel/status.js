@@ -75,8 +75,10 @@ export function statusFor(o) {
  */
 export function partStatusFor(part) {
   if (part.kind === 'drafting') return statusFor({ outcome: 'green' });
-  if (typeof part.outcome === 'string') return statusFor({ outcome: part.outcome });
   const why = part.stopReason;
+  // a step the run's cap escalated ends `escalated` yet wears the cap word (src/panel/server.js cappedLastStep)
+  if (part.outcome === 'escalated' && (why === 'money cap' || why === 'time cap')) return { key: 'capped', ...STATUS.capped };
+  if (typeof part.outcome === 'string') return statusFor({ outcome: part.outcome });
   if (why) {
     const key = why === 'money cap' || why === 'time cap' ? 'capped' : why === 'you stopped it' ? 'stopped' : why === 'died' ? 'died' : 'failed';
     return { key, ...STATUS[key] };

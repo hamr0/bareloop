@@ -1881,7 +1881,7 @@ function getRunDetailBody(runid, opts) {
     // tabs still never disagree about order/counts/blocked-call figures.
     // a run that DIED (no job-end, runner gone — `death`, decided once above) leaves its last part in flight: that part reads
     // `died`, never the "happened, so passed" default. Replay alone cannot tell died from still running, so the verdict lives here.
-    parts: (handed.drafting && Array.isArray(enrichedParts) ? [handed.drafting, ...enrichedParts] : enrichedParts)?.map((p, i, all) => ({ ...(death.died && i === all.length - 1 ? diedFixTry(p) : p), status: partStatusFor(death.died && i === all.length - 1 && p.kind !== 'drafting' && p.outcome == null && !p.stopReason ? { ...p, stopReason: 'died' } : p) })),
+    parts: (handed.drafting && Array.isArray(enrichedParts) ? [handed.drafting, ...enrichedParts] : enrichedParts)?.map((p, i, all) => ({ ...(death.died && i === all.length - 1 ? diedFixTry(p) : p), status: partStatusFor(death.died && i === all.length - 1 && p.kind !== 'drafting' && p.outcome == null && !p.stopReason ? { ...p, stopReason: 'died' } : cappedLastStep(p, i === all.length - 1, status.key)) })),
     replans: summary.replans,
     close: summary.close,
     branch: summary.branch,
@@ -2770,6 +2770,24 @@ function noVerdictWords(stop) {
   if (stop.what === 'provider-red') return stop.detail ? `provider dropped (${stop.detail}), no check ran` : 'provider dropped, no check ran';
   if (stop.by === 'run-end' && stop.what === 'stopped') return STOPPED_WORDS;
   return CUT_OFF_WORDS;
+}
+
+/**
+ * A run that ended capped (money or time) cut its LAST part, a step the cap escalated: that step's own `step-end` reads
+ * `escalated` and carries no `stopReason`, so its card said failed under a capped header (real spines msi0w2i5, msx87qqs: the
+ * cap-halt / wall-halt escalation lands just before the step-end). The verdict is known only here, like the died marking, so the
+ * LAST part alone gets the cap word, and only when the step's OWN escalation (`part.tripped`, src/replay.js) was the cap: `wall-halt`
+ * reads 'time cap', a `cap-halt` that is not the ladder's (`tripped.ladder`) reads 'money cap'. A step its strike limit escalated
+ * stays failed even if the run then ended on the cap (real spine u-mshcpdg4: the ladder's stop is also category `cap-halt`), and so
+ * does an earlier escalated step (a later part follows).
+ * @param {any} part @param {boolean} isLast @param {string} runStatusKey
+ */
+function cappedLastStep(part, isLast, runStatusKey) {
+  if (!isLast || runStatusKey !== 'capped' || part.kind !== 'step' || part.outcome !== 'escalated' || part.stopReason) return part;
+  const t = part.tripped;
+  if (t?.category === 'wall-halt') return { ...part, stopReason: 'time cap' };
+  if (t?.category === 'cap-halt' && !t.ladder) return { ...part, stopReason: 'money cap' };
+  return part;
 }
 
 /** a died run's fix part: its last try never got a verdict (the Audit grid's "?" row says it died) @param {any} part */
