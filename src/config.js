@@ -11,7 +11,8 @@
 //   { "monthlyLimitUsd": <number > 0>,          // absent = no limit, no check
 //     "learningHints": true|false,               // absent = true (ON by default; only false turns it off): the planner is handed cross-run learnings (src/learn.js); the tally is kept either way
 //     "keys":   { "<ENV NAME>": { "shape": "<shape id>", "baseUrl": "http(s)://…", "legacyMaxTokens": true|false } },
-//     "models": { "<ENV NAME>": [ { "model": "<id>", "use": true|false, "inPerM": n, "outPerM": n } ] } }
+//     "models": { "<ENV NAME>": [ { "model": "<id>", "use": true|false, "inPerM": n, "outPerM": n } ] },
+//     "mcpPaths": [ "<absolute path of an extra MCP config file>" ] }   // judged by `mcpPathProblem`; read by src/mcpsources.js
 // An older file's `keys.<ENV>.{name,priceInPerM,priceOutPerM}` is tolerated and read as ONE model
 // line (`effectiveModels`, src/providerrows.js); the first write of that row's `models` list removes them.
 // `modelsProblem` is the ONE rule for a row's model lines: a price is a PAIR or neither, a ticked
@@ -123,6 +124,24 @@ export function modelsProblem(list) {
 }
 
 /**
+ * The rule for `mcpPaths` (extra MCP config files the person added): a list of absolute, NUL-free paths, no duplicates. Plain words, or null.
+ * (The Settings > MCP tab, R3, is the writer; `~` is expanded there, so what is stored is always absolute.)
+ * @param {unknown} list
+ * @returns {string|null}
+ */
+export function mcpPathProblem(list) {
+  if (!Array.isArray(list)) return 'The MCP paths must be a list of file paths.';
+  const seen = new Set();
+  for (const p of list) {
+    if (typeof p !== 'string' || p.trim() === '' || p.length > 1000 || p.includes('\0')) return 'Each MCP path must be a file path.';
+    if (!p.startsWith('/')) return `The MCP path "${p}" must be a full path (it starts with /).`;
+    if (seen.has(p)) return `The MCP path "${p}" is listed twice.`;
+    seen.add(p);
+  }
+  return null;
+}
+
+/**
  * The first problem in a document's known fields, in plain words, or null.
  * @param {Record<string, any>} doc
  * @returns {string|null}
@@ -130,6 +149,10 @@ export function modelsProblem(list) {
 function docProblem(doc) {
   // monthlyLimitUsd is NOT judged here: `monthlyLimitOf` (src/monthly.js) owns its read-time sentence
   if (doc.learningHints !== undefined && typeof doc.learningHints !== 'boolean') return 'learningHints must be true or false';
+  if (doc.mcpPaths !== undefined) {
+    const bad = mcpPathProblem(doc.mcpPaths);
+    if (bad) return `mcpPaths: ${bad}`;
+  }
   if (doc.keys !== undefined) {
     if (doc.keys === null || typeof doc.keys !== 'object' || Array.isArray(doc.keys)) return 'keys must be an object of key variable names';
     for (const [env, row] of Object.entries(doc.keys)) {
