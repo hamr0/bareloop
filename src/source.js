@@ -1369,7 +1369,7 @@ export async function refreezeUrlInputs({ into, fetchUrl = (u) => fetchPageText(
   const listRows = ticket === undefined ? [] : rows.filter((/** @type {any} */ r) => parseTicketList(r.url).ok);
   if (ticket !== undefined && listRows.length !== 1) {
     return { ok: false, error: listRows.length === 0
-      ? 'This job reads a ticket, but none of its Inputs is a GitHub issues address (https://github.com/<owner>/<repo>/issues). The run did not start. Nothing spent.'
+      ? 'This job reads a ticket, but none of its Inputs is the issues page of a GitHub repository (owner/repo/issues). The run did not start. Nothing spent.'
       : 'This job reads one ticket, but more than one of its Inputs is a GitHub issues address. The run did not start. Nothing spent.' };
   }
   for (const row of rows) {
