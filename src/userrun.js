@@ -311,7 +311,7 @@ class ExitSignal extends Error {
  * @property {string} [into] see `RunOpts.into`
  * @property {boolean} [refreeze] a FRESH `--spec` run: fetch the web inputs again AFTER the run is listed (never on resume/door/decide)
  * @property {{number: number, mcp: {server: string, tools: string[]}, repo?: true}} [ticket] a FRESH run of a job that reads tickets (flow type Tickets): the ticket number `--ticket` named (per run, never signed) and the job's signed `mcp`; `repo` = a code-repository (worktree) job, whose ticket is frozen into the worktree's private `.bareloop-input/` (src/ticketrepo.js) instead of the prepared copy's `input/`
- * @property {{url: string, record: any, reread?: () => Promise<any>}} [pr] piece 12: a FRESH run of a code-repo job on a pull request: `url` = the PR address, `record` = the frozen PR record (its `head.sha` is what the worktree is checked out at, src/prcheckout.js), `reread` = read that record again once if the PR moved. Set by the PR reader (not built yet; an OPEN item), never by a flag
+ * @property {{url: string, record: any, reread?: () => Promise<any>}} [pr] piece 12: a FRESH run of a code-repo job on a pull request: `url` = the PR address, `record` = the frozen PR record (its `head.sha` is what the worktree is checked out at, src/prcheckout.js), `reread` = read that record again once if the PR moved. Set by the PR reader (a repo job whose ticket line is a pulls list supplies it from its own frozen `pull_request_read`; this field is the override seam), never by a flag
  * @property {boolean} [anyway] `--anyway`: run this ticket even if the job's filter would skip it (inert until the filter exists; it needs --ticket)
  * @property {string|null} model
  * @property {string|null} providerKey
@@ -1612,20 +1612,22 @@ async function execute(ctx) {
     // ticket is the one Inputs row `refreezeUrlInputs` re-reads. The record rides onto this run's `job-start` (metadata only, never the text).
     /** @type {{ok: true, refreshed: string[], seed: string|null}|{ok: false, error: string}} */
     let fresh;
+    // piece 12's door: `ctx.pr` (a test seam / caller) wins; otherwise a PULLS ticket line of a repo job supplies it from its own frozen read
+    let prIn = ctx.pr;
     if (ctx.ticket?.repo === true) {
       const frozen = await freezeRepoTicket({ workdir: wd, inputs: Array.isArray(spec.inputs) ? spec.inputs : [], ticket: ctx.ticket });
-      if (frozen.ok) ticketRecord = frozen.record;
+      if (frozen.ok) { ticketRecord = frozen.record; prIn ??= frozen.pr; }
       fresh = frozen.ok ? { ok: true, refreshed: [], seed: null } : frozen;
     } else {
       fresh = await refreezeUrlInputs({ into: ctx.into, ...(deps.fetchUrl ? { fetchUrl: deps.fetchUrl } : {}), ...(ctx.ticket ? { ticket: ctx.ticket } : {}) });
     }
     // piece 12: a PR job's worktree is moved to the PR's head BEFORE the seed is read and the work branch is made (planrun, later); every refusal ends in "Nothing spent."
-    if (fresh.ok && ctx.pr !== undefined) {
+    if (fresh.ok && prIn !== undefined) {
       const read = await readSourceManifest(ctx.into);
       const repoRoot = read.stop === null && read.present && typeof read.manifest?.repo === 'string' ? read.manifest.repo : null;
       if (repoRoot === null) fresh = { ok: false, error: 'This pull request job has no repository to check the code out of. The run did not start. Nothing spent.' };
       else {
-        const co = await checkoutPrHead({ repo: repoRoot, worktree: wd, pr: ctx.pr });
+        const co = await checkoutPrHead({ repo: repoRoot, worktree: wd, pr: prIn });
         if (co.ok) {
           recordPrOnManifest(ctx.into, co.checkout);
           SEED = co.checkout.sha;
