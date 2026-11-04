@@ -7,6 +7,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Added
+
+- **A job can read a ticket through the person's own MCP server (MCP + tickets, R2a).** Four optional signed job fields: `mcp {server, tools}`, `flowType` (`plain`|`mcp`|`tickets`), `ticketFilter {priority, labels}` and `ticketWatch` (`state`|`labels`); an absent key keeps every old spec's hash (pinned on a real existing spec), a changed `mcp`/`flowType`/`ticketFilter` changes the workflow key, and `assembleSpec` refuses a draft that carries any of them. A rubric or plain-folder job whose Inputs line is a GitHub issues address reads one ticket at run start through `issue_read` (`run-u --spec ... --ticket <n>`; `--anyway` is accepted and inert until the filter exists): the server starts with `PATH` and `HOME` only, only the signed tools exist for it, and the reply is frozen as the run's input with `mcp`, `ticket` and `masked` on its manifest row. A secret in a ticket is masked with the one inventory before the sha, never refused (page inputs keep their refusal). Refusals (server or tool missing, remote server, locked key store, empty reply) are plain words at $0. New: `src/ticketmcp.js`, `src/ticketshape.js`, `src/ticket.js` (the source-neutral ticket shape and `readTicket`, MCP or page), `src/mcpsources.js` (server lookup across bare-agent's places and `config.json` `mcpPaths`; its Settings tab comes later). Not yet: tickets for a job on a code repository (refused at $0), the filter that skips a ticket, the `new-ticket` trigger, step-level MCP tools. Test-proven against a fake MCP server; the real-GitHub read is the R0 check.
+
 ### Fixed
 
 - **The launcher `6 update` no longer hands your shell's keys to npm.** `npm install -g bareloop@latest` now runs with the same credential-stripped environment as bareloop's own `npm ci`; the panel launch still gets its keys.

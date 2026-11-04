@@ -352,7 +352,7 @@ async function mainInner(argv, deps, holder) {
   // deps)`, unparsed: that function is this flag grammar's one owner
   // (`--job`/`--spec`/`--resume`/`--door`/`--decide`/`--text`/
   // `--review-door`/`--approve`/`--registry`/`--workflow`/`--model`/
-  // `--read-shim`/`--scout`). `deps` is spread first so an injected test
+  // `--read-shim`/`--scout`/`--ticket`/`--anyway`). `deps` is spread first so an injected test
   // seam (`deps.provider`/`providerFor`/`judgeProvider`) still reaches it,
   // then `env`/`out`/`err` are overridden to the SAME resolved values every
   // other command here prints through, so `run-u`'s output lands on the
