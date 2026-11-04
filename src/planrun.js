@@ -2297,6 +2297,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   const shrinkGuardPath = await trackedAtSeedGuard(workdir, guardListing.files);
 
   const lc = new LiteCtx({ root: workdir });
+  let ctxIndexRecorded = false; // the run's ONE `ctx-index` record: the first index attempt (every later mkWorker re-indexes incrementally, unrecorded)
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
   const fencePrefixes = job.writeScope.map((/** @type {string} */ g) => resolve(workdir, globToPrefix(g)));
   const auditPath = join(workdir, GATE_AUDIT_FILE);
@@ -2681,12 +2682,13 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         const res = await lc.index({ yield: true });
         if (typeof res?.files === 'number') indexedFiles = res.files;
       } catch (e) { indexError = String(/** @type {any} */ (e)?.message ?? e).slice(0, 300); }
-      emitCtx('ctx-index', {
+      if (!ctxIndexRecorded) emitCtx('ctx-index', {
         indexed: lc.indexed === true,
         ...(indexedFiles === undefined ? {} : { files: indexedFiles }),
         ms: Math.round(performance.now() - indexT0),
         ...(indexError === undefined ? {} : { error: indexError }),
       });
+      ctxIndexRecorded = true;
     }
     const toolDefs = [...shell, ...ctx];
     // The carry note: records what each ask's read-class tools returned (a summary, never content) and hands the next
