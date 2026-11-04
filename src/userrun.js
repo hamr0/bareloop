@@ -28,7 +28,7 @@ import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, rmS
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
 import { join, resolve, dirname, basename } from 'node:path';
-import { commitWork, removeWorktree } from './worktree.js';
+import { commitWork, removeWorktree, removePrRef } from './worktree.js';
 import { moveFile } from './movefile.js';
 import { runJob } from './run.js';
 import { moneyWithDraft } from './replay.js';
@@ -231,6 +231,7 @@ class ExitSignal extends Error {
 /**
  * @typedef {object} Deps
  * @property {Record<string,string|undefined>} [env]
+ * @property {{url: string, record: any, reread?: () => Promise<any>}} [pr] piece 12: the PR a FRESH run of a code-repo job is checked out at (see `RunCtx.pr`); the door the PR reader will use, and the test seam. No flag sets it.
  * @property {string} [keysHome] P4a — a test seam naming the home whose `.env` keys file is loaded
  *   even when `env` is injected; production never sets it.
  * @property {string} [invokedAs] the command this run was actually reached through (`src/invoke.js`);
@@ -2131,6 +2132,8 @@ async function execute(ctx) {
         if (doorHere) worktreeLine = `\nWORKTREE  ${done}${wb || fin.committed ? ` on ${onBranch}` : ''}; the worktree folder is KEPT for the review door — ${wd}`;
         else {
           const gone = removeWorktree(wtManifest.repo, wd);
+          // piece 12 item 3: the PR's private ref goes with the worktree (the branch holds the code now)
+          if (gone && Number.isSafeInteger(wtManifest.prNumber)) removePrRef(wtManifest.repo, wtManifest.prNumber);
           worktreeLine = `\nWORKTREE  ${done}${wb || fin.committed ? ` on ${onBranch}` : ''}; ${gone ? 'the worktree folder is removed' : `the worktree folder could not be removed — ${wd}`}`;
         }
       } catch (e) {
@@ -2757,6 +2760,7 @@ export async function main(argv, deps = {}) {
       ...(target.into === undefined ? {} : { into: target.into }),
       ...(refreeze ? { refreeze: true } : {}),
       ...(tickets && refreeze && ticketNumber !== undefined ? { ticket: { number: ticketNumber, mcp: spec.mcp, ...(worktreeJob ? { repo: /** @type {const} */ (true) } : {}) } } : {}),
+      ...(deps.pr !== undefined && refreeze ? { pr: deps.pr } : {}),
       ...(anyway ? { anyway: true } : {}),
       model: argFlag('model'),
       providerKey: argFlag('provider'),
