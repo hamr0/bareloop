@@ -35,6 +35,7 @@ import { scanSecrets, SECRET_PATTERNS, SECRET_PATTERN_NAMES } from './validate.j
 import { fetchPageText, isWebUrl } from './pagefetch.js';
 import { parseTicketList } from './ticketshape.js';
 import { readTicket } from './ticket.js';
+import { proveTicketLine } from './ticketrepo.js';
 
 /** @typedef {{stop: string, code: string}} SourceRefusal a named, non-throwing stop */
 
@@ -1176,10 +1177,14 @@ export function nonRepoSourceMessage(kind) {
  *     file. A known secret shape in its content is NOT a refusal (masked where recorded, as the P6 worktree door does).
  * A folder value is checked for existence and tracking only (its files are the repo's own, which the worktree door
  * already masks). Reads the tree; writes nothing.
+ * MCP + tickets piece 1a: with `opts.mcp` (the job's signed `{server, tools}`), a line 2+ whose value is a GitHub issues address is a TICKET line, not a repo path: it is proven at $0
+ * as "the MCP can read it" (`proveTicketLine`: server named in the person's config, not remote, `issue_read` signed). Only one such line; it is read and frozen at run start.
+ * Without `opts.mcp` the same line is the old refusal ("only files inside the repo for now").
  * @param {{n: number, label: string, value: string}[]} inputs the parsed Inputs (`parseInputs`)
+ * @param {{mcp?: {server: string, tools: string[]}, configPath?: string}} [opts]
  * @returns {Promise<{ok: true, repo: string, root: string|null}|{ok: false, error: string}>} `repo` = line 1's absolute path; `root` = the git root it sits in (null when line 1 alone was given and it is not in a git repo)
  */
-export async function proveInputFiles(inputs) {
+export async function proveInputFiles(inputs, opts = {}) {
   const first = inputs[0];
   if (!first) return { ok: false, error: 'Inputs, line 1: the repo is required' };
   /** @param {number} n @param {string} msg @returns {{ok: false, error: string}} */
@@ -1197,8 +1202,15 @@ export async function proveInputFiles(inputs) {
   const root = found.dir;
   const rootReal = await realpath(root);
   const repoReal = await realpath(repo);
+  let ticketLines = 0;
   for (const inp of inputs.slice(1)) {
     const { n, label, value } = inp;
+    if (opts.mcp !== undefined && parseTicketList(value).ok) {
+      if (++ticketLines > 1) return bad(n, 'only one ticket address per job - a second issues address is not read');
+      const proof = proveTicketLine(opts.mcp, opts.configPath === undefined ? {} : { configPath: opts.configPath });
+      if (!proof.ok) return bad(n, proof.error);
+      continue;
+    }
     if (/^search$/i.test(label) || /^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return bad(n, 'only files inside the repo for now');
     // like-for-like: resolve against the repo as the REAL filesystem sees it, so a repo reached through a symlinked parent
     // compares against `rootReal` in the same spelling (a symlinked INPUT FILE is still refused below, by lstat)
