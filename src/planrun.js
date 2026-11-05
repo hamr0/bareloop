@@ -2308,6 +2308,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
   const shrinkGuardPath = await trackedAtSeedGuard(workdir, guardListing.files);
 
   const lc = new LiteCtx({ root: workdir });
+  let ctxIndexRecorded = false; // the run's ONE `ctx-index` record: the first index attempt (every later mkWorker re-indexes incrementally, unrecorded)
   const ceiling = Array.isArray(job.tools) ? job.tools : [...TOOL_MENU];
   const fencePrefixes = job.writeScope.map((/** @type {string} */ g) => resolve(workdir, globToPrefix(g)));
   const auditPath = join(workdir, GATE_AUDIT_FILE);
@@ -2645,7 +2646,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
         memoryCacheCounts.bytesWithheld += bytes;
       },
       // The first-read map (experimental, off unless the spec says `readMap: true`): this worker's index, and whether it holds ctx_get.
-      readMap: readMapOn ? { root: workdir, hasGet: grantedNames.has(TOOL_BY_VERB.get), getNode: (/** @type {string} */ rel) => lc.getNode(rel), refresh: () => lc.index({ yield: true }), emit: emitCtx } : null,
+      readMap: readMapOn ? { root: workdir, hasGet: grantedNames.has(TOOL_BY_VERB.get), getNode: (/** @type {string} */ rel) => lc.getNode(rel), indexed: () => lc.indexed, refresh: () => lc.index({ yield: true }), emit: emitCtx } : null,
     });
     const rdTool = shell.find((/** @type {{name: string}} */ t) => t.name === TOOL_BY_VERB.read);
     // F48: on native, bound shell_read below the CLI's tool-result display cap and hand back a
@@ -2688,8 +2689,25 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     // sampler all live here) for its full duration: measured 4.4s at 4.5% liveness on a
     // 155-file force pass. With yield:true the worst single block measured 189–252ms (n=4),
     // below anything a second/minute-scale timer can perceive. Store output is byte-identical.
-    // …and with the first-read map on the index is built at run start too, so the map never waits on a ctx tool being granted.
-    if (ctx.length || readMapOn) await lc.index({ yield: true });
+    // …and the index is built at run start for EVERY run (litectx 0.41 makes index.db lazy: nothing exists until the first index()),
+    // so the carry memo's function ranges and the first-read map never wait on a ctx tool being granted. A failed pass never
+    // crashes the run: it is recorded and the run goes on without ranges. One report-only record says what happened — the worker is told nothing.
+    {
+      const indexT0 = performance.now();
+      /** @type {number|undefined} */ let indexedFiles;
+      /** @type {string|undefined} */ let indexError;
+      try {
+        const res = await lc.index({ yield: true });
+        if (typeof res?.files === 'number') indexedFiles = res.files;
+      } catch (e) { indexError = String(/** @type {any} */ (e)?.message ?? e).slice(0, 300); }
+      if (!ctxIndexRecorded) emitCtx('ctx-index', {
+        indexed: lc.indexed === true,
+        ...(indexedFiles === undefined ? {} : { files: indexedFiles }),
+        ms: Math.round(performance.now() - indexT0),
+        ...(indexError === undefined ? {} : { error: indexError }),
+      });
+      ctxIndexRecorded = true;
+    }
     // R2c: the step's bridge tools sit beside its shell and ctx tools. Only the GRANTED names exist in `mcpRun.tools` (the bridge was started with `allow` = the
     // step's `mcpTools`), so an unsigned tool is not in the menu the Loop is given.
     const toolDefs = [...shell, ...ctx, ...(mcpRun ? mcpRun.tools : [])];
@@ -2699,7 +2717,7 @@ export async function runPlan(job, { workdir, provider, nativeProvider, provider
     /** @param {(prompt: string, defs?: any) => Promise<any>} inner */
     const withCarry = (inner) => (!carry ? inner : async (/** @type {string} */ prompt, /** @type {any} */ defs) => {
       // The index is incremental: refreshing it here keeps the function ranges true to the files as they now are.
-      if (phase === 'fix' || phase.startsWith('step:')) { try { if (ctx.length) await lc.index({ yield: true }); } catch { /* ranges are left out */ } }
+      if (phase === 'fix' || phase.startsWith('step:')) { try { await lc.index({ yield: true }); } catch { /* ranges are left out */ } }
       const text = await carry.beginAsk({ phase, iteration: roundIteration, prompt, getNode: (rel) => lc.getNode(rel) });
       try { return await inner(text ? `${prompt}\n\n${text}` : prompt, defs); } finally { carry.endAsk({ bounded: attemptBounded, iteration: roundIteration, rounds: attemptRounds }); }
     });

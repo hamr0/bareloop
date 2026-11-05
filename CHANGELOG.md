@@ -26,6 +26,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 - **The launcher `6 update` no longer hands your shell's keys to npm.** `npm install -g bareloop@latest` now runs with the same credential-stripped environment as bareloop's own `npm ci`; the panel launch still gets its keys.
 
+### Changed
+
+- **litectx `^0.41.0`; the index is built at the start of every run, and the run log says what happened.** litectx 0.41 makes `index.db` lazy, so a run that was granted no ctx tool no longer leaves an empty `.litectx` db and, before this, never had the index the carry memo's function ranges and the first-read map read. Run start now indexes every run, the per-ask refresh runs on every step and fix ask, an index failure is recorded and the run goes on without ranges, and one `ctx-index` spine record (indexed, files, ms, error) is written per run. The worker is told nothing new. The first-read map skips with `no-index` when `lc.indexed` is false.
+
 ## [0.54.1] - 2026-11-04
 
 ### Fixed
