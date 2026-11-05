@@ -27,7 +27,7 @@ function harness() {
     querySelector: () => radios.find((r) => r.checked) ?? null,
   };
   const st = { live: false };
-  const src = `var __e = function(){ return {value: "plain", hidden: false, disabled: false, readOnly: false, classList: {toggle: function(){}}}; }; var flowTypeEl = __e(), mcpEl = __e(), ticketEl = __e(); function paintFlowType(){} /* piece 8: the card's Flow type / MCP / Ticket stand-ins */ var LOCKED_IDS = ["jf-name", "jf-job"]; var OPEN_IDS = ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var reuseOn = false; var sessionLive = false; var resumeRun = null; var sched = null; var CAP_IDS = ["jf-cap-money", "jf-cap-time"]; function syncThinking(){}
+  const src = `var __e = function(){ return {value: "plain", hidden: false, disabled: false, readOnly: false, classList: {toggle: function(){}}}; }; var flowTypeEl = __e(), mcpEl = __e(), ticketEl = __e(), cardSchedEl = __e(), cardSchedTimeEl = __e(); function paintFlowType(){} /* piece 8: the card's Flow type / MCP / Ticket stand-ins */ var LOCKED_IDS = ["jf-name", "jf-job"]; var OPEN_IDS = ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var reuseOn = false; var sessionLive = false; var resumeRun = null; var sched = null; var CAP_IDS = ["jf-cap-money", "jf-cap-time"]; function syncThinking(){}
 ${fnSrc('syncCardLock')}\n${fnSrc('setReuseLocked')}
 return { setReuseLocked, setLive: function(v){ sessionLive = v; syncCardLock(); } };`;
   // eslint-disable-next-line no-new-func
