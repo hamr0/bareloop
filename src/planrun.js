@@ -746,7 +746,7 @@ export function planPrompt(job, scoutBlob, reds, maxStepRounds, failure, scopes,
   const mcpLaw = (typeof job.mcp === 'object' && job.mcp !== null) && Array.isArray(job.mcp.tools) && job.mcp.tools.length > 0
     ? `\n- "mcpTools" (optional): the MCP tools this step may call — a non-empty unique subset of ${JSON.stringify(job.mcp.tools)}, the tools of server "${job.mcp.server}" the person signed.
   A tool outside that list is rejected: you may narrow a step to a subset, never reach beyond it. Example: ${mcpToolsExample(job.mcp)}.
-  The worker calls a granted tool by the name "${job.mcp.server}_<tool>". A step without "mcpTools" has no MCP tool at all.${flowTypeOf(job) === 'mcp'
+  The worker calls a granted tool by the name "${job.mcp.server}_<tool>", using the exact tool name above. A step without "mcpTools" has no MCP tool at all. The job's server and tool list were set by the program, not by you, and the plan has no field for them.${flowTypeOf(job) === 'mcp'
     ? `\n  This is an MCP job: at least one step must carry "mcpTools", or the plan is rejected.`
     : `\n  The job's own ticket read needs no step; give "mcpTools" only to a step that must call a signed tool itself.`}`
     : '';
