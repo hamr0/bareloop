@@ -194,6 +194,27 @@ test('the schedule card and the Run tab say it in words: When a new ticket arriv
   assert.equal(scheduledWords(WHEN), 'When a new ticket arrives in issues');
 });
 
+test('the schedule card is told which Inputs it may watch: a Tickets job with list_issues signed names its issues-list line, before and after signing; a plain job names none', async () => {
+  const w = await world();
+  assert.deepEqual(w.door.cardFor('sched-job').ticketInputs, ['issues']);
+  const unsigned = await world({ sign: false });
+  assert.deepEqual(unsigned.door.cardFor('sched-job').ticketInputs, ['issues']);
+  const noTool = await world({ tools: ['issue_read'], sign: false });
+  assert.deepEqual(noTool.door.cardFor('sched-job').ticketInputs, []);
+  const plain = await world({ flow: 'plain', sign: false });
+  assert.deepEqual(plain.door.cardFor('sched-job').ticketInputs, []);
+});
+
+test('the check at sign time reads the job to be SIGNED (the card\'s Inputs), not the origin run\'s: a card whose Inputs line is no longer an issues list is refused', async () => {
+  const home = keysHome();
+  const spec = { ...specOf({ files: true }), inputs: [{ n: 1, label: 'issues', value: LIST }], flowType: 'tickets', mcp: { server: 'github', tools: TOOLS } };
+  makeRun(home, { runid: 'r1', spec, accepted: true });
+  const p = await panel({ home, now: clock(SLOT) });
+  const pre = await p.post('/api/author/schedule-prepare', { runid: 'r1', when: WHEN, inputs: 'issues: /tw/in/notes.txt', destination: '/tw/out', capUsd: 1.5, maxWallMs: 600000 });
+  assert.equal(pre.status, 400);
+  assert.match(pre.body.say, /not a ticket list \(a GitHub issues page\)/);
+});
+
 test('the Job tab and Audit say how a ticket run began', () => {
   const rec = { kind: 'ticket', ticket: 7, trigger: 'When a new ticket arrives in issues', triggerKind: 'new-ticket' };
   assert.match(startedWords(rec, null), /^By a new ticket: #7$/);

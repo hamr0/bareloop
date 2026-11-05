@@ -20,3 +20,13 @@ export function ticketLookOf(spec, trigger) {
   }
   return { ok: true, listUrl: String(line.value).trim(), server: spec.mcp.server, watch: Array.isArray(spec.ticketWatch) ? [...spec.ticketWatch] : [] };
 }
+
+/**
+ * The Inputs labels a job could start a schedule on: only a Tickets MCP job whose signed tools hold `list_issues`, and only its issues-list lines. Empty = the schedule card
+ * does not offer "When a new ticket arrives". The card offers these; `ticketLookOf` is still the one judge at sign time. @param {any} spec @returns {string[]}
+ */
+export function ticketInputLabels(spec) {
+  return (Array.isArray(spec?.inputs) ? spec.inputs : [])
+    .map((/** @type {any} */ i) => String(i?.label ?? ''))
+    .filter((/** @type {string} */ label) => label !== '' && ticketLookOf(spec, { kind: 'new-ticket', input: label }).ok);
+}

@@ -26,7 +26,7 @@ import { armTrigger, nextSlot, recordFire } from '../triggerclock.js';
 import { appendRow, readLedger, withoutReleased } from '../triggerledger.js';
 import { checkTarget, createFileTrigger, queueOf, readSeen, recordDropped, recordRan } from '../triggerfiles.js';
 import { recordTicketRan } from '../triggertickets.js';
-import { ticketLookOf } from '../ticketschedule.js';
+import { ticketInputLabels, ticketLookOf } from '../ticketschedule.js';
 import {
   SCHEDULE_WORDS, dateTimeWords, gaveUpDateWords, lateRefusalWords, nextInWords, nextSlotShort, nextTimeWords, retryNextWords, sameMonthAs, scheduledNextFor, scheduledWords, skippedWords,
 } from '../schedulewords.js';
@@ -255,14 +255,14 @@ export function createScheduleDoor(deps) {
         return reply(400, { refused: 'bad-trigger', say: `${/** @type {Error} */ (e).message}. Nothing was changed.` });
       }
     }
-    if (isTicketTrigger(trigger)) {
-      // MCP + tickets piece 3: the look reads with the SIGNED tools. The signed job must be a Tickets MCP job whose tools include `list_issues`, and the named Inputs line must
-      // be an issues list; the refusal is plain words at sign time, never a schedule that can never look
-      const look = ticketLookOf(pre.spec, trigger);
-      if (!look.ok) return reply(400, { refused: 'bad-trigger', say: look.say });
-    }
     const spec = buildReuseSpec(pre.spec, card, rows);
     spec.trigger = trigger;
+    if (isTicketTrigger(trigger)) {
+      // MCP + tickets piece 3: the look reads with the SIGNED tools. The job to be signed (the card's Inputs included) must be a Tickets MCP job whose tools include `list_issues`, and the
+      // named Inputs line must be an issues list; the refusal is plain words at sign time, never a schedule that can never look
+      const look = ticketLookOf(spec, trigger);
+      if (!look.ok) return reply(400, { refused: 'bad-trigger', say: look.say });
+    }
     const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
     if (!jv.ok) return reply(400, { refused: 'bad-spec', say: `The job this would sign is not valid (${jv.reds.map((r) => `${r.code} at ${r.path}`).join('; ')}). Nothing was changed.` });
     if (workflowKey(spec) !== green.key) return reply(400, { refused: 'bad-spec', say: 'The job this would sign is not the one that had the good run. Nothing was changed.' });
@@ -623,9 +623,12 @@ export function createScheduleDoor(deps) {
       const st = stateOf(job);
       const green = st.schedule ? null : cachedGreen(job);
       const t = st.schedule ? st.schedule.trigger : null;
+      // the Inputs lines a new-ticket schedule could watch (a Tickets MCP job with list_issues signed); [] = the card does not offer the choice
+      const specNow = st.schedule ? st.schedule.spec : (green && green.ok ? green.run.spec : null);
       return {
         scheduled: st.schedule !== null, trigger: t, now: t ? scheduledWords(t, userHome) : null,
         refusal: green && !green.ok ? green.say : null,
+        ticketInputs: ticketInputLabels(specNow),
         words: SCHEDULE_WORDS,
       };
     },

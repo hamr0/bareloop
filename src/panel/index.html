@@ -932,6 +932,9 @@
                 </select>
                 <input id="jf-when-time" type="time" value="09:00" data-testid="jf-when-time" aria-label="Time, HH:MM">
               </div>
+              <div class="when-sub" id="jf-when-ticketbox" hidden>
+                <select id="jf-when-input" data-testid="jf-when-input" aria-label="The ticket list to watch"></select>
+              </div>
               <div class="when-sub" id="jf-when-filebox" hidden>
                 <input id="jf-when-path" type="text" autocomplete="off" spellcheck="false" data-testid="jf-when-path" aria-label="File or folder">
               </div>
@@ -6178,7 +6181,7 @@
     // The Reuse card plus the When field, copied from fwdloop's Run card (index.html:998-1019, 4690-4772). The page works out nothing: the
     // server's words, refusals and hashes. Click 1 (schedule-prepare) is $0 and signs nothing; click 2 (schedule) signs; NOTHING runs.
     function byId(id){ return document.getElementById(id); }
-    var WHEN_KINDS = ["hand", "daily", "weekdays", "weekly", "file-updated", "new-file"];
+    var WHEN_KINDS = ["hand", "daily", "weekdays", "weekly", "file-updated", "new-file", "new-ticket"];
     function whenTriggerFromBoxes(){
       var kind = byId("jf-when").value;
       if(kind === "hand") return null;
@@ -6188,6 +6191,7 @@
         if(kind === "weekly") o.day = byId("jf-when-day").value;
         return o;
       }
+      if(kind === "new-ticket") return {kind: kind, input: byId("jf-when-input").value};   // MCP + tickets piece 3: the person picks the input; the server fills the rest from the signed job
       var q = {kind: kind};
       q[kind === "new-file" ? "folder" : "path"] = byId("jf-when-path").value.trim();
       return q;
@@ -6195,7 +6199,7 @@
     // one comparable spelling of a trigger (or By hand), so "changed" is a plain string compare
     function whenCanon(t){
       if(!t) return "hand";
-      return [t.kind, t.hour === undefined ? "" : t.hour, t.minute === undefined ? "" : t.minute, t.day || "", t.path || t.folder || ""].join("|");
+      return [t.kind, t.hour === undefined ? "" : t.hour, t.minute === undefined ? "" : t.minute, t.day || "", t.path || t.folder || t.input || ""].join("|");
     }
     // Is the card changed from what was signed? The ONE reader. A schedule card (Schedule run, Cancel / modify schedule) never starts a run: the main
     // button is Sign schedule while this is true and disabled while it is not. On a scheduled job any When, Inputs, Destination or cap edit counts
@@ -6213,6 +6217,7 @@
       byId("jf-when-clock").hidden = !(kind === "daily" || kind === "weekdays" || kind === "weekly");
       byId("jf-when-day").hidden = kind !== "weekly";
       byId("jf-when-filebox").hidden = !(kind === "file-updated" || kind === "new-file");
+      byId("jf-when-ticketbox").hidden = kind !== "new-ticket";
       byId("jf-when-path").placeholder = kind === "new-file" ? "/full/path/to/folder" : "/full/path/to/file";
     }
     function paintWhen(){
@@ -6224,7 +6229,9 @@
       byId("jf-when-label").textContent = w.whenLabel || "";
       var sel = byId("jf-when");
       sel.innerHTML = "";
+      var ticketInputs = sched.ticketInputs || [];
       WHEN_KINDS.forEach(function(k){
+        if(k === "new-ticket" && ticketInputs.length === 0 && !(sched.cur && sched.cur.kind === "new-ticket")) return;   // only a Tickets MCP job with list_issues signed offers it
         var op = document.createElement("option");
         op.value = k;
         // on a scheduled job the first option reads Cancel schedule instead of By hand
@@ -6236,9 +6243,15 @@
       if(t && t.hour !== undefined){ byId("jf-when-time").value = ("0" + t.hour).slice(-2) + ":" + ("0" + t.minute).slice(-2); }
       if(t && t.day) byId("jf-when-day").value = t.day;
       byId("jf-when-path").value = t ? (t.path || t.folder || "") : "";
+      var inSel = byId("jf-when-input");
+      inSel.innerHTML = "";
+      (ticketInputs.length ? ticketInputs : (t && t.input ? [t.input] : [])).forEach(function(label){
+        var o = document.createElement("option"); o.value = label; o.textContent = label; inSel.appendChild(o);
+      });
+      if(t && t.input) inSel.value = t.input;
       // refused = the select and every sub-box are DISABLED and the reason stands where "Now:" would be
       var refused = !!sched.refusal;
-      sel.disabled = byId("jf-when-day").disabled = byId("jf-when-time").disabled = byId("jf-when-path").disabled = refused;
+      sel.disabled = byId("jf-when-day").disabled = byId("jf-when-time").disabled = byId("jf-when-path").disabled = byId("jf-when-input").disabled = refused;
       byId("jf-when-now").textContent = refused ? sched.refusal : (sched.now ? (w.nowPrefix || "") + sched.now : "");
       byId("jf-err-when").textContent = "";
       whenShowSubs();
@@ -6254,7 +6267,7 @@
       whenShowSubs();
       renderMain();
     }
-    ["jf-when", "jf-when-day", "jf-when-time"].forEach(function(id){ byId(id).addEventListener("change", whenEdited); });
+    ["jf-when", "jf-when-day", "jf-when-time", "jf-when-input"].forEach(function(id){ byId(id).addEventListener("change", whenEdited); });
     byId("jf-when-path").addEventListener("input", whenEdited);
     // the hash binds the WHOLE card (inputs, destination, caps), so a change to any of them drops it too (and repaints the button: on a scheduled job a box edit is Sign schedule)
     ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time"].forEach(function(id){ byId(id).addEventListener("input", function(){ if(!sched) return; if(whenHash !== null) whenEdited(); else renderMain(); }); });
@@ -6303,7 +6316,7 @@
       if(sessionLive || resumeRun !== null){ errEl.textContent = "Finish or clear what is on the card first, then try again."; return; }
       applyReuse({runid: d.runid, prefill: d.prefill, lock: true});
       var sc = (d.prefill || {}).scheduleCard || {};
-      sched = {job: d.job, runid: d.runid, words: sc.words || {}, cur: sc.trigger || null, scheduled: sc.scheduled === true, refusal: sc.refusal || null, now: sc.now || null,
+      sched = {job: d.job, runid: d.runid, words: sc.words || {}, ticketInputs: sc.ticketInputs || [], cur: sc.trigger || null, scheduled: sc.scheduled === true, refusal: sc.refusal || null, now: sc.now || null,
         base: {inputs: byId("jf-inputs").value.trim(), dest: byId("jf-dest").value.trim(), capUsd: byId("jf-cap-money").value.trim(), capTime: byId("jf-cap-time").value.trim()}};
       whenHash = null; whenConfirm = null; whenBusy = false;
       paintWhen();
