@@ -12,6 +12,8 @@ import { signRun } from '../src/panel/authorroutes.js';
 import { jobSpecHash, workflowKey, validateJob } from '../src/job.js';
 import { readLedger } from '../src/triggerledger.js';
 import { cardWorld, LIST } from './schedule-card-world.mjs';
+import { createSession } from '../src/panel/authorsession.js';
+import { draftSeams, keysHome, until } from './flowtype-world.mjs';
 
 const OLD = JSON.parse(readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'mv5bk400-resolved-spec.json'), 'utf8'));
 const TOOLS = ['issue_read', 'list_issues'];
@@ -186,4 +188,19 @@ test('a run that never started takes its waiting schedule back: a spawn that thr
   assert.equal(bad.ok, false);
   assert.match(bad.error, /no longer matches what was signed/);
   assert.equal(spawned, false);
+});
+
+test('the session checks the schedule against the job it ACTUALLY built, not only the card: a new-ticket trigger on a job that is not a Tickets job refuses the session before anything is signed', async (t) => {
+  const f = await cardWorld(t);
+  const card = f.card({ jobName: 'tk-belt', flowType: undefined, mcp: undefined, inputs: `repo: ${f.repo}` });
+  const session = createSession(card, {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(path.join(f.w.base, 'keys2')), sessionsRoot: path.join(f.w.base, 'sess-belt'), ...draftSeams({}),
+    schedule: { kind: 'new-ticket', input: 'issues' },
+  });
+  await until(() => session.state.pendingAsk?.kind === 'menu');
+  session.signPrepare();
+  await until(() => ['prepared', 'refused', 'error'].includes(session.state.phase));
+  assert.equal(session.state.phase, 'refused');
+  assert.match(session.state.error, /^Only a Tickets MCP job can start on a new ticket\./);
+  assert.equal(session.state.specHash, null, 'nothing was signed');
 });

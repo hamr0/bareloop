@@ -142,3 +142,16 @@ test('the page file on disk holds NO schedule word for the card\'s row: tokens o
   const { scheduleCardFill } = await import('../src/schedulewords.js');
   assert.deepEqual(Object.keys(scheduleCardFill()).sort(), [...new Set(row.match(/__BARELOOP_SCHED_[A-Z_]+__/g))].sort(), 'every token the page holds is one the server fills, and no more');
 });
+
+test('fillCard fills the Schedule row from the card it is handed (a re-attached session, a Reuse prefill), and a card with none sets by hand', async (t) => {
+  const PAGE = await served(t);
+  const calls = [];
+  const els = {};
+  const scope = {
+    document: { getElementById: (id) => (els[id] ??= { value: '' }) }, setVal() {}, setFlow() {}, setThinkingTick() {}, fitCardBoxes() {}, setCardSchedule: (sc) => calls.push(sc),
+  };
+  const { fillCard } = build(PAGE, ['fillCard'], scope, vars);
+  fillCard({ schedule: { kind: 'daily', hour: 6, minute: 5 }, flowType: 'plain' });
+  fillCard({ flowType: 'plain' });
+  assert.deepEqual(calls, [{ kind: 'daily', hour: 6, minute: 5 }, undefined]);
+});

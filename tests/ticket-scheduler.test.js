@@ -7,7 +7,7 @@ import { chmodSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createScheduler } from '../src/panel/scheduler.js';
 import { readSeen, queueOf } from '../src/triggerfiles.js';
-import { readLedger } from '../src/triggerledger.js';
+import { appendRow, readLedger } from '../src/triggerledger.js';
 import { TICKET_LOOK_MS } from '../src/triggertickets.js';
 import {
   ticketWorld, newestFirst, MIN, LIST,
@@ -251,4 +251,14 @@ test('every row of a ticket schedule carries the signing', async (t) => {
   f.setList(newestFirst(6));
   await f.step(15 * MIN);
   assert.ok(readLedger(f.ledger).rows.every((r) => r.sig === SIG), readFileSync(f.ledger, 'utf8'));
+});
+
+test('R7: the first look cuts at the NEWEST armed row of the signing (a schedule signed with the same job again carries its own ticket number, not the old one)', async (t) => {
+  const f = setup(t, { issues: newestFirst(5) });
+  appendRow(f.ledger, { kind: 'armed', sig: SIG, at: 1, ticketN: 2 });
+  appendRow(f.ledger, { kind: 'armed', sig: SIG, at: 2, ticketN: 5 });
+  f.setList(newestFirst(7));
+  await f.step();
+  assert.deepEqual(f.rows('baseline').map((r) => r.number).sort((a, b) => a - b), [1, 2, 3, 4, 5], 'baselined up to the newest cut');
+  assert.deepEqual(f.rows('arrived').map((r) => r.number), [6, 7]);
 });

@@ -148,18 +148,21 @@ export function createScheduler(opts) {
     for (const { job, schedule } of jobs) {
       const sig = schedule.specHash;
       const key = `${job}|${sig}`;
+      // a schedule signed again with the very same signature (cancelled, then signed with the job once more, between two ticks) is a NEW life of it: its arming is asked again (R7)
+      const armKey = `${key}|${schedule.signedAt ?? ''}`;
       live.add(key);
+      live.add(armKey);
       const isBusy = () => {
         if (!busyMemo.has(job)) busyMemo.set(job, door.busy(job));
         return /** @type {boolean} */ (busyMemo.get(job));
       };
       try {
-        if (!armedKeys.has(key)) {
+        if (!armedKeys.has(armKey)) {
           // R7: a schedule signed with its job on the New job card is OFF until a run that began after the signing has a real green; it is asked again every tick and until then
           // nothing looks, fires or queues for it (`armFor` answers `waiting`)
           const turned = door.armFor(job, schedule);
           if (turned && turned.armed === false) continue;
-          armedKeys.add(key);
+          armedKeys.add(armKey);
         }
         const ledger = door.ledgerOf(job);
         const { trigger } = schedule;

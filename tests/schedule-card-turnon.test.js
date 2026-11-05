@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { readLedger } from '../src/triggerledger.js';
+import { appendRow, readLedger } from '../src/triggerledger.js';
 import { jobSpecHash } from '../src/job.js';
 import { cardWorld } from './schedule-card-world.mjs';
 import { DAILY } from './trigger-world.mjs';
@@ -66,7 +66,7 @@ test('a clock schedule does not change the two-click door: a job scheduled AFTER
   assert.deepEqual(kinds(f, 'tk-door'), ['signed', 'armed']);
 });
 
-test('card-time schedule and the two-click door agree: sign with a schedule, Cancel it, set it again through the door - on, not waiting; and the SAME signature signed again by the card waits again', async (t) => {
+test('card-time schedule and the two-click door agree: sign with a schedule, Cancel it, set it again through the door - on, not waiting', async (t) => {
   const f = await cardWorld(t);
   const out = await f.signCard(plainCard(f, { jobName: 'tk-both', schedule: { kind: 'daily', hour: 9, minute: 0 } }));
   assert.equal(out.signed.status, 200);
@@ -85,12 +85,48 @@ test('card-time schedule and the two-click door agree: sign with a schedule, Can
   assert.equal(set.body.armed, true, 'the door arms at once: the job already had its good run');
   assert.equal(f.door.isWaiting('tk-both'), false);
   assert.equal(f.door.read('tk-both').armed, true);
-  // the SAME signature signed with the job again (a cancel, then the card with the very same job): a `waiting` row starts that signing over, so it waits, not "already armed"
-  f.door.cancel('tk-both');
+});
+
+test('the SAME signature signed with the job again after it was armed and cancelled waits again: a `waiting` row starts that signing over, it is not "already armed"', async (t) => {
+  const f = await cardWorld(t);
+  const out = await f.signCard(plainCard(f, { jobName: 'tk-again', schedule: { kind: 'daily', hour: 9, minute: 0 } }));
+  f.run(out.spec, { runid: 'g1', outcome: 'green' });
+  await tickAll(f);
+  assert.equal(f.door.read('tk-again').armed, true, 'the green run turned it on');
+  assert.equal(f.door.cancel('tk-again'), true);
+  f.now.add(60_000);   // the person signs again a little later (and the scheduler need not have ticked in between: that is the point)
   const spec = { ...out.spec };
   assert.equal(f.door.signWithJob({ spec, specHash: jobSpecHash(spec), trigger: spec.trigger, inputsText: `repo: ${f.repo}`, destination: null }).ok, true);
-  assert.equal(f.door.isWaiting('tk-both'), true, 'the earlier `armed` row of the same signature does not count');
-  assert.equal(f.door.read('tk-both').armed, false);
+  assert.equal(f.door.isWaiting('tk-again'), true, 'the earlier `armed` row of the same signature does not count');
+  assert.equal(f.door.read('tk-again').armed, false);
+  // and it is turned on again by a green run that began AFTER this signing, not by the old one
+  await tickAll(f);
+  assert.equal(f.door.isWaiting('tk-again'), true);
+  f.run(out.spec, { runid: 'g2', outcome: 'green' });
+  await tickAll(f);
+  assert.equal(f.door.isWaiting('tk-again'), false);
+  assert.equal(f.door.read('tk-again').armed, true);
+});
+
+test('a later `signed` row (the two-click door) ends the wait even when the door could not arm it (its target went away): the schedule is not "waiting for a green run" any more', async (t) => {
+  const f = await cardWorld(t);
+  const out = await f.signCard(plainCard(f, { jobName: 'tk-signed', schedule: { kind: 'daily', hour: 9, minute: 0 } }));
+  assert.equal(f.door.isWaiting('tk-signed'), true);
+  appendRow(f.door.ledgerOf('tk-signed'), { kind: 'signed', sig: out.state.specHash, at: 5 });
+  assert.equal(f.door.isWaiting('tk-signed'), false, 'a re-sign through the door supersedes the card\'s wait');
+});
+
+test('signWithJob is the card\'s door only: a file trigger, a bad trigger and a nameless job are refused and write nothing', async (t) => {
+  const f = await cardWorld(t);
+  const base = (await f.signCard(plainCard(f, { jobName: 'tk-door2', schedule: { kind: 'daily', hour: 9, minute: 0 } }))).spec;
+  const sign = (over, trigger) => { const spec = { ...base, ...over, trigger }; return f.door.signWithJob({ spec, specHash: jobSpecHash(spec), trigger, inputsText: 'repo: /r' }); };
+  const file = sign({ job: 'tk-file' }, { kind: 'new-file', folder: '/tmp' });
+  assert.equal(file.ok, false);
+  assert.match(file.say, /A file trigger is set after the first good run\. Nothing was signed\.$/);
+  assert.match(sign({ job: 'tk-bad' }, { kind: 'daily', hour: 30, minute: 0 }).say, / Nothing was signed\.$/);
+  assert.match(sign({ job: 'Bad Name' }, { kind: 'daily', hour: 9, minute: 0 }).say, /no name a schedule can be kept under/);
+  assert.equal(existsSync(path.join(f.dir('tk-file'), 'schedule.json')), false);
+  assert.equal(existsSync(path.join(f.dir('tk-bad'), 'schedule.json')), false);
 });
 
 test('a waiting schedule is superseded by the two-click door\'s click 2 (a later `signed` row), which arms it at once', async (t) => {
