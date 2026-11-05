@@ -3771,7 +3771,7 @@ function sendText(res, code, text) {
  * only `createPanelServer` below always supplies one.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ home?: string, sessionsRoot?: string, version?: string, startedAt?: string, packageJsonPath?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
+ * @param {{ home?: string, mcpHome?: string, sessionsRoot?: string, version?: string, startedAt?: string, packageJsonPath?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
  */
 export function handleRequest(req, res, opts) {
   /** the ONE writable route family for a path, or null — `/api/author/*` (authoring) or
@@ -3988,7 +3988,7 @@ export function panelUrl(boundPort) {
  * @param {{ port?: number, home?: string, env?: Record<string,string|undefined>,
  *   sessionsRoot?: string, spawnFn?: (...a: any[]) => any, bareloopBin?: string,
  *   fetchImpl?: typeof fetch, settleMs?: number, userHome?: string,
- *   openFolderSpawn?: (cmd: string, args: string[], o: object) => any, platform?: string, packageJsonPath?: string,
+ *   openFolderSpawn?: (cmd: string, args: string[], o: object) => any, platform?: string, mcpHome?: string, packageJsonPath?: string,
  *   scheduleNow?: () => number, sessionDeps?: Record<string, any>, schedulerIntervalMs?: number, acceptWaitMs?: number }} [opts] `scheduleNow`, `sessionDeps` and `schedulerIntervalMs` are TEST SEAMS (the schedule clock; createSession's stubs; the scheduler's timer, 0 = none)
  * @returns {Promise<{ server: import('node:http').Server, port: number, token: string, schedules: ReturnType<typeof createScheduleDoor>, scheduler: ReturnType<typeof createScheduler>, close: () => Promise<void> }>}
  */
@@ -4080,7 +4080,7 @@ export function createPanelServer(opts = {}) {
       scheduler.start();
       settingsRoutes = createSettingsRoutes({
         port: boundPort, token, home, env: opts.env, fetchImpl: opts.fetchImpl,
-        openFolderSpawn: opts.openFolderSpawn, platform: opts.platform,
+        openFolderSpawn: opts.openFolderSpawn, platform: opts.platform, mcpHome: opts.mcpHome,
       });
       runRoutes = createRunRoutes({
         port: boundPort,
