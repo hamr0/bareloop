@@ -49,7 +49,7 @@ test('resolveFlowCard: Tickets MCP needs the ticket list address as an Inputs li
   checked(w);
   const bad = resolveFlowCard({ flowType: 'tickets', mcp: 'github', inputs: 'repo: /r' }, where(w));
   assert.equal(bad.ok, false);
-  assert.match(bad.error, /^Tickets MCP needs the ticket list address as an Inputs line/);
+  assert.match(bad.error, /^Tickets MCP needs the ticket list address \(the issues or pulls page of one repository\) as an Inputs line\.$/);
   assert.equal(resolveFlowCard({ flowType: 'tickets', mcp: 'github', inputs: `repo: /r\nissues: ${LIST}` }, where(w)).ok, true);
   assert.equal(resolveFlowCard({ flowType: 'mcp', mcp: 'github', inputs: 'repo: /r' }, where(w)).ok, true);
 });
