@@ -131,7 +131,7 @@ test('the page prints the server\'s words (startingWord/startingNote) and has a 
   assert.match(html, /detail\.startingWord \|\| "starting…"/);
   assert.match(html, /detail\.startingNote \|\| "the run has not written its log yet"/);
   assert.match(html, /p\.why = r\.startingWord \|\| "starting…"/);
-  assert.match(html, /if\(detail\.refused\)\{/);
+  assert.match(html, /if\(detail\.refused \|\| detail\.skipped\)\{/);
   assert.doesNotMatch(html, /the run has not started yet/, 'that sentence is the server\'s');
 });
 
