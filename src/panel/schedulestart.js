@@ -40,7 +40,8 @@ function destinationOf(schedule, spec, fallback) {
  * field must be deep-equal and the workflow key unchanged (F.4): the person signed the SCHEDULE, each fire's hash is
  * derived by code. A clock fire's spec equals the signed spec byte for byte (same hash).
  * @param {{spec: any, specHash: string, workflowKey: string}} schedule
- * @param {{kind: 'clock'}|{kind: 'file', path: string}} cause
+ * A TICKET fire leaves the spec UNCHANGED (hash equal, like a clock fire): the ticket number is per run, never signed, and rides on argv (`--ticket N`).
+ * @param {{kind: 'clock'}|{kind: 'file', path: string}|{kind: 'ticket'}} cause
  * @returns {{ok: true, spec: any, hash: string}|{ok: false, why: string}}
  */
 export function perFireSpec(schedule, cause) {
@@ -109,14 +110,14 @@ export function createStarter(deps) {
 
   /** @param {any} schedule @param {any} cause @returns {{ok: true, spec: any, hash: string}|{ok: false, why: string}} */
   function resolveFire(schedule, cause) {
-    return perFireSpec(schedule, cause.kind === 'file' ? { kind: 'file', path: cause.path } : { kind: 'clock' });
+    return perFireSpec(schedule, cause.kind === 'file' ? { kind: 'file', path: cause.path } : cause.kind === 'ticket' ? { kind: 'ticket' } : { kind: 'clock' });
   }
 
   return {
     /**
      * Cheap, $0, no copy, no session. `{ok: true}` or `{ok: false, why}` (words).
      * @param {string} job
-     * @param {{kind: 'clock'} | {kind: 'file', path: string, sha: string}} cause
+     * @param {{kind: 'clock'} | {kind: 'file', path: string, sha: string} | {kind: 'ticket', number: number, sha: string}} cause
      * @returns {{ok: true}|{ok: false, why: string}}
      */
     wouldAccept(job, cause) {
@@ -140,7 +141,7 @@ export function createStarter(deps) {
         const r = recheck({ path: cause.path, sha: cause.sha });
         if (r.state === 'deleted') return { ok: false, why: `The file ${cause.path} is not there (${r.say}). Nothing started.` };
         if (r.state === 'changed') return { ok: false, why: `The file ${cause.path} changed before its turn. Nothing started.` };
-      } else {
+      } else if (cause.kind === 'clock') {
         for (const inp of fire.spec.inputs ?? []) {
           const v = String(inp.value);
           if (/^https?:\/\//i.test(v)) continue;
@@ -161,7 +162,7 @@ export function createStarter(deps) {
     /**
      * Start the run. Never throws. `consumed` says whether `beforeSpawn` ran, so the caller knows whether a `released` row is owed.
      * @param {string} job
-     * @param {{kind: 'clock', slot: number, catchUp: boolean, missed: number} | {kind: 'file', path: string, sha: string}} cause
+     * @param {{kind: 'clock', slot: number, catchUp: boolean, missed: number} | {kind: 'file', path: string, sha: string} | {kind: 'ticket', number: number, sha: string}} cause
      * @param {{beforeSpawn?: () => void}} [hooks]
      * @returns {Promise<{ok: true, sessionId: string, specHash: string, consumed: true}|{ok: false, why: string, consumed: boolean, installNeeded?: true}>}
      */
@@ -185,6 +186,8 @@ export function createStarter(deps) {
           inputs: inputsText,
           destination: destinationOf(schedule, spec, pre.card.destination),
           capUsd: spec.budgetUsd,
+          // a ticket fire: the number rides on the card exactly as the person's typed Ticket box does, and `signRun` turns it into `--ticket N` (`--anyway` arrives with the anyway route, R8)
+          ...(cause.kind === 'ticket' ? { ticket: String(cause.number) } : {}),
           ...(typeof spec.maxWallMs === 'number' ? { maxWallMs: spec.maxWallMs } : { maxWallMs: undefined }),
           model: spec.model,
           ...(row ? { provider: row.envName } : {}),
@@ -219,7 +222,8 @@ export function createStarter(deps) {
         const catchUp = cause.kind === 'clock' && cause.catchUp === true;
         writeFileSync(join(outDir, 'trigger.json'), `${JSON.stringify({
           kind: cause.kind, trigger: words, reason: `Started by the schedule: ${words}${catchUp ? ' (catch-up)' : ''}`, catchUp,
-          ...(cause.kind === 'clock' ? { slot: cause.slot, missed: cause.missed, lateMs: Math.max(0, now() - cause.slot) } : { file: cause.path, sha: cause.sha }),
+          ...(cause.kind === 'clock' ? { slot: cause.slot, missed: cause.missed, lateMs: Math.max(0, now() - cause.slot) }
+            : cause.kind === 'ticket' ? { ticket: cause.number, sha: cause.sha } : { file: cause.path, sha: cause.sha }),
           // RULED 2026-10-15: what the Job tab and Audit say about a scheduled start (older records lack these; the words fall back)
           triggerKind: schedule.trigger.kind, sessionId: session.state.id, originRunid: schedule.originRunid, sig: schedule.specHash, startedAt: now(),
         }, null, 2)}\n`, { flag: 'wx', mode: 0o600 });

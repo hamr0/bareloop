@@ -52,6 +52,7 @@ export const SCHEDULE_WORDS = Object.freeze({
     weekly: 'Every <day> at HH:MM',
     'file-updated': 'When <file> is updated',
     'new-file': 'When a new file arrives in <folder>',
+    'new-ticket': 'When a new ticket arrives in <input>',
   }),
   // RULED 2026-10-15: the Needs-you pill of a schedule that gave up (hamr may reword)
   gaveUpPill: 'Check',
@@ -75,6 +76,7 @@ export function scheduledWords(t, home) {
   if (t.kind === 'weekdays') return `Weekdays at ${hhmm(t)}`;
   if (t.kind === 'weekly') return `${DAY_PLURAL[/** @type {keyof typeof DAY_PLURAL} */ (t.day)] ?? t.day} at ${hhmm(t)}`;
   if (t.kind === 'file-updated') return `When ${basename(t.path)} is updated`;
+  if (t.kind === 'new-ticket') return `When a new ticket arrives in ${t.input}`;
   const folder = tilde(/** @type {{folder: string}} */ (t).folder, home);
   return `When a new file arrives in ${folder.endsWith('/') ? folder : `${folder}/`}`;
 }
@@ -134,6 +136,7 @@ export function scheduledNextFor(f) {
   if (!armed) return say(`${lead}Not armed yet: the panel arms it on its next check.`, red);
   if (trigger.kind === 'file-updated') return say(`${lead}Watching for it. A run starts when its contents change.`, red);
   if (trigger.kind === 'new-file') return say(`${lead}Watching for it. A run starts for each new file.`, red);
+  if (trigger.kind === 'new-ticket') return say(`${lead}Watching for it. A run starts for each new ticket.`, red);
   if (nextSlotMs === null) return say(`${lead}Not armed yet: the panel arms it on its next check.`, red);
   return say(`${lead}Next run ${slotWords(nextSlotMs)}.`, red);
 }
@@ -207,7 +210,9 @@ export function startedWords(rec, atMs) {
   if (!rec || typeof rec !== 'object') return `${SCHEDULE_WORDS.byHand}${when}`;
   const trig = typeof rec.trigger === 'string' ? rec.trigger : '';
   let how;
-  if (rec.kind === 'file') {
+  if (rec.kind === 'ticket') {
+    how = `By a new ticket: #${rec.ticket}`;
+  } else if (rec.kind === 'file') {
     const name = basename(String(rec.file ?? ''));
     how = isNewFile(rec) ? `By a new file: ${name}` : `By a file update: ${name}`;
   } else {
@@ -225,6 +230,7 @@ export function startedWords(rec, atMs) {
  */
 export function startedAuditWords(rec, originNo) {
   const from = originNo === null ? '' : ` · from run-${originNo}`;
+  if (rec.kind === 'ticket') return `started by the schedule · new ticket #${rec.ticket}${from}`;
   if (rec.kind === 'file') return `started by the schedule · ${isNewFile(rec) ? 'new file' : 'file update'} ${basename(String(rec.file ?? ''))}${from}`;
   const slot = typeof rec.slot === 'number' ? ` · slot ${two(new Date(rec.slot).getHours())}:${two(new Date(rec.slot).getMinutes())}` : '';
   return `started by the schedule · ${lowerFirst(String(rec.trigger ?? ''))}${slot}${from}${rec.catchUp === true ? ' · catch-up' : ''}`;
@@ -284,6 +290,7 @@ export function scheduleSignFor(f) {
 
 /** Audit schedule section, the `this run` words of a run the schedule started (the head already says which schedule and from where). @param {any} rec `trigger.json` */
 export function sectionThisRunWords(rec) {
+  if (rec.kind === 'ticket') return `started by the schedule · new ticket #${rec.ticket}`;
   if (rec.kind === 'file') return `started by the schedule · ${isNewFile(rec) ? 'new file' : 'file update'} ${basename(String(rec.file ?? ''))}`;
   let late = '';
   if (rec.catchUp === true) {

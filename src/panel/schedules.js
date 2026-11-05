@@ -21,10 +21,12 @@ import { checkMonthlyRoom, monthlyRefusalText } from '../monthly.js';
 import { ConfigError } from '../config.js';
 import { doorAccepted } from '../reviewdoor.js';
 import { findRow } from '../providerrows.js';
-import { validateTrigger, isClockTrigger, isFileTrigger } from '../trigger.js';
+import { validateTrigger, isClockTrigger, isFileTrigger, isTicketTrigger } from '../trigger.js';
 import { armTrigger, nextSlot, recordFire } from '../triggerclock.js';
 import { appendRow, readLedger, withoutReleased } from '../triggerledger.js';
 import { checkTarget, createFileTrigger, queueOf, readSeen, recordDropped, recordRan } from '../triggerfiles.js';
+import { recordTicketRan } from '../triggertickets.js';
+import { ticketLookOf } from '../ticketschedule.js';
 import {
   SCHEDULE_WORDS, dateTimeWords, gaveUpDateWords, lateRefusalWords, nextInWords, nextSlotShort, nextTimeWords, retryNextWords, sameMonthAs, scheduledNextFor, scheduledWords, skippedWords,
 } from '../schedulewords.js';
@@ -253,6 +255,12 @@ export function createScheduleDoor(deps) {
         return reply(400, { refused: 'bad-trigger', say: `${/** @type {Error} */ (e).message}. Nothing was changed.` });
       }
     }
+    if (isTicketTrigger(trigger)) {
+      // MCP + tickets piece 3: the look reads with the SIGNED tools. The signed job must be a Tickets MCP job whose tools include `list_issues`, and the named Inputs line must
+      // be an issues list; the refusal is plain words at sign time, never a schedule that can never look
+      const look = ticketLookOf(pre.spec, trigger);
+      if (!look.ok) return reply(400, { refused: 'bad-trigger', say: look.say });
+    }
     const spec = buildReuseSpec(pre.spec, card, rows);
     spec.trigger = trigger;
     const jv = validateJob(spec, { shellCapUsd: spec.budgetUsd });
@@ -399,7 +407,7 @@ export function createScheduleDoor(deps) {
      * `key|outcome|why` (read back from disk, so a restart does not repeat it). RULED 2026-10-14: a busy, monthly or refused
      * fire consumes NOTHING, so the next tick tries again; a spawn error after `beforeSpawn` writes a `released` row (bounded).
      * @param {string} job
-     * @param {{kind: 'clock', slot: number, catchUp: boolean, missed: number} | {kind: 'file', path: string, sha: string, size?: number}} cause
+     * @param {{kind: 'clock', slot: number, catchUp: boolean, missed: number} | {kind: 'file', path: string, sha: string, size?: number} | {kind: 'ticket', number: number, sha: string, why?: string}} cause
      * @param {{beforeSpawn?: () => void, busy?: boolean}} [hooks] `busy` = the scheduler's one read of the run list this tick
      * @returns {Promise<{outcome: 'busy'|'monthly-exhausted'|'refused'|'started', why?: string, told: boolean, sessionId?: string}>}
      */
@@ -408,9 +416,10 @@ export function createScheduleDoor(deps) {
       if (!schedule || !starter) return { outcome: 'refused', why: 'This job has no schedule any more. Nothing started.', told: false };
       const sig = schedule.specHash;
       const ledger = ledgerOf(job);
-      const key = cause.kind === 'file' ? cause.sha : String(cause.slot);
-      const consumeId = cause.kind === 'file' ? `ran:${cause.sha}` : `fire:${cause.slot}`;
-      const base = cause.kind === 'file' ? { file: cause.path, sha: cause.sha } : { slot: cause.slot, catchUp: cause.catchUp, missed: cause.missed };
+      const key = cause.kind === 'clock' ? String(cause.slot) : cause.sha;
+      const consumeId = cause.kind === 'clock' ? `fire:${cause.slot}` : `ran:${cause.sha}`;
+      const base = cause.kind === 'file' ? { file: cause.path, sha: cause.sha }
+        : cause.kind === 'ticket' ? { ticket: cause.number, sha: cause.sha } : { slot: cause.slot, catchUp: cause.catchUp, missed: cause.missed };
       /** @param {'busy'|'monthly-exhausted'|'refused'} outcome @param {string} why @param {Record<string, unknown>} [extra] */
       const told = (outcome, why, extra = {}) => {
         const tag = `${key}|${outcome}|${why}`;
@@ -430,7 +439,7 @@ export function createScheduleDoor(deps) {
         return told('refused', `${e.message} — refusing rather than guess the monthly limit. Nothing started.`);
       }
       // already consumed (a live `fire`/`ran` row, e.g. given up on after releases): never start it a second time
-      if (readLedger(ledger).rows.length > 0 && withoutReleased(readLedger(ledger).rows).some((r) => r.id === consumeId)) {
+      if (readLedger(ledger).rows.length > 0 && withoutReleased(readLedger(ledger).rows).some((r) => r.id === consumeId && (cause.kind !== 'ticket' || r.sig === sig))) {
         return { outcome: 'refused', why: 'This one was already started or given up on.', told: false };
       }
       // RULED 2026-10-15: inside an install-needed wait nothing is written, no session made, no copy or install run
@@ -440,6 +449,7 @@ export function createScheduleDoor(deps) {
       if (!accept.ok) return told('refused', accept.why);
       const beforeSpawn = hooks.beforeSpawn ?? (() => {
         if (cause.kind === 'file') recordRan(ledger, { sha: cause.sha, path: cause.path, size: cause.size ?? 0 }, now(), sig);
+        else if (cause.kind === 'ticket') recordTicketRan(ledger, sig, { sha: cause.sha, name: `#${cause.number}` }, now());
         else recordFire(ledger, { fire: true, slot: cause.slot, catchUp: cause.catchUp, missed: cause.missed }, now(), sig);
       });
       starting.set(job, now());
@@ -511,7 +521,7 @@ export function createScheduleDoor(deps) {
       }
       const cur = s.cur;
       const keep = sameTarget(cur, s.trigger);
-      if (cur && !keep && isFileTrigger(cur.trigger)) dropQueue(s.job, jobSpecHash(s.spec), 'schedule-changed');
+      if (cur && !keep && (isFileTrigger(cur.trigger) || isTicketTrigger(cur.trigger))) dropQueue(s.job, jobSpecHash(s.spec), 'schedule-changed');
       /** @type {Schedule} */
       const schedule = {
         job: s.job, trigger: s.trigger, spec: s.spec, specHash: s.hash, workflowKey: s.key, originRunid: s.originRunid,
@@ -585,7 +595,7 @@ export function createScheduleDoor(deps) {
       const last = lastFireRow(job, st.schedule);
       const nextWords = !st.armed ? 'next: not armed yet' : isClockTrigger(st.schedule.trigger)
         ? (st.nextSlotMs === null ? 'next: not armed yet' : `next ${nextSlotShort(st.nextSlotMs)}`)
-        : (st.schedule.trigger.kind === 'new-file' ? 'next: waiting for a new file' : 'next: waiting for the file to change');
+        : (st.schedule.trigger.kind === 'new-ticket' ? 'next: waiting for a new ticket' : st.schedule.trigger.kind === 'new-file' ? 'next: waiting for a new file' : 'next: waiting for the file to change');
       // hamr 2026-10-15: only a refusal that is not retrying, the give-up and a used-up month are problems (red); busy and an install back-off are not
       let problem = false;
       let ended = nextWords;
