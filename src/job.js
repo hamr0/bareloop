@@ -235,6 +235,9 @@ export function validateBaseUrl(value) {
 /** the job's flow types; `flowType` is set by code from the job card and signed with the job (fwdloop M13 piece 4) */
 export const FLOW_TYPES = Object.freeze(['plain', 'mcp', 'tickets']);
 
+/** the words the card's Flow type menu and the Job tab use for each flow type (fwd's am2 names) */
+export const FLOW_TYPE_LABELS = Object.freeze({ plain: 'plain', mcp: 'MCP', tickets: 'Tickets MCP' });
+
 /**
  * The ONE reader of a job's flow type: the field when present; an `mcp` block with no `flowType` is a Tickets job; no `mcp` block is plain.
  * @param {Record<string, any>} spec @returns {'plain'|'mcp'|'tickets'}
