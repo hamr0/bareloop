@@ -85,7 +85,7 @@ export function runnerAlive(row, nowMs) {
 }
 
 /**
- * @typedef {{runid: string, outcome: string|null, spec: any, records: any[]}} JobRun
+ * @typedef {{runid: string, outcome: string|null, spec: any, records: any[], ticket?: number}} JobRun
  * @typedef {{job: string, trigger: import('../trigger.js').Trigger, spec: any, specHash: string, workflowKey: string,
  *   originRunid: string, inputsText: string, destination?: string, signedBy: string, signedAt: string}} Schedule
  */
@@ -148,36 +148,79 @@ export function createScheduleDoor(deps) {
    * THE gate (T3). The job's CURRENT workflow key is the key of its newest listed run whose signed spec is on disk.
    * It passes when a run with THAT key has a real `green` outcome (`already-green` does not count) and, for a rubric
    * job, that run's spine holds an honoured accept. An edited job has a new key, so an older green does not count (T5).
-   * @param {string} job
+   * @param {string} job @param {Set<string>} [skip] runs that do not count (R7: the runs that existed when a schedule was signed WITH its job, so only a later run turns it on)
    * @returns {{ok: true, run: JobRun, key: string} | {ok: false, say: string}}
    */
-  function greenFor(job) {
+  function greenFor(job, skip) {
     const runs = deps.jobRuns(job);
     const head = runs.find((r) => r.spec);
     if (!head) return { ok: false, say: SCHEDULE_WORDS.notGreen };
     const key = workflowKey(head.spec);
-    const hit = runs.find((r) => r.spec && workflowKey(r.spec) === key && r.outcome === 'green'
+    const hit = runs.find((r) => !(skip && skip.has(r.runid)) && r.spec && workflowKey(r.spec) === key && r.outcome === 'green'
       && (r.spec.verdictType !== 'soft-green' || doorAccepted(r.records)));
     return hit ? { ok: true, run: hit, key } : { ok: false, say: SCHEDULE_WORDS.notGreen };
+  }
+
+  /**
+   * The ledger rows of the CURRENT signing (live ones), oldest first. @param {string} job @param {string} sig
+   */
+  function rowsOf(job, sig) {
+    return withoutReleased(readLedger(ledgerOf(job)).rows).filter((r) => r.sig === sig);
+  }
+
+  /**
+   * R7 (piece 9): the `armed` row of a signing, or undefined. A `waiting` row (a schedule signed WITH its job on the New job card) starts the signing over: an `armed` row older than the
+   * newest `waiting` row belongs to an earlier life of the same signature and does not count.
+   * @param {import('../triggerledger.js').LedgerRow[]} rows the live rows of one signing
+   */
+  function armedRowOf(rows) {
+    const w = rows.map((r) => r.kind).lastIndexOf('waiting');
+    return rows.slice(w + 1).find((r) => r.kind === 'armed');
+  }
+
+  /**
+   * R7 (piece 9): the `waiting` row when the signing is signed with its job and still OFF - no `armed` row after it, and no later `signed` row (the two-click door's click 2 supersedes the wait).
+   * @param {import('../triggerledger.js').LedgerRow[]} rows the live rows of one signing @returns {import('../triggerledger.js').LedgerRow|null}
+   */
+  function waitingRowOf(rows) {
+    if (armedRowOf(rows)) return null;
+    const marks = rows.filter((r) => r.kind === 'waiting' || r.kind === 'signed');
+    const last = marks.length > 0 ? marks[marks.length - 1] : null;
+    return last !== null && last.kind === 'waiting' ? last : null;
   }
 
   /**
    * The ONE writer of "this schedule was armed". A file kind records what is already there first (it never runs),
    * then the armed row, so a failure between the two leaves it unarmed and the next call finishes it. Idempotent for
    * a signing: a second call with the same sig writes nothing. Throws, naming why, when the target is not usable.
+   * R7: a schedule signed WITH its job waits (`waitingRowOf`): it arms only when a run that began after the signing has a real green (`greenFor`, so a rubric job needs its honoured Accept);
+   * until then this returns `{armed: false, waiting: true}` and writes nothing. A ticket schedule keeps the ticket number that run read (`ticketN`).
    * @param {string} job @param {Schedule} schedule @param {{baseline?: boolean}} [o] `baseline: false` = a re-sign that kept the same folder/file: its queue and baseline stand
+   * @returns {{armed: boolean, already?: boolean, waiting?: boolean}}
    */
   function armFor(job, schedule, o = {}) {
     const sig = schedule.specHash;
     const ledger = ledgerOf(job);
-    if (readLedger(ledger).rows.some((r) => r.kind === 'armed' && r.sig === sig)) return { armed: true, already: true };
+    const rows = rowsOf(job, sig);
+    if (armedRowOf(rows)) return { armed: true, already: true };
+    const wait = waitingRowOf(rows);
+    /** @type {number|undefined} */
+    let ticketN;
+    if (wait) {
+      const green = cachedGreen(job, new Set(Array.isArray(wait.before) ? wait.before.map(String) : []));
+      // the run that turns it on must be of THIS workflow (an edited job is a new workflow and its schedule never arms)
+      if (!green.ok || green.key !== schedule.workflowKey) return { armed: false, waiting: true };
+      if (isTicketTrigger(schedule.trigger) && Number.isInteger(green.run.ticket)) ticketN = green.run.ticket;
+      // the schedule now names the run it was turned on by (the card opens from it); written before the armed row, so a crash between the two is finished by the next call
+      if (green.run.runid !== schedule.originRunid) writeSchedule(job, { ...schedule, originRunid: green.run.runid });
+    }
     if (isFileTrigger(schedule.trigger) && o.baseline !== false) {
       const t = schedule.trigger;
       createFileTrigger({
         mode: t.kind === 'new-file' ? 'new' : 'updated', target: t.kind === 'new-file' ? t.folder : t.path, ledger, sig, now,
       }).arm();
     }
-    armTrigger(ledger, now(), sig);
+    armTrigger(ledger, now(), sig, ticketN);
     return { armed: true, already: false };
   }
 
@@ -320,12 +363,12 @@ export function createScheduleDoor(deps) {
    */
   function stateOf(job) {
     const schedule = readSchedule(job);
-    if (!schedule) return { schedule: null, trigger: null, armed: false, armedAt: null, nextSlotMs: null, lastOutcome: null, retryInMs: null, gaveUp: null };
+    if (!schedule) return { schedule: null, trigger: null, armed: false, armedAt: null, waiting: false, nextSlotMs: null, lastOutcome: null, retryInMs: null, gaveUp: null };
     const rows = withoutReleased(readLedger(ledgerOf(job)).rows).filter((r) => r.sig === schedule.specHash);
-    const armed = rows.find((r) => r.kind === 'armed');
+    const armed = armedRowOf(rows);
     const outcomes = rows.filter((r) => OUTCOME_KINDS.includes(r.kind));
     return {
-      schedule, trigger: schedule.trigger, armed: armed !== undefined, armedAt: armed ? armed.at : null,
+      schedule, trigger: schedule.trigger, armed: armed !== undefined, armedAt: armed ? armed.at : null, waiting: waitingRowOf(rows) !== null,
       nextSlotMs: isClockTrigger(schedule.trigger) && armed ? nextSlot(/** @type {any} */ (schedule.trigger), now()) : null,
       lastOutcome: outcomes.length > 0 ? outcomes[outcomes.length - 1] : null,
       retryInMs: (() => { const w = installWait.get(job); return w && w.until > now() ? w.until - now() : null; })(),
@@ -365,16 +408,16 @@ export function createScheduleDoor(deps) {
   /**
    * `greenFor`, memoised on the job's run-list state (each of its spines' size and mtime), so the Run tab's poll does not
    * re-parse every run of the job each time. A finished run changes its spine, so the key moves and the gate is asked again.
-   * @param {string} job
+   * @param {string} job @param {Set<string>} [skip] see {@link greenFor}; part of the memo key
    */
-  function cachedGreen(job) {
+  function cachedGreen(job, skip) {
     const rows = (deps.runRows ? deps.runRows() : readRunList({ home: deps.home }).rows).filter((r) => r && r.job === job);
-    const key = rows.map((r) => {
+    const key = `${rows.map((r) => {
       try { const st = statSync(r.spine); return `${r.runid}:${st.size}:${st.mtimeMs}`; } catch { return `${r.runid}:gone`; }
-    }).join('|');
+    }).join('|')}#${skip ? [...skip].sort().join(',') : ''}`;
     const hit = greenMemo.get(job);
     if (hit && hit.key === key) return hit.green;
-    const green = greenFor(job);
+    const green = greenFor(job, skip);
     greenMemo.set(job, { key, green });
     return green;
   }
@@ -537,6 +580,39 @@ export function createScheduleDoor(deps) {
       return { status: 200, body: { ok: true, job: s.job, words: s.words, hash: s.hash, armed, ...(say ? { say } : {}) } };
     },
 
+    /**
+     * R7 (piece 9, hamr: schedule exactly like fwd): the New job card's Sign & run signs the schedule WITH the job, written OFF. It writes `schedule.json`, a `signed` row and a `waiting`
+     * row that remembers the runs the job already had (`before`): only a run that began after this turns the schedule on (`armFor`, the one turn-on), and a skipped run never does.
+     * Nothing looks or fires while it waits. $0. A refusal names why and writes nothing. The job is the one just signed, so a job that already has a schedule is refused (the two-click door edits it).
+     * @param {{spec: any, specHash: string, trigger: unknown, inputsText: string, destination?: string|null}} o `spec` = the signed spec WITH its `trigger`; `specHash` = the hash the person signed (it must be the spec's own)
+     * @returns {{ok: true, hash: string}|{ok: false, say: string}}
+     */
+    signWithJob(o) {
+      const job = o.spec?.job;
+      if (typeof job !== 'string' || !SLUG_RE.test(job)) return { ok: false, say: 'This job has no name a schedule can be kept under. Nothing was signed.' };
+      const tv = validateTrigger(o.trigger);
+      if (!tv.ok) return { ok: false, say: `${tv.say}. Nothing was signed.` };
+      if (!isClockTrigger(tv.trigger) && !isTicketTrigger(tv.trigger)) return { ok: false, say: 'The New job card can start a job every day or on a new ticket. A file trigger is set after the first good run. Nothing was signed.' };
+      if (readSchedule(job)) return { ok: false, say: 'This job already has a schedule. Change it with Cancel / modify schedule on one of its runs. Nothing was signed.' };
+      if (isTicketTrigger(tv.trigger)) {
+        const look = ticketLookOf(o.spec, tv.trigger);
+        if (!look.ok) return { ok: false, say: look.say };
+      }
+      const hash = jobSpecHash(o.spec);
+      if (hash !== o.specHash) return { ok: false, say: 'The saved copy of this job no longer matches what was signed. Nothing was signed.' };
+      const before = (deps.runRows ? deps.runRows() : readRunList({ home: deps.home }).rows).filter((r) => r && r.job === job).map((r) => String(r.runid));
+      /** @type {Schedule} */
+      const schedule = {
+        job, trigger: tv.trigger, spec: o.spec, specHash: hash, workflowKey: workflowKey(o.spec), originRunid: '',
+        inputsText: o.inputsText, ...(typeof o.destination === 'string' && o.destination !== '' ? { destination: o.destination } : {}), signedBy: userInfo().username, signedAt: new Date(now()).toISOString(),
+      };
+      writeSchedule(job, schedule);
+      appendRow(ledgerOf(job), { kind: 'signed', sig: hash, at: now() });
+      appendRow(ledgerOf(job), { kind: 'waiting', sig: hash, at: now(), before });
+      installWait.delete(job);
+      return { ok: true, hash };
+    },
+
     /** Cancel a job's schedule, never refused. @param {string} job @returns {boolean} there was one */
     cancel(job) {
       const cur = SLUG_RE.test(job) ? readSchedule(job) : null;
@@ -573,6 +649,8 @@ export function createScheduleDoor(deps) {
     },
 
     stateOf,
+    /** is this job's schedule signed with its job and still off? (the Audit and Job tab read it) @param {string} job */
+    isWaiting(job) { return SLUG_RE.test(job) && stateOf(job).waiting; },
     userHome,
 
     /**
@@ -589,11 +667,12 @@ export function createScheduleDoor(deps) {
         const g = cachedGreen(job);
         return { scheduled: false, canSchedule: g.ok, words: SCHEDULE_WORDS, ...(g.ok ? { fromRunid: g.run.runid } : {}) };
       }
-      const next = scheduledNextFor({
+      // R7: signed with the job and still off - the grey line says so, whatever else is true of a schedule that has not started
+      const next = st.waiting ? { text: SCHEDULE_WORDS.waiting, red: false } : scheduledNextFor({
         trigger: st.schedule.trigger, armed: st.armed, nextSlotMs: st.nextSlotMs, lastOutcome: st.lastOutcome, waitingRunNo: o.waitingRunNo ?? null, now: now(), retryInMs: st.retryInMs, gaveUp: st.gaveUp,
       });
       const last = lastFireRow(job, st.schedule);
-      const nextWords = !st.armed ? 'next: not armed yet' : isClockTrigger(st.schedule.trigger)
+      const nextWords = st.waiting ? SCHEDULE_WORDS.waiting : !st.armed ? 'next: not armed yet' : isClockTrigger(st.schedule.trigger)
         ? (st.nextSlotMs === null ? 'next: not armed yet' : `next ${nextSlotShort(st.nextSlotMs)}`)
         : (st.schedule.trigger.kind === 'new-ticket' ? 'next: waiting for a new ticket' : st.schedule.trigger.kind === 'new-file' ? 'next: waiting for a new file' : 'next: waiting for the file to change');
       // hamr 2026-10-15: only a refusal that is not retrying, the give-up and a used-up month are problems (red); busy and an install back-off are not
@@ -607,7 +686,7 @@ export function createScheduleDoor(deps) {
       }
       return {
         scheduled: true, canSchedule: false, words: SCHEDULE_WORDS, fromRunid: st.schedule.originRunid,
-        text: scheduledWords(st.schedule.trigger, userHome), next: next.text, nextRed: next.red,
+        text: scheduledWords(st.schedule.trigger, userHome), next: next.text, nextRed: next.red, waiting: st.waiting,
         // aligned with fwdloop M9 am7: the SCHEDULE row's second line is put together by the server from these
         lastRow: last, problem, nextWords: ended, accept: o.waitingRunNo !== undefined && o.waitingRunNo !== null,
       };
@@ -626,7 +705,7 @@ export function createScheduleDoor(deps) {
       // the Inputs lines a new-ticket schedule could watch (a Tickets MCP job with list_issues signed); [] = the card does not offer the choice
       const specNow = st.schedule ? st.schedule.spec : (green && green.ok ? green.run.spec : null);
       return {
-        scheduled: st.schedule !== null, trigger: t, now: t ? scheduledWords(t, userHome) : null,
+        scheduled: st.schedule !== null, trigger: t, now: t ? [scheduledWords(t, userHome), st.waiting ? SCHEDULE_WORDS.waiting : null].filter(Boolean).join(' · ') : null,
         refusal: green && !green.ok ? green.say : null,
         ticketInputs: ticketInputLabels(specNow),
         words: SCHEDULE_WORDS,

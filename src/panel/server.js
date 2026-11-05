@@ -1597,7 +1597,8 @@ function scheduleExtrasFor(runid, job, rows, events, nos, opts, view) {
             lastWords = `last ${dateTimeWords(Number(lastRow.at))} · ${skippedWords(lastRow, true)}`;
           }
         }
-        schedule.line2 = [lastWords ?? 'no run yet', accept ? SCHEDULE_WORDS.acceptWaiting : null, nextWords].filter(Boolean).join(' · ');
+        // R7: a schedule signed with the job says only that it waits (and a run waiting for the Accept, which is what a rubric job waits for)
+        schedule.line2 = (view.waiting === true ? [accept ? SCHEDULE_WORDS.acceptWaiting : null, nextWords] : [lastWords ?? 'no run yet', accept ? SCHEDULE_WORDS.acceptWaiting : null, nextWords]).filter(Boolean).join(' · ');
       }
     }
     const row = rows.find((r) => r && r.runid === runid);
@@ -1614,7 +1615,7 @@ function scheduleExtrasFor(runid, job, rows, events, nos, opts, view) {
     const running = rows.some((r) => r && r.job === job && r.via !== 'import' && runIsAlive(r));
     const { sign, word } = scheduleSignFor({ running, red: !!(view && view.problem) });
     const words = scheduledWords(cur.trigger, door.userHome);
-    const head = [lowerFirst(words ?? ''), originNo === null ? null : `from run-${originNo}`, triesTailWords(tries.length) || null].filter(Boolean).join(' · ');
+    const head = [lowerFirst(words ?? ''), originNo === null ? null : `from run-${originNo}`, door.isWaiting(job) ? lowerFirst(SCHEDULE_WORDS.waiting) : null, triesTailWords(tries.length) || null].filter(Boolean).join(' · ');
     const when = row ? dateTimeWords(atMs(row)) : '';
     const thisRun = rec ? sectionThisRunWords(rec) : `by hand.${runid === cur.originRunid ? ' The schedule was set from this run.' : ''}`;
     const shown = tries.slice(0, 7).map((x, i) => ({ label: i === 0 ? 'tries' : '', text: x.line }));
@@ -3239,7 +3240,7 @@ export function getRunJob(runid, opts = {}) {
       trigger: cur ? cur.trigger : null, originNo: cur ? (nos.get(cur.originRunid) ?? null) : null,
       model: spec && typeof spec.model === 'string' ? spec.model : null,
       destination: cur ? (typeof cur.destination === 'string' && cur.destination !== '' ? cur.destination : (Array.isArray(spec?.writeScope) ? spec.writeScope.join(', ') : null)) : null,
-      home: door.userHome,
+      home: door.userHome, waiting: cur ? door.isWaiting(job) : false,
     });
     return { ...body, started, schedule };
   } catch { return body; }
@@ -3631,11 +3632,11 @@ export function getStartFrom(runid, opts = {}) {
  * its parsed spine. The schedule door's gate (`greenFor`) reads this; nothing here builds a run context.
  * @param {string} job
  * @param {{ home?: string }} [opts]
- * @returns {{runid: string, outcome: string|null, spec: any, records: any[]}[]}
+ * @returns {{runid: string, outcome: string|null, spec: any, records: any[], ticket?: number}[]}
  */
 export function jobRunsOf(job, opts = {}) {
   const { rows } = readRunList(opts);
-  /** @type {{runid: string, outcome: string|null, spec: any, records: any[]}[]} */
+  /** @type {{runid: string, outcome: string|null, spec: any, records: any[], ticket?: number}[]} */
   const out = [];
   for (let i = rows.length - 1; i >= 0; i -= 1) {
     const row = rows[i];
@@ -3644,7 +3645,11 @@ export function jobRunsOf(job, opts = {}) {
     try { records = parseJsonl(row.spine).records; } catch { continue; }
     const outcome = legsOf(records).at(-1)?.outcome ?? null;
     // T D.2: a scheduled run's green is HELD until accepted, so it is not a good run for the schedule gate either
-    out.push({ runid: row.runid, outcome: outcome === 'green' && heldScheduled(records, triggerRecordOf(row)) ? 'green-held' : outcome, spec: signedSpecForRun(row, records)?.spec ?? null, records });
+    out.push({
+      runid: row.runid, outcome: outcome === 'green' && heldScheduled(records, triggerRecordOf(row)) ? 'green-held' : outcome, spec: signedSpecForRun(row, records)?.spec ?? null, records,
+      // a Tickets run's ticket number (the run list row carries it): the schedule signed with the job starts after this one (R7)
+      ...(Number.isInteger(row.ticket) ? { ticket: row.ticket } : {}),
+    });
   }
   return out;
 }

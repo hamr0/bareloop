@@ -60,8 +60,18 @@ export const SCHEDULE_WORDS = Object.freeze({
   problemNext: 'next: fix it in Cancel / modify schedule',
   monthNext: 'next: raise the limit in Settings, or it starts on the 1st',
   acceptWaiting: 'waiting for your Accept (the next run does not wait)',
+  // R7 (piece 9, fwd SCHEDULE_WAITING_SAY): a schedule signed with the job on the New job card is off until the job's first green run (a rubric job: until that run is accepted)
+  waiting: 'Schedule waiting for a green run',
   scheduleGroup: 'schedule',
   notGreen: 'This job has not had a good run yet. Run it by hand and get it right first; then you can set when it runs. A rubric job also needs your Accept once. Nothing was changed.',
+  // R7: the New job card's Schedule row (fwd's three words and two hints; the rubric hint is bareloop's own, because a judged green waits for the Accept)
+  card: Object.freeze({
+    label: 'Schedule',
+    options: Object.freeze({ hand: 'By hand', 'new-ticket': 'When a new ticket arrives', daily: 'Every day at HH:MM' }),
+    hint: 'off until the first green run, then turns on',
+    rubricHint: 'off until the first green run is accepted, then turns on',
+    ticketHint: 'the first run reads the newest ticket at the time it starts; older tickets never run',
+  }),
   stale: 'What you were shown is not what is on the card now. Nothing was signed. Look again, then sign.',
 });
 
@@ -259,12 +269,13 @@ export function skippedWords(row, short = false) {
 /**
  * Job tab, "Schedule": the job's schedule NOW and what it is bound to. The first part IS the Run tab's line ({@link scheduledWords}),
  * first letter lowered, so the two can never disagree.
- * @param {{trigger: Trigger|null, originNo: number|null, model: string|null, destination: string|null, home?: string}} f
+ * @param {{trigger: Trigger|null, originNo: number|null, model: string|null, destination: string|null, home?: string, waiting?: boolean}} f `waiting` (R7): signed with the job and still off
  */
 export function jobScheduleWords(f) {
   const w = f.trigger ? scheduledWords(f.trigger, f.home) : null;
   if (w === null) return 'none';
   const parts = [lowerFirst(w)];
+  if (f.waiting === true) parts.push(lowerFirst(SCHEDULE_WORDS.waiting));
   if (f.originNo !== null) parts.push(`from run-${f.originNo}`);
   if (f.model) parts.push(f.model);
   if (f.destination) parts.push(tilde(f.destination, f.home));

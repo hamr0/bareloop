@@ -29,6 +29,7 @@ import { parseInputs } from '../jobblock.js';
 import { isReusableGreen } from './status.js';
 import { proveInputFiles, looksLikeRubricInput, webFetchState } from '../source.js';
 import { validateJob, flowTypeOf } from '../job.js';
+import { cardScheduleOf } from '../cardschedule.js';
 
 /** plain words for a run whose saved job no longer passes today's `validateJob` (RULED 2026-10-15): never the raw red codes */
 export const OLD_JOB_REUSE_WORDS = "This run was made by an older bareloop. Its saved job doesn't pass today's checks, so it can't be reused. Start a new job instead.";
@@ -166,6 +167,11 @@ export function createAuthorRoutes(opts) {
     if (!flow.ok) return Promise.resolve({ ok: /** @type {false} */ (false), status: 400, error: flow.error });
     const ticketProblem = ticketBoxProblem(card, flow.flowType);
     if (ticketProblem !== null) return Promise.resolve({ ok: /** @type {false} */ (false), status: 400, error: ticketProblem });
+    // piece 9 (R7): the card's Schedule row, decided at $0 before any session exists. A scheduled fire is a headless start with no Schedule row, so it never reaches this.
+    const sch = o.headless ? { ok: /** @type {const} */ (true), trigger: null } : cardScheduleOf(card, {
+      flowType: flow.flowType, pick: flow.pick, inputs, hasSchedule: (job) => { try { return !!opts.schedules?.readSchedule(job); } catch { return false; } },
+    });
+    if (!sch.ok) return Promise.resolve({ ok: /** @type {false} */ (false), status: 400, error: sch.error });
     return (filesJob ? Promise.resolve(/** @type {{ok: true}} */ ({ ok: true })) : proveInputFiles(inputs, flow.pick ? { mcp: flow.pick } : {})).then((proof) => {
       if (!proof.ok) return { ok: /** @type {false} */ (false), status: 400, error: proof.error };
       if (!o.headless && hasLiveSession()) return { ok: /** @type {false} */ (false), status: 409, error: 'an authoring session is already live — one at a time' };
@@ -173,7 +179,7 @@ export function createAuthorRoutes(opts) {
       const destProblem = startDestinationProblem(card);
       if (destProblem !== null) return { ok: /** @type {false} */ (false), status: 400, error: destProblem };
       const session = createSession(cardFields(card), {
-        env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}), flow: { flowType: flow.flowType, pick: flow.pick }, ...(opts.sessionDeps ?? {}),
+        env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}), flow: { flowType: flow.flowType, pick: flow.pick }, ...(sch.trigger ? { schedule: sch.trigger } : {}), ...(opts.sessionDeps ?? {}),
       });
       (o.headless ? headless : sessions).set(session.id, session);
       return { ok: /** @type {true} */ (true), session };
@@ -432,7 +438,7 @@ export function createAuthorRoutes(opts) {
     }
     if (sub === 'sign') {
       const claimedHash = String(body?.specHash ?? '');
-      const r = signRun(session, claimedHash, { env: envNow(), spawnFn, bareloopBin, sessionsRoot: opts.sessionsRoot, home: opts.home });
+      const r = signRun(session, claimedHash, { env: envNow(), spawnFn, bareloopBin, sessionsRoot: opts.sessionsRoot, home: opts.home, ...(opts.schedules ? { schedules: opts.schedules } : {}) });
       send(r.ok ? 200 : 400, r);
       return true;
     }
@@ -457,7 +463,8 @@ export { panelMoney2 };
  * it to sign"), and this is where it is checked, not trusted.
  * @param {ReturnType<typeof createSession>} session
  * @param {string} claimedHash
- * @param {{env: any, spawnFn: typeof realSpawn, bareloopBin: string, sessionsRoot?: string, home?: string, reviewDoor?: boolean, onSpawnError?: (e: Error) => void, onExit?: (code: number|null) => void}} o
+ * @param {{env: any, spawnFn: typeof realSpawn, bareloopBin: string, sessionsRoot?: string, home?: string, reviewDoor?: boolean, onSpawnError?: (e: Error) => void, onExit?: (code: number|null) => void, schedules?: ReturnType<typeof import('./schedules.js').createScheduleDoor>}} o
+ *   `schedules` (R7, piece 9): the schedule door. A session whose card picked a Schedule has it signed WITH the job here, written OFF, before the run is spawned; a refusal spawns nothing.
  * @returns {{ok: boolean, error?: string, job?: string}}
  */
 export function signRun(session, claimedHash, o) {
@@ -484,6 +491,20 @@ export function signRun(session, claimedHash, o) {
       const m = planMatchesClose(session.state.finalPlan.checkItems, spec.closeDecl);
       if (!m.ok) return { ok: false, error: m.error };
     } catch { return { ok: false, error: 'could not read the signed spec to compare it with the plan you were shown — refusing to sign' }; }
+  }
+  // PIECE 9 (R7): the Schedule the card picked is signed WITH the job it is a field of (`spec.trigger`), written OFF beside the run about to start; the first green run turns it on. Before the
+  // spawn, so a refusal starts nothing and a run is never left without the schedule the person signed it with.
+  /** @type {string|null} the job whose waiting schedule this sign wrote */
+  let scheduledJob = null;
+  if (session.state.schedule) {
+    if (!o.schedules) return { ok: false, error: 'this panel cannot keep a schedule, so the job was not signed' };
+    try {
+      const spec = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
+      const dest = typeof session.state.card?.destination === 'string' ? session.state.card.destination.trim() : '';
+      const made = o.schedules.signWithJob({ spec, specHash: session.state.specHash, trigger: spec.trigger, inputsText: typeof session.state.card?.inputs === 'string' ? session.state.card.inputs : '', destination: /^(\/|[a-zA-Z]:[\\/])/.test(dest) ? dest : null });
+      if (!made.ok) return { ok: false, error: made.say };
+      scheduledJob = spec.job;
+    } catch { return { ok: false, error: 'could not read the signed spec to sign its schedule — refusing to sign' }; }
   }
   const logFile = join(session.state.outDir, 'run.log');
   // array argv, never a shell string — `--approve <hash>` is a literal
@@ -519,9 +540,16 @@ export function signRun(session, claimedHash, o) {
   /** @type {number|null} */
   let logFd = null;
   try { logFd = openSync(logFile, 'a'); } catch { logFd = null; }
-  const child = o.spawnFn('setsid', args, {
-    detached: true, stdio: ['ignore', logFd ?? 'ignore', logFd ?? 'ignore'], env: o.env,
-  });
+  /** a run that never started takes its waiting schedule back (cancel is never refused; it writes its own plain row) */
+  const dropSchedule = () => { if (scheduledJob !== null) { try { o.schedules?.cancel(scheduledJob); } catch { /* the schedule file is already gone */ } } };
+  /** @type {ReturnType<typeof realSpawn>} */
+  let child;
+  try {
+    child = o.spawnFn('setsid', args, {
+      detached: true, stdio: ['ignore', logFd ?? 'ignore', logFd ?? 'ignore'], env: o.env,
+    });
+  } catch (e) { dropSchedule(); throw e; }
+  if (scheduledJob !== null && typeof child?.once === 'function') child.once('error', dropSchedule);
   if (typeof child?.unref === 'function') child.unref();
   if (o.onSpawnError && typeof child?.once === 'function') child.once('error', o.onSpawnError);
   if (o.onExit && typeof child?.once === 'function') child.once('exit', o.onExit);

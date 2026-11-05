@@ -66,6 +66,8 @@ import {
   parseJobBlock, parseInputs, jobBlockFitsCheck, renderJobLines, renderExamples, signedJobLines,
 } from '../jobblock.js';
 import { planFromConfirm } from './jobplan.js';
+import { isTicketTrigger } from '../trigger.js';
+import { ticketLookOf } from '../ticketschedule.js';
 
 /**
  * THE PROGRESS LIST's one table (hamr 2026-10-04, "one place showing all"): every pipeline step the left Chat panel
@@ -227,7 +229,7 @@ export function nextFreeJobName(origin, runJobs, opts = {}) {
 }
 
 /** the form's fields, in card order — what `card.json` stores, verbatim (P5 item 3) */
-export const CARD_FIELDS = Object.freeze(['jobName', 'checkType', 'provider', 'model', 'thinking', 'jobText', 'inputs', 'destination', 'capUsd', 'maxWallMs', 'flowType', 'mcp', 'ticket']);
+export const CARD_FIELDS = Object.freeze(['jobName', 'checkType', 'provider', 'model', 'thinking', 'jobText', 'inputs', 'destination', 'capUsd', 'maxWallMs', 'flowType', 'mcp', 'ticket', 'schedule']);
 
 /**
  * The repo a card names: Inputs line 1 (P7 — the Source box is gone; the first input IS the repo). `''` when the Inputs
@@ -459,7 +461,7 @@ export function validateJobCard(card, opts = {}) {
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
  *   scout?: any, generate?: Function, confirmGenerate?: Function, authorFn?: Function,
- *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, fitFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, flow?: {flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null}}} [deps] `scout`..`prepareSigningFn` are
+ *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, fitFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, schedule?: import('../trigger.js').Trigger|null, flow?: {flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
  * @returns {any} the session object
@@ -500,6 +502,8 @@ export function createSession(card, deps = {}) {
     // the form as submitted + whether it is a reuse session: a refreshed page re-attaches to a live session from these
     card: cardFields(card),
     reuse: deps.reuse !== undefined,
+    // R7: the schedule the card asked for (the typed trigger the job is signed with); `signRun` writes it OFF beside the run it starts
+    ...(deps.schedule ? { schedule: deps.schedule } : {}),
     messages: /** @type {{role: string, text: string}[]} */ ([]),
     pendingAsk: /** @type {any} */ (null),
     cost: /** @type {any} */ (null),
@@ -918,6 +922,14 @@ export function createSession(card, deps = {}) {
      */
     const finish = async (spec, seedRef) => {
       if (abandoned) return;
+      // R7 (piece 9): a schedule picked on the card is part of the job the person signs, so the FIRST run's hash already covers it. By hand adds nothing (the key stays absent).
+      if (deps.schedule) {
+        spec.trigger = deps.schedule;
+        if (isTicketTrigger(deps.schedule)) {
+          const look = ticketLookOf(spec, deps.schedule);
+          if (!look.ok) { refuse(look.say); return; }
+        }
+      }
       const specFile = join(outDir, 'resolved-spec.json');
       writeFileSync(specFile, `${JSON.stringify(spec, null, 2)}\n`);
       state.resolvedSpecPath = specFile;

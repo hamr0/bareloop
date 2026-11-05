@@ -36,6 +36,7 @@ export async function world(t, o = {}) {
     process.chdir(proj);
     const srv = await createPanelServer({ port: 0, home: cfg, mcpHome: home, env: {}, sessionsRoot: path.join(base, 'sessions'), ...(o.panel ?? {}) });
     w.close = async () => { await srv.close(); process.chdir(cwd); };
+    w.srv = srv;   // R7: the schedule door and the scheduler the panel built
     const origin = `http://127.0.0.1:${srv.port}`;
     const H = { 'x-bareloop-token': srv.token, 'content-type': 'application/json' };
     Object.assign(w, {

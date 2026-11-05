@@ -57,7 +57,7 @@ export function specOf({ job = 'sched-job', files = false, goal = 'summarise the
  * One listed run, laid out the way a panel run is: the spine at `<out>/source-seed/<job>-bareloop/u-<runid>.jsonl`, the
  * signed spec at `<out>/resolved-spec.json`. `accepted` appends an honoured door-decision accept.
  */
-export function makeRun(home, { runid, spec, outcome = 'green', accepted = false, at = '2026-10-01T10:00:00.000Z' }) {
+export function makeRun(home, { runid, spec, outcome = 'green', accepted = false, at = '2026-10-01T10:00:00.000Z', ticket }) {
   const out = tmp('tw-out-');
   const into = join(out, 'source-seed');
   const dir = join(into, `${spec.job}-bareloop`);
@@ -76,7 +76,7 @@ export function makeRun(home, { runid, spec, outcome = 'green', accepted = false
   writeFileSync(spine, `${recs.map((r) => JSON.stringify(r)).join('\n')}\n`);
   const old = new Date(Date.now() - 3 * 3600 * 1000);
   utimesSync(spine, old, old);
-  appendRun({ at, runid, job: spec.job, spine, patient: null, via: 'run-u', pid: DEAD_PID }, { home });
+  appendRun({ at, runid, job: spec.job, spine, patient: null, via: 'run-u', pid: DEAD_PID, ...(ticket === undefined ? {} : { ticket }) }, { home });
   return { out, spine, specHash: sh };
 }
 

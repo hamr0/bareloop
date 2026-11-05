@@ -8,7 +8,7 @@
 //   - the timer is unref'd, `start`/`stop` are idempotent, the server's close calls `stop`.
 //   - with no schedule on disk a tick is one readdir and nothing else (no runs.jsonl read).
 // What a tick does for one job with a signed schedule:
-//   1. arm it if it is not armed under this signing (a crash between the sign and the arm);
+//   1. arm it if it is not armed under this signing (a crash between the sign and the arm). A schedule signed WITH its job (R7) is asked again every tick and does nothing else until it arms: no look, no fire;
 //   2. clock kinds: `due`; a due slot goes to `door.fire` and is NOT consumed up front: the starter's `beforeSpawn` writes
 //      the `fire` row only after busy, monthly, wouldAccept and the session all said yes, so a refused slot retries;
 //   3. file kinds: `poll`; each file taken is recorded `arrived` (THIS is the only writer of `arrived` rows), then the
@@ -119,7 +119,7 @@ export function createScheduler(opts) {
     st.at = nowMs;
     const first = !hasBaseline(ledger, sig);
     // the turn-on may have written the ticket number the first green run read (`armed.ticketN`): the first look baselines only tickets up to it
-    const armed = first ? readLedger(ledger).rows.find((r) => r.kind === 'armed' && r.sig === sig) : undefined;
+    const armed = first ? readLedger(ledger).rows.filter((r) => r.kind === 'armed' && r.sig === sig).at(-1) : undefined;
     const cut = Number.isInteger(armed?.ticketN) ? /** @type {number} */ (armed?.ticketN) : undefined;
     const state = st;
     state.out = Promise.resolve(look({
@@ -154,7 +154,13 @@ export function createScheduler(opts) {
         return /** @type {boolean} */ (busyMemo.get(job));
       };
       try {
-        if (!armedKeys.has(key)) { door.armFor(job, schedule); armedKeys.add(key); }
+        if (!armedKeys.has(key)) {
+          // R7: a schedule signed with its job on the New job card is OFF until a run that began after the signing has a real green; it is asked again every tick and until then
+          // nothing looks, fires or queues for it (`armFor` answers `waiting`)
+          const turned = door.armFor(job, schedule);
+          if (turned && turned.armed === false) continue;
+          armedKeys.add(key);
+        }
         const ledger = door.ledgerOf(job);
         const { trigger } = schedule;
         if (isTicketTrigger(trigger)) {
