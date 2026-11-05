@@ -60,6 +60,8 @@ export function checkExportable(row, name) {
   const signed = signedSpecForRun(row, records);
   if (!signed) return { ok: false, why: `the signed job file for "${name}" is not beside its log, or none matches the hash it ran under` };
   const spec = signed.spec;
+  // MCP + tickets (hamr's ruling 2026-11-02): no export for a job with an `mcp` source. A bundle runs without the person's MCP config, and the server and its tools are theirs, not the bundle's.
+  if (spec.mcp !== undefined) return { ok: false, why: `"${name}" uses an MCP${typeof spec.mcp?.server === 'string' ? ` (${spec.mcp.server})` : ''}, and a job that uses an MCP cannot be exported` };
   // repo jobs only for now ($0): say which kind this is
   if (spec.verdictType !== 'green') return { ok: false, why: `${REPO_ONLY}: "${name}" is a rubric job, graded by a judge (${spec.verdictType ?? 'no class recorded'})` };
   if (Array.isArray(spec.inputs) && spec.inputs.some((/** @type {any} */ i) => isUrl(i?.value))) return { ok: false, why: `${REPO_ONLY}: "${name}" reads a page link` };
