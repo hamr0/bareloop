@@ -23,11 +23,12 @@ import { openSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { planMatchesClose } from '../rubricstep.js';
-import { createSession, validateJobCard, validateReuseCard, jobBoxesChanged, buildReuseSpec, cardFields, nextFreeJobName, startDestinationProblem, STEP_LABELS } from './authorsession.js';
+import { ticketNumberOf } from '../ticketshape.js';
+import { createSession, validateJobCard, validateReuseCard, jobBoxesChanged, buildReuseSpec, cardFields, nextFreeJobName, startDestinationProblem, resolveFlowCard, ticketBoxProblem, STEP_LABELS } from './authorsession.js';
 import { parseInputs } from '../jobblock.js';
 import { isReusableGreen } from './status.js';
 import { proveInputFiles, looksLikeRubricInput, webFetchState } from '../source.js';
-import { validateJob } from '../job.js';
+import { validateJob, flowTypeOf } from '../job.js';
 
 /** plain words for a run whose saved job no longer passes today's `validateJob` (RULED 2026-10-15): never the raw red codes */
 export const OLD_JOB_REUSE_WORDS = "This run was made by an older bareloop. Its saved job doesn't pass today's checks, so it can't be reused. Start a new job instead.";
@@ -115,7 +116,7 @@ const TERMINAL_PHASES = new Set(['refused', 'abandoned', 'error', 'signed', 'sig
  * deliberately has none of).
  * @param {{ port: number, token: string, env?: Record<string,string|undefined>,
  *   sessionsRoot?: string, spawnFn?: typeof realSpawn, bareloopBin?: string,
- *   jobsDir?: string, fetchImpl?: typeof fetch, home?: string,
+ *   jobsDir?: string, fetchImpl?: typeof fetch, home?: string, mcpHome?: string,
  *   schedules?: ReturnType<typeof import('./schedules.js').createScheduleDoor>,
  *   sessionDeps?: Record<string, any>,
  *   runJobNames?: () => string[],
@@ -157,14 +158,22 @@ export function createAuthorRoutes(opts) {
     const rubric = reuse ? reuse.spec?.verdictType === 'soft-green' : card?.checkType === 'rubric';
     if (reuse) card = { ...card, checkType: rubric ? 'rubric' : 'deterministic' };
     const filesJob = rubric && inputs.length > 0 && looksLikeRubricInput(inputs[0].value);
-    return (filesJob ? Promise.resolve(/** @type {{ok: true}} */ ({ ok: true })) : proveInputFiles(inputs)).then((proof) => {
+    // piece 8: the card's Flow type and MCP pick, decided at $0 before any session (a reuse keeps the signed spec's own MCP). Nothing is started: the pick reads the check log.
+    /** @type {ReturnType<typeof resolveFlowCard>} */
+    const flow = reuse
+      ? { ok: true, flowType: flowTypeOf(reuse.spec), pick: reuse.spec?.mcp ? { server: reuse.spec.mcp.server, tools: reuse.spec.mcp.tools } : null }
+      : resolveFlowCard(card, { ...(opts.home !== undefined ? { home: opts.home } : {}), ...(opts.mcpHome !== undefined ? { mcpHome: opts.mcpHome } : {}) });
+    if (!flow.ok) return Promise.resolve({ ok: /** @type {false} */ (false), status: 400, error: flow.error });
+    const ticketProblem = ticketBoxProblem(card, flow.flowType);
+    if (ticketProblem !== null) return Promise.resolve({ ok: /** @type {false} */ (false), status: 400, error: ticketProblem });
+    return (filesJob ? Promise.resolve(/** @type {{ok: true}} */ ({ ok: true })) : proveInputFiles(inputs, flow.pick ? { mcp: flow.pick } : {})).then((proof) => {
       if (!proof.ok) return { ok: /** @type {false} */ (false), status: 400, error: proof.error };
       if (!o.headless && hasLiveSession()) return { ok: /** @type {false} */ (false), status: 409, error: 'an authoring session is already live — one at a time' };
       // the SAME Destination check the session runs, at $0, BEFORE the session (and its folder) exists
       const destProblem = startDestinationProblem(card);
       if (destProblem !== null) return { ok: /** @type {false} */ (false), status: 400, error: destProblem };
       const session = createSession(cardFields(card), {
-        env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}), ...(opts.sessionDeps ?? {}),
+        env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}), flow: { flowType: flow.flowType, pick: flow.pick }, ...(opts.sessionDeps ?? {}),
       });
       (o.headless ? headless : sessions).set(session.id, session);
       return { ok: /** @type {true} */ (true), session };
@@ -496,12 +505,15 @@ export function signRun(session, claimedHash, o) {
   // EXACT. Meaningless without a drafting spend, so only ever passed
   // alongside --draft-spent-usd, matching run-u's own guard.
   const draftIncomplete = draftSpentUsd !== null && session.state.draftSpendComplete === false;
+  const ticketArg = ticketNumberOf(session.state.card?.ticket);
   const args = [
     'systemd-inhibit', '--why=bareloop panel run',
     process.execPath, o.bareloopBin,
     'run-u', '--spec', session.state.resolvedSpecPath, '--approve', session.state.specHash,
     // T (F.1): a scheduled run opens the review door even when deterministic, so its green waits for the person's Accept
     ...(o.reviewDoor === true ? ['--review-door'] : []),
+    // piece 8: a Tickets MCP run reads the ticket number typed on the card (per run, never signed): the same number `--ticket` takes, read by the same function
+    ...(ticketArg !== undefined ? ['--ticket', String(ticketArg)] : []),
     ...(draftSpentUsd !== null ? ['--draft-spent-usd', String(draftSpentUsd), ...(draftIncomplete ? ['--draft-spend-incomplete'] : [])] : []),
   ];
   /** @type {number|null} */

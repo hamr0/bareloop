@@ -53,6 +53,9 @@ import { closeJudges } from '../kinds.js';
 import { RUBRIC_LANG } from '../authoring.js';
 import { rubricGoal, reconcileRubricPlan, signedFactNames } from '../rubricstep.js';
 import { redactSecrets } from '../validate.js';
+import { FLOW_TYPES } from '../job.js';
+import { mcpPickFor, signFlow } from '../mcppick.js';
+import { parseTicketList, ticketNumberOf, TICKET_NUMBER_WORDS } from '../ticketshape.js';
 import { isDropIt, isAgree, stripAgreeLead } from '../pagemap.js';
 import { FIT_ABSENT_NOTE } from '../fitcheck.js';
 import { tallyCalls } from '../text.js';
@@ -224,7 +227,7 @@ export function nextFreeJobName(origin, runJobs, opts = {}) {
 }
 
 /** the form's fields, in card order — what `card.json` stores, verbatim (P5 item 3) */
-export const CARD_FIELDS = Object.freeze(['jobName', 'checkType', 'provider', 'model', 'thinking', 'jobText', 'inputs', 'destination', 'capUsd', 'maxWallMs']);
+export const CARD_FIELDS = Object.freeze(['jobName', 'checkType', 'provider', 'model', 'thinking', 'jobText', 'inputs', 'destination', 'capUsd', 'maxWallMs', 'flowType', 'mcp', 'ticket']);
 
 /**
  * The repo a card names: Inputs line 1 (P7 — the Source box is gone; the first input IS the repo). `''` when the Inputs
@@ -255,7 +258,53 @@ export function cardFields(card) {
  * `~` rules, `~ PASS`/`~ FAIL`), the check type and the thinking tick. The RUN boxes (Inputs, Destination, Model, $ cap, Time cap)
  * never decide it. A green origin with no job box changed reuses the signed plan verbatim (no drafting); anything else drafts.
  */
-export const JOB_BOXES = Object.freeze(['jobText', 'checkType', 'thinking']);
+export const JOB_BOXES = Object.freeze(['jobText', 'checkType', 'thinking', 'flowType', 'mcp']);
+
+/**
+ * The card's flow type and MCP, normalised: a card with no `flowType` (or `plain`) is plain with no MCP; any other pick keeps its server name.
+ * @param {any} card @returns {{flowType: 'plain'|'mcp'|'tickets', mcp: string}}
+ */
+export function flowOfCard(card) {
+  const t = card?.flowType;
+  if (t !== 'mcp' && t !== 'tickets') return { flowType: 'plain', mcp: '' };
+  return { flowType: t, mcp: typeof card?.mcp === 'string' ? card.mcp.trim() : '' };
+}
+
+/**
+ * ITEM33-BUILD piece 8: what the card's Flow type and MCP become, decided at $0 before any session (nothing is started, no server runs). A plain card is `{flowType:'plain', pick:null}`.
+ * An MCP or Tickets card needs a server named in Settings > MCP and that server's newest successful `check tools` (`mcpPickFor`: ALL its tools, set by code); an unknown flow type, no pick, a
+ * never-checked MCP and a Tickets card with no ticket-list Inputs line are refused in plain words.
+ * @param {any} card @param {{ home?: string, mcpHome?: string }} [o]
+ * @returns {{ok: true, flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null} | {ok: false, error: string}}
+ */
+export function resolveFlowCard(card, o = {}) {
+  if (card?.flowType !== undefined && !FLOW_TYPES.includes(card.flowType)) return { ok: false, error: `Flow type must be one of ${FLOW_TYPES.join(', ')}.` };
+  const { flowType, mcp } = flowOfCard(card);
+  if (flowType === 'plain') return { ok: true, flowType, pick: null };
+  if (mcp === '') return { ok: false, error: 'Pick an MCP.' };
+  const pick = mcpPickFor(mcp, o);
+  if (!pick.ok) return { ok: false, error: pick.say };
+  if (flowType === 'tickets') {
+    const ip = parseInputs(card.inputs);
+    if (ip.ok && !ip.inputs.some((i) => parseTicketList(i.value).ok)) {
+      return { ok: false, error: 'Tickets MCP needs the ticket list address as an Inputs line, like issues: https://github.com/owner/repo/issues' };
+    }
+  }
+  return { ok: true, flowType, pick: { server: pick.server, tools: pick.tools } };
+}
+
+/**
+ * The by-hand ticket of a Tickets MCP run (ITEM33-BUILD piece 8, divergence from fwd: no schedule ledger here, so no "newest unrun ticket"): the number typed on the card, the same
+ * number `--ticket` takes. A Tickets MCP job needs one; any other job takes none.
+ * @param {any} card @param {'plain'|'mcp'|'tickets'} flowType the FINAL flow type of the job (the card's, or the reused spec's)
+ * @returns {string|null} the refusal in plain words, or null when the card is fine
+ */
+export function ticketBoxProblem(card, flowType) {
+  const typed = typeof card?.ticket === 'string' ? card.ticket.trim() : (typeof card?.ticket === 'number' ? String(card.ticket) : '');
+  if (flowType !== 'tickets') return typed === '' ? null : 'A ticket number is only for a Tickets MCP job. Clear the Ticket box.';
+  if (typed === '') return `This job reads a ticket. Type the ticket number to read (${TICKET_NUMBER_WORDS}).`;
+  return ticketNumberOf(typed) === undefined ? `The ticket must be ${TICKET_NUMBER_WORDS}, not "${typed}".` : null;
+}
 
 /**
  * Did any JOB box on `card` change from what the origin run prefilled (`origin`)? Whitespace is not compared (a one-line input drops
@@ -267,6 +316,8 @@ export const JOB_BOXES = Object.freeze(['jobText', 'checkType', 'thinking']);
 export function jobBoxesChanged(card, origin) {
   const text = (/** @type {any} */ v) => (typeof v === 'string' ? v.replace(/\s+/g, '') : '');
   return text(card?.jobText) !== text(origin?.jobText)
+    || flowOfCard(card).flowType !== flowOfCard(origin).flowType
+    || flowOfCard(card).mcp !== flowOfCard(origin).mcp
     || (card?.checkType === 'rubric') !== (origin?.checkType === 'rubric')
     || (card?.thinking === true) !== (origin?.thinking === true);
 }
@@ -408,7 +459,7 @@ export function validateJobCard(card, opts = {}) {
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
  *   scout?: any, generate?: Function, confirmGenerate?: Function, authorFn?: Function,
- *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, fitFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
+ *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, fitFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, flow?: {flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
  * @returns {any} the session object
@@ -1152,7 +1203,8 @@ export function createSession(card, deps = {}) {
 
     if (RUBRIC_FILES) draft.goal = redactSecrets(rubricGoal({ jobLines, files: prep.manifest.inputs, confirmedGoal: authored.confirmed?.goal ?? null, closeDecl: authored.closeDecl }));
     else if (authored.confirmed?.goal) draft.goal = redactSecrets(String(authored.confirmed.goal));
-    const spec = assembleSpec(draft, { ...authored, verdictType: /** @type {string} */ (authored.verdictType) });
+    // piece 8: the card's Flow type and MCP pick are signed by CODE, after the draft (the agent cannot carry them: `assembleSpec` refuses a draft that does). A plain card adds nothing.
+    const spec = signFlow(assembleSpec(draft, { ...authored, verdictType: /** @type {string} */ (authored.verdictType) }), deps.flow?.flowType ?? 'plain', deps.flow?.pick ?? null);
     // PART 1a (run mv5bk400): the plan the person confirmed named three checks for line 1; the composer wrote ONE stage and put
     // "lists 3 releases" in its notes, so the card promised a check the close never ran. The card AFTER drafting is now built
     // from the close itself, and every confirmed check no part carries out is moved to Not checked, in code, before signing.

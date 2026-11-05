@@ -895,6 +895,25 @@
                 <div class="nbox-in"><textarea class="jf-wrap" id="jf-inputs" rows="2" data-testid="jf-inputs" spellcheck="false"></textarea><div class="nbox-mir" id="jf-inputs-mir" aria-hidden="true"></div></div>
               </div>
             </div>
+            <!-- ITEM33-BUILD piece 8 (fwd M13 p4): Flow type and the MCP pick. Signed WITH the job by code; the MCP list is Settings > MCP's (the page only reads it). -->
+            <div class="field" id="jf-flowtype-field" data-testid="jf-flowtype-field">
+              <label for="jf-flowtype">Flow type</label>
+              <select id="jf-flowtype" data-testid="jf-flowtype" aria-label="Flow type">
+                <option value="plain">plain</option>
+                <option value="mcp">MCP</option>
+                <option value="tickets">Tickets MCP</option>
+              </select>
+            </div>
+            <div class="field" id="jf-mcp-field" data-testid="jf-mcp-field" hidden>
+              <label for="jf-mcp">MCP</label>
+              <select id="jf-mcp" data-testid="jf-mcp" aria-label="MCP"></select>
+              <div class="hint"><a class="link" id="jf-mcp-manage" data-testid="jf-mcp-manage" href="#">manage in Settings &gt; MCP</a></div>
+            </div>
+            <div class="field" id="jf-ticket-field" data-testid="jf-ticket-field" hidden>
+              <label for="jf-ticket">Ticket</label>
+              <input id="jf-ticket" data-testid="jf-ticket" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="the ticket number to read, like 42">
+              <div class="hint" id="jf-ticket-hint" data-testid="jf-ticket-hint">Required for a Tickets MCP job: the ticket this run reads. It is per run, never signed.</div>
+            </div>
             <div class="field">
               <label for="jf-dest">Destination <span class="req">required</span></label>
               <textarea class="jf-wrap" id="jf-dest" rows="1" placeholder="the write fence — where in the repo this run may change files"></textarea>
@@ -1076,6 +1095,7 @@
             <div class="field" id="details-description-field"><label>Description</label><div class="ro-value" id="details-description">—</div></div>
             <div class="field"><label>The job</label><div class="ro-value" id="details-plan" data-testid="details-plan">—</div></div>
             <div class="field"><label>Inputs</label><div class="ro-value" id="details-inputs" data-testid="details-inputs">—</div></div>
+            <div class="field" id="details-mcp-field" data-testid="details-mcp-field" hidden><label>MCP</label><div class="ro-value" id="details-mcp" data-testid="details-mcp"></div></div>
             <div class="field"><label>Destination</label><div class="ro-value" id="details-dest">—</div></div>
             <div class="field"><label>Tools</label><div class="ro-value" id="details-tools">—</div></div>
             <div class="field-row">
@@ -4040,6 +4060,17 @@
       ? ins.map(function(i){ return '<div><span class="num-in">' + escapeXml(String(i.n)) + "</span> " + escapeXml(i.label + ": " + i.value) + "</div>"; }).join("")
       : "not recorded";
     document.getElementById("details-signed").textContent = job.signed || "not recorded";
+    // piece 8 (fwd am4): a job with an MCP shows its signed flow type, server and tools (and a ticket filter / watched fields when it has them); a plain job shows no MCP row
+    var mcpField = document.getElementById("details-mcp-field"), mcpBox = document.getElementById("details-mcp");
+    mcpBox.innerHTML = "";
+    var mcpJob = job.mcp && typeof job.mcp === "object" ? job.mcp : null;
+    mcpField.hidden = mcpJob === null;
+    if(mcpJob !== null){
+      var rows = ["flow type \u00b7 " + mcpJob.flowType, "MCP \u00b7 " + mcpJob.server].concat((mcpJob.tools || []).map(function(t){ return "tools \u00b7 " + t; }));
+      if(mcpJob.ticketFilter) rows.push("ticket filter \u00b7 " + JSON.stringify(mcpJob.ticketFilter));
+      if(Array.isArray(mcpJob.ticketWatch)) rows.push("watched field \u00b7 " + mcpJob.ticketWatch.join(", "));
+      rows.forEach(function(r){ var d = document.createElement("div"); d.textContent = r; mcpBox.appendChild(d); });
+    }
     document.getElementById("details-dest").textContent = job.destination;
     document.getElementById("details-tools").textContent = job.tools;
     document.getElementById("details-cap-money").textContent = panelMoney(job.budgetUsd);
@@ -5031,6 +5062,13 @@
     var moneyCapInput = document.getElementById("jf-cap-money");
     var modelSelect = document.getElementById("jf-model");
     var thinkingBox = document.getElementById("jf-thinking");
+    // piece 8 (fwd M13 p4): the card's Flow type, the MCP pick and the by-hand Ticket box. Declared up here: syncCardLock reads them from the first refresh on.
+    var flowTypeEl = document.getElementById("jf-flowtype");
+    var mcpEl = document.getElementById("jf-mcp");
+    var mcpFieldEl = document.getElementById("jf-mcp-field");
+    var ticketEl = document.getElementById("jf-ticket");
+    var ticketFieldEl = document.getElementById("jf-ticket-field");
+    var mcpServers = [];   // the MCPs Settings > MCP lists as usable (not remote, not shadowed); the page only READS the list
     var thinkingNote = document.getElementById("jf-thinking-note");
     var lineThinking = {};   // option value -> the server's {support, canChange, say} for that Model line
     var modelStatusEl = document.getElementById("jf-model-status");
@@ -5097,14 +5135,46 @@
       // the Check type radios stay clickable on a reuse card (Deterministic / Rubric = leave reuse); a live session or a resume freezes them
       document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.disabled = live || resuming; });
       document.getElementById("job-card").classList.toggle("reuse", reuseOn);
+      // Flow type and MCP are JOB boxes (a change drafts a new workflow): locked like the job text on a schedule card, a live session or a resume. The Ticket box is a RUN box.
+      var flowLocked = reuseOn || live || resuming;
+      flowTypeEl.disabled = flowLocked; mcpEl.disabled = flowLocked; ticketEl.readOnly = live || resuming;
+      [flowTypeEl, mcpEl, ticketEl].forEach(function(el){ el.classList.toggle("locked", el === ticketEl ? (live || resuming) : flowLocked); });
+      paintFlowType();
       syncThinking();
     }
     function setReuseLocked(on){ reuseOn = on; syncCardLock(); }
+    // ---- Flow type / MCP / Ticket (piece 8). The MCP menu is Settings > MCP's usable servers; a reused job's server that is no longer listed stays pickable by name
+    // (the start refuses it with its cause). The Ticket box shows for Tickets MCP only, never on a resume or a schedule card (no run starts there).
+    function paintMcpOptions(want){
+      var names = mcpServers.slice();
+      if(want && names.indexOf(want) === -1) names.push(want);
+      mcpEl.innerHTML = "";
+      names.forEach(function(n){ var o = document.createElement("option"); o.value = n; o.textContent = n; mcpEl.appendChild(o); });
+      if(want) mcpEl.value = want;
+    }
+    function paintFlowType(){
+      var f = flowTypeEl.value;
+      mcpFieldEl.hidden = f === "plain";
+      ticketFieldEl.hidden = f !== "tickets" || resumeRun !== null || sched !== null;
+    }
+    function setFlow(type, server){
+      flowTypeEl.value = (type === "mcp" || type === "tickets") ? type : "plain";
+      paintMcpOptions(server || "");
+      paintFlowType();
+    }
+    function loadMcpServers(){
+      return authorGet("/api/settings/mcp").then(function(d){
+        var names = [];
+        ((d && d.places) || []).forEach(function(p){ (p.servers || []).forEach(function(sv){ if(!sv.remote && !sv.shadowedBy && names.indexOf(sv.name) === -1) names.push(sv.name); }); });
+        mcpServers = names; paintMcpOptions(mcpEl.value);
+      }, function(){ /* the list stays as it was; a pick the server cannot start is refused with its cause */ });
+    }
     function clearStartFrom(keepBoxes){
       // Clear after a reuse starts a genuinely new job: the reused values do not linger in the boxes — except when a Check type
       // radio click leaves reuse (keepBoxes): a radio never blanks what the person has on the card
       if(startFrom && !keepBoxes){
         CARD_BOX_IDS.forEach(function(id){ document.getElementById(id).value = ""; });
+        setFlow("plain", "");
         NUMBERED_IDS.forEach(gutterSync);
         document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === "deterministic"); });
       }
@@ -5118,7 +5188,7 @@
     // ---- Reuse workflow picker (hamr 2026-10-06): Check type is ONE radio group of three; "Reuse workflow" shows a search
     // box over the jobs that have a green local run (GET /api/author/reuse-jobs), a pick fills the card through the SAME
     // path the Run tab's button uses (reuseWorkflow -> bareloop-reuse -> applyReuse), then a picked box with `change`.
-    var CARD_BOX_IDS = ["jf-name", "jf-job", "jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time"];
+    var CARD_BOX_IDS = ["jf-name", "jf-job", "jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-ticket"];
     var rwBox = document.getElementById("rw");
     var rwSearch = document.getElementById("rw-search");
     var rwQ = document.getElementById("rw-q");
@@ -5139,6 +5209,7 @@
     }
     function clearCardBoxes(){
       CARD_BOX_IDS.forEach(function(id){ document.getElementById(id).value = ""; });
+      setFlow("plain", "");
       NUMBERED_IDS.forEach(gutterSync);
       document.getElementById("jf-cap-note").textContent = "";
     }
@@ -5295,6 +5366,9 @@
         thinking: thinkingBox.checked === true,
         capUsd: moneyCap,
         maxWallMs: timeCapMin === "" ? undefined : Math.round(Number(timeCapMin) * 60000),
+        // piece 8: a plain job sends neither key (the signed job carries neither); the ticket is a per-run box and goes only with Tickets MCP
+        ...(flowTypeEl.value !== "plain" ? {flowType: flowTypeEl.value, mcp: mcpEl.value} : {}),
+        ...(flowTypeEl.value === "tickets" && ticketEl.value.trim() !== "" ? {ticket: ticketEl.value.trim()} : {}),
       };
     }
 
@@ -5850,6 +5924,7 @@
       setVal("jf-name", c.jobName); setVal("jf-job", c.jobText); setVal("jf-inputs", c.inputs);
       setVal("jf-dest", c.destination); setVal("jf-cap-money", c.capUsd);
       setVal("jf-cap-time", typeof c.maxWallMs === "number" ? Math.round(c.maxWallMs / 60000) : "");
+      setFlow(c.flowType, c.mcp); setVal("jf-ticket", c.ticket);
       setThinkingTick(c.thinking === true);
       fitCardBoxes();
     }
@@ -5893,7 +5968,9 @@
       if(reuseOrigin === null) return false;
       var cur = currentCard(), o = reuseOrigin.card;
       var t = function(v){ return typeof v === "string" ? v.replace(/\s+/g, "") : ""; };
-      return t(cur.jobText) !== t(o.jobText) || cur.checkType !== (o.checkType === "rubric" ? "rubric" : "deterministic") || (cur.thinking === true) !== (o.thinking === true);
+      // Flow type and MCP are job boxes too (piece 8): a plain card has neither key, so absent reads as plain with no MCP, the same as the server
+      return t(cur.jobText) !== t(o.jobText) || cur.checkType !== (o.checkType === "rubric" ? "rubric" : "deterministic") || (cur.thinking === true) !== (o.thinking === true)
+        || (cur.flowType || "plain") !== (o.flowType || "plain") || (cur.mcp || "") !== (o.mcp || "");
     }
     // the reuse path (signed plan verbatim, no drafting, $0): a card made by Reuse workflow from a GREEN run with no job box changed
     function reusePathNow(){
@@ -5910,6 +5987,11 @@
     function reuseBoxesEdited(){ syncReuseName(); renderMain(); }
     document.getElementById("jf-job").addEventListener("input", reuseBoxesEdited);
     thinkingBox.addEventListener("change", reuseBoxesEdited);
+    flowTypeEl.addEventListener("change", function(){ paintFlowType(); reuseBoxesEdited(); refreshStartEnabled(); });
+    mcpEl.addEventListener("change", reuseBoxesEdited);
+    ticketEl.addEventListener("input", renderMain);
+    document.getElementById("jf-mcp-manage").addEventListener("click", function(ev){ ev.preventDefault(); document.getElementById("btn-settings").click(); document.getElementById("tab-mcp").click(); });
+    loadMcpServers();
     document.getElementById("jf-name").addEventListener("input", function(){
       if(reuseOrigin === null || reuseOn) return;
       if(jobBoxesChangedNow()) nameTouched = true; else syncReuseName();

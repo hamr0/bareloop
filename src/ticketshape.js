@@ -34,3 +34,12 @@ export const isTicketNumber = (n) => Number.isSafeInteger(n) && /** @type {numbe
 
 /** The words every refusal of a ticket number uses. */
 export const TICKET_NUMBER_WORDS = `a whole number from 1 to ${TICKET_MAX.toLocaleString('en-US')}`;
+
+/**
+ * The ONE reader of a typed ticket number (the CLI's `--ticket` and the panel's Ticket box): a whole number written in digits, no sign, no zero in front, at most 10 digits.
+ * @param {unknown} text @returns {number|undefined} the number, or undefined when the text is not one
+ */
+export function ticketNumberOf(text) {
+  const n = typeof text === 'string' && /^[1-9]\d{0,9}$/.test(text.trim()) ? Number(text.trim()) : undefined;
+  return isTicketNumber(n) ? n : undefined;
+}

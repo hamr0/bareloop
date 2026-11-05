@@ -48,7 +48,7 @@ import { legsOf, legsWallMs, stopFilePath, capKindOf } from '../legs.js';
 import { chainSpend } from '../ledger.js';
 import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
-import { jobSpecHash, workflowKey } from '../job.js';
+import { jobSpecHash, workflowKey, flowTypeOf, FLOW_TYPE_LABELS } from '../job.js';
 import { attachMemos, learningsHanded, attachLearnings } from './handed.js';
 import { confirmProtections } from '../authorflow.js';
 import { createScheduleDoor } from './schedules.js';
@@ -3107,6 +3107,21 @@ function toolsListFromSpec(spec) {
 }
 
 /**
+ * The Job tab's MCP rows (piece 8): the signed flow type (in the card's own words), the server and the tools the job signed, plus a ticket filter / watched fields when the spec
+ * carries them. `null` for a plain job (no MCP rows at all).
+ * @param {any} spec
+ * @returns {{flowType: string, server: string, tools: string[], ticketFilter?: any, ticketWatch?: string[]}|null}
+ */
+function mcpDetailFromSpec(spec) {
+  const m = spec?.mcp;
+  if (!m || typeof m.server !== 'string' || !Array.isArray(m.tools)) return null;
+  return {
+    flowType: FLOW_TYPE_LABELS[flowTypeOf(spec)], server: m.server, tools: m.tools.filter((/** @type {any} */ t) => typeof t === 'string'),
+    ...(spec.ticketFilter ? { ticketFilter: spec.ticketFilter } : {}), ...(Array.isArray(spec.ticketWatch) ? { ticketWatch: spec.ticketWatch } : {}),
+  };
+}
+
+/**
  * The granted tool list, verbatim, in declared order — `null` when the spec
  * carries none (a job may legally declare no `tools` at all).
  * @param {any} spec
@@ -3306,6 +3321,7 @@ function getRunJobBody(runid, opts) {
     guardrails: notRecorded(guardrailsFromSpec(spec)),
     tools: notRecorded(toolsFromSpec(spec)),
     toolsList: toolsListFromSpec(spec),
+    mcp: mcpDetailFromSpec(spec),
     thinkingTick: spec.thinking === true,
     note,
   });
@@ -3670,6 +3686,8 @@ function reuseCardFromSpec(spec, extra) {
     destination: extra.destination || writeScope.join(', '),
     capUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
     maxWallMs: typeof spec.maxWallMs === 'number' ? spec.maxWallMs : undefined,
+    // piece 8: a job with an MCP shows its Flow type and server on the card; a plain job adds nothing (so its card is what it was)
+    ...(spec.mcp && typeof spec.mcp.server === 'string' ? { flowType: flowTypeOf(spec), mcp: spec.mcp.server } : {}),
   };
 }
 
@@ -4060,6 +4078,7 @@ export function createPanelServer(opts = {}) {
         bareloopBin: opts.bareloopBin,
         fetchImpl: opts.fetchImpl,
         home,
+        mcpHome: opts.mcpHome,
         startFrom: {
           get: (runid, o = {}) => getStartFrom(runid, { home, ...o }),
           getImport: (id, o = {}) => getStartFromImport(id, { home, ...o }),

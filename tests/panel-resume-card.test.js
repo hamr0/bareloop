@@ -116,7 +116,7 @@ test('lock: in resume mode EVERYTHING is locked — boxes, Model, Check type rad
   const radios = [{ disabled: false }, { disabled: false }, { disabled: false }];
   dom.document.querySelectorAll = () => radios;
   const sandbox = (resumeRun, sessionLive) => build(['syncCardLock'], { document: dom.document, syncThinking() {} },
-    `var sessionLive = ${sessionLive}; var reuseOn = false; var resumeRun = ${JSON.stringify(resumeRun)};
+    `var __e = function(){ return {value: "plain", hidden: false, disabled: false, readOnly: false, classList: {toggle: function(){}}}; }; var flowTypeEl = __e(), mcpEl = __e(), ticketEl = __e(); function paintFlowType(){} /* piece 8: the card's Flow type / MCP / Ticket stand-ins */ var sessionLive = ${sessionLive}; var reuseOn = false; var resumeRun = ${JSON.stringify(resumeRun)};
      var LOCKED_IDS = ["jf-name", "jf-job"];
      var OPEN_IDS = ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var CAP_IDS = ["jf-cap-money", "jf-cap-time"];`).syncCardLock;
   sandbox({ runid: 'r', noTime: false }, false)();
@@ -205,7 +205,7 @@ test('Q2(b) page: a spec that names NO model opens the Model box and the resume 
   // the lock rule: Model open (not disabled, not readOnly), the other boxes still locked
   const dom = fakeDom();
   const lock = build(['syncCardLock'], { document: dom.document, syncThinking() {} },
-    `var sessionLive = false; var reuseOn = false; var resumeRun = {runid: 'r', noTime: false, pickModel: true};
+    `var __e = function(){ return {value: "plain", hidden: false, disabled: false, readOnly: false, classList: {toggle: function(){}}}; }; var flowTypeEl = __e(), mcpEl = __e(), ticketEl = __e(); function paintFlowType(){} /* piece 8: the card's Flow type / MCP / Ticket stand-ins */ var sessionLive = false; var reuseOn = false; var resumeRun = {runid: 'r', noTime: false, pickModel: true};
      var LOCKED_IDS = ["jf-name", "jf-job"]; var OPEN_IDS = ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time", "jf-model"]; var CAP_IDS = ["jf-cap-money", "jf-cap-time"];`).syncCardLock;
   lock();
   assert.equal(dom.els['jf-model'].disabled, false);

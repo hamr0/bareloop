@@ -33,7 +33,7 @@ import { moveFile } from './movefile.js';
 import { runJob } from './run.js';
 import { moneyWithDraft } from './replay.js';
 import { jobSpecHash, resolveWorkerModel, validateJob, workflowKey, flowTypeOf } from './job.js';
-import { isTicketNumber, TICKET_NUMBER_WORDS } from './ticketshape.js';
+import { ticketNumberOf, TICKET_NUMBER_WORDS } from './ticketshape.js';
 import { freezeRepoTicket } from './ticketrepo.js';
 import { checkoutPrHead, prHeadIsAncestor, recordPrOnManifest } from './prcheckout.js';
 import { readShimArm } from './readshim.js';
@@ -2742,8 +2742,8 @@ export async function main(argv, deps = {}) {
     /** @type {number|undefined} */
     let ticketNumber;
     if (ticketArg !== null) {
-      ticketNumber = /^[1-9]\d{0,9}$/.test(ticketArg) ? Number(ticketArg) : undefined;
-      if (!isTicketNumber(ticketNumber)) die(`--ticket takes ${TICKET_NUMBER_WORDS}, not "${ticketArg}".`);
+      ticketNumber = ticketNumberOf(ticketArg);
+      if (ticketNumber === undefined) die(`--ticket takes ${TICKET_NUMBER_WORDS}, not "${ticketArg}".`);
       if (!tickets) die('--ticket is for a job that reads tickets, and this job has no ticket source.');
     }
     if (tickets && refreeze) {
