@@ -6,6 +6,7 @@
 //   FAKE_CALLS  a file path; each tools/call appends one JSON line {name, arguments}
 //   FAKE_PR_HEAD / FAKE_PR_BASE  the head and base sha `pull_request_read` (method get) answers with; FAKE_PR_HEADS 'a,b,..' = the head of the 1st, 2nd... read (a PR that moves);
 //               FAKE_PR_NOHEAD=1 omits `head`. The reply has the keys of the real GitHub server's (measured 2026-11-04), plus FAKE_PLANT in the body.
+//   FAKE_ISSUE  a JSON object merged over the issue_read reply (R5: labels, state); a value "__omit__" drops that key
 //   FAKE_LIST   a file path holding JSON [{number, state, labels, ...}], newest first (M12 piece 2); list_issues pages it like GitHub's (perPage, after = offset, state filter),
 //               re-read on every call so a test changes it between looks
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
@@ -49,7 +50,10 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       };
       return send(m.id, { content: [{ type: 'text', text: JSON.stringify(pr) }] });
     }
-    return send(m.id, { content: [{ type: 'text', text: `{"number":${m.params.arguments.issue_number},"title":"Crash on tap","state":"open","body":"Tap the back arrow${process.env.FAKE_PLANT ? ` token ${process.env.FAKE_PLANT}` : ''}","labels":[{"name":"P2"}]}` }] });
+    const issue = JSON.parse(`{"number":${m.params.arguments.issue_number},"title":"Crash on tap","state":"open","body":"Tap the back arrow${process.env.FAKE_PLANT ? ` token ${process.env.FAKE_PLANT}` : ''}","labels":[{"name":"P2"}]}`);
+    // FAKE_ISSUE: a JSON object merged over the issue (R5: other labels / state); a key set to the string "__omit__" is left out (GitHub omits `labels` when there are none)
+    for (const [k, v] of Object.entries(JSON.parse(process.env.FAKE_ISSUE ?? '{}'))) { if (v === '__omit__') delete issue[k]; else issue[k] = v; }
+    return send(m.id, { content: [{ type: 'text', text: JSON.stringify(issue) }] });
   }
   return undefined;
 });
