@@ -48,17 +48,17 @@ export const STATUS = Object.freeze({
 });
 
 /**
- * The plain words a skipped run carries (the `settled` event's `words`, the Ended block's line), from CODE: the filter decision's own reason, never model-written.
+ * The plain words a skipped run carries (the `settled` event's `words`, the Ended line), from CODE. They do NOT repeat the status word: every surface prints `skipped — <words>` from the table's word (the CLI line adds its own `skipped:`): the filter decision's own reason, never model-written.
  * `reason` is `decideTicket`'s ('closed' | 'priority P3, not P1' | 'no P1 label' | 'no bug label'); `filter` is the job's signed `ticketFilter`, which tells a missing
  * priority label from a missing type label (the two share the `no X label` spelling).
  * @param {string} reason @param {{priority?: string[], labels?: string[]}|undefined} filter @returns {string}
  */
 export function skipWords(reason, filter) {
-  if (reason === 'closed') return 'skipped: the ticket is closed';
+  if (reason === 'closed') return 'the ticket is closed';
   const m = /^no (.+) label$/.exec(reason);
-  if (m && filter?.priority?.length && m[1] === filter.priority.join(' or ')) return `skipped: no ${m[1]} label on the ticket`;
-  if (m) return `skipped: label ${m[1]} not on the ticket`;
-  return `skipped: ${reason}`;
+  if (m && filter?.priority?.length && m[1] === filter.priority.join(' or ')) return `no ${m[1]} label on the ticket`;
+  if (m) return `label ${m[1]} not on the ticket`;
+  return reason;
 }
 
 /**

@@ -1630,7 +1630,7 @@ async function execute(ctx) {
       const verdict = decideTicket({ text: fresh.ticketText, filter: spec.ticketFilter });
       if (verdict.outcome === 'skip' && ctx.anyway !== true) {
         const words = skipWords(verdict.reason, spec.ticketFilter);
-        out(`${SELECTOR}: ${words}. Nothing spent.`);
+        out(`${SELECTOR}: skipped: ${words}. Nothing spent.`);
         if (claimedRow) {
           try { appendRunEvent({ runid, type: 'settled', by: runid, reason: 'skipped', words, spentUsd: 0, spendComplete: true, at: new Date().toISOString() }, { home: claimedRow.home }); } catch { /* the exit stands; the dead pid's claim is closed by the next run */ }
           claimedRow = null; // settled, not released: the row stays listed so the person sees the ticket was skipped, and why

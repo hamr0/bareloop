@@ -32,13 +32,13 @@ describe('the status table', () => {
 
 describe('the words come from code', () => {
   const table = [
-    ['priority P3, not P1', { priority: ['P1'] }, 'skipped: priority P3, not P1'],
-    ['closed', { priority: ['P1'] }, 'skipped: the ticket is closed'],
-    ['closed', undefined, 'skipped: the ticket is closed'],
-    ['no P1 label', { priority: ['P1'] }, 'skipped: no P1 label on the ticket'],
-    ['no P1 or P2 label', { priority: ['P1', 'P2'] }, 'skipped: no P1 or P2 label on the ticket'],
-    ['no bug label', { labels: ['bug'] }, 'skipped: label bug not on the ticket'],
-    ['no bug or crash label', { labels: ['bug', 'crash'] }, 'skipped: label bug or crash not on the ticket'],
+    ['priority P3, not P1', { priority: ['P1'] }, 'priority P3, not P1'],
+    ['closed', { priority: ['P1'] }, 'the ticket is closed'],
+    ['closed', undefined, 'the ticket is closed'],
+    ['no P1 label', { priority: ['P1'] }, 'no P1 label on the ticket'],
+    ['no P1 or P2 label', { priority: ['P1', 'P2'] }, 'no P1 or P2 label on the ticket'],
+    ['no bug label', { labels: ['bug'] }, 'label bug not on the ticket'],
+    ['no bug or crash label', { labels: ['bug', 'crash'] }, 'label bug or crash not on the ticket'],
   ];
   for (const [reason, filter, want] of table) test(`${reason} -> ${want}`, () => assert.equal(skipWords(reason, filter), want));
 });
@@ -49,7 +49,7 @@ describe('a skipped run in the runs list and the run detail', () => {
     const home = tmp(t);
     const row = { at: new Date().toISOString(), runid: 'skiprun1', job: 'triage', spine: join(home, 'gone', 'u-skiprun1.jsonl'), patient: join(home, 'p'), via: 'run-u', pid: 999999, capUsd: 2 };
     appendRun(row, { home });
-    appendRunEvent({ runid: row.runid, type: 'settled', by: row.runid, reason: 'skipped', words: 'skipped: priority P3, not P1', spentUsd: 0, spendComplete: true, at: new Date().toISOString() }, { home });
+    appendRunEvent({ runid: row.runid, type: 'settled', by: row.runid, reason: 'skipped', words: 'priority P3, not P1', spentUsd: 0, spendComplete: true, at: new Date().toISOString() }, { home });
     return { home, row };
   }
   test('the detail: status skipped, sign [–], the words as the Ended line, $0, terminal, not live, no Needs-you tag, no spine claimed', (t) => {
@@ -59,7 +59,7 @@ describe('a skipped run in the runs list and the run detail', () => {
     assert.equal(d.status.word, 'skipped');
     assert.equal(d.glyph, '–');
     assert.equal(d.outcome, 'skipped');
-    assert.equal(d.endedLine, 'skipped: priority P3, not P1');
+    assert.equal(d.endedLine, 'priority P3, not P1');
     assert.equal(d.skipped, true);
     assert.equal(d.refused, false, 'not a refusal');
     assert.equal(d.fileMissing, false);
@@ -77,8 +77,17 @@ describe('a skipped run in the runs list and the run detail', () => {
     assert.equal(l.status.word, 'skipped');
     assert.equal(l.glyph, '–');
     assert.equal(l.needs, null);
-    assert.equal(l.endedLine, 'skipped: priority P3, not P1');
+    assert.equal(l.endedLine, 'priority P3, not P1');
     assert.equal(l.fileMissing, false);
+  });
+  test('the row reads the word ONCE: the list row is `skipped` + the words, the words do not repeat it (the page prints `word - words`)', (t) => {
+    const { home, row } = skippedRun(t);
+    const l = listRuns({ home }).find((r) => r.runid === row.runid);
+    assert.equal(`${l.status.word} \u2014 ${l.endedLine}`, 'skipped \u2014 priority P3, not P1');
+    for (const w of ['closed', 'no P1 label']) assert.doesNotMatch(skipWords(w, { priority: ['P1'] }), /^skipped/i);
+    const html = readFileSync(new URL('../src/panel/index.html', import.meta.url), 'utf8');
+    assert.match(html, /p\.word = r\.status && r\.status\.word/);
+    assert.match(html, /p\.why = r\.endedLine/);
   });
   test('a refusal before start still wears failed and refused:true (the skipped branch did not take it over)', (t) => {
     const home = tmp(t);
