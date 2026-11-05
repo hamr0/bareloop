@@ -125,7 +125,7 @@ export function modelsProblem(list) {
 
 /**
  * The rule for `mcpPaths` (extra MCP config files the person added): a list of absolute, NUL-free paths, no duplicates. Plain words, or null.
- * (The Settings > MCP tab, R3, is the writer; `~` is expanded there, so what is stored is always absolute.)
+ * (The Settings > MCP tab, R3, is the writer; `~` is expanded there, so what is stored is always absolute. One line, at most 500 characters: fwd's rule.)
  * @param {unknown} list
  * @returns {string|null}
  */
@@ -133,7 +133,7 @@ export function mcpPathProblem(list) {
   if (!Array.isArray(list)) return 'The MCP paths must be a list of file paths.';
   const seen = new Set();
   for (const p of list) {
-    if (typeof p !== 'string' || p.trim() === '' || p.length > 1000 || p.includes('\0')) return 'Each MCP path must be a file path.';
+    if (typeof p !== 'string' || p.trim() === '' || p.length > 500 || /[\0\r\n]/.test(p)) return 'Each MCP path must be one line of at most 500 characters.';
     if (!p.startsWith('/')) return `The MCP path "${p}" must be a full path (it starts with /).`;
     if (seen.has(p)) return `The MCP path "${p}" is listed twice.`;
     seen.add(p);
