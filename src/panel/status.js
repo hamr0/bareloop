@@ -11,6 +11,7 @@
 //   cap-halt, wall-halt                                  -> capped   (money cap / time cap)
 //   escalated + money-halt record, escalated + wall-halt -> capped
 //   stopped (the person pressed Stop)                    -> stopped
+//   skipped (a Tickets job's signed filter let the ticket by)  -> skipped  (a quiet end: not a failure, not a pass, never reusable or Needs you)
 //   plan-red, check-red, step-red, escalated (strikes / provider / other), close-red, provider-red, step-stalled,
 //   and every other outcome (refusals, instrument stops)  -> failed
 // `waiting` is the step-level sign for a step that has not started; no run outcome maps to it.
@@ -31,7 +32,7 @@ export function isReusableGreen(outcome) {
   return outcome === 'green' || outcome === 'already-green';
 }
 
-/** @typedef {'running'|'waiting'|'passed'|'failed'|'capped'|'stopped'|'died'} StatusKey */
+/** @typedef {'running'|'waiting'|'passed'|'failed'|'capped'|'stopped'|'died'|'skipped'} StatusKey */
 
 /** the table: key -> sign + word */
 export const STATUS = Object.freeze({
@@ -42,7 +43,24 @@ export const STATUS = Object.freeze({
   capped: Object.freeze({ sign: '✗', word: 'capped' }),
   stopped: Object.freeze({ sign: '■', word: 'stopped' }),
   died: Object.freeze({ sign: '?', word: 'died' }),
+  // a ticket the job's signed filter did not let through (piece 2): grey, rests, ends at run start at $0
+  skipped: Object.freeze({ sign: '–', word: 'skipped' }),
 });
+
+/**
+ * The plain words a skipped run carries (the `settled` event's `words`, the Ended block's line), from CODE: the filter decision's own reason, never model-written.
+ * `reason` is `decideTicket`'s ('closed' | 'priority P3, not P1' | 'no P1 label' | 'no bug label'); `filter` is the job's signed `ticketFilter`, which tells a missing
+ * priority label from a missing type label (the two share the `no X label` spelling).
+ * @param {string} reason @param {{priority?: string[], labels?: string[]}|undefined} filter @returns {string}
+ */
+export function skipWords(reason, filter) {
+  if (reason === 'closed') return 'skipped: the ticket is closed';
+  if (/^priority P[0-3], not /.test(reason)) return `skipped: ${reason}`;
+  const m = /^no (.+) label$/.exec(reason);
+  if (m && filter?.priority?.length && m[1] === filter.priority.join(' or ')) return `skipped: no ${m[1]} label on the ticket`;
+  if (m) return `skipped: label ${m[1]} not on the ticket`;
+  return `skipped: ${reason}`;
+}
 
 /**
  * The status of one run.
@@ -57,6 +75,7 @@ export function statusFor(o) {
   if (o.died) key = 'died';
   else if (out === null || out === undefined) key = 'running';
   else if (out === 'green' || out === 'already-green' || out === 'satisfied') key = 'passed';
+  else if (out === 'skipped') key = 'skipped';
   else if (capKindOf(o) !== null) key = 'capped';
   else if (out === 'stopped') key = 'stopped';
   return { key, ...STATUS[key] };

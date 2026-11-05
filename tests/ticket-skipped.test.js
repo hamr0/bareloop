@@ -83,8 +83,8 @@ process.exit(existsSync(join(process.cwd(), 'output', 'out.txt')) ? 0 : 1);
 describe('a skipped ticket ends at run start', () => {
   const cases = [
     ['priority P3 against a P1 filter', { labels: [{ name: 'P3' }] }, { priority: ['P1'] }, 'skipped: priority P3, not P1'],
-    ['no priority label against a P1 filter', { labels: [{ name: 'bug' }] }, { priority: ['P1'] }, 'skipped: no P1 label'],
-    ['a ticket with NO labels key against a P1 filter (GitHub omits it)', { labels: '__omit__' }, { priority: ['P1'] }, 'skipped: no P1 label'],
+    ['no priority label against a P1 filter', { labels: [{ name: 'bug' }] }, { priority: ['P1'] }, 'skipped: no P1 label on the ticket'],
+    ['a ticket with NO labels key against a P1 filter (GitHub omits it)', { labels: '__omit__' }, { priority: ['P1'] }, 'skipped: no P1 label on the ticket'],
     ['a label the filter does not list', { labels: [{ name: 'docs' }] }, { labels: ['bug'] }, 'skipped: label bug not on the ticket'],
     ['a closed ticket, with a filter', { state: 'closed', labels: [{ name: 'P1' }] }, { priority: ['P1'] }, 'skipped: the ticket is closed'],
   ];

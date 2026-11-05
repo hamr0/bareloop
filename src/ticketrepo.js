@@ -63,7 +63,7 @@ export function repoTicketLine(inputs) {
  * @param {{workdir: string, inputs: {n: number, label: string, value: string}[], ticket: {number: number, mcp: {server: string, tools: string[]}}}} o
  * A PULLS address reads the pull request the same way (`pull_request_read`) and also returns `pr` = `{url, record, reread}` for piece 12's run-start checkout: `record` is the
  * parsed MASKED reply (its `head.sha` is what the worktree is checked out at), `reread` reads it once more if the PR moved while the run was starting.
- * @returns {Promise<{ok: true, record: RepoTicketRecord, pr?: {url: string, record: any, reread: () => Promise<any>}}|{ok: false, error: string}>}
+ * @returns {Promise<{ok: true, ticketText: string, record: RepoTicketRecord, pr?: {url: string, record: any, reread: () => Promise<any>}}|{ok: false, error: string}>}
  */
 export async function freezeRepoTicket({ workdir, inputs, ticket }) {
   const tail = 'The run did not start. Nothing spent.';
@@ -94,5 +94,5 @@ export async function freezeRepoTicket({ workdir, inputs, ticket }) {
   const k = t.ticket;
   /** @type {{url: string, record: any, reread: () => Promise<any>}|undefined} */
   const pr = kind === 'pull' ? { url: k.url, record: prRecordOfTicket(k) ?? {}, reread: async () => { const again = await readTicket({ mcp: ticket.mcp, listUrl: line.value, number: ticket.number }); return again.ok ? prRecordOfTicket(again.ticket) : null; } } : undefined;
-  return { ok: true, ...(pr === undefined ? {} : { pr }), record: { label: line.label, file: rel, url: k.url, number: /** @type {number} */ (k.number), title: k.title, state: k.state, source: k.source, sha256: k.sha256, bytes: k.bytes, masked: k.masked, mcp: k.record } };
+  return { ok: true, ticketText: k.text, ...(pr === undefined ? {} : { pr }), record: { label: line.label, file: rel, url: k.url, number: /** @type {number} */ (k.number), title: k.title, state: k.state, source: k.source, sha256: k.sha256, bytes: k.bytes, masked: k.masked, mcp: k.record } };
 }

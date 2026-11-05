@@ -1367,7 +1367,7 @@ export function looksLikeRubricInput(value) {
  * gains `mcp:{server,exposed,missing,calls}`, `ticket:{number,title,state,source}` and `masked:<count>`. Any refusal (server or tool missing, a device login,
  * an empty reply, no list row or two) is the same plain `did not start` words at $0.
  * @param {{into: string, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, ticket?: {number: number, mcp: {server: string, tools: string[]}}}} o `into` - the prepared copy (source.json + tree/)
- * @returns {Promise<{ok: true, refreshed: string[], seed: string|null}|{ok: false, error: string}>}
+ * @returns {Promise<{ok: true, refreshed: string[], seed: string|null, ticketText?: string}|{ok: false, error: string}>}
  */
 export async function refreezeUrlInputs({ into, fetchUrl = (u) => fetchPageText(u), ticket }) {
   const read = await readSourceManifest(into);
@@ -1424,7 +1424,8 @@ export async function refreezeUrlInputs({ into, fetchUrl = (u) => fetchPageText(
   }) : manifest.files;
   const next = { ...manifest, inputs, files, seed, refrozenAt: new Date().toISOString() };
   await writeFile(join(resolve(into), 'source.json'), `${JSON.stringify(next, null, 2)}\n`);
-  return { ok: true, refreshed: rows.map((/** @type {any} */ r) => r.label), seed };
+  const read1 = fresh.find((f) => f.ticket !== undefined)?.ticket;
+  return { ok: true, refreshed: rows.map((/** @type {any} */ r) => r.label), seed, ...(read1 === undefined ? {} : { ticketText: read1.text }) };
 }
 
 /**

@@ -35,6 +35,8 @@ import { moneyWithDraft } from './replay.js';
 import { jobSpecHash, resolveWorkerModel, validateJob, workflowKey, flowTypeOf } from './job.js';
 import { ticketNumberOf, TICKET_NUMBER_WORDS } from './ticketshape.js';
 import { freezeRepoTicket } from './ticketrepo.js';
+import { decideTicket } from './ticketlabels.js';
+import { skipWords } from './panel/status.js';
 import { checkoutPrHead, prHeadIsAncestor, recordPrOnManifest } from './prcheckout.js';
 import { readShimArm } from './readshim.js';
 import { closeStagesOf } from './plan.js';
@@ -1610,16 +1612,32 @@ async function execute(ctx) {
   if (ctx.refreeze === true && ctx.into !== undefined) {
     // a CODE-REPO job's ticket (piece 1a) is frozen into the worktree's private `.bareloop-input/` (nothing committed, the seed does not move); every other job's
     // ticket is the one Inputs row `refreezeUrlInputs` re-reads. The record rides onto this run's `job-start` (metadata only, never the text).
-    /** @type {{ok: true, refreshed: string[], seed: string|null}|{ok: false, error: string}} */
+    /** @type {{ok: true, refreshed: string[], seed: string|null, ticketText?: string}|{ok: false, error: string}} */
     let fresh;
     // piece 12's door: `ctx.pr` (a test seam / caller) wins; otherwise a PULLS ticket line of a repo job supplies it from its own frozen read
     let prIn = ctx.pr;
     if (ctx.ticket?.repo === true) {
       const frozen = await freezeRepoTicket({ workdir: wd, inputs: Array.isArray(spec.inputs) ? spec.inputs : [], ticket: ctx.ticket });
       if (frozen.ok) { ticketRecord = frozen.record; prIn ??= frozen.pr; }
-      fresh = frozen.ok ? { ok: true, refreshed: [], seed: null } : frozen;
+      fresh = frozen.ok ? { ok: true, refreshed: [], seed: null, ticketText: frozen.ticketText } : frozen;
     } else {
       fresh = await refreezeUrlInputs({ into: ctx.into, ...(deps.fetchUrl ? { fetchUrl: deps.fetchUrl } : {}), ...(ctx.ticket ? { ticket: ctx.ticket } : {}) });
+    }
+    // piece 2 (R5): the job's signed `ticketFilter` (and a closed ticket, always) decides RUN or SKIP from the frozen ticket's labels and state, by CODE, before any worker or
+    // model call and before piece 12 fetches a PR head. A skip is a quiet end: ONE `settled` event on the already-listed row ($0, complete), the claim freed, no spine, no
+    // learnings note, no bridge/credit row; exit 0 (a clean end, not a refusal). `--anyway` runs it regardless. An UNSURE verdict (off-scale or unreadable label) never skips.
+    if (fresh.ok && ctx.ticket !== undefined && typeof fresh.ticketText === 'string') {
+      const verdict = decideTicket({ text: fresh.ticketText, filter: spec.ticketFilter });
+      if (verdict.outcome === 'skip' && ctx.anyway !== true) {
+        const words = skipWords(verdict.reason, spec.ticketFilter);
+        out(`${SELECTOR}: ${words}. Nothing spent.`);
+        if (claimedRow) {
+          try { appendRunEvent({ runid, type: 'settled', by: runid, reason: 'skipped', words, spentUsd: 0, spendComplete: true, at: new Date().toISOString() }, { home: claimedRow.home }); } catch { /* the exit stands; the dead pid's claim is closed by the next run */ }
+          claimedRow = null; // settled, not released: the row stays listed so the person sees the ticket was skipped, and why
+        }
+        throw new ExitSignal(0);
+      }
+      if (verdict.outcome === 'run' && verdict.unsure !== undefined) out(`${SELECTOR}: the ticket filter was unsure (${verdict.unsure}), so the ticket runs.`);
     }
     // piece 12: a PR job's worktree is moved to the PR's head BEFORE the seed is read and the work branch is made (planrun, later); every refusal ends in "Nothing spent."
     if (fresh.ok && prIn !== undefined) {
