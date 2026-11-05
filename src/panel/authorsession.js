@@ -287,7 +287,7 @@ export function resolveFlowCard(card, o = {}) {
   if (flowType === 'tickets') {
     const ip = parseInputs(card.inputs);
     if (ip.ok && !ip.inputs.some((i) => parseTicketList(i.value).ok)) {
-      return { ok: false, error: 'Tickets MCP needs the ticket list address as an Inputs line, like issues: https://github.com/owner/repo/issues' };
+      return { ok: false, error: 'Tickets MCP needs the ticket list address (the issues or pulls page of one repository) as an Inputs line.' };
     }
   }
   return { ok: true, flowType, pick: { server: pick.server, tools: pick.tools } };
