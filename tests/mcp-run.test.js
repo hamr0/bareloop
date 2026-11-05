@@ -214,10 +214,10 @@ describe('run-u --spec --ticket: the engine', () => {
   });
 
   describe('--ticket / --anyway at argv, before any approval or spend', () => {
-    test('a ticket job without --ticket is refused in plain words', async (t) => {
+    test('a ticket job without --ticket looks for the newest unrun ticket (R6); with no issues list among its Inputs it is refused in plain words', async (t) => {
       const r = await engine(t, { argv: [] });
       assert.notEqual(r.rc, 0);
-      assert.match(r.err, /reads a ticket.*--ticket <number>/);
+      assert.match(r.err, /newest ticket can only be found on an issues list.*Type the ticket number to read instead\. The run did not start\. Nothing spent\./);
       assert.equal(r.provider.messagesLog.length, 0);
     });
     test('--anyway needs --ticket', async (t) => {
