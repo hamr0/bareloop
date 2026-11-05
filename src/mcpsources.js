@@ -13,13 +13,16 @@ import { readConfig } from './config.js';
 export { mcpPathProblem } from './config.js';
 
 /** the 4 places bare-agent reads, in its order (absolute) @returns {string[]} */
-export const DEFAULT_MCP_PLACES = () => {
-  const h = homedir();
+export const DEFAULT_MCP_PLACES = (home = homedir()) => {
+  const h = home;
   return [join(h, '.mcp.json'), join(h, '.claude', 'mcp_servers.json'), join(h, '.config', 'Claude', 'claude_desktop_config.json'), join(h, '.cursor', 'mcp.json')];
 };
 
-/** a path as the person sees it: the home folder written `~` @param {string} p */
-export const showMcpPath = (p) => { const h = homedir(); return p === h ? '~' : p.startsWith(`${h}/`) ? `~${p.slice(h.length)}` : p; };
+/** a path as the person sees it: the home folder written `~` @param {string} p @param {string} [home] the person's home folder (tests inject a fixture one) */
+export const showMcpPath = (p, home = homedir()) => { const h = home; return p === h ? '~' : p.startsWith(`${h}/`) ? `~${p.slice(h.length)}` : p; };
+
+/** a typed path with a leading `~` or `~/` written out (the config stores absolute paths only) @param {string} p @param {string} [home] */
+export const expandMcpPath = (p, home = homedir()) => (p === '~' ? home : p.startsWith('~/') ? join(home, p.slice(2)) : p);
 
 /**
  * The added paths in config.json; none when the file is missing, and a plain-words `problem` when it cannot be read (never papered over).
@@ -36,12 +39,13 @@ export function addedMcpPaths(home) {
  * Every place, in order, with the servers found in it.
  * `status`: 'found' (a readable file), 'missing' (no file) or 'not-json' (a file that is not JSON; bare-agent skips it silently).
  * A server: `{name, remote, shadowedBy}`; `shadowedBy` is the shown path of the earlier place that has the same name (the earlier one wins), or null.
- * @param {{ home?: string }} [o] `home` the config home (tests)
+ * @param {{ home?: string, mcpHome?: string }} [o] `home` the config home (tests); `mcpHome` the person's home folder the four places live under
+ *   (tests inject a fixture one so discovery never reads the real `~`; undefined = `os.homedir()`)
  * @returns {{ places: Array<{ path: string, file: string, added: boolean, status: 'found'|'missing'|'not-json', servers: Array<{name: string, remote: boolean, shadowedBy: string|null}> }>, problem: string|null }}
  */
 export function mcpSources(o = {}) {
   const added = addedMcpPaths(o.home);
-  const typed = [...DEFAULT_MCP_PLACES().map((p) => ({ path: showMcpPath(p), file: p, added: false })), ...added.paths.map((p) => ({ path: p, file: p, added: true }))];
+  const typed = [...DEFAULT_MCP_PLACES(o.mcpHome).map((p) => ({ path: showMcpPath(p, o.mcpHome), file: p, added: false })), ...added.paths.map((p) => ({ path: p, file: p, added: true }))];
   /** @type {Map<string, string>} */
   const first = new Map();
   const places = typed.map(({ path, file, added: isAdded }) => {
@@ -61,7 +65,7 @@ export function mcpSources(o = {}) {
 /**
  * The file that holds the WINNING `server` (the first place in the list that has the name), whether it is remote, or null when no place has it.
  * Every place bareloop starts an MCP from takes its config file from here.
- * @param {string} server @param {{ home?: string }} [o]
+ * @param {string} server @param {{ home?: string, mcpHome?: string }} [o]
  * @returns {{ file: string, remote: boolean } | null}
  */
 export function mcpConfigFor(server, o = {}) {
