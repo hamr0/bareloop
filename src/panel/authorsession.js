@@ -294,15 +294,15 @@ export function resolveFlowCard(card, o = {}) {
 }
 
 /**
- * The by-hand ticket of a Tickets MCP run (ITEM33-BUILD piece 8, divergence from fwd: no schedule ledger here, so no "newest unrun ticket"): the number typed on the card, the same
- * number `--ticket` takes. A Tickets MCP job needs one; any other job takes none.
+ * The by-hand ticket of a Tickets MCP run (ITEM33-BUILD piece 8): the number typed on the card, the same number `--ticket` takes, or BLANK = the newest ticket this job has not run
+ * (R6: `run-u` finds it with the schedule's own look, src/ticketnext.js, and a list that cannot be looked at says so and asks for a number). Any other job takes none.
  * @param {any} card @param {'plain'|'mcp'|'tickets'} flowType the FINAL flow type of the job (the card's, or the reused spec's)
  * @returns {string|null} the refusal in plain words, or null when the card is fine
  */
 export function ticketBoxProblem(card, flowType) {
   const typed = typeof card?.ticket === 'string' ? card.ticket.trim() : (typeof card?.ticket === 'number' ? String(card.ticket) : '');
   if (flowType !== 'tickets') return typed === '' ? null : 'A ticket number is only for a Tickets MCP job. Clear the Ticket box.';
-  if (typed === '') return `This job reads a ticket. Type the ticket number to read (${TICKET_NUMBER_WORDS}).`;
+  if (typed === '') return null;
   return ticketNumberOf(typed) === undefined ? `The ticket must be ${TICKET_NUMBER_WORDS}, not "${typed}".` : null;
 }
 

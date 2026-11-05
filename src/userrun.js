@@ -35,6 +35,7 @@ import { moneyWithDraft } from './replay.js';
 import { jobSpecHash, resolveWorkerModel, validateJob, workflowKey, flowTypeOf } from './job.js';
 import { ticketNumberOf, TICKET_NUMBER_WORDS } from './ticketshape.js';
 import { freezeRepoTicket } from './ticketrepo.js';
+import { newestUnrunTicket } from './ticketnext.js';
 import { decideTicket } from './ticketlabels.js';
 import { skipWords } from './panel/status.js';
 import { checkoutPrHead, prHeadIsAncestor, recordPrOnManifest } from './prcheckout.js';
@@ -245,6 +246,8 @@ class ExitSignal extends Error {
  * @property {(tier: string) => any} [providerFor]
  * @property {(url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>} [fetchUrl] PART 1c - a test seam: how a web input is read at run start (production: barebrowse)
  * @property {any} [judgeProvider]
+ * @property {typeof newestUnrunTicket} [newestUnrunTicket] R6 - a test seam: how a Tickets run that names no `--ticket` finds the newest unrun ticket (production: the real look, src/ticketnext.js)
+ * @property {string} [mcpConfig] R6 - a test seam: the MCP config file that look reads (production: the person's own, found by src/mcpsources.js)
  * @property {string} [runlistHome] F196 — a test seam for `appendRun`'s
  *   (src/runlist.js) `home` override, the same shape `deps.provider` already
  *   is. Production never sets it; `appendRun` falls through to its own
@@ -1546,6 +1549,8 @@ async function execute(ctx) {
   const runRow = {
     // a RESUMED run keeps its own start stamp (the row is listed only if the list has none; it is the run's, not the leg's)
     at: resuming ? (deadLegs[0]?.start?.ts ?? new Date().toISOString()) : new Date().toISOString(), runid, job: spec.job, spine: spineFile, patient: wd, via: ctx.bundle ? 'bundle' : 'run-u', pid: process.pid, capUsd: legCapUsd,
+    // a Tickets run lists the ticket it reads (a fresh run only; a skipped or refused run keeps it too): "has run" for the by-hand pick of the newest unrun ticket (src/ticketnext.js)
+    ...(ctx.ticket !== undefined ? { ticket: ctx.ticket.number } : {}),
   };
   let claimed = false;
   {
@@ -2764,8 +2769,15 @@ export async function main(argv, deps = {}) {
       if (ticketNumber === undefined) die(`--ticket takes ${TICKET_NUMBER_WORDS}, not "${ticketArg}".`);
       if (!tickets) die('--ticket is for a job that reads tickets, and this job has no ticket source.');
     }
-    if (tickets && refreeze) {
-      if (ticketNumber === undefined) die('This job reads a ticket. Give the ticket to read with --ticket <number>. The run did not start. Nothing spent.');
+    // a fresh Tickets run that names no ticket takes the NEWEST UNRUN one (piece 8; fwd newestUnrunTicket): the schedule's own look at $0 over the job's signed `list_issues`, above the
+    // highest number this job's runs already hold. Nothing new, or a list that cannot be read, is one plain line at $0 and no run. A typed `--ticket` never reaches this.
+    if (tickets && refreeze && ticketNumber === undefined) {
+      const home = deps.keysHome ?? deps.runlistHome;
+      const rows = (() => { try { return readRunList({ home }).rows; } catch { return []; } })();
+      const picked = await (deps.newestUnrunTicket ?? newestUnrunTicket)({ job: spec.job, rows, inputs: Array.isArray(spec.inputs) ? spec.inputs : [], mcp: spec.mcp, ...(deps.mcpConfig ? { configPath: deps.mcpConfig } : {}) });
+      if (!picked.ok) die(`${picked.say} The run did not start. Nothing spent.`);
+      ticketNumber = picked.number;
+      (deps.out ?? ((/** @type {string} */ l) => { console.log(l); }))(`${SELECTOR}: no --ticket given, so this run takes the newest ticket it has not run: #${ticketNumber}.`);
     }
 
     const ctx = {

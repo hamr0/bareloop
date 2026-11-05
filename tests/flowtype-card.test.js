@@ -67,8 +67,9 @@ test('jobBoxesChanged: a changed flow type or MCP is a changed job; absent and "
   assert.equal(jobBoxesChanged({ ...gm, ticket: '9' }, gm), false, 'the ticket is a run box');
 });
 
-test('ticketBoxProblem: Tickets MCP needs a number the CLI would accept; any other flow takes none', () => {
-  assert.match(ticketBoxProblem({}, 'tickets'), /^This job reads a ticket\. Type the ticket number to read \(a whole number from 1 to 9,999,999,999\)\.$/);
+test('ticketBoxProblem: Tickets MCP takes a number the CLI would accept, or BLANK (the newest unrun ticket, R6); any other flow takes none', () => {
+  assert.equal(ticketBoxProblem({}, 'tickets'), null, 'blank = the newest ticket this job has not run');
+  assert.equal(ticketBoxProblem({ ticket: '  ' }, 'tickets'), null);
   assert.match(ticketBoxProblem({ ticket: 'abc' }, 'tickets'), /^The ticket must be a whole number from 1 to 9,999,999,999, not "abc"\.$/);
   for (const bad of ['0', '-3', '007', '1.5', '12345678901', '4 2']) assert.notEqual(ticketBoxProblem({ ticket: bad }, 'tickets'), null, bad);
   assert.equal(ticketBoxProblem({ ticket: '42' }, 'tickets'), null);

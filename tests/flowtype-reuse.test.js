@@ -63,12 +63,13 @@ test('workflow: a changed MCP or flow type is a different workflow, and the plai
   assert.notEqual(jobSpecHash(s.tk), jobSpecHash(s.pl));
 });
 
-test('POST /api/author/start with Reuse: unchanged Flow type + MCP reuses the signed plan (no drafting) and keeps the origin\'s name; a Tickets job needs its ticket number', async (t) => {
+test('POST /api/author/start with Reuse: unchanged Flow type + MCP reuses the signed plan (no drafting) and keeps the origin\'s name; a Tickets job takes a typed ticket number, or none (the newest unrun)', async (t) => {
   const s = await setup(t);
   const card = (over = {}) => ({ ...baseCard({ source: s.repo, jobName: 'tick-job', inputs: s.inputs, flowType: 'tickets', mcp: 'github' }), startFrom: 'tkrun001', ...over });
-  const none = await s.srv.post('/api/author/start', card());
-  assert.equal(none.status, 400);
-  assert.match(none.body.error, /^This job reads a ticket\. Type the ticket number to read/);
+  // R6: a blank Ticket box is no longer refused (it means the newest ticket not run yet, found by `run-u`); a typed number that is not one still is
+  const bad = await s.srv.post('/api/author/start', card({ ticket: '4x' }));
+  assert.equal(bad.status, 400);
+  assert.match(bad.body.error, /^The ticket must be a whole number/);
   const ok = await s.srv.post('/api/author/start', card({ ticket: '17' }));
   assert.equal(ok.status, 200, JSON.stringify(ok.body));
   assert.equal(ok.body.reuse, true, 'the signed plan is reused');

@@ -58,7 +58,8 @@ export function runlistPath(home) {
 }
 
 /**
- * @typedef {{ at: string, runid: string, job: string, spine: string, patient: string|null, via: 'run-u'|'bundle'|'backfill', pid?: number, capUsd?: number, leg?: number }} RunRow
+ * @typedef {{ at: string, runid: string, job: string, spine: string, patient: string|null, via: 'run-u'|'bundle'|'backfill', pid?: number, capUsd?: number, leg?: number, ticket?: number }} RunRow
+ * `ticket` (a Tickets run, ITEM33-BUILD R6): the ticket number this run reads; older rows have none.
  * `pid`/`capUsd` (optional; older and backfilled rows carry neither): the runner's process id and the
  * leg's $ cap — what the monthly limit holds while that pid is a live bareloop runner (src/monthly.js).
  * `leg` (P5-R; only on a row {@link readRunList} FOLDED from `leg-start` entries, i.e. a RESUMED run):

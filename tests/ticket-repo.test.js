@@ -273,7 +273,7 @@ describe('run-u --spec --ticket on a code-repo job (R2b step 3)', () => {
     assert.ok(!JSON.stringify(tk).includes('Tap the back arrow') && !JSON.stringify(tk).includes(TOKEN));
   });
 
-  test('refused at $0 before any model call: the MCP cannot give the ticket; and a repo ticket job with no --ticket', async (t) => {
+  test('refused at $0 before any model call: the MCP cannot give the ticket; and a repo ticket job with no --ticket and no list_issues', async (t) => {
     const r = await engine(t, { mcpEnv: { FAKE_REPLY: 'device' } });
     assert.notEqual(r.rc, 0);
     assert.match(r.err, /GitHub token unavailable.*The run did not start\. Nothing spent\./);
@@ -281,7 +281,8 @@ describe('run-u --spec --ticket on a code-repo job (R2b step 3)', () => {
     assert.equal(existsSync(join(r.wt, TICKET_INPUT_DIR, 'issues.txt')), false);
     const none = await engine(t, { argv: [] });
     assert.notEqual(none.rc, 0);
-    assert.match(none.err, /--ticket <number>/);
+    // R6: no --ticket takes the newest unrun ticket; this job's signed tools lack list_issues, so it cannot look and says to type a number
+    assert.match(none.err, /do not include list_issues.*Type the ticket number to read instead\. The run did not start\. Nothing spent\./);
     assert.equal(none.provider.messagesLog.length, 0);
   });
 });

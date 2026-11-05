@@ -30,9 +30,7 @@ test('the start door asks for the ticket number of a Tickets MCP job, refuses ga
   const routes = createAuthorRoutes({ port: 1, token: 'x', home: keysHome(w.cfg), mcpHome: w.home, env: {}, sessionsRoot: path.join(w.base, 'sessions'), sessionDeps: draftSeams({}) });
   const inputs = [{ n: 1, label: 'repo', value: repo }, { n: 2, label: 'issues', value: LIST }];
   const tk = (over = {}) => baseCard({ source: repo, jobName: 'flow-t', flowType: 'tickets', mcp: 'github', inputs: `repo: ${repo}\nissues: ${LIST}`, ...over });
-  const none = await routes.startSession(tk(), null, inputs);
-  assert.equal(none.ok, false);
-  assert.match(none.error, /^This job reads a ticket\. Type the ticket number to read/);
+  // R6: a blank Ticket box is no longer refused here - it means "the newest ticket this job has not run", found by `run-u` at run start (tests/ticket-next-run.test.js)
   const bad = await routes.startSession(tk({ ticket: '4x' }), null, inputs);
   assert.match(bad.error, /^The ticket must be a whole number from 1 to 9,999,999,999, not "4x"\./);
   assert.equal(routes.sessions.size, 0, 'nothing started on a refusal');
