@@ -152,6 +152,8 @@
   .dot.red::before{content:"[✗]";color:var(--red);}
   /* stopped (hamr 2026-10-07): the person pressed Stop — its own sign, grey (RULED 2026-10-15) */
   .dot.stopped::before{content:"[■]";color:var(--grey-dot);}
+  /* R5 (piece 2): a ticket the job's signed filter did not let through ends skipped at run start: [–], grey, rests (fwd's sign) */
+  .dot.skipped::before{content:"[–]";color:var(--grey-dot);}
   /* Panel build P3 addition (2026-09-27, "yes, go"): the part cards below the
      step map (`partResultGlyph`/`attemptGlyph`) and the chat job card render
      their result glyph as PLAIN inline text inside a larger string (never
@@ -1529,6 +1531,7 @@
     if(g === "✓") return "green";
     if(g === "✗") return "red";
     if(g === "■") return "stopped";
+    if(g === "–") return "skipped";
     if(g === "▶") return "amber";
     if(g === "?") return "magenta";
     return "grey";
@@ -2835,8 +2838,8 @@
       return;
     }
 
-    if(detail.refused){
-      // refused before it started (e.g. the page could not be fetched): the server's plain words, status word from the table
+    if(detail.refused || detail.skipped){
+      // refused before it started (e.g. the page could not be fetched) or skipped by the job's ticket filter (R5): the server's plain words, status word from the table
       syncResultTab({});
       setRunHeader(detail.glyph, runName(detail.job, detail.runNo, detail.runid), statusWordHtml(detail.status, "") + " \u00B7 " + escapeXml("started " + fmtLocalDateTime(detail.at)));
       document.getElementById("run-empty").hidden = false;

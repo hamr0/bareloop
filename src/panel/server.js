@@ -126,10 +126,10 @@ export const DEFAULT_PORT = 4700;
  * running attempt and an archived spine that never reached its own end are
  * the same fact from this read-only side: no verdict has been recorded yet.
  * @param {string|null} outcome
- * @returns {'✓'|'✗'|'■'|'▶'}
+ * @returns {'✓'|'✗'|'■'|'▶'|'–'}
  */
 export function glyphForOutcome(outcome) {
-  return /** @type {'✓'|'✗'|'■'|'▶'} */ (statusFor({ outcome }).sign);
+  return /** @type {'✓'|'✗'|'■'|'▶'|'–'} */ (statusFor({ outcome }).sign);
 }
 
 /**
@@ -815,14 +815,15 @@ function startingStub(row) {
 /**
  * A run that REFUSED before it started (its refetch of a web input was refused, run mvez8s54 shape): listed, settled at $0, no spine.
  * The status word is the table's `failed` (statusFor: "refusals, instrument stops -> failed"); the plain words ride on `endedLine`.
- * @param {{ runid: string, job: string, at: string, via: string }} row @param {string} words
+ * @param {{ runid: string, job: string, at: string, via: string }} row @param {string} words @param {'refused-before-start'|'skipped'} [outcome] `skipped` (R5): a ticket the job's filter did not let through, the same no-spine shape with its own status word
  * @returns {any}
  */
-function refusedStub(row, words) {
+function refusedStub(row, words, outcome = 'refused-before-start') {
+  const status = statusFor({ outcome });
   return {
-    runid: row.runid, job: row.job, at: row.at, via: row.via, fileMissing: false, refused: true, live: false, needs: null, stoppedAt: null,
-    died: false, glyph: statusFor({ outcome: 'refused-before-start' }).sign, status: statusFor({ outcome: 'refused-before-start' }),
-    outcome: 'refused-before-start', endedLine: words, ended: null, resume: null, checkType: 'unknown', checkTypeTitle: null, model: null,
+    runid: row.runid, job: row.job, at: row.at, via: row.via, fileMissing: false, refused: outcome !== 'skipped', skipped: outcome === 'skipped', live: false, needs: null, stoppedAt: null,
+    died: false, glyph: status.sign, status,
+    outcome, endedLine: words, ended: null, resume: null, checkType: 'unknown', checkTypeTitle: null, model: null,
     spend: '$0', wall: '', date: typeof row.at === 'string' ? row.at.slice(0, 10) : null, spentUsd: 0, spendComplete: true,
     spendFloorUsd: null, wallFloorMs: null, draftSpentUsd: null, draftSpendComplete: null, budgetUsd: null, steps: [], parts: [],
   };
@@ -831,6 +832,15 @@ function refusedStub(row, words) {
 /** the plain words of a run that settled as "refused before start" (leg 1), or null @param {any[]} events @param {{runid: string}} row */
 function refusalWordsOf(events, row) {
   const e = events.find((x) => x && x.type === 'settled' && x.runid === row.runid && x.reason === 'refused before start' && !(x.leg > 1));
+  return e && typeof e.words === 'string' && e.words !== '' ? e.words : null;
+}
+
+/**
+ * R5 (piece 2): the plain words of a run a Tickets job's filter SKIPPED at run start (leg 1), or null. Same home as a refusal: one `settled` event on the run's row, no spine.
+ * @param {any[]} events @param {{runid: string}} row
+ */
+function skipWordsOf(events, row) {
+  const e = events.find((x) => x && x.type === 'settled' && x.runid === row.runid && x.reason === 'skipped' && !(x.leg > 1));
   return e && typeof e.words === 'string' && e.words !== '' ? e.words : null;
 }
 
@@ -866,6 +876,8 @@ function summarizeRow(row, nowMs = Date.now(), removals = undefined, events = []
   if (!existsSync(row.spine)) {
     const refusal = refusalWordsOf(events, row);
     if (refusal !== null) return refusedStub(row, refusal);
+    const skipped = skipWordsOf(events, row);
+    if (skipped !== null) return refusedStub(row, skipped, 'skipped');
     if (runIsAlive(row)) return startingStub(row);
     return {
       runid: row.runid, job: row.job, at: row.at, via: row.via, fileMissing: true, live: false, needs: null, stoppedAt: null,
@@ -1622,8 +1634,11 @@ function getRunDetailBody(runid, opts) {
   const row = findRunRow(runid, opts);
   if (!row) return null;
   if (!existsSync(row.spine)) {
-    const refusal = refusalWordsOf(readRunList(opts).events, row);
+    const { events: settledEvents } = readRunList(opts);
+    const refusal = refusalWordsOf(settledEvents, row);
     if (refusal !== null) return refusedStub(row, refusal);
+    const skipped = skipWordsOf(settledEvents, row);
+    if (skipped !== null) return refusedStub(row, skipped, 'skipped');
     if (runIsAlive(row)) return startingStub(row);
     return {
       runid, job: row.job, at: row.at, via: row.via, fileMissing: true,
