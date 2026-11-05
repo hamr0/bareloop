@@ -39,7 +39,9 @@ describe('the plan card and the Job tab say it in code-owned words', () => {
   const words = 'only tickets with priority P1 run; a closed ticket is skipped';
   test('the signed spec: planFromSpec', () => {
     const spec = signFlow(clone(BASE), 'tickets', PICK, { priority: ['P1'] });
-    assert.equal(planFromSpec(spec).ticketFilter, words);
+    assert.equal(planFromSpec(spec).ticketFilter, words, 'an older spec (no job lines)');
+    const lined = { ...spec, jobLines: [{ n: 1, text: 'Fix it', rule: '', rules: [] }] };
+    assert.equal(planFromSpec(lined).ticketFilter, words, 'a spec with numbered job lines');
     assert.equal(Object.hasOwn(planFromSpec(clone(BASE)), 'ticketFilter'), false);
   });
   test('the card before signing: planFromConfirm', () => {

@@ -55,7 +55,6 @@ export const STATUS = Object.freeze({
  */
 export function skipWords(reason, filter) {
   if (reason === 'closed') return 'skipped: the ticket is closed';
-  if (/^priority P[0-3], not /.test(reason)) return `skipped: ${reason}`;
   const m = /^no (.+) label$/.exec(reason);
   if (m && filter?.priority?.length && m[1] === filter.priority.join(' or ')) return `skipped: no ${m[1]} label on the ticket`;
   if (m) return `skipped: label ${m[1]} not on the ticket`;
