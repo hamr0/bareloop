@@ -173,7 +173,7 @@ export const PLAN_FOOTER = 'Sign & run to confirm this plan, or Revise to edit t
  * The confirm turn's plan as a chat message (P7): a STRUCTURED `{role:'bot', kind:'plan', plan}` the page draws with the
  * same renderer the Job tab uses — each numbered job line, its `~` rule, its drafted checks folded; the AI's own "not
  * checked"; the always-on guards. `questions` (what the plan still asks) ride inside the plan. One owner of the shape.
- * @param {{goal?: string, checks?: string[], checkItems?: {text: string, fromLine: number[]|null}[], notChecked?: string[], questions?: string[], protections?: string[], signedFacts?: string[]}} p the confirm turn's plan
+ * @param {{goal?: string, checks?: string[], checkItems?: {text: string, fromLine: number[]|null}[], notChecked?: string[], questions?: string[], protections?: string[], signedFacts?: string[], ticketFilter?: any}} p the confirm turn's plan
  * @param {{n: number, text: string, rule: string}[]|null} jobLines
  * @returns {{role: 'bot', kind: 'plan', text: string, plan: ReturnType<typeof planFromConfirm> & {goal: string, questions: string[]}}}
  */
@@ -1166,6 +1166,8 @@ export function createSession(card, deps = {}) {
       fitAsk, onFit,
       ...(deps.fitFn !== undefined ? { fitFn: deps.fitFn } : (deps.generate ? { fitFn: null } : {})),
       ...(authorFnOverride ? { authorFn: authorFnOverride } : {}),
+      // R5 (piece 2): a Tickets job's drafter is told about the ticket filter and may propose one (the person signs it)
+      ...(deps.flow?.flowType === 'tickets' ? { authorOpts: { ticket: true } } : {}),
     });
 
     if (!authored.ok && PLAIN_PROPOSAL_STOPS.includes(String(authored.stop))) {
@@ -1204,7 +1206,7 @@ export function createSession(card, deps = {}) {
     if (RUBRIC_FILES) draft.goal = redactSecrets(rubricGoal({ jobLines, files: prep.manifest.inputs, confirmedGoal: authored.confirmed?.goal ?? null, closeDecl: authored.closeDecl }));
     else if (authored.confirmed?.goal) draft.goal = redactSecrets(String(authored.confirmed.goal));
     // piece 8: the card's Flow type and MCP pick are signed by CODE, after the draft (the agent cannot carry them: `assembleSpec` refuses a draft that does). A plain card adds nothing.
-    const spec = signFlow(assembleSpec(draft, { ...authored, verdictType: /** @type {string} */ (authored.verdictType) }), deps.flow?.flowType ?? 'plain', deps.flow?.pick ?? null);
+    const spec = signFlow(assembleSpec(draft, { ...authored, verdictType: /** @type {string} */ (authored.verdictType) }), deps.flow?.flowType ?? 'plain', deps.flow?.pick ?? null, authored.authoring?.ticketFilter);
     // PART 1a (run mv5bk400): the plan the person confirmed named three checks for line 1; the composer wrote ONE stage and put
     // "lists 3 releases" in its notes, so the card promised a check the close never ran. The card AFTER drafting is now built
     // from the close itself, and every confirmed check no part carries out is moved to Not checked, in code, before signing.
@@ -1212,7 +1214,7 @@ export function createSession(card, deps = {}) {
       const rec = reconcileRubricPlan({
         confirmed: authored.confirmed?.checkItems ?? [], notChecked: authored.confirmed?.notChecked ?? [], closeDecl: spec.closeDecl, jobLines,
       });
-      state.finalPlan = { goal: String(draft.goal ?? ''), checkItems: rec.checkItems, notChecked: rec.notChecked, protections: authored.confirmed?.protections ?? [], moved: rec.moved, signedFacts: signedFactNames(spec.closeDecl) };
+      state.finalPlan = { goal: String(draft.goal ?? ''), checkItems: rec.checkItems, notChecked: rec.notChecked, protections: authored.confirmed?.protections ?? [], moved: rec.moved, signedFacts: signedFactNames(spec.closeDecl), ...(spec.ticketFilter ? { ticketFilter: spec.ticketFilter } : {}) };
     }
     await finish(spec, authored.seedRef);
     if (state.finalPlan && state.phase === 'prepared') {
@@ -1221,7 +1223,7 @@ export function createSession(card, deps = {}) {
       // dropped, so drafter prose can never sit above (and be read instead of) the code's sentences (run mv5e1ktb).
       state.messages = state.messages.filter((/** @type {any} */ m) => m.kind !== 'plan');
       state.messages.push({
-        ...planMessage({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, protections: state.finalPlan.protections, signedFacts: state.finalPlan.signedFacts, questions: [] }, jobLines),
+        ...planMessage({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, protections: state.finalPlan.protections, signedFacts: state.finalPlan.signedFacts, ticketFilter: state.finalPlan.ticketFilter, questions: [] }, jobLines),
         text: 'These are the checks the signed close will run, and what it will not check. Sign & run to accept them, or Revise to edit the boxes and draft again.',
       });
     }

@@ -4029,6 +4029,7 @@
     h += fold("Not checked (the AI's own reading)", plan.notChecked, "plan-notchecked");
     h += fold("How the page was read", plan.readNotes, "plan-readnotes");
     h += fold("Always checked", plan.alwaysOn, "plan-alwayson");
+    if(plan.ticketFilter) h += '<div class="fold" data-testid="plan-ticketfilter"><span class="mk">\u203A</span> ticket filter \u00B7 ' + escapeXml(plan.ticketFilter) + "</div>";
     return h + "</div>";
   }
 
@@ -4070,7 +4071,7 @@
     mcpField.hidden = mcpJob === null;
     if(mcpJob !== null){
       var rows = ["flow type \u00b7 " + mcpJob.flowType, "MCP \u00b7 " + mcpJob.server].concat((mcpJob.tools || []).map(function(t){ return "tools \u00b7 " + t; }));
-      if(mcpJob.ticketFilter) rows.push("ticket filter \u00b7 " + JSON.stringify(mcpJob.ticketFilter));
+      if(mcpJob.ticketFilter) rows.push("ticket filter \u00b7 " + (mcpJob.ticketFilterWords || JSON.stringify(mcpJob.ticketFilter)));
       if(Array.isArray(mcpJob.ticketWatch)) rows.push("watched field \u00b7 " + mcpJob.ticketWatch.join(", "));
       rows.forEach(function(r){ var d = document.createElement("div"); d.textContent = r; mcpBox.appendChild(d); });
     }

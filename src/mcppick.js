@@ -26,10 +26,11 @@ export function mcpPickFor(server, o = {}) {
  * The spec with the card's flow type and MCP pick signed into it. A `plain` pick writes NOTHING (no `flowType` key, no `mcp`), so every plain job keeps the hash it had before
  * the card had these controls. The `mcp` block is the pick's server and EVERY tool of its newest check; the agent never sets it (`assembleSpec` refuses a draft that carries it).
  * @template {Record<string, any>} T
- * @param {T} spec @param {'plain'|'mcp'|'tickets'} flowType @param {{ server: string, tools: string[] }|null} pick
+ * R5: a Tickets job also signs the drafter's PROPOSED `ticketFilter` (already read by `ticketFilterReds`), if it made one: the person signs the whole hash. Never on an `mcp` job.
+ * @param {T} spec @param {'plain'|'mcp'|'tickets'} flowType @param {{ server: string, tools: string[] }|null} pick @param {{priority?: string[], labels?: string[]}|undefined} [ticketFilter]
  * @returns {T}
  */
-export function signFlow(spec, flowType, pick) {
+export function signFlow(spec, flowType, pick, ticketFilter = undefined) {
   if (flowType === 'plain' || pick === null) return spec;
-  return { ...spec, flowType, mcp: { server: pick.server, tools: [...pick.tools] } };
+  return { ...spec, flowType, mcp: { server: pick.server, tools: [...pick.tools] }, ...(flowType === 'tickets' && ticketFilter !== undefined ? { ticketFilter } : {}) };
 }

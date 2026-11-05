@@ -73,6 +73,7 @@ import {
   statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER, DOOR_WORDS, isReusableGreen,
 } from './status.js';
 import { thinkingJobText } from '../thinking.js';
+import { ticketFilterWords } from '../ticketfilter.js';
 import { judgedFilesOf, lineRules, stepFileRel, proseNotCheckedItems } from '../rubricstep.js';
 import { factPartOf, factSentence, ruleWords, moneyAs } from '../facts.js';
 import { createSettingsRoutes } from './settingsroutes.js';
@@ -3125,14 +3126,14 @@ function toolsListFromSpec(spec) {
  * The Job tab's MCP rows (piece 8): the signed flow type (in the card's own words), the server and the tools the job signed, plus a ticket filter / watched fields when the spec
  * carries them. `null` for a plain job (no MCP rows at all).
  * @param {any} spec
- * @returns {{flowType: string, server: string, tools: string[], ticketFilter?: any, ticketWatch?: string[]}|null}
+ * @returns {{flowType: string, server: string, tools: string[], ticketFilter?: any, ticketFilterWords?: string|null, ticketWatch?: string[]}|null}
  */
 function mcpDetailFromSpec(spec) {
   const m = spec?.mcp;
   if (!m || typeof m.server !== 'string' || !Array.isArray(m.tools)) return null;
   return {
     flowType: FLOW_TYPE_LABELS[flowTypeOf(spec)], server: m.server, tools: m.tools.filter((/** @type {any} */ t) => typeof t === 'string'),
-    ...(spec.ticketFilter ? { ticketFilter: spec.ticketFilter } : {}), ...(Array.isArray(spec.ticketWatch) ? { ticketWatch: spec.ticketWatch } : {}),
+    ...(spec.ticketFilter ? { ticketFilter: spec.ticketFilter, ticketFilterWords: ticketFilterWords(spec.ticketFilter) } : {}), ...(Array.isArray(spec.ticketWatch) ? { ticketWatch: spec.ticketWatch } : {}),
   };
 }
 

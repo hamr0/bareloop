@@ -92,6 +92,7 @@ import { dropRows, dropLine } from './pagedropwords.js';
 import { factShapeGuide } from './facts.js';
 import { renderLookReport, labelListsOf } from './inputlook.js';
 import { checkDeclarationWords } from './factwords.js';
+import { ticketFilterReds, ticketFilterBlock } from './ticketfilter.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
@@ -940,9 +941,10 @@ export function schemaCoverage(catalogue = KIND_CATALOGUE) {
  * `kinds` (Part 1a) narrows the branches to the kinds a language may use (`catalogueForLang`) WITHOUT narrowing the coverage check,
  * which stays over the whole catalogue; null (the default) = no narrowing.
  * @param {Record<string, any>} [catalogue]
- * @param {{verdictType?: string|null, questions?: boolean, kinds?: string[]|null}} [o]
+ * `ticket` (MCP + tickets piece 2) adds the optional top-level `ticketFilter` property for a job that reads tickets; absent, the schema is byte-identical.
+ * @param {{verdictType?: string|null, questions?: boolean, kinds?: string[]|null, ticket?: boolean}} [o]
  */
-export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = null, questions = false, kinds = null } = {}) {
+export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = null, questions = false, kinds = null, ticket = false } = {}) {
   const cov = schemaCoverage(catalogue);
   if (!cov.ok) {
     throw new Error('[authorflow] the declaration schema does not cover the catalogue — '
@@ -1016,6 +1018,17 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
         },
         description: 'optional: which job lines the always-on guards already cover (a line whose every ask a mandatory guard checks needs no stage of its own)',
       },
+      ...(ticket ? {
+        ticketFilter: {
+          type: 'object',
+          properties: {
+            priority: { type: 'array', items: { type: 'string', enum: ['P0', 'P1', 'P2', 'P3'] }, description: 'priorities a ticket must have; only when a job line names them' },
+            labels: { type: 'array', items: { type: 'string' }, description: 'label names, one of which a ticket must carry; only when a job line names them' },
+          },
+          additionalProperties: false,
+          description: 'optional: only when a job line names a priority or a label. The person signs it; code decides at run start',
+        },
+      } : {}),
       ...(questions ? {
         questions: {
           type: 'array',
@@ -1037,13 +1050,13 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
  * The output channel. It records and acknowledges; it takes no action, which is
  * why handing it to a toolless authoring call does not reopen D3.
  * @param {{calls: any[]}} box
- * @param {{catalogue?: Record<string, any>, verdictType?: string|null, questions?: boolean, kinds?: string[]|null}} [o]
+ * @param {{catalogue?: Record<string, any>, verdictType?: string|null, questions?: boolean, kinds?: string[]|null, ticket?: boolean}} [o]
  */
-export function declarationTool(box, { catalogue = KIND_CATALOGUE, verdictType = null, questions = false, kinds = null } = {}) {
+export function declarationTool(box, { catalogue = KIND_CATALOGUE, verdictType = null, questions = false, kinds = null, ticket = false } = {}) {
   return {
     name: DECLARATION_TOOL_NAME,
     description: 'Deliver the finished close. Call this exactly once, with the whole declaration as its arguments.',
-    parameters: declarationSchema(catalogue, { verdictType, questions, kinds }),
+    parameters: declarationSchema(catalogue, { verdictType, questions, kinds, ticket }),
     execute: async (/** @type {any} */ args) => { box.calls.push(args); return DECLARATION_ACK; },
   };
 }
@@ -2089,12 +2102,12 @@ export async function askStructured({ messages, generate, mode, retries, label, 
 /** THE DECLARATION CHANNEL — the one this loop has always used. Its schema is
  * CLASS-SCOPED, like the prompt's catalogue block: the two must offer one set of
  * kinds, or the composer reads about a kind it cannot call.
- * @param {{catalogue: Record<string, any>, verdictType: string, questions?: boolean, kinds?: string[]|null}} o */
-const declarationChannel = ({ catalogue, verdictType, questions = false, kinds = null }) => ({
+ * @param {{catalogue: Record<string, any>, verdictType: string, questions?: boolean, kinds?: string[]|null, ticket?: boolean}} o */
+const declarationChannel = ({ catalogue, verdictType, questions = false, kinds = null, ticket = false }) => ({
   name: DECLARATION_TOOL_NAME,
   instruction: STRUCTURE_INSTRUCTION_TOOL,
   textPath: 'declaration',
-  tool: (/** @type {{calls: any[]}} */ box) => declarationTool(box, { catalogue, verdictType, questions, kinds }),
+  tool: (/** @type {{calls: any[]}} */ box) => declarationTool(box, { catalogue, verdictType, questions, kinds, ticket }),
 });
 
 /** The declaration ask, over the shared ladder. `declaration` is `artifact`
@@ -2102,11 +2115,11 @@ const declarationChannel = ({ catalogue, verdictType, questions = false, kinds =
  * anonymous artifact, and one word for two things is how a reader loses which.
  * @param {{messages: any[], generate: Function, mode: 'tool'|'text', retries: number,
  *   label: string, book: ReturnType<typeof makeCostBook>, catalogue: Record<string, any>,
- *   verdictType: string, questions?: boolean, kinds?: string[]|null}} o
+ *   verdictType: string, questions?: boolean, kinds?: string[]|null, ticket?: boolean}} o
  */
-async function askDeclaration({ messages, generate, mode, retries, label, book, catalogue, verdictType, questions = false, kinds = null }) {
+async function askDeclaration({ messages, generate, mode, retries, label, book, catalogue, verdictType, questions = false, kinds = null, ticket = false }) {
   const r = await askStructured({
-    messages, generate, mode, retries, label, book, channel: declarationChannel({ catalogue, verdictType, questions, kinds }),
+    messages, generate, mode, retries, label, book, channel: declarationChannel({ catalogue, verdictType, questions, kinds, ticket }),
   });
   return { ...r, declaration: r.artifact };
 }
@@ -2602,7 +2615,7 @@ export async function runConfirmTurn({
  *   priorCalls?: {label: string, costUsd: number|null, unpricedRounds: number}[]|null,
  *   priorRaws?: any[]|null,
  *   jobLines?: {n: number, text: string}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
- *   offerQuestions?: boolean,
+ *   offerQuestions?: boolean, ticket?: boolean,
  *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
  */
 export async function authorClose({
@@ -2644,6 +2657,9 @@ export async function authorClose({
   // full drafting ladder (the author call plus both revisions), and only after the two before it both failed validation,
   // is offered the optional `questions` property — see `askOpen` below. Absent = byte-identical to today.
   offerQuestions = false,
+  // MCP + tickets piece 2 (R5): the job reads tickets, so the drafter is told about the ticket filter, the schema offers the optional `ticketFilter` property and a proposal is
+  // checked by the one reader (src/ticketfilter.js). ABSENT = every other job: prompt, schema and validation byte-identical.
+  ticket = false,
 }) {
   // PART 1a: the menu this close may draw from — a rubric job on local files sees its own two kinds, a code job never sees
   // the rubric-only ones (`catalogueForLang`). Everything below (prompt, schema, validator, env) reads THIS one catalogue.
@@ -2821,9 +2837,11 @@ export async function authorClose({
     answers, questions, facts, listingBlock: /** @type {string} */ (seeds.block),
     lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue, writeScope, confirmed, jobLines, inputs,
     labelLists,
-  });
+  }) + (ticket ? `\n\n${ticketFilterBlock()}` : '');
   /** @type {any[]} */
   let messages = [{ role: 'user', content: prompt }];
+  /** the drafter's PROPOSED ticket filter of the accepted iteration (a Tickets job only); the person signs it, the spec carries it, the close never does @type {any} */
+  let acceptedTicketFilter;
   /** @type {any[]} */
   const iterations = [];
   /** @type {any} */
@@ -2907,8 +2925,16 @@ export async function authorClose({
       // P7 item 5: a mechanism, never a wish. Only the last try of the full ladder carries the property, and only when the
       // two before it both failed (validation or the seed read; `questionLines` is set at the end of the second one, below).
       const askOpen = questionLines !== null && i === revisionCap;
-      const ask = await askDeclaration({ messages, generate, mode: structuredMode, retries: retryCap, label, book, catalogue: catalogueIn, kinds: Object.keys(catalogue), verdictType, questions: askOpen });
+      const ask = await askDeclaration({ messages, generate, mode: structuredMode, retries: retryCap, label, book, catalogue: catalogueIn, kinds: Object.keys(catalogue), verdictType, questions: askOpen, ticket });
       messages = ask.convo;
+      // `ticketFilter` is never part of the declaration (the close): taken out before validation, checked by its own reader below, and kept beside the declaration
+      /** @type {any} */
+      let proposedFilter;
+      if (ticket && ask.declaration && typeof ask.declaration === 'object' && Object.hasOwn(ask.declaration, 'ticketFilter')) {
+        const { ticketFilter: tf, ...restDecl } = ask.declaration;
+        proposedFilter = tf;
+        ask.declaration = restDecl;
+      }
       /** @type {{reason: string, raw: any}[]} */
       let droppedQuestions = [];
       if (askOpen && ask.declaration && typeof ask.declaration === 'object' && Object.hasOwn(ask.declaration, 'questions')) {
@@ -2990,13 +3016,13 @@ export async function authorClose({
       // early stop: an unchanged declaration has the previous iteration's
       // measurements by definition — re-executing it buys nothing and costs a
       // full close
-      if (previous && canonical(ask.declaration) === canonical(previous)) {
+      if (previous && canonical({ d: ask.declaration, f: proposedFilter ?? null }) === canonical(previous)) {
         iter.validation = '(identical declaration — see the previous iteration)';
         iter.seedRead = '(identical declaration — see the previous iteration)';
         stop = 'unchanged';
         break;
       }
-      previous = ask.declaration;
+      previous = { d: ask.declaration, f: proposedFilter ?? null };
 
       // PART 1b: code puts the number tie on every prose step that follows a fact step, before anything is validated or signed
       let v = validateDeclaration(withFactBindings(withDropNotes(settlePersonsWords(ask.declaration, jobLines), facts?.look?.dropped, jobLines)), { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope, jobLines, inputLabels: inputLabelsOf(inputs) });
@@ -3006,6 +3032,11 @@ export async function authorClose({
       if (v.ok && lang === RUBRIC_LANG) {
         const words = checkDeclarationWords(v.declaration, inputTexts, facts?.look ?? null);
         if (words.length > 0) v = { ...v, ok: false, reds: [...v.reds, ...words], declaration: null };
+      }
+      // MCP + tickets piece 2: a proposed ticket filter is read by the ONE reader (src/ticketfilter.js); its reds carry a legal example and go back to the drafter like any red
+      if (v.ok && ticket && proposedFilter !== undefined) {
+        const fr = ticketFilterReds(proposedFilter);
+        if (fr.length > 0) v = { ...v, ok: false, reds: [...v.reds, ...fr], declaration: null };
       }
       // SCRUBBED HERE, once, where the reds enter this module's records — the same
       // boundary rule `renderRejectBlock` already states, applied to the OTHER
@@ -3053,6 +3084,7 @@ export async function authorClose({
         onPhase('seed-read-done', { call: label, stages: stageCount });
         iter.seedRead = rows;
         accepted = injected.declaration;
+        acceptedTicketFilter = proposedFilter;
         acceptedSeedRead = rows;
         finalFrom = label;
         measured = renderSeedReadBlock(rows);
@@ -3143,6 +3175,7 @@ export async function authorClose({
     // Why the loop ended is never hidden: `stop` names it and `reds` carries it.
     ok: accepted !== null,
     declaration: accepted,
+    ...(ticket && acceptedTicketFilter !== undefined ? { ticketFilter: acceptedTicketFilter } : {}),
     seedRead: acceptedSeedRead,
     iterations,
     reds,

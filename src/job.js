@@ -21,6 +21,7 @@ import { CLOSE_TIMEOUT_FLOOR_MS } from './closetimeout.js';
 import { validateTrigger } from './trigger.js';
 import { WATCHABLE } from './ticketshape.js';
 import { resolveJobJudge } from './judged.js';
+import { ticketFilterReds } from './ticketfilter.js';
 
 // The menus below ARE the close-authoring hierarchy (PRD §7) and ship frozen:
 // they are read at call time, so a mutable export would let adopter code
@@ -287,24 +288,8 @@ function checkMcpFields(spec, red) {
     }
   }
   if (has('ticketFilter')) {
-    const f = spec.ticketFilter;
-    if (!isObj(f) || Object.keys(f).length === 0) red('invalid-value', 'ticketFilter', 'an object with "priority" and/or "labels"');
-    else {
-      if (!hasMcp) red('invalid-value', 'ticketFilter', 'filters tickets read through the job\'s "mcp" tools, but the job lists no "mcp" server');
-      for (const key of Object.keys(f)) if (key !== 'priority' && key !== 'labels') red('unknown-field', `ticketFilter.${key}`, 'declared keys only: priority|labels');
-      /** @type {Array<['priority'|'labels', (v: string) => boolean]>} */
-      const lists = [['priority', (v) => /^P[0-3]$/.test(v)], ['labels', (v) => v.trim() !== '' && v.length <= 100]];
-      for (const [key, ok] of lists) {
-        if (!Object.hasOwn(f, key)) continue;
-        if (!Array.isArray(f[key]) || f[key].length === 0) { red('invalid-value', `ticketFilter.${key}`, 'a non-empty list'); continue; }
-        const seen = new Set();
-        for (const v of f[key]) {
-          if (typeof v !== 'string' || !ok(v)) red('invalid-value', `ticketFilter.${key}`, `names ${JSON.stringify(v)}, which is not ${key === 'priority' ? 'a priority from P0 to P3' : 'a label name (1 to 100 characters)'}`);
-          else if (seen.has(v.toLowerCase())) red('invalid-value', `ticketFilter.${key}`, `names "${v}" twice`);
-          else seen.add(v.toLowerCase());
-        }
-      }
-    }
+    // ONE reader of a legal filter (src/ticketfilter.js), shared with the drafter's proposal
+    for (const r of ticketFilterReds(spec.ticketFilter, { hasMcp })) red(r.code, r.path, r.detail);
   }
   if (has('ticketWatch')) {
     const w = spec.ticketWatch;
