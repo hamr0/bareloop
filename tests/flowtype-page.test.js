@@ -39,7 +39,8 @@ test('the SERVED card has Flow type, MCP and Ticket with the fwd words and ids, 
   assert.deepEqual(opts, [['plain', 'plain'], ['mcp', 'MCP'], ['tickets', 'Tickets MCP']], 'the three fwd words');
   assert.deepEqual(Object.fromEntries(opts), FLOW_TYPE_LABELS, 'the menu words are the one table (src/job.js)');
   assert.match(PAGE, /<a class="link" id="jf-mcp-manage"[^>]*>manage in Settings &gt; MCP<\/a>/);
-  assert.match(PAGE, /Required for a Tickets MCP job: the ticket this run reads\. It is per run, never signed\./);
+  assert.match(PAGE, /<div class="hint" id="jf-ticket-hint" data-testid="jf-ticket-hint">the issue number, like 7<\/div>/);
+  assert.ok(PAGE.match(/<div class="field" id="jf-ticket-field"[\s\S]*?<\/div>\s*<\/div>/)[0].includes('id="jf-ticket-hint"'), 'the hint sits inside the Ticket field (hides with it)');
   assert.match(PAGE.match(/<div class="field" id="jf-mcp-field"[^>]*>/)[0], /hidden/, 'plain has no MCP pick');
   assert.match(PAGE.match(/<div class="field" id="jf-ticket-field"[^>]*>/)[0], /hidden/, 'only Tickets MCP has the Ticket box');
   // the controls use the card's own classes (nothing new): .field, select, .hint, .link
