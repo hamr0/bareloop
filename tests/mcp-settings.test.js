@@ -170,6 +170,7 @@ test('an added path round-trips through config.json: it is listed (added), its s
   assert.deepEqual(JSON.parse(readFileSync(path.join(w.cfg, 'config.json'), 'utf8')), { monthlyLimitUsd: 7, mcpPaths: [claudeJson] });
   const after1 = (await w.get()).body.places.find((p) => p.added);
   assert.deepEqual([after1.added, after1.status, after1.servers.map((s) => s.name)], [true, 'found', ['barebrowse']]);
+  assert.equal(after1.path, '~/.claude.json', 'an added path under the home folder is shown with ~');
   // the same path again (either spelling), a default place, a relative path, a line break and an empty one are refused with nothing saved
   for (const [p, refused] of [['~/.claude.json', 'path-listed'], [claudeJson, 'path-listed'], ['~/.mcp.json', 'path-listed'], ['claude.json', 'bad-path'], ['/a\n/b', 'bad-path'], ['', 'bad-path']]) {
     assert.equal((await w.post('/api/settings/mcp-path', { path: p })).body.refused, refused, JSON.stringify(p));

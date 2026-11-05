@@ -45,7 +45,7 @@ export function addedMcpPaths(home) {
  */
 export function mcpSources(o = {}) {
   const added = addedMcpPaths(o.home);
-  const typed = [...DEFAULT_MCP_PLACES(o.mcpHome).map((p) => ({ path: showMcpPath(p, o.mcpHome), file: p, added: false })), ...added.paths.map((p) => ({ path: p, file: p, added: true }))];
+  const typed = [...DEFAULT_MCP_PLACES(o.mcpHome).map((p) => ({ path: showMcpPath(p, o.mcpHome), file: p, added: false })), ...added.paths.map((p) => ({ path: showMcpPath(p, o.mcpHome), file: p, added: true }))];
   /** @type {Map<string, string>} */
   const first = new Map();
   const places = typed.map(({ path, file, added: isAdded }) => {
