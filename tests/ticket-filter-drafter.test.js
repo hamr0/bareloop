@@ -12,7 +12,7 @@ import { authorClose, declarationSchema, DECLARATION_TOOL_NAME, GREEN_QUESTIONS 
 import { RUBRIC_LANG } from '../src/authoring.js';
 import { proveRubricInputs } from '../src/source.js';
 import { buildSeedListing } from '../src/authorscout.js';
-import { ticketFilterBlock, ticketFilterReds, ticketFilterWords, TICKET_FILTER_EXAMPLE } from '../src/ticketfilter.js';
+import { ticketFilterBlock, ticketFilterReds, ticketFilterWords, TICKET_FILTER_EXAMPLE, TICKET_FILTER_SCHEMA_WORDS } from '../src/ticketfilter.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** @type {string[]} */
@@ -28,6 +28,9 @@ test('the schema offers ticketFilter ONLY to a Tickets job; every other schema i
   const f = tickets.properties.ticketFilter;
   assert.deepEqual(f.properties.priority.items.enum, ['P0', 'P1', 'P2', 'P3'], 'a priority outside P0-P3 is inexpressible');
   assert.equal(f.additionalProperties, false);
+  assert.match(f.description, /^REQUIRED when a job line names a priority or a label/);
+  assert.doesNotMatch(f.description, /optional/i, 'the schema no longer says optional while the prompt says MUST');
+  assert.equal(f.description, TICKET_FILTER_SCHEMA_WORDS, 'one owner');
   assert.deepEqual(tickets.required, ['stages'], 'optional: a Tickets job without a priority line has none');
 });
 
@@ -38,6 +41,7 @@ test('the drafter is told: the MUST, the legal example, never invent a label, th
   assert.match(b, /Never invent a label/);
   assert.match(b, /only priority P1 tickets/);
   assert.match(b, /list it under "refused"/);
+  assert.match(b, /AND add the ticketFilter: the refused entry alone does not filter anything/, 'the refused duty is tied to the key (F285, e1 shape)');
   assert.match(b, /a closed ticket always skips/);
 });
 

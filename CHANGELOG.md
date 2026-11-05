@@ -26,6 +26,8 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 - **A Tickets job's confirm turn no longer asks which ticket or its priority (F285).** In a paid POC the confirm turn stopped on "Which ticket is this job for, and what is its priority?" in 5 of 10 drafts. A Tickets job's confirm prompt and drafting prompt now say, in one set of words (`ticketPerRunFacts`, `src/ticketfilter.js`): the ticket is picked per run and never known at drafting, and a priority or label line is decided by code at run start through `ticketFilter`, so never ask. Plain and generic-MCP jobs' prompts are unchanged. Test-proven; the live retest is pending.
 
+- **The drafter's ticket filter key is REQUIRED, not optional (F285 addendum).** A paid retest draft (e1) listed "only priority P1 tickets" under `refused` as decided by the filter but never emitted `ticketFilter`: the schema called the key "optional" while the prompt said MUST, and the refused duty was not tied to the key. The schema description now says REQUIRED when a job line names a priority or label, and the prompt says to list the line under `refused` AND add the `ticketFilter` ("the refused entry alone does not filter anything"). Words owned in `src/ticketfilter.js`. Test-proven; live retest pending.
+
 ### Fixed
 - **A signed write fence can no longer name the frozen-ticket folder.** A `writeScope` naming `.bareloop-input` (e.g. `.bareloop-input/**`) is refused at validation like `.git` and `node_modules`, so a worker can never be allowed to write the ticket it was given; the folder name has one spelling, shared from `src/worktree.js`.
 

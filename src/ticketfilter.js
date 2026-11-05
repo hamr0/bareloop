@@ -36,6 +36,9 @@ export function ticketFilterReds(f, { hasMcp = true } = {}) {
   return reds;
 }
 
+/** the schema's description of the `ticketFilter` property (src/authorflow.js): REQUIRED when a job line names a priority or a label, never "optional" (F285, run-e1 shape) */
+export const TICKET_FILTER_SCHEMA_WORDS = 'REQUIRED when a job line names a priority or a label (leave it out only when none does). The person signs it; code decides at run start. Listing the line under "refused" does not filter anything: only this key does';
+
 /**
  * The facts a person-facing turn must not ask about (R5 finding F285): the confirm turn asked "which ticket, and is it P1?" in 5 of 10 live drafts. ONE owner of these words;
  * the confirm prompt and the drafting prompt both carry them, for a Tickets job only.
@@ -54,7 +57,7 @@ export function ticketPerRunFacts() {
 export function ticketFilterBlock() {
   return `${ticketPerRunFacts()}\n\nTHE TICKET FILTER — this job reads one ticket per run. Code, not you, decides at run start whether a ticket runs or is skipped, from the ticket's labels and state; a closed ticket always skips.
 When a job line (or its ~ rule) names a priority or a label (for example "only priority P1 tickets", "only tickets with priority P1 count", "only issues labelled bug"), you MUST add a top-level "ticketFilter" beside "stages": ${TICKET_FILTER_EXAMPLE}. "priority" is a list of values from P0 to P3, "labels" is a list of label names; each key is optional, and at least one is required. Never invent a label: use only the names the job lines give. Leave "ticketFilter" out entirely when no job line names a priority or a label.
-The filter decides whether a run starts, not whether the work is good, so it is not a check. The job line that names the priority or label has no stage: list it under "refused" with the reason "decided by the ticket filter before the run starts". A person reads and signs the filter; you never set the job's server or tools.`;
+The filter decides whether a run starts, not whether the work is good, so it is not a check. The job line that names the priority or label has no stage: list it under "refused" with the reason "decided by the ticket filter before the run starts" AND add the ticketFilter: the refused entry alone does not filter anything, only the ticketFilter does. A person reads and signs the filter; you never set the job's server or tools.`;
 }
 
 /**

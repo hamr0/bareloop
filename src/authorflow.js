@@ -92,7 +92,7 @@ import { dropRows, dropLine } from './pagedropwords.js';
 import { factShapeGuide } from './facts.js';
 import { renderLookReport, labelListsOf } from './inputlook.js';
 import { checkDeclarationWords } from './factwords.js';
-import { ticketFilterReds, ticketFilterBlock, ticketPerRunFacts } from './ticketfilter.js';
+import { ticketFilterReds, ticketFilterBlock, ticketPerRunFacts, TICKET_FILTER_SCHEMA_WORDS } from './ticketfilter.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
@@ -1026,7 +1026,7 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
             labels: { type: 'array', items: { type: 'string' }, description: 'label names, one of which a ticket must carry; only when a job line names them' },
           },
           additionalProperties: false,
-          description: 'optional: only when a job line names a priority or a label. The person signs it; code decides at run start',
+          description: TICKET_FILTER_SCHEMA_WORDS,
         },
       } : {}),
       ...(questions ? {
