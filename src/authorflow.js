@@ -92,7 +92,7 @@ import { dropRows, dropLine } from './pagedropwords.js';
 import { factShapeGuide } from './facts.js';
 import { renderLookReport, labelListsOf } from './inputlook.js';
 import { checkDeclarationWords } from './factwords.js';
-import { ticketFilterReds, ticketFilterBlock } from './ticketfilter.js';
+import { ticketFilterReds, ticketFilterBlock, ticketPerRunFacts } from './ticketfilter.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
@@ -2295,9 +2295,9 @@ export const CONFIRM_SYSTEM = 'You read what a NON-ENGINEER answered, plus a rea
  * @param {{answers: Record<string|number, string>, questions: Record<string|number, string>,
  *   labels?: Record<string|number, string>, facts?: any, listing?: string|null,
  *   writeScope?: string[]|null, isRepo: boolean, lang: string, worseThanBefore?: string,
- *   fixText?: string|null, protections?: string[], inputs?: {n: number, label: string, value: string}[]|null}} o
+ *   fixText?: string|null, protections?: string[], inputs?: {n: number, label: string, value: string}[]|null, ticket?: boolean}} o
  */
-export function confirmPrompt({ answers, questions, labels = {}, facts = null, listing = null, writeScope = null, isRepo, lang, worseThanBefore = '', fixText = null, protections = [], inputs = null }) {
+export function confirmPrompt({ answers, questions, labels = {}, facts = null, listing = null, writeScope = null, isRepo, lang, worseThanBefore = '', fixText = null, protections = [], inputs = null, ticket = false }) {
   const lines = ['THE PERSON\'S OWN ANSWERS (a non-engineer; read exactly what they wrote, invent nothing beyond it):'];
   for (const k of Object.keys(questions)) {
     const label = labels[k] ? ` (${labels[k]})` : '';
@@ -2312,6 +2312,8 @@ export function confirmPrompt({ answers, questions, labels = {}, facts = null, l
   // PART 1a: a rubric job on the person's own text files. The model is told what a check CAN be here, so that anything
   // needing judgement lands in `notChecked` instead of being promised as a check
   if (lang === RUBRIC_LANG) lines.push('', RUBRIC_CONFIRM_NOTE);
+  // MCP + tickets R5 (F285): a Tickets job's confirm turn is told the ticket is picked per run and a priority/label line is code's, so it never asks the person which ticket
+  if (ticket) lines.push('', ticketPerRunFacts());
   if (writeScope) lines.push(`WRITE SCOPE (the fence — the run may write only here): ${writeScope.join(', ')}`);
   if (protections.length > 0) {
     lines.push(
@@ -2365,7 +2367,7 @@ async function askConfirmPlan({ convo, generate, mode, book, label }) {
  *   ask: (step: {kind: string, [k: string]: any}) => Promise<string|null>,
  *   onPhase?: (phase: string, data?: any) => void, mode?: 'tool'|'text',
  *   worseThanBefore?: string, inputs?: {n: number, label: string, value: string}[]|null,
- *   jobLines?: {n: number}[]|null}} o retired field (hamr's ruling 2026-09-28):
+ *   jobLines?: {n: number}[]|null, ticket?: boolean}} o retired field (hamr's ruling 2026-09-28):
  *   `worseThanBefore` is never asked any more and defaults to `''` — a
  *   caller may still pass a string through (kept for a future, non-ask
  *   source of the same constraint), it just never comes from an ask() step.
@@ -2389,6 +2391,8 @@ export async function runConfirmTurn({
   inputs = null,
   // PART 1a: the numbered job lines, so a rubric job's per-line file protections are listed from code
   jobLines = null,
+  // MCP + tickets R5 (F285): the job reads tickets; absent = the confirm prompt is byte-identical
+  ticket = false,
 }) {
   /** @typedef {null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart'} ConfirmStop */
   /** @returns {{ok: boolean, stop: ConfirmStop, rounds: number, accepted: null, reds: Red[], cost: any}} */
@@ -2459,14 +2463,14 @@ export async function runConfirmTurn({
   let convo = [{
     role: 'user',
     content: confirmPrompt({
-      answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, protections, inputs,
+      answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, protections, inputs, ticket,
     }),
   }];
 
   for (let round = 1; round <= 2; round += 1) {
     if (fixText) {
       convo = [...convo, { role: 'user', content: confirmPrompt({
-        answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, fixText, protections, inputs,
+        answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, fixText, protections, inputs, ticket,
       }) }];
     }
     onPhase('confirm-round', { round });
