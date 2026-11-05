@@ -254,6 +254,8 @@ describe('the ledger rows (recordLook), clock injected', () => {
     await step(w, 'sig-2', 2_000);
     assert.equal(readSeen(ledgerIn(w), 'sig-1').length, 3);
     assert.equal(readSeen(ledgerIn(w), 'sig-2').length, 3);
+    assert.ok(readSeen(ledgerIn(w), 'sig-2').every((r) => r.sig === 'sig-2'), 'a signing reads only its own rows');
+    assert.equal(readSeen(ledgerIn(w)).length, 6, 'both signings are in the one ledger');
   });
   test('the first look with a cut (the highest ticket the first green run read): up to it baselines, above it arrives and runs once the schedule is on', async (t) => {
     const w = ticketWorld(t, { issues: newestFirst(15) });

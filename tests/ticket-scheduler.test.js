@@ -80,6 +80,28 @@ test('looks never overlap: a second tick while a look is out starts no second lo
   assert.equal(f.lookCalls(), 1);
 });
 
+test('looks never overlap: a slow look still out when the next 15 minutes pass starts no second look', async (t) => {
+  const w = ticketWorld(t);
+  const ledger = join(w.dir, 'ledger.jsonl');
+  let calls = 0; let release;
+  const gate = new Promise((r) => { release = r; });
+  const look = async () => { calls += 1; await gate; return { ok: true, first: true, found: [{ number: 1, state: 'open', labels: [] }], changed: [], pages: 1 }; };
+  const schedule = { specHash: SIG, trigger: { kind: 'new-ticket', input: 'issues' }, spec: { flowType: 'tickets', mcp: { server: 'github', tools: ['list_issues'] }, inputs: [{ n: 1, label: 'issues', value: LIST }] } };
+  const door = { scan: () => [{ job: 'tk', schedule }], armFor() {}, ledgerOf: () => ledger, paused: () => false, busy: () => false, tellOnce() {}, async fire() { return { outcome: 'started' }; } };
+  const clock = { t: 1_000_000 };
+  const s = createScheduler({ door, now: () => clock.t, intervalMs: 0, look });
+  await s.tick();
+  clock.t += 20 * MIN;
+  await s.tick();
+  assert.equal(calls, 1, 'the first look is still out');
+  release();
+  await s.settled();
+  clock.t += 20 * MIN;
+  await s.tick();
+  await s.settled();
+  assert.equal(calls, 2, 'once it has settled and 15 minutes have passed, the next look starts');
+});
+
 test('new tickets get one `arrived` row each and start oldest first, one at a time; each `ran` row is written before its start; a seen ticket never runs again', async (t) => {
   const f = setup(t);
   await f.step();

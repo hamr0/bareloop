@@ -183,6 +183,19 @@ test('the queue is the signing\'s: cancelling drops every waiting ticket with it
   assert.match(w.rows().find((x) => x.kind === 'changed').say, /#8 was waiting to run and did not: the schedule was cancelled/);
 });
 
+test('a re-sign (another cap, so another signing) drops the tickets still waiting under the old one, each with its reason', async () => {
+  const w = await world();
+  const sig = w.schedule().specHash;
+  recordLook(w.ledger, sig, { ok: true, first: false, found: [{ number: 8, state: 'open', labels: [] }], changed: [], pages: 1 }, 5_000);
+  const again = { ...w.body, capUsd: 2 };
+  const pre = await w.p.post('/api/author/schedule-prepare', again);
+  assert.equal(pre.status, 200, JSON.stringify(pre.body));
+  assert.equal((await w.p.post('/api/author/schedule', { ...again, hash: pre.body.hash })).status, 200);
+  assert.notEqual(w.schedule().specHash, sig);
+  const dropped = w.rows().filter((x) => x.kind === 'dropped');
+  assert.deepEqual(dropped.map((d) => [d.of, d.why]), [['arrived:ticket:8', 'schedule-changed']]);
+});
+
 test('the schedule card and the Run tab say it in words: When a new ticket arrives in issues / next: waiting for a new ticket', async () => {
   const w = await world();
   const v = w.door.view('sched-job');
