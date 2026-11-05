@@ -916,6 +916,21 @@
               <input id="jf-ticket" data-testid="jf-ticket" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="blank = the newest ticket not run yet, or a number like 42">
               <div class="hint" id="jf-ticket-hint" data-testid="jf-ticket-hint">leave blank for the newest ticket this job has not run, or type its number, like 7</div>
             </div>
+            <!-- ITEM33-BUILD piece 9 (R7, fwd M13 p5): the Schedule is signed WITH the job; it is OFF until the job's first green run. The words are src/schedulewords.js SCHEDULE_WORDS.card, filled in by the server like the port. -->
+            <div class="field" id="jf-sched-field" data-testid="jf-sched-field">
+              <label for="jf-sched">__BARELOOP_SCHED_LABEL__</label>
+              <select id="jf-sched" data-testid="jf-sched" aria-label="Schedule">
+                <option value="hand">__BARELOOP_SCHED_OPT_HAND__</option>
+                <option value="new-ticket">__BARELOOP_SCHED_OPT_TICKET__</option>
+                <option value="daily">__BARELOOP_SCHED_OPT_DAILY__</option>
+              </select>
+              <div class="when-sub" id="jf-sched-clock" hidden>
+                <input id="jf-sched-time" type="time" value="09:00" data-testid="jf-sched-time" aria-label="Time, HH:MM">
+              </div>
+              <div class="hint" id="jf-sched-hint" data-testid="jf-sched-hint" hidden>__BARELOOP_SCHED_HINT__</div>
+              <div class="hint" id="jf-sched-hint-rubric" data-testid="jf-sched-hint-rubric" hidden>__BARELOOP_SCHED_HINT_RUBRIC__</div>
+              <div class="hint" id="jf-sched-ticket-hint" data-testid="jf-sched-ticket-hint" hidden>__BARELOOP_SCHED_HINT_TICKET__</div>
+            </div>
             <div class="field">
               <label for="jf-dest">Destination <span class="req">required</span></label>
               <textarea class="jf-wrap" id="jf-dest" rows="1" placeholder="the write fence — where in the repo this run may change files"></textarea>
@@ -5075,6 +5090,10 @@
     var mcpFieldEl = document.getElementById("jf-mcp-field");
     var ticketEl = document.getElementById("jf-ticket");
     var ticketFieldEl = document.getElementById("jf-ticket-field");
+    // piece 9 (R7): the Schedule row, signed with the job; off until the first green run (a rubric job: until that run is accepted)
+    var cardSchedEl = document.getElementById("jf-sched");
+    var cardSchedTimeEl = document.getElementById("jf-sched-time");
+    var cardSchedFieldEl = document.getElementById("jf-sched-field");
     var mcpServers = [];   // the MCPs Settings > MCP lists as usable (not remote, not shadowed); the page only READS the list
     var thinkingNote = document.getElementById("jf-thinking-note");
     var lineThinking = {};   // option value -> the server's {support, canChange, say} for that Model line
@@ -5146,6 +5165,9 @@
       var flowLocked = reuseOn || live || resuming;
       flowTypeEl.disabled = flowLocked; mcpEl.disabled = flowLocked; ticketEl.readOnly = live || resuming;
       [flowTypeEl, mcpEl, ticketEl].forEach(function(el){ el.classList.toggle("locked", el === ticketEl ? (live || resuming) : flowLocked); });
+      // the Schedule is chosen before the start and signed with the job: frozen while a session is live
+      cardSchedEl.disabled = live; cardSchedTimeEl.disabled = live;
+      cardSchedEl.classList.toggle("locked", live); cardSchedTimeEl.classList.toggle("locked", live);
       paintFlowType();
       syncThinking();
     }
@@ -5163,6 +5185,32 @@
       var f = flowTypeEl.value;
       mcpFieldEl.hidden = f === "plain";
       ticketFieldEl.hidden = f !== "tickets" || resumeRun !== null || sched !== null;
+      paintCardSchedule();
+    }
+    // The Schedule row (fwd's three words and two hints): "When a new ticket arrives" only for a Tickets job; the time box and the hints follow the pick. A rubric job's hint says Accepted.
+    // Hidden on a resume (no run starts there) and on the two-click schedule card (its own When field).
+    function paintCardSchedule(){
+      var tk = cardSchedEl.querySelector('option[value="new-ticket"]');
+      tk.hidden = tk.disabled = flowTypeEl.value !== "tickets";
+      if(cardSchedEl.value === "new-ticket" && tk.disabled) cardSchedEl.value = "hand";
+      cardSchedFieldEl.hidden = resumeRun !== null || sched !== null;
+      var rubric = (verdictValue() === "reuse" ? reuseCheckType : verdictValue()) === "rubric";
+      document.getElementById("jf-sched-clock").hidden = cardSchedEl.value !== "daily";
+      document.getElementById("jf-sched-hint").hidden = cardSchedEl.value === "hand" || rubric;
+      document.getElementById("jf-sched-hint-rubric").hidden = cardSchedEl.value === "hand" || !rubric;
+      document.getElementById("jf-sched-ticket-hint").hidden = cardSchedEl.value !== "new-ticket";
+    }
+    // the typed Schedule the card sends: null (by hand) sends nothing, so the signed job carries no trigger and hashes as before
+    function scheduleOfCard(){
+      if(cardSchedEl.value === "new-ticket") return {kind: "new-ticket"};
+      if(cardSchedEl.value !== "daily") return null;
+      var t = /^(\d{2}):(\d{2})$/.exec(cardSchedTimeEl.value || "");
+      return {kind: "daily", hour: t ? Number(t[1]) : NaN, minute: t ? Number(t[2]) : NaN};
+    }
+    function setCardSchedule(sc){
+      cardSchedEl.value = sc && sc.kind === "daily" ? "daily" : (sc && sc.kind === "new-ticket" ? "new-ticket" : "hand");
+      if(sc && sc.kind === "daily" && Number.isInteger(sc.hour) && Number.isInteger(sc.minute)) cardSchedTimeEl.value = ("0" + sc.hour).slice(-2) + ":" + ("0" + sc.minute).slice(-2);
+      paintCardSchedule();
     }
     function setFlow(type, server){
       flowTypeEl.value = (type === "mcp" || type === "tickets") ? type : "plain";
@@ -5182,6 +5230,7 @@
       if(startFrom && !keepBoxes){
         CARD_BOX_IDS.forEach(function(id){ document.getElementById(id).value = ""; });
         setFlow("plain", "");
+        setCardSchedule(null);
         NUMBERED_IDS.forEach(gutterSync);
         document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === "deterministic"); });
       }
@@ -5217,6 +5266,7 @@
     function clearCardBoxes(){
       CARD_BOX_IDS.forEach(function(id){ document.getElementById(id).value = ""; });
       setFlow("plain", "");
+      setCardSchedule(null);
       NUMBERED_IDS.forEach(gutterSync);
       document.getElementById("jf-cap-note").textContent = "";
     }
@@ -5376,6 +5426,8 @@
         // piece 8: a plain job sends neither key (the signed job carries neither); the ticket is a per-run box and goes only with Tickets MCP
         ...(flowTypeEl.value !== "plain" ? {flowType: flowTypeEl.value, mcp: mcpEl.value} : {}),
         ...(flowTypeEl.value === "tickets" && ticketEl.value.trim() !== "" ? {ticket: ticketEl.value.trim()} : {}),
+        // piece 9: by hand sends no key (the signed job carries no trigger); a pick is signed with the job and starts OFF
+        ...(scheduleOfCard() !== null ? {schedule: scheduleOfCard()} : {}),
       };
     }
 
@@ -5931,7 +5983,7 @@
       setVal("jf-name", c.jobName); setVal("jf-job", c.jobText); setVal("jf-inputs", c.inputs);
       setVal("jf-dest", c.destination); setVal("jf-cap-money", c.capUsd);
       setVal("jf-cap-time", typeof c.maxWallMs === "number" ? Math.round(c.maxWallMs / 60000) : "");
-      setFlow(c.flowType, c.mcp); setVal("jf-ticket", c.ticket);
+      setFlow(c.flowType, c.mcp); setVal("jf-ticket", c.ticket); setCardSchedule(c.schedule);
       setThinkingTick(c.thinking === true);
       fitCardBoxes();
     }
@@ -5995,6 +6047,7 @@
     document.getElementById("jf-job").addEventListener("input", reuseBoxesEdited);
     thinkingBox.addEventListener("change", reuseBoxesEdited);
     flowTypeEl.addEventListener("change", function(){ paintFlowType(); reuseBoxesEdited(); refreshStartEnabled(); });
+    cardSchedEl.addEventListener("change", function(){ paintCardSchedule(); renderMain(); });
     mcpEl.addEventListener("change", reuseBoxesEdited);
     ticketEl.addEventListener("input", renderMain);
     document.getElementById("jf-mcp-manage").addEventListener("click", function(ev){ ev.preventDefault(); document.getElementById("btn-settings").click(); document.getElementById("tab-mcp").click(); });

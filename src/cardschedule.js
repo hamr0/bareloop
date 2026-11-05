@@ -4,6 +4,7 @@
 // so a job with no schedule hashes exactly as before. Pure; writes nothing.
 import { validateTrigger, isClockTrigger, isTicketTrigger } from './trigger.js';
 import { ticketInputLabels, ticketLookOf } from './ticketschedule.js';
+import { parseTicketList } from './ticketshape.js';
 
 /**
  * @param {any} card the card as submitted (`card.schedule` = {kind, hour?, minute?, day?} or absent / null / {kind: 'hand'})
@@ -27,7 +28,7 @@ export function cardScheduleOf(card, o) {
     const labels = ticketInputLabels(spec);
     if (labels.length === 0) {
       // the same sentence the sign-time check would say (not a Tickets job, no issues list, no list_issues signed)
-      const first = o.inputs.find((i) => i.label)?.label ?? '';
+      const first = (o.inputs.find((i) => { const l = parseTicketList(i.value); return l.ok && l.kind === 'issue'; }) ?? o.inputs.find((i) => i.label))?.label ?? '';
       const look = ticketLookOf(spec, { kind: 'new-ticket', input: first });
       return no(`${look.ok ? 'This job cannot start on a new ticket.' : look.say.replace(/ Nothing was changed\.$/, '')} Nothing spent.`);
     }

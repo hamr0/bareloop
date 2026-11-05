@@ -200,7 +200,7 @@ test('radios stay CLICKABLE during reuse (only a live session freezes them); the
 
 test('checkType on the start request comes from the PICKED job when the radio is Reuse workflow, never from the radio', () => {
   const val = (id) => ({ value: id === 'jf-cap-money' ? '2' : '' });
-  const flow = { flowTypeEl: { value: 'plain' }, mcpEl: { value: '' }, ticketEl: { value: '' } };
+  const flow = { flowTypeEl: { value: 'plain' }, mcpEl: { value: '' }, ticketEl: { value: '' }, scheduleOfCard: () => null };
   const mk = (verdict, reuseCheckType) => build(['pickParts', 'currentCard'], { document: { getElementById: val }, verdictValue: () => verdict, thinkingBox: { checked: false }, ...flow }, `var reuseCheckType = ${JSON.stringify(reuseCheckType)};`).currentCard();
   assert.equal(mk('reuse', 'rubric').checkType, 'rubric');
   assert.equal(mk('reuse', 'deterministic').checkType, 'deterministic');
@@ -229,7 +229,7 @@ test('clearStartFrom(true) (a radio click leaving reuse) keeps the box values; p
     const sf = { hidden: false };
     const api = build(['clearStartFrom'], {
       document: { getElementById: (id) => els[id], querySelectorAll: () => [] }, sfLine: sf, sfNote: sf, originLine: sf, setReuseLocked() {}, renderPicker() {}, renderMain() {},
-    }, 'function setFlow(){} var startFrom = {runid: "r1"}, reuseSession = false, autoSigned = false, reuseCheckType = "rubric"; var CARD_BOX_IDS = ["jf-name", "jf-job", "jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time"]; var NUMBERED_IDS = []; function gutterSync(){}');
+    }, 'function setFlow(){} function setCardSchedule(){} var startFrom = {runid: "r1"}, reuseSession = false, autoSigned = false, reuseCheckType = "rubric"; var CARD_BOX_IDS = ["jf-name", "jf-job", "jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time"]; var NUMBERED_IDS = []; function gutterSync(){}');
     return { api, els };
   };
   const a = mk(); a.api.clearStartFrom(true);

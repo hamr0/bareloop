@@ -50,7 +50,7 @@ test('the SERVED card has Flow type, MCP and Ticket with the fwd words and ids, 
 test('currentCard: a plain card sends neither flowType nor mcp (so the signed job carries neither); MCP and Tickets send the pick; the ticket goes only with Tickets', async (t) => {
   const PAGE = await served(t);
   const val = (id) => ({ value: id === 'jf-cap-money' ? '2' : '' });
-  const mk = (flowType, mcp, ticket) => build(PAGE, ['pickParts', 'currentCard'], { document: { getElementById: val }, verdictValue: () => 'deterministic', thinkingBox: { checked: false }, flowTypeEl: { value: flowType }, mcpEl: { value: mcp }, ticketEl: { value: ticket } }, 'var reuseCheckType = "deterministic";').currentCard();
+  const mk = (flowType, mcp, ticket) => build(PAGE, ['pickParts', 'currentCard'], { document: { getElementById: val }, verdictValue: () => 'deterministic', thinkingBox: { checked: false }, flowTypeEl: { value: flowType }, mcpEl: { value: mcp }, ticketEl: { value: ticket }, scheduleOfCard: () => null }, 'var reuseCheckType = "deterministic";').currentCard();
   const plain = mk('plain', 'github', '5');
   assert.equal('flowType' in plain, false);
   assert.equal('mcp' in plain, false);
@@ -78,7 +78,7 @@ test('setFlow / paintFlowType: the MCP pick shows for MCP and Tickets, the Ticke
   const PAGE = await served(t);
   const flowTypeEl = el({ value: 'plain' }); const mcpEl = el(); const mcpFieldEl = el({ hidden: true }); const ticketFieldEl = el({ hidden: true });
   const doc = { createElement: () => el() };
-  const make = (vars) => build(PAGE, ['paintMcpOptions', 'paintFlowType', 'setFlow'], { flowTypeEl, mcpEl, mcpFieldEl, ticketFieldEl, document: doc }, `var mcpServers = ["github", "other"]; ${vars}`);
+  const make = (vars) => build(PAGE, ['paintMcpOptions', 'paintFlowType', 'setFlow'], { flowTypeEl, mcpEl, mcpFieldEl, ticketFieldEl, document: doc, paintCardSchedule() {} }, `var mcpServers = ["github", "other"]; ${vars}`);
   const api = make('var resumeRun = null, sched = null;');
   api.setFlow('plain', '');
   assert.deepEqual([flowTypeEl.value, mcpFieldEl.hidden, ticketFieldEl.hidden], ['plain', true, true]);
@@ -106,7 +106,7 @@ test('syncCardLock locks Flow type and MCP like the job text (live, resume, sche
   const mkSel = () => el({ classList: { toggle(c, on) { this.on = on; } } });
   const flowTypeEl = mkSel(); const mcpEl = mkSel(); const ticketEl = mkSel();
   const doc = { getElementById: (id) => els[id], querySelectorAll: () => ({ forEach() {} }) };
-  const run = (vars) => build(PAGE, ['syncCardLock'], { document: doc, flowTypeEl, mcpEl, ticketEl, paintFlowType() {}, syncThinking() {} },
+  const run = (vars) => build(PAGE, ['syncCardLock'], { document: doc, flowTypeEl, mcpEl, ticketEl, cardSchedEl: mkSel(), cardSchedTimeEl: mkSel(), paintFlowType() {}, syncThinking() {} },
     `var LOCKED_IDS = ["jf-name", "jf-job"]; var OPEN_IDS = ["jf-inputs"]; var CAP_IDS = []; var sched = null; ${vars}`).syncCardLock;
   run('var sessionLive = false, reuseOn = false, resumeRun = null;')();
   assert.deepEqual([flowTypeEl.disabled, mcpEl.disabled, ticketEl.readOnly], [false, false, false], 'a fresh card is open');

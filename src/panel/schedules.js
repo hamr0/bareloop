@@ -528,6 +528,36 @@ export function createScheduleDoor(deps) {
       return out;
     },
 
+    /**
+     * R7, am3 (fwd M13 am3): "Run it anyway" on a ticket while the job's ticket schedule is still OFF (signed with the job, waiting for its first green run): start that ticket's run at
+     * once, by hand, with the job's normal cap, after the same busy / monthly / would-accept checks a fire makes. `null` = not this door's case (no ticket schedule, or it is on: the queue
+     * takes it, R8). Else `{ok, say}`; a refusal starts nothing and spends $0. It writes NO ledger row: a skipped run never arms the schedule, a green one does (`armFor`).
+     * NOTE: no HTTP route calls this yet - the "Run it anyway" button and its route are R8 (piece 4); this is the start path they will call.
+     * @param {{job: string, number: number}} a
+     * @returns {Promise<{ok: boolean, say: string}|null>}
+     */
+    async startAnyway({ job, number }) {
+      if (!SLUG_RE.test(job)) return null;
+      const schedule = readSchedule(job);
+      if (!schedule || !isTicketTrigger(schedule.trigger) || !stateOf(job).waiting || !starter) return null;
+      if (!Number.isSafeInteger(number) || number < 1) return { ok: false, say: 'The ticket number must be a whole number from 1 up. Nothing started.' };
+      if (busy(job)) return { ok: false, say: 'A run of this job is still going. Nothing started.' };
+      try {
+        const room = checkMonthlyRoom({ capUsd: schedule.spec.budgetUsd, home: deps.home, sessionsRoot: deps.sessionsRoot, now });
+        if (!room.ok) return { ok: false, say: "This month's limit has no room for this job's cap. Nothing started." };
+      } catch (e) {
+        if (!(e instanceof ConfigError)) throw e;
+        return { ok: false, say: `${e.message} — refusing rather than guess the monthly limit. Nothing started.` };
+      }
+      const cause = { kind: /** @type {const} */ ('ticket'), number, sha: `ticket:${number}`, byHand: true };
+      const accept = starter.wouldAccept(job, cause);
+      if (!accept.ok) return { ok: false, say: accept.why };
+      starting.set(job, now());
+      const r = await starter.start(job, cause);
+      if (!r.ok) { starting.delete(job); return { ok: false, say: r.why }; }
+      return { ok: true, say: `Ticket #${number} started now; the schedule is still off until a green run.` };
+    },
+
     greenFor,
     armFor,
     readSchedule,

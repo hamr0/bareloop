@@ -55,7 +55,7 @@ import { createScheduleDoor } from './schedules.js';
 import { createStarter } from './schedulestart.js';
 import { createScheduler } from './scheduler.js';
 import {
-  catchUpWords, dateTimeWords, jobScheduleWords, lowerFirst, scheduleSignFor, scheduledWords, sectionThisRunWords, skippedWords, startedAuditWords, startedWords, triesTailWords, SCHEDULE_WORDS,
+  catchUpWords, dateTimeWords, jobScheduleWords, lowerFirst, scheduleCardFill, scheduleSignFor, scheduledWords, sectionThisRunWords, skippedWords, startedAuditWords, startedWords, triesTailWords, SCHEDULE_WORDS,
 } from '../schedulewords.js';
 import { doorWaiting, heldScheduled } from '../reviewdoor.js';
 import { createAuthorRoutes, mintToken, checkHostGuard, panelMoney2 } from './authorroutes.js';
@@ -3914,6 +3914,8 @@ export function handleRequest(req, res, opts) {
     // caller (no `opts.token`), which is fine: the page's own JS only reads
     // it to send on a POST, and there are none to send without P3's routes.
     html = html.replace(/__BARELOOP_PANEL_TOKEN__/g, String(opts.token ?? ''));
+    // the New job card's Schedule row (R7): its words come from the schedule words table, never from the page
+    for (const [token, words] of Object.entries(scheduleCardFill())) html = html.split(token).join(words);
     if (method === 'HEAD') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': Buffer.byteLength(html) });
       res.end();

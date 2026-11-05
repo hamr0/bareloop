@@ -75,6 +75,26 @@ export const SCHEDULE_WORDS = Object.freeze({
   stale: 'What you were shown is not what is on the card now. Nothing was signed. Look again, then sign.',
 });
 
+/** `&`, `<`, `>` and quotes made safe for page markup. @param {string} s */
+const markup = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/**
+ * R7 (piece 9): the New job card's Schedule row is served with its words from {@link SCHEDULE_WORDS}`.card`, never typed into the page: each token in `index.html` is replaced by
+ * the server when the page is sent (the way the port is), so a reword is ONE edit here. @returns {Record<string, string>} token -> escaped words
+ */
+export function scheduleCardFill() {
+  const c = SCHEDULE_WORDS.card;
+  return {
+    __BARELOOP_SCHED_LABEL__: markup(c.label),
+    __BARELOOP_SCHED_OPT_HAND__: markup(c.options.hand),
+    __BARELOOP_SCHED_OPT_TICKET__: markup(c.options['new-ticket']),
+    __BARELOOP_SCHED_OPT_DAILY__: markup(c.options.daily),
+    __BARELOOP_SCHED_HINT__: markup(c.hint),
+    __BARELOOP_SCHED_HINT_RUBRIC__: markup(c.rubricHint),
+    __BARELOOP_SCHED_HINT_TICKET__: markup(c.ticketHint),
+  };
+}
+
 /**
  * What starts the job, in words. `null` (by hand) has no sentence.
  * @param {Trigger|null|undefined} t @param {string} [home]

@@ -463,7 +463,7 @@ export { panelMoney2 };
  * it to sign"), and this is where it is checked, not trusted.
  * @param {ReturnType<typeof createSession>} session
  * @param {string} claimedHash
- * @param {{env: any, spawnFn: typeof realSpawn, bareloopBin: string, sessionsRoot?: string, home?: string, reviewDoor?: boolean, onSpawnError?: (e: Error) => void, onExit?: (code: number|null) => void, schedules?: ReturnType<typeof import('./schedules.js').createScheduleDoor>}} o
+ * @param {{env: any, spawnFn: typeof realSpawn, bareloopBin: string, sessionsRoot?: string, home?: string, reviewDoor?: boolean, onSpawnError?: (e: Error) => void, onExit?: (code: number|null) => void, anyway?: boolean, schedules?: ReturnType<typeof import('./schedules.js').createScheduleDoor>}} o
  *   `schedules` (R7, piece 9): the schedule door. A session whose card picked a Schedule has it signed WITH the job here, written OFF, before the run is spawned; a refusal spawns nothing.
  * @returns {{ok: boolean, error?: string, job?: string}}
  */
@@ -535,6 +535,8 @@ export function signRun(session, claimedHash, o) {
     ...(o.reviewDoor === true ? ['--review-door'] : []),
     // piece 8: a Tickets MCP run reads the ticket number typed on the card (per run, never signed): the same number `--ticket` takes, read by the same function
     ...(ticketArg !== undefined ? ['--ticket', String(ticketArg)] : []),
+    // R7 (am3): the person's own "Run it anyway" on a ticket - `run-u` reads `--anyway` as "start it even if the job's filter skipped it". Never set by a card or a scheduled fire.
+    ...(o.anyway === true && ticketArg !== undefined ? ['--anyway'] : []),
     ...(draftSpentUsd !== null ? ['--draft-spent-usd', String(draftSpentUsd), ...(draftIncomplete ? ['--draft-spend-incomplete'] : [])] : []),
   ];
   /** @type {number|null} */

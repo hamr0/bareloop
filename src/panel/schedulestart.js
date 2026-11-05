@@ -117,7 +117,7 @@ export function createStarter(deps) {
     /**
      * Cheap, $0, no copy, no session. `{ok: true}` or `{ok: false, why}` (words).
      * @param {string} job
-     * @param {{kind: 'clock'} | {kind: 'file', path: string, sha: string} | {kind: 'ticket', number: number, sha: string}} cause
+     * @param {{kind: 'clock'} | {kind: 'file', path: string, sha: string} | {kind: 'ticket', number: number, sha: string, byHand?: boolean}} cause `byHand` (R7, am3) = "Run it anyway" while the schedule is still off: no good run exists yet to read the saved job from
      * @returns {{ok: true}|{ok: false, why: string}}
      */
     wouldAccept(job, cause) {
@@ -125,8 +125,9 @@ export function createStarter(deps) {
       if (!schedule) return { ok: false, why: 'This job has no schedule any more. Nothing started.' };
       const fire = resolveFire(schedule, cause);
       if (!fire.ok) return fire;
-      // the origin run's saved job is still readable (the start reads it)
-      const pre = deps.startFrom(schedule.originRunid);
+      // the origin run's saved job is still readable (the start reads it). A by-hand start (R7, am3) runs the signed schedule's own spec: there is no good run yet
+      const byHand = cause.kind === 'ticket' && cause.byHand === true;
+      const pre = byHand ? { ok: true, card: { destination: '' } } : deps.startFrom(schedule.originRunid);
       if (!pre || !pre.ok) return { ok: false, why: "The good run this schedule was made from is gone from the list, so its saved job cannot be read. Nothing started." };
       // THE session start's Destination check (authorsession.js), on the card the start would build: before any session exists
       const inputsText = cause.kind === 'file'
@@ -162,7 +163,8 @@ export function createStarter(deps) {
     /**
      * Start the run. Never throws. `consumed` says whether `beforeSpawn` ran, so the caller knows whether a `released` row is owed.
      * @param {string} job
-     * @param {{kind: 'clock', slot: number, catchUp: boolean, missed: number} | {kind: 'file', path: string, sha: string} | {kind: 'ticket', number: number, sha: string}} cause
+     * @param {{kind: 'clock', slot: number, catchUp: boolean, missed: number} | {kind: 'file', path: string, sha: string} | {kind: 'ticket', number: number, sha: string, byHand?: boolean}} cause
+     *   `byHand` (R7, am3): the person's own "Run it anyway" while the schedule is still off - the same path as Sign & run (no review door, no `trigger.json`, `--anyway`), the job's normal cap, no ledger row
      * @param {{beforeSpawn?: () => void}} [hooks]
      * @returns {Promise<{ok: true, sessionId: string, specHash: string, consumed: true}|{ok: false, why: string, consumed: boolean, installNeeded?: true}>}
      */
@@ -173,7 +175,9 @@ export function createStarter(deps) {
         if (!schedule) return { ok: false, why: 'This job has no schedule any more. Nothing started.', consumed };
         const fire = resolveFire(schedule, cause);
         if (!fire.ok) return { ok: false, why: fire.why, consumed };
-        const pre = deps.startFrom(schedule.originRunid);
+        const byHand = cause.kind === 'ticket' && cause.byHand === true;
+        // a by-hand start (R7, am3) has no good run to read the saved job from yet: the card is made from the signed spec itself
+        const pre = byHand ? { ok: true, card: { jobName: String(fire.spec.job), checkType: fire.spec.verdictType === 'soft-green' ? 'rubric' : 'deterministic', thinking: fire.spec.thinking === true, jobText: '', destination: '' } } : deps.startFrom(schedule.originRunid);
         if (!pre || !pre.ok) return { ok: false, why: "The good run this schedule was made from is gone from the list, so its saved job cannot be read. Nothing started.", consumed };
         const spec = fire.spec;
         const rows = deps.rowsFor();
@@ -220,7 +224,8 @@ export function createStarter(deps) {
         const outDir = session.state.outDir;
         const words = scheduledWords(schedule.trigger, deps.door.userHome) ?? '';
         const catchUp = cause.kind === 'clock' && cause.catchUp === true;
-        writeFileSync(join(outDir, 'trigger.json'), `${JSON.stringify({
+        // a by-hand start is not the schedule's: it writes no `trigger.json` (so the run reads "By hand"), opens no review door and says `--anyway` like the person's own Run it anyway
+        if (!byHand) writeFileSync(join(outDir, 'trigger.json'), `${JSON.stringify({
           kind: cause.kind, trigger: words, reason: `Started by the schedule: ${words}${catchUp ? ' (catch-up)' : ''}`, catchUp,
           ...(cause.kind === 'clock' ? { slot: cause.slot, missed: cause.missed, lateMs: Math.max(0, now() - cause.slot) }
             : cause.kind === 'ticket' ? { ticket: cause.number, sha: cause.sha } : { file: cause.path, sha: cause.sha }),
@@ -234,7 +239,7 @@ export function createStarter(deps) {
         const spawnedAt = Date.now();
         const signed = signRun(session, session.state.specHash, {
           env: deps.envNow(), spawnFn: /** @type {any} */ (deps.spawnFn), bareloopBin: deps.bareloopBin, sessionsRoot: deps.sessionsRoot, home: deps.home,
-          reviewDoor: true, onSpawnError: (e) => { spawnError = e; }, onExit: (code) => { exitCode = typeof code === 'number' ? code : 1; },
+          reviewDoor: !byHand, ...(byHand ? { anyway: true } : {}), onSpawnError: (e) => { spawnError = e; }, onExit: (code) => { exitCode = typeof code === 'number' ? code : 1; },
         });
         // a spawn failure is reported on the next turn of the event loop; give it that turn before calling this started
         await new Promise((r) => { setImmediate(r); });
