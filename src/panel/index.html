@@ -485,6 +485,10 @@
   #result-body details>summary{cursor:pointer;color:var(--text-dim);min-height:28px;}
   .rs-link{background:none;border:none;padding:0;min-height:44px;color:var(--accent);text-decoration:underline;font:inherit;cursor:pointer;}
   .rs-warn{color:var(--amber);overflow-wrap:anywhere;}
+  /* R7b item 4: the generic Result tab. A diff wraps inside its own box (no page scroll); a check row is a question and its word and number. */
+  .rs-diff{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.45 ui-monospace,"Courier New",monospace;}
+  .rs-add{color:var(--green);} .rs-del{color:var(--red);} .rs-ctx{color:var(--text-dim);}
+  .rs-check{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;padding:3px 0;border-bottom:1px dotted var(--border);}
   #result-door-card .stopping{color:var(--amber);font-size:13px;overflow-wrap:anywhere;}
   /* PRD v1.106 Part 5 C: the Audit step fold (tries, their numbered checks, the Round table). Every line wraps; nothing forces a page-wide scroll. */
   .actor-mark{color:var(--text-faint);font-size:12px;margin-left:6px;white-space:nowrap;}
@@ -4097,7 +4101,7 @@
     paintOfferedRow();
   }
 
-  // ---- Result tab (PRD v1.107 Part 6, rubric jobs only; signed visual design/result-tab-mock.html variant F) ----
+  // ---- Result tab (PRD v1.107 Part 6, rubric jobs; every other ended job wears the generic tab below, R7b item 4; signed visual design/result-tab-mock.html variant F) ----
   // The server decides everything: `detail.hasResult` shows the tab, `/result` carries the signed lines, the facts' own sentences
   // (src/facts.js factSentence), the rows of the delivered file (sha256-checked against the run's own record) and `passed` (read from the
   // run's own check-run). The page only draws; it never decides a check and never searches a quote for a word.
@@ -4218,6 +4222,72 @@
       (line.kind === "facts" ? resultFactsLine(line) : resultTextLine(line)) +
       resultNotChecked("Not checked", line.notChecked, "result-line-notchecked") + '</div>';
   }
+  // ---- the generic Result tab (R7b item 4): every ended non-rubric run. The server sends the facts and the words (`kind: "generic"`); the page only draws.
+  // The check words and numbers are the Run/Audit tabs' own owners (stageQuestionText, stageNumberText); the state word is the status table's (the server sends it).
+  // a unified diff, one span per line: + added, - removed, anything else (headers, hunks, context) dim. Every piece is escaped.
+  function resultDiffHtml(diff){
+    return String(diff).split("\n").map(function(l){
+      var cls = (l.charAt(0) === "+" && l.indexOf("+++") !== 0) ? "rs-add" : ((l.charAt(0) === "-" && l.indexOf("---") !== 0) ? "rs-del" : "rs-ctx");
+      return '<span class="' + cls + '">' + escapeXml(l) + '</span>';
+    }).join("\n");
+  }
+  function resultTicketCard(t){
+    if(!t) return "";
+    var link = typeof t.url === "string" && /^https?:\/\//i.test(t.url)
+      ? '<div class="hint"><a data-testid="result-ticket-link" href="' + escapeXml(t.url) + '" target="_blank" rel="noopener noreferrer">' + escapeXml(t.url) + '</a></div>' : "";
+    return '<div class="job-card" data-testid="result-ticket"><h4>The ticket</h4><div class="field"><div class="ro-value" data-testid="result-ticket-title" style="color:var(--text)">#' + escapeXml(String(t.number)) +
+      ' &middot; ' + escapeXml(t.title || "") + '</div>' + link + '</div></div>';
+  }
+  function resultJobCard(job){
+    return '<div class="job-card" data-testid="result-job"><h4>The job</h4>' +
+      resultField("What it was asked", '<div class="ro-value" data-testid="result-asked" style="white-space:pre-wrap">' + escapeXml(job.asked) + '</div>') +
+      (Array.isArray(job.scope) && job.scope.length ? resultField("Where it may change files", '<div class="ro-value" data-testid="result-scope">' + escapeXml(job.scope.join(", ")) + '</div>') : "") + '</div>';
+  }
+  function resultChangedCard(c){
+    if(!c) return '<div class="job-card" data-testid="result-changed"><h4>What changed</h4><div class="hint" data-testid="result-changed-none">no edit was recorded for this run</div></div>';
+    var last = c.last.files.map(function(f){ return resultDiffHtml(f.diff); }).join("\n") + (c.last.note ? '\n<span class="rs-ctx">' + escapeXml(c.last.note) + '</span>' : "");
+    var all = c.all.map(function(e){
+      return '<div class="hint">edit ' + e.n + (e.step ? ' &middot; ' + escapeXml(e.step) : "") + '</div>' + e.files.map(function(f){
+        return '<pre class="rs-diff">' + resultDiffHtml(f.diff) + (f.cutNote ? '\n<span class="rs-ctx">' + escapeXml(f.cutNote) + '</span>' : "") + '</pre>';
+      }).join("");
+    }).join("");
+    return '<div class="job-card" data-testid="result-changed"><h4>What changed</h4>' +
+      resultField(c.head, '<div class="ro-value"><pre class="rs-diff" data-testid="result-diff">' + last + '</pre></div>') +
+      '<details data-testid="result-all-edits"><summary>' + escapeXml(c.foldWords) + '</summary><div class="ro-value">' + all + '</div></details>' +
+      (c.scopeLine ? '<div class="hint" data-testid="result-scopeline">' + escapeXml(c.scopeLine) + '</div>' : "") + '</div>';
+  }
+  function resultChecksCard(k){
+    if(!k) return '<div class="job-card" data-testid="result-checks"><h4>The checks</h4><div class="hint" data-testid="result-checks-none">the close did not run any check for this run</div></div>';
+    var rows = k.stages.map(function(s){
+      var num = stageNumberText(s);
+      return '<div class="rs-check" data-testid="result-check"><span>' + escapeXml(stageQuestionText(s)) + '</span><span>' +
+        stateDotHTML(s.passed ? "green" : "red", s.status.word, "result-check-state") + (num ? ' <span class="hint">' + escapeXml(num) + '</span>' : "") + '</span></div>';
+    }).join("");
+    var notes = k.notes.length ? '<details data-testid="result-close-notes"><summary>the close\'s own notes</summary><div class="ro-value" style="white-space:pre-wrap">' +
+      k.notes.map(function(n){ return escapeXml(n.text); }).join("\n") + '</div></details>' : "";
+    return '<div class="job-card" data-testid="result-checks"><h4>The checks</h4>' +
+      resultField(k.head, '<div class="ro-value" data-testid="result-check-list">' + rows + '</div>') + notes + '</div>';
+  }
+  function resultWorkCard(w){
+    if(!w) return "";
+    return '<div class="job-card" data-testid="result-work"><h4>The work</h4>' +
+      resultField("Branch", '<div class="ro-value" data-testid="result-branch">' + escapeXml(w.branch) + ' <span class="hint">&middot; final commit ' + escapeXml(w.finalCommit) + (w.madeFrom ? ' &middot; made from ' + escapeXml(w.madeFrom) : "") + '</span></div>') +
+      resultField("In", '<div class="ro-value" data-testid="result-repo">' + escapeXml(w.repo) + '</div>') +
+      resultField("Keep the work", '<div class="ro-value" data-testid="result-merge">' + escapeXml(w.merge) + '</div>') +
+      resultField("Throw it away", '<div class="ro-value" data-testid="result-drop">' + escapeXml(w.drop) + '</div>') +
+      '<div class="hint" data-testid="result-work-note">' + escapeXml(w.note) + '</div></div>';
+  }
+  function resultRunCard(run){
+    return '<div class="job-card" data-testid="result-run"><h4>The run</h4><div class="field-row">' +
+      resultField("Spent", '<div class="ro-value" data-testid="result-spent">' + escapeXml(run.spent) + (run.spentNote ? ' <span class="hint">(' + escapeXml(run.spentNote) + ')</span>' : "") + '</div>') +
+      resultField("Time", '<div class="ro-value" data-testid="result-time">' + escapeXml(run.time) + '</div>') +
+      (run.steps ? resultField("Steps", '<div class="ro-value" data-testid="result-steps">' + escapeXml(run.steps) + '</div>') : "") + '</div></div>';
+  }
+  // the whole generic tab, top to bottom; the Your call card is the rubric tab's own resultDoorHtml, only while the run waits at the door
+  function resultGenericHtml(data, detail){
+    return resultTicketCard(data.ticket) + resultJobCard(data.job) + resultChangedCard(data.changed) + resultChecksCard(data.checks) + resultWorkCard(data.work) + resultRunCard(data.run) +
+      (detail.accept === true && !detail.live ? resultDoorHtml(data.door) : "");
+  }
   function resultDoorHtml(door){
     return '<div class="job-card" id="result-door-card" data-testid="result-door"><h4>Your call</h4><div class="field"><div class="ro-value"><b class="st-word">' + escapeXml(door.head) + '</b> \u2014 ' + escapeXml(door.ask) + '</div></div>' +
       '<div class="run-actions" style="margin:6px 0 0;"><button class="btn primary" type="button" data-testid="result-accept">Accept</button>' +
@@ -4270,6 +4340,7 @@
     var keepText = body.querySelector("#result-rerun-text");
     var typed = keepText ? keepText.value : "";
     var rerunOpen = !!body.querySelector("#result-rerun-box:not([hidden])");
+    if(data.kind === "generic"){ paintResultBody(body, resultGenericHtml(data, detail), detail, typed, rerunOpen); return; }
     var counters = document.getElementById("run-counters").textContent.split(" \u00b7 ");
     var h = '<div class="job-card" data-testid="result-head"><h4>Result</h4>' +
       resultField("Status", '<div class="ro-value">' + stateDotHTML(glyphClass(detail.glyph), detail.status && detail.status.word ? detail.status.word : "", "result-status") +
@@ -4296,6 +4367,10 @@
             : '<div class="run-actions" style="margin:6px 0 0;"><a class="btn" style="text-decoration:none;" data-testid="result-download" download href="/api/runs/' + encodeURIComponent(data.runid) + '/download?i=' + d.i + '">Download ' + escapeXml(d.name) + '</a></div>'));
       }).join("") + '</div>';
     }
+    paintResultBody(body, h, detail, typed, rerunOpen);
+  }
+  // the one tail of both Result tabs: draw, then put back what the person was typing and wire the door
+  function paintResultBody(body, h, detail, typed, rerunOpen){
     body.innerHTML = h;
     var ta = body.querySelector("#result-rerun-text");
     if(ta){
