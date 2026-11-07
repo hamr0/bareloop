@@ -2193,6 +2193,7 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 - **Panel looks carried from fwdloop (hamr 2026-11-03):** accent captions, the Runs tab search card, the Audit "told in this run" row; no behaviour change. hamr's click-through and phone width pending.
 - **Contract pointers:** `bareloop.context.md` (closeDecl row, "Text-only ending nudge"), `docs/wiki/FINDINGS.md` F281, F282.
 
-### Parked: Result tab for every job (v1.128 — 2026-11-07) — PARKED by hamr, after the MCP + tickets branch
+### Result tab for every job (v1.128 — 2026-11-07) — UNPARKED 2026-11-07: pulled into the MCP + tickets branch (hamr), see ITEM33-BUILD R7b
 
+- **Unparked (hamr 2026-11-07):** no longer parked; built in the MCP + tickets branch beside R8, mockup to hamr first (ITEM33-BUILD R7b).
 - A Result tab for every job, not only rubric: what changed (each file and its diff), the checks that passed in plain words with their last output lines, where it is (work branch and the `git merge` line), and for a ticket job the ticket read with its link, all in one place ready for Accept. Needs a mockup shown to hamr, then an interview, before any spec.
