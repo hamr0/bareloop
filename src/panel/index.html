@@ -5853,8 +5853,9 @@
     // R7b (3): "yes" to the folder question changes the SESSION's Destination; the box is locked while a session is live, so the page re-fills it from the session's own card
     function syncDestinationFromSession(state){
       var d = state && state.card && state.card.destination;
+      if(typeof d !== "string") return;
       var box = document.getElementById("jf-dest");
-      if(typeof d === "string" && box && box.value !== d){ box.value = d; fitCardBoxes(); }
+      if(box && box.value !== d){ box.value = d; fitCardBoxes(); }
     }
     function renderActions(state){
       lastState = state;
