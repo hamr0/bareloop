@@ -35,12 +35,12 @@ function dom({ flow = 'plain', verdict = 'deterministic', resume = null, sched =
 }
 const vars = 'var reuseCheckType = "deterministic";';
 
-test('the SERVED card has the Schedule row with fwd\'s ids and the table\'s words, once each, between the Ticket box and Destination, in the card\'s own classes', async (t) => {
+test('the SERVED card has the Schedule row with fwd\'s ids and the table\'s words, once each, between Flow type / MCP and Destination, in the card\'s own classes', async (t) => {
   const PAGE = await served(t);
   const once = (id) => assert.equal(PAGE.split(` id="${id}"`).length - 1, 1, `${id} appears exactly once`);
   for (const id of ['jf-sched-field', 'jf-sched', 'jf-sched-clock', 'jf-sched-time', 'jf-sched-hint', 'jf-sched-hint-rubric', 'jf-sched-ticket-hint']) once(id);
   const card = PAGE.slice(PAGE.indexOf('id="job-card"'));
-  assert.ok(card.indexOf('id="jf-ticket"') < card.indexOf('id="jf-sched"') && card.indexOf('id="jf-sched-field"') < card.indexOf('id="jf-dest"'));
+  assert.ok(card.indexOf('id="jf-mcp"') < card.indexOf('id="jf-sched"') && card.indexOf('id="jf-sched-field"') < card.indexOf('id="jf-dest"'));
   const W = SCHEDULE_WORDS.card;
   assert.match(PAGE, new RegExp(`<label for="jf-sched">${W.label}</label>`));
   const opts = [...PAGE.match(/<select id="jf-sched"[\s\S]*?<\/select>/)[0].matchAll(/<option value="([^"]+)">([^<]+)<\/option>/g)].map((m) => [m[1], m[2]]);

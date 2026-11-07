@@ -26,31 +26,29 @@ const el = (o = {}) => {
   return e;
 };
 
-test('the SERVED card has Flow type, MCP and Ticket with the fwd words and ids, once each, in the card (after Inputs, before Destination)', async (t) => {
+test('the SERVED card has Flow type and MCP with the fwd words and ids, once each, in the card (after Inputs, before Destination), and NO Ticket box (R7b, fwd v0.28.0)', async (t) => {
   const PAGE = await served(t);
   const once = (id) => assert.equal(PAGE.split(` id="${id}"`).length - 1, 1, `${id} appears exactly once`);
-  for (const id of ['jf-flowtype-field', 'jf-flowtype', 'jf-mcp-field', 'jf-mcp', 'jf-mcp-manage', 'jf-ticket-field', 'jf-ticket', 'jf-ticket-hint', 'details-mcp-field', 'details-mcp']) once(id);
+  for (const id of ['jf-flowtype-field', 'jf-flowtype', 'jf-mcp-field', 'jf-mcp', 'jf-mcp-manage', 'details-mcp-field', 'details-mcp']) once(id);
   const card = PAGE.slice(PAGE.indexOf('id="job-card"'));
-  assert.ok(card.indexOf('id="jf-inputs"') < card.indexOf('id="jf-flowtype"') && card.indexOf('id="jf-ticket"') < card.indexOf('id="jf-dest"'));
+  assert.ok(card.indexOf('id="jf-inputs"') < card.indexOf('id="jf-flowtype"') && card.indexOf('id="jf-mcp"') < card.indexOf('id="jf-dest"'));
+  for (const gone of ['jf-ticket', 'jf-ticket-field', 'jf-ticket-hint']) assert.equal(PAGE.includes(gone), false, `${gone} is gone (F287: the box invited a number in Destination)`);
+  assert.doesNotMatch(PAGE, /the newest ticket this job has not run, or type its number|issue number/);
   assert.match(PAGE, /<label for="jf-flowtype">Flow type<\/label>/);
   assert.match(PAGE, /<label for="jf-mcp">MCP<\/label>/);
-  assert.match(PAGE, /<label for="jf-ticket">Ticket<\/label>/);
   const opts = [...PAGE.match(/<select id="jf-flowtype"[\s\S]*?<\/select>/)[0].matchAll(/<option value="([^"]+)">([^<]+)<\/option>/g)].map((m) => [m[1], m[2]]);
   assert.deepEqual(opts, [['plain', 'plain'], ['mcp', 'MCP'], ['tickets', 'Tickets MCP']], 'the three fwd words');
   assert.deepEqual(Object.fromEntries(opts), FLOW_TYPE_LABELS, 'the menu words are the one table (src/job.js)');
   assert.match(PAGE, /<a class="link" id="jf-mcp-manage"[^>]*>manage in Settings &gt; MCP<\/a>/);
-  assert.match(PAGE, /<div class="hint" id="jf-ticket-hint" data-testid="jf-ticket-hint">leave blank for the newest ticket this job has not run, or type its number, like 7<\/div>/);
-  assert.ok(PAGE.match(/<div class="field" id="jf-ticket-field"[\s\S]*?<\/div>\s*<\/div>/)[0].includes('id="jf-ticket-hint"'), 'the hint sits inside the Ticket field (hides with it)');
   assert.match(PAGE.match(/<div class="field" id="jf-mcp-field"[^>]*>/)[0], /hidden/, 'plain has no MCP pick');
-  assert.match(PAGE.match(/<div class="field" id="jf-ticket-field"[^>]*>/)[0], /hidden/, 'only Tickets MCP has the Ticket box');
   // the controls use the card's own classes (nothing new): .field, select, .hint, .link
   assert.doesNotMatch(PAGE.match(/<div class="field" id="jf-flowtype-field"[\s\S]*?<\/select>/)[0], /style=/);
 });
 
-test('currentCard: a plain card sends neither flowType nor mcp (so the signed job carries neither); MCP and Tickets send the pick; the ticket goes only with Tickets', async (t) => {
+test('currentCard: a plain card sends neither flowType nor mcp (so the signed job carries neither); MCP and Tickets send the pick; no card ever sends a ticket (the box is gone, R7b)', async (t) => {
   const PAGE = await served(t);
   const val = (id) => ({ value: id === 'jf-cap-money' ? '2' : '' });
-  const mk = (flowType, mcp, ticket) => build(PAGE, ['pickParts', 'currentCard'], { document: { getElementById: val }, verdictValue: () => 'deterministic', thinkingBox: { checked: false }, flowTypeEl: { value: flowType }, mcpEl: { value: mcp }, ticketEl: { value: ticket }, scheduleOfCard: () => null }, 'var reuseCheckType = "deterministic";').currentCard();
+  const mk = (flowType, mcp, ticket) => build(PAGE, ['pickParts', 'currentCard'], { document: { getElementById: val }, verdictValue: () => 'deterministic', thinkingBox: { checked: false }, flowTypeEl: { value: flowType }, mcpEl: { value: mcp }, scheduleOfCard: () => null }, 'var reuseCheckType = "deterministic";').currentCard();
   const plain = mk('plain', 'github', '5');
   assert.equal('flowType' in plain, false);
   assert.equal('mcp' in plain, false);
@@ -58,8 +56,7 @@ test('currentCard: a plain card sends neither flowType nor mcp (so the signed jo
   const m = mk('mcp', 'github', '5');
   assert.deepEqual([m.flowType, m.mcp, 'ticket' in m], ['mcp', 'github', false], 'an MCP job has no ticket');
   const tk = mk('tickets', 'github', ' 42 ');
-  assert.deepEqual([tk.flowType, tk.mcp, tk.ticket], ['tickets', 'github', '42']);
-  assert.equal('ticket' in mk('tickets', 'github', ''), false, 'an empty box sends nothing; the server says what is missing');
+  assert.deepEqual([tk.flowType, tk.mcp, 'ticket' in tk], ['tickets', 'github', false], 'a Tickets card sends no ticket: a by-hand run takes the newest not run yet');
 });
 
 test('jobBoxesChangedNow: a changed Flow type or MCP is a changed job box (a new workflow); plain with no keys equals the origin\'s plain', async (t) => {
@@ -74,18 +71,18 @@ test('jobBoxesChangedNow: a changed Flow type or MCP is a changed job box (a new
   assert.equal(mk({ ...base, flowType: 'mcp', mcp: 'github' }, { ...base, flowType: 'mcp', mcp: 'github' }), false);
 });
 
-test('setFlow / paintFlowType: the MCP pick shows for MCP and Tickets, the Ticket box for Tickets only (never on a resume or a schedule card); a reused server no longer listed stays pickable', async (t) => {
+test('setFlow / paintFlowType: the MCP pick shows for MCP and Tickets, a reused server no longer listed stays pickable', async (t) => {
   const PAGE = await served(t);
-  const flowTypeEl = el({ value: 'plain' }); const mcpEl = el(); const mcpFieldEl = el({ hidden: true }); const ticketFieldEl = el({ hidden: true });
+  const flowTypeEl = el({ value: 'plain' }); const mcpEl = el(); const mcpFieldEl = el({ hidden: true });
   const doc = { createElement: () => el() };
-  const make = (vars) => build(PAGE, ['paintMcpOptions', 'paintFlowType', 'setFlow'], { flowTypeEl, mcpEl, mcpFieldEl, ticketFieldEl, document: doc, paintCardSchedule() {} }, `var mcpServers = ["github", "other"]; ${vars}`);
+  const make = (vars) => build(PAGE, ['paintMcpOptions', 'paintFlowType', 'setFlow'], { flowTypeEl, mcpEl, mcpFieldEl, document: doc, paintCardSchedule() {} }, `var mcpServers = ["github", "other"]; ${vars}`);
   const api = make('var resumeRun = null, sched = null;');
   api.setFlow('plain', '');
-  assert.deepEqual([flowTypeEl.value, mcpFieldEl.hidden, ticketFieldEl.hidden], ['plain', true, true]);
+  assert.deepEqual([flowTypeEl.value, mcpFieldEl.hidden], ['plain', true]);
   api.setFlow('mcp', 'github');
-  assert.deepEqual([flowTypeEl.value, mcpFieldEl.hidden, ticketFieldEl.hidden, mcpEl.value], ['mcp', false, true, 'github']);
+  assert.deepEqual([flowTypeEl.value, mcpFieldEl.hidden, mcpEl.value], ['mcp', false, 'github']);
   api.setFlow('tickets', 'other');
-  assert.deepEqual([flowTypeEl.value, mcpFieldEl.hidden, ticketFieldEl.hidden, mcpEl.value], ['tickets', false, false, 'other']);
+  assert.deepEqual([flowTypeEl.value, mcpFieldEl.hidden, mcpEl.value], ['tickets', false, 'other']);
   api.setFlow('tickets', 'gone-server');
   assert.deepEqual(mcpEl.children.map((o) => o.value), ['github', 'other', 'gone-server'], 'a reused job\'s server that Settings no longer lists is still shown by name');
   api.setFlow('chat', 'github');
@@ -93,29 +90,27 @@ test('setFlow / paintFlowType: the MCP pick shows for MCP and Tickets, the Ticke
   api.setFlow('tickets', 'github');
   const resumed = make('var resumeRun = {runid: "r"}, sched = null;');
   resumed.paintFlowType();
-  assert.equal(ticketFieldEl.hidden, true, 'a resume keeps the ticket its first start froze: no Ticket box');
   const scheduled = make('var resumeRun = null, sched = {job: "j"};');
   scheduled.paintFlowType();
-  assert.equal(ticketFieldEl.hidden, true, 'a schedule card starts no run: no Ticket box');
 });
 
-test('syncCardLock locks Flow type and MCP like the job text (live, resume, schedule card) and the Ticket box like a run box (live, resume)', async (t) => {
+test('syncCardLock locks Flow type and MCP like the job text (live, resume, schedule card)', async (t) => {
   const PAGE = await served(t);
   const els = {};
   for (const id of ['jf-name', 'jf-job', 'jf-inputs', 'jf-dest', 'jf-cap-money', 'jf-cap-time', 'jf-model', 'job-card']) els[id] = el({ id, classList: { toggle() {} } });
   const mkSel = () => el({ classList: { toggle(c, on) { this.on = on; } } });
-  const flowTypeEl = mkSel(); const mcpEl = mkSel(); const ticketEl = mkSel();
+  const flowTypeEl = mkSel(); const mcpEl = mkSel();
   const doc = { getElementById: (id) => els[id], querySelectorAll: () => ({ forEach() {} }) };
-  const run = (vars) => build(PAGE, ['syncCardLock'], { document: doc, flowTypeEl, mcpEl, ticketEl, cardSchedEl: mkSel(), cardSchedTimeEl: mkSel(), paintFlowType() {}, syncThinking() {} },
+  const run = (vars) => build(PAGE, ['syncCardLock'], { document: doc, flowTypeEl, mcpEl, cardSchedEl: mkSel(), cardSchedTimeEl: mkSel(), paintFlowType() {}, syncThinking() {} },
     `var LOCKED_IDS = ["jf-name", "jf-job"]; var OPEN_IDS = ["jf-inputs"]; var CAP_IDS = []; var sched = null; ${vars}`).syncCardLock;
   run('var sessionLive = false, reuseOn = false, resumeRun = null;')();
-  assert.deepEqual([flowTypeEl.disabled, mcpEl.disabled, ticketEl.readOnly], [false, false, false], 'a fresh card is open');
+  assert.deepEqual([flowTypeEl.disabled, mcpEl.disabled], [false, false], 'a fresh card is open');
   run('var sessionLive = true, reuseOn = false, resumeRun = null;')();
-  assert.deepEqual([flowTypeEl.disabled, mcpEl.disabled, ticketEl.readOnly], [true, true, true], 'a live drafting session: nothing is editable');
+  assert.deepEqual([flowTypeEl.disabled, mcpEl.disabled], [true, true], 'a live drafting session: nothing is editable');
   run('var sessionLive = false, reuseOn = true, resumeRun = null;')();
-  assert.deepEqual([flowTypeEl.disabled, mcpEl.disabled, ticketEl.readOnly], [true, true, false], 'a schedule card: the job boxes are locked, a run box is not');
+  assert.deepEqual([flowTypeEl.disabled, mcpEl.disabled], [true, true], 'a schedule card: the job boxes are locked');
   run('var sessionLive = false, reuseOn = false, resumeRun = {runid: "r"};')();
-  assert.deepEqual([flowTypeEl.disabled, mcpEl.disabled, ticketEl.readOnly], [true, true, true], 'a resume: everything locked');
+  assert.deepEqual([flowTypeEl.disabled, mcpEl.disabled], [true, true], 'a resume: everything locked');
 });
 
 test('the Job tab: an MCP job shows its signed flow type, server and every tool; a ticket filter and watched fields when it has them; a plain job shows no MCP row', async (t) => {
