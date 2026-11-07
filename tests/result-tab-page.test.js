@@ -163,3 +163,10 @@ test('RUBRIC = A: the rubric tab\'s line cards and door draw exactly what the ol
     assert.equal(rub.resultDoorHtml(rr[id].door), golden[id].door, `${id}: door`);
   }
 });
+
+test('the asked text and the fence are escaped: a job line cannot inject markup', () => {
+  const h = fns.resultJobCard({ asked: 'fix <b>this</b> & "that"', scope: ['<i>x</i>/**'] });
+  assert.equal(/<b>|<i>/.test(h), false);
+  assert.match(h, /fix &lt;b&gt;this&lt;\/b&gt; &amp; &quot;that&quot;/);
+  assert.equal(fns.resultJobCard({ asked: 'x', scope: null }).includes('Where it may change files'), false, 'no fence recorded: no box for it');
+});

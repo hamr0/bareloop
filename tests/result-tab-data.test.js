@@ -3,7 +3,7 @@
 // code's, byte for byte (tests/fixtures/result-tab/rubric-result.golden.json, written by the pre-change server from the committed part5 fixtures).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync, utimesSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync, utimesSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeResultWorld, makeRepoWithBranch, git } from './result-tab-world.mjs';
@@ -144,4 +144,57 @@ test('RUBRIC = A: the real rubric runs\' /result payload is exactly what the old
     assert.equal('kind' in now, false, `${id}: no kind key`);
     assert.deepEqual(now, golden[id], `${id}: payload unchanged`);
   }
+});
+
+// ---- mutation survivors, each given a test ----
+const rewrite = (file, fn) => writeFileSync(file, fn(readFileSync(file, 'utf8')));
+const specFile = (w, id) => join(w.root, `session-${id}`, 'resolved-spec.json');
+
+test('a ticket link that is not http(s) is dropped by the server too', () => {
+  const w = makeResultWorld(['mw1zse2m']);
+  rewrite(w.spine('mw1zse2m'), (t) => t.replace('https://github.com/hamr0/hol-guard/issues/7', 'javascript:alert(1)'));
+  const tk = getRunResult('mw1zse2m', { home: w.home }).ticket;
+  assert.deepEqual(tk, { number: 7, title: 'fwdloop test: P1 walk 2', url: null });
+});
+
+test('a resumed run (two closes): the checks are the LAST close\'s stages', () => {
+  const w = makeResultWorld(['mvkj03w7']);
+  rewrite(w.spine('mvkj03w7'), (t) => {
+    const lines = t.split('\n').filter(Boolean);
+    const i = lines.findIndex((l) => l.includes('"type":"outer-close"'));
+    const later = JSON.parse(lines[i]);
+    later.stages = [{ name: 'changed-from-seed', verdict: 'needs_revision' }];
+    lines.splice(i + 1, 0, JSON.stringify(later));
+    return `${lines.join('\n')}\n`;
+  });
+  const k = getRunResult('mvkj03w7', { home: w.home }).checks;
+  assert.equal(k.total, 1);
+  assert.equal(k.head, '0 of 1 passed · the close ran them after the worker stopped');
+});
+
+test('a run whose close has rubric stages but is not labelled soft-green wears the generic tab, never the rubric payload', () => {
+  const w = makePart5World();
+  const spine = w.spine('mve5y8fa');
+  writeFileSync(spine, readFileSync(spine, 'utf8').replace(/"verdictType":"soft-green"/, '"verdictType":"green"'));
+  const old = new Date(Date.now() - 3 * 3600 * 1000);
+  utimesSync(spine, old, old);
+  const r = getRunResult('mve5y8fa', { home: w.home });
+  assert.equal(r.kind, 'generic');
+  assert.equal(r.lines, undefined);
+});
+
+test('one edit that was not cut: no "last edit only" and no cut words; the fence line names a file that lies outside it', () => {
+  const w = makeResultWorld(['mvkj03w7']);
+  rewrite(w.spine('mvkj03w7'), (t) => {
+    let n = 0;
+    return `${t.split('\n').filter((l) => !l.includes('"type":"attempt-diff"') || (n += 1) === 2).join('\n')}`;
+  });
+  const c = getRunResult('mvkj03w7', { home: w.home }).changed;
+  assert.equal(c.edits, 1);
+  assert.equal(c.last.note, null);
+  assert.match(c.head, /lines over 1 edit$/, 'one edit, singular');
+  rewrite(specFile(w, 'mvkj03w7'), (t) => t.replace('"src/**"', '"docs/**"'));
+  assert.equal(getRunResult('mvkj03w7', { home: w.home }).changed.scopeLine, 'only docs/ was allowed, but the run wrote src/checks.js.');
+  rewrite(specFile(w, 'mvkj03w7'), (t) => t.replace('"docs/**"', '"src/checks.js"'));
+  assert.equal(getRunResult('mvkj03w7', { home: w.home }).changed.scopeLine, 'only src/checks.js was allowed; the run wrote 1 file, no other.');
 });
