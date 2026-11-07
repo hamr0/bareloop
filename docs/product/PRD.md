@@ -2192,3 +2192,7 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 - **Built on `fix/bad-calls`:** `closeDecl.guardLines` lets a job line the always-on guards fully cover count as covered (F281; screening read n=6, wording clause test-proven only); a worker that ends a writeable try in text with no gate-audited write is nudged once in the same conversation (F282; test-proven only, not seen live; base rate under 1%).
 - **Panel looks carried from fwdloop (hamr 2026-11-03):** accent captions, the Runs tab search card, the Audit "told in this run" row; no behaviour change. hamr's click-through and phone width pending.
 - **Contract pointers:** `bareloop.context.md` (closeDecl row, "Text-only ending nudge"), `docs/wiki/FINDINGS.md` F281, F282.
+
+### Parked: Result tab for every job (v1.128 — 2026-11-07) — PARKED by hamr, after the MCP + tickets branch
+
+- A Result tab for every job, not only rubric: what changed (each file and its diff), the checks that passed in plain words with their last output lines, where it is (work branch and the `git merge` line), and for a ticket job the ticket read with its link, all in one place ready for Accept. Needs a mockup shown to hamr, then an interview, before any spec.
