@@ -1551,6 +1551,8 @@ async function execute(ctx) {
   let ticket = ctx.ticket;
   /** @type {string|null} */
   let pickRefusal = null;
+  /** @type {string|null} */
+  let pickSkip = null;
   if (ctx.pickNewest !== undefined && !resuming) {
     const home = deps.keysHome ?? deps.runlistHome;
     const rows = (() => { try { return readRunList({ home }).rows; } catch { return []; } })();
@@ -1558,7 +1560,8 @@ async function execute(ctx) {
     if (picked.ok) {
       ticket = { number: picked.number, mcp: ctx.pickNewest.mcp, ...(ctx.pickNewest.repo ? { repo: /** @type {const} */ (true) } : {}) };
       out(`${SELECTOR}: no --ticket given, so this run takes the newest ticket it has not run: #${picked.number}.`);
-    } else pickRefusal = /did not start|Nothing spent\.$/.test(picked.say) ? picked.say : `${picked.say} The run did not start. Nothing spent.`;
+    } else if (picked.nothingNew === true) pickSkip = `${picked.say} Nothing spent.`;   // a race with a scheduled run: a quiet SKIP (the R5 shape), not a failure
+    else pickRefusal = /did not start|Nothing spent\.$/.test(picked.say) ? picked.say : `${picked.say} The run did not start. Nothing spent.`;
   }
   // every row carries its runner's pid and the leg cap, limit set or not: a limit set LATER still holds it
   /** @type {import('./runlist.js').RunRow} */
@@ -1632,6 +1635,14 @@ async function execute(ctx) {
     try { appendRunEvent({ runid, type: 'settled', by: runid, reason: 'refused before start', words, spentUsd: 0, spendComplete: true, at: new Date().toISOString() }, { home: claimedRow.home }); } catch { /* the exit stands; the dead pid frees the claim */ }
     claimedRow = null;
   };
+  if (pickSkip !== null) {
+    out(`${SELECTOR}: skipped: ${pickSkip}`);
+    if (claimedRow) {
+      try { appendRunEvent({ runid, type: 'settled', by: runid, reason: 'skipped', words: pickSkip, spentUsd: 0, spendComplete: true, at: new Date().toISOString() }, { home: claimedRow.home }); } catch { /* the exit stands; the dead pid frees the claim */ }
+      claimedRow = null;   // settled, not released: the row stays listed, grey, with the words
+    }
+    throw new ExitSignal(0);
+  }
   if (pickRefusal !== null) {
     err(`${SELECTOR}: ${pickRefusal}`);
     settleRefused(pickRefusal);

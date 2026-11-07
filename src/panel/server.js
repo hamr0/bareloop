@@ -3268,7 +3268,8 @@ function getRunJobBody(runid, opts) {
   const row = findRunRow(runid, opts);
   if (!row) return null;
 
-  const near = existsSync(row.spine) ? sourceNearSpine(row.spine) : { specPath: null, sourceJsonPath: null };
+  // a run that ended BEFORE it started (refused or skipped: a listed row, no spine file) still has its session folder: its path names it (R7b), so the signed job shows from there
+  const near = sourceNearSpine(row.spine);
   let manifest = null;
   if (near.sourceJsonPath) {
     try { manifest = JSON.parse(readFileSync(near.sourceJsonPath, 'utf8')); } catch { manifest = null; }

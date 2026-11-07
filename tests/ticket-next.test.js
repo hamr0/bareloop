@@ -22,7 +22,7 @@ describe('the pick', () => {
   test('a job that ran #20 takes the newest above it; a number it ran is never picked again', async (t) => {
     const w = ticketWorld(t, { issues: newestFirst(23) });
     assert.deepEqual(await pick(w, { rows: rowsOf(20) }), { ok: true, number: 23 });
-    assert.deepEqual(await pick(w, { rows: rowsOf(20, 23) }), { ok: false, say: 'Nothing new: no ticket newer than #23 has come in.' });
+    assert.deepEqual(await pick(w, { rows: rowsOf(20, 23) }), { ok: false, nothingNew: true, say: 'No new ticket since #23. Nothing to run.' });
   });
   test('only THIS job\'s runs count: another job\'s ticket number is not "run" here', async (t) => {
     const w = ticketWorld(t, { issues: newestFirst(5) });

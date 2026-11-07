@@ -24,6 +24,8 @@ import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { planMatchesClose } from '../rubricstep.js';
 import { ticketNumberOf } from '../ticketshape.js';
+import { newestUnrunTicket } from '../ticketnext.js';
+import { readRunList } from '../runlist.js';
 import { createSession, validateJobCard, validateReuseCard, jobBoxesChanged, buildReuseSpec, cardFields, nextFreeJobName, startDestinationProblem, resolveFlowCard, ticketBoxProblem, STEP_LABELS } from './authorsession.js';
 import { parseInputs } from '../jobblock.js';
 import { isReusableGreen } from './status.js';
@@ -117,7 +119,7 @@ const TERMINAL_PHASES = new Set(['refused', 'abandoned', 'error', 'signed', 'sig
  * deliberately has none of).
  * @param {{ port: number, token: string, env?: Record<string,string|undefined>,
  *   sessionsRoot?: string, spawnFn?: typeof realSpawn, bareloopBin?: string,
- *   jobsDir?: string, fetchImpl?: typeof fetch, home?: string, mcpHome?: string,
+ *   jobsDir?: string, fetchImpl?: typeof fetch, home?: string, mcpHome?: string, newestUnrunTicket?: typeof newestUnrunTicket,
  *   schedules?: ReturnType<typeof import('./schedules.js').createScheduleDoor>,
  *   sessionDeps?: Record<string, any>,
  *   runJobNames?: () => string[],
@@ -178,11 +180,22 @@ export function createAuthorRoutes(opts) {
       // the SAME Destination check the session runs, at $0, BEFORE the session (and its folder) exists
       const destProblem = startDestinationProblem(card);
       if (destProblem !== null) return { ok: /** @type {false} */ (false), status: 400, error: destProblem };
-      const session = createSession(cardFields(card), {
-        env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}), flow: { flowType: flow.flowType, pick: flow.pick }, ...(sch.trigger ? { schedule: sch.trigger } : {}), ...(opts.sessionDeps ?? {}),
+      // R7b rulings (live runs mw6skdyk, mw6u5794): a by-hand Tickets session looks for a new ticket NOW, at $0, before any session, copy, draft or model call, through the ONE reader
+      // (`run-u` calls the same one at run start). Nothing new, or a look that cannot read, refuses in the card's own error line. A scheduled fire (headless) carries its ticket and never looks.
+      const lookJob = reuse ? String(reuse.spec?.job ?? card.jobName) : card.jobName;
+      return (!o.headless && flow.flowType === 'tickets' && flow.pick
+        ? (opts.newestUnrunTicket ?? newestUnrunTicket)({
+          job: lookJob, rows: (() => { try { return readRunList({ ...(opts.home !== undefined ? { home: opts.home } : {}) }).rows; } catch { return []; } })(), inputs, mcp: flow.pick,
+        })
+        : Promise.resolve({ ok: /** @type {true} */ (true) })
+      ).then((picked) => {
+        if (!picked.ok) return { ok: /** @type {false} */ (false), status: 400, error: `${/** @type {any} */ (picked).say} Nothing spent.` };
+        const session = createSession(cardFields(card), {
+          env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}), flow: { flowType: flow.flowType, pick: flow.pick }, ...(sch.trigger ? { schedule: sch.trigger } : {}), ...(opts.sessionDeps ?? {}),
+        });
+        (o.headless ? headless : sessions).set(session.id, session);
+        return { ok: /** @type {true} */ (true), session };
       });
-      (o.headless ? headless : sessions).set(session.id, session);
-      return { ok: /** @type {true} */ (true), session };
     }).catch((e) => ({ ok: /** @type {false} */ (false), status: 500, error: `could not check the inputs: ${/** @type {Error} */ (e)?.message ?? e}` }));
   }
 

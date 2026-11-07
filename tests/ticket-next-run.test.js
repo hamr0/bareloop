@@ -68,10 +68,10 @@ test('a job that already ran #25 takes the next newer one; the earlier numbers n
   assert.equal(r.row.ticket, 27);
 });
 
-test('Must fail: nothing new -> one plain line, exit non-zero, no run read, $0', async (t) => {
+test('nothing new at run start (a race with a scheduled run) is a quiet SKIP, not a failure: one plain line, exit 0, no ticket read, $0', async (t) => {
   const r = await engine(t, { list: newestFirst(25), prior: [{ ticket: 25 }] });
-  assert.notEqual(r.rc, 0);
-  assert.match(r.err, /Nothing new: no ticket newer than #25 has come in\. The run did not start\. Nothing spent\./);
+  assert.equal(r.rc, 0, `${r.out}\n${r.err}`);
+  assert.match(r.out, /No new ticket since #25\. Nothing to run\. Nothing spent\./);
   assert.deepEqual(r.looked().map((c) => c.name), ['list_issues'], 'the ticket itself was never read');
   assert.equal(r.provider.messagesLog.length, 0);
 });
@@ -113,10 +113,11 @@ test('Must fail (F287b): a newest-ticket look that is refused (locked pass) list
   assert.doesNotMatch(ev.words, /Type the ticket number/);
 });
 
-test('Must fail (F287b): "nothing new" is listed and settled too, so a by-hand press is never silent', async (t) => {
+test('Must fail (F287b + R7b ruling): "nothing new" at run start is listed and settled as SKIPPED (the R5 shape: grey, not a failure), with the plain words', async (t) => {
   const r = await engine(t, { list: newestFirst(25), prior: [{ ticket: 25 }] });
-  assert.equal(r.rc, 2);
+  assert.equal(r.rc, 0);
   const ev = r.listed.events.find((e) => e.runid === r.row?.runid);
   assert.ok(r.row && ev, 'listed and settled');
-  assert.match(ev.words, /^Nothing new: no ticket newer than #25 has come in\. The run did not start\. Nothing spent\.$/);
+  assert.deepEqual([ev.type, ev.reason, ev.spentUsd, ev.spendComplete], ['settled', 'skipped', 0, true]);
+  assert.equal(ev.words, 'No new ticket since #25. Nothing to run. Nothing spent.');
 });

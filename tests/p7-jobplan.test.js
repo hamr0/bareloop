@@ -206,3 +206,23 @@ test('confirmedGoalOf reads back what rubricGoal wrote with the same prefix', ()
   assert.equal(confirmedGoalOf(g), 'One sentence.');
   assert.equal(confirmedGoalOf(rubricGoal({ jobLines: [{ n: 1, text: 'a', rule: '' }], files: [{ label: 'f', rel: 'input/f.txt' }] })), null);
 });
+
+// R7b ruling (live runs mw6skdyk, mw6u5794): a run that ended BEFORE it started (refused or skipped: a listed row, a settled event, no spine file) used to open an empty Job tab.
+// Its row's spine path still names its session folder, so the signed job is read from that folder's resolved-spec.json, through the same renderer.
+test('getRunJob: a run with NO spine file (refused / skipped before start) still shows the signed job from its session folder', () => {
+  const home = tmp('p7-nospine-home-');
+  const out = tmp('p7-nospine-out-');
+  const into = join(out, 'source-seed');
+  mkdirSync(join(into, 'p7-job-bareloop'), { recursive: true });
+  writeFileSync(join(into, 'source.json'), JSON.stringify({ source: '/the/original/source', destination: 'out/' }));
+  writeFileSync(join(out, 'resolved-spec.json'), JSON.stringify(NEW_SPEC));
+  const spine = join(into, 'p7-job-bareloop', 'u-nospine1.jsonl');   // never written: the run refused before it began
+  appendRun({ at: '2026-11-07T10:00:00.000Z', runid: 'nospine1', job: 'p7-job', spine, patient: null, via: 'run-u' }, { home });
+  const j = getRunJob('nospine1', { home });
+  assert.ok(j, 'the Job tab has a body');
+  assert.equal(j.plan.lines.length, 3);
+  assert.deepEqual(j.jobLines, NEW_SPEC.jobLines);
+  assert.deepEqual(j.inputs, NEW_SPEC.inputs);
+  assert.equal(j.resolvedFrom, "the run's own resolved-spec.json");
+  assert.equal(j.specHash, null, 'no start record: the page claims no signature time or hash the run never recorded');
+});
