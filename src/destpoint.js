@@ -27,10 +27,11 @@ export const DEST_SYSTEM = 'You read the numbered lines of a code job. You never
 export function destPrompt({ jobLines, destination }) {
   const job = jobLines.map((l) => `LINE ${l.n}: ${l.text}`).join('\n');
   return `THE JOB:\n${job}\n\nDestination (the only place the job may change files): ${destination}\n\n`
-    + 'For EACH job line that names a file to change, give the line number, the file path copied exactly from that line, and the folder that holds that file (the folder part of the path, ending with /). '
-    + 'A line that names no file path is left out; never guess a path the line does not contain. '
+    + 'Name ONLY a file the line asks to CHANGE (to fix, edit, write, add or remove). A file the line only says must pass, be read, be run or be checked (for example the tests it must make pass) is NOT a change: never name it. '
+    + 'For EACH job line, for each file it asks to change, give the line number, the file path copied exactly from that line, and the folder that holds that file (the folder part of the path, ending with /). '
+    + 'A line that names no file path to change is left out; never guess a path the line does not contain. '
     + 'Reply with JSON only, no prose, no code fence: {"points":[{"line":<line number>,"file":"<path copied from the line>","folder":"<its folder>"}]}. '
-    + 'Example: for the line "LINE 1: Fix the bug in src/sum.js so the tests pass" the reply is {"points":[{"line":1,"file":"src/sum.js","folder":"src/"}]}; for "LINE 2: make npm test pass" it is {"points":[]}.';
+    + 'Example: for the line "LINE 1: Fix the bug in src/sum.js so the tests in test/sum.test.js pass" the reply is {"points":[{"line":1,"file":"src/sum.js","folder":"src/"}]}, and test/sum.test.js is not named because the line only needs those tests to pass; for "LINE 2: make npm test pass" it is {"points":[]}.';
 }
 
 /** @typedef {{line: number, file: string, folder: string}} DestPoint */

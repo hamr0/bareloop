@@ -51,6 +51,10 @@ test('the drafter is TOLD the rule with a legal example, and sees only the job l
   const p = destPrompt({ jobLines: LINES, destination: 'docs/' });
   assert.match(p, /copied exactly from that line/);
   assert.match(p, /Example: for the line "LINE 1: Fix the bug in src\/sum\.js/);
+  // R7b paid draft test misses B2/B3/B5: the AI also named the test file a line says must PASS. Only a file the line asks to CHANGE is named; the exact case is the legal example.
+  assert.match(p, /Name ONLY a file the line asks to CHANGE/);
+  assert.match(p, /must pass, be read, be run or be checked[^.]*is NOT a change[^.]*never name it/);
+  assert.match(p, /for the line "LINE 1: Fix the bug in src\/sum\.js so the tests in test\/sum\.test\.js pass" the reply is \{"points":\[\{"line":1,"file":"src\/sum\.js","folder":"src\/"\}\]\}, and test\/sum\.test\.js is not named/);
   assert.match(p, /\{"points":\[\{"line":1,"file":"src\/sum\.js","folder":"src\/"\}\]\}/);
   assert.match(p, /LINE 1: Fix the bug in src\/sum\.js/);
   assert.match(p, /Destination[^\n]*: docs\//);
