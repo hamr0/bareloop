@@ -1,0 +1,183 @@
+{
+ "mve5y8fa": {
+  "runid": "mve5y8fa",
+  "lines": [
+   {
+    "notChecked": [],
+    "n": 1,
+    "text": "List 3 flights from Boston to Chicago",
+    "rules": [
+     "under $450",
+     "not a red-eye",
+     "nonstop"
+    ],
+    "kind": "facts",
+    "passed": true,
+    "file": {
+     "i": 0,
+     "state": "ok",
+     "words": null
+    },
+    "source": "flights",
+    "page": null,
+    "facts": [
+     {
+      "name": "price",
+      "kind": "value",
+      "sentence": "fact · price — money in US dollars or $, under 450 US dollars, after \"From\", quoted from \"flights\""
+     },
+     {
+      "name": "departure time",
+      "kind": "value",
+      "sentence": "fact · departure time — time, between 06:00 and 21:00, after \"Departure time:\", quoted from \"flights\" — AI's proposal — check it"
+     },
+     {
+      "name": "nonstop",
+      "kind": "phrase",
+      "sentence": "fact · nonstop — phrase, must say \"Nonstop\", quoted from \"flights\""
+     },
+     {
+      "name": "origin",
+      "kind": "phrase",
+      "sentence": "fact · origin — phrase, must say \"Boston Logan International Airport\", quoted from \"flights\""
+     },
+     {
+      "name": "destination",
+      "kind": "phrase",
+      "sentence": "fact · destination — phrase, must say \"Chicago O'Hare International Airport\", quoted from \"flights\""
+     }
+    ],
+    "rows": [
+     {
+      "n": 1,
+      "quote": "From 144 US dollars. Nonstop flight with American. Leaves Boston Logan International Airport at 12:12 PM on Friday, November 20 and arrives at Chicago O'Hare International Airport at 2:22 PM on Friday, November 20. Total duration 3 hr 10 min. 1 carry-on bag included. 0 checked bags included. Select flight\" [ref=2326]\n            - generic \"Departure time: 12:12 PM.",
+      "cells": [
+       "$144",
+       "12:12 PM",
+       "Nonstop",
+       "Boston Logan International Airport",
+       "Chicago O'Hare International Airport"
+      ]
+     },
+     {
+      "n": 2,
+      "quote": "From 144 US dollars. Nonstop flight with United. Leaves Boston Logan International Airport at 1:29 PM on Friday, November 20 and arrives at Chicago O'Hare International Airport at 3:32 PM on Friday, November 20. Total duration 3 hr 3 min. 0 carry-on bags included. 0 checked bags included. Select flight\" [ref=2415]\n            - generic \"Departure time: 1:29 PM.",
+      "cells": [
+       "$144",
+       "1:29 PM",
+       "Nonstop",
+       "Boston Logan International Airport",
+       "Chicago O'Hare International Airport"
+      ]
+     },
+     {
+      "n": 3,
+      "quote": "From 144 US dollars. Nonstop flight with JetBlue. Leaves Boston Logan International Airport at 2:40 PM on Friday, November 20 and arrives at Chicago O'Hare International Airport at 4:40 PM on Friday, November 20. Total duration 3 hr. 1 carry-on bag included. 0 checked bags included. Select flight\" [ref=2504]\n            - generic \"Departure time: 2:40 PM.",
+      "cells": [
+       "$144",
+       "2:40 PM",
+       "Nonstop",
+       "Boston Logan International Airport",
+       "Chicago O'Hare International Airport"
+      ]
+     }
+    ]
+   }
+  ],
+  "pages": [],
+  "pageNote": null,
+  "notChecked": [
+   "Labels, units and phrase words are the input's own words (\"From\", \"US dollars\", \"$\", \"Departure time:\", \"Nonstop\", \"Boston Logan International Airport\", \"Chicago O'Hare International Airport\"), copied from the look, not the person's wording.",
+   "The 06:00–21:00 window for \"not a red-eye\" is the AI's proposal the person confirmed; the departure time fact carries it as a between range marked aiProposal.",
+   "\"under $450\" is applied to the input's \"From\" starting fare, as the person confirmed.",
+   "Asked for but NOT checked by anything here: that the picks are flights a traveller would genuinely want (quality/accuracy — needs reading the text); that the three results are distinct airlines/schedules rather than three prices of one itinerary, beyond the plain count of three results; and \"from\" was not used as a second way to read the price, since it does not show the same values as \"From\" (listed under Not checked for the person)."
+  ],
+  "readNotes": [
+   "line 1: \"under $450\" — \"from\" does not show the same values as \"From\", so it was not used as a second way to read it."
+  ],
+  "door": {
+   "head": "waiting for you",
+   "ask": "the checks passed; is this what you wanted?"
+  },
+  "delivered": [
+   {
+    "i": 0,
+    "path": "<DELIVERED>",
+    "name": "1-2026-10-18.json",
+    "bytes": 1473,
+    "state": "ok",
+    "words": null
+   }
+  ],
+  "gap": null
+ },
+ "mvdg1xo3": {
+  "runid": "mvdg1xo3",
+  "lines": [
+   {
+    "notChecked": [],
+    "n": 1,
+    "text": "List 3 flights from Boston to Chicago",
+    "rules": [
+     "under $450",
+     "not a red-eye",
+     "nonstop"
+    ],
+    "kind": "facts",
+    "passed": false,
+    "file": null,
+    "source": "flights",
+    "page": null,
+    "facts": [
+     {
+      "name": "MaxPrice",
+      "kind": "value",
+      "sentence": "fact · MaxPrice — money in US dollars, under 450 US dollars, after \"From\", quoted from \"flights\""
+     },
+     {
+      "name": "DepartureWindow",
+      "kind": "value",
+      "sentence": "fact · DepartureWindow — time, between 5:00 AM and 10:00 PM, after \"Departure time:\", quoted from \"flights\" — AI's proposal — check it"
+     },
+     {
+      "name": "Stops",
+      "kind": "value",
+      "sentence": "fact · Stops — number, at most 0, after \"StaticText\", quoted from \"flights\""
+     },
+     {
+      "name": "LeaveAirport",
+      "kind": "value",
+      "sentence": "fact · LeaveAirport — text, after \"Leaves\", quoted from \"flights\""
+     },
+     {
+      "name": "ArriveAirport",
+      "kind": "value",
+      "sentence": "fact · ArriveAirport — text, after \"O\", quoted from \"flights\""
+     }
+    ],
+    "rows": null
+   }
+  ],
+  "pages": [],
+  "pageNote": null,
+  "notChecked": [
+   "The look's own labels were used instead of the person's words: \"Leaves\" for the departure airport (seen \"Boston Logan International Airport\") and \"O\" for the arrival airport (seen \"Hare International Airport\").",
+   "The person's rule \"not a red-eye\" is carried as a departure-time range between 5:00 AM and 10:00 PM — that range is my proposal for them to check; the input holds no \"red-eye\" word.",
+   "The person's rule \"nonstop\" is carried as a stop count of 0 or fewer read from the label \"StaticText\" — that number is my proposal for them to check; the input holds no \"nonstop\" word.",
+   "The price limit \"under $450\" is the person's own number, read from the label \"From\" in US dollars.",
+   "The count of 3 is enforced only as 3 results in output/steps/1.json; nothing in the input ranks or caps the list at exactly 3, so which 3 flights appear and in what order is not checked.",
+   "The input's origin/destination labels (\"Where from?\", \"Where to?\") were not found, so \"Boston to Chicago\" is only reflected through the quoted airport names."
+  ],
+  "readNotes": [],
+  "door": {
+   "head": "waiting for you",
+   "ask": "the checks passed; is this what you wanted?"
+  },
+  "delivered": [],
+  "gap": {
+   "line": "result 1: the quote is not found word for word in \"flights\"",
+   "more": 2,
+   "moreText": "(+2 more)"
+  }
+ }
+}

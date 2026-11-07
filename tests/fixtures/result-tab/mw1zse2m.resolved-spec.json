@@ -1,0 +1,56 @@
+{
+  "schema": "job-v1",
+  "job": "r2-ticket-repo",
+  "description": "R2 live: r2-ticket-repo",
+  "provider": "openai-api",
+  "baseUrl": "https://api.fireworks.ai/inference/v1",
+  "cadence": {
+    "unit": "day",
+    "every": 1
+  },
+  "budgetUsd": 0.3,
+  "maxWallMs": 1800000,
+  "writeScope": [
+    "src/**"
+  ],
+  "goal": "Fix the bug in src/sum.js so that the tests in test/sum.test.js pass. A ticket from the repository tracker is saved at .bareloop-input/issues.txt; read it for the background.",
+  "verdictType": "green",
+  "mcp": {
+    "server": "github",
+    "tools": [
+      "issue_read"
+    ]
+  },
+  "tools": [
+    "read",
+    "grep",
+    "write",
+    "edit",
+    "recall",
+    "get"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  },
+  "flowType": "tickets",
+  "inputs": [
+    {
+      "n": 1,
+      "label": "repo",
+      "value": "/home/hamr/PycharmProjects/bareloop/.claude/scratch/mcp-tickets/r2-live/work/r2/repo"
+    },
+    {
+      "n": 2,
+      "label": "Issues",
+      "value": "https://github.com/hamr0/hol-guard/issues"
+    }
+  ],
+  "close": [
+    {
+      "name": "sum-tests-pass",
+      "cmd": "node /home/hamr/PycharmProjects/bareloop/.claude/scratch/mcp-tickets/r2-live/work/r2/close-sum-tests-pass.mjs sum-tests-pass",
+      "expect": 0,
+      "sha256": "1eec25468d39c70f99aba8acbd62c511eec67c8b1bfcd37acddd974540cadd90"
+    }
+  ]
+}

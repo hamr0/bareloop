@@ -53,7 +53,7 @@ test('detail: the Result tab shows for a rubric run with a rubric-step stage (re
   assert.deepEqual(r.delivered, [], 'a red run delivered nothing');
 });
 
-test('detail: no Result tab for a deterministic run, nor for a rubric run whose close has no rubric-step stage', async () => {
+test('detail: a non-rubric run that ENDED has the generic Result tab (R7b item 4); a rubric run whose close has no rubric-step stage too; neither carries the rubric payload', async () => {
   const { keysHome, makeRun, specOf } = await import('./trigger-world.mjs');
   const home = keysHome();
   // makeRun's job-start carries no verdictType (the label would read 'unknown'); real run-u spines carry it
@@ -66,12 +66,17 @@ test('detail: no Result tab for a deterministic run, nor for a rubric run whose 
   const p = { get: async (path) => { const r = await fetch(`http://127.0.0.1:${port}${path}`); const t = await r.text(); let body = t; try { body = JSON.parse(t); } catch { /* text */ } return { status: r.status, body }; } };
   const det = (await p.get('/api/runs/det1')).body;
   assert.equal(det.checkType, 'deterministic');
-  assert.equal(det.hasResult, false);
+  assert.equal(det.hasResult, true);
   const rub = (await p.get('/api/runs/rub1')).body;
   assert.equal(rub.checkType, 'rubric');
-  assert.equal(rub.hasResult, false, 'rubric, but no rubric-step stage');
-  assert.equal((await p.get('/api/runs/det1/result')).status, 404);
-  assert.equal((await p.get('/api/runs/rub1/result')).status, 404);
+  assert.equal(rub.hasResult, true, 'rubric, but no rubric-step stage: the generic tab');
+  for (const id of ['det1', 'rub1']) {
+    const res = await p.get(`/api/runs/${id}/result`);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.kind, 'generic');
+    assert.equal(res.body.lines, undefined, 'no rubric lines');
+  }
+  assert.equal((await p.get('/api/runs/nope/result')).status, 404);
 });
 
 test('/result (green, mve5y8fa): one row per delivered result, columns are the signed fact names, cells are the file\'s values, ✓ basis is the run\'s own check', async () => {

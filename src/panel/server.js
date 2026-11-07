@@ -29,6 +29,7 @@ import {
   readFileSync, existsSync, readdirSync, lstatSync, realpathSync,
 } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import {
   dirname, join, basename, relative, isAbsolute, sep,
 } from 'node:path';
@@ -70,7 +71,7 @@ import { SHAPES } from '../providershapes.js';
 import { resolveProvider } from '../providers.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
 import {
-  statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER, DOOR_WORDS, isReusableGreen,
+  statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER, DOOR_WORDS, isReusableGreen, STATUS,
 } from './status.js';
 import { thinkingJobText } from '../thinking.js';
 import { ticketFilterWords } from '../ticketfilter.js';
@@ -1400,10 +1401,179 @@ function cellText(v) {
 }
 
 /**
+ * Which Result tab a run wears: `'rubric'` (a soft-green run whose signed close has a rubric-step stage: the page-reading tab, unchanged), `'generic'`
+ * (any other run that ENDED, green or failed: R7b item 4), or `null` (not ended yet, or died with no `job-end`). ONE owner for the tab's gate
+ * ({@link getRunDetailBody}'s `hasResult`) and the route.
+ * @param {{ at?: string }} row @param {any[]} records @param {any} spec
+ * @returns {'rubric'|'generic'|null}
+ */
+function resultKindOf(row, records, spec) {
+  const start = records.findLast((r) => r && r.type === 'job-start');
+  if (checkTypeLabel(typeof start?.verdictType === 'string' ? start.verdictType : null, row.at ?? null) === 'rubric' && rubricStagesOf(spec).length > 0) return 'rubric';
+  return records.some((r) => r && r.type === 'job-end') ? 'generic' : null;
+}
+
+/** the words of the work box and the diff box, code-owned (one spelling) */
+const RESULT_WORK_NOTE = 'shown as text; the merge is yours, no button runs it.';
+
+/**
+ * the allowed folder of a write fence entry in plain words: `src/**` is `src/`; an entry this cannot read as a folder or file is `null`
+ * @param {string} entry
+ */
+function scopePrefixOf(entry) {
+  const m = /^(.*?)(?:\/\*\*?)?$/.exec(entry);
+  const base = m ? m[1] : entry;
+  return base !== '' && !/[*?[\]{}]/.test(base) ? base : null;
+}
+
+/**
+ * The generic Result tab's "What changed" box, from the spine's own `attempt-diff` records (they survive a deleted branch): the LAST edit's diff, every
+ * edit behind a fold, and the header numbers counted over every diff the records hold. `null` when the run recorded no edit at all.
+ * @param {any[]} records @param {string[]|null} writeScope
+ */
+function changedOf(records, writeScope) {
+  const diffs = records.filter((r) => r && r.type === 'attempt-diff' && Array.isArray(r.files));
+  if (diffs.length === 0) return null;
+  const edits = diffs.map((r, i) => ({
+    n: i + 1,
+    step: typeof r.step === 'string' ? r.step : null,
+    files: r.files.filter((/** @type {any} */ f) => f && typeof f.path === 'string').map((/** @type {any} */ f) => ({
+      path: f.path, diff: typeof f.diff === 'string' ? f.diff : '',
+      cut: f.truncated === true ? (Number.isInteger(f.cutLines) ? f.cutLines : 0) : null,
+    })),
+    binary: Array.isArray(r.binary) ? r.binary.filter((/** @type {any} */ b) => typeof b === 'string') : [],
+  }));
+  const paths = [...new Set(edits.flatMap((e) => [...e.files.map((f) => f.path), ...e.binary]))];
+  let plus = 0; let minus = 0; let anyCut = false;
+  for (const e of edits) {
+    for (const f of e.files) {
+      if (f.cut !== null) anyCut = true;
+      for (const line of f.diff.split('\n')) {
+        if (line.startsWith('+') && !line.startsWith('+++')) plus += 1;
+        else if (line.startsWith('-') && !line.startsWith('---')) minus += 1;
+      }
+    }
+  }
+  const shown = paths.length > 4 ? `${paths.slice(0, 4).join(', ')} and ${paths.length - 4} more` : paths.join(', ');
+  const head = `${paths.length} file${paths.length === 1 ? '' : 's'} · ${shown} · +${plus} −${minus} lines over ${edits.length} edit${edits.length === 1 ? '' : 's'}`;
+  const last = edits[edits.length - 1];
+  const cutLines = last.files.reduce((a, f) => a + (f.cut ?? 0), 0);
+  const note = [
+    edits.length > 1 ? 'the last edit only' : null,
+    last.files.some((f) => f.cut !== null) ? `${cutLines} more line${cutLines === 1 ? '' : 's'} cut` : null,
+  ].filter(Boolean).join('; ');
+  // the fence line: every path the run wrote inside what was allowed, or what lay outside
+  let scopeLine = null;
+  const prefixes = writeScope ? writeScope.map(scopePrefixOf) : [];
+  if (writeScope && writeScope.length > 0 && prefixes.every((x) => x !== null)) {
+    const inside = (/** @type {string} */ p) => prefixes.some((x) => p === x || p.startsWith(`${x}/`));
+    const outside = paths.filter((p) => !inside(p));
+    const allowed = prefixes.map((x) => (writeScope.includes(`${x}/**`) || writeScope.includes(`${x}/*`) ? `${x}/` : x)).join(', ');
+    scopeLine = outside.length === 0
+      ? `only ${allowed} was allowed; the run wrote ${paths.length} file${paths.length === 1 ? '' : 's'}, no other.`
+      : `only ${allowed} was allowed, but the run wrote ${outside.join(', ')}.`;
+  }
+  return {
+    head, files: paths.length, paths, plus, minus, edits: edits.length, anyCut,
+    last: { files: last.files.map((f) => ({ path: f.path, diff: f.diff })), note: note === '' ? null : `...(${note})` },
+    all: edits.map((e) => ({ n: e.n, step: e.step, files: e.files.map((f) => ({ path: f.path, diff: f.diff, cutNote: f.cut === null ? null : `...(${f.cut} more line${f.cut === 1 ? '' : 's'} cut)` })) })),
+    foldWords: `show every edit of the run (${edits.length})`,
+    scopeLine,
+  };
+}
+
+/**
+ * The generic Result tab's "The checks" box, from the run's LAST `outer-close` record: each stage's plain question ({@link stageQuestionText}'s one
+ * owner, through the spec's own declaration), its pass/fail word from the status table, and the number the close read. `null` when no close ran.
+ * @param {any[]} records @param {any} spec
+ */
+function checksOf(records, spec) {
+  const oc = records.findLast((r) => r && r.type === 'outer-close' && Array.isArray(r.stages));
+  if (!oc) return null;
+  const kindMeta = stageKindMetaFromSpec(spec);
+  const stages = oc.stages.filter((/** @type {any} */ s) => s && typeof s.name === 'string').map((/** @type {any} */ raw) => {
+    const s = attachStageKind(raw, kindMeta);
+    const passed = s.verdict === 'satisfied';
+    return {
+      name: s.name, question: typeof s.question === 'string' && s.question ? s.question : null, passed,
+      status: passed ? STATUS.passed : STATUS.failed,
+      value: typeof s.value === 'number' ? s.value : null, baseline: typeof s.baseline === 'number' ? s.baseline : null,
+      direction: s.direction ?? null, baselineKind: s.baselineKind ?? null,
+      notes: typeof s.notes === 'string' && s.notes !== '' ? s.notes : null,
+    };
+  });
+  const ok = stages.filter((/** @type {any} */ s) => s.passed).length;
+  return {
+    head: `${ok} of ${stages.length} passed · the close ran them after the worker stopped`,
+    passed: ok, total: stages.length, allPassed: ok === stages.length, stages,
+    notes: stages.filter((/** @type {any} */ s) => s.notes).map((/** @type {any} */ s) => ({ name: s.name, text: s.notes })),
+  };
+}
+
+/**
+ * The generic Result tab's "The work" box: the run's work branch, but ONLY while that branch still exists in the person's repo (asked of git itself).
+ * The merge and delete lines are TEXT; nothing runs them. `null` when the run has no work branch, no repo is known, or the branch is gone.
+ * @param {{ spine: string }} row @param {any[]} records
+ */
+function workOf(row, records) {
+  const wb = records.findLast((r) => r && r.type === 'work-branch' && typeof r.branch === 'string') ?? null;
+  const wt = worktreeOfRun(row, records);
+  if (!wb || !wt || !wt.branch) return null;
+  /** @type {string} */
+  let final;
+  try {
+    final = execFileSync('git', ['-C', wt.repo, 'rev-parse', '--verify', '--quiet', `refs/heads/${wt.branch}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }).trim();
+  } catch { return null; }
+  if (final === '') return null;
+  return {
+    branch: wt.branch, finalCommit: final.slice(0, 7), madeFrom: typeof wb.base === 'string' ? wb.base.slice(0, 7) : null, repo: wt.repo,
+    merge: `git merge ${wt.branch}`, drop: `git branch -D ${wt.branch}`, note: RESULT_WORK_NOTE,
+  };
+}
+
+/**
+ * The generic Result tab (R7b item 4; hamr signed the mockup 2026-11-07) for a run that ENDED and is not a rubric job: five boxes of facts read
+ * from the run's own records, plus the ticket a ticket job read. The page draws it; it decides nothing.
+ * @param {string} runid @param {any} row @param {any[]} records @param {any} spec @param {any} opts
+ */
+function genericResultOf(runid, row, records, spec, opts) {
+  const start = records.findLast((r) => r && r.type === 'job-start') ?? null;
+  const writeScope = Array.isArray(spec?.writeScope) && spec.writeScope.every((/** @type {any} */ x) => typeof x === 'string') ? spec.writeScope : null;
+  const t = start && start.ticket && typeof start.ticket === 'object' ? start.ticket : null;
+  const ticket = t && Number.isInteger(t.number) ? {
+    number: t.number, title: typeof t.title === 'string' ? t.title : '', url: typeof t.url === 'string' && /^https?:\/\//i.test(t.url) ? t.url : null,
+  } : null;
+  const detail = getRunDetailBody(runid, opts);
+  const plan = records.findLast((r) => r && r.type === 'plan-executed' && Array.isArray(r.steps)) ?? null;
+  const spentUsd = detail && typeof detail.spentUsd === 'number' ? detail.spentUsd : null;
+  const complete = detail ? detail.spendComplete !== false : true;
+  const ids = plan ? plan.steps.map((/** @type {any} */ x) => String(x?.id)) : [];
+  const replans = plan && Number.isInteger(plan.replans) ? plan.replans : 0;
+  return {
+    runid,
+    kind: 'generic',
+    job: { asked: jobTextFromSpec(spec) || (typeof start?.goal === 'string' ? start.goal : ''), scope: writeScope },
+    ticket,
+    changed: changedOf(records, writeScope),
+    checks: checksOf(records, spec),
+    work: workOf(row, records),
+    run: {
+      spent: spentUsd === null ? 'unknown' : `${complete ? '' : 'at least '}${panelMoney2(spentUsd)}`,
+      spentNote: spentUsd !== null && !complete ? 'a floor: some rounds were unpriced' : null,
+      time: detail && typeof detail.wallMs === 'number' ? formatDurationMs(detail.wallMs) : 'unknown',
+      steps: plan ? `${ids.length} step${ids.length === 1 ? '' : 's'}${ids.length ? ` (${ids.join(', ')})` : ''}, ${replans === 0 ? 'no replan' : `${replans} replan${replans === 1 ? '' : 's'}`}` : null,
+    },
+    door: { head: DOOR_WORDS.waiting.head, ask: RESULT_DOOR_ASK },
+  };
+}
+
+/**
  * `GET /api/runs/:runid/result` — the Result tab: for each rubric job line, its words and `~` rules from the signed spec, the facts it requires
  * (worded by {@link factSentence}), and — read from the run's own delivered step file, sha256-checked against its `destination-written`
  * record — one row per result with each fact's cell. `passed` is read from the run's own `check-run` record; the tab never re-decides. A red run
  * delivers nothing, so it has no rows: it carries the check's own first gap instead. `null` = no such run or no result tab for it.
+ * Every OTHER job (R7b item 4) that ENDED gets the generic payload from {@link genericResultOf} (`kind: 'generic'`); the rubric payload below is
+ * untouched and carries no `kind`.
  * @param {string} runid @param {{ home?: string }} opts
  */
 export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: string }} */ opts = {}) {
@@ -1411,8 +1581,10 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
   if (!row || row.via === 'import' || !existsSync(row.spine)) return null;
   const records = parseJsonl(row.spine).records;
   const spec = resolveSpecForRow(row);
+  const kind = resultKindOf(row, records, spec);
+  if (kind === 'generic') return genericResultOf(runid, row, records, spec, opts);
+  if (kind === null) return null;
   const stages = rubricStagesOf(spec);
-  if (stages.length === 0) return null;
   const delivered = deliveredOf(records);
   const read = delivered.map((d) => readDelivered(d));
   const jobLines = Array.isArray(spec?.jobLines) ? spec.jobLines : [];
@@ -1933,7 +2105,7 @@ function getRunDetailBody(runid, opts) {
     accept: !runIsAlive(row) && doorWaiting(rawSpineRecords),
     // PRD v1.107 Part 6: the Result tab shows for a rubric run whose signed close has a rubric-step stage, never otherwise; `delivered` is the
     // files the run's own `destination-written` records name (the Result tab's downloads index into this list, never a path from a request)
-    hasResult: checkTypeLabel(summary.verdictType, row.at) === 'rubric' && rubricStagesOf(specForParts).length > 0,
+    hasResult: resultKindOf(row, rawSpineRecords, specForParts) !== null,
     delivered: deliveredOf(rawSpineRecords).map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })),
     // T Part 7: why a SCHEDULED run started (the words `trigger.json` carried) and the fixed catch-up sentence; null on every hand run
     ...(() => {
