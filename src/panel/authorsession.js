@@ -27,7 +27,7 @@ import {
 } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import {
-  prepareSource, proveDestination, proveRubricInputs, looksLikeRubricInput, missingDependencies, looksLikeRepoSource, nearestGitAncestor, nonRepoSourceMessage, destinationMissingInRepo,
+  prepareSource, proveDestination, proveRubricInputs, looksLikeRubricInput, missingDependencies, looksLikeRepoSource, nearestGitAncestor, nonRepoSourceMessage, destinationMissingInRepo, repoTrackedFiles,
 } from '../source.js';
 import {
   worktreePath, uncommittedCount, shortHead, removeWorktree,
@@ -48,7 +48,7 @@ import {
   resolveProvider, buildRunnerProviders, apiKeyProblem,
 } from '../providers.js';
 import { resolveJobJudge, defaultJudgeLoop } from '../judged.js';
-import { assertThinkingMode, thinkingPlanFor, thinkingRowText } from '../thinking.js';
+import { assertThinkingMode, thinkingPlanFor, thinkingRowText, thinkingCallOptions } from '../thinking.js';
 import { closeJudges } from '../kinds.js';
 import { RUBRIC_LANG } from '../authoring.js';
 import { rubricGoal, reconcileRubricPlan, signedFactNames } from '../rubricstep.js';
@@ -58,6 +58,7 @@ import { mcpPickFor, signFlow } from '../mcppick.js';
 import { parseTicketList, ticketNumberOf, TICKET_NUMBER_WORDS } from '../ticketshape.js';
 import { isDropIt, isAgree, stripAgreeLead } from '../pagemap.js';
 import { FIT_ABSENT_NOTE } from '../fitcheck.js';
+import { runDestPoint, destQuestionText, yesNoOf } from '../destpoint.js';
 import { tallyCalls } from '../text.js';
 import { appendDraftLog } from '../draftspend.js';
 import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, draftStopText, redsRecord, declarationRecord, calibrationSummary, tryRefusedText } from '../authorreadout.js';
@@ -470,7 +471,7 @@ export function validateJobCard(card, opts = {}) {
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
  *   scout?: any, generate?: Function, confirmGenerate?: Function, authorFn?: Function,
- *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, fitFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, schedule?: import('../trigger.js').Trigger|null, flow?: {flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null}}} [deps] `scout`..`prepareSigningFn` are
+ *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, fitFn?: Function|null, destFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, schedule?: import('../trigger.js').Trigger|null, flow?: {flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
  * @returns {any} the session object
@@ -628,7 +629,7 @@ export function createSession(card, deps = {}) {
     if (step.kind === 'language') say('bot', `${step.field?.prompt ?? 'Which language is this job about?'} (${(step.candidates ?? []).join(', ')})`);
     else if (step.kind === 'menu') {
       sayPlan(step.plan ?? {});
-    } else if (step.kind === 'answer' && step.source === 'fit-check') say('bot', step.question);
+    } else if (step.kind === 'answer' && (step.source === 'fit-check' || step.source === 'dest-point')) say('bot', step.question);
     else if (step.kind === 'answer') say('bot', `A question the plan raised (${step.index} of ${step.total})${Number.isInteger(step.line) ? `, about job line ${step.line}` : ''}: ${step.question}`);
     else if (step.kind === 'goal') say('bot', 'Type the goal sentence yourself.');
   });
@@ -1061,7 +1062,7 @@ export function createSession(card, deps = {}) {
 
     // a rubric job on files writes only inside the hidden tree's own `output/`; its Destination is a drop-off folder
     // (proven above, per run), never a fence
-    const writeScope = RUBRIC_FILES ? ['output/'] : card.destination.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
+    let writeScope = RUBRIC_FILES ? ['output/'] : card.destination.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
     /** @type {any} the confirm turn (below) fills `goal` in once accepted —
      * declared loosely rather than typed field-by-field, since this object's
      * own shape is a `job-v1` draft `validateJob` itself is the real
@@ -1117,6 +1118,40 @@ export function createSession(card, deps = {}) {
     const noCallAfterAbandon = (fn) => (...a) => { if (abandoned) throw new Error('abandoned — no new model call'); return fn(...a); };
     const generate = noCallAfterAbandon(deps.generate ?? makeLoopGenerate(provider, { rates: draftPrice?.rates ?? null, draftThinking }));
     const confirmGenerate = noCallAfterAbandon(deps.confirmGenerate ?? makeLoopGenerate(provider, { system: CONFIRM_SYSTEM, rates: draftPrice?.rates ?? null, draftThinking }));
+
+    // R7b (3), hamr's option A: the drafting AI POINTS when a job line's file to change lies outside Destination; code checks the claim (src/destpoint.js) and asks ONE typed
+    // yes/no question through the same `ask` as the fit check's "go on". "yes" sets the fence (below) AND this session's card Destination (the page re-fills its box from it);
+    // "no" goes on unchanged. The fence and the draft are updated before the composer sees them, so the signed spec carries the answer. The caller's own card object is never mutated. A repo job only; failure is OPEN.
+    if (!RUBRIC_FILES && isRepoLike) {
+      const destFn = deps.destFn !== undefined ? deps.destFn : (deps.generate ? null : runDestPoint);
+      const tracked = destFn ? repoTrackedFiles(prep.tree) : null;
+      if (destFn && tracked !== null) {
+        const pointed = await destFn({
+          jobLines, files: tracked, destination: card.destination, provider, ceilingUsd: card.capUsd, onCall, ...(draftPrice?.rates ? { rates: draftPrice.rates } : {}),
+          ...(Object.keys(thinkingCallOptions(provider, draftThinking)).length ? { callOptions: thinkingCallOptions(provider, draftThinking) } : {}),
+        });
+        if (abandoned) return;
+        appendDraftLog(outDir, { kind: 'dest-point', no: Math.max(0, state.steps.length - 1), state: pointed.state, ...(pointed.point ? { line: pointed.point.line, file: redactSecrets(pointed.point.file), folder: redactSecrets(pointed.point.folder) } : {}), ...(pointed.reason ? { reason: redactSecrets(pointed.reason) } : {}), at: new Date().toISOString() });
+        if (pointed.state === 'point' && pointed.point) {
+          const question = destQuestionText(pointed.point, card.destination);
+          let said = null;
+          while (said === null) {
+            const a = await ask({ kind: 'answer', source: 'dest-point', index: 1, total: 1, question, line: pointed.point.line });
+            if (a === null) return;
+            said = yesNoOf(a);
+            if (said === null) say('bot', 'Type yes or no.');
+          }
+          appendDraftLog(outDir, { kind: 'dest-answer', no: Math.max(0, state.steps.length - 1), answer: said, from: redactSecrets(card.destination), to: redactSecrets(pointed.point.folder), at: new Date().toISOString() });
+          if (said === 'yes') {
+            card = { ...card, destination: pointed.point.folder };
+            writeScope = [pointed.point.folder];
+            draft.writeScope = writeScope;
+            state.card = { ...state.card, destination: pointed.point.folder };
+            say('bot', `Destination is now ${pointed.point.folder}. Drafting.`);
+          } else say('bot', 'Destination stays as it is. Drafting.');
+        }
+      }
+    }
 
     // P7 item 5 (fwdloop am24/25): the last drafting try, after two failed ones, may ask. Each question comes through the same
     // ask path as every other (the chat box + Send); the answer is REQUIRED (a blank one asks again, there is no skip) and is

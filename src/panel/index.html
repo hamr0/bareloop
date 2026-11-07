@@ -5850,8 +5850,15 @@
       }
     });
 
+    // R7b (3): "yes" to the folder question changes the SESSION's Destination; the box is locked while a session is live, so the page re-fills it from the session's own card
+    function syncDestinationFromSession(state){
+      var d = state && state.card && state.card.destination;
+      var box = document.getElementById("jf-dest");
+      if(typeof d === "string" && box && box.value !== d){ box.value = d; fitCardBoxes(); }
+    }
     function renderActions(state){
       lastState = state;
+      syncDestinationFromSession(state);
       // a session's stop is shown ONCE, in the progress line (renderProgress); #chat-card-error carries only a
       // refused START (its own handler writes it) — echoing state.error here made the same refusal appear twice
       errEl.textContent = "";

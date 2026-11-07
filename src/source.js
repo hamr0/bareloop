@@ -184,15 +184,22 @@ export function looksLikeRepoSource(source) {
 }
 
 /**
+ * The files of a repo's COMMITTED tree (`git ls-tree -r HEAD`: what a job's worktree holds), or null when git cannot read it.
+ * @param {string} root the repo's (or worktree's) top folder @returns {string[]|null}
+ */
+export function repoTrackedFiles(root) {
+  try { return execFileSync('git', ['-C', root, 'ls-tree', '-r', '--name-only', '-z', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024 }).split('\0').filter(Boolean); } catch { return null; }
+}
+
+/**
  * R7b (F287): the first piece of a repo Destination (comma or line separated) that the repo's COMMITTED tree does not have, or null when every piece exists.
  * A piece is a folder (`src`, `src/`), a file, or a glob whose folder part exists (`src/**\/*.js`); `.` is the repo root. A tree that cannot be read is null:
  * the copy step refuses that repo with its own words, this check never invents a refusal from a failure.
  * @param {string} root the repo's top folder @param {string} destination @returns {string|null}
  */
 export function destinationMissingInRepo(root, destination) {
-  /** @type {string[]} */
-  let files;
-  try { files = execFileSync('git', ['-C', root, 'ls-tree', '-r', '--name-only', '-z', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024 }).split('\0').filter(Boolean); } catch { return null; }
+  const files = repoTrackedFiles(root);
+  if (files === null) return null;
   const hasDir = (/** @type {string} */ dir) => files.some((f) => f.startsWith(`${dir}/`));
   for (const raw of destination.split(/[,\n]/)) {
     const piece = raw.trim();
