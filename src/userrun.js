@@ -316,6 +316,7 @@ class ExitSignal extends Error {
  * @property {string} [into] see `RunOpts.into`
  * @property {boolean} [refreeze] a FRESH `--spec` run: fetch the web inputs again AFTER the run is listed (never on resume/door/decide)
  * @property {{number: number, mcp: {server: string, tools: string[]}, repo?: true}} [ticket] a FRESH run of a job that reads tickets (flow type Tickets): the ticket number `--ticket` named (per run, never signed) and the job's signed `mcp`; `repo` = a code-repository (worktree) job, whose ticket is frozen into the worktree's private `.bareloop-input/` (src/ticketrepo.js) instead of the prepared copy's `input/`
+ * @property {{mcp: {server: string, tools: string[]}, repo?: boolean}} [pickNewest] R7b (5): a FRESH Tickets run that names no ticket: `execute` looks up the newest unrun one before it builds the run's row (so the row carries the number), and a refused look still lists the row and settles it at $0
  * @property {{url: string, record: any, reread?: () => Promise<any>}} [pr] piece 12: a FRESH run of a code-repo job on a pull request: `url` = the PR address, `record` = the frozen PR record (its `head.sha` is what the worktree is checked out at, src/prcheckout.js), `reread` = read that record again once if the PR moved. Set by the PR reader (a repo job whose ticket line is a pulls list supplies it from its own frozen `pull_request_read`; this field is the override seam), never by a flag
  * @property {boolean} [anyway] `--anyway`: run this ticket even if the job's filter would skip it (inert until the filter exists; it needs --ticket)
  * @property {string|null} model
@@ -1544,13 +1545,28 @@ async function execute(ctx) {
   const LEG = resuming ? deadLegs.length + 1 : 1;
   const foldedUsd = dead ? dead.restart.priorSpentUsd : (doorPrior?.spentUsd ?? 0);
   const legCapUsd = Math.max(0, spec.budgetUsd - (typeof foldedUsd === 'number' && Number.isFinite(foldedUsd) ? foldedUsd : 0));
+  // a fresh Tickets run that names no ticket: the newest unrun ticket (src/ticketnext.js), looked up HERE so the row below carries the number it read. A look that is refused
+  // (a locked pass, an unreadable list, nothing new) is not an exit with no trace: the run is listed and settled at $0 with the plain words (R7b 5, the refused-page-fetch shape).
+  /** @type {typeof ctx.ticket} */
+  let ticket = ctx.ticket;
+  /** @type {string|null} */
+  let pickRefusal = null;
+  if (ctx.pickNewest !== undefined && !resuming) {
+    const home = deps.keysHome ?? deps.runlistHome;
+    const rows = (() => { try { return readRunList({ home }).rows; } catch { return []; } })();
+    const picked = await (deps.newestUnrunTicket ?? newestUnrunTicket)({ job: spec.job, rows, inputs: Array.isArray(spec.inputs) ? spec.inputs : [], mcp: ctx.pickNewest.mcp, ...(deps.mcpConfig ? { configPath: deps.mcpConfig } : {}) });
+    if (picked.ok) {
+      ticket = { number: picked.number, mcp: ctx.pickNewest.mcp, ...(ctx.pickNewest.repo ? { repo: /** @type {const} */ (true) } : {}) };
+      out(`${SELECTOR}: no --ticket given, so this run takes the newest ticket it has not run: #${picked.number}.`);
+    } else pickRefusal = /did not start|Nothing spent\.$/.test(picked.say) ? picked.say : `${picked.say} The run did not start. Nothing spent.`;
+  }
   // every row carries its runner's pid and the leg cap, limit set or not: a limit set LATER still holds it
   /** @type {import('./runlist.js').RunRow} */
   const runRow = {
     // a RESUMED run keeps its own start stamp (the row is listed only if the list has none; it is the run's, not the leg's)
     at: resuming ? (deadLegs[0]?.start?.ts ?? new Date().toISOString()) : new Date().toISOString(), runid, job: spec.job, spine: spineFile, patient: wd, via: ctx.bundle ? 'bundle' : 'run-u', pid: process.pid, capUsd: legCapUsd,
     // a Tickets run lists the ticket it reads (a fresh run only; a skipped or refused run keeps it too): "has run" for the by-hand pick of the newest unrun ticket (src/ticketnext.js)
-    ...(ctx.ticket !== undefined ? { ticket: ctx.ticket.number } : {}),
+    ...(ticket !== undefined ? { ticket: ticket.number } : {}),
   };
   let claimed = false;
   {
@@ -1610,6 +1626,18 @@ async function execute(ctx) {
     err(`WARNING: could not add this run to ~/.config/bareloop/runs.jsonl (${e.message}) — the run continues; the panel's list will be missing this row.`);
   }
 
+  /** a run refused before it started: ONE settled event on its listed row ($0, complete), the claim freed, the plain words kept for the panel (Runs list + Ended block); never a `released` row, which would unlist it */
+  const settleRefused = (/** @type {string} */ words) => {
+    if (!claimedRow) return;
+    try { appendRunEvent({ runid, type: 'settled', by: runid, reason: 'refused before start', words, spentUsd: 0, spendComplete: true, at: new Date().toISOString() }, { home: claimedRow.home }); } catch { /* the exit stands; the dead pid frees the claim */ }
+    claimedRow = null;
+  };
+  if (pickRefusal !== null) {
+    err(`${SELECTOR}: ${pickRefusal}`);
+    settleRefused(pickRefusal);
+    throw new ExitSignal(2);
+  }
+
   // RUN START REFETCH (PART 1c RF22; moved here 2026-10-19, run mvez8s54: the ~18 s barebrowse fetch ran in main() BEFORE this run was
   // listed, so Sign & run showed nothing for 18 s). The run is listed FIRST (row above, with its pid and cap = the monthly claim), THEN
   // fetches: the Run tab reads "fetching the page…" while source.json has no refrozenAt at or after the row. A refusal cannot be a
@@ -1621,17 +1649,17 @@ async function execute(ctx) {
     let fresh;
     // piece 12's door: `ctx.pr` (a test seam / caller) wins; otherwise a PULLS ticket line of a repo job supplies it from its own frozen read
     let prIn = ctx.pr;
-    if (ctx.ticket?.repo === true) {
-      const frozen = await freezeRepoTicket({ workdir: wd, inputs: Array.isArray(spec.inputs) ? spec.inputs : [], ticket: ctx.ticket });
+    if (ticket?.repo === true) {
+      const frozen = await freezeRepoTicket({ workdir: wd, inputs: Array.isArray(spec.inputs) ? spec.inputs : [], ticket });
       if (frozen.ok) { ticketRecord = frozen.record; prIn ??= frozen.pr; }
       fresh = frozen.ok ? { ok: true, refreshed: [], seed: null, ticketText: frozen.ticketText } : frozen;
     } else {
-      fresh = await refreezeUrlInputs({ into: ctx.into, ...(deps.fetchUrl ? { fetchUrl: deps.fetchUrl } : {}), ...(ctx.ticket ? { ticket: ctx.ticket } : {}) });
+      fresh = await refreezeUrlInputs({ into: ctx.into, ...(deps.fetchUrl ? { fetchUrl: deps.fetchUrl } : {}), ...(ticket ? { ticket } : {}) });
     }
     // piece 2 (R5): the job's signed `ticketFilter` (and a closed ticket, always) decides RUN or SKIP from the frozen ticket's labels and state, by CODE, before any worker or
     // model call and before piece 12 fetches a PR head. A skip is a quiet end: ONE `settled` event on the already-listed row ($0, complete), the claim freed, no spine, no
     // learnings note, no bridge/credit row; exit 0 (a clean end, not a refusal). `--anyway` runs it regardless. An UNSURE verdict (off-scale or unreadable label) never skips.
-    if (fresh.ok && ctx.ticket !== undefined && typeof fresh.ticketText === 'string') {
+    if (fresh.ok && ticket !== undefined && typeof fresh.ticketText === 'string') {
       const verdict = decideTicket({ text: fresh.ticketText, filter: spec.ticketFilter });
       if (verdict.outcome === 'skip' && ctx.anyway !== true) {
         const words = skipWords(verdict.reason, spec.ticketFilter);
@@ -1661,10 +1689,7 @@ async function execute(ctx) {
     if (!fresh.ok) {
       const words = /did not start|Nothing spent\.$/.test(fresh.error) ? fresh.error : `${fresh.error}. The run did not start. Nothing spent.`;
       err(`${SELECTOR}: ${fresh.error}`);
-      if (claimedRow) {
-        try { appendRunEvent({ runid, type: 'settled', by: runid, reason: 'refused before start', words, spentUsd: 0, spendComplete: true, at: new Date().toISOString() }, { home: claimedRow.home }); } catch { /* the exit stands; the dead pid's claim is closed by the next run */ }
-        claimedRow = null; // settled, not released: a released leg-1 row is unlisted, and the person must see why
-      }
+      settleRefused(words);   // settled, not released: a released leg-1 row is unlisted, and the person must see why
       throw new ExitSignal(2);
     }
     if (fresh.refreshed.length > 0 && typeof fresh.seed === 'string' && fresh.seed) SEED = fresh.seed;
@@ -2769,16 +2794,9 @@ export async function main(argv, deps = {}) {
       if (ticketNumber === undefined) die(`--ticket takes ${TICKET_NUMBER_WORDS}, not "${ticketArg}".`);
       if (!tickets) die('--ticket is for a job that reads tickets, and this job has no ticket source.');
     }
-    // a fresh Tickets run that names no ticket takes the NEWEST UNRUN one (piece 8; fwd newestUnrunTicket): the schedule's own look at $0 over the job's signed `list_issues`, above the
-    // highest number this job's runs already hold. Nothing new, or a list that cannot be read, is one plain line at $0 and no run. A typed `--ticket` never reaches this.
-    if (tickets && refreeze && ticketNumber === undefined) {
-      const home = deps.keysHome ?? deps.runlistHome;
-      const rows = (() => { try { return readRunList({ home }).rows; } catch { return []; } })();
-      const picked = await (deps.newestUnrunTicket ?? newestUnrunTicket)({ job: spec.job, rows, inputs: Array.isArray(spec.inputs) ? spec.inputs : [], mcp: spec.mcp, ...(deps.mcpConfig ? { configPath: deps.mcpConfig } : {}) });
-      if (!picked.ok) die(`${picked.say} The run did not start. Nothing spent.`);
-      ticketNumber = picked.number;
-      (deps.out ?? ((/** @type {string} */ l) => { console.log(l); }))(`${SELECTOR}: no --ticket given, so this run takes the newest ticket it has not run: #${ticketNumber}.`);
-    }
+    // a fresh Tickets run that names no ticket takes the NEWEST UNRUN one (piece 8; fwd newestUnrunTicket): `execute` makes the schedule's own look at $0 over the job's signed
+    // `list_issues`, AFTER the run's own row is built so a look that is refused is a LISTED, settled run (R7b 5), never a silent exit. A typed `--ticket` never reaches it.
+    const pickNewest = tickets && refreeze && ticketNumber === undefined;
 
     const ctx = {
       spec,
@@ -2791,6 +2809,7 @@ export async function main(argv, deps = {}) {
       ...(target.into === undefined ? {} : { into: target.into }),
       ...(refreeze ? { refreeze: true } : {}),
       ...(tickets && refreeze && ticketNumber !== undefined ? { ticket: { number: ticketNumber, mcp: spec.mcp, ...(worktreeJob ? { repo: /** @type {const} */ (true) } : {}) } } : {}),
+      ...(pickNewest ? { pickNewest: { mcp: spec.mcp, repo: worktreeJob } } : {}),
       ...(deps.pr !== undefined && refreeze ? { pr: deps.pr } : {}),
       ...(anyway ? { anyway: true } : {}),
       model: argFlag('model'),

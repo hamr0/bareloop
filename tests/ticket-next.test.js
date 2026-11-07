@@ -39,11 +39,15 @@ describe('the pick', () => {
     const a = await pick(empty);
     assert.equal(a.ok, false);
     assert.match(a.say, /came back empty/);
-    assert.match(a.say, /Type the ticket number to read instead\.$/);
+    assert.doesNotMatch(a.say, /Type the ticket number/, 'the Ticket box is gone: no words point at it (R7b 6)');
+    assert.match(a.say, /start the job again\.$/);
     const dev = ticketWorld(t, { env: { FAKE_REPLY: 'device' } });
     const b = await pick(dev);
     assert.equal(b.ok, false);
     assert.match(b.say, /GitHub token unavailable/);
+    assert.match(b.say, /^The newest ticket could not be looked up\. The reason: /, 'it names that the newest-ticket look failed, then the cause');
+    assert.doesNotMatch(b.say, /\?\./, 'no doubled ?. (fwd flags it as a nit)');
+    assert.doesNotMatch(b.say, /Type the ticket number/);
   });
   test('Must fail: the signed tools lack list_issues, or the job reads a pulls list -> plain words, no look', async (t) => {
     const w = ticketWorld(t);

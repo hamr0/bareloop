@@ -18,7 +18,7 @@ const DRAFT_PAGE = `DRAFT-LIST ${'Issues list page text. Open issues of the repo
 const tmp = (t, prefix) => { const d = mkdtempSync(join(tmpdir(), prefix)); t.after(() => rmSync(d, { recursive: true, force: true })); return d; };
 
 /** a Tickets job whose filter (P1) skips the fake ticket (P3): the run ends at run start, so no worker is needed; `list` = what the "server" lists, `prior` = rows already in the run list */
-async function engine(t, { list = newestFirst(25), argv = [], tools = MCP.tools, prior = [], jobName = 'next-job' } = {}) {
+async function engine(t, { list = newestFirst(25), argv = [], tools = MCP.tools, prior = [], jobName = 'next-job', serverEnv = {} } = {}) {
   const home = tmp(t, 'next-home-');
   const old = process.env.HOME;
   process.env.HOME = home;
@@ -26,7 +26,7 @@ async function engine(t, { list = newestFirst(25), argv = [], tools = MCP.tools,
   const listFile = join(home, 'list.json');
   writeFileSync(listFile, JSON.stringify(list));
   const calls = join(home, 'calls.jsonl');
-  writeFileSync(join(home, '.mcp.json'), JSON.stringify({ mcpServers: { github: { command: process.execPath, args: [FAKE], env: { FAKE_MCP_SERVER: '1', FAKE_LIST: listFile, FAKE_CALLS: calls, FAKE_ISSUE: JSON.stringify({ labels: [{ name: 'P3' }] }) } } } }));
+  writeFileSync(join(home, '.mcp.json'), JSON.stringify({ mcpServers: { github: { command: process.execPath, args: [FAKE], env: { FAKE_MCP_SERVER: '1', ...serverEnv, FAKE_LIST: listFile, FAKE_CALLS: calls, FAKE_ISSUE: JSON.stringify({ labels: [{ name: 'P3' }] }) } } } }));
   const dir = tmp(t, 'next-run-');
   const into = join(dir, 'source-seed');
   const prep = await proveRubricInputs({ inputs: [{ n: 1, label: 'Issues', value: LIST }], into, fetchUrl: async (u) => ({ ok: true, text: DRAFT_PAGE, url: u }) });
@@ -83,14 +83,40 @@ test('a typed --ticket still wins and never looks', async (t) => {
   assert.deepEqual(r.looked().map((c) => c.name), ['issue_read']);
 });
 
-test('Must fail: signed tools without list_issues -> the pick cannot look; it says so and says to type a number', async (t) => {
+test('Must fail: signed tools without list_issues -> the pick cannot look; it says so and says to start the job again (no Ticket box to type in)', async (t) => {
   const r = await engine(t, { tools: ['issue_read'] });
   assert.notEqual(r.rc, 0);
-  assert.match(r.err, /do not include list_issues.*Type the ticket number to read instead\. The run did not start\. Nothing spent\./);
+  assert.match(r.err, /do not include list_issues.*start the job again\. The run did not start\. Nothing spent\./);
 });
 
 test('the other jobs\' tickets are not this job\'s: a prior run of ANOTHER job holding #25 does not hide #25', async (t) => {
   const r = await engine(t, { prior: [{ ticket: 25, job: 'other-job' }] });
   assert.equal(r.rc, 0, `${r.out}\n${r.err}`);
   assert.equal(r.row.ticket, 25);
+});
+
+// R7b (5): hamr pressed Reuse twice on r7-sched with a locked pass; run-u refused at start and NOTHING showed in the panel (no run-list row). A refusal of the newest-ticket look is now
+// a run LISTED first and SETTLED at $0 with the plain words (the same `settled` / `refused before start` row a refused page fetch makes: Runs list + Ended block).
+test('Must fail (F287b): a newest-ticket look that is refused (locked pass) lists the run and settles it at $0 with the words; no spine, no model', async (t) => {
+  const r = await engine(t, { list: newestFirst(25) });
+  const dead = await engine(t, { list: newestFirst(25), serverEnv: { FAKE_REPLY: 'device' } });
+  assert.equal(r.rc, 0);
+  assert.equal(dead.rc, 2, `${dead.out}\n${dead.err}`);
+  assert.match(dead.err, /GitHub token unavailable/);
+  assert.equal(dead.provider.messagesLog.length, 0);
+  assert.ok(dead.row, 'the refused run IS in the run list (it was invisible before)');
+  assert.equal(dead.row.ticket, undefined, 'no ticket was read');
+  const ev = dead.listed.events.find((e) => e.runid === dead.row.runid);
+  assert.ok(ev, 'a settled event closes the row');
+  assert.deepEqual([ev.type, ev.reason, ev.spentUsd, ev.spendComplete], ['settled', 'refused before start', 0, true]);
+  assert.match(ev.words, /^The newest ticket could not be looked up\. The reason: GitHub token unavailable.*start the job again\. The run did not start\. Nothing spent\.$/);
+  assert.doesNotMatch(ev.words, /Type the ticket number/);
+});
+
+test('Must fail (F287b): "nothing new" is listed and settled too, so a by-hand press is never silent', async (t) => {
+  const r = await engine(t, { list: newestFirst(25), prior: [{ ticket: 25 }] });
+  assert.equal(r.rc, 2);
+  const ev = r.listed.events.find((e) => e.runid === r.row?.runid);
+  assert.ok(r.row && ev, 'listed and settled');
+  assert.match(ev.words, /^Nothing new: no ticket newer than #25 has come in\. The run did not start\. Nothing spent\.$/);
 });

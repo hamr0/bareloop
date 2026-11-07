@@ -282,7 +282,7 @@ describe('run-u --spec --ticket on a code-repo job (R2b step 3)', () => {
     const none = await engine(t, { argv: [] });
     assert.notEqual(none.rc, 0);
     // R6: no --ticket takes the newest unrun ticket; this job's signed tools lack list_issues, so it cannot look and says to type a number
-    assert.match(none.err, /do not include list_issues.*Type the ticket number to read instead\. The run did not start\. Nothing spent\./);
+    assert.match(none.err, /do not include list_issues.*start the job again\. The run did not start\. Nothing spent\./);
     assert.equal(none.provider.messagesLog.length, 0);
   });
 });

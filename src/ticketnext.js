@@ -21,13 +21,14 @@ export function ranTicketNumbers(rows, job) {
  * @returns {Promise<{ok: true, number: number} | {ok: false, say: string}>}
  */
 export async function newestUnrunTicket({ job, rows, inputs, mcp, configPath, look = lookTickets }) {
-  const typed = 'Type the ticket number to read instead.';
+  const again = 'Fix that, then start the job again.';
   const list = inputs.map((i) => ({ value: String(i.value).trim(), p: parseTicketList(i.value) })).find((x) => x.p.ok && x.p.kind === 'issue');
-  if (!list) return { ok: false, say: `The newest ticket can only be found on an issues list. ${typed}` };
-  if (!mcp.tools.includes(LOOK_TOOL)) return { ok: false, say: `This job's signed tools do not include ${LOOK_TOOL}, the tool that finds the newest ticket. ${typed}` };
+  if (!list) return { ok: false, say: `The newest ticket can only be found on an issues list, so this job cannot pick the newest one. ${again}` };
+  if (!mcp.tools.includes(LOOK_TOOL)) return { ok: false, say: `This job's signed tools do not include ${LOOK_TOOL}, the tool that finds the newest ticket. ${again}` };
   const ran = ranTicketNumbers(rows, job);
   const r = await look({ listUrl: list.value, mcp: { server: mcp.server, tool: LOOK_TOOL }, ...(configPath ? { configPath } : {}), seen: ran.size === 0 ? null : ran, last: new Map(), watch: [] });
-  if (!r.ok) return { ok: false, say: `${r.error}. ${typed}` };
+  // the cause is the look's own words (a locked pass names itself); one full stop at the end, never a doubled `?.`
+  if (!r.ok) return { ok: false, say: `The newest ticket could not be looked up. The reason: ${/[.?!]$/.test(r.error) ? r.error : `${r.error}.`} ${again}` };
   const numbers = r.found.map((f) => f.number);
   if (numbers.length === 0) return { ok: false, say: ran.size === 0 ? `No open ticket at ${list.value}.` : `Nothing new: no ticket newer than #${Math.max(...ran)} has come in.` };
   return { ok: true, number: Math.max(...numbers) };
