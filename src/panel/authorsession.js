@@ -27,7 +27,7 @@ import {
 } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import {
-  prepareSource, proveDestination, proveRubricInputs, looksLikeRubricInput, missingDependencies, looksLikeRepoSource, nearestGitAncestor, nonRepoSourceMessage,
+  prepareSource, proveDestination, proveRubricInputs, looksLikeRubricInput, missingDependencies, looksLikeRepoSource, nearestGitAncestor, nonRepoSourceMessage, destinationMissingInRepo,
 } from '../source.js';
 import {
   worktreePath, uncommittedCount, shortHead, removeWorktree,
@@ -388,6 +388,9 @@ export { nonRepoSourceMessage };
 /** the refusal for a plain-files rubric job whose Destination is not an absolute folder (ends with the words the session start shows) */
 export const FILES_DESTINATION_WORDS = 'Destination must be the full path of a folder, like /home/me/out — the finished files are delivered there. Nothing spent.';
 
+/** the fixed example of a Destination refusal (code-owned; it never guesses a folder from the job's words) */
+export const DESTINATION_HINT = 'Type the folder that holds the files the job should change, like src/.';
+
 /**
  * THE ONE Destination check of a session start, at $0, before any session, copy or model call. The session's own pipeline, the HTTP
  * start (`startSession`), the schedule's two clicks and a scheduled fire's `wouldAccept` all call THIS (never a copy of it), so a start
@@ -402,6 +405,12 @@ export function startDestinationProblem(card) {
   const isRepoLike = looksLikeRepoSource(source);
   const repo = repoDestinationProblem(destination, isRepoLike);
   if (repo !== null) return repo;
+  // R7b (F287): a repo's Destination is the write fence, so every piece of it must name something the repo really has (its committed tree: what the job's copy holds)
+  if (isRepoLike) {
+    const root = nearestGitAncestor(resolve(source))?.dir;
+    const missing = root === undefined ? null : destinationMissingInRepo(root, destination);
+    if (missing !== null) return `Destination \`${missing}\` is not a folder or file in this repo. ${DESTINATION_HINT}`;
+  }
   if (card?.checkType === 'rubric' && !isRepoLike && !isAbsoluteDestination(destination)) return FILES_DESTINATION_WORDS;
   return null;
 }

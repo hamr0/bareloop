@@ -49,6 +49,8 @@ function makeRepo() {
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'x', version: '1.0.0' }));
   mkdirSync(join(dir, 'src'));
   writeFileSync(join(dir, 'src', 'mod.js'), '// nothing yet\n');
+  writeFileSync(join(dir, 'src', 'digest.js'), '// a file a Destination may name\n');
+  mkdirSync(join(dir, 'lib')); writeFileSync(join(dir, 'lib', 'a.js'), '// a folder a Destination may name\n');   // R7b: a repo Destination must exist in the repo
   git(dir, ['add', '-A']);
   git(dir, ['commit', '-q', '-m', 'seed']);
   return dir;

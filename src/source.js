@@ -22,6 +22,7 @@
 // (src/kinds.js) already use for a $0 precheck a runner has to print and act
 // on rather than catch.
 
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
@@ -180,6 +181,33 @@ export function looksLikeRepoSource(source) {
     const found = nearestGitAncestor(abs);
     return found !== null && !found.isFile;
   } catch { return false; }
+}
+
+/**
+ * R7b (F287): the first piece of a repo Destination (comma or line separated) that the repo's COMMITTED tree does not have, or null when every piece exists.
+ * A piece is a folder (`src`, `src/`), a file, or a glob whose folder part exists (`src/**\/*.js`); `.` is the repo root. A tree that cannot be read is null:
+ * the copy step refuses that repo with its own words, this check never invents a refusal from a failure.
+ * @param {string} root the repo's top folder @param {string} destination @returns {string|null}
+ */
+export function destinationMissingInRepo(root, destination) {
+  /** @type {string[]} */
+  let files;
+  try { files = execFileSync('git', ['-C', root, 'ls-tree', '-r', '--name-only', '-z', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024 }).split('\0').filter(Boolean); } catch { return null; }
+  const hasDir = (/** @type {string} */ dir) => files.some((f) => f.startsWith(`${dir}/`));
+  for (const raw of destination.split(/[,\n]/)) {
+    const piece = raw.trim();
+    if (piece === '') continue;
+    const t = piece.replace(/^(\.\/)+/, '').replace(/\/+$/, '');
+    if (t === '' || t === '.') continue;
+    const wild = t.search(/[*?[{]/);
+    if (wild !== -1) {
+      const dir = t.slice(0, wild).includes('/') ? t.slice(0, t.slice(0, wild).lastIndexOf('/')) : '';
+      if (dir === '' || hasDir(dir)) continue;
+      return piece;
+    }
+    if (!files.includes(t) && !hasDir(t)) return piece;
+  }
+  return null;
 }
 
 /** @param {Buffer} buf @returns {boolean} */
