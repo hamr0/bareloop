@@ -72,6 +72,13 @@ test('buildJobGrid: buckets, newest first, counts, the stats line honours spendC
   assert.equal(all.stats.spentUsd, null);
 });
 
+test('a live or died row with only a floor reads "at least", a floor mark, and the stats line is then a floor too (mutant: a floor read as complete)', () => {
+  const g = buildJobGrid({ entries: [entry({ runId: 'f', statusKey: 'died', sign: '?', word: 'died', spentUsd: null, spendComplete: false, spendFloorUsd: 0.04, steps: null, checks: null })] });
+  const f = g.groups.find((x) => x.key === 'stop').rows[0];
+  assert.deepEqual(f.cost, { mark: 'q', text: `at least ${panelMoney2(0.04)}` });
+  assert.deepEqual([g.stats.spentComplete, g.stats.spent], [false, `at least ${panelMoney2(0.04)}`]);
+});
+
 test('real spines: the grid of a ticket job is one row per run-list row of that job, in buckets, with the cells from the run\'s own records', () => {
   const w = makeGridWorld({ skipped: SKIPS });
   const opts = { home: w.home, now: NOW };

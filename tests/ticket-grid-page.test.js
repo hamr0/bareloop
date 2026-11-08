@@ -95,6 +95,18 @@ test('an opened row whose payload is not there yet says it is loading; one with 
   assert.match(fns.tgOpenHtml({ ...row, needs: 'Accept' }, { none: true, kind: 'none' }, false), /data-testid="grid-door-elsewhere"/);
 });
 
+test('the door shows only on the row of the run the person opened, only while that run waits at the door and is not live (mutant: a door on every opened row)', () => {
+  const { grid, passed } = real();
+  const row = grid.groups.find((g) => g.key === 'done').rows[0];
+  const f = make(passed);
+  const open = ui({ rows: { mw3gso0m: true } });
+  assert.equal(f.tgRowHTML(row, open, { runid: 'mw6lmvdg', accept: true, live: false }).includes('result-accept'), false, 'another run is in hand');
+  assert.equal(f.tgRowHTML(row, open, { runid: 'mw3gso0m', accept: false, live: false }).includes('result-accept'), false, 'the run does not wait at the door');
+  assert.equal(f.tgRowHTML(row, open, { runid: 'mw3gso0m', accept: true, live: true }).includes('result-accept'), false, 'a live run has no door');
+  assert.equal(f.tgRowHTML(row, open, { runid: 'mw3gso0m', accept: true, live: false }).includes('data-testid="result-accept"'), true);
+  assert.equal(f.tgRowHTML(row, open, null).includes('result-accept'), false);
+});
+
 test('a skipped row is always open: the badge word and the reason from the server, Run it anyway only when the server allows it; its box needs words before Go', () => {
   const { grid } = real();
   const skip = grid.groups.find((g) => g.key === 'skip').rows[0];
