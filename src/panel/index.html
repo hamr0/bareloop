@@ -489,7 +489,10 @@
   .rs-diff{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.45 ui-monospace,"Courier New",monospace;}
   .ro-value>.rs-diff{max-height:28em;overflow:auto;}
   .rs-add{color:var(--green);} .rs-del{color:var(--red);} .rs-ctx{color:var(--text-dim);}
-  .rs-check{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;padding:3px 0;border-bottom:1px dotted var(--border);}
+  .rs-check{display:grid;grid-template-columns:minmax(0,1fr) minmax(8em,auto) 7em;gap:6px 12px;align-items:baseline;padding:3px 0;border-bottom:1px dotted var(--border);}
+  .rs-q{overflow-wrap:anywhere;} .rs-num{overflow-wrap:anywhere;} .rs-sign{white-space:nowrap;}
+  /* phone width: the number drops under the question, the sign stays in the right column */
+  @media (max-width:600px){ .rs-check{grid-template-columns:minmax(0,1fr) auto;} .rs-num{grid-column:1;grid-row:2;} .rs-sign{grid-column:2;grid-row:1;} .rs-num:empty{display:none;} }
   #result-door-card .stopping{color:var(--amber);font-size:13px;overflow-wrap:anywhere;}
   /* PRD v1.106 Part 5 C: the Audit step fold (tries, their numbered checks, the Round table). Every line wraps; nothing forces a page-wide scroll. */
   .actor-mark{color:var(--text-faint);font-size:12px;margin-left:6px;white-space:nowrap;}
@@ -4261,8 +4264,8 @@
     if(!k) return '<div class="job-card" data-testid="result-checks"><h4>The checks</h4><div class="hint" data-testid="result-checks-none">the close did not run any check for this run</div></div>';
     var rows = k.stages.map(function(s){
       var num = stageNumberText(s);
-      return '<div class="rs-check" data-testid="result-check"><span>' + escapeXml(stageQuestionText(s)) + '</span><span>' +
-        stateDotHTML(s.passed ? "green" : "red", s.status.word, "result-check-state") + (num ? ' <span class="hint">' + escapeXml(num) + '</span>' : "") + '</span></div>';
+      return '<div class="rs-check" data-testid="result-check"><span class="rs-q">' + escapeXml(stageQuestionText(s)) + '</span><span class="rs-num hint" data-testid="result-check-num">' +
+        (num ? escapeXml(num) : "") + '</span><span class="rs-sign">' + stateDotHTML(s.passed ? "green" : "red", s.status.word, "result-check-state") + '</span></div>';
     }).join("");
     var notes = k.notes.length ? '<details data-testid="result-close-notes"><summary>the close\'s own notes</summary><div class="ro-value" style="white-space:pre-wrap">' +
       k.notes.map(function(n){ return escapeXml(n.text); }).join("\n") + '</div></details>' : "";

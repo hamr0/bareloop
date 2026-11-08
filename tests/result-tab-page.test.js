@@ -91,8 +91,11 @@ test('the checks: one row per close stage, the existing question words, the stat
   const rows = h.split('data-testid="result-check"').slice(1);
   assert.equal(rows.length, 7);
   assert.match(rows[0], /did it change any file\?/);
-  assert.match(rows[1], /<span class="step-state" data-testid="result-check-state"><span class="dot green"><\/span><b class="st-word">passed<\/b><\/span> <span class="hint">0 left, need 0<\/span>/);
-  assert.match(rows[2], /<span class="hint">46, limit 46<\/span>/);
+  // hamr's layout 2 (2026-11-08): question, then the number column, then the sign column (rightmost); an empty number leaves its cell blank
+  assert.match(rows[1], /<span class="rs-num hint" data-testid="result-check-num">0 left, need 0<\/span><span class="rs-sign"><span class="step-state" data-testid="result-check-state"><span class="dot green"><\/span><b class="st-word">passed<\/b><\/span><\/span>/);
+  assert.match(rows[2], /<span class="rs-num hint" data-testid="result-check-num">46, limit 46<\/span>/);
+  assert.match(rows[0], /<span class="rs-num hint" data-testid="result-check-num"><\/span><span class="rs-sign">/, 'no number: the cell stays so the signs line up');
+  assert.match(PAGE, /\.rs-check\{[^}]*display:grid;[^}]*grid-template-columns/, 'one grid row per check');
   assert.match(h, /<summary>the close's own notes<\/summary>[^]*46 matching line\(s\) dropped by the scope filter/);
 });
 
