@@ -850,6 +850,18 @@ function skipWordsOf(events, row) {
 }
 
 /**
+ * R9 (9b.2, fwd 7a98141): did this run END BEFORE ITS FIRST STEP, at $0? The rule, from recorded facts only: the run has NO spine on disk, and its row carries a leg-1 `settled` event
+ * that is `refused before start` or `skipped` with `spentUsd` exactly 0 and `spendComplete` not false. Such a run never ran its plan (no step, no model call), so Reuse workflow with
+ * the job unchanged signs and goes with the signed job; a red run that DID run (it has a spine) still drafts.
+ * @param {any[]} events @param {{runid: string, spine: string}} row
+ */
+export function neverRanPlan(events, row) {
+  if (existsSync(row.spine)) return false;
+  return events.some((x) => x && x.type === 'settled' && x.runid === row.runid && !(x.leg > 1)
+    && (x.reason === 'refused before start' || x.reason === 'skipped') && x.spentUsd === 0 && x.spendComplete !== false);
+}
+
+/**
  * RULED 2026-10-15 (Remove from Needs you): the ONE place a run's Needs-you state is decided. `Accept` (a live door) is never removable and never ages out.
  * A `Resume` tag leaves when the person removed it AFTER (or at) the stop it is for — a removal covers only the ending it was made on, so a later stop
  * brings the run back — or after `needsYouDays`. `removedMs` is the newest removal that covers the current ending (or null), `expired` is true when only
@@ -3863,7 +3875,7 @@ export function reuseLine(record) {
  * to copy: change the job: Clear the card). `null` when the runid is not listed.
  * @param {string} runid
  * @param {{ home?: string, model?: string, provider?: string }} [opts] `model` = the Model box's current Name (the estimate counts only runs on that worker); absent = the card's own Model
- * @returns {{ok: true, origin: {runid: string, job: string}, outcome: string|null, card: Record<string, any>, from: 'signed job',
+ * @returns {{ok: true, origin: {runid: string, job: string}, outcome: string|null, neverRan: boolean, card: Record<string, any>, from: 'signed job',
  *   note: string|null,
  *   specHash: string, workflowKey: string, spec: any, specPath: string, specNamesModel: boolean,
  *   specWorker: {provider: string, endpoint: string, label: string},
@@ -3874,7 +3886,8 @@ export function getStartFrom(runid, opts = {}) {
   const row = rows.find((r) => r && r.runid === runid);
   if (!row) return null;
   // a ticket the job's filter SKIPPED has no log (R5) but its session kept the signed job beside where the log would be: the no-schedule "Run it anyway" (am3) starts from it
-  const skipped = !existsSync(row.spine) && skipWordsOf(events, row) !== null;
+  // R9 (9b.2): so does a run refused before its first step (a refused run-start fetch, a locked-token look): it has no log either, and its session kept the signed job the same way
+  const skipped = neverRanPlan(events, row);
   if (!existsSync(row.spine) && !skipped) return { ok: false, error: 'this run has no log on disk — nothing to reuse' };
   const records = skipped ? [] : parseJsonl(row.spine).records;
   const signed = skipped ? skippedSignedSpec(row) : signedSpecForRun(row, records);
@@ -3915,6 +3928,8 @@ export function getStartFrom(runid, opts = {}) {
       const o = legsOf(records).at(-1)?.outcome ?? null;
       return isReusableGreen(o) && heldScheduled(records, triggerRecordOf(row)) ? 'green-held' : o;
     })(),
+    // R9 (9b.2): the run ended before its first step at $0 (see neverRanPlan): the signed job stands, so an unchanged Reuse is "Sign & run", not a redraft
+    neverRan: skipped,
     card,
     from: 'signed job',
     note: Array.isArray(spec.jobLines) && spec.jobLines.length ? null : 'older job — numbered lines were not saved',
