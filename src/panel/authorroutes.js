@@ -31,6 +31,7 @@ import { parseInputs } from '../jobblock.js';
 import { isReusableGreen } from './status.js';
 import { proveInputFiles, looksLikeRubricInput, webFetchState } from '../source.js';
 import { validateJob, flowTypeOf } from '../job.js';
+import { ticketAnyway } from './tickets.js';
 import { cardScheduleOf } from '../cardschedule.js';
 
 /** plain words for a run whose saved job no longer passes today's `validateJob` (RULED 2026-10-15): never the raw red codes */
@@ -121,6 +122,7 @@ const TERMINAL_PHASES = new Set(['refused', 'abandoned', 'error', 'signed', 'sig
  *   sessionsRoot?: string, spawnFn?: typeof realSpawn, bareloopBin?: string,
  *   jobsDir?: string, fetchImpl?: typeof fetch, home?: string, mcpHome?: string, newestUnrunTicket?: typeof newestUnrunTicket,
  *   schedules?: ReturnType<typeof import('./schedules.js').createScheduleDoor>,
+ *   isSkippedTicket?: (job: string, number: number) => boolean,
  *   sessionDeps?: Record<string, any>,
  *   runJobNames?: () => string[],
  *   startFrom?: {get: (runid: string, o?: {model?: string}) => any, getImport: (id: string, o?: {model?: string}) => any, listJobs?: (o?: {model?: string}) => any[]} }} opts
@@ -341,6 +343,17 @@ export function createAuthorRoutes(opts) {
       if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
       const r = pathname.endsWith('-prepare') ? opts.schedules.prepare(body ?? {}) : opts.schedules.set(body ?? {});
       send(r.status, r.body);
+      return true;
+    }
+
+    // ── R8 (piece 4): "Run it anyway" on a skipped ticket, after the person's reason. A click route behind the token + Origin/Host guard above (the authoring session can reach no route here by
+    // itself); with no schedule on it starts that ticket's run at once, else it queues ONE `arrived` row. Placed with the other exact matches, before the session regex below.
+    if (pathname === '/api/author/ticket-anyway') {
+      if (!opts.schedules || !opts.isSkippedTicket) { send(404, { ok: false, error: 'not found' }); return true; }
+      if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
+      ticketAnyway({ body, isSkipped: opts.isSkippedTicket, door: opts.schedules })
+        .then((r) => send(r.status, r.body))
+        .catch((e) => send(500, { ok: false, error: `could not run it anyway: ${/** @type {Error} */ (e).message}. Nothing started.` }));
       return true;
     }
 

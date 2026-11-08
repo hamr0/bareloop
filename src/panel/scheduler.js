@@ -59,7 +59,7 @@ export function createScheduler(opts) {
     let queue = queueOf(readSeen(ledger, ticket ? sig : undefined));
     if (queue.length === 0 || inflight.has(job)) return;
     /** a ticket has no file to look at again: it is its number. @param {any} q */
-    const causeOf = (q) => (ticket ? { kind: /** @type {const} */ ('ticket'), number: q.number, sha: q.sha, ...(typeof q.reason === 'string' ? { why: q.reason } : {}) } : { kind: /** @type {const} */ ('file'), path: q.path, sha: q.sha, size: q.size });
+    const causeOf = (q) => (ticket ? { kind: /** @type {const} */ ('ticket'), number: q.number, sha: q.sha, ...(typeof q.reason === 'string' ? { why: q.reason } : {}), ...(q.anyway === true ? { anyway: true } : {}) } : { kind: /** @type {const} */ ('file'), path: q.path, sha: q.sha, size: q.size });
     const busy = isBusy();
     if (busy) {
       // every queued file (or ticket) is told ONCE (`busy`, once per sha) and waits

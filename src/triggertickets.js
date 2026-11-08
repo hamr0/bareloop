@@ -225,3 +225,20 @@ export function recordLook(ledger, sig, look, at) {
  * @param {string} ledger @param {string} sig @param {{sha: string, name: string}} item @param {number} at
  */
 export const recordTicketRan = (ledger, sig, item, at) => appendSeen(ledger, { id: `ran:${item.sha}`, kind: 'ran', sha: item.sha, name: item.name, size: 0, at }, sig);
+
+/**
+ * "Run it anyway" (ITEM33-BUILD piece 4, borrowed-from fwdloop trigger-tickets.js@v0.29.0 `recordAnyway`): queue a ticket as a NEW arrival with the person's reason and `anyway: true`
+ * (the starter then says `--anyway`, so the job's filter never skips it). ONE `arrived` row; a ticket that is already in the queue is refused, never a second run.
+ * @param {string} ledger @param {string} sig @param {{number: number, reason: string}} a @param {number} at
+ * @returns {{ok: true} | {ok: false, say: string}}
+ */
+export function recordAnyway(ledger, sig, a, at) {
+  const rows = readSeen(ledger, sig);
+  if (queueOf(rows).some((q) => /** @type {any} */ (q).number === a.number)) return { ok: false, say: `Ticket #${a.number} is already queued. Nothing more was queued.` };
+  const n = rows.filter((r) => r.kind === 'arrived' && /** @type {any} */ (r).number === a.number).length;
+  const watch = lastSeen(ledger, sig).get(a.number);
+  appendSeen(ledger, /** @type {any} */ ({
+    id: `arrived:ticket:${a.number}:${n}`, kind: 'arrived', sha: `ticket:${a.number}:${n}`, name: `#${a.number}`, path: `#${a.number}`, size: 0, at, number: a.number, ...(watch ? { watch } : {}), reason: a.reason, anyway: true,
+  }), sig);
+  return { ok: true };
+}

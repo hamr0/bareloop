@@ -117,7 +117,7 @@ export function createStarter(deps) {
     /**
      * Cheap, $0, no copy, no session. `{ok: true}` or `{ok: false, why}` (words).
      * @param {string} job
-     * @param {{kind: 'clock'} | {kind: 'file', path: string, sha: string} | {kind: 'ticket', number: number, sha: string, byHand?: boolean}} cause `byHand` (R7, am3) = "Run it anyway" while the schedule is still off: no good run exists yet to read the saved job from
+     * @param {{kind: 'clock'} | {kind: 'file', path: string, sha: string} | {kind: 'ticket', number: number, sha: string, byHand?: boolean, anyway?: boolean}} cause `byHand` (R7, am3) = "Run it anyway" while the schedule is still off: no good run exists yet to read the saved job from
      * @returns {{ok: true}|{ok: false, why: string}}
      */
     wouldAccept(job, cause) {
@@ -163,7 +163,7 @@ export function createStarter(deps) {
     /**
      * Start the run. Never throws. `consumed` says whether `beforeSpawn` ran, so the caller knows whether a `released` row is owed.
      * @param {string} job
-     * @param {{kind: 'clock', slot: number, catchUp: boolean, missed: number} | {kind: 'file', path: string, sha: string} | {kind: 'ticket', number: number, sha: string, byHand?: boolean}} cause
+     * @param {{kind: 'clock', slot: number, catchUp: boolean, missed: number} | {kind: 'file', path: string, sha: string} | {kind: 'ticket', number: number, sha: string, byHand?: boolean, anyway?: boolean}} cause
      *   `byHand` (R7, am3): the person's own "Run it anyway" while the schedule is still off - the same path as Sign & run (no review door, no `trigger.json`, `--anyway`), the job's normal cap, no ledger row
      * @param {{beforeSpawn?: () => void}} [hooks]
      * @returns {Promise<{ok: true, sessionId: string, specHash: string, consumed: true}|{ok: false, why: string, consumed: boolean, installNeeded?: true}>}
@@ -190,7 +190,7 @@ export function createStarter(deps) {
           inputs: inputsText,
           destination: destinationOf(schedule, spec, pre.card.destination),
           capUsd: spec.budgetUsd,
-          // a ticket fire: the number rides on the card exactly as the person's typed Ticket box does, and `signRun` turns it into `--ticket N` (`--anyway` arrives with the anyway route, R8)
+          // a ticket fire: the number rides on the card exactly as the person's typed Ticket box does, and `signRun` turns it into `--ticket N`; a queued Run it anyway (an `arrived` row with `anyway: true`, R8) adds `--anyway` below
           ...(cause.kind === 'ticket' ? { ticket: String(cause.number) } : {}),
           ...(typeof spec.maxWallMs === 'number' ? { maxWallMs: spec.maxWallMs } : { maxWallMs: undefined }),
           model: spec.model,
@@ -239,7 +239,7 @@ export function createStarter(deps) {
         const spawnedAt = Date.now();
         const signed = signRun(session, session.state.specHash, {
           env: deps.envNow(), spawnFn: /** @type {any} */ (deps.spawnFn), bareloopBin: deps.bareloopBin, sessionsRoot: deps.sessionsRoot, home: deps.home,
-          reviewDoor: !byHand, ...(byHand ? { anyway: true } : {}), onSpawnError: (e) => { spawnError = e; }, onExit: (code) => { exitCode = typeof code === 'number' ? code : 1; },
+          reviewDoor: !byHand, ...(byHand || (cause.kind === 'ticket' && cause.anyway === true) ? { anyway: true } : {}), onSpawnError: (e) => { spawnError = e; }, onExit: (code) => { exitCode = typeof code === 'number' ? code : 1; },
         });
         // a spawn failure is reported on the next turn of the event loop; give it that turn before calling this started
         await new Promise((r) => { setImmediate(r); });

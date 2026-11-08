@@ -25,7 +25,7 @@ import { validateTrigger, isClockTrigger, isFileTrigger, isTicketTrigger } from 
 import { armTrigger, nextSlot, recordFire } from '../triggerclock.js';
 import { appendRow, readLedger, withoutReleased } from '../triggerledger.js';
 import { checkTarget, createFileTrigger, queueOf, readSeen, recordDropped, recordRan } from '../triggerfiles.js';
-import { recordTicketRan } from '../triggertickets.js';
+import { recordAnyway, recordTicketRan } from '../triggertickets.js';
 import { ticketInputLabels, ticketLookOf } from '../ticketschedule.js';
 import {
   SCHEDULE_WORDS, dateTimeWords, gaveUpDateWords, lateRefusalWords, nextInWords, nextSlotShort, nextTimeWords, retryNextWords, sameMonthAs, scheduledNextFor, scheduledWords, skippedWords,
@@ -450,7 +450,7 @@ export function createScheduleDoor(deps) {
      * `key|outcome|why` (read back from disk, so a restart does not repeat it). RULED 2026-10-14: a busy, monthly or refused
      * fire consumes NOTHING, so the next tick tries again; a spawn error after `beforeSpawn` writes a `released` row (bounded).
      * @param {string} job
-     * @param {{kind: 'clock', slot: number, catchUp: boolean, missed: number} | {kind: 'file', path: string, sha: string, size?: number} | {kind: 'ticket', number: number, sha: string, why?: string}} cause
+     * @param {{kind: 'clock', slot: number, catchUp: boolean, missed: number} | {kind: 'file', path: string, sha: string, size?: number} | {kind: 'ticket', number: number, sha: string, why?: string, anyway?: boolean}} cause
      * @param {{beforeSpawn?: () => void, busy?: boolean}} [hooks] `busy` = the scheduler's one read of the run list this tick
      * @returns {Promise<{outcome: 'busy'|'monthly-exhausted'|'refused'|'started', why?: string, told: boolean, sessionId?: string}>}
      */
@@ -556,6 +556,25 @@ export function createScheduleDoor(deps) {
       const r = await starter.start(job, cause);
       if (!r.ok) { starting.delete(job); return { ok: false, say: r.why }; }
       return { ok: true, say: `Ticket #${number} started now; the schedule is still off until a green run.` };
+    },
+
+    /**
+     * R8 (piece 4, `POST /api/author/ticket-anyway`): the ONE door of "Run it anyway" once the person has given a reason (the route checks it). A ticket schedule that is still OFF starts that
+     * ticket's run at once ({@link startAnyway}, by hand, no row); one that is ON takes ONE `arrived` row with the reason and `anyway: true` ({@link recordAnyway}), and the queue starts it
+     * with `--anyway` under the job's normal cap. A job with no ticket schedule at all has no signed spec to start from here: refused in words, nothing written.
+     * @param {{job: string, number: number, reason: string}} a
+     * @returns {Promise<{ok: boolean, say: string, started?: boolean}>}
+     */
+    async arriveAnyway({ job, number, reason }) {
+      const schedule = SLUG_RE.test(job) ? readSchedule(job) : null;
+      if (!schedule || !isTicketTrigger(schedule.trigger)) return { ok: false, say: `Job "${job}" has no ticket schedule, so Run it anyway has nothing to start it from. Nothing started.` };
+      if (stateOf(job).waiting) {
+        const r = await this.startAnyway({ job, number });
+        if (r === null) return { ok: false, say: 'The job could not start this ticket now. Nothing started.' };
+        return { ok: r.ok, say: r.say, ...(r.ok ? { started: true } : {}) };
+      }
+      const r = recordAnyway(ledgerOf(job), schedule.specHash, { number, reason }, now());
+      return r.ok ? { ok: true, say: `Ticket #${number} is queued; it runs when its turn comes.` } : { ok: false, say: r.say };
     },
 
     greenFor,

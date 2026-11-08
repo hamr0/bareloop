@@ -1,0 +1,236 @@
+{
+  "schema": "job-v1",
+  "job": "r7-sched",
+  "description": "r7-sched — authored through the bareloop panel (green, js)",
+  "jobLines": [
+    {
+      "n": 1,
+      "text": "Fix the bug in src/sum.js so the tests in test/sum.test.js pass",
+      "rule": "no new dependencies",
+      "rules": [
+        "no new dependencies"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "n": 1,
+      "label": "repo",
+      "value": "/home/hamr/PycharmProjects/bareloop/.claude/scratch/mcp-tickets/r7/paid/work/sum-seed"
+    },
+    {
+      "n": 2,
+      "label": "issues",
+      "value": "https://github.com/hamr0/hol-guard/issues"
+    }
+  ],
+  "provider": "openai-api",
+  "baseUrl": "https://api.deepseek.com/v1",
+  "model": "deepseek-flash",
+  "budgetUsd": 0.3,
+  "writeScope": [
+    "7"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  },
+  "goal": "The bug in src/sum.js is fixed so that running `node --test test/sum.test.js` passes all tests in test/sum.test.js, with src/sum.js genuinely changed and no new dependencies added to package.json.",
+  "verdictType": "green",
+  "closeDecl": {
+    "genre": "TYPES",
+    "lang": "js",
+    "stages": [
+      {
+        "name": "changed-from-seed",
+        "kind": "files-changed",
+        "params": {
+          "requireNonEmpty": true,
+          "allowPrefixes": [
+            "src",
+            "test",
+            "package.json"
+          ]
+        }
+      },
+      {
+        "name": "suite-green",
+        "kind": "command-exit",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "cmd": "node",
+          "args": [
+            "--test",
+            "test/sum.test.js"
+          ],
+          "expectExit": 0,
+          "timeoutMs": 120000
+        }
+      },
+      {
+        "name": "no-failing-tests",
+        "kind": "count-not-worse",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "cmd": "node",
+          "args": [
+            "--test",
+            "test/sum.test.js"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^# fail (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "test"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": 0,
+          "timeoutMs": 120000
+        }
+      },
+      {
+        "name": "tests-executed-kept",
+        "kind": "count-not-worse",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "cmd": "node",
+          "args": [
+            "--test",
+            "test/sum.test.js"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^# tests (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "test"
+            ]
+          },
+          "direction": "higher-is-better",
+          "baseline": "seed",
+          "timeoutMs": 120000
+        }
+      },
+      {
+        "name": "dependency-lists-untouched",
+        "kind": "count-not-worse",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "cmd": "node",
+          "args": [
+            "-e",
+            "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));let n=0;for(const k of ['dependencies','devDependencies','peerDependencies','optionalDependencies']){n+=Object.keys(p[k]||{}).length;}console.log('resolved-deps '+n);"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^resolved-deps (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "package.json"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": 0,
+          "timeoutMs": 60000
+        }
+      },
+      {
+        "name": "no-suppressions",
+        "kind": "pattern-absent-in-diff",
+        "params": {
+          "patterns": [
+            {
+              "id": "ts-ignore",
+              "regex": "@ts-ignore"
+            },
+            {
+              "id": "ts-expect-error",
+              "regex": "@ts-expect-error"
+            },
+            {
+              "id": "ts-nocheck",
+              "regex": "@ts-nocheck"
+            },
+            {
+              "id": "eslint-disable",
+              "regex": "eslint-disable"
+            },
+            {
+              "id": "any",
+              "regex": "(?:[{<|(\\[:,]|\\bas)\\s*any\\b|\\bany\\[\\]"
+            },
+            {
+              "id": "any-star",
+              "regex": "@\\w+\\s*\\{\\s*[*?]\\s*\\}"
+            },
+            {
+              "id": "cast",
+              "regex": "@type\\s*\\{.*\\}\\s*\\*\\/\\s*\\("
+            }
+          ],
+          "extensions": [
+            ".js",
+            ".mjs",
+            ".cjs"
+          ]
+        }
+      }
+    ],
+    "notes": [
+      "The confirmed plan's third check was meant to prove package.json dependency lists stay empty/unchanged and that no node_modules or lockfile is introduced. I can only partly express this: the dependency-lists-untouched stage reads package.json and requires the total count of entries across dependencies/devDependencies/peerDependencies/optionalDependencies to be 0 (the seed has no lockfile and no node_modules). No lockfile/node_modules creation check is composed, because no catalogue kind can assert the absence of untracked new files; files-changed only sees files this run changed and cannot forbid extra untracked paths.",
+      "The write fence as transmitted in the brief was the literal string \"7\", which the validator rejected as not matching anything in the seed tree. The guards had to be given a real allowPrefixes list, so I used the three things this job may legitimately touch and that exist at the seed: src, test, package.json. If the person meant something narrower (for example only src/sum.js), that is a change to the fence and not to the checks.",
+      "count-not-worse stages report \"matching line(s) named no path, so the scope filter could not judge them\". The node --test output and the inline package.json reader name no file paths, so the test-scope filter keeps those lines rather than discarding them; the population is still the one test file the job names, because the command runs only test/sum.test.js.",
+      "Nothing checks the issues at https://github.com/hamr0/hol-guard/issues: the ticket's own wording was not given to me, so no stage confirms that the fix matches what that ticket asks for.",
+      "The facts object's testSummaryLine was \"ℹ pass <n>\" (inferred, not measured), while the measured seed output is TAP (\"# pass n\" / \"# fail n\" / \"# tests n\"). I used the genre's measured TAP patterns, not the inferred reporter shape.",
+      "tests-executed-kept is a floor on executed tests at the measured seed baseline, so a run that deletes or deselects tests cannot pass by making the suite green; no-failing-tests is the fail-count floor at zero that makes suite-green meaningful."
+    ]
+  },
+  "flowType": "tickets",
+  "mcp": {
+    "server": "github",
+    "tools": [
+      "get_label",
+      "issue_read",
+      "list_issue_fields",
+      "list_issue_types",
+      "list_issues",
+      "list_pull_requests",
+      "pull_request_read",
+      "search_issues",
+      "search_pull_requests"
+    ]
+  }
+}

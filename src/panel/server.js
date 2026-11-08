@@ -53,6 +53,8 @@ import { jobSpecHash, workflowKey, flowTypeOf, FLOW_TYPE_LABELS } from '../job.j
 import { attachMemos, learningsHanded, attachLearnings } from './handed.js';
 import { confirmProtections } from '../authorflow.js';
 import { createScheduleDoor } from './schedules.js';
+import { buildJobGrid } from './jobgrid.js';
+import { TICKET_LOOK_MS } from '../triggertickets.js';
 import { createStarter } from './schedulestart.js';
 import { createScheduler } from './scheduler.js';
 import {
@@ -1532,6 +1534,16 @@ function workOf(row, records) {
 }
 
 /**
+ * The ticket a run read, from its `job-start` record (`{number, title, url}`), or null. ONE reader: the generic Result tab's ticket box and the ticket grid's row both ask here.
+ * @param {any} start the run's `job-start` record @returns {{number: number, title: string|null, url: string|null}|null}
+ */
+function ticketOfStart(start) {
+  const t = start && start.ticket && typeof start.ticket === 'object' ? start.ticket : null;
+  if (!t || !Number.isInteger(t.number)) return null;
+  return { number: t.number, title: typeof t.title === 'string' ? t.title : null, url: typeof t.url === 'string' && /^https?:\/\//i.test(t.url) ? t.url : null };
+}
+
+/**
  * The generic Result tab (R7b item 4; hamr signed the mockup 2026-11-07) for a run that ENDED and is not a rubric job: five boxes of facts read
  * from the run's own records, plus the ticket a ticket job read. The page draws it; it decides nothing.
  * @param {string} runid @param {any} row @param {any[]} records @param {any} spec @param {any} opts
@@ -1539,10 +1551,8 @@ function workOf(row, records) {
 function genericResultOf(runid, row, records, spec, opts) {
   const start = records.findLast((r) => r && r.type === 'job-start') ?? null;
   const writeScope = Array.isArray(spec?.writeScope) && spec.writeScope.every((/** @type {any} */ x) => typeof x === 'string') ? spec.writeScope : null;
-  const t = start && start.ticket && typeof start.ticket === 'object' ? start.ticket : null;
-  const ticket = t && Number.isInteger(t.number) ? {
-    number: t.number, title: typeof t.title === 'string' ? t.title : '', url: typeof t.url === 'string' && /^https?:\/\//i.test(t.url) ? t.url : null,
-  } : null;
+  const t0 = ticketOfStart(start);
+  const ticket = t0 ? { number: t0.number, title: t0.title ?? '', url: t0.url } : null;
   const detail = getRunDetailBody(runid, opts);
   const plan = records.findLast((r) => r && r.type === 'plan-executed' && Array.isArray(r.steps)) ?? null;
   const spentUsd = detail && typeof detail.spentUsd === 'number' ? detail.spentUsd : null;
@@ -1563,8 +1573,81 @@ function genericResultOf(runid, row, records, spec, opts) {
       time: detail && typeof detail.wallMs === 'number' ? formatDurationMs(detail.wallMs) : 'unknown',
       steps: plan ? `${ids.length} step${ids.length === 1 ? '' : 's'}${ids.length ? ` (${ids.join(', ')})` : ''}, ${replans === 0 ? 'no replan' : `${replans} replan${replans === 1 ? '' : 's'}`}` : null,
     },
+    // R8: why the run ended, in the Run tab's own words (`detail.ended.reason`): the ticket grid's opened row says it for a run that did not pass
+    endedWords: typeof detail?.ended?.reason === 'string' && detail.ended.reason !== '' ? detail.ended.reason : null,
     door: { head: DOOR_WORDS.waiting.head, ask: RESULT_DOOR_ASK },
   };
+}
+
+/**
+ * R8 (piece 10): the ticket grid of the job a run belongs to, or `null` when that job is not a Tickets job (no run of it read a ticket) or the run is unknown. ONE row per run of the job, from
+ * the run list's own entry (`summarizeRow`: status, needs, money, wall, ending words), the ticket from `job-start` ({@link ticketOfStart}), the checks from {@link checksOf} and the steps from
+ * the run's `plan-executed` record. The page opens a row through `GET /api/runs/:runid/result` (the generic payload, one owner): this reads no diff and no branch.
+ * @param {string} runid @param {{ home?: string, now?: number, schedules?: ReturnType<typeof createScheduleDoor> }} [opts]
+ */
+export function getJobGrid(runid, opts = {}) {
+  const list = readRunList(opts);
+  const anchor = list.rows.find((r) => r && r.runid === runid);
+  if (!anchor || typeof anchor.job !== 'string') return null;
+  const grid = ticketGridOfJob(anchor.job, list, opts);
+  return grid === null ? null : { runid, job: anchor.job, ...grid };
+}
+
+/**
+ * Does this run's own record say it read a ticket? (the run list row's `ticket`, else its `job-start` ticket). The cheap gate before a whole job is read.
+ * @param {any} row
+ */
+function rowReadTicket(row) {
+  if (Number.isInteger(row.ticket)) return true;
+  if (!existsSync(row.spine)) return false;
+  try { return ticketOfStart(parseJsonl(row.spine).records.findLast((/** @type {any} */ r) => r && r.type === 'job-start')) !== null; } catch { return false; }
+}
+
+/**
+ * @param {string} job @param {{rows: any[], events: any[]}} list @param {{ home?: string, now?: number, schedules?: ReturnType<typeof createScheduleDoor> }} opts
+ */
+function ticketGridOfJob(job, list, opts) {
+  const mine = list.rows.filter((r) => r && r.job === job);
+  if (!mine.some((r) => rowReadTicket(r))) return null;
+  const nowMs = typeof opts.now === 'number' ? opts.now : Date.now();
+  const removals = readNeedsRemovals(opts);
+  const nos = runNumbers(list.rows);
+  const entries = mine.map((r) => {
+    const e = summarizeRow(r, nowMs, removals, list.events);
+    /** @type {any[]|null} */
+    let records = null;
+    if (existsSync(r.spine)) { try { records = parseJsonl(r.spine).records; } catch { records = null; } }
+    const t = records ? ticketOfStart(records.findLast((/** @type {any} */ x) => x && x.type === 'job-start')) : null;
+    const checks = records ? checksOf(records, resolveSpecForRow(r)) : null;
+    const plan = records ? records.findLast((/** @type {any} */ x) => x && x.type === 'plan-executed' && Array.isArray(x.steps)) : null;
+    const status = e.status ?? { key: 'failed', ...STATUS.failed };
+    return {
+      runId: r.runid, runNo: nos.get(r.runid) ?? null, at: Number.isFinite(atMs(r)) ? atMs(r) : null,
+      statusKey: status.key, sign: status.sign, word: status.word, needs: e.needs ?? null,
+      number: t ? t.number : (Number.isInteger(r.ticket) ? r.ticket : null), title: t ? t.title : null, url: t ? t.url : null,
+      steps: plan ? { done: plan.steps.filter((/** @type {any} */ x) => isReusableGreen(x?.outcome)).length, total: plan.steps.length } : null,
+      checks: checks ? { passed: checks.passed, total: checks.total } : null,
+      spentUsd: typeof e.spentUsd === 'number' ? e.spentUsd : null, spendComplete: e.spendComplete === true, spendFloorUsd: typeof e.spendFloorUsd === 'number' ? e.spendFloorUsd : null,
+      wall: typeof e.wall === 'string' && e.wall !== '' ? e.wall : null,
+      reason: typeof e.endedLine === 'string' && e.endedLine !== '' ? e.endedLine : (e.fileMissing === true ? 'the run\'s log is no longer on disk' : null),
+    };
+  });
+  let scheduleLine = null;
+  try {
+    const v = opts.schedules ? opts.schedules.view(job) : null;
+    if (v && v.scheduled === true && typeof v.text === 'string') scheduleLine = `${v.text} · looks every ${TICKET_LOOK_MS / 60_000} min`;
+  } catch { scheduleLine = null; }
+  return buildJobGrid({ entries, scheduleLine });
+}
+
+/**
+ * Is ticket `number` a skipped ticket of `job` that nobody has run since? The ONE check behind `POST /api/author/ticket-anyway`: the grid's own skipped row says so.
+ * @param {string} job @param {number} number @param {{ home?: string, now?: number }} [opts]
+ */
+export function isSkippedTicket(job, number, opts = {}) {
+  const list = readRunList(opts);
+  const grid = ticketGridOfJob(job, list, opts);
+  return grid !== null && grid.groups.some((g) => g.key === 'skip' && g.rows.some((r) => r.number === number && r.anyway === true));
 }
 
 /**
@@ -4108,7 +4191,7 @@ export function handleRequest(req, res, opts) {
 
   if (pathname === '/api/runs') { send(200, runsListPayload({ home: opts.home, schedules: opts.schedules })); return; }
 
-  const runMatch = /^\/api\/runs\/([^/]+)(\/(audit|job|rounds|result|download))?$/.exec(pathname);
+  const runMatch = /^\/api\/runs\/([^/]+)(\/(audit|job|rounds|result|download|grid))?$/.exec(pathname);
   if (runMatch) {
     const rawRunid = runMatch[1];
     const sub = runMatch[3] ?? null;
@@ -4133,6 +4216,12 @@ export function handleRequest(req, res, opts) {
     if (sub === 'result') {
       const result = getRunResult(runid, { home: opts.home, sessionsRoot: opts.sessionsRoot });
       if (!result) { sendText(res, 404, 'no such run, or it has no result tab'); return; }
+      send(200, result);
+      return;
+    }
+    if (sub === 'grid') {
+      const result = getJobGrid(runid, { home: opts.home, schedules: opts.schedules });
+      if (!result) { sendText(res, 404, 'no such run, or its job is not a Tickets job'); return; }
       send(200, result);
       return;
     }
@@ -4264,6 +4353,7 @@ export function createPanelServer(opts = {}) {
       schedulesRef = schedules;
       authorRoutes = createAuthorRoutes({
         schedules,
+        isSkippedTicket: (job, n) => isSkippedTicket(job, n, { home }),
         runJobNames: () => readRunList({ home }).rows.flatMap((r) => (r && typeof r.job === 'string' ? [r.job] : [])),
         ...(opts.sessionDeps ? { sessionDeps: opts.sessionDeps } : {}),
         port: boundPort,
