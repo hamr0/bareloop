@@ -58,6 +58,7 @@ test('Must fail: an unreadable look shows ONE red line with its cause on the Run
 
 test('the words come from one function: the cause with its full stop trimmed, then the cadence', () => {
   assert.equal(lookProblemWords({ at: 1, why: 'the server wants a login.' }), 'could not read the tickets: the server wants a login. It looks again in 15 minutes.');
+  assert.equal(lookProblemWords({ at: 1, why: 'is pass locked?' }), 'could not read the tickets: is pass locked? It looks again in 15 minutes.', 'no "?." after a question');
   const n = scheduledNextFor({ trigger: WHEN, armed: true, nextSlotMs: null, lastOutcome: null, waitingRunNo: null, now: 0, lookProblem: { at: 1, why: 'x' } });
   assert.deepEqual(n, { text: 'The last look could not read the tickets: x. It looks again in 15 minutes.', red: true });
   const ok = scheduledNextFor({ trigger: WHEN, armed: true, nextSlotMs: null, lastOutcome: null, waitingRunNo: null, now: 0 });

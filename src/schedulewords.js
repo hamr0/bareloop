@@ -139,7 +139,7 @@ export function nextInWords(ms, now) {
 }
 
 /** R9 (fwd 9b.3): the one red line for a ticket look that could not read, with its cause (never "0 new"). The look cadence is fixed at 15 minutes. @param {{at: number, why: string}} p */
-export const lookProblemWords = (p) => `could not read the tickets: ${String(p.why).trim().replace(/\.$/, '')}. It looks again in 15 minutes.`;
+export const lookProblemWords = (p) => `could not read the tickets: ${String(p.why).trim().replace(/\.$/, '').replace(/([?!])$/, '$1')}${/[?!]$/.test(String(p.why).trim()) ? '' : '.'} It looks again in 15 minutes.`;
 
 /**
  * NEXT of a scheduled job: one sentence, first match wins.
