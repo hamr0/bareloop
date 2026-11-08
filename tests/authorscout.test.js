@@ -217,12 +217,15 @@ test('runAuthorScout: every metered call is REPORTED as it lands, recovery round
     onCall: (/** @type {any} */ c) => told.push(c),
   });
   assert.equal(r.meta.recovered, true, 'the reserved round fired — and it is a paid call like any other');
-  assert.deepEqual(told, [
+  // R9 (Part B 4): a call that ANSWERED also reports its scrubbed answer (`raw`) so the drafting log keeps it; an empty answer reports none
+  assert.deepEqual(told.map(({ raw, ...c }) => c), [
     { label: 'author-scout', costUsd: 0.03, unpricedRounds: 0 },
     { label: 'author-scout-recovery', costUsd: 0.02, unpricedRounds: 1 },
   ]);
+  assert.equal('raw' in told[0], false, 'an empty answer adds no raw');
+  assert.equal(told[1].raw, r.raws[1].text, 'the report carries the same scrubbed text the persisted raw holds');
   // ONE list, read two ways — the report is not a second accumulator
-  assert.deepEqual(r.calls, told);
+  assert.deepEqual(r.calls, told.map(({ raw, ...c }) => c));
 });
 
 test('runAuthorScout: an UNPRICED call reports its null — never a floor wearing a complete coat (F6)', async () => {

@@ -1854,7 +1854,7 @@ export function resolveSourcePrefixes({ workdir, sourcePaths, seedFiles }) {
  */
 /**
  * @param {{ceilingUsd?: number|null,
- *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string}) => void}} [o]
+ *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string, raw?: string}) => void}} [o]
  *   `ceilingUsd` is the OPERATOR's ceiling; `null`/absent is UNBOUNDED.
  *   `onCall` is a REPORTING seam fired as each metered call lands — the shell's
  *   only chance to know what has been spent while the run is still alive. It is
@@ -1874,10 +1874,13 @@ export function makeCostBook({ ceilingUsd = null, onCall = () => {} } = {}) {
     add(label, r, attempt = 1) {
       const call = { label, ...priceOf(r) };
       entries.push(call);
-      raws.push(scrubRaw({ label, attempt, text: r?.text, reason: r?.error ? String(r.error) : null }));
+      const kept = scrubRaw({ label, attempt, text: r?.text, reason: r?.error ? String(r.error) : null });
+      raws.push(kept);
       // bare-agent's per-run `thinkingStatus` ('applied' | 'unsupported' | 'ignored' | 'unknown') rides the REPORTING seam only —
-      // never the stored entry, so the cost report and every persisted shape stay as they were; absent when thinkingMode was not sent
-      onCall({ ...call, ...(r?.thinkingStatus === undefined ? {} : { thinkingStatus: r.thinkingStatus }) });
+      // never the stored entry, so the cost report and every persisted shape stay as they were; absent when thinkingMode was not sent.
+      // R9 (Part B 4): the call's scrubbed answer rides the same seam (secret-masked and bounded by `scrubRaw`, the one mask owner), so the session's drafting log keeps what an
+      // unusable draft try actually said; an empty answer (a tool-delivered reply) adds nothing
+      onCall({ ...call, ...(kept.text === '' ? {} : { raw: kept.text }), ...(r?.thinkingStatus === undefined ? {} : { thinkingStatus: r.thinkingStatus }) });
       return entries.at(-1);
     },
     /** @param {{label: string, costUsd: number|null, unpricedRounds: number}[]} calls

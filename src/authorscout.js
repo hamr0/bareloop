@@ -376,7 +376,7 @@ const defaultLoop = (/** @type {any} */ { system, policy, onLlmResult, provider,
  * @param {{workdir: string, provider?: any,
  *   rounds?: number, minBytes?: number, blobMax?: number, maxTokens?: number, ctx?: boolean,
  *   attempts?: number, ceilingUsd?: number|null, callTimeoutMs?: number,
- *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string}) => void,
+ *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string, raw?: string}) => void,
  *   createLoop?: (o: {system: string, policy: any, onLlmResult: any, provider: any, rates?: {in: number, out: number}}) => any,
  *   rates?: {in: number, out: number}|null, callOptions?: Record<string, any>,
  *   createSurveyor?: (o: {workdir: string, granted: readonly string[], ctx: boolean}) => Promise<any>}} o
@@ -438,8 +438,10 @@ export async function runAuthorScout({
     // raw already rides. It REPORTS and decides nothing; the ceiling still binds
     // through `capStop` between calls, untouched.
     // bare-agent's per-run `thinkingStatus` rides the reporting seam only, never the stored entry (see makeCostBook.add)
-    onCall({ ...call, ...(r?.thinkingStatus === undefined ? {} : { thinkingStatus: r.thinkingStatus }) });
-    return raws.push(scrubRaw({ label, attempt, text: r?.text })) - 1;
+    // R9 (Part B 4): the scrubbed answer rides the same report, so the session's drafting log keeps what an unusable scout answer said (an empty one adds nothing)
+    const kept = scrubRaw({ label, attempt, text: r?.text });
+    onCall({ ...call, ...(kept.text === '' ? {} : { raw: kept.text }), ...(r?.thinkingStatus === undefined ? {} : { thinkingStatus: r.thinkingStatus }) });
+    return raws.push(kept) - 1;
   };
   // TIGHTEN-ONLY: an operator may lower the ceiling, never raise it. A garbage
   // value floors at one attempt rather than at zero — a scout that never ran is
@@ -679,7 +681,7 @@ export const LOOK_RECOVERY_PROMPT = 'You are out of looking turns. Report NOW, f
  * Run the look. `createLoop` is the same seam the repo scout has; nothing else here needs a live process.
  * @param {{texts: Record<string, string>, inputs: {n: number, label: string}[], jobLines: {n: number, text: string, rule?: string, rules?: string[]}[],
  *   provider?: any, rounds?: number, maxTokens?: number, ceilingUsd?: number|null, callTimeoutMs?: number,
- *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string}) => void,
+ *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string, raw?: string}) => void,
  *   createLoop?: (o: {system: string, policy: any, onLlmResult: any, provider: any, rates?: {in: number, out: number}}) => any,
  *   rates?: {in: number, out: number}|null, callOptions?: Record<string, any>,
  *   prove?: (source: string, phrase: string) => number}} o
@@ -701,8 +703,9 @@ export async function runInputLook({
   const record = (/** @type {string} */ label, /** @type {any} */ r) => {
     const call = { label, ...priceOf(r) };
     calls.push(call);
-    onCall({ ...call, ...(r?.thinkingStatus === undefined ? {} : { thinkingStatus: r.thinkingStatus }) });
-    raws.push(scrubRaw({ label, attempt: 1, text: r?.text }));
+    const kept = scrubRaw({ label, attempt: 1, text: r?.text });
+    onCall({ ...call, ...(kept.text === '' ? {} : { raw: kept.text }), ...(r?.thinkingStatus === undefined ? {} : { thinkingStatus: r.thinkingStatus }) });
+    raws.push(kept);
   };
   const settled = async (/** @type {Promise<any>} */ p) => {
     try { return await p; } catch (e) {
