@@ -4378,7 +4378,8 @@
   var gridUi = { open: {}, rows: {}, anyway: null, msg: "", ownFor: null, focusAnyway: false };
   var gridRowData = {};
   function tgMark(c){ return gridGlyph(c === "g" ? "✓" : (c === "r" ? "✗" : (c === "q" ? "?" : "·"))); }
-  function tgCell(cell){ return '<td class="c">' + tgMark(cell.mark) + (cell.text ? '<span class="tg-val">' + escapeXml(cell.text) + '</span>' : "") + '</td>'; }
+  // no data = the panel's grey dash (the Audit grid's `cell none`), never a "?" or "unknown"
+  function tgCell(cell){ if(cell.mark === "n" && !cell.text) return '<td class="c"><span class="cell none">\u2014</span></td>'; return '<td class="c">' + tgMark(cell.mark) + (cell.text ? '<span class="tg-val">' + escapeXml(cell.text) + '</span>' : "") + '</td>'; }
   // the row's own data: the open run's payload is already loaded; any other row's is fetched when it opens
   function tgRowData(runId){ return resultData && resultData.runid === runId ? resultData : (gridRowData[runId] || null); }
   // checks line of an opened row: the generic payload's stages, in the Run/Audit tabs' own question words and numbers
@@ -4392,7 +4393,7 @@
   }
   // what an opened row says, top to bottom: the ticket, why it ended, what changed (+ the last diff), the checks, the work, the door (only for the run the person opened), the run id
   function tgOpenHtml(r, rd, canAct){
-    var label = r.title ? r.name + " " + r.title : r.name;
+    var label = r.title ? r.name + " " + r.title : (r.ref || r.name);
     var link = typeof r.url === "string" && /^https?:\/\//i.test(r.url) ? ' &middot; <a data-testid="grid-ticket-link" class="link" href="' + escapeXml(r.url) + '" target="_blank" rel="noopener noreferrer">' + escapeXml(r.url) + '</a>' : "";
     var h = '<div class="tg-line" data-testid="grid-ticket"><b>' + escapeXml(label) + '</b>' + link + '</div>';
     var why = rd && typeof rd.endedWords === "string" && rd.endedWords !== "" ? rd.endedWords : r.reason;
@@ -4420,7 +4421,7 @@
     var label = r.title ? r.name + " · " + r.title : r.name;
     var nameBtn = '<button class="tg-name" type="button" data-testid="grid-name" data-run="' + escapeXml(r.runId) + '" title="' + escapeXml(label) + '">' + escapeXml(label) + '</button>';
     var h = '<tr data-testid="grid-row" data-run="' + escapeXml(r.runId) + '"><td class="r"><div class="tg-rowname">' + (skip ? "" :
-      '<button class="q-fold tg-arrow" type="button" data-testid="grid-open" data-run="' + escapeXml(r.runId) + '" aria-label="show ' + escapeXml(r.name) + '" aria-expanded="' + open + '"></button>') + nameBtn + '</div></td>' +
+      '<button class="q-fold tg-arrow" type="button" data-testid="grid-open" data-run="' + escapeXml(r.runId) + '" aria-label="show ' + escapeXml(r.ref || r.name) + '" aria-expanded="' + open + '"></button>') + nameBtn + '</div></td>' +
       tgCell(r.steps) + tgCell(r.checks) + tgCell(r.cost) + tgCell(r.time) + '</tr>';
     if(skip){
       var mine = ui.anyway && ui.anyway.number === r.number;

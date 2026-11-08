@@ -48,6 +48,23 @@ export function entryMoney(e) {
 }
 
 /**
+ * A row's short reference: its ticket (`#14`), else the run's panel name `run-N`, the run id only when the run list gave it no number (the run id never names a row otherwise).
+ * @param {{runId: string, runNo?: number|null, number: number|null}} e
+ */
+function gridRefOf(e) {
+  return e.number !== null ? `#${e.number}` : (isNum(e.runNo) ? `run-${e.runNo}` : e.runId);
+}
+
+/**
+ * A row's name: the reference, and for a run that read no ticket the run list's OWN ending words after it (`run-3 · Nothing new: ...`), so the row says why it has no ticket.
+ * @param {{runId: string, runNo?: number|null, number: number|null, reason: string|null}} e
+ */
+function gridNameOf(e) {
+  const ref = gridRefOf(e);
+  return e.number === null && typeof e.reason === 'string' && e.reason !== '' ? `${ref} · ${e.reason}` : ref;
+}
+
+/**
  * The grid of one ticket job: every run a row in its bucket, newest first inside each bucket, and the stats line's numbers.
  * @param {{entries: Array<{runId: string, runNo?: number|null, at: number|null, statusKey: string, sign: string, word: string, needs: 'Accept'|'Resume'|null, number: number|null, title: string|null, url: string|null,
  *   steps: {done: number, total: number}|null, checks: {passed: number, total: number}|null, spentUsd: number|null, spendComplete: boolean, spendFloorUsd: number|null, wall: string|null, reason: string|null}>,
@@ -60,18 +77,19 @@ export function buildJobGrid({ entries, scheduleLine = null }) {
     const money = entryMoney(e);
     const skip = bucket === 'skip';
     /** @type {{mark: 'g'|'r'|'q'|'n', text: string}} */
-    const steps = skip || e.steps === null ? { mark: skip ? 'n' : (ended ? 'q' : 'n'), text: '' }
+    const steps = skip || e.steps === null ? { mark: 'n', text: '' }
       : { mark: e.steps.done === e.steps.total ? 'g' : (ended ? 'r' : 'n'), text: `${e.steps.done} of ${e.steps.total}` };
     /** @type {{mark: 'g'|'r'|'q'|'n', text: string}} */
-    const checks = skip || e.checks === null ? { mark: skip ? 'n' : (ended ? 'q' : 'n'), text: '' }
+    const checks = skip || e.checks === null ? { mark: 'n', text: '' }
       : (e.checks.passed === e.checks.total ? { mark: 'g', text: `${e.checks.passed} of ${e.checks.total}` } : { mark: 'r', text: `${e.checks.total - e.checks.passed} red` });
     const walled = e.wall !== null && e.wall !== '' && e.wall !== 'unknown';
     return {
       runId: e.runId, runNo: e.runNo ?? null, number: e.number, title: e.title, url: e.url,
-      name: e.number !== null ? `#${e.number}` : e.runId, bucket, status: { key: e.statusKey, sign: e.sign, word: e.word }, needs: e.needs, at: e.at,
+      name: gridNameOf(e), ref: gridRefOf(e), bucket, status: { key: e.statusKey, sign: e.sign, word: e.word }, needs: e.needs, at: e.at,
       steps, checks,
-      cost: { mark: money.usd !== null && money.complete ? 'g' : 'q', text: moneyWords(money.usd, money.complete) },
-      time: { mark: skip ? 'n' : (walled ? 'g' : 'q'), text: skip ? '' : (walled ? /** @type {string} */ (e.wall) : 'unknown') },
+      // a cell with no data is the page's grey dash (mark `n`, no text), never `?` or `unknown`; a floor keeps its `?` and "at least"
+      cost: money.usd === null ? { mark: 'n', text: '' } : { mark: money.complete ? 'g' : 'q', text: moneyWords(money.usd, money.complete) },
+      time: skip || !walled ? { mark: 'n', text: '' } : { mark: 'g', text: /** @type {string} */ (e.wall) },
       reason: e.reason,
       money,
     };

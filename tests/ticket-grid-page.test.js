@@ -57,8 +57,24 @@ test('the stats line: counts from the groups\' own labels, the money the server 
 test('cells: the mark and the server\'s own text; a cell with no text draws the mark alone', () => {
   assert.equal(fns.tgCell({ mark: 'g', text: '6 of 6' }), '<td class="c"><span class="glyph-green">✓</span><span class="tg-val">6 of 6</span></td>');
   assert.equal(fns.tgCell({ mark: 'r', text: '' }), '<td class="c"><span class="glyph-red">✗</span></td>');
-  assert.match(fns.tgCell({ mark: 'q', text: 'unknown' }), /glyph-q.*unknown/);
-  assert.match(fns.tgCell({ mark: 'n', text: '' }), /glyph-nr/);
+  assert.match(fns.tgCell({ mark: 'q', text: 'at least $0.08' }), /glyph-q.*at least/);
+  assert.equal(fns.tgCell({ mark: 'n', text: '' }), '<td class="c"><span class="cell none">\u2014</span></td>', 'no data = the panel\'s grey dash, never ? or unknown');
+});
+
+test('REAL refused rows (hamr r7-sched): the row reads run-N · the run list\'s words with grey dashes and the recorded $0.00; opened it shows the ending words and the run-N name, no diff or checks line', () => {
+  const w = makeGridWorld({ refused: true });
+  const grid = getJobGrid('mw3gso0m', { home: w.home, now: NOW });
+  const row = grid.groups.flatMap((g) => g.rows).find((r) => r.runId === 'mw6skdyk');
+  const h = fns.tgRowHTML(row, ui({ rows: { mw6skdyk: true } }), null);
+  assert.match(h, /data-testid="grid-name"[^>]*>run-3 · Nothing new: no ticket newer than #17 has come in\./);
+  assert.equal([...h.matchAll(/<td class="c">(.*?)<\/td>/g)].map((m) => m[1]).join('|'),
+    '<span class="cell none">\u2014</span>|<span class="cell none">\u2014</span>|<span class="glyph-green">✓</span><span class="tg-val">$0.00</span>|<span class="cell none">\u2014</span>');
+  assert.equal(/\?|unknown/.test(strip(h).replace('Nothing new: no ticket newer than #17', '')), false, 'no "?" and no "unknown" anywhere in the row');
+  assert.equal(h.includes('mw6skdyk</td>') || /grid-name[^>]*>mw6skdyk/.test(h), false, 'the run id does not name the row');
+  const open = fns.tgOpenHtml(row, { runid: 'mw6skdyk', none: true, kind: 'none' }, false);
+  assert.match(open, /data-testid="grid-ticket"><b>run-3<\/b>/);
+  assert.match(open, /data-testid="grid-why">failed: Nothing new: no ticket newer than #17/);
+  assert.equal(/grid-diff|grid-checks|grid-changed/.test(open), false);
 });
 
 test('the opened passed row: ticket line with its link, what changed with the last diff, the checks line, the work as TEXT, no door unless it is the run in hand, then the run id', () => {

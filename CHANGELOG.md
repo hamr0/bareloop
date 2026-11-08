@@ -40,6 +40,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 - **A signed write fence can no longer name the frozen-ticket folder.** A `writeScope` naming `.bareloop-input` (e.g. `.bareloop-input/**`) is refused at validation like `.git` and `node_modules`, so a worker can never be allowed to write the ticket it was given; the folder name has one spelling, shared from `src/worktree.js`.
+- **A ticket job's grid names a run that read no ticket `run-N · <why>` and draws empty cells as the grey dash (hamr, 2026-11-08, live).** A run refused before start (the key store was locked) or skipped for "nothing new" showed its internal run id and `?` / `unknown` cells. The row is now named by the panel's own run number plus the Runs list's own ending words (`run-3 · Nothing new: no ticket newer than #17 has come in. ...`; one wording owner, `endedLine`), a cell with no data (steps, checks, time, an unknown cost) is the grey `—`, and a recorded `$0.00` stays. A row with a ticket keeps `#14`. The run id shows only in the opened row's command text. Tested on the two real rows copied from the panel's run list (`tests/fixtures/ticket-grid/r7-sched-refused.jsonl`).
 
 - **The launcher `6 update` no longer hands your shell's keys to npm.** `npm install -g bareloop@latest` now runs with the same credential-stripped environment as bareloop's own `npm ci`; the panel launch still gets its keys.
 

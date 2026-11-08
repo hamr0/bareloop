@@ -66,7 +66,7 @@ test('buildJobGrid: buckets, newest first, counts, the stats line honours spendC
   assert.deepEqual([b.steps, b.checks], [{ mark: 'r', text: '0 of 2' }, { mark: 'r', text: '2 red' }]);
   assert.deepEqual(b.cost, { mark: 'q', text: `at least ${panelMoney2(0.1)}` });
   const e = g.groups[1].rows.find((r) => r.runId === 'e');
-  assert.deepEqual(e.cost, { mark: 'q', text: 'unknown' }, 'unknown is said, never $0.00');
+  assert.deepEqual(e.cost, { mark: 'n', text: '' }, 'unknown money is the grey dash in the cell, never $0.00 (the stats line says unknown)');
   const all = buildJobGrid({ entries: [entry({ runId: 'x', spentUsd: null, spendFloorUsd: null, spendComplete: false })] });
   assert.equal(all.stats.spent, 'unknown');
   assert.equal(all.stats.spentUsd, null);
@@ -157,4 +157,32 @@ test('GET /api/runs/:runid/grid over HTTP: 200 for a ticket job, 404 for a plain
   t.after(() => srv2.close());
   assert.equal((await fetch(`http://127.0.0.1:${srv2.port}/api/runs/mvkj03w7/grid`)).status, 404);
   assert.equal((await fetch(`http://127.0.0.1:${srv.port}/api/runs/bad%2Fid/grid`)).status, 400);
+});
+
+test('REAL refused rows (hamr r7-sched, 2026-11-07): a run that read no ticket is named run-N · the run list\'s own ending words, never its run id; no cell says unknown or ?', () => {
+  const w = makeGridWorld({ refused: true });
+  const opts = { home: w.home, now: NOW };
+  const listed = listRuns(opts).filter((r) => r.job === 'tk-grid');
+  const g = getJobGrid('mw3gso0m', opts);
+  const rows = g.groups.flatMap((x) => x.rows);
+  assert.equal(rows.length, listed.length, 'the grid count is the run list row count');
+  assert.equal(rows.length, 4);
+  for (const id of ['mw6skdyk', 'mw6u5794']) {
+    const r = rows.find((x) => x.runId === id);
+    const own = listed.find((x) => x.runid === id);
+    assert.ok(own.endedLine, 'the run list says why');
+    assert.equal(r.name, `run-${own.runNo} · ${own.endedLine}`, 'one wording owner: the run list\'s endedLine');
+    assert.equal(r.name.includes(id), false);
+    for (const c of [r.steps, r.checks, r.time]) assert.deepEqual(c, { mark: 'n', text: '' }, 'no data: the grey dash, not ?/unknown');
+    assert.deepEqual(r.cost, { mark: 'g', text: '$0.00' }, 'a recorded zero stays');
+  }
+  assert.deepEqual(rows.map((r) => r.name).filter((n) => n.startsWith('run-')).map((n) => n.split(' ')[0]).sort(), ['run-3', 'run-4']);
+});
+
+test('a ticket-job row with no ticket and no recorded ending words is named run-N, not its run id', () => {
+  const g = buildJobGrid({ entries: [{ runId: 'abc12345', runNo: 5, at: 1, statusKey: 'failed', sign: '✗', word: 'failed', needs: null, number: null, title: null, url: null,
+    steps: null, checks: null, spentUsd: null, spendComplete: false, spendFloorUsd: null, wall: null, reason: null }] });
+  const r = g.groups.flatMap((x) => x.rows)[0];
+  assert.equal(r.name, 'run-5');
+  assert.deepEqual(r.cost, { mark: 'n', text: '' }, 'unknown money is a dash in the cell (the stats line still says unknown)');
 });
