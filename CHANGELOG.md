@@ -44,6 +44,9 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 - **The launcher `6 update` no longer hands your shell's keys to npm.** `npm install -g bareloop@latest` now runs with the same credential-stripped environment as bareloop's own `npm ci`; the panel launch still gets its keys.
 
+- **Ticket fixes (MCP + tickets R9, ported from fwd M13 p7).** Tickets that arrive at the same instant queue in number order (`#9` before `#10`; `src/natural.js` is the one natural compare). A ticket look that could not read (a locked pass, a server error) shows ONE red line on the Run tab's SCHEDULE row and NEXT naming the cause, until a later look reads. A run the ticket filter was unsure about (a label on another scale, two priorities, unreadable fields; the ticket ran) records why on its `job-start` (`ticketFilter.unsure`) and its grid row wears a grey `unsure` mark, with "the filter was unsure about this ticket" when opened. Reuse workflow on a run that ended before its first step at $0 (`refused before start`, or a skipped ticket), job unchanged, signs and goes with the signed job instead of a paid redraft; a red run that ran a step still drafts. The ticket drafting prompt says a step reading the frozen ticket still lists `read` in its tools (F122).
+- **The drafting log keeps each answered call's raw answer.** `draft-log.jsonl` `call` lines of the draft, confirm and scout calls now carry `raw` (secret-masked and capped at 8000 bytes by the one `scrubRaw`), so an unusable draft try can be read afterwards; before, only the page-map call did. A run refused before its first step takes back the empty run folder it had made (its row stays listed).
+
 ### Changed
 
 - **The New job card has no Ticket box (R7b 1, fwd v0.28.0).** A by-hand Tickets run always takes the newest ticket the job has not run (`src/ticketnext.js`); a typed number invited the person to put it in Destination (F287). `run-u --ticket N` stays on the CLI (the scheduler and "Run it anyway" use it).
