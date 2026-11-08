@@ -493,6 +493,33 @@
   .rs-q{overflow-wrap:anywhere;} .rs-num{overflow-wrap:anywhere;} .rs-sign{white-space:nowrap;}
   /* phone width: the number drops under the question, the sign stays in the right column */
   @media (max-width:600px){ .rs-check{grid-template-columns:minmax(0,1fr) auto;} .rs-num{grid-column:1;grid-row:2;} .rs-sign{grid-column:2;grid-row:1;} .rs-num:empty{display:none;} }
+  /* R8 (piece 10): a ticket job's Result grid. borrowed-from: fwdloop src/panel/index.html@v0.29.0 tg- rules (the signed mockup .claude/scratch/mcp-tickets/r7b/result-tab-tickets.html). The table, cells and
+     step-sub are the Audit grid's own; these are the bucket fold rows, the stats line, the run column and the "Run it anyway" box. A long line wraps; the table scrolls inside its own box, never the page. */
+  #result-body .tg-stats{font-size:13px;margin:0 0 8px;overflow-wrap:anywhere;}
+  table.grid.tg td.r,table.grid.tg th.r{position:sticky;left:0;background:var(--panel2);z-index:1;min-width:84px;white-space:nowrap;text-align:left;}
+  table.grid.tg td.c{min-width:84px;}
+  table.grid.tg th{color:var(--accent);font-weight:700;}
+  .tg-rowname{display:flex;align-items:center;max-width:min(300px,60vw);}
+  table.grid.tg button.tg-name{flex:0 1 auto;min-width:0;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;border:0;background:none;padding:0;min-height:32px;font:inherit;font-size:12px;font-weight:700;color:var(--accent);cursor:pointer;}
+  table.grid.tg button.tg-name:hover{text-decoration:underline;}
+  table.grid.tg button.tg-name:focus-visible,table.grid.tg button.tg-arrow:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  table.grid.tg button.tg-arrow{flex:0 0 auto;width:auto;color:var(--accent);font-weight:700;}
+  .tg-val{font-size:11px;color:var(--text-faint);margin-left:4px;}
+  tr.tg-grp td{background:var(--panel);border-bottom:1px solid var(--border-strong);padding:0 8px;}
+  .tg-fold{display:block;width:100%;text-align:left;background:none;border:0;color:var(--text);font:inherit;font-size:13px;font-weight:700;min-height:34px;cursor:pointer;}
+  .tg-fold:hover{color:var(--accent);}
+  .tg-fold:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .tg-foldin{position:sticky;left:8px;}
+  .tg-skipwhy{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  table.grid.tg tr.step-sub td{white-space:normal;overflow-wrap:anywhere;text-align:left;}
+  .tg-line{padding:2px 0;font-size:12px;overflow-wrap:anywhere;}
+  .tg-line pre.rs-diff{max-height:18em;overflow:auto;}
+  .tk-rl{color:var(--accent);text-decoration:underline;cursor:pointer;background:none;border:0;padding:0;font:inherit;}
+  .tk-rl:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .tk-anyway{margin-top:6px;}
+  .tk-anyway button{display:block;width:100%;box-sizing:border-box;}
+  .tk-anyway textarea{width:100%;min-height:52px;margin:4px 0;background:var(--bg);color:var(--text);border:1px solid var(--text-dim);font:inherit;font-size:16px;padding:6px;box-sizing:border-box;}
+  .tk-msg{font-size:12px;overflow-wrap:anywhere;}
   #result-door-card .stopping{color:var(--amber);font-size:13px;overflow-wrap:anywhere;}
   /* PRD v1.106 Part 5 C: the Audit step fold (tries, their numbered checks, the Round table). Every line wraps; nothing forces a page-wide scroll. */
   .actor-mark{color:var(--text-faint);font-size:12px;margin-left:6px;white-space:nowrap;}
@@ -4113,7 +4140,8 @@
   var resultData = null;
   function resultTabShown(){ return document.getElementById("tab-result").getAttribute("aria-selected") === "true"; }
   function clearResult(){
-    resultDetail = null; resultData = null;
+    resultDetail = null; resultData = null; resultGrid = null; gridRowData = {};
+    gridUi = { open: {}, rows: {}, anyway: null, msg: "", ownFor: null, focusAnyway: false };
     document.getElementById("result-body").hidden = true;
     document.getElementById("result-body").innerHTML = "";
     document.getElementById("result-empty").hidden = false;
@@ -4135,9 +4163,13 @@
     if(!show) clearResult();
   }
   function loadResult(runid){
-    return getJSON("/api/runs/" + encodeURIComponent(runid) + "/result").then(function(data){
+    // R8: the job's ticket grid rides along; a job that is not a Tickets job answers 404, which is simply "no grid"
+    var gridP = getJSON("/api/runs/" + encodeURIComponent(runid) + "/grid").catch(function(){ return null; });
+    return Promise.all([getJSON("/api/runs/" + encodeURIComponent(runid) + "/result"), gridP]).then(function(both){
       if(runid !== currentRunid || !resultDetail || resultDetail.runid !== runid) return;
-      resultData = data;
+      resultData = both[0];
+      resultGrid = both[1] && Array.isArray(both[1].groups) ? both[1] : null;
+      if(resultGrid) gridOpenOwn(resultGrid, runid);
       renderResult();
     }).catch(function(){ /* the tab keeps what it last drew */ });
   }
@@ -4334,6 +4366,162 @@
       }).catch(function(x){ pause.disabled = false; say("resume-err", "could not reach the panel: " + x.message, "result-door-err"); });
     });
   }
+  // ---- R8 (piece 10): a TICKET job's Result tab is ONE grid instead of the five generic boxes. borrowed-from: fwdloop src/panel/index.html@v0.29.0 (the grid markup and its wiring), drawn as the signed
+  // mockup (.claude/scratch/mcp-tickets/r7b/result-tab-tickets.html). The server decides every bucket, mark, name, money word and reason (`GET /api/runs/:runid/grid`, src/panel/jobgrid.js); a row opens
+  // through the generic payload of THAT run (`GET /api/runs/:runid/result`, the one owner), so no diff or check is read twice. Pure functions take the state they draw (`ui`, `rowData`, `cur`).
+  var resultGrid = null;
+  var gridUi = { open: {}, rows: {}, anyway: null, msg: "", ownFor: null, focusAnyway: false };
+  var gridRowData = {};
+  function tgMark(c){ return gridGlyph(c === "g" ? "✓" : (c === "r" ? "✗" : (c === "q" ? "?" : "·"))); }
+  function tgCell(cell){ return '<td class="c">' + tgMark(cell.mark) + (cell.text ? '<span class="tg-val">' + escapeXml(cell.text) + '</span>' : "") + '</td>'; }
+  // the row's own data: the open run's payload is already loaded; any other row's is fetched when it opens
+  function tgRowData(runId){ return resultData && resultData.runid === runId ? resultData : (gridRowData[runId] || null); }
+  // checks line of an opened row: the generic payload's stages, in the Run/Audit tabs' own question words and numbers
+  function tgChecksLine(k){
+    if(!k) return "checks: the close did not run any check for this run";
+    var bits = k.stages.map(function(s){
+      var num = stageNumberText(s);
+      return s.passed ? escapeXml(stageQuestionText(s)) : gridGlyph("✗") + " " + escapeXml(stageQuestionText(s)) + (num ? " — " + escapeXml(num) : "");
+    });
+    return "checks: " + k.passed + " of " + k.total + " " + (k.allPassed ? gridGlyph("✓") : "") + (bits.length ? " &middot; " : "") + bits.join(" &middot; ");
+  }
+  // what an opened row says, top to bottom: the ticket, why it ended, what changed (+ the last diff), the checks, the work, the door (only for the run the person opened), the run id
+  function tgOpenHtml(r, rd, canAct){
+    var label = r.title ? r.name + " " + r.title : r.name;
+    var link = typeof r.url === "string" && /^https?:\/\//i.test(r.url) ? ' &middot; <a data-testid="grid-ticket-link" class="link" href="' + escapeXml(r.url) + '" target="_blank" rel="noopener noreferrer">' + escapeXml(r.url) + '</a>' : "";
+    var h = '<div class="tg-line" data-testid="grid-ticket"><b>' + escapeXml(label) + '</b>' + link + '</div>';
+    var why = rd && typeof rd.endedWords === "string" && rd.endedWords !== "" ? rd.endedWords : r.reason;
+    if(r.bucket === "stop" || (r.bucket === "wait" && r.status.key === "running")) h += '<div class="tg-line" data-testid="grid-why">' + escapeXml(r.status.word) + (why ? ": " + escapeXml(why) : "") + '</div>';
+    if(!rd) h += '<div class="tg-line hint" data-testid="grid-loading">loading this run…</div>';
+    else if(rd.none) h += "";
+    else if(rd.kind !== "generic") h += '<div class="tg-line hint" data-testid="grid-own-result">this run’s own result is on its page: open it with the run id below.</div>';
+    else {
+      var c = rd.changed;
+      if(c){
+        var shown = c.paths.length > 4 ? c.paths.slice(0, 4).join(", ") + " and " + (c.paths.length - 4) + " more" : c.paths.join(", ");
+        h += '<div class="tg-line" data-testid="grid-changed">changed: ' + escapeXml(shown) + " (+" + c.plus + " −" + c.minus + ")</div>" +
+          '<div class="tg-line"><pre class="rs-diff" data-testid="grid-diff">' + c.last.files.map(function(f){ return resultDiffHtml(f.diff); }).join("\n") + (c.last.note ? '\n<span class="rs-ctx">' + escapeXml(c.last.note) + '</span>' : "") + '</pre></div>';
+      } else h += '<div class="tg-line" data-testid="grid-changed">no edit was recorded for this run</div>';
+      h += '<div class="tg-line" data-testid="grid-checks">' + tgChecksLine(rd.checks) + '</div>';
+      if(rd.work) h += '<div class="tg-line" data-testid="grid-work">work: branch ' + escapeXml(rd.work.branch) + ' &middot; <code>' + escapeXml(rd.work.merge) + '</code> &middot; <code>' + escapeXml(rd.work.drop) + '</code></div>';
+      if(canAct) h += resultDoorHtml(rd.door);
+    }
+    if(r.needs === "Accept" && !canAct) h += '<div class="tg-line hint" data-testid="grid-door-elsewhere">this run waits for your answer: open it with the run id below.</div>';
+    return h + '<div class="tg-line"><button class="tk-rl" type="button" data-testid="ticket-run" data-run="' + escapeXml(r.runId) + '">' + escapeXml(r.runId) + '</button></div>';
+  }
+  function tgRowHTML(r, ui, cur){
+    var skip = r.bucket === "skip";
+    var open = skip || !!ui.rows[r.runId];
+    var label = r.title ? r.name + " · " + r.title : r.name;
+    var nameBtn = '<button class="tg-name" type="button" data-testid="grid-name" data-run="' + escapeXml(r.runId) + '" title="' + escapeXml(label) + '">' + escapeXml(label) + '</button>';
+    var h = '<tr data-testid="grid-row" data-run="' + escapeXml(r.runId) + '"><td class="r"><div class="tg-rowname">' + (skip ? "" :
+      '<button class="q-fold tg-arrow" type="button" data-testid="grid-open" data-run="' + escapeXml(r.runId) + '" aria-label="show ' + escapeXml(r.name) + '" aria-expanded="' + open + '"></button>') + nameBtn + '</div></td>' +
+      tgCell(r.steps) + tgCell(r.checks) + tgCell(r.cost) + tgCell(r.time) + '</tr>';
+    if(skip){
+      var mine = ui.anyway && ui.anyway.number === r.number;
+      h += '<tr class="step-sub"><td colspan="5"><div class="tg-skipwhy"><span class="badge grey">' + escapeXml(r.status.word) + '</span><span data-testid="ticket-reason">' + escapeXml(r.reason || "") + '</span>' +
+        (r.anyway && !mine ? '<button class="btn small" type="button" data-testid="ticket-anyway-open" data-number="' + r.number + '">Run it anyway</button>' : "") + '</div>';
+      if(r.anyway && mine){
+        h += '<div class="tk-anyway" data-testid="ticket-anyway-box"><textarea data-testid="ticket-anyway-text" aria-label="reason (needed to run it anyway)" placeholder="reason (needed to run it anyway)">' + escapeXml(ui.anyway.text) + '</textarea>' +
+          '<button class="btn small" type="button" data-testid="ticket-anyway-go"' + (ui.anyway.text.trim() === "" ? " disabled" : "") + '>Run it anyway</button></div>';
+      }
+      h += '</td></tr>';
+    } else if(open){
+      h += '<tr class="step-sub"><td colspan="5">' + tgOpenHtml(r, tgRowData(r.runId), !!(cur && cur.runid === r.runId && cur.accept === true && !cur.live)) + '</td></tr>';
+    }
+    return h;
+  }
+  function tgStatsHTML(g){
+    var c = g.stats.counts;
+    return '<p class="tg-stats" data-testid="grid-stats">' + g.groups.map(function(b){ return '<b>' + c[b.key] + '</b> ' + escapeXml(b.label.toLowerCase()); }).join(" · ") + ' · spent <b>' + escapeXml(g.stats.spent) + '</b></p>';
+  }
+  function tgTableHTML(g, ui, cur){
+    var h = '<div class="grid-wrap"><table class="grid tg" data-testid="grid-table"><thead><tr><th class="r">run</th><th class="t">steps<span class="hint">done</span></th><th class="t">checks<span class="hint">the close’s</span></th><th class="t">cost</th><th class="t">time</th></tr></thead><tbody>';
+    g.groups.forEach(function(b){
+      var open = ui.open[b.key] === undefined ? b.open : ui.open[b.key];
+      h += '<tr class="tg-grp"><td colspan="5"><button class="tg-fold" type="button" data-testid="grid-fold-' + b.key + '" data-group="' + b.key + '" aria-expanded="' + open + '"><span class="tg-foldin">' + (open ? "▾" : "▸") + " " + escapeXml(b.label) + " (" + b.rows.length + ")</span></button></td></tr>";
+      if(open) h += b.rows.map(function(r){ return tgRowHTML(r, ui, cur); }).join("");
+    });
+    return h + '</tbody></table></div>';
+  }
+  function gridCardHTML(g, ui, cur){
+    return '<div class="audit-group" data-testid="result-grid"><h4><span class="badge grey">tickets</span></h4>' + tgStatsHTML(g) +
+      (g.scheduleLine ? '<div class="hint" style="margin-bottom:6px" data-testid="grid-schedule">' + escapeXml(g.scheduleLine) + '</div>' : "") +
+      '<div id="grid-host" data-testid="grid-host">' + tgTableHTML(g, ui, cur) + '</div><div class="tk-msg" id="ticket-msg" data-testid="ticket-msg">' + escapeXml(ui.msg) + '</div>' +
+      '<div class="hint">newest first inside each bucket</div></div>';
+  }
+  // the grid opens with the row of the run the person came from, in its bucket, once per run
+  function gridOpenOwn(g, runid){
+    if(gridUi.ownFor === runid) return;
+    gridUi.ownFor = runid;
+    g.groups.forEach(function(b){ b.rows.forEach(function(r){ if(r.runId === runid){ gridUi.rows[runid] = true; gridUi.open[b.key] = true; } }); });
+  }
+  function gridRepaint(){
+    var body = document.getElementById("result-body");
+    var keepText = body.querySelector("#result-rerun-text");
+    var typed = keepText ? keepText.value : "";
+    var rerunOpen = !!body.querySelector("#result-rerun-box:not([hidden])");
+    paintResultBody(body, gridCardHTML(resultGrid, gridUi, resultDetail), resultDetail, typed, rerunOpen);
+    var ta = body.querySelector("[data-testid=ticket-anyway-text]");
+    if(ta && gridUi.focusAnyway){ ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  }
+  function gridClick(ev){
+    var g = resultGrid;
+    if(!g) return;
+    var t = ev.target.closest ? ev.target.closest("button") : null;
+    var host = document.getElementById("grid-host");
+    if(!t || !host || !host.contains(t)) return;
+    var tid = t.getAttribute("data-testid") || "";
+    if(t.hasAttribute("data-group")){
+      var k = t.getAttribute("data-group");
+      var cur = g.groups.filter(function(x){ return x.key === k; })[0];
+      gridUi.open[k] = !(gridUi.open[k] === undefined ? cur.open : gridUi.open[k]);
+      gridRepaint();
+    } else if(tid === "grid-open"){
+      var id = t.getAttribute("data-run");
+      gridUi.rows[id] = !gridUi.rows[id];
+      gridRepaint();
+      if(gridUi.rows[id] && !tgRowData(id)){
+        getJSON("/api/runs/" + encodeURIComponent(id) + "/result").then(function(d){ gridRowData[id] = d; }).catch(function(){ gridRowData[id] = { runid: id, none: true, kind: "none" }; }).then(function(){ if(resultGrid === g) gridRepaint(); });
+      }
+    } else if(tid === "grid-name" || tid === "ticket-run"){
+      selectRun(t.getAttribute("data-run")); document.getElementById("tab-run").click();
+    } else if(tid === "ticket-anyway-open"){
+      var n = Number(t.getAttribute("data-number"));
+      gridUi.anyway = (gridUi.anyway && gridUi.anyway.number === n) ? null : { number: n, text: "" };
+      gridUi.msg = ""; gridUi.focusAnyway = true; gridRepaint();
+    } else if(tid === "ticket-anyway-go"){
+      var a = gridUi.anyway;
+      var msg = document.getElementById("ticket-msg");
+      if(!a || a.text.trim() === ""){ gridUi.msg = "Please write a reason to run it anyway."; msg.textContent = gridUi.msg; return; }
+      t.disabled = true;
+      var anchor = g.runid;
+      authorPost("/api/author/ticket-anyway", { job: g.job, ticket: a.number, reason: a.text.trim() }).then(function(r){
+        var ok = r.status >= 200 && r.status < 300 && r.body && r.body.ok === true;
+        gridUi.msg = (r.body && (r.body.say || r.body.error)) || (ok ? "Queued." : "Not queued. Nothing started.");
+        if(ok){ gridUi.anyway = null; refreshRunsList(true); setTimeout(function(){ if(currentRunid === anchor) loadResult(anchor); }, 1500); }
+        gridRepaint();
+      }).catch(function(){ gridUi.msg = "Could not reach the panel. Nothing started."; document.getElementById("ticket-msg").textContent = gridUi.msg; t.disabled = false; });
+    }
+  }
+  function gridWire(body){
+    if(body.getAttribute("data-grid-wired") === "1") return;
+    body.setAttribute("data-grid-wired", "1");
+    body.addEventListener("click", gridClick);
+    body.addEventListener("input", function(ev){
+      var ta = ev.target;
+      if(!resultGrid || !ta || !ta.getAttribute || ta.getAttribute("data-testid") !== "ticket-anyway-text" || !gridUi.anyway) return;
+      gridUi.anyway.text = ta.value;
+      var go = body.querySelector("[data-testid=ticket-anyway-go]");
+      if(go) go.disabled = ta.value.trim() === "";
+    });
+    body.addEventListener("keydown", function(ev){
+      if(ev.key !== "Escape" || !resultGrid || !ev.target.getAttribute || ev.target.getAttribute("data-testid") !== "ticket-anyway-text") return;
+      gridUi.anyway = null; gridUi.focusAnyway = false; gridUi.msg = ""; gridRepaint();
+    });
+    body.addEventListener("focusin", function(ev){ if(ev.target.getAttribute && ev.target.getAttribute("data-testid") === "ticket-anyway-text") gridUi.focusAnyway = true; });
+    body.addEventListener("focusout", function(ev){ if(ev.target.getAttribute && ev.target.getAttribute("data-testid") === "ticket-anyway-text") gridUi.focusAnyway = false; });
+  }
   function renderResult(){
     var detail = resultDetail, data = resultData;
     var body = document.getElementById("result-body");
@@ -4344,6 +4532,8 @@
     var keepText = body.querySelector("#result-rerun-text");
     var typed = keepText ? keepText.value : "";
     var rerunOpen = !!body.querySelector("#result-rerun-box:not([hidden])");
+    // R8: a TICKET job shows its one grid instead (the generic boxes and the rubric tab stay for every other job)
+    if(resultGrid && resultGrid.runid === detail.runid){ gridWire(body); paintResultBody(body, gridCardHTML(resultGrid, gridUi, detail), detail, typed, rerunOpen); return; }
     if(data.kind === "generic"){ paintResultBody(body, resultGenericHtml(data, detail), detail, typed, rerunOpen); return; }
     var counters = document.getElementById("run-counters").textContent.split(" \u00b7 ");
     var h = '<div class="job-card" data-testid="result-head"><h4>Result</h4>' +
