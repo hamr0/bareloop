@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { appendRunEvent } from '../src/runlist.js';
 import { neverRanPlan, getStartFrom } from '../src/panel/server.js';
 import { readRunList } from '../src/runlist.js';
@@ -70,4 +71,11 @@ test('Must fail: POST start on a refused-before-start run, job unchanged, signs 
   const changed = await start(s, 'refused1', { jobText: `${s.card.jobText ?? 'do the thing'}\nand one more step`, jobName: 'plain-job-2' });
   assert.equal(changed.status, 200, JSON.stringify(changed.body));
   assert.equal(changed.body.reuse, false, 'a changed job on a refused run drafts');
+});
+
+test('neverRanPlan: a later leg\'s settled event and a run that HAS a spine on disk are never "never ran"', () => {
+  const ev = (over = {}) => ({ type: 'settled', runid: 'x', reason: 'refused before start', spentUsd: 0, spendComplete: true, ...over });
+  assert.equal(neverRanPlan([ev()], { runid: 'x', spine: '/nonexistent/u-x.jsonl' }), true, 'control: the rule holds on this shape');
+  assert.equal(neverRanPlan([ev({ leg: 2 })], { runid: 'x', spine: '/nonexistent/u-x.jsonl' }), false, 'a resume leg that was refused is not leg 1 refusing');
+  assert.equal(neverRanPlan([ev()], { runid: 'x', spine: fileURLToPath(import.meta.url) }), false, 'a run with a log on disk ran');
 });

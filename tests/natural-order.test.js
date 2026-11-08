@@ -14,6 +14,7 @@ test('compareNatural: digit runs are numbers, long numbers keep every digit, lea
   assert.equal(compareNatural('#007', '#7'), 0);
   assert.ok(compareNatural('a', 'b') < 0 && compareNatural('b', 'a') > 0 && compareNatural('x', 'x') === 0);
   assert.ok(compareNatural('run', 'run-1') < 0, 'a prefix sorts first');
+  assert.ok(compareNatural('#9', '#9a') < 0 && compareNatural('#9a', '#9') > 0, 'equal leading parts: the shorter name first');
 });
 
 test('queueOf: tickets that arrived at the same instant queue #9 before #10', () => {

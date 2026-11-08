@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { lookProblemWords, scheduledNextFor } from '../src/schedulewords.js';
 import { recordLook, lookTickets } from '../src/triggertickets.js';
+import { appendRow } from '../src/triggerledger.js';
 import { ticketWorld, LIST, MCP, MIN } from './ticket-world.mjs';
 import { clock, keysHome, makeRun, panel, specOf, SLOT } from './trigger-world.mjs';
 
@@ -54,6 +55,17 @@ test('Must fail: an unreadable look shows ONE red line with its cause on the Run
   assert.equal(after.schedule.problem, false);
   assert.equal(after.schedule.nextRed, false);
   assert.match(after.schedule.line2, /next: waiting for a new ticket/);
+});
+
+test('a schedule signed with its job and still OFF keeps its grey waiting line: a look row cannot turn it red', async (t) => {
+  const w = await world(t);
+  appendRow(w.ledger, { kind: 'waiting', sig: w.sig, at: w.now() - 10 * MIN, before: null });
+  recordLook(w.ledger, w.sig, await w.look(w.mcp.configPath, true), w.now() - 5 * MIN);
+  const d = await w.detail();
+  assert.equal(d.schedule.waiting, true);
+  assert.equal(d.schedule.problem, false);
+  assert.doesNotMatch(d.schedule.line2, /could not read/);
+  assert.match(d.schedule.line2, /Schedule waiting for a green run/);
 });
 
 test('the words come from one function: the cause with its full stop trimmed, then the cadence', () => {

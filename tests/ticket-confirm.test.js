@@ -71,7 +71,7 @@ test('through the card door: a Tickets card\'s confirm turn is told; a generic M
 // R9 (F122, fwd e89196e): the drafting turn says reading the frozen ticket still needs the `read` grant; the person-facing confirm turn does not (it speaks of no tools).
 test('the drafting block says a step reading the ticket still lists "read"; the confirm turn is unchanged', async () => {
   const { TICKET_READ_FACT } = await import('../src/ticketfilter.js');
-  assert.match(TICKET_READ_FACT, /still lists "read" in its tools/);
+  assert.match(TICKET_READ_FACT, /still lists "read" in its tools: the ticket is already frozen at run start, but reading it is a grant, so a step without "read" cannot see it\./);
   assert.ok(ticketFilterBlock().includes(TICKET_READ_FACT));
   assert.equal(confirmPrompt({ ...A, ticket: true }).includes(TICKET_READ_FACT), false);
 });
