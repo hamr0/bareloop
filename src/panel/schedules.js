@@ -532,41 +532,58 @@ export function createScheduleDoor(deps) {
      * R7, am3 (fwd M13 am3): "Run it anyway" on a ticket while the job's ticket schedule is still OFF (signed with the job, waiting for its first green run): start that ticket's run at
      * once, by hand, with the job's normal cap, after the same busy / monthly / would-accept checks a fire makes. `null` = not this door's case (no ticket schedule, or it is on: the queue
      * takes it, R8). Else `{ok, say}`; a refusal starts nothing and spends $0. It writes NO ledger row: a skipped run never arms the schedule, a green one does (`armFor`).
-     * NOTE: no HTTP route calls this yet - the "Run it anyway" button and its route are R8 (piece 4); this is the start path they will call.
-     * @param {{job: string, number: number}} a
+     * `fromRun` (am3, no ticket schedule at all): the skipped run whose saved signed job is started instead of a schedule's.
+     * @param {{job: string, number: number, fromRun?: string}} a
      * @returns {Promise<{ok: boolean, say: string}|null>}
      */
-    async startAnyway({ job, number }) {
+    async startAnyway({ job, number, fromRun }) {
       if (!SLUG_RE.test(job)) return null;
-      const schedule = readSchedule(job);
-      if (!schedule || !isTicketTrigger(schedule.trigger) || !stateOf(job).waiting || !starter) return null;
+      /** @type {any} */
+      let spec;
+      if (fromRun === undefined) {
+        const schedule = readSchedule(job);
+        if (!schedule || !isTicketTrigger(schedule.trigger) || !stateOf(job).waiting || !starter) return null;
+        spec = schedule.spec;
+      } else {
+        // am3 with NO ticket schedule: the signed job is the skipped run's own (its session's saved copy, read through the one `startFrom`)
+        if (!starter) return null;
+        const pre = deps.startFrom(fromRun);
+        if (!pre || !pre.ok) return { ok: false, say: `This skipped ticket's signed job cannot be read (${String(pre?.error ?? 'its run is gone from the list').replace(/\.$/, '')}), so it cannot be run from here. Nothing started.` };
+        spec = pre.spec;
+      }
       if (!Number.isSafeInteger(number) || number < 1) return { ok: false, say: 'The ticket number must be a whole number from 1 up. Nothing started.' };
       if (busy(job)) return { ok: false, say: 'A run of this job is still going. Nothing started.' };
       try {
-        const room = checkMonthlyRoom({ capUsd: schedule.spec.budgetUsd, home: deps.home, sessionsRoot: deps.sessionsRoot, now });
+        const room = checkMonthlyRoom({ capUsd: spec.budgetUsd, home: deps.home, sessionsRoot: deps.sessionsRoot, now });
         if (!room.ok) return { ok: false, say: "This month's limit has no room for this job's cap. Nothing started." };
       } catch (e) {
         if (!(e instanceof ConfigError)) throw e;
         return { ok: false, say: `${e.message} — refusing rather than guess the monthly limit. Nothing started.` };
       }
-      const cause = { kind: /** @type {const} */ ('ticket'), number, sha: `ticket:${number}`, byHand: true };
+      const cause = { kind: /** @type {const} */ ('ticket'), number, sha: `ticket:${number}`, byHand: true, ...(fromRun === undefined ? {} : { fromRun }) };
       const accept = starter.wouldAccept(job, cause);
       if (!accept.ok) return { ok: false, say: accept.why };
       starting.set(job, now());
       const r = await starter.start(job, cause);
       if (!r.ok) { starting.delete(job); return { ok: false, say: r.why }; }
-      return { ok: true, say: `Ticket #${number} started now; the schedule is still off until a green run.` };
+      return { ok: true, say: fromRun === undefined ? `Ticket #${number} started now; the schedule is still off until a green run.` : `Ticket #${number} started now.` };
     },
 
     /**
      * R8 (piece 4, `POST /api/author/ticket-anyway`): the ONE door of "Run it anyway" once the person has given a reason (the route checks it). A ticket schedule that is still OFF starts that
      * ticket's run at once ({@link startAnyway}, by hand, no row); one that is ON takes ONE `arrived` row with the reason and `anyway: true` ({@link recordAnyway}), and the queue starts it
-     * with `--anyway` under the job's normal cap. A job with no ticket schedule at all has no signed spec to start from here: refused in words, nothing written.
-     * @param {{job: string, number: number, reason: string}} a
+     * with `--anyway` under the job's normal cap. A job with NO ticket schedule (am3: for a first ticket this is the only way to run it) starts at once from the skipped run's own saved signed job
+     * (`runid`, the grid's skipped row, through the one `startFrom` and the one starter); with no readable job there, or no `runid`, it is refused in words and nothing is written.
+     * @param {{job: string, number: number, reason: string, runid?: string}} a
      * @returns {Promise<{ok: boolean, say: string, started?: boolean}>}
      */
-    async arriveAnyway({ job, number, reason }) {
+    async arriveAnyway({ job, number, reason, runid }) {
       const schedule = SLUG_RE.test(job) ? readSchedule(job) : null;
+      if ((!schedule || !isTicketTrigger(schedule.trigger)) && SLUG_RE.test(job) && typeof runid === 'string' && runid !== '') {
+        const r = await this.startAnyway({ job, number, fromRun: runid });
+        if (r === null) return { ok: false, say: 'The job could not start this ticket now. Nothing started.' };
+        return { ok: r.ok, say: r.say, ...(r.ok ? { started: true } : {}) };
+      }
       if (!schedule || !isTicketTrigger(schedule.trigger)) return { ok: false, say: `Job "${job}" has no ticket schedule, so Run it anyway has nothing to start it from. Nothing started.` };
       if (stateOf(job).waiting) {
         const r = await this.startAnyway({ job, number });

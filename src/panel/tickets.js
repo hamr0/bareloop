@@ -25,17 +25,18 @@ export const ANYWAY_REASON_MAX = 500;
 /**
  * `POST /api/author/ticket-anyway {job, ticket, reason}`: a SKIPPED ticket is run anyway, after a short reason. Without a reason nothing starts. `isSkipped(job, number)` says whether the
  * job's grid holds that ticket as a skipped row nobody has run since; `door.arriveAnyway({job, number, reason})` is the ONE seam (production: the schedule door's).
- * @param {{body: any, isSkipped: (job: string, number: number) => boolean, door: {arriveAnyway: (a: {job: string, number: number, reason: string}) => Promise<{ok: boolean, say: string, started?: boolean}>}}} a
+ * @param {{body: any, isSkipped: (job: string, number: number) => boolean, door: {arriveAnyway: (a: {job: string, number: number, reason: string, runid?: string}) => Promise<{ok: boolean, say: string, started?: boolean}>},
+ *   skippedRunOf?: (job: string, number: number) => string|null}} a
  * @returns {Promise<{status: number, body: Record<string, any>}>}
  */
-export async function ticketAnyway({ body, isSkipped, door }) {
+export async function ticketAnyway({ body, isSkipped, door, skippedRunOf }) {
   const b = body !== null && typeof body === 'object' ? body : {};
   const reason = typeof b.reason === 'string' ? b.reason.trim() : '';
   if (reason === '') return { status: 400, body: { ok: false, refused: 'reason-required', say: 'Please write a reason to run it anyway. Nothing started.' } };
   if (reason.length > ANYWAY_REASON_MAX) return { status: 400, body: { ok: false, refused: 'reason-too-long', say: `Keep the reason under ${ANYWAY_REASON_MAX} characters. Nothing started.` } };
   if (typeof b.job !== 'string' || b.job === '' || !isTicketNumber(b.ticket)) return { status: 400, body: { ok: false, refused: 'bad-request', say: `Name the job and the ticket number (${TICKET_NUMBER_WORDS}). Nothing started.` } };
   if (!isSkipped(b.job, b.ticket)) return { status: 409, body: { ok: false, refused: 'not-skipped', say: `Ticket #${b.ticket} is not a skipped ticket of this job. Nothing started.` } };
-  const r = await door.arriveAnyway({ job: b.job, number: b.ticket, reason });
+  const r = await door.arriveAnyway({ job: b.job, number: b.ticket, reason, ...(skippedRunOf ? { runid: skippedRunOf(b.job, b.ticket) ?? undefined } : {}) });
   if (!r.ok) return { status: 409, body: { ok: false, refused: 'queue', say: r.say } };
   return r.started === true
     ? { status: 202, body: { ok: true, started: true, number: b.ticket, say: r.say } }

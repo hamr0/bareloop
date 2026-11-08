@@ -113,15 +113,31 @@ export function createStarter(deps) {
     return perFireSpec(schedule, cause.kind === 'file' ? { kind: 'file', path: cause.path } : cause.kind === 'ticket' ? { kind: 'ticket' } : { kind: 'clock' });
   }
 
+  /**
+   * The schedule a start runs from: the job's signed schedule, or - for a by-hand "Run it anyway" with no ticket schedule at all (`cause.fromRun`, am3) - a stand-in built from the
+   * skipped run's own saved signed job through the one `startFrom`. `null` = nothing to run from.
+   * @param {string} job @param {any} cause @returns {any}
+   */
+  function scheduleOf(job, cause) {
+    if (cause.kind !== 'ticket' || typeof cause.fromRun !== 'string') return deps.door.readSchedule(job);
+    const pre = deps.startFrom(cause.fromRun);
+    if (!pre || !pre.ok) return null;
+    const spec = pre.spec;
+    return {
+      spec, specHash: jobSpecHash(spec), workflowKey: workflowKey(spec), originRunid: cause.fromRun, trigger: { kind: 'new-ticket', input: '' }, destination: pre.card.destination,
+      inputsText: typeof pre.card.inputs === 'string' && pre.card.inputs !== '' ? pre.card.inputs : (spec.inputs ?? []).map((/** @type {any} */ i) => `${i.label}: ${i.value}`).join('\n'),
+    };
+  }
+
   return {
     /**
      * Cheap, $0, no copy, no session. `{ok: true}` or `{ok: false, why}` (words).
      * @param {string} job
-     * @param {{kind: 'clock'} | {kind: 'file', path: string, sha: string} | {kind: 'ticket', number: number, sha: string, byHand?: boolean, anyway?: boolean}} cause `byHand` (R7, am3) = "Run it anyway" while the schedule is still off: no good run exists yet to read the saved job from
+     * @param {{kind: 'clock'} | {kind: 'file', path: string, sha: string} | {kind: 'ticket', number: number, sha: string, byHand?: boolean, anyway?: boolean, fromRun?: string}} cause `byHand` (R7, am3) = "Run it anyway" while the schedule is still off: no good run exists yet to read the saved job from
      * @returns {{ok: true}|{ok: false, why: string}}
      */
     wouldAccept(job, cause) {
-      const schedule = deps.door.readSchedule(job);
+      const schedule = scheduleOf(job, cause);
       if (!schedule) return { ok: false, why: 'This job has no schedule any more. Nothing started.' };
       const fire = resolveFire(schedule, cause);
       if (!fire.ok) return fire;
@@ -163,7 +179,7 @@ export function createStarter(deps) {
     /**
      * Start the run. Never throws. `consumed` says whether `beforeSpawn` ran, so the caller knows whether a `released` row is owed.
      * @param {string} job
-     * @param {{kind: 'clock', slot: number, catchUp: boolean, missed: number} | {kind: 'file', path: string, sha: string} | {kind: 'ticket', number: number, sha: string, byHand?: boolean, anyway?: boolean}} cause
+     * @param {{kind: 'clock', slot: number, catchUp: boolean, missed: number} | {kind: 'file', path: string, sha: string} | {kind: 'ticket', number: number, sha: string, byHand?: boolean, anyway?: boolean, fromRun?: string}} cause
      *   `byHand` (R7, am3): the person's own "Run it anyway" while the schedule is still off - the same path as Sign & run (no review door, no `trigger.json`, `--anyway`), the job's normal cap, no ledger row
      * @param {{beforeSpawn?: () => void}} [hooks]
      * @returns {Promise<{ok: true, sessionId: string, specHash: string, consumed: true}|{ok: false, why: string, consumed: boolean, installNeeded?: true}>}
@@ -171,7 +187,7 @@ export function createStarter(deps) {
     async start(job, cause, hooks = {}) {
       let consumed = false;
       try {
-        const schedule = deps.door.readSchedule(job);
+        const schedule = scheduleOf(job, cause);
         if (!schedule) return { ok: false, why: 'This job has no schedule any more. Nothing started.', consumed };
         const fire = resolveFire(schedule, cause);
         if (!fire.ok) return { ok: false, why: fire.why, consumed };

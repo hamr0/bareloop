@@ -1645,9 +1645,20 @@ function ticketGridOfJob(job, list, opts) {
  * @param {string} job @param {number} number @param {{ home?: string, now?: number }} [opts]
  */
 export function isSkippedTicket(job, number, opts = {}) {
+  return skippedRunOf(job, number, opts) !== null;
+}
+
+/**
+ * The run id of the skipped row {@link isSkippedTicket} means (the newest one of that ticket, with Run it anyway on it), or null. The no-schedule "Run it anyway" (am3) starts from that
+ * run's own saved signed job.
+ * @param {string} job @param {number} number @param {{ home?: string, now?: number }} [opts]
+ */
+export function skippedRunOf(job, number, opts = {}) {
   const list = readRunList(opts);
   const grid = ticketGridOfJob(job, list, opts);
-  return grid !== null && grid.groups.some((g) => g.key === 'skip' && g.rows.some((r) => r.number === number && r.anyway === true));
+  if (grid === null) return null;
+  const skip = grid.groups.find((g) => g.key === 'skip');
+  return skip?.rows.find((r) => r.number === number && r.anyway === true)?.runId ?? null;
 }
 
 /**
@@ -3820,12 +3831,14 @@ export function reuseLine(record) {
  *   trackRecord: ReturnType<typeof trackRecordFor>, line: string}|{ok: false, error: string}|null}
  */
 export function getStartFrom(runid, opts = {}) {
-  const { rows } = readRunList(opts);
+  const { rows, events } = readRunList(opts);
   const row = rows.find((r) => r && r.runid === runid);
   if (!row) return null;
-  if (!existsSync(row.spine)) return { ok: false, error: 'this run has no log on disk — nothing to reuse' };
-  const records = parseJsonl(row.spine).records;
-  const signed = signedSpecForRun(row, records);
+  // a ticket the job's filter SKIPPED has no log (R5) but its session kept the signed job beside where the log would be: the no-schedule "Run it anyway" (am3) starts from it
+  const skipped = !existsSync(row.spine) && skipWordsOf(events, row) !== null;
+  if (!existsSync(row.spine) && !skipped) return { ok: false, error: 'this run has no log on disk — nothing to reuse' };
+  const records = skipped ? [] : parseJsonl(row.spine).records;
+  const signed = skipped ? skippedSignedSpec(row) : signedSpecForRun(row, records);
   if (!signed) return { ok: false, error: "this run's signed job is not on disk — nothing to reuse (change the job: Clear the card and draft a new one)" };
   const near = sourceNearSpine(row.spine);
   const spec = signed.spec;
@@ -3881,6 +3894,20 @@ export function getStartFrom(runid, opts = {}) {
     trackRecord,
     line: reuseLine(trackRecord),
   };
+}
+
+/**
+ * The signed job a SKIPPED run's session left (`resolved-spec.json` beside where its log would be), or null. A skipped run has no `job-start` to name the hash, so the file stands as the
+ * session saved it; whatever starts from it is signed afresh by the start's own gates.
+ * @param {{ spine: string }} row @returns {{spec: any, specPath: string, specHash: string}|null}
+ */
+function skippedSignedSpec(row) {
+  const { specPath } = sourceNearSpine(row.spine);
+  if (!specPath) return null;
+  try {
+    const spec = JSON.parse(readFileSync(specPath, 'utf8'));
+    return spec && typeof spec === 'object' ? { spec, specPath, specHash: jobSpecHash(spec) } : null;
+  } catch { return null; }
 }
 
 /**
@@ -4354,6 +4381,7 @@ export function createPanelServer(opts = {}) {
       authorRoutes = createAuthorRoutes({
         schedules,
         isSkippedTicket: (job, n) => isSkippedTicket(job, n, { home }),
+        skippedRunOf: (job, n) => skippedRunOf(job, n, { home }),
         runJobNames: () => readRunList({ home }).rows.flatMap((r) => (r && typeof r.job === 'string' ? [r.job] : [])),
         ...(opts.sessionDeps ? { sessionDeps: opts.sessionDeps } : {}),
         port: boundPort,

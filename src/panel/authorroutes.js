@@ -122,7 +122,7 @@ const TERMINAL_PHASES = new Set(['refused', 'abandoned', 'error', 'signed', 'sig
  *   sessionsRoot?: string, spawnFn?: typeof realSpawn, bareloopBin?: string,
  *   jobsDir?: string, fetchImpl?: typeof fetch, home?: string, mcpHome?: string, newestUnrunTicket?: typeof newestUnrunTicket,
  *   schedules?: ReturnType<typeof import('./schedules.js').createScheduleDoor>,
- *   isSkippedTicket?: (job: string, number: number) => boolean,
+ *   isSkippedTicket?: (job: string, number: number) => boolean, skippedRunOf?: (job: string, number: number) => string|null,
  *   sessionDeps?: Record<string, any>,
  *   runJobNames?: () => string[],
  *   startFrom?: {get: (runid: string, o?: {model?: string}) => any, getImport: (id: string, o?: {model?: string}) => any, listJobs?: (o?: {model?: string}) => any[]} }} opts
@@ -351,7 +351,7 @@ export function createAuthorRoutes(opts) {
     if (pathname === '/api/author/ticket-anyway') {
       if (!opts.schedules || !opts.isSkippedTicket) { send(404, { ok: false, error: 'not found' }); return true; }
       if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
-      ticketAnyway({ body, isSkipped: opts.isSkippedTicket, door: opts.schedules })
+      ticketAnyway({ body, isSkipped: opts.isSkippedTicket, door: opts.schedules, ...(opts.skippedRunOf ? { skippedRunOf: opts.skippedRunOf } : {}) })
         .then((r) => send(r.status, r.body))
         .catch((e) => send(500, { ok: false, error: `could not run it anyway: ${/** @type {Error} */ (e).message}. Nothing started.` }));
       return true;
