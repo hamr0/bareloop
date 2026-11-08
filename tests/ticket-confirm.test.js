@@ -67,3 +67,11 @@ test('through the card door: a Tickets card\'s confirm turn is told; a generic M
   assert.doesNotMatch((await confirmSeen(t, 'mcp'))[0], /picked per run/);
   assert.doesNotMatch((await confirmSeen(t, 'plain'))[0], /picked per run/);
 });
+
+// R9 (F122, fwd e89196e): the drafting turn says reading the frozen ticket still needs the `read` grant; the person-facing confirm turn does not (it speaks of no tools).
+test('the drafting block says a step reading the ticket still lists "read"; the confirm turn is unchanged', async () => {
+  const { TICKET_READ_FACT } = await import('../src/ticketfilter.js');
+  assert.match(TICKET_READ_FACT, /still lists "read" in its tools/);
+  assert.ok(ticketFilterBlock().includes(TICKET_READ_FACT));
+  assert.equal(confirmPrompt({ ...A, ticket: true }).includes(TICKET_READ_FACT), false);
+});
