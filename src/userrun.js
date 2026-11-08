@@ -512,6 +512,8 @@ async function execute(ctx) {
   let SEED = target.seed;
   /** @type {import('./ticketrepo.js').RepoTicketRecord|null} a code-repo job's frozen ticket (metadata), set at the run-start freeze; rides onto `job-start` */
   let ticketRecord = null;
+  /** @type {string|null} R9 (9.4): the ticket filter's unsure reason when it let the ticket run anyway-unsure; rides onto `job-start` as `ticketFilter.unsure` */
+  let ticketUnsure = null;
   /** @type {{number: number, ownerRepo: string, head: string, base: {ref: string|null, sha: string}|null, mergeBase: string|null}|null} a PR job's checkout (piece 12), set at the run-start seam; rides onto `job-start` as `pr` */
   let prRecord = null;
   const specHash = jobSpecHash(spec);
@@ -1681,6 +1683,7 @@ async function execute(ctx) {
         }
         throw new ExitSignal(0);
       }
+      if (verdict.outcome === 'run' && verdict.unsure !== undefined) ticketUnsure = verdict.unsure;
       if (verdict.outcome === 'run' && verdict.unsure !== undefined) out(`${SELECTOR}: the ticket filter was unsure (${verdict.unsure}), so the ticket runs.`);
     }
     // piece 12: a PR job's worktree is moved to the PR's head BEFORE the seed is read and the work branch is made (planrun, later); every refusal ends in "Nothing spent."
@@ -2019,6 +2022,7 @@ async function execute(ctx) {
     outcome = await runJob(spec, {
       stopFile,
       ...(ticketRecord === null ? {} : { ticketRecord }),
+      ...(ticketUnsure === null ? {} : { ticketUnsure }),
       ...(prRecord === null ? {} : { prRecord }),
       ...(learnHints === null ? {} : { learnHints }),
       // PRD item 27/M3 — the SAME `emit` the pre-run close-timing reading above

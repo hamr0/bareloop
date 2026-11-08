@@ -77,6 +77,7 @@ import {
 } from './status.js';
 import { thinkingJobText } from '../thinking.js';
 import { ticketFilterWords } from '../ticketfilter.js';
+import { filterUnsure } from '../ticketlabels.js';
 import { judgedFilesOf, lineRules, stepFileRel, proseNotCheckedItems } from '../rubricstep.js';
 import { factPartOf, factSentence, ruleWords, moneyAs } from '../facts.js';
 import { createSettingsRoutes } from './settingsroutes.js';
@@ -1653,13 +1654,15 @@ function ticketGridOfJob(job, list, opts) {
     /** @type {any[]|null} */
     let records = null;
     if (existsSync(r.spine)) { try { records = parseJsonl(r.spine).records; } catch { records = null; } }
-    const t = records ? ticketOfStart(records.findLast((/** @type {any} */ x) => x && x.type === 'job-start')) : null;
+    const startRec = records ? records.findLast((/** @type {any} */ x) => x && x.type === 'job-start') : null;
+    const t = records ? ticketOfStart(startRec) : null;
     const checks = records ? checksOf(records, resolveSpecForRow(r)) : null;
     const plan = records ? records.findLast((/** @type {any} */ x) => x && x.type === 'plan-executed' && Array.isArray(x.steps)) : null;
     const status = e.status ?? { key: 'failed', ...STATUS.failed };
     return {
       runId: r.runid, runNo: nos.get(r.runid) ?? null, at: Number.isFinite(atMs(r)) ? atMs(r) : null,
       statusKey: status.key, sign: status.sign, word: status.word, needs: e.needs ?? null,
+      unsure: filterUnsure({ filter: startRec?.ticketFilter }),
       number: t ? t.number : (Number.isInteger(r.ticket) ? r.ticket : null), title: t ? t.title : null, url: t ? t.url : null,
       steps: plan ? { done: plan.steps.filter((/** @type {any} */ x) => isReusableGreen(x?.outcome)).length, total: plan.steps.length } : null,
       checks: checks ? { passed: checks.passed, total: checks.total } : null,

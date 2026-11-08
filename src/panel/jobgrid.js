@@ -3,6 +3,7 @@
 // Pure of the panel: `getJobGrid` (src/panel/server.js) reads the run list and the spines and hands plain entries in. Nothing is written.
 import { GROUP_OF, TICKET_GROUPS } from './tickets.js';
 import { panelMoney2 } from '../panelmoney.js';
+import { FILTER_UNSURE_SAY } from '../ticketlabels.js';
 
 /** the buckets, in the mockup's order */
 export const GRID_BUCKETS = TICKET_GROUPS;
@@ -66,7 +67,7 @@ function gridNameOf(e) {
 
 /**
  * The grid of one ticket job: every run a row in its bucket, newest first inside each bucket, and the stats line's numbers.
- * @param {{entries: Array<{runId: string, runNo?: number|null, at: number|null, statusKey: string, sign: string, word: string, needs: 'Accept'|'Resume'|null, number: number|null, title: string|null, url: string|null,
+ * @param {{entries: Array<{runId: string, runNo?: number|null, at: number|null, statusKey: string, sign: string, word: string, needs: 'Accept'|'Resume'|null, unsure?: boolean, number: number|null, title: string|null, url: string|null,
  *   steps: {done: number, total: number}|null, checks: {passed: number, total: number}|null, spentUsd: number|null, spendComplete: boolean, spendFloorUsd: number|null, wall: string|null, reason: string|null}>,
  *   scheduleLine?: string|null}} a
  */
@@ -84,7 +85,7 @@ export function buildJobGrid({ entries, scheduleLine = null }) {
       : (e.checks.passed === e.checks.total ? { mark: 'g', text: `${e.checks.passed} of ${e.checks.total}` } : { mark: 'r', text: `${e.checks.total - e.checks.passed} red` });
     const walled = e.wall !== null && e.wall !== '' && e.wall !== 'unknown';
     return {
-      runId: e.runId, runNo: e.runNo ?? null, number: e.number, title: e.title, url: e.url,
+      runId: e.runId, runNo: e.runNo ?? null, number: e.number, title: e.title, url: e.url, ...(e.unsure === true ? { unsure: true, unsureSay: FILTER_UNSURE_SAY } : { unsure: false }),
       name: gridNameOf(e), ref: gridRefOf(e), bucket, status: { key: e.statusKey, sign: e.sign, word: e.word }, needs: e.needs, at: e.at,
       steps, checks,
       // a cell with no data is the page's grey dash (mark `n`, no text), never `?` or `unknown`; a floor keeps its `?` and "at least"

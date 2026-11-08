@@ -504,6 +504,7 @@
   table.grid.tg button.tg-name:hover{text-decoration:underline;}
   table.grid.tg button.tg-name:focus-visible,table.grid.tg button.tg-arrow:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
   table.grid.tg button.tg-arrow{flex:0 0 auto;width:auto;color:var(--accent);font-weight:700;}
+  .tg-unsure{flex:0 0 auto;margin-left:6px;}
   table.grid.tg button.q-fold{border:0;background:none;color:var(--text);font:inherit;font-size:12px;text-align:left;padding:0;min-height:32px;cursor:pointer;}
   table.grid.tg button.q-fold::before{content:"\25B8  ";color:var(--text-faint);white-space:pre;}
   table.grid.tg button.q-fold[aria-expanded="true"]::before{content:"\25BE  ";}
@@ -4398,6 +4399,7 @@
     var h = '<div class="tg-line" data-testid="grid-ticket"><b>' + escapeXml(label) + '</b>' + link + '</div>';
     var why = rd && typeof rd.endedWords === "string" && rd.endedWords !== "" ? rd.endedWords : r.reason;
     if(r.bucket === "stop" || (r.bucket === "wait" && r.status.key === "running")) h += '<div class="tg-line" data-testid="grid-why">' + escapeXml(r.status.word) + (why ? ": " + escapeXml(why) : "") + '</div>';
+    if(r.unsure) h += '<div class="tg-line hint" data-testid="grid-unsure-line">' + escapeXml(r.unsureSay || "") + '</div>';
     if(!rd) h += '<div class="tg-line hint" data-testid="grid-loading">loading this run…</div>';
     else if(rd.none) h += "";
     else if(rd.kind !== "generic") h += '<div class="tg-line hint" data-testid="grid-own-result">this run’s own result is on its page: open it with the run id below.</div>';
@@ -4421,7 +4423,8 @@
     var label = r.title ? r.name + " · " + r.title : r.name;
     var nameBtn = '<button class="tg-name" type="button" data-testid="grid-name" data-run="' + escapeXml(r.runId) + '" title="' + escapeXml(label) + '">' + escapeXml(label) + '</button>';
     var h = '<tr data-testid="grid-row" data-run="' + escapeXml(r.runId) + '"><td class="r"><div class="tg-rowname">' + (skip ? "" :
-      '<button class="q-fold tg-arrow" type="button" data-testid="grid-open" data-run="' + escapeXml(r.runId) + '" aria-label="show ' + escapeXml(r.ref || r.name) + '" aria-expanded="' + open + '"></button>') + nameBtn + '</div></td>' +
+      '<button class="q-fold tg-arrow" type="button" data-testid="grid-open" data-run="' + escapeXml(r.runId) + '" aria-label="show ' + escapeXml(r.ref || r.name) + '" aria-expanded="' + open + '"></button>') + nameBtn +
+      (r.unsure ? '<span class="badge grey tg-unsure" data-testid="grid-unsure" title="' + escapeXml(r.unsureSay || "") + '">unsure</span>' : "") + '</div></td>' +
       tgCell(r.steps) + tgCell(r.checks) + tgCell(r.cost) + tgCell(r.time) + '</tr>';
     if(skip){
       var mine = ui.anyway && ui.anyway.number === r.number;

@@ -129,3 +129,18 @@ describe('a ticket the filter lets through runs', () => {
     });
   }
 });
+
+// R9 (9.4, fwd 83b6d02): an UNSURE verdict runs the ticket and the run's `job-start` carries WHY (`ticketFilter.unsure`, the reason text only), so the grid can wear its grey mark; a sure verdict leaves the field out.
+describe('an unsure filter verdict is recorded on the run', () => {
+  const jobStart = (r) => readFileSync(r.row.spine, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).find((x) => x.type === 'job-start');
+  test('a priority on another scale: job-start.ticketFilter.unsure holds the reason', async (t) => {
+    const r = await engine(t, { issue: { labels: [{ name: 'priority/important-soon' }] }, ticketFilter: { priority: ['P1'] } });
+    assert.equal(r.rc, 0, `${r.out}\n${r.err}`);
+    assert.match(jobStart(r).ticketFilter.unsure, /not on the P0-P3 scale/);
+  });
+  test('a sure verdict (a priority match) records nothing', async (t) => {
+    const r = await engine(t, { issue: { labels: [{ name: 'P1' }] }, ticketFilter: { priority: ['P1'] } });
+    assert.equal(r.rc, 0, `${r.out}\n${r.err}`);
+    assert.equal('ticketFilter' in jobStart(r), false);
+  });
+});

@@ -40,6 +40,9 @@ export function readTicketFields(text) {
   return { ok: true, labels, state: typeof o.state === 'string' ? o.state.toLowerCase() : null, title: typeof o.title === 'string' ? o.title : null };
 }
 
+/** R9 (9.4): the words for it, one owner (the grid's open row and the badge's title read them). */
+export const FILTER_UNSURE_SAY = 'the filter was unsure about this ticket';
+
 /**
  * M13 piece 7 (9.4): the ONE reader of "the filter was unsure about this ticket", from a run.json input entry: true when its stored verdict ran with an `unsure`
  * reason (also when the ticket was sent with Run it anyway and the filter's own verdict was unsure). Anything else, a torn entry too, is false.
