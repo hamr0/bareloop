@@ -138,6 +138,9 @@ export function nextInWords(ms, now) {
   return hours < 48 ? `next in ${hours}h` : `next in ${Math.floor(hours / 24)}d`;
 }
 
+/** R9 (fwd 9b.3): the one red line for a ticket look that could not read, with its cause (never "0 new"). The look cadence is fixed at 15 minutes. @param {{at: number, why: string}} p */
+export const lookProblemWords = (p) => `could not read the tickets: ${String(p.why).trim().replace(/\.$/, '')}. It looks again in 15 minutes.`;
+
 /**
  * NEXT of a scheduled job: one sentence, first match wins.
  *  1. a run of this job is waiting for the person's Accept (the next scheduled run does NOT wait for it, T7);
@@ -145,16 +148,17 @@ export function nextInWords(ms, now) {
  *  3. a clock kind with a next slot; 4. a file kind that is armed; 5. not armed yet.
  * A last outcome of `refused` goes in front of 3-5, so a trigger that cannot start is never silent.
  * `red` is the typed flag for "the person must act": the page paints it and never guesses from the text.
- * @param {{trigger: Trigger, armed: boolean, nextSlotMs: number|null, lastOutcome: any, waitingRunNo: number|null, now: number, retryInMs?: number|null, gaveUp?: any}} f
+ * @param {{trigger: Trigger, armed: boolean, nextSlotMs: number|null, lastOutcome: any, waitingRunNo: number|null, now: number, retryInMs?: number|null, gaveUp?: any, lookProblem?: {at: number, why: string}|null}} f
  *   `lastOutcome` = the newest outcome row of the CURRENT signing (`kind`, `at` in ms, `why`, `leftUsd`, `needUsd`, `atLeast`)
  * @returns {{text: string, red: boolean}}
  */
 export function scheduledNextFor(f) {
-  const { trigger, armed, nextSlotMs, lastOutcome, waitingRunNo, now, retryInMs = null, gaveUp = null } = f;
+  const { trigger, armed, nextSlotMs, lastOutcome, waitingRunNo, now, retryInMs = null, gaveUp = null, lookProblem = null } = f;
   /** @param {string} text @param {boolean} [red] */
   const say = (text, red = false) => ({ text, red });
   if (waitingRunNo !== null) return say(`Run ${waitingRunNo} is waiting for your Accept. The next scheduled run does not wait for it.`);
   if (gaveUp && typeof gaveUp === 'object') return say(gaveUpNextWords(gaveUp.why), true);
+  if (lookProblem) return say(`The last look ${lookProblemWords(lookProblem)}`, true);   // R9 (fwd 9b.3): a look that could not read is never "waiting for a new ticket"
   const last = lastOutcome && typeof lastOutcome === 'object' ? lastOutcome : null;
   const sameMonth = last !== null && sameMonthAs(last.at, now);
   if (last !== null && last.kind === 'monthly-exhausted' && sameMonth && typeof last.leftUsd === 'number' && typeof last.needUsd === 'number') {

@@ -25,10 +25,10 @@ import { validateTrigger, isClockTrigger, isFileTrigger, isTicketTrigger } from 
 import { armTrigger, nextSlot, recordFire } from '../triggerclock.js';
 import { appendRow, readLedger, withoutReleased } from '../triggerledger.js';
 import { checkTarget, createFileTrigger, queueOf, readSeen, recordDropped, recordRan } from '../triggerfiles.js';
-import { recordAnyway, recordTicketRan } from '../triggertickets.js';
+import { lookProblemOf, recordAnyway, recordTicketRan } from '../triggertickets.js';
 import { ticketInputLabels, ticketLookOf } from '../ticketschedule.js';
 import {
-  SCHEDULE_WORDS, dateTimeWords, gaveUpDateWords, lateRefusalWords, nextInWords, nextSlotShort, nextTimeWords, retryNextWords, sameMonthAs, scheduledNextFor, scheduledWords, skippedWords,
+  SCHEDULE_WORDS, dateTimeWords, gaveUpDateWords, lateRefusalWords, nextInWords, nextSlotShort, nextTimeWords, retryNextWords, sameMonthAs, scheduledNextFor, scheduledWords, lookProblemWords, skippedWords,
 } from '../schedulewords.js';
 import { buildReuseSpec, startDestinationProblem, validateReuseCard } from './authorsession.js';
 
@@ -363,7 +363,7 @@ export function createScheduleDoor(deps) {
    */
   function stateOf(job) {
     const schedule = readSchedule(job);
-    if (!schedule) return { schedule: null, trigger: null, armed: false, armedAt: null, waiting: false, nextSlotMs: null, lastOutcome: null, retryInMs: null, gaveUp: null };
+    if (!schedule) return { schedule: null, trigger: null, armed: false, armedAt: null, waiting: false, nextSlotMs: null, lastOutcome: null, retryInMs: null, gaveUp: null, lookProblem: null };
     const rows = withoutReleased(readLedger(ledgerOf(job)).rows).filter((r) => r.sig === schedule.specHash);
     const armed = armedRowOf(rows);
     const outcomes = rows.filter((r) => OUTCOME_KINDS.includes(r.kind));
@@ -373,6 +373,8 @@ export function createScheduleDoor(deps) {
       lastOutcome: outcomes.length > 0 ? outcomes[outcomes.length - 1] : null,
       retryInMs: (() => { const w = installWait.get(job); return w && w.until > now() ? w.until - now() : null; })(),
       gaveUp: pausedRow(rows),
+      // R9 (fwd 9b.3): the cause when the newest look of a ticket schedule could not read (pass locked, a server error), else null; a later look that reads clears it
+      lookProblem: schedule.trigger.kind === 'new-ticket' ? lookProblemOf(readSeen(ledgerOf(job), schedule.specHash)) : null,
     };
   }
 
@@ -735,7 +737,7 @@ export function createScheduleDoor(deps) {
       }
       // R7: signed with the job and still off - the grey line says so, whatever else is true of a schedule that has not started
       const next = st.waiting ? { text: SCHEDULE_WORDS.waiting, red: false } : scheduledNextFor({
-        trigger: st.schedule.trigger, armed: st.armed, nextSlotMs: st.nextSlotMs, lastOutcome: st.lastOutcome, waitingRunNo: o.waitingRunNo ?? null, now: now(), retryInMs: st.retryInMs, gaveUp: st.gaveUp,
+        trigger: st.schedule.trigger, armed: st.armed, nextSlotMs: st.nextSlotMs, lastOutcome: st.lastOutcome, waitingRunNo: o.waitingRunNo ?? null, now: now(), retryInMs: st.retryInMs, gaveUp: st.gaveUp, lookProblem: st.lookProblem,
       });
       const last = lastFireRow(job, st.schedule);
       const nextWords = st.waiting ? SCHEDULE_WORDS.waiting : !st.armed ? 'next: not armed yet' : isClockTrigger(st.schedule.trigger)
@@ -746,6 +748,7 @@ export function createScheduleDoor(deps) {
       let ended = nextWords;
       if (st.gaveUp !== null) { problem = true; ended = SCHEDULE_WORDS.problemNext; }
       else if (last !== null && last.kind === 'monthly-exhausted' && sameMonthAs(last.at, now())) { problem = true; ended = SCHEDULE_WORDS.monthNext; }
+      else if (st.lookProblem !== null && !st.waiting) { problem = true; ended = `last look ${dateTimeWords(st.lookProblem.at)} · ${lookProblemWords(st.lookProblem)}`; }
       else if (last !== null && last.kind === 'refused') {
         if (typeof st.retryInMs === 'number') ended = retryNextWords(st.retryInMs);
         else { problem = true; ended = SCHEDULE_WORDS.problemNext; }
