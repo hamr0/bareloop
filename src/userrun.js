@@ -24,7 +24,7 @@
 // green ONE job end to end. That green GRADUATES the bridge: the plan the agent
 // authored is preserved from the spine as a reusable artifact, and the next run of
 // this shape reuses and fine-tunes it rather than starting cold.
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, rmSync, readdirSync, openSync, readSync, closeSync, fstatSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, rmSync, rmdirSync, readdirSync, openSync, readSync, closeSync, fstatSync, unlinkSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
 import { join, resolve, dirname, basename } from 'node:path';
@@ -1636,6 +1636,8 @@ async function execute(ctx) {
     if (!claimedRow) return;
     try { appendRunEvent({ runid, type: 'settled', by: runid, reason: 'refused before start', words, spentUsd: 0, spendComplete: true, at: new Date().toISOString() }, { home: claimedRow.home }); } catch { /* the exit stands; the dead pid frees the claim */ }
     claimedRow = null;
+    // R9 (Part B 3): the run folder made just above stays an EMPTY husk when nothing ran in it; take it back (rmdir refuses a folder with anything in it, so a bundle's or a resumed leg's never goes)
+    if (!existsSync(spineFile)) { try { rmdirSync(spineDir); } catch { /* not empty, or already gone: leave it */ } }
   };
   if (pickSkip !== null) {
     out(`${SELECTOR}: skipped: ${pickSkip}`);
