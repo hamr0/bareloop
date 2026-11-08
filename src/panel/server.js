@@ -44,7 +44,7 @@ import { readingOfQuestion, isAgree } from '../pagemap.js';
 import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
 } from '../replayio.js';
-import { summarizeForAllLine, auditWindowsOf } from '../replay.js';
+import { summarizeForAllLine, auditWindowsOf, replayRun } from '../replay.js';
 import { legsOf, legsWallMs, stopFilePath, capKindOf } from '../legs.js';
 import { chainSpend } from '../ledger.js';
 import { runBehaviour } from '../behaviour.js';
@@ -1485,13 +1485,49 @@ function changedOf(records, writeScope) {
 }
 
 /**
+ * The checks a run's STEPS ran in the loop, for a run the outer close never reached (a strike-ladder cap-halt, a stop): read through the Audit tab's own data owner
+ * (`replayRun` parts, worded by {@link enrichPartsWithStageKind} / {@link tryChecksOf}), never a second reader of `check-run` / `exit-eval` records. Each check's standing is its LAST graded
+ * try; a name a later step ran again takes that later standing. The in-loop record carries no structured number, so `value`/`baseline` are null (no figure is parsed out of the gap prose);
+ * `tries` is how many times the step that ran it tried. `null` when no step ran any check.
+ * @param {any[]} records @param {any} spec
+ */
+function stepChecksOf(records, spec) {
+  /** @type {any[]|null|undefined} */
+  let parts;
+  try { parts = enrichPartsWithStageKind(replayRun(records).parts, stageKindMetaFromSpec(spec), spec); } catch { return null; }
+  /** @type {Map<string, any>} */
+  const byName = new Map();
+  for (const p of parts ?? []) {
+    if (!p || p.kind !== 'step' || !Array.isArray(p.attempts)) continue;
+    const graded = p.attempts.filter((/** @type {any} */ a) => Array.isArray(a.checks) && a.checks.length > 0);
+    const last = graded.at(-1);
+    if (!last) continue;
+    for (const c of last.checks) {
+      byName.set(c.name, {
+        name: c.name, question: typeof c.question === 'string' && c.question ? c.question : null, passed: c.pass === true,
+        status: c.pass === true ? STATUS.passed : STATUS.failed, value: null, baseline: null, direction: null, baselineKind: null,
+        notes: null, tries: p.attempts.length,
+      });
+    }
+  }
+  const stages = [...byName.values()];
+  if (stages.length === 0) return null;
+  const ok = stages.filter((s) => s.passed).length;
+  return {
+    head: `${ok} of ${stages.length} passed · the steps ran them; the close never ran`,
+    passed: ok, total: stages.length, allPassed: ok === stages.length, stages, notes: [],
+  };
+}
+
+/**
  * The generic Result tab's "The checks" box, from the run's LAST `outer-close` record: each stage's plain question ({@link stageQuestionText}'s one
- * owner, through the spec's own declaration), its pass/fail word from the status table, and the number the close read. `null` when no close ran.
+ * owner, through the spec's own declaration), its pass/fail word from the status table, and the number the close read. A run the close never reached
+ * falls back to the checks its steps ran ({@link stepChecksOf}); `null` when neither exists.
  * @param {any[]} records @param {any} spec
  */
 function checksOf(records, spec) {
   const oc = records.findLast((r) => r && r.type === 'outer-close' && Array.isArray(r.stages));
-  if (!oc) return null;
+  if (!oc) return stepChecksOf(records, spec);
   const kindMeta = stageKindMetaFromSpec(spec);
   const stages = oc.stages.filter((/** @type {any} */ s) => s && typeof s.name === 'string').map((/** @type {any} */ raw) => {
     const s = attachStageKind(raw, kindMeta);

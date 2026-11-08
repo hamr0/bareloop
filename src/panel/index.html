@@ -4295,12 +4295,14 @@
       '<details data-testid="result-all-edits"><summary>' + escapeXml(c.foldWords) + '</summary><div class="ro-value">' + all + '</div></details>' +
       (c.scopeLine ? '<div class="hint" data-testid="result-scopeline">' + escapeXml(c.scopeLine) + '</div>' : "") + '</div>';
   }
+  // a check the STEPS ran (the close never did) says how many times its step tried; a close stage has no `tries`
+  function stageTriedText(s){ return !s.passed && typeof s.tries === "number" && s.tries > 1 ? " (tried " + s.tries + " times)" : ""; }
   function resultChecksCard(k){
     if(!k) return '<div class="job-card" data-testid="result-checks"><h4>The checks</h4><div class="hint" data-testid="result-checks-none">the close did not run any check for this run</div></div>';
     var rows = k.stages.map(function(s){
       var num = stageNumberText(s);
       return '<div class="rs-check" data-testid="result-check"><span class="rs-q">' + escapeXml(stageQuestionText(s)) + '</span><span class="rs-num hint" data-testid="result-check-num">' +
-        (num ? escapeXml(num) : "") + '</span><span class="rs-sign">' + stateDotHTML(s.passed ? "green" : "red", s.status.word, "result-check-state") + '</span></div>';
+        (num ? escapeXml(num) : "") + escapeXml(stageTriedText(s)) + '</span><span class="rs-sign">' + stateDotHTML(s.passed ? "green" : "red", s.status.word, "result-check-state") + '</span></div>';
     }).join("");
     var notes = k.notes.length ? '<details data-testid="result-close-notes"><summary>the close\'s own notes</summary><div class="ro-value" style="white-space:pre-wrap">' +
       k.notes.map(function(n){ return escapeXml(n.text); }).join("\n") + '</div></details>' : "";
@@ -4384,7 +4386,7 @@
     if(!k) return "checks: the close did not run any check for this run";
     var bits = k.stages.map(function(s){
       var num = stageNumberText(s);
-      return s.passed ? escapeXml(stageQuestionText(s)) : gridGlyph("✗") + " " + escapeXml(stageQuestionText(s)) + (num ? " — " + escapeXml(num) : "");
+      return s.passed ? escapeXml(stageQuestionText(s)) : gridGlyph("✗") + " " + escapeXml(stageQuestionText(s)) + (num ? " — " + escapeXml(num) : "") + escapeXml(stageTriedText(s));
     });
     return "checks: " + k.passed + " of " + k.total + " " + (k.allPassed ? gridGlyph("✓") : "") + (bits.length ? " &middot; " : "") + bits.join(" &middot; ");
   }

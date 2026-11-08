@@ -120,7 +120,7 @@ test('a run that has not ended has no tab and no payload', () => {
 test('a run with no recorded edit and no close still gets the tab with those boxes null, never invented', () => {
   const w = makeResultWorld(['mvkj03w7']);
   const spine = w.spine('mvkj03w7');
-  writeFileSync(spine, readFileSync(spine, 'utf8').split('\n').filter((l) => l && !/"type":"(attempt-diff|outer-close)"/.test(l)).join('\n') + '\n');
+  writeFileSync(spine, readFileSync(spine, 'utf8').split('\n').filter((l) => l && !/"type":"(attempt-diff|outer-close|exit-eval)"/.test(l)).join('\n') + '\n');
   const r = getRunResult('mvkj03w7', { home: w.home });
   assert.equal(r.kind, 'generic');
   assert.equal(r.changed, null);

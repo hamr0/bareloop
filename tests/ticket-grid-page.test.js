@@ -19,7 +19,7 @@ const src = (name) => {
   return PAGE.slice(start, i + 1);
 };
 const ESC = 'function escapeXml(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}';
-const names = ['gridGlyph', 'stateDotHTML', 'resultField', 'resultDoorHtml', 'resultDiffHtml', 'stageQuestionText', 'stageNumberText',
+const names = ['gridGlyph', 'stateDotHTML', 'resultField', 'resultDoorHtml', 'resultDiffHtml', 'stageQuestionText', 'stageNumberText', 'stageTriedText',
   'tgMark', 'tgCell', 'tgRowData', 'tgChecksLine', 'tgOpenHtml', 'tgRowHTML', 'tgStatsHTML', 'tgTableHTML', 'gridCardHTML', 'gridOpenOwn'];
 let cut = null;
 const make = (data) => new Function('resultData', 'gridRowData', 'gridUi', `${ESC}\n${names.map(src).join('\n')}\nreturn {${names.join(', ')}};`)(data, {}, { rows: {}, open: {}, ownFor: null });
@@ -78,12 +78,14 @@ test('the opened passed row: ticket line with its link, what changed with the la
   assert.equal(h.includes('<button class="btn"'), false);
 });
 
-test('the opened stopped row: why it stopped in the Run tab\'s own words, the checks line says none ran when the close never ran, no work line without a branch', () => {
+test('the opened stopped row: why it stopped in the Run tab\'s own words, the checks line is the steps\' own checks (the close never ran), no work line without a branch', () => {
   const { grid, stopped } = real();
   const row = grid.groups.find((g) => g.key === 'stop').rows[0];
   const h = fns.tgOpenHtml(row, stopped, false);
   assert.match(h, /data-testid="grid-why">failed: Goal not met — the checks said no \(cap-halt/);
-  assert.match(h, /data-testid="grid-checks">checks: the close did not run any check for this run</);
+  const line = strip(h.match(/data-testid="grid-checks">(.*?)<\/div>/)[1]);
+  assert.equal(h.includes('the close did not run any check'), false, 'the row does not contradict its own header');
+  assert.match(line, /^checks: 1 of 3 +&middot; did it change any file\? &middot; ✗ no failing tests\? \(tried 3 times\) &middot; ✗ artifact-written \(tried 2 times\)$/);
   assert.match(h, /data-testid="grid-ticket"><b>#17 fwdloop test: P3 skip check</);
 });
 
@@ -171,4 +173,11 @@ test('narrow screens: the table scrolls inside its own box and the long lines wr
   assert.match(PAGE, /table\.grid\.tg tr\.step-sub td\{white-space:normal;overflow-wrap:anywhere/);
   assert.match(PAGE, /\.tg-line\{[^}]*overflow-wrap:anywhere/);
   assert.match(PAGE, /\.tg-rowname\{[^}]*max-width:min\(300px,60vw\)/);
+});
+
+test('a close stage that failed (outer-close) carries no tries: the line never says "tried"; a passing step check never does either', () => {
+  assert.equal(fns.stageTriedText({ passed: false }), '');
+  assert.equal(fns.stageTriedText({ passed: true, tries: 3 }), '');
+  assert.equal(fns.stageTriedText({ passed: false, tries: 1 }), '');
+  assert.equal(fns.stageTriedText({ passed: false, tries: 3 }), ' (tried 3 times)');
 });

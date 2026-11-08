@@ -98,7 +98,8 @@ test('real spines: the grid of a ticket job is one row per run-list row of that 
   assert.equal(stopped.runId, 'mw6lmvdg');
   assert.equal(stopped.name, '#17');
   assert.deepEqual(stopped.steps, { mark: 'r', text: '0 of 2' });
-  assert.equal(stopped.checks.mark, 'q', 'the run never reached the close: no verdict, not a pass');
+  // the close never ran (cap-halt): the cell is the steps' own checks - 3 distinct checks, 1 standing green at the last try - the SAME data the Audit grid reads
+  assert.deepEqual(stopped.checks, { mark: 'r', text: '2 red' }, 'the header says the checks said no; the cell agrees');
   assert.equal(stopped.reason, 'checks said no', 'the run list\'s own short ending words');
   // money and wall are the run list's own entry, spelled once
   const own = listed.find((r) => r.runid === 'mw6lmvdg');
@@ -130,7 +131,14 @@ test('a job that read no ticket has no grid; an unknown run has none; the opened
   assert.equal(r.kind, 'generic');
   assert.equal(r.ticket.number, grid.groups.find((x) => x.key === 'done').rows[0].number, 'one reader of the ticket');
   assert.ok(r.changed && r.checks && r.work !== undefined);
+  assert.equal(r.checks.head, '6 of 6 passed · the close ran them after the worker stopped', 'a green run keeps its outer-close checks exactly');
   const stop = getRunResult('mw6lmvdg', { home: g.home });
+  assert.equal(stop.checks.head, '1 of 3 passed · the steps ran them; the close never ran');
+  assert.deepEqual(stop.checks.stages.map((x) => [x.name, x.question, x.passed, x.tries, x.value]), [
+    ['changed-from-seed', 'did it change any file?', true, 3, null],
+    ['no-failing-tests', 'no failing tests?', false, 3, null],
+    ['artifact-written', null, false, 2, null],
+  ]);
   assert.match(stop.endedWords, /^Goal not met — the checks said no \(cap-halt/, 'the opened row says why the run stopped, in the Run tab\'s own words');
 });
 
