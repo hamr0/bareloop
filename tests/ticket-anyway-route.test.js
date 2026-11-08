@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import path from 'node:path';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { appendRun, appendRunEvent } from '../src/runlist.js';
+import { getStartFrom } from '../src/panel/server.js';
 import { readLedger } from '../src/triggerledger.js';
 import { cardWorld } from './schedule-card-world.mjs';
 import { DEAD_PID } from './trigger-world.mjs';
@@ -171,4 +172,43 @@ test('am3: the no-schedule start keeps the guards: a month with no room starts n
   assert.equal(r.status, 409);
   assert.match(r.body.say, /limit has no room.*Nothing started\.$/);
   assert.equal(f.spawnFn.spawns.length, n);
+});
+
+test('am3: the no-schedule start keeps the busy guard: a second Run it anyway while the first run is still going starts nothing', async (t) => {
+  const f = await cardWorld(t);
+  const out = await f.signCard(f.card({ ticket: '5' }));
+  // listed BEFORE the schedule clock, so only the start in flight (not a newer listed row) makes the job busy
+  const past = (min) => new Date(f.now() - min * 60_000).toISOString();
+  skipInSession(f, out, 'sk7', 7, past(120));
+  skipInSession(f, out, 'sk8', 8, past(60));
+  assert.equal((await f.w.post(POST, { job: 'tk-job', ticket: 7, reason: 'why' })).status, 202);
+  const n = f.spawnFn.spawns.length;
+  const again = await f.w.post(POST, { job: 'tk-job', ticket: 8, reason: 'why' });
+  assert.deepEqual([again.status, again.body.say], [409, 'A run of this job is still going. Nothing started.']);
+  assert.equal(f.spawnFn.spawns.length, n);
+});
+
+test('am3: a ticket that ran after its skip is not a skipped one any more: no start from the old skipped row', async (t) => {
+  const f = await cardWorld(t);
+  const out = await f.signCard(f.card({ ticket: '5' }));
+  skipInSession(f, out, 'sk7', 7);
+  appendRun({ at: '2026-11-07T21:00:00.000Z', runid: 'ran7', job: 'tk-job', spine: path.join(f.w.base, 'ran7.jsonl'), patient: null, via: 'run-u', pid: DEAD_PID, ticket: 7 }, { home: f.w.cfg });
+  const n = f.spawnFn.spawns.length;
+  const r = await f.w.post(POST, { job: 'tk-job', ticket: 7, reason: 'why' });
+  assert.deepEqual([r.status, r.body.refused], [409, 'not-skipped']);
+  assert.equal(f.spawnFn.spawns.length, n);
+});
+
+test('am3: getStartFrom reads a SKIPPED run\'s saved job, and a listed run with no log that was not skipped still says there is nothing to reuse', async (t) => {
+  const f = await cardWorld(t);
+  const out = await f.signCard(f.card({ ticket: '5' }));
+  skipInSession(f, out, 'sk7', 7);
+  const ok = getStartFrom('sk7', { home: f.w.cfg });
+  assert.equal(ok.ok, true, JSON.stringify(ok));
+  assert.equal(ok.spec.job, 'tk-job');
+  assert.equal(ok.outcome, null, 'a skipped run is never a reusable green');
+  const spine = path.join(path.dirname(out.state.resolvedSpecPath), 'source-seed', 'tk-job-bareloop', 'u-gone.jsonl');
+  appendRun({ at: '2026-11-07T20:30:00.000Z', runid: 'gone', job: 'tk-job', spine, patient: null, via: 'run-u', pid: DEAD_PID }, { home: f.w.cfg });
+  const no = getStartFrom('gone', { home: f.w.cfg });
+  assert.deepEqual(no, { ok: false, error: 'this run has no log on disk — nothing to reuse' });
 });
