@@ -21,7 +21,7 @@ const src = (name) => {
 const ESC = 'function escapeXml(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}';
 const NONE = /var RESULT_NONE = "([^"]+)";/.exec(PAGE)[1];
 const names = ['resultFileWords', 'resultField', 'resultLineBox', 'resultProofHtml', 'resultFactsLine', 'resultTextLine', 'resultNotChecked', 'resultPageLink', 'resultLineCard', 'resultDoorHtml',
-  'stageQuestionText', 'stageNumberText', 'stateDotHTML', 'resultDiffHtml', 'resultTicketCard', 'resultJobCard', 'resultChangedCard', 'resultChecksCard', 'resultWorkCard', 'resultRunCard', 'resultGenericHtml'];
+  'stageQuestionText', 'stageNumberText', 'stageTriedText', 'stateDotHTML', 'resultDiffHtml', 'resultTicketCard', 'resultJobCard', 'resultChangedCard', 'resultChecksCard', 'resultWorkCard', 'resultRunCard', 'resultGenericHtml'];
 // cut lazily so a missing page function fails ITS test, not the whole file
 let cut = null;
 const fns = new Proxy({}, { get: (_, k) => { cut ??= new Function(`${ESC}\nvar RESULT_NONE = ${JSON.stringify(NONE)};\n${names.map(src).join('\n')}\nreturn {${names.join(', ')}};`)(); return cut[k]; } });
