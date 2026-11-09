@@ -2863,7 +2863,7 @@ export async function authorClose({
   }
   // R10: the picks settled against the lines as they stand now (the answers are already `~` rules on them); the draft carries exactly these checks and these Not checked rows
   const settledPicks = checkPicks ? settleRules(checkPicks.rules, checkPicks.picks, checkPicks.left, jobLines ?? []) : null;
-  const picked = (/** @type {any} */ d) => (settledPicks ? applyPicks(d, settledPicks) : d);
+  const picked = (/** @type {any} */ d) => applyPicks(d, settledPicks);
   const prompt = authorPrompt({
     answers, questions, facts, listingBlock: /** @type {string} */ (seeds.block),
     lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue, writeScope, confirmed, jobLines, inputs,

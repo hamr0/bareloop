@@ -1,0 +1,102 @@
+{
+ "D2": {
+  "stages": [
+   {
+    "name": "changed-from-seed",
+    "kind": "files-changed",
+    "params": {
+     "requireNonEmpty": true,
+     "allowPrefixes": [
+      "output/"
+     ]
+    }
+   },
+   {
+    "name": "line-1-change-kind-heading",
+    "kind": "rubric-step",
+    "fromLine": [
+     1
+    ],
+    "params": {
+     "step": 1,
+     "parts": [
+      {
+       "text": "the change kind heading, quoted from the Changelog (one of the words the Changelog itself uses: Added, Changed, Fixed, Removed, Deprecated, Security)",
+       "class": "fact",
+       "source": "Changelog",
+       "count": {
+        "min": 1,
+        "max": 1
+       },
+       "facts": [
+        {
+         "name": "change kind heading",
+         "shape": "phrase",
+         "phrase": "Changed"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  ],
+  "notes": [
+   "The phrase fact carries the six page words the look lists as a single phrase fact: the quote must say ONE of \"Added\", \"Changed\", \"Fixed\", \"Removed\", \"Deprecated\", \"Security\", copied exactly from the Changelog. I used the input's own words from the look rather than the person's wording.",
+   "Line 1's ~ rules 1 (\"exactly 3 bullets\") and 2 (\"under 80 words\") are settled by code: code writes the list-item and word-count checks itself, so no part and no refused entry are written for them.",
+   "\"Summarise the latest release\" — which release counts as the latest, and whether the summary is a fair or accurate summary of it, needs reading the text to judge; nothing checks it.",
+   "The release version and the release date cannot be quoted as facts: the Changelog holds no label for either (the look lists both under NOT CHECKED), so they are left to code's Not checked list."
+  ]
+ },
+ "D3": {
+  "stages": [
+   {
+    "name": "changed-from-seed",
+    "kind": "files-changed",
+    "params": {
+     "requireNonEmpty": true,
+     "allowPrefixes": [
+      "output/"
+     ]
+    }
+   },
+   {
+    "name": "line-1-release-fact",
+    "kind": "rubric-step",
+    "fromLine": [
+     1
+    ],
+    "params": {
+     "step": 1,
+     "parts": [
+      {
+       "text": "the release version and date, quoted from the Changelog exactly as it writes it",
+       "class": "fact",
+       "source": "Changelog",
+       "facts": [
+        {
+         "name": "release version and date",
+         "shape": "phrase",
+         "phrase": "## [0.54.1] - 2026-11-04"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  ],
+  "notes": [
+   "Line 1 is a writing line (a summary), so the word and list-item limits are settled by code: line 1 ~ rule 1 (exactly 3 bullets) and ~ rule 2 (under 80 words) get no part and no refused entry from me.",
+   "The phrase fact uses the input's own words: the look gives three acceptable page words, and I picked the versioned one the confirmed plan named, \"## [0.54.1] - 2026-11-04\" (the other two are \"## [Unreleased]\" and \"## [0.54.0] - 2026-11-03\")."
+  ],
+  "refused": [
+   {
+    "line": 1,
+    "reason": "which release is the \"latest release\" — the choice of which one is the newest cannot be judged by a check"
+   },
+   {
+    "line": 1,
+    "reason": "that the bullets are a correct and faithful summary of the release — accuracy and quality of the summary would need a person to read the text"
+   }
+  ]
+ }
+}

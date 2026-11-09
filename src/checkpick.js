@@ -303,17 +303,23 @@ export function partOfPick(check, text, rules) {
  * Put the person's picks into the drafted declaration (a pure function; the input is untouched): on every rubric-step stage of a line this call settles, the drafter's own
  * word/section/line/list/phrase checks are gone (the drafter writes none, whatever it sent), a part per picked check is added carrying the `~` rule numbers it settles, and every
  * other settled rule goes under Not checked (`refused` with a rule number and the reason). A rule a fact or guard part of the draft already carries is left to that part.
- * @param {any} declaration @param {ReturnType<typeof settleRules>} settled @returns {any}
+ * With no picks settled (`null`) it only drops a `picks` record the drafter sent.
+ * @param {any} declaration @param {ReturnType<typeof settleRules>|null} settled @returns {any}
  */
 export function applyPicks(declaration, settled) {
   const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
   if (!isRec(declaration) || !Array.isArray(declaration.stages)) return declaration;
+  // the record of picks is code's alone: whatever the drafter sent under `picks` is gone, and with no picks settled none is written
+  if (settled === null) { const { picks: _drafted, ...rest } = declaration; return rest; }
   const lines = new Set([...settled.checks.map((c) => c.line), ...settled.notes.map((n) => n.line)]);
   const shape = (/** @type {any} */ p) => isRec(p) && p.class === 'countable' && OFFERED.includes(p.check);
+  /** the record of what was added, `{line, part}` each: the signed close keeps it, so a pick beside a fact is told from a drafter's own count @type {{line: number, part: any}[]} */
+  const record = [];
   const stages = declaration.stages.map((/** @type {any} */ st) => {
     if (!(isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts) && lines.has(st.params.step))) return st;
     const kept = st.params.parts.filter((/** @type {any} */ p) => !shape(p));
     const add = settled.checks.filter((c) => c.line === st.params.step).map((c) => partOfPick(c.check, c.text, c.rules));
+    for (const part of add) record.push({ line: st.params.step, part });
     return { ...st, params: { ...st.params, parts: [...kept, ...add] } };
   });
   const carried = (/** @type {number} */ line, /** @type {number} */ n) => stages.some((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && st.params.step === line
@@ -327,5 +333,6 @@ export function applyPicks(declaration, settled) {
     if (carried(x.line, x.rule)) continue;
     for (const n of [x.rule, ...x.also]) base.push({ line: x.line, rule: n, reason: `${NOTE_WORDS[x.reason]}${x.kept ? ` (${KEPT_WORDS})` : ''}` });
   }
-  return { ...declaration, stages, ...(base.length ? { refused: base } : {}) };
+  const { picks: _drafted, ...rest } = declaration;
+  return { ...rest, stages, ...(record.length ? { picks: record } : {}), ...(base.length ? { refused: base } : {}) };
 }

@@ -3,6 +3,7 @@ import { readFile, lstat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { createRubric, checkStep, renderGaps, numbersInQuote } from 'bareguard';
 import { dropRows, dropLine } from './pagedropwords.js';
+import { OFFERED } from './checkwords.js';
 import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem, factBrief, writtenSpans } from './facts.js';
 
 // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES — what one job line leaves
@@ -37,9 +38,10 @@ export function stepFileContract() {
     '            ** or __ marks do not matter). Every number in a claim must also appear in its quote.',
     '  In each claim, copy every number, time and price exactly as the input writes it (for example "9:27 AM", not "09:27"),',
     '  because the check matches the numbers in your claim against your quote.',
-    'A job line the brief below marks as a FACTS line is different: its file holds ONLY {"results": [{"quote": "...", "values":',
+    'A job line the brief below marks as a FACTS line is different: its file holds {"results": [{"quote": "...", "values":',
     '{"<fact>": "<value>"}}]} — one result per thing found, one quote copied exactly from the text of that one result, the values written as the quote',
-    'writes them; no "text" and no "cites". A line the brief marks as a TEXT line keeps "text" (free words), and every number in it',
+    'writes them; no "cites". It holds a "text" too only when the brief says it is also a TEXT line (the person asked for limits on the words, so',
+    'the same file carries both "results" and "text"). A line the brief marks as a TEXT line keeps "text" (free words), and every number in it',
     'must be copied from a quote of an earlier facts line.',
     'Write nothing outside output/, and never edit the files under input/. The file must be complete, valid JSON: a file cut',
     'off before its closing brace counts as not written.',
@@ -65,10 +67,14 @@ export function lineBriefs(closeDecl) {
       const count = !c ? 'one result for every one you find' : c.min !== undefined && c.max !== undefined
         ? (c.min === c.max ? `exactly ${c.min} result${c.min === 1 ? '' : 's'}` : `${c.min} to ${c.max} results`)
         : c.min !== undefined ? `at least ${c.min} results` : `at most ${c.max} results`;
+      // keep-both: the person's picks (countable parts) sit beside the fact on this line, so the same file also carries the "text" they limit
+      const alsoText = st.params.parts.some((/** @type {any} */ q) => isRec(q) && q.class === 'countable');
       out.push({
         line: n,
         text: [
-          `Job line ${n} is a FACTS line. Write ${stepFileRel(n)} as {"results": [{"quote": "...", "values": {...}}]} and nothing else — no "text", no "cites".`,
+          alsoText
+            ? `Job line ${n} is a FACTS line AND a TEXT line. Write ${stepFileRel(n)} as {"results": [{"quote": "...", "values": {...}}], "text": "..."} — the results are the facts below, the "text" is your answer to the line in your own words (its limits are in the line's ~ rules); no "cites".`
+            : `Job line ${n} is a FACTS line. Write ${stepFileRel(n)} as {"results": [{"quote": "...", "values": {...}}]} and nothing else — no "text", no "cites".`,
           `  One result per thing you find in the input "${fp.source}": ${count}.`,
           '  "quote": ONE quote per result, copied exactly from that result\'s own text in the input (at most 4000 characters) — never joined from two results.',
           '  "values": one entry per fact below, written exactly as the quote writes it (for example "9:27 AM", not "09:27"; "389", not "389.00").',
@@ -177,6 +183,10 @@ const PART_FIELDS = Object.freeze(['text', 'class', 'check', 'value', 'names', '
 
 /** @param {unknown} v @returns {v is Record<string, any>} */
 const isRec = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+/** @param {unknown} v @returns {string} JSON with every object's keys sorted, so two equal parts compare equal whatever order their keys were written in */
+const sortedJson = (v) => JSON.stringify(v, (_k, x) => (isRec(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : 1))) : x));
+/** @param {unknown} a @param {unknown} b */
+const sameJson = (a, b) => sortedJson(a) === sortedJson(b);
 /** @param {unknown} v @returns {v is string} */
 const nonEmpty = (v) => typeof v === 'string' && v.trim() !== '';
 /** @param {unknown} v @returns {v is string[]} */
@@ -253,7 +263,8 @@ export function citedLabels(params) {
  */
 export function buildStepSpec(params, inputShas) {
   /** @type {Record<string, any>[]} */
-  const checks = factPartOf(params) ? [] : [{ id: 'text-present', rule: 'nonEmpty', field: 'text' }];
+  // a fact step has no text to floor, unless the person's picks put text checks on its line (keep-both): then "text" must be there, or an upper bound alone (maxWords) would pass an empty file
+  const checks = factPartOf(params) && !params.parts.some((x) => x.class === 'countable') ? [] : [{ id: 'text-present', rule: 'nonEmpty', field: 'text' }];
   params.parts.forEach((part, i) => {
     if (part.class === 'fact') {
       // ONE bareguard `cited` check per fact part: the quote is in the frozen input, every value is in the quote and meets its rule
@@ -560,10 +571,11 @@ function dupUnitWords(p, path) {
  *     naming both parts and both numbers;
  *   - a `cited` part names a label the person's inputs do not have.
  * @param {any[]} stages the declaration's stages
- * @param {{inputLabels?: string[]|null, red: (code: string, path: string, detail: string, extra?: object) => void}} o
- *   `inputLabels` absent = the label rule is not run (a caller with no inputs in hand)
+ * @param {{inputLabels?: string[]|null, picks?: {line: number, part: any}[]|null, red: (code: string, path: string, detail: string, extra?: object) => void}} o
+ *   `inputLabels` absent = the label rule is not run (a caller with no inputs in hand);
+ *   `picks` = the record of the person's picks (`declaration.picks`, `{line, part}` each): the only countable parts a fact line may carry
  */
-export function checkRubricParts(stages, { inputLabels = null, red }) {
+export function checkRubricParts(stages, { inputLabels = null, red, picks = null }) {
   /** @type {Map<number, string>} */
   const owner = new Map();
   /** the stage index of each fact line (PART 1b: a prose step ties its numbers to fact lines that are checked BEFORE it) @type {Map<number, number>} */
@@ -622,7 +634,9 @@ export function checkRubricParts(stages, { inputLabels = null, red }) {
           }
           return;
         }
-        if (factLine) {
+        // keep-both: a fact line may carry a countable part only when it IS one of the person's recorded picks (an offered check, its `rules`, the same line, the same words)
+        const isPick = factLine && Array.isArray(picks) && picks.some((x) => isRec(x) && x.line === step && sameJson(x.part, part)) && OFFERED.includes(part.check) && Array.isArray(part.rules);
+        if (factLine && !isPick) {
           red('rubric-fact-text', w, `line ${line}: '${said}' counts or quotes free text, but this line lists facts and has no text. Say it as a fact (a shape and a rule) or remove it. Nothing spent.`, { line: step, stage: label });
           return;
         }

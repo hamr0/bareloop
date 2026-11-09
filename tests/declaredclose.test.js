@@ -393,7 +393,7 @@ test('validateCloseDecl reds the envelope: unknown field, wrong genre, unknown l
   assert.ok(codes({ ...GOOD_DECL(), refused: [{ line: 1 }] }).some((c) => c.startsWith('invalid-value:closeDecl.refused')));
   // `calibration` joined the list at softgreen module 4 — the frozen ten a judged
   // close is calibrated against ride the declaration, not a stage's params
-  assert.deepEqual([...CLOSE_DECL_FIELDS].sort(), ['calibration', 'genre', 'genreEnv', 'guardLines', 'lang', 'notes', 'refused', 'stages']);
+  assert.deepEqual([...CLOSE_DECL_FIELDS].sort(), ['calibration', 'genre', 'genreEnv', 'guardLines', 'lang', 'notes', 'picks', 'refused', 'stages']);
 });
 
 test('validateCloseDecl refuses when a guard was WEAKENED — D5 is not a taste', () => {

@@ -935,6 +935,8 @@ export async function authorCloseForJob({
     ...(authored.declaration.refused?.length
       ? { refused: authored.declaration.refused.map((/** @type {any} */ r) => ({ line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), reason: redactSecrets(String(r.reason)) })) }
       : {}),
+    // keep-both: the person's picks, as code recorded them at the draft (the signed close reads this to tell a pick from a drafter-written count beside a fact)
+    ...(authored.declaration.picks?.length ? { picks: structuredClone(authored.declaration.picks) } : {}),
     // the lines the always-on guards cover (names and numbers only, nothing free-text)
     ...(authored.declaration.guardLines?.length
       ? { guardLines: authored.declaration.guardLines.map((/** @type {any} */ g) => ({ guard: g.guard, lines: [...g.lines] })) }
