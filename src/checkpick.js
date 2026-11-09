@@ -45,6 +45,14 @@ export function guardrailSectionCount(g) {
   if (!m) return null;
   return /^\d+$/.test(m[1]) ? Number(m[1]) : NUMBER_WORDS[m[1].toLowerCase()];
 }
+/** the first "<N> bullets / list items / items / lines / points" in a guardrail (digits, or one..ten), or null @param {unknown} g @returns {number|null} */
+export function guardrailItemCount(g) {
+  const m = typeof g === 'string' ? /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:\w+\s+)?(?:bullets?|bullet\s+points?|list\s+items?|items?|lines?|points?)\b/i.exec(g) : null;
+  if (!m) return null;
+  return /^\d+$/.test(m[1]) ? Number(m[1]) : NUMBER_WORDS[m[1].toLowerCase()];
+}
+/** @param {unknown} g @returns {boolean} the rule is a COUNT bareguard checks (words, list items or lines, sections): code reads it, whatever the page look said about it */
+export const isCountable = (g) => guardrailWordNumbers(g).length > 0 || guardrailItemCount(g) !== null || guardrailSectionCount(g) !== null;
 
 // ---- scope, decided by CODE before the call ----------------------------------------------------------------------------------------------
 /** @param {unknown} v @returns {boolean} the input is a web page (a URL), which routes its rules to the page words (facts) */
@@ -61,7 +69,7 @@ export const codeScope = (inputs, g) => (hasRoutingInput(inputs) && guardrailWor
 /** @typedef {{line: number, rule: number, text: string}} Rule */
 /**
  * Every `~` rule of a rubric job that this call settles, in line order. `rule` is the rule's number on its line (the number a part's `rules` and the answers use). A rule a
- * kept page word already carries (the look tied it by line and rule number) or that the look already put under Not checked is left to that, and a repeated text on a line is
+ * kept page word already carries (the look tied it by line and rule number) or that the look already put under Not checked is left to that, EXCEPT a countable rule (`isCountable`: a word, list-item/line or section count), which always comes here: the look's fact stays beside the pick (keep-both). A repeated text on a line is
  * one rule here, asked once.
  * @param {{n: number, rule?: string, rules?: string[]}[]} jobLines @param {{inputs?: {value?: string}[]|null, look?: any}} [o]
  * @returns {Rule[]}
@@ -77,8 +85,11 @@ export function scopedRules(jobLines, { inputs = null, look = null } = {}) {
       const key = text.trim().toLowerCase();
       const n = i + 1;
       if (seen.has(key) || codeScope(inputs, text) !== 'in') return;
-      if (facts.some((/** @type {any} */ f) => f?.line === l.n && f?.forRule === n)) return;
-      if (dropped.some((/** @type {any} */ d) => d?.line === l.n && d?.rule === n)) return;
+      // a countable rule always reaches the pick offer: what the look tied or dropped on it stays (keep-both), but never hides the count from the person
+      if (!isCountable(text)) {
+        if (facts.some((/** @type {any} */ f) => f?.line === l.n && f?.forRule === n)) return;
+        if (dropped.some((/** @type {any} */ d) => d?.line === l.n && d?.rule === n)) return;
+      }
       seen.add(key);
       out.push({ line: l.n, rule: n, text });
     });
