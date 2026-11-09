@@ -359,6 +359,7 @@
   .ended-text .sched-line2{display:block;}
   .run-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;}
   .run-actions[hidden]{display:none;}
+  #run-content.actions-only > :not(.run-actions){display:none;}
   .run-actions .stopping{color:var(--amber);font-size:13px;overflow-wrap:anywhere;}
   .resume-err{color:var(--red);white-space:pre-wrap;overflow-wrap:anywhere;}
   /* P5-R: a resumed run is ONE card; its legs are told apart by a divider line, a dotted map connector, a small tag */
@@ -2801,7 +2802,8 @@
       html += '<button class="btn primary" type="button" data-testid="btn-accept-run">Accept</button>';
     }
     // Reuse workflow: ONE door on every ending (v1.101), a died run included - the Chat card opens with every box open
-    if(!live && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "reuse"; })){
+    // a run refused before it started / skipped has no `ended`; the server marks it `reuseOffered`
+    if(!live && ((!!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "reuse"; })) || detail.reuseOffered === true)){
       html += '<button class="btn" type="button" data-testid="btn-reuse">Reuse workflow</button>';
     }
     // T Part 7: the schedule button is LAST, right after Reuse workflow. The SERVER decides (detail.schedule): `scheduled` shows
@@ -2878,6 +2880,7 @@
   }
 
   function renderRun(detail){
+    document.getElementById("run-content").classList.remove("actions-only");
     if(detail.fileMissing){
       syncResultTab({});
       setRunHeader("\u00B7", runName(detail.job, detail.runNo, detail.runid), "file missing");
@@ -2896,10 +2899,13 @@
       setRunHeader(detail.glyph, runName(detail.job, detail.runNo, detail.runid), statusWordHtml(detail.status, "") + " \u00B7 " + escapeXml("started " + fmtLocalDateTime(detail.at)));
       document.getElementById("run-empty").hidden = false;
       document.getElementById("run-empty").textContent = detail.endedLine || "";
-      document.getElementById("run-content").hidden = true;
+      // the Run tab shows the words above and ONLY the action row (Reuse workflow) below: the rest of run-content has nothing to show
+      document.getElementById("run-content").hidden = false;
+      document.getElementById("run-content").classList.add("actions-only");
       document.getElementById("audit-select-empty").hidden = false;
       document.getElementById("audit-select-empty").textContent = detail.endedLine || "";
       document.getElementById("audit-body").hidden = true;
+      renderRunActions(detail); // the SAME owner: the server's detail says which buttons (Reuse workflow on every ending)
       return;
     }
 
