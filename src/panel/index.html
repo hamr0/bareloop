@@ -3609,7 +3609,7 @@
   // line 2 of a part's card / Audit body: the drafting step names, or a worker part's tool breakdown
   function partLine2Text(part){
     if(part && part.kind === "door") return part.doorView ? "last answer: " + part.doorView.last : "";
-    if(part && part.kind === "drafting") return (part.draftSteps || []).map(function(x){ return x.label; }).join(" · ");
+    if(part && part.kind === "drafting") return (part.draftLabel ? part.draftLabel + " \u00B7 " : "") + (part.draftSteps || []).map(function(x){ return x.label; }).join(" · ");
     return toolBreakdownLine(part.byTool);
   }
   function draftingCallCost(c){
@@ -3621,6 +3621,8 @@
   // call's own label (confirm#2, revise-1…); the last row is the total, equal to the header's money
   function draftingTableHtml(part){
     var rows = "";
+    // fwd am14 item 6: a revise or a Start over says so, first, in the server's own words (`revise 1`, `revise 2`, `start over`); a first draft has no such row
+    if(part.draftLabel) rows += '<tr class="draft-kind-row" data-testid="drafting-kind"><td colspan="5"><b>' + escapeXml(part.draftLabel) + "</b></td></tr>";
     (part.draftSteps || []).forEach(function(st){
       var wall = st.wallMs === null || st.wallMs === undefined ? "–" : duration(st.wallMs);
       var calls = Array.isArray(st.calls) ? st.calls : [];

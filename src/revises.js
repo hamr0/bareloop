@@ -41,6 +41,15 @@ export function reviseRefusal(root, carryFrom, carryKind) {
   return `This draft has used its ${MAX_REVISES} revises. Start over: it keeps the boxes and gives ${MAX_REVISES} new revises. Nothing was sent.`;
 }
 
+/** The words the draft record and the Audit use for a draft that follows another (fwdloop am14 item 6): `revise 1`, `revise 2`, `start over`; a first draft has none.
+ * @param {unknown} carryFrom @param {unknown} carryKind @param {number} used this draft's revises used
+ * @returns {string|null} */
+export function draftLabelOf(carryFrom, carryKind, used) {
+  if (typeof carryFrom !== 'string') return null;
+  if (carryKind === 'revise') return `revise ${used}`;
+  return carryKind === 'startover' ? 'start over' : null;
+}
+
 /** @param {string} dir the session's folder @param {number} used */
 export function writeRevisesUsed(dir, used) {
   try { writeFileSync(join(dir, REVISES_FILE), `${JSON.stringify({ used })}\n`, { mode: 0o600 }); } catch { /* the count is a convenience: a disk fault only means a later Revise reads 0 */ }

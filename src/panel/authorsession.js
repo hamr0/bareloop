@@ -59,7 +59,7 @@ import { parseTicketList, ticketNumberOf, TICKET_NUMBER_WORDS } from '../tickets
 import { isDropIt, isAgree, stripAgreeLead } from '../pagemap.js';
 import { plainWords, SUGGEST_SYSTEM, settleRules } from '../checkpick.js';
 import { readRecordFile, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
-import { MAX_REVISES, nextRevisesUsed, sessionsRootOf, writeRevisesUsed } from '../revises.js';
+import { MAX_REVISES, draftLabelOf, nextRevisesUsed, sessionsRootOf, writeRevisesUsed } from '../revises.js';
 import { FIT_ABSENT_NOTE } from '../fitcheck.js';
 import { runDestPoint, destQuestionText, yesNoOf } from '../destpoint.js';
 import { tallyCalls } from '../text.js';
@@ -515,6 +515,9 @@ export function createSession(card, deps = {}) {
   // fwd M4e am14 item 3: the revises this draft has used (src/revises.js); the page reads `revisesLeft` to word its button
   const revisesUsed = nextRevisesUsed(sessionsRoot, deps.carryFrom, deps.carryKind);
   writeRevisesUsed(outDir, revisesUsed);
+  // fwd am14 item 6: the draft record says which kind of draft this is (a first draft says nothing); the Audit's Draft group reads it back
+  const draftLabel = draftLabelOf(deps.carryFrom, deps.carryKind, revisesUsed);
+  if (draftLabel !== null) appendDraftLog(outDir, { kind: 'draft-label', no: 0, label: draftLabel, at: new Date().toISOString() });
 
   /** @type {any} */
   const state = {

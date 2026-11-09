@@ -121,3 +121,17 @@ test('the count rides the chain: each draft that follows the last by Revise is o
   const r2 = await w.revise(r1.id);
   assert.equal((await w.state(r2.id)).revisesLeft, 0);
 });
+
+test('rule 6: each draft\'s record says revise 1, revise 2 or start over (from the same count); a first draft writes no label', async (t) => {
+  const w = await world(t);
+  const label = (id) => { const f = join(w.sessionsRoot, id, 'draft-log.jsonl'); return readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.kind === 'draft-label').map((e) => e.label); };
+  const d0 = await w.draft();
+  const r1 = await w.revise(d0);
+  const r2 = await w.revise(r1.id);
+  assert.deepEqual(label(d0), []);
+  assert.deepEqual(label(r1.id), ['revise 1']);
+  assert.deepEqual(label(r2.id), ['revise 2']);
+  assert.equal((await w.post(`/api/author/${r2.id}/abandon`, { kind: 'startover' })).status, 200);
+  const fresh = await w.draft({ carryFrom: r2.id, carryKind: 'startover' });
+  assert.deepEqual(label(fresh), ['start over']);
+});

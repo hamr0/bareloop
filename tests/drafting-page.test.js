@@ -124,3 +124,21 @@ test('page Audit group: a drafting body shows the table instead of loading round
   assert.doesNotMatch(fnSrc('renderAudit'), /drafting/, 'drafting makes no tool calls: the flat table never mentions it');
   assert.match(PAGE, /\.audit-table-scroll\{overflow:auto/, 'the table scrolls inside its own box on a phone');
 });
+
+// fwd am14 item 6 (R10): a revise or a Start over is labelled in the draft record and the Audit Draft group; a first draft is as before
+test('Audit Draft group: a draft that follows another says `revise 1` / `revise 2` / `start over` (one row first in the table, and ahead of line 2); a first draft has neither', (t) => {
+  const { draftingTableHtml, partLine2Text } = load();
+  const first = realPart(t);
+  assert.equal(first.draftLabel, null);
+  assert.doesNotMatch(draftingTableHtml(first), /drafting-kind/);
+  assert.equal(partLine2Text(first), 'checking setup · confirming plan · drafting');
+  for (const label of ['revise 1', 'revise 2', 'start over']) {
+    const part = realPart(t, { extra: [{ kind: 'draft-label', no: 0, label, at: at(0, 0) }] });
+    assert.equal(part.draftLabel, label, 'the real builder reads it from the draft log');
+    const html = draftingTableHtml(part);
+    const rows = html.slice(html.indexOf('<tbody>')).match(/<tr[^>]*>.*?<\/tr>/g);
+    assert.match(rows[0], new RegExp(`data-testid="drafting-kind"><td colspan="5"><b>${label}</b></td>`), 'the label is the first row');
+    assert.equal(rows.length, 6, 'the five rows of a first draft, plus the label');
+    assert.equal(partLine2Text(part), `${label} · checking setup · confirming plan · drafting`);
+  }
+});
