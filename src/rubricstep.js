@@ -559,6 +559,12 @@ function dupUnitWords(p, path) {
   return null;
 }
 
+/** The legal example the `rubric-fact-twice` red carries as its drafter-only `hint` (the person's text is the plain sentence): one fact part holding two facts, the rule it carries listed in "rules", no "count" (a picked count is a pick). */
+const factTwiceExample = (/** @type {unknown} */ source) => ({
+  class: 'fact', source: typeof source === 'string' ? source : 'Changelog', text: 'the release heading and a section word', rules: [1],
+  facts: [{ name: 'release heading', shape: 'phrase', phrase: '## [0.54.1] - 2026-11-04' }, { name: 'section word', shape: 'phrase', phrase: '### Fixed' }],
+});
+
 /**
  * R11 — the drafting-time rules for the `rubric-step` stages of a declaration, each a red in the person's plain words that
  * names the job line and ends "Nothing spent." where nothing was. Pure; never throws. Judged parts are RED in this build
@@ -624,7 +630,7 @@ export function checkRubricParts(stages, { inputLabels = null, red, picks = null
           red('rubric-part-source', `${w}.source`, `line ${line}: '${said}' asks for quotes from "${sayText(part.source ?? '')}", but the job's inputs are ${inputLabels.map((l) => `"${l}"`).join(', ')}.`, { line: step, stage: label });
         }
         if (p.parts.filter((/** @type {any} */ x) => isRec(x) && x.class === 'fact').length > 1) {
-          red('rubric-fact-twice', w, `line ${line}: '${said}' is a second fact list on the same line. One line has one list of facts; put them all in one. Nothing spent.`, { line: step, stage: label });
+          red('rubric-fact-twice', w, `line ${line}: '${said}' is a second fact list on the same line. One line has one list of facts; put them all in one. Nothing spent.`, { line: step, stage: label, hint: `Example of ONE part holding two facts: ${JSON.stringify(factTwiceExample(part.source))}` });
         }
       } else if (part.class === 'countable') {
         if (part.check === 'numbersFromFacts') {

@@ -1524,6 +1524,8 @@ export const REQUIRED_FACTS_BRIEF = 'REQUIRED FACTS — what a line that finds, 
   + ' - A line that WRITES (a summary, a report) needs no part for a word, section, line, list-item or phrase count: code adds the checks the person picked for it. Code ties its numbers to the facts of the lines '
   + 'before it; you do not add that.\n'
   + ' - A look fact that says "carries ~ rule N" is how the look carried that rule: put N in the fact part\'s "rules" and do not also list rule N in "refused".\n'
+  + ' - A line has ONE fact part. A look fact that carries a ~ rule goes INSIDE the line\'s one fact part (add its rule number to that part\'s "rules" and its fact to "facts"), never as a fact part of its own: two fact parts on one line are refused at $0. '
+  + 'A count of words, bullets or list items the person picked is a pick, not a "count" on the fact part; "count" is only how many results were asked for.\n'
   + ' - A ~ rule that you carry out as a fact (a limit on a time, a price, a date: "not a red-eye" is a time fact with a between rule) is carried by the '
   + 'fact part: list its number in that part\'s "rules". It is NOT also a part of its own: on a line that lists facts, a part of class judged or none '
   + 'is refused. A rule you cannot express as a shape and a rule goes in "refused", never into a part.\n'
@@ -1697,7 +1699,7 @@ export function renderRejectBlock({ kind, reds, cap = REVISE_RED_CAP }) {
   const head = kind === 'validation'
     ? 'MEASURED VALIDATION — your declaration was rejected by the validator before any stage could run:'
     : 'MEASURED PARSE — your reply could not be read as one declaration:';
-  const rendered = (reds ?? []).map((r) => (typeof r === 'string' ? r : `${r.code} at ${r.path || '(root)'}: ${r.detail}`));
+  const rendered = (reds ?? []).map((r) => (typeof r === 'string' ? r : `${r.code} at ${r.path || '(root)'}: ${r.detail}${typeof r.hint === 'string' ? ` ${r.hint}` : ''}`));
   const shown = rendered.slice(0, cap);
   const tail = rendered.length > shown.length
     ? [`  [${rendered.length - shown.length} of ${rendered.length} reds withheld — the cap is ${cap}]`]
