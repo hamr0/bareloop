@@ -59,7 +59,7 @@ test('the panel: a proposal and a can\'t-check are asked in fwd\'s words; agree 
   assert.deepEqual(picks[0].picked, { rule: 'maxWords', value: 80 });
 });
 
-test('the prepared plan card (through the real drafting loop) has a "You picked" row, the picked check row, and the unpicked rule under Not checked', async () => {
+test('the prepared plan card (through the real drafting loop) has ONE row for the pick (a `[you picked]` check row, no separate "You picked" row), and the unpicked rule under Not checked', async () => {
   const file = join(tmp(), 'CHANGELOG.md');
   copyFileSync(join(HERE, '..', 'CHANGELOG.md'), file);
   const session = createSession({
@@ -83,10 +83,9 @@ test('the prepared plan card (through the real drafting loop) has a "You picked"
   assert.ok(await until(() => session.state.phase === 'prepared'), `${session.state.phase} ${session.state.error}`);
   const plan = session.state.messages.filter((/** @type {any} */ m) => m.kind === 'plan').at(-1).plan;
   assert.deepEqual(plan.lines[0].picked, ['exactly 3 list items']);
-  assert.deepEqual(plan.lines[0].checks.map((c) => c.name), ['the text has exactly 3 list items'], 'the drafter\'s made-up maxWords 79 is not on the card');
+  assert.deepEqual(plan.lines[0].checks.map((c) => c.name), [], 'the pick is drawn once, from `picked`; the drafter\'s made-up maxWords 79 is not on the card');
   assert.ok(plan.notChecked.some((n) => /"be kind" — You chose to leave it Not checked/.test(n)), JSON.stringify(plan.notChecked));
   // labels: the close's row for the pick is the person's, and the draft log records the checks the draft ended with, each marked
-  assert.deepEqual(plan.lines[0].checks.map((c) => c.by), ['you']);
   const logged = readFileSync(join(session.state.outDir, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((e) => e.kind === 'draft-checks');
   assert.deepEqual(logged.map((e) => e.checks.map((c) => [c.line, c.text, c.by])), [[[1, 'the text has exactly 3 list items', 'you']]]);
 });

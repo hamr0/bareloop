@@ -138,7 +138,9 @@ export function planFromConfirm(jobLines, plan) {
   const lines = jl.map((l) => ({ n: l.n, text: l.text, rule: l.rule, rules: rulesOfLine(l), checks: [], refused: [] }));
   /** @type {PlanCheck[]} */
   const loose = [];
-  for (const c of items) {
+  // the person's picks are drawn once, from `plan.picked` (their words, with `kept from last draft`) as `[you picked]` check rows: a close row for the same pick is not a second row
+  const hasPicked = Array.isArray(plan?.picked) && plan.picked.length > 0;
+  for (const c of items.filter((x) => !(hasPicked && /** @type {any} */ (x).by === 'you'))) {
     const by = /** @type {any} */ (c).by === null ? {} : { by: /** @type {'agent'|'you'} */ (/** @type {any} */ (c).by ?? 'agent') };
     const served = lines.filter((l) => Array.isArray(c.fromLine) && c.fromLine.includes(l.n));
     for (const line of served) line.checks.push({ name: c.text, cls: null, ...by });

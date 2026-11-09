@@ -4083,7 +4083,7 @@
       h += '<div class="jl" data-testid="plan-line"><span class="num">' + escapeXml(String(l.n)) + "</span>" + escapeXml(l.text);
       // one `~` row per rule (fwdloop's shape); an older plan that carries only the joined `rule` still shows it
       (l.rules && l.rules.length ? l.rules : (l.rule ? [l.rule] : [])).forEach(function(r){ h += '<div class="sub">~ ' + escapeXml(r) + "</div>"; });
-      (l.picked || []).forEach(function(p){ h += '<div class="fold" data-testid="plan-picked"><span class="mk">\u203A</span> You picked \u00B7 ' + escapeXml(p) + "</div>"; });
+      (l.picked || []).forEach(function(p){ h += '<div class="fold" data-testid="plan-picked"><span class="mk">\u203A</span> check \u00B7 ' + escapeXml(p) + byTag("you") + "</div>"; });
       (l.checks || []).forEach(function(c){ h += checkLine(c); });
       (l.always || []).forEach(function(g){ h += '<div class="fold" data-testid="plan-always"><span class="mk">\u203A</span> check \u00B7 always-on: ' + escapeXml(g) + "</div>"; });
       (l.refused || []).forEach(function(r){ h += '<div class="fold" data-testid="plan-refused"><span class="mk">\u203A</span> not checked \u00B7 ' + escapeXml(r) + "</div>"; });

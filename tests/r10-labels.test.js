@@ -54,7 +54,8 @@ test('plan card (planFromConfirm): the drafter\'s checks are [agent]; the picks 
   assert.deepEqual(p.lines[0].picked, ['at most 80 words']);
   const rec = reconcileRubricPlan({ confirmed: [], notChecked: [], closeDecl, jobLines });
   const prepared = planFromConfirm(jobLines, { checkItems: rec.checkItems, picked: [{ line: 1, text: 'at most 80 words' }] });
-  assert.deepEqual(prepared.lines[0].checks.filter((c) => c.by === 'you').length, 2);
+  assert.equal(prepared.lines[0].checks.filter((c) => c.by === 'you').length, 0, 'the close\'s rows for the picks are not drawn a second time');
+  assert.equal(prepared.lines[0].picked.length, 1);
 });
 
 // ---- the page: functions extracted verbatim from index.html (no jsdom) ----------------------------------------------------------------------
@@ -81,7 +82,8 @@ test('renderJobPlan draws the mark on a check row, one markup for the plan card 
   // the confirm turn: [agent] on the drafter's check, the pick's own row unchanged
   const conf = renderJobPlan(planFromConfirm(jobLines, { checkItems: [{ text: 'the heading is quoted', fromLine: [1] }], picked: [{ line: 1, text: 'at most 80 words' }] }));
   assert.match(conf, /the heading is quoted <span class="by" data-testid="plan-by" data-by="agent">\[agent\]<\/span>/);
-  assert.match(conf, /data-testid="plan-picked"><span class="mk">›<\/span> You picked · at most 80 words<\/div>/);
+  assert.match(conf, /data-testid="plan-picked"><span class="mk">›<\/span> check · at most 80 words <span class="by" data-testid="plan-by" data-by="you">\[you picked\]<\/span><\/div>/);
+  assert.doesNotMatch(conf, /You picked/);
   // an always-on guard and a not-known check carry no mark
   assert.doesNotMatch(renderJobPlan({ lines: [{ n: 1, text: 'x', rule: '', rules: [], checks: [{ name: 'c', cls: null }], refused: [], always: ['g'] }], loose: [], notChecked: [], readNotes: [], alwaysOn: [], older: false }), /class="by"/);
   assert.match(PAGE, /\.jp \.by,\.draft-checks-row \.by\{color:var\(--text-dim\)/);
