@@ -215,7 +215,7 @@ export const stripAgreeLead = (text) => {
   return m ? m[1].trim() : String(text ?? '');
 };
 
-/** @typedef {{line: number, rule: number, source: 'look', question: string, ask: 'reading'|'cant-check', ruleText: string, reading?: string}} LookAsk
+/** @typedef {{line: number, rule: number, source: 'look', question: string, ask: 'reading'|'cant-check'|'check'|'no-check', ruleText: string, reading?: string}} LookAsk
  *   `reading` = the plain words an `agree` writes as a `~` rule (a reading ask only) */
 
 /** the words of a reading ask: the ONE spelling, and {@link readingOfQuestion} reads it back (the Result tab's "(you confirmed)") */
@@ -290,6 +290,6 @@ const ruleBounds = (r) => (r.op === 'between' ? [r.lo, r.hi] : [r.value]);
  * @param {LookAsk[]} asks @returns {string}
  */
 export function tooManyAsksText(asks) {
-  const list = asks.map((a) => `line ${a.line} "${a.ruleText}" → ${a.reading ?? "I can't check this on the page"}`).join('; ');
+  const list = asks.map((a) => `line ${a.line} "${a.ruleText}" → ${a.ask === 'no-check' ? "I can't check this" : (a.reading ?? "I can't check this on the page")}`).join('; ');
   return redactSecrets(`Your job has ${asks.length} rules I can't check or had to guess. Please rewrite it so each one says what to look for. My readings: ${list}.`);
 }

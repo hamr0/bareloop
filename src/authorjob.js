@@ -120,6 +120,8 @@ import { runFitCheck, fitQuestionText, notFoundList, isGoOn } from './fitcheck.j
 import { pageContentChars } from './pagefetch.js';
 import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
 import { runPageMap, askableFromLook, tooManyAsksText } from './pagemap.js';
+import { scopedRules, checkAsks } from './checkpick.js';
+import { runCheckSuggest } from './checksuggest.js';
 import {
   DECLARED_GAP_PREFIX, DECLARED_GENRES, guardNames, isDeclaredClose, validateCloseDecl,
 } from './declaredclose.js';
@@ -436,12 +438,13 @@ function composerRefusal(reds) {
  *   signerFix?: Function|any, proposeFn?: Function, compileOpts?: object,
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
  *   answerQuestions?: ((o: {questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}) =>
- *     Promise<{jobLines: {n: number, text: string, rule?: string}[], answers: Record<string|number, any>, left?: {line: number, rule: number}[]}|null>)|null,
+ *     Promise<{jobLines: {n: number, text: string, rule?: string}[], answers: Record<string|number, any>, left?: {line: number, rule: number}[], picks?: any[]}|null>)|null,
+ *   pickGenerate?: Function|null,
  *   confirmGenerate?: Function|null, isRepo?: boolean,
  *   langResult?: {kind: string, candidates?: string[], [k: string]: any}|null}} o
  * @returns {Promise<{ok: boolean, refusal: Refusal|null, verdictType: string|null,
  *   closeDecl: any, seedRef: string|null, authoring: any, judged: any, reds: Red[],
- *   stop: string|null, cost: any, interview: any, confirmed: any}>}
+ *   stop: string|null, cost: any, interview: any, confirmed: any, checkPicks?: any}>}
  */
 export async function authorCloseForJob({
   answers, repoPath = null, lang, verdictType = null, questions = null,
@@ -479,6 +482,9 @@ export async function authorCloseForJob({
   // `fitFn` null is an explicit "no check" (a test seam). With no `fitAsk` (the CLI door) it never runs.
   fitFn = runFitCheck, fitAsk = null, onFit = () => {},
   authorFn = authorClose, authorOpts = {},
+  // R10 (fwd am16): the model boundary of the check-suggestion call (a `makeLoopGenerate` bound to SUGGEST_SYSTEM). ABSENT = no pick path: nothing is suggested or asked and the
+  // drafted declaration is validated as it always was (a test seam, like `lookFn: null`).
+  pickGenerate = null,
   // SOFTGREEN modules 4+5. `signerFix` is the D5 seam: a function (or a value)
   // carrying the SIGNER's corrected artifacts back. Absent means the proposal is
   // signed as proposed, and `signJudgedArtifacts` records which of the two
@@ -676,13 +682,18 @@ export async function authorCloseForJob({
   // existing one (`answerQuestions`: answer required, no skip, the answer becomes a `~` rule on its line; `normalizeQuestions` keeps at most
   // MAX_QUESTIONS). The answer "drop it" adds no rule: the rule is put on the look's own dropped list, so it reads Not checked on the
   // confirm card, in the signed plan and in the drafter's block, and can never be written back as a check.
+  /** the look's code-forced asks that were put to the person (they count toward the cap with the pick asks) @type {any[]} */
+  let lookAsks = [];
   if (answerQuestions && lang === RUBRIC_LANG && survey?.state === 'PRESENT' && survey.facts?.look && typeof survey.facts.look === 'object' && Array.isArray(jobLines)) {
-    const candidates = askableFromLook(survey.facts.look, jobLines);
+    // R10: a rule the pick path scopes in is settled by its own ask (a proposal, or "I can't check this"), so the look does not also ask "I can't check this on the page" about it
+    const picksOwn = pickGenerate ? new Set(scopedRules(jobLines, { inputs, look: survey.facts.look }).map((r) => `${r.line}:${r.rule}`)) : new Set();
+    const candidates = askableFromLook(survey.facts.look, jobLines).filter((c) => !(c.ask === 'cant-check' && picksOwn.has(`${c.line}:${c.rule}`)));
     if (candidates.length > MAX_QUESTIONS) {
       return { ...base, interview, verdictType: picked, seedRef: seed, reds: [{ code: 'look-asks-too-many', path: 'jobLines', detail: tooManyAsksText(candidates) }], stop: 'look-asks-too-many', cost: null };
     }
     const kept = normalizeQuestions(candidates, [...new Set(candidates.map((q) => q.line))]);
     if (kept.kept.length > 0) {
+      lookAsks = candidates;
       onPhase('look-ask', { questions: kept.kept.length });
       const updated = await answerQuestions({ questions: kept.kept, dropped: kept.dropped, confirmed: null });
       if (updated === null) return { ...base, interview, verdictType: picked, seedRef: seed, reds: [], stop: 'confirm-abandoned', cost: null };
@@ -694,6 +705,35 @@ export async function authorCloseForJob({
         const look = survey.facts.look;
         look.dropped = [...(Array.isArray(look.dropped) ? look.dropped : []), { line: lf.line, rule: lf.rule, fact: ruleText, reason: 'person-left', source: 'person' }];
       }
+    }
+  }
+
+  // R10 (fwdloop M10 am16, ruled 2026-11-09): for a rubric job, ONE paid call suggests a check from bareguard's own list for each `~` rule that code scopes in (src/checkpick.js
+  // `scopedRules`); code keeps a suggestion only if its rule is on the list and every number and word is the rule's own (`keepOrDrop`); then CODE asks, through the same ask
+  // path as the look's asks: a kept check is proposed (not counted toward the cap), nothing kept reads "I can't check this" (counted: the look's asks plus these, at most
+  // MAX_QUESTIONS). The plan carries exactly the checks the person picked; the drafter writes none.
+  /** @type {{rules: {line: number, rule: number, text: string}[], picks: any[], left: {line: number, rule: number}[], rows: any[]}|null} */
+  let checkPicks = null;
+  if (answerQuestions && pickGenerate && lang === RUBRIC_LANG && survey?.state === 'PRESENT' && Array.isArray(jobLines)) {
+    const scoped = scopedRules(jobLines, { inputs, look: survey.facts?.look ?? null });
+    if (scoped.length > 0) {
+      onPhase('check-suggest', { rules: scoped.length });
+      const sug = await runCheckSuggest({ jobLines, scoped, generate: pickGenerate, ceilingUsd, onCall, priorCalls: survey?.calls ?? [], priorRaws: survey?.raws ?? [] });
+      // the call's spend joins the survey's, so the ONE ceiling the later stages enforce already holds it
+      survey.calls = [...(survey.calls ?? []), ...sug.calls];
+      survey.raws = [...(survey.raws ?? []), ...sug.raws];
+      const asks = checkAsks(sug.rows);
+      const counted = asks.filter((a) => a.counted);
+      if (lookAsks.length + counted.length > MAX_QUESTIONS) {
+        return { ...base, interview, verdictType: picked, seedRef: seed, reds: [{ code: 'look-asks-too-many', path: 'jobLines', detail: tooManyAsksText([...lookAsks, ...counted]) }], stop: 'look-asks-too-many', cost: null };
+      }
+      onPhase('check-ask', { questions: asks.length });
+      const updated = await answerQuestions({ questions: asks, dropped: [], confirmed: null });
+      if (updated === null) return { ...base, interview, verdictType: picked, seedRef: seed, reds: [], stop: 'confirm-abandoned', cost: null };
+      jobLines = updated.jobLines;
+      interview.answers = updated.answers;
+      checkPicks = { rules: scoped, picks: Array.isArray(updated.picks) ? updated.picks : [], left: Array.isArray(updated.left) ? updated.left : [], rows: sug.rows };
+      base.checkPicks = checkPicks;
     }
   }
 
@@ -740,6 +780,7 @@ export async function authorCloseForJob({
       verdictType: picked, answers: interview.answers, questions: questions ?? questionsFor(picked),
       facts: survey.facts, listing: null, writeScope, isRepo, lang, worseThanBefore, inputs, jobLines,
       ...(authorOpts?.ticket === true ? { ticket: true } : {}),
+      ...(checkPicks ? { settled: checkPicks.rules } : {}),
       generate: confirmGenerate, book: confirmBook, ask, onPhase,
     });
     // DISTINCT from `runConfirmTurn`'s own per-round 'confirm-done' (fired once
@@ -793,6 +834,7 @@ export async function authorCloseForJob({
     // PART 1c: a rubric job asks nothing piecemeal on a failed try - it stops, and the person reviews the whole job (the one early
     // ask is about a `~` rule the look could not find, above)
     ...(answerQuestions && lang !== RUBRIC_LANG ? { offerQuestions: true } : {}),
+    ...(checkPicks ? { checkPicks } : {}),
     ...authorOpts,
   });
   // P7 item 5: the drafter, on the last try after two failed ones, asked. The person answers (required, no skip); each
@@ -813,6 +855,7 @@ export async function authorCloseForJob({
       scout: survey, listing: seeds, generate, ceilingUsd, onPhase, onCall, writeScope,
       priorCalls: (authored.cost?.calls ?? []).slice(scoutCalls), priorRaws: (authored.raws ?? []).slice(scoutRaws),
       confirmed, jobLines, inputs,
+      ...(checkPicks ? { checkPicks } : {}),
       ...authorOpts,
       offerQuestions: false,
     });

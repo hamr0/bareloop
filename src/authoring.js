@@ -353,14 +353,14 @@ export const KIND_CATALOGUE = Object.freeze({
     optional: Object.freeze([]),
     pathParams: Object.freeze([]),
     shape: 'step: integer (the job line number), parts: [{text: string, class: "countable" | "fact" | "judged" | "guard" | "none", '
-      + 'check?: "maxWords" | "minWords" | "maxLines" | "sections" | "sectionWords" | "cited" | "minClaims" | "maxClaims", value?: integer, names?: string[], '
-      + 'wordsPerSection?: integer, source?: string (an input label), domains?: string[], covers?: integer[], rules?: integer[], '
+      + 'check?: "cited" | "minClaims" | "maxClaims", value?: integer, '
+      + 'source?: string (an input label), domains?: string[], covers?: integer[], rules?: integer[], '
       + 'fact parts: facts?: [{name, shape: "money"|"number"|"date"|"time"|"phrase"|"text", unit?|currency? (each one value or a list; money names at least one), phrase?, anchor?, until?, '
       + 'rule?: {op, value | lo+hi}, aiProposal?: boolean}], count?: {min?, max?}}]',
     asserts: 'the file output/<step>.json under output/steps/ exists, is a JSON object, and its "text" is present and within the '
       + 'limits the person asked for. Write ONE rubric-step stage per numbered job line (step = that line number, fromLine = [that line]). '
       + 'In "parts" list each constraint the person put on that line, in their own words, and SORT it: "countable" when a machine can '
-      + 'count it (check maxWords/minWords/maxLines with value; sections with names; sectionWords with names and wordsPerSection) or '
+      + 'quote it (word, section, line, list-item and phrase counts are never yours: code adds the ones the person picked) or '
       + 'when claims must be backed by a quote from a named input (check cited, source = the input label), or when a number of '
       + 'quoted claims is asked for (minClaims / maxClaims with value and source: it counts the claims listed under that input); '
       + 'a line that FINDS, LISTS or LOOKS UP something gets ONE part of class "fact" instead (source = the input label, '

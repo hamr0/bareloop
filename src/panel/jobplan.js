@@ -16,7 +16,7 @@ import { splitReadNotes } from '../pagedropwords.js';
 import { checksOfClose, signedFactNames, proseNotChecked, lineRules, confirmedGoalOf } from '../rubricstep.js';
 
 /** @typedef {{name: string, cls: 'machine check'|'judge'|null}} PlanCheck */
-/** @typedef {{n: number, text: string, rule: string, rules: string[], checks: PlanCheck[], refused: string[], always?: string[]}} PlanLine */
+/** @typedef {{n: number, text: string, rule: string, rules: string[], checks: PlanCheck[], refused: string[], always?: string[], picked?: string[]}} PlanLine */
 /** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], readNotes: string[], alwaysOn: string[], older: boolean, goal?: string, ticketFilter?: string}} JobPlan */
 
 /** the ticket filter's code-owned words as a plan part, or nothing (R5) @param {any} f @returns {{ticketFilter?: string}} */
@@ -124,7 +124,7 @@ export function planFromSpec(spec) {
  * The plan of the confirm turn, before anything is drafted: the person's own job lines, the model's checks under the
  * line each names, its own "not checked" words, and the real protections (code-owned) as "Always checked".
  * @param {{n: number, text: string, rule: string, rules?: string[]}[]|null|undefined} jobLines
- * @param {{checkItems?: {text: string, fromLine: number[]|null}[], checks?: string[], notChecked?: string[], protections?: string[], signedFacts?: string[], ticketFilter?: any}} plan
+ * @param {{checkItems?: {text: string, fromLine: number[]|null}[], checks?: string[], notChecked?: string[], protections?: string[], signedFacts?: string[], ticketFilter?: any, picked?: {line: number, text: string}[]}} plan
  * `signedFacts` = the names of the facts the look signs (so an S1 copy of a signed fact reads as a note, not Not checked)
  * @returns {JobPlan}
  */
@@ -143,6 +143,11 @@ export function planFromConfirm(jobLines, plan) {
     if (served.length === 0) loose.push({ name: c.text, cls: null });
   }
   const { notChecked, readNotes } = splitReadNotes(plan?.notChecked, plan?.signedFacts);
+  // R10 (fwd am16 (6)): the checks the person picked, each under its line, in the one table's plain words (`kept from last draft` rides in `text` when a Revise kept it)
+  for (const x of Array.isArray(plan?.picked) ? plan.picked : []) {
+    const line = lines.find((l) => l.n === x?.line);
+    if (line && typeof x.text === 'string') (line.picked ??= []).push(x.text);
+  }
   return {
     lines, loose, notChecked, readNotes, alwaysOn: [...(plan?.protections ?? [])], older: false, ...filterPart(plan?.ticketFilter),
   };
