@@ -156,6 +156,12 @@ export const COUNT_CHECKS = Object.freeze({
   maxLines: Object.freeze(['value']),
   sections: Object.freeze(['names']),
   sectionWords: Object.freeze(['names', 'wordsPerSection']),
+  // R10 (bareguard 0.31, fwdloop v0.29.0 OFFERED): the five text checks a person's pick may carry; the drafter never writes them
+  nonEmpty: Object.freeze([]),
+  listItems: Object.freeze(['value']),
+  sectionOrder: Object.freeze(['names']),
+  mustCarry: Object.freeze(['phrases']),
+  blockLines: Object.freeze(['size', 'phrases']),
   cited: Object.freeze(['source']),
   // a COUNT of the claims listed under an input: the code counts the list (flattenStep), bareguard's own min/max compares it
   minClaims: Object.freeze(['value', 'source']),
@@ -165,7 +171,7 @@ export const COUNT_CHECKS = Object.freeze({
   numbersFromFacts: Object.freeze(['from']),
 });
 /** every field a part may carry, whatever its class */
-const PART_FIELDS = Object.freeze(['text', 'class', 'check', 'value', 'names', 'wordsPerSection', 'source', 'domains', 'covers', 'rules', 'from', 'record', 'facts', 'count', 'tested', 'sample']);
+const PART_FIELDS = Object.freeze(['text', 'class', 'check', 'value', 'names', 'wordsPerSection', 'source', 'domains', 'phrases', 'size', 'covers', 'rules', 'from', 'record', 'facts', 'count', 'tested', 'sample']);
 
 /** @typedef {{code: string, path: string, detail: string}} ShapeRed */
 
@@ -214,12 +220,13 @@ export function rubricStepShapeReds(p, at) {
     if (part.class !== 'countable') return;
     if (!Object.hasOwn(COUNT_CHECKS, part.check)) { red('invalid-value', `${w}.check`, `one of ${Object.keys(COUNT_CHECKS).join(' | ')}`); return; }
     for (const f of COUNT_CHECKS[part.check]) {
-      const ok = f === 'value' || f === 'wordsPerSection' ? Number.isInteger(part[f]) && part[f] >= 1
-        : f === 'names' ? nameList(part.names)
+      const ok = f === 'value' || f === 'wordsPerSection' || f === 'size' ? Number.isInteger(part[f]) && part[f] >= 1
+        : f === 'names' || f === 'phrases' ? nameList(part[f])
           : f === 'from' ? Array.isArray(part.from) && part.from.length > 0 && new Set(part.from).size === part.from.length && part.from.every((/** @type {unknown} */ x) => Number.isInteger(x) && /** @type {number} */ (x) >= 1)
             : nonEmpty(part.source) && part.source.length <= 128;
       if (!ok) {
         red('invalid-value', `${w}.${f}`, f === 'names' ? 'a non-empty array of section names'
+          : f === 'phrases' ? 'a non-empty array of words or phrases'
           : f === 'source' ? 'the label of the input a quote must come from'
             : f === 'from' ? 'the numbers of the earlier fact lines whose checked quotes the text\'s numbers come from (distinct integers, 1 or more)'
               : 'an integer, 1 or more');
@@ -261,6 +268,11 @@ export function buildStepSpec(params, inputShas) {
       case 'maxWords': case 'minWords': case 'maxLines': checks.push({ id, rule: part.check, field: 'text', value: part.value }); break;
       case 'sections': checks.push({ id, rule: 'sections', field: 'text', names: [...part.names] }); break;
       case 'sectionWords': checks.push({ id, rule: 'sectionWords', field: 'text', names: [...part.names], wordsPerSection: part.wordsPerSection }); break;
+      case 'nonEmpty': checks.push({ id, rule: 'nonEmpty', field: 'text' }); break;
+      case 'listItems': checks.push({ id, rule: 'listItems', field: 'text', value: part.value }); break;
+      case 'sectionOrder': checks.push({ id, rule: 'sectionOrder', field: 'text', names: [...part.names] }); break;
+      case 'mustCarry': checks.push({ id, rule: 'mustCarry', field: 'text', phrases: [...part.phrases] }); break;
+      case 'blockLines': checks.push({ id, rule: 'blockLines', field: 'text', size: part.size, phrases: [...part.phrases] }); break;
       case 'cited': checks.push({ id, rule: 'cited', claims: `cites:${part.source}`, source: part.source }); break;
       case 'minClaims': checks.push({ id, rule: 'min', field: `claims:${part.source}`, value: part.value }); break;
       case 'maxClaims': checks.push({ id, rule: 'max', field: `claims:${part.source}`, value: part.value }); break;
@@ -394,6 +406,10 @@ export function plainStepGap(step, why, g, params = null) {
   if (g.check === 'minWords') return `${at}: "text" has ${g.measured} words, at least ${g.limit} are required`;
   if (g.check === 'maxLines') return `${at}: "text" has ${g.measured} lines, at most ${g.limit} are allowed`;
   if (g.check === 'sections') return `${at}: "text" is missing section(s): ${(g.items ?? []).join(', ')}`;
+  if (g.check === 'listItems') return `${at}: "text" has ${g.measured} list items, exactly ${g.limit} are required`;
+  if (g.check === 'sectionOrder') return `${at}: "text" does not hold its sections in the asked order (${(g.items ?? []).map((/** @type {string} */ x) => x.replace(/^[^:]*:/, '')).join(', ')} out of place)`;
+  if (g.check === 'mustCarry') return `${at}: "text" does not carry: ${(g.items ?? []).join(', ')}`;
+  if (g.check === 'blockLines') return `${at}: "text" is not in blocks of ${g.limit} lines each carrying the asked words (${(g.items ?? []).join(', ')})`;
   if ((g.check === 'min' || g.check === 'max') && String(g.field ?? '').startsWith('claims:')) {
     const label = String(g.field).slice('claims:'.length);
     return g.check === 'min'
@@ -869,6 +885,11 @@ export function partSentence(part) {
     case 'maxLines': return `the text is at most ${n(part.value, 'line')}`;
     case 'sections': return `the text has the section(s): ${list(part.names)}`;
     case 'sectionWords': return `each section (${list(part.names)}) is about ${part.wordsPerSection} words`;
+    case 'nonEmpty': return 'the text is not empty';
+    case 'listItems': return `the text has exactly ${n(part.value, 'list item')}`;
+    case 'sectionOrder': return `the text has the section(s) ${list(part.names)}, in that order`;
+    case 'mustCarry': return `the text carries ${list(part.phrases)}`;
+    case 'blockLines': return `the text is in blocks of ${n(part.size, 'line')}, each carrying ${list(part.phrases)}`;
     case 'cited': return `every claim is backed by a quote copied from "${part.source}"`;
     case 'minClaims': return `at least ${part.value} claim(s) are listed under "${part.source}"`;
     case 'maxClaims': return `at most ${part.value} claim(s) are listed under "${part.source}"`;
