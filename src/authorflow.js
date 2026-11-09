@@ -87,7 +87,7 @@ import {
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
 import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
-import { applyPicks, fillAndMergeFacts, moveUncheckable, retentionOf, settleRules } from './checkpick.js';
+import { applyPicks, dropExtras, fillAndMergeFacts, moveUncheckable, retentionOf, settleRules } from './checkpick.js';
 import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, withFactBindings, settlePersonsWords, withDropNotes, lineRules } from './rubricstep.js';
 import { dropRows, dropLine } from './pagedropwords.js';
 import { factShapeGuide } from './facts.js';
@@ -2598,6 +2598,22 @@ export async function runConfirmTurn({
 }
 
 /**
+ * PRD v1.131 tick 4 (rubric jobs, the LAST try only; the caller gates both): the last try failed the gate, so the AI's own broken parts are dropped to Not checked (`dropExtras`) and the plan
+ * is bound and checked ONCE more with the same gate (`redo`). Returns the new settled declaration and its result when that passes; `null` = nothing dropped, the plan is refused as today (the
+ * try passed already, a red sits on a part the picks built or on no part, or the re-check is still red).
+ * @param {{pre: any, v: {ok: boolean, reds: any[]}, jobLines: any[]|null|undefined, redo: (d: any) => any}} o
+ * @returns {{pre: any, v: any}|null}
+ */
+export function dropAfterLastTry({ pre, v, jobLines, redo }) {
+  if (v.ok) return null;
+  const out = dropExtras(pre, v.reds, jobLines);
+  if ('refused' in out) return null;
+  const next = withFactBindings(out.declaration);
+  const again = redo(next);
+  return again.ok ? { pre: next, v: again } : null;
+}
+
+/**
  * THE AUTHORING FLOW.
  *
  * Everything cheap happens BEFORE any token is spent: an ABSENT survey, an
@@ -3073,8 +3089,14 @@ export async function authorClose({
       previous = { d: ask.declaration, f: proposedFilter ?? null };
 
       // PART 1b: code puts the number tie on every prose step that follows a fact step, before anything is validated or signed
-      const pre = withFactBindings(withDropNotes(settlePersonsWords(picked(ask.declaration), jobLines), facts?.look?.dropped, jobLines));
+      const settled = withFactBindings(withDropNotes(settlePersonsWords(picked(ask.declaration), jobLines), facts?.look?.dropped, jobLines));
+      let pre = settled;
       let v = checkDraft(pre);
+      // PRD v1.131 tick 4: only after the LAST try of a rubric draft failed, the AI's own broken parts are dropped to Not checked and the plan is checked ONCE more; else the plan is refused as today
+      if (!v.ok && lang === RUBRIC_LANG && i === revisionCap) {
+        const dropped = dropAfterLastTry({ pre, v, jobLines, redo: checkDraft });
+        if (dropped) { pre = dropped.pre; v = dropped.v; }
+      }
       if (lang === RUBRIC_LANG) retentions.set(label, retentionOf(ask.declaration, pre, jobLines));
       // MCP + tickets piece 2: a proposed ticket filter is read by the ONE reader (src/ticketfilter.js); its reds carry a legal example and go back to the drafter like any red
       if (v.ok && ticket && proposedFilter !== undefined) {

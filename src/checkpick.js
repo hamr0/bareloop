@@ -515,3 +515,62 @@ export function retentionOf(drafted, final, jobLines) {
     return { line: l.n, aiParts, kept, dropped: aiParts - kept, picks: picks.some((/** @type {any} */ k) => isRec(k) && k.line === l.n) };
   });
 }
+
+/** the reason a dropped AI extra is listed under Not checked */
+export const DROPPED_WORDS = "The AI couldn't build a working check for this, so you judge it at Accept.";
+
+/**
+ * RUBRIC jobs only, run ONLY after the LAST try failed the gate (PRD v1.131 tick 4, hamr's ruling 2026-11-09). When EVERY red points at one part of a rubric-step stage and that part is not
+ * a code-matched pick (a part in `declaration.picks`) nor code-owned (a guard, `numbersFromFacts`), the AI's parts those reds name are dropped and listed under Not checked: a pure extra as a
+ * note with its words, a part that served a `~` rule as a `refused` entry for each rule no surviving part carries (rule numbers outside the line's rules are ignored, as moveUncheckable does).
+ * Any red on a pick / code-owned part, or any red not tied to one part, returns `{refused}` and the plan is refused as today. Pure.
+ * @param {any} declaration the declaration as the gate validated it @param {{path?: string, code?: string}[]} reds @param {any[]|null|undefined} jobLines
+ * @returns {{declaration: any, dropped: {line: number, words: string, rules: number[]}[]}|{refused: string}}
+ */
+export function dropExtras(declaration, reds, jobLines) {
+  const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  if (!isRec(declaration) || !Array.isArray(declaration.stages)) return { refused: 'no plan to drop from' };
+  if (!Array.isArray(reds) || reds.length === 0) return { refused: 'no red to drop for' };
+  const sortKeys = (/** @type {any} */ v) => JSON.stringify(v, (_k, x) => (isRec(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : 1))) : x));
+  const pickKeys = (Array.isArray(declaration.picks) ? declaration.picks : []).map((/** @type {any} */ k) => sortKeys(k?.part));
+  const owned = (/** @type {any} */ p) => !isRec(p) || pickKeys.includes(sortKeys(p)) || p.class === 'guard' || (p.class === 'countable' && p.check === 'numbersFromFacts');
+  /** @type {Map<string, [number, number]>} */
+  const hit = new Map();
+  for (const r of reds) {
+    const m = /^stages\[(\d+)\]\.params\.parts\[(\d+)\]/.exec(String(r?.path ?? ''));
+    const st = m ? declaration.stages[Number(m[1])] : null;
+    if (!m || !(isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts)) || !isRec(st.params.parts[Number(m[2])])) return { refused: `a red (${r?.code}) is not tied to one part` };
+    if (owned(st.params.parts[Number(m[2])])) return { refused: `a red (${r?.code}) is on a check code built from your picks` };
+    hit.set(`${m[1]}.${m[2]}`, [Number(m[1]), Number(m[2])]);
+  }
+  const say = (/** @type {unknown} */ t) => String(t ?? '').replace(/\s+/g, ' ').trim();
+  /** @type {{line: number, words: string, rules: number[], pure: boolean}[]} */
+  const dropped = [];
+  const stages = declaration.stages.map((/** @type {any} */ st, /** @type {number} */ si) => {
+    if (![...hit.values()].some(([s]) => s === si)) return st;
+    const parts = st.params.parts.filter((/** @type {any} */ p, /** @type {number} */ pi) => {
+      if (!hit.has(`${si}.${pi}`)) return true;
+      const names = Array.isArray(p.facts) ? p.facts.map((/** @type {any} */ f) => say(f?.name)).filter(Boolean).join(', ') : '';
+      const rules = [...new Set([...(Array.isArray(p.rules) ? p.rules : []), ...(Array.isArray(p.covers) ? p.covers : [])].filter((n) => Number.isInteger(n)))];
+      dropped.push({ line: st.params.step, words: say(p.text) || names, rules, pure: rules.length === 0 });
+      return false;
+    });
+    return { ...st, params: { ...st.params, parts } };
+  });
+  const carried = (/** @type {number} */ line, /** @type {number} */ n) => stages.some((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && st.params.step === line
+    && Array.isArray(st.params.parts) && st.params.parts.some((/** @type {any} */ x) => isRec(x) && ((Array.isArray(x.rules) && x.rules.includes(n)) || (Array.isArray(x.covers) && x.covers.includes(n)))));
+  const refused = Array.isArray(declaration.refused) ? [...declaration.refused] : [];
+  const notes = Array.isArray(declaration.notes) ? [...declaration.notes] : [];
+  for (const d of dropped) {
+    const jl = (jobLines ?? []).find((/** @type {any} */ l) => isRec(l) && l.n === d.line);
+    const ruleTexts = jl ? lineRules(jl) : [];
+    const ownWords = (/** @type {string} */ w) => ruleTexts.some((t) => say(t).toLowerCase() === w.toLowerCase());
+    for (const n of d.rules.filter((k) => k >= 1 && k <= ruleTexts.length)) if (!carried(d.line, n) && !refused.some((/** @type {any} */ r) => isRec(r) && r.line === d.line && r.rule === n)) refused.push({ line: d.line, rule: n, reason: DROPPED_WORDS });
+    // a pure extra, or a ruled part that said more than the rule's own words, is also listed by its words
+    if (d.pure || !ownWords(d.words)) {
+      const text = `line ${d.line}: ${d.words ? `"${d.words}"` : 'a part of this line'} — ${DROPPED_WORDS}`;
+      if (!notes.includes(text)) notes.push(text);
+    }
+  }
+  return { declaration: { ...declaration, stages, ...(refused.length ? { refused } : {}), ...(notes.length ? { notes } : {}) }, dropped: dropped.map(({ line, words, rules }) => ({ line, words, rules })) };
+}
