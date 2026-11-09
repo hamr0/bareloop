@@ -15488,3 +15488,130 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Caveats.** The strike ladder is a no-progress detector, so flat limit-reds are partly built in; nothing past 2 strikes is observable in the archive. Mixed eras and genres; underpowered. This re-asks the loop-tier question F31, F33 and F36 left open (battery rows: no green on attempt 2-3 ever observed); here 30 of 94 greens came on a later try. 'Try' differs: the battery counted whole attempts, this read counts fix-loop iterations and replans inside a run. Strikes count consecutive no-progress tries and progress resets them, so the strike limit stops stuck runs only; a run still improving is bounded by money and wall (38 reds here). The curve pools three eras — stateless (fresh plan every try), learnings (from about 2026-10-20) and the carry memo (from 2026-10-30) — so it says nothing yet about whether learnings or the memo made retries pay more; that split is unread.
 **The two stage-advance cases, checked in the spines (u-mshzdogs, 2026-08-06; u-mtplc72b, 2026-09-06).** Verdict C for both: neither was a stage advance. In each the fix loop opened on the `outer-close` grade at stage `no-suppressions` (mshzdogs: 2 suppressions, stage index 5; mtplc72b: 2, index 4). Iteration 1 fell back to `typecheck` (2 errors in mshzdogs, 8 in mtplc72b), an earlier stage, so a strike (`close-trend` noProgress 1; spine seq 83 / 200). Iteration 2 returned to `no-suppressions` at 4 (mshzdogs, worse than 2) and 2 (mtplc72b, equal to 2), the same stage as the opening grade, not a later one: strike 2, cap-halt (seq 94-96 / 209-212). The governor read the spine correctly under src/trend.js (lines 293-311).
 **Status.** Dropped by hamr, not built. Training on run records is not pursued (only useful with a local model).
+
+
+## F290 — R10 paid round 1: FAIL, $0.2487; two harness flaws and one product defect (2026-11-09; PAID, Fireworks `accounts/fireworks/models/deepseek-v4p1-flash`; n=5, UNDERPOWERED; engine b9d6724)
+
+**Facts.** Files: `.claude/scratch/r10/paid/` (PREREG.md, result.json, progress.log, run.out). Job: a local-file rubric job, "Summarise the latest release in the changelog" with `~ exactly 3 bullets` and `~ under 80 words`, on a copy of this repo's CHANGELOG.md (about 593 KB). Hard cap $0.30, session cap $0.08 per draft. Result FAIL, spent $0.2487, 5 of 5 drafts run, real runs.jsonl 397 to 397. The $0 rescan of the 22-rule corpus refused 0 good rules.
+- Draft 1 (smw9chak3usgf, $0.0708): refused before drafting. The fit check said "I found 0 of 1 of your asks on this page", and the runner answered `drop it`. A person types `go on`. Harness flaw. The one cold call over the big input cost $0.0708.
+- Draft 2 (smw9che4f38xv, $0.0890): both picks agreed, then "Drafting stopped on your cost cap" ($0.081836 against the $0.08 session cap). Harness flaw: I sized the cap without measuring the input. The input was about 156k tokens, so one cold call took almost the whole cap.
+- Draft 3 (smw9chq27j9rl, $0.0249): refused. Reds were `rubric-fact-text` ("'exactly 3 bullets' counts or quotes free text, but this line lists facts and has no text"). Product defect: the drafter wrote a fact part, code added the picked countables on the same line, and the validator refused the pair.
+- Drafts 4 and 5 (smw9ci2j5thu7 $0.0242, smw9cielsoap8 $0.0398): prepared, all four marks true. A later $0 read with the round-4 bar (REPLAY-25) gives their signed closeDecl H1-H5 = 11101: no `picks` record existed yet, because keep-both was not built.
+- Negative control: the runner printed `(b must be false: true)`. That line means the control PASSED (mark b was false on the doctored plan, as required).
+**Operator misreading, WITHDRAWN.** I first read that line as "the negative control failed". It did not. The control worked in round 1; I misread the print. Stated here so no later reader inherits the wrong reading.
+**Reading.** The round is FAIL on the letter, and the cause is mixed: two flaws in my test setup (a test-script answer, a cap sized without measurement) cost drafts 1 and 2, and one real product defect (fact part plus picks on one line) cost draft 3. Only drafts 4 and 5 say anything about the pick path.
+**Learning.** A test script answers like a person or it measures nothing. A cap is sized from a measured per-call cost, never guessed. Both were already rules in this project; I broke them.
+**Status.** Round 2 re-registered with a small real input, a `go on` answer and a $0.04 cap (F292). The defect is F291.
+
+
+## F291 — keep-both: the AI's fact check and the person's picks stay on one line (2026-11-09; $0 POC, PASS; hamr's ruling; built 5989e64, de79a6e, b40b06f, ce08d92)
+
+**Facts.** `.claude/scratch/r10/keepboth/POC-RESULTS.md`: PASS, no model call, real bareguard 0.31.0 and the real 593 KB changelog. Where the live red came from: the look's page-map tied a fact to the line; the drafter turned it into a `phrase` fact; code's `applyPicks` added the person's picks (listItems 3, maxWords 80) as countable parts beside it; the validator then raised `rubric-fact-text`. One output file can carry both: `{"results":[...], "text":"..."}`; the fact part reads `results`, the picks read `text`. Chosen shape B (one stage, 24 changed lines in 4 files), shape A (two stages) passed too but cost four consumer fixes and a clash with `MAX_EXITS_PER_STEP = 2`. Bar P8 found a hole in my own shape (a fact plus a lone `maxWords` with NO text graded green); a one-line floor closed it.
+**hamr's ruling (2026-11-09).** The AI's fact checks are load-bearing: keep both. Labels are `[agent]` on the AI's checks and `[you picked]` on the person's. The signed plan records `picks`, and the strict gate holds a countable beside a fact to that record only (de79a6e, b40b06f, ce08d92 for the labels).
+**Risks stated by the POC.** (1) The signed close is re-validated with no draft in hand (declaredclose.js), so there "only picks" is the weaker rule "an offered check with `rules` on a fact line", under the person's signature hash. (2) `stepFileContract()` still says a facts line has "no text"; the per-line brief overrides it. (3) Not run: typecheck, the full suite, any live draft at POC time.
+**Learning.** The first live red sat in a pair of code and validator, not in the model. Reading the draft log before touching a prompt found it.
+**Status.** Built. Seen live from round 2 on (F292); test-proven and POC-proven before that.
+
+
+## F292 — R10 paid round 2: FAIL, $0.0575; drafts 4 and 5 lost both picks (2026-11-09; PAID, Fireworks `accounts/fireworks/models/deepseek-v4p1-flash`; n=5, UNDERPOWERED; engine ce08d92)
+
+**Facts.** Files: `paid2/` (PREREG.md, result.json, progress.log), diagnosis `paid2/diag/REPLAY-FIX.md`. Changes from round 1: a `go on` answer to the fit ask, a real small input (the first 3 released sections of the v0.54.1 changelog, 13,951 bytes), session cap $0.04, new mark (e) for keep-both seen live, a second negative control. Result FAIL, spent $0.0575, all 5 drafts reached `prepared`, keep-both fired live on 3 (drafts 1-3, marks a-e all true), both negative controls OK.
+- Drafts 4 and 5 (smw9ie5pi52mf $0.0116, smw9ieiiyrm5n $0.0094): only ONE ask each, the look's `Your line 1 says "under 80 words". I can't check this on the page. Drop it?`, answered `drop it`. Marks a, b and d false. Both picks were lost.
+- Cause (proved at $0, REPLAY-FIX): the page look tied "exactly 3 bullets" to a kept page fact and dropped "under 80 words" as no-label. `scopedRules` excluded rules the look tied or dropped, so neither rule reached the pick call. A word count, which bareguard checks, was called uncheckable.
+- Replay of all 10 saved drafts, old code (ce08d92) against the fix (16961c4): only r2d4 and r2d5 change; every other draft was already scoped.
+**Fix.** 16961c4: a countable `~` rule (words, list items or lines, sections) always reaches the pick offer, whatever the look said; the look's facts stay. Fail-first tests and the 10-draft replay.
+**Learning.** The fix was real, but it had never run against a live model until round 3. A $0 replay proves the code path, not the model.
+**Status.** Fixed; tested live in round 3 (F293).
+
+
+## F293 — R10 paid round 3: FAIL, $0.0604; draft 5 died on two fact parts on one line (2026-11-09; PAID, Fireworks `accounts/fireworks/models/deepseek-v4p1-flash`; n=5, UNDERPOWERED; engine e75d245)
+
+**Facts.** Files: `paid3/` (PREREG.md, result.json, progress.log). A copy of round 2 with the fix 16961c4 in. Result FAIL, spent $0.0604, 4 of 5 prepared, keep-both fired live on 3, both negative controls OK. Reported (not gating): the countable fix path fired on 4 of 5 drafts, so 16961c4 was seen live.
+- Draft 5 (smw9ln03z3vf6, $0.0120): refused after all tries. The drafter wrote two fact parts on line 1, one of them from the rule-tied look fact (the section words and the release heading). `rubric-fact-twice`: "is a second fact list on the same line". It did so on author, revise-1 and revise-2.
+**Fix 3 (31e6e1a).** The drafter brief now says a look fact that carries a `~` rule goes inside the line's ONE fact part, and a picked count is a pick, not a `count`; the `rubric-fact-twice` retry note carries one legal example (two facts in one part). The example goes in the drafter's retry note, not into the person's stop text (a test pins that).
+**Learning.** The pick fix worked live. The next red was the drafter side of the same line, not a pick defect. Each live fix exposed the next one.
+**Status.** Fix 3 was test-proven only until round 4, where it fired (F294).
+
+
+## F294 — hamr's reframe, and R10 paid round 4: FAIL on the honesty bar, 5 of 10, $0.1111, new red kinds (2026-11-09; PAID, Fireworks `accounts/fireworks/models/deepseek-v4p1-flash`; n=10, UNDERPOWERED; engine 31e6e1a)
+
+**hamr's reframe (verbatim).** "humans add rules they think matter, ai try to comply and does its best to check it honestly and if one is missing or could be reshaped better that should be offered, our goal is to make it honest and check what's really checkable in rubric and say what it isn't, not to close all". This replaced the "5 of 5 drafts close" bar with an honesty bar. Frozen in `paid4/PREREG.md`: H1 no dead draft, H2 no silent drop of a `~` rule, H3 no false "can't check" about a countable rule, H4 every agreed pick really checked, H5 no over-claim (no countable beyond the picks, no fact `count` restating a pick). All five are decided by code and the bar had its own self-test. Pre-declared: a NEW red kind means a redesign of who owns a rule that has a pick, not another patch.
+**Facts.** Files: `paid4/` (PREREG.md, result.json, progress.log), diagnosis `paid4/diag/REPORT.md`. 10 drafts, 8 prepared, 2 refused, bar passes 5 of 10 (drafts 2, 5, 6, 7, 10), spent $0.1111, both negative controls OK, the bar self-test OK. Fix 3 fired live: `rubric-fact-twice` on 2 of 10 drafts (d5 recovered with the example in revise-1, d8 died). Failures:
+- d1 (smw9nndhqv0hm) H5: a fact part carried `count 3/3`, restating the pick.
+- d3 (smw9no3kwo7of) H1, H2, H4: dead. `count 3/3` on a fact led to `rubric-fact-phrase-rare`; the drafter then wrote the job sentence and all four `~` lines as five `none` parts, `rubric-part-unsortable` x5.
+- d4 (smw9nohy3s68g) H5: a drafter-written `minClaims 3` countable beyond the picks.
+- d8 (smw9npyf9dxkc) H1, H2, H4: dead. The goal sentence as `none`, then three fact parts with no `source`: `rubric-fact-twice` x3 plus `rubric-part-source` x3 with no tries left.
+- d9 (smw9nqdjjzzew) H3: the suggest call returned `none` for "exactly 3 bullets". The model thought `listItems` could not mean "exactly"; bareguard's `listItems` is exactly N, but the model only saw the signature. The ask said "I can't check this" about a countable rule.
+- NEW red kinds, never seen in rounds 1-3: `rubric-part-unsortable`, `rubric-fact-phrase-rare`. The frozen rule fired.
+**Reading.** The diagnosis found one root: the look, the pick and the drafter all touched one count rule, so no one owned it. The most frequent red was the drafter writing the job's own goal sentence as a `none` or `judged` part; the report headline says 6 of 10 drafts hit it and its list names 5 (d2, d3, d4, d8, d9).
+**Learning.** The frozen "new red kind, so redesign" rule worked: it stopped a sixth round of single patches. The honesty bar is also the better bar than "all closed": it caught a restated count and a false "can't check" that a closes-or-not bar would have passed.
+**Status.** FAIL. Redesign ruled by hamr (F295).
+
+
+## F295 — one owner per count rule: the redesign matched to fwdloop (2026-11-09; $0 replay, no model; fixes b3c53d7, 5a81681, 72a1a9f, e187095)
+
+**Facts.** hamr's ruling: "1, like what fwd does": one owner per count rule, code plus the person, as in fwdloop's am22, am23 and am24 (fwdloop `docs/logs/FINDINGS.md` F158-F165, read only; fwd's rule is that a count guardrail gets no page question and the AI's fact checks stay). Built:
+- b3c53d7 (fwd am24, D1): a count rule gets no page question, only the pick. No "I can't check this on the page" and no "I read it as" for a count.
+- 5a81681 (fwd am22 strip, D2; ours, D3): code strips the drafter's countables (including `minClaims` / `maxClaims`) and any fact `count` that restates a pick on a picked line; when the suggest call yields no pick for a count rule, code builds it from its own readers (covers d9). Needs refuse-to-build when a rule holds two numbers; the readers are first-match.
+- 72a1a9f + e187095 (hamr, rubric jobs only, fwd's way): a drafter part that is `none` or `judged` goes to Not checked with its words, not a plan-red; a part's rule words are dropped from its note when a pick checks them.
+**Replay.** `paid4/diag/REPLAY-25.md`: the draft gate on 36 saved declarations from 21 of the 25 drafts of rounds 1-4 (the other 4 logged no refused try). Gate red old 34, mid 33, new 23; the `unsortable` / `judged` reds 11 to 0; 10 declarations went red to ok; 0 worse; 0 over-moves (no Not checked entry written for a rule a pick checks). The diagnosis also named what the three mechanisms do NOT cover: several fact parts on one line (d8), a fact part with no `source` on a one-input job (d8), the look inventing rule-tied facts for count rules.
+**Learning.** Test-proven and replay-proven, not seen live until round 4b (F296). A replay can show a fix does not break the old drafts; only a live round shows it holds on a new draft.
+**Status.** Built.
+
+
+## F296 — R10 paid round 4b: bar 8 of 10, $0.1086, two dead drafts; both died on drafter-written extras (2026-11-09; PAID, Fireworks `accounts/fireworks/models/deepseek-v4p1-flash`; n=10, UNDERPOWERED; engine e187095)
+
+**Facts.** Files: `paid4b/` (PREREG.md, progress.log, result.json), replay `paid4b/diag/REPLAY-ALL.md`. Same bar and input as round 4. 8 of 10 drafts pass H1-H5, 2 refused, spent $0.1086, no new red kind, both negative controls OK, the countable fix path fired on 8 of 10. By the frozen rule a FAIL of known kinds goes to hamr for the call, with no fix without his word.
+- d1 (smw9rfiz5ahds, $0.0124): dead, H1 H2 H4. Reds: `invalid-value`, `rubric-fact-text`, `rubric-part-source`, a drafter `cited` part on a fact line.
+- d4 (smw9rh8d6y845, $0.0104): dead, H1 H2 H4. `rubric-fact-twice` x3 on revise-2, with no tries left.
+- Both died on checks the DRAFTER wrote beyond the person's own (a second fact part, a missing `source`, a cited part on a fact line). The person's `~` picks were never the cause.
+**Harness flaw, recorded.** The runner crashed in its own bar self-test at `draft.mjs:194` after the 10 drafts: that arm did `.find()` for a fact part in the first prepared draft, which had none, and wrote `.count` on undefined. So no RESULT line, no verdict and no firing counts printed. The frozen file was not edited. `result.json` holds the drafts and per-draft firings only; the next runner must guard that arm. The per-draft taps in it read: the strip fired on d2, d4 and d7 (3 of 10); the drafter wrote a `none` / `judged` part on d7 and d9 (the Not-checked words reached the artifact on d7 only); the D3 build 0 (a suggest call was read on every draft); fact-twice on d4 and d5. Counts of 0 read "not seen live".
+**Replay of fixes 2b3813f + 49ca3e7.** After the round I built two more: code fills a missing `source` on a one-input job, and code merges a line's several fact parts into one when safe (22 of 47 saved declarations changed; every merge kept every fact and rule, lost 0; gate red old 34, new 26 of 47). They would NOT have saved the two dead drafts: `paid4b/diag/REPLAY-ALL.md` shows d1's next red is still `rubric-fact-text`, d4's is `rubric-fact-label-off-list` (the drafter typed the anchor "## [" for the version). Three drafts were already red and got a new red code the same way. No draft that was ok became red.
+**Reading, plainly.** This is the patch-chain pattern: fix a red, a later red shows up, fix that. Rounds 1 to 4b produced fixes 16961c4, 31e6e1a, b3c53d7, 5a81681, 72a1a9f, e187095, 2b3813f and 49ca3e7, and the drafter-written extras keep producing the next one. Five paid rounds cost $0.5863 in total; drafts reaching `prepared` went from 2 of 5 in round 1 to 8 of 10 in round 4b (the bars differ, so this is not a like-for-like trend).
+**Learning.** The remaining deaths come from checks the AI writes itself. Two ways out were tried at $0 (F297, F299). Round 4b's 8 of 10 is a leaning, n=10, one model, one job.
+**Status.** Logged. The two fixes 2b3813f and 49ca3e7 are test-proven, not seen live.
+
+
+## F297 — drop the broken AI extras after the last try: POC PASS, NOT BUILT (2026-11-09; $0 POC, no model call; HEAD 49ca3e7)
+
+**Facts.** `.claude/scratch/r10/dropextras/POC-RESULTS.md` (PREREG frozen with Amendment 1 before any data). Idea: after the LAST try fails, if every red points at one AI-written part that is not a pick, drop that part and list its words under Not checked; a red on a pick, or a red tied to no part, still refuses the plan. Corpus: 8 dead drafts in rounds 1-4b, 7 usable (round 1 d1 had no declaration). Result: 4 of 7 already green at HEAD (healed by earlier commits, no credit to the drop); 3 rescued (round 4 d8, round 4b d1 and d4), 0 refused, 0 still red; the rescues kept both agreed picks, `picks` record identical, H1-H5 11111; 45 declarations that already pass: 0 differ with the hook (it was never active); every one of 29 reds is tied to a part. Bars P1-P5 PASS, RESULT PASS.
+**Limits (from the file).** One job, one drafter family, 3 rescues only. The branch "a dropped part leaves a `~` rule uncovered, so write a `refused` entry" was never reached by a real draft (synthetic check only). A rescue drops a fact part that checked real things (release version and date): the plan passes but those become Not checked, a weaker plan than a clean draft. Not seen live.
+**Reading.** `~` picks are never dropped and nothing drops silently. The honesty risk is fwd's (F298): a drop can hide fact loss behind an honest Not checked.
+**Status.** NOT BUILT. Parked in the PRD addendum v1.131 tick 4.
+
+
+## F298 — fwdloop's F165: the AI's page facts vanish when count picks share a line; retention must be measured (2026-11-09; read-only note on fwdloop's FINDINGS; fwd result RELAYED, not in the file read)
+
+**Facts.** fwdloop's `docs/logs/FINDINGS.md` F165 (read only) pre-registers a paid test of the mirror failure: arm A is a flights job (a price check on the fact line), arm B is the same plus `~ exactly 3 bullets` and `~ under 80 words` on that line; 10 drafts per arm, deepseek-flash; the measure is how many drafts keep a green cited price check. The pre-registration is the only F165 text in that file at the time of writing. The result as relayed to me: fwd drafts never die, but the AI's page facts vanish when count picks share the line, 2 of 10 against 9 of 10. I did not see that figure in a file; it needs to be verified against fwd's own record before it is quoted anywhere else.
+**Warning from fwd, kept.** Measure retention. A drop mechanism like F297 can hide fact loss behind an honest Not checked, so a round can read as healthy while the AI's page checks disappear.
+**Reading for bareloop.** Our bar H1-H5 never measured retention: it asks whether nothing was dropped silently, not how often the AI's page check survives. F299 measures it at $0.
+**Status.** The retention measure is in the PRD addendum v1.131 tick 7.
+
+
+## F299 — offer the AI's extra checks as questions that code builds: POC FAIL on retention, 51.9% (2026-11-09; $0 POC, no model call; HEAD 49ca3e7)
+
+**Facts.** `.claude/scratch/r10/offerextras/POC-RESULTS.md`. Idea: the drafter writes NO fact or cited part; code builds each page check from the page look's facts and offers it as a question ("I can also check ... agree / drop it", at most 3 per line, outside the 3-question cap), recorded in a signed sibling `offered` record. Corpus: 33 of the 34 drafts of rounds 1-4b (one fit-stopped, excluded); looks are nondeterministic (all 27 with a line-level fact differ); one job, one page type; answers simulated.
+- O1 PASS and O2 PASS: plans with the offers (and with all buildable offers, and with picks only) pass the gate and H1-H5 on 33 of 33. The cap of 3 never bound (max 3), so it is UNTESTED.
+- O3 FAIL: of 27 drafts whose look had a line-level fact, 14 had at least one buildable offer, 51.9%, under the 80% bar. Of 38 suggestions: 21 built, 10 "alternatives", 5 "short", 2 "name".
+- O4 PASS (every suggestion not added is listed in Not checked by its words, 38 of 38) and O5 PASS (21 questions, none holds JSON or a field name).
+- Biggest cause: the 10 "alternatives" are the change-type facts (one of Added / Changed / Fixed). bareguard's `phrases` on a `cited` fact is ALL-of, case-insensitive plain substring (`node_modules/bareguard/src/primitives/rubric-locate.js:1091-1106`), so "one of these words" cannot be signed. See `docs/product/UPSTREAM-ASKS.md` BG-4.
+- O6 (listed, not a pass): 17 of the 21 built checks quote THIS week's page (14 the latest heading, version or date; 3 one bullet's text) and would fail a correct output on next week's changelog; a signed plan is a repeating shape. 4 are the section word ("### Fixed"). One built check was WRONG: `summary: "Fixed"` made a single change word required where the person meant any change word. A length floor of 4 characters is too weak ("fixed", "0.54.1"). The rule on length (b2, 4 or more letters or digits) refused 5 phrases that would not have been good checks.
+- Extra, reported: on the 26 drafts that have a logged refused try, with the drafter's fact parts stripped, 22 of 26 pass with offers and 24 of 26 with picks only. Two plans fail only because a drafter `cited` part stays beside the code-built fact part (the same red that killed round 4b's two dead drafts), so the cited part needs code ownership too; stripping it gives 24 of 26 and rescues 6 of the 8 drafts red at HEAD.
+**Reading.** The mechanism never makes a plan the gate refuses and never loses a check silently, but retention is 51.9% and not underpowered (n=27), so the design as written does NOT meet fwd's retention ask. Nothing was seen live.
+**Learning.** The look's most wanted extra, one word out of several, is not expressible today. Page-frozen quotes are the larger danger: they pass at draft and fail next week.
+**Status.** Not built. Redo after bareguard any-of (BG-4) and a repeating-job rule for offers (PRD addendum v1.131 ticks 5 and 6).
+
+
+## F300 — R10 paid rounds: the process lessons (2026-11-09; summary of F290-F299; five paid rounds $0.5863)
+
+**Facts.** Paid rounds: round 1 $0.2487, round 2 $0.0575, round 3 $0.0604, round 4 $0.1111, round 4b $0.1086; all Fireworks deepseek-flash; all FAIL on their frozen bar; the POCs (keep-both, drop-extras, offer-extras) and replays were $0.
+**Lessons, each paid for.**
+- Each live fix exposed the next one (round 1 pair defect, round 2 look scoping, round 3 fact-twice, round 4 unsortable and phrase-rare, round 4b drafter extras). Expected, and traced each time, but five rounds of this is the patch-chain pattern: when the drafter keeps writing checks beyond the person's, the owner of those checks is the problem.
+- The frozen rule "a new red kind means redesign, not another patch" worked in round 4: it forced the one-owner redesign (F295). Freezing the redesign trigger before any number existed is why it was not argued away.
+- A test-script answer ("drop it" to a fit ask) and a cap sized without measuring the input each cost a round-1 draft. Both were ours, not the product's.
+- I misread a passing negative control as failed (F290). Read the control's own line, not its look.
+- The honesty bar beats an "all closed" bar. hamr's reframe: check what is really checkable, say what is not, offer what is missing. H1-H5 caught a restated count and a false "can't check" that a closes-or-not bar passes.
+- A replay proves a fix does not break old drafts; it cannot prove it holds on a new draft. Seen live: 16961c4 (round 3) and 31e6e1a (round 4, where d5 recovered). In round 4b the tap shows the strip's trigger on 3 of 10 drafts and the Not-checked move's trigger on 2 (the words reached the artifact on 1); the D3 build did not fire. b3c53d7, 2b3813f and 49ca3e7 have no live reading, so they are test-proven only.
+- A runner's own self-test can crash after the paid part and lose the summary (F296). Its arms must handle a draft with no fact part.
+- Retention was never measured in our bar (F298). Add it to every future round.
+**Status.** Logged. Next steps are in the PRD addendum v1.131.

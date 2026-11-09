@@ -2205,3 +2205,18 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 ### Dropped: a workflow graph or a rigid-workflow export (v1.130 — 2026-11-09) — DROPPED by hamr
 
 - A graph of the winning path, or a fixed workflow taken out to run on its own, is not pursued: the value is the plan written for each run, the learnings and the memo, plus healing by retry under the judge, not a fixed path. Paths differ per model and need healing when the input changes; a graph keeps no judge. The existing export stays as built (it carries the harness and the arbiter) and gets no further work. See F289 for the retry share.
+
+### Rubric drafting: the person's ~ rules first, the AI's extra checks offered and built by code (v1.131 — 2026-11-09)
+
+hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and does its best to check it honestly and if one is missing or could be reshaped better that should be offered, our goal is to make it honest and check what's really checkable in rubric and say what it isn't, not to close all". The evidence is `docs/wiki/FINDINGS.md` F290-F300. Contract only; each tick has a status.
+
+1. **`~` first.** Each `~` rule is matched by code (a count becomes a pick, built by code, never dropped) or shown honestly as Not checked; an unmatched rule is asked as a question. BUILT (F290-F296).
+2. **One owner per count rule: code plus the person.** The look asks nothing about a count, the drafter writes none, the pick is asked and agreed. BUILT (F292, F295).
+3. **The AI's uncheckable parts go to Not checked, rubric jobs only.** A drafter part that is `none` or `judged` is listed with its words, not a plan-red. BUILT (F295); not seen live beyond the round 4b tap.
+4. **A broken AI-written part after the last try is dropped to Not checked; a pick is never dropped.** PROVEN, NOT BUILT: POC PASS on 7 saved drafts with limits (F297). Build only after tick 7's retention measure exists.
+5. **The AI's extra checks become suggestions.** Code builds each one and offers it as a question ("I can also check ... agree / drop it"); the drafter writes no fact and no cited part itself; an agreed offer is recorded in a signed `offered` record held by the strict gate; at most 3 offers per line, outside the 3-question cap. TO REDO, BLOCKED ON BAREGUARD any-of presence (`docs/product/UPSTREAM-ASKS.md` BG-4): the first POC failed on retention (F299).
+6. **An offer must be a good check for a REPEATING job.** Code refuses to offer a quote that is true only of this week's page (a version, a date, one bullet's text) and refuses phrases too short or too common (a length floor is too weak alone). The rule is TO DESIGN and POC before any build (F299, O6).
+7. **A retention measure goes into every paid round.** The rate of drafts that keep the AI's page checks, with and without count picks, at least 10 drafts per arm. TO BUILD (F298); no paid round on this branch reads without it.
+8. **Shared with fwdloop.** fwd hit the mirror failure (F298); one design for both. fwd is paused by hamr until this is proven here. OPEN.
+
+- **Pointers:** `docs/product/ITEM33-BUILD.md` R10 (shipped pieces, offer redesign open); `docs/product/UPSTREAM-ASKS.md` BG-4.
