@@ -3,7 +3,7 @@
 // its new number, and an edited agreed `~` line is asked once, about the edited words (the answer replaces it; the old line never comes back). The model is a script.
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync, copyFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, copyFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -115,6 +115,12 @@ test('am18 (3): a line whose own words changed is a new line - its rules are ask
   assert.deepEqual(b.leg.checkPicks.picks.map((p) => [p.line, p.kept === true]).sort(), [[1, false], [2, true]]);
 });
 
+test('am18 (3): two lines with the same words are matched in their order - each keeps its own pick, nothing is asked', async () => {
+  const a = await draft('Summarise it\n~ under 80 words\nSummarise it\n~ under 40 words\nSummarise it\n~ under 20 words', { suggest: (g) => ({ checks: g.map((x) => ({ line: /80/.test(x.text) ? 1 : (/40/.test(x.text) ? 2 : 3), guardrail: x.rule, rule: 'maxWords', value: Number(/(\d+) words/.exec(x.text)[1]) })) }), answers: ['agree', 'agree', 'agree'] });
+  const b = await draft(a.session.state.card.jobText, { carryFrom: a.session.id, suggest: () => { throw new Error('no call'); } });
+  assert.deepEqual(b.leg.checkPicks.picks.map((p) => [p.line, p.rule, p.check.value]).sort(), [[1, 1, 80], [2, 1, 40], [3, 1, 20]]);
+});
+
 test('am17 (4): kept picks never count toward the cap - three kept "can\'t check" picks plus one new one still asks', async () => {
   const none = () => ({ checks: [1, 2, 3].map((n) => ({ line: 1, guardrail: n, rule: 'none' })) });
   const a = await draft('Do it\n~ be nice\n~ be brief\n~ be kind', { suggest: none, answers: ['x one', 'x two', 'x three'] });
@@ -153,8 +159,15 @@ test('am21: own words replace the edited line; "drop it" leaves the line and BOT
   assert.deepEqual(drop.leg.checkPicks.left.map((l) => l.rule).sort(), [1, 2]);
 });
 
-test('no record (or a carryFrom that is not a session id): every rule is asked, as on a first draft', async () => {
-  const b = await draft('Summarise the latest release\n~ under 80 words', { carryFrom: '../../etc', suggest: maxWords, answers: ['agree'] });
-  assert.equal(b.asked.length, 1);
-  assert.equal(existsSync(join(SESSIONS, 'x')), false);
+test('no record (or a carryFrom that is not a session id): every rule is asked, as on a first draft; a path is never followed out of the sessions folder', async () => {
+  // a record planted OUTSIDE the sessions folder, reachable by `..`, must not be read
+  const outside = join(dirname(SESSIONS), `${SESSIONS.split('/').at(-1)}-out`);
+  made.push(outside);
+  mkdirSync(join(outside, 'sx'), { recursive: true });
+  writeFileSync(join(outside, 'sx', 'picks-record.json'), JSON.stringify({ picks: [{ lineWords: 'summarise the latest release', occurrence: 0, ruleText: 'under 80 words', added: null, check: { rule: 'maxWords', value: 80 }, own: false, left: false }] }));
+  const rel = `../${SESSIONS.split('/').at(-1)}-out/sx`;
+  const b = await draft('Summarise the latest release\n~ under 80 words', { carryFrom: rel, suggest: maxWords, answers: ['agree'] });
+  assert.equal(b.asked.length, 1, 'the planted record was not read');
+  const c = await draft('Summarise the latest release\n~ under 80 words', { suggest: maxWords, answers: ['agree'] });
+  assert.equal(c.asked.length, 1);
 });

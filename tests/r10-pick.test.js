@@ -40,6 +40,11 @@ test('keepOrDrop drops: a number the guardrail never named (79 for "under 80"), 
   assert.equal(keepOrDrop('anything', null).kept, false);
   assert.match(/** @type {any} */ (keepOrDrop('3 sections: a, b', { rule: 'sections', names: ['a', 'b'] })).why, /says 3 sections/);
 });
+test('keepOrDrop drops a rule that IS on bareguard\'s list but is not offered here', () => {
+  const r = /** @type {any} */ (keepOrDrop('at least 5', { rule: 'min', value: 5 }));
+  assert.equal(r.kept, false);
+  assert.match(r.why, /is on bareguard's list but is not offered here/);
+});
 test('the answer form is one anyOf variant per offered rule plus none, each with exactly that rule\'s own fields', () => {
   const v = SUGGEST_SCHEMA.properties.checks.items.anyOf.map((/** @type {any} */ x) => x.properties.rule.const);
   assert.deepEqual(v, ['nonEmpty', 'maxWords', 'minWords', 'maxLines', 'listItems', 'sections', 'sectionOrder', 'sectionWords', 'mustCarry', 'blockLines', 'none']);
@@ -150,7 +155,7 @@ test('authorClose with picks: the drafter\'s own shape checks (a 79 for "under 8
 });
 
 // ---- the job door: asks before any draft, the cap counts only "I can't check this" ------------------------------------------------------------------
-async function doorWorld(lines, { answer, suggest, lookAsks = false } = {}) {
+async function doorWorld(lines, { answer, suggest, look = { facts: [], prose: [], notFound: [] } } = {}) {
   const file = changelogCopy();
   const proved = await proveRubricInputs({ inputs: [{ n: 1, label: 'Changelog', value: file }], into: join(tmp(), 'seed') });
   assert.equal(proved.ok, true);
@@ -158,7 +163,7 @@ async function doorWorld(lines, { answer, suggest, lookAsks = false } = {}) {
   /** @type {string[]} */ const order = [];
   /** @type {any[]} */ const asked = [];
   /** @type {any} */ let seen = null;
-  const survey = { state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [], facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }], look: { facts: [], prose: [], notFound: [] } } };
+  const survey = { state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [], facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }], look } };
   const r = await forJob({
     answers: { 1: '1. x' }, verdictType: 'soft-green', repoPath: proved.prep.tree, lang: RUBRIC_LANG, jobLines: JSON.parse(JSON.stringify(lines)), inputs: [{ n: 1, label: 'Changelog', value: file }], writeScope: ['output/'],
     provider: { fake: true }, ceilingUsd: 1, onPhase: (p) => order.push(p),
@@ -197,6 +202,16 @@ test('the cap: proposals never count; the look\'s asks plus "I can\'t check this
   assert.equal(four.asked.length, 0);
   assert.match(four.r.reds[0].detail, /Your job has 4 rules I can't check or had to guess\./);
   assert.match(four.r.reds[0].detail, /line 1 "a" → I can't check this/);
+  // the look's own ask counts with the pick asks: one look ask + three "I can't check this" = four = refused, and only the look ask was put to the person
+  const withLook = [{ n: 1, text: 'List flights', rule: 'not a red-eye; b; c; d', rules: ['not a red-eye', 'b', 'c', 'd'] }];
+  const lookFacts = { facts: [{ line: 1, name: 'Departure', shape: 'time', source: 'Changelog', example: '', forRule: 1, reading: { op: 'between', lo: '06:00', hi: '21:00' } }], prose: [], notFound: [] };
+  const five = await doorWorld(withLook, { suggest: { checks: [] }, answer: () => 'drop it', look: lookFacts });
+  assert.equal(five.r.stop, 'look-asks-too-many');
+  assert.equal(five.asked.length, 1, 'only the look ask was asked');
+  assert.match(five.r.reds[0].detail, /Your job has 4 rules I can't check or had to guess\./);
+  const three = [{ n: 1, text: 'Do', rule: 'a; b; c', rules: ['a', 'b', 'c'] }];
+  const exactly = await doorWorld(three, { suggest: { checks: [] }, answer: () => 'drop it' });
+  assert.equal(exactly.asked[0].length, 3, 'exactly MAX_QUESTIONS counted asks are asked, not refused');
   const proposals = [{ n: 1, text: 'Do', rule: 'under 1 words; under 2 words; under 3 words; under 4 words', rules: ['under 1 words', 'under 2 words', 'under 3 words', 'under 4 words'] }];
   const ok = await doorWorld(proposals, { suggest: { checks: [1, 2, 3, 4].map((n) => ({ line: 1, guardrail: n, rule: 'maxWords', value: n })) }, answer: () => 'agree' });
   assert.equal(ok.asked[0].length, 4, 'four proposals are asked, none counts');
