@@ -14,6 +14,7 @@ import { isRateLimited, rateLimitWaitMs } from './ratelimit.js';
 import { isOutputCutOff } from './authorflow.js';
 import { AUTHOR_CALL_TIMEOUT_MS, AUTHOR_SCOUT_MAX_TOKENS, SURVEY_CAUSES } from './authorscout.js';
 import { lineRules, boundInWords, wordsSaidOn } from './rubricstep.js';
+import { isCountable } from './checkpick.js';
 import { applyPageRules, validReading } from './pagerules.js';
 import { dryReadMoney, dryReadTimes, dryReadPhrases } from './pagedry.js';
 import { ruleWords, FACT_LANGS } from './facts.js';
@@ -240,6 +241,7 @@ export function readingOfQuestion(q) {
  *     bound they wrote themselves is theirs and nothing is asked. `agree` writes the reading as a `~` rule in plain words (the answer text is
  *     `reading`), so the drafter is told it and the fact signs plain.
  *   - CAN'T CHECK: no kept fact carries it (PRD v1.106 Part 5 Q3 T2). `drop it` leaves it Not checked.
+ * A COUNT rule (`isCountable`: words, list items or lines, sections) is none of these: it is asked once, as a pick (R10, fwd am24); the look's facts about it stay.
  * One ask per rule text on a line; readings first, then can't-check asks, each in line order. The caller applies the machine's cap and the answer gate.
  * @param {{facts?: {line: number, forRule?: number, name?: string, shape?: string, unit?: string[], currency?: string[], reading?: import('./pagerules.js').Reading}[]}|null|undefined} look
  * @param {{n: number, text?: string, rule?: string, rules?: string[]}[]|null|undefined} jobLines
@@ -256,6 +258,7 @@ export function askableFromLook(look, jobLines) {
   for (const l of Array.isArray(jobLines) ? jobLines : []) {
     lineRules(l).forEach((rule, k) => {
       const n = k + 1;
+      if (isCountable(rule)) return; // R10 (fwd am24): a count rule is asked ONCE, as a pick (src/checkpick.js), never as a page question ("I can't check this on the page" / "I read it as"); its look facts stay
       const key = `${l.n}\u0000${rule.trim().toLowerCase()}`;
       const tied = facts.filter((f) => f.line === l.n && f.forRule === n);
       if (tied.length > 0) {

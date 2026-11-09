@@ -44,9 +44,10 @@ test('the real draft-5 look: the same, and no "I can\'t check this on the page" 
   assert.deepEqual(key(scopedRules(jobLines, { inputs: FILE_INPUT, look })), ['1.1', '1.2']);
 });
 
-test('askableFromLook still asks the can\'t-check about rule 2 on its own (the look is untouched); the door drops it because the pick path owns the rule', async () => {
+test('askableFromLook asks nothing about a count rule (R10 one owner, fwd am24): the pick path owns it; the look\'s facts stay', async () => {
   const look = await lookOf('d4');
-  assert.deepEqual(askableFromLook(look, jobLines).map((a) => [a.rule, a.ask]), [[2, 'cant-check']]);
+  assert.deepEqual(askableFromLook(look, jobLines).map((a) => [a.rule, a.ask]), []);
+  assert.ok(look.facts.some((f) => f.forRule === 1));
 });
 
 test('countable reader: words, list items, lines and sections; nothing else', () => {
