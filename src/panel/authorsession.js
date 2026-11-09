@@ -687,6 +687,8 @@ export function createSession(card, deps = {}) {
     if (PHASE_STEP[name]) stepStart(PHASE_STEP[name], PHASE_STEP[name] === 'draft' ? `${card.model}, $${card.capUsd.toFixed(2)} cap` : undefined);
     // WHY a try was refused: the drafting log keeps it beside the call that made it (it used to say only "retry 3 of 3"), and the
     // progress line shows it briefly, in code's words
+    // PRD v1.131 tick 7: the retention counts of a rubric draft, one line when it ends (counts only, no words)
+    if (name === 'draft-retention' && Array.isArray(data.lines)) appendDraftLog(outDir, { kind: 'retention', no: Math.max(0, state.steps.length - 1), lines: data.lines, at: new Date().toISOString() });
     if (name === 'author-try-failed') {
       lastTryRefused = true;
       const no = state.steps.findLastIndex((/** @type {any} */ x) => x.id === 'draft');

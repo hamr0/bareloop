@@ -87,7 +87,7 @@ import {
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
 import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
-import { applyPicks, fillAndMergeFacts, moveUncheckable, settleRules } from './checkpick.js';
+import { applyPicks, fillAndMergeFacts, moveUncheckable, retentionOf, settleRules } from './checkpick.js';
 import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, withFactBindings, settlePersonsWords, withDropNotes, lineRules } from './rubricstep.js';
 import { dropRows, dropLine } from './pagedropwords.js';
 import { factShapeGuide } from './facts.js';
@@ -2873,6 +2873,19 @@ export async function authorClose({
     lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue, writeScope, confirmed, jobLines, inputs,
     labelLists, ...(checkPicks ? { settled: checkPicks.rules } : {}),
   }) + (ticket ? `\n\n${ticketFilterBlock()}` : '');
+  // the draft gate on one settled declaration: validation, then (PART 1c, rubric) code proves, at $0, that every label is PICKED from the input's own list and every word a fact depends
+  // on is really in the source (white-space blind, once is enough). A word that is not found is a red naming the word and the input; the drafter revises like it does for any validation red.
+  const checkDraft = (/** @type {any} */ d) => {
+    let r = validateDeclaration(d, { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope, jobLines, inputLabels: inputLabelsOf(inputs) });
+    if (r.ok && lang === RUBRIC_LANG) {
+      const words = checkDeclarationWords(r.declaration, inputTexts, facts?.look ?? null);
+      if (words.length > 0) r = { ...r, ok: false, reds: [...r.reds, ...words], declaration: null };
+    }
+    return r;
+  };
+  // PRD v1.131 tick 7: per try (by call label), the retention counts of a rubric draft; the one that stands is reported once at the end
+  /** @type {Map<string, ReturnType<typeof retentionOf>>} */
+  const retentions = new Map();
   /** @type {any[]} */
   let messages = [{ role: 'user', content: prompt }];
   /** the drafter's PROPOSED ticket filter of the accepted iteration (a Tickets job only); the person signs it, the spec carries it, the close never does @type {any} */
@@ -3060,14 +3073,9 @@ export async function authorClose({
       previous = { d: ask.declaration, f: proposedFilter ?? null };
 
       // PART 1b: code puts the number tie on every prose step that follows a fact step, before anything is validated or signed
-      let v = validateDeclaration(withFactBindings(withDropNotes(settlePersonsWords(picked(ask.declaration), jobLines), facts?.look?.dropped, jobLines)), { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope, jobLines, inputLabels: inputLabelsOf(inputs) });
-      // PART 1c: code proves, at $0, that every label is PICKED from the input's own list and every word a fact depends on is really
-      // in the source (white-space blind, once is enough). A word that is not found is a red naming the word and the input; the
-      // drafter revises like it does for any validation red.
-      if (v.ok && lang === RUBRIC_LANG) {
-        const words = checkDeclarationWords(v.declaration, inputTexts, facts?.look ?? null);
-        if (words.length > 0) v = { ...v, ok: false, reds: [...v.reds, ...words], declaration: null };
-      }
+      const pre = withFactBindings(withDropNotes(settlePersonsWords(picked(ask.declaration), jobLines), facts?.look?.dropped, jobLines));
+      let v = checkDraft(pre);
+      if (lang === RUBRIC_LANG) retentions.set(label, retentionOf(ask.declaration, pre, jobLines));
       // MCP + tickets piece 2: a proposed ticket filter is read by the ONE reader (src/ticketfilter.js); its reds carry a legal example and go back to the drafter like any red
       if (v.ok && ticket && proposedFilter !== undefined) {
         const fr = ticketFilterReds(proposedFilter);
@@ -3200,6 +3208,10 @@ export async function authorClose({
       }
     }
   }
+
+  // PRD v1.131 tick 7: ONE retention record when a rubric draft ends (accepted or stopped), counts only; the panel writes it into the drafting log
+  const standing = fellBack ? retentions.get(fellBack.to) : [...retentions.values()].at(-1);
+  if (standing) onPhase('draft-retention', { lines: standing });
 
   const reds = fatal.length ? fatal : (lastValidation && !lastValidation.ok ? lastValidation.reds : []);
   return {

@@ -489,3 +489,29 @@ export function fillAndMergeFacts(declaration, inputLabels, rubric) {
   });
   return changed ? { ...declaration, stages } : declaration;
 }
+
+/**
+ * RETENTION record of one rubric draft (PRD v1.131 tick 7; record only). Per job line: `aiParts` = what the drafter wrote on it that is the AI's own check or extra (a fact counts once per
+ * fact it lists, a `cited` part, a part code later moves as `none` / `judged`; guards and the drafter's own count checks are not counted, the picks strip those), `kept` = how many of
+ * those are still in the final declaration, `dropped` = what code removed (the move to Not checked, the drop after the last try), `picks` = the line has code-matched count picks. A merge
+ * of fact parts keeps every fact, so it drops nothing. Pure; no words, only counts.
+ * @param {any} drafted the declaration as the drafter sent it @param {any} final the declaration the draft ended with @param {any[]|null|undefined} jobLines
+ * @returns {{line: number, aiParts: number, kept: number, dropped: number, picks: boolean}[]}
+ */
+export function retentionOf(drafted, final, jobLines) {
+  const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  if (!isRec(drafted) || !Array.isArray(drafted.stages) || !isRec(final) || !Array.isArray(final.stages)) return [];
+  const partsOn = (/** @type {any} */ d, /** @type {number} */ n) => d.stages.flatMap((/** @type {any} */ st) => (isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && st.params.step === n && Array.isArray(st.params.parts) ? st.params.parts : []));
+  const units = (/** @type {any[]} */ parts, /** @type {string[]} */ classes) => parts.reduce((/** @type {number} */ sum, /** @type {any} */ p) => {
+    if (!isRec(p)) return sum;
+    if (p.class === 'fact') return classes.includes('fact') ? sum + Math.max(1, Array.isArray(p.facts) ? p.facts.length : 0) : sum;
+    if (p.class === 'countable' && p.check === 'cited') return classes.includes('cited') ? sum + 1 : sum;
+    return (p.class === 'none' || p.class === 'judged') && classes.includes('moved') ? sum + 1 : sum;
+  }, 0);
+  const picks = Array.isArray(final.picks) ? final.picks : [];
+  return (Array.isArray(jobLines) ? jobLines : []).filter((l) => isRec(l) && Number.isInteger(l.n)).map((l) => {
+    const aiParts = units(partsOn(drafted, l.n), ['fact', 'cited', 'moved']);
+    const kept = Math.min(aiParts, units(partsOn(final, l.n), ['fact', 'cited']));
+    return { line: l.n, aiParts, kept, dropped: aiParts - kept, picks: picks.some((/** @type {any} */ k) => isRec(k) && k.line === l.n) };
+  });
+}
