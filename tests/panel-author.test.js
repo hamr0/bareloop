@@ -556,7 +556,10 @@ test('createSession end to end: draft -> plan menu -> prepared -> sign, driven b
   // any more, so the first (and only, for a non-ambiguous-language repo)
   // ask the confirm turn raises is the menu itself.
   assert.ok(await waitForAskKind('menu'), `expected a menu ask; got phase=${session.state.phase} error=${session.state.error}`);
-  assert.equal('revisesLeft' in session.state, false, 'no typed-revise rounds exist any more');
+  // R10 / fwd M4e am14 item 3: a first draft has used no revises, so the server's count says 2 left (MAX_REVISES); there is still no typed
+  // change request (no session.revise) - Revise reopens the boxes and starts a new session
+  assert.equal(session.state.revisesLeft, 2, 'a first draft has its 2 revises left');
+  assert.equal(session.state.revisesUsed, 0);
   assert.equal(typeof /** @type {any} */ (session).revise, 'undefined');
   // P7: the plan is a STRUCTURED message the page draws with the one renderer (one owner: planMessage) — each numbered
   // job line, its rule, its drafted check; the always-on protections serve no line
