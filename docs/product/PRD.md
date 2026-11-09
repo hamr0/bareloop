@@ -2201,3 +2201,7 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 ### Dropped: more retries for long jobs (v1.129 — 2026-11-09) — DROPPED by hamr after a $0 read
 
 - Idea (hamr): a long-job checkmark that doubles strikes and tries, dropped; the $0 read found retry-limit reds were stuck, not short of room; see F289 in `docs/wiki/FINDINGS.md`.
+
+### Dropped: a workflow graph or a rigid-workflow export (v1.130 — 2026-11-09) — DROPPED by hamr
+
+- A graph of the winning path, or a fixed workflow taken out to run on its own, is not pursued: the value is the plan written for each run, the learnings and the memo, plus healing by retry under the judge, not a fixed path. Paths differ per model and need healing when the input changes; a graph keeps no judge. The existing export stays as built (it carries the harness and the arbiter) and gets no further work. See F289 for the retry share.
