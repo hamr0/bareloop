@@ -220,6 +220,25 @@ export const suggestChannel = () => ({
 });
 
 /**
+ * The check CODE proposes for a count rule when the call yields none (R10, ours; fwd has no such fallback): a bullets / list-items / points count -> listItems N, a lines count ->
+ * maxLines N, ONE word number -> minWords N when the rule says "at least / minimum / more than", else maxWords N. A section count names no sections, so none is built; a rule naming two different counts ("3 bullets under 80 words") is not built either; a rule with
+ * several word numbers or a range ("between 100 and 200 words") is not guessed. The result passes `keepOrDrop`, so every number is one the rule names.
+ * @param {string} text @returns {Record<string, any>|null}
+ */
+export function countCheck(text) {
+  const items = guardrailItemCount(text);
+  const words = guardrailWordNumbers(text);
+  /** @type {Record<string, any>|null} */
+  let built = null;
+  if (items !== null && (words.length > 0 || guardrailSectionCount(text) !== null)) return null; // two different counts in one rule: first-match readers would guess, so nothing is built
+  if (items !== null) built = { rule: /\blines?\b/i.test(text) && !/\b(bullets?|items?|points?)\b/i.test(text) ? 'maxLines' : 'listItems', value: items };
+  else if (words.length === 1 && !/\bbetween\b|\d\s*(?:-|–|to)\s*\d/i.test(text)) built = { rule: /\b(at least|min(?:imum)?|more than|over|no fewer than)\b/i.test(text) ? 'minWords' : 'maxWords', value: words[0] };
+  if (built === null) return null;
+  const res = keepOrDrop(text, built);
+  return res.kept ? res.check : null;
+}
+
+/**
  * What the call's answer comes to, one row per scoped rule: the check kept (or null) and why it was dropped. A rule the answer never mentions is dropped as `no entry`; an
  * entry for a rule that was not sent is ignored.
  * @param {Rule[]} scoped @param {any} args the tool call's arguments
@@ -230,7 +249,10 @@ export function rowsFromAnswer(scoped, args) {
   return scoped.map((s) => {
     const e = entries.find((/** @type {any} */ x) => x?.line === s.line && x?.guardrail === s.rule);
     const res = e === undefined ? /** @type {ReturnType<typeof keepOrDrop>} */ ({ kept: false, why: 'no entry' }) : keepOrDrop(s.text, e);
-    return { ...s, check: res.kept ? res.check : null, why: res.kept ? null : res.why };
+    if (res.kept) return { ...s, check: res.check, why: null };
+    // R10 (hamr 2026-11-09): a count rule is never "I can't check this"; with no kept pick from the call, CODE proposes the check its own readers name
+    const own = countCheck(s.text);
+    return { ...s, check: own, why: own ? null : res.why };
   });
 }
 
@@ -323,12 +345,17 @@ export function applyPicks(declaration, settled) {
   // the record of picks is code's alone: whatever the drafter sent under `picks` is gone, and with no picks settled none is written
   if (settled === null) { const { picks: _drafted, ...rest } = declaration; return rest; }
   const lines = new Set([...settled.checks.map((c) => c.line), ...settled.notes.map((n) => n.line)]);
-  const shape = (/** @type {any} */ p) => isRec(p) && p.class === 'countable' && OFFERED.includes(p.check);
+  // the drafter writes no count of its own: a shape check or a claim count (minClaims / maxClaims) it sent is gone, whatever the line (fwd am22's strip, one owner here)
+  const shape = (/** @type {any} */ p) => isRec(p) && p.class === 'countable' && (OFFERED.includes(p.check) || p.check === 'minClaims' || p.check === 'maxClaims');
   /** the record of what was added, `{line, part}` each: the signed close keeps it, so a pick beside a fact is told from a drafter's own count @type {{line: number, part: any}[]} */
   const record = [];
   const stages = declaration.stages.map((/** @type {any} */ st) => {
     if (!(isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts) && lines.has(st.params.step))) return st;
-    const kept = st.params.parts.filter((/** @type {any} */ p) => !shape(p));
+    /** the numbers the person's picks on this line check (a picked count) @type {number[]} */
+    const vals = settled.checks.filter((c) => c.line === st.params.step).map((c) => c.check.value).filter((v) => typeof v === 'number');
+    // a fact part's `count` that restates a picked count is the drafter's second copy of the person's rule: gone (the fact itself stays)
+    const restates = (/** @type {any} */ p) => isRec(p) && p.class === 'fact' && isRec(p.count) && [p.count.min, p.count.max].some((v) => vals.includes(v));
+    const kept = st.params.parts.filter((/** @type {any} */ p) => !shape(p)).map((/** @type {any} */ p) => { if (!restates(p)) return p; const { count: _restated, ...rest } = p; return rest; });
     const add = settled.checks.filter((c) => c.line === st.params.step).map((c) => partOfPick(c.check, c.text, c.rules));
     for (const part of add) record.push({ line: st.params.step, part });
     return { ...st, params: { ...st.params, parts: [...kept, ...add] } };

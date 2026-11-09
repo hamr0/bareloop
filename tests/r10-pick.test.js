@@ -99,7 +99,7 @@ const scripted = (args, calls = []) => async (_m, tools) => {
   if (args !== null) await tools.find((t) => t.name === SUGGEST_TOOL).execute(args);
   return { text: '', error: null, msgs: [], metrics: { costUsd: 0.0007, unpricedRounds: 0 } };
 };
-test('runCheckSuggest: one forced typed tool call, its cost booked and reported through onCall; an unusable answer (twice) reads "I can\'t check this" for every rule, never a guess', async () => {
+test('runCheckSuggest: one forced typed tool call, its cost booked and reported through onCall; an unusable answer (twice) reads "I can\'t check this" for every non-count rule, never a guess', async () => {
   const seen = []; const booked = [];
   const ok = await runCheckSuggest({ jobLines: [{ n: 1, text: 'Summarise' }], scoped: RULES.slice(0, 1), generate: scripted({ checks: [{ line: 1, guardrail: 1, rule: 'maxWords', value: 80 }] }, seen), onCall: (c) => booked.push(c) });
   assert.equal(ok.state, 'ok');
@@ -109,7 +109,7 @@ test('runCheckSuggest: one forced typed tool call, its cost booked and reported 
   const bad = await runCheckSuggest({ jobLines: [{ n: 1, text: 'Summarise' }], scoped: RULES.slice(0, 2), generate: scripted(null) });
   assert.equal(bad.state, 'absent');
   assert.equal(bad.calls.length, 2, 'one retry, both booked');
-  assert.deepEqual(bad.rows.map((r) => r.check), [null, null]);
+  assert.deepEqual(bad.rows.map((r) => r.check), [{ rule: 'maxWords', value: 80 }, null], 'a count rule gets code\'s own proposal (R10 D3); "be nice" reads "I can\'t check this"');
 });
 
 // ---- the whole drafting loop: the plan carries only what was picked ----------------------------------------------------------------------------
