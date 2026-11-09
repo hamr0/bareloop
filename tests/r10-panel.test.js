@@ -58,3 +58,31 @@ test('the panel: a proposal and a can\'t-check are asked in fwd\'s words; agree 
   assert.deepEqual(picks.map((e) => [e.rule, e.how]), [[1, 'agree'], [2, 'drop it']]);
   assert.deepEqual(picks[0].picked, { rule: 'maxWords', value: 80 });
 });
+
+test('the prepared plan card (through the real drafting loop) has a "You picked" row, the picked check row, and the unpicked rule under Not checked', async () => {
+  const file = join(tmp(), 'CHANGELOG.md');
+  copyFileSync(join(HERE, '..', 'CHANGELOG.md'), file);
+  const session = createSession({
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'r10-card', jobText: '1. Summarise the latest release\n~ exactly 3 bullets\n~ be kind', inputs: `Changelog: ${file}`, destination: join(tmp(), 'delivered'), capUsd: 1,
+  }, {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(), sessionsRoot: tmp('r10-sess-'),
+    lookFn: async () => ({ state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [], facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }], look: { facts: [], prose: [], notFound: [] } } }),
+    pickGenerate: async (_m, tools) => { await tools[0].execute({ checks: [{ line: 1, guardrail: 1, rule: 'listItems', value: 3 }, { line: 1, guardrail: 2, rule: 'none' }] }); return { text: '', error: null, msgs: [], metrics: { costUsd: 0.0009, unpricedRounds: 0 } }; },
+    confirmGenerate: async (_c, tools) => { await tools[0].execute({ goal: 'g', checks: [], notChecked: [], questions: [] }); return { text: '', error: null, cost: 0.0005 }; },
+    generate: async (_m, tools) => {
+      await tools[0].execute({ stages: [{ name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } }, { name: 'line-1', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts: [{ text: 'made up', class: 'countable', check: 'maxWords', value: 79, rules: [2] }] } }] });
+      return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } };
+    },
+  });
+  assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'));
+  session.send('agree');
+  assert.ok(await until(() => /\(2 of 2\)/.test(session.state.messages.filter((/** @type {any} */ m) => m.role === 'bot').at(-1).text)));
+  session.send('drop it');
+  assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'));
+  assert.equal(session.signPrepare().ok, true);
+  assert.ok(await until(() => session.state.phase === 'prepared'), `${session.state.phase} ${session.state.error}`);
+  const plan = session.state.messages.filter((/** @type {any} */ m) => m.kind === 'plan').at(-1).plan;
+  assert.deepEqual(plan.lines[0].picked, ['exactly 3 list items']);
+  assert.deepEqual(plan.lines[0].checks.map((c) => c.name), ['the text has exactly 3 list items'], 'the drafter\'s made-up maxWords 79 is not on the card');
+  assert.ok(plan.notChecked.some((n) => /"be kind" — You chose to leave it Not checked/.test(n)), JSON.stringify(plan.notChecked));
+});

@@ -1035,6 +1035,7 @@ export async function authorCloseForJob({
     seedRef: seed,
     authoring: authored,
     judged,
+    ...(checkPicks ? { checkPicks } : {}),
     reds: authored.reds,
     stop: authored.stop,
     cost: authored.cost,
