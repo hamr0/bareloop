@@ -87,7 +87,7 @@ import {
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
 import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
-import { applyPicks, settleRules } from './checkpick.js';
+import { applyPicks, moveUncheckable, settleRules } from './checkpick.js';
 import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, withFactBindings, settlePersonsWords, withDropNotes, lineRules } from './rubricstep.js';
 import { dropRows, dropLine } from './pagedropwords.js';
 import { factShapeGuide } from './facts.js';
@@ -2865,7 +2865,8 @@ export async function authorClose({
   }
   // R10: the picks settled against the lines as they stand now (the answers are already `~` rules on them); the draft carries exactly these checks and these Not checked rows
   const settledPicks = checkPicks ? settleRules(checkPicks.rules, checkPicks.picks, checkPicks.left, jobLines ?? []) : null;
-  const picked = (/** @type {any} */ d) => applyPicks(d, settledPicks);
+  // a rubric job only: what no rule can check goes under Not checked before the picks are applied (every other kind of job keeps its reds)
+  const picked = (/** @type {any} */ d) => applyPicks(moveUncheckable(d, jobLines ?? [], lang === RUBRIC_LANG), settledPicks);
   const prompt = authorPrompt({
     answers, questions, facts, listingBlock: /** @type {string} */ (seeds.block),
     lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue, writeScope, confirmed, jobLines, inputs,

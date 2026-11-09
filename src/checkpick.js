@@ -326,6 +326,54 @@ export function settleRules(rules, picks, left, jobLines) {
   return { checks, notes };
 }
 
+/** the reason a part the drafter could not express as a check is listed under Not checked (fwd's am16: the drafter writes no check of its own, what no rule can check is the person's to judge) */
+export const UNCHECKABLE_WORDS = 'No rule can check this, so you judge it at Accept.';
+
+/**
+ * RUBRIC jobs only (the caller gates on the job's lang): a part the drafter wrote as `none` or `judged` is a thing no rule can check, so it is
+ * listed under Not checked with its own words instead of failing the whole plan (hamr's ruling 2026-11-09, as fwd lists what the drafter cannot check).
+ * A part carrying `~` rule numbers becomes a `refused` entry per rule no other part carries (shown as that rule's own words); any other part
+ * (the job sentence itself) becomes one line in `notes`. Never silent, never a line-level refusal (that would silence the line's other rule reds).
+ * Runs BEFORE applyPicks, so a rule the person's picks settle gets code's own reason there. `guard` and every other class are untouched.
+ * A stage left with no parts stays: an empty stage is the legal prose stage ("what the text says - you judge it at Accept"). Pure.
+ * @param {any} declaration @param {any[]|null|undefined} jobLines @param {boolean} rubric whether the job is a rubric job (the draft gate's `lang === RUBRIC_LANG`); anything else is returned untouched, its reds stand @returns {any}
+ */
+export function moveUncheckable(declaration, jobLines, rubric) {
+  if (rubric !== true) return declaration;
+  const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  if (!isRec(declaration) || !Array.isArray(declaration.stages)) return declaration;
+  const unchecked = (/** @type {any} */ x) => isRec(x) && (x.class === 'none' || x.class === 'judged');
+  const isStage = (/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts);
+  if (!declaration.stages.some((/** @type {any} */ st) => isStage(st) && st.params.parts.some(unchecked))) return declaration;
+  const refused = Array.isArray(declaration.refused) ? [...declaration.refused] : [];
+  const notes = Array.isArray(declaration.notes) ? [...declaration.notes] : [];
+  /** @type {{line: number, part: any}[]} */
+  const moved = [];
+  const stages = declaration.stages.map((/** @type {any} */ st) => {
+    if (!isStage(st) || !st.params.parts.some(unchecked)) return st;
+    for (const part of st.params.parts.filter(unchecked)) moved.push({ line: st.params.step, part });
+    return { ...st, params: { ...st.params, parts: st.params.parts.filter((/** @type {any} */ x) => !unchecked(x)) } };
+  });
+  const carried = (/** @type {number} */ line, /** @type {number} */ n) => stages.some((/** @type {any} */ st) => isStage(st) && st.params.step === line
+    && st.params.parts.some((/** @type {any} */ x) => isRec(x) && Array.isArray(x.rules) && x.rules.includes(n)));
+  for (const { line, part } of moved) {
+    const jl = (jobLines ?? []).find((/** @type {any} */ l) => isRec(l) && l.n === line);
+    const nRules = jl ? lineRules(jl).length : 0;
+    const nums = Array.isArray(part.rules) ? [...new Set(part.rules.filter((/** @type {any} */ n) => Number.isInteger(n) && n >= 1 && n <= nRules))] : [];
+    if (nums.length === 0) {
+      const words = String(part.text ?? '').replace(/\s+/g, ' ').trim();
+      const text = `line ${line}: ${words ? `"${words}"` : 'a part of this line'} \u2014 ${UNCHECKABLE_WORDS}`;
+      if (!notes.includes(text)) notes.push(text);
+      continue;
+    }
+    for (const n of nums) {
+      if (carried(line, n) || refused.some((/** @type {any} */ r) => isRec(r) && r.line === line && r.rule === n)) continue;
+      refused.push({ line, rule: n, reason: UNCHECKABLE_WORDS });
+    }
+  }
+  return { ...declaration, stages, ...(refused.length ? { refused } : {}), ...(notes.length ? { notes } : {}) };
+}
+
 /** a part of a rubric-step stage, from a pick: the check's own fields, the rule's words, and the `~` rule numbers it carries out @param {Record<string, any>} check @param {string} text @param {number[]} rules */
 export function partOfPick(check, text, rules) {
   const { rule, ...fields } = check;
