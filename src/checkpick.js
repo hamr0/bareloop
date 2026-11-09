@@ -426,3 +426,66 @@ export function applyPicks(declaration, settled) {
   const { picks: _drafted, ...rest } = declaration;
   return { ...rest, stages, ...(record.length ? { picks: record } : {}), ...(base.length ? { refused: base } : {}) };
 }
+
+/** the `source` of a part is missing: absent, not a string, or only white space */
+const noSource = (/** @type {any} */ p) => typeof p.source !== 'string' || p.source.trim() === '';
+/** the fields a fact part may carry; a part with any other field is never merged (its extra field would be lost) */
+const FACT_FIELDS = ['text', 'class', 'covers', 'rules', 'source', 'facts', 'count'];
+
+/**
+ * RUBRIC jobs only (the caller gates on the job's lang; anything else is returned untouched, its reds stand). Two small, mechanical steps on every rubric-step stage, run
+ * before validation (hamr's ruling 2026-11-09):
+ *  F1 source fill: when the job has EXACTLY ONE input label, a `fact` part, or a `cited` part, whose `source` is missing or empty gets that label. With 2+ labels nothing is filled; a
+ *     wrong non-empty source is never rewritten (its red stands).
+ *  F2 fact merge: when ONE stage holds 2+ `fact` parts they become ONE fact part (where the first stood): the `facts` of all in order, the union of `rules` and of `covers`, the one shared
+ *     `source`, the `text`s joined with "; ". Only when it is safe, else the parts stay and the existing second-fact-list red fires: the sources differ (after F1), two facts share a name
+ *     (compared white-space and case blind), the parts' `count`s differ (a part with no count agrees with any; the merged part carries the one count), a part is not a plain object or has a
+ *     field a fact part does not carry, or `facts` is not a list.
+ * Runs AFTER applyPicks (its strip of a count that restates a pick has already happened). Pure.
+ * @param {any} declaration @param {string[]|null|undefined} inputLabels the labels of the job's inputs @param {boolean} rubric the draft gate's `lang === RUBRIC_LANG` @returns {any}
+ */
+export function fillAndMergeFacts(declaration, inputLabels, rubric) {
+  if (rubric !== true) return declaration;
+  const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  if (!isRec(declaration) || !Array.isArray(declaration.stages)) return declaration;
+  const only = Array.isArray(inputLabels) && inputLabels.length === 1 && typeof inputLabels[0] === 'string' && inputLabels[0] !== '' ? inputLabels[0] : null;
+  const isFact = (/** @type {any} */ p) => isRec(p) && p.class === 'fact';
+  const sortKeys = (/** @type {any} */ v) => JSON.stringify(v, (_k, x) => (isRec(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : 1))) : x));
+  const nameOf = (/** @type {any} */ f) => (isRec(f) && typeof f.name === 'string' ? f.name.replace(/\s+/g, ' ').trim().toLowerCase() : null);
+  const union = (/** @type {any[]} */ parts, /** @type {string} */ key) => {
+    const all = parts.flatMap((p) => (Array.isArray(p[key]) ? p[key] : []));
+    return all.filter((x, i) => all.findIndex((y) => sortKeys(y) === sortKeys(x)) === i);
+  };
+  /** @param {any[]} parts @returns {any|null} the merged part, or null when merging is not safe */
+  const merge = (parts) => {
+    if (!parts.every((p) => Object.keys(p).every((k) => FACT_FIELDS.includes(k)) && Array.isArray(p.facts))) return null;
+    if (new Set(parts.map((p) => p.source)).size !== 1) return null;
+    const names = parts.flatMap((p) => p.facts.map(nameOf));
+    if (names.some((n) => n === null) || new Set(names).size !== names.length) return null;
+    const counts = parts.filter((p) => p.count !== undefined).map((p) => sortKeys(p.count));
+    if (new Set(counts).size > 1) return null;
+    const texts = parts.map((p) => (typeof p.text === 'string' ? p.text.trim() : '')).filter((t, i, a) => t !== '' && a.indexOf(t) === i);
+    const rules = union(parts, 'rules'), covers = union(parts, 'covers');
+    const withCount = parts.find((p) => p.count !== undefined);
+    return {
+      ...(texts.length ? { text: texts.join('; ') } : {}), class: 'fact', source: parts[0].source,
+      ...(covers.length ? { covers } : {}), ...(rules.length ? { rules } : {}), facts: parts.flatMap((p) => p.facts),
+      ...(withCount ? { count: withCount.count } : {}),
+    };
+  };
+  let changed = false;
+  const stages = declaration.stages.map((/** @type {any} */ st) => {
+    if (!(isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts))) return st;
+    let parts = st.params.parts;
+    if (only !== null) {
+      parts = parts.map((/** @type {any} */ p) => (isRec(p) && (p.class === 'fact' || (p.class === 'countable' && p.check === 'cited')) && noSource(p) ? { ...p, source: only } : p));
+    }
+    const facts = parts.filter(isFact);
+    const merged = facts.length > 1 ? merge(facts) : null;
+    if (merged) parts = parts.flatMap((/** @type {any} */ p) => (p === facts[0] ? [merged] : isFact(p) ? [] : [p]));
+    if (parts.every((/** @type {any} */ p, /** @type {number} */ i) => p === st.params.parts[i]) && parts.length === st.params.parts.length) return st;
+    changed = true;
+    return { ...st, params: { ...st.params, parts } };
+  });
+  return changed ? { ...declaration, stages } : declaration;
+}
