@@ -15,7 +15,8 @@ import { KIND_CATALOGUE } from '../authoring.js';
 import { splitReadNotes } from '../pagedropwords.js';
 import { checksOfClose, signedFactNames, proseNotChecked, lineRules, confirmedGoalOf } from '../rubricstep.js';
 
-/** @typedef {{name: string, cls: 'machine check'|'judge'|null}} PlanCheck */
+/** `by` = who added the check: the drafter (`agent`) or the person's own pick (`you`); absent = code's own (an always-on guard, a number tie) or not known */
+/** @typedef {{name: string, cls: 'machine check'|'judge'|null, by?: 'agent'|'you'|null}} PlanCheck */
 /** @typedef {{n: number, text: string, rule: string, rules: string[], checks: PlanCheck[], refused: string[], always?: string[], picked?: string[]}} PlanLine */
 /** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], readNotes: string[], alwaysOn: string[], older: boolean, goal?: string, ticketFilter?: string}} JobPlan */
 
@@ -57,7 +58,7 @@ export function rulesOfLine(l) {
  * @returns {JobPlan}
  */
 export function planFromSpec(spec) {
-  /** @type {{name: string, cls: 'machine check'|'judge'|null, fromLine: number[]|null}[]} */
+  /** @type {{name: string, cls: 'machine check'|'judge'|null, fromLine: number[]|null, by?: 'agent'|'you'|null}[]} */
   let stages = [];
   if (spec && Array.isArray(spec.closeDecl?.stages)) {
     stages = spec.closeDecl.stages.filter((/** @type {any} */ s) => s && typeof s.name === 'string' && s.name)
@@ -65,8 +66,8 @@ export function planFromSpec(spec) {
         const fromLine = Array.isArray(s.fromLine) && s.fromLine.length ? s.fromLine.filter(Number.isInteger) : null;
         // PART 1b: a rubric-step stage is shown as the checks it RUNS — one code-worded row per fact, per count, per limit — read by
         // the same reader (`checksOfClose`) the confirm card and the sign-time invariant use, so the Job tab cannot differ from them
-        const rows = s.kind === 'rubric-step' ? checksOfClose({ stages: [s] }) : [];
-        return rows.length > 0 ? rows.map((r) => ({ name: r.text, cls: /** @type {'machine check'} */ ('machine check'), fromLine })) : [{ name: s.name, cls: checkClassOfKind(s.kind), fromLine }];
+        const rows = s.kind === 'rubric-step' ? checksOfClose({ stages: [s], picks: spec.closeDecl.picks }) : [];
+        return rows.length > 0 ? rows.map((r) => ({ name: r.text, cls: /** @type {'machine check'} */ ('machine check'), fromLine, by: r.by })) : [{ name: s.name, cls: checkClassOfKind(s.kind), fromLine, by: /** @type {'agent'} */ ('agent') }];
       });
   } else if (spec && Array.isArray(spec.close)) {
     stages = spec.close.filter((/** @type {any} */ s) => s && typeof s.name === 'string' && s.name)
@@ -99,8 +100,8 @@ export function planFromSpec(spec) {
     if (s.fromLine === null) { alwaysOn.push(s.name); continue; }
     // a check that serves several job lines is shown under EACH line it serves (no new element: the same check line, repeated)
     const served = lines.filter((l) => /** @type {number[]} */ (s.fromLine).includes(l.n));
-    for (const line of served) line.checks.push({ name: s.name, cls: s.cls });
-    if (served.length === 0) loose.push({ name: s.name, cls: s.cls });
+    for (const line of served) line.checks.push({ name: s.name, cls: s.cls, ...(s.by ? { by: s.by } : {}) });
+    if (served.length === 0) loose.push({ name: s.name, cls: s.cls, ...(s.by ? { by: s.by } : {}) });
   }
   // an always-on guard that the drafter said covers a job line is shown under that line too ("› check · always-on: <guard>")
   for (const g of Array.isArray(spec?.closeDecl?.guardLines) ? spec.closeDecl.guardLines : []) {
@@ -124,7 +125,7 @@ export function planFromSpec(spec) {
  * The plan of the confirm turn, before anything is drafted: the person's own job lines, the model's checks under the
  * line each names, its own "not checked" words, and the real protections (code-owned) as "Always checked".
  * @param {{n: number, text: string, rule: string, rules?: string[]}[]|null|undefined} jobLines
- * @param {{checkItems?: {text: string, fromLine: number[]|null}[], checks?: string[], notChecked?: string[], protections?: string[], signedFacts?: string[], ticketFilter?: any, picked?: {line: number, text: string}[]}} plan
+ * @param {{checkItems?: {text: string, fromLine: number[]|null, by?: 'agent'|'you'|null}[], checks?: string[], notChecked?: string[], protections?: string[], signedFacts?: string[], ticketFilter?: any, picked?: {line: number, text: string}[]}} plan
  * `signedFacts` = the names of the facts the look signs (so an S1 copy of a signed fact reads as a note, not Not checked)
  * @returns {JobPlan}
  */
@@ -138,9 +139,10 @@ export function planFromConfirm(jobLines, plan) {
   /** @type {PlanCheck[]} */
   const loose = [];
   for (const c of items) {
+    const by = /** @type {any} */ (c).by === null ? {} : { by: /** @type {'agent'|'you'} */ (/** @type {any} */ (c).by ?? 'agent') };
     const served = lines.filter((l) => Array.isArray(c.fromLine) && c.fromLine.includes(l.n));
-    for (const line of served) line.checks.push({ name: c.text, cls: null });
-    if (served.length === 0) loose.push({ name: c.text, cls: null });
+    for (const line of served) line.checks.push({ name: c.text, cls: null, ...by });
+    if (served.length === 0) loose.push({ name: c.text, cls: null, ...by });
   }
   const { notChecked, readNotes } = splitReadNotes(plan?.notChecked, plan?.signedFacts);
   // R10 (fwd am16 (6)): the checks the person picked, each under its line, in the one table's plain words (`kept from last draft` rides in `text` when a Revise kept it)

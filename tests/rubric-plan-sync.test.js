@@ -56,9 +56,9 @@ test('(b) reconcile: with the real mv5bk400 close, a confirmed check no part cov
   closeDecl.stages[2].params.parts[0].covers = [4];
   const rec = reconcileRubricPlan({ confirmed: CONFIRMED, notChecked: ['be friendly'], closeDecl });
   assert.deepEqual(rec.checkItems, [
-    { text: 'every claim is backed by a quote copied from "Changelog"', fromLine: [1] },
-    { text: 'the text is at most 120 words', fromLine: [1] },
-    { text: 'the text is at most 80 words', fromLine: [2] },
+    { text: 'every claim is backed by a quote copied from "Changelog"', fromLine: [1], by: 'agent' },
+    { text: 'the text is at most 120 words', fromLine: [1], by: 'agent' },
+    { text: 'the text is at most 80 words', fromLine: [2], by: 'agent' },
   ]);
   assert.deepEqual(rec.moved.map((m) => m.text), ['output/steps/1.json lists 3 releases']);
   assert.deepEqual(rec.notChecked, ['be friendly', ...TEXT_NOT_CHECKED, 'line 1: output/steps/1.json lists 3 releases — nothing in this close counts it or checks it against a quote']);

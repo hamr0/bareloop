@@ -1311,6 +1311,8 @@ export function createSession(card, deps = {}) {
       const rec = reconcileRubricPlan({
         confirmed: authored.confirmed?.checkItems ?? [], notChecked: authored.confirmed?.notChecked ?? [], closeDecl: spec.closeDecl, jobLines,
       });
+      // the checks this draft ended with, each marked who added it (`agent` or `you`): the Audit's Draft group shows them (a log line, not a second record of the plan)
+      appendDraftLog(outDir, { kind: 'draft-checks', no: Math.max(0, state.steps.length - 1), checks: rec.checkItems.filter((/** @type {any} */ c) => c.by === 'agent' || c.by === 'you').map((/** @type {any} */ c) => ({ line: c.fromLine[0], text: redactSecrets(String(c.text)), by: c.by })), at: new Date().toISOString() });
       // R10: the checks the person picked, for the plan card's "You picked" rows (the check rows and the Not checked rows come from the signed close itself)
       const cp = authored.checkPicks;
       const picked = cp ? settleRules(cp.rules, cp.picks, cp.left, jobLines).checks.map((c) => ({ line: c.line, text: `${plainWords(/** @type {any} */ (c.check))}${c.kept ? ` \u00B7 ${KEPT_WORDS}` : ''}` })) : [];

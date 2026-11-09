@@ -915,16 +915,21 @@ export function partSentence(part) {
 /**
  * The checks a signed close actually runs, per job line, in plain code-written sentences: one per countable part of every
  * rubric-step stage. This is the ONE reader both the plan card and the sign-time invariant use.
+ * Each row says who added the check (`by`): `you` = one of the person's picks, as the signed close's own record (`closeDecl.picks`) names it; `agent` = the drafter's;
+ * `null` = code's own tie (the numbers of a text step come from the fact quotes), which is neither.
  * @param {any} closeDecl
- * @returns {{line: number, text: string, covers: number[]}[]}
+ * @returns {{line: number, text: string, covers: number[], by: 'agent'|'you'|null}[]}
  */
 export function checksOfClose(closeDecl) {
   const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
+  const record = isRec(closeDecl) && Array.isArray(closeDecl.picks) ? closeDecl.picks : [];
   return stages.flatMap((/** @type {any} */ st) => (isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts)
     ? st.params.parts.filter((/** @type {any} */ p) => isRec(p) && (p.class === 'countable' || p.class === 'fact')).flatMap((/** @type {any} */ p) => {
       const covers = Array.isArray(p.covers) ? p.covers.filter(Number.isInteger) : [];
+      /** @type {'agent'|'you'|null} */
+      const by = p.check === 'numbersFromFacts' ? null : record.some((/** @type {any} */ x) => isRec(x) && x.line === st.params.step && sameJson(x.part, p)) ? 'you' : 'agent';
       // a fact part is one plan row per fact (and one for its count): the person signs the rows, the close runs the same list
-      return (p.class === 'fact' ? factRows(p) : [partSentence(p)]).map((/** @type {string} */ text) => ({ line: st.params.step, text, covers }));
+      return (p.class === 'fact' ? factRows(p) : [partSentence(p)]).map((/** @type {string} */ text) => ({ line: st.params.step, text, covers, by }));
     })
     : []));
 }
@@ -947,14 +952,14 @@ export function signedFactNames(closeDecl) {
  * silently dropped (run mv5bk400: "lists 3 releases" was confirmed, then left out of the signed close without a word).
  * @param {{confirmed: {text: string, fromLine: number[]|null}[], notChecked: string[], closeDecl: any, jobLines?: any[]|null}} o
  *   `jobLines` — the person's numbered lines, so a ~ rule the drafter listed as Not checked reads in the person's own words
- * @returns {{checkItems: {text: string, fromLine: number[]}[], notChecked: string[], moved: {text: string, fromLine: number[]|null}[]}}
+ * @returns {{checkItems: {text: string, fromLine: number[], by: 'agent'|'you'|null}[], notChecked: string[], moved: {text: string, fromLine: number[]|null}[]}}
  */
 export function reconcileRubricPlan({ confirmed, notChecked, closeDecl, jobLines = null }) {
   const real = checksOfClose(closeDecl);
   const covered = new Set(real.flatMap((c) => c.covers));
   const moved = confirmed.filter((_, i) => !covered.has(i + 1));
   return {
-    checkItems: real.map((c) => ({ text: c.text, fromLine: [c.line] })),
+    checkItems: real.map((c) => ({ text: c.text, fromLine: [c.line], by: c.by })),
     notChecked: [
       ...notChecked,
       ...proseNotChecked(closeDecl),

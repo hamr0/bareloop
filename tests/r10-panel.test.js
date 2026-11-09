@@ -85,4 +85,8 @@ test('the prepared plan card (through the real drafting loop) has a "You picked"
   assert.deepEqual(plan.lines[0].picked, ['exactly 3 list items']);
   assert.deepEqual(plan.lines[0].checks.map((c) => c.name), ['the text has exactly 3 list items'], 'the drafter\'s made-up maxWords 79 is not on the card');
   assert.ok(plan.notChecked.some((n) => /"be kind" — You chose to leave it Not checked/.test(n)), JSON.stringify(plan.notChecked));
+  // labels: the close's row for the pick is the person's, and the draft log records the checks the draft ended with, each marked
+  assert.deepEqual(plan.lines[0].checks.map((c) => c.by), ['you']);
+  const logged = readFileSync(join(session.state.outDir, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((e) => e.kind === 'draft-checks');
+  assert.deepEqual(logged.map((e) => e.checks.map((c) => [c.line, c.text, c.by])), [[[1, 'the text has exactly 3 list items', 'you']]]);
 });

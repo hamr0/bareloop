@@ -676,6 +676,8 @@
   .jp .num{display:inline-block;text-indent:0;width:22px;text-align:right;color:var(--text-faint);margin-right:8px;}
   .jp .sub{color:var(--text-dim);padding-left:30px;}
   .jp .fold{padding-left:30px;color:var(--text);}
+  /* who added a check: the drafter's [agent] or the person's own [you picked] (fwdloop's `[added]` marker, in the dim of a ~ row) */
+  .jp .by,.draft-checks-row .by{color:var(--text-dim);white-space:nowrap;}
   .jp details.fold{padding-left:0;margin:6px 0;}
   .jp details>summary{cursor:pointer;list-style:none;}
   .jp details>summary::-webkit-details-marker{display:none;}
@@ -3623,6 +3625,11 @@
     var rows = "";
     // fwd am14 item 6: a revise or a Start over says so, first, in the server's own words (`revise 1`, `revise 2`, `start over`); a first draft has no such row
     if(part.draftLabel) rows += '<tr class="draft-kind-row" data-testid="drafting-kind"><td colspan="5"><b>' + escapeXml(part.draftLabel) + "</b></td></tr>";
+    // the checks this draft ended with, each marked who added it: the drafter ([agent]) or the person's pick ([you picked])
+    (part.draftChecks || []).forEach(function(c){
+      rows += '<tr class="draft-checks-row" data-testid="drafting-check"><td colspan="5" style="overflow-wrap:anywhere">line ' + escapeXml(String(c.line)) + " \u00B7 " + escapeXml(c.text) +
+        (c.by === "you" ? ' <span class="by" data-by="you">[you picked]</span>' : c.by === "agent" ? ' <span class="by" data-by="agent">[agent]</span>' : "") + "</td></tr>";
+    });
     (part.draftSteps || []).forEach(function(st){
       var wall = st.wallMs === null || st.wallMs === undefined ? "–" : duration(st.wallMs);
       var calls = Array.isArray(st.calls) ? st.calls : [];
@@ -4068,8 +4075,9 @@
   function renderJobPlan(plan){
     var h = '<div class="jp" data-testid="job-plan">' + (plan.older ? '<div class="older" data-testid="plan-older">older job \u2014 numbered lines were not saved</div>' : "") + '<div class="jp-legend">Done when every <b>\u203A</b> check passes</div>' +
       (plan.goal && !plan.older ? '<div class="jp-sum" data-testid="plan-goal"><span class="lbl">AI\'s summary</span>' + escapeXml(plan.goal) + "</div>" : "");
+    var byTag = function(by){ return by === "you" ? ' <span class="by" data-testid="plan-by" data-by="you">[you picked]</span>' : by === "agent" ? ' <span class="by" data-testid="plan-by" data-by="agent">[agent]</span>' : ""; };
     var checkLine = function(c){
-      return '<div class="fold" data-testid="plan-check"><span class="mk">\u203A</span> check \u00B7 ' + escapeXml(c.name) + (c.cls ? " \u00B7 " + escapeXml(c.cls) : "") + "</div>";
+      return '<div class="fold" data-testid="plan-check"><span class="mk">\u203A</span> check \u00B7 ' + escapeXml(c.name) + (c.cls ? " \u00B7 " + escapeXml(c.cls) : "") + byTag(c.by) + "</div>";
     };
     (plan.lines || []).forEach(function(l){
       h += '<div class="jl" data-testid="plan-line"><span class="num">' + escapeXml(String(l.n)) + "</span>" + escapeXml(l.text);

@@ -260,6 +260,27 @@ export function readDraftLabel(dir) {
 }
 
 /**
+ * The checks the draft ended with, each marked who added it (`agent` = the drafter, `you` = the person's own pick): the last `draft-checks` line of the log, or `[]` (a draft from before it, or a job that has none).
+ * @param {string} dir
+ * @returns {{line: number, text: string, by: 'agent'|'you'}[]}
+ */
+export function readDraftChecks(dir) {
+  /** @type {string} */
+  let text;
+  try { text = readFileSync(join(dir, DRAFT_LOG_FILE), 'utf8'); } catch { return []; }
+  /** @type {{line: number, text: string, by: 'agent'|'you'}[]} */
+  let out = [];
+  for (const line of text.split('\n')) {
+    if (!line.includes('"draft-checks"')) continue;
+    try {
+      const ev = JSON.parse(line);
+      if (ev?.kind === 'draft-checks' && Array.isArray(ev.checks)) out = ev.checks.filter((/** @type {any} */ c) => c && Number.isInteger(c.line) && typeof c.text === 'string' && (c.by === 'agent' || c.by === 'you'));
+    } catch { /* a torn line */ }
+  }
+  return out;
+}
+
+/**
  * The DRAFTING PART of a run (hamr 2026-10-06, option A): the first part of the run's views, built from the session's
  * drafting log. `null` when the run did not come out of a panel session, or the log carries no metered call (a Reuse
  * workflow run, a CLI run, a run older than the log). The part's money is the SPINE's figure (`job-start.draftSpentUsd`,
@@ -285,5 +306,6 @@ export function draftingPartFor(row, spine, opts = {}) {
     spentUsd: spine.draftSpentUsd, spendComplete: spine.draftSpendComplete !== false, unpricedRounds: 0,
     draftSteps: steps,
     draftLabel: readDraftLabel(dir),
+    draftChecks: readDraftChecks(dir),
   };
 }
