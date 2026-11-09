@@ -2197,3 +2197,7 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 
 - **Unparked (hamr 2026-11-07):** no longer parked; built in the MCP + tickets branch beside R8, mockup to hamr first (ITEM33-BUILD R7b).
 - A Result tab for every job, not only rubric: what changed (each file and its diff), the checks that passed in plain words with their last output lines, where it is (work branch and the `git merge` line), and for a ticket job the ticket read with its link, all in one place ready for Accept. Needs a mockup shown to hamr, then an interview, before any spec.
+
+### Dropped: more retries for long jobs (v1.129 — 2026-11-09) — DROPPED by hamr after a $0 read
+
+- Idea (hamr): a long-job checkmark that doubles strikes and tries, dropped; the $0 read found retry-limit reds were stuck, not short of room; see F289 in `docs/wiki/FINDINGS.md`.
