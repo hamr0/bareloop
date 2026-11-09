@@ -33,7 +33,7 @@ function dom({ flow = 'plain', verdict = 'deterministic', resume = null, sched =
   };
   return { els, tk, scope };
 }
-const vars = 'var reuseCheckType = "deterministic";';
+const vars = 'var carryFromId = null; var reuseCheckType = "deterministic";';
 
 test('the SERVED card has the Schedule row with fwd\'s ids and the table\'s words, once each, between Flow type / MCP and Destination, in the card\'s own classes', async (t) => {
   const PAGE = await served(t);

@@ -58,6 +58,7 @@ import { mcpPickFor, signFlow } from '../mcppick.js';
 import { parseTicketList, ticketNumberOf, TICKET_NUMBER_WORDS } from '../ticketshape.js';
 import { isDropIt, isAgree, stripAgreeLead } from '../pagemap.js';
 import { plainWords, SUGGEST_SYSTEM, settleRules } from '../checkpick.js';
+import { readRecordFile, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
 import { FIT_ABSENT_NOTE } from '../fitcheck.js';
 import { runDestPoint, destQuestionText, yesNoOf } from '../destpoint.js';
 import { tallyCalls } from '../text.js';
@@ -65,7 +66,7 @@ import { appendDraftLog } from '../draftspend.js';
 import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, draftStopText, redsRecord, declarationRecord, calibrationSummary, tryRefusedText } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 import {
-  parseJobBlock, parseInputs, jobBlockFitsCheck, renderJobLines, renderExamples, signedJobLines,
+  parseJobBlock, parseInputs, jobBlockFitsCheck, renderJobLines, renderExamples, signedJobLines, jobBoxText,
 } from '../jobblock.js';
 import { planFromConfirm } from './jobplan.js';
 import { isTicketTrigger } from '../trigger.js';
@@ -471,7 +472,7 @@ export function validateJobCard(card, opts = {}) {
  * `signPrepare()` are the only ways in.
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
- *   scout?: any, generate?: Function, pickGenerate?: Function|null, confirmGenerate?: Function, authorFn?: Function,
+ *   scout?: any, generate?: Function, pickGenerate?: Function|null, carryFrom?: string, confirmGenerate?: Function, authorFn?: Function,
  *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, fitFn?: Function|null, destFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, schedule?: import('../trigger.js').Trigger|null, flow?: {flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
@@ -506,6 +507,9 @@ export function createSession(card, deps = {}) {
   const id = `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const outDir = join(sessionsRoot, id);
   mkdirSync(outDir, { recursive: true });
+  // R10 (fwd am17/am18/am20): the picks record of the earlier session this draft follows (a Revise, or a Start over), read from that session's own folder. The id is a session id
+  // (never a path); no record, or an unreadable one, is no record: every rule is asked.
+  const carriedPicks = typeof deps.carryFrom === 'string' && /^s[a-z0-9]+$/.test(deps.carryFrom) ? readRecordFile(join(sessionsRoot, deps.carryFrom, RECORD_FILE)) : null;
 
   /** @type {any} */
   const state = {
@@ -1188,17 +1192,22 @@ export function createSession(card, deps = {}) {
         // R10 (fwd am16): a check-pick ask. `agree` writes the proposal's plain words as a new `~` rule and picks the check; "drop it" leaves the rule Not checked; anything else
         // is the person's own words, a `~` rule word for word with no check (Not checked: they judge it at Accept)
         const isPick = q.source === 'look' && (q.ask === 'check' || q.ask === 'no-check') && Number.isInteger(q.rule);
-        if (isPick && isDropIt(text)) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: q.line, rule: q.rule, ruleText: redactSecrets(String(q.ruleText ?? '')), proposed: q.reading ?? null, how: 'drop it', at: new Date().toISOString() }); continue; }
+        // am21: the ask is about the person's EDITED added `~` line (`pairRule` = the rule it was agreed from): the answer REPLACES that line and the pick is kept under the source's number
+        const pair = isPick && Number.isInteger(/** @type {any} */ (q).pairRule) ? /** @type {number} */ (/** @type {any} */ (q).pairRule) : null;
+        if (isPick && isDropIt(text)) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); if (pair !== null) left.push({ line: q.line, rule: pair }); appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: q.line, rule: q.rule, ruleText: redactSecrets(String(q.ruleText ?? '')), proposed: q.reading ?? null, how: 'drop it', at: new Date().toISOString() }); continue; }
         if (isPick) {
           const agreed = q.ask === 'check' && q.check && isAgree(text);
           if (agreed) text = plainWords(/** @type {any} */ (q.check));
-          picks.push({ line: q.line, rule: /** @type {number} */ (q.rule), check: agreed ? /** @type {any} */ (q.check) : null, added: text, ...(agreed ? {} : { own: true }) });
+          picks.push({ line: q.line, rule: pair ?? /** @type {number} */ (q.rule), check: agreed ? /** @type {any} */ (q.check) : null, added: text, ...(agreed ? {} : { own: true }) });
           appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: q.line, rule: q.rule, ruleText: redactSecrets(String(q.ruleText ?? '')), proposed: q.reading ?? null, how: agreed ? 'agree' : 'own words', ...(agreed ? { picked: q.check } : {}), added: redactSecrets(text), at: new Date().toISOString() });
         }
         const line = jobLines.find((l) => l.n === q.line);
-        if (line) { line.rule = line.rule ? `${line.rule}; ${text}` : text; line.rules.push(text); }
+        if (line && pair !== null) { line.rules[/** @type {number} */ (q.rule) - 1] = text; line.rule = line.rules.join('; '); }
+        else if (line) { line.rule = line.rule ? `${line.rule}; ${text}` : text; line.rules.push(text); }
       }
       draft.jobLines = signedJobLines(jobLines);
+      // R10 (fwd am21): the answers are `~` rules on the lines, so the card's job box says so too: a Revise reopens the boxes WITH them, and an edit of an agreed line is seen as an edit
+      state.card = { ...state.card, jobText: jobBoxText(jobLines) };
       answers[1] = renderJobLines(jobLines);
       state.messages.push({ ...planMessage(o.confirmed ?? {}, jobLines), text: left.length === total ? 'Noted: those stay Not checked. Drafting.' : 'Your answers are in as ~ rules on those job lines. Drafting again.' });
       return { jobLines, answers, left, picks };
@@ -1229,7 +1238,14 @@ export function createSession(card, deps = {}) {
       rates: draftPrice?.rates ?? null,
       draftThinking,
       onPhase, onCall,
-      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate,
+      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, carriedPicks,
+      // R10: this draft's record (the picks it kept and the ones just answered) goes to its own folder for the next draft to carry; each kept pick is logged as such
+      onPicks: (/** @type {{entries: any[], kept: {line: number, rule: number, entry: any}[]}} */ o) => {
+        try { writeFileSync(join(outDir, RECORD_FILE), `${JSON.stringify({ picks: o.entries })}\n`, { mode: 0o600 }); } catch { /* the record is a convenience: a disk fault only means the next draft asks again */ }
+        for (const k of o.kept) {
+          appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: k.line, rule: k.rule, ruleText: redactSecrets(String(k.entry.ruleText ?? '')), how: KEPT_WORDS, ...(k.entry.check ? { picked: k.entry.check } : {}), ...(k.entry.left ? { left: true } : {}), ...(k.entry.own ? { own: true } : {}), at: new Date().toISOString() });
+        }
+      },
       ...(deps.scout ? { scout: deps.scout } : {}),
       // PART 1c: a test that replaces the model boundary (`generate`) must not reach the real paid look; `deps.lookFn` brings its own
       ...(deps.lookFn !== undefined ? { lookFn: deps.lookFn } : (deps.generate ? { lookFn: null } : {})),
@@ -1287,7 +1303,7 @@ export function createSession(card, deps = {}) {
       });
       // R10: the checks the person picked, for the plan card's "You picked" rows (the check rows and the Not checked rows come from the signed close itself)
       const cp = authored.checkPicks;
-      const picked = cp ? settleRules(cp.rules, cp.picks, cp.left, jobLines).checks.map((c) => ({ line: c.line, text: plainWords(/** @type {any} */ (c.check)) })) : [];
+      const picked = cp ? settleRules(cp.rules, cp.picks, cp.left, jobLines).checks.map((c) => ({ line: c.line, text: `${plainWords(/** @type {any} */ (c.check))}${c.kept ? ` \u00B7 ${KEPT_WORDS}` : ''}` })) : [];
       state.finalPlan = { goal: String(draft.goal ?? ''), checkItems: rec.checkItems, picked, notChecked: rec.notChecked, protections: authored.confirmed?.protections ?? [], moved: rec.moved, signedFacts: signedFactNames(spec.closeDecl), ...(spec.ticketFilter ? { ticketFilter: spec.ticketFilter } : {}) };
     }
     await finish(spec, authored.seedRef);

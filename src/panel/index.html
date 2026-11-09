@@ -1033,6 +1033,8 @@
           <div class="hint" id="chat-main-hint" data-testid="chat-main-hint"></div>
           <!-- hamr 2026-10-09: Revise = reopen the boxes, filled as drafted, and draft again. Shown only while a plan waits for the OK. -->
           <button class="btn wide" type="button" id="chat-reopen-btn" data-testid="chat-reopen" hidden>Revise</button>
+          <!-- R10 (fwd am20): Start over = draft the card as it is now, fresh; the check picks of this draft ride along, so a pick already made is not asked again -->
+          <button class="btn wide" type="button" id="chat-startover-btn" data-testid="chat-startover" hidden>Start over</button>
           <div class="hint">Only your click signs. The chat can't.</div>
         </section>
 
@@ -5355,6 +5357,9 @@
     var mainBtn = document.getElementById("chat-main-btn");
     var mainHint = document.getElementById("chat-main-hint");
     var reopenBtn = document.getElementById("chat-reopen-btn");
+    var startOverBtn = document.getElementById("chat-startover-btn");
+    // R10 (fwd am17/am20): the id of the draft the next Start drafting follows; the server hands its check picks on (words-keyed), so a pick already made is not asked again
+    var carryFromId = null;
     var mainAction = "none";
     var knownRunIdsAtSign = null; // the run ids listed when Sign & run was pressed (M3: afterSignRefresh waits for a new one)
     var lastState = null;
@@ -5661,6 +5666,7 @@
     // back to a fresh empty card: every box, check type deterministic, the default (first) Model, origin/estimate/notes
     // hidden, progress list and thread cleared, reuse lock lifted
     function resetCard(){
+      carryFromId = null;
       clearCardBoxes();
       setVerdict("deterministic");
       modelSelect.selectedIndex = 0;
@@ -5696,6 +5702,7 @@
         jobText: document.getElementById("jf-job").value.trim(),
         inputs: document.getElementById("jf-inputs").value.trim(),
         destination: document.getElementById("jf-dest").value.trim(),
+        ...(carryFromId ? {carryFrom: carryFromId} : {}),
         // the "Thinking on" tick: sent as a boolean; the server judges it per line and signs it only when ticked
         thinking: thinkingBox.checked === true,
         capUsd: moneyCap,
@@ -6065,6 +6072,7 @@
       mainAction = b.action;
       mainHint.textContent = b.hint;
       reopenBtn.hidden = !reviseShownFor(st);
+      startOverBtn.hidden = !reviseShownFor(st);
       fitBox(msgInput);
       fitCardBoxes();
     }
@@ -6474,18 +6482,28 @@
     // hamr 2026-10-09 (as fwdloop's Revise): the draft is ended and the New job card opens with the SAME values in every
     // box, all editable; Start drafting then drafts fresh from whatever the boxes now say. No typed change request goes
     // to the model. The ended draft is an Abandon: money already spent stays booked.
-    function doReopen(){
+    // Revise and Start over both end this draft and open the boxes as the draft left them: the job box now holds the `~` lines the answers added (the server's card), and the
+    // check picks of this draft ride along to the next one. Revise stops there (edit, then Start drafting); Start over drafts the card as it is at once.
+    function doReopen(thenStart){
       if(!sessionId) return;
-      authorPost("/api/author/" + sessionId + "/abandon", {}).then(function(r){
-        var o = chatPostOutcome(r);
-        if(!o.ok){ chatActionFailed(o.error); return; }
-        openNewCard();
-        chatActionOk();
-        lastMsgSig = null;
-        thread.innerHTML = '<div class="msg system">' + escapeXml("The boxes are open as you drafted them. Edit what you want, then Start drafting. The first draft's cost stays counted.") + "</div>";
+      var from = sessionId;
+      authorGet("/api/author/" + from).then(function(j){
+        var jt = j && j.state && j.state.card && typeof j.state.card.jobText === "string" ? j.state.card.jobText : "";
+        return authorPost("/api/author/" + from + "/abandon", {}).then(function(r){
+          var o = chatPostOutcome(r);
+          if(!o.ok){ chatActionFailed(o.error); return; }
+          openNewCard();
+          carryFromId = from;
+          if(jt){ setVal("jf-job", jt); fitCardBoxes(); }
+          chatActionOk();
+          lastMsgSig = null;
+          if(thenStart === true){ refreshStartEnabled(); if(!mainBtn.disabled) doStart(); return; }
+          thread.innerHTML = '<div class="msg system">' + escapeXml("The boxes are open as you drafted them. Edit what you want, then Start drafting. The first draft's cost stays counted.") + "</div>";
+        });
       }).catch(function(){ chatActionFailed("network error — could not reach the panel server, not revised"); });
     }
-    reopenBtn.addEventListener("click", doReopen);
+    reopenBtn.addEventListener("click", function(){ doReopen(false); });
+    startOverBtn.addEventListener("click", function(){ doReopen(true); });
 
     function doSign(){
       if(!sessionId) return;

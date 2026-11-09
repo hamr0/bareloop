@@ -193,7 +193,7 @@ export function createAuthorRoutes(opts) {
       ).then((picked) => {
         if (!picked.ok) return { ok: /** @type {false} */ (false), status: 400, error: `${/** @type {any} */ (picked).say} Nothing spent.` };
         const session = createSession(cardFields(card), {
-          env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}), flow: { flowType: flow.flowType, pick: flow.pick }, ...(sch.trigger ? { schedule: sch.trigger } : {}), ...(opts.sessionDeps ?? {}),
+          env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}), flow: { flowType: flow.flowType, pick: flow.pick }, ...(typeof card.carryFrom === 'string' ? { carryFrom: card.carryFrom } : {}), ...(sch.trigger ? { schedule: sch.trigger } : {}), ...(opts.sessionDeps ?? {}),
         });
         (o.headless ? headless : sessions).set(session.id, session);
         return { ok: /** @type {true} */ (true), session };

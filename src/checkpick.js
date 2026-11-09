@@ -8,6 +8,7 @@
 // drafting call); a pick lands as a `countable` part of the line's rubric-step stage (src/rubricstep.js), carrying the `~` rule numbers it settles.
 import { rubricVocabulary } from 'bareguard';
 import { plainWords, OFFERED } from './checkwords.js';
+import { KEPT_WORDS } from './pickrecord.js';
 import { lineRules } from './rubricstep.js';
 
 export { plainWords, OFFERED };
@@ -250,7 +251,7 @@ export function checkAsks(rows) {
 
 // ---- the plan uses only the checks you picked (am16 (4)) ---------------------------------------------------------------------------------
 /**
- * @typedef {{line: number, rule: number, check: Record<string, any>|null, added?: string, own?: boolean}} Pick
+ * @typedef {{line: number, rule: number, check: Record<string, any>|null, added?: string, own?: boolean, kept?: boolean}} Pick
  *   `check` = the check the person agreed to (null for their own words); `added` = the `~` rule the answer wrote on the line; `own` = their own words
  * @typedef {'person-left'|'own-words'|'no-pick'} NoteReason
  */
@@ -264,13 +265,13 @@ export const NOTE_WORDS = Object.freeze({
 /**
  * Settle every scoped rule against the person's answers: a rule with a picked check is checked (and the `~` line an agree wrote is covered by that pick); every other rule is
  * Not checked, with the reason (`person-left` = they chose it, `own-words` = they gave their own words, `no-pick` = nothing was picked).
- * @param {Rule[]} rules @param {Pick[]} picks @param {{line: number, rule: number}[]} left @param {{n: number, rule?: string, rules?: string[]}[]} jobLines the lines AFTER the answers were added
- * @returns {{checks: {line: number, text: string, check: Record<string, any>, rules: number[]}[], notes: (Rule & {reason: NoteReason, also: number[]})[]}}
+ * @param {Rule[]} rules @param {Pick[]} picks @param {{line: number, rule: number, kept?: boolean}[]} left @param {{n: number, rule?: string, rules?: string[]}[]} jobLines the lines AFTER the answers were added
+ * @returns {{checks: {line: number, text: string, check: Record<string, any>, rules: number[], kept: boolean}[], notes: (Rule & {reason: NoteReason, also: number[], kept: boolean})[]}}
  */
 export function settleRules(rules, picks, left, jobLines) {
-  /** @type {{line: number, text: string, check: Record<string, any>, rules: number[]}[]} */
+  /** @type {{line: number, text: string, check: Record<string, any>, rules: number[], kept: boolean}[]} */
   const checks = [];
-  /** @type {(Rule & {reason: NoteReason, also: number[]})[]} */
+  /** @type {(Rule & {reason: NoteReason, also: number[], kept: boolean})[]} */
   const notes = [];
   /** the rule number the answer's added `~` line has on its line (a `~` line is a rule of its own) @param {number} line @param {string|undefined} added @returns {number[]} */
   const addedNo = (line, added) => {
@@ -279,12 +280,15 @@ export function settleRules(rules, picks, left, jobLines) {
     return at >= 0 ? [at + 1] : [];
   };
   for (const r of rules) {
+    // the `~` line an answer wrote is covered by its pick (a carried card already holds it as a rule of its own): never settled twice
+    if (picks.some((p) => p.line === r.line && p.rule !== r.rule && typeof p.added === 'string' && norm(p.added) === norm(r.text))) continue;
     const own = picks.find((p) => p.line === r.line && p.rule === r.rule);
-    if (own?.check) { checks.push({ line: r.line, text: r.text, check: own.check, rules: [r.rule, ...addedNo(r.line, own.added)] }); continue; }
+    if (own?.check) { checks.push({ line: r.line, text: r.text, check: own.check, rules: [r.rule, ...addedNo(r.line, own.added)], kept: own.kept === true }); continue; }
     const also = addedNo(r.line, own?.added);
-    if (left.some((l) => l.line === r.line && l.rule === r.rule)) notes.push({ ...r, reason: 'person-left', also });
-    else if (own?.own) notes.push({ ...r, reason: 'own-words', also });
-    else notes.push({ ...r, reason: 'no-pick', also });
+    const lf = left.find((l) => l.line === r.line && l.rule === r.rule);
+    if (lf) notes.push({ ...r, reason: 'person-left', also, kept: lf.kept === true });
+    else if (own?.own) notes.push({ ...r, reason: 'own-words', also, kept: own.kept === true });
+    else notes.push({ ...r, reason: 'no-pick', also, kept: false });
   }
   return { checks, notes };
 }
@@ -321,7 +325,7 @@ export function applyPicks(declaration, settled) {
   const base = refused.filter((r) => !mine(r));
   for (const x of settled.notes) {
     if (carried(x.line, x.rule)) continue;
-    for (const n of [x.rule, ...x.also]) base.push({ line: x.line, rule: n, reason: NOTE_WORDS[x.reason] });
+    for (const n of [x.rule, ...x.also]) base.push({ line: x.line, rule: n, reason: `${NOTE_WORDS[x.reason]}${x.kept ? ` (${KEPT_WORDS})` : ''}` });
   }
   return { ...declaration, stages, ...(base.length ? { refused: base } : {}) };
 }

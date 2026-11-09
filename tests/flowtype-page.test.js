@@ -48,7 +48,7 @@ test('the SERVED card has Flow type and MCP with the fwd words and ids, once eac
 test('currentCard: a plain card sends neither flowType nor mcp (so the signed job carries neither); MCP and Tickets send the pick; no card ever sends a ticket (the box is gone, R7b)', async (t) => {
   const PAGE = await served(t);
   const val = (id) => ({ value: id === 'jf-cap-money' ? '2' : '' });
-  const mk = (flowType, mcp, ticket) => build(PAGE, ['pickParts', 'currentCard'], { document: { getElementById: val }, verdictValue: () => 'deterministic', thinkingBox: { checked: false }, flowTypeEl: { value: flowType }, mcpEl: { value: mcp }, scheduleOfCard: () => null }, 'var reuseCheckType = "deterministic";').currentCard();
+  const mk = (flowType, mcp, ticket) => build(PAGE, ['pickParts', 'currentCard'], { document: { getElementById: val }, verdictValue: () => 'deterministic', thinkingBox: { checked: false }, flowTypeEl: { value: flowType }, mcpEl: { value: mcp }, scheduleOfCard: () => null }, 'var reuseCheckType = "deterministic"; var carryFromId = null;').currentCard();
   const plain = mk('plain', 'github', '5');
   assert.equal('flowType' in plain, false);
   assert.equal('mcp' in plain, false);

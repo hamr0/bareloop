@@ -121,6 +121,7 @@ import { pageContentChars } from './pagefetch.js';
 import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.js';
 import { runPageMap, askableFromLook, tooManyAsksText } from './pagemap.js';
 import { scopedRules, checkAsks } from './checkpick.js';
+import { matchRecord, entriesFromAnswers } from './pickrecord.js';
 import { runCheckSuggest } from './checksuggest.js';
 import {
   DECLARED_GAP_PREFIX, DECLARED_GENRES, guardNames, isDeclaredClose, validateCloseDecl,
@@ -439,7 +440,7 @@ function composerRefusal(reds) {
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
  *   answerQuestions?: ((o: {questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}) =>
  *     Promise<{jobLines: {n: number, text: string, rule?: string}[], answers: Record<string|number, any>, left?: {line: number, rule: number}[], picks?: any[]}|null>)|null,
- *   pickGenerate?: Function|null,
+ *   pickGenerate?: Function|null, carriedPicks?: any[]|null, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
  *   confirmGenerate?: Function|null, isRepo?: boolean,
  *   langResult?: {kind: string, candidates?: string[], [k: string]: any}|null}} o
  * @returns {Promise<{ok: boolean, refusal: Refusal|null, verdictType: string|null,
@@ -485,6 +486,8 @@ export async function authorCloseForJob({
   // R10 (fwd am16): the model boundary of the check-suggestion call (a `makeLoopGenerate` bound to SUGGEST_SYSTEM). ABSENT = no pick path: nothing is suggested or asked and the
   // drafted declaration is validated as it always was (a test seam, like `lookFn: null`).
   pickGenerate = null,
+  // R10 (fwd am17/am18): the picks record of the draft this one follows (`readRecordFile`), and the seam that receives this draft's record + the picks it kept. ABSENT = every rule is asked.
+  carriedPicks = null, onPicks = () => {},
   // SOFTGREEN modules 4+5. `signerFix` is the D5 seam: a function (or a value)
   // carrying the SIGNER's corrected artifacts back. Absent means the proposal is
   // signed as proposed, and `signJudgedArtifacts` records which of the two
@@ -717,22 +720,43 @@ export async function authorCloseForJob({
   if (answerQuestions && pickGenerate && lang === RUBRIC_LANG && survey?.state === 'PRESENT' && Array.isArray(jobLines)) {
     const scoped = scopedRules(jobLines, { inputs, look: survey.facts?.look ?? null });
     if (scoped.length > 0) {
-      onPhase('check-suggest', { rules: scoped.length });
-      const sug = await runCheckSuggest({ jobLines, scoped, generate: pickGenerate, ceilingUsd, onCall, priorCalls: survey?.calls ?? [], priorRaws: survey?.raws ?? [] });
-      // the call's spend joins the survey's, so the ONE ceiling the later stages enforce already holds it
-      survey.calls = [...(survey.calls ?? []), ...sug.calls];
-      survey.raws = [...(survey.raws ?? []), ...sug.raws];
-      const asks = checkAsks(sug.rows);
+      // am17/am18: a pick follows its line's WORDS and its rule's exact words; one still matching is kept (not sent to the call, not asked, not counted), a changed or new rule is asked
+      const matched = matchRecord(Array.isArray(carriedPicks) ? carriedPicks : [], jobLines, scoped);
+      /** @type {ReturnType<typeof checkAsks>} */
+      let asks = [];
+      let sug = null;
+      if (matched.askRules.length > 0) {
+        onPhase('check-suggest', { rules: matched.askRules.length });
+        sug = await runCheckSuggest({ jobLines, scoped: matched.askRules, generate: pickGenerate, ceilingUsd, onCall, priorCalls: survey?.calls ?? [], priorRaws: survey?.raws ?? [] });
+        // the call's spend joins the survey's, so the ONE ceiling the later stages enforce already holds it
+        survey.calls = [...(survey.calls ?? []), ...sug.calls];
+        survey.raws = [...(survey.raws ?? []), ...sug.raws];
+        asks = checkAsks(sug.rows);
+      }
       const counted = asks.filter((a) => a.counted);
       if (lookAsks.length + counted.length > MAX_QUESTIONS) {
         return { ...base, interview, verdictType: picked, seedRef: seed, reds: [{ code: 'look-asks-too-many', path: 'jobLines', detail: tooManyAsksText([...lookAsks, ...counted]) }], stop: 'look-asks-too-many', cost: null };
       }
-      onPhase('check-ask', { questions: asks.length });
-      const updated = await answerQuestions({ questions: asks, dropped: [], confirmed: null });
-      if (updated === null) return { ...base, interview, verdictType: picked, seedRef: seed, reds: [], stop: 'confirm-abandoned', cost: null };
-      jobLines = updated.jobLines;
-      interview.answers = updated.answers;
-      checkPicks = { rules: scoped, picks: Array.isArray(updated.picks) ? updated.picks : [], left: Array.isArray(updated.left) ? updated.left : [], rows: sug.rows };
+      /** @type {{picks?: any[], left?: {line: number, rule: number}[], jobLines: any[], answers: any}|null} */
+      let updated = { jobLines, answers: interview.answers, picks: [], left: [] };
+      if (asks.length > 0) {
+        onPhase('check-ask', { questions: asks.length });
+        updated = await answerQuestions({ questions: asks, dropped: [], confirmed: null });
+        if (updated === null) return { ...base, interview, verdictType: picked, seedRef: seed, reds: [], stop: 'confirm-abandoned', cost: null };
+        jobLines = updated.jobLines;
+        interview.answers = updated.answers;
+      }
+      const newPicks = Array.isArray(updated.picks) ? updated.picks : [];
+      const newLeft = Array.isArray(updated.left) ? updated.left : [];
+      const keptPicks = matched.picks.map((p) => ({ ...p, kept: true }));
+      const keptLeft = matched.left.map((l) => ({ ...l, kept: true }));
+      const answeredLeft = newLeft.filter((l) => scoped.some((r) => r.line === l.line && r.rule === l.rule));
+      // the record this draft hands on: the picks it kept, as they were, and the picks just answered, keyed by words
+      onPicks({
+        entries: [...matched.kept.map((k) => k.entry), ...entriesFromAnswers(jobLines, scoped, newPicks, answeredLeft)],
+        kept: matched.kept.map((k) => ({ line: k.line, rule: k.rule, entry: k.entry })),
+      });
+      checkPicks = { rules: scoped, picks: [...keptPicks, ...newPicks], left: [...keptLeft, ...answeredLeft], rows: sug?.rows ?? [] };
       base.checkPicks = checkPicks;
     }
   }
