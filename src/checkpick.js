@@ -332,8 +332,7 @@ export const UNCHECKABLE_WORDS = 'No rule can check this, so you judge it at Acc
 /**
  * RUBRIC jobs only (the caller gates on the job's lang): a part the drafter wrote as `none` or `judged` is a thing no rule can check, so it is
  * listed under Not checked with its own words instead of failing the whole plan (hamr's ruling 2026-11-09, as fwd lists what the drafter cannot check).
- * A part carrying `~` rule numbers becomes a `refused` entry per rule no other part carries (shown as that rule's own words); any other part
- * (the job sentence itself) becomes one line in `notes`. Never silent, never a line-level refusal (that would silence the line's other rule reds).
+ * A part that is a verbatim copy of one of the person's `~` rules, or lists rule numbers, gives a `refused` entry per rule no other part carries (shown as that rule's own words); a part that is NOT a verbatim copy of a rule (the job sentence itself, the drafter's own wording) also becomes one line in `notes`, so its words are never lost. Never silent, never a line-level refusal (that would silence the line's other rule reds).
  * Runs BEFORE applyPicks, so a rule the person's picks settle gets code's own reason there. `guard` and every other class are untouched.
  * A stage left with no parts stays: an empty stage is the legal prose stage ("what the text says - you judge it at Accept"). Pure.
  * @param {any} declaration @param {any[]|null|undefined} jobLines @param {boolean} rubric whether the job is a rubric job (the draft gate's `lang === RUBRIC_LANG`); anything else is returned untouched, its reds stand @returns {any}
@@ -356,17 +355,22 @@ export function moveUncheckable(declaration, jobLines, rubric) {
   });
   const carried = (/** @type {number} */ line, /** @type {number} */ n) => stages.some((/** @type {any} */ st) => isStage(st) && st.params.step === line
     && st.params.parts.some((/** @type {any} */ x) => isRec(x) && Array.isArray(x.rules) && x.rules.includes(n)));
+  const say = (/** @type {unknown} */ t) => String(t ?? '').replace(/\s+/g, ' ').trim();
+  const same = (/** @type {unknown} */ a, /** @type {unknown} */ b) => say(a).replace(/[.]$/, '').toLowerCase() === say(b).replace(/[.]$/, '').toLowerCase();
   for (const { line, part } of moved) {
     const jl = (jobLines ?? []).find((/** @type {any} */ l) => isRec(l) && l.n === line);
-    const nRules = jl ? lineRules(jl).length : 0;
-    const nums = Array.isArray(part.rules) ? [...new Set(part.rules.filter((/** @type {any} */ n) => Number.isInteger(n) && n >= 1 && n <= nRules))] : [];
-    if (nums.length === 0) {
-      const words = String(part.text ?? '').replace(/\s+/g, ' ').trim();
+    const ruleTexts = jl ? lineRules(jl) : [];
+    /** the `~` rules the part's own words ARE (a verbatim copy of the person's rule: that rule is checked or listed by its own owner, the part says nothing more) */
+    const echoed = ruleTexts.flatMap((t, i) => (same(t, part.text) ? [i + 1] : []));
+    const named = Array.isArray(part.rules) ? part.rules.filter((/** @type {any} */ n) => Number.isInteger(n) && n >= 1 && n <= ruleTexts.length) : [];
+    // the words the person's own rules already say are not repeated as unchecked (a pick may check them): a part reading "<sentence>, <rule>, <rule>" lists the sentence only
+    const rest = [...ruleTexts].sort((a, b) => b.length - a.length).reduce((w, t) => (t ? w.split(new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')).join(',') : w), say(part.text)).replace(/(\s*[,;]\s*)+/g, ', ').replace(/^[,;\s]+|[,;\s]+$/g, '');
+    if (echoed.length === 0 && (rest !== '' || say(part.text) === '')) {
+      const words = rest;
       const text = `line ${line}: ${words ? `"${words}"` : 'a part of this line'} \u2014 ${UNCHECKABLE_WORDS}`;
       if (!notes.includes(text)) notes.push(text);
-      continue;
     }
-    for (const n of nums) {
+    for (const n of new Set([...echoed, ...named])) {
       if (carried(line, n) || refused.some((/** @type {any} */ r) => isRec(r) && r.line === line && r.rule === n)) continue;
       refused.push({ line, rule: n, reason: UNCHECKABLE_WORDS });
     }

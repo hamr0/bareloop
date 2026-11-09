@@ -109,7 +109,7 @@ test('the declaration schema for the text genre can only SAY a sorted part: five
 import { KIND_CATALOGUE } from '../src/authoring.js';
 function KIND_CAT_ALL() { return KIND_CATALOGUE; }
 
-test('the revise loop carries the plain sentence back: try 1 sorts a part as judged, the measured block quotes the red, try 2 drops it and the declaration is accepted', async () => {
+test('the revise loop carries the plain sentence back: try 1 sorts a part as a web-source guard part, the measured block quotes the red, try 2 drops it and the declaration is accepted', async () => {
   const file = join(tmp(), 'CHANGELOG.md');
   copyFileSync(join(HERE, '..', 'CHANGELOG.md'), file);
   const proved = await proveRubricInputs({ inputs: [{ n: 1, label: 'Changelog', value: file }], into: join(tmp(), 'seed') });
@@ -118,7 +118,8 @@ test('the revise loop carries the plain sentence back: try 1 sorts a part as jud
   const { prep } = proved;
   const listing = await buildSeedListing({ workdir: prep.tree, seedRef: prep.manifest.seed, sourcePaths: undefined, testPaths: undefined });
   const script = [
-    decl(step(1, [{ text: 'the tone should be friendly', class: 'judged' }])),
+    // (a `judged` or `none` part no longer reds on a rubric job: it is listed under Not checked, tests/r10-uncheckable.test.js; a web-source part still does)
+    decl(step(1, [{ text: 'the tone should be friendly', class: 'guard' }])),
     { ...decl(step(1, [count('maxWords', 'under 200 words', { value: 200 })])), refused: undefined },
   ];
   const turns = [];
@@ -141,7 +142,7 @@ test('the revise loop carries the plain sentence back: try 1 sorts a part as jud
   assert.equal(r.ok, true, JSON.stringify(r.reds));
   assert.ok(call >= 2, 'the red sent the loop to a revision (a later identical declaration then ends it as unchanged)');
   const revise = turns[1].at(-1).content;
-  assert.match(revise, /rubric-part-judged at stages\[1\]\.params\.parts\[0\]: line 1: this rule needs the judge, which arrives in the next build\. Nothing spent\./);
+  assert.match(revise, /rubric-part-guard at stages\[1\]\.params\.parts\[0\]: line 1: 'the tone should be friendly' is about web sources, and this job has no web input\. Nothing spent\./);
   assert.equal(r.declaration.stages[1].params.parts[0].check, 'maxWords');
 });
 

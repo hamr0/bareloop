@@ -281,5 +281,136 @@
    "invalid-value",
    "rubric-part-judged"
   ]
+ },
+ "d3-revise-2": {
+  "session": "smw9no3kwo7of",
+  "call": "revise-2",
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-latest-release-summary",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "Summarise the latest release in the changelog",
+        "class": "none"
+       },
+       {
+        "text": "under 80 words",
+        "class": "none"
+       },
+       {
+        "text": "exactly 3 list items",
+        "class": "none"
+       },
+       {
+        "text": "at most 80 words",
+        "class": "none"
+       },
+       {
+        "text": "exactly 3 bullets",
+        "class": "none"
+       }
+      ]
+     }
+    }
+   ],
+   "refused": [
+    {
+     "line": 1,
+     "rule": 3,
+     "reason": "exactly 3 bullets - \"-\" is written more than once inside one line of the page, so one result cannot show it once. No word on this page reads \"bullet count\" safely."
+    },
+    {
+     "line": 1,
+     "rule": 4,
+     "reason": "under 80 words - No word on this page reads \"bullet length\" safely."
+    },
+    {
+     "line": 1,
+     "rule": 5,
+     "reason": "at most 80 words - no word on this page reads a bullet/word limit safely"
+    },
+    {
+     "line": 1,
+     "reason": "Summarise the latest release in the changelog - the choice of WHICH release is \"the latest\" (a superlative) and whether the summary is a faithful/accurate summary of that release needs reading the text to judge; the page words \"### Fixed\" / \"### Added\" / \"### Changed\" appear fewer than 3 times each, so no single word can back all 3 results"
+    }
+   ],
+   "notes": [
+    "The line is a writing (summary) line: code adds the word/list-item limits the person picked (exactly 3 bullets, under 80 words, exactly 3 list items, at most 80 words); I write no word, list-item or section count part myself.",
+    "No fact part is composed: the only checkable thing the look offered was the phrase fact (\"### Fixed\"/\"### Added\"/\"### Changed\"), and each of those words occurs only twice in the Changelog, so it cannot back the 3 results this line would need. It is dropped rather than approximated.",
+    "The plan's confirmed checks #1 (exactly 3 list items) and #2 (at most 80 words) are carried by code, not by any part I write."
+   ]
+  },
+  "redCodes": [
+   "rubric-part-unsortable",
+   "rubric-part-unsortable",
+   "rubric-part-unsortable",
+   "rubric-part-unsortable",
+   "rubric-part-unsortable"
+  ]
+ },
+ "r1-author": {
+  "session": "smw9ci2j5thu7 (round 1)",
+  "call": "author",
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-summarise-latest-release",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "Summarise the latest release in the changelog, exactly 3 bullets, under 80 words, exactly 3 list items, at most 80 words",
+        "class": "judged",
+        "rules": [
+         1,
+         2
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "The person asked for a summary of the latest release in the changelog. No check verifies that the written summary actually summarises the latest release, or that it is a faithful summary of the changelog's contents.",
+    "No check verifies which release counts as the \"latest\" one.",
+    "Line 1's ~ rule 1 (\"exactly 3 bullets\") and ~ rule 2 (\"under 80 words\") are settled by code: code writes those list-item and word-count checks itself, so I wrote no part and no refusal for them. The same words repeated in the line (\"exactly 3 list items\", \"at most 80 words\") are the same two limits.",
+    "The look at the input Changelog found nothing checkable for line 1: it lists \"version number\" under NOT CHECKED (no word on the page reads \"version number\" safely), so no fact could be built from it and I did not write it into \"refused\" myself.",
+    "No facts could be drawn from the Changelog look, so line 1's stage carries a single judged part (is this really a summary of the latest release, read as prose) plus the two code-settled limits; the confirmed checks #1 and #2 are the code-settled list-item and word-count limits, which code composes itself, so no part of mine covers them."
+   ]
+  },
+  "redCodes": [
+   "rubric-part-judged"
+  ]
  }
 }

@@ -72,3 +72,19 @@ test('NOT a rubric job: the same `none` / `judged` parts are returned untouched,
     assert.ok(codes(v).some((c) => c === 'rubric-part-unsortable' || c === 'rubric-part-judged'), codes(v).join());
   }
 });
+
+test('d3-revise-2 (five `none` parts, four are verbatim copies of the person\'s own rules): only the job sentence is listed; the rules stay checked by the picks, never called Not checked', () => {
+  const v = gate(FX['d3-revise-2'].declaration);
+  assert.deepEqual(codes(v), [], JSON.stringify(v.reds.map((r) => r.detail)));
+  assert.deepEqual(v.declaration.notes.filter((n) => n.includes(cp.UNCHECKABLE_WORDS)), ['line 1: "Summarise the latest release in the changelog" — No rule can check this, so you judge it at Accept.']);
+  assert.ok(!(v.declaration.refused ?? []).some((r) => r.reason === cp.UNCHECKABLE_WORDS), 'no rule was moved to Not checked by the move (the drafter\'s own refused entries are its own)');
+  const parts = v.declaration.stages.find((s) => s.kind === 'rubric-step').params.parts;
+  assert.deepEqual(parts.map((p) => p.check).sort(), ['listItems', 'maxWords']);
+});
+
+test('round-1 author (one `judged` part reading "<job sentence>, <rule>, <rule>..." with rules [1,2]): only the sentence is listed, the picks keep the rules', () => {
+  const v = gate(FX['r1-author'].declaration);
+  assert.deepEqual(codes(v), []);
+  assert.deepEqual(v.declaration.notes.filter((n) => n.includes(cp.UNCHECKABLE_WORDS)), ['line 1: "Summarise the latest release in the changelog" — No rule can check this, so you judge it at Accept.']);
+  assert.deepEqual(v.declaration.stages.find((s) => s.kind === 'rubric-step').params.parts.map((p) => p.check).sort(), ['listItems', 'maxWords']);
+});
