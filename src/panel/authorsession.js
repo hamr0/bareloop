@@ -604,7 +604,9 @@ export function createSession(card, deps = {}) {
   /** @param {'bot'|'you'|'system'} role @param {string} text */
   const say = (role, text) => { state.messages.push({ role, text }); };
   /** a structured message (the plan bubble): the page draws it, the thread keeps it as data */
-  const sayPlan = (/** @type {any} */ plan) => { state.messages.push(planMessage(plan, jobLines)); };
+  /** the checks the person has agreed so far (their plain words, `kept from last draft` on a carried one): the plan bubble draws each once, as a `[you picked]` row @type {{line: number, text: string}[]} */
+  const pickedSoFar = [];
+  const sayPlan = (/** @type {any} */ plan) => { state.messages.push(planMessage({ ...plan, ...(pickedSoFar.length ? { picked: [...pickedSoFar] } : {}) }, jobLines)); };
 
   /** @type {((value: string|null) => void)|null} */
   let resolvePending = null;
@@ -1208,6 +1210,7 @@ export function createSession(card, deps = {}) {
         if (isPick) {
           const agreed = q.ask === 'check' && q.check && isAgree(text);
           if (agreed) text = plainWords(/** @type {any} */ (q.check));
+          if (agreed) pickedSoFar.push({ line: q.line, text: plainWords(/** @type {any} */ (q.check)) });
           picks.push({ line: q.line, rule: pair ?? /** @type {number} */ (q.rule), check: agreed ? /** @type {any} */ (q.check) : null, added: text, ...(agreed ? {} : { own: true }) });
           appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: q.line, rule: q.rule, ruleText: redactSecrets(String(q.ruleText ?? '')), proposed: q.reading ?? null, how: agreed ? 'agree' : 'own words', ...(agreed ? { picked: q.check } : {}), added: redactSecrets(text), at: new Date().toISOString() });
         }
@@ -1219,7 +1222,7 @@ export function createSession(card, deps = {}) {
       // R10 (fwd am21): the answers are `~` rules on the lines, so the card's job box says so too: a Revise reopens the boxes WITH them, and an edit of an agreed line is seen as an edit
       state.card = { ...state.card, jobText: jobBoxText(jobLines) };
       answers[1] = renderJobLines(jobLines);
-      state.messages.push({ ...planMessage(o.confirmed ?? {}, jobLines), text: left.length === total ? 'Noted: those stay Not checked. Drafting.' : 'Your answers are in as ~ rules on those job lines. Drafting again.' });
+      state.messages.push({ ...planMessage({ ...(o.confirmed ?? {}), ...(pickedSoFar.length ? { picked: [...pickedSoFar] } : {}) }, jobLines), text: left.length === total ? 'Noted: those stay Not checked. Drafting.' : 'Your answers are in as ~ rules on those job lines. Drafting again.' });
       return { jobLines, answers, left, picks };
     };
 
@@ -1253,6 +1256,7 @@ export function createSession(card, deps = {}) {
       onPicks: (/** @type {{entries: any[], kept: {line: number, rule: number, entry: any}[]}} */ o) => {
         try { writeFileSync(join(outDir, RECORD_FILE), `${JSON.stringify({ picks: o.entries })}\n`, { mode: 0o600 }); } catch { /* the record is a convenience: a disk fault only means the next draft asks again */ }
         for (const k of o.kept) {
+          if (k.entry.check) pickedSoFar.push({ line: k.line, text: `${plainWords(/** @type {any} */ (k.entry.check))} \u00B7 ${KEPT_WORDS}` });
           appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: k.line, rule: k.rule, ruleText: redactSecrets(String(k.entry.ruleText ?? '')), how: KEPT_WORDS, ...(k.entry.check ? { picked: k.entry.check } : {}), ...(k.entry.left ? { left: true } : {}), ...(k.entry.own ? { own: true } : {}), at: new Date().toISOString() });
         }
       },

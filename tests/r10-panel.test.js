@@ -47,6 +47,9 @@ test('the panel: a proposal and a can\'t-check are asked in fwd\'s words; agree 
   assert.match(said(), /Line 1, guardrail "be nice": I can't check this\. Your own words, or Not checked\?/);
   session.send('drop it');
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'), 'then the plan is confirmed as usual');
+  // the plan menu (before signing) draws the agreed pick once, as a `[you picked]` row
+  const menuPlan = session.state.messages.filter((/** @type {any} */ m) => m.kind === 'plan').at(-1).plan;
+  assert.deepEqual(menuPlan.lines[0].picked, ['at most 80 words']);
   assert.equal(session.signPrepare().ok, true);
   assert.ok(await until(() => legs.length === 1));
   assert.deepEqual(legs[0].jobLines[0].rules, ['under 80 words', 'be nice', 'at most 80 words']);
@@ -79,6 +82,7 @@ test('the prepared plan card (through the real drafting loop) has ONE row for th
   assert.ok(await until(() => /\(2 of 2\)/.test(session.state.messages.filter((/** @type {any} */ m) => m.role === 'bot').at(-1).text)));
   session.send('drop it');
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'));
+  assert.deepEqual(session.state.messages.filter((/** @type {any} */ m) => m.kind === 'plan').at(-1).plan.lines[0].picked, ['exactly 3 list items'], 'the plan menu draws the pick once too');
   assert.equal(session.signPrepare().ok, true);
   assert.ok(await until(() => session.state.phase === 'prepared'), `${session.state.phase} ${session.state.error}`);
   const plan = session.state.messages.filter((/** @type {any} */ m) => m.kind === 'plan').at(-1).plan;
