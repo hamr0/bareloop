@@ -1033,8 +1033,8 @@
           <div class="hint" id="chat-main-hint" data-testid="chat-main-hint"></div>
           <!-- hamr 2026-10-09: Revise = reopen the boxes, filled as drafted, and draft again. Shown only while a plan waits for the OK. -->
           <button class="btn wide" type="button" id="chat-reopen-btn" data-testid="chat-reopen" hidden>Revise</button>
-          <!-- R10 (fwd am20): Start over = draft the card as it is now, fresh; the check picks of this draft ride along, so a pick already made is not asked again -->
-          <button class="btn wide" type="button" id="chat-startover-btn" data-testid="chat-startover" hidden>Start over</button>
+          <!-- fwd M4e am14 item 3: "N revises left"; after the second revise this same button reads Start over (a fresh draft, its own 2 revises) -->
+          <span id="chat-left-count" data-testid="revises-left" class="hint" hidden></span>
           <div class="hint">Only your click signs. The chat can't.</div>
         </section>
 
@@ -5357,9 +5357,10 @@
     var mainBtn = document.getElementById("chat-main-btn");
     var mainHint = document.getElementById("chat-main-hint");
     var reopenBtn = document.getElementById("chat-reopen-btn");
-    var startOverBtn = document.getElementById("chat-startover-btn");
+    var revisesLeftEl = document.getElementById("chat-left-count");
     // R10 (fwd am17/am20): the id of the draft the next Start drafting follows; the server hands its check picks on (words-keyed), so a pick already made is not asked again
     var carryFromId = null;
+    var carryKindVal = null;
     var mainAction = "none";
     var knownRunIdsAtSign = null; // the run ids listed when Sign & run was pressed (M3: afterSignRefresh waits for a new one)
     var lastState = null;
@@ -5667,6 +5668,7 @@
     // hidden, progress list and thread cleared, reuse lock lifted
     function resetCard(){
       carryFromId = null;
+      carryKindVal = null;
       clearCardBoxes();
       setVerdict("deterministic");
       modelSelect.selectedIndex = 0;
@@ -5702,7 +5704,7 @@
         jobText: document.getElementById("jf-job").value.trim(),
         inputs: document.getElementById("jf-inputs").value.trim(),
         destination: document.getElementById("jf-dest").value.trim(),
-        ...(carryFromId ? {carryFrom: carryFromId} : {}),
+        ...(carryFromId ? {carryFrom: carryFromId, carryKind: carryKindVal === "startover" ? "startover" : "revise"} : {}),
         // the "Thinking on" tick: sent as a boolean; the server judges it per line and signs it only when ticked
         thinking: thinkingBox.checked === true,
         capUsd: moneyCap,
@@ -6055,12 +6057,20 @@
     function reviseShownFor(st){
       return !!st.session && !!st.pendingAsk && st.pendingAsk.kind === "menu";
     }
+    // fwd M4e am14 item 3 (pure): 2 revises per draft, shown as "2 revises left" / "1 revise left"; with none left the same button reads Start over. The SERVER counts (revisesLeft); an
+    // absent number (a state from before the count) reads as 2.
+    function reviseButtonFor(left){
+      var n = typeof left === "number" ? Math.max(0, Math.floor(left)) : 2;
+      if(n <= 0) return {text: "Start over", kind: "startover", left: ""};
+      return {text: "Revise", kind: "revise", left: n + (n === 1 ? " revise left" : " revises left")};
+    }
     function renderMain(){
       var st = {session: sessionLive, startOk: startOk, signClicked: signClickedOnce, whenLocked: whenLocked};
       if(sched){ st.when = {changed: whenChanged(), refused: !!sched.refusal, cancel: byId("jf-when").value === "hand", confirm: whenConfirm, busy: whenBusy, words: sched.words}; }
       if(sessionLive && lastState){
         st.phase = lastState.phase; st.pendingAsk = lastState.pendingAsk;
         st.specHash = lastState.specHash;
+        st.revisesLeft = lastState.revisesLeft;
       }
       // hamr 2026-10-05: the ask box is open only while something asks for a reply; otherwise dimmed and emptied
       var open = askBoxOpenFor(st);
@@ -6071,8 +6081,11 @@
       mainBtn.disabled = b.disabled;
       mainAction = b.action;
       mainHint.textContent = b.hint;
+      var rv = reviseButtonFor(st.revisesLeft);
       reopenBtn.hidden = !reviseShownFor(st);
-      startOverBtn.hidden = !reviseShownFor(st);
+      reopenBtn.textContent = rv.text;
+      revisesLeftEl.textContent = rv.left;
+      revisesLeftEl.hidden = !reviseShownFor(st) || rv.left === "";
       fitBox(msgInput);
       fitCardBoxes();
     }
@@ -6215,6 +6228,8 @@
           refreshStartEnabled();
           return;
         }
+        // a draft that follows another stays in that line: a red one redrafted from the card is the next revise, not a fresh start (the server counts by this link)
+        if(carryFromId) carryFromId = r.body.sessionId;
         sessionId = r.body.sessionId;
         // a same-job session has no confirm turn: it goes straight to `prepared`, and THIS click (Sign & run) is the
         // signature — the page signs the hash the server prepared as soon as it is ready (the server re-checks it)
@@ -6483,27 +6498,27 @@
     // box, all editable; Start drafting then drafts fresh from whatever the boxes now say. No typed change request goes
     // to the model. The ended draft is an Abandon: money already spent stays booked.
     // Revise and Start over both end this draft and open the boxes as the draft left them: the job box now holds the `~` lines the answers added (the server's card), and the
-    // check picks of this draft ride along to the next one. Revise stops there (edit, then Start drafting); Start over drafts the card as it is at once.
-    function doReopen(thenStart){
+    // check picks of this draft ride along to the next one. Neither drafts at once (fwd am14: the fields are open, the person edits and drafts). A Revise is one of the draft's 2
+    // (the server counts it and refuses the third, before this draft is ended); Start over gives the next draft 2 new ones.
+    function doReopen(kind){
       if(!sessionId) return;
       var from = sessionId;
       authorGet("/api/author/" + from).then(function(j){
         var jt = j && j.state && j.state.card && typeof j.state.card.jobText === "string" ? j.state.card.jobText : "";
-        return authorPost("/api/author/" + from + "/abandon", {}).then(function(r){
+        return authorPost("/api/author/" + from + "/abandon", {kind: kind}).then(function(r){
           var o = chatPostOutcome(r);
           if(!o.ok){ chatActionFailed(o.error); return; }
           openNewCard();
           carryFromId = from;
+          carryKindVal = kind === "startover" ? "startover" : "revise";
           if(jt){ setVal("jf-job", jt); fitCardBoxes(); }
           chatActionOk();
           lastMsgSig = null;
-          if(thenStart === true){ refreshStartEnabled(); if(!mainBtn.disabled) doStart(); return; }
           thread.innerHTML = '<div class="msg system">' + escapeXml("The boxes are open as you drafted them. Edit what you want, then Start drafting. The first draft's cost stays counted.") + "</div>";
         });
       }).catch(function(){ chatActionFailed("network error — could not reach the panel server, not revised"); });
     }
-    reopenBtn.addEventListener("click", function(){ doReopen(false); });
-    startOverBtn.addEventListener("click", function(){ doReopen(true); });
+    reopenBtn.addEventListener("click", function(){ doReopen(reviseButtonFor(lastState && lastState.revisesLeft).kind); });
 
     function doSign(){
       if(!sessionId) return;

@@ -47,6 +47,7 @@ import { endpointOf, judgePick, keyValueOf, rowsForHome, tickedLines } from '../
 import { thinkingForLine } from '../thinking.js';
 import { panelMoney2 } from '../panelmoney.js';
 import { apiKeyProblem, checkProviderReachable } from '../providers.js';
+import { reviseRefusal, sessionsRootOf } from '../revises.js';
 
 /** @returns {string} a fresh per-process token — never persisted, never logged */
 export function mintToken() {
@@ -157,6 +158,9 @@ export function createAuthorRoutes(opts) {
    * @returns {Promise<{ok: true, session: ReturnType<typeof createSession>}|{ok: false, status: number, error: string}>}
    */
   function startSession(card, reuse, inputs, o = {}) {
+    // fwd M4e am14 item 3: a third revise of one draft is refused at $0, before any input proof, session or model call
+    const tooMany = o.headless ? null : reviseRefusal(sessionsRootOf(opts.sessionsRoot), card?.carryFrom, card?.carryKind);
+    if (tooMany !== null) return Promise.resolve({ ok: /** @type {false} */ (false), status: 409, error: tooMany });
     // ONE owner of "is this a rubric job on files": a reuse (and so a scheduled fire) reads it from the signed spec's verdict type,
     // never from the card; a fresh job reads the card. A rubric job whose line 1 is a file or URL has no repo to prove inputs against;
     // the session proves every line itself (`proveRubricInputs`), at $0, before any model call.
@@ -193,7 +197,7 @@ export function createAuthorRoutes(opts) {
       ).then((picked) => {
         if (!picked.ok) return { ok: /** @type {false} */ (false), status: 400, error: `${/** @type {any} */ (picked).say} Nothing spent.` };
         const session = createSession(cardFields(card), {
-          env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}), flow: { flowType: flow.flowType, pick: flow.pick }, ...(typeof card.carryFrom === 'string' ? { carryFrom: card.carryFrom } : {}), ...(sch.trigger ? { schedule: sch.trigger } : {}), ...(opts.sessionDeps ?? {}),
+          env: envNow(), sessionsRoot: opts.sessionsRoot, ...(opts.home !== undefined ? { home: opts.home } : {}), ...(reuse ? { reuse } : {}), flow: { flowType: flow.flowType, pick: flow.pick }, ...(typeof card.carryFrom === 'string' ? { carryFrom: card.carryFrom, carryKind: card.carryKind } : {}), ...(sch.trigger ? { schedule: sch.trigger } : {}), ...(opts.sessionDeps ?? {}),
         });
         (o.headless ? headless : sessions).set(session.id, session);
         return { ok: /** @type {true} */ (true), session };
@@ -448,6 +452,9 @@ export function createAuthorRoutes(opts) {
       return true;
     }
     if (sub === 'abandon') {
+      // a Revise ends this draft: the third one is refused here, so the plan the person is looking at is not thrown away for nothing
+      const tooMany = body?.kind === 'revise' ? reviseRefusal(sessionsRootOf(opts.sessionsRoot), session.id, 'revise') : null;
+      if (tooMany !== null) { send(409, { ok: false, error: tooMany, state: session.state }); return true; }
       const r = session.abandon();
       send(r.ok ? 200 : 400, { ...r, state: session.state });
       return true;

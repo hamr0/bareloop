@@ -59,6 +59,7 @@ import { parseTicketList, ticketNumberOf, TICKET_NUMBER_WORDS } from '../tickets
 import { isDropIt, isAgree, stripAgreeLead } from '../pagemap.js';
 import { plainWords, SUGGEST_SYSTEM, settleRules } from '../checkpick.js';
 import { readRecordFile, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
+import { MAX_REVISES, nextRevisesUsed, sessionsRootOf, writeRevisesUsed } from '../revises.js';
 import { FIT_ABSENT_NOTE } from '../fitcheck.js';
 import { runDestPoint, destQuestionText, yesNoOf } from '../destpoint.js';
 import { tallyCalls } from '../text.js';
@@ -472,7 +473,7 @@ export function validateJobCard(card, opts = {}) {
  * `signPrepare()` are the only ways in.
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
- *   scout?: any, generate?: Function, pickGenerate?: Function|null, carryFrom?: string, confirmGenerate?: Function, authorFn?: Function,
+ *   scout?: any, generate?: Function, pickGenerate?: Function|null, carryFrom?: string, carryKind?: string, confirmGenerate?: Function, authorFn?: Function,
  *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, fitFn?: Function|null, destFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, schedule?: import('../trigger.js').Trigger|null, flow?: {flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
@@ -491,7 +492,7 @@ export function createSession(card, deps = {}) {
   const INPUTS = inputsParsed.ok ? inputsParsed.inputs : [];
   /** the repo — Inputs line 1 */
   const SOURCE = INPUTS[0]?.value ?? '';
-  const sessionsRoot = deps.sessionsRoot ?? join(process.env.HOME ?? '/tmp', '.config', 'bareloop', 'panel-sessions');
+  const sessionsRoot = sessionsRootOf(deps.sessionsRoot);
   // config.json lives beside the sessions dir (~/.config/bareloop) unless a home is injected
   const configHome = deps.home ?? dirname(sessionsRoot);
   const timeoutMs = deps.timeoutMs ?? 300_000;
@@ -511,9 +512,15 @@ export function createSession(card, deps = {}) {
   // (never a path); no record, or an unreadable one, is no record: every rule is asked.
   const carriedPicks = typeof deps.carryFrom === 'string' && /^s[a-z0-9]+$/.test(deps.carryFrom) ? readRecordFile(join(sessionsRoot, deps.carryFrom, RECORD_FILE)) : null;
 
+  // fwd M4e am14 item 3: the revises this draft has used (src/revises.js); the page reads `revisesLeft` to word its button
+  const revisesUsed = nextRevisesUsed(sessionsRoot, deps.carryFrom, deps.carryKind);
+  writeRevisesUsed(outDir, revisesUsed);
+
   /** @type {any} */
   const state = {
     id,
+    revisesUsed,
+    revisesLeft: Math.max(0, MAX_REVISES - revisesUsed),
     // the form as submitted + whether it is a reuse session: a refreshed page re-attaches to a live session from these
     card: cardFields(card),
     reuse: deps.reuse !== undefined,
