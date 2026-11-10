@@ -29,6 +29,7 @@ import {
   readFileSync, existsSync, readdirSync, lstatSync, realpathSync,
 } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import {
   dirname, join, basename, relative, isAbsolute, sep,
 } from 'node:path';
@@ -43,19 +44,21 @@ import { readingOfQuestion, isAgree } from '../pagemap.js';
 import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
 } from '../replayio.js';
-import { summarizeForAllLine, auditWindowsOf } from '../replay.js';
+import { summarizeForAllLine, auditWindowsOf, replayRun } from '../replay.js';
 import { legsOf, legsWallMs, stopFilePath, capKindOf } from '../legs.js';
 import { chainSpend } from '../ledger.js';
 import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
-import { jobSpecHash, workflowKey } from '../job.js';
+import { jobSpecHash, workflowKey, flowTypeOf, FLOW_TYPE_LABELS } from '../job.js';
 import { attachMemos, learningsHanded, attachLearnings } from './handed.js';
 import { confirmProtections } from '../authorflow.js';
 import { createScheduleDoor } from './schedules.js';
+import { buildJobGrid } from './jobgrid.js';
+import { TICKET_LOOK_MS } from '../triggertickets.js';
 import { createStarter } from './schedulestart.js';
 import { createScheduler } from './scheduler.js';
 import {
-  catchUpWords, dateTimeWords, jobScheduleWords, lowerFirst, scheduleSignFor, scheduledWords, sectionThisRunWords, skippedWords, startedAuditWords, startedWords, triesTailWords, SCHEDULE_WORDS,
+  catchUpWords, dateTimeWords, jobScheduleWords, lowerFirst, scheduleCardFill, scheduleSignFor, scheduledWords, sectionThisRunWords, skippedWords, startedAuditWords, startedWords, triesTailWords, SCHEDULE_WORDS,
 } from '../schedulewords.js';
 import { doorWaiting, heldScheduled } from '../reviewdoor.js';
 import { createAuthorRoutes, mintToken, checkHostGuard, panelMoney2 } from './authorroutes.js';
@@ -70,9 +73,11 @@ import { SHAPES } from '../providershapes.js';
 import { resolveProvider } from '../providers.js';
 import { readResume, checkpointAgeGate, CHECKPOINT_OUTCOMES } from '../reuse.js';
 import {
-  statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER, DOOR_WORDS, isReusableGreen,
+  statusFor, partStatusFor, GOAL_MET_LINE, doorViewOf, ACTOR_MARKER, DOOR_WORDS, isReusableGreen, STATUS,
 } from './status.js';
 import { thinkingJobText } from '../thinking.js';
+import { ticketFilterWords } from '../ticketfilter.js';
+import { filterUnsure } from '../ticketlabels.js';
 import { judgedFilesOf, lineRules, stepFileRel, proseNotCheckedItems } from '../rubricstep.js';
 import { factPartOf, factSentence, ruleWords, moneyAs } from '../facts.js';
 import { createSettingsRoutes } from './settingsroutes.js';
@@ -126,10 +131,10 @@ export const DEFAULT_PORT = 4700;
  * running attempt and an archived spine that never reached its own end are
  * the same fact from this read-only side: no verdict has been recorded yet.
  * @param {string|null} outcome
- * @returns {'✓'|'✗'|'■'|'▶'}
+ * @returns {'✓'|'✗'|'■'|'▶'|'–'}
  */
 export function glyphForOutcome(outcome) {
-  return /** @type {'✓'|'✗'|'■'|'▶'} */ (statusFor({ outcome }).sign);
+  return /** @type {'✓'|'✗'|'■'|'▶'|'–'} */ (statusFor({ outcome }).sign);
 }
 
 /**
@@ -815,14 +820,15 @@ function startingStub(row) {
 /**
  * A run that REFUSED before it started (its refetch of a web input was refused, run mvez8s54 shape): listed, settled at $0, no spine.
  * The status word is the table's `failed` (statusFor: "refusals, instrument stops -> failed"); the plain words ride on `endedLine`.
- * @param {{ runid: string, job: string, at: string, via: string }} row @param {string} words
+ * @param {{ runid: string, job: string, at: string, via: string }} row @param {string} words @param {'refused-before-start'|'skipped'} [outcome] @param {boolean} [reuseOffered] the Run tab's [Reuse workflow] shows (the run never ran its plan: {@link neverRanPlan}); `skipped` (R5): a ticket the job's filter did not let through, the same no-spine shape with its own status word
  * @returns {any}
  */
-function refusedStub(row, words) {
+function refusedStub(row, words, outcome = 'refused-before-start', reuseOffered = false) {
+  const status = statusFor({ outcome });
   return {
-    runid: row.runid, job: row.job, at: row.at, via: row.via, fileMissing: false, refused: true, live: false, needs: null, stoppedAt: null,
-    died: false, glyph: statusFor({ outcome: 'refused-before-start' }).sign, status: statusFor({ outcome: 'refused-before-start' }),
-    outcome: 'refused-before-start', endedLine: words, ended: null, resume: null, checkType: 'unknown', checkTypeTitle: null, model: null,
+    runid: row.runid, job: row.job, at: row.at, via: row.via, fileMissing: false, refused: outcome !== 'skipped', skipped: outcome === 'skipped', live: false, needs: null, stoppedAt: null,
+    died: false, glyph: status.sign, status,
+    outcome, endedLine: words, ended: null, reuseOffered, resume: null, checkType: 'unknown', checkTypeTitle: null, model: null,
     spend: '$0', wall: '', date: typeof row.at === 'string' ? row.at.slice(0, 10) : null, spentUsd: 0, spendComplete: true,
     spendFloorUsd: null, wallFloorMs: null, draftSpentUsd: null, draftSpendComplete: null, budgetUsd: null, steps: [], parts: [],
   };
@@ -832,6 +838,27 @@ function refusedStub(row, words) {
 function refusalWordsOf(events, row) {
   const e = events.find((x) => x && x.type === 'settled' && x.runid === row.runid && x.reason === 'refused before start' && !(x.leg > 1));
   return e && typeof e.words === 'string' && e.words !== '' ? e.words : null;
+}
+
+/**
+ * R5 (piece 2): the plain words of a run a Tickets job's filter SKIPPED at run start (leg 1), or null. Same home as a refusal: one `settled` event on the run's row, no spine.
+ * @param {any[]} events @param {{runid: string}} row
+ */
+function skipWordsOf(events, row) {
+  const e = events.find((x) => x && x.type === 'settled' && x.runid === row.runid && x.reason === 'skipped' && !(x.leg > 1));
+  return e && typeof e.words === 'string' && e.words !== '' ? e.words : null;
+}
+
+/**
+ * R9 (9b.2, fwd 7a98141): did this run END BEFORE ITS FIRST STEP, at $0? The rule, from recorded facts only: the run has NO spine on disk, and its row carries a leg-1 `settled` event
+ * that is `refused before start` or `skipped` with `spentUsd` exactly 0 and `spendComplete` not false. Such a run never ran its plan (no step, no model call), so Reuse workflow with
+ * the job unchanged signs and goes with the signed job; a red run that DID run (it has a spine) still drafts.
+ * @param {any[]} events @param {{runid: string, spine: string}} row
+ */
+export function neverRanPlan(events, row) {
+  if (existsSync(row.spine)) return false;
+  return events.some((x) => x && x.type === 'settled' && x.runid === row.runid && !(x.leg > 1)
+    && (x.reason === 'refused before start' || x.reason === 'skipped') && x.spentUsd === 0 && x.spendComplete !== false);
 }
 
 /**
@@ -865,7 +892,9 @@ export function needsStateFor(f) {
 function summarizeRow(row, nowMs = Date.now(), removals = undefined, events = []) {
   if (!existsSync(row.spine)) {
     const refusal = refusalWordsOf(events, row);
-    if (refusal !== null) return refusedStub(row, refusal);
+    if (refusal !== null) return refusedStub(row, refusal, 'refused-before-start', neverRanPlan(events, row));
+    const skipped = skipWordsOf(events, row);
+    if (skipped !== null) return refusedStub(row, skipped, 'skipped', neverRanPlan(events, row));
     if (runIsAlive(row)) return startingStub(row);
     return {
       runid: row.runid, job: row.job, at: row.at, via: row.via, fileMissing: true, live: false, needs: null, stoppedAt: null,
@@ -1387,10 +1416,309 @@ function cellText(v) {
 }
 
 /**
+ * Which Result tab a run wears: `'rubric'` (a soft-green run whose signed close has a rubric-step stage: the page-reading tab, unchanged), `'generic'`
+ * (any other run that ENDED, green or failed: R7b item 4), or `null` (not ended yet, or died with no `job-end`). ONE owner for the tab's gate
+ * ({@link getRunDetailBody}'s `hasResult`) and the route.
+ * @param {{ at?: string }} row @param {any[]} records @param {any} spec
+ * @returns {'rubric'|'generic'|null}
+ */
+function resultKindOf(row, records, spec) {
+  const start = records.findLast((r) => r && r.type === 'job-start');
+  if (checkTypeLabel(typeof start?.verdictType === 'string' ? start.verdictType : null, row.at ?? null) === 'rubric' && rubricStagesOf(spec).length > 0) return 'rubric';
+  return records.some((r) => r && r.type === 'job-end') ? 'generic' : null;
+}
+
+/** the words of the work box and the diff box, code-owned (one spelling) */
+const RESULT_WORK_NOTE = 'shown as text; the merge is yours, no button runs it.';
+
+/**
+ * the allowed folder of a write fence entry in plain words: `src/**` is `src/`; an entry this cannot read as a folder or file is `null`
+ * @param {string} entry
+ */
+function scopePrefixOf(entry) {
+  const m = /^(.*?)(?:\/\*\*?)?$/.exec(entry);
+  const base = m ? m[1] : entry;
+  return base !== '' && !/[*?[\]{}]/.test(base) ? base : null;
+}
+
+/**
+ * The generic Result tab's "What changed" box, from the spine's own `attempt-diff` records (they survive a deleted branch): the LAST edit's diff, every
+ * edit behind a fold, and the header numbers counted over every diff the records hold. `null` when the run recorded no edit at all.
+ * @param {any[]} records @param {string[]|null} writeScope
+ */
+function changedOf(records, writeScope) {
+  const diffs = records.filter((r) => r && r.type === 'attempt-diff' && Array.isArray(r.files));
+  if (diffs.length === 0) return null;
+  const edits = diffs.map((r, i) => ({
+    n: i + 1,
+    step: typeof r.step === 'string' ? r.step : null,
+    files: r.files.filter((/** @type {any} */ f) => f && typeof f.path === 'string').map((/** @type {any} */ f) => ({
+      path: f.path, diff: typeof f.diff === 'string' ? f.diff : '',
+      cut: f.truncated === true ? (Number.isInteger(f.cutLines) ? f.cutLines : 0) : null,
+    })),
+    binary: Array.isArray(r.binary) ? r.binary.filter((/** @type {any} */ b) => typeof b === 'string') : [],
+  }));
+  const paths = [...new Set(edits.flatMap((e) => [...e.files.map((f) => f.path), ...e.binary]))];
+  let plus = 0; let minus = 0; let anyCut = false;
+  for (const e of edits) {
+    for (const f of e.files) {
+      if (f.cut !== null) anyCut = true;
+      for (const line of f.diff.split('\n')) {
+        if (line.startsWith('+') && !line.startsWith('+++')) plus += 1;
+        else if (line.startsWith('-') && !line.startsWith('---')) minus += 1;
+      }
+    }
+  }
+  const shown = paths.length > 4 ? `${paths.slice(0, 4).join(', ')} and ${paths.length - 4} more` : paths.join(', ');
+  const head = `${paths.length} file${paths.length === 1 ? '' : 's'} · ${shown} · +${plus} −${minus} lines over ${edits.length} edit${edits.length === 1 ? '' : 's'}`;
+  const last = edits[edits.length - 1];
+  const cutLines = last.files.reduce((a, f) => a + (f.cut ?? 0), 0);
+  const note = [
+    edits.length > 1 ? 'the last edit only' : null,
+    last.files.some((f) => f.cut !== null) ? `${cutLines} more line${cutLines === 1 ? '' : 's'} cut` : null,
+  ].filter(Boolean).join('; ');
+  // the fence line: every path the run wrote inside what was allowed, or what lay outside
+  let scopeLine = null;
+  const prefixes = writeScope ? writeScope.map(scopePrefixOf) : [];
+  if (writeScope && writeScope.length > 0 && prefixes.every((x) => x !== null)) {
+    const inside = (/** @type {string} */ p) => prefixes.some((x) => p === x || p.startsWith(`${x}/`));
+    const outside = paths.filter((p) => !inside(p));
+    const allowed = prefixes.map((x) => (writeScope.includes(`${x}/**`) || writeScope.includes(`${x}/*`) ? `${x}/` : x)).join(', ');
+    scopeLine = outside.length === 0
+      ? `only ${allowed} was allowed; the run wrote ${paths.length} file${paths.length === 1 ? '' : 's'}, no other.`
+      : `only ${allowed} was allowed, but the run wrote ${outside.join(', ')}.`;
+  }
+  return {
+    head, files: paths.length, paths, plus, minus, edits: edits.length, anyCut,
+    last: { files: last.files.map((f) => ({ path: f.path, diff: f.diff })), note: note === '' ? null : `...(${note})` },
+    all: edits.map((e) => ({ n: e.n, step: e.step, files: e.files.map((f) => ({ path: f.path, diff: f.diff, cutNote: f.cut === null ? null : `...(${f.cut} more line${f.cut === 1 ? '' : 's'} cut)` })) })),
+    foldWords: `show every edit of the run (${edits.length})`,
+    scopeLine,
+  };
+}
+
+/**
+ * The checks a run's STEPS ran in the loop, for a run the outer close never reached (a strike-ladder cap-halt, a stop): read through the Audit tab's own data owner
+ * (`replayRun` parts, worded by {@link enrichPartsWithStageKind} / {@link tryChecksOf}), never a second reader of `check-run` / `exit-eval` records. Each check's standing is its LAST graded
+ * try; a name a later step ran again takes that later standing. The in-loop record carries no structured number, so `value`/`baseline` are null (no figure is parsed out of the gap prose);
+ * `tries` is how many times the step that ran it tried. `null` when no step ran any check.
+ * @param {any[]} records @param {any} spec
+ */
+function stepChecksOf(records, spec) {
+  /** @type {any[]|null|undefined} */
+  let parts;
+  try { parts = enrichPartsWithStageKind(replayRun(records).parts, stageKindMetaFromSpec(spec), spec); } catch { return null; }
+  /** @type {Map<string, any>} */
+  const byName = new Map();
+  for (const p of parts ?? []) {
+    if (!p || p.kind !== 'step' || !Array.isArray(p.attempts)) continue;
+    const graded = p.attempts.filter((/** @type {any} */ a) => Array.isArray(a.checks) && a.checks.length > 0);
+    const last = graded.at(-1);
+    if (!last) continue;
+    for (const c of last.checks) {
+      byName.set(c.name, {
+        name: c.name, question: typeof c.question === 'string' && c.question ? c.question : null, passed: c.pass === true,
+        status: c.pass === true ? STATUS.passed : STATUS.failed, value: null, baseline: null, direction: null, baselineKind: null,
+        notes: null, tries: p.attempts.length,
+      });
+    }
+  }
+  const stages = [...byName.values()];
+  if (stages.length === 0) return null;
+  const ok = stages.filter((s) => s.passed).length;
+  return {
+    head: `${ok} of ${stages.length} passed · the steps ran them; the close never ran`,
+    passed: ok, total: stages.length, allPassed: ok === stages.length, stages, notes: [],
+  };
+}
+
+/**
+ * The generic Result tab's "The checks" box, from the run's LAST `outer-close` record: each stage's plain question ({@link stageQuestionText}'s one
+ * owner, through the spec's own declaration), its pass/fail word from the status table, and the number the close read. A run the close never reached
+ * falls back to the checks its steps ran ({@link stepChecksOf}); `null` when neither exists.
+ * @param {any[]} records @param {any} spec
+ */
+function checksOf(records, spec) {
+  const oc = records.findLast((r) => r && r.type === 'outer-close' && Array.isArray(r.stages));
+  if (!oc) return stepChecksOf(records, spec);
+  const kindMeta = stageKindMetaFromSpec(spec);
+  const stages = oc.stages.filter((/** @type {any} */ s) => s && typeof s.name === 'string').map((/** @type {any} */ raw) => {
+    const s = attachStageKind(raw, kindMeta);
+    const passed = s.verdict === 'satisfied';
+    return {
+      name: s.name, question: typeof s.question === 'string' && s.question ? s.question : null, passed,
+      status: passed ? STATUS.passed : STATUS.failed,
+      value: typeof s.value === 'number' ? s.value : null, baseline: typeof s.baseline === 'number' ? s.baseline : null,
+      direction: s.direction ?? null, baselineKind: s.baselineKind ?? null,
+      notes: typeof s.notes === 'string' && s.notes !== '' ? s.notes : null,
+    };
+  });
+  const ok = stages.filter((/** @type {any} */ s) => s.passed).length;
+  return {
+    head: `${ok} of ${stages.length} passed · the close ran them after the worker stopped`,
+    passed: ok, total: stages.length, allPassed: ok === stages.length, stages,
+    notes: stages.filter((/** @type {any} */ s) => s.notes).map((/** @type {any} */ s) => ({ name: s.name, text: s.notes })),
+  };
+}
+
+/**
+ * The generic Result tab's "The work" box: the run's work branch, but ONLY while that branch still exists in the person's repo (asked of git itself).
+ * The merge and delete lines are TEXT; nothing runs them. `null` when the run has no work branch, no repo is known, or the branch is gone.
+ * @param {{ spine: string }} row @param {any[]} records
+ */
+function workOf(row, records) {
+  const wb = records.findLast((r) => r && r.type === 'work-branch' && typeof r.branch === 'string') ?? null;
+  const wt = worktreeOfRun(row, records);
+  if (!wb || !wt || !wt.branch) return null;
+  /** @type {string} */
+  let final;
+  try {
+    final = execFileSync('git', ['-C', wt.repo, 'rev-parse', '--verify', '--quiet', `refs/heads/${wt.branch}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }).trim();
+  } catch { return null; }
+  if (final === '') return null;
+  return {
+    branch: wt.branch, finalCommit: final.slice(0, 7), madeFrom: typeof wb.base === 'string' ? wb.base.slice(0, 7) : null, repo: wt.repo,
+    merge: `git merge ${wt.branch}`, drop: `git branch -D ${wt.branch}`, note: RESULT_WORK_NOTE,
+  };
+}
+
+/**
+ * The ticket a run read, from its `job-start` record (`{number, title, url}`), or null. ONE reader: the generic Result tab's ticket box and the ticket grid's row both ask here.
+ * @param {any} start the run's `job-start` record @returns {{number: number, title: string|null, url: string|null}|null}
+ */
+function ticketOfStart(start) {
+  const t = start && start.ticket && typeof start.ticket === 'object' ? start.ticket : null;
+  if (!t || !Number.isInteger(t.number)) return null;
+  return { number: t.number, title: typeof t.title === 'string' ? t.title : null, url: typeof t.url === 'string' && /^https?:\/\//i.test(t.url) ? t.url : null };
+}
+
+/**
+ * The generic Result tab (R7b item 4; hamr signed the mockup 2026-11-07) for a run that ENDED and is not a rubric job: five boxes of facts read
+ * from the run's own records, plus the ticket a ticket job read. The page draws it; it decides nothing.
+ * @param {string} runid @param {any} row @param {any[]} records @param {any} spec @param {any} opts
+ */
+function genericResultOf(runid, row, records, spec, opts) {
+  const start = records.findLast((r) => r && r.type === 'job-start') ?? null;
+  const writeScope = Array.isArray(spec?.writeScope) && spec.writeScope.every((/** @type {any} */ x) => typeof x === 'string') ? spec.writeScope : null;
+  const t0 = ticketOfStart(start);
+  const ticket = t0 ? { number: t0.number, title: t0.title ?? '', url: t0.url } : null;
+  const detail = getRunDetailBody(runid, opts);
+  const plan = records.findLast((r) => r && r.type === 'plan-executed' && Array.isArray(r.steps)) ?? null;
+  const spentUsd = detail && typeof detail.spentUsd === 'number' ? detail.spentUsd : null;
+  const complete = detail ? detail.spendComplete !== false : true;
+  const ids = plan ? plan.steps.map((/** @type {any} */ x) => String(x?.id)) : [];
+  const replans = plan && Number.isInteger(plan.replans) ? plan.replans : 0;
+  return {
+    runid,
+    kind: 'generic',
+    job: { asked: jobTextFromSpec(spec) || (typeof start?.goal === 'string' ? start.goal : ''), scope: writeScope },
+    ticket,
+    changed: changedOf(records, writeScope),
+    checks: checksOf(records, spec),
+    work: workOf(row, records),
+    run: {
+      spent: spentUsd === null ? 'unknown' : `${complete ? '' : 'at least '}${panelMoney2(spentUsd)}`,
+      spentNote: spentUsd !== null && !complete ? 'a floor: some rounds were unpriced' : null,
+      time: detail && typeof detail.wallMs === 'number' ? formatDurationMs(detail.wallMs) : 'unknown',
+      steps: plan ? `${ids.length} step${ids.length === 1 ? '' : 's'}${ids.length ? ` (${ids.join(', ')})` : ''}, ${replans === 0 ? 'no replan' : `${replans} replan${replans === 1 ? '' : 's'}`}` : null,
+    },
+    // R8: why the run ended, in the Run tab's own words (`detail.ended.reason`): the ticket grid's opened row says it for a run that did not pass
+    endedWords: typeof detail?.ended?.reason === 'string' && detail.ended.reason !== '' ? detail.ended.reason : null,
+    door: { head: DOOR_WORDS.waiting.head, ask: RESULT_DOOR_ASK },
+  };
+}
+
+/**
+ * R8 (piece 10): the ticket grid of the job a run belongs to, or `null` when that job is not a Tickets job (no run of it read a ticket) or the run is unknown. ONE row per run of the job, from
+ * the run list's own entry (`summarizeRow`: status, needs, money, wall, ending words), the ticket from `job-start` ({@link ticketOfStart}), the checks from {@link checksOf} and the steps from
+ * the run's `plan-executed` record. The page opens a row through `GET /api/runs/:runid/result` (the generic payload, one owner): this reads no diff and no branch.
+ * @param {string} runid @param {{ home?: string, now?: number, schedules?: ReturnType<typeof createScheduleDoor> }} [opts]
+ */
+export function getJobGrid(runid, opts = {}) {
+  const list = readRunList(opts);
+  const anchor = list.rows.find((r) => r && r.runid === runid);
+  if (!anchor || typeof anchor.job !== 'string') return null;
+  const grid = ticketGridOfJob(anchor.job, list, opts);
+  return grid === null ? null : { runid, job: anchor.job, ...grid };
+}
+
+/**
+ * Does this run's own record say it read a ticket? (the run list row's `ticket`, else its `job-start` ticket). The cheap gate before a whole job is read.
+ * @param {any} row
+ */
+function rowReadTicket(row) {
+  if (Number.isInteger(row.ticket)) return true;
+  if (!existsSync(row.spine)) return false;
+  try { return ticketOfStart(parseJsonl(row.spine).records.findLast((/** @type {any} */ r) => r && r.type === 'job-start')) !== null; } catch { return false; }
+}
+
+/**
+ * @param {string} job @param {{rows: any[], events: any[]}} list @param {{ home?: string, now?: number, schedules?: ReturnType<typeof createScheduleDoor> }} opts
+ */
+function ticketGridOfJob(job, list, opts) {
+  const mine = list.rows.filter((r) => r && r.job === job);
+  if (!mine.some((r) => rowReadTicket(r))) return null;
+  const nowMs = typeof opts.now === 'number' ? opts.now : Date.now();
+  const removals = readNeedsRemovals(opts);
+  const nos = runNumbers(list.rows);
+  const entries = mine.map((r) => {
+    const e = summarizeRow(r, nowMs, removals, list.events);
+    /** @type {any[]|null} */
+    let records = null;
+    if (existsSync(r.spine)) { try { records = parseJsonl(r.spine).records; } catch { records = null; } }
+    const startRec = records ? records.findLast((/** @type {any} */ x) => x && x.type === 'job-start') : null;
+    const t = records ? ticketOfStart(startRec) : null;
+    const checks = records ? checksOf(records, resolveSpecForRow(r)) : null;
+    const plan = records ? records.findLast((/** @type {any} */ x) => x && x.type === 'plan-executed' && Array.isArray(x.steps)) : null;
+    const status = e.status ?? { key: 'failed', ...STATUS.failed };
+    return {
+      runId: r.runid, runNo: nos.get(r.runid) ?? null, at: Number.isFinite(atMs(r)) ? atMs(r) : null,
+      statusKey: status.key, sign: status.sign, word: status.word, needs: e.needs ?? null,
+      unsure: filterUnsure({ filter: startRec?.ticketFilter }),
+      number: t ? t.number : (Number.isInteger(r.ticket) ? r.ticket : null), title: t ? t.title : null, url: t ? t.url : null,
+      steps: plan ? { done: plan.steps.filter((/** @type {any} */ x) => isReusableGreen(x?.outcome)).length, total: plan.steps.length } : null,
+      checks: checks ? { passed: checks.passed, total: checks.total } : null,
+      spentUsd: typeof e.spentUsd === 'number' ? e.spentUsd : null, spendComplete: e.spendComplete === true, spendFloorUsd: typeof e.spendFloorUsd === 'number' ? e.spendFloorUsd : null,
+      wall: typeof e.wall === 'string' && e.wall !== '' ? e.wall : null,
+      reason: typeof e.endedLine === 'string' && e.endedLine !== '' ? e.endedLine : (e.fileMissing === true ? 'the run\'s log is no longer on disk' : null),
+    };
+  });
+  let scheduleLine = null;
+  try {
+    const v = opts.schedules ? opts.schedules.view(job) : null;
+    if (v && v.scheduled === true && typeof v.text === 'string') scheduleLine = `${v.text} · looks every ${TICKET_LOOK_MS / 60_000} min`;
+  } catch { scheduleLine = null; }
+  return buildJobGrid({ entries, scheduleLine });
+}
+
+/**
+ * Is ticket `number` a skipped ticket of `job` that nobody has run since? The ONE check behind `POST /api/author/ticket-anyway`: the grid's own skipped row says so.
+ * @param {string} job @param {number} number @param {{ home?: string, now?: number }} [opts]
+ */
+export function isSkippedTicket(job, number, opts = {}) {
+  return skippedRunOf(job, number, opts) !== null;
+}
+
+/**
+ * The run id of the skipped row {@link isSkippedTicket} means (the newest one of that ticket, with Run it anyway on it), or null. The no-schedule "Run it anyway" (am3) starts from that
+ * run's own saved signed job.
+ * @param {string} job @param {number} number @param {{ home?: string, now?: number }} [opts]
+ */
+export function skippedRunOf(job, number, opts = {}) {
+  const list = readRunList(opts);
+  const grid = ticketGridOfJob(job, list, opts);
+  if (grid === null) return null;
+  const skip = grid.groups.find((g) => g.key === 'skip');
+  return skip?.rows.find((r) => r.number === number && r.anyway === true)?.runId ?? null;
+}
+
+/**
  * `GET /api/runs/:runid/result` — the Result tab: for each rubric job line, its words and `~` rules from the signed spec, the facts it requires
  * (worded by {@link factSentence}), and — read from the run's own delivered step file, sha256-checked against its `destination-written`
  * record — one row per result with each fact's cell. `passed` is read from the run's own `check-run` record; the tab never re-decides. A red run
  * delivers nothing, so it has no rows: it carries the check's own first gap instead. `null` = no such run or no result tab for it.
+ * Every OTHER job (R7b item 4) that ENDED gets the generic payload from {@link genericResultOf} (`kind: 'generic'`); the rubric payload below is
+ * untouched and carries no `kind`.
  * @param {string} runid @param {{ home?: string }} opts
  */
 export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: string }} */ opts = {}) {
@@ -1398,8 +1726,10 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
   if (!row || row.via === 'import' || !existsSync(row.spine)) return null;
   const records = parseJsonl(row.spine).records;
   const spec = resolveSpecForRow(row);
+  const kind = resultKindOf(row, records, spec);
+  if (kind === 'generic') return genericResultOf(runid, row, records, spec, opts);
+  if (kind === null) return null;
   const stages = rubricStagesOf(spec);
-  if (stages.length === 0) return null;
   const delivered = deliveredOf(records);
   const read = delivered.map((d) => readDelivered(d));
   const jobLines = Array.isArray(spec?.jobLines) ? spec.jobLines : [];
@@ -1584,7 +1914,8 @@ function scheduleExtrasFor(runid, job, rows, events, nos, opts, view) {
             lastWords = `last ${dateTimeWords(Number(lastRow.at))} · ${skippedWords(lastRow, true)}`;
           }
         }
-        schedule.line2 = [lastWords ?? 'no run yet', accept ? SCHEDULE_WORDS.acceptWaiting : null, nextWords].filter(Boolean).join(' · ');
+        // R7: a schedule signed with the job says only that it waits (and a run waiting for the Accept, which is what a rubric job waits for)
+        schedule.line2 = (view.waiting === true ? [accept ? SCHEDULE_WORDS.acceptWaiting : null, nextWords] : [lastWords ?? 'no run yet', accept ? SCHEDULE_WORDS.acceptWaiting : null, nextWords]).filter(Boolean).join(' · ');
       }
     }
     const row = rows.find((r) => r && r.runid === runid);
@@ -1601,7 +1932,7 @@ function scheduleExtrasFor(runid, job, rows, events, nos, opts, view) {
     const running = rows.some((r) => r && r.job === job && r.via !== 'import' && runIsAlive(r));
     const { sign, word } = scheduleSignFor({ running, red: !!(view && view.problem) });
     const words = scheduledWords(cur.trigger, door.userHome);
-    const head = [lowerFirst(words ?? ''), originNo === null ? null : `from run-${originNo}`, triesTailWords(tries.length) || null].filter(Boolean).join(' · ');
+    const head = [lowerFirst(words ?? ''), originNo === null ? null : `from run-${originNo}`, door.isWaiting(job) ? lowerFirst(SCHEDULE_WORDS.waiting) : null, triesTailWords(tries.length) || null].filter(Boolean).join(' · ');
     const when = row ? dateTimeWords(atMs(row)) : '';
     const thisRun = rec ? sectionThisRunWords(rec) : `by hand.${runid === cur.originRunid ? ' The schedule was set from this run.' : ''}`;
     const shown = tries.slice(0, 7).map((x, i) => ({ label: i === 0 ? 'tries' : '', text: x.line }));
@@ -1622,8 +1953,11 @@ function getRunDetailBody(runid, opts) {
   const row = findRunRow(runid, opts);
   if (!row) return null;
   if (!existsSync(row.spine)) {
-    const refusal = refusalWordsOf(readRunList(opts).events, row);
-    if (refusal !== null) return refusedStub(row, refusal);
+    const { events: settledEvents } = readRunList(opts);
+    const refusal = refusalWordsOf(settledEvents, row);
+    if (refusal !== null) return refusedStub(row, refusal, 'refused-before-start', neverRanPlan(settledEvents, row));
+    const skipped = skipWordsOf(settledEvents, row);
+    if (skipped !== null) return refusedStub(row, skipped, 'skipped', neverRanPlan(settledEvents, row));
     if (runIsAlive(row)) return startingStub(row);
     return {
       runid, job: row.job, at: row.at, via: row.via, fileMissing: true,
@@ -1916,7 +2250,7 @@ function getRunDetailBody(runid, opts) {
     accept: !runIsAlive(row) && doorWaiting(rawSpineRecords),
     // PRD v1.107 Part 6: the Result tab shows for a rubric run whose signed close has a rubric-step stage, never otherwise; `delivered` is the
     // files the run's own `destination-written` records name (the Result tab's downloads index into this list, never a path from a request)
-    hasResult: checkTypeLabel(summary.verdictType, row.at) === 'rubric' && rubricStagesOf(specForParts).length > 0,
+    hasResult: resultKindOf(row, rawSpineRecords, specForParts) !== null,
     delivered: deliveredOf(rawSpineRecords).map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })),
     // T Part 7: why a SCHEDULED run started (the words `trigger.json` carried) and the fixed catch-up sentence; null on every hand run
     ...(() => {
@@ -3107,6 +3441,21 @@ function toolsListFromSpec(spec) {
 }
 
 /**
+ * The Job tab's MCP rows (piece 8): the signed flow type (in the card's own words), the server and the tools the job signed, plus a ticket filter / watched fields when the spec
+ * carries them. `null` for a plain job (no MCP rows at all).
+ * @param {any} spec
+ * @returns {{flowType: string, server: string, tools: string[], ticketFilter?: any, ticketFilterWords?: string|null, ticketWatch?: string[]}|null}
+ */
+function mcpDetailFromSpec(spec) {
+  const m = spec?.mcp;
+  if (!m || typeof m.server !== 'string' || !Array.isArray(m.tools)) return null;
+  return {
+    flowType: FLOW_TYPE_LABELS[flowTypeOf(spec)], server: m.server, tools: m.tools.filter((/** @type {any} */ t) => typeof t === 'string'),
+    ...(spec.ticketFilter ? { ticketFilter: spec.ticketFilter, ticketFilterWords: ticketFilterWords(spec.ticketFilter) } : {}), ...(Array.isArray(spec.ticketWatch) ? { ticketWatch: spec.ticketWatch } : {}),
+  };
+}
+
+/**
  * The granted tool list, verbatim, in declared order — `null` when the spec
  * carries none (a job may legally declare no `tools` at all).
  * @param {any} spec
@@ -3208,7 +3557,7 @@ export function getRunJob(runid, opts = {}) {
       trigger: cur ? cur.trigger : null, originNo: cur ? (nos.get(cur.originRunid) ?? null) : null,
       model: spec && typeof spec.model === 'string' ? spec.model : null,
       destination: cur ? (typeof cur.destination === 'string' && cur.destination !== '' ? cur.destination : (Array.isArray(spec?.writeScope) ? spec.writeScope.join(', ') : null)) : null,
-      home: door.userHome,
+      home: door.userHome, waiting: cur ? door.isWaiting(job) : false,
     });
     return { ...body, started, schedule };
   } catch { return body; }
@@ -3236,7 +3585,8 @@ function getRunJobBody(runid, opts) {
   const row = findRunRow(runid, opts);
   if (!row) return null;
 
-  const near = existsSync(row.spine) ? sourceNearSpine(row.spine) : { specPath: null, sourceJsonPath: null };
+  // a run that ended BEFORE it started (refused or skipped: a listed row, no spine file) still has its session folder: its path names it (R7b), so the signed job shows from there
+  const near = sourceNearSpine(row.spine);
   let manifest = null;
   if (near.sourceJsonPath) {
     try { manifest = JSON.parse(readFileSync(near.sourceJsonPath, 'utf8')); } catch { manifest = null; }
@@ -3306,6 +3656,7 @@ function getRunJobBody(runid, opts) {
     guardrails: notRecorded(guardrailsFromSpec(spec)),
     tools: notRecorded(toolsFromSpec(spec)),
     toolsList: toolsListFromSpec(spec),
+    mcp: mcpDetailFromSpec(spec),
     thinkingTick: spec.thinking === true,
     note,
   });
@@ -3524,19 +3875,22 @@ export function reuseLine(record) {
  * to copy: change the job: Clear the card). `null` when the runid is not listed.
  * @param {string} runid
  * @param {{ home?: string, model?: string, provider?: string }} [opts] `model` = the Model box's current Name (the estimate counts only runs on that worker); absent = the card's own Model
- * @returns {{ok: true, origin: {runid: string, job: string}, outcome: string|null, card: Record<string, any>, from: 'signed job',
+ * @returns {{ok: true, origin: {runid: string, job: string}, outcome: string|null, neverRan: boolean, card: Record<string, any>, from: 'signed job',
  *   note: string|null,
  *   specHash: string, workflowKey: string, spec: any, specPath: string, specNamesModel: boolean,
  *   specWorker: {provider: string, endpoint: string, label: string},
  *   trackRecord: ReturnType<typeof trackRecordFor>, line: string}|{ok: false, error: string}|null}
  */
 export function getStartFrom(runid, opts = {}) {
-  const { rows } = readRunList(opts);
+  const { rows, events } = readRunList(opts);
   const row = rows.find((r) => r && r.runid === runid);
   if (!row) return null;
-  if (!existsSync(row.spine)) return { ok: false, error: 'this run has no log on disk — nothing to reuse' };
-  const records = parseJsonl(row.spine).records;
-  const signed = signedSpecForRun(row, records);
+  // a ticket the job's filter SKIPPED has no log (R5) but its session kept the signed job beside where the log would be: the no-schedule "Run it anyway" (am3) starts from it
+  // R9 (9b.2): so does a run refused before its first step (a refused run-start fetch, a locked-token look): it has no log either, and its session kept the signed job the same way
+  const skipped = neverRanPlan(events, row);
+  if (!existsSync(row.spine) && !skipped) return { ok: false, error: 'this run has no log on disk — nothing to reuse' };
+  const records = skipped ? [] : parseJsonl(row.spine).records;
+  const signed = skipped ? skippedSignedSpec(row) : signedSpecForRun(row, records);
   if (!signed) return { ok: false, error: "this run's signed job is not on disk — nothing to reuse (change the job: Clear the card and draft a new one)" };
   const near = sourceNearSpine(row.spine);
   const spec = signed.spec;
@@ -3574,6 +3928,8 @@ export function getStartFrom(runid, opts = {}) {
       const o = legsOf(records).at(-1)?.outcome ?? null;
       return isReusableGreen(o) && heldScheduled(records, triggerRecordOf(row)) ? 'green-held' : o;
     })(),
+    // R9 (9b.2): the run ended before its first step at $0 (see neverRanPlan): the signed job stands, so an unchanged Reuse is "Sign & run", not a redraft
+    neverRan: skipped,
     card,
     from: 'signed job',
     note: Array.isArray(spec.jobLines) && spec.jobLines.length ? null : 'older job — numbered lines were not saved',
@@ -3595,15 +3951,29 @@ export function getStartFrom(runid, opts = {}) {
 }
 
 /**
+ * The signed job a SKIPPED run's session left (`resolved-spec.json` beside where its log would be), or null. A skipped run has no `job-start` to name the hash, so the file stands as the
+ * session saved it; whatever starts from it is signed afresh by the start's own gates.
+ * @param {{ spine: string }} row @returns {{spec: any, specPath: string, specHash: string}|null}
+ */
+function skippedSignedSpec(row) {
+  const { specPath } = sourceNearSpine(row.spine);
+  if (!specPath) return null;
+  try {
+    const spec = JSON.parse(readFileSync(specPath, 'utf8'));
+    return spec && typeof spec === 'object' ? { spec, specPath, specHash: jobSpecHash(spec) } : null;
+  } catch { return null; }
+}
+
+/**
  * T Part 3: a job's listed runs, newest first, each with its signed spec (null when not on disk), its terminal outcome and
  * its parsed spine. The schedule door's gate (`greenFor`) reads this; nothing here builds a run context.
  * @param {string} job
  * @param {{ home?: string }} [opts]
- * @returns {{runid: string, outcome: string|null, spec: any, records: any[]}[]}
+ * @returns {{runid: string, outcome: string|null, spec: any, records: any[], ticket?: number}[]}
  */
 export function jobRunsOf(job, opts = {}) {
   const { rows } = readRunList(opts);
-  /** @type {{runid: string, outcome: string|null, spec: any, records: any[]}[]} */
+  /** @type {{runid: string, outcome: string|null, spec: any, records: any[], ticket?: number}[]} */
   const out = [];
   for (let i = rows.length - 1; i >= 0; i -= 1) {
     const row = rows[i];
@@ -3612,7 +3982,11 @@ export function jobRunsOf(job, opts = {}) {
     try { records = parseJsonl(row.spine).records; } catch { continue; }
     const outcome = legsOf(records).at(-1)?.outcome ?? null;
     // T D.2: a scheduled run's green is HELD until accepted, so it is not a good run for the schedule gate either
-    out.push({ runid: row.runid, outcome: outcome === 'green' && heldScheduled(records, triggerRecordOf(row)) ? 'green-held' : outcome, spec: signedSpecForRun(row, records)?.spec ?? null, records });
+    out.push({
+      runid: row.runid, outcome: outcome === 'green' && heldScheduled(records, triggerRecordOf(row)) ? 'green-held' : outcome, spec: signedSpecForRun(row, records)?.spec ?? null, records,
+      // a Tickets run's ticket number (the run list row carries it): the schedule signed with the job starts after this one (R7)
+      ...(Number.isInteger(row.ticket) ? { ticket: row.ticket } : {}),
+    });
   }
   return out;
 }
@@ -3670,6 +4044,8 @@ function reuseCardFromSpec(spec, extra) {
     destination: extra.destination || writeScope.join(', '),
     capUsd: typeof spec.budgetUsd === 'number' ? spec.budgetUsd : null,
     maxWallMs: typeof spec.maxWallMs === 'number' ? spec.maxWallMs : undefined,
+    // piece 8: a job with an MCP shows its Flow type and server on the card; a plain job adds nothing (so its card is what it was)
+    ...(spec.mcp && typeof spec.mcp.server === 'string' ? { flowType: flowTypeOf(spec), mcp: spec.mcp.server } : {}),
   };
 }
 
@@ -3771,7 +4147,7 @@ function sendText(res, code, text) {
  * only `createPanelServer` below always supplies one.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
- * @param {{ home?: string, sessionsRoot?: string, version?: string, startedAt?: string, packageJsonPath?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
+ * @param {{ home?: string, mcpHome?: string, sessionsRoot?: string, version?: string, startedAt?: string, packageJsonPath?: string, port: number, token?: string, authorRoutes?: ReturnType<typeof createAuthorRoutes>, settingsRoutes?: ReturnType<typeof createSettingsRoutes>, runRoutes?: ReturnType<typeof createRunRoutes>, importRoutes?: ReturnType<typeof createImportRoutes>, schedules?: ReturnType<typeof createScheduleDoor> }} opts
  */
 export function handleRequest(req, res, opts) {
   /** the ONE writable route family for a path, or null — `/api/author/*` (authoring) or
@@ -3875,6 +4251,8 @@ export function handleRequest(req, res, opts) {
     // caller (no `opts.token`), which is fine: the page's own JS only reads
     // it to send on a POST, and there are none to send without P3's routes.
     html = html.replace(/__BARELOOP_PANEL_TOKEN__/g, String(opts.token ?? ''));
+    // the New job card's Schedule row (R7): its words come from the schedule words table, never from the page
+    for (const [token, words] of Object.entries(scheduleCardFill())) html = html.split(token).join(words);
     if (method === 'HEAD') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': Buffer.byteLength(html) });
       res.end();
@@ -3894,7 +4272,7 @@ export function handleRequest(req, res, opts) {
 
   if (pathname === '/api/runs') { send(200, runsListPayload({ home: opts.home, schedules: opts.schedules })); return; }
 
-  const runMatch = /^\/api\/runs\/([^/]+)(\/(audit|job|rounds|result|download))?$/.exec(pathname);
+  const runMatch = /^\/api\/runs\/([^/]+)(\/(audit|job|rounds|result|download|grid))?$/.exec(pathname);
   if (runMatch) {
     const rawRunid = runMatch[1];
     const sub = runMatch[3] ?? null;
@@ -3919,6 +4297,12 @@ export function handleRequest(req, res, opts) {
     if (sub === 'result') {
       const result = getRunResult(runid, { home: opts.home, sessionsRoot: opts.sessionsRoot });
       if (!result) { sendText(res, 404, 'no such run, or it has no result tab'); return; }
+      send(200, result);
+      return;
+    }
+    if (sub === 'grid') {
+      const result = getJobGrid(runid, { home: opts.home, schedules: opts.schedules });
+      if (!result) { sendText(res, 404, 'no such run, or its job is not a Tickets job'); return; }
       send(200, result);
       return;
     }
@@ -3988,7 +4372,7 @@ export function panelUrl(boundPort) {
  * @param {{ port?: number, home?: string, env?: Record<string,string|undefined>,
  *   sessionsRoot?: string, spawnFn?: (...a: any[]) => any, bareloopBin?: string,
  *   fetchImpl?: typeof fetch, settleMs?: number, userHome?: string,
- *   openFolderSpawn?: (cmd: string, args: string[], o: object) => any, platform?: string, packageJsonPath?: string,
+ *   openFolderSpawn?: (cmd: string, args: string[], o: object) => any, platform?: string, mcpHome?: string, packageJsonPath?: string,
  *   scheduleNow?: () => number, sessionDeps?: Record<string, any>, schedulerIntervalMs?: number, acceptWaitMs?: number }} [opts] `scheduleNow`, `sessionDeps` and `schedulerIntervalMs` are TEST SEAMS (the schedule clock; createSession's stubs; the scheduler's timer, 0 = none)
  * @returns {Promise<{ server: import('node:http').Server, port: number, token: string, schedules: ReturnType<typeof createScheduleDoor>, scheduler: ReturnType<typeof createScheduler>, close: () => Promise<void> }>}
  */
@@ -4050,6 +4434,8 @@ export function createPanelServer(opts = {}) {
       schedulesRef = schedules;
       authorRoutes = createAuthorRoutes({
         schedules,
+        isSkippedTicket: (job, n) => isSkippedTicket(job, n, { home }),
+        skippedRunOf: (job, n) => skippedRunOf(job, n, { home }),
         runJobNames: () => readRunList({ home }).rows.flatMap((r) => (r && typeof r.job === 'string' ? [r.job] : [])),
         ...(opts.sessionDeps ? { sessionDeps: opts.sessionDeps } : {}),
         port: boundPort,
@@ -4060,6 +4446,7 @@ export function createPanelServer(opts = {}) {
         bareloopBin: opts.bareloopBin,
         fetchImpl: opts.fetchImpl,
         home,
+        mcpHome: opts.mcpHome,
         startFrom: {
           get: (runid, o = {}) => getStartFrom(runid, { home, ...o }),
           getImport: (id, o = {}) => getStartFromImport(id, { home, ...o }),
@@ -4080,7 +4467,7 @@ export function createPanelServer(opts = {}) {
       scheduler.start();
       settingsRoutes = createSettingsRoutes({
         port: boundPort, token, home, env: opts.env, fetchImpl: opts.fetchImpl,
-        openFolderSpawn: opts.openFolderSpawn, platform: opts.platform,
+        openFolderSpawn: opts.openFolderSpawn, platform: opts.platform, mcpHome: opts.mcpHome,
       });
       runRoutes = createRunRoutes({
         port: boundPort,

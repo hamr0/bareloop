@@ -120,6 +120,11 @@ const ALLOWED = [
     why: 'the panel\'s own loopback address (parsing its request URL; the line the panel prints). Not a provider.',
   },
   {
+    file: 'src/mcpsources.js',
+    re: /'\.claude', 'mcp_servers\.json'|'Claude', 'claude_desktop_config\.json'/g,
+    why: 'the file names of two of the four MCP config places bare-agent itself reads (the person\'s own client configs, listed so a server is found where bare-agent finds it). Config file paths, not a model provider or a model.',
+  },
+  {
     file: 'src/panel/settingsroutes.js',
     re: /http:\/\/ or https:\/\/\./g,
     why: 'the sentence that a Base URL must start with http:// or https:// (the SHAPE of an address, not an address).',

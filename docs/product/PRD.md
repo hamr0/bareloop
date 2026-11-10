@@ -2192,3 +2192,55 @@ Two items, built next, one at a time, each on its own branch. Neither is built y
 - **Built on `fix/bad-calls`:** `closeDecl.guardLines` lets a job line the always-on guards fully cover count as covered (F281; screening read n=6, wording clause test-proven only); a worker that ends a writeable try in text with no gate-audited write is nudged once in the same conversation (F282; test-proven only, not seen live; base rate under 1%).
 - **Panel looks carried from fwdloop (hamr 2026-11-03):** accent captions, the Runs tab search card, the Audit "told in this run" row; no behaviour change. hamr's click-through and phone width pending.
 - **Contract pointers:** `bareloop.context.md` (closeDecl row, "Text-only ending nudge"), `docs/wiki/FINDINGS.md` F281, F282.
+
+### Result tab for every job (v1.128 — 2026-11-07) — UNPARKED 2026-11-07: pulled into the MCP + tickets branch (hamr), see ITEM33-BUILD R7b
+
+- **Unparked (hamr 2026-11-07):** no longer parked; built in the MCP + tickets branch beside R8, mockup to hamr first (ITEM33-BUILD R7b).
+- A Result tab for every job, not only rubric: what changed (each file and its diff), the checks that passed in plain words with their last output lines, where it is (work branch and the `git merge` line), and for a ticket job the ticket read with its link, all in one place ready for Accept. Needs a mockup shown to hamr, then an interview, before any spec.
+
+### Dropped: more retries for long jobs (v1.129 — 2026-11-09) — DROPPED by hamr after a $0 read
+
+- Idea (hamr): a long-job checkmark that doubles strikes and tries, dropped; the $0 read found retry-limit reds were stuck, not short of room; see F289 in `docs/wiki/FINDINGS.md`.
+
+### Dropped: a workflow graph or a rigid-workflow export (v1.130 — 2026-11-09) — DROPPED by hamr
+
+- A graph of the winning path, or a fixed workflow taken out to run on its own, is not pursued: the value is the plan written for each run, the learnings and the memo, plus healing by retry under the judge, not a fixed path. Paths differ per model and need healing when the input changes; a graph keeps no judge. The existing export stays as built (it carries the harness and the arbiter) and gets no further work. See F289 for the retry share.
+
+### Rubric drafting: the person's ~ rules first, the AI's extra checks offered and built by code (v1.131 — 2026-11-09)
+
+hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and does its best to check it honestly and if one is missing or could be reshaped better that should be offered, our goal is to make it honest and check what's really checkable in rubric and say what it isn't, not to close all". The evidence is `docs/wiki/FINDINGS.md` F290-F300. Contract only; each tick has a status.
+
+1. **`~` first.** Each `~` rule is matched by code (a count becomes a pick, built by code, never dropped) or shown honestly as Not checked; an unmatched rule is asked as a question. BUILT (F290-F296).
+2. **One owner per count rule: code plus the person.** The look asks nothing about a count, the drafter writes none, the pick is asked and agreed. BUILT (F292, F295).
+3. **The AI's uncheckable parts go to Not checked, rubric jobs only.** A drafter part that is `none` or `judged` is listed with its words, not a plan-red. BUILT (F295); not seen live beyond the round 4b tap.
+4. **A broken AI-written part after the last try is dropped to Not checked; a pick is never dropped.** BUILT 9e3f64b, test-proven, not seen live (0 firings in round 5, F301); POC F297.
+5. **The AI's extra checks become suggestions.** Code builds each one and offers it as a question ("I can also check ... agree / drop it"); the drafter writes no fact and no cited part itself; an agreed offer is recorded in a signed `offered` record held by the strict gate; at most 3 offers per line, outside the 3-question cap. TO REDO with a new POC. No longer blocked on bareguard: BG-4 is delivered in 0.33.0 (F303); bareloop still needs the `^0.33.0` bump. The first POC failed on retention (F299).
+6. **An offer must be a good check for a REPEATING job.** Code refuses to offer a quote that is true only of this week's page (a version, a date, one bullet's text) and refuses phrases too short or too common (a length floor is too weak alone). The rule is TO DESIGN and POC before any build (F299, O6).
+7. **A retention measure goes into every paid round.** The rate of drafts that keep the AI's page checks, with and without count picks, at least 10 drafts per arm. BUILT 890affa, seen live in round 5 (F301).
+8. **Shared with fwdloop.** fwd hit the mirror failure (F298); one design for both. fwd is paused by hamr until this is proven here; fwd copies our per-part design from our release (F304, relayed). OPEN.
+9. **A run needs at least one check that can fail.** A rubric job whose close has none stops with signed words saying so, not the repository sentence (hamr ruling 2026-11-10; F302). BUILT d4596a7, test-proven, new words not seen live. Caveat: this stop fires only when nothing in the close fails on the seed; a plan can still end with zero checks (after a drop or when every part goes to Not checked), seen live in paid round 6 drafts 2 and 17 (F309).
+
+- **Pointers:** `docs/product/ITEM33-BUILD.md` R10 (shipped pieces, offer redesign open); `docs/product/UPSTREAM-ASKS.md` BG-4.
+
+### NEXT after this release: one code-owned check ledger per job line (v1.132 — 2026-11-10)
+
+**Problem.** Several lists say what a job line checks and no one owns them, so they drift (FINDINGS F305-F308; map at `.claude/scratch/r10/ledger/MAP.md`).
+
+**Goal.** One code-owned ledger row per item: a `~` rule, a `~` pick, an AI proposal, a look fact, an AI part, an answer. Each row has one state: agreed, dropped, built or Not checked. Every reader (drafter brief, sign card, Job tab, end check, retention, signing) reads only the ledger. Prompt text is only conditional and injected where it happens (hamr's ruling, F308).
+
+0. **Fix 0 (first): a rubric plan must never sign with zero checks** — one end check on both doors after the declaration settles, independent of the seed gate; includes dropExtras/moveUncheckable leaving `parts: []`. Seen live paid6 d2, d17 (F309). A test-proven version exists on feat/check-ledger (55e7234, cb3babf).
+1. **Map.** DONE (`MAP.md`).
+2. **Design and a $0 POC on the 77 saved paid drafts.** TO DO. No build before it passes.
+3. **Build.** TO DO, after tick 2.
+4. **A paid round to verify.** TO DO; the round 7 harness exists and is reframed for the ledger.
+5. **Shared with fwdloop.** OPEN: one shape for both; fwd was shown the map on 2026-11-10. See also fwd's F171 (fwdloop docs/logs/FINDINGS.md, commit 1186072, relayed): 21 lists, same root, a zero-check plan is signable there too.
+
+**Open questions for hamr** (picks are the main session's, not rulings):
+- (a) A free-text answer that types a limit. Pick: code does not read it; ask for a `~` rule.
+- (b) Keep the confirm AI's `checkItems` list or remove it. Pick: remove it, one owner.
+- (c) The ledger changes the signed plan's shape, so old hashes flip. Pick: yes; old runs are not repaired.
+
+**Local fixes not in this release.** The four local fixes of F307 (55e7234 end check, 5683008, 039ce9d, cb3babf) are NOT in this release. They are kept on branch `feat/check-ledger` (tip de0af496), test-proven only; the ledger redesign decides whether each is kept, reworked or replaced. The paid round 7 harness (`.claude/scratch/r10/paid7`, frozen against cb3babf) belongs to that branch.
+
+**Pick up first thing next.** Read FINDINGS F305-F308 and `MAP.md`, then tick 2.
+

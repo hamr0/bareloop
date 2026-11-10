@@ -27,14 +27,24 @@ import { SHAPES } from '../providershapes.js';
 import { keyRows, effectiveModels, usableKey, rowNamesOf } from '../providerrows.js';
 import { apiKeyProblem } from '../providers.js';
 import { listModels } from '../modellist.js';
+import { homedir } from 'node:os';
+import { listServerTools } from 'bare-agent/mcp';
+import { mcpPathProblem } from '../config.js';
+import { mcpSources, expandMcpPath, DEFAULT_MCP_PLACES } from '../mcpsources.js';
+import { appendMcpCheck, newestMcpChecks } from '../mcpchecks.js';
+import { countMcpUse } from '../mcpuse.js';
+import { MCP_PASS_ENV } from '../ticketmcp.js';
+import { readRunList } from '../runlist.js';
 
 const BROKEN_CONFIG = 'Your settings file (config.json) cannot be read. Fix or remove it, then look again.';
+const MCP_CHECK_MS = 15000;
 const BAD_KEY = 'The key has a space or a line break in it. Fix it in your keys file, then reload keys.';
 
 /**
  * `openFolderSpawn` / `platform` are test seams for the Open keys folder button (a real caller passes
- * neither: `child_process.spawn` and `process.platform`).
- * @param {{ port: number, token: string, home?: string, env?: Record<string,string|undefined>,
+ * neither: `child_process.spawn` and `process.platform`). `mcpHome` is the test seam for the person's home folder the four MCP config places
+ * live under and where `check tools` starts a server (a real caller passes none: `os.homedir()`), so a test reads a fixture home, never the real `~`.
+ * @param {{ port: number, token: string, home?: string, mcpHome?: string, env?: Record<string,string|undefined>,
  *   fetchImpl?: typeof fetch, now?: () => number, openFolderSpawn?: (cmd: string, args: string[], o: object) => any,
  *   platform?: string }} opts
  */
@@ -214,6 +224,117 @@ export function createSettingsRoutes(opts) {
       .then((opened) => (opened ? reply(200, { ok: true, opened: true, path: dir }) : cannot()));
   }
 
+
+  // ---- Settings > MCP (piece 7). Reads the MCP config files (never writes them) and shows names, flags and counts only: no command, args, env or key.
+  /** @type {Set<string>} */
+  const checking = new Set();
+  /** a tool hint as the page shows it: only `readOnlyHint: true` is a hint; anything else is "no hint" (null) @param {any} a */
+  const hintOf = (a) => (a?.readOnlyHint === true ? 'read-only' : null);
+  const sources = () => mcpSources({ ...(opts.home === undefined ? {} : { home: opts.home }), ...(opts.mcpHome === undefined ? {} : { mcpHome: opts.mcpHome }) });
+
+  function mcpGet() {
+    const src = sources();
+    const names = [...new Set(src.places.flatMap((p) => p.servers.map((x) => x.name)))];
+    const use = countMcpUse(readRunList({ home: opts.home }).rows, names);
+    const checks = newestMcpChecks(opts.home);
+    const places = src.places.map((p) => ({
+      path: p.path,
+      added: p.added,
+      status: p.status,
+      servers: p.servers.map((x) => {
+        const u = use.get(x.name);
+        const c = x.remote || x.shadowedBy !== null ? null : checks.get(`${p.path}\t${x.name}`) ?? null;
+        return {
+          name: x.name,
+          remote: x.remote,
+          shadowedBy: x.shadowedBy,
+          check: c === null ? null : (c.ok === true && Array.isArray(c.tools)
+            ? { at: c.at, ok: true, tools: c.tools.map((/** @type {any} */ t) => ({ name: String(t?.name), hint: t?.hint === 'read-only' ? 'read-only' : null })) }
+            : { at: c.at, ok: false, error: typeof c.error === 'string' ? c.error : 'The check failed.' }),
+          use: x.remote || x.shadowedBy !== null || !u ? null : { calls: u.calls, runs: u.runs, last: u.last, denied: u.denied, tools: Object.fromEntries(u.tools) },
+        };
+      }),
+    }));
+    return reply(200, { ok: true, problem: src.problem, places });
+  }
+
+  /** the plain sentence for a failed `check tools`; the library's own message can hold the start command, so it is never passed on @param {any} e */
+  function checkFailure(e) {
+    if (e?.context?.timeout === true) return 'The server did not answer in time.';
+    if (e?.context?.spawnError === true) return 'The server did not start.';
+    if (e?.context?.notFound === true) return 'The server is not in the list any more.';
+    return 'The check failed.';
+  }
+
+  /** The one place a press starts a server: ONLY from this POST (never a page load or a GET), that one server, once, with the same start options as a run. @param {any} body */
+  async function mcpCheck(body) {
+    const server = body?.server;
+    if (typeof server !== 'string' || server === '') return refuse('bad-server', 'Pick an MCP to check. Nothing was started.');
+    const place = sources().places.find((p) => p.servers.some((x) => x.name === server));
+    const row = place?.servers.find((x) => x.name === server);
+    if (!place || !row) return refuse('unknown-mcp', 'That MCP is not in the list. Nothing was started.');
+    if (row.remote) return refuse('remote-mcp', 'A remote server is not supported yet. Nothing was started.');
+    if (row.shadowedBy !== null) return refuse('shadowed-mcp', 'An earlier path has an MCP with this name, so this one is not used. Nothing was started.');
+    if (checking.has(server)) return refuse('already-checking', 'That MCP is being checked right now.', 409);
+    checking.add(server);
+    const line = { server, path: place.path, at: new Date(opts.now ? opts.now() : Date.now()).toISOString() };
+    try {
+      let entry;
+      try {
+        // confirmServer vets ONLY the named server (bare-agent needs exactly `true`); the start options are a run's: PATH and HOME, the home folder as cwd
+        const tools = await listServerTools({ server, configPaths: [place.file], passEnv: MCP_PASS_ENV, cwd: opts.mcpHome ?? homedir(), confirmServer: (/** @type {string} */ n) => n === server, timeout: MCP_CHECK_MS });
+        entry = { ...line, ok: true, tools: tools.map((t) => ({ name: t.name, hint: hintOf(t.annotations) })) };
+      } catch (e) {
+        entry = { ...line, ok: false, error: checkFailure(e) };
+      }
+      try {
+        appendMcpCheck(opts.home, entry);
+      } catch {
+        return refuse('log-failed', 'The check ran but its result could not be saved.', 500);
+      }
+      return reply(200, { ok: true, checked: entry.ok });
+    } finally {
+      checking.delete(server);
+    }
+  }
+
+  /** @param {any} body */
+  function mcpPathAdd(body) {
+    const raw = typeof body?.path === 'string' ? body.path.trim() : body?.path;
+    // the person may type `~/x`; the config keeps absolute paths only (`mcpPathProblem`), so it is written out first
+    const typed = typeof raw === 'string' ? expandMcpPath(raw, opts.mcpHome) : raw;
+    const why = mcpPathProblem([typed]);
+    if (why) return refuse('bad-path', `${why} Nothing was saved.`);
+    const c = config();
+    if (c.problem) return refuse('config-broken', `${BROKEN_CONFIG} Nothing was saved.`);
+    const list = Array.isArray(c.config.mcpPaths) ? c.config.mcpPaths : [];
+    if (DEFAULT_MCP_PLACES(opts.mcpHome).includes(typed) || list.includes(typed)) return refuse('path-listed', 'That path is already in the list. Nothing was saved.');
+    try {
+      updateConfig({ mcpPaths: [...list, typed] }, { home: opts.home });
+    } catch (e) {
+      if (!(e instanceof ConfigError)) throw e;
+      return refuse('config-broken', `${BROKEN_CONFIG} Nothing was saved.`);
+    }
+    return reply(200, { ok: true, path: typed });
+  }
+
+  /** @param {any} body */
+  function mcpPathRemove(body) {
+    const c = config();
+    if (c.problem) return refuse('config-broken', `${BROKEN_CONFIG} Nothing was saved.`);
+    const list = Array.isArray(c.config.mcpPaths) ? c.config.mcpPaths : [];
+    const typed = typeof body?.path === 'string' ? expandMcpPath(body.path, opts.mcpHome) : null;
+    if (typed === null || !list.includes(typed)) return refuse('path-unknown', 'That path is not one you added. Nothing was changed.');
+    const next = list.filter((/** @type {string} */ p) => p !== typed);
+    try {
+      updateConfig({ mcpPaths: next.length ? next : null }, { home: opts.home });
+    } catch (e) {
+      if (!(e instanceof ConfigError)) throw e;
+      return refuse('config-broken', `${BROKEN_CONFIG} Nothing was saved.`);
+    }
+    return reply(200, { ok: true });
+  }
+
   /**
    * The POST routes that answer asynchronously.
    * @param {string} pathname
@@ -224,6 +345,9 @@ export function createSettingsRoutes(opts) {
     if (pathname === '/api/settings/provider') return providerRoute(body);
     if (pathname === '/api/settings/model') return modelRoute(body);
     if (pathname === '/api/settings/open-keys-folder') return openKeysFolder(body);
+    if (pathname === '/api/settings/mcp-check') return mcpCheck(body);
+    if (pathname === '/api/settings/mcp-path') return mcpPathAdd(body);
+    if (pathname === '/api/settings/mcp-path-remove') return mcpPathRemove(body);
     return listFor(body?.slot).then((r) => {
       if ('unknown' in r) return refuse('unknown-provider', 'That provider is not known.');
       if (pathname === '/api/settings/test') return reply(200, r.ok ? { ok: true, ms: r.ms } : r);
@@ -311,7 +435,13 @@ export function createSettingsRoutes(opts) {
       send(r.status, r.body);
       return true;
     }
-    const postPaths = ['/api/settings/provider', '/api/settings/model', '/api/settings/models', '/api/settings/test', '/api/settings/open-keys-folder'];
+    if (pathname === '/api/settings/mcp' && req.method === 'GET') {
+      const r = mcpGet();
+      send(r.status, r.body);
+      return true;
+    }
+    const postPaths = ['/api/settings/provider', '/api/settings/model', '/api/settings/models', '/api/settings/test', '/api/settings/open-keys-folder',
+      '/api/settings/mcp-check', '/api/settings/mcp-path', '/api/settings/mcp-path-remove'];
     if (req.method === 'POST' && postPaths.includes(pathname)) {
       Promise.resolve(postRoute(pathname, body)).then((r) => send(r.status, r.body));
       return true;

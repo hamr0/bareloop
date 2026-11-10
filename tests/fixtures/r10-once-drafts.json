@@ -1,0 +1,301 @@
+{
+ "_about": "Trimmed from R10 paid round 4 (engine 31e6e1a). D1/D4 = the closeDecl of drafts 1 and 4 as signed (specClose: what applyPicks returned); re-applying the same picks to it is the drafter's declaration plus code's picks. D9 = draft 9's check-suggest raw (prose; the log holds text only, so `artifact` is the tool call that prose states: rule 1 none, rule 2 maxWords 80).",
+ "D1": {
+  "session": "smw9nndhqv0hm",
+  "closeDecl": {
+   "genre": "TEXT",
+   "lang": "text",
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-summary-of-latest-release",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "the bullets are bulleted with the \"-\" marker from Changelog",
+        "class": "fact",
+        "source": "Changelog",
+        "rules": [
+         1
+        ],
+        "covers": [
+         3
+        ],
+        "count": {
+         "min": 3,
+         "max": 3
+        },
+        "facts": [
+         {
+          "name": "bullet marker",
+          "shape": "phrase",
+          "phrase": "-"
+         }
+        ]
+       },
+       {
+        "text": "exactly 3 bullets",
+        "class": "countable",
+        "check": "listItems",
+        "value": 3,
+        "rules": [
+         1,
+         3
+        ]
+       },
+       {
+        "text": "under 80 words",
+        "class": "countable",
+        "check": "maxWords",
+        "value": 80,
+        "rules": [
+         2,
+         4
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "The person asked that the summary be of the LATEST release; nothing in the catalogue can check WHICH release, so it is not checked.",
+    "The person asked that the summary be a good summary of the release; that is a judgement only reading could decide, so it is not checked.",
+    "The person asked for \"release version and date\"; the look reports NOT CHECKED: \"release version and date\" - no word on this page reads \"release version and date\" safely, so code lists it under Not checked and I write no part for it.",
+    "Line 1 is a facts line: its worker file output/steps/1.json holds results with one quote copied from Changelog and the value of every fact as the quote writes it, and no free text.",
+    "~ rule 1 \"exactly 3 bullets\" and ~ rule 2 \"under 80 words\" are settled by code: the person picked how they are checked, so I wrote no part and no refused entry for them. The phrase fact uses the input's own words (\"-\") from the look, not the person's word \"bullet\".",
+    "Confirmed check #3 (each list item is backed by a quote copied from Changelog) is carried by the fact part's per-result quote, so I listed it in that part's covers; confirmed checks #1 (at most 80 words) and #2 (exactly 3 list items) are the picks code writes itself.",
+    "line 1: \"release version and date\" \u2014 No word on this page reads \"release version and date\" safely."
+   ],
+   "picks": [
+    {
+     "line": 1,
+     "part": {
+      "text": "exactly 3 bullets",
+      "class": "countable",
+      "check": "listItems",
+      "value": 3,
+      "rules": [
+       1,
+       3
+      ]
+     }
+    },
+    {
+     "line": 1,
+     "part": {
+      "text": "under 80 words",
+      "class": "countable",
+      "check": "maxWords",
+      "value": 80,
+      "rules": [
+       2,
+       4
+      ]
+     }
+    }
+   ],
+   "guardLines": [
+    {
+     "guard": "changed-from-seed",
+     "lines": [
+      1
+     ]
+    }
+   ]
+  }
+ },
+ "D4": {
+  "session": "smw9nohy3s68g",
+  "closeDecl": {
+   "genre": "TEXT",
+   "lang": "text",
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-summarise-latest-release",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "The text in output/steps/1.json is a summary of the changelog, with each of its 3 bullets backed by a quote copied from the Changelog input",
+        "class": "countable",
+        "check": "minClaims",
+        "value": 3,
+        "source": "Changelog",
+        "covers": [
+         1
+        ],
+        "rules": [
+         1
+        ]
+       },
+       {
+        "text": "exactly 3 bullets",
+        "class": "countable",
+        "check": "listItems",
+        "value": 3,
+        "rules": [
+         1,
+         3
+        ]
+       },
+       {
+        "text": "under 80 words",
+        "class": "countable",
+        "check": "maxWords",
+        "value": 80,
+        "rules": [
+         2,
+         4
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "Confirmed check #2 (at most 80 words in output/steps/1.json) is a word count the person picked; code writes that check itself, so no part carries it.",
+    "Line 1's ~ rule 1 (exactly 3 bullets) and ~ rule 2 (under 80 words) are settled by code \u2014 no part and no refused entry are written for them.",
+    "The look found no label or phrase in the Changelog that could back the required facts for line 1, so no fact part exists for this line.",
+    "line 1: \"exactly 3 bullets\" \u2014 No word on this page reads \"changelog bullets\" safely.",
+    "line 1: \"under 80 words\" \u2014 No word on this page reads \"changelog summary length\" safely."
+   ],
+   "refused": [
+    {
+     "line": 1,
+     "reason": "summarising the LATEST release \u2014 choosing which release is the latest needs reading the changelog to judge, and the check cannot verify which release is the latest"
+    },
+    {
+     "line": 1,
+     "reason": "whether the summary is a fair/accurate summary of the changelog entries (quality and accuracy need reading the text to judge)"
+    }
+   ],
+   "picks": [
+    {
+     "line": 1,
+     "part": {
+      "text": "exactly 3 bullets",
+      "class": "countable",
+      "check": "listItems",
+      "value": 3,
+      "rules": [
+       1,
+       3
+      ]
+     }
+    },
+    {
+     "line": 1,
+     "part": {
+      "text": "under 80 words",
+      "class": "countable",
+      "check": "maxWords",
+      "value": 80,
+      "rules": [
+       2,
+       4
+      ]
+     }
+    }
+   ]
+  }
+ },
+ "D9": {
+  "session": "smw9nqdjjzzew",
+  "raw": "I'll analyze each guardrail and map it to the appropriate check.\n\n**Line 1, g1: \"exactly 3 bullets\"** \u2014 This is a count of list items. `listItems` checks a count of list items, but it's a max/min style check, not an exact-match check. The guardrail says \"exactly 3\" which cannot be expressed as exactly matching by listItems. However, listItems with value 3 would enforce at most/at least 3 (depending on semantics). Since the guardrail demands *exactly* 3 and listItems can't guarantee exact, this is a weaker/different check. \u2192 none\n\n**Line 1, g2: \"under 80 words\"** \u2014 This is about the whole answer being under 80 words \u2192 maxWords 80.",
+  "artifact": {
+   "checks": [
+    {
+     "line": 1,
+     "guardrail": 1,
+     "rule": "none"
+    },
+    {
+     "line": 1,
+     "guardrail": 2,
+     "rule": "maxWords",
+     "value": 80
+    }
+   ]
+  }
+ },
+ "D3": {
+  "session": "smw9no3kwo7of",
+  "about": "revise-1's declaration as the drafter sent it (try-refused row): a fact part with count 3/3, red rubric-fact-phrase-rare",
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-summary-bullets",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "Summarise the latest release in the changelog",
+        "class": "fact",
+        "source": "Changelog",
+        "count": {
+         "min": 3,
+         "max": 3
+        },
+        "facts": [
+         {
+          "name": "summary section",
+          "shape": "phrase",
+          "phrase": "### Fixed"
+         }
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "Line 1 is a FACTS line: output/steps/1.json holds results, each with one quote from the Changelog and the value of the fact as the quote writes it. The look could only confirm one checkable fact on this line: a phrase fact whose quote must say one of the page's own section words, copied exactly: \"### Fixed\" or \"### Added\" or \"### Changed\". I named the fact \"summary section\" (a name may appear only once per line).",
+    "The person asked for \"exactly 3 bullets\" and \"under 80 words\" on line 1. Both are settled by code (confirmed checks #1 and #2): code adds the list-item and word-count checks itself, so I wrote no part and no refusal for ~ rule 1 and ~ rule 2.",
+    "NOT CHECKED by anything, stated plainly: (a) which release is \"the latest\" is a superlative \u2014 reading cannot decide it as a shape; (b) whether the summary is faithful/accurate to that release needs reading the text to judge; (c) which sections the summary draws on (\"### Fixed\" / \"### Added\" / \"### Changed\") and which bullets those are is a choice of which ones, not a check; (d) \"bullet count\" \u2014 \"-\" is written more than once inside one line of the page, so no word on this page reads it safely; (e) \"bullet length\" \u2014 no word on this page reads it safely.",
+    "The fact's phrase words are the input's own words (the look gives \"### Fixed\", \"### Added\", \"### Changed\"), not the person's; the person wrote \"bullets\", which the page does not hold as a safe word."
+   ]
+  }
+ }
+}

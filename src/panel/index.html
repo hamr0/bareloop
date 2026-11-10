@@ -152,6 +152,8 @@
   .dot.red::before{content:"[✗]";color:var(--red);}
   /* stopped (hamr 2026-10-07): the person pressed Stop — its own sign, grey (RULED 2026-10-15) */
   .dot.stopped::before{content:"[■]";color:var(--grey-dot);}
+  /* R5 (piece 2): a ticket the job's signed filter did not let through ends skipped at run start: [–], grey, rests (fwd's sign) */
+  .dot.skipped::before{content:"[–]";color:var(--grey-dot);}
   /* Panel build P3 addition (2026-09-27, "yes, go"): the part cards below the
      step map (`partResultGlyph`/`attemptGlyph`) and the chat job card render
      their result glyph as PLAIN inline text inside a larger string (never
@@ -357,6 +359,7 @@
   .ended-text .sched-line2{display:block;}
   .run-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;}
   .run-actions[hidden]{display:none;}
+  #run-content.actions-only > :not(.run-actions){display:none;}
   .run-actions .stopping{color:var(--amber);font-size:13px;overflow-wrap:anywhere;}
   .resume-err{color:var(--red);white-space:pre-wrap;overflow-wrap:anywhere;}
   /* P5-R: a resumed run is ONE card; its legs are told apart by a divider line, a dotted map connector, a small tag */
@@ -483,6 +486,45 @@
   #result-body details>summary{cursor:pointer;color:var(--text-dim);min-height:28px;}
   .rs-link{background:none;border:none;padding:0;min-height:44px;color:var(--accent);text-decoration:underline;font:inherit;cursor:pointer;}
   .rs-warn{color:var(--amber);overflow-wrap:anywhere;}
+  /* R7b item 4: the generic Result tab. A diff wraps inside its own box (no page scroll); a check row is a question and its word and number. */
+  .rs-diff{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.45 ui-monospace,"Courier New",monospace;}
+  .ro-value>.rs-diff{max-height:28em;overflow:auto;}
+  .rs-add{color:var(--green);} .rs-del{color:var(--red);} .rs-ctx{color:var(--text-dim);}
+  .rs-check{display:grid;grid-template-columns:minmax(0,1fr) minmax(8em,auto) 7em;gap:6px 12px;align-items:baseline;padding:3px 0;border-bottom:1px dotted var(--border);}
+  .rs-q{overflow-wrap:anywhere;} .rs-num{overflow-wrap:anywhere;} .rs-sign{white-space:nowrap;}
+  /* phone width: the number drops under the question, the sign stays in the right column */
+  @media (max-width:600px){ .rs-check{grid-template-columns:minmax(0,1fr) auto;} .rs-num{grid-column:1;grid-row:2;} .rs-sign{grid-column:2;grid-row:1;} .rs-num:empty{display:none;} }
+  /* R8 (piece 10): a ticket job's Result grid. borrowed-from: fwdloop src/panel/index.html@v0.29.0 tg- rules (the signed mockup .claude/scratch/mcp-tickets/r7b/result-tab-tickets.html). The table, cells and
+     step-sub are the Audit grid's own; these are the bucket fold rows, the stats line, the run column and the "Run it anyway" box. A long line wraps; the table scrolls inside its own box, never the page. */
+  #result-body .tg-stats{font-size:13px;margin:0 0 8px;overflow-wrap:anywhere;}
+  table.grid.tg td.r,table.grid.tg th.r{position:sticky;left:0;background:var(--panel2);z-index:1;min-width:84px;white-space:nowrap;text-align:left;}
+  table.grid.tg td.c{min-width:84px;}
+  table.grid.tg th{color:var(--accent);font-weight:700;}
+  .tg-rowname{display:flex;align-items:center;max-width:min(300px,60vw);}
+  table.grid.tg button.tg-name{flex:0 1 auto;min-width:0;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;border:0;background:none;padding:0;min-height:32px;font:inherit;font-size:12px;font-weight:700;color:var(--accent);cursor:pointer;}
+  table.grid.tg button.tg-name:hover{text-decoration:underline;}
+  table.grid.tg button.tg-name:focus-visible,table.grid.tg button.tg-arrow:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  table.grid.tg button.tg-arrow{flex:0 0 auto;width:auto;color:var(--accent);font-weight:700;}
+  .tg-unsure{flex:0 0 auto;margin-left:6px;}
+  table.grid.tg button.q-fold{border:0;background:none;color:var(--text);font:inherit;font-size:12px;text-align:left;padding:0;min-height:32px;cursor:pointer;}
+  table.grid.tg button.q-fold::before{content:"\25B8  ";color:var(--text-faint);white-space:pre;}
+  table.grid.tg button.q-fold[aria-expanded="true"]::before{content:"\25BE  ";}
+  .tg-val{font-size:11px;color:var(--text-faint);margin-left:4px;}
+  tr.tg-grp td{background:var(--panel);border-bottom:1px solid var(--border-strong);padding:0 8px;}
+  .tg-fold{display:block;width:100%;text-align:left;background:none;border:0;color:var(--text);font:inherit;font-size:13px;font-weight:700;min-height:34px;cursor:pointer;}
+  .tg-fold:hover{color:var(--accent);}
+  .tg-fold:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .tg-foldin{position:sticky;left:8px;}
+  .tg-skipwhy{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  table.grid.tg tr.step-sub td{white-space:normal;overflow-wrap:anywhere;text-align:left;}
+  .tg-line{padding:2px 0;font-size:12px;overflow-wrap:anywhere;}
+  .tg-line pre.rs-diff{max-height:18em;overflow:auto;}
+  .tk-rl{color:var(--accent);text-decoration:underline;cursor:pointer;background:none;border:0;padding:0;font:inherit;}
+  .tk-rl:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .tk-anyway{margin-top:6px;}
+  .tk-anyway button{display:block;width:100%;box-sizing:border-box;}
+  .tk-anyway textarea{width:100%;min-height:52px;margin:4px 0;background:var(--bg);color:var(--text);border:1px solid var(--text-dim);font:inherit;font-size:16px;padding:6px;box-sizing:border-box;}
+  .tk-msg{font-size:12px;overflow-wrap:anywhere;}
   #result-door-card .stopping{color:var(--amber);font-size:13px;overflow-wrap:anywhere;}
   /* PRD v1.106 Part 5 C: the Audit step fold (tries, their numbered checks, the Round table). Every line wraps; nothing forces a page-wide scroll. */
   .actor-mark{color:var(--text-faint);font-size:12px;margin-left:6px;white-space:nowrap;}
@@ -634,6 +676,8 @@
   .jp .num{display:inline-block;text-indent:0;width:22px;text-align:right;color:var(--text-faint);margin-right:8px;}
   .jp .sub{color:var(--text-dim);padding-left:30px;}
   .jp .fold{padding-left:30px;color:var(--text);}
+  /* who added a check: the drafter's [agent] or the person's own [you picked] (fwdloop's `[added]` marker, in the dim of a ~ row) */
+  .jp .by,.draft-checks-row .by{color:var(--text-dim);white-space:nowrap;}
   .jp details.fold{padding-left:0;margin:6px 0;}
   .jp details>summary{cursor:pointer;list-style:none;}
   .jp details>summary::-webkit-details-marker{display:none;}
@@ -734,6 +778,40 @@
   .pv-typed{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:4px;}
   .pv-typed input{flex:1 1 160px;min-width:0;max-width:260px;min-height:28px;box-sizing:border-box;}
   .pv-typed .hint{flex:1 1 100%;margin:0;}
+  /* Settings > MCP (piece 7), borrowed-from: fwdloop src/panel/index.html@d71846c; reuses .pv-key/.pv-krow/.pv-mrow with other columns */
+  .mc-sect{font-size:12px;color:var(--text-dim);font-weight:700;margin:16px 0 6px;text-transform:uppercase;letter-spacing:.06em;}
+  .mc-sect:first-child{margin-top:0;}
+  .mc-grp{border-top:1px solid var(--border-strong);}
+  .mc-grp:first-of-type{border-top:none;}
+  .mc-prow{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;padding:4px 8px;min-height:40px;background:var(--panel2);overflow-wrap:anywhere;}
+  .mc-prow .mc-grow{flex:1 1 100px;min-width:0;}
+  .mc-prow .btn{margin-left:auto;}
+  .mc-prow.faint{color:var(--text-faint);}
+  .mc-grp[data-open="0"] .mc-kids{display:none;}
+  .pv-head.mc-k,.pv-krow.mc-k{--pv-cols:minmax(0,1.6fr) minmax(0,1.5fr) minmax(0,.8fr) 150px;}
+  .mc-grp .pv-key:first-child{border-top:1px solid var(--border-strong);}
+  .mc-k .pv-name{padding-left:26px;}
+  .mc-grp .pv-more{padding-left:60px;}
+  .mc-grp .mc-use{padding-left:60px;}
+  .mc-use{padding:0 8px 6px 34px;margin:0;}
+  .mc-use .bad{color:var(--red);}
+  .pv-mrow.mc-t,.pv-mhead.mc-t{--pv-cols:minmax(0,1.6fr) minmax(0,1.5fr) minmax(0,.8fr) 150px;}
+  .pv-mrow.mc-t{display:grid;padding:0 8px;}
+  .mc-t .pv-m-name{padding-left:52px;}
+  .mc-t .n{text-align:left;font-variant-numeric:tabular-nums;}
+  .pv-key.faint{color:var(--text-faint);}
+  @media (max-width:1279px){
+    .pv-mhead.mc-t{display:grid;}
+    .pv-mrow.mc-t{display:grid;padding:0 8px;}
+    .mc-use{padding-left:8px;}
+    .mc-kids{margin-left:14px;border-left:2px solid var(--border-strong);}
+    .mc-k .pv-name{padding-left:0;}
+    .mc-grp .pv-more,.mc-grp .mc-use{padding-left:8px;}
+    .pv-mrow.mc-t,.pv-mhead.mc-t{--pv-cols:minmax(0,2fr) minmax(0,1fr) minmax(0,.6fr);}
+    .mc-t .n{text-align:right;}
+    .mc-t .pv-m-name{padding-left:0;}
+    .pv-refcell:empty{display:none;}
+  }
   .hint.bad{color:var(--red);}
   /* a refused Start (a $0 refusal, e.g. an Inputs line) is read like the red failure line of the progress list, not like a faint hint */
   .card-refusal:not(:empty){font-size:13px;margin-top:8px;line-height:1.4;}
@@ -861,6 +939,35 @@
                 <div class="nbox-in"><textarea class="jf-wrap" id="jf-inputs" rows="2" data-testid="jf-inputs" spellcheck="false"></textarea><div class="nbox-mir" id="jf-inputs-mir" aria-hidden="true"></div></div>
               </div>
             </div>
+            <!-- ITEM33-BUILD piece 8 (fwd M13 p4): Flow type and the MCP pick. Signed WITH the job by code; the MCP list is Settings > MCP's (the page only reads it). -->
+            <div class="field" id="jf-flowtype-field" data-testid="jf-flowtype-field">
+              <label for="jf-flowtype">Flow type</label>
+              <select id="jf-flowtype" data-testid="jf-flowtype" aria-label="Flow type">
+                <option value="plain">plain</option>
+                <option value="mcp">MCP</option>
+                <option value="tickets">Tickets MCP</option>
+              </select>
+            </div>
+            <div class="field" id="jf-mcp-field" data-testid="jf-mcp-field" hidden>
+              <label for="jf-mcp">MCP</label>
+              <select id="jf-mcp" data-testid="jf-mcp" aria-label="MCP"></select>
+              <div class="hint"><a class="link" id="jf-mcp-manage" data-testid="jf-mcp-manage" href="#">manage in Settings &gt; MCP</a></div>
+            </div>
+            <!-- ITEM33-BUILD piece 9 (R7, fwd M13 p5): the Schedule is signed WITH the job; it is OFF until the job's first green run. The words are src/schedulewords.js SCHEDULE_WORDS.card, filled in by the server like the port. -->
+            <div class="field" id="jf-sched-field" data-testid="jf-sched-field">
+              <label for="jf-sched">__BARELOOP_SCHED_LABEL__</label>
+              <select id="jf-sched" data-testid="jf-sched" aria-label="Schedule">
+                <option value="hand">__BARELOOP_SCHED_OPT_HAND__</option>
+                <option value="new-ticket">__BARELOOP_SCHED_OPT_TICKET__</option>
+                <option value="daily">__BARELOOP_SCHED_OPT_DAILY__</option>
+              </select>
+              <div class="when-sub" id="jf-sched-clock" hidden>
+                <input id="jf-sched-time" type="time" value="09:00" data-testid="jf-sched-time" aria-label="Time, HH:MM">
+              </div>
+              <div class="hint" id="jf-sched-hint" data-testid="jf-sched-hint" hidden>__BARELOOP_SCHED_HINT__</div>
+              <div class="hint" id="jf-sched-hint-rubric" data-testid="jf-sched-hint-rubric" hidden>__BARELOOP_SCHED_HINT_RUBRIC__</div>
+              <div class="hint" id="jf-sched-ticket-hint" data-testid="jf-sched-ticket-hint" hidden>__BARELOOP_SCHED_HINT_TICKET__</div>
+            </div>
             <div class="field">
               <label for="jf-dest">Destination <span class="req">required</span></label>
               <textarea class="jf-wrap" id="jf-dest" rows="1" placeholder="the write fence — where in the repo this run may change files"></textarea>
@@ -876,6 +983,9 @@
                   <option value="fri">Friday</option><option value="sat">Saturday</option><option value="sun">Sunday</option>
                 </select>
                 <input id="jf-when-time" type="time" value="09:00" data-testid="jf-when-time" aria-label="Time, HH:MM">
+              </div>
+              <div class="when-sub" id="jf-when-ticketbox" hidden>
+                <select id="jf-when-input" data-testid="jf-when-input" aria-label="The ticket list to watch"></select>
               </div>
               <div class="when-sub" id="jf-when-filebox" hidden>
                 <input id="jf-when-path" type="text" autocomplete="off" spellcheck="false" data-testid="jf-when-path" aria-label="File or folder">
@@ -925,6 +1035,8 @@
           <div class="hint" id="chat-main-hint" data-testid="chat-main-hint"></div>
           <!-- hamr 2026-10-09: Revise = reopen the boxes, filled as drafted, and draft again. Shown only while a plan waits for the OK. -->
           <button class="btn wide" type="button" id="chat-reopen-btn" data-testid="chat-reopen" hidden>Revise</button>
+          <!-- fwd M4e am14 item 3: "N revises left"; after the second revise this same button reads Start over (a fresh draft, its own 2 revises) -->
+          <span id="chat-left-count" data-testid="revises-left" class="hint" hidden></span>
           <div class="hint">Only your click signs. The chat can't.</div>
         </section>
 
@@ -1042,6 +1154,7 @@
             <div class="field" id="details-description-field"><label>Description</label><div class="ro-value" id="details-description">—</div></div>
             <div class="field"><label>The job</label><div class="ro-value" id="details-plan" data-testid="details-plan">—</div></div>
             <div class="field"><label>Inputs</label><div class="ro-value" id="details-inputs" data-testid="details-inputs">—</div></div>
+            <div class="field" id="details-mcp-field" data-testid="details-mcp-field" hidden><label>MCP</label><div class="ro-value" id="details-mcp" data-testid="details-mcp"></div></div>
             <div class="field"><label>Destination</label><div class="ro-value" id="details-dest">—</div></div>
             <div class="field"><label>Tools</label><div class="ro-value" id="details-tools">—</div></div>
             <div class="field-row">
@@ -1073,6 +1186,7 @@
 
     <div class="tabrow" role="tablist" aria-label="Settings views">
       <button role="tab" id="tab-providers" aria-controls="panel-providers" aria-selected="true" data-testid="settings-tab-providers">Providers</button>
+      <button role="tab" id="tab-mcp" aria-controls="panel-mcp" aria-selected="false" data-testid="settings-tab-mcp">MCP</button>
       <button role="tab" id="tab-money" aria-controls="panel-money" aria-selected="false" data-testid="settings-tab-money">Money &amp; limits</button>
     </div>
 
@@ -1097,6 +1211,22 @@
           </div>
         </div>
         <div class="hint" id="pv-note" data-testid="pv-note" style="margin-top:6px;">&#10227; refresh models (free) &middot; old max_tokens: tick if the server wants the old field name</div>
+      </section>
+
+      <!-- MCP TAB (piece 7; borrowed-from fwdloop src/panel/index.html@d71846c: one list "Path and MCP", a path is a header and its MCPs sit under it) -->
+      <section id="panel-mcp" class="tabpanel" role="tabpanel" aria-labelledby="tab-mcp" hidden>
+        <div class="mc-sect">Path and MCP</div>
+        <div class="table-wrap" data-testid="mcp-table-wrap">
+          <div id="mcp-paths" data-testid="mcp-paths"></div>
+          <div class="pv-more" style="padding-left:10px;border-top:1px solid var(--border-strong)">
+            <button class="btn small" type="button" id="mcp-add-open" data-testid="mcp-add-open">+ add a path</button>
+            <div class="pv-typed" id="mcp-add-box" hidden></div>
+          </div>
+        </div>
+        <div class="hint" id="mcp-problem" data-testid="mcp-problem"></div>
+        <div class="hint" style="margin-top:6px;">Read only. bareloop never edits these files and never shows keys. A project folder's .mcp.json is never read.</div>
+        <div class="hint">check tools starts the server once, only when pressed.</div>
+        <div class="hint">&mdash; = no hint; shown, not blocked. Hints are info only.</div>
       </section>
 
       <!-- MONEY & LIMITS TAB -->
@@ -1458,6 +1588,7 @@
     if(g === "✓") return "green";
     if(g === "✗") return "red";
     if(g === "■") return "stopped";
+    if(g === "–") return "skipped";
     if(g === "▶") return "amber";
     if(g === "?") return "magenta";
     return "grey";
@@ -2675,7 +2806,8 @@
       html += '<button class="btn primary" type="button" data-testid="btn-accept-run">Accept</button>';
     }
     // Reuse workflow: ONE door on every ending (v1.101), a died run included - the Chat card opens with every box open
-    if(!live && !!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "reuse"; })){
+    // a run refused before it started / skipped has no `ended`; the server marks it `reuseOffered`
+    if(!live && ((!!detail.ended && (detail.ended.actions || []).some(function(a){ return a.id === "reuse"; })) || detail.reuseOffered === true)){
       html += '<button class="btn" type="button" data-testid="btn-reuse">Reuse workflow</button>';
     }
     // T Part 7: the schedule button is LAST, right after Reuse workflow. The SERVER decides (detail.schedule): `scheduled` shows
@@ -2752,6 +2884,7 @@
   }
 
   function renderRun(detail){
+    document.getElementById("run-content").classList.remove("actions-only");
     if(detail.fileMissing){
       syncResultTab({});
       setRunHeader("\u00B7", runName(detail.job, detail.runNo, detail.runid), "file missing");
@@ -2764,16 +2897,19 @@
       return;
     }
 
-    if(detail.refused){
-      // refused before it started (e.g. the page could not be fetched): the server's plain words, status word from the table
+    if(detail.refused || detail.skipped){
+      // refused before it started (e.g. the page could not be fetched) or skipped by the job's ticket filter (R5): the server's plain words, status word from the table
       syncResultTab({});
       setRunHeader(detail.glyph, runName(detail.job, detail.runNo, detail.runid), statusWordHtml(detail.status, "") + " \u00B7 " + escapeXml("started " + fmtLocalDateTime(detail.at)));
       document.getElementById("run-empty").hidden = false;
       document.getElementById("run-empty").textContent = detail.endedLine || "";
-      document.getElementById("run-content").hidden = true;
+      // the Run tab shows the words above and ONLY the action row (Reuse workflow) below: the rest of run-content has nothing to show
+      document.getElementById("run-content").hidden = false;
+      document.getElementById("run-content").classList.add("actions-only");
       document.getElementById("audit-select-empty").hidden = false;
       document.getElementById("audit-select-empty").textContent = detail.endedLine || "";
       document.getElementById("audit-body").hidden = true;
+      renderRunActions(detail); // the SAME owner: the server's detail says which buttons (Reuse workflow on every ending)
       return;
     }
 
@@ -3475,7 +3611,7 @@
   // line 2 of a part's card / Audit body: the drafting step names, or a worker part's tool breakdown
   function partLine2Text(part){
     if(part && part.kind === "door") return part.doorView ? "last answer: " + part.doorView.last : "";
-    if(part && part.kind === "drafting") return (part.draftSteps || []).map(function(x){ return x.label; }).join(" · ");
+    if(part && part.kind === "drafting") return (part.draftLabel ? part.draftLabel + " \u00B7 " : "") + (part.draftSteps || []).map(function(x){ return x.label; }).join(" · ");
     return toolBreakdownLine(part.byTool);
   }
   function draftingCallCost(c){
@@ -3487,6 +3623,13 @@
   // call's own label (confirm#2, revise-1…); the last row is the total, equal to the header's money
   function draftingTableHtml(part){
     var rows = "";
+    // fwd am14 item 6: a revise or a Start over says so, first, in the server's own words (`revise 1`, `revise 2`, `start over`); a first draft has no such row
+    if(part.draftLabel) rows += '<tr class="draft-kind-row" data-testid="drafting-kind"><td colspan="5"><b>' + escapeXml(part.draftLabel) + "</b></td></tr>";
+    // the checks this draft ended with, each marked who added it: the drafter ([agent]) or the person's pick ([you picked])
+    (part.draftChecks || []).forEach(function(c){
+      rows += '<tr class="draft-checks-row" data-testid="drafting-check"><td colspan="5" style="overflow-wrap:anywhere">line ' + escapeXml(String(c.line)) + " \u00B7 " + escapeXml(c.text) +
+        (c.by === "you" ? ' <span class="by" data-by="you">[you picked]</span>' : c.by === "agent" ? ' <span class="by" data-by="agent">[agent]</span>' : "") + "</td></tr>";
+    });
     (part.draftSteps || []).forEach(function(st){
       var wall = st.wallMs === null || st.wallMs === undefined ? "–" : duration(st.wallMs);
       var calls = Array.isArray(st.calls) ? st.calls : [];
@@ -3932,13 +4075,15 @@
   function renderJobPlan(plan){
     var h = '<div class="jp" data-testid="job-plan">' + (plan.older ? '<div class="older" data-testid="plan-older">older job \u2014 numbered lines were not saved</div>' : "") + '<div class="jp-legend">Done when every <b>\u203A</b> check passes</div>' +
       (plan.goal && !plan.older ? '<div class="jp-sum" data-testid="plan-goal"><span class="lbl">AI\'s summary</span>' + escapeXml(plan.goal) + "</div>" : "");
+    var byTag = function(by){ return by === "you" ? ' <span class="by" data-testid="plan-by" data-by="you">[you picked]</span>' : by === "agent" ? ' <span class="by" data-testid="plan-by" data-by="agent">[agent]</span>' : ""; };
     var checkLine = function(c){
-      return '<div class="fold" data-testid="plan-check"><span class="mk">\u203A</span> check \u00B7 ' + escapeXml(c.name) + (c.cls ? " \u00B7 " + escapeXml(c.cls) : "") + "</div>";
+      return '<div class="fold" data-testid="plan-check"><span class="mk">\u203A</span> check \u00B7 ' + escapeXml(c.name) + (c.cls ? " \u00B7 " + escapeXml(c.cls) : "") + byTag(c.by) + "</div>";
     };
     (plan.lines || []).forEach(function(l){
       h += '<div class="jl" data-testid="plan-line"><span class="num">' + escapeXml(String(l.n)) + "</span>" + escapeXml(l.text);
       // one `~` row per rule (fwdloop's shape); an older plan that carries only the joined `rule` still shows it
       (l.rules && l.rules.length ? l.rules : (l.rule ? [l.rule] : [])).forEach(function(r){ h += '<div class="sub">~ ' + escapeXml(r) + "</div>"; });
+      (l.picked || []).forEach(function(p){ h += '<div class="fold" data-testid="plan-picked"><span class="mk">\u203A</span> check \u00B7 ' + escapeXml(p) + byTag("you") + "</div>"; });
       (l.checks || []).forEach(function(c){ h += checkLine(c); });
       (l.always || []).forEach(function(g){ h += '<div class="fold" data-testid="plan-always"><span class="mk">\u203A</span> check \u00B7 always-on: ' + escapeXml(g) + "</div>"; });
       (l.refused || []).forEach(function(r){ h += '<div class="fold" data-testid="plan-refused"><span class="mk">\u203A</span> not checked \u00B7 ' + escapeXml(r) + "</div>"; });
@@ -3955,6 +4100,7 @@
     h += fold("Not checked (the AI's own reading)", plan.notChecked, "plan-notchecked");
     h += fold("How the page was read", plan.readNotes, "plan-readnotes");
     h += fold("Always checked", plan.alwaysOn, "plan-alwayson");
+    if(plan.ticketFilter) h += '<div class="fold" data-testid="plan-ticketfilter"><span class="mk">\u203A</span> ticket filter \u00B7 ' + escapeXml(plan.ticketFilter) + "</div>";
     return h + "</div>";
   }
 
@@ -3989,6 +4135,17 @@
       ? ins.map(function(i){ return '<div><span class="num-in">' + escapeXml(String(i.n)) + "</span> " + escapeXml(i.label + ": " + i.value) + "</div>"; }).join("")
       : "not recorded";
     document.getElementById("details-signed").textContent = job.signed || "not recorded";
+    // piece 8 (fwd am4): a job with an MCP shows its signed flow type, server and tools (and a ticket filter / watched fields when it has them); a plain job shows no MCP row
+    var mcpField = document.getElementById("details-mcp-field"), mcpBox = document.getElementById("details-mcp");
+    mcpBox.innerHTML = "";
+    var mcpJob = job.mcp && typeof job.mcp === "object" ? job.mcp : null;
+    mcpField.hidden = mcpJob === null;
+    if(mcpJob !== null){
+      var rows = ["flow type \u00b7 " + mcpJob.flowType, "MCP \u00b7 " + mcpJob.server].concat((mcpJob.tools || []).map(function(t){ return "tools \u00b7 " + t; }));
+      if(mcpJob.ticketFilter) rows.push("ticket filter \u00b7 " + (mcpJob.ticketFilterWords || JSON.stringify(mcpJob.ticketFilter)));
+      if(Array.isArray(mcpJob.ticketWatch)) rows.push("watched field \u00b7 " + mcpJob.ticketWatch.join(", "));
+      rows.forEach(function(r){ var d = document.createElement("div"); d.textContent = r; mcpBox.appendChild(d); });
+    }
     document.getElementById("details-dest").textContent = job.destination;
     document.getElementById("details-tools").textContent = job.tools;
     document.getElementById("details-cap-money").textContent = panelMoney(job.budgetUsd);
@@ -3998,7 +4155,7 @@
     paintOfferedRow();
   }
 
-  // ---- Result tab (PRD v1.107 Part 6, rubric jobs only; signed visual design/result-tab-mock.html variant F) ----
+  // ---- Result tab (PRD v1.107 Part 6, rubric jobs; every other ended job wears the generic tab below, R7b item 4; signed visual design/result-tab-mock.html variant F) ----
   // The server decides everything: `detail.hasResult` shows the tab, `/result` carries the signed lines, the facts' own sentences
   // (src/facts.js factSentence), the rows of the delivered file (sha256-checked against the run's own record) and `passed` (read from the
   // run's own check-run). The page only draws; it never decides a check and never searches a quote for a word.
@@ -4006,7 +4163,8 @@
   var resultData = null;
   function resultTabShown(){ return document.getElementById("tab-result").getAttribute("aria-selected") === "true"; }
   function clearResult(){
-    resultDetail = null; resultData = null;
+    resultDetail = null; resultData = null; resultGrid = null; gridRowData = {};
+    gridUi = { open: {}, rows: {}, anyway: null, msg: "", ownFor: null, focusAnyway: false };
     document.getElementById("result-body").hidden = true;
     document.getElementById("result-body").innerHTML = "";
     document.getElementById("result-empty").hidden = false;
@@ -4028,9 +4186,13 @@
     if(!show) clearResult();
   }
   function loadResult(runid){
-    return getJSON("/api/runs/" + encodeURIComponent(runid) + "/result").then(function(data){
+    // R8: the job's ticket grid rides along; a job that is not a Tickets job answers 404, which is simply "no grid"
+    var gridP = getJSON("/api/runs/" + encodeURIComponent(runid) + "/grid").catch(function(){ return null; });
+    return Promise.all([getJSON("/api/runs/" + encodeURIComponent(runid) + "/result"), gridP]).then(function(both){
       if(runid !== currentRunid || !resultDetail || resultDetail.runid !== runid) return;
-      resultData = data;
+      resultData = both[0];
+      resultGrid = both[1] && Array.isArray(both[1].groups) ? both[1] : null;
+      if(resultGrid) gridOpenOwn(resultGrid, runid);
       renderResult();
     }).catch(function(){ /* the tab keeps what it last drew */ });
   }
@@ -4119,6 +4281,74 @@
       (line.kind === "facts" ? resultFactsLine(line) : resultTextLine(line)) +
       resultNotChecked("Not checked", line.notChecked, "result-line-notchecked") + '</div>';
   }
+  // ---- the generic Result tab (R7b item 4): every ended non-rubric run. The server sends the facts and the words (`kind: "generic"`); the page only draws.
+  // The check words and numbers are the Run/Audit tabs' own owners (stageQuestionText, stageNumberText); the state word is the status table's (the server sends it).
+  // a unified diff, one span per line: + added, - removed, anything else (headers, hunks, context) dim. Every piece is escaped.
+  function resultDiffHtml(diff){
+    return String(diff).split("\n").map(function(l){
+      var cls = (l.charAt(0) === "+" && l.indexOf("+++") !== 0) ? "rs-add" : ((l.charAt(0) === "-" && l.indexOf("---") !== 0) ? "rs-del" : "rs-ctx");
+      return '<span class="' + cls + '">' + escapeXml(l) + '</span>';
+    }).join("\n");
+  }
+  function resultTicketCard(t){
+    if(!t) return "";
+    var link = typeof t.url === "string" && /^https?:\/\//i.test(t.url)
+      ? '<div class="hint"><a data-testid="result-ticket-link" href="' + escapeXml(t.url) + '" target="_blank" rel="noopener noreferrer">' + escapeXml(t.url) + '</a></div>' : "";
+    return '<div class="job-card" data-testid="result-ticket"><h4>The ticket</h4><div class="field"><div class="ro-value" data-testid="result-ticket-title" style="color:var(--text)">#' + escapeXml(String(t.number)) +
+      ' &middot; ' + escapeXml(t.title || "") + '</div>' + link + '</div></div>';
+  }
+  function resultJobCard(job){
+    return '<div class="job-card" data-testid="result-job"><h4>The job</h4>' +
+      resultField("What it was asked", '<div class="ro-value" data-testid="result-asked" style="white-space:pre-wrap">' + escapeXml(job.asked) + '</div>') +
+      (Array.isArray(job.scope) && job.scope.length ? resultField("Where it may change files", '<div class="ro-value" data-testid="result-scope">' + escapeXml(job.scope.join(", ")) + '</div>') : "") + '</div>';
+  }
+  function resultChangedCard(c){
+    if(!c) return '<div class="job-card" data-testid="result-changed"><h4>What changed</h4><div class="hint" data-testid="result-changed-none">no edit was recorded for this run</div></div>';
+    var last = c.last.files.map(function(f){ return resultDiffHtml(f.diff); }).join("\n") + (c.last.note ? '\n<span class="rs-ctx">' + escapeXml(c.last.note) + '</span>' : "");
+    var all = c.all.map(function(e){
+      return '<div class="hint">edit ' + e.n + (e.step ? ' &middot; ' + escapeXml(e.step) : "") + '</div>' + e.files.map(function(f){
+        return '<pre class="rs-diff">' + resultDiffHtml(f.diff) + (f.cutNote ? '\n<span class="rs-ctx">' + escapeXml(f.cutNote) + '</span>' : "") + '</pre>';
+      }).join("");
+    }).join("");
+    return '<div class="job-card" data-testid="result-changed"><h4>What changed</h4>' +
+      resultField(c.head, '<div class="ro-value"><pre class="rs-diff" data-testid="result-diff">' + last + '</pre></div>') +
+      '<details data-testid="result-all-edits"><summary>' + escapeXml(c.foldWords) + '</summary><div class="ro-value">' + all + '</div></details>' +
+      (c.scopeLine ? '<div class="hint" data-testid="result-scopeline">' + escapeXml(c.scopeLine) + '</div>' : "") + '</div>';
+  }
+  // a check the STEPS ran (the close never did) says how many times its step tried; a close stage has no `tries`
+  function stageTriedText(s){ return !s.passed && typeof s.tries === "number" && s.tries > 1 ? " (tried " + s.tries + " times)" : ""; }
+  function resultChecksCard(k){
+    if(!k) return '<div class="job-card" data-testid="result-checks"><h4>The checks</h4><div class="hint" data-testid="result-checks-none">the close did not run any check for this run</div></div>';
+    var rows = k.stages.map(function(s){
+      var num = stageNumberText(s);
+      return '<div class="rs-check" data-testid="result-check"><span class="rs-q">' + escapeXml(stageQuestionText(s)) + '</span><span class="rs-num hint" data-testid="result-check-num">' +
+        (num ? escapeXml(num) : "") + escapeXml(stageTriedText(s)) + '</span><span class="rs-sign">' + stateDotHTML(s.passed ? "green" : "red", s.status.word, "result-check-state") + '</span></div>';
+    }).join("");
+    var notes = k.notes.length ? '<details data-testid="result-close-notes"><summary>the close\'s own notes</summary><div class="ro-value" style="white-space:pre-wrap">' +
+      k.notes.map(function(n){ return escapeXml(n.text); }).join("\n") + '</div></details>' : "";
+    return '<div class="job-card" data-testid="result-checks"><h4>The checks</h4>' +
+      resultField(k.head, '<div class="ro-value" data-testid="result-check-list">' + rows + '</div>') + notes + '</div>';
+  }
+  function resultWorkCard(w){
+    if(!w) return "";
+    return '<div class="job-card" data-testid="result-work"><h4>The work</h4>' +
+      resultField("Branch", '<div class="ro-value" data-testid="result-branch">' + escapeXml(w.branch) + ' <span class="hint">&middot; final commit ' + escapeXml(w.finalCommit) + (w.madeFrom ? ' &middot; made from ' + escapeXml(w.madeFrom) : "") + '</span></div>') +
+      resultField("In", '<div class="ro-value" data-testid="result-repo">' + escapeXml(w.repo) + '</div>') +
+      resultField("Keep the work", '<div class="ro-value" data-testid="result-merge">' + escapeXml(w.merge) + '</div>') +
+      resultField("Throw it away", '<div class="ro-value" data-testid="result-drop">' + escapeXml(w.drop) + '</div>') +
+      '<div class="hint" data-testid="result-work-note">' + escapeXml(w.note) + '</div></div>';
+  }
+  function resultRunCard(run){
+    return '<div class="job-card" data-testid="result-run"><h4>The run</h4><div class="field-row">' +
+      resultField("Spent", '<div class="ro-value" data-testid="result-spent">' + escapeXml(run.spent) + (run.spentNote ? ' <span class="hint">(' + escapeXml(run.spentNote) + ')</span>' : "") + '</div>') +
+      resultField("Time", '<div class="ro-value" data-testid="result-time">' + escapeXml(run.time) + '</div>') +
+      (run.steps ? resultField("Steps", '<div class="ro-value" data-testid="result-steps">' + escapeXml(run.steps) + '</div>') : "") + '</div></div>';
+  }
+  // the whole generic tab, top to bottom; the Your call card is the rubric tab's own resultDoorHtml, only while the run waits at the door
+  function resultGenericHtml(data, detail){
+    return resultTicketCard(data.ticket) + resultJobCard(data.job) + resultChangedCard(data.changed) + resultChecksCard(data.checks) + resultWorkCard(data.work) + resultRunCard(data.run) +
+      (detail.accept === true && !detail.live ? resultDoorHtml(data.door) : "");
+  }
   function resultDoorHtml(door){
     return '<div class="job-card" id="result-door-card" data-testid="result-door"><h4>Your call</h4><div class="field"><div class="ro-value"><b class="st-word">' + escapeXml(door.head) + '</b> \u2014 ' + escapeXml(door.ask) + '</div></div>' +
       '<div class="run-actions" style="margin:6px 0 0;"><button class="btn primary" type="button" data-testid="result-accept">Accept</button>' +
@@ -4161,6 +4391,165 @@
       }).catch(function(x){ pause.disabled = false; say("resume-err", "could not reach the panel: " + x.message, "result-door-err"); });
     });
   }
+  // ---- R8 (piece 10): a TICKET job's Result tab is ONE grid instead of the five generic boxes. borrowed-from: fwdloop src/panel/index.html@v0.29.0 (the grid markup and its wiring), drawn as the signed
+  // mockup (.claude/scratch/mcp-tickets/r7b/result-tab-tickets.html). The server decides every bucket, mark, name, money word and reason (`GET /api/runs/:runid/grid`, src/panel/jobgrid.js); a row opens
+  // through the generic payload of THAT run (`GET /api/runs/:runid/result`, the one owner), so no diff or check is read twice. Pure functions take the state they draw (`ui`, `rowData`, `cur`).
+  var resultGrid = null;
+  var gridUi = { open: {}, rows: {}, anyway: null, msg: "", ownFor: null, focusAnyway: false };
+  var gridRowData = {};
+  function tgMark(c){ return gridGlyph(c === "g" ? "✓" : (c === "r" ? "✗" : (c === "q" ? "?" : "·"))); }
+  // no data = the panel's grey dash (the Audit grid's `cell none`), never a "?" or "unknown"
+  function tgCell(cell){ if(cell.mark === "n" && !cell.text) return '<td class="c"><span class="cell none">\u2014</span></td>'; return '<td class="c">' + tgMark(cell.mark) + (cell.text ? '<span class="tg-val">' + escapeXml(cell.text) + '</span>' : "") + '</td>'; }
+  // the row's own data: the open run's payload is already loaded; any other row's is fetched when it opens
+  function tgRowData(runId){ return resultData && resultData.runid === runId ? resultData : (gridRowData[runId] || null); }
+  // checks line of an opened row: the generic payload's stages, in the Run/Audit tabs' own question words and numbers
+  function tgChecksLine(k){
+    if(!k) return "checks: the close did not run any check for this run";
+    var bits = k.stages.map(function(s){
+      var num = stageNumberText(s);
+      return s.passed ? escapeXml(stageQuestionText(s)) : gridGlyph("✗") + " " + escapeXml(stageQuestionText(s)) + (num ? " — " + escapeXml(num) : "") + escapeXml(stageTriedText(s));
+    });
+    return "checks: " + k.passed + " of " + k.total + " " + (k.allPassed ? gridGlyph("✓") : "") + (bits.length ? " &middot; " : "") + bits.join(" &middot; ");
+  }
+  // what an opened row says, top to bottom: the ticket, why it ended, what changed (+ the last diff), the checks, the work, the door (only for the run the person opened), the run id
+  function tgOpenHtml(r, rd, canAct){
+    var label = r.title ? r.name + " " + r.title : (r.ref || r.name);
+    var link = typeof r.url === "string" && /^https?:\/\//i.test(r.url) ? ' &middot; <a data-testid="grid-ticket-link" class="link" href="' + escapeXml(r.url) + '" target="_blank" rel="noopener noreferrer">' + escapeXml(r.url) + '</a>' : "";
+    var h = '<div class="tg-line" data-testid="grid-ticket"><b>' + escapeXml(label) + '</b>' + link + '</div>';
+    var why = rd && typeof rd.endedWords === "string" && rd.endedWords !== "" ? rd.endedWords : r.reason;
+    if(r.bucket === "stop" || (r.bucket === "wait" && r.status.key === "running")) h += '<div class="tg-line" data-testid="grid-why">' + escapeXml(r.status.word) + (why ? ": " + escapeXml(why) : "") + '</div>';
+    if(r.unsure) h += '<div class="tg-line hint" data-testid="grid-unsure-line">' + escapeXml(r.unsureSay || "") + '</div>';
+    if(!rd) h += '<div class="tg-line hint" data-testid="grid-loading">loading this run…</div>';
+    else if(rd.none) h += "";
+    else if(rd.kind !== "generic") h += '<div class="tg-line hint" data-testid="grid-own-result">this run’s own result is on its page: open it with the run id below.</div>';
+    else {
+      var c = rd.changed;
+      if(c){
+        var shown = c.paths.length > 4 ? c.paths.slice(0, 4).join(", ") + " and " + (c.paths.length - 4) + " more" : c.paths.join(", ");
+        h += '<div class="tg-line" data-testid="grid-changed">changed: ' + escapeXml(shown) + " (+" + c.plus + " −" + c.minus + ")</div>" +
+          '<div class="tg-line"><pre class="rs-diff" data-testid="grid-diff">' + c.last.files.map(function(f){ return resultDiffHtml(f.diff); }).join("\n") + (c.last.note ? '\n<span class="rs-ctx">' + escapeXml(c.last.note) + '</span>' : "") + '</pre></div>';
+      } else h += '<div class="tg-line" data-testid="grid-changed">no edit was recorded for this run</div>';
+      h += '<div class="tg-line" data-testid="grid-checks">' + tgChecksLine(rd.checks) + '</div>';
+      if(rd.work) h += '<div class="tg-line" data-testid="grid-work">work: branch ' + escapeXml(rd.work.branch) + ' &middot; <code>' + escapeXml(rd.work.merge) + '</code> &middot; <code>' + escapeXml(rd.work.drop) + '</code></div>';
+      if(canAct) h += resultDoorHtml(rd.door);
+    }
+    if(r.needs === "Accept" && !canAct) h += '<div class="tg-line hint" data-testid="grid-door-elsewhere">this run waits for your answer: open it with the run id below.</div>';
+    return h + '<div class="tg-line"><button class="tk-rl" type="button" data-testid="ticket-run" data-run="' + escapeXml(r.runId) + '">' + escapeXml(r.runId) + '</button></div>';
+  }
+  function tgRowHTML(r, ui, cur){
+    var skip = r.bucket === "skip";
+    var open = skip || !!ui.rows[r.runId];
+    var label = r.title ? r.name + " · " + r.title : r.name;
+    var nameBtn = '<button class="tg-name" type="button" data-testid="grid-name" data-run="' + escapeXml(r.runId) + '" title="' + escapeXml(label) + '">' + escapeXml(label) + '</button>';
+    var h = '<tr data-testid="grid-row" data-run="' + escapeXml(r.runId) + '"><td class="r"><div class="tg-rowname">' + (skip ? "" :
+      '<button class="q-fold tg-arrow" type="button" data-testid="grid-open" data-run="' + escapeXml(r.runId) + '" aria-label="show ' + escapeXml(r.ref || r.name) + '" aria-expanded="' + open + '"></button>') + nameBtn +
+      (r.unsure ? '<span class="badge grey tg-unsure" data-testid="grid-unsure" title="' + escapeXml(r.unsureSay || "") + '">unsure</span>' : "") + '</div></td>' +
+      tgCell(r.steps) + tgCell(r.checks) + tgCell(r.cost) + tgCell(r.time) + '</tr>';
+    if(skip){
+      var mine = ui.anyway && ui.anyway.number === r.number;
+      h += '<tr class="step-sub"><td colspan="5"><div class="tg-skipwhy"><span class="badge grey">' + escapeXml(r.status.word) + '</span><span data-testid="ticket-reason">' + escapeXml(r.reason || "") + '</span>' +
+        (r.anyway && !mine ? '<button class="btn small" type="button" data-testid="ticket-anyway-open" data-number="' + r.number + '">Run it anyway</button>' : "") + '</div>';
+      if(r.anyway && mine){
+        h += '<div class="tk-anyway" data-testid="ticket-anyway-box"><textarea data-testid="ticket-anyway-text" aria-label="reason (needed to run it anyway)" placeholder="reason (needed to run it anyway)">' + escapeXml(ui.anyway.text) + '</textarea>' +
+          '<button class="btn small" type="button" data-testid="ticket-anyway-go"' + (ui.anyway.text.trim() === "" ? " disabled" : "") + '>Run it anyway</button></div>';
+      }
+      h += '</td></tr>';
+    } else if(open){
+      h += '<tr class="step-sub"><td colspan="5">' + tgOpenHtml(r, tgRowData(r.runId), !!(cur && cur.runid === r.runId && cur.accept === true && !cur.live)) + '</td></tr>';
+    }
+    return h;
+  }
+  function tgStatsHTML(g){
+    var c = g.stats.counts;
+    return '<p class="tg-stats" data-testid="grid-stats">' + g.groups.map(function(b){ return '<b>' + c[b.key] + '</b> ' + escapeXml(b.label.toLowerCase()); }).join(" · ") + ' · spent <b>' + escapeXml(g.stats.spent) + '</b></p>';
+  }
+  function tgTableHTML(g, ui, cur){
+    var h = '<div class="grid-wrap"><table class="grid tg" data-testid="grid-table"><thead><tr><th class="r">run</th><th class="t">steps<span class="hint">done</span></th><th class="t">checks<span class="hint">the close’s</span></th><th class="t">cost</th><th class="t">time</th></tr></thead><tbody>';
+    g.groups.forEach(function(b){
+      var open = ui.open[b.key] === undefined ? b.open : ui.open[b.key];
+      h += '<tr class="tg-grp"><td colspan="5"><button class="tg-fold" type="button" data-testid="grid-fold-' + b.key + '" data-group="' + b.key + '" aria-expanded="' + open + '"><span class="tg-foldin">' + (open ? "▾" : "▸") + " " + escapeXml(b.label) + " (" + b.rows.length + ")</span></button></td></tr>";
+      if(open) h += b.rows.map(function(r){ return tgRowHTML(r, ui, cur); }).join("");
+    });
+    return h + '</tbody></table></div>';
+  }
+  function gridCardHTML(g, ui, cur){
+    return '<div class="audit-group" data-testid="result-grid"><h4><span class="badge grey">tickets</span></h4>' + tgStatsHTML(g) +
+      (g.scheduleLine ? '<div class="hint" style="margin-bottom:6px" data-testid="grid-schedule">' + escapeXml(g.scheduleLine) + '</div>' : "") +
+      '<div id="grid-host" data-testid="grid-host">' + tgTableHTML(g, ui, cur) + '</div><div class="tk-msg" id="ticket-msg" data-testid="ticket-msg">' + escapeXml(ui.msg) + '</div>' +
+      '<div class="hint">newest first inside each bucket</div></div>';
+  }
+  // the grid opens with the row of the run the person came from, in its bucket, once per run
+  function gridOpenOwn(g, runid){
+    if(gridUi.ownFor === runid) return;
+    gridUi.ownFor = runid;
+    g.groups.forEach(function(b){ b.rows.forEach(function(r){ if(r.runId === runid){ gridUi.rows[runid] = true; gridUi.open[b.key] = true; } }); });
+  }
+  function gridRepaint(){
+    var body = document.getElementById("result-body");
+    var keepText = body.querySelector("#result-rerun-text");
+    var typed = keepText ? keepText.value : "";
+    var rerunOpen = !!body.querySelector("#result-rerun-box:not([hidden])");
+    paintResultBody(body, gridCardHTML(resultGrid, gridUi, resultDetail), resultDetail, typed, rerunOpen);
+    var ta = body.querySelector("[data-testid=ticket-anyway-text]");
+    if(ta && gridUi.focusAnyway){ ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  }
+  function gridClick(ev){
+    var g = resultGrid;
+    if(!g) return;
+    var t = ev.target.closest ? ev.target.closest("button") : null;
+    var host = document.getElementById("grid-host");
+    if(!t || !host || !host.contains(t)) return;
+    var tid = t.getAttribute("data-testid") || "";
+    if(t.hasAttribute("data-group")){
+      var k = t.getAttribute("data-group");
+      var cur = g.groups.filter(function(x){ return x.key === k; })[0];
+      gridUi.open[k] = !(gridUi.open[k] === undefined ? cur.open : gridUi.open[k]);
+      gridRepaint();
+    } else if(tid === "grid-open"){
+      var id = t.getAttribute("data-run");
+      gridUi.rows[id] = !gridUi.rows[id];
+      gridRepaint();
+      if(gridUi.rows[id] && !tgRowData(id)){
+        getJSON("/api/runs/" + encodeURIComponent(id) + "/result").then(function(d){ gridRowData[id] = d; }).catch(function(){ gridRowData[id] = { runid: id, none: true, kind: "none" }; }).then(function(){ if(resultGrid === g) gridRepaint(); });
+      }
+    } else if(tid === "grid-name" || tid === "ticket-run"){
+      selectRun(t.getAttribute("data-run")); document.getElementById("tab-run").click();
+    } else if(tid === "ticket-anyway-open"){
+      var n = Number(t.getAttribute("data-number"));
+      gridUi.anyway = (gridUi.anyway && gridUi.anyway.number === n) ? null : { number: n, text: "" };
+      gridUi.msg = ""; gridUi.focusAnyway = true; gridRepaint();
+    } else if(tid === "ticket-anyway-go"){
+      var a = gridUi.anyway;
+      var msg = document.getElementById("ticket-msg");
+      if(!a || a.text.trim() === ""){ gridUi.msg = "Please write a reason to run it anyway."; msg.textContent = gridUi.msg; return; }
+      t.disabled = true;
+      var anchor = g.runid;
+      authorPost("/api/author/ticket-anyway", { job: g.job, ticket: a.number, reason: a.text.trim() }).then(function(r){
+        var ok = r.status >= 200 && r.status < 300 && r.body && r.body.ok === true;
+        gridUi.msg = (r.body && (r.body.say || r.body.error)) || (ok ? "Queued." : "Not queued. Nothing started.");
+        if(ok){ gridUi.anyway = null; refreshRunsList(true); setTimeout(function(){ if(currentRunid === anchor) loadResult(anchor); }, 1500); }
+        gridRepaint();
+      }).catch(function(){ gridUi.msg = "Could not reach the panel. Nothing started."; document.getElementById("ticket-msg").textContent = gridUi.msg; t.disabled = false; });
+    }
+  }
+  function gridWire(body){
+    if(body.getAttribute("data-grid-wired") === "1") return;
+    body.setAttribute("data-grid-wired", "1");
+    body.addEventListener("click", gridClick);
+    body.addEventListener("input", function(ev){
+      var ta = ev.target;
+      if(!resultGrid || !ta || !ta.getAttribute || ta.getAttribute("data-testid") !== "ticket-anyway-text" || !gridUi.anyway) return;
+      gridUi.anyway.text = ta.value;
+      var go = body.querySelector("[data-testid=ticket-anyway-go]");
+      if(go) go.disabled = ta.value.trim() === "";
+    });
+    body.addEventListener("keydown", function(ev){
+      if(ev.key !== "Escape" || !resultGrid || !ev.target.getAttribute || ev.target.getAttribute("data-testid") !== "ticket-anyway-text") return;
+      gridUi.anyway = null; gridUi.focusAnyway = false; gridUi.msg = ""; gridRepaint();
+    });
+    body.addEventListener("focusin", function(ev){ if(ev.target.getAttribute && ev.target.getAttribute("data-testid") === "ticket-anyway-text") gridUi.focusAnyway = true; });
+    body.addEventListener("focusout", function(ev){ if(ev.target.getAttribute && ev.target.getAttribute("data-testid") === "ticket-anyway-text") gridUi.focusAnyway = false; });
+  }
   function renderResult(){
     var detail = resultDetail, data = resultData;
     var body = document.getElementById("result-body");
@@ -4171,6 +4560,9 @@
     var keepText = body.querySelector("#result-rerun-text");
     var typed = keepText ? keepText.value : "";
     var rerunOpen = !!body.querySelector("#result-rerun-box:not([hidden])");
+    // R8: a TICKET job shows its one grid instead (the generic boxes and the rubric tab stay for every other job)
+    if(resultGrid && resultGrid.runid === detail.runid){ gridWire(body); paintResultBody(body, gridCardHTML(resultGrid, gridUi, detail), detail, typed, rerunOpen); return; }
+    if(data.kind === "generic"){ paintResultBody(body, resultGenericHtml(data, detail), detail, typed, rerunOpen); return; }
     var counters = document.getElementById("run-counters").textContent.split(" \u00b7 ");
     var h = '<div class="job-card" data-testid="result-head"><h4>Result</h4>' +
       resultField("Status", '<div class="ro-value">' + stateDotHTML(glyphClass(detail.glyph), detail.status && detail.status.word ? detail.status.word : "", "result-status") +
@@ -4197,6 +4589,10 @@
             : '<div class="run-actions" style="margin:6px 0 0;"><a class="btn" style="text-decoration:none;" data-testid="result-download" download href="/api/runs/' + encodeURIComponent(data.runid) + '/download?i=' + d.i + '">Download ' + escapeXml(d.name) + '</a></div>'));
       }).join("") + '</div>';
     }
+    paintResultBody(body, h, detail, typed, rerunOpen);
+  }
+  // the one tail of both Result tabs: draw, then put back what the person was typing and wire the door
+  function paintResultBody(body, h, detail, typed, rerunOpen){
     body.innerHTML = h;
     var ta = body.querySelector("#result-rerun-text");
     if(ta){
@@ -4486,6 +4882,7 @@
       settingsView.hidden = false;
       loadProviders(true);
       loadMoney();
+      loadMcp();
     });
     document.getElementById("settings-back").addEventListener("click", function(){
       settingsView.hidden = true;
@@ -4813,7 +5210,137 @@
     }
 
     document.getElementById("tab-providers").addEventListener("click", function(){ loadProviders(); });
-    wireTabs([document.getElementById("tab-providers"), document.getElementById("tab-money")]);
+
+    // ---- Settings > MCP (piece 7; borrowed-from fwdloop src/panel/index.html@d71846c). One list "Path and MCP": a path is a header, its MCPs sit under it.
+    // The page only READS: GET /api/settings/mcp (names, flags, counts; never a command or a key) and, on a press, POST .../mcp-check for that one MCP.
+    var mcpRoot = document.getElementById("mcp-paths");
+    var mcpData = null;
+    var mcpPathFold = {};   // path -> false when folded (paths start open)
+    var mcpSrvOpen = {};    // path + tab + name -> true when open (MCPs start folded)
+    var mcpMoreOpen = {};
+    var mcpBusy = {};
+    var mcpFail = {};       // path + tab + name -> the sentence of a press that was refused
+    var MCP_TOOLS_SHOWN = 5;
+    function loadMcp(){
+      return authorGet("/api/settings/mcp").then(function(d){
+        if(!d || !d.ok){ setNote(document.getElementById("mcp-problem"), true, "Could not read your MCP list. Reload the page."); return; }
+        mcpData = d; setNote(document.getElementById("mcp-problem"), true, d.problem || ""); paintMcp();
+      }, function(){ setNote(document.getElementById("mcp-problem"), true, networkText()); });
+    }
+    function mcpClock(iso){
+      var d = new Date(iso);
+      if(isNaN(d.getTime())) return "";
+      var two = function(n){ return ("0" + n).slice(-2); };
+      var hm = two(d.getHours()) + ":" + two(d.getMinutes());
+      var now = new Date();
+      if(d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) return { today: true, text: hm };
+      return { today: false, text: d.getFullYear() + "-" + two(d.getMonth() + 1) + "-" + two(d.getDate()) + " " + hm };
+    }
+    function mcpUseLine(u){
+      if(!u || (u.calls === 0 && u.denied === 0)) return "never used";
+      var t = "used " + u.calls + (u.calls === 1 ? " time" : " times") + (u.calls > 0 ? " in " + u.runs + (u.runs === 1 ? " run" : " runs") : "");
+      var c = u.last ? mcpClock(u.last) : "";
+      if(c) t += " · last used " + (c.today ? "today " : "") + c.text;
+      return '<span>' + escapeXml(t) + ' · <span class="' + (u.denied > 0 ? "bad" : "") + '">' + u.denied + ' denied</span></span>';
+    }
+    function mcpSrvHtml(s, pi, si, place){
+      var key = place.path + "\t" + s.name;
+      var open = mcpSrvOpen[key] === true;
+      var ok = s.check && s.check.ok === true;
+      var idle = s.remote || s.shadowedBy !== null;
+      var tools = s.remote ? '<span class="hint">remote server, not supported yet</span>' : s.shadowedBy !== null ? '<span class="hint">same name as above, not used</span>' : idle ? "—" : ok ? s.check.tools.length + (s.check.tools.length === 1 ? " tool" : " tools") : s.check ? "—" : "never checked";
+      var at = s.check ? mcpClock(s.check.at) : "";
+      var checked = idle ? "—" : s.check ? "checked " + (at ? at.text : "") : "never checked";
+      var busy = mcpBusy[key] === true;
+      var btn = idle ? "" : (busy ? '<button class="btn small pv-refbtn" type="button" disabled>checking…</button>' : '<button class="btn small pv-refbtn' + (s.check ? "" : " primary") + '" type="button" data-chk="' + pi + "-" + si + '" data-testid="mcp-check">check tools</button>');
+      var use = idle ? "" : mcpUseLine(s.use);
+      var list = "";
+      if(ok){
+        var more = mcpMoreOpen[key] === true;
+        var shown = more ? s.check.tools : s.check.tools.slice(0, MCP_TOOLS_SHOWN);
+        list = '<div class="pv-mhead mc-t" aria-hidden="true"><span>TOOL</span><span>HINT</span><span class="n">USED</span></div>' +
+          shown.map(function(t){
+            var n = (s.use && s.use.tools && Object.prototype.hasOwnProperty.call(s.use.tools, t.name)) ? s.use.tools[t.name] : 0;
+            return '<div class="pv-mrow mc-t" tabindex="-1" data-testid="mcp-tool"><span class="pv-m-name"><code>' + escapeXml(t.name) + '</code></span><span>' + escapeXml(t.hint || "—") + '</span><span class="n">' + n + '</span></div>';
+          }).join("") +
+          (s.check.tools.length > shown.length ? '<div class="pv-more"><button class="pv-add" type="button" data-more="' + pi + "-" + si + '">+' + (s.check.tools.length - shown.length) + ' more</button></div>' : "");
+      } else if(s.check) list = '<div class="pv-more"><span class="hint bad">' + escapeXml(s.check.error || "") + '</span></div>';
+      else if(!idle) list = '<div class="pv-more"><span class="hint">Press check tools to list its tools.</span></div>';
+      if(mcpFail[key]) list += '<div class="pv-more"><span class="hint bad">' + escapeXml(mcpFail[key]) + '</span></div>';
+      return '<div class="pv-key' + (s.shadowedBy !== null ? " faint" : "") + '" data-open="' + (open ? 1 : 0) + '" data-testid="mcp-row">' +
+        '<div class="pv-krow mc-k">' +
+          '<div class="pv-cell pv-name nolbl"><button class="pv-fold" type="button" data-fold="' + pi + "-" + si + '" aria-expanded="' + open + '">' + (open ? "▾" : "▸") + '</button><code>' + escapeXml(s.name) + '</code></div>' +
+          '<div class="pv-cell"><span class="pv-lbl">Tools</span><span>' + tools + (busy ? ' <span class="mc-spin">…</span>' : "") + '</span></div>' +
+          '<div class="pv-cell"><span class="pv-lbl">Checked</span><span>' + escapeXml(checked) + '</span></div>' +
+          '<div class="pv-cell pv-refcell nolbl">' + btn + '</div>' +
+        '</div>' +
+        (use ? '<div class="hint mc-use">' + use + '</div>' : "") +
+        '<div class="pv-models">' + list + '</div>' +
+      '</div>';
+    }
+    function paintMcp(){
+      if(!mcpData) return;
+      var h = '<div class="pv-head mc-k" aria-hidden="true"><span>PATH / MCP</span><span>TOOLS</span><span>CHECKED</span><span></span></div>';
+      mcpData.places.forEach(function(g, pi){
+        var found = g.status === "found", n = g.servers.length, open = mcpPathFold[g.path] !== false;
+        var note = found ? " — " + (g.added ? "(added) — " : "") + n + " server" + (n === 1 ? "" : "s") : " — " + (g.added ? "(added) — " : "") + (g.status === "not-json" ? "can't be read" : "not found");
+        h += '<div class="mc-grp" data-open="' + (open ? 1 : 0) + '" data-testid="mcp-path"><div class="mc-prow' + (found ? "" : " faint") + '">' +
+          (found ? '<button class="pv-fold" type="button" data-pfold="' + pi + '" aria-expanded="' + open + '">' + (open ? "▾" : "▸") + '</button><span class="pv-ok">✓</span>' : '<span class="pv-fold" style="display:inline-block">&nbsp;</span><span>–</span>') +
+          '<span class="mc-grow"><code>' + escapeXml(g.path) + '</code>' + escapeXml(note) + '</span>' +
+          (g.added ? '<button class="btn small" type="button" data-rm="' + pi + '" data-testid="mcp-remove">remove</button>' : "") + '</div>' +
+          (found ? '<div class="mc-kids">' + g.servers.map(function(s, si){ return mcpSrvHtml(s, pi, si, g); }).join("") + '</div>' : "") + '</div>';
+      });
+      mcpRoot.innerHTML = h;
+    }
+    function mcpAt(id){ var a = id.split("-"); var g = mcpData.places[+a[0]]; return { place: g, srv: g.servers[+a[1]] }; }
+    mcpRoot.addEventListener("click", function(e){
+      if(!mcpData) return;
+      var pf = e.target.closest("[data-pfold]");
+      if(pf){ var g = mcpData.places[+pf.getAttribute("data-pfold")]; mcpPathFold[g.path] = mcpPathFold[g.path] === false; paintMcp(); return; }
+      var r = e.target.closest("[data-rm]");
+      if(r){
+        var path = mcpData.places[+r.getAttribute("data-rm")].path;
+        authorPost("/api/settings/mcp-path-remove", { path: path }).then(function(res){
+          if(res.body && res.body.ok) loadMcp(); else setNote(document.getElementById("mcp-problem"), true, settingsRefusal(res));
+        }, function(){ setNote(document.getElementById("mcp-problem"), true, networkText()); });
+        return;
+      }
+      var f = e.target.closest("[data-fold]");
+      if(f){ var x = mcpAt(f.getAttribute("data-fold")); var k = x.place.path + "\t" + x.srv.name; mcpSrvOpen[k] = mcpSrvOpen[k] !== true; paintMcp(); return; }
+      var m = e.target.closest("[data-more]");
+      if(m){ var y = mcpAt(m.getAttribute("data-more")); mcpMoreOpen[y.place.path + "\t" + y.srv.name] = true; paintMcp(); return; }
+      var c = e.target.closest("[data-chk]");
+      if(c){
+        var z = mcpAt(c.getAttribute("data-chk")); var key = z.place.path + "\t" + z.srv.name;
+        mcpBusy[key] = true; delete mcpFail[key]; paintMcp();
+        authorPost("/api/settings/mcp-check", { server: z.srv.name }).then(function(res){
+          mcpBusy[key] = false;
+          if(res.body && res.body.ok) mcpSrvOpen[key] = true; else mcpFail[key] = settingsRefusal(res);
+          loadMcp();
+        }, function(){ mcpBusy[key] = false; mcpFail[key] = networkText(); paintMcp(); });
+      }
+    });
+    // the typed-path box is built on the first press of "+ add a path" (like the Providers tab's typed-model box)
+    document.getElementById("mcp-add-open").addEventListener("click", function(){
+      var b = document.getElementById("mcp-add-box");
+      if(!b.firstChild){
+        b.innerHTML = '<input type="text" id="mcp-add-in" data-testid="mcp-add-in" autocomplete="off" spellcheck="false" aria-label="path" placeholder="type a path to an MCP config file"> <button class="btn small" type="button" id="mcp-add-go" data-testid="mcp-add-go">Add</button><div class="hint pv-msg" id="mcp-add-msg" data-testid="mcp-add-msg"></div>';
+        document.getElementById("mcp-add-go").addEventListener("click", mcpAddPath);
+      }
+      b.hidden = !b.hidden; if(!b.hidden) document.getElementById("mcp-add-in").focus();
+    });
+    function mcpAddPath(){
+      var inp = document.getElementById("mcp-add-in"), msg = document.getElementById("mcp-add-msg");
+      var v = inp.value.trim();
+      var say = function(bad, text){ setNote(msg, bad, text); msg.className += " pv-msg"; };
+      if(!v){ say(true, "Type a path first."); return; }
+      authorPost("/api/settings/mcp-path", { path: v }).then(function(res){
+        if(res.body && res.body.ok){ inp.value = ""; say(false, "added"); loadMcp(); }
+        else say(true, settingsRefusal(res));
+      }, function(){ say(true, networkText()); });
+    }
+    document.getElementById("tab-mcp").addEventListener("click", function(){ loadMcp(); });
+    wireTabs([document.getElementById("tab-providers"), document.getElementById("tab-mcp"), document.getElementById("tab-money")]);
     // Auto-save on a human edit (change = blur or Enter): POST carries the per-start token; the chat has no route here
     limitInput.addEventListener("change", function(){
       var text = limitInput.value.trim();
@@ -4840,6 +5367,10 @@
     var mainBtn = document.getElementById("chat-main-btn");
     var mainHint = document.getElementById("chat-main-hint");
     var reopenBtn = document.getElementById("chat-reopen-btn");
+    var revisesLeftEl = document.getElementById("chat-left-count");
+    // R10 (fwd am17/am20): the id of the draft the next Start drafting follows; the server hands its check picks on (words-keyed), so a pick already made is not asked again
+    var carryFromId = null;
+    var carryKindVal = null;
     var mainAction = "none";
     var knownRunIdsAtSign = null; // the run ids listed when Sign & run was pressed (M3: afterSignRefresh waits for a new one)
     var lastState = null;
@@ -4849,6 +5380,15 @@
     var moneyCapInput = document.getElementById("jf-cap-money");
     var modelSelect = document.getElementById("jf-model");
     var thinkingBox = document.getElementById("jf-thinking");
+    // piece 8 (fwd M13 p4): the card's Flow type, the MCP pick and (the by-hand Ticket box is gone: fwd v0.28.0). Declared up here: syncCardLock reads them from the first refresh on.
+    var flowTypeEl = document.getElementById("jf-flowtype");
+    var mcpEl = document.getElementById("jf-mcp");
+    var mcpFieldEl = document.getElementById("jf-mcp-field");
+    // piece 9 (R7): the Schedule row, signed with the job; off until the first green run (a rubric job: until that run is accepted)
+    var cardSchedEl = document.getElementById("jf-sched");
+    var cardSchedTimeEl = document.getElementById("jf-sched-time");
+    var cardSchedFieldEl = document.getElementById("jf-sched-field");
+    var mcpServers = [];   // the MCPs Settings > MCP lists as usable (not remote, not shadowed); the page only READS the list
     var thinkingNote = document.getElementById("jf-thinking-note");
     var lineThinking = {};   // option value -> the server's {support, canChange, say} for that Model line
     var modelStatusEl = document.getElementById("jf-model-status");
@@ -4915,14 +5455,75 @@
       // the Check type radios stay clickable on a reuse card (Deterministic / Rubric = leave reuse); a live session or a resume freezes them
       document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.disabled = live || resuming; });
       document.getElementById("job-card").classList.toggle("reuse", reuseOn);
+      // Flow type and MCP are JOB boxes (a change drafts a new workflow): locked like the job text on a schedule card, a live session or a resume. 
+      var flowLocked = reuseOn || live || resuming;
+      flowTypeEl.disabled = flowLocked; mcpEl.disabled = flowLocked;
+      [flowTypeEl, mcpEl].forEach(function(el){ el.classList.toggle("locked", flowLocked); });
+      // the Schedule is chosen before the start and signed with the job: frozen while a session is live
+      cardSchedEl.disabled = live; cardSchedTimeEl.disabled = live;
+      cardSchedEl.classList.toggle("locked", live); cardSchedTimeEl.classList.toggle("locked", live);
+      paintFlowType();
       syncThinking();
     }
     function setReuseLocked(on){ reuseOn = on; syncCardLock(); }
+    // ---- Flow type / MCP (piece 8). The MCP menu is Settings > MCP's usable servers; a reused job's server that is no longer listed stays pickable by name
+    // (the start refuses it with its cause).
+    function paintMcpOptions(want){
+      var names = mcpServers.slice();
+      if(want && names.indexOf(want) === -1) names.push(want);
+      mcpEl.innerHTML = "";
+      names.forEach(function(n){ var o = document.createElement("option"); o.value = n; o.textContent = n; mcpEl.appendChild(o); });
+      if(want) mcpEl.value = want;
+    }
+    function paintFlowType(){
+      var f = flowTypeEl.value;
+      mcpFieldEl.hidden = f === "plain";
+      paintCardSchedule();
+    }
+    // The Schedule row (fwd's three words and two hints): "When a new ticket arrives" only for a Tickets job; the time box and the hints follow the pick. A rubric job's hint says Accepted.
+    // Hidden on a resume (no run starts there) and on the two-click schedule card (its own When field).
+    function paintCardSchedule(){
+      var tk = cardSchedEl.querySelector('option[value="new-ticket"]');
+      tk.hidden = tk.disabled = flowTypeEl.value !== "tickets";
+      if(cardSchedEl.value === "new-ticket" && tk.disabled) cardSchedEl.value = "hand";
+      cardSchedFieldEl.hidden = resumeRun !== null || sched !== null;
+      var rubric = (verdictValue() === "reuse" ? reuseCheckType : verdictValue()) === "rubric";
+      document.getElementById("jf-sched-clock").hidden = cardSchedEl.value !== "daily";
+      document.getElementById("jf-sched-hint").hidden = cardSchedEl.value === "hand" || rubric;
+      document.getElementById("jf-sched-hint-rubric").hidden = cardSchedEl.value === "hand" || !rubric;
+      document.getElementById("jf-sched-ticket-hint").hidden = cardSchedEl.value !== "new-ticket";
+    }
+    // the typed Schedule the card sends: null (by hand) sends nothing, so the signed job carries no trigger and hashes as before
+    function scheduleOfCard(){
+      if(cardSchedEl.value === "new-ticket") return {kind: "new-ticket"};
+      if(cardSchedEl.value !== "daily") return null;
+      var t = /^(\d{2}):(\d{2})$/.exec(cardSchedTimeEl.value || "");
+      return {kind: "daily", hour: t ? Number(t[1]) : NaN, minute: t ? Number(t[2]) : NaN};
+    }
+    function setCardSchedule(sc){
+      cardSchedEl.value = sc && sc.kind === "daily" ? "daily" : (sc && sc.kind === "new-ticket" ? "new-ticket" : "hand");
+      if(sc && sc.kind === "daily" && Number.isInteger(sc.hour) && Number.isInteger(sc.minute)) cardSchedTimeEl.value = ("0" + sc.hour).slice(-2) + ":" + ("0" + sc.minute).slice(-2);
+      paintCardSchedule();
+    }
+    function setFlow(type, server){
+      flowTypeEl.value = (type === "mcp" || type === "tickets") ? type : "plain";
+      paintMcpOptions(server || "");
+      paintFlowType();
+    }
+    function loadMcpServers(){
+      return authorGet("/api/settings/mcp").then(function(d){
+        var names = [];
+        ((d && d.places) || []).forEach(function(p){ (p.servers || []).forEach(function(sv){ if(!sv.remote && !sv.shadowedBy && names.indexOf(sv.name) === -1) names.push(sv.name); }); });
+        mcpServers = names; paintMcpOptions(mcpEl.value);
+      }, function(){ /* the list stays as it was; a pick the server cannot start is refused with its cause */ });
+    }
     function clearStartFrom(keepBoxes){
       // Clear after a reuse starts a genuinely new job: the reused values do not linger in the boxes — except when a Check type
       // radio click leaves reuse (keepBoxes): a radio never blanks what the person has on the card
       if(startFrom && !keepBoxes){
         CARD_BOX_IDS.forEach(function(id){ document.getElementById(id).value = ""; });
+        setFlow("plain", "");
+        setCardSchedule(null);
         NUMBERED_IDS.forEach(gutterSync);
         document.querySelectorAll('input[name="jf-verdict"]').forEach(function(r){ r.checked = (r.value === "deterministic"); });
       }
@@ -4957,6 +5558,8 @@
     }
     function clearCardBoxes(){
       CARD_BOX_IDS.forEach(function(id){ document.getElementById(id).value = ""; });
+      setFlow("plain", "");
+      setCardSchedule(null);
       NUMBERED_IDS.forEach(gutterSync);
       document.getElementById("jf-cap-note").textContent = "";
     }
@@ -5074,6 +5677,8 @@
     // back to a fresh empty card: every box, check type deterministic, the default (first) Model, origin/estimate/notes
     // hidden, progress list and thread cleared, reuse lock lifted
     function resetCard(){
+      carryFromId = null;
+      carryKindVal = null;
       clearCardBoxes();
       setVerdict("deterministic");
       modelSelect.selectedIndex = 0;
@@ -5109,10 +5714,15 @@
         jobText: document.getElementById("jf-job").value.trim(),
         inputs: document.getElementById("jf-inputs").value.trim(),
         destination: document.getElementById("jf-dest").value.trim(),
+        ...(carryFromId ? {carryFrom: carryFromId, carryKind: carryKindVal === "startover" ? "startover" : "revise"} : {}),
         // the "Thinking on" tick: sent as a boolean; the server judges it per line and signs it only when ticked
         thinking: thinkingBox.checked === true,
         capUsd: moneyCap,
         maxWallMs: timeCapMin === "" ? undefined : Math.round(Number(timeCapMin) * 60000),
+        // piece 8: a plain job sends neither key (the signed job carries neither); a by-hand Tickets run takes the newest ticket not run yet (no box, fwd v0.28.0)
+        ...(flowTypeEl.value !== "plain" ? {flowType: flowTypeEl.value, mcp: mcpEl.value} : {}),
+        // piece 9: by hand sends no key (the signed job carries no trigger); a pick is signed with the job and starts OFF
+        ...(scheduleOfCard() !== null ? {schedule: scheduleOfCard()} : {}),
       };
     }
 
@@ -5457,12 +6067,20 @@
     function reviseShownFor(st){
       return !!st.session && !!st.pendingAsk && st.pendingAsk.kind === "menu";
     }
+    // fwd M4e am14 item 3 (pure): 2 revises per draft, shown as "2 revises left" / "1 revise left"; with none left the same button reads Start over. The SERVER counts (revisesLeft); an
+    // absent number (a state from before the count) reads as 2.
+    function reviseButtonFor(left){
+      var n = typeof left === "number" ? Math.max(0, Math.floor(left)) : 2;
+      if(n <= 0) return {text: "Start over", kind: "startover", left: ""};
+      return {text: "Revise", kind: "revise", left: n + (n === 1 ? " revise left" : " revises left")};
+    }
     function renderMain(){
       var st = {session: sessionLive, startOk: startOk, signClicked: signClickedOnce, whenLocked: whenLocked};
       if(sched){ st.when = {changed: whenChanged(), refused: !!sched.refusal, cancel: byId("jf-when").value === "hand", confirm: whenConfirm, busy: whenBusy, words: sched.words}; }
       if(sessionLive && lastState){
         st.phase = lastState.phase; st.pendingAsk = lastState.pendingAsk;
         st.specHash = lastState.specHash;
+        st.revisesLeft = lastState.revisesLeft;
       }
       // hamr 2026-10-05: the ask box is open only while something asks for a reply; otherwise dimmed and emptied
       var open = askBoxOpenFor(st);
@@ -5473,7 +6091,11 @@
       mainBtn.disabled = b.disabled;
       mainAction = b.action;
       mainHint.textContent = b.hint;
+      var rv = reviseButtonFor(st.revisesLeft);
       reopenBtn.hidden = !reviseShownFor(st);
+      reopenBtn.textContent = rv.text;
+      revisesLeftEl.textContent = rv.left;
+      revisesLeftEl.hidden = !reviseShownFor(st) || rv.left === "";
       fitBox(msgInput);
       fitCardBoxes();
     }
@@ -5544,8 +6166,16 @@
       }
     });
 
+    // R7b (3): "yes" to the folder question changes the SESSION's Destination; the box is locked while a session is live, so the page re-fills it from the session's own card
+    function syncDestinationFromSession(state){
+      var d = state && state.card && state.card.destination;
+      if(typeof d !== "string") return;
+      var box = document.getElementById("jf-dest");
+      if(box && box.value !== d){ box.value = d; fitCardBoxes(); }
+    }
     function renderActions(state){
       lastState = state;
+      syncDestinationFromSession(state);
       // a session's stop is shown ONCE, in the progress line (renderProgress); #chat-card-error carries only a
       // refused START (its own handler writes it) — echoing state.error here made the same refusal appear twice
       errEl.textContent = "";
@@ -5608,6 +6238,8 @@
           refreshStartEnabled();
           return;
         }
+        // a draft that follows another stays in that line: a red one redrafted from the card is the next revise, not a fresh start (the server counts by this link)
+        if(carryFromId) carryFromId = r.body.sessionId;
         sessionId = r.body.sessionId;
         // a same-job session has no confirm turn: it goes straight to `prepared`, and THIS click (Sign & run) is the
         // signature — the page signs the hash the server prepared as soon as it is ready (the server re-checks it)
@@ -5668,6 +6300,7 @@
       setVal("jf-name", c.jobName); setVal("jf-job", c.jobText); setVal("jf-inputs", c.inputs);
       setVal("jf-dest", c.destination); setVal("jf-cap-money", c.capUsd);
       setVal("jf-cap-time", typeof c.maxWallMs === "number" ? Math.round(c.maxWallMs / 60000) : "");
+      setFlow(c.flowType, c.mcp); setCardSchedule(c.schedule);
       setThinkingTick(c.thinking === true);
       fitCardBoxes();
     }
@@ -5711,7 +6344,9 @@
       if(reuseOrigin === null) return false;
       var cur = currentCard(), o = reuseOrigin.card;
       var t = function(v){ return typeof v === "string" ? v.replace(/\s+/g, "") : ""; };
-      return t(cur.jobText) !== t(o.jobText) || cur.checkType !== (o.checkType === "rubric" ? "rubric" : "deterministic") || (cur.thinking === true) !== (o.thinking === true);
+      // Flow type and MCP are job boxes too (piece 8): a plain card has neither key, so absent reads as plain with no MCP, the same as the server
+      return t(cur.jobText) !== t(o.jobText) || cur.checkType !== (o.checkType === "rubric" ? "rubric" : "deterministic") || (cur.thinking === true) !== (o.thinking === true)
+        || (cur.flowType || "plain") !== (o.flowType || "plain") || (cur.mcp || "") !== (o.mcp || "");
     }
     // the reuse path (signed plan verbatim, no drafting, $0): a card made by Reuse workflow from a GREEN run with no job box changed
     function reusePathNow(){
@@ -5728,6 +6363,11 @@
     function reuseBoxesEdited(){ syncReuseName(); renderMain(); }
     document.getElementById("jf-job").addEventListener("input", reuseBoxesEdited);
     thinkingBox.addEventListener("change", reuseBoxesEdited);
+    flowTypeEl.addEventListener("change", function(){ paintFlowType(); reuseBoxesEdited(); refreshStartEnabled(); });
+    cardSchedEl.addEventListener("change", function(){ paintCardSchedule(); renderMain(); });
+    mcpEl.addEventListener("change", reuseBoxesEdited);
+    document.getElementById("jf-mcp-manage").addEventListener("click", function(ev){ ev.preventDefault(); document.getElementById("btn-settings").click(); document.getElementById("tab-mcp").click(); });
+    loadMcpServers();
     document.getElementById("jf-name").addEventListener("input", function(){
       if(reuseOrigin === null || reuseOn) return;
       if(jobBoxesChangedNow()) nameTouched = true; else syncReuseName();
@@ -5867,18 +6507,28 @@
     // hamr 2026-10-09 (as fwdloop's Revise): the draft is ended and the New job card opens with the SAME values in every
     // box, all editable; Start drafting then drafts fresh from whatever the boxes now say. No typed change request goes
     // to the model. The ended draft is an Abandon: money already spent stays booked.
-    function doReopen(){
+    // Revise and Start over both end this draft and open the boxes as the draft left them: the job box now holds the `~` lines the answers added (the server's card), and the
+    // check picks of this draft ride along to the next one. Neither drafts at once (fwd am14: the fields are open, the person edits and drafts). A Revise is one of the draft's 2
+    // (the server counts it and refuses the third, before this draft is ended); Start over gives the next draft 2 new ones.
+    function doReopen(kind){
       if(!sessionId) return;
-      authorPost("/api/author/" + sessionId + "/abandon", {}).then(function(r){
-        var o = chatPostOutcome(r);
-        if(!o.ok){ chatActionFailed(o.error); return; }
-        openNewCard();
-        chatActionOk();
-        lastMsgSig = null;
-        thread.innerHTML = '<div class="msg system">' + escapeXml("The boxes are open as you drafted them. Edit what you want, then Start drafting. The first draft's cost stays counted.") + "</div>";
+      var from = sessionId;
+      authorGet("/api/author/" + from).then(function(j){
+        var jt = j && j.state && j.state.card && typeof j.state.card.jobText === "string" ? j.state.card.jobText : "";
+        return authorPost("/api/author/" + from + "/abandon", {kind: kind}).then(function(r){
+          var o = chatPostOutcome(r);
+          if(!o.ok){ chatActionFailed(o.error); return; }
+          openNewCard();
+          carryFromId = from;
+          carryKindVal = kind === "startover" ? "startover" : "revise";
+          if(jt){ setVal("jf-job", jt); fitCardBoxes(); }
+          chatActionOk();
+          lastMsgSig = null;
+          thread.innerHTML = '<div class="msg system">' + escapeXml("The boxes are open as you drafted them. Edit what you want, then Start drafting. The first draft's cost stays counted.") + "</div>";
+        });
       }).catch(function(){ chatActionFailed("network error — could not reach the panel server, not revised"); });
     }
-    reopenBtn.addEventListener("click", doReopen);
+    reopenBtn.addEventListener("click", function(){ doReopen(reviseButtonFor(lastState && lastState.revisesLeft).kind); });
 
     function doSign(){
       if(!sessionId) return;
@@ -5910,7 +6560,7 @@
     // The Reuse card plus the When field, copied from fwdloop's Run card (index.html:998-1019, 4690-4772). The page works out nothing: the
     // server's words, refusals and hashes. Click 1 (schedule-prepare) is $0 and signs nothing; click 2 (schedule) signs; NOTHING runs.
     function byId(id){ return document.getElementById(id); }
-    var WHEN_KINDS = ["hand", "daily", "weekdays", "weekly", "file-updated", "new-file"];
+    var WHEN_KINDS = ["hand", "daily", "weekdays", "weekly", "file-updated", "new-file", "new-ticket"];
     function whenTriggerFromBoxes(){
       var kind = byId("jf-when").value;
       if(kind === "hand") return null;
@@ -5920,6 +6570,7 @@
         if(kind === "weekly") o.day = byId("jf-when-day").value;
         return o;
       }
+      if(kind === "new-ticket") return {kind: kind, input: byId("jf-when-input").value};   // MCP + tickets piece 3: the person picks the input; the server fills the rest from the signed job
       var q = {kind: kind};
       q[kind === "new-file" ? "folder" : "path"] = byId("jf-when-path").value.trim();
       return q;
@@ -5927,7 +6578,7 @@
     // one comparable spelling of a trigger (or By hand), so "changed" is a plain string compare
     function whenCanon(t){
       if(!t) return "hand";
-      return [t.kind, t.hour === undefined ? "" : t.hour, t.minute === undefined ? "" : t.minute, t.day || "", t.path || t.folder || ""].join("|");
+      return [t.kind, t.hour === undefined ? "" : t.hour, t.minute === undefined ? "" : t.minute, t.day || "", t.path || t.folder || t.input || ""].join("|");
     }
     // Is the card changed from what was signed? The ONE reader. A schedule card (Schedule run, Cancel / modify schedule) never starts a run: the main
     // button is Sign schedule while this is true and disabled while it is not. On a scheduled job any When, Inputs, Destination or cap edit counts
@@ -5945,6 +6596,7 @@
       byId("jf-when-clock").hidden = !(kind === "daily" || kind === "weekdays" || kind === "weekly");
       byId("jf-when-day").hidden = kind !== "weekly";
       byId("jf-when-filebox").hidden = !(kind === "file-updated" || kind === "new-file");
+      byId("jf-when-ticketbox").hidden = kind !== "new-ticket";
       byId("jf-when-path").placeholder = kind === "new-file" ? "/full/path/to/folder" : "/full/path/to/file";
     }
     function paintWhen(){
@@ -5956,7 +6608,9 @@
       byId("jf-when-label").textContent = w.whenLabel || "";
       var sel = byId("jf-when");
       sel.innerHTML = "";
+      var ticketInputs = sched.ticketInputs || [];
       WHEN_KINDS.forEach(function(k){
+        if(k === "new-ticket" && ticketInputs.length === 0 && !(sched.cur && sched.cur.kind === "new-ticket")) return;   // only a Tickets MCP job with list_issues signed offers it
         var op = document.createElement("option");
         op.value = k;
         // on a scheduled job the first option reads Cancel schedule instead of By hand
@@ -5968,9 +6622,15 @@
       if(t && t.hour !== undefined){ byId("jf-when-time").value = ("0" + t.hour).slice(-2) + ":" + ("0" + t.minute).slice(-2); }
       if(t && t.day) byId("jf-when-day").value = t.day;
       byId("jf-when-path").value = t ? (t.path || t.folder || "") : "";
+      var inSel = byId("jf-when-input");
+      inSel.innerHTML = "";
+      (ticketInputs.length ? ticketInputs : (t && t.input ? [t.input] : [])).forEach(function(label){
+        var o = document.createElement("option"); o.value = label; o.textContent = label; inSel.appendChild(o);
+      });
+      if(t && t.input) inSel.value = t.input;
       // refused = the select and every sub-box are DISABLED and the reason stands where "Now:" would be
       var refused = !!sched.refusal;
-      sel.disabled = byId("jf-when-day").disabled = byId("jf-when-time").disabled = byId("jf-when-path").disabled = refused;
+      sel.disabled = byId("jf-when-day").disabled = byId("jf-when-time").disabled = byId("jf-when-path").disabled = byId("jf-when-input").disabled = refused;
       byId("jf-when-now").textContent = refused ? sched.refusal : (sched.now ? (w.nowPrefix || "") + sched.now : "");
       byId("jf-err-when").textContent = "";
       whenShowSubs();
@@ -5986,7 +6646,7 @@
       whenShowSubs();
       renderMain();
     }
-    ["jf-when", "jf-when-day", "jf-when-time"].forEach(function(id){ byId(id).addEventListener("change", whenEdited); });
+    ["jf-when", "jf-when-day", "jf-when-time", "jf-when-input"].forEach(function(id){ byId(id).addEventListener("change", whenEdited); });
     byId("jf-when-path").addEventListener("input", whenEdited);
     // the hash binds the WHOLE card (inputs, destination, caps), so a change to any of them drops it too (and repaints the button: on a scheduled job a box edit is Sign schedule)
     ["jf-inputs", "jf-dest", "jf-cap-money", "jf-cap-time"].forEach(function(id){ byId(id).addEventListener("input", function(){ if(!sched) return; if(whenHash !== null) whenEdited(); else renderMain(); }); });
@@ -6035,7 +6695,7 @@
       if(sessionLive || resumeRun !== null){ errEl.textContent = "Finish or clear what is on the card first, then try again."; return; }
       applyReuse({runid: d.runid, prefill: d.prefill, lock: true});
       var sc = (d.prefill || {}).scheduleCard || {};
-      sched = {job: d.job, runid: d.runid, words: sc.words || {}, cur: sc.trigger || null, scheduled: sc.scheduled === true, refusal: sc.refusal || null, now: sc.now || null,
+      sched = {job: d.job, runid: d.runid, words: sc.words || {}, ticketInputs: sc.ticketInputs || [], cur: sc.trigger || null, scheduled: sc.scheduled === true, refusal: sc.refusal || null, now: sc.now || null,
         base: {inputs: byId("jf-inputs").value.trim(), dest: byId("jf-dest").value.trim(), capUsd: byId("jf-cap-money").value.trim(), capTime: byId("jf-cap-time").value.trim()}};
       whenHash = null; whenConfirm = null; whenBusy = false;
       paintWhen();

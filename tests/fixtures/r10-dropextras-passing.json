@@ -1,0 +1,1849 @@
+[
+ {
+  "id": "paid-smw9che4f38xv-revise-1",
+  "call": "revise-1",
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-change-kind-heading",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "the change kind heading, quoted from the Changelog (one of the words the Changelog itself uses: Added, Changed, Fixed, Removed, Deprecated, Security)",
+        "class": "fact",
+        "source": "Changelog",
+        "count": {
+         "min": 1,
+         "max": 1
+        },
+        "facts": [
+         {
+          "name": "change kind heading",
+          "shape": "phrase",
+          "phrase": "Changed"
+         }
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "The phrase fact carries the six page words the look lists as a single phrase fact: the quote must say ONE of \"Added\", \"Changed\", \"Fixed\", \"Removed\", \"Deprecated\", \"Security\", copied exactly from the Changelog. I used the input's own words from the look rather than the person's wording.",
+    "Line 1's ~ rules 1 (\"exactly 3 bullets\") and 2 (\"under 80 words\") are settled by code: code writes the list-item and word-count checks itself, so no part and no refused entry are written for them.",
+    "\"Summarise the latest release\" — which release counts as the latest, and whether the summary is a fair or accurate summary of it, needs reading the text to judge; nothing checks it.",
+    "The release version and the release date cannot be quoted as facts: the Changelog holds no label for either (the look lists both under NOT CHECKED), so they are left to code's Not checked list."
+   ]
+  }
+ },
+ {
+  "id": "paid-smw9chq27j9rl-revise-2",
+  "call": "revise-2",
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-release-fact",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "the release version and date, quoted from the Changelog exactly as it writes it",
+        "class": "fact",
+        "source": "Changelog",
+        "facts": [
+         {
+          "name": "release version and date",
+          "shape": "phrase",
+          "phrase": "## [0.54.1] - 2026-11-04"
+         }
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "Line 1 is a writing line (a summary), so the word and list-item limits are settled by code: line 1 ~ rule 1 (exactly 3 bullets) and ~ rule 2 (under 80 words) get no part and no refused entry from me.",
+    "The phrase fact uses the input's own words: the look gives three acceptable page words, and I picked the versioned one the confirmed plan named, \"## [0.54.1] - 2026-11-04\" (the other two are \"## [Unreleased]\" and \"## [0.54.0] - 2026-11-03\")."
+   ],
+   "refused": [
+    {
+     "line": 1,
+     "reason": "which release is the \"latest release\" — the choice of which one is the newest cannot be judged by a check"
+    },
+    {
+     "line": 1,
+     "reason": "that the bullets are a correct and faithful summary of the release — accuracy and quality of the summary would need a person to read the text"
+    }
+   ]
+  }
+ },
+ {
+  "id": "paid-smw9ci2j5thu7-author",
+  "call": "author",
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-summarise-latest-release",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "Summarise the latest release in the changelog, exactly 3 bullets, under 80 words, exactly 3 list items, at most 80 words",
+        "class": "judged",
+        "rules": [
+         1,
+         2
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "The person asked for a summary of the latest release in the changelog. No check verifies that the written summary actually summarises the latest release, or that it is a faithful summary of the changelog's contents.",
+    "No check verifies which release counts as the \"latest\" one.",
+    "Line 1's ~ rule 1 (\"exactly 3 bullets\") and ~ rule 2 (\"under 80 words\") are settled by code: code writes those list-item and word-count checks itself, so I wrote no part and no refusal for them. The same words repeated in the line (\"exactly 3 list items\", \"at most 80 words\") are the same two limits.",
+    "The look at the input Changelog found nothing checkable for line 1: it lists \"version number\" under NOT CHECKED (no word on the page reads \"version number\" safely), so no fact could be built from it and I did not write it into \"refused\" myself.",
+    "No facts could be drawn from the Changelog look, so line 1's stage carries a single judged part (is this really a summary of the latest release, read as prose) plus the two code-settled limits; the confirmed checks #1 and #2 are the code-settled list-item and word-count limits, which code composes itself, so no part of mine covers them."
+   ]
+  }
+ },
+ {
+  "id": "paid2-smw9icyy07hce-revise-2",
+  "call": "revise-2",
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-latest-release-summary",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "must carry a fact quoting the latest release from the Changelog, copied exactly as the input writes it",
+        "class": "fact",
+        "covers": [
+         3
+        ],
+        "facts": [
+         {
+          "name": "release",
+          "shape": "phrase",
+          "phrase": "## [0.54.1] - 2026-11-04"
+         }
+        ],
+        "count": {
+         "min": 1,
+         "max": 1
+        }
+       }
+      ]
+     }
+    }
+   ],
+   "guardLines": [
+    {
+     "guard": "changed-from-seed",
+     "lines": [
+      1
+     ]
+    }
+   ],
+   "notes": [
+    "Line 1 is a WRITE line (a summary), so code adds the list-item and word checks the person picked (~ rules 1 and 2: exactly 3 bullets / exactly 3 list items, at most 80 words) and ties them to the fact below; no word, list-item or line-count part is written by me.",
+    "The fact part uses the input's own words, not the person's: the Changelog writes the newest heading as \"## [0.54.1] - 2026-11-04\", and the phrase fact is copied verbatim from the look. I used the input's words (and its label wording) instead of the person's phrasing \"the latest release\".",
+    "Confirmed check #3 is carried by the fact part (covers: [3]). Confirmed checks #1 and #2 are carried by the code-added limits on the step file's text; I write no part for them.",
+    "The fact is a phrase fact because the look offers it as a phrase (\"the quote must say this page word\"); a phrase shape takes no rule, anchor, unit or currency, so none is given.",
+    "I did not sign a date fact for 2026-11-04: the look gives no \"lang\" for it, and the whole heading is checked as one verbatim phrase instead.",
+    "Nothing in the look is listed under NOT CHECKED or LEFT OUT for line 1, so no fact or label was dropped on that account."
+   ],
+   "refused": [
+    {
+     "line": 1,
+     "rule": 1,
+     "reason": "the person wrote \"exactly 3 bullets\" / \"exactly 3 list items\" — this is a list-item count, which code writes for the picked rules; I do not compose a count part for it."
+    },
+    {
+     "line": 1,
+     "rule": 2,
+     "reason": "the person wrote \"under 80 words\" / \"at most 80 words\" — this is a word count, which code writes for the picked rules; I do not compose a count part for it."
+    },
+    {
+     "line": 1,
+     "reason": "that the summary is of the LATEST release (which one is the newest) cannot be expressed as a shape plus a rule; only the presence of the release heading is checked, copied verbatim from the Changelog."
+    },
+    {
+     "line": 1,
+     "reason": "that the summary is accurate cannot be expressed as a shape plus a rule; nothing checks it."
+    },
+    {
+     "line": 1,
+     "reason": "the quality/tone of the summary cannot be expressed as a shape plus a rule; nothing checks it."
+    }
+   ]
+  }
+ },
+ {
+  "id": "paid2-smw9idewp0mm9-revise-1",
+  "call": "revise-1",
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-release-summary",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "Summarise the latest release in the changelog",
+        "class": "judged"
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "Code writes the two checks the person picked for line 1 (\"exactly 3 bullets\" and \"under 80 words\") itself, tied to output/steps/1.json; no part and no refused entry was written for them.",
+    "The look gives no label or phrase that can be quoted per result for a fact part: line 1 asks for a written summary, not for a list of found items, so the line is served by one judged part and the step file keeps its \"text\".",
+    "NOT CHECKED by any stage: which release is \"the latest\" (a choice of which one) and whether the summary is a fair, accurate summary cannot be verified by any check.",
+    "NOT CHECKED by any stage: \"release version\" - the page gives no second label for it, so it is not turned into a fact.",
+    "NOT CHECKED by any stage: \"fixed entries\" - the page gives no second label for it, so it is not turned into a fact.",
+    "The look's CAN CHECK phrases (\"## [0.54.1] - 2026-11-04\" and \"### Fixed\") were not written into a fact part: they are page words counted once or twice, not labels every one of 3 results would carry, and a phrase fact whose words the page holds fewer than 3 times is refused."
+   ]
+  }
+ },
+ {
+  "id": "paid2-smw9ids3r91no-author",
+  "call": "author",
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "summary-of-latest-release",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "summarise the latest release in the changelog",
+        "class": "judged"
+       },
+       {
+        "text": "the summary must be backed by a quote copied from the Changelog",
+        "class": "countable",
+        "check": "cited",
+        "source": "Changelog",
+        "covers": [
+         5
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "Line 1's ~ rule 1 (exactly 3 bullets) and ~ rule 2 (under 80 words), and the duplicate limits 'exactly 3 list items' and 'at most 80 words', are settled by code (confirmed checks #1-#4): code writes those word/list-item counts itself, so I wrote no part and no refusal for them.",
+    "Nothing checks which release is the latest, or whether the summary is good or accurate — that needs reading the text to judge. Only the quote-backing of each claim (confirmed check #5) is checked.",
+    "A required fact for the release bullet phrase \"Fixed\" from the Changelog was dropped by the survey (listed under dropped with reason s1), so no fact check for it is planned.",
+    "Line 1: \"release bullet\" — \"release bullet\" would read the same value as \"release bullet\". The page gives no second label for it, so no fact check for it is written.",
+    "The look found the release bullet as a phrase from the Changelog whose quote must say one of the page words \"Fixed\", \"Added\" or \"Changed\"; because that would need a fact-shaped result file and the line is a TEXT line (the person asked for word/list limits on its text), the phrase is not composed as a fact and is left to the Not checked list as the brief states."
+   ],
+   "refused": [
+    {
+     "line": 1,
+     "reason": "which release is the latest, and whether the summary is a good or accurate summary of it, needs reading the text to judge — no machine can count it"
+    }
+   ]
+  }
+ },
+ {
+  "id": "paid2-smw9ie5pi52mf-revise-2",
+  "call": "revise-2",
+  "picksRecord": null,
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-release-summary-facts",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "each release bullet says one of the changelog's own section words",
+        "class": "fact",
+        "rules": [
+         1
+        ],
+        "facts": [
+         {
+          "name": "release bullets",
+          "shape": "phrase",
+          "phrase": "Fixed"
+         }
+        ],
+        "count": {
+         "min": 3,
+         "max": 3
+        }
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "Line 1 is a FACTS line: output/steps/1.json holds {\"results\": [...]}, one result per bullet, each with a quote copied from the Changelog and the value of the \"release bullets\" phrase fact.",
+    "The look says the phrase fact's quote must say ONE of the page words \"Fixed\" or \"Added\" or \"Changed\"; the fact's phrase is set to the first of these, \"Fixed\", copied verbatim from the look. The other two allowed words (\"Added\", \"Changed\") are the look's alternates and are not separately expressible in a single phrase fact.",
+    "The look says the phrase fact carries ~ rule 1, so rule 1 is listed on the fact part and is not also listed under refused.",
+    "The look lists under NOT CHECKED (rule 1) \"release bullet count\" and (rule 2) \"release summary length\" / \"under 80 words\": code lists these under Not checked for the person, so they are not written into refused here.",
+    "Confirmed check #3 (each bullet's claim backed by a quote copied from the Changelog) cannot be expressed on a facts line as a shape and a rule, so it is moved to Not checked rather than composed as a free-text/cited part.",
+    "Confirmed checks #1 (exactly 3 bullets) and #2 (under 80 words) have no safely readable word on the page per the look, so neither is composed as a limit; both are moved to Not checked.",
+    "NOT CHECKED and not composed: which release counts as \"the latest\", and whether the summary is accurate or good — both need reading the text to judge.",
+    "The person's own words (\"exactly 3 bullets\", \"under 80 words\") name a count of 3 bullets, which is carried as the fact part's count {min: 3, max: 3}; this is the number of results the person asked for."
+   ],
+   "refused": [
+    {
+     "line": 1,
+     "rule": 1,
+     "reason": "which release counts as \"the latest\" (the choice of which one) needs reading the text to judge"
+    },
+    {
+     "line": 1,
+     "rule": 2,
+     "reason": "that the summary is an accurate/good summary of the release — judging the summary's quality or accuracy needs reading the text"
+    }
+   ]
+  }
+ },
+ {
+  "id": "paid2-smw9ieiiyrm5n-revise-1",
+  "call": "revise-1",
+  "picksRecord": null,
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-summary-of-latest-release",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "Summarise the latest release in the changelog: the summary's text must be written, and every bullet must be a bullet of the changelog page",
+        "class": "fact",
+        "rules": [
+         1
+        ],
+        "facts": [
+         {
+          "name": "bullet marker",
+          "shape": "phrase",
+          "phrase": "-"
+         }
+        ],
+        "count": {
+         "min": 1
+        }
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "Line 1 is a writing line (a summary). Its two confirmed checks — at most 3 bullets and under 80 words — are counted limits on the written text; code adds those counts for a TEXT line, so I did not write them as parts (writing a word/bullet count myself would be guessing an instrument name).",
+    "The look's only checkable item for line 1 is the bullet marker phrase \"-\" (the page's own words), which carries ~ rule 1 (\"exactly 3 bullets\"); I kept the person's word \"bullets\" and copied the page's marker exactly.",
+    "Not checkable and left out: which release counts as \"the latest\" (a choice of which one) — the page does not name one safely; that the summary actually summarises the release, and that the bullets are the right bullets, need reading the text to judge.",
+    "The look reports \"release heading\", \"release date\", \"word count\" and \"under 80 words\" under NOT CHECKED; per the rules I do not turn these into facts or write them into refused myself — code lists them under Not checked for the person."
+   ],
+   "refused": [
+    {
+     "line": 1,
+     "reason": "Which release counts as \"the latest\" in the changelog is a choice of which one, and the page does not name one safely — this cannot be expressed as a shape and a rule."
+    }
+   ]
+  }
+ },
+ {
+  "id": "paid3-smw9lmnwtuwwz-revise-1",
+  "call": "revise-1",
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "step-1-summary-limits",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "The summary must name a release heading phrase from the Changelog, saying either \"Added\", \"Changed\" or \"Fixed\"",
+        "class": "countable",
+        "check": "cited",
+        "source": "Changelog",
+        "covers": [
+         3
+        ],
+        "rules": [
+         3
+        ]
+       },
+       {
+        "text": "Summarise the latest release in the changelog",
+        "class": "judged"
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "The two counted limits the person picked on line 1 (\"exactly 3 bullets\", \"under 80 words\") are written by code, not by me: no word, list-item or phrase count part is mine.",
+    "The phrase check (confirmed check #3) is carried by the cited part above, which requires a quote from the Changelog containing one of the release-heading words \"Added\", \"Changed\", \"Fixed\" — exactly the page words the look found.",
+    "The person's two extra asks on line 1 are not verifiable by any listed check and are NOT claimed as covered: (a) which release is \"the latest\" in the changelog — choosing WHICH one — cannot be verified; (b) whether the summary is an accurate or faithful summary of that release cannot be verified. I record these here rather than in \"refused\" because line 1 is a WRITE line (a summary) that is fully checked by the counted limits code adds plus the cited phrase part; these two asks are matters of reading, not countable limits or required facts.",
+    "I added no fact part for line 1: the line writes prose, so its step file carries \"text\" and quotes, not a results list."
+   ]
+  }
+ },
+ {
+  "id": "paid3-smw9ln03z3vf6-revise-1",
+  "call": "revise-1",
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-release-facts",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "each list item's label is one of the changelog's own section words, copied exactly as the input writes them (### Fixed / ### Added / ### Changed), counted at least 3 times",
+        "class": "fact",
+        "source": "Changelog",
+        "count": {
+         "min": 3
+        },
+        "rules": [
+         1
+        ],
+        "covers": [
+         3
+        ],
+        "facts": [
+         {
+          "name": "section heading",
+          "shape": "phrase",
+          "phrase": "### Fixed"
+         }
+        ]
+       },
+       {
+        "text": "the release version and date quoted as a phrase from the Changelog (## [0.54.1] - 2026-11-04)",
+        "class": "fact",
+        "covers": [
+         4
+        ],
+        "facts": [
+         {
+          "name": "release version and date",
+          "shape": "phrase",
+          "phrase": "## [0.54.1] - 2026-11-04"
+         }
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "Confirmed checks #1 (exactly 3 list items) and #2 (at most 80 words) are limits on the summary TEXT, but line 1 is a FACTS line: its step file output/steps/1.json holds only results (quotes + values) and no free text, so no word or list-item count can be checked on it. Nothing in this build carries those two checks; code adds the counts the person picked only for a line that WRITES. They are reported under Not checked.",
+    "The plan lists 'the latest release' as unchecked and the person's own summary wording as needing reading to judge; no shape or rule expresses 'the latest', so no fact is written for it.",
+    "The look's phrase facts are copied verbatim as the input writes them: the version-and-date phrase \"## [0.54.1] - 2026-11-04\" and the section-heading phrase \"### Fixed\" (the look also allows \"### Added\" or \"### Changed\"). These are the input's own words, not the person's.",
+    "Line 1 ~ rule 1 (\"exactly 3 bullets\") is carried out by the fact part as its count of at least 3 results, so it is listed in that part's rules and not in refused.",
+    "Line 1 ~ rule 2 (\"under 80 words\") and the look's NOT CHECKED \"word limit\" are settled by code: no part and no refused entry are written for them."
+   ],
+   "refused": [
+    {
+     "line": 1,
+     "reason": "the person's own words: \"the latest release\" — which release is the latest is not a shape and a rule, so no fact can be checked for it"
+    }
+   ]
+  }
+ },
+ {
+  "id": "paid3-smw9ln03z3vf6-revise-2",
+  "call": "revise-2",
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-release-facts",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "the summary must quote the changelog's own section words for its bullets: ### Fixed, ### Added or ### Changed, copied exactly",
+        "class": "fact",
+        "source": "Changelog",
+        "rules": [
+         1
+        ],
+        "facts": [
+         {
+          "name": "section label",
+          "shape": "phrase",
+          "phrase": "### Fixed"
+         }
+        ],
+        "count": {
+         "min": 3
+        }
+       },
+       {
+        "text": "the release version and date quoted as a phrase from the Changelog (## [0.54.1] - 2026-11-04)",
+        "class": "fact",
+        "source": "Changelog",
+        "facts": [
+         {
+          "name": "release heading",
+          "shape": "phrase",
+          "phrase": "## [0.54.1] - 2026-11-04"
+         }
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "The look gives only ONE quote requirement for line 1: the quote must say \"## [0.54.1] - 2026-11-04\" — the whole release heading (version AND date) is one page phrase, so it is a single phrase fact, not separate version and date facts.",
+    "The look's bullet phrase is a choice of three page words (\"### Fixed\" or \"### Added\" or \"### Changed\"); the catalogue's phrase shape takes one fixed phrase, so the first of the three is written and the other two are covered by the part's text.",
+    "Nothing checks: the latest release; \"Summarise the latest release\" (a summary's quality and accuracy need reading the text to judge); line 1 \"under 80 words\" (the page holds no word reading \"word limit\").",
+    "Line 1 is a facts line: its file output/steps/1.json holds results with one quote each and the filled values; the \"exactly 3 bullets\" and \"under 80 words\" rules are left to code (line 1, ~ rules 1 and 2)."
+   ],
+   "refused": [
+    {
+     "line": 1,
+     "rule": 3,
+     "reason": "each list item's label must be one of the changelog's own section words — the page offers three alternatives (### Fixed / ### Added / ### Changed), which one fixed phrase fact cannot express"
+    },
+    {
+     "line": 1,
+     "reason": "the latest release — which release is latest cannot be expressed as a shape and a rule"
+    }
+   ],
+   "guardLines": [
+    {
+     "guard": "changed-from-seed",
+     "lines": [
+      1
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "paid4-smw9nnsop7sxm-author",
+  "call": "author",
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-summary-step",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "The summary must contain the phrase \"Fixed\" as it appears in the Changelog, quoted from input 1 (Changelog).",
+        "class": "countable",
+        "check": "cited",
+        "source": "Changelog",
+        "covers": [
+         1
+        ],
+        "rules": [
+         1,
+         2
+        ]
+       },
+       {
+        "text": "Summarise the latest release in the changelog — that it is the LATEST release",
+        "class": "none"
+       }
+      ]
+     }
+    }
+   ],
+   "refused": [
+    {
+     "line": 1,
+     "rule": 1,
+     "reason": "exactly 3 bullets — the page never shows a number right after or right before \"[ N lines ]\", and no word on this page reads \"bullet\" safely"
+    },
+    {
+     "line": 1,
+     "rule": 2,
+     "reason": "under 80 words — the page never shows a number right after or right before \"N\", and no word on this page reads \"bullet\" safely"
+    },
+    {
+     "line": 1,
+     "reason": "that the release summarised is the LATEST release in the changelog — nothing in the text can be counted or quoted to prove which release is the latest"
+    }
+   ],
+   "notes": [
+    "The person asked for \"exactly 3 bullets\" and \"under 80 words\" — code writes those checks (or the Not checked rows) itself, so no part and no refused entry were written for them.",
+    "The person asked for \"exactly 3 list items\" and \"at most 80 words\" — these are word / list-item counts the person picked, so code adds them; they are not composed here.",
+    "The confirmed check #1 (the phrase \"Fixed\" quoted from the Changelog) is carried out by the countable part on the line 1 stage via covers [1]; the fact uses the input's own word \"Fixed\" copied verbatim from the look.",
+    "line 1 is a writing line (a summary), so its step file output/steps/1.json keeps \"text\" with its cites, and no fact part is written for it."
+   ]
+  }
+ },
+ {
+  "id": "paid4-smw9no3kwo7of-revise-1",
+  "call": "revise-1",
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-summary-bullets",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "Summarise the latest release in the changelog",
+        "class": "fact",
+        "source": "Changelog",
+        "count": {
+         "min": 3,
+         "max": 3
+        },
+        "facts": [
+         {
+          "name": "summary section",
+          "shape": "phrase",
+          "phrase": "### Fixed"
+         }
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "Line 1 is a FACTS line: output/steps/1.json holds results, each with one quote from the Changelog and the value of the fact as the quote writes it. The look could only confirm one checkable fact on this line: a phrase fact whose quote must say one of the page's own section words, copied exactly: \"### Fixed\" or \"### Added\" or \"### Changed\". I named the fact \"summary section\" (a name may appear only once per line).",
+    "The person asked for \"exactly 3 bullets\" and \"under 80 words\" on line 1. Both are settled by code (confirmed checks #1 and #2): code adds the list-item and word-count checks itself, so I wrote no part and no refusal for ~ rule 1 and ~ rule 2.",
+    "NOT CHECKED by anything, stated plainly: (a) which release is \"the latest\" is a superlative — reading cannot decide it as a shape; (b) whether the summary is faithful/accurate to that release needs reading the text to judge; (c) which sections the summary draws on (\"### Fixed\" / \"### Added\" / \"### Changed\") and which bullets those are is a choice of which ones, not a check; (d) \"bullet count\" — \"-\" is written more than once inside one line of the page, so no word on this page reads it safely; (e) \"bullet length\" — no word on this page reads it safely.",
+    "The fact's phrase words are the input's own words (the look gives \"### Fixed\", \"### Added\", \"### Changed\"), not the person's; the person wrote \"bullets\", which the page does not hold as a safe word."
+   ]
+  }
+ },
+ {
+  "id": "paid4-smw9no3kwo7of-revise-2",
+  "call": "revise-2",
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-latest-release-summary",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "Summarise the latest release in the changelog",
+        "class": "none"
+       },
+       {
+        "text": "under 80 words",
+        "class": "none"
+       },
+       {
+        "text": "exactly 3 list items",
+        "class": "none"
+       },
+       {
+        "text": "at most 80 words",
+        "class": "none"
+       },
+       {
+        "text": "exactly 3 bullets",
+        "class": "none"
+       }
+      ]
+     }
+    }
+   ],
+   "refused": [
+    {
+     "line": 1,
+     "rule": 3,
+     "reason": "exactly 3 bullets - \"-\" is written more than once inside one line of the page, so one result cannot show it once. No word on this page reads \"bullet count\" safely."
+    },
+    {
+     "line": 1,
+     "rule": 4,
+     "reason": "under 80 words - No word on this page reads \"bullet length\" safely."
+    },
+    {
+     "line": 1,
+     "rule": 5,
+     "reason": "at most 80 words - no word on this page reads a bullet/word limit safely"
+    },
+    {
+     "line": 1,
+     "reason": "Summarise the latest release in the changelog - the choice of WHICH release is \"the latest\" (a superlative) and whether the summary is a faithful/accurate summary of that release needs reading the text to judge; the page words \"### Fixed\" / \"### Added\" / \"### Changed\" appear fewer than 3 times each, so no single word can back all 3 results"
+    }
+   ],
+   "notes": [
+    "The line is a writing (summary) line: code adds the word/list-item limits the person picked (exactly 3 bullets, under 80 words, exactly 3 list items, at most 80 words); I write no word, list-item or section count part myself.",
+    "No fact part is composed: the only checkable thing the look offered was the phrase fact (\"### Fixed\"/\"### Added\"/\"### Changed\"), and each of those words occurs only twice in the Changelog, so it cannot back the 3 results this line would need. It is dropped rather than approximated.",
+    "The plan's confirmed checks #1 (exactly 3 list items) and #2 (at most 80 words) are carried by code, not by any part I write."
+   ]
+  }
+ },
+ {
+  "id": "paid4-smw9nohy3s68g-revise-1",
+  "call": "revise-1",
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-summarise-latest-release",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "Summarise the latest release in the changelog",
+        "class": "none"
+       }
+      ]
+     }
+    }
+   ],
+   "refused": [
+    {
+     "line": 1,
+     "reason": "Choosing WHICH release is the latest needs reading the changelog to judge, and the check cannot verify which release is the latest."
+    },
+    {
+     "line": 1,
+     "reason": "Whether the summary is a fair and accurate summary of the changelog entries needs reading the text to judge; only reading it could decide."
+    }
+   ],
+   "notes": [
+    "Line 1's ~ rule 1 (\"exactly 3 bullets\" / \"exactly 3 list items\") and ~ rule 2 (\"under 80 words\" / \"at most 80 words\") are settled by code: code writes the list-item and word-count checks (or the Not checked row) itself, so I wrote no part and no refused entry for them. The look lists both under NOT CHECKED for line 1.",
+    "Line 1 is a WRITING line (a summary), not a line that finds, lists or looks something up: the look found no number, date, text, money, time or phrase fact to fill, so there is no fact part and no count on line 1. Its step file output/steps/1.json carries free text under \"text\".",
+    "No cited part is written for line 1: the person did not ask that any claim carry words quoted from the Changelog input; the plan's check #1 is a list-item count, which is code's to write, so no claim-count (minClaims/maxClaims) part is composed either.",
+    "The confirmed check #2 (\"at most 80 words\") is the word limit code writes for ~ rule 2; it is not a part I compose, so no part carries a \"covers\" number for it. The confirmed check #1 (\"exactly 3 list items, each quoting the changelog entry it summarises\") is likewise the code-written list-item check for ~ rule 1; the \"each quoting the changelog entry\" half is not expressible as a shape-and-rule fact and is not approximated by a stage that means something else.",
+    "The look's number and text labels (e.g. \"of\", \"(\", \"to\", \"on\", \"about\", \"up to\", \"[\", \"## [\", \"; fwdloop\") and its date labels (e.g. \"(hamr,\", \"] -\", \"Tested\") were not used: the person asked for no price, count, version or date value on line 1, and no label is typed that the look did not give.",
+    "The Changelog input's own wording is preserved where I quote the person's asks; the two refusals use the person's words for what cannot be checked."
+   ],
+   "guardLines": []
+  }
+ },
+ {
+  "id": "paid4-smw9np9m50ok4-revise-2",
+  "call": "revise-2",
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-release-facts",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "the release version, found in the Changelog and written as the Changelog writes it (\"## [0.54.1] - 2026-11-04\"), and the fixed section, found in the Changelog and written as the Changelog writes it (\"### Fixed\")",
+        "class": "fact",
+        "covers": [
+         2,
+         3
+        ],
+        "facts": [
+         {
+          "name": "release version",
+          "shape": "phrase",
+          "phrase": "## [0.54.1] - 2026-11-04"
+         },
+         {
+          "name": "fixed section",
+          "shape": "phrase",
+          "phrase": "### Fixed"
+         }
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "The facts' phrase words are copied verbatim from the look at the Changelog, not from the person's own words: the release version is written as \"## [0.54.1] - 2026-11-04\" and the fixed section as \"### Fixed\".",
+    "Not checked (the person asked, but no check can verify it): \"Summarise\" — whether the text actually reads as a summary of the release is a judgement of the writing.",
+    "Not checked: \"the latest release\" — which release counts as the latest is a choice of WHICH one, not something a check can verify.",
+    "Not checked (rule 1 of line 1): \"exactly 3 bullets\" — code writes this check or its Not checked row itself; no part and no refusal entry is written for it.",
+    "Not checked (rule 2 of line 1): \"under 80 words\" — code writes this check or its Not checked row itself; no part and no refusal entry is written for it.",
+    "Confirmed check #1 (the text summarises the latest release and every claim is backed by a quote copied from the Changelog) is not composed: line 1 is a facts line whose file holds only results, so a text-quoting part cannot sit on it; the judgement part of that check is already listed as Not checked above."
+   ],
+   "refused": [
+    {
+     "line": 1,
+     "reason": "Summarise — whether the text actually reads as a summary of the release is a judgement of the writing, not something a check can verify."
+    },
+    {
+     "line": 1,
+     "reason": "the latest release — which release counts as the latest is a choice of WHICH one, not something a check can verify."
+    }
+   ]
+  }
+ },
+ {
+  "id": "paid4-smw9npn6kf5b9-revise-1",
+  "call": "revise-1",
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-release-heading-fact",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "the release heading, quoted word for word from the Changelog",
+        "class": "fact",
+        "rules": [
+         1,
+         2
+        ],
+        "facts": [
+         {
+          "name": "release heading",
+          "shape": "phrase",
+          "phrase": "## [0.54.1] - 2026-11-04"
+         }
+        ],
+        "count": {
+         "min": 1,
+         "max": 1
+        }
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "Both stages were red at the seed exactly as expected: nothing has been changed yet and output/steps/1.json does not exist. Neither stage is green at seed, so neither is grading nothing.",
+    "The two limits the person picked for line 1 (\"under 80 words\", \"exactly 3 bullets\" / \"exactly 3 list items\") are settled by code: the person picked them in the confirm turn, so I wrote no part and no refused entry for them. Code adds the word and list-item checks (or the Not checked row) itself.",
+    "The phrase fact uses the input's own words: the look lists the checkable release heading as the phrase \"## [0.54.1] - 2026-11-04\", so that is copied verbatim rather than the person's looser wording \"the latest release\".",
+    "The line's two ~ rules are listed on the fact part's \"rules\" ([1, 2]) because the look carried those rules there; they are not repeated in refused."
+   ],
+   "refused": [
+    {
+     "line": 1,
+     "reason": "the summary being a good, accurate or complete summary of the latest release — nothing on the page can be counted or quoted to decide it"
+    },
+    {
+     "line": 1,
+     "reason": "which release is the latest — the page does not let a machine decide that; only the heading the person asked to be quoted is checked"
+    },
+    {
+     "line": 1,
+     "reason": "the bullets being well-written or in a sensible order — only reading it could decide"
+    }
+   ]
+  }
+ },
+ {
+  "id": "paid4-smw9npyf9dxkc-author",
+  "call": "author",
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-latest-release-summary",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "the step text quotes the release version phrase \"## [0.54.1] - 2026-11-04\" copied from the Changelog input",
+        "class": "countable",
+        "check": "cited",
+        "source": "Changelog",
+        "covers": [
+         3
+        ]
+       },
+       {
+        "text": "the step text quotes the release date as it appears in the Changelog under the label \"## [0.54.1] -\"",
+        "class": "countable",
+        "check": "cited",
+        "source": "Changelog",
+        "covers": [
+         4
+        ]
+       },
+       {
+        "text": "the step text quotes the fixed items phrase \"### Fixed\" from the Changelog input",
+        "class": "countable",
+        "check": "cited",
+        "source": "Changelog",
+        "covers": [
+         5
+        ],
+        "rules": [
+         1
+        ]
+       },
+       {
+        "text": "Summarising the latest release in the changelog",
+        "class": "judged"
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "The look gives the three quotable things for line 1 (the release version phrase, the release date under the label \"## [0.54.1] -\", and the fixed items phrase \"### Fixed\") as quote-backed checks, so I wrote them as countable/cited parts against the Changelog input rather than as a facts file. The phrase words \"## [0.54.1] - 2026-11-04\" and \"### Fixed\" and the date label \"## [0.54.1] -\" are copied verbatim from the look.",
+    "The look's date line gives lang \"en\"; since the date is checked as a quote-backed claim (not a fact in a results file), no lang field is signed and none is written on the cited part.",
+    "NOT CHECKED, stated here rather than claimed as covered: which release counts as the \"latest\" (choosing it needs reading the Changelog) and whether the summary is a good, accurate summary of that release — both need reading the text to judge.",
+    "The person's own ~ rules 1 (\"exactly 3 bullets\") and 2 (\"under 80 words\") are settled by code: code writes those list-item and word-count checks (or their Not checked rows) itself, so I wrote no part and no refusal for them. The same applies to the restatement \"exactly 3 list items\" and \"at most 80 words\".",
+    "The look lists \"bullet count\" under NOT CHECKED (rule 1) and \"word count\" under NOT CHECKED (rule 2); those are left to code and are not turned into checks here.",
+    "The always-on protections (changed-from-seed, the output/ write fence, and the existence/completeness of output/steps/1.json) are not re-composed as checks; only the write fence is parameterised in the mandatory guard."
+   ]
+  }
+ },
+ {
+  "id": "paid4-smw9npyf9dxkc-revise-1",
+  "call": "revise-1",
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-release-summary-facts",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "the step text quotes the release version phrase \"## [0.54.1] - 2026-11-04\" copied from the Changelog input",
+        "class": "countable",
+        "check": "cited",
+        "source": "Changelog",
+        "covers": [
+         3
+        ]
+       },
+       {
+        "text": "the step text quotes the release date as it appears in the Changelog under the label \"## [0.54.1] -\"",
+        "class": "countable",
+        "check": "cited",
+        "source": "Changelog",
+        "covers": [
+         4
+        ]
+       },
+       {
+        "text": "the step text quotes the fixed items phrase \"### Fixed\" from the Changelog input",
+        "class": "countable",
+        "check": "cited",
+        "source": "Changelog",
+        "covers": [
+         5
+        ]
+       },
+       {
+        "text": "the summary must summarise the latest release in the changelog, and the summary must be a good, accurate summary of that release",
+        "class": "none"
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "Line 1 is a writing line (a summary), so its file output/steps/1.json keeps \"text\"; the confirmed checks are the three quoted-from-Changelog claims (#3 version phrase, #4 release date under the label \"## [0.54.1] -\", #5 \"### Fixed\"), carried by three countable cited parts.",
+    "The person asked for exactly 3 bullets and under 80 words (their ~ rules 1 and 2); code adds those list-item and word-count checks itself, so I wrote no part and no refusal for them.",
+    "NOT CHECKED and stated here, not claimed as covered: which release is the \"latest\" (choosing which one needs reading the Changelog), and whether the summary is a good, accurate summary of that release. Both need reading the text to judge, so no part checks them.",
+    "The look found no result-set for line 1 (nothing to list or look up), so no fact part was written and no anchors, units or phrases were invented; the look's phrase words are copied verbatim: \"## [0.54.1] - 2026-11-04\" and \"### Fixed\".",
+    "The look lists \"bullet count\" and \"word count\" under NOT CHECKED for ~ rules 1 and 2, so I did not turn them into parts, and did not write them into \"refused\" (code lists them under Not checked for the person)."
+   ]
+  }
+ },
+ {
+  "id": "paid4-smw9nqdjjzzew-author",
+  "call": "author",
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": null,
+    "check": null,
+    "own": false,
+    "left": true
+   }
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-latest-release-summary",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "Summarise the latest release in the changelog",
+        "class": "judged"
+       },
+       {
+        "text": "the quotes for the bullets must say one of the changelog's own bullet words",
+        "class": "fact",
+        "source": "Changelog",
+        "covers": [
+         1
+        ],
+        "count": {
+         "min": 3,
+         "max": 3
+        },
+        "facts": [
+         {
+          "name": "bullet wording",
+          "shape": "phrase",
+          "phrase": "Fixed"
+         }
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "Line 1 is both a facts line and a writing line: its file output/steps/1.json carries the three bullet results (each with a quote from the Changelog and the phrase value) and the free \"text\" of the summary.",
+    "The fact's phrase \"Fixed\" is the input's own word, copied exactly from the look (the look lists \"Fixed\" / \"Added\" / \"Changed\" as the page words a bullet quote may say); the confirmed check #1 asked specifically that each of the 3 bullet quotes say \"Fixed\", and \"Fixed\" must appear in the Changelog at least 3 times to support 3 results.",
+    "Not checked (nothing I may compose checks these): \"the latest release\" (which release is the newest is a choice of which one, not a count), \"summarise\" (whether the bullets actually summarise the release needs reading), and the two settled-by-code picks — line 1 ~ rule 1 \"exactly 3 bullets\" and line 1 ~ rule 2 \"under 80 words\" — code writes those checks itself and I wrote no part for them.",
+    "The look lists \"changelog bullet count\" and \"changelog bullet words\" under NOT CHECKED, so they are not written into refused here; code lists them under Not checked for the person."
+   ],
+   "refused": [
+    {
+     "line": 1,
+     "reason": "the latest release — which release is the newest is a choice of which one, not a count, so no stage can check it"
+    },
+    {
+     "line": 1,
+     "reason": "summarise — whether the bullets actually summarise the release needs reading the text to judge"
+    }
+   ],
+   "guardLines": [
+    {
+     "guard": "changed-from-seed",
+     "lines": [
+      1
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "paid4b-smw9rhme94r50-author",
+  "call": "author",
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-release-facts",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "a required fact: the release version quoted from the Changelog",
+        "class": "fact",
+        "source": "Changelog",
+        "covers": [
+         3
+        ],
+        "facts": [
+         {
+          "name": "release version",
+          "shape": "phrase",
+          "phrase": "0.54.1"
+         }
+        ]
+       },
+       {
+        "text": "a required fact: the release heading quoted from the Changelog",
+        "class": "fact",
+        "source": "Changelog",
+        "covers": [
+         4
+        ],
+        "facts": [
+         {
+          "name": "release heading",
+          "shape": "phrase",
+          "phrase": "## [0.54.1] - 2026-11-04"
+         }
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "Confirmed checks #1 (at most 80 words in the line 1 step text) and #2 (exactly 3 list items in the line 1 step text) are word/list-item counts the person picked: code writes those checks itself, so I composed no part for them.",
+    "The two fact parts on line 1 are both phrase facts carrying confirmed checks #3 and #4. They sit on the one rubric-step stage for line 1; the phrase words are copied verbatim from the look at the Changelog input, not from the person's own wording.",
+    "The look also found a CAN CHECK fact \"fixed section\" (phrase \"### Fixed\"), but it is not among the confirmed plan's checks, so I did not compose it — a genre never adds a check the goal did not ask for.",
+    "Line 1's ~ rule 1 (\"exactly 3 bullets\") and ~ rule 2 (\"under 80 words\") are settled by code as word/list-item counts; I wrote no part and no refusal for them.",
+    "Nothing checks: summarising the latest release in the changelog — the accuracy and quality of a summary need reading the text to judge. Nothing checks which release counts as the latest — that is a choice of WHICH one. Nothing checks a \"release date\" fact — \"-\" is written more than once inside one line of the page, so one result cannot show it once, and no word on the page reads \"release date\" safely; the look lists it under NOT CHECKED."
+   ]
+  }
+ }
+]

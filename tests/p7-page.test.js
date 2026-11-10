@@ -137,10 +137,10 @@ test('fillCard is the ONE prefill (re-attach, Reuse, Edit in chat, Resume): the 
   const calls = [];
   // eslint-disable-next-line no-new-func
   const ticks = [];
-  const fillCard = new Function('setVal', 'fitCardBoxes', 'setThinkingTick', `${fnSrc('fillCard')}\nreturn fillCard;`)((id, v) => { vals[id] = v; }, () => calls.push('fit'), (on) => ticks.push(on));
+  const fillCard = new Function('setVal', 'fitCardBoxes', 'setThinkingTick', 'setFlow', 'setCardSchedule', `${fnSrc('fillCard')}\nreturn fillCard;`)((id, v) => { vals[id] = v; }, () => calls.push('fit'), (on) => ticks.push(on), (type, server) => calls.push(`flow:${type}:${server}`), () => {});
   fillCard({ jobName: 'j', jobText: 'a\n~ b', inputs: 'repo: /r', destination: 'src/', capUsd: 2, maxWallMs: 600000 });
   assert.deepEqual(vals, { 'jf-name': 'j', 'jf-job': 'a\n~ b', 'jf-inputs': 'repo: /r', 'jf-dest': 'src/', 'jf-cap-money': 2, 'jf-cap-time': 10 });
-  assert.deepEqual(calls, ['fit']);
+  assert.deepEqual(calls, ['flow:undefined:undefined', 'fit'], 'the card\'s Flow type and MCP are restored with the boxes (piece 8: a plain card has neither)');
   assert.deepEqual(ticks, [false], 'the Thinking on tick is restored from the card (unticked when the card has none)');
   fillCard({ jobName: 'j', thinking: true });
   assert.deepEqual(ticks, [false, true], 'a ticked card re-ticks the box');

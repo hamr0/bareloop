@@ -58,7 +58,8 @@ export function runlistPath(home) {
 }
 
 /**
- * @typedef {{ at: string, runid: string, job: string, spine: string, patient: string|null, via: 'run-u'|'bundle'|'backfill', pid?: number, capUsd?: number, leg?: number }} RunRow
+ * @typedef {{ at: string, runid: string, job: string, spine: string, patient: string|null, via: 'run-u'|'bundle'|'backfill', pid?: number, capUsd?: number, leg?: number, ticket?: number }} RunRow
+ * `ticket` (a Tickets run, ITEM33-BUILD R6): the ticket number this run reads; older rows have none.
  * `pid`/`capUsd` (optional; older and backfilled rows carry neither): the runner's process id and the
  * leg's $ cap — what the monthly limit holds while that pid is a live bareloop runner (src/monthly.js).
  * `leg` (P5-R; only on a row {@link readRunList} FOLDED from `leg-start` entries, i.e. a RESUMED run):
@@ -105,7 +106,7 @@ export function appendRun(row, opts = {}) {
 
 /**
  * @typedef {{ runid: string, type: 'settled'|'released', by: string, at: string, reason?: string, words?: string, spentUsd?: number, spendComplete?: boolean, leg?: number }} RunEvent
- * `words` (2026-10-19): on a `settled` with `reason: 'refused before start'`, the plain refusal the panel shows for that run (it has no spine).
+ * `words` (2026-10-19): on a `settled` with `reason: 'refused before start'` (or, R5, `reason: 'skipped'`: a ticket the job's filter did not let through), the plain words the panel shows for that run (it has no spine).
  * `leg` (P5-R): which leg of the run the write-back is about; absent = leg 1 (every entry written before P5-R).
  * A resumed run is ONE row, so `settled`/`released` are per leg: a later leg's `released` gives back THAT leg's
  * claim and never removes the run.

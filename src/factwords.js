@@ -6,7 +6,7 @@
 // Compared WHITE-SPACE BLIND: any run of white space (U+202F and U+00A0 included - Google writes U+202F before AM/PM, 259 times in one
 // page) is one space on both sides.
 
-import { labelOnList, normLabel, scanLabels } from './labelscan.js';
+import { labelOnList, normLabel, scanLabels, renderLabelList, renderKeptLabelList } from './labelscan.js';
 import { asList } from './facts.js';
 import { dropSentence } from './pagedropwords.js';
 
@@ -71,6 +71,19 @@ export function keptSetOf(look, source) {
     forms: facts.filter((f) => f.shape !== 'phrase' && (f.lang !== undefined || f.decimal !== undefined))
       .map((f) => ({ labels: new Set(f.words.map((w) => normLabel(String(w)))), lang: f.lang, decimal: f.decimal })),
   };
+}
+
+/**
+ * The label lists the drafter is told, one per input: ONE owner with the proof above. An input the page-word map read (a look with a
+ * `dropped` list) is offered the labels `keptSetOf` accepts, nothing else; any other input keeps the code-made list the proof reads.
+ * @param {Record<string, string>} texts @param {Parameters<typeof keptSetOf>[0]} look
+ * @returns {string[]}
+ */
+export function labelListsFor(texts, look) {
+  return Object.entries(texts).map(([label, text]) => {
+    const kept = keptSetOf(look, label);
+    return kept ? renderKeptLabelList(label, [...kept.labels]) : renderLabelList(label, scanLabels(text));
+  });
 }
 
 /**

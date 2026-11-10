@@ -1,0 +1,83 @@
+{
+ "D5": {
+  "stages": [
+   {
+    "name": "changed-from-seed",
+    "kind": "files-changed",
+    "params": {
+     "requireNonEmpty": true,
+     "allowPrefixes": [
+      "output/"
+     ]
+    }
+   },
+   {
+    "name": "line-1-release-facts",
+    "kind": "rubric-step",
+    "fromLine": [
+     1
+    ],
+    "params": {
+     "step": 1,
+     "parts": [
+      {
+       "text": "the summary must quote the changelog's own section words for its bullets: ### Fixed, ### Added or ### Changed, copied exactly",
+       "class": "fact",
+       "source": "Changelog",
+       "rules": [
+        1
+       ],
+       "facts": [
+        {
+         "name": "section label",
+         "shape": "phrase",
+         "phrase": "### Fixed"
+        }
+       ],
+       "count": {
+        "min": 3
+       }
+      },
+      {
+       "text": "the release version and date quoted as a phrase from the Changelog (## [0.54.1] - 2026-11-04)",
+       "class": "fact",
+       "source": "Changelog",
+       "facts": [
+        {
+         "name": "release heading",
+         "shape": "phrase",
+         "phrase": "## [0.54.1] - 2026-11-04"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  ],
+  "notes": [
+   "The look gives only ONE quote requirement for line 1: the quote must say \"## [0.54.1] - 2026-11-04\" \u2014 the whole release heading (version AND date) is one page phrase, so it is a single phrase fact, not separate version and date facts.",
+   "The look's bullet phrase is a choice of three page words (\"### Fixed\" or \"### Added\" or \"### Changed\"); the catalogue's phrase shape takes one fixed phrase, so the first of the three is written and the other two are covered by the part's text.",
+   "Nothing checks: the latest release; \"Summarise the latest release\" (a summary's quality and accuracy need reading the text to judge); line 1 \"under 80 words\" (the page holds no word reading \"word limit\").",
+   "Line 1 is a facts line: its file output/steps/1.json holds results with one quote each and the filled values; the \"exactly 3 bullets\" and \"under 80 words\" rules are left to code (line 1, ~ rules 1 and 2)."
+  ],
+  "refused": [
+   {
+    "line": 1,
+    "rule": 3,
+    "reason": "each list item's label must be one of the changelog's own section words \u2014 the page offers three alternatives (### Fixed / ### Added / ### Changed), which one fixed phrase fact cannot express"
+   },
+   {
+    "line": 1,
+    "reason": "the latest release \u2014 which release is latest cannot be expressed as a shape and a rule"
+   }
+  ],
+  "guardLines": [
+   {
+    "guard": "changed-from-seed",
+    "lines": [
+     1
+    ]
+   }
+  ]
+ }
+}

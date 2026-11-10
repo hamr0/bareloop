@@ -91,6 +91,15 @@ export function renderJobLines(lines) {
 }
 
 /**
+ * The job lines as the job BOX reads them (R10): each line's text, then one `~` line per rule. The inverse of {@link parseJobBlock}, so a card reopened by a Revise holds
+ * the `~` lines the person's answers added.
+ * @param {{text: string, rules: string[]}[]} lines @returns {string}
+ */
+export function jobBoxText(lines) {
+  return lines.map((l) => [l.text, ...l.rules.map((r) => `~ ${r}`)].join('\n')).join('\n');
+}
+
+/**
  * The PASS:/FAIL: examples the person wrote, each kept with its line number (answer 2 of a rubric interview — what the
  * calibration compile reads). Empty string when there are none.
  * @param {JobLine[]} lines

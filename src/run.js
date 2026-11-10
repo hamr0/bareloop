@@ -206,6 +206,11 @@ async function primitiveSmoke(workdir) {
  *   collision walk would mint a `-2` beside the work the resume exists to continue. The
  *   fold's precedent exactly: the chain's state is DECLARED, never re-derived. Forwarded
  *   verbatim to the plan flow; absent is the cold path.
+ * @param {string|null} [opts.ticketUnsure] R9 (9.4): the ticket filter's `unsure` reason when it let the ticket run unsure; rides onto `job-start` as `ticketFilter.unsure`
+ * @param {import('./ticketrepo.js').RepoTicketRecord|null} [opts.ticketRecord] MCP + tickets piece 1a: a CODE-REPO job's frozen ticket (metadata only: number, title,
+ *        state, source, sha256, bytes, masked count, the frozen file's relative path, the MCP record - never the text). Report-only: it rides onto `job-start` as `ticket`,
+ *        so the run's books name the exact bytes the worker could read. Absent = the job reads no ticket (or froze it in its prepared copy's `source.json`).
+ * @param {{number: number, ownerRepo: string, head: string, base: {ref: string|null, sha: string}|null, mergeBase: string|null}|null} [opts.prRecord] MCP + tickets piece 12: the PR a worktree job was checked out at (the head sha the seed is, the base and the merge-base for the readout). Report-only: rides onto `job-start` as `pr`.
  * @param {boolean|'cap'|'diff'} [opts.readShim=false] THE READ SHIM (src/readshim.js) —
  *        WHICH ARM to run, threaded to the plan flow. The Phase 2 pre-registration's four:
  *          `false`  A0 — off (the default)
@@ -275,7 +280,7 @@ async function primitiveSmoke(workdir) {
  *   deliberately NOT in the resumable/checkpoint set (`src/reuse.js`) — an
  *   unknown in-flight state is not a known-safe resume point.
  */
-export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, rates = null, judgeRates = null, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, closeDir = null, layerRoot = false, readShim = false, scout = true, bridge = null, draftSpentUsd = 0, draftSpendComplete = true, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, learnHints = null }) {
+export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, rates = null, judgeRates = null, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, closeDir = null, layerRoot = false, readShim = false, scout = true, bridge = null, draftSpentUsd = 0, draftSpendComplete = true, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, learnHints = null, ticketRecord = null, ticketUnsure = null, prRecord = null }) {
   // THE READ SHIM's ARM, resolved at the door — the FIRST thing this entry does,
   // before the ledger, before the approval gate, before a byte of the spec is read.
   // An unrecognised spelling throws here at zero cost instead of being coerced by
@@ -412,6 +417,10 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
     // (an absent baseUrl is the vendor's own host, not an unknown).
     provider: typeof job.provider === 'string' ? job.provider : null,
     ...(typeof job.baseUrl === 'string' ? { baseUrl: job.baseUrl } : {}),
+    ...(ticketRecord === null ? {} : { ticket: ticketRecord }),
+    // R9 (fwd 9.4): the ticket filter ran UNSURE about this ticket (an off-scale or unreadable label), so the ticket ran; the grid wears a grey mark. The reason text only, never the ticket.
+    ...(ticketUnsure === null ? {} : { ticketFilter: { unsure: ticketUnsure } }),
+    ...(prRecord === null ? {} : { pr: prRecord }),
     // F118: replay reads this; report-only. `dirty` is deliberately omitted —
     // it can't be known without a shell, and null = unknown, never faked.
     code: (() => { const { version, sha } = codeVersion(); return { version, sha }; })(),

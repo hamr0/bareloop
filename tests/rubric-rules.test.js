@@ -202,7 +202,7 @@ test('L4 cause 1: "covers" on a fact (try A of smv710w8c3wdh) is refused with th
   assert.match(REQUIRED_FACTS_BRIEF, /"covers" and "rules" are fields of the PART, written once on it as a list of numbers\. A fact never has a "covers" or a "rules" field\./);
 });
 
-test('L4 cause 2: a ~ rule beside the fact part as a judged / none part (tries 1 and 3 of smv710w8c3wdh) is refused AND told where it goes; a red-eye rule drafted as a time fact with `between`, marked AI\'s proposal, is accepted', async () => {
+test('L4 cause 2: a ~ rule beside the fact part as a judged / none part (tries 1 and 3 of smv710w8c3wdh) is no longer a plan-red (R10: listed under Not checked, the fact part carries the rule); a red-eye rule drafted as a time fact with `between`, marked AI\'s proposal, is accepted', async () => {
   const proved = await proveRubricInputs({ inputs: [{ n: 1, label: 'Flights', value: 'https://www.google.com/travel/flights?q=sfo-lax' }], into: join(tmp(), 'seed'), fetchUrl: async (url) => ({ ok: true, text: readFileSync(join(HERE, 'fixtures', 'page-partial.txt'), 'utf8'), url }) });
   assert.equal(proved.ok, true);
   if (!proved.ok) return;
@@ -227,10 +227,9 @@ test('L4 cause 2: a ~ rule beside the fact part as a judged / none part (tries 1
     scout: { state: 'PRESENT', facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Flights' }] }, calls: [], raws: [] },
     listing, generate, writeScope: ['output/'], jobLines: [FLIGHTS_LINE], inputs: [{ n: 1, label: 'Flights', value: 'https://www.google.com/travel/flights?q=sfo-lax' }],
   });
-  assert.equal(r.iterations[0].validation.ok, false, 'the real refused shape is refused at $0');
-  assert.ok(r.iterations[0].validation.reds.some((/** @type {any} */ x) => x.code === 'rubric-part-judged'));
-  const second = seen[1].map((/** @type {any} */ m) => m.content).join('\n');
-  assert.match(second, /a limit you can say as a time, number, date or money fact goes INSIDE its fact part/, 'the drafter is told where the rule goes');
+  // since the R10 move (hamr 2026-11-09, fwd's way) the `judged` part is no longer a red on a rubric job: code lists it under Not checked, and rule 2 stays carried by the fact part
+  assert.equal(r.iterations[0].validation.ok, true, 'the real shape that was refused at $0 is now accepted at the first try');
+  assert.ok(!r.iterations[0].validation.reds.some((/** @type {any} */ x) => x.code === 'rubric-part-judged'));
   assert.equal(r.ok, true, JSON.stringify(r.reds));
   const timeFact = r.declaration.stages[1].params.parts[0].facts.find((/** @type {any} */ f) => f.shape === 'time');
   assert.equal(timeFact.rule.op, 'between');

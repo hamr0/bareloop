@@ -22,25 +22,33 @@ import {
 import { basename, dirname, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { appendRow, readLedger, withoutReleased } from './triggerledger.js';
+import { compareNatural } from './natural.js';
 
-/** @typedef {{id:string, kind:'baseline'|'arrived'|'ran'|'dropped', sha:string, name:string, size:number, at:number, sig?:string, path?:string, why?:string, of?:string}} SeenRow */
+/** @typedef {{id:string, kind:'baseline'|'arrived'|'ran'|'dropped'|'unreadable'|'looked', sha:string, name:string, size:number, at:number, sig?:string, path?:string, why?:string, of?:string}} SeenRow */
 /** @typedef {{path:string, sha:string, size:number}} ToRun */
 /** @typedef {{path:string, why:string}} Refused */
 
 /** Consecutive polls with the same size and mtime before a file is taken. (Two matches in a row = taken on the third sighting.) */
 export const STABLE_POLLS = 2;
 
-const SEEN_KINDS = ['baseline', 'arrived', 'ran', 'dropped'];
+// `unreadable` / `looked` are the ticket look's own rows (src/triggertickets.js): a look that could not read, and the first look that read after one
+const SEEN_KINDS = ['baseline', 'arrived', 'ran', 'dropped', 'unreadable', 'looked'];
 
-/** The file-kind rows of the job's ledger that still count (a released `ran` does not). @param {string} file @returns {SeenRow[]} */
-export function readSeen(file) {
-  return /** @type {SeenRow[]} */ (withoutReleased(readLedger(file).rows).filter((r) => SEEN_KINDS.includes(r.kind)));
+/**
+ * The seen-kind rows of the job's ledger that still count (a released `ran` does not). `sig` (the ticket look only) = just the rows of that signing; absent = every row.
+ * @param {string} file @param {string} [sig] @returns {SeenRow[]}
+ */
+export function readSeen(file, sig) {
+  return /** @type {SeenRow[]} */ (withoutReleased(readLedger(file).rows).filter((r) => SEEN_KINDS.includes(r.kind) && (sig === undefined || r.sig === sig)));
 }
 
-/** The ONE appender here: write-once by live id (a second row with the same id is not written). @param {string} file @param {SeenRow} row @returns {boolean} written */
-function appendSeen(file, row) {
-  if (readSeen(file).some((r) => r.id === row.id)) return false;
-  appendRow(file, row);
+/**
+ * The ONE appender here: write-once by live id (a second row with the same id is not written). With `sig` (the ticket look) the id is unique within that signing and the row is stamped with it.
+ * @param {string} file @param {SeenRow} row @param {string} [sig] @returns {boolean} written
+ */
+export function appendSeen(file, row, sig) {
+  if (readSeen(file, sig).some((r) => r.id === row.id)) return false;
+  appendRow(file, sig === undefined ? row : { ...row, sig });
   return true;
 }
 /** Rows of one sha, file order. @param {SeenRow[]} rows @param {string} sha */
@@ -79,13 +87,13 @@ export function recordDropped(ledger, item, why, at, sig) {
 }
 
 /**
- * The queue: arrived and neither ran nor dropped, oldest arrival first. Identical arrival times: by name, then by sha (deterministic).
+ * The queue: arrived and neither ran nor dropped, oldest arrival first. Identical arrival times: by name (numbers as numbers, `#9` before `#10`), then by sha (deterministic).
  * @param {SeenRow[]} rows @returns {(SeenRow & {path:string})[]}
  */
 export function queueOf(rows) {
   const cmp = (/** @type {string} */ x, /** @type {string} */ y) => (x < y ? -1 : x > y ? 1 : 0);
   return /** @type {any} */ (rows.filter((r) => waiting(rows, r)))
-    .sort((x, y) => x.at - y.at || cmp(x.name, y.name) || cmp(x.sha, y.sha));
+    .sort((x, y) => x.at - y.at || compareNatural(x.name, y.name) || cmp(x.sha, y.sha));
 }
 
 /**

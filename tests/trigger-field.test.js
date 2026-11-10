@@ -12,8 +12,8 @@ import { specOf } from './trigger-world.mjs';
 const reds = (spec) => validateJob(spec, { shellCapUsd: spec.budgetUsd }).reds.map((r) => `${r.code}:${r.path}`);
 const withT = (t) => ({ ...specOf(), trigger: t });
 
-test('every trigger shape validates; kinds are the five', () => {
-  assert.deepEqual([...TRIGGER_KINDS], ['daily', 'weekdays', 'weekly', 'new-file', 'file-updated']);
+test('every trigger shape validates; kinds are the five and the ticket kind', () => {
+  assert.deepEqual([...TRIGGER_KINDS], ['daily', 'weekdays', 'weekly', 'new-file', 'file-updated', 'new-ticket']);
   for (const t of [
     { kind: 'daily', hour: 9, minute: 5 }, { kind: 'weekdays', hour: 0, minute: 0 },
     { kind: 'weekly', day: 'mon', hour: 23, minute: 59 }, { kind: 'new-file', folder: '/home/u/inbox' }, { kind: 'file-updated', path: '/home/u/data.csv' },

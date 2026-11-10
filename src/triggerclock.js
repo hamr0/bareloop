@@ -112,9 +112,13 @@ export function nextSlot(schedule, afterMs) {
   return /** @type {number} */ (found);
 }
 
-/** The trigger was set at `now` under signature `sig`: no slot before this ever fires. @param {string} file @param {number} now @param {string} sig */
-export function armTrigger(file, now, sig) {
-  appendRow(file, { id: `armed:${now}`, kind: 'armed', at: now, sig }, { once: true });
+/**
+ * The trigger was set at `now` under signature `sig`: no slot before this ever fires. `ticketN` (a ticket schedule turned on by its first green run, R7) = the ticket number that run
+ * read: the first look baselines only tickets up to it.
+ * @param {string} file @param {number} now @param {string} sig @param {number} [ticketN]
+ */
+export function armTrigger(file, now, sig, ticketN) {
+  appendRow(file, { id: `armed:${now}`, kind: 'armed', at: now, sig, ...(Number.isInteger(ticketN) ? { ticketN } : {}) }, { once: true });
 }
 
 /**

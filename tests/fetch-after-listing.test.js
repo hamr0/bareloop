@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { proveRubricInputs } from '../src/source.js';
 import { jobSpecHash } from '../src/job.js';
 import { hashCloseScriptBytes } from '../src/close-integrity.js';
@@ -46,7 +46,7 @@ function spawnRunner(/** @type {import('node:test').TestContext} */ t) {
 async function world(/** @type {import('node:test').TestContext} */ t, /** @type {{ limit?: number }} */ o = {}) {
   const dir = tmp(t, 'fal-run-');
   const closeSource = `import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 const page = readFileSync(join(process.cwd(), 'input', 'flights.txt'), 'utf8');
 console.log('FIXTURE judged=1');
 process.exit(page.includes('RUN-COPY') && existsSync(join(process.cwd(), 'output', 'out.txt')) ? 0 : 1);
@@ -131,7 +131,7 @@ test('the page prints the server\'s words (startingWord/startingNote) and has a 
   assert.match(html, /detail\.startingWord \|\| "starting…"/);
   assert.match(html, /detail\.startingNote \|\| "the run has not written its log yet"/);
   assert.match(html, /p\.why = r\.startingWord \|\| "starting…"/);
-  assert.match(html, /if\(detail\.refused\)\{/);
+  assert.match(html, /if\(detail\.refused \|\| detail\.skipped\)\{/);
   assert.doesNotMatch(html, /the run has not started yet/, 'that sentence is the server\'s');
 });
 
@@ -191,4 +191,15 @@ test('the refetch flag is derived from the three non-fresh doors only (a resume 
   assert.match(src, /if \(ctx\.refreeze === true && ctx\.into !== undefined\) \{/);
   assert.equal((src.match(/refreezeUrlInputs\(/g) ?? []).length, 1, 'one call site, after the run is listed');
   assert.ok(src.indexOf('refreezeUrlInputs({ into: ctx.into') > src.indexOf("appendRun(runRow, { home: deps.runlistHome })"), 'the fetch sits after the row append');
+});
+
+// R9 (Part B 3): a refused fetch listed the row on purpose, but it also left the run's own folder behind EMPTY (made just before the row). Nothing ran in it, so it is taken back; the row stays.
+test('a refused fetch leaves no empty run folder behind, and the settled row still lists', async (t) => {
+  const w = await world(t, { limit: 2 });
+  const r = await w.start(async (url) => ({ ok: false, error: `${url} came back with no text` }));
+  assert.equal(r.rc, 2);
+  const list = readRunList({ home: w.home });
+  assert.equal(list.rows.length, 1);
+  assert.equal(existsSync(dirname(list.rows[0].spine)), false, 'the empty run folder is gone');
+  assert.equal(list.events.find((e) => e.runid === list.rows[0].runid)?.reason, 'refused before start');
 });

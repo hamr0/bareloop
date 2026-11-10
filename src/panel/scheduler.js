@@ -8,29 +8,40 @@
 //   - the timer is unref'd, `start`/`stop` are idempotent, the server's close calls `stop`.
 //   - with no schedule on disk a tick is one readdir and nothing else (no runs.jsonl read).
 // What a tick does for one job with a signed schedule:
-//   1. arm it if it is not armed under this signing (a crash between the sign and the arm);
+//   1. arm it if it is not armed under this signing (a crash between the sign and the arm). A schedule signed WITH its job (R7) is asked again every tick and does nothing else until it arms: no look, no fire;
 //   2. clock kinds: `due`; a due slot goes to `door.fire` and is NOT consumed up front: the starter's `beforeSpawn` writes
 //      the `fire` row only after busy, monthly, wouldAccept and the session all said yes, so a refused slot retries;
 //   3. file kinds: `poll`; each file taken is recorded `arrived` (THIS is the only writer of `arrived` rows), then the
 //      queue runs: busy tells each queued file once and waits; free, the head is looked at again (deleted or changed is
 //      dropped with a reason, the next head is tried) and goes through `door.fire`; `ran` is written by `beforeSpawn` only.
+//   4. ticket kind (MCP + tickets piece 3): every `TICKET_LOOK_MS` (15 min, at $0, looks never overlap) the injected `look` reads the signed server's `list_issues` through
+//      the signed tools; the first look is the starting point (a `baseline` row per ticket, nothing runs), later ones queue each new ticket (`arrived`, oldest first) and
+//      each watched change once; an unreadable look is ONE `unreadable` row, never "no new tickets". The queue then runs like a file's: busy tells each ticket once and
+//      waits; free, the head goes through `door.fire` with `{kind:'ticket', number}` and `ran` is written by `beforeSpawn` only. The look is async and `tick` never waits for
+//      it (`settled()` does, for a test). The server, list address and watched fields are DERIVED from the signed spec, never stored in the trigger.
 // One job's exception is written once as a `refused` row and never stops the others (fwd scheduler.js:94-110).
 // BUSY IS CHEAP (T19): the run list is read at most ONCE per tick, and only when a fire or a queued head needs it.
 // Rewritten from fwdloop src/panel/scheduler.js.
 import { due } from '../triggerclock.js';
-import { isClockTrigger, isFileTrigger } from '../trigger.js';
+import { isClockTrigger, isFileTrigger, isTicketTrigger } from '../trigger.js';
 import { appendRow, readLedger } from '../triggerledger.js';
 import {
   createFileTrigger, queueOf, readSeen, recheck, recordArrived, recordDropped, recordRan,
 } from '../triggerfiles.js';
 import { recordFire } from '../triggerclock.js';
+import {
+  LOOK_TOOL, TICKET_LOOK_MS, hasBaseline, lastSeen, lookTickets, recordLook, recordTicketRan, seenNumbers,
+} from '../triggertickets.js';
+import { ticketLookOf } from '../ticketschedule.js';
 
 /**
- * @param {{ door: ReturnType<typeof import('./schedules.js').createScheduleDoor>, now?: () => number, intervalMs?: number }} opts
- *   `intervalMs` 0 = no timer (a test drives `tick`).
+ * @param {{ door: ReturnType<typeof import('./schedules.js').createScheduleDoor>, now?: () => number, intervalMs?: number, look?: typeof lookTickets, mcpConfig?: string }} opts
+ *   `intervalMs` 0 = no timer (a test drives `tick`). `look` / `mcpConfig` = the ticket look and the MCP config file it reads (tests inject them; default the real look over the person's own config).
  */
 export function createScheduler(opts) {
-  const { door, now = Date.now, intervalMs = 500 } = opts;
+  const { door, now = Date.now, intervalMs = 500, look = lookTickets, mcpConfig } = opts;
+  /** per ticket schedule: when its last look STARTED, the look still out (a look is async; `tick` never waits), and a save failure not yet told (the ledger could not be written) @type {Map<string, {at: number|null, out: Promise<void>|null, untold?: string}>} */
+  const lookers = new Map();
   /** @type {Map<string, ReturnType<typeof createFileTrigger>>} */
   const watchers = new Map();
   /** `job|sig` keys already armed this process @type {Set<string>} */
@@ -42,15 +53,22 @@ export function createScheduler(opts) {
 
   /**
    * The queue of a file trigger (arrived minus ran minus dropped, oldest first).
-   * @param {string} job @param {string} ledger @param {string} sig @param {number} nowMs @param {() => boolean} isBusy @param {Promise<unknown>[]} pending
+   * @param {string} job @param {string} ledger @param {string} sig @param {number} nowMs @param {() => boolean} isBusy @param {Promise<unknown>[]} pending @param {boolean} [ticket] a ticket schedule: the queue is this signing's tickets
    */
-  function runQueue(job, ledger, sig, nowMs, isBusy, pending) {
-    let queue = queueOf(readSeen(ledger));
+  function runQueue(job, ledger, sig, nowMs, isBusy, pending, ticket = false) {
+    let queue = queueOf(readSeen(ledger, ticket ? sig : undefined));
     if (queue.length === 0 || inflight.has(job)) return;
+    /** a ticket has no file to look at again: it is its number. @param {any} q */
+    const causeOf = (q) => (ticket ? { kind: /** @type {const} */ ('ticket'), number: q.number, sha: q.sha, ...(typeof q.reason === 'string' ? { why: q.reason } : {}), ...(q.anyway === true ? { anyway: true } : {}) } : { kind: /** @type {const} */ ('file'), path: q.path, sha: q.sha, size: q.size });
     const busy = isBusy();
     if (busy) {
-      // every queued file is told ONCE (`busy`, once per sha) and waits
-      for (const q of queue) pending.push(door.fire(job, { kind: 'file', path: q.path, sha: q.sha, size: q.size }, { busy: true }));
+      // every queued file (or ticket) is told ONCE (`busy`, once per sha) and waits
+      for (const q of queue) pending.push(door.fire(job, causeOf(q), { busy: true }));
+      return;
+    }
+    if (ticket) {
+      const q = queue[0];
+      pending.push(startFire(job, causeOf(q), { busy: false, beforeSpawn: () => { recordTicketRan(ledger, sig, { sha: q.sha, name: q.name }, nowMs); } }, sig));
       return;
     }
     while (queue.length > 0) {
@@ -84,10 +102,43 @@ export function createScheduler(opts) {
       .finally(() => { inflight.delete(job); });
   }
 
+  /**
+   * When a ticket schedule's look is due (never looked, or `TICKET_LOOK_MS` since the last START of one) and none is out, start it. THE writer of the ticket rows is
+   * `recordLook`, called once the look settles at THIS clock. Without a baseline the look is a first look again (an unreadable first look gave none). A save that throws is told
+   * once as a refusal and never leaves the look's promise rejected, so the panel stays up (fwd 9.3).
+   * @param {string} job @param {string} key @param {any} schedule @param {string} ledger @param {number} nowMs
+   */
+  function startLook(job, key, schedule, ledger, nowMs) {
+    let st = lookers.get(key);
+    if (!st) { st = { at: null, out: null }; lookers.set(key, st); }
+    if (st.out !== null || (st.at !== null && nowMs - st.at < TICKET_LOOK_MS)) return;
+    const sig = schedule.specHash;
+    if (st.untold !== undefined) { try { door.tellOnce(job, sig, `look-save|${st.untold}`, st.untold); st.untold = undefined; } catch { /* still unwritable: tried again next tick */ } }
+    const src = ticketLookOf(schedule.spec, schedule.trigger);
+    if (!src.ok) { door.tellOnce(job, sig, `look|${src.say}`, src.say); return; }
+    st.at = nowMs;
+    const first = !hasBaseline(ledger, sig);
+    // the turn-on may have written the ticket number the first green run read (`armed.ticketN`): the first look baselines only tickets up to it
+    const armed = first ? readLedger(ledger).rows.filter((r) => r.kind === 'armed' && r.sig === sig).at(-1) : undefined;
+    const cut = Number.isInteger(armed?.ticketN) ? /** @type {number} */ (armed?.ticketN) : undefined;
+    const state = st;
+    state.out = Promise.resolve(look({
+      listUrl: src.listUrl, mcp: { server: src.server, tool: LOOK_TOOL }, ...(mcpConfig ? { configPath: mcpConfig } : {}),
+      seen: first ? null : seenNumbers(ledger, sig), last: first ? new Map() : lastSeen(ledger, sig), watch: src.watch, ...(cut === undefined ? {} : { cut }),
+    })).catch((e) => ({ ok: /** @type {const} */ (false), error: String(e?.message ?? e) }))
+      .then((r) => {
+        try { recordLook(ledger, sig, r, now()); } catch (e) {
+          // the ledger itself cannot be written, so the failure cannot be told now: it is told on a later tick, once the ledger takes a row again
+          state.untold = `ticket look: its result could not be saved: ${String(/** @type {any} */ (e)?.message ?? e).split('\n')[0]}`;
+        }
+      })
+      .finally(() => { state.out = null; });
+  }
+
   /** @returns {Promise<void>} resolves when every fire this tick started has settled */
   function tick() {
     const jobs = door.scan();
-    if (jobs.length === 0) { watchers.clear(); armedKeys.clear(); return Promise.resolve(); }
+    if (jobs.length === 0) { watchers.clear(); armedKeys.clear(); lookers.clear(); return Promise.resolve(); }
     const nowMs = now();
     /** @type {Promise<unknown>[]} */
     const pending = [];
@@ -97,16 +148,29 @@ export function createScheduler(opts) {
     for (const { job, schedule } of jobs) {
       const sig = schedule.specHash;
       const key = `${job}|${sig}`;
+      // a schedule signed again with the very same signature (cancelled, then signed with the job once more, between two ticks) is a NEW life of it: its arming is asked again (R7)
+      const armKey = `${key}|${schedule.signedAt ?? ''}`;
       live.add(key);
+      live.add(armKey);
       const isBusy = () => {
         if (!busyMemo.has(job)) busyMemo.set(job, door.busy(job));
         return /** @type {boolean} */ (busyMemo.get(job));
       };
       try {
-        if (!armedKeys.has(key)) { door.armFor(job, schedule); armedKeys.add(key); }
+        if (!armedKeys.has(armKey)) {
+          // R7: a schedule signed with its job on the New job card is OFF until a run that began after the signing has a real green; it is asked again every tick and until then
+          // nothing looks, fires or queues for it (`armFor` answers `waiting`)
+          const turned = door.armFor(job, schedule);
+          if (turned && turned.armed === false) continue;
+          armedKeys.add(armKey);
+        }
         const ledger = door.ledgerOf(job);
         const { trigger } = schedule;
-        if (isFileTrigger(trigger)) {
+        if (isTicketTrigger(trigger)) {
+          startLook(job, key, schedule, ledger, nowMs);
+          // a paused schedule still looks (tickets queue as `arrived`), but none runs
+          if (!door.paused(job)) runQueue(job, ledger, sig, nowMs, isBusy, pending, true);
+        } else if (isFileTrigger(trigger)) {
           let w = watchers.get(key);
           if (!w) {
             w = createFileTrigger({
@@ -135,11 +199,14 @@ export function createScheduler(opts) {
     }
     for (const k of [...watchers.keys()]) if (!live.has(k)) watchers.delete(k);
     for (const k of [...armedKeys]) if (!live.has(k)) armedKeys.delete(k);
+    for (const k of [...lookers.keys()]) if (!live.has(k)) lookers.delete(k);
     return Promise.all(pending).then(() => undefined);
   }
 
   return {
     tick,
+    /** resolves when every ticket look now out has been written to its ledger (a test awaits it; the timer never does) */
+    async settled() { await Promise.all([...lookers.values()].map((l) => l.out)); },
     /** Start the real timer (idempotent). */
     start() {
       if (intervalMs <= 0 || timer !== null) return;

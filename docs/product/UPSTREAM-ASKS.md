@@ -2981,3 +2981,28 @@ Filed 2026-11-01. hamr said "BA-30 go, build it" (relayed to the bare-agent sess
 2026-11-01 — **Built, not released.** On bare-agent `feat/ba30-shrink-guard` (a876cf8; plural fix 4400a5f, "1 byte (1 line)"). bareloop harness PASS (`.claude/scratch/ba30-harness/RESULT.md`, untracked scratch): 14/14 gutting writes refused, 589/589 others passed, 0 false refusals; `guardPath` required (13 would be refused without it). bare-agent rulings: `guardPath` stays lexical (no realpath in the guard; the caller may realpath inside its own predicate); check order kept. bare-agent suite 1807 tests, 0 fail. Release waits for bare-agent's branch-review and hamr's word. bareloop wiring spec: `docs/product/ITEM33-BUILD.md`, addendum "Bad tool calls and the planning trap", section D; findings F275, F276.
 
 2026-11-02 — **Released and consumed.** Released in bare-agent v0.59.0 (PR #78, merge 1247efe, tag v0.59.0); consumed by bareloop fix/bad-calls (6daf87c), `shrinkGuard` on every worker with `guardPath` realpathed in bareloop's own predicate (F276). Test-proven; the live check (F280) had no gutting write to refuse.
+
+
+## BG-4 — FILED 2026-11-09, DELIVERED in bareguard 0.33.0 (2026-11-10): any-of phrase presence on a cited quote — "the quote carries AT LEAST ONE of these words" (R10 offer POC, F299)
+
+### Ask
+
+A way to sign, on a rubric fact or `cited` check, a presence decide that passes when the quote carries AT LEAST ONE of a list of words or phrases. Example: a bullet's change type is one of `Added`, `Changed`, `Fixed`. Same shape and limits as `decides` presence today, with an any-of mode (for example `type: "presence", phrases: [...], mode: "any"`, or a sibling `anyOf`). Case rule: case-insensitive by default, as `presence` is today; an optional strict-case flag like `carriesAny`'s `strict` is welcome but not needed. Plain substring, as `presence` is today (word edges are welcome only as an opt-in; `carriesAny` already has them). The red names the signed list, like `carriesAny`'s `none-found` gap, not just the first missing word. The all-of behaviour must not change.
+
+### Why
+
+R10's offer POC (`.claude/scratch/r10/offerextras/POC-RESULTS.md`, FINDINGS F299) tried to let code build the AI's extra page checks as offers. Of 38 suggestions from 33 saved drafts, 10 could not be built because they are "one of these change words": 10 of the 17 suggestions not built. That is the biggest single cause of retention 14 of 27 = 51.9%, under the 80% bar. Taking the first word would be a WRONG check (it makes one change word mandatory where the person meant any), and one built check already did that (`summary: "Fixed"`). Several separate phrase facts do not help either, because they are all required.
+
+### Today in bareloop
+
+bareguard 0.31.0: a `cited` fact's `phrases` is checked by `evalPresence` (`node_modules/bareguard/src/primitives/rubric-locate.js:1091-1106`): every phrase must be carried, the loop stops at the first missing one and reports `phrase-missing` (ALL-of), matched case-insensitively through `carries` (`rubric.js:645`, plain `includes` on the lowered text, no word edges). So "one of Added / Changed / Fixed" cannot be signed on a quote.
+
+### Disconfirming evidence, considered per this file's standing rule
+
+`carriesAny` exists in 0.31.0 (`README.md:134`, `bareguard.context.md:765`): any-of, word edges, case-insensitive, on a text `field`. The POC did NOT try it, and it reads the output's text field, not a cited quote, so it is not a proven substitute. If guard says a cited quote's text can be pointed at by `carriesAny` today, no new shape is needed and this ask is withdrawn. No other shape the POC needed was missing: the other unbuilt suggestions were bareloop's own rules (5 "short", 2 duplicate fact names), not bareguard gaps.
+
+### Status
+
+2026-11-09 — Filed here; to be relayed to the bareguard session by the main session on hamr's word. No target version. Bareloop side blocked on it: PRD v1.131 tick 5.
+
+2026-11-10 — DELIVERED in bareguard 0.33.0 (ruling #79: `any: true`, opt-in `edges: true`); our frozen E1-E6 verified PASS on guard's branch 272c42d and on the published package (`.claude/scratch/bg4/output.txt`, `pub/output-pub.txt`); see F303. Bareloop still pins ^0.31.0.

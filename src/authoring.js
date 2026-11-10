@@ -353,14 +353,14 @@ export const KIND_CATALOGUE = Object.freeze({
     optional: Object.freeze([]),
     pathParams: Object.freeze([]),
     shape: 'step: integer (the job line number), parts: [{text: string, class: "countable" | "fact" | "judged" | "guard" | "none", '
-      + 'check?: "maxWords" | "minWords" | "maxLines" | "sections" | "sectionWords" | "cited" | "minClaims" | "maxClaims", value?: integer, names?: string[], '
-      + 'wordsPerSection?: integer, source?: string (an input label), domains?: string[], covers?: integer[], rules?: integer[], '
+      + 'check?: "cited" | "minClaims" | "maxClaims", value?: integer, '
+      + 'source?: string (an input label), domains?: string[], covers?: integer[], rules?: integer[], '
       + 'fact parts: facts?: [{name, shape: "money"|"number"|"date"|"time"|"phrase"|"text", unit?|currency? (each one value or a list; money names at least one), phrase?, anchor?, until?, '
       + 'rule?: {op, value | lo+hi}, aiProposal?: boolean}], count?: {min?, max?}}]',
     asserts: 'the file output/<step>.json under output/steps/ exists, is a JSON object, and its "text" is present and within the '
       + 'limits the person asked for. Write ONE rubric-step stage per numbered job line (step = that line number, fromLine = [that line]). '
       + 'In "parts" list each constraint the person put on that line, in their own words, and SORT it: "countable" when a machine can '
-      + 'count it (check maxWords/minWords/maxLines with value; sections with names; sectionWords with names and wordsPerSection) or '
+      + 'quote it (word, section, line, list-item and phrase counts are never yours: code adds the ones the person picked) or '
       + 'when claims must be backed by a quote from a named input (check cited, source = the input label), or when a number of '
       + 'quoted claims is asked for (minClaims / maxClaims with value and source: it counts the claims listed under that input); '
       + 'a line that FINDS, LISTS or LOOKS UP something gets ONE part of class "fact" instead (source = the input label, '
@@ -1526,12 +1526,29 @@ export function validateDeclaration(declaration, opts = {}) {
   if (haveGuards) checkGuards({ declaration, guards: /** @type {any[]} */ (guards), red });
   checkJobLines({ declaration, stages, jobLines, guards: haveGuards ? /** @type {any[]} */ (guards) : [], red });
   // PART 1a (R11): the sorting rules for the rubric-step stages — plain-words reds, judged and web parts refused in this build
-  checkRubricParts(stages, { inputLabels, red });
+  // keep-both: the record of the person's picks (code writes it, the signed spec carries it) is what lets a countable part sit beside a fact
+  checkPickRecord(declaration.picks, red);
+  checkRubricParts(stages, { inputLabels, red, picks: Array.isArray(declaration.picks) ? declaration.picks : null });
   // PART 1b (RF16, RF17): every ~ rule is a check or Not checked; the AI's own numbers are marked and a time range is a range
   checkRubricRules(stages, { jobLines, refused: declaration.refused, red });
 
   const ok = reds.length === 0;
   return { ok, reds, declaration: ok ? normalizeDeclaration(declaration) : null, grounded: haveListing, scoped, ceiling };
+}
+
+/**
+ * keep-both: the SHAPE of the record of the person's picks, `picks: [{line, part}]` (code writes it from the settled picks, `applyPicks`; the signed close carries it;
+ * `checkRubricParts` reads it). A bad entry is a plain red, never a crash.
+ * @param {unknown} picks @param {(c: string, p: string, d: string, e?: object) => void} red
+ */
+function checkPickRecord(picks, red) {
+  if (picks === undefined) return;
+  if (!Array.isArray(picks)) { red('invalid-value', 'picks', 'an array of {line, part} - the person\'s picked checks, written by code'); return; }
+  picks.forEach((/** @type {any} */ e, /** @type {number} */ j) => {
+    if (!isObj(e) || !Number.isInteger(e.line) || !isObj(e.part) || e.part.class !== 'countable') {
+      red('invalid-value', `picks[${j}]`, '{line, part}: a job line number and the picked countable part');
+    }
+  });
 }
 
 /**

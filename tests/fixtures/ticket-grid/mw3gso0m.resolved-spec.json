@@ -1,0 +1,250 @@
+{
+  "schema": "job-v1",
+  "job": "walkr4-1",
+  "description": "walkr4-1 — authored through the bareloop panel (green, js)",
+  "jobLines": [
+    {
+      "n": 1,
+      "text": "Fix the bug in src/sum.js so the tests in test/sum.test.js pass",
+      "rule": "no new dependencies",
+      "rules": [
+        "no new dependencies"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "n": 1,
+      "label": "repo",
+      "value": "/home/hamr/PycharmProjects/bareloop/.claude/scratch/mcp-tickets/r4-live/repo"
+    },
+    {
+      "n": 2,
+      "label": "issues",
+      "value": "https://github.com/hamr0/hol-guard/issues"
+    }
+  ],
+  "provider": "openai-api",
+  "baseUrl": "https://api.deepseek.com/v1",
+  "model": "deepseek-flash",
+  "budgetUsd": 0.5,
+  "maxWallMs": 1800000,
+  "writeScope": [
+    "src/"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  },
+  "goal": "Make the tests in test/sum.test.js pass under npm test with 2/2 tests passed, with package.json dependencies unchanged and only files under src/ changed.",
+  "verdictType": "green",
+  "closeDecl": {
+    "genre": "TYPES",
+    "lang": "js",
+    "stages": [
+      {
+        "name": "changed-from-seed",
+        "kind": "files-changed",
+        "params": {
+          "requireNonEmpty": true,
+          "allowPrefixes": [
+            "src/"
+          ]
+        }
+      },
+      {
+        "name": "dependency-count-not-increased",
+        "kind": "count-not-worse",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "cmd": "node",
+          "args": [
+            "-e",
+            "const p=require('./package.json');const n=Object.keys({...p.dependencies,...p.devDependencies,...p.peerDependencies,...p.optionalDependencies}).length;console.log('dependency entries: '+n)"
+          ],
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^dependency entries: (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "package.json"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": "seed"
+        }
+      },
+      {
+        "name": "tests-kept",
+        "kind": "count-not-worse",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "cmd": "npm",
+          "args": [
+            "test",
+            "--",
+            "--test-reporter=tap"
+          ],
+          "env": {
+            "NODE_OPTIONS": ""
+          },
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^# tests (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "test/sum.test.js"
+            ]
+          },
+          "direction": "higher-is-better",
+          "baseline": "seed"
+        }
+      },
+      {
+        "name": "suite-no-failures",
+        "kind": "count-not-worse",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "cmd": "npm",
+          "args": [
+            "test",
+            "--",
+            "--test-reporter=tap"
+          ],
+          "env": {
+            "NODE_OPTIONS": ""
+          },
+          "parser": {
+            "terms": [
+              {
+                "lineMatch": "^# fail (\\d+)$",
+                "capture": 1,
+                "sign": 1,
+                "aggregate": "first",
+                "region": "whole-output"
+              }
+            ]
+          },
+          "scope": {
+            "includePrefixes": [
+              "test/sum.test.js"
+            ]
+          },
+          "direction": "lower-is-better",
+          "baseline": 0
+        }
+      },
+      {
+        "name": "suite-green",
+        "kind": "command-exit",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "cmd": "npm",
+          "args": [
+            "test"
+          ],
+          "expectExit": 0,
+          "env": {
+            "NODE_OPTIONS": ""
+          }
+        }
+      },
+      {
+        "name": "no-suppressions",
+        "kind": "pattern-absent-in-diff",
+        "params": {
+          "patterns": [
+            {
+              "id": "ts-ignore",
+              "regex": "@ts-ignore"
+            },
+            {
+              "id": "ts-expect-error",
+              "regex": "@ts-expect-error"
+            },
+            {
+              "id": "ts-nocheck",
+              "regex": "@ts-nocheck"
+            },
+            {
+              "id": "eslint-disable",
+              "regex": "eslint-disable"
+            },
+            {
+              "id": "any",
+              "regex": "(?:[{<|(\\[:,]|\\bas)\\s*any\\b|\\bany\\[\\]"
+            },
+            {
+              "id": "any-star",
+              "regex": "@\\w+\\s*\\{\\s*[*?]\\s*\\}"
+            },
+            {
+              "id": "cast",
+              "regex": "@type\\s*\\{.*\\}\\s*\\*\\/\\s*\\("
+            }
+          ],
+          "extensions": [
+            ".js",
+            ".mjs",
+            ".cjs"
+          ]
+        }
+      }
+    ],
+    "notes": [
+      "No typecheck stage is composed: the survey found no tsconfig/jsconfig, no typescript/tsc dependency and no lint/typecheck script, so the genre's typecheck and typecheck-outside stages are absent by design, not skipped as passing.",
+      "The 'no new dependencies' rule is measured as a count of dependency entries across dependencies/devDependencies/peerDependencies/optionalDependencies in package.json, computed by a one-liner passed to node and required to be not-worse than the seed's own count. There is no lockfile in the repo, so package.json is the only dependency surface; the survey says dependencies are currently empty, but the stage reads the seed number rather than a typed zero.",
+      "The test stages pass `-- --test-reporter=tap` so the summary is the TAP shape the genre's node-test patterns are measured against (the facts object flags that no reporter is pinned and an inherited NODE_OPTIONS could change the shape); NODE_OPTIONS is set to empty for the same reason. The facts object also says the script hard-pins test/sum.test.js, so extra args after `--` are forwarded to node --test — if this npm version does not forward them the run would still print a spec-reporter summary and the count stages would stop as an unreadable instrument rather than silently pass.",
+      "tests-kept counts EXECUTED tests (^# tests N) with a seed floor, so a fix that deletes or skips assertions cannot satisfy the close; suite-no-failures requires the reported fail count to be 0 and, per the genre, a run that never prints the line is treated as unknown; suite-green is the separate exit-code assertion. These are three distinct populations: executed count, failing count, process exit.",
+      "Not machine-checked, as the confirmed plan itself says: whether the fix in src/sum.js is correct beyond the two assertions the existing tests make (the doc-comment says 'Sum of a list of numbers', but inputs outside the tests — negatives, non-integers, non-array iterables — are unverified). A behavioural check on unseen inputs would need new tests, which line 1's 'no new dependencies' and the write fence (src/ only) do not obviously invite, so nothing is claimed about it.",
+      "Not machine-checked: the issues at https://github.com/hamr0/hol-guard/issues — the job lines never say what to do with them and no stage here reads GitHub.",
+      "src/sum.js and test/sum.test.js are the only files that exist at the seed; I invented no other path. package.json was named in the facts object's scripts.test but is not in the seed file listing's [sourcePaths]/[testPaths] blocks — it is used only as a read target of the dependency stage and a write-fence target that the write fence already denies."
+    ],
+    "guardLines": [
+      {
+        "guard": "changed-from-seed",
+        "lines": [
+          1
+        ]
+      }
+    ]
+  },
+  "flowType": "tickets",
+  "mcp": {
+    "server": "github",
+    "tools": [
+      "get_label",
+      "issue_read",
+      "list_issue_fields",
+      "list_issue_types",
+      "list_issues",
+      "list_pull_requests",
+      "pull_request_read",
+      "search_issues",
+      "search_pull_requests"
+    ]
+  }
+}

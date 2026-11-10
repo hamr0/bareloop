@@ -1,0 +1,26 @@
+{
+ "d11": {
+  "session": "smwabfk0eadsv",
+  "pageMapRaw": "{\"facts\":[{\"name\":\"release heading\",\"from\":\"line 1\",\"shape\":\"date\",\"words\":[],\"lang\":\"en\",\"decimal\":\".\"}]}",
+  "refused": [
+   {
+    "call": "author",
+    "detail": "line 1: fact \"release heading\": the label \"## [\" is not one of the labels the page words for \"Changelog\" kept. A label is picked from those, never typed (there are none - leave the label out). Nothing was signed."
+   }
+  ]
+ },
+ "d12": {
+  "session": "smwabfyt763ga",
+  "pageMapRaw": "{\"facts\":[{\"name\":\"release version and date\",\"from\":\"line 1\",\"shape\":\"date\",\"words\":[\"## [0.54.1] - 2026-11-04\"],\"lang\":\"en\"}]}",
+  "refused": [
+   {
+    "call": "author",
+    "detail": "line 1: fact \"release date\": the label \"] -\" is not one of the labels the page words for \"Changelog\" kept. A label is picked from those, never typed: \"## [0.54.1] - 2026-11-04\". Nothing was signed."
+   },
+   {
+    "call": "revise-1",
+    "detail": "line 1: fact \"release version\": the label \"## [\" is not one of the labels the page words for \"Changelog\" kept. A label is picked from those, never typed: \"## [0.54.1] - 2026-11-04\". Nothing was signed."
+   }
+  ]
+ }
+}

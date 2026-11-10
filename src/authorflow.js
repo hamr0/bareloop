@@ -87,11 +87,13 @@ import {
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
 import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
+import { applyPicks, dropExtras, fillAndMergeFacts, moveUncheckable, retentionOf, settleRules } from './checkpick.js';
 import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, withFactBindings, settlePersonsWords, withDropNotes, lineRules } from './rubricstep.js';
 import { dropRows, dropLine } from './pagedropwords.js';
 import { factShapeGuide } from './facts.js';
-import { renderLookReport, labelListsOf } from './inputlook.js';
-import { checkDeclarationWords } from './factwords.js';
+import { renderLookReport } from './inputlook.js';
+import { checkDeclarationWords, labelListsFor } from './factwords.js';
+import { ticketFilterReds, ticketFilterBlock, ticketPerRunFacts, TICKET_FILTER_SCHEMA_WORDS } from './ticketfilter.js';
 
 const require = createRequire(import.meta.url);
 const { Loop } = require('bare-agent');
@@ -830,10 +832,8 @@ export const PARAM_SCHEMAS = Object.freeze({
       properties: {
         text: { type: 'string', minLength: 1, description: 'the constraint, in the person\'s own words' },
         class: { enum: ['countable', 'fact', 'judged', 'guard', 'none'] },
-        check: { enum: ['maxWords', 'minWords', 'maxLines', 'sections', 'sectionWords', 'cited', 'minClaims', 'maxClaims'], description: 'countable only; minClaims / maxClaims count the claims listed under the input named in source' },
-        value: { type: 'integer', minimum: 1, description: 'maxWords / minWords / maxLines: the limit the person asked for' },
-        names: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 }, description: 'sections / sectionWords: the section names' },
-        wordsPerSection: { type: 'integer', minimum: 1 },
+        check: { enum: ['cited', 'minClaims', 'maxClaims'], description: 'countable only; minClaims / maxClaims count the claims listed under the input named in source' },
+        value: { type: 'integer', minimum: 1, description: 'minClaims / maxClaims: the number of claims asked for' },
         source: { type: 'string', minLength: 1, description: 'cited: the label of the input a quote must come from' },
         domains: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 }, description: 'guard only: the web domains the rule is about' },
         covers: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'integer', minimum: 1 }, description: 'the number(s) of the CONFIRMED check(s) this part carries out' },
@@ -940,9 +940,10 @@ export function schemaCoverage(catalogue = KIND_CATALOGUE) {
  * `kinds` (Part 1a) narrows the branches to the kinds a language may use (`catalogueForLang`) WITHOUT narrowing the coverage check,
  * which stays over the whole catalogue; null (the default) = no narrowing.
  * @param {Record<string, any>} [catalogue]
- * @param {{verdictType?: string|null, questions?: boolean, kinds?: string[]|null}} [o]
+ * `ticket` (MCP + tickets piece 2) adds the optional top-level `ticketFilter` property for a job that reads tickets; absent, the schema is byte-identical.
+ * @param {{verdictType?: string|null, questions?: boolean, kinds?: string[]|null, ticket?: boolean}} [o]
  */
-export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = null, questions = false, kinds = null } = {}) {
+export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = null, questions = false, kinds = null, ticket = false } = {}) {
   const cov = schemaCoverage(catalogue);
   if (!cov.ok) {
     throw new Error('[authorflow] the declaration schema does not cover the catalogue — '
@@ -1016,6 +1017,17 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
         },
         description: 'optional: which job lines the always-on guards already cover (a line whose every ask a mandatory guard checks needs no stage of its own)',
       },
+      ...(ticket ? {
+        ticketFilter: {
+          type: 'object',
+          properties: {
+            priority: { type: 'array', items: { type: 'string', enum: ['P0', 'P1', 'P2', 'P3'] }, description: 'priorities a ticket must have; only when a job line names them' },
+            labels: { type: 'array', items: { type: 'string' }, description: 'label names, one of which a ticket must carry; only when a job line names them' },
+          },
+          additionalProperties: false,
+          description: TICKET_FILTER_SCHEMA_WORDS,
+        },
+      } : {}),
       ...(questions ? {
         questions: {
           type: 'array',
@@ -1037,13 +1049,13 @@ export function declarationSchema(catalogue = KIND_CATALOGUE, { verdictType = nu
  * The output channel. It records and acknowledges; it takes no action, which is
  * why handing it to a toolless authoring call does not reopen D3.
  * @param {{calls: any[]}} box
- * @param {{catalogue?: Record<string, any>, verdictType?: string|null, questions?: boolean, kinds?: string[]|null}} [o]
+ * @param {{catalogue?: Record<string, any>, verdictType?: string|null, questions?: boolean, kinds?: string[]|null, ticket?: boolean}} [o]
  */
-export function declarationTool(box, { catalogue = KIND_CATALOGUE, verdictType = null, questions = false, kinds = null } = {}) {
+export function declarationTool(box, { catalogue = KIND_CATALOGUE, verdictType = null, questions = false, kinds = null, ticket = false } = {}) {
   return {
     name: DECLARATION_TOOL_NAME,
     description: 'Deliver the finished close. Call this exactly once, with the whole declaration as its arguments.',
-    parameters: declarationSchema(catalogue, { verdictType, questions, kinds }),
+    parameters: declarationSchema(catalogue, { verdictType, questions, kinds, ticket }),
     execute: async (/** @type {any} */ args) => { box.calls.push(args); return DECLARATION_ACK; },
   };
 }
@@ -1310,7 +1322,7 @@ export function jobLineTagBlock(count, guardNames = []) {
  *   writeScope?: string[]|null,
  *   jobLines?: {n: number}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
  *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null,
- *   labelLists?: string[]|null,
+ *   labelLists?: string[]|null, settled?: {line: number, rule: number, text: string}[]|null,
  * }} o
  */
 export function authorPrompt({
@@ -1325,13 +1337,15 @@ export function authorPrompt({
   confirmed = null,
   // PART 1c: the label lists code made from the frozen inputs (src/labelscan.js `renderLabelList`); a label is picked from them
   labelLists = null,
+  // R10: the `~` rules code settles from the person's own picks (src/checkpick.js); ABSENT = byte-identical prompt
+  settled = null,
 }) {
   // PART 1a: a rubric job on the person's own local files has no repository, no genre template and no tool to measure with —
   // it gets its own brief (`rubricAuthorPrompt`), which still ends in the same declaration tool and the same guards
   // an absent catalogue is the language's own menu (`catalogueForLang`), so a code job's prompt never lists a rubric-only kind
   const catalogue = catalogueIn ?? catalogueForLang(lang);
   if (lang === RUBRIC_LANG) {
-    return rubricAuthorPrompt({ answers, questions, facts, listingBlock, verdictType, guards, mode, catalogue, writeScope, jobLines, inputs, confirmed, labelLists });
+    return rubricAuthorPrompt({ answers, questions, facts, listingBlock, verdictType, guards, mode, catalogue, writeScope, jobLines, inputs, confirmed, labelLists, settled });
   }
   const statement = CLASS_STATEMENTS[String(verdictType)] ?? null;
   if (statement === null) {
@@ -1468,6 +1482,18 @@ export const RUBRIC_RULES = 'THE RULES FOR TURNING THE PERSON\'S WORDS INTO CHEC
   + ' - The same holds for the words a "must say" (phrase) fact makes each quote say: they must be in the input at least N times for N results. Words counted fewer times (page-header words like "from San Francisco" when each result says "Leaves San Francisco International Airport") are refused at $0 with their count; pick words every result says, or drop the check.';
 
 /**
+ * R10: the `~` rules code settles from the person's own picks, as the composer is told them. The drafter writes no check for these and lists nothing for them under
+ * "refused": code puts the picked check, or the Not checked row, on the stage itself.
+ * @param {{line: number, rule: number, text: string}[]} settled @returns {string}
+ */
+export function settledBlock(settled) {
+  return 'SETTLED BY CODE - the person picked how these ~ rules are checked\n\n'
+    + settled.map((r) => `- line ${r.line}, ~ rule ${r.rule}: "${r.text}"`).join('\n')
+    + '\n\nFor these rules code writes the check the person picked, or the Not checked row, itself: write NO part and NO "refused" entry for them. '
+    + 'You never write a word, section, line, list-item or phrase count part (maxWords, minWords, maxLines, listItems, sections, sectionOrder, sectionWords, mustCarry, blockLines, nonEmpty) for any rule: only code does.';
+}
+
+/**
  * REQUIRED FACTS, as the composer is told them (PART 1b, PRD item 33 RF1–RF17). The shape of the fact part is in the catalogue and the
  * schema; this is the judgement the schema cannot carry: what becomes a fact, where its words come from, and what is Not checked.
  */
@@ -1495,9 +1521,11 @@ export const REQUIRED_FACTS_BRIEF = 'REQUIRED FACTS — what a line that finds, 
   + 'anything else you cannot express as a shape and a rule ("the cheapest", "the best", "a good pick") is NOT CHECKED: list it in "refused" as {"line": N, "rule": the number of that ~ rule, "reason": the '
   + 'person\'s own words}. EVERY ~ rule of a line must be carried out by a part (list its number in the part\'s "rules", 1 = the first ~ '
   + 'rule under the line) or be listed in "refused"; a rule that is neither is refused at $0.\n'
-  + ' - A line that WRITES (a summary, a report) keeps word, section and line counts. Code ties its numbers to the facts of the lines '
+  + ' - A line that WRITES (a summary, a report) needs no part for a word, section, line, list-item or phrase count: code adds the checks the person picked for it. Code ties its numbers to the facts of the lines '
   + 'before it; you do not add that.\n'
   + ' - A look fact that says "carries ~ rule N" is how the look carried that rule: put N in the fact part\'s "rules" and do not also list rule N in "refused".\n'
+  + ' - A line has ONE fact part. A look fact that carries a ~ rule goes INSIDE the line\'s one fact part (add its rule number to that part\'s "rules" and its fact to "facts"), never as a fact part of its own: two fact parts on one line are refused at $0. '
+  + 'A count of words, bullets or list items the person picked is a pick, not a "count" on the fact part; "count" is only how many results were asked for.\n'
   + ' - A ~ rule that you carry out as a fact (a limit on a time, a price, a date: "not a red-eye" is a time fact with a between rule) is carried by the '
   + 'fact part: list its number in that part\'s "rules". It is NOT also a part of its own: on a line that lists facts, a part of class judged or none '
   + 'is refused. A rule you cannot express as a shape and a rule goes in "refused", never into a part.\n'
@@ -1515,13 +1543,13 @@ export const REQUIRED_FACTS_BRIEF = 'REQUIRED FACTS — what a line that finds, 
  *   verdictType: string, guards: {name: string, kind: string, params: Record<string, any>, fill: string[]}[],
  *   mode?: 'tool'|'text', catalogue?: Record<string, any>, writeScope?: string[]|null,
  *   jobLines?: {n: number}[]|null, inputs?: {n: number, label: string, value: string}[]|null, confirmed?: any,
- *   labelLists?: string[]|null,
+ *   labelLists?: string[]|null, settled?: {line: number, rule: number, text: string}[]|null,
  * }} o
  * @returns {string}
  */
 export function rubricAuthorPrompt({
   answers, questions = GREEN_QUESTIONS, facts, listingBlock, verdictType, guards,
-  mode = 'tool', catalogue = KIND_CATALOGUE, writeScope = null, jobLines = null, inputs = null, confirmed = null, labelLists = null,
+  mode = 'tool', catalogue = KIND_CATALOGUE, writeScope = null, jobLines = null, inputs = null, confirmed = null, labelLists = null, settled = null,
 }) {
   const interview = Object.entries(questions)
     .map(([n, q]) => `Q${n}. ${q}\nA${n}. ${answers?.[n] ?? '(no answer given)'}`)
@@ -1571,6 +1599,7 @@ left as a placeholder. You never write a number the person did not ask for.`;
       + 'A confirmed check that no part covers is not silently left out: it is moved to Not checked before signing, and the person is told. '
       + 'To count "N things listed", use minClaims / maxClaims (it counts the claims listed under an input); anything else you cannot count is not composed.'] : []),
     REQUIRED_FACTS_BRIEF,
+    ...(Array.isArray(settled) && settled.length ? [settledBlock(settled)] : []),
     `THE STEP FILES — what the worker leaves behind for each job line\n\n${stepFileContract()}\n\n`
       + 'The rubric-step stage for job line N reads exactly that file, output/steps/N.json. It names the inputs (by label) the '
       + 'step must cite from, and the limits on its "text".',
@@ -1670,7 +1699,7 @@ export function renderRejectBlock({ kind, reds, cap = REVISE_RED_CAP }) {
   const head = kind === 'validation'
     ? 'MEASURED VALIDATION — your declaration was rejected by the validator before any stage could run:'
     : 'MEASURED PARSE — your reply could not be read as one declaration:';
-  const rendered = (reds ?? []).map((r) => (typeof r === 'string' ? r : `${r.code} at ${r.path || '(root)'}: ${r.detail}`));
+  const rendered = (reds ?? []).map((r) => (typeof r === 'string' ? r : `${r.code} at ${r.path || '(root)'}: ${r.detail}${typeof r.hint === 'string' ? ` ${r.hint}` : ''}`));
   const shown = rendered.slice(0, cap);
   const tail = rendered.length > shown.length
     ? [`  [${rendered.length - shown.length} of ${rendered.length} reds withheld — the cap is ${cap}]`]
@@ -1841,7 +1870,7 @@ export function resolveSourcePrefixes({ workdir, sourcePaths, seedFiles }) {
  */
 /**
  * @param {{ceilingUsd?: number|null,
- *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string}) => void}} [o]
+ *   onCall?: (call: {label: string, costUsd: number|null, unpricedRounds: number, thinkingStatus?: string, raw?: string}) => void}} [o]
  *   `ceilingUsd` is the OPERATOR's ceiling; `null`/absent is UNBOUNDED.
  *   `onCall` is a REPORTING seam fired as each metered call lands — the shell's
  *   only chance to know what has been spent while the run is still alive. It is
@@ -1861,10 +1890,13 @@ export function makeCostBook({ ceilingUsd = null, onCall = () => {} } = {}) {
     add(label, r, attempt = 1) {
       const call = { label, ...priceOf(r) };
       entries.push(call);
-      raws.push(scrubRaw({ label, attempt, text: r?.text, reason: r?.error ? String(r.error) : null }));
+      const kept = scrubRaw({ label, attempt, text: r?.text, reason: r?.error ? String(r.error) : null });
+      raws.push(kept);
       // bare-agent's per-run `thinkingStatus` ('applied' | 'unsupported' | 'ignored' | 'unknown') rides the REPORTING seam only —
-      // never the stored entry, so the cost report and every persisted shape stay as they were; absent when thinkingMode was not sent
-      onCall({ ...call, ...(r?.thinkingStatus === undefined ? {} : { thinkingStatus: r.thinkingStatus }) });
+      // never the stored entry, so the cost report and every persisted shape stay as they were; absent when thinkingMode was not sent.
+      // R9 (Part B 4): the call's scrubbed answer rides the same seam (secret-masked and bounded by `scrubRaw`, the one mask owner), so the session's drafting log keeps what an
+      // unusable draft try actually said; an empty answer (a tool-delivered reply) adds nothing
+      onCall({ ...call, ...(kept.text === '' ? {} : { raw: kept.text }), ...(r?.thinkingStatus === undefined ? {} : { thinkingStatus: r.thinkingStatus }) });
       return entries.at(-1);
     },
     /** @param {{label: string, costUsd: number|null, unpricedRounds: number}[]} calls
@@ -2089,12 +2121,12 @@ export async function askStructured({ messages, generate, mode, retries, label, 
 /** THE DECLARATION CHANNEL — the one this loop has always used. Its schema is
  * CLASS-SCOPED, like the prompt's catalogue block: the two must offer one set of
  * kinds, or the composer reads about a kind it cannot call.
- * @param {{catalogue: Record<string, any>, verdictType: string, questions?: boolean, kinds?: string[]|null}} o */
-const declarationChannel = ({ catalogue, verdictType, questions = false, kinds = null }) => ({
+ * @param {{catalogue: Record<string, any>, verdictType: string, questions?: boolean, kinds?: string[]|null, ticket?: boolean}} o */
+const declarationChannel = ({ catalogue, verdictType, questions = false, kinds = null, ticket = false }) => ({
   name: DECLARATION_TOOL_NAME,
   instruction: STRUCTURE_INSTRUCTION_TOOL,
   textPath: 'declaration',
-  tool: (/** @type {{calls: any[]}} */ box) => declarationTool(box, { catalogue, verdictType, questions, kinds }),
+  tool: (/** @type {{calls: any[]}} */ box) => declarationTool(box, { catalogue, verdictType, questions, kinds, ticket }),
 });
 
 /** The declaration ask, over the shared ladder. `declaration` is `artifact`
@@ -2102,11 +2134,11 @@ const declarationChannel = ({ catalogue, verdictType, questions = false, kinds =
  * anonymous artifact, and one word for two things is how a reader loses which.
  * @param {{messages: any[], generate: Function, mode: 'tool'|'text', retries: number,
  *   label: string, book: ReturnType<typeof makeCostBook>, catalogue: Record<string, any>,
- *   verdictType: string, questions?: boolean, kinds?: string[]|null}} o
+ *   verdictType: string, questions?: boolean, kinds?: string[]|null, ticket?: boolean}} o
  */
-async function askDeclaration({ messages, generate, mode, retries, label, book, catalogue, verdictType, questions = false, kinds = null }) {
+async function askDeclaration({ messages, generate, mode, retries, label, book, catalogue, verdictType, questions = false, kinds = null, ticket = false }) {
   const r = await askStructured({
-    messages, generate, mode, retries, label, book, channel: declarationChannel({ catalogue, verdictType, questions, kinds }),
+    messages, generate, mode, retries, label, book, channel: declarationChannel({ catalogue, verdictType, questions, kinds, ticket }),
   });
   return { ...r, declaration: r.artifact };
 }
@@ -2282,9 +2314,10 @@ export const CONFIRM_SYSTEM = 'You read what a NON-ENGINEER answered, plus a rea
  * @param {{answers: Record<string|number, string>, questions: Record<string|number, string>,
  *   labels?: Record<string|number, string>, facts?: any, listing?: string|null,
  *   writeScope?: string[]|null, isRepo: boolean, lang: string, worseThanBefore?: string,
- *   fixText?: string|null, protections?: string[], inputs?: {n: number, label: string, value: string}[]|null}} o
+ *   fixText?: string|null, protections?: string[], inputs?: {n: number, label: string, value: string}[]|null, ticket?: boolean,
+ *   settled?: {line: number, rule: number, text: string}[]|null}} o
  */
-export function confirmPrompt({ answers, questions, labels = {}, facts = null, listing = null, writeScope = null, isRepo, lang, worseThanBefore = '', fixText = null, protections = [], inputs = null }) {
+export function confirmPrompt({ answers, questions, labels = {}, facts = null, listing = null, writeScope = null, isRepo, lang, worseThanBefore = '', fixText = null, protections = [], inputs = null, ticket = false, settled = null }) {
   const lines = ['THE PERSON\'S OWN ANSWERS (a non-engineer; read exactly what they wrote, invent nothing beyond it):'];
   for (const k of Object.keys(questions)) {
     const label = labels[k] ? ` (${labels[k]})` : '';
@@ -2299,6 +2332,10 @@ export function confirmPrompt({ answers, questions, labels = {}, facts = null, l
   // PART 1a: a rubric job on the person's own text files. The model is told what a check CAN be here, so that anything
   // needing judgement lands in `notChecked` instead of being promised as a check
   if (lang === RUBRIC_LANG) lines.push('', RUBRIC_CONFIRM_NOTE);
+  // R10: the `~` rules code settles from the person's own picks are not yours to plan: a check for them is code's, a gap is code's Not checked row
+  if (Array.isArray(settled) && settled.length) lines.push('', `SETTLED BY CODE - the person picked how these ~ rules are checked; plan no check for them and list none under notChecked:\n${settled.map((/** @type {any} */ r) => `  - line ${r.line}: "${r.text}"`).join('\n')}`);
+  // MCP + tickets R5 (F285): a Tickets job's confirm turn is told the ticket is picked per run and a priority/label line is code's, so it never asks the person which ticket
+  if (ticket) lines.push('', ticketPerRunFacts());
   if (writeScope) lines.push(`WRITE SCOPE (the fence — the run may write only here): ${writeScope.join(', ')}`);
   if (protections.length > 0) {
     lines.push(
@@ -2352,7 +2389,7 @@ async function askConfirmPlan({ convo, generate, mode, book, label }) {
  *   ask: (step: {kind: string, [k: string]: any}) => Promise<string|null>,
  *   onPhase?: (phase: string, data?: any) => void, mode?: 'tool'|'text',
  *   worseThanBefore?: string, inputs?: {n: number, label: string, value: string}[]|null,
- *   jobLines?: {n: number}[]|null}} o retired field (hamr's ruling 2026-09-28):
+ *   jobLines?: {n: number}[]|null, ticket?: boolean, settled?: {line: number, rule: number, text: string}[]|null}} o retired field (hamr's ruling 2026-09-28):
  *   `worseThanBefore` is never asked any more and defaults to `''` — a
  *   caller may still pass a string through (kept for a future, non-ask
  *   source of the same constraint), it just never comes from an ask() step.
@@ -2376,6 +2413,10 @@ export async function runConfirmTurn({
   inputs = null,
   // PART 1a: the numbered job lines, so a rubric job's per-line file protections are listed from code
   jobLines = null,
+  // MCP + tickets R5 (F285): the job reads tickets; absent = the confirm prompt is byte-identical
+  ticket = false,
+  // R10: the `~` rules settled by the person's picks (src/checkpick.js); ABSENT = the confirm prompt is byte-identical
+  settled = null,
 }) {
   /** @typedef {null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart'} ConfirmStop */
   /** @returns {{ok: boolean, stop: ConfirmStop, rounds: number, accepted: null, reds: Red[], cost: any}} */
@@ -2446,14 +2487,14 @@ export async function runConfirmTurn({
   let convo = [{
     role: 'user',
     content: confirmPrompt({
-      answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, protections, inputs,
+      answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, protections, inputs, ticket, settled,
     }),
   }];
 
   for (let round = 1; round <= 2; round += 1) {
     if (fixText) {
       convo = [...convo, { role: 'user', content: confirmPrompt({
-        answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, fixText, protections, inputs,
+        answers, questions, labels, facts, listing, writeScope, isRepo, lang: resolvedLang, worseThanBefore, fixText, protections, inputs, ticket, settled,
       }) }];
     }
     onPhase('confirm-round', { round });
@@ -2557,6 +2598,22 @@ export async function runConfirmTurn({
 }
 
 /**
+ * PRD v1.131 tick 4 (rubric jobs, the LAST try only; the caller gates both): the last try failed the gate, so the AI's own broken parts are dropped to Not checked (`dropExtras`) and the plan
+ * is bound and checked ONCE more with the same gate (`redo`). Returns the new settled declaration and its result when that passes; `null` = nothing dropped, the plan is refused as today (the
+ * try passed already, a red sits on a part the picks built or on no part, or the re-check is still red).
+ * @param {{pre: any, v: {ok: boolean, reds: any[]}, jobLines: any[]|null|undefined, redo: (d: any) => any}} o
+ * @returns {{pre: any, v: any}|null}
+ */
+export function dropAfterLastTry({ pre, v, jobLines, redo }) {
+  if (v.ok) return null;
+  const out = dropExtras(pre, v.reds, jobLines);
+  if ('refused' in out) return null;
+  const next = withFactBindings(out.declaration);
+  const again = redo(next);
+  return again.ok ? { pre: next, v: again } : null;
+}
+
+/**
  * THE AUTHORING FLOW.
  *
  * Everything cheap happens BEFORE any token is spent: an ABSENT survey, an
@@ -2602,7 +2659,7 @@ export async function runConfirmTurn({
  *   priorCalls?: {label: string, costUsd: number|null, unpricedRounds: number}[]|null,
  *   priorRaws?: any[]|null,
  *   jobLines?: {n: number, text: string}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
- *   offerQuestions?: boolean,
+ *   offerQuestions?: boolean, ticket?: boolean, checkPicks?: {rules: {line: number, rule: number, text: string}[], picks: any[], left: {line: number, rule: number}[]}|null,
  *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
  */
 export async function authorClose({
@@ -2644,6 +2701,11 @@ export async function authorClose({
   // full drafting ladder (the author call plus both revisions), and only after the two before it both failed validation,
   // is offered the optional `questions` property — see `askOpen` below. Absent = byte-identical to today.
   offerQuestions = false,
+  // MCP + tickets piece 2 (R5): the job reads tickets, so the drafter is told about the ticket filter, the schema offers the optional `ticketFilter` property and a proposal is
+  // checked by the one reader (src/ticketfilter.js). ABSENT = every other job: prompt, schema and validation byte-identical.
+  ticket = false,
+  // R10 (fwd am16): the person's check picks for the `~` rules code settled, `{rules, picks, left, jobLines}`. ABSENT = every other caller: the declaration is validated as drafted.
+  checkPicks = null,
 }) {
   // PART 1a: the menu this close may draw from — a rubric job on local files sees its own two kinds, a code job never sees
   // the rubric-only ones (`catalogueForLang`). Everything below (prompt, schema, validator, env) reads THIS one catalogue.
@@ -2815,15 +2877,35 @@ export async function authorClose({
   let labelLists = null;
   if (lang === RUBRIC_LANG && Array.isArray(inputs) && inputs.length > 0) {
     const frozen = await readFrozenInputs(workdir, inputs.map((i) => i.label));
-    if (frozen.ok) { inputTexts = frozen.texts; labelLists = Object.values(labelListsOf(frozen.texts).lists); }
+    if (frozen.ok) { inputTexts = frozen.texts; labelLists = labelListsFor(frozen.texts, facts?.look ?? null); }
   }
+  // R10: the picks settled against the lines as they stand now (the answers are already `~` rules on them); the draft carries exactly these checks and these Not checked rows
+  const settledPicks = checkPicks ? settleRules(checkPicks.rules, checkPicks.picks, checkPicks.left, jobLines ?? []) : null;
+  // a rubric job only: what no rule can check goes under Not checked before the picks are applied (every other kind of job keeps its reds)
+  // then (rubric only) a one-input job's missing source is filled and a line's several fact parts are merged into one when that is safe, after the picks' count strip
+  const picked = (/** @type {any} */ d) => fillAndMergeFacts(applyPicks(moveUncheckable(d, jobLines ?? [], lang === RUBRIC_LANG), settledPicks), inputLabelsOf(inputs), lang === RUBRIC_LANG);
   const prompt = authorPrompt({
     answers, questions, facts, listingBlock: /** @type {string} */ (seeds.block),
     lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue, writeScope, confirmed, jobLines, inputs,
-    labelLists,
-  });
+    labelLists, ...(checkPicks ? { settled: checkPicks.rules } : {}),
+  }) + (ticket ? `\n\n${ticketFilterBlock()}` : '');
+  // the draft gate on one settled declaration: validation, then (PART 1c, rubric) code proves, at $0, that every label is PICKED from the input's own list and every word a fact depends
+  // on is really in the source (white-space blind, once is enough). A word that is not found is a red naming the word and the input; the drafter revises like it does for any validation red.
+  const checkDraft = (/** @type {any} */ d) => {
+    let r = validateDeclaration(d, { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope, jobLines, inputLabels: inputLabelsOf(inputs) });
+    if (r.ok && lang === RUBRIC_LANG) {
+      const words = checkDeclarationWords(r.declaration, inputTexts, facts?.look ?? null);
+      if (words.length > 0) r = { ...r, ok: false, reds: [...r.reds, ...words], declaration: null };
+    }
+    return r;
+  };
+  // PRD v1.131 tick 7: per try (by call label), the retention counts of a rubric draft; the one that stands is reported once at the end
+  /** @type {Map<string, ReturnType<typeof retentionOf>>} */
+  const retentions = new Map();
   /** @type {any[]} */
   let messages = [{ role: 'user', content: prompt }];
+  /** the drafter's PROPOSED ticket filter of the accepted iteration (a Tickets job only); the person signs it, the spec carries it, the close never does @type {any} */
+  let acceptedTicketFilter;
   /** @type {any[]} */
   const iterations = [];
   /** @type {any} */
@@ -2907,8 +2989,16 @@ export async function authorClose({
       // P7 item 5: a mechanism, never a wish. Only the last try of the full ladder carries the property, and only when the
       // two before it both failed (validation or the seed read; `questionLines` is set at the end of the second one, below).
       const askOpen = questionLines !== null && i === revisionCap;
-      const ask = await askDeclaration({ messages, generate, mode: structuredMode, retries: retryCap, label, book, catalogue: catalogueIn, kinds: Object.keys(catalogue), verdictType, questions: askOpen });
+      const ask = await askDeclaration({ messages, generate, mode: structuredMode, retries: retryCap, label, book, catalogue: catalogueIn, kinds: Object.keys(catalogue), verdictType, questions: askOpen, ticket });
       messages = ask.convo;
+      // `ticketFilter` is never part of the declaration (the close): taken out before validation, checked by its own reader below, and kept beside the declaration
+      /** @type {any} */
+      let proposedFilter;
+      if (ticket && ask.declaration && typeof ask.declaration === 'object' && Object.hasOwn(ask.declaration, 'ticketFilter')) {
+        const { ticketFilter: tf, ...restDecl } = ask.declaration;
+        proposedFilter = tf;
+        ask.declaration = restDecl;
+      }
       /** @type {{reason: string, raw: any}[]} */
       let droppedQuestions = [];
       if (askOpen && ask.declaration && typeof ask.declaration === 'object' && Object.hasOwn(ask.declaration, 'questions')) {
@@ -2990,22 +3080,28 @@ export async function authorClose({
       // early stop: an unchanged declaration has the previous iteration's
       // measurements by definition — re-executing it buys nothing and costs a
       // full close
-      if (previous && canonical(ask.declaration) === canonical(previous)) {
+      if (previous && canonical({ d: ask.declaration, f: proposedFilter ?? null }) === canonical(previous)) {
         iter.validation = '(identical declaration — see the previous iteration)';
         iter.seedRead = '(identical declaration — see the previous iteration)';
         stop = 'unchanged';
         break;
       }
-      previous = ask.declaration;
+      previous = { d: ask.declaration, f: proposedFilter ?? null };
 
       // PART 1b: code puts the number tie on every prose step that follows a fact step, before anything is validated or signed
-      let v = validateDeclaration(withFactBindings(withDropNotes(settlePersonsWords(ask.declaration, jobLines), facts?.look?.dropped, jobLines)), { catalogue, listing: seedFiles, guards, envOwned: ownedEnvNames, verdictType, writeScope, jobLines, inputLabels: inputLabelsOf(inputs) });
-      // PART 1c: code proves, at $0, that every label is PICKED from the input's own list and every word a fact depends on is really
-      // in the source (white-space blind, once is enough). A word that is not found is a red naming the word and the input; the
-      // drafter revises like it does for any validation red.
-      if (v.ok && lang === RUBRIC_LANG) {
-        const words = checkDeclarationWords(v.declaration, inputTexts, facts?.look ?? null);
-        if (words.length > 0) v = { ...v, ok: false, reds: [...v.reds, ...words], declaration: null };
+      const settled = withFactBindings(withDropNotes(settlePersonsWords(picked(ask.declaration), jobLines), facts?.look?.dropped, jobLines));
+      let pre = settled;
+      let v = checkDraft(pre);
+      // PRD v1.131 tick 4: only after the LAST try of a rubric draft failed, the AI's own broken parts are dropped to Not checked and the plan is checked ONCE more; else the plan is refused as today
+      if (!v.ok && lang === RUBRIC_LANG && i === revisionCap) {
+        const dropped = dropAfterLastTry({ pre, v, jobLines, redo: checkDraft });
+        if (dropped) { pre = dropped.pre; v = dropped.v; }
+      }
+      if (lang === RUBRIC_LANG) retentions.set(label, retentionOf(ask.declaration, pre, jobLines));
+      // MCP + tickets piece 2: a proposed ticket filter is read by the ONE reader (src/ticketfilter.js); its reds carry a legal example and go back to the drafter like any red
+      if (v.ok && ticket && proposedFilter !== undefined) {
+        const fr = ticketFilterReds(proposedFilter);
+        if (fr.length > 0) v = { ...v, ok: false, reds: [...v.reds, ...fr], declaration: null };
       }
       // SCRUBBED HERE, once, where the reds enter this module's records — the same
       // boundary rule `renderRejectBlock` already states, applied to the OTHER
@@ -3053,6 +3149,7 @@ export async function authorClose({
         onPhase('seed-read-done', { call: label, stages: stageCount });
         iter.seedRead = rows;
         accepted = injected.declaration;
+        acceptedTicketFilter = proposedFilter;
         acceptedSeedRead = rows;
         finalFrom = label;
         measured = renderSeedReadBlock(rows);
@@ -3134,6 +3231,10 @@ export async function authorClose({
     }
   }
 
+  // PRD v1.131 tick 7: ONE retention record when a rubric draft ends (accepted or stopped), counts only; the panel writes it into the drafting log
+  const standing = fellBack ? retentions.get(fellBack.to) : [...retentions.values()].at(-1);
+  if (standing) onPhase('draft-retention', { lines: standing });
+
   const reds = fatal.length ? fatal : (lastValidation && !lastValidation.ok ? lastValidation.reds : []);
   return {
     // `ok` means A SIGNABLE CLOSE EXISTS, and nothing more. A dead socket on a
@@ -3143,6 +3244,7 @@ export async function authorClose({
     // Why the loop ended is never hidden: `stop` names it and `reds` carries it.
     ok: accepted !== null,
     declaration: accepted,
+    ...(ticket && acceptedTicketFilter !== undefined ? { ticketFilter: acceptedTicketFilter } : {}),
     seedRead: acceptedSeedRead,
     iterations,
     reds,

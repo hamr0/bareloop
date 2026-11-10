@@ -24,15 +24,21 @@
 // green ONE job end to end. That green GRADUATES the bridge: the plan the agent
 // authored is preserved from the spine as a reusable artifact, and the next run of
 // this shape reuses and fine-tunes it rather than starting cold.
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, rmSync, readdirSync, openSync, readSync, closeSync, fstatSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, rmSync, rmdirSync, readdirSync, openSync, readSync, closeSync, fstatSync, unlinkSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawn } from 'node:child_process';
 import { join, resolve, dirname, basename } from 'node:path';
-import { commitWork, removeWorktree } from './worktree.js';
+import { commitWork, removeWorktree, removePrRef } from './worktree.js';
 import { moveFile } from './movefile.js';
 import { runJob } from './run.js';
 import { moneyWithDraft } from './replay.js';
-import { jobSpecHash, resolveWorkerModel, validateJob, workflowKey } from './job.js';
+import { jobSpecHash, resolveWorkerModel, validateJob, workflowKey, flowTypeOf } from './job.js';
+import { ticketNumberOf, TICKET_NUMBER_WORDS } from './ticketshape.js';
+import { freezeRepoTicket } from './ticketrepo.js';
+import { newestUnrunTicket } from './ticketnext.js';
+import { decideTicket } from './ticketlabels.js';
+import { skipWords } from './panel/status.js';
+import { checkoutPrHead, prHeadIsAncestor, recordPrOnManifest } from './prcheckout.js';
 import { readShimArm } from './readshim.js';
 import { closeStagesOf } from './plan.js';
 import { resolveCloseTimeoutMs } from './closetimeout.js';
@@ -228,6 +234,7 @@ class ExitSignal extends Error {
 /**
  * @typedef {object} Deps
  * @property {Record<string,string|undefined>} [env]
+ * @property {{url: string, record: any, reread?: () => Promise<any>}} [pr] piece 12: the PR a FRESH run of a code-repo job is checked out at (see `RunCtx.pr`); the door the PR reader will use, and the test seam. No flag sets it.
  * @property {string} [keysHome] P4a — a test seam naming the home whose `.env` keys file is loaded
  *   even when `env` is injected; production never sets it.
  * @property {string} [invokedAs] the command this run was actually reached through (`src/invoke.js`);
@@ -239,6 +246,8 @@ class ExitSignal extends Error {
  * @property {(tier: string) => any} [providerFor]
  * @property {(url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>} [fetchUrl] PART 1c - a test seam: how a web input is read at run start (production: barebrowse)
  * @property {any} [judgeProvider]
+ * @property {typeof newestUnrunTicket} [newestUnrunTicket] R6 - a test seam: how a Tickets run that names no `--ticket` finds the newest unrun ticket (production: the real look, src/ticketnext.js)
+ * @property {string} [mcpConfig] R6 - a test seam: the MCP config file that look reads (production: the person's own, found by src/mcpsources.js)
  * @property {string} [runlistHome] F196 — a test seam for `appendRun`'s
  *   (src/runlist.js) `home` override, the same shape `deps.provider` already
  *   is. Production never sets it; `appendRun` falls through to its own
@@ -306,6 +315,10 @@ class ExitSignal extends Error {
  * @property {string} spineName
  * @property {string} [into] see `RunOpts.into`
  * @property {boolean} [refreeze] a FRESH `--spec` run: fetch the web inputs again AFTER the run is listed (never on resume/door/decide)
+ * @property {{number: number, mcp: {server: string, tools: string[]}, repo?: true}} [ticket] a FRESH run of a job that reads tickets (flow type Tickets): the ticket number `--ticket` named (per run, never signed) and the job's signed `mcp`; `repo` = a code-repository (worktree) job, whose ticket is frozen into the worktree's private `.bareloop-input/` (src/ticketrepo.js) instead of the prepared copy's `input/`
+ * @property {{mcp: {server: string, tools: string[]}, repo?: boolean}} [pickNewest] R7b (5): a FRESH Tickets run that names no ticket: `execute` looks up the newest unrun one before it builds the run's row (so the row carries the number), and a refused look still lists the row and settles it at $0
+ * @property {{url: string, record: any, reread?: () => Promise<any>}} [pr] piece 12: a FRESH run of a code-repo job on a pull request: `url` = the PR address, `record` = the frozen PR record (its `head.sha` is what the worktree is checked out at, src/prcheckout.js), `reread` = read that record again once if the PR moved. Set by the PR reader (a repo job whose ticket line is a pulls list supplies it from its own frozen `pull_request_read`; this field is the override seam), never by a flag
+ * @property {boolean} [anyway] `--anyway`: run this ticket even if the job's filter would skip it (inert until the filter exists; it needs --ticket)
  * @property {string|null} model
  * @property {string|null} providerKey
  * @property {string|null} readShim
@@ -497,6 +510,12 @@ async function execute(ctx) {
   const WORKDIR = target.workdir;
   // `let`: a fresh run's refetch of its web inputs commits a NEW seed (below, after the run is listed)
   let SEED = target.seed;
+  /** @type {import('./ticketrepo.js').RepoTicketRecord|null} a code-repo job's frozen ticket (metadata), set at the run-start freeze; rides onto `job-start` */
+  let ticketRecord = null;
+  /** @type {string|null} R9 (9.4): the ticket filter's unsure reason when it let the ticket run anyway-unsure; rides onto `job-start` as `ticketFilter.unsure` */
+  let ticketUnsure = null;
+  /** @type {{number: number, ownerRepo: string, head: string, base: {ref: string|null, sha: string}|null, mergeBase: string|null}|null} a PR job's checkout (piece 12), set at the run-start seam; rides onto `job-start` as `pr` */
+  let prRecord = null;
   const specHash = jobSpecHash(spec);
   // the re-invocation commands this engine prints: a bundle names its own door and hash,
   // every other caller gets today's byte-identical strings.
@@ -1528,11 +1547,31 @@ async function execute(ctx) {
   const LEG = resuming ? deadLegs.length + 1 : 1;
   const foldedUsd = dead ? dead.restart.priorSpentUsd : (doorPrior?.spentUsd ?? 0);
   const legCapUsd = Math.max(0, spec.budgetUsd - (typeof foldedUsd === 'number' && Number.isFinite(foldedUsd) ? foldedUsd : 0));
+  // a fresh Tickets run that names no ticket: the newest unrun ticket (src/ticketnext.js), looked up HERE so the row below carries the number it read. A look that is refused
+  // (a locked pass, an unreadable list, nothing new) is not an exit with no trace: the run is listed and settled at $0 with the plain words (R7b 5, the refused-page-fetch shape).
+  /** @type {typeof ctx.ticket} */
+  let ticket = ctx.ticket;
+  /** @type {string|null} */
+  let pickRefusal = null;
+  /** @type {string|null} */
+  let pickSkip = null;
+  if (ctx.pickNewest !== undefined && !resuming) {
+    const home = deps.keysHome ?? deps.runlistHome;
+    const rows = (() => { try { return readRunList({ home }).rows; } catch { return []; } })();
+    const picked = await (deps.newestUnrunTicket ?? newestUnrunTicket)({ job: spec.job, rows, inputs: Array.isArray(spec.inputs) ? spec.inputs : [], mcp: ctx.pickNewest.mcp, ...(deps.mcpConfig ? { configPath: deps.mcpConfig } : {}) });
+    if (picked.ok) {
+      ticket = { number: picked.number, mcp: ctx.pickNewest.mcp, ...(ctx.pickNewest.repo ? { repo: /** @type {const} */ (true) } : {}) };
+      out(`${SELECTOR}: no --ticket given, so this run takes the newest ticket it has not run: #${picked.number}.`);
+    } else if (picked.nothingNew === true) pickSkip = `${picked.say} Nothing spent.`;   // a race with a scheduled run: a quiet SKIP (the R5 shape), not a failure
+    else pickRefusal = /did not start|Nothing spent\.$/.test(picked.say) ? picked.say : `${picked.say} The run did not start. Nothing spent.`;
+  }
   // every row carries its runner's pid and the leg cap, limit set or not: a limit set LATER still holds it
   /** @type {import('./runlist.js').RunRow} */
   const runRow = {
     // a RESUMED run keeps its own start stamp (the row is listed only if the list has none; it is the run's, not the leg's)
     at: resuming ? (deadLegs[0]?.start?.ts ?? new Date().toISOString()) : new Date().toISOString(), runid, job: spec.job, spine: spineFile, patient: wd, via: ctx.bundle ? 'bundle' : 'run-u', pid: process.pid, capUsd: legCapUsd,
+    // a Tickets run lists the ticket it reads (a fresh run only; a skipped or refused run keeps it too): "has run" for the by-hand pick of the newest unrun ticket (src/ticketnext.js)
+    ...(ticket !== undefined ? { ticket: ticket.number } : {}),
   };
   let claimed = false;
   {
@@ -1592,19 +1631,81 @@ async function execute(ctx) {
     err(`WARNING: could not add this run to ~/.config/bareloop/runs.jsonl (${e.message}) — the run continues; the panel's list will be missing this row.`);
   }
 
+  /** a run refused before it started: ONE settled event on its listed row ($0, complete), the claim freed, the plain words kept for the panel (Runs list + Ended block); never a `released` row, which would unlist it */
+  const settleRefused = (/** @type {string} */ words) => {
+    if (!claimedRow) return;
+    try { appendRunEvent({ runid, type: 'settled', by: runid, reason: 'refused before start', words, spentUsd: 0, spendComplete: true, at: new Date().toISOString() }, { home: claimedRow.home }); } catch { /* the exit stands; the dead pid frees the claim */ }
+    claimedRow = null;
+    // R9 (Part B 3): the run folder made just above stays an EMPTY husk when nothing ran in it; take it back (rmdir refuses a folder with anything in it, so a bundle's or a resumed leg's never goes)
+    if (!existsSync(spineFile)) { try { rmdirSync(spineDir); } catch { /* not empty, or already gone: leave it */ } }
+  };
+  if (pickSkip !== null) {
+    out(`${SELECTOR}: skipped: ${pickSkip}`);
+    if (claimedRow) {
+      try { appendRunEvent({ runid, type: 'settled', by: runid, reason: 'skipped', words: pickSkip, spentUsd: 0, spendComplete: true, at: new Date().toISOString() }, { home: claimedRow.home }); } catch { /* the exit stands; the dead pid frees the claim */ }
+      claimedRow = null;   // settled, not released: the row stays listed, grey, with the words
+    }
+    throw new ExitSignal(0);
+  }
+  if (pickRefusal !== null) {
+    err(`${SELECTOR}: ${pickRefusal}`);
+    settleRefused(pickRefusal);
+    throw new ExitSignal(2);
+  }
+
   // RUN START REFETCH (PART 1c RF22; moved here 2026-10-19, run mvez8s54: the ~18 s barebrowse fetch ran in main() BEFORE this run was
   // listed, so Sign & run showed nothing for 18 s). The run is listed FIRST (row above, with its pid and cap = the monthly claim), THEN
   // fetches: the Run tab reads "fetching the page…" while source.json has no refrozenAt at or after the row. A refusal cannot be a
   // `released` row (that unlists the run and its words); it SETTLES the claim at $0 and keeps the plain reason for the panel.
   if (ctx.refreeze === true && ctx.into !== undefined) {
-    const fresh = await refreezeUrlInputs({ into: ctx.into, ...(deps.fetchUrl ? { fetchUrl: deps.fetchUrl } : {}) });
-    if (!fresh.ok) {
-      const words = /did not start/.test(fresh.error) ? fresh.error : `${fresh.error}. The run did not start. Nothing spent.`;
-      err(`${SELECTOR}: ${fresh.error}`);
-      if (claimedRow) {
-        try { appendRunEvent({ runid, type: 'settled', by: runid, reason: 'refused before start', words, spentUsd: 0, spendComplete: true, at: new Date().toISOString() }, { home: claimedRow.home }); } catch { /* the exit stands; the dead pid's claim is closed by the next run */ }
-        claimedRow = null; // settled, not released: a released leg-1 row is unlisted, and the person must see why
+    // a CODE-REPO job's ticket (piece 1a) is frozen into the worktree's private `.bareloop-input/` (nothing committed, the seed does not move); every other job's
+    // ticket is the one Inputs row `refreezeUrlInputs` re-reads. The record rides onto this run's `job-start` (metadata only, never the text).
+    /** @type {{ok: true, refreshed: string[], seed: string|null, ticketText?: string}|{ok: false, error: string}} */
+    let fresh;
+    // piece 12's door: `ctx.pr` (a test seam / caller) wins; otherwise a PULLS ticket line of a repo job supplies it from its own frozen read
+    let prIn = ctx.pr;
+    if (ticket?.repo === true) {
+      const frozen = await freezeRepoTicket({ workdir: wd, inputs: Array.isArray(spec.inputs) ? spec.inputs : [], ticket });
+      if (frozen.ok) { ticketRecord = frozen.record; prIn ??= frozen.pr; }
+      fresh = frozen.ok ? { ok: true, refreshed: [], seed: null, ticketText: frozen.ticketText } : frozen;
+    } else {
+      fresh = await refreezeUrlInputs({ into: ctx.into, ...(deps.fetchUrl ? { fetchUrl: deps.fetchUrl } : {}), ...(ticket ? { ticket } : {}) });
+    }
+    // piece 2 (R5): the job's signed `ticketFilter` (and a closed ticket, always) decides RUN or SKIP from the frozen ticket's labels and state, by CODE, before any worker or
+    // model call and before piece 12 fetches a PR head. A skip is a quiet end: ONE `settled` event on the already-listed row ($0, complete), the claim freed, no spine, no
+    // learnings note, no bridge/credit row; exit 0 (a clean end, not a refusal). `--anyway` runs it regardless. An UNSURE verdict (off-scale or unreadable label) never skips.
+    if (fresh.ok && ticket !== undefined && typeof fresh.ticketText === 'string') {
+      const verdict = decideTicket({ text: fresh.ticketText, filter: spec.ticketFilter });
+      if (verdict.outcome === 'skip' && ctx.anyway !== true) {
+        const words = skipWords(verdict.reason, spec.ticketFilter);
+        out(`${SELECTOR}: skipped: ${words}. Nothing spent.`);
+        if (claimedRow) {
+          try { appendRunEvent({ runid, type: 'settled', by: runid, reason: 'skipped', words, spentUsd: 0, spendComplete: true, at: new Date().toISOString() }, { home: claimedRow.home }); } catch { /* the exit stands; the dead pid's claim is closed by the next run */ }
+          claimedRow = null; // settled, not released: the row stays listed so the person sees the ticket was skipped, and why
+        }
+        throw new ExitSignal(0);
       }
+      if (verdict.outcome === 'run' && verdict.unsure !== undefined) ticketUnsure = verdict.unsure;
+      if (verdict.outcome === 'run' && verdict.unsure !== undefined) out(`${SELECTOR}: the ticket filter was unsure (${verdict.unsure}), so the ticket runs.`);
+    }
+    // piece 12: a PR job's worktree is moved to the PR's head BEFORE the seed is read and the work branch is made (planrun, later); every refusal ends in "Nothing spent."
+    if (fresh.ok && prIn !== undefined) {
+      const read = await readSourceManifest(ctx.into);
+      const repoRoot = read.stop === null && read.present && typeof read.manifest?.repo === 'string' ? read.manifest.repo : null;
+      if (repoRoot === null) fresh = { ok: false, error: 'This pull request job has no repository to check the code out of. The run did not start. Nothing spent.' };
+      else {
+        const co = await checkoutPrHead({ repo: repoRoot, worktree: wd, pr: prIn });
+        if (co.ok) {
+          recordPrOnManifest(ctx.into, co.checkout);
+          SEED = co.checkout.sha;
+          prRecord = { number: co.checkout.number, ownerRepo: co.checkout.ownerRepo, head: co.checkout.sha, base: co.checkout.base, mergeBase: co.checkout.mergeBase };
+        } else fresh = { ok: false, error: co.error };
+      }
+    }
+    if (!fresh.ok) {
+      const words = /did not start|Nothing spent\.$/.test(fresh.error) ? fresh.error : `${fresh.error}. The run did not start. Nothing spent.`;
+      err(`${SELECTOR}: ${fresh.error}`);
+      settleRefused(words);   // settled, not released: a released leg-1 row is unlisted, and the person must see why
       throw new ExitSignal(2);
     }
     if (fresh.refreshed.length > 0 && typeof fresh.seed === 'string' && fresh.seed) SEED = fresh.seed;
@@ -1626,6 +1727,13 @@ async function execute(ctx) {
       throw new ExitSignal(2);
     }
     out(`patient   ${gate.detail ?? 'clean — the halted run left no uncommitted work'} (store kept: it is indexing this run already paid for)`);
+    // piece 12 (item 12): a PR job resumes WITHOUT fetching; the work branch must still hold the PR's code, or it is the existing "gone branch" stop
+    const prHead = ((m) => (m.stop === null && m.present ? m.manifest?.prHead : undefined))(await readSourceManifest(into));
+    if (typeof prHead === 'string' && !(await prHeadIsAncestor(wd, prHead))) {
+      err(`PATIENT REFUSED — the pull request's code (${prHead.slice(0, 12)}) is no longer in this run's branch, so it cannot be resumed.`);
+      err('This is a decision for you, not the harness: start the pull request again.');
+      throw new ExitSignal(2);
+    }
   } else {
     // the patient starts at the seed, every time — a run that inherits the previous
     // run's edits is measuring the wrong thing. COLD MEANS COLD (P design record): the
@@ -1915,6 +2023,9 @@ async function execute(ctx) {
   try {
     outcome = await runJob(spec, {
       stopFile,
+      ...(ticketRecord === null ? {} : { ticketRecord }),
+      ...(ticketUnsure === null ? {} : { ticketUnsure }),
+      ...(prRecord === null ? {} : { prRecord }),
       ...(learnHints === null ? {} : { learnHints }),
       // PRD item 27/M3 — the SAME `emit` the pre-run close-timing reading above
       // used (never a second `makeSpine(spineFile)` here: two independent
@@ -2087,6 +2198,8 @@ async function execute(ctx) {
         if (doorHere) worktreeLine = `\nWORKTREE  ${done}${wb || fin.committed ? ` on ${onBranch}` : ''}; the worktree folder is KEPT for the review door — ${wd}`;
         else {
           const gone = removeWorktree(wtManifest.repo, wd);
+          // piece 12 item 3: the PR's private ref goes with the worktree (the branch holds the code now)
+          if (gone && Number.isSafeInteger(wtManifest.prNumber)) removePrRef(wtManifest.repo, wtManifest.prNumber);
           worktreeLine = `\nWORKTREE  ${done}${wb || fin.committed ? ` on ${onBranch}` : ''}; ${gone ? 'the worktree folder is removed' : `the worktree folder could not be removed — ${wd}`}`;
         }
       } catch (e) {
@@ -2569,6 +2682,7 @@ export async function main(argv, deps = {}) {
      * spec's own path for `--spec` (it has no `jobs/` home to point at). */
     let SPEC_DESC;
     let refreeze = false;
+    let worktreeJob = false;
     let spec;
 
     if (jobArg !== null) {
@@ -2662,6 +2776,7 @@ export async function main(argv, deps = {}) {
       // P6 item 1: a repo job's tree is a WORKTREE in the person's own repo, recorded in the manifest; every other prepared
       // copy keeps its tree at `<into>/tree`
       const worktreeRun = typeof manifestRead.manifest.worktree === 'string' && manifestRead.manifest.worktree !== '';
+      worktreeJob = worktreeRun;
       const specWorkdir = worktreeRun ? manifestRead.manifest.worktree : join(into, 'tree');
       if (!existsSync(specWorkdir) || !existsSync(join(specWorkdir, '.git'))) {
         die(worktreeRun
@@ -2683,6 +2798,23 @@ export async function main(argv, deps = {}) {
       SPEC_DESC = specPath;
     }
 
+    // MCP + tickets (piece 1): `--ticket <n>` names the ticket this run reads (per run, never signed); `--anyway` runs it past the job's filter. Judged here, at $0,
+    // before the approval gate. A resume or door keeps the copy its first start froze, so only a fresh run needs a ticket.
+    const ticketArg = argFlag('ticket');
+    const anyway = argv.includes('--anyway');
+    const tickets = flowTypeOf(spec) === 'tickets';
+    if (anyway && ticketArg === null) die('--anyway needs --ticket <number>: it runs that one ticket even when the job\'s filter would skip it.');
+    /** @type {number|undefined} */
+    let ticketNumber;
+    if (ticketArg !== null) {
+      ticketNumber = ticketNumberOf(ticketArg);
+      if (ticketNumber === undefined) die(`--ticket takes ${TICKET_NUMBER_WORDS}, not "${ticketArg}".`);
+      if (!tickets) die('--ticket is for a job that reads tickets, and this job has no ticket source.');
+    }
+    // a fresh Tickets run that names no ticket takes the NEWEST UNRUN one (piece 8; fwd newestUnrunTicket): `execute` makes the schedule's own look at $0 over the job's signed
+    // `list_issues`, AFTER the run's own row is built so a look that is refused is a LISTED, settled run (R7b 5), never a silent exit. A typed `--ticket` never reaches it.
+    const pickNewest = tickets && refreeze && ticketNumber === undefined;
+
     const ctx = {
       spec,
       specPath,
@@ -2693,6 +2825,10 @@ export async function main(argv, deps = {}) {
       spineName: target.spine,
       ...(target.into === undefined ? {} : { into: target.into }),
       ...(refreeze ? { refreeze: true } : {}),
+      ...(tickets && refreeze && ticketNumber !== undefined ? { ticket: { number: ticketNumber, mcp: spec.mcp, ...(worktreeJob ? { repo: /** @type {const} */ (true) } : {}) } } : {}),
+      ...(pickNewest ? { pickNewest: { mcp: spec.mcp, repo: worktreeJob } } : {}),
+      ...(deps.pr !== undefined && refreeze ? { pr: deps.pr } : {}),
+      ...(anyway ? { anyway: true } : {}),
       model: argFlag('model'),
       providerKey: argFlag('provider'),
       readShim: argFlag('read-shim'),

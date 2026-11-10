@@ -1,0 +1,471 @@
+{
+ "d4-4b-revise-2": {
+  "session": "smw9rh8d6y845",
+  "round": "paid4b",
+  "call": "revise-2",
+  "reason": "line 1: 'The latest release's version is filled and quoted from the Changelog' is a second fact list on the same line. One line has one list of facts; put them all in one.; line 1: 'The latest release's date is filled and quoted from the Changelog' is a second fact list on the same line. One line has one list of facts; put them all in one.; line 1: 'Each of the 3 bullets quotes one of the Changelog's words \"Fixed\", \"Added\" or \"C…' is a second fact list on the same line. One line has one list of facts; put them all in one.",
+  "reds": [
+   "rubric-fact-twice",
+   "rubric-fact-twice",
+   "rubric-fact-twice"
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-release-facts",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "The latest release's version is filled and quoted from the Changelog",
+        "class": "fact",
+        "source": "Changelog",
+        "covers": [
+         3
+        ],
+        "facts": [
+         {
+          "name": "release version",
+          "shape": "number",
+          "anchor": "## [",
+          "decimal": "."
+         }
+        ]
+       },
+       {
+        "text": "The latest release's date is filled and quoted from the Changelog",
+        "class": "fact",
+        "source": "Changelog",
+        "covers": [
+         4
+        ],
+        "facts": [
+         {
+          "name": "release date",
+          "shape": "date",
+          "anchor": "] -",
+          "lang": "en"
+         }
+        ]
+       },
+       {
+        "text": "Each of the 3 bullets quotes one of the Changelog's words \"Fixed\", \"Added\" or \"Changed\"",
+        "class": "fact",
+        "source": "Changelog",
+        "covers": [
+         5
+        ],
+        "rules": [
+         1
+        ],
+        "facts": [
+         {
+          "name": "release bullet",
+          "shape": "phrase",
+          "phrase": "Fixed"
+         }
+        ],
+        "count": {
+         "min": 3,
+         "max": 3
+        }
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "The person asked for these, but nothing I can write checks them: whether the summary is an accurate/faithful summary of the latest release, and which release counts as \"the latest\" (the choice of which release counts as latest).",
+    "Line 1's \"exactly 3 bullets\" (~ rule 1) and \"under 80 words\" (~ rule 2) are settled by code, not by a part I write; the look also lists \"release bullet count\" (rule 2) under NOT CHECKED, so I wrote no part and no refused entry for it.",
+    "The look's phrase fact for the release bullets lists three alternative page words (\"Fixed\" or \"Added\" or \"Changed\"); I signed the phrase fact with the first of them, copied exactly as the look gives it.",
+    "The fact names, anchors (\"## [\", \"] -\") and the phrase are the input's own words from the look, not the person's wording."
+   ]
+  },
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ]
+ },
+ "d1-4b-revise-2": {
+  "session": "smw9rfiz5ahds",
+  "round": "paid4b",
+  "call": "revise-2",
+  "reason": "the label of the input the quotes come from; line 1: 'a summarised release from the Changelog, with each claim backed by a quote copie…' counts or quotes free text, but this line lists facts and has no text. Say it as a fact (a shape and a rule) or remove it.; line 1: 'the summary must state the change type, one of the Changelog's own words: \"Added…' asks for quotes from \"\", but the job's inputs are \"Changelog\".",
+  "reds": [
+   "invalid-value",
+   "rubric-fact-text",
+   "rubric-part-source"
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-release-summary",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "a summarised release from the Changelog, with each claim backed by a quote copied from the Changelog",
+        "class": "countable",
+        "check": "cited",
+        "source": "Changelog",
+        "covers": [
+         1
+        ]
+       },
+       {
+        "text": "the summary must state the change type, one of the Changelog's own words: \"Added\", \"Changed\" or \"Fixed\", each quoted from the Changelog",
+        "class": "fact",
+        "covers": [
+         2
+        ],
+        "facts": [
+         {
+          "name": "change type",
+          "shape": "phrase",
+          "phrase": "Added"
+         }
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "Line 1 is a TEXT line: it asks for a written summary, so code adds the word and list-item checks the person picked (exactly 3 bullets, exactly 3 list items, under 80 words / at most 80 words). I wrote no word, section, line, list-item or phrase count part for it.",
+    "Line 1's \"change type\" quote must say one of the page's own words: \"Added\" or \"Changed\" or \"Fixed\". The fact carries the phrase \"Added\" because only one fixed phrase fits a phrase fact; the look gives all three as alternatives, so the other two are recorded here, not in a second fact (a line has ONE fact part).",
+    "The person asked for the summary's claims to be backed by quotes copied from the Changelog; the input is labelled \"Changelog\" in the job, so the cited part names that label.",
+    "Not checked (the look found no safe words for these): the latest release (which release counts as latest, and whether the summary is of that one); whether the summary is accurate or a good summary (quality); the tone of the summary; the release version and the release date — the Changelog holds no label for either.",
+    "Line 1, ~ rule 1 (\"exactly 3 bullets\") and ~ rule 2 (\"under 80 words\") are settled by code, so I wrote no part and no refusal for them; the look lists them as NOT CHECKED for bullet count and bullet length.",
+    "\"release version\" and \"release date\" on line 1 are NOT CHECKED by the look (no word on the page reads them safely), so they are not turned into facts here."
+   ]
+  },
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ]
+ },
+ "d8-r4-revise-2": {
+  "session": "smw9npyf9dxkc",
+  "round": "paid4",
+  "call": "revise-2",
+  "reason": "the label of the input the quotes come from; line 1: 'the step text quotes the release version phrase \"## [0.54.1] - 2026-11-04\" copie…' asks for quotes from \"\", but the job's inputs are \"Changelog\".; line 1: 'the step text quotes the release version phrase \"## [0.54.1] - 2026-11-04\" copie…' is a second fact list on the same line. One line has one list of facts; put them all in one.; …and 4 more",
+  "reds": [
+   "invalid-value",
+   "invalid-value",
+   "invalid-value",
+   "rubric-part-source",
+   "rubric-fact-twice",
+   "rubric-part-source",
+   "rubric-fact-twice",
+   "rubric-part-source",
+   "rubric-fact-twice"
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-release-summary-facts",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "the step text quotes the release version phrase \"## [0.54.1] - 2026-11-04\" copied from the Changelog input",
+        "class": "fact",
+        "facts": [
+         {
+          "name": "release version",
+          "shape": "phrase",
+          "phrase": "## [0.54.1] - 2026-11-04"
+         }
+        ],
+        "count": {
+         "min": 1,
+         "max": 1
+        },
+        "covers": [
+         3
+        ]
+       },
+       {
+        "text": "the step text quotes the release date as it appears in the Changelog under the label \"## [0.54.1] -\"",
+        "class": "fact",
+        "facts": [
+         {
+          "name": "release date",
+          "shape": "date",
+          "anchor": "## [0.54.1] -",
+          "lang": "en"
+         }
+        ],
+        "count": {
+         "min": 1,
+         "max": 1
+        },
+        "covers": [
+         4
+        ]
+       },
+       {
+        "text": "the step text quotes the fixed items phrase \"### Fixed\" from the Changelog input",
+        "class": "fact",
+        "facts": [
+         {
+          "name": "fixed items",
+          "shape": "phrase",
+          "phrase": "### Fixed"
+         }
+        ],
+        "count": {
+         "min": 1,
+         "max": 1
+        },
+        "covers": [
+         5
+        ],
+        "rules": [
+         1
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "Not checked, and stated here rather than silently claimed: which release is the \"latest\" in the Changelog needs reading the file to judge, so the choice of release is not checked.",
+    "Not checked: that the summary is a good, accurate summary of the release — quality and accuracy need reading the text to judge, so they are not checked.",
+    "Confirmed check #1 [line 1] (\"exactly 3 list items (bullets)\") and check #2 [line 1] (\"under 80 words (at most 80 words)\") are settled by code: the person picked them, so no part and no refused entry is written for them here.",
+    "Line 1 is a TEXT line (the person asked for word/bullet limits on what is written), so output/steps/1.json carries \"text\" and the facts above are backed by quotes from the Changelog label; the quote for the release version and the fixed-items phrase use the input's own words, exactly as the look gives them.",
+    "The date fact is signed with lang \"en\" because the look line for the release date gives lang \"en\".",
+    "Line 1's ~ rules 1 and 2 (\"exactly 3 bullets\", \"under 80 words\") are listed under NOT CHECKED by the look for the words \"bullet count\" and \"word count\"; code writes their Not checked rows, so they are not written into \"refused\" here. The fixed-items fact carries ~ rule 1 because the look says it carries ~ rule 1."
+   ]
+  },
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ]
+ },
+ "d5-r3-revise-2": {
+  "session": "smw9ln03z3vf6",
+  "round": "paid3",
+  "call": "revise-2",
+  "reason": "line 1: 'the summary must quote the changelog's own section words for its bullets: ### Fi…' is a second fact list on the same line. One line has one list of facts; put them all in one.; line 1: 'the release version and date quoted as a phrase from the Changelog (## [0.54.1] …' is a second fact list on the same line. One line has one list of facts; put them all in one.",
+  "reds": [
+   "rubric-fact-twice",
+   "rubric-fact-twice"
+  ],
+  "declaration": {
+   "stages": [
+    {
+     "name": "changed-from-seed",
+     "kind": "files-changed",
+     "params": {
+      "requireNonEmpty": true,
+      "allowPrefixes": [
+       "output/"
+      ]
+     }
+    },
+    {
+     "name": "line-1-release-facts",
+     "kind": "rubric-step",
+     "fromLine": [
+      1
+     ],
+     "params": {
+      "step": 1,
+      "parts": [
+       {
+        "text": "the summary must quote the changelog's own section words for its bullets: ### Fixed, ### Added or ### Changed, copied exactly",
+        "class": "fact",
+        "source": "Changelog",
+        "rules": [
+         1
+        ],
+        "facts": [
+         {
+          "name": "section label",
+          "shape": "phrase",
+          "phrase": "### Fixed"
+         }
+        ],
+        "count": {
+         "min": 3
+        }
+       },
+       {
+        "text": "the release version and date quoted as a phrase from the Changelog (## [0.54.1] - 2026-11-04)",
+        "class": "fact",
+        "source": "Changelog",
+        "facts": [
+         {
+          "name": "release heading",
+          "shape": "phrase",
+          "phrase": "## [0.54.1] - 2026-11-04"
+         }
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "notes": [
+    "The look gives only ONE quote requirement for line 1: the quote must say \"## [0.54.1] - 2026-11-04\" — the whole release heading (version AND date) is one page phrase, so it is a single phrase fact, not separate version and date facts.",
+    "The look's bullet phrase is a choice of three page words (\"### Fixed\" or \"### Added\" or \"### Changed\"); the catalogue's phrase shape takes one fixed phrase, so the first of the three is written and the other two are covered by the part's text.",
+    "Nothing checks: the latest release; \"Summarise the latest release\" (a summary's quality and accuracy need reading the text to judge); line 1 \"under 80 words\" (the page holds no word reading \"word limit\").",
+    "Line 1 is a facts line: its file output/steps/1.json holds results with one quote each and the filled values; the \"exactly 3 bullets\" and \"under 80 words\" rules are left to code (line 1, ~ rules 1 and 2)."
+   ],
+   "refused": [
+    {
+     "line": 1,
+     "rule": 3,
+     "reason": "each list item's label must be one of the changelog's own section words — the page offers three alternatives (### Fixed / ### Added / ### Changed), which one fixed phrase fact cannot express"
+    },
+    {
+     "line": 1,
+     "reason": "the latest release — which release is latest cannot be expressed as a shape and a rule"
+    }
+   ],
+   "guardLines": [
+    {
+     "guard": "changed-from-seed",
+     "lines": [
+      1
+     ]
+    }
+   ]
+  },
+  "picksRecord": [
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "exactly 3 bullets",
+    "added": "exactly 3 list items",
+    "check": {
+     "rule": "listItems",
+     "value": 3
+    },
+    "own": false,
+    "left": false
+   },
+   {
+    "lineWords": "summarise the latest release in the changelog",
+    "occurrence": 0,
+    "ruleText": "under 80 words",
+    "added": "at most 80 words",
+    "check": {
+     "rule": "maxWords",
+     "value": 80
+    },
+    "own": false,
+    "left": false
+   }
+  ]
+ }
+}

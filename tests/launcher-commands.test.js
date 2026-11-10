@@ -713,7 +713,9 @@ test('update: newer asks; y installs (success and failure words), n / q / two em
   assert.equal(r.lines.at(-2), first);
   assert.equal(r.lines.at(-1), 'Updated to 99.1.2. Then run bareloop restart.');
   assert.deepEqual(r.asked, ['Update now? (y/n) ']);
-  assert.deepEqual(r.spawns, [['npm', ['install', '-g', 'bareloop@latest'], { stdio: 'inherit' }]]);
+  assert.equal(r.spawns.length, 1);
+  assert.deepEqual(r.spawns[0].slice(0, 2), ['npm', ['install', '-g', 'bareloop@latest']]);
+  assert.equal(r.spawns[0][2].stdio, 'inherit');
   r = await go(['yes'], { code: 1 });
   assert.equal(r.rc, 1);
   assert.match(r.err, /The update did not finish\. Run it yourself: npm install -g bareloop@latest/);
@@ -801,4 +803,27 @@ test('update: the menu door says "pick 3 restart", the subcommand door says "run
   const sub = sink();
   assert.equal(await updateCmd(sub, mk('sub')), 0);
   assert.equal(sub.lines.at(-1), 'Updated to 99.1.2. Then run bareloop restart.');
+});
+
+// borrowed-from: fwdloop test/m13-p1-npm-env.test.js@f6f2a7c
+// MCP+tickets R1: the update's npm child gets a stripped env (no credential-shaped name); the panel launch still gets its keys.
+test('update: the npm child env lacks credential names (npmEnv) but keeps PATH; the panel launch env still carries the key', async () => {
+  const home = installedHome();
+  const base = await freeBase();
+  const CANARY = 'FAKE_PROVIDER_API_KEY'; // matches CLOSE_ENV_DENY.shape (_API_KEY)
+  const env = { [CANARY]: 'canary-not-a-key', PATH: '/usr/bin:/bin' };
+  let npmOpts = null;
+  const io = sink();
+  const rc = await updateCmd({ out: io.out, err: io.err }, deps(home, base, { env, npmFetch: npmOk('99.1.2'), ask: async () => 'y', npmSpawn: (_c, _a, o) => { npmOpts = o; return fakeChild(0); } }));
+  assert.equal(rc, 0, io.text());
+  assert.ok(npmOpts?.env, 'the npm spawn was handed an env');
+  assert.equal(CANARY in npmOpts.env, false, 'a credential name reached npm');
+  assert.equal(npmOpts.env.PATH, '/usr/bin:/bin');
+  assert.equal(env[CANARY], 'canary-not-a-key', 'the shared env is not mutated');
+  let panelOpts = null;
+  const d = deps(home, base, { env });
+  const inner = d.spawnFn;
+  d.spawnFn = (c, a, o) => { panelOpts = o; return inner(c, a, o); };
+  assert.equal(await startCmd(sink(), d), 0);
+  assert.equal(panelOpts.env[CANARY], 'canary-not-a-key');
 });

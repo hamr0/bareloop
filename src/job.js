@@ -19,7 +19,9 @@ import { validateCloseDecl, DECLARED_CLOSE_CLASSES } from './declaredclose.js';
 import { inputLabelsOf } from './rubricstep.js';
 import { CLOSE_TIMEOUT_FLOOR_MS } from './closetimeout.js';
 import { validateTrigger } from './trigger.js';
+import { WATCHABLE } from './ticketshape.js';
 import { resolveJobJudge } from './judged.js';
+import { ticketFilterReds } from './ticketfilter.js';
 
 // The menus below ARE the close-authoring hierarchy (PRD §7) and ship frozen:
 // they are read at call time, so a mutable export would let adopter code
@@ -170,7 +172,7 @@ export const CONDITION_KEYS = Object.freeze(['providerPath', 'closeVerbosity', '
 // `steps` stays in the field list ONLY so a retired spec reds by name
 // (`shape-retired`) instead of falling through to a generic unknown-field —
 // the operator gets told what happened, not just that something is wrong.
-const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'baseUrl', 'conditions', 'cadence', 'trigger', 'budgetUsd', 'maxWallMs', 'closeTimeoutMs', 'model', 'thinking', 'handoffNote', 'seedNote', 'readMap', 'judge', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools', 'jobLines', 'inputs'];
+const JOB_FIELDS = ['schema', 'job', 'description', 'provider', 'baseUrl', 'conditions', 'cadence', 'trigger', 'budgetUsd', 'maxWallMs', 'closeTimeoutMs', 'model', 'thinking', 'handoffNote', 'seedNote', 'mcp', 'flowType', 'ticketFilter', 'ticketWatch', 'readMap', 'judge', 'writeScope', 'steps', 'escalation', 'goal', 'verdictType', 'close', 'closeDecl', 'checks', 'tools', 'jobLines', 'inputs'];
 /** the exact fields of a signed `judge` override — nested objects red unknown
  * keys too, because no smuggling level exists in a signed spec */
 const JUDGE_FIELDS = ['provider', 'model'];
@@ -229,6 +231,79 @@ export function validateBaseUrl(value) {
     return null; // admitted — a local OpenAI-compatible endpoint, the one case that legitimately skips TLS
   }
   return 'https:// required (http:// admitted only to 127.0.0.1/localhost/::1)';
+}
+
+/** the job's flow types; `flowType` is set by code from the job card and signed with the job (fwdloop M13 piece 4) */
+export const FLOW_TYPES = Object.freeze(['plain', 'mcp', 'tickets']);
+
+/** the words the card's Flow type menu and the Job tab use for each flow type (fwd's am2 names) */
+export const FLOW_TYPE_LABELS = Object.freeze({ plain: 'plain', mcp: 'MCP', tickets: 'Tickets MCP' });
+
+/**
+ * The ONE reader of a job's flow type: the field when present; an `mcp` block with no `flowType` is a Tickets job; no `mcp` block is plain.
+ * @param {Record<string, any>} spec @returns {'plain'|'mcp'|'tickets'}
+ */
+export function flowTypeOf(spec) {
+  if (typeof spec?.flowType === 'string' && FLOW_TYPES.includes(spec.flowType)) return /** @type {any} */ (spec.flowType);
+  return spec?.mcp ? 'tickets' : 'plain';
+}
+
+/** the shape of an MCP server or tool name in a job (the bridge names a tool `<server>_<tool>`) */
+const MCP_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+/**
+ * Validate `mcp`, `flowType`, `ticketFilter`, `ticketWatch` (all optional; a spec without them is unchanged). Reds name the field and the legal shape.
+ * @param {Record<string, any>} spec @param {(code: string, path: string, detail?: string) => void} red
+ */
+function checkMcpFields(spec, red) {
+  const has = (/** @type {string} */ k) => spec[k] !== undefined;
+  const hasMcp = has('mcp');
+  if (hasMcp) {
+    const m = spec.mcp;
+    if (!isObj(m)) red('invalid-value', 'mcp', 'an object {server, tools}');
+    else {
+      for (const key of Object.keys(m)) if (key !== 'server' && key !== 'tools') red('unknown-field', `mcp.${key}`, 'declared keys only: server|tools');
+      if (typeof m.server !== 'string' || !MCP_NAME.test(m.server)) red('invalid-value', 'mcp.server', 'a plain server name (letters, digits, _ or -)');
+      if (!Array.isArray(m.tools) || m.tools.length === 0) red('invalid-value', 'mcp.tools', 'a non-empty list of tool names');
+      else {
+        const seen = new Set();
+        for (const t of m.tools) {
+          if (typeof t !== 'string' || !MCP_NAME.test(t)) red('invalid-value', 'mcp.tools', `names ${JSON.stringify(t)}, which is not a plain tool name`);
+          else if (seen.has(t)) red('invalid-value', 'mcp.tools', `names "${t}" twice`);
+          else seen.add(t);
+        }
+      }
+    }
+  }
+  if (has('flowType')) {
+    const t = spec.flowType;
+    if (typeof t !== 'string' || !FLOW_TYPES.includes(t)) red('invalid-value', 'flowType', `one of ${FLOW_TYPES.join(', ')}`);
+    else {
+      if (t === 'plain' && hasMcp) red('invalid-value', 'flowType', 'a "plain" job takes no "mcp" server');
+      if (t !== 'plain' && !hasMcp) red('invalid-value', 'flowType', `a "${t}" job needs an "mcp" server`);
+      if (t !== 'tickets') {
+        if (has('ticketFilter')) red('invalid-value', 'ticketFilter', 'belongs to a Tickets MCP job');
+        if (has('ticketWatch')) red('invalid-value', 'ticketWatch', 'belongs to a Tickets MCP job');
+      }
+    }
+  }
+  if (has('ticketFilter')) {
+    // ONE reader of a legal filter (src/ticketfilter.js), shared with the drafter's proposal
+    for (const r of ticketFilterReds(spec.ticketFilter, { hasMcp })) red(r.code, r.path, r.detail);
+  }
+  if (has('ticketWatch')) {
+    const w = spec.ticketWatch;
+    if (!Array.isArray(w) || w.length === 0) red('invalid-value', 'ticketWatch', `a non-empty list of fields (${WATCHABLE.join(' and ')})`);
+    else {
+      if (!hasMcp) red('invalid-value', 'ticketWatch', 'watches tickets read through the job\'s "mcp" tools, but the job lists no "mcp" server');
+      const seen = new Set();
+      for (const f of w) {
+        if (typeof f !== 'string' || !WATCHABLE.includes(f)) red('invalid-value', 'ticketWatch', `names ${JSON.stringify(f)}, which is not a field that can be watched (${WATCHABLE.join(' and ')})`);
+        else if (seen.has(f)) red('invalid-value', 'ticketWatch', `names "${f}" twice`);
+        else seen.add(f);
+      }
+    }
+  }
 }
 
 /**
@@ -360,6 +435,11 @@ export function validateJob(input, { shellCapUsd = 2 } = {}) {
   if (spec.seedNote !== undefined && typeof spec.seedNote !== 'boolean') {
     red('invalid-value', 'seedNote', 'true or false (absent = on): whether the planner and the first worker are told what the job\'s own count check said on the untouched tree');
   }
+
+  // THE MCP SOURCE AND TICKET FIELDS (ITEM33-BUILD, MCP+tickets piece 1): `mcp {server, tools}`, `flowType`, `ticketFilter`, `ticketWatch`.
+  // Signed like `seedNote`: ABSENT keeps every old spec's bytes, so its hash. Set by CODE from the person's card pick, never by the drafter
+  // (assembleSpec refuses a draft carrying them). Validated here; the run-start reader is src/ticketmcp.js.
+  checkMcpFields(spec, red);
 
   // THE FIRST-READ MAP (src/readshim.js, EXPERIMENTAL): a declared job condition, signed like `thinking`. A boolean; ABSENT = off (an old spec keeps
   // its bytes, so its hash), `true` makes the first shell_read of a big non-test file in an ask return a map of its parts. The switch is hashed.

@@ -3,6 +3,7 @@ import { readFile, lstat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { createRubric, checkStep, renderGaps, numbersInQuote } from 'bareguard';
 import { dropRows, dropLine } from './pagedropwords.js';
+import { OFFERED } from './checkwords.js';
 import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem, factBrief, writtenSpans } from './facts.js';
 
 // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES — what one job line leaves
@@ -37,9 +38,10 @@ export function stepFileContract() {
     '            ** or __ marks do not matter). Every number in a claim must also appear in its quote.',
     '  In each claim, copy every number, time and price exactly as the input writes it (for example "9:27 AM", not "09:27"),',
     '  because the check matches the numbers in your claim against your quote.',
-    'A job line the brief below marks as a FACTS line is different: its file holds ONLY {"results": [{"quote": "...", "values":',
+    'A job line the brief below marks as a FACTS line is different: its file holds {"results": [{"quote": "...", "values":',
     '{"<fact>": "<value>"}}]} — one result per thing found, one quote copied exactly from the text of that one result, the values written as the quote',
-    'writes them; no "text" and no "cites". A line the brief marks as a TEXT line keeps "text" (free words), and every number in it',
+    'writes them; no "cites". It holds a "text" too only when the brief says it is also a TEXT line (the person asked for limits on the words, so',
+    'the same file carries both "results" and "text"). A line the brief marks as a TEXT line keeps "text" (free words), and every number in it',
     'must be copied from a quote of an earlier facts line.',
     'Write nothing outside output/, and never edit the files under input/. The file must be complete, valid JSON: a file cut',
     'off before its closing brace counts as not written.',
@@ -65,10 +67,14 @@ export function lineBriefs(closeDecl) {
       const count = !c ? 'one result for every one you find' : c.min !== undefined && c.max !== undefined
         ? (c.min === c.max ? `exactly ${c.min} result${c.min === 1 ? '' : 's'}` : `${c.min} to ${c.max} results`)
         : c.min !== undefined ? `at least ${c.min} results` : `at most ${c.max} results`;
+      // keep-both: the person's picks (countable parts) sit beside the fact on this line, so the same file also carries the "text" they limit
+      const alsoText = st.params.parts.some((/** @type {any} */ q) => isRec(q) && q.class === 'countable');
       out.push({
         line: n,
         text: [
-          `Job line ${n} is a FACTS line. Write ${stepFileRel(n)} as {"results": [{"quote": "...", "values": {...}}]} and nothing else — no "text", no "cites".`,
+          alsoText
+            ? `Job line ${n} is a FACTS line AND a TEXT line. Write ${stepFileRel(n)} as {"results": [{"quote": "...", "values": {...}}], "text": "..."} — the results are the facts below, the "text" is your answer to the line in your own words (its limits are in the line's ~ rules); no "cites".`
+            : `Job line ${n} is a FACTS line. Write ${stepFileRel(n)} as {"results": [{"quote": "...", "values": {...}}]} and nothing else — no "text", no "cites".`,
           `  One result per thing you find in the input "${fp.source}": ${count}.`,
           '  "quote": ONE quote per result, copied exactly from that result\'s own text in the input (at most 4000 characters) — never joined from two results.',
           '  "values": one entry per fact below, written exactly as the quote writes it (for example "9:27 AM", not "09:27"; "389", not "389.00").',
@@ -156,6 +162,12 @@ export const COUNT_CHECKS = Object.freeze({
   maxLines: Object.freeze(['value']),
   sections: Object.freeze(['names']),
   sectionWords: Object.freeze(['names', 'wordsPerSection']),
+  // R10 (bareguard 0.31, fwdloop v0.29.0 OFFERED): the five text checks a person's pick may carry; the drafter never writes them
+  nonEmpty: Object.freeze([]),
+  listItems: Object.freeze(['value']),
+  sectionOrder: Object.freeze(['names']),
+  mustCarry: Object.freeze(['phrases']),
+  blockLines: Object.freeze(['size', 'phrases']),
   cited: Object.freeze(['source']),
   // a COUNT of the claims listed under an input: the code counts the list (flattenStep), bareguard's own min/max compares it
   minClaims: Object.freeze(['value', 'source']),
@@ -165,12 +177,16 @@ export const COUNT_CHECKS = Object.freeze({
   numbersFromFacts: Object.freeze(['from']),
 });
 /** every field a part may carry, whatever its class */
-const PART_FIELDS = Object.freeze(['text', 'class', 'check', 'value', 'names', 'wordsPerSection', 'source', 'domains', 'covers', 'rules', 'from', 'record', 'facts', 'count', 'tested', 'sample']);
+const PART_FIELDS = Object.freeze(['text', 'class', 'check', 'value', 'names', 'wordsPerSection', 'source', 'domains', 'phrases', 'size', 'covers', 'rules', 'from', 'record', 'facts', 'count', 'tested', 'sample']);
 
 /** @typedef {{code: string, path: string, detail: string}} ShapeRed */
 
 /** @param {unknown} v @returns {v is Record<string, any>} */
 const isRec = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+/** @param {unknown} v @returns {string} JSON with every object's keys sorted, so two equal parts compare equal whatever order their keys were written in */
+const sortedJson = (v) => JSON.stringify(v, (_k, x) => (isRec(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : 1))) : x));
+/** @param {unknown} a @param {unknown} b */
+const sameJson = (a, b) => sortedJson(a) === sortedJson(b);
 /** @param {unknown} v @returns {v is string} */
 const nonEmpty = (v) => typeof v === 'string' && v.trim() !== '';
 /** @param {unknown} v @returns {v is string[]} */
@@ -214,12 +230,13 @@ export function rubricStepShapeReds(p, at) {
     if (part.class !== 'countable') return;
     if (!Object.hasOwn(COUNT_CHECKS, part.check)) { red('invalid-value', `${w}.check`, `one of ${Object.keys(COUNT_CHECKS).join(' | ')}`); return; }
     for (const f of COUNT_CHECKS[part.check]) {
-      const ok = f === 'value' || f === 'wordsPerSection' ? Number.isInteger(part[f]) && part[f] >= 1
-        : f === 'names' ? nameList(part.names)
+      const ok = f === 'value' || f === 'wordsPerSection' || f === 'size' ? Number.isInteger(part[f]) && part[f] >= 1
+        : f === 'names' || f === 'phrases' ? nameList(part[f])
           : f === 'from' ? Array.isArray(part.from) && part.from.length > 0 && new Set(part.from).size === part.from.length && part.from.every((/** @type {unknown} */ x) => Number.isInteger(x) && /** @type {number} */ (x) >= 1)
             : nonEmpty(part.source) && part.source.length <= 128;
       if (!ok) {
         red('invalid-value', `${w}.${f}`, f === 'names' ? 'a non-empty array of section names'
+          : f === 'phrases' ? 'a non-empty array of words or phrases'
           : f === 'source' ? 'the label of the input a quote must come from'
             : f === 'from' ? 'the numbers of the earlier fact lines whose checked quotes the text\'s numbers come from (distinct integers, 1 or more)'
               : 'an integer, 1 or more');
@@ -246,7 +263,8 @@ export function citedLabels(params) {
  */
 export function buildStepSpec(params, inputShas) {
   /** @type {Record<string, any>[]} */
-  const checks = factPartOf(params) ? [] : [{ id: 'text-present', rule: 'nonEmpty', field: 'text' }];
+  // a fact step has no text to floor, unless the person's picks put text checks on its line (keep-both): then "text" must be there, or an upper bound alone (maxWords) would pass an empty file
+  const checks = factPartOf(params) && !params.parts.some((x) => x.class === 'countable') ? [] : [{ id: 'text-present', rule: 'nonEmpty', field: 'text' }];
   params.parts.forEach((part, i) => {
     if (part.class === 'fact') {
       // ONE bareguard `cited` check per fact part: the quote is in the frozen input, every value is in the quote and meets its rule
@@ -261,6 +279,11 @@ export function buildStepSpec(params, inputShas) {
       case 'maxWords': case 'minWords': case 'maxLines': checks.push({ id, rule: part.check, field: 'text', value: part.value }); break;
       case 'sections': checks.push({ id, rule: 'sections', field: 'text', names: [...part.names] }); break;
       case 'sectionWords': checks.push({ id, rule: 'sectionWords', field: 'text', names: [...part.names], wordsPerSection: part.wordsPerSection }); break;
+      case 'nonEmpty': checks.push({ id, rule: 'nonEmpty', field: 'text' }); break;
+      case 'listItems': checks.push({ id, rule: 'listItems', field: 'text', value: part.value }); break;
+      case 'sectionOrder': checks.push({ id, rule: 'sectionOrder', field: 'text', names: [...part.names] }); break;
+      case 'mustCarry': checks.push({ id, rule: 'mustCarry', field: 'text', phrases: [...part.phrases] }); break;
+      case 'blockLines': checks.push({ id, rule: 'blockLines', field: 'text', size: part.size, phrases: [...part.phrases] }); break;
       case 'cited': checks.push({ id, rule: 'cited', claims: `cites:${part.source}`, source: part.source }); break;
       case 'minClaims': checks.push({ id, rule: 'min', field: `claims:${part.source}`, value: part.value }); break;
       case 'maxClaims': checks.push({ id, rule: 'max', field: `claims:${part.source}`, value: part.value }); break;
@@ -394,6 +417,10 @@ export function plainStepGap(step, why, g, params = null) {
   if (g.check === 'minWords') return `${at}: "text" has ${g.measured} words, at least ${g.limit} are required`;
   if (g.check === 'maxLines') return `${at}: "text" has ${g.measured} lines, at most ${g.limit} are allowed`;
   if (g.check === 'sections') return `${at}: "text" is missing section(s): ${(g.items ?? []).join(', ')}`;
+  if (g.check === 'listItems') return `${at}: "text" has ${g.measured} list items, exactly ${g.limit} are required`;
+  if (g.check === 'sectionOrder') return `${at}: "text" does not hold its sections in the asked order (${(g.items ?? []).map((/** @type {string} */ x) => x.replace(/^[^:]*:/, '')).join(', ')} out of place)`;
+  if (g.check === 'mustCarry') return `${at}: "text" does not carry: ${(g.items ?? []).join(', ')}`;
+  if (g.check === 'blockLines') return `${at}: "text" is not in blocks of ${g.limit} lines each carrying the asked words (${(g.items ?? []).join(', ')})`;
   if ((g.check === 'min' || g.check === 'max') && String(g.field ?? '').startsWith('claims:')) {
     const label = String(g.field).slice('claims:'.length);
     return g.check === 'min'
@@ -532,6 +559,12 @@ function dupUnitWords(p, path) {
   return null;
 }
 
+/** The legal example the `rubric-fact-twice` red carries as its drafter-only `hint` (the person's text is the plain sentence): one fact part holding two facts, the rule it carries listed in "rules", no "count" (a picked count is a pick). */
+const factTwiceExample = (/** @type {unknown} */ source) => ({
+  class: 'fact', source: typeof source === 'string' ? source : 'Changelog', text: 'the release heading and a section word', rules: [1],
+  facts: [{ name: 'release heading', shape: 'phrase', phrase: '## [0.54.1] - 2026-11-04' }, { name: 'section word', shape: 'phrase', phrase: '### Fixed' }],
+});
+
 /**
  * R11 — the drafting-time rules for the `rubric-step` stages of a declaration, each a red in the person's plain words that
  * names the job line and ends "Nothing spent." where nothing was. Pure; never throws. Judged parts are RED in this build
@@ -544,10 +577,11 @@ function dupUnitWords(p, path) {
  *     naming both parts and both numbers;
  *   - a `cited` part names a label the person's inputs do not have.
  * @param {any[]} stages the declaration's stages
- * @param {{inputLabels?: string[]|null, red: (code: string, path: string, detail: string, extra?: object) => void}} o
- *   `inputLabels` absent = the label rule is not run (a caller with no inputs in hand)
+ * @param {{inputLabels?: string[]|null, picks?: {line: number, part: any}[]|null, red: (code: string, path: string, detail: string, extra?: object) => void}} o
+ *   `inputLabels` absent = the label rule is not run (a caller with no inputs in hand);
+ *   `picks` = the record of the person's picks (`declaration.picks`, `{line, part}` each): the only countable parts a fact line may carry
  */
-export function checkRubricParts(stages, { inputLabels = null, red }) {
+export function checkRubricParts(stages, { inputLabels = null, red, picks = null }) {
   /** @type {Map<number, string>} */
   const owner = new Map();
   /** the stage index of each fact line (PART 1b: a prose step ties its numbers to fact lines that are checked BEFORE it) @type {Map<number, number>} */
@@ -596,7 +630,7 @@ export function checkRubricParts(stages, { inputLabels = null, red }) {
           red('rubric-part-source', `${w}.source`, `line ${line}: '${said}' asks for quotes from "${sayText(part.source ?? '')}", but the job's inputs are ${inputLabels.map((l) => `"${l}"`).join(', ')}.`, { line: step, stage: label });
         }
         if (p.parts.filter((/** @type {any} */ x) => isRec(x) && x.class === 'fact').length > 1) {
-          red('rubric-fact-twice', w, `line ${line}: '${said}' is a second fact list on the same line. One line has one list of facts; put them all in one. Nothing spent.`, { line: step, stage: label });
+          red('rubric-fact-twice', w, `line ${line}: '${said}' is a second fact list on the same line. One line has one list of facts; put them all in one. Nothing spent.`, { line: step, stage: label, hint: `Example of ONE part holding two facts: ${JSON.stringify(factTwiceExample(part.source))}` });
         }
       } else if (part.class === 'countable') {
         if (part.check === 'numbersFromFacts') {
@@ -606,7 +640,9 @@ export function checkRubricParts(stages, { inputLabels = null, red }) {
           }
           return;
         }
-        if (factLine) {
+        // keep-both: a fact line may carry a countable part only when it IS one of the person's recorded picks (an offered check, its `rules`, the same line, the same words)
+        const isPick = factLine && Array.isArray(picks) && picks.some((x) => isRec(x) && x.line === step && sameJson(x.part, part)) && OFFERED.includes(part.check) && Array.isArray(part.rules);
+        if (factLine && !isPick) {
           red('rubric-fact-text', w, `line ${line}: '${said}' counts or quotes free text, but this line lists facts and has no text. Say it as a fact (a shape and a rule) or remove it. Nothing spent.`, { line: step, stage: label });
           return;
         }
@@ -869,6 +905,11 @@ export function partSentence(part) {
     case 'maxLines': return `the text is at most ${n(part.value, 'line')}`;
     case 'sections': return `the text has the section(s): ${list(part.names)}`;
     case 'sectionWords': return `each section (${list(part.names)}) is about ${part.wordsPerSection} words`;
+    case 'nonEmpty': return 'the text is not empty';
+    case 'listItems': return `the text has exactly ${n(part.value, 'list item')}`;
+    case 'sectionOrder': return `the text has the section(s) ${list(part.names)}, in that order`;
+    case 'mustCarry': return `the text carries ${list(part.phrases)}`;
+    case 'blockLines': return `the text is in blocks of ${n(part.size, 'line')}, each carrying ${list(part.phrases)}`;
     case 'cited': return `every claim is backed by a quote copied from "${part.source}"`;
     case 'minClaims': return `at least ${part.value} claim(s) are listed under "${part.source}"`;
     case 'maxClaims': return `at most ${part.value} claim(s) are listed under "${part.source}"`;
@@ -880,16 +921,21 @@ export function partSentence(part) {
 /**
  * The checks a signed close actually runs, per job line, in plain code-written sentences: one per countable part of every
  * rubric-step stage. This is the ONE reader both the plan card and the sign-time invariant use.
+ * Each row says who added the check (`by`): `you` = one of the person's picks, as the signed close's own record (`closeDecl.picks`) names it; `agent` = the drafter's;
+ * `null` = code's own tie (the numbers of a text step come from the fact quotes), which is neither.
  * @param {any} closeDecl
- * @returns {{line: number, text: string, covers: number[]}[]}
+ * @returns {{line: number, text: string, covers: number[], by: 'agent'|'you'|null}[]}
  */
 export function checksOfClose(closeDecl) {
   const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
+  const record = isRec(closeDecl) && Array.isArray(closeDecl.picks) ? closeDecl.picks : [];
   return stages.flatMap((/** @type {any} */ st) => (isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts)
     ? st.params.parts.filter((/** @type {any} */ p) => isRec(p) && (p.class === 'countable' || p.class === 'fact')).flatMap((/** @type {any} */ p) => {
       const covers = Array.isArray(p.covers) ? p.covers.filter(Number.isInteger) : [];
+      /** @type {'agent'|'you'|null} */
+      const by = p.check === 'numbersFromFacts' ? null : record.some((/** @type {any} */ x) => isRec(x) && x.line === st.params.step && sameJson(x.part, p)) ? 'you' : 'agent';
       // a fact part is one plan row per fact (and one for its count): the person signs the rows, the close runs the same list
-      return (p.class === 'fact' ? factRows(p) : [partSentence(p)]).map((/** @type {string} */ text) => ({ line: st.params.step, text, covers }));
+      return (p.class === 'fact' ? factRows(p) : [partSentence(p)]).map((/** @type {string} */ text) => ({ line: st.params.step, text, covers, by }));
     })
     : []));
 }
@@ -912,14 +958,14 @@ export function signedFactNames(closeDecl) {
  * silently dropped (run mv5bk400: "lists 3 releases" was confirmed, then left out of the signed close without a word).
  * @param {{confirmed: {text: string, fromLine: number[]|null}[], notChecked: string[], closeDecl: any, jobLines?: any[]|null}} o
  *   `jobLines` — the person's numbered lines, so a ~ rule the drafter listed as Not checked reads in the person's own words
- * @returns {{checkItems: {text: string, fromLine: number[]}[], notChecked: string[], moved: {text: string, fromLine: number[]|null}[]}}
+ * @returns {{checkItems: {text: string, fromLine: number[], by: 'agent'|'you'|null}[], notChecked: string[], moved: {text: string, fromLine: number[]|null}[]}}
  */
 export function reconcileRubricPlan({ confirmed, notChecked, closeDecl, jobLines = null }) {
   const real = checksOfClose(closeDecl);
   const covered = new Set(real.flatMap((c) => c.covers));
   const moved = confirmed.filter((_, i) => !covered.has(i + 1));
   return {
-    checkItems: real.map((c) => ({ text: c.text, fromLine: [c.line] })),
+    checkItems: real.map((c) => ({ text: c.text, fromLine: [c.line], by: c.by })),
     notChecked: [
       ...notChecked,
       ...proseNotChecked(closeDecl),

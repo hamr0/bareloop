@@ -38,8 +38,8 @@ test('planFromSpec: each stage lands under the job line it names; stages with no
   const p = planFromSpec(NEW_SPEC);
   assert.equal(p.older, false);
   assert.deepEqual(p.lines.map((l) => [l.n, l.text, l.rule, l.checks, l.refused]), [
-    [1, 'Find 3 flights', 'PASS: quoted from the page; FAIL: invented price', [{ name: 'flights-found', cls: 'judge' }], []],
-    [2, 'Sort them cheapest first', 'direct only', [{ name: 'sorted-by-price', cls: 'machine check' }], []],
+    [1, 'Find 3 flights', 'PASS: quoted from the page; FAIL: invented price', [{ name: 'flights-found', cls: 'judge', by: 'agent' }], []],
+    [2, 'Sort them cheapest first', 'direct only', [{ name: 'sorted-by-price', cls: 'machine check', by: 'agent' }], []],
     [3, 'Write a table', '', [], ['no command can check a table layout']],
   ]);
   assert.deepEqual(p.alwaysOn, ['changed-from-seed']);
@@ -75,8 +75,8 @@ test('planFromConfirm: the person\'s lines, the model\'s checks under the line e
     [{ n: 1, text: 'Fix it', rule: '' }, { n: 2, text: 'Run tests', rule: 'quiet' }],
     { checkItems: [{ text: 'tsc clean', fromLine: [1] }, { text: 'tests pass', fromLine: [2] }, { text: 'stray', fromLine: [9] }], notChecked: ['style'], protections: ['no-suppressions'] },
   );
-  assert.deepEqual(p.lines.map((l) => l.checks), [[{ name: 'tsc clean', cls: null }], [{ name: 'tests pass', cls: null }]]);
-  assert.deepEqual(p.loose, [{ name: 'stray', cls: null }]);
+  assert.deepEqual(p.lines.map((l) => l.checks), [[{ name: 'tsc clean', cls: null, by: 'agent' }], [{ name: 'tests pass', cls: null, by: 'agent' }]]);
+  assert.deepEqual(p.loose, [{ name: 'stray', cls: null, by: 'agent' }]);
   assert.deepEqual([p.notChecked, p.alwaysOn], [['style'], ['no-suppressions']]);
   assert.equal(checkClassOfKind('judged-floor'), 'judge');
   assert.equal(checkClassOfKind('command-exit'), 'machine check');
@@ -205,4 +205,24 @@ test('confirmedGoalOf reads back what rubricGoal wrote with the same prefix', ()
   const g = rubricGoal({ jobLines: [{ n: 1, text: 'a', rule: '' }], files: [{ label: 'f', rel: 'input/f.txt' }], confirmedGoal: 'One sentence.' });
   assert.equal(confirmedGoalOf(g), 'One sentence.');
   assert.equal(confirmedGoalOf(rubricGoal({ jobLines: [{ n: 1, text: 'a', rule: '' }], files: [{ label: 'f', rel: 'input/f.txt' }] })), null);
+});
+
+// R7b ruling (live runs mw6skdyk, mw6u5794): a run that ended BEFORE it started (refused or skipped: a listed row, a settled event, no spine file) used to open an empty Job tab.
+// Its row's spine path still names its session folder, so the signed job is read from that folder's resolved-spec.json, through the same renderer.
+test('getRunJob: a run with NO spine file (refused / skipped before start) still shows the signed job from its session folder', () => {
+  const home = tmp('p7-nospine-home-');
+  const out = tmp('p7-nospine-out-');
+  const into = join(out, 'source-seed');
+  mkdirSync(join(into, 'p7-job-bareloop'), { recursive: true });
+  writeFileSync(join(into, 'source.json'), JSON.stringify({ source: '/the/original/source', destination: 'out/' }));
+  writeFileSync(join(out, 'resolved-spec.json'), JSON.stringify(NEW_SPEC));
+  const spine = join(into, 'p7-job-bareloop', 'u-nospine1.jsonl');   // never written: the run refused before it began
+  appendRun({ at: '2026-11-07T10:00:00.000Z', runid: 'nospine1', job: 'p7-job', spine, patient: null, via: 'run-u' }, { home });
+  const j = getRunJob('nospine1', { home });
+  assert.ok(j, 'the Job tab has a body');
+  assert.equal(j.plan.lines.length, 3);
+  assert.deepEqual(j.jobLines, NEW_SPEC.jobLines);
+  assert.deepEqual(j.inputs, NEW_SPEC.inputs);
+  assert.equal(j.resolvedFrom, "the run's own resolved-spec.json");
+  assert.equal(j.specHash, null, 'no start record: the page claims no signature time or hash the run never recorded');
 });

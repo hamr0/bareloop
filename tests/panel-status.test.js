@@ -15,9 +15,9 @@ import { jobSpecHash } from '../src/job.js';
 after(() => { for (const d of tmps) rmSync(d, { recursive: true, force: true }); });
 const tmp = () => { const d = mkdtempSync(join(tmpdir(), 'panel-status-')); tmps.push(d); return d; };
 
-test('C6: the table is exactly the seven signs/words hamr ruled', () => {
+test('C6: the table is exactly the seven signs/words hamr ruled plus skipped (MCP + tickets R5)', () => {
   assert.deepEqual(Object.entries(STATUS).map(([k, v]) => `${k}:${v.sign}:${v.word}`), [
-    'running:▶:running', 'waiting:·:waiting', 'passed:✓:passed', 'failed:✗:failed', 'capped:✗:capped', 'stopped:■:stopped', 'died:?:died',
+    'running:▶:running', 'waiting:·:waiting', 'passed:✓:passed', 'failed:✗:failed', 'capped:✗:capped', 'stopped:■:stopped', 'died:?:died', 'skipped:–:skipped',
   ]);
 });
 

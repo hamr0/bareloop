@@ -171,6 +171,16 @@ test('no index / getNode throws / no named chunks: today\'s read plus a skip rec
   }
 });
 
+test('lc.indexed false: the skip reason is no-index even when getNode would answer', async (t) => {
+  const r = await repo(t, { 'src/a.js': manyFns(80) });
+  const { read, events } = shimFor(r, { indexed: () => false });
+  const p = join(r.dir, 'src/a.js');
+  assert.equal(await read.execute({ path: p }), readFileSync(p, 'utf8'));
+  assert.deepEqual(events, [{ type: 'read-map-skip', data: { path: 'src/a.js', reason: 'no-index' } }]);
+  const on = shimFor(r, { indexed: () => true });
+  assert.match(await on.read.execute({ path: p }), /map, not the file/);
+});
+
 test('an off shim arm serves no map even with readMap given', async (t) => {
   const r = await repo(t, { 'src/a.js': manyFns(80) });
   const events = [];

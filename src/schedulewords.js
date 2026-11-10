@@ -52,6 +52,7 @@ export const SCHEDULE_WORDS = Object.freeze({
     weekly: 'Every <day> at HH:MM',
     'file-updated': 'When <file> is updated',
     'new-file': 'When a new file arrives in <folder>',
+    'new-ticket': 'When a new ticket arrives in <input>',
   }),
   // RULED 2026-10-15: the Needs-you pill of a schedule that gave up (hamr may reword)
   gaveUpPill: 'Check',
@@ -59,10 +60,40 @@ export const SCHEDULE_WORDS = Object.freeze({
   problemNext: 'next: fix it in Cancel / modify schedule',
   monthNext: 'next: raise the limit in Settings, or it starts on the 1st',
   acceptWaiting: 'waiting for your Accept (the next run does not wait)',
+  // R7 (piece 9, fwd SCHEDULE_WAITING_SAY): a schedule signed with the job on the New job card is off until the job's first green run (a rubric job: until that run is accepted)
+  waiting: 'Schedule waiting for a green run',
   scheduleGroup: 'schedule',
   notGreen: 'This job has not had a good run yet. Run it by hand and get it right first; then you can set when it runs. A rubric job also needs your Accept once. Nothing was changed.',
+  // R7: the New job card's Schedule row (fwd's three words and two hints; the rubric hint is bareloop's own, because a judged green waits for the Accept)
+  card: Object.freeze({
+    label: 'Schedule',
+    options: Object.freeze({ hand: 'By hand', 'new-ticket': 'When a new ticket arrives', daily: 'Every day at HH:MM' }),
+    hint: 'off until the first green run, then turns on',
+    rubricHint: 'off until the first green run is accepted, then turns on',
+    ticketHint: 'the first run reads the newest ticket at the time it starts; older tickets never run',
+  }),
   stale: 'What you were shown is not what is on the card now. Nothing was signed. Look again, then sign.',
 });
+
+/** `&`, `<`, `>` and quotes made safe for page markup. @param {string} s */
+const markup = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/**
+ * R7 (piece 9): the New job card's Schedule row is served with its words from {@link SCHEDULE_WORDS}`.card`, never typed into the page: each token in `index.html` is replaced by
+ * the server when the page is sent (the way the port is), so a reword is ONE edit here. @returns {Record<string, string>} token -> escaped words
+ */
+export function scheduleCardFill() {
+  const c = SCHEDULE_WORDS.card;
+  return {
+    __BARELOOP_SCHED_LABEL__: markup(c.label),
+    __BARELOOP_SCHED_OPT_HAND__: markup(c.options.hand),
+    __BARELOOP_SCHED_OPT_TICKET__: markup(c.options['new-ticket']),
+    __BARELOOP_SCHED_OPT_DAILY__: markup(c.options.daily),
+    __BARELOOP_SCHED_HINT__: markup(c.hint),
+    __BARELOOP_SCHED_HINT_RUBRIC__: markup(c.rubricHint),
+    __BARELOOP_SCHED_HINT_TICKET__: markup(c.ticketHint),
+  };
+}
 
 /**
  * What starts the job, in words. `null` (by hand) has no sentence.
@@ -75,6 +106,7 @@ export function scheduledWords(t, home) {
   if (t.kind === 'weekdays') return `Weekdays at ${hhmm(t)}`;
   if (t.kind === 'weekly') return `${DAY_PLURAL[/** @type {keyof typeof DAY_PLURAL} */ (t.day)] ?? t.day} at ${hhmm(t)}`;
   if (t.kind === 'file-updated') return `When ${basename(t.path)} is updated`;
+  if (t.kind === 'new-ticket') return `When a new ticket arrives in ${t.input}`;
   const folder = tilde(/** @type {{folder: string}} */ (t).folder, home);
   return `When a new file arrives in ${folder.endsWith('/') ? folder : `${folder}/`}`;
 }
@@ -106,6 +138,9 @@ export function nextInWords(ms, now) {
   return hours < 48 ? `next in ${hours}h` : `next in ${Math.floor(hours / 24)}d`;
 }
 
+/** R9 (fwd 9b.3): the one red line for a ticket look that could not read, with its cause (never "0 new"). The look cadence is fixed at 15 minutes. @param {{at: number, why: string}} p */
+export const lookProblemWords = (p) => `could not read the tickets: ${String(p.why).trim().replace(/\.$/, '').replace(/([?!])$/, '$1')}${/[?!]$/.test(String(p.why).trim()) ? '' : '.'} It looks again in 15 minutes.`;
+
 /**
  * NEXT of a scheduled job: one sentence, first match wins.
  *  1. a run of this job is waiting for the person's Accept (the next scheduled run does NOT wait for it, T7);
@@ -113,16 +148,17 @@ export function nextInWords(ms, now) {
  *  3. a clock kind with a next slot; 4. a file kind that is armed; 5. not armed yet.
  * A last outcome of `refused` goes in front of 3-5, so a trigger that cannot start is never silent.
  * `red` is the typed flag for "the person must act": the page paints it and never guesses from the text.
- * @param {{trigger: Trigger, armed: boolean, nextSlotMs: number|null, lastOutcome: any, waitingRunNo: number|null, now: number, retryInMs?: number|null, gaveUp?: any}} f
+ * @param {{trigger: Trigger, armed: boolean, nextSlotMs: number|null, lastOutcome: any, waitingRunNo: number|null, now: number, retryInMs?: number|null, gaveUp?: any, lookProblem?: {at: number, why: string}|null}} f
  *   `lastOutcome` = the newest outcome row of the CURRENT signing (`kind`, `at` in ms, `why`, `leftUsd`, `needUsd`, `atLeast`)
  * @returns {{text: string, red: boolean}}
  */
 export function scheduledNextFor(f) {
-  const { trigger, armed, nextSlotMs, lastOutcome, waitingRunNo, now, retryInMs = null, gaveUp = null } = f;
+  const { trigger, armed, nextSlotMs, lastOutcome, waitingRunNo, now, retryInMs = null, gaveUp = null, lookProblem = null } = f;
   /** @param {string} text @param {boolean} [red] */
   const say = (text, red = false) => ({ text, red });
   if (waitingRunNo !== null) return say(`Run ${waitingRunNo} is waiting for your Accept. The next scheduled run does not wait for it.`);
   if (gaveUp && typeof gaveUp === 'object') return say(gaveUpNextWords(gaveUp.why), true);
+  if (lookProblem) return say(`The last look ${lookProblemWords(lookProblem)}`, true);   // R9 (fwd 9b.3): a look that could not read is never "waiting for a new ticket"
   const last = lastOutcome && typeof lastOutcome === 'object' ? lastOutcome : null;
   const sameMonth = last !== null && sameMonthAs(last.at, now);
   if (last !== null && last.kind === 'monthly-exhausted' && sameMonth && typeof last.leftUsd === 'number' && typeof last.needUsd === 'number') {
@@ -134,6 +170,7 @@ export function scheduledNextFor(f) {
   if (!armed) return say(`${lead}Not armed yet: the panel arms it on its next check.`, red);
   if (trigger.kind === 'file-updated') return say(`${lead}Watching for it. A run starts when its contents change.`, red);
   if (trigger.kind === 'new-file') return say(`${lead}Watching for it. A run starts for each new file.`, red);
+  if (trigger.kind === 'new-ticket') return say(`${lead}Watching for it. A run starts for each new ticket.`, red);
   if (nextSlotMs === null) return say(`${lead}Not armed yet: the panel arms it on its next check.`, red);
   return say(`${lead}Next run ${slotWords(nextSlotMs)}.`, red);
 }
@@ -207,7 +244,9 @@ export function startedWords(rec, atMs) {
   if (!rec || typeof rec !== 'object') return `${SCHEDULE_WORDS.byHand}${when}`;
   const trig = typeof rec.trigger === 'string' ? rec.trigger : '';
   let how;
-  if (rec.kind === 'file') {
+  if (rec.kind === 'ticket') {
+    how = `By a new ticket: #${rec.ticket}`;
+  } else if (rec.kind === 'file') {
     const name = basename(String(rec.file ?? ''));
     how = isNewFile(rec) ? `By a new file: ${name}` : `By a file update: ${name}`;
   } else {
@@ -225,6 +264,7 @@ export function startedWords(rec, atMs) {
  */
 export function startedAuditWords(rec, originNo) {
   const from = originNo === null ? '' : ` · from run-${originNo}`;
+  if (rec.kind === 'ticket') return `started by the schedule · new ticket #${rec.ticket}${from}`;
   if (rec.kind === 'file') return `started by the schedule · ${isNewFile(rec) ? 'new file' : 'file update'} ${basename(String(rec.file ?? ''))}${from}`;
   const slot = typeof rec.slot === 'number' ? ` · slot ${two(new Date(rec.slot).getHours())}:${two(new Date(rec.slot).getMinutes())}` : '';
   return `started by the schedule · ${lowerFirst(String(rec.trigger ?? ''))}${slot}${from}${rec.catchUp === true ? ' · catch-up' : ''}`;
@@ -253,12 +293,13 @@ export function skippedWords(row, short = false) {
 /**
  * Job tab, "Schedule": the job's schedule NOW and what it is bound to. The first part IS the Run tab's line ({@link scheduledWords}),
  * first letter lowered, so the two can never disagree.
- * @param {{trigger: Trigger|null, originNo: number|null, model: string|null, destination: string|null, home?: string}} f
+ * @param {{trigger: Trigger|null, originNo: number|null, model: string|null, destination: string|null, home?: string, waiting?: boolean}} f `waiting` (R7): signed with the job and still off
  */
 export function jobScheduleWords(f) {
   const w = f.trigger ? scheduledWords(f.trigger, f.home) : null;
   if (w === null) return 'none';
   const parts = [lowerFirst(w)];
+  if (f.waiting === true) parts.push(lowerFirst(SCHEDULE_WORDS.waiting));
   if (f.originNo !== null) parts.push(`from run-${f.originNo}`);
   if (f.model) parts.push(f.model);
   if (f.destination) parts.push(tilde(f.destination, f.home));
@@ -284,6 +325,7 @@ export function scheduleSignFor(f) {
 
 /** Audit schedule section, the `this run` words of a run the schedule started (the head already says which schedule and from where). @param {any} rec `trigger.json` */
 export function sectionThisRunWords(rec) {
+  if (rec.kind === 'ticket') return `started by the schedule · new ticket #${rec.ticket}`;
   if (rec.kind === 'file') return `started by the schedule · ${isNewFile(rec) ? 'new file' : 'file update'} ${basename(String(rec.file ?? ''))}`;
   let late = '';
   if (rec.catchUp === true) {

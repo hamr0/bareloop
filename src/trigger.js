@@ -6,20 +6,25 @@
 //   {kind:'weekly', day:'mon'..'sun', hour, minute}
 //   {kind:'new-file', folder}        absolute path
 //   {kind:'file-updated', path}      absolute path
+//   {kind:'new-ticket', input}       the LABEL of the job's ticket-list Inputs line (MCP + tickets piece 3); the server, list address and look tool are
+//                                    read from the signed spec (`mcp`, `inputs`, `ticketWatch`), never stored here
 // Rewritten from fwdloop src/trigger-line.js (its prose-line grammar is replaced: the signed thing is the JSON spec).
 import { isAbsolute } from 'node:path';
 import { validateSchedule } from './triggerclock.js';
 
-/** @typedef {import('./triggerclock.js').Schedule | {kind:'new-file', folder:string} | {kind:'file-updated', path:string}} Trigger */
+/** @typedef {import('./triggerclock.js').Schedule | {kind:'new-file', folder:string} | {kind:'file-updated', path:string} | {kind:'new-ticket', input:string}} Trigger */
 
-export const TRIGGER_KINDS = Object.freeze(['daily', 'weekdays', 'weekly', 'new-file', 'file-updated']);
+export const TRIGGER_KINDS = Object.freeze(['daily', 'weekdays', 'weekly', 'new-file', 'file-updated', 'new-ticket']);
 export const CLOCK_KINDS = Object.freeze(['daily', 'weekdays', 'weekly']);
 export const FILE_KINDS = Object.freeze(['new-file', 'file-updated']);
+export const TICKET_KINDS = Object.freeze(['new-ticket']);
 
 /** @param {unknown} t @returns {t is {kind:'daily'|'weekdays'|'weekly', hour:number, minute:number}} */
 export const isClockTrigger = (t) => !!t && typeof t === 'object' && CLOCK_KINDS.includes(/** @type {any} */ (t).kind);
 /** @param {unknown} t @returns {t is {kind:'new-file', folder:string} | {kind:'file-updated', path:string}} */
 export const isFileTrigger = (t) => !!t && typeof t === 'object' && FILE_KINDS.includes(/** @type {any} */ (t).kind);
+/** @param {unknown} t @returns {t is {kind:'new-ticket', input:string}} */
+export const isTicketTrigger = (t) => !!t && typeof t === 'object' && TICKET_KINDS.includes(/** @type {any} */ (t).kind);
 
 /**
  * The only way a trigger enters the system. Returns the typed trigger, or says what to fix (and which field).
@@ -37,6 +42,13 @@ export function validateTrigger(t) {
     const extra = Object.keys(o).find((k) => !allowed.includes(k));
     if (extra !== undefined) return no(`trigger field "${extra}" is not allowed on a ${o.kind} trigger`, `trigger.${extra}`, 'unknown-field');
     try { return { ok: true, trigger: validateSchedule(o) }; } catch (e) { return no(/** @type {Error} */ (e).message.replace(/^schedule/, 'trigger')); }
+  }
+  if (o.kind === 'new-ticket') {
+    const stray = Object.keys(o).find((k) => k !== 'kind' && k !== 'input');
+    if (stray !== undefined) return no(`trigger field "${stray}" is not allowed on a new-ticket trigger (it takes an input)`, `trigger.${stray}`, 'unknown-field');
+    // eslint-disable-next-line no-control-regex
+    if (typeof o.input !== 'string' || o.input.trim() === '' || /[\x00-\x1f\x7f]/.test(o.input)) return no('the input must be the name of a ticket list in the job\'s Inputs, on one line, like issues', 'trigger.input');
+    return { ok: true, trigger: { kind: 'new-ticket', input: o.input } };
   }
   const where = o.kind === 'new-file' ? 'folder' : 'path';
   const extra = Object.keys(o).find((k) => k !== 'kind' && k !== where);

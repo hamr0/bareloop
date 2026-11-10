@@ -37,8 +37,8 @@ const JOB_LINES = [{ n: 1, text: 'List the last 3 releases', rule: '' }, { n: 2,
 const FILES = [{ label: 'Changelog', rel: 'input/CHANGELOG.md' }];
 
 test('the contract names both shapes; the goal briefs a facts line by its facts and count, and a text line by its number tie', () => {
-  assert.match(stepFileContract(), /FACTS line is different: its file holds ONLY \{"results"/);
-  assert.match(stepFileContract(), /no "text" and no "cites"/);
+  assert.match(stepFileContract(), /FACTS line is different: its file holds \{"results"/);
+  assert.match(stepFileContract(), /writes them; no "cites"/);
   const briefs = lineBriefs(closeDecl());
   assert.deepEqual(briefs.map((b) => b.line), [1, 2]);
   const [facts, text] = briefs.map((b) => b.text);

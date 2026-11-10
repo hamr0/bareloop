@@ -1238,7 +1238,7 @@ export async function main(argv, deps = {}) {
         if (!signing.ok) {
           const t = costSoFar();
           out(`\n${signingStopText({
-            reds: signing.reds ?? [], refusal: signing.refusal,
+            reds: signing.reds ?? [], refusal: signing.refusal, closeDecl: spec.closeDecl,
             spend: { knownUsd: t.knownUsd ?? null, spendComplete: t.spendComplete ?? null },
           })}`);
         }

@@ -27,7 +27,7 @@ import {
 } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import {
-  prepareSource, proveDestination, proveRubricInputs, looksLikeRubricInput, missingDependencies, looksLikeRepoSource, nearestGitAncestor, nonRepoSourceMessage,
+  prepareSource, proveDestination, proveRubricInputs, looksLikeRubricInput, missingDependencies, looksLikeRepoSource, nearestGitAncestor, nonRepoSourceMessage, destinationMissingInRepo, repoTrackedFiles,
 } from '../source.js';
 import {
   worktreePath, uncommittedCount, shortHead, removeWorktree,
@@ -48,21 +48,30 @@ import {
   resolveProvider, buildRunnerProviders, apiKeyProblem,
 } from '../providers.js';
 import { resolveJobJudge, defaultJudgeLoop } from '../judged.js';
-import { assertThinkingMode, thinkingPlanFor, thinkingRowText } from '../thinking.js';
+import { assertThinkingMode, thinkingPlanFor, thinkingRowText, thinkingCallOptions } from '../thinking.js';
 import { closeJudges } from '../kinds.js';
 import { RUBRIC_LANG } from '../authoring.js';
 import { rubricGoal, reconcileRubricPlan, signedFactNames } from '../rubricstep.js';
 import { redactSecrets } from '../validate.js';
+import { FLOW_TYPES } from '../job.js';
+import { mcpPickFor, signFlow } from '../mcppick.js';
+import { parseTicketList, ticketNumberOf, TICKET_NUMBER_WORDS } from '../ticketshape.js';
 import { isDropIt, isAgree, stripAgreeLead } from '../pagemap.js';
+import { plainWords, SUGGEST_SYSTEM, settleRules } from '../checkpick.js';
+import { readRecordFile, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
+import { MAX_REVISES, draftLabelOf, nextRevisesUsed, sessionsRootOf, writeRevisesUsed } from '../revises.js';
 import { FIT_ABSENT_NOTE } from '../fitcheck.js';
+import { runDestPoint, destQuestionText, yesNoOf } from '../destpoint.js';
 import { tallyCalls } from '../text.js';
 import { appendDraftLog } from '../draftspend.js';
 import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, draftStopText, redsRecord, declarationRecord, calibrationSummary, tryRefusedText } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 import {
-  parseJobBlock, parseInputs, jobBlockFitsCheck, renderJobLines, renderExamples, signedJobLines,
+  parseJobBlock, parseInputs, jobBlockFitsCheck, renderJobLines, renderExamples, signedJobLines, jobBoxText,
 } from '../jobblock.js';
 import { planFromConfirm } from './jobplan.js';
+import { isTicketTrigger } from '../trigger.js';
+import { ticketLookOf } from '../ticketschedule.js';
 
 /**
  * THE PROGRESS LIST's one table (hamr 2026-10-04, "one place showing all"): every pipeline step the left Chat panel
@@ -170,7 +179,7 @@ export const PLAN_FOOTER = 'Sign & run to confirm this plan, or Revise to edit t
  * The confirm turn's plan as a chat message (P7): a STRUCTURED `{role:'bot', kind:'plan', plan}` the page draws with the
  * same renderer the Job tab uses — each numbered job line, its `~` rule, its drafted checks folded; the AI's own "not
  * checked"; the always-on guards. `questions` (what the plan still asks) ride inside the plan. One owner of the shape.
- * @param {{goal?: string, checks?: string[], checkItems?: {text: string, fromLine: number[]|null}[], notChecked?: string[], questions?: string[], protections?: string[], signedFacts?: string[]}} p the confirm turn's plan
+ * @param {{goal?: string, checks?: string[], checkItems?: {text: string, fromLine: number[]|null}[], notChecked?: string[], questions?: string[], protections?: string[], signedFacts?: string[], ticketFilter?: any, picked?: {line: number, text: string}[]}} p the confirm turn's plan
  * @param {{n: number, text: string, rule: string}[]|null} jobLines
  * @returns {{role: 'bot', kind: 'plan', text: string, plan: ReturnType<typeof planFromConfirm> & {goal: string, questions: string[]}}}
  */
@@ -224,7 +233,7 @@ export function nextFreeJobName(origin, runJobs, opts = {}) {
 }
 
 /** the form's fields, in card order — what `card.json` stores, verbatim (P5 item 3) */
-export const CARD_FIELDS = Object.freeze(['jobName', 'checkType', 'provider', 'model', 'thinking', 'jobText', 'inputs', 'destination', 'capUsd', 'maxWallMs']);
+export const CARD_FIELDS = Object.freeze(['jobName', 'checkType', 'provider', 'model', 'thinking', 'jobText', 'inputs', 'destination', 'capUsd', 'maxWallMs', 'flowType', 'mcp', 'ticket', 'schedule']);
 
 /**
  * The repo a card names: Inputs line 1 (P7 — the Source box is gone; the first input IS the repo). `''` when the Inputs
@@ -255,7 +264,53 @@ export function cardFields(card) {
  * `~` rules, `~ PASS`/`~ FAIL`), the check type and the thinking tick. The RUN boxes (Inputs, Destination, Model, $ cap, Time cap)
  * never decide it. A green origin with no job box changed reuses the signed plan verbatim (no drafting); anything else drafts.
  */
-export const JOB_BOXES = Object.freeze(['jobText', 'checkType', 'thinking']);
+export const JOB_BOXES = Object.freeze(['jobText', 'checkType', 'thinking', 'flowType', 'mcp']);
+
+/**
+ * The card's flow type and MCP, normalised: a card with no `flowType` (or `plain`) is plain with no MCP; any other pick keeps its server name.
+ * @param {any} card @returns {{flowType: 'plain'|'mcp'|'tickets', mcp: string}}
+ */
+export function flowOfCard(card) {
+  const t = card?.flowType;
+  if (t !== 'mcp' && t !== 'tickets') return { flowType: 'plain', mcp: '' };
+  return { flowType: t, mcp: typeof card?.mcp === 'string' ? card.mcp.trim() : '' };
+}
+
+/**
+ * ITEM33-BUILD piece 8: what the card's Flow type and MCP become, decided at $0 before any session (nothing is started, no server runs). A plain card is `{flowType:'plain', pick:null}`.
+ * An MCP or Tickets card needs a server named in Settings > MCP and that server's newest successful `check tools` (`mcpPickFor`: ALL its tools, set by code); an unknown flow type, no pick, a
+ * never-checked MCP and a Tickets card with no ticket-list Inputs line are refused in plain words.
+ * @param {any} card @param {{ home?: string, mcpHome?: string }} [o]
+ * @returns {{ok: true, flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null} | {ok: false, error: string}}
+ */
+export function resolveFlowCard(card, o = {}) {
+  if (card?.flowType !== undefined && !FLOW_TYPES.includes(card.flowType)) return { ok: false, error: `Flow type must be one of ${FLOW_TYPES.join(', ')}.` };
+  const { flowType, mcp } = flowOfCard(card);
+  if (flowType === 'plain') return { ok: true, flowType, pick: null };
+  if (mcp === '') return { ok: false, error: 'Pick an MCP.' };
+  const pick = mcpPickFor(mcp, o);
+  if (!pick.ok) return { ok: false, error: pick.say };
+  if (flowType === 'tickets') {
+    const ip = parseInputs(card.inputs);
+    if (ip.ok && !ip.inputs.some((i) => parseTicketList(i.value).ok)) {
+      return { ok: false, error: 'Tickets MCP needs the ticket list address (the issues or pulls page of one repository) as an Inputs line.' };
+    }
+  }
+  return { ok: true, flowType, pick: { server: pick.server, tools: pick.tools } };
+}
+
+/**
+ * The by-hand ticket of a Tickets MCP run (ITEM33-BUILD piece 8): the number typed on the card, the same number `--ticket` takes, or BLANK = the newest ticket this job has not run
+ * (R6: `run-u` finds it with the schedule's own look, src/ticketnext.js, and a list that cannot be looked at says so and asks for a number). Any other job takes none.
+ * @param {any} card @param {'plain'|'mcp'|'tickets'} flowType the FINAL flow type of the job (the card's, or the reused spec's)
+ * @returns {string|null} the refusal in plain words, or null when the card is fine
+ */
+export function ticketBoxProblem(card, flowType) {
+  const typed = typeof card?.ticket === 'string' ? card.ticket.trim() : (typeof card?.ticket === 'number' ? String(card.ticket) : '');
+  if (flowType !== 'tickets') return typed === '' ? null : 'A ticket number is only for a Tickets MCP job. Clear the Ticket box.';
+  if (typed === '') return null;
+  return ticketNumberOf(typed) === undefined ? `The ticket must be ${TICKET_NUMBER_WORDS}, not "${typed}".` : null;
+}
 
 /**
  * Did any JOB box on `card` change from what the origin run prefilled (`origin`)? Whitespace is not compared (a one-line input drops
@@ -267,6 +322,8 @@ export const JOB_BOXES = Object.freeze(['jobText', 'checkType', 'thinking']);
 export function jobBoxesChanged(card, origin) {
   const text = (/** @type {any} */ v) => (typeof v === 'string' ? v.replace(/\s+/g, '') : '');
   return text(card?.jobText) !== text(origin?.jobText)
+    || flowOfCard(card).flowType !== flowOfCard(origin).flowType
+    || flowOfCard(card).mcp !== flowOfCard(origin).mcp
     || (card?.checkType === 'rubric') !== (origin?.checkType === 'rubric')
     || (card?.thinking === true) !== (origin?.thinking === true);
 }
@@ -335,6 +392,9 @@ export { nonRepoSourceMessage };
 /** the refusal for a plain-files rubric job whose Destination is not an absolute folder (ends with the words the session start shows) */
 export const FILES_DESTINATION_WORDS = 'Destination must be the full path of a folder, like /home/me/out — the finished files are delivered there. Nothing spent.';
 
+/** the fixed example of a Destination refusal (code-owned; it never guesses a folder from the job's words) */
+export const DESTINATION_HINT = 'Type the folder that holds the files the job should change, like src/.';
+
 /**
  * THE ONE Destination check of a session start, at $0, before any session, copy or model call. The session's own pipeline, the HTTP
  * start (`startSession`), the schedule's two clicks and a scheduled fire's `wouldAccept` all call THIS (never a copy of it), so a start
@@ -349,6 +409,12 @@ export function startDestinationProblem(card) {
   const isRepoLike = looksLikeRepoSource(source);
   const repo = repoDestinationProblem(destination, isRepoLike);
   if (repo !== null) return repo;
+  // R7b (F287): a repo's Destination is the write fence, so every piece of it must name something the repo really has (its committed tree: what the job's copy holds)
+  if (isRepoLike) {
+    const root = nearestGitAncestor(resolve(source))?.dir;
+    const missing = root === undefined ? null : destinationMissingInRepo(root, destination);
+    if (missing !== null) return `Destination \`${missing}\` is not a folder or file in this repo. ${DESTINATION_HINT}`;
+  }
   if (card?.checkType === 'rubric' && !isRepoLike && !isAbsoluteDestination(destination)) return FILES_DESTINATION_WORDS;
   return null;
 }
@@ -407,8 +473,8 @@ export function validateJobCard(card, opts = {}) {
  * `signPrepare()` are the only ways in.
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
- *   scout?: any, generate?: Function, confirmGenerate?: Function, authorFn?: Function,
- *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, fitFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}}} [deps] `scout`..`prepareSigningFn` are
+ *   scout?: any, generate?: Function, pickGenerate?: Function|null, carryFrom?: string, carryKind?: string, confirmGenerate?: Function, authorFn?: Function,
+ *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, fitFn?: Function|null, destFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, schedule?: import('../trigger.js').Trigger|null, flow?: {flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
  * @returns {any} the session object
@@ -426,7 +492,7 @@ export function createSession(card, deps = {}) {
   const INPUTS = inputsParsed.ok ? inputsParsed.inputs : [];
   /** the repo — Inputs line 1 */
   const SOURCE = INPUTS[0]?.value ?? '';
-  const sessionsRoot = deps.sessionsRoot ?? join(process.env.HOME ?? '/tmp', '.config', 'bareloop', 'panel-sessions');
+  const sessionsRoot = sessionsRootOf(deps.sessionsRoot);
   // config.json lives beside the sessions dir (~/.config/bareloop) unless a home is injected
   const configHome = deps.home ?? dirname(sessionsRoot);
   const timeoutMs = deps.timeoutMs ?? 300_000;
@@ -442,13 +508,27 @@ export function createSession(card, deps = {}) {
   const id = `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const outDir = join(sessionsRoot, id);
   mkdirSync(outDir, { recursive: true });
+  // R10 (fwd am17/am18/am20): the picks record of the earlier session this draft follows (a Revise, or a Start over), read from that session's own folder. The id is a session id
+  // (never a path); no record, or an unreadable one, is no record: every rule is asked.
+  const carriedPicks = typeof deps.carryFrom === 'string' && /^s[a-z0-9]+$/.test(deps.carryFrom) ? readRecordFile(join(sessionsRoot, deps.carryFrom, RECORD_FILE)) : null;
+
+  // fwd M4e am14 item 3: the revises this draft has used (src/revises.js); the page reads `revisesLeft` to word its button
+  const revisesUsed = nextRevisesUsed(sessionsRoot, deps.carryFrom, deps.carryKind);
+  writeRevisesUsed(outDir, revisesUsed);
+  // fwd am14 item 6: the draft record says which kind of draft this is (a first draft says nothing); the Audit's Draft group reads it back
+  const draftLabel = draftLabelOf(deps.carryFrom, deps.carryKind, revisesUsed);
+  if (draftLabel !== null) appendDraftLog(outDir, { kind: 'draft-label', no: 0, label: draftLabel, at: new Date().toISOString() });
 
   /** @type {any} */
   const state = {
     id,
+    revisesUsed,
+    revisesLeft: Math.max(0, MAX_REVISES - revisesUsed),
     // the form as submitted + whether it is a reuse session: a refreshed page re-attaches to a live session from these
     card: cardFields(card),
     reuse: deps.reuse !== undefined,
+    // R7: the schedule the card asked for (the typed trigger the job is signed with); `signRun` writes it OFF beside the run it starts
+    ...(deps.schedule ? { schedule: deps.schedule } : {}),
     messages: /** @type {{role: string, text: string}[]} */ ([]),
     pendingAsk: /** @type {any} */ (null),
     cost: /** @type {any} */ (null),
@@ -524,7 +604,9 @@ export function createSession(card, deps = {}) {
   /** @param {'bot'|'you'|'system'} role @param {string} text */
   const say = (role, text) => { state.messages.push({ role, text }); };
   /** a structured message (the plan bubble): the page draws it, the thread keeps it as data */
-  const sayPlan = (/** @type {any} */ plan) => { state.messages.push(planMessage(plan, jobLines)); };
+  /** the checks the person has agreed so far (their plain words, `kept from last draft` on a carried one): the plan bubble draws each once, as a `[you picked]` row @type {{line: number, text: string}[]} */
+  const pickedSoFar = [];
+  const sayPlan = (/** @type {any} */ plan) => { state.messages.push(planMessage({ ...plan, ...(pickedSoFar.length ? { picked: [...pickedSoFar] } : {}) }, jobLines)); };
 
   /** @type {((value: string|null) => void)|null} */
   let resolvePending = null;
@@ -564,7 +646,7 @@ export function createSession(card, deps = {}) {
     if (step.kind === 'language') say('bot', `${step.field?.prompt ?? 'Which language is this job about?'} (${(step.candidates ?? []).join(', ')})`);
     else if (step.kind === 'menu') {
       sayPlan(step.plan ?? {});
-    } else if (step.kind === 'answer' && step.source === 'fit-check') say('bot', step.question);
+    } else if (step.kind === 'answer' && (step.source === 'fit-check' || step.source === 'dest-point')) say('bot', step.question);
     else if (step.kind === 'answer') say('bot', `A question the plan raised (${step.index} of ${step.total})${Number.isInteger(step.line) ? `, about job line ${step.line}` : ''}: ${step.question}`);
     else if (step.kind === 'goal') say('bot', 'Type the goal sentence yourself.');
   });
@@ -605,6 +687,8 @@ export function createSession(card, deps = {}) {
     if (PHASE_STEP[name]) stepStart(PHASE_STEP[name], PHASE_STEP[name] === 'draft' ? `${card.model}, $${card.capUsd.toFixed(2)} cap` : undefined);
     // WHY a try was refused: the drafting log keeps it beside the call that made it (it used to say only "retry 3 of 3"), and the
     // progress line shows it briefly, in code's words
+    // PRD v1.131 tick 7: the retention counts of a rubric draft, one line when it ends (counts only, no words)
+    if (name === 'draft-retention' && Array.isArray(data.lines)) appendDraftLog(outDir, { kind: 'retention', no: Math.max(0, state.steps.length - 1), lines: data.lines, at: new Date().toISOString() });
     if (name === 'author-try-failed') {
       lastTryRefused = true;
       const no = state.steps.findLastIndex((/** @type {any} */ x) => x.id === 'draft');
@@ -867,6 +951,14 @@ export function createSession(card, deps = {}) {
      */
     const finish = async (spec, seedRef) => {
       if (abandoned) return;
+      // R7 (piece 9): a schedule picked on the card is part of the job the person signs, so the FIRST run's hash already covers it. By hand adds nothing (the key stays absent).
+      if (deps.schedule) {
+        spec.trigger = deps.schedule;
+        if (isTicketTrigger(deps.schedule)) {
+          const look = ticketLookOf(spec, deps.schedule);
+          if (!look.ok) { refuse(look.say); return; }
+        }
+      }
       const specFile = join(outDir, 'resolved-spec.json');
       writeFileSync(specFile, `${JSON.stringify(spec, null, 2)}\n`);
       state.resolvedSpecPath = specFile;
@@ -956,7 +1048,7 @@ export function createSession(card, deps = {}) {
           reds: redsRecord(signing.reds ?? [], { signing: true }), at: new Date().toISOString(),
         });
         refuse(signingStopText({
-          reds: signing.reds ?? [], refusal: signing.refusal,
+          reds: signing.reds ?? [], refusal: signing.refusal, closeDecl: spec.closeDecl,
           spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete },
         }));
         return;
@@ -989,7 +1081,7 @@ export function createSession(card, deps = {}) {
 
     // a rubric job on files writes only inside the hidden tree's own `output/`; its Destination is a drop-off folder
     // (proven above, per run), never a fence
-    const writeScope = RUBRIC_FILES ? ['output/'] : card.destination.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
+    let writeScope = RUBRIC_FILES ? ['output/'] : card.destination.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
     /** @type {any} the confirm turn (below) fills `goal` in once accepted —
      * declared loosely rather than typed field-by-field, since this object's
      * own shape is a `job-v1` draft `validateJob` itself is the real
@@ -1045,16 +1137,54 @@ export function createSession(card, deps = {}) {
     const noCallAfterAbandon = (fn) => (...a) => { if (abandoned) throw new Error('abandoned — no new model call'); return fn(...a); };
     const generate = noCallAfterAbandon(deps.generate ?? makeLoopGenerate(provider, { rates: draftPrice?.rates ?? null, draftThinking }));
     const confirmGenerate = noCallAfterAbandon(deps.confirmGenerate ?? makeLoopGenerate(provider, { system: CONFIRM_SYSTEM, rates: draftPrice?.rates ?? null, draftThinking }));
+    // R10 (fwd am16): the check-suggestion call's own model boundary (SUGGEST_SYSTEM, the drafter's thinking); a test that replaces the model boundary never reaches it unless it brings `deps.pickGenerate`
+    const pickGenerate = deps.pickGenerate !== undefined ? deps.pickGenerate : (deps.generate ? null : noCallAfterAbandon(makeLoopGenerate(provider, { system: SUGGEST_SYSTEM, rates: draftPrice?.rates ?? null, draftThinking })));
+
+    // R7b (3), hamr's option A: the drafting AI POINTS when a job line's file to change lies outside Destination; code checks the claim (src/destpoint.js) and asks ONE typed
+    // yes/no question through the same `ask` as the fit check's "go on". "yes" sets the fence (below) AND this session's card Destination (the page re-fills its box from it);
+    // "no" goes on unchanged. The fence and the draft are updated before the composer sees them, so the signed spec carries the answer. The caller's own card object is never mutated. A repo job only; failure is OPEN.
+    if (!RUBRIC_FILES && isRepoLike) {
+      const destFn = deps.destFn !== undefined ? deps.destFn : (deps.generate ? null : runDestPoint);
+      const tracked = destFn ? repoTrackedFiles(prep.tree) : null;
+      if (destFn && tracked !== null) {
+        const pointed = await destFn({
+          jobLines, files: tracked, destination: card.destination, provider, ceilingUsd: card.capUsd, onCall, ...(draftPrice?.rates ? { rates: draftPrice.rates } : {}),
+          ...(Object.keys(thinkingCallOptions(provider, draftThinking)).length ? { callOptions: thinkingCallOptions(provider, draftThinking) } : {}),
+        });
+        if (abandoned) return;
+        appendDraftLog(outDir, { kind: 'dest-point', no: Math.max(0, state.steps.length - 1), state: pointed.state, ...(pointed.point ? { line: pointed.point.line, file: redactSecrets(pointed.point.file), folder: redactSecrets(pointed.point.folder) } : {}), ...(pointed.reason ? { reason: redactSecrets(pointed.reason) } : {}), at: new Date().toISOString() });
+        if (pointed.state === 'point' && pointed.point) {
+          const question = destQuestionText(pointed.point, card.destination);
+          let said = null;
+          while (said === null) {
+            const a = await ask({ kind: 'answer', source: 'dest-point', index: 1, total: 1, question, line: pointed.point.line });
+            if (a === null) return;
+            said = yesNoOf(a);
+            if (said === null) say('bot', 'Type yes or no.');
+          }
+          appendDraftLog(outDir, { kind: 'dest-answer', no: Math.max(0, state.steps.length - 1), answer: said, from: redactSecrets(card.destination), to: redactSecrets(pointed.point.folder), at: new Date().toISOString() });
+          if (said === 'yes') {
+            card = { ...card, destination: pointed.point.folder };
+            writeScope = [pointed.point.folder];
+            draft.writeScope = writeScope;
+            state.card = { ...state.card, destination: pointed.point.folder };
+            say('bot', `Destination is now ${pointed.point.folder}. Drafting.`);
+          } else say('bot', 'Destination stays as it is. Drafting.');
+        }
+      }
+    }
 
     // P7 item 5 (fwdloop am24/25): the last drafting try, after two failed ones, may ask. Each question comes through the same
     // ask path as every other (the chat box + Send); the answer is REQUIRED (a blank one asks again, there is no skip) and is
     // added WORD FOR WORD as a `~` rule on the job line it names — never rewritten. The lines are mutated in place, so the
     // signed `jobLines`, the answers text and the plan card all read the same words.
-    const answerQuestions = async (/** @type {{questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}} */ o) => {
+    const answerQuestions = async (/** @type {{questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string, ruleText?: string, check?: Record<string, any>}[], dropped: {reason: string, raw: any}[], confirmed: any}} */ o) => {
       if (o.dropped.length) appendDraftLog(outDir, { kind: 'questions-dropped', no: Math.max(0, state.steps.length - 1), dropped: o.dropped, at: new Date().toISOString() });
       const total = o.questions.length;
       /** @type {{line: number, rule: number}[]} */
       const left = [];
+      /** R10: the picks the person made (fwd am16): the check agreed to, or their own words with no check @type {{line: number, rule: number, check: Record<string, any>|null, added?: string, own?: boolean}[]} */
+      const picks = [];
       for (let k = 0; k < total; k += 1) {
         const q = o.questions[k];
         let text = '';
@@ -1073,13 +1203,29 @@ export function createSession(card, deps = {}) {
         if (q.source === 'look') text = stripAgreeLead(text);
         if (q.source === 'look' && q.ask === 'reading' && typeof q.reading === 'string' && isAgree(text)) text = q.reading;
         if (q.source === 'look' && q.ask === 'cant-check' && Number.isInteger(q.rule) && isDropIt(text)) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); continue; }
+        // R10 (fwd am16): a check-pick ask. `agree` writes the proposal's plain words as a new `~` rule and picks the check; "drop it" leaves the rule Not checked; anything else
+        // is the person's own words, a `~` rule word for word with no check (Not checked: they judge it at Accept)
+        const isPick = q.source === 'look' && (q.ask === 'check' || q.ask === 'no-check') && Number.isInteger(q.rule);
+        // am21: the ask is about the person's EDITED added `~` line (`pairRule` = the rule it was agreed from): the answer REPLACES that line and the pick is kept under the source's number
+        const pair = isPick && Number.isInteger(/** @type {any} */ (q).pairRule) ? /** @type {number} */ (/** @type {any} */ (q).pairRule) : null;
+        if (isPick && isDropIt(text)) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); if (pair !== null) left.push({ line: q.line, rule: pair }); appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: q.line, rule: q.rule, ruleText: redactSecrets(String(q.ruleText ?? '')), proposed: q.reading ?? null, how: 'drop it', at: new Date().toISOString() }); continue; }
+        if (isPick) {
+          const agreed = q.ask === 'check' && q.check && isAgree(text);
+          if (agreed) text = plainWords(/** @type {any} */ (q.check));
+          if (agreed) pickedSoFar.push({ line: q.line, text: plainWords(/** @type {any} */ (q.check)) });
+          picks.push({ line: q.line, rule: pair ?? /** @type {number} */ (q.rule), check: agreed ? /** @type {any} */ (q.check) : null, added: text, ...(agreed ? {} : { own: true }) });
+          appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: q.line, rule: q.rule, ruleText: redactSecrets(String(q.ruleText ?? '')), proposed: q.reading ?? null, how: agreed ? 'agree' : 'own words', ...(agreed ? { picked: q.check } : {}), added: redactSecrets(text), at: new Date().toISOString() });
+        }
         const line = jobLines.find((l) => l.n === q.line);
-        if (line) { line.rule = line.rule ? `${line.rule}; ${text}` : text; line.rules.push(text); }
+        if (line && pair !== null) { line.rules[/** @type {number} */ (q.rule) - 1] = text; line.rule = line.rules.join('; '); }
+        else if (line) { line.rule = line.rule ? `${line.rule}; ${text}` : text; line.rules.push(text); }
       }
       draft.jobLines = signedJobLines(jobLines);
+      // R10 (fwd am21): the answers are `~` rules on the lines, so the card's job box says so too: a Revise reopens the boxes WITH them, and an edit of an agreed line is seen as an edit
+      state.card = { ...state.card, jobText: jobBoxText(jobLines) };
       answers[1] = renderJobLines(jobLines);
-      state.messages.push({ ...planMessage(o.confirmed ?? {}, jobLines), text: left.length === total ? 'Noted: those stay Not checked. Drafting.' : 'Your answers are in as ~ rules on those job lines. Drafting again.' });
-      return { jobLines, answers, left };
+      state.messages.push({ ...planMessage({ ...(o.confirmed ?? {}), ...(pickedSoFar.length ? { picked: [...pickedSoFar] } : {}) }, jobLines), text: left.length === total ? 'Noted: those stay Not checked. Drafting.' : 'Your answers are in as ~ rules on those job lines. Drafting again.' });
+      return { jobLines, answers, left, picks };
     };
 
     // F243: the fit check's one question, through the same `ask` (the chat box + Send; a blank answer asks again, there is no skip)
@@ -1107,7 +1253,15 @@ export function createSession(card, deps = {}) {
       rates: draftPrice?.rates ?? null,
       draftThinking,
       onPhase, onCall,
-      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult,
+      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, carriedPicks,
+      // R10: this draft's record (the picks it kept and the ones just answered) goes to its own folder for the next draft to carry; each kept pick is logged as such
+      onPicks: (/** @type {{entries: any[], kept: {line: number, rule: number, entry: any}[]}} */ o) => {
+        try { writeFileSync(join(outDir, RECORD_FILE), `${JSON.stringify({ picks: o.entries })}\n`, { mode: 0o600 }); } catch { /* the record is a convenience: a disk fault only means the next draft asks again */ }
+        for (const k of o.kept) {
+          if (k.entry.check) pickedSoFar.push({ line: k.line, text: `${plainWords(/** @type {any} */ (k.entry.check))} \u00B7 ${KEPT_WORDS}` });
+          appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: k.line, rule: k.rule, ruleText: redactSecrets(String(k.entry.ruleText ?? '')), how: KEPT_WORDS, ...(k.entry.check ? { picked: k.entry.check } : {}), ...(k.entry.left ? { left: true } : {}), ...(k.entry.own ? { own: true } : {}), at: new Date().toISOString() });
+        }
+      },
       ...(deps.scout ? { scout: deps.scout } : {}),
       // PART 1c: a test that replaces the model boundary (`generate`) must not reach the real paid look; `deps.lookFn` brings its own
       ...(deps.lookFn !== undefined ? { lookFn: deps.lookFn } : (deps.generate ? { lookFn: null } : {})),
@@ -1115,6 +1269,8 @@ export function createSession(card, deps = {}) {
       fitAsk, onFit,
       ...(deps.fitFn !== undefined ? { fitFn: deps.fitFn } : (deps.generate ? { fitFn: null } : {})),
       ...(authorFnOverride ? { authorFn: authorFnOverride } : {}),
+      // R5 (piece 2): a Tickets job's drafter is told about the ticket filter and may propose one (the person signs it)
+      ...(deps.flow?.flowType === 'tickets' ? { authorOpts: { ticket: true } } : {}),
     });
 
     if (!authored.ok && PLAIN_PROPOSAL_STOPS.includes(String(authored.stop))) {
@@ -1152,7 +1308,8 @@ export function createSession(card, deps = {}) {
 
     if (RUBRIC_FILES) draft.goal = redactSecrets(rubricGoal({ jobLines, files: prep.manifest.inputs, confirmedGoal: authored.confirmed?.goal ?? null, closeDecl: authored.closeDecl }));
     else if (authored.confirmed?.goal) draft.goal = redactSecrets(String(authored.confirmed.goal));
-    const spec = assembleSpec(draft, { ...authored, verdictType: /** @type {string} */ (authored.verdictType) });
+    // piece 8: the card's Flow type and MCP pick are signed by CODE, after the draft (the agent cannot carry them: `assembleSpec` refuses a draft that does). A plain card adds nothing.
+    const spec = signFlow(assembleSpec(draft, { ...authored, verdictType: /** @type {string} */ (authored.verdictType) }), deps.flow?.flowType ?? 'plain', deps.flow?.pick ?? null, authored.authoring?.ticketFilter);
     // PART 1a (run mv5bk400): the plan the person confirmed named three checks for line 1; the composer wrote ONE stage and put
     // "lists 3 releases" in its notes, so the card promised a check the close never ran. The card AFTER drafting is now built
     // from the close itself, and every confirmed check no part carries out is moved to Not checked, in code, before signing.
@@ -1160,7 +1317,12 @@ export function createSession(card, deps = {}) {
       const rec = reconcileRubricPlan({
         confirmed: authored.confirmed?.checkItems ?? [], notChecked: authored.confirmed?.notChecked ?? [], closeDecl: spec.closeDecl, jobLines,
       });
-      state.finalPlan = { goal: String(draft.goal ?? ''), checkItems: rec.checkItems, notChecked: rec.notChecked, protections: authored.confirmed?.protections ?? [], moved: rec.moved, signedFacts: signedFactNames(spec.closeDecl) };
+      // the checks this draft ended with, each marked who added it (`agent` or `you`): the Audit's Draft group shows them (a log line, not a second record of the plan)
+      appendDraftLog(outDir, { kind: 'draft-checks', no: Math.max(0, state.steps.length - 1), checks: rec.checkItems.filter((/** @type {any} */ c) => c.by === 'agent' || c.by === 'you').map((/** @type {any} */ c) => ({ line: c.fromLine[0], text: redactSecrets(String(c.text)), by: c.by })), at: new Date().toISOString() });
+      // R10: the checks the person picked, for the plan card's "You picked" rows (the check rows and the Not checked rows come from the signed close itself)
+      const cp = authored.checkPicks;
+      const picked = cp ? settleRules(cp.rules, cp.picks, cp.left, jobLines).checks.map((c) => ({ line: c.line, text: `${plainWords(/** @type {any} */ (c.check))}${c.kept ? ` \u00B7 ${KEPT_WORDS}` : ''}` })) : [];
+      state.finalPlan = { goal: String(draft.goal ?? ''), checkItems: rec.checkItems, picked, notChecked: rec.notChecked, protections: authored.confirmed?.protections ?? [], moved: rec.moved, signedFacts: signedFactNames(spec.closeDecl), ...(spec.ticketFilter ? { ticketFilter: spec.ticketFilter } : {}) };
     }
     await finish(spec, authored.seedRef);
     if (state.finalPlan && state.phase === 'prepared') {
@@ -1169,7 +1331,7 @@ export function createSession(card, deps = {}) {
       // dropped, so drafter prose can never sit above (and be read instead of) the code's sentences (run mv5e1ktb).
       state.messages = state.messages.filter((/** @type {any} */ m) => m.kind !== 'plan');
       state.messages.push({
-        ...planMessage({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, protections: state.finalPlan.protections, signedFacts: state.finalPlan.signedFacts, questions: [] }, jobLines),
+        ...planMessage({ checkItems: state.finalPlan.checkItems, checks: state.finalPlan.checkItems.map((/** @type {any} */ c) => c.text), notChecked: state.finalPlan.notChecked, protections: state.finalPlan.protections, signedFacts: state.finalPlan.signedFacts, picked: state.finalPlan.picked, ticketFilter: state.finalPlan.ticketFilter, questions: [] }, jobLines),
         text: 'These are the checks the signed close will run, and what it will not check. Sign & run to accept them, or Revise to edit the boxes and draft again.',
       });
     }

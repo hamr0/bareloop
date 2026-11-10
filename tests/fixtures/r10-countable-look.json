@@ -1,0 +1,10 @@
+{
+ "d4": {
+  "session": "smw9ie5pi52mf",
+  "raw": "{\"facts\":[{\"name\":\"release bullets\",\"from\":\"line 1 rule 1\",\"shape\":\"phrase\",\"words\":[\"Fixed\",\"Added\",\"Changed\"],\"lang\":\"en\"},{\"name\":\"release bullet count\",\"from\":\"line 1 rule 1\",\"shape\":\"number\",\"words\":[],\"decimal\":\".\",\"lang\":\"en\"},{\"name\":\"release summary length\",\"from\":\"line 1 rule 2\",\"shape\":\"number\",\"words\":[],\"decimal\":\".\",\"lang\":\"en\"}]}"
+ },
+ "d5": {
+  "session": "smw9ieiiyrm5n",
+  "raw": "{\n  \"facts\": [\n    {\n      \"name\": \"release heading\",\n      \"from\": \"line 1\",\n      \"shape\": \"phrase\",\n      \"words\": [\"## [\"],\n      \"lang\": \"en\"\n    },\n    {\n      \"name\": \"release date\",\n      \"from\": \"line 1\",\n      \"shape\": \"date\",\n      \"words\": [],\n      \"lang\": \"en\"\n    },\n    {\n      \"name\": \"bullet marker\",\n      \"from\": \"line 1 rule 1\",\n      \"shape\": \"phrase\",\n      \"words\": [\"-\"],\n      \"lang\": \"en\"\n    },\n    {\n      \"name\": \"word count\",\n      \"from\": \"line 1 rule 2\",\n      \"shape\": \"number\",\n      \"words\": [],\n      \"decimal\": \".\"\n    }\n  ]\n}"
+ }
+}
