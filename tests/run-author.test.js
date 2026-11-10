@@ -342,7 +342,7 @@ test('the reporters never take down the run they report on', () => {
 // a real model call have been paid for.
 
 /** the `prepareSigning` call, from its opening to its closing paren */
-const SIGN = /const signing = await prepareSigning\(\{[\s\S]*?\n {8}\}\);/.exec(SRC)?.[0];
+const SIGN = /const signing = (?:isNoCheckRubricClose\(spec\.closeDecl\)\n[^\n]*\n\s*: )?await prepareSigning\(\{[\s\S]*?\n {8}\}\);/.exec(SRC)?.[0];   // R10: the end check may sit in front of the call (a no-check close is refused before it)
 
 test('the calibration gate runs under the OPERATOR\'s ceiling, with prior spend folded in', () => {
   assert.ok(SIGN, 'the prepareSigning call moved — this guard no longer reads the code it guards');

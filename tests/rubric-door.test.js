@@ -159,7 +159,9 @@ test('createSession on a rubric job with a local file: the CONFIRM TURN runs (no
       authorOpts = o;
       return {
         ok: true,
-        declaration: { stages: [{ name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } }], refused: [{ line: 1, reason: 'fixture' }], notes: [] },
+        declaration: { stages: [{ name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } },
+          // R10 end check: a close with no real check is refused before signing, so the fixture carries the person's own word limit as a real check
+          { name: 'line-1', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts: [{ text: 'keep it under 200 words', class: 'countable', check: 'maxWords', value: 200, rules: [1] }] } }], refused: [{ line: 1, reason: 'fixture' }], notes: [] },
         genreEnv: null, cost: { costUsd: 0, knownUsd: 0, spendComplete: true, calls: [], unpricedRounds: 0 }, reds: [],
       };
     },
