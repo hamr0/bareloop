@@ -2221,3 +2221,23 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 9. **A run needs at least one check that can fail.** A rubric job whose close has none stops with signed words saying so, not the repository sentence (hamr ruling 2026-11-10; F302). BUILT d4596a7, test-proven, new words not seen live.
 
 - **Pointers:** `docs/product/ITEM33-BUILD.md` R10 (shipped pieces, offer redesign open); `docs/product/UPSTREAM-ASKS.md` BG-4.
+
+### NEXT after this release: one code-owned check ledger per job line (v1.132 — 2026-11-10)
+
+**Problem.** Several lists say what a job line checks and no one owns them, so they drift (FINDINGS F305-F308; map at `.claude/scratch/r10/ledger/MAP.md`).
+
+**Goal.** One code-owned ledger row per item: a `~` rule, a `~` pick, an AI proposal, a look fact, an AI part, an answer. Each row has one state: agreed, dropped, built or Not checked. Every reader (drafter brief, sign card, Job tab, end check, retention, signing) reads only the ledger. Prompt text is only conditional and injected where it happens (hamr's ruling, F308).
+
+1. **Map.** DONE (`MAP.md`).
+2. **Design and a $0 POC on the 77 saved paid drafts.** TO DO. No build before it passes.
+3. **Build.** TO DO, after tick 2.
+4. **A paid round to verify.** TO DO; the round 7 harness exists and is reframed for the ledger.
+5. **Shared with fwdloop.** OPEN: one shape for both; fwd was shown the map on 2026-11-10.
+
+**Open questions for hamr** (picks are the main session's, not rulings):
+- (a) A free-text answer that types a limit. Pick: code does not read it; ask for a `~` rule.
+- (b) Keep the confirm AI's `checkItems` list or remove it. Pick: remove it, one owner.
+- (c) The ledger changes the signed plan's shape, so old hashes flip. Pick: yes; old runs are not repaired.
+
+**Pick up first thing next.** Read FINDINGS F305-F308 and `MAP.md`, then tick 2.
+
