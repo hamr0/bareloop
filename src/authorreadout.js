@@ -882,8 +882,19 @@ const NO_CHECK_TODO = 'add a `~` rule (for example the version, the date, or "un
  */
 export function isNoCheckRubricClose(closeDecl) {
   if (!closeDecl || closeDecl.lang !== 'text' || !Array.isArray(closeDecl.stages)) return false;
+  // a part of class none (nothing checks it) or guard (an always-on stage) is not a check either
+  const real = (/** @type {any} */ x) => x && x.class !== 'none' && x.class !== 'guard';
   return !closeDecl.stages.some((/** @type {any} */ st) => st && st.kind !== 'files-changed'
-    && (st.kind !== 'rubric-step' || (Array.isArray(st.params?.parts) && st.params.parts.length > 0)));
+    && (st.kind !== 'rubric-step' || (Array.isArray(st.params?.parts) && st.params.parts.some(real))));
+}
+
+/**
+ * THE END CHECK, both doors (panel `finish`, the author CLI before `prepareSigning`): the declaration is settled, and a rubric close with no
+ * real check is refused with the d4596a7 words, whatever the seed gate would say (an empty rubric-step reads red at seed, so that gate lets it pass).
+ * @param {{closeDecl: any, spend?: {knownUsd?: number|null, spendComplete?: boolean|null}|null}} o @returns {string|null} the words, or null when the close has a check
+ */
+export function noCheckStopText({ closeDecl, spend = null }) {
+  return isNoCheckRubricClose(closeDecl) ? signingStopText({ reds: [], closeDecl, spend }) : null;
 }
 
 /**

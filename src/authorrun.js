@@ -131,7 +131,7 @@ import { tallyCalls } from './text.js';
 import { splitReadNotes } from './pagedropwords.js';
 import {
   declarationLines, rubricLines, calibrationLines, parseCeiling, ceilingLine, crashRecord, phaseLine,
-  openQuestionLines, answeredQuestionLines, fellBackLines, PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText,
+  openQuestionLines, answeredQuestionLines, fellBackLines, PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, isNoCheckRubricClose,
 } from './authorreadout.js';
 
 /** Thrown to unwind `main` to an exit code without ever calling
@@ -1173,7 +1173,10 @@ export async function main(argv, deps = {}) {
           out(`\ncalibration gate — REAL judge calls at ${judge.model} on ${judge.provider}, one per case plus the injection battery.`);
           out('  this is the only gate that spends money, and it runs after every free one.');
         }
-        const signing = await prepareSigning({
+        // the end check: a rubric close with no real check is refused here, whatever the seed gate would say (the stop words are printed below from signingStopText)
+        const signing = isNoCheckRubricClose(spec.closeDecl)
+          ? { ok: false, reds: [], refusal: null, specHash: null, seedRef: authored.seedRef, gates: { declaration: { ok: true, grounded: '-' }, precheck: null, seedVerdict: null }, work: [], guards: [], stops: [] }
+          : await prepareSigning({
           spec, workdir: SOURCE, seedRef: authored.seedRef, timeoutMs: TIMEOUT_MS,
           // gate 1a re-runs the job validator inside prepareSigning — same coupling, or
           // the spec that just passed above would fail the gate that signs it

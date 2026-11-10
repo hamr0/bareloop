@@ -64,7 +64,7 @@ import { FIT_ABSENT_NOTE } from '../fitcheck.js';
 import { runDestPoint, destQuestionText, yesNoOf } from '../destpoint.js';
 import { tallyCalls } from '../text.js';
 import { appendDraftLog } from '../draftspend.js';
-import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, draftStopText, redsRecord, declarationRecord, calibrationSummary, tryRefusedText } from '../authorreadout.js';
+import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, noCheckStopText, draftStopText, redsRecord, declarationRecord, calibrationSummary, tryRefusedText } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 import {
   parseJobBlock, parseInputs, jobBlockFitsCheck, renderJobLines, renderExamples, signedJobLines, jobBoxText,
@@ -991,6 +991,13 @@ export function createSession(card, deps = {}) {
         return;
       }
 
+      // the end check: a rubric close with no real check never reaches the signing gates (R10, hamr 2026-11-10)
+      const noCheck = noCheckStopText({ closeDecl: spec.closeDecl, spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete } });
+      if (noCheck) {
+        appendDraftLog(outDir, { kind: 'step-reds', no: state.steps.length - 1, stop: 'no-check', reds: [], at: new Date().toISOString() });
+        refuse(noCheck);
+        return;
+      }
       state.phase = 'signing-gates';
       stepStart('gates', 'gates 1–3 cost $0; gate 4 only for a rubric');
       const judges = closeJudges(spec.closeDecl);
