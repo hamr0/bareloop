@@ -15696,3 +15696,11 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Map.** `.claude/scratch/r10/ledger/MAP.md`: 17 lists (L1-L17), 15 disagreements (D1-D15), each marked seen or reading-derived. Four of the 15 are fixed or in the local fixes of F307 (D1, D3, D4, D5); the rest are open.
 **Ruling.** hamr: redesign, map first, share with fwdloop (shared 2026-11-10). No more patches to the lists until the design exists. PRD v1.132 holds the ticks.
 **Prompt-text ruling (hamr, verbatim).** "i don't want to surround ai with what if text to not over confuse it with so many text injection that they all get farbled, but injected text should always be conditional and make sure we inject it at the right place IF it happens".
+
+
+## F309 — a rubric plan can sign with zero checks; found by /self-review, seen live in drafts 2 and 17 (2026-11-10)
+
+**Finding.** `dropExtras` (`src/checkpick.js:530`) can drop every AI part of a line and leave the rubric-step with `parts: []`. `dropAfterLastTry` (`src/authorflow.js`) accepts it, and `src/rubricstep.js:208` allows empty parts. The same is reachable through `moveUncheckable` when every part is none or judged. The seed-green stop (d4596a7 words) only fires when nothing fails at seed; an empty rubric-step reads red at seed, so the stop does not fire.
+**Seen live.** Paid round 6 draft 2 (arm B) prepared with rubric-step 0 parts after a drop (`.claude/scratch/r10/paid6/result.json`, i=2), and draft 17 (session smwag7ncubmip) with zero checks.
+**Correction.** The main session's round-6 read missed draft 2 and said only draft 17. Both are real.
+**Ruling (hamr, 2026-11-10).** Ship this release as-is and narrow the claim: CHANGELOG and PRD now say the no-check stop fires only when nothing fails on the seed. The zero-check defect is the FIRST fix of the next item (PRD v1.132 Fix 0). A test-proven version exists on `feat/check-ledger` (55e7234, cb3babf).
