@@ -3364,3 +3364,68 @@ FAIL on any bar -> report FAIL, redesign, re-freeze; never re-tune the bar.
 - Whether `refused`/`notes` stay in the signed close beside `ledger` (fwd compatibility).
 
 sha256 of .claude/scratch/r10/ledger/DESIGN.md: 739258971f9e5d38995574edabd16f51110721a244688316ef5a8626283866c6
+
+
+## Check ledger round 1 FAIL (P6) and draft 3 + round 2 bar (frozen 2026-11-10)
+
+Round 1 of the $0 POC (draft 2, frozen cb89aded) is FAIL on P6: 6 of 37 sessions carry every row by key; person rows (rule, pick, look, answer) carried 344/344, drafter-written rows (ai-part, notes, refused, prose) almost never. Other bars: P1 68/68, P2 68/68, P3 4/4, P4 68/68, P5 68/68, P7 68/68 on 68 valid drafts (9 row-invalid casualties, limit 10). Detail in `.claude/scratch/r10/ledger/poc/RESULTS.md`. hamr ruled a new shape; draft 3 below is frozen before any round 2 data is read.
+
+# DESIGN: one check ledger per job (draft 3, 2026-11-10 — round 2)
+
+Status: DRAFT 3. Round 1 (draft 2, frozen cb89aded) is FAIL on P6 and stays on record (`poc/RESULTS.md`). This draft changes the SHAPE, not the bar's spirit.
+Carried over unchanged from draft 2: the Row fields, the signed/unsigned split, fwd review a-i, rulings 1-6, the mechanical floor never counts as built, run-time told picks reads only built pick values.
+
+## What round 1 showed
+
+- Rows from the person (rule, pick, look, answer) carried across tries 344/344.
+- Rows the drafter wrote (ai-part, notes, refused, prose) carried in 6/37 sessions: the drafter rewrites its own checks every try, so they have no stable name.
+- Shape holes: keys not unique; no kind for drafter notes; confirm answers have no line; a "drop it" answer and the check it should cancel are not linked (paid6 d22: maxClaims 120 built beside a dropped answer); refused entries name rules that do not exist (paid5 d4, paid6 d16); guardLines and fit-check asks have no rows.
+
+## The new shape (hamr, 2026-11-10)
+
+ONE LIST, MADE ONCE, BEFORE ANY TRY:
+
+```
+~ rule   (the person's)        by: you
+~ rule
+! check  (the agent's)         by: agent
+! check
+```
+
+1. The person writes `~` rules. The agent suggests `!` checks, ONLY from what it sees in the job's inputs (page or doc).
+2. Code proves each `!` against the input: its words must be in the input, or code drops it with a reason (as the look's word proof does today).
+3. If a `!` and a `~` are about the same thing, the `~` wins: the agent never makes the person's rule stricter.
+4. The list is FROZEN before the first try. Tries change only HOW a line is checked, never WHAT is on the list. The drafter builds checks only for listed lines; a part with no list row is refused ("not on the list").
+5. Code builds each row it can (built) and marks the rest not-checked with its reason. If code can't, code won't.
+6. Code may still ask the person when it really needs to (the existing ask path, cap 3). Default: move on.
+7. The draft result (plan card) shows every row with `by: you` / `by: agent`. The person drops any `!` before signing.
+
+## Shape fixes from round 1
+
+- `key` is UNIQUE within a ledger: {line, kind, words-hash, occurrence}. A duplicate is a code bug, never two rows.
+- New kind `note` for the drafter's commentary (shown under Not checked, never a check).
+- Every answer row carries the line it answers (the line its question was asked about).
+- A row can `cancel` another: a "drop it" answer sets the row it answers to dropped, and any check built for it is removed (fixes d22).
+- A `refused` entry naming a rule that does not exist is a red (code bug or drafter error), never stored.
+- guardLines become rows (`from: guard`, built, by code). Fit-check "not found" asks become answer rows.
+
+## $0 POC round 2 — bar (freeze in a commit before any data is read)
+
+Corpus: the same 77 saved drafts; same casualty rule (row-invalid logged; >10 invalid = FAIL).
+Replay of the new shape: the `!` list for a draft = the agent checks of its FIRST try (frozen there, as if suggested up front), after the input word proof and the `~`-wins rule.
+
+- P1 every real check (not the mechanical floor) has at least one built row, and every built row points at a real check (100%).
+- P2 every `~` and every kept `!` ends built or not-checked with a reason (100%).
+- P3 paid6 d2, d8, d17, d22 show as rows with state + reason; d22's dropped answer cancels its maxClaims 120 check (100%).
+- P4 zero-check drafts caught, 0 false stops (100%).
+- P5 no loss vs the OLD sign card and Job tab Not-checked lists (100%).
+- P6 CARRY: every row of the frozen list is present, same key, in every later try of its session (100%).
+- P6b DRAFTER STAYS ON THE LIST: of the agent parts in later tries, the share that maps to a frozen row. If more than 20% are new (would be refused), FAIL: freezing would lose real checks. Reported per session either way.
+- P7 rebuilding the same draft twice gives the same signed fields byte for byte (100%).
+- P8 GROUNDED: every kept `!` has its words in the input; every dropped `!` has the drop reason. Counts reported (kept / dropped).
+- P9 UNIQUE: no two rows in any ledger share a key (100%).
+
+FAIL on any bar -> report FAIL; a third round only with a new shape and a new freeze; never re-tune.
+Throwaway code in `.claude/scratch/r10/ledger/poc2/`, never ships.
+
+sha256 of .claude/scratch/r10/ledger/DESIGN3.md: 6fe6671a50e7abb190292b727c6faf65de641773c608f908306eb4b306d137ff
