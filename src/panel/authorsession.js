@@ -1048,7 +1048,7 @@ export function createSession(card, deps = {}) {
           reds: redsRecord(signing.reds ?? [], { signing: true }), at: new Date().toISOString(),
         });
         refuse(signingStopText({
-          reds: signing.reds ?? [], refusal: signing.refusal,
+          reds: signing.reds ?? [], refusal: signing.refusal, closeDecl: spec.closeDecl,
           spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete },
         }));
         return;

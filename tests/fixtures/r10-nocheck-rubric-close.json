@@ -1,0 +1,35 @@
+{
+  "source": "paid round 5 draft 18, panel session smwabidzpqvgt",
+  "specClose": {
+    "genre": "TEXT",
+    "lang": "text",
+    "stages": [
+      {
+        "name": "changed-from-seed",
+        "kind": "files-changed",
+        "params": {
+          "requireNonEmpty": true,
+          "allowPrefixes": [
+            "output/"
+          ]
+        }
+      }
+    ],
+    "notes": [
+      "The person's only binding answer about line 1 was \"drop it\": they dropped every specific-content ask (a version number, a date, a release name) and dropped any length limit (words, lines, sections). So no countable part (word/section/line/list-item/phrase count) and no claim-count part is composed for line 1 \u2014 composing one would invent a number the person did not ask for.",
+      "The person's ask \"the latest release\" \u2014 which release counts as latest \u2014 is NOT CHECKED: it is not expressible as a shape plus a rule.",
+      "The person's ask that the text be \"a summary\" (that it is a good summary / is accurate / reads as a summary) is NOT CHECKED: only reading it could decide, and the person dropped the requirements that would have made it checkable.",
+      "The look at input \"Changelog\" found no labelled facts and no prose to quote: its single line is NOT CHECKED: \"changelog release version\" \u2014 no word on this page reads \"changelog release version\" safely. With nothing to quote, no fact part and no cited-claim part can be built for line 1, and the label \"changelog release version\" is not used in any fact.",
+      "Line 1 is a WRITES line (a summary), but with all its asks dropped there is no limit the person picked and no fact the input supports, so there is nothing for a rubric-step stage to assert beyond what the always-on guard \"line 1 file\" already checks (output/steps/1.json exists, is complete JSON, and carries text). That guard carries no fromLine.",
+      "No confirmed checks were given in the plan, so no part carries a \"covers\" entry and nothing was moved to Not checked on that account.",
+      "The mandatory guard changed-from-seed is parameterised with allowPrefixes [\"output/\"] to match the write fence, and is placed first.",
+      "line 1: \"changelog release version\" \u2014 No word on this page reads \"changelog release version\" safely."
+    ],
+    "refused": [
+      {
+        "line": 1,
+        "reason": "Summarise the latest release in the changelog \u2014 the person dropped every specific-content ask (version number, date, release name) and every length limit, and the changelog input holds no labelled facts and no prose to quote, so there is nothing to count, nothing to look up, and nothing to back a claim with. The always-on guard \"line 1 file\" only checks that output/steps/1.json exists, is complete JSON, and carries text."
+      }
+    ]
+  }
+}

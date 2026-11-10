@@ -871,6 +871,21 @@ const listText = (v) => {
 /** the sentence when the gates refuse with no red at all (the close already passes on the untouched repository) */
 const SEED_GREEN_SENTENCE = 'Nothing in the close fails on the repository as it is, so there is nothing for a run to do.';
 
+/** the sentence and the to-do when a rubric / page job's close has no check that can fail (hamr ruling 2026-11-10) */
+const NO_CHECK_SENTENCE = 'This job has no check that can fail: no `~` rule, and no check the AI built was kept. A run needs at least one check, a quoted fact or a count. Without one, its pass would prove nothing. For an answer nobody checks, a plain chat AI is the right tool.';
+const NO_CHECK_TODO = 'add a `~` rule (for example the version, the date, or "under 80 words"), or answer the question with what the output must contain';
+
+/**
+ * Code's reading of a declared close: a rubric (text-lang) close with no real check, only always-on stages such as
+ * files-changed, or rubric-step stages holding no part. Decided from the close alone, never by a model.
+ * @param {any} closeDecl @returns {boolean}
+ */
+export function isNoCheckRubricClose(closeDecl) {
+  if (!closeDecl || closeDecl.lang !== 'text' || !Array.isArray(closeDecl.stages)) return false;
+  return !closeDecl.stages.some((/** @type {any} */ st) => st && st.kind !== 'files-changed'
+    && (st.kind !== 'rubric-step' || (Array.isArray(st.params?.parts) && st.params.parts.length > 0)));
+}
+
 /**
  * Plain sentences for the reds of a refused signing, one or more per red. Card and practice-case reds reuse the
  * proposal table; an unknown code is a generic sentence that quotes the code.
@@ -904,14 +919,16 @@ export function signingKinds() {
 
 /**
  * THE MESSAGE a person reads when the signing gates refuse. The panel's failed step and the CLI print exactly this.
- * @param {{reds: PlainRed[], refusal?: {detail?: string}|null, cases?: any,
+ * @param {{reds: PlainRed[], refusal?: {detail?: string}|null, cases?: any, closeDecl?: any,
  *   spend?: {knownUsd?: number|null, spendComplete?: boolean|null}|null}} o
  * @returns {string}
  */
-export function signingStopText({ reds, refusal = null, cases = null, spend = null }) {
+export function signingStopText({ reds, refusal = null, cases = null, spend = null, closeDecl = null }) {
   const reasons = signingReasons(reds, { cases });
   if (reasons.length === 0) {
-    reasons.push({ kind: 'seed-green', sentence: SEED_GREEN_SENTENCE, todo: 'check that the close measures the right thing, or describe a sharper problem',
+    const noCheck = isNoCheckRubricClose(closeDecl);
+    reasons.push({ kind: 'seed-green', sentence: noCheck ? NO_CHECK_SENTENCE : SEED_GREEN_SENTENCE,
+      todo: noCheck ? NO_CHECK_TODO : 'check that the close measures the right thing, or describe a sharper problem',
       red: { code: '', path: '', detail: String(refusal?.detail ?? '') } });
   }
   const unique = [...new Set(reasons.map((x) => x.sentence))];
