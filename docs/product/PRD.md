@@ -2218,7 +2218,7 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 6. **An offer must be a good check for a REPEATING job.** Code refuses to offer a quote that is true only of this week's page (a version, a date, one bullet's text) and refuses phrases too short or too common (a length floor is too weak alone). The rule is TO DESIGN and POC before any build (F299, O6).
 7. **A retention measure goes into every paid round.** The rate of drafts that keep the AI's page checks, with and without count picks, at least 10 drafts per arm. BUILT 890affa, seen live in round 5 (F301).
 8. **Shared with fwdloop.** fwd hit the mirror failure (F298); one design for both. fwd is paused by hamr until this is proven here; fwd copies our per-part design from our release (F304, relayed). OPEN.
-9. **A run needs at least one check that can fail.** A rubric job whose close has none stops with signed words saying so, not the repository sentence (hamr ruling 2026-11-10; F302). BUILT d4596a7, test-proven, new words not seen live.
+9. **A run needs at least one check that can fail.** A rubric job whose close has none stops with signed words saying so, not the repository sentence (hamr ruling 2026-11-10; F302). BUILT d4596a7, test-proven, new words not seen live. Caveat: this stop fires only when nothing in the close fails on the seed; a plan can still end with zero checks (after a drop or when every part goes to Not checked), seen live in paid round 6 drafts 2 and 17 (F309).
 
 - **Pointers:** `docs/product/ITEM33-BUILD.md` R10 (shipped pieces, offer redesign open); `docs/product/UPSTREAM-ASKS.md` BG-4.
 
@@ -2228,16 +2228,20 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 
 **Goal.** One code-owned ledger row per item: a `~` rule, a `~` pick, an AI proposal, a look fact, an AI part, an answer. Each row has one state: agreed, dropped, built or Not checked. Every reader (drafter brief, sign card, Job tab, end check, retention, signing) reads only the ledger. Prompt text is only conditional and injected where it happens (hamr's ruling, F308).
 
+0. **Fix 0 (first): a rubric plan must never sign with zero checks** — one end check on both doors after the declaration settles, independent of the seed gate; includes dropExtras/moveUncheckable leaving `parts: []`. Seen live paid6 d2, d17 (F309). A test-proven version exists on feat/check-ledger (55e7234, cb3babf).
+0b. **Check 0b ($0, before any build): is the run-time worker told a line's picks?** fwdloop found (their F173, relayed, not read in a file) that a page-quoting step with picks was never told them and swung between the word-count red and the list-items red (0/4 green); telling it the picks in the quoting block, only when the step has picks, gave 4/4 on the first try (fwd M10 am28). bareloop's paid rounds tested drafting only, so ours is unknown. Read the worker brief for a rubric step with picks; if the picks are missing, copy fwd's fix from their released tag (conditional text only, per hamr's prompt-text ruling).
 1. **Map.** DONE (`MAP.md`).
 2. **Design and a $0 POC on the 77 saved paid drafts.** TO DO. No build before it passes.
 3. **Build.** TO DO, after tick 2.
 4. **A paid round to verify.** TO DO; the round 7 harness exists and is reframed for the ledger.
-5. **Shared with fwdloop.** OPEN: one shape for both; fwd was shown the map on 2026-11-10.
+5. **Shared with fwdloop.** OPEN: one shape for both; fwd was shown the map on 2026-11-10. See also fwd's F171 (fwdloop docs/logs/FINDINGS.md, commit 1186072, relayed): 21 lists, same root, a zero-check plan is signable there too.
 
 **Open questions for hamr** (picks are the main session's, not rulings):
 - (a) A free-text answer that types a limit. Pick: code does not read it; ask for a `~` rule.
 - (b) Keep the confirm AI's `checkItems` list or remove it. Pick: remove it, one owner.
 - (c) The ledger changes the signed plan's shape, so old hashes flip. Pick: yes; old runs are not repaired.
+
+**Local fixes not in this release.** The four local fixes of F307 (55e7234 end check, 5683008, 039ce9d, cb3babf) are NOT in this release. They are kept on branch `feat/check-ledger` (tip de0af496), test-proven only; the ledger redesign decides whether each is kept, reworked or replaced. The paid round 7 harness (`.claude/scratch/r10/paid7`, frozen against cb3babf) belongs to that branch.
 
 **Pick up first thing next.** Read FINDINGS F305-F308 and `MAP.md`, then tick 2.
 
