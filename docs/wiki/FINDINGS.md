@@ -15649,3 +15649,49 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 
 **Facts.** Relayed to me, not read in fwdloop's FINDINGS: fwd's hide-at-draft arm kept 6 of 10 drafts against its bar of 8. hamr ruled that fwd waits and copies our per-part design from our release.
 **Status.** Verify against fwd's own record before quoting anywhere else.
+
+
+## F305 — R10 paid round 6: FAIL by the frozen rule, $0.2042; the label fix held, three drafts show a list that has no owner (2026-11-10; PAID, Fireworks `accounts/fireworks/models/deepseek-v4p1-flash`; engine 8648474; 22 drafts: A 10, B 10, C 2; one model, one job: a leaning)
+
+**Facts.** `.claude/scratch/r10/paid6/PREREG.md`, `run.out`, `result.json`. Spent $0.2042; real `runs.jsonl` 397 lines before and after. RESULT FAIL by the frozen rule. Failing gates: arm A honesty bar (draft 3), bar self-test, retention record on every ended draft (draft 3), arm C (both drafts must stop with the exact new words), and one new red kind.
+**Seen live.**
+- `rubric-fact-label-off-list`: 0 tries in 20 A+B drafts. The fix 8648474 holds (a leaning, not proof).
+- `dropExtras` fired in 3 drafts (2, 12, 16, all arm B).
+- Retention: arm A 9 of 10 drafts keep an AI page check, arm B 8 of 10. The 4-draft gap did not appear.
+- The firing-tap self-test is fixed: the new construction reads ok, and round 5's construction, run in the same state, reads not-ok.
+**Causes of the FAIL.**
+- Draft 3 (arm A) is a casualty: the AI's page answer was unreadable twice ($0.0016). The harness then counted a missing retention record as an instrument fail.
+- Draft 17 (`smwag7ncubmip`, arm C) was prepared with ZERO checks. An empty rubric-step reads red at seed, so the d4596a7 seed-green stop (F302) never fired.
+- Draft 22 (`smwag9marst6v`, arm C) was correctly prepared (a cite plus a count, per hamr's ruling) but "120 words" was built as `maxClaims 120`, a claim count.
+- The harness bar self-test misfired on draft 1: its picked rules were [1, 2].
+- One new red kind, `rubric-fact-form-unsigned` (draft 7); it recovered inside the draft.
+**Status.** Pre-declared: a new red kind stops the round and the next step is hamr's call. Draft 17 and draft 22 lead to F306.
+
+
+## F306 — vanish scan: no `~` pick vanished, but a dropped word limit stayed "confirmed" and the drafter skipped it (2026-11-10; $0 read of saved paid drafts)
+
+**Facts.** `.claude/scratch/r10/vanish/SCAN.md` and `TRUTH.md`.
+- `~` picks: 0 of 101 agreed picks vanished across 77 paid drafts (rounds paid to paid6). 87 are in the plan, 14 sit in 7 drafts that were stopped (nothing signed).
+- AI proposals with a value: 5 items; 2 vanished (paid6 draft 8 `smwag4fcpf9z0`, "at most 250 words"; draft 17, "200 words"), 1 was built in the wrong shape (draft 22, "120 words" as `maxClaims`), 2 were listed honestly.
+**Root, read from code and the draft logs (TRUTH.md).** The three drafts had no `~` rule. At the confirm turn the person's scripted answer to the limit question was "drop it". Code never reduces the confirm AI's `checkItems` by the answers, so the dropped limit stayed in the "confirmed plan". The drafter trusted the prompt line at `src/authorflow.js:1524` ("code adds the checks the person picked"), which is true only for `~` picks, and wrote no part. Code added none, because there was no pick.
+**Caveat.** The harness answers "drop it" to nearly every confirm ask, which magnifies these corners compared with a real person. One job family, one model, arm C only 2 drafts. The confirm call logs no raw, so a confirmed check the drafter neither covered nor mentioned would be invisible to this scan.
+**Status.** Reading of saved drafts; the defect itself was seen live in draft 17 and draft 22 (F305).
+
+
+## F307 — four local fixes built for round 6's findings; gate green on cb3babf; NOT seen live; paid round 7 frozen but not run (2026-11-10)
+
+**Commits (branch `feat/mcp-tickets`).**
+- 55e7234: end check. A rubric close with no real check is refused before signing, on both doors, without the seed gate.
+- 5683008: a word limit is never a claim count (`moveTextUnitClaims`, a text match on the drafter's own words; hamr has not decided on it); the drafter line at `src/authorflow.js:1524` now says code adds the checks "for its ~ rules".
+- 039ce9d: tests pinned to the old call shapes follow the end check and the new move (3 reds of the first full gate).
+- cb3babf: the end check writes no drafting-log stop of its own; a panel-door test of the refusal on draft 17's real close.
+**Gate.** 5821 tests, 0 fail, on cb3babf (reported by the build session; I did not rerun it in this pass).
+**Status.** Test-proven only. Paid round 7 is frozen but NOT run: hamr put it on hold for the redesign in F308.
+
+
+## F308 — the redesign ruling: the last four bugs share one root, no owner for "what a line checks" (2026-11-10; RULING)
+
+**Ask.** hamr asked "are we patching or whackamoling". The answer: the last four bugs (F302, the word limit as a claim count, the vanished limit, the zero-check plan) share one root. Several lists say what a job line checks and nobody keeps them in sync.
+**Map.** `.claude/scratch/r10/ledger/MAP.md`: 17 lists (L1-L17), 15 disagreements (D1-D15), each marked seen or reading-derived. Four of the 15 are fixed or in the local fixes of F307 (D1, D3, D4, D5); the rest are open.
+**Ruling.** hamr: redesign, map first, share with fwdloop (shared 2026-11-10). No more patches to the lists until the design exists. PRD v1.132 holds the ticks.
+**Prompt-text ruling (hamr, verbatim).** "i don't want to surround ai with what if text to not over confuse it with so many text injection that they all get farbled, but injected text should always be conditional and make sure we inject it at the right place IF it happens".
