@@ -15615,3 +15615,37 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 - A runner's own self-test can crash after the paid part and lose the summary (F296). Its arms must handle a draft with no fact part.
 - Retention was never measured in our bar (F298). Add it to every future round.
 **Status.** Logged. Next steps are in the PRD addendum v1.131.
+
+
+## F301 — R10 paid round 5: FAIL by the frozen rule on two new red kinds, $0.2185; retention measured for the first time (2026-11-10; PAID, Fireworks `accounts/fireworks/models/deepseek-v4p1-flash`; engine 9e3f64b; n=10 per arm, one model, one job: a leaning)
+
+**Facts.** `.claude/scratch/r10/paid5/PREREG.md`, `run.out`, `result.json`. 20 drafts: arm A with `~` count rules (10), arm B without (10). Spent $0.2185 of a $0.80 cap. Real runs.jsonl 397 lines before and after.
+- RESULT FAIL, by the rule frozen before any number: a new red kind means stop and report. Two new kinds: `rubric-fact-label-off-list` (drafts 11 arm A and 12 arm B; both drafts still ended prepared) and `signing-gates-failed` (draft 18, arm B; see F302).
+- H1-H5: 10 of 10 arm-A drafts passed. Both negative controls OK. The bar self-test (synthetic arms) OK. 19 of 20 drafts reached prepared.
+- Retention (new in this round, PRD v1.131 tick 7): every one of the 20 drafts had a retention record. Drafts that kept at least one AI page check: arm A 9 of 10, arm B 8 of 10. AI parts: A 19, kept 16, dropped 3; B 13, kept 12, dropped 1. No 4-draft gap between arms. A leaning at n=10.
+- Firings, arm A: strip 2 of 10 drafts; Not-checked move 7 of 10 (in the artifact on 3); D3 build 0 of 10, not seen live; fact-twice 0 of 10, not seen live; countable fix path 8 of 10. `dropExtras` (F297): 0 firings, not seen live (the 3 dropped parts in arm A and 1 in arm B went to Not checked through the move, not through `dropExtras`).
+**INSTRUMENT DEFECT.** The firing-tap self-test read `ok=false` (`declTapped` false, `suggestTapped` false; body unchanged true). The 4b PREREG says a failing tap self-test fails the round as part of `barSelfTest.ok`. The final verdict line did not fail on it (it failed on the new red kinds only; `barSelfTest.synthetic.ok` was true and the tap result sits beside it, not inside it). So the strip and D3 firing counts above are untrustworthy: the tap may not have read the model's arguments. The Not-checked move count comes from the accepted artifact and from the wire; treat the strip and D3 counts as unmeasured until the tap is fixed and its self-test passes.
+**Reading.** H1-H5 holds on 10 of 10 and retention is first measured (9 of 10 vs 8 of 10), but the round is a FAIL and its tap evidence is unreadable. Not proof either way.
+**Status.** Logged. The next step is hamr's call (frozen rule: no auto-patch). Tick 4 (drop) is built but not seen live. Tick 7 is seen live.
+
+
+## F302 — a page job with no labelled facts, and a "drop it", stopped with a repository sentence (2026-11-10; paid round 5 draft 18; fixed d4596a7, test-proven, new words NOT seen live)
+
+**Facts.** Draft 18 (arm B, session `smwabidzpqvgt`, `result.json` draft index 18). The page look found no labelled facts (the other 19 drafts' looks did). The scripted answer to the one ask was "drop it". That left only the `files-changed` check. The seed-green gate refused, correctly, at $0.01 (`signing-gates-failed`). The stop sentence said "Nothing in the close fails on the repository as it is", which is wrong on a page job.
+**Ruling (hamr, 2026-11-10, verbatim).** "keep the stop, fix the message, reason is a run needs at least one check, at least cite or non zero at minimum otherwise go chat with standard llm".
+**Fix.** d4596a7: a rubric job whose close has no check that can fail stops with signed words saying a run needs at least one check. Files: `src/authorreadout.js`, `src/authorrun.js`, `src/panel/authorsession.js`, new `tests/nocheck-rubric-stop.test.js`, a fixture and a CHANGELOG line.
+**Frequency.** 1 of the 55 paid R10 drafts across rounds 1-5 (the count is my arithmetic from the round totals; I did not recount round 1-4b rows in this pass). The earlier 35 all carried `~` rules. 1 of the 10 drafts without `~` rules.
+**Status.** Test-proven only. The new message is not seen live.
+
+
+## F303 — BG-4 delivered in bareguard 0.33.0; our frozen E1-E6 pass on the published package (2026-11-10; $0)
+
+**Facts.** `.claude/scratch/bg4/output.txt` (guard's branch 272c42d) and `.claude/scratch/bg4/pub/output-pub.txt` (published bareguard 0.33.0). Per guard: ruling #79, `any: true`, and an opt-in `edges: true`. E1-E6 all PASS on both. E6 `rubricSha` 8e7144c278bdad481621ed139a71aa79c40ff7166d134a34f5883cdc734afb7c, the same on the branch, on bg-main and on the published package (I did not compare it with the 0.32 file in this pass).
+**The real trap behind `edges`.** Plain substring matches "changed" inside "unchanged", a wrong green. The round 2-5 page carries 8 "unchanged" (counted in `paid5/input/CHANGELOG.md`, same 8 in rounds 2, 3, 4, 4b). The "111 in round 1's page" figure was relayed to me and I could not find that page to count it: not verified.
+**Status.** bareloop still pins `bareguard ^0.31.0` (`package.json`); a `^0.33.0` bump is needed before use. Tick 5 is no longer blocked on bareguard but is TO REDO with a new POC.
+
+
+## F304 — fwdloop's F168: hiding the AI's page checks at draft kept 6 of 10 against a bar of 8 (2026-11-10; RELAYED, not verified, not read in a file)
+
+**Facts.** Relayed to me, not read in fwdloop's FINDINGS: fwd's hide-at-draft arm kept 6 of 10 drafts against its bar of 8. hamr ruled that fwd waits and copies our per-part design from our release.
+**Status.** Verify against fwd's own record before quoting anywhere else.

@@ -3004,3 +3004,5 @@ bareguard 0.31.0: a `cited` fact's `phrases` is checked by `evalPresence` (`node
 ### Status
 
 2026-11-09 — Filed here; to be relayed to the bareguard session by the main session on hamr's word. No target version. Bareloop side blocked on it: PRD v1.131 tick 5.
+
+2026-11-10 — DELIVERED in bareguard 0.33.0 (ruling #79: `any: true`, opt-in `edges: true`); our frozen E1-E6 verified PASS on guard's branch 272c42d and on the published package (`.claude/scratch/bg4/output.txt`, `pub/output-pub.txt`); see F303. Bareloop still pins ^0.31.0.
