@@ -87,7 +87,7 @@ import {
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
 import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
-import { applyPicks, dropExtras, fillAndMergeFacts, moveUncheckable, retentionOf, settleRules } from './checkpick.js';
+import { applyPicks, dropExtras, fillAndMergeFacts, moveTextUnitClaims, moveUncheckable, retentionOf, settleRules } from './checkpick.js';
 import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, withFactBindings, settlePersonsWords, withDropNotes, lineRules } from './rubricstep.js';
 import { dropRows, dropLine } from './pagedropwords.js';
 import { factShapeGuide } from './facts.js';
@@ -1521,7 +1521,7 @@ export const REQUIRED_FACTS_BRIEF = 'REQUIRED FACTS — what a line that finds, 
   + 'anything else you cannot express as a shape and a rule ("the cheapest", "the best", "a good pick") is NOT CHECKED: list it in "refused" as {"line": N, "rule": the number of that ~ rule, "reason": the '
   + 'person\'s own words}. EVERY ~ rule of a line must be carried out by a part (list its number in the part\'s "rules", 1 = the first ~ '
   + 'rule under the line) or be listed in "refused"; a rule that is neither is refused at $0.\n'
-  + ' - A line that WRITES (a summary, a report) needs no part for a word, section, line, list-item or phrase count: code adds the checks the person picked for it. Code ties its numbers to the facts of the lines '
+  + ' - A line that WRITES (a summary, a report) needs no part for a word, section, line, list-item or phrase count: code adds the checks the person picked for its ~ rules. Code ties its numbers to the facts of the lines '
   + 'before it; you do not add that.\n'
   + ' - A look fact that says "carries ~ rule N" is how the look carried that rule: put N in the fact part\'s "rules" and do not also list rule N in "refused".\n'
   + ' - A line has ONE fact part. A look fact that carries a ~ rule goes INSIDE the line\'s one fact part (add its rule number to that part\'s "rules" and its fact to "facts"), never as a fact part of its own: two fact parts on one line are refused at $0. '
@@ -2883,7 +2883,7 @@ export async function authorClose({
   const settledPicks = checkPicks ? settleRules(checkPicks.rules, checkPicks.picks, checkPicks.left, jobLines ?? []) : null;
   // a rubric job only: what no rule can check goes under Not checked before the picks are applied (every other kind of job keeps its reds)
   // then (rubric only) a one-input job's missing source is filled and a line's several fact parts are merged into one when that is safe, after the picks' count strip
-  const picked = (/** @type {any} */ d) => fillAndMergeFacts(applyPicks(moveUncheckable(d, jobLines ?? [], lang === RUBRIC_LANG), settledPicks), inputLabelsOf(inputs), lang === RUBRIC_LANG);
+  const picked = (/** @type {any} */ d) => fillAndMergeFacts(applyPicks(moveUncheckable(moveTextUnitClaims(d, lang === RUBRIC_LANG), jobLines ?? [], lang === RUBRIC_LANG), settledPicks), inputLabelsOf(inputs), lang === RUBRIC_LANG);
   const prompt = authorPrompt({
     answers, questions, facts, listingBlock: /** @type {string} */ (seeds.block),
     lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue, writeScope, confirmed, jobLines, inputs,
