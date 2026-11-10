@@ -2229,6 +2229,7 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 **Goal.** One code-owned ledger row per item: a `~` rule, a `~` pick, an AI proposal, a look fact, an AI part, an answer. Each row has one state: agreed, dropped, built or Not checked. Every reader (drafter brief, sign card, Job tab, end check, retention, signing) reads only the ledger. Prompt text is only conditional and injected where it happens (hamr's ruling, F308).
 
 0. **Fix 0 (first): a rubric plan must never sign with zero checks** — one end check on both doors after the declaration settles, independent of the seed gate; includes dropExtras/moveUncheckable leaving `parts: []`. Seen live paid6 d2, d17 (F309). A test-proven version exists on feat/check-ledger (55e7234, cb3babf).
+0b. **Check 0b ($0, before any build): is the run-time worker told a line's picks?** fwdloop found (their F173, relayed, not read in a file) that a page-quoting step with picks was never told them and swung between the word-count red and the list-items red (0/4 green); telling it the picks in the quoting block, only when the step has picks, gave 4/4 on the first try (fwd M10 am28). bareloop's paid rounds tested drafting only, so ours is unknown. Read the worker brief for a rubric step with picks; if the picks are missing, copy fwd's fix from their released tag (conditional text only, per hamr's prompt-text ruling).
 1. **Map.** DONE (`MAP.md`).
 2. **Design and a $0 POC on the 77 saved paid drafts.** TO DO. No build before it passes.
 3. **Build.** TO DO, after tick 2.
