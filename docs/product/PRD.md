@@ -2239,5 +2239,7 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 - (b) Keep the confirm AI's `checkItems` list or remove it. Pick: remove it, one owner.
 - (c) The ledger changes the signed plan's shape, so old hashes flip. Pick: yes; old runs are not repaired.
 
+**Local fixes not in this release.** The four local fixes of F307 (55e7234 end check, 5683008, 039ce9d, cb3babf) are NOT in this release. They are kept on branch `feat/check-ledger` (tip de0af496), test-proven only; the ledger redesign decides whether each is kept, reworked or replaced. The paid round 7 harness (`.claude/scratch/r10/paid7`, frozen against cb3babf) belongs to that branch.
+
 **Pick up first thing next.** Read FINDINGS F305-F308 and `MAP.md`, then tick 2.
 

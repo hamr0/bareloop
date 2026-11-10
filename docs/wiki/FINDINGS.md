@@ -15687,6 +15687,7 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 - cb3babf: the end check writes no drafting-log stop of its own; a panel-door test of the refusal on draft 17's real close.
 **Gate.** 5821 tests, 0 fail, on cb3babf (reported by the build session; I did not rerun it in this pass).
 **Status.** Test-proven only. Paid round 7 is frozen but NOT run: hamr put it on hold for the redesign in F308.
+**Not in this release.** These four commits are NOT in this release; they are kept on branch `feat/check-ledger` (tip de0af496), test-proven only. Their fate (keep, rework or replace) is decided by the ledger redesign (F308). The paid round 7 harness (`.claude/scratch/r10/paid7`, frozen against cb3babf) belongs to that branch.
 
 
 ## F308 — the redesign ruling: the last four bugs share one root, no owner for "what a line checks" (2026-11-10; RULING)
