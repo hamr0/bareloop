@@ -91,8 +91,8 @@ import { applyPicks, dropExtras, fillAndMergeFacts, moveUncheckable, retentionOf
 import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, withFactBindings, settlePersonsWords, withDropNotes, lineRules } from './rubricstep.js';
 import { dropRows, dropLine } from './pagedropwords.js';
 import { factShapeGuide } from './facts.js';
-import { renderLookReport, labelListsOf } from './inputlook.js';
-import { checkDeclarationWords } from './factwords.js';
+import { renderLookReport } from './inputlook.js';
+import { checkDeclarationWords, labelListsFor } from './factwords.js';
 import { ticketFilterReds, ticketFilterBlock, ticketPerRunFacts, TICKET_FILTER_SCHEMA_WORDS } from './ticketfilter.js';
 
 const require = createRequire(import.meta.url);
@@ -2877,7 +2877,7 @@ export async function authorClose({
   let labelLists = null;
   if (lang === RUBRIC_LANG && Array.isArray(inputs) && inputs.length > 0) {
     const frozen = await readFrozenInputs(workdir, inputs.map((i) => i.label));
-    if (frozen.ok) { inputTexts = frozen.texts; labelLists = Object.values(labelListsOf(frozen.texts).lists); }
+    if (frozen.ok) { inputTexts = frozen.texts; labelLists = labelListsFor(frozen.texts, facts?.look ?? null); }
   }
   // R10: the picks settled against the lines as they stand now (the answers are already `~` rules on them); the draft carries exactly these checks and these Not checked rows
   const settledPicks = checkPicks ? settleRules(checkPicks.rules, checkPicks.picks, checkPicks.left, jobLines ?? []) : null;

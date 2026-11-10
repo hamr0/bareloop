@@ -177,3 +177,14 @@ export function renderLabelList(inputLabel, scan) {
   });
   return `LABELS IN THE INPUT "${inputLabel}" - pick a label ONLY from this list (by its id or its exact words); a label that is not here is refused:\n\n${blocks.length ? blocks.join('\n\n') : '(no repeated label was found before a value)'}`;
 }
+
+/**
+ * The list a page-word map input is shown: ONLY the labels the map kept (what the draft gate's `keptSetOf` accepts), so the prompt and the
+ * proof read the same words. Empty = no label was kept, so the drafter leaves the label out.
+ * @param {string} inputLabel @param {string[]} labels
+ * @returns {string}
+ */
+export function renderKeptLabelList(inputLabel, labels) {
+  return `LABELS IN THE INPUT "${inputLabel}" - pick a label ONLY from this list (its exact words); a label that is not here is refused:\n\n`
+    + (labels.length ? labels.map((l) => `  ${JSON.stringify(l)}`).join('\n') : '(the page words kept no label for this input - leave the label out of every fact)');
+}
