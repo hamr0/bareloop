@@ -2983,7 +2983,7 @@ Filed 2026-11-01. hamr said "BA-30 go, build it" (relayed to the bare-agent sess
 2026-11-02 — **Released and consumed.** Released in bare-agent v0.59.0 (PR #78, merge 1247efe, tag v0.59.0); consumed by bareloop fix/bad-calls (6daf87c), `shrinkGuard` on every worker with `guardPath` realpathed in bareloop's own predicate (F276). Test-proven; the live check (F280) had no gutting write to refuse.
 
 
-## BG-4 — FILED 2026-11-09 (not yet relayed): any-of phrase presence on a cited quote — "the quote carries AT LEAST ONE of these words" (R10 offer POC, F299)
+## BG-4 — FILED 2026-11-09, DELIVERED in bareguard 0.33.0 (2026-11-10): any-of phrase presence on a cited quote — "the quote carries AT LEAST ONE of these words" (R10 offer POC, F299)
 
 ### Ask
 

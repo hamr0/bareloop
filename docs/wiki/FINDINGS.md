@@ -15641,7 +15641,7 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 ## F303 — BG-4 delivered in bareguard 0.33.0; our frozen E1-E6 pass on the published package (2026-11-10; $0)
 
 **Facts.** `.claude/scratch/bg4/output.txt` (guard's branch 272c42d) and `.claude/scratch/bg4/pub/output-pub.txt` (published bareguard 0.33.0). Per guard: ruling #79, `any: true`, and an opt-in `edges: true`. E1-E6 all PASS on both. E6 `rubricSha` 8e7144c278bdad481621ed139a71aa79c40ff7166d134a34f5883cdc734afb7c, the same on the branch, on bg-main and on the published package (I did not compare it with the 0.32 file in this pass).
-**The real trap behind `edges`.** Plain substring matches "changed" inside "unchanged", a wrong green. The round 2-5 page carries 8 "unchanged" (counted in `paid5/input/CHANGELOG.md`, same 8 in rounds 2, 3, 4, 4b). The "111 in round 1's page" figure was relayed to me and I could not find that page to count it: not verified.
+**The real trap behind `edges`.** Plain substring matches "changed" inside "unchanged", a wrong green. The round 2-5 page carries 8 "unchanged" (counted in `paid5/input/CHANGELOG.md`, same 8 in rounds 2, 3, 4, 4b). Round 1's page (`.claude/scratch/r10/paid/work/CHANGELOG.md`) carries 111 "unchanged" (counted, case-insensitive).
 **Status.** bareloop still pins `bareguard ^0.31.0` (`package.json`); a `^0.33.0` bump is needed before use. Tick 5 is no longer blocked on bareguard but is TO REDO with a new POC.
 
 
