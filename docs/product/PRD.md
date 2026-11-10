@@ -2231,7 +2231,7 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 0. **Fix 0 (first): a rubric plan must never sign with zero checks** — one end check on both doors after the declaration settles, independent of the seed gate; includes dropExtras/moveUncheckable leaving `parts: []`. Seen live paid6 d2, d17 (F309). A test-proven version exists on feat/check-ledger (55e7234, cb3babf).
 0b. **Check 0b ($0, before any build): is the run-time worker told a line's picks?** fwdloop found (their F173, relayed, not read in a file) that a page-quoting step with picks was never told them and swung between the word-count red and the list-items red (0/4 green); telling it the picks in the quoting block, only when the step has picks, gave 4/4 on the first try (fwd M10 am28). bareloop's paid rounds tested drafting only, so ours is unknown. Read the worker brief for a rubric step with picks; if the picks are missing, copy fwd's fix from their released tag (conditional text only, per hamr's prompt-text ruling).
 1. **Map.** DONE (`MAP.md`).
-2. **Design and a $0 POC on the 77 saved paid drafts.** TO DO. No build before it passes.
+2. **Design and a $0 POC on the 77 saved paid drafts.** Design draft 2 frozen in `ITEM33-BUILD.md` (hamr + fwd review 2026-11-10); POC running. No build before it passes.
 3. **Build.** TO DO, after tick 2.
 4. **A paid round to verify.** TO DO; the round 7 harness exists and is reframed for the ledger.
 5. **Shared with fwdloop.** OPEN: one shape for both; fwd was shown the map on 2026-11-10. See also fwd's F171 (fwdloop docs/logs/FINDINGS.md, commit 1186072, relayed): 21 lists, same root, a zero-check plan is signable there too.
@@ -2241,7 +2241,7 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 - (b) Keep the confirm AI's `checkItems` list or remove it. Pick: remove it, one owner.
 - (c) The ledger changes the signed plan's shape, so old hashes flip. Pick: yes; old runs are not repaired.
 
-**Local fixes not in this release.** The four local fixes of F307 (55e7234 end check, 5683008, 039ce9d, cb3babf) are NOT in this release. They are kept on branch `feat/check-ledger` (tip de0af496), test-proven only; the ledger redesign decides whether each is kept, reworked or replaced. The paid round 7 harness (`.claude/scratch/r10/paid7`, frozen against cb3babf) belongs to that branch.
+**Local fixes not in this release.** Three of the local fixes of F307 (55e7234 end check, cb3babf, 039ce9d) are NOT in this release; they are kept on branch `feat/check-ledger`, test-proven only, and the ledger redesign decides whether each is kept, reworked or replaced. 5683008 was reverted on 2026-11-10 (5e3cbdb1): the word-limit case goes to the ledger design (hamr ruling: a typed limit is not read by code, code asks for a `~` rule). The paid round 7 harness (`.claude/scratch/r10/paid7`, frozen against cb3babf) belongs to that branch.
 
 **Pick up first thing next.** Read FINDINGS F305-F308 and `MAP.md`, then tick 2.
 

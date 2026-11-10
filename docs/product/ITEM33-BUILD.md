@@ -3256,3 +3256,111 @@ For hamr to know (report, not a question): a PR-verification job runs the person
 - Real per-run cost on bareloop for these shapes.
 - Which status-switch sites in the panel need the new `skipped` key.
 - `bridge.missing`/`confirmServer` shape in bare-agent 0.59.0.
+
+
+## Check ledger design draft 2 + $0 POC bar (frozen 2026-11-10)
+
+# DESIGN: one check ledger per job (draft 2, 2026-11-10 — fwd review folded in)
+
+Status: DRAFT. hamr agreed the four picks below on 2026-11-10. Not frozen until the POC bar is committed.
+Input: `MAP.md` (17 lists L1-L17, 15 disagreements D1-D15), PRD v1.132 "NEXT after this release", FINDINGS F305-F309.
+Shared with fwdloop: one shape for both repos; each repo builds its own copy.
+
+## Rulings this draft rests on (hamr, 2026-11-10)
+
+1. The confirm AI's `checkItems` list is REMOVED. The confirm turn confirms the goal only. Checks come from `~` rules, picks, page facts and the drafter's parts. (Kills D2, D3, D6, D9, D12, D15 at the root.)
+2. A limit typed in a free-text answer ("250 words") is NOT read by code. Code asks the person to write it as a `~` rule.
+3. The ledger is saved INSIDE the signed close. The hash shape changes; old runs keep their old plans and are not repaired. AMENDED 2026-11-10 (hamr agreed, fwd review d): signed = line, key, from, state, rule, part; reason text and words are saved but NOT signed; words the person answered are frozen as seen.
+4. The command line door stays simple: no ask step. Its rows come from `~` rules, page facts and drafter parts, each shown as built or Not checked.
+5. (main-session call) The plan card and Job tab keep their look; they become views of the ledger. Any look change is shown to hamr first.
+6. (main-session call) Agreeing to a reading still adds a `~` line to the job box, as today; that line gets its row.
+
+## The ledger
+
+One array per job, `ledger: Row[]`, written ONLY by code. AIs propose; code sets every state.
+
+```
+Row {
+  key:    {lineWords, occurrence, ruleWords?, kind}   carry key across drafts and Revise (fwd e: same key as picks-record, for EVERY row kind)
+  line:   number                 the job line (this draft's number)
+  from:   "rule" | "pick" | "look" | "ai-part" | "answer" | "code-end"   (code-end = fwd addEnd lines)
+  words:  string                 the exact words the person saw, frozen at answer time
+  rule?:  number                 the ~ rule it belongs to, if any
+  state:  "proposed" | "agreed" | "dropped" | "built" | "not-checked"
+  by:     "person" | "code" | "ai"   who set the CURRENT state
+  part?:  {line, part?, fact?, pick?}   for built: points INSIDE the close (fwd b: a fact, or picked[i], not only a whole part)
+  reason?: string                for dropped / not-checked: plain words from code's one table
+}
+```
+
+Draft 2 changes from fwd's review (2026-11-10):
+- (a) A per-line verdict class (fwd: green/softgreen/hitl, unjudgeable, refused) is a VIEW: one code function `lineClassOf(rows)`. bareloop has parts, not a line class, so this is fwd-side; the function shape is shared.
+- (b)+(h) `part` points inside a close, and row -> part is MANY-TO-ONE: two rules with one meaning ("exactly 3 bullets" + "exactly 3 list items") share one checker. The sign check is: every built row points at a real check, and every real check has at least one row.
+- (c) Run-time "told picks" reads ONLY built pick values. Never row words, look rows or verdicts. Hard limit.
+- (d) SIGNED: line, key, from, state, rule, part. UNSIGNED: reason text and words (the look re-runs per draft and its words change). Words the person answered are frozen as seen.
+- (e) Rows carry across drafts and Revise by `key`, not by id.
+- (f) "Drop it" exists only where the ask offers it. An agreed reading adds a `~` rule, and that rule gets its own row (as ruling 6).
+- (g) fwd's sheet `covers` becomes the row's `part` link, not a second source. bareloop's `covers` goes away with checkItems.
+- (i) Out of the ledger: the arbiter block (cap, send, source, ask TTL) and schedule.json. The AI's own `notChecked` list is DROPPED: every rule already ends built or not-checked by code, so the AI list would be a second owner.
+- The mechanical floor (file exists, non-empty, done, files-changed, text-present) never counts as built.
+
+State moves (code only):
+- `proposed -> agreed | dropped` (a person's answer, or code for a code-built pick)
+- `agreed -> built | not-checked` (after the drafter and code transforms)
+- a `~` rule starts `agreed` (the person wrote it); a look fact starts `proposed` unless tied to a rule.
+- `built` and `not-checked` are final for the draft. Nothing is ever deleted: a row only changes state. That is what makes "silently vanished" impossible.
+
+## Who writes rows (one writer per step)
+
+| Step (MAP flow) | Writes |
+|---|---|
+| 1 job box | one `rule` row per `~` rule, state agreed, by person |
+| 4 look | one `look` row per kept fact (proposed, or agreed when tied to a rule); one per drop (not-checked, reason) |
+| 5 look asks | the answered row -> agreed / dropped (by person); an agreed reading also adds the `~` line (ruling 6) |
+| 6-7 pick suggest + asks | `pick` rows; answers -> agreed / dropped; own words -> agreed with the person's words |
+| 8 confirm | goal only (ruling 1). A typed limit in an answer -> code asks for a `~` rule (ruling 2) |
+| 10 code transforms | each transform changes row states instead of editing `refused`/`notes` strings: applyPicks -> built; moveUncheckable, dropExtras, withDropNotes -> not-checked with reason; drafter parts with no row -> new `ai-part` row, built |
+| 11 validator | reads rows: every `agreed` row must end `built` or `not-checked` (replaces `rubric-rule-dropped` by rule number) |
+
+## Who reads (everything else is a view)
+
+- Drafter prompt: one block rendered from rows (agreed, settled by code, not checked). Replaces `confirmedBlock`, `settledBlock` and the look report's three sources. Conditional text only.
+- Run-time worker brief (`lineBriefs`): told each built pick on its line, only when the line has one (Check 0b; copy fwd am28 from their released tag).
+- Plan card and Job tab "Not checked": the same filter over rows (fixes D8).
+- End check (Fix 0): stop when no row is `built` with a real check.
+- Retention: counts rows by `from` and final state (fixes D15).
+- Signing: the signed close carries `ledger`; each close part carries its row id; `planMatchesClose` also checks every built row has its part and every part has its row.
+
+## What goes away
+
+`checkItems`, `covers`, the confirm `notChecked`, `reconcileRubricPlan`'s three-source merge, the `moved` list, `rulesOfLine` (the twin of `lineRules`). `refused`/`notes` become rendered from rows (kept in the signed close only if fwd needs them for compatibility; to decide in the build spec).
+
+## Fixes already on feat/check-ledger
+
+- 55e7234 + cb3babf (end check): kept; becomes "no built row" in the build.
+- 5683008 (word limit as claim count): dropped (reverted); covered by ruling 2 + the row model.
+- Check 0b fix: waits for fwd's released tag.
+
+## $0 POC (before any build) — bar to freeze in a commit before it runs
+
+Corpus: the 77 saved paid drafts (rounds 3-6), real, not authored.
+A sonnet builder writes a throwaway replay that builds the ledger from each saved draft's recorded inputs and outputs, then measures:
+
+- P1 every real check (not the mechanical floor) in each saved final declaration has AT LEAST one built row pointing at it, and every built row points at a real check (target: 100% of valid drafts).
+- P2 every `~` rule has a row that ends built or not-checked with a reason (target: 100%; any silent end = FAIL).
+- P3 the known vanish cases (paid6 d2, d8, d17, d22) show as rows with a state and reason, never missing.
+- P4 the zero-check drafts (paid6 d2, d17) are caught by "no built row"; and no draft that had a real check is caught (0 false stops).
+- P5 NO LOSS: the ledger's one Not-checked view holds every item the OLD sign card OR the OLD Job tab listed as not checked, on every valid draft (target: 100%; a lost item = FAIL). Items the old views missed are counted and listed, not a fail.
+- P6 CARRY: where a session has 2+ drafts or tries, every row of the earlier one re-matches by `key` in the later one, or its line/rule is really gone from the job text (target: 100%).
+- P7 SIGNED HASH STABLE: rebuilding the same saved draft twice gives the same signed fields byte for byte (target: 100%).
+- Casualty rule: a draft whose saved data cannot rebuild a step is row-invalid, logged with why, not counted; more than 10 invalid = POC FAIL (instrument too blind).
+- The replay code is throwaway, lives in `.claude/scratch/r10/ledger/poc/`, and never ships.
+
+FAIL on any bar -> report FAIL, redesign, re-freeze; never re-tune the bar.
+
+## Open for the build spec (not for hamr unless they change behaviour)
+
+- Exact row id scheme across a Fix/revise round.
+- Whether `refused`/`notes` stay in the signed close beside `ledger` (fwd compatibility).
+
+sha256 of .claude/scratch/r10/ledger/DESIGN.md: 739258971f9e5d38995574edabd16f51110721a244688316ef5a8626283866c6
