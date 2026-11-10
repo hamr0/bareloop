@@ -193,6 +193,29 @@ test('createSession on a rubric job with a local file: the CONFIRM TURN runs (no
   assert.equal(existsSync(join(into, 'tree', 'input', 'CHANGELOG.md')), true);
 });
 
+test('R10 end check, panel door: a declaration with no real check (paid6 draft 17\'s real close) ends refused with the d4596a7 words and never reaches the signing gates', async () => {
+  const file = changelogCopy();
+  const d17 = JSON.parse(readFileSync(join(HERE, 'fixtures', 'r10-vanish-closes.json'), 'utf8')).d17.specClose;
+  let gatesReached = false;
+  const session = createSession({
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-door-nocheck', jobText: '1. Write a short friendly summary of the note', inputs: `Changelog: ${file}`, destination: join(tmp(), 'delivered'), capUsd: 1,
+  }, {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(), sessionsRoot: tmp('rubric-door-sess-'),
+    scout: { state: 'PRESENT', facts: { x: 1 }, calls: [], raws: [] },
+    generate: async () => { throw new Error('no authoring model call'); },
+    confirmGenerate: confirmModel(PLAN).generate,
+    authorFn: async () => ({ ok: true, declaration: { stages: d17.stages, notes: d17.notes, refused: d17.refused }, genreEnv: null, cost: { costUsd: 0, knownUsd: 0, spendComplete: true, calls: [], unpricedRounds: 0 }, reds: [] }),
+    prepareSigningFn: async () => { gatesReached = true; return { ok: true, specHash: 'abc', seedRef: 'x', work: [], guards: [], stops: [], reds: [], refusal: null, gates: {} }; },
+  });
+  assert.ok(await waitFor(() => session.state.pendingAsk?.kind === 'menu'));
+  assert.equal(session.signPrepare().ok, true);
+  assert.ok(await waitFor(() => ['prepared', 'refused', 'error'].includes(session.state.phase)));
+  assert.equal(session.state.phase, 'refused', `${session.state.phase} / ${session.state.error}`);
+  assert.match(session.state.error, /^The checks before signing did not all pass, so nothing was signed\. Spent so far: /);
+  assert.match(session.state.error, /This job has no check that can fail: no `~` rule, and no check the AI built was kept\./);
+  assert.equal(gatesReached, false, 'the end check refuses before the signing gates');
+});
+
 test('the rubric confirm turn: the PROTECTIONS shown are the code\'s (guard list + write fence + one file line per job line), the model is told what a check can be and shown the same list as ALREADY COVERED, and notChecked is the model\'s own', async () => {
   const file = changelogCopy();
   const cm = confirmModel(PLAN);

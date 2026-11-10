@@ -994,7 +994,6 @@ export function createSession(card, deps = {}) {
       // the end check: a rubric close with no real check never reaches the signing gates (R10, hamr 2026-11-10)
       const noCheck = noCheckStopText({ closeDecl: spec.closeDecl, spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete } });
       if (noCheck) {
-        appendDraftLog(outDir, { kind: 'step-reds', no: state.steps.length - 1, stop: 'no-check', reds: [], at: new Date().toISOString() });
         refuse(noCheck);
         return;
       }
