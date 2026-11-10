@@ -111,6 +111,6 @@ test('guard: a non-rubric job is untouched (the same object, its reds stand)', (
 
 test('wiring: the draft gate runs the fill/merge on every declaration (author, revise and retry share `picked`), rubric-gated, after the picks', () => {
   const src = readFileSync(new URL('../src/authorflow.js', import.meta.url), 'utf8');
-  assert.match(src, /fillAndMergeFacts\(applyPicks\(moveUncheckable\(moveTextUnitClaims\(d, lang === RUBRIC_LANG\), jobLines \?\? \[\], lang === RUBRIC_LANG\), settledPicks\), inputLabelsOf\(inputs\), lang === RUBRIC_LANG\)/);
+  assert.match(src, /fillAndMergeFacts\(applyPicks\(moveUncheckable\(d, jobLines \?\? \[\], lang === RUBRIC_LANG\), settledPicks\), inputLabelsOf\(inputs\), lang === RUBRIC_LANG\)/);
   assert.equal([...src.matchAll(/withFactBindings\(withDropNotes\(settlePersonsWords\(picked\(/g)].length, 1, 'one settle site, so one place for the step');
 });

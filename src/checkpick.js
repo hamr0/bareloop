@@ -378,25 +378,6 @@ export function moveUncheckable(declaration, jobLines, rubric) {
   return { ...declaration, stages, ...(refused.length ? { refused } : {}), ...(notes.length ? { notes } : {}) };
 }
 
-/** a claim-count check whose own words count text units, not claims: the wrong shape for a limit on words, lines, bullets, sections or sentences */
-const countsTextUnits = (/** @type {any} */ p) => p !== null && typeof p === 'object' && p.class === 'countable' && (p.check === 'minClaims' || p.check === 'maxClaims')
-  && /\b(words?|lines?|bullets?|list items?|sections?|sentences?|paragraphs?)\b/i.test(String(p.text ?? '')) && !/\b(claims?|quotes?|quoted|cited|copied)\b/i.test(String(p.text ?? ''));
-
-/**
- * RUBRIC jobs only (the caller gates on the job's lang): a claim count (minClaims / maxClaims) that the drafter worded as a limit on words, lines, bullets, sections or sentences
- * (paid round 6 draft 22: "at most 120 words" written as maxClaims 120) is the wrong shape, so it is turned into a part nothing can check and `moveUncheckable` lists it under Not checked
- * with its own words. A word limit the person agreed is a `~` pick built by code (`applyPicks`); it is never a claim count. Runs BEFORE `moveUncheckable`. Pure.
- * @param {any} declaration @param {boolean} rubric @returns {any}
- */
-export function moveTextUnitClaims(declaration, rubric) {
-  if (rubric !== true || declaration === null || typeof declaration !== 'object' || !Array.isArray(declaration.stages)) return declaration;
-  const isStage = (/** @type {any} */ st) => st !== null && typeof st === 'object' && st.kind === 'rubric-step' && st.params !== null && typeof st.params === 'object' && Array.isArray(st.params.parts);
-  if (!declaration.stages.some((/** @type {any} */ st) => isStage(st) && st.params.parts.some(countsTextUnits))) return declaration;
-  return { ...declaration, stages: declaration.stages.map((/** @type {any} */ st) => (!isStage(st) ? st : {
-    ...st, params: { ...st.params, parts: st.params.parts.map((/** @type {any} */ p) => (countsTextUnits(p) ? { text: p.text, class: 'none', ...(Array.isArray(p.rules) ? { rules: p.rules } : {}), ...(Array.isArray(p.covers) ? { covers: p.covers } : {}) } : p)) },
-  })) };
-}
-
 /** a part of a rubric-step stage, from a pick: the check's own fields, the rule's words, and the `~` rule numbers it carries out @param {Record<string, any>} check @param {string} text @param {number[]} rules */
 export function partOfPick(check, text, rules) {
   const { rule, ...fields } = check;
