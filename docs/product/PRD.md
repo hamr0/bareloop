@@ -2256,3 +2256,5 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 - Audit lists every rule each run with the value it read.
 - Example: a changelog summary job whose check needs "the newest release heading". Until built, week-only exact-word checks stay refused.
 
+
+**Backlog (PARKED, not to build now): Ship bareloop as a single binary** — today an adopter must install Node >=22 before bareloop (CLI and panel) runs; a one-file executable (e.g. Node's own single-executable packaging, no language rewrite) would remove that install step for non-engineers. No rewrite to Rust/TS: the arbiter is the product, and runs wait on the model, not on bareloop. Parked by hamr 2026-11-11; build only when install friction shows up live.
