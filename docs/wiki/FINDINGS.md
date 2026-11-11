@@ -15704,3 +15704,28 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Seen live.** Paid round 6 draft 2 (arm B) prepared with rubric-step 0 parts after a drop (`.claude/scratch/r10/paid6/result.json`, i=2), and draft 17 (session smwag7ncubmip) with zero checks.
 **Correction.** The main session's round-6 read missed draft 2 and said only draft 17. Both are real.
 **Ruling (hamr, 2026-11-10).** Ship this release as-is and narrow the claim: CHANGELOG and PRD now say the no-check stop fires only when nothing fails on the seed. The zero-check defect is the FIRST fix of the next item (PRD v1.132 Fix 0). A test-proven version exists on `feat/check-ledger` (55e7234, cb3babf).
+
+
+## F310 — the confirm step's injections made the drafter leave the list (paid round 8, 2026-11-10)
+
+**Finding.** Round 8 failed Q1 (13 of 58 final-try agent parts had no ledger row, 22%) and Q2 (one row silent), with 3 zero-check stops (`.claude/scratch/r10/ledger/paid8/result.json`, `progress.log`). Root cause: the confirm step still injected "kinds of check" text and a confirmed plan next to the list, so two plans competed and the drafter produced parts off the list.
+**Fix (in the POC copy, branch `poc/ledger-list`).** One list with `~` / `!` / `$` rows, confirm turn = goal only, no injections (commit c697421b). Rounds 9-10 then showed 0 zero-check stops and no injection (Q6 ok).
+**Status.** Seen in a paid round on one model and one job family; a leaning.
+
+## F311 — the `$` cited default was decided before the build settled (paid round 9, 2026-11-10)
+
+**Finding.** Round 9 failed Q8 only: 2 of 7 text lines had no built `$` cited row (draft 6; `.claude/scratch/r10/ledger/paid9/result.json`, `progress.log`). The default was decided before the build settled, so a fact that did not build, or was dropped on the last try, left the line without its cited default.
+**Fix (copy commit 4e1abeae).** Decide the default after the build settles, whatever the reason the fact did not build. Round 10 Q8: 0 bad of 11 text lines.
+**Status.** Seen in a paid round; the fix is seen once (round 10).
+
+## F312 — week-only exact-word checks are correctly refused; round 10's Q1 was a measure defect (2026-11-11)
+
+**Finding.** Round 10 failed Q1 only (9 of 42, 21%). All 9 refusals were drafter rewrites of a phrase fact "release heading" with words like "## [0.54.1] - 2026-11-04" (`.claude/scratch/r10/ledger/paid10/result.json`, `weekOnlyRefusals`: drafts 3, 4, 13). A repeating job's check that copies today's page words passes run 1 and fails run 2 after the next release, so the week-only rule refusing it is CORRECT. Q1 counted correctly refused checks as the drafter wandering: a measure defect, named, not re-tuned. All other gates passed (20/20 prepared, 0 casualties, no injection, every text line had its `$` default).
+**Ruling (hamr, 2026-11-11).** Stop testing; build the round-10 shape; keep refusing week-only exact-word checks for now. The proper cure (the signed check stores the rule, code re-reads the value each run) is parked in PRD v1.132 backlog "Rules re-read each run".
+**Status.** Seen in a paid round; n=8/8/4, one model.
+
+## F313 — round 11 withdrawn: the operator's reading was wrong (2026-11-11)
+
+**Finding.** The main session read round 10's Q1 as the rule being too strict and froze round 11 (pre-registration f5e145b3, nothing run) with the week-only rule narrowed to keep phrase facts carrying a version or date (copy commit 1880ad13). That would let through a check that fails on run 2 (F312). Withdrawn before any paid data; `.claude/scratch/r10/ledger/paid11/` holds only the prereg and a $0 dry run. 1880ad13 is not carried forward; 4e1abeae stands.
+**Lesson.** An operator's reading of a failed gate must be checked against what the failing items actually were before a rule is loosened.
+**Status.** Withdrawn; no paid spend.
