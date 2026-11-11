@@ -174,6 +174,40 @@ export function fitPlaceRule(words, text) {
   return null;
 }
 
+/** the only marks a heading piece may carry around its value: heading hashes, brackets, a dash, parentheses and spaces */
+const HEADING_FURNITURE = /^[\s#[\]()\-\u2013\u2014]*$/;
+
+/**
+ * STRIP (P1b, hamr 2026-11-11): the words of a phrase fact that are a piece of the newest release heading ("## [0.54.1]", "[0.54.1] -", "0.54.1",
+ * "2026-11-04", "## [0.54.1] - 2026-11-04") are stripped by code to their value(s). The words hold exactly one version (X.Y.Z, an optional leading v) and/or
+ * exactly one ISO date and nothing else but heading marks; each value is fitted with {@link fitPlaceRule} on the input's own text, and when both are
+ * present both must sit on the SAME first release heading line. Returns the values (version first) each with its rule, or null: two versions, two dates,
+ * any other word, another date form, a value that is not at the first release heading, no text. Pure.
+ * @param {string} words @param {string|null|undefined} text
+ * @returns {{kind: 'version'|'date', value: string, rule: PlaceRule}[]|null}
+ */
+export function fitPlacePhrase(words, text) {
+  if (typeof text !== 'string' || text.trim() === '') return null;
+  const w = String(words ?? '');
+  const dates = w.match(/(?<![\w.])\d{4}-\d{2}-\d{2}(?!\d)/g) ?? [];
+  const noDates = w.replace(/(?<![\w.])\d{4}-\d{2}-\d{2}(?!\d)/g, ' ');
+  const versions = [...noDates.matchAll(/(?<![\w.])v?(\d+\.\d+\.\d+)(?!\d|\.\d)/g)].map((m) => m[1]);
+  if (dates.length > 1 || versions.length > 1 || dates.length + versions.length === 0) return null;
+  if (!HEADING_FURNITURE.test(noDates.replace(/(?<![\w.])v?\d+\.\d+\.\d+(?!\d|\.\d)/g, ' '))) return null;
+  /** @type {{kind: 'version'|'date', value: string, rule: PlaceRule}[]} */
+  const out = [];
+  for (const [kind, value] of /** @type {['version'|'date', string][]} */ ([...versions.map((v) => ['version', v]), ...dates.map((d) => ['date', d])])) {
+    const rule = fitPlaceRule(value, text);
+    if (rule === null) return null;
+    out.push({ kind, value, rule });
+  }
+  if (out.length === 2) {
+    const [a, b] = out.map((x) => readPlace(x.rule, text));
+    if (!a.found || !b.found || a.lineIndex !== b.lineIndex) return null;
+  }
+  return out;
+}
+
 // ---- the facts a spec carries -----------------------------------------------------------------------------------------------------------
 
 /** @param {unknown} v @returns {v is Record<string, any>} */
