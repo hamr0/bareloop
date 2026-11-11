@@ -3910,3 +3910,16 @@ Round 2 of the place-rules POC (round 1 stays FAIL, F317): strict first-heading 
 
 - PREREG.md `2c750d2e60a414296fd43f6a8e43b48be1b07bd1398057b4de0c3df20f4a5bf9`
 - poc.mjs `79823d02905e2349599f75a4830d3d62b0bd3a6ecad2adbf6b3ac2b0b4eb5b1f`
+
+## Addendum 2026-11-11: Place-rules $0 POC round 2 result (2026-11-11): FAIL
+
+Run once on the frozen prereg (f69f3d92, amended before data), $0, no model call. ROUND FAIL on G1, from one WRONG in arm (b). Reported FAIL, not re-tuned.
+
+- The fix under test held: the strict selector reads only the first heading at the rule's level and never scans down. All 10 crafted negatives behave, including round 1's N1a (NOT FOUND now).
+- Arm (a): 224 consecutive tag pairs across bareloop, bareguard, bare-agent and litectx (the pair count of 223 quoted earlier was a miscount). Variant B gets versions 222/224 and dates 221/224; 0 stale reads, 0 file-lag, 0 WRONG. Variant A (no skip word) stays safe: versions 154/224, dates 153/224, all stops.
+- Arm (b): 61 files, 28 unique after dedupe and seen-package exclusion, 18 valid. Variant B: correct 9/18, unfittable 8/18 (safe stops), wrong 1.
+- The WRONG: `node_modules/boolean/CHANGELOG.md` (in bareagent), package 3.2.0, read 3.1.4. It is a semantic-release file: minor releases sit at `# [`, patches at `## [`. The rule picked by shape was `## [`, so it never saw the top `# [3.2.0]` heading: a mixed-heading-level stale read.
+- Caveat: arm (a) is one genre (keep-a-changelog style), so it says nothing about other formats.
+- Open (hamr's call): a round 3 design, for example a drafting-time refusal when releases appear at mixed heading levels. Needs a new frozen prereg before it runs.
+
+Result: `.claude/scratch/r10/placerules/round2/result.json` (untracked). See FINDINGS F319.
