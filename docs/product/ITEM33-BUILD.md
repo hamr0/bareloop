@@ -3974,3 +3974,11 @@ Date: 2026-11-11. Round 4 is $0 and asks two things, run once: arm E, whether th
 - sha256 PREREG.md: fe9af317cefe06d59eba8be57272b3847d876455d70a02e465e1f025fbcd82c0
 - sha256 poc.mjs: e369dd499815b191a6b348fc9261e190b514675f880d49a74b061cd88e891590
 - Run: `node /home/hamr/PycharmProjects/bareloop/.claude/scratch/r10/placerules/round4/poc.mjs --real`
+
+### Place rules POC round 5 pre-registration (frozen, nothing run)
+
+Date: 2026-11-11. Round 5 is $0, run once: round 4's arm W with one change, the "any piece of the heading line" fit. A phrase carrying one semver and/or one ISO date token (a whole heading line, a cut `## [0.54.1]`, or a bare value) is fitted by the product's fit to one heading line; the template (tokens to `{v}`/`{d}`) must be CONTAINED in that line (round 4: equal); at run start the bound text must occur inside the newly read heading line. W1 runs three times (whole line, cut after the version's closing mark, bare version) on the 224 pairs; W2 now scores every saved draft phrase; W3 is round 4's 17 negatives with W-N3 changed and W-N5 added. Bars G1 to G5 are in PREREG.md. Known before any number: W-N1 is kept as round 4 wrote it and is predicted to proceed under containment (a G1/G4 fail on that row). Frozen in `.claude/scratch/r10/placerules/round5/`. Nothing was run on real data.
+
+- sha256 PREREG.md: e3c9f1677a00e587b2519542c94da8ae705b6a02a6f532b124ec531c3b25da14
+- sha256 poc.mjs: c1841cfc9b74adda8d04ddcd7572418ea0a6643f096891014b9fba317541c60a
+- Run: `node /home/hamr/PycharmProjects/bareloop/.claude/scratch/r10/placerules/round5/poc.mjs --real`
