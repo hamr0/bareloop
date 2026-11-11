@@ -24,7 +24,7 @@ const DATE = { kind: 'headingDateAfter', prefix: '## [', end: ']', shape: 'semve
 
 
 const LOOK_WORDS = '## [0.55.0] - 2026-11-04';
-const lookOf = (/** @type {string[]} */ words) => ({ facts: [{ line: 1, name: 'version heading', words, source: 'Changelog' }] });
+const lookOf = (/** @type {string[]} */ words) => ({ facts: [{ line: 1, name: 'version heading', shape: 'phrase', words, source: 'Changelog' }] });
 
 /** the real drafting pipeline on one look fact: the list, then the apply of a drafter plan that copies the look's words */
 function draftLook(/** @type {string[]} */ words, /** @type {string} */ log = LOG) {
@@ -44,6 +44,13 @@ test('look strip: a look fact "## [0.55.0] - 2026-11-04" is listed and splits in
   assert.equal(resolved.find((x) => x.from === 'look')?.state, 'built');
   assert.equal(CL.signedRows(resolved).find((x) => x.from === 'look')?.state, 'built');
   assert.deepEqual(PR.placeFactsOf({ closeDecl: r.declaration }).map((f) => f.key), ['s1/version heading version', 's1/version heading date']);
+});
+
+test('look strip: a date or number SHAPE look fact with a version or date stays dropped as week-only', () => {
+  for (const [shape, words] of [['date', ['2026-11-04']], ['number', ['0.55.0']]]) {
+    const rows = CL.buildLedger({ jobLines, texts, inputLabels: ['Changelog'], look: { facts: [{ line: 1, name: 'v', shape, words, source: 'Changelog' }] } });
+    assert.equal(rows.find((x) => x.from === 'look')?.reason, CL.WEEK_ONLY_WORDS, shape);
+  }
 });
 
 test('look strip: a bare version look fact keeps one fact with the rule', () => {
@@ -74,7 +81,7 @@ test('look strip run: a look fact stripped at drafting from the whole heading bi
   const d = (() => {
     const phrase = '## [0.55.0] - 2026-11-04';
     const t1 = { changelog: DRAFT_LOG };
-    const rows = CL.buildLedger({ jobLines, texts: t1, inputLabels: ['changelog'], look: { facts: [{ line: 1, name: 'newest release', words: [phrase], source: 'changelog' }] } });
+    const rows = CL.buildLedger({ jobLines, texts: t1, inputLabels: ['changelog'], look: { facts: [{ line: 1, name: 'newest release', shape: 'phrase', words: [phrase], source: 'changelog' }] } });
     const part = { text: 'Quote the newest release heading', class: 'fact', source: 'changelog', facts: [{ name: 'newest release', shape: 'phrase', phrase }] };
     return CL.applyLedger(decl([part]), rows, { labels: ['changelog'], texts: t1 }).declaration.stages[0].params.parts[0];
   })();

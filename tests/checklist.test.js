@@ -88,7 +88,8 @@ test('A8 a look fact or a phrase proposal whose words hold a version or a date i
   const jl = [{ n: 1, text: 'Summarise', rule: 'must say 0.54.1', rules: ['must say 0.54.1'] }];
   const rows = build({ jobLines: jl, look: lk, extra: [{ line: 1, kind: 'phrase', source: 'Changelog', phrase: '2026-11-04' }] });
   const by = (k) => rows.find((r) => r.key === k);
-  assert.equal(by('L1.fact.release version').reason, CL.WEEK_ONLY_WORDS);
+  // place rules (look strip): a PHRASE look fact whose version the input's newest heading carries is kept; a date-shape look fact stays dropped
+  assert.equal(by('L1.fact.release version').state, 'listed');
   assert.equal(by('L1.fact.release date').reason, CL.WEEK_ONLY_WORDS);
   assert.equal(by('L1.fact.heading').state, 'listed');
   // place rules (P1): an ISO date the input's newest heading carries is kept, a place rule fits it at the draft (it is no longer week-only)

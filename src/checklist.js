@@ -95,7 +95,8 @@ export function buildLedger({ jobLines, checkPicks = null, look = null, texts = 
     if (words.some(weekOnly)) {
       // PLACE RULES (hamr 2026-11-11, "strip look too"): a look fact is kept only when EVERY week-only word fits (the same fit as a call phrase); the signed fact then carries the bare value(s) and rule(s)
       const strips = words.filter(weekOnly).map((w) => fitPlacePhrase(w, text));
-      if (strips.some((x) => x === null)) { rows.push({ ...base, state: 'dropped', reason: WEEK_ONLY_WORDS }); continue; }
+      // only a PHRASE-shape look fact is stripped (the apply strips phrase facts); a date or number shape fact stays dropped
+      if (f.shape !== 'phrase' || strips.some((x) => x === null)) { rows.push({ ...base, state: 'dropped', reason: WEEK_ONLY_WORDS }); continue; }
       for (const st of strips) for (const x of /** @type {NonNullable<typeof st>} */ (st)) if (!words.includes(x.value)) words.push(x.value);
     }
     if (missing.length) rows.push({ ...base, state: 'dropped', reason: `the words ${missing.map((w) => `"${w}"`).join(', ')} are not in the input` });
