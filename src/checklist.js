@@ -287,7 +287,7 @@ export function resolveLedger(rows, declaration) {
       const kind = p.check === 'cited' ? 'cited' : 'numbers';
       const line = st.params.step;
       if (out.some((r) => r.line === line && r.kind === kind)) continue;
-      out.push({ key: `L${line}.$${kind}`, line, kind, from: 'default', by: 'default', words: [], ...(kind === 'cited' ? { source: String(p.source ?? '') } : { after: Array.isArray(p.from) ? p.from : [] }), state: 'built', reason: null });
+      out.push({ key: `L${line}.$${kind}`, line, kind, from: 'default', by: 'default', words: [], ...(kind === 'cited' ? { source: String(p.source ?? '') } : { after: Array.isArray(p.from) ? p.from : [] }), state: 'built', reason: null, part: { line, part: partsOf(line).indexOf(p) } });
     }
   }
   return out;

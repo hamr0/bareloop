@@ -886,6 +886,8 @@ const NO_CHECK_TODO = 'add a `~` rule (for example the version, the date, or "un
  */
 export function isNoCheckRubricClose(closeDecl) {
   if (!closeDecl || closeDecl.lang !== 'text' || !Array.isArray(closeDecl.stages)) return false;
+  // a close that carries the one check list: no check is no BUILT row (the mechanical floor never counts)
+  if (Array.isArray(closeDecl.list)) return !closeDecl.list.some((/** @type {any} */ r) => r && r.state === 'built' && r.kind !== 'floor');
   // a part of class none (nothing checks it) or guard (an always-on stage) is not a check either
   const real = (/** @type {any} */ x) => x && x.class !== 'none' && x.class !== 'guard';
   return !closeDecl.stages.some((/** @type {any} */ st) => st && st.kind !== 'files-changed'

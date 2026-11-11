@@ -866,11 +866,28 @@ export function withDropNotes(declaration, dropped, jobLines) {
  * @param {any} closeDecl @param {any[]|null|undefined} jobLines @returns {string[]}
  */
 export function ruleNotChecked(closeDecl, jobLines) {
-  const refused = isRec(closeDecl) && Array.isArray(closeDecl.refused) ? closeDecl.refused : [];
-  return refused.filter((/** @type {any} */ r) => isRec(r) && Number.isInteger(r.line) && Number.isInteger(r.rule) && typeof r.reason === 'string').map((/** @type {any} */ r) => {
-    const text = lineRules((jobLines ?? []).find((/** @type {any} */ l) => isRec(l) && l.n === r.line))[r.rule - 1];
-    return `line ${r.line}: ${text ? `"${text}"` : `rule ${r.rule}`} — ${r.reason}`;
+  return refusedOf(closeDecl).filter((r) => Number.isInteger(r.rule) || r.fromList).map((r) => {
+    const text = Number.isInteger(r.rule) ? lineRules((jobLines ?? []).find((/** @type {any} */ l) => isRec(l) && l.n === r.line))[/** @type {number} */ (r.rule) - 1] : (r.label ?? null);
+    return `line ${r.line}: ${text ? `"${text}"` : `rule ${r.rule ?? r.kind}`} — ${r.reason}`;
   });
+}
+
+/**
+ * The refusals of a signed close, as ONE reader: when the close carries the one check list (`closeDecl.list`) its not-checked rows are the refusals (a `~` rule's row names the rule, a fact row its
+ * fact name); the old `closeDecl.refused` entries a list has no row for (a line-level refusal, a rule the list never saw) are kept, so nothing the older close said is lost. A close with no list
+ * reads `refused` alone. Pure.
+ * @param {any} closeDecl
+ * @returns {{line: number, rule?: number, kind?: string, label?: string, reason: string, fromList: boolean}[]}
+ */
+export function refusedOf(closeDecl) {
+  const old = (isRec(closeDecl) && Array.isArray(closeDecl.refused) ? closeDecl.refused : []).filter((/** @type {any} */ r) => isRec(r) && Number.isInteger(r.line) && typeof r.reason === 'string');
+  const list = isRec(closeDecl) && Array.isArray(closeDecl.list) ? closeDecl.list : null;
+  if (list === null) return old.map((/** @type {any} */ r) => ({ line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), reason: r.reason, fromList: false }));
+  const rows = list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'not-checked' && Number.isInteger(r.line) && typeof r.reason === 'string' && r.kind !== 'floor').map((/** @type {any} */ r) => ({
+    line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), kind: String(r.kind), ...(r.kind === 'fact' ? { label: String(r.key).split('.').slice(2).join('.') } : {}), reason: r.reason, fromList: true,
+  }));
+  const seen = (/** @type {any} */ r) => rows.some((x) => x.line === r.line && x.rule === (Number.isInteger(r.rule) ? r.rule : undefined) && Number.isInteger(r.rule));
+  return [...rows, ...old.filter((/** @type {any} */ r) => !seen(r)).map((/** @type {any} */ r) => ({ line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), reason: r.reason, fromList: false }))];
 }
 
 /**
@@ -977,6 +994,32 @@ export function reconcileRubricPlan({ confirmed, notChecked, closeDecl, jobLines
     ],
     moved,
   };
+}
+
+/**
+ * The sign-time check of a close that carries the one check list: every BUILT row (the mechanical floor aside) points at a part that is really in the close, and every real check part
+ * (countable or fact) has at least one built row pointing at it, so a check cannot be in the close with no row and a row cannot claim a check the close does not run. A close with no list is
+ * not examined here. Pure.
+ * @param {any} closeDecl @returns {{ok: true}|{ok: false, error: string}}
+ */
+export function listMatchesClose(closeDecl) {
+  const list = isRec(closeDecl) && Array.isArray(closeDecl.list) ? closeDecl.list : null;
+  if (list === null) return { ok: true };
+  const stages = Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
+  const partsOn = (/** @type {number} */ n) => stages.filter((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && st.params.step === n && Array.isArray(st.params.parts)).flatMap((/** @type {any} */ st) => st.params.parts);
+  const built = list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'built' && r.kind !== 'floor');
+  const bad = built.filter((/** @type {any} */ r) => !(isRec(r.part) && r.part.line === r.line && Number.isInteger(r.part.part) && isRec(partsOn(r.line)[r.part.part])));
+  const lines = [...new Set(stages.filter((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params)).map((/** @type {any} */ st) => st.params.step))];
+  const bare = lines.flatMap((/** @type {number} */ n) => partsOn(n).map((/** @type {any} */ p, /** @type {number} */ i) => ({ n, i, p })))
+    .filter(({ p }) => isRec(p) && (p.class === 'countable' || p.class === 'fact'))
+    // a part has its row when a built row points at it, or when the part lists (in its `rules`) the number of a built `~` row of its line (a row points at ONE part, a rule may be carried by several)
+    .filter(({ n, i, p }) => !built.some((/** @type {any} */ r) => (isRec(r.part) && r.part.line === n && r.part.part === i)
+      || (r.kind === 'rule' && r.line === n && Array.isArray(p.rules) && p.rules.includes(r.rule))));
+  if (bad.length === 0 && bare.length === 0) return { ok: true };
+  const parts = [];
+  if (bad.length) parts.push(`a row points at a check the close does not run: ${bad.map((/** @type {any} */ r) => r.key).join('; ')}`);
+  if (bare.length) parts.push(`a check in the close has no row: line ${bare.map(({ n, i }) => `${n} part ${i + 1}`).join('; ')}`);
+  return { ok: false, error: `The list of checks does not match the signed close (${parts.join(' | ')}). Nothing was signed — draft again.` };
 }
 
 /**

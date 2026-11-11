@@ -13,7 +13,7 @@
 import { ticketFilterWords } from '../ticketfilter.js';
 import { KIND_CATALOGUE } from '../authoring.js';
 import { splitReadNotes } from '../pagedropwords.js';
-import { checksOfClose, signedFactNames, proseNotChecked, lineRules, confirmedGoalOf } from '../rubricstep.js';
+import { checksOfClose, signedFactNames, proseNotChecked, lineRules, confirmedGoalOf, refusedOf } from '../rubricstep.js';
 
 /** `by` = who added the check: the drafter (`agent`) or the person's own pick (`you`); absent = code's own (an always-on guard, a number tie) or not known */
 /** @typedef {{name: string, cls: 'machine check'|'judge'|null, by?: 'agent'|'you'|'default'|null}} PlanCheck */
@@ -108,12 +108,11 @@ export function planFromSpec(spec) {
     if (!g || typeof g.guard !== 'string' || !Array.isArray(g.lines)) continue;
     for (const line of lines.filter((l) => g.lines.includes(l.n))) (line.always ??= []).push(g.guard);
   }
-  const refused = Array.isArray(spec?.closeDecl?.refused) ? spec.closeDecl.refused : [];
-  for (const r of refused) {
+  for (const r of refusedOf(spec?.closeDecl)) {
     const line = lines.find((l) => l.n === r?.line);
-    // a refusal of ONE ~ rule (PART 1b, RF16) names the rule in the person's words, so the row reads as that rule's Not checked
-    const ruleText = line && Number.isInteger(r.rule) ? lineRules(spec.jobLines.find((/** @type {any} */ l) => l?.n === r.line))[r.rule - 1] : null;
-    if (line && typeof r.reason === 'string') line.refused.push(ruleText ? `"${ruleText}" — ${r.reason}` : r.reason);
+    // a refusal of ONE ~ rule (PART 1b, RF16) names the rule in the person's words, so the row reads as that rule's Not checked; a list row of another kind names its fact when it has one
+    const ruleText = line && Number.isInteger(r.rule) ? lineRules(spec.jobLines.find((/** @type {any} */ l) => l?.n === r.line))[Number(r.rule) - 1] : (r.label ?? null);
+    if (line) line.refused.push(ruleText ? `"${ruleText}" — ${r.reason}` : r.reason);
   }
   // the model's signed goal sentence rides along: the page draws it as the "AI's summary" row (an older job shows it as line 1 instead)
   // (a rubric job's signed goal is the whole worker brief: only the sentence the person confirmed is the summary)

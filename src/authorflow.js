@@ -87,7 +87,7 @@ import {
 import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } from './authorscout.js';
 import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
-import { applyPicks, dropExtras, fillAndMergeFacts, moveUncheckable, retentionOf, settleRules } from './checkpick.js';
+import { applyPicks, dropExtras, fillAndMergeFacts, moveUncheckable, retentionOf, retentionOfList, settleRules } from './checkpick.js';
 import { ledgerBlock, applyLedger, ensureCited, resolveLedger, ledgerRecord } from './checklist.js';
 import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, withFactBindings, settlePersonsWords, withDropNotes, lineRules } from './rubricstep.js';
 import { dropRows, dropLine } from './pagedropwords.js';
@@ -3264,11 +3264,12 @@ export async function authorClose({
 
   // PRD v1.131 tick 7: ONE retention record when a rubric draft ends (accepted or stopped), counts only; the panel writes it into the drafting log
   const standing = fellBack ? retentions.get(fellBack.to) : [...retentions.values()].at(-1);
-  if (standing) onPhase('draft-retention', { lines: standing });
-  if (ledger && lang === RUBRIC_LANG) {
-    const lastPre = fellBack ? ledgerPres.get(fellBack.to) : [...ledgerPres.values()].at(-1);
-    if (lastPre !== undefined) onPhase('draft-ledger', { rows: ledgerRecord(resolveLedger(ledger, lastPre)) });
-  }
+  // with the one check list the retention is read from its final rows (B2); without it, from the drafted/final declaration pair as before
+  const lastPre = ledger && lang === RUBRIC_LANG ? (fellBack ? ledgerPres.get(fellBack.to) : [...ledgerPres.values()].at(-1)) : undefined;
+  const finalRows = lastPre !== undefined ? resolveLedger(/** @type {any[]} */ (ledger), lastPre) : null;
+  if (finalRows) onPhase('draft-retention', { lines: retentionOfList(finalRows, jobLines) });
+  else if (standing) onPhase('draft-retention', { lines: standing });
+  if (finalRows) onPhase('draft-ledger', { rows: ledgerRecord(finalRows) });
 
   const reds = fatal.length ? fatal : (lastValidation && !lastValidation.ok ? lastValidation.reds : []);
   return {

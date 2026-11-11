@@ -516,6 +516,22 @@ export function retentionOf(drafted, final, jobLines) {
   });
 }
 
+/**
+ * Retention read from the one check list instead of the declaration pair: per job line, `aiParts` = the rows the agent proposed (look facts, the call's checks, the default cited part), `kept` = those that ended built,
+ * `dropped` = the rest, `picks` = the line has a `~` row built from a pick. Same shape as {@link retentionOf}; counts only. Pure.
+ * @param {any[]} rows the final rows (`resolveLedger`) @param {any[]|null|undefined} jobLines
+ * @returns {{line: number, aiParts: number, kept: number, dropped: number, picks: boolean}[]}
+ */
+export function retentionOfList(rows, jobLines) {
+  const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  const mine = (/** @type {number} */ n) => (Array.isArray(rows) ? rows : []).filter((r) => isRec(r) && r.line === n && r.kind !== 'floor');
+  return (Array.isArray(jobLines) ? jobLines : []).filter((l) => isRec(l) && Number.isInteger(l.n)).map((l) => {
+    const ai = mine(l.n).filter((r) => r.by === 'agent' || (r.by === 'default' && r.kind === 'cited'));
+    const kept = ai.filter((r) => r.state === 'built').length;
+    return { line: l.n, aiParts: ai.length, kept, dropped: ai.length - kept, picks: mine(l.n).some((r) => r.from === 'pick' && r.state === 'built') };
+  });
+}
+
 /** the reason a dropped AI extra is listed under Not checked */
 export const DROPPED_WORDS = "The AI couldn't build a working check for this, so you judge it at Accept.";
 

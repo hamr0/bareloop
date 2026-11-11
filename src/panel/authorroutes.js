@@ -22,7 +22,7 @@ import { spawn as realSpawn } from 'node:child_process';
 import { openSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { planMatchesClose } from '../rubricstep.js';
+import { planMatchesClose, listMatchesClose } from '../rubricstep.js';
 import { ticketNumberOf } from '../ticketshape.js';
 import { newestUnrunTicket } from '../ticketnext.js';
 import { readRunList } from '../runlist.js';
@@ -523,6 +523,9 @@ export function signRun(session, claimedHash, o) {
       const spec = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
       const m = planMatchesClose(session.state.finalPlan.checkItems, spec.closeDecl);
       if (!m.ok) return { ok: false, error: m.error };
+      // B2: a close that carries the one check list must agree with it: every built row points at a check the close runs, and every check has a row
+      const lm = listMatchesClose(spec.closeDecl);
+      if (!lm.ok) return { ok: false, error: lm.error };
     } catch { return { ok: false, error: 'could not read the signed spec to compare it with the plan you were shown — refusing to sign' }; }
   }
   // PIECE 9 (R7): the Schedule the card picked is signed WITH the job it is a field of (`spec.trigger`), written OFF beside the run about to start; the first green run turns it on. Before the
