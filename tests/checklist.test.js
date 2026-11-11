@@ -110,3 +110,39 @@ test('A9 an empty list (only the floor, or only dropped rows) is logged as ONE e
   assert.equal(CL.isEmptyList(textAgain), false);
   assert.equal(CL.ledgerRecord(build()).some((r) => r.rowKind === 'empty'), false);
 });
+
+// ---- A3: the one paid call -----------------------------------------------------------------------------------------------------------------
+const scripted = (args, seen = []) => async (m, tools) => {
+  seen.push({ tools: tools.map((t) => t.name), user: m.at(-1).content });
+  if (args !== null) await tools.find((t) => t.name === CL.LEDGER_TOOL).execute(args);
+  return { text: '', error: null, msgs: [], metrics: { costUsd: 0.0009, unpricedRounds: 0 } };
+};
+
+test('A3 runLedgerSuggest: one typed tool call, its cost booked and reported through onCall; the user text shows the job and the input', async () => {
+  const seen = []; const booked = [];
+  const r = await CL.runLedgerSuggest({ jobLines, texts, generate: scripted({ extra: [{ line: 1, kind: 'count', min: 1, max: 1 }] }, seen), onCall: (c) => booked.push(c) });
+  assert.deepEqual(r.extra, [{ line: 1, kind: 'count', min: 1, max: 1 }]);
+  assert.equal(r.reason, null);
+  assert.deepEqual(seen.map((s) => s.tools), [[CL.LEDGER_TOOL]]);
+  assert.match(seen[0].user, /1\. Summarise the latest release/);
+  assert.match(seen[0].user, /g1: exactly 3 bullets/);
+  assert.match(seen[0].user, /Input "Changelog":/);
+  assert.deepEqual(booked.map((c) => [c.label, c.costUsd]), [['ledger-suggest', 0.0009]]);
+  assert.equal(r.calls.length, 1);
+});
+
+test('A3 runLedgerSuggest: an unusable answer (twice) is NOT a guessed list: no proposals, a reason, both calls booked', async () => {
+  const r = await CL.runLedgerSuggest({ jobLines, texts, generate: scripted(null) });
+  assert.deepEqual(r.extra, []);
+  assert.equal(typeof r.reason, 'string');
+  assert.equal(r.calls.length, 2, 'one retry, both booked');
+});
+
+test('A3 the call system text is the signed one (count and phrase only, up to 3, or an empty list)', () => {
+  assert.equal(CL.LEDGER_SYSTEM, 'You look at the inputs of a job and name checks the inputs themselves support, beyond the guardrails the person wrote.\n'
+    + 'Call suggest_extra_checks once with up to 3 entries, or with an empty list.\n'
+    + '- kind "count": how many results the input shows or the job asks for (min and/or max, whole numbers).\n'
+    + '- kind "phrase": fixed words copied verbatim from an input (phrase, and source = that input\'s label).\n'
+    + 'Use only what you can see in the inputs. Do not repeat a guardrail the person wrote. If the inputs support none, send an empty list.');
+  assert.deepEqual(CL.LEDGER_SCHEMA.properties.extra.items.properties.kind.enum, ['count', 'phrase']);
+});

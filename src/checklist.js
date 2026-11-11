@@ -5,6 +5,7 @@
 //   `$` rows  default checks code adds itself (by: default): every claim quotes the input (a text line with one input), the numbers tie (a text line after a fact line);
 //             the mechanical floor (file exists, text not empty) is shown as a `$` row but is never counted as a check.
 // Nothing here decides a verdict; the list says what the drafter may build, and code builds the rest.
+import { askStructured, makeCostBook } from './authorflow.js';
 import { countExact, countPhrase } from './factwords.js';
 import { settleRules, plainWords } from './checkpick.js';
 import { lineRules } from './rubricstep.js';
@@ -13,6 +14,11 @@ import { lineRules } from './rubricstep.js';
 export const MAX_BANG = 3;
 /** the reason a check on a version or a date goes under Not checked: it is true only for the input as it is today */
 export const WEEK_ONLY_WORDS = 'It names a version or a date from the input, true only for the input as it is today, so you judge it at Accept.';
+/** the label of the list call, as the drafting book and the draft log see it */
+export const LEDGER_LABEL = 'ledger-suggest';
+export const LEDGER_TOOL = 'suggest_extra_checks';
+/** how much of each input the call is shown */
+const SHOWN_CHARS = 8000;
 /** the reason the empty list is logged with */
 export const EMPTY_LIST_WORDS = 'empty list: nothing to check';
 
@@ -142,3 +148,74 @@ export const ledgerRecord = (rows) => [
   ...rows.map((r) => ({ key: r.key, line: r.line, rowKind: r.kind, from: r.from, by: r.by, words: r.kind === 'rule' ? [r.text ?? ''] : r.words, state: r.state, reason: r.reason })),
   ...(isEmptyList(rows) ? [{ key: 'empty', line: 0, rowKind: 'empty', from: 'default', by: 'default', words: [], state: 'empty', reason: EMPTY_LIST_WORDS }] : []),
 ];
+
+// ---- the one paid call ---------------------------------------------------------------------------------------------------------------------
+/** the list call's own system text (model-facing; used only by the list call of a rubric job with input text) */
+export const LEDGER_SYSTEM = `You look at the inputs of a job and name checks the inputs themselves support, beyond the guardrails the person wrote.
+Call ${LEDGER_TOOL} once with up to ${MAX_BANG} entries, or with an empty list.
+- kind "count": how many results the input shows or the job asks for (min and/or max, whole numbers).
+- kind "phrase": fixed words copied verbatim from an input (phrase, and source = that input's label).
+Use only what you can see in the inputs. Do not repeat a guardrail the person wrote. If the inputs support none, send an empty list.`;
+
+export const LEDGER_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: {
+    extra: {
+      type: 'array', maxItems: MAX_BANG,
+      items: {
+        type: 'object',
+        properties: {
+          line: { type: 'integer', minimum: 1, description: 'the job line number' },
+          kind: { enum: ['count', 'phrase'] },
+          source: { type: 'string', description: 'the label of the input' },
+          phrase: { type: 'string', description: 'phrase only: words copied verbatim from the input' },
+          min: { type: 'integer', minimum: 1 },
+          max: { type: 'integer', minimum: 1 },
+        },
+        required: ['line', 'kind'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['extra'],
+  additionalProperties: false,
+});
+
+const ledgerChannel = () => ({
+  name: LEDGER_TOOL,
+  instruction: `Your reply did not deliver exactly one ${LEDGER_TOOL} call. Call ${LEDGER_TOOL} exactly once. Do not write the answer as text.`,
+  textPath: 'extra',
+  tool: (/** @type {{calls: any[]}} */ box) => ({
+    name: LEDGER_TOOL,
+    description: 'Deliver the extra checks the inputs support (or an empty list). Call this exactly once.',
+    parameters: LEDGER_SCHEMA,
+    execute: async (/** @type {any} */ args) => { box.calls.push(args); return 'received'; },
+  }),
+});
+
+/** @param {{n: number, text: string, rules?: string[], rule?: string}[]} jobLines @param {Record<string, string>} texts @returns {string} */
+export function ledgerUserText(jobLines, texts) {
+  const out = ['The job:'];
+  for (const l of jobLines) {
+    out.push(`${l.n}. ${l.text}`);
+    lineRules(l).forEach((r, i) => out.push(`   g${i + 1}: ${r}`));
+  }
+  for (const [label, t] of Object.entries(texts)) out.push('', `Input "${label}":`, String(t).slice(0, SHOWN_CHARS));
+  return out.join('\n');
+}
+
+/**
+ * The one paid call; its spend is booked like the look's. An unusable answer is NOT a guessed list: it yields no `!` proposals and says why.
+ * @param {{jobLines: any[], texts: Record<string, string>, generate: Function, ceilingUsd?: number|null, onCall?: (c: any) => void, priorCalls?: any[], priorRaws?: any[]}} o
+ * @returns {Promise<{extra: any[], reason: string|null, calls: any[], raws: any[]}>}
+ */
+export async function runLedgerSuggest({ jobLines, texts, generate, ceilingUsd = null, onCall = () => {}, priorCalls = [], priorRaws = [] }) {
+  const book = makeCostBook({ ceilingUsd, onCall });
+  book.absorb(priorCalls, priorRaws);
+  const before = book.report().calls.length;
+  const beforeRaws = book.raws().length;
+  const r = await askStructured({ messages: [{ role: 'user', content: ledgerUserText(jobLines, texts) }], generate, mode: 'tool', retries: 1, label: LEDGER_LABEL, book, channel: ledgerChannel() });
+  const extra = r.artifact && Array.isArray(r.artifact.extra) ? r.artifact.extra : [];
+  const reason = r.artifact ? null : (r.budget ? 'the spend ceiling was reached' : (r.providerError ?? r.red?.detail ?? 'the answer could not be read'));
+  return { extra, reason, calls: book.report().calls.slice(before), raws: book.raws().slice(beforeRaws) };
+}
