@@ -3966,3 +3966,11 @@ Proof:
 - (c) One live pair on DeepSeek direct, deepseek-flash, cap $0.10 per run, scratch HOME, input under 50 KB. Draft on an older changelog version and run. Then Reuse on a newer one: it must read the new value and go green. Then a mixed-level input: it must stop at $0.
 
 Out of scope: AI rule choice; rule kinds beyond the two; signing shapes not words (F320 note); ordering checks.
+
+### Place rules POC round 4 pre-registration (frozen, nothing run)
+
+Date: 2026-11-11. Round 4 is $0 and asks two things, run once: arm E, whether the product `src/placerule.js` equals round 3's frozen POC on round 3's exact data (0 differences, product wrong 0); arm W, whether a phrase written as the whole heading line (`## [0.54.1] - 2026-11-04`) can bind by a candidate `fitLine`/`rebind` built inside the POC (G1 wrong 0, versions and dates 90% per repo and pooled, closed reasons, 17 negatives behave). Frozen in `.claude/scratch/r10/placerules/round4/` (PREREG.md and poc.mjs). Nothing was run on real data.
+
+- sha256 PREREG.md: fe9af317cefe06d59eba8be57272b3847d876455d70a02e465e1f025fbcd82c0
+- sha256 poc.mjs: e369dd499815b191a6b348fc9261e190b514675f880d49a74b061cd88e891590
+- Run: `node /home/hamr/PycharmProjects/bareloop/.claude/scratch/r10/placerules/round4/poc.mjs --real`
