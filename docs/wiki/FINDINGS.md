@@ -15773,3 +15773,13 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Also seen.** Arm (b): 61 files, 28 unique after dedupe and seen-package exclusion, 18 valid; Variant B correct 9/18, unfittable 8/18 (safe stops), wrong 1. The pooled pair count was 224, not the 223 stated earlier (a miscount). Arm (a) is one genre (keep-a-changelog style), so it says nothing about other formats.
 **Caveats.** Reported FAIL, not re-tuned. $0, no model call. Result: `.claude/scratch/r10/placerules/round2/result.json` (untracked). A round 3 needs a new frozen prereg; one candidate design is a drafting-time refusal when releases appear at mixed heading levels (hamr's call).
 **Status.** Open, parked. Recorded in ITEM33-BUILD.md.
+
+## F320 — Job tab and plan card after the first live run: three list-view defects, seen live and fixed (2026-11-11)
+
+**Finding.** Three defects seen live on run mwc2u3yh (F318), all in how the check list is shown or built.
+(a) A not-checked list row had no name ("› not checked · the plan did not build it"), because signed rows carry no words (hamr's option A). Fixed 1e5fd888: rows are named from the session draft-log ledger rows, with a key fallback.
+(b) A dropped week-only row was missing from the Job tab, although the spec's A11 card preview shows it. Fixed 1e5fd888. Only week-only dropped rows show (hamr: the other dropped reasons stay hidden).
+(c) Answering "agree" with the same words as an existing ~ rule added a duplicate "~ at most 80 words" line. Fixed 0291e910: no line when the words match after normalisation; different words still add one.
+**Also.** The drafting plan card said "rule phrase"; it now uses the same listRowName as the Job tab (3471065a).
+**Note.** A signed row's KEY still holds the row's words in lower case (e.g. "L1.phrase.### fixed"), so words still reach the signature through keys. This matters for the parked "sign shapes, not words" plan.
+**Status.** Fixed, test-proven against the live run's fixture; old signed runs keep their duplicate line.
