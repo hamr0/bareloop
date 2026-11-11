@@ -5,6 +5,13 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Added
+
+- **A rubric job now has ONE list of checks, made once before the first try (check list, Phase A, hamr 2026-11-11).** Test-proven; not seen live. Before, the confirm AI, the page look, the person's picks and the drafter each kept their own list of what a line checks, and they drifted (paid rounds 8-10). Now, after the look and the pick path and before the confirm turn, code builds one list (`src/checklist.js`): a `~` row for each rule the person wrote, a `!` row for each fact the look kept and for up to three count or phrase checks one new call (`ledger-suggest`, its spend joins the drafting cap) suggests from the inputs, and a `$` row for each default code adds itself (every claim quotes the input on a text line of a one-input job; the numbers tie after a fact line). Code proves each `!` row against the input and drops it with a reason otherwise; a `~` rule always wins over a `!` on the same thing. The drafter is shown the list in one code-written block; after each try a part with no row goes to Not checked ("Not on the list of checks made before the draft, so you judge it at Accept."), a fact's result count rides with its fact, and the default cited part is decided after the draft settles (also after the last-try drop). A check that needs exact words holding a version or a date ("## [0.54.1] - 2026-11-04") is refused as true only for the input as it is today ("It names a version or a date from the input, true only for the input as it is today, so you judge it at Accept."). An empty list is logged as "empty list: nothing to check" and ends in the existing no-check stop. Both doors build it (the panel and the author CLI; the CLI asks nothing); there is no switch. The drafting log gets a `ledger` line per row at the build and at the end, and a `ledger-try` line per try. Rubric jobs only; a code job's prompts are unchanged.
+- **A rubric job's confirm turn now plans the goal only.** The turn sends one sentence; any check, gap or question the model sends is discarded by code, so the confirm card shows no check and the drafter is no longer told "the person confirmed" checks (the list is the one plan). The plan card and the Job tab mark a check code added itself `[default]`, beside `[you picked]` and `[agent]`. Phone width not checked.
+
 ## [0.55.0] - 2026-11-10
 
 ### Added
