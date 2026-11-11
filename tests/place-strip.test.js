@@ -24,10 +24,10 @@ const VER = { kind: 'headingBetween', prefix: '## [', end: ']', shape: 'semver',
 const DATE = { kind: 'headingDateAfter', prefix: '## [', end: ']', shape: 'semver', skip: ['Unreleased'] };
 
 /** the real drafting pipeline on one phrase: the list, then the apply */
-function draft(/** @type {string} */ phrase, /** @type {string} */ log = LOG) {
+function draft(/** @type {string} */ phrase, /** @type {string} */ log = LOG, name = 'newest release') {
   const t = { Changelog: log };
   const rows = CL.buildLedger({ jobLines, texts: t, inputLabels: ['Changelog'], extra: [{ line: 1, kind: 'phrase', phrase, source: 'Changelog' }] });
-  const r = CL.applyLedger(decl([phrasePart(phrase)]), rows, { labels: ['Changelog'], texts: t });
+  const r = CL.applyLedger(decl([phrasePart(phrase, name)]), rows, { labels: ['Changelog'], texts: t });
   const facts = r.declaration.stages[0].params.parts.filter((/** @type {any} */ p) => p.class === 'fact').flatMap((/** @type {any} */ p) => p.facts);
   return { rows, r, facts };
 }
@@ -132,3 +132,17 @@ test('P1b run: facts stripped at drafting from the whole heading bind the NEW ve
   const rec = events.findLast((e) => e.type === 'place-rules');
   assert.deepEqual(rec.rows.map((/** @type {any} */ r) => [r.key.split('/').pop(), r.value, r.was]), [['newest release version', '0.56.0', '0.55.0'], ['newest release date', '2026-11-10', '2026-11-04']]);
 });
+
+// plain split names (hamr 2026-11-11 "fix it"): the words version, date and "and" leave the AI's base name before " version"/" date" is appended (live: "release version version")
+for (const [name, want] of /** @type {[string, string[]][]} */ ([
+  ['release version', ['release version', 'release date']],
+  ['newest release version and date', ['newest release version', 'newest release date']],
+  ['version and date', ['version', 'date']],
+  ['release heading', ['release heading version', 'release heading date']],
+])) {
+  test(`split names: "${name}" -> ${want.join(' + ')}`, () => {
+    const { r, facts } = draft('## [0.55.0] - 2026-11-04', LOG, name);
+    assert.deepEqual(r.refused, []);
+    assert.deepEqual(facts.map((f) => f.name), want);
+  });
+}

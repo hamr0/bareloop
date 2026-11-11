@@ -235,10 +235,12 @@ export function applyLedger(declaration, rows, { labels = [], texts = null } = {
           const own = weekTokens(f.phrase);
           const strip = full === null ? [] : full.filter((v) => own.includes(v.value));
           if (strip.length === 0) continue;
-          const nm = (/** @type {string} */ sfx) => `${String(f.name).slice(0, 64 - sfx.length - 1).trimEnd()} ${sfx}`;
+          // plain split names (hamr 2026-11-11): the words version, date and and leave the AI's base name before the kind is appended, so "release version" is not named "release version version"
+          const base = String(f.name).replace(/\b(?:version|date|and)\b/gi, ' ').replace(/\s+/g, ' ').trim();
+          const nm = (/** @type {string} */ sfx) => (base === '' ? sfx : `${base.slice(0, 64 - sfx.length - 1).trimEnd()} ${sfx}`);
           const facts = strip.length === 1 ? [{ ...f, phrase: strip[0].value, place: strip[0].rule }] : strip.map((s) => ({ ...f, name: nm(s.kind), phrase: s.value, place: s.rule }));
-          if (strip.length === 2 && (facts.some((x) => taken.has(x.name)) || total + 1 > MAX_FACTS)) continue;
-          if (strip.length === 2) { total += 1; facts.forEach((x) => taken.add(x.name)); }
+          if (strip.length === 2 && (facts.some((x) => x.name !== f.name && taken.has(x.name)) || total + 1 > MAX_FACTS)) continue;
+          if (strip.length === 2) { total += 1; taken.delete(f.name); facts.forEach((x) => taken.add(x.name)); }
           placed.set(f, facts);
         }
         const week = (/** @type {any} */ f) => weekFact(f) && !exempt.has(f) && !placed.has(f);
