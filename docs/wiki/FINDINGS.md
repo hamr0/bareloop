@@ -15783,3 +15783,9 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Also.** The drafting plan card said "rule phrase"; it now uses the same listRowName as the Job tab (3471065a).
 **Note.** A signed row's KEY still holds the row's words in lower case (e.g. "L1.phrase.### fixed"), so words still reach the signature through keys. This matters for the parked "sign shapes, not words" plan.
 **Status.** Fixed, test-proven against the live run's fixture; old signed runs keep their duplicate line.
+
+## F321 — place-rules $0 POC round 3 PASS: the mixed-level guard closed the stale-read class; found rate on varied npm changelogs is low (2026-11-11)
+
+**Finding.** Pre-registered round 3 (frozen at 818186be, run once, exit 0): PASS. Variant B met G1-G5 with 0 WRONG anywhere. Pairs: 224, versions 222/224, dates 221/224, identical to round 2; the guard never fired on a pair. Negatives: 13 cases x A/B all pass (N9 boolean shape gives `mixed-levels`, N10 becoming mixed at re-read stops, N11 a "# Changelog" title reads right). Regression on 18 valid node_modules rows: `boolean` WRONG became NOT FOUND `mixed-levels`; `proper-lockfile` now gives `mixed-levels` too (a cost); B gets 8 correct, 2 mixed-levels, 8 unfittable. Blind set, 65 valid rows from other local projects' node_modules: correct 19 (29.2%), mixed-levels 8 (12.3%), unfittable 38 (58.5%), wrong 0.
+**Caveats.** Code never bound a wrong value; it reads keep-a-changelog style well and stops safely on other styles, but the found rate on varied npm changelogs is low (about 29%). The pair arm is one genre. AI choice of the rule is untested. $0, no model call. Result: `.claude/scratch/r10/placerules/round3/result.json` (untracked).
+**Status.** POC proves the code re-read; next is a build spec on hamr's go. Recorded in ITEM33-BUILD.md.

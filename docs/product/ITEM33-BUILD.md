@@ -3930,3 +3930,14 @@ Round 3 of the place-rules POC (rounds 1 and 2 stay FAIL, F317 and F319): round 
 
 - PREREG.md `4aa0f32f0d8730775a8adad27c7ac94455ab64a75b88cb119a16ba89f7204c83`
 - poc.mjs `218dad8433e73ac2f4907067883a8df531e5e19cf59cb6088589fd110961f8c6`
+
+## Addendum 2026-11-11: Place-rules $0 POC round 3 result (2026-11-11): PASS
+
+Round 3 (prereg 818186be, run once, exit 0): PASS. Variant B met G1-G5 and there were 0 WRONG anywhere. $0, no model call. Result: `.claude/scratch/r10/placerules/round3/result.json` (untracked). See FINDINGS F321.
+
+- Pairs: 224, Variant B versions 222/224, dates 221/224. Identical to round 2; the mixed-level guard never fired on a pair.
+- Negatives: 13 cases x A/B all pass. N9 (boolean shape) gives NOT FOUND `mixed-levels`; N10 (becomes mixed at re-read) stops; N11 (a "# Changelog" title over a single level) reads right.
+- Regression, 18 valid node_modules rows: `boolean` WRONG became NOT FOUND `mixed-levels`; `proper-lockfile` now also gives `mixed-levels` (a cost); B gets 8 correct, 2 mixed-levels, 8 unfittable.
+- Blind, 65 valid rows from other local projects' node_modules: correct 19 (29.2%), mixed-levels 8 (12.3%), unfittable 38 (58.5%), wrong 0.
+- Meaning: code never bound a wrong value. It reads keep-a-changelog style well and stops safely on other styles. The found rate on varied npm changelogs is low (about 29%). Which rule the AI picks is still untested.
+- Next: a build spec, on hamr's go.
