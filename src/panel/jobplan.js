@@ -14,7 +14,7 @@ import { ticketFilterWords } from '../ticketfilter.js';
 import { KIND_CATALOGUE } from '../authoring.js';
 import { WEEK_ONLY_WORDS } from '../checklist.js';
 import { splitReadNotes } from '../pagedropwords.js';
-import { checksOfClose, signedFactNames, proseNotChecked, lineRules, confirmedGoalOf, refusedOf } from '../rubricstep.js';
+import { checksOfClose, signedFactNames, proseNotChecked, lineRules, confirmedGoalOf, refusedOf, listRowName } from '../rubricstep.js';
 
 /** `by` = who added the check: the drafter (`agent`) or the person's own pick (`you`); absent = code's own (an always-on guard, a number tie) or not known */
 /** @typedef {{name: string, cls: 'machine check'|'judge'|null, by?: 'agent'|'you'|'default'|null}} PlanCheck */
@@ -38,23 +38,6 @@ export function checkClassOfKind(kind) {
   const spec = Object.hasOwn(KIND_CATALOGUE, kind) ? KIND_CATALOGUE[kind] : null;
   if (!spec) return null;
   return spec.verdictClass === 'green' ? 'machine check' : 'judge';
-}
-
-/** the words a list row of kind `$cited` / `$numbers` carries no text for */
-const DEFAULT_ROW_WORDS = Object.freeze({ cited: 'every claim quotes its input', numbers: 'every number matches a quote' });
-
-/**
- * A check-list row named in the person's plain words: `phrase "### Fixed"`. The words are the draft log's; with none, the text after the key's kind prefix (`L1.phrase.### fixed`).
- * Never empty. Pure.
- * @param {unknown} kind @param {string} key @param {string[]|null|undefined} words
- * @returns {string}
- */
-function listRowName(kind, key, words) {
-  const k = typeof kind === 'string' && kind ? kind : 'check';
-  if (k === 'cited' || k === 'numbers') return DEFAULT_ROW_WORDS[k];
-  const tail = key.replace(/^L\d+\.(?:[^.]*\.)?/, '').trim();
-  const w = Array.isArray(words) && words.length ? words : [tail || key];
-  return `${k} ${w.map((x) => `"${x}"`).join(', ')}`;
 }
 
 /**

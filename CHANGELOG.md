@@ -20,6 +20,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 ### Fixed
 
 - **The Job tab now names every Not checked row of the check list, and shows the one the list dropped for naming a version or a date (F318, first live run mwc2u3yh).** Test-proven on a copy of that run's own signed spec and draft log; the real screen is re-checked by hamr. A phrase row the plan did not build read ` — the plan did not build it` with no name; it now reads `phrase "### Fixed" — the plan did not build it` (the words come from the drafting log; with no log, a CLI or imported run, from the row's key: `phrase "### fixed"`). A row dropped because it names a version or a date used to be missing from the tab; it now shows under its line with its reason, as the card preview of the build spec says. Other dropped rows (a `~` rule wins, words not in the input) stay out.
+- **The drafting plan card's Not checked now names a phrase row the same way the Job tab does (F318).** Test-proven; not seen live. It read `line 1: rule phrase — the plan did not build it`; it now reads `line 1: phrase "### Fixed" — the plan did not build it` (one owner, `listRowName`; the drafting log's words, else the row's key).
 - **Answering "agree" to a reading that is the rule's own words no longer adds a second identical `~` line (F318).** Test-proven (real panel session); the pick now cites the rule that is already there. Case, spacing and a trailing full stop do not make words different. Agreeing to DIFFERENT words still adds a `~` line, as before.
 
 ## [0.55.0] - 2026-11-10

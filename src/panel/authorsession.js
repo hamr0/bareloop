@@ -64,7 +64,7 @@ import { MAX_REVISES, draftLabelOf, nextRevisesUsed, sessionsRootOf, writeRevise
 import { FIT_ABSENT_NOTE } from '../fitcheck.js';
 import { runDestPoint, destQuestionText, yesNoOf } from '../destpoint.js';
 import { tallyCalls } from '../text.js';
-import { appendDraftLog } from '../draftspend.js';
+import { appendDraftLog, readDraftLedger } from '../draftspend.js';
 import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, noCheckStopText, draftStopText, redsRecord, declarationRecord, calibrationSummary, tryRefusedText } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 import {
@@ -1328,7 +1328,7 @@ export function createSession(card, deps = {}) {
     const spec = signFlow(assembleSpec(draft, { ...authored, verdictType: /** @type {string} */ (authored.verdictType) }), deps.flow?.flowType ?? 'plain', deps.flow?.pick ?? null, authored.authoring?.ticketFilter);
     // PART 1a (run mv5bk400): the card AFTER drafting is built from the signed close itself (cardOfClose), never from what the confirm turn planned.
     if (RUBRIC_FILES) {
-      const rec = cardOfClose({ closeDecl: spec.closeDecl, jobLines });
+      const rec = cardOfClose({ closeDecl: spec.closeDecl, jobLines, ledger: readDraftLedger(outDir) });
       // the checks this draft ended with, each marked who added it (`agent` or `you`): the Audit's Draft group shows them (a log line, not a second record of the plan)
       appendDraftLog(outDir, { kind: 'draft-checks', no: Math.max(0, state.steps.length - 1), checks: rec.checkItems.filter((/** @type {any} */ c) => c.by === 'agent' || c.by === 'you').map((/** @type {any} */ c) => ({ line: c.fromLine[0], text: redactSecrets(String(c.text)), by: c.by })), at: new Date().toISOString() });
       // R10: the checks the person picked, for the plan card's "You picked" rows (the check rows and the Not checked rows come from the signed close itself)

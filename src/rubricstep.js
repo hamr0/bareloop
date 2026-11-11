@@ -888,14 +888,33 @@ export function withDropNotes(declaration, dropped, jobLines) {
   return { ...declaration, ...(refused.length ? { refused } : {}), ...(notes.length ? { notes } : {}) };
 }
 
+/** the words a list row of kind `$cited` / `$numbers` carries no text for */
+const DEFAULT_ROW_WORDS = Object.freeze({ cited: 'every claim quotes its input', numbers: 'every number matches a quote' });
+
+/**
+ * A check-list row named in the person's plain words: `phrase "### Fixed"`. The words are the draft log's; with none, the text after the key's kind prefix (`L1.phrase.### fixed`).
+ * Never empty. Pure.
+ * @param {unknown} kind @param {string} key @param {string[]|null|undefined} words
+ * @returns {string}
+ */
+export function listRowName(kind, key, words) {
+  const k = typeof kind === 'string' && kind ? kind : 'check';
+  if (k === 'cited' || k === 'numbers') return DEFAULT_ROW_WORDS[k];
+  const tail = key.replace(/^L\d+\.(?:[^.]*\.)?/, '').trim();
+  const w = Array.isArray(words) && words.length ? words : [tail || key];
+  return `${k} ${w.map((x) => `"${x}"`).join(', ')}`;
+}
+
 /**
  * The ~ rules the drafter listed under Not checked (`refused` entries that name a `rule`), each as one line in the person's own
  * words: `line N: "<the rule as written>" — <the drafter's reason>` (PART 1b, RF6 / RF16).
- * @param {any} closeDecl @param {any[]|null|undefined} jobLines @returns {string[]}
+ * @param {any} closeDecl @param {any[]|null|undefined} jobLines @param {{key: string, words: string[]}[]|null} [ledger] the draft log's final list rows (`readDraftLedger`) @returns {string[]}
  */
-export function ruleNotChecked(closeDecl, jobLines) {
+export function ruleNotChecked(closeDecl, jobLines, ledger = null) {
   return refusedOf(closeDecl).filter((r) => Number.isInteger(r.rule) || r.fromList).map((r) => {
     const text = Number.isInteger(r.rule) ? lineRules((jobLines ?? []).find((/** @type {any} */ l) => isRec(l) && l.n === r.line))[/** @type {number} */ (r.rule) - 1] : (r.label ?? null);
+    // a list row that is not a fact or a rule is named by its words, as the Job tab names it (one owner: listRowName)
+    if (!text && r.fromList && r.key) return `line ${r.line}: ${listRowName(r.kind, r.key, ledger?.find((x) => x.key === r.key)?.words)} — ${r.reason}`;
     return `line ${r.line}: ${text ? `"${text}"` : `rule ${r.rule ?? r.kind}`} — ${r.reason}`;
   });
 }
@@ -1004,14 +1023,14 @@ export function signedFactNames(closeDecl) {
  * The plan card after drafting, read from the signed close ALONE (one source, the same the Job tab reads): its checks are `checksOfClose`; its Not checked is the close's own notes, the prose
  * steps' "you judge it at Accept" lines and the refusals (`ruleNotChecked`, which reads the list's not-checked rows when the close carries the list). Nothing the confirm turn said is merged
  * in: a rubric confirm turn plans the goal only, so a check can never be shown and then silently dropped (run mv5bk400).
- * @param {{closeDecl: any, jobLines?: any[]|null}} o `jobLines` the person's numbered lines, so a ~ rule reads in the person's own words
+ * @param {{closeDecl: any, jobLines?: any[]|null, ledger?: {key: string, words: string[]}[]|null}} o `jobLines` the person's numbered lines, so a ~ rule reads in the person's own words; `ledger` the draft log's final list rows, so a phrase row is named by its words
  * @returns {{checkItems: {text: string, fromLine: number[], by: 'agent'|'you'|'default'}[], notChecked: string[]}}
  */
-export function cardOfClose({ closeDecl, jobLines = null }) {
+export function cardOfClose({ closeDecl, jobLines = null, ledger = null }) {
   const notes = isRec(closeDecl) && Array.isArray(closeDecl.notes) ? closeDecl.notes.filter((/** @type {any} */ n) => typeof n === 'string' && n) : [];
   return {
     checkItems: checksOfClose(closeDecl).map((c) => ({ text: c.text, fromLine: [c.line], by: c.by })),
-    notChecked: [...new Set([...notes, ...proseNotChecked(closeDecl), ...ruleNotChecked(closeDecl, jobLines)])],
+    notChecked: [...new Set([...notes, ...proseNotChecked(closeDecl), ...ruleNotChecked(closeDecl, jobLines, ledger)])],
   };
 }
 

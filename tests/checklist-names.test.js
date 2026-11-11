@@ -35,3 +35,12 @@ test('F318 (2) a dropped row of another reason (a ~ rule wins) is not drawn', ()
   s.closeDecl.list.push({ line: 1, key: 'L1.fact.other', from: 'look', by: 'agent', kind: 'fact', state: 'dropped', reason: 'a ~ rule wins: line 1 rule 1 carries it' });
   assert.ok(!planFromSpec(s).lines[0].refused.some((r) => /rule wins/.test(r)));
 });
+
+test('F318 the drafting plan card names the not-checked phrase row like the Job tab (one owner), with the draft log or from the key', async () => {
+  const { cardOfClose } = await import('../src/rubricstep.js');
+  const withLog = cardOfClose({ closeDecl: spec.closeDecl, jobLines: spec.jobLines, ledger: readDraftLedger(DIR) }).notChecked;
+  assert.ok(withLog.includes('line 1: phrase "### Fixed" — the plan did not build it'), JSON.stringify(withLog));
+  const noLog = cardOfClose({ closeDecl: spec.closeDecl, jobLines: spec.jobLines }).notChecked;
+  assert.ok(noLog.includes('line 1: phrase "### fixed" — the plan did not build it'), JSON.stringify(noLog));
+  assert.ok(!withLog.concat(noLog).some((t) => /rule phrase/.test(t)));
+});
