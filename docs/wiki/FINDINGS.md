@@ -15789,3 +15789,35 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Finding.** Pre-registered round 3 (frozen at 818186be, run once, exit 0): PASS. Variant B met G1-G5 with 0 WRONG anywhere. Pairs: 224, versions 222/224, dates 221/224, identical to round 2; the guard never fired on a pair. Negatives: 13 cases x A/B all pass (N9 boolean shape gives `mixed-levels`, N10 becoming mixed at re-read stops, N11 a "# Changelog" title reads right). Regression on 18 valid node_modules rows: `boolean` WRONG became NOT FOUND `mixed-levels`; `proper-lockfile` now gives `mixed-levels` too (a cost); B gets 8 correct, 2 mixed-levels, 8 unfittable. Blind set, 65 valid rows from other local projects' node_modules: correct 19 (29.2%), mixed-levels 8 (12.3%), unfittable 38 (58.5%), wrong 0.
 **Caveats.** Code never bound a wrong value; it reads keep-a-changelog style well and stops safely on other styles, but the found rate on varied npm changelogs is low (about 29%). The pair arm is one genre. AI choice of the rule is untested. $0, no model call. Result: `.claude/scratch/r10/placerules/round3/result.json` (untracked).
 **Status.** POC proves the code re-read; next is a build spec on hamr's go. Recorded in ITEM33-BUILD.md.
+
+## F322 — SKILLPROOF: a 4-line engineering-workflow skill in the worker prompt shows no effect; not adopted (2026-11-11)
+
+**Question.** Does a short engineering-workflow skill text in the bareloop worker's system prompt make runs pass more, or pass the same for less money or time? The text, verbatim:
+`How to work:` / `1. Look before you change: find the code you will touch, plus its callers and uses.` / `2. Check before you create: do not add a file or function that already exists.` / `3. Add a test only if the job asks for one, or a bug fix needs one to stop it coming back.` / `4. Before you finish, re-read your change against what the step asks for.`
+It is trimmed from `~/.claude/agents/code-developer.md`; the rest of that file orders tools the bareloop worker does not have, so it was left out. It goes at the end of the worker system prompt in `src/planrun.js` (`mkWorker`), only for writable workers (step and fix). The scout, planner and judge never get it. This was proven at $0 by the scripted prompt proof (`.claude/scratch/skillproof-run/promptproof.mjs`): 19 of 19 requests equal between arms apart from the text, 16 of 16 ON worker asks carry it, 0 OFF and 0 planner/scout requests carry it. A first version of the append (not gated on `writable`) leaked into the scout and planner; the proof caught it before any paid run.
+
+**Design.** Pre-registered in `docs/logs/SKILLPROOF-PREREG.md`: 32 slots (bigfile 6, pulselog 6, p7 4 per arm), $1 per run, $20 stop, frozen rule (WIN-MORE needs ON >= OFF + 3 greens), declared UNDERPOWERED (about a 30% false-WIN rate at no effect). The arm's only difference is the text; plan and carry memo are on in both. Three revisions, each re-signed: rev 1 (86be2378) Baseten Muse, never ran (model deactivated, HTTP 400, alias 403 on this key); rev 2 (328a7876) Fireworks, 3 runs then the account was depleted, those runs set aside and not pooled (`fireworks-aborted/`); rev 3 (194e0086) DeepSeek direct API `deepseek-flash`, all 32 slots rerun.
+
+**Result.** The frozen rule printed WIN-MORE (ON 8/8 greens, OFF 5/8), but on only 8 of 16 surviving pairs, and the driver itself flagged it INCOMPLETE. It is not a win, for three reasons:
+(1) **Transport drops dropped the pairs unevenly.** DeepSeek direct reset connections (ECONNRESET / socket hang up, about 12 of 692 calls, 1 to 2%, rising with context size: 0.4% under 10k tokens to 4.1% over 40k; the server hangs 12 to 33 s, then resets; Fireworks had 0 in 289 calls). A recovered drop makes `spendComplete=false`, which is a casualty. 23 attempts were lost this way: 15 ON and 8 OFF. 6 of the 8 slots with no surviving attempt were ON, and 13 of those 15 lost ON attempts were green. So most ON attempts were lost while the OFF side of the same pair survived; the surviving pairs are a selected sample, and the 8/8 vs 5/8 is not a fair read.
+(2) **2 of the 3 OFF failures are plan-reds**, which the skill cannot touch: the planner never sees it and its prompts are identical across arms. 01-bigfile-OFF-r1: draft 1 `parse-error` (the model emitted `<｜｜DSML｜｜` tool markup instead of plan JSON), draft 2 `scope-escape` ("package.json" outside the fence [src/]). 17-p7-OFF-r3: `invalid-value` kebab-case slug on step ids, twice. Both are chance.
+(3) **The only OFF failure the text could reach** is 30-bigfile-OFF-r6 #2 (step-red: `finish-until-suite-green` and the replan both stalled, "0 files changed under src/**", 2 of 2 strikes). The same "worker writes nothing" stall hit the ON bigfile casualty runs 07-bigfile-ON-r2 #1 and 26-bigfile-ON-r5 #2, which did carry the text. So the text neither caused nor cured it.
+
+**Numbers** (from `.claude/scratch/skillproof-run/results.jsonl`; view (a) = non-casualty attempts, not pairs).
+
+| view | arm | n | greens | median turns | median cost | median wall | median input / output tokens |
+|---|---|---|---|---|---|---|---|
+| (a) non-casualty | ON | 10 | 10 | 47 | $0.136 | 273 s | 781k / 20k |
+| (a) non-casualty | OFF | 14 | 11 | 45 | $0.131 | 338 s | 582k / 21k |
+| (b) all attempts | ON | 25 | 23 | 54 | $0.152 | 385 s | 869k / 25k |
+| (b) all attempts | OFF | 22 | 18 | 55 | $0.161 | 369 s | 915k / 25k |
+
+Paired view per the driver (RESULT.md, 8 pairs): R_cost 1.03, R_wall 1.10, i.e. no cost or time difference. View (b) is the least biased by casualties but its casualty spend is a floor. Reasoning tokens are not separable: the spine's per-round usage has no reasoning field, so they read 0 and any thinking is inside output tokens. p7 is the one job where ON was costlier and slower per run (median $0.077 vs $0.050, 223 s vs 145 s, 4 vs 4 runs); counts per job are too small for any per-job claim.
+
+**Decision.** Not adopted (hamr, 2026-11-11: "leave it"). The signal is not clean enough to ship and there is no live failure the text addresses. It would reopen on a clean rerun on a provider without transport drops, or on a live failure the text plausibly addresses.
+
+**Seen, not acted on.** The DeepSeek drafter once emitted `<｜｜DSML｜｜` tool markup instead of plan JSON (01-bigfile-OFF-r1). Bigfile workers in both arms sometimes spend all their rounds without writing a file, and the strike ladder ends the step. Harness note: the prompt proof had to mask the "time left ... N minutes" line, because `Math.round(remainingMs / 60000)` flipped between 30 and 29 across the two arms and failed check (c) once.
+
+**Spend.** About $9.21 booked ($7.84 DeepSeek direct, $1.37 Fireworks, set aside) plus a few cents of probes; real `runs.jsonl` untouched (397 lines). Result and spines: `.claude/scratch/skillproof-run/RESULT.md`, `results.jsonl`, `runs/` (scratch, untracked).
+
+**Status.** Closed as a record: no effect shown, not adopted, no code change.
