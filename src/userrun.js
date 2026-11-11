@@ -41,7 +41,7 @@ import { skipWords } from './panel/status.js';
 import { checkoutPrHead, prHeadIsAncestor, recordPrOnManifest } from './prcheckout.js';
 import { readShimArm } from './readshim.js';
 import { closeStagesOf } from './plan.js';
-import { placeFactsOf, readPlaceRules, valueInWords, stopWords } from './placerule.js';
+import { placeFactsOf, readPlaceRules, valueInWords, stopWords, lastPlaceRead, placeValuesOfEvents } from './placerule.js';
 import { readFrozenInputs } from './rubricstep.js';
 import { resolveCloseTimeoutMs } from './closetimeout.js';
 import { makeSpine } from './spine.js';
@@ -1657,6 +1657,10 @@ async function execute(ctx) {
 
   /** @type {Record<string, string>|null} PLACE RULES: the values the run start read for the spec's place-rule facts (key to value), handed to `runJob`; null = none */
   let placeValues = null;
+  /** @type {{workflowKey: string, rows: object[]}|null} PLACE RULES: the record the spine keeps of that read; null on a resume (its first leg wrote it) */
+  let placeRead = null;
+  // a RESUME does not re-read: it rebinds the values its own first leg recorded, so the close grades on the words the run started with
+  if (dead) placeValues = placeValuesOfEvents(deadAllEvents);
   // RUN START REFETCH (PART 1c RF22; moved here 2026-10-19, run mvez8s54: the ~18 s barebrowse fetch ran in main() BEFORE this run was
   // listed, so Sign & run showed nothing for 18 s). The run is listed FIRST (row above, with its pid and cap = the monthly claim), THEN
   // fetches: the Run tab reads "fetching the page…" while source.json has no refrozenAt at or after the row. A refusal cannot be a
@@ -1719,7 +1723,10 @@ async function execute(ctx) {
     const placeFacts = placeFactsOf(spec);
     if (placeFacts.length > 0) {
       const frozen = await readFrozenInputs(join(ctx.into, 'tree'), [...new Set(placeFacts.map((f) => f.source))]);
-      const read = readPlaceRules(placeFacts.map((fact) => ({ fact, text: frozen.ok ? (frozen.texts[fact.source] ?? null) : null, was: valueInWords(fact.place, fact.phrase) })));
+      // "last read": the newest earlier run of this workflow's own record, else the drafting words
+      let earlier = {};
+      if (cfgOn) { try { earlier = lastPlaceRead({ rows: readRunList({ home: cfgHome }).rows, job: spec.job, workflowKey: workflowKey(spec), runid }); } catch { /* no earlier record is the drafting words */ } }
+      const read = readPlaceRules(placeFacts.map((fact) => ({ fact, text: frozen.ok ? (frozen.texts[fact.source] ?? null) : null, was: /** @type {Record<string, string>} */ (earlier)[fact.key] ?? valueInWords(fact.place, fact.phrase) })));
       if (!read.proceed) {
         const words = stopWords(read.rows);
         err(`${SELECTOR}: ${words}`);
@@ -1727,6 +1734,7 @@ async function execute(ctx) {
         throw new ExitSignal(2);
       }
       placeValues = read.values;
+      placeRead = { workflowKey: workflowKey(spec), rows: read.rows.map(({ name: _n, ...r }) => r) };
     }
   }
 
@@ -2043,6 +2051,7 @@ async function execute(ctx) {
     outcome = await runJob(spec, {
       stopFile,
       ...(placeValues === null ? {} : { placeValues }),
+      ...(placeRead === null ? {} : { placeRead }),
       ...(ticketRecord === null ? {} : { ticketRecord }),
       ...(ticketUnsure === null ? {} : { ticketUnsure }),
       ...(prRecord === null ? {} : { prRecord }),

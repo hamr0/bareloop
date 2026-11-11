@@ -51,6 +51,7 @@ import { runBehaviour } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
 import { jobSpecHash, workflowKey, flowTypeOf, FLOW_TYPE_LABELS } from '../job.js';
 import { attachMemos, learningsHanded, attachLearnings } from './handed.js';
+import { placeRuleLines } from '../placerule.js';
 import { confirmProtections } from '../authorflow.js';
 import { createScheduleDoor } from './schedules.js';
 import { buildJobGrid } from './jobgrid.js';
@@ -2247,6 +2248,8 @@ function getRunDetailBody(runid, opts) {
     callsLine: callsLineOf(rawSpineRecords, scopedBehaviour(row, rawSpineRecords)),
     checksLine: checksLineOf(rawSpineRecords, enrichedParts),
     memoryCache: summary.memoryCache,
+    // PLACE RULES: what the run start read for each place-rule check (plain lines from code), or null when the run has none; the Audit page's placement of it is not built yet
+    placeRules: placeRuleLines(rawSpineRecords),
     // T Part 8: is this run waiting for the person's Accept? The SAME answer fills the runs list's Needs-you tag (`doorWaiting`, one owner)
     accept: !runIsAlive(row) && doorWaiting(rawSpineRecords),
     // PRD v1.107 Part 6: the Result tab shows for a rubric run whose signed close has a rubric-step stage, never otherwise; `delivered` is the

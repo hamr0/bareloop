@@ -5,7 +5,9 @@
 // value is. The signed fact carries the rule; at run start, before any provider call, CODE reads the run's own copy of the input with the rule
 // and the value it finds is bound, in memory only, as that fact's phrase for the planner and the close. No model chooses or reads anything here.
 //
-// This module is the graduation (a REWRITE, never a copy) of the round-3 POC (F321). Pure: no file, no clock, no network.
+// This module is the graduation (a REWRITE, never a copy) of the round-3 POC (F321). Pure except `lastPlaceRead`, which reads earlier runs' spines.
+
+import { existsSync, readFileSync } from 'node:fs';
 
 /** the two rule kinds on the menu: the version in a heading, and the date on the same heading line */
 export const PLACE_KINDS = Object.freeze(['headingBetween', 'headingDateAfter']);
@@ -259,4 +261,58 @@ export function stopWords(rows) {
     return `${r.name}: found ${r.value}${r.was !== null && r.was !== r.value ? ` (was ${r.was})` : ''}`;
   });
   return `${lines.join('\n')}\n${STOP_TAIL}`;
+}
+
+// ---- the record of a run: what was read, and what the last run read ---------------------------------------------------------------------
+
+/** the spine event a run writes, once, after job-start */
+export const PLACE_EVENT = 'place-rules';
+
+/**
+ * The values of the LAST `place-rules` record in a run's own events (key to value): what a RESUME of that run rebinds, since a resume does not re-read. Null when
+ * there is no record, or any of its rows was not found.
+ * @param {any[]} events @returns {Record<string, string>|null}
+ */
+export function placeValuesOfEvents(events) {
+  const rec = Array.isArray(events) ? events.findLast((e) => isRec(e) && e.type === PLACE_EVENT && Array.isArray(e.rows)) : undefined;
+  if (rec === undefined || rec.rows.length === 0 || rec.rows.some((/** @type {any} */ r) => !isRec(r) || r.found !== true || typeof r.value !== 'string')) return null;
+  return Object.fromEntries(rec.rows.map((/** @type {any} */ r) => [String(r.key), r.value]));
+}
+
+/**
+ * What the newest EARLIER run of the same workflow read, per fact key: "last read". `rows` are the run list's rows (file order, oldest first). Candidates are
+ * the rows of the same job, newest first, at most {@link LAST_READ_LOOK} of them; the first whose spine holds a `place-rules` record of the same workflow key
+ * answers. An unreadable spine is skipped. Empty when there is none (the caller falls back to the drafting words).
+ * @param {{rows: {runid: string, job: string, spine: string}[], job: string, workflowKey: string, runid: string}} o @returns {Record<string, string>}
+ */
+export function lastPlaceRead({ rows, job, workflowKey, runid }) {
+  let looked = 0;
+  for (const row of [...rows].reverse()) {
+    if (row.runid === runid || row.job !== job || typeof row.spine !== 'string' || !existsSync(row.spine)) continue;
+    if (looked >= LAST_READ_LOOK) break;
+    looked += 1;
+    /** @type {any[]} */
+    let events = [];
+    try { events = readFileSync(row.spine, 'utf8').split('\n').filter((l) => l.includes(`"${PLACE_EVENT}"`)).map((l) => JSON.parse(l)); } catch { continue; }
+    const rec = events.findLast((e) => isRec(e) && e.type === PLACE_EVENT && e.workflowKey === workflowKey && Array.isArray(e.rows));
+    if (rec !== undefined) return Object.fromEntries(rec.rows.filter((/** @type {any} */ r) => isRec(r) && r.found === true && typeof r.value === 'string').map((/** @type {any} */ r) => [String(r.key), r.value]));
+  }
+  return {};
+}
+/** how many earlier runs of the job are looked at for "last read" */
+export const LAST_READ_LOOK = 25;
+
+/**
+ * The Audit lines of a run's `place-rules` record, in plain words from code: "<name>: <value>" (with "(was <last>)" when the value is new) or
+ * "<name>: not found (<reason>)". Null when the run has no record.
+ * @param {any[]} events @returns {string[]|null}
+ */
+export function placeRuleLines(events) {
+  const rec = Array.isArray(events) ? events.findLast((e) => isRec(e) && e.type === PLACE_EVENT && Array.isArray(e.rows)) : undefined;
+  if (rec === undefined) return null;
+  return rec.rows.filter(isRec).map((/** @type {any} */ r) => {
+    const name = String(r.key).split('/').pop();
+    if (r.found !== true) return `${name}: not found (${PLAIN_REASONS[/** @type {keyof typeof PLAIN_REASONS} */ (r.reason)] ?? 'the input could not be read'})`;
+    return `${name}: ${r.value}${typeof r.was === 'string' && r.was !== r.value ? ` (was ${r.was})` : ''}`;
+  });
 }
