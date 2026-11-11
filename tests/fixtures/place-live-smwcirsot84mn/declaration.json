@@ -1,0 +1,74 @@
+{
+ "jobLines": [
+  {
+   "n": 1,
+   "text": "Find the version and release date of the newest release, then summarise its changes",
+   "rule": "at most 80 words",
+   "rules": [
+    "at most 80 words"
+   ]
+  }
+ ],
+ "inputs": [
+  {
+   "label": "Changelog"
+  }
+ ],
+ "stages": [
+  {
+   "name": "changed-from-seed",
+   "kind": "files-changed",
+   "params": {
+    "requireNonEmpty": true,
+    "allowPrefixes": [
+     "output/"
+    ]
+   }
+  },
+  {
+   "name": "line-1-release-facts",
+   "kind": "rubric-step",
+   "fromLine": [
+    1
+   ],
+   "params": {
+    "step": 1,
+    "parts": [
+     {
+      "text": "Find the version and release date of the newest release; summarise its changes",
+      "class": "fact",
+      "source": "Changelog",
+      "rules": [
+       1
+      ],
+      "facts": [
+       {
+        "name": "version",
+        "shape": "phrase",
+        "phrase": "0.54.1"
+       },
+       {
+        "name": "changes summary",
+        "shape": "phrase",
+        "phrase": "Fixed"
+       }
+      ],
+      "count": {
+       "min": 1,
+       "max": 1
+      }
+     },
+     {
+      "text": "at most 80 words",
+      "class": "countable",
+      "check": "maxWords",
+      "value": 80,
+      "rules": [
+       1
+      ]
+     }
+    ]
+   }
+  }
+ ]
+}

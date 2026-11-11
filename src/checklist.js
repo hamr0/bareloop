@@ -33,14 +33,19 @@ export const EMPTY_LIST_WORDS = 'empty list: nothing to check';
  * @param {unknown} t @returns {boolean}
  */
 export function weekOnly(t) {
+  return weekTokens(t).length > 0;
+}
+
+/**
+ * The version-like and date-like tokens a text holds (the very tokens {@link weekOnly} reads), each once. Pure.
+ * @param {unknown} t @returns {string[]}
+ */
+export function weekTokens(t) {
   const s = String(t ?? '');
   const M = '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
-  return /(?<![\d.$€£])\d+\.\d+(?:\.\d+)*(?![\d.]*%)/.test(s)
-    || /\b\d{4}-\d{2}-\d{2}\b/.test(s)
-    || /\b\d{1,2}[/.]\d{1,2}[/.]\d{2,4}\b/.test(s)
-    || new RegExp(`\\b${M}\\.? \\d{1,2}(?:st|nd|rd|th)?(?:,? \\d{4})?\\b`, 'i').test(s)
-    || new RegExp(`\\b\\d{1,2}(?:st|nd|rd|th)? ${M}\\.?(?: \\d{4})?\\b`, 'i').test(s)
-    || new RegExp(`\\b${M}\\.? \\d{4}\\b`, 'i').test(s);
+  const res = [/(?<![\d.$€£])\d+\.\d+(?:\.\d+)*(?![\d.]*%)/g, /\b\d{4}-\d{2}-\d{2}\b/g, /\b\d{1,2}[/.]\d{1,2}[/.]\d{2,4}\b/g,
+    new RegExp(`\\b${M}\\.? \\d{1,2}(?:st|nd|rd|th)?(?:,? \\d{4})?\\b`, 'gi'), new RegExp(`\\b\\d{1,2}(?:st|nd|rd|th)? ${M}\\.?(?: \\d{4})?\\b`, 'gi'), new RegExp(`\\b${M}\\.? \\d{4}\\b`, 'gi')];
+  return [...new Set(res.flatMap((re) => [...s.matchAll(re)].map((m) => m[0])))];
 }
 
 const norm = (/** @type {unknown} */ t) => String(t ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -197,6 +202,7 @@ export function applyLedger(declaration, rows, { labels = [], texts = null } = {
     const onRule = (/** @type {any} */ p) => Array.isArray(p.rules) && p.rules.some((n) => Number.isInteger(n) && n >= 1 && n <= ruleCount);
     const factRow = (/** @type {any} */ f) => live.some((r) => r.line === line && (r.kind === 'fact' || r.kind === 'phrase')
       && ((r.name !== undefined && norm(r.name) === norm(f?.name)) || (typeof f?.phrase === 'string' && r.words.some((w) => norm(w) === norm(f.phrase)))));
+    const ruleTexts = live.filter((r) => r.line === line && r.kind === 'rule').map((r) => String(r.text ?? ''));
     const textStage = !st.params.parts.some((/** @type {any} */ x) => isRec(x) && x.class === 'fact');
     const parts = [];
     for (const p of st.params.parts) {
@@ -206,24 +212,35 @@ export function applyLedger(declaration, rows, { labels = [], texts = null } = {
       if (p.class === 'fact') {
         const fs = Array.isArray(p.facts) ? p.facts : [];
         const ruled = onRule(p);
-        // PLACE RULES: an unruled phrase fact whose words are a version or an ISO date the input's newest heading holds takes the rule that fits (code picks it)
-        // The phrase is STRIPPED to its value(s) (P1b): a version and a date in one phrase become TWO phrase facts, "<name> version" and "<name> date", each with its own rule.
+        // ONE OWNER of the week-only decision (hamr 2026-11-11): the list row alone. A fact whose phrase/anchor/until holds a version or a date is signed ONLY as the place value(s) its standing
+        // row's fit gives (the values that are the fact's own phrase tokens; a version and a date in one phrase become TWO facts, "<name> version" and "<name> date", each with its own rule),
+        // else refused. A rule NUMBER on the part never exempts it; only the person's own ~ rule text naming the fact's token does (the fixed words are theirs then).
         /** @type {Map<any, any[]>} */
         const placed = new Map();
         const taken = new Set(fs.map((f) => f?.name));
         let total = fs.length;
+        const weekFact = (/** @type {any} */ f) => isRec(f) && !isRec(f.place) && [f.phrase, f.anchor, f.until].some(weekOnly);
+        const named = (/** @type {any} */ f) => (/** @type {string} */ t) => weekTokens([f.phrase, f.anchor, f.until].join(' ')).some((k) => norm(t).includes(norm(k)));
+        const exempt = new Set(fs.filter((f) => weekFact(f) && ruleTexts.some(named(f))));
         for (const f of fs) {
-          if (ruled || !isRec(f) || f.shape !== 'phrase' || isRec(f.place) || f.anchor !== undefined || f.until !== undefined || !weekOnly(f.phrase)) continue;
-          const strip = fitPlacePhrase(f.phrase, texts?.[String(p.source ?? labels[0] ?? '')]);
-          if (strip === null) continue;
+          if (!weekFact(f) || exempt.has(f) || f.shape !== 'phrase' || f.anchor !== undefined || f.until !== undefined) continue;
+          const cands = rows.filter((r) => r.line === line && (r.kind === 'fact' || r.kind === 'phrase')
+            && ((r.name !== undefined && norm(r.name) === norm(f.name)) || (typeof f.phrase === 'string' && r.words.some((w) => norm(w) === norm(f.phrase)))));
+          const row = cands.find((r) => r.state !== 'dropped') ?? cands[0];
+          if (!row || row.state === 'dropped' || row.state === 'not-checked') continue;
+          const w = row.words.find(weekOnly);
+          const full = w === undefined ? null : fitPlacePhrase(w, texts?.[String(p.source ?? labels[0] ?? '')]);
+          const own = weekTokens(f.phrase);
+          const strip = full === null ? [] : full.filter((v) => own.includes(v.value));
+          if (strip.length === 0) continue;
           const nm = (/** @type {string} */ sfx) => `${String(f.name).slice(0, 64 - sfx.length - 1).trimEnd()} ${sfx}`;
           const facts = strip.length === 1 ? [{ ...f, phrase: strip[0].value, place: strip[0].rule }] : strip.map((s) => ({ ...f, name: nm(s.kind), phrase: s.value, place: s.rule }));
           if (strip.length === 2 && (facts.some((x) => taken.has(x.name)) || total + 1 > MAX_FACTS)) continue;
           if (strip.length === 2) { total += 1; facts.forEach((x) => taken.add(x.name)); }
           placed.set(f, facts);
         }
-        const week = (/** @type {any} */ f) => !ruled && !placed.has(f) && !isRec(f?.place) && [f?.phrase, f?.anchor, f?.until].some(weekOnly);
-        const keptFacts = fs.filter((f) => !week(f) && (ruled || factRow(f)));
+        const week = (/** @type {any} */ f) => weekFact(f) && !exempt.has(f) && !placed.has(f);
+        const keptFacts = fs.filter((f) => !week(f) && (ruled || placed.has(f) || exempt.has(f) || factRow(f)));
         units += fs.length;
         for (const f of fs.filter((x) => !keptFacts.includes(x))) refused.push({ line, kind: 'fact', words: say(f?.name) || say(p.text), reason: week(f) ? 'week-only' : 'not on the list' });
         let np = p;

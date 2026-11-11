@@ -224,7 +224,8 @@ test('A7 ensureCited decides the default AFTER everything settled: a step with n
 });
 
 test('A8 applyLedger refuses a drafter fact whose phrase holds a version (reason week-only, plain words in the notes) unless a ~ rule carries it', () => {
-  const rows = build({ look: { facts: [] } });
+  // one-owner ruling (hamr 2026-11-11): a rule NUMBER no longer exempts; the person's own ~ rule TEXT must name the token ("must say 0.54.1")
+  const rows = build({ look: { facts: [] }, jobLines: [{ n: 1, text: 'Summarise', rule: 'must say 0.54.1', rules: ['must say 0.54.1'] }] });
   const r = CL.applyLedger(decl([
     { text: 'f', class: 'fact', source: 'Changelog', facts: [{ name: 'release version', shape: 'phrase', phrase: '0.54.1' }], rules: [1] },
     { text: 'g', class: 'fact', source: 'Changelog', facts: [{ name: 'release date', shape: 'phrase', phrase: 'Nov 4, 2026' }] },
