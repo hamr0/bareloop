@@ -1,6 +1,6 @@
-# SKILLPROOF — does a short "engineering workflow" skill text in the worker's system prompt help: pre-registration (SIGNED rev 2 2026-11-11; no number exists yet)
+# SKILLPROOF — does a short "engineering workflow" skill text in the worker's system prompt help: pre-registration (SIGNED rev 3 2026-11-11; no number exists yet)
 
-Status: SIGNED rev 2 2026-11-11 (hamr) and FROZEN. Rev 2 moves the proof from Baseten Muse to Fireworks DeepSeek flash (provider, model, price, base-rate and power wording only; arms, jobs, n, caps and decision rules unchanged). Rev 1 history: rev 1 signed 2026-11-11, never run: Baseten muse-spark-open-1026 deactivated (HTTP 400 'Model version wpgy40e is deactivated'), alias muse-spark-open 403 on this key; $0 spent. Structure, decision rules, jobs, counts, provider and caps are copied from `docs/logs/MEMOPROOF-PREREG.md` (rev 2, signed 2026-11-01); only the arm differs.
+Status: SIGNED rev 3 2026-11-11 (hamr) and FROZEN. Rev 3 moves the proof from Fireworks to the DeepSeek direct API (provider, model, price and expected-spend wording only; arms, jobs, n, caps and decision rules unchanged); ALL 32 runs are rerun there, nothing pooled with the Fireworks runs. Rev 2 history: rev 2 signed 2026-11-11, ran 3 runs on Fireworks (01 bigfile OFF green $0.49, 02 bigfile ON green $0.29, 03 pulselog OFF green $0.28), then the account was depleted, 2 provider-red casualties, booked $1.37; those runs are set aside in `.claude/scratch/skillproof-run/fireworks-aborted/`, NOT pooled. Rev 2 moved the proof from Baseten Muse to Fireworks DeepSeek flash (provider, model, price, base-rate and power wording only; arms, jobs, n, caps and decision rules unchanged). Rev 1 history: rev 1 signed 2026-11-11, never run: Baseten muse-spark-open-1026 deactivated (HTTP 400 'Model version wpgy40e is deactivated'), alias muse-spark-open 403 on this key; $0 spent. Structure, decision rules, jobs, counts, provider and caps are copied from `docs/logs/MEMOPROOF-PREREG.md` (rev 2, signed 2026-11-01); only the arm differs.
 
 **UP FRONT: UNDERPOWERED. The result is a LEANING only, never proof.** At 32 runs (bigfile 6, pulselog 6, p7 4 per arm) a skill text with NO effect is still called a win of one kind or the other about 3 times in 10 (about 30% false-WIN) and a loss about 2 times in 10 (power table below, carried from the memoproof simulation: same n, same thresholds). A SAME or NO DIFFERENCE does not mean no effect.
 
@@ -8,7 +8,7 @@ Sources: `docs/logs/MEMOPROOF-PREREG.md` and its power table (`.claude/scratch/m
 
 ## Question
 
-With everything else equal, does a worker whose system prompt carries a short engineering-workflow skill text pass more jobs, or pass the same number for less money or less time, than a worker without it, on Fireworks DeepSeek flash? Plan (planner) and carry memo are ON in BOTH arms (both always on).
+With everything else equal, does a worker whose system prompt carries a short engineering-workflow skill text pass more jobs, or pass the same number for less money or less time, than a worker without it, on DeepSeek flash via the direct API? Plan (planner) and carry memo are ON in BOTH arms (both always on).
 
 ## Arms (the arm's ONLY difference is the skill text)
 
@@ -30,7 +30,7 @@ How to work:
 
 ## Held fixed in BOTH arms
 
-- Same model and provider: Fireworks, key env `FIREWORKS_API_KEY`, model `accounts/fireworks/models/deepseek-v4p1-flash`, baseUrl `https://api.fireworks.ai/inference/v1`, price in $0.45 / out $1.80 per 1M (from hamr's config row), `legacyMaxTokens` false (the row has none). DeepSeek thinks by default; the product's thinking rule applies identically in both arms (the spec carries no `thinking` field). Never pooled with memoproof (Muse) numbers.
+- Same model and provider: DeepSeek direct API, key env `DEEPSEEK_API_KEY`, model `deepseek-flash`, baseUrl `https://api.deepseek.com/v1`, price in $0.60 / out $1.20 per 1M (from hamr's config row), `legacyMaxTokens` true (the row sets it). DeepSeek thinks by default; the product's thinking rule applies identically in both arms (the spec carries no `thinking` field). Never pooled with memoproof (Muse) numbers.
 - Seed note ON (default); `readMap` absent; `handoffNote` absent; read shim at `cap`; carry memo ON (always on); plan ON.
 - Learnings OFF: scratch `config.json` carries `learningHints:false`, NO `carryNote` key. Scratch HOME per run; the real `~/.config/bareloop/runs.jsonl` line count is recorded before and after (must be equal).
 - Fresh patient per run from the job's template; templates rebased to the DeepSeek model/baseUrl, spec hash recomputed; the spec hash is equal across arms for a job (the skill text is not in the spec).
@@ -89,7 +89,7 @@ Read: UNDERPOWERED. A no-effect skill text is called a win about 3 times in 10; 
 
 ## Expected cost
 
-Expected spend is UNKNOWN for DeepSeek on these jobs (the rev 1 figures of about $10 to $14 were Muse and at Muse prices; DeepSeek is priced lower per token); wall unknown; worst case 32 x $1 = $32 against the $20 stop (a run starts only while booked + $1 <= $20).
+Expected spend: the three rev 2 Fireworks runs (set aside, not data for the rule) suggest about $0.30 to $0.50 per run, so about $10 to $12 for 32 runs; unknown on the direct API (different price row and provider); wall unknown; worst case 32 x $1 = $32 against the $20 stop (a run starts only while booked + $1 <= $20).
 
 ## Casualties
 
@@ -113,19 +113,19 @@ Excluded from denominators, never evidence, replaced once per run: provider-red,
 2. `npm ci --ignore-scripts` and `npm rebuild better-sqlite3` in both; litectx smoke green; dependency versions identical.
 3. Byte-diff gate and scripted prompt proof PASS (above).
 4. Preflight: two consecutive 200s from the model, each parsing into a tool call.
-5. Scratch config (`learningHints:false`, no `carryNote`, one Fireworks row, prices 0.45 / 1.80); per-run HOME; real `runs.jsonl` count recorded before and after.
+5. Scratch config (`learningHints:false`, no `carryNote`, one DeepSeek row, prices 0.60 / 1.20); per-run HOME; real `runs.jsonl` count recorded before and after.
 6. Seed state of each template clean; spec hash equal across arms; run cap $1.00 per job.
 7. `--preview` lists the 32 runs, sizes the cap math, exits at $0.
 
 ## For hamr to confirm at sign
 
 1. The arm's only difference is the appended skill text (verbatim above), at the single worker system-prompt site in `src/planrun.js`.
-2. Provider and model: Fireworks `accounts/fireworks/models/deepseek-v4p1-flash`, prices 0.45 / 1.80; never pooled with Muse.
+2. Provider and model: DeepSeek direct API `deepseek-flash`, prices 0.60 / 1.20; never pooled with Muse or with the Fireworks runs.
 3. Jobs and n: bigfile 6, pulselog 6, p7 4 per arm (32 runs); decision numbers unchanged (+3 greens; 0.80 either / 1.20 both).
 4. Caps: $1 per run, $20 total stop, 2-casualty stop; dependencies frozen for the whole proof.
 5. A WIN means "the text helped on this mix with DeepSeek flash"; neither result ships or removes anything by itself.
 
-Signed: hamr, 2026-11-11 rev 2 (in-turn word "sign")
+Signed: hamr, 2026-11-11 rev 3 (in-turn word "sign")
 
 ---
-sha256 of this file above this footer (frozen, never edited again): f2487fa85e4ad47fc53b1e1dd58aff45d7f870037f9e9b0225b13309a57dad60
+sha256 of this file above this footer (frozen, never edited again): d202cd57615b655facdbc7c41e771d4dcf7bacab67934a36a71d50eb7f363783
