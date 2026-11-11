@@ -88,6 +88,7 @@ import { buildSeedListing, cleanEntry, SURVEY_CAUSES, AUTHOR_CALL_TIMEOUT_MS } f
 import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
 import { redactSecrets } from './validate.js';
 import { applyPicks, dropExtras, fillAndMergeFacts, moveUncheckable, retentionOf, settleRules } from './checkpick.js';
+import { ledgerBlock, applyLedger, ensureCited, resolveLedger, ledgerRecord } from './checklist.js';
 import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, withFactBindings, settlePersonsWords, withDropNotes, lineRules } from './rubricstep.js';
 import { dropRows, dropLine } from './pagedropwords.js';
 import { factShapeGuide } from './facts.js';
@@ -1240,7 +1241,7 @@ export function writeScopeBlock(writeScope) {
  * meaning from `openQuestions` (which means "could not resolve"): the two
  * never merge.
  * @param {{checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[],
- *   answeredQuestions?: string[]}} confirmed
+ *   answeredQuestions?: string[], goalOnly?: boolean}} confirmed
  * @param {{numbered?: boolean}} [o] `numbered` (a rubric job on files): each confirmed check carries its `#n`, which a part cites in `covers`
  */
 export function confirmedBlock(confirmed, { numbered = false } = {}) {
@@ -1249,6 +1250,14 @@ export function confirmedBlock(confirmed, { numbered = false } = {}) {
   const openQuestions = confirmed.openQuestions ?? [];
   const notChecked = confirmed.notChecked ?? [];
   const answeredQuestions = confirmed.answeredQuestions ?? [];
+  // a rubric job's confirm turn plans the goal only (its checks are the list's): no check list and no "the person confirmed" text
+  if (confirmed.goalOnly === true) {
+    return 'ALWAYS-ON PROTECTIONS \u2014 already enforced by this run and unchanged by the job; never compose one of these as a check:\n\n'
+      + `${protections.map((p) => `  - ${p}`).join('\n') || '  (none)'}\n`
+      + (notChecked.length ? `\nTHESE WERE ASKED FOR, BUT NOTHING CHECKS THEM (state these in your notes):\n\n${notChecked.map((n) => `  - ${n}`).join('\n')}\n` : '')
+      + (answeredQuestions.length ? `\nQUESTIONS THE PERSON ANSWERED \u2014 binding:\n\n${answeredQuestions.map((a) => `  - ${a}`).join('\n')}\n` : '')
+      + (openQuestions.length ? `\nOPEN QUESTIONS (state these in your notes, never decide them silently):\n\n${openQuestions.map((q) => `  - ${q}`).join('\n')}\n` : '');
+  }
   return 'THE CONFIRMED PLAN — the person already saw and confirmed this in the confirm turn\n\n'
     + 'Compose stages for these checks and no other — a genre never adds a check the goal did not ask for, and '
     + 'neither do you:\n\n'
@@ -1322,7 +1331,7 @@ export function jobLineTagBlock(count, guardNames = []) {
  *   writeScope?: string[]|null,
  *   jobLines?: {n: number}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
  *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null,
- *   labelLists?: string[]|null, settled?: {line: number, rule: number, text: string}[]|null,
+ *   labelLists?: string[]|null, settled?: {line: number, rule: number, text: string}[]|null, ledger?: any[]|null,
  * }} o
  */
 export function authorPrompt({
@@ -1339,13 +1348,15 @@ export function authorPrompt({
   labelLists = null,
   // R10: the `~` rules code settles from the person's own picks (src/checkpick.js); ABSENT = byte-identical prompt
   settled = null,
+  // the rubric job's one list of checks (src/checklist.js); ABSENT = byte-identical prompt
+  ledger = null,
 }) {
   // PART 1a: a rubric job on the person's own local files has no repository, no genre template and no tool to measure with —
   // it gets its own brief (`rubricAuthorPrompt`), which still ends in the same declaration tool and the same guards
   // an absent catalogue is the language's own menu (`catalogueForLang`), so a code job's prompt never lists a rubric-only kind
   const catalogue = catalogueIn ?? catalogueForLang(lang);
   if (lang === RUBRIC_LANG) {
-    return rubricAuthorPrompt({ answers, questions, facts, listingBlock, verdictType, guards, mode, catalogue, writeScope, jobLines, inputs, confirmed, labelLists, settled });
+    return rubricAuthorPrompt({ answers, questions, facts, listingBlock, verdictType, guards, mode, catalogue, writeScope, jobLines, inputs, confirmed, labelLists, settled, ledger });
   }
   const statement = CLASS_STATEMENTS[String(verdictType)] ?? null;
   if (statement === null) {
@@ -1465,7 +1476,7 @@ export const RUBRIC_FILES_STATEMENT = 'The person declared this job SOFT-GREEN a
 
 /**
  * THE RUBRIC RULES, in one place (live fix B1): what the confirm step and the drafter are both told about turning the person's words
- * into checks. The confirm note ({@link RUBRIC_CONFIRM_NOTE}) and the composer brief ({@link REQUIRED_FACTS_BRIEF}) interpolate THIS
+ * into checks. The composer brief ({@link REQUIRED_FACTS_BRIEF}) interpolates THIS
  * constant, so the two cannot drift (in smv6k6l8dxkzs the confirm step planned a limit the drafter then could not carry, and the
  * drafter added an airport code the person never wrote). Field-neutral: neither turn needs the other's field names.
  */
@@ -1543,13 +1554,13 @@ export const REQUIRED_FACTS_BRIEF = 'REQUIRED FACTS — what a line that finds, 
  *   verdictType: string, guards: {name: string, kind: string, params: Record<string, any>, fill: string[]}[],
  *   mode?: 'tool'|'text', catalogue?: Record<string, any>, writeScope?: string[]|null,
  *   jobLines?: {n: number}[]|null, inputs?: {n: number, label: string, value: string}[]|null, confirmed?: any,
- *   labelLists?: string[]|null, settled?: {line: number, rule: number, text: string}[]|null,
+ *   labelLists?: string[]|null, settled?: {line: number, rule: number, text: string}[]|null, ledger?: any[]|null,
  * }} o
  * @returns {string}
  */
 export function rubricAuthorPrompt({
   answers, questions = GREEN_QUESTIONS, facts, listingBlock, verdictType, guards,
-  mode = 'tool', catalogue = KIND_CATALOGUE, writeScope = null, jobLines = null, inputs = null, confirmed = null, labelLists = null, settled = null,
+  mode = 'tool', catalogue = KIND_CATALOGUE, writeScope = null, jobLines = null, inputs = null, confirmed = null, labelLists = null, settled = null, ledger = null,
 }) {
   const interview = Object.entries(questions)
     .map(([n, q]) => `Q${n}. ${q}\nA${n}. ${answers?.[n] ?? '(no answer given)'}`)
@@ -1595,11 +1606,12 @@ left as a placeholder. You never write a number the person did not ask for.`;
     ...(jobLines && jobLines.length ? [jobLineTagBlock(jobLines.length)] : []),
     ...(writeScope && writeScope.length ? [writeScopeBlock(writeScope)] : []),
     ...(confirmed ? [confirmedBlock(confirmed, { numbered: true }),
-      'EVERY CONFIRMED CHECK IS COMPOSED OR MOVED, NEVER DROPPED\n\nThe person saw the numbered checks above. On each countable or fact part that carries one of them out, list its number in the PART\'s "covers" (once on the part, never on a fact inside it). '
+      ...(confirmed.goalOnly === true ? [] : ['EVERY CONFIRMED CHECK IS COMPOSED OR MOVED, NEVER DROPPED\n\nThe person saw the numbered checks above. On each countable or fact part that carries one of them out, list its number in the PART\'s "covers" (once on the part, never on a fact inside it). '
       + 'A confirmed check that no part covers is not silently left out: it is moved to Not checked before signing, and the person is told. '
-      + 'To count "N things listed", use minClaims / maxClaims (it counts the claims listed under an input); anything else you cannot count is not composed.'] : []),
+      + 'To count "N things listed", use minClaims / maxClaims (it counts the claims listed under an input); anything else you cannot count is not composed.'])] : []),
     REQUIRED_FACTS_BRIEF,
     ...(Array.isArray(settled) && settled.length ? [settledBlock(settled)] : []),
+    ...(Array.isArray(ledger) ? [ledgerBlock(ledger)] : []),
     `THE STEP FILES — what the worker leaves behind for each job line\n\n${stepFileContract()}\n\n`
       + 'The rubric-step stage for job line N reads exactly that file, output/steps/N.json. It names the inputs (by label) the '
       + 'step must cite from, and the limits on its "text".',
@@ -2261,21 +2273,12 @@ const confirmChannel = () => ({
  * {@link CLASS_STATEMENTS} already use, rather than a code matcher over prose.
  */
 /**
- * What the confirm turn tells the model about a rubric job on local text files (model-facing, registered). There is no
- * repository and no judge: a check is a limit a machine counts (words, lines, sections), or a claim a quote from a named
- * input must back. Everything else the person asked for is named in `notChecked`, in their words.
+ * What the confirm turn tells the model about a rubric job on local text files (model-facing, registered). The turn plans the goal only: the checks of the job are the one list's
+ * (`src/checklist.js`), made before the draft, never this turn's.
  */
-export const RUBRIC_CONFIRM_NOTE = 'THIS JOB HAS NO REPOSITORY. Its inputs are the person\'s own text files, and each numbered job line leaves ONE '
-  + 'file the run writes (output/steps/<line>.json: a "text" and, per input, quoted claims — or, for a line that finds, lists or '
-  + 'looks something up, only filled facts, each quoted from the input). In this build only three kinds of check exist: a COUNTED '
-  + 'limit on that text (words, lines, sections, words per section); a claim that must be backed by a quote copied from a named input; '
-  + 'and a REQUIRED FACT, something a line finds (a price, a date, a time, a name, a phrase) with a limit only if the person gave one '
-  + '— plan one fact check for each thing the line asks to find, including those named in the line itself ("SFO to LAX"). Plan a check '
-  + 'only for what the person asked for in those terms; '
-  + 'anything that needs reading the text to judge it (tone, quality, accuracy), any superlative ("the cheapest", "the best") and any '
-  + 'choice of WHICH ones ("the last", "the newest") goes in `notChecked`, in the person\'s own words; how MANY results were asked for is '
-  + 'a count and can be checked.\n'
-  + RUBRIC_RULES;
+export const RUBRIC_CONFIRM_NOTE = 'THIS JOB HAS NO REPOSITORY. Its inputs are the person\'s own text files, and each numbered job line leaves ONE file the run writes. '
+  + 'The checks of this job are made elsewhere: plan none. Send an empty checks list, an empty notChecked list and an empty questions list, '
+  + 'and write ONE sentence saying what the job does, from the numbered job lines.';
 
 export const CONFIRM_SYSTEM = 'You read what a NON-ENGINEER answered, plus a read-only survey or listing of their '
   + 'own repository, and draft a PLAN for a job\'s definition of done: the checks you plan to compose and one '
@@ -2295,6 +2298,14 @@ export const CONFIRM_SYSTEM = 'You read what a NON-ENGINEER answered, plus a rea
   + 'were missing when both were already enforced; check the list before writing the claim). Ask a question only '
   + 'where an answer is genuinely missing — never to double-check something already answered. You cannot read '
   + 'anything and you cannot run anything: everything you know is in the message you are given.';
+
+/** the confirm turn's system prompt for a rubric job (model-facing, registered): a one-sentence goal, no check of its own */
+export const CONFIRM_GOAL_SYSTEM = 'You read what a NON-ENGINEER answered, plus the numbered job lines and the inputs they pointed at, and write a one-sentence goal for the job. '
+  + 'You never propose a check, a gap or a question: the checks of this job are made elsewhere. '
+  + 'You cannot read anything and you cannot run anything: everything you know is in the message you are given.';
+
+/** the confirm turn's system prompt for a job of this language: a rubric job's is the goal-only one @param {string} lang @returns {string} */
+export const confirmSystemFor = (lang) => (lang === RUBRIC_LANG ? CONFIRM_GOAL_SYSTEM : CONFIRM_SYSTEM);
 
 /**
  * The confirm turn's per-round prompt (model-facing, registered). Shows the
@@ -2418,6 +2429,8 @@ export async function runConfirmTurn({
   // R10: the `~` rules settled by the person's picks (src/checkpick.js); ABSENT = the confirm prompt is byte-identical
   settled = null,
 }) {
+  /** a rubric job's confirm turn plans the goal only (its checks are the list's) */
+  const goalOnly = lang === RUBRIC_LANG;
   /** @typedef {null|'cap-halt'|'pricing-red'|'provider-red'|'artifact-red'|'confirm-abandoned'|'confirm-restart'} ConfirmStop */
   /** @returns {{ok: boolean, stop: ConfirmStop, rounds: number, accepted: null, reds: Red[], cost: any}} */
   const base = () => ({ ok: false, stop: null, rounds: 0, accepted: null, reds: [], cost: book.report() });
@@ -2524,6 +2537,8 @@ export async function runConfirmTurn({
     // model's own honest gap list, carried through unchanged.
     // NO SILENT DROP (idea A core, spec 4.5): what the page rules removed is said HERE too, in the same words as the signed plan, before
     // drafting is paid for. The words come from the one table (src/pagedropwords.js).
+    // a rubric job's turn keeps nothing but the goal of the model's plan: its checks, gaps and questions are the list's to make, so code discards any it sent
+    if (goalOnly) r.plan = { ...r.plan, checks: [], notChecked: [], questions: [] };
     const notChecked = [...(r.plan.notChecked ?? [])];
     for (const row of dropRows(facts?.look?.dropped)) { const text = dropLine(row, jobLines, lineRules); if (!notChecked.includes(text)) notChecked.push(text); }
     const checkItems = normalizeChecks(r.plan.checks);
@@ -2541,7 +2556,7 @@ export async function runConfirmTurn({
         ok: true, stop: null, rounds: round,
         accepted: {
           goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], checkItems: [...(r.plan.checkItems ?? [])], protections: [...protections],
-          lang: resolvedLang, worseThanBefore,
+          lang: resolvedLang, worseThanBefore, ...(goalOnly ? { goalOnly: true } : {}),
           // every question forced above was answered in order, so what's left
           // unresolved is honestly empty — computed FROM questionsFromPlan
           // rather than a hardcoded `[]`, so this stays true if the forcing
@@ -2562,7 +2577,7 @@ export async function runConfirmTurn({
         ok: true, stop: null, rounds: round,
         accepted: {
           goal: redactSecrets(String(typed).trim()), checks: [...(r.plan.checks ?? [])], checkItems: [...(r.plan.checkItems ?? [])], protections: [...protections],
-          lang: resolvedLang, worseThanBefore,
+          lang: resolvedLang, worseThanBefore, ...(goalOnly ? { goalOnly: true } : {}),
           openQuestions: questionsFromPlan(r.plan).slice(answeredQuestions.length),
           notChecked: [...notChecked], answeredQuestions,
         },
@@ -2584,7 +2599,7 @@ export async function runConfirmTurn({
         ok: true, stop: null, rounds: round,
         accepted: {
           goal: String(r.plan.goal ?? ''), checks: [...(r.plan.checks ?? [])], checkItems: [...(r.plan.checkItems ?? [])], protections: [...protections],
-          lang: resolvedLang, worseThanBefore, openQuestions: [...questionsFromPlan(r.plan), redactedFix], notChecked: [...notChecked],
+          lang: resolvedLang, worseThanBefore, ...(goalOnly ? { goalOnly: true } : {}), openQuestions: [...questionsFromPlan(r.plan), redactedFix], notChecked: [...notChecked],
         },
         reds: [], cost: book.report(),
       };
@@ -2601,14 +2616,15 @@ export async function runConfirmTurn({
  * PRD v1.131 tick 4 (rubric jobs, the LAST try only; the caller gates both): the last try failed the gate, so the AI's own broken parts are dropped to Not checked (`dropExtras`) and the plan
  * is bound and checked ONCE more with the same gate (`redo`). Returns the new settled declaration and its result when that passes; `null` = nothing dropped, the plan is refused as today (the
  * try passed already, a red sits on a part the picks built or on no part, or the re-check is still red).
- * @param {{pre: any, v: {ok: boolean, reds: any[]}, jobLines: any[]|null|undefined, redo: (d: any) => any}} o
+ * `finish` (the one list's `$ cited` default) is applied to the settled declaration before the re-check: a line whose fact parts were dropped here is a text line after all.
+ * @param {{pre: any, v: {ok: boolean, reds: any[]}, jobLines: any[]|null|undefined, redo: (d: any) => any, finish?: (d: any) => any}} o
  * @returns {{pre: any, v: any}|null}
  */
-export function dropAfterLastTry({ pre, v, jobLines, redo }) {
+export function dropAfterLastTry({ pre, v, jobLines, redo, finish = (/** @type {any} */ d) => d }) {
   if (v.ok) return null;
   const out = dropExtras(pre, v.reds, jobLines);
   if ('refused' in out) return null;
-  const next = withFactBindings(out.declaration);
+  const next = finish(withFactBindings(out.declaration));
   const again = redo(next);
   return again.ok ? { pre: next, v: again } : null;
 }
@@ -2659,7 +2675,7 @@ export function dropAfterLastTry({ pre, v, jobLines, redo }) {
  *   priorCalls?: {label: string, costUsd: number|null, unpricedRounds: number}[]|null,
  *   priorRaws?: any[]|null,
  *   jobLines?: {n: number, text: string}[]|null, inputs?: {n: number, label: string, value: string}[]|null,
- *   offerQuestions?: boolean, ticket?: boolean, checkPicks?: {rules: {line: number, rule: number, text: string}[], picks: any[], left: {line: number, rule: number}[]}|null,
+ *   offerQuestions?: boolean, ticket?: boolean, checkPicks?: {rules: {line: number, rule: number, text: string}[], picks: any[], left: {line: number, rule: number}[]}|null, ledger?: any[]|null,
  *   confirmed?: {checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[], answeredQuestions?: string[]}|null}} o
  */
 export async function authorClose({
@@ -2706,6 +2722,8 @@ export async function authorClose({
   ticket = false,
   // R10 (fwd am16): the person's check picks for the `~` rules code settled, `{rules, picks, left, jobLines}`. ABSENT = every other caller: the declaration is validated as drafted.
   checkPicks = null,
+  // the rubric job's one list of checks, made once before the first try (src/checklist.js). ABSENT = every other caller, byte-identical.
+  ledger = null,
 }) {
   // PART 1a: the menu this close may draw from — a rubric job on local files sees its own two kinds, a code job never sees
   // the rubric-only ones (`catalogueForLang`). Everything below (prompt, schema, validator, env) reads THIS one catalogue.
@@ -2883,11 +2901,19 @@ export async function authorClose({
   const settledPicks = checkPicks ? settleRules(checkPicks.rules, checkPicks.picks, checkPicks.left, jobLines ?? []) : null;
   // a rubric job only: what no rule can check goes under Not checked before the picks are applied (every other kind of job keeps its reds)
   // then (rubric only) a one-input job's missing source is filled and a line's several fact parts are merged into one when that is safe, after the picks' count strip
-  const picked = (/** @type {any} */ d) => fillAndMergeFacts(applyPicks(moveUncheckable(d, jobLines ?? [], lang === RUBRIC_LANG), settledPicks), inputLabelsOf(inputs), lang === RUBRIC_LANG);
+  /** what the last `picked` call cut as not on the list @type {{units: number, refused: any[]}} */
+  let ledgerTry = { units: 0, refused: [] };
+  const picked = (/** @type {any} */ d) => {
+    const built = fillAndMergeFacts(applyPicks(moveUncheckable(d, jobLines ?? [], lang === RUBRIC_LANG), settledPicks), inputLabelsOf(inputs), lang === RUBRIC_LANG);
+    if (!ledger || lang !== RUBRIC_LANG) return built;
+    const r = applyLedger(built, ledger, { labels: inputLabelsOf(inputs) ?? [] });
+    ledgerTry = { units: r.units, refused: r.refused };
+    return r.declaration;
+  };
   const prompt = authorPrompt({
     answers, questions, facts, listingBlock: /** @type {string} */ (seeds.block),
     lang, verdictType, guards, ownedEnvNames, mode: structuredMode, catalogue, writeScope, confirmed, jobLines, inputs,
-    labelLists, ...(checkPicks ? { settled: checkPicks.rules } : {}),
+    labelLists, ...(checkPicks ? { settled: checkPicks.rules } : {}), ...(ledger ? { ledger } : {}),
   }) + (ticket ? `\n\n${ticketFilterBlock()}` : '');
   // the draft gate on one settled declaration: validation, then (PART 1c, rubric) code proves, at $0, that every label is PICKED from the input's own list and every word a fact depends
   // on is really in the source (white-space blind, once is enough). A word that is not found is a red naming the word and the input; the drafter revises like it does for any validation red.
@@ -2902,6 +2928,8 @@ export async function authorClose({
   // PRD v1.131 tick 7: per try (by call label), the retention counts of a rubric draft; the one that stands is reported once at the end
   /** @type {Map<string, ReturnType<typeof retentionOf>>} */
   const retentions = new Map();
+  /** the declaration each try ended with, by try label (the list's final states are read from the one that stands) @type {Map<string, any>} */
+  const ledgerPres = new Map();
   /** @type {any[]} */
   let messages = [{ role: 'user', content: prompt }];
   /** the drafter's PROPOSED ticket filter of the accepted iteration (a Tickets job only); the person signs it, the spec carries it, the close never does @type {any} */
@@ -3090,14 +3118,17 @@ export async function authorClose({
 
       // PART 1b: code puts the number tie on every prose step that follows a fact step, before anything is validated or signed
       const settled = withFactBindings(withDropNotes(settlePersonsWords(picked(ask.declaration), jobLines), facts?.look?.dropped, jobLines));
-      let pre = settled;
+      // the `$ cited` default is decided once the build has settled, here and again after the last-try drop
+      const finish = (/** @type {any} */ d) => (ledger && lang === RUBRIC_LANG ? ensureCited(d, inputLabelsOf(inputs) ?? []) : d);
+      let pre = finish(settled);
       let v = checkDraft(pre);
       // PRD v1.131 tick 4: only after the LAST try of a rubric draft failed, the AI's own broken parts are dropped to Not checked and the plan is checked ONCE more; else the plan is refused as today
       if (!v.ok && lang === RUBRIC_LANG && i === revisionCap) {
-        const dropped = dropAfterLastTry({ pre, v, jobLines, redo: checkDraft });
+        const dropped = dropAfterLastTry({ pre, v, jobLines, redo: checkDraft, finish });
         if (dropped) { pre = dropped.pre; v = dropped.v; }
       }
       if (lang === RUBRIC_LANG) retentions.set(label, retentionOf(ask.declaration, pre, jobLines));
+      if (ledger && lang === RUBRIC_LANG) { ledgerPres.set(label, pre); onPhase('draft-ledger-try', { label, units: ledgerTry.units, refused: ledgerTry.refused }); }
       // MCP + tickets piece 2: a proposed ticket filter is read by the ONE reader (src/ticketfilter.js); its reds carry a legal example and go back to the drafter like any red
       if (v.ok && ticket && proposedFilter !== undefined) {
         const fr = ticketFilterReds(proposedFilter);
@@ -3234,6 +3265,10 @@ export async function authorClose({
   // PRD v1.131 tick 7: ONE retention record when a rubric draft ends (accepted or stopped), counts only; the panel writes it into the drafting log
   const standing = fellBack ? retentions.get(fellBack.to) : [...retentions.values()].at(-1);
   if (standing) onPhase('draft-retention', { lines: standing });
+  if (ledger && lang === RUBRIC_LANG) {
+    const lastPre = fellBack ? ledgerPres.get(fellBack.to) : [...ledgerPres.values()].at(-1);
+    if (lastPre !== undefined) onPhase('draft-ledger', { rows: ledgerRecord(resolveLedger(ledger, lastPre)) });
+  }
 
   const reds = fatal.length ? fatal : (lastValidation && !lastValidation.ok ? lastValidation.reds : []);
   return {

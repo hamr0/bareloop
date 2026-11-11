@@ -114,7 +114,7 @@ import {
   REFUSAL_LIB, REFUSAL_CATEGORY,
 } from './authorjob.js';
 import {
-  makeLoopGenerate, CONFIRM_MENU, CONFIRM_SYSTEM,
+  makeLoopGenerate, CONFIRM_MENU, confirmSystemFor,
 } from './authorflow.js';
 import { defaultJudgeLoop, resolveJobJudge } from './judged.js';
 import { validateJob, jobSpecHash, resolveWorkerModel } from './job.js';
@@ -822,7 +822,7 @@ export async function main(argv, deps = {}) {
    * bound to `CONFIRM_SYSTEM`, never the authoring `generate` above (that one
    * is bound to `AUTHOR_SYSTEM`). Same provider instance, a different system
    * prompt: reusing `generate` would run the wrong system prompt silently. */
-  const confirmGenerate = makeLoopGenerate(provider, { system: CONFIRM_SYSTEM, rates: authorPrice?.rates ?? null });
+  const confirmGenerate = makeLoopGenerate(provider, { system: confirmSystemFor(LANG), rates: authorPrice?.rates ?? null });
 
   // ── PLAIN-FOLDER SOURCE: A NAMED $0 STOP, NO MODEL CALL (F191; PRD item 33 M3
   // piece 4, step S6, D5 amended 2026-09-21) ──────────────────────────────────

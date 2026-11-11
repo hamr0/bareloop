@@ -42,7 +42,7 @@ import {
 import { prepareSigning } from '../authorjob.js';
 import { checkCloseByteSignature } from '../close-integrity.js';
 import {
-  questionsFor, requiredAnswersFor, makeLoopGenerate, CONFIRM_SYSTEM, SOFTGREEN_JUDGE_EXAMPLES_KEY,
+  questionsFor, requiredAnswersFor, makeLoopGenerate, confirmSystemFor, SOFTGREEN_JUDGE_EXAMPLES_KEY,
 } from '../authorflow.js';
 import {
   resolveProvider, buildRunnerProviders, apiKeyProblem,
@@ -1142,7 +1142,7 @@ export function createSession(card, deps = {}) {
     // no NEW model call starts after an abandon; a call already in flight books its usage via onCall and is discarded
     const noCallAfterAbandon = (fn) => (...a) => { if (abandoned) throw new Error('abandoned — no new model call'); return fn(...a); };
     const generate = noCallAfterAbandon(deps.generate ?? makeLoopGenerate(provider, { rates: draftPrice?.rates ?? null, draftThinking }));
-    const confirmGenerate = noCallAfterAbandon(deps.confirmGenerate ?? makeLoopGenerate(provider, { system: CONFIRM_SYSTEM, rates: draftPrice?.rates ?? null, draftThinking }));
+    const confirmGenerate = noCallAfterAbandon(deps.confirmGenerate ?? makeLoopGenerate(provider, { system: confirmSystemFor(RUBRIC_FILES ? RUBRIC_LANG : ''), rates: draftPrice?.rates ?? null, draftThinking }));
     // R10 (fwd am16): the check-suggestion call's own model boundary (SUGGEST_SYSTEM, the drafter's thinking); a test that replaces the model boundary never reaches it unless it brings `deps.pickGenerate`
     const pickGenerate = deps.pickGenerate !== undefined ? deps.pickGenerate : (deps.generate ? null : noCallAfterAbandon(makeLoopGenerate(provider, { system: SUGGEST_SYSTEM, rates: draftPrice?.rates ?? null, draftThinking })));
 

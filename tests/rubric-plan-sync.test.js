@@ -173,7 +173,7 @@ function keysHome() {
 }
 const waitFor = async (fn, ms = 20000) => { const t0 = Date.now(); while (!fn() && Date.now() - t0 < ms) await new Promise((r) => { setTimeout(r, 15); }); return fn(); };
 
-test('through the session: confirm shows 3 checks for line 1, the composer writes ONE stage (the mv5bk400 drop), and the card AFTER drafting lists "lists 3 releases" under Not checked — never as a check — and signing then works', async () => {
+test('through the session: the confirm turn plans the goal only (the model\'s 4 checks are discarded), the composer writes ONE stage (the mv5bk400 drop), the card AFTER drafting is built from the close, and signing then works', async () => {
   const file = join(tmp(), 'CHANGELOG.md');
   copyFileSync(join(HERE, '..', 'CHANGELOG.md'), file);
   const plan = { goal: 'List the last 3 releases and summarize.', checks: CONFIRMED, notChecked: [], questions: [] };
@@ -193,7 +193,7 @@ test('through the session: confirm shows 3 checks for line 1, the composer write
   });
   assert.ok(await waitFor(() => session.state.pendingAsk?.kind === 'menu'), `${session.state.phase} / ${session.state.error}`);
   const confirmedCard = session.state.pendingAsk.plan;
-  assert.ok(confirmedCard.checkItems.some((c) => c.text.includes('lists 3 releases')), 'the confirm card DID show it as a check');
+  assert.deepEqual([confirmedCard.checks, confirmedCard.checkItems], [[], []], 'a rubric confirm card shows no check: the checks are the list\'s');
   session.signPrepare();
   assert.ok(await waitFor(() => ['prepared', 'refused', 'error'].includes(session.state.phase)));
   assert.equal(session.state.phase, 'prepared', `${session.state.phase} / ${session.state.error}`);
@@ -204,8 +204,8 @@ test('through the session: confirm shows 3 checks for line 1, the composer write
   const allChecks = finalCard.plan.lines.flatMap((l) => l.checks.map((c) => c.name));
   assert.ok(allChecks.length >= 3);
   assert.ok(!allChecks.some((n) => n.includes('releases')), `the dropped check must not be shown as a check: ${allChecks}`);
-  assert.ok(finalCard.plan.notChecked.some((n) => n.includes('lists 3 releases')), 'it is listed under Not checked');
-  assert.equal(session.state.finalPlan.moved.length, 1);
+  // the old "moved to Not checked" came from the model's confirmed checks, which a rubric confirm turn no longer makes (the list owns the checks; phase B moves this card onto the list)
+  assert.equal(session.state.finalPlan.moved.length, 0);
   // card == close, so signing is allowed
   const r = signRun(session, session.state.specHash, { env: {}, spawnFn: () => ({ unref() {} }), bareloopBin: '/x/bareloop.mjs', home: tmp('rubric-sync-home-') });
   assert.equal(r.ok, true, JSON.stringify(r));

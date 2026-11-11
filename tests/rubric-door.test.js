@@ -216,7 +216,7 @@ test('R10 end check, panel door: a declaration with no real check (paid6 draft 1
   assert.equal(gatesReached, false, 'the end check refuses before the signing gates');
 });
 
-test('the rubric confirm turn: the PROTECTIONS shown are the code\'s (guard list + write fence + one file line per job line), the model is told what a check can be and shown the same list as ALREADY COVERED, and notChecked is the model\'s own', async () => {
+test('the rubric confirm turn: the PROTECTIONS shown are the code\'s (guard list + write fence + one file line per job line), the model is told to plan none (the checks are the list\'s) and shown the same list as ALREADY COVERED, and what the model sent as checks and notChecked is discarded by code', async () => {
   const file = changelogCopy();
   const cm = confirmModel(PLAN);
   const session = createSession({
@@ -236,9 +236,9 @@ test('the rubric confirm turn: the PROTECTIONS shown are the code\'s (guard list
   ]);
   const shown = session.state.pendingAsk.plan.protections;
   assert.deepEqual(shown, expected, 'what the person is shown is the code\'s list, whatever the model said');
-  assert.equal(session.state.pendingAsk.plan.notChecked[0], 'be friendly');
+  assert.deepEqual([session.state.pendingAsk.plan.checks, session.state.pendingAsk.plan.notChecked], [[], []], 'a rubric confirm turn plans the goal only: what the model sent is discarded');
   const prompt = cm.seen[0][0].content;
-  assert.ok(prompt.includes(RUBRIC_CONFIRM_NOTE), 'the model is told what a check can be here');
+  assert.ok(prompt.includes(RUBRIC_CONFIRM_NOTE), 'the model is told to plan no check here');
   for (const line of expected) assert.ok(prompt.includes(line), `ALREADY COVERED must carry: ${line}`);
   assert.match(prompt, /LANGUAGE: text/);
   assert.match(prompt, /the person pointed at these inputs: 1 Changelog /);

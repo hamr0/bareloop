@@ -6,11 +6,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { RUBRIC_RULES, RUBRIC_CONFIRM_NOTE, REQUIRED_FACTS_BRIEF } from '../src/authorflow.js';
 
-test('B1: both the confirm note and the drafter brief carry the one rulebook, verbatim, exactly once', () => {
-  for (const text of [RUBRIC_CONFIRM_NOTE, REQUIRED_FACTS_BRIEF]) {
-    assert.ok(text.includes(RUBRIC_RULES));
-    assert.equal(text.split(RUBRIC_RULES).length - 1, 1);
-  }
+test('B1: the drafter brief carries the one rulebook, verbatim, exactly once; the confirm note plans none (the checks are the list\'s), so it carries no rulebook', () => {
+  assert.ok(REQUIRED_FACTS_BRIEF.includes(RUBRIC_RULES));
+  assert.equal(REQUIRED_FACTS_BRIEF.split(RUBRIC_RULES).length - 1, 1);
+  assert.ok(!RUBRIC_CONFIRM_NOTE.includes('THE RULES FOR TURNING'));
 });
 
 test('B1: the rulebook says the three things — a written limit is checkable, a made number is the AI\'s proposal (a range), names and units are the input\'s', () => {

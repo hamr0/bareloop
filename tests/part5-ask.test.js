@@ -13,7 +13,6 @@ import { applyPageRules } from '../src/pagerules.js';
 import { normalizeQuestions, MAX_QUESTIONS } from '../src/authorflow.js';
 import { dropRows, dropLine } from '../src/pagedropwords.js';
 import { lineRules } from '../src/rubricstep.js';
-import { redactSecrets } from '../src/validate.js';
 import { ANTH_CFG } from './helpers.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -91,9 +90,7 @@ function sessionWith({ lookFacts, confirmQuestions }) {
   return { session, legs, sessionDir, survey };
 }
 
-test('Q1 + Q3: the early ask and a confirm question are each recorded as a `human` row (source, question, answer); a blank answer leaves no row; a secret is masked; "drop it" adds no rule and lands on the look\'s Not checked list', async () => {
-  const secret = `sk-ant-api03-${'a'.repeat(40)}`;
-  assert.notEqual(redactSecrets(secret), secret, 'precondition: the repo\'s own inventory masks this shape');
+test('Q1 + Q3: the early ask is recorded as a `human` row (source, question, answer); a blank answer leaves no row; "drop it" adds no rule and lands on the look\'s Not checked list; a question the confirm model raises is discarded (a rubric confirm turn plans the goal only), never asked', async () => {
   const { session, legs, sessionDir, survey } = sessionWith({ lookFacts: [], confirmQuestions: ['Which airport do you mean?'] });
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'), `${session.state.phase} / ${session.state.error}`);
   assert.equal(session.state.pendingAsk.source, 'look');
@@ -103,29 +100,22 @@ test('Q1 + Q3: the early ask and a confirm question are each recorded as a `huma
   session.send('Drop it.');                            // T2: no new rule
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'), 'then the plan is confirmed as usual');
   session.signPrepare();
-  assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer' && session.state.pendingAsk.source === 'confirm'), 'the confirm card\'s own question');
-  session.send(`LAX, and my key is ${secret}`);
-  assert.ok(await until(() => ['refused', 'error', 'prepared'].includes(session.state.phase) || legs.length > 0));
   assert.ok(await until(() => legs.length === 1));
   const raw = readFileSync(join(sessionDir(), DRAFT_LOG_FILE), 'utf8');
-  assert.ok(!raw.includes(secret), 'the secret never reaches the log');
   const humans = raw.split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.kind === 'human');
-  assert.equal(humans.length, 2, 'two answered questions, the blank answer left nothing');
-  assert.deepEqual(humans.map((h) => [h.source, h.line ?? null]), [['look', 1], ['confirm', null]]);
+  assert.equal(humans.length, 1, 'one answered question, the blank answer left nothing, and the confirm model\'s own question was never asked');
+  assert.deepEqual(humans.map((h) => [h.source, h.line ?? null]), [['look', 1]]);
   assert.match(humans[0].question, /^Your line 1 says "one per week"\./);
   assert.equal(humans[0].answer, 'Drop it.');
-  assert.match(humans[1].answer, /^LAX, and my key is \[REDACTED/);
   // the steps fold them in under the step that was running
   const steps = readDraftSteps(sessionDir());
   const withHumans = steps.filter((x) => x.humans.length > 0);
-  assert.deepEqual(withHumans.map((x) => [x.id, x.humans.length]), [['look', 1], ['confirm', 1]]);
-  assert.equal(withHumans[1].humans[0].askedText, 'you were asked: Which airport do you mean?');
-  assert.match(withHumans[1].humans[0].saidText, /^you said: LAX, and my key is \[REDACTED/);
+  assert.deepEqual(withHumans.map((x) => [x.id, x.humans.length]), [['look', 1]]);
   // T2 "leave": no rule was added, and the rule is on the look's own Not checked list, so it reads that way everywhere
   assert.deepEqual(legs[0].jobLines[0].rules, ['one per week']);
   const left = survey.facts.look.dropped;
   assert.deepEqual(left.map((d) => [d.line, d.rule, d.reason]), [[1, 1, 'person-left']]);
-  assert.equal(dropLine(dropRows(left)[0], legs[0].jobLines, lineRules), 'line 1: "one per week" — You chose to leave it Not checked.');
+  assert.equal(dropLine(dropRows(left)[0], legs[0].jobLines, lineRules), 'line 1: "one per week" \u2014 You chose to leave it Not checked.');
 });
 
 test('Q1: an abandoned or unanswered question writes no row; an old session (the real mve5y8fa log) has no human rows and its steps carry an empty list', async () => {

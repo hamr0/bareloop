@@ -1,0 +1,195 @@
+// The one check list inside the authoring flow (src/authorflow.js, src/authorjob.js): the confirm turn plans the goal only, the drafter reads the list, every try is cut to the list.
+import { test, after } from 'node:test';
+import { mkdtempSync, rmSync, copyFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import assert from 'node:assert/strict';
+import {
+  confirmPrompt, confirmedBlock, runConfirmTurn, makeCostBook, GREEN_QUESTIONS, CONFIRM_TOOL_NAME, CONFIRM_SYSTEM, RUBRIC_CONFIRM_NOTE, confirmSystemFor, authorPrompt,
+} from '../src/authorflow.js';
+import { RUBRIC_LANG } from '../src/authoring.js';
+import * as CL from '../src/checklist.js';
+import { authorClose, DECLARATION_TOOL_NAME, dropAfterLastTry } from '../src/authorflow.js';
+import { proveRubricInputs } from '../src/source.js';
+import { buildSeedListing } from '../src/authorscout.js';
+import { isNoCheckRubricClose } from '../src/authorreadout.js';
+
+const CA = { answers: { 1: '1. summarise' }, questions: GREEN_QUESTIONS, isRepo: false, lang: RUBRIC_LANG };
+const jobLines = [{ n: 1, text: 'Summarise the latest release', rule: 'exactly 3 bullets', rules: ['exactly 3 bullets'] }];
+const texts = { Changelog: '## [0.54.1] - 2026-11-04\n### Fixed\n- one\n- two\n' };
+const look = { facts: [{ line: 1, name: 'release heading', shape: 'phrase', source: 'Changelog', words: ['## ['] }], dropped: [] };
+
+test('A4 the rubric confirm note is the signed one: goal only, plan none; CONFIRM_SYSTEM for a rubric job says a one-sentence goal', () => {
+  assert.equal(RUBRIC_CONFIRM_NOTE, 'THIS JOB HAS NO REPOSITORY. Its inputs are the person\'s own text files, and each numbered job line leaves ONE file the run writes. '
+    + 'The checks of this job are made elsewhere: plan none. Send an empty checks list, an empty notChecked list and an empty questions list, '
+    + 'and write ONE sentence saying what the job does, from the numbered job lines.');
+  const on = confirmPrompt(CA);
+  assert.doesNotMatch(on, /only three kinds of check/);
+  assert.doesNotMatch(on, /COUNTED/);
+  assert.doesNotMatch(on, /THE RULES FOR TURNING/);
+  assert.match(on, /plan none/);
+  assert.match(confirmSystemFor(RUBRIC_LANG), /one-sentence goal/);
+  assert.doesNotMatch(confirmSystemFor(RUBRIC_LANG), /the checks you plan to compose/);
+  assert.equal(confirmSystemFor('js'), CONFIRM_SYSTEM, 'a code job keeps the old system text');
+  assert.doesNotMatch(confirmPrompt({ ...CA, isRepo: true, lang: 'js' }), /plan none/);
+});
+
+test('A4 runConfirmTurn on a rubric job keeps the goal and discards the model\'s checks, gaps and questions; accepted carries goalOnly; the menu shows no check', async () => {
+  const sent = [];
+  const generate = async (m, tools) => { sent.push(JSON.stringify(m)); await tools.find((t) => t.name === CONFIRM_TOOL_NAME).execute({ goal: 'Summarise the release', checks: [{ text: 'quote the input', fromLine: [1] }], notChecked: ['tone'], questions: ['which release?'] }); return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } }; };
+  const asked = [];
+  const ask = async (step) => { asked.push(step); return step.kind === 'menu' ? 'confirm' : 'x'; };
+  const r = await runConfirmTurn({ verdictType: 'soft-green', ...CA, facts: {}, writeScope: null, generate, book: makeCostBook({ ceilingUsd: null }), ask });
+  assert.equal(r.ok, true);
+  assert.equal(r.accepted.goal, 'Summarise the release');
+  assert.deepEqual([r.accepted.checkItems, r.accepted.checks, r.accepted.notChecked, r.accepted.openQuestions], [[], [], [], []]);
+  assert.equal(r.accepted.goalOnly, true);
+  assert.deepEqual(asked.map((a) => a.kind), ['menu'], 'a question the model sent is never asked');
+  assert.deepEqual(asked[0].plan.checks, []);
+  assert.doesNotMatch(sent[0], /only three kinds of check/);
+});
+
+test('A4 a code job\'s confirm turn is untouched: its checks and questions still count', async () => {
+  const generate = async (m, tools) => { await tools.find((t) => t.name === CONFIRM_TOOL_NAME).execute({ goal: 'g', checks: [{ text: 'tests stay green', fromLine: [1] }], notChecked: [], questions: [] }); return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } }; };
+  const r = await runConfirmTurn({ verdictType: 'green', answers: { 1: '1. fix' }, questions: GREEN_QUESTIONS, isRepo: true, lang: 'js', facts: {}, writeScope: ['src/**'], generate, book: makeCostBook({ ceilingUsd: null }), ask: async () => 'confirm' });
+  assert.equal(r.accepted.checkItems.length, 1);
+  assert.equal(r.accepted.goalOnly, undefined);
+});
+
+// ---- A5: the drafter sees the list ---------------------------------------------------------------------------------------------------------
+const promptWith = (over) => authorPrompt({ answers: {}, facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }] }, listingBlock: '', lang: RUBRIC_LANG, verdictType: 'soft-green', guards: [], jobLines, inputs: [{ n: 1, label: 'Changelog', value: '/x' }], ...over });
+
+test('A5 the rubric drafter prompt carries the list block when it is given one; without a list it is byte-identical to before', () => {
+  const rows = CL.buildLedger({ jobLines, look, texts, inputLabels: ['Changelog'] });
+  const withList = promptWith({ ledger: rows });
+  assert.ok(withList.includes('THE LIST OF CHECKS'));
+  assert.ok(!promptWith({}).includes('THE LIST OF CHECKS'));
+  assert.equal(promptWith({}), promptWith({ ledger: null }));
+});
+
+test('A5 a goal-only confirmed plan gives the drafter no confirmed-plan block, no "the person confirmed" text and no covers rule; an old-shape plan still does', () => {
+  const rows = CL.buildLedger({ jobLines, look, texts, inputLabels: ['Changelog'] });
+  const conf = { checks: [], checkItems: [], protections: ['always on'], notChecked: [], goalOnly: true };
+  const b = confirmedBlock(conf);
+  assert.doesNotMatch(b, /CONFIRMED|confirmed|confirm turn/);
+  assert.match(b, /always on/);
+  const on = promptWith({ confirmed: conf, ledger: rows });
+  assert.doesNotMatch(on, /THE CONFIRMED PLAN|EVERY CONFIRMED CHECK|already saw and confirmed|only three kinds of check/);
+  assert.match(on, /THE LIST OF CHECKS/);
+  assert.match(promptWith({ confirmed: { ...conf, goalOnly: undefined, checkItems: [{ text: 'a', fromLine: [1] }], checks: ['a'] } }), /EVERY CONFIRMED CHECK IS COMPOSED OR MOVED/);
+});
+
+// ---- A6 / A7 / A9 / A10: the drafting loop is cut to the list -----------------------------------------------------------------------------------
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+/** @type {string[]} */
+const made = [];
+after(() => { for (const d of made) rmSync(d, { recursive: true, force: true }); });
+const tmp = (p = 'checklist-flow-') => { const d = mkdtempSync(join(tmpdir(), p)); made.push(d); return d; };
+
+async function closeWorld(parts, { lines = jobLines, rows = null, second = false } = {}) {
+  const file = join(tmp(), 'CHANGELOG.md');
+  copyFileSync(join(HERE, '..', 'CHANGELOG.md'), file);
+  const file2 = join(tmp(), 'README.md');
+  copyFileSync(join(HERE, '..', 'README.md'), file2);
+  const inputs = [{ n: 1, label: 'Changelog', value: file }, ...(second ? [{ n: 2, label: 'Readme', value: file2 }] : [])];
+  const proved = await proveRubricInputs({ inputs, into: join(tmp(), 'seed') });
+  assert.equal(proved.ok, true);
+  if (!proved.ok) throw new Error('unreachable');
+  const prep = proved.prep;
+  const guard = { name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } };
+  /** @type {string[]} */ const prompts = [];
+  /** @type {[string, any][]} */ const phases = [];
+  const generate = async (m, tools) => {
+    prompts.push(m[0].content);
+    await tools.find((t) => t.name === DECLARATION_TOOL_NAME).execute({ stages: [guard, { name: 'line-1', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts } }] });
+    return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } };
+  };
+  const listing = await buildSeedListing({ workdir: prep.tree, seedRef: prep.manifest.seed, sourcePaths: undefined, testPaths: undefined });
+  const ledger = rows ?? CL.buildLedger({ jobLines: lines, look, texts, inputLabels: ['Changelog'] });
+  const r = await authorClose({
+    workdir: prep.tree, seedRef: prep.manifest.seed, lang: RUBRIC_LANG, verdictType: 'soft-green',
+    answers: { 1: '1. Summarise the latest release' }, questions: { 1: GREEN_QUESTIONS[1] },
+    scout: { state: 'PRESENT', facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }] }, calls: [], raws: [] },
+    listing, generate, writeScope: ['output/'], jobLines: lines, inputs, ledger,
+    onPhase: (name, data) => phases.push([name, data]),
+  });
+  return { r, prompts, phases, ledger };
+}
+
+test('A5/A6/A10 authorClose: the drafter prompt carries the list; an off-list fact and count go to Not checked; each try and the end are logged', async () => {
+  const w = await closeWorld([
+    { text: 'heading', class: 'fact', source: 'Changelog', facts: [{ name: 'release heading', shape: 'phrase', phrase: '## [' }, { name: 'made up', shape: 'phrase', phrase: 'zzz' }], count: { min: 1, max: 1 } },
+  ], { lines: [{ n: 1, text: 'Summarise the latest release' }] });
+  assert.equal(w.r.ok, true, JSON.stringify(w.r.reds));
+  assert.match(w.prompts[0], /THE LIST OF CHECKS/);
+  assert.doesNotMatch(w.prompts[0], /THE CONFIRMED PLAN/);
+  const parts = w.r.declaration.stages[1].params.parts;
+  assert.deepEqual(parts[0].facts.map((f) => f.name), ['release heading']);
+  assert.deepEqual(parts[0].count, { min: 1, max: 1 }, 'the count rides with its kept fact');
+  assert.ok(w.r.declaration.notes.some((n) => n.includes(CL.OFF_LIST_WORDS)));
+  const tries = w.phases.filter(([n]) => n === 'draft-ledger-try');
+  assert.equal(tries.length, 1);
+  assert.deepEqual(tries[0][1].refused.map((x) => x.words), ['made up']);
+  const end = w.phases.find(([n]) => n === 'draft-ledger')[1].rows;
+  assert.ok(end.every((x) => ['built', 'not-checked', 'dropped', 'empty'].includes(x.state)));
+  assert.equal(end.find((x) => x.key === 'L1.fact.release heading').state, 'built');
+});
+
+test('A7 authorClose: a text line gets the $ cited default after the build settles, whatever the drafter wrote', async () => {
+  const rows = CL.buildLedger({ jobLines, look: { facts: [] }, texts, inputLabels: ['Changelog'] });
+  const w = await closeWorld([{ text: 'exactly 3 bullets', class: 'countable', check: 'listItems', value: 3, rules: [1] }], { rows });
+  assert.equal(w.r.ok, true, JSON.stringify(w.r.reds));
+  assert.deepEqual(w.r.declaration.stages[1].params.parts.map((p) => p.check), ['listItems', 'cited']);
+  assert.equal(w.phases.find(([n]) => n === 'draft-ledger')[1].rows.find((x) => x.key === 'L1.$cited').state, 'built');
+});
+
+test('A9 authorClose: an empty list logs "nothing to check", every drafted part is off the list, and the close ends with no real check (the zero-check stop)', async () => {
+  const lines = [{ n: 1, text: 'Summarise' }];
+  const rows = CL.buildLedger({ jobLines: lines, look: { facts: [] }, texts: { Changelog: 'a', Readme: 'b' }, inputLabels: ['Changelog', 'Readme'] });
+  assert.equal(CL.isEmptyList(rows), false, 'a two-input job has a $ cited row, but code cannot pick the input');
+  assert.equal(rows.find((r) => r.kind === 'cited').state, 'not-checked');
+  const bare = rows.filter((r) => r.kind === 'floor');
+  assert.equal(CL.isEmptyList(bare), true);
+  const w = await closeWorld([{ text: 'a fact', class: 'fact', source: 'Changelog', facts: [{ name: 'x', shape: 'phrase', phrase: 'x' }] }], { lines, rows: bare, second: true });
+  assert.equal(w.r.ok, true, JSON.stringify(w.r.reds));
+  const end = w.phases.find(([n]) => n === 'draft-ledger')[1].rows;
+  assert.deepEqual(end.filter((x) => x.rowKind === 'empty').map((x) => x.reason), ['empty list: nothing to check']);
+  assert.equal(isNoCheckRubricClose({ lang: 'text', stages: w.r.declaration.stages }), true);
+});
+
+test('A7 dropAfterLastTry: the default is decided again after the last-try drop (finish), so a line whose facts were dropped there still ends with its $ cited part', () => {
+  const rows = CL.buildLedger({ jobLines, look: { facts: [{ line: 1, name: 'summary bullets', shape: 'phrase', source: 'Changelog', words: ['### Fixed'] }], dropped: [] }, texts, inputLabels: ['Changelog'] });
+  assert.equal(rows.some((r) => r.key === 'L1.$cited'), false, 'the list foresaw a fact line');
+  const decl = (parts) => ({ stages: [{ name: 'changed', kind: 'files-changed', params: {} }, { name: 'line-1', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts } }] });
+  const pre = decl([
+    { text: 'exactly 3 bullets', class: 'countable', check: 'listItems', value: 3, rules: [1] },
+    { text: 'the summary', class: 'fact', source: 'Changelog', facts: [{ name: 'summary bullets', shape: 'phrase', phrase: '### Fixed' }] },
+  ]);
+  const r = dropAfterLastTry({ pre, v: { ok: false, reds: [{ path: 'stages[1].params.parts[1]', code: 'x' }] }, jobLines, redo: () => ({ ok: true, reds: [] }), finish: (d) => CL.ensureCited(d, ['Changelog']) });
+  assert.ok(r, 'the drop applies');
+  assert.deepEqual(r.pre.stages[1].params.parts.map((p) => p.check), ['listItems', 'cited']);
+  const fin = CL.resolveLedger(rows, r.pre);
+  assert.equal(fin.find((x) => x.key === 'L1.$cited').state, 'built');
+  assert.equal(fin.find((x) => x.key === 'L1.fact.summary bullets').state, 'not-checked');
+});
+
+test('code job: authorClose without a list is untouched (no list block in the prompt, no ledger phase)', async () => {
+  const file = join(tmp(), 'CHANGELOG.md');
+  copyFileSync(join(HERE, '..', 'CHANGELOG.md'), file);
+  const proved = await proveRubricInputs({ inputs: [{ n: 1, label: 'Changelog', value: file }], into: join(tmp(), 'seed') });
+  if (!proved.ok) throw new Error('unreachable');
+  const prep = proved.prep;
+  const guard = { name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } };
+  /** @type {string[]} */ const phases = []; /** @type {string[]} */ const prompts = [];
+  const listing = await buildSeedListing({ workdir: prep.tree, seedRef: prep.manifest.seed, sourcePaths: undefined, testPaths: undefined });
+  await authorClose({
+    workdir: prep.tree, seedRef: prep.manifest.seed, lang: RUBRIC_LANG, verdictType: 'soft-green', answers: { 1: '1. x' }, questions: { 1: GREEN_QUESTIONS[1] },
+    scout: { state: 'PRESENT', facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }] }, calls: [], raws: [] }, listing, writeScope: ['output/'], jobLines, inputs: [{ n: 1, label: 'Changelog', value: file }],
+    generate: async (m, tools) => { prompts.push(m[0].content); await tools.find((t) => t.name === DECLARATION_TOOL_NAME).execute({ stages: [guard, { name: 'line-1', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts: [{ text: 'u', class: 'countable', check: 'listItems', value: 3, rules: [1] }] } }] }); return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } }; },
+    onPhase: (n) => phases.push(n),
+  });
+  assert.ok(!prompts[0].includes('THE LIST OF CHECKS'));
+  assert.ok(!phases.includes('draft-ledger') && !phases.includes('draft-ledger-try'));
+});
