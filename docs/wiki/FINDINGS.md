@@ -15724,8 +15724,12 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Ruling (hamr, 2026-11-11).** Stop testing; build the round-10 shape; keep refusing week-only exact-word checks for now. The proper cure (the signed check stores the rule, code re-reads the value each run) is parked in PRD v1.132 backlog "Rules re-read each run".
 **Status.** Seen in a paid round; n=8/8/4, one model.
 
+**CORRECTION (2026-11-11).** The claim above that ALL 9 refusals were week-only release-heading rewrites is wrong, and `weekOnlyRefusals` is a different count (it does not list the 9 Q1 refusals). Re-checked from each session's last `ledger-try` refused list and final `ledger` rows (`paid10/work/home/.config/bareloop/panel-sessions/*/draft-log.jsonl`): 4 were the week-only class (r10g-b4 and r10g-a13: fact `release` / `release heading` plus its count "results", correctly refused, the agent's row dropped as week-only); 4 were a REAL list gap (r10g-a1, b2, a8, b12: the count "results" was refused although its fact, `change bullet` / `release version` / `release notes body`, was on the list and built; a count should ride with its fact); 1 is unclear (r10g-a16: fact `release entry` refused, no release row was ever on the list). Without the gap Q1 would have been 5 of 42 (12%). The week-only refusals stay correct; the "measure defect" reading holds for those 4 only.
+
 ## F313 — round 11 withdrawn: the operator's reading was wrong (2026-11-11)
 
 **Finding.** The main session read round 10's Q1 as the rule being too strict and froze round 11 (pre-registration f5e145b3, nothing run) with the week-only rule narrowed to keep phrase facts carrying a version or date (copy commit 1880ad13). That would let through a check that fails on run 2 (F312). Withdrawn before any paid data; `.claude/scratch/r10/ledger/paid11/` holds only the prereg and a $0 dry run. 1880ad13 is not carried forward; 4e1abeae stands.
 **Lesson.** An operator's reading of a failed gate must be checked against what the failing items actually were before a rule is loosened.
 **Status.** Withdrawn; no paid spend.
+
+**CORRECTION (2026-11-11).** "Wrong" applies to half of copy commit 1880ad13 only. It held two changes: keeping version/date phrase facts (WRONG, withdrawn as written above) and "a fact's count rides with its fact" (RIGHT: the fix for the real list gap in F312's correction; test-proven only, never live). The build target is the round-10 shape (4e1abeae) plus count-rides-with-fact.
