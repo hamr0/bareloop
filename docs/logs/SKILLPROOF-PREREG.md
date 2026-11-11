@@ -1,6 +1,6 @@
-# SKILLPROOF — does a short "engineering workflow" skill text in the worker's system prompt help: pre-registration (SIGNED 2026-11-11; no number exists yet)
+# SKILLPROOF — does a short "engineering workflow" skill text in the worker's system prompt help: pre-registration (SIGNED rev 2 2026-11-11; no number exists yet)
 
-Status: SIGNED 2026-11-11 (hamr) and FROZEN. Structure, decision rules, jobs, counts, provider and caps are copied from `docs/logs/MEMOPROOF-PREREG.md` (rev 2, signed 2026-11-01); only the arm differs.
+Status: SIGNED rev 2 2026-11-11 (hamr) and FROZEN. Rev 2 moves the proof from Baseten Muse to Fireworks DeepSeek flash (provider, model, price, base-rate and power wording only; arms, jobs, n, caps and decision rules unchanged). Rev 1 history: rev 1 signed 2026-11-11, never run: Baseten muse-spark-open-1026 deactivated (HTTP 400 'Model version wpgy40e is deactivated'), alias muse-spark-open 403 on this key; $0 spent. Structure, decision rules, jobs, counts, provider and caps are copied from `docs/logs/MEMOPROOF-PREREG.md` (rev 2, signed 2026-11-01); only the arm differs.
 
 **UP FRONT: UNDERPOWERED. The result is a LEANING only, never proof.** At 32 runs (bigfile 6, pulselog 6, p7 4 per arm) a skill text with NO effect is still called a win of one kind or the other about 3 times in 10 (about 30% false-WIN) and a loss about 2 times in 10 (power table below, carried from the memoproof simulation: same n, same thresholds). A SAME or NO DIFFERENCE does not mean no effect.
 
@@ -8,7 +8,7 @@ Sources: `docs/logs/MEMOPROOF-PREREG.md` and its power table (`.claude/scratch/m
 
 ## Question
 
-With everything else equal, does a worker whose system prompt carries a short engineering-workflow skill text pass more jobs, or pass the same number for less money or less time, than a worker without it, on Baseten Muse? Plan (planner) and carry memo are ON in BOTH arms (both always on).
+With everything else equal, does a worker whose system prompt carries a short engineering-workflow skill text pass more jobs, or pass the same number for less money or less time, than a worker without it, on Fireworks DeepSeek flash? Plan (planner) and carry memo are ON in BOTH arms (both always on).
 
 ## Arms (the arm's ONLY difference is the skill text)
 
@@ -30,10 +30,10 @@ How to work:
 
 ## Held fixed in BOTH arms
 
-- Same model and provider: Baseten, key env `BASETEN_API_KEY`, model `meta-models/muse-spark-open-1026`, baseUrl `https://inference.baseten.co/v1`, price in $1.25 / out $4.25 per 1M. Muse always thinks (same in both arms). Never pooled with DeepSeek or with memoproof numbers.
+- Same model and provider: Fireworks, key env `FIREWORKS_API_KEY`, model `accounts/fireworks/models/deepseek-v4p1-flash`, baseUrl `https://api.fireworks.ai/inference/v1`, price in $0.45 / out $1.80 per 1M (from hamr's config row), `legacyMaxTokens` false (the row has none). DeepSeek thinks by default; the product's thinking rule applies identically in both arms (the spec carries no `thinking` field). Never pooled with memoproof (Muse) numbers.
 - Seed note ON (default); `readMap` absent; `handoffNote` absent; read shim at `cap`; carry memo ON (always on); plan ON.
 - Learnings OFF: scratch `config.json` carries `learningHints:false`, NO `carryNote` key. Scratch HOME per run; the real `~/.config/bareloop/runs.jsonl` line count is recorded before and after (must be equal).
-- Fresh patient per run from the job's template; templates rebased to the Muse model/baseUrl, spec hash recomputed; the spec hash is equal across arms for a job (the skill text is not in the spec).
+- Fresh patient per run from the job's template; templates rebased to the DeepSeek model/baseUrl, spec hash recomputed; the spec hash is equal across arms for a job (the skill text is not in the spec).
 - Caps from each signed spec (wall 30 min; driver outer kill 55 min). Per-run money cap $1.00 (run ceiling = spec budget minus draft spent; draft = budget - 1). Booked spend is read from the spine.
 - Interleaved: per (job, rep) one ON and one OFF run back to back, first arm alternating by rep (rep 1 OFF first, rep 2 ON first, ...); reps advance round-robin over jobs. Sequential, detached `setsid nohup systemd-inhibit` launch with a PID watcher; no test suite runs while a paid run is live.
 
@@ -45,7 +45,7 @@ How to work:
 | pulselog (panel-strict) | `.claude/scratch/e1-poc/battery/templates/pulselog` | 6 |
 | p7 (pulselog-p7-small) | `.claude/scratch/e1-poc/battery/templates/p7` | 4 |
 
-Total 16 per arm, 32 runs. change2 stays dropped (BA-29 class shape defect on Muse; the proof says nothing about rubric jobs). Muse base rates from memoproof (n=3, anecdotes, memo ON): bigfile 2/3, pulselog 2/3, p7 3/3; p7 may be a ceiling job showing only cost and wall; the greens verdict rests on bigfile and pulselog.
+Total 16 per arm, 32 runs. change2 stays dropped (the proof says nothing about rubric jobs). DeepSeek base rates on these three jobs are UNKNOWN: there is no prior DeepSeek n on bigfile, pulselog or p7 in this harness (the Muse n=3 rates of rev 1 are removed and do not carry). Whether any job sits at a ceiling or floor is therefore unknown; the greens verdict is read pooled, with the per-job table report-only.
 
 ## Caps
 
@@ -71,7 +71,7 @@ Let G_on and G_off be the pooled greens of the paired non-casualty runs.
 3. Otherwise (|G_on - G_off| <= 2) the greens are SAME, and then: WIN-CHEAPER/FASTER if R_cost <= 0.80 OR R_wall <= 0.80 (named by whichever fired); LOSE (same greens) if R_cost >= 1.20 AND R_wall >= 1.20; else NO DIFFERENCE.
 4. A WIN-MORE is not cancelled by cost or time; a LOSE on greens is not softened by them.
 5. Per-job breakdown is report-only; no rerun, no extra n, no change of the pooled set after the data exists.
-6. WIN is read as "on this job mix, with Muse, the skill text helped"; LOSE or NO DIFFERENCE as "no evidence it helps". Neither changes a default by itself: shipping the text is hamr's call.
+6. WIN is read as "on this job mix, with DeepSeek flash, the skill text helped"; LOSE or NO DIFFERENCE as "no evidence it helps". Neither changes a default by itself: shipping the text is hamr's call.
 
 ### Power table (carried unchanged from MEMOPROOF: same rule, same n, same base-rate shape; order of magnitude only)
 
@@ -85,15 +85,15 @@ Let G_on and G_off be the pooled greens of the paired non-casualty runs.
 | true -20 pts (harm): LOSE on greens detected | 49.2% |
 | true cost x0.70, no pass effect: WIN-CHEAPER/FASTER detected | 46.5% |
 
-Read: UNDERPOWERED. A no-effect skill text is called a win about 3 times in 10; a real +20-point gain is caught about half the time. Note the sim was built for memoproof's base rates and cost spread (lognormal sigma 0.6, not measured on Muse); it has not been re-run for this proof.
+Read: UNDERPOWERED. A no-effect skill text is called a win about 3 times in 10; a real +20-point gain is caught about half the time. The power table is Muse-derived (memoproof's Muse base rates and cost spread, lognormal sigma 0.6, not measured on DeepSeek) and has not been re-run for DeepSeek: order of magnitude only.
 
 ## Expected cost
 
-About $10.4 from the memoproof Muse medians, about $14.3 from the observed means, wall about 2.7 h sequential; worst case 32 x $1 = $32 against the $20 stop (a run starts only while booked + $1 <= $20).
+Expected spend is UNKNOWN for DeepSeek on these jobs (the rev 1 figures of about $10 to $14 were Muse and at Muse prices; DeepSeek is priced lower per token); wall unknown; worst case 32 x $1 = $32 against the $20 stop (a run starts only while booked + $1 <= $20).
 
 ## Casualties
 
-Excluded from denominators, never evidence, replaced once per run: provider-red, a run with no `job-end`, transport failure, a 429 that ends the run, `spendComplete:false`, a failed byte-diff or delivery check (a run in either arm with no `carry-note` record on a non-first ask), a run that dies before job-start, an install or `smoke-red` stop. A run stopped by its cap, wall clock, or ending `step-red`/`escalated`/`plan-red`/`wall-halt`/`cap-halt` is a RESULT. 2 casualties in a row stops the battery. Equal denominators: a (job, rep) pair with one arm missing drops the other arm's run from every statistic. A plan-red is a RESULT in whichever arm drew it (planner prompts are identical across arms). A BA-29-class bad tool call inside a run that reaches `job-end` is a RESULT.
+Excluded from denominators, never evidence, replaced once per run: provider-red, a run with no `job-end`, transport failure, a 429 that ends the run, `spendComplete:false`, a failed byte-diff or delivery check (a run in either arm with no `carry-note` record on a non-first ask), a run that dies before job-start, an install or `smoke-red` stop. A run stopped by its cap, wall clock, or ending `step-red`/`escalated`/`plan-red`/`wall-halt`/`cap-halt` is a RESULT. 2 casualties in a row stops the battery. Equal denominators: a (job, rep) pair with one arm missing drops the other arm's run from every statistic. A plan-red is a RESULT in whichever arm drew it (planner prompts are identical across arms). A bad tool call inside a run that reaches `job-end` is a RESULT.
 
 ## Underpowered, declared now
 
@@ -113,19 +113,19 @@ Excluded from denominators, never evidence, replaced once per run: provider-red,
 2. `npm ci --ignore-scripts` and `npm rebuild better-sqlite3` in both; litectx smoke green; dependency versions identical.
 3. Byte-diff gate and scripted prompt proof PASS (above).
 4. Preflight: two consecutive 200s from the model, each parsing into a tool call.
-5. Scratch config (`learningHints:false`, no `carryNote`, one Baseten row, prices 1.25 / 4.25); per-run HOME; real `runs.jsonl` count recorded before and after.
+5. Scratch config (`learningHints:false`, no `carryNote`, one Fireworks row, prices 0.45 / 1.80); per-run HOME; real `runs.jsonl` count recorded before and after.
 6. Seed state of each template clean; spec hash equal across arms; run cap $1.00 per job.
 7. `--preview` lists the 32 runs, sizes the cap math, exits at $0.
 
 ## For hamr to confirm at sign
 
 1. The arm's only difference is the appended skill text (verbatim above), at the single worker system-prompt site in `src/planrun.js`.
-2. Provider and model: Baseten `meta-models/muse-spark-open-1026`, prices 1.25 / 4.25; never pooled.
+2. Provider and model: Fireworks `accounts/fireworks/models/deepseek-v4p1-flash`, prices 0.45 / 1.80; never pooled with Muse.
 3. Jobs and n: bigfile 6, pulselog 6, p7 4 per arm (32 runs); decision numbers unchanged (+3 greens; 0.80 either / 1.20 both).
 4. Caps: $1 per run, $20 total stop, 2-casualty stop; dependencies frozen for the whole proof.
-5. A WIN means "the text helped on this mix with Muse"; neither result ships or removes anything by itself.
+5. A WIN means "the text helped on this mix with DeepSeek flash"; neither result ships or removes anything by itself.
 
-Signed: hamr, 2026-11-11 (in-turn word "sign")
+Signed: hamr, 2026-11-11 rev 2 (in-turn word "sign")
 
 ---
-sha256 of this file above this footer (frozen, never edited again): 522bc1f51e83d72a6ac8af08ff79096aca33d5d7e9d6ec8fc67c3f73d99eed5a
+sha256 of this file above this footer (frozen, never edited again): f2487fa85e4ad47fc53b1e1dd58aff45d7f870037f9e9b0225b13309a57dad60
