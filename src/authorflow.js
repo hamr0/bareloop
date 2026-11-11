@@ -3302,6 +3302,8 @@ export async function authorClose({
     stop,
     // P7 item 5: what the person is asked (empty on every other stop)
     questions: stop === 'questions-open' ? askedQuestions : [],
+    // the one check list's final rows against the declaration that stands (the signed close carries them as `closeDecl.list`); null = no list
+    ledger: ledger && lang === RUBRIC_LANG && accepted !== null ? resolveLedger(ledger, accepted) : null,
     revisions: Math.max(0, iterations.length - 1),
   };
 }

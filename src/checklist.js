@@ -9,6 +9,7 @@ import { askStructured, makeCostBook } from './authorflow.js';
 import { countExact, countPhrase } from './factwords.js';
 import { settleRules, plainWords } from './checkpick.js';
 import { lineRules, defaultCitedText } from './rubricstep.js';
+import { SIGNED_ROW_FIELDS, SIGNED_STATES } from './declaredclose.js';
 
 /** at most this many `!` checks come from the call */
 export const MAX_BANG = 3;
@@ -46,7 +47,7 @@ const proved = (/** @type {string} */ text, /** @type {string} */ w) => countExa
 
 /**
  * @typedef {{key: string, line: number, kind: 'rule'|'fact'|'cited'|'count'|'phrase'|'numbers'|'floor', from: 'rule'|'pick'|'look'|'agent'|'default', by: 'you'|'agent'|'default',
- *   words: string[], text?: string, rule?: number, source?: string, name?: string, min?: number, max?: number, pick?: string, after?: number[],
+ *   words: string[], text?: string, rule?: number, part?: {line: number, part: number}, source?: string, name?: string, min?: number, max?: number, pick?: string, after?: number[],
  *   state: 'listed'|'built'|'not-checked'|'dropped', reason: string|null}} Row
  */
 
@@ -258,23 +259,26 @@ export function resolveLedger(rows, declaration) {
   const settle = (r) => {
     if (r.state === 'dropped') return r;
     const ps = partsOf(r.line);
-    const built = () => ({ ...r, state: /** @type {const} */ ('built'), reason: null });
+    /** @param {number} [i] the index of the part (among this line's parts) that carries the row */
+    const built = (i) => ({ ...r, state: /** @type {const} */ ('built'), reason: null, ...(i !== undefined && i >= 0 ? { part: { line: r.line, part: i } } : {}) });
     const not = (/** @type {string} */ reason) => ({ ...r, state: /** @type {const} */ ('not-checked'), reason });
     if (r.kind === 'floor') return built();
     if (r.kind === 'cited' || r.kind === 'numbers') {
-      if (ps.some((p) => p.class === 'countable' && p.check === (r.kind === 'cited' ? 'cited' : 'numbersFromFacts'))) return built();
+      const ci = ps.findIndex((p) => p.class === 'countable' && p.check === (r.kind === 'cited' ? 'cited' : 'numbersFromFacts'));
+      if (ci >= 0) return built(ci);
       if (r.state === 'not-checked' && r.reason) return r;
       return not(ps.some((p) => p.class === 'fact') ? 'this line finds facts, so it has no text to quote' : 'the plan did not build it');
     }
     if (r.kind === 'rule') {
-      if (ps.some((p) => Array.isArray(p.rules) && p.rules.includes(r.rule))) return built();
+      const ri = ps.findIndex((p) => Array.isArray(p.rules) && p.rules.includes(r.rule));
+      if (ri >= 0) return built(ri);
       const x = refused.find((q) => isRec(q) && q.line === r.line && q.rule === r.rule);
       return not(x ? say(x.reason) : 'the plan did not carry it');
     }
-    const hit = r.kind === 'fact' || r.kind === 'phrase'
-      ? ps.some((p) => p.class === 'fact' && Array.isArray(p.facts) && p.facts.some((/** @type {any} */ f) => (r.name !== undefined && norm(f?.name) === norm(r.name)) || (typeof f?.phrase === 'string' && r.words.some((w) => norm(w) === norm(f.phrase)))))
-      : ps.some((p) => (p.class === 'countable' && (p.check === 'minClaims' || p.check === 'maxClaims')) || (p.class === 'fact' && isRec(p.count)));
-    return hit ? built() : not('the plan did not build it');
+    const hi = r.kind === 'fact' || r.kind === 'phrase'
+      ? ps.findIndex((p) => p.class === 'fact' && Array.isArray(p.facts) && p.facts.some((/** @type {any} */ f) => (r.name !== undefined && norm(f?.name) === norm(r.name)) || (typeof f?.phrase === 'string' && r.words.some((w) => norm(w) === norm(f.phrase)))))
+      : ps.findIndex((p) => (p.class === 'countable' && (p.check === 'minClaims' || p.check === 'maxClaims')) || (p.class === 'fact' && isRec(p.count)));
+    return hi >= 0 ? built(hi) : not('the plan did not build it');
   };
   const out = rows.map(settle);
   for (const st of steps) {
@@ -287,6 +291,20 @@ export function resolveLedger(rows, declaration) {
     }
   }
   return out;
+}
+
+export { SIGNED_ROW_FIELDS, SIGNED_STATES };
+
+/**
+ * The rows as the signed close carries them (`closeDecl.list`): line, key, from, by, kind, state, rule, part (where a built row points inside the close) and reason, and nothing else.
+ * Only a row that ended built, not-checked or dropped is carried (a row still `listed` never reached the close). Pure; the same rows give the same bytes.
+ * @param {Row[]} rows @returns {Record<string, any>[]}
+ */
+export function signedRows(rows) {
+  return rows.filter((r) => SIGNED_STATES.includes(r.state)).map((r) => {
+    const x = /** @type {Record<string, any>} */ (r);
+    return Object.fromEntries(SIGNED_ROW_FIELDS.filter((f) => x[f] !== undefined && x[f] !== null).map((f) => [f, x[f]]));
+  });
 }
 
 /**
