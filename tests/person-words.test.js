@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { settlePersonsWords, checkRubricRules, reconcileRubricPlan } from '../src/rubricstep.js';
+import { settlePersonsWords, checkRubricRules, cardOfClose } from '../src/rubricstep.js';
 import { verifyLookReport, lookPrompt, renderLookReport } from '../src/inputlook.js';
 import { scanLabels, labelOnList } from '../src/labelscan.js';
 import { authorClose, DECLARATION_TOOL_NAME, GREEN_QUESTIONS } from '../src/authorflow.js';
@@ -42,7 +42,7 @@ test('L3: the person answered "between 07:00 and 23:00" - the check uses exactly
   const used = settlePersonsWords(decl([price, window({ op: 'between', lo: '07:00', hi: '23:00' }, { aiProposal: true })]), [LINE]);
   assert.equal(Object.hasOwn(timeFact(used), 'aiProposal'), false);
   // and the plan row the person reads says the range and no "AI's proposal" mark
-  const rows = reconcileRubricPlan({ confirmed: [], notChecked: [], closeDecl: settled, jobLines: [LINE] }).checkItems.map((c) => c.text).join('\n');
+  const rows = cardOfClose({ closeDecl: settled, jobLines: [LINE] }).checkItems.map((c) => c.text).join('\n');
   assert.match(rows, /Departure time/);
   assert.doesNotMatch(rows, /AI's proposal/);
   assert.doesNotMatch(rows, /5:00 AM/);
@@ -68,7 +68,7 @@ test('L3: a ~ rule is a check or under Not checked, never both - a refusal of a 
   assert.deepEqual(settled.refused, [{ line: 1, reason: 'which flights' }], 'the whole-line note is kept; the carried rule is not also refused');
   const partial = settlePersonsWords(decl([price], { rules: [1], refused: [{ line: 1, rule: 2, reason: 'x' }] }), [LINE]);
   assert.equal(partial.refused.length, 1, 'an uncarried rule stays under Not checked');
-  const notChecked = reconcileRubricPlan({ confirmed: [], notChecked: [], closeDecl: settled, jobLines: [LINE] }).notChecked.join('\n');
+  const notChecked = cardOfClose({ closeDecl: settled, jobLines: [LINE] }).notChecked.join('\n');
   assert.doesNotMatch(notChecked, /not between 00:00/);
 });
 

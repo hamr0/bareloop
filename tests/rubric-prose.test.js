@@ -11,7 +11,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runStage, EXIT_STOP } from '../src/kinds.js';
 import { proveRubricInputs } from '../src/source.js';
-import { stepFileRel, withFactBindings, checkRubricParts, reconcileRubricPlan, checksOfClose, proseNotChecked } from '../src/rubricstep.js';
+import { stepFileRel, withFactBindings, checkRubricParts, cardOfClose, checksOfClose, proseNotChecked } from '../src/rubricstep.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** @type {string[]} */
@@ -130,7 +130,7 @@ test('drafting reds: a prose step after a fact line with no tie; a tie to a line
 test('the card: "what the text says" is Not checked on every prose step, never on a fact step; the tie is a plan row', () => {
   const decl = withFactBindings({ stages: [factStage, proseStage([])] });
   assert.deepEqual(proseNotChecked(decl), ['line 2: what the text says — you judge it at Accept']);
-  const rec = reconcileRubricPlan({ confirmed: [], notChecked: ['superlative: the cheapest'], closeDecl: decl });
+  const rec = cardOfClose({ closeDecl: { ...decl, notes: ['superlative: the cheapest'] } });
   assert.deepEqual(rec.notChecked, ['superlative: the cheapest', 'line 2: what the text says — you judge it at Accept']);
   assert.ok(checksOfClose(decl).some((c) => c.line === 2 && c.text === 'every number in the text is in a quote checked on line 1'));
   assert.equal(checksOfClose(decl).filter((c) => c.line === 1).length >= 3, true);

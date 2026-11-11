@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { planFromSpec, planFromConfirm } from '../src/panel/jobplan.js';
-import { checksOfClose, planMatchesClose, reconcileRubricPlan, withFactBindings, ruleNotChecked } from '../src/rubricstep.js';
+import { checksOfClose, planMatchesClose, cardOfClose, withFactBindings, ruleNotChecked } from '../src/rubricstep.js';
 import { factRows } from '../src/facts.js';
 
 const FACT = {
@@ -50,13 +50,11 @@ test('the Job tab reads the same rows: a rubric-step stage is shown as the check
 });
 
 test('the card after drafting: checks are the close\'s own rows, Not checked holds the prose line and the rule the drafter listed, in the person\'s words; sign == run', () => {
-  const rec = reconcileRubricPlan({ confirmed: [{ text: 'lists 3 releases', fromLine: [1] }], notChecked: ['a good pick'], closeDecl: closeDecl(), jobLines: JOB_LINES });
+  const rec = cardOfClose({ closeDecl: closeDecl(), jobLines: JOB_LINES });
   assert.deepEqual(rec.notChecked, [
-    'a good pick',
     'line 2: what the text says — you judge it at Accept',
     'line 1: "the cheapest one" — a "cheapest" cannot be told from one release',
   ]);
-  assert.deepEqual(rec.moved, []);
   assert.deepEqual(planMatchesClose(rec.checkItems, closeDecl()), { ok: true });
   const plan = planFromConfirm(JOB_LINES, { checkItems: rec.checkItems, notChecked: rec.notChecked, protections: [] });
   assert.equal(plan.lines[0].checks.length, 3);

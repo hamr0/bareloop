@@ -14,7 +14,7 @@ import { authorCloseForJob as forJob } from '../src/authorjob.js';
 import { RUBRIC_LANG } from '../src/authoring.js';
 import { proveRubricInputs } from '../src/source.js';
 import { buildSeedListing } from '../src/authorscout.js';
-import { reconcileRubricPlan } from '../src/rubricstep.js';
+import { cardOfClose } from '../src/rubricstep.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** @type {string[]} */
@@ -83,7 +83,7 @@ test('settleRules + applyPicks: the pick is the line\'s only shape check, carrie
   assert.deepEqual(parts[1], { text: 'under 80 words', class: 'countable', check: 'maxWords', value: 80, rules: [1, 4] });
   assert.deepEqual(d.refused.map((r) => [r.rule, r.reason.slice(0, 21)]).sort(), [[2, 'Your own words are on'], [3, 'You chose to leave it'], [5, 'Your own words are on']]);
   assert.equal(JSON.stringify(draftWith([{ text: 'x', class: 'countable', check: 'maxWords', value: 5 }])), JSON.stringify(draftWith([{ text: 'x', class: 'countable', check: 'maxWords', value: 5 }])), 'inputs are never touched');
-  const row = reconcileRubricPlan({ confirmed: [], notChecked: [], closeDecl: d, jobLines: LINES_AFTER });
+  const row = cardOfClose({ closeDecl: d, jobLines: LINES_AFTER });
   assert.ok(row.checkItems.some((c) => c.text === 'the text is at most 80 words'));
   assert.ok(row.notChecked.some((n) => /^line 1: "no jargon" — You chose to leave it Not checked/.test(n)));
 });

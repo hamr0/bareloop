@@ -972,27 +972,17 @@ export function signedFactNames(closeDecl) {
 }
 
 /**
- * Reconcile the CONFIRMED plan with the close the composer actually wrote. The plan card after drafting shows exactly
- * the close's own checks (`checksOfClose`); every confirmed check that no part carries out (no part lists its number in
- * `covers`) is moved to Not checked, in the person's words, with the reason. A check can therefore never be shown and then
- * silently dropped (run mv5bk400: "lists 3 releases" was confirmed, then left out of the signed close without a word).
- * @param {{confirmed: {text: string, fromLine: number[]|null}[], notChecked: string[], closeDecl: any, jobLines?: any[]|null}} o
- *   `jobLines` — the person's numbered lines, so a ~ rule the drafter listed as Not checked reads in the person's own words
- * @returns {{checkItems: {text: string, fromLine: number[], by: 'agent'|'you'|'default'}[], notChecked: string[], moved: {text: string, fromLine: number[]|null}[]}}
+ * The plan card after drafting, read from the signed close ALONE (one source, the same the Job tab reads): its checks are `checksOfClose`; its Not checked is the close's own notes, the prose
+ * steps' "you judge it at Accept" lines and the refusals (`ruleNotChecked`, which reads the list's not-checked rows when the close carries the list). Nothing the confirm turn said is merged
+ * in: a rubric confirm turn plans the goal only, so a check can never be shown and then silently dropped (run mv5bk400).
+ * @param {{closeDecl: any, jobLines?: any[]|null}} o `jobLines` the person's numbered lines, so a ~ rule reads in the person's own words
+ * @returns {{checkItems: {text: string, fromLine: number[], by: 'agent'|'you'|'default'}[], notChecked: string[]}}
  */
-export function reconcileRubricPlan({ confirmed, notChecked, closeDecl, jobLines = null }) {
-  const real = checksOfClose(closeDecl);
-  const covered = new Set(real.flatMap((c) => c.covers));
-  const moved = confirmed.filter((_, i) => !covered.has(i + 1));
+export function cardOfClose({ closeDecl, jobLines = null }) {
+  const notes = isRec(closeDecl) && Array.isArray(closeDecl.notes) ? closeDecl.notes.filter((/** @type {any} */ n) => typeof n === 'string' && n) : [];
   return {
-    checkItems: real.map((c) => ({ text: c.text, fromLine: [c.line], by: c.by })),
-    notChecked: [
-      ...notChecked,
-      ...proseNotChecked(closeDecl),
-      ...ruleNotChecked(closeDecl, jobLines),
-      ...moved.map((m) => `${m.fromLine && m.fromLine.length ? `line ${m.fromLine.join(', ')}: ` : ''}${m.text} — nothing in this close counts it or checks it against a quote`),
-    ],
-    moved,
+    checkItems: checksOfClose(closeDecl).map((c) => ({ text: c.text, fromLine: [c.line], by: c.by })),
+    notChecked: [...new Set([...notes, ...proseNotChecked(closeDecl), ...ruleNotChecked(closeDecl, jobLines)])],
   };
 }
 

@@ -51,7 +51,7 @@ import { resolveJobJudge, defaultJudgeLoop } from '../judged.js';
 import { assertThinkingMode, thinkingPlanFor, thinkingRowText, thinkingCallOptions } from '../thinking.js';
 import { closeJudges } from '../kinds.js';
 import { RUBRIC_LANG } from '../authoring.js';
-import { rubricGoal, reconcileRubricPlan, signedFactNames } from '../rubricstep.js';
+import { rubricGoal, cardOfClose, signedFactNames } from '../rubricstep.js';
 import { redactSecrets } from '../validate.js';
 import { FLOW_TYPES } from '../job.js';
 import { mcpPickFor, signFlow } from '../mcppick.js';
@@ -1323,19 +1323,15 @@ export function createSession(card, deps = {}) {
     else if (authored.confirmed?.goal) draft.goal = redactSecrets(String(authored.confirmed.goal));
     // piece 8: the card's Flow type and MCP pick are signed by CODE, after the draft (the agent cannot carry them: `assembleSpec` refuses a draft that does). A plain card adds nothing.
     const spec = signFlow(assembleSpec(draft, { ...authored, verdictType: /** @type {string} */ (authored.verdictType) }), deps.flow?.flowType ?? 'plain', deps.flow?.pick ?? null, authored.authoring?.ticketFilter);
-    // PART 1a (run mv5bk400): the plan the person confirmed named three checks for line 1; the composer wrote ONE stage and put
-    // "lists 3 releases" in its notes, so the card promised a check the close never ran. The card AFTER drafting is now built
-    // from the close itself, and every confirmed check no part carries out is moved to Not checked, in code, before signing.
+    // PART 1a (run mv5bk400): the card AFTER drafting is built from the signed close itself (cardOfClose), never from what the confirm turn planned.
     if (RUBRIC_FILES) {
-      const rec = reconcileRubricPlan({
-        confirmed: authored.confirmed?.checkItems ?? [], notChecked: authored.confirmed?.notChecked ?? [], closeDecl: spec.closeDecl, jobLines,
-      });
+      const rec = cardOfClose({ closeDecl: spec.closeDecl, jobLines });
       // the checks this draft ended with, each marked who added it (`agent` or `you`): the Audit's Draft group shows them (a log line, not a second record of the plan)
       appendDraftLog(outDir, { kind: 'draft-checks', no: Math.max(0, state.steps.length - 1), checks: rec.checkItems.filter((/** @type {any} */ c) => c.by === 'agent' || c.by === 'you').map((/** @type {any} */ c) => ({ line: c.fromLine[0], text: redactSecrets(String(c.text)), by: c.by })), at: new Date().toISOString() });
       // R10: the checks the person picked, for the plan card's "You picked" rows (the check rows and the Not checked rows come from the signed close itself)
       const cp = authored.checkPicks;
       const picked = cp ? settleRules(cp.rules, cp.picks, cp.left, jobLines).checks.map((c) => ({ line: c.line, text: `${plainWords(/** @type {any} */ (c.check))}${c.kept ? ` \u00B7 ${KEPT_WORDS}` : ''}` })) : [];
-      state.finalPlan = { goal: String(draft.goal ?? ''), checkItems: rec.checkItems, picked, notChecked: rec.notChecked, protections: authored.confirmed?.protections ?? [], moved: rec.moved, signedFacts: signedFactNames(spec.closeDecl), ...(spec.ticketFilter ? { ticketFilter: spec.ticketFilter } : {}) };
+      state.finalPlan = { goal: String(draft.goal ?? ''), checkItems: rec.checkItems, picked, notChecked: rec.notChecked, protections: authored.confirmed?.protections ?? [], signedFacts: signedFactNames(spec.closeDecl), ...(spec.ticketFilter ? { ticketFilter: spec.ticketFilter } : {}) };
     }
     await finish(spec, authored.seedRef);
     if (state.finalPlan && state.phase === 'prepared') {

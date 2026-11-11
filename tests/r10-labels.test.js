@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateDeclaration, classGuards, catalogueForLang, RUBRIC_LANG, genreForLang } from '../src/authoring.js';
-import { withFactBindings, withDropNotes, settlePersonsWords, checksOfClose, reconcileRubricPlan } from '../src/rubricstep.js';
+import { withFactBindings, withDropNotes, settlePersonsWords, checksOfClose, cardOfClose } from '../src/rubricstep.js';
 import { applyPicks, settleRules } from '../src/checkpick.js';
 import { planFromSpec, planFromConfirm } from '../src/panel/jobplan.js';
 import { draftingPartFor, readDraftChecks, DRAFT_LOG_FILE } from '../src/draftspend.js';
@@ -34,7 +34,7 @@ test('checksOfClose: the fact rows are the agent\'s, the picks (the close\'s own
   const { picks: _p, ...bare } = closeDecl;
   assert.ok(checksOfClose(bare).every((r) => r.by === 'agent'));
   // the reconciled card carries the mark too
-  assert.deepEqual(reconcileRubricPlan({ confirmed: [], notChecked: [], closeDecl, jobLines }).checkItems.slice(-2).map((c) => c.by), ['you', 'you']);
+  assert.deepEqual(cardOfClose({ closeDecl, jobLines }).checkItems.slice(-2).map((c) => c.by), ['you', 'you']);
 });
 
 test('Job tab (planFromSpec): each check under its line says who added it', () => {
@@ -52,7 +52,7 @@ test('plan card (planFromConfirm): the drafter\'s checks are [agent]; the picks 
   const p = planFromConfirm(jobLines, { checkItems: [{ text: 'the heading is quoted', fromLine: [1] }], picked: [{ line: 1, text: 'at most 80 words' }] });
   assert.deepEqual(p.lines[0].checks, [{ name: 'the heading is quoted', cls: null, by: 'agent' }]);
   assert.deepEqual(p.lines[0].picked, ['at most 80 words']);
-  const rec = reconcileRubricPlan({ confirmed: [], notChecked: [], closeDecl, jobLines });
+  const rec = cardOfClose({ closeDecl, jobLines });
   const prepared = planFromConfirm(jobLines, { checkItems: rec.checkItems, picked: [{ line: 1, text: 'at most 80 words' }] });
   assert.equal(prepared.lines[0].checks.filter((c) => c.by === 'you').length, 0, 'the close\'s rows for the picks are not drawn a second time');
   assert.equal(prepared.lines[0].picked.length, 1);
