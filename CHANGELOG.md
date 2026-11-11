@@ -17,6 +17,11 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - **The run-time worker is told the checks the person picked (R10, fwd am28 "Check 0b", ported by rewrite).** Test-proven; not seen live. A facts line that also carries picked checks (keep-both) now has one plain line per pick in its worker brief, written by code from the signed record of the picks (`closeDecl.picks`), for example `Your "text" must have exactly 3 list items; a list item is its own line starting with "1." or "- " followed by a space and its text.` or `Your "text" must have at most 80 words.`; a check that is not the person's pick is not told, and a close with no picks reads as before. A text-only line with picks is not told yet (fwd tells only its page-quoting steps; same scope here).
 - **A rubric job's confirm turn now plans the goal only.** The turn sends one sentence; any check, gap or question the model sends is discarded by code, so the confirm card shows no check and the drafter is no longer told "the person confirmed" checks (the list is the one plan). The plan card and the Job tab mark a check code added itself `[default]`, beside `[you picked]` and `[agent]`. Phone width not checked.
 
+### Fixed
+
+- **The Job tab now names every Not checked row of the check list, and shows the one the list dropped for naming a version or a date (F318, first live run mwc2u3yh).** Test-proven on a copy of that run's own signed spec and draft log; the real screen is re-checked by hamr. A phrase row the plan did not build read ` — the plan did not build it` with no name; it now reads `phrase "### Fixed" — the plan did not build it` (the words come from the drafting log; with no log, a CLI or imported run, from the row's key: `phrase "### fixed"`). A row dropped because it names a version or a date used to be missing from the tab; it now shows under its line with its reason, as the card preview of the build spec says. Other dropped rows (a `~` rule wins, words not in the input) stay out.
+- **Answering "agree" to a reading that is the rule's own words no longer adds a second identical `~` line (F318).** Test-proven (real panel session); the pick now cites the rule that is already there. Case, spacing and a trailing full stop do not make words different. Agreeing to DIFFERENT words still adds a `~` line, as before.
+
 ## [0.55.0] - 2026-11-10
 
 ### Added

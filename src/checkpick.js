@@ -115,6 +115,8 @@ export function scopedRules(jobLines, { inputs = null, look = null } = {}) {
 
 // ---- code's keep-or-drop (am16 (2)) ------------------------------------------------------------------------------------------------------
 const norm = (/** @type {unknown} */ t) => String(t).toLowerCase().replace(/\s+/g, ' ').trim();
+/** a ~ rule's words compared case, spacing and trailing punctuation blind: the one spelling "is this the same rule?" is asked by */
+export const sameRuleWords = (/** @type {unknown} */ a, /** @type {unknown} */ b) => norm(a).replace(/[.,;:!?\s]+$/, '') === norm(b).replace(/[.,;:!?\s]+$/, '');
 const tokens = (/** @type {unknown} */ t) => new Set(norm(t).match(/[\p{L}\p{N}]+/gu) ?? []);
 
 /**
@@ -332,14 +334,14 @@ export function settleRules(rules, picks, left, jobLines) {
   /** the rule number the answer's added `~` line has on its line (a `~` line is a rule of its own) @param {number} line @param {string|undefined} added @returns {number[]} */
   const addedNo = (line, added) => {
     if (typeof added !== 'string') return [];
-    const at = lineRules(jobLines.find((l) => l.n === line) ?? {}).findLastIndex((t) => norm(t) === norm(added));
+    const at = lineRules(jobLines.find((l) => l.n === line) ?? {}).findLastIndex((t) => sameRuleWords(t, added));
     return at >= 0 ? [at + 1] : [];
   };
   for (const r of rules) {
     // the `~` line an answer wrote is covered by its pick (a carried card already holds it as a rule of its own): never settled twice
     if (picks.some((p) => p.line === r.line && p.rule !== r.rule && typeof p.added === 'string' && norm(p.added) === norm(r.text))) continue;
     const own = picks.find((p) => p.line === r.line && p.rule === r.rule);
-    if (own?.check) { checks.push({ line: r.line, text: r.text, check: own.check, rules: [r.rule, ...addedNo(r.line, own.added)], kept: own.kept === true }); continue; }
+    if (own?.check) { checks.push({ line: r.line, text: r.text, check: own.check, rules: [...new Set([r.rule, ...addedNo(r.line, own.added)])], kept: own.kept === true }); continue; }
     const also = addedNo(r.line, own?.added);
     const lf = left.find((l) => l.line === r.line && l.rule === r.rule);
     if (lf) notes.push({ ...r, reason: 'person-left', also, kept: lf.kept === true });

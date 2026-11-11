@@ -57,7 +57,7 @@ import { FLOW_TYPES } from '../job.js';
 import { mcpPickFor, signFlow } from '../mcppick.js';
 import { parseTicketList, ticketNumberOf, TICKET_NUMBER_WORDS } from '../ticketshape.js';
 import { isDropIt, isAgree, stripAgreeLead } from '../pagemap.js';
-import { plainWords, SUGGEST_SYSTEM, settleRules } from '../checkpick.js';
+import { plainWords, SUGGEST_SYSTEM, settleRules, sameRuleWords } from '../checkpick.js';
 import { LEDGER_SYSTEM } from '../checklist.js';
 import { readRecordFile, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
 import { MAX_REVISES, draftLabelOf, nextRevisesUsed, sessionsRootOf, writeRevisesUsed } from '../revises.js';
@@ -1218,6 +1218,7 @@ export function createSession(card, deps = {}) {
         if (q.source === 'look' && q.ask === 'cant-check' && Number.isInteger(q.rule) && isDropIt(text)) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); continue; }
         // R10 (fwd am16): a check-pick ask. `agree` writes the proposal's plain words as a new `~` rule and picks the check; "drop it" leaves the rule Not checked; anything else
         // is the person's own words, a `~` rule word for word with no check (Not checked: they judge it at Accept)
+        let agreedPick = false;
         const isPick = q.source === 'look' && (q.ask === 'check' || q.ask === 'no-check') && Number.isInteger(q.rule);
         // am21: the ask is about the person's EDITED added `~` line (`pairRule` = the rule it was agreed from): the answer REPLACES that line and the pick is kept under the source's number
         const pair = isPick && Number.isInteger(/** @type {any} */ (q).pairRule) ? /** @type {number} */ (/** @type {any} */ (q).pairRule) : null;
@@ -1225,13 +1226,15 @@ export function createSession(card, deps = {}) {
         if (isPick) {
           const agreed = q.ask === 'check' && q.check && isAgree(text);
           if (agreed) text = plainWords(/** @type {any} */ (q.check));
+          agreedPick = agreed === true;
           if (agreed) pickedSoFar.push({ line: q.line, text: plainWords(/** @type {any} */ (q.check)) });
           picks.push({ line: q.line, rule: pair ?? /** @type {number} */ (q.rule), check: agreed ? /** @type {any} */ (q.check) : null, added: text, ...(agreed ? {} : { own: true }) });
           appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: q.line, rule: q.rule, ruleText: redactSecrets(String(q.ruleText ?? '')), proposed: q.reading ?? null, how: agreed ? 'agree' : 'own words', ...(agreed ? { picked: q.check } : {}), added: redactSecrets(text), at: new Date().toISOString() });
         }
         const line = jobLines.find((l) => l.n === q.line);
         if (line && pair !== null) { line.rules[/** @type {number} */ (q.rule) - 1] = text; line.rule = line.rules.join('; '); }
-        else if (line) { line.rule = line.rule ? `${line.rule}; ${text}` : text; line.rules.push(text); }
+        // F318: agreeing to words the line already holds as a ~ rule adds no second line (the pick cites the rule that is there); different words still add one
+        else if (line && !(agreedPick && line.rules.some((/** @type {string} */ t) => sameRuleWords(t, text)))) { line.rule = line.rule ? `${line.rule}; ${text}` : text; line.rules.push(text); }
       }
       draft.jobLines = signedJobLines(jobLines);
       // R10 (fwd am21): the answers are `~` rules on the lines, so the card's job box says so too: a Revise reopens the boxes WITH them, and an edit of an agreed line is seen as an edit
