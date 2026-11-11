@@ -15,6 +15,10 @@ test('the wording maps to the right rule and value', () => {
     ['max 3 list items', 'maxListItems', 3],
     ['fewer than 3 bullets', 'maxListItems', 2],
     ['less than 4 bullets', 'maxListItems', 3],
+    ['under 4 bullets', 'maxListItems', 3],
+    ['below 4 items', 'maxListItems', 3],
+    ['under 1 bullet', 'maxListItems', 0],
+    ['under 80 words', 'maxWords', 80],
     ['at least 3 bullets', 'minListItems', 3],
     ['minimum 3 bullets', 'minListItems', 3],
     ['no fewer than 3 bullets', 'minListItems', 3],
@@ -27,6 +31,8 @@ test('the wording maps to the right rule and value', () => {
 
 test('a value below the rule floor is refused', () => {
   assert.equal(countCheck('at least 0 bullets'), null);
+  assert.equal(countCheck('under 0 bullets'), null);
+  assert.equal(countCheck('fewer than 0 bullets'), null);
   assert.deepEqual(countCheck('at most 0 bullets'), { rule: 'maxListItems', value: 0 });
   assert.equal(keepOrDrop('at least 3 bullets', { rule: 'minListItems', value: 0 }).kept, false);
 });
@@ -72,4 +78,11 @@ test('exactly 3 is unchanged, and an old signed listItems part still validates a
   assert.equal(g.verdict, 'red');
   assert.match(g.gapLines.join('\n'), /exactly 3 are required/);
   assert.equal(partSentence({ text: 'r', class: 'countable', check: 'listItems', value: 3 }), 'the text has exactly 3 list items');
+});
+
+test('graded by real bareguard: "under 4 bullets" (max 3) passes 0 and 3 and fails 4', async () => {
+  const v = countCheck('under 4 bullets');
+  assert.deepEqual(v, { rule: 'maxListItems', value: 3 });
+  for (const n of [0, 3]) assert.equal((await grade(v.rule, v.value, n)).verdict, 'green', `n=${n}`);
+  assert.equal((await grade(v.rule, v.value, 4)).verdict, 'red');
 });

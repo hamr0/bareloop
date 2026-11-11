@@ -53,7 +53,7 @@ export function guardrailItemCount(g) {
 }
 /** a list-bound word the guardrail uses: the count it names, or the one it stands for ("more than 3" = at least 4, "fewer than 3" = at most 2) */
 const MORE_THAN = /(?<!\b(?:no|not)\s)\bmore\s+than\s+(\d+)\b/i;
-const FEWER_THAN = /(?<!\b(?:no|not)\s)\b(?:fewer|less)\s+than\s+(\d+)\b/i;
+const FEWER_THAN = /(?<!\b(?:no|not)\s)\b(?:(?:fewer|less)\s+than|under|below)\s+(\d+)\b/i;
 /** the direction of a list-items rule's wording: 'max', 'min' or null (exact / not said) @param {string} t @returns {'max'|'min'|null} */
 function listDirection(t) {
   if (/\b(at\s+most|up\s+to|no\s+more\s+than|not\s+more\s+than|max(?:imum)?(?:\s+of)?)\b/i.test(t) || FEWER_THAN.test(t)) return 'max';
@@ -237,7 +237,7 @@ export const suggestChannel = () => ({
 });
 
 /**
- * The check CODE proposes for a count rule when the call yields none (R10, ours; fwd has no such fallback): a bullets / list-items / points count -> listItems N (exact; "at most / up to / no more than / fewer than" -> maxListItems, "at least / minimum / no fewer than / more than" -> minListItems, F315), a lines count ->
+ * The check CODE proposes for a count rule when the call yields none (R10, ours; fwd has no such fallback): a bullets / list-items / points count -> listItems N (exact; "at most / up to / no more than / fewer than / under / below" -> maxListItems, "at least / minimum / no fewer than / more than" -> minListItems, F315), a lines count ->
  * maxLines N, ONE word number -> minWords N when the rule says "at least / minimum / more than", else maxWords N. A section count names no sections, so none is built; a rule naming two different counts ("3 bullets under 80 words") is not built either; a rule with
  * several word numbers or a range ("between 100 and 200 words") is not guessed. The result passes `keepOrDrop`, so every number is one the rule names.
  * @param {string} text @returns {Record<string, any>|null}
