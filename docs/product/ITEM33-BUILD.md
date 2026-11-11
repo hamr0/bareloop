@@ -3998,3 +3998,22 @@ Round 1 (run once, 381 unique rubric sessions, 144 week-only facts): VERDICT: FA
 - sha256 PREREG.md: 3fbff39f3622db947962ba83a0da6a0f5098fe18f53556d57306b124734349ec
 - sha256 poc.mjs: c55c8e3a15ab9c8b9f38848d1a6bbd80a858668052bb7f59b6465a23e3d574bc
 - Run: `node /home/hamr/PycharmProjects/bareloop/.claude/scratch/r10/placerules/onewner/round2/poc.mjs --real`
+
+### Place rules: build status 2026-11-11
+
+Commits in order, oldest first (POC history F317, F319, F321, F323, F324 is in FINDINGS):
+
+- 5c768c7b P1: fit a place rule at drafting instead of refusing a version or date as week-only.
+- 60c7d82e P2: pin the signed shape (rule signed, run value never signed).
+- 6db34b4e P3: bind the run's place-rule values in memory after the approval check.
+- b134ac78 P4: the $0 stop lists every rule in plain words.
+- f0e23027 P5: one place-rules spine record per run, after job-start.
+- 92c3eaf2 P6: the Job tab row for a place-rule fact.
+- adc63ce1 P1b: strip a heading piece to its value(s) at drafting (F324).
+- 165cbcbe, d5a54896: the door re-check uses the run's own read value; door rerun success path test.
+- eb828f77, 5315b617: look facts stripped to their value(s); strip only for a phrase-shape look fact.
+- 3daf33b0: one owner of the week-only decision, the list row alone (F325).
+- 34d58847: a place rule on a drafter fact is discarded before the one-owner decision (F325; not seen live).
+- b6c455cf, bc813cc6: plain split-fact names, no "release version version" (F326; test-proven, not seen live).
+
+Live proof: F326 (origin green, Reuse on v0.55.0 green, mixed-heading Reuse stopped at $0). Full gate on bc813cc6: tests 5935, pass 5933, fail 0, skipped 2, exit codes 0.

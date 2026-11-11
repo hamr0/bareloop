@@ -15821,3 +15821,23 @@ Paired view per the driver (RESULT.md, 8 pairs): R_cost 1.03, R_wall 1.10, i.e. 
 **Spend.** About $9.21 booked ($7.84 DeepSeek direct, $1.37 Fireworks, set aside) plus a few cents of probes; real `runs.jsonl` untouched (397 lines). Result and spines: `.claude/scratch/skillproof-run/RESULT.md`, `results.jsonl`, `runs/` (scratch, untracked).
 
 **Status.** Closed as a record: no effect shown, not adopted, no code change.
+
+### F323: place-rules POC round 4 PASS (prereg 712dc0fd)
+
+Product code equals the round 3 POC: 0 differences over 18,954 reads. The whole heading line binds right in 218 of 224 pairs, 0 wrong. W2 (saved draft phrases) showed the AI mostly writes PIECES of the heading, not the whole line: "## [0.54.1]" in 75 sessions, "2026-11-04" in 68, "0.54.1" in 19, "[0.54.1]" in 17, the whole line in 29. Source: `.claude/scratch/r10/placerules/round4/result.json`.
+
+### F324: place-rules POC round 5 FAIL (prereg acba5cf3)
+
+"Any piece" containment proceeds on an appended "(yanked)" heading where the frozen row expected STOP (values right, so G1 and G4 red). The bare value read best at 222 of 224. This led to hamr's "strip it" ruling (value only), built in adc63ce1. Source: `.claude/scratch/r10/placerules/round5/result.json`.
+
+### F325: first live place test stopped at drafting; one owner of the week-only decision
+
+The first live place test stopped at drafting ($0.014, session smwcirsot84mn). The look's "version" fact was signed as a FIXED phrase "0.54.1": applyLedger re-decided week-only, and a `~` rule number on the part ("at most 80 words") bypassed the place fit. One-owner POC round 1 FAIL (d3462055; a candidate defect gave both values to split facts, dry session). Round 2 PASS (fb282332): the G1 live case becomes place, 0 wrong over 381 unique sessions, and 138 of 144 week-only facts are signed fixed today. Built 3daf33b0 (the list row is the only owner) and 34d58847 (a drafter-supplied place rule is discarded; not seen live). Sources: `.claude/scratch/r10/placerules/onewner/result.json`, `.claude/scratch/r10/placerules/onewner/round2/result.json`, `.claude/scratch/r10/place-live/run1.out`.
+
+### F326: live place test PASS on engine 34d58847
+
+DeepSeek direct deepseek-flash, scratch HOME, total $0.105. The draft signed version 0.54.1 and date 2026-11-04 as place rules. The origin run was green. Reuse on the v0.55.0 changelog was green and read 0.55.0 (was 0.54.1) and 2026-11-10 (was 2026-11-04); the signed spec stayed byte-identical and the workflowKey unchanged. A mixed-heading Reuse stopped at $0 with 0 provider calls. Seen live: doubled names "release version version" in the stop message; fixed in b6c455cf and bc813cc6 (test-proven, not seen live). Real runs.jsonl 397 lines before and after. Source: `.claude/scratch/r10/place-live/run.out`.
+
+Also built this stretch, test-proven only: door Accept/Rerun bind the run's own read values (165cbcbe, 64b8d076); look facts stripped to their value(s) (eb828f77, 5315b617).
+
+Full gate on bc813cc6: tests 5935, pass 5933, fail 0, skipped 2, TEST_EXIT=0, TSC_EXIT=0, PCC_EXIT=0 (78 commits).
