@@ -10,6 +10,7 @@
 // the check. The claim TEXT that bareguard's number scan reads is written by code from the values, never by the worker.
 
 import { rubricVocabulary } from 'bareguard';
+import { placeRuleProblem } from './placerule.js';
 
 /** the shapes a fact may have (bareguard's value kinds, plus `phrase` = a presence decide) */
 export const FACT_SHAPES = Object.freeze(['money', 'number', 'date', 'time', 'phrase', 'text']);
@@ -18,7 +19,7 @@ export const FACT_OPS = Object.freeze(['lt', 'lte', 'gt', 'gte', 'between']);
 /** bareguard signs at most this many decides on one `cited` check */
 export const MAX_FACTS = 10;
 /** every field a fact may carry */
-const FACT_FIELDS = Object.freeze(['name', 'shape', 'unit', 'currency', 'phrase', 'anchor', 'until', 'rule', 'aiProposal', 'lang', 'decimal']);
+const FACT_FIELDS = Object.freeze(['name', 'shape', 'unit', 'currency', 'phrase', 'anchor', 'until', 'rule', 'aiProposal', 'lang', 'decimal', 'place']);
 /** the languages whose month names bareguard 0.27 reads on a `date` fact (its `lang`), each with the name a person reads; absent `lang` = ISO YYYY-MM-DD only */
 export const FACT_LANGS = Object.freeze({ en: 'English', de: 'German', fr: 'French', es: 'Spanish', it: 'Italian', pt: 'Portuguese', nl: 'Dutch' });
 /** the decimal marks a number or money fact may sign (bareguard 0.27 `decimal`); absent = "." */
@@ -124,6 +125,10 @@ export function factShapeReds(part, w, red) {
         if (!nonEmpty(f.phrase)) red('invalid-value', `${fw}.phrase`, 'the fixed words the quote must contain, copied from the input');
         for (const k of ['anchor', 'until', 'rule']) if (has(k)) red('invalid-value', `${fw}.${k}`, 'a phrase is fixed words the quote must contain; it has no anchor, until or rule');
       } else if (has('phrase')) red('invalid-value', `${fw}.phrase`, 'only a phrase fact carries phrase');
+      if (has('place')) {
+        const bad = f.shape === 'phrase' ? placeRuleProblem(f.place) : 'only a phrase fact carries a place rule';
+        if (bad !== null) red('invalid-value', `${fw}.place`, bad);
+      }
       if (has('anchor') && !nonEmpty(f.anchor)) red('invalid-value', `${fw}.anchor`, 'a label copied VERBATIM from the input');
       if (has('until') && !nonEmpty(f.until)) red('invalid-value', `${fw}.until`, 'a label copied VERBATIM from the input');
       if (has('until') && !has('anchor') && f.shape !== 'phrase') red('invalid-value', `${fw}.until`, 'until needs an anchor');

@@ -41,6 +41,8 @@ import { skipWords } from './panel/status.js';
 import { checkoutPrHead, prHeadIsAncestor, recordPrOnManifest } from './prcheckout.js';
 import { readShimArm } from './readshim.js';
 import { closeStagesOf } from './plan.js';
+import { placeFactsOf, readPlaceRules, valueInWords, stopWords } from './placerule.js';
+import { readFrozenInputs } from './rubricstep.js';
 import { resolveCloseTimeoutMs } from './closetimeout.js';
 import { makeSpine } from './spine.js';
 // PRD item 33/M2 — the source front door. `readSourceManifest` finds the
@@ -1653,6 +1655,8 @@ async function execute(ctx) {
     throw new ExitSignal(2);
   }
 
+  /** @type {Record<string, string>|null} PLACE RULES: the values the run start read for the spec's place-rule facts (key to value), handed to `runJob`; null = none */
+  let placeValues = null;
   // RUN START REFETCH (PART 1c RF22; moved here 2026-10-19, run mvez8s54: the ~18 s barebrowse fetch ran in main() BEFORE this run was
   // listed, so Sign & run showed nothing for 18 s). The run is listed FIRST (row above, with its pid and cap = the monthly claim), THEN
   // fetches: the Run tab reads "fetching the page…" while source.json has no refrozenAt at or after the row. A refusal cannot be a
@@ -1709,6 +1713,21 @@ async function execute(ctx) {
       throw new ExitSignal(2);
     }
     if (fresh.refreshed.length > 0 && typeof fresh.seed === 'string' && fresh.seed) SEED = fresh.seed;
+    // PLACE RULES: every place-rule fact of the signed spec is read, by CODE, from this run's own copy of its input (the copy the refetch above just froze); the values are
+    // bound as those facts' phrases on the run's in-memory copy inside `runJob`, after the approval check, and are never written to the signed spec. Any rule not found
+    // stops the run here, before any provider call.
+    const placeFacts = placeFactsOf(spec);
+    if (placeFacts.length > 0) {
+      const frozen = await readFrozenInputs(join(ctx.into, 'tree'), [...new Set(placeFacts.map((f) => f.source))]);
+      const read = readPlaceRules(placeFacts.map((fact) => ({ fact, text: frozen.ok ? (frozen.texts[fact.source] ?? null) : null, was: valueInWords(fact.place, fact.phrase) })));
+      if (!read.proceed) {
+        const words = stopWords(read.rows);
+        err(`${SELECTOR}: ${words}`);
+        settleRefused(words);
+        throw new ExitSignal(2);
+      }
+      placeValues = read.values;
+    }
   }
 
   const git = (/** @type {string[]} */ a) => execFileSync('git', ['-C', wd, ...a], { encoding: 'utf8' }).trim();
@@ -2023,6 +2042,7 @@ async function execute(ctx) {
   try {
     outcome = await runJob(spec, {
       stopFile,
+      ...(placeValues === null ? {} : { placeValues }),
       ...(ticketRecord === null ? {} : { ticketRecord }),
       ...(ticketUnsure === null ? {} : { ticketUnsure }),
       ...(prRecord === null ? {} : { prRecord }),
