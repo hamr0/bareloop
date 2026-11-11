@@ -3982,3 +3982,11 @@ Date: 2026-11-11. Round 5 is $0, run once: round 4's arm W with one change, the 
 - sha256 PREREG.md: e3c9f1677a00e587b2519542c94da8ae705b6a02a6f532b124ec531c3b25da14
 - sha256 poc.mjs: c1841cfc9b74adda8d04ddcd7572418ea0a6643f096891014b9fba317541c60a
 - Run: `node /home/hamr/PycharmProjects/bareloop/.claude/scratch/r10/placerules/round5/poc.mjs --real`
+
+### One-owner week-only POC pre-registration (frozen, nothing run)
+
+Date: 2026-11-11. $0, run once. Question: if the list row alone decides week-only handling at signing (applyLedger keeping no week-only logic of its own; the person's own `~` text naming the token is the only exemption), does every signed week-only fact become place, refused or exempt, with none fixed and none wrong? Bars G1 (live session smwcirsot84mn "version" becomes place 0.54.1), G2 (wrong = 0), G3 (0 fixed week-only except exempt), G4 (under 20 unique rubric sessions = UNDERPOWERED). The author knows the live defect.
+
+- sha256 PREREG.md: 2e6aad5be2d80d62777ec3f79daf1a892e98aa13d56a95fbacc779792d205824
+- sha256 poc.mjs: 6056a9a521b7f475dff60168fc5fe644fe7fbc4eacb7d58c7b828a2aeff2841f
+- Run: `node /home/hamr/PycharmProjects/bareloop/.claude/scratch/r10/placerules/onewner/poc.mjs --real`
