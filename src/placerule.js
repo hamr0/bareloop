@@ -141,6 +141,37 @@ export function readPlace(rule, text) {
   return { found: true, value: m[0], lineIndex: sel.lineIndex };
 }
 
+// ---- drafting: fit a rule ---------------------------------------------------------------------------------------------------------------
+
+const CANDIDATE_PREFIXES = ['## [', '## v', '## ', '# [', '# v', '# ', '### [', '### v', '### '];
+const CANDIDATE_ENDS = [']', ' ', EOL];
+/** the frozen candidate list: 9 prefixes crossed with 3 ends, prefix-major (27) */
+export const PLACE_CANDIDATES = Object.freeze(CANDIDATE_PREFIXES.flatMap((prefix) => CANDIDATE_ENDS.map((end) => Object.freeze({ prefix, end }))));
+/** the one skip word of a fitted rule: an "Unreleased" heading above the newest release */
+const FIT_SKIP = Object.freeze(['Unreleased']);
+
+/**
+ * Fit a place rule to a fact's own words, by CODE, at drafting. The words must be exactly one version (X.Y.Z) or exactly one ISO date; the frozen
+ * candidates are walked in order, and the first whose strict first-heading read on the input's own text returns exactly those words wins. Null =
+ * no fit (a version and a date together, any other words, another date form, a mixed-level file, no text, or no candidate reading them): the caller
+ * refuses the words as week-only exactly as before. Only the two kinds are handled. Pure.
+ * @param {string} words @param {string|null|undefined} text
+ * @returns {PlaceRule|null}
+ */
+export function fitPlaceRule(words, text) {
+  if (typeof text !== 'string' || text.trim() === '') return null;
+  const w = String(words ?? '').trim();
+  const kind = SHAPES.semver.test(w) ? 'headingBetween' : (SHAPES['iso-date'].test(w) ? 'headingDateAfter' : null);
+  if (kind === null) return null;
+  for (const c of PLACE_CANDIDATES) {
+    /** @type {PlaceRule} */
+    const rule = { kind, prefix: c.prefix, end: c.end, shape: 'semver', skip: [...FIT_SKIP] };
+    const r = readPlace(rule, text);
+    if (r.found && r.value === w) return rule;
+  }
+  return null;
+}
+
 // ---- the facts a spec carries -----------------------------------------------------------------------------------------------------------
 
 /** @param {unknown} v @returns {v is Record<string, any>} */

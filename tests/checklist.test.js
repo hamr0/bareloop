@@ -91,7 +91,8 @@ test('A8 a look fact or a phrase proposal whose words hold a version or a date i
   assert.equal(by('L1.fact.release version').reason, CL.WEEK_ONLY_WORDS);
   assert.equal(by('L1.fact.release date').reason, CL.WEEK_ONLY_WORDS);
   assert.equal(by('L1.fact.heading').state, 'listed');
-  assert.equal(by('L1.phrase.2026-11-04').reason, CL.WEEK_ONLY_WORDS);
+  // place rules (P1): an ISO date the input's newest heading carries is kept, a place rule fits it at the draft (it is no longer week-only)
+  assert.equal(by('L1.phrase.2026-11-04').state, 'listed');
   assert.equal(by('L1.~1').state, 'listed');
 });
 

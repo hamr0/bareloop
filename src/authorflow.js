@@ -2901,7 +2901,7 @@ export async function authorClose({
   const picked = (/** @type {any} */ d) => {
     const built = fillAndMergeFacts(applyPicks(moveUncheckable(d, jobLines ?? [], lang === RUBRIC_LANG), settledPicks), inputLabelsOf(inputs), lang === RUBRIC_LANG);
     if (!ledger || lang !== RUBRIC_LANG) return built;
-    const r = applyLedger(built, ledger, { labels: inputLabelsOf(inputs) ?? [] });
+    const r = applyLedger(built, ledger, { labels: inputLabelsOf(inputs) ?? [], texts: inputTexts });
     ledgerTry = { units: r.units, refused: r.refused };
     return r.declaration;
   };

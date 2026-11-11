@@ -10,6 +10,7 @@ import { countExact, countPhrase } from './factwords.js';
 import { settleRules, plainWords } from './checkpick.js';
 import { lineRules, defaultCitedText } from './rubricstep.js';
 import { SIGNED_ROW_FIELDS, SIGNED_STATES } from './declaredclose.js';
+import { fitPlaceRule } from './placerule.js';
 
 /** at most this many `!` checks come from the call */
 export const MAX_BANG = 3;
@@ -111,7 +112,8 @@ export function buildLedger({ jobLines, checkPicks = null, look = null, texts = 
       const text = textOf(e.source);
       if (words.length === 0) { drop('no words given'); continue; }
       if (text !== null && !proved(text, words[0])) { drop(`the words "${words[0]}" are not in the input`); continue; }
-      if (weekOnly(words[0])) { drop(WEEK_ONLY_WORDS); continue; }
+      // PLACE RULES: a version or an ISO date a place rule fits on the input's own text is kept (the signed fact then carries the rule); no fit is refused as week-only
+      if (weekOnly(words[0]) && fitPlaceRule(words[0], text) === null) { drop(WEEK_ONLY_WORDS); continue; }
       const w = ruleWins(line, words[0]);
       if (w !== null) { drop(`a ~ rule wins: line ${line} rule ${w} says it`); continue; }
     }
@@ -167,10 +169,10 @@ const citedPart = (label) => ({ text: defaultCitedText(label), class: 'countable
  * A part carrying a `~` rule number is on the list by that rule; a fact is on the list when its name or phrase matches a `!` fact/phrase row; a claims-count part needs a `!` count row;
  * a fact's own result count rides with its fact while a fact of that part stands. A fact whose phrase/anchor/until holds a version or a date is refused as week-only (a `~` rule excepted).
  * On a one-input text stage the drafter's own `cited` parts are replaced by code's one default. Other classes are untouched.
- * @param {any} declaration @param {Row[]} rows @param {{labels?: string[]}} [o] `labels` the job's input labels
+ * @param {any} declaration @param {Row[]} rows @param {{labels?: string[], texts?: Record<string, string>|null}} [o] `labels` the job's input labels; `texts` each input's frozen text, which a place rule is fitted on
  * @returns {{declaration: any, units: number, refused: {line: number, kind: string, words: string, reason: string}[]}}
  */
-export function applyLedger(declaration, rows, { labels = [] } = {}) {
+export function applyLedger(declaration, rows, { labels = [], texts = null } = {}) {
   if (!isRec(declaration) || !Array.isArray(declaration.stages)) return { declaration, units: 0, refused: [] };
   const live = standing(rows);
   /** @type {{line: number, kind: string, words: string, reason: string}[]} */
@@ -192,12 +194,20 @@ export function applyLedger(declaration, rows, { labels = [] } = {}) {
       if (p.class === 'fact') {
         const fs = Array.isArray(p.facts) ? p.facts : [];
         const ruled = onRule(p);
-        const week = (/** @type {any} */ f) => !ruled && [f?.phrase, f?.anchor, f?.until].some(weekOnly);
+        // PLACE RULES: an unruled phrase fact whose words are a version or an ISO date the input's newest heading holds takes the rule that fits (code picks it)
+        /** @type {Map<any, any>} */
+        const placed = new Map();
+        for (const f of fs) {
+          if (ruled || !isRec(f) || f.shape !== 'phrase' || isRec(f.place) || f.anchor !== undefined || f.until !== undefined || !weekOnly(f.phrase)) continue;
+          const rule = fitPlaceRule(f.phrase, texts?.[String(p.source ?? labels[0] ?? '')]);
+          if (rule !== null) placed.set(f, rule);
+        }
+        const week = (/** @type {any} */ f) => !ruled && !placed.has(f) && !isRec(f?.place) && [f?.phrase, f?.anchor, f?.until].some(weekOnly);
         const keptFacts = fs.filter((f) => !week(f) && (ruled || factRow(f)));
         units += fs.length;
         for (const f of fs.filter((x) => !keptFacts.includes(x))) refused.push({ line, kind: 'fact', words: say(f?.name) || say(p.text), reason: week(f) ? 'week-only' : 'not on the list' });
         let np = p;
-        if (keptFacts.length !== fs.length) np = { ...p, facts: keptFacts };
+        if (keptFacts.length !== fs.length || placed.size > 0) np = { ...p, facts: keptFacts.map((f) => (placed.has(f) ? { ...f, place: placed.get(f) } : f)) };
         if (isRec(p.count)) {
           units += 1;
           if (!ruled && keptFacts.length === 0 && !live.some((r) => r.line === line && r.kind === 'count')) {
