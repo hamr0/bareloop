@@ -3788,3 +3788,77 @@ Sources: `.claude/scratch/r10/ledger/paid8/` to `paid11/` (PREREG.md, result.jso
 - **Round 11: WITHDRAWN before any paid data** (pre-registration f5e145b3, nothing run). It narrowed the week-only rule to keep phrase facts carrying a version or date, which would let through a check that fails on run 2. The main session's reading was wrong and is withdrawn (FINDINGS F313). Copy commit 1880ad13 is NOT carried forward; round 10's rule (4e1abeae) stands.
   - **CORRECTION (2026-11-11):** only the phrase-fact half of 1880ad13 was wrong. Its other change, "a fact's count rides with its fact", is the right fix for the real gap (test-proven only, never live). Build target = round-10 shape (4e1abeae) plus count-rides-with-fact.
 - **hamr's ruling 2026-11-11:** stop testing; build the round-10 shape in bareloop; keep refusing week-only exact-word checks for now. The "rules re-read each run" idea is parked in the PRD (v1.132 backlog).
+
+## Check list build spec (signed 2026-11-11)
+
+# BUILD SPEC: one check list per job, in bareloop (draft for hamr, 2026-11-11)
+
+Branch: `feat/check-ledger` (already holds Fix 0 + the round records). Source of truth for behaviour: the copy
+`/home/hamr/PycharmProjects/bareloop-ledger-poc` at 4e1abeae (round 10 shape) PLUS the "count rides with its fact" half of
+1880ad13 (NOT its phrase-fact half). Port by REWRITE into bareloop, never copy-paste (graduation is a rewrite).
+Rubric jobs only. Code jobs unchanged, byte-identical prompts.
+
+## Phase A — the proven shape (round 10, paid, 20/20 prepared)
+
+| # | What | Where (owner) | Called from |
+|---|---|---|---|
+| A1 | The list module: rows `~` (by you), `!` (by agent), `$` (by default); build, word proof, `~` wins, week-only, empty list | NEW `src/checklist.js` | A2 |
+| A2 | Build the list once, after the look and the pick path, before the confirm turn | `src/authorjob.js` `authorCloseForJob` | both doors (panel `authorsession.js`, CLI `authorrun.js`) |
+| A3 | One new paid call: the agent suggests up to 3 `!` checks (count, phrase) from the inputs; spend joins the drafting ceiling | `src/checklist.js` `runLedgerSuggest` | A2 |
+| A4 | Confirm turn = goal only (no checks, no "kinds of check" text, no notChecked, no questions; code discards any it sends) | `src/authorflow.js` confirm turn | `runConfirmTurn` |
+| A5 | Drafter sees the list (one code-written block); no confirmed-plan block, no "the person confirmed" text | `src/authorflow.js` `rubricAuthorPrompt` | drafter loop |
+| A6 | After each try: a part with no list row goes to Not checked ("not on the list"); a fact's result count rides with its fact | `src/checklist.js` `applyLedger` | `authorClose` loop, every try |
+| A7 | `$` cited default decided AFTER everything settles, incl. the last-try drop | `src/checklist.js` `ensureCited` | `authorClose` + `dropAfterLastTry` |
+| A8 | Week-only: refuse a check needing exact words (phrase, quote, must-carry) or a non-phrase fact anchor that holds a version or date | `src/checklist.js` `weekOnly` | A1, A6 |
+| A9 | Every row ends built / not-checked (reason) / dropped (reason); an empty list is logged "nothing to check" and ends in the zero-check stop | `src/checklist.js` + Fix 0 end check | `authorClose` end |
+| A10 | Draft log rows kind `ledger` (each row, at build and at end) and `ledger-try` (per try) | `src/authorflow.js` | `onCall`/draft log |
+| A11 | Card: each check tagged `[you picked]` / `[agent]` / `[default]` (only `[default]` is new) | `src/panel/index.html` `renderJobPlan` + `src/panel/jobplan.js` | plan bubble AND Job tab (one drawing) |
+
+Always on for rubric jobs. No config switch (hamr: a switch never wanted off is removed).
+CLI door: same list, no asks (ruling 4).
+
+### Prompt text (exact, to sign)
+- NEW list call system text (A3): "You look at the inputs of a job and name checks the inputs themselves support, beyond the guardrails the person wrote. Call suggest_extra_checks once with up to 3 entries, or with an empty list. - kind "count": how many results the input shows or the job asks for (min and/or max, whole numbers). - kind "phrase": fixed words copied verbatim from an input (phrase, and source = that input's label). Use only what you can see in the inputs. Do not repeat a guardrail the person wrote. If the inputs support none, send an empty list."
+- Confirm note (A4), replacing RUBRIC_CONFIRM_NOTE for rubric jobs: "THIS JOB HAS NO REPOSITORY. Its inputs are the person's own text files, and each numbered job line leaves ONE file the run writes. The checks of this job are made elsewhere: plan none. Send an empty checks list, an empty notChecked list and an empty questions list, and write ONE sentence saying what the job does, from the numbered job lines."
+- `CONFIRM_SYSTEM` still says the call drafts "a PLAN ... the checks": reword for rubric jobs to "a one-sentence goal" (residual from round 9, not yet live).
+- Drafter list block (A5): code-written from the rows; `$` lines say "code adds it; write no part for it"; "a count part only where a ! count row is listed or it counts a listed fact".
+- Refusal words: "Not on the list of checks made before the draft, so you judge it at Accept." / "It names a version or a date from the input, true only for the input as it is today, so you judge it at Accept." / "empty list: nothing to check".
+
+### Card preview (A11) — only the `[default]` tag is new
+```
+1  Summarise the latest release in the changelog
+   ~ exactly 3 bullets
+   ~ under 80 words
+   › check · exactly 3 list items              [you picked]
+   › check · at most 80 words                  [you picked]
+   › check · change bullet (1 result)          [agent]
+   › check · every claim quotes the Changelog  [default]
+   › not checked · "NO reuse credit..." — the plan did not build it
+   › not checked · release heading — names a version or a date from the input, true only for the input as it is today
+```
+
+## Phase B — the list becomes the one owner (NOT yet proven; own $0 check first)
+- B1 Signed close carries the list (signed: line, key, from, state, rule, part; reason/words unsigned).
+- B2 Readers become views of the list: card Not checked, Job tab Not checked, end check ("no built row"), retention.
+- B3 Remove what it replaces: confirm `checkItems`/`covers`/`moved`, `reconcileRubricPlan` three-source merge, `rulesOfLine` twin.
+Phase B gets its own $0 replay bar before any build (the round-1 bars P1-P7 against the real saved paid9/paid10 drafts).
+
+## Tests and gates
+- Port `tests/checklist.test.js` (rewrite), plus one fail-first test per A-item; show each fails on the branch tip before the change.
+- Neighbour tests: grep for every reworded string (confirm note, drafter blocks) and fix tests that pin old words.
+- Labels: commits touching `authorflow.js` carry Failure/Addresses/Corrects (cite `run mv76m82c` for the class, paid round ids in the body).
+- Full gate on the final commit (one suite, peers told), exit code + last line quoted; `npm run typecheck`.
+- Paid verify (PRD tick 4): the paid10 harness pointed at the branch, one round, Fireworks deepseek-flash, cap $1, same Q1-Q8 except Q1 counts only off-list parts that would have been kept if listed (raw share reported too).
+- Phone width of the card: hamr's DevTools check (barebrowse cannot).
+
+## Out of scope (parked)
+- Rules re-read each run (PRD backlog, hamr 2026-11-11).
+- A "newest X, whatever it says" check shape.
+- Check 0b (run-time worker told the picks): waits for fwd's released tag.
+- `may` read as a month by the week-only rule (known false positive, not seen live).
+
+## Decisions (hamr, 2026-11-11)
+1. A and B TOGETHER, one branch, one release (B's shape was tested in the round-1 replay: P1-P5, P7 passed; P6 fixed by the made-once list). Build order: A first, then B. B's no-loss proof is a $0 test over real saved paid9/paid10 drafts committed as fixtures.
+2. The new paid list call on every rubric draft — measured: round 10 drafts averaged $0.0091 each with the call, round 6 $0.0093 without it (same model, same jobs; the call is lost in the noise). Accepted.
+3. NEXT after this build (parked until then): place rules ("the first heading that starts with '## ['") instead of refusing exact-word checks; $0 POC first on bareloop's own CHANGELOG at two real releases from git history.
+
