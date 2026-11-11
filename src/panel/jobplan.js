@@ -12,6 +12,7 @@
 // stage kinds exist only after drafting). Pure; no file IO.
 import { ticketFilterWords } from '../ticketfilter.js';
 import { KIND_CATALOGUE } from '../authoring.js';
+import { WEEK_ONLY_WORDS } from '../checklist.js';
 import { splitReadNotes } from '../pagedropwords.js';
 import { checksOfClose, signedFactNames, proseNotChecked, lineRules, confirmedGoalOf, refusedOf } from '../rubricstep.js';
 
@@ -39,15 +40,34 @@ export function checkClassOfKind(kind) {
   return spec.verdictClass === 'green' ? 'machine check' : 'judge';
 }
 
+/** the words a list row of kind `$cited` / `$numbers` carries no text for */
+const DEFAULT_ROW_WORDS = Object.freeze({ cited: 'every claim quotes its input', numbers: 'every number matches a quote' });
+
+/**
+ * A check-list row named in the person's plain words: `phrase "### Fixed"`. The words are the draft log's; with none, the text after the key's kind prefix (`L1.phrase.### fixed`).
+ * Never empty. Pure.
+ * @param {unknown} kind @param {string} key @param {string[]|null|undefined} words
+ * @returns {string}
+ */
+function listRowName(kind, key, words) {
+  const k = typeof kind === 'string' && kind ? kind : 'check';
+  if (k === 'cited' || k === 'numbers') return DEFAULT_ROW_WORDS[k];
+  const tail = key.replace(/^L\d+\.(?:[^.]*\.)?/, '').trim();
+  const w = Array.isArray(words) && words.length ? words : [tail || key];
+  return `${k} ${w.map((x) => `"${x}"`).join(', ')}`;
+}
+
 /**
  * The plan of a SIGNED spec. With `jobLines`, each stage lands under EACH line its `fromLine` array names (a stage with none is
  * a mandatory guard: "Always checked"), `closeDecl.refused` reasons land under their line, and `closeDecl.notes` are the
  * drafter's own "not checked" words. Without `jobLines` (a spec that predates the job block) the signed goal sentence is
  * line 1 and every stage name is a check under it — `older: true`.
+ * `ledger` = the draft log's final check-list rows (`readDraftLedger`), the words a Not checked row is named by; absent (no draft log) a row is named from its key.
  * @param {any} spec
+ * @param {{key: string, words: string[]}[]|null} [ledger]
  * @returns {JobPlan}
  */
-export function planFromSpec(spec) {
+export function planFromSpec(spec, ledger = null) {
   /** @type {{name: string, cls: 'machine check'|'judge'|null, fromLine: number[]|null, by?: 'agent'|'you'|'default'|null}[]} */
   let stages = [];
   if (spec && Array.isArray(spec.closeDecl?.stages)) {
@@ -102,7 +122,15 @@ export function planFromSpec(spec) {
     const line = lines.find((l) => l.n === r?.line);
     // a refusal of ONE ~ rule (PART 1b, RF16) names the rule in the person's words, so the row reads as that rule's Not checked; a list row of another kind names its fact when it has one
     const ruleText = line && Number.isInteger(r.rule) ? lineRules(spec.jobLines.find((/** @type {any} */ l) => l?.n === r.line))[Number(r.rule) - 1] : (r.label ?? null);
-    if (line) line.refused.push(ruleText ? `"${ruleText}" — ${r.reason}` : r.reason);
+    // a list row that is not a fact or a rule (a phrase, a count) is named by its words: the draft log's, else the text after the key's kind prefix
+    const named = line && !ruleText && r.fromList && r.key ? listRowName(r.kind, r.key, ledger?.find((x) => x.key === r.key)?.words) : null;
+    if (line) line.refused.push(ruleText ? `"${ruleText}" — ${r.reason}` : (named ? `${named} — ${r.reason}` : r.reason));
+  }
+  // a row the list dropped because it names a version or a date from the input is told, with its reason (the signed card preview, A11); other dropped rows are not drawn
+  for (const r of Array.isArray(spec?.closeDecl?.list) ? spec.closeDecl.list : []) {
+    if (!r || r.state !== 'dropped' || r.reason !== WEEK_ONLY_WORDS || typeof r.key !== 'string' || r.kind === 'rule') continue;
+    const line = lines.find((l) => l.n === r.line);
+    if (line) line.refused.push(`${listRowName(r.kind, r.key, ledger?.find((x) => x.key === r.key)?.words)} — ${r.reason}`);
   }
   // the model's signed goal sentence rides along: the page draws it as the "AI's summary" row (an older job shows it as line 1 instead)
   // (a rubric job's signed goal is the whole worker brief: only the sentence the person confirmed is the summary)

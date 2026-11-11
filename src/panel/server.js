@@ -39,7 +39,7 @@ import { checkExportable } from '../runexport.js';
 import { sourceNearSpine, signedSpecForRun } from '../runfiles.js';
 import { webFetchState } from '../source.js';
 import { isWebUrl } from '../pagefetch.js';
-import { draftingPartFor, sessionDirForRow, readDraftSteps } from '../draftspend.js';
+import { draftingPartFor, sessionDirForRow, readDraftSteps, readDraftLedger } from '../draftspend.js';
 import { readingOfQuestion, isAgree } from '../pagemap.js';
 import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
@@ -1736,7 +1736,8 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
   // Not checked, split by the line the SIGNED plan ties each item to: a refusal carries its line (closeDecl.refused[].line, planFromSpec's
   // `lines[].refused`), a prose step carries its stage's step. What the plan ties to no line stays in `notChecked` (the bottom). Together they are
   // exactly the Job tab's items (its per-line "not checked" rows plus its Not checked fold) — never a second spelling.
-  const plan = planFromSpec(spec);
+  const ledgerDir = sessionDirForRow(row, opts);
+  const plan = planFromSpec(spec, ledgerDir ? readDraftLedger(ledgerDir) : null);
   const proseByLine = proseNotCheckedItems(spec?.closeDecl);
   const prosePool = proseByLine.map((i) => i.text);
   const tiedToLine = (/** @type {number} */ n) => [...(plan.lines.find((l) => l.n === n)?.refused ?? []), ...proseByLine.filter((i) => i.line === n).map((i) => i.text)];
@@ -3630,10 +3631,12 @@ function getRunJobBody(runid, opts) {
   if (existsSync(row.spine)) {
     try { firstStart = parseJsonl(row.spine).records.find((r) => r && typeof r === 'object' && r.type === 'job-start') ?? null; } catch { firstStart = null; }
   }
+  // the check list's rows as the drafting ended, from the run's own session folder (none for a CLI or imported run: the plan then names a row from its key)
+  const ledgerOf = () => { const dir = sessionDirForRow(row, opts); return dir ? readDraftLedger(dir) : null; };
   /** @param {any} spec @param {boolean} resolved @param {string} resolvedFrom @param {string|null} note */
   const fromSpec = (spec, resolved, resolvedFrom, note) => ({
     // P7: the same plan model the chat's plan bubble is drawn from (src/panel/jobplan.js), read from the SIGNED spec
-    plan: planFromSpec(spec),
+    plan: planFromSpec(spec, ledgerOf()),
     jobLines: Array.isArray(spec.jobLines) ? spec.jobLines : null,
     inputs: Array.isArray(spec.inputs) && spec.inputs.length ? spec.inputs : [{ n: 1, label: 'repo', value: sourceDisplay() }],
     signedAt: typeof firstStart?.ts === 'string' ? firstStart.ts : null,

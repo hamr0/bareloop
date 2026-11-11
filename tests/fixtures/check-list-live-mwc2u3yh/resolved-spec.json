@@ -1,0 +1,172 @@
+{
+  "schema": "job-v1",
+  "job": "e2e-alt",
+  "description": "e2e-alt — authored through the bareloop panel (soft-green, text)",
+  "jobLines": [
+    {
+      "n": 1,
+      "text": "Find the section headings of the latest release, then summarise its changes",
+      "rule": "at most 80 words; at most 80 words",
+      "rules": [
+        "at most 80 words",
+        "at most 80 words"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "n": 1,
+      "label": "Changelog",
+      "value": "/home/hamr/PycharmProjects/bareloop/.claude/scratch/r10/e2e/work/in/CHANGELOG.md"
+    }
+  ],
+  "provider": "openai-api",
+  "baseUrl": "https://api.deepseek.com/v1",
+  "model": "deepseek-flash",
+  "budgetUsd": 0.1,
+  "writeScope": [
+    "output/"
+  ],
+  "escalation": {
+    "mode": "decision-ready"
+  },
+  "goal": "Do the job below from the input files, then write one JSON file per numbered line.\n\nThe input files (label: file):\n  - Changelog: input/CHANGELOG.md\n\nFor each numbered job line N, write ONE file output/steps/N.json: a JSON object with exactly these keys.\n  \"text\"  — your answer for that line, as a string.\n  \"cites\" — an object: for each input you drew on, its label as the key and a list of {\"claim\", \"quote\"} as the value.\n            \"claim\" is one thing your text relies on; \"quote\" is words copied EXACTLY from that input (spacing and\n            ** or __ marks do not matter). Every number in a claim must also appear in its quote.\n  In each claim, copy every number, time and price exactly as the input writes it (for example \"9:27 AM\", not \"09:27\"),\n  because the check matches the numbers in your claim against your quote.\nA job line the brief below marks as a FACTS line is different: its file holds {\"results\": [{\"quote\": \"...\", \"values\":\n{\"<fact>\": \"<value>\"}}]} — one result per thing found, one quote copied exactly from the text of that one result, the values written as the quote\nwrites them; no \"cites\". It holds a \"text\" too only when the brief says it is also a TEXT line (the person asked for limits on the words, so\nthe same file carries both \"results\" and \"text\"). A line the brief marks as a TEXT line keeps \"text\" (free words), and every number in it\nmust be copied from a quote of an earlier facts line.\nWrite nothing outside output/, and never edit the files under input/. The file must be complete, valid JSON: a file cut\noff before its closing brace counts as not written.\n\nThe job, line by line:\n1. Find the section headings of the latest release, then summarise its changes\n   rule: at most 80 words; at most 80 words\n\nJob line 1 is a FACTS line AND a TEXT line. Write output/steps/1.json as {\"results\": [{\"quote\": \"...\", \"values\": {...}}], \"text\": \"...\"} — the results are the facts below, the \"text\" is your answer to the line in your own words (its limits are in the line's ~ rules); no \"cites\".\n  Your \"text\" must have at most 80 words.\n  One result per thing you find in the input \"Changelog\": one result for every one you find.\n  \"quote\": ONE quote per result, copied exactly from that result's own text in the input (at most 4000 characters) — never joined from two results.\n  \"values\": one entry per fact below, written exactly as the quote writes it (for example \"9:27 AM\", not \"09:27\"; \"389\", not \"389.00\").\n    - section headings — no value to write; the quote you copy must say \"Fixed\"\n\nThe plan the person confirmed: Find the section headings in the changelog input and write a summary of its changes, in at most 80 words.",
+  "verdictType": "soft-green",
+  "closeDecl": {
+    "genre": "TEXT",
+    "lang": "text",
+    "stages": [
+      {
+        "name": "changed-from-seed",
+        "kind": "files-changed",
+        "params": {
+          "allowPrefixes": [
+            "output/"
+          ],
+          "requireNonEmpty": true
+        }
+      },
+      {
+        "name": "latest-release-headings-and-facts",
+        "kind": "rubric-step",
+        "fromLine": [
+          1
+        ],
+        "params": {
+          "step": 1,
+          "parts": [
+            {
+              "text": "Find the section headings of the latest release",
+              "class": "fact",
+              "source": "Changelog",
+              "facts": [
+                {
+                  "name": "section headings",
+                  "shape": "phrase",
+                  "phrase": "Fixed"
+                }
+              ]
+            },
+            {
+              "text": "at most 80 words",
+              "class": "countable",
+              "check": "maxWords",
+              "value": 80,
+              "rules": [
+                1,
+                2
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "notes": [
+      "Line 1 also asks for a summary of the release's changes; that is written text, so its word limits ('at most 80 words', ~ rules 1 and 2) are built by code from the person's pick and I wrote no part for them.",
+      "The look kept no label for the 'Changelog' input, so no anchor is used on any fact.",
+      "The '! fact' row names the fact 'section headings' and its words are one of \"Fixed\", \"Added\", \"Changed\", quoted exactly as the look gives them.",
+      "The look gave no phrase row of its own for line 1 and no count of results, so the person's asked-for number of headings is not bounded; I set no count."
+    ],
+    "picks": [
+      {
+        "line": 1,
+        "part": {
+          "text": "at most 80 words",
+          "class": "countable",
+          "check": "maxWords",
+          "value": 80,
+          "rules": [
+            1,
+            2
+          ]
+        }
+      }
+    ],
+    "list": [
+      {
+        "line": 1,
+        "key": "L1.~1",
+        "from": "pick",
+        "by": "you",
+        "kind": "rule",
+        "state": "built",
+        "rule": 1,
+        "part": {
+          "line": 1,
+          "part": 1
+        }
+      },
+      {
+        "line": 1,
+        "key": "L1.~2",
+        "from": "pick",
+        "by": "you",
+        "kind": "rule",
+        "state": "built",
+        "rule": 2,
+        "part": {
+          "line": 1,
+          "part": 1
+        }
+      },
+      {
+        "line": 1,
+        "key": "L1.fact.section headings",
+        "from": "look",
+        "by": "agent",
+        "kind": "fact",
+        "state": "built",
+        "part": {
+          "line": 1,
+          "part": 0
+        }
+      },
+      {
+        "line": 1,
+        "key": "L1.phrase.### fixed",
+        "from": "agent",
+        "by": "agent",
+        "kind": "phrase",
+        "state": "not-checked",
+        "reason": "the plan did not build it"
+      },
+      {
+        "line": 1,
+        "key": "L1.phrase.## [0.54.1] - 2026-11-04",
+        "from": "agent",
+        "by": "agent",
+        "kind": "phrase",
+        "state": "dropped",
+        "reason": "It names a version or a date from the input, true only for the input as it is today, so you judge it at Accept."
+      },
+      {
+        "line": 1,
+        "key": "L1.$floor",
+        "from": "default",
+        "by": "default",
+        "kind": "floor",
+        "state": "built"
+      }
+    ]
+  }
+}
