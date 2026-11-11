@@ -76,7 +76,7 @@ async function greenAtDoor(/** @type {import('node:test').TestContext} */ t) {
     return main(['--spec', specPath, '--door', row.spine, '--decide', decision, '--approve', jobSpecHash(spec), ...extra], io)
       .then((r) => ({ rc: r, err: err.join('\n'), out: outL.join('\n') }));
   };
-  return { spec, specPath, row, events, rc, door, first: { err: err.join('\n'), out: outL.join('\n') } };
+  return { spec, specPath, row, events, rc, door, io, tree: prep.prep.tree, first: { err: err.join('\n'), out: outL.join('\n') } };
 }
 
 test('a run that read 0.56.0 (signed 0.55.0) greens at its door, and Accept passes on the value that run read; the signed spec is byte-identical', async (t) => {
@@ -110,4 +110,25 @@ test('a door Rerun without a place-rules record is refused in the same words, be
   const r = await w.door('rerun', ['--text', 'again']);
   assert.notEqual(r.rc, 0);
   assert.ok(r.err.includes(NO_RECORD), r.err);
+});
+
+test('a door Rerun binds the value the answered run read (0.56.0, signed 0.55.0) and greens on it with a scripted worker', async (t) => {
+  const w = await greenAtDoor(t);
+  assert.equal(w.rc, 0, JSON.stringify(w.first));
+  // a rerun is a fresh engagement (a new run id and spine): the scout, the plan and the worker are scripted again; the provider is replaced (the first one is spent)
+  const plan = JSON.stringify({ schema: 'plan-v1', steps: [{
+    id: 'line-1', action: 'Write output/steps/1.json', tools: ['write'], rounds: 6, target: 'output/steps/1.json',
+    exit: [{ type: 'tree-changed', scope: 'output/**' }, { type: 'check-passes', name: 'line-1-newest-release' }],
+  }] });
+  w.io.provider = scriptedProvider([
+    { text: 'input/CHANGELOG.md holds the changelog' }, { text: plan },
+    { toolCalls: [{ id: 't2', name: 'shell_write', arguments: { path: join(w.tree, 'output', 'steps', '1.json'), content: `${JSON.stringify({ results: [{ quote: '## [0.56.0] - 2026-11-10', values: {} }] })}\n` } }] },
+    { text: 'wrote' },
+  ]);
+  const r = await w.door('rerun', ['--text', 'again']);
+  assert.equal(r.rc, 0, `${r.err}\n${r.out}`);
+  const rows = readRunList({ home: w.io.runlistHome }).rows;
+  assert.equal(rows.length, 2, 'the rerun is a second run');
+  const events = readSpine(rows.find((x) => x.spine !== w.row.spine).spine);
+  assert.equal(events.findLast((e) => e.type === 'job-end').outcome, 'green', 'the rerun greens on 0.56.0, the value the answered run read');
 });
