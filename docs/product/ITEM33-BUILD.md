@@ -3889,3 +3889,13 @@ Pre-registration for "place rules" (PRD backlog: a signed check stores a rule fr
 
 - PREREG.md `e4513e192b124944566b9e21b7a4474d7467ef7790cbe1f71884fdf37d2b7027`
 - poc.mjs `95539c6f1d6afb228afe163b039020eeb44ecff0f0b01af05301f0208d66268d`
+
+## Addendum 2026-11-11: Place-rules $0 POC round 1 result (2026-11-11): FAIL
+
+Run once against the frozen prereg (commit 16cb20b7), exit 1. ROUND FAIL, reported as FAIL, not re-tuned. Result: `.claude/scratch/r10/placerules/result.json` and `out.txt` (untracked). See FINDINGS F317.
+
+- Variant B, real tags: bareloop 58/58 later tags correct for versions and 58/58 for dates (fit v0.2.0; v0.0.1 is a stop, no prefix line). Unseen pooled (bareguard 47 tags, bare-agent 75, litectx 44, unread before the freeze): versions 163/163, dates 162/163. The one date miss is a stop (bareguard v0.15.0, no date on the line). 0 WRONG on any real tag in any repo.
+- The FAIL is the crafted negative N1a ("heading format changed"). The crafted v0.55.0 changed only the newest headings; 37 older headings kept `## [`. The rule scanned past the changed top heading, found an older `## [` line and returned 0.33.0 / 2026-09-30 where "not found" was expected. That is a WRONG value (bar B1, hard fail), in both A and B.
+- Meaning: a prefix rule that takes the first matching line can silently bind a stale older release when only the newest heading drifts, a wrong value instead of a stop.
+- All three unseen repos fit the first candidate (`## [` ... `]`), so the corpus is effectively one genre; the test gave no evidence that code can choose among different formats. Variant A (no skip word) stops on every `[Unreleased]` top: 76.6% pooled versions, 75.9% dates, all safe stops.
+- Any round 2 needs a new frozen prereg (hamr's call).
