@@ -3862,3 +3862,12 @@ Phase B gets its own $0 replay bar before any build (the round-1 bars P1-P7 agai
 2. The new paid list call on every rubric draft — measured: round 10 drafts averaged $0.0091 each with the call, round 6 $0.0093 without it (same model, same jobs; the call is lost in the noise). Accepted.
 3. NEXT after this build (parked until then): place rules ("the first heading that starts with '## ['") instead of refusing exact-word checks; $0 POC first on bareloop's own CHANGELOG at two real releases from git history.
 
+
+## Addendum 2026-11-11: Paid verify round 12 pre-registration frozen
+
+The paid verify of the one check list (PRD v1.132 tick 4) is pre-registered and frozen, nothing run. Engine: a full clone of this branch at `f1c20b6947e61ca0f68644feb9d3751a0fc692cb`. Harness: round 10's, with Q1 counting only final-try off-list parts that would have been kept if listed (the raw share is reported beside it, the 20% bar is unchanged) and a new gate QB (every signed close carries `closeDecl.list`, no row words, `listMatchesClose` ok). Same arms (ABABC x4, N=20), same inputs, Fireworks deepseek-flash, caps $0.04 per draft and $1.00 total. The $0 dry run passed (exit 0, 42 gate self-test cases, runs.jsonl 397 before and after). The files live in `.claude/scratch/r10/ledger/paid12/` (untracked); their sha256 values:
+
+- PREREG.md `68e04498d7eefecd2a68cba2c08d76b0d6924ddbf6293a2de5926b1115be137b`
+- draft.mjs `7eb918cd2a5604ab73e425190ce86fdaa9f400bce706e628c9e135348d530dda`
+- input/CHANGELOG.md `6bfd90359485d7e2098ba5d10638473fee94e1e41bd479f6873900338320925b`
+- input/NOTE.md `9f22ae39c34021cc1258d475d23f7072bd926eb7746bed798e64cc532284ece0`
