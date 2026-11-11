@@ -3923,3 +3923,10 @@ Run once on the frozen prereg (f69f3d92, amended before data), $0, no model call
 - Open (hamr's call): a round 3 design, for example a drafting-time refusal when releases appear at mixed heading levels. Needs a new frozen prereg before it runs.
 
 Result: `.claude/scratch/r10/placerules/round2/result.json` (untracked). See FINDINGS F319.
+
+## Addendum 2026-11-11: Place-rules $0 POC round 3 pre-registration frozen
+
+Round 3 of the place-rules POC (rounds 1 and 2 stay FAIL, F317 and F319): round 2 as frozen plus one change, a mixed-level guard (semver-carrying headings at more than one level give NOT FOUND `mixed-levels`, at fit and on every re-read). Regression on round 2's 224 pairs, its 18 valid node_modules rows (`boolean` must now stop) and all crafted negatives plus N9 to N11; a new blind set of 175 changelog files from other local projects' node_modules (82 unique after exclusions). Nothing run yet. Files in `.claude/scratch/r10/placerules/round3/` (untracked):
+
+- PREREG.md `4aa0f32f0d8730775a8adad27c7ac94455ab64a75b88cb119a16ba89f7204c83`
+- poc.mjs `218dad8433e73ac2f4907067883a8df531e5e19cf59cb6088589fd110961f8c6`
