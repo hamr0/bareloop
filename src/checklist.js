@@ -8,7 +8,7 @@
 import { askStructured, makeCostBook } from './authorflow.js';
 import { countExact, countPhrase } from './factwords.js';
 import { settleRules, plainWords } from './checkpick.js';
-import { lineRules } from './rubricstep.js';
+import { lineRules, defaultCitedText } from './rubricstep.js';
 
 /** at most this many `!` checks come from the call */
 export const MAX_BANG = 3;
@@ -159,7 +159,7 @@ const standing = (rows) => rows.filter((r) => r.state !== 'dropped');
 /** @param {any} st @returns {boolean} */
 const isRubricStep = (st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts);
 /** code's one default cited part for a one-input job @param {string} label */
-const citedPart = (label) => ({ text: `every claim is backed by a quote copied from "${label}"`, class: 'countable', check: 'cited', source: label });
+const citedPart = (label) => ({ text: defaultCitedText(label), class: 'countable', check: 'cited', source: label });
 
 /**
  * Move every part (or fact, or count) of the drafted declaration that has no row on the list to Not checked. Pure.
