@@ -3882,3 +3882,10 @@ Round 12 ran as pre-registered (prereg frozen at c9793a07; engine f1c20b69, copy
 - Real `runs.jsonl` 397 before and after.
 
 Caveats: n = 8/8/4 on one model and one job family, a leaning, not proof. Q1's "would have been kept if listed" is the harness's own frozen reading. Nothing has yet run as a real scheduled or panel run (draft stage only). The phone width of the `[default]` tag is unchecked. See FINDINGS F314.
+
+## Addendum 2026-11-11: Place-rules $0 POC round 1 pre-registration frozen
+
+Pre-registration for "place rules" (PRD backlog: a signed check stores a rule from a small closed menu, code re-reads the value each run). Nothing run yet. Files in `.claude/scratch/r10/placerules/` (untracked, hashes recorded here): bareloop's own CHANGELOG at all 61 tags (fixed rule, fit v0.2.0, plus crafted negatives) AND three unseen sibling repos (bareguard 47 tags, bareagent 75, litectx 44; their changelog text was not read before this freeze, rule parameters are picked by code from a closed candidate list). Bars: WRONG = 0 anywhere, 90% found-and-correct pooled on the unseen later tags (versions and dates separately, an unfittable repo counts 0%), Variant B decides, A is the control. A FAIL is reported FAIL and never re-tuned.
+
+- PREREG.md `e4513e192b124944566b9e21b7a4474d7467ef7790cbe1f71884fdf37d2b7027`
+- poc.mjs `95539c6f1d6afb228afe163b039020eeb44ecff0f0b01af05301f0208d66268d`
