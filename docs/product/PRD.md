@@ -2246,18 +2246,18 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 
 **Pick up first thing next.** Read FINDINGS F305-F308 and `MAP.md`, then tick 2.
 
-**Backlog (PARKED, not to build now): Rules re-read each run (fresh values, same rules)** — hamr's rulings 2026-11-11 (FINDINGS F312).
+**Building with Place rules (hamr go 2026-11-11): Rules re-read each run (fresh values, same rules)** — hamr's rulings 2026-11-11 (FINDINGS F312).
 - The signed check stores the rule, never the value.
 - At each run start CODE alone re-reads the input and binds this run's value; no AI at run start (the first drafting read is enough).
 - A rule that cannot find its value stops before any spend, with plain advice: "Reuse workflow and adjust the rules, or check the doc".
 
-**Backlog (PARKED, not to build now): Place rules instead of refusing exact-word checks** (e.g. 'the first heading that starts with ## ['): code proves the rule finds today's words at drafting and finds each run's value at run start; $0 POC first on bareloop's own CHANGELOG at two real releases from git history; NEXT after the check-list build (hamr 2026-11-11).
+**Building (hamr go 2026-11-11): Place rules instead of refusing exact-word checks** (e.g. 'the first heading that starts with ## ['): code proves the rule finds today's words at drafting and finds each run's value at run start; $0 POC first on bareloop's own CHANGELOG at two real releases from git history; NEXT after the check-list build (hamr 2026-11-11).
 - Never auto-create a new workflow.
 - Audit lists every rule each run with the value it read.
 - Example: a changelog summary job whose check needs "the newest release heading". Until built, week-only exact-word checks stay refused.
 - Behaviour ruled by hamr 2026-11-11: the signed check keeps the rule's SHAPE plus the last words read. Every run, CODE alone re-reads each rule before any spend: same value found = OK, new value found = swapped in, both proceed. Not found = stop before spend, listing every rule as found (with value) or not found, with the advice "Reuse workflow and adjust the rules, or check the input". A wrong value must never happen.
 - POC status: round 1 FAIL (F317, first-match scan read a stale older heading); round 2 FAIL (F319, strict first-heading read fixed that, but a mixed-heading-level changelog read a stale patch); round 3 (mixed-level guard): PASS (F321); the POC proves the code re-read; next is a build spec (hamr's go), AI rule choice still unproven.
-
+- Build spec: ITEM33-BUILD.md 'Place rules build spec'; code picks the rule, last read = the previous run's value.
 
 **Backlog (PARKED, not to build now): Ship bareloop as a single binary** — today an adopter must install Node >=22 before bareloop (CLI and panel) runs; a one-file executable (e.g. Node's own single-executable packaging, no language rewrite) would remove that install step for non-engineers. No rewrite to Rust/TS: the arbiter is the product, and runs wait on the model, not on bareloop. Parked by hamr 2026-11-11; build only when install friction shows up live.
 

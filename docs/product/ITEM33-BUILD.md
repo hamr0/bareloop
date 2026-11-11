@@ -3941,3 +3941,28 @@ Round 3 (prereg 818186be, run once, exit 0): PASS. Variant B met G1-G5 and there
 - Blind, 65 valid rows from other local projects' node_modules: correct 19 (29.2%), mixed-levels 8 (12.3%), unfittable 38 (58.5%), wrong 0.
 - Meaning: code never bound a wrong value. It reads keep-a-changelog style well and stops safely on other styles. The found rate on varied npm changelogs is low (about 29%). Which rule the AI picks is still untested.
 - Next: a build spec, on hamr's go.
+
+## Place rules build spec (hamr go 2026-11-11)
+
+Rulings (hamr 2026-11-11, "go with yours"): code picks the rule at drafting, not the AI. "Last read" means the value the previous run of this workflow read; if there is no earlier run, it is the drafting words.
+
+Evidence: POC round 3 PASS (F321). The harness is `.claude/scratch/r10/placerules/round3/poc.mjs` (untracked), with the functions validateRule, levelLines, mixedLevels, selectFirst, applyRule, rereadAll and CANDIDATES. Graduation is a REWRITE into src, never a copy.
+
+Pieces:
+
+- P1 Drafting (code only, $0). Today a phrase is refused as week-only at `src/checklist.js:114` (buildLedger) and at `:195` (applyLedger's `week`). There, code first tries to fit a place rule. It walks the frozen 27 candidates in order: the prefixes `## [`, `## v`, `## `, `# [`, `# v`, `# `, `### [`, `### v`, `### ` crossed with the ends `]`, space and end-of-line. The skip list is ['Unreleased'] and the mixed-level guard is on. The strict first-heading read, run on the fact's own input text, must return the version (kind headingBetween, shape semver) or the date (kind headingDateAfter) that appears in the phrase words. The first fit wins. A fit means the check is kept as a place-rule fact. No fit means it is refused exactly as today, with WEEK_ONLY_WORDS. Only these two kinds are handled; any other week-only words stay refused. The drafter AI is told nothing new.
+- P2 Signed shape. The fact carries `place: {kind, prefix, end, shape, skip}` plus `phrase`, which holds the drafting words as an example. The signature covers the rule. The per-run value is never written into the signed spec, so specHash and workflowKey do not change from run to run and Reuse keeps working.
+- P3 Run start (code only, $0, before any provider call). The step goes right after the refreeze block in `src/userrun.js` (about line 1700, after the `fresh.ok` handling and before coldReset). For every place-rule fact, read the input text from the run's own copy (`ctx.into/tree/<rel>`, file and URL inputs alike) and apply the rule. The mixed-level guard runs on every read. Same value or new value, the run proceeds. The run's in-memory spec gets the bound value as that fact's phrase, for the planner and the close. This happens AFTER the approval and signature check, and is never written back to the signed spec. If any rule is not found, stop before any spend.
+- P4 Stop. The words list every rule as "found <value>" (with "(was <last>)" when the value is new) or "not found (<plain reason>)". They then end with "Reuse workflow and adjust the rules, or check the input. The run did not start. Nothing spent." This uses the existing settleRefused path (a $0 settled row, ExitSignal(2)). Reasons are plain words from code, from this closed list: mixed-levels, no-heading-line, first-heading-mismatch, end-mark-missing, capture-not-shape, only-skipped-headings, no-date-on-line, no-file, empty-text.
+- P5 Audit. One spine record per run, event `place-rules`, rows {key, kind, found, value, was, reason}, emitted after job-start. The Audit tab lists it. "was" comes from the newest earlier run of the same workflowKey's `place-rules` record, else from the drafting words.
+- P6 Screen. The Job tab row for a place-rule fact reads like `› version in the newest "## [" heading (last read 0.55.0)`. The date kind reads `› date in the newest "## [" heading (last read 2026-11-04)`.
+
+Riskiest part: binding the run's value in memory without tripping any signature or hash re-check, and without the value leaking into the signed spec. The builder must show a fail-first test where the run grades on the new value and the signature check still passes. The builder must also show a test that the signed spec file is byte-identical after a run.
+
+Proof:
+
+- (a) Unit tests for P1 to P6.
+- (b) A $0 replay of round 3's data (224 pairs, 13 negatives, the regression and blind sets) through the PRODUCT functions, with the same frozen bars: 0 wrong, versions at least 222/224, dates at least 221/224, all negatives behave. A FAIL is reported, never re-tuned.
+- (c) One live pair on DeepSeek direct, deepseek-flash, cap $0.10 per run, scratch HOME, input under 50 KB. Draft on an older changelog version and run. Then Reuse on a newer one: it must read the new value and go green. Then a mixed-level input: it must stop at $0.
+
+Out of scope: AI rule choice; rule kinds beyond the two; signing shapes not words (F320 note); ordering checks.
