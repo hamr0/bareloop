@@ -40,16 +40,6 @@ export function checkClassOfKind(kind) {
 }
 
 /**
- * The `~` rules of one job line, each on its own (the page draws one `~` row per rule): the line's own `rules` array when it
- * has one (a rule may itself contain "; "), else the joined `rule` split on "; " (an older line that saved only the join).
- * @param {any} l @returns {string[]}
- */
-export function rulesOfLine(l) {
-  if (Array.isArray(l?.rules)) return l.rules.filter((/** @type {unknown} */ r) => typeof r === 'string' && r);
-  return typeof l?.rule === 'string' && l.rule ? l.rule.split('; ').filter(Boolean) : [];
-}
-
-/**
  * The plan of a SIGNED spec. With `jobLines`, each stage lands under EACH line its `fromLine` array names (a stage with none is
  * a mandatory guard: "Always checked"), `closeDecl.refused` reasons land under their line, and `closeDecl.notes` are the
  * drafter's own "not checked" words. Without `jobLines` (a spec that predates the job block) the signed goal sentence is
@@ -91,7 +81,7 @@ export function planFromSpec(spec) {
     };
   }
   /** @type {PlanLine[]} */
-  const lines = jl.map((/** @type {any} */ l) => ({ n: l.n, text: l.text, rule: typeof l.rule === 'string' ? l.rule : '', rules: rulesOfLine(l), checks: [], refused: [] }));
+  const lines = jl.map((/** @type {any} */ l) => ({ n: l.n, text: l.text, rule: typeof l.rule === 'string' ? l.rule : '', rules: lineRules(l), checks: [], refused: [] }));
   /** @type {PlanCheck[]} */
   const loose = [];
   /** @type {string[]} */
@@ -134,7 +124,7 @@ export function planFromConfirm(jobLines, plan) {
     : (Array.isArray(plan?.checks) ? plan.checks.map((c) => ({ text: String(c), fromLine: null })) : []);
   const jl = Array.isArray(jobLines) ? jobLines : [];
   /** @type {PlanLine[]} */
-  const lines = jl.map((l) => ({ n: l.n, text: l.text, rule: l.rule, rules: rulesOfLine(l), checks: [], refused: [] }));
+  const lines = jl.map((l) => ({ n: l.n, text: l.text, rule: l.rule, rules: lineRules(l), checks: [], refused: [] }));
   /** @type {PlanCheck[]} */
   const loose = [];
   // the person's picks are drawn once, from `plan.picked` (their words, with `kept from last draft`) as `[you picked]` check rows: a close row for the same pick is not a second row

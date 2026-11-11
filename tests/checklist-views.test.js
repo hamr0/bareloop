@@ -99,3 +99,13 @@ test('B2 the panel signing path refuses a close whose list and checks disagree (
   const src = readFileSync(fileURLToPath(new URL('../src/panel/authorroutes.js', import.meta.url)), 'utf8');
   assert.match(src, /const lm = listMatchesClose\(spec\.closeDecl\);\s*if \(!lm\.ok\) return \{ ok: false, error: lm\.error \};/);
 });
+
+import * as jobplan from '../src/panel/jobplan.js';
+import { lineRules } from '../src/rubricstep.js';
+test('B3 the rulesOfLine twin of lineRules is gone: the plan reads a line\'s rules through lineRules, with the same answers', () => {
+  assert.equal('rulesOfLine' in jobplan, false);
+  for (const l of [{ n: 1, text: 'x', rules: ['a', '', 'b'] }, { n: 1, text: 'x', rule: 'a; b' }, { n: 1, text: 'x' }]) {
+    assert.deepEqual(planFromSpec({ jobLines: [l], closeDecl: { stages: [] }, goal: '' }).lines[0].rules, lineRules(l));
+    assert.deepEqual(jobplan.planFromConfirm([l], {}).lines[0].rules, lineRules(l));
+  }
+});
