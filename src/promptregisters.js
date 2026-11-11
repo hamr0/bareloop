@@ -88,6 +88,13 @@ export const PROMPT_REGISTERS = Object.freeze([
   // (F198 item 2), built inline inside `middle` and appended to `w.ask([...])`
   Object.freeze({ file: 'src/planrun.js', name: 'middle()\'s facts-only "The close\'s own numbers so far" block (inline template, not a const)' }),
 
+  // src/checklist.js — the one check list of a rubric job: the list call's system text and schema descriptions, the drafter's list block, the code-written refusal words
+  Object.freeze({ file: 'src/checklist.js', name: 'LEDGER_SYSTEM' }),
+  Object.freeze({ file: 'src/checklist.js', name: 'LEDGER_SCHEMA (property descriptions)' }),
+  Object.freeze({ file: 'src/checklist.js', name: 'ledgerBlock() (inline template, not a const)' }),
+  Object.freeze({ file: 'src/checklist.js', name: 'ledgerUserText() (inline template, not a const)' }),
+  Object.freeze({ file: 'src/checklist.js', name: 'OFF_LIST_WORDS, WEEK_ONLY_WORDS, EMPTY_LIST_WORDS' }),
+
   // src/authoring.js — the types-genre close template, interpolated verbatim
   // into the authoring prompt (src/authorflow.js's assembled system message,
   // "THE GENRE TEMPLATE" block) — model-facing law for a types-genre
