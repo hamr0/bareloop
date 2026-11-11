@@ -3006,3 +3006,18 @@ bareguard 0.31.0: a `cited` fact's `phrases` is checked by `evalPresence` (`node
 2026-11-09 — Filed here; to be relayed to the bareguard session by the main session on hamr's word. No target version. Bareloop side blocked on it: PRD v1.131 tick 5.
 
 2026-11-10 — DELIVERED in bareguard 0.33.0 (ruling #79: `any: true`, opt-in `edges: true`); our frozen E1-E6 verified PASS on guard's branch 272c42d and on the published package (`.claude/scratch/bg4/output.txt`, `pub/output-pub.txt`); see F303. Bareloop still pins ^0.31.0.
+
+
+## BG-5 — FILED 2026-11-11, bareguard ruling #81: at-most and at-least list-item bounds (`maxListItems`, `minListItems`) (F315)
+
+### Ask
+
+Two new rubric rules beside `listItems`: `maxListItems` (red `over`, at-most) and `minListItems` (red `under`, at-least). Same outer-list reading as `listItems`, inclusive bounds. No list is green under max. `maxListItems` accepts 0; `minListItems` needs >=1. `listItems` stays exact. Existing `rubricSha` is unchanged.
+
+### Why
+
+F315: an "at most / up to / no more than / at least N bullets" rule builds an exact `listItems` check, so a 2-item answer to "at most 3 bullets" is graded red and a 4-item answer to "at least 3 bullets" is red. bareguard's `listItems` is exact by design; bullets have no direction today.
+
+### Status
+
+2026-11-11 — Asked by bareloop, approved by hamr, fwd agreed (ruling #81). Being built in bareguard, version pending. Bareloop waits (hamr picked waiting over a local stopgap), then maps "at most / up to / no more than N" to `maxListItems` and "at least N" to `minListItems`.
