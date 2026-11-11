@@ -41,7 +41,7 @@ import { skipWords } from './panel/status.js';
 import { checkoutPrHead, prHeadIsAncestor, recordPrOnManifest } from './prcheckout.js';
 import { readShimArm } from './readshim.js';
 import { closeStagesOf } from './plan.js';
-import { placeFactsOf, readPlaceRules, valueInWords, stopWords, lastPlaceRead, placeValuesOfEvents } from './placerule.js';
+import { placeFactsOf, readPlaceRules, valueInWords, stopWords, lastPlaceRead, placeValuesOfEvents, bindPlaceValues, NO_PLACE_RECORD_WORDS } from './placerule.js';
 import { readFrozenInputs } from './rubricstep.js';
 import { resolveCloseTimeoutMs } from './closetimeout.js';
 import { makeSpine } from './spine.js';
@@ -1261,6 +1261,8 @@ async function execute(ctx) {
   // budget — money folds on every path, time does not.
   /** @type {{text: string, fromRunid: string, receivedAt: string}|null} */
   let DOOR_RERUN = null;
+  /** @type {Record<string, string>|null} PLACE RULES: a door rerun's values, taken from the answered run's own record (it re-reads nothing) */
+  let DOOR_PLACE_VALUES = null;
   if (doorSpineFile !== null) {
     if (RULING === null) {
       err('NO DECISION — this run is standing at its review door and no decision was given.');
@@ -1269,6 +1271,20 @@ async function execute(ctx) {
       throw new ExitSignal(2);
     }
     const answeredAt = new Date().toISOString();
+    // PLACE RULES: an accept's re-proof and a rerun (which re-reads nothing: no refreeze at the door) use the values THIS run read, from its own `place-rules`
+    // record (what a resume rebinds); never the signed drafting words, never a new read. No record = refused in plain words. The signed spec is not touched.
+    /** @type {any} */
+    let doorSpec = spec;
+    if (RULING.decision !== 'pause' && placeFactsOf(spec).length > 0) {
+      const doorPlaceValues = placeValuesOfEvents(doorEvents ?? []);
+      if (doorPlaceValues === null) {
+        err(`DOOR REFUSED (${RULING.decision}) — nothing was recorded and nothing was released.`);
+        err(NO_PLACE_RECORD_WORDS);
+        throw new ExitSignal(2);
+      }
+      doorSpec = bindPlaceValues(spec, doorPlaceValues);
+      if (RULING.decision === 'rerun') DOOR_PLACE_VALUES = doorPlaceValues;
+    }
     // PRD item 27/M3 — the door's mechanical re-run needs the same effective
     // ceiling the run itself would use; resolved through the identical
     // function (`resolveCloseTimeoutMs`), never a second guess. Paid only on
@@ -1297,7 +1313,7 @@ async function execute(ctx) {
     // `timedOut: true`, already handled above.
     if (doorCloseTiming.closeTimeoutMs === null) throw new Error('unreachable: resolveCloseTimeoutMs sets closeTimeoutMs whenever timedOut is false');
     const ans = await answerReviewDoor({
-      job: spec,
+      job: doorSpec,
       workdir: wd,
       events: doorEvents ?? [],
       decision: RULING.decision,
@@ -1656,7 +1672,7 @@ async function execute(ctx) {
   }
 
   /** @type {Record<string, string>|null} PLACE RULES: the values the run start read for the spec's place-rule facts (key to value), handed to `runJob`; null = none */
-  let placeValues = null;
+  let placeValues = DOOR_PLACE_VALUES;
   /** @type {{workflowKey: string, rows: object[]}|null} PLACE RULES: the record the spine keeps of that read; null on a resume (its first leg wrote it) */
   let placeRead = null;
   // a RESUME does not re-read: it rebinds the values its own first leg recorded, so the close grades on the words the run started with

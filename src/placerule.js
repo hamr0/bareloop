@@ -299,6 +299,9 @@ export function stopWords(rows) {
 
 // ---- the record of a run: what was read, and what the last run read ---------------------------------------------------------------------
 
+/** the plain words of the door's refusal when a place-rule run has no record of the values it read */
+export const NO_PLACE_RECORD_WORDS = 'This run has no record of the values it read, so it cannot be checked again. Use Reuse workflow.';
+
 /** the spine event a run writes, once, after job-start */
 export const PLACE_EVENT = 'place-rules';
 
