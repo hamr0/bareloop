@@ -245,10 +245,18 @@ export function readPlaceRules(items) {
   return { proceed: rows.every((r) => r.found), rows, values };
 }
 
+/** the end of the stop words: what the person can do, and that nothing ran or was spent */
+export const STOP_TAIL = 'Reuse workflow and adjust the rules, or check the input. The run did not start. Nothing spent.';
+
 /**
- * The words of the $0 stop. Placeholder wording of the stop path (P3); the final plain-words text is the next piece.
- * @param {{name: string, found: boolean, reason: string|null}[]} rows @returns {string}
+ * The words of the $0 stop, plain words from code. Every rule is listed, found or not: "<name>: found <value>" (with "(was <last>)" when the value is
+ * new) or "<name>: not found (<plain reason>)", then the closing line. The reasons come only from the closed list.
+ * @param {{name: string, found: boolean, value: string|null, was: string|null, reason: string|null}[]} rows @returns {string}
  */
 export function stopWords(rows) {
-  return `A place rule did not read the input (${rows.filter((r) => !r.found).map((r) => r.name).join(', ')}). The run did not start. Nothing spent.`;
+  const lines = rows.map((r) => {
+    if (!r.found) return `${r.name}: not found (${PLAIN_REASONS[/** @type {keyof typeof PLAIN_REASONS} */ (r.reason ?? 'no-file')] ?? 'the input could not be read'})`;
+    return `${r.name}: found ${r.value}${r.was !== null && r.was !== r.value ? ` (was ${r.was})` : ''}`;
+  });
+  return `${lines.join('\n')}\n${STOP_TAIL}`;
 }
