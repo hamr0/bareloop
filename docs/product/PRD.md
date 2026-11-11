@@ -2232,9 +2232,9 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 0b. **Check 0b ($0, before any build): is the run-time worker told a line's picks?** fwdloop found (their F173, relayed, not read in a file) that a page-quoting step with picks was never told them and swung between the word-count red and the list-items red (0/4 green); telling it the picks in the quoting block, only when the step has picks, gave 4/4 on the first try (fwd M10 am28). bareloop's paid rounds tested drafting only, so ours is unknown. Read the worker brief for a rubric step with picks; if the picks are missing, copy fwd's fix from their released tag (conditional text only, per hamr's prompt-text ruling).
 1. **Map.** DONE (`MAP.md`).
 2. **Design and a $0 POC on the 77 saved paid drafts.** POC rounds done (rounds 8-10 paid, round 11 withdrawn); the round-10 shape is the build target (`ITEM33-BUILD.md`, 2026-11-11; FINDINGS F310-F313).
-3. **Build.** IN BUILD on feat/check-ledger: Phase A + B together (hamr 2026-11-11), spec in ITEM33-BUILD 'Check list build spec (signed 2026-11-11)'.
+3. **Build.** DONE on feat/check-ledger (Phase A + B); spec in ITEM33-BUILD 'Check list build spec (signed 2026-11-11)'; verified live at round 12 (FINDINGS F314).
 
-4. **A paid round to verify.** TO DO; the round 7 harness exists and is reframed for the ledger.
+4. **A paid round to verify.** DONE: round 12 PASS (draft stage, a leaning); FINDINGS F314, ITEM33-BUILD 'Paid verify round 12 result'.
 5. **Shared with fwdloop.** OPEN: one shape for both; fwd was shown the map on 2026-11-10. See also fwd's F171 (fwdloop docs/logs/FINDINGS.md, commit 1186072, relayed): 21 lists, same root, a zero-check plan is signable there too.
 
 **Open questions for hamr** (picks are the main session's, not rulings):

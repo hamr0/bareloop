@@ -15733,3 +15733,9 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Status.** Withdrawn; no paid spend.
 
 **CORRECTION (2026-11-11).** "Wrong" applies to half of copy commit 1880ad13 only. It held two changes: keeping version/date phrase facts (WRONG, withdrawn as written above) and "a fact's count rides with its fact" (RIGHT: the fix for the real list gap in F312's correction; test-proven only, never live). The build target is the round-10 shape (4e1abeae) plus count-rides-with-fact.
+
+## F314 — the check list (Phase A + B) verified live at paid round 12: PASS (2026-11-11)
+
+**Finding.** The one check list build (engine f1c20b69, prereg frozen c9793a07, Fireworks deepseek-flash) passed every pre-registered gate: 20 of 20 drafts prepared (A 8, B 8, C 4), 0 casualties, Q1 1 of 54 counted (1.9%; raw 5 of 54, 9.3%; bar 20%; round 10 was 9 of 42), QB ok (20 signed specs carry the list, 0 bad), Q2-Q8 ok (Q4 kept=26 bad=0, Q5 A 8/8 B 8/8, Q6 61 drafter prompts and 20 confirm prompts with 0 bad). Real `runs.jsonl` 397 before and after. Evidence: `.claude/scratch/r10/ledger/paid12/run.out`, `result.json` (draft session ids per draft), `PREREG.md`.
+**Caveats.** n = 8/8/4 on one model and one job family: a leaning, not proof. Q1's "would have been kept if listed" is the harness's own frozen reading (the raw share is reported beside it). Draft stage only: nothing has run as a real scheduled or panel run. The phone width of the `[default]` tag is unchecked.
+**Status.** Seen live in a paid round; closes the F310-F313 chain for the build. Build doc: ITEM33-BUILD, "Paid verify round 12 result".

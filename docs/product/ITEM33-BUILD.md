@@ -3871,3 +3871,14 @@ The paid verify of the one check list (PRD v1.132 tick 4) is pre-registered and 
 - draft.mjs `7eb918cd2a5604ab73e425190ce86fdaa9f400bce706e628c9e135348d530dda`
 - input/CHANGELOG.md `6bfd90359485d7e2098ba5d10638473fee94e1e41bd479f6873900338320925b`
 - input/NOTE.md `9f22ae39c34021cc1258d475d23f7072bd926eb7746bed798e64cc532284ece0`
+
+## Addendum 2026-11-11: Paid verify round 12 result (2026-11-11): PASS
+
+Round 12 ran as pre-registered (prereg frozen at c9793a07; engine f1c20b69, copy `/home/hamr/PycharmProjects/bareloop-ledger-verify`; Fireworks deepseek-flash; files in `.claude/scratch/r10/ledger/paid12/`, `run.out` and `result.json`). RESULT PASS.
+
+- Drafts 20/20 (A 8, B 8, C 4), prepared 20, casualties 0, spent $0.1766 (cap $1).
+- Q1: 1 of 54 counted (1.9%), raw 5 of 54 (9.3%), bar 20%. Round 10 was 9 of 42 (21.4%).
+- QB ok: all 20 signed specs carry the list, 0 bad. Q2-Q8 ok (Q4 kept=26 bad=0; Q5 A 8/8, B 8/8; Q6 61 drafter prompts and 20 confirm prompts, 0 bad).
+- Real `runs.jsonl` 397 before and after.
+
+Caveats: n = 8/8/4 on one model and one job family, a leaning, not proof. Q1's "would have been kept if listed" is the harness's own frozen reading. Nothing has yet run as a real scheduled or panel run (draft stage only). The phone width of the `[default]` tag is unchecked. See FINDINGS F314.
