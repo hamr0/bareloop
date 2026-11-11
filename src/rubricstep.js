@@ -944,18 +944,17 @@ export const defaultCitedText = (label) => `every claim is backed by a quote cop
  * Each row says who added the check (`by`): `you` = one of the person's picks, as the signed close's own record (`closeDecl.picks`) names it; `agent` = the drafter's;
  * `default` = code's own (the one list's `$` rows: the cited part written by `defaultCitedText`, and the numbers tie of a text step).
  * @param {any} closeDecl
- * @returns {{line: number, text: string, covers: number[], by: 'agent'|'you'|'default'}[]}
+ * @returns {{line: number, text: string, by: 'agent'|'you'|'default'}[]}
  */
 export function checksOfClose(closeDecl) {
   const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
   const record = isRec(closeDecl) && Array.isArray(closeDecl.picks) ? closeDecl.picks : [];
   return stages.flatMap((/** @type {any} */ st) => (isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts)
     ? st.params.parts.filter((/** @type {any} */ p) => isRec(p) && (p.class === 'countable' || p.class === 'fact')).flatMap((/** @type {any} */ p) => {
-      const covers = Array.isArray(p.covers) ? p.covers.filter(Number.isInteger) : [];
       /** @type {'agent'|'you'|'default'} */
       const by = p.check === 'numbersFromFacts' || (p.check === 'cited' && p.text === defaultCitedText(p.source)) ? 'default' : record.some((/** @type {any} */ x) => isRec(x) && x.line === st.params.step && sameJson(x.part, p)) ? 'you' : 'agent';
       // a fact part is one plan row per fact (and one for its count): the person signs the rows, the close runs the same list
-      return (p.class === 'fact' ? factRows(p) : [partSentence(p)]).map((/** @type {string} */ text) => ({ line: st.params.step, text, covers, by }));
+      return (p.class === 'fact' ? factRows(p) : [partSentence(p)]).map((/** @type {string} */ text) => ({ line: st.params.step, text, by }));
     })
     : []));
 }

@@ -69,7 +69,7 @@ test('A5 the rubric drafter prompt carries the list block when it is given one; 
   assert.equal(promptWith({}), promptWith({ ledger: null }));
 });
 
-test('A5 a goal-only confirmed plan gives the drafter no confirmed-plan block, no "the person confirmed" text and no covers rule; an old-shape plan still does', () => {
+test('A5 a goal-only confirmed plan gives the drafter no confirmed-plan block, no "the person confirmed" text and no covers rule; an old-shape plan no longer brings the covers rule either', () => {
   const rows = CL.buildLedger({ jobLines, look, texts, inputLabels: ['Changelog'] });
   const conf = { checks: [], checkItems: [], protections: ['always on'], notChecked: [], goalOnly: true };
   const b = confirmedBlock(conf);
@@ -78,7 +78,7 @@ test('A5 a goal-only confirmed plan gives the drafter no confirmed-plan block, n
   const on = promptWith({ confirmed: conf, ledger: rows });
   assert.doesNotMatch(on, /THE CONFIRMED PLAN|EVERY CONFIRMED CHECK|already saw and confirmed|only three kinds of check/);
   assert.match(on, /THE LIST OF CHECKS/);
-  assert.match(promptWith({ confirmed: { ...conf, goalOnly: undefined, checkItems: [{ text: 'a', fromLine: [1] }], checks: ['a'] } }), /EVERY CONFIRMED CHECK IS COMPOSED OR MOVED/);
+  assert.doesNotMatch(promptWith({ confirmed: { ...conf, goalOnly: undefined, checkItems: [{ text: 'a', fromLine: [1] }], checks: ['a'] } }), /EVERY CONFIRMED CHECK IS COMPOSED OR MOVED|covers/);
 });
 
 // ---- A6 / A7 / A9 / A10: the drafting loop is cut to the list -----------------------------------------------------------------------------------

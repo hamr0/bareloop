@@ -354,7 +354,7 @@ export const KIND_CATALOGUE = Object.freeze({
     pathParams: Object.freeze([]),
     shape: 'step: integer (the job line number), parts: [{text: string, class: "countable" | "fact" | "judged" | "guard" | "none", '
       + 'check?: "cited" | "minClaims" | "maxClaims", value?: integer, '
-      + 'source?: string (an input label), domains?: string[], covers?: integer[], rules?: integer[], '
+      + 'source?: string (an input label), domains?: string[], rules?: integer[], '
       + 'fact parts: facts?: [{name, shape: "money"|"number"|"date"|"time"|"phrase"|"text", unit?|currency? (each one value or a list; money names at least one), phrase?, anchor?, until?, '
       + 'rule?: {op, value | lo+hi}, aiProposal?: boolean}], count?: {min?, max?}}]',
     asserts: 'the file output/<step>.json under output/steps/ exists, is a JSON object, and its "text" is present and within the '
@@ -366,8 +366,7 @@ export const KIND_CATALOGUE = Object.freeze({
       + 'a line that FINDS, LISTS or LOOKS UP something gets ONE part of class "fact" instead (source = the input label, '
       + 'facts = the required facts, count = how many results): its step file holds only filled facts and no free text, so '
       + 'give such a line no word, section or claim-count parts; list in "rules" the number of every ~ rule a part carries out; '
-      + 'on every countable part that carries out a CONFIRMED check, list that check\'s number in covers (a confirmed check no part '
-      + 'covers is moved to Not checked before signing); "judged" when only reading '
+      + '"judged" when only reading '
       + 'it could decide; "guard" for a rule about web sources (domains); "none" when you cannot sort it. Never turn a part you cannot '
       + 'count or quote into a countable one by guessing a number.',
   }),

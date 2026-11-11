@@ -837,7 +837,6 @@ export const PARAM_SCHEMAS = Object.freeze({
         value: { type: 'integer', minimum: 1, description: 'minClaims / maxClaims: the number of claims asked for' },
         source: { type: 'string', minLength: 1, description: 'cited: the label of the input a quote must come from' },
         domains: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 }, description: 'guard only: the web domains the rule is about' },
-        covers: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'integer', minimum: 1 }, description: 'the number(s) of the CONFIRMED check(s) this part carries out' },
         rules: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'integer', minimum: 1 }, description: 'the number(s) of the job line\'s ~ rules this part carries out (1 = the first ~ rule under the line)' },
         facts: {
           type: 'array',
@@ -1242,9 +1241,8 @@ export function writeScopeBlock(writeScope) {
  * never merge.
  * @param {{checks: string[], checkItems?: {text: string, fromLine: number[]|null}[], protections: string[], openQuestions?: string[], notChecked?: string[],
  *   answeredQuestions?: string[], goalOnly?: boolean}} confirmed
- * @param {{numbered?: boolean}} [o] `numbered` (a rubric job on files): each confirmed check carries its `#n`, which a part cites in `covers`
  */
-export function confirmedBlock(confirmed, { numbered = false } = {}) {
+export function confirmedBlock(confirmed) {
   const checks = confirmed.checks ?? [];
   const protections = confirmed.protections ?? [];
   const openQuestions = confirmed.openQuestions ?? [];
@@ -1262,8 +1260,8 @@ export function confirmedBlock(confirmed, { numbered = false } = {}) {
     + 'Compose stages for these checks and no other — a genre never adds a check the goal did not ask for, and '
     + 'neither do you:\n\n'
     + `${(confirmed.checkItems?.length
-      ? confirmed.checkItems.map((c, i) => `  - ${numbered ? `#${i + 1} ` : ''}${c.fromLine && c.fromLine.length ? `[line ${c.fromLine.join(', ')}] ` : ''}${c.text}`)
-      : checks.map((c, i) => `  - ${numbered ? `#${i + 1} ` : ''}${c}`)).join('\n') || '  (none)'}\n\n`
+      ? confirmed.checkItems.map((c) => `  - ${c.fromLine && c.fromLine.length ? `[line ${c.fromLine.join(', ')}] ` : ''}${c.text}`)
+      : checks.map((c) => `  - ${c}`)).join('\n') || '  (none)'}\n\n`
     + 'These protections are already always-on and unchanged by this plan — never compose one of these as a check:\n\n'
     + `${protections.map((p) => `  - ${p}`).join('\n') || '  (none)'}\n\n`
     + (notChecked.length
@@ -1540,7 +1538,7 @@ export const REQUIRED_FACTS_BRIEF = 'REQUIRED FACTS — what a line that finds, 
   + ' - A ~ rule that you carry out as a fact (a limit on a time, a price, a date: "not a red-eye" is a time fact with a between rule) is carried by the '
   + 'fact part: list its number in that part\'s "rules". It is NOT also a part of its own: on a line that lists facts, a part of class judged or none '
   + 'is refused. A rule you cannot express as a shape and a rule goes in "refused", never into a part.\n'
-  + ' - "covers" and "rules" are fields of the PART, written once on it as a list of numbers. A fact never has a "covers" or a "rules" field.\n'
+  + ' - "rules" is a field of the PART, written once on it as a list of numbers. A fact never has a "rules" field.\n'
   + ' - ONE stage per job line, holding ALL of that line\'s facts (and its other parts). Two stages for one line are refused: put a '
   + '~ rule\'s fact (a "not a red-eye" time) on the same stage as the line\'s other facts.\n'
   + ' - WHICH SHAPE TAKES WHICH FIELDS (a field a shape does not take is refused):\n'
@@ -1605,10 +1603,7 @@ left as a placeholder. You never write a number the person did not ask for.`;
       + (inputs && inputs.length ? `\n\n${renderInputs(inputs)}` : ''),
     ...(jobLines && jobLines.length ? [jobLineTagBlock(jobLines.length)] : []),
     ...(writeScope && writeScope.length ? [writeScopeBlock(writeScope)] : []),
-    ...(confirmed ? [confirmedBlock(confirmed, { numbered: true }),
-      ...(confirmed.goalOnly === true ? [] : ['EVERY CONFIRMED CHECK IS COMPOSED OR MOVED, NEVER DROPPED\n\nThe person saw the numbered checks above. On each countable or fact part that carries one of them out, list its number in the PART\'s "covers" (once on the part, never on a fact inside it). '
-      + 'A confirmed check that no part covers is not silently left out: it is moved to Not checked before signing, and the person is told. '
-      + 'To count "N things listed", use minClaims / maxClaims (it counts the claims listed under an input); anything else you cannot count is not composed.'])] : []),
+    ...(confirmed ? [confirmedBlock(confirmed)] : []),
     REQUIRED_FACTS_BRIEF,
     ...(Array.isArray(settled) && settled.length ? [settledBlock(settled)] : []),
     ...(Array.isArray(ledger) ? [ledgerBlock(ledger)] : []),

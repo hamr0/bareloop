@@ -199,7 +199,7 @@ test('L4 cause 1: "covers" on a fact (try A of smv710w8c3wdh) is refused with th
   assert.equal(shape.length, 4, 'one red per fact that carries covers');
   assert.match(shape[0].detail, /"covers" is a field of the PART, not of a fact - write the numbers once on the fact part/);
   assert.deepEqual(rubricStepShapeReds({ step: 1, parts: [factPart(REAL_FACTS, { rules: [1, 2], covers: [1, 2, 3, 4] })] }, 'stages[1].params'), []);
-  assert.match(REQUIRED_FACTS_BRIEF, /"covers" and "rules" are fields of the PART, written once on it as a list of numbers\. A fact never has a "covers" or a "rules" field\./);
+  assert.match(REQUIRED_FACTS_BRIEF, /"rules" is a field of the PART, written once on it as a list of numbers\. A fact never has a "rules" field\./);
 });
 
 test('L4 cause 2: a ~ rule beside the fact part as a judged / none part (tries 1 and 3 of smv710w8c3wdh) is no longer a plan-red (R10: listed under Not checked, the fact part carries the rule); a red-eye rule drafted as a time fact with `between`, marked AI\'s proposal, is accepted', async () => {

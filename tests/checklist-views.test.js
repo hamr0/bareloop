@@ -109,3 +109,18 @@ test('B3 the rulesOfLine twin of lineRules is gone: the plan reads a line\'s rul
     assert.deepEqual(jobplan.planFromConfirm([l], {}).lines[0].rules, lineRules(l));
   }
 });
+
+import { declarationSchema, confirmedBlock, authorPrompt } from '../src/authorflow.js';
+import { catalogueForLang, RUBRIC_LANG } from '../src/authoring.js';
+test('B3 the drafter is no longer offered `covers` (a number of a confirmed check): not in its tool schema, its stage shape, or its prompt; confirmedBlock has no numbered form', () => {
+  const walk = (o, f) => { if (o && typeof o === 'object') for (const [k, v] of Object.entries(o)) { f(k); walk(v, f); } };
+  /** @type {string[]} */ const keys = [];
+  walk(declarationSchema(undefined, { kinds: Object.keys(catalogueForLang(RUBRIC_LANG)) }), (k) => keys.push(k));
+  assert.equal(keys.includes('covers'), false, 'the tool schema has no covers property');
+  assert.doesNotMatch(JSON.stringify(catalogueForLang(RUBRIC_LANG)['rubric-step']), /covers/);
+  const prompt = authorPrompt({ answers: {}, facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }] }, listingBlock: '', lang: RUBRIC_LANG, verdictType: 'soft-green', guards: [], ownedEnvNames: [], mode: 'tool', catalogue: catalogueForLang(RUBRIC_LANG), writeScope: ['output/'],
+    confirmed: { checks: ['a'], checkItems: [{ text: 'a', fromLine: [1] }], protections: [] }, jobLines: [{ n: 1, text: 'x' }], inputs: [{ n: 1, label: 'Changelog', value: 'x' }] });
+  assert.doesNotMatch(prompt, /covers|EVERY CONFIRMED CHECK|#1 /);
+  const c = { checks: [], checkItems: [{ text: 'a', fromLine: [1] }], protections: [] };
+  assert.equal(confirmedBlock(c, { numbered: true }), confirmedBlock(c));
+});

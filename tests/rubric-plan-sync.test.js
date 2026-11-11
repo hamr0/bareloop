@@ -103,14 +103,12 @@ test('(a) minClaims / maxClaims at run time: the CODE counts the list, bareguard
   assert.equal((await runStage(max2, ctx)).verdict, 'green');
 });
 
-test('the shape: minClaims needs value and source; covers is distinct integers; the prompt numbers the confirmed checks so a part can cite them', () => {
+test('the shape: minClaims needs value and source; a legacy `covers` on a saved part is still read as distinct integers (the drafter is no longer offered it)', () => {
   const bad = (parts) => rubricStepShapeReds({ step: 1, parts }, 'p').map((r) => r.path);
   assert.deepEqual(bad([{ text: 'x', class: 'countable', check: 'minClaims', value: 3 }]), ['p.parts[0].source']);
   assert.deepEqual(bad([{ text: 'x', class: 'countable', check: 'minClaims', source: 'C' }]), ['p.parts[0].value']);
   assert.deepEqual(bad([{ text: 'x', class: 'countable', check: 'minClaims', source: 'C', value: 3, covers: [1, 1] }]), ['p.parts[0].covers']);
   assert.deepEqual(bad([{ text: 'x', class: 'countable', check: 'minClaims', source: 'C', value: 3, covers: [3] }]), []);
-  const block = confirmedBlock({ checks: [], checkItems: CONFIRMED, protections: [] }, { numbered: true });
-  assert.match(block, /#3 \[line 1\] output\/steps\/1\.json lists 3 releases/);
   assert.doesNotMatch(confirmedBlock({ checks: [], checkItems: CONFIRMED, protections: [] }), /#3/);
 });
 
