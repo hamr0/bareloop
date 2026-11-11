@@ -210,7 +210,9 @@ export function applyLedger(declaration, rows, { labels = [], texts = null } = {
       // the drafter's own cited parts on a text stage: the `$` default (added below) replaces them
       if (p.class === 'countable' && p.check === 'cited' && textStage && labels.length === 1) continue;
       if (p.class === 'fact') {
-        const fs = Array.isArray(p.facts) ? p.facts : [];
+        // a `place` on a drafter fact is DISCARDED here (hamr 2026-11-11): only the list row's fit below can attach one (code picks the rule, never the AI)
+        const incoming = Array.isArray(p.facts) ? p.facts : [];
+        const fs = incoming.map((/** @type {any} */ f) => { if (!isRec(f) || !('place' in f)) return f; const { place: _ai, ...rest } = f; return rest; });
         const ruled = onRule(p);
         // ONE OWNER of the week-only decision (hamr 2026-11-11): the list row alone. A fact whose phrase/anchor/until holds a version or a date is signed ONLY as the place value(s) its standing
         // row's fit gives (the values that are the fact's own phrase tokens; a version and a date in one phrase become TWO facts, "<name> version" and "<name> date", each with its own rule),
@@ -244,7 +246,7 @@ export function applyLedger(declaration, rows, { labels = [], texts = null } = {
         units += fs.length;
         for (const f of fs.filter((x) => !keptFacts.includes(x))) refused.push({ line, kind: 'fact', words: say(f?.name) || say(p.text), reason: week(f) ? 'week-only' : 'not on the list' });
         let np = p;
-        if (keptFacts.length !== fs.length || placed.size > 0) np = { ...p, facts: keptFacts.flatMap((f) => (placed.has(f) ? placed.get(f) : [f])) };
+        if (keptFacts.length !== fs.length || placed.size > 0 || fs.some((f, i) => f !== incoming[i])) np = { ...p, facts: keptFacts.flatMap((f) => (placed.has(f) ? placed.get(f) : [f])) };
         if (isRec(p.count)) {
           units += 1;
           if (!ruled && keptFacts.length === 0 && !live.some((r) => r.line === line && r.kind === 'count')) {

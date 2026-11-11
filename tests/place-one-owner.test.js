@@ -64,3 +64,17 @@ test('split version/date facts each get only their own value', () => {
   assert.deepEqual(factsOf(r).map((/** @type {any} */ f) => [f.name, f.phrase]), [['v', '0.54.1'], ['d', '2026-11-04']]);
   assert.ok(factsOf(r).every((/** @type {any} */ f) => f.place));
 });
+
+test('a drafter fact arriving with its own place rule is stripped first: the signed rule is code\'s, or the fact is refused week-only when no row fits', () => {
+  const own = { kind: 'line-prefix', prefix: '# ' };
+  const mk = () => decl([fp([{ name: 'version', shape: 'phrase', phrase: '0.54.1', place: own }], [])]);
+  const rows = [row({ key: 'L1.fact.version', name: 'version', words: ['## [0.54.1] - 2026-11-04', '0.54.1'] })];
+  const withRow = CL.applyLedger(mk(), rows, { labels: ['Changelog'], texts });
+  const v = factsOf(withRow).find((/** @type {any} */ f) => f.name === 'version');
+  assert.ok(v && v.place, 'signed with a place rule');
+  assert.notDeepEqual(v.place, own, 'not the drafter\'s rule');
+  assert.equal(JSON.stringify(v.place).includes('## ['), true, 'the rule is code\'s ("## [" prefix)');
+  const none = CL.applyLedger(mk(), [], { labels: ['Changelog'], texts });
+  assert.deepEqual(none.refused.map((x) => [x.words, x.reason]), [['version', 'week-only']]);
+  assert.deepEqual(factsOf(none), []);
+});
