@@ -146,3 +146,88 @@ test('A3 the call system text is the signed one (count and phrase only, up to 3,
     + 'Use only what you can see in the inputs. Do not repeat a guardrail the person wrote. If the inputs support none, send an empty list.');
   assert.deepEqual(CL.LEDGER_SCHEMA.properties.extra.items.properties.kind.enum, ['count', 'phrase']);
 });
+
+// ---- A6 / A7 / A8: after each try -------------------------------------------------------------------------------------------------------------
+const decl = (parts, extra = {}) => ({ stages: [{ name: 'changed', kind: 'files-changed', params: {} }, { name: 'line-1', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts } }], ...extra });
+const partsOf = (d) => d.stages[1].params.parts;
+
+test('A6 applyLedger: a fact with a listed name stays; an off-list fact, count and cited go to Not checked "not on the list"; a fact\'s count rides with its kept fact; ~ parts stay', () => {
+  const rows = build();
+  const d = decl([
+    { text: 'x', class: 'fact', source: 'Changelog', facts: [{ name: 'release heading', shape: 'phrase', phrase: '## [' }, { name: 'made up', shape: 'phrase', phrase: 'q' }], count: { min: 3 } },
+    { text: 'exactly 3 bullets', class: 'countable', check: 'listItems', value: 3, rules: [1] },
+    { text: 'quote it', class: 'countable', check: 'cited', source: 'Changelog' },
+    { text: 'judged thing', class: 'judged' },
+  ]);
+  const r = CL.applyLedger(d, rows);
+  const parts = partsOf(r.declaration);
+  assert.deepEqual(parts[0].facts.map((f) => f.name), ['release heading']);
+  assert.deepEqual(parts[0].count, { min: 3 }, 'the count rides with its kept fact');
+  assert.ok(parts.some((p) => p.check === 'listItems'));
+  assert.ok(!parts.some((p) => p.check === 'cited'));
+  assert.ok(parts.some((p) => p.class === 'judged'));
+  assert.deepEqual(r.refused.map((x) => x.kind).sort(), ['cited', 'fact']);
+  assert.ok(r.refused.every((x) => x.reason === 'not on the list'));
+  assert.ok(r.declaration.notes.every((n) => n.includes(CL.OFF_LIST_WORDS)));
+  assert.equal(r.units, 5);
+});
+
+test('A6 a fact part with no listed fact and no rule is removed whole, its count with it; an unchanged declaration comes back as it was', () => {
+  const rows = build({ look: { facts: [] } });
+  const r = CL.applyLedger(decl([{ text: 'x', class: 'fact', source: 'Changelog', facts: [{ name: 'q', shape: 'phrase', phrase: 'q' }], count: { min: 1 } }]), rows);
+  assert.deepEqual(r.refused.map((x) => x.kind).sort(), ['count', 'fact']);
+  assert.equal(partsOf(r.declaration).length, 0);
+  const same = decl([{ text: 'n', class: 'none' }]);
+  assert.deepEqual(CL.applyLedger(same, rows).declaration, same);
+});
+
+test('A6 a count part counts only where a ! count row stands', () => {
+  const withRow = build({ look: { facts: [] }, extra: [{ line: 1, kind: 'count', min: 2 }], jobLines: [{ n: 1, text: 'x' }] });
+  const mk = () => decl([{ text: 'at least 2', class: 'countable', check: 'minClaims', value: 2 }]);
+  assert.equal(CL.applyLedger(mk(), withRow).refused.length, 0);
+  const without = build({ look: { facts: [] }, jobLines: [{ n: 1, text: 'x' }] });
+  assert.deepEqual(CL.applyLedger(mk(), without).refused.map((x) => x.kind), ['minClaims']);
+});
+
+test('A7 a text stage gets ONE default cited part (the drafter\'s own cited parts are replaced), a fact stage none', () => {
+  const rows = build({ look: { facts: [] } });
+  const d = decl([
+    { text: 'x', class: 'countable', check: 'cited', source: 'Changelog' },
+    { text: 'the summary says 0.54.1', class: 'countable', check: 'cited', source: 'Changelog' },
+    { text: 'exactly 3 bullets', class: 'countable', check: 'listItems', value: 3, rules: [1] },
+  ]);
+  const r = CL.applyLedger(d, rows, { labels: ['Changelog'] });
+  const parts = partsOf(r.declaration);
+  assert.equal(parts.filter((p) => p.check === 'cited').length, 1);
+  assert.equal(parts.find((p) => p.check === 'cited').source, 'Changelog');
+  assert.deepEqual(r.refused, []);
+  assert.equal(r.units, 1, 'only the pick-carrying part counted; the default is not a drafter unit');
+  const fs = CL.applyLedger(decl([{ text: 'f', class: 'fact', source: 'Changelog', facts: [{ name: 'release heading', shape: 'phrase', phrase: '## [' }] }]), build(), { labels: ['Changelog'] });
+  assert.ok(!partsOf(fs.declaration).some((p) => p.check === 'cited'));
+});
+
+test('A7 a stage whose fact parts were all refused as off-list is a text stage after all and gets the default cited part', () => {
+  const rows = build({ look: { facts: [] } });
+  const r = CL.applyLedger(decl([{ text: 'x', class: 'fact', source: 'Changelog', facts: [{ name: 'made up', shape: 'phrase', phrase: 'q' }] }]), rows, { labels: ['Changelog'] });
+  assert.deepEqual(partsOf(r.declaration).map((p) => p.check), ['cited']);
+  assert.equal(r.refused.length, 1);
+});
+
+test('A7 ensureCited decides the default AFTER everything settled: a step with no fact part gets it, a step holding a fact part or a job with two inputs is untouched', () => {
+  const pre = decl([{ text: 'exactly 3 bullets', class: 'countable', check: 'listItems', value: 3, rules: [1] }]);
+  assert.deepEqual(partsOf(CL.ensureCited(pre, ['Changelog'])).map((p) => p.check), ['listItems', 'cited']);
+  assert.deepEqual(CL.ensureCited(pre, ['Changelog', 'B']), pre);
+  const withFact = decl([{ text: 's', class: 'fact', facts: [] }]);
+  assert.equal(partsOf(CL.ensureCited(withFact, ['Changelog'])).length, 1);
+});
+
+test('A8 applyLedger refuses a drafter fact whose phrase holds a version (reason week-only, plain words in the notes) unless a ~ rule carries it', () => {
+  const rows = build({ look: { facts: [] } });
+  const r = CL.applyLedger(decl([
+    { text: 'f', class: 'fact', source: 'Changelog', facts: [{ name: 'release version', shape: 'phrase', phrase: '0.54.1' }], rules: [1] },
+    { text: 'g', class: 'fact', source: 'Changelog', facts: [{ name: 'release date', shape: 'phrase', phrase: 'Nov 4, 2026' }] },
+  ]), rows, { labels: ['Changelog'] });
+  assert.deepEqual(r.refused.map((x) => [x.words, x.reason]), [['release date', 'week-only']]);
+  assert.ok(r.declaration.notes.some((n) => n.includes(CL.WEEK_ONLY_WORDS)));
+  assert.equal(partsOf(r.declaration).length, 1);
+});

@@ -12,6 +12,8 @@ import { lineRules } from './rubricstep.js';
 
 /** at most this many `!` checks come from the call */
 export const MAX_BANG = 3;
+/** the reason a part with no row on the list goes under Not checked, in the person's words */
+export const OFF_LIST_WORDS = 'Not on the list of checks made before the draft, so you judge it at Accept.';
 /** the reason a check on a version or a date goes under Not checked: it is true only for the input as it is today */
 export const WEEK_ONLY_WORDS = 'It names a version or a date from the input, true only for the input as it is today, so you judge it at Accept.';
 /** the label of the list call, as the drafting book and the draft log see it */
@@ -148,6 +150,99 @@ export const ledgerRecord = (rows) => [
   ...rows.map((r) => ({ key: r.key, line: r.line, rowKind: r.kind, from: r.from, by: r.by, words: r.kind === 'rule' ? [r.text ?? ''] : r.words, state: r.state, reason: r.reason })),
   ...(isEmptyList(rows) ? [{ key: 'empty', line: 0, rowKind: 'empty', from: 'default', by: 'default', words: [], state: 'empty', reason: EMPTY_LIST_WORDS }] : []),
 ];
+
+// ---- after each try -------------------------------------------------------------------------------------------------------------------------
+const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const say = (/** @type {unknown} */ t) => String(t ?? '').replace(/\s+/g, ' ').trim();
+/** the rows that stand (a `~` row, or a `!`/`$` row that survived the proofs) @param {Row[]} rows */
+const standing = (rows) => rows.filter((r) => r.state !== 'dropped');
+/** @param {any} st @returns {boolean} */
+const isRubricStep = (st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts);
+/** code's one default cited part for a one-input job @param {string} label */
+const citedPart = (label) => ({ text: `every claim is backed by a quote copied from "${label}"`, class: 'countable', check: 'cited', source: label });
+
+/**
+ * Move every part (or fact, or count) of the drafted declaration that has no row on the list to Not checked. Pure.
+ * A part carrying a `~` rule number is on the list by that rule; a fact is on the list when its name or phrase matches a `!` fact/phrase row; a claims-count part needs a `!` count row;
+ * a fact's own result count rides with its fact while a fact of that part stands. A fact whose phrase/anchor/until holds a version or a date is refused as week-only (a `~` rule excepted).
+ * On a one-input text stage the drafter's own `cited` parts are replaced by code's one default. Other classes are untouched.
+ * @param {any} declaration @param {Row[]} rows @param {{labels?: string[]}} [o] `labels` the job's input labels
+ * @returns {{declaration: any, units: number, refused: {line: number, kind: string, words: string, reason: string}[]}}
+ */
+export function applyLedger(declaration, rows, { labels = [] } = {}) {
+  if (!isRec(declaration) || !Array.isArray(declaration.stages)) return { declaration, units: 0, refused: [] };
+  const live = standing(rows);
+  /** @type {{line: number, kind: string, words: string, reason: string}[]} */
+  const refused = [];
+  let units = 0;
+  const stages = declaration.stages.map((/** @type {any} */ st) => {
+    if (!isRubricStep(st)) return st;
+    const line = st.params.step;
+    const ruleCount = live.filter((r) => r.line === line && r.kind === 'rule').length;
+    const onRule = (/** @type {any} */ p) => Array.isArray(p.rules) && p.rules.some((n) => Number.isInteger(n) && n >= 1 && n <= ruleCount);
+    const factRow = (/** @type {any} */ f) => live.some((r) => r.line === line && (r.kind === 'fact' || r.kind === 'phrase')
+      && ((r.name !== undefined && norm(r.name) === norm(f?.name)) || (typeof f?.phrase === 'string' && r.words.some((w) => norm(w) === norm(f.phrase)))));
+    const textStage = !st.params.parts.some((/** @type {any} */ x) => isRec(x) && x.class === 'fact');
+    const parts = [];
+    for (const p of st.params.parts) {
+      if (!isRec(p) || (p.class !== 'fact' && p.class !== 'countable')) { parts.push(p); continue; }
+      // the drafter's own cited parts on a text stage: the `$` default (added below) replaces them
+      if (p.class === 'countable' && p.check === 'cited' && textStage && labels.length === 1) continue;
+      if (p.class === 'fact') {
+        const fs = Array.isArray(p.facts) ? p.facts : [];
+        const ruled = onRule(p);
+        const week = (/** @type {any} */ f) => !ruled && [f?.phrase, f?.anchor, f?.until].some(weekOnly);
+        const keptFacts = fs.filter((f) => !week(f) && (ruled || factRow(f)));
+        units += fs.length;
+        for (const f of fs.filter((x) => !keptFacts.includes(x))) refused.push({ line, kind: 'fact', words: say(f?.name) || say(p.text), reason: week(f) ? 'week-only' : 'not on the list' });
+        let np = p;
+        if (keptFacts.length !== fs.length) np = { ...p, facts: keptFacts };
+        if (isRec(p.count)) {
+          units += 1;
+          if (!ruled && keptFacts.length === 0 && !live.some((r) => r.line === line && r.kind === 'count')) {
+            refused.push({ line, kind: 'count', words: `results ${JSON.stringify(p.count)}`, reason: 'not on the list' });
+            const { count: _dropped, ...rest } = np;
+            np = rest;
+          }
+        }
+        if (keptFacts.length === 0) continue;
+        parts.push(np);
+        continue;
+      }
+      // countable: a part carrying a ~ rule (a pick, code's own) stays; the claims counts need a `!` count row
+      units += 1;
+      if (onRule(p)) { parts.push(p); continue; }
+      if ((p.check === 'minClaims' || p.check === 'maxClaims') && live.some((r) => r.line === line && r.kind === 'count')) { parts.push(p); continue; }
+      refused.push({ line, kind: String(p.check ?? 'countable'), words: say(p.text), reason: 'not on the list' });
+    }
+    // a stage with no fact part left once the off-list ones are gone is a text stage: it carries the default cited check (a one-input job)
+    const textNow = !parts.some((/** @type {any} */ x) => isRec(x) && x.class === 'fact');
+    if (textNow && labels.length === 1 && !parts.some((/** @type {any} */ x) => isRec(x) && x.class === 'countable' && x.check === 'cited')) parts.push(citedPart(labels[0]));
+    return { ...st, params: { ...st.params, parts } };
+  });
+  if (refused.length === 0) return { declaration: { ...declaration, stages }, units, refused };
+  const notes = Array.isArray(declaration.notes) ? [...declaration.notes] : [];
+  for (const r of refused) {
+    const t = `line ${r.line}: "${r.words}" \u2014 ${r.reason === 'week-only' ? WEEK_ONLY_WORDS : OFF_LIST_WORDS}`;
+    if (!notes.includes(t)) notes.push(t);
+  }
+  return { declaration: { ...declaration, stages, notes }, units, refused };
+}
+
+/**
+ * The `$ cited` default decided AFTER the build has settled (whatever dropped, refused or never built the facts, the last-try drop included): a rubric step whose parts hold no fact part
+ * gets code's one default `cited` part (a one-input job only), the drafter's own `cited` parts on it replaced by it. Pure; a step that still holds a fact part is untouched.
+ * @param {any} declaration @param {string[]} labels the job's input labels @returns {any}
+ */
+export function ensureCited(declaration, labels = []) {
+  if (!isRec(declaration) || !Array.isArray(declaration.stages) || labels.length !== 1) return declaration;
+  const stages = declaration.stages.map((/** @type {any} */ st) => {
+    if (!isRubricStep(st) || st.params.parts.some((/** @type {any} */ x) => isRec(x) && x.class === 'fact')) return st;
+    const rest = st.params.parts.filter((/** @type {any} */ x) => !(isRec(x) && x.class === 'countable' && x.check === 'cited'));
+    return { ...st, params: { ...st.params, parts: [...rest, citedPart(labels[0])] } };
+  });
+  return { ...declaration, stages };
+}
 
 // ---- the one paid call ---------------------------------------------------------------------------------------------------------------------
 /** the list call's own system text (model-facing; used only by the list call of a rubric job with input text) */
