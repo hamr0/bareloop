@@ -231,3 +231,58 @@ test('A8 applyLedger refuses a drafter fact whose phrase holds a version (reason
   assert.ok(r.declaration.notes.some((n) => n.includes(CL.WEEK_ONLY_WORDS)));
   assert.equal(partsOf(r.declaration).length, 1);
 });
+
+// ---- A9: every row ends built / not-checked (reason) / dropped (reason) ----------------------------------------------------------------------
+test('A9 resolveLedger: every standing row ends built or not-checked with a reason; dropped keeps its reason; the record has one object per row', () => {
+  const rows = build({ extra: [{ line: 1, kind: 'count', min: 1, max: 1 }] });
+  const d = decl([{ text: 'x', class: 'fact', source: 'Changelog', facts: [{ name: 'release heading', shape: 'phrase', phrase: '## [' }] }], { refused: [{ line: 1, rule: 1, reason: 'judge it' }] });
+  const fin = CL.resolveLedger(rows, d);
+  for (const r of fin) { assert.ok(['built', 'not-checked', 'dropped'].includes(r.state)); assert.ok(r.state === 'built' || (typeof r.reason === 'string' && r.reason !== '')); }
+  const by = (k) => fin.find((r) => r.key === k);
+  assert.equal(by('L1.fact.release heading').state, 'built');
+  assert.equal(by('L1.~1').state, 'not-checked');
+  assert.equal(by('L1.~1').reason, 'judge it');
+  assert.equal(by('L1.$floor').state, 'built');
+  assert.equal(fin.find((r) => r.kind === 'count').state, 'not-checked');
+  assert.equal(by('L1.fact.invented').state, 'dropped');
+  assert.equal(CL.ledgerRecord(fin).length, fin.length);
+  assert.ok(CL.ledgerRecord(fin).every((r) => r.rowKind && r.kind === undefined && r.key && r.by && r.from && r.state));
+});
+
+test('A9 a ~ rule a part carries is built; a fact\'s own count builds a ! count row; a default put on a line the list did not foresee gets its row', () => {
+  const rows = build({ extra: [{ line: 1, kind: 'count', min: 1, max: 1 }] });
+  const d = decl([
+    { text: 'f', class: 'fact', source: 'Changelog', facts: [{ name: 'release heading', shape: 'phrase', phrase: '## [' }], count: { min: 1, max: 1 } },
+    { text: 'exactly 3 bullets', class: 'countable', check: 'listItems', value: 3, rules: [1] },
+  ]);
+  const fin = CL.resolveLedger(rows, d);
+  assert.equal(fin.find((r) => r.key === 'L1.~1').state, 'built');
+  assert.equal(fin.find((r) => r.kind === 'count').state, 'built');
+  // the list foresaw a fact line; the drafter made it a text line, and code put the default there
+  const text = CL.applyLedger(decl([{ text: 'n', class: 'none' }]), rows, { labels: ['Changelog'] }).declaration;
+  const fin2 = CL.resolveLedger(rows, text);
+  assert.equal(fin2.find((r) => r.key === 'L1.$cited').state, 'built');
+  assert.equal(fin2.find((r) => r.key === 'L1.$cited').from, 'default');
+});
+
+test('A9 a $ cited row on a line the drafter made a fact line is not-checked with a reason', () => {
+  const rows = build({ look: { facts: [] } });
+  const d = CL.applyLedger(decl([{ text: 'f', class: 'fact', source: 'Changelog', facts: [{ name: 'q', shape: 'phrase', phrase: 'q' }], rules: [1] }]), rows, { labels: ['Changelog'] }).declaration;
+  const c = CL.resolveLedger(rows, d).find((r) => r.key === 'L1.$cited');
+  assert.equal(c.state, 'not-checked');
+  assert.match(c.reason, /finds facts/);
+});
+
+// ---- A5: the drafter's block ------------------------------------------------------------------------------------------------------------------
+test('A5 the drafter block lists only standing rows, says "$" rows are code\'s, and states the count-part rule', () => {
+  const rows = build({ jobLines: textJob, look: factLook });
+  const b = CL.ledgerBlock(rows);
+  assert.match(b, /THE LIST OF CHECKS/);
+  assert.match(b, /! fact "release heading"/);
+  assert.match(b, /line 2, \$ default: every claim is backed by a quote copied from "Changelog" \(code adds it; write no part for it\)/);
+  assert.match(b, /line 2, \$ default: every number in the text is in a quote checked on line 1/);
+  assert.match(b, /a count part only where a "!" count row is listed or it counts a listed fact/);
+  assert.doesNotMatch(CL.ledgerBlock(build()), /invented/);
+  assert.match(CL.ledgerBlock(build()), /~ rule 1: "exactly 3 bullets"/);
+  assert.doesNotMatch(b, /the person confirmed|CONFIRMED/);
+});

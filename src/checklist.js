@@ -244,6 +244,72 @@ export function ensureCited(declaration, labels = []) {
   return { ...declaration, stages };
 }
 
+/**
+ * Every row's final state against the declaration the draft ended with. A `~` row is built when a part (or a pick) carries its number, else not-checked (`refused` names why, or "the plan
+ * did not carry it"); a `!` row is built when a part matches it, else not-checked ("the plan did not build it"). A dropped row stays dropped with its reason. A default check code put on a
+ * line the list did not foresee gets its row here, so no check in the plan is off the list.
+ * @param {Row[]} rows @param {any} declaration @returns {Row[]}
+ */
+export function resolveLedger(rows, declaration) {
+  const steps = (isRec(declaration) && Array.isArray(declaration.stages) ? declaration.stages : []).filter(isRubricStep);
+  const partsOf = (/** @type {number} */ line) => steps.filter((st) => st.params.step === line).flatMap((st) => st.params.parts).filter(isRec);
+  const refused = Array.isArray(declaration?.refused) ? declaration.refused : [];
+  /** @type {(r: Row) => Row} */
+  const settle = (r) => {
+    if (r.state === 'dropped') return r;
+    const ps = partsOf(r.line);
+    const built = () => ({ ...r, state: /** @type {const} */ ('built'), reason: null });
+    const not = (/** @type {string} */ reason) => ({ ...r, state: /** @type {const} */ ('not-checked'), reason });
+    if (r.kind === 'floor') return built();
+    if (r.kind === 'cited' || r.kind === 'numbers') {
+      if (ps.some((p) => p.class === 'countable' && p.check === (r.kind === 'cited' ? 'cited' : 'numbersFromFacts'))) return built();
+      if (r.state === 'not-checked' && r.reason) return r;
+      return not(ps.some((p) => p.class === 'fact') ? 'this line finds facts, so it has no text to quote' : 'the plan did not build it');
+    }
+    if (r.kind === 'rule') {
+      if (ps.some((p) => Array.isArray(p.rules) && p.rules.includes(r.rule))) return built();
+      const x = refused.find((q) => isRec(q) && q.line === r.line && q.rule === r.rule);
+      return not(x ? say(x.reason) : 'the plan did not carry it');
+    }
+    const hit = r.kind === 'fact' || r.kind === 'phrase'
+      ? ps.some((p) => p.class === 'fact' && Array.isArray(p.facts) && p.facts.some((/** @type {any} */ f) => (r.name !== undefined && norm(f?.name) === norm(r.name)) || (typeof f?.phrase === 'string' && r.words.some((w) => norm(w) === norm(f.phrase)))))
+      : ps.some((p) => (p.class === 'countable' && (p.check === 'minClaims' || p.check === 'maxClaims')) || (p.class === 'fact' && isRec(p.count)));
+    return hit ? built() : not('the plan did not build it');
+  };
+  const out = rows.map(settle);
+  for (const st of steps) {
+    for (const p of st.params.parts) {
+      if (!isRec(p) || p.class !== 'countable' || (p.check !== 'cited' && p.check !== 'numbersFromFacts')) continue;
+      const kind = p.check === 'cited' ? 'cited' : 'numbers';
+      const line = st.params.step;
+      if (out.some((r) => r.line === line && r.kind === kind)) continue;
+      out.push({ key: `L${line}.$${kind}`, line, kind, from: 'default', by: 'default', words: [], ...(kind === 'cited' ? { source: String(p.source ?? '') } : { after: Array.isArray(p.from) ? p.from : [] }), state: 'built', reason: null });
+    }
+  }
+  return out;
+}
+
+/**
+ * The block the drafter reads, code-written from the rows that stand. Used only for a rubric job that has a list.
+ * @param {Row[]} rows @returns {string}
+ */
+export function ledgerBlock(rows) {
+  const lines = standing(rows).map((r) => {
+    if (r.kind === 'rule') return `- line ${r.line}, ~ rule ${r.rule}: "${r.text}"${r.pick ? " (code builds this check from the person's pick; write no part for it)" : ' (carry it with a part whose "rules" lists its number, or list it in "refused")'}`;
+    if (r.kind === 'fact') return `- line ${r.line}, ! fact "${r.name}"${r.words.length ? ` with the words ${r.words.map((w) => `"${w}"`).join(', ')}` : ''}`;
+    if (r.kind === 'phrase') return `- line ${r.line}, ! phrase "${r.words[0]}"${r.source ? ` from "${r.source}"` : ''}`;
+    if (r.kind === 'count') return `- line ${r.line}, ! result count${r.min ? ` min ${r.min}` : ''}${r.max ? ` max ${r.max}` : ''}`;
+    if (r.kind === 'floor') return `- line ${r.line}, $ floor: ${r.text} (code's; write no part for it)`;
+    if (r.kind === 'numbers') return `- line ${r.line}, $ default: every number in the text is in a quote checked on line ${(r.after ?? []).join(', ')} (code adds it; write no part for it)`;
+    return `- line ${r.line}, $ default: every claim is backed by a quote copied from "${r.source ?? 'the input'}" (code adds it; write no part for it)`;
+  });
+  return 'THE LIST OF CHECKS - made once before this draft and frozen\n\n'
+    + "These rows are every check this job has. A \"~\" row is the person's own rule. A \"!\" row is a check proposed from the inputs and proven against them by code. A \"$\" row is a default check code adds itself.\n"
+    + (lines.length ? `\n${lines.join('\n')}\n` : '\n(the list has no check rows)\n')
+    + '\nBuild a part only for a row on this list: a fact part uses the name and words of its "!" fact row exactly; a count part only where a "!" count row is listed or it counts a listed fact. '
+    + `A part with no row on this list is moved to Not checked ("${OFF_LIST_WORDS}"). Do not add checks of your own.`;
+}
+
 // ---- the one paid call ---------------------------------------------------------------------------------------------------------------------
 /** the list call's own system text (model-facing; used only by the list call of a rubric job with input text) */
 export const LEDGER_SYSTEM = `You look at the inputs of a job and name checks the inputs themselves support, beyond the guardrails the person wrote.
