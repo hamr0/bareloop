@@ -58,6 +58,8 @@ export function toldPicks(picked) {
   return picked.map((p) => {
     switch (p.check) {
       case 'listItems': return `Your "text" must have exactly ${p.value} list items; a list item is its own line starting with "1." or "- " followed by a space and its text.`;
+      case 'maxListItems': return `Your "text" must have at most ${p.value} list items; a list item is its own line starting with "1." or "- " followed by a space and its text.`;
+      case 'minListItems': return `Your "text" must have at least ${p.value} list items; a list item is its own line starting with "1." or "- " followed by a space and its text.`;
       case 'nonEmpty': return 'Your "text" must not be empty.';
       case 'mustCarry': return `Your "text" must carry ${list(p.phrases)}.`;
       case 'blockLines': return `Your "text" must be in blocks of ${p.size} lines, each carrying ${list(p.phrases)}.`;
@@ -187,6 +189,8 @@ export const COUNT_CHECKS = Object.freeze({
   // R10 (bareguard 0.31, fwdloop v0.29.0 OFFERED): the five text checks a person's pick may carry; the drafter never writes them
   nonEmpty: Object.freeze([]),
   listItems: Object.freeze(['value']),
+  maxListItems: Object.freeze(['value']), // bareguard 0.35 (F315): an at-most / at-least bound on the list items, beside the exact listItems
+  minListItems: Object.freeze(['value']),
   sectionOrder: Object.freeze(['names']),
   mustCarry: Object.freeze(['phrases']),
   blockLines: Object.freeze(['size', 'phrases']),
@@ -302,7 +306,7 @@ export function buildStepSpec(params, inputShas) {
       case 'sections': checks.push({ id, rule: 'sections', field: 'text', names: [...part.names] }); break;
       case 'sectionWords': checks.push({ id, rule: 'sectionWords', field: 'text', names: [...part.names], wordsPerSection: part.wordsPerSection }); break;
       case 'nonEmpty': checks.push({ id, rule: 'nonEmpty', field: 'text' }); break;
-      case 'listItems': checks.push({ id, rule: 'listItems', field: 'text', value: part.value }); break;
+      case 'listItems': case 'maxListItems': case 'minListItems': checks.push({ id, rule: part.check, field: 'text', value: part.value }); break;
       case 'sectionOrder': checks.push({ id, rule: 'sectionOrder', field: 'text', names: [...part.names] }); break;
       case 'mustCarry': checks.push({ id, rule: 'mustCarry', field: 'text', phrases: [...part.phrases] }); break;
       case 'blockLines': checks.push({ id, rule: 'blockLines', field: 'text', size: part.size, phrases: [...part.phrases] }); break;
@@ -439,6 +443,8 @@ export function plainStepGap(step, why, g, params = null) {
   if (g.check === 'minWords') return `${at}: "text" has ${g.measured} words, at least ${g.limit} are required`;
   if (g.check === 'maxLines') return `${at}: "text" has ${g.measured} lines, at most ${g.limit} are allowed`;
   if (g.check === 'sections') return `${at}: "text" is missing section(s): ${(g.items ?? []).join(', ')}`;
+  if (g.check === 'maxListItems') return `${at}: "text" has ${g.measured} list items, at most ${g.limit} are allowed`;
+  if (g.check === 'minListItems') return `${at}: "text" has ${g.measured} list items, at least ${g.limit} are required`;
   if (g.check === 'listItems') return `${at}: "text" has ${g.measured} list items, exactly ${g.limit} are required`;
   if (g.check === 'sectionOrder') return `${at}: "text" does not hold its sections in the asked order (${(g.items ?? []).map((/** @type {string} */ x) => x.replace(/^[^:]*:/, '')).join(', ')} out of place)`;
   if (g.check === 'mustCarry') return `${at}: "text" does not carry: ${(g.items ?? []).join(', ')}`;
@@ -946,6 +952,8 @@ export function partSentence(part) {
     case 'sectionWords': return `each section (${list(part.names)}) is about ${part.wordsPerSection} words`;
     case 'nonEmpty': return 'the text is not empty';
     case 'listItems': return `the text has exactly ${n(part.value, 'list item')}`;
+    case 'maxListItems': return `the text has at most ${n(part.value, 'list item')}`;
+    case 'minListItems': return `the text has at least ${n(part.value, 'list item')}`;
     case 'sectionOrder': return `the text has the section(s) ${list(part.names)}, in that order`;
     case 'mustCarry': return `the text carries ${list(part.phrases)}`;
     case 'blockLines': return `the text is in blocks of ${n(part.size, 'line')}, each carrying ${list(part.phrases)}`;

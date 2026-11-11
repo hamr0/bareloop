@@ -1499,7 +1499,7 @@ export function settledBlock(settled) {
   return 'SETTLED BY CODE - the person picked how these ~ rules are checked\n\n'
     + settled.map((r) => `- line ${r.line}, ~ rule ${r.rule}: "${r.text}"`).join('\n')
     + '\n\nFor these rules code writes the check the person picked, or the Not checked row, itself: write NO part and NO "refused" entry for them. '
-    + 'You never write a word, section, line, list-item or phrase count part (maxWords, minWords, maxLines, listItems, sections, sectionOrder, sectionWords, mustCarry, blockLines, nonEmpty) for any rule: only code does.';
+    + 'You never write a word, section, line, list-item or phrase count part (maxWords, minWords, maxLines, listItems, maxListItems, minListItems, sections, sectionOrder, sectionWords, mustCarry, blockLines, nonEmpty) for any rule: only code does.';
 }
 
 /**

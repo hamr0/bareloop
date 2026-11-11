@@ -47,7 +47,7 @@ test('keepOrDrop drops a rule that IS on bareguard\'s list but is not offered he
 });
 test('the answer form is one anyOf variant per offered rule plus none, each with exactly that rule\'s own fields', () => {
   const v = SUGGEST_SCHEMA.properties.checks.items.anyOf.map((/** @type {any} */ x) => x.properties.rule.const);
-  assert.deepEqual(v, ['nonEmpty', 'maxWords', 'minWords', 'maxLines', 'listItems', 'sections', 'sectionOrder', 'sectionWords', 'mustCarry', 'blockLines', 'none']);
+  assert.deepEqual(v, ['nonEmpty', 'maxWords', 'minWords', 'maxLines', 'listItems', 'maxListItems', 'minListItems', 'sections', 'sectionOrder', 'sectionWords', 'mustCarry', 'blockLines', 'none']);
   const mw = SUGGEST_SCHEMA.properties.checks.items.anyOf.find((/** @type {any} */ x) => x.properties.rule.const === 'maxWords');
   assert.deepEqual(Object.keys(mw.properties).sort(), ['guardrail', 'line', 'rule', 'value']);
   assert.equal(mw.additionalProperties, false);

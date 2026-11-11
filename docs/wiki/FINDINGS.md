@@ -15744,7 +15744,7 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 
 **Finding.** `countCheck` (`src/checkpick.js:228-239`) reads only the number with `guardrailItemCount` (`:49`) and builds `{rule:'listItems', value:N}` for "at most 3 bullets", "up to 3 bullets", "no more than 3 bullets", "at least 3 bullets", "exactly 3 bullets" and "3 bullets" alike; `keepOrDrop` (`:110`) keeps it (the number is one the rule names). bareguard's `listItems` is EXACT (`node_modules/bareguard/src/primitives/rubric.js:790-796`, `n === c.value`, else red under/over), so a 2-item answer to "at most 3 bullets" is graded RED (measured 2, limit 3, "under") and a 4-item answer to "at least 3 bullets" is RED. Only the words checks (`maxWords`/`minWords`) have a direction here (`:235`); bullets and lines have none. Reported by fwd; confirmed here by a $0 probe through the real bareguard `checkStep` on both a 2-bullet and a 4-bullet answer: all six rule texts build the same check and every one is red at 2 and at 4 (green only at exactly 3).
 **Caveats.** Reading-derived and $0-probe-proven; NOT seen in a live run. Nothing is fixed. Whether a direction-less check should be refused, offered as exact, or wait for a bareguard ask is hamr's call. Probe: `.claude/scratch/r10/atmost/probe.mjs` (untracked).
-**Status.** Open, parked.
+**Status.** Open, parked. Fixed by bareguard 0.35.0 maxListItems/minListItems, mapped in the commit that adds tests/f315-listbounds.test.js (see git log).
 
 ## F316 — told picks on text-only lines: NOT SEEN, not widened (2026-11-11)
 

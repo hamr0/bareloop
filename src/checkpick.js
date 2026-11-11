@@ -51,6 +51,22 @@ export function guardrailItemCount(g) {
   if (!m) return null;
   return /^\d+$/.test(m[1]) ? Number(m[1]) : NUMBER_WORDS[m[1].toLowerCase()];
 }
+/** a list-bound word the guardrail uses: the count it names, or the one it stands for ("more than 3" = at least 4, "fewer than 3" = at most 2) */
+const MORE_THAN = /(?<!\b(?:no|not)\s)\bmore\s+than\s+(\d+)\b/i;
+const FEWER_THAN = /(?<!\b(?:no|not)\s)\b(?:fewer|less)\s+than\s+(\d+)\b/i;
+/** the direction of a list-items rule's wording: 'max', 'min' or null (exact / not said) @param {string} t @returns {'max'|'min'|null} */
+function listDirection(t) {
+  if (/\b(at\s+most|up\s+to|no\s+more\s+than|not\s+more\s+than|max(?:imum)?(?:\s+of)?)\b/i.test(t) || FEWER_THAN.test(t)) return 'max';
+  if (/\b(at\s+least|min(?:imum)?(?:\s+of)?|no\s+fewer\s+than|not\s+fewer\s+than)\b/i.test(t) || MORE_THAN.test(t)) return 'min';
+  return null;
+}
+/** the numbers a rule may carry: the standalone numbers of the guardrail, plus N+1 for "more than N" (min) and N-1 for "fewer than N" (max) @param {string} rule @param {string} g @returns {number[]} */
+function listBoundNumbers(rule, g) {
+  const named = guardrailStandaloneNumbers(g);
+  if (rule === 'minListItems') { const m = MORE_THAN.exec(g); if (m) named.push(Number(m[1]) + 1); }
+  if (rule === 'maxListItems') { const m = FEWER_THAN.exec(g); if (m) named.push(Number(m[1]) - 1); }
+  return named;
+}
 /** @param {unknown} g @returns {boolean} the rule is a COUNT bareguard checks (words, list items or lines, sections): code reads it, whatever the page look said about it */
 export const isCountable = (g) => guardrailWordNumbers(g).length > 0 || guardrailItemCount(g) !== null || guardrailSectionCount(g) !== null;
 
@@ -123,10 +139,11 @@ export function keepOrDrop(guardrail, sug) {
     const v = sug[k];
     if (v == null) continue;
     if (NUM_FIELDS.includes(k)) {
-      if (!Number.isInteger(v) || v < 1) return { kept: false, why: `${k} ${JSON.stringify(v)} is not a whole number >= 1` };
+      const floor = rule === 'maxListItems' ? 0 : 1; // maxListItems 0 = no bullets (bareguard 0.35); every other count starts at 1
+      if (!Number.isInteger(v) || v < floor) return { kept: false, why: `${k} ${JSON.stringify(v)} is not a whole number >= ${floor}` };
       const named = rule === 'maxWords' || rule === 'minWords' ? guardrailWordNumbers(guardrail)
         : k === 'wordsPerSection' ? [guardrailWordsPerSection(guardrail)].filter((x) => x !== null)
-          : guardrailStandaloneNumbers(guardrail);
+          : listBoundNumbers(rule, guardrail);
       if (!named.includes(v)) return { kept: false, why: `${k} ${v} is not a number the guardrail names (${named.join(', ') || 'it names none'})` };
       check[k] = v;
     } else if (WORD_FIELDS.includes(k)) {
@@ -220,7 +237,7 @@ export const suggestChannel = () => ({
 });
 
 /**
- * The check CODE proposes for a count rule when the call yields none (R10, ours; fwd has no such fallback): a bullets / list-items / points count -> listItems N, a lines count ->
+ * The check CODE proposes for a count rule when the call yields none (R10, ours; fwd has no such fallback): a bullets / list-items / points count -> listItems N (exact; "at most / up to / no more than / fewer than" -> maxListItems, "at least / minimum / no fewer than / more than" -> minListItems, F315), a lines count ->
  * maxLines N, ONE word number -> minWords N when the rule says "at least / minimum / more than", else maxWords N. A section count names no sections, so none is built; a rule naming two different counts ("3 bullets under 80 words") is not built either; a rule with
  * several word numbers or a range ("between 100 and 200 words") is not guessed. The result passes `keepOrDrop`, so every number is one the rule names.
  * @param {string} text @returns {Record<string, any>|null}
@@ -231,7 +248,13 @@ export function countCheck(text) {
   /** @type {Record<string, any>|null} */
   let built = null;
   if (items !== null && (words.length > 0 || guardrailSectionCount(text) !== null)) return null; // two different counts in one rule: first-match readers would guess, so nothing is built
-  if (items !== null) built = { rule: /\blines?\b/i.test(text) && !/\b(bullets?|items?|points?)\b/i.test(text) ? 'maxLines' : 'listItems', value: items };
+  if (items !== null && /\blines?\b/i.test(text) && !/\b(bullets?|items?|points?)\b/i.test(text)) built = { rule: 'maxLines', value: items };
+  else if (items !== null) {
+    const dir = listDirection(text);
+    if (dir === 'min') built = { rule: 'minListItems', value: MORE_THAN.test(text) ? items + 1 : items };
+    else if (dir === 'max') built = { rule: 'maxListItems', value: FEWER_THAN.test(text) ? items - 1 : items };
+    else built = { rule: 'listItems', value: items };
+  }
   else if (words.length === 1 && !/\bbetween\b|\d\s*(?:-|–|to)\s*\d/i.test(text)) built = { rule: /\b(at least|min(?:imum)?|more than|over|no fewer than)\b/i.test(text) ? 'minWords' : 'maxWords', value: words[0] };
   if (built === null) return null;
   const res = keepOrDrop(text, built);
