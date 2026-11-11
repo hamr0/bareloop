@@ -3990,3 +3990,11 @@ Date: 2026-11-11. $0, run once. Question: if the list row alone decides week-onl
 - sha256 PREREG.md: 2e6aad5be2d80d62777ec3f79daf1a892e98aa13d56a95fbacc779792d205824
 - sha256 poc.mjs: 6056a9a521b7f475dff60168fc5fe644fe7fbc4eacb7d58c7b828a2aeff2841f
 - Run: `node /home/hamr/PycharmProjects/bareloop/.claude/scratch/r10/placerules/onewner/poc.mjs --real`
+
+### One-owner week-only POC round 1 result and round 2 pre-registration (frozen, nothing run)
+
+Round 1 (run once, 381 unique rubric sessions, 144 week-only facts): VERDICT: FAIL (G1 ok, G2 wrong=2 FAIL, G3 fixed-remaining=0 ok, G4 powered n=381), rawDirs=441. Cause: one split pair (version + date facts, one row yielding both values) got both values each. Not re-tuned. Round 2 changes ONE thing: a fact keeps only the row-fit value(s) whose token equals its own phrase token(s) (both when its phrase holds both). Same data, matching, key and bars G1-G4; new report-only split of no-row cases (check-list-drafted vs older, real-model vs dry). Round 1's results are known to the author.
+
+- sha256 PREREG.md: 3fbff39f3622db947962ba83a0da6a0f5098fe18f53556d57306b124734349ec
+- sha256 poc.mjs: c55c8e3a15ab9c8b9f38848d1a6bbd80a858668052bb7f59b6465a23e3d574bc
+- Run: `node /home/hamr/PycharmProjects/bareloop/.claude/scratch/r10/placerules/onewner/round2/poc.mjs --real`
