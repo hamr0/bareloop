@@ -3903,3 +3903,10 @@ Run once against the frozen prereg (commit 16cb20b7), exit 1. ROUND FAIL, report
 ## Addendum 2026-11-11: First live end-to-end run of the check list (2026-11-11): green
 
 Engine 328a7876 (throwaway clone), scratch HOME, DeepSeek direct deepseek-flash; one step, green on attempt 1, $0.0320 total; the signing check (`listMatchesClose`) did not falsely refuse. Told picks reached the worker only through the planner's step action. n=1, one model. See FINDINGS F318.
+
+## Addendum 2026-11-11: Place-rules $0 POC round 2 pre-registration frozen (amended before data)
+
+Round 2 of the place-rules POC (round 1 stays FAIL, F317): strict first-heading selector; arm (a) cross-run on consecutive tag pairs of four repos, arm (b) blind node_modules changelogs, arm (c) crafted negatives. Nothing run yet. Amendment before any data (hamr 2026-11-11): arm (a) scores only reader mistakes (right / file-lag excluded from the denominator / wrong only when the true version is on a heading but another value was read / not found); a changelog that was not updated is never WRONG. Files in `.claude/scratch/r10/placerules/round2/` (untracked):
+
+- PREREG.md `2c750d2e60a414296fd43f6a8e43b48be1b07bd1398057b4de0c3df20f4a5bf9`
+- poc.mjs `79823d02905e2349599f75a4830d3d62b0bd3a6ecad2adbf6b3ac2b0b4eb5b1f`
