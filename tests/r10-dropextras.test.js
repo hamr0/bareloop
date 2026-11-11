@@ -160,5 +160,5 @@ test('authorClose: a red on a pick-free plan the drop cannot explain still ends 
 
 test('wiring: the hook runs only on the last try of a rubric job, after the words check, and the re-check is the same one helper', () => {
   const src = readFileSync(join(HERE, '..', 'src', 'authorflow.js'), 'utf8');
-  assert.match(src, /if \(!v\.ok && lang === RUBRIC_LANG && i === revisionCap\) \{\s*const dropped = dropAfterLastTry\(\{ pre, v, jobLines, redo: checkDraft \}\);/);
+  assert.match(src, /if \(!v\.ok && lang === RUBRIC_LANG && i === revisionCap\) \{\s*const dropped = dropAfterLastTry\(\{ pre, v, jobLines, redo: checkDraft, finish \}\);/);
 });
