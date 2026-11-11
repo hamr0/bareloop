@@ -3,7 +3,7 @@ import { readFile, lstat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { createRubric, checkStep, renderGaps, numbersInQuote } from 'bareguard';
 import { dropRows, dropLine } from './pagedropwords.js';
-import { OFFERED } from './checkwords.js';
+import { OFFERED, plainWords } from './checkwords.js';
 import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem, factBrief, writtenSpans } from './facts.js';
 
 // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES — what one job line leaves
@@ -49,6 +49,24 @@ export function stepFileContract() {
 }
 
 /**
+ * R10 (fwd am28, rewritten here): what a facts+text line's worker is told about the person's picks, one plain line per pick, the values and what counts, never a verdict and never any other
+ * check. Written by code from the signed pick parts; a list item is what bareguard's listItems counts (its own line starting with "1." or "- " and a space).
+ * @param {any[]} picked countable parts (`{check, value, names, ...}`) @returns {string[]}
+ */
+export function toldPicks(picked) {
+  const list = (/** @type {unknown} */ v) => (Array.isArray(v) ? v.map((x) => String(x)).join(', ') : '');
+  return picked.map((p) => {
+    switch (p.check) {
+      case 'listItems': return `Your "text" must have exactly ${p.value} list items; a list item is its own line starting with "1." or "- " followed by a space and its text.`;
+      case 'nonEmpty': return 'Your "text" must not be empty.';
+      case 'mustCarry': return `Your "text" must carry ${list(p.phrases)}.`;
+      case 'blockLines': return `Your "text" must be in blocks of ${p.size} lines, each carrying ${list(p.phrases)}.`;
+      default: return `Your "text" must have ${plainWords({ ...p, rule: p.check })}.`;
+    }
+  });
+}
+
+/**
  * What the worker is told about each line, from the close that will grade it (PART 1b item 7): a FACTS line gets its
  * facts and its count; a TEXT line that follows a facts line is told its numbers come from that line's quotes. Written by code from
  * the signed parts, never by a model. A line with no rubric-step stage gets nothing here.
@@ -69,12 +87,16 @@ export function lineBriefs(closeDecl) {
         : c.min !== undefined ? `at least ${c.min} results` : `at most ${c.max} results`;
       // keep-both: the person's picks (countable parts) sit beside the fact on this line, so the same file also carries the "text" they limit
       const alsoText = st.params.parts.some((/** @type {any} */ q) => isRec(q) && q.class === 'countable');
+      // R10 (fwd am28): the picks among them, as the signed close's own record names them, are told to the worker in plain words
+      const record = Array.isArray(closeDecl.picks) ? closeDecl.picks : [];
+      const picked = st.params.parts.filter((/** @type {any} */ q) => isRec(q) && q.class === 'countable' && OFFERED.includes(q.check) && record.some((/** @type {any} */ x) => isRec(x) && x.line === n && sameJson(x.part, q)));
       out.push({
         line: n,
         text: [
           alsoText
             ? `Job line ${n} is a FACTS line AND a TEXT line. Write ${stepFileRel(n)} as {"results": [{"quote": "...", "values": {...}}], "text": "..."} — the results are the facts below, the "text" is your answer to the line in your own words (its limits are in the line's ~ rules); no "cites".`
             : `Job line ${n} is a FACTS line. Write ${stepFileRel(n)} as {"results": [{"quote": "...", "values": {...}}]} and nothing else — no "text", no "cites".`,
+          ...(alsoText && picked.length ? toldPicks(picked).map((t) => `  ${t}`) : []),
           `  One result per thing you find in the input "${fp.source}": ${count}.`,
           '  "quote": ONE quote per result, copied exactly from that result\'s own text in the input (at most 4000 characters) — never joined from two results.',
           '  "values": one entry per fact below, written exactly as the quote writes it (for example "9:27 AM", not "09:27"; "389", not "389.00").',
