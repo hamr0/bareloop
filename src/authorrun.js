@@ -122,6 +122,7 @@ import { scanSecrets, redactSecrets } from './validate.js';
 import { detectLanguage } from './detectlang.js';
 import { RUBRIC_LANG } from './authoring.js';
 import { rubricGoal } from './rubricstep.js';
+import { LEDGER_SYSTEM } from './checklist.js';
 import { moveFile } from './movefile.js';
 import { closeJudges, GATE_AUDIT_FILE } from './kinds.js';
 import { resolveProvider, buildRunnerProviders, apiKeyProblem } from './providers.js';
@@ -908,6 +909,8 @@ export async function main(argv, deps = {}) {
       // travels through unchanged — its `ambiguous` shape is what the confirm
       // turn's own $0 half (D7) asks about, before the scout.
       ask, confirmGenerate, isRepo: !RUBRIC_FILES, langResult,
+      // the one check list of a rubric job (src/checklist.js): same list as the panel, its one call bound to its own system text; this door asks nothing for it
+      ledgerGenerate: RUBRIC_FILES ? makeLoopGenerate(provider, { system: LEDGER_SYSTEM, rates: authorPrice?.rates ?? null }) : null,
     });
     const authoredFile = writeOut('authored.json', authored);
     emit('authored', { ok: authored.ok, stop: authored.stop, seedRef: authored.seedRef, cost: authored.cost, reds: authored.reds });

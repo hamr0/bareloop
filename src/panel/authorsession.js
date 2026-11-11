@@ -58,6 +58,7 @@ import { mcpPickFor, signFlow } from '../mcppick.js';
 import { parseTicketList, ticketNumberOf, TICKET_NUMBER_WORDS } from '../ticketshape.js';
 import { isDropIt, isAgree, stripAgreeLead } from '../pagemap.js';
 import { plainWords, SUGGEST_SYSTEM, settleRules } from '../checkpick.js';
+import { LEDGER_SYSTEM } from '../checklist.js';
 import { readRecordFile, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
 import { MAX_REVISES, draftLabelOf, nextRevisesUsed, sessionsRootOf, writeRevisesUsed } from '../revises.js';
 import { FIT_ABSENT_NOTE } from '../fitcheck.js';
@@ -473,7 +474,7 @@ export function validateJobCard(card, opts = {}) {
  * `signPrepare()` are the only ways in.
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
- *   scout?: any, generate?: Function, pickGenerate?: Function|null, carryFrom?: string, carryKind?: string, confirmGenerate?: Function, authorFn?: Function,
+ *   scout?: any, generate?: Function, pickGenerate?: Function|null, ledgerGenerate?: Function|null, carryFrom?: string, carryKind?: string, confirmGenerate?: Function, authorFn?: Function,
  *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, fitFn?: Function|null, destFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, schedule?: import('../trigger.js').Trigger|null, flow?: {flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
@@ -688,6 +689,10 @@ export function createSession(card, deps = {}) {
     // WHY a try was refused: the drafting log keeps it beside the call that made it (it used to say only "retry 3 of 3"), and the
     // progress line shows it briefly, in code's words
     // PRD v1.131 tick 7: the retention counts of a rubric draft, one line when it ends (counts only, no words)
+    // the one check list of a rubric job: each row once when it is built and once at the end, and each try's refusals (kind `ledger` / `ledger-try`)
+    if (name === 'ledger-built' && Array.isArray(data.rows)) for (const r of data.rows) appendDraftLog(outDir, { phase: 'built', ...r, kind: 'ledger', no: Math.max(0, state.steps.length - 1), at: new Date().toISOString() });
+    if (name === 'draft-ledger-try') appendDraftLog(outDir, { kind: 'ledger-try', no: Math.max(0, state.steps.length - 1), label: data.label, units: data.units, refused: data.refused, at: new Date().toISOString() });
+    if (name === 'draft-ledger' && Array.isArray(data.rows)) for (const r of data.rows) appendDraftLog(outDir, { phase: 'final', ...r, kind: 'ledger', no: Math.max(0, state.steps.length - 1), at: new Date().toISOString() });
     if (name === 'draft-retention' && Array.isArray(data.lines)) appendDraftLog(outDir, { kind: 'retention', no: Math.max(0, state.steps.length - 1), lines: data.lines, at: new Date().toISOString() });
     if (name === 'author-try-failed') {
       lastTryRefused = true;
@@ -1145,6 +1150,8 @@ export function createSession(card, deps = {}) {
     const confirmGenerate = noCallAfterAbandon(deps.confirmGenerate ?? makeLoopGenerate(provider, { system: confirmSystemFor(RUBRIC_FILES ? RUBRIC_LANG : ''), rates: draftPrice?.rates ?? null, draftThinking }));
     // R10 (fwd am16): the check-suggestion call's own model boundary (SUGGEST_SYSTEM, the drafter's thinking); a test that replaces the model boundary never reaches it unless it brings `deps.pickGenerate`
     const pickGenerate = deps.pickGenerate !== undefined ? deps.pickGenerate : (deps.generate ? null : noCallAfterAbandon(makeLoopGenerate(provider, { system: SUGGEST_SYSTEM, rates: draftPrice?.rates ?? null, draftThinking })));
+    // the one check list's call has its own model boundary (LEDGER_SYSTEM, the drafter's thinking); like the others, a test that replaces the model boundary never reaches it unless it brings `deps.ledgerGenerate`
+    const ledgerGenerate = deps.ledgerGenerate !== undefined ? deps.ledgerGenerate : (deps.generate ? null : noCallAfterAbandon(makeLoopGenerate(provider, { system: LEDGER_SYSTEM, rates: draftPrice?.rates ?? null, draftThinking })));
 
     // R7b (3), hamr's option A: the drafting AI POINTS when a job line's file to change lies outside Destination; code checks the claim (src/destpoint.js) and asks ONE typed
     // yes/no question through the same `ask` as the fit check's "go on". "yes" sets the fence (below) AND this session's card Destination (the page re-fills its box from it);
@@ -1259,7 +1266,7 @@ export function createSession(card, deps = {}) {
       rates: draftPrice?.rates ?? null,
       draftThinking,
       onPhase, onCall,
-      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, carriedPicks,
+      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, ledgerGenerate, carriedPicks,
       // R10: this draft's record (the picks it kept and the ones just answered) goes to its own folder for the next draft to carry; each kept pick is logged as such
       onPicks: (/** @type {{entries: any[], kept: {line: number, rule: number, entry: any}[]}} */ o) => {
         try { writeFileSync(join(outDir, RECORD_FILE), `${JSON.stringify({ picks: o.entries })}\n`, { mode: 0o600 }); } catch { /* the record is a convenience: a disk fault only means the next draft asks again */ }

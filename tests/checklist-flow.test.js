@@ -14,6 +14,7 @@ import { authorClose, DECLARATION_TOOL_NAME, dropAfterLastTry } from '../src/aut
 import { proveRubricInputs } from '../src/source.js';
 import { buildSeedListing } from '../src/authorscout.js';
 import { isNoCheckRubricClose } from '../src/authorreadout.js';
+import { authorCloseForJob as forJob } from '../src/authorjob.js';
 
 const CA = { answers: { 1: '1. summarise' }, questions: GREEN_QUESTIONS, isRepo: false, lang: RUBRIC_LANG };
 const jobLines = [{ n: 1, text: 'Summarise the latest release', rule: 'exactly 3 bullets', rules: ['exactly 3 bullets'] }];
@@ -192,4 +193,62 @@ test('code job: authorClose without a list is untouched (no list block in the pr
   });
   assert.ok(!prompts[0].includes('THE LIST OF CHECKS'));
   assert.ok(!phases.includes('draft-ledger') && !phases.includes('draft-ledger-try'));
+});
+
+// ---- A2 / A3: the list is made once, after the look and the pick path, before the confirm turn -----------------------------------------------
+async function doorWorld({ ledgerGenerate = null, lang = RUBRIC_LANG, lines = jobLines, survey: surveyOver = null } = {}) {
+  const file = join(tmp(), 'CHANGELOG.md');
+  copyFileSync(join(HERE, '..', 'CHANGELOG.md'), file);
+  const proved = await proveRubricInputs({ inputs: [{ n: 1, label: 'Changelog', value: file }], into: join(tmp(), 'seed') });
+  if (!proved.ok) throw new Error('unreachable');
+  /** @type {string[]} */ const order = [];
+  /** @type {any} */ let seen = null;
+  const survey = surveyOver ?? { state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [], facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }], look: { facts: [{ line: 1, name: 'release heading', shape: 'phrase', source: 'Changelog', words: ['## ['] }], prose: [], notFound: [], dropped: [] } } };
+  const phases = [];
+  const r = await forJob({
+    answers: { 1: '1. x' }, verdictType: 'soft-green', repoPath: proved.prep.tree, lang, jobLines: JSON.parse(JSON.stringify(lines)), inputs: [{ n: 1, label: 'Changelog', value: file }], writeScope: ['output/'],
+    provider: { fake: true }, ceilingUsd: 1, onPhase: (p, d) => { order.push(p); phases.push([p, d]); },
+    lookFn: async () => survey, ...(ledgerGenerate ? { ledgerGenerate } : {}), ...(lang !== RUBRIC_LANG ? { scout: survey } : {}),
+    generate: async () => { throw new Error('no model call'); },
+    authorFn: async (o) => { order.push('authorFn'); seen = o; return { ok: false, stop: 'max-revisions', declaration: null, iterations: [], raws: [], cost: { costUsd: 0, knownUsd: 0, spendComplete: true, calls: [], unpricedRounds: 0 }, reds: [] }; },
+  });
+  return { r, order, phases, survey, get seen() { return seen; } };
+}
+const ledgerScript = (extra, seen = []) => async (m, tools) => {
+  seen.push(m.at(-1).content);
+  await tools.find((t) => t.name === CL.LEDGER_TOOL).execute({ extra });
+  return { text: '', error: null, msgs: [], metrics: { costUsd: 0.002, unpricedRounds: 0 } };
+};
+
+test('A2/A3 authorCloseForJob (rubric): the list is built once before the draft, with the call\'s proposals proved; the call\'s spend joins the survey\'s; the drafter gets the rows', async () => {
+  const seenUser = [];
+  const w = await doorWorld({ ledgerGenerate: ledgerScript([{ line: 1, kind: 'count', min: 1, max: 1 }, { line: 1, kind: 'phrase', source: 'Changelog', phrase: 'not in the file' }], seenUser) });
+  assert.deepEqual(w.order.filter((x) => ['look-done', 'ledger-suggest', 'ledger-built', 'authorFn'].includes(x)), ['look-done', 'ledger-suggest', 'ledger-built', 'authorFn']);
+  assert.match(seenUser[0], /Input "Changelog":/);
+  assert.ok(Array.isArray(w.seen.ledger));
+  const by = (k) => w.seen.ledger.find((r) => r.key === k);
+  assert.equal(by('L1.~1').by, 'you');
+  assert.equal(by('L1.fact.release heading').state, 'listed');
+  assert.equal(w.seen.ledger.find((r) => r.kind === 'count').state, 'listed');
+  assert.match(w.seen.ledger.find((r) => r.words[0] === 'not in the file').reason, /not in the input/);
+  assert.deepEqual(w.survey.calls.map((c) => c.label), ['ledger-suggest'], 'the call\'s spend joins the survey\'s, so the one ceiling holds it');
+  const built = w.phases.find(([n]) => n === 'ledger-built')[1].rows;
+  assert.equal(built.length, w.seen.ledger.length);
+  assert.ok(built.every((x) => x.rowKind && x.key && x.state));
+});
+
+test('A2 without a list call (no ledgerGenerate) the list is still built from the look; a code job and a job with no look get none', async () => {
+  const w = await doorWorld();
+  assert.ok(Array.isArray(w.seen.ledger));
+  assert.equal(w.order.includes('ledger-suggest'), false);
+  assert.equal(w.seen.ledger.some((r) => r.from === 'agent' && r.kind === 'count'), false);
+  const code = await doorWorld({ lang: 'js' });
+  assert.equal(code.seen?.ledger, undefined);
+  assert.equal(code.order.includes('ledger-built'), false);
+});
+
+test('A3 an unusable list answer is not a guessed list: no proposals, the draft goes on with the look\'s facts and the defaults', async () => {
+  const w = await doorWorld({ ledgerGenerate: async () => ({ text: '', error: null, msgs: [], metrics: { costUsd: 0.002, unpricedRounds: 0 } }) });
+  assert.equal(w.seen.ledger.some((r) => r.from === 'agent' && r.kind !== 'fact'), false);
+  assert.equal(w.survey.calls.length, 2, 'one retry, both booked');
 });

@@ -123,6 +123,7 @@ import { runPageMap, askableFromLook, tooManyAsksText } from './pagemap.js';
 import { scopedRules, checkAsks } from './checkpick.js';
 import { matchRecord, entriesFromAnswers } from './pickrecord.js';
 import { runCheckSuggest } from './checksuggest.js';
+import { runLedgerSuggest, buildLedger, ledgerRecord } from './checklist.js';
 import {
   DECLARED_GAP_PREFIX, DECLARED_GENRES, guardNames, isDeclaredClose, validateCloseDecl,
 } from './declaredclose.js';
@@ -440,7 +441,7 @@ function composerRefusal(reds) {
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
  *   answerQuestions?: ((o: {questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}) =>
  *     Promise<{jobLines: {n: number, text: string, rule?: string}[], answers: Record<string|number, any>, left?: {line: number, rule: number}[], picks?: any[]}|null>)|null,
- *   pickGenerate?: Function|null, carriedPicks?: any[]|null, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
+ *   pickGenerate?: Function|null, ledgerGenerate?: Function|null, carriedPicks?: any[]|null, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
  *   confirmGenerate?: Function|null, isRepo?: boolean,
  *   langResult?: {kind: string, candidates?: string[], [k: string]: any}|null}} o
  * @returns {Promise<{ok: boolean, refusal: Refusal|null, verdictType: string|null,
@@ -486,6 +487,9 @@ export async function authorCloseForJob({
   // R10 (fwd am16): the model boundary of the check-suggestion call (a `makeLoopGenerate` bound to SUGGEST_SYSTEM). ABSENT = no pick path: nothing is suggested or asked and the
   // drafted declaration is validated as it always was (a test seam, like `lookFn: null`).
   pickGenerate = null,
+  // the model boundary of the list call (a `makeLoopGenerate` bound to LEDGER_SYSTEM), rubric jobs only. ABSENT = the list is built from the look and the defaults with no suggestion call
+  // (a test seam, like `pickGenerate`); the CLI and the panel always bring it.
+  ledgerGenerate = null,
   // R10 (fwd am17/am18): the picks record of the draft this one follows (`readRecordFile`), and the seam that receives this draft's record + the picks it kept. ABSENT = every rule is asked.
   carriedPicks = null, onPicks = () => {},
   // SOFTGREEN modules 4+5. `signerFix` is the D5 seam: a function (or a value)
@@ -613,6 +617,8 @@ export async function authorCloseForJob({
   // arrived at by accident.
   /** @type {any} */
   let survey = scout;
+  /** the frozen input texts the list's word proof reads (a rubric job with a look only) @type {Record<string, string>|null} */
+  let ledgerTexts = null;
   // PART 1a: a rubric job on local files has no repository to survey. PART 1c: its survey is the LOOK - a read-only, bounded, paid
   // look at the person's frozen input text that reports which facts can be checked and with which label (picked from a code-made
   // list). Without a look (`lookFn` null, or no model boundary) the survey is just the numbered inputs, known to code at $0.
@@ -620,6 +626,7 @@ export async function authorCloseForJob({
     const inputList = (Array.isArray(inputs) ? inputs : []).map((i) => ({ n: i.n, label: i.label }));
     const frozen = lookFn && provider && Array.isArray(jobLines) && jobLines.length > 0 && inputList.length > 0
       ? await readFrozenInputs(workdir, inputList.map((i) => i.label)) : null;
+    if (frozen !== null && frozen.ok) ledgerTexts = frozen.texts;
     if (frozen !== null && !frozen.ok) {
       survey = { state: 'ABSENT', reason: `the look at your input could not start: ${frozen.why}`, cause: 'call-failed', budgetStop: null, calls: [], raws: [], facts: null };
     } else if (frozen !== null && lookFn && !Object.values(frozen.texts).some((t) => pageContentChars(t) > 0)) {
@@ -761,6 +768,23 @@ export async function authorCloseForJob({
     }
   }
 
+  // THE ONE CHECK LIST of a rubric job (src/checklist.js): made once here, after the look and the pick path and before the confirm turn and the drafter's tries. ONE paid call suggests up to
+  // three extra checks (count, phrase) from the inputs; code proves each against the input and builds the rows. Its spend joins the survey's, so the one ceiling already holds it.
+  /** @type {any[]|null} */
+  let ledger = null;
+  if (lang === RUBRIC_LANG && survey?.state === 'PRESENT' && Array.isArray(jobLines) && ledgerTexts) {
+    let extra = [];
+    if (ledgerGenerate) {
+      onPhase('ledger-suggest', {});
+      const lg = await runLedgerSuggest({ jobLines, texts: ledgerTexts, generate: ledgerGenerate, ceilingUsd, onCall, priorCalls: survey?.calls ?? [], priorRaws: survey?.raws ?? [] });
+      survey.calls = [...(survey.calls ?? []), ...lg.calls];
+      survey.raws = [...(survey.raws ?? []), ...lg.raws];
+      extra = lg.extra;
+    }
+    ledger = buildLedger({ jobLines, checkPicks, look: survey.facts?.look ?? null, texts: ledgerTexts, extra, inputLabels: (Array.isArray(inputs) ? inputs : []).map((i) => i.label) });
+    onPhase('ledger-built', { rows: ledgerRecord(ledger) });
+  }
+
   // ── THE CONFIRM TURN'S PAID HALF (PRD item 33 M3 piece 4) ──────────────────
   // Slotted between the scout and the listing: it reuses the scout's own
   // survey (ruling 4 — never a second read of the source) and needs nothing
@@ -859,6 +883,7 @@ export async function authorCloseForJob({
     // ask is about a `~` rule the look could not find, above)
     ...(answerQuestions && lang !== RUBRIC_LANG ? { offerQuestions: true } : {}),
     ...(checkPicks ? { checkPicks } : {}),
+    ...(ledger ? { ledger } : {}),
     ...authorOpts,
   });
   // P7 item 5: the drafter, on the last try after two failed ones, asked. The person answers (required, no skip); each
@@ -880,6 +905,7 @@ export async function authorCloseForJob({
       priorCalls: (authored.cost?.calls ?? []).slice(scoutCalls), priorRaws: (authored.raws ?? []).slice(scoutRaws),
       confirmed, jobLines, inputs,
       ...(checkPicks ? { checkPicks } : {}),
+      ...(ledger ? { ledger } : {}),
       ...authorOpts,
       offerQuestions: false,
     });

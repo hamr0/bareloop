@@ -316,6 +316,10 @@ export function phaseLine(phase, data = {}) {
     case 'scout-done': return `· scout ${data.state ?? 'unknown'} — ${data.facts ?? 0} fact(s)`;
     case 'look': return '· looking at your input — a read-only search for the facts the job asks for…';
     case 'look-done': return `· look ${data.state ?? 'unknown'} — ${data.facts ?? 0} fact(s) can be checked`;
+    case 'ledger-suggest': return '· suggesting extra checks from your input…';
+    case 'ledger-built': { const rows = Array.isArray(data.rows) ? data.rows : []; const dropped = rows.filter((/** @type {any} */ r) => r.state === 'dropped').length; return `· the list of checks: ${rows.length} row(s), ${dropped} dropped`; }
+    case 'draft-ledger-try': return `·   ${data.label}: ${(data.refused ?? []).length} of ${data.units ?? '?'} part(s) are not on the list`;
+    case 'draft-ledger': { const rows = Array.isArray(data.rows) ? data.rows : []; const n = (/** @type {string} */ st) => rows.filter((/** @type {any} */ r) => r.state === st).length; return `· the list at the end: ${n('built')} built, ${n('not-checked')} not checked, ${n('dropped')} dropped`; }
     case 'listing': return '· listing the files the declaration may name…';
     case 'listing-done': return `· listing ${data.stop ? `STOPPED (${data.stop})` : `${data.files ?? 'unknown'} file(s)`}`;
     case 'author': return '· authoring the close declaration…';
