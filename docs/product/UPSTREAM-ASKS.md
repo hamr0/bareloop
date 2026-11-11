@@ -3020,4 +3020,4 @@ F315: an "at most / up to / no more than / at least N bullets" rule builds an ex
 
 ### Status
 
-2026-11-11 — Asked by bareloop, approved by hamr, fwd agreed (ruling #81). Being built in bareguard, version pending. Bareloop waits (hamr picked waiting over a local stopgap), then maps "at most / up to / no more than N" to `maxListItems` and "at least N" to `minListItems`.
+2026-11-11 — Asked by bareloop, approved by hamr, fwd agreed (ruling #81). SHIPPED in bareguard 0.35.0, adopted (pin bumped to ^0.35.0; the wording map follows in the same branch).
