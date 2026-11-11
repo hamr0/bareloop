@@ -262,6 +262,8 @@ export function ruleWords(f) {
  * @returns {string}
  */
 export function factSentence(f, source) {
+  // PLACE RULES: a check that reads WHERE the newest value sits, not what it is; the phrase shown is the signed drafting example (the value a run read is in its Audit)
+  if (f.shape === 'phrase' && isRec(f.place)) return `${f.place.kind === 'headingDateAfter' ? 'date' : 'version'} in the newest "${f.place.prefix}" heading (last read ${f.phrase})`;
   /** @type {string[]} */
   const bits = [];
   if (f.shape === 'phrase') bits.push('phrase', `must say "${f.phrase}"`);
