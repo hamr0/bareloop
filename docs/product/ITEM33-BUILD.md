@@ -3899,3 +3899,7 @@ Run once against the frozen prereg (commit 16cb20b7), exit 1. ROUND FAIL, report
 - Meaning: a prefix rule that takes the first matching line can silently bind a stale older release when only the newest heading drifts, a wrong value instead of a stop.
 - All three unseen repos fit the first candidate (`## [` ... `]`), so the corpus is effectively one genre; the test gave no evidence that code can choose among different formats. Variant A (no skip word) stops on every `[Unreleased]` top: 76.6% pooled versions, 75.9% dates, all safe stops.
 - Any round 2 needs a new frozen prereg (hamr's call).
+
+## Addendum 2026-11-11: First live end-to-end run of the check list (2026-11-11): green
+
+Engine 328a7876 (throwaway clone), scratch HOME, DeepSeek direct deepseek-flash; one step, green on attempt 1, $0.0320 total; the signing check (`listMatchesClose`) did not falsely refuse. Told picks reached the worker only through the planner's step action. n=1, one model. See FINDINGS F318.
