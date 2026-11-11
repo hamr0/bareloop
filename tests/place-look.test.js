@@ -39,11 +39,12 @@ test('look strip: a look fact "## [0.55.0] - 2026-11-04" is listed and splits in
   const { rows, r, facts } = draftLook([LOOK_WORDS]);
   assert.equal(rows.find((x) => x.from === 'look')?.state, 'listed');
   assert.deepEqual(r.refused, []);
-  assert.deepEqual(facts.map((f) => [f.name, f.phrase, f.place]), [['version heading version', '0.55.0', VER], ['version heading date', '2026-11-04', DATE]]);
+  // plain split names (hamr 2026-11-11 "fix it"): the word "version" leaves the base name "version heading" before the kind is appended
+  assert.deepEqual(facts.map((f) => [f.name, f.phrase, f.place]), [['heading version', '0.55.0', VER], ['heading date', '2026-11-04', DATE]]);
   const resolved = CL.resolveLedger(rows, r.declaration);
   assert.equal(resolved.find((x) => x.from === 'look')?.state, 'built');
   assert.equal(CL.signedRows(resolved).find((x) => x.from === 'look')?.state, 'built');
-  assert.deepEqual(PR.placeFactsOf({ closeDecl: r.declaration }).map((f) => f.key), ['s1/version heading version', 's1/version heading date']);
+  assert.deepEqual(PR.placeFactsOf({ closeDecl: r.declaration }).map((f) => f.key), ['s1/heading version', 's1/heading date']);
 });
 
 test('look strip: a date or number SHAPE look fact with a version or date stays dropped as week-only', () => {
