@@ -439,6 +439,8 @@ export class CheckBlock {
   editAdd(/** @type {any} */ e) {
     if (e.kind === 'count') return this.addCount(e);
     if (e.kind !== 'fact' && e.kind !== 'phrase') return { refusedBecause: 'an add is a fact, a phrase or a count' };
+    // an input the job does not have is refused alone (it would otherwise reach the draft gate as a red on code's own plan and stop the whole draft)
+    if (e.source !== undefined && e.source !== null && !this.labels.includes(e.source)) return { refusedBecause: `"${String(e.source).slice(0, 60)}" is not one of the inputs` };
     const words = (Array.isArray(e.words) ? e.words : []).filter((/** @type {unknown} */ w) => typeof w === 'string' && w.trim());
     if (!words.length) return { refusedBecause: 'no words given' };
     if (!words.some((/** @type {string} */ w) => proved(this.textOf(e.source), w))) return { refusedBecause: `the words ${words.map((/** @type {string} */ w) => `"${w}"`).join(', ')} are not in the input` };
