@@ -4302,3 +4302,5 @@ hamr answered "all yes" on 2026-11-12 to the three open items of section 14:
 3. The drafter and the suggest call both keep proposing `!` rows, both through `applyDelta` now. Fold into one call only after the live draft proves the delta path.
 
 hamr also asked for a POC of the pieces the spec adds that rounds 1-2 never proved (limit reader cases of section 5, already-on-list refusal, `hasBuiltCheck`, two sources through one door) before the build starts. The spec above is not rewritten.
+
+POC round 3 bar frozen: .claude/scratch/checkblock-poc/PREREG-R3.md sha256 b615001728e25ab46b8fe98a8f52e07b5b7ce0ec96720471225039a958936d37
