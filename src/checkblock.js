@@ -62,9 +62,10 @@ export function renderCard(rows) {
 }
 
 export class CheckBlock {
-  /** @param {{texts: Record<string, string>, labels: string[], maxTries?: number, countScope?: (ruleText: string) => boolean}} o the frozen input texts, their labels, how many AI replies (tries) may still change a row, and whether code scopes a counting `~` rule in (a pick is asked) */
-  constructor({ texts, labels, maxTries = 3, countScope = () => true }) {
+  /** @param {{texts: Record<string, string>, labels: string[], maxTries?: number, countScope?: (ruleText: string) => boolean, asks?: boolean}} o the frozen input texts, their labels, how many AI replies (tries) may still change a row, whether code scopes a counting `~` rule in (a pick is asked), and whether a person can be asked at all (`asks`: false = a rule code cannot settle is Not checked, a reading code proposes is built as the AI's proposal) */
+  constructor({ texts, labels, maxTries = 3, countScope = () => true, asks = true }) {
     this.countScope = countScope;
+    this.asks = asks;
     this.texts = texts;
     this.labels = labels;
     this.maxTries = maxTries;
@@ -178,7 +179,7 @@ export class CheckBlock {
         if (reading === undefined || !validReading(l.shape, reading)) continue; // code does not guess a limit; the AI may still propose one
         const bounds = reading.op === 'between' ? [reading.lo, reading.hi] : [reading.value];
         const unsaid = bounds.some((b) => !boundInWords(b, said));
-        if (unsaid && !r.agreed) { r.can = { ok: false, ask: 'reading', link: l, reading, proposal: `${l.name} ${ruleWords({ shape: l.shape, unit: l.unit, currency: l.currency, rule: reading })}`, why: REASON.waitingReading }; return; }
+        if (unsaid && !r.agreed && this.asks) { r.can = { ok: false, ask: 'reading', link: l, reading, proposal: `${l.name} ${ruleWords({ shape: l.shape, unit: l.unit, currency: l.currency, rule: reading })}`, why: REASON.waitingReading }; return; }
         if (unsaid && l.shape === 'time' && reading.op !== 'between') { r.can = { ok: false, why: REASON.oneSidedTime }; return; }
         r.can = { ok: true, how: 'fact', link: l, reading, aiProposal: unsaid && !ownWords && !r.agreed, ...(ownWords ? { readBy: 'your words' } : {}) };
         return;
@@ -189,7 +190,7 @@ export class CheckBlock {
     if (r.links?.length && !links.length) { r.can = { ok: false, why: REASON.lookNoWords }; return; }
     if (r.origin === 'typed' || r.cantAsked) { r.can = { ok: false, why: r.aiReason ?? r.lookWhy ?? REASON.nothingOnPage }; return; }
     if (r.links?.length) { r.can = { ok: false, why: r.aiReason ?? `the look tied a fact to this rule but gave no limit, and ${ownWhy ? `in your words ${ownWhy}` : 'your own words give none code can read'}, so you judge it at Accept.` }; return; }
-    r.can = { ok: false, ask: 'cant-check', why: r.lookWhy ?? REASON.cantCheck };
+    r.can = this.asks ? { ok: false, ask: 'cant-check', why: r.lookWhy ?? REASON.cantCheck } : { ok: false, why: r.lookWhy ?? REASON.noRule };
   }
 
   /** a `~` rule that counts words, bullets, lines or sections: a settled pick builds it; else code proposes the check and asks */
@@ -197,7 +198,8 @@ export class CheckBlock {
     if (!r.pick && (r.cantAsked || !this.countScope(r.text))) { r.can = { ok: false, why: r.aiReason ?? REASON.noRule }; return; }
     if (r.pick) { r.can = { ok: true, how: 'pick' }; return; }
     const proposal = r.pickProposal ?? countCheck(r.text);
-    if (proposal) r.can = { ok: false, ask: 'check', proposal, why: REASON.waitingPick };
+    if (!this.asks) r.can = { ok: false, why: REASON.noRule };
+    else if (proposal) r.can = { ok: false, ask: 'check', proposal, why: REASON.waitingPick };
     else r.can = r.origin === 'typed' ? { ok: false, why: REASON.noRule } : { ok: false, ask: 'cant-check', why: REASON.cantCheck };
   }
 
@@ -361,7 +363,12 @@ export class CheckBlock {
       } else { r.agreed = true; r.agreedText = said; }
       // hamr 2026-11-12 (ruling 1): an agreed answer is a `~` rule in plain words, a new line with the SAME rule number a typed rule gets; an edited added line (pairWith) IS that line, so its words are replaced
       if (r.pairWith !== undefined) r.text = said;
-      else if (!sameRuleWords(r.text, said)) this.addRow({ key: `L${r.line}.~${this.ruleRows(r.line).length + 1}`, line: r.line, kind: 'rule', by: 'you', from: 'rule', origin: 'agreed', parent: r.key, text: said, rule: this.ruleRows(r.line).length + 1 });
+      else {
+        // F318: agreeing to words the line already holds as a `~` rule adds no second line (the pick cites the rule that is there); a reading always adds its line
+        const held = q.ask === 'check' ? this.ruleRows(r.line).filter((x) => sameRuleWords(x.text, said)).at(-1) : undefined;
+        if (held === undefined) this.addRow({ key: `L${r.line}.~${this.ruleRows(r.line).length + 1}`, line: r.line, kind: 'rule', by: 'you', from: 'rule', origin: 'agreed', parent: r.key, text: said, rule: this.ruleRows(r.line).length + 1 });
+        else if (held !== r) this.follow(r, held);
+      }
       return { ok: true };
     }
     if (choice === 'drop') { r.left = true; return { ok: true }; }
@@ -390,7 +397,7 @@ export class CheckBlock {
     for (const p of picks) {
       const r = rowOf(p.line, p.rule);
       if (!r) continue;
-      if (p.check) { r.pick = p.check; r.from = 'pick'; r.agreedText = plainWords(p.check); } else r.cantAsked = true;
+      if (p.check) { r.pick = p.check; r.from = 'pick'; r.keptFromLast = true; r.agreedText = plainWords(p.check); } else r.cantAsked = true;
       if (typeof p.added === 'string') { const add = this.ruleRows(p.line).filter((x) => x !== r && !x.parent && sameRuleWords(x.text, String(p.added))).at(-1); if (add) this.follow(r, add); }
     }
     for (const l of left) { const r = rowOf(l.line, l.rule); if (r) r.left = true; }

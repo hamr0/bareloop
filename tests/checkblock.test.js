@@ -6,7 +6,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { CheckBlock, renderCard, REASON, CARD_T } from '../src/checkblock.js';
 import { MAX_BANG } from '../src/checklist.js';
-import { isNoCheckRubricClose } from '../src/authorreadout.js';
 
 const load = (/** @type {string} */ f) => JSON.parse(readFileSync(new URL(`./fixtures/checkblock/${f}`, import.meta.url), 'utf8'));
 const CASES = load('replay-cases.json');
@@ -251,16 +250,15 @@ test('B8: a repeat of a ~-tied look fact is refused "already on the list" alone;
 });
 
 // ---- B9: the standing ruling "a run needs one check"
-test('B9: hasBuiltCheck agrees with the product verdict (isNoCheckRubricClose) on every crafted case and says no where the ruling says no', () => {
+test('B9: hasBuiltCheck says no where the standing ruling "a run needs one check" says no, and agrees with the signed list', () => {
   for (const c of D.b9) {
     const b = new CheckBlock({ texts: c.texts, labels: c.labels });
     b.fromJob([{ n: 1, text: c.lineText, rules: c.rules }]); b.addLook(c.look);
     b.drive({ answer: () => ({ choice: 'drop' }) });
-    const decl = { lang: 'text', stages: [{ kind: 'files-changed' }, ...b.closeCache.stages], list: b.signedRows() };
     assert.equal(b.hasBuiltCheck(), c.expect, c.id);
-    assert.equal(!isNoCheckRubricClose(decl), b.hasBuiltCheck(), `${c.id}: the block and the product disagree`);
+    assert.equal(b.signedRows().some((r) => r.state === 'built' && r.kind !== 'floor'), c.expect, `${c.id}: the signed list says what the block says`);
   }
-  for (const c of CASES) { const b = replay(c); assert.equal(b.hasBuiltCheck(), !isNoCheckRubricClose({ lang: 'text', stages: [{ kind: 'files-changed' }, ...b.closeCache.stages], list: b.signedRows() }), c.id); }
+  for (const c of CASES) { const b = replay(c); assert.equal(b.hasBuiltCheck(), b.signedRows().some((r) => r.state === 'built' && r.kind !== 'floor'), c.id); }
 });
 
 test('signedRows carries only the signed fields (never words), each row built or not-checked, and a built row points at its part', () => {
