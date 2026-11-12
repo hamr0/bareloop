@@ -104,3 +104,14 @@ test('page: the thread skips a message whose question is still open, and renderA
   assert.match(fnSrc('renderActions'), /renderQuestionBox\(state\)/);
   assert.match(fnSrc('openNewCard'), /renderQuestionBox\(null\)/);
 });
+
+test('page: a question with choices shows its buttons (labels, data-choice); a question with no box words (the fit check) hides the answer box and Send', () => {
+  const { e, render } = boxHarness();
+  render({ pendingAsk: { kind: 'answer', index: 1, source: 'fit-check', box: { head: 'A question before drafting', line: '', text: 'Found 2 of 4.', choices: [{ choice: 'go-on', label: 'Go on' }, { choice: 'stop', label: 'Stop' }], orLabel: null, sendChoice: 'stop' } } });
+  assert.deepEqual([e.qC1.hidden, e.qC1.textContent, e.qC1.attrs['data-choice'], e.qC2.textContent, e.qC2.attrs['data-choice']], [false, 'Go on', 'go-on', 'Stop', 'stop']);
+  assert.deepEqual([e.qChoices.hidden, e.qAnswer.hidden, e.qSend.hidden, e.qOr.hidden], [false, true, true, true]);
+  render({ pendingAsk: { kind: 'answer', index: 1, source: 'dest-point', box: { head: 'h', line: '', text: 'Dest?', choices: [{ choice: 'yes', label: 'Yes, set it to src/' }, { choice: 'no', label: 'No, keep docs/' }], orLabel: 'Or type a different Destination:', sendChoice: 'path' } } });
+  assert.deepEqual([e.qAnswer.hidden, e.qSend.hidden, e.qOr.textContent], [false, false, 'Or type a different Destination:']);
+  render(ASK('plain'));
+  assert.equal(e.qChoices.hidden, true, 'a question without choices has no button row');
+});

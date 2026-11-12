@@ -4,6 +4,8 @@
 // questions and keeps typing words; the stored question text never changes, only the panel's copy of it is cut.
 import { readingTail, cantCheckTail, DROP_IT } from './pagemap.js';
 import { HOW_TO_ANSWER } from './checkpick.js';
+import { FIT_ANSWER, FIT_GO_ON } from './fitcheck.js';
+import { DEST_ANSWER } from './destpoint.js';
 
 /** the door's refusals, word for word (fwd am31); a refusal leaves the question open and writes nothing */
 export const CHOICE_SAYS = Object.freeze({
@@ -32,6 +34,8 @@ export function offersOf(q) {
  */
 export function panelQuestionText(q) {
   const text = String(q.question);
+  if (q.source === 'fit-check') return text.endsWith(FIT_ANSWER) ? text.slice(0, text.length - FIT_ANSWER.length) : text;
+  if (q.source === 'dest-point') return text.endsWith(DEST_ANSWER) ? text.slice(0, text.length - DEST_ANSWER.length) : text;
   if (q.source !== 'look' || !Number.isInteger(q.line)) return text;
   const n = /** @type {number} */ (q.line);
   const hit = [readingTail(n), cantCheckTail(n), ` ${HOW_TO_ANSWER(n, true)}`, ` ${HOW_TO_ANSWER(n, false)}`].find((t) => text.endsWith(t));
@@ -41,12 +45,24 @@ export function panelQuestionText(q) {
 /**
  * What the panel's question box shows for one pending ask. Only a question the person answers (`kind: 'answer'`) has a box; every other ask (language, menu, install)
  * keeps the chat input. `sendChoice` = the choice the box's own Send posts.
- * @param {{kind: string, source?: string, index?: number, total?: number, question?: string, line?: number, offers?: {agree: boolean, drop: boolean}}} step
+ * @param {{kind: string, source?: string, index?: number, total?: number, question?: string, line?: number, offers?: {agree: boolean, drop: boolean}, folder?: string, current?: string}} step
  * @returns {{head: string, line: string, text: string, choices: {choice: string, label: string}[], orLabel: string|null, sendChoice: string}|null}
  */
 export function boxFor(step) {
   if (step.kind !== 'answer' || typeof step.question !== 'string') return null;
   const before = step.source === 'fit-check' || step.source === 'dest-point';
+  // the fit check: two buttons, no box (go on = keep drafting; stop = anything else, as typed words did)
+  if (step.source === 'fit-check') {
+    return { head: 'A question before drafting', line: '', text: panelQuestionText(/** @type {any} */ (step)), choices: [{ choice: 'go-on', label: 'Go on' }, { choice: 'stop', label: 'Stop' }], orLabel: null, sendChoice: 'stop' };
+  }
+  // the Destination point: yes / no buttons and a box for a different Destination (checked at $0 before it is taken)
+  if (step.source === 'dest-point') {
+    return {
+      head: 'A question before drafting', line: Number.isInteger(step.line) ? `About job line ${step.line}` : '', text: panelQuestionText(/** @type {any} */ (step)),
+      choices: [{ choice: 'yes', label: `Yes, set it to ${step.folder ?? ''}` }, { choice: 'no', label: `No, keep ${String(step.current ?? '').trim().replace(/\s*\n\s*/g, ', ')}` }],
+      orLabel: 'Or type a different Destination:', sendChoice: 'path',
+    };
+  }
   /** @type {{choice: string, label: string}[]} */
   const choices = [];
   if (step.offers?.agree) choices.push({ choice: 'agree', label: 'Agree' });
@@ -61,8 +77,8 @@ export function boxFor(step) {
   };
 }
 
-/** the choices a question's typed answer may name */
-const LOOK_CHOICES = ['agree', 'drop', 'rule'];
+/** the choices each kind of question's typed answer may name */
+const CHOICES = { look: ['agree', 'drop', 'rule'], 'fit-check': ['go-on', 'stop'], 'dest-point': ['yes', 'no', 'path'] };
 
 /**
  * The door's check of a choice sent for the pending ask. Null = accepted; else the refusal words.
@@ -70,7 +86,9 @@ const LOOK_CHOICES = ['agree', 'drop', 'rule'];
  */
 export function refuseChoice(step, choice) {
   if (step.kind !== 'answer') return CHOICE_SAYS.notOffered;
-  if (typeof choice !== 'string' || !LOOK_CHOICES.includes(choice)) return CHOICE_SAYS.bad;
+  const own = /** @type {string[]|undefined} */ (/** @type {Record<string, string[]>} */ (CHOICES)[step.source === 'fit-check' || step.source === 'dest-point' ? step.source : 'look']);
+  if (typeof choice !== 'string' || !(own ?? CHOICES.look).includes(choice)) return CHOICE_SAYS.bad;
+  if (step.source === 'fit-check' || step.source === 'dest-point') return null;
   if (choice === 'agree' && step.offers?.agree !== true) return CHOICE_SAYS.notOffered;
   if (choice === 'drop' && step.offers?.drop !== true) return step.source === 'look' && !Number.isInteger(step.rule) ? CHOICE_SAYS.noRule : CHOICE_SAYS.notOffered;
   return null;
@@ -84,6 +102,10 @@ export function refuseChoice(step, choice) {
 export function resolveChoice(choice, text) {
   if (choice === 'agree') return { value: 'agree', shown: 'Agree' };
   if (choice === 'drop') return { value: DROP_IT, shown: 'Drop it' };
+  if (choice === 'go-on') return { value: FIT_GO_ON, shown: 'Go on' };
+  if (choice === 'stop') return { value: 'stop', shown: 'Stop' };
+  if (choice === 'yes') return { value: 'yes', shown: 'Yes' };
+  if (choice === 'no') return { value: 'no', shown: 'No' };
   const said = String(text ?? '').replace(/\s*\n\s*/g, ' ').trim();
   return said === '' ? { error: CHOICE_SAYS.blank } : { value: said, shown: said };
 }

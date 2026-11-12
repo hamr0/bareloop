@@ -1180,19 +1180,23 @@ export function createSession(card, deps = {}) {
         if (pointed.state === 'point' && pointed.point) {
           const question = destQuestionText(pointed.point, card.destination);
           let said = null;
+          let typedDest = '';
           while (said === null) {
-            const a = await ask({ kind: 'answer', source: 'dest-point', index: 1, total: 1, question, line: pointed.point.line });
+            const a = await ask({ kind: 'answer', source: 'dest-point', index: 1, total: 1, question, line: pointed.point.line, folder: pointed.point.folder, current: card.destination });
             if (a === null) return;
+            // a typed Destination (the question box's own words, already checked at $0 by `send`) is taken as typed; buttons and old words say yes or no
+            if (takeChoice() === 'path') { said = 'typed'; typedDest = String(a).trim(); break; }
             said = yesNoOf(a);
             if (said === null) say('bot', 'Type yes or no.');
           }
-          appendDraftLog(outDir, { kind: 'dest-answer', no: Math.max(0, state.steps.length - 1), answer: said, from: redactSecrets(card.destination), to: redactSecrets(pointed.point.folder), at: new Date().toISOString() });
-          if (said === 'yes') {
-            card = { ...card, destination: pointed.point.folder };
-            writeScope = [pointed.point.folder];
+          const newDest = said === 'typed' ? typedDest : pointed.point.folder;
+          appendDraftLog(outDir, { kind: 'dest-answer', no: Math.max(0, state.steps.length - 1), answer: said, from: redactSecrets(card.destination), to: redactSecrets(newDest), at: new Date().toISOString() });
+          if (said === 'yes' || said === 'typed') {
+            card = { ...card, destination: newDest };
+            writeScope = said === 'typed' ? newDest.split(/[,\n]/).map((x) => x.trim()).filter(Boolean) : [newDest];
             draft.writeScope = writeScope;
-            state.card = { ...state.card, destination: pointed.point.folder };
-            say('bot', `Destination is now ${pointed.point.folder}. Drafting.`);
+            state.card = { ...state.card, destination: newDest };
+            say('bot', `Destination is now ${newDest}. Drafting.`);
           } else say('bot', 'Destination stays as it is. Drafting.');
         }
       }
@@ -1387,6 +1391,11 @@ export function createSession(card, deps = {}) {
         if (no !== null) return { ok: false, refused: 'bad-choice', error: no };
         const r = resolveChoice(choice, text);
         if ('error' in r) return { ok: false, refused: 'blank-answer', error: r.error };
+        // a typed Destination goes through the SAME $0 check the card's Destination does, before it is taken; a refusal keeps the question open with that check's own words
+        if (choice === 'path') {
+          const problem = startDestinationProblem({ inputs: card.inputs, destination: r.value, checkType: card.checkType });
+          if (problem !== null) return { ok: false, refused: 'bad-destination', error: problem };
+        }
         say('you', r.shown);
         answer(r.value, /** @type {string} */ (choice));
         return { ok: true };
