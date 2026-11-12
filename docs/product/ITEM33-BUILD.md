@@ -4124,3 +4124,8 @@ Signed by hamr 2026-11-12. No build before POC PASS.
 
 POC bar frozen: .claude/scratch/checkblock-poc/PREREG.md sha256 ab684c13edde0815956b92ee82bc58b701e6a90a05f77d8ab0822a3287d0c298
 (Case sets: 10 test panel sessions plus the 77 saved paid drafts, paid to paid6, under `.claude/scratch/r10/`; counts verified by listing. The PREREG file is untracked; this sha is the freeze.)
+
+### 2026-11-12 POC round 1 FAIL, round 2 frozen
+- Round 1 verdict FAIL: record in `.claude/scratch/checkblock-poc/RESULTS.md` (stays as written). Most failures were scorer defects, but one was a real block fault: the "more than 3 checks proposed" cap counted every AI row kept across all replies instead of the checks kept in one reply (src/checklist.js:18, :121), so a full reply refused every later edit whole, against the signed answer 2A (per-edit refusal). Fixed: the cap is per reply, each extra refused alone.
+- hamr's ruling A (2026-11-12): when the look picked the shape for a `~` rule but gave no limit, code reads the limit from the person's own `~` words (e.g. "under $450", "between 05:00 and 21:59"), reusing the existing readers; a text code cannot read stays Not checked with a plain reason; code never invents a shape.
+- POC round 2 bar frozen: .claude/scratch/checkblock-poc/PREREG-R2.md sha256 39650de10cf6594e72e4daf8f263d1178166258dee8473dffdc8afaf343c853a
