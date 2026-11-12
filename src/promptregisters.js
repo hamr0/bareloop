@@ -92,7 +92,7 @@ export const PROMPT_REGISTERS = Object.freeze([
   Object.freeze({ file: 'src/checklist.js', name: 'LEDGER_SYSTEM' }),
   Object.freeze({ file: 'src/checklist.js', name: 'LEDGER_SCHEMA (property descriptions)' }),
   Object.freeze({ file: 'src/checklist.js', name: 'ledgerUserText() (inline template, not a const)' }),
-  Object.freeze({ file: 'src/checklist.js', name: 'OFF_LIST_WORDS, WEEK_ONLY_WORDS, EMPTY_LIST_WORDS' }),
+  Object.freeze({ file: 'src/checklist.js', name: 'WEEK_ONLY_WORDS, EMPTY_LIST_WORDS' }),
 
   // src/rowedit.js — the drafter's row-edit turn of a rubric job (the check block): system text, the one user message, the revise line, the tool's description
   Object.freeze({ file: 'src/rowedit.js', name: 'ROW_EDIT_SYSTEM' }),

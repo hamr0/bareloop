@@ -621,15 +621,14 @@ export async function authorCloseForJob({
   // arrived at by accident.
   /** @type {any} */
   let survey = scout;
-  /** the frozen input texts the list's word proof reads (a rubric job with job lines and a provider) @type {Record<string, string>|null} */
+  /** the frozen input texts the list's word proof reads (a rubric job with a look) @type {Record<string, string>|null} */
   let ledgerTexts = null;
   // PART 1a: a rubric job on local files has no repository to survey. PART 1c: its survey is the LOOK - a read-only, bounded, paid
   // look at the person's frozen input text that reports which facts can be checked and with which label (picked from a code-made
   // list). Without a look (`lookFn` null, or no model boundary) the survey is just the numbered inputs, known to code at $0.
   if (survey == null && lang === RUBRIC_LANG) {
     const inputList = (Array.isArray(inputs) ? inputs : []).map((i) => ({ n: i.n, label: i.label }));
-    // every rubric job drafts through the check block, so the inputs are frozen and read whether or not a look runs (a test seam passes `lookFn: null`: the block then holds no look facts)
-    const frozen = provider && Array.isArray(jobLines) && jobLines.length > 0 && inputList.length > 0
+    const frozen = lookFn && provider && Array.isArray(jobLines) && jobLines.length > 0 && inputList.length > 0
       ? await readFrozenInputs(workdir, inputList.map((i) => i.label)) : null;
     if (frozen !== null && frozen.ok) ledgerTexts = frozen.texts;
     if (frozen !== null && !frozen.ok) {

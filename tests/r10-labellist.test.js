@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { runPageMap } from '../src/pagemap.js';
 import { checkFactWords, keptSetOf, labelListsFor } from '../src/factwords.js';
 import * as af from '../src/authorflow.js';
+import { ROW_EDIT_TOOL } from '../src/rowedit.js';
+import { renderLookReport } from '../src/inputlook.js';
 import { proveRubricInputs } from '../src/source.js';
 import { buildSeedListing } from '../src/authorscout.js';
 
@@ -62,7 +64,7 @@ test('an input with no page-word map (no look, or the old look with no dropped l
 
 // ---- the real seam: the prompt the drafting loop builds -------------------------------------------------------------------------------------
 for (const key of ['d11', 'd12']) {
-  test(`${key}: authorClose's drafting prompt carries the one list (the kept labels), not the code-made one`, async () => {
+  test(`${key}: authorClose's row-edit message carries the look's report (the kept labels), not the code-made list`, async () => {
     const look = await lookOf(FX[key].pageMapRaw);
     const file = join(tmp(), 'CHANGELOG.md'); copyFileSync(CHANGELOG, file);
     const proved = await proveRubricInputs({ inputs: [{ n: 1, label: 'Changelog', value: file }], into: join(tmp(), 'seed') });
@@ -72,7 +74,7 @@ for (const key of ['d11', 'd12']) {
     /** @type {string[]} */ const prompts = [];
     const generate = async (/** @type {any} */ m, /** @type {any} */ tools) => {
       prompts.push(m.map((/** @type {any} */ x) => (typeof x.content === 'string' ? x.content : JSON.stringify(x.content))).join('\n'));
-      await tools.find((/** @type {any} */ t) => t.name === af.DECLARATION_TOOL_NAME).execute({ stages: [{ name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } }] });
+      await tools.find((/** @type {any} */ t) => t.name === ROW_EDIT_TOOL).execute({ edits: [] });
       return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } };
     };
     const listing = await buildSeedListing({ workdir: prep.tree, seedRef: prep.manifest.seed, sourcePaths: undefined, testPaths: undefined });
@@ -83,8 +85,11 @@ for (const key of ['d11', 'd12']) {
       listing, generate, writeScope: ['output/'], jobLines: JOB_LINES, inputs: [{ n: 1, label: 'Changelog', value: file }], maxRevisions: 0,
     });
     assert.ok(prompts.length >= 1);
-    const [block] = labelListsFor({ Changelog: TEXT }, look);
-    assert.ok(prompts[0].includes(block), 'the prompt carries the kept-label list');
+    // the drafter reads the LOOK's own report (what it can check, with the kept labels), the one list code keeps; the code-made label list is never in the message (the AI picks no label: a label outside the kept ones is a
+    // refused/Not checked add, in the gate's words, tested in tests/checkblock-rows.test.js)
+    const body = renderLookReport(look).split('\n').slice(1).map((l) => l.trim()).filter(Boolean);
+    assert.ok(body.length > 0, 'the look has something to report');
+    for (const l of body) assert.ok(prompts[0].includes(l), `the message carries the look report line: ${l}`);
     assert.doesNotMatch(prompts[0], /the words right before a date\)/);
     for (const bad of refusedLabels(FX[key])) assert.ok(!prompts[0].includes(`  ${JSON.stringify(bad)}  x`), `the code-made row for ${JSON.stringify(bad)} is still in the prompt`);
   });

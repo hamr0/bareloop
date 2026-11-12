@@ -95,7 +95,7 @@ async function closeWorld(replies, { lines = jobLines, lk = look, second = false
   };
   const listing = await buildSeedListing({ workdir: prep.tree, seedRef: prep.manifest.seed, sourcePaths: undefined, testPaths: undefined });
   const real = Object.fromEntries(inputs.map((i) => [i.label, readFileSync(i.value, 'utf8')]));
-  const block = new CheckBlock({ texts: second ? real : texts, labels: inputs.map((i) => i.label) });
+  const block = new CheckBlock({ texts: real, labels: inputs.map((i) => i.label) });
   block.fromJob(lines);
   block.addLook(lk.facts ?? [], lk.dropped ?? []);
   if (carry) block.carry(carry);
