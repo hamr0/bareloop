@@ -49,7 +49,9 @@ test('F318 (3) agree to the rule\'s own words adds no second ~ line; the pick ci
   const leg = await agreeOn('at most 80 words');
   assert.deepEqual(leg.jobLines[0].rules, ['at most 80 words']);
   assert.equal(leg.jobLines[0].rule, 'at most 80 words');
-  assert.deepEqual(leg.checkPicks.picks.map((p) => [p.line, p.rule]), [[1, 1]]);
+  // the pick sits on the existing rule's row: one `~` row, no follower row (F318 (3), the block's `follow`)
+  const rows = leg.block.rows.filter((r) => r.kind === 'rule');
+  assert.deepEqual(rows.map((r) => [r.line, r.rule, r.pick ?? null]), [[1, 1, { rule: 'maxWords', value: 80 }]]);
 });
 
 test('F318 (3) the same words in another case, spacing and with a full stop are still the same rule', async () => {

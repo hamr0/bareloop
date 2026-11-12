@@ -6,17 +6,16 @@ import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, rmSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { scopedRules, isCountable, guardrailItemCount, settleRules, applyPicks, plainWords, SUGGEST_TOOL } from '../src/checkpick.js';
+import { scopedRules, isCountable, guardrailItemCount, plainWords, SUGGEST_TOOL } from '../src/checkpick.js';
 import { runPageMap, askableFromLook } from '../src/pagemap.js';
 import { authorCloseForJob as forJob } from '../src/authorjob.js';
 import { RUBRIC_LANG, validateDeclaration, classGuards, catalogueForLang, genreForLang } from '../src/authoring.js';
-import { withFactBindings, withDropNotes, settlePersonsWords, checksOfClose } from '../src/rubricstep.js';
+import { checksOfClose } from '../src/rubricstep.js';
 import { proveRubricInputs } from '../src/source.js';
 import { reply } from './helpers.js';
 
 const fx = (f) => readFileSync(new URL(`./fixtures/${f}`, import.meta.url), 'utf8');
 const LOOKS = JSON.parse(fx('r10-countable-look.json'));
-const { D3 } = JSON.parse(fx('r10-keepboth-refused.json'));
 const PAGE = fx('r10-countable-changelog.md');
 const jobLines = [{ n: 1, text: 'Summarise the latest release in the changelog', rule: 'exactly 3 bullets; under 80 words', rules: ['exactly 3 bullets', 'under 80 words'] }];
 /** @type {string[]} */ const made = [];
@@ -88,7 +87,7 @@ async function door(look) {
       asked.push(o.questions);
       const jl = JSON.parse(JSON.stringify(jobLines)); const picks = [];
       for (const q of o.questions) { picks.push({ line: q.line, rule: q.rule, check: q.check, added: plainWords(q.check) }); jl[0].rule += `; ${plainWords(q.check)}`; jl[0].rules.push(plainWords(q.check)); }
-      return { jobLines: jl, answers: { 1: 'ans' }, left: [], picks };
+      return { jobLines: jl, answers: { 1: 'ans' }, left: [], picks, choices: o.questions.map((q) => ({ key: q.key, choice: 'agree', text: '' })) };
     },
     generate: async () => { throw new Error('no model call'); },
     authorFn: async (o) => { seen = o; return { ok: false, stop: 'max-revisions', declaration: null, iterations: [], raws: [], cost: { costUsd: 0, knownUsd: 0, spendComplete: true, calls: [], unpricedRounds: 0 }, reds: [] }; },
@@ -100,11 +99,12 @@ for (const k of ['d4', 'd5']) {
     const look = await lookOf(k);
     const { asked, seen } = await door(look);
     assert.deepEqual(asked.flat().map((q) => [q.ask, q.line, q.rule]), [['check', 1, 1], ['check', 1, 2]], 'both proposals, no look ask');
-    assert.deepEqual(seen.checkPicks.picks.map((p) => p.check.rule), ['listItems', 'maxWords']);
+    const block = seen.block;
+    assert.deepEqual(block.rows.filter((r) => r.kind === 'rule' && r.pick).map((r) => r.pick.rule), ['listItems', 'maxWords']);
     assert.ok(look.facts.some((f) => f.forRule === 1), 'the look\'s fact is still there beside the pick');
-    // the plan: the drafter's fact (the real refused declaration of the paid drafts) plus the picks, through the real draft gate
-    const settled = settleRules(seen.checkPicks.rules, seen.checkPicks.picks, [], seen.jobLines);
-    const v = validateDeclaration(withFactBindings(withDropNotes(settlePersonsWords(applyPicks(D3, settled), seen.jobLines), undefined, seen.jobLines)), {
+    // the plan: the block's own close (the look's fact plus both picks), through the real draft gate
+    const built = block.reconcile();
+    const v = validateDeclaration({ stages: [...classGuards({ verdictType: 'soft-green', lang: RUBRIC_LANG }).map((g) => ({ name: g.name, kind: g.kind, params: { ...g.params, allowPrefixes: ['output/'] } })), ...built.stages], picks: built.map.flatMap((m) => { const part = built.parts[m.part]; return part.class === 'countable' && Array.isArray(part.rules) ? [{ line: m.line, part }] : []; }) }, {
       catalogue: catalogueForLang(RUBRIC_LANG), listing: ['input/CHANGELOG.md', 'output/.gitkeep'], guards: classGuards({ verdictType: 'soft-green', lang: RUBRIC_LANG }),
       envOwned: [], verdictType: 'soft-green', writeScope: ['output/'], jobLines: seen.jobLines, inputLabels: ['Changelog'],
     });

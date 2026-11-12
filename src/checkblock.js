@@ -34,7 +34,7 @@ const wordSet = (/** @type {unknown} */ t) => new Set(norm(t).match(/[\p{L}\p{N}
 
 /** the plain reasons code gives, in one place (the card, the Job tab and the Audit read them from the row) */
 export const REASON = Object.freeze({
-  left: 'You left it off, so you judge it at Accept.',
+  left: 'You chose to leave it Not checked, so you judge it at Accept.',
   nothingOnPage: 'nothing on the page carries your own words, so you judge it at Accept.',
   cantCheck: "I can't check this on the page; waiting for your answer",
   noRule: 'No rule can check this, so you judge it at Accept.',
@@ -143,7 +143,9 @@ export class CheckBlock {
     }
     for (const f of facts) {
       this.lookFacts.push(f);
-      const row = Number.isInteger(f.forRule) ? this.ruleRows(f.line).find((r) => r.rule === f.forRule) : undefined;
+      // a fact the look tied to a COUNTING `~` rule stays a fact of its own: the pick path owns that rule (R10, hamr 2026-11-09), so the rule uses no link
+      const tied = Number.isInteger(f.forRule) ? this.ruleRows(f.line).find((r) => r.rule === f.forRule) : undefined;
+      const row = tied && !isCountable(tied.text) ? tied : undefined;
       const carried = { name: f.name, shape: f.shape, words: [...(f.words ?? [])], unit: f.unit, currency: f.currency, decimal: f.decimal, lang: f.lang, source: f.source };
       if (row) { (row.links ??= []).push({ ...carried, reading: f.reading }); continue; }
       this.addRow({ key: `L${f.line}.fact.${norm(f.name)}`, line: f.line, kind: 'fact', by: 'agent', from: 'look', ...carried });
@@ -273,6 +275,8 @@ export class CheckBlock {
     /** @type {{r: Row, src: string}[]} */ const factRows = [];
     /** @type {Row|null} */ let countRow = null;
     /** @type {number[]} */ const rulesCarried = [];
+    /** the person's picks of this line: they follow the line's fact part on the card, as they always did (the facts, then the picks, then the defaults) @type {{p: any, key: string}[]} */
+    const pickParts = [];
     for (const r of this.rowsOn(l.n)) {
       if (r.kind === 'floor') continue;
       r.part = null;
@@ -282,7 +286,7 @@ export class CheckBlock {
         const p = partOfPick(r.pick, r.text, [r.rule, ...this.followsOf(r).map((/** @type {Row} */ f) => f.rule)]);
         const reds = rubricStepShapeReds({ step: l.n, parts: [p] }, 'trial');
         if (reds.length) { r.state = 'not-checked'; r.reason = `the pick is not a legal check: ${reds[0].detail}`; continue; }
-        lineParts.push(p); lineRows.push([r.key]); r.state = 'built'; r.reason = null;
+        pickParts.push({ p, key: r.key }); r.state = 'built'; r.reason = null;
         continue;
       }
       if (r.can.how === 'count') { countRow = r; continue; }
@@ -303,6 +307,7 @@ export class CheckBlock {
       if (reds.length) for (const x of [...factRows.map((f) => f.r), ...(countRow ? [countRow] : [])]) { x.state = 'not-checked'; x.reason = `code could not build the line's fact part: ${reds[0]?.detail}`; x.part = null; }
       else { lineParts.push(part); lineRows.push([...factRows.map((f) => f.r.key), ...(countRow ? [countRow.key] : [])]); factLines.add(l.n); if (countRow) { countRow.state = 'built'; countRow.reason = null; } }
     } else if (countRow) { countRow.state = 'not-checked'; countRow.reason = REASON.countNeedsFact; }
+    for (const { p, key } of pickParts) { lineParts.push(p); lineRows.push([key]); }
     this.buildDefaults(l, lineParts, lineRows, factLines);
     for (const f of this.rowsOn(l.n).filter((x) => x.parent)) {
       const par = this.rows.find((x) => x.key === f.parent);

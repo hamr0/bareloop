@@ -91,7 +91,7 @@ function sessionWith({ lookFacts, confirmQuestions }) {
 }
 
 test('Q1 + Q3: the early ask is recorded as a `human` row (source, question, answer); a blank answer leaves no row; "drop it" adds no rule and lands on the look\'s Not checked list; a question the confirm model raises is discarded (a rubric confirm turn plans the goal only), never asked', async () => {
-  const { session, legs, sessionDir, survey } = sessionWith({ lookFacts: [], confirmQuestions: ['Which airport do you mean?'] });
+  const { session, legs, sessionDir } = sessionWith({ lookFacts: [], confirmQuestions: ['Which airport do you mean?'] });
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'), `${session.state.phase} / ${session.state.error}`);
   assert.equal(session.state.pendingAsk.source, 'look');
   session.send('   ');                                 // blank: re-asks, records nothing
@@ -111,11 +111,12 @@ test('Q1 + Q3: the early ask is recorded as a `human` row (source, question, ans
   const steps = readDraftSteps(sessionDir());
   const withHumans = steps.filter((x) => x.humans.length > 0);
   assert.deepEqual(withHumans.map((x) => [x.id, x.humans.length]), [['look', 1]]);
-  // T2 "leave": no rule was added, and the rule is on the look's own Not checked list, so it reads that way everywhere
+  // T2 "leave": no rule was added, and the rule is Not checked in the block's own row (ruling 4 of 2026-11-12: a rule the person left is the block's own, not an entry on the look's dropped list), so it reads that way everywhere
   assert.deepEqual(legs[0].jobLines[0].rules, ['one per week']);
-  const left = survey.facts.look.dropped;
-  assert.deepEqual(left.map((d) => [d.line, d.rule, d.reason]), [[1, 1, 'person-left']]);
-  assert.equal(dropLine(dropRows(left)[0], legs[0].jobLines, lineRules), 'line 1: "one per week" \u2014 You chose to leave it Not checked.');
+  const row = legs[0].block.rows.find((r) => r.kind === 'rule');
+  assert.deepEqual([row.rule, row.state, row.left], [1, 'not-checked', true]);
+  assert.equal(row.reason, 'You chose to leave it Not checked, so you judge it at Accept.');
+  assert.deepEqual(legs[0].block.signedRows().find((r) => r.key === row.key)?.reason, row.reason);
 });
 
 test('Q1: an abandoned or unanswered question writes no row; an old session (the real mve5y8fa log) has no human rows and its steps carry an empty list', async () => {
