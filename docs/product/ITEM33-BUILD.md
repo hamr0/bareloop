@@ -4129,3 +4129,167 @@ POC bar frozen: .claude/scratch/checkblock-poc/PREREG.md sha256 ab684c13edde0815
 - Round 1 verdict FAIL: record in `.claude/scratch/checkblock-poc/RESULTS.md` (stays as written). Most failures were scorer defects, but one was a real block fault: the "more than 3 checks proposed" cap counted every AI row kept across all replies instead of the checks kept in one reply (src/checklist.js:18, :121), so a full reply refused every later edit whole, against the signed answer 2A (per-edit refusal). Fixed: the cap is per reply, each extra refused alone.
 - hamr's ruling A (2026-11-12): when the look picked the shape for a `~` rule but gave no limit, code reads the limit from the person's own `~` words (e.g. "under $450", "between 05:00 and 21:59"), reusing the existing readers; a text code cannot read stays Not checked with a plain reason; code never invents a shape.
 - POC round 2 bar frozen: .claude/scratch/checkblock-poc/PREREG-R2.md sha256 39650de10cf6594e72e4daf8f263d1178166258dee8473dffdc8afaf343c853a
+
+### 2026-11-12 CHECK BLOCK BUILD SPEC — for hamr's read, not signed
+
+Status: a spec for hamr to read. Nothing is built. No builder starts before hamr signs this.
+The POC (round 2, PASS) is `.claude/scratch/checkblock-poc/RESULTS-R2.md`. Its thin power is stated there; this spec does not claim more than it proved.
+Line numbers below were checked against the tree on feat/check-ledger on 2026-11-12. None of the design's cited lines had drifted. New lines are added where the design named none.
+
+#### 1. Goal
+
+hamr, verbatim: "goal again is simplfication and one flow one place ai suggestes ! code adds $ and code decides what worked/doable"
+
+Rubric jobs only. Repo/deterministic jobs are out (answer 4).
+
+#### 2. The new module: src/checkblock.js
+
+One class, `CheckBlock`. The rows are the one store. Nothing else holds a check.
+The prototype is `.claude/scratch/checkblock-poc/checkblock.mjs`. The build is a REWRITE from it, never a copy (rule: graduation is a rewrite).
+Every method is small. Each says what it reads and what it writes.
+
+A row: `key`, `line`, `kind` (rule, fact, phrase, count, cited, numbers, floor), `by` (you, agent, default), `from`, `state` (built, not-checked), `reason`, `words`, plus kind fields. A `~` row may carry `links` (look facts tied to it), `pick`, `aiReading`, `left`.
+
+- `constructor({texts, labels, maxTries})`. Reads the frozen input texts and labels. Writes empty `rows`.
+- `fromJob(jobLines)`. Reads the person's lines and `~` rules (`lineRules`, `src/rubricstep.js:706`). Writes one `~` row per rule and one `$ floor` row per line.
+- `addLook(facts)`. Reads the look's facts. Writes: a fact tied to a `~` rule (`forRule`) becomes a LINK on that row, never a drop. Any other fact becomes a `!` row.
+- `match()`. Reads every row, the saved page text, the person's words. Writes `row.can` = ok or not, and how. Never the AI. Order for a limit: the look's reading, then the person's own words (`readLimit`, section 5), then the AI's reading.
+- `build()`. Reads `row.can`. Writes `row.state` and `row.reason` on every row. Returns the close's stages and parts, made by code through the bareguard-backed shapes (`rubricStepShapeReds`, `partOfPick`). A row code cannot build keeps its place with its plain reason. `$ cited` and `$ numbers` are decided here, from what the line ended with.
+- `ask()`. Reads `row.can.ask`. Writes `open` (the questions). Cap 3 stays (MAX_QUESTIONS rule at `src/authorjob.js:703`).
+- `applyAnswer(key, choice, text)`. Reads the typed choice (agree, drop, rule). Writes a row edit. The choice decides, never the words.
+- `applyDelta(delta)`. Reads the AI's reply: a list of row edits. Writes row edits, each checked alone (section 6). Counts one try per reply.
+- `reconcile()`. Runs `match`, `build`, `ask` over the WHOLE list, every time.
+- `drive({answer})`. The loop: `while (open questions or a delta waits) { apply; reconcile }`. Then sign.
+- `card()`. Reads rows only. Returns the card lines (one pure function; the card's fixed words in one `CARD_T`).
+- `signedRows()`. Reads rows. Writes the signed list (line, key, from, by, kind, state, rule, part, reason, NO words).
+- `retention()`. Reads rows. Returns the per-line counts.
+- `hasBuiltCheck()`. Reads rows. True when one non-floor row is built (the standing ruling: a run needs one check).
+
+The block never removes a row. Only the person (answer) or code (match) changes a row.
+
+#### 3. Call sites (every clause, file:function)
+
+An engine with no caller is not the feature. Each clause below is wired in the build, and the test for it goes through the caller, not the class alone.
+
+- Make the block (job + look): `src/authorjob.js`, the block at 775-787 that now calls `buildLedger` (`checklist.js:68`). It becomes `new CheckBlock(...)`, `fromJob`, `addLook`, `reconcile`. The phase `ledger-built` stays, fed from `block.signedRows()`.
+- Code-forced questions: `src/authorjob.js:701` calls `askableFromLook` (`src/pagemap.js:259`). It becomes `block.ask()`. The look keeps `runPageMap` (`pagemap.js:107`) and `readingOfQuestion` (`pagemap.js:237`).
+- The pick path (check picks for count rules): the picks settle into `rule.pick` rows through `applyAnswer`. `settleRules` (`checkpick.js:329`) is read at `authorflow.js:2896` and `checklist.js:73`; both go.
+- The AI's extra `!` check call: `src/authorjob.js:779` `runLedgerSuggest` (`checklist.js:467`). Its output goes into `block.applyDelta` (same door as the drafter's reply). See open item 3.
+- The drafter's reply per try: `src/authorflow.js` `authorClose`, the `picked` closure (2899-2906) and the try body (3115-3126). `picked` and `settled` are replaced by: `block.applyDelta(parse(ask))`, `block.reconcile()`, then the declaration is assembled FROM `block.build()` and passed to `checkDraft` (`authorflow.js:2915`).
+- The revise loop: `MAX_REVISIONS` (`authorflow.js:111`), `revisionCap` (2730), `nextTryMayAsk` (3001), the revise turn (3215). Limit stays 2 revises. A try is one delta reply. The revise turn carries each edit's own refusal reason and nothing else.
+- The end of the draft: `authorflow.js:3264-3265` and 3302 now read `resolveLedger` and `retentionOfList`. They become `block.signedRows()` and `block.retention()`. Phases `draft-ledger` and `draft-retention` stay.
+- Panel answer loop: `src/panel/authorsession.js` `answerQuestions` (about 1209-1330). Each answer, via the question box choice (`takeChoice`, `refuseChoice` at 1390, `resolveChoice`), calls `block.applyAnswer`. The `src/questionbox.js` box (`boxFor` at `authorsession.js:653`, `offersOf`) reads `block.open`. The offers come from the row (agree only with a proposal; drop only for a `~` row).
+- Card, signed: `authorsession.js:1352` `cardOfClose` (`rubricstep.js:1029`) with `readDraftLedger` (`src/draftspend.js:289`). It reads the signed rows (`closeDecl.list`) only.
+- Job tab and plan card: `src/panel/jobplan.js` `planFromSpec` (53; called at `src/panel/server.js:1741`, 3642, 4071) and `planFromConfirm` (132; called at `authorsession.js:191`), drawn by `renderJobPlan` (`src/panel/index.html:4101`; called at 4160 and 6021). They read rows only. The Not checked list at `jobplan.js:100-125` reads row reasons, not `refused` parts.
+- Close and signing: `src/authorjob.js:968` `signedRows(authored.ledger)` becomes `block.signedRows()` (the signed `closeDecl.list`). The gate stays: `src/authoring.js:1530-1532` `checkRubricParts`, `checkRubricRules` check the code-built parts (a second look, kept).
+- Plan-matches-close check: `src/panel/authorroutes.js:527-530` `planMatchesClose`, `listMatchesClose` (`rubricstep.js`). They read rows.
+- End check (one check needed): `src/panel/authorsession.js:1011` and `src/authorrun.js:1180` both call `noCheckStopText` / `isNoCheckRubricClose` (`authorreadout.js:887,902`). They become `block.hasBuiltCheck()`. See section 8 and open item 1.
+- Retention: `authorflow.js:3125` `retentionOf` goes (section 8); `retentionOfList` (`checkpick.js:550`) reads `block.retention()`.
+- Audit: the draft-log writers at `authorsession.js:703-706` (`ledger-built`, `draft-ledger-try`, `draft-ledger`) and the readout words at `authorreadout.js:319-322`. `draft-ledger-try` now reports edits kept and edits refused with reasons.
+- Prompt registers: `src/promptregisters.js:94` lists `ledgerBlock()`; update it to match what stays.
+
+#### 4. What the AI is asked for now
+
+The AI's rubric reply shrinks to: row edits (add a `!`, a reading for a `~` rule, a pick for a count rule, a not-checkable reason) plus the goal sentence. It never writes a part, a check or a final declaration.
+The AI sees the job lines and the look (its existing inputs). It is NOT shown the list. A refusal says "already on the list" per edit.
+No injected text restates the list (invariant 5). A line saying what the edit shape is, is a format, not the list.
+
+Prompt constants that change (all in `src/authorflow.js` unless stated):
+- `REQUIRED_FACTS_BRIEF` (1509): the part-writing rules go; it becomes the row-edit format and the look-copy rule only.
+- `RUBRIC_RULES` (1481): "plan it as a limit with its number" and "a number YOU make" move to the reading edit; the line about a time proposal being a range stays (code enforces it too).
+- `settledBlock` (1498) and its use at 1608: removed (code settles picks).
+- `ledgerBlock` use at 1609 and the function (`checklist.js:390`): removed.
+- `LEDGER_SYSTEM` (`checklist.js:409`), `LEDGER_SCHEMA` (415), `ledgerUserText` (452): change only if open item 3 is answered "fold"; otherwise they feed `applyDelta` unchanged.
+- `RUBRIC_CONFIRM_NOTE` (2274): check for list wording, remove any.
+- Prompt-commit labels apply (section 11).
+
+#### 5. The limit reader (hamr ruling A)
+
+When the look picked the shape for a `~` rule but gave no limit, code reads the limit from the person's own `~` words. One reader, no copy.
+- Put `readLimit` in `src/rubricstep.js` beside `TIME_RANGE_RE` (792) and `NEGATING_RE` (793), exported. The block imports it. `CLOCK` (791), `boundInWords` (736) and `validReading` (`pagerules.js:46`) judge the result.
+- The ops words are the `facts.js:254-255` words. Money direction words (under, below, less than, at most, up to, no more than, over, above, more than, at least, no less than) are the only new parsing. `between $X and $Y` is the money range.
+- Code never invents a shape. No look-tied link, no read.
+- A text code cannot read is Not checked with a plain reason. Never a wrong check.
+
+Required tests the POC did NOT cover (each ends built correctly or Not checked with a plain reason):
+- "at least $200": built as gte 200.
+- "over $450": built as gt 450.
+- "between $100 and $300": built as between 100 and 300.
+- "between $100 and 300" (second amount has no sign): Not checked (the reader needs a sign or word on both).
+- one-sided time, "after 06:00" and "before 21:00": Not checked (a time proposal must be a range; also negating words).
+- AM/PM, "between 5:00 PM and 9:00 PM": Not checked (the prototype refuses a 12-hour time; a build may convert, but only with a test that proves it).
+- negated: "not between 05:00 and 21:59", "not under $450": Not checked.
+- one more case found while reading the prototype: "under $450 or over $900". The prototype's first-match reader would read only "under $450" and drop the "or". It is a wrong check. Rule: more than one amount or range in the rule = Not checked. Needs a fail-first test. (Not seen live; found by reading, so it is a test, not a parked defect.)
+
+#### 6. The per-reply cap
+
+`MAX_BANG = 3` (`checklist.js:18`) counts the checks KEPT in one AI reply, in order. Each extra is refused alone with "more than 3 checks proposed". It never refuses a later reply. (POC round 1 fault: the prototype counted across replies.) Test: a reply with 5 legal adds keeps 3 and refuses 2 alone; a second reply keeps its own 3.
+
+#### 7. Seen in the POC replay (not seen live) — hamr's call
+
+A `!` add that repeats a look fact already tied to a `~` rule is accepted as a `!` row but ends not-checked "the name 'price label' is used twice on this line" (session smwdhl8k5q8pn). It should be refused at the edit as "already on the list". It is hamr's call whether it goes in. Recommended: yes (one small check in `editAdd`, the reason is then plain).
+
+#### 8. Deletions (same build, hamr answer 5A)
+
+Each is removed in the same build. Its tests are removed or rewritten to the rows; a test that pinned the old wording is grepped.
+- The drafter's part-writing instructions: `REQUIRED_FACTS_BRIEF` part rules, `authorflow.js:1509` (section 4).
+- `applyLedger`, `src/checklist.js:193` (and its refusal of AI parts).
+- fea67fd9's look-credit: `src/checklist.js:216-236` (`tieRow`, `lookCredit`) and its test/fixture `tests/look-tied-rule.test.js`, `tests/fixtures/look-tied-rule/rows.json`.
+- `resolveLedger`, `checklist.js:330`; `ensureCited`, `checklist.js:314` (become row reads).
+- `ledgerBlock`, `checklist.js:390`; its call `authorflow.js:1609`; its register line `promptregisters.js:94`.
+- `buildLedger`, `checklist.js:68` (replaced by `fromJob` and `addLook`).
+- `settlePersonsWords`, `rubricstep.js:806`; `withDropNotes`, `rubricstep.js:871`; `withFactBindings`, `rubricstep.js:846` (also `authorflow.js:2622`, 3115).
+- `fillAndMergeFacts`, `checkpick.js:472`; `moveUncheckable`, `checkpick.js:365`; `applyPicks`, `checkpick.js:419`; `settleRules` as a separate step, `checkpick.js:329`.
+- The last-try drop: `dropAfterLastTry`, `authorflow.js:2618` (call 3122); `dropExtras`, `checkpick.js:571`; `DROPPED_WORDS`, `checkpick.js:561` as a catch-all reason; `retentionOf`, `checkpick.js:526` (call 3125).
+- The part revise ladder use: the `picked` closure, `authorflow.js:2899-2906`, and the `ledgerTry`/`ledgerPres` bookkeeping (2896-2930, 3126).
+- The F307 local fixes: `55e72344` (end check) — `noCheckStopText` `authorreadout.js:902`, its call `authorsession.js:1011`, the bypass at `authorrun.js:1180`, test `tests/nocheck-end-check.test.js`, fixture `tests/fixtures/r10-vanish-closes.json`. `cb3babf5` — its test in `tests/rubric-door.test.js`. `039ce9d3` — its test edits in `tests/r10-sourcefill.test.js`, `tests/rubric-door.test.js`, `tests/run-author.test.js`. Replaced, not just removed: the end check's behaviour is `block.hasBuiltCheck()` at the same two doors, with the same plain stop words (see open item 1).
+
+#### 9. What stays
+
+- Bareguard shapes and validation.
+- The seed/dry read on the page (`src/pagedry.js`).
+- Signing and the hash. Calibration where it applies.
+- The question box (`src/questionbox.js`).
+- `runPageMap` (the look), `readingOfQuestion`, the `~ ! $` marks, the signed row fields (no words).
+- The draft gate `checkRubricParts` / `checkRubricRules` (`authoring.js:1530-1532`) as a second look on code-built parts.
+- The 2-revise limit, then Start over. The monthly/caps/budget rules. Nothing in arbiter territory is touched.
+
+#### 10. Tests
+
+All run only via `npm test` / `scripts/hermetic.mjs`. A builder reports `runs.jsonl` line count before and after.
+Every test below has a real fail-first run (red before the change, green after), not a mutation stand-in.
+- The five invariants from the design, each a test through the real callers: agreed and checkable implies built; not checkable implies Not checked with a reason; nothing on the card that is not a row; every edit passes `reconcile`; no injected prompt text restates the list (a check over the assembled drafter prompt).
+- The POC's six bars as unit tests over COMMITTED fixtures under `tests/fixtures/checkblock/`: the saved rows, job text, looks and deltas needed from the valid POC cases (copy the data; a test never reads `.claude/scratch`). Bars: every agreed checkable row built; no not-checkable row built; zero AI-format parts reach the close; card from rows only; a bad edit refused alone removes no row; no row dropped after the last try.
+- The limit-reader cases of section 5, and the per-reply cap of section 6.
+- Mutation guards kept from the POC (drop-after-last, keep-ai, whole-reply, skip-words-read) as tests that must fail on the mutant.
+- Caller tests: the drafter path in `authorflow.js`, the panel answer path, `planFromSpec` and `cardOfClose`, the signing doors. Each goes through the real function, not a stub of the seam.
+- The six row-invalid POC sessions are not used as fixtures.
+
+#### 11. Commit labels
+
+Commits touching `pagemap`, `authorflow`, `planrun` or `checklist` need `Failure:`, `Addresses:`, `Corrects:` lines. The `Failure:` line cites a real run id on its own line, for example `Failure: ... run mwdhma1l` (the draft session `smwdhl8k5q8pn` is 13 characters and is rejected; name it in the body). Run `node scripts/prompt-commit-check.mjs --range origin/main..HEAD` before pushing. Check `git branch --show-current` before every commit. Scope commits by explicit path.
+
+#### 12. Build order (small commits, each green on its own)
+
+- a. Limit reader: `readLimit` and exports beside the regexes in `rubricstep.js`, plus the section 5 tests. Nothing calls it yet but its own tests; no behaviour change.
+- b. `src/checkblock.js` and its fixtures and invariant tests. Not yet called by the product.
+- c. Wire drafting: `authorjob.js` block construction and `askableFromLook` swap; the `authorflow.js` try loop on `applyDelta`; the prompt constants of section 4. Old chain deleted in this commit where it cannot run any more (it must never run beside the block).
+- d. Wire panel, card, Job tab, close, signing, retention, Audit (section 3). End check becomes `hasBuiltCheck`.
+- e. Deletions of section 8 not already done in c and d, with test cleanup and a grep for old wording.
+- f. CHANGELOG `[Unreleased]` lines (one per user-visible change), PRD pointer line (contract tick only, no run ids), `docs/index.md` regenerated by the tool, never by hand.
+
+After each commit the builder runs the full `npm test` and quotes the exit code and the last line. No two suites at once; machine load under 15.
+
+#### 13. Done means
+
+- The full gate on the FINAL commit: `npm test` exit code and its last line quoted, with `prompt-commit-check` run.
+- Then ONE live draft on DeepSeek direct, deepseek-flash (`DEEPSEEK_API_KEY` from `pass amr/deepseek_api | head -1`, empty-key guard), replaying the F329 job, with a pasteable job text. Before the paid run: the $0 check of the job against the patient/page. Provider and model named first.
+- The card checked by my own screenshot beside its neighbours.
+- Phone width is named UNCHECKED unless hamr checks it in DevTools (barebrowse cannot emulate a phone).
+- No "done" word on the UI until hamr clicks through it. The AI-edit path (a real reading edit, a real refused edit) is test-proven only unless the live draft shows it; the summary says which.
+
+#### 14. Open items for hamr (3)
+
+1. End check (55e72344) and the standing ruling "a run needs one check". Answer 5A says delete it. Deleting the code with no replacement would drop that ruling. Recommended: delete the functions and tests, keep the behaviour as `block.hasBuiltCheck()` at the same two doors with the same stop words.
+2. Section 7: refuse a `!` add that repeats a `~`-tied look fact as "already on the list". Recommended: yes.
+3. The AI proposes `!` rows from TWO calls today: the separate suggest call (`runLedgerSuggest`) and the drafter. "One place" would fold them. Recommended: not in this build. Feed the suggest call through `applyDelta` now; fold it into the drafter only after the live draft shows the delta path works (the POC never replayed a native delta reply).
