@@ -2271,4 +2271,5 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 - The fit question lists the asks it found, not only the missing ones (F327, 73e08808; not seen live). The confirm legend is hidden when the plan has no check row (F328, 48e35a5d).
 - A look-tied rule is credited by code when its fact has a bound (F329, fea67fd9); superseded by the redesign below.
 - CHECK BLOCK REDESIGN: signed as direction by hamr 2026-11-12. One class owns the rows; code builds every check; the AI proposes row edits only. Design is a DRAFT in `docs/product/ITEM33-BUILD.md` ("2026-11-12 CHECK BLOCK REDESIGN"); POC first, no build before PASS; the branch release waits.
+- Check block design signed 2026-11-12 (5 answers, ITEM33-BUILD addendum); POC bar frozen by sha; no build before PASS.
 - Open: F330 (agreed checks lost at the last-try drop), F332 (an action word counted as a page ask), Destination buttons not seen live, phone width unchecked.

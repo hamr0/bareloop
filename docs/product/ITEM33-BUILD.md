@@ -4031,7 +4031,7 @@ Status: built on feat/check-ledger, test-proven (tests/question-box, question-ch
 
 Live walk 2026-11-12 (DeepSeek flash, test panel, scratch HOME): Stop at the fit question (session smwdhk8e6amd0, choice `stop`); Drop it (smwdirp88t2cy and smwdixbapp5h4, choice `drop`); typed own rule (smwdiy4k3bk0v, choice `rule`, words kept whole); Agree (smwdoiysjmma3, choice `agree`). Fit [Go on] and [Stop] seen. Destination buttons NOT seen live. Phone width NOT checked. Live findings: FINDINGS F327-F332 (F330 and F332 open).
 
-## 2026-11-12 CHECK BLOCK REDESIGN — DRAFT, not signed
+## 2026-11-12 CHECK BLOCK REDESIGN — signed 2026-11-12 (see addendum)
 
 hamr's direction 2026-11-12 is signed; this design is a proposal for hamr to interview and sign. No build before a POC PASS. The branch release waits for this (hamr 2026-11-12).
 
@@ -4109,3 +4109,18 @@ FAIL on any bar: report FAIL, redesign, re-freeze, never re-tune.
 ### Release note
 
 The feat/check-ledger release waits for this redesign (hamr 2026-11-12). Open findings that stay open until then: F330, F332.
+
+### 2026-11-12 SIGNED — hamr's answers
+
+Governing line, hamr verbatim: "goal again is simplfication and one flow one place ai suggestes ! code adds $ and code decides what worked/doable"
+
+Signed by hamr 2026-11-12. No build before POC PASS.
+
+1. Yes: per round the AI only proposes `!` rows, readings for `~` rows, and the goal sentence. Code builds every check.
+2. A: per-edit refusal. A bad AI edit is refused alone; the rest of the reply stays.
+3. Yes: the limit stays as 2 revises then Start over (as fwd). A "try" is one AI delta reply. Code never drops rows after the last try; rows change only by the person or by code.
+4. Repo/deterministic jobs OUT. fwdloop will borrow this whole change after the bareloop release.
+5. A: keep fea67fd9, 55e7234, cb3babf, 039ce9d until CheckBlock replaces them; delete them in the same build.
+
+POC bar frozen: .claude/scratch/checkblock-poc/PREREG.md sha256 ab684c13edde0815956b92ee82bc58b701e6a90a05f77d8ab0822a3287d0c298
+(Case sets: 10 test panel sessions plus the 77 saved paid drafts, paid to paid6, under `.claude/scratch/r10/`; counts verified by listing. The PREREG file is untracked; this sha is the freeze.)
