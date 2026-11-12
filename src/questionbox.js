@@ -11,7 +11,8 @@ import { DEST_ANSWER } from './destpoint.js';
 export const CHOICE_SAYS = Object.freeze({
   bad: 'That answer is not one of the choices. Nothing was saved.',
   notOffered: 'That choice is not offered for this question. Nothing was saved.',
-  noRule: 'That question is about the job line, not one of your ~ rules, so there is nothing to drop. Agree, or type your own words. Nothing was saved.',
+  outOfDate: 'This page is out of date. Reload it and answer again. Nothing was saved.',
+  noRule:'That question is about the job line, not one of your ~ rules, so there is nothing to drop. Agree, or type your own words. Nothing was saved.',
   blank: 'An answer is needed here — there is no skip. Type it in the box and press Send.',
 });
 

@@ -48,6 +48,7 @@ import { thinkingForLine } from '../thinking.js';
 import { panelMoney2 } from '../panelmoney.js';
 import { apiKeyProblem, checkProviderReachable } from '../providers.js';
 import { reviseRefusal, sessionsRootOf } from '../revises.js';
+import { CHOICE_SAYS } from '../questionbox.js';
 
 /** @returns {string} a fresh per-process token — never persisted, never logged */
 export function mintToken() {
@@ -447,7 +448,9 @@ export function createAuthorRoutes(opts) {
     if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
 
     if (sub === 'send') {
-      const r = session.send(String(body?.text ?? ''), body?.choice);
+      // hamr 2026-11-12 (fwd M10 am32 A): while a question is open the page always posts the button's typed choice; an answer with none is from an old page and is refused, nothing logged, the question stays open
+      if (session.state.pendingAsk?.kind === 'answer' && body?.choice === undefined) { send(400, { ok: false, refused: 'bad-choice', error: CHOICE_SAYS.outOfDate, state: session.state }); return true; }
+      const r =session.send(String(body?.text ?? ''), body?.choice);
       send(r.ok ? 200 : 400, { ...r, state: session.state });
       return true;
     }
