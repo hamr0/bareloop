@@ -1,4 +1,4 @@
-// PART 1b item 4 — the PROSE step after a fact step (src/rubricstep.js `withFactBindings`, `gradeStep`, `proseNotChecked`):
+// PART 1b item 4 — the PROSE step after a fact step (the check block's `$ numbers` default, `gradeStep`, `proseNotChecked`; withFactBindings, which tied an AI-written declaration, is deleted):
 // words are free, size is counted, and EVERY NUMBER in the text must be in a quote an earlier fact line already had checked
 // (bareguard's `numbersInQuote`). The card says "what the text says" is not checked. Real data: this repo's CHANGELOG.md frozen by
 // the real source door; the facts are its real release headings. No model is involved.
@@ -11,7 +11,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runStage, EXIT_STOP } from '../src/kinds.js';
 import { proveRubricInputs } from '../src/source.js';
-import { stepFileRel, withFactBindings, checkRubricParts, cardOfClose, checksOfClose, proseNotChecked } from '../src/rubricstep.js';
+import { stepFileRel, checkRubricParts, cardOfClose, checksOfClose, proseNotChecked } from '../src/rubricstep.js';
+import { CheckBlock } from '../src/checkblock.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** @type {string[]} */
@@ -42,21 +43,28 @@ const factStage = { name: 'line-1', kind: 'rubric-step', fromLine: [1], params: 
 const proseStage = (parts = []) => ({ name: 'line-2', kind: 'rubric-step', fromLine: [2], params: { step: 2, parts } });
 const tie = { text: 'every number in the text is in a quote checked on line 1', class: 'countable', check: 'numbersFromFacts', from: [1] };
 
-test('withFactBindings: code ties every prose step to the fact lines BEFORE it, replaces a tie the model wrote, and touches nothing else', () => {
-  const decl = { stages: [{ name: 'guard', kind: 'files-changed', params: {} }, factStage, proseStage([{ text: 'under 50 words', class: 'countable', check: 'maxWords', value: 50 }])] };
-  const out = withFactBindings(decl);
-  assert.deepEqual(out.stages[2].params.parts.map((p) => p.check), ['maxWords', 'numbersFromFacts']);
-  assert.deepEqual(out.stages[2].params.parts[1].from, [1]);
-  assert.equal(decl.stages[2].params.parts.length, 1, 'the input is untouched');
-  assert.equal(out.stages[0], decl.stages[0]);
-  assert.equal(out.stages[1], decl.stages[1]);
-  // the model's own (wrong) tie is replaced, never doubled
-  const wrong = withFactBindings({ stages: [factStage, proseStage([{ ...tie, from: [7] }])] });
-  assert.deepEqual(wrong.stages[1].params.parts.map((p) => p.from), [[1]]);
-  // no fact line before it: nothing added (a tie to nothing is removed)
-  const none = withFactBindings({ stages: [proseStage([{ ...tie }]), factStage] });
-  assert.deepEqual(none.stages[0].params.parts, []);
-  assert.deepEqual(withFactBindings({ stages: [proseStage([])] }).stages[0].params.parts, []);
+/** the block of a two-line job: line 1 finds facts (a look fact), line 2 is text; code ties line 2\'s numbers to the fact lines BEFORE it */
+const blockOf = (/** @type {{n: number, text: string}[]} */ lines, /** @type {any[]} */ facts) => {
+  const b = new CheckBlock({ texts: { Changelog: '### Fixed\n### Added\n### Changed\n' }, labels: ['Changelog'], asks: false });
+  b.fromJob(lines.map((l) => ({ ...l, rules: [] })));
+  b.addLook(facts, []);
+  return b;
+};
+const heading = (/** @type {number} */ line, /** @type {string} */ name, /** @type {string} */ w) => ({ line, name, shape: 'phrase', source: 'Changelog', words: [w] });
+
+test('the numbers tie ($ numbers row): code ties every prose line to the fact lines BEFORE it; with no fact line before it nothing is added; the AI never writes it', () => {
+  const b = blockOf([{ n: 1, text: 'find' }, { n: 2, text: 'summarise' }, { n: 3, text: 'find more' }, { n: 4, text: 'summarise again' }], [heading(1, 'fixed', '### Fixed'), heading(3, 'added', '### Added')]);
+  const c = b.reconcile();
+  const tieOf = (/** @type {number} */ n) => c.stages.find((/** @type {any} */ st) => st.params.step === n)?.params.parts.find((/** @type {any} */ p) => p.check === 'numbersFromFacts');
+  assert.deepEqual(tieOf(2).from, [1]);
+  assert.deepEqual(tieOf(4).from, [1, 3]);
+  assert.equal(tieOf(1), undefined);
+  assert.equal(tieOf(3), undefined, 'a fact line has no text to tie');
+  // a prose line BEFORE the fact line has nothing to tie to
+  const first = blockOf([{ n: 1, text: 'summarise' }, { n: 2, text: 'find' }], [heading(2, 'fixed', '### Fixed')]).reconcile();
+  assert.equal(first.stages.find((/** @type {any} */ st) => st.params.step === 1)?.params.parts.some((/** @type {any} */ p) => p.check === 'numbersFromFacts'), false);
+  // every part is code\'s: no part of origin other than code reaches the close
+  assert.ok(c.map.every((/** @type {any} */ m) => m.origin === 'code'));
 });
 
 test('a prose step\'s numbers must be in the checked quotes: numbers from the real headings pass, a number nobody quoted is red and named', async () => {
@@ -128,7 +136,7 @@ test('drafting reds: a prose step after a fact line with no tie; a tie to a line
 });
 
 test('the card: "what the text says" is Not checked on every prose step, never on a fact step; the tie is a plan row', () => {
-  const decl = withFactBindings({ stages: [factStage, proseStage([])] });
+  const decl = { stages: blockOf([{ n: 1, text: 'find' }, { n: 2, text: 'summarise' }], [heading(1, 'fixed', '### Fixed'), heading(1, 'added', '### Added'), heading(1, 'changed', '### Changed')]).reconcile().stages };
   assert.deepEqual(proseNotChecked(decl), ['line 2: what the text says — you judge it at Accept']);
   const rec = cardOfClose({ closeDecl: { ...decl, notes: ['superlative: the cheapest'] } });
   assert.deepEqual(rec.notChecked, ['superlative: the cheapest', 'line 2: what the text says — you judge it at Accept']);

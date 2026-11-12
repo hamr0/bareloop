@@ -11,7 +11,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runStage } from '../src/kinds.js';
 import { proveRubricInputs } from '../src/source.js';
-import { stepFileContract, lineBriefs, rubricGoal, stepFileRel, withFactBindings } from '../src/rubricstep.js';
+import { stepFileContract, lineBriefs, rubricGoal, stepFileRel } from '../src/rubricstep.js';
 import { factBrief } from '../src/facts.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -27,10 +27,11 @@ const FACT = {
   count: { min: 3, max: 3 },
 };
 const FACT_OK = { ...FACT, facts: FACT.facts.slice(0, 2) };
-const closeDecl = (fact = FACT) => withFactBindings({
+// the close as the check block builds it: the text line after a fact line carries code's number tie
+const closeDecl = (fact = FACT) => ({
   stages: [
     { name: 'line-1', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts: [fact] } },
-    { name: 'line-2', kind: 'rubric-step', fromLine: [2], params: { step: 2, parts: [{ text: 'under 100 words', class: 'countable', check: 'maxWords', value: 100 }] } },
+    { name: 'line-2', kind: 'rubric-step', fromLine: [2], params: { step: 2, parts: [{ text: 'under 100 words', class: 'countable', check: 'maxWords', value: 100 }, { text: 'every number in the text is in a quote checked on line 1', class: 'countable', check: 'numbersFromFacts', from: [1] }] } },
   ],
 });
 const JOB_LINES = [{ n: 1, text: 'List the last 3 releases', rule: '' }, { n: 2, text: 'Summarize them', rule: 'under 100 words' }];
