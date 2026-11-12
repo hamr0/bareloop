@@ -1244,7 +1244,7 @@ export function createSession(card, deps = {}) {
         if (q.source === 'look' && q.ask === 'reading' && typeof q.reading === 'string' && agrees) text = q.reading;
         // the person's CHOICE, for the check block (the choice decides, never the words): agree only where agree is offered, drop only where drop is
         const canAgree = q.source === 'look' && ((q.ask === 'reading' && typeof q.reading === 'string') || (q.ask === 'check' && q.check !== undefined && q.check !== null));
-        const canDrop = q.source === 'look' && (q.ask === 'cant-check' || q.ask === 'check') && Number.isInteger(q.rule);
+        const canDrop = q.source === 'look' && (q.ask === 'cant-check' || q.ask === 'no-check' || q.ask === 'check') && Number.isInteger(q.rule);
         if (typeof (/** @type {any} */ (q)).key === 'string') choices.push({ key: /** @type {any} */ (q).key, choice: canDrop && dropsIt ? 'drop' : canAgree && agrees ? 'agree' : 'rule', text });
         if (q.source === 'look' && q.ask === 'cant-check' && Number.isInteger(q.rule) && dropsIt) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); continue; }
         // R10 (fwd am16): a check-pick ask. `agree` writes the proposal's plain words as a new `~` rule and picks the check; "drop it" leaves the rule Not checked; anything else

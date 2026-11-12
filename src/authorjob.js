@@ -113,7 +113,7 @@ import {
 } from './authoring.js';
 import {
   QUESTION_SETS, questionsFor, requiredAnswersFor, authorClose, makeCostBook,
-  runConfirmTurn, LANGUAGE_PICK_FIELD, normalizeQuestions, MAX_QUESTIONS,
+  runConfirmTurn, LANGUAGE_PICK_FIELD, MAX_QUESTIONS,
 } from './authorflow.js';
 import { thinkingCallOptions, assertThinkingMode } from './thinking.js';
 import { runFitCheck, fitQuestionText, notFoundList, isGoOn } from './fitcheck.js';
@@ -741,15 +741,16 @@ export async function authorCloseForJob({
     // MAX_QUESTIONS counted asks is a job to rewrite, not a questionnaire: nothing is asked and the stop lists every ask.
     if (answerQuestions) {
       for (let round = 0; round < 3 && block.open.length > 0; round += 1) {
-        const asks = questionsOfBlock(block);
+        const asks = questionsOfBlock(block, pickGenerate ? scoped : []);
         const counted = asks.filter((a) => a.counted);
         if (counted.length > MAX_QUESTIONS) {
           return { ...base, interview, verdictType: picked, seedRef: seed, reds: [{ code: 'look-asks-too-many', path: 'jobLines', detail: tooManyAsksText(asks) }], stop: 'look-asks-too-many', cost: null };
         }
-        const kept = normalizeQuestions(asks, [...new Set(asks.map((q) => q.line))]);
-        if (kept.kept.length === 0) break;
-        onPhase(round === 0 ? 'look-ask' : 'check-ask', { questions: kept.kept.length });
-        const updated = await answerQuestions({ questions: kept.kept, dropped: kept.dropped, confirmed: null });
+        // the asks go to the person whole (key, check, reading, counted, pairRule): normalizeQuestions keeps only a model's question fields and would drop the proposal an Agree button needs
+        const shown = asks.map((a) => ({ ...a, question: redactSecrets(a.question) }));
+        if (shown.length === 0) break;
+        onPhase(round === 0 ? 'look-ask' : 'check-ask', { questions: shown.length });
+        const updated = await answerQuestions({ questions: shown, dropped: [], confirmed: null });
         if (updated === null) return { ...base, interview, verdictType: picked, seedRef: seed, reds: [], stop: 'confirm-abandoned', cost: null };
         jobLines = updated.jobLines;
         interview.answers = updated.answers;
