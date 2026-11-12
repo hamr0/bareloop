@@ -5,7 +5,8 @@
 //   fromJob -> addLook -> reconcile( match -> build -> ask ), then, while a question is open or a reply waits: apply it and reconcile the WHOLE list again.
 // Pure: no I/O, no clock, no model. Rubric jobs only (repo jobs never run through it).
 import { countExact, countPhrase } from './factwords.js';
-import { isCountable, keepOrDrop, countCheck, partOfPick, plainWords } from './checkpick.js';
+import { isCountable, keepOrDrop, countCheck, partOfPick, plainWords, sameRuleWords } from './checkpick.js';
+import { dropRows } from './pagedropwords.js';
 import { boundInWords, rubricStepShapeReds, defaultCitedText, readLimit, holdsManyBounds } from './rubricstep.js';
 import { validReading } from './pagerules.js';
 import { weekOnly, WEEK_ONLY_WORDS, MAX_BANG } from './checklist.js';
@@ -61,8 +62,9 @@ export function renderCard(rows) {
 }
 
 export class CheckBlock {
-  /** @param {{texts: Record<string, string>, labels: string[], maxTries?: number}} o the frozen input texts, their labels, and how many AI replies (tries) may still change a row */
-  constructor({ texts, labels, maxTries = 3 }) {
+  /** @param {{texts: Record<string, string>, labels: string[], maxTries?: number, countScope?: (ruleText: string) => boolean}} o the frozen input texts, their labels, how many AI replies (tries) may still change a row, and whether code scopes a counting `~` rule in (a pick is asked) */
+  constructor({ texts, labels, maxTries = 3, countScope = () => true }) {
+    this.countScope = countScope;
     this.texts = texts;
     this.labels = labels;
     this.maxTries = maxTries;
@@ -110,8 +112,17 @@ export class CheckBlock {
   }
 
   // 2. the look: a fact tied to a `~` rule is a LINK on that row, never a drop; any other fact is a `!` row
-  /** @param {any[]} facts */
-  addLook(facts) {
+  /**
+   * @param {any[]} facts the look's kept facts @param {any[]} [dropped] the look's drops (`look.dropped`): a whole fact a page rule left out. Its plain sentence (src/pagedropwords.js)
+   * becomes the `why` of the `~` rule it was tied to, or a Not checked `!` row of its own, so every drop shows under Not checked.
+   */
+  addLook(facts, dropped = []) {
+    for (const d of dropRows(dropped.filter((/** @type {any} */ x) => x && x.reason !== 'person-left')).filter((x) => x.full)) {
+      const why = d.sentences.join(' ');
+      const rr = d.rule === undefined ? undefined : this.ruleRows(d.line).find((r) => r.rule === d.rule);
+      if (rr) rr.lookWhy = why;
+      else this.addRow({ key: `L${d.line}.fact.${norm(d.fact)}`, line: d.line, kind: 'fact', by: 'agent', from: 'look', name: d.fact, shape: 'phrase', words: [], lookWhy: why });
+    }
     for (const f of facts) {
       this.lookFacts.push(f);
       const row = Number.isInteger(f.forRule) ? this.ruleRows(f.line).find((r) => r.rule === f.forRule) : undefined;
@@ -127,10 +138,18 @@ export class CheckBlock {
       r.can = null;
       if (r.kind === 'floor') continue;
       if (r.left) r.can = { ok: false, why: REASON.left };
+      else if (r.lookWhy && r.kind === 'fact' && !r.words.length) r.can = { ok: false, why: r.lookWhy };
+      else if (r.parent) this.matchFollow(r);
       else if (r.kind === 'rule') this.matchRule(r);
       else if (r.kind === 'fact' || r.kind === 'phrase') this.matchBang(r);
       else if (r.kind === 'count') this.matchCount(r);
     }
+  }
+
+  /** a `~` line an agreed answer wrote (or a carried pair partner) is checked by the rule it was agreed from: one check, both numbers */
+  matchFollow(/** @type {Row} */ r) {
+    const parent = this.rows.find((x) => x.key === r.parent);
+    r.can = parent?.can?.ok ? { ok: true, how: 'follow' } : { ok: false, why: parent?.can?.why ?? 'the rule it was agreed from is not checked' };
   }
 
   /** a `!` count row is built unless a `~` rule on its line already names the number */
@@ -161,20 +180,21 @@ export class CheckBlock {
         const unsaid = bounds.some((b) => !boundInWords(b, said));
         if (unsaid && !r.agreed) { r.can = { ok: false, ask: 'reading', link: l, reading, proposal: `${l.name} ${ruleWords({ shape: l.shape, unit: l.unit, currency: l.currency, rule: reading })}`, why: REASON.waitingReading }; return; }
         if (unsaid && l.shape === 'time' && reading.op !== 'between') { r.can = { ok: false, why: REASON.oneSidedTime }; return; }
-        r.can = { ok: true, how: 'fact', link: l, reading, aiProposal: unsaid && !ownWords, ...(ownWords ? { readBy: 'your words' } : {}) };
+        r.can = { ok: true, how: 'fact', link: l, reading, aiProposal: unsaid && !ownWords && !r.agreed, ...(ownWords ? { readBy: 'your words' } : {}) };
         return;
       }
       r.can = { ok: true, how: 'fact', link: l, reading: undefined };
       return;
     }
     if (r.links?.length && !links.length) { r.can = { ok: false, why: REASON.lookNoWords }; return; }
-    if (r.origin === 'typed' || r.cantAsked) { r.can = { ok: false, why: r.aiReason ?? REASON.nothingOnPage }; return; }
+    if (r.origin === 'typed' || r.cantAsked) { r.can = { ok: false, why: r.aiReason ?? r.lookWhy ?? REASON.nothingOnPage }; return; }
     if (r.links?.length) { r.can = { ok: false, why: r.aiReason ?? `the look tied a fact to this rule but gave no limit, and ${ownWhy ? `in your words ${ownWhy}` : 'your own words give none code can read'}, so you judge it at Accept.` }; return; }
-    r.can = { ok: false, ask: 'cant-check', why: REASON.cantCheck };
+    r.can = { ok: false, ask: 'cant-check', why: r.lookWhy ?? REASON.cantCheck };
   }
 
   /** a `~` rule that counts words, bullets, lines or sections: a settled pick builds it; else code proposes the check and asks */
   matchCountRule(/** @type {Row} */ r) {
+    if (!r.pick && (r.cantAsked || !this.countScope(r.text))) { r.can = { ok: false, why: r.aiReason ?? REASON.noRule }; return; }
     if (r.pick) { r.can = { ok: true, how: 'pick' }; return; }
     const proposal = r.pickProposal ?? countCheck(r.text);
     if (proposal) r.can = { ok: false, ask: 'check', proposal, why: REASON.waitingPick };
@@ -227,9 +247,10 @@ export class CheckBlock {
     for (const r of this.rowsOn(l.n)) {
       if (r.kind === 'floor') continue;
       r.part = null;
+      if (r.parent) continue; // a follow row copies its parent's end state after the line is built
       if (!r.can?.ok) { r.state = 'not-checked'; r.reason = r.can?.why ?? 'not checked'; continue; }
       if (r.can.how === 'pick') {
-        const p = partOfPick(r.pick, r.text, [r.rule]);
+        const p = partOfPick(r.pick, r.text, [r.rule, ...this.followsOf(r).map((/** @type {Row} */ f) => f.rule)]);
         const reds = rubricStepShapeReds({ step: l.n, parts: [p] }, 'trial');
         if (reds.length) { r.state = 'not-checked'; r.reason = `the pick is not a legal check: ${reds[0].detail}`; continue; }
         lineParts.push(p); lineRows.push([r.key]); r.state = 'built'; r.reason = null;
@@ -240,7 +261,7 @@ export class CheckBlock {
       if ('why' in built) { r.state = 'not-checked'; r.reason = `code could not build a legal check from it: ${built.why}`; continue; }
       facts.push(...built.fresh);
       factRows.push({ r, src: built.src });
-      if (r.kind === 'rule') rulesCarried.push(r.rule);
+      if (r.kind === 'rule') rulesCarried.push(r.rule, ...this.followsOf(r).map((/** @type {Row} */ f) => f.rule));
       r.state = 'built'; r.reason = null;
     }
     if (facts.length) {
@@ -254,7 +275,14 @@ export class CheckBlock {
       else { lineParts.push(part); lineRows.push([...factRows.map((f) => f.r.key), ...(countRow ? [countRow.key] : [])]); factLines.add(l.n); if (countRow) { countRow.state = 'built'; countRow.reason = null; } }
     } else if (countRow) { countRow.state = 'not-checked'; countRow.reason = REASON.countNeedsFact; }
     this.buildDefaults(l, lineParts, lineRows, factLines);
+    for (const f of this.rowsOn(l.n).filter((x) => x.parent)) {
+      const par = this.rows.find((x) => x.key === f.parent);
+      f.state = par?.state ?? 'not-checked'; f.reason = par?.state === 'built' ? null : (par?.reason ?? 'not checked'); f.part = par?.part ?? null;
+    }
   }
+
+  /** the follow rows of a row (its agreed or carried `~` lines) */
+  followsOf(/** @type {Row} */ r) { return this.rows.filter((x) => x.parent === r.key); }
 
   /**
    * The fact(s) a fact-like row builds, checked alone through the bareguard shapes and against the facts already on the line.
@@ -324,11 +352,16 @@ export class CheckBlock {
     if (!q || !r) return { ok: false, why: 'out of date' };
     if (choice === 'agree') {
       if (!q.offers.agree) return { ok: false, why: 'that choice is not offered for this question' };
+      let said = String(q.proposal);
       if (q.ask === 'check') {
         const res = keepOrDrop(r.text, /** @type {any} */ ({ ...q.proposal }));
         if (!res.kept) return { ok: false, why: String(res.why) };
-        r.pick = res.check; r.agreedText = plainWords(/** @type {any} */ (res.check));
-      } else { r.agreed = true; r.agreedText = q.proposal; }
+        r.pick = res.check; r.from = 'pick'; r.agreedText = plainWords(/** @type {any} */ (res.check));
+        said = r.agreedText;
+      } else { r.agreed = true; r.agreedText = said; }
+      // hamr 2026-11-12 (ruling 1): an agreed answer is a `~` rule in plain words, a new line with the SAME rule number a typed rule gets; an edited added line (pairWith) IS that line, so its words are replaced
+      if (r.pairWith !== undefined) r.text = said;
+      else if (!sameRuleWords(r.text, said)) this.addRow({ key: `L${r.line}.~${this.ruleRows(r.line).length + 1}`, line: r.line, kind: 'rule', by: 'you', from: 'rule', origin: 'agreed', parent: r.key, text: said, rule: this.ruleRows(r.line).length + 1 });
       return { ok: true };
     }
     if (choice === 'drop') { r.left = true; return { ok: true }; }
@@ -341,6 +374,27 @@ export class CheckBlock {
       return { ok: true };
     }
     return { ok: false, why: 'not one of the choices' };
+  }
+
+  /** the `~` row `partner` is checked by `source` (one check, both rule numbers) */
+  follow(/** @type {Row} */ source, /** @type {Row} */ partner) { partner.parent = source.key; partner.origin = 'agreed'; }
+
+  /**
+   * Revise keeps the picks of the last draft (am17/am18/am21, `src/pickrecord.js` `matchRecord`): a kept pick settles its rule and its added `~` line follows it; a kept left rule is
+   * left; an edited added line (`pairRule`) is the row asked and its source follows it.
+   * @param {{picks?: {line: number, rule: number, check: any, added?: string, own?: boolean}[], left?: {line: number, rule: number}[]}} kept
+   * @param {{line: number, rule: number, pairRule?: number}[]} [asked] the rules still asked (a `pairRule` marks an edited added line)
+   */
+  carry({ picks = [], left = [] }, asked = []) {
+    const rowOf = (/** @type {number} */ line, /** @type {number} */ rule) => this.ruleRows(line).find((x) => x.rule === rule);
+    for (const p of picks) {
+      const r = rowOf(p.line, p.rule);
+      if (!r) continue;
+      if (p.check) { r.pick = p.check; r.from = 'pick'; r.agreedText = plainWords(p.check); } else r.cantAsked = true;
+      if (typeof p.added === 'string') { const add = this.ruleRows(p.line).filter((x) => x !== r && !x.parent && sameRuleWords(x.text, String(p.added))).at(-1); if (add) this.follow(r, add); }
+    }
+    for (const l of left) { const r = rowOf(l.line, l.rule); if (r) r.left = true; }
+    for (const a of asked) if (a.pairRule !== undefined) { const r = rowOf(a.line, a.rule); if (r) { r.pairWith = a.pairRule; const src = rowOf(a.line, a.pairRule); if (src && src !== r) this.follow(r, src); } }
   }
 
   // 7. the AI's reply: a list of proposed ROW edits, each judged ALONE; a bad edit is refused on its own and costs the rest nothing
@@ -490,11 +544,16 @@ export class CheckBlock {
     return this.rows.map((r) => Object.fromEntries(SIGNED_ROW_FIELDS.filter((f) => r[f] !== undefined && r[f] !== null).map((f) => [f, r[f]])));
   }
 
-  /** per line: how many rows are built and how many are Not checked (the `~ ! $` rows, floor excluded) @returns {{line: number, built: number, notChecked: number}[]} */
+  /**
+   * per line, the shape of `retentionOfList` (counts only): `aiParts` = the rows the agent proposed (and the default cited), `kept` = those built, `dropped` = the rest, `picks` = a `~` row built from a pick
+   * @returns {{line: number, aiParts: number, kept: number, dropped: number, picks: boolean}[]}
+   */
   retention() {
     return this.lines.map((l) => {
-      const rs = this.rowsOn(l.n).filter((r) => r.kind !== 'floor');
-      return { line: l.n, built: rs.filter((r) => r.state === 'built').length, notChecked: rs.filter((r) => r.state !== 'built').length };
+      const mine = this.rowsOn(l.n).filter((r) => r.kind !== 'floor');
+      const ai = mine.filter((r) => r.by === 'agent' || (r.by === 'default' && r.kind === 'cited'));
+      const kept = ai.filter((r) => r.state === 'built').length;
+      return { line: l.n, aiParts: ai.length, kept, dropped: ai.length - kept, picks: mine.some((r) => r.from === 'pick' && r.state === 'built') };
     });
   }
 }
