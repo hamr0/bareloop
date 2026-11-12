@@ -4017,3 +4017,14 @@ Commits in order, oldest first (POC history F317, F319, F321, F323, F324 is in F
 - b6c455cf, bc813cc6: plain split-fact names, no "release version version" (F326; test-proven, not seen live).
 
 Live proof: F326 (origin green, Reuse on v0.55.0 green, mixed-heading Reuse stopped at $0). Full gate on bc813cc6: tests 5935, pass 5933, fail 0, skipped 2, exit codes 0.
+
+## Addendum 2026-11-12 - the drafting question box (signed by hamr in chat)
+
+A question asked while drafting gets its own box in the panel, so the person's intent is a typed choice, never words parsed. Copied from fwdloop v0.31.0 (am29, am30, am31) by rewrite, plus two bareloop-only questions. The CLI (`src/authorrun.js`) is unchanged and keeps typing words. One owner: `src/questionbox.js`.
+
+- **A. The box.** Head "A question the plan raised (i of n)", "About job line N", the question, a choices row, "Or type a new rule:", a one-line answer box, an alert error line, a wide Send. It takes the chat input's place while open. The question's chat message waits out of the thread until answered.
+- **B. Look asks, typed choice.** The send route takes `choice` (`agree` | `drop` | `rule`); absent = today's words reading. Agree only with a proposal; Drop it only on a question about one of the person's `~` rules (integer rule number); `rule` keeps the box's words whole. The panel hides the `Answer "agree"...` / `"drop it"` tails (exact suffix). Refusals in fwd's words, question stays open, nothing logged. Drafter (try-3) questions: box and Send only.
+- **D. Fit check.** [Go on] [Stop], no box. Choices `go-on` | `stop`; any other is refused.
+- **E. Destination point.** [Yes, set it to <folder>] [No, keep <current>] and a box "Or type a different Destination:"; a typed path passes the card's own `startDestinationProblem` check first; the log row says `yes` | `no` | `typed`.
+
+Status: built on feat/check-ledger, test-proven (tests/question-box, question-choices, question-before); not seen live; phone width (320/390) not checked (no walk harness in this repo, barebrowse cannot emulate a phone).
