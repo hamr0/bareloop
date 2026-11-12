@@ -11,6 +11,7 @@ import { settleRules, plainWords } from './checkpick.js';
 import { lineRules, defaultCitedText } from './rubricstep.js';
 import { SIGNED_ROW_FIELDS, SIGNED_STATES } from './declaredclose.js';
 import { fitPlacePhrase } from './placerule.js';
+import { validReading } from './pagerules.js';
 import { MAX_FACTS } from './facts.js';
 
 /** at most this many `!` checks come from the call */
@@ -55,7 +56,7 @@ const proved = (/** @type {string} */ text, /** @type {string} */ w) => countExa
 /**
  * @typedef {{key: string, line: number, kind: 'rule'|'fact'|'cited'|'count'|'phrase'|'numbers'|'floor', from: 'rule'|'pick'|'look'|'agent'|'default', by: 'you'|'agent'|'default',
  *   words: string[], text?: string, rule?: number, part?: {line: number, part: number}, source?: string, name?: string, min?: number, max?: number, pick?: string, after?: number[],
- *   state: 'listed'|'built'|'not-checked'|'dropped', reason: string|null}} Row
+ *   state: 'listed'|'built'|'not-checked'|'dropped', reason: string|null, forRule?: number, reading?: import('./pagerules.js').Reading}} Row
  */
 
 /**
@@ -94,7 +95,7 @@ export function buildLedger({ jobLines, checkPicks = null, look = null, texts = 
     if (!f || typeof f.name !== 'string') continue;
     const words = (Array.isArray(f.words) ? f.words : []).filter((/** @type {unknown} */ w) => typeof w === 'string' && w.trim() !== '');
     const base = { key: keyOf(`L${f.line}.fact.${norm(f.name)}`), line: Number(f.line), kind: /** @type {'fact'} */ ('fact'), from: /** @type {'look'} */ ('look'), by: /** @type {'agent'} */ ('agent'), name: f.name, words, ...(typeof f.source === 'string' ? { source: f.source } : {}) };
-    if (Number.isInteger(f.forRule)) { rows.push({ ...base, state: 'dropped', reason: `a ~ rule wins: line ${f.line} rule ${f.forRule} carries it` }); continue; }
+    if (Number.isInteger(f.forRule)) { rows.push({ ...base, forRule: f.forRule, ...(f.reading !== null && typeof f.reading === 'object' ? { reading: { ...f.reading } } : {}), state: 'dropped', reason: `a ~ rule wins: line ${f.line} rule ${f.forRule} carries it` }); continue; }
     const text = textOf(f.source);
     const missing = text === null ? [] : words.filter((w) => !proved(text, w));
     if (words.some(weekOnly)) {
@@ -212,7 +213,29 @@ export function applyLedger(declaration, rows, { labels = [], texts = null } = {
       if (p.class === 'fact') {
         // a `place` on a drafter fact is DISCARDED here (hamr 2026-11-11): only the list row's fit below can attach one (code picks the rule, never the AI)
         const incoming = Array.isArray(p.facts) ? p.facts : [];
-        const fs = incoming.map((/** @type {any} */ f) => { if (!isRec(f) || !('place' in f)) return f; const { place: _ai, ...rest } = f; return rest; });
+        // A fact the look tied to ~ rule N (its list row is dropped as 'a ~ rule wins') carries rule N by the look's own decision, so the drafter need not repeat it on the part
+        // (hamr 2026-11-12: "checks that are checkable and agreed should be part of the plan and should be verified"). It credits the rule ONLY with a real bound: the drafter's own
+        // `rule`, else the look's reading (the same shape), else, for a phrase fact, its own fixed words. With none the rule stays not-checked (a fact that checks nothing credits nothing).
+        const tieRow = (/** @type {any} */ f) => (!isRec(f) ? undefined : rows.find((r) => r.line === line && r.kind === 'fact' && r.from === 'look' && r.state === 'dropped' && Number.isInteger(r.forRule)
+          && /** @type {number} */ (r.forRule) >= 1 && /** @type {number} */ (r.forRule) <= ruleCount
+          && ((r.name !== undefined && norm(r.name) === norm(f.name)) || (typeof f.anchor === 'string' && r.words.some((w) => norm(w) === norm(f.anchor))) || (typeof f.phrase === 'string' && r.words.some((w) => norm(w) === norm(f.phrase))))));
+        /** @type {Map<any, number>} */
+        const lookCredit = new Map();
+        const fs = incoming.map((/** @type {any} */ f) => {
+          if (!isRec(f)) return f;
+          let g = f;
+          if ('place' in g) { const { place: _ai, ...rest } = g; g = rest; }
+          const row = tieRow(f);
+          if (!row) return g;
+          // a fact never has a `rules` field (the part owns it): code moves the number to the part
+          if ('rules' in g) { const { rules: _r, ...rest } = g; g = rest; }
+          const own = isRec(g.rule) && typeof g.rule.op === 'string';
+          const fill = !own && validReading(g.shape, row.reading);
+          const phraseBound = g.shape === 'phrase' && typeof g.phrase === 'string' && g.phrase.trim() !== '';
+          if (fill) g = { ...g, rule: { ...row.reading } };
+          if (own || fill || phraseBound) lookCredit.set(g, /** @type {number} */ (row.forRule));
+          return g;
+        });
         const ruled = onRule(p);
         // ONE OWNER of the week-only decision (hamr 2026-11-11): the list row alone. A fact whose phrase/anchor/until holds a version or a date is signed ONLY as the place value(s) its standing
         // row's fit gives (the values that are the fact's own phrase tokens; a version and a date in one phrase become TWO facts, "<name> version" and "<name> date", each with its own rule),
@@ -244,11 +267,13 @@ export function applyLedger(declaration, rows, { labels = [], texts = null } = {
           placed.set(f, facts);
         }
         const week = (/** @type {any} */ f) => weekFact(f) && !exempt.has(f) && !placed.has(f);
-        const keptFacts = fs.filter((f) => !week(f) && (ruled || placed.has(f) || exempt.has(f) || factRow(f)));
+        const keptFacts = fs.filter((f) => !week(f) && (ruled || placed.has(f) || exempt.has(f) || factRow(f) || lookCredit.has(f)));
         units += fs.length;
         for (const f of fs.filter((x) => !keptFacts.includes(x))) refused.push({ line, kind: 'fact', words: say(f?.name) || say(p.text), reason: week(f) ? 'week-only' : 'not on the list' });
         let np = p;
         if (keptFacts.length !== fs.length || placed.size > 0 || fs.some((f, i) => f !== incoming[i])) np = { ...p, facts: keptFacts.flatMap((f) => (placed.has(f) ? placed.get(f) : [f])) };
+        const credited = [...new Set(keptFacts.filter((f) => lookCredit.has(f)).map((f) => /** @type {number} */ (lookCredit.get(f))))];
+        if (credited.length > 0) np = { ...np, rules: [...new Set([...(Array.isArray(p.rules) ? p.rules : []), ...credited])] };
         if (isRec(p.count)) {
           units += 1;
           if (!ruled && keptFacts.length === 0 && !live.some((r) => r.line === line && r.kind === 'count')) {

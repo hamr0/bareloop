@@ -1,0 +1,18 @@
+{
+  "note": "draft session smwdiy4k3bk0v (live 2026-11-12): job 'List 3 flights from Boston to Chicago' with '~ under $450'; the look (page-map raw) tied the price fact to rule 1 and carried reading lt 450. Rows are the ledger as built; the look rows keep forRule and reading.",
+  "jobLines": [{ "n": 1, "text": "List 3 flights from Boston to Chicago", "rules": ["under $450"] }],
+  "rows": [
+    { "key": "L1.~1", "line": 1, "kind": "rule", "from": "rule", "by": "you", "words": [], "text": "under $450", "rule": 1, "state": "listed", "reason": null },
+    { "key": "L1.fact.origin airport", "line": 1, "kind": "fact", "from": "look", "by": "agent", "name": "origin airport", "words": ["Boston Logan International Airport"], "state": "listed", "reason": null },
+    { "key": "L1.fact.price", "line": 1, "kind": "fact", "from": "look", "by": "agent", "name": "price", "words": ["From"], "forRule": 1, "reading": { "op": "lt", "value": 450 }, "state": "dropped", "reason": "a ~ rule wins: line 1 rule 1 carries it" }
+  ],
+  "declaration": {
+    "genre": "TEXT", "lang": "text",
+    "stages": [{ "name": "s1", "kind": "rubric-step", "fromLine": [1], "params": { "step": 1, "parts": [{
+      "text": "List 3 flights from Boston to Chicago, each result quoted from the flights page", "class": "fact", "source": "flights", "count": { "min": 3, "max": 3 },
+      "facts": [
+        { "name": "origin airport", "shape": "phrase", "phrase": "Boston Logan International Airport" },
+        { "name": "price", "shape": "money", "anchor": "From", "unit": "US dollars", "currency": "$", "decimal": ".", "rule": { "op": "lt", "value": 450 }, "rules": [1] }
+      ] }] } }]
+  }
+}
