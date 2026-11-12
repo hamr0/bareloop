@@ -2263,3 +2263,12 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 **Backlog (PARKED, not to build now): Ship bareloop as a single binary** — today an adopter must install Node >=22 before bareloop (CLI and panel) runs; a one-file executable (e.g. Node's own single-executable packaging, no language rewrite) would remove that install step for non-engineers. No rewrite to Rust/TS: the arbiter is the product, and runs wait on the model, not on bareloop. Parked by hamr 2026-11-11; build only when install friction shows up live.
 
 **Backlog (PROPOSED, awaiting hamr's go): drafter prompt text conditional only.** REQUIRED_FACTS_BRIEF (src/authorflow.js ~1509) is sent on every rubric draft with blanket "what if" rules (money, dates/decimals, anchors). It still holds the line hamr flagged on 2026-11-10 ("code adds the checks the person picked", ~1533; it caused dropped word limits in paid round 6). It also now duplicates the check-list block. Proposal: split it into pieces, each sent only when its case occurs (decided by code from the look), and delete the flagged line. Proof: frozen bars, a $0 rebuild of every saved real draft prompt (no piece dropped where its case exists), then one paid round (DeepSeek direct, cap $1) passing round 12's gates plus "no agreed word limit dropped".
+
+### Question box, check block redesign (v1.133 — 2026-11-12)
+
+- Question box built: fwd am29/am30/am31 ported by rewrite plus loop's fit-check and Destination buttons; see `docs/product/ITEM33-BUILD.md` 2026-11-12 addendum. Live walk done for Stop, Drop it, own rule, Agree.
+- fwd am32 A ported (5260f242: the answer door refuses an answer with no typed choice); fwd F180 not applicable (no sheet look here).
+- The fit question lists the asks it found, not only the missing ones (F327, 73e08808; not seen live). The confirm legend is hidden when the plan has no check row (F328, 48e35a5d).
+- A look-tied rule is credited by code when its fact has a bound (F329, fea67fd9); superseded by the redesign below.
+- CHECK BLOCK REDESIGN: signed as direction by hamr 2026-11-12. One class owns the rows; code builds every check; the AI proposes row edits only. Design is a DRAFT in `docs/product/ITEM33-BUILD.md` ("2026-11-12 CHECK BLOCK REDESIGN"); POC first, no build before PASS; the branch release waits.
+- Open: F330 (agreed checks lost at the last-try drop), F332 (an action word counted as a page ask), Destination buttons not seen live, phone width unchecked.
