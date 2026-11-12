@@ -100,7 +100,7 @@
 
 import { jobSpecHash, validateJob } from './job.js';
 import { seedAtHead, seedListing, seedRead as runSeedRead, makeSeedTrees, judgedStages, closeJudges } from './kinds.js';
-import { inputLabelsOf, readFrozenInputs, lineRules } from './rubricstep.js';
+import { inputLabelsOf, readFrozenInputs, lineRules, cardOfClose } from './rubricstep.js';
 import { proverOf } from './factwords.js';
 // SOFTGREEN modules 4 and 5 — the compile the interview's Q6/Q7 answers land in,
 // and the gate that decides whether the ruler they describe is a ruler.
@@ -819,6 +819,8 @@ export async function authorCloseForJob({
       facts: survey.facts, listing: null, writeScope, isRepo, lang, worseThanBefore, inputs, jobLines,
       ...(authorOpts?.ticket === true ? { ticket: true } : {}),
       generate: confirmGenerate, book: confirmBook, ask, onPhase,
+      // the rows the block has built, read by the signed card's own readers (cardOfClose): the confirm card draws them under their lines
+      ...(block ? { card: cardOfClose({ closeDecl: block.closeView(), jobLines, ledger: block.rows.map((r) => ({ key: r.key, words: r.kind === 'rule' ? [r.text ?? ''] : (r.words ?? []) })) }) } : {}),
     });
     // DISTINCT from `runConfirmTurn`'s own per-round 'confirm-done' (fired once
     // per round when a plan arrives) — this is the WRAPPER's own line, once,

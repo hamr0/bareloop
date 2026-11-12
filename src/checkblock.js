@@ -585,6 +585,20 @@ export class CheckBlock {
 
   card() { return renderCard(this.rows); }
 
+  /**
+   * The rows as the close shape the card readers (`checksOfClose`, `refusedOf`, `cardOfClose`) already read: the block's stages, the picks code records and the signed list. The confirm card
+   * and the signed card read the rows through the SAME readers, so a row shown at confirm is the row signed. Reconciles first (the whole list, every time).
+   */
+  closeView() {
+    const c = this.reconcile();
+    return { stages: c.stages, picks: this.picksOf(c), list: this.signedRows() };
+  }
+
+  /** the picks code records: a countable part carrying the `~` rule numbers it settles @param {{parts: any[], map: {part: number, line: number}[]}} c the build @returns {{line: number, part: any}[]} */
+  picksOf(c) {
+    return c.map.flatMap((m) => { const part = c.parts[m.part]; return part && part.class === 'countable' && Array.isArray(part.rules) ? [{ line: m.line, part }] : []; });
+  }
+
   /** the standing ruling "a run needs one check": one row that is not the floor is built */
   hasBuiltCheck() { return this.rows.some((r) => r.state === 'built' && r.kind !== 'floor'); }
 

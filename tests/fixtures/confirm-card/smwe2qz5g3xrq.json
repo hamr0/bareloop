@@ -1,0 +1,154 @@
+{
+ "note": "draft session smwe2qz5g3xrq (live 2026-11-12, panel 4711, deepseek-flash): job \"List 3 flights from Boston to Chicago\" with two ~ rules. page = six verbatim lines of the saved page (google flights); pageMapFacts = the last page-map reply; ledgerRows = the rows the CheckBlock built (draft log phase built); count 3-3 came from the ledger-suggest call. The confirm card showed none of these rows.",
+ "jobLines": [
+  {
+   "n": 1,
+   "text": "List 3 flights from Boston to Chicago",
+   "rules": [
+    "under $450",
+    "departure between 05:00 and 21:59"
+   ]
+  }
+ ],
+ "page": "- link \"From 166 US dollars. Nonstop flight with American. Leaves Boston Logan International Airport at 12:12 PM on Thursday, November 26 and arrives at Chicago O'Hare International Airport at 2:22 PM on Thursday, November 26. Total duration 3 hr 10 min. 1 carry-on bag included. 0 checked bags included. Select flight\" [ref=1351]\n- generic \"Departure time: 12:12 PM.\" [ref=1401]\n- link \"From 168 US dollars. Nonstop flight with United. Leaves Boston Logan International Airport at 9:12 AM on Thursday, November 26 and arrives at Chicago O'Hare International Airport at 11:15 AM on Thursday, November 26. Total duration 3 hr 3 min. 0 carry-on bags included. 0 checked bags included. Select flight\" [ref=1440]\n- generic \"Departure time: 9:12 AM.\" [ref=1490]\n- link \"From 173 US dollars. Nonstop flight with Delta. Leaves Boston Logan International Airport at 1:35 PM on Thursday, November 26 and arrives at Chicago O'Hare International Airport at 3:30 PM on Thursday, November 26. Total duration 2 hr 55 min. 1 carry-on bag included. 0 checked bags included. Select flight\" [ref=1529]\n- generic \"Departure time: 1:35 PM.\" [ref=1579]\n",
+ "pageMapFacts": [
+  {
+   "name": "origin airport",
+   "from": "line 1",
+   "shape": "place",
+   "words": [
+    "Boston Logan International Airport",
+    "Boston"
+   ],
+   "lang": "en"
+  },
+  {
+   "name": "destination airport",
+   "from": "line 1",
+   "shape": "place",
+   "words": [
+    "Chicago O'Hare International Airport",
+    "Chicago"
+   ],
+   "lang": "en"
+  },
+  {
+   "name": "price",
+   "from": "line 1 rule 1",
+   "shape": "money",
+   "words": [
+    "From"
+   ],
+   "currency": [
+    "$",
+    "US dollars"
+   ],
+   "unit": [
+    "US dollars"
+   ],
+   "lang": "en",
+   "decimal": ".",
+   "reading": {
+    "op": "lte",
+    "value": 450
+   }
+  },
+  {
+   "name": "departure time",
+   "from": "line 1 rule 2",
+   "shape": "time",
+   "words": [
+    "Leaves Boston Logan International Airport at",
+    "Departure time:"
+   ],
+   "lang": "en",
+   "reading": {
+    "op": "between",
+    "lo": "05:00",
+    "hi": "21:59"
+   }
+  }
+ ],
+ "ledgerRows": [
+  {
+   "key": "L1.~1",
+   "line": 1,
+   "rowKind": "rule",
+   "from": "rule",
+   "by": "you",
+   "words": [
+    "under $450"
+   ],
+   "state": "built",
+   "reason": null
+  },
+  {
+   "key": "L1.~2",
+   "line": 1,
+   "rowKind": "rule",
+   "from": "rule",
+   "by": "you",
+   "words": [
+    "departure between 05:00 and 21:59"
+   ],
+   "state": "built",
+   "reason": null
+  },
+  {
+   "key": "L1.$floor",
+   "line": 1,
+   "rowKind": "floor",
+   "from": "default",
+   "by": "default",
+   "words": [],
+   "state": "built",
+   "reason": null
+  },
+  {
+   "key": "L1.fact.origin airport",
+   "line": 1,
+   "rowKind": "fact",
+   "from": "look",
+   "by": "agent",
+   "words": [
+    "Boston Logan International Airport",
+    "Boston"
+   ],
+   "state": "built",
+   "reason": null
+  },
+  {
+   "key": "L1.fact.destination airport",
+   "line": 1,
+   "rowKind": "fact",
+   "from": "look",
+   "by": "agent",
+   "words": [
+    "Chicago O'Hare International Airport",
+    "Chicago"
+   ],
+   "state": "built",
+   "reason": null
+  },
+  {
+   "key": "L1.$cited",
+   "line": 1,
+   "rowKind": "cited",
+   "from": "default",
+   "by": "default",
+   "words": [],
+   "state": "not-checked",
+   "reason": "this line finds facts, so it has no text to quote"
+  },
+  {
+   "key": "L1.count.3-3",
+   "line": 1,
+   "rowKind": "count",
+   "from": "agent",
+   "by": "agent",
+   "words": [],
+   "state": "built",
+   "reason": null
+  }
+ ]
+}

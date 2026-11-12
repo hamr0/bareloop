@@ -2216,7 +2216,7 @@ async function askConfirmPlan({ convo, generate, mode, book, label }) {
  *   ask: (step: {kind: string, [k: string]: any}) => Promise<string|null>,
  *   onPhase?: (phase: string, data?: any) => void, mode?: 'tool'|'text',
  *   worseThanBefore?: string, inputs?: {n: number, label: string, value: string}[]|null,
- *   jobLines?: {n: number}[]|null, ticket?: boolean}} o retired field (hamr's ruling 2026-09-28):
+ *   jobLines?: {n: number}[]|null, ticket?: boolean, card?: {checkItems: {text: string, fromLine: number[], by: 'agent'|'you'|'default'}[], notChecked: string[]}|null}} o retired field (hamr's ruling 2026-09-28):
  *   `worseThanBefore` is never asked any more and defaults to `''` — a
  *   caller may still pass a string through (kept for a future, non-ask
  *   source of the same constraint), it just never comes from an ask() step.
@@ -2242,6 +2242,8 @@ export async function runConfirmTurn({
   jobLines = null,
   // MCP + tickets R5 (F285): the job reads tickets; absent = the confirm prompt is byte-identical
   ticket = false,
+  // a rubric job's check rows as the card readers read them (`cardOfClose` over `block.closeView()`): the card draws them, nothing else. SHOWN only: the accepted plan below never carries them
+  card = null,
 }) {
   /** a rubric job's confirm turn plans the goal only (its checks are the list's) */
   const goalOnly = lang === RUBRIC_LANG;
@@ -2357,7 +2359,12 @@ export async function runConfirmTurn({
     for (const row of dropRows(facts?.look?.dropped)) { const text = dropLine(row, jobLines, lineRules); if (!notChecked.includes(text)) notChecked.push(text); }
     const checkItems = normalizeChecks(r.plan.checks);
     r.plan = { ...r.plan, checks: checkItems.map((c) => c.text), checkItems };
-    const plan = { ...r.plan, protections, notChecked, signedFacts: (Array.isArray(facts?.look?.facts) ? facts.look.facts : []).map((/** @type {any} */ f) => String(f?.name)) };
+    // the rows of the check block, drawn by the same readers as the signed card (hamr 2026-11-12: the confirm card showed no row the block had built); shown only, never accepted
+    const shown = card === null ? {} : { checkItems: card.checkItems, checks: card.checkItems.map((c) => c.text) };
+    const plan = {
+      ...r.plan, ...shown, protections, notChecked: card === null ? notChecked : [...new Set([...notChecked, ...card.notChecked])],
+      signedFacts: (Array.isArray(facts?.look?.facts) ? facts.look.facts : []).map((/** @type {any} */ f) => String(f?.name)),
+    };
     onPhase('confirm-done', { round, plan });
     const picked = await ask({ kind: 'menu', field: CONFIRM_MENU, plan });
     if (picked === null) return abandon(round);
@@ -2711,7 +2718,7 @@ export async function authorClose({
     const refused = /** @type {CheckBlock} */ (block).rows.filter((r) => r.kind === 'rule' && r.state !== 'built').map((r) => ({ line: r.line, rule: r.rule, reason: String(r.reason ?? 'not checked') }));
     // a job line no check could be built for (no stage) is refused as a line, in code's plain words, so the draft gate sees it covered and the end check (hasBuiltCheck) can say "no check" in its own words
     for (const l of jobLines ?? []) if (!c.stages.some((/** @type {any} */ st) => Array.isArray(st.fromLine) && st.fromLine.includes(l.n))) refused.push({ line: l.n, reason: REASON.noRule });
-    const picks = c.map.flatMap((/** @type {any} */ m) => { const part = c.parts[m.part]; return part && part.class === 'countable' && Array.isArray(part.rules) ? [{ line: m.line, part }] : []; });
+    const picks = /** @type {CheckBlock} */ (block).picksOf(c);
     // a guard's one fill slot (`allowPrefixes`) is the signed write fence, the very value the old drafter was told to copy: for a rubric job the run writes only under output/
     const fence = Array.isArray(writeScope) && writeScope.length ? [...writeScope] : ['output/'];
     return { stages: [...guards.map((/** @type {any} */ g) => ({ name: g.name, kind: g.kind, params: { ...g.params, ...Object.fromEntries((g.fill ?? []).map((/** @type {string} */ f) => [f, fence])) } })), ...c.stages], ...(refused.length ? { refused } : {}), ...(picks.length ? { picks } : {}) };

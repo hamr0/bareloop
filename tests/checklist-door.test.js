@@ -45,7 +45,8 @@ test('panel door: the list is built once with its call, every row is in the draf
     prepareSigningFn: async () => ({ ok: true, specHash: 'abc123def4567890', seedRef: 'deadbeef', work: [], guards: [], stops: [], reds: [], refusal: null, gates: {} }),
   });
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'), `${session.state.phase} / ${session.state.error}`);
-  assert.deepEqual(session.state.pendingAsk.plan.checkItems, [], 'the confirm card plans the goal only');
+  // the model's own plan is the goal only; the card draws the block's rows (hamr 2026-11-12, session smwe2qz5g3xrq: it used to show none of them)
+  assert.deepEqual(session.state.pendingAsk.plan.checkItems.map((/** @type {any} */ c) => c.text), ['fact · release heading — phrase, must say "## [", quoted from "Changelog"', 'fact · results — exactly 1 result, each quoted from "Changelog"'], 'the confirm card draws the check block\'s rows');
   session.signPrepare();
   assert.ok(await until(() => ['prepared', 'refused', 'error'].includes(session.state.phase)));
   assert.equal(session.state.phase, 'prepared', `${session.state.phase} / ${session.state.error}`);
