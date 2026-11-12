@@ -136,11 +136,8 @@ test('M1 on the REAL frozen page of run mv73swnx (copied to a temp dir, never co
   assert.deepEqual(good, []);
 });
 
-test('M1: the ONE rulebook tells it, the brief and the confirm note carry it, and the red reaches the person in its own plain words', async () => {
-  const { RUBRIC_RULES, REQUIRED_FACTS_BRIEF } = await import('../src/authorflow.js');
+test('M1: the red reaches the person in its own plain words (the rulebook sentence that told the drafter is deleted with the part-writing brief: see the build status note, open point on gate reds of a code-built plan)', async () => {
   const { proposalStopText } = await import('../src/authorreadout.js');
-  assert.match(RUBRIC_RULES, /asks for N results[\s\S]*N or more times/);
-  assert.ok(REQUIRED_FACTS_BRIEF.includes(RUBRIC_RULES), 'the brief interpolates the one rulebook');
   const decl = { stages: [{ kind: 'rubric-step', params: { step: 1, parts: [part([{ name: 'c', shape: 'money', currency: '$', anchor: 'Cheapest from' }], { count: { min: 3, max: 3 }, source: 'Page' })] } }] };
   const text = ['Sort: Cheapest from $37', ...Array.from({ length: 5 }, (_, i) => `Flight ${i}: From $${50 + i}`)].join('\n');
   const reds = checkDeclarationWords(decl, { Page: text });
@@ -182,11 +179,8 @@ test('M4 on the REAL frozen page of run mv76jhj1 (copied to a temp dir, never co
   assert.deepEqual(checkFactWords({ part: p([ph('Origin', 'from San Francisco')], 2), text, line: 1 }), []);
 });
 
-test('M4: the ONE rulebook tells it and the red reaches the person in its own plain words', async () => {
-  const { RUBRIC_RULES, REQUIRED_FACTS_BRIEF } = await import('../src/authorflow.js');
+test('M4: the red reaches the person in its own plain words (the rulebook sentence that told the drafter is deleted with the part-writing brief)', async () => {
   const { proposalStopText } = await import('../src/authorreadout.js');
-  assert.match(RUBRIC_RULES, /"must say" \(phrase\) fact[\s\S]*at least N times for N results/);
-  assert.ok(REQUIRED_FACTS_BRIEF.includes(RUBRIC_RULES));
   const decl = { stages: [{ kind: 'rubric-step', params: { step: 1, parts: [part([ph('Origin', 'from San Francisco')], { count: { min: 3, max: 3 }, source: 'Page' })] } }] };
   const text = ['Flights from San Francisco', ...Array.from({ length: 4 }, (_, i) => `Flight ${i}`)].join('\n');
   const reds = checkDeclarationWords(decl, { Page: text });

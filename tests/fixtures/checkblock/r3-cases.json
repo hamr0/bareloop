@@ -1,8 +1,8 @@
 {
  "pages": {
-  "usd": "Flights\nPrice: $450\nDeparture: 07:30\nSeats: 4\n",
-  "eur": "Flights\nPrice: €450\nDeparture: 07:30\nSeats: 4\n",
-  "gbp": "Flights\nPrice: £450\nDeparture: 07:30\nSeats: 4\n"
+  "usd": "Flights\nPrice: $450 US dollars\nDeparture: 07:30\nSeats: 4\n",
+  "eur": "Flights\nPrice: €450 euros\nDeparture: 07:30\nSeats: 4\n",
+  "gbp": "Flights\nPrice: £450 pounds\nDeparture: 07:30\nSeats: 4\n"
  },
  "facts": {
   "usd": {
@@ -671,7 +671,7 @@
     "flights"
    ],
    "texts": {
-    "flights": "Flights\nPrice: $450\n"
+    "flights": "Flights\nPrice: $450 US dollars\n"
    },
    "lineText": "Pick a flight",
    "rules": [

@@ -37,7 +37,7 @@ function barsBroken(/** @type {any} */ b, /** @type {any} */ snapshots = null) {
   // I2 not checkable implies Not checked with a plain reason, and never built
   for (const r of rows) {
     if (r.can && !r.can.ok && r.state === 'built') broken.push(`b2 ${r.key} not checkable but built`);
-    if (r.state !== 'built' && !(typeof r.reason === 'string' && r.reason.length >= 10 && !/[{}[\]]|undefined|\bnull\b/.test(r.reason))) broken.push(`b2 ${r.key} not built without a plain reason: ${r.reason}`);
+    if (r.state !== 'built' && !(typeof r.reason === 'string' && r.reason.length >= 10 && !/[{}[\]]|undefined|\bnull\b/.test(r.reason.replace(/"[^"]*"/g, '')))) broken.push(`b2 ${r.key} not built without a plain reason: ${r.reason}`);
   }
   // b3 zero AI-format parts reach the close: every part is one code makes from rows (a fact part, a pick part, or code's own $ default)
   for (const p of b.closeCache?.parts ?? []) {

@@ -9,7 +9,7 @@ import { ledgerRecord, isEmptyList, EMPTY_LIST_WORDS, WEEK_ONLY_WORDS } from '..
 const TEXT = '## [0.54.1] - 2026-11-04\n### Fixed\n- one\n- two\n';
 const jobLines = [{ n: 1, text: 'Summarise the latest release', rule: 'exactly 3 bullets', rules: ['exactly 3 bullets'] }];
 const look = { facts: [
-  { line: 1, name: 'release heading', shape: 'phrase', source: 'Changelog', words: ['## ['] },
+  { line: 1, name: 'release heading', shape: 'phrase', source: 'Changelog', words: ['### Fixed'] },
   { line: 1, name: 'invented', shape: 'phrase', source: 'Changelog', words: ['zzz nowhere'] },
   { line: 1, name: 'bullets', shape: 'number', source: 'Changelog', words: [], forRule: 1 },
 ], dropped: [] };
@@ -112,7 +112,7 @@ test('A8 a look fact or a phrase proposal whose words hold a version or a date: 
   const lk = { facts: [
     { line: 1, name: 'release version', shape: 'phrase', source: 'Changelog', words: ['0.54.1'] },
     { line: 1, name: 'release date', shape: 'date', source: 'Changelog', words: ['2026-11-04'] },
-    { line: 1, name: 'heading', shape: 'phrase', source: 'Changelog', words: ['## ['] },
+    { line: 1, name: 'heading', shape: 'phrase', source: 'Changelog', words: ['### Fixed'] },
   ], dropped: [] };
   const jl = [{ n: 1, text: 'Summarise', rule: 'must say 0.54.1', rules: ['must say 0.54.1'] }];
   const b = made({ jobLines: jl, look: lk });
@@ -157,4 +157,45 @@ test('A9 every row ends built or Not checked with a plain reason (no row is drop
   c.applyDelta({ edits: [{ op: 'add', kind: 'count', line: 1, min: 2 }] });
   c.reconcile();
   assert.equal(c.rows.find((r) => r.kind === 'count')?.reason, REASON.countNeedsFact);
+});
+
+// ---- the draft gate's own word checks run per fact on the block (src/factwords.js checkFactWords): a word the gate would refuse makes THIS row Not checked in the gate's plain words, never a red on code's whole plan ----
+// Fail-first: before this pre-check each case below was a `plan-red` stop (a code-built plan refused by checkDeclarationWords), e.g. the real run mwdhma1l "12 results returned." counted once for 3 results.
+const PAGE = 'Flights\nLeaves Boston at 9 AM. Price: $389 US dollars\nLeaves Boston at 10 AM. Price: $431 US dollars\nLeaves Boston at 11 AM. Price: $512 US dollars\n12 results returned.\n';
+function wordBlock(/** @type {any[]} */ edits, /** @type {any} */ look = { facts: [] }) {
+  const b = new CheckBlock({ texts: { flights: PAGE }, labels: ['flights'], asks: false });
+  b.fromJob([{ n: 1, text: 'List 3 flights', rules: [] }]);
+  b.addLook(look.facts, look.dropped);
+  b.applyDelta({ edits });
+  b.reconcile();
+  return b;
+}
+const add = (/** @type {any} */ o) => ({ op: 'add', kind: 'fact', line: 1, source: 'flights', ...o });
+
+test('words found fewer times than the line\'s result count: the fact is Not checked in the gate\'s words (M4/M1), the count and the other facts stay', () => {
+  const b = wordBlock([add({ kind: 'phrase', name: 'results returned', words: ['12 results returned.'] }), add({ kind: 'phrase', name: 'leaves', words: ['Leaves Boston'] }), { op: 'add', kind: 'count', line: 1, min: 3, max: 3 }]);
+  const row = (/** @type {string} */ n) => b.rows.find((r) => r.name === n);
+  assert.equal(row('results returned')?.state, 'not-checked');
+  assert.match(String(row('results returned')?.reason), /only 1 time, but this line asks for 3 results/);
+  assert.equal(row('leaves')?.state, 'built');
+  assert.equal(b.rows.find((r) => r.kind === 'count')?.state, 'built');
+});
+
+test('a unit or a sign that is not on the page: the add is Not checked ("the unit ... is not in the input"), a unit that is there is built', () => {
+  const b = wordBlock([add({ name: 'price', shape: 'money', words: ['Price:'], unit: ['zorkmids'] })]);
+  assert.match(String(b.rows.find((r) => r.name === 'price')?.reason), /the unit "zorkmids" is not in the input "flights"/);
+  assert.equal(wordBlock([add({ name: 'price', shape: 'money', words: ['Price:'], unit: ['US dollars'] })]).rows.find((r) => r.name === 'price')?.state, 'built');
+  assert.match(String(wordBlock([add({ name: 'price', shape: 'money', words: ['Price:'], currency: ['£'] })]).rows.find((r) => r.name === 'price')?.reason), /the currency "£" is not in the input/);
+});
+
+test('a label the look dropped or never kept is not used by an add: Not checked in the look\'s own plain words, and the look\'s kept label still builds', () => {
+  const look = { facts: [{ line: 1, name: 'price', shape: 'money', source: 'flights', words: ['Price:'], unit: ['US dollars'] }], dropped: [{ line: 1, fact: 'Stops', word: 'Leaves', reason: 'no-value', source: 'flights' }] };
+  const b = wordBlock([add({ name: 'stops', shape: 'number', words: ['Leaves'] })], look);
+  const row = b.rows.find((r) => r.name === 'stops');
+  assert.equal(row?.state, 'not-checked');
+  assert.match(String(row?.reason), /the label "Leaves" cannot be used\./);
+  assert.equal(b.rows.find((r) => r.name === 'price')?.state, 'built');
+  // a label that is on the page but that the look did not keep is picked from the look's list, never typed
+  const typed = wordBlock([add({ name: 'time', shape: 'time', words: ['Leaves Boston at'] })], look);
+  assert.match(String(typed.rows.find((r) => r.name === 'time')?.reason), /is not one of the labels the page words for "flights" kept/);
 });

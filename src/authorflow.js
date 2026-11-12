@@ -89,11 +89,10 @@ import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty }
 import { redactSecrets } from './validate.js';
 import { ledgerRecord } from './checklist.js';
 import { ROW_EDIT_REVISE, rowEditUserText, rowEditChannel, editsOf } from './rowedit.js';
-import { REASON } from './checkblock.js';
+import { REASON, CheckBlock } from './checkblock.js';
 import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, lineRules } from './rubricstep.js';
 /** @typedef {import('./checkblock.js').CheckBlock} CheckBlock */
 import { dropRows, dropLine } from './pagedropwords.js';
-import { factShapeGuide } from './facts.js';
 import { renderLookReport } from './inputlook.js';
 import { checkDeclarationWords, labelListsFor } from './factwords.js';
 import { ticketFilterReds, ticketFilterBlock, ticketPerRunFacts, TICKET_FILTER_SCHEMA_WORDS } from './ticketfilter.js';
@@ -1467,24 +1466,6 @@ export const RUBRIC_FILES_STATEMENT = 'The person declared this job SOFT-GREEN a
   + 'Compose ONE rubric-step stage per numbered job line, after the mandatory guard, and name only limits the person actually '
   + 'asked for. A part you cannot express that way is not approximated by a stage that means something else.';
 
-/**
- * THE RUBRIC RULES, in one place (live fix B1): what the confirm step and the drafter are both told about turning the person's words
- * into checks. The composer brief ({@link REQUIRED_FACTS_BRIEF}) interpolates THIS
- * constant, so the two cannot drift (in smv6k6l8dxkzs the confirm step planned a limit the drafter then could not carry, and the
- * drafter added an airport code the person never wrote). Field-neutral: neither turn needs the other's field names.
- */
-export const RUBRIC_RULES = 'THE RULES FOR TURNING THE PERSON\'S WORDS INTO CHECKS (the same for every turn of this job):\n - A limit the person WROTE ("under $450") is a rule that can be checked: plan it as a limit with its number.\n'
-  + ' - A number YOU make out of their words ("not a red-eye" becomes a departure time between 06:00 and 21:00) is your proposal, marked '
-  + 'as the AI\'s proposal for the person to check; a limit on a time that you propose is a RANGE (between), never one-sided. The input does '
-  + 'not have to hold the person\'s word (it holds no "red-eye"): the limit goes on the time the input DOES hold (e.g. the one after "Departure time:"), as a '
-  + 'range marked as the AI\'s proposal.\n'
-  + ' - Names, labels and units are the INPUT\'s own words, copied exactly as the input writes them. When the input does not use the '
-  + 'person\'s word (they wrote SFO, the input says San Francisco International Airport), use the words the input uses; never invent a '
-  + 'word the input does not hold, and never add a code (like SFO) that the person did not write and the input does not hold.\n'
-  + ' - A label for a line that asks for N results (a count of N) must sit in each result, so the label list must count it N or more times '
-  + '(the x-number beside it). A label counted fewer times is on the page once or twice (a sort tab, a switch) and is refused at $0 with its count.\n'
-  + ' - The same holds for the words a "must say" (phrase) fact makes each quote say: they must be in the input at least N times for N results. Words counted fewer times (page-header words like "from San Francisco" when each result says "Leaves San Francisco International Airport") are refused at $0 with their count; pick words every result says, or drop the check.';
-
 // ── 3. THE MEASURED BLOCKS ───────────────────────────────────────────────────
 
 /** F6, at the rendering boundary: an absent number is unknown, never 0. */
@@ -2713,6 +2694,13 @@ export async function authorClose({
   if (lang === RUBRIC_LANG && Array.isArray(inputs) && inputs.length > 0) {
     const frozen = await readFrozenInputs(workdir, inputs.map((i) => i.label));
     if (frozen.ok) { inputTexts = frozen.texts; labelLists = labelListsFor(frozen.texts, facts?.look ?? null); }
+  }
+  // every rubric job drafts through the check block (src/authorjob.js builds it, with the person's answers applied); a caller that brings none (a direct authorClose call) gets the block of the look alone, nobody to ask
+  if (block === null && lang === RUBRIC_LANG && inputTexts !== null && Array.isArray(jobLines)) {
+    block = new CheckBlock({ texts: inputTexts, labels: (inputs ?? []).map((/** @type {any} */ i) => i.label), asks: false });
+    block.fromJob(jobLines);
+    block.addLook(Array.isArray(facts?.look?.facts) ? facts.look.facts : [], Array.isArray(facts?.look?.dropped) ? facts.look.dropped : []);
+    block.reconcile();
   }
   /** the row-edit turn replaces the drafter's declaration for a rubric job: the model boundary and the declaration code assembles from the block's rows */
   const rowEdits = block !== null && lang === RUBRIC_LANG;

@@ -4,7 +4,7 @@
 // shapes, and says why a row it cannot build is Not checked. The block never removes a row: only the person (`applyAnswer`) or code (`match`) changes one.
 //   fromJob -> addLook -> reconcile( match -> build -> ask ), then, while a question is open or a reply waits: apply it and reconcile the WHOLE list again.
 // Pure: no I/O, no clock, no model. Rubric jobs only (repo jobs never run through it).
-import { countExact, countPhrase } from './factwords.js';
+import { countExact, countPhrase, checkFactWords, keptSetOf } from './factwords.js';
 import { isCountable, keepOrDrop, countCheck, partOfPick, plainWords, sameRuleWords } from './checkpick.js';
 import { dropRows } from './pagedropwords.js';
 import { boundInWords, rubricStepShapeReds, defaultCitedText, readLimit, holdsManyBounds } from './rubricstep.js';
@@ -87,6 +87,8 @@ export class CheckBlock {
     this.lines = [];
     /** @type {any[]} the look's facts as given (a `reading` edit names one) */
     this.lookFacts = [];
+    /** @type {{facts: any[], dropped: any[]}|null} the look as the draft gate reads it (null = no look report: the gate proves a label against the list code made) */
+    this.look = null;
     /** @type {any[]} replies waiting to be applied by `drive` */
     this.queue = [];
     /** @type {any[]} the open questions, set by `ask` */
@@ -129,7 +131,9 @@ export class CheckBlock {
    * @param {any[]} facts the look's kept facts @param {any[]} [dropped] the look's drops (`look.dropped`): a whole fact a page rule left out. Its plain sentence (src/pagedropwords.js)
    * becomes the `why` of the `~` rule it was tied to, or a Not checked `!` row of its own, so every drop shows under Not checked.
    */
-  addLook(facts, dropped = []) {
+  addLook(facts, dropped = undefined) {
+    if (Array.isArray(dropped)) this.look = { facts: this.lookFacts, dropped };
+    dropped ??= [];
     for (const d of dropRows(dropped.filter((/** @type {any} */ x) => x && x.reason !== 'person-left')).filter((x) => x.full)) {
       const why = d.sentences.join(' ');
       const rr = d.rule === undefined ? undefined : this.ruleRows(d.line).find((r) => r.rule === d.rule);
@@ -332,6 +336,11 @@ export class CheckBlock {
     for (const f of fs) {
       const reds = rubricStepShapeReds({ step: r.line, parts: [{ text: 'trial', class: 'fact', source: src, facts: [f] }] }, 'trial');
       if (reds.length) return { why: String(reds[0]?.detail) };
+      // the draft gate's own word checks (src/factwords.js), run here on this fact alone so a word it would refuse (a label the look dropped or never kept, a unit or sign not on the page, words
+      // found fewer times than the line's result count) makes THIS row Not checked in the gate's plain words, never a red on code's whole plan
+      const cnt = this.rowsOn(r.line, 'count').find((x) => x.can?.ok);
+      const wordReds = checkFactWords({ part: { source: src, facts: [f], ...(cnt ? { count: { ...(Number.isInteger(cnt.min) ? { min: cnt.min } : {}), ...(Number.isInteger(cnt.max) ? { max: cnt.max } : {}) } } : {}) }, text: this.textOf(src), line: r.line, kept: keptSetOf(this.look, src) });
+      if (wordReds.length) return { why: String(wordReds[0].detail) };
       const same = [...onLine, ...fresh].find((x) => x.name.toLowerCase() === f.name.toLowerCase());
       if (same && JSON.stringify(same) === JSON.stringify(f)) continue; // the very same fact already carries another rule: one fact, both rules
       if (same) return { why: `the name "${f.name}" is used twice on this line` };
