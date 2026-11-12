@@ -221,9 +221,18 @@ export const stripAgreeLead = (text) => {
 
 /** the words of a reading ask: the ONE spelling, and {@link readingOfQuestion} reads it back (the Result tab's "(you confirmed)") */
 const READING_HEAD = ' I read it as: ';
-const READING_TAIL = '. Agree? Answer "agree"';
+const READING_ASKED = '. Agree?';
+/** the part of a reading ask that tells the CLI's typed words (the panel's question box shows the question without it: src/questionbox.js) */
+const READING_ANSWER = ' Answer "agree"';
+const READING_TAIL = `${READING_ASKED}${READING_ANSWER}`;
+/** @param {number} n @returns {string} the rest of a reading ask after its answer words */
+const readingRest = (n) => `, or type your own reading (your answer is added as a new ~ rule on line ${n}).`;
+/** @param {number} n @returns {string} the answer words a reading ask ends with (said once, here, and cut in the panel) */
+export const readingTail = (n) => `${READING_ANSWER}${readingRest(n)}`;
+/** @param {number} n @returns {string} the answer words a can't-check ask ends with (said once, here, and cut in the panel) */
+export const cantCheckTail = (n) => ` Answer "${DROP_IT}", or type how to check it (your answer is added as a new ~ rule on line ${n}).`;
 /** @param {number} n @param {string} rule @param {string} reading @returns {string} */
-const readingQuestion = (n, rule, reading) => `Your line ${n} says "${rule}".${READING_HEAD}${reading}${READING_TAIL}, or type your own reading (your answer is added as a new ~ rule on line ${n}).`;
+const readingQuestion = (n, rule, reading) => `Your line ${n} says "${rule}".${READING_HEAD}${reading}${READING_TAIL}${readingRest(n)}`;
 /** @param {unknown} q a recorded question @returns {string|null} the reading a reading ask proposed, or null when it was another kind of question */
 export function readingOfQuestion(q) {
   const s = String(q ?? '');
@@ -277,7 +286,7 @@ export function askableFromLook(look, jobLines) {
       seen.add(key);
       cants.push({
         line: l.n, rule: n, source: 'look', ask: 'cant-check', ruleText: rule,
-        question: `Your line ${l.n} says "${rule}". I can't check this on the page. Drop it? Answer "${DROP_IT}", or type how to check it (your answer is added as a new ~ rule on line ${l.n}).`,
+        question: `Your line ${l.n} says "${rule}". I can't check this on the page. Drop it?${cantCheckTail(l.n)}`,
       });
     });
   }

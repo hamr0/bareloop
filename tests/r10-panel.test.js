@@ -40,7 +40,9 @@ test('the panel: a proposal and a can\'t-check are asked in fwd\'s words; agree 
   });
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'), `${session.state.phase} / ${session.state.error}`);
   const said = () => session.state.messages.filter((/** @type {any} */ m) => m.role === 'bot').at(-1).text;
-  assert.match(said(), /\(1 of 2\), about job line 1: Line 1, guardrail "under 80 words": I propose at most 80 words\. Answer "agree" to use it/);
+  // the panel shows the question without the CLI's typed answer words (the box and its buttons say it); the stored question keeps them
+  assert.match(said(), /\(1 of 2\), about job line 1: Line 1, guardrail "under 80 words": I propose at most 80 words\.$/);
+  assert.match(session.state.pendingAsk.question, /I propose at most 80 words\. Answer "agree" to use it/);
   assert.equal(legs.length, 0, 'asked before any draft');
   session.send('agree');
   assert.ok(await until(() => /\(2 of 2\)/.test(said())));

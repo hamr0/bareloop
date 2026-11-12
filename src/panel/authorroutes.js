@@ -447,7 +447,7 @@ export function createAuthorRoutes(opts) {
     if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
 
     if (sub === 'send') {
-      const r = session.send(String(body?.text ?? ''));
+      const r = session.send(String(body?.text ?? ''), body?.choice);
       send(r.ok ? 200 : 400, { ...r, state: session.state });
       return true;
     }

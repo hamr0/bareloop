@@ -1,22 +1,89 @@
-// The question box of the drafting chat (hamr 2026-11-12, as fwdloop M10 am29): a question asked while drafting gets its own box in the panel, with the question,
-// its own buttons where the question offers choices, and one line to type in. This file is the ONE owner of what the panel shows for a pending question
-// (the page draws it, never works it out). The CLI (src/authorrun.js) is a sibling caller of the same questions and keeps typing words; the stored question
-// text never changes.
+// The question box of the drafting chat (hamr 2026-11-12, as fwdloop M10 am29/am30/am31): a question asked while drafting gets its own box in the panel, with the question,
+// its own buttons where the question offers choices (the person's intent is a typed choice, never words read), and one line to type in. This file is the ONE owner of what the
+// panel shows for a pending question and of which choices a question offers (the page draws it, never works it out). The CLI (src/authorrun.js) is a sibling caller of the same
+// questions and keeps typing words; the stored question text never changes, only the panel's copy of it is cut.
+import { readingTail, cantCheckTail, DROP_IT } from './pagemap.js';
+import { HOW_TO_ANSWER } from './checkpick.js';
+
+/** the door's refusals, word for word (fwd am31); a refusal leaves the question open and writes nothing */
+export const CHOICE_SAYS = Object.freeze({
+  bad: 'That answer is not one of the choices. Nothing was saved.',
+  notOffered: 'That choice is not offered for this question. Nothing was saved.',
+  noRule: 'That question is about the job line, not one of your ~ rules, so there is nothing to drop. Agree, or type your own words. Nothing was saved.',
+  blank: 'An answer is needed here — there is no skip. Type it in the box and press Send.',
+});
+
+/**
+ * Which buttons a look question offers. Agree only when it carries a proposal (a reading ask with its reading, a check-pick ask with its check); Drop it only where "drop it" leaves
+ * one of the person's own `~` rules Not checked (a can't-check ask or a check-pick ask about a rule number).
+ * @param {{source?: string, ask?: string, reading?: unknown, check?: unknown, rule?: unknown}} q @returns {{agree: boolean, drop: boolean}}
+ */
+export function offersOf(q) {
+  const look = q.source === 'look';
+  const agree = look && ((q.ask === 'reading' && typeof q.reading === 'string') || (q.ask === 'check' && q.check !== null && typeof q.check === 'object'));
+  const drop = look && Number.isInteger(q.rule) && (q.ask === 'cant-check' || q.ask === 'check' || q.ask === 'no-check');
+  return { agree, drop };
+}
+
+/**
+ * A look question as the PANEL shows it: the code's own answer words (`Answer "agree"...` / `Answer "drop it"...`) cut off the end, because the buttons and the box say it.
+ * Only the known tails are cut, matched exactly as a suffix (never a pattern over the prose); a question that ends in none of them is returned whole.
+ * @param {{question: string, line?: number, source?: string}} q @returns {string}
+ */
+export function panelQuestionText(q) {
+  const text = String(q.question);
+  if (q.source !== 'look' || !Number.isInteger(q.line)) return text;
+  const n = /** @type {number} */ (q.line);
+  const hit = [readingTail(n), cantCheckTail(n), ` ${HOW_TO_ANSWER(n, true)}`, ` ${HOW_TO_ANSWER(n, false)}`].find((t) => text.endsWith(t));
+  return hit === undefined ? text : text.slice(0, text.length - hit.length);
+}
 
 /**
  * What the panel's question box shows for one pending ask. Only a question the person answers (`kind: 'answer'`) has a box; every other ask (language, menu, install)
- * keeps the chat input.
- * @param {{kind: string, source?: string, index?: number, total?: number, question?: string, line?: number}} step
- * @returns {{head: string, line: string, text: string, choices: {choice: string, label: string}[], orLabel: string|null}|null}
+ * keeps the chat input. `sendChoice` = the choice the box's own Send posts.
+ * @param {{kind: string, source?: string, index?: number, total?: number, question?: string, line?: number, offers?: {agree: boolean, drop: boolean}}} step
+ * @returns {{head: string, line: string, text: string, choices: {choice: string, label: string}[], orLabel: string|null, sendChoice: string}|null}
  */
 export function boxFor(step) {
   if (step.kind !== 'answer' || typeof step.question !== 'string') return null;
   const before = step.source === 'fit-check' || step.source === 'dest-point';
+  /** @type {{choice: string, label: string}[]} */
+  const choices = [];
+  if (step.offers?.agree) choices.push({ choice: 'agree', label: 'Agree' });
+  if (step.offers?.drop) choices.push({ choice: 'drop', label: 'Drop it' });
   return {
     head: before ? 'A question before drafting' : `A question the plan raised (${step.index ?? 1} of ${step.total ?? 1})`,
     line: Number.isInteger(step.line) ? `About job line ${step.line}` : '',
-    text: step.question,
-    choices: [],
-    orLabel: 'Type your answer:',
+    text: panelQuestionText({ question: step.question, source: step.source, ...(Number.isInteger(step.line) ? { line: step.line } : {}) }),
+    choices,
+    orLabel: choices.length > 0 ? 'Or type a new rule:' : 'Type your answer:',
+    sendChoice: 'rule',
   };
+}
+
+/** the choices a question's typed answer may name */
+const LOOK_CHOICES = ['agree', 'drop', 'rule'];
+
+/**
+ * The door's check of a choice sent for the pending ask. Null = accepted; else the refusal words.
+ * @param {{kind: string, source?: string, rule?: unknown, offers?: {agree: boolean, drop: boolean}}} step @param {unknown} choice @returns {string|null}
+ */
+export function refuseChoice(step, choice) {
+  if (step.kind !== 'answer') return CHOICE_SAYS.notOffered;
+  if (typeof choice !== 'string' || !LOOK_CHOICES.includes(choice)) return CHOICE_SAYS.bad;
+  if (choice === 'agree' && step.offers?.agree !== true) return CHOICE_SAYS.notOffered;
+  if (choice === 'drop' && step.offers?.drop !== true) return step.source === 'look' && !Number.isInteger(step.rule) ? CHOICE_SAYS.noRule : CHOICE_SAYS.notOffered;
+  return null;
+}
+
+/**
+ * What a choice resolves the question with: the words the asker reads (today's own words for the effect, so the drafting log and the CLI path see the same), and the chat line the person
+ * sees as their own. `rule` = the box's words kept whole.
+ * @param {unknown} choice @param {unknown} text @returns {{value: string, shown: string}|{error: string}}
+ */
+export function resolveChoice(choice, text) {
+  if (choice === 'agree') return { value: 'agree', shown: 'Agree' };
+  if (choice === 'drop') return { value: DROP_IT, shown: 'Drop it' };
+  const said = String(text ?? '').replace(/\s*\n\s*/g, ' ').trim();
+  return said === '' ? { error: CHOICE_SAYS.blank } : { value: said, shown: said };
 }

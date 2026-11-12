@@ -71,7 +71,7 @@ import {
   parseJobBlock, parseInputs, jobBlockFitsCheck, renderJobLines, renderExamples, signedJobLines, jobBoxText,
 } from '../jobblock.js';
 import { planFromConfirm } from './jobplan.js';
-import { boxFor } from '../questionbox.js';
+import { boxFor, offersOf, panelQuestionText, refuseChoice, resolveChoice } from '../questionbox.js';
 import { isTicketTrigger } from '../trigger.js';
 import { ticketLookOf } from '../ticketschedule.js';
 
@@ -609,6 +609,9 @@ export function createSession(card, deps = {}) {
   let openMsg = null;
   const sayOpen = (/** @type {string} */ text) => { openMsg = { role: 'bot', text, askOpen: true }; state.messages.push(openMsg); };
   const closeOpenMsg = () => { if (openMsg) { delete openMsg.askOpen; openMsg = null; } };
+  /** the button the person used to answer the question just resolved (`agree`, `drop`, `rule`, ...), or null when they typed words (the CLI, an old page); read once, right after the `await ask(...)` @type {string|null} */
+  let answeredChoice = null;
+  const takeChoice = () => { const c = answeredChoice; answeredChoice = null; return c; };
   /** a structured message (the plan bubble): the page draws it, the thread keeps it as data */
   /** the checks the person has agreed so far (their plain words, `kept from last draft` on a carried one): the plan bubble draws each once, as a `[you picked]` row @type {{line: number, text: string}[]} */
   const pickedSoFar = [];
@@ -642,7 +645,7 @@ export function createSession(card, deps = {}) {
         const running = state.steps.findLastIndex((/** @type {any} */ x) => x.status === 'running');
         appendDraftLog(outDir, {
           kind: 'human', no: running === -1 ? Math.max(0, state.steps.length - 1) : running, source: typeof step.source === 'string' ? step.source : 'confirm',
-          question: redactSecrets(step.question), answer: said, ...(Number.isInteger(step.line) ? { line: step.line } : {}), at: new Date().toISOString(),
+          question: redactSecrets(step.question), answer: said, ...(answeredChoice === null ? {} : { choice: answeredChoice }), ...(Number.isInteger(step.line) ? { line: step.line } : {}), at: new Date().toISOString(),
         });
       }
       resolveFn0(value);
@@ -653,18 +656,19 @@ export function createSession(card, deps = {}) {
     if (step.kind === 'language') say('bot', `${step.field?.prompt ?? 'Which language is this job about?'} (${(step.candidates ?? []).join(', ')})`);
     else if (step.kind === 'menu') {
       sayPlan(step.plan ?? {});
-    } else if (step.kind === 'answer' && (step.source === 'fit-check' || step.source === 'dest-point')) sayOpen(step.question);
-    else if (step.kind === 'answer') sayOpen(`A question the plan raised (${step.index} of ${step.total})${Number.isInteger(step.line) ? `, about job line ${step.line}` : ''}: ${step.question}`);
+    } else if (step.kind === 'answer' && (step.source === 'fit-check' || step.source === 'dest-point')) sayOpen(panelQuestionText(/** @type {any} */ (step)));
+    else if (step.kind === 'answer') sayOpen(`A question the plan raised (${step.index} of ${step.total})${Number.isInteger(step.line) ? `, about job line ${step.line}` : ''}: ${panelQuestionText(/** @type {any} */ (step))}`);
     else if (step.kind === 'goal') say('bot', 'Type the goal sentence yourself.');
   });
 
-  /** @param {string|null} value @returns {boolean} */
-  const answer = (value) => {
+  /** @param {string|null} value @param {string|null} [choice] the button used, when the answer came from the question box @returns {boolean} */
+  const answer = (value, choice = null) => {
     if (!resolvePending) return false;
     const r = resolvePending;
     resolvePending = null;
     state.pendingAsk = null;
     closeOpenMsg();
+    answeredChoice = choice;
     r(value);
     return true;
   };
@@ -1208,9 +1212,12 @@ export function createSession(card, deps = {}) {
       for (let k = 0; k < total; k += 1) {
         const q = o.questions[k];
         let text = '';
+        /** the button the person used for this question (src/questionbox.js), or null when they typed words (the CLI, an old page): a typed choice decides, never the words */
+        let via = null;
         for (;;) {
-          const a = await ask({ kind: 'answer', source: typeof q.source === 'string' ? q.source : 'try-3', index: k + 1, total, question: q.question, line: q.line });
+          const a = await ask({ kind: 'answer', source: typeof q.source === 'string' ? q.source : 'try-3', index: k + 1, total, question: q.question, line: q.line, ...(q.source === 'look' ? { ask: q.ask, rule: q.rule, offers: offersOf(q) } : {}) });
           if (a === null) return null;
+          via = takeChoice();
           // one `~` line is one line: the person's own words, newlines folded to spaces, nothing else touched
           text = String(a).replace(/\s*\n\s*/g, ' ').trim();
           if (text) break;
@@ -1220,18 +1227,21 @@ export function createSession(card, deps = {}) {
         // rule on the look's Not checked list. A reading ask answered "agree" adds the code's reading, in plain words, as the `~` rule (so the
         // bound is now the person's own words); anything else typed is the person's own rule, word for word.
         // F240: "yes, check it as ..." is the person's own words minus the leading "yes,"
-        if (q.source === 'look') text = stripAgreeLead(text);
-        if (q.source === 'look' && q.ask === 'reading' && typeof q.reading === 'string' && isAgree(text)) text = q.reading;
-        if (q.source === 'look' && q.ask === 'cant-check' && Number.isInteger(q.rule) && isDropIt(text)) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); continue; }
+        // a choice from the question box decides what the answer does; the box's own words (`rule`) are kept whole, even when they read "agree" or "drop it"
+        if (q.source === 'look' && via === null) text = stripAgreeLead(text);
+        const agrees = via === 'agree' || (via === null && isAgree(text));
+        const dropsIt = via === 'drop' || (via === null && isDropIt(text));
+        if (q.source === 'look' && q.ask === 'reading' && typeof q.reading === 'string' && agrees) text = q.reading;
+        if (q.source === 'look' && q.ask === 'cant-check' && Number.isInteger(q.rule) && dropsIt) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); continue; }
         // R10 (fwd am16): a check-pick ask. `agree` writes the proposal's plain words as a new `~` rule and picks the check; "drop it" leaves the rule Not checked; anything else
         // is the person's own words, a `~` rule word for word with no check (Not checked: they judge it at Accept)
         let agreedPick = false;
         const isPick = q.source === 'look' && (q.ask === 'check' || q.ask === 'no-check') && Number.isInteger(q.rule);
         // am21: the ask is about the person's EDITED added `~` line (`pairRule` = the rule it was agreed from): the answer REPLACES that line and the pick is kept under the source's number
         const pair = isPick && Number.isInteger(/** @type {any} */ (q).pairRule) ? /** @type {number} */ (/** @type {any} */ (q).pairRule) : null;
-        if (isPick && isDropIt(text)) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); if (pair !== null) left.push({ line: q.line, rule: pair }); appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: q.line, rule: q.rule, ruleText: redactSecrets(String(q.ruleText ?? '')), proposed: q.reading ?? null, how: 'drop it', at: new Date().toISOString() }); continue; }
+        if (isPick && dropsIt) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); if (pair !== null) left.push({ line: q.line, rule: pair }); appendDraftLog(outDir, { kind: 'check-pick', no: Math.max(0, state.steps.length - 1), line: q.line, rule: q.rule, ruleText: redactSecrets(String(q.ruleText ?? '')), proposed: q.reading ?? null, how: 'drop it', at: new Date().toISOString() }); continue; }
         if (isPick) {
-          const agreed = q.ask === 'check' && q.check && isAgree(text);
+          const agreed = q.ask === 'check' && q.check && agrees;
           if (agreed) text = plainWords(/** @type {any} */ (q.check));
           agreedPick = agreed === true;
           if (agreed) pickedSoFar.push({ line: q.line, text: plainWords(/** @type {any} */ (q.check)) });
@@ -1366,11 +1376,21 @@ export function createSession(card, deps = {}) {
   return {
     id,
     state,
-    /** @param {string} text */
-    send: (text) => {
+    /** @param {string} text @param {unknown} [choice] the button used in the question box (`agree`, `drop`, `rule`); absent = the words reading (the CLI's way, old pages) */
+    send: (text, choice) => {
       if (!state.pendingAsk) return { ok: false, error: 'nothing is being asked right now' };
       if (state.pendingAsk.kind === 'menu') return { ok: false, error: 'use Sign & run for a plan, never Send — the chat can never sign or pick a plan action' };
       if (state.pendingAsk.kind === 'install-needed') return { ok: false, error: 'install the packages, then click Check again — nothing to send here' };
+      if (choice !== undefined) {
+        // hamr 2026-11-12 (fwd am29/am31): the question box posts a typed choice. A refusal leaves the question open: nothing said, nothing logged, nothing resolved.
+        const no = refuseChoice(state.pendingAsk, choice);
+        if (no !== null) return { ok: false, refused: 'bad-choice', error: no };
+        const r = resolveChoice(choice, text);
+        if ('error' in r) return { ok: false, refused: 'blank-answer', error: r.error };
+        say('you', r.shown);
+        answer(r.value, /** @type {string} */ (choice));
+        return { ok: true };
+      }
       say('you', text);
       answer(text);
       return { ok: true };

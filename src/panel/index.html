@@ -5404,7 +5404,7 @@
     var qAnswer = document.getElementById("chat-q-answer");
     var qError = document.getElementById("chat-q-error");
     var qSend = document.getElementById("chat-q-send");
-    var qKey = null, qBusy = false;
+    var qKey = null, qBusy = false, qSendChoice = "rule";
     var revisesLeftEl = document.getElementById("chat-left-count");
     // R10 (fwd am17/am20): the id of the draft the next Start drafting follows; the server hands its check picks on (words-keyed), so a pick already made is not asked again
     var carryFromId = null;
@@ -6225,6 +6225,7 @@
       var key = String(sessionId) + ":" + String(ask.index) + ":" + String(ask.source) + ":" + b.text;
       if(key !== qKey){
         qKey = key;
+        qSendChoice = b.sendChoice || "rule";
         qHead.textContent = b.head; qLine.textContent = b.line; qText.textContent = b.text;
         qHead.hidden = b.head === ""; qLine.hidden = b.line === "";
         var cs = b.choices || [];
@@ -6558,7 +6559,8 @@
       if(qBusy || !sessionId || !lastState || !lastState.pendingAsk || !lastState.pendingAsk.box) return;
       qBusy = true; qSend.disabled = true; qC1.disabled = true; qC2.disabled = true; qError.textContent = "";
       var id = sessionId;
-      var body = choice === null ? {text: qAnswer.value} : {text: qAnswer.value, choice: choice};
+      // a choice button posts its choice and nothing else; the box's Send posts the box's words with the choice the box carries (a new rule), never read as agree or drop it
+      var body = choice === qSendChoice ? {text: qAnswer.value, choice: choice} : {choice: choice};
       authorPost("/api/author/" + id + "/send", body).then(function(r){
         qBusy = false; qSend.disabled = false; qC1.disabled = false; qC2.disabled = false;
         if(id !== sessionId) return;
@@ -6568,10 +6570,10 @@
         poll();
       }).catch(function(){ qBusy = false; qSend.disabled = false; qC1.disabled = false; qC2.disabled = false; qError.textContent = "network error \u2014 could not reach the panel server, your answer was NOT sent"; });
     }
-    qSend.addEventListener("click", function(){ doQuestion(null); });
+    qSend.addEventListener("click", function(){ doQuestion(qSendChoice); });
     qC1.addEventListener("click", function(){ doQuestion(qC1.getAttribute("data-choice")); });
     qC2.addEventListener("click", function(){ doQuestion(qC2.getAttribute("data-choice")); });
-    qAnswer.addEventListener("keydown", function(e){ if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); doQuestion(null); } });
+    qAnswer.addEventListener("keydown", function(e){ if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); doQuestion(qSendChoice); } });
 
     function doSend(){
       if(!sessionId) return;
