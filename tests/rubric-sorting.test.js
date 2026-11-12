@@ -109,43 +109,6 @@ test('the declaration schema for the text genre can only SAY a sorted part: five
 import { KIND_CATALOGUE } from '../src/authoring.js';
 function KIND_CAT_ALL() { return KIND_CATALOGUE; }
 
-test('the revise loop carries the plain sentence back: try 1 sorts a part as a web-source guard part, the measured block quotes the red, try 2 drops it and the declaration is accepted', async () => {
-  const file = join(tmp(), 'CHANGELOG.md');
-  copyFileSync(join(HERE, '..', 'CHANGELOG.md'), file);
-  const proved = await proveRubricInputs({ inputs: [{ n: 1, label: 'Changelog', value: file }], into: join(tmp(), 'seed') });
-  assert.equal(proved.ok, true);
-  if (!proved.ok) return;
-  const { prep } = proved;
-  const listing = await buildSeedListing({ workdir: prep.tree, seedRef: prep.manifest.seed, sourcePaths: undefined, testPaths: undefined });
-  const script = [
-    // (a `judged` or `none` part no longer reds on a rubric job: it is listed under Not checked, tests/r10-uncheckable.test.js; a web-source part still does)
-    decl(step(1, [{ text: 'the tone should be friendly', class: 'guard' }])),
-    { ...decl(step(1, [count('maxWords', 'under 200 words', { value: 200 })])), refused: undefined },
-  ];
-  const turns = [];
-  let call = 0;
-  const generate = async (messages, tools) => {
-    turns.push(messages);
-    const tool = tools.find((t) => t.name === DECLARATION_TOOL_NAME);
-    const d = script[Math.min(call, script.length - 1)];
-    call += 1;
-    await tool.execute(JSON.parse(JSON.stringify(d)));
-    return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } };
-  };
-  const r = await authorClose({
-    workdir: prep.tree, seedRef: prep.manifest.seed, lang: RUBRIC_LANG, verdictType: 'soft-green',
-    answers: { 1: '1. Summarize the unreleased changes\n   rule: be friendly, under 200 words' }, questions: { 1: GREEN_QUESTIONS[1] },
-    scout: { state: 'PRESENT', facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }] }, calls: [], raws: [] },
-    listing, generate, writeScope: ['output/'], jobLines: [{ n: 1, text: 'Summarize', rule: 'be friendly, under 200 words' }],
-    inputs: [{ n: 1, label: 'Changelog', value: file }],
-  });
-  assert.equal(r.ok, true, JSON.stringify(r.reds));
-  assert.ok(call >= 2, 'the red sent the loop to a revision (a later identical declaration then ends it as unchanged)');
-  const revise = turns[1].at(-1).content;
-  assert.match(revise, /rubric-part-guard at stages\[1\]\.params\.parts\[0\]: line 1: 'the tone should be friendly' is about web sources, and this job has no web input\. Nothing spent\./);
-  assert.equal(r.declaration.stages[1].params.parts[0].check, 'maxWords');
-});
-
 test('both doors print the sorting reds in FULL (no 60-character cut): the drafting stop and the signing stop', () => {
   const reds = [
     { code: 'rubric-part-unsortable', path: 'stages[1].params.parts[0]', detail: "line 2: 'make the whole thing feel considerably more professional and polished throughout' can't be counted or checked against a quote. Say it as a count (words, sections, rows) or as something a quote must show." },

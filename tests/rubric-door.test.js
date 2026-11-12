@@ -18,6 +18,7 @@ import { proveRubricInputs } from '../src/source.js';
 import { parseJobBlock, jobBlockFitsCheck } from '../src/jobblock.js';
 import { rubricGoal } from '../src/rubricstep.js';
 import { createSession, validateJobCard as rawValidateJobCard } from '../src/panel/authorsession.js';
+import { ROW_EDIT_TOOL } from '../src/rowedit.js';
 import { keyRows } from '../src/providerrows.js';
 import { ANTH_CFG } from './helpers.js';
 
@@ -193,21 +194,22 @@ test('createSession on a rubric job with a local file: the CONFIRM TURN runs (no
   assert.equal(existsSync(join(into, 'tree', 'input', 'CHANGELOG.md')), true);
 });
 
-test('R10 end check, panel door: a declaration with no real check (paid6 draft 17\'s real close) ends refused with the d4596a7 words and never reaches the signing gates', async () => {
+test('R10 end check, panel door: a draft whose check block built no check (a text line over TWO inputs: code cannot pick which one the claims quote; paid6 draft 17\'s shape) ends refused with the d4596a7 words and never reaches the signing gates', async () => {
   const file = changelogCopy();
-  const d17 = JSON.parse(readFileSync(join(HERE, 'fixtures', 'r10-vanish-closes.json'), 'utf8')).d17.specClose;
+  const file2 = join(tmp(), 'README.md');
+  copyFileSync(join(HERE, '..', 'README.md'), file2);
   let gatesReached = false;
   const session = createSession({
-    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-door-nocheck', jobText: '1. Write a short friendly summary of the note', inputs: `Changelog: ${file}`, destination: join(tmp(), 'delivered'), capUsd: 1,
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-door-nocheck', jobText: '1. Write a short friendly summary of the note', inputs: `Changelog: ${file}\nReadme: ${file2}`, destination: join(tmp(), 'delivered'), capUsd: 1,
   }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(), sessionsRoot: tmp('rubric-door-sess-'),
-    scout: { state: 'PRESENT', facts: { x: 1 }, calls: [], raws: [] },
-    generate: async () => { throw new Error('no authoring model call'); },
+    lookFn: async () => ({ state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [], facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }, { n: 2, label: 'Readme' }], look: { facts: [], prose: [], notFound: [], dropped: [] } } }),
+    // the drafter sends no edit (the reply of a model with nothing sure to say)
+    generate: async (_m, tools) => { await tools.find((t) => t.name === ROW_EDIT_TOOL).execute({ edits: [] }); return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } }; },
     confirmGenerate: confirmModel(PLAN).generate,
-    authorFn: async () => ({ ok: true, declaration: { stages: d17.stages, notes: d17.notes, refused: d17.refused }, genreEnv: null, cost: { costUsd: 0, knownUsd: 0, spendComplete: true, calls: [], unpricedRounds: 0 }, reds: [] }),
     prepareSigningFn: async () => { gatesReached = true; return { ok: true, specHash: 'abc', seedRef: 'x', work: [], guards: [], stops: [], reds: [], refusal: null, gates: {} }; },
   });
-  assert.ok(await waitFor(() => session.state.pendingAsk?.kind === 'menu'));
+  assert.ok(await waitFor(() => session.state.pendingAsk?.kind === 'menu'), `${session.state.phase} / ${session.state.error}`);
   assert.equal(session.signPrepare().ok, true);
   assert.ok(await waitFor(() => ['prepared', 'refused', 'error'].includes(session.state.phase)));
   assert.equal(session.state.phase, 'refused', `${session.state.phase} / ${session.state.error}`);
