@@ -4099,7 +4099,9 @@
   // (src/panel/jobplan.js): numbered lines with their rule, the checks under the line each serves (folded), the AI's own
   // "Not checked", the always-on guards. Only the marker is blue (--plan). Returns HTML (every text is escaped).
   function renderJobPlan(plan){
-    var h = '<div class="jp" data-testid="job-plan">' + (plan.older ? '<div class="older" data-testid="plan-older">older job \u2014 numbered lines were not saved</div>' : "") + '<div class="jp-legend">Done when every <b>\u203A</b> check passes</div>' +
+    // the legend promises \u203A checks, so it shows only when the plan has one to show (the goal-only confirm card has none yet)
+    var hasCheck = (plan.loose || []).length > 0 || (plan.lines || []).some(function(l){ return (l.checks || []).length || (l.picked || []).length || (l.always || []).length; });
+    var h = '<div class="jp" data-testid="job-plan">' + (plan.older ? '<div class="older" data-testid="plan-older">older job \u2014 numbered lines were not saved</div>' : "") + (hasCheck ? '<div class="jp-legend">Done when every <b>\u203A</b> check passes</div>' : "") +
       (plan.goal && !plan.older ? '<div class="jp-sum" data-testid="plan-goal"><span class="lbl">AI\'s summary</span>' + escapeXml(plan.goal) + "</div>" : "");
     var byTag = function(by){ return by === "you" ? ' <span class="by" data-testid="plan-by" data-by="you">[you picked]</span>' : by === "agent" ? ' <span class="by" data-testid="plan-by" data-by="agent">[agent]</span>' : by === "default" ? ' <span class="by" data-testid="plan-by" data-by="default">[default]</span>' : ""; };
     var checkLine = function(c){

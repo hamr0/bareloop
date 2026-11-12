@@ -26,6 +26,16 @@ const PLAN = {
   loose: [{ name: 'stray', cls: null }], notChecked: ['looks nice'], alwaysOn: ['no-suppressions', 'changed-from-seed'], older: false,
 };
 
+test('renderJobPlan: the legend shows only when the plan has a › check row', () => {
+  const none = renderJobPlan({ lines: [{ n: 1, text: 'Do it', rule: '', checks: [], refused: [] }], loose: [], notChecked: [], alwaysOn: [], older: false });
+  assert.doesNotMatch(none, /jp-legend/, 'a goal-only plan has no › rows, so no legend');
+  assert.match(renderJobPlan(PLAN), /jp-legend/);
+  const loose = renderJobPlan({ lines: [], loose: [{ name: 'x', cls: null }], older: false });
+  assert.match(loose, /jp-legend/, 'an other-checks row counts');
+  const always = renderJobPlan({ lines: [{ n: 1, text: 'a', checks: [], always: ['g'] }], loose: [], older: false });
+  assert.match(always, /jp-legend/, 'an always-on row under a line counts');
+});
+
 test('renderJobPlan: legend, numbered lines with their rule, checks as "check · name · class", the two folds with their counts; every text escaped', () => {
   const h = renderJobPlan(PLAN);
   assert.match(h, /Done when every <b>›<\/b> check passes/);
