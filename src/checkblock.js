@@ -9,7 +9,7 @@ import { isCountable, keepOrDrop, countCheck, partOfPick, plainWords, sameRuleWo
 import { dropRows } from './pagedropwords.js';
 import { boundInWords, rubricStepShapeReds, defaultCitedText, readLimit, holdsManyBounds } from './rubricstep.js';
 import { validReading } from './pagerules.js';
-import { weekOnly, WEEK_ONLY_WORDS, MAX_BANG } from './checklist.js';
+import { weekOnly, weekTokens, WEEK_ONLY_WORDS, MAX_BANG } from './checklist.js';
 import { fitPlacePhrase } from './placerule.js';
 import { ruleWords } from './facts.js';
 import { SIGNED_ROW_FIELDS } from './declaredclose.js';
@@ -59,6 +59,18 @@ export function renderCard(rows) {
     else body = `${r.kind} "${r.name ?? r.words?.[0] ?? ''}"${r.words?.length ? ` ${CARD_T.withWords} ${r.words.map((/** @type {string} */ w) => `"${w}"`).join(', ')}` : ''}`;
     return { key: r.key, line: r.line, by: r.by, state: r.state, reason: r.reason ?? null, text: `${r.by === 'you' ? '~' : r.by === 'agent' ? '!' : '$'} ${body}` };
   });
+}
+
+/**
+ * The facts a place fit builds (hamr 2026-11-11, plain split names): one value keeps the fact's own name; a version AND a date become TWO facts, "<name> version" and "<name> date", each with its
+ * own place rule. The words version, date and "and" leave the base name first, so "release version" is not named "release version version".
+ * @param {string} name @param {{kind: string, value: string, rule: any}[]} strips @param {(n: string, extra: any) => any} mk
+ */
+function placeFacts(name, strips, mk) {
+  if (strips.length === 1) return [mk(name, { shape: 'phrase', phrase: strips[0].value, place: strips[0].rule })];
+  const base = String(name).replace(/\b(?:version|date|and)\b/gi, ' ').replace(/\s+/g, ' ').trim();
+  const nm = (/** @type {string} */ sfx) => (base === '' ? sfx : `${base.slice(0, 64 - sfx.length - 1).trimEnd()} ${sfx}`);
+  return strips.map((s) => mk(nm(s.kind), { shape: 'phrase', phrase: s.value, place: s.rule }));
 }
 
 export class CheckBlock {
@@ -184,6 +196,14 @@ export class CheckBlock {
         r.can = { ok: true, how: 'fact', link: l, reading, aiProposal: unsaid && !ownWords && !r.agreed, ...(ownWords ? { readBy: 'your words' } : {}) };
         return;
       }
+      // one owner of the week-only decision (hamr 2026-11-11): a version or a date in a linked phrase is fixed words only when the person's own `~` rule names that token; else a place rule fits it or it stays Not checked
+      const week = l.shape === 'phrase' ? l.words.filter((/** @type {string} */ w) => proved(this.textOf(l.source), w) && weekOnly(w)) : [];
+      if (week.length && !weekTokens(week.join(' ')).some((k) => norm(r.text).includes(norm(k)))) {
+        const fits = week.map((/** @type {string} */ w) => fitPlacePhrase(w, this.textOf(l.source)));
+        if (fits.some((x) => x === null)) { r.can = { ok: false, why: WEEK_ONLY_WORDS }; return; }
+        r.can = { ok: true, how: 'fact', link: l, reading: undefined, strips: fits[0] ?? [] };
+        return;
+      }
       r.can = { ok: true, how: 'fact', link: l, reading: undefined };
       return;
     }
@@ -211,9 +231,10 @@ export class CheckBlock {
     if (provedWords.length === 0) { r.can = { ok: false, why: `the words ${w.map((/** @type {string} */ x) => `"${x}"`).join(', ') || '(none)'} are not in the input` }; return; }
     if (provedWords.some(weekOnly)) {
       if (r.shape !== 'phrase' && r.kind !== 'phrase') { r.can = { ok: false, why: WEEK_ONLY_WORDS }; return; }
-      const strips = provedWords.filter(weekOnly).map((/** @type {string} */ x) => fitPlacePhrase(x, text));
-      if (strips.some((x) => x === null)) { r.can = { ok: false, why: WEEK_ONLY_WORDS }; return; }
-      r.can = { ok: true, how: 'place', strips: strips.flatMap((x) => x ?? []) };
+      // every week-only word must fit a place rule (else Not checked, as before); the fact is built from the first one, like a `!` row's first proved word
+      const fits = provedWords.filter(weekOnly).map((/** @type {string} */ x) => fitPlacePhrase(x, text));
+      if (fits.some((x) => x === null)) { r.can = { ok: false, why: WEEK_ONLY_WORDS }; return; }
+      r.can = { ok: true, how: 'place', strips: fits[0] ?? [] };
       return;
     }
     r.can = { ok: true, how: 'bang', word: provedWords[0] };
@@ -301,9 +322,10 @@ export class CheckBlock {
     /** @type {any[]} */ let fs;
     if (r.kind === 'rule') {
       const w = base.words.find((/** @type {string} */ x) => proved(this.textOf(src), x)) ?? base.words[0];
-      fs = base.shape === 'phrase' ? [mk(base.name, { shape: 'phrase', phrase: w })]
+      fs = r.can.strips ? placeFacts(base.name, r.can.strips, mk)
+        : base.shape === 'phrase' ? [mk(base.name, { shape: 'phrase', phrase: w })]
         : [kindFields(base, w, { ...(r.can.reading ? { rule: r.can.reading } : {}), ...(r.can.aiProposal ? { aiProposal: true } : {}) })];
-    } else if (r.can.how === 'place') fs = r.can.strips.map((/** @type {any} */ s) => mk(`${r.name} ${s.kind}`, { shape: 'phrase', phrase: s.value, place: s.rule }));
+    } else if (r.can.how === 'place') fs = placeFacts(r.name ?? 'phrase', r.can.strips, mk);
     else if (r.shape === 'phrase' || r.kind === 'phrase') fs = [mk(r.name ?? `phrase ${r.words[0]}`, { shape: 'phrase', phrase: r.can.word })];
     else fs = [kindFields(r, r.can.word, {})];
     const fresh = [];
