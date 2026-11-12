@@ -4028,3 +4028,84 @@ A question asked while drafting gets its own box in the panel, so the person's i
 - **E. Destination point.** [Yes, set it to <folder>] [No, keep <current>] and a box "Or type a different Destination:"; a typed path passes the card's own `startDestinationProblem` check first; the log row says `yes` | `no` | `typed`.
 
 Status: built on feat/check-ledger, test-proven (tests/question-box, question-choices, question-before); not seen live; phone width (320/390) not checked (no walk harness in this repo, barebrowse cannot emulate a phone).
+
+Live walk 2026-11-12 (DeepSeek flash, test panel, scratch HOME): Stop at the fit question (session smwdhk8e6amd0, choice `stop`); Drop it (smwdirp88t2cy and smwdixbapp5h4, choice `drop`); typed own rule (smwdiy4k3bk0v, choice `rule`, words kept whole); Agree (smwdoiysjmma3, choice `agree`). Fit [Go on] and [Stop] seen. Destination buttons NOT seen live. Phone width NOT checked. Live findings: FINDINGS F327-F332 (F330 and F332 open).
+
+## 2026-11-12 CHECK BLOCK REDESIGN — DRAFT, not signed
+
+hamr's direction 2026-11-12 is signed; this design is a proposal for hamr to interview and sign. No build before a POC PASS. The branch release waits for this (hamr 2026-11-12).
+
+### Why
+
+- hamr 2026-11-12: "checks that are checkable and agreed should be part of the plan and should be verified". The flow he wants: job > look for rules to match > `~ ! $` > code finds it and matches it > agent replies with delta/questions > approved: move forward; modify: go back to where all stored rules are, update or remove `~ ! $`, then pass it through code again. No "or" branches. "Most issues come from reconciling what is in and out." Stop patching with injected texts and complex single functions; build the block as a clean class with functions called each round, clean if/else and a while loop.
+- The Nov-10 ruling made ONE code-owned check list (built Nov 11, rows `~ ! $`, `src/checklist.js`). But "code builds the checks from the list" (the R10 "offer redesign", PRD v1.131 ticks 5-6) stayed OPEN, blocked on bareguard BG-4. BG-4 was DELIVERED in bareguard 0.33.0 (UPSTREAM-ASKS BG-4) and bareloop pins `^0.35.0`. The blocker is gone.
+- Today the AI still writes rubric checks in its own declaration format (`rubric-step` parts) beside the list, and code reconciles that second store through separate functions. F329 and F330 are losses at those seams: a look tie dropped by the list (F329), and one part-tied red dropping five checks plus a lost agreed rule and an invisible drop (F330).
+
+### Inventory (read from the tree on feat/check-ledger, 2026-11-12)
+
+- Job, rules and look: `lineRules` (`src/rubricstep.js:706`); `runPageMap` (`src/pagemap.js:107`) reads the page; `askableFromLook` (`pagemap.js:259`) makes the code-forced asks; `readingOfQuestion` (`pagemap.js:237`).
+- The one list: `buildLedger` (`src/checklist.js:68`) makes rows `~` (rule), `!` (look fact or agent proposal, word-proven by `proved`), `$` (defaults); `runLedgerSuggest` (`checklist.js:467`) is the AI's extra-check call; `ensureCited` (`checklist.js:314`); `resolveLedger` (`checklist.js:330`); `signedRows` (`checklist.js:379`); `ledgerBlock` (`checklist.js:390`) is the prompt text.
+- The second store, the AI's declaration: the drafter writes `rubric-step` parts (facts, rules, count, refused). `applyLedger` (`checklist.js:193`) refuses AI parts that are not on the list and keeps only the look's `forRule` on a part (look-tied credit added by fea67fd9, `checklist.js:216-236`).
+- The reconcile chain, run as `picked` in `src/authorflow.js:2896-2906` and then at ~3115: `moveUncheckable` (`src/checkpick.js:365`), `applyPicks` (`checkpick.js:419`), `fillAndMergeFacts` (`checkpick.js:472`), `applyLedger`, then `settlePersonsWords` (`rubricstep.js:806`), `withDropNotes` (`rubricstep.js:871`), `withFactBindings` (`rubricstep.js:846`), `ensureCited`. Gate: `checkRubricParts` (`rubricstep.js:612`), `checkRubricRules` (`rubricstep.js:755`), `settleRules` (`checkpick.js:329`).
+- The revise loop: `MAX_REVISIONS = 2` (`authorflow.js:111`); the loop keeps the LAST try (~3105-3125); `dropAfterLastTry` (`authorflow.js:2618`) calls `dropExtras` (`checkpick.js:571`), which drops every part a red touches and writes no record, shown only as `retentionOf` (`checkpick.js:526`); the F176 fallback (`authorflow.js:3223-3228`) fires only on an instrument stop.
+- The question door: `src/questionbox.js` (`boxFor`, `refuseChoice`, `resolveChoice`); the panel answer loop in `src/panel/authorsession.js` (~1215-1240) turns a typed choice (`agree` | `drop` | `rule`) into a new `~` rule or a left-off rule.
+- Is the deterministic (repo) job on this path? No. The list and the reconcile chain run only when `lang === RUBRIC_LANG` (`authorflow.js:2902-2904`, 3117). Repo/deterministic jobs are out of scope.
+
+### The design (proposal)
+
+One class, `CheckBlock` in `src/checkblock.js`. State: the rows (the one store) and the open questions. Nothing else holds a check. Methods are small and pure and are called in a fixed order:
+
+1. `fromJob(jobLines)`: `~` rows from the person's rules; `$` default rows.
+2. `addLook(look)`: `!` rows from the look, word-proven by code. A look fact tied to a `~` rule is a LINK on that row (`forRule`), never a drop.
+3. `match()`: per row, can code check it on the saved page? Kind money, time, phrase, count or cited, plus a bound. Else the row is not-checkable with a plain reason.
+4. `build()`: code makes every check from the rows through bareguard shapes. The AI never writes a final check.
+5. `ask()`: code-forced questions (cap 3, as today) for rows code cannot settle. The question box: Agree / Drop it / own rule.
+6. `applyAnswer(choice, text)`: a row edit from the typed choice (the choice decides, never the words).
+7. `applyDelta(delta)`: the AI's reply is a list of proposed ROW edits (add a `!` row, propose a reading for a `~` row, propose a not-checkable reason). Code alone validates each edit. An illegal edit is refused on its own, never the whole reply.
+8. `reconcile()`: runs `match`, `build`, `ask` over the WHOLE list every time.
+
+Loop: `while (block.hasOpenQuestions() || block.hasPendingDelta()) { apply; block.reconcile(); }`, then sign. Clean if/else, no "or" branches. The card, Job tab, close, retention and Audit read rows only.
+
+Invariants (each a test):
+- agreed + checkable implies built;
+- not checkable implies Not checked with a reason;
+- nothing on the card that is not a row;
+- every edit passes `reconcile`;
+- no injected prompt text restates the list.
+
+### What it replaces
+
+- The AI-written rubric-step parts for rubric jobs (the drafter's `parts` in `REQUIRED_FACTS_BRIEF`, `authorflow.js:1509`).
+- `applyLedger` and its refusal of AI parts (`checklist.js:193`); `resolveLedger`, `ensureCited` become row reads.
+- `settlePersonsWords` (`rubricstep.js:806`), `withDropNotes` (`rubricstep.js:871`), `withFactBindings` (`rubricstep.js:846`).
+- `fillAndMergeFacts` (`checkpick.js:472`), `moveUncheckable` (`checkpick.js:365`), `applyPicks` and `settleRules` as separate steps (`checkpick.js:419`, `329`).
+- The last-try drop: `dropAfterLastTry` (`authorflow.js:2618`), `dropExtras` (`checkpick.js:571`), and `DROPPED_WORDS` (`checkpick.js:561`) as a catch-all reason.
+- The rubric revise ladder for parts (`MAX_REVISIONS` use for parts, `authorflow.js:111`, loop ~3105).
+- fea67fd9's look-tied credit (`checklist.js:216-236`) is superseded: a link row makes it unnecessary.
+- Any confirm or injected text that restates the list (`ledgerBlock`, `checklist.js:390`, and the list lines in the drafter brief).
+
+What stays: bareguard shapes and validation; the seed/dry read on the page (`pagedry.js`); signing and the hash; calibration where it applies; the question box; `runPageMap` (the look). Out of scope: deterministic repo jobs.
+
+### Open questions for hamr (interview before signing; not answered here)
+
+1. What does the AI still do per round: propose `!` rows and readings only, plus the goal sentence?
+2. Per-edit refusal or whole-reply refusal?
+3. Does the 3-try limit stay, and what is a "try" when the AI only sends deltas?
+4. Repo/deterministic jobs in or out? (The inventory says they do not share the path, so out is the default.)
+5. What happens to fea67fd9 and the F307 local fixes kept on this branch (55e7234, cb3babf, 039ce9d)?
+
+### POC plan (no build before PASS)
+
+A prototype block replays saved drafts at $0, read-only, from the test panel sessions: smwdoiysjmma3, smwdiy4k3bk0v, smwdhl8k5q8pn (F329/F330 cases), plus the other saved rubric sessions in `.claude/scratch/r10/e2e/work/home/.config/bareloop/panel-sessions/` (smwdirp88t2cy, smwdixbapp5h4, smwdjoy4dsdxs, smwdhk8e6amd0, smwdivlp43ywm, smwdiwhn50v5i, smwc2tpds4lnq) and the 77 saved paid drafts of the check-list POC (their path is listed before the freeze; not checked here). The real `~/.config/bareloop/panel-sessions` is read-only and untouched. The sets are listed before any number exists.
+
+Bar, to be frozen by sha BEFORE any number:
+- every agreed checkable row is built;
+- no not-checkable row is built;
+- zero AI-format parts reach the close;
+- the card renders from rows only.
+
+FAIL on any bar: report FAIL, redesign, re-freeze, never re-tune.
+
+### Release note
+
+The feat/check-ledger release waits for this redesign (hamr 2026-11-12). Open findings that stay open until then: F330, F332.
