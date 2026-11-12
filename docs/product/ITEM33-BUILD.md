@@ -4293,3 +4293,12 @@ After each commit the builder runs the full `npm test` and quotes the exit code 
 1. End check (55e72344) and the standing ruling "a run needs one check". Answer 5A says delete it. Deleting the code with no replacement would drop that ruling. Recommended: delete the functions and tests, keep the behaviour as `block.hasBuiltCheck()` at the same two doors with the same stop words.
 2. Section 7: refuse a `!` add that repeats a `~`-tied look fact as "already on the list". Recommended: yes.
 3. The AI proposes `!` rows from TWO calls today: the separate suggest call (`runLedgerSuggest`) and the drafter. "One place" would fold them. Recommended: not in this build. Feed the suggest call through `applyDelta` now; fold it into the drafter only after the live draft shows the delta path works (the POC never replayed a native delta reply).
+
+#### 15. Addendum 2026-11-12 — hamr's answers to the 3 open items, and a POC round 3
+
+hamr answered "all yes" on 2026-11-12 to the three open items of section 14:
+1. Keep "a run needs one check" as `block.hasBuiltCheck()` at the same two doors (`authorsession.js:1011`, `authorrun.js:1180`) with the same plain stop words.
+2. A `!` add that repeats a `~`-tied look fact is refused "already on the list" (section 7 goes in).
+3. The drafter and the suggest call both keep proposing `!` rows, both through `applyDelta` now. Fold into one call only after the live draft proves the delta path.
+
+hamr also asked for a POC of the pieces the spec adds that rounds 1-2 never proved (limit reader cases of section 5, already-on-list refusal, `hasBuiltCheck`, two sources through one door) before the build starts. The spec above is not rewritten.
