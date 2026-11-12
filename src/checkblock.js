@@ -46,6 +46,7 @@ export const REASON = Object.freeze({
   countNeedsFact: 'a result count needs a fact to count; this line has none',
   lookNoWords: "the page does not hold the words of the look's fact for this rule",
   afterLast: 'no more tries: Start over (rows are never changed by the AI after the last try)',
+  noPick: 'No check was picked for it, so you judge it at Accept.',
 });
 
 /** the card lines: rows in, lines out. ONE pure function of the rows; nothing else may feed it. @param {Row[]} rows */
@@ -156,6 +157,7 @@ export class CheckBlock {
       if (r.kind === 'floor') continue;
       if (r.left) r.can = { ok: false, why: REASON.left };
       else if (r.lookWhy && r.kind === 'fact' && !r.words.length) r.can = { ok: false, why: r.lookWhy };
+      else if (r.folded) r.can = { ok: false, why: REASON.noPick };
       else if (r.parent) this.matchFollow(r);
       else if (r.kind === 'rule') this.matchRule(r);
       else if (r.kind === 'fact' || r.kind === 'phrase') this.matchBang(r);
@@ -428,10 +430,10 @@ export class CheckBlock {
     for (const p of picks) {
       const r = rowOf(p.line, p.rule);
       if (!r) continue;
-      if (p.check) { r.pick = p.check; r.from = 'pick'; r.keptFromLast = true; r.agreedText = plainWords(p.check); } else r.cantAsked = true;
+      if (p.check) { r.pick = p.check; r.from = 'pick'; r.keptFromLast = true; r.agreedText = plainWords(p.check); } else { r.cantAsked = true; r.keptFromLast = true; }
       if (typeof p.added === 'string') { const add = this.ruleRows(p.line).filter((x) => x !== r && !x.parent && sameRuleWords(x.text, String(p.added))).at(-1); if (add) this.follow(r, add); }
     }
-    for (const l of left) { const r = rowOf(l.line, l.rule); if (r) r.left = true; }
+    for (const l of left) { const r = rowOf(l.line, l.rule); if (r) { r.left = true; r.keptFromLast = true; } }
     for (const a of asked) if (a.pairRule !== undefined) { const r = rowOf(a.line, a.rule); if (r) { r.pairWith = a.pairRule; const src = rowOf(a.line, a.pairRule); if (src && src !== r) this.follow(r, src); } }
   }
 

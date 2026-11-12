@@ -6,13 +6,13 @@ import { plainWords, HOW_TO_ANSWER, CANT_CHECK_WORDS } from './checkpick.js';
 /** @typedef {{key: string, rowKey: string, line: number, rule: number, source: 'look', ask: 'reading'|'cant-check'|'no-check'|'check', ruleText: string, question: string, counted: boolean, reading?: string, check?: Record<string, any>, pairRule?: number}} BlockAsk */
 
 /**
- * The questions the block has open, in the order the person meets them: readings, then can't-checks, then check proposals (a proposal is not counted toward the 3-ask cap).
+ * The questions the block has open, in the order the person meets them: the look's readings, then the look's can't-checks, then the pick path's asks (a proposal or a can't-check about a rule the pick path owns) in rule order (a proposal is not counted toward the 3-ask cap).
  * A can't-check about a rule the PICK path owns (`scoped`: src/checkpick.js scopedRules, every `~` rule of a file job) is the pick path's own ask, `no-check`, in fwd's words (a "Line N, guardrail ...: I can't check this" ask
  * whose answer the panel records as a pick, so Revise carries it: am17/am18/am21); any other can't-check is the look's own ask about a page.
  * @param {import('./checkblock.js').CheckBlock} block @param {{line: number, rule: number}[]} [scoped] @returns {BlockAsk[]}
  */
 export function questionsOfBlock(block, scoped = []) {
-  const rank = { reading: 0, 'cant-check': 1, 'no-check': 1, check: 2 };
+  const rank = { reading: 0, 'cant-check': 1, 'no-check': 2, check: 2 };
   return block.open.map((/** @type {any} */ q) => {
     const row = block.rows.find((r) => r.key === q.rowKey);
     const rule = Number(row?.rule);

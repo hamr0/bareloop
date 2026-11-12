@@ -710,6 +710,11 @@ export async function authorCloseForJob({
     const matched = matchRecord(Array.isArray(carriedPicks) ? carriedPicks : [], jobLines, scoped);
     carried = { kept: matched.kept };
     block.carry({ picks: matched.picks, left: matched.left }, matched.askRules);
+    // a rule the record folded into another ask (a broken pair's partner) is neither asked nor given the old check: Not checked, in the pick path's own words
+    for (const r of scoped) {
+      const row = block.ruleRows(r.line).find((x) => x.rule === r.rule);
+      if (row && !matched.askRules.some((a) => a.line === r.line && a.rule === r.rule) && !row.pick && !row.cantAsked && !row.left && !row.parent) row.folded = true;
+    }
     block.reconcile();
     // the pick call: one suggestion per counting rule the record did not keep; each kept suggestion is a `pick` edit
     if (answerQuestions && pickGenerate && matched.askRules.length > 0) {
@@ -740,6 +745,8 @@ export async function authorCloseForJob({
     // the code-forced asks (PRD v1.106 Part 5 Q3 T2, v1.107 Part 5b, R10): a reading code proposes, a rule the page cannot check, a check proposed for a counting rule. More than
     // MAX_QUESTIONS counted asks is a job to rewrite, not a questionnaire: nothing is asked and the stop lists every ask.
     if (answerQuestions) {
+      /** what the person answered, across the rounds: the picks and the rules they left, for the record this draft hands on @type {{picks: any[], left: any[]}} */
+      const answered = { picks: [], left: [] };
       for (let round = 0; round < 3 && block.open.length > 0; round += 1) {
         const asks = questionsOfBlock(block, pickGenerate ? scoped : []);
         const counted = asks.filter((a) => a.counted);
@@ -754,13 +761,17 @@ export async function authorCloseForJob({
         if (updated === null) return { ...base, interview, verdictType: picked, seedRef: seed, reds: [], stop: 'confirm-abandoned', cost: null };
         jobLines = updated.jobLines;
         interview.answers = updated.answers;
+        answered.picks.push(...(Array.isArray(updated.picks) ? updated.picks : []));
+        answered.left.push(...(Array.isArray(updated.left) ? updated.left : []));
         const refused = applyChoices(block, Array.isArray(updated.choices) ? updated.choices : []);
-        // the record this draft hands on: the picks it kept, as they were, and the picks just answered, keyed by words
+        if (refused.length === 0) break;
+      }
+      // the record this draft hands on, written whether or not anything was asked (a draft that kept every pick still carries them forward): the picks it kept, as they were, and the picks just answered, keyed by words
+      if (scoped.length > 0) {
         onPicks({
-          entries: [...carried.kept.map((k) => k.entry), ...entriesFromAnswers(jobLines, scoped, Array.isArray(updated.picks) ? updated.picks : [], (Array.isArray(updated.left) ? updated.left : []).filter((l) => scoped.some((r) => r.line === l.line && r.rule === l.rule)))],
+          entries: [...carried.kept.map((k) => k.entry), ...entriesFromAnswers(jobLines, scoped, answered.picks, answered.left.filter((l) => scoped.some((r) => r.line === l.line && r.rule === l.rule)))],
           kept: carried.kept.map((k) => ({ line: k.line, rule: k.rule, entry: k.entry })),
         });
-        if (refused.length === 0) break;
       }
     } else block.reconcile();
   }
