@@ -792,6 +792,77 @@ const CLOCK = '\\d{1,2}:\\d{2}(?:\\s?[AaPp][Mm])?';
 const TIME_RANGE_RE = new RegExp(`\\b(?:between|from)\\s+(${CLOCK})\\s+(?:and|to|-)\\s+(${CLOCK})`, 'i');
 const NEGATING_RE = /\b(?:not|no|never|outside|except|before|after|without)\b/i;
 
+// The limit reader (hamr ruling A, 2026-11-12): when the look tied a money or time fact to a `~` rule but gave no limit, CODE reads the limit
+// from the person's own rule words. ONE amount or ONE range only; every other text is a plain reason (Not checked), never a wrong check.
+// The direction words are the FACT_OPS words of src/facts.js (lt under, lte at most, gt over, gte at least) plus their plain synonyms.
+const AMOUNT = '(?:[$\\u20ac\\u00a3]\\s?(\\d[\\d,]*(?:\\.\\d+)?)|(\\d[\\d,]*(?:\\.\\d+)?)\\s?(?:US\\s)?(?:dollars?|euros?|pounds?|USD|EUR|GBP)\\b)';
+const AMOUNT_ALL_RE = new RegExp(AMOUNT, 'gi');
+const MONEY_BETWEEN_RE = new RegExp(`\\bbetween\\s+${AMOUNT}\\s+(?:and|to|-)\\s+${AMOUNT}`, 'i');
+const MONEY_DIRECTION_RE = new RegExp(`\\b(under|below|less than|fewer than|at most|up to|no more than|over|above|more than|at least|no less than|no fewer than)\\s+${AMOUNT}`, 'i');
+const MONEY_OR_LESS_RE = new RegExp(`${AMOUNT}\\s+or\\s+(less|fewer|under|below|lower|more|over|above|higher)\\b`, 'i');
+const DIRECTION_OP = /** @type {Record<string, 'lt'|'lte'|'gt'|'gte'>} */ ({ under: 'lt', below: 'lt', 'less than': 'lt', 'fewer than': 'lt', 'at most': 'lte', 'up to': 'lte', 'no more than': 'lte', over: 'gt', above: 'gt', 'more than': 'gt', 'at least': 'gte', 'no less than': 'gte', 'no fewer than': 'gte' });
+const CURRENCY_STEM = /** @type {Record<string, string>} */ ({ $: 'dollar', '€': 'euro', '£': 'pound', usd: 'dollar', eur: 'euro', gbp: 'pound' });
+const num = (/** @type {string|undefined} */ a, /** @type {string|undefined} */ b) => Number(String(a ?? b).replace(/,/g, ''));
+const hhmm = (/** @type {string} */ t) => (/[AaPp][Mm]/.test(t) ? null : t.replace(/\s+/g, '').replace(/^(\d):/, '0$1:'));
+
+/** does the amount token's currency (sign or word) fit the look fact's currency and unit lists? A fact with neither list fits anything. */
+function currencyFits(/** @type {string} */ tok, /** @type {any} */ fact) {
+  const cur = (Array.isArray(fact?.currency) ? fact.currency : fact?.currency ? [fact.currency] : []).map(String);
+  const unit = (Array.isArray(fact?.unit) ? fact.unit : fact?.unit ? [fact.unit] : []).map((/** @type {unknown} */ u) => String(u).toLowerCase());
+  if (!cur.length && !unit.length) return true;
+  const sym = /^[$€£]/.test(tok) ? tok.charAt(0) : null;
+  const last = String(tok.trim().split(/\s+/).at(-1)).toLowerCase();
+  const stem = sym ? CURRENCY_STEM[sym] : (CURRENCY_STEM[last] ?? last.replace(/s$/, ''));
+  return (sym !== null && cur.includes(sym)) || unit.some((/** @type {string} */ u) => u.includes(String(stem)));
+}
+
+/**
+ * Does this rule text hold more than one amount (money) or more than one time range (time)? The ONE guard code's own limit read and an AI
+ * reading edit both use: "under $450 or over $900" is two limits, and one reading of it would be a wrong check.
+ * @param {string} shape @param {string} text @returns {boolean}
+ */
+export function holdsManyBounds(shape, text) {
+  const t = String(text ?? '');
+  if (shape === 'time') return [...t.matchAll(new RegExp(TIME_RANGE_RE.source, 'gi'))].length > 1 || (t.match(/\d{1,2}:\d{2}/g) ?? []).length > 2;
+  if (shape === 'money') { const amts = [...t.matchAll(AMOUNT_ALL_RE)]; return amts.length > 1 && !(MONEY_BETWEEN_RE.test(t) && amts.length === 2); }
+  return false;
+}
+
+/**
+ * The limit the person's own words give a fact of this shape: `{reading}` or `{why}` (a plain reason; the rule then stays Not checked).
+ * @param {string} shape money or time @param {string} text the `~` rule's words @param {any} [fact] the look fact (its currency and unit lists must fit)
+ * @returns {{reading: {op: 'lt'|'lte'|'gt'|'gte', value: number} | {op: 'between', lo: number|string, hi: number|string}} | {why: string}}
+ */
+export function readLimit(shape, text, fact = {}) {
+  const t = String(text ?? '');
+  if (shape === 'time') {
+    if (NEGATING_RE.test(t)) return { why: 'a one-sided or negated time (before, after, not) is not a range code can read' };
+    if (/\b\d{1,2}(?::\d{2})?\s?[ap]\.?m\b/i.test(t)) return { why: 'a 12-hour time (am or pm) is not read, write it like 06:00' };
+    if (holdsManyBounds('time', t)) return { why: 'more than one time range in the rule' };
+    const m = TIME_RANGE_RE.exec(t);
+    if (!m) return { why: 'no range between two times in the rule' };
+    const lo = hhmm(String(m[1])), hi = hhmm(String(m[2]));
+    if (!lo || !hi) return { why: 'a 12-hour time (am or pm) is not read, write it like 06:00' };
+    if (lo >= hi) return { why: 'a range whose end is not after its start is not read' };
+    return { reading: { op: 'between', lo, hi } };
+  }
+  if (shape === 'money') {
+    if (/\b(?:not|never|outside|except|without)\b/i.test(t)) return { why: 'a negated limit (not, except, without) is not read' };
+    const amts = [...t.matchAll(AMOUNT_ALL_RE)];
+    if (!amts.length) return { why: 'no amount with a currency sign or word in the rule' };
+    for (const a of amts) if (!currencyFits(a[0], fact)) return { why: 'the amount is in another currency than the page fact' };
+    if (holdsManyBounds('money', t)) return { why: 'more than one amount in the rule' };
+    const b = MONEY_BETWEEN_RE.exec(t);
+    if (b) { const lo = num(b[1], b[2]), hi = num(b[3], b[4]); return lo < hi ? { reading: { op: 'between', lo, hi } } : { why: 'a range whose end is not above its start is not read' }; }
+    const d = MONEY_DIRECTION_RE.exec(t);
+    if (d) return { reading: { op: /** @type {'lt'|'lte'|'gt'|'gte'} */ (DIRECTION_OP[String(d[1]).toLowerCase()]), value: num(d[2], d[3]) } };
+    const o = MONEY_OR_LESS_RE.exec(t);
+    if (o) return { reading: { op: /^(less|fewer|under|below|lower)$/i.test(String(o[3])) ? 'lte' : 'gte', value: num(o[1], o[2]) } };
+    return { why: 'the rule gives an amount but no direction (under, over, at most, at least, between)' };
+  }
+  return { why: 'code reads a limit only for money or time' };
+}
+
 /**
  * PART 1c L3 - the person's own words win over the AI's reading of them, settled by CODE before anything is validated or signed:
  *   - a limit on a fact whose bounds are all in the words the person wrote (the line, its `~` rules, an answer they gave) is the
