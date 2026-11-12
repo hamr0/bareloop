@@ -91,7 +91,6 @@ import { ledgerRecord } from './checklist.js';
 import { ROW_EDIT_REVISE, rowEditUserText, rowEditChannel, editsOf } from './rowedit.js';
 import { REASON, CheckBlock } from './checkblock.js';
 import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, lineRules } from './rubricstep.js';
-/** @typedef {import('./checkblock.js').CheckBlock} CheckBlock */
 import { dropRows, dropLine } from './pagedropwords.js';
 import { renderLookReport } from './inputlook.js';
 import { checkDeclarationWords, labelListsFor } from './factwords.js';
@@ -2708,6 +2707,7 @@ export async function authorClose({
   /** the declaration of a rubric job, assembled by code from the rows: the mandatory guards, then the block's stages (hamr 2026-11-12, ruling 6), the rule rows no check carries as `refused`, the picks code recorded */
   const assemble = () => {
     const c = /** @type {CheckBlock} */ (block).reconcile();
+    /** @type {{line: number, rule?: number, reason: string}[]} */
     const refused = /** @type {CheckBlock} */ (block).rows.filter((r) => r.kind === 'rule' && r.state !== 'built').map((r) => ({ line: r.line, rule: r.rule, reason: String(r.reason ?? 'not checked') }));
     // a job line no check could be built for (no stage) is refused as a line, in code's plain words, so the draft gate sees it covered and the end check (hasBuiltCheck) can say "no check" in its own words
     for (const l of jobLines ?? []) if (!c.stages.some((/** @type {any} */ st) => Array.isArray(st.fromLine) && st.fromLine.includes(l.n))) refused.push({ line: l.n, reason: REASON.noRule });
