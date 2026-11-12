@@ -4304,3 +4304,9 @@ hamr answered "all yes" on 2026-11-12 to the three open items of section 14:
 hamr also asked for a POC of the pieces the spec adds that rounds 1-2 never proved (limit reader cases of section 5, already-on-list refusal, `hasBuiltCheck`, two sources through one door) before the build starts. The spec above is not rewritten.
 
 POC round 3 bar frozen: .claude/scratch/checkblock-poc/PREREG-R3.md sha256 b615001728e25ab46b8fe98a8f52e07b5b7ce0ec96720471225039a958936d37
+
+### 2026-11-12 POC round 4 (paid, DeepSeek flash) frozen
+
+Question: given the new shrunk drafter prompt (row edits only: add a `!`, a reading for a `~`, a pick, a not-checkable reason, plus the goal sentence; section 4), does real DeepSeek deepseek-flash reply in that format so CheckBlock builds the right checks? Rounds 1-3 only replayed old-format replies converted to edits. Ten saved cases (the F329 session and three more from the 2026-11-12 sessions, six from paid rounds 2-6), listed in the PREREG with their thinness: 6 distinct job texts, 4 job lines, 3 pages, one reply per case. One call per case, thinking off, cap $0.50, a zero-edit reply is legal and passes by itself (named in the PREREG), so the bars that can fail on the AI's behaviour are format, no wrong check and per-edit refusal. Hamr runs the paid part in his own shell; the harness is `.claude/scratch/checkblock-poc/paid-r4.mjs`, the scorer `score-r4.mjs`.
+
+POC round 4 bar frozen: .claude/scratch/checkblock-poc/PREREG-R4.md sha256 b5544f3c3421dafb7886651ca8a72ea30a94a78756b905100e6030c5d2bc1aab
