@@ -71,6 +71,7 @@ import {
   parseJobBlock, parseInputs, jobBlockFitsCheck, renderJobLines, renderExamples, signedJobLines, jobBoxText,
 } from '../jobblock.js';
 import { planFromConfirm } from './jobplan.js';
+import { boxFor } from '../questionbox.js';
 import { isTicketTrigger } from '../trigger.js';
 import { ticketLookOf } from '../ticketschedule.js';
 
@@ -604,6 +605,10 @@ export function createSession(card, deps = {}) {
 
   /** @param {'bot'|'you'|'system'} role @param {string} text */
   const say = (role, text) => { state.messages.push({ role, text }); };
+  /** the bot message of the question now open: the panel's question box shows it, so the thread holds it back (`askOpen`) until the question is answered @type {{role: string, text: string, askOpen?: boolean}|null} */
+  let openMsg = null;
+  const sayOpen = (/** @type {string} */ text) => { openMsg = { role: 'bot', text, askOpen: true }; state.messages.push(openMsg); };
+  const closeOpenMsg = () => { if (openMsg) { delete openMsg.askOpen; openMsg = null; } };
   /** a structured message (the plan bubble): the page draws it, the thread keeps it as data */
   /** the checks the person has agreed so far (their plain words, `kept from last draft` on a carried one): the plan bubble draws each once, as a `[you picked]` row @type {{line: number, text: string}[]} */
   const pickedSoFar = [];
@@ -642,13 +647,14 @@ export function createSession(card, deps = {}) {
       }
       resolveFn0(value);
     };
-    state.pendingAsk = step;
+    const box = boxFor(step);
+    state.pendingAsk = box === null ? step : { ...step, box };
     resolvePending = resolveFn;
     if (step.kind === 'language') say('bot', `${step.field?.prompt ?? 'Which language is this job about?'} (${(step.candidates ?? []).join(', ')})`);
     else if (step.kind === 'menu') {
       sayPlan(step.plan ?? {});
-    } else if (step.kind === 'answer' && (step.source === 'fit-check' || step.source === 'dest-point')) say('bot', step.question);
-    else if (step.kind === 'answer') say('bot', `A question the plan raised (${step.index} of ${step.total})${Number.isInteger(step.line) ? `, about job line ${step.line}` : ''}: ${step.question}`);
+    } else if (step.kind === 'answer' && (step.source === 'fit-check' || step.source === 'dest-point')) sayOpen(step.question);
+    else if (step.kind === 'answer') sayOpen(`A question the plan raised (${step.index} of ${step.total})${Number.isInteger(step.line) ? `, about job line ${step.line}` : ''}: ${step.question}`);
     else if (step.kind === 'goal') say('bot', 'Type the goal sentence yourself.');
   });
 
@@ -658,6 +664,7 @@ export function createSession(card, deps = {}) {
     const r = resolvePending;
     resolvePending = null;
     state.pendingAsk = null;
+    closeOpenMsg();
     r(value);
     return true;
   };
@@ -1378,6 +1385,7 @@ export function createSession(card, deps = {}) {
       dropWorktree();
       state.error = 'Abandoned by you — money already spent stays booked.';
       state.pendingAsk = null;
+      closeOpenMsg();
       if (resolvePending) { const r = resolvePending; resolvePending = null; r(null); }
       if (resolveDepsCheck) { const r = resolveDepsCheck; resolveDepsCheck = null; r(); }
       return { ok: true };
