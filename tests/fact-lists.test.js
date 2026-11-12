@@ -115,7 +115,7 @@ test('words proof: EVERY listed unit must be found as whole words and EVERY list
 
 test('the new rules are enforced on the block (the row-edit prompt no longer teaches them): at least one of unit/currency, a code like EUR is a unit not a currency, over-limit lists - each an `add` row that is Not checked in plain words, never a built check', () => {
   const run = (/** @type {Record<string, any>} */ extra) => {
-    const b = new CheckBlock({ texts: { Page: 'From 12 EUR\nFrom 15 EUR\nFrom 20 EUR\n' }, labels: ['Page'], asks: false });
+    const b = new CheckBlock({ texts: { Page: 'From 12 EUR €\nFrom 15 EUR €\nFrom 20 EUR €\n' }, labels: ['Page'], asks: false });
     b.fromJob([{ n: 1, text: 'List 3 stays', rules: [] }]);
     b.addLook([]);
     b.applyDelta({ edits: [{ op: 'add', kind: 'fact', line: 1, name: 'price', shape: 'money', words: ['From'], source: 'Page', ...extra }] });
