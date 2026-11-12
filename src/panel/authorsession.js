@@ -57,15 +57,16 @@ import { FLOW_TYPES } from '../job.js';
 import { mcpPickFor, signFlow } from '../mcppick.js';
 import { parseTicketList, ticketNumberOf, TICKET_NUMBER_WORDS } from '../ticketshape.js';
 import { isDropIt, isAgree, stripAgreeLead } from '../pagemap.js';
-import { plainWords, SUGGEST_SYSTEM, settleRules, sameRuleWords } from '../checkpick.js';
+import { plainWords, SUGGEST_SYSTEM, sameRuleWords } from '../checkpick.js';
 import { LEDGER_SYSTEM } from '../checklist.js';
+import { ROW_EDIT_SYSTEM } from '../rowedit.js';
 import { readRecordFile, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
 import { MAX_REVISES, draftLabelOf, nextRevisesUsed, sessionsRootOf, writeRevisesUsed } from '../revises.js';
 import { FIT_ABSENT_NOTE } from '../fitcheck.js';
 import { runDestPoint, destQuestionText, yesNoOf } from '../destpoint.js';
 import { tallyCalls } from '../text.js';
 import { appendDraftLog, readDraftLedger } from '../draftspend.js';
-import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, noCheckStopText, draftStopText, redsRecord, declarationRecord, calibrationSummary, tryRefusedText } from '../authorreadout.js';
+import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, draftStopText, redsRecord, declarationRecord, calibrationSummary, tryRefusedText } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 import {
   parseJobBlock, parseInputs, jobBlockFitsCheck, renderJobLines, renderExamples, signedJobLines, jobBoxText,
@@ -475,7 +476,7 @@ export function validateJobCard(card, opts = {}) {
  * `signPrepare()` are the only ways in.
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
- *   scout?: any, generate?: Function, pickGenerate?: Function|null, ledgerGenerate?: Function|null, carryFrom?: string, carryKind?: string, confirmGenerate?: Function, authorFn?: Function,
+ *   scout?: any, generate?: Function, pickGenerate?: Function|null, ledgerGenerate?: Function|null, editGenerate?: Function|null, carryFrom?: string, carryKind?: string, confirmGenerate?: Function, authorFn?: Function,
  *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, fitFn?: Function|null, destFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, schedule?: import('../trigger.js').Trigger|null, flow?: {flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
@@ -965,7 +966,7 @@ export function createSession(card, deps = {}) {
      * the seed themselves.
      * @param {any} spec @param {string|null} seedRef
      */
-    const finish = async (spec, seedRef) => {
+    const finish = async (spec, seedRef, hasBuiltCheck = /** @type {boolean|null} */ (null)) => {
       if (abandoned) return;
       // R7 (piece 9): a schedule picked on the card is part of the job the person signs, so the FIRST run's hash already covers it. By hand adds nothing (the key stays absent).
       if (deps.schedule) {
@@ -1008,7 +1009,8 @@ export function createSession(card, deps = {}) {
       }
 
       // the end check: a rubric close with no real check never reaches the signing gates (R10, hamr 2026-11-10)
-      const noCheck = noCheckStopText({ closeDecl: spec.closeDecl, spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete } });
+      // the check block says it (block.hasBuiltCheck(), carried out of drafting): a rubric run needs at least one built check
+      const noCheck = hasBuiltCheck === false ? signingStopText({ reds: [], noCheck: true, spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete } }) : null;
       if (noCheck) {
         refuse(noCheck);
         return;
@@ -1070,7 +1072,7 @@ export function createSession(card, deps = {}) {
           reds: redsRecord(signing.reds ?? [], { signing: true }), at: new Date().toISOString(),
         });
         refuse(signingStopText({
-          reds: signing.reds ?? [], refusal: signing.refusal, closeDecl: spec.closeDecl,
+          reds: signing.reds ?? [], refusal: signing.refusal, noCheck: hasBuiltCheck === false,
           spend: { knownUsd: state.draftSpentUsd, spendComplete: state.draftSpendComplete },
         }));
         return;
@@ -1163,6 +1165,8 @@ export function createSession(card, deps = {}) {
     const pickGenerate = deps.pickGenerate !== undefined ? deps.pickGenerate : (deps.generate ? null : noCallAfterAbandon(makeLoopGenerate(provider, { system: SUGGEST_SYSTEM, rates: draftPrice?.rates ?? null, draftThinking })));
     // the one check list's call has its own model boundary (LEDGER_SYSTEM, the drafter's thinking); like the others, a test that replaces the model boundary never reaches it unless it brings `deps.ledgerGenerate`
     const ledgerGenerate = deps.ledgerGenerate !== undefined ? deps.ledgerGenerate : (deps.generate ? null : noCallAfterAbandon(makeLoopGenerate(provider, { system: LEDGER_SYSTEM, rates: draftPrice?.rates ?? null, draftThinking })));
+    // the row-edit turn (the drafter's reply of a rubric job, src/rowedit.js) has its own model boundary; a test that replaces `generate` need not bring one
+    const editGenerate = deps.editGenerate !== undefined ? deps.editGenerate : (deps.generate ? null : noCallAfterAbandon(makeLoopGenerate(provider, { system: ROW_EDIT_SYSTEM, rates: draftPrice?.rates ?? null, draftThinking })));
 
     // R7b (3), hamr's option A: the drafting AI POINTS when a job line's file to change lies outside Destination; code checks the claim (src/destpoint.js) and asks ONE typed
     // yes/no question through the same `ask` as the fit check's "go on". "yes" sets the fence (below) AND this session's card Destination (the page re-fills its box from it);
@@ -1213,6 +1217,8 @@ export function createSession(card, deps = {}) {
       const left = [];
       /** R10: the picks the person made (fwd am16): the check agreed to, or their own words with no check @type {{line: number, rule: number, check: Record<string, any>|null, added?: string, own?: boolean}[]} */
       const picks = [];
+      /** the choices the check block applies (src/blockasks.js) @type {{key: string, choice: string, text: string}[]} */
+      const choices = [];
       for (let k = 0; k < total; k += 1) {
         const q = o.questions[k];
         let text = '';
@@ -1236,6 +1242,10 @@ export function createSession(card, deps = {}) {
         const agrees = via === 'agree' || (via === null && isAgree(text));
         const dropsIt = via === 'drop' || (via === null && isDropIt(text));
         if (q.source === 'look' && q.ask === 'reading' && typeof q.reading === 'string' && agrees) text = q.reading;
+        // the person's CHOICE, for the check block (the choice decides, never the words): agree only where agree is offered, drop only where drop is
+        const canAgree = q.source === 'look' && ((q.ask === 'reading' && typeof q.reading === 'string') || (q.ask === 'check' && q.check !== undefined && q.check !== null));
+        const canDrop = q.source === 'look' && (q.ask === 'cant-check' || q.ask === 'check') && Number.isInteger(q.rule);
+        if (typeof (/** @type {any} */ (q)).key === 'string') choices.push({ key: /** @type {any} */ (q).key, choice: canDrop && dropsIt ? 'drop' : canAgree && agrees ? 'agree' : 'rule', text });
         if (q.source === 'look' && q.ask === 'cant-check' && Number.isInteger(q.rule) && dropsIt) { left.push({ line: q.line, rule: /** @type {number} */ (q.rule) }); continue; }
         // R10 (fwd am16): a check-pick ask. `agree` writes the proposal's plain words as a new `~` rule and picks the check; "drop it" leaves the rule Not checked; anything else
         // is the person's own words, a `~` rule word for word with no check (Not checked: they judge it at Accept)
@@ -1262,7 +1272,7 @@ export function createSession(card, deps = {}) {
       state.card = { ...state.card, jobText: jobBoxText(jobLines) };
       answers[1] = renderJobLines(jobLines);
       state.messages.push({ ...planMessage({ ...(o.confirmed ?? {}), ...(pickedSoFar.length ? { picked: [...pickedSoFar] } : {}) }, jobLines), text: left.length === total ? 'Noted: those stay Not checked. Drafting.' : 'Your answers are in as ~ rules on those job lines. Drafting again.' });
-      return { jobLines, answers, left, picks };
+      return { jobLines, answers, left, picks, choices };
     };
 
     // F243: the fit check's one question, through the same `ask` (the chat box + Send; a blank answer asks again, there is no skip)
@@ -1290,7 +1300,7 @@ export function createSession(card, deps = {}) {
       rates: draftPrice?.rates ?? null,
       draftThinking,
       onPhase, onCall,
-      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, ledgerGenerate, carriedPicks,
+      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, ledgerGenerate, editGenerate, carriedPicks,
       // R10: this draft's record (the picks it kept and the ones just answered) goes to its own folder for the next draft to carry; each kept pick is logged as such
       onPicks: (/** @type {{entries: any[], kept: {line: number, rule: number, entry: any}[]}} */ o) => {
         try { writeFileSync(join(outDir, RECORD_FILE), `${JSON.stringify({ picks: o.entries })}\n`, { mode: 0o600 }); } catch { /* the record is a convenience: a disk fault only means the next draft asks again */ }
@@ -1353,11 +1363,10 @@ export function createSession(card, deps = {}) {
       // the checks this draft ended with, each marked who added it (`agent` or `you`): the Audit's Draft group shows them (a log line, not a second record of the plan)
       appendDraftLog(outDir, { kind: 'draft-checks', no: Math.max(0, state.steps.length - 1), checks: rec.checkItems.filter((/** @type {any} */ c) => c.by === 'agent' || c.by === 'you').map((/** @type {any} */ c) => ({ line: c.fromLine[0], text: redactSecrets(String(c.text)), by: c.by })), at: new Date().toISOString() });
       // R10: the checks the person picked, for the plan card's "You picked" rows (the check rows and the Not checked rows come from the signed close itself)
-      const cp = authored.checkPicks;
-      const picked = cp ? settleRules(cp.rules, cp.picks, cp.left, jobLines).checks.map((c) => ({ line: c.line, text: `${plainWords(/** @type {any} */ (c.check))}${c.kept ? ` \u00B7 ${KEPT_WORDS}` : ''}` })) : [];
+      const picked = Array.isArray(authored.picked) ? authored.picked : [];
       state.finalPlan = { goal: String(draft.goal ?? ''), checkItems: rec.checkItems, picked, notChecked: rec.notChecked, protections: authored.confirmed?.protections ?? [], signedFacts: signedFactNames(spec.closeDecl), ...(spec.ticketFilter ? { ticketFilter: spec.ticketFilter } : {}) };
     }
-    await finish(spec, authored.seedRef);
+    await finish(spec, authored.seedRef, authored.hasBuiltCheck ?? null);
     if (state.finalPlan && state.phase === 'prepared') {
       // The confirm turn's plan bubble (and a try-3 "answers are in" one) is the DRAFTER's wording of the checks, written before
       // any close existed. Once the close is signed-ready its card is the only plan the person sees: the earlier ones are

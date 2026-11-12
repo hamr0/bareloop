@@ -880,30 +880,6 @@ const NO_CHECK_SENTENCE = 'This job has no check that can fail: no `~` rule, and
 const NO_CHECK_TODO = 'add a `~` rule (for example the version, the date, or "under 80 words"), or answer the question with what the output must contain';
 
 /**
- * Code's reading of a declared close: a rubric (text-lang) close with no real check, only always-on stages such as
- * files-changed, or rubric-step stages holding no part. Decided from the close alone, never by a model.
- * @param {any} closeDecl @returns {boolean}
- */
-export function isNoCheckRubricClose(closeDecl) {
-  if (!closeDecl || closeDecl.lang !== 'text' || !Array.isArray(closeDecl.stages)) return false;
-  // a close that carries the one check list: no check is no BUILT row (the mechanical floor never counts)
-  if (Array.isArray(closeDecl.list)) return !closeDecl.list.some((/** @type {any} */ r) => r && r.state === 'built' && r.kind !== 'floor');
-  // a part of class none (nothing checks it) or guard (an always-on stage) is not a check either
-  const real = (/** @type {any} */ x) => x && x.class !== 'none' && x.class !== 'guard';
-  return !closeDecl.stages.some((/** @type {any} */ st) => st && st.kind !== 'files-changed'
-    && (st.kind !== 'rubric-step' || (Array.isArray(st.params?.parts) && st.params.parts.some(real))));
-}
-
-/**
- * THE END CHECK, both doors (panel `finish`, the author CLI before `prepareSigning`): the declaration is settled, and a rubric close with no
- * real check is refused with the d4596a7 words, whatever the seed gate would say (an empty rubric-step reads red at seed, so that gate lets it pass).
- * @param {{closeDecl: any, spend?: {knownUsd?: number|null, spendComplete?: boolean|null}|null}} o @returns {string|null} the words, or null when the close has a check
- */
-export function noCheckStopText({ closeDecl, spend = null }) {
-  return isNoCheckRubricClose(closeDecl) ? signingStopText({ reds: [], closeDecl, spend }) : null;
-}
-
-/**
  * Plain sentences for the reds of a refused signing, one or more per red. Card and practice-case reds reuse the
  * proposal table; an unknown code is a generic sentence that quotes the code.
  * @param {PlainRed[]} reds @param {{cases?: any}} [o]
@@ -936,14 +912,13 @@ export function signingKinds() {
 
 /**
  * THE MESSAGE a person reads when the signing gates refuse. The panel's failed step and the CLI print exactly this.
- * @param {{reds: PlainRed[], refusal?: {detail?: string}|null, cases?: any, closeDecl?: any,
- *   spend?: {knownUsd?: number|null, spendComplete?: boolean|null}|null}} o
+ * @param {{reds: PlainRed[], refusal?: {detail?: string}|null, cases?: any, noCheck?: boolean,
+ *   spend?: {knownUsd?: number|null, spendComplete?: boolean|null}|null}} o `noCheck` = the check block has no built check (block.hasBuiltCheck() is false): the stop is the end check's own words
  * @returns {string}
  */
-export function signingStopText({ reds, refusal = null, cases = null, spend = null, closeDecl = null }) {
+export function signingStopText({ reds, refusal = null, cases = null, spend = null, noCheck = false }) {
   const reasons = signingReasons(reds, { cases });
   if (reasons.length === 0) {
-    const noCheck = isNoCheckRubricClose(closeDecl);
     reasons.push({ kind: 'seed-green', sentence: noCheck ? NO_CHECK_SENTENCE : SEED_GREEN_SENTENCE,
       todo: noCheck ? NO_CHECK_TODO : 'check that the close measures the right thing, or describe a sharper problem',
       red: { code: '', path: '', detail: String(refusal?.detail ?? '') } });
