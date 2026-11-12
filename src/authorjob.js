@@ -646,7 +646,8 @@ export async function authorCloseForJob({
         onPhase('fit-check-done', { state: fit.state });
         onFit({ state: fit.state, asks: fit.asks, notFound: fit.notFound });
         if (fit.state === 'ask') {
-          const answer = await fitAsk(fitQuestionText({ found: fit.asks.filter((/** @type {any} */ a) => !a.ignored && a.found).length, total: fit.asks.filter((/** @type {any} */ a) => !a.ignored).length, notFound: fit.notFound }));
+          const foundAsks = fit.asks.filter((/** @type {any} */ a) => !a.ignored && a.found).map((/** @type {any} */ a) => ({ line: a.line, ask: a.ask }));
+          const answer = await fitAsk(fitQuestionText({ found: foundAsks.length, foundAsks, total: fit.asks.filter((/** @type {any} */ a) => !a.ignored).length, notFound: fit.notFound }));
           if (answer === null) return { ...base, interview, verdictType: picked, seedRef: seed, reds: [], stop: 'confirm-abandoned', cost: null };
           if (!isGoOn(answer)) {
             return { ...base, interview, verdictType: picked, seedRef: seed, reds: [{ code: 'fit-stopped', path: 'jobLines', detail: notFoundList(fit.notFound) }], stop: 'fit-stopped', cost: null };

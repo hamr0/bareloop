@@ -49,7 +49,7 @@ test('D: the fit question has [Go on] [Stop] and no answer box; the box shows it
   assert.equal(ask.box.orLabel, null, 'no answer box');
   assert.equal(ask.box.text.endsWith('.'), true);
   assert.doesNotMatch(ask.box.text, /Type go on/);
-  assert.match(ask.box.text, /^I found 2 of 4 of your asks on this page\. Not found: flights from New York JFK \(line 1\), to Miami \(line 1\)\.$/);
+  assert.match(ask.box.text, /^I found 2 of 4 of your asks on this page: price \(line 1\), departure time \(line 1\)\. Not found: flights from New York JFK \(line 1\), to Miami \(line 1\)\.$/);
   assert.ok(ask.question.endsWith(FIT_ANSWER), 'the stored question keeps its words');
   assert.equal(session.state.messages.at(-1).askOpen, true);
   assert.equal(panelQuestionText({ question: 'Not found: x. Type go on to keep drafting.', source: 'fit-check' }), 'Not found: x. Type go on to keep drafting.', 'only the exact suffix');
