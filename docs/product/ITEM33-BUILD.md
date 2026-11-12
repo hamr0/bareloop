@@ -4326,3 +4326,11 @@ POC round 4 bar frozen: .claude/scratch/checkblock-poc/PREREG-R4.md sha256 b5544
   4. The look's own per-fact drop reasons (`look.dropped`, shown today as Not checked reasons) have no place in the block's rows.
   5. Where the reply's "goal" sentence goes (the confirm turn already writes the goal).
   6. The mandatory guard stages of the declaration: code places them (rubric guards have no fill slots) beside the block's stages.
+
+### 2026-11-12 hamr's rulings on the six build points ("A")
+1. Agree: an agreed reading or check is stored as a `~` rule in plain words. Agree adds a new `~` line to the signed jobLines AND a row with the SAME rule number (as a typed `rule` does). Revise keeps carried picks as today (am17/am18/am21, fwd parity). The bound is now the person's own words, so the agreed fact does NOT carry `aiProposal`; the card says "you agreed: ...". "Agree adds nothing to jobLines" is rejected.
+2. Ticket jobs: the reply keeps the `ticketFilter` field (R5) unchanged.
+3. Revise trigger: a revise try runs when the last reply had refused edits OR the seed read failed; at most 2 revises, then Start over. A gate red on the code-built declaration is our bug: stop as plan-red in plain words, never ask the AI to fix it.
+4. addLook takes `look.dropped`; its reason becomes the row's why and shows under Not checked.
+5. The confirm turn owns the goal; the drafter reply has no "goal" (one place). Section 4's "plus the goal sentence" is withdrawn.
+6. Mandatory guards: code places them via `classGuards()` beside the block's stages.
