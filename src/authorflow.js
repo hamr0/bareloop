@@ -89,6 +89,7 @@ import { extractArtifact, priceOf, scrubRaw, tallyCalls, capStop, callCasualty }
 import { redactSecrets } from './validate.js';
 import { ledgerRecord } from './checklist.js';
 import { ROW_EDIT_REVISE, rowEditUserText, rowEditChannel, editsOf } from './rowedit.js';
+import { REASON } from './checkblock.js';
 import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, lineRules } from './rubricstep.js';
 /** @typedef {import('./checkblock.js').CheckBlock} CheckBlock */
 import { dropRows, dropLine } from './pagedropwords.js';
@@ -2720,8 +2721,12 @@ export async function authorClose({
   const assemble = () => {
     const c = /** @type {CheckBlock} */ (block).reconcile();
     const refused = /** @type {CheckBlock} */ (block).rows.filter((r) => r.kind === 'rule' && r.state !== 'built').map((r) => ({ line: r.line, rule: r.rule, reason: String(r.reason ?? 'not checked') }));
+    // a job line no check could be built for (no stage) is refused as a line, in code's plain words, so the draft gate sees it covered and the end check (hasBuiltCheck) can say "no check" in its own words
+    for (const l of jobLines ?? []) if (!c.stages.some((/** @type {any} */ st) => Array.isArray(st.fromLine) && st.fromLine.includes(l.n))) refused.push({ line: l.n, reason: REASON.noRule });
     const picks = c.map.flatMap((/** @type {any} */ m) => { const part = c.parts[m.part]; return part && part.class === 'countable' && Array.isArray(part.rules) ? [{ line: m.line, part }] : []; });
-    return { stages: [...guards.map((/** @type {any} */ g) => ({ name: g.name, kind: g.kind, params: g.params })), ...c.stages], ...(refused.length ? { refused } : {}), ...(picks.length ? { picks } : {}) };
+    // a guard's one fill slot (`allowPrefixes`) is the signed write fence, the very value the old drafter was told to copy: for a rubric job the run writes only under output/
+    const fence = Array.isArray(writeScope) && writeScope.length ? [...writeScope] : ['output/'];
+    return { stages: [...guards.map((/** @type {any} */ g) => ({ name: g.name, kind: g.kind, params: { ...g.params, ...Object.fromEntries((g.fill ?? []).map((/** @type {string} */ f) => [f, fence])) } })), ...c.stages], ...(refused.length ? { refused } : {}), ...(picks.length ? { picks } : {}) };
   };
   const prompt = rowEdits
     ? rowEditUserText({ jobLines: jobLines ?? [], look: facts?.look ?? null, texts: inputTexts ?? {} }) + (ticket ? `\n\n${ticketFilterBlock()}` : '')

@@ -317,9 +317,9 @@ export function phaseLine(phase, data = {}) {
     case 'look': return '· looking at your input — a read-only search for the facts the job asks for…';
     case 'look-done': return `· look ${data.state ?? 'unknown'} — ${data.facts ?? 0} fact(s) can be checked`;
     case 'ledger-suggest': return '· suggesting extra checks from your input…';
-    case 'ledger-built': { const rows = Array.isArray(data.rows) ? data.rows : []; const dropped = rows.filter((/** @type {any} */ r) => r.state === 'dropped').length; return `· the list of checks: ${rows.length} row(s), ${dropped} dropped`; }
-    case 'draft-ledger-try': return `·   ${data.label}: ${(data.refused ?? []).length} of ${data.units ?? '?'} part(s) are not on the list`;
-    case 'draft-ledger': { const rows = Array.isArray(data.rows) ? data.rows : []; const n = (/** @type {string} */ st) => rows.filter((/** @type {any} */ r) => r.state === st).length; return `· the list at the end: ${n('built')} built, ${n('not-checked')} not checked, ${n('dropped')} dropped`; }
+    case 'ledger-built': { const rows = Array.isArray(data.rows) ? data.rows : []; const not = rows.filter((/** @type {any} */ r) => r.state === 'not-checked').length; return `· the list of checks: ${rows.length} row(s), ${not} not checked`; }
+    case 'draft-ledger-try': return `·   ${data.label}: ${data.kept ?? '?'} edit(s) kept, ${(data.refused ?? []).length} refused`;
+    case 'draft-ledger': { const rows = Array.isArray(data.rows) ? data.rows : []; const n = (/** @type {string} */ st) => rows.filter((/** @type {any} */ r) => r.state === st).length; return `· the list at the end: ${n('built')} built, ${n('not-checked')} not checked`; }
     case 'listing': return '· listing the files the declaration may name…';
     case 'listing-done': return `· listing ${data.stop ? `STOPPED (${data.stop})` : `${data.files ?? 'unknown'} file(s)`}`;
     case 'author': return '· authoring the close declaration…';
@@ -680,6 +680,7 @@ export const STOP_HEADS = {
   'calibration-missing': 'Drafting stopped: the practice cases that prove the rubric were missing, so the check could not be trusted.',
   'invalid-set': 'Drafting stopped: the rubric and its practice cases do not fit together, so they could not be graded.',
   'broken-close': 'Drafting stopped: the final check the model wrote could not run.',
+  'plan-red': 'Drafting stopped: the plan code built from your checks did not pass its own gate. That is a fault in the build, not in your job.',
   'listing-absent': 'Drafting stopped: the list of your files was not available, so the checks could not name any.',
   'listing-conflict': 'Drafting stopped: the list of your files was given twice and the two did not agree.',
   'listing-unreadable': 'Drafting stopped: your repo\'s file list could not be read.',
@@ -699,6 +700,7 @@ const STOP_TODO = /** @type {Record<string, string>} */ ({
   'listing-unreadable': 'check the repo is a readable git repo with at least one commit, then draft again.',
   'confirm-abandoned': 'start a new draft when you are ready; nothing more was spent.',
   'confirm-restart': 'change the answers you want and start the draft again.',
+  'plan-red': 'draft again; if it stops the same way twice, report it (nothing was spent on a close).',
 });
 
 /** a stop code this table does not know: still plain words, never the code */

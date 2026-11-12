@@ -7,7 +7,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSession } from '../src/panel/authorsession.js';
 import { DRAFT_LOG_FILE } from '../src/draftspend.js';
-import { DECLARATION_TOOL_NAME } from '../src/authorflow.js';
+import { ROW_EDIT_TOOL } from '../src/rowedit.js';
 import { LEDGER_TOOL } from '../src/checklist.js';
 import { ANTH_CFG } from './helpers.js';
 
@@ -38,7 +38,8 @@ test('panel door: the list is built once with its call, every row is in the draf
     confirmGenerate: async (_c, tools) => { await tools[0].execute({ goal: 'Find the latest release heading.', checks: [], notChecked: [], questions: [] }); return { text: '', error: null, cost: 0.0005 }; },
     generate: async (m, tools) => {
       drafterPrompts.push(m[0].content);
-      await tools.find((t) => t.name === DECLARATION_TOOL_NAME).execute({ stages: [guard, { name: 'line-1', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts: [{ text: 'heading', class: 'fact', source: 'Changelog', facts: [{ name: 'release heading', shape: 'phrase', phrase: '## [' }, { name: 'made up', shape: 'phrase', phrase: 'zzz' }], count: { min: 1, max: 1 } }] } }] });
+      // the drafter's reply is ROW EDITS (src/rowedit.js): the first try sends one edit the page cannot prove (refused alone), the revise sends none
+      await tools.find((t) => t.name === ROW_EDIT_TOOL).execute({ edits: drafterPrompts.length === 1 ? [{ op: 'add', kind: 'phrase', line: 1, name: 'made up', source: 'Changelog', words: ['zzz'] }] : [] });
       return ok;
     },
     prepareSigningFn: async () => ({ ok: true, specHash: 'abc123def4567890', seedRef: 'deadbeef', work: [], guards: [], stops: [], reds: [], refusal: null, gates: {} }),
@@ -48,8 +49,9 @@ test('panel door: the list is built once with its call, every row is in the draf
   session.signPrepare();
   assert.ok(await until(() => ['prepared', 'refused', 'error'].includes(session.state.phase)));
   assert.equal(session.state.phase, 'prepared', `${session.state.phase} / ${session.state.error}`);
-  assert.match(drafterPrompts[0], /THE LIST OF CHECKS/);
-  assert.match(drafterPrompts[0], /! result count min 1 max 1/);
+  // invariant 5: no injected text restates the list of checks (the drafter sees the job, the look and the inputs, never the rows)
+  assert.doesNotMatch(drafterPrompts[0].split('INPUT "Changelog"')[0], /THE LIST OF CHECKS|result count|\$ default|! fact/);
+  assert.equal(drafterPrompts.length, 2, 'a refused edit starts exactly one revise; the empty reply settles it');
   const dir = join(sessionsRoot, readdirSync(sessionsRoot)[0]);
   const log = readFileSync(join(dir, DRAFT_LOG_FILE), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
   const rows = log.filter((e) => e.kind === 'ledger');
@@ -60,8 +62,10 @@ test('panel door: the list is built once with its call, every row is in the draf
   assert.equal(final.find((e) => e.key === 'L1.fact.release heading').state, 'built');
   assert.equal(final.find((e) => e.rowKind === 'count').state, 'built');
   const tries = log.filter((e) => e.kind === 'ledger-try');
-  assert.equal(tries.length, 1);
-  assert.deepEqual(tries[0].refused.map((x) => x.words), ['made up']);
+  assert.equal(tries.length, 2);
+  assert.deepEqual(tries[0].refused.map((x) => x.op), ['add']);
+  assert.match(tries[0].refused[0].reason, /not in the input/);
+  assert.deepEqual([tries[0].kept, tries[1].kept, tries[1].refused.length], [0, 0, 0]);
   assert.ok(log.some((e) => e.label === 'ledger-suggest'), 'the list call is a booked call in the draft log');
 });
 
@@ -73,7 +77,7 @@ test('CLI door: the author runner brings the list call its own model boundary (L
   assert.match(src, /import \{ LEDGER_SYSTEM \} from '\.\/checklist\.js';/);
   assert.match(src, /ledgerGenerate: RUBRIC_FILES \? makeLoopGenerate\(provider, \{ system: LEDGER_SYSTEM, rates: authorPrice\?\.rates \?\? null \}\) : null,/);
   assert.equal(phaseLine('ledger-suggest', {}), '· suggesting extra checks from your input…');
-  assert.equal(phaseLine('ledger-built', { rows: [{ rowKind: 'rule', state: 'listed' }, { rowKind: 'fact', state: 'dropped' }, { rowKind: 'floor', state: 'built' }] }), '· the list of checks: 3 row(s), 1 dropped');
-  assert.equal(phaseLine('draft-ledger-try', { label: 'author', units: 4, refused: [{}, {}] }), '·   author: 2 of 4 part(s) are not on the list');
-  assert.equal(phaseLine('draft-ledger', { rows: [{ state: 'built' }, { state: 'not-checked' }, { state: 'dropped' }] }), '· the list at the end: 1 built, 1 not checked, 1 dropped');
+  assert.equal(phaseLine('ledger-built', { rows: [{ rowKind: 'rule', state: 'built' }, { rowKind: 'fact', state: 'not-checked' }, { rowKind: 'floor', state: 'built' }] }), '· the list of checks: 3 row(s), 1 not checked');
+  assert.equal(phaseLine('draft-ledger-try', { label: 'author', kept: 4, refused: [{}, {}] }), '·   author: 4 edit(s) kept, 2 refused');
+  assert.equal(phaseLine('draft-ledger', { rows: [{ state: 'built' }, { state: 'not-checked' }, { state: 'not-checked' }] }), '· the list at the end: 1 built, 2 not checked');
 });

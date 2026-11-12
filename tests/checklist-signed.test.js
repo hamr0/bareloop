@@ -5,7 +5,8 @@ import { mkdtempSync, rmSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import * as CL from '../src/checklist.js';
+import { CheckBlock } from '../src/checkblock.js';
+import { ROW_EDIT_TOOL } from '../src/rowedit.js';
 import { CLOSE_DECL_FIELDS } from '../src/declaredclose.js';
 import { authorClose, DECLARATION_TOOL_NAME, GREEN_QUESTIONS } from '../src/authorflow.js';
 import { RUBRIC_LANG } from '../src/authoring.js';
@@ -22,28 +23,11 @@ const jobLines = [{ n: 1, text: 'Find the latest heading', rule: 'at most 80 wor
 const texts = { Changelog: '## [0.54.1] - 2026-11-04\n### Fixed\n- one\n' };
 const look = { facts: [{ line: 1, name: 'release heading', shape: 'phrase', source: 'Changelog', words: ['## ['] }], dropped: [] };
 
-test('B1 signedRows: only the nine signed fields, never words or text; a listed row is not carried; same rows give the same bytes', () => {
-  const rows = CL.buildLedger({ jobLines, look, texts, inputLabels: ['Changelog'] });
-  const decl = { stages: [{ name: 's', kind: 'rubric-step', params: { step: 1, parts: [{ text: 'h', class: 'fact', source: 'Changelog', rules: [], facts: [{ name: 'release heading', shape: 'phrase', phrase: '## [' }] }] } }] };
-  const fin = CL.resolveLedger(rows, decl);
-  const signed = CL.signedRows(fin);
-  assert.ok(signed.length > 0);
-  for (const r of signed) {
-    assert.deepEqual(Object.keys(r).filter((k) => !CL.SIGNED_ROW_FIELDS.includes(k)), [], 'no field beyond the signed ones');
-    assert.ok(['built', 'not-checked', 'dropped'].includes(r.state));
-    assert.ok(!('words' in r) && !('text' in r));
-  }
-  const fact = signed.find((r) => r.key === 'L1.fact.release heading');
-  assert.deepEqual(fact.part, { line: 1, part: 0 }, 'a built row points at the part that carries it');
-  assert.equal(JSON.stringify(CL.signedRows(fin)), JSON.stringify(signed));
-  assert.equal(CL.signedRows(rows.map((r) => ({ ...r, state: 'listed' }))).length, 0);
-});
-
 test('B1 the close validator admits `list` as a closeDecl field', () => {
   assert.ok(CLOSE_DECL_FIELDS.includes('list'));
 });
 
-test('B1 authorClose returns the final rows (`ledger`) resolved against the accepted declaration; no list means none', async () => {
+test('B1 authorClose returns the final signed rows of the block (`ledger`) beside the accepted declaration', async () => {
   const file = join(tmp(), 'CHANGELOG.md');
   copyFileSync(join(HERE, '..', 'CHANGELOG.md'), file);
   const proved = await proveRubricInputs({ inputs: [{ n: 1, label: 'Changelog', value: file }], into: join(tmp(), 'seed') });
@@ -51,17 +35,25 @@ test('B1 authorClose returns the final rows (`ledger`) resolved against the acce
   const prep = proved.prep;
   const guard = { name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } };
   const listing = await buildSeedListing({ workdir: prep.tree, seedRef: prep.manifest.seed, sourcePaths: undefined, testPaths: undefined });
-  const run = (ledger) => authorClose({
-    workdir: prep.tree, seedRef: prep.manifest.seed, lang: RUBRIC_LANG, verdictType: 'soft-green', answers: { 1: '1. x' }, questions: { 1: GREEN_QUESTIONS[1] },
-    scout: { state: 'PRESENT', facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }] }, calls: [], raws: [] }, listing, writeScope: ['output/'],
-    jobLines: [{ n: 1, text: 'Summarise' }], inputs: [{ n: 1, label: 'Changelog', value: file }], ...(ledger ? { ledger } : {}),
-    generate: async (_m, tools) => { await tools.find((t) => t.name === DECLARATION_TOOL_NAME).execute({ stages: [guard, { name: 'line-1', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts: [{ text: 'u', class: 'countable', check: 'cited', source: 'Changelog' }] } }] }); return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } }; },
-  });
-  const rows = CL.buildLedger({ jobLines: [{ n: 1, text: 'Summarise' }], look: { facts: [] }, texts, inputLabels: ['Changelog'] });
-  const r = await run(rows);
+  const labels = ['Changelog'];
+  const run = () => {
+    const block = new CheckBlock({ texts, labels });
+    block.fromJob([{ n: 1, text: 'Summarise' }]); block.addLook([], []); block.reconcile();
+    return authorClose({
+      workdir: prep.tree, seedRef: prep.manifest.seed, lang: RUBRIC_LANG, verdictType: 'soft-green', answers: { 1: '1. x' }, questions: { 1: GREEN_QUESTIONS[1] },
+      scout: { state: 'PRESENT', facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }] }, calls: [], raws: [] }, listing, writeScope: ['output/'],
+      jobLines: [{ n: 1, text: 'Summarise' }], inputs: [{ n: 1, label: 'Changelog', value: file }], block,
+      // the drafter's reply is row edits (an empty list is a good answer)
+      generate: async (_m, tools) => {
+        await tools.find((t) => t.name === ROW_EDIT_TOOL).execute({ edits: [] });
+        return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } };
+      },
+    });
+  };
+  const r = await run();
   assert.equal(r.ok, true, JSON.stringify(r.reds));
   assert.ok(Array.isArray(r.ledger) && r.ledger.some((x) => x.kind === 'cited' && x.state === 'built'));
-  assert.equal((await run(null)).ledger, null);
+  assert.ok(r.ledger.every((x) => !('words' in x) && !('text' in x)), 'the signed rows carry no words');
 });
 
 test('B1 hashing is untouched: the list is hashed as any closeDecl field, and an unrelated spec hashes as before', () => {
@@ -95,13 +87,13 @@ test('B1 authorCloseForJob carries the list into closeDecl like picks: signed ro
     provider: { fake: true }, ceilingUsd: 1, lookFn: async () => survey, generate: async () => { throw new Error('no model call'); },
     authorFn: async () => ({ ok: true, declaration: { stages: [{ name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } }, { name: 'line-1', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts: [{ text: 'u', class: 'countable', check: 'cited', source: 'Changelog' }] } }] }, genreEnv: null, ledger, cost: { costUsd: 0, knownUsd: 0, spendComplete: true, calls: [], unpricedRounds: 0 }, reds: [] }),
   });
-  const rows = [{ key: 'L1.$cited', line: 1, kind: 'cited', from: 'default', by: 'default', words: ['quoted words'], source: 'Changelog', state: 'built', reason: null, part: { line: 1, part: 0 } }, { key: 'L1.~1', line: 1, kind: 'rule', from: 'rule', by: 'you', words: [], text: 'be nice', rule: 1, state: 'not-checked', reason: 'No rule can check this.' }];
+  // the block's own signedRows() output (src/checkblock.js): the nine signed fields, never a row's words
+  const rows = [{ key: 'L1.$cited', line: 1, kind: 'cited', from: 'default', by: 'default', state: 'built', part: { line: 1, part: 0 } }, { key: 'L1.~1', line: 1, kind: 'rule', from: 'rule', by: 'you', rule: 1, state: 'not-checked', reason: 'No rule can check this.' }];
   const r = await go(rows);
   assert.equal(r.ok, true, JSON.stringify(r.reds));
   assert.deepEqual(r.closeDecl.list, [
     { line: 1, key: 'L1.$cited', from: 'default', by: 'default', kind: 'cited', state: 'built', part: { line: 1, part: 0 } },
     { line: 1, key: 'L1.~1', from: 'rule', by: 'you', kind: 'rule', rule: 1, state: 'not-checked', reason: 'No rule can check this.' },
   ]);
-  assert.ok(!JSON.stringify(r.closeDecl.list).includes('quoted words') && !JSON.stringify(r.closeDecl.list).includes('be nice'), 'no row words are signed');
   assert.equal('list' in (await go(null)).closeDecl, false);
 });

@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { checksOfClose, defaultCitedText } from '../src/rubricstep.js';
 import { planFromSpec, planFromConfirm } from '../src/panel/jobplan.js';
-import * as CL from '../src/checklist.js';
+import { CheckBlock } from '../src/checkblock.js';
 
 const stage = (parts) => ({ name: 'line-2', kind: 'rubric-step', fromLine: [2], params: { step: 2, parts } });
 const closeDecl = { lang: 'text', stages: [stage([
@@ -18,7 +18,10 @@ const spec = { schema: 'job-v1', job: 'kb', goal: 'g', verdictType: 'soft-green'
 
 test('A11 checksOfClose: the default cited part and the numbers tie are [default]; a drafter-worded cited part and a limit stay [agent]', () => {
   assert.deepEqual(checksOfClose(closeDecl).map((r) => r.by), ['default', 'default', 'agent', 'agent']);
-  assert.equal(CL.applyLedger({ stages: [stage([])] }, [], { labels: ['Changelog'] }).declaration.stages[0].params.parts[0].text, defaultCitedText('Changelog'), 'the list module writes the very text the card reads');
+  // the block writes the very text the card reads
+  const b = new CheckBlock({ texts: { Changelog: 'x' }, labels: ['Changelog'] });
+  b.fromJob([{ n: 2, text: 'write', rules: [] }]);
+  assert.equal(b.reconcile().parts[0].text, defaultCitedText('Changelog'));
 });
 
 test('A11 Job tab (planFromSpec) and the plan card carry the default mark through', () => {
