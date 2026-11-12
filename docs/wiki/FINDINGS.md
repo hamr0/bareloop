@@ -15841,3 +15841,38 @@ DeepSeek direct deepseek-flash, scratch HOME, total $0.105. The draft signed ver
 Also built this stretch, test-proven only: door Accept/Rerun bind the run's own read values (165cbcbe, 64b8d076); look facts stripped to their value(s) (eb828f77, 5315b617).
 
 Full gate on bc813cc6: tests 5935, pass 5933, fail 0, skipped 2, TEST_EXIT=0, TSC_EXIT=0, PCC_EXIT=0 (78 commits).
+
+### F327: the fit question named only the asks NOT found (session smwdhk8e6amd0, 2026-11-12)
+
+Live walk on the test panel, DeepSeek flash. The job line "List 3 flights from Boston to Chicago" gave 4 asks; 3 were found. The question read "I found 3 of 4 of your asks on this page. Not found: List (line 1)." The person could not see which 3 were found (draft-log `fit-check` row has all four asks with quotes; the question showed one). Fixed in 73e08808: the question names the asks it found too. Test-proven only. Not seen live: no later fit question was asked (sessions after 73e08808, e.g. smwdirp88t2cy and smwdjoy4dsdxs, read state `fits`, so no question was raised). Source: `src/fitcheck.js` (`decideFit` line 63).
+
+### F328: the confirm card said "Done when every › check passes" with no › rows (2026-11-12)
+
+The confirm step is goal-only by ruling (hamr 2026-11-12), but the card still printed the legend. hamr asked where the checks were. Fixed in 48e35a5d: the job-plan legend shows only when the plan has a check row. Test-proven; not checked by a later live walk.
+
+### F329: a look-tied fact was dropped by the list and the drafter's price part was refused (sessions smwdiy4k3bk0v, smwdhl8k5q8pn, 2026-11-12)
+
+The look tied a price fact to `~` rule 1 (`forRule=1`). The list drops such a fact ("a ~ rule wins", `src/checklist.js:98`), so the drafter's price part was refused "not on the list" (draft-log `ledger-try`, `refused: [{kind: fact, words: price}]`). The drafter puts `rules` on the fact, not on the part, against the brief at `src/authorflow.js:1541` ("rules is a field of the PART"), so rule 1 stayed uncovered and the gate said "your rule 'under $450' is neither checked nor listed under Not checked" (`rubric-rule-dropped`).
+- Session smwdiy4k3bk0v: author, revise-1 and revise-2 all refused; stopped at max revisions (3 refused tries).
+- Session smwdhl8k5q8pn: revise-1 and revise-2 refused ("price label", "departure time label" not on the list). Run mwdhma1l from that session ran GREEN. Its signed spec shows rules [1, 2] built from the author try, so I could NOT confirm from the files that "under $450" ended not-checked in that run; the refusals above are the verified part.
+- $0 replay POC: PASS (pre-fix replay of the saved drafts).
+- Fixed fea67fd9 (`src/checklist.js:216-236`): code credits rule N from the look tie when the fact has a bound; the bound is filled from the look's reading; no bound means not-checked.
+- Seen live: session smwdoiysjmma3, all 3 tries had `refused: []` at the list stage.
+- Superseded in direction by the check block redesign (build doc, 2026-11-12 section): the fix is one more patch at a seam the redesign removes.
+
+### F330: OPEN — the final card kept only the default cited check (session smwdoiysjmma3, 2026-11-12, 15:07Z)
+
+Job: list 3 flights, "under $450", "departure not redeye" (agreed reading "departure time between 05:00 and 21:00"). Retention line: 6 AI parts, 1 kept, 5 dropped (draft-log `retention`; `draft-checks` is empty). On the card, "under $450", "departure not redeye", the agreed departure rule, origin, destination and the count all went to "The AI couldn't build a working check for this, so you judge it at Accept." (`DROPPED_WORDS`, `src/checkpick.js:561`). The price IS readable on the page ("From 161 US dollars", 24 rows). Not caused by the question-box commits. $0 root cause, four seams:
+- (a) revise-1 passed the gate (`ledger-try` revise-1, no `try-refused` after it), but the loop went on to revise-2 and kept the last try (`src/authorflow.js` loop around 3105-3125). The F176 fallback to the newest sound try (3223-3228) fires only after an instrument-stop, not here.
+- (b) `fillAndMergeFacts` (`src/checkpick.js:472`) merges a line's facts into ONE part, so one part-tied red on revise-2 (likely an illegal `currency:["$","US dollars"]` copied from the look; not proven from the log) made `dropExtras` (`checkpick.js:571-600`, called by `dropAfterLastTry`, `authorflow.js:2618`) drop all five checks.
+- (c) `applyLedger` keeps only the look's `forRule` on the part and strips fact-level rules, so agreed rule 3 (no look fact) was lost on the author try (`try-refused` author: "rule 'departure time between 05:00 and 21:00' is neither checked nor listed").
+- (d) the last-try drop writes no record: the reds, the dropped parts and the pre-drop declaration are invisible; only the retention line (6/1/5) remains.
+hamr ruled a redesign instead of a fifth patch: build doc section "2026-11-12 CHECK BLOCK REDESIGN". Status: OPEN, no fix.
+
+### F331: process — a commit cited an unrelated run and another lacked labels; the full gate's prompt-commit-check went red (2026-11-12)
+
+b5241e43 cited run mwclgxs3 (a place-rules run) on its `Failure:` line, but the failure it described was a look answer read from typed words. a8f45a51 lacked labels. The full gate was 5962 pass, 0 fail, exit 1 (prompt-commit-check). Both were reworded honestly by a clone-tested commit-tree script run by hamr (`.claude/scratch/reword-qbox.sh`): a053034c cites run mvh7g2hc, 151f9e45 cites run mviepi4i; both runs exist in `runs.jsonl`. The old shas still sit in the reflog. Lesson: check that a builder's cited run id exists and matches the failure before committing. Not verified by me: that those two runs show the exact failure text (only that the ids exist and the classes match F240 and the fit-question path).
+
+### F332: OPEN — the fit check counted the verb "List" as an ask to find on the page (sessions smwdhk8e6amd0, smwdirp88t2cy, 2026-11-12)
+
+In smwdhk8e6amd0 the AI listed "List" (line 1) as an ask; it was "not found" and was the whole reason for the fit question. In smwdirp88t2cy the same word was "found" as "Search results". An action word is not a page fact: the first reading stopped a good draft, the second counted a made-up match. Source: draft-log `fit-check` rows; `src/fitcheck.js:39` (`fitPrompt`), `decideFit` line 63. No fix; not built.
