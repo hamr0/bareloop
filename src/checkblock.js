@@ -35,7 +35,7 @@ const wordSet = (/** @type {unknown} */ t) => new Set(norm(t).match(/[\p{L}\p{N}
 /** the plain reasons code gives, in one place (the card, the Job tab and the Audit read them from the row) */
 export const REASON = Object.freeze({
   left: 'You chose to leave it Not checked, so you judge it at Accept.',
-  nothingOnPage: 'nothing on the page carries your own words, so you judge it at Accept.',
+  nothingOnPage: 'Your own words are on the line; the machine has no check for them, so you judge it at Accept.',
   cantCheck: "I can't check this on the page; waiting for your answer",
   noRule: 'No rule can check this, so you judge it at Accept.',
   waitingPick: 'waiting for your answer on the proposed check',
@@ -479,6 +479,8 @@ export class CheckBlock {
     if (e.kind !== 'fact' && e.kind !== 'phrase') return { refusedBecause: 'an add is a fact, a phrase or a count' };
     // an input the job does not have is refused alone (it would otherwise reach the draft gate as a red on code's own plan and stop the whole draft)
     if (e.source !== undefined && e.source !== null && !this.labels.includes(e.source)) return { refusedBecause: `"${String(e.source).slice(0, 60)}" is not one of the inputs` };
+    // a job with more than one input never guesses which one an add quotes (code fills a missing source only when there is exactly one)
+    if ((e.source === undefined || e.source === null) && this.labels.length > 1) return { refusedBecause: `names no input; the job has ${this.labels.length}: ${this.labels.map((/** @type {string} */ l) => `"${l}"`).join(', ')}` };
     const words = (Array.isArray(e.words) ? e.words : []).filter((/** @type {unknown} */ w) => typeof w === 'string' && w.trim());
     if (!words.length) return { refusedBecause: 'no words given' };
     if (!words.some((/** @type {string} */ w) => proved(this.textOf(e.source), w))) return { refusedBecause: `the words ${words.map((/** @type {string} */ w) => `"${w}"`).join(', ')} are not in the input` };

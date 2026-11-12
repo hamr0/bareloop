@@ -7,9 +7,12 @@ import { mkdtempSync, writeFileSync, rmSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { keepOrDrop, scopedRules, checkAsks, rowsFromAnswer, settleRules, applyPicks, SUGGEST_SCHEMA, SUGGEST_TOOL, plainWords, CANT_CHECK_WORDS } from '../src/checkpick.js';
+import { keepOrDrop, scopedRules, rowsFromAnswer, SUGGEST_SCHEMA, SUGGEST_TOOL, plainWords, CANT_CHECK_WORDS } from '../src/checkpick.js';
+import { CheckBlock } from '../src/checkblock.js';
+import { questionsOfBlock } from '../src/blockasks.js';
+import { ROW_EDIT_TOOL } from '../src/rowedit.js';
 import { runCheckSuggest } from '../src/checksuggest.js';
-import { authorClose, GREEN_QUESTIONS, DECLARATION_TOOL_NAME, MAX_QUESTIONS } from '../src/authorflow.js';
+import { authorClose, GREEN_QUESTIONS, MAX_QUESTIONS } from '../src/authorflow.js';
 import { authorCloseForJob as forJob } from '../src/authorjob.js';
 import { RUBRIC_LANG } from '../src/authoring.js';
 import { proveRubricInputs } from '../src/source.js';
@@ -62,12 +65,16 @@ test('scopedRules: every ~ rule of a local-file job; a page job only for a rule 
 });
 
 // ---- the asks: fwd's exact words; a proposal is not counted, a can't-check is ---------------------------------------------------------------
-test('checkAsks: fwd\'s words, `counted` only for "I can\'t check this"', () => {
-  const rows = rowsFromAnswer([{ line: 1, rule: 1, text: 'under 80 words' }, { line: 1, rule: 2, text: 'be nice' }], { checks: [{ line: 1, guardrail: 1, rule: 'maxWords', value: 80 }, { line: 1, guardrail: 2, rule: 'none' }] });
-  const [a, b] = checkAsks(rows);
+test('the asks (questionsOfBlock): fwd\'s words, `counted` only for "I can\'t check this"', () => {
+  const b = new CheckBlock({ texts: { Changelog: 'x' }, labels: ['Changelog'] });
+  b.fromJob([{ n: 1, text: 'Summarise', rules: ['under 80 words', 'be nice'] }]);
+  b.addLook([]);
+  b.applyDelta({ label: 'pre', pre: true, edits: [{ op: 'pick', line: 1, rules: [1], check: { rule: 'maxWords', value: 80 } }] });
+  b.reconcile();
+  const [a, c] = questionsOfBlock(b, [{ line: 1, rule: 1 }, { line: 1, rule: 2 }]);
   assert.equal(a.question, 'Line 1, guardrail "under 80 words": I propose at most 80 words. Answer "agree" to use it, or type your own words (your answer is added as a new ~ rule on line 1), or answer "drop it" to leave it Not checked.');
-  assert.equal(b.question, `Line 1, guardrail "be nice": ${CANT_CHECK_WORDS} Type your own words (your answer is added as a new ~ rule on line 1), or answer "drop it" to leave it Not checked.`);
-  assert.deepEqual([a.counted, b.counted, a.ask, b.ask, a.source], [false, true, 'check', 'no-check', 'look']);
+  assert.equal(c.question, `Line 1, guardrail "be nice": ${CANT_CHECK_WORDS} Type your own words (your answer is added as a new ~ rule on line 1), or answer "drop it" to leave it Not checked.`);
+  assert.deepEqual([a.counted, c.counted, a.ask, c.ask, a.source], [false, true, 'check', 'no-check', 'look']);
   assert.equal(rowsFromAnswer([{ line: 1, rule: 1, text: 'x' }], { checks: [] })[0].why, 'no entry');
 });
 
@@ -75,22 +82,28 @@ test('checkAsks: fwd\'s words, `counted` only for "I can\'t check this"', () => 
 const RULES = [{ line: 1, rule: 1, text: 'under 80 words' }, { line: 1, rule: 2, text: 'be nice' }, { line: 1, rule: 3, text: 'no jargon' }];
 const LINES_AFTER = [{ n: 1, text: 'Summarise', rule: 'x', rules: ['under 80 words', 'be nice', 'no jargon', 'at most 80 words', 'be very nice'] }];
 const draftWith = (parts, refused = []) => ({ stages: [{ name: 'line-1', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts } }], refused });
-test('settleRules + applyPicks: the pick is the line\'s only shape check, carries the guardrail and its added ~ rule; the others are Not checked with the reason; a drafted shape part is gone', () => {
-  const settled = settleRules(RULES, [{ line: 1, rule: 1, check: { rule: 'maxWords', value: 80 }, added: 'at most 80 words' }, { line: 1, rule: 2, check: null, added: 'be very nice', own: true }], [{ line: 1, rule: 3 }], LINES_AFTER);
-  const d = applyPicks(draftWith([{ text: 'under 79', class: 'countable', check: 'maxWords', value: 79, rules: [1] }, { text: 'c', class: 'countable', check: 'cited', source: 'Changelog' }], [{ line: 1, rule: 2, reason: 'drafter reason' }]), settled);
-  const parts = d.stages[0].params.parts;
-  assert.deepEqual(parts.map((p) => p.check), ['cited', 'maxWords']);
-  assert.deepEqual(parts[1], { text: 'under 80 words', class: 'countable', check: 'maxWords', value: 80, rules: [1, 4] });
-  assert.deepEqual(d.refused.map((r) => [r.rule, r.reason.slice(0, 21)]).sort(), [[2, 'Your own words are on'], [3, 'You chose to leave it'], [5, 'Your own words are on']]);
-  assert.equal(JSON.stringify(draftWith([{ text: 'x', class: 'countable', check: 'maxWords', value: 5 }])), JSON.stringify(draftWith([{ text: 'x', class: 'countable', check: 'maxWords', value: 5 }])), 'inputs are never touched');
-  const row = cardOfClose({ closeDecl: d, jobLines: LINES_AFTER });
-  assert.ok(row.checkItems.some((c) => c.text === 'the text is at most 80 words'));
+test('picks on the block: the pick is the line\'s only shape check, carries the guardrail and its added ~ rule; the others are Not checked with the reason; nothing the drafter could write is left to drop', () => {
+  const b = new CheckBlock({ texts: { Changelog: 'x' }, labels: ['Changelog'], asks: false });
+  b.fromJob([{ n: 1, text: 'Summarise', rules: ['under 80 words', 'be nice', 'no jargon', 'at most 80 words', 'be very nice'] }]);
+  b.addLook([]);
+  b.carry({ picks: [{ line: 1, rule: 1, check: { rule: 'maxWords', value: 80 }, added: 'at most 80 words' }, { line: 1, rule: 2, check: null, added: 'be very nice', own: true }], left: [{ line: 1, rule: 3 }] });
+  const c = b.reconcile();
+  const parts = c.stages.flatMap((st) => st.params.parts);
+  assert.deepEqual(parts.map((p) => p.check), ['maxWords', 'cited']);
+  assert.deepEqual(parts[0], { text: 'under 80 words', class: 'countable', check: 'maxWords', value: 80, rules: [1, 4] });
+  const refused = b.rows.filter((r) => r.kind === 'rule' && r.state !== 'built').map((r) => [r.rule, r.reason.slice(0, 21)]);
+  assert.deepEqual(refused, [[2, 'Your own words are on'], [3, 'You chose to leave it'], [5, 'Your own words are on']]);
+  const row = cardOfClose({ closeDecl: { genre: 'text', lang: 'text', stages: c.stages, list: b.signedRows(), refused: b.rows.filter((r) => r.kind === 'rule' && r.state !== 'built').map((r) => ({ line: r.line, rule: r.rule, reason: String(r.reason) })) }, jobLines: [{ n: 1, text: 'Summarise', rule: 'x', rules: ['under 80 words', 'be nice', 'no jargon', 'at most 80 words', 'be very nice'] }] });
+  assert.ok(row.checkItems.some((x) => x.text === 'the text is at most 80 words'));
   assert.ok(row.notChecked.some((n) => /^line 1: "no jargon" — You chose to leave it Not checked/.test(n)));
 });
-test('no pick: every scoped rule is Not checked ("no-pick"), none is checked', () => {
-  const s = settleRules(RULES, [], [], LINES_AFTER);
-  assert.equal(s.checks.length, 0);
-  assert.deepEqual(s.notes.map((n) => n.reason), ['no-pick', 'no-pick', 'no-pick']);
+test('no pick: every counting rule stays unbuilt and none is checked (nothing to ask in the CLI: Not checked in plain words)', () => {
+  const b = new CheckBlock({ texts: { Changelog: 'x' }, labels: ['Changelog'], asks: false });
+  b.fromJob([{ n: 1, text: 'Summarise', rules: ['under 80 words', 'be nice', 'no jargon'] }]);
+  b.addLook([]);
+  b.reconcile();
+  assert.deepEqual(b.rows.filter((r) => r.kind === 'rule').map((r) => r.state), ['not-checked', 'not-checked', 'not-checked']);
+  assert.ok(b.rows.filter((r) => r.kind === 'rule').every((r) => typeof r.reason === 'string' && r.reason.length > 10));
 });
 
 // ---- the call over the structured ladder ----------------------------------------------------------------------------------------------------
@@ -113,45 +126,37 @@ test('runCheckSuggest: one forced typed tool call, its cost booked and reported 
 });
 
 // ---- the whole drafting loop: the plan carries only what was picked ----------------------------------------------------------------------------
-test('authorClose with picks: the drafter\'s own shape checks (a 79 for "under 80") never reach the plan; exactly the picked check does; the prompt says code settles these rules', async () => {
+test('authorClose with picks: exactly the picked check reaches the plan (a drafter\'s own 79 for "under 80" or made-up section is inexpressible: the AI sends edits); the drafter\'s message does not restate the picks', async () => {
   const file = changelogCopy();
   const proved = await proveRubricInputs({ inputs: [{ n: 1, label: 'Changelog', value: file }], into: join(tmp(), 'seed') });
   assert.equal(proved.ok, true);
   if (!proved.ok) return;
   const prep = proved.prep;
-  const guard = { name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } };
   const line = { n: 1, text: 'Summarise the latest release', rule: 'under 80 words; be nice; no jargon; at most 80 words', rules: ['under 80 words', 'be nice', 'no jargon', 'at most 80 words'] };
   /** @type {string[]} */ const prompts = [];
   const generate = async (m, tools) => {
     prompts.push(m[0].content);
-    await tools.find((t) => t.name === DECLARATION_TOOL_NAME).execute({ stages: [guard, { name: 'line-1', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts: [{ text: 'under 80 words', class: 'countable', check: 'maxWords', value: 79, rules: [1] }, { text: 'sections', class: 'countable', check: 'sections', names: ['Made up'] }] } }] });
+    await tools.find((t) => t.name === ROW_EDIT_TOOL).execute({ edits: [{ op: 'pick', line: 1, rules: [1], check: { rule: 'maxWords', value: 79 } }] });
     return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } };
   };
   const listing = await buildSeedListing({ workdir: prep.tree, seedRef: prep.manifest.seed, sourcePaths: undefined, testPaths: undefined });
-  const checkPicks = { rules: RULES, picks: [{ line: 1, rule: 1, check: { rule: 'maxWords', value: 80 }, added: 'at most 80 words' }], left: [{ line: 1, rule: 2 }, { line: 1, rule: 3 }] };
+  const block = new CheckBlock({ texts: { Changelog: 'x' }, labels: ['Changelog'], asks: false });
+  block.fromJob([line]);
+  block.addLook([]);
+  block.carry({ picks: [{ line: 1, rule: 1, check: { rule: 'maxWords', value: 80 }, added: 'at most 80 words' }], left: [{ line: 1, rule: 2 }, { line: 1, rule: 3 }] });
+  block.reconcile();
   const r = await authorClose({
     workdir: prep.tree, seedRef: prep.manifest.seed, lang: RUBRIC_LANG, verdictType: 'soft-green',
     answers: { 1: '1. Summarise the latest release' }, questions: { 1: GREEN_QUESTIONS[1] },
     scout: { state: 'PRESENT', facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }] }, calls: [], raws: [] },
-    listing, generate, writeScope: ['output/'], jobLines: [line], inputs: [{ n: 1, label: 'Changelog', value: file }], checkPicks,
+    listing, generate, writeScope: ['output/'], jobLines: [line], inputs: [{ n: 1, label: 'Changelog', value: file }], block,
   });
   assert.equal(r.ok, true, JSON.stringify(r.reds));
   const parts = r.declaration.stages[1].params.parts;
-  assert.deepEqual(parts.map((p) => [p.check, p.value]), [['maxWords', 80]], 'only the pick; the drafter\'s 79 and its made-up section are gone');
+  assert.deepEqual(parts.filter((p) => p.check !== 'cited').map((p) => [p.check, p.value]), [['maxWords', 80]], 'only the pick; a drafter pick edit of 79 on a settled rule is refused ("already on the list" would be the proposal of an asked rule)');
   assert.deepEqual(parts[0].rules, [1, 4]);
   assert.deepEqual(r.declaration.refused.map((x) => x.rule).sort(), [2, 3]);
-  assert.match(prompts[0], /SETTLED BY CODE - the person picked how these ~ rules are checked/);
-  assert.match(prompts[0], /line 1, ~ rule 2: "be nice"/);
-  // without picks nothing changes: the declaration is validated as drafted (a 79 stays)
-  const plain = await authorClose({
-    workdir: prep.tree, seedRef: prep.manifest.seed, lang: RUBRIC_LANG, verdictType: 'soft-green',
-    answers: { 1: '1. Summarise the latest release' }, questions: { 1: GREEN_QUESTIONS[1] },
-    scout: { state: 'PRESENT', facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }] }, calls: [], raws: [] },
-    listing, generate: async (m, tools) => { await tools.find((t) => t.name === DECLARATION_TOOL_NAME).execute({ stages: [guard, { name: 'line-1', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts: [{ text: 'u', class: 'countable', check: 'maxWords', value: 79, rules: [1, 2, 3, 4] }] } }] }); return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } }; },
-    writeScope: ['output/'], jobLines: [line], inputs: [{ n: 1, label: 'Changelog', value: file }],
-  });
-  assert.equal(plain.ok, true, JSON.stringify(plain.reds));
-  assert.equal(plain.declaration.stages[1].params.parts[0].value, 79);
+  assert.doesNotMatch(prompts[0].split('INPUT "Changelog"')[0], /SETTLED BY CODE|THE LIST OF CHECKS/, 'no injected text restates what code settled');
 });
 
 // ---- the job door: asks before any draft, the cap counts only "I can't check this" ------------------------------------------------------------------
@@ -179,7 +184,8 @@ async function doorWorld(lines, { answer, suggest, look = { facts: [], prose: []
         picks.push({ line: q.line, rule: q.rule, check: a === 'agree' && q.ask === 'check' ? q.check : null, added: text, ...(a === 'agree' && q.ask === 'check' ? {} : { own: true }) });
         jl[0].rule += `; ${text}`; jl[0].rules.push(text);
       }
-      return { jobLines: jl, answers: { 1: 'ans' }, left, picks };
+      const choices = o.questions.map((q) => { const a = answer(q); return a === 'drop it' ? { key: q.key, choice: 'drop', text: a } : (a === 'agree' && q.ask === 'check' ? { key: q.key, choice: 'agree', text: '' } : { key: q.key, choice: 'rule', text: a }); });
+      return { jobLines: jl, answers: { 1: 'ans' }, left, picks, choices };
     },
     generate: async () => { throw new Error('no model call'); },
     authorFn: async (o) => { order.push('authorFn'); seen = o; return { ok: false, stop: 'max-revisions', declaration: null, iterations: [], raws: [], cost: { costUsd: 0, knownUsd: 0, spendComplete: true, calls: [], unpricedRounds: 0 }, reds: [] }; },
@@ -191,7 +197,9 @@ test('the door: a proposal and a "can\'t check" are asked before any draft; agre
   const w = await doorWorld(L2, { suggest: { checks: [{ line: 1, guardrail: 1, rule: 'maxWords', value: 80 }, { line: 1, guardrail: 2, rule: 'none' }] }, answer: (q) => (q.ask === 'check' ? 'agree' : 'be gentle') });
   assert.deepEqual(w.order.filter((x) => ['check-suggest', 'check-ask', 'authorFn'].includes(x)), ['check-suggest', 'check-ask', 'authorFn']);
   assert.deepEqual(w.asked[0].map((q) => [q.ask, q.line, q.rule]), [['check', 1, 1], ['no-check', 1, 2]]);
-  assert.deepEqual(w.seen.checkPicks.picks.map((p) => [p.rule, p.check?.rule ?? null, p.added]), [[1, 'maxWords', 'at most 80 words'], [2, null, 'be gentle']]);
+  const ruleRows = w.seen.block.rows.filter((r) => r.kind === 'rule');
+  assert.deepEqual(ruleRows.map((r) => [r.rule, r.pick?.rule ?? null, r.text]), [[1, 'maxWords', 'under 80 words'], [2, null, 'be nice'], [3, null, 'at most 80 words'], [4, null, 'be gentle']]);
+  assert.equal(ruleRows[1].cantAsked, true, 'the asked rule is settled by the person\'s own words (a typed row holds them)');
   assert.equal(w.seen.jobLines[0].rules.at(-1), 'be gentle');
   assert.deepEqual(w.survey.calls.map((c) => c.label), ['check-suggest'], 'the call\'s spend joins the survey\'s, so the one ceiling holds it');
 });
@@ -202,12 +210,12 @@ test('the cap: proposals never count; the look\'s asks plus "I can\'t check this
   assert.equal(four.asked.length, 0);
   assert.match(four.r.reds[0].detail, /Your job has 4 rules I can't check or had to guess\./);
   assert.match(four.r.reds[0].detail, /line 1 "a" → I can't check this/);
-  // the look's own ask counts with the pick asks: one look ask + three "I can't check this" = four = refused, and only the look ask was put to the person
+  // the look's own ask counts with the pick asks: one look ask + three "I can't check this" = four = refused, and nothing is put to the person (the block knows every ask before it asks one)
   const withLook = [{ n: 1, text: 'List flights', rule: 'not a red-eye; b; c; d', rules: ['not a red-eye', 'b', 'c', 'd'] }];
-  const lookFacts = { facts: [{ line: 1, name: 'Departure', shape: 'time', source: 'Changelog', example: '', forRule: 1, reading: { op: 'between', lo: '06:00', hi: '21:00' } }], prose: [], notFound: [] };
+  const lookFacts = { facts: [{ line: 1, name: 'Departure', shape: 'time', source: 'Changelog', words: ['Unreleased'], forRule: 1, reading: { op: 'between', lo: '06:00', hi: '21:00' } }], prose: [], notFound: [] };
   const five = await doorWorld(withLook, { suggest: { checks: [] }, answer: () => 'drop it', look: lookFacts });
   assert.equal(five.r.stop, 'look-asks-too-many');
-  assert.equal(five.asked.length, 1, 'only the look ask was asked');
+  assert.equal(five.asked.length, 0, 'nothing is asked: the block counts every ask up front (the old flow put the look ask to the person first and refused after), and the stop lists every ask');
   assert.match(five.r.reds[0].detail, /Your job has 4 rules I can't check or had to guess\./);
   const three = [{ n: 1, text: 'Do', rule: 'a; b; c', rules: ['a', 'b', 'c'] }];
   const exactly = await doorWorld(three, { suggest: { checks: [] }, answer: () => 'drop it' });
@@ -224,10 +232,11 @@ test('no pickGenerate: nothing is suggested or asked (a test seam) and the draft
   if (!proved.ok) throw new Error('x');
   let seen = null;
   await forJob({ answers: { 1: '1. x' }, verdictType: 'soft-green', repoPath: proved.prep.tree, lang: RUBRIC_LANG, jobLines: JSON.parse(JSON.stringify(L2)), inputs: [{ n: 1, label: 'Changelog', value: file }], writeScope: ['output/'], provider: { fake: true }, ceilingUsd: 1,
-    lookFn: async () => ({ state: 'PRESENT', calls: [], raws: [], facts: { rubricFiles: true, inputs: [], look: { facts: [{ line: 1, forRule: 1 }, { line: 1, forRule: 2 }], prose: [], notFound: [] } } }),
+    lookFn: async () => ({ state: 'PRESENT', calls: [], raws: [], facts: { rubricFiles: true, inputs: [], look: { facts: [{ line: 1, forRule: 1, name: 'a', shape: 'phrase', source: 'Changelog', words: ['Unreleased'] }, { line: 1, forRule: 2, name: 'b', shape: 'phrase', source: 'Changelog', words: ['Unreleased'] }], prose: [], notFound: [] } } }),
     answerQuestions: async () => { throw new Error('asked'); }, generate: async () => { throw new Error('no'); },
     authorFn: async (o) => { seen = o; return { ok: false, stop: 'x', reds: [], cost: null, iterations: [], raws: [] }; } });
-  assert.equal(seen?.checkPicks, undefined);
+  assert.ok(seen.block, 'the draft gets the block');
+  assert.equal(seen.block.rows.some((r) => r.pick), false, 'and no picks');
 });
 
 test('the plan card: a pick is one `[you picked]` check row under its line (planFromConfirm), in the one table\'s plain words', async () => {

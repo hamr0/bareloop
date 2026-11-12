@@ -702,7 +702,7 @@ export async function authorCloseForJob({
   let carried = null;
   if (lang === RUBRIC_LANG && survey?.state === 'PRESENT' && Array.isArray(jobLines) && ledgerTexts) {
     const look = survey.facts?.look && typeof survey.facts.look === 'object' ? survey.facts.look : null;
-    block = new CheckBlock({ texts: ledgerTexts, labels: (Array.isArray(inputs) ? inputs : []).map((i) => i.label), asks: Boolean(answerQuestions), countScope: (t) => codeScope(inputs, t) === 'in' });
+    block = new CheckBlock({ texts: ledgerTexts, labels: (Array.isArray(inputs) ? inputs : []).map((i) => i.label), asks: Boolean(answerQuestions), countScope: (t) => Boolean(pickGenerate) && codeScope(inputs, t) === 'in' });
     block.fromJob(jobLines);
     block.addLook(Array.isArray(look?.facts) ? look.facts : [], Array.isArray(look?.dropped) ? look.dropped : []);
     /** the rules a count pick settles, as the record knows them (a scoped rule is a counting `~` rule code scopes in) */
@@ -756,7 +756,7 @@ export async function authorCloseForJob({
         // the asks go to the person whole (key, check, reading, counted, pairRule): normalizeQuestions keeps only a model's question fields and would drop the proposal an Agree button needs
         const shown = asks.map((a) => ({ ...a, question: redactSecrets(a.question) }));
         if (shown.length === 0) break;
-        onPhase(round === 0 ? 'look-ask' : 'check-ask', { questions: shown.length });
+        onPhase(shown.every((a) => a.ask === 'check' || a.ask === 'no-check') ? 'check-ask' : 'look-ask', { questions: shown.length });
         const updated = await answerQuestions({ questions: shown, dropped: [], confirmed: null });
         if (updated === null) return { ...base, interview, verdictType: picked, seedRef: seed, reds: [], stop: 'confirm-abandoned', cost: null };
         jobLines = updated.jobLines;

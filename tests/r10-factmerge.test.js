@@ -5,22 +5,19 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { validateDeclaration, classGuards, catalogueForLang, RUBRIC_LANG } from '../src/authoring.js';
-import { withFactBindings, withDropNotes, settlePersonsWords } from '../src/rubricstep.js';
-import { applyPicks, settleRules } from '../src/checkpick.js';
-import { REQUIRED_FACTS_BRIEF, renderRejectBlock } from '../src/authorflow.js';
+import { renderRejectBlock } from '../src/authorflow.js';
+import { CheckBlock } from '../src/checkblock.js';
 import { draftStopText } from '../src/authorreadout.js';
 
 const fx = (f) => readFileSync(new URL(`./fixtures/${f}`, import.meta.url), 'utf8');
 const { D5 } = JSON.parse(fx('r10-factmerge-refused.json'));
 const jobLines = [{ n: 1, text: 'Summarise the latest release in the changelog', rules: ['exactly 3 bullets', 'under 80 words', 'exactly 3 list items', 'at most 80 words'] }];
-const rules = [{ line: 1, rule: 1, text: 'exactly 3 bullets' }, { line: 1, rule: 2, text: 'under 80 words' }];
-const picks = [{ line: 1, rule: 1, check: { rule: 'listItems', value: 3 }, added: 'exactly 3 list items' }, { line: 1, rule: 2, check: { rule: 'maxWords', value: 80 }, added: 'at most 80 words' }];
-const settled = settleRules(rules, picks, [], jobLines);
 const opts = () => ({
   catalogue: catalogueForLang(RUBRIC_LANG), listing: ['input/CHANGELOG.md', 'output/.gitkeep'], guards: classGuards({ verdictType: 'soft-green', lang: RUBRIC_LANG }),
   envOwned: [], verdictType: 'soft-green', writeScope: ['output/'], jobLines, inputLabels: ['Changelog'],
 });
-const chain = (d) => validateDeclaration(withFactBindings(withDropNotes(settlePersonsWords(applyPicks(d, settled), jobLines), undefined, jobLines)), opts());
+// the validator alone (the draft gate stays as a second look on a code-built plan); an AI-written declaration with two fact parts can no longer reach it, but the red and its example are still the validator's own
+const chain = (d) => validateDeclaration(d, opts());
 const withParts = (d, parts) => ({ ...d, stages: d.stages.map((s) => (s.kind === 'rubric-step' ? { ...s, params: { ...s.params, parts } } : s)) });
 const twice = () => chain(D5).reds.filter((r) => r.code === 'rubric-fact-twice');
 
@@ -39,10 +36,9 @@ test('the rubric-fact-twice red carries a drafter-only example, and the example 
   assert.equal(part.facts.length, 2);
   assert.deepEqual(part.rules, [1]);
   assert.equal(part.count, undefined);
-  // the example, as the only part of the line, plus the person's two picks, passes the real draft gate
+  // the example, as the only part of the line, passes the real fact-part shape and word rules (the person's picks are the block's)
   const v = chain(withParts(D5, [part]));
-  assert.deepEqual(v.reds.map((x) => `${x.code} ${x.path}`), []);
-  assert.equal(v.ok, true);
+  assert.deepEqual(v.reds.filter((x) => /^rubric-fact/.test(x.code)).map((x) => `${x.code} ${x.path}`), []);
 });
 
 test('the person\'s stop text for a fact-twice refusal is plain words (no JSON); the drafter\'s retry note carries the example', () => {
@@ -56,20 +52,15 @@ test('the person\'s stop text for a fact-twice refusal is plain words (no JSON);
   assert.equal(JSON.parse(/(\{.*\})/.exec(note)[1]).facts.length, 2);
 });
 
-test('R3 d5 merged: one fact part with both facts, rules [1], no count min 3, plus the two picks passes the draft gate', () => {
-  const merged = { text: 'the release heading and the section words', class: 'fact', source: 'Changelog', rules: [1], facts: [
-    { name: 'release heading', shape: 'phrase', phrase: '## [0.54.1] - 2026-11-04' },
-    { name: 'section word', shape: 'phrase', phrase: '### Fixed' },
-  ] };
-  const v = chain(withParts(D5, [merged]));
-  assert.deepEqual(v.reds.map((x) => `${x.code} ${x.path}`), []);
-  assert.equal(v.ok, true);
-  const [st] = v.declaration.stages.filter((s) => s.kind === 'rubric-step');
-  assert.deepEqual(st.params.parts.map((p) => p.class + ':' + (p.check ?? '')), ['fact:', 'countable:listItems', 'countable:maxWords']);
-});
-
-test('the drafter brief says a rule-tied look fact goes inside the line\'s one fact part, and a picked count is not a count on it', () => {
-  assert.match(REQUIRED_FACTS_BRIEF, /A look fact that carries a ~ rule goes INSIDE the line's one fact part/);
-  assert.match(REQUIRED_FACTS_BRIEF, /never as a fact part of its own/);
-  assert.match(REQUIRED_FACTS_BRIEF, /A count of words, bullets or list items the person picked is a pick, not a "count" on the fact part/);
+test('R3 d5 on the block: a look fact that carries a ~ rule and a free fact are ONE fact part of the line (rule 1 carried, no count), and the two picks follow it as their own parts - never a second fact part', () => {
+  const TEXT = '## [0.54.1] - 2026-11-04\n### Fixed\n- one\n- two\n- three\n';
+  const b = new CheckBlock({ texts: { Changelog: TEXT }, labels: ['Changelog'], asks: false });
+  b.fromJob([{ n: 1, text: 'Summarise the latest release in the changelog', rules: ['exactly 3 bullets', 'under 80 words'] }]);
+  b.addLook([{ line: 1, name: 'release heading', shape: 'phrase', source: 'Changelog', words: ['## [0.54.1] - 2026-11-04'], forRule: 1 }, { line: 1, name: 'section word', shape: 'phrase', source: 'Changelog', words: ['### Fixed'] }]);
+  b.carry({ picks: [{ line: 1, rule: 1, check: { rule: 'listItems', value: 3 } }, { line: 1, rule: 2, check: { rule: 'maxWords', value: 80 } }] });
+  const c = b.reconcile();
+  const parts = c.stages.flatMap((st) => st.params.parts);
+  assert.equal(parts.filter((p) => p.class === 'fact').length, 1);
+  assert.deepEqual(parts.map((p) => p.class + ':' + (p.check ?? '')), ['fact:', 'countable:listItems', 'countable:maxWords']);
+  assert.equal(parts[0].count, undefined, 'a picked count is a pick, not a "count" on the fact part');
 });

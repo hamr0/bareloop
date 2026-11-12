@@ -201,3 +201,16 @@ test('a label the look dropped or never kept is not used by an add: Not checked 
   const typed = wordBlock([add({ name: 'time', shape: 'time', words: ['Leaves Boston at'] })], look);
   assert.match(String(typed.rows.find((r) => r.name === 'time')?.reason), /is not one of the labels the page words for "flights" kept/);
 });
+
+test('a missing source is filled by code when the job has exactly ONE input, and refused (never guessed) when it has two (ported from r10-sourcefill: fill/merge guards)', () => {
+  const one = made({ look: { facts: [] }, jobLines: [{ n: 1, text: 'Say it', rules: [] }] });
+  const r1 = one.applyDelta({ edits: [{ op: 'add', kind: 'phrase', line: 1, name: 'heading', words: ['### Fixed'] }] });
+  one.reconcile();
+  assert.equal(r1.edits[0].accepted, true);
+  assert.equal(one.closeCache.parts.find((p) => p.class === 'fact')?.source, 'Changelog');
+  const two = made({ look: { facts: [] }, jobLines: [{ n: 1, text: 'Say it', rules: [] }], texts: { Changelog: TEXT, Readme: 'readme' } });
+  const r2 = two.applyDelta({ edits: [{ op: 'add', kind: 'phrase', line: 1, name: 'heading', words: ['### Fixed'] }] });
+  assert.equal(r2.edits[0].accepted, false);
+  assert.match(r2.edits[0].refusedBecause, /names no input; the job has 2: "Changelog", "Readme"/);
+  assert.equal(two.rows.some((r) => r.kind === 'phrase'), false);
+});

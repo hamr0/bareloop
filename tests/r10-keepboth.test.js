@@ -6,22 +6,36 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { validateDeclaration, classGuards, catalogueForLang, RUBRIC_LANG, genreForLang } from '../src/authoring.js';
 import { validateCloseDecl } from '../src/declaredclose.js';
-import { withFactBindings, withDropNotes, settlePersonsWords, gradeStep, sha256Of, lineBriefs, stepFileContract, buildStepSpec } from '../src/rubricstep.js';
-import { applyPicks, settleRules } from '../src/checkpick.js';
+import { gradeStep, sha256Of, lineBriefs, stepFileContract, buildStepSpec } from '../src/rubricstep.js';
+import { CheckBlock } from '../src/checkblock.js';
 
 const fx = (f) => readFileSync(new URL(`./fixtures/${f}`, import.meta.url), 'utf8');
 const { D2, D3 } = JSON.parse(fx('r10-keepboth-refused.json'));
 const CHANGELOG = fx('r10-keepboth-changelog.md');
 const jobLines = [{ n: 1, text: 'Summarise the latest release in the changelog', rules: ['exactly 3 bullets', 'under 80 words', 'exactly 3 list items', 'at most 80 words'] }];
-const rules = [{ line: 1, rule: 1, text: 'exactly 3 bullets' }, { line: 1, rule: 2, text: 'under 80 words' }];
-const picks = [{ line: 1, rule: 1, check: { rule: 'listItems', value: 3 }, added: 'exactly 3 list items' }, { line: 1, rule: 2, check: { rule: 'maxWords', value: 80 }, added: 'at most 80 words' }];
-const settled = settleRules(rules, picks, [], jobLines);
+// the person's two picks, as the record carries them (a `maxWords` and a `listItems` on the line's two rules)
+const PICKS = [{ line: 1, rule: 1, check: { rule: 'listItems', value: 3 }, added: 'exactly 3 list items' }, { line: 1, rule: 2, check: { rule: 'maxWords', value: 80 }, added: 'at most 80 words' }];
 const opts = () => ({
   catalogue: catalogueForLang(RUBRIC_LANG), listing: ['input/CHANGELOG.md', 'output/.gitkeep'], guards: classGuards({ verdictType: 'soft-green', lang: RUBRIC_LANG }),
   envOwned: [], verdictType: 'soft-green', writeScope: ['output/'], jobLines, inputLabels: ['Changelog'],
 });
-/** the draft gate's chain, as authorflow runs it */
-const chain = (d, s = settled) => validateDeclaration(withFactBindings(withDropNotes(settlePersonsWords(applyPicks(d, s), jobLines), undefined, jobLines)), opts());
+/**
+ * The plan the check block builds from a saved draft's fact parts (they are the look's facts now) and the person's picks, through the draft gate: `picked` = which picks are settled (null = none).
+ * The AI writes no parts any more, so the declaration is the block's own; a `picks` record rides it as the signed gate reads it.
+ */
+const built = (/** @type {any} */ d, /** @type {any[]|null} */ picked = PICKS) => {
+  const facts = d.stages.filter((/** @type {any} */ s) => s.kind === 'rubric-step').flatMap((/** @type {any} */ s) => s.params.parts.filter((/** @type {any} */ p) => p.class === 'fact').flatMap((/** @type {any} */ p) => p.facts.map((/** @type {any} */ f) => ({ line: s.params.step, name: f.name, shape: f.shape, source: p.source, words: [f.phrase] }))));
+  const count = d.stages.filter((/** @type {any} */ s) => s.kind === 'rubric-step').flatMap((/** @type {any} */ s) => s.params.parts.filter((/** @type {any} */ p) => p.count).map((/** @type {any} */ p) => p.count))[0];
+  const b = new CheckBlock({ texts: { Changelog: CHANGELOG }, labels: ['Changelog'], asks: false });
+  b.fromJob([{ n: 1, text: 'Summarise the latest release in the changelog', rules: ['exactly 3 bullets', 'under 80 words', ...(picked ? ['exactly 3 list items', 'at most 80 words'] : [])] }]);
+  b.addLook(facts);
+  if (picked) b.carry({ picks: picked });
+  if (count) b.applyDelta({ edits: [{ op: 'add', kind: 'count', line: 1, ...count }] });
+  const c = b.reconcile();
+  const picks = c.map.flatMap((/** @type {any} */ m) => { const part = c.parts[m.part]; return part.class === 'countable' && Array.isArray(part.rules) ? [{ line: m.line, part }] : []; });
+  return { stages: [...classGuards({ verdictType: 'soft-green', lang: RUBRIC_LANG }).map((g) => ({ name: g.name, kind: g.kind, params: { ...g.params, allowPrefixes: ['output/'] } })), ...c.stages], ...(picks.length ? { picks } : {}), refused: b.rows.filter((r) => r.kind === 'rule' && r.state !== 'built').map((r) => ({ line: r.line, rule: r.rule, reason: String(r.reason) })) };
+};
+const chain = (/** @type {any} */ d, /** @type {any[]|null} */ picked = PICKS) => validateDeclaration(built(d, picked), opts());
 const codes = (v) => v.reds.map((r) => `${r.code} ${r.path}`);
 const withPart = (d, part) => ({ ...d, stages: d.stages.map((s) => (s.kind === 'rubric-step' ? { ...s, params: { ...s.params, parts: [...s.params.parts, part] } } : s)) });
 const stageOf = (v) => v.declaration.stages.filter((s) => s.kind === 'rubric-step');
@@ -39,28 +53,23 @@ for (const [name, d] of [['D2', D2], ['D3', D3]]) {
 }
 
 test('a drafter-written countable beside a fact stays red (no pick settled for the line)', () => {
-  const v = chain(withPart(D3, { text: 'under 80', class: 'countable', check: 'maxWords', value: 80, rules: [2] }), null); // no pick session: the drafter's part is its own
+  const v = validateDeclaration(withPart(built(D3, null), { text: 'under 80', class: 'countable', check: 'maxWords', value: 80, rules: [2] }), opts()); // no pick settled: a countable beside the fact is a forged one
   assert.equal(v.ok, false);
   assert.ok(codes(v).some((c) => c.startsWith('rubric-fact-text')), codes(v).join(' | '));
 });
 
-test('a drafter-written `picks` record is thrown away when no pick is settled: the forged countable stays red', () => {
-  const forged = { text: 'x', class: 'countable', check: 'maxWords', value: 5, rules: [1] };
-  const d = { ...withPart(D3, forged), picks: [{ line: 1, part: forged }] };
-  const v = chain(d, null);
-  assert.equal(v.ok, false);
-  assert.ok(codes(v).some((c) => c.startsWith('rubric-fact-text')));
-});
+// (deleted: "a drafter-written `picks` record is thrown away when no pick is settled" - the AI sends row edits, never a `picks` record, so a forged record is inexpressible; the signed gate tests below still refuse a forged count)
 
 test('a drafter-written `cited` countable beside a fact stays red even when picks are settled', () => {
-  const v = chain(withPart(D3, { text: 'c', class: 'countable', check: 'cited', source: 'Changelog', rules: [1] }));
+  const v = validateDeclaration(withPart(built(D3), { text: 'c', class: 'countable', check: 'cited', source: 'Changelog', rules: [1] }), opts());
   assert.equal(v.ok, false);
   assert.ok(codes(v).some((c) => c.startsWith('rubric-fact-text')));
 });
 
 test('a forged second stage on the fact line stays red, picks or not', () => {
   const second = { name: 'line-1-text', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts: [{ text: 'x', class: 'countable', check: 'maxWords', value: 5, rules: [2] }] } };
-  const v = chain({ ...D3, stages: [...D3.stages, second] });
+  const b3 = built(D3);
+  const v = validateDeclaration({ ...b3, stages: [...b3.stages, second] }, opts());
   assert.equal(v.ok, false);
   assert.ok(codes(v).some((c) => c.startsWith('rubric-step-twice')));
 });
@@ -123,7 +132,7 @@ for (const [name, d] of [['D2', D2], ['D3', D3]]) {
 }
 
 test('the floor: a fact line whose only pick is a maxWords and whose file has NO text is red, not green', async () => {
-  const [st] = stageOf(chain(D3, settleRules(rules, [picks[1]], [], jobLines)));
+  const [st] = stageOf(chain(D3, [PICKS[1]]));
   assert.ok(st.params.parts.some((p) => p.check === 'maxWords') && !st.params.parts.some((p) => p.check === 'listItems'));
   const bytes = JSON.stringify({ results: [{ quote: QUOTE.D3, values: {} }] });
   const g = await gradeStep({ params: st.params, bytes, outputBytes: bytes, inputs: { Changelog: CHANGELOG }, factQuotes: {}, factMissing: [] }, { Changelog: sha });

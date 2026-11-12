@@ -8,7 +8,7 @@ import { CheckBlock } from '../src/checkblock.js';
 import { checkRubricRules } from '../src/rubricstep.js';
 
 const fx = JSON.parse(readFileSync(new URL('./fixtures/look-tied-rule/rows.json', import.meta.url), 'utf8'));
-const PAGE = 'Flights\nBoston Logan International Airport\nFrom $389\nFrom $431\nFrom $512\n';
+const PAGE = 'Flights\nBoston Logan International Airport\nFrom $389 US dollars\nFrom $431 US dollars\nFrom $512 US dollars\n';
 /** the live look's two facts, back in the look's own shape (the saved rows plus the saved declaration's price fact) */
 const lookFacts = (/** @type {{reading?: any, forRule?: number}} */ o = {}) => [
   { line: 1, name: 'origin airport', shape: 'phrase', source: 'flights', words: ['Boston Logan International Airport'] },

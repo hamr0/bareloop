@@ -8,20 +8,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateDeclaration, classGuards, catalogueForLang, RUBRIC_LANG, genreForLang } from '../src/authoring.js';
-import { withFactBindings, withDropNotes, settlePersonsWords, checksOfClose, cardOfClose } from '../src/rubricstep.js';
-import { applyPicks, settleRules } from '../src/checkpick.js';
+import { checksOfClose, cardOfClose } from '../src/rubricstep.js';
+import { builtFrom } from './block-world.mjs';
 import { planFromSpec, planFromConfirm } from '../src/panel/jobplan.js';
 import { draftingPartFor, readDraftChecks, DRAFT_LOG_FILE } from '../src/draftspend.js';
 
 const { D3 } = JSON.parse(readFileSync(new URL('./fixtures/r10-keepboth-refused.json', import.meta.url), 'utf8'));
 const jobLines = [{ n: 1, text: 'Summarise the latest release in the changelog', rule: 'exactly 3 bullets; under 80 words', rules: ['exactly 3 bullets', 'under 80 words'] }];
-const rules = [{ line: 1, rule: 1, text: 'exactly 3 bullets' }, { line: 1, rule: 2, text: 'under 80 words' }];
-const picks = [{ line: 1, rule: 1, check: { rule: 'listItems', value: 3 }, added: 'exactly 3 list items' }, { line: 1, rule: 2, check: { rule: 'maxWords', value: 80 }, added: 'at most 80 words' }];
-const settled = settleRules(rules, picks, [], jobLines);
-const v = validateDeclaration(withFactBindings(withDropNotes(settlePersonsWords(applyPicks(D3, settled), jobLines), undefined, jobLines)), {
+const CHANGELOG = readFileSync(new URL('./fixtures/r10-keepboth-changelog.md', import.meta.url), 'utf8');
+const built = builtFrom(D3, CHANGELOG);
+const v = { ...validateDeclaration(built.declaration, {
   catalogue: catalogueForLang(RUBRIC_LANG), listing: ['input/CHANGELOG.md', 'output/.gitkeep'], guards: classGuards({ verdictType: 'soft-green', lang: RUBRIC_LANG }),
   envOwned: [], verdictType: 'soft-green', writeScope: ['output/'], jobLines, inputLabels: ['Changelog'],
-});
+}) };
 const closeDecl = { genre: genreForLang(RUBRIC_LANG), lang: RUBRIC_LANG, stages: v.declaration.stages, picks: v.declaration.picks, ...(v.declaration.notes ? { notes: v.declaration.notes } : {}) };
 const spec = { schema: 'job-v1', job: 'kb', goal: 'g', verdictType: 'soft-green', jobLines, closeDecl };
 
