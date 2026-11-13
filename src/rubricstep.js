@@ -790,7 +790,7 @@ export function checkRubricRules(stages, { jobLines = null, refused = null, red 
 /** a clock time as a person writes it: 7:00, 07:00, 7:00 AM, 11 PM is not matched (no minutes) */
 const CLOCK = '\\d{1,2}:\\d{2}(?:\\s?[AaPp][Mm])?';
 const TIME_RANGE_RE = new RegExp(`\\b(?:between|from)\\s+(${CLOCK})\\s+(?:and|to|-)\\s+(${CLOCK})`, 'i');
-const NEGATING_RE = /\b(?:not|no|never|outside|except|before|after|without)\b/i;
+export const NEGATING_RE = /\b(?:not|no|never|outside|except|before|after|without)\b/i;
 
 // The limit reader (hamr ruling A, 2026-11-12): when the look tied a money or time fact to a `~` rule but gave no limit, CODE reads the limit
 // from the person's own rule words. ONE amount or ONE range only; every other text is a plain reason (Not checked), never a wrong check.

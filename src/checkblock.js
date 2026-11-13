@@ -7,7 +7,7 @@
 import { countExact, countPhrase, checkFactWords, keptSetOf } from './factwords.js';
 import { isCountable, keepOrDrop, countCheck, partOfPick, plainWords, sameRuleWords } from './checkpick.js';
 import { dropRows } from './pagedropwords.js';
-import { boundInWords, rubricStepShapeReds, defaultCitedText, readLimit, holdsManyBounds } from './rubricstep.js';
+import { boundInWords, rubricStepShapeReds, defaultCitedText, readLimit, holdsManyBounds, NEGATING_RE } from './rubricstep.js';
 import { validReading } from './pagerules.js';
 import { weekOnly, weekTokens, WEEK_ONLY_WORDS, MAX_BANG } from './checklist.js';
 import { fitPlacePhrase } from './placerule.js';
@@ -30,6 +30,8 @@ const norm = (/** @type {unknown} */ t) => String(t ?? '').toLowerCase().replace
 const isRec = (/** @type {unknown} */ v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const proved = (/** @type {unknown} */ text, /** @type {unknown} */ w) => typeof text === 'string' && typeof w === 'string' && w.trim() !== '' && (countExact(text, w) > 0 || countPhrase(text, w) > 0);
 const cleanName = (/** @type {unknown} */ n) => String(n ?? '').replace(/[^A-Za-z _-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 64);
+/** does `text` hold `w` as whole words (case and spacing aside)? One reader for "its words appear in the job" */
+const inText = (/** @type {unknown} */ text, /** @type {unknown} */ w) => { const a = norm(w); return a !== '' && new RegExp(`(?<![\\p{L}\\p{N}])${a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'u').test(norm(text)); };
 const wordSet = (/** @type {unknown} */ t) => new Set(norm(t).match(/[\p{L}\p{N}]+/gu) ?? []);
 
 /** the plain reasons code gives, in one place (the card, the Job tab and the Audit read them from the row) */
@@ -47,6 +49,7 @@ export const REASON = Object.freeze({
   lookNoWords: "the page does not hold the words of the look's fact for this rule",
   afterLast: 'no more tries: Start over (rows are never changed by the AI after the last try)',
   noPick: 'No check was picked for it, so you judge it at Accept.',
+  negated: 'it says what is not needed, so there is nothing to check',
 });
 
 /** the card lines: rows in, lines out. ONE pure function of the rows; nothing else may feed it. @param {Row[]} rows */
@@ -182,7 +185,11 @@ export class CheckBlock {
 
   matchRule(/** @type {Row} */ r) {
     if (isCountable(r.text)) { this.matchCountRule(r); return; }
-    const links = (r.links ?? []).filter((/** @type {any} */ l) => l.words.some((/** @type {string} */ w) => proved(this.textOf(l.source), w)));
+    // F-a (hamr 2026-11-13): a rule that carries a negation ("nonstop is not mandatory") says what is NOT needed; its words can never give a phrase bound ("must say"). The one negation reader is NEGATING_RE.
+    const negated = NEGATING_RE.test(r.text);
+    const isPhrase = (/** @type {any} */ l) => l.shape === 'phrase' || l.shape === 'place';
+    if (negated && (r.links ?? []).length && (r.links ?? []).every(isPhrase)) { r.can = { ok: false, why: REASON.negated }; return; }
+    const links = (r.links ?? []).filter((/** @type {any} */ l) => !(negated && isPhrase(l)) && l.words.some((/** @type {string} */ w) => proved(this.textOf(l.source), w)));
     const said = this.said(r.line);
     let ownWhy = null;
     for (const l of links) {
@@ -240,6 +247,9 @@ export class CheckBlock {
     const w = (r.words ?? []).filter((/** @type {unknown} */ x) => typeof x === 'string' && x.trim());
     const provedWords = w.filter((/** @type {string} */ x) => proved(text, x));
     if (provedWords.length === 0) { r.can = { ok: false, why: `the words ${w.map((/** @type {string} */ x) => `"${x}"`).join(', ') || '(none)'} are not in the input` }; return; }
+    // F-a: a `!` row whose words are in a rule that says what is NOT needed is refused alone, naming the rule
+    const no = this.ruleRows(r.line).find((x) => NEGATING_RE.test(x.text) && provedWords.some((/** @type {string} */ p) => inText(x.text, p)));
+    if (no) { r.can = { ok: false, why: `your rule ${no.rule} says it is not needed` }; return; }
     if (provedWords.some(weekOnly)) {
       if (r.shape !== 'phrase' && r.kind !== 'phrase') { r.can = { ok: false, why: WEEK_ONLY_WORDS }; return; }
       // every week-only word must fit a place rule (else Not checked, as before); the fact is built from the first one, like a `!` row's first proved word
