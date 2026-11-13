@@ -105,7 +105,7 @@ export const DECLARED_GENRES = Object.freeze([TYPES_GENRE.name, TEXT_GENRE]);
 export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes', 'refused', 'guardLines', 'picks', 'list', 'genreEnv', 'calibration']);
 
 /** the fields of a row of the one check list that the signed close carries (`closeDecl.list`); the row's own words are never signed */
-export const SIGNED_ROW_FIELDS = Object.freeze(['line', 'key', 'from', 'by', 'kind', 'state', 'rule', 'part', 'reason']);
+export const SIGNED_ROW_FIELDS = Object.freeze(['line', 'key', 'from', 'by', 'kind', 'state', 'rule', 'part', 'reason', 'facts']);
 /** the states a signed row may end in */
 export const SIGNED_STATES = Object.freeze(['built', 'not-checked', 'dropped']);
 const SIGNED_FROM = Object.freeze(['rule', 'pick', 'look', 'agent', 'default']);
@@ -346,6 +346,7 @@ export function validateCloseDecl(closeDecl, opts = {}) {
         if (row.rule !== undefined && !Number.isInteger(row.rule)) red('invalid-value', `${w}.rule`, 'the ~ rule number');
         if (row.part !== undefined && !(isObj(row.part) && Number.isInteger(row.part.line) && Number.isInteger(row.part.part))) red('invalid-value', `${w}.part`, '{ line, part }: the job line and the index of the part that carries the row');
         if (row.reason !== undefined && typeof row.reason !== 'string') red('invalid-value', `${w}.reason`, 'plain words');
+        if (row.facts !== undefined && !(Array.isArray(row.facts) && row.facts.every((/** @type {unknown} */ x) => typeof x === 'string'))) red('invalid-value', `${w}.facts`, 'the names of the facts the row built, an array of strings');
       });
     }
   }

@@ -26,14 +26,14 @@ export function readDraft(which) {
   };
 }
 
-/** the block of a draft, built in the order authorjob builds it: job, look, the ledger-suggest adds, reconcile @param {'A'|'B'} which @param {{asks?: boolean, extra?: any[], untie?: string}} [o] */
-export async function draftBlock(which, { asks = false, extra, untie = '' } = {}) {
+/** the block of a draft, built in the order authorjob builds it: job, look, the ledger-suggest adds, reconcile @param {'A'|'B'} which @param {{asks?: boolean, extra?: any[], untie?: string, split?: boolean}} [o] */
+export async function draftBlock(which, { asks = false, extra, untie = '', split = true } = {}) {
   const d = readDraft(which);
   const map = await runPageMap({
     texts: { flights: d.page }, inputs: [{ n: 1, label: 'flights' }], jobLines: d.jobLines, sleep: async () => {}, onCall: () => {},
     provider: { async generate() { return reply({ text: d.raw, costUsd: 0.001 }); } },
   });
-  const block = new CheckBlock({ texts: { flights: d.page }, labels: ['flights'], asks });
+  const block = new CheckBlock({ texts: { flights: d.page }, labels: ['flights'], asks, split });
   block.fromJob(d.jobLines);
   block.addLook(untie ? map.facts.look.facts.map((/** @type {any} */ f) => { if (f.name !== untie) return f; const { forRule, ...rest } = f; return rest; }) : map.facts.look.facts, map.facts.look.dropped);
   block.reconcile();

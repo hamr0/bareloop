@@ -13,6 +13,7 @@ import { weekOnly, weekTokens, WEEK_ONLY_WORDS, MAX_BANG } from './checklist.js'
 import { fitPlacePhrase } from './placerule.js';
 import { ruleWords } from './facts.js';
 import { SIGNED_ROW_FIELDS } from './declaredclose.js';
+import { factSentence, countSentence } from './facts.js';
 
 /**
  * A row. `kind`: rule, fact, phrase, count, cited, numbers, floor. `by`: you (`~`), agent (`!`), default (`$`). A `~` row may carry `links` (the look's facts tied to it),
@@ -50,11 +51,13 @@ export const REASON = Object.freeze({
   afterLast: 'no more tries: Start over (rows are never changed by the AI after the last try)',
   noPick: 'No check was picked for it, so you judge it at Accept.',
   negated: 'it says what is not needed, so there is nothing to check',
+  dropped: 'You dropped it.',
+  suggested: 'Suggested: not in your job, so it is not checked unless you add it.',
 });
 
 /** the card lines: rows in, lines out. ONE pure function of the rows; nothing else may feed it. @param {Row[]} rows */
 export function renderCard(rows) {
-  return rows.filter((r) => r.kind !== 'floor').map((r) => {
+  return rows.filter((r) => r.kind !== 'floor' && r.state !== 'suggested' && r.state !== 'dropped' && !r.hidden).map((r) => {
     let body;
     if (r.kind === 'rule') body = `"${r.text}"${r.pick ? ` -> ${plainWords(r.pick)}` : ''}${r.agreedText ? ` (${CARD_T.agreed} ${r.agreedText})` : ''}`;
     else if (r.kind === 'count') body = `${CARD_T.count} ${r.min ?? ''}-${r.max ?? ''}`;
@@ -78,8 +81,10 @@ function placeFacts(name, strips, mk) {
 }
 
 export class CheckBlock {
-  /** @param {{texts: Record<string, string>, labels: string[], maxTries?: number, countScope?: (ruleText: string) => boolean, asks?: boolean}} o the frozen input texts, their labels, how many AI replies (tries) may still change a row, whether code scopes a counting `~` rule in (a pick is asked), and whether a person can be asked at all (`asks`: false = a rule code cannot settle is Not checked, a reading code proposes is built as the AI's proposal) */
-  constructor({ texts, labels, maxTries = 3, countScope = () => true, asks = true }) {
+  /** @param {{texts: Record<string, string>, labels: string[], maxTries?: number, countScope?: (ruleText: string) => boolean, asks?: boolean, split?: boolean}} o the frozen input texts, their labels, how many AI replies (tries) may still change a row, whether code scopes a counting `~` rule in (a pick is asked), and whether a person can be asked at all (`asks`: false = a rule code cannot settle is Not checked, a reading code proposes is built as the AI's proposal) */
+  constructor({ texts, labels, maxTries = 3, countScope = () => true, asks = true, split = false }) {
+    /** the product path sets it: `!` rows split into job-derived and suggested, a suggestion code cannot build is hidden (hamr 2026-11-13). Off, every `!` row is built as before (the older callers and their tests) */
+    this.split = split;
     this.countScope = countScope;
     this.asks = asks;
     this.texts = texts;
@@ -168,6 +173,25 @@ export class CheckBlock {
       else if (r.kind === 'fact' || r.kind === 'phrase') this.matchBang(r);
       else if (r.kind === 'count') this.matchCount(r);
     }
+    // N-1 (hamr 2026-11-13): code splits the `!` rows. Words (or the count number) in the job line or its ~ rules = JOB-DERIVED (built, Drop). Not in the job = SUGGESTED: held out of the close, offered
+    // only when code has already proved it can build it (build() trials it), and switched on by the person's Add. The person's Drop removes a row for good. Never the AI.
+    for (const r of this.split ? this.rows : []) {
+      r.derived = undefined; r.held = false;
+      if (!this.isBang(r)) continue;
+      r.derived = this.inJob(r);
+      if (r.choice === 'drop') r.can = { ok: false, why: REASON.dropped, dropped: true };
+      else if (r.can?.ok && !r.derived && r.choice !== 'add') r.held = true;
+    }
+  }
+
+  /** a `!` row: the agent's fact, phrase or count (a look fact tied to a rule is a link on that rule's row, never a row of its own) */
+  isBang(/** @type {Row} */ r) { return r.by === 'agent' && (r.kind === 'fact' || r.kind === 'phrase' || r.kind === 'count') && !r.parent; }
+
+  /** are the row's words (or its count number) in the job line or its `~` rules? Normalised, case-insensitive */
+  inJob(/** @type {Row} */ r) {
+    const said = this.said(r.line);
+    if (r.kind === 'count') return [r.min, r.max].filter((x) => Number.isInteger(x)).some((n) => new RegExp(`(?<![\\d.])${n}(?![\\d.])`).test(said));
+    return (r.words ?? []).some((/** @type {string} */ w) => inText(said, w));
   }
 
   /** a `~` line an agreed answer wrote (or a carried pair partner) is checked by the rule it was agreed from: one check, both numbers */
@@ -278,8 +302,33 @@ export class CheckBlock {
         parts.push(p);
       });
     }
+    // a suggestion code has not built stays off the card (Audit only, F-b); a held one is trialled: shown under Suggested only when code has proved it builds (hamr 2026-11-13)
+    for (const r of this.rows.filter((x) => x.held)) this.trialOffer(r);
+    if (this.split) for (const r of this.rows) r.hidden = this.isBang(r) && r.state === 'not-checked' && !r.lookWhy;
     this.closeCache = { stages, parts, map };
     return this.closeCache;
+  }
+
+  /** build the line as if this held row were on: when it builds, `offer` is the row as the card would draw it; else the row is hidden with code's reason. The rows' own state is restored */
+  trialOffer(/** @type {Row} */ r) {
+    const l = this.lines.find((x) => x.n === r.line);
+    if (!l) return;
+    const mine = this.rowsOn(r.line);
+    const snap = mine.map((x) => ({ x, state: x.state, reason: x.reason, part: x.part, factNames: x.factNames }));
+    r.held = false;
+    /** @type {any[]} */ const parts = [];
+    /** @type {string[][]} */ const rows = [];
+    this.buildLine(l, parts, rows, new Set());
+    const ok = r.state === 'built';
+    const reason = r.reason;
+    const i = rows.findIndex((k) => k.includes(r.key));
+    const part = i >= 0 ? parts[i] : null;
+    const names = r.factNames ?? [];
+    const text = !ok || !part ? null : r.kind === 'count' ? countSentence(part) : (part.facts ?? []).filter((/** @type {any} */ f) => names.includes(f.name)).map((/** @type {any} */ f) => factSentence(f, part.source)).join('; ');
+    for (const a of snap) { a.x.state = a.state; a.x.reason = a.reason; a.x.part = a.part; a.x.factNames = a.factNames; }
+    r.held = true;
+    if (ok && text) r.offer = { text };
+    else { r.offer = null; r.held = false; r.state = 'not-checked'; r.reason = String(reason ?? 'not checked'); }
   }
 
   /** one line's parts: a pick part per count rule, ONE fact part carrying every fact row of the line (and its result count), then the `$` defaults */
@@ -294,7 +343,9 @@ export class CheckBlock {
       if (r.kind === 'floor') continue;
       r.part = null;
       if (r.parent) continue; // a follow row copies its parent's end state after the line is built
+      if (r.can?.dropped) { r.state = 'dropped'; r.reason = REASON.dropped; continue; }
       if (!r.can?.ok) { r.state = 'not-checked'; r.reason = r.can?.why ?? 'not checked'; continue; }
+      if (r.held) { r.state = 'suggested'; r.reason = REASON.suggested; continue; }
       if (r.can.how === 'pick') {
         const p = partOfPick(r.pick, r.text, [r.rule, ...this.followsOf(r).map((/** @type {Row} */ f) => f.rule)]);
         const reds = rubricStepShapeReds({ step: l.n, parts: [p] }, 'trial');
@@ -306,6 +357,7 @@ export class CheckBlock {
       const built = this.factsOf(r, facts);
       if ('why' in built) { r.state = 'not-checked'; r.reason = `code could not build a legal check from it: ${built.why}`; continue; }
       facts.push(...built.fresh);
+      r.factNames = built.names;
       factRows.push({ r, src: built.src });
       if (r.kind === 'rule') rulesCarried.push(r.rule, ...this.followsOf(r).map((/** @type {Row} */ f) => f.rule));
       r.state = 'built'; r.reason = null;
@@ -333,7 +385,7 @@ export class CheckBlock {
 
   /**
    * The fact(s) a fact-like row builds, checked alone through the bareguard shapes and against the facts already on the line.
-   * @param {Row} r @param {any[]} onLine the facts already built on this line @returns {{fresh: any[], src: string} | {why: string}}
+   * @param {Row} r @param {any[]} onLine the facts already built on this line @returns {{fresh: any[], src: string, names: string[]} | {why: string}}
    */
   factsOf(r, onLine) {
     const base = r.kind === 'rule' ? r.can.link : r;
@@ -353,6 +405,7 @@ export class CheckBlock {
     else if (r.shape === 'phrase' || r.kind === 'phrase') fs = [mk(r.name ?? `phrase ${r.words[0]}`, { shape: 'phrase', phrase: r.can.word })];
     else fs = [kindFields(r, r.can.word, {})];
     const fresh = [];
+    const names = fs.map((f) => f.name);
     for (const f of fs) {
       const reds = rubricStepShapeReds({ step: r.line, parts: [{ text: 'trial', class: 'fact', source: src, facts: [f] }] }, 'trial');
       if (reds.length) return { why: String(reds[0]?.detail) };
@@ -366,7 +419,7 @@ export class CheckBlock {
       if (same) return { why: `the name "${f.name}" is used twice on this line` };
       fresh.push(f);
     }
-    return { fresh, src };
+    return { fresh, src, names };
   }
 
   /** the `$` defaults of a line, decided from what the line ended with: a text line quotes its input (one input only) and ties its numbers to the fact lines before it */
@@ -625,9 +678,66 @@ export class CheckBlock {
   /** the standing ruling "a run needs one check": one row that is not the floor is built */
   hasBuiltCheck() { return this.rows.some((r) => r.state === 'built' && r.kind !== 'floor'); }
 
-  /** the signed list (`closeDecl.list`): the signed fields of every row, never its words */
+  /**
+   * The signed list (`closeDecl.list`): the signed fields of every row, never its words. A suggestion not added is signed `dropped` ("suggested, not added"), a suggestion code could not build
+   * `dropped` with code's reason (it is on the Audit, never on the card), and a built row carries the names of the facts it made (`facts`), so every reader can tag each fact by its row's kind.
+   */
   signedRows() {
-    return this.rows.map((r) => Object.fromEntries(SIGNED_ROW_FIELDS.filter((f) => r[f] !== undefined && r[f] !== null).map((f) => [f, r[f]])));
+    return this.rows.map((r) => {
+      const gone = r.state === 'suggested' || r.hidden === true;
+      const row = { ...r, ...(gone ? { state: 'dropped' } : {}), ...(r.state === 'built' && r.factNames?.length ? { facts: r.factNames } : {}) };
+      return Object.fromEntries(SIGNED_ROW_FIELDS.filter((f) => row[f] !== undefined && row[f] !== null).map((f) => [f, row[f]]));
+    });
+  }
+
+  /** the suggestions code has proved it can build, as the card offers them (Add): `{key, line, text}` */
+  suggestedView() {
+    return this.rows.filter((r) => r.state === 'suggested' && r.offer?.text).map((r) => ({ key: r.key, line: r.line, text: String(r.offer.text) }));
+  }
+
+  /** the suggestions code could not build, in one plain sentence each: the Audit's draft lines (never the card) */
+  unbuiltSuggestions() {
+    return this.rows.filter((r) => r.hidden === true).map((r) => ({
+      line: r.line, text: `A suggested check was not built (${r.kind} ${(r.words ?? []).length ? (r.words ?? []).map((/** @type {string} */ w) => `"${w}"`).join(', ') : `"${r.name ?? ''}"`}): ${String(r.reason ?? 'not checked').replace(/^code could not build a legal check from it: /, '').replace(/\s*Nothing was signed\.\s*$/, '')}`,
+    }));
+  }
+
+  /**
+   * The person's Drop or Add on a `!` row (hamr 2026-11-13: instant, $0, no AI; the choice decides). The whole list is reconciled again, so an Add is judged by code like every other row.
+   * @param {string} key @param {'drop'|'add'} choice @returns {{ok: true} | {ok: false, why: string}}
+   */
+  rowChoice(key, choice) {
+    const r = this.rows.find((x) => x.key === key);
+    if (!r) return { ok: false, why: 'there is no such check on the list' };
+    if (r.by === 'you') return { ok: false, why: 'that check comes from a rule you wrote; edit the job to change it' };
+    if (r.by !== 'agent' || !this.isBang(r)) return { ok: false, why: 'that check is code\'s own and stays' };
+    if (choice !== 'drop' && choice !== 'add') return { ok: false, why: 'not one of the choices' };
+    if (choice === 'drop' && r.state !== 'built') return { ok: false, why: 'only a check that is on the card can be dropped' };
+    if (choice === 'add' && r.state !== 'suggested') return { ok: false, why: 'only a suggested check can be added' };
+    const before = r.choice;
+    r.choice = choice;
+    this.reconcile();
+    if (choice === 'add' && r.state !== 'built') { const why = String(r.reason ?? 'not checked'); r.choice = before; this.reconcile(); return { ok: false, why }; }
+    return { ok: true };
+  }
+
+  /** the person's Drop/Add choices, tied to the line's words (not its number) and the row's own name, so a Revise keeps them @returns {{lineWords: string, occurrence: number, tail: string, choice: string}[]} */
+  choicesRecord() {
+    const seen = new Map();
+    const key = new Map(this.lines.map((l) => { const w = norm(l.text); const o = seen.get(w) ?? 0; seen.set(w, o + 1); return [l.n, { lineWords: w, occurrence: o }]; }));
+    return this.rows.filter((r) => r.choice === 'drop' || r.choice === 'add').map((r) => ({ ...(key.get(r.line) ?? { lineWords: '', occurrence: 0 }), tail: r.key.replace(/^L\d+\./, ''), choice: String(r.choice) }));
+  }
+
+  /** a Revise keeps the last draft's Drop/Add choices on the rows that are still there (same line words, same row); code still judges every one @param {{lineWords: string, occurrence: number, tail: string, choice: string}[]} rec */
+  carryChoices(rec) {
+    const seen = new Map();
+    const lines = this.lines.map((l) => { const w = norm(l.text); const o = seen.get(w) ?? 0; seen.set(w, o + 1); return { n: l.n, w, o }; });
+    for (const c of Array.isArray(rec) ? rec : []) {
+      if (!c || (c.choice !== 'drop' && c.choice !== 'add')) continue;
+      const line = lines.find((l) => l.w === c.lineWords && l.o === c.occurrence);
+      const r = line ? this.rows.find((x) => x.line === line.n && this.isBang(x) && x.key.replace(/^L\d+\./, '') === c.tail) : undefined;
+      if (r) { r.choice = c.choice; r.keptFromLast = true; }
+    }
   }
 
   /**

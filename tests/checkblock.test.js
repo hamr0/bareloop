@@ -266,7 +266,7 @@ test('signedRows carries only the signed fields (never words), each row built or
   const rows = b.signedRows();
   assert.equal(rows.length, b.rows.length);
   for (const r of rows) {
-    assert.deepEqual(Object.keys(r).filter((k) => !['line', 'key', 'from', 'by', 'kind', 'state', 'rule', 'part', 'reason'].includes(k)), []);
+    assert.deepEqual(Object.keys(r).filter((k) => !['line', 'key', 'from', 'by', 'kind', 'state', 'rule', 'part', 'reason', 'facts'].includes(k)), []);
     assert.ok(r.state === 'built' || r.state === 'not-checked');
   }
   const built = rows.filter((r) => r.state === 'built' && r.kind !== 'floor');
