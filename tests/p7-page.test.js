@@ -16,7 +16,7 @@ function fnSrc(name) {
 }
 const escapeXml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 // eslint-disable-next-line no-new-func
-const renderJobPlan = new Function('escapeXml', `${fnSrc('renderJobPlan')}\nreturn renderJobPlan;`)(escapeXml);
+const renderJobPlan = new Function('escapeXml', `${fnSrc('byTagOf')}\n${fnSrc('renderJobPlan')}\nreturn renderJobPlan;`)(escapeXml);
 
 const PLAN = {
   lines: [
@@ -25,6 +25,16 @@ const PLAN = {
   ],
   loose: [{ name: 'stray', cls: null }], notChecked: ['looks nice'], alwaysOn: ['no-suppressions', 'changed-from-seed'], older: false,
 };
+
+test('renderJobPlan: the legend shows only when the plan has a › check row', () => {
+  const none = renderJobPlan({ lines: [{ n: 1, text: 'Do it', rule: '', checks: [], refused: [] }], loose: [], notChecked: [], alwaysOn: [], older: false });
+  assert.doesNotMatch(none, /jp-legend/, 'a goal-only plan has no › rows, so no legend');
+  assert.match(renderJobPlan(PLAN), /jp-legend/);
+  const loose = renderJobPlan({ lines: [], loose: [{ name: 'x', cls: null }], older: false });
+  assert.match(loose, /jp-legend/, 'an other-checks row counts');
+  const always = renderJobPlan({ lines: [{ n: 1, text: 'a', checks: [], always: ['g'] }], loose: [], older: false });
+  assert.match(always, /jp-legend/, 'an always-on row under a line counts');
+});
 
 test('renderJobPlan: legend, numbered lines with their rule, checks as "check · name · class", the two folds with their counts; every text escaped', () => {
   const h = renderJobPlan(PLAN);
@@ -35,7 +45,7 @@ test('renderJobPlan: legend, numbered lines with their rule, checks as "check ·
   assert.match(h, /check · sorted · machine check/);
   assert.match(h, /check · stray</, 'a check with no class shows no class');
   assert.match(h, /not checked · no command can check the layout/);
-  assert.match(h, /<details[^>]*data-testid="plan-notchecked"><summary>Not checked \(the AI's own reading\) · 1</);
+  assert.match(h, /<details[^>]*data-testid="plan-notchecked"><summary>Not checked · 1</);
   assert.match(h, /<details[^>]*data-testid="plan-alwayson"><summary>Always checked · 2</);
   assert.doesNotMatch(h, /plan-older/);
   assert.doesNotMatch(h, /<script|<input|<button/i);
@@ -51,7 +61,7 @@ test('renderJobPlan: a line covered by an always-on guard shows "check · always
 
 test('renderJobPlan: "How the page was read" is its own fold right after Not checked, counted apart, same markup; none = no fold', () => {
   const h = renderJobPlan({ ...PLAN, readNotes: ['line 1: "price" \u2014 "from" was not used.', 'second <note>'] });
-  assert.match(h, /<details[^>]*data-testid="plan-notchecked"><summary>Not checked \(the AI's own reading\) · 1</, 'the notes are not in the Not checked count');
+  assert.match(h, /<details[^>]*data-testid="plan-notchecked"><summary>Not checked · 1</, 'the notes are not in the Not checked count');
   assert.match(h, /<details class="fold" data-testid="plan-readnotes"><summary>How the page was read · 2<\/summary><ul><li>line 1/);
   assert.match(h, /second &lt;note&gt;/);
   assert.ok(h.indexOf('plan-notchecked') < h.indexOf('plan-readnotes') && h.indexOf('plan-readnotes') < h.indexOf('plan-alwayson'));
@@ -75,7 +85,7 @@ test('renderJobPlan: an older job says its numbered lines were not saved; empty 
 
 test('ONE renderer: the chat plan bubble and the Job tab both call renderJobPlan (no second drawing of the plan)', () => {
   assert.equal((PAGE.match(/function renderJobPlan\(/g) || []).length, 1);
-  assert.match(fnSrc('renderMessages'), /renderJobPlan\(m\.plan\)/);
+  assert.match(fnSrc('renderMessages'), /renderJobPlan\(m\.plan, /);
   assert.match(fnSrc('renderJob'), /renderJobPlan\(plan\)/);
   assert.match(fnSrc('renderMessages'), /m\.kind === "plan"/);
 });

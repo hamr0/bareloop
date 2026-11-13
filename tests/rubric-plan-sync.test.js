@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { runStage } from '../src/kinds.js';
 import { proveRubricInputs } from '../src/source.js';
 import {
-  reconcileRubricPlan, planMatchesClose, checksOfClose, partSentence, rubricStepShapeReds, stepFileRel,
+  cardOfClose, planMatchesClose, checksOfClose, partSentence, rubricStepShapeReds, stepFileRel,
 } from '../src/rubricstep.js';
 import { confirmedBlock } from '../src/authorflow.js';
 import { createSession } from '../src/panel/authorsession.js';
@@ -48,42 +48,26 @@ test('the real signed close of mv5bk400 has no check that counts releases — th
   assert.ok(JSON.stringify(REAL.closeDecl.notes).includes('lists 3 releases'), 'it went to the free-text notes, which no card shows');
 });
 
-test('(b) reconcile: with the real mv5bk400 close, a confirmed check no part covers is MOVED to Not checked in the person\'s words, and the card lists only what the close runs', () => {
-  const closeDecl = clone(REAL.closeDecl);
-  // the composer says which confirmed checks its parts carry out: #1, #2 and #4 — not #3
-  closeDecl.stages[1].params.parts[1].covers = [1];
-  closeDecl.stages[1].params.parts[0].covers = [2];
-  closeDecl.stages[2].params.parts[0].covers = [4];
-  const rec = reconcileRubricPlan({ confirmed: CONFIRMED, notChecked: ['be friendly'], closeDecl });
+test('(b) cardOfClose: with the real mv5bk400 close, the card lists only what the close runs, and Not checked is the close\'s own notes (where "lists 3 releases" went) plus the prose steps - nothing is merged in from the confirm turn', () => {
+  const rec = cardOfClose({ closeDecl: clone(REAL.closeDecl) });
   assert.deepEqual(rec.checkItems, [
     { text: 'every claim is backed by a quote copied from "Changelog"', fromLine: [1], by: 'agent' },
     { text: 'the text is at most 120 words', fromLine: [1], by: 'agent' },
     { text: 'the text is at most 80 words', fromLine: [2], by: 'agent' },
   ]);
-  assert.deepEqual(rec.moved.map((m) => m.text), ['output/steps/1.json lists 3 releases']);
-  assert.deepEqual(rec.notChecked, ['be friendly', ...TEXT_NOT_CHECKED, 'line 1: output/steps/1.json lists 3 releases — nothing in this close counts it or checks it against a quote']);
-  // and the card and the close agree
-  assert.deepEqual(planMatchesClose(rec.checkItems, closeDecl), { ok: true });
-});
-
-test('(b) a composer that says nothing about covers drops NOTHING silently: every confirmed check lands in Not checked', () => {
-  const rec = reconcileRubricPlan({ confirmed: CONFIRMED, notChecked: [], closeDecl: clone(REAL.closeDecl) });
-  assert.equal(rec.moved.length, 4);
-  assert.equal(rec.notChecked.length, 6, 'the 4 moved checks and the two prose steps\' "what the text says"');
-  assert.ok(rec.notChecked.some((n) => n.includes('lists 3 releases')));
+  for (const t of TEXT_NOT_CHECKED) assert.ok(rec.notChecked.includes(t), t);
+  assert.ok(rec.notChecked.some((n) => n.includes('lists 3 releases')), 'the check the composer left out of the stages is on the card now, not hidden in notes');
   assert.ok(rec.checkItems.every((c) => !c.text.includes('releases')));
+  // and the card and the close agree
+  assert.deepEqual(planMatchesClose(rec.checkItems, REAL.closeDecl), { ok: true });
 });
 
 test('(a) "lists 3 releases" becomes a REAL check: a minClaims part counts the claims under the input, and the card shows it as a check, not as Not checked', async () => {
   const closeDecl = clone(REAL.closeDecl);
-  closeDecl.stages[1].params.parts.push({ text: 'lists 3 releases', class: 'countable', check: 'minClaims', source: 'Changelog', value: 3, covers: [3] });
-  closeDecl.stages[1].params.parts[1].covers = [1];
-  closeDecl.stages[1].params.parts[0].covers = [2];
-  closeDecl.stages[2].params.parts[0].covers = [4];
-  const rec = reconcileRubricPlan({ confirmed: CONFIRMED, notChecked: [], closeDecl });
-  assert.deepEqual(rec.moved, []);
+  closeDecl.stages[1].params.parts.push({ text: 'lists 3 releases', class: 'countable', check: 'minClaims', source: 'Changelog', value: 3 });
+  const rec = cardOfClose({ closeDecl });
   assert.ok(rec.checkItems.some((c) => c.text === 'at least 3 claim(s) are listed under "Changelog"' && c.fromLine[0] === 1));
-  assert.deepEqual(rec.notChecked, TEXT_NOT_CHECKED, 'only the prose steps\' own Not-checked lines');
+  for (const t of TEXT_NOT_CHECKED) assert.ok(rec.notChecked.includes(t), t);
   assert.equal(partSentence({ check: 'maxClaims', source: 'Changelog', value: 5 }), 'at most 5 claim(s) are listed under "Changelog"');
 });
 
@@ -119,14 +103,12 @@ test('(a) minClaims / maxClaims at run time: the CODE counts the list, bareguard
   assert.equal((await runStage(max2, ctx)).verdict, 'green');
 });
 
-test('the shape: minClaims needs value and source; covers is distinct integers; the prompt numbers the confirmed checks so a part can cite them', () => {
+test('the shape: minClaims needs value and source; a legacy `covers` on a saved part is still read as distinct integers (the drafter is no longer offered it)', () => {
   const bad = (parts) => rubricStepShapeReds({ step: 1, parts }, 'p').map((r) => r.path);
   assert.deepEqual(bad([{ text: 'x', class: 'countable', check: 'minClaims', value: 3 }]), ['p.parts[0].source']);
   assert.deepEqual(bad([{ text: 'x', class: 'countable', check: 'minClaims', source: 'C' }]), ['p.parts[0].value']);
   assert.deepEqual(bad([{ text: 'x', class: 'countable', check: 'minClaims', source: 'C', value: 3, covers: [1, 1] }]), ['p.parts[0].covers']);
   assert.deepEqual(bad([{ text: 'x', class: 'countable', check: 'minClaims', source: 'C', value: 3, covers: [3] }]), []);
-  const block = confirmedBlock({ checks: [], checkItems: CONFIRMED, protections: [] }, { numbered: true });
-  assert.match(block, /#3 \[line 1\] output\/steps\/1\.json lists 3 releases/);
   assert.doesNotMatch(confirmedBlock({ checks: [], checkItems: CONFIRMED, protections: [] }), /#3/);
 });
 
@@ -173,14 +155,11 @@ function keysHome() {
 }
 const waitFor = async (fn, ms = 20000) => { const t0 = Date.now(); while (!fn() && Date.now() - t0 < ms) await new Promise((r) => { setTimeout(r, 15); }); return fn(); };
 
-test('through the session: confirm shows 3 checks for line 1, the composer writes ONE stage (the mv5bk400 drop), and the card AFTER drafting lists "lists 3 releases" under Not checked — never as a check — and signing then works', async () => {
+test('through the session: the confirm turn plans the goal only (the model\'s 4 checks are discarded), the composer writes ONE stage (the mv5bk400 drop), the card AFTER drafting is built from the close, and signing then works', async () => {
   const file = join(tmp(), 'CHANGELOG.md');
   copyFileSync(join(HERE, '..', 'CHANGELOG.md'), file);
   const plan = { goal: 'List the last 3 releases and summarize.', checks: CONFIRMED, notChecked: [], questions: [] };
   const closeDecl = clone(REAL.closeDecl);
-  closeDecl.stages[1].params.parts[1].covers = [1];
-  closeDecl.stages[1].params.parts[0].covers = [2];
-  closeDecl.stages[2].params.parts[0].covers = [4];
   const session = createSession({
     checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-sync-session', jobText: '1. List the last 3 releases\n~ every version quoted\n~ under 120 words\n2. Write a one-paragraph summary\n~ under 80 words',
     inputs: `Changelog: ${file}`, destination: join(tmp(), 'out'), capUsd: 1,
@@ -193,7 +172,7 @@ test('through the session: confirm shows 3 checks for line 1, the composer write
   });
   assert.ok(await waitFor(() => session.state.pendingAsk?.kind === 'menu'), `${session.state.phase} / ${session.state.error}`);
   const confirmedCard = session.state.pendingAsk.plan;
-  assert.ok(confirmedCard.checkItems.some((c) => c.text.includes('lists 3 releases')), 'the confirm card DID show it as a check');
+  assert.deepEqual([confirmedCard.checks, confirmedCard.checkItems], [[], []], 'a rubric confirm card shows no check: the checks are the list\'s');
   session.signPrepare();
   assert.ok(await waitFor(() => ['prepared', 'refused', 'error'].includes(session.state.phase)));
   assert.equal(session.state.phase, 'prepared', `${session.state.phase} / ${session.state.error}`);
@@ -204,9 +183,7 @@ test('through the session: confirm shows 3 checks for line 1, the composer write
   const allChecks = finalCard.plan.lines.flatMap((l) => l.checks.map((c) => c.name));
   assert.ok(allChecks.length >= 3);
   assert.ok(!allChecks.some((n) => n.includes('releases')), `the dropped check must not be shown as a check: ${allChecks}`);
-  assert.ok(finalCard.plan.notChecked.some((n) => n.includes('lists 3 releases')), 'it is listed under Not checked');
-  assert.equal(session.state.finalPlan.moved.length, 1);
-  // card == close, so signing is allowed
+    // card == close, so signing is allowed
   const r = signRun(session, session.state.specHash, { env: {}, spawnFn: () => ({ unref() {} }), bareloopBin: '/x/bareloop.mjs', home: tmp('rubric-sync-home-') });
   assert.equal(r.ok, true, JSON.stringify(r));
 });

@@ -1,10 +1,10 @@
 // PART 1b live fix B2 — the drafter is told which shape takes which fields, READ OFF bareguard's rubric vocabulary. Pinned three ways:
 // the guide agrees with bareguard's real vocabulary AND with this repo's own validator (a field the guide says a shape never takes is
-// refused; one it takes is accepted), and the composer prompt carries the guide verbatim.
+// refused; one it takes is accepted). The composer brief that carried the guide verbatim is deleted with the AI-written parts: an `add` edit names only a shape, the words and the unit/currency, and code builds the fact.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { factShapeFields, factShapeGuide, factShapeReds, FACT_SHAPES } from '../src/facts.js';
-import { REQUIRED_FACTS_BRIEF } from '../src/authorflow.js';
+import { ROW_EDIT_SYSTEM } from '../src/rowedit.js';
 import { rubricVocabulary, createRubric } from 'bareguard';
 
 /** a minimal fact of a shape plus one extra field, run through this repo's validator; returns the reds at that field */
@@ -49,8 +49,10 @@ test('B2: bareguard itself agrees — it signs an until on a text decide and ref
   assert.throws(mk({ valueKind: 'text', op: 'lt', value: 3 }));
 });
 
-test('B2: the composer brief carries the generated guide verbatim, and says one stage per job line', () => {
-  assert.ok(REQUIRED_FACTS_BRIEF.includes(factShapeGuide()));
+test('B2: the row-edit prompt names the shapes an add may take (the very shapes bareguard publishes) and the guide still says what each shape takes', () => {
+  assert.match(ROW_EDIT_SYSTEM, /"shape" is one of phrase, money, number, date, time/);
+  for (const sh of ['phrase', 'money', 'number', 'date', 'time']) assert.ok(FACT_SHAPES.includes(sh), sh);
   assert.match(factShapeGuide(), /text: takes anchor, until; never rule/);
-  assert.match(REQUIRED_FACTS_BRIEF, /ONE stage per job line, holding ALL of that line's facts/);
+  // the guide is not copied into the prompt (one owner: facts.js)
+  assert.equal(ROW_EDIT_SYSTEM.includes(factShapeGuide()), false);
 });

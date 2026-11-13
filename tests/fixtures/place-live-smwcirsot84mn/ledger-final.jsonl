@@ -1,0 +1,5 @@
+{"phase":"final","key":"L1.~1","line":1,"rowKind":"rule","from":"pick","by":"you","words":["at most 80 words"],"state":"built","reason":null,"kind":"ledger","no":15,"at":"2026-11-11T19:36:26.518Z"}
+{"phase":"final","key":"L1.fact.version","line":1,"rowKind":"fact","from":"look","by":"agent","words":["0.54.1"],"state":"built","reason":null,"kind":"ledger","no":15,"at":"2026-11-11T19:36:26.518Z"}
+{"phase":"final","key":"L1.fact.changes summary","line":1,"rowKind":"fact","from":"look","by":"agent","words":["Fixed"],"state":"dropped","reason":"a ~ rule wins: line 1 rule 1 carries it","kind":"ledger","no":15,"at":"2026-11-11T19:36:26.519Z"}
+{"phase":"final","key":"L1.count.-80","line":1,"rowKind":"count","from":"agent","by":"agent","words":[],"state":"dropped","reason":"a ~ rule wins: line 1 rule 1 names the number","kind":"ledger","no":15,"at":"2026-11-11T19:36:26.519Z"}
+{"phase":"final","key":"L1.$floor","line":1,"rowKind":"floor","from":"default","by":"default","words":[],"state":"built","reason":null,"kind":"ledger","no":15,"at":"2026-11-11T19:36:26.519Z"}

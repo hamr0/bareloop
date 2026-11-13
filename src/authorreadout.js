@@ -316,6 +316,10 @@ export function phaseLine(phase, data = {}) {
     case 'scout-done': return `· scout ${data.state ?? 'unknown'} — ${data.facts ?? 0} fact(s)`;
     case 'look': return '· looking at your input — a read-only search for the facts the job asks for…';
     case 'look-done': return `· look ${data.state ?? 'unknown'} — ${data.facts ?? 0} fact(s) can be checked`;
+    case 'ledger-suggest': return '· suggesting extra checks from your input…';
+    case 'ledger-built': { const rows = Array.isArray(data.rows) ? data.rows : []; const not = rows.filter((/** @type {any} */ r) => r.state === 'not-checked').length; return `· the list of checks: ${rows.length} row(s), ${not} not checked`; }
+    case 'draft-ledger-try': return `·   ${data.label}: ${data.kept ?? '?'} edit(s) kept, ${(data.refused ?? []).length} refused`;
+    case 'draft-ledger': { const rows = Array.isArray(data.rows) ? data.rows : []; const n = (/** @type {string} */ st) => rows.filter((/** @type {any} */ r) => r.state === st).length; return `· the list at the end: ${n('built')} built, ${n('not-checked')} not checked`; }
     case 'listing': return '· listing the files the declaration may name…';
     case 'listing-done': return `· listing ${data.stop ? `STOPPED (${data.stop})` : `${data.files ?? 'unknown'} file(s)`}`;
     case 'author': return '· authoring the close declaration…';
@@ -676,6 +680,7 @@ export const STOP_HEADS = {
   'calibration-missing': 'Drafting stopped: the practice cases that prove the rubric were missing, so the check could not be trusted.',
   'invalid-set': 'Drafting stopped: the rubric and its practice cases do not fit together, so they could not be graded.',
   'broken-close': 'Drafting stopped: the final check the model wrote could not run.',
+  'plan-red': 'Drafting stopped: the plan code built from your checks did not pass its own gate. That is a fault in the build, not in your job.',
   'listing-absent': 'Drafting stopped: the list of your files was not available, so the checks could not name any.',
   'listing-conflict': 'Drafting stopped: the list of your files was given twice and the two did not agree.',
   'listing-unreadable': 'Drafting stopped: your repo\'s file list could not be read.',
@@ -695,6 +700,7 @@ const STOP_TODO = /** @type {Record<string, string>} */ ({
   'listing-unreadable': 'check the repo is a readable git repo with at least one commit, then draft again.',
   'confirm-abandoned': 'start a new draft when you are ready; nothing more was spent.',
   'confirm-restart': 'change the answers you want and start the draft again.',
+  'plan-red': 'draft again; if it stops the same way twice, report it (nothing was spent on a close).',
 });
 
 /** a stop code this table does not know: still plain words, never the code */
@@ -876,17 +882,6 @@ const NO_CHECK_SENTENCE = 'This job has no check that can fail: no `~` rule, and
 const NO_CHECK_TODO = 'add a `~` rule (for example the version, the date, or "under 80 words"), or answer the question with what the output must contain';
 
 /**
- * Code's reading of a declared close: a rubric (text-lang) close with no real check, only always-on stages such as
- * files-changed, or rubric-step stages holding no part. Decided from the close alone, never by a model.
- * @param {any} closeDecl @returns {boolean}
- */
-export function isNoCheckRubricClose(closeDecl) {
-  if (!closeDecl || closeDecl.lang !== 'text' || !Array.isArray(closeDecl.stages)) return false;
-  return !closeDecl.stages.some((/** @type {any} */ st) => st && st.kind !== 'files-changed'
-    && (st.kind !== 'rubric-step' || (Array.isArray(st.params?.parts) && st.params.parts.length > 0)));
-}
-
-/**
  * Plain sentences for the reds of a refused signing, one or more per red. Card and practice-case reds reuse the
  * proposal table; an unknown code is a generic sentence that quotes the code.
  * @param {PlainRed[]} reds @param {{cases?: any}} [o]
@@ -919,14 +914,13 @@ export function signingKinds() {
 
 /**
  * THE MESSAGE a person reads when the signing gates refuse. The panel's failed step and the CLI print exactly this.
- * @param {{reds: PlainRed[], refusal?: {detail?: string}|null, cases?: any, closeDecl?: any,
- *   spend?: {knownUsd?: number|null, spendComplete?: boolean|null}|null}} o
+ * @param {{reds: PlainRed[], refusal?: {detail?: string}|null, cases?: any, noCheck?: boolean,
+ *   spend?: {knownUsd?: number|null, spendComplete?: boolean|null}|null}} o `noCheck` = the check block has no built check (block.hasBuiltCheck() is false): the stop is the end check's own words
  * @returns {string}
  */
-export function signingStopText({ reds, refusal = null, cases = null, spend = null, closeDecl = null }) {
+export function signingStopText({ reds, refusal = null, cases = null, spend = null, noCheck = false }) {
   const reasons = signingReasons(reds, { cases });
   if (reasons.length === 0) {
-    const noCheck = isNoCheckRubricClose(closeDecl);
     reasons.push({ kind: 'seed-green', sentence: noCheck ? NO_CHECK_SENTENCE : SEED_GREEN_SENTENCE,
       todo: noCheck ? NO_CHECK_TODO : 'check that the close measures the right thing, or describe a sharper problem',
       red: { code: '', path: '', detail: String(refusal?.detail ?? '') } });

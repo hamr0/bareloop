@@ -3256,3 +3256,1138 @@ For hamr to know (report, not a question): a PR-verification job runs the person
 - Real per-run cost on bareloop for these shapes.
 - Which status-switch sites in the panel need the new `skipped` key.
 - `bridge.missing`/`confirmServer` shape in bare-agent 0.59.0.
+
+
+## Check ledger design draft 2 + $0 POC bar (frozen 2026-11-10)
+
+# DESIGN: one check ledger per job (draft 2, 2026-11-10 — fwd review folded in)
+
+Status: DRAFT. hamr agreed the four picks below on 2026-11-10. Not frozen until the POC bar is committed.
+Input: `MAP.md` (17 lists L1-L17, 15 disagreements D1-D15), PRD v1.132 "NEXT after this release", FINDINGS F305-F309.
+Shared with fwdloop: one shape for both repos; each repo builds its own copy.
+
+## Rulings this draft rests on (hamr, 2026-11-10)
+
+1. The confirm AI's `checkItems` list is REMOVED. The confirm turn confirms the goal only. Checks come from `~` rules, picks, page facts and the drafter's parts. (Kills D2, D3, D6, D9, D12, D15 at the root.)
+2. A limit typed in a free-text answer ("250 words") is NOT read by code. Code asks the person to write it as a `~` rule.
+3. The ledger is saved INSIDE the signed close. The hash shape changes; old runs keep their old plans and are not repaired. AMENDED 2026-11-10 (hamr agreed, fwd review d): signed = line, key, from, state, rule, part; reason text and words are saved but NOT signed; words the person answered are frozen as seen.
+4. The command line door stays simple: no ask step. Its rows come from `~` rules, page facts and drafter parts, each shown as built or Not checked.
+5. (main-session call) The plan card and Job tab keep their look; they become views of the ledger. Any look change is shown to hamr first.
+6. (main-session call) Agreeing to a reading still adds a `~` line to the job box, as today; that line gets its row.
+
+## The ledger
+
+One array per job, `ledger: Row[]`, written ONLY by code. AIs propose; code sets every state.
+
+```
+Row {
+  key:    {lineWords, occurrence, ruleWords?, kind}   carry key across drafts and Revise (fwd e: same key as picks-record, for EVERY row kind)
+  line:   number                 the job line (this draft's number)
+  from:   "rule" | "pick" | "look" | "ai-part" | "answer" | "code-end"   (code-end = fwd addEnd lines)
+  words:  string                 the exact words the person saw, frozen at answer time
+  rule?:  number                 the ~ rule it belongs to, if any
+  state:  "proposed" | "agreed" | "dropped" | "built" | "not-checked"
+  by:     "person" | "code" | "ai"   who set the CURRENT state
+  part?:  {line, part?, fact?, pick?}   for built: points INSIDE the close (fwd b: a fact, or picked[i], not only a whole part)
+  reason?: string                for dropped / not-checked: plain words from code's one table
+}
+```
+
+Draft 2 changes from fwd's review (2026-11-10):
+- (a) A per-line verdict class (fwd: green/softgreen/hitl, unjudgeable, refused) is a VIEW: one code function `lineClassOf(rows)`. bareloop has parts, not a line class, so this is fwd-side; the function shape is shared.
+- (b)+(h) `part` points inside a close, and row -> part is MANY-TO-ONE: two rules with one meaning ("exactly 3 bullets" + "exactly 3 list items") share one checker. The sign check is: every built row points at a real check, and every real check has at least one row.
+- (c) Run-time "told picks" reads ONLY built pick values. Never row words, look rows or verdicts. Hard limit.
+- (d) SIGNED: line, key, from, state, rule, part. UNSIGNED: reason text and words (the look re-runs per draft and its words change). Words the person answered are frozen as seen.
+- (e) Rows carry across drafts and Revise by `key`, not by id.
+- (f) "Drop it" exists only where the ask offers it. An agreed reading adds a `~` rule, and that rule gets its own row (as ruling 6).
+- (g) fwd's sheet `covers` becomes the row's `part` link, not a second source. bareloop's `covers` goes away with checkItems.
+- (i) Out of the ledger: the arbiter block (cap, send, source, ask TTL) and schedule.json. The AI's own `notChecked` list is DROPPED: every rule already ends built or not-checked by code, so the AI list would be a second owner.
+- The mechanical floor (file exists, non-empty, done, files-changed, text-present) never counts as built.
+
+State moves (code only):
+- `proposed -> agreed | dropped` (a person's answer, or code for a code-built pick)
+- `agreed -> built | not-checked` (after the drafter and code transforms)
+- a `~` rule starts `agreed` (the person wrote it); a look fact starts `proposed` unless tied to a rule.
+- `built` and `not-checked` are final for the draft. Nothing is ever deleted: a row only changes state. That is what makes "silently vanished" impossible.
+
+## Who writes rows (one writer per step)
+
+| Step (MAP flow) | Writes |
+|---|---|
+| 1 job box | one `rule` row per `~` rule, state agreed, by person |
+| 4 look | one `look` row per kept fact (proposed, or agreed when tied to a rule); one per drop (not-checked, reason) |
+| 5 look asks | the answered row -> agreed / dropped (by person); an agreed reading also adds the `~` line (ruling 6) |
+| 6-7 pick suggest + asks | `pick` rows; answers -> agreed / dropped; own words -> agreed with the person's words |
+| 8 confirm | goal only (ruling 1). A typed limit in an answer -> code asks for a `~` rule (ruling 2) |
+| 10 code transforms | each transform changes row states instead of editing `refused`/`notes` strings: applyPicks -> built; moveUncheckable, dropExtras, withDropNotes -> not-checked with reason; drafter parts with no row -> new `ai-part` row, built |
+| 11 validator | reads rows: every `agreed` row must end `built` or `not-checked` (replaces `rubric-rule-dropped` by rule number) |
+
+## Who reads (everything else is a view)
+
+- Drafter prompt: one block rendered from rows (agreed, settled by code, not checked). Replaces `confirmedBlock`, `settledBlock` and the look report's three sources. Conditional text only.
+- Run-time worker brief (`lineBriefs`): told each built pick on its line, only when the line has one (Check 0b; copy fwd am28 from their released tag).
+- Plan card and Job tab "Not checked": the same filter over rows (fixes D8).
+- End check (Fix 0): stop when no row is `built` with a real check.
+- Retention: counts rows by `from` and final state (fixes D15).
+- Signing: the signed close carries `ledger`; each close part carries its row id; `planMatchesClose` also checks every built row has its part and every part has its row.
+
+## What goes away
+
+`checkItems`, `covers`, the confirm `notChecked`, `reconcileRubricPlan`'s three-source merge, the `moved` list, `rulesOfLine` (the twin of `lineRules`). `refused`/`notes` become rendered from rows (kept in the signed close only if fwd needs them for compatibility; to decide in the build spec).
+
+## Fixes already on feat/check-ledger
+
+- 55e7234 + cb3babf (end check): kept; becomes "no built row" in the build.
+- 5683008 (word limit as claim count): dropped (reverted); covered by ruling 2 + the row model.
+- Check 0b fix: waits for fwd's released tag.
+
+## $0 POC (before any build) — bar to freeze in a commit before it runs
+
+Corpus: the 77 saved paid drafts (rounds 3-6), real, not authored.
+A sonnet builder writes a throwaway replay that builds the ledger from each saved draft's recorded inputs and outputs, then measures:
+
+- P1 every real check (not the mechanical floor) in each saved final declaration has AT LEAST one built row pointing at it, and every built row points at a real check (target: 100% of valid drafts).
+- P2 every `~` rule has a row that ends built or not-checked with a reason (target: 100%; any silent end = FAIL).
+- P3 the known vanish cases (paid6 d2, d8, d17, d22) show as rows with a state and reason, never missing.
+- P4 the zero-check drafts (paid6 d2, d17) are caught by "no built row"; and no draft that had a real check is caught (0 false stops).
+- P5 NO LOSS: the ledger's one Not-checked view holds every item the OLD sign card OR the OLD Job tab listed as not checked, on every valid draft (target: 100%; a lost item = FAIL). Items the old views missed are counted and listed, not a fail.
+- P6 CARRY: where a session has 2+ drafts or tries, every row of the earlier one re-matches by `key` in the later one, or its line/rule is really gone from the job text (target: 100%).
+- P7 SIGNED HASH STABLE: rebuilding the same saved draft twice gives the same signed fields byte for byte (target: 100%).
+- Casualty rule: a draft whose saved data cannot rebuild a step is row-invalid, logged with why, not counted; more than 10 invalid = POC FAIL (instrument too blind).
+- The replay code is throwaway, lives in `.claude/scratch/r10/ledger/poc/`, and never ships.
+
+FAIL on any bar -> report FAIL, redesign, re-freeze; never re-tune the bar.
+
+## Open for the build spec (not for hamr unless they change behaviour)
+
+- Exact row id scheme across a Fix/revise round.
+- Whether `refused`/`notes` stay in the signed close beside `ledger` (fwd compatibility).
+
+sha256 of .claude/scratch/r10/ledger/DESIGN.md: 739258971f9e5d38995574edabd16f51110721a244688316ef5a8626283866c6
+
+
+## Check ledger round 1 FAIL (P6) and draft 3 + round 2 bar (frozen 2026-11-10)
+
+Round 1 of the $0 POC (draft 2, frozen cb89aded) is FAIL on P6: 6 of 37 sessions carry every row by key; person rows (rule, pick, look, answer) carried 344/344, drafter-written rows (ai-part, notes, refused, prose) almost never. Other bars: P1 68/68, P2 68/68, P3 4/4, P4 68/68, P5 68/68, P7 68/68 on 68 valid drafts (9 row-invalid casualties, limit 10). Detail in `.claude/scratch/r10/ledger/poc/RESULTS.md`. hamr ruled a new shape; draft 3 below is frozen before any round 2 data is read.
+
+# DESIGN: one check ledger per job (draft 3, 2026-11-10 — round 2)
+
+Status: DRAFT 3. Round 1 (draft 2, frozen cb89aded) is FAIL on P6 and stays on record (`poc/RESULTS.md`). This draft changes the SHAPE, not the bar's spirit.
+Carried over unchanged from draft 2: the Row fields, the signed/unsigned split, fwd review a-i, rulings 1-6, the mechanical floor never counts as built, run-time told picks reads only built pick values.
+
+## What round 1 showed
+
+- Rows from the person (rule, pick, look, answer) carried across tries 344/344.
+- Rows the drafter wrote (ai-part, notes, refused, prose) carried in 6/37 sessions: the drafter rewrites its own checks every try, so they have no stable name.
+- Shape holes: keys not unique; no kind for drafter notes; confirm answers have no line; a "drop it" answer and the check it should cancel are not linked (paid6 d22: maxClaims 120 built beside a dropped answer); refused entries name rules that do not exist (paid5 d4, paid6 d16); guardLines and fit-check asks have no rows.
+
+## The new shape (hamr, 2026-11-10)
+
+ONE LIST, MADE ONCE, BEFORE ANY TRY:
+
+```
+~ rule   (the person's)        by: you
+~ rule
+! check  (the agent's)         by: agent
+! check
+```
+
+1. The person writes `~` rules. The agent suggests `!` checks, ONLY from what it sees in the job's inputs (page or doc).
+2. Code proves each `!` against the input: its words must be in the input, or code drops it with a reason (as the look's word proof does today).
+3. If a `!` and a `~` are about the same thing, the `~` wins: the agent never makes the person's rule stricter.
+4. The list is FROZEN before the first try. Tries change only HOW a line is checked, never WHAT is on the list. The drafter builds checks only for listed lines; a part with no list row is refused ("not on the list").
+5. Code builds each row it can (built) and marks the rest not-checked with its reason. If code can't, code won't.
+6. Code may still ask the person when it really needs to (the existing ask path, cap 3). Default: move on.
+7. The draft result (plan card) shows every row with `by: you` / `by: agent`. The person drops any `!` before signing.
+
+## Shape fixes from round 1
+
+- `key` is UNIQUE within a ledger: {line, kind, words-hash, occurrence}. A duplicate is a code bug, never two rows.
+- New kind `note` for the drafter's commentary (shown under Not checked, never a check).
+- Every answer row carries the line it answers (the line its question was asked about).
+- A row can `cancel` another: a "drop it" answer sets the row it answers to dropped, and any check built for it is removed (fixes d22).
+- A `refused` entry naming a rule that does not exist is a red (code bug or drafter error), never stored.
+- guardLines become rows (`from: guard`, built, by code). Fit-check "not found" asks become answer rows.
+
+## $0 POC round 2 — bar (freeze in a commit before any data is read)
+
+Corpus: the same 77 saved drafts; same casualty rule (row-invalid logged; >10 invalid = FAIL).
+Replay of the new shape: the `!` list for a draft = the agent checks of its FIRST try (frozen there, as if suggested up front), after the input word proof and the `~`-wins rule.
+
+- P1 every real check (not the mechanical floor) has at least one built row, and every built row points at a real check (100%).
+- P2 every `~` and every kept `!` ends built or not-checked with a reason (100%).
+- P3 paid6 d2, d8, d17, d22 show as rows with state + reason; d22's dropped answer cancels its maxClaims 120 check (100%).
+- P4 zero-check drafts caught, 0 false stops (100%).
+- P5 no loss vs the OLD sign card and Job tab Not-checked lists (100%).
+- P6 CARRY: every row of the frozen list is present, same key, in every later try of its session (100%).
+- P6b DRAFTER STAYS ON THE LIST: of the agent parts in later tries, the share that maps to a frozen row. If more than 20% are new (would be refused), FAIL: freezing would lose real checks. Reported per session either way.
+- P7 rebuilding the same draft twice gives the same signed fields byte for byte (100%).
+- P8 GROUNDED: every kept `!` has its words in the input; every dropped `!` has the drop reason. Counts reported (kept / dropped).
+- P9 UNIQUE: no two rows in any ledger share a key (100%).
+
+FAIL on any bar -> report FAIL; a third round only with a new shape and a new freeze; never re-tune.
+Throwaway code in `.claude/scratch/r10/ledger/poc2/`, never ships.
+
+sha256 of .claude/scratch/r10/ledger/DESIGN3.md: 6fe6671a50e7abb190292b727c6faf65de641773c608f908306eb4b306d137ff
+
+
+## Addendum 2026-11-10 - check-ledger paid round 8, pre-registration (frozen before any paid call)
+
+The text below is `.claude/scratch/r10/ledger/paid8/PREREG.md` as frozen (untracked scratch; this addendum is the committed record). Harness: `.claude/scratch/r10/ledger/paid8/draft.mjs`, driving the throwaway copy `/home/hamr/PycharmProjects/bareloop-ledger-poc` (branch `poc/ledger-list`, HEAD 3066b0cdb5c0e2c9001c1a074147558b44a0cfe2, never pushed). Nothing paid has run.
+
+sha256 lines (PREREG.sha256):
+
+```
+c36a85fc626a35fd518f5181dc7284b47dab84587f0888f66019d5f1ba4b1b6b  PREREG.md
+cec67de4f634bd7ddf0740a58684440f155b43d44c3d382dc9f6210496607925  draft.mjs
+6bfd90359485d7e2098ba5d10638473fee94e1e41bd479f6873900338320925b  input/CHANGELOG.md
+9f22ae39c34021cc1258d475d23f7072bd926eb7746bed798e64cc532284ece0  input/NOTE.md
+```
+
+### R10 PAID DRAFT TEST, ROUND 8 - PRE-REGISTRATION (written 2026-11-10, BEFORE any paid call; NOT run)
+
+Round 8 tests, live, ONE frozen list of checks per job, made once before the drafter's tries (design: `.claude/scratch/r10/ledger/DESIGN3.md`). It is a POC in a throwaway copy of the engine, never merged.
+Rounds on record, each stays frozen:
+- Check-ledger $0 POC round 1 (draft 2, bar frozen cb89aded): FAIL on P6 (rows the drafter wrote did not carry between tries, 6 of 37 sessions).
+- Check-ledger $0 POC round 2 (draft 3, bar frozen f1a67a2f): FAIL on P4, P5, P6b (the replay's stand-in for "the agent suggests `!` checks up front" was the drafter's try-1 checks, a bad stand-in: 50-74% of later-try agent checks were off that list). Round 8 replaces the stand-in with the real thing.
+- Paid rounds 1-7 (paid/ .. paid7/): round 7 (paid7/) was frozen against cb3babf and never run; round 6 (paid6/) is the baseline for Q5.
+
+#### What the copy does (poc/ledger-list, copy HEAD = the engine sha below)
+Copy at `/home/hamr/PycharmProjects/bareloop-ledger-poc`, branch `poc/ledger-list`, from the tip of feat/check-ledger (f1a67a2f). New file `src/checklist.js`; small hooks in `src/authorjob.js`, `src/authorflow.js`, `src/panel/authorsession.js`; test `tests/checklist.test.js`. Everything is OFF unless the caller sets `deps.checklist` (the harness does); every other caller is unchanged.
+- hamr's rulings: `~` = the person's rules (by: you); `!` = checks the agent suggests ONCE, only from what it sees in the inputs (by: agent).
+- THE LIST, built once after the look and the pick path, before the confirm turn and the drafter's first try:
+  - one row per `~` rule (an agreed pick's added `~` line is a row too; a settled pick builds the rule's check);
+  - one `!` row per look fact that carries no `~` rule (a look fact tied to a `~` rule is a dropped row: "a ~ rule wins");
+  - up to 3 `!` rows from ONE new paid call (kinds `cited`, `count`, `phrase`; see the prompt block below). The existing check-suggest call cannot propose them: it answers once per `~` guardrail, and in a job with no `~` it is not made at all.
+- WORD PROOF (code, reusing `src/factwords.js` countExact/countPhrase): a word-bearing `!` (a fact's words, a phrase) must have every word in the input text, else it is dropped with the reason "the words ... are not in the input". `count` and `cited` have no words and skip the proof (a `cited` source must be one of the job's inputs, else dropped).
+- `~` WINS: a `!` phrase whose words are all inside a `~` rule of its line, a `!` count whose number a `~` rule of that line names, a `!` cited when a `~` rule asks for a quote/source, and a look fact tied to a `~` rule, are dropped with "a ~ rule wins".
+- The list is FROZEN before try 1. The drafter is told the list (one block, `THE LIST OF CHECKS`, in the drafter prompt after the settled-by-code block; only when a list exists). After each try, code moves every part with no list row to Not checked with the words "Not on the list of checks made before the draft, so you judge it at Accept." (draft-log reason `not on the list`): a fact with no `!` fact/phrase row and no `~` rule number, a result `count` with no `!` count row, a `cited` or claims-count part with no `!` cited/count row. A part carrying a `~` rule number stays (its rule is on the list). Classes judged, none and guard are untouched.
+- The existing ask path (cap 3) and "default move on" are unchanged. A person's "drop it" on the only check still makes a zero-check plan, which the end check (d4596a7, live at this engine) stops (hamr: "a run needs one check").
+- Record (draft log, per draft): kind `ledger` rows, phase `built` (the frozen list) and phase `final` (each row's end state), one row per list row with key, line, rowKind, from, by, words, state, reason; kind `ledger-try`, one per try: the agent-part units seen and the parts refused. States: built, not-checked (with reason), dropped (with reason).
+
+The ONE prompt block added (exact text; it is the system text of the one list call, never shown to the drafter):
+```
+You look at the inputs of a job and name checks the inputs themselves support, beyond the guardrails the person wrote.
+Call suggest_extra_checks once with up to 3 entries, or with an empty list.
+- kind "cited": the answer must quote the input named in source (source = that input's label).
+- kind "count": how many results the input shows or the job asks for (min and/or max, whole numbers).
+- kind "phrase": fixed words copied verbatim from an input (phrase, and source = that input's label).
+Use only what you can see in the inputs. Do not repeat a guardrail the person wrote. If the inputs support none, send an empty list.
+```
+The call's user message is the job (numbered lines, their `~` rules as g1, g2) plus each input's first 8,000 characters. Plus the drafter's list block (code-written, conditional on a list existing; text in `src/checklist.js` `ledgerBlock`).
+
+#### Design: three arms, alternating (as round 7, N = 20)
+- Arm A (8 drafts): `Summarise the latest release in the changelog` / `~ exactly 3 bullets` / `~ under 80 words`, input `input/CHANGELOG.md` (sha256 6bfd90359485d7e2098ba5d10638473fee94e1e41bd479f6873900338320925b).
+- Arm B (8 drafts): the first line only, no `~`, same input.
+- Arm C (4 drafts): `Write a short friendly summary of the note`, no `~`, input `input/NOTE.md` (sha256 9f22ae39c34021cc1258d475d23f7072bd926eb7746bed798e64cc532284ece0; no digit, no label).
+- Order `ABABC` x4 (20 drafts). Answers as in rounds 6-7: "go on" to the fit ask, "agree" to an "I propose" `~` ask, "drop it" to every other ask. Job names `r10g-<arm><i>`.
+- Provider: Fireworks `accounts/fireworks/models/deepseek-v4p1-flash` (in $0.45/M, out $1.80/M), key from the shell env only (`FIREWORKS_API_KEY`); an empty key is refused at $0 (exit 3). Caps: $0.04 per draft, $1.00 total, the stop rule of rounds 5-7 (spent + the largest draft so far > total cap = no new draft). The list call is inside the per-draft cap. Round 6 spent $0.2042 for 22 drafts; the extra call adds about $0.002-0.004 per draft.
+- Engine check: the copy's HEAD must be exactly `3066b0cdb5c0e2c9001c1a074147558b44a0cfe2` and its `src`, `tests`, `package.json` clean (exit 2 otherwise). Scratch HOME; hamr's real `~/.config/bareloop` is never touched; its runs.jsonl line count (397) is reported before and after.
+
+#### Round 6 baseline for Q5 (read from `.claude/scratch/r10/paid6/result.json` before any paid data)
+- Arm A: 10 drafts, 9 prepared, 1 refused. The refused one (draft 3) stopped before any declaration (`precheck`, `scout-absent`: the page look unreadable twice), so under the casualty rule it is a casualty: 9 prepared of 9 non-casualty (100%; 90% of all ten).
+- Arm B: 10 drafts, 10 prepared (100%).
+- Arm C: 2 drafts, 2 prepared (round 6 had no zero-check stop yet; the stop landed after it).
+- Round 8 has 8 drafts per arm, not 10, so the "more than 2 fewer prepared per ten" bar is stated as a rate: 20 points below round 6's rate (floors below).
+
+#### Measures (frozen; decided by code from the draft log and the saved session; each has a fail rule)
+- Q1 STAYS ON LIST: over non-casualty drafts, the share of the drafter's FINAL-try agent parts (each fact, each result count, each cited or claims-count part) that had no list row and were refused. FAIL if refused / units > 20% overall (reported per draft and per arm).
+- Q2 NOTHING SILENT: every list row of every non-casualty draft is logged at build and again at the end, and ends `built`, `not-checked` (with a reason) or `dropped` (with a reason). 100%: a row left `listed`, a missing final row, or a not-checked/dropped row with no reason FAILS.
+- Q3 ZERO-CHECK: a draft that ends with no real check (a part of class fact or countable) never reaches `prepared`; it stops before signing with the d4596a7 words. 100%. And none of arm A stops for zero checks (an arm-A draft with zero real checks, prepared or stopped, FAILS: the list must not strip the person's own `~` checks).
+- Q4 GROUNDED: every kept (state listed) word-bearing `!` row (fact or phrase with words) has all its words in the input text, re-checked by the harness against the saved input with its own whitespace/case-blind substring test (not the engine's proof); every dropped `!` row has a reason. 100%. Count and cited rows (no words) are counted apart, not graded here.
+- Q5 NO WORSE: prepared drafts among the non-casualty drafts of arm A and of arm B vs round 6. FAIL if arm A's prepared share is under 70% (round 6: 100% of non-casualty, minus 20 points; at 8 non-casualty drafts: fewer than 6 prepared) or arm B's under 80% (round 6: 100%, minus 20 points; at 8: fewer than 7 prepared). With casualties the needed count is ceil(floor x non-casualty drafts).
+- Casualties (a draft that stopped before any declaration: no `author`/`revise` call in the log and none read on the wire; provider errors) are listed apart with their red codes and never counted in Q1-Q5. More than 5 casualties of 20 = row-invalid round (reported as such, no verdict).
+- Reported, not gating: per-arm prepared counts; the honesty bar H1-H5 of rounds 4-7 on arm A (kept as in round 7); what the list call proposed, kept and dropped per draft; off-list parts by kind per final try; new red kinds; retention.
+
+#### Gate self-test (frozen, runs in dry AND live mode, $0)
+Each Q gate is run on doctored rows and must FAIL on them: Q1 at 3 of 5 refused (and pass at 1 of 5); Q2 on a row left `listed`, a not-checked row with an empty reason, a missing final row; Q3 on a prepared draft with no real check and on an arm-A draft stopped for zero checks (an arm-C stop must pass); Q4 on a word not in the input and on a dropped row with no reason; Q5 at 5 of 8 (arm A), 6 of 8 (arm B), and pass at 6 of 8 (A) / 7 of 8 (B).
+
+#### Pre-declared outcomes (frozen)
+- PASS = Q1-Q5 all hold, the gate self-test passes, casualties <= 5, spend <= $1.00, not stopped by cap. n = 8/8/4 on one model and one job family: a leaning, not proof.
+- STOPPED BY CAP = underpowered, not a PASS. ROW-INVALID = more than 5 casualties.
+- FAIL = any gate listed on the RESULT line. A failed round is reported FAIL; a further round would be pre-registered, never re-tuned. A red kind not seen before: STOP and report (hamr's call).
+- What the round cannot show: whether a person wants the `!` rows (the plan card does not render by: you / by: agent in this POC; the rows are in the draft log only); that the drafter would stay on a list over a second job family; anything about the confirm AI's own check items (they are not list rows: a part built only to cover a confirm item with no list row is refused, and counted in Q1).
+
+#### Dry mode ($0: `node .claude/scratch/r10/ledger/paid8/draft.mjs --dry`, must PASS before freezing)
+Scripted model, 20 drafts through the same panel doors of the COPY (arms A, B as in round 7: made-up maxWords 79 and a section that the picks displace, a no-fact draft, the real round-2 d4 look, fact-twice then merge, a drafter `none` part, a count restating a pick, a drop firing; arm B's first draft is the draft-8 shape; arm C scripted from the real paid6 closes d17, d22, d18, d17). The scripted list call returns a cited row, a count row and a phrase the input does not hold (the word proof must drop it); for the Note a cited row. Dry checks: every draft has list rows and one list call; two or more `~` rows by you; a cited and a look fact row by agent kept; the invented phrase dropped by the word proof; an off-list refusal seen; every list row has a final row; d17 shape stops with the exact words; d22 shape is prepared with its cite kept and its 120-word claims count under Not checked; d8 shape prepared with no 250; the gate self-test passes; the real runs.jsonl unchanged.
+Dry result recorded before freezing: PASS (exit 0), 20/20 drafts, 17 prepared (arm C by script: 3 refused with the exact words, 1 prepared), Q1 4 of 34 refused (11.8%, scripted), Q2 0 bad, Q3 ok, Q4 ok (15 kept word-bearing), Q5 A 8/8 B 8/8, casualties none (scripted), runs.jsonl 397 -> 397. The dry numbers are the SCRIPT's, not evidence about the model.
+
+#### Untested before the paid run (named, not hidden)
+- The list call over the real provider (`makeLoopGenerate` with the list system text and the `suggest_extra_checks` tool) is exercised only by the scripted dry run; a live malformed or empty answer is handled by `askStructured` (one retry, then no `!` rows from the call), not seen.
+- The drafter's reaction to the list block is the thing the round measures; nothing in the dry run says how deepseek-flash behaves.
+- Targeted tests only in the copy (no full suite: peer sessions are benchmarking).
+
+#### Amendments (dated, before any paid data)
+(none)
+
+## Addendum 2026-11-10 - check-ledger paid round 9, pre-registration (frozen before any paid call)
+
+The text below is `.claude/scratch/r10/ledger/paid9/PREREG.md` as frozen (untracked scratch; this addendum is the committed record). Harness: `.claude/scratch/r10/ledger/paid9/draft.mjs`, driving the throwaway copy `/home/hamr/PycharmProjects/bareloop-ledger-poc` (branch `poc/ledger-list`, HEAD 72cfb225491bb2ca0f8c2e0214bbf6a8a3b4ff39, never pushed). Round 8 (above) is FAIL on Q1 and Q2 and stays on record. Nothing was run on a paid provider.
+
+sha256 lines (PREREG.sha256):
+
+```
+1ecf3bff9b8aa74fcda9c06d041876e2ce3ac0883fcea14de7ddda76e1c01d84  PREREG.md
+1924acb2e8b2a0e645a74d1ff45c7115698a3dab6cfb3d63c98f474888da0bd5  draft.mjs
+6bfd90359485d7e2098ba5d10638473fee94e1e41bd479f6873900338320925b  input/CHANGELOG.md
+9f22ae39c34021cc1258d475d23f7072bd926eb7746bed798e64cc532284ece0  input/NOTE.md
+```
+
+### R10 PAID DRAFT TEST, ROUND 9 - PRE-REGISTRATION (written 2026-11-10, BEFORE any paid call; NOT run)
+
+Round 9 tests, live, ONE list, three kinds, ONE path, NO injections (hamr's ruling 2026-11-10). It is a POC in a throwaway copy of the engine, never merged. Design: `.claude/scratch/r10/ledger/DESIGN3.md` plus the ruling below.
+Rounds on record, each stays frozen:
+- Check-ledger $0 POC round 1 (draft 2, bar frozen cb89aded): FAIL on P6 (rows the drafter wrote did not carry between tries, 6 of 37 sessions).
+- Check-ledger $0 POC round 2 (draft 3, replay, bar frozen f1a67a2f): FAIL on P4, P5, P6b (the replay's stand-in for "the agent suggests `!` checks up front" was the drafter's try-1 checks, a bad stand-in: 50-74% of later-try agent checks were off that list).
+- Paid round 8 (paid8/, frozen against copy 3066b0cd): FAIL on Q1 (13 of 58 final-try drafter parts off the list = 22.4%, bar 20%) and Q2 (one draft logged no row at all: an empty list). Q3, Q4 (30 kept word-bearing rows, 0 bad), Q5 (A 8/8, B 7/8) held; spent $0.2018; 0 casualties. Cause found in the 13 refused final-try parts: 5 "the answer must quote the input" (an always-on rule the list never carried), 4 a "release version" fact + "1 result" count, 2 "must say 0.54.1" (true only this week), 2 "one section" (made up). Root: the confirm step still ran with its own plan (RUBRIC_CONFIRM_NOTE "only three kinds of check exist ... plan one fact check for each thing the line asks to find") and the drafter's confirmedBlock told it the person confirmed that plan: two plans fought.
+
+#### The ruling (hamr, 2026-11-10): ONE list, three kinds, ONE path, NO injections
+- `~` the person's rules [you]; `!` the agent's checks [agent], only from what it sees in the inputs, word-proven by code; `$` default checks [default], always on, added by code.
+- The mechanical floor (file exists, text not empty) may show as a `$` row but never counts as a real check.
+- Every row goes the same path: on the list -> code builds it or marks it not-checked with a reason -> shown with its tag. The drafter sees only the list.
+
+#### What the copy does (poc/ledger-list, copy HEAD = the engine sha below)
+Copy `/home/hamr/PycharmProjects/bareloop-ledger-poc`, branch `poc/ledger-list`. Everything is OFF unless the caller sets `deps.checklist` (the harness does); every other caller is byte-identical (checked by the existing authorflow, confirmturn, authorjob, panel-author, nocheck tests, all green). Commits since round 8's engine (3066b0cd): c697421b (F1-F4), 8a7183c8 (a fact line = a standing fact/phrase row), 72cfb225 (a stage left with no fact part is a text stage).
+- F1 CONFIRM = GOAL ONLY (when `checklist` is on and the job is a rubric job): the confirm turn is sent `GOAL_ONLY_NOTE` in place of RUBRIC_CONFIRM_NOTE + RUBRIC_RULES; whatever checks, notChecked and questions the model still sends are thrown away in code; `accepted` carries `goalOnly: true`. The drafter's `confirmedBlock` then carries no check list and no "the person confirmed" text, and the "EVERY CONFIRMED CHECK IS COMPOSED OR MOVED" block is not added. Exact new text:
+  GOAL_ONLY_NOTE = `THIS JOB HAS NO REPOSITORY. Its inputs are the person's own text files, and each numbered job line leaves ONE file the run writes. The checks of this job are made elsewhere: plan none. Send an empty checks list, an empty notChecked list and an empty questions list, and write ONE sentence saying what the job does, from the numbered job lines.`
+  goal-only confirmedBlock = `ALWAYS-ON PROTECTIONS - already enforced by this run and unchanged by the job; never compose one of these as a check:` + the protections, then only if present: `THESE WERE ASKED FOR, BUT NOTHING CHECKS THEM (state these in your notes):`, `QUESTIONS THE PERSON ANSWERED - binding:`, `OPEN QUESTIONS (state these in your notes, never decide them silently):` (no check list, no "confirmed"). (The code text uses an em dash after PROTECTIONS.)
+- F2 `$` ROWS (by: default), built by code, never by the drafter: per job line, a `$ floor` row (built, never real); on a text line (no standing `!` fact/phrase row) with ONE input a `$ cited` row ("every claim is backed by a quote copied from <input>"), with more than one input the row is not-checked with its reason; on a text line after a fact line a `$ numbers` row (numbersFromFacts, which `withFactBindings` already adds). In the drafts, code replaces the drafter's own cited parts on a text stage by ONE default cited part and puts that part on any stage that ends with no fact part. The ledger call no longer offers kind `cited` (removed from its system text and schema); a `!` cited is dropped "already on the list". The drafter's list block shows the `$` rows ("code adds it; write no part for it") and its header gains `A "$" row is a default check code adds itself.`; its instruction now reads `a count part only where a "!" count row is listed` (it said cited or count).
+- F3 WEEK-ONLY REFUSAL (code): a `!` look fact whose words, a `!` phrase, or a drafter fact's phrase/anchor/until holds a version-like or date-like token is refused to Not checked with `It names a version or a date from the input, true only for the input as it is today, so you judge it at Accept.` A fact a `~` rule carries (rules on the part) is the person's and exempt. The rule: version = `\d+\.\d+(\.\d+)*` not after a digit, dot, `$`, euro or pound sign and not followed by `%`; date = `YYYY-MM-DD`, `d/m/y` or `d.m.y`, `Mon d` (month name or abbreviation, optional year), `d Mon (year)`, `Mon YYYY` (case-blind). `src/checklist.js` `weekOnly`.
+- F4 EMPTY LIST: a list with no standing row but the floor (nothing `~`, `!` or `$` that stands) logs ONE extra `ledger` record `{key: empty, rowKind: empty, state: empty, reason: "empty list: nothing to check"}` at build and at the end; the plan then ends in the existing zero-check stop (d4596a7), never silent.
+- Record (draft log): kind `ledger` rows (phase `built`, phase `final`) incl. the `$` and empty rows; kind `ledger-try` per try (units seen, parts refused with reason `not on the list` or `week-only`).
+- The `!` call (unchanged but for the removed cited kind): one paid call, kinds `count`, `phrase`, system text of round 8 minus its `kind "cited"` line.
+
+#### Design: same three arms, alternating, N = 20 (as round 8)
+- Arm A (8 drafts): `Summarise the latest release in the changelog` / `~ exactly 3 bullets` / `~ under 80 words`, input `input/CHANGELOG.md` (sha256 6bfd90359485d7e2098ba5d10638473fee94e1e41bd479f6873900338320925b).
+- Arm B (8 drafts): the first line only, no `~`, same input.
+- Arm C (4 drafts): `Write a short friendly summary of the note`, no `~`, input `input/NOTE.md` (sha256 9f22ae39c34021cc1258d475d23f7072bd926eb7746bed798e64cc532284ece0).
+- Order `ABABC` x4. Answers: "go on" to the fit ask, "agree" to an "I propose" `~` ask, "drop it" to every other ask. Job names `r10g-<arm><i>`.
+- Provider: Fireworks `accounts/fireworks/models/deepseek-v4p1-flash` (in $0.45/M, out $1.80/M), key from the shell env only (`FIREWORKS_API_KEY`); an empty key is refused at $0 (exit 3, checked). Caps: $0.04 per draft, $1.00 total, the stop rule of rounds 5-8 (spent + the largest draft so far > total cap = no new draft). Round 8 spent $0.2018.
+- Engine check: the copy's HEAD must be exactly `72cfb225491bb2ca0f8c2e0214bbf6a8a3b4ff39` and its `src`, `tests`, `package.json` clean (exit 2 otherwise). Scratch HOME; hamr's real `~/.config/bareloop` is never touched; its runs.jsonl line count (397) is reported before and after.
+
+#### Measures (frozen; decided by code from the draft log, the saved session and the observed prompts; each has a fail rule)
+- Q1 STAYS ON LIST (UNCHANGED bar): over non-casualty drafts, refused / units of the drafter's FINAL-try agent parts (each fact, each result count, each claims part; a week-only refusal counts as refused). FAIL if > 20% overall. Reported per draft and per arm.
+- Q2 NOTHING SILENT: every row of every non-casualty draft is logged at build and at the end and ends built, not-checked (with a reason) or dropped (with a reason) - 100%. An empty list counts only if logged with its explicit empty state at build and at the end (exact reason above) and no list that holds a row carries it. A missing row, a row left `listed`, a not-checked or dropped row with no reason, or an empty list with no empty record FAILS.
+- Q3 ZERO-CHECK: a draft that ends with no real check (fact or countable part) never reaches `prepared` and stops with the d4596a7 words; none in arm A stops or is prepared with zero checks. 100%. (Reported: how many zero-check stops occurred. With the `$` cited default a one-input text line carries a real check, so zero-check stops are expected to be rare; none is NOT a failure.)
+- Q4 GROUNDED: every kept word-bearing `!` row (fact or phrase with words) has all its words in the input, re-checked by the harness with its own whitespace/case-blind substring test; every dropped `!` row has a reason. 100%.
+- Q5 NO WORSE (same rule as round 8): prepared drafts among non-casualty drafts of arm A and of arm B. FAIL if arm A's prepared share < 70% or arm B's < 80% (round 6: 100% / 100% of non-casualty, minus 20 points; needed count = ceil(floor x non-casualty drafts)).
+- Q6 NO INJECTION: on every non-casualty draft, every DRAFTER prompt observed on the wire (live: the request body of each chat completion; it carries `THE LIST OF CHECKS`) holds NONE of these strings: `THE CONFIRMED PLAN`, `EVERY CONFIRMED CHECK`, `already saw and confirmed`, `Compose stages for these checks and no other`, `only three kinds of check`, `kinds of check`; and every CONFIRM prompt observed (it carries `THIS JOB HAS NO REPOSITORY`) carries GOAL_ONLY_NOTE and not the old note. At least one drafter and one confirm prompt must be seen on every non-casualty draft. 100%. (A scan of the wire prompts for exactly those strings, not a diff against a reference prompt: stated here so it is not read as more.)
+- Q7 NO WEEK-ONLY: no BUILT check carries a version- or date-like token that is in the input: the phrase/anchor/until of every fact part in the saved close (a part a `~` rule carries is exempt) and the words of every `!` row that ended built; the harness uses its own reading of "version-like / date-like" (written apart from the engine's, same classes). 100%.
+- Q8 DEFAULTS PRESENT: on every non-casualty draft with a saved close, every rubric-step stage with no fact part (a text line with an input) carries a cited part AND the final list has its `$` cited row, by default, built; a built `$` cited row on a fact stage or without a cited part also fails. 100%.
+- Casualties (a draft that stopped before any declaration; provider errors) are listed apart and never counted in Q1-Q8. More than 5 casualties of 20 = row-invalid round (no verdict).
+- Reported, not gating: per-arm prepared counts; the honesty bar H1-H5 of rounds 4-8 on arm A; what the `!` call proposed, kept and dropped; off-list and week-only refusals by kind per final try; empty lists; zero-check stops; new red kinds.
+
+#### Gate self-test (frozen, runs in dry AND live mode, $0)
+Each gate is run on doctored rows and must FAIL on them, and pass its controls: Q1 (3 of 5 refused fails; 1 of 5 passes); Q2 (a row left listed; a not-checked row with no reason; a missing final row; an empty list with no empty record; an empty record with no reason; an empty record on a list that holds a row; all fail; an empty list logged with its state passes); Q3 (a prepared draft with no real check; an arm-A zero-check stop; both fail; an arm-C stop passes); Q4 (a word not in the input; a dropped row with no reason); Q5 (5 of 8 in A, 6 of 8 in B fail; 6 of 8 / 7 of 8 pass); Q6 (a drafter prompt carrying the confirmed plan; carrying "kinds of check"; an old confirm prompt; no drafter prompt seen; the real `promptKinds` reader on a doctored prompt); Q7 (a built fact with a version; with a date; a built `!` row with a version; fail. The same fact carried by a `~` rule, plain words and a price pass); Q8 (a text line with no `$` cited row; a stage with no cited part; a `$` cited row that is not built; fail). Plus a $0 tap self-test: a local server receives a POST through the patched `http.request` and the drafter marker and a forbidden string must reach the prompt reader.
+
+#### Pre-declared outcomes (frozen)
+- PASS = Q1-Q8 all hold, the gate self-tests pass, casualties <= 5, spend <= $1.00, not stopped by cap. n = 8/8/4 on one model, one job family: a leaning, not proof.
+- STOPPED BY CAP = underpowered, not a PASS. ROW-INVALID = more than 5 casualties.
+- FAIL = any gate on the RESULT line. A failed round is reported FAIL; a further round would be pre-registered, never re-tuned. A red kind not seen before: STOP and report (hamr's call).
+- What the round cannot show: whether a person wants the rows (the plan card does not render `~`/`!`/`$` tags in this POC: the rows are in the draft log only); that the drafter stays on a list over a second job family; that the worker can fill the quoted claims the default cited check now demands of every text line (the run is not exercised: drafts only); that a model other than deepseek-flash behaves alike.
+
+#### Not removed (named, not hidden)
+- CONFIRM_SYSTEM (the system text of the confirm call) still says the call drafts "a PLAN ... the checks you plan to compose"; the goal-only note in the user message overrides it and code discards any checks it sends, so nothing of it reaches the drafter. Not scanned by Q6 (the scan reads messages, not the system text).
+- The drafter's declaration catalogue (`src/authoring.js`, rubric-step `asserts`) still says a part that carries out "a CONFIRMED check" lists its number in `covers`; with no confirmed checks the field is inert. It holds neither a check list nor "kinds of check" text. Shared with every other caller, so left byte-identical.
+
+#### Dry mode ($0: `node .claude/scratch/r10/ledger/paid9/draft.mjs --dry`, passed before freezing)
+Scripted model, 20 drafts through the same panel doors of the COPY (arms as in round 8; the scripted look now holds a week-only version fact, a standing section-word fact, the real round-2 d4 look in draft 6; the scripted list call returns a count row, a phrase the input does not hold and a date phrase; a scripted drafter fact with a version; arm C scripted from the real paid6 closes d17, d22, d18, d17: d17 now ends prepared with the default cited as its one real check, d18 (files-changed only) still stops for zero checks). Dry result recorded before freezing: PASS (exit 0), 20/20 drafts, 19 prepared, Q1 5 of 34 refused (14.7%, scripted), Q2 0 bad, Q3 ok, Q4 ok (15 kept word-bearing), Q5 A 8/8 B 8/8, Q6 ok (42 drafter prompts, 20 confirm prompts, 0 bad), Q7 ok, Q8 ok (6 text lines), gate self-test ok (33 cases), tap self-test ok, dry checks all true (the empty-list record is checked at unit level: the engine's own functions called directly, because with a `$` row on every text line a drafting flow rarely ends with an empty list), casualties none, runs.jsonl 397 -> 397. The dry numbers are the SCRIPT's, not evidence about the model.
+
+#### Untested before the paid run (named, not hidden)
+- The Q6 request tap over the real provider (the local-server self-test proves the tap reads a body through `http.request`; the provider's own client could in principle bypass it: then Q6 reads "no drafter prompt observed" and FAILS, not passes).
+- How deepseek-flash reacts to a goal-only confirm turn and to `$` rows in the list block.
+- Targeted tests only in the copy (no full suite: a peer is running one).
+
+#### Amendments (dated, before any paid data)
+(none)
+
+## Addendum 2026-11-10 - check-ledger paid round 10, pre-registration (frozen before any paid call)
+
+The text below is `.claude/scratch/r10/ledger/paid10/PREREG.md` as frozen (untracked scratch; this addendum is the committed record). Harness: `.claude/scratch/r10/ledger/paid10/draft.mjs`, driving the throwaway copy `/home/hamr/PycharmProjects/bareloop-ledger-poc` (branch `poc/ledger-list`, HEAD 4e1abeaecac1d72f2449db8a36bb14d4fec9b305). Round 9 failed on Q8 only; the fix is the one copy commit above.
+
+sha256 lines (PREREG.sha256):
+
+```
+d95c25c34a3d089eae822897075a033de4f1da2cdd9b63eaf3fe15fd948bad35  PREREG.md
+3b3c4c9d8c816f4307a0f2fed2fefb7e9b987ab8ecb4d0b2f62ab1990eabadc3  draft.mjs
+6bfd90359485d7e2098ba5d10638473fee94e1e41bd479f6873900338320925b  input/CHANGELOG.md
+9f22ae39c34021cc1258d475d23f7072bd926eb7746bed798e64cc532284ece0  input/NOTE.md
+```
+
+### R10 PAID DRAFT TEST, ROUND 10 - PRE-REGISTRATION (written 2026-11-10, BEFORE any paid call; NOT run)
+
+Round 10 tests, live, ONE list, three kinds, ONE path, NO injections (hamr's ruling 2026-11-10). It is a POC in a throwaway copy of the engine, never merged. Design: `.claude/scratch/r10/ledger/DESIGN3.md` plus the ruling below.
+Rounds on record, each stays frozen:
+- Check-ledger $0 POC round 1 (draft 2, bar frozen cb89aded): FAIL on P6 (rows the drafter wrote did not carry between tries, 6 of 37 sessions).
+- Check-ledger $0 POC round 2 (draft 3, replay, bar frozen f1a67a2f): FAIL on P4, P5, P6b (the replay's stand-in for "the agent suggests `!` checks up front" was the drafter's try-1 checks, a bad stand-in: 50-74% of later-try agent checks were off that list).
+- Paid round 8 (paid8/, frozen against copy 3066b0cd): FAIL on Q1 (13 of 58 final-try drafter parts off the list = 22.4%, bar 20%) and Q2 (one draft logged no row at all: an empty list). Q3, Q4 (30 kept word-bearing rows, 0 bad), Q5 (A 8/8, B 7/8) held; spent $0.2018; 0 casualties. Cause found in the 13 refused final-try parts: 5 "the answer must quote the input" (an always-on rule the list never carried), 4 a "release version" fact + "1 result" count, 2 "must say 0.54.1" (true only this week), 2 "one section" (made up). Root: the confirm step still ran with its own plan (RUBRIC_CONFIRM_NOTE "only three kinds of check exist ... plan one fact check for each thing the line asks to find") and the drafter's confirmedBlock told it the person confirmed that plan: two plans fought.
+- Paid round 9 (paid9/, frozen against copy 72cfb225): FAIL on Q8 only (draft 6, session smwb7jyl9w9fw, line 1: the final ledger held no `$ cited` row and the final close no cited part; `! fact summary bullets` and `! phrase` ended not-checked "the plan did not build it"). Cause, the timing bug: the copy decided a line is a "fact line" (no default cited) from the STANDING `!` fact/phrase rows when the list was built, before knowing whether the drafter builds them; 72cfb225 fixed only the off-list-refusal case. In draft 6 the fact part passed the try but the last-try drop (`dropAfterLastTry`) removed it afterwards, so the step ended with no fact part and no cited part. Fixed in copy commit 4e1abeaecac1d72f2449db8a36bb14d4fec9b305 (`ensureCited`: the `$ cited` default is decided after the build settles, on the settled plan and again after the last-try drop, whatever the reason the fact did not build). Q1-Q7 held in round 9.
+
+#### The ruling (hamr, 2026-11-10): ONE list, three kinds, ONE path, NO injections
+- `~` the person's rules [you]; `!` the agent's checks [agent], only from what it sees in the inputs, word-proven by code; `$` default checks [default], always on, added by code.
+- The mechanical floor (file exists, text not empty) may show as a `$` row but never counts as a real check.
+- Every row goes the same path: on the list -> code builds it or marks it not-checked with a reason -> shown with its tag. The drafter sees only the list.
+
+#### What the copy does (poc/ledger-list, copy HEAD = the engine sha below)
+Copy `/home/hamr/PycharmProjects/bareloop-ledger-poc`, branch `poc/ledger-list`. Everything is OFF unless the caller sets `deps.checklist` (the harness does); every other caller is byte-identical (checked by the existing authorflow, confirmturn, authorjob, panel-author, nocheck tests, all green). Commits since round 8's engine (3066b0cd): c697421b (F1-F4), 8a7183c8 (a fact line = a standing fact/phrase row), 72cfb225 (a stage left with no fact part is a text stage), 4e1abeae (the `$ cited` default decided after the build settles).
+- F1 CONFIRM = GOAL ONLY (when `checklist` is on and the job is a rubric job): the confirm turn is sent `GOAL_ONLY_NOTE` in place of RUBRIC_CONFIRM_NOTE + RUBRIC_RULES; whatever checks, notChecked and questions the model still sends are thrown away in code; `accepted` carries `goalOnly: true`. The drafter's `confirmedBlock` then carries no check list and no "the person confirmed" text, and the "EVERY CONFIRMED CHECK IS COMPOSED OR MOVED" block is not added. Exact new text:
+  GOAL_ONLY_NOTE = `THIS JOB HAS NO REPOSITORY. Its inputs are the person's own text files, and each numbered job line leaves ONE file the run writes. The checks of this job are made elsewhere: plan none. Send an empty checks list, an empty notChecked list and an empty questions list, and write ONE sentence saying what the job does, from the numbered job lines.`
+  goal-only confirmedBlock = `ALWAYS-ON PROTECTIONS - already enforced by this run and unchanged by the job; never compose one of these as a check:` + the protections, then only if present: `THESE WERE ASKED FOR, BUT NOTHING CHECKS THEM (state these in your notes):`, `QUESTIONS THE PERSON ANSWERED - binding:`, `OPEN QUESTIONS (state these in your notes, never decide them silently):` (no check list, no "confirmed"). (The code text uses an em dash after PROTECTIONS.)
+- F2 `$` ROWS (by: default), built by code, never by the drafter: per job line, a `$ floor` row (built, never real); on a text line (no standing `!` fact/phrase row) with ONE input a `$ cited` row ("every claim is backed by a quote copied from <input>"), with more than one input the row is not-checked with its reason; on a text line after a fact line a `$ numbers` row (numbersFromFacts, which `withFactBindings` already adds). In the drafts, code replaces the drafter's own cited parts on a text stage by ONE default cited part and puts that part on any stage that ends with no fact part. The ledger call no longer offers kind `cited` (removed from its system text and schema); a `!` cited is dropped "already on the list". The drafter's list block shows the `$` rows ("code adds it; write no part for it") and its header gains `A "$" row is a default check code adds itself.`; its instruction now reads `a count part only where a "!" count row is listed` (it said cited or count).
+- F3 WEEK-ONLY REFUSAL (code): a `!` look fact whose words, a `!` phrase, or a drafter fact's phrase/anchor/until holds a version-like or date-like token is refused to Not checked with `It names a version or a date from the input, true only for the input as it is today, so you judge it at Accept.` A fact a `~` rule carries (rules on the part) is the person's and exempt. The rule: version = `\d+\.\d+(\.\d+)*` not after a digit, dot, `$`, euro or pound sign and not followed by `%`; date = `YYYY-MM-DD`, `d/m/y` or `d.m.y`, `Mon d` (month name or abbreviation, optional year), `d Mon (year)`, `Mon YYYY` (case-blind). `src/checklist.js` `weekOnly`.
+- F4 EMPTY LIST: a list with no standing row but the floor (nothing `~`, `!` or `$` that stands) logs ONE extra `ledger` record `{key: empty, rowKind: empty, state: empty, reason: "empty list: nothing to check"}` at build and at the end; the plan then ends in the existing zero-check stop (d4596a7), never silent.
+- Record (draft log): kind `ledger` rows (phase `built`, phase `final`) incl. the `$` and empty rows; kind `ledger-try` per try (units seen, parts refused with reason `not on the list` or `week-only`).
+- The `!` call (unchanged but for the removed cited kind): one paid call, kinds `count`, `phrase`, system text of round 8 minus its `kind "cited"` line.
+
+#### Design: same three arms, alternating, N = 20 (as round 8)
+- Arm A (8 drafts): `Summarise the latest release in the changelog` / `~ exactly 3 bullets` / `~ under 80 words`, input `input/CHANGELOG.md` (sha256 6bfd90359485d7e2098ba5d10638473fee94e1e41bd479f6873900338320925b).
+- Arm B (8 drafts): the first line only, no `~`, same input.
+- Arm C (4 drafts): `Write a short friendly summary of the note`, no `~`, input `input/NOTE.md` (sha256 9f22ae39c34021cc1258d475d23f7072bd926eb7746bed798e64cc532284ece0).
+- Order `ABABC` x4. Answers: "go on" to the fit ask, "agree" to an "I propose" `~` ask, "drop it" to every other ask. Job names `r10g-<arm><i>`.
+- Provider: Fireworks `accounts/fireworks/models/deepseek-v4p1-flash` (in $0.45/M, out $1.80/M), key from the shell env only (`FIREWORKS_API_KEY`); an empty key is refused at $0 (exit 3, checked). Caps: $0.04 per draft, $1.00 total, the stop rule of rounds 5-8 (spent + the largest draft so far > total cap = no new draft). Round 8 spent $0.2018.
+- Engine check: the copy's HEAD must be exactly `4e1abeaecac1d72f2449db8a36bb14d4fec9b305` and its `src`, `tests`, `package.json` clean (exit 2 otherwise). Scratch HOME; hamr's real `~/.config/bareloop` is never touched; its runs.jsonl line count (397) is reported before and after.
+
+#### Measures (frozen; decided by code from the draft log, the saved session and the observed prompts; each has a fail rule)
+- Q1 STAYS ON LIST (UNCHANGED bar): over non-casualty drafts, refused / units of the drafter's FINAL-try agent parts (each fact, each result count, each claims part; a week-only refusal counts as refused). FAIL if > 20% overall. Reported per draft and per arm.
+- Q2 NOTHING SILENT: every row of every non-casualty draft is logged at build and at the end and ends built, not-checked (with a reason) or dropped (with a reason) - 100%. An empty list counts only if logged with its explicit empty state at build and at the end (exact reason above) and no list that holds a row carries it. A missing row, a row left `listed`, a not-checked or dropped row with no reason, or an empty list with no empty record FAILS.
+- Q3 ZERO-CHECK: a draft that ends with no real check (fact or countable part) never reaches `prepared` and stops with the d4596a7 words; none in arm A stops or is prepared with zero checks. 100%. (Reported: how many zero-check stops occurred. With the `$` cited default a one-input text line carries a real check, so zero-check stops are expected to be rare; none is NOT a failure.)
+- Q4 GROUNDED: every kept word-bearing `!` row (fact or phrase with words) has all its words in the input, re-checked by the harness with its own whitespace/case-blind substring test; every dropped `!` row has a reason. 100%.
+- Q5 NO WORSE (same rule as round 8): prepared drafts among non-casualty drafts of arm A and of arm B. FAIL if arm A's prepared share < 70% or arm B's < 80% (round 6: 100% / 100% of non-casualty, minus 20 points; needed count = ceil(floor x non-casualty drafts)).
+- Q6 NO INJECTION: on every non-casualty draft, every DRAFTER prompt observed on the wire (live: the request body of each chat completion; it carries `THE LIST OF CHECKS`) holds NONE of these strings: `THE CONFIRMED PLAN`, `EVERY CONFIRMED CHECK`, `already saw and confirmed`, `Compose stages for these checks and no other`, `only three kinds of check`, `kinds of check`; and every CONFIRM prompt observed (it carries `THIS JOB HAS NO REPOSITORY`) carries GOAL_ONLY_NOTE and not the old note. At least one drafter and one confirm prompt must be seen on every non-casualty draft. 100%. (A scan of the wire prompts for exactly those strings, not a diff against a reference prompt: stated here so it is not read as more.)
+- Q7 NO WEEK-ONLY: no BUILT check carries a version- or date-like token that is in the input: the phrase/anchor/until of every fact part in the saved close (a part a `~` rule carries is exempt) and the words of every `!` row that ended built; the harness uses its own reading of "version-like / date-like" (written apart from the engine's, same classes). 100%.
+- Q8 DEFAULTS PRESENT: on every non-casualty draft with a saved close, every rubric-step stage with no fact part (a text line with an input) carries a cited part AND the final list has its `$` cited row, by default, built; a built `$` cited row on a fact stage or without a cited part also fails. 100%.
+- Casualties (a draft that stopped before any declaration; provider errors) are listed apart and never counted in Q1-Q8. More than 5 casualties of 20 = row-invalid round (no verdict).
+- Reported, not gating: per-arm prepared counts; the honesty bar H1-H5 of rounds 4-8 on arm A; what the `!` call proposed, kept and dropped; off-list and week-only refusals by kind per final try; empty lists; zero-check stops; new red kinds.
+
+#### Gate self-test (frozen, runs in dry AND live mode, $0)
+Each gate is run on doctored rows and must FAIL on them, and pass its controls: Q1 (3 of 5 refused fails; 1 of 5 passes); Q2 (a row left listed; a not-checked row with no reason; a missing final row; an empty list with no empty record; an empty record with no reason; an empty record on a list that holds a row; all fail; an empty list logged with its state passes); Q3 (a prepared draft with no real check; an arm-A zero-check stop; both fail; an arm-C stop passes); Q4 (a word not in the input; a dropped row with no reason); Q5 (5 of 8 in A, 6 of 8 in B fail; 6 of 8 / 7 of 8 pass); Q6 (a drafter prompt carrying the confirmed plan; carrying "kinds of check"; an old confirm prompt; no drafter prompt seen; the real `promptKinds` reader on a doctored prompt); Q7 (a built fact with a version; with a date; a built `!` row with a version; fail. The same fact carried by a `~` rule, plain words and a price pass); Q8 (a text line with no `$` cited row; a stage with no cited part; a `$` cited row that is not built; fail). Plus a $0 tap self-test: a local server receives a POST through the patched `http.request` and the drafter marker and a forbidden string must reach the prompt reader.
+
+#### Pre-declared outcomes (frozen)
+- PASS = Q1-Q8 all hold, the gate self-tests pass, casualties <= 5, spend <= $1.00, not stopped by cap. n = 8/8/4 on one model, one job family: a leaning, not proof.
+- STOPPED BY CAP = underpowered, not a PASS. ROW-INVALID = more than 5 casualties.
+- FAIL = any gate on the RESULT line. A failed round is reported FAIL; a further round would be pre-registered, never re-tuned. A red kind not seen before: STOP and report (hamr's call).
+- What the round cannot show: whether a person wants the rows (the plan card does not render `~`/`!`/`$` tags in this POC: the rows are in the draft log only); that the drafter stays on a list over a second job family; that the worker can fill the quoted claims the default cited check now demands of every text line (the run is not exercised: drafts only); that a model other than deepseek-flash behaves alike.
+
+#### Not removed (named, not hidden)
+- CONFIRM_SYSTEM (the system text of the confirm call) still says the call drafts "a PLAN ... the checks you plan to compose"; the goal-only note in the user message overrides it and code discards any checks it sends, so nothing of it reaches the drafter. Not scanned by Q6 (the scan reads messages, not the system text).
+- The drafter's declaration catalogue (`src/authoring.js`, rubric-step `asserts`) still says a part that carries out "a CONFIRMED check" lists its number in `covers`; with no confirmed checks the field is inert. It holds neither a check list nor "kinds of check" text. Shared with every other caller, so left byte-identical.
+
+#### Dry mode ($0: `node .claude/scratch/r10/ledger/paid10/draft.mjs --dry`, passed before freezing)
+Scripted model, 20 drafts through the same panel doors of the COPY (arms as in round 8; the scripted look now holds a week-only version fact, a standing section-word fact, the real round-2 d4 look in draft 6; the scripted list call returns a count row, a phrase the input does not hold and a date phrase; a scripted drafter fact with a version; arm C scripted from the real paid6 closes d17, d22, d18, d17: d17 now ends prepared with the default cited as its one real check, d18 (files-changed only) still stops for zero checks). Dry result recorded before freezing (see the dry line appended below): PASS (exit 0), 20/20 drafts, 19 prepared, Q1 5 of 34 refused (14.7%, scripted), Q2 0 bad, Q3 ok, Q4 ok (15 kept word-bearing), Q5 A 8/8 B 8/8, Q6 ok (42 drafter prompts, 20 confirm prompts, 0 bad), Q7 ok, Q8 ok (6 text lines), gate self-test ok (33 cases), tap self-test ok, dry checks all true (the empty-list record is checked at unit level: the engine's own functions called directly, because with a `$` row on every text line a drafting flow rarely ends with an empty list), casualties none, runs.jsonl 397 -> 397. The dry numbers are the SCRIPT's, not evidence about the model.
+
+#### Untested before the paid run (named, not hidden)
+- The Q6 request tap over the real provider (the local-server self-test proves the tap reads a body through `http.request`; the provider's own client could in principle bypass it: then Q6 reads "no drafter prompt observed" and FAILS, not passes).
+- How deepseek-flash reacts to a goal-only confirm turn and to `$` rows in the list block.
+- Targeted tests only in the copy (no full suite: a peer is running one).
+
+#### Amendments (dated, before any paid data)
+(none)
+
+#### Dry run line (round 10, $0, before freezing)
+`RESULT PASS (n=8/8/4 on one model, one job family: a leaning, not proof) drafts=20/20 (A 8, B 8, C 4) prepared=19 casualties=0 spent $0.4561 real runs.jsonl 397 -> 397` (exit 0; spent is the script's, not money). Q1 5 of 34 (scripted), Q2-Q8 ok, gate self-test ok. Copy targeted tests: checklist 19/0 (new fail-first test failed on 72cfb225), authorflow 153/0, confirmturn 34/0, authorjob 52/0, nocheck-end-check 5/0, panel-author 50 pass / 7 fail (the same 7 signRun tests fail identically on 72cfb225, unrelated).
+
+## Addendum 2026-11-11 - check-ledger paid round 11, pre-registration (frozen before any paid call)
+
+The text below is `.claude/scratch/r10/ledger/paid11/PREREG.md` as frozen (untracked scratch; this addendum is the committed record). Harness: `.claude/scratch/r10/ledger/paid11/draft.mjs`, driving the throwaway copy `/home/hamr/PycharmProjects/bareloop-ledger-poc` (branch `poc/ledger-list`, HEAD 1880ad13e469f8999be55f5113dd1f90bace6fc9). Round 10 failed on Q1 only (9 of 42, one class: the release fact dropped by the week-only rule); the rule is narrowed in that one copy commit.
+
+sha256 lines (PREREG.sha256):
+
+```
+9a5db427229f29465a1d9fa268cf8dd4984fe0ecc8f708ca282cff0d675e700e  PREREG.md
+03569d41b48d69c2915a9d454798db24c3aebf01da8345227c538cc28fbacebd  draft.mjs
+6bfd90359485d7e2098ba5d10638473fee94e1e41bd479f6873900338320925b  input/CHANGELOG.md
+9f22ae39c34021cc1258d475d23f7072bd926eb7746bed798e64cc532284ece0  input/NOTE.md
+```
+
+### R10 PAID DRAFT TEST, ROUND 11 - PRE-REGISTRATION (written 2026-11-11, BEFORE any paid call; NOT run)
+
+Round 11 tests, live, ONE list, three kinds, ONE path, NO injections (hamr's ruling 2026-11-10). It is a POC in a throwaway copy of the engine, never merged. Design: `.claude/scratch/r10/ledger/DESIGN3.md` plus the ruling below.
+Rounds on record, each stays frozen:
+- Check-ledger $0 POC round 1 (draft 2, bar frozen cb89aded): FAIL on P6 (rows the drafter wrote did not carry between tries, 6 of 37 sessions).
+- Check-ledger $0 POC round 2 (draft 3, replay, bar frozen f1a67a2f): FAIL on P4, P5, P6b (the replay's stand-in for "the agent suggests `!` checks up front" was the drafter's try-1 checks, a bad stand-in: 50-74% of later-try agent checks were off that list).
+- Paid round 8 (paid8/, frozen against copy 3066b0cd): FAIL on Q1 (13 of 58 final-try drafter parts off the list = 22.4%, bar 20%) and Q2 (one draft logged no row at all: an empty list). Q3, Q4 (30 kept word-bearing rows, 0 bad), Q5 (A 8/8, B 7/8) held; spent $0.2018; 0 casualties. Cause found in the 13 refused final-try parts: 5 "the answer must quote the input" (an always-on rule the list never carried), 4 a "release version" fact + "1 result" count, 2 "must say 0.54.1" (true only this week), 2 "one section" (made up). Root: the confirm step still ran with its own plan (RUBRIC_CONFIRM_NOTE "only three kinds of check exist ... plan one fact check for each thing the line asks to find") and the drafter's confirmedBlock told it the person confirmed that plan: two plans fought.
+- Paid round 9 (paid9/, frozen against copy 72cfb225): FAIL on Q8 only (draft 6, session smwb7jyl9w9fw, line 1: the final ledger held no `$ cited` row and the final close no cited part; `! fact summary bullets` and `! phrase` ended not-checked "the plan did not build it"). Cause, the timing bug: the copy decided a line is a "fact line" (no default cited) from the STANDING `!` fact/phrase rows when the list was built, before knowing whether the drafter builds them; 72cfb225 fixed only the off-list-refusal case. In draft 6 the fact part passed the try but the last-try drop (`dropAfterLastTry`) removed it afterwards, so the step ended with no fact part and no cited part. Fixed in copy commit 4e1abeaecac1d72f2449db8a36bb14d4fec9b305 (`ensureCited`: the `$ cited` default is decided after the build settles, on the settled plan and again after the last-try drop, whatever the reason the fact did not build). Q1-Q7 held in round 9.
+- Paid round 10 (paid10/, frozen against copy 4e1abeae): FAIL on Q1 only (9 of 42 final-try drafter parts off the list = 21%, bar 20%). All 9 are ONE class: a fact `release` / `release heading` / `release entry` plus its 1-result count. The agent DID list the fact, but the week-only rule F3 dropped it (its found words carried 0.54.1 / a date), so the drafter wrote the same fact itself and the list refused it (and its count). Rule narrowed in copy commit 1880ad13e469f8999be55f5113dd1f90bace6fc9 (below).
+- Paid round 11 (this file, paid11/, frozen against copy 1880ad13e469f8999be55f5113dd1f90bace6fc9).
+
+#### The ruling (hamr, 2026-11-10): ONE list, three kinds, ONE path, NO injections
+- `~` the person's rules [you]; `!` the agent's checks [agent], only from what it sees in the inputs, word-proven by code; `$` default checks [default], always on, added by code.
+- The mechanical floor (file exists, text not empty) may show as a `$` row but never counts as a real check.
+- Every row goes the same path: on the list -> code builds it or marks it not-checked with a reason -> shown with its tag. The drafter sees only the list.
+
+#### The change since round 10 (hamr's ruling, 2026-11-11) - the ONLY engine change, copy commit 1880ad13e469f8999be55f5113dd1f90bace6fc9
+Week-only refuses only a check that needs EXACT words in the answer (a `!` phrase, a quote, a must-carry) carrying a version- or date-like token. A FACT that FINDS a value fresh each run is a good repeating check and is KEPT. Exact rule in `src/checklist.js`: (1) a look fact whose shape is `phrase` is no longer dropped for a version/date in its words (those words are the found value; they are still word-proven against the input); a look fact of any other shape (money, number, date, time, place, text) whose words (the anchor/label that locates the value) hold a version/date literal is still dropped week-only; (2) a drafter fact part whose name matches a standing look `!` fact row is no longer refused for a version/date in its `phrase` (anchor/until still are); a drafter fact with no look row behind it is still refused week-only; (3) a `!` phrase proposal from the list call holding a version/date stays dropped; (4) a fact part's result count rides with its fact: it is on the list when a fact of that part stands (it was refused as a separate off-list count). $0 scan of rounds 9-10 look facts: 12 distinct look facts with a version/date in their words: 7 phrase-shaped (value, now kept), 5 non-phrase (4 number, 1 date: the anchor itself a literal, escalated case, existing behaviour kept: still dropped). Fail-first test in the copy (fails on 4e1abeae, passes on 1880ad13).
+Harness changes (the only ones): paths and names paid10 to paid11 (job names r11g-), the engine sha, the dry script's look gains a number-shaped fact with a version anchor `[0.54.1]` (so the still-dropped case is exercised) and Q7's reading follows the ruling: a fact part whose name matches a BUILT look `fact` row, and a built look `fact` row's words, are exempt from Q7 (the bars, arms, caps and every other gate are untouched); the gate self-test gains one control (that exemption passes) beside the unchanged fails.
+
+#### What the copy does (poc/ledger-list, copy HEAD = the engine sha below)
+Copy `/home/hamr/PycharmProjects/bareloop-ledger-poc`, branch `poc/ledger-list`. Everything is OFF unless the caller sets `deps.checklist` (the harness does); every other caller is byte-identical (checked by the existing authorflow, confirmturn, authorjob, panel-author, nocheck tests, all green). Commits since round 8's engine (3066b0cd): c697421b (F1-F4), 8a7183c8 (a fact line = a standing fact/phrase row), 72cfb225 (a stage left with no fact part is a text stage), 4e1abeae (the `$ cited` default decided after the build settles).
+- F1 CONFIRM = GOAL ONLY (when `checklist` is on and the job is a rubric job): the confirm turn is sent `GOAL_ONLY_NOTE` in place of RUBRIC_CONFIRM_NOTE + RUBRIC_RULES; whatever checks, notChecked and questions the model still sends are thrown away in code; `accepted` carries `goalOnly: true`. The drafter's `confirmedBlock` then carries no check list and no "the person confirmed" text, and the "EVERY CONFIRMED CHECK IS COMPOSED OR MOVED" block is not added. Exact new text:
+  GOAL_ONLY_NOTE = `THIS JOB HAS NO REPOSITORY. Its inputs are the person's own text files, and each numbered job line leaves ONE file the run writes. The checks of this job are made elsewhere: plan none. Send an empty checks list, an empty notChecked list and an empty questions list, and write ONE sentence saying what the job does, from the numbered job lines.`
+  goal-only confirmedBlock = `ALWAYS-ON PROTECTIONS - already enforced by this run and unchanged by the job; never compose one of these as a check:` + the protections, then only if present: `THESE WERE ASKED FOR, BUT NOTHING CHECKS THEM (state these in your notes):`, `QUESTIONS THE PERSON ANSWERED - binding:`, `OPEN QUESTIONS (state these in your notes, never decide them silently):` (no check list, no "confirmed"). (The code text uses an em dash after PROTECTIONS.)
+- F2 `$` ROWS (by: default), built by code, never by the drafter: per job line, a `$ floor` row (built, never real); on a text line (no standing `!` fact/phrase row) with ONE input a `$ cited` row ("every claim is backed by a quote copied from <input>"), with more than one input the row is not-checked with its reason; on a text line after a fact line a `$ numbers` row (numbersFromFacts, which `withFactBindings` already adds). In the drafts, code replaces the drafter's own cited parts on a text stage by ONE default cited part and puts that part on any stage that ends with no fact part. The ledger call no longer offers kind `cited` (removed from its system text and schema); a `!` cited is dropped "already on the list". The drafter's list block shows the `$` rows ("code adds it; write no part for it") and its header gains `A "$" row is a default check code adds itself.`; its instruction now reads `a count part only where a "!" count row is listed` (it said cited or count).
+- F3 WEEK-ONLY REFUSAL (code): a `!` look fact whose words, a `!` phrase, or a drafter fact's phrase/anchor/until holds a version-like or date-like token is refused to Not checked with `It names a version or a date from the input, true only for the input as it is today, so you judge it at Accept.` A fact a `~` rule carries (rules on the part) is the person's and exempt. The rule: version = `\d+\.\d+(\.\d+)*` not after a digit, dot, `$`, euro or pound sign and not followed by `%`; date = `YYYY-MM-DD`, `d/m/y` or `d.m.y`, `Mon d` (month name or abbreviation, optional year), `d Mon (year)`, `Mon YYYY` (case-blind). `src/checklist.js` `weekOnly`.
+- F4 EMPTY LIST: a list with no standing row but the floor (nothing `~`, `!` or `$` that stands) logs ONE extra `ledger` record `{key: empty, rowKind: empty, state: empty, reason: "empty list: nothing to check"}` at build and at the end; the plan then ends in the existing zero-check stop (d4596a7), never silent.
+- Record (draft log): kind `ledger` rows (phase `built`, phase `final`) incl. the `$` and empty rows; kind `ledger-try` per try (units seen, parts refused with reason `not on the list` or `week-only`).
+- The `!` call (unchanged but for the removed cited kind): one paid call, kinds `count`, `phrase`, system text of round 8 minus its `kind "cited"` line.
+
+#### Design: same three arms, alternating, N = 20 (as round 8)
+- Arm A (8 drafts): `Summarise the latest release in the changelog` / `~ exactly 3 bullets` / `~ under 80 words`, input `input/CHANGELOG.md` (sha256 6bfd90359485d7e2098ba5d10638473fee94e1e41bd479f6873900338320925b).
+- Arm B (8 drafts): the first line only, no `~`, same input.
+- Arm C (4 drafts): `Write a short friendly summary of the note`, no `~`, input `input/NOTE.md` (sha256 9f22ae39c34021cc1258d475d23f7072bd926eb7746bed798e64cc532284ece0).
+- Order `ABABC` x4. Answers: "go on" to the fit ask, "agree" to an "I propose" `~` ask, "drop it" to every other ask. Job names `r11g-<arm><i>`.
+- Provider: Fireworks `accounts/fireworks/models/deepseek-v4p1-flash` (in $0.45/M, out $1.80/M), key from the shell env only (`FIREWORKS_API_KEY`); an empty key is refused at $0 (exit 3, checked). Caps: $0.04 per draft, $1.00 total, the stop rule of rounds 5-8 (spent + the largest draft so far > total cap = no new draft). Round 8 spent $0.2018 (round 10 more of the same order).
+- Engine check: the copy's HEAD must be exactly `1880ad13e469f8999be55f5113dd1f90bace6fc9` and its `src`, `tests`, `package.json` clean (exit 2 otherwise). Scratch HOME; hamr's real `~/.config/bareloop` is never touched; its runs.jsonl line count (397) is reported before and after.
+
+#### Measures (frozen; decided by code from the draft log, the saved session and the observed prompts; each has a fail rule)
+- Q1 STAYS ON LIST (UNCHANGED bar): over non-casualty drafts, refused / units of the drafter's FINAL-try agent parts (each fact, each result count, each claims part; a week-only refusal counts as refused). FAIL if > 20% overall. Reported per draft and per arm.
+- Q2 NOTHING SILENT: every row of every non-casualty draft is logged at build and at the end and ends built, not-checked (with a reason) or dropped (with a reason) - 100%. An empty list counts only if logged with its explicit empty state at build and at the end (exact reason above) and no list that holds a row carries it. A missing row, a row left `listed`, a not-checked or dropped row with no reason, or an empty list with no empty record FAILS.
+- Q3 ZERO-CHECK: a draft that ends with no real check (fact or countable part) never reaches `prepared` and stops with the d4596a7 words; none in arm A stops or is prepared with zero checks. 100%. (Reported: how many zero-check stops occurred. With the `$` cited default a one-input text line carries a real check, so zero-check stops are expected to be rare; none is NOT a failure.)
+- Q4 GROUNDED: every kept word-bearing `!` row (fact or phrase with words) has all its words in the input, re-checked by the harness with its own whitespace/case-blind substring test; every dropped `!` row has a reason. 100%.
+- Q5 NO WORSE (same rule as round 8): prepared drafts among non-casualty drafts of arm A and of arm B. FAIL if arm A's prepared share < 70% or arm B's < 80% (round 6: 100% / 100% of non-casualty, minus 20 points; needed count = ceil(floor x non-casualty drafts)).
+- Q6 NO INJECTION: on every non-casualty draft, every DRAFTER prompt observed on the wire (live: the request body of each chat completion; it carries `THE LIST OF CHECKS`) holds NONE of these strings: `THE CONFIRMED PLAN`, `EVERY CONFIRMED CHECK`, `already saw and confirmed`, `Compose stages for these checks and no other`, `only three kinds of check`, `kinds of check`; and every CONFIRM prompt observed (it carries `THIS JOB HAS NO REPOSITORY`) carries GOAL_ONLY_NOTE and not the old note. At least one drafter and one confirm prompt must be seen on every non-casualty draft. 100%. (A scan of the wire prompts for exactly those strings, not a diff against a reference prompt: stated here so it is not read as more.)
+- Q7 NO WEEK-ONLY (round 11 reading, see the change above): no BUILT exact-words check carries a version- or date-like token that is in the input: the phrase/anchor/until of every fact part in the saved close (a part a `~` rule carries is exempt; a fact part named like a built look `fact` row is exempt, ruling 2026-11-11) and the words of every `!` row that ended built other than a built look `fact` row; the harness uses its own reading of "version-like / date-like" (written apart from the engine's, same classes). 100%.
+- Q8 DEFAULTS PRESENT: on every non-casualty draft with a saved close, every rubric-step stage with no fact part (a text line with an input) carries a cited part AND the final list has its `$` cited row, by default, built; a built `$` cited row on a fact stage or without a cited part also fails. 100%.
+- Casualties (a draft that stopped before any declaration; provider errors) are listed apart and never counted in Q1-Q8. More than 5 casualties of 20 = row-invalid round (no verdict).
+- Reported, not gating: per-arm prepared counts; the honesty bar H1-H5 of rounds 4-8 on arm A; what the `!` call proposed, kept and dropped; off-list and week-only refusals by kind per final try; empty lists; zero-check stops; new red kinds.
+
+#### Gate self-test (frozen, runs in dry AND live mode, $0)
+Each gate is run on doctored rows and must FAIL on them, and pass its controls: Q1 (3 of 5 refused fails; 1 of 5 passes); Q2 (a row left listed; a not-checked row with no reason; a missing final row; an empty list with no empty record; an empty record with no reason; an empty record on a list that holds a row; all fail; an empty list logged with its state passes); Q3 (a prepared draft with no real check; an arm-A zero-check stop; both fail; an arm-C stop passes); Q4 (a word not in the input; a dropped row with no reason); Q5 (5 of 8 in A, 6 of 8 in B fail; 6 of 8 / 7 of 8 pass); Q6 (a drafter prompt carrying the confirmed plan; carrying "kinds of check"; an old confirm prompt; no drafter prompt seen; the real `promptKinds` reader on a doctored prompt); Q7 (a built fact with a version; with a date; a built `!` row with a version; fail. The same fact carried by a `~` rule, plain words and a price pass); Q8 (a text line with no `$` cited row; a stage with no cited part; a `$` cited row that is not built; fail). Plus a $0 tap self-test: a local server receives a POST through the patched `http.request` and the drafter marker and a forbidden string must reach the prompt reader.
+
+#### Pre-declared outcomes (frozen)
+- PASS = Q1-Q8 all hold, the gate self-tests pass, casualties <= 5, spend <= $1.00, not stopped by cap. n = 8/8/4 on one model, one job family: a leaning, not proof.
+- STOPPED BY CAP = underpowered, not a PASS. ROW-INVALID = more than 5 casualties.
+- FAIL = any gate on the RESULT line. A failed round is reported FAIL; a further round would be pre-registered, never re-tuned. A red kind not seen before: STOP and report (hamr's call).
+- What the round cannot show: whether a person wants the rows (the plan card does not render `~`/`!`/`$` tags in this POC: the rows are in the draft log only); that the drafter stays on a list over a second job family; that the worker can fill the quoted claims the default cited check now demands of every text line (the run is not exercised: drafts only); that a model other than deepseek-flash behaves alike.
+
+#### Not removed (named, not hidden)
+- CONFIRM_SYSTEM (the system text of the confirm call) still says the call drafts "a PLAN ... the checks you plan to compose"; the goal-only note in the user message overrides it and code discards any checks it sends, so nothing of it reaches the drafter. Not scanned by Q6 (the scan reads messages, not the system text).
+- The drafter's declaration catalogue (`src/authoring.js`, rubric-step `asserts`) still says a part that carries out "a CONFIRMED check" lists its number in `covers`; with no confirmed checks the field is inert. It holds neither a check list nor "kinds of check" text. Shared with every other caller, so left byte-identical.
+
+#### Dry mode ($0: `node .claude/scratch/r10/ledger/paid11/draft.mjs --dry`, passed before freezing)
+Scripted model, 20 drafts through the same panel doors of the COPY (arms as in round 8; the scripted look now holds a week-only version fact, a standing section-word fact, the real round-2 d4 look in draft 6; the scripted list call returns a count row, a phrase the input does not hold and a date phrase; a scripted drafter fact with a version; arm C scripted from the real paid6 closes d17, d22, d18, d17: d17 now ends prepared with the default cited as its one real check, d18 (files-changed only) still stops for zero checks). Dry result recorded before freezing (see the dry line appended below): PASS (exit 0), 20/20 drafts, 19 prepared, Q1 5 of 34 refused (14.7%, scripted), Q2 0 bad, Q3 ok, Q4 ok (15 kept word-bearing), Q5 A 8/8 B 8/8, Q6 ok (42 drafter prompts, 20 confirm prompts, 0 bad), Q7 ok, Q8 ok (6 text lines), gate self-test ok (33 cases), tap self-test ok, dry checks all true (the empty-list record is checked at unit level: the engine's own functions called directly, because with a `$` row on every text line a drafting flow rarely ends with an empty list), casualties none, runs.jsonl 397 -> 397. The dry numbers are the SCRIPT's, not evidence about the model.
+
+#### Untested before the paid run (named, not hidden)
+- The Q6 request tap over the real provider (the local-server self-test proves the tap reads a body through `http.request`; the provider's own client could in principle bypass it: then Q6 reads "no drafter prompt observed" and FAILS, not passes).
+- How deepseek-flash reacts to a goal-only confirm turn and to `$` rows in the list block.
+- Targeted tests only in the copy (no full suite: a peer is running one).
+
+#### Amendments (dated, before any paid data)
+(none)
+
+#### Dry run line (round 11, $0, before freezing)
+`RESULT PASS (n=8/8/4 on one model, one job family: a leaning, not proof) drafts=20/20 (A 8, B 8, C 4) prepared=19 casualties=0 spent $0.4561 real runs.jsonl 397 -> 397` (exit 0; spent is the script's, not money). Q1 4 of 34 (scripted), Q2-Q8 ok, gate self-test ok, all dry checks true. Copy targeted tests (empty HOME, one file at a time) at 1880ad13: checklist 20/0 (the new test fails on 4e1abeae: 2 fails, checked in a throwaway worktree, removed), authorflow 153/0, confirmturn 34/0, authorjob 52/0, nocheck-end-check 5/0, panel-author 57/0 (also 57/0 on 4e1abeae; the earlier 7 fails need the real HOME: signRun with no `home` reads the person's own config for the monthly limit, so it reds outside the hermetic runner). The dry numbers are the SCRIPT's, not evidence about the model.
+
+## Addendum 2026-11-11 - Check ledger rounds 8-11 outcome
+
+Sources: `.claude/scratch/r10/ledger/paid8/` to `paid11/` (PREREG.md, result.json, progress.log); POC copy `/home/hamr/PycharmProjects/bareloop-ledger-poc`, branch `poc/ledger-list`. All rounds: one model, one job family, n=8/8/4: leanings, not proof.
+
+- **Round 8: FAIL (Q1 22%, 13 of 58; Q2 one row silent; 3 zero-check stops).** Cause: the confirm step still injected "kinds of check" and a confirmed plan, so two plans fought and the drafter wandered off the list (FINDINGS F310). Fix in the copy: ONE list with `~` / `!` / `$` rows and no injections.
+- **Round 9: FAIL (Q8 only, draft 6; 2 lines without a `$` cited row, 2 casualties).** The `$` cited default was decided before the build settled (FINDINGS F311). Fixed in the copy (4e1abeae): decided after the build settles, also after the last-try drop.
+- **Round 10: FAIL (Q1 only, 21%, 9 of 42).** All 9 were the drafter re-writing a phrase fact "release heading" with words like "## [0.54.1] - 2026-11-04", which the week-only rule refused. A phrase fact means fixed words the answer must contain, so such a check passes run 1 and fails run 2 after the next release. The refusals were CORRECT; Q1 counted correctly refused checks as the drafter wandering. That is a measure defect, named, not re-tuned (FINDINGS F312). Every other gate passed: 20/20 prepared, 0 casualties, no injection, every text line had its `$` cited default.
+  - **CORRECTION (2026-11-11):** "All 9" above is wrong. Re-checked against each session's last `ledger-try` refused list and final `ledger` rows: 4 were the week-only class (b4, a13: fact + count, correctly refused); 4 were a REAL list gap (a1, b2, a8, b12: the count "results" refused although its fact was on the list and built); 1 unclear (a16). Without the gap: 5 of 42 (12%). `weekOnlyRefusals` is a different count (FINDINGS F312 correction).
+- **Round 11: WITHDRAWN before any paid data** (pre-registration f5e145b3, nothing run). It narrowed the week-only rule to keep phrase facts carrying a version or date, which would let through a check that fails on run 2. The main session's reading was wrong and is withdrawn (FINDINGS F313). Copy commit 1880ad13 is NOT carried forward; round 10's rule (4e1abeae) stands.
+  - **CORRECTION (2026-11-11):** only the phrase-fact half of 1880ad13 was wrong. Its other change, "a fact's count rides with its fact", is the right fix for the real gap (test-proven only, never live). Build target = round-10 shape (4e1abeae) plus count-rides-with-fact.
+- **hamr's ruling 2026-11-11:** stop testing; build the round-10 shape in bareloop; keep refusing week-only exact-word checks for now. The "rules re-read each run" idea is parked in the PRD (v1.132 backlog).
+
+## Check list build spec (signed 2026-11-11)
+
+# BUILD SPEC: one check list per job, in bareloop (draft for hamr, 2026-11-11)
+
+Branch: `feat/check-ledger` (already holds Fix 0 + the round records). Source of truth for behaviour: the copy
+`/home/hamr/PycharmProjects/bareloop-ledger-poc` at 4e1abeae (round 10 shape) PLUS the "count rides with its fact" half of
+1880ad13 (NOT its phrase-fact half). Port by REWRITE into bareloop, never copy-paste (graduation is a rewrite).
+Rubric jobs only. Code jobs unchanged, byte-identical prompts.
+
+## Phase A — the proven shape (round 10, paid, 20/20 prepared)
+
+| # | What | Where (owner) | Called from |
+|---|---|---|---|
+| A1 | The list module: rows `~` (by you), `!` (by agent), `$` (by default); build, word proof, `~` wins, week-only, empty list | NEW `src/checklist.js` | A2 |
+| A2 | Build the list once, after the look and the pick path, before the confirm turn | `src/authorjob.js` `authorCloseForJob` | both doors (panel `authorsession.js`, CLI `authorrun.js`) |
+| A3 | One new paid call: the agent suggests up to 3 `!` checks (count, phrase) from the inputs; spend joins the drafting ceiling | `src/checklist.js` `runLedgerSuggest` | A2 |
+| A4 | Confirm turn = goal only (no checks, no "kinds of check" text, no notChecked, no questions; code discards any it sends) | `src/authorflow.js` confirm turn | `runConfirmTurn` |
+| A5 | Drafter sees the list (one code-written block); no confirmed-plan block, no "the person confirmed" text | `src/authorflow.js` `rubricAuthorPrompt` | drafter loop |
+| A6 | After each try: a part with no list row goes to Not checked ("not on the list"); a fact's result count rides with its fact | `src/checklist.js` `applyLedger` | `authorClose` loop, every try |
+| A7 | `$` cited default decided AFTER everything settles, incl. the last-try drop | `src/checklist.js` `ensureCited` | `authorClose` + `dropAfterLastTry` |
+| A8 | Week-only: refuse a check needing exact words (phrase, quote, must-carry) or a non-phrase fact anchor that holds a version or date | `src/checklist.js` `weekOnly` | A1, A6 |
+| A9 | Every row ends built / not-checked (reason) / dropped (reason); an empty list is logged "nothing to check" and ends in the zero-check stop | `src/checklist.js` + Fix 0 end check | `authorClose` end |
+| A10 | Draft log rows kind `ledger` (each row, at build and at end) and `ledger-try` (per try) | `src/authorflow.js` | `onCall`/draft log |
+| A11 | Card: each check tagged `[you picked]` / `[agent]` / `[default]` (only `[default]` is new) | `src/panel/index.html` `renderJobPlan` + `src/panel/jobplan.js` | plan bubble AND Job tab (one drawing) |
+
+Always on for rubric jobs. No config switch (hamr: a switch never wanted off is removed).
+CLI door: same list, no asks (ruling 4).
+
+### Prompt text (exact, to sign)
+- NEW list call system text (A3): "You look at the inputs of a job and name checks the inputs themselves support, beyond the guardrails the person wrote. Call suggest_extra_checks once with up to 3 entries, or with an empty list. - kind "count": how many results the input shows or the job asks for (min and/or max, whole numbers). - kind "phrase": fixed words copied verbatim from an input (phrase, and source = that input's label). Use only what you can see in the inputs. Do not repeat a guardrail the person wrote. If the inputs support none, send an empty list."
+- Confirm note (A4), replacing RUBRIC_CONFIRM_NOTE for rubric jobs: "THIS JOB HAS NO REPOSITORY. Its inputs are the person's own text files, and each numbered job line leaves ONE file the run writes. The checks of this job are made elsewhere: plan none. Send an empty checks list, an empty notChecked list and an empty questions list, and write ONE sentence saying what the job does, from the numbered job lines."
+- `CONFIRM_SYSTEM` still says the call drafts "a PLAN ... the checks": reword for rubric jobs to "a one-sentence goal" (residual from round 9, not yet live).
+- Drafter list block (A5): code-written from the rows; `$` lines say "code adds it; write no part for it"; "a count part only where a ! count row is listed or it counts a listed fact".
+- Refusal words: "Not on the list of checks made before the draft, so you judge it at Accept." / "It names a version or a date from the input, true only for the input as it is today, so you judge it at Accept." / "empty list: nothing to check".
+
+### Card preview (A11) — only the `[default]` tag is new
+```
+1  Summarise the latest release in the changelog
+   ~ exactly 3 bullets
+   ~ under 80 words
+   › check · exactly 3 list items              [you picked]
+   › check · at most 80 words                  [you picked]
+   › check · change bullet (1 result)          [agent]
+   › check · every claim quotes the Changelog  [default]
+   › not checked · "NO reuse credit..." — the plan did not build it
+   › not checked · release heading — names a version or a date from the input, true only for the input as it is today
+```
+
+## Phase B — the list becomes the one owner (NOT yet proven; own $0 check first)
+- B1 Signed close carries the list (signed: line, key, from, state, rule, part; reason/words unsigned).
+- B2 Readers become views of the list: card Not checked, Job tab Not checked, end check ("no built row"), retention.
+- B3 Remove what it replaces: confirm `checkItems`/`covers`/`moved`, `reconcileRubricPlan` three-source merge, `rulesOfLine` twin.
+Phase B gets its own $0 replay bar before any build (the round-1 bars P1-P7 against the real saved paid9/paid10 drafts).
+
+## Tests and gates
+- Port `tests/checklist.test.js` (rewrite), plus one fail-first test per A-item; show each fails on the branch tip before the change.
+- Neighbour tests: grep for every reworded string (confirm note, drafter blocks) and fix tests that pin old words.
+- Labels: commits touching `authorflow.js` carry Failure/Addresses/Corrects (cite `run mv76m82c` for the class, paid round ids in the body).
+- Full gate on the final commit (one suite, peers told), exit code + last line quoted; `npm run typecheck`.
+- Paid verify (PRD tick 4): the paid10 harness pointed at the branch, one round, Fireworks deepseek-flash, cap $1, same Q1-Q8 except Q1 counts only off-list parts that would have been kept if listed (raw share reported too).
+- Phone width of the card: hamr's DevTools check (barebrowse cannot).
+
+## Out of scope (parked)
+- Rules re-read each run (PRD backlog, hamr 2026-11-11).
+- A "newest X, whatever it says" check shape.
+- Check 0b (run-time worker told the picks): waits for fwd's released tag.
+- `may` read as a month by the week-only rule (known false positive, not seen live).
+
+## Decisions (hamr, 2026-11-11)
+1. A and B TOGETHER, one branch, one release (B's shape was tested in the round-1 replay: P1-P5, P7 passed; P6 fixed by the made-once list). Build order: A first, then B. B's no-loss proof is a $0 test over real saved paid9/paid10 drafts committed as fixtures.
+2. The new paid list call on every rubric draft — measured: round 10 drafts averaged $0.0091 each with the call, round 6 $0.0093 without it (same model, same jobs; the call is lost in the noise). Accepted.
+3. NEXT after this build (parked until then): place rules ("the first heading that starts with '## ['") instead of refusing exact-word checks; $0 POC first on bareloop's own CHANGELOG at two real releases from git history.
+
+
+## Addendum 2026-11-11: Paid verify round 12 pre-registration frozen
+
+The paid verify of the one check list (PRD v1.132 tick 4) is pre-registered and frozen, nothing run. Engine: a full clone of this branch at `f1c20b6947e61ca0f68644feb9d3751a0fc692cb`. Harness: round 10's, with Q1 counting only final-try off-list parts that would have been kept if listed (the raw share is reported beside it, the 20% bar is unchanged) and a new gate QB (every signed close carries `closeDecl.list`, no row words, `listMatchesClose` ok). Same arms (ABABC x4, N=20), same inputs, Fireworks deepseek-flash, caps $0.04 per draft and $1.00 total. The $0 dry run passed (exit 0, 42 gate self-test cases, runs.jsonl 397 before and after). The files live in `.claude/scratch/r10/ledger/paid12/` (untracked); their sha256 values:
+
+- PREREG.md `68e04498d7eefecd2a68cba2c08d76b0d6924ddbf6293a2de5926b1115be137b`
+- draft.mjs `7eb918cd2a5604ab73e425190ce86fdaa9f400bce706e628c9e135348d530dda`
+- input/CHANGELOG.md `6bfd90359485d7e2098ba5d10638473fee94e1e41bd479f6873900338320925b`
+- input/NOTE.md `9f22ae39c34021cc1258d475d23f7072bd926eb7746bed798e64cc532284ece0`
+
+## Addendum 2026-11-11: Paid verify round 12 result (2026-11-11): PASS
+
+Round 12 ran as pre-registered (prereg frozen at c9793a07; engine f1c20b69, copy `/home/hamr/PycharmProjects/bareloop-ledger-verify`; Fireworks deepseek-flash; files in `.claude/scratch/r10/ledger/paid12/`, `run.out` and `result.json`). RESULT PASS.
+
+- Drafts 20/20 (A 8, B 8, C 4), prepared 20, casualties 0, spent $0.1766 (cap $1).
+- Q1: 1 of 54 counted (1.9%), raw 5 of 54 (9.3%), bar 20%. Round 10 was 9 of 42 (21.4%).
+- QB ok: all 20 signed specs carry the list, 0 bad. Q2-Q8 ok (Q4 kept=26 bad=0; Q5 A 8/8, B 8/8; Q6 61 drafter prompts and 20 confirm prompts, 0 bad).
+- Real `runs.jsonl` 397 before and after.
+
+Caveats: n = 8/8/4 on one model and one job family, a leaning, not proof. Q1's "would have been kept if listed" is the harness's own frozen reading. Nothing has yet run as a real scheduled or panel run (draft stage only). The phone width of the `[default]` tag is unchecked. See FINDINGS F314.
+
+## Addendum 2026-11-11: Place-rules $0 POC round 1 pre-registration frozen
+
+Pre-registration for "place rules" (PRD backlog: a signed check stores a rule from a small closed menu, code re-reads the value each run). Nothing run yet. Files in `.claude/scratch/r10/placerules/` (untracked, hashes recorded here): bareloop's own CHANGELOG at all 61 tags (fixed rule, fit v0.2.0, plus crafted negatives) AND three unseen sibling repos (bareguard 47 tags, bareagent 75, litectx 44; their changelog text was not read before this freeze, rule parameters are picked by code from a closed candidate list). Bars: WRONG = 0 anywhere, 90% found-and-correct pooled on the unseen later tags (versions and dates separately, an unfittable repo counts 0%), Variant B decides, A is the control. A FAIL is reported FAIL and never re-tuned.
+
+- PREREG.md `e4513e192b124944566b9e21b7a4474d7467ef7790cbe1f71884fdf37d2b7027`
+- poc.mjs `95539c6f1d6afb228afe163b039020eeb44ecff0f0b01af05301f0208d66268d`
+
+## Addendum 2026-11-11: Place-rules $0 POC round 1 result (2026-11-11): FAIL
+
+Run once against the frozen prereg (commit 16cb20b7), exit 1. ROUND FAIL, reported as FAIL, not re-tuned. Result: `.claude/scratch/r10/placerules/result.json` and `out.txt` (untracked). See FINDINGS F317.
+
+- Variant B, real tags: bareloop 58/58 later tags correct for versions and 58/58 for dates (fit v0.2.0; v0.0.1 is a stop, no prefix line). Unseen pooled (bareguard 47 tags, bare-agent 75, litectx 44, unread before the freeze): versions 163/163, dates 162/163. The one date miss is a stop (bareguard v0.15.0, no date on the line). 0 WRONG on any real tag in any repo.
+- The FAIL is the crafted negative N1a ("heading format changed"). The crafted v0.55.0 changed only the newest headings; 37 older headings kept `## [`. The rule scanned past the changed top heading, found an older `## [` line and returned 0.33.0 / 2026-09-30 where "not found" was expected. That is a WRONG value (bar B1, hard fail), in both A and B.
+- Meaning: a prefix rule that takes the first matching line can silently bind a stale older release when only the newest heading drifts, a wrong value instead of a stop.
+- All three unseen repos fit the first candidate (`## [` ... `]`), so the corpus is effectively one genre; the test gave no evidence that code can choose among different formats. Variant A (no skip word) stops on every `[Unreleased]` top: 76.6% pooled versions, 75.9% dates, all safe stops.
+- Any round 2 needs a new frozen prereg (hamr's call).
+
+## Addendum 2026-11-11: First live end-to-end run of the check list (2026-11-11): green
+
+Engine 328a7876 (throwaway clone), scratch HOME, DeepSeek direct deepseek-flash; one step, green on attempt 1, $0.0320 total; the signing check (`listMatchesClose`) did not falsely refuse. Told picks reached the worker only through the planner's step action. n=1, one model. See FINDINGS F318.
+
+## Addendum 2026-11-11: Place-rules $0 POC round 2 pre-registration frozen (amended before data)
+
+Round 2 of the place-rules POC (round 1 stays FAIL, F317): strict first-heading selector; arm (a) cross-run on consecutive tag pairs of four repos, arm (b) blind node_modules changelogs, arm (c) crafted negatives. Nothing run yet. Amendment before any data (hamr 2026-11-11): arm (a) scores only reader mistakes (right / file-lag excluded from the denominator / wrong only when the true version is on a heading but another value was read / not found); a changelog that was not updated is never WRONG. Files in `.claude/scratch/r10/placerules/round2/` (untracked):
+
+- PREREG.md `2c750d2e60a414296fd43f6a8e43b48be1b07bd1398057b4de0c3df20f4a5bf9`
+- poc.mjs `79823d02905e2349599f75a4830d3d62b0bd3a6ecad2adbf6b3ac2b0b4eb5b1f`
+
+## Addendum 2026-11-11: Place-rules $0 POC round 2 result (2026-11-11): FAIL
+
+Run once on the frozen prereg (f69f3d92, amended before data), $0, no model call. ROUND FAIL on G1, from one WRONG in arm (b). Reported FAIL, not re-tuned.
+
+- The fix under test held: the strict selector reads only the first heading at the rule's level and never scans down. All 10 crafted negatives behave, including round 1's N1a (NOT FOUND now).
+- Arm (a): 224 consecutive tag pairs across bareloop, bareguard, bare-agent and litectx (the pair count of 223 quoted earlier was a miscount). Variant B gets versions 222/224 and dates 221/224; 0 stale reads, 0 file-lag, 0 WRONG. Variant A (no skip word) stays safe: versions 154/224, dates 153/224, all stops.
+- Arm (b): 61 files, 28 unique after dedupe and seen-package exclusion, 18 valid. Variant B: correct 9/18, unfittable 8/18 (safe stops), wrong 1.
+- The WRONG: `node_modules/boolean/CHANGELOG.md` (in bareagent), package 3.2.0, read 3.1.4. It is a semantic-release file: minor releases sit at `# [`, patches at `## [`. The rule picked by shape was `## [`, so it never saw the top `# [3.2.0]` heading: a mixed-heading-level stale read.
+- Caveat: arm (a) is one genre (keep-a-changelog style), so it says nothing about other formats.
+- Open (hamr's call): a round 3 design, for example a drafting-time refusal when releases appear at mixed heading levels. Needs a new frozen prereg before it runs.
+
+Result: `.claude/scratch/r10/placerules/round2/result.json` (untracked). See FINDINGS F319.
+
+## Addendum 2026-11-11: Place-rules $0 POC round 3 pre-registration frozen
+
+Round 3 of the place-rules POC (rounds 1 and 2 stay FAIL, F317 and F319): round 2 as frozen plus one change, a mixed-level guard (semver-carrying headings at more than one level give NOT FOUND `mixed-levels`, at fit and on every re-read). Regression on round 2's 224 pairs, its 18 valid node_modules rows (`boolean` must now stop) and all crafted negatives plus N9 to N11; a new blind set of 175 changelog files from other local projects' node_modules (82 unique after exclusions). Nothing run yet. Files in `.claude/scratch/r10/placerules/round3/` (untracked):
+
+- PREREG.md `4aa0f32f0d8730775a8adad27c7ac94455ab64a75b88cb119a16ba89f7204c83`
+- poc.mjs `218dad8433e73ac2f4907067883a8df531e5e19cf59cb6088589fd110961f8c6`
+
+## Addendum 2026-11-11: Place-rules $0 POC round 3 result (2026-11-11): PASS
+
+Round 3 (prereg 818186be, run once, exit 0): PASS. Variant B met G1-G5 and there were 0 WRONG anywhere. $0, no model call. Result: `.claude/scratch/r10/placerules/round3/result.json` (untracked). See FINDINGS F321.
+
+- Pairs: 224, Variant B versions 222/224, dates 221/224. Identical to round 2; the mixed-level guard never fired on a pair.
+- Negatives: 13 cases x A/B all pass. N9 (boolean shape) gives NOT FOUND `mixed-levels`; N10 (becomes mixed at re-read) stops; N11 (a "# Changelog" title over a single level) reads right.
+- Regression, 18 valid node_modules rows: `boolean` WRONG became NOT FOUND `mixed-levels`; `proper-lockfile` now also gives `mixed-levels` (a cost); B gets 8 correct, 2 mixed-levels, 8 unfittable.
+- Blind, 65 valid rows from other local projects' node_modules: correct 19 (29.2%), mixed-levels 8 (12.3%), unfittable 38 (58.5%), wrong 0.
+- Meaning: code never bound a wrong value. It reads keep-a-changelog style well and stops safely on other styles. The found rate on varied npm changelogs is low (about 29%). Which rule the AI picks is still untested.
+- Next: a build spec, on hamr's go.
+
+## Place rules build spec (hamr go 2026-11-11)
+
+Rulings (hamr 2026-11-11, "go with yours"): code picks the rule at drafting, not the AI. "Last read" means the value the previous run of this workflow read; if there is no earlier run, it is the drafting words.
+
+Evidence: POC round 3 PASS (F321). The harness is `.claude/scratch/r10/placerules/round3/poc.mjs` (untracked), with the functions validateRule, levelLines, mixedLevels, selectFirst, applyRule, rereadAll and CANDIDATES. Graduation is a REWRITE into src, never a copy.
+
+Pieces:
+
+- P1 Drafting (code only, $0). Today a phrase is refused as week-only at `src/checklist.js:114` (buildLedger) and at `:195` (applyLedger's `week`). There, code first tries to fit a place rule. It walks the frozen 27 candidates in order: the prefixes `## [`, `## v`, `## `, `# [`, `# v`, `# `, `### [`, `### v`, `### ` crossed with the ends `]`, space and end-of-line. The skip list is ['Unreleased'] and the mixed-level guard is on. The strict first-heading read, run on the fact's own input text, must return the version (kind headingBetween, shape semver) or the date (kind headingDateAfter) that appears in the phrase words. The first fit wins. A fit means the check is kept as a place-rule fact. No fit means it is refused exactly as today, with WEEK_ONLY_WORDS. Only these two kinds are handled; any other week-only words stay refused. The drafter AI is told nothing new.
+- P2 Signed shape. The fact carries `place: {kind, prefix, end, shape, skip}` plus `phrase`, which holds the drafting words as an example. The signature covers the rule. The per-run value is never written into the signed spec, so specHash and workflowKey do not change from run to run and Reuse keeps working.
+- P3 Run start (code only, $0, before any provider call). The step goes right after the refreeze block in `src/userrun.js` (about line 1700, after the `fresh.ok` handling and before coldReset). For every place-rule fact, read the input text from the run's own copy (`ctx.into/tree/<rel>`, file and URL inputs alike) and apply the rule. The mixed-level guard runs on every read. Same value or new value, the run proceeds. The run's in-memory spec gets the bound value as that fact's phrase, for the planner and the close. This happens AFTER the approval and signature check, and is never written back to the signed spec. If any rule is not found, stop before any spend.
+- P4 Stop. The words list every rule as "found <value>" (with "(was <last>)" when the value is new) or "not found (<plain reason>)". They then end with "Reuse workflow and adjust the rules, or check the input. The run did not start. Nothing spent." This uses the existing settleRefused path (a $0 settled row, ExitSignal(2)). Reasons are plain words from code, from this closed list: mixed-levels, no-heading-line, first-heading-mismatch, end-mark-missing, capture-not-shape, only-skipped-headings, no-date-on-line, no-file, empty-text.
+- P5 Audit. One spine record per run, event `place-rules`, rows {key, kind, found, value, was, reason}, emitted after job-start. The Audit tab lists it. "was" comes from the newest earlier run of the same workflowKey's `place-rules` record, else from the drafting words.
+- P6 Screen. The Job tab row for a place-rule fact reads like `› version in the newest "## [" heading (last read 0.55.0)`. The date kind reads `› date in the newest "## [" heading (last read 2026-11-04)`.
+
+Riskiest part: binding the run's value in memory without tripping any signature or hash re-check, and without the value leaking into the signed spec. The builder must show a fail-first test where the run grades on the new value and the signature check still passes. The builder must also show a test that the signed spec file is byte-identical after a run.
+
+Proof:
+
+- (a) Unit tests for P1 to P6.
+- (b) A $0 replay of round 3's data (224 pairs, 13 negatives, the regression and blind sets) through the PRODUCT functions, with the same frozen bars: 0 wrong, versions at least 222/224, dates at least 221/224, all negatives behave. A FAIL is reported, never re-tuned.
+- (c) One live pair on DeepSeek direct, deepseek-flash, cap $0.10 per run, scratch HOME, input under 50 KB. Draft on an older changelog version and run. Then Reuse on a newer one: it must read the new value and go green. Then a mixed-level input: it must stop at $0.
+
+Out of scope: AI rule choice; rule kinds beyond the two; signing shapes not words (F320 note); ordering checks.
+
+### Place rules POC round 4 pre-registration (frozen, nothing run)
+
+Date: 2026-11-11. Round 4 is $0 and asks two things, run once: arm E, whether the product `src/placerule.js` equals round 3's frozen POC on round 3's exact data (0 differences, product wrong 0); arm W, whether a phrase written as the whole heading line (`## [0.54.1] - 2026-11-04`) can bind by a candidate `fitLine`/`rebind` built inside the POC (G1 wrong 0, versions and dates 90% per repo and pooled, closed reasons, 17 negatives behave). Frozen in `.claude/scratch/r10/placerules/round4/` (PREREG.md and poc.mjs). Nothing was run on real data.
+
+- sha256 PREREG.md: fe9af317cefe06d59eba8be57272b3847d876455d70a02e465e1f025fbcd82c0
+- sha256 poc.mjs: e369dd499815b191a6b348fc9261e190b514675f880d49a74b061cd88e891590
+- Run: `node /home/hamr/PycharmProjects/bareloop/.claude/scratch/r10/placerules/round4/poc.mjs --real`
+
+### Place rules POC round 5 pre-registration (frozen, nothing run)
+
+Date: 2026-11-11. Round 5 is $0, run once: round 4's arm W with one change, the "any piece of the heading line" fit. A phrase carrying one semver and/or one ISO date token (a whole heading line, a cut `## [0.54.1]`, or a bare value) is fitted by the product's fit to one heading line; the template (tokens to `{v}`/`{d}`) must be CONTAINED in that line (round 4: equal); at run start the bound text must occur inside the newly read heading line. W1 runs three times (whole line, cut after the version's closing mark, bare version) on the 224 pairs; W2 now scores every saved draft phrase; W3 is round 4's 17 negatives with W-N3 changed and W-N5 added. Bars G1 to G5 are in PREREG.md. Known before any number: W-N1 is kept as round 4 wrote it and is predicted to proceed under containment (a G1/G4 fail on that row). Frozen in `.claude/scratch/r10/placerules/round5/`. Nothing was run on real data.
+
+- sha256 PREREG.md: e3c9f1677a00e587b2519542c94da8ae705b6a02a6f532b124ec531c3b25da14
+- sha256 poc.mjs: c1841cfc9b74adda8d04ddcd7572418ea0a6643f096891014b9fba317541c60a
+- Run: `node /home/hamr/PycharmProjects/bareloop/.claude/scratch/r10/placerules/round5/poc.mjs --real`
+
+### One-owner week-only POC pre-registration (frozen, nothing run)
+
+Date: 2026-11-11. $0, run once. Question: if the list row alone decides week-only handling at signing (applyLedger keeping no week-only logic of its own; the person's own `~` text naming the token is the only exemption), does every signed week-only fact become place, refused or exempt, with none fixed and none wrong? Bars G1 (live session smwcirsot84mn "version" becomes place 0.54.1), G2 (wrong = 0), G3 (0 fixed week-only except exempt), G4 (under 20 unique rubric sessions = UNDERPOWERED). The author knows the live defect.
+
+- sha256 PREREG.md: 2e6aad5be2d80d62777ec3f79daf1a892e98aa13d56a95fbacc779792d205824
+- sha256 poc.mjs: 6056a9a521b7f475dff60168fc5fe644fe7fbc4eacb7d58c7b828a2aeff2841f
+- Run: `node /home/hamr/PycharmProjects/bareloop/.claude/scratch/r10/placerules/onewner/poc.mjs --real`
+
+### One-owner week-only POC round 1 result and round 2 pre-registration (frozen, nothing run)
+
+Round 1 (run once, 381 unique rubric sessions, 144 week-only facts): VERDICT: FAIL (G1 ok, G2 wrong=2 FAIL, G3 fixed-remaining=0 ok, G4 powered n=381), rawDirs=441. Cause: one split pair (version + date facts, one row yielding both values) got both values each. Not re-tuned. Round 2 changes ONE thing: a fact keeps only the row-fit value(s) whose token equals its own phrase token(s) (both when its phrase holds both). Same data, matching, key and bars G1-G4; new report-only split of no-row cases (check-list-drafted vs older, real-model vs dry). Round 1's results are known to the author.
+
+- sha256 PREREG.md: 3fbff39f3622db947962ba83a0da6a0f5098fe18f53556d57306b124734349ec
+- sha256 poc.mjs: c55c8e3a15ab9c8b9f38848d1a6bbd80a858668052bb7f59b6465a23e3d574bc
+- Run: `node /home/hamr/PycharmProjects/bareloop/.claude/scratch/r10/placerules/onewner/round2/poc.mjs --real`
+
+### Place rules: build status 2026-11-11
+
+Commits in order, oldest first (POC history F317, F319, F321, F323, F324 is in FINDINGS):
+
+- 5c768c7b P1: fit a place rule at drafting instead of refusing a version or date as week-only.
+- 60c7d82e P2: pin the signed shape (rule signed, run value never signed).
+- 6db34b4e P3: bind the run's place-rule values in memory after the approval check.
+- b134ac78 P4: the $0 stop lists every rule in plain words.
+- f0e23027 P5: one place-rules spine record per run, after job-start.
+- 92c3eaf2 P6: the Job tab row for a place-rule fact.
+- adc63ce1 P1b: strip a heading piece to its value(s) at drafting (F324).
+- 165cbcbe, d5a54896: the door re-check uses the run's own read value; door rerun success path test.
+- eb828f77, 5315b617: look facts stripped to their value(s); strip only for a phrase-shape look fact.
+- 3daf33b0: one owner of the week-only decision, the list row alone (F325).
+- 34d58847: a place rule on a drafter fact is discarded before the one-owner decision (F325; not seen live).
+- b6c455cf, bc813cc6: plain split-fact names, no "release version version" (F326; test-proven, not seen live).
+
+Live proof: F326 (origin green, Reuse on v0.55.0 green, mixed-heading Reuse stopped at $0). Full gate on bc813cc6: tests 5935, pass 5933, fail 0, skipped 2, exit codes 0.
+
+## Addendum 2026-11-12 - the drafting question box (signed by hamr in chat)
+
+A question asked while drafting gets its own box in the panel, so the person's intent is a typed choice, never words parsed. Copied from fwdloop v0.31.0 (am29, am30, am31) by rewrite, plus two bareloop-only questions. The CLI (`src/authorrun.js`) is unchanged and keeps typing words. One owner: `src/questionbox.js`.
+
+- **A. The box.** Head "A question the plan raised (i of n)", "About job line N", the question, a choices row, "Or type a new rule:", a one-line answer box, an alert error line, a wide Send. It takes the chat input's place while open. The question's chat message waits out of the thread until answered.
+- **B. Look asks, typed choice.** The send route takes `choice` (`agree` | `drop` | `rule`); absent = today's words reading. Agree only with a proposal; Drop it only on a question about one of the person's `~` rules (integer rule number); `rule` keeps the box's words whole. The panel hides the `Answer "agree"...` / `"drop it"` tails (exact suffix). Refusals in fwd's words, question stays open, nothing logged. Drafter (try-3) questions: box and Send only.
+- **D. Fit check.** [Go on] [Stop], no box. Choices `go-on` | `stop`; any other is refused.
+- **E. Destination point.** [Yes, set it to <folder>] [No, keep <current>] and a box "Or type a different Destination:"; a typed path passes the card's own `startDestinationProblem` check first; the log row says `yes` | `no` | `typed`.
+
+Status: built on feat/check-ledger, test-proven (tests/question-box, question-choices, question-before); not seen live; phone width (320/390) not checked (no walk harness in this repo, barebrowse cannot emulate a phone).
+
+Live walk 2026-11-12 (DeepSeek flash, test panel, scratch HOME): Stop at the fit question (session smwdhk8e6amd0, choice `stop`); Drop it (smwdirp88t2cy and smwdixbapp5h4, choice `drop`); typed own rule (smwdiy4k3bk0v, choice `rule`, words kept whole); Agree (smwdoiysjmma3, choice `agree`). Fit [Go on] and [Stop] seen. Destination buttons NOT seen live. Phone width NOT checked. Live findings: FINDINGS F327-F332 (F330 and F332 open).
+
+## 2026-11-12 CHECK BLOCK REDESIGN — signed 2026-11-12 (see addendum)
+
+hamr's direction 2026-11-12 is signed; this design is a proposal for hamr to interview and sign. No build before a POC PASS. The branch release waits for this (hamr 2026-11-12).
+
+### Why
+
+- hamr 2026-11-12: "checks that are checkable and agreed should be part of the plan and should be verified". The flow he wants: job > look for rules to match > `~ ! $` > code finds it and matches it > agent replies with delta/questions > approved: move forward; modify: go back to where all stored rules are, update or remove `~ ! $`, then pass it through code again. No "or" branches. "Most issues come from reconciling what is in and out." Stop patching with injected texts and complex single functions; build the block as a clean class with functions called each round, clean if/else and a while loop.
+- The Nov-10 ruling made ONE code-owned check list (built Nov 11, rows `~ ! $`, `src/checklist.js`). But "code builds the checks from the list" (the R10 "offer redesign", PRD v1.131 ticks 5-6) stayed OPEN, blocked on bareguard BG-4. BG-4 was DELIVERED in bareguard 0.33.0 (UPSTREAM-ASKS BG-4) and bareloop pins `^0.35.0`. The blocker is gone.
+- Today the AI still writes rubric checks in its own declaration format (`rubric-step` parts) beside the list, and code reconciles that second store through separate functions. F329 and F330 are losses at those seams: a look tie dropped by the list (F329), and one part-tied red dropping five checks plus a lost agreed rule and an invisible drop (F330).
+
+### Inventory (read from the tree on feat/check-ledger, 2026-11-12)
+
+- Job, rules and look: `lineRules` (`src/rubricstep.js:706`); `runPageMap` (`src/pagemap.js:107`) reads the page; `askableFromLook` (`pagemap.js:259`) makes the code-forced asks; `readingOfQuestion` (`pagemap.js:237`).
+- The one list: `buildLedger` (`src/checklist.js:68`) makes rows `~` (rule), `!` (look fact or agent proposal, word-proven by `proved`), `$` (defaults); `runLedgerSuggest` (`checklist.js:467`) is the AI's extra-check call; `ensureCited` (`checklist.js:314`); `resolveLedger` (`checklist.js:330`); `signedRows` (`checklist.js:379`); `ledgerBlock` (`checklist.js:390`) is the prompt text.
+- The second store, the AI's declaration: the drafter writes `rubric-step` parts (facts, rules, count, refused). `applyLedger` (`checklist.js:193`) refuses AI parts that are not on the list and keeps only the look's `forRule` on a part (look-tied credit added by fea67fd9, `checklist.js:216-236`).
+- The reconcile chain, run as `picked` in `src/authorflow.js:2896-2906` and then at ~3115: `moveUncheckable` (`src/checkpick.js:365`), `applyPicks` (`checkpick.js:419`), `fillAndMergeFacts` (`checkpick.js:472`), `applyLedger`, then `settlePersonsWords` (`rubricstep.js:806`), `withDropNotes` (`rubricstep.js:871`), `withFactBindings` (`rubricstep.js:846`), `ensureCited`. Gate: `checkRubricParts` (`rubricstep.js:612`), `checkRubricRules` (`rubricstep.js:755`), `settleRules` (`checkpick.js:329`).
+- The revise loop: `MAX_REVISIONS = 2` (`authorflow.js:111`); the loop keeps the LAST try (~3105-3125); `dropAfterLastTry` (`authorflow.js:2618`) calls `dropExtras` (`checkpick.js:571`), which drops every part a red touches and writes no record, shown only as `retentionOf` (`checkpick.js:526`); the F176 fallback (`authorflow.js:3223-3228`) fires only on an instrument stop.
+- The question door: `src/questionbox.js` (`boxFor`, `refuseChoice`, `resolveChoice`); the panel answer loop in `src/panel/authorsession.js` (~1215-1240) turns a typed choice (`agree` | `drop` | `rule`) into a new `~` rule or a left-off rule.
+- Is the deterministic (repo) job on this path? No. The list and the reconcile chain run only when `lang === RUBRIC_LANG` (`authorflow.js:2902-2904`, 3117). Repo/deterministic jobs are out of scope.
+
+### The design (proposal)
+
+One class, `CheckBlock` in `src/checkblock.js`. State: the rows (the one store) and the open questions. Nothing else holds a check. Methods are small and pure and are called in a fixed order:
+
+1. `fromJob(jobLines)`: `~` rows from the person's rules; `$` default rows.
+2. `addLook(look)`: `!` rows from the look, word-proven by code. A look fact tied to a `~` rule is a LINK on that row (`forRule`), never a drop.
+3. `match()`: per row, can code check it on the saved page? Kind money, time, phrase, count or cited, plus a bound. Else the row is not-checkable with a plain reason.
+4. `build()`: code makes every check from the rows through bareguard shapes. The AI never writes a final check.
+5. `ask()`: code-forced questions (cap 3, as today) for rows code cannot settle. The question box: Agree / Drop it / own rule.
+6. `applyAnswer(choice, text)`: a row edit from the typed choice (the choice decides, never the words).
+7. `applyDelta(delta)`: the AI's reply is a list of proposed ROW edits (add a `!` row, propose a reading for a `~` row, propose a not-checkable reason). Code alone validates each edit. An illegal edit is refused on its own, never the whole reply.
+8. `reconcile()`: runs `match`, `build`, `ask` over the WHOLE list every time.
+
+Loop: `while (block.hasOpenQuestions() || block.hasPendingDelta()) { apply; block.reconcile(); }`, then sign. Clean if/else, no "or" branches. The card, Job tab, close, retention and Audit read rows only.
+
+Invariants (each a test):
+- agreed + checkable implies built;
+- not checkable implies Not checked with a reason;
+- nothing on the card that is not a row;
+- every edit passes `reconcile`;
+- no injected prompt text restates the list.
+
+### What it replaces
+
+- The AI-written rubric-step parts for rubric jobs (the drafter's `parts` in `REQUIRED_FACTS_BRIEF`, `authorflow.js:1509`).
+- `applyLedger` and its refusal of AI parts (`checklist.js:193`); `resolveLedger`, `ensureCited` become row reads.
+- `settlePersonsWords` (`rubricstep.js:806`), `withDropNotes` (`rubricstep.js:871`), `withFactBindings` (`rubricstep.js:846`).
+- `fillAndMergeFacts` (`checkpick.js:472`), `moveUncheckable` (`checkpick.js:365`), `applyPicks` and `settleRules` as separate steps (`checkpick.js:419`, `329`).
+- The last-try drop: `dropAfterLastTry` (`authorflow.js:2618`), `dropExtras` (`checkpick.js:571`), and `DROPPED_WORDS` (`checkpick.js:561`) as a catch-all reason.
+- The rubric revise ladder for parts (`MAX_REVISIONS` use for parts, `authorflow.js:111`, loop ~3105).
+- fea67fd9's look-tied credit (`checklist.js:216-236`) is superseded: a link row makes it unnecessary.
+- Any confirm or injected text that restates the list (`ledgerBlock`, `checklist.js:390`, and the list lines in the drafter brief).
+
+What stays: bareguard shapes and validation; the seed/dry read on the page (`pagedry.js`); signing and the hash; calibration where it applies; the question box; `runPageMap` (the look). Out of scope: deterministic repo jobs.
+
+### Open questions for hamr (interview before signing; not answered here)
+
+1. What does the AI still do per round: propose `!` rows and readings only, plus the goal sentence?
+2. Per-edit refusal or whole-reply refusal?
+3. Does the 3-try limit stay, and what is a "try" when the AI only sends deltas?
+4. Repo/deterministic jobs in or out? (The inventory says they do not share the path, so out is the default.)
+5. What happens to fea67fd9 and the F307 local fixes kept on this branch (55e7234, cb3babf, 039ce9d)?
+
+### POC plan (no build before PASS)
+
+A prototype block replays saved drafts at $0, read-only, from the test panel sessions: smwdoiysjmma3, smwdiy4k3bk0v, smwdhl8k5q8pn (F329/F330 cases), plus the other saved rubric sessions in `.claude/scratch/r10/e2e/work/home/.config/bareloop/panel-sessions/` (smwdirp88t2cy, smwdixbapp5h4, smwdjoy4dsdxs, smwdhk8e6amd0, smwdivlp43ywm, smwdiwhn50v5i, smwc2tpds4lnq) and the 77 saved paid drafts of the check-list POC (their path is listed before the freeze; not checked here). The real `~/.config/bareloop/panel-sessions` is read-only and untouched. The sets are listed before any number exists.
+
+Bar, to be frozen by sha BEFORE any number:
+- every agreed checkable row is built;
+- no not-checkable row is built;
+- zero AI-format parts reach the close;
+- the card renders from rows only.
+
+FAIL on any bar: report FAIL, redesign, re-freeze, never re-tune.
+
+### Release note
+
+The feat/check-ledger release waits for this redesign (hamr 2026-11-12). Open findings that stay open until then: F330, F332.
+
+### 2026-11-12 SIGNED — hamr's answers
+
+Governing line, hamr verbatim: "goal again is simplfication and one flow one place ai suggestes ! code adds $ and code decides what worked/doable"
+
+Signed by hamr 2026-11-12. No build before POC PASS.
+
+1. Yes: per round the AI only proposes `!` rows, readings for `~` rows, and the goal sentence. Code builds every check.
+2. A: per-edit refusal. A bad AI edit is refused alone; the rest of the reply stays.
+3. Yes: the limit stays as 2 revises then Start over (as fwd). A "try" is one AI delta reply. Code never drops rows after the last try; rows change only by the person or by code.
+4. Repo/deterministic jobs OUT. fwdloop will borrow this whole change after the bareloop release.
+5. A: keep fea67fd9, 55e7234, cb3babf, 039ce9d until CheckBlock replaces them; delete them in the same build.
+
+POC bar frozen: .claude/scratch/checkblock-poc/PREREG.md sha256 ab684c13edde0815956b92ee82bc58b701e6a90a05f77d8ab0822a3287d0c298
+(Case sets: 10 test panel sessions plus the 77 saved paid drafts, paid to paid6, under `.claude/scratch/r10/`; counts verified by listing. The PREREG file is untracked; this sha is the freeze.)
+
+### 2026-11-12 POC round 1 FAIL, round 2 frozen
+- Round 1 verdict FAIL: record in `.claude/scratch/checkblock-poc/RESULTS.md` (stays as written). Most failures were scorer defects, but one was a real block fault: the "more than 3 checks proposed" cap counted every AI row kept across all replies instead of the checks kept in one reply (src/checklist.js:18, :121), so a full reply refused every later edit whole, against the signed answer 2A (per-edit refusal). Fixed: the cap is per reply, each extra refused alone.
+- hamr's ruling A (2026-11-12): when the look picked the shape for a `~` rule but gave no limit, code reads the limit from the person's own `~` words (e.g. "under $450", "between 05:00 and 21:59"), reusing the existing readers; a text code cannot read stays Not checked with a plain reason; code never invents a shape.
+- POC round 2 bar frozen: .claude/scratch/checkblock-poc/PREREG-R2.md sha256 39650de10cf6594e72e4daf8f263d1178166258dee8473dffdc8afaf343c853a
+
+### 2026-11-12 CHECK BLOCK BUILD SPEC — for hamr's read, not signed
+
+Status: a spec for hamr to read. Nothing is built. No builder starts before hamr signs this.
+The POC (round 2, PASS) is `.claude/scratch/checkblock-poc/RESULTS-R2.md`. Its thin power is stated there; this spec does not claim more than it proved.
+Line numbers below were checked against the tree on feat/check-ledger on 2026-11-12. None of the design's cited lines had drifted. New lines are added where the design named none.
+
+#### 1. Goal
+
+hamr, verbatim: "goal again is simplfication and one flow one place ai suggestes ! code adds $ and code decides what worked/doable"
+
+Rubric jobs only. Repo/deterministic jobs are out (answer 4).
+
+#### 2. The new module: src/checkblock.js
+
+One class, `CheckBlock`. The rows are the one store. Nothing else holds a check.
+The prototype is `.claude/scratch/checkblock-poc/checkblock.mjs`. The build is a REWRITE from it, never a copy (rule: graduation is a rewrite).
+Every method is small. Each says what it reads and what it writes.
+
+A row: `key`, `line`, `kind` (rule, fact, phrase, count, cited, numbers, floor), `by` (you, agent, default), `from`, `state` (built, not-checked), `reason`, `words`, plus kind fields. A `~` row may carry `links` (look facts tied to it), `pick`, `aiReading`, `left`.
+
+- `constructor({texts, labels, maxTries})`. Reads the frozen input texts and labels. Writes empty `rows`.
+- `fromJob(jobLines)`. Reads the person's lines and `~` rules (`lineRules`, `src/rubricstep.js:706`). Writes one `~` row per rule and one `$ floor` row per line.
+- `addLook(facts)`. Reads the look's facts. Writes: a fact tied to a `~` rule (`forRule`) becomes a LINK on that row, never a drop. Any other fact becomes a `!` row.
+- `match()`. Reads every row, the saved page text, the person's words. Writes `row.can` = ok or not, and how. Never the AI. Order for a limit: the look's reading, then the person's own words (`readLimit`, section 5), then the AI's reading.
+- `build()`. Reads `row.can`. Writes `row.state` and `row.reason` on every row. Returns the close's stages and parts, made by code through the bareguard-backed shapes (`rubricStepShapeReds`, `partOfPick`). A row code cannot build keeps its place with its plain reason. `$ cited` and `$ numbers` are decided here, from what the line ended with.
+- `ask()`. Reads `row.can.ask`. Writes `open` (the questions). Cap 3 stays (MAX_QUESTIONS rule at `src/authorjob.js:703`).
+- `applyAnswer(key, choice, text)`. Reads the typed choice (agree, drop, rule). Writes a row edit. The choice decides, never the words.
+- `applyDelta(delta)`. Reads the AI's reply: a list of row edits. Writes row edits, each checked alone (section 6). Counts one try per reply.
+- `reconcile()`. Runs `match`, `build`, `ask` over the WHOLE list, every time.
+- `drive({answer})`. The loop: `while (open questions or a delta waits) { apply; reconcile }`. Then sign.
+- `card()`. Reads rows only. Returns the card lines (one pure function; the card's fixed words in one `CARD_T`).
+- `signedRows()`. Reads rows. Writes the signed list (line, key, from, by, kind, state, rule, part, reason, NO words).
+- `retention()`. Reads rows. Returns the per-line counts.
+- `hasBuiltCheck()`. Reads rows. True when one non-floor row is built (the standing ruling: a run needs one check).
+
+The block never removes a row. Only the person (answer) or code (match) changes a row.
+
+#### 3. Call sites (every clause, file:function)
+
+An engine with no caller is not the feature. Each clause below is wired in the build, and the test for it goes through the caller, not the class alone.
+
+- Make the block (job + look): `src/authorjob.js`, the block at 775-787 that now calls `buildLedger` (`checklist.js:68`). It becomes `new CheckBlock(...)`, `fromJob`, `addLook`, `reconcile`. The phase `ledger-built` stays, fed from `block.signedRows()`.
+- Code-forced questions: `src/authorjob.js:701` calls `askableFromLook` (`src/pagemap.js:259`). It becomes `block.ask()`. The look keeps `runPageMap` (`pagemap.js:107`) and `readingOfQuestion` (`pagemap.js:237`).
+- The pick path (check picks for count rules): the picks settle into `rule.pick` rows through `applyAnswer`. `settleRules` (`checkpick.js:329`) is read at `authorflow.js:2896` and `checklist.js:73`; both go.
+- The AI's extra `!` check call: `src/authorjob.js:779` `runLedgerSuggest` (`checklist.js:467`). Its output goes into `block.applyDelta` (same door as the drafter's reply). See open item 3.
+- The drafter's reply per try: `src/authorflow.js` `authorClose`, the `picked` closure (2899-2906) and the try body (3115-3126). `picked` and `settled` are replaced by: `block.applyDelta(parse(ask))`, `block.reconcile()`, then the declaration is assembled FROM `block.build()` and passed to `checkDraft` (`authorflow.js:2915`).
+- The revise loop: `MAX_REVISIONS` (`authorflow.js:111`), `revisionCap` (2730), `nextTryMayAsk` (3001), the revise turn (3215). Limit stays 2 revises. A try is one delta reply. The revise turn carries each edit's own refusal reason and nothing else.
+- The end of the draft: `authorflow.js:3264-3265` and 3302 now read `resolveLedger` and `retentionOfList`. They become `block.signedRows()` and `block.retention()`. Phases `draft-ledger` and `draft-retention` stay.
+- Panel answer loop: `src/panel/authorsession.js` `answerQuestions` (about 1209-1330). Each answer, via the question box choice (`takeChoice`, `refuseChoice` at 1390, `resolveChoice`), calls `block.applyAnswer`. The `src/questionbox.js` box (`boxFor` at `authorsession.js:653`, `offersOf`) reads `block.open`. The offers come from the row (agree only with a proposal; drop only for a `~` row).
+- Card, signed: `authorsession.js:1352` `cardOfClose` (`rubricstep.js:1029`) with `readDraftLedger` (`src/draftspend.js:289`). It reads the signed rows (`closeDecl.list`) only.
+- Job tab and plan card: `src/panel/jobplan.js` `planFromSpec` (53; called at `src/panel/server.js:1741`, 3642, 4071) and `planFromConfirm` (132; called at `authorsession.js:191`), drawn by `renderJobPlan` (`src/panel/index.html:4101`; called at 4160 and 6021). They read rows only. The Not checked list at `jobplan.js:100-125` reads row reasons, not `refused` parts.
+- Close and signing: `src/authorjob.js:968` `signedRows(authored.ledger)` becomes `block.signedRows()` (the signed `closeDecl.list`). The gate stays: `src/authoring.js:1530-1532` `checkRubricParts`, `checkRubricRules` check the code-built parts (a second look, kept).
+- Plan-matches-close check: `src/panel/authorroutes.js:527-530` `planMatchesClose`, `listMatchesClose` (`rubricstep.js`). They read rows.
+- End check (one check needed): `src/panel/authorsession.js:1011` and `src/authorrun.js:1180` both call `noCheckStopText` / `isNoCheckRubricClose` (`authorreadout.js:887,902`). They become `block.hasBuiltCheck()`. See section 8 and open item 1.
+- Retention: `authorflow.js:3125` `retentionOf` goes (section 8); `retentionOfList` (`checkpick.js:550`) reads `block.retention()`.
+- Audit: the draft-log writers at `authorsession.js:703-706` (`ledger-built`, `draft-ledger-try`, `draft-ledger`) and the readout words at `authorreadout.js:319-322`. `draft-ledger-try` now reports edits kept and edits refused with reasons.
+- Prompt registers: `src/promptregisters.js:94` lists `ledgerBlock()`; update it to match what stays.
+
+#### 4. What the AI is asked for now
+
+The AI's rubric reply shrinks to: row edits (add a `!`, a reading for a `~` rule, a pick for a count rule, a not-checkable reason) plus the goal sentence. It never writes a part, a check or a final declaration.
+The AI sees the job lines and the look (its existing inputs). It is NOT shown the list. A refusal says "already on the list" per edit.
+No injected text restates the list (invariant 5). A line saying what the edit shape is, is a format, not the list.
+
+Prompt constants that change (all in `src/authorflow.js` unless stated):
+- `REQUIRED_FACTS_BRIEF` (1509): the part-writing rules go; it becomes the row-edit format and the look-copy rule only.
+- `RUBRIC_RULES` (1481): "plan it as a limit with its number" and "a number YOU make" move to the reading edit; the line about a time proposal being a range stays (code enforces it too).
+- `settledBlock` (1498) and its use at 1608: removed (code settles picks).
+- `ledgerBlock` use at 1609 and the function (`checklist.js:390`): removed.
+- `LEDGER_SYSTEM` (`checklist.js:409`), `LEDGER_SCHEMA` (415), `ledgerUserText` (452): change only if open item 3 is answered "fold"; otherwise they feed `applyDelta` unchanged.
+- `RUBRIC_CONFIRM_NOTE` (2274): check for list wording, remove any.
+- Prompt-commit labels apply (section 11).
+
+#### 5. The limit reader (hamr ruling A)
+
+When the look picked the shape for a `~` rule but gave no limit, code reads the limit from the person's own `~` words. One reader, no copy.
+- Put `readLimit` in `src/rubricstep.js` beside `TIME_RANGE_RE` (792) and `NEGATING_RE` (793), exported. The block imports it. `CLOCK` (791), `boundInWords` (736) and `validReading` (`pagerules.js:46`) judge the result.
+- The ops words are the `facts.js:254-255` words. Money direction words (under, below, less than, at most, up to, no more than, over, above, more than, at least, no less than) are the only new parsing. `between $X and $Y` is the money range.
+- Code never invents a shape. No look-tied link, no read.
+- A text code cannot read is Not checked with a plain reason. Never a wrong check.
+
+Required tests the POC did NOT cover (each ends built correctly or Not checked with a plain reason):
+- "at least $200": built as gte 200.
+- "over $450": built as gt 450.
+- "between $100 and $300": built as between 100 and 300.
+- "between $100 and 300" (second amount has no sign): Not checked (the reader needs a sign or word on both).
+- one-sided time, "after 06:00" and "before 21:00": Not checked (a time proposal must be a range; also negating words).
+- AM/PM, "between 5:00 PM and 9:00 PM": Not checked (the prototype refuses a 12-hour time; a build may convert, but only with a test that proves it).
+- negated: "not between 05:00 and 21:59", "not under $450": Not checked.
+- one more case found while reading the prototype: "under $450 or over $900". The prototype's first-match reader would read only "under $450" and drop the "or". It is a wrong check. Rule: more than one amount or range in the rule = Not checked. Needs a fail-first test. (Not seen live; found by reading, so it is a test, not a parked defect.)
+
+#### 6. The per-reply cap
+
+`MAX_BANG = 3` (`checklist.js:18`) counts the checks KEPT in one AI reply, in order. Each extra is refused alone with "more than 3 checks proposed". It never refuses a later reply. (POC round 1 fault: the prototype counted across replies.) Test: a reply with 5 legal adds keeps 3 and refuses 2 alone; a second reply keeps its own 3.
+
+#### 7. Seen in the POC replay (not seen live) — hamr's call
+
+A `!` add that repeats a look fact already tied to a `~` rule is accepted as a `!` row but ends not-checked "the name 'price label' is used twice on this line" (session smwdhl8k5q8pn). It should be refused at the edit as "already on the list". It is hamr's call whether it goes in. Recommended: yes (one small check in `editAdd`, the reason is then plain).
+
+#### 8. Deletions (same build, hamr answer 5A)
+
+Each is removed in the same build. Its tests are removed or rewritten to the rows; a test that pinned the old wording is grepped.
+- The drafter's part-writing instructions: `REQUIRED_FACTS_BRIEF` part rules, `authorflow.js:1509` (section 4).
+- `applyLedger`, `src/checklist.js:193` (and its refusal of AI parts).
+- fea67fd9's look-credit: `src/checklist.js:216-236` (`tieRow`, `lookCredit`) and its test/fixture `tests/look-tied-rule.test.js`, `tests/fixtures/look-tied-rule/rows.json`.
+- `resolveLedger`, `checklist.js:330`; `ensureCited`, `checklist.js:314` (become row reads).
+- `ledgerBlock`, `checklist.js:390`; its call `authorflow.js:1609`; its register line `promptregisters.js:94`.
+- `buildLedger`, `checklist.js:68` (replaced by `fromJob` and `addLook`).
+- `settlePersonsWords`, `rubricstep.js:806`; `withDropNotes`, `rubricstep.js:871`; `withFactBindings`, `rubricstep.js:846` (also `authorflow.js:2622`, 3115).
+- `fillAndMergeFacts`, `checkpick.js:472`; `moveUncheckable`, `checkpick.js:365`; `applyPicks`, `checkpick.js:419`; `settleRules` as a separate step, `checkpick.js:329`.
+- The last-try drop: `dropAfterLastTry`, `authorflow.js:2618` (call 3122); `dropExtras`, `checkpick.js:571`; `DROPPED_WORDS`, `checkpick.js:561` as a catch-all reason; `retentionOf`, `checkpick.js:526` (call 3125).
+- The part revise ladder use: the `picked` closure, `authorflow.js:2899-2906`, and the `ledgerTry`/`ledgerPres` bookkeeping (2896-2930, 3126).
+- The F307 local fixes: `55e72344` (end check) — `noCheckStopText` `authorreadout.js:902`, its call `authorsession.js:1011`, the bypass at `authorrun.js:1180`, test `tests/nocheck-end-check.test.js`, fixture `tests/fixtures/r10-vanish-closes.json`. `cb3babf5` — its test in `tests/rubric-door.test.js`. `039ce9d3` — its test edits in `tests/r10-sourcefill.test.js`, `tests/rubric-door.test.js`, `tests/run-author.test.js`. Replaced, not just removed: the end check's behaviour is `block.hasBuiltCheck()` at the same two doors, with the same plain stop words (see open item 1).
+
+#### 9. What stays
+
+- Bareguard shapes and validation.
+- The seed/dry read on the page (`src/pagedry.js`).
+- Signing and the hash. Calibration where it applies.
+- The question box (`src/questionbox.js`).
+- `runPageMap` (the look), `readingOfQuestion`, the `~ ! $` marks, the signed row fields (no words).
+- The draft gate `checkRubricParts` / `checkRubricRules` (`authoring.js:1530-1532`) as a second look on code-built parts.
+- The 2-revise limit, then Start over. The monthly/caps/budget rules. Nothing in arbiter territory is touched.
+
+#### 10. Tests
+
+All run only via `npm test` / `scripts/hermetic.mjs`. A builder reports `runs.jsonl` line count before and after.
+Every test below has a real fail-first run (red before the change, green after), not a mutation stand-in.
+- The five invariants from the design, each a test through the real callers: agreed and checkable implies built; not checkable implies Not checked with a reason; nothing on the card that is not a row; every edit passes `reconcile`; no injected prompt text restates the list (a check over the assembled drafter prompt).
+- The POC's six bars as unit tests over COMMITTED fixtures under `tests/fixtures/checkblock/`: the saved rows, job text, looks and deltas needed from the valid POC cases (copy the data; a test never reads `.claude/scratch`). Bars: every agreed checkable row built; no not-checkable row built; zero AI-format parts reach the close; card from rows only; a bad edit refused alone removes no row; no row dropped after the last try.
+- The limit-reader cases of section 5, and the per-reply cap of section 6.
+- Mutation guards kept from the POC (drop-after-last, keep-ai, whole-reply, skip-words-read) as tests that must fail on the mutant.
+- Caller tests: the drafter path in `authorflow.js`, the panel answer path, `planFromSpec` and `cardOfClose`, the signing doors. Each goes through the real function, not a stub of the seam.
+- The six row-invalid POC sessions are not used as fixtures.
+
+#### 11. Commit labels
+
+Commits touching `pagemap`, `authorflow`, `planrun` or `checklist` need `Failure:`, `Addresses:`, `Corrects:` lines. The `Failure:` line cites a real run id on its own line, for example `Failure: ... run mwdhma1l` (the draft session `smwdhl8k5q8pn` is 13 characters and is rejected; name it in the body). Run `node scripts/prompt-commit-check.mjs --range origin/main..HEAD` before pushing. Check `git branch --show-current` before every commit. Scope commits by explicit path.
+
+#### 12. Build order (small commits, each green on its own)
+
+- a. Limit reader: `readLimit` and exports beside the regexes in `rubricstep.js`, plus the section 5 tests. Nothing calls it yet but its own tests; no behaviour change.
+- b. `src/checkblock.js` and its fixtures and invariant tests. Not yet called by the product.
+- c. Wire drafting: `authorjob.js` block construction and `askableFromLook` swap; the `authorflow.js` try loop on `applyDelta`; the prompt constants of section 4. Old chain deleted in this commit where it cannot run any more (it must never run beside the block).
+- d. Wire panel, card, Job tab, close, signing, retention, Audit (section 3). End check becomes `hasBuiltCheck`.
+- e. Deletions of section 8 not already done in c and d, with test cleanup and a grep for old wording.
+- f. CHANGELOG `[Unreleased]` lines (one per user-visible change), PRD pointer line (contract tick only, no run ids), `docs/index.md` regenerated by the tool, never by hand.
+
+After each commit the builder runs the full `npm test` and quotes the exit code and the last line. No two suites at once; machine load under 15.
+
+#### 13. Done means
+
+- The full gate on the FINAL commit: `npm test` exit code and its last line quoted, with `prompt-commit-check` run.
+- Then ONE live draft on DeepSeek direct, deepseek-flash (`DEEPSEEK_API_KEY` from `pass amr/deepseek_api | head -1`, empty-key guard), replaying the F329 job, with a pasteable job text. Before the paid run: the $0 check of the job against the patient/page. Provider and model named first.
+- The card checked by my own screenshot beside its neighbours.
+- Phone width is named UNCHECKED unless hamr checks it in DevTools (barebrowse cannot emulate a phone).
+- No "done" word on the UI until hamr clicks through it. The AI-edit path (a real reading edit, a real refused edit) is test-proven only unless the live draft shows it; the summary says which.
+
+#### 14. Open items for hamr (3)
+
+1. End check (55e72344) and the standing ruling "a run needs one check". Answer 5A says delete it. Deleting the code with no replacement would drop that ruling. Recommended: delete the functions and tests, keep the behaviour as `block.hasBuiltCheck()` at the same two doors with the same stop words.
+2. Section 7: refuse a `!` add that repeats a `~`-tied look fact as "already on the list". Recommended: yes.
+3. The AI proposes `!` rows from TWO calls today: the separate suggest call (`runLedgerSuggest`) and the drafter. "One place" would fold them. Recommended: not in this build. Feed the suggest call through `applyDelta` now; fold it into the drafter only after the live draft shows the delta path works (the POC never replayed a native delta reply).
+
+#### 15. Addendum 2026-11-12 — hamr's answers to the 3 open items, and a POC round 3
+
+hamr answered "all yes" on 2026-11-12 to the three open items of section 14:
+1. Keep "a run needs one check" as `block.hasBuiltCheck()` at the same two doors (`authorsession.js:1011`, `authorrun.js:1180`) with the same plain stop words.
+2. A `!` add that repeats a `~`-tied look fact is refused "already on the list" (section 7 goes in).
+3. The drafter and the suggest call both keep proposing `!` rows, both through `applyDelta` now. Fold into one call only after the live draft proves the delta path.
+
+hamr also asked for a POC of the pieces the spec adds that rounds 1-2 never proved (limit reader cases of section 5, already-on-list refusal, `hasBuiltCheck`, two sources through one door) before the build starts. The spec above is not rewritten.
+
+POC round 3 bar frozen: .claude/scratch/checkblock-poc/PREREG-R3.md sha256 b615001728e25ab46b8fe98a8f52e07b5b7ce0ec96720471225039a958936d37
+
+### 2026-11-12 POC round 4 (paid, DeepSeek flash) frozen
+
+Question: given the new shrunk drafter prompt (row edits only: add a `!`, a reading for a `~`, a pick, a not-checkable reason, plus the goal sentence; section 4), does real DeepSeek deepseek-flash reply in that format so CheckBlock builds the right checks? Rounds 1-3 only replayed old-format replies converted to edits. Ten saved cases (the F329 session and three more from the 2026-11-12 sessions, six from paid rounds 2-6), listed in the PREREG with their thinness: 6 distinct job texts, 4 job lines, 3 pages, one reply per case. One call per case, thinking off, cap $0.50, a zero-edit reply is legal and passes by itself (named in the PREREG), so the bars that can fail on the AI's behaviour are format, no wrong check and per-edit refusal. Hamr runs the paid part in his own shell; the harness is `.claude/scratch/checkblock-poc/paid-r4.mjs`, the scorer `score-r4.mjs`.
+
+POC round 4 bar frozen: .claude/scratch/checkblock-poc/PREREG-R4.md sha256 b5544f3c3421dafb7886651ca8a72ea30a94a78756b905100e6030c5d2bc1aab
+
+### 2026-11-12 POC round 4 PASS
+- R4 verdict PASS (record: `.claude/scratch/checkblock-poc/`, harness `paid-r4.mjs`, scorer `score-r4.mjs`). 10 of 10 replies parsed, 0 wrong checks, 0 missed, $0.0205 on DeepSeek direct, deepseek-flash.
+- Thin: 3 pages, 6 distinct job texts, one reply per case; an empty reply would also pass R4c. It proves the shrunk prompt gets a parseable edit reply, not more.
+- Two findings go into the build. A2 (prompt): in one reply the model sent op `count` instead of `add` with kind `count`, so that draft lost its "3 flights" count; the shipped drafter prompt states the four ops exactly with one legal example each. A3 (reason): "already on the list: the look already reads it, or no look fact of that name" was two cases in one sentence; the build gives each its own plain reason, chosen by code.
+- Round 3 hole A1 also goes in: an AI reading edit on a `~` rule whose words hold more than one amount or range ("under $450 or over $900") is refused / Not checked, the same guard as code's own read.
+
+### 2026-11-12 CHECK BLOCK BUILD STATUS (builder stopped at the wiring: questions for hamr)
+- Built and committed: (a) the limit reader (`readLimit`, `holdsManyBounds`, `src/rubricstep.js`; the frozen 42-case B7 table is `tests/fixtures/checkblock/r3-cases.json`; A1's guard is `holdsManyBounds`, used by the reading edit); (b) `src/checkblock.js` with the per-reply cap, the "already on the list" refusals (two distinct reasons, A3), `hasBuiltCheck`, `signedRows`, `retention`, and its tests over committed fixtures (`tests/checkblock.test.js`, `tests/fixtures/checkblock/`). Nothing in the product calls the block yet.
+- Not built: (c) wiring drafting, (d) panel/card/Job tab/close/signing/end check/retention/Audit, (e) the deletions, A2 (the drafter prompt with the four ops). They wait on the open points below, each a conflict between the spec and the tree found while reading the call sites; none is decided here.
+  1. Agree answers and the signed job text. Today an agreed reading or check becomes a new `~` rule in the signed job lines (`authorsession.js` answerQuestions, am21 `pairRule`, and the carried picks of am17/am18 that Revise keeps). The block's `agree` adds no row, and rule numbers must stay equal between job lines and rows (the draft gate `checkRubricRules` reads job lines). Also the gate's `rubric-fact-unmarked` needs an agreed bound in the person's words, else the fact must carry `aiProposal`, which the card then calls "AI's proposal".
+  2. Ticket jobs: the drafter proposes `ticketFilter` (R5); the shrunk reply has no such field.
+  3. What starts a revise try when the AI sends edits only (refused edits, a failed seed read, both).
+  4. The look's own per-fact drop reasons (`look.dropped`, shown today as Not checked reasons) have no place in the block's rows.
+  5. Where the reply's "goal" sentence goes (the confirm turn already writes the goal).
+  6. The mandatory guard stages of the declaration: code places them (rubric guards have no fill slots) beside the block's stages.
+
+### 2026-11-12 hamr's rulings on the six build points ("A")
+1. Agree: an agreed reading or check is stored as a `~` rule in plain words. Agree adds a new `~` line to the signed jobLines AND a row with the SAME rule number (as a typed `rule` does). Revise keeps carried picks as today (am17/am18/am21, fwd parity). The bound is now the person's own words, so the agreed fact does NOT carry `aiProposal`; the card says "you agreed: ...". "Agree adds nothing to jobLines" is rejected.
+2. Ticket jobs: the reply keeps the `ticketFilter` field (R5) unchanged.
+3. Revise trigger: a revise try runs when the last reply had refused edits OR the seed read failed; at most 2 revises, then Start over. A gate red on the code-built declaration is our bug: stop as plan-red in plain words, never ask the AI to fix it.
+4. addLook takes `look.dropped`; its reason becomes the row's why and shows under Not checked.
+5. The confirm turn owns the goal; the drafter reply has no "goal" (one place). Section 4's "plus the goal sentence" is withdrawn.
+6. Mandatory guards: code places them via `classGuards()` beside the block's stages.
+
+### 2026-11-12 CHECK BLOCK WIRED (builder finished (c)-(f) on wip/check-block-wiring; not merged)
+- Built: the block is the ONE store at both doors. Drafting (`src/authorjob.js` builds it after the look; `src/authorflow.js` `authorClose` applies the drafter's row edits with `applyDelta`, assembles the declaration from `block.reconcile()`, runs the draft gate once on it), the row-edit turn (`src/rowedit.js`: four ops, one legal example each, the count is an add, no goal, no list restated; the Tickets reply keeps `ticketFilter`), the panel answers (`src/blockasks.js` `questionsOfBlock` / `applyChoices`; the panel turns each choice into rows and `jobLines`), the end check (`block.hasBuiltCheck()` at the panel's `finish` and the CLI's `authored.hasBuiltCheck === false`, same stop words), retention, the draft log and the readout lines (edits kept / refused). The old chain is deleted (`applyLedger`, `buildLedger`, `resolveLedger`, `ensureCited`, `ledgerBlock`, `applyPicks`, `moveUncheckable`, `fillAndMergeFacts`, `settleRules`, `dropAfterLastTry`, `dropExtras`, `settlePersonsWords`, `withDropNotes`, `withFactBindings`, `retentionOf`, `isNoCheckRubricClose`, `noCheckStopText`, `REQUIRED_FACTS_BRIEF`, `RUBRIC_RULES`, `rubricAuthorPrompt`).
+- Found by wiring it (each a real defect of the first wiring, fixed with a test): the code-built declaration filled no guard slot (files-changed needs `allowPrefixes`: the signed write fence) and left a job line with no built check uncovered, so the draft gate reddened code's own plan; the asks went through `normalizeQuestions` (lost the proposal and the key: no Agree button, no choice reached the block); a draft that asked nothing never wrote the picks record; a rule the record folded was asked on its own; a fact tied to a counting rule was swallowed as an unused link; the pick parts came before the fact part on the card; an `add` naming an unknown input, an input it did not name (two inputs), a label the look dropped or never kept, a unit or sign not on the page, or words found fewer times than the line's result count reached the draft gate as a red on code's own plan (plan-red) - the block now runs the gate's own `checkFactWords` per fact, so that row is Not checked in the gate's plain words and the draft goes on.
+- Test-proven only (never run live): the edit reply, the per-edit refusals, the revise trigger, the panel choices into rows, the end check at both doors, the place rules on the block. The CLI end-check door is checked by source text only (no CLI rubric e2e exists). Phone width is unchecked; the card screenshot beside its neighbours is not taken.
+- Known divergences, FOR HAMR (named, not resolved): (1) The F176 fallback (fall back to the newest sound measured try) is skipped for block drafts. (2) The CLI (no asker) shows a rule code cannot settle as Not checked in code's words; a reading code proposes is built as the AI's proposal. (3) The look's narrowing notes ("LEFT OUT of X: the rest is still checked") are not on the signed close or the card any more (only whole facts the look dropped are rows); the drafter still reads them in the look report. (4) The AI's `not-checkable` reason is shown only on a typed rule, a tied rule with no limit, or an out-of-scope count rule; on a plain rule code's words stand. (5) The Tickets block text (`ticketFilterBlock`) still speaks of "stages" and "refused"; a ticket job's priority line is a Not checked rule that the panel asks about ("Drop it?"). (6) `askableFromLook`, `scopedRules`-based `no-check` words and `rowsFromAnswer` stay (tested pure functions); `askableFromLook` is unused by the product. (7) An `add` with no `source` on a job with ONE input takes it, with two is refused; a rubric job whose look is skipped (`lookFn: null`, a test seam) drafts through a look-only block built inside `authorClose` and has no `hasBuiltCheck`. (8) POC golden rows moved: two real cases (a fact tied to a counting rule is now its own row; the default quote row follows) and three rows the real gate would have refused; the B7 pages gained the unit word their facts name. (9) The look-asks cap now stops BEFORE any question is put to the person (the old flow asked the look ask first and refused after).
+
+### 2026-11-13 live draft findings and card ruling
+
+Source: live drafts on the test panel (DeepSeek flash), sessions smwelq2l6srdb (draft A: "List 3 flights from Boston to Chicago", `~ under $450`, `~ departure between 05:00 and 21:59`) and smwelw0jrax5c (draft B: the same plus `~ nonstop is not mandatory`, revise 1). Hamr approved the fixes and the card below on 2026-11-13.
+
+Findings to fix:
+
+- F-a (wrong check, serious): in draft B the look tied the phrase fact "stops" (words "Nonstop", "1 stop") to the person's rule `~ nonstop is not mandatory`, and code built `must say "Nonstop"`: the opposite of the rule. Fix: a `~` rule whose words carry a negation (the one reader `NEGATING_RE`, src/rubricstep.js) can never give a phrase bound / "must say" from its words. That rule becomes Not checked with the plain reason "it says what is not needed, so there is nothing to check". Any `!` row whose words appear in that negated rule is refused alone, with a plain reason naming the rule ("your rule N says it is not needed").
+- F-b: a Not checked row showed raw gate text ("code could not build a legal check from it: ... Nothing was signed."). An AI/look suggestion code could not build is NOT shown on the card; it goes to the Audit draft lines in one plain sentence. Rules the person wrote always show (built or Not checked): never a silent drop of a `~` rule.
+- F-c (labels): card tags are by row kind, code-owned: `~` rows (including a fact built from a person's rule) are `[you]`; `!` rows `[agent]`; `$` rows `[default]`. Rule-built facts showed `[agent]` before. The heading "Not checked (the AI's own reading)" becomes "Not checked". Applies to the confirm card, the signed card, the Job tab and the Result tab.
+
+New (hamr ruling, signed preview):
+
+- N-1: code splits `!` rows. A `!` row whose words (or count number) appear in that job line's text or its `~` rules is JOB-DERIVED: built as today, tagged `[agent]`, with a Drop button. A `!` row whose words do NOT appear in the job is SUGGESTED: not checked by default, shown in a card section "Suggested · not in your job, not checked unless you add it", with an Add button. Code decides by word match (normalised, case-insensitive), never the AI.
+- N-2: Drop and Add are instant and $0: no AI call, no new draft. They are row edits through the block (a typed choice, the choice decides) and every edit goes back through `block.reconcile`; the card redraws from rows. The person's Drop/Add choices are stored in the list and kept on Revise (same carry as picks, am17/am18). Signing reads rows only. A `[you]` row has no Drop (the person edits the job for that).
+- Clarification (hamr, same day, binding): code checks FIRST. The Suggested section lists ONLY `!` rows code has already proved it can build (a legal check). A suggestion code cannot build is never shown on the card (Audit only, F-b). Add just switches an already-checkable row on (it still passes through reconcile as a safety pass but must not normally end Not checked; if it ever does, that is a defect, asserted in a test). Drop removes.
+- Hamr's words: "suggested with add/drop since it's already past code and it's confirmed that its checkable"; "keep the flow so it goes through code and may get dropped as not checked"; "suggested ones go through code and if it's checkable goes to human to approve; approve = added, if not, remove it".
+
+The preview hamr signed:
+
+```
+1  List 3 flights from Boston to Chicago
+   ~ under $450
+   ~ departure between 05:00 and 21:59
+   ~ nonstop is not mandatory
+   › price — under 450 US dollars              [you]
+   › departure time — between 05:00 and 21:59  [you]
+   › origin — must say "Boston"                [agent]  (Drop)
+   › destination — must say "Chicago"          [agent]  (Drop)
+   › results — exactly 3                       [agent]  (Drop)
+Suggested · not in your job, not checked unless you add it
+   (Nonstop would show here with (Add) in draft A, without rule 3)
+Not checked
+   line 1: every claim quotes its input — this line finds facts  [default]
+   ~ nonstop is not mandatory — it says what is not needed, so there is nothing to check  [you]
+```
+
+Built as: the Drop/Add buttons live on the confirm card (the plan bubble while the confirm menu is open), where the live block is held; the final card shows tags only. The signed list gains an optional per-row `facts` field (the names of the facts a row built) so every read of a signed close can tag each fact by its row's kind.
+
+### 2026-11-13 live draft 3 (session smwen1p12tyhc, test panel 127.0.0.1:4711)
+
+Job "List 3 flights from Boston to Chicago" with `~ under $450` and `~ departure between 05:00 and 21:59`. Live results: the tags were right; Add moved origin and destination up; Drop removed "exactly 3". Four things to fix (hamr: "fix the 4 first"):
+
+1. Bold headings: the card section headings "Suggested · ...", "Not checked", "Always checked" (and "How the page was read", same markup) are bold on the confirm card, the signed card and the Job tab (one drawing, `renderJobPlan`).
+2. Job words win: origin and destination went to Suggested because the look's words were the long page names ("Boston Logan International Airport", "Chicago O'Hare International Airport") and the job says "Boston" and "Chicago". hamr's rule, verbatim: "anything not in your original job that code can check goes to Suggested". So when a job word (a proper name, from the job line or its `~` rules) is a whole-word part of a `!` fact's page words and the page holds it, the row is job-derived and its phrase check uses the job word ("must say Boston"). A count number in the job works as before. Only a row with no word from the job goes to Suggested. One owner: the N-1 split in src/checkblock.js (`inJob`).
+3. A `[default]` tag on the "Always checked" rows (the mandatory guards and floor rows), same tag as the other rows, in every card view.
+4. Undo Drop: a Drop on an `[agent]` row moves it to Suggested with Add (it was proved buildable), instead of vanishing; Add from there puts it back. Both through the existing $0 row-edit path and reconcile; a Revise carries the state (the existing Drop/Add carry).
+
+Seen, NOT fixed (record only): after the drop, a new suggestion "must say 12 results returned" (a page status line) appeared under Suggested. It is legal under the rules and off unless added.
+
+2026-11-13 (orchestrator): hamr ruled A on the Audit write fence row: it shows the gate's own record of the run (`held · N writes blocked`, N = write/edit attempts the gate denied; a missing gate record says so, never "held"). Q2 (the drafting-table duplicate check list removed) and Q3 (the Checks fold starts closed) were accepted by the orchestrator.

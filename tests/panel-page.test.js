@@ -1771,8 +1771,8 @@ test('progress list (2026-10-05): renderProgress reports a change only when the 
   let scrolls = 0; let lastArg = null;
   const li = { scrollIntoView: (o) => { scrolls += 1; lastArg = o; } };
   // eslint-disable-next-line no-new-func
-  const renderActions = new Function('progressRow', 'errEl', 'CLIENT_TERMINAL_PHASES', 'refreshStartEnabled', `var lastState, sessionLive;\n${rp}\n${extractFnSource(html, 'syncDestinationFromSession')}\n${ra}\nreturn renderActions;`)(
-    row, { textContent: '' }, ['refused', 'abandoned', 'error', 'signed', 'signing-failed'], () => {});
+  const renderActions = new Function('progressRow', 'errEl', 'CLIENT_TERMINAL_PHASES', 'refreshStartEnabled', 'renderQuestionBox', `var lastState, sessionLive;\n${rp}\n${extractFnSource(html, 'syncDestinationFromSession')}\n${ra}\nreturn renderActions;`)(
+    row, { textContent: '' }, ['refused', 'abandoned', 'error', 'signed', 'signing-failed'], () => {}, () => {} /* the question box has its own tests (question-box.test.js) */);
   const a = { phase: 'drafting', steps: [{ id: 'copy', label: 'making worktree', status: 'running', detail: '' }] };
   row.lastElementChild = li;
   renderActions(a); assert.equal(scrolls, 1, 'a new line scrolls');

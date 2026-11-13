@@ -81,8 +81,10 @@ export function decideDestPoint(text, { jobLines, files, destination }) {
 
 /** the one question, worded by code @param {DestPoint} p @param {string} destination @returns {string} */
 export const destQuestionText = (p, destination) => redactSecrets(
-  `Line ${p.line} needs ${p.file} changed, but Destination is ${destination.trim().replace(/\s*\n\s*/g, ', ')}, so the job could not change it. Set Destination to ${p.folder}? Type yes to set it, or no to keep it as it is.`,
+  `Line ${p.line} needs ${p.file} changed, but Destination is ${destination.trim().replace(/\s*\n\s*/g, ', ')}, so the job could not change it. Set Destination to ${p.folder}?${DEST_ANSWER}`,
 );
+/** the answer words the question ends with (said once, here; the panel's question box shows the question without them and has the buttons instead) */
+export const DEST_ANSWER = ' Type yes to set it, or no to keep it as it is.';
 /** the answers (any case, a closing full stop allowed) @param {unknown} text @returns {'yes'|'no'|null} */
 export const yesNoOf = (text) => {
   const t = String(text ?? '').trim().replace(/\.$/, '').toLowerCase();

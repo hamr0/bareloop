@@ -2231,9 +2231,10 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 0. **Fix 0 (first): a rubric plan must never sign with zero checks** — one end check on both doors after the declaration settles, independent of the seed gate; includes dropExtras/moveUncheckable leaving `parts: []`. Seen live paid6 d2, d17 (F309). A test-proven version exists on feat/check-ledger (55e7234, cb3babf).
 0b. **Check 0b ($0, before any build): is the run-time worker told a line's picks?** fwdloop found (their F173, relayed, not read in a file) that a page-quoting step with picks was never told them and swung between the word-count red and the list-items red (0/4 green); telling it the picks in the quoting block, only when the step has picks, gave 4/4 on the first try (fwd M10 am28). bareloop's paid rounds tested drafting only, so ours is unknown. Read the worker brief for a rubric step with picks; if the picks are missing, copy fwd's fix from their released tag (conditional text only, per hamr's prompt-text ruling).
 1. **Map.** DONE (`MAP.md`).
-2. **Design and a $0 POC on the 77 saved paid drafts.** TO DO. No build before it passes.
-3. **Build.** TO DO, after tick 2.
-4. **A paid round to verify.** TO DO; the round 7 harness exists and is reframed for the ledger.
+2. **Design and a $0 POC on the 77 saved paid drafts.** POC rounds done (rounds 8-10 paid, round 11 withdrawn); the round-10 shape is the build target (`ITEM33-BUILD.md`, 2026-11-11; FINDINGS F310-F313).
+3. **Build.** DONE on feat/check-ledger (Phase A + B); spec in ITEM33-BUILD 'Check list build spec (signed 2026-11-11)'; verified live at round 12 (FINDINGS F314).
+
+4. **A paid round to verify.** DONE: round 12 PASS (draft stage, a leaning); FINDINGS F314, ITEM33-BUILD 'Paid verify round 12 result'.
 5. **Shared with fwdloop.** OPEN: one shape for both; fwd was shown the map on 2026-11-10. See also fwd's F171 (fwdloop docs/logs/FINDINGS.md, commit 1186072, relayed): 21 lists, same root, a zero-check plan is signable there too.
 
 **Open questions for hamr** (picks are the main session's, not rulings):
@@ -2241,7 +2242,36 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 - (b) Keep the confirm AI's `checkItems` list or remove it. Pick: remove it, one owner.
 - (c) The ledger changes the signed plan's shape, so old hashes flip. Pick: yes; old runs are not repaired.
 
-**Local fixes not in this release.** The four local fixes of F307 (55e7234 end check, 5683008, 039ce9d, cb3babf) are NOT in this release. They are kept on branch `feat/check-ledger` (tip de0af496), test-proven only; the ledger redesign decides whether each is kept, reworked or replaced. The paid round 7 harness (`.claude/scratch/r10/paid7`, frozen against cb3babf) belongs to that branch.
+**Local fixes not in this release.** Three of the local fixes of F307 (55e7234 end check, cb3babf, 039ce9d) are NOT in this release; they are kept on branch `feat/check-ledger`, test-proven only, and the ledger redesign decides whether each is kept, reworked or replaced. 5683008 was reverted on 2026-11-10 (5e3cbdb1): the word-limit case goes to the ledger design (hamr ruling: a typed limit is not read by code, code asks for a `~` rule). The paid round 7 harness (`.claude/scratch/r10/paid7`, frozen against cb3babf) belongs to that branch.
 
 **Pick up first thing next.** Read FINDINGS F305-F308 and `MAP.md`, then tick 2.
 
+**Building with Place rules (hamr go 2026-11-11): Rules re-read each run (fresh values, same rules)** — hamr's rulings 2026-11-11 (FINDINGS F312).
+- The signed check stores the rule, never the value.
+- At each run start CODE alone re-reads the input and binds this run's value; no AI at run start (the first drafting read is enough).
+- A rule that cannot find its value stops before any spend, with plain advice: "Reuse workflow and adjust the rules, or check the doc".
+
+**Building (hamr go 2026-11-11): Place rules instead of refusing exact-word checks** (e.g. 'the first heading that starts with ## ['): code proves the rule finds today's words at drafting and finds each run's value at run start; $0 POC first on bareloop's own CHANGELOG at two real releases from git history; NEXT after the check-list build (hamr 2026-11-11).
+- Never auto-create a new workflow.
+- Audit lists every rule each run with the value it read.
+- Example: a changelog summary job whose check needs "the newest release heading". Until built, week-only exact-word checks stay refused.
+- Behaviour ruled by hamr 2026-11-11: the signed check keeps the rule's SHAPE plus the last words read. Every run, CODE alone re-reads each rule before any spend: same value found = OK, new value found = swapped in, both proceed. Not found = stop before spend, listing every rule as found (with value) or not found, with the advice "Reuse workflow and adjust the rules, or check the input". A wrong value must never happen.
+- POC status: round 1 FAIL (F317, first-match scan read a stale older heading); round 2 FAIL (F319, strict first-heading read fixed that, but a mixed-heading-level changelog read a stale patch); round 3 (mixed-level guard): PASS (F321); the POC proves the code re-read; next is a build spec (hamr's go), AI rule choice still unproven.
+- Build spec: ITEM33-BUILD.md 'Place rules build spec'; code picks the rule, last read = the previous run's value.
+- Status 2026-11-11: built and live-proven (F326); one owner of the week-only decision (F325); fwd am29 + am30 + M14 am3 join this branch from fwd's release tag before /code-review (hamr 2026-11-11).
+
+**Backlog (PARKED, not to build now): Ship bareloop as a single binary** — today an adopter must install Node >=22 before bareloop (CLI and panel) runs; a one-file executable (e.g. Node's own single-executable packaging, no language rewrite) would remove that install step for non-engineers. No rewrite to Rust/TS: the arbiter is the product, and runs wait on the model, not on bareloop. Parked by hamr 2026-11-11; build only when install friction shows up live.
+
+**Backlog (PROPOSED, awaiting hamr's go): drafter prompt text conditional only.** REQUIRED_FACTS_BRIEF (src/authorflow.js ~1509) is sent on every rubric draft with blanket "what if" rules (money, dates/decimals, anchors). It still holds the line hamr flagged on 2026-11-10 ("code adds the checks the person picked", ~1533; it caused dropped word limits in paid round 6). It also now duplicates the check-list block. Proposal: split it into pieces, each sent only when its case occurs (decided by code from the look), and delete the flagged line. Proof: frozen bars, a $0 rebuild of every saved real draft prompt (no piece dropped where its case exists), then one paid round (DeepSeek direct, cap $1) passing round 12's gates plus "no agreed word limit dropped".
+
+### Question box, check block redesign (v1.133 — 2026-11-12)
+
+- Question box built: fwd am29/am30/am31 ported by rewrite plus loop's fit-check and Destination buttons; see `docs/product/ITEM33-BUILD.md` 2026-11-12 addendum. Live walk done for Stop, Drop it, own rule, Agree.
+- fwd am32 A ported (5260f242: the answer door refuses an answer with no typed choice); fwd F180 not applicable (no sheet look here).
+- The fit question lists the asks it found, not only the missing ones (F327, 73e08808; not seen live). The confirm legend is hidden when the plan has no check row (F328, 48e35a5d).
+- A look-tied rule is credited by code when its fact has a bound (F329, fea67fd9); superseded by the redesign below.
+- CHECK BLOCK REDESIGN: signed as direction by hamr 2026-11-12. One class owns the rows; code builds every check; the AI proposes row edits only. Design is a DRAFT in `docs/product/ITEM33-BUILD.md` ("2026-11-12 CHECK BLOCK REDESIGN"); POC first, no build before PASS; the branch release waits.
+- Check block design signed 2026-11-12 (5 answers, ITEM33-BUILD addendum); POC bar frozen by sha; no build before PASS.
+- Open: F330 (agreed checks lost at the last-try drop), F332 (an action word counted as a page ask), Destination buttons not seen live, phone width unchecked.
+
+**Backlog (PARKED until after the check-ledger release): Old-run stats scan, then delete old runs** — a one-time $0 script (no AI) reads every archived run record (spines in `~/PycharmProjects/bareloop-patients`, `~/.config/bareloop/panel-sessions`, and the few under the bareloop repo) and writes one stats file with several views: by job, by provider/model, verdict, cost, wall time, failure kinds, tries to green. hamr reads it and says if it is enough; then `bareloop-patients` and old panel runs are deleted and hamr's own `!` line trims `~/.config/bareloop/runs.jsonl` with a backup first. Saved winning plans (`bareloop-patients/bridges`, `bundles`) are kept or moved into `~/.config/bareloop`, never deleted. The pinned `~/PycharmProjects/bareloop-close` stays. Agreed by hamr 2026-11-13; code goes to a sonnet builder.

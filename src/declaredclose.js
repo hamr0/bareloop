@@ -102,7 +102,15 @@ export const DECLARED_GENRES = Object.freeze([TYPES_GENRE.name, TEXT_GENRE]);
  * constrained to the names the genre OWNS, so it can never become an environment
  * channel of its own.
  */
-export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes', 'refused', 'guardLines', 'picks', 'genreEnv', 'calibration']);
+export const CLOSE_DECL_FIELDS = Object.freeze(['genre', 'lang', 'stages', 'notes', 'refused', 'guardLines', 'picks', 'list', 'genreEnv', 'calibration']);
+
+/** the fields of a row of the one check list that the signed close carries (`closeDecl.list`); the row's own words are never signed */
+export const SIGNED_ROW_FIELDS = Object.freeze(['line', 'key', 'from', 'by', 'kind', 'state', 'rule', 'part', 'reason', 'facts']);
+/** the states a signed row may end in */
+export const SIGNED_STATES = Object.freeze(['built', 'not-checked', 'dropped']);
+const SIGNED_FROM = Object.freeze(['rule', 'pick', 'look', 'agent', 'default']);
+const SIGNED_BY = Object.freeze(['you', 'agent', 'default']);
+const SIGNED_KINDS = Object.freeze(['rule', 'fact', 'cited', 'count', 'phrase', 'numbers', 'floor']);
 
 /** what a stored calibration set carries, ENUMERATED: the frozen cases and the judge
  * tier that graded them. Both are inside the spec, so `jobSpecHash` covers both — which
@@ -319,6 +327,27 @@ export function validateCloseDecl(closeDecl, opts = {}) {
     if (!CLOSE_DECL_FIELDS.includes(key)) {
       red('unknown-field', `${at}.${key}`, `not a closeDecl field (script bodies, seed refs and frozen thresholds all `
         + `land here); fields: ${CLOSE_DECL_FIELDS.join(', ')}`);
+    }
+  }
+  // the signed copy of the one check list: an array of rows with exactly the signed fields (no words), each in its closed menu
+  if (closeDecl.list !== undefined) {
+    if (!Array.isArray(closeDecl.list)) red('invalid-value', `${at}.list`, 'the one check list as an array of rows: { line, key, from, by, kind, state, rule?, part?, reason? }');
+    else {
+      closeDecl.list.forEach((/** @type {any} */ row, /** @type {number} */ i) => {
+        const w = `${at}.list[${i}]`;
+        if (!isObj(row)) { red('invalid-value', w, 'a row: { line, key, from, by, kind, state, rule?, part?, reason? }'); return; }
+        for (const k of Object.keys(row)) if (!SIGNED_ROW_FIELDS.includes(k)) red('unknown-field', `${w}.${k}`, `not a signed row field (the row's own words are never signed); fields: ${SIGNED_ROW_FIELDS.join(', ')}`);
+        if (!Number.isInteger(row.line) || row.line < 1) red('invalid-value', `${w}.line`, 'the job line number');
+        if (!isNonEmptyString(row.key)) red('invalid-value', `${w}.key`, 'the row key, a non-empty string');
+        if (!SIGNED_FROM.includes(row.from)) red('invalid-value', `${w}.from`, `menu: ${SIGNED_FROM.join('|')}`);
+        if (!SIGNED_BY.includes(row.by)) red('invalid-value', `${w}.by`, `menu: ${SIGNED_BY.join('|')}`);
+        if (!SIGNED_KINDS.includes(row.kind)) red('invalid-value', `${w}.kind`, `menu: ${SIGNED_KINDS.join('|')}`);
+        if (!SIGNED_STATES.includes(row.state)) red('invalid-value', `${w}.state`, `menu: ${SIGNED_STATES.join('|')}`);
+        if (row.rule !== undefined && !Number.isInteger(row.rule)) red('invalid-value', `${w}.rule`, 'the ~ rule number');
+        if (row.part !== undefined && !(isObj(row.part) && Number.isInteger(row.part.line) && Number.isInteger(row.part.part))) red('invalid-value', `${w}.part`, '{ line, part }: the job line and the index of the part that carries the row');
+        if (row.reason !== undefined && typeof row.reason !== 'string') red('invalid-value', `${w}.reason`, 'plain words');
+        if (row.facts !== undefined && !(Array.isArray(row.facts) && row.facts.every((/** @type {unknown} */ x) => typeof x === 'string'))) red('invalid-value', `${w}.facts`, 'the names of the facts the row built, an array of strings');
+      });
     }
   }
   // PART 1a: a genre is bound to its language — code languages are TYPES, the rubric-files language is TEXT, and neither may

@@ -15704,3 +15704,191 @@ A facts-only carry note (files, greps, edits) would be small: median about 200-1
 **Seen live.** Paid round 6 draft 2 (arm B) prepared with rubric-step 0 parts after a drop (`.claude/scratch/r10/paid6/result.json`, i=2), and draft 17 (session smwag7ncubmip) with zero checks.
 **Correction.** The main session's round-6 read missed draft 2 and said only draft 17. Both are real.
 **Ruling (hamr, 2026-11-10).** Ship this release as-is and narrow the claim: CHANGELOG and PRD now say the no-check stop fires only when nothing fails on the seed. The zero-check defect is the FIRST fix of the next item (PRD v1.132 Fix 0). A test-proven version exists on `feat/check-ledger` (55e7234, cb3babf).
+
+
+## F310 — the confirm step's injections made the drafter leave the list (paid round 8, 2026-11-10)
+
+**Finding.** Round 8 failed Q1 (13 of 58 final-try agent parts had no ledger row, 22%) and Q2 (one row silent), with 3 zero-check stops (`.claude/scratch/r10/ledger/paid8/result.json`, `progress.log`). Root cause: the confirm step still injected "kinds of check" text and a confirmed plan next to the list, so two plans competed and the drafter produced parts off the list.
+**Fix (in the POC copy, branch `poc/ledger-list`).** One list with `~` / `!` / `$` rows, confirm turn = goal only, no injections (commit c697421b). Rounds 9-10 then showed 0 zero-check stops and no injection (Q6 ok).
+**Status.** Seen in a paid round on one model and one job family; a leaning.
+
+## F311 — the `$` cited default was decided before the build settled (paid round 9, 2026-11-10)
+
+**Finding.** Round 9 failed Q8 only: 2 of 7 text lines had no built `$` cited row (draft 6; `.claude/scratch/r10/ledger/paid9/result.json`, `progress.log`). The default was decided before the build settled, so a fact that did not build, or was dropped on the last try, left the line without its cited default.
+**Fix (copy commit 4e1abeae).** Decide the default after the build settles, whatever the reason the fact did not build. Round 10 Q8: 0 bad of 11 text lines.
+**Status.** Seen in a paid round; the fix is seen once (round 10).
+
+## F312 — week-only exact-word checks are correctly refused; round 10's Q1 was a measure defect (2026-11-11)
+
+**Finding.** Round 10 failed Q1 only (9 of 42, 21%). All 9 refusals were drafter rewrites of a phrase fact "release heading" with words like "## [0.54.1] - 2026-11-04" (`.claude/scratch/r10/ledger/paid10/result.json`, `weekOnlyRefusals`: drafts 3, 4, 13). A repeating job's check that copies today's page words passes run 1 and fails run 2 after the next release, so the week-only rule refusing it is CORRECT. Q1 counted correctly refused checks as the drafter wandering: a measure defect, named, not re-tuned. All other gates passed (20/20 prepared, 0 casualties, no injection, every text line had its `$` default).
+**Ruling (hamr, 2026-11-11).** Stop testing; build the round-10 shape; keep refusing week-only exact-word checks for now. The proper cure (the signed check stores the rule, code re-reads the value each run) is parked in PRD v1.132 backlog "Rules re-read each run".
+**Status.** Seen in a paid round; n=8/8/4, one model.
+
+**CORRECTION (2026-11-11).** The claim above that ALL 9 refusals were week-only release-heading rewrites is wrong, and `weekOnlyRefusals` is a different count (it does not list the 9 Q1 refusals). Re-checked from each session's last `ledger-try` refused list and final `ledger` rows (`paid10/work/home/.config/bareloop/panel-sessions/*/draft-log.jsonl`): 4 were the week-only class (r10g-b4 and r10g-a13: fact `release` / `release heading` plus its count "results", correctly refused, the agent's row dropped as week-only); 4 were a REAL list gap (r10g-a1, b2, a8, b12: the count "results" was refused although its fact, `change bullet` / `release version` / `release notes body`, was on the list and built; a count should ride with its fact); 1 is unclear (r10g-a16: fact `release entry` refused, no release row was ever on the list). Without the gap Q1 would have been 5 of 42 (12%). The week-only refusals stay correct; the "measure defect" reading holds for those 4 only.
+
+## F313 — round 11 withdrawn: the operator's reading was wrong (2026-11-11)
+
+**Finding.** The main session read round 10's Q1 as the rule being too strict and froze round 11 (pre-registration f5e145b3, nothing run) with the week-only rule narrowed to keep phrase facts carrying a version or date (copy commit 1880ad13). That would let through a check that fails on run 2 (F312). Withdrawn before any paid data; `.claude/scratch/r10/ledger/paid11/` holds only the prereg and a $0 dry run. 1880ad13 is not carried forward; 4e1abeae stands.
+**Lesson.** An operator's reading of a failed gate must be checked against what the failing items actually were before a rule is loosened.
+**Status.** Withdrawn; no paid spend.
+
+**CORRECTION (2026-11-11).** "Wrong" applies to half of copy commit 1880ad13 only. It held two changes: keeping version/date phrase facts (WRONG, withdrawn as written above) and "a fact's count rides with its fact" (RIGHT: the fix for the real list gap in F312's correction; test-proven only, never live). The build target is the round-10 shape (4e1abeae) plus count-rides-with-fact.
+
+## F314 — the check list (Phase A + B) verified live at paid round 12: PASS (2026-11-11)
+
+**Finding.** The one check list build (engine f1c20b69, prereg frozen c9793a07, Fireworks deepseek-flash) passed every pre-registered gate: 20 of 20 drafts prepared (A 8, B 8, C 4), 0 casualties, Q1 1 of 54 counted (1.9%; raw 5 of 54, 9.3%; bar 20%; round 10 was 9 of 42), QB ok (20 signed specs carry the list, 0 bad), Q2-Q8 ok (Q4 kept=26 bad=0, Q5 A 8/8 B 8/8, Q6 61 drafter prompts and 20 confirm prompts with 0 bad). Real `runs.jsonl` 397 before and after. Evidence: `.claude/scratch/r10/ledger/paid12/run.out`, `result.json` (draft session ids per draft), `PREREG.md`.
+**Caveats.** n = 8/8/4 on one model and one job family: a leaning, not proof. Q1's "would have been kept if listed" is the harness's own frozen reading (the raw share is reported beside it). Draft stage only: nothing has run as a real scheduled or panel run. The phone width of the `[default]` tag is unchecked.
+**Status.** Seen live in a paid round; closes the F310-F313 chain for the build. Build doc: ITEM33-BUILD, "Paid verify round 12 result".
+
+## F315 — an "at most / up to / at least N bullets" rule is built as an EXACT list-items check (2026-11-11)
+
+**Finding.** `countCheck` (`src/checkpick.js:228-239`) reads only the number with `guardrailItemCount` (`:49`) and builds `{rule:'listItems', value:N}` for "at most 3 bullets", "up to 3 bullets", "no more than 3 bullets", "at least 3 bullets", "exactly 3 bullets" and "3 bullets" alike; `keepOrDrop` (`:110`) keeps it (the number is one the rule names). bareguard's `listItems` is EXACT (`node_modules/bareguard/src/primitives/rubric.js:790-796`, `n === c.value`, else red under/over), so a 2-item answer to "at most 3 bullets" is graded RED (measured 2, limit 3, "under") and a 4-item answer to "at least 3 bullets" is RED. Only the words checks (`maxWords`/`minWords`) have a direction here (`:235`); bullets and lines have none. Reported by fwd; confirmed here by a $0 probe through the real bareguard `checkStep` on both a 2-bullet and a 4-bullet answer: all six rule texts build the same check and every one is red at 2 and at 4 (green only at exactly 3).
+**Caveats.** Reading-derived and $0-probe-proven; NOT seen in a live run. Nothing is fixed. Whether a direction-less check should be refused, offered as exact, or wait for a bareguard ask is hamr's call. Probe: `.claude/scratch/r10/atmost/probe.mjs` (untracked).
+**Status.** Open, parked. Fixed by bareguard 0.35.0 maxListItems/minListItems, mapped 05740058.
+
+## F316 — told picks on text-only lines: NOT SEEN, not widened (2026-11-11)
+
+**Finding.** Told picks on text-only lines: NOT SEEN, not widened (hamr 2026-11-11: build only if proven). $0 archive read of every real rubric run: 26 runs, all openai-api deepseek-flash, 2026-10-12 to 13. Text-only lines with `~` countable limits (maxWords 120/80/30, maxLines 1): 7 graded, 0 attempt-1 reds (mv76m82c, mv97ju82, mv9euoam, mv5e1ktb, mv5bk400); 3 unreadable (mv9gm796, mv9vzze6, mvcur592: the step stayed red on line-1 fact checks). Every red in the population was a fact check. No real run has a keep-both line, so the facts+text toldPicks (d17c650e) has never been exercised live either.
+**Caveats.** A small, old population: 0 of 7 seen, never "never". Widen only if a live run shows a text-only countable red. Rows: `.claude/scratch/r10/toldtext/rows.json` (untracked).
+**Status.** Open, parked.
+
+## F317 — place-rules $0 POC round 1 FAIL: a first-match prefix rule binds a stale older release when only the newest heading drifts (2026-11-11)
+
+**Finding.** Pre-registered round (frozen at 16cb20b7, run once, exit 1): ROUND FAIL. Variant B on real tags: bareloop 58/58 later tags correct for versions and 58/58 for dates; unseen pooled (bareguard 47 tags, bare-agent 75, litectx 44, read blind before the freeze) versions 163/163, dates 162/163; the one date miss is a stop (bareguard v0.15.0, no date on the line); 0 WRONG on any real tag in any repo. The FAIL is the crafted negative N1a, "heading format changed": the crafted v0.55.0 changed only the newest headings and 37 older headings kept `## [`; the rule scanned past the changed top heading, found an older `## [` line and returned 0.33.0 / 2026-09-30 where "not found" was expected. That is a WRONG value (bar B1, hard fail), in both A and B. A prefix rule that searches for the first matching line can silently bind a STALE older release when only the newest heading drifts: the worst failure class, a wrong value instead of a stop.
+**Also seen.** All three unseen repos fit the first candidate (`## [` ... `]`), so the corpus is effectively one genre; the test gave no evidence that code can choose among different formats. Variant A (no skip word) stops on every `[Unreleased]` top: 76.6% pooled versions, 75.9% dates, all safe stops.
+**Caveats.** Reported FAIL, not re-tuned. $0, no model call. Result: `.claude/scratch/r10/placerules/result.json`, `out.txt` (untracked). Any round 2 needs a new frozen prereg (hamr's call).
+**Status.** Open, parked. Recorded in ITEM33-BUILD.md.
+
+## F318 — first live end-to-end run of the check list: green, signing check held, picks reach the worker only via the planner (2026-11-11)
+
+**Finding.** First live end-to-end rubric run of the check-list build. Engine 328a7876 (a throwaway clone), scratch HOME, DeepSeek direct deepseek-flash. Job: "Find the section headings of the latest release, then summarise its changes" with "~ at most 80 words"; input the 14 KB paid-round changelog. Signed list: 6 rows; `closeDecl.picks` holds maxWords 80. `listMatchesClose` returned ok pre-sign and `signRun` returned 200: the new signing check did not falsely refuse. Run: 1 step, green on attempt 1, close satisfied (`changed-from-seed` and `latest-release-headings-and-facts` both satisfied). Spend $0.0320 = run $0.0161 + drafting $0.0159, spendComplete true.
+**Told line.** The brief (with the line "Your \"text\" must have at most 80 words.") reached the planner (wire tap: scout and planner requests carried it). The worker's requests did not carry the literal told sentence; instead the planner wrote the limit into the step action ("'text' is a plain string of at most 80 words"). The worker only ever sees the plan step's action (`src/planrun.js`), so told picks reach the worker only through the planner. A direct told-to-worker path does not exist.
+**Earlier attempt (Fireworks, `run1-fireworks.out`).** Died cap-halt before any step: the full 603 KB v0.55.0 CHANGELOG made drafting cost $0.153 (2 calls at $0.072 each), over the $0.10 cap. The cap held. Since then the driver refuses inputs over 50 KB at $0 (`run.mjs`).
+**Caveats.** n=1, one model. The planner-mediated delivery is observed, not guaranteed: it depends on the planner copying the limit. Real `runs.jsonl` stayed at 397 lines. Files: `.claude/scratch/r10/e2e/run.out`, `result.json`, `run1-fireworks.out` (untracked).
+**Status.** Closed as a record (green, no defect found); the planner-mediated path is noted, not widened.
+
+## F319 — place-rules $0 POC round 2 FAIL: strict first-heading read fixed the stale bind; a mixed-level changelog still reads a stale patch (2026-11-11)
+
+**Finding.** Pre-registered round 2 (frozen at f69f3d92, amended before data, run once): ROUND FAIL on G1 from one WRONG in arm (b). The fix held: the strict selector reads only the first heading at the rule's level and never scans down; all 10 crafted negatives behave, including round 1's N1a (NOT FOUND now). Arm (a): 224 consecutive tag pairs over bareloop, bareguard, bare-agent and litectx; Variant B versions 222/224, dates 221/224, 0 stale reads, 0 file-lag, 0 WRONG. The WRONG: `node_modules/boolean/CHANGELOG.md` (in bareagent), package 3.2.0, read 3.1.4. It is a semantic-release file, minor releases at `# [`, patches at `## [`; the rule picked by shape was `## [`, so it never saw the top `# [3.2.0]` heading. A mixed-heading-level changelog gives a stale read, the same failure class as F317 reached by a different door.
+**Also seen.** Arm (b): 61 files, 28 unique after dedupe and seen-package exclusion, 18 valid; Variant B correct 9/18, unfittable 8/18 (safe stops), wrong 1. The pooled pair count was 224, not the 223 stated earlier (a miscount). Arm (a) is one genre (keep-a-changelog style), so it says nothing about other formats.
+**Caveats.** Reported FAIL, not re-tuned. $0, no model call. Result: `.claude/scratch/r10/placerules/round2/result.json` (untracked). A round 3 needs a new frozen prereg; one candidate design is a drafting-time refusal when releases appear at mixed heading levels (hamr's call).
+**Status.** Open, parked. Recorded in ITEM33-BUILD.md.
+
+## F320 — Job tab and plan card after the first live run: three list-view defects, seen live and fixed (2026-11-11)
+
+**Finding.** Three defects seen live on run mwc2u3yh (F318), all in how the check list is shown or built.
+(a) A not-checked list row had no name ("› not checked · the plan did not build it"), because signed rows carry no words (hamr's option A). Fixed 1e5fd888: rows are named from the session draft-log ledger rows, with a key fallback.
+(b) A dropped week-only row was missing from the Job tab, although the spec's A11 card preview shows it. Fixed 1e5fd888. Only week-only dropped rows show (hamr: the other dropped reasons stay hidden).
+(c) Answering "agree" with the same words as an existing ~ rule added a duplicate "~ at most 80 words" line. Fixed 0291e910: no line when the words match after normalisation; different words still add one.
+**Also.** The drafting plan card said "rule phrase"; it now uses the same listRowName as the Job tab (3471065a).
+**Note.** A signed row's KEY still holds the row's words in lower case (e.g. "L1.phrase.### fixed"), so words still reach the signature through keys. This matters for the parked "sign shapes, not words" plan.
+**Status.** Fixed, test-proven against the live run's fixture; old signed runs keep their duplicate line.
+
+## F321 — place-rules $0 POC round 3 PASS: the mixed-level guard closed the stale-read class; found rate on varied npm changelogs is low (2026-11-11)
+
+**Finding.** Pre-registered round 3 (frozen at 818186be, run once, exit 0): PASS. Variant B met G1-G5 with 0 WRONG anywhere. Pairs: 224, versions 222/224, dates 221/224, identical to round 2; the guard never fired on a pair. Negatives: 13 cases x A/B all pass (N9 boolean shape gives `mixed-levels`, N10 becoming mixed at re-read stops, N11 a "# Changelog" title reads right). Regression on 18 valid node_modules rows: `boolean` WRONG became NOT FOUND `mixed-levels`; `proper-lockfile` now gives `mixed-levels` too (a cost); B gets 8 correct, 2 mixed-levels, 8 unfittable. Blind set, 65 valid rows from other local projects' node_modules: correct 19 (29.2%), mixed-levels 8 (12.3%), unfittable 38 (58.5%), wrong 0.
+**Caveats.** Code never bound a wrong value; it reads keep-a-changelog style well and stops safely on other styles, but the found rate on varied npm changelogs is low (about 29%). The pair arm is one genre. AI choice of the rule is untested. $0, no model call. Result: `.claude/scratch/r10/placerules/round3/result.json` (untracked).
+**Status.** POC proves the code re-read; next is a build spec on hamr's go. Recorded in ITEM33-BUILD.md.
+
+## F322 — SKILLPROOF: a 4-line engineering-workflow skill in the worker prompt shows no effect; not adopted (2026-11-11)
+
+**Question.** Does a short engineering-workflow skill text in the bareloop worker's system prompt make runs pass more, or pass the same for less money or time? The text, verbatim:
+`How to work:` / `1. Look before you change: find the code you will touch, plus its callers and uses.` / `2. Check before you create: do not add a file or function that already exists.` / `3. Add a test only if the job asks for one, or a bug fix needs one to stop it coming back.` / `4. Before you finish, re-read your change against what the step asks for.`
+It is trimmed from `~/.claude/agents/code-developer.md`; the rest of that file orders tools the bareloop worker does not have, so it was left out. It goes at the end of the worker system prompt in `src/planrun.js` (`mkWorker`), only for writable workers (step and fix). The scout, planner and judge never get it. This was proven at $0 by the scripted prompt proof (`.claude/scratch/skillproof-run/promptproof.mjs`): 19 of 19 requests equal between arms apart from the text, 16 of 16 ON worker asks carry it, 0 OFF and 0 planner/scout requests carry it. A first version of the append (not gated on `writable`) leaked into the scout and planner; the proof caught it before any paid run.
+
+**Design.** Pre-registered in `docs/logs/SKILLPROOF-PREREG.md`: 32 slots (bigfile 6, pulselog 6, p7 4 per arm), $1 per run, $20 stop, frozen rule (WIN-MORE needs ON >= OFF + 3 greens), declared UNDERPOWERED (about a 30% false-WIN rate at no effect). The arm's only difference is the text; plan and carry memo are on in both. Three revisions, each re-signed: rev 1 (86be2378) Baseten Muse, never ran (model deactivated, HTTP 400, alias 403 on this key); rev 2 (328a7876) Fireworks, 3 runs then the account was depleted, those runs set aside and not pooled (`fireworks-aborted/`); rev 3 (194e0086) DeepSeek direct API `deepseek-flash`, all 32 slots rerun.
+
+**Result.** The frozen rule printed WIN-MORE (ON 8/8 greens, OFF 5/8), but on only 8 of 16 surviving pairs, and the driver itself flagged it INCOMPLETE. It is not a win, for three reasons:
+(1) **Transport drops dropped the pairs unevenly.** DeepSeek direct reset connections (ECONNRESET / socket hang up, about 12 of 692 calls, 1 to 2%, rising with context size: 0.4% under 10k tokens to 4.1% over 40k; the server hangs 12 to 33 s, then resets; Fireworks had 0 in 289 calls). A recovered drop makes `spendComplete=false`, which is a casualty. 23 attempts were lost this way: 15 ON and 8 OFF. 6 of the 8 slots with no surviving attempt were ON, and 13 of those 15 lost ON attempts were green. So most ON attempts were lost while the OFF side of the same pair survived; the surviving pairs are a selected sample, and the 8/8 vs 5/8 is not a fair read.
+(2) **2 of the 3 OFF failures are plan-reds**, which the skill cannot touch: the planner never sees it and its prompts are identical across arms. 01-bigfile-OFF-r1: draft 1 `parse-error` (the model emitted `<｜｜DSML｜｜` tool markup instead of plan JSON), draft 2 `scope-escape` ("package.json" outside the fence [src/]). 17-p7-OFF-r3: `invalid-value` kebab-case slug on step ids, twice. Both are chance.
+(3) **The only OFF failure the text could reach** is 30-bigfile-OFF-r6 #2 (step-red: `finish-until-suite-green` and the replan both stalled, "0 files changed under src/**", 2 of 2 strikes). The same "worker writes nothing" stall hit the ON bigfile casualty runs 07-bigfile-ON-r2 #1 and 26-bigfile-ON-r5 #2, which did carry the text. So the text neither caused nor cured it.
+
+**Numbers** (from `.claude/scratch/skillproof-run/results.jsonl`; view (a) = non-casualty attempts, not pairs).
+
+| view | arm | n | greens | median turns | median cost | median wall | median input / output tokens |
+|---|---|---|---|---|---|---|---|
+| (a) non-casualty | ON | 10 | 10 | 47 | $0.136 | 273 s | 781k / 20k |
+| (a) non-casualty | OFF | 14 | 11 | 45 | $0.131 | 338 s | 582k / 21k |
+| (b) all attempts | ON | 25 | 23 | 54 | $0.152 | 385 s | 869k / 25k |
+| (b) all attempts | OFF | 22 | 18 | 55 | $0.161 | 369 s | 915k / 25k |
+
+Paired view per the driver (RESULT.md, 8 pairs): R_cost 1.03, R_wall 1.10, i.e. no cost or time difference. View (b) is the least biased by casualties but its casualty spend is a floor. Reasoning tokens are not separable: the spine's per-round usage has no reasoning field, so they read 0 and any thinking is inside output tokens. p7 is the one job where ON was costlier and slower per run (median $0.077 vs $0.050, 223 s vs 145 s, 4 vs 4 runs); counts per job are too small for any per-job claim.
+
+**Decision.** Not adopted (hamr, 2026-11-11: "leave it"). The signal is not clean enough to ship and there is no live failure the text addresses. It would reopen on a clean rerun on a provider without transport drops, or on a live failure the text plausibly addresses.
+
+**Seen, not acted on.** The DeepSeek drafter once emitted `<｜｜DSML｜｜` tool markup instead of plan JSON (01-bigfile-OFF-r1). Bigfile workers in both arms sometimes spend all their rounds without writing a file, and the strike ladder ends the step. Harness note: the prompt proof had to mask the "time left ... N minutes" line, because `Math.round(remainingMs / 60000)` flipped between 30 and 29 across the two arms and failed check (c) once.
+
+**Spend.** About $9.21 booked ($7.84 DeepSeek direct, $1.37 Fireworks, set aside) plus a few cents of probes; real `runs.jsonl` untouched (397 lines). Result and spines: `.claude/scratch/skillproof-run/RESULT.md`, `results.jsonl`, `runs/` (scratch, untracked).
+
+**Status.** Closed as a record: no effect shown, not adopted, no code change.
+
+### F323: place-rules POC round 4 PASS (prereg 712dc0fd)
+
+Product code equals the round 3 POC: 0 differences over 18,954 reads. The whole heading line binds right in 218 of 224 pairs, 0 wrong. W2 (saved draft phrases) showed the AI mostly writes PIECES of the heading, not the whole line: "## [0.54.1]" in 75 sessions, "2026-11-04" in 68, "0.54.1" in 19, "[0.54.1]" in 17, the whole line in 29. Source: `.claude/scratch/r10/placerules/round4/result.json`.
+
+### F324: place-rules POC round 5 FAIL (prereg acba5cf3)
+
+"Any piece" containment proceeds on an appended "(yanked)" heading where the frozen row expected STOP (values right, so G1 and G4 red). The bare value read best at 222 of 224. This led to hamr's "strip it" ruling (value only), built in adc63ce1. Source: `.claude/scratch/r10/placerules/round5/result.json`.
+
+### F325: first live place test stopped at drafting; one owner of the week-only decision
+
+The first live place test stopped at drafting ($0.014, session smwcirsot84mn). The look's "version" fact was signed as a FIXED phrase "0.54.1": applyLedger re-decided week-only, and a `~` rule number on the part ("at most 80 words") bypassed the place fit. One-owner POC round 1 FAIL (d3462055; a candidate defect gave both values to split facts, dry session). Round 2 PASS (fb282332): the G1 live case becomes place, 0 wrong over 381 unique sessions, and 138 of 144 week-only facts are signed fixed today. Built 3daf33b0 (the list row is the only owner) and 34d58847 (a drafter-supplied place rule is discarded; not seen live). Sources: `.claude/scratch/r10/placerules/onewner/result.json`, `.claude/scratch/r10/placerules/onewner/round2/result.json`, `.claude/scratch/r10/place-live/run1.out`.
+
+### F326: live place test PASS on engine 34d58847
+
+DeepSeek direct deepseek-flash, scratch HOME, total $0.105. The draft signed version 0.54.1 and date 2026-11-04 as place rules. The origin run was green. Reuse on the v0.55.0 changelog was green and read 0.55.0 (was 0.54.1) and 2026-11-10 (was 2026-11-04); the signed spec stayed byte-identical and the workflowKey unchanged. A mixed-heading Reuse stopped at $0 with 0 provider calls. Seen live: doubled names "release version version" in the stop message; fixed in b6c455cf and bc813cc6 (test-proven, not seen live). Real runs.jsonl 397 lines before and after. Source: `.claude/scratch/r10/place-live/run.out`.
+
+Also built this stretch, test-proven only: door Accept/Rerun bind the run's own read values (165cbcbe, 64b8d076); look facts stripped to their value(s) (eb828f77, 5315b617).
+
+Full gate on bc813cc6: tests 5935, pass 5933, fail 0, skipped 2, TEST_EXIT=0, TSC_EXIT=0, PCC_EXIT=0 (78 commits).
+
+### F327: the fit question named only the asks NOT found (session smwdhk8e6amd0, 2026-11-12)
+
+Live walk on the test panel, DeepSeek flash. The job line "List 3 flights from Boston to Chicago" gave 4 asks; 3 were found. The question read "I found 3 of 4 of your asks on this page. Not found: List (line 1)." The person could not see which 3 were found (draft-log `fit-check` row has all four asks with quotes; the question showed one). Fixed in 73e08808: the question names the asks it found too. Test-proven only. Not seen live: no later fit question was asked (sessions after 73e08808, e.g. smwdirp88t2cy and smwdjoy4dsdxs, read state `fits`, so no question was raised). Source: `src/fitcheck.js` (`decideFit` line 63).
+
+### F328: the confirm card said "Done when every › check passes" with no › rows (2026-11-12)
+
+The confirm step is goal-only by ruling (hamr 2026-11-12), but the card still printed the legend. hamr asked where the checks were. Fixed in 48e35a5d: the job-plan legend shows only when the plan has a check row. Test-proven; not checked by a later live walk.
+
+### F329: a look-tied fact was dropped by the list and the drafter's price part was refused (sessions smwdiy4k3bk0v, smwdhl8k5q8pn, 2026-11-12)
+
+The look tied a price fact to `~` rule 1 (`forRule=1`). The list drops such a fact ("a ~ rule wins", `src/checklist.js:98`), so the drafter's price part was refused "not on the list" (draft-log `ledger-try`, `refused: [{kind: fact, words: price}]`). The drafter puts `rules` on the fact, not on the part, against the brief at `src/authorflow.js:1541` ("rules is a field of the PART"), so rule 1 stayed uncovered and the gate said "your rule 'under $450' is neither checked nor listed under Not checked" (`rubric-rule-dropped`).
+- Session smwdiy4k3bk0v: author, revise-1 and revise-2 all refused; stopped at max revisions (3 refused tries).
+- Session smwdhl8k5q8pn: revise-1 and revise-2 refused ("price label", "departure time label" not on the list). Run mwdhma1l from that session ran GREEN. Its signed spec shows rules [1, 2] built from the author try, so I could NOT confirm from the files that "under $450" ended not-checked in that run; the refusals above are the verified part.
+- $0 replay POC: PASS (pre-fix replay of the saved drafts).
+- Fixed fea67fd9 (`src/checklist.js:216-236`): code credits rule N from the look tie when the fact has a bound; the bound is filled from the look's reading; no bound means not-checked.
+- Seen live: session smwdoiysjmma3, all 3 tries had `refused: []` at the list stage.
+- Superseded in direction by the check block redesign (build doc, 2026-11-12 section): the fix is one more patch at a seam the redesign removes.
+
+### F330: OPEN — the final card kept only the default cited check (session smwdoiysjmma3, 2026-11-12, 15:07Z)
+
+Job: list 3 flights, "under $450", "departure not redeye" (agreed reading "departure time between 05:00 and 21:00"). Retention line: 6 AI parts, 1 kept, 5 dropped (draft-log `retention`; `draft-checks` is empty). On the card, "under $450", "departure not redeye", the agreed departure rule, origin, destination and the count all went to "The AI couldn't build a working check for this, so you judge it at Accept." (`DROPPED_WORDS`, `src/checkpick.js:561`). The price IS readable on the page ("From 161 US dollars", 24 rows). Not caused by the question-box commits. $0 root cause, four seams:
+- (a) revise-1 passed the gate (`ledger-try` revise-1, no `try-refused` after it), but the loop went on to revise-2 and kept the last try (`src/authorflow.js` loop around 3105-3125). The F176 fallback to the newest sound try (3223-3228) fires only after an instrument-stop, not here.
+- (b) `fillAndMergeFacts` (`src/checkpick.js:472`) merges a line's facts into ONE part, so one part-tied red on revise-2 (likely an illegal `currency:["$","US dollars"]` copied from the look; not proven from the log) made `dropExtras` (`checkpick.js:571-600`, called by `dropAfterLastTry`, `authorflow.js:2618`) drop all five checks.
+- (c) `applyLedger` keeps only the look's `forRule` on the part and strips fact-level rules, so agreed rule 3 (no look fact) was lost on the author try (`try-refused` author: "rule 'departure time between 05:00 and 21:00' is neither checked nor listed").
+- (d) the last-try drop writes no record: the reds, the dropped parts and the pre-drop declaration are invisible; only the retention line (6/1/5) remains.
+hamr ruled a redesign instead of a fifth patch: build doc section "2026-11-12 CHECK BLOCK REDESIGN". Status: OPEN, no fix.
+
+### F331: process — a commit cited an unrelated run and another lacked labels; the full gate's prompt-commit-check went red (2026-11-12)
+
+b5241e43 cited run mwclgxs3 (a place-rules run) on its `Failure:` line, but the failure it described was a look answer read from typed words. a8f45a51 lacked labels. The full gate was 5962 pass, 0 fail, exit 1 (prompt-commit-check). Both were reworded honestly by a clone-tested commit-tree script run by hamr (`.claude/scratch/reword-qbox.sh`): a053034c cites run mvh7g2hc, 151f9e45 cites run mviepi4i; both runs exist in `runs.jsonl`. The old shas still sit in the reflog. Lesson: check that a builder's cited run id exists and matches the failure before committing. Not verified by me: that those two runs show the exact failure text (only that the ids exist and the classes match F240 and the fit-question path).
+
+### F332: OPEN — the fit check counted the verb "List" as an ask to find on the page (sessions smwdhk8e6amd0, smwdirp88t2cy, 2026-11-12)
+
+In smwdhk8e6amd0 the AI listed "List" (line 1) as an ask; it was "not found" and was the whole reason for the fit question. In smwdirp88t2cy the same word was "found" as "Search results". An action word is not a page fact: the first reading stopped a good draft, the second counted a made-up match. Source: draft-log `fit-check` rows; `src/fitcheck.js:39` (`fitPrompt`), `decideFit` line 63. No fix; not built.
+
+### F333: a negated `~` rule built the opposite check (session smwelw0jrax5c, draft B, 2026-11-13)
+
+The job had `~ nonstop is not mandatory`. The look tied the phrase fact "stops" (words "Nonstop", "1 stop", page-map `from: "line 1 rule 3"`) to that rule, and `matchRule` (src/checkblock.js) built `must say "Nonstop"` from the link: the opposite of what the person wrote. Draft A (session smwelq2l6srdb, no rule 3) built `phrase "Nonstop"` as a `!` row, which is the agent's own suggestion and not wrong. `NEGATING_RE` (src/rubricstep.js:793) is read only by the time reader, so a negation never reached a phrase link. Fixed with the negation reader as the one owner (see the 2026-11-13 addendum of docs/product/ITEM33-BUILD.md).
+
+### F334: the confirm card drew no check rows (session smwe2qz5g3xrq, 2026-11-12)
+
+The block had built both `~` rules, two look facts and a count and marked the `$cited` row Not checked, but the confirm card showed only the summary, the job line, "How the page was read" and "Always checked": it read the confirm turn's own plan (empty for a rubric job), not the block's rows. Fixed in 9af3fd6a (the card draws the rows through the signed card's readers); test tests/confirm-card-rows.test.js.
+
+### F335: the look's `lte` beat the person's "under $450" (session smwe2qz5g3xrq, 2026-11-12; seen again in smwelq2l6srdb and smwelw0jrax5c)
+
+`~ under $450` ended as "at most 450" (450 itself would pass) because `matchRule` took the look's reading first, then the person's words, then the AI's. The person's own words now win: code reads a money or time limit from the `~` words (one owner, `wordsReading`), and the look's or AI's reading is used only when code cannot read them. Fixed in d4c3ff3b (test tests/checkblock-words-win.test.js).
+
+### F336: the job's words lost to the long page name, so origin and destination went to Suggested (session smwen1p12tyhc, live draft 3, 2026-11-13)
+
+The look named the origin fact by the page's own long words ("Boston Logan International Airport", "Chicago O'Hare International Airport"); the job says "Boston" and "Chicago". The N-1 split (`inJob`, src/checkblock.js) asked only whether the page words are in the job, so both rows were read as "not in your job" and held under Suggested, though the person had asked for them. hamr's rule (2026-11-13): "anything not in your original job that code can check goes to Suggested", so a word the job really holds makes the row job-derived, and the check says the job's word. Recorded with the fix in the 2026-11-13 live draft 3 addendum of docs/product/ITEM33-BUILD.md.

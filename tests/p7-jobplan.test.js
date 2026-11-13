@@ -38,8 +38,8 @@ test('planFromSpec: each stage lands under the job line it names; stages with no
   const p = planFromSpec(NEW_SPEC);
   assert.equal(p.older, false);
   assert.deepEqual(p.lines.map((l) => [l.n, l.text, l.rule, l.checks, l.refused]), [
-    [1, 'Find 3 flights', 'PASS: quoted from the page; FAIL: invented price', [{ name: 'flights-found', cls: 'judge', by: 'agent' }], []],
-    [2, 'Sort them cheapest first', 'direct only', [{ name: 'sorted-by-price', cls: 'machine check', by: 'agent' }], []],
+    [1, 'Find 3 flights', 'PASS: quoted from the page; FAIL: invented price', [{ name: 'flights-found', cls: 'judge', by: 'agent', stage: 'flights-found' }], []],
+    [2, 'Sort them cheapest first', 'direct only', [{ name: 'sorted-by-price', cls: 'machine check', by: 'agent', stage: 'sorted-by-price' }], []],
     [3, 'Write a table', '', [], ['no command can check a table layout']],
   ]);
   assert.deepEqual(p.alwaysOn, ['changed-from-seed']);

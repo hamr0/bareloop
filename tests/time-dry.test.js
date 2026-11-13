@@ -11,7 +11,8 @@ import { fileURLToPath } from 'node:url';
 import { dryReadTimes, dryReadMoney } from '../src/pagedry.js';
 import { runPageMap } from '../src/pagemap.js';
 import { dropSentence, dropRows, dropLine } from '../src/pagedropwords.js';
-import { withDropNotes, lineRules } from '../src/rubricstep.js';
+import { lineRules } from '../src/rubricstep.js';
+import { CheckBlock } from '../src/checkblock.js';
 import { reply } from './helpers.js';
 import { loadFixture } from './idea-a-fixtures.js';
 
@@ -87,11 +88,16 @@ test('the Not checked sentence and the whole rendered line', async () => {
     'line 1: "leaves between 05:00 and 21:59" — the page never shows a time right after "Departure time", so it is not checked.');
 });
 
-test('withDropNotes: the drop is never silent - an unmet rule goes to refused in the person\'s rule words', async () => {
+test('block: the drop is never silent - an unmet rule is a Not checked ROW in the person\'s rule words (the old withDropNotes is deleted; the same dry read)', async () => {
   const r = await dryReadTimes(jfk, [timeFact(['Departure time'])]);
   const jobLines = [{ n: 1, text: 'List 3 flights', rules: ['under $450', 'leaves between 05:00 and 21:59'] }];
-  const out = withDropNotes({ stages: [] }, r.dropped, jobLines);
-  assert.deepEqual(out.refused, [{ line: 1, rule: 2, reason: 'the page never shows a time right after "Departure time", so it is not checked.' }]);
+  const block = new CheckBlock({ texts: { Flights: 'x' }, labels: ['Flights'], asks: false });
+  block.fromJob(jobLines);
+  block.addLook([], r.dropped);
+  block.reconcile();
+  const row = block.rows.find((x) => x.kind === 'rule' && x.rule === 2);
+  assert.equal(row?.state, 'not-checked');
+  assert.equal(row?.reason, 'the page never shows a time right after "Departure time", so it is not checked.');
 });
 
 test('runPageMap (the real saved JFK-LAX map): the time fact is dropped, the other facts are kept, and the Not checked line renders', async () => {

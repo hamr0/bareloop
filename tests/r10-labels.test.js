@@ -1,4 +1,4 @@
-// R10 keep-both, labels: every list of a line's checks says who added each one - the drafter's `[agent]`, the person's own pick `[you picked]` (fwdloop's `[added]`
+// R10 keep-both, labels: every list of a line's checks says who added each one - the drafter's `[agent]`, the person's own pick `[you]` (fwdloop's `[added]`
 // marker, matched in kind). Surfaces: the signed close's own reader (checksOfClose), the Job tab and the plan card (one model, jobplan.js, one drawing, renderJobPlan),
 // and the Audit's Draft group (the draft log's `draft-checks` line). The real refused declaration of the paid R10 drafts, put through the real draft gate.
 import { test } from 'node:test';
@@ -8,20 +8,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateDeclaration, classGuards, catalogueForLang, RUBRIC_LANG, genreForLang } from '../src/authoring.js';
-import { withFactBindings, withDropNotes, settlePersonsWords, checksOfClose, reconcileRubricPlan } from '../src/rubricstep.js';
-import { applyPicks, settleRules } from '../src/checkpick.js';
+import { checksOfClose, cardOfClose } from '../src/rubricstep.js';
+import { builtFrom } from './block-world.mjs';
 import { planFromSpec, planFromConfirm } from '../src/panel/jobplan.js';
 import { draftingPartFor, readDraftChecks, DRAFT_LOG_FILE } from '../src/draftspend.js';
 
 const { D3 } = JSON.parse(readFileSync(new URL('./fixtures/r10-keepboth-refused.json', import.meta.url), 'utf8'));
 const jobLines = [{ n: 1, text: 'Summarise the latest release in the changelog', rule: 'exactly 3 bullets; under 80 words', rules: ['exactly 3 bullets', 'under 80 words'] }];
-const rules = [{ line: 1, rule: 1, text: 'exactly 3 bullets' }, { line: 1, rule: 2, text: 'under 80 words' }];
-const picks = [{ line: 1, rule: 1, check: { rule: 'listItems', value: 3 }, added: 'exactly 3 list items' }, { line: 1, rule: 2, check: { rule: 'maxWords', value: 80 }, added: 'at most 80 words' }];
-const settled = settleRules(rules, picks, [], jobLines);
-const v = validateDeclaration(withFactBindings(withDropNotes(settlePersonsWords(applyPicks(D3, settled), jobLines), undefined, jobLines)), {
+const CHANGELOG = readFileSync(new URL('./fixtures/r10-keepboth-changelog.md', import.meta.url), 'utf8');
+const built = builtFrom(D3, CHANGELOG);
+const v = { ...validateDeclaration(built.declaration, {
   catalogue: catalogueForLang(RUBRIC_LANG), listing: ['input/CHANGELOG.md', 'output/.gitkeep'], guards: classGuards({ verdictType: 'soft-green', lang: RUBRIC_LANG }),
   envOwned: [], verdictType: 'soft-green', writeScope: ['output/'], jobLines, inputLabels: ['Changelog'],
-});
+}) };
 const closeDecl = { genre: genreForLang(RUBRIC_LANG), lang: RUBRIC_LANG, stages: v.declaration.stages, picks: v.declaration.picks, ...(v.declaration.notes ? { notes: v.declaration.notes } : {}) };
 const spec = { schema: 'job-v1', job: 'kb', goal: 'g', verdictType: 'soft-green', jobLines, closeDecl };
 
@@ -34,7 +33,7 @@ test('checksOfClose: the fact rows are the agent\'s, the picks (the close\'s own
   const { picks: _p, ...bare } = closeDecl;
   assert.ok(checksOfClose(bare).every((r) => r.by === 'agent'));
   // the reconciled card carries the mark too
-  assert.deepEqual(reconcileRubricPlan({ confirmed: [], notChecked: [], closeDecl, jobLines }).checkItems.slice(-2).map((c) => c.by), ['you', 'you']);
+  assert.deepEqual(cardOfClose({ closeDecl, jobLines }).checkItems.slice(-2).map((c) => c.by), ['you', 'you']);
 });
 
 test('Job tab (planFromSpec): each check under its line says who added it', () => {
@@ -45,14 +44,14 @@ test('Job tab (planFromSpec): each check under its line says who added it', () =
   assert.ok(checks.every((c) => c.by === 'agent' || c.by === 'you'));
   // a code job's stage is the drafter's too
   const code = planFromSpec({ goal: 'g', jobLines: [{ n: 1, text: 'x', rule: '' }], closeDecl: { genre: 'types', lang: 'js', stages: [{ name: 'tests-pass', fromLine: [1], kind: 'command-exit', params: {} }] } });
-  assert.deepEqual(code.lines[0].checks, [{ name: 'tests-pass', cls: 'machine check', by: 'agent' }]);
+  assert.deepEqual(code.lines[0].checks, [{ name: 'tests-pass', cls: 'machine check', by: 'agent', stage: 'tests-pass' }]);
 });
 
 test('plan card (planFromConfirm): the drafter\'s checks are [agent]; the picks keep their own "You picked" rows; a prepared card marks the close\'s pick rows', () => {
   const p = planFromConfirm(jobLines, { checkItems: [{ text: 'the heading is quoted', fromLine: [1] }], picked: [{ line: 1, text: 'at most 80 words' }] });
   assert.deepEqual(p.lines[0].checks, [{ name: 'the heading is quoted', cls: null, by: 'agent' }]);
   assert.deepEqual(p.lines[0].picked, ['at most 80 words']);
-  const rec = reconcileRubricPlan({ confirmed: [], notChecked: [], closeDecl, jobLines });
+  const rec = cardOfClose({ closeDecl, jobLines });
   const prepared = planFromConfirm(jobLines, { checkItems: rec.checkItems, picked: [{ line: 1, text: 'at most 80 words' }] });
   assert.equal(prepared.lines[0].checks.filter((c) => c.by === 'you').length, 0, 'the close\'s rows for the picks are not drawn a second time');
   assert.equal(prepared.lines[0].picked.length, 1);
@@ -71,25 +70,27 @@ function fnSrc(name) {
   }
   return PAGE.slice(start, i + 1);
 }
-const page = () => new Function(`${fnSrc('escapeXml')}\n${fnSrc('renderJobPlan')}\n${fnSrc('draftingTableHtml')}\n${fnSrc('draftingMoneyText')}\n${fnSrc('draftingCallCost')}\n${fnSrc('panelMoney')}\n${fnSrc('duration')}\nreturn { renderJobPlan, draftingTableHtml };`)();
+const page = () => new Function(`${fnSrc('escapeXml')}\n${fnSrc('byTagOf')}\n${fnSrc('renderJobPlan')}\n${fnSrc('draftingTableHtml')}\n${fnSrc('draftingMoneyText')}\n${fnSrc('draftingCallCost')}\n${fnSrc('panelMoney')}\n${fnSrc('duration')}\nreturn { renderJobPlan, draftingTableHtml };`)();
 
 test('renderJobPlan draws the mark on a check row, one markup for the plan card and the Job tab', () => {
   const { renderJobPlan } = page();
   const html = renderJobPlan(planFromSpec(spec));
-  assert.match(html, /<div class="fold" data-testid="plan-check"><span class="mk">›<\/span> check · the text is at most 80 words · machine check <span class="by" data-testid="plan-by" data-by="you">\[you picked\]<\/span><\/div>/);
+  assert.match(html, /<div class="fold" data-testid="plan-check"><span class="mk">›<\/span> check · the text is at most 80 words · machine check <span class="by" data-testid="plan-by" data-by="you">\[you\]<\/span><\/div>/);
   assert.match(html, /data-by="agent">\[agent\]<\/span>/);
-  assert.equal((html.match(/\[you picked\]/g) ?? []).length, 2);
+  assert.equal((html.match(/\[you\]/g) ?? []).length, 2);
   // the confirm turn: [agent] on the drafter's check, the pick's own row unchanged
   const conf = renderJobPlan(planFromConfirm(jobLines, { checkItems: [{ text: 'the heading is quoted', fromLine: [1] }], picked: [{ line: 1, text: 'at most 80 words' }] }));
   assert.match(conf, /the heading is quoted <span class="by" data-testid="plan-by" data-by="agent">\[agent\]<\/span>/);
-  assert.match(conf, /data-testid="plan-picked"><span class="mk">›<\/span> check · at most 80 words <span class="by" data-testid="plan-by" data-by="you">\[you picked\]<\/span><\/div>/);
+  assert.match(conf, /data-testid="plan-picked"><span class="mk">›<\/span> check · at most 80 words <span class="by" data-testid="plan-by" data-by="you">\[you\]<\/span><\/div>/);
   assert.doesNotMatch(conf, /You picked/);
-  // an always-on guard and a not-known check carry no mark
-  assert.doesNotMatch(renderJobPlan({ lines: [{ n: 1, text: 'x', rule: '', rules: [], checks: [{ name: 'c', cls: null }], refused: [], always: ['g'] }], loose: [], notChecked: [], readNotes: [], alwaysOn: [], older: false }), /class="by"/);
-  assert.match(PAGE, /\.jp \.by,\.draft-checks-row \.by\{color:var\(--text-dim\)/);
+  // a not-known check carries no mark; an always-on guard is `[default]` (live draft 3, hamr 2026-11-13)
+  const g = renderJobPlan({ lines: [{ n: 1, text: 'x', rule: '', rules: [], checks: [{ name: 'c', cls: null }], refused: [], always: ['g'] }], loose: [], notChecked: [], readNotes: [], alwaysOn: [], older: false });
+  assert.doesNotMatch(g, /plan-check"><span class="mk">›<\/span> check · c <span class="by"/);
+  assert.match(g, /always-on: g <span class="by" data-testid="plan-by" data-by="default">\[default\]<\/span>/);
+  assert.match(PAGE, /\.jp \.by,\.draft-checks-row \.by,\.job-card \.by\{color:var\(--text-dim\)/);
 });
 
-test('Audit Draft group: the draft log\'s draft-checks line gives one row per check, [agent] or [you picked], after the revise label', (t) => {
+test('Audit Draft group: the draft log\'s draft-checks line is read (the Audit\'s Checks section draws the list, not this table)', (t) => {
   const root = mkdtempSync(join(tmpdir(), 'r10-labels-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const sess = join(root, 'panel-sessions', 's1');
@@ -110,10 +111,8 @@ test('Audit Draft group: the draft log\'s draft-checks line gives one row per ch
   const html = page().draftingTableHtml(part);
   const trs = html.slice(html.indexOf('<tbody>')).match(/<tr[^>]*>.*?<\/tr>/g);
   assert.match(trs[0], /drafting-kind/);
-  const checkRows = trs.filter((x) => x.includes('drafting-check'));
-  assert.equal(checkRows.length, rows.length);
-  assert.match(checkRows.at(-1), /line 1 · the text is at most 80 words <span class="by" data-by="you">\[you picked\]<\/span>/);
-  assert.match(checkRows[0], /data-by="agent">\[agent\]<\/span>/);
-  assert.equal(trs.indexOf(checkRows[0]), 1, 'right after the label');
+  // the checks themselves are the Audit's own Checks section now (tests/audit-checks-section.test.js), not a second list in the Draft group
+  assert.equal(trs.filter((x) => x.includes('drafting-check')).length, 0);
+  assert.match(trs[0], /drafting-kind/);
   assert.deepEqual(readDraftChecks(join(root, 'nothing-here')), []);
 });

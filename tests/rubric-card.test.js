@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { planFromSpec, planFromConfirm } from '../src/panel/jobplan.js';
-import { checksOfClose, planMatchesClose, reconcileRubricPlan, withFactBindings, ruleNotChecked } from '../src/rubricstep.js';
+import { checksOfClose, planMatchesClose, cardOfClose, ruleNotChecked } from '../src/rubricstep.js';
 import { factRows } from '../src/facts.js';
 
 const FACT = {
@@ -17,12 +17,13 @@ const JOB_LINES = [
   { n: 1, text: 'List the last 3 releases', rule: 'released on or after 2026-10-01; the cheapest one', rules: ['released on or after 2026-10-01', 'the cheapest one'] },
   { n: 2, text: 'Summarize them', rule: 'under 100 words', rules: ['under 100 words'] },
 ];
-const closeDecl = () => withFactBindings({
+// the close as the check block builds it: line 2 (a text line after a fact line) carries code's number tie (withFactBindings, which added it to an AI-written close, is deleted)
+const closeDecl = () => ({
   genre: 'text', lang: 'rubric-files',
   stages: [
     { name: 'changed-from-seed', kind: 'files-changed', params: {} },
     { name: 'line-1', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts: [FACT] } },
-    { name: 'line-2', kind: 'rubric-step', fromLine: [2], params: { step: 2, parts: [{ text: 'under 100 words', class: 'countable', check: 'maxWords', value: 100, rules: [1] }] } },
+    { name: 'line-2', kind: 'rubric-step', fromLine: [2], params: { step: 2, parts: [{ text: 'under 100 words', class: 'countable', check: 'maxWords', value: 100, rules: [1] }, { text: 'every number in the text is in a quote checked on line 1', class: 'countable', check: 'numbersFromFacts', from: [1] }] } },
   ],
   refused: [{ line: 1, rule: 2, reason: 'a "cheapest" cannot be told from one release' }],
 });
@@ -50,13 +51,11 @@ test('the Job tab reads the same rows: a rubric-step stage is shown as the check
 });
 
 test('the card after drafting: checks are the close\'s own rows, Not checked holds the prose line and the rule the drafter listed, in the person\'s words; sign == run', () => {
-  const rec = reconcileRubricPlan({ confirmed: [{ text: 'lists 3 releases', fromLine: [1] }], notChecked: ['a good pick'], closeDecl: closeDecl(), jobLines: JOB_LINES });
+  const rec = cardOfClose({ closeDecl: closeDecl(), jobLines: JOB_LINES });
   assert.deepEqual(rec.notChecked, [
-    'a good pick',
     'line 2: what the text says — you judge it at Accept',
     'line 1: "the cheapest one" — a "cheapest" cannot be told from one release',
   ]);
-  assert.deepEqual(rec.moved, []);
   assert.deepEqual(planMatchesClose(rec.checkItems, closeDecl()), { ok: true });
   const plan = planFromConfirm(JOB_LINES, { checkItems: rec.checkItems, notChecked: rec.notChecked, protections: [] });
   assert.equal(plan.lines[0].checks.length, 3);

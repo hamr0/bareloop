@@ -1,4 +1,4 @@
-// Run mvij7kuk (flight-c1): the plan card listed code's notes about written forms it did not use under "Not checked (the AI's own reading)",
+// Run mvij7kuk (flight-c1): the plan card listed code's notes about written forms it did not use under "Not checked",
 // although the price WAS checked. A drop of one word whose fact is kept is a note ("How the page was read"); a whole fact left out stays Not checked.
 // The data is the notes that run's signed spec really carried (session smvij5q3rx96z).
 

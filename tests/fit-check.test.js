@@ -109,6 +109,12 @@ test('fitQuestionText: the exact words, with the count and each not-found ask an
   assert.equal(q, 'I found 2 of 4 of your asks on this page. Not found: to Miami (line 1), price (line 2). Type go on to keep drafting, or anything else to stop and change the job or the page.');
 });
 
+test('fitQuestionText: names the found asks with their lines too (found 0 keeps the old shape)', () => {
+  const q = fitQuestionText({ found: 3, total: 4, notFound: [{ line: 1, ask: 'List' }], foundAsks: [{ line: 1, ask: '3 flights' }, { line: 1, ask: 'from Boston' }, { line: 1, ask: 'to Chicago' }] });
+  assert.equal(q, 'I found 3 of 4 of your asks on this page: 3 flights (line 1), from Boston (line 1), to Chicago (line 1). Not found: List (line 1). Type go on to keep drafting, or anything else to stop and change the job or the page.');
+  assert.equal(fitQuestionText({ found: 0, total: 4, notFound: [{ line: 1, ask: 'x' }], foundAsks: [] }), 'I found 0 of 4 of your asks on this page. Not found: x (line 1). Type go on to keep drafting, or anything else to stop and change the job or the page.');
+});
+
 /** a provider that plays `steps` in order and counts its calls */
 function playing(/** @type {any[]} */ steps) {
   const seen = { calls: 0, prompts: /** @type {string[]} */ ([]), options: /** @type {any[]} */ ([]) };

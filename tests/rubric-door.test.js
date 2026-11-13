@@ -18,6 +18,7 @@ import { proveRubricInputs } from '../src/source.js';
 import { parseJobBlock, jobBlockFitsCheck } from '../src/jobblock.js';
 import { rubricGoal } from '../src/rubricstep.js';
 import { createSession, validateJobCard as rawValidateJobCard } from '../src/panel/authorsession.js';
+import { ROW_EDIT_TOOL } from '../src/rowedit.js';
 import { keyRows } from '../src/providerrows.js';
 import { ANTH_CFG } from './helpers.js';
 
@@ -159,7 +160,9 @@ test('createSession on a rubric job with a local file: the CONFIRM TURN runs (no
       authorOpts = o;
       return {
         ok: true,
-        declaration: { stages: [{ name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } }], refused: [{ line: 1, reason: 'fixture' }], notes: [] },
+        declaration: { stages: [{ name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } },
+          // R10 end check: a close with no real check is refused before signing, so the fixture carries the person's own word limit as a real check
+          { name: 'line-1', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts: [{ text: 'keep it under 200 words', class: 'countable', check: 'maxWords', value: 200, rules: [1] }] } }], refused: [{ line: 1, reason: 'fixture' }], notes: [] },
         genreEnv: null, cost: { costUsd: 0, knownUsd: 0, spendComplete: true, calls: [], unpricedRounds: 0 }, reds: [],
       };
     },
@@ -191,7 +194,31 @@ test('createSession on a rubric job with a local file: the CONFIRM TURN runs (no
   assert.equal(existsSync(join(into, 'tree', 'input', 'CHANGELOG.md')), true);
 });
 
-test('the rubric confirm turn: the PROTECTIONS shown are the code\'s (guard list + write fence + one file line per job line), the model is told what a check can be and shown the same list as ALREADY COVERED, and notChecked is the model\'s own', async () => {
+test('R10 end check, panel door: a draft whose check block built no check (a text line over TWO inputs: code cannot pick which one the claims quote; paid6 draft 17\'s shape) ends refused with the d4596a7 words and never reaches the signing gates', async () => {
+  const file = changelogCopy();
+  const file2 = join(tmp(), 'README.md');
+  copyFileSync(join(HERE, '..', 'README.md'), file2);
+  let gatesReached = false;
+  const session = createSession({
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-door-nocheck', jobText: '1. Write a short friendly summary of the note', inputs: `Changelog: ${file}\nReadme: ${file2}`, destination: join(tmp(), 'delivered'), capUsd: 1,
+  }, {
+    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(), sessionsRoot: tmp('rubric-door-sess-'),
+    lookFn: async () => ({ state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [], facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }, { n: 2, label: 'Readme' }], look: { facts: [], prose: [], notFound: [], dropped: [] } } }),
+    // the drafter sends no edit (the reply of a model with nothing sure to say)
+    generate: async (_m, tools) => { await tools.find((t) => t.name === ROW_EDIT_TOOL).execute({ edits: [] }); return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } }; },
+    confirmGenerate: confirmModel(PLAN).generate,
+    prepareSigningFn: async () => { gatesReached = true; return { ok: true, specHash: 'abc', seedRef: 'x', work: [], guards: [], stops: [], reds: [], refusal: null, gates: {} }; },
+  });
+  assert.ok(await waitFor(() => session.state.pendingAsk?.kind === 'menu'), `${session.state.phase} / ${session.state.error}`);
+  assert.equal(session.signPrepare().ok, true);
+  assert.ok(await waitFor(() => ['prepared', 'refused', 'error'].includes(session.state.phase)));
+  assert.equal(session.state.phase, 'refused', `${session.state.phase} / ${session.state.error}`);
+  assert.match(session.state.error, /^The checks before signing did not all pass, so nothing was signed\. Spent so far: /);
+  assert.match(session.state.error, /This job has no check that can fail: no `~` rule, and no check the AI built was kept\./);
+  assert.equal(gatesReached, false, 'the end check refuses before the signing gates');
+});
+
+test('the rubric confirm turn: the PROTECTIONS shown are the code\'s (guard list + write fence + one file line per job line), the model is told to plan none (the checks are the list\'s) and shown the same list as ALREADY COVERED, and what the model sent as checks and notChecked is discarded by code', async () => {
   const file = changelogCopy();
   const cm = confirmModel(PLAN);
   const session = createSession({
@@ -211,9 +238,9 @@ test('the rubric confirm turn: the PROTECTIONS shown are the code\'s (guard list
   ]);
   const shown = session.state.pendingAsk.plan.protections;
   assert.deepEqual(shown, expected, 'what the person is shown is the code\'s list, whatever the model said');
-  assert.equal(session.state.pendingAsk.plan.notChecked[0], 'be friendly');
+  assert.deepEqual([session.state.pendingAsk.plan.checks, session.state.pendingAsk.plan.notChecked], [[], []], 'a rubric confirm turn plans the goal only: what the model sent is discarded');
   const prompt = cm.seen[0][0].content;
-  assert.ok(prompt.includes(RUBRIC_CONFIRM_NOTE), 'the model is told what a check can be here');
+  assert.ok(prompt.includes(RUBRIC_CONFIRM_NOTE), 'the model is told to plan no check here');
   for (const line of expected) assert.ok(prompt.includes(line), `ALREADY COVERED must carry: ${line}`);
   assert.match(prompt, /LANGUAGE: text/);
   assert.match(prompt, /the person pointed at these inputs: 1 Changelog /);

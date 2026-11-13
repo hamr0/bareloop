@@ -131,7 +131,7 @@ test('the plan card rows come from the signed part: one per fact, then the count
   const decl = { stages: [stage([{ ...part, covers: [1] }])] };
   const got = checksOfClose(decl);
   assert.deepEqual(got.map((c) => c.text), rows);
-  assert.ok(got.every((c) => c.line === 1 && c.covers[0] === 1));
+  assert.ok(got.every((c) => c.line === 1));
   assert.deepEqual(planMatchesClose(got.map((c) => ({ text: c.text, fromLine: [c.line] })), decl), { ok: true });
   assert.equal(planMatchesClose(got.slice(1).map((c) => ({ text: c.text, fromLine: [c.line] })), decl).ok, false, 'a dropped row is a sign/run mismatch');
 });

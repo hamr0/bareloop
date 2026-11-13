@@ -648,6 +648,17 @@
   .msg.system{color:var(--text-faint);border-left:3px dotted var(--text-faint);font-size:12px;}
   .msg .who{font-size:11px;color:var(--text-faint);margin-bottom:3px;text-transform:none;font-weight:400;}
   .chat-input-row{margin-top:10px;border-top:1px dotted var(--border-strong);padding-top:10px;}
+  /* hamr 2026-11-12 (as fwdloop M10 am29): a question the drafting raised gets its own box; it takes the chat input's place while it is open */
+  .chat-question{border:1px solid var(--border);border-left:3px solid var(--amber);background:var(--panel2);padding:8px 10px;margin-top:10px;max-width:100%;box-sizing:border-box;}
+  .chat-question .q-head{font-size:11px;color:var(--text-faint);}
+  .chat-question .q-line{font-size:12px;color:var(--text-faint);margin-top:4px;overflow-wrap:anywhere;}
+  .chat-question .q-text{font-size:13px;margin-top:4px;overflow-wrap:anywhere;white-space:pre-wrap;}
+  .chat-question textarea{display:block;width:100%;max-width:100%;box-sizing:border-box;margin-top:8px;min-height:3.4em;font:inherit;padding:6px 8px;border:1px solid var(--border-strong);border-radius:0;background:var(--bg);color:var(--text);resize:vertical;}
+  .chat-question .q-choices{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;}
+  .chat-question .q-choices .btn{flex:1 1 auto;min-width:0;white-space:normal;overflow-wrap:anywhere;height:auto;min-height:44px;}
+  .chat-question .q-or{display:block;font-size:12px;color:var(--text-faint);margin-top:8px;text-transform:none;letter-spacing:normal;font-weight:normal;}
+  .chat-question .q-or + textarea{margin-top:4px;}
+  .chat-question .q-err{color:var(--red);}
   .chat-input-row input{width:100%;box-sizing:border-box;}
   /* the ask box wraps long text (textarea, hamr 2026-10-05): grows a few rows (fitBox), then scrolls inside; Enter sends, Shift+Enter is a newline */
   textarea[data-testid="chat-msg"]{width:100%;box-sizing:border-box;font:inherit;color:var(--text);resize:vertical;overflow-y:auto;max-height:200px;}
@@ -677,9 +688,13 @@
   .jp .sub{color:var(--text-dim);padding-left:30px;}
   .jp .fold{padding-left:30px;color:var(--text);}
   /* who added a check: the drafter's [agent] or the person's own [you picked] (fwdloop's `[added]` marker, in the dim of a ~ row) */
-  .jp .by,.draft-checks-row .by{color:var(--text-dim);white-space:nowrap;}
+  .jp .by,.draft-checks-row .by,.job-card .by{color:var(--text-dim);white-space:nowrap;}
+  /* the confirm card's Drop / Add: wraps with its row, a comfortable touch target, no horizontal scroll at phone width */
+  .jp .jp-btn{margin:2px 0 2px 8px;padding:4px 12px;min-height:32px;font-size:inherit;}
+  .jp .fold{overflow-wrap:anywhere;}
+  .jp-sug .lbl{display:block;margin-top:6px;font-weight:700;}
   .jp details.fold{padding-left:0;margin:6px 0;}
-  .jp details>summary{cursor:pointer;list-style:none;}
+  .jp details>summary{cursor:pointer;list-style:none;font-weight:700;}
   .jp details>summary::-webkit-details-marker{display:none;}
   .jp details>summary::before{content:"\203A";color:var(--plan);font-weight:700;margin-right:6px;}
   .jp details[open]>summary::before{content:"\2304";}
@@ -1026,6 +1041,21 @@
                instead), so it can never be wiped by the next 2s poll tick
                before a person reads it. -->
           <div class="hint" id="chat-action-error" data-testid="chat-action-error"></div>
+
+          <!-- hamr 2026-11-12 (as fwdloop M10 am29): a question the drafting raised, one at a time. No Skip. Static markup: the poll only rewrites the texts when the question changes, never the typed answer -->
+          <div class="chat-question" id="chat-question" data-testid="chat-question" hidden>
+            <div class="q-head" id="chat-q-head" data-testid="chat-q-head"></div>
+            <div class="q-line" id="chat-q-line" data-testid="chat-q-line"></div>
+            <div class="q-text" id="chat-q-text" data-testid="chat-q-text"></div>
+            <div class="q-choices" id="chat-q-choices" data-testid="chat-q-choices" hidden>
+              <button class="btn small" type="button" id="chat-q-c1" hidden></button>
+              <button class="btn small" type="button" id="chat-q-c2" hidden></button>
+            </div>
+            <label class="q-or" id="chat-q-or" data-testid="chat-q-or" for="chat-q-answer">Type your answer:</label>
+            <textarea id="chat-q-answer" data-testid="chat-q-answer" rows="2" autocomplete="off" spellcheck="false" aria-label="Your answer" placeholder="Your answer, on one line"></textarea>
+            <div class="hint q-err" id="chat-q-error" data-testid="chat-q-error" role="alert"></div>
+            <button class="btn primary wide" type="button" id="chat-q-send" data-testid="chat-q-send">Send</button>
+          </div>
 
           <div class="chat-input-row">
             <label for="chat-msg" style="display:none">Message</label>
@@ -3625,10 +3655,10 @@
     var rows = "";
     // fwd am14 item 6: a revise or a Start over says so, first, in the server's own words (`revise 1`, `revise 2`, `start over`); a first draft has no such row
     if(part.draftLabel) rows += '<tr class="draft-kind-row" data-testid="drafting-kind"><td colspan="5"><b>' + escapeXml(part.draftLabel) + "</b></td></tr>";
-    // the checks this draft ended with, each marked who added it: the drafter ([agent]) or the person's pick ([you picked])
-    (part.draftChecks || []).forEach(function(c){
-      rows += '<tr class="draft-checks-row" data-testid="drafting-check"><td colspan="5" style="overflow-wrap:anywhere">line ' + escapeXml(String(c.line)) + " \u00B7 " + escapeXml(c.text) +
-        (c.by === "you" ? ' <span class="by" data-by="you">[you picked]</span>' : c.by === "agent" ? ' <span class="by" data-by="agent">[agent]</span>' : "") + "</td></tr>";
+    // the checks themselves are the Audit's own "Checks" section now (`auditChecks`, one list with each row's result), not a second list here
+    // F-b: a suggested check code could not build is told here in one plain sentence, never on the card
+    (part.draftNotBuilt || []).forEach(function(c){
+      rows += '<tr class="draft-checks-row" data-testid="drafting-notbuilt"><td colspan="5" style="overflow-wrap:anywhere">line ' + escapeXml(String(c.line)) + " \u00B7 " + escapeXml(c.text) + "</td></tr>";
     });
     (part.draftSteps || []).forEach(function(st){
       var wall = st.wallMs === null || st.wallMs === undefined ? "–" : duration(st.wallMs);
@@ -3813,6 +3843,51 @@
       }
     });
   }
+  // one row of the Audit's check list: its words, its tag, its result in the one state sign+word markup (a row with no recorded verdict says so, never "passed")
+  function auditCheckRowHtml(r){
+    var res = r.result === "held" ? ["green", r.word || "held"] : r.result === "record-missing" ? ["grey", r.word || "the gate's record for this run is missing"] : r.result === "passed" ? ["green", "passed"] : r.result === "failed" ? ["red", "failed"] : r.result === "not-checked" ? ["grey", "not checked"] : ["grey", "no result recorded"];
+    return '<div class="audit-check-row" data-testid="audit-check-row" data-result="' + escapeXml(r.result) + '" style="overflow-wrap:anywhere">' + escapeXml(r.text) + byTagOf(r.by) + " " + stateDotHTML(res[0], res[1], "audit-check-state") + "</div>";
+  }
+  // the Checks fold's one state sign (code-owned, one place): any row failed = [✗]; else any row with no recorded result / no gate record = [·]; else [✓] ("held" is passed, "not checked" rows never move it)
+  function auditChecksSignClass(rows){
+    if(rows.some(function(r){ return r.result === "failed"; })) return glyphClass("\u2717");
+    if(rows.some(function(r){ return r.result === "none" || r.result === "record-missing"; })) return glyphClass("\u00B7");
+    return glyphClass("\u2713");
+  }
+  function auditChecksEl(ac){
+    var wrap = document.createElement("div");
+    wrap.className = "audit-part";
+    wrap.setAttribute("data-testid", "audit-checks-group");
+    var all = (ac.checks || []).concat(ac.always || []);
+    var nPass = all.filter(function(r){ return r.result === "passed" || r.result === "held"; }).length;
+    var nFail = all.filter(function(r){ return r.result === "failed"; }).length;
+    var head = "Checks &middot; " + nPass + " passed" + (nFail ? " &middot; " + nFail + " failed" : "") + ((ac.notChecked || []).length ? " &middot; " + ac.notChecked.length + " not checked" : "");
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn audit-part-toggle";
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("data-testid", "audit-checks-toggle");
+    var headHtml = function(open){ return auditCaret(open) + stateDotHTML(auditChecksSignClass(all), "", "audit-checks-state") + head; };
+    btn.innerHTML = headHtml(false);
+    var body = document.createElement("div");
+    body.className = "audit-part-body";
+    body.hidden = true;
+    body.setAttribute("data-testid", "audit-checks-body");
+    var sec = function(title, rows, tid){
+      if(!rows || !rows.length) return "";
+      return '<div data-testid="' + tid + '" style="margin:6px 0"><div><b>' + escapeXml(title) + "</b></div>" + rows.map(auditCheckRowHtml).join("") + "</div>";
+    };
+    body.innerHTML = '<div class="jp">' + sec("Checks", ac.checks, "audit-checks-checks") + sec("Not checked", ac.notChecked, "audit-checks-notchecked") + sec("Always checked", ac.always, "audit-checks-always") + "</div>";
+    btn.addEventListener("click", function(){
+      var open = btn.getAttribute("aria-expanded") === "true";
+      btn.setAttribute("aria-expanded", open ? "false" : "true");
+      body.hidden = open;
+      btn.innerHTML = headHtml(!open);
+    });
+    wrap.appendChild(btn);
+    wrap.appendChild(body);
+    return wrap;
+  }
   function renderAuditGroups(detail){
     var container = document.getElementById("audit-groups");
     container.innerHTML = "";
@@ -3870,6 +3945,11 @@
       needsEl.style.overflowWrap = "anywhere";
       needsEl.textContent = detail.needsAudit;
       container.appendChild(needsEl);
+    }
+    // hamr ruling A (2026-11-13): the card's own sections (Checks, Not checked, Always checked), each row with its tag and, after the run, its recorded result (server: `auditChecks`)
+    var ac = detail.auditChecks;
+    if(ac && ((ac.checks || []).length || (ac.notChecked || []).length || (ac.always || []).length)){
+      container.appendChild(auditChecksEl(ac));
     }
     // P5-R: a resumed run is ONE run — its legs are told apart by a divider line (code-owned text from the server)
     var dividers = Array.isArray(detail.legDividers) ? detail.legDividers : [];
@@ -4072,12 +4152,17 @@
   // ---- the ONE job plan drawing (P7): used by the chat's plan bubble AND the Job tab. `plan` is the server's model
   // (src/panel/jobplan.js): numbered lines with their rule, the checks under the line each serves (folded), the AI's own
   // "Not checked", the always-on guards. Only the marker is blue (--plan). Returns HTML (every text is escaped).
-  function renderJobPlan(plan){
-    var h = '<div class="jp" data-testid="job-plan">' + (plan.older ? '<div class="older" data-testid="plan-older">older job \u2014 numbered lines were not saved</div>' : "") + '<div class="jp-legend">Done when every <b>\u203A</b> check passes</div>' +
+  // the tag of a row by its kind (F-c, code-owned): `~` rows [you], `!` rows [agent], `$` rows [default]; one spelling for the confirm card, the signed card, the Job tab and the Result tab
+  function byTagOf(by){ return by === "you" ? ' <span class="by" data-testid="plan-by" data-by="you">[you]</span>' : by === "agent" ? ' <span class="by" data-testid="plan-by" data-by="agent">[agent]</span>' : by === "default" ? ' <span class="by" data-testid="plan-by" data-by="default">[default]</span>' : ""; }
+  function renderJobPlan(plan, ctl){
+    // the legend promises \u203A checks, so it shows only when the plan has one to show (the goal-only confirm card has none yet)
+    var hasCheck = (plan.loose || []).length > 0 || (plan.lines || []).some(function(l){ return (l.checks || []).length || (l.picked || []).length || (l.always || []).length; });
+    var h = '<div class="jp" data-testid="job-plan">' + (plan.older ? '<div class="older" data-testid="plan-older">older job \u2014 numbered lines were not saved</div>' : "") + (hasCheck ? '<div class="jp-legend">Done when every <b>\u203A</b> check passes</div>' : "") +
       (plan.goal && !plan.older ? '<div class="jp-sum" data-testid="plan-goal"><span class="lbl">AI\'s summary</span>' + escapeXml(plan.goal) + "</div>" : "");
-    var byTag = function(by){ return by === "you" ? ' <span class="by" data-testid="plan-by" data-by="you">[you picked]</span>' : by === "agent" ? ' <span class="by" data-testid="plan-by" data-by="agent">[agent]</span>' : ""; };
+    var byTag = byTagOf;
+    // `ctl` (the confirm card only): draws a Drop button after an [agent] check that has a row key; a [you] or [default] row has none
     var checkLine = function(c){
-      return '<div class="fold" data-testid="plan-check"><span class="mk">\u203A</span> check \u00B7 ' + escapeXml(c.name) + (c.cls ? " \u00B7 " + escapeXml(c.cls) : "") + byTag(c.by) + "</div>";
+      return '<div class="fold" data-testid="plan-check"><span class="mk">\u203A</span> check \u00B7 ' + escapeXml(c.name) + (c.cls ? " \u00B7 " + escapeXml(c.cls) : "") + byTag(c.by) + (ctl && c.by === "agent" && c.key ? ctl("drop", c.key) : "") + "</div>";
     };
     (plan.lines || []).forEach(function(l){
       h += '<div class="jl" data-testid="plan-line"><span class="num">' + escapeXml(String(l.n)) + "</span>" + escapeXml(l.text);
@@ -4085,21 +4170,27 @@
       (l.rules && l.rules.length ? l.rules : (l.rule ? [l.rule] : [])).forEach(function(r){ h += '<div class="sub">~ ' + escapeXml(r) + "</div>"; });
       (l.picked || []).forEach(function(p){ h += '<div class="fold" data-testid="plan-picked"><span class="mk">\u203A</span> check \u00B7 ' + escapeXml(p) + byTag("you") + "</div>"; });
       (l.checks || []).forEach(function(c){ h += checkLine(c); });
-      (l.always || []).forEach(function(g){ h += '<div class="fold" data-testid="plan-always"><span class="mk">\u203A</span> check \u00B7 always-on: ' + escapeXml(g) + "</div>"; });
-      (l.refused || []).forEach(function(r){ h += '<div class="fold" data-testid="plan-refused"><span class="mk">\u203A</span> not checked \u00B7 ' + escapeXml(r) + "</div>"; });
+      (l.always || []).forEach(function(g){ h += '<div class="fold" data-testid="plan-always"><span class="mk">\u203A</span> check \u00B7 always-on: ' + escapeXml(g) + byTag("default") + "</div>"; });
+      (l.refused || []).forEach(function(r){ h += '<div class="fold" data-testid="plan-refused"><span class="mk">\u203A</span> not checked \u00B7 ' + escapeXml(r) + byTag((plan.notCheckedBy || {})[r]) + "</div>"; });
       h += "</div>";
     });
     if((plan.loose || []).length){
       h += '<div class="jl"><span class="num"></span>other checks' + plan.loose.map(checkLine).join("") + "</div>";
     }
-    var fold = function(title, items, testid){
+    // N-1: checks the agent suggests that are NOT in the job. Code has already proved each builds; none is checked unless the person adds it
+    if((plan.suggested || []).length){
+      h += '<div class="jl jp-sug" data-testid="plan-suggested"><span class="num"></span><span class="lbl">Suggested \u00B7 not in your job, not checked unless you add it</span>' + plan.suggested.map(function(x){
+        return '<div class="fold" data-testid="plan-suggest-row"><span class="mk">\u203A</span> line ' + escapeXml(String(x.line)) + " \u00B7 " + escapeXml(x.text) + byTag("agent") + (x.dropped ? " (you dropped it)" : "") + (ctl ? ctl("add", x.key) : "") + "</div>";
+      }).join("") + "</div>";
+    }
+    var fold = function(title, items, testid, by){
       if(!items || !items.length) return "";
       return '<details class="fold" data-testid="' + testid + '"><summary>' + escapeXml(title) + " \u00B7 " + items.length + "</summary><ul>" +
-        items.map(function(x){ return "<li>" + escapeXml(x) + "</li>"; }).join("") + "</ul></details>";
+        items.map(function(x){ return "<li>" + escapeXml(x) + byTag(by ? by : (plan.notCheckedBy || {})[x]) + "</li>"; }).join("") + "</ul></details>";
     };
-    h += fold("Not checked (the AI's own reading)", plan.notChecked, "plan-notchecked");
+    h += fold("Not checked", plan.notChecked, "plan-notchecked");
     h += fold("How the page was read", plan.readNotes, "plan-readnotes");
-    h += fold("Always checked", plan.alwaysOn, "plan-alwayson");
+    h += fold("Always checked", plan.alwaysOn, "plan-alwayson", "default");
     if(plan.ticketFilter) h += '<div class="fold" data-testid="plan-ticketfilter"><span class="mk">\u203A</span> ticket filter \u00B7 ' + escapeXml(plan.ticketFilter) + "</div>";
     return h + "</div>";
   }
@@ -4263,10 +4354,10 @@
     return h;
   }
   // a list, one row per item (the Job tab lists the same items one per row)
-  function resultNotChecked(label, items, testid){
+  function resultNotChecked(label, items, testid, by){
     if(!items || !items.length) return "";
     return resultField(label, '<div class="ro-value" data-testid="' + testid + '"><ul style="margin:0;padding-left:18px">' +
-      items.map(function(t){ return '<li>' + escapeXml(t) + '</li>'; }).join("") + '</ul></div>');
+      items.map(function(t){ return '<li>' + escapeXml(t) + (by && typeof byTagOf === "function" ? byTagOf(by[t]) : "") + '</li>'; }).join("") + '</ul></div>');
   }
   // the web page a result was read from: a link (http/https only, new tab) and the server's words that the page may have moved on
   function resultPageLink(url, note, testid){
@@ -4279,7 +4370,7 @@
     return '<div class="job-card" data-testid="result-line"><h4>Line ' + escapeXml(String(line.n)) + '</h4>' + resultLineBox(line) +
       (own ? resultPageLink(line.page, note, "result-page-line") : "") +
       (line.kind === "facts" ? resultFactsLine(line) : resultTextLine(line)) +
-      resultNotChecked("Not checked", line.notChecked, "result-line-notchecked") + '</div>';
+      resultNotChecked("Not checked", line.notChecked, "result-line-notchecked", line.notCheckedBy) + '</div>';
   }
   // ---- the generic Result tab (R7b item 4): every ended non-rubric run. The server sends the facts and the words (`kind: "generic"`); the page only draws.
   // The check words and numbers are the Run/Audit tabs' own owners (stageQuestionText, stageNumberText); the state word is the status table's (the server sends it).
@@ -4576,7 +4667,7 @@
       h += '<div class="rs-warn" data-testid="result-gap">The check said: ' + escapeXml(data.gap.line) + (data.gap.moreText ? ' ' + escapeXml(data.gap.moreText) : "") + '</div>';
     }
     if((data.notChecked || []).length){
-      h += '<div class="job-card"><h4>Not checked</h4>' + resultNotChecked("Not checked (the AI's own reading)", data.notChecked, "result-notchecked") + '</div>';
+      h += '<div class="job-card"><h4>Not checked</h4>' + resultNotChecked("Not checked", data.notChecked, "result-notchecked", data.notCheckedBy) + '</div>';
     }
     if((data.readNotes || []).length){
       h += '<div class="job-card"><h4>How the page was read</h4>' + resultNotChecked("How the page was read \u00b7 " + data.readNotes.length, data.readNotes, "result-readnotes") + '</div>';
@@ -5367,6 +5458,18 @@
     var mainBtn = document.getElementById("chat-main-btn");
     var mainHint = document.getElementById("chat-main-hint");
     var reopenBtn = document.getElementById("chat-reopen-btn");
+    var qBox = document.getElementById("chat-question");
+    var qHead = document.getElementById("chat-q-head");
+    var qLine = document.getElementById("chat-q-line");
+    var qText = document.getElementById("chat-q-text");
+    var qChoices = document.getElementById("chat-q-choices");
+    var qC1 = document.getElementById("chat-q-c1");
+    var qC2 = document.getElementById("chat-q-c2");
+    var qOr = document.getElementById("chat-q-or");
+    var qAnswer = document.getElementById("chat-q-answer");
+    var qError = document.getElementById("chat-q-error");
+    var qSend = document.getElementById("chat-q-send");
+    var qKey = null, qBusy = false, qSendChoice = "rule";
     var revisesLeftEl = document.getElementById("chat-left-count");
     // R10 (fwd am17/am20): the id of the draft the next Start drafting follows; the server hands its check picks on (words-keyed), so a pick already made is not asked again
     var carryFromId = null;
@@ -5649,6 +5752,7 @@
       card.hidden = false;
       originLine.hidden = true;
       exitResumeMode();
+      renderQuestionBox(null);
       thread.innerHTML = ""; lastMsgSig = null;
       errEl.textContent = "";
       actionErrEl.textContent = "";
@@ -5963,11 +6067,16 @@
     }
     // the thread is redrawn only when its messages changed: a 2 s poll tick must not close a fold the person just opened
     var lastMsgSig = null;
+    // the confirm card's Drop / Add button (N-2): a typed row edit, instant and $0; the click is handled once on the thread
+    function planControlHTML(op, key){
+      return ' <button type="button" class="btn jp-btn" data-testid="plan-' + op + '" data-rowop="' + op + '" data-rowkey="' + escapeXml(key) + '">' + (op === "add" ? "Add" : "Drop") + "</button>";
+    }
     function renderMessages(state){
       var sig = JSON.stringify(state.messages);
       if(sig === lastMsgSig) return;
       lastMsgSig = sig;
-      thread.innerHTML = state.messages.map(function(m){
+      // a question still open is drawn in its own box, not here
+      thread.innerHTML = state.messages.filter(function(m){ return m.askOpen !== true; }).map(function(m){
         var cls = m.role === "you" ? "you" : (m.role === "system" ? "system" : "bot");
         var who = chatWhoLabel(m.role);
         var whoHtml = who ? ('<div class="who">' + escapeXml(who) + '</div>') : "";
@@ -5976,7 +6085,7 @@
           var qs = (m.plan.questions || []).length
             ? '<div class="jp-qs" data-testid="plan-questions"><span class="lbl">AI\'s open questions</span><ul>' +
               m.plan.questions.map(function(q){ return "<li>" + escapeXml(q) + "</li>"; }).join("") + "</ul><b>Revise if you need to.</b></div>" : "";
-          return '<div class="msg ' + cls + '" data-testid="plan-bubble">' + whoHtml + renderJobPlan(m.plan) + qs + '<div class="jp-goal">' + escapeXml(m.text) + "</div></div>";
+          return '<div class="msg ' + cls + '" data-testid="plan-bubble">' + whoHtml + renderJobPlan(m.plan, m.plan.editable === true ? planControlHTML : null) + qs + '<div class="jp-goal">' + escapeXml(m.text) + "</div></div>";
         }
         return '<div class="msg ' + cls + '">' + whoHtml + escapeXml(m.text) + '</div>';
       }).join("");
@@ -6173,6 +6282,33 @@
       var box = document.getElementById("jf-dest");
       if(box && box.value !== d){ box.value = d; fitCardBoxes(); }
     }
+    // hamr 2026-11-12 (as fwdloop M10 am29): the question box. It shows while the session has a question with a `box` (the server's words, src/questionbox.js) and takes the chat input's
+    // place; the texts are rewritten only when the question changes, so a poll tick never wipes what the person is typing. A state with no box (an ask of another kind) keeps the chat input.
+    function renderQuestionBox(state){
+      var ask = state && state.pendingAsk;
+      var b = ask && ask.box ? ask.box : null;
+      qBox.hidden = b === null;
+      document.querySelector(".chat-input-row").hidden = b !== null;
+      mainBtn.hidden = b !== null; mainHint.hidden = b !== null;
+      if(b === null){ qKey = null; return; }
+      var key = String(sessionId) + ":" + String(ask.index) + ":" + String(ask.source) + ":" + b.text;
+      if(key !== qKey){
+        qKey = key;
+        qSendChoice = b.sendChoice || "rule";
+        qHead.textContent = b.head; qLine.textContent = b.line; qText.textContent = b.text;
+        qHead.hidden = b.head === ""; qLine.hidden = b.line === "";
+        var cs = b.choices || [];
+        [qC1, qC2].forEach(function(btn, i){
+          var c = cs[i];
+          btn.hidden = !c;
+          if(c){ btn.textContent = c.label; btn.setAttribute("data-choice", c.choice); btn.setAttribute("data-testid", "chat-q-" + c.choice); }
+        });
+        qChoices.hidden = cs.length === 0;
+        qOr.hidden = b.orLabel === null; qAnswer.hidden = b.orLabel === null; qSend.hidden = b.orLabel === null;
+        if(b.orLabel !== null) qOr.textContent = b.orLabel;
+        qAnswer.value = ""; qError.textContent = "";
+      }
+    }
     function renderActions(state){
       lastState = state;
       syncDestinationFromSession(state);
@@ -6180,6 +6316,7 @@
       // refused START (its own handler writes it) — echoing state.error here made the same refusal appear twice
       errEl.textContent = "";
       var progressChanged = renderProgress(state);
+      renderQuestionBox(state);
       // build item 4 — re-enable Start only once the session has settled
       // into a terminal phase (a fresh Start becomes possible again).
       sessionLive = CLIENT_TERMINAL_PHASES.indexOf(state.phase) === -1;
@@ -6485,6 +6622,41 @@
         poll();
       }).catch(function(){ chatActionFailed("network error — could not reach the panel server, nothing was sent"); });
     }
+
+    // the box's own Send and choice buttons: a choice button posts its choice and nothing else; the box's Send posts the box's words (as a new rule where the question has choices)
+    function doQuestion(choice){
+      if(qBusy || !sessionId || !lastState || !lastState.pendingAsk || !lastState.pendingAsk.box) return;
+      qBusy = true; qSend.disabled = true; qC1.disabled = true; qC2.disabled = true; qError.textContent = "";
+      var id = sessionId;
+      // a choice button posts its choice and nothing else; the box's Send posts the box's words with the choice the box carries (a new rule), never read as agree or drop it
+      var body = choice === qSendChoice ? {text: qAnswer.value, choice: choice} : {choice: choice};
+      authorPost("/api/author/" + id + "/send", body).then(function(r){
+        qBusy = false; qSend.disabled = false; qC1.disabled = false; qC2.disabled = false;
+        if(id !== sessionId) return;
+        var o = chatPostOutcome(r);
+        if(!o.ok){ qError.textContent = o.error; return; }
+        qAnswer.value = "";
+        poll();
+      }).catch(function(){ qBusy = false; qSend.disabled = false; qC1.disabled = false; qC2.disabled = false; qError.textContent = "network error \u2014 could not reach the panel server, your answer was NOT sent"; });
+    }
+    qSend.addEventListener("click", function(){ doQuestion(qSendChoice); });
+    qC1.addEventListener("click", function(){ doQuestion(qC1.getAttribute("data-choice")); });
+    qC2.addEventListener("click", function(){ doQuestion(qC2.getAttribute("data-choice")); });
+    qAnswer.addEventListener("keydown", function(e){ if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); doQuestion(qSendChoice); } });
+
+    // Drop / Add on the confirm card: one delegated click; the server edits the row through the check block (no model call) and the card is drawn again from the rows
+    thread.addEventListener("click", function(ev){
+      var b = ev.target && ev.target.closest ? ev.target.closest("[data-rowop]") : null;
+      if(!b || !sessionId) return;
+      b.disabled = true;
+      var id = sessionId;
+      authorPost("/api/author/" + id + "/row-edit", {op: b.getAttribute("data-rowop"), key: b.getAttribute("data-rowkey")}).then(function(r){
+        if(id !== sessionId) return;
+        var o = chatPostOutcome(r);
+        if(o.ok) chatActionOk(); else { b.disabled = false; chatActionFailed(o.error); }
+        poll();
+      }).catch(function(){ b.disabled = false; chatActionFailed("network error \u2014 could not reach the panel server, nothing was changed"); });
+    });
 
     function doSend(){
       if(!sessionId) return;

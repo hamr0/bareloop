@@ -81,7 +81,7 @@ test('ask + "go on" (any case, a closing full stop): the one question is asked i
     assert.equal(r.ok, true, say);
     assert.deepEqual(order.filter((x) => ['fitFn', 'fitAsk', 'lookFn', 'authorFn'].includes(x)), ['fitFn', 'fitAsk', 'lookFn', 'authorFn'], say);
     assert.equal(asked.length, 1);
-    assert.equal(asked[0], 'I found 2 of 4 of your asks on this page. Not found: flights from New York JFK (line 1), to Miami (line 1). Type go on to keep drafting, or anything else to stop and change the job or the page.');
+    assert.equal(asked[0], 'I found 2 of 4 of your asks on this page: price (line 1), departure time (line 1). Not found: flights from New York JFK (line 1), to Miami (line 1). Type go on to keep drafting, or anything else to stop and change the job or the page.');
     assert.deepEqual(r.interview.answers, { 1: `1. ${JOB_TEXT}` }, 'the answer changes nothing in the job');
   }
 });
@@ -161,7 +161,7 @@ test('the panel: ask + "go on" goes through the ordinary ask path (a blank answe
   const { session, order, logRows } = panel((o) => fitFnOf(2, o));
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'), `${session.state.phase} / ${session.state.error}`);
   assert.equal(session.state.pendingAsk.source, 'fit-check');
-  assert.match(session.state.pendingAsk.question, /^I found 2 of 4 of your asks on this page\. Not found: flights from New York JFK \(line 1\), to Miami \(line 1\)\. Type go on/);
+  assert.match(session.state.pendingAsk.question, /^I found 2 of 4 of your asks on this page: price \(line 1\), departure time \(line 1\)\. Not found: flights from New York JFK \(line 1\), to Miami \(line 1\)\. Type go on/);
   assert.deepEqual(order, ['fitFn'], 'asked before the look');
   session.send('   ');
   assert.ok(await until(() => session.state.messages.some((/** @type {any} */ m) => /An answer is needed/.test(m.text))));
@@ -212,7 +212,7 @@ test('the panel: a bare-number ask ("3") is not counted, not listed in the quest
   };
   const { session, logRows } = panel(() => fitFn);
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'answer'), `${session.state.phase} / ${session.state.error}`);
-  assert.match(session.state.pendingAsk.question, /^I found 3 of 4 of your asks on this page\. Not found: flights from New York JFK \(line 1\)\. Type go on/);
+  assert.match(session.state.pendingAsk.question, /^I found 3 of 4 of your asks on this page: to Miami \(line 1\), price \(line 1\), departure time \(line 1\)\. Not found: flights from New York JFK \(line 1\)\. Type go on/);
   const row = logRows().find((e) => e.kind === 'fit-check');
   assert.equal(row.asks[0].ask, '3');
   assert.equal(row.asks[0].ignored, 'number');

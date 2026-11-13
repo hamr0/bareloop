@@ -3,7 +3,7 @@ import { readFile, lstat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { createRubric, checkStep, renderGaps, numbersInQuote } from 'bareguard';
 import { dropRows, dropLine } from './pagedropwords.js';
-import { OFFERED } from './checkwords.js';
+import { OFFERED, plainWords } from './checkwords.js';
 import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem, factBrief, writtenSpans } from './facts.js';
 
 // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES — what one job line leaves
@@ -49,6 +49,26 @@ export function stepFileContract() {
 }
 
 /**
+ * R10 (fwd am28, rewritten here): what a facts+text line's worker is told about the person's picks, one plain line per pick, the values and what counts, never a verdict and never any other
+ * check. Written by code from the signed pick parts; a list item is what bareguard's listItems counts (its own line starting with "1." or "- " and a space).
+ * @param {any[]} picked countable parts (`{check, value, names, ...}`) @returns {string[]}
+ */
+export function toldPicks(picked) {
+  const list = (/** @type {unknown} */ v) => (Array.isArray(v) ? v.map((x) => String(x)).join(', ') : '');
+  return picked.map((p) => {
+    switch (p.check) {
+      case 'listItems': return `Your "text" must have exactly ${p.value} list items; a list item is its own line starting with "1." or "- " followed by a space and its text.`;
+      case 'maxListItems': return `Your "text" must have at most ${p.value} list items; a list item is its own line starting with "1." or "- " followed by a space and its text.`;
+      case 'minListItems': return `Your "text" must have at least ${p.value} list items; a list item is its own line starting with "1." or "- " followed by a space and its text.`;
+      case 'nonEmpty': return 'Your "text" must not be empty.';
+      case 'mustCarry': return `Your "text" must carry ${list(p.phrases)}.`;
+      case 'blockLines': return `Your "text" must be in blocks of ${p.size} lines, each carrying ${list(p.phrases)}.`;
+      default: return `Your "text" must have ${plainWords({ ...p, rule: p.check })}.`;
+    }
+  });
+}
+
+/**
  * What the worker is told about each line, from the close that will grade it (PART 1b item 7): a FACTS line gets its
  * facts and its count; a TEXT line that follows a facts line is told its numbers come from that line's quotes. Written by code from
  * the signed parts, never by a model. A line with no rubric-step stage gets nothing here.
@@ -69,12 +89,16 @@ export function lineBriefs(closeDecl) {
         : c.min !== undefined ? `at least ${c.min} results` : `at most ${c.max} results`;
       // keep-both: the person's picks (countable parts) sit beside the fact on this line, so the same file also carries the "text" they limit
       const alsoText = st.params.parts.some((/** @type {any} */ q) => isRec(q) && q.class === 'countable');
+      // R10 (fwd am28): the picks among them, as the signed close's own record names them, are told to the worker in plain words
+      const record = Array.isArray(closeDecl.picks) ? closeDecl.picks : [];
+      const picked = st.params.parts.filter((/** @type {any} */ q) => isRec(q) && q.class === 'countable' && OFFERED.includes(q.check) && record.some((/** @type {any} */ x) => isRec(x) && x.line === n && sameJson(x.part, q)));
       out.push({
         line: n,
         text: [
           alsoText
             ? `Job line ${n} is a FACTS line AND a TEXT line. Write ${stepFileRel(n)} as {"results": [{"quote": "...", "values": {...}}], "text": "..."} — the results are the facts below, the "text" is your answer to the line in your own words (its limits are in the line's ~ rules); no "cites".`
             : `Job line ${n} is a FACTS line. Write ${stepFileRel(n)} as {"results": [{"quote": "...", "values": {...}}]} and nothing else — no "text", no "cites".`,
+          ...(alsoText && picked.length ? toldPicks(picked).map((t) => `  ${t}`) : []),
           `  One result per thing you find in the input "${fp.source}": ${count}.`,
           '  "quote": ONE quote per result, copied exactly from that result\'s own text in the input (at most 4000 characters) — never joined from two results.',
           '  "values": one entry per fact below, written exactly as the quote writes it (for example "9:27 AM", not "09:27"; "389", not "389.00").',
@@ -165,6 +189,8 @@ export const COUNT_CHECKS = Object.freeze({
   // R10 (bareguard 0.31, fwdloop v0.29.0 OFFERED): the five text checks a person's pick may carry; the drafter never writes them
   nonEmpty: Object.freeze([]),
   listItems: Object.freeze(['value']),
+  maxListItems: Object.freeze(['value']), // bareguard 0.35 (F315): an at-most / at-least bound on the list items, beside the exact listItems
+  minListItems: Object.freeze(['value']),
   sectionOrder: Object.freeze(['names']),
   mustCarry: Object.freeze(['phrases']),
   blockLines: Object.freeze(['size', 'phrases']),
@@ -280,7 +306,7 @@ export function buildStepSpec(params, inputShas) {
       case 'sections': checks.push({ id, rule: 'sections', field: 'text', names: [...part.names] }); break;
       case 'sectionWords': checks.push({ id, rule: 'sectionWords', field: 'text', names: [...part.names], wordsPerSection: part.wordsPerSection }); break;
       case 'nonEmpty': checks.push({ id, rule: 'nonEmpty', field: 'text' }); break;
-      case 'listItems': checks.push({ id, rule: 'listItems', field: 'text', value: part.value }); break;
+      case 'listItems': case 'maxListItems': case 'minListItems': checks.push({ id, rule: part.check, field: 'text', value: part.value }); break;
       case 'sectionOrder': checks.push({ id, rule: 'sectionOrder', field: 'text', names: [...part.names] }); break;
       case 'mustCarry': checks.push({ id, rule: 'mustCarry', field: 'text', phrases: [...part.phrases] }); break;
       case 'blockLines': checks.push({ id, rule: 'blockLines', field: 'text', size: part.size, phrases: [...part.phrases] }); break;
@@ -417,6 +443,8 @@ export function plainStepGap(step, why, g, params = null) {
   if (g.check === 'minWords') return `${at}: "text" has ${g.measured} words, at least ${g.limit} are required`;
   if (g.check === 'maxLines') return `${at}: "text" has ${g.measured} lines, at most ${g.limit} are allowed`;
   if (g.check === 'sections') return `${at}: "text" is missing section(s): ${(g.items ?? []).join(', ')}`;
+  if (g.check === 'maxListItems') return `${at}: "text" has ${g.measured} list items, at most ${g.limit} are allowed`;
+  if (g.check === 'minListItems') return `${at}: "text" has ${g.measured} list items, at least ${g.limit} are required`;
   if (g.check === 'listItems') return `${at}: "text" has ${g.measured} list items, exactly ${g.limit} are required`;
   if (g.check === 'sectionOrder') return `${at}: "text" does not hold its sections in the asked order (${(g.items ?? []).map((/** @type {string} */ x) => x.replace(/^[^:]*:/, '')).join(', ')} out of place)`;
   if (g.check === 'mustCarry') return `${at}: "text" does not carry: ${(g.items ?? []).join(', ')}`;
@@ -762,115 +790,132 @@ export function checkRubricRules(stages, { jobLines = null, refused = null, red 
 /** a clock time as a person writes it: 7:00, 07:00, 7:00 AM, 11 PM is not matched (no minutes) */
 const CLOCK = '\\d{1,2}:\\d{2}(?:\\s?[AaPp][Mm])?';
 const TIME_RANGE_RE = new RegExp(`\\b(?:between|from)\\s+(${CLOCK})\\s+(?:and|to|-)\\s+(${CLOCK})`, 'i');
-const NEGATING_RE = /\b(?:not|no|never|outside|except|before|after|without)\b/i;
+export const NEGATING_RE = /\b(?:not|no|never|outside|except|before|after|without)\b/i;
 
-/**
- * PART 1c L3 - the person's own words win over the AI's reading of them, settled by CODE before anything is validated or signed:
- *   - a limit on a fact whose bounds are all in the words the person wrote (the line, its `~` rules, an answer they gave) is the
- *     person's, so it is NOT marked "AI's proposal" (smv710w8c3wdh: the plan called the person's own range the AI's);
- *   - a time range the AI proposed while the person wrote ONE explicit positive time range ("between 07:00 and 23:00") on that line
- *     is replaced by exactly that range (smv710w8c3wdh: the plan said 5:00 AM). Only when it is unambiguous: one such range in the
- *     line's rules and one AI-proposed `between` time fact on the line; a rule with a negation ("not between ...") is never read as a range;
- *   - a `~` rule is a check or under Not checked, never both: a `refused` entry for a rule that a part of its own line carries is dropped.
- * Pure; returns a new declaration, the input untouched. The model is told the same in the brief; this makes it true either way.
- * @param {any} declaration @param {any[]|null|undefined} jobLines @returns {any}
- */
-export function settlePersonsWords(declaration, jobLines) {
-  if (!isRec(declaration) || !Array.isArray(declaration.stages) || !Array.isArray(jobLines)) return declaration;
-  const stages = declaration.stages.map((/** @type {any} */ st) => {
-    if (!(isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts))) return st;
-    const fp = factPartOf(st.params);
-    const jl = jobLines.find((l) => isRec(l) && l.n === st.params.step);
-    if (!fp || !Array.isArray(fp.facts) || !jl) return st;
-    const rules = lineRules(jl);
-    const said = wordsSaidOn(jl);
-    const ranges = rules.filter((r) => !NEGATING_RE.test(r)).map((r) => TIME_RANGE_RE.exec(r)).filter((m) => m !== null);
-    const proposed = fp.facts.filter((/** @type {any} */ f) => isRec(f) && f.aiProposal === true && f.shape === 'time' && isRec(f.rule) && f.rule.op === 'between');
-    const facts = fp.facts.map((/** @type {any} */ f) => {
-      if (!isRec(f) || !isRec(f.rule) || f.aiProposal !== true) return f;
-      const own = (/** @type {unknown[]} */ bounds) => bounds.every((b) => boundInWords(b, said));
-      const bounds = f.rule.op === 'between' ? [f.rule.lo, f.rule.hi] : [f.rule.value];
-      const { aiProposal: _drop, ...rest } = f;
-      if (own(bounds)) return rest;
-      if (ranges.length === 1 && proposed.length === 1 && proposed[0] === f) {
-        const m = /** @type {RegExpExecArray} */ (ranges[0]);
-        return { ...rest, rule: { op: 'between', lo: m[1], hi: m[2] } };
-      }
-      return f;
-    });
-    const parts = st.params.parts.map((/** @type {any} */ x) => (x === fp ? { ...x, facts } : x));
-    return { ...st, params: { ...st.params, parts } };
-  });
-  const carried = (/** @type {number} */ line, /** @type {number} */ n) => stages.some((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && st.params.step === line
-    && Array.isArray(st.params.parts) && st.params.parts.some((/** @type {any} */ x) => isRec(x) && Array.isArray(x.rules) && x.rules.includes(n)));
-  /** @type {any} */
-  const out = { ...declaration, stages };
-  if (Array.isArray(declaration.refused)) out.refused = declaration.refused.filter((/** @type {any} */ r) => !(isRec(r) && Number.isInteger(r.line) && Number.isInteger(r.rule) && carried(r.line, r.rule)));
-  return out;
+// The limit reader (hamr ruling A, 2026-11-12): when the look tied a money or time fact to a `~` rule but gave no limit, CODE reads the limit
+// from the person's own rule words. ONE amount or ONE range only; every other text is a plain reason (Not checked), never a wrong check.
+// The direction words are the FACT_OPS words of src/facts.js (lt under, lte at most, gt over, gte at least) plus their plain synonyms.
+const AMOUNT = '(?:[$\\u20ac\\u00a3]\\s?(\\d[\\d,]*(?:\\.\\d+)?)|(\\d[\\d,]*(?:\\.\\d+)?)\\s?(?:US\\s)?(?:dollars?|euros?|pounds?|USD|EUR|GBP)\\b)';
+const AMOUNT_ALL_RE = new RegExp(AMOUNT, 'gi');
+const MONEY_BETWEEN_RE = new RegExp(`\\bbetween\\s+${AMOUNT}\\s+(?:and|to|-)\\s+${AMOUNT}`, 'i');
+const MONEY_DIRECTION_RE = new RegExp(`\\b(under|below|less than|fewer than|at most|up to|no more than|over|above|more than|at least|no less than|no fewer than)\\s+${AMOUNT}`, 'i');
+const MONEY_OR_LESS_RE = new RegExp(`${AMOUNT}\\s+or\\s+(less|fewer|under|below|lower|more|over|above|higher)\\b`, 'i');
+const DIRECTION_OP = /** @type {Record<string, 'lt'|'lte'|'gt'|'gte'>} */ ({ under: 'lt', below: 'lt', 'less than': 'lt', 'fewer than': 'lt', 'at most': 'lte', 'up to': 'lte', 'no more than': 'lte', over: 'gt', above: 'gt', 'more than': 'gt', 'at least': 'gte', 'no less than': 'gte', 'no fewer than': 'gte' });
+const CURRENCY_STEM = /** @type {Record<string, string>} */ ({ $: 'dollar', '€': 'euro', '£': 'pound', usd: 'dollar', eur: 'euro', gbp: 'pound' });
+const num = (/** @type {string|undefined} */ a, /** @type {string|undefined} */ b) => Number(String(a ?? b).replace(/,/g, ''));
+const hhmm = (/** @type {string} */ t) => (/[AaPp][Mm]/.test(t) ? null : t.replace(/\s+/g, '').replace(/^(\d):/, '0$1:'));
+
+/** does the amount token's currency (sign or word) fit the look fact's currency and unit lists? A fact with neither list fits anything. */
+function currencyFits(/** @type {string} */ tok, /** @type {any} */ fact) {
+  const cur = (Array.isArray(fact?.currency) ? fact.currency : fact?.currency ? [fact.currency] : []).map(String);
+  const unit = (Array.isArray(fact?.unit) ? fact.unit : fact?.unit ? [fact.unit] : []).map((/** @type {unknown} */ u) => String(u).toLowerCase());
+  if (!cur.length && !unit.length) return true;
+  const sym = /^[$€£]/.test(tok) ? tok.charAt(0) : null;
+  const last = String(tok.trim().split(/\s+/).at(-1)).toLowerCase();
+  const stem = sym ? CURRENCY_STEM[sym] : (CURRENCY_STEM[last] ?? last.replace(/s$/, ''));
+  return (sym !== null && cur.includes(sym)) || unit.some((/** @type {string} */ u) => u.includes(String(stem)));
 }
 
 /**
- * PART 1b — put the number tie on every prose step. A rubric-step stage with no fact part that comes AFTER one or more fact
- * stages gets exactly one `numbersFromFacts` part naming those lines; one the model wrote is replaced. Pure; returns a new
- * declaration (the input is untouched). The model never writes this part: it is code's, so a draft cannot omit it.
- * @param {any} declaration @returns {any}
+ * Does this rule text hold more than one amount (money) or more than one time range (time)? The ONE guard code's own limit read and an AI
+ * reading edit both use: "under $450 or over $900" is two limits, and one reading of it would be a wrong check.
+ * @param {string} shape @param {string} text @returns {boolean}
  */
-export function withFactBindings(declaration) {
-  if (!isRec(declaration) || !Array.isArray(declaration.stages)) return declaration;
-  /** @type {number[]} */
-  const seen = [];
-  const stages = declaration.stages.map((/** @type {any} */ st) => {
-    if (!(isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts))) return st;
-    if (factPartOf(st.params)) { if (Number.isInteger(st.params.step)) seen.push(st.params.step); return st; }
-    const rest = st.params.parts.filter((/** @type {any} */ x) => !(isRec(x) && x.class === 'countable' && x.check === 'numbersFromFacts'));
-    if (seen.length === 0) return rest.length === st.params.parts.length ? st : { ...st, params: { ...st.params, parts: rest } };
-    const from = [...seen];
-    return { ...st, params: { ...st.params, parts: [...rest, { text: `every number in the text is in a quote checked on line ${from.join(', ')}`, class: 'countable', check: 'numbersFromFacts', from }] } };
-  });
-  return { ...declaration, stages };
+export function holdsManyBounds(shape, text) {
+  const t = String(text ?? '');
+  if (shape === 'time') return [...t.matchAll(new RegExp(TIME_RANGE_RE.source, 'gi'))].length > 1 || (t.match(/\d{1,2}:\d{2}/g) ?? []).length > 2;
+  if (shape === 'money') { const amts = [...t.matchAll(AMOUNT_ALL_RE)]; return amts.length > 1 && !(MONEY_BETWEEN_RE.test(t) && amts.length === 2); }
+  return false;
 }
 
 /**
- * NO SILENT DROP (idea A core, spec 4.4): code writes the Not checked rows for what the page rules removed, before the declaration is validated.
- *   - a dropped FACT that carries a `~` rule no part carries and no `refused` entry names -> `closeDecl.refused` gets {line, rule, reason}
- *     (shown under that line in the person's own rule words by {@link ruleNotChecked});
- *   - any other drop (a fact from the job line itself, a rule another fact carries, a word dropped from a fact that is still checked, so a
- *     narrower check is still said) -> one line in `closeDecl.notes`, shown as Not checked (the AI's own reading).
- * Never a line-level `refused` entry without `rule` (that would silence every other rule red on the line). A rule the drafter already listed
- * itself is never listed twice, and running this twice adds nothing. Pure; the input is untouched.
- * @param {any} declaration @param {import('./pagerules.js').Dropped[]|null|undefined} dropped @param {any[]|null|undefined} jobLines @returns {any}
+ * The limit the person's own words give a fact of this shape: `{reading}` or `{why}` (a plain reason; the rule then stays Not checked).
+ * @param {string} shape money or time @param {string} text the `~` rule's words @param {any} [fact] the look fact (its currency and unit lists must fit)
+ * @returns {{reading: {op: 'lt'|'lte'|'gt'|'gte', value: number} | {op: 'between', lo: number|string, hi: number|string}} | {why: string}}
  */
-export function withDropNotes(declaration, dropped, jobLines) {
-  if (!isRec(declaration) || !Array.isArray(dropped) || dropped.length === 0) return declaration;
-  const stages = Array.isArray(declaration.stages) ? declaration.stages : [];
-  const carried = (/** @type {number} */ line, /** @type {number} */ n) => stages.some((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && st.params.step === line
-    && Array.isArray(st.params.parts) && st.params.parts.some((/** @type {any} */ x) => isRec(x) && Array.isArray(x.rules) && x.rules.includes(n)));
-  const refused = Array.isArray(declaration.refused) ? [...declaration.refused] : [];
-  const notes = Array.isArray(declaration.notes) ? [...declaration.notes] : [];
-  for (const row of dropRows(dropped)) {
-    const named = row.rule !== undefined && refused.some((/** @type {any} */ r) => isRec(r) && r.line === row.line && r.rule === row.rule);
-    if (named) continue;
-    if (row.full && row.rule !== undefined && !carried(row.line, row.rule)) {
-      refused.push({ line: row.line, rule: row.rule, reason: row.sentences.join(' ') });
-      continue;
-    }
-    const text = dropLine(row, jobLines, lineRules);
-    if (!notes.includes(text)) notes.push(text);
+export function readLimit(shape, text, fact = {}) {
+  const t = String(text ?? '');
+  if (shape === 'time') {
+    if (NEGATING_RE.test(t)) return { why: 'a one-sided or negated time (before, after, not) is not a range code can read' };
+    if (/\b\d{1,2}(?::\d{2})?\s?[ap]\.?m\b/i.test(t)) return { why: 'a 12-hour time (am or pm) is not read, write it like 06:00' };
+    if (holdsManyBounds('time', t)) return { why: 'more than one time range in the rule' };
+    const m = TIME_RANGE_RE.exec(t);
+    if (!m) return { why: 'no range between two times in the rule' };
+    const lo = hhmm(String(m[1])), hi = hhmm(String(m[2]));
+    if (!lo || !hi) return { why: 'a 12-hour time (am or pm) is not read, write it like 06:00' };
+    if (lo >= hi) return { why: 'a range whose end is not after its start is not read' };
+    return { reading: { op: 'between', lo, hi } };
   }
-  return { ...declaration, ...(refused.length ? { refused } : {}), ...(notes.length ? { notes } : {}) };
+  if (shape === 'money') {
+    if (/\b(?:not|never|outside|except|without)\b/i.test(t)) return { why: 'a negated limit (not, except, without) is not read' };
+    const amts = [...t.matchAll(AMOUNT_ALL_RE)];
+    if (!amts.length) return { why: 'no amount with a currency sign or word in the rule' };
+    for (const a of amts) if (!currencyFits(a[0], fact)) return { why: 'the amount is in another currency than the page fact' };
+    if (holdsManyBounds('money', t)) return { why: 'more than one amount in the rule' };
+    const b = MONEY_BETWEEN_RE.exec(t);
+    if (b) { const lo = num(b[1], b[2]), hi = num(b[3], b[4]); return lo < hi ? { reading: { op: 'between', lo, hi } } : { why: 'a range whose end is not above its start is not read' }; }
+    const d = MONEY_DIRECTION_RE.exec(t);
+    if (d) return { reading: { op: /** @type {'lt'|'lte'|'gt'|'gte'} */ (DIRECTION_OP[String(d[1]).toLowerCase()]), value: num(d[2], d[3]) } };
+    const o = MONEY_OR_LESS_RE.exec(t);
+    if (o) return { reading: { op: /^(less|fewer|under|below|lower)$/i.test(String(o[3])) ? 'lte' : 'gte', value: num(o[1], o[2]) } };
+    return { why: 'the rule gives an amount but no direction (under, over, at most, at least, between)' };
+  }
+  return { why: 'code reads a limit only for money or time' };
+}
+
+/** the words a list row of kind `$cited` / `$numbers` carries no text for */
+const DEFAULT_ROW_WORDS = Object.freeze({ cited: 'every claim quotes its input', numbers: 'every number matches a quote' });
+
+/**
+ * A check-list row named in the person's plain words: `phrase "### Fixed"`. The words are the draft log's; with none, the text after the key's kind prefix (`L1.phrase.### fixed`).
+ * Never empty. Pure.
+ * @param {unknown} kind @param {string} key @param {string[]|null|undefined} words
+ * @returns {string}
+ */
+export function listRowName(kind, key, words) {
+  const k = typeof kind === 'string' && kind ? kind : 'check';
+  if (k === 'cited' || k === 'numbers') return DEFAULT_ROW_WORDS[k];
+  const tail = key.replace(/^L\d+\.(?:[^.]*\.)?/, '').trim();
+  const w = Array.isArray(words) && words.length ? words : [tail || key];
+  return `${k} ${w.map((x) => `"${x}"`).join(', ')}`;
 }
 
 /**
  * The ~ rules the drafter listed under Not checked (`refused` entries that name a `rule`), each as one line in the person's own
  * words: `line N: "<the rule as written>" — <the drafter's reason>` (PART 1b, RF6 / RF16).
- * @param {any} closeDecl @param {any[]|null|undefined} jobLines @returns {string[]}
+ * @param {any} closeDecl @param {any[]|null|undefined} jobLines @param {{key: string, words: string[]}[]|null} [ledger] the draft log's final list rows (`readDraftLedger`) @returns {string[]}
  */
-export function ruleNotChecked(closeDecl, jobLines) {
-  const refused = isRec(closeDecl) && Array.isArray(closeDecl.refused) ? closeDecl.refused : [];
-  return refused.filter((/** @type {any} */ r) => isRec(r) && Number.isInteger(r.line) && Number.isInteger(r.rule) && typeof r.reason === 'string').map((/** @type {any} */ r) => {
-    const text = lineRules((jobLines ?? []).find((/** @type {any} */ l) => isRec(l) && l.n === r.line))[r.rule - 1];
-    return `line ${r.line}: ${text ? `"${text}"` : `rule ${r.rule}`} — ${r.reason}`;
+export function ruleNotChecked(closeDecl, jobLines, ledger = null) {
+  return ruleNotCheckedItems(closeDecl, jobLines, ledger).map((i) => i.text);
+}
+
+/** the same lines as {@link ruleNotChecked}, each with who it belongs to (`by`: the row's kind, F-c) @param {any} closeDecl @param {any[]|null|undefined} jobLines @param {{key: string, words: string[]}[]|null} [ledger] @returns {{text: string, by?: 'you'|'agent'|'default'}[]} */
+export function ruleNotCheckedItems(closeDecl, jobLines, ledger = null) {
+  return refusedOf(closeDecl).filter((r) => Number.isInteger(r.rule) || r.fromList).map((r) => {
+    const text = Number.isInteger(r.rule) ? lineRules((jobLines ?? []).find((/** @type {any} */ l) => isRec(l) && l.n === r.line))[/** @type {number} */ (r.rule) - 1] : (r.label ?? null);
+    const by = r.by ? { by: r.by } : {};
+    // a list row that is not a fact or a rule is named by its words, as the Job tab names it (one owner: listRowName)
+    if (!text && r.fromList && r.key) return { text: `line ${r.line}: ${listRowName(r.kind, r.key, ledger?.find((x) => x.key === r.key)?.words)} — ${r.reason}`, ...by };
+    return { text: `line ${r.line}: ${text ? `"${text}"` : `rule ${r.rule ?? r.kind}`} — ${r.reason}`, ...by };
   });
+}
+
+/**
+ * The refusals of a signed close, as ONE reader: when the close carries the one check list (`closeDecl.list`) its not-checked rows are the refusals (a `~` rule's row names the rule, a fact row its
+ * fact name); the old `closeDecl.refused` entries a list has no row for (a line-level refusal, a rule the list never saw) are kept, so nothing the older close said is lost. A close with no list
+ * reads `refused` alone. Pure.
+ * @param {any} closeDecl
+ * @returns {{line: number, rule?: number, kind?: string, key?: string, by?: 'you'|'agent'|'default', label?: string, reason: string, fromList: boolean}[]}
+ */
+export function refusedOf(closeDecl) {
+  const old = (isRec(closeDecl) && Array.isArray(closeDecl.refused) ? closeDecl.refused : []).filter((/** @type {any} */ r) => isRec(r) && Number.isInteger(r.line) && typeof r.reason === 'string');
+  const list = isRec(closeDecl) && Array.isArray(closeDecl.list) ? closeDecl.list : null;
+  if (list === null) return old.map((/** @type {any} */ r) => ({ line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), reason: r.reason, fromList: false }));
+  const rows = list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'not-checked' && Number.isInteger(r.line) && typeof r.reason === 'string' && r.kind !== 'floor').map((/** @type {any} */ r) => ({
+    line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), kind: String(r.kind), key: String(r.key), ...(['you', 'agent', 'default'].includes(r.by) ? { by: r.by } : {}), ...(r.kind === 'fact' ? { label: String(r.key).split('.').slice(2).join('.') } : {}), reason: r.reason, fromList: true,
+  }));
+  const seen = (/** @type {any} */ r) => rows.some((x) => x.line === r.line && x.rule === (Number.isInteger(r.rule) ? r.rule : undefined) && Number.isInteger(r.rule));
+  return [...rows, ...old.filter((/** @type {any} */ r) => !seen(r)).map((/** @type {any} */ r) => ({ line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), reason: r.reason, fromList: false }))];
 }
 
 /**
@@ -907,6 +952,8 @@ export function partSentence(part) {
     case 'sectionWords': return `each section (${list(part.names)}) is about ${part.wordsPerSection} words`;
     case 'nonEmpty': return 'the text is not empty';
     case 'listItems': return `the text has exactly ${n(part.value, 'list item')}`;
+    case 'maxListItems': return `the text has at most ${n(part.value, 'list item')}`;
+    case 'minListItems': return `the text has at least ${n(part.value, 'list item')}`;
     case 'sectionOrder': return `the text has the section(s) ${list(part.names)}, in that order`;
     case 'mustCarry': return `the text carries ${list(part.phrases)}`;
     case 'blockLines': return `the text is in blocks of ${n(part.size, 'line')}, each carrying ${list(part.phrases)}`;
@@ -918,24 +965,43 @@ export function partSentence(part) {
   }
 }
 
+/** the words of the default cited check code adds to a text line of a one-input job (the one list's `$` row); the card reads a part with exactly these words as `[default]` @param {string} label @returns {string} */
+export const defaultCitedText = (label) => `every claim is backed by a quote copied from "${label}"`;
+
 /**
  * The checks a signed close actually runs, per job line, in plain code-written sentences: one per countable part of every
  * rubric-step stage. This is the ONE reader both the plan card and the sign-time invariant use.
  * Each row says who added the check (`by`): `you` = one of the person's picks, as the signed close's own record (`closeDecl.picks`) names it; `agent` = the drafter's;
- * `null` = code's own tie (the numbers of a text step come from the fact quotes), which is neither.
+ * `default` = code's own (the one list's `$` rows: the cited part written by `defaultCitedText`, and the numbers tie of a text step).
  * @param {any} closeDecl
- * @returns {{line: number, text: string, covers: number[], by: 'agent'|'you'|null}[]}
+ * @returns {{line: number, text: string, by: 'agent'|'you'|'default', key?: string}[]}
  */
 export function checksOfClose(closeDecl) {
   const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
   const record = isRec(closeDecl) && Array.isArray(closeDecl.picks) ? closeDecl.picks : [];
+  const list = isRec(closeDecl) && Array.isArray(closeDecl.list) ? closeDecl.list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'built') : [];
+  /** the tag of a fact by its row's kind (hamr 2026-11-13, F-c): a fact a `~` rule built is [you], a `!` row's [agent]; `facts` on the signed row names what it built. No such row (an older close): the old reading */
+  const factBy = (/** @type {number} */ line, /** @type {string} */ name) => {
+    const rows = list.filter((/** @type {any} */ r) => r.line === line && Array.isArray(r.facts) && r.facts.includes(name));
+    const r = rows.find((/** @type {any} */ x) => x.by === 'you') ?? rows[0];
+    return r ? { by: /** @type {'agent'|'you'|'default'} */ (r.by), key: String(r.key) } : null;
+  };
+  const countBy = (/** @type {number} */ line, /** @type {number} */ pi) => {
+    const r = list.find((/** @type {any} */ x) => x.line === line && x.kind === 'count' && isRec(x.part) && x.part.part === pi);
+    return r ? { by: /** @type {'agent'|'you'|'default'} */ (r.by), key: String(r.key) } : null;
+  };
   return stages.flatMap((/** @type {any} */ st) => (isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts)
-    ? st.params.parts.filter((/** @type {any} */ p) => isRec(p) && (p.class === 'countable' || p.class === 'fact')).flatMap((/** @type {any} */ p) => {
-      const covers = Array.isArray(p.covers) ? p.covers.filter(Number.isInteger) : [];
-      /** @type {'agent'|'you'|null} */
-      const by = p.check === 'numbersFromFacts' ? null : record.some((/** @type {any} */ x) => isRec(x) && x.line === st.params.step && sameJson(x.part, p)) ? 'you' : 'agent';
+    ? st.params.parts.flatMap((/** @type {any} */ p, /** @type {number} */ pi) => {
+      if (!isRec(p) || (p.class !== 'countable' && p.class !== 'fact')) return [];
+      /** @type {'agent'|'you'|'default'} */
+      const by = p.check === 'numbersFromFacts' || (p.check === 'cited' && p.text === defaultCitedText(p.source)) ? 'default' : record.some((/** @type {any} */ x) => isRec(x) && x.line === st.params.step && sameJson(x.part, p)) ? 'you' : 'agent';
       // a fact part is one plan row per fact (and one for its count): the person signs the rows, the close runs the same list
-      return (p.class === 'fact' ? factRows(p) : [partSentence(p)]).map((/** @type {string} */ text) => ({ line: st.params.step, text, covers, by }));
+      if (p.class !== 'fact') return [{ line: st.params.step, text: partSentence(p), by }];
+      const facts = Array.isArray(p.facts) ? p.facts : [];
+      return factRows(p).map((/** @type {string} */ text, /** @type {number} */ i) => {
+        const own = i < facts.length ? factBy(st.params.step, facts[i]?.name) : countBy(st.params.step, pi);
+        return { line: st.params.step, text, by: own?.by ?? by, ...(own ? { key: own.key } : {}) };
+      });
     })
     : []));
 }
@@ -952,28 +1018,49 @@ export function signedFactNames(closeDecl) {
 }
 
 /**
- * Reconcile the CONFIRMED plan with the close the composer actually wrote. The plan card after drafting shows exactly
- * the close's own checks (`checksOfClose`); every confirmed check that no part carries out (no part lists its number in
- * `covers`) is moved to Not checked, in the person's words, with the reason. A check can therefore never be shown and then
- * silently dropped (run mv5bk400: "lists 3 releases" was confirmed, then left out of the signed close without a word).
- * @param {{confirmed: {text: string, fromLine: number[]|null}[], notChecked: string[], closeDecl: any, jobLines?: any[]|null}} o
- *   `jobLines` — the person's numbered lines, so a ~ rule the drafter listed as Not checked reads in the person's own words
- * @returns {{checkItems: {text: string, fromLine: number[], by: 'agent'|'you'|null}[], notChecked: string[], moved: {text: string, fromLine: number[]|null}[]}}
+ * The plan card after drafting, read from the signed close ALONE (one source, the same the Job tab reads): its checks are `checksOfClose`; its Not checked is the close's own notes, the prose
+ * steps' "you judge it at Accept" lines and the refusals (`ruleNotChecked`, which reads the list's not-checked rows when the close carries the list). Nothing the confirm turn said is merged
+ * in: a rubric confirm turn plans the goal only, so a check can never be shown and then silently dropped (run mv5bk400).
+ * @param {{closeDecl: any, jobLines?: any[]|null, ledger?: {key: string, words: string[]}[]|null}} o `jobLines` the person's numbered lines, so a ~ rule reads in the person's own words; `ledger` the draft log's final list rows, so a phrase row is named by its words
+ * @returns {{checkItems: {text: string, fromLine: number[], by: 'agent'|'you'|'default', key?: string}[], notChecked: string[], notCheckedBy: Record<string, 'you'|'agent'|'default'>}}
  */
-export function reconcileRubricPlan({ confirmed, notChecked, closeDecl, jobLines = null }) {
-  const real = checksOfClose(closeDecl);
-  const covered = new Set(real.flatMap((c) => c.covers));
-  const moved = confirmed.filter((_, i) => !covered.has(i + 1));
+export function cardOfClose({ closeDecl, jobLines = null, ledger = null }) {
+  const notes = isRec(closeDecl) && Array.isArray(closeDecl.notes) ? closeDecl.notes.filter((/** @type {any} */ n) => typeof n === 'string' && n) : [];
+  const items = ruleNotCheckedItems(closeDecl, jobLines, ledger);
+  /** @type {Record<string, 'you'|'agent'|'default'>} */
+  const notCheckedBy = {};
+  for (const i of items) if (i.by) notCheckedBy[i.text] = i.by;
   return {
-    checkItems: real.map((c) => ({ text: c.text, fromLine: [c.line], by: c.by })),
-    notChecked: [
-      ...notChecked,
-      ...proseNotChecked(closeDecl),
-      ...ruleNotChecked(closeDecl, jobLines),
-      ...moved.map((m) => `${m.fromLine && m.fromLine.length ? `line ${m.fromLine.join(', ')}: ` : ''}${m.text} — nothing in this close counts it or checks it against a quote`),
-    ],
-    moved,
+    checkItems: checksOfClose(closeDecl).map((c) => ({ text: c.text, fromLine: [c.line], by: c.by, ...(c.key ? { key: c.key } : {}) })),
+    notChecked: [...new Set([...notes, ...proseNotChecked(closeDecl), ...items.map((i) => i.text)])],
+    notCheckedBy,
   };
+}
+
+/**
+ * The sign-time check of a close that carries the one check list: every BUILT row (the mechanical floor aside) points at a part that is really in the close, and every real check part
+ * (countable or fact) has at least one built row pointing at it, so a check cannot be in the close with no row and a row cannot claim a check the close does not run. A close with no list is
+ * not examined here. Pure.
+ * @param {any} closeDecl @returns {{ok: true}|{ok: false, error: string}}
+ */
+export function listMatchesClose(closeDecl) {
+  const list = isRec(closeDecl) && Array.isArray(closeDecl.list) ? closeDecl.list : null;
+  if (list === null) return { ok: true };
+  const stages = Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
+  const partsOn = (/** @type {number} */ n) => stages.filter((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && st.params.step === n && Array.isArray(st.params.parts)).flatMap((/** @type {any} */ st) => st.params.parts);
+  const built = list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'built' && r.kind !== 'floor');
+  const bad = built.filter((/** @type {any} */ r) => !(isRec(r.part) && r.part.line === r.line && Number.isInteger(r.part.part) && isRec(partsOn(r.line)[r.part.part])));
+  const lines = [...new Set(stages.filter((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params)).map((/** @type {any} */ st) => st.params.step))];
+  const bare = lines.flatMap((/** @type {number} */ n) => partsOn(n).map((/** @type {any} */ p, /** @type {number} */ i) => ({ n, i, p })))
+    .filter(({ p }) => isRec(p) && (p.class === 'countable' || p.class === 'fact'))
+    // a part has its row when a built row points at it, or when the part lists (in its `rules`) the number of a built `~` row of its line (a row points at ONE part, a rule may be carried by several)
+    .filter(({ n, i, p }) => !built.some((/** @type {any} */ r) => (isRec(r.part) && r.part.line === n && r.part.part === i)
+      || (r.kind === 'rule' && r.line === n && Array.isArray(p.rules) && p.rules.includes(r.rule))));
+  if (bad.length === 0 && bare.length === 0) return { ok: true };
+  const parts = [];
+  if (bad.length) parts.push(`a row points at a check the close does not run: ${bad.map((/** @type {any} */ r) => r.key).join('; ')}`);
+  if (bare.length) parts.push(`a check in the close has no row: line ${bare.map(({ n, i }) => `${n} part ${i + 1}`).join('; ')}`);
+  return { ok: false, error: `The list of checks does not match the signed close (${parts.join(' | ')}). Nothing was signed — draft again.` };
 }
 
 /**

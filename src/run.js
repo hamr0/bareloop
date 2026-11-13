@@ -18,6 +18,7 @@ import { runPlan } from './planrun.js';
 import { SMOKE_STORE, resolveHumanRuling } from './kinds.js';
 import { readShimArm } from './readshim.js';
 import { codeVersion } from './codeversion.js';
+import { bindPlaceValues } from './placerule.js';
 
 /** @typedef {{code: string, path: string, detail?: string}} Red */
 
@@ -112,6 +113,10 @@ async function primitiveSmoke(workdir) {
  *   never a step knob and never agent-selectable; absent, a judged stage instrument-stops as
  *   a wiring gap rather than grading on whatever binding happened to be at hand. Its spend
  *   lands on this ledger as `judge-round` (see `ACCOUNTED_ROUND_TYPES`).
+ * @param {Record<string, string>|null} [opts.placeValues] PLACE RULES (src/placerule.js): the values this run's start read for the spec's place-rule facts, by key. Bound
+ *   as those facts' phrases on the run's own in-memory copy AFTER the approval check and the `job-start` record, so the hash checked and the hash recorded stay the
+ *   SIGNED one and the signed spec is never changed; the planner and the close read the copy. Absent = the signed words.
+ * @param {{workflowKey: string, rows: object[]}|null} [opts.placeRead] PLACE RULES: what the run start read (rows {key, kind, found, value, was, reason}); recorded once as a `place-rules` event right after `job-start`. Absent = the job has none (or this is a resume, whose first leg wrote it).
  * @param {number} [opts.capRuns] shell-owned iteration cap for the plan flow's
  *   CLOSE-FIX loop (a plan STEP runs under the strike ladder instead)
  * @param {number} [opts.strikeLimit] shell-owned strike ceiling for a plan step's ladder
@@ -280,7 +285,7 @@ async function primitiveSmoke(workdir) {
  *   deliberately NOT in the resumable/checkpoint set (`src/reuse.js`) — an
  *   unknown in-flight state is not a known-safe resume point.
  */
-export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, rates = null, judgeRates = null, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, closeDir = null, layerRoot = false, readShim = false, scout = true, bridge = null, draftSpentUsd = 0, draftSpendComplete = true, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, learnHints = null, ticketRecord = null, ticketUnsure = null, prRecord = null }) {
+export async function runJob(rawSpec, { approvals, workdir, provider, nativeProvider, providerFor, judgeProvider = null, judgeModel = null, rates = null, judgeRates = null, emit, capRuns = 3, strikeLimit, shellCapUsd = 2, closeTimeoutMs, closeDir = null, layerRoot = false, readShim = false, scout = true, bridge = null, draftSpentUsd = 0, draftSpendComplete = true, priorSpentUsd = 0, priorSpendComplete = true, priorWallMs = 0, resumeSeed = null, resumeGrades = [], resumeReplans = null, resumeBranch = null, humanRuling = null, heldRuling = null, reviewDoor = null, doorRerun = null, resumable = true, stopFile = null, learnHints = null, ticketRecord = null, ticketUnsure = null, prRecord = null, placeValues = null, placeRead = null }) {
   // THE READ SHIM's ARM, resolved at the door — the FIRST thing this entry does,
   // before the ledger, before the approval gate, before a byte of the spec is read.
   // An unrecognised spelling throws here at zero cost instead of being coerced by
@@ -389,7 +394,7 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
     emit('job-end', { outcome: 'job-red', ...spend() });
     return 'job-red';
   }
-  const job = /** @type {any} */ (jv.job);
+  let job = /** @type {any} */ (jv.job);
   /** F103 — the two TIME figures, resolved once here and read the same way by
    * `runPlan`'s clock. An unreadable ruling resolves to `fresh: false` and folds as
    * it always did; `runPlan` is where it is refused, so this never has to. */
@@ -460,6 +465,9 @@ export async function runJob(rawSpec, { approvals, workdir, provider, nativeProv
       ? { priorReplans: Math.floor(resumeReplans.count), priorReplanGrantUsed: resumeReplans.grantUsed === true }
       : {}),
   });
+  // PLACE RULES: the approval was checked on the signed spec and `job-start` recorded its hash; only now does the run's own copy take the values its start read
+  if (placeValues !== null) job = bindPlaceValues(job, placeValues);
+  if (placeRead !== null) emit('place-rules', placeRead);
 
   // F140/PRD item 28 (c) — the backstop that fires on the ABSENCE of a
   // `job-end`. A provider promise that never settles (BA-25's class; 0.42.0

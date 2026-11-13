@@ -3,6 +3,7 @@
 // barebrowse capture (tests/fixtures/pageforms, header lines included) and the reader is the REAL bareguard. All $0.
 
 import { test } from 'node:test';
+import { CheckBlock } from '../src/checkblock.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { FACT_LANGS, factShapeReds, factDecides, factSentence, factBrief } from '../src/facts.js';
@@ -153,10 +154,26 @@ test('look: the kept lang / decimal ride the look fact and the drafter\'s block 
   assert.match(renderLookReport({ facts: [], prose: [], notFound: [], dropped }), /NOT CHECKED: "item date" - the page shows no month name in German, so the date is not checked\./);
 });
 
-test('drafter: the composer brief and the fact schema carry lang and decimal', async () => {
-  const { REQUIRED_FACTS_BRIEF } = await import('../src/authorflow.js');
-  assert.match(REQUIRED_FACTS_BRIEF, /whose look line gives a "lang" is signed with that lang/);
-  assert.match(REQUIRED_FACTS_BRIEF, /a date as YYYY-MM-DD/);
+test('block: code COPIES the look fact\'s lang and decimal onto the fact it builds (the drafter is no longer told to), so the built declaration passes the form check against the look, and only when the look carries them', () => {
+  const text = `${page('stripe-de')}\nUVP: 1.057,65 €\nUVP: 1.369 €\nUVP: 429,99 €\n`;
+  const look = { facts: [
+    { line: 1, name: 'released', shape: 'date', source: 'page', words: ['Letzte Änderung:'], lang: 'de' },
+    { line: 2, name: 'price', shape: 'money', source: 'page', words: ['UVP:'], unit: ['€'], decimal: ',' },
+  ], dropped: [] };
+  const b = new CheckBlock({ texts: { page: text }, labels: ['page'], asks: false });
+  b.fromJob([{ n: 1, text: 'a', rules: [] }, { n: 2, text: 'b', rules: [] }]);
+  b.addLook(look.facts, look.dropped);
+  const close = b.reconcile();
+  const fact = (/** @type {string} */ n) => close.parts.flatMap((/** @type {any} */ p) => p.facts ?? []).find((/** @type {any} */ f) => f.name === n);
+  assert.equal(fact('released').lang, 'de');
+  assert.equal(fact('price').decimal, ',');
+  assert.equal('lang' in fact('price'), false, 'a look fact with neither field asks for nothing');
+  const decl = { stages: close.stages };
+  assert.deepEqual(checkDeclarationWords(decl, { page: text }, look).filter((r) => r.code === 'rubric-fact-form-unsigned'), []);
+  // mutant: a fact built without them is red against the look (the check the copying satisfies)
+  const bare = structuredClone(decl);
+  for (const st of bare.stages) for (const p of st.params.parts) for (const f of p.facts ?? []) { delete f.lang; delete f.decimal; }
+  assert.ok(checkDeclarationWords(bare, { page: text }, look).some((r) => r.code === 'rubric-fact-form-unsigned'));
 });
 
 // ── pagerules.js: a currency sign is filed by how the page writes it next to the number ─────────────────────────────────────
@@ -384,10 +401,4 @@ test('validation: a signed fact whose look fact carries lang or decimal must sig
   // a look fact with neither field asks for nothing
   const plain = { facts: [{ line: 2, name: 'released', shape: 'date', source: 'page', words: ['Letzte Änderung:'] }], dropped: [] };
   assert.deepEqual(checkDeclarationWords(decl(date), { page: text }, plain).filter((r) => r.code === 'rubric-fact-form-unsigned'), []);
-});
-
-test('the drafter brief says what the red says: copy lang and decimal from the look', async () => {
-  const { REQUIRED_FACTS_BRIEF } = await import('../src/authorflow.js');
-  assert.match(REQUIRED_FACTS_BRIEF, /signed with that lang.*signed with that decimal; copy it exactly/s);
-  assert.match(REQUIRED_FACTS_BRIEF, /refused at \$0, nothing spent/);
 });

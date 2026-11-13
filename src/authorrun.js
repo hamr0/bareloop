@@ -114,7 +114,7 @@ import {
   REFUSAL_LIB, REFUSAL_CATEGORY,
 } from './authorjob.js';
 import {
-  makeLoopGenerate, CONFIRM_MENU, CONFIRM_SYSTEM,
+  makeLoopGenerate, CONFIRM_MENU, confirmSystemFor,
 } from './authorflow.js';
 import { defaultJudgeLoop, resolveJobJudge } from './judged.js';
 import { validateJob, jobSpecHash, resolveWorkerModel } from './job.js';
@@ -122,6 +122,8 @@ import { scanSecrets, redactSecrets } from './validate.js';
 import { detectLanguage } from './detectlang.js';
 import { RUBRIC_LANG } from './authoring.js';
 import { rubricGoal } from './rubricstep.js';
+import { LEDGER_SYSTEM } from './checklist.js';
+import { ROW_EDIT_SYSTEM } from './rowedit.js';
 import { moveFile } from './movefile.js';
 import { closeJudges, GATE_AUDIT_FILE } from './kinds.js';
 import { resolveProvider, buildRunnerProviders, apiKeyProblem } from './providers.js';
@@ -822,7 +824,7 @@ export async function main(argv, deps = {}) {
    * bound to `CONFIRM_SYSTEM`, never the authoring `generate` above (that one
    * is bound to `AUTHOR_SYSTEM`). Same provider instance, a different system
    * prompt: reusing `generate` would run the wrong system prompt silently. */
-  const confirmGenerate = makeLoopGenerate(provider, { system: CONFIRM_SYSTEM, rates: authorPrice?.rates ?? null });
+  const confirmGenerate = makeLoopGenerate(provider, { system: confirmSystemFor(LANG), rates: authorPrice?.rates ?? null });
 
   // ── PLAIN-FOLDER SOURCE: A NAMED $0 STOP, NO MODEL CALL (F191; PRD item 33 M3
   // piece 4, step S6, D5 amended 2026-09-21) ──────────────────────────────────
@@ -908,6 +910,10 @@ export async function main(argv, deps = {}) {
       // travels through unchanged — its `ambiguous` shape is what the confirm
       // turn's own $0 half (D7) asks about, before the scout.
       ask, confirmGenerate, isRepo: !RUBRIC_FILES, langResult,
+      // the one check list of a rubric job (src/checklist.js): same list as the panel, its one call bound to its own system text; this door asks nothing for it
+      ledgerGenerate: RUBRIC_FILES ? makeLoopGenerate(provider, { system: LEDGER_SYSTEM, rates: authorPrice?.rates ?? null }) : null,
+      // the drafter's row-edit reply of a rubric job (src/rowedit.js), its own system text
+      editGenerate: RUBRIC_FILES ? makeLoopGenerate(provider, { system: ROW_EDIT_SYSTEM, rates: authorPrice?.rates ?? null }) : null,
     });
     const authoredFile = writeOut('authored.json', authored);
     emit('authored', { ok: authored.ok, stop: authored.stop, seedRef: authored.seedRef, cost: authored.cost, reds: authored.reds });
@@ -1173,7 +1179,10 @@ export async function main(argv, deps = {}) {
           out(`\ncalibration gate — REAL judge calls at ${judge.model} on ${judge.provider}, one per case plus the injection battery.`);
           out('  this is the only gate that spends money, and it runs after every free one.');
         }
-        const signing = await prepareSigning({
+        // the end check: a rubric close with no real check is refused here, whatever the seed gate would say (the stop words are printed below from signingStopText)
+        const signing = authored.hasBuiltCheck === false
+          ? { ok: false, reds: [], refusal: null, specHash: null, seedRef: authored.seedRef, gates: { declaration: { ok: true, grounded: '-' }, precheck: null, seedVerdict: null }, work: [], guards: [], stops: [] }
+          : await prepareSigning({
           spec, workdir: SOURCE, seedRef: authored.seedRef, timeoutMs: TIMEOUT_MS,
           // gate 1a re-runs the job validator inside prepareSigning — same coupling, or
           // the spec that just passed above would fail the gate that signs it
@@ -1238,7 +1247,7 @@ export async function main(argv, deps = {}) {
         if (!signing.ok) {
           const t = costSoFar();
           out(`\n${signingStopText({
-            reds: signing.reds ?? [], refusal: signing.refusal, closeDecl: spec.closeDecl,
+            reds: signing.reds ?? [], refusal: signing.refusal, noCheck: authored.hasBuiltCheck === false,
             spend: { knownUsd: t.knownUsd ?? null, spendComplete: t.spendComplete ?? null },
           })}`);
         }

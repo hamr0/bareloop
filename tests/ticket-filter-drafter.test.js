@@ -8,7 +8,8 @@ import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { authorClose, declarationSchema, DECLARATION_TOOL_NAME, GREEN_QUESTIONS } from '../src/authorflow.js';
+import { authorClose, declarationSchema, GREEN_QUESTIONS } from '../src/authorflow.js';
+import { ROW_EDIT_TOOL, rowEditChannel } from '../src/rowedit.js';
 import { RUBRIC_LANG } from '../src/authoring.js';
 import { proveRubricInputs } from '../src/source.js';
 import { buildSeedListing } from '../src/authorscout.js';
@@ -32,6 +33,15 @@ test('the schema offers ticketFilter ONLY to a Tickets job; every other schema i
   assert.doesNotMatch(f.description, /optional/i, 'the schema no longer says optional while the prompt says MUST');
   assert.equal(f.description, TICKET_FILTER_SCHEMA_WORDS, 'one owner');
   assert.deepEqual(tickets.required, ['stages'], 'optional: a Tickets job without a priority line has none');
+});
+
+test('the row-edit tool offers ticketFilter ONLY to a Tickets job (ruling 2: the reply keeps the field unchanged); every other job\'s tool is the edits list alone', () => {
+  const plain = rowEditChannel(false).tool({ calls: [] }).parameters;
+  const tickets = rowEditChannel(true).tool({ calls: [] }).parameters;
+  assert.equal(Object.hasOwn(plain.properties, 'ticketFilter'), false);
+  assert.deepEqual(tickets.properties.ticketFilter.properties.priority.items.enum, ['P0', 'P1', 'P2', 'P3']);
+  assert.equal(tickets.properties.ticketFilter.description, TICKET_FILTER_SCHEMA_WORDS, 'one owner');
+  assert.deepEqual(tickets.required, ['edits']);
 });
 
 test('the drafter is told: the MUST, the legal example, never invent a label, the filter is not a check', () => {
@@ -70,17 +80,15 @@ async function loop(/** @type {{ticket: boolean, filters: any[]}} */ { ticket, f
   assert.equal(proved.ok, true);
   if (!proved.ok) throw new Error('unreachable');
   const prep = proved.prep;
-  const guard = { name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } };
-  const stages = [guard, { name: 'line-1', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts: [{ text: 'list the flights', class: 'fact', source: 'Flights', rules: [1], covers: [1], facts: [
-    { name: 'Origin', shape: 'phrase', phrase: 'Leaves San Francisco International Airport' }], count: { min: 1, max: 3 } }] } }];
   /** @type {any[]} */ const sent = [];
   let n = 0;
+  // the drafter's reply is ROW EDITS plus, for a Tickets job, the optional ticketFilter (ruling 2, 2026-11-12): the filter is read by the ticket reader, the edits by the block
   const generate = async (/** @type {any[]} */ m, /** @type {any[]} */ tools) => {
     sent.push(JSON.parse(JSON.stringify(m)));
-    const tool = tools.find((t) => t.name === DECLARATION_TOOL_NAME);
+    const tool = tools.find((t) => t.name === ROW_EDIT_TOOL);
     const f = filters[Math.min(n, filters.length - 1)];
     n += 1;
-    await tool.execute({ stages, ...(f === undefined ? {} : { ticketFilter: f }) });
+    await tool.execute({ edits: [], ...(f === undefined ? {} : { ticketFilter: f }) });
     return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } };
   };
   const listing = await buildSeedListing({ workdir: prep.tree, seedRef: prep.manifest.seed, sourcePaths: undefined, testPaths: undefined });
@@ -98,6 +106,7 @@ test('a Tickets job: the prompt carries the ticket block, a legal proposal is ke
   assert.equal(r.ok, true, JSON.stringify(r.reds));
   assert.deepEqual(r.ticketFilter, { priority: ['P1'] });
   assert.equal(Object.hasOwn(r.declaration, 'ticketFilter'), false, 'the filter is not part of the close');
+  assert.match(sent[0].map((x) => x.content).join('\n'), /^THE JOB/, 'the first message is the row-edit message');
   assert.match(JSON.stringify(sent[0]), /THE TICKET FILTER/);
 });
 

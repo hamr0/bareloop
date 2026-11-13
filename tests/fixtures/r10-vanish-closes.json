@@ -1,0 +1,213 @@
+{
+  "d8": {
+    "session": "smwag4fcpf9z0",
+    "arm": "B",
+    "asks": [
+      {
+        "text": "The Changelog shows more than one release date (\"- 2026-11-04\", \"- 2026-11-03\", \"- 2026-11-02\"); how should the run know which one is the latest release to summarise?",
+        "answer": "drop it"
+      },
+      {
+        "text": "How long may the summary be \u2014 is there a word or line limit you want? (I proposed at most 250 words.)",
+        "answer": "drop it"
+      }
+    ],
+    "specClose": {
+      "genre": "TEXT",
+      "lang": "text",
+      "stages": [
+        {
+          "name": "changed-from-seed",
+          "kind": "files-changed",
+          "params": {
+            "requireNonEmpty": true,
+            "allowPrefixes": [
+              "output/"
+            ]
+          }
+        },
+        {
+          "name": "line-1-release-date",
+          "kind": "rubric-step",
+          "fromLine": [
+            1
+          ],
+          "params": {
+            "step": 1,
+            "parts": [
+              {
+                "text": "The step-1 text must include the release date quoted from the Changelog, written exactly as the input writes it: \"- 2026-11-04\" (fact found by the line: release date)",
+                "class": "fact",
+                "source": "Changelog",
+                "covers": [
+                  2
+                ],
+                "facts": [
+                  {
+                    "name": "release date",
+                    "shape": "date",
+                    "anchor": "- 2026-11-04"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "notes": [
+        "The person's confirmed check #1 (at most 250 words) is a word limit on the step-1 text. Line 1 is a FACTS line (it looks up the release date), so its step file holds only results and no free text, and code adds the word limits the person picked. I did not write a countable word-limit part for it \u2014 a part of class countable with a word limit on a facts line is refused.",
+        "line 1: \"release version\" \u2014 The page never shows a number right after or right before \"[0.54.1]\". The page never shows a number right after or right before \"[0.54.0]\". The page never shows a number right after or right before \"[0.53.0]\". No word on this page reads \"release version\" safely."
+      ],
+      "refused": [
+        {
+          "line": 1,
+          "reason": "which release counts as the newest is a choice no check can make \u2014 the summary being of the LATEST release cannot be checked"
+        },
+        {
+          "line": 1,
+          "reason": "whether the summary is accurate, complete or well written needs reading the text"
+        },
+        {
+          "line": 1,
+          "reason": "release version \u2014 the page never shows a number right after or right before \"[0.54.1]\", \"[0.54.0]\" or \"[0.53.0]\", and no word on this page reads \"release version\" safely"
+        }
+      ]
+    }
+  },
+  "d17": {
+    "session": "smwag7ncubmip",
+    "arm": "C",
+    "asks": [
+      {
+        "text": "How short is \"short\" for the summary \u2014 a word limit (e.g. under 150 words) or a number of sentences? I proposed 200 words as a placeholder for you to check.",
+        "answer": "drop it"
+      },
+      {
+        "text": "Should the summary quote the note directly, or is plain paraphrase fine? If quotes are needed, how many?",
+        "answer": "drop it"
+      }
+    ],
+    "specClose": {
+      "genre": "TEXT",
+      "lang": "text",
+      "stages": [
+        {
+          "name": "changed-from-seed",
+          "kind": "files-changed",
+          "params": {
+            "requireNonEmpty": true,
+            "allowPrefixes": [
+              "output/"
+            ]
+          }
+        },
+        {
+          "name": "line-1-summary",
+          "kind": "rubric-step",
+          "fromLine": [
+            1
+          ],
+          "params": {
+            "step": 1,
+            "parts": []
+          }
+        }
+      ],
+      "notes": [
+        "The person's confirmed check #1 (the text in output/steps/1.json is at most 200 words) is a word limit on a writing line. Limits on words are added by code for a line that writes; I did not write it as a part myself.",
+        "The person's confirmed check #2 (the text quotes at least one claim copied from the Note) needs a source label naming the input. The look reported nothing and the label list for the Note kept no label, so no source can be named without inventing one. Nothing checks it.",
+        "The person asked that the summary be friendly, and that it be a good or accurate summary of the note. Neither is checked; the line-1 part is judged, so only reading it could decide.",
+        "line 1: \"Write a short friendly summary of the note\" \u2014 No rule can check this, so you judge it at Accept."
+      ],
+      "refused": [
+        {
+          "line": 1,
+          "reason": "The note input has no label I am allowed to name, so the requirement that the summary quote words copied from the Note cannot be checked against a named input."
+        }
+      ],
+      "guardLines": [
+        {
+          "guard": "changed-from-seed",
+          "lines": [
+            1
+          ]
+        }
+      ]
+    }
+  },
+  "d22": {
+    "session": "smwag9marst6v",
+    "arm": "C",
+    "asks": [
+      {
+        "text": "How short should the summary be \u2014 how many words (or sentences) at most? You only wrote \"short\".",
+        "answer": "drop it"
+      }
+    ],
+    "specClose": {
+      "genre": "TEXT",
+      "lang": "text",
+      "stages": [
+        {
+          "name": "changed-from-seed",
+          "kind": "files-changed",
+          "params": {
+            "requireNonEmpty": true,
+            "allowPrefixes": [
+              "output/"
+            ]
+          }
+        },
+        {
+          "name": "line-1-summary-of-note",
+          "kind": "rubric-step",
+          "fromLine": [
+            1
+          ],
+          "params": {
+            "step": 1,
+            "parts": [
+              {
+                "text": "the summary of the note written for line 1 is at most 120 words",
+                "class": "countable",
+                "check": "maxClaims",
+                "value": 120,
+                "source": "Note",
+                "covers": [
+                  1
+                ]
+              },
+              {
+                "text": "every quoted claim in output/steps/1.json is copied exactly from the named input Note and appears there",
+                "class": "countable",
+                "check": "cited",
+                "source": "Note",
+                "covers": [
+                  2
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "notes": [
+        "The word limit of 120 words is the AI's proposal: the person asked only for a \"short\" summary and, when asked how many words at most, answered \"drop it\" (no number). The confirmed plan carries this as check #1 (the AI's proposed counted limit).",
+        "The person asked for a \"short friendly summary of the note\". \"Short\" has no number from the person, so the only length limit is the AI's 120-word proposal; there is no person-given word limit to count.",
+        "The summary being FRIENDLY is listed as judged: tone cannot be checked from the text.",
+        "The summary being a FAIR or ACCURATE summary of the note is listed as judged: judging the writing is not something a countable or fact check can do.",
+        "The look at the input \"Note\" reported nothing and kept no labels, so line 1 (a writing/summary line) has no fact part; it is a TEXT line, not a facts line, and code adds the word/section/line counts the person picked.",
+        "Code ties the summary's numbers to the facts of earlier lines; this job has no facts line before it, so no such part is added here.",
+        "line 1: \"the summary is friendly\" \u2014 No rule can check this, so you judge it at Accept.",
+        "line 1: \"the summary is a fair and accurate summary of the note\" \u2014 No rule can check this, so you judge it at Accept."
+      ],
+      "guardLines": [
+        {
+          "guard": "changed-from-seed",
+          "lines": [
+            1
+          ]
+        }
+      ]
+    }
+  }
+}

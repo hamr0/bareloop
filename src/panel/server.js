@@ -39,7 +39,7 @@ import { checkExportable } from '../runexport.js';
 import { sourceNearSpine, signedSpecForRun } from '../runfiles.js';
 import { webFetchState } from '../source.js';
 import { isWebUrl } from '../pagefetch.js';
-import { draftingPartFor, sessionDirForRow, readDraftSteps } from '../draftspend.js';
+import { draftingPartFor, sessionDirForRow, readDraftSteps, readDraftLedger } from '../draftspend.js';
 import { readingOfQuestion, isAgree } from '../pagemap.js';
 import {
   replayOne, parseJsonl, resolveSiblings, isSidecarByName,
@@ -47,10 +47,11 @@ import {
 import { summarizeForAllLine, auditWindowsOf, replayRun } from '../replay.js';
 import { legsOf, legsWallMs, stopFilePath, capKindOf } from '../legs.js';
 import { chainSpend } from '../ledger.js';
-import { runBehaviour } from '../behaviour.js';
+import { runBehaviour, writesBlocked } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
 import { jobSpecHash, workflowKey, flowTypeOf, FLOW_TYPE_LABELS } from '../job.js';
 import { attachMemos, learningsHanded, attachLearnings } from './handed.js';
+import { placeRuleLines } from '../placerule.js';
 import { confirmProtections } from '../authorflow.js';
 import { createScheduleDoor } from './schedules.js';
 import { buildJobGrid } from './jobgrid.js';
@@ -81,7 +82,7 @@ import { filterUnsure } from '../ticketlabels.js';
 import { judgedFilesOf, lineRules, stepFileRel, proseNotCheckedItems } from '../rubricstep.js';
 import { factPartOf, factSentence, ruleWords, moneyAs } from '../facts.js';
 import { createSettingsRoutes } from './settingsroutes.js';
-import { planFromSpec } from './jobplan.js';
+import { planFromSpec, auditChecksOf } from './jobplan.js';
 import { stageQuestionsByName } from '../stagewords.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -1736,7 +1737,8 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
   // Not checked, split by the line the SIGNED plan ties each item to: a refusal carries its line (closeDecl.refused[].line, planFromSpec's
   // `lines[].refused`), a prose step carries its stage's step. What the plan ties to no line stays in `notChecked` (the bottom). Together they are
   // exactly the Job tab's items (its per-line "not checked" rows plus its Not checked fold) — never a second spelling.
-  const plan = planFromSpec(spec);
+  const ledgerDir = sessionDirForRow(row, opts);
+  const plan = planFromSpec(spec, ledgerDir ? readDraftLedger(ledgerDir) : null);
   const proseByLine = proseNotCheckedItems(spec?.closeDecl);
   const prosePool = proseByLine.map((i) => i.text);
   const tiedToLine = (/** @type {number} */ n) => [...(plan.lines.find((l) => l.n === n)?.refused ?? []), ...proseByLine.filter((i) => i.line === n).map((i) => i.text)];
@@ -1753,6 +1755,7 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
     /** @type {any} */
     const out = {
       notChecked: tiedToLine(n),
+      ...(plan.notCheckedBy ? { notCheckedBy: plan.notCheckedBy } : {}),
       n, text: jl && typeof jl.text === 'string' ? jl.text : '', rules: jl ? lineRules(jl) : [], kind: fp ? 'facts' : 'text', passed,
       file: di ? { i: di.i, state: read[di.i].state, words: read[di.i].state === 'gone' ? RESULT_FILE_GONE : (read[di.i].state === 'changed' ? RESULT_FILE_CHANGED : null) } : null,
     };
@@ -1824,6 +1827,7 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
     pages,
     pageNote: pages.length ? RESULT_PAGE_MAY_CHANGE : null,
     notChecked: bottom,
+    ...(plan.notCheckedBy ? { notCheckedBy: plan.notCheckedBy } : {}),
     readNotes: plan.readNotes,
     // the door's words, from the one table (src/panel/status.js DOOR_WORDS); the page types none of them
     door: { head: DOOR_WORDS.waiting.head, ask: RESULT_DOOR_ASK },
@@ -2245,7 +2249,10 @@ function getRunDetailBody(runid, opts) {
     // PRD v1.106 Part 5 F: the two Run summary rows, worded here (the page prints them)
     callsLine: callsLineOf(rawSpineRecords, scopedBehaviour(row, rawSpineRecords)),
     checksLine: checksLineOf(rawSpineRecords, enrichedParts),
+    auditChecks: auditChecksFor(row, rawSpineRecords, specForParts, opts),
     memoryCache: summary.memoryCache,
+    // PLACE RULES: what the run start read for each place-rule check (plain lines from code), or null when the run has none; the Audit page's placement of it is not built yet
+    placeRules: placeRuleLines(rawSpineRecords),
     // T Part 8: is this run waiting for the person's Accept? The SAME answer fills the runs list's Needs-you tag (`doorWaiting`, one owner)
     accept: !runIsAlive(row) && doorWaiting(rawSpineRecords),
     // PRD v1.107 Part 6: the Result tab shows for a rubric run whose signed close has a rubric-step stage, never otherwise; `delivered` is the
@@ -2419,11 +2426,22 @@ function resolveAuditPathsForRow(row, spineRecords) {
  * @returns {ReturnType<typeof runBehaviour>|null}
  */
 function scopedBehaviour(row, spineRecords) {
+  const windowed = scopedAuditRows(row, spineRecords);
+  return windowed === null ? null : runBehaviour(windowed);
+}
+
+/**
+ * The gate-audit rows inside this run's own ts window(s), the ONE scoping behind the Run tab's tools summary and the Audit's write-fence row; `null` when no
+ * gate-audit sidecar was found for the run (never an empty list posing as a clean record).
+ * @param {{spine: string, patient: string|null}} row
+ * @param {any[]} spineRecords
+ * @returns {any[]|null}
+ */
+function scopedAuditRows(row, spineRecords) {
   const auditPaths = resolveAuditPathsForRow(row, spineRecords);
   if (auditPaths.length === 0) return null;
   const windows = runAuditWindows(spineRecords);
-  const windowed = auditPaths.flatMap((ap) => parseJsonl(ap).records).filter((r) => r && typeof r === 'object' && typeof r.ts === 'string' && inAnyWindow(r.ts, windows));
-  return runBehaviour(windowed);
+  return auditPaths.flatMap((ap) => parseJsonl(ap).records).filter((r) => r && typeof r === 'object' && typeof r.ts === 'string' && inAnyWindow(r.ts, windows));
 }
 
 /**
@@ -3393,6 +3411,31 @@ function successFromSpec(spec) {
 }
 
 /**
+ * The Audit's check list (hamr ruling A): the card's own sections (planFromSpec for the checks and Not checked, confirmProtections for Always checked) with each row's
+ * result read from the run's recorded stage verdicts ({@link checksOf}), never re-derived. `null` for a run with no signed spec (nothing to list).
+ * @param {{spine: string, patient: string|null}} row @param {any[]} records @param {any} spec @param {{ home?: string, sessionsRoot?: string }} opts
+ */
+function auditChecksFor(row, records, spec, opts) {
+  if (!spec || typeof spec !== 'object') return null;
+  const ledgerDir = sessionDirForRow(row, opts);
+  const plan = planFromSpec(spec, ledgerDir ? readDraftLedger(ledgerDir) : null);
+  /** @type {string[]} */
+  let guards = [];
+  if (spec.closeDecl && typeof spec.closeDecl.lang === 'string' && typeof spec.verdictType === 'string') {
+    try {
+      guards = confirmProtections({
+        verdictType: spec.verdictType, lang: spec.closeDecl.lang, jobLines: Array.isArray(spec.jobLines) ? spec.jobLines : null,
+        writeScope: Array.isArray(spec.writeScope) && spec.writeScope.every((/** @type {any} */ x) => typeof x === 'string') ? spec.writeScope : null,
+      });
+    } catch { guards = []; }
+  }
+  const got = checksOf(records, spec);
+  const results = got ? new Map(got.stages.map((/** @type {any} */ x) => [x.name, x.passed === true])) : null;
+  const rows = scopedAuditRows(row, records);
+  return auditChecksOf(plan, guards, results, rows === null ? null : writesBlocked(rows));
+}
+
+/**
  * The write fence plus the guard checks a close actually carries — reusing
  * {@link confirmProtections} (`src/authorflow.js`), the SAME function the
  * authoring CLI's confirm turn shows a person, never a second hand-typed list
@@ -3630,10 +3673,12 @@ function getRunJobBody(runid, opts) {
   if (existsSync(row.spine)) {
     try { firstStart = parseJsonl(row.spine).records.find((r) => r && typeof r === 'object' && r.type === 'job-start') ?? null; } catch { firstStart = null; }
   }
+  // the check list's rows as the drafting ended, from the run's own session folder (none for a CLI or imported run: the plan then names a row from its key)
+  const ledgerOf = () => { const dir = sessionDirForRow(row, opts); return dir ? readDraftLedger(dir) : null; };
   /** @param {any} spec @param {boolean} resolved @param {string} resolvedFrom @param {string|null} note */
   const fromSpec = (spec, resolved, resolvedFrom, note) => ({
     // P7: the same plan model the chat's plan bubble is drawn from (src/panel/jobplan.js), read from the SIGNED spec
-    plan: planFromSpec(spec),
+    plan: planFromSpec(spec, ledgerOf()),
     jobLines: Array.isArray(spec.jobLines) ? spec.jobLines : null,
     inputs: Array.isArray(spec.inputs) && spec.inputs.length ? spec.inputs : [{ n: 1, label: 'repo', value: sourceDisplay() }],
     signedAt: typeof firstStart?.ts === 'string' ? firstStart.ts : null,

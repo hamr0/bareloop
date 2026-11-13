@@ -14,14 +14,16 @@ import { fileURLToPath } from 'node:url';
 import { runPageMap } from '../src/pagemap.js';
 import { applyPageRules } from '../src/pagerules.js';
 import { dropRows, dropLine, dropSentence } from '../src/pagedropwords.js';
-import { withDropNotes, ruleNotChecked, checkRubricRules, checkRubricParts, lineRules, readFrozenInputs } from '../src/rubricstep.js';
+import { ruleNotChecked, checkRubricRules, checkRubricParts, lineRules, readFrozenInputs } from '../src/rubricstep.js';
+import { CheckBlock } from '../src/checkblock.js';
+import { ROW_EDIT_TOOL } from '../src/rowedit.js';
 import { RUBRIC_LANG } from '../src/authoring.js';
 import { proveRubricInputs } from '../src/source.js';
 import { buildSeedListing } from '../src/authorscout.js';
 import { checkDeclarationWords } from '../src/factwords.js';
 import { renderLookReport, lookFactOf } from '../src/inputlook.js';
 import { planFromSpec, planFromConfirm } from '../src/panel/jobplan.js';
-import { runConfirmTurn, CONFIRM_TOOL_NAME, GREEN_QUESTIONS, FIELD_LABELS, makeCostBook, authorClose, DECLARATION_TOOL_NAME, REQUIRED_FACTS_BRIEF } from '../src/authorflow.js';
+import { runConfirmTurn, CONFIRM_TOOL_NAME, GREEN_QUESTIONS, FIELD_LABELS, makeCostBook, authorClose } from '../src/authorflow.js';
 import { reply } from './helpers.js';
 import { loadFixture } from './idea-a-fixtures.js';
 
@@ -65,44 +67,17 @@ test('run mvdg1xo3 (F237/F238): every label the rules remove has a dropped entry
   for (const w of offered) assert.ok(kept.has(w) || look.dropped.some((/** @type {any} */ d) => d.word === w), `"${w}" vanished without a trace`);
 });
 
-test('withDropNotes: the dropped rule becomes a `line 1: "nonstop" - ...` row by the existing reader; it must FAIL without withDropNotes (the rule is neither checked nor listed)', async () => {
+test('block rows: the dropped rule becomes a Not checked ROW with the plain sentence from the one table, never silent and never a line-level refusal (the old withDropNotes is deleted; the same data)', async () => {
   const look = await lookOf(FIVE);
-  // the declaration run mvdg1xo3 signed, but with the junk "Stops" fact and its rule taken out the way a drafter told "NOT CHECKED" would
-  const decl = JSON.parse(JSON.stringify(spec.closeDecl));
-  delete decl.refused;
-  delete decl.notes;
-  const part = decl.stages.find((/** @type {any} */ s) => s.kind === 'rubric-step').params.parts.find((/** @type {any} */ p) => p.class === 'fact');
-  part.facts = part.facts.filter((/** @type {any} */ f) => f.name !== 'Stops');
-  part.rules = [1, 2];
-  const reds = (/** @type {any} */ d) => { /** @type {string[]} */ const out = []; checkRubricRules(d.stages, { jobLines: JOB, refused: d.refused, red: (code) => out.push(code) }); return out; };
-  assert.deepEqual(reds(decl), ['rubric-rule-dropped'], 'without the drop notes the rule is silently dropped - the arbiter-side red');
-  const withNotes = withDropNotes(decl, look.dropped, JOB);
-  assert.deepEqual(reds(withNotes), [], 'with them it is listed under Not checked');
-  assert.deepEqual(withNotes.refused.map((/** @type {any} */ r) => [r.line, r.rule]), [[1, 3]]);
-  const rows = ruleNotChecked(withNotes, JOB);
-  assert.equal(rows.length, 1);
-  assert.match(rows[0], /^line 1: "nonstop" — The page never shows a number right after or right before "StaticText"\. No word on this page reads "Stops" safely\.$/);
-  // never a line-level refusal (it would silence every other rule red on the line)
-  assert.ok(withNotes.refused.every((/** @type {any} */ r) => Number.isInteger(r.rule)));
-});
-
-test('withDropNotes: a drop that leaves the fact still checkable is a NOTE ("a narrower check is still said"); a fact from the job line itself is a note; a rule the drafter listed is never listed twice; running it twice adds nothing', async () => {
-  const look = await lookOf({ facts: [
-    { name: 'price', from: 'line 1 rule 1', shape: 'money', words: ['From ', 'from '], currency: ['$'], unit: ['US dollars'] },
-    { name: 'origin', from: 'line 1', shape: 'phrase', words: ['Boston Logan International Airport', 'Nowhere Field'] },
-    { name: 'second flight', from: 'line 1', shape: 'phrase', words: ['Nonstop'] },
-  ] });
-  const decl = { stages: [{ kind: 'rubric-step', params: { step: 1, parts: [{ class: 'fact', rules: [1], facts: [] }] } }] };
-  const once = withDropNotes(decl, look.dropped, JOB);
-  assert.equal(once.refused, undefined, 'nothing here is a whole fact tied to an uncarried rule');
-  assert.ok(once.notes.some((/** @type {string} */ n) => /^line 1: "under \$450" — "from" does not show the same values as "From"/.test(n)), JSON.stringify(once.notes));
-  assert.ok(once.notes.some((/** @type {string} */ n) => /^line 1: "origin" — "Nowhere Field" is not written on the page\.$/.test(n)));
-  assert.ok(once.notes.some((/** @type {string} */ n) => /^line 1: "second flight" — One result is one record; ask for N results instead\.$/.test(n)));
-  assert.deepEqual(withDropNotes(once, look.dropped, JOB).notes, once.notes, 'idempotent');
-  const own = { ...decl, refused: [{ line: 1, rule: 3, reason: 'my own reason' }] };
-  const stops = await lookOf(FIVE);
-  assert.deepEqual(withDropNotes(own, stops.dropped, JOB).refused, own.refused, 'the drafter\'s own entry stands; code adds none for that rule');
-  assert.equal(withDropNotes({ stages: [] }, [], JOB).refused, undefined, 'no drops, no change');
+  const block = new CheckBlock({ texts: { flights: bos.page }, labels: ['flights'], asks: false });
+  block.fromJob(JOB);
+  block.addLook(look.facts, look.dropped);
+  block.reconcile();
+  const nonstop = block.rows.find((r) => r.kind === 'rule' && r.rule === 3);
+  assert.equal(nonstop?.state, 'not-checked');
+  assert.match(String(nonstop?.reason), /^The page never shows a number right after or right before "StaticText"\. No word on this page reads "Stops" safely\.$/);
+  // the signed rows and the declaration's refusal carry it (a rule, not a line)
+  assert.equal(block.signedRows().find((r) => r.key === nonstop?.key)?.reason, nonstop?.reason);
 });
 
 test('a dropped word cannot return through the drafter: the REAL checkDeclarationWords reds a signed label that the map dropped (rubric-fact-word-dropped), with the drop\'s reason', async () => {
@@ -154,10 +129,12 @@ test('the drafter reads the drops: renderLookReport prints NOT CHECKED (rule n) 
 
 test('plan card words: planFromSpec shows the refused rule and the notes; planFromConfirm shows the drop lines - all from the one table', async () => {
   const look = await lookOf(FIVE);
-  const closeDecl = withDropNotes({ ...JSON.parse(JSON.stringify(spec.closeDecl)), refused: undefined, notes: undefined }, look.dropped, JOB);
-  const part = closeDecl.stages.find((/** @type {any} */ s) => s.kind === 'rubric-step').params.parts.find((/** @type {any} */ p) => p.class === 'fact');
-  part.rules = [1, 2];
-  const signedPlan = planFromSpec({ ...spec, closeDecl: withDropNotes({ ...closeDecl, refused: undefined, notes: undefined }, look.dropped, JOB) });
+  const block = new CheckBlock({ texts: { flights: bos.page }, labels: ['flights'], asks: false });
+  block.fromJob(JOB);
+  block.addLook(look.facts, look.dropped);
+  const built = block.reconcile();
+  const closeDecl = { genre: 'text', lang: 'text', stages: built.stages, refused: block.rows.filter((r) => r.kind === 'rule' && r.state !== 'built').map((r) => ({ line: r.line, rule: r.rule, reason: String(r.reason) })), list: block.signedRows() };
+  const signedPlan = planFromSpec({ ...spec, closeDecl });
   const refused = signedPlan.lines[0].refused.join('\n');
   assert.match(refused, /"nonstop" — The page never shows a number right after or right before "StaticText"\./);
   // the confirm card: the drop lines are appended to plan.notChecked by code before drafting is paid for (the REAL runConfirmTurn)
@@ -230,62 +207,63 @@ async function frozenFlights() {
 const made = [];
 after(() => { for (const d of made) rmSync(d, { recursive: true, force: true }); });
 
-const GUARD = { name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } };
-const factStage = (/** @type {any[]} */ facts) => ({ name: 'line-1', kind: 'rubric-step', fromLine: [1], params: { step: 1, parts: [{ text: 'list 3 flights', class: 'fact', source: 'flights', rules: [1, 2], facts, count: { min: 3, max: 3 } }] } });
-const PRICE = { name: 'MaxPrice', shape: 'money', anchor: 'From', unit: 'US dollars', rule: { op: 'lt', value: 450 } };
-const DEPART = { name: 'DepartureWindow', shape: 'time', anchor: 'Departure time:', rule: { op: 'between', lo: '5:00 AM', hi: '10:00 PM' }, aiProposal: true };
+const READ_DEPART = { op: 'reading', line: 1, rules: [2], fact: 'DepartureWindow', reading: { op: 'between', lo: '05:00', hi: '22:00' } };
 
-test('authorClose (the real drafting loop): a drafter that drops the junk "Stops" fact is NOT refused for the dropped "nonstop" rule - code lists it under Not checked; without withDropNotes in the loop this is a rubric-rule-dropped red', async () => {
+test('authorClose (the real drafting loop): the junk "Stops" fact is NOT built and the dropped "nonstop" rule is NOT refused as dropped by the gate - code lists it under Not checked from the block\'s row; the drafter is told in the look block it reads', async () => {
   const { prep, file, look } = await frozenFlights();
   const listing = await buildSeedListing({ workdir: prep.tree, seedRef: prep.manifest.seed, sourcePaths: undefined, testPaths: undefined });
+  const block = new CheckBlock({ texts: { flights: readFileSync(file, 'utf8') }, labels: ['flights'], asks: false });
+  block.fromJob(JOB);
+  block.addLook(look.facts, look.dropped);
+  block.reconcile();
   /** @type {any[]} */
   const seen = [];
   const generate = async (/** @type {any[]} */ messages, /** @type {any[]} */ tools) => {
     seen.push(messages.map((m) => m.content).join('\n'));
-    await tools.find((t) => t.name === DECLARATION_TOOL_NAME).execute({ stages: [GUARD, factStage([PRICE, DEPART])] });
+    await tools.find((t) => t.name === ROW_EDIT_TOOL).execute({ edits: [READ_DEPART] });
     return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } };
   };
   const r = await authorClose({
     workdir: prep.tree, seedRef: prep.manifest.seed, lang: RUBRIC_LANG, verdictType: 'soft-green',
     answers: { 1: '1. List 3 flights from Boston to Chicago' }, questions: { 1: GREEN_QUESTIONS[1] },
     scout: { state: 'PRESENT', facts: { rubricFiles: true, inputs: [{ n: 1, label: 'flights' }], look }, calls: [], raws: [] },
-    listing, generate, writeScope: ['output/'], jobLines: JOB, inputs: [{ n: 1, label: 'flights', value: file }],
+    listing, generate, writeScope: ['output/'], jobLines: JOB, inputs: [{ n: 1, label: 'flights', value: file }], block,
   });
   assert.equal(r.ok, true, JSON.stringify(r.reds));
   assert.equal(r.iterations[0].validation.ok, true, JSON.stringify(r.iterations[0].validation));
   assert.deepEqual(r.declaration.refused.map((/** @type {any} */ x) => [x.line, x.rule]), [[1, 3]]);
   assert.match(ruleNotChecked(r.declaration, JOB)[0], /^line 1: "nonstop" — The page never shows a number right after or right before "StaticText"/);
-  assert.match(seen[0], /NOT CHECKED \(rule 3\): "Stops"/, 'the drafter was told in the same block it reads the checks from');
+  assert.match(seen[0], /NOT CHECKED \(rule 3\): "Stops"/, 'the drafter was told in the look block it reads');
+  assert.ok(!r.declaration.stages[1].params.parts[0].facts.some((/** @type {any} */ f) => f.name === 'Stops'));
 });
 
-test('authorClose (the real drafting loop): a drafter that signs the dropped label "StaticText" gets a rubric-fact-word-dropped red with the reason, and the corrected try validates', async () => {
+test('a dropped word cannot return through the drafter: an `add` of the "StaticText" label the page rules dropped is Not checked in the drop\'s own words (never a plan-red); the corrected try (no add) settles', async () => {
   const { prep, file, look } = await frozenFlights();
   const listing = await buildSeedListing({ workdir: prep.tree, seedRef: prep.manifest.seed, sourcePaths: undefined, testPaths: undefined });
-  const STOPS = { name: 'Stops', shape: 'number', anchor: 'StaticText', rule: { op: 'lte', value: 0 }, aiProposal: true };
-  /** @type {string[]} */
-  const seen = [];
+  const block = new CheckBlock({ texts: { flights: readFileSync(file, 'utf8') }, labels: ['flights'], asks: false });
+  block.fromJob(JOB);
+  block.addLook(look.facts, look.dropped);
+  block.reconcile();
   let calls = 0;
-  const generate = async (/** @type {any[]} */ messages, /** @type {any[]} */ tools) => {
-    seen.push(messages.map((m) => m.content).join('\n'));
+  const generate = async (/** @type {any[]} */ _m, /** @type {any[]} */ tools) => {
     calls += 1;
-    const facts = calls === 1 ? [PRICE, DEPART, STOPS] : [PRICE, DEPART];
-    await tools.find((t) => t.name === DECLARATION_TOOL_NAME).execute({ stages: [GUARD, factStage(facts)] });
+    await tools.find((t) => t.name === ROW_EDIT_TOOL).execute({ edits: calls === 1 ? [{ op: 'add', kind: 'fact', line: 1, name: 'Stops', shape: 'number', words: ['StaticText'], source: 'flights' }] : [] });
     return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } };
   };
   const r = await authorClose({
     workdir: prep.tree, seedRef: prep.manifest.seed, lang: RUBRIC_LANG, verdictType: 'soft-green',
     answers: { 1: '1. List 3 flights from Boston to Chicago' }, questions: { 1: GREEN_QUESTIONS[1] },
     scout: { state: 'PRESENT', facts: { rubricFiles: true, inputs: [{ n: 1, label: 'flights' }], look }, calls: [], raws: [] },
-    listing, generate, writeScope: ['output/'], jobLines: JOB, inputs: [{ n: 1, label: 'flights', value: file }],
+    listing, generate, writeScope: ['output/'], jobLines: JOB, inputs: [{ n: 1, label: 'flights', value: file }], block,
   });
-  assert.equal(r.ok, true, JSON.stringify(r.reds));
-  assert.equal(r.iterations[0].validation.ok, false);
-  assert.ok(r.iterations[0].validation.reds.some((/** @type {any} */ x) => x.code === 'rubric-fact-word-dropped'), JSON.stringify(r.iterations[0].validation.reds));
-  assert.match(seen[1], /the label "StaticText" cannot be used\. The page never shows a number right after or right before "StaticText"/);
-  assert.equal(r.iterations[1].validation.ok, true);
+  assert.equal(r.ok, true, `${r.stop} ${JSON.stringify(r.reds)}`);
+  assert.notEqual(r.stop, 'plan-red');
+  assert.equal(r.iterations[0].validation.ok, true, 'the plan code built passes its own gate at the first try');
+  const stops = block.rows.find((x) => x.name === 'Stops');
+  assert.equal(stops?.state, 'not-checked');
+  assert.match(String(stops?.reason), /the label "StaticText" cannot be used\. The page never shows a number right after or right before "StaticText"/);
+  assert.ok(!r.declaration.stages[1].params.parts[0].facts.some((/** @type {any} */ f) => f.name === 'Stops'));
 });
 
-test('the drafter is TOLD the drop rules in the same change: a NOT CHECKED / LEFT OUT word is never used, and code lists dropped rules itself', () => {
-  assert.match(REQUIRED_FACTS_BRIEF, /A word the look lists under NOT CHECKED or LEFT OUT is never used in a fact - not as a label, a closing label, a unit or a currency/);
-  assert.match(REQUIRED_FACTS_BRIEF, /code lists it under Not checked for the person, so you do not write it into "refused" yourself/);
-});
+// (deleted: "the drafter is TOLD the drop rules in the same change: a NOT CHECKED / LEFT OUT word is never used" pinned REQUIRED_FACTS_BRIEF wording; the rule is code's now (src/checkblock.js factsOf runs
+// checkFactWords, tested above), and the look block the drafter reads still prints NOT CHECKED / LEFT OUT, tested in "the drafter reads the drops".)

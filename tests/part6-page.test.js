@@ -169,7 +169,7 @@ test('Not checked per line (fix 5): each line card lists its own items (server l
   assert.match(card, /line\.notChecked/);
   const f = src('renderResult');
   assert.ok(f.indexOf('result-notchecked') > f.indexOf('resultLineCard(line,'), 'the unlinked items come after the line cards');
-  assert.match(f, /resultNotChecked\("Not checked \(the AI's own reading\)", data\.notChecked/);
+  assert.match(f, /resultNotChecked\("Not checked", data\.notChecked/);
 });
 
 test('cards (signed look, variation B): Result, Line N, Your call, Saved — in the panel\'s own .job-card boxes; the "gone" words render once per file, in Saved only; no table', () => {

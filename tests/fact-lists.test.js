@@ -13,7 +13,7 @@ import { rubricStepShapeReds, checkRubricParts, buildStepSpec } from '../src/rub
 import { factDecides, factSentence, factBrief, asList, moneyForms, MAX_CURRENCIES, MAX_UNITS } from '../src/facts.js';
 import { checkFactWords } from '../src/factwords.js';
 import { jobSpecHash } from '../src/job.js';
-import { REQUIRED_FACTS_BRIEF } from '../src/authorflow.js';
+import { CheckBlock } from '../src/checkblock.js';
 import { loadFixture } from './idea-a-fixtures.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -113,10 +113,22 @@ test('words proof: EVERY listed unit must be found as whole words and EVERY list
   assert.match(run({ name: 'p', shape: 'money', unit: 'zorkmids' })[0], /the unit "zorkmids"/, 'a single string is proved exactly as before');
 });
 
-test('the drafter is TOLD the new rules in the same change: at least one of unit/currency, both allowed, the list limits, a code is a unit', () => {
-  assert.match(REQUIRED_FACTS_BRIEF, /names at least one of "unit".*or "currency".*and may name both/);
-  assert.match(REQUIRED_FACTS_BRIEF, /at most 3 currencies and 10 units, none repeated, a unit at most 100 characters/);
-  assert.match(REQUIRED_FACTS_BRIEF, /A code like EUR is a unit/);
+test('the new rules are enforced on the block (the row-edit prompt no longer teaches them): at least one of unit/currency, a code like EUR is a unit not a currency, over-limit lists - each an `add` row that is Not checked in plain words, never a built check', () => {
+  const run = (/** @type {Record<string, any>} */ extra) => {
+    const b = new CheckBlock({ texts: { Page: 'From 12 EUR €\nFrom 15 EUR €\nFrom 20 EUR €\n' }, labels: ['Page'], asks: false });
+    b.fromJob([{ n: 1, text: 'List 3 stays', rules: [] }]);
+    b.addLook([]);
+    b.applyDelta({ edits: [{ op: 'add', kind: 'fact', line: 1, name: 'price', shape: 'money', words: ['From'], source: 'Page', ...extra }] });
+    b.reconcile();
+    return b.rows.find((r) => r.kind === 'fact');
+  };
+  assert.equal(run({ unit: ['EUR'] })?.state, 'built', 'a code is a unit');
+  assert.equal(run({ unit: ['EUR'], currency: ['€'] })?.state, 'built', 'both may be named');
+  assert.equal(run({ currency: ['EUR'] })?.state, 'not-checked', 'a code in the currency box is refused');
+  assert.match(String(run({ currency: ['EUR'] })?.reason), /^code could not build a legal check from it: /);
+  assert.equal(run({})?.state, 'not-checked', 'neither unit nor currency');
+  assert.equal(run({ currency: ['€', '$', '£', '¥'] })?.state, 'not-checked', 'more than 3 currencies');
+  assert.equal(run({ unit: Array.from({ length: 11 }, (_, i) => `unit${String.fromCharCode(97 + i)}`) })?.state, 'not-checked', 'more than 10 units');
 });
 
 test('bareguard 0.26 refuses a unit list whose entries are equal once marks and spaces are removed; the signing pre-flight (real createRubric) says it in our words, naming the fact and both units', () => {

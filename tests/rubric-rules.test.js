@@ -11,7 +11,9 @@ import { fileURLToPath } from 'node:url';
 import { checkRubricRules, lineRules, rubricStepShapeReds } from '../src/rubricstep.js';
 import { parseJobBlock } from '../src/jobblock.js';
 import { validateDeclaration, RUBRIC_LANG, classGuards, catalogueForLang, KIND_CATALOGUE } from '../src/authoring.js';
-import { authorClose, DECLARATION_TOOL_NAME, GREEN_QUESTIONS, declarationSchema, REQUIRED_FACTS_BRIEF, RUBRIC_RULES, authorPrompt } from '../src/authorflow.js';
+import { authorClose, GREEN_QUESTIONS, declarationSchema } from '../src/authorflow.js';
+import { CheckBlock } from '../src/checkblock.js';
+import { ROW_EDIT_TOOL, ROW_EDIT_SYSTEM, ROW_EDIT_REVISE } from '../src/rowedit.js';
 import { proveRubricInputs } from '../src/source.js';
 import { buildSeedListing } from '../src/authorscout.js';
 
@@ -84,7 +86,7 @@ test('validateDeclaration runs the rule checks and accepts "refused" with a rule
   assert.ok(bad.reds.some((r) => r.path === 'refused[0]'));
 });
 
-test('the declaration schema the model fills can say a fact part; the composer prompt carries the REQUIRED FACTS brief', () => {
+test('the declaration schema (the gate\'s own shape) can say a fact part; the drafter\'s row-edit prompt says the four edits, one legal example each (the count is an add), no goal, no copy of the list', () => {
   const schema = declarationSchema(KIND_CATALOGUE, { verdictType: 'soft-green', kinds: Object.keys(catalogueForLang(RUBRIC_LANG)) });
   const parts = schema.properties.stages.items.oneOf.find((b) => b.title === 'rubric-step').properties.params.properties.parts.items.properties;
   assert.ok(parts.class.enum.includes('fact'));
@@ -92,13 +94,16 @@ test('the declaration schema the model fills can say a fact part; the composer p
   assert.ok(parts.count && parts.rules);
   assert.equal(parts.record, undefined, 'no record cutting (Part 1c)');
   assert.deepEqual(Object.keys(schema.properties.refused.items.properties), ['line', 'rule', 'reason']);
-  const prompt = authorPrompt({
-    answers: { 1: 'x' }, questions: { 1: GREEN_QUESTIONS[1] }, facts: { rubricFiles: true }, listingBlock: '', lang: RUBRIC_LANG,
-    verdictType: 'soft-green', guards: classGuards({ verdictType: 'soft-green', lang: RUBRIC_LANG }), catalogue: catalogueForLang(RUBRIC_LANG),
-  });
-  assert.ok(prompt.includes(REQUIRED_FACTS_BRIEF));
-  assert.match(REQUIRED_FACTS_BRIEF, /"SFO to LAX" is a from fact and a to fact/);
-  assert.match(REQUIRED_FACTS_BRIEF, /never invent a word the input does not hold/);
+  // (the old REQUIRED FACTS brief that told the drafter how to write a part is deleted with the AI-written parts; the row-edit prompt replaces it, ruling 5 of 2026-11-12)
+  assert.match(ROW_EDIT_SYSTEM, /the op is exactly one of: add, reading, pick, not-checkable/);
+  assert.match(ROW_EDIT_SYSTEM, /A count is an add with "kind":"count"; "count" is never an op/);
+  for (const ex of ['{"op":"add","kind":"fact"', '{"op":"add","kind":"phrase"', '{"op":"add","kind":"count"', '{"op":"reading"', '{"op":"pick"', '{"op":"not-checkable"']) assert.ok(ROW_EDIT_SYSTEM.includes(ex), ex);
+  assert.match(ROW_EDIT_SYSTEM, /never invent a word the input holds nowhere/);
+  assert.match(ROW_EDIT_SYSTEM, /never add a code \(like SFO\) that the person did not write/);
+  assert.doesNotMatch(ROW_EDIT_SYSTEM, /"goal"|THE LIST OF CHECKS|the list of checks:/, 'ruling 5: the confirm turn owns the goal; invariant 5: no text restates the list');
+  // a limit the person wrote is a rule that can be checked; a number the AI makes is its proposal and a time limit it proposes is a range (this was RUBRIC_RULES, now said on the reading edit)
+  assert.match(ROW_EDIT_SYSTEM, /A limit the person WROTE \("under \$450"\) is a rule that can be checked/);
+  assert.match(ROW_EDIT_SYSTEM, /a time limit that you propose is a RANGE \(between\), never one-sided/);
 });
 
 async function freeze() {
@@ -110,42 +115,42 @@ async function freeze() {
   return { file, prep: r.prep };
 }
 
-test('authorClose: a label that is not on the input\'s list is refused at $0 and the drafter is told the word and the input; the corrected try (a label picked from the list, no record marker) validates as drafted', async () => {
+test('authorClose: an edit that names words the input does not hold is refused ALONE at $0 and the drafter is told the words and the input; the corrected try validates and settles', async () => {
   const { prep, file } = await freeze();
-  const guard = { name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } };
-  const good = {
-    text: 'list the last 3 releases', class: 'fact', source: 'Changelog', rules: [1],
-    facts: [{ name: 'version', shape: 'text', anchor: '## [', until: ']' }, { name: 'released', shape: 'date', rule: { op: 'gte', value: '2026-10-01' } }],
-    count: { min: 3, max: 3 },
-  };
-  const bad = { ...good, facts: [{ name: 'version', shape: 'text', anchor: 'Release number:', until: ']' }, good.facts[1]] };
   /** @type {any[]} */
   const seen = [];
   let calls = 0;
   const generate = async (messages, tools) => {
     seen.push(messages);
     calls += 1;
-    await tools.find((t) => t.name === DECLARATION_TOOL_NAME).execute({ stages: [guard, stage([calls === 1 ? bad : good])] });
+    await tools.find((t) => t.name === ROW_EDIT_TOOL).execute({ edits: calls === 1
+      ? [{ op: 'add', kind: 'phrase', line: 1, name: 'release number', source: 'Changelog', words: ['Release number:'] }, { op: 'add', kind: 'count', line: 1, min: 2, max: 2 }]
+      : [] });
     return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } };
   };
   const listing = await buildSeedListing({ workdir: prep.tree, seedRef: prep.manifest.seed, sourcePaths: undefined, testPaths: undefined });
   const jobLines = [{ n: 1, text: 'List the last 3 releases', rule: 'released on or after 2026-10-01', rules: ['released on or after 2026-10-01'] }];
+  const look = { facts: [{ line: 1, name: 'version', shape: 'phrase', source: 'Changelog', words: ['## ['] }], dropped: [], prose: [], notFound: [] };
+  const block = new CheckBlock({ texts: { Changelog: readFileSync(file, 'utf8') }, labels: ['Changelog'], asks: false });
+  block.fromJob(jobLines);
+  block.addLook(look.facts, look.dropped);
+  block.reconcile();
   const r = await authorClose({
     workdir: prep.tree, seedRef: prep.manifest.seed, lang: RUBRIC_LANG, verdictType: 'soft-green',
     answers: { 1: '1. List the last 3 releases' }, questions: { 1: GREEN_QUESTIONS[1] },
-    scout: { state: 'PRESENT', facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }] }, calls: [], raws: [] },
-    listing, generate, writeScope: ['output/'], jobLines, inputs: [{ n: 1, label: 'Changelog', value: file }],
+    scout: { state: 'PRESENT', facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }], look }, calls: [], raws: [] },
+    listing, generate, writeScope: ['output/'], jobLines, inputs: [{ n: 1, label: 'Changelog', value: file }], block,
   });
   assert.equal(r.ok, true, JSON.stringify(r.reds));
-  assert.equal(r.iterations[0].validation.ok, false, 'the first try was refused, at $0');
-  assert.equal(r.iterations[1].validation.ok, true, 'the corrected second try was accepted');
-  assert.equal(r.iterations[0].seedRead, null, 'and the refused try was never run');
+  assert.equal(r.iterations[0].edits.filter((e) => !e.accepted).length, 1, 'one edit refused, the other kept');
+  assert.equal(r.iterations[1].edits.length, 0);
   const second = seen[1].map((m) => m.content).join('\n');
-  assert.match(second, /the label "Release number:" is not one of the labels the input "Changelog" holds before a text value/);
-  assert.match(second, /Nothing was signed/);
-  assert.match(seen[0].map((m) => m.content).join('\n'), /LABELS IN THE INPUT "Changelog" - pick a label ONLY from this list/, 'the drafter is shown the list it must pick from');
+  assert.match(second, /edit add: the words "Release number:" are not in the input/);
+  assert.ok(second.endsWith(ROW_EDIT_REVISE));
   const part = r.declaration.stages[1].params.parts[0];
-  assert.deepEqual(Object.keys(part).sort(), ['class', 'count', 'facts', 'rules', 'source', 'text'], 'nothing is added to the part by code: no record, no test evidence, no sample');
+  assert.deepEqual(Object.keys(part).sort(), ['class', 'count', 'facts', 'source', 'text'], 'nothing is added to the part by code beyond the rows: no record, no test evidence, no sample');
+  // (count 2: the version heading words are in this input only twice, and the draft gate's M1 rule refuses a count above the words' own count: see the build status note)
+  assert.deepEqual(part.count, { min: 2, max: 2 });
 });
 
 // A ~ rule is carried only by a part on ITS OWN step: a part on another step never covers it.
@@ -199,42 +204,48 @@ test('L4 cause 1: "covers" on a fact (try A of smv710w8c3wdh) is refused with th
   assert.equal(shape.length, 4, 'one red per fact that carries covers');
   assert.match(shape[0].detail, /"covers" is a field of the PART, not of a fact - write the numbers once on the fact part/);
   assert.deepEqual(rubricStepShapeReds({ step: 1, parts: [factPart(REAL_FACTS, { rules: [1, 2], covers: [1, 2, 3, 4] })] }, 'stages[1].params'), []);
-  assert.match(REQUIRED_FACTS_BRIEF, /"covers" and "rules" are fields of the PART, written once on it as a list of numbers\. A fact never has a "covers" or a "rules" field\./);
 });
 
-test('L4 cause 2: a ~ rule beside the fact part as a judged / none part (tries 1 and 3 of smv710w8c3wdh) is no longer a plan-red (R10: listed under Not checked, the fact part carries the rule); a red-eye rule drafted as a time fact with `between`, marked AI\'s proposal, is accepted', async () => {
+test('L4 cause 2: a ~ rule is never a part of its own (the AI writes no parts); the real flights shape builds ONE fact part carrying rules 1 and 2, a red-eye rule read as a time `between` is marked AI\'s proposal, and the nonstop rule is Not checked in code\'s plain words', async () => {
   const proved = await proveRubricInputs({ inputs: [{ n: 1, label: 'Flights', value: 'https://www.google.com/travel/flights?q=sfo-lax' }], into: join(tmp(), 'seed'), fetchUrl: async (url) => ({ ok: true, text: readFileSync(join(HERE, 'fixtures', 'page-partial.txt'), 'utf8'), url }) });
   assert.equal(proved.ok, true);
   if (!proved.ok) return;
   const prep = proved.prep;
-  const guard = { name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } };
-  // the REAL refused shape: the fact part holds the departure window, and "not a red-eye" is ALSO a part of its own
-  const refusedShape = [factPart(REAL_FACTS, { rules: [1, 2], covers: [1, 2, 3, 4], source: 'Flights' }), { text: 'not a red-eye', class: 'judged', rules: [2] }];
-  const fixed = [factPart(REAL_FACTS, { rules: [1, 2], covers: [1, 2, 3, 4], source: 'Flights' })];
-  /** @type {any[]} */
-  const seen = [];
-  let calls = 0;
-  const generate = async (/** @type {any} */ messages, /** @type {any} */ tools) => {
-    seen.push(messages);
-    calls += 1;
-    await tools.find((/** @type {any} */ t) => t.name === DECLARATION_TOOL_NAME).execute({ stages: [guard, stage(calls === 1 ? refusedShape : fixed)], refused: [{ line: 1, rule: 3, reason: 'nonstop: the page holds no stop count I can quote' }] });
+  const page = readFileSync(join(HERE, 'fixtures', 'page-partial.txt'), 'utf8');
+  // the real look of that session, as the look's own facts: the price tied to rule 1, the departure window tied to rule 2 (an AI proposal: 07:00 and 23:00 are not in the person's words)
+  const look = { facts: [
+    { line: 1, name: 'Origin', shape: 'phrase', source: 'Flights', words: ['Leaves San Francisco International Airport'] },
+    { line: 1, name: 'Destination', shape: 'phrase', source: 'Flights', words: ['arrives at Los Angeles International Airport'] },
+    { line: 1, name: 'Price', shape: 'money', source: 'Flights', words: ['generic'], unit: ['US dollars'], forRule: 1, reading: { op: 'lt', value: 450 } },
+    { line: 1, name: 'Departure time', shape: 'time', source: 'Flights', words: ['Departure time:'], forRule: 2, reading: { op: 'between', lo: '07:00', hi: '23:00' } },
+  ], dropped: [], prose: [], notFound: [] };
+  const block = new CheckBlock({ texts: { Flights: page }, labels: ['Flights'], asks: false });
+  block.fromJob([FLIGHTS_LINE]);
+  block.addLook(look.facts, look.dropped);
+  block.reconcile();
+  const generate = async (/** @type {any} */ _m, /** @type {any} */ tools) => {
+    await tools.find((/** @type {any} */ t) => t.name === ROW_EDIT_TOOL).execute({ edits: [{ op: 'not-checkable', line: 1, rule: 3, reason: 'nonstop: the page holds no stop count I can quote' }] });
     return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } };
   };
   const listing = await buildSeedListing({ workdir: prep.tree, seedRef: prep.manifest.seed, sourcePaths: undefined, testPaths: undefined });
   const r = await authorClose({
     workdir: prep.tree, seedRef: prep.manifest.seed, lang: RUBRIC_LANG, verdictType: 'soft-green',
     answers: { 1: '1. List 3 flights from San Francisco to Los Angeles' }, questions: { 1: GREEN_QUESTIONS[1] },
-    scout: { state: 'PRESENT', facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Flights' }] }, calls: [], raws: [] },
-    listing, generate, writeScope: ['output/'], jobLines: [FLIGHTS_LINE], inputs: [{ n: 1, label: 'Flights', value: 'https://www.google.com/travel/flights?q=sfo-lax' }],
+    scout: { state: 'PRESENT', facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Flights' }], look }, calls: [], raws: [] },
+    listing, generate, writeScope: ['output/'], jobLines: [FLIGHTS_LINE], inputs: [{ n: 1, label: 'Flights', value: 'https://www.google.com/travel/flights?q=sfo-lax' }], block,
   });
-  // since the R10 move (hamr 2026-11-09, fwd's way) the `judged` part is no longer a red on a rubric job: code lists it under Not checked, and rule 2 stays carried by the fact part
-  assert.equal(r.iterations[0].validation.ok, true, 'the real shape that was refused at $0 is now accepted at the first try');
-  assert.ok(!r.iterations[0].validation.reds.some((/** @type {any} */ x) => x.code === 'rubric-part-judged'));
+  assert.equal(r.iterations[0].validation.ok, true, 'the declaration code built passes its own gate at the first try');
   assert.equal(r.ok, true, JSON.stringify(r.reds));
-  const timeFact = r.declaration.stages[1].params.parts[0].facts.find((/** @type {any} */ f) => f.shape === 'time');
+  const parts = r.declaration.stages[1].params.parts;
+  const timeFact = parts[0].facts.find((/** @type {any} */ f) => f.shape === 'time');
   assert.equal(timeFact.rule.op, 'between');
   assert.equal(timeFact.aiProposal, true);
-  assert.equal(r.declaration.stages[1].params.parts.length, 1, 'one part: the rule is not a part of its own');
-  assert.match(REQUIRED_FACTS_BRIEF, /"not a red-eye" is a time fact with a between rule\) is carried by the fact part/);
-  assert.match(RUBRIC_RULES, /holds no "red-eye"/);
+  assert.equal(parts.filter((/** @type {any} */ p) => p.class === 'fact').length, 1, 'one fact part: a rule is not a part of its own');
+  assert.deepEqual(parts[0].rules, [1, 2]);
+  assert.ok(!parts.some((/** @type {any} */ p) => p.class === 'judged' || p.class === 'none'));
+  const nonstop = block.rows.find((x) => x.kind === 'rule' && x.rule === 3);
+  assert.equal(nonstop?.state, 'not-checked');
+  // by design (src/checkblock.js matchRule): on a plain rule with nobody to ask the reason is code's; the AI's own words show only on a typed rule, a tied rule with no limit, or an out-of-scope count rule
+  assert.match(String(nonstop?.reason), /judge it at Accept/);
+  assert.equal(block.deltaLog.at(-1).edits[0].accepted, true, 'the not-checkable edit itself was judged and kept');
 });

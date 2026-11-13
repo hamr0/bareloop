@@ -91,12 +91,14 @@ export const notFoundList = (notFound) => notFound.map((x) => `${x.ask} (line ${
 
 /**
  * The one question, worded by code.
- * @param {{found: number, total: number, notFound: {line: number, ask: string}[]}} o
+ * @param {{found: number, total: number, notFound: {line: number, ask: string}[], foundAsks?: {line: number, ask: string}[]}} o
  * @returns {string}
  */
-export const fitQuestionText = ({ found, total, notFound }) => redactSecrets(
-  `I found ${found} of ${total} of your asks on this page. Not found: ${notFoundList(notFound)}. Type go on to keep drafting, or anything else to stop and change the job or the page.`,
+export const fitQuestionText = ({ found, total, notFound, foundAsks = [] }) => redactSecrets(
+  `I found ${found} of ${total} of your asks on this page${found > 0 && foundAsks.length ? `: ${notFoundList(foundAsks)}` : ''}. Not found: ${notFoundList(notFound)}.${FIT_ANSWER}`,
 );
+/** the answer words the question ends with (said once, here; the panel's question box shows the question without them and has the buttons instead) */
+export const FIT_ANSWER = ' Type go on to keep drafting, or anything else to stop and change the job or the page.';
 
 /** the default loop seam - one spelling of how this repo drives a model */
 const defaultLoop = (/** @type {any} */ { system, onLlmResult, provider, rates }) =>

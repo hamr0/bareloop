@@ -281,6 +281,51 @@ export function readDraftChecks(dir) {
 }
 
 /**
+ * The suggested checks code could not build, one plain sentence each (the last `draft-notbuilt` line of the log): the Audit's draft lines. `[]` when there are none.
+ * @param {string} dir
+ * @returns {{line: number, text: string}[]}
+ */
+export function readDraftNotBuilt(dir) {
+  /** @type {string} */
+  let text;
+  try { text = readFileSync(join(dir, DRAFT_LOG_FILE), 'utf8'); } catch { return []; }
+  /** @type {{line: number, text: string}[]} */
+  let out = [];
+  for (const line of text.split('\n')) {
+    if (!line.includes('"draft-notbuilt"')) continue;
+    try {
+      const ev = JSON.parse(line);
+      if (ev?.kind === 'draft-notbuilt' && Array.isArray(ev.rows)) out = ev.rows.filter((/** @type {any} */ c) => c && Number.isInteger(c.line) && typeof c.text === 'string');
+    } catch { /* a torn line */ }
+  }
+  return out;
+}
+
+/**
+ * The check list's rows as the drafting ended (draft log `ledger` rows of phase `final`, the last one per key): each row's own words, so the Job tab can name a
+ * Not checked row in the person's words. `null` when the session has no readable log or no final row (a CLI run, an imported run, a deleted session). Never throws.
+ * @param {string} dir
+ * @returns {{key: string, rowKind: string, words: string[], state: string}[]|null}
+ */
+export function readDraftLedger(dir) {
+  /** @type {string} */
+  let text;
+  try { text = readFileSync(join(dir, DRAFT_LOG_FILE), 'utf8'); } catch { return null; }
+  /** @type {Map<string, {key: string, rowKind: string, words: string[], state: string}>} */
+  const byKey = new Map();
+  for (const line of text.split('\n')) {
+    if (!line.includes('"ledger"')) continue;
+    try {
+      const ev = JSON.parse(line);
+      if (ev?.kind === 'ledger' && ev.phase === 'final' && typeof ev.key === 'string') {
+        byKey.set(ev.key, { key: ev.key, rowKind: String(ev.rowKind), words: Array.isArray(ev.words) ? ev.words.filter((/** @type {any} */ w) => typeof w === 'string' && w) : [], state: String(ev.state) });
+      }
+    } catch { /* a torn line */ }
+  }
+  return byKey.size ? [...byKey.values()] : null;
+}
+
+/**
  * The DRAFTING PART of a run (hamr 2026-10-06, option A): the first part of the run's views, built from the session's
  * drafting log. `null` when the run did not come out of a panel session, or the log carries no metered call (a Reuse
  * workflow run, a CLI run, a run older than the log). The part's money is the SPINE's figure (`job-start.draftSpentUsd`,
@@ -307,5 +352,6 @@ export function draftingPartFor(row, spine, opts = {}) {
     draftSteps: steps,
     draftLabel: readDraftLabel(dir),
     draftChecks: readDraftChecks(dir),
+    draftNotBuilt: readDraftNotBuilt(dir),
   };
 }

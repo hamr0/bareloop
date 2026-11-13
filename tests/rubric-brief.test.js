@@ -1,5 +1,5 @@
-// PART 1a, deliverable 2 — the step-file contract reaches BOTH readers of it: the composer's prompt (src/authorflow.js
-// `rubricAuthorPrompt`) and the worker's goal (src/rubricstep.js `rubricGoal`); the plan validator lets a per-line step file
+// PART 1a, deliverable 2 — the step-file contract reaches its reader, the worker's goal (src/rubricstep.js `rubricGoal`; the composer's prompt that used to carry it too, `rubricAuthorPrompt`,
+// is deleted: the AI writes row edits now, never a stage, so it needs no step-file contract); the plan validator lets a per-line step file
 // be a step's target (src/plan.js); and the copy-out delivers `output/steps/` with the rest of the output (src/source.js).
 // Real data: a copy of this repo's CHANGELOG.md frozen by the real door; the real seed listing; a scripted model boundary
 // that can only DELIVER a declaration (it cannot spend).
@@ -10,7 +10,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { authorPrompt, authorClose, DECLARATION_TOOL_NAME, FILL_MARKER, GREEN_QUESTIONS } from '../src/authorflow.js';
+import { authorPrompt, authorClose, GREEN_QUESTIONS } from '../src/authorflow.js';
+import { CheckBlock } from '../src/checkblock.js';
+import { ROW_EDIT_TOOL, rowEditUserText } from '../src/rowedit.js';
 import { classGuards, RUBRIC_LANG, catalogueForLang, KIND_CATALOGUE } from '../src/authoring.js';
 import { proveRubricInputs, copyOut } from '../src/source.js';
 import { stepFileContract, stepFileRel, STEP_DIR } from '../src/rubricstep.js';
@@ -44,23 +46,14 @@ test('catalogueForLang: the text genre sees only its own kinds; a code language 
   }
 });
 
-test('the composer prompt for the text genre carries the step-file contract, the numbered lines, the labelled inputs and the guard to fill — and nothing of a repository genre', () => {
-  const prompt = authorPrompt({
-    answers: { 1: '1. Summarize the unreleased changes\n   rule: under 200 words' }, questions: { 1: GREEN_QUESTIONS[1] },
-    facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }] }, listingBlock: 'FILES THAT ACTUALLY EXIST AT THE SEED\n  input/CHANGELOG.md',
-    lang: RUBRIC_LANG, verdictType: 'soft-green', guards: guards(), catalogue: catalogueForLang(RUBRIC_LANG),
-    writeScope: ['output/'], jobLines: JOB_LINES, inputs: INPUTS,
-  });
-  assert.ok(prompt.includes(stepFileContract()), 'the SAME contract text the worker is given');
-  assert.match(prompt, /output\/steps\/N\.json/);
-  assert.match(prompt, /1 Changelog \/x\/CHANGELOG\.md/);
-  assert.match(prompt, /The person's job has 2 numbered lines/);
-  assert.match(prompt, /files-changed/);
-  assert.ok(prompt.includes(FILL_MARKER), 'the guard\'s allowPrefixes slot is the model\'s');
-  assert.match(prompt, /output\//);
-  assert.match(prompt, new RegExp(`Call the ${DECLARATION_TOOL_NAME} tool exactly once`));
-  for (const gone of ['TYPES', 'type checker', 'KNOWN INSTRUMENTS', 'MYPYPATH', 'read-only survey of their repository']) {
-    assert.equal(prompt.includes(gone), false, `a repo-genre phrase leaked into the text-genre prompt: ${gone}`);
+test('the drafter\'s message for the text genre carries the numbered lines and the labelled inputs — and nothing of a repository genre or of a stage; a CODE language is untouched', () => {
+  const user = rowEditUserText({ jobLines: JOB_LINES.map((l) => ({ ...l, rules: l.rule ? [l.rule] : [] })), look: null, texts: { Changelog: 'the changelog text' } });
+  assert.match(user, /^THE JOB \(the person's own words\)/);
+  assert.match(user, /1\. Summarize the unreleased changes\n   ~ rule 1: under 200 words/);
+  assert.match(user, /2\. List the fixes/);
+  assert.match(user, /INPUT "Changelog" \(first 8000 characters\):\nthe changelog text/);
+  for (const gone of ['TYPES', 'type checker', 'KNOWN INSTRUMENTS', 'MYPYPATH', 'read-only survey of their repository', 'output/steps', 'declare_close', 'allowPrefixes']) {
+    assert.equal(user.includes(gone), false, `a repo-genre or stage phrase leaked into the text-genre message: ${gone}`);
   }
   // and a CODE language is untouched by this branch
   const code = authorPrompt({
@@ -71,31 +64,34 @@ test('the composer prompt for the text genre carries the step-file contract, the
   assert.equal(code.includes('output/steps'), false);
 });
 
-test('authorClose on the text genre end to end: no scout facts needed beyond the inputs, the real hidden-git listing is selected from, the declaration validates and is seed-read', async () => {
+test('authorClose on the text genre end to end: no scout facts needed beyond the inputs, the real hidden-git listing is selected from, the block-built declaration validates and is seed-read', async () => {
   const { prep, file } = await frozenTree();
   const seen = [];
   const generate = async (messages, tools) => {
     seen.push(messages);
-    const tool = tools.find((t) => t.name === DECLARATION_TOOL_NAME);
-    await tool.execute({
-      stages: [{ name: 'changed-from-seed', kind: 'files-changed', params: { requireNonEmpty: true, allowPrefixes: ['output/'] } }],
-      refused: [{ line: 1, reason: 'fixture' }, { line: 2, reason: 'fixture' }],
-    });
+    await tools.find((t) => t.name === ROW_EDIT_TOOL).execute({ edits: [] });
     return { text: '', error: null, msgs: [], metrics: { costUsd: 0.01, unpricedRounds: 0 } };
   };
   const listing = await buildSeedListing({ workdir: prep.tree, seedRef: prep.manifest.seed, sourcePaths: undefined, testPaths: undefined });
   assert.ok(listing.files.includes('input/CHANGELOG.md'));
+  const jobLines = JOB_LINES.map((l) => ({ ...l, rules: l.rule ? [l.rule] : [] }));
+  const block = new CheckBlock({ texts: { Changelog: readFileSync(file, 'utf8') }, labels: ['Changelog'], asks: false });
+  block.fromJob(jobLines);
+  block.addLook([]);
+  block.reconcile();
   const r = await authorClose({
     workdir: prep.tree, seedRef: prep.manifest.seed, lang: RUBRIC_LANG, verdictType: 'soft-green',
     answers: { 1: '1. Summarize\n2. List' }, questions: { 1: GREEN_QUESTIONS[1] },
     scout: { state: 'PRESENT', facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Changelog' }] }, calls: [], raws: [] },
-    listing, generate, writeScope: ['output/'], jobLines: JOB_LINES, inputs: [{ n: 1, label: 'Changelog', value: file }],
+    listing, generate, writeScope: ['output/'], jobLines, inputs: [{ n: 1, label: 'Changelog', value: file }], block,
   });
   assert.equal(r.ok, true, JSON.stringify(r.reds));
   assert.ok(seen.length >= 1);
-  assert.match(seen[0][0].content, /THE STEP FILES/);
-  assert.deepEqual(r.declaration.stages.map((s) => s.name), ['changed-from-seed']);
-  assert.equal(r.seedRead.length, 1);
+  assert.match(seen[0][0].content, /^THE JOB/);
+  assert.deepEqual(r.declaration.stages.map((s) => s.name), ['changed-from-seed', 'line-1', 'line-2']);
+  assert.deepEqual(r.declaration.stages[0].params.allowPrefixes, ['output/'], 'the guard\'s fence slot is filled by code from the signed write fence');
+  assert.deepEqual(r.declaration.refused.map((x) => [x.line, x.rule]), [[1, 1]], 'the rule nothing can check is listed under Not checked');
+  assert.equal(r.seedRead.length, 3);
   assert.equal(r.seedRead[0].verdict, 'red', 'at the seed nothing has changed, so the guard is red — the work still has to be done');
   assert.deepEqual(r.genreEnv.owned, [], 'the text genre owns no environment');
 });
@@ -141,15 +137,10 @@ test('copyOut delivers output/steps/<n>.json with the output — each under its 
   assert.equal(JSON.parse(readFileSync(r.files[0].path, 'utf8')).text, 'one');
 });
 
-test('the step-file brief tells the worker to copy numbers, times and prices exactly as the input writes them — in the worker goal AND the composer prompt, one text', async () => {
+test('the step-file brief tells the worker to copy numbers, times and prices exactly as the input writes them — in the worker goal (the composer prompt that also carried it is deleted: the AI writes edits, not stages)', async () => {
   const { rubricGoal } = await import('../src/rubricstep.js');
   const line = 'copy every number, time and price exactly as the input writes it (for example "9:27 AM", not "09:27")';
   assert.ok(stepFileContract().replace(/\s+/g, ' ').includes(line), 'the contract carries the rule');
   assert.match(stepFileContract(), /the check matches the numbers in your claim against your quote/);
   assert.ok(rubricGoal({ jobLines: [{ n: 1, text: 'x', rule: '' }], files: [{ label: 'C', rel: 'input/C.md' }] }).replace(/\s+/g, ' ').includes(line));
-  const prompt = authorPrompt({
-    answers: { 1: 'x' }, questions: { 1: GREEN_QUESTIONS[1] }, facts: { rubricFiles: true }, listingBlock: '', lang: RUBRIC_LANG,
-    verdictType: 'soft-green', guards: guards(), catalogue: catalogueForLang(RUBRIC_LANG),
-  });
-  assert.ok(prompt.replace(/\s+/g, ' ').includes(line));
 });

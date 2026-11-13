@@ -22,7 +22,7 @@ import { spawn as realSpawn } from 'node:child_process';
 import { openSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { planMatchesClose } from '../rubricstep.js';
+import { planMatchesClose, listMatchesClose } from '../rubricstep.js';
 import { ticketNumberOf } from '../ticketshape.js';
 import { newestUnrunTicket } from '../ticketnext.js';
 import { readRunList } from '../runlist.js';
@@ -48,6 +48,7 @@ import { thinkingForLine } from '../thinking.js';
 import { panelMoney2 } from '../panelmoney.js';
 import { apiKeyProblem, checkProviderReachable } from '../providers.js';
 import { reviseRefusal, sessionsRootOf } from '../revises.js';
+import { CHOICE_SAYS } from '../questionbox.js';
 
 /** @returns {string} a fresh per-process token — never persisted, never logged */
 export function mintToken() {
@@ -432,7 +433,7 @@ export function createAuthorRoutes(opts) {
       return true;
     }
 
-    const m = /^\/api\/author\/([A-Za-z0-9]+)(\/(send|sign-prepare|sign|check-deps|abandon))?$/.exec(pathname);
+    const m = /^\/api\/author\/([A-Za-z0-9]+)(\/(send|sign-prepare|sign|check-deps|abandon|row-edit))?$/.exec(pathname);
     if (!m) { send(404, { ok: false, error: 'not found' }); return true; }
     const session = sessions.get(m[1]);
     if (!session) { send(404, { ok: false, error: 'no such session' }); return true; }
@@ -447,7 +448,9 @@ export function createAuthorRoutes(opts) {
     if (req.method !== 'POST') { send(405, { ok: false, error: 'POST only' }); return true; }
 
     if (sub === 'send') {
-      const r = session.send(String(body?.text ?? ''));
+      // hamr 2026-11-12 (fwd M10 am32 A): while a question is open the page always posts the button's typed choice; an answer with none is from an old page and is refused, nothing logged, the question stays open
+      if (session.state.pendingAsk?.kind === 'answer' && body?.choice === undefined) { send(400, { ok: false, refused: 'bad-choice', error: CHOICE_SAYS.outOfDate, state: session.state }); return true; }
+      const r =session.send(String(body?.text ?? ''), body?.choice);
       send(r.ok ? 200 : 400, { ...r, state: session.state });
       return true;
     }
@@ -461,6 +464,12 @@ export function createAuthorRoutes(opts) {
     }
     if (sub === 'check-deps') {
       const r = session.checkDeps();
+      send(r.ok ? 200 : 400, { ...r, state: session.state });
+      return true;
+    }
+    if (sub === 'row-edit') {
+      // hamr 2026-11-13 (N-2): the confirm card's Drop / Add. $0 and instant: a row edit through the live check block, never a model call
+      const r = session.rowEdit(body?.op, body?.key);
       send(r.ok ? 200 : 400, { ...r, state: session.state });
       return true;
     }
@@ -523,6 +532,9 @@ export function signRun(session, claimedHash, o) {
       const spec = JSON.parse(readFileSync(session.state.resolvedSpecPath, 'utf8'));
       const m = planMatchesClose(session.state.finalPlan.checkItems, spec.closeDecl);
       if (!m.ok) return { ok: false, error: m.error };
+      // B2: a close that carries the one check list must agree with it: every built row points at a check the close runs, and every check has a row
+      const lm = listMatchesClose(spec.closeDecl);
+      if (!lm.ok) return { ok: false, error: lm.error };
     } catch { return { ok: false, error: 'could not read the signed spec to compare it with the plan you were shown — refusing to sign' }; }
   }
   // PIECE 9 (R7): the Schedule the card picked is signed WITH the job it is a field of (`spec.trigger`), written OFF beside the run about to start; the first green run turns it on. Before the
