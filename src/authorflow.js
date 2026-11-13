@@ -2216,7 +2216,7 @@ async function askConfirmPlan({ convo, generate, mode, book, label }) {
  *   ask: (step: {kind: string, [k: string]: any}) => Promise<string|null>,
  *   onPhase?: (phase: string, data?: any) => void, mode?: 'tool'|'text',
  *   worseThanBefore?: string, inputs?: {n: number, label: string, value: string}[]|null,
- *   jobLines?: {n: number}[]|null, ticket?: boolean, card?: {checkItems: {text: string, fromLine: number[], by: 'agent'|'you'|'default'}[], notChecked: string[]}|null}} o retired field (hamr's ruling 2026-09-28):
+ *   jobLines?: {n: number}[]|null, ticket?: boolean, card?: {checkItems: {text: string, fromLine: number[], by: 'agent'|'you'|'default', key?: string}[], notChecked: string[], notCheckedBy?: Record<string, string>}|null, block?: CheckBlock|null, cardOf?: (() => any)|null}} o retired field (hamr's ruling 2026-09-28):
  *   `worseThanBefore` is never asked any more and defaults to `''` — a
  *   caller may still pass a string through (kept for a future, non-ask
  *   source of the same constraint), it just never comes from an ask() step.
@@ -2244,6 +2244,8 @@ export async function runConfirmTurn({
   ticket = false,
   // a rubric job's check rows as the card readers read them (`cardOfClose` over `block.closeView()`): the card draws them, nothing else. SHOWN only: the accepted plan below never carries them
   card = null,
+  // the live check block of a rubric job and the reader that draws its rows (`() => cardOfClose(...)`): the confirm card's Drop and Add are instant row edits ($0, no AI) through the block, and the card is redrawn from its rows
+  block = null, cardOf = null,
 }) {
   /** a rubric job's confirm turn plans the goal only (its checks are the list's) */
   const goalOnly = lang === RUBRIC_LANG;
@@ -2360,13 +2362,19 @@ export async function runConfirmTurn({
     const checkItems = normalizeChecks(r.plan.checks);
     r.plan = { ...r.plan, checks: checkItems.map((c) => c.text), checkItems };
     // the rows of the check block, drawn by the same readers as the signed card (hamr 2026-11-12: the confirm card showed no row the block had built); shown only, never accepted
-    const shown = card === null ? {} : { checkItems: card.checkItems, checks: card.checkItems.map((c) => c.text) };
-    const plan = {
-      ...r.plan, ...shown, protections, notChecked: card === null ? notChecked : [...new Set([...notChecked, ...card.notChecked])], ...(card?.notCheckedBy ? { notCheckedBy: card.notCheckedBy } : {}),
+    const planFor = (/** @type {any} */ c) => ({
+      ...r.plan, ...(c === null ? {} : { checkItems: c.checkItems, checks: c.checkItems.map((/** @type {any} */ x) => x.text) }), protections, notChecked: c === null ? notChecked : [...new Set([...notChecked, ...c.notChecked])], ...(c?.notCheckedBy ? { notCheckedBy: c.notCheckedBy } : {}),
       signedFacts: (Array.isArray(facts?.look?.facts) ? facts.look.facts : []).map((/** @type {any} */ f) => String(f?.name)),
-    };
+      ...(block !== null && cardOf !== null ? { suggested: block.suggestedView(), editable: true } : {}),
+    });
+    const plan = planFor(card);
     onPhase('confirm-done', { round, plan });
-    const picked = await ask({ kind: 'menu', field: CONFIRM_MENU, plan });
+    // Drop and Add on the confirm card: a row edit through the block (the choice decides), reconciled, then the card is drawn again from the rows. $0: no model call is made here
+    const edit = block !== null && cardOf !== null ? (/** @type {'drop'|'add'} */ op, /** @type {string} */ key) => {
+      const res = block.rowChoice(key, op);
+      return res.ok ? { ok: true, plan: planFor(cardOf()), choices: block.choicesRecord() } : res;
+    } : null;
+    const picked = await ask({ kind: 'menu', field: CONFIRM_MENU, plan, ...(edit ? { edit } : {}) });
     if (picked === null) return abandon(round);
     if (picked === 'start-over') return { ...base(), stop: /** @type {ConfirmStop} */ ('confirm-restart'), rounds: round, cost: book.report() };
 

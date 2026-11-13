@@ -281,6 +281,27 @@ export function readDraftChecks(dir) {
 }
 
 /**
+ * The suggested checks code could not build, one plain sentence each (the last `draft-notbuilt` line of the log): the Audit's draft lines. `[]` when there are none.
+ * @param {string} dir
+ * @returns {{line: number, text: string}[]}
+ */
+export function readDraftNotBuilt(dir) {
+  /** @type {string} */
+  let text;
+  try { text = readFileSync(join(dir, DRAFT_LOG_FILE), 'utf8'); } catch { return []; }
+  /** @type {{line: number, text: string}[]} */
+  let out = [];
+  for (const line of text.split('\n')) {
+    if (!line.includes('"draft-notbuilt"')) continue;
+    try {
+      const ev = JSON.parse(line);
+      if (ev?.kind === 'draft-notbuilt' && Array.isArray(ev.rows)) out = ev.rows.filter((/** @type {any} */ c) => c && Number.isInteger(c.line) && typeof c.text === 'string');
+    } catch { /* a torn line */ }
+  }
+  return out;
+}
+
+/**
  * The check list's rows as the drafting ended (draft log `ledger` rows of phase `final`, the last one per key): each row's own words, so the Job tab can name a
  * Not checked row in the person's words. `null` when the session has no readable log or no final row (a CLI run, an imported run, a deleted session). Never throws.
  * @param {string} dir
@@ -331,5 +352,6 @@ export function draftingPartFor(row, spine, opts = {}) {
     draftSteps: steps,
     draftLabel: readDraftLabel(dir),
     draftChecks: readDraftChecks(dir),
+    draftNotBuilt: readDraftNotBuilt(dir),
   };
 }

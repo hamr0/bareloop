@@ -3,7 +3,7 @@
 // and to its guardrail's exact words, never to a line or rule number: both are recomputed on the new card. This file is the only writer of a record's entries
 // (`entriesFromAnswers`) and the only reader that decides keep-or-ask (`matchRecord`); the logic is the one F146 / F146b proved (poc/m10-am17/keep-picks-am18.mjs).
 // Throws away: line and rule numbers (recomputed), the model's words (it never sees a pick), a pick whose line or guardrail words no longer match.
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 /** the record's file, inside a drafting session folder only (never a run folder) */
@@ -143,3 +143,21 @@ export function readRecordFile(file) {
 
 /** where a drafting session folder keeps its record @param {string} planDir */
 export const recordPath = (planDir) => path.join(planDir, RECORD_FILE);
+
+/**
+ * The Drop/Add choices a draft's person made on the confirm card (hamr 2026-11-13, N-2), carried the same way as the picks: tied to the line's words and the row's own name, never to a number.
+ * @param {string} file @returns {{lineWords: string, occurrence: number, tail: string, choice: string}[]|null}
+ */
+export function readRowChoices(file) {
+  try {
+    const j = JSON.parse(readFileSync(file, 'utf8'));
+    return Array.isArray(j?.rowChoices) ? j.rowChoices.filter((/** @type {any} */ e) => e && typeof e.lineWords === 'string' && Number.isInteger(e.occurrence) && typeof e.tail === 'string' && (e.choice === 'drop' || e.choice === 'add')) : null;
+  } catch { return null; }
+}
+
+/** write a part of the record without losing the other: `patch` is `{picks}` or `{rowChoices}` @param {string} file @param {Record<string, any>} patch */
+export function writeRecordPart(file, patch) {
+  let cur = {};
+  try { const j = JSON.parse(readFileSync(file, 'utf8')); if (j && typeof j === 'object' && !Array.isArray(j)) cur = j; } catch { /* no record yet */ }
+  writeFileSync(file, `${JSON.stringify({ ...cur, ...patch })}\n`, { mode: 0o600 });
+}

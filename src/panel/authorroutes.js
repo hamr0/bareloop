@@ -433,7 +433,7 @@ export function createAuthorRoutes(opts) {
       return true;
     }
 
-    const m = /^\/api\/author\/([A-Za-z0-9]+)(\/(send|sign-prepare|sign|check-deps|abandon))?$/.exec(pathname);
+    const m = /^\/api\/author\/([A-Za-z0-9]+)(\/(send|sign-prepare|sign|check-deps|abandon|row-edit))?$/.exec(pathname);
     if (!m) { send(404, { ok: false, error: 'not found' }); return true; }
     const session = sessions.get(m[1]);
     if (!session) { send(404, { ok: false, error: 'no such session' }); return true; }
@@ -464,6 +464,12 @@ export function createAuthorRoutes(opts) {
     }
     if (sub === 'check-deps') {
       const r = session.checkDeps();
+      send(r.ok ? 200 : 400, { ...r, state: session.state });
+      return true;
+    }
+    if (sub === 'row-edit') {
+      // hamr 2026-11-13 (N-2): the confirm card's Drop / Add. $0 and instant: a row edit through the live check block, never a model call
+      const r = session.rowEdit(body?.op, body?.key);
       send(r.ok ? 200 : 400, { ...r, state: session.state });
       return true;
     }

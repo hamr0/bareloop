@@ -187,11 +187,12 @@ export class CheckBlock {
   /** a `!` row: the agent's fact, phrase or count (a look fact tied to a rule is a link on that rule's row, never a row of its own) */
   isBang(/** @type {Row} */ r) { return r.by === 'agent' && (r.kind === 'fact' || r.kind === 'phrase' || r.kind === 'count') && !r.parent; }
 
-  /** are the row's words (or its count number) in the job line or its `~` rules? Normalised, case-insensitive */
+  /** are the row's words (or its count number, or the name it asks for a fact by) in the job line or its `~` rules? Normalised, case-insensitive */
   inJob(/** @type {Row} */ r) {
     const said = this.said(r.line);
     if (r.kind === 'count') return [r.min, r.max].filter((x) => Number.isInteger(x)).some((n) => new RegExp(`(?<![\\d.])${n}(?![\\d.])`).test(said));
-    return (r.words ?? []).some((/** @type {string} */ w) => inText(said, w));
+    // a fact the person asked for BY NAME ("the release heading") is in the job too: the look's page words rarely echo the job's own words
+    return (r.words ?? []).some((/** @type {string} */ w) => inText(said, w)) || (r.kind === 'fact' && typeof r.name === 'string' && inText(said, r.name));
   }
 
   /** a `~` line an agreed answer wrote (or a carried pair partner) is checked by the rule it was agreed from: one check, both numbers */

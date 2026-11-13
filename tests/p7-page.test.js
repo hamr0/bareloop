@@ -85,7 +85,7 @@ test('renderJobPlan: an older job says its numbered lines were not saved; empty 
 
 test('ONE renderer: the chat plan bubble and the Job tab both call renderJobPlan (no second drawing of the plan)', () => {
   assert.equal((PAGE.match(/function renderJobPlan\(/g) || []).length, 1);
-  assert.match(fnSrc('renderMessages'), /renderJobPlan\(m\.plan\)/);
+  assert.match(fnSrc('renderMessages'), /renderJobPlan\(m\.plan, /);
   assert.match(fnSrc('renderJob'), /renderJobPlan\(plan\)/);
   assert.match(fnSrc('renderMessages'), /m\.kind === "plan"/);
 });

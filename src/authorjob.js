@@ -443,12 +443,12 @@ function composerRefusal(reds) {
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
  *   answerQuestions?: ((o: {questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string, key?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}) =>
  *     Promise<{jobLines: {n: number, text: string, rule?: string}[], answers: Record<string|number, any>, left?: {line: number, rule: number}[], picks?: any[], choices?: {key: string, choice: string, text?: string}[]}|null>)|null,
- *   pickGenerate?: Function|null, ledgerGenerate?: Function|null, editGenerate?: Function|null, carriedPicks?: any[]|null, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
+ *   pickGenerate?: Function|null, ledgerGenerate?: Function|null, editGenerate?: Function|null, carriedPicks?: any[]|null, carriedChoices?: any[]|null, onChoices?: (rec: any[]) => void, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
  *   confirmGenerate?: Function|null, isRepo?: boolean,
  *   langResult?: {kind: string, candidates?: string[], [k: string]: any}|null}} o
  * @returns {Promise<{ok: boolean, refusal: Refusal|null, verdictType: string|null,
  *   closeDecl: any, seedRef: string|null, authoring: any, judged: any, reds: Red[],
- *   stop: string|null, cost: any, interview: any, confirmed: any, picked?: {line: number, text: string}[], hasBuiltCheck?: boolean}>}
+ *   stop: string|null, cost: any, interview: any, confirmed: any, picked?: {line: number, text: string}[], hasBuiltCheck?: boolean, notBuilt?: {line: number, text: string}[]}>}
  */
 export async function authorCloseForJob({
   answers, repoPath = null, lang, verdictType = null, questions = null,
@@ -496,6 +496,8 @@ export async function authorCloseForJob({
   editGenerate = null,
   // R10 (fwd am17/am18): the picks record of the draft this one follows (`readRecordFile`), and the seam that receives this draft's record + the picks it kept. ABSENT = every rule is asked.
   carriedPicks = null, onPicks = () => {},
+  // hamr 2026-11-13 (N-2): the Drop/Add choices of the draft this one follows (the picks record file's `rowChoices`); a Revise keeps them, code still judges every one
+  carriedChoices = null, onChoices = () => {},
   // SOFTGREEN modules 4+5. `signerFix` is the D5 seam: a function (or a value)
   // carrying the SIGNER's corrected artifacts back. Absent means the proposal is
   // signed as proposed, and `signJudgedArtifacts` records which of the two
@@ -701,7 +703,7 @@ export async function authorCloseForJob({
   let carried = null;
   if (lang === RUBRIC_LANG && survey?.state === 'PRESENT' && Array.isArray(jobLines) && ledgerTexts) {
     const look = survey.facts?.look && typeof survey.facts.look === 'object' ? survey.facts.look : null;
-    block = new CheckBlock({ texts: ledgerTexts, labels: (Array.isArray(inputs) ? inputs : []).map((i) => i.label), asks: Boolean(answerQuestions), countScope: (t) => Boolean(pickGenerate) && codeScope(inputs, t) === 'in' });
+    block = new CheckBlock({ texts: ledgerTexts, labels: (Array.isArray(inputs) ? inputs : []).map((i) => i.label), asks: Boolean(answerQuestions), split: true, countScope: (t) => Boolean(pickGenerate) && codeScope(inputs, t) === 'in' });
     block.fromJob(jobLines);
     block.addLook(Array.isArray(look?.facts) ? look.facts : [], Array.isArray(look?.dropped) ? look.dropped : []);
     /** the rules a count pick settles, as the record knows them (a scoped rule is a counting `~` rule code scopes in) */
@@ -740,6 +742,9 @@ export async function authorCloseForJob({
       block.applyDelta({ label: 'pre:ledger-suggest', pre: true, edits: adds });
       block.reconcile();
     }
+    // a Revise keeps the last draft's Drop/Add choices (the suggestions exist now); code still judges every one when the list is reconciled
+    if (Array.isArray(carriedChoices)) { block.carryChoices(carriedChoices); onChoices(block.choicesRecord()); }
+    block.reconcile();
     onPhase('ledger-built', { rows: ledgerRecord(/** @type {any} */ (block.rows)) });
     // the code-forced asks (PRD v1.106 Part 5 Q3 T2, v1.107 Part 5b, R10): a reading code proposes, a rule the page cannot check, a check proposed for a counting rule. More than
     // MAX_QUESTIONS counted asks is a job to rewrite, not a questionnaire: nothing is asked and the stop lists every ask.
@@ -820,7 +825,10 @@ export async function authorCloseForJob({
       ...(authorOpts?.ticket === true ? { ticket: true } : {}),
       generate: confirmGenerate, book: confirmBook, ask, onPhase,
       // the rows the block has built, read by the signed card's own readers (cardOfClose): the confirm card draws them under their lines
-      ...(block ? { card: cardOfClose({ closeDecl: block.closeView(), jobLines, ledger: block.rows.map((r) => ({ key: r.key, words: r.kind === 'rule' ? [r.text ?? ''] : (r.words ?? []) })) }) } : {}),
+      ...(block ? (() => {
+        const cardOf = () => cardOfClose({ closeDecl: block.closeView(), jobLines, ledger: block.rows.map((r) => ({ key: r.key, words: r.kind === 'rule' ? [r.text ?? ''] : (r.words ?? []) })) });
+        return { card: cardOf(), cardOf, block };
+      })() : {}),
     });
     // DISTINCT from `runConfirmTurn`'s own per-round 'confirm-done' (fired once
     // per round when a plan arrives) — this is the WRAPPER's own line, once,
@@ -1056,6 +1064,8 @@ export async function authorCloseForJob({
     judged,
     // the checks the person picked, for the plan card's "You picked" rows (read from the block's rows)
     ...(block ? { hasBuiltCheck: block.hasBuiltCheck() } : {}),
+    // the suggestions code could not build, one plain sentence each: the Audit's draft lines, never the card (hamr 2026-11-13, F-b)
+    ...(block ? { notBuilt: block.unbuiltSuggestions() } : {}),
     ...(block ? { picked: block.rows.filter((r) => r.kind === 'rule' && r.pick).map((r) => ({ line: r.line, text: `${plainWords(r.pick)}${r.keptFromLast ? ` \u00B7 ${KEPT_WORDS}` : ''}` })) } : {}),
     reds: authored.reds,
     stop: authored.stop,

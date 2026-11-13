@@ -112,8 +112,9 @@ for (const k of ['d4', 'd5']) {
     const closeDecl = { genre: genreForLang(RUBRIC_LANG), lang: RUBRIC_LANG, stages: v.declaration.stages, picks: v.declaration.picks };
     assert.equal(closeDecl.picks.length, 2);
     const rows = checksOfClose(closeDecl);
-    assert.deepEqual(rows.map((r) => r.by), rows.map((_r, i) => (i < rows.length - 2 ? 'agent' : 'you')));
-    assert.ok(rows.some((r) => r.by === 'agent'));
-    assert.deepEqual(rows.slice(-2).map((r) => r.text), ['the text has exactly 3 list items', 'the text is at most 80 words']);
+    // N-1 (hamr 2026-11-13): the look's fact is not in the job line, so it is only Suggested (code proved it builds); the close holds the two picks [you] and the default quote row
+    assert.ok(block.suggestedView().length >= 1, 'the look\'s fact waits under Suggested');
+    assert.deepEqual(rows.map((r) => r.by).sort(), ['default', 'you', 'you']);
+    assert.deepEqual(rows.filter((r) => r.by === 'you').map((r) => r.text), ['the text has exactly 3 list items', 'the text is at most 80 words']);
   });
 }

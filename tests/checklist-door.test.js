@@ -46,7 +46,9 @@ test('panel door: the list is built once with its call, every row is in the draf
   });
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'), `${session.state.phase} / ${session.state.error}`);
   // the model's own plan is the goal only; the card draws the block's rows (hamr 2026-11-12, session smwe2qz5g3xrq: it used to show none of them)
-  assert.deepEqual(session.state.pendingAsk.plan.checkItems.map((/** @type {any} */ c) => c.text), ['fact · release heading — phrase, must say "## [", quoted from "Changelog"', 'fact · results — exactly 1 result, each quoted from "Changelog"'], 'the confirm card draws the check block\'s rows');
+  assert.deepEqual(session.state.pendingAsk.plan.checkItems.map((/** @type {any} */ c) => c.text), ['fact · release heading — phrase, must say "## [", quoted from "Changelog"'], 'the confirm card draws the check block\'s rows');
+  // N-1: the result count of 1 is not in the job line; the fact on its line is built, so code can build it and it waits under Suggested (with its Add), not checked
+  assert.deepEqual(session.state.pendingAsk.plan.suggested.map((/** @type {any} */ x) => x.text), ['fact · results — exactly 1 result, each quoted from "Changelog"']);
   session.signPrepare();
   assert.ok(await until(() => ['prepared', 'refused', 'error'].includes(session.state.phase)));
   assert.equal(session.state.phase, 'prepared', `${session.state.phase} / ${session.state.error}`);
@@ -61,7 +63,7 @@ test('panel door: the list is built once with its call, every row is in the draf
   assert.ok(built.length > 0 && built.length === final.length, 'each row at build and at the end');
   assert.ok(built.every((e) => e.key && e.rowKind && e.from && e.by && e.state));
   assert.equal(final.find((e) => e.key === 'L1.fact.release heading').state, 'built');
-  assert.equal(final.find((e) => e.rowKind === 'count').state, 'built');
+  assert.equal(final.find((e) => e.rowKind === 'count').state, 'suggested');
   const tries = log.filter((e) => e.kind === 'ledger-try');
   assert.equal(tries.length, 2);
   assert.deepEqual(tries[0].refused.map((x) => x.op), ['add']);

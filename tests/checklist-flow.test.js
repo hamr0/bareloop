@@ -181,8 +181,15 @@ test('A2/A3 authorCloseForJob (rubric): the block is built once before the draft
   const rows = w.seen.block.rows;
   const by = (k) => rows.find((r) => r.key === k);
   assert.equal(by('L1.~1').by, 'you');
-  assert.equal(by('L1.fact.release heading').state, 'built');
-  assert.equal(rows.find((r) => r.kind === 'count').state, 'built');
+  // N-1: the look's "release heading" is not what the job line says ("Summarise the latest release"), so it is Suggested too
+  assert.equal(by('L1.fact.release heading').state, 'suggested');
+  // N-1 (hamr 2026-11-13): the count of 1 is not in the job line; with no fact built on the line code cannot build it, so it is hidden (Audit only) until the fact is added, when it is offered
+  const count = rows.find((r) => r.kind === 'count');
+  assert.equal(count.state, 'not-checked');
+  assert.equal(count.hidden, true);
+  assert.deepEqual(w.seen.block.suggestedView().map((x) => x.key), ['L1.fact.release heading']);
+  assert.deepEqual(w.seen.block.rowChoice('L1.fact.release heading', 'add'), { ok: true });
+  assert.deepEqual(w.seen.block.suggestedView().map((x) => x.key), ['L1.count.1-1'], 'with the fact on, the count is buildable, so it is offered');
   // a phrase the input does not hold is an edit refused alone: no row, the reason is in the block's reply record
   assert.equal(rows.some((r) => r.words?.[0] === 'not in the file'), false);
   assert.match(w.seen.block.deltaLog.find((d) => d.label === 'pre:ledger-suggest').edits.find((e) => e.kind === 'phrase').refusedBecause, /not in the input/);
