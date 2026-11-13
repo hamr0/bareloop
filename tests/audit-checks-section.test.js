@@ -110,3 +110,18 @@ test('a run with no gate audit says the gate\'s record is missing: never held, n
   assert.equal(ac.always[1].word, "the gate's record for this run is missing");
   assert.match(rowHtml(ac.always[1]), /<b class="st-word">the gate's record for this run is missing<\/b>/);
 });
+
+test('the Checks fold header wears one state sign: [✗] if a row failed, [·] if a result is missing, else [✓] (fixture mwenvde5)', () => {
+  const sign = new Function(`${fnSrc('glyphClass')}\n${fnSrc('auditChecksSignClass')}\nreturn auditChecksSignClass;`)();
+  const rows = (/** @type {any} */ ac) => ac.checks.concat(ac.always);
+  const ac = getRunDetail('mwenvde5', { home: runHome() }).auditChecks;
+  assert.equal(sign(rows(ac)), 'green', 'mwenvde5: 9 passed or held, 1 not checked');
+  const failed = getRunDetail('mwenvde5', { home: runHome((recs) => recs.map((r) => (r.type === 'outer-close'
+    ? { ...r, verdict: 'unsatisfied', stages: r.stages.map((s) => (s.name === 'changed-from-seed' ? { ...s, verdict: 'unsatisfied' } : s)) } : r))) }).auditChecks;
+  assert.equal(sign(rows(failed)), 'red');
+  const none = getRunDetail('mwenvde5', { home: runHome((recs) => recs.filter((r) => !['outer-close', 'check-run', 'exit-eval', 'close-verdict', 'step-end'].includes(r.type))) }).auditChecks;
+  assert.equal(sign(rows(none)), 'grey');
+  const missing = getRunDetail('mwenvde5', { home: runHome(undefined, null) }).auditChecks;
+  assert.equal(sign(rows(missing)), 'grey');
+  assert.match(PAGE, /stateDotHTML\(auditChecksSignClass\(all\), "", "audit-checks-state"\) \+ head/);
+});

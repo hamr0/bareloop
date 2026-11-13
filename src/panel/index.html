@@ -3848,6 +3848,12 @@
     var res = r.result === "held" ? ["green", r.word || "held"] : r.result === "record-missing" ? ["grey", r.word || "the gate's record for this run is missing"] : r.result === "passed" ? ["green", "passed"] : r.result === "failed" ? ["red", "failed"] : r.result === "not-checked" ? ["grey", "not checked"] : ["grey", "no result recorded"];
     return '<div class="audit-check-row" data-testid="audit-check-row" data-result="' + escapeXml(r.result) + '" style="overflow-wrap:anywhere">' + escapeXml(r.text) + byTagOf(r.by) + " " + stateDotHTML(res[0], res[1], "audit-check-state") + "</div>";
   }
+  // the Checks fold's one state sign (code-owned, one place): any row failed = [✗]; else any row with no recorded result / no gate record = [·]; else [✓] ("held" is passed, "not checked" rows never move it)
+  function auditChecksSignClass(rows){
+    if(rows.some(function(r){ return r.result === "failed"; })) return glyphClass("\u2717");
+    if(rows.some(function(r){ return r.result === "none" || r.result === "record-missing"; })) return glyphClass("\u00B7");
+    return glyphClass("\u2713");
+  }
   function auditChecksEl(ac){
     var wrap = document.createElement("div");
     wrap.className = "audit-part";
@@ -3861,7 +3867,7 @@
     btn.className = "btn audit-part-toggle";
     btn.setAttribute("aria-expanded", "false");
     btn.setAttribute("data-testid", "audit-checks-toggle");
-    btn.innerHTML = auditCaret(false) + " " + head;
+    btn.innerHTML = auditCaret(false) + " " + stateDotHTML(auditChecksSignClass(all), "", "audit-checks-state") + head;
     var body = document.createElement("div");
     body.className = "audit-part-body";
     body.hidden = true;
