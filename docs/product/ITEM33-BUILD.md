@@ -4378,3 +4378,14 @@ Not checked
 ```
 
 Built as: the Drop/Add buttons live on the confirm card (the plan bubble while the confirm menu is open), where the live block is held; the final card shows tags only. The signed list gains an optional per-row `facts` field (the names of the facts a row built) so every read of a signed close can tag each fact by its row's kind.
+
+### 2026-11-13 live draft 3 (session smwen1p12tyhc, test panel 127.0.0.1:4711)
+
+Job "List 3 flights from Boston to Chicago" with `~ under $450` and `~ departure between 05:00 and 21:59`. Live results: the tags were right; Add moved origin and destination up; Drop removed "exactly 3". Four things to fix (hamr: "fix the 4 first"):
+
+1. Bold headings: the card section headings "Suggested · ...", "Not checked", "Always checked" (and "How the page was read", same markup) are bold on the confirm card, the signed card and the Job tab (one drawing, `renderJobPlan`).
+2. Job words win: origin and destination went to Suggested because the look's words were the long page names ("Boston Logan International Airport", "Chicago O'Hare International Airport") and the job says "Boston" and "Chicago". hamr's rule, verbatim: "anything not in your original job that code can check goes to Suggested". So when a job word (a proper name, from the job line or its `~` rules) is a whole-word part of a `!` fact's page words and the page holds it, the row is job-derived and its phrase check uses the job word ("must say Boston"). A count number in the job works as before. Only a row with no word from the job goes to Suggested. One owner: the N-1 split in src/checkblock.js (`inJob`).
+3. A `[default]` tag on the "Always checked" rows (the mandatory guards and floor rows), same tag as the other rows, in every card view.
+4. Undo Drop: a Drop on an `[agent]` row moves it to Suggested with Add (it was proved buildable), instead of vanishing; Add from there puts it back. Both through the existing $0 row-edit path and reconcile; a Revise carries the state (the existing Drop/Add carry).
+
+Seen, NOT fixed (record only): after the drop, a new suggestion "must say 12 results returned" (a page status line) appeared under Suggested. It is legal under the rules and off unless added.

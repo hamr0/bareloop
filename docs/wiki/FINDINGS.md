@@ -15888,3 +15888,7 @@ The block had built both `~` rules, two look facts and a count and marked the `$
 ### F335: the look's `lte` beat the person's "under $450" (session smwe2qz5g3xrq, 2026-11-12; seen again in smwelq2l6srdb and smwelw0jrax5c)
 
 `~ under $450` ended as "at most 450" (450 itself would pass) because `matchRule` took the look's reading first, then the person's words, then the AI's. The person's own words now win: code reads a money or time limit from the `~` words (one owner, `wordsReading`), and the look's or AI's reading is used only when code cannot read them. Fixed in d4c3ff3b (test tests/checkblock-words-win.test.js).
+
+### F336: the job's words lost to the long page name, so origin and destination went to Suggested (session smwen1p12tyhc, live draft 3, 2026-11-13)
+
+The look named the origin fact by the page's own long words ("Boston Logan International Airport", "Chicago O'Hare International Airport"); the job says "Boston" and "Chicago". The N-1 split (`inJob`, src/checkblock.js) asked only whether the page words are in the job, so both rows were read as "not in your job" and held under Suggested, though the person had asked for them. hamr's rule (2026-11-13): "anything not in your original job that code can check goes to Suggested", so a word the job really holds makes the row job-derived, and the check says the job's word. Recorded with the fix in the 2026-11-13 live draft 3 addendum of docs/product/ITEM33-BUILD.md.
