@@ -25,7 +25,7 @@ bareloop finds that path for you. Write your problem in plain language, as steps
 The harness (budget, time, what it may touch) and the judge both sit **outside** the agent loop. The agent can't judge itself. Every run is recorded, so you can audit it and replay it at $0 and see exactly what happened.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/hamr0/bareloop/main/docs/media/panel-walkthrough.gif" alt="The bareloop panel: write a job, the runs list, a passed rubric run, its Result, the Audit checks fold and the signed Job with its check rows, then a repo run ready to merge" width="900">
+  <img src="https://raw.githubusercontent.com/hamr0/bareloop/main/docs/media/panel-walkthrough.gif" alt="The bareloop panel: write a job, the runs list, a rubric run with a fixed try, its Result, the Audit checks fold and the signed Job with its check rows, then a repo run ready to merge" width="900">
 </p>
 
 ## The machine that makes machines
