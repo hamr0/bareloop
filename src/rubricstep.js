@@ -886,11 +886,17 @@ export function listRowName(kind, key, words) {
  * @param {any} closeDecl @param {any[]|null|undefined} jobLines @param {{key: string, words: string[]}[]|null} [ledger] the draft log's final list rows (`readDraftLedger`) @returns {string[]}
  */
 export function ruleNotChecked(closeDecl, jobLines, ledger = null) {
+  return ruleNotCheckedItems(closeDecl, jobLines, ledger).map((i) => i.text);
+}
+
+/** the same lines as {@link ruleNotChecked}, each with who it belongs to (`by`: the row's kind, F-c) @param {any} closeDecl @param {any[]|null|undefined} jobLines @param {{key: string, words: string[]}[]|null} [ledger] @returns {{text: string, by?: 'you'|'agent'|'default'}[]} */
+export function ruleNotCheckedItems(closeDecl, jobLines, ledger = null) {
   return refusedOf(closeDecl).filter((r) => Number.isInteger(r.rule) || r.fromList).map((r) => {
     const text = Number.isInteger(r.rule) ? lineRules((jobLines ?? []).find((/** @type {any} */ l) => isRec(l) && l.n === r.line))[/** @type {number} */ (r.rule) - 1] : (r.label ?? null);
+    const by = r.by ? { by: r.by } : {};
     // a list row that is not a fact or a rule is named by its words, as the Job tab names it (one owner: listRowName)
-    if (!text && r.fromList && r.key) return `line ${r.line}: ${listRowName(r.kind, r.key, ledger?.find((x) => x.key === r.key)?.words)} — ${r.reason}`;
-    return `line ${r.line}: ${text ? `"${text}"` : `rule ${r.rule ?? r.kind}`} — ${r.reason}`;
+    if (!text && r.fromList && r.key) return { text: `line ${r.line}: ${listRowName(r.kind, r.key, ledger?.find((x) => x.key === r.key)?.words)} — ${r.reason}`, ...by };
+    return { text: `line ${r.line}: ${text ? `"${text}"` : `rule ${r.rule ?? r.kind}`} — ${r.reason}`, ...by };
   });
 }
 
@@ -899,14 +905,14 @@ export function ruleNotChecked(closeDecl, jobLines, ledger = null) {
  * fact name); the old `closeDecl.refused` entries a list has no row for (a line-level refusal, a rule the list never saw) are kept, so nothing the older close said is lost. A close with no list
  * reads `refused` alone. Pure.
  * @param {any} closeDecl
- * @returns {{line: number, rule?: number, kind?: string, key?: string, label?: string, reason: string, fromList: boolean}[]}
+ * @returns {{line: number, rule?: number, kind?: string, key?: string, by?: 'you'|'agent'|'default', label?: string, reason: string, fromList: boolean}[]}
  */
 export function refusedOf(closeDecl) {
   const old = (isRec(closeDecl) && Array.isArray(closeDecl.refused) ? closeDecl.refused : []).filter((/** @type {any} */ r) => isRec(r) && Number.isInteger(r.line) && typeof r.reason === 'string');
   const list = isRec(closeDecl) && Array.isArray(closeDecl.list) ? closeDecl.list : null;
   if (list === null) return old.map((/** @type {any} */ r) => ({ line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), reason: r.reason, fromList: false }));
   const rows = list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'not-checked' && Number.isInteger(r.line) && typeof r.reason === 'string' && r.kind !== 'floor').map((/** @type {any} */ r) => ({
-    line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), kind: String(r.kind), key: String(r.key), ...(r.kind === 'fact' ? { label: String(r.key).split('.').slice(2).join('.') } : {}), reason: r.reason, fromList: true,
+    line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), kind: String(r.kind), key: String(r.key), ...(['you', 'agent', 'default'].includes(r.by) ? { by: r.by } : {}), ...(r.kind === 'fact' ? { label: String(r.key).split('.').slice(2).join('.') } : {}), reason: r.reason, fromList: true,
   }));
   const seen = (/** @type {any} */ r) => rows.some((x) => x.line === r.line && x.rule === (Number.isInteger(r.rule) ? r.rule : undefined) && Number.isInteger(r.rule));
   return [...rows, ...old.filter((/** @type {any} */ r) => !seen(r)).map((/** @type {any} */ r) => ({ line: r.line, ...(Number.isInteger(r.rule) ? { rule: r.rule } : {}), reason: r.reason, fromList: false }))];
@@ -968,17 +974,34 @@ export const defaultCitedText = (label) => `every claim is backed by a quote cop
  * Each row says who added the check (`by`): `you` = one of the person's picks, as the signed close's own record (`closeDecl.picks`) names it; `agent` = the drafter's;
  * `default` = code's own (the one list's `$` rows: the cited part written by `defaultCitedText`, and the numbers tie of a text step).
  * @param {any} closeDecl
- * @returns {{line: number, text: string, by: 'agent'|'you'|'default'}[]}
+ * @returns {{line: number, text: string, by: 'agent'|'you'|'default', key?: string}[]}
  */
 export function checksOfClose(closeDecl) {
   const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
   const record = isRec(closeDecl) && Array.isArray(closeDecl.picks) ? closeDecl.picks : [];
+  const list = isRec(closeDecl) && Array.isArray(closeDecl.list) ? closeDecl.list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'built') : [];
+  /** the tag of a fact by its row's kind (hamr 2026-11-13, F-c): a fact a `~` rule built is [you], a `!` row's [agent]; `facts` on the signed row names what it built. No such row (an older close): the old reading */
+  const factBy = (/** @type {number} */ line, /** @type {string} */ name) => {
+    const rows = list.filter((/** @type {any} */ r) => r.line === line && Array.isArray(r.facts) && r.facts.includes(name));
+    const r = rows.find((/** @type {any} */ x) => x.by === 'you') ?? rows[0];
+    return r ? { by: /** @type {'agent'|'you'|'default'} */ (r.by), key: String(r.key) } : null;
+  };
+  const countBy = (/** @type {number} */ line, /** @type {number} */ pi) => {
+    const r = list.find((/** @type {any} */ x) => x.line === line && x.kind === 'count' && isRec(x.part) && x.part.part === pi);
+    return r ? { by: /** @type {'agent'|'you'|'default'} */ (r.by), key: String(r.key) } : null;
+  };
   return stages.flatMap((/** @type {any} */ st) => (isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts)
-    ? st.params.parts.filter((/** @type {any} */ p) => isRec(p) && (p.class === 'countable' || p.class === 'fact')).flatMap((/** @type {any} */ p) => {
+    ? st.params.parts.flatMap((/** @type {any} */ p, /** @type {number} */ pi) => {
+      if (!isRec(p) || (p.class !== 'countable' && p.class !== 'fact')) return [];
       /** @type {'agent'|'you'|'default'} */
       const by = p.check === 'numbersFromFacts' || (p.check === 'cited' && p.text === defaultCitedText(p.source)) ? 'default' : record.some((/** @type {any} */ x) => isRec(x) && x.line === st.params.step && sameJson(x.part, p)) ? 'you' : 'agent';
       // a fact part is one plan row per fact (and one for its count): the person signs the rows, the close runs the same list
-      return (p.class === 'fact' ? factRows(p) : [partSentence(p)]).map((/** @type {string} */ text) => ({ line: st.params.step, text, by }));
+      if (p.class !== 'fact') return [{ line: st.params.step, text: partSentence(p), by }];
+      const facts = Array.isArray(p.facts) ? p.facts : [];
+      return factRows(p).map((/** @type {string} */ text, /** @type {number} */ i) => {
+        const own = i < facts.length ? factBy(st.params.step, facts[i]?.name) : countBy(st.params.step, pi);
+        return { line: st.params.step, text, by: own?.by ?? by, ...(own ? { key: own.key } : {}) };
+      });
     })
     : []));
 }
@@ -999,13 +1022,18 @@ export function signedFactNames(closeDecl) {
  * steps' "you judge it at Accept" lines and the refusals (`ruleNotChecked`, which reads the list's not-checked rows when the close carries the list). Nothing the confirm turn said is merged
  * in: a rubric confirm turn plans the goal only, so a check can never be shown and then silently dropped (run mv5bk400).
  * @param {{closeDecl: any, jobLines?: any[]|null, ledger?: {key: string, words: string[]}[]|null}} o `jobLines` the person's numbered lines, so a ~ rule reads in the person's own words; `ledger` the draft log's final list rows, so a phrase row is named by its words
- * @returns {{checkItems: {text: string, fromLine: number[], by: 'agent'|'you'|'default'}[], notChecked: string[]}}
+ * @returns {{checkItems: {text: string, fromLine: number[], by: 'agent'|'you'|'default', key?: string}[], notChecked: string[], notCheckedBy: Record<string, 'you'|'agent'|'default'>}}
  */
 export function cardOfClose({ closeDecl, jobLines = null, ledger = null }) {
   const notes = isRec(closeDecl) && Array.isArray(closeDecl.notes) ? closeDecl.notes.filter((/** @type {any} */ n) => typeof n === 'string' && n) : [];
+  const items = ruleNotCheckedItems(closeDecl, jobLines, ledger);
+  /** @type {Record<string, 'you'|'agent'|'default'>} */
+  const notCheckedBy = {};
+  for (const i of items) if (i.by) notCheckedBy[i.text] = i.by;
   return {
-    checkItems: checksOfClose(closeDecl).map((c) => ({ text: c.text, fromLine: [c.line], by: c.by })),
-    notChecked: [...new Set([...notes, ...proseNotChecked(closeDecl), ...ruleNotChecked(closeDecl, jobLines, ledger)])],
+    checkItems: checksOfClose(closeDecl).map((c) => ({ text: c.text, fromLine: [c.line], by: c.by, ...(c.key ? { key: c.key } : {}) })),
+    notChecked: [...new Set([...notes, ...proseNotChecked(closeDecl), ...items.map((i) => i.text)])],
+    notCheckedBy,
   };
 }
 

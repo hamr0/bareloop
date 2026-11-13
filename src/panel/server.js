@@ -1755,6 +1755,7 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
     /** @type {any} */
     const out = {
       notChecked: tiedToLine(n),
+      ...(plan.notCheckedBy ? { notCheckedBy: plan.notCheckedBy } : {}),
       n, text: jl && typeof jl.text === 'string' ? jl.text : '', rules: jl ? lineRules(jl) : [], kind: fp ? 'facts' : 'text', passed,
       file: di ? { i: di.i, state: read[di.i].state, words: read[di.i].state === 'gone' ? RESULT_FILE_GONE : (read[di.i].state === 'changed' ? RESULT_FILE_CHANGED : null) } : null,
     };
@@ -1826,6 +1827,7 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
     pages,
     pageNote: pages.length ? RESULT_PAGE_MAY_CHANGE : null,
     notChecked: bottom,
+    ...(plan.notCheckedBy ? { notCheckedBy: plan.notCheckedBy } : {}),
     readNotes: plan.readNotes,
     // the door's words, from the one table (src/panel/status.js DOOR_WORDS); the page types none of them
     door: { head: DOOR_WORDS.waiting.head, ask: RESULT_DOOR_ASK },

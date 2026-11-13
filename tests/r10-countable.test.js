@@ -95,7 +95,7 @@ async function door(look) {
   return { asked, seen };
 }
 for (const k of ['d4', 'd5']) {
-  test(`the door on the real ${k} look: the person is asked "I propose" for both rules, no "can't check", and the prepared plan carries the fact [agent] plus both picks [you picked]`, async () => {
+  test(`the door on the real ${k} look: the person is asked "I propose" for both rules, no "can't check", and the prepared plan carries the fact [agent] plus both picks [you]`, async () => {
     const look = await lookOf(k);
     const { asked, seen } = await door(look);
     assert.deepEqual(asked.flat().map((q) => [q.ask, q.line, q.rule]), [['check', 1, 1], ['check', 1, 2]], 'both proposals, no look ask');

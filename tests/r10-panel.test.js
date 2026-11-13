@@ -49,7 +49,7 @@ test('the panel: a proposal and a can\'t-check are asked in fwd\'s words; agree 
   assert.match(said(), /Line 1, guardrail "be nice": I can't check this\. Your own words, or Not checked\?/);
   session.send('drop it');
   assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'), 'then the plan is confirmed as usual');
-  // the plan menu (before signing) draws the agreed pick once, as a `[you picked]` row
+  // the plan menu (before signing) draws the agreed pick once, as a `[you]` row
   const menuPlan = session.state.messages.filter((/** @type {any} */ m) => m.kind === 'plan').at(-1).plan;
   assert.deepEqual(menuPlan.lines[0].picked, ['at most 80 words']);
   assert.equal(session.signPrepare().ok, true);
@@ -64,7 +64,7 @@ test('the panel: a proposal and a can\'t-check are asked in fwd\'s words; agree 
   assert.deepEqual(picks[0].picked, { rule: 'maxWords', value: 80 });
 });
 
-test('the prepared plan card (through the real drafting loop) has ONE row for the pick (a `[you picked]` check row, no separate "You picked" row), and the unpicked rule under Not checked', async () => {
+test('the prepared plan card (through the real drafting loop) has ONE row for the pick (a `[you]` check row, no separate "You picked" row), and the unpicked rule under Not checked', async () => {
   const file = join(tmp(), 'CHANGELOG.md');
   copyFileSync(join(HERE, '..', 'CHANGELOG.md'), file);
   const session = createSession({

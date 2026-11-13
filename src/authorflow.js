@@ -2362,7 +2362,7 @@ export async function runConfirmTurn({
     // the rows of the check block, drawn by the same readers as the signed card (hamr 2026-11-12: the confirm card showed no row the block had built); shown only, never accepted
     const shown = card === null ? {} : { checkItems: card.checkItems, checks: card.checkItems.map((c) => c.text) };
     const plan = {
-      ...r.plan, ...shown, protections, notChecked: card === null ? notChecked : [...new Set([...notChecked, ...card.notChecked])],
+      ...r.plan, ...shown, protections, notChecked: card === null ? notChecked : [...new Set([...notChecked, ...card.notChecked])], ...(card?.notCheckedBy ? { notCheckedBy: card.notCheckedBy } : {}),
       signedFacts: (Array.isArray(facts?.look?.facts) ? facts.look.facts : []).map((/** @type {any} */ f) => String(f?.name)),
     };
     onPhase('confirm-done', { round, plan });

@@ -688,7 +688,7 @@
   .jp .sub{color:var(--text-dim);padding-left:30px;}
   .jp .fold{padding-left:30px;color:var(--text);}
   /* who added a check: the drafter's [agent] or the person's own [you picked] (fwdloop's `[added]` marker, in the dim of a ~ row) */
-  .jp .by,.draft-checks-row .by{color:var(--text-dim);white-space:nowrap;}
+  .jp .by,.draft-checks-row .by,.job-card .by{color:var(--text-dim);white-space:nowrap;}
   .jp details.fold{padding-left:0;margin:6px 0;}
   .jp details>summary{cursor:pointer;list-style:none;}
   .jp details>summary::-webkit-details-marker{display:none;}
@@ -3654,7 +3654,7 @@
     // the checks this draft ended with, each marked who added it: the drafter ([agent]) or the person's pick ([you picked])
     (part.draftChecks || []).forEach(function(c){
       rows += '<tr class="draft-checks-row" data-testid="drafting-check"><td colspan="5" style="overflow-wrap:anywhere">line ' + escapeXml(String(c.line)) + " \u00B7 " + escapeXml(c.text) +
-        (c.by === "you" ? ' <span class="by" data-by="you">[you picked]</span>' : c.by === "agent" ? ' <span class="by" data-by="agent">[agent]</span>' : "") + "</td></tr>";
+        (c.by === "you" ? ' <span class="by" data-by="you">[you]</span>' : c.by === "agent" ? ' <span class="by" data-by="agent">[agent]</span>' : "") + "</td></tr>";
     });
     (part.draftSteps || []).forEach(function(st){
       var wall = st.wallMs === null || st.wallMs === undefined ? "–" : duration(st.wallMs);
@@ -4098,12 +4098,14 @@
   // ---- the ONE job plan drawing (P7): used by the chat's plan bubble AND the Job tab. `plan` is the server's model
   // (src/panel/jobplan.js): numbered lines with their rule, the checks under the line each serves (folded), the AI's own
   // "Not checked", the always-on guards. Only the marker is blue (--plan). Returns HTML (every text is escaped).
+  // the tag of a row by its kind (F-c, code-owned): `~` rows [you], `!` rows [agent], `$` rows [default]; one spelling for the confirm card, the signed card, the Job tab and the Result tab
+  function byTagOf(by){ return by === "you" ? ' <span class="by" data-testid="plan-by" data-by="you">[you]</span>' : by === "agent" ? ' <span class="by" data-testid="plan-by" data-by="agent">[agent]</span>' : by === "default" ? ' <span class="by" data-testid="plan-by" data-by="default">[default]</span>' : ""; }
   function renderJobPlan(plan){
     // the legend promises \u203A checks, so it shows only when the plan has one to show (the goal-only confirm card has none yet)
     var hasCheck = (plan.loose || []).length > 0 || (plan.lines || []).some(function(l){ return (l.checks || []).length || (l.picked || []).length || (l.always || []).length; });
     var h = '<div class="jp" data-testid="job-plan">' + (plan.older ? '<div class="older" data-testid="plan-older">older job \u2014 numbered lines were not saved</div>' : "") + (hasCheck ? '<div class="jp-legend">Done when every <b>\u203A</b> check passes</div>' : "") +
       (plan.goal && !plan.older ? '<div class="jp-sum" data-testid="plan-goal"><span class="lbl">AI\'s summary</span>' + escapeXml(plan.goal) + "</div>" : "");
-    var byTag = function(by){ return by === "you" ? ' <span class="by" data-testid="plan-by" data-by="you">[you picked]</span>' : by === "agent" ? ' <span class="by" data-testid="plan-by" data-by="agent">[agent]</span>' : by === "default" ? ' <span class="by" data-testid="plan-by" data-by="default">[default]</span>' : ""; };
+    var byTag = byTagOf;
     var checkLine = function(c){
       return '<div class="fold" data-testid="plan-check"><span class="mk">\u203A</span> check \u00B7 ' + escapeXml(c.name) + (c.cls ? " \u00B7 " + escapeXml(c.cls) : "") + byTag(c.by) + "</div>";
     };
@@ -4114,7 +4116,7 @@
       (l.picked || []).forEach(function(p){ h += '<div class="fold" data-testid="plan-picked"><span class="mk">\u203A</span> check \u00B7 ' + escapeXml(p) + byTag("you") + "</div>"; });
       (l.checks || []).forEach(function(c){ h += checkLine(c); });
       (l.always || []).forEach(function(g){ h += '<div class="fold" data-testid="plan-always"><span class="mk">\u203A</span> check \u00B7 always-on: ' + escapeXml(g) + "</div>"; });
-      (l.refused || []).forEach(function(r){ h += '<div class="fold" data-testid="plan-refused"><span class="mk">\u203A</span> not checked \u00B7 ' + escapeXml(r) + "</div>"; });
+      (l.refused || []).forEach(function(r){ h += '<div class="fold" data-testid="plan-refused"><span class="mk">\u203A</span> not checked \u00B7 ' + escapeXml(r) + byTag((plan.notCheckedBy || {})[r]) + "</div>"; });
       h += "</div>";
     });
     if((plan.loose || []).length){
@@ -4123,9 +4125,9 @@
     var fold = function(title, items, testid){
       if(!items || !items.length) return "";
       return '<details class="fold" data-testid="' + testid + '"><summary>' + escapeXml(title) + " \u00B7 " + items.length + "</summary><ul>" +
-        items.map(function(x){ return "<li>" + escapeXml(x) + "</li>"; }).join("") + "</ul></details>";
+        items.map(function(x){ return "<li>" + escapeXml(x) + byTag((plan.notCheckedBy || {})[x]) + "</li>"; }).join("") + "</ul></details>";
     };
-    h += fold("Not checked (the AI's own reading)", plan.notChecked, "plan-notchecked");
+    h += fold("Not checked", plan.notChecked, "plan-notchecked");
     h += fold("How the page was read", plan.readNotes, "plan-readnotes");
     h += fold("Always checked", plan.alwaysOn, "plan-alwayson");
     if(plan.ticketFilter) h += '<div class="fold" data-testid="plan-ticketfilter"><span class="mk">\u203A</span> ticket filter \u00B7 ' + escapeXml(plan.ticketFilter) + "</div>";
@@ -4291,10 +4293,10 @@
     return h;
   }
   // a list, one row per item (the Job tab lists the same items one per row)
-  function resultNotChecked(label, items, testid){
+  function resultNotChecked(label, items, testid, by){
     if(!items || !items.length) return "";
     return resultField(label, '<div class="ro-value" data-testid="' + testid + '"><ul style="margin:0;padding-left:18px">' +
-      items.map(function(t){ return '<li>' + escapeXml(t) + '</li>'; }).join("") + '</ul></div>');
+      items.map(function(t){ return '<li>' + escapeXml(t) + (by && typeof byTagOf === "function" ? byTagOf(by[t]) : "") + '</li>'; }).join("") + '</ul></div>');
   }
   // the web page a result was read from: a link (http/https only, new tab) and the server's words that the page may have moved on
   function resultPageLink(url, note, testid){
@@ -4307,7 +4309,7 @@
     return '<div class="job-card" data-testid="result-line"><h4>Line ' + escapeXml(String(line.n)) + '</h4>' + resultLineBox(line) +
       (own ? resultPageLink(line.page, note, "result-page-line") : "") +
       (line.kind === "facts" ? resultFactsLine(line) : resultTextLine(line)) +
-      resultNotChecked("Not checked", line.notChecked, "result-line-notchecked") + '</div>';
+      resultNotChecked("Not checked", line.notChecked, "result-line-notchecked", line.notCheckedBy) + '</div>';
   }
   // ---- the generic Result tab (R7b item 4): every ended non-rubric run. The server sends the facts and the words (`kind: "generic"`); the page only draws.
   // The check words and numbers are the Run/Audit tabs' own owners (stageQuestionText, stageNumberText); the state word is the status table's (the server sends it).
@@ -4604,7 +4606,7 @@
       h += '<div class="rs-warn" data-testid="result-gap">The check said: ' + escapeXml(data.gap.line) + (data.gap.moreText ? ' ' + escapeXml(data.gap.moreText) : "") + '</div>';
     }
     if((data.notChecked || []).length){
-      h += '<div class="job-card"><h4>Not checked</h4>' + resultNotChecked("Not checked (the AI's own reading)", data.notChecked, "result-notchecked") + '</div>';
+      h += '<div class="job-card"><h4>Not checked</h4>' + resultNotChecked("Not checked", data.notChecked, "result-notchecked", data.notCheckedBy) + '</div>';
     }
     if((data.readNotes || []).length){
       h += '<div class="job-card"><h4>How the page was read</h4>' + resultNotChecked("How the page was read \u00b7 " + data.readNotes.length, data.readNotes, "result-readnotes") + '</div>';

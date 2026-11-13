@@ -239,7 +239,7 @@ test('no pickGenerate: nothing is suggested or asked (a test seam) and the draft
   assert.equal(seen.block.rows.some((r) => r.pick), false, 'and no picks');
 });
 
-test('the plan card: a pick is one `[you picked]` check row under its line (planFromConfirm), in the one table\'s plain words', async () => {
+test('the plan card: a pick is one `[you]` check row under its line (planFromConfirm), in the one table\'s plain words', async () => {
   const { planFromConfirm } = await import('../src/panel/jobplan.js');
   const plan = planFromConfirm([{ n: 1, text: 'Summarise', rule: 'under 80 words', rules: ['under 80 words'] }], { checkItems: [], picked: [{ line: 1, text: 'at most 80 words' }] });
   assert.deepEqual(plan.lines[0].picked, ['at most 80 words']);

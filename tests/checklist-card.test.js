@@ -1,4 +1,4 @@
-// A11: the card tags a check code added itself `[default]` (the `$` rows of the one list), beside `[you picked]` and `[agent]`; the plan bubble and the Job tab share the one drawing.
+// A11: the card tags a check code added itself `[default]` (the `$` rows of the one list), beside `[you]` and `[agent]`; the plan bubble and the Job tab share the one drawing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -44,7 +44,7 @@ function fnSrc(name) {
 }
 
 test('A11 renderJobPlan draws [default] with the same markup as the other two marks', () => {
-  const { renderJobPlan } = new Function(`${fnSrc('escapeXml')}\n${fnSrc('renderJobPlan')}\nreturn { renderJobPlan };`)();
+  const { renderJobPlan } = new Function(`${fnSrc('escapeXml')}\n${fnSrc('byTagOf')}\n${fnSrc('renderJobPlan')}\nreturn { renderJobPlan };`)();
   const html = renderJobPlan(planFromSpec(spec));
   assert.match(html, /<span class="by" data-testid="plan-by" data-by="default">\[default\]<\/span>/);
   assert.equal((html.match(/\[default\]/g) ?? []).length, 2);

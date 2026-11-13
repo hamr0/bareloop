@@ -1,4 +1,4 @@
-// R10 keep-both, labels: every list of a line's checks says who added each one - the drafter's `[agent]`, the person's own pick `[you picked]` (fwdloop's `[added]`
+// R10 keep-both, labels: every list of a line's checks says who added each one - the drafter's `[agent]`, the person's own pick `[you]` (fwdloop's `[added]`
 // marker, matched in kind). Surfaces: the signed close's own reader (checksOfClose), the Job tab and the plan card (one model, jobplan.js, one drawing, renderJobPlan),
 // and the Audit's Draft group (the draft log's `draft-checks` line). The real refused declaration of the paid R10 drafts, put through the real draft gate.
 import { test } from 'node:test';
@@ -70,25 +70,25 @@ function fnSrc(name) {
   }
   return PAGE.slice(start, i + 1);
 }
-const page = () => new Function(`${fnSrc('escapeXml')}\n${fnSrc('renderJobPlan')}\n${fnSrc('draftingTableHtml')}\n${fnSrc('draftingMoneyText')}\n${fnSrc('draftingCallCost')}\n${fnSrc('panelMoney')}\n${fnSrc('duration')}\nreturn { renderJobPlan, draftingTableHtml };`)();
+const page = () => new Function(`${fnSrc('escapeXml')}\n${fnSrc('byTagOf')}\n${fnSrc('renderJobPlan')}\n${fnSrc('draftingTableHtml')}\n${fnSrc('draftingMoneyText')}\n${fnSrc('draftingCallCost')}\n${fnSrc('panelMoney')}\n${fnSrc('duration')}\nreturn { renderJobPlan, draftingTableHtml };`)();
 
 test('renderJobPlan draws the mark on a check row, one markup for the plan card and the Job tab', () => {
   const { renderJobPlan } = page();
   const html = renderJobPlan(planFromSpec(spec));
-  assert.match(html, /<div class="fold" data-testid="plan-check"><span class="mk">›<\/span> check · the text is at most 80 words · machine check <span class="by" data-testid="plan-by" data-by="you">\[you picked\]<\/span><\/div>/);
+  assert.match(html, /<div class="fold" data-testid="plan-check"><span class="mk">›<\/span> check · the text is at most 80 words · machine check <span class="by" data-testid="plan-by" data-by="you">\[you\]<\/span><\/div>/);
   assert.match(html, /data-by="agent">\[agent\]<\/span>/);
-  assert.equal((html.match(/\[you picked\]/g) ?? []).length, 2);
+  assert.equal((html.match(/\[you\]/g) ?? []).length, 2);
   // the confirm turn: [agent] on the drafter's check, the pick's own row unchanged
   const conf = renderJobPlan(planFromConfirm(jobLines, { checkItems: [{ text: 'the heading is quoted', fromLine: [1] }], picked: [{ line: 1, text: 'at most 80 words' }] }));
   assert.match(conf, /the heading is quoted <span class="by" data-testid="plan-by" data-by="agent">\[agent\]<\/span>/);
-  assert.match(conf, /data-testid="plan-picked"><span class="mk">›<\/span> check · at most 80 words <span class="by" data-testid="plan-by" data-by="you">\[you picked\]<\/span><\/div>/);
+  assert.match(conf, /data-testid="plan-picked"><span class="mk">›<\/span> check · at most 80 words <span class="by" data-testid="plan-by" data-by="you">\[you\]<\/span><\/div>/);
   assert.doesNotMatch(conf, /You picked/);
   // an always-on guard and a not-known check carry no mark
   assert.doesNotMatch(renderJobPlan({ lines: [{ n: 1, text: 'x', rule: '', rules: [], checks: [{ name: 'c', cls: null }], refused: [], always: ['g'] }], loose: [], notChecked: [], readNotes: [], alwaysOn: [], older: false }), /class="by"/);
-  assert.match(PAGE, /\.jp \.by,\.draft-checks-row \.by\{color:var\(--text-dim\)/);
+  assert.match(PAGE, /\.jp \.by,\.draft-checks-row \.by,\.job-card \.by\{color:var\(--text-dim\)/);
 });
 
-test('Audit Draft group: the draft log\'s draft-checks line gives one row per check, [agent] or [you picked], after the revise label', (t) => {
+test('Audit Draft group: the draft log\'s draft-checks line gives one row per check, [agent] or [you], after the revise label', (t) => {
   const root = mkdtempSync(join(tmpdir(), 'r10-labels-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const sess = join(root, 'panel-sessions', 's1');
@@ -111,7 +111,7 @@ test('Audit Draft group: the draft log\'s draft-checks line gives one row per ch
   assert.match(trs[0], /drafting-kind/);
   const checkRows = trs.filter((x) => x.includes('drafting-check'));
   assert.equal(checkRows.length, rows.length);
-  assert.match(checkRows.at(-1), /line 1 · the text is at most 80 words <span class="by" data-by="you">\[you picked\]<\/span>/);
+  assert.match(checkRows.at(-1), /line 1 · the text is at most 80 words <span class="by" data-by="you">\[you\]<\/span>/);
   assert.match(checkRows[0], /data-by="agent">\[agent\]<\/span>/);
   assert.equal(trs.indexOf(checkRows[0]), 1, 'right after the label');
   assert.deepEqual(readDraftChecks(join(root, 'nothing-here')), []);
