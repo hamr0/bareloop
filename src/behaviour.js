@@ -123,6 +123,20 @@ export function runBehaviour(events, { runId } = {}) {
 }
 
 /**
+ * How many write/edit attempts the gate DENIED (they fell outside the write scope), from gate-audit records alone. One write-class test (action `type`
+ * write|edit, as `workerWrites`' reader in src/planrun.js uses), deny-decision only: an allowed write is never counted. Pure.
+ * @param {Array<{action?: {type?: string}, decision?: string|null}>} events
+ * @returns {number}
+ */
+export function writesBlocked(events) {
+  let n = 0;
+  for (const e of Array.isArray(events) ? events : []) {
+    if (e?.decision === 'deny' && (e.action?.type === 'write' || e.action?.type === 'edit')) n += 1;
+  }
+  return n;
+}
+
+/**
  * Render a {@link runBehaviour} summary as the agreed printable block
  * (2–4 short lines). A zero-call run formats plainly ("0 tool calls") rather
  * than a NaN-laced percentage — an empty run is a complete, reportable

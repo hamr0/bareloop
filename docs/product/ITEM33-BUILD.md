@@ -4389,3 +4389,5 @@ Job "List 3 flights from Boston to Chicago" with `~ under $450` and `~ departure
 4. Undo Drop: a Drop on an `[agent]` row moves it to Suggested with Add (it was proved buildable), instead of vanishing; Add from there puts it back. Both through the existing $0 row-edit path and reconcile; a Revise carries the state (the existing Drop/Add carry).
 
 Seen, NOT fixed (record only): after the drop, a new suggestion "must say 12 results returned" (a page status line) appeared under Suggested. It is legal under the rules and off unless added.
+
+2026-11-13 (orchestrator): hamr ruled A on the Audit write fence row: it shows the gate's own record of the run (`held · N writes blocked`, N = write/edit attempts the gate denied; a missing gate record says so, never "held"). Q2 (the drafting-table duplicate check list removed) and Q3 (the Checks fold starts closed) were accepted by the orchestrator.

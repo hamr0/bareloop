@@ -47,7 +47,7 @@ import {
 import { summarizeForAllLine, auditWindowsOf, replayRun } from '../replay.js';
 import { legsOf, legsWallMs, stopFilePath, capKindOf } from '../legs.js';
 import { chainSpend } from '../ledger.js';
-import { runBehaviour } from '../behaviour.js';
+import { runBehaviour, writesBlocked } from '../behaviour.js';
 import { SPEND_RECORD_TYPES, floorsFromRecords } from '../ledger.js';
 import { jobSpecHash, workflowKey, flowTypeOf, FLOW_TYPE_LABELS } from '../job.js';
 import { attachMemos, learningsHanded, attachLearnings } from './handed.js';
@@ -2426,11 +2426,22 @@ function resolveAuditPathsForRow(row, spineRecords) {
  * @returns {ReturnType<typeof runBehaviour>|null}
  */
 function scopedBehaviour(row, spineRecords) {
+  const windowed = scopedAuditRows(row, spineRecords);
+  return windowed === null ? null : runBehaviour(windowed);
+}
+
+/**
+ * The gate-audit rows inside this run's own ts window(s), the ONE scoping behind the Run tab's tools summary and the Audit's write-fence row; `null` when no
+ * gate-audit sidecar was found for the run (never an empty list posing as a clean record).
+ * @param {{spine: string, patient: string|null}} row
+ * @param {any[]} spineRecords
+ * @returns {any[]|null}
+ */
+function scopedAuditRows(row, spineRecords) {
   const auditPaths = resolveAuditPathsForRow(row, spineRecords);
   if (auditPaths.length === 0) return null;
   const windows = runAuditWindows(spineRecords);
-  const windowed = auditPaths.flatMap((ap) => parseJsonl(ap).records).filter((r) => r && typeof r === 'object' && typeof r.ts === 'string' && inAnyWindow(r.ts, windows));
-  return runBehaviour(windowed);
+  return auditPaths.flatMap((ap) => parseJsonl(ap).records).filter((r) => r && typeof r === 'object' && typeof r.ts === 'string' && inAnyWindow(r.ts, windows));
 }
 
 /**
@@ -3402,7 +3413,7 @@ function successFromSpec(spec) {
 /**
  * The Audit's check list (hamr ruling A): the card's own sections (planFromSpec for the checks and Not checked, confirmProtections for Always checked) with each row's
  * result read from the run's recorded stage verdicts ({@link checksOf}), never re-derived. `null` for a run with no signed spec (nothing to list).
- * @param {{spine: string}} row @param {any[]} records @param {any} spec @param {{ home?: string, sessionsRoot?: string }} opts
+ * @param {{spine: string, patient: string|null}} row @param {any[]} records @param {any} spec @param {{ home?: string, sessionsRoot?: string }} opts
  */
 function auditChecksFor(row, records, spec, opts) {
   if (!spec || typeof spec !== 'object') return null;
@@ -3420,7 +3431,8 @@ function auditChecksFor(row, records, spec, opts) {
   }
   const got = checksOf(records, spec);
   const results = got ? new Map(got.stages.map((/** @type {any} */ x) => [x.name, x.passed === true])) : null;
-  return auditChecksOf(plan, guards, results);
+  const rows = scopedAuditRows(row, records);
+  return auditChecksOf(plan, guards, results, rows === null ? null : writesBlocked(rows));
 }
 
 /**

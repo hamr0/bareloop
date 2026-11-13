@@ -19,7 +19,7 @@ import { checksOfClose, signedFactNames, proseNotChecked, lineRules, confirmedGo
 
 /** `by` = who added the check: the drafter (`agent`) or the person's own pick (`you`); absent = code's own (an always-on guard, a number tie) or not known */
 /** `stage` = the signed close stage the row belongs to (its recorded verdict is the row's result in the Audit) */
-/** @typedef {{text: string, by: 'agent'|'you'|'default'|null, result: 'passed'|'failed'|'none'|'not-checked'}} AuditRow */
+/** @typedef {{text: string, by: 'agent'|'you'|'default'|null, result: 'passed'|'failed'|'none'|'not-checked'|'held'|'record-missing', word?: string}} AuditRow */
 /** @typedef {{name: string, cls: 'machine check'|'judge'|null, by?: 'agent'|'you'|'default'|null, key?: string, stage?: string}} PlanCheck */
 /** @typedef {{n: number, text: string, rule: string, rules: string[], checks: PlanCheck[], refused: string[], always?: string[], picked?: string[]}} PlanLine */
 /** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], readNotes: string[], alwaysOn: string[], older: boolean, goal?: string, ticketFilter?: string, notCheckedBy?: Record<string, 'you'|'agent'|'default'>, suggested?: {key: string, line: number, text: string}[], editable?: boolean}} JobPlan */
@@ -176,10 +176,12 @@ export const AUDIT_NO_RESULT = 'no result recorded';
  * The Audit's check list (hamr ruling A, 2026-11-13): the SAME sections as the card, read from the SAME model (`plan` = {@link planFromSpec}'s, plus `guards` = the
  * code-owned protections the confirm card shows), each row with its tag and, after the run, its result. A check's result is the recorded verdict of its own signed stage
  * (`results`: stage name to passed), never re-derived; a row no verdict was recorded for says so. A Not checked row's result is "not checked" (its reason is in its words).
- * @param {JobPlan} plan @param {string[]} guards @param {Map<string, boolean>|null} results
+ * The write fence is enforced per write by the gate, so its row reads the gate's own record of THIS run (hamr ruling A, 2026-11-13): `blocked` = the write/edit attempts the gate denied
+ * (`held · N writes blocked`), or `null` when the run's gate record is missing (said in plain words, never "held").
+ * @param {JobPlan} plan @param {string[]} guards @param {Map<string, boolean>|null} results @param {number|null} [blocked]
  * @returns {{checks: AuditRow[], notChecked: AuditRow[], always: AuditRow[]}}
  */
-export function auditChecksOf(plan, guards, results) {
+export function auditChecksOf(plan, guards, results, blocked = null) {
   /** @param {string|undefined|null} stage @returns {'passed'|'failed'|'none'} */
   const verdict = (stage) => (!stage || !results || !results.has(stage) ? 'none' : (results.get(stage) ? 'passed' : 'failed'));
   /** @type {AuditRow[]} */
@@ -195,8 +197,13 @@ export function auditChecksOf(plan, guards, results) {
   const always = names.map((g) => {
     const head = g.split(' — ')[0];
     const file = /^line (\d+) file$/.exec(head);
-    // the write fence is held by the gate, which records no verdict of its own: it says so rather than borrowing another stage's
+    // the write fence is held by the gate (the row reads the gate's own record, above), never another stage's verdict
     const stage = file ? `line-${file[1]}` : (head === 'write fence' ? null : head);
+    if (head === 'write fence') {
+      return blocked === null
+        ? { text: g, by: /** @type {'default'} */ ('default'), result: /** @type {'record-missing'} */ ('record-missing'), word: "the gate's record for this run is missing" }
+        : { text: g, by: /** @type {'default'} */ ('default'), result: /** @type {'held'} */ ('held'), word: `held · ${blocked} ${blocked === 1 ? 'write' : 'writes'} blocked` };
+    }
     return { text: g, by: /** @type {'default'} */ ('default'), result: verdict(stage) };
   });
   return { checks, notChecked, always };

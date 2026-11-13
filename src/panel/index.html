@@ -3845,7 +3845,7 @@
   }
   // one row of the Audit's check list: its words, its tag, its result in the one state sign+word markup (a row with no recorded verdict says so, never "passed")
   function auditCheckRowHtml(r){
-    var res = r.result === "passed" ? ["green", "passed"] : r.result === "failed" ? ["red", "failed"] : r.result === "not-checked" ? ["grey", "not checked"] : ["grey", "no result recorded"];
+    var res = r.result === "held" ? ["green", r.word || "held"] : r.result === "record-missing" ? ["grey", r.word || "the gate's record for this run is missing"] : r.result === "passed" ? ["green", "passed"] : r.result === "failed" ? ["red", "failed"] : r.result === "not-checked" ? ["grey", "not checked"] : ["grey", "no result recorded"];
     return '<div class="audit-check-row" data-testid="audit-check-row" data-result="' + escapeXml(r.result) + '" style="overflow-wrap:anywhere">' + escapeXml(r.text) + byTagOf(r.by) + " " + stateDotHTML(res[0], res[1], "audit-check-state") + "</div>";
   }
   function auditChecksEl(ac){
@@ -3853,7 +3853,7 @@
     wrap.className = "audit-part";
     wrap.setAttribute("data-testid", "audit-checks-group");
     var all = (ac.checks || []).concat(ac.always || []);
-    var nPass = all.filter(function(r){ return r.result === "passed"; }).length;
+    var nPass = all.filter(function(r){ return r.result === "passed" || r.result === "held"; }).length;
     var nFail = all.filter(function(r){ return r.result === "failed"; }).length;
     var head = "Checks &middot; " + nPass + " passed" + (nFail ? " &middot; " + nFail + " failed" : "") + ((ac.notChecked || []).length ? " &middot; " + ac.notChecked.length + " not checked" : "");
     var btn = document.createElement("button");
