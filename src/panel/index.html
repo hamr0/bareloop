@@ -692,9 +692,9 @@
   /* the confirm card's Drop / Add: wraps with its row, a comfortable touch target, no horizontal scroll at phone width */
   .jp .jp-btn{margin:2px 0 2px 8px;padding:4px 12px;min-height:32px;font-size:inherit;}
   .jp .fold{overflow-wrap:anywhere;}
-  .jp-sug .lbl{display:block;margin-top:6px;}
+  .jp-sug .lbl{display:block;margin-top:6px;font-weight:700;}
   .jp details.fold{padding-left:0;margin:6px 0;}
-  .jp details>summary{cursor:pointer;list-style:none;}
+  .jp details>summary{cursor:pointer;list-style:none;font-weight:700;}
   .jp details>summary::-webkit-details-marker{display:none;}
   .jp details>summary::before{content:"\203A";color:var(--plan);font-weight:700;margin-right:6px;}
   .jp details[open]>summary::before{content:"\2304";}
@@ -4124,7 +4124,7 @@
       (l.rules && l.rules.length ? l.rules : (l.rule ? [l.rule] : [])).forEach(function(r){ h += '<div class="sub">~ ' + escapeXml(r) + "</div>"; });
       (l.picked || []).forEach(function(p){ h += '<div class="fold" data-testid="plan-picked"><span class="mk">\u203A</span> check \u00B7 ' + escapeXml(p) + byTag("you") + "</div>"; });
       (l.checks || []).forEach(function(c){ h += checkLine(c); });
-      (l.always || []).forEach(function(g){ h += '<div class="fold" data-testid="plan-always"><span class="mk">\u203A</span> check \u00B7 always-on: ' + escapeXml(g) + "</div>"; });
+      (l.always || []).forEach(function(g){ h += '<div class="fold" data-testid="plan-always"><span class="mk">\u203A</span> check \u00B7 always-on: ' + escapeXml(g) + byTag("default") + "</div>"; });
       (l.refused || []).forEach(function(r){ h += '<div class="fold" data-testid="plan-refused"><span class="mk">\u203A</span> not checked \u00B7 ' + escapeXml(r) + byTag((plan.notCheckedBy || {})[r]) + "</div>"; });
       h += "</div>";
     });
@@ -4134,17 +4134,17 @@
     // N-1: checks the agent suggests that are NOT in the job. Code has already proved each builds; none is checked unless the person adds it
     if((plan.suggested || []).length){
       h += '<div class="jl jp-sug" data-testid="plan-suggested"><span class="num"></span><span class="lbl">Suggested \u00B7 not in your job, not checked unless you add it</span>' + plan.suggested.map(function(x){
-        return '<div class="fold" data-testid="plan-suggest-row"><span class="mk">\u203A</span> line ' + escapeXml(String(x.line)) + " \u00B7 " + escapeXml(x.text) + byTag("agent") + (ctl ? ctl("add", x.key) : "") + "</div>";
+        return '<div class="fold" data-testid="plan-suggest-row"><span class="mk">\u203A</span> line ' + escapeXml(String(x.line)) + " \u00B7 " + escapeXml(x.text) + byTag("agent") + (x.dropped ? " (you dropped it)" : "") + (ctl ? ctl("add", x.key) : "") + "</div>";
       }).join("") + "</div>";
     }
-    var fold = function(title, items, testid){
+    var fold = function(title, items, testid, by){
       if(!items || !items.length) return "";
       return '<details class="fold" data-testid="' + testid + '"><summary>' + escapeXml(title) + " \u00B7 " + items.length + "</summary><ul>" +
-        items.map(function(x){ return "<li>" + escapeXml(x) + byTag((plan.notCheckedBy || {})[x]) + "</li>"; }).join("") + "</ul></details>";
+        items.map(function(x){ return "<li>" + escapeXml(x) + byTag(by ? by : (plan.notCheckedBy || {})[x]) + "</li>"; }).join("") + "</ul></details>";
     };
     h += fold("Not checked", plan.notChecked, "plan-notchecked");
     h += fold("How the page was read", plan.readNotes, "plan-readnotes");
-    h += fold("Always checked", plan.alwaysOn, "plan-alwayson");
+    h += fold("Always checked", plan.alwaysOn, "plan-alwayson", "default");
     if(plan.ticketFilter) h += '<div class="fold" data-testid="plan-ticketfilter"><span class="mk">\u203A</span> ticket filter \u00B7 ' + escapeXml(plan.ticketFilter) + "</div>";
     return h + "</div>";
   }
