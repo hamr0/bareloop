@@ -15885,7 +15885,6 @@ The job had `~ nonstop is not mandatory`. The look tied the phrase fact "stops" 
 
 The block had built both `~` rules, two look facts and a count and marked the `$cited` row Not checked, but the confirm card showed only the summary, the job line, "How the page was read" and "Always checked": it read the confirm turn's own plan (empty for a rubric job), not the block's rows. Fixed in 9af3fd6a (the card draws the rows through the signed card's readers); test tests/confirm-card-rows.test.js.
 
-### F335: the look's `lte` beat the person's "under $450" (sessions smwelq2l6srdb and smwelw0jrax5c, 2026-11-13)
+### F335: the look's `lte` beat the person's "under $450" (session smwe2qz5g3xrq, 2026-11-12; seen again in smwelq2l6srdb and smwelw0jrax5c)
 
-The page-map replies for both drafts carried `reading: {op: "lt", value: 450}`, but an earlier code path let a look's reading override the person's words, so "under" could be built as at most. The person's own words now win the limit of a `~` rule ("under $450" is `lt`). Fixed in d4c3ff3b.
-
+`~ under $450` ended as "at most 450" (450 itself would pass) because `matchRule` took the look's reading first, then the person's words, then the AI's. The person's own words now win: code reads a money or time limit from the `~` words (one owner, `wordsReading`), and the look's or AI's reading is used only when code cannot read them. Fixed in d4c3ff3b (test tests/checkblock-words-win.test.js).
