@@ -3861,7 +3861,7 @@
     var all = (ac.checks || []).concat(ac.always || []);
     var nPass = all.filter(function(r){ return r.result === "passed" || r.result === "held"; }).length;
     var nFail = all.filter(function(r){ return r.result === "failed"; }).length;
-    var head = "Checks &middot; " + nPass + " passed" + (nFail ? " &middot; " + nFail + " failed" : "") + ((ac.notChecked || []).length ? " &middot; " + ac.notChecked.length + " not checked" : "");
+    var head = "checks &middot; " + nPass + " passed" + (nFail ? " &middot; " + nFail + " failed" : "") + ((ac.notChecked || []).length ? " &middot; " + ac.notChecked.length + " not checked" : "");
     var btn = document.createElement("button");
     btn.type = "button";
     btn.className = "btn audit-part-toggle";
