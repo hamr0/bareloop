@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { CheckBlock, renderCard, REASON, CARD_T } from '../src/checkblock.js';
+import { listMatchesClose } from '../src/rubricstep.js';
 import { MAX_BANG } from '../src/checklist.js';
 
 const load = (/** @type {string} */ f) => JSON.parse(readFileSync(new URL(`./fixtures/checkblock/${f}`, import.meta.url), 'utf8'));
@@ -358,4 +359,43 @@ test('retention() has retentionOfList\'s shape and counts', () => {
   const r = b.retention();
   assert.deepEqual(Object.keys(r[0]).sort(), ['aiParts', 'dropped', 'kept', 'line', 'picks']);
   assert.equal(r[0].aiParts, r[0].kept + r[0].dropped);
+});
+
+// ---- live draft smwevmaaazskf (hamr 2026-11-13): an agreed answer's follower row must end with its parent's check, else Sign & run refuses ("a row points at a check the close does not run")
+test('after an agree, the follower row carries its parent\'s part and the signed list matches the close', () => {
+  const b = flight();
+  b.applyAnswer(b.open[0].key, 'agree'); b.reconcile();
+  const follower = b.rows.find((r) => r.parent);
+  assert.ok(follower, 'the agreed answer is a follower row');
+  const parent = b.rows.find((r) => r.key === follower.parent);
+  assert.ok(parent?.part, 'the parent has its part');
+  assert.deepEqual(follower.part, parent.part);
+  assert.equal(follower.state, 'built');
+  assert.deepEqual(listMatchesClose({ stages: b.closeCache.stages, list: b.signedRows() }), { ok: true });
+});
+
+test('real saved draft smwevmaaazskf: the agreed reading rebuilt from its saved page, job and look matches the close; the saved (buggy) list did not', () => {
+  const dir = new URL('./fixtures/agree-follower/', import.meta.url);
+  const text = readFileSync(new URL('flights.txt', dir), 'utf8');
+  const spec = JSON.parse(readFileSync(new URL('resolved-spec.json', dir), 'utf8'));
+  const log = readFileSync(new URL('draft-log.jsonl', dir), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  // the live failure as saved: the agreed row L1.~4 was signed `built` with no part
+  const saved = spec.closeDecl;
+  assert.equal(saved.list.find((/** @type {any} */ r) => r.key === 'L1.~4').part, undefined);
+  assert.equal(listMatchesClose({ stages: saved.stages, list: saved.list }).ok, false);
+  // rebuilt from the saved page-map facts (the look) and the saved job lines, with the person's agree
+  const look = JSON.parse(log.find((x) => x.label === 'page-map').raw).facts;
+  const lookFacts = look.filter((/** @type {any} */ f) => f.name !== 'stops').map((/** @type {any} */ f) => ({ ...f, line: 1, source: 'flights', forRule: Number(/rule (\d+)/.exec(f.from)?.[1]) || undefined }));
+  const b = new CheckBlock({ texts: { flights: text }, labels: ['flights'], split: true });
+  b.fromJob(spec.jobLines.map((/** @type {any} */ l) => ({ n: l.n, text: l.text, rules: l.rules.slice(0, 3) })));
+  b.addLook(lookFacts);
+  b.reconcile();
+  const q = b.open.find((x) => x.ruleText === 'not a red-eye');
+  assert.ok(q, JSON.stringify(b.open));
+  assert.deepEqual(b.applyAnswer(q.key, 'agree'), { ok: true });
+  b.reconcile();
+  const follower = b.rows.find((r) => r.parent);
+  assert.ok(follower);
+  assert.deepEqual(follower.part, b.rows.find((r) => r.key === follower.parent)?.part);
+  assert.deepEqual(listMatchesClose({ stages: b.closeCache.stages, list: b.signedRows() }), { ok: true });
 });
