@@ -42,12 +42,12 @@ test('every row offered under Suggested builds on Add (a row that did not would 
 test('Drop removes a job-derived row; Add switches a suggestion on; both go through reconcile; the close and the signed rows follow', async () => {
   const { block } = await draftBlock('A');
   assert.deepEqual(block.rowChoice('L1.fact.origin', 'drop'), { ok: true });
-  assert.equal(row(block, 'L1.fact.origin').state, 'dropped');
+  assert.equal(row(block, 'L1.fact.origin').state, 'suggested');
   assert.ok(!facts(block).some((f) => f.name === 'origin'));
   assert.deepEqual(block.rowChoice('L1.phrase.nonstop', 'add'), { ok: true });
   assert.equal(row(block, 'L1.phrase.nonstop').state, 'built');
   assert.ok(facts(block).some((f) => f.phrase === 'Nonstop'));
-  assert.deepEqual(block.suggestedView(), []);
+  assert.deepEqual(block.suggestedView().map((x) => x.key), ['L1.fact.origin'], 'the dropped row waits under Suggested (live draft 3)');
   const signed = block.signedRows();
   assert.equal(signed.find((r) => r.key === 'L1.fact.origin')?.state, 'dropped');
   assert.equal(signed.find((r) => r.key === 'L1.phrase.nonstop')?.state, 'built');
@@ -71,7 +71,7 @@ test('Revise keeps the choices (same line words, same row), and code still judge
   assert.equal(rec.length, 2);
   const again = await draftBlock('A');
   again.block.carryChoices(rec); again.block.reconcile();
-  assert.equal(row(again.block, 'L1.fact.origin').state, 'dropped');
+  assert.equal(row(again.block, 'L1.fact.origin').state, 'suggested');
   assert.equal(row(again.block, 'L1.phrase.nonstop').state, 'built');
   // an Add carried onto a draft where the row no longer exists is simply not applied
   const b = await draftBlock('B');

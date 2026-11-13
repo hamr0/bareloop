@@ -102,9 +102,9 @@ test('a Revise keeps the choices: the next draft starts with the row dropped and
   first.session.abandon();
   const next = await parked({ sessionsRoot: first.sessionsRoot, home: first.home, carryFrom: first.session.id });
   const p = next.plan();
-  assert.ok(!p.lines[0].checks.some((/** @type {any} */ c) => /^fact · origin/.test(c.name)), 'the dropped row stays dropped');
+  assert.ok(!p.lines[0].checks.some((/** @type {any} */ c) => /^fact · origin/.test(c.name)), 'the dropped row stays off the card');
   assert.ok(p.lines[0].checks.some((/** @type {any} */ c) => /must say "Nonstop"/.test(c.name)), 'the added suggestion stays added');
-  assert.deepEqual(p.suggested ?? [], []);
+  assert.deepEqual((p.suggested ?? []).map((/** @type {any} */ x) => x.key), ['L1.fact.origin'], 'the dropped row waits under Suggested');
   next.session.abandon();
 });
 

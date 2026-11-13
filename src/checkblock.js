@@ -162,6 +162,9 @@ export class CheckBlock {
 
   // 3. can code check it on the saved page? Never the AI. `row.can` = {ok, how, ...} or {ok:false, why} or {ok:false, ask, ...}
   match() {
+    // live draft 3 (hamr 2026-11-13: "anything not in your original job that code can check goes to Suggested"): a `!` fact whose page words are longer than what the job says ("Boston Logan International
+    // Airport" for the job's "Boston") says the JOB's word; the row is then job-derived (inJob below, the one owner) and its phrase check uses that word
+    if (this.split) for (const r of this.rows) if (this.isBang(r) && (r.kind === 'fact' || r.kind === 'phrase')) this.takeJobWord(r);
     for (const r of this.rows) {
       r.can = null;
       if (r.kind === 'floor') continue;
@@ -179,13 +182,27 @@ export class CheckBlock {
       r.derived = undefined; r.held = false;
       if (!this.isBang(r)) continue;
       r.derived = this.inJob(r);
-      if (r.choice === 'drop') r.can = { ok: false, why: REASON.dropped, dropped: true };
-      else if (r.can?.ok && !r.derived && r.choice !== 'add') r.held = true;
+      // a Drop is undone through Suggested (live draft 3): the row was proved buildable, so it is offered again with Add; only a row code can still build is offered
+      if (r.can?.ok && r.choice !== 'add' && (!r.derived || r.choice === 'drop')) r.held = true;
     }
   }
 
   /** a `!` row: the agent's fact, phrase or count (a look fact tied to a rule is a link on that rule's row, never a row of its own) */
   isBang(/** @type {Row} */ r) { return r.by === 'agent' && (r.kind === 'fact' || r.kind === 'phrase' || r.kind === 'count') && !r.parent; }
+
+  /**
+   * The job's own word for a `!` row: when none of its page words is in the job line or its `~` rules but a proper name the job holds (capital or digit first, 3+ characters) is a whole-word part of one
+   * page word and the page holds it, the row's words become that job word. The page's long name is kept as `pageWords`; the row's other fields are untouched.
+   */
+  takeJobWord(/** @type {Row} */ r) {
+    if (this.inJob(r)) return;
+    const said = this.said(r.line);
+    const names = said.match(/[\p{Lu}\p{N}][\p{L}\p{N}'’-]*(?: [\p{Lu}\p{N}][\p{L}\p{N}'’-]*)*/gu) ?? [];
+    for (const w of (r.words ?? []).filter((/** @type {unknown} */ x) => typeof x === 'string')) {
+      const hit = names.filter((n) => n.length >= 3 && inText(w, n) && proved(this.textOf(r.source), n)).sort((a, b) => b.length - a.length)[0];
+      if (hit) { r.pageWords = r.words; r.words = [hit]; return; }
+    }
+  }
 
   /** are the row's words (or its count number, or the name it asks for a fact by) in the job line or its `~` rules? Normalised, case-insensitive */
   inJob(/** @type {Row} */ r) {
@@ -344,9 +361,8 @@ export class CheckBlock {
       if (r.kind === 'floor') continue;
       r.part = null;
       if (r.parent) continue; // a follow row copies its parent's end state after the line is built
-      if (r.can?.dropped) { r.state = 'dropped'; r.reason = REASON.dropped; continue; }
       if (!r.can?.ok) { r.state = 'not-checked'; r.reason = r.can?.why ?? 'not checked'; continue; }
-      if (r.held) { r.state = 'suggested'; r.reason = REASON.suggested; continue; }
+      if (r.held) { r.state = 'suggested'; r.reason = r.choice === 'drop' ? REASON.dropped : REASON.suggested; continue; }
       if (r.can.how === 'pick') {
         const p = partOfPick(r.pick, r.text, [r.rule, ...this.followsOf(r).map((/** @type {Row} */ f) => f.rule)]);
         const reds = rubricStepShapeReds({ step: l.n, parts: [p] }, 'trial');
@@ -693,7 +709,7 @@ export class CheckBlock {
 
   /** the suggestions code has proved it can build, as the card offers them (Add): `{key, line, text}` */
   suggestedView() {
-    return this.rows.filter((r) => r.state === 'suggested' && r.offer?.text).map((r) => ({ key: r.key, line: r.line, text: String(r.offer.text) }));
+    return this.rows.filter((r) => r.state === 'suggested' && r.offer?.text).map((r) => ({ key: r.key, line: r.line, text: String(r.offer.text), ...(r.choice === 'drop' ? { dropped: true } : {}) }));
   }
 
   /** the suggestions code could not build, in one plain sentence each: the Audit's draft lines (never the card) */
