@@ -15876,3 +15876,16 @@ b5241e43 cited run mwclgxs3 (a place-rules run) on its `Failure:` line, but the 
 ### F332: OPEN — the fit check counted the verb "List" as an ask to find on the page (sessions smwdhk8e6amd0, smwdirp88t2cy, 2026-11-12)
 
 In smwdhk8e6amd0 the AI listed "List" (line 1) as an ask; it was "not found" and was the whole reason for the fit question. In smwdirp88t2cy the same word was "found" as "Search results". An action word is not a page fact: the first reading stopped a good draft, the second counted a made-up match. Source: draft-log `fit-check` rows; `src/fitcheck.js:39` (`fitPrompt`), `decideFit` line 63. No fix; not built.
+
+### F333: a negated `~` rule built the opposite check (session smwelw0jrax5c, draft B, 2026-11-13)
+
+The job had `~ nonstop is not mandatory`. The look tied the phrase fact "stops" (words "Nonstop", "1 stop", page-map `from: "line 1 rule 3"`) to that rule, and `matchRule` (src/checkblock.js) built `must say "Nonstop"` from the link: the opposite of what the person wrote. Draft A (session smwelq2l6srdb, no rule 3) built `phrase "Nonstop"` as a `!` row, which is the agent's own suggestion and not wrong. `NEGATING_RE` (src/rubricstep.js:793) is read only by the time reader, so a negation never reached a phrase link. Fixed with the negation reader as the one owner (see the 2026-11-13 addendum of docs/product/ITEM33-BUILD.md).
+
+### F334: the confirm card drew no check rows (session smwe2qz5g3xrq, 2026-11-12)
+
+The block had built both `~` rules, two look facts and a count and marked the `$cited` row Not checked, but the confirm card showed only the summary, the job line, "How the page was read" and "Always checked": it read the confirm turn's own plan (empty for a rubric job), not the block's rows. Fixed in 9af3fd6a (the card draws the rows through the signed card's readers); test tests/confirm-card-rows.test.js.
+
+### F335: the look's `lte` beat the person's "under $450" (sessions smwelq2l6srdb and smwelw0jrax5c, 2026-11-13)
+
+The page-map replies for both drafts carried `reading: {op: "lt", value: 450}`, but an earlier code path let a look's reading override the person's words, so "under" could be built as at most. The person's own words now win the limit of a `~` rule ("under $450" is `lt`). Fixed in d4c3ff3b.
+

@@ -4340,3 +4340,41 @@ POC round 4 bar frozen: .claude/scratch/checkblock-poc/PREREG-R4.md sha256 b5544
 - Found by wiring it (each a real defect of the first wiring, fixed with a test): the code-built declaration filled no guard slot (files-changed needs `allowPrefixes`: the signed write fence) and left a job line with no built check uncovered, so the draft gate reddened code's own plan; the asks went through `normalizeQuestions` (lost the proposal and the key: no Agree button, no choice reached the block); a draft that asked nothing never wrote the picks record; a rule the record folded was asked on its own; a fact tied to a counting rule was swallowed as an unused link; the pick parts came before the fact part on the card; an `add` naming an unknown input, an input it did not name (two inputs), a label the look dropped or never kept, a unit or sign not on the page, or words found fewer times than the line's result count reached the draft gate as a red on code's own plan (plan-red) - the block now runs the gate's own `checkFactWords` per fact, so that row is Not checked in the gate's plain words and the draft goes on.
 - Test-proven only (never run live): the edit reply, the per-edit refusals, the revise trigger, the panel choices into rows, the end check at both doors, the place rules on the block. The CLI end-check door is checked by source text only (no CLI rubric e2e exists). Phone width is unchecked; the card screenshot beside its neighbours is not taken.
 - Known divergences, FOR HAMR (named, not resolved): (1) The F176 fallback (fall back to the newest sound measured try) is skipped for block drafts. (2) The CLI (no asker) shows a rule code cannot settle as Not checked in code's words; a reading code proposes is built as the AI's proposal. (3) The look's narrowing notes ("LEFT OUT of X: the rest is still checked") are not on the signed close or the card any more (only whole facts the look dropped are rows); the drafter still reads them in the look report. (4) The AI's `not-checkable` reason is shown only on a typed rule, a tied rule with no limit, or an out-of-scope count rule; on a plain rule code's words stand. (5) The Tickets block text (`ticketFilterBlock`) still speaks of "stages" and "refused"; a ticket job's priority line is a Not checked rule that the panel asks about ("Drop it?"). (6) `askableFromLook`, `scopedRules`-based `no-check` words and `rowsFromAnswer` stay (tested pure functions); `askableFromLook` is unused by the product. (7) An `add` with no `source` on a job with ONE input takes it, with two is refused; a rubric job whose look is skipped (`lookFn: null`, a test seam) drafts through a look-only block built inside `authorClose` and has no `hasBuiltCheck`. (8) POC golden rows moved: two real cases (a fact tied to a counting rule is now its own row; the default quote row follows) and three rows the real gate would have refused; the B7 pages gained the unit word their facts name. (9) The look-asks cap now stops BEFORE any question is put to the person (the old flow asked the look ask first and refused after).
+
+### 2026-11-13 live draft findings and card ruling
+
+Source: live drafts on the test panel (DeepSeek flash), sessions smwelq2l6srdb (draft A: "List 3 flights from Boston to Chicago", `~ under $450`, `~ departure between 05:00 and 21:59`) and smwelw0jrax5c (draft B: the same plus `~ nonstop is not mandatory`, revise 1). Hamr approved the fixes and the card below on 2026-11-13.
+
+Findings to fix:
+
+- F-a (wrong check, serious): in draft B the look tied the phrase fact "stops" (words "Nonstop", "1 stop") to the person's rule `~ nonstop is not mandatory`, and code built `must say "Nonstop"`: the opposite of the rule. Fix: a `~` rule whose words carry a negation (the one reader `NEGATING_RE`, src/rubricstep.js) can never give a phrase bound / "must say" from its words. That rule becomes Not checked with the plain reason "it says what is not needed, so there is nothing to check". Any `!` row whose words appear in that negated rule is refused alone, with a plain reason naming the rule ("your rule N says it is not needed").
+- F-b: a Not checked row showed raw gate text ("code could not build a legal check from it: ... Nothing was signed."). An AI/look suggestion code could not build is NOT shown on the card; it goes to the Audit draft lines in one plain sentence. Rules the person wrote always show (built or Not checked): never a silent drop of a `~` rule.
+- F-c (labels): card tags are by row kind, code-owned: `~` rows (including a fact built from a person's rule) are `[you]`; `!` rows `[agent]`; `$` rows `[default]`. Rule-built facts showed `[agent]` before. The heading "Not checked (the AI's own reading)" becomes "Not checked". Applies to the confirm card, the signed card, the Job tab and the Result tab.
+
+New (hamr ruling, signed preview):
+
+- N-1: code splits `!` rows. A `!` row whose words (or count number) appear in that job line's text or its `~` rules is JOB-DERIVED: built as today, tagged `[agent]`, with a Drop button. A `!` row whose words do NOT appear in the job is SUGGESTED: not checked by default, shown in a card section "Suggested · not in your job, not checked unless you add it", with an Add button. Code decides by word match (normalised, case-insensitive), never the AI.
+- N-2: Drop and Add are instant and $0: no AI call, no new draft. They are row edits through the block (a typed choice, the choice decides) and every edit goes back through `block.reconcile`; the card redraws from rows. The person's Drop/Add choices are stored in the list and kept on Revise (same carry as picks, am17/am18). Signing reads rows only. A `[you]` row has no Drop (the person edits the job for that).
+- Clarification (hamr, same day, binding): code checks FIRST. The Suggested section lists ONLY `!` rows code has already proved it can build (a legal check). A suggestion code cannot build is never shown on the card (Audit only, F-b). Add just switches an already-checkable row on (it still passes through reconcile as a safety pass but must not normally end Not checked; if it ever does, that is a defect, asserted in a test). Drop removes.
+- Hamr's words: "suggested with add/drop since it's already past code and it's confirmed that its checkable"; "keep the flow so it goes through code and may get dropped as not checked"; "suggested ones go through code and if it's checkable goes to human to approve; approve = added, if not, remove it".
+
+The preview hamr signed:
+
+```
+1  List 3 flights from Boston to Chicago
+   ~ under $450
+   ~ departure between 05:00 and 21:59
+   ~ nonstop is not mandatory
+   › price — under 450 US dollars              [you]
+   › departure time — between 05:00 and 21:59  [you]
+   › origin — must say "Boston"                [agent]  (Drop)
+   › destination — must say "Chicago"          [agent]  (Drop)
+   › results — exactly 3                       [agent]  (Drop)
+Suggested · not in your job, not checked unless you add it
+   (Nonstop would show here with (Add) in draft A, without rule 3)
+Not checked
+   line 1: every claim quotes its input — this line finds facts  [default]
+   ~ nonstop is not mandatory — it says what is not needed, so there is nothing to check  [you]
+```
+
+Built as: the Drop/Add buttons live on the confirm card (the plan bubble while the confirm menu is open), where the live block is held; the final card shows tags only. The signed list gains an optional per-row `facts` field (the names of the facts a row built) so every read of a signed close can tag each fact by its row's kind.
