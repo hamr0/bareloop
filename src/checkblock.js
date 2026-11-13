@@ -188,11 +188,14 @@ export class CheckBlock {
     for (const l of links) {
       let reading = l.reading;
       let ownWords = false;
-      if (reading === undefined && (l.shape === 'money' || l.shape === 'time')) {
-        const own = readLimit(l.shape, r.text, l);
-        const rd = 'reading' in own ? own.reading : undefined;
-        if (rd && validReading(l.shape, rd) && (rd.op === 'between' ? [rd.lo, rd.hi] : [rd.value]).every((b) => boundInWords(b, r.text))) { reading = rd; ownWords = true; }
-        else ownWhy = 'why' in own ? own.why : 'a bound in the rule is not written in your own words';
+      if (l.shape === 'money' || l.shape === 'time') {
+        // the person's words win (hamr 2026-11-13): code's reading of the `~` words beats the look's and the AI's; theirs is used only when code cannot read the words
+        const rd = this.wordsReading(l, r.text);
+        if (rd) { reading = rd; ownWords = true; }
+        else if (reading === undefined) {
+          const own = readLimit(l.shape, r.text, l);
+          ownWhy = 'why' in own ? own.why : 'a bound in the rule is not written in your own words';
+        }
       }
       reading ??= r.aiReading?.reading;
       if (l.shape === 'money' || l.shape === 'time' || l.shape === 'number' || l.shape === 'date') {
@@ -522,6 +525,14 @@ export class CheckBlock {
     return (Array.isArray(e.rules) ? e.rules : []).map((/** @type {number} */ n) => this.ruleRows(e.line).find((r) => r.rule === n)).filter((/** @type {Row|undefined} */ r) => r !== undefined);
   }
 
+  /** the one owner of "what do the person's own words say": code's reading of a `~` rule for a money/time fact, or undefined when it cannot read it */
+  wordsReading(/** @type {any} */ l, /** @type {string} */ text) {
+    if (l.shape !== 'money' && l.shape !== 'time') return undefined;
+    const own = readLimit(l.shape, text, l);
+    const rd = 'reading' in own ? own.reading : undefined;
+    return rd && validReading(l.shape, rd) && (rd.op === 'between' ? [rd.lo, rd.hi] : [rd.value]).every((b) => boundInWords(b, text)) ? rd : undefined;
+  }
+
   editReading(/** @type {any} */ e) {
     const targets = this.targetsOf(e);
     if (!targets.length) return { refusedBecause: 'names no ~ rule of this line' };
@@ -530,6 +541,8 @@ export class CheckBlock {
     if (!validReading(fact.shape, e.reading)) return { refusedBecause: 'not a legal reading for that fact shape' };
     const many = targets.find((/** @type {Row} */ r) => holdsManyBounds(fact.shape, r.text));
     if (many) return { refusedBecause: `your rule ${many.rule} holds more than one amount or range, so one reading would be a wrong check` };
+    const read = targets.map((/** @type {Row} */ r) => ({ r, rd: this.wordsReading(fact, r.text) })).find((x) => x.rd && JSON.stringify(x.rd) !== JSON.stringify(e.reading));
+    if (read) return { refusedBecause: `code reads your words in rule ${read.r.rule} itself, so that reading is not used` };
     const open = targets.filter((/** @type {Row} */ r) => !r.links?.some((/** @type {any} */ l) => l.reading) && !r.aiReading);
     if (!open.length) return { refusedBecause: 'already on the list: the look or an earlier reading already reads that rule' };
     for (const r of open) {

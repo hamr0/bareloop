@@ -58,7 +58,7 @@ test('the confirm card draws every row the block built under its line, and every
   const names = plan.lines[0].checks.map((/** @type {any} */ c) => c.name);
   // each built row, by what the signed card's readers say it is: a ~ rule is the fact it limits, a look fact its name, the count its range
   const shows = {
-    'L1.~1': /^fact · price .*at most 450/, 'L1.~2': /^fact · departure time .*between 05:00 and 21:59/,
+    'L1.~1': /^fact · price .*under 450 US dollars/, 'L1.~2': /^fact · departure time .*between 05:00 and 21:59/,
     'L1.fact.origin airport': /^fact · origin airport .*Boston Logan International Airport/, 'L1.fact.destination airport': /^fact · destination airport .*Chicago O'Hare International Airport/,
     'L1.count.3-3': /^fact · results — exactly 3 results/,
   };
