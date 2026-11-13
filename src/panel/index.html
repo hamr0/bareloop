@@ -3867,7 +3867,8 @@
     btn.className = "btn audit-part-toggle";
     btn.setAttribute("aria-expanded", "false");
     btn.setAttribute("data-testid", "audit-checks-toggle");
-    btn.innerHTML = auditCaret(false) + " " + stateDotHTML(auditChecksSignClass(all), "", "audit-checks-state") + head;
+    var headHtml = function(open){ return auditCaret(open) + stateDotHTML(auditChecksSignClass(all), "", "audit-checks-state") + head; };
+    btn.innerHTML = headHtml(false);
     var body = document.createElement("div");
     body.className = "audit-part-body";
     body.hidden = true;
@@ -3881,7 +3882,7 @@
       var open = btn.getAttribute("aria-expanded") === "true";
       btn.setAttribute("aria-expanded", open ? "false" : "true");
       body.hidden = open;
-      btn.innerHTML = auditCaret(!open) + " " + head;
+      btn.innerHTML = headHtml(!open);
     });
     wrap.appendChild(btn);
     wrap.appendChild(body);

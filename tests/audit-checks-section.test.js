@@ -123,5 +123,16 @@ test('the Checks fold header wears one state sign: [✗] if a row failed, [·] i
   assert.equal(sign(rows(none)), 'grey');
   const missing = getRunDetail('mwenvde5', { home: runHome(undefined, null) }).auditChecks;
   assert.equal(sign(rows(missing)), 'grey');
-  assert.match(PAGE, /stateDotHTML\(auditChecksSignClass\(all\), "", "audit-checks-state"\) \+ head/);
+  assert.match(PAGE, /auditCaret\(open\) \+ stateDotHTML\(auditChecksSignClass\(all\), "", "audit-checks-state"\) \+ head/);
+});
+
+test('the Checks fold header wears caret then sign exactly like a step row: sign right after the caret span, no extra space text node, same on re-render', () => {
+  const body = fnSrc('auditChecksEl');
+  assert.doesNotMatch(body, /auditCaret\([^)]*\) \+ " "/, 'no literal space between caret and sign');
+  assert.match(body, /btn\.innerHTML = headHtml\(false\)/);
+  assert.match(body, /btn\.innerHTML = headHtml\(!open\)/, 'the click re-render keeps the sign too');
+  const caretThenSign = (/** @type {string} */ h) => /^<span class="audit-caret">.<\/span><span class="step-state"/.test(h);
+  const mk = new Function(`${fnSrc('escapeXml')}\n${fnSrc('auditCaret')}\n${fnSrc('stateDotHTML')}\nreturn (open) => auditCaret(open) + stateDotHTML("green", "", "t");`)();
+  assert.ok(caretThenSign(mk(false)) && caretThenSign(mk(true)));
+  assert.match(PAGE, /return auditCaret\(open\) \+\n\s+stepStateHTML\(box, 'audit-part-state-' \+ idx\)/, 'the step rows use the same caret-then-sign structure');
 });
