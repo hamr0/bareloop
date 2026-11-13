@@ -3655,11 +3655,7 @@
     var rows = "";
     // fwd am14 item 6: a revise or a Start over says so, first, in the server's own words (`revise 1`, `revise 2`, `start over`); a first draft has no such row
     if(part.draftLabel) rows += '<tr class="draft-kind-row" data-testid="drafting-kind"><td colspan="5"><b>' + escapeXml(part.draftLabel) + "</b></td></tr>";
-    // the checks this draft ended with, each marked who added it: the drafter ([agent]) or the person's pick ([you picked])
-    (part.draftChecks || []).forEach(function(c){
-      rows += '<tr class="draft-checks-row" data-testid="drafting-check"><td colspan="5" style="overflow-wrap:anywhere">line ' + escapeXml(String(c.line)) + " \u00B7 " + escapeXml(c.text) +
-        (c.by === "you" ? ' <span class="by" data-by="you">[you]</span>' : c.by === "agent" ? ' <span class="by" data-by="agent">[agent]</span>' : "") + "</td></tr>";
-    });
+    // the checks themselves are the Audit's own "Checks" section now (`auditChecks`, one list with each row's result), not a second list here
     // F-b: a suggested check code could not build is told here in one plain sentence, never on the card
     (part.draftNotBuilt || []).forEach(function(c){
       rows += '<tr class="draft-checks-row" data-testid="drafting-notbuilt"><td colspan="5" style="overflow-wrap:anywhere">line ' + escapeXml(String(c.line)) + " \u00B7 " + escapeXml(c.text) + "</td></tr>";
@@ -3847,6 +3843,44 @@
       }
     });
   }
+  // one row of the Audit's check list: its words, its tag, its result in the one state sign+word markup (a row with no recorded verdict says so, never "passed")
+  function auditCheckRowHtml(r){
+    var res = r.result === "passed" ? ["green", "passed"] : r.result === "failed" ? ["red", "failed"] : r.result === "not-checked" ? ["grey", "not checked"] : ["grey", "no result recorded"];
+    return '<div class="audit-check-row" data-testid="audit-check-row" data-result="' + escapeXml(r.result) + '" style="overflow-wrap:anywhere">' + escapeXml(r.text) + byTagOf(r.by) + " " + stateDotHTML(res[0], res[1], "audit-check-state") + "</div>";
+  }
+  function auditChecksEl(ac){
+    var wrap = document.createElement("div");
+    wrap.className = "audit-part";
+    wrap.setAttribute("data-testid", "audit-checks-group");
+    var all = (ac.checks || []).concat(ac.always || []);
+    var nPass = all.filter(function(r){ return r.result === "passed"; }).length;
+    var nFail = all.filter(function(r){ return r.result === "failed"; }).length;
+    var head = "Checks &middot; " + nPass + " passed" + (nFail ? " &middot; " + nFail + " failed" : "") + ((ac.notChecked || []).length ? " &middot; " + ac.notChecked.length + " not checked" : "");
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn audit-part-toggle";
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("data-testid", "audit-checks-toggle");
+    btn.innerHTML = auditCaret(false) + " " + head;
+    var body = document.createElement("div");
+    body.className = "audit-part-body";
+    body.hidden = true;
+    body.setAttribute("data-testid", "audit-checks-body");
+    var sec = function(title, rows, tid){
+      if(!rows || !rows.length) return "";
+      return '<div data-testid="' + tid + '" style="margin:6px 0"><div><b>' + escapeXml(title) + "</b></div>" + rows.map(auditCheckRowHtml).join("") + "</div>";
+    };
+    body.innerHTML = '<div class="jp">' + sec("Checks", ac.checks, "audit-checks-checks") + sec("Not checked", ac.notChecked, "audit-checks-notchecked") + sec("Always checked", ac.always, "audit-checks-always") + "</div>";
+    btn.addEventListener("click", function(){
+      var open = btn.getAttribute("aria-expanded") === "true";
+      btn.setAttribute("aria-expanded", open ? "false" : "true");
+      body.hidden = open;
+      btn.innerHTML = auditCaret(!open) + " " + head;
+    });
+    wrap.appendChild(btn);
+    wrap.appendChild(body);
+    return wrap;
+  }
   function renderAuditGroups(detail){
     var container = document.getElementById("audit-groups");
     container.innerHTML = "";
@@ -3904,6 +3938,11 @@
       needsEl.style.overflowWrap = "anywhere";
       needsEl.textContent = detail.needsAudit;
       container.appendChild(needsEl);
+    }
+    // hamr ruling A (2026-11-13): the card's own sections (Checks, Not checked, Always checked), each row with its tag and, after the run, its recorded result (server: `auditChecks`)
+    var ac = detail.auditChecks;
+    if(ac && ((ac.checks || []).length || (ac.notChecked || []).length || (ac.always || []).length)){
+      container.appendChild(auditChecksEl(ac));
     }
     // P5-R: a resumed run is ONE run — its legs are told apart by a divider line (code-owned text from the server)
     var dividers = Array.isArray(detail.legDividers) ? detail.legDividers : [];

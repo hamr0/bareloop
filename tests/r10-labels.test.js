@@ -44,7 +44,7 @@ test('Job tab (planFromSpec): each check under its line says who added it', () =
   assert.ok(checks.every((c) => c.by === 'agent' || c.by === 'you'));
   // a code job's stage is the drafter's too
   const code = planFromSpec({ goal: 'g', jobLines: [{ n: 1, text: 'x', rule: '' }], closeDecl: { genre: 'types', lang: 'js', stages: [{ name: 'tests-pass', fromLine: [1], kind: 'command-exit', params: {} }] } });
-  assert.deepEqual(code.lines[0].checks, [{ name: 'tests-pass', cls: 'machine check', by: 'agent' }]);
+  assert.deepEqual(code.lines[0].checks, [{ name: 'tests-pass', cls: 'machine check', by: 'agent', stage: 'tests-pass' }]);
 });
 
 test('plan card (planFromConfirm): the drafter\'s checks are [agent]; the picks keep their own "You picked" rows; a prepared card marks the close\'s pick rows', () => {
@@ -90,7 +90,7 @@ test('renderJobPlan draws the mark on a check row, one markup for the plan card 
   assert.match(PAGE, /\.jp \.by,\.draft-checks-row \.by,\.job-card \.by\{color:var\(--text-dim\)/);
 });
 
-test('Audit Draft group: the draft log\'s draft-checks line gives one row per check, [agent] or [you], after the revise label', (t) => {
+test('Audit Draft group: the draft log\'s draft-checks line is read (the Audit\'s Checks section draws the list, not this table)', (t) => {
   const root = mkdtempSync(join(tmpdir(), 'r10-labels-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const sess = join(root, 'panel-sessions', 's1');
@@ -111,10 +111,8 @@ test('Audit Draft group: the draft log\'s draft-checks line gives one row per ch
   const html = page().draftingTableHtml(part);
   const trs = html.slice(html.indexOf('<tbody>')).match(/<tr[^>]*>.*?<\/tr>/g);
   assert.match(trs[0], /drafting-kind/);
-  const checkRows = trs.filter((x) => x.includes('drafting-check'));
-  assert.equal(checkRows.length, rows.length);
-  assert.match(checkRows.at(-1), /line 1 · the text is at most 80 words <span class="by" data-by="you">\[you\]<\/span>/);
-  assert.match(checkRows[0], /data-by="agent">\[agent\]<\/span>/);
-  assert.equal(trs.indexOf(checkRows[0]), 1, 'right after the label');
+  // the checks themselves are the Audit's own Checks section now (tests/audit-checks-section.test.js), not a second list in the Draft group
+  assert.equal(trs.filter((x) => x.includes('drafting-check')).length, 0);
+  assert.match(trs[0], /drafting-kind/);
   assert.deepEqual(readDraftChecks(join(root, 'nothing-here')), []);
 });

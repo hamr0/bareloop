@@ -82,7 +82,7 @@ import { filterUnsure } from '../ticketlabels.js';
 import { judgedFilesOf, lineRules, stepFileRel, proseNotCheckedItems } from '../rubricstep.js';
 import { factPartOf, factSentence, ruleWords, moneyAs } from '../facts.js';
 import { createSettingsRoutes } from './settingsroutes.js';
-import { planFromSpec } from './jobplan.js';
+import { planFromSpec, auditChecksOf } from './jobplan.js';
 import { stageQuestionsByName } from '../stagewords.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -2249,6 +2249,7 @@ function getRunDetailBody(runid, opts) {
     // PRD v1.106 Part 5 F: the two Run summary rows, worded here (the page prints them)
     callsLine: callsLineOf(rawSpineRecords, scopedBehaviour(row, rawSpineRecords)),
     checksLine: checksLineOf(rawSpineRecords, enrichedParts),
+    auditChecks: auditChecksFor(row, rawSpineRecords, specForParts, opts),
     memoryCache: summary.memoryCache,
     // PLACE RULES: what the run start read for each place-rule check (plain lines from code), or null when the run has none; the Audit page's placement of it is not built yet
     placeRules: placeRuleLines(rawSpineRecords),
@@ -3396,6 +3397,30 @@ function successFromSpec(spec) {
   if (!stages) return null;
   const names = stages.filter((s) => s && typeof s.name === 'string' && s.name.length > 0).map((s) => s.name);
   return names.length > 0 ? names.join(' · ') : null;
+}
+
+/**
+ * The Audit's check list (hamr ruling A): the card's own sections (planFromSpec for the checks and Not checked, confirmProtections for Always checked) with each row's
+ * result read from the run's recorded stage verdicts ({@link checksOf}), never re-derived. `null` for a run with no signed spec (nothing to list).
+ * @param {{spine: string}} row @param {any[]} records @param {any} spec @param {{ home?: string, sessionsRoot?: string }} opts
+ */
+function auditChecksFor(row, records, spec, opts) {
+  if (!spec || typeof spec !== 'object') return null;
+  const ledgerDir = sessionDirForRow(row, opts);
+  const plan = planFromSpec(spec, ledgerDir ? readDraftLedger(ledgerDir) : null);
+  /** @type {string[]} */
+  let guards = [];
+  if (spec.closeDecl && typeof spec.closeDecl.lang === 'string' && typeof spec.verdictType === 'string') {
+    try {
+      guards = confirmProtections({
+        verdictType: spec.verdictType, lang: spec.closeDecl.lang, jobLines: Array.isArray(spec.jobLines) ? spec.jobLines : null,
+        writeScope: Array.isArray(spec.writeScope) && spec.writeScope.every((/** @type {any} */ x) => typeof x === 'string') ? spec.writeScope : null,
+      });
+    } catch { guards = []; }
+  }
+  const got = checksOf(records, spec);
+  const results = got ? new Map(got.stages.map((/** @type {any} */ x) => [x.name, x.passed === true])) : null;
+  return auditChecksOf(plan, guards, results);
 }
 
 /**

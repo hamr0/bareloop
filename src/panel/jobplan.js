@@ -18,7 +18,9 @@ import { splitReadNotes } from '../pagedropwords.js';
 import { checksOfClose, signedFactNames, proseNotChecked, lineRules, confirmedGoalOf, refusedOf, listRowName, ruleNotCheckedItems } from '../rubricstep.js';
 
 /** `by` = who added the check: the drafter (`agent`) or the person's own pick (`you`); absent = code's own (an always-on guard, a number tie) or not known */
-/** @typedef {{name: string, cls: 'machine check'|'judge'|null, by?: 'agent'|'you'|'default'|null, key?: string}} PlanCheck */
+/** `stage` = the signed close stage the row belongs to (its recorded verdict is the row's result in the Audit) */
+/** @typedef {{text: string, by: 'agent'|'you'|'default'|null, result: 'passed'|'failed'|'none'|'not-checked'}} AuditRow */
+/** @typedef {{name: string, cls: 'machine check'|'judge'|null, by?: 'agent'|'you'|'default'|null, key?: string, stage?: string}} PlanCheck */
 /** @typedef {{n: number, text: string, rule: string, rules: string[], checks: PlanCheck[], refused: string[], always?: string[], picked?: string[]}} PlanLine */
 /** @typedef {{lines: PlanLine[], loose: PlanCheck[], notChecked: string[], readNotes: string[], alwaysOn: string[], older: boolean, goal?: string, ticketFilter?: string, notCheckedBy?: Record<string, 'you'|'agent'|'default'>, suggested?: {key: string, line: number, text: string}[], editable?: boolean}} JobPlan */
 
@@ -52,7 +54,7 @@ export function checkClassOfKind(kind) {
  * @returns {JobPlan}
  */
 export function planFromSpec(spec, ledger = null) {
-  /** @type {{name: string, cls: 'machine check'|'judge'|null, fromLine: number[]|null, by?: 'agent'|'you'|'default'|null}[]} */
+  /** @type {{name: string, cls: 'machine check'|'judge'|null, fromLine: number[]|null, by?: 'agent'|'you'|'default'|null, stage?: string}[]} */
   let stages = [];
   if (spec && Array.isArray(spec.closeDecl?.stages)) {
     stages = spec.closeDecl.stages.filter((/** @type {any} */ s) => s && typeof s.name === 'string' && s.name)
@@ -61,7 +63,7 @@ export function planFromSpec(spec, ledger = null) {
         // PART 1b: a rubric-step stage is shown as the checks it RUNS — one code-worded row per fact, per count, per limit — read by
         // the same reader (`checksOfClose`) the confirm card and the sign-time invariant use, so the Job tab cannot differ from them
         const rows = s.kind === 'rubric-step' ? checksOfClose({ stages: [s], picks: spec.closeDecl.picks, list: spec.closeDecl.list }) : [];
-        return rows.length > 0 ? rows.map((r) => ({ name: r.text, cls: /** @type {'machine check'} */ ('machine check'), fromLine, by: r.by })) : [{ name: s.name, cls: checkClassOfKind(s.kind), fromLine, by: /** @type {'agent'} */ ('agent') }];
+        return rows.length > 0 ? rows.map((r) => ({ name: r.text, cls: /** @type {'machine check'} */ ('machine check'), fromLine, by: r.by, stage: s.name })) : [{ name: s.name, cls: checkClassOfKind(s.kind), fromLine, by: /** @type {'agent'} */ ('agent'), stage: s.name }];
       });
   } else if (spec && Array.isArray(spec.close)) {
     stages = spec.close.filter((/** @type {any} */ s) => s && typeof s.name === 'string' && s.name)
@@ -96,8 +98,8 @@ export function planFromSpec(spec, ledger = null) {
     if (s.fromLine === null) { alwaysOn.push(s.name); continue; }
     // a check that serves several job lines is shown under EACH line it serves (no new element: the same check line, repeated)
     const served = lines.filter((l) => /** @type {number[]} */ (s.fromLine).includes(l.n));
-    for (const line of served) line.checks.push({ name: s.name, cls: s.cls, ...(s.by ? { by: s.by } : {}) });
-    if (served.length === 0) loose.push({ name: s.name, cls: s.cls, ...(s.by ? { by: s.by } : {}) });
+    for (const line of served) line.checks.push({ name: s.name, cls: s.cls, ...(s.by ? { by: s.by } : {}), ...(s.stage ? { stage: s.stage } : {}) });
+    if (served.length === 0) loose.push({ name: s.name, cls: s.cls, ...(s.by ? { by: s.by } : {}), ...(s.stage ? { stage: s.stage } : {}) });
   }
   // an always-on guard that the drafter said covers a job line is shown under that line too ("› check · always-on: <guard>")
   for (const g of Array.isArray(spec?.closeDecl?.guardLines) ? spec.closeDecl.guardLines : []) {
@@ -165,4 +167,37 @@ export function planFromConfirm(jobLines, plan) {
     ...(Array.isArray(plan?.suggested) && plan.suggested.length ? { suggested: plan.suggested } : {}),
     ...(plan?.editable === true ? { editable: true } : {}),
   };
+}
+
+/** the words of a row the run recorded no verdict for: never "passed" */
+export const AUDIT_NO_RESULT = 'no result recorded';
+
+/**
+ * The Audit's check list (hamr ruling A, 2026-11-13): the SAME sections as the card, read from the SAME model (`plan` = {@link planFromSpec}'s, plus `guards` = the
+ * code-owned protections the confirm card shows), each row with its tag and, after the run, its result. A check's result is the recorded verdict of its own signed stage
+ * (`results`: stage name to passed), never re-derived; a row no verdict was recorded for says so. A Not checked row's result is "not checked" (its reason is in its words).
+ * @param {JobPlan} plan @param {string[]} guards @param {Map<string, boolean>|null} results
+ * @returns {{checks: AuditRow[], notChecked: AuditRow[], always: AuditRow[]}}
+ */
+export function auditChecksOf(plan, guards, results) {
+  /** @param {string|undefined|null} stage @returns {'passed'|'failed'|'none'} */
+  const verdict = (stage) => (!stage || !results || !results.has(stage) ? 'none' : (results.get(stage) ? 'passed' : 'failed'));
+  /** @type {AuditRow[]} */
+  const checks = [];
+  for (const l of plan.lines) for (const c of l.checks) checks.push({ text: `line ${l.n} · ${c.name}`, by: c.by ?? null, result: verdict(c.stage) });
+  for (const c of plan.loose) checks.push({ text: `other · ${c.name}`, by: c.by ?? null, result: verdict(c.stage) });
+  /** @type {AuditRow[]} */
+  const notChecked = [];
+  const by = plan.notCheckedBy ?? {};
+  for (const l of plan.lines) for (const r of l.refused) notChecked.push({ text: `line ${l.n} · ${r}`, by: by[r] ?? null, result: 'not-checked' });
+  for (const r of plan.notChecked) notChecked.push({ text: r, by: by[r] ?? null, result: 'not-checked' });
+  const names = guards.length > 0 ? guards : plan.alwaysOn;
+  const always = names.map((g) => {
+    const head = g.split(' — ')[0];
+    const file = /^line (\d+) file$/.exec(head);
+    // the write fence is held by the gate, which records no verdict of its own: it says so rather than borrowing another stage's
+    const stage = file ? `line-${file[1]}` : (head === 'write fence' ? null : head);
+    return { text: g, by: /** @type {'default'} */ ('default'), result: verdict(stage) };
+  });
+  return { checks, notChecked, always };
 }
