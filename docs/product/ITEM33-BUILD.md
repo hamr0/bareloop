@@ -4425,3 +4425,38 @@ Build plan, one commit per piece, each with a real fail-first test:
 Proof: full gate (typecheck, build:types, npm test), then one live Tickets + rubric draft and run, and one live page rubric (flights) draft and run, on the real branch. Live proof decides done.
 
 Not in this build: ticket actions applied at Accept (next step).
+
+## Addendum 2026-11-14 (b): note question on fact lines; one rule in, one rule out (signed by hamr in chat)
+
+Two builds, in this order, one commit per deliverable. Branch fix/after-0.56.
+
+### Build 1: note question on facts-only lines (live finding, run mwgjlezb)
+
+Root cause (verified): a rubric line whose `~` rule maps to a fact becomes facts-only (`src/checkblock.js` buildLine ~:404 factLines, buildDefaults ~:457 `$cited` "this line finds facts"). `src/rubricstep.js:91` sets `alsoText` only via a countable part; :99-100 tells the worker 'no "text"'; :293 has no text-present check. So line 1 "Write a one-sentence triage note ... quoting its title word for word" produced results only and no note.
+
+POC PASS 12/12 ($0.002): wording, prompt and reply format in `.claude/scratch/poc-note-question/PREREG.md` and `poc.mjs`, modelled on `src/destpoint.js`. That wording and shape are used exactly.
+
+Build:
+
+1. During drafting, ONLY IF the rubric job has at least one facts-only line (no call otherwise), ONE typed call for the job asks, per facts-only line, "does it also ask for written words (a note, sentence, summary) beyond the facts found?" and gets yes/no. It sees line text only. Same provider, model and thinking-off as the destpoint call; one retry on malformed; no JSON repair. Logged in the draft log like destpoint.
+2. Code decides. On yes, the check list adds a `$` default row on that line ("line N writes a note — the note must be there") whose part is a countable nonEmpty text part. That flips alsoText (brief becomes FACTS AND TEXT, text-present floored). Existing keep-both machinery, one owner, no second path. On no, nothing changes. On a failed call the line stays facts-only and the card shows a Not checked row: "could not ask whether line N also wants a note".
+3. Fix the display lie at `src/authorflow.js:643-646`: list "carry text" only for lines whose signed close really has text-present, derived from the close (one owner).
+4. Not in this round: checking that the note quotes the title.
+
+Fail-first tests: line 1 of the mwgjlezb job with a stubbed yes builds a countable text part, the brief says FACTS AND TEXT, a results-only file grades red. Stubbed no keeps facts-only. A job with no facts-only line makes no call. A failed call gives the Not checked row. The protections line is absent on a facts-only line.
+
+### Build 2: one rule in, one rule out
+
+hamr: "one list, one rule (~ ! $), one in one out, one updated replacing the one it's updating". This SUPERSEDES hamr's 2026-11-12 ruling 1 ("an agreed answer is a new ~ line"). Live finding: run mwgjnrkz, whose card showed two `~` rules from one Agree.
+
+Today: `src/panel/authorsession.js` ~:1236-1249 (answerQuestions) appends the answer as a new `~` rule to jobLines; `src/checkblock.js` applyAnswer :486-522 adds a follower row (origin 'agreed', parent); the F318 sameRuleWords dedupe hides exact duplicates; matchCountRule :283-289 asks every count rule without a pick even when its words already are the proposal.
+
+Change:
+
+1. An answer (Agree, or the person's own typed words) REPLACES the asked rule: same line, same rule number. ONE owner: the check list. authorsession's jobLines/jobText are rebuilt from the list; the second implementation in answerQuestions is removed.
+2. Follower rows (parent / matchFollow / followsOf / follow, the pairWith special case if then redundant) and the F318 dedupe are deleted; every caller, the card and signedRows are updated.
+3. No obvious asks: in matchCountRule, if plainWords(countCheck(r.text)) equals the rule's own words (normalized, as sameRuleWords does), build it directly as a settled check, no question. A replaced rule never re-asks on a re-draft or Reuse.
+4. `!` and `$` rows: an edit replaces its row, never adds a sibling. Audit editAdd and the Revise/Start over carried picks (carriedPicks/carriedChoices) for append-beside behaviour; make it replace.
+5. The signed record (picks, list rows) stores the final rule only.
+
+Fail-first tests: Agree on "~ exactly 3 bullets" proposing "exactly 3 list items" leaves ONE rule, "exactly 3 list items", in the job text, the rows and the signed rows. Typed words replace the same way. A re-draft from that job text asks nothing for that rule (count asks = 0). A flights "~ not a red-eye" Agree leaves only the departure-time rule. Old F318/follower tests are rewritten or deleted (listed in the commit).

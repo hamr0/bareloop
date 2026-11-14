@@ -2287,3 +2287,9 @@ hamr's goal, verbatim: "humans add rules they think matter, ai try to comply and
 - Audit shows only the latest close everywhere (done on this branch). Pointer: `docs/product/ITEM33-BUILD.md`, Addendum 2026-11-14.
 - Built 2026-11-14 on fix/after-0.56, one commit per piece (pieces 1-7); `docs/product/ITEM33-BUILD.md` Addendum 2026-11-14. The live Tickets + rubric draft/run and the live page-rubric (flights) draft/run are still to be done by hamr; ticks are build ticks, not live proof.
 - Next: ticket actions prepared by the run, applied at Accept.
+
+### Note question on fact lines; one rule in, one rule out (v1.135 — 2026-11-14)
+
+- [ ] A facts-only rubric line is asked ONCE at drafting whether it also wants written words; yes adds a `$` countable text row (brief FACTS AND TEXT, text-present floored), no changes nothing, a failed call shows a Not checked row. The "carry text" protection is derived from the signed close. Run mwgjlezb.
+- [ ] An agreed or typed answer REPLACES the asked `~` rule (same line, same number); the check list is the one owner, no follower rows, no F318 dedupe, no re-ask of a rule whose words already are the proposal. Supersedes the 2026-11-12 ruling "an agreed answer is a new `~` line". Run mwgjnrkz.
+- Pointer: `docs/product/ITEM33-BUILD.md`, Addendum 2026-11-14 (b). Ticks are flipped when built.
