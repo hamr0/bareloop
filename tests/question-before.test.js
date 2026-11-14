@@ -1,4 +1,4 @@
-// hamr 2026-11-12 (bareloop's own two questions, signed with the question box): items D and E. The fit-check question shows [Go on] [Stop] and no box; the Destination question shows
+// hamr 2026-11-12 (bareloop's own two questions, signed with the question box): item E (item D, the fit-check question, went with the fit check on 2026-11-14). The Destination question shows
 // [Yes, set it to <folder>] [No, keep <current>] and a box for a different Destination, checked at $0 by the card's own Destination check. Real panel sessions; the model is scripted.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -6,84 +6,12 @@ import { readFileSync, writeFileSync, mkdirSync, copyFileSync, readdirSync } fro
 import { execFileSync } from 'node:child_process';
 import path, { join } from 'node:path';
 import { createSession } from '../src/panel/authorsession.js';
-import { decideFit, fitQuestionText, FIT_ANSWER } from '../src/fitcheck.js';
 import { runDestPoint, destQuestionText, DEST_ANSWER } from '../src/destpoint.js';
 import { boxFor, panelQuestionText, refuseChoice, CHOICE_SAYS } from '../src/questionbox.js';
 import { DRAFT_LOG_FILE } from '../src/draftspend.js';
 const reply = (points) => JSON.stringify({ points });
 import { world, makeRepo, keysHome, draftSeams, until, baseCard } from './flowtype-world.mjs';
 import { tmp, HERE } from './qbox-world.mjs';
-
-// ── D: the fit check ──
-const JOB_TEXT = 'List 3 flights from New York JFK to Miami with price and departure time';
-const ASKS = ['flights from New York JFK', 'to Miami', 'price', 'departure time'];
-const QUOTES = ['Leaves John F. Kennedy International Airport at 11:20 AM on Friday, November 20', 'arrives at Miami International Airport at 2:31 PM on Friday, November 20', '$289', '11:20 AM'];
-const replyOf = (missing) => JSON.stringify({ asks: ASKS.map((ask, i) => (i < missing ? { line: 1, ask, found: false, quote: null } : { line: 1, ask, found: true, quote: QUOTES[i] })) });
-const fitFn = async (o) => {
-  o.onCall({ label: 'fit-check', costUsd: 0.004, unpricedRounds: 0, raw: replyOf(2) });
-  const d = decideFit(replyOf(2), o.jobLines, o.texts);
-  return { state: d.state, asks: d.asks, notFound: d.notFound, reason: null, cause: null, budgetStop: null, calls: [] };
-};
-function fitPanel() {
-  const file = join(tmp(), 'flights.txt'); copyFileSync(join(HERE, 'fixtures', 'fit', 'jfk-mia.txt'), file);
-  const sessionsRoot = tmp('qb-fit-sess-');
-  const legs = [];
-  const PLAN = { goal: 'List flights.', checks: [{ text: 'three flights are listed', fromLine: [1] }], notChecked: [], questions: [] };
-  const session = createSession({ checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'qb-fit', jobText: `1. ${JOB_TEXT}`, inputs: `Flights: ${file}`, destination: join(tmp(), 'delivered'), capUsd: 1 }, {
-    env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home: keysHome(tmp('qb-fit-home-')), sessionsRoot, generate: async () => { throw new Error('no model call'); },
-    lookFn: async () => ({ state: 'PRESENT', reason: null, cause: null, budgetStop: null, calls: [], raws: [], facts: { rubricFiles: true, inputs: [{ n: 1, label: 'Flights' }], look: { facts: [], prose: [], notFound: [], dropped: [] } } }),
-    fitFn,
-    confirmGenerate: async (_c, tools) => { await tools[0].execute(PLAN); return { text: JSON.stringify(PLAN), error: null, cost: 0.0005 }; },
-    authorFn: async (o) => { legs.push(o); return { ok: false, stop: 'max-revisions', declaration: null, iterations: [], raws: [], cost: { costUsd: 0, knownUsd: 0, spendComplete: true, calls: [], unpricedRounds: 0 }, reds: [{ code: 'x', path: 'p', detail: 'line 1: nothing. Nothing was signed.' }] }; },
-  });
-  const log = () => readFileSync(join(sessionsRoot, readdirSync(sessionsRoot)[0], DRAFT_LOG_FILE), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
-  return { session, legs, log };
-}
-const fitAsking = (s) => s.state.pendingAsk?.source === 'fit-check';
-
-test('D: the fit question has [Go on] [Stop] and no answer box; the box shows it without the typed words, the stored question and the CLI keep them', async () => {
-  const { session } = fitPanel();
-  assert.ok(await until(() => fitAsking(session)), `${session.state.phase} / ${session.state.error}`);
-  const ask = session.state.pendingAsk;
-  assert.deepEqual(ask.box.choices, [{ choice: 'go-on', label: 'Go on' }, { choice: 'stop', label: 'Stop' }]);
-  assert.equal(ask.box.orLabel, null, 'no answer box');
-  assert.equal(ask.box.text.endsWith('.'), true);
-  assert.doesNotMatch(ask.box.text, /Type go on/);
-  assert.match(ask.box.text, /^I found 2 of 4 of your asks on this page: price \(line 1\), departure time \(line 1\)\. Not found: flights from New York JFK \(line 1\), to Miami \(line 1\)\.$/);
-  assert.ok(ask.question.endsWith(FIT_ANSWER), 'the stored question keeps its words');
-  assert.equal(session.state.messages.at(-1).askOpen, true);
-  assert.equal(panelQuestionText({ question: 'Not found: x. Type go on to keep drafting.', source: 'fit-check' }), 'Not found: x. Type go on to keep drafting.', 'only the exact suffix');
-});
-
-test('D: Go on = today\'s "go on" (drafting continues); the human row says the choice', async () => {
-  const { session, legs, log } = fitPanel();
-  assert.ok(await until(() => fitAsking(session)));
-  assert.deepEqual(session.send('', 'go-on'), { ok: true });
-  assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'), `${session.state.phase} / ${session.state.error}`);
-  const h = log().filter((e) => e.kind === 'human');
-  assert.deepEqual(h.map((e) => [e.source, e.answer, e.choice]), [['fit-check', 'go on', 'go-on']]);
-  assert.equal(legs.length, 0);
-});
-
-test('D: Stop = today\'s "anything else stops"; any other choice is refused with the generic words and the question stays open', async () => {
-  const { session } = fitPanel();
-  assert.ok(await until(() => fitAsking(session)));
-  for (const c of ['agree', 'yes', 'rule', 'path', 'maybe', 5]) {
-    const r = session.send('go on', c);
-    assert.deepEqual([r.ok, r.error], [false, CHOICE_SAYS.bad], String(c));
-  }
-  assert.ok(fitAsking(session), 'still open');
-  assert.deepEqual(session.send('', 'stop'), { ok: true });
-  assert.ok(await until(() => ['refused', 'error', 'stopped'].includes(session.state.phase)), session.state.phase);
-  assert.match(String(session.state.error), /Stopped before drafting: the page does not show everything the job asks for/);
-});
-
-test('D: no choice (the old words path) still works: typing "go on" goes on', async () => {
-  const { session } = fitPanel();
-  assert.ok(await until(() => fitAsking(session)));
-  assert.deepEqual(session.send('go on'), { ok: true });
-  assert.ok(await until(() => session.state.pendingAsk?.kind === 'menu'));
-});
 
 // ── E: the Destination question ──
 const git = (dir, args) => execFileSync('git', ['-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { stdio: 'ignore' });
@@ -180,10 +108,7 @@ test('E: no choice (old words path): "yes" and "no" still work, anything else as
   assert.deepEqual(await fence(s, got), ['src/']);
 });
 
-test('boxFor / refuseChoice: the choice tables of the two questions', () => {
+test('boxFor / refuseChoice: the choice table of the Destination question', () => {
   assert.equal(refuseChoice({ kind: 'answer', source: 'dest-point' }, 'path'), null);
   assert.equal(refuseChoice({ kind: 'answer', source: 'dest-point' }, 'go-on'), CHOICE_SAYS.bad);
-  assert.equal(refuseChoice({ kind: 'answer', source: 'fit-check' }, 'go-on'), null);
-  assert.equal(refuseChoice({ kind: 'answer', source: 'fit-check' }, 'path'), CHOICE_SAYS.bad);
-  assert.equal(boxFor({ kind: 'answer', source: 'fit-check', question: fitQuestionText({ found: 1, total: 2, notFound: [{ line: 1, ask: 'x' }] }) })?.orLabel, null);
 });

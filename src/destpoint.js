@@ -2,7 +2,7 @@
 // names a file to change, the line, the file (copied from that line) and the folder that holds it. Plain code then checks every claim (the line is a job line, the path
 // stands in that line's own words, the file is in the repo's committed tree, the folder is a real parent of it) and that the file lies OUTSIDE the Destination. Only then is
 // there ONE question, worded by code, answered yes or no like the fit check's "go on". A made-up file, a path the line does not hold or a malformed reply is no question.
-// Failure is OPEN (a wrong question is the costly mistake): a call that does not finish asks nothing and drafting goes on. The call/book/retry pattern is src/fitcheck.js's.
+// Failure is OPEN (a wrong question is the costly mistake): a call that does not finish asks nothing and drafting goes on. The call/book/retry pattern is src/pagemap.js's `runPageMap`.
 
 import { createRequire } from 'node:module';
 import { priceOf, scrubRaw, tallyCalls, capStop, callCasualty } from './text.js';
