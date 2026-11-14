@@ -5,6 +5,18 @@ All notable changes to bareloop are documented here. Format:
 [SemVer](https://semver.org/spec/v2.0.0.html). Pre-1.0: **minor** = a ladder rung or
 feature lands, **patch** = docs, fixes, scaffolding.
 
+## [Unreleased]
+
+### Changed
+
+- **One list for every rubric check (hamr 2026-11-14, Addendum (c); docs/product/ITEM33-BUILD.md).** Every check a person sees on a rubric job is a row of the one list (`~ [you]`, `! [agent]`, `$ [default]`), code decides, and a view shows nothing that is not a row. Built in six pieces:
+  - piece 1: the `$` floor row (the line's file must exist, be complete JSON, and carry text) is drawn on every line on the card, the Job tab and the Audit; a facts-only line says its floor has no text check. The separate "line N file" note of the protections folds into it (an older close with no floor row keeps the note).
+  - piece 2: the mandatory guards (`changed-from-seed`, and `no-suppressions` where a class has it) are `$ [default]` rows of the signed list, ONCE for the whole job (`closeDecl.list`, row `kind: 'guard'`, line 0, key `J.$guard.<name>`); the close validator admits them, `listMatchesClose` checks each names a guard stage the close runs, and "Always checked" keeps only the write fence for a job that signs them. `GUARD_DESCRIPTIONS` moved to `src/guarddescriptions.js` (still exported from `authorflow.js`).
+  - piece 3: every check item the card and the Job tab draw carries the key of its built list row (a pick, the cited default, the numbers tie and the note too). The CLI plan print (`confirmPlanLines`) draws each check with its line and row tag. A close that carries the list with its guard rows draws no model free-text `notes`, and its Job `success` / `guardrails` fields are the rows and the write fence.
+  - piece 4: each row gets its OWN pass or fail. `gradeStep` hands out bareguard's raw gaps; `src/rowresults.js` maps each gap to the one row that owns the check it names; `runDeclaredStages` (given the signed list by `planrun` and the review door) records `rows` and `unclaimed` on each stage entry of the close; the Audit and the Result tab show a mark per row and the reason of a failed one. A gap that names no single row (a quote-level gap of a fact part, a part with no results) is never spread over rows: it is shown as its own failed item of the line.
+  - piece 5: the try-3 question replaces. The drafter tags each question with `rule` (a `~` rule the line really has) or `new`; `normalizeQuestions` drops a rule the line does not have, a question with no tag and one with both, with the reason. An answer about a rule REPLACES that rule (one in, one out), `new` adds one; the ask shows "This replaces: <old words>" or "This adds a new rule to line N"; each answered question is logged as draft-log kind `try3-question`.
+  - A signed spec or old run is never repaired: a close with no list, or a list with no guard row, keeps today's display and the same verdicts.
+
 ## [0.57.0] - 2026-11-14
 
 ### Removed
