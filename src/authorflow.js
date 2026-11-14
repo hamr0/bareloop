@@ -89,7 +89,8 @@ import { redactSecrets } from './validate.js';
 import { ledgerRecord } from './checklist.js';
 import { ROW_EDIT_REVISE, rowEditUserText, rowEditChannel, editsOf } from './rowedit.js';
 import { REASON, CheckBlock } from './checkblock.js';
-import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, lineRules, lineCarriesText } from './rubricstep.js';
+import { GUARD_DESCRIPTIONS } from './guarddescriptions.js';
+import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, lineRules, lineCarriesText, guardNameOfKey } from './rubricstep.js';
 import { dropRows, dropLine } from './pagedropwords.js';
 import { renderLookReport } from './inputlook.js';
 import { checkDeclarationWords, labelListsFor } from './factwords.js';
@@ -595,21 +596,7 @@ export const CONFIRM_MENU = Object.freeze({
   'start-over': 'Start over — rerun the interview from the beginning',
 });
 
-/**
- * PLAIN-ENGLISH lines for the guards `classGuards` can compose, keyed by
- * guard NAME — frozen beside {@link CONFIRM_MENU} because both are constants
- * the confirm turn shows a person verbatim. One entry per guard that exists
- * in `MECHANICAL_GUARDS` (`src/authoring.js`); {@link confirmProtections}
- * throws if a guard `classGuards` hands back has no line here, so a battery
- * that grows a guard fails loudly instead of showing a blank description.
- * @type {Record<string, string>}
- */
-export const GUARD_DESCRIPTIONS = Object.freeze({
-  'changed-from-seed': 'the run must actually change at least one file in scope — a close that reports done '
-    + 'without touching anything is refused',
-  'no-suppressions': 'the run may not silence a checker instead of fixing what it flags (things like @ts-ignore, '
-    + 'eslint-disable, or # type: ignore) — none of those may appear in the diff',
-});
+export { GUARD_DESCRIPTIONS };
 
 /**
  * THE REAL PROTECTIONS a person is shown, and what {@link runConfirmTurn}
@@ -629,7 +616,9 @@ export const GUARD_DESCRIPTIONS = Object.freeze({
  * @returns {string[]}
  */
 export function confirmProtections({ verdictType, lang, writeScope = null, jobLines = null, closeDecl = null }) {
-  const guards = classGuards({ verdictType, lang });
+  // (one list, Addendum 2026-11-14 (c) piece 2: a guard the signed list already holds as a `$` row is said THERE, once for the job; an older close with no guard row keeps its line here)
+  const rowed = Array.isArray(closeDecl?.list) ? closeDecl.list.filter((/** @type {any} */ r) => r && r.kind === 'guard' && r.state === 'built').map((/** @type {any} */ r) => guardNameOfKey(r.key)) : [];
+  const guards = classGuards({ verdictType, lang }).filter((g) => !rowed.includes(g.name));
   const lines = guards.map((g) => {
     const desc = GUARD_DESCRIPTIONS[g.name];
     if (!desc) {
@@ -2665,6 +2654,8 @@ export async function authorClose({
     block.addLook(Array.isArray(facts?.look?.facts) ? facts.look.facts : [], Array.isArray(facts?.look?.dropped) ? facts.look.dropped : []);
     block.reconcile();
   }
+  // the mandatory guards are job-level `$` rows of the signed list (piece 2): the block that signs knows their names, whoever built it
+  if (block !== null && lang === RUBRIC_LANG) block.setGuards(guards.map((/** @type {any} */ g) => g.name));
   /** the row-edit turn replaces the drafter's declaration for a rubric job: the model boundary and the declaration code assembles from the block's rows */
   const rowEdits = block !== null && lang === RUBRIC_LANG;
   const draftGenerate = rowEdits && editGenerate ? editGenerate : generate;

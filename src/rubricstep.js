@@ -4,6 +4,7 @@ import { join, dirname } from 'node:path';
 import { createRubric, checkStep, renderGaps, numbersInQuote } from 'bareguard';
 import { dropRows, dropLine } from './pagedropwords.js';
 import { OFFERED, plainWords } from './checkwords.js';
+import { GUARD_DESCRIPTIONS } from './guarddescriptions.js';
 import { factPartOf, factShapeReds, factDecides, factClaims, factRows, plainFactItem, factBrief, writtenSpans } from './facts.js';
 
 // PART 1a (docs/product/ITEM33-BUILD.md, "Addendum 2026-10-12"): the rubric job on LOCAL FILES — what one job line leaves
@@ -988,6 +989,13 @@ export function lineCarriesText(closeDecl, n) {
     && !(factPartOf(st.params) && !st.params.parts.some((/** @type {any} */ x) => isRec(x) && x.class === 'countable')));
 }
 
+/** the key of a job-level guard row: `J.$guard.<name>` (the one list, Addendum 2026-11-14 (c) piece 2) @param {string} name @returns {string} */
+export const guardKeyOf = (name) => `J.$guard.${name}`;
+/** the guard a row key names, or '' @param {unknown} key @returns {string} */
+export const guardNameOfKey = (key) => (typeof key === 'string' && key.startsWith('J.$guard.') ? key.slice('J.$guard.'.length) : '');
+/** the words of a guard row: the guard's name and its one plain line (GUARD_DESCRIPTIONS), the way the confirm card always said it @param {string} name @returns {string} */
+export const guardRowText = (name) => `${name} — ${GUARD_DESCRIPTIONS[name] ?? name}`;
+
 /**
  * The words of a line's `$` floor row (Addendum 2026-11-14 (c) piece 1), written by code from the signed close: the line's file must exist and be complete JSON, and carry text only when the close
  * really puts a text check on it ({@link lineCarriesText}); a facts-only line says it has none. ONE owner: the card, the Job tab and the Audit read it.
@@ -1027,7 +1035,9 @@ export function checksOfClose(closeDecl) {
     const r = list.find((/** @type {any} */ x) => x.kind === 'floor' && x.line === st.params.step);
     return r ? [{ line: st.params.step, text: floorText(closeDecl, st.params.step), by: /** @type {'default'} */ ('default'), key: String(r.key) }] : [];
   };
-  return stages.flatMap((/** @type {any} */ st) => (isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts)
+  // the job-level `$` guard rows (piece 2): once for the whole job, line 0, after every line's rows
+  const guardRows = list.filter((/** @type {any} */ x) => x.kind === 'guard' && guardNameOfKey(x.key) !== '').map((/** @type {any} */ x) => ({ line: 0, text: guardRowText(guardNameOfKey(x.key)), by: /** @type {'default'} */ ('default'), key: String(x.key) }));
+  return [...stages.flatMap((/** @type {any} */ st) => (isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && Array.isArray(st.params.parts)
     ? [...st.params.parts.flatMap((/** @type {any} */ p, /** @type {number} */ pi) => {
       if (!isRec(p) || (p.class !== 'countable' && p.class !== 'fact')) return [];
       /** @type {'agent'|'you'|'default'} */
@@ -1040,7 +1050,7 @@ export function checksOfClose(closeDecl) {
         return { line: st.params.step, text, by: own?.by ?? by, ...(own ? { key: own.key } : {}) };
       });
     }), ...floorOf(st)]
-    : []));
+    : [])), ...guardRows];
 }
 
 /**
@@ -1085,8 +1095,11 @@ export function listMatchesClose(closeDecl) {
   if (list === null) return { ok: true };
   const stages = Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
   const partsOn = (/** @type {number} */ n) => stages.filter((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && st.params.step === n && Array.isArray(st.params.parts)).flatMap((/** @type {any} */ st) => st.params.parts);
-  const built = list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'built' && r.kind !== 'floor');
-  const bad = built.filter((/** @type {any} */ r) => !(isRec(r.part) && r.part.line === r.line && Number.isInteger(r.part.part) && isRec(partsOn(r.line)[r.part.part])));
+  // a job-level guard row (line 0) points at a guard STAGE the close runs, by name; it has no part
+  const stageNames = stages.filter((/** @type {any} */ st) => isRec(st)).map((/** @type {any} */ st) => st.name);
+  const guardBad = list.filter((/** @type {any} */ r) => isRec(r) && r.kind === 'guard' && r.state === 'built' && !stageNames.includes(guardNameOfKey(r.key)));
+  const built = list.filter((/** @type {any} */ r) => isRec(r) && r.state === 'built' && r.kind !== 'floor' && r.kind !== 'guard');
+  const bad = [...guardBad, ...built.filter((/** @type {any} */ r) => !(isRec(r.part) && r.part.line === r.line && Number.isInteger(r.part.part) && isRec(partsOn(r.line)[r.part.part])))];
   const lines = [...new Set(stages.filter((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params)).map((/** @type {any} */ st) => st.params.step))];
   const bare = lines.flatMap((/** @type {number} */ n) => partsOn(n).map((/** @type {any} */ p, /** @type {number} */ i) => ({ n, i, p })))
     .filter(({ p }) => isRec(p) && (p.class === 'countable' || p.class === 'fact'))

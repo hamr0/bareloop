@@ -63,6 +63,8 @@ test('the confirm card draws every row the block built under its line, and every
     'L1.count.3-3': /^fact · results — exactly 3 results/,
   };
   for (const r of built) assert.ok(names.some((/** @type {string} */ n) => /** @type {RegExp} */ (/** @type {any} */ (shows)[r.key]).test(n)), `${r.key} is not on the card: ${JSON.stringify(names)}`);
-  assert.equal(names.length, built.length, 'one card row per built row, no more');
+  // plus the line's `$` floor row (one list, Addendum 2026-11-14 (c) piece 1), nothing else
+  assert.equal(names.filter((/** @type {string} */ n) => /^its file output\/steps\/1\.json must exist/.test(n)).length, 1, 'the floor row is drawn once');
+  assert.equal(names.length, built.length + 1, 'one card row per built row and the floor, no more');
   for (const r of notChecked) assert.ok(plan.notChecked.some((/** @type {string} */ n) => n.includes(r.reason)), `${r.key} (${r.reason}) is not under Not checked: ${JSON.stringify(plan.notChecked)}`);
 });

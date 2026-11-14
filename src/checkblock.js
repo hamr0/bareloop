@@ -8,7 +8,7 @@ import { countExact, countPhrase, checkFactWords, keptSetOf } from './factwords.
 import { isCountable, keepOrDrop, countCheck, obviousCheck, partOfPick, plainWords, sameRuleWords } from './checkpick.js';
 import { dropRows, dropSentence } from './pagedropwords.js';
 import { phraseInNoResult } from './pagedry.js';
-import { boundInWords, rubricStepShapeReds, floorWords, defaultCitedText, defaultNoteText, readLimit, holdsManyBounds, NEGATING_RE, WHY_OTHER_CURRENCY } from './rubricstep.js';
+import { boundInWords, rubricStepShapeReds, floorWords, guardKeyOf, defaultCitedText, defaultNoteText, readLimit, holdsManyBounds, NEGATING_RE, WHY_OTHER_CURRENCY } from './rubricstep.js';
 import { validReading } from './pagerules.js';
 import { weekOnly, weekTokens, WEEK_ONLY_WORDS, MAX_BANG } from './checklist.js';
 import { fitPlacePhrase } from './placerule.js';
@@ -114,7 +114,12 @@ export class CheckBlock {
     this.closeCache = null;
     /** @type {Map<number, 'yes'|'no'|'failed'>} the note question's answer per facts-only line (src/noteask.js; code decides what it means) */
     this.notes = new Map();
+    /** @type {string[]} the NAMES of the mandatory guards the close carries (Addendum 2026-11-14 (c) piece 2): each is a job-level `$` row of the signed list, never a row of `rows` (no line, so no check of a line) */
+    this.guards = [];
   }
+
+  /** the mandatory guards of this job's class, by name: signedRows() adds one `$` guard row for each, once for the whole job @param {string[]} names */
+  setGuards(names) { this.guards = [...new Set(names)]; }
 
   textOf(/** @type {string|undefined} */ source) { return this.texts[source ?? this.labels[0] ?? ''] ?? Object.values(this.texts)[0] ?? ''; }
   /** @param {number} line @param {string} [kind] */
@@ -729,11 +734,12 @@ export class CheckBlock {
    * `dropped` with code's reason (it is on the Audit, never on the card), and a built row carries the names of the facts it made (`facts`), so every reader can tag each fact by its row's kind.
    */
   signedRows() {
-    return this.rows.map((r) => {
+    const rows = this.rows.map((r) => {
       const gone = r.state === 'suggested' || r.hidden === true;
       const row = { ...r, ...(gone ? { state: 'dropped' } : {}), ...(r.state === 'built' && r.factNames?.length ? { facts: r.factNames } : {}) };
       return Object.fromEntries(SIGNED_ROW_FIELDS.filter((f) => row[f] !== undefined && row[f] !== null).map((f) => [f, row[f]]));
     });
+    return [...rows, ...this.guards.map((name) => ({ line: 0, key: guardKeyOf(name), from: 'default', by: 'default', kind: 'guard', state: 'built' }))];
   }
 
   /** the suggestions code has proved it can build, as the card offers them (Add): `{key, line, text}` */
