@@ -16,7 +16,7 @@ import { ticketFilterWords } from '../ticketfilter.js';
 import { KIND_CATALOGUE } from '../authoring.js';
 import { WEEK_ONLY_WORDS } from '../checklist.js';
 import { splitReadNotes } from '../pagedropwords.js';
-import { checksOfClose, guardKeyOf, guardRowText, signedFactNames, proseNotChecked, lineRules, confirmedGoalOf, refusedOf, listRowName, ruleNotCheckedItems } from '../rubricstep.js';
+import { checksOfClose, carriesOneList, guardKeyOf, guardRowText, signedFactNames, proseNotChecked, lineRules, confirmedGoalOf, refusedOf, listRowName, ruleNotCheckedItems } from '../rubricstep.js';
 
 /** `by` = who added the check: the drafter (`agent`) or the person's own pick (`you`); absent = code's own (an always-on guard, a number tie) or not known */
 /** `stage` = the signed close stage the row belongs to (its recorded verdict is the row's result in the Audit) */
@@ -55,7 +55,7 @@ export function checkClassOfKind(kind) {
  * @returns {JobPlan}
  */
 export function planFromSpec(spec, ledger = null) {
-  /** @type {{name: string, cls: 'machine check'|'judge'|null, fromLine: number[]|null, by?: 'agent'|'you'|'default'|null, stage?: string}[]} */
+  /** @type {{name: string, cls: 'machine check'|'judge'|null, fromLine: number[]|null, by?: 'agent'|'you'|'default'|null, stage?: string, key?: string}[]} */
   let stages = [];
   if (spec && Array.isArray(spec.closeDecl?.stages)) {
     stages = spec.closeDecl.stages.filter((/** @type {any} */ s) => s && typeof s.name === 'string' && s.name)
@@ -66,8 +66,8 @@ export function planFromSpec(spec, ledger = null) {
         const rows = s.kind === 'rubric-step' ? checksOfClose({ stages: [s], picks: spec.closeDecl.picks, list: spec.closeDecl.list }).filter((r) => r.line !== 0) : [];
         // a guard stage the signed list holds as a job-level `$` row (piece 2) is that row: one check that serves no one line, drawn once, never "Always checked"
         const guardRow = s.kind !== 'rubric-step' && Array.isArray(spec.closeDecl.list) ? spec.closeDecl.list.find((/** @type {any} */ r) => r && r.kind === 'guard' && r.state === 'built' && r.key === guardKeyOf(s.name)) : null;
-        if (guardRow) return [{ name: guardRowText(s.name), cls: checkClassOfKind(s.kind), fromLine: /** @type {number[]} */ ([0]), by: /** @type {'default'} */ ('default'), stage: s.name }];
-        return rows.length > 0 ? rows.map((r) => ({ name: r.text, cls: /** @type {'machine check'} */ ('machine check'), fromLine, by: r.by, stage: s.name })) : [{ name: s.name, cls: checkClassOfKind(s.kind), fromLine, by: /** @type {'agent'} */ ('agent'), stage: s.name }];
+        if (guardRow) return [{ name: guardRowText(s.name), cls: checkClassOfKind(s.kind), fromLine: /** @type {number[]} */ ([0]), by: /** @type {'default'} */ ('default'), stage: s.name, key: String(guardRow.key) }];
+        return rows.length > 0 ? rows.map((r) => ({ name: r.text, cls: /** @type {'machine check'} */ ('machine check'), fromLine, by: r.by, stage: s.name, ...(r.key ? { key: r.key } : {}) })) : [{ name: s.name, cls: checkClassOfKind(s.kind), fromLine, by: /** @type {'agent'} */ ('agent'), stage: s.name }];
       });
   } else if (spec && Array.isArray(spec.close)) {
     stages = spec.close.filter((/** @type {any} */ s) => s && typeof s.name === 'string' && s.name)
@@ -75,7 +75,7 @@ export function planFromSpec(spec, ledger = null) {
   }
   // a prose step says what it does not check (PART 1b, RF5): the person judges the text at Accept
   const allNotes = [
-    ...(Array.isArray(spec?.closeDecl?.notes) ? spec.closeDecl.notes.filter((/** @type {any} */ n) => typeof n === 'string' && n) : []),
+    ...(Array.isArray(spec?.closeDecl?.notes) && !carriesOneList(spec.closeDecl) ? spec.closeDecl.notes.filter((/** @type {any} */ n) => typeof n === 'string' && n) : []),
     ...proseNotChecked(spec?.closeDecl),
   ];
   // code's notes on which written forms of a still-checked fact were not used are "How the page was read", not Not checked
@@ -102,8 +102,8 @@ export function planFromSpec(spec, ledger = null) {
     if (s.fromLine === null) { alwaysOn.push(s.name); continue; }
     // a check that serves several job lines is shown under EACH line it serves (no new element: the same check line, repeated)
     const served = lines.filter((l) => /** @type {number[]} */ (s.fromLine).includes(l.n));
-    for (const line of served) line.checks.push({ name: s.name, cls: s.cls, ...(s.by ? { by: s.by } : {}), ...(s.stage ? { stage: s.stage } : {}) });
-    if (served.length === 0) loose.push({ name: s.name, cls: s.cls, ...(s.by ? { by: s.by } : {}), ...(s.stage ? { stage: s.stage } : {}) });
+    for (const line of served) line.checks.push({ name: s.name, cls: s.cls, ...(s.by ? { by: s.by } : {}), ...(s.stage ? { stage: s.stage } : {}), ...(s.key ? { key: s.key } : {}) });
+    if (served.length === 0) loose.push({ name: s.name, cls: s.cls, ...(s.by ? { by: s.by } : {}), ...(s.stage ? { stage: s.stage } : {}), ...(s.key ? { key: s.key } : {}) });
   }
   // an always-on guard that the drafter said covers a job line is shown under that line too ("› check · always-on: <guard>")
   for (const g of Array.isArray(spec?.closeDecl?.guardLines) ? spec.closeDecl.guardLines : []) {

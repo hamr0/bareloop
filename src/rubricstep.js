@@ -989,6 +989,13 @@ export function lineCarriesText(closeDecl, n) {
     && !(factPartOf(st.params) && !st.params.parts.some((/** @type {any} */ x) => isRec(x) && x.class === 'countable')));
 }
 
+/**
+ * Does this signed close carry the ONE list in full (Addendum 2026-11-14 (c)): a list that holds its job-level guard rows? Such a close is built by the check block alone, so every view reads its rows and
+ * the model's free-text `notes` (which the block never writes) are not a source; an older close (no list, or a list with no guard row) keeps today's display.
+ * @param {any} closeDecl @returns {boolean}
+ */
+export const carriesOneList = (closeDecl) => isRec(closeDecl) && Array.isArray(closeDecl.list) && closeDecl.list.some((/** @type {any} */ r) => isRec(r) && r.kind === 'guard');
+
 /** the key of a job-level guard row: `J.$guard.<name>` (the one list, Addendum 2026-11-14 (c) piece 2) @param {string} name @returns {string} */
 export const guardKeyOf = (name) => `J.$guard.${name}`;
 /** the guard a row key names, or '' @param {unknown} key @returns {string} */
@@ -1043,7 +1050,12 @@ export function checksOfClose(closeDecl) {
       /** @type {'agent'|'you'|'default'} */
       const by = p.check === 'numbersFromFacts' || isDefaultNote(p, st.params.step) || (p.check === 'cited' && p.text === defaultCitedText(p.source)) ? 'default' : record.some((/** @type {any} */ x) => isRec(x) && x.line === st.params.step && sameJson(x.part, p)) ? 'you' : 'agent';
       // a fact part is one plan row per fact (and one for its count): the person signs the rows, the close runs the same list
-      if (p.class !== 'fact') return [{ line: st.params.step, text: partSentence(p), by }];
+      if (p.class !== 'fact') {
+        // the built row that carries this countable part (piece 3: every check is a row): a row points at its part, or a `~` rule row is named in the part's own `rules`; the first one keys it
+        const row = list.find((/** @type {any} */ x) => ['rule', 'cited', 'numbers', 'note'].includes(x.kind) && x.line === st.params.step
+          && ((isRec(x.part) && x.part.line === st.params.step && x.part.part === pi) || (x.kind === 'rule' && Array.isArray(p.rules) && p.rules.includes(x.rule))));
+        return [{ line: st.params.step, text: partSentence(p), by, ...(row ? { key: String(row.key) } : {}) }];
+      }
       const facts = Array.isArray(p.facts) ? p.facts : [];
       return factRows(p).map((/** @type {string} */ text, /** @type {number} */ i) => {
         const own = i < facts.length ? factBy(st.params.step, facts[i]?.name) : countBy(st.params.step, pi);
@@ -1072,7 +1084,7 @@ export function signedFactNames(closeDecl) {
  * @returns {{checkItems: {text: string, fromLine: number[], by: 'agent'|'you'|'default', key?: string}[], notChecked: string[], notCheckedBy: Record<string, 'you'|'agent'|'default'>}}
  */
 export function cardOfClose({ closeDecl, jobLines = null, ledger = null }) {
-  const notes = isRec(closeDecl) && Array.isArray(closeDecl.notes) ? closeDecl.notes.filter((/** @type {any} */ n) => typeof n === 'string' && n) : [];
+  const notes = isRec(closeDecl) && !carriesOneList(closeDecl) && Array.isArray(closeDecl.notes) ? closeDecl.notes.filter((/** @type {any} */ n) => typeof n === 'string' && n) : [];
   const items = ruleNotCheckedItems(closeDecl, jobLines, ledger);
   /** @type {Record<string, 'you'|'agent'|'default'>} */
   const notCheckedBy = {};

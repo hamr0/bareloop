@@ -79,7 +79,7 @@ import {
 import { thinkingJobText } from '../thinking.js';
 import { ticketFilterWords } from '../ticketfilter.js';
 import { filterUnsure } from '../ticketlabels.js';
-import { judgedFilesOf, lineRules, stepFileRel, proseNotCheckedItems } from '../rubricstep.js';
+import { judgedFilesOf, lineRules, stepFileRel, proseNotCheckedItems, carriesOneList, checksOfClose } from '../rubricstep.js';
 import { factPartOf, factSentence, ruleWords, moneyAs } from '../facts.js';
 import { createSettingsRoutes } from './settingsroutes.js';
 import { planFromSpec, auditChecksOf } from './jobplan.js';
@@ -3362,8 +3362,10 @@ function stageOfCheck(c) {
  * @param {any} spec
  * @returns {string|null}
  */
-function successFromSpec(spec) {
+export function successFromSpec(spec) {
   if (!spec || typeof spec !== 'object') return null;
+  // a one-list job (Addendum 2026-11-14 (c) piece 3): the checks ARE its rows, in the card's own words, never the stage names
+  if (carriesOneList(spec.closeDecl)) return checksOfClose(spec.closeDecl).map((c) => c.text).join(' · ');
   const stages = Array.isArray(spec.close) ? spec.close
     : (spec.closeDecl && Array.isArray(spec.closeDecl.stages) ? spec.closeDecl.stages : null);
   if (!stages) return null;
@@ -3412,7 +3414,7 @@ function auditChecksFor(row, records, spec, opts) {
  * @param {any} spec
  * @returns {string|null}
  */
-function guardrailsFromSpec(spec) {
+export function guardrailsFromSpec(spec) {
   if (!spec || typeof spec !== 'object') return null;
   const writeScope = Array.isArray(spec.writeScope) && spec.writeScope.every((s) => typeof s === 'string')
     ? spec.writeScope : null;
@@ -3420,7 +3422,7 @@ function guardrailsFromSpec(spec) {
     ? `write fence — the run may only change files matching: ${writeScope.join(', ')}` : null;
   if (spec.closeDecl && typeof spec.closeDecl.lang === 'string' && typeof spec.verdictType === 'string') {
     try {
-      const lines = confirmProtections({ verdictType: spec.verdictType, lang: spec.closeDecl.lang, writeScope });
+      const lines = confirmProtections({ verdictType: spec.verdictType, lang: spec.closeDecl.lang, writeScope, closeDecl: spec.closeDecl });
       if (lines.length > 0) return lines.join(' · ');
     } catch { /* falls through to the write-fence-only line below */ }
   }

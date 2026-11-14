@@ -160,6 +160,43 @@ class ExitSignal extends Error {
  *   never a script path they never invoked and may not have on disk.
  */
 
+/** the tag of a row by its kind, one spelling with the panel: `~ [you]`, `! [agent]`, `$ [default]` (a check with no row kind says nothing) @param {unknown} by @returns {string} */
+const rowTag = (by) => (by === 'you' ? '~ [you]' : by === 'agent' ? '! [agent]' : by === 'default' ? '$ [default]' : '');
+
+/**
+ * The confirm turn's plan as the CLI prints it, read from the SAME rows the panel card draws (Addendum 2026-11-14 (c) piece 3): every check is its row (line, tag, words), the protections are the
+ * write fence only for a job whose list holds the guards. A plan that carries no row items (a repo job) prints its plain `checks` as before. Pure: one string per printed line.
+ * @param {any} p the confirm plan @returns {string[]}
+ */
+export function confirmPlanLines(p) {
+  /** @type {string[]} */
+  const out = ['THE PLAN — read before you pick:', `  goal          ${JSON.stringify(p.goal ?? '')}`, '  checks it will compose:'];
+  const items = Array.isArray(p.checkItems) && p.checkItems.length ? p.checkItems : null;
+  if (items) {
+    for (const c of items) {
+      const line = Array.isArray(c.fromLine) && Number.isInteger(c.fromLine[0]) && c.fromLine[0] >= 1 ? `line ${c.fromLine[0]}: ` : '';
+      const tag = rowTag(c.by);
+      out.push(`    · ${line}${tag ? `${tag} ` : ''}${c.text}`);
+    }
+  } else for (const c of p.checks ?? []) out.push(`    · ${c}`);
+  out.push('  protections (always-on guards, never named in the goal):');
+  for (const g of p.protections ?? []) out.push(`    · ${g}`);
+  const { notChecked: unchecked, readNotes } = splitReadNotes(p.notChecked, p.signedFacts);
+  if (unchecked.length) {
+    out.push('  you asked for these, but nothing checks them:');
+    for (const n of unchecked) out.push(`    · ${n}`);
+  }
+  if (readNotes.length) {
+    out.push(`  how the page was read · ${readNotes.length}:`);
+    for (const n of readNotes) out.push(`    · ${n}`);
+  }
+  if ((p.questions ?? []).length) {
+    out.push('  open questions:');
+    for (const q of p.questions ?? []) out.push(`    ? ${q}`);
+  }
+  return out;
+}
+
 /**
  * Parses this script's own argv shape and runs the authoring pipeline
  * (scout, declaration loop, D9's gates) against the given (or real)
@@ -716,26 +753,7 @@ export async function main(argv, deps = {}) {
       return readFreeText(false);
     }
     if (step.kind === 'menu') {
-      const p = step.plan ?? {};
-      out('THE PLAN — read before you pick:');
-      out(`  goal          ${JSON.stringify(p.goal ?? '')}`);
-      out('  checks it will compose:');
-      for (const c of p.checks ?? []) out(`    · ${c}`);
-      out('  protections (always-on guards, never named in the goal):');
-      for (const g of p.protections ?? []) out(`    · ${g}`);
-      const { notChecked: unchecked, readNotes } = splitReadNotes(p.notChecked, p.signedFacts);
-      if (unchecked.length) {
-        out('  you asked for these, but nothing checks them:');
-        for (const n of unchecked) out(`    · ${n}`);
-      }
-      if (readNotes.length) {
-        out(`  how the page was read · ${readNotes.length}:`);
-        for (const n of readNotes) out(`    · ${n}`);
-      }
-      if ((p.questions ?? []).length) {
-        out('  open questions:');
-        for (const q of p.questions ?? []) out(`    ? ${q}`);
-      }
+      for (const l of confirmPlanLines(step.plan ?? {})) out(l);
       const keys = /** @type {(keyof typeof CONFIRM_MENU)[]} */ (Object.keys(CONFIRM_MENU));
       keys.forEach((k, i) => out(`  ${i + 1}. ${CONFIRM_MENU[k]}`));
       for (;;) {
