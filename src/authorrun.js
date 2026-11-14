@@ -164,7 +164,7 @@ class ExitSignal extends Error {
 /**
  * The lines the CLI prints for one question the plan raised: the ask, then (try-3 question, Addendum 2026-11-14 (c) piece 5) what the answer does, in the panel's own words ("This replaces: ..." or
  * "This adds a new rule to line N"). Pure.
- * @param {{index?: number, total?: number, question?: string, line?: number, replaces?: string, adds?: boolean}} step @returns {string[]}
+ * @param {{index?: number, total?: number, question?: string, line?: number, replaces?: string, adds?: boolean, [k: string]: any}} step @returns {string[]}
  */
 export function answerPromptLines(step) {
   const effect = answerEffectWords(step);
