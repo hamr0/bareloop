@@ -45,8 +45,8 @@ import { cleanEnv } from './helpers.js';
 // DERIVED from the menu, never a literal — it was `hitl` until PRD item 31.1
 // took that class off the menu, and a literal here would have silently become a
 // test of a class the product no longer offers.
-// 2026-11-14: soft-green is the green set again (no judge examples), so no class is longer than another; the rubric class is the fixture
-const CLASS = 'soft-green';
+// 2026-11-14: the CLI interview takes a repo on line 1 and a repo job is Deterministic (a soft-green pick is refused, tests/repo-rubric-refused.test.js), so green is the fixture
+const CLASS = 'green';
 
 const SCRIPT = new URL('../scripts/run-interview.mjs', import.meta.url).pathname;
 // PANEL-BUILD.md P0 task 3/4 — the ORCHESTRATION this file's two source-text
@@ -187,9 +187,7 @@ const a = (/** @type {string} */ s) => [s, ''];
  * to a fence glob (repo Source: Destination IS the write fence). */
 const front = (over = {}) => [...a(`repo: ${over.source ?? repoBase}`), ...a(over.destination ?? 'src/**')];
 /** P7: "The job" is ONE multi-line answer; a `~` rule line under a job line is its check (the PASS/FAIL examples are gone, 2026-11-14) */
-const jobBlock = (verdict, text = 'answer to question 1') => (verdict === 'soft-green'
-  ? [text, '~ every exported function has a doc block', '']
-  : [text, '']);
+const jobBlock = (_verdict, text = 'answer to question 1') => [text, '~ every exported function has a doc block', ''];
 /** a complete, valid session for a class, ending with "n" at the paid-step offer.
  * NO GOAL LINE (PRD item 33 M3 piece 4, step S5): the interview no longer asks a
  * separate goal question — the confirm turn (run-author.mjs) drafts and confirms
@@ -285,42 +283,9 @@ test('the GREEN interview shows exactly Inputs, Destination, The job, in that or
   assert.ok(!r.out.includes('PASS:'), 'no interview shows the (gone) Judge Examples question');
 });
 
-test('the SOFT-GREEN interview shows Inputs, Destination, The job (no judge examples any more)', () => {
-  const out = outDir();
-  const r = interview({ verdict: 'soft-green', out, lines: session('soft-green') });
-  assert.equal(r.code, 0, r.out);
-  const q = questionsFor('soft-green');
-  const order = [INPUTS_FIELD.prompt, DESTINATION_FIELD_REPO.prompt, q[1]];
-  assert.deepEqual(requiredAnswersFor('soft-green'), [1], 'the job is the only free-text answer');
-  let at = -1;
-  for (const text of order) {
-    const seen = r.out.indexOf(text);
-    assert.ok(seen > at, `expected to find ${JSON.stringify(text.slice(0, 40))}... after position ${at}`);
-    at = seen;
-  }
-});
-
-test('the SOFT-GREEN interview shows each free-text field\'s LABEL, in order, from the signed table (PRD item 33 M3 piece 3 wording fix)', () => {
-  const out = outDir();
-  const r = interview({ verdict: 'soft-green', out, lines: session('soft-green') });
-  assert.equal(r.code, 0, r.out);
-  const labels = labelsFor('soft-green');
-  assert.deepEqual(labels, { 1: 'The job' });
-  // Source and Destination already have their own section headers (── SOURCE ──,
-  // ── DESTINATION ──); this asserts the ORDER of the SECTIONS plus the newly-shown
-  // labels for the four free-text fields, together, exactly as a person sees them.
-  const order = ['── INPUTS', '── DESTINATION', labels[1]];
-  let at = -1;
-  for (const text of order) {
-    const seen = r.out.indexOf(text);
-    assert.ok(seen > at, `expected to find ${JSON.stringify(text)} after position ${at}`);
-    at = seen;
-  }
-});
-
 test('"worse than before" is gone from the form entirely (PRD item 33 M3 piece 3 wording fix; the confirm turn\'s own ask of it is ALSO retired now, hamr\'s ruling 2026-09-28 — it is never asked anywhere any more)', () => {
   const out = outDir();
-  const r = interview({ verdict: 'soft-green', out, lines: session('soft-green') });
+  const r = interview({ verdict: 'green', out, lines: session('green') });
   assert.equal(r.code, 0, r.out);
   assert.doesNotMatch(r.out, /worse than before/i);
 });
@@ -615,26 +580,6 @@ test('a secret typed into an answer is SCRUBBED by the library seam before it re
 });
 
 // ══ the refusals, all of them for $0 ═══════════════════════════════════════════
-
-test('the SOFT-GREEN class files just The job (the judge examples are gone)', () => {
-  // This slot used to hold the locked-class refusal, with soft-green as its
-  // exemplar. Softgreen module 3 admitted the class, so the refusal is unreachable
-  // (`LOCKED_CLASSES` is empty and the script's branch keys on it) and what
-  // replaces it is the positive the admission bought: the script asks the class's
-  // own set, one at a time, and files every answer — including the one the judged
-  // floor needs (Judge Examples, compiled at module 4, PRD item 33 M3 piece 3).
-  assert.deepEqual([...LOCKED_CLASSES], [], 'nothing left to refuse');
-  const out = outDir();
-  const r = interview({ verdict: 'soft-green', out, lines: session('soft-green') });
-  assert.equal(r.code, 0, r.out);
-  const nums = requiredAnswersFor('soft-green');
-  assert.equal(nums.length, requiredAnswersFor('green').length, 'the job alone');
-  const qs = questionsFor('soft-green');
-  assert.ok(r.out.includes(`1. ${qs[1]}`), 'The job is asked verbatim');
-  assert.match(r.out, /── 1 of 1 /);
-  const answers = JSON.parse(readFileSync(join(out, 'answers.json'), 'utf8'));
-  assert.deepEqual(Object.keys(answers).map(Number), nums, 'every answer is filed, module 4\'s inputs included');
-});
 
 test('an unknown verdict is a TYPO, refused with the menu handed over enumerated', () => {
   const out = outDir();
@@ -1070,10 +1015,10 @@ test('a repo Source with dependencies but node_modules ALREADY present: no insta
 test('P7: a ~ PASS: / ~ FAIL: line is re-asked with the plain refusal (the examples are gone, 2026-11-14)', () => {
   const out = outDir();
   const bad = [
-    ...front(), 'Write the summary', '~ PASS: x', '', ...jobBlock('soft-green'),
+    ...front(), 'Write the summary', '~ PASS: x', '', ...jobBlock('green'),
     ...a('litectx-maintainer'), ...a('5'), ...a('30'), 'n',
   ];
-  const r = interview({ verdict: 'soft-green', out, lines: bad });
+  const r = interview({ verdict: 'green', out, lines: bad });
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /PASS\/FAIL examples are gone \u2014 write what you want as a ~ rule\./);
 });
@@ -1091,5 +1036,5 @@ test('P7: Inputs lines 2+ are proven at $0 — a miss names its line and re-asks
   assert.match(r.out, /Inputs, line 2: src\/missing\.md does not exist in the repo/);
   const draft = JSON.parse(readFileSync(join(out, 'specdraft.json'), 'utf8'));
   assert.deepEqual(draft.inputs, [{ n: 1, label: 'repo', value: repoBase }, { n: 2, label: 'main', value: 'src/index.js' }]);
-  assert.deepEqual(draft.jobLines, [{ n: 1, text: 'Fix src/index.js', rule: '' }]);
+  assert.deepEqual(draft.jobLines, [{ n: 1, text: 'Fix src/index.js', rule: 'every exported function has a doc block', rules: ['every exported function has a doc block'] }]);
 });

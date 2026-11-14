@@ -66,7 +66,7 @@ import { appendDraftLog, readDraftLedger } from '../draftspend.js';
 import { signingStopText, draftStopText, redsRecord, declarationRecord, tryRefusedText } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 import {
-  parseJobBlock, parseInputs, renderJobLines, signedJobLines, jobBoxText,
+  parseJobBlock, parseInputs, renderJobLines, signedJobLines, jobBoxText, REPO_RUBRIC_WORDS,
 } from '../jobblock.js';
 import { planFromConfirm } from './jobplan.js';
 import { boxFor, offersOf, panelQuestionText, refuseChoice, resolveChoice } from '../questionbox.js';
@@ -447,6 +447,8 @@ export function validateJobCard(card, opts = {}) {
   if (!jb.ok) return { ok: false, error: jb.error };
   const ib = parseInputs(card.inputs);
   if (!ib.ok) return { ok: false, error: ib.error };
+  // hamr 2026-11-14: a repo job is Deterministic. Rubric on a repo is for a Tickets job only (its input is the ticket, below).
+  if (checkType === 'rubric' && flowOfCard(card).flowType !== 'tickets' && looksLikeRepoSource(ib.inputs[0].value)) return { ok: false, error: REPO_RUBRIC_WORDS };
   if (typeof destination !== 'string' || destination.trim() === '') return { ok: false, error: 'Destination is required' };
   if (typeof capUsd !== 'number' || !Number.isFinite(capUsd) || capUsd <= 0) {
     return { ok: false, error: '$ cap is required and must be a positive number' };

@@ -20,6 +20,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Changed
 
+- **Rubric on a repo is refused at $0 (hamr 2026-11-14, piece 4).** A Deterministic check is anything a machine can check, so a repo job is Deterministic; Rubric on a repo is allowed only for a Tickets job. A rubric card whose Inputs line 1 is a repo, and a `soft-green` pick at the CLI interview (it always takes a repo), are refused before anything is made or asked: "A repo job uses a Deterministic check."
 - bareguard ^0.36.0 (check helpers, ruling #82; existing rubric fingerprints and verdicts unchanged — peer-tested on 90 saved plans and 35 verdicts).
 
 ## [0.56.0] - 2026-11-13

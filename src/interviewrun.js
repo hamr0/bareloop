@@ -104,7 +104,7 @@ import {
   INPUTS_FIELD, JOB_BLOCK_HELP, destinationFieldFor, labelsFor,
 } from './authorflow.js';
 import {
-  parseJobBlock, parseInputs, renderJobLines, signedJobLines,
+  parseJobBlock, parseInputs, renderJobLines, signedJobLines, REPO_RUBRIC_WORDS,
 } from './jobblock.js';
 import { validateJob, validateBaseUrl, PROVIDERS } from './job.js';
 import { resolveProvider, probeWarningLines, apiKeyProblem } from './providers.js';
@@ -391,6 +391,14 @@ export async function main(argv, deps = {}) {
   // 'repo'), the same authoritative outcome `prepareSource`'s own walk
   // produces for it — reported, never fought, below.
   const IS_REPO = looksLikeRepoSource(SOURCE);
+  // hamr 2026-11-14: this door always takes a repo on line 1, and a repo job is Deterministic (a rubric on a repo is for a Tickets job, a panel flow).
+  // Refused before a single class question is asked.
+  if (VERDICT === 'soft-green' && IS_REPO) {
+    say('');
+    say(REPO_RUBRIC_WORDS);
+    say('Nothing was asked and nothing was written.');
+    throw new ExitSignal(1);
+  }
 
   // ── LANGUAGE, DETECTED — never asked (PRD item 33 M3, ruling 3) ──────────────
   // $0, no provider: reads the repo's own manifest, nearest wins, walking up to

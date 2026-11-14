@@ -7,6 +7,9 @@
 /** @typedef {{n: number, text: string, rule: string, rules: string[]}} JobLine one numbered job line; `rule` = its `~` lines joined with '; ' ('' when none), `rules` = those same `~` lines one by one */
 /** @typedef {{n: number, label: string, value: string}} JobInput one numbered `label: value` input line */
 
+/** hamr 2026-11-14: Rubric on a repo is allowed ONLY for a Tickets job; any other repo + rubric start is refused at $0 in these words */
+export const REPO_RUBRIC_WORDS = 'A repo job uses a Deterministic check.';
+
 /** the joiner for consecutive `~` lines (fwd's joinGuardrails) */
 export const RULE_JOINER = '; ';
 
