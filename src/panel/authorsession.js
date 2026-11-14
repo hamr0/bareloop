@@ -42,7 +42,7 @@ import {
 import { prepareSigning } from '../authorjob.js';
 import { checkCloseByteSignature } from '../close-integrity.js';
 import {
-  questionsFor, requiredAnswersFor, makeLoopGenerate, confirmSystemFor, SOFTGREEN_JUDGE_EXAMPLES_KEY,
+  questionsFor, requiredAnswersFor, makeLoopGenerate, confirmSystemFor,
 } from '../authorflow.js';
 import {
   resolveProvider, buildRunnerProviders, apiKeyProblem,
@@ -69,7 +69,7 @@ import { appendDraftLog, readDraftLedger } from '../draftspend.js';
 import { PLAIN_PROPOSAL_STOPS, proposalStopText, signingStopText, draftStopText, redsRecord, declarationRecord, calibrationSummary, tryRefusedText } from '../authorreadout.js';
 import { runNpmCi, NPM_CI_LOCKS } from '../npminstall.js';
 import {
-  parseJobBlock, parseInputs, jobBlockFitsCheck, renderJobLines, renderExamples, signedJobLines, jobBoxText,
+  parseJobBlock, parseInputs, renderJobLines, signedJobLines, jobBoxText,
 } from '../jobblock.js';
 import { planFromConfirm } from './jobplan.js';
 import { boxFor, offersOf, panelQuestionText, refuseChoice, resolveChoice } from '../questionbox.js';
@@ -264,7 +264,7 @@ export function cardFields(card) {
 /**
  * REUSE WORKFLOW, ONE DOOR (RULED 2026-10-15, v1.101; replaces v1.88's five open boxes). Every box on the card is open. What decides
  * the path is the CARD compared with the origin run's card, never the drafted spec: the JOB boxes are the job text (numbered lines,
- * `~` rules, `~ PASS`/`~ FAIL`), the check type and the thinking tick. The RUN boxes (Inputs, Destination, Model, $ cap, Time cap)
+ * `~` rules), the check type and the thinking tick. The RUN boxes (Inputs, Destination, Model, $ cap, Time cap)
  * never decide it. A green origin with no job box changed reuses the signed plan verbatim (no drafting); anything else drafts.
  */
 export const JOB_BOXES = Object.freeze(['jobText', 'checkType', 'thinking', 'flowType', 'mcp']);
@@ -457,11 +457,6 @@ export function validateJobCard(card, opts = {}) {
   if (!jb.ok) return { ok: false, error: jb.error };
   const ib = parseInputs(card.inputs);
   if (!ib.ok) return { ok: false, error: ib.error };
-  // P1=B: PASS/FAIL examples are required of a rubric job only when it holds a judged part. A rubric on the person's own
-  // local files (first input not a repo) holds none in this build; a rubric on a repo composes the judged floor.
-  const rubricFiles = checkType === 'rubric' && looksLikeRubricInput(ib.inputs[0].value);
-  const misfit = jobBlockFitsCheck(jb.lines, checkType === 'rubric', { judged: !rubricFiles });
-  if (misfit) return { ok: false, error: misfit };
   if (typeof destination !== 'string' || destination.trim() === '') return { ok: false, error: 'Destination is required' };
   if (typeof capUsd !== 'number' || !Number.isFinite(capUsd) || capUsd <= 0) {
     return { ok: false, error: '$ cap is required and must be a positive number' };
@@ -1146,8 +1141,6 @@ export function createSession(card, deps = {}) {
 
     /** @type {Record<string, string>} */
     const answers = { 1: renderJobLines(jobLines) };
-    if (verdictType === 'soft-green') answers[SOFTGREEN_JUDGE_EXAMPLES_KEY] = renderExamples(jobLines);
-    // a rubric job on files holds no judged part in this build, so the PASS/FAIL examples are not required of it
     const required = RUBRIC_FILES ? [1] : requiredAnswersFor(verdictType);
     for (const n of required) {
       if (!answers[n]) { refuse(`the ${verdictType} check type needs ${required.length} answers and one is missing (key ${n})`); return; }

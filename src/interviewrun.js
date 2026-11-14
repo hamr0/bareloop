@@ -101,10 +101,10 @@ import {
   PLAIN_FOLDER_DEFERRED_FIELDS,
 } from './authorjob.js';
 import {
-  INPUTS_FIELD, JOB_BLOCK_HELP, destinationFieldFor, labelsFor, SOFTGREEN_JUDGE_EXAMPLES_KEY,
+  INPUTS_FIELD, JOB_BLOCK_HELP, destinationFieldFor, labelsFor,
 } from './authorflow.js';
 import {
-  parseJobBlock, parseInputs, renderJobLines, renderExamples, jobBlockFitsCheck, signedJobLines,
+  parseJobBlock, parseInputs, renderJobLines, signedJobLines,
 } from './jobblock.js';
 import { validateJob, validateBaseUrl, PROVIDERS } from './job.js';
 import { resolveProvider, probeWarningLines, apiKeyProblem } from './providers.js';
@@ -577,13 +577,13 @@ export async function main(argv, deps = {}) {
 
   // ── 3. the class's own frozen questions, one at a time ───────────────────────
   // P7: "The job" is ONE multi-line answer — numbered lines with their `~` rules, parsed by `parseJobBlock` (the same
-  // parser the panel uses) and filed under key 1 as the numbered text the drafter reads. A rubric's second answer
-  // (the judge examples) is DERIVED from the `~ PASS:`/`~ FAIL:` lines of that block, never asked a second time.
+  // parser the panel uses) and filed under key 1 as the numbered text the drafter reads. A `~ PASS:`/`~ FAIL:` line
+  // is refused by that parser (2026-11-14); the judge examples are gone.
   /** @type {Record<string, string>} */
   const answers = {};
   /** @type {import('./jobblock.js').JobLine[]} */
   let JOB_LINES = [];
-  const ASKED = REQUIRED.filter((n) => !(VERDICT === 'soft-green' && n === SOFTGREEN_JUDGE_EXAMPLES_KEY));
+  const ASKED = REQUIRED;
   let asked = 0;
   for (const n of ASKED) {
     asked += 1;
@@ -600,14 +600,11 @@ export async function main(argv, deps = {}) {
         'that one is required — every question in this class\'s set has to be answered before a close can be authored from it. Again:');
       const parsed = parseJobBlock(raw);
       if (!parsed.ok) { say(`  ${parsed.error}`); continue; }
-      const misfit = jobBlockFitsCheck(parsed.lines, VERDICT === 'soft-green');
-      if (misfit) { say(`  ${misfit}`); continue; }
       JOB_LINES = parsed.lines;
       answers[n] = renderJobLines(parsed.lines);
       break;
     }
   }
-  if (VERDICT === 'soft-green') answers[SOFTGREEN_JUDGE_EXAMPLES_KEY] = renderExamples(JOB_LINES);
 
   // ── 4. the OPERATOR's half of the spec — the part nothing authors for you ────
   say('');

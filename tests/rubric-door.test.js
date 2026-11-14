@@ -15,7 +15,6 @@ import { confirmProtections, RUBRIC_CONFIRM_NOTE } from '../src/authorflow.js';
 import { validateCloseDecl, guardNames } from '../src/declaredclose.js';
 import { authorCloseForJob, runInterview } from '../src/authorjob.js';
 import { proveRubricInputs } from '../src/source.js';
-import { parseJobBlock, jobBlockFitsCheck } from '../src/jobblock.js';
 import { rubricGoal } from '../src/rubricstep.js';
 import { createSession, validateJobCard as rawValidateJobCard } from '../src/panel/authorsession.js';
 import { ROW_EDIT_TOOL } from '../src/rowedit.js';
@@ -78,7 +77,8 @@ test('a closeDecl may declare lang "text" and is judged against its one guard; "
 
 test('runInterview: a caller may name the answer keys it needs; with none named the whole class set is still demanded', () => {
   const base = { verdictType: 'soft-green', repoPath: '/x' };
-  assert.equal(runInterview({ ...base, answers: { 1: 'the job' } }).ok, false, 'default: soft-green still wants its examples answer');
+  assert.equal(runInterview({ ...base, answers: { 1: 'the job' } }).ok, true, 'default: soft-green wants The job alone (no examples answer)');
+  assert.equal(runInterview({ ...base, answers: {} }).ok, false, 'an empty answer set is still refused');
   const one = runInterview({ ...base, answers: { 1: 'the job' }, required: [1] });
   assert.equal(one.ok, true, JSON.stringify(one.reds));
 });
@@ -118,27 +118,13 @@ test('authorCloseForJob: a language that is neither a code genre nor text (cobol
 
 // ── P1=B ─────────────────────────────────────────────────────────────────────
 
-test('P1=B: jobBlockFitsCheck demands PASS/FAIL examples of a rubric only when it holds a judged part', () => {
-  const noEx = parseJobBlock('1. Summarize the changes\n2. List the fixes');
-  const withEx = parseJobBlock('1. Summarize\n~ PASS: a clear short summary\n~ FAIL: a wall of text');
-  assert.ok(noEx.ok && withEx.ok);
-  if (!noEx.ok || !withEx.ok) return;
-  assert.match(jobBlockFitsCheck(noEx.lines, true) ?? '', /needs at least one "~ PASS:" line/, 'default (judged): still required');
-  assert.equal(jobBlockFitsCheck(noEx.lines, true, { judged: false }), null, 'no judged part: not required');
-  assert.equal(jobBlockFitsCheck(withEx.lines, true, { judged: false }), null, 'examples given anyway are never a red');
-  assert.match(jobBlockFitsCheck(withEx.lines, false) ?? '', /Deterministic job has no judge/, 'deterministic jobs are unchanged');
-});
-
-test('P1=B at the card: a rubric on a local FILE needs no examples; a rubric on a REPO still does', () => {
+test('a rubric card on a local FILE needs no examples (there are none any more)', () => {
   const file = changelogCopy();
   const card = (inputs) => ({
     checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'rubric-door-card-test', jobText: '1. Summarize the unreleased changes',
     inputs, destination: '/tmp/out', capUsd: 1,
   });
   assert.equal(validateJobCard(card(`Changelog: ${file}`)).ok, true);
-  const repo = validateJobCard(card(`repo: ${join(HERE, '..')}`));
-  assert.equal(repo.ok, false);
-  assert.match(repo.error, /needs at least one "~ PASS:" line/);
 });
 
 // ── the panel session ────────────────────────────────────────────────────────

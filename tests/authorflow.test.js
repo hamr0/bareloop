@@ -245,9 +245,9 @@ test('the interview block carries each field\'s LABEL beside its question, from 
   assert.match(p, /Q1 \(The job\)\. the job, as numbered lines/);
 });
 
-test('labelsFor mirrors questionsFor: same admission rule, and soft-green\'s fourth label is "Judge examples"', () => {
+test('labelsFor mirrors questionsFor: same admission rule, and soft-green has the one label (the judge examples are gone)', () => {
   assert.deepEqual(labelsFor('green'), { 1: 'The job' });
-  assert.deepEqual(labelsFor('soft-green'), { 1: 'The job', 2: 'Judge examples' });
+  assert.deepEqual(labelsFor('soft-green'), { 1: 'The job' });
   // hitl's own second question has no row in the signed table — no fabricated label
   assert.deepEqual(labelsFor('hitl'), { 1: 'The job' });
   assert.throws(() => labelsFor('chartreuse'), /chartreuse/);

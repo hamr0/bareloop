@@ -186,7 +186,7 @@ test('PANEL: a proposal-invalid stop shows the plain message under the failed st
   const cases = mubSet();
   const reds = validateJudgedArtifacts({ card: CARD(), cases }).reds;
   const session = createSession({
-    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'plain-reasons-job', jobText: 'document things\n~ PASS: documented\n~ FAIL: undocumented', inputs: `repo: ${repo}`,
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'plain-reasons-job', jobText: 'document things\n~ documented functions only', inputs: `repo: ${repo}`,
     destination: 'src/', capUsd: 2,
   }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home, sessionsRoot: join(home, 'panel-sessions'),
@@ -333,7 +333,7 @@ test('PANEL: a signing-gates refusal shows the plain message and writes the full
   git(repo, ['add', '-A']);
   git(repo, ['commit', '-q', '-m', 'seed']);
   const session = createSession({
-    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'plain-sign-job', jobText: 'document things\n~ PASS: documented\n~ FAIL: undocumented', inputs: `repo: ${repo}`,
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'plain-sign-job', jobText: 'document things\n~ documented functions only', inputs: `repo: ${repo}`,
     destination: 'src/', capUsd: 2,
   }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home, sessionsRoot: join(home, 'panel-sessions'),
@@ -416,7 +416,7 @@ async function panelWithCalibration(calibration, t) {
   git(repo, ['add', '-A']);
   git(repo, ['commit', '-q', '-m', 'seed']);
   const session = createSession({
-    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'plain-cal-job', jobText: 'document things\n~ PASS: documented\n~ FAIL: undocumented', inputs: `repo: ${repo}`,
+    checkType: 'rubric', model: 'claude-sonnet-5', jobName: 'plain-cal-job', jobText: 'document things\n~ documented functions only', inputs: `repo: ${repo}`,
     destination: 'src/', capUsd: 2,
   }, {
     env: { ANTHROPIC_API_KEY: 'fake-not-a-real-key' }, home, sessionsRoot: join(home, 'panel-sessions'),

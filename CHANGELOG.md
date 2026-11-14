@@ -7,6 +7,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING: PASS/FAIL judge examples are gone (hamr 2026-11-14, rubric vs deterministic split, piece 1).** A `~ PASS:` / `~ FAIL:` line is refused at $0 in plain words ("PASS/FAIL examples are gone — write what you want as a ~ rule."), on the panel and the CLI. `jobblock.js` no longer exports `renderExamples` or `jobBlockFitsCheck`, a parsed job line has no `examples` field, the soft-green question set is The job alone (no Judge Examples answer), and the hint text and the panel's rubric placeholder no longer mention the examples. The `~` / `!` / `$` check list (with Drop and Add) covers what the examples did.
+
 ### Fixed
 
 - panel: the Audit's checks fold (and the Result tab's checks box) show ONLY the run's latest close (the last `outer-close` or fix-loop `close-verdict`), not the `outer-close` precheck that runs before the fix loop; a run that went green in the fix loop no longer shows failed rows, and a stage the latest close never reached (it stops at its first red) reads grey "not reached" instead of the precheck's old result (live run mwg3pov1).

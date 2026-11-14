@@ -324,10 +324,10 @@ export const INPUTS_FIELD = Object.freeze({
     + '(e.g. `spec: docs/spec.md`) — git must track them.',
 });
 
-/** P7: how to write "The job" (printed under its question by the CLI; the panel's box shows the same in its examples). */
+/** P7: how to write "The job" (printed under its question by the CLI; the panel's box shows the same in its placeholder). */
 export const JOB_BLOCK_HELP = Object.freeze([
   'One line per thing the job must do — each plain line gets a number. A line starting with `~` is a rule for the',
-  'numbered line above it. For a rubric check, a `~ PASS: ...` and a `~ FAIL: ...` line are your examples.',
+  'numbered line above it (what you want checked, in your own words).',
 ]);
 
 /** Destination's wording when Source resolved to a git repo: the answer IS the
@@ -402,37 +402,19 @@ export const FIELD_LABELS = Object.freeze({
  * soft-green and hitl extensions below — computed, never hardcoded twice. */
 const NEXT_FREE_TEXT_KEY = Object.keys(GREEN_QUESTIONS).length + 1;
 
-/** The soft-green quartet's own key for Judge Examples — exported so
- * `cardauthor.js` reads the SAME number this module files the answer under,
- * rather than a second, hand-typed "6"/"7". */
+/** The old judge-examples key and question. DEAD: the PASS/FAIL examples are gone (hamr 2026-11-14) and no set carries them;
+ * only `cardauthor.js` still reads these two names, and it is deleted with the old judge (piece 2 of the same addendum). */
 export const SOFTGREEN_JUDGE_EXAMPLES_KEY = NEXT_FREE_TEXT_KEY;
-
-/** The Judge Examples question — the signed table's own Holds text, verbatim
- * ("one pass, one fail, and why"), not the old worded Q7 ("Give one example
- * you'd pass and one you'd fail, and say why."). Exported so `cardauthor.js`'s
- * prompt and this module's own `SOFTGREEN_QUESTIONS` render the identical
- * string; its label ("Judge examples") lives in `SOFTGREEN_FIELD_LABELS`. */
 export const JUDGE_EXAMPLES_QUESTION = 'the PASS: and FAIL: examples the person wrote under their job lines, each with its line number';
 
-/** {@link FIELD_LABELS} plus Judge Examples' own label, for the soft-green set. */
-export const SOFTGREEN_FIELD_LABELS = Object.freeze({
-  ...FIELD_LABELS,
-  [SOFTGREEN_JUDGE_EXAMPLES_KEY]: 'Judge examples',
-});
+/** {@link FIELD_LABELS} for the soft-green set: the same one label (the judge examples are gone). */
+export const SOFTGREEN_FIELD_LABELS = Object.freeze({ ...FIELD_LABELS });
 
 /**
- * THE SOFTGREEN SET — the green trio plus Judge Examples. A judged close needs
- * exactly this one more thing the green set cannot supply: a real pass/fail
- * pair in the person's own words, which module 4 (`cardauthor.js`) compiles
- * into the signed rubric card and the frozen calibration set. It rides in
- * `answers` and reaches the composer verbatim through the prompt's interview
- * block, exactly as every other free-text answer does — this module derives
- * nothing from it.
+ * THE SOFTGREEN SET — the green set again: a rubric job's whole job is the numbered lines of "The job" (its `~` rules
+ * become the check list); the PASS/FAIL judge examples are gone (hamr 2026-11-14).
  */
-export const SOFTGREEN_QUESTIONS = Object.freeze({
-  ...GREEN_QUESTIONS,
-  [SOFTGREEN_JUDGE_EXAMPLES_KEY]: JUDGE_EXAMPLES_QUESTION,
-});
+export const SOFTGREEN_QUESTIONS = Object.freeze({ ...GREEN_QUESTIONS });
 
 /**
  * THE HITL SET (N4 slice 1, kept in code only — never offered in the form or
