@@ -18,6 +18,10 @@ feature lands, **patch** = docs, fixes, scaffolding.
 - panel: the Audit's checks fold (and the Result tab's checks box) show ONLY the run's latest close (the last `outer-close` or fix-loop `close-verdict`), not the `outer-close` precheck that runs before the fix loop; a run that went green in the fix loop no longer shows failed rows, and a stage the latest close never reached (it stops at its first red) reads grey "not reached" instead of the precheck's old result (live run mwg3pov1).
 - panel: the Run summary "checks:" line ("N run · N passed · N failed") reads the same latest close as the Audit checks fold, through `checksOf`, not every step exit check plus the pre-fix-loop precheck; a stage the latest close never reached shows "N not reached" and counts as neither; the tries parenthesis is gone (live run mwg3pov1).
 
+### Added
+
+- **Tickets + rubric goes through the check list (hamr 2026-11-14, piece 5; POC runs mwg70fd7 and mwg3pov1).** A Tickets job on the Rubric check has the ticket as its one input: the ticket line is the only input and is renumbered from 1 in ONE place (`cardInputs`, `src/panel/authorsession.js`), read by the fresh card, the session, the Destination check, the schedule and Reuse (`buildReuseSpec`) alike, so a Reuse no longer dies at signing with `spec-invalid (inputs[0].n expected 1)`. The drafting-time read takes the newest ticket the job has not run (`newestUnrunTicket`) and reads it (`readTicket`), with no ticket-number box; the frozen draft input is that ticket's text, and run start re-reads the same list row. Test seams: `createSession` deps `newestUnrunTicket` and `readTicketFn`.
+
 ### Changed
 
 - **Rubric on a repo is refused at $0 (hamr 2026-11-14, piece 4).** A Deterministic check is anything a machine can check, so a repo job is Deterministic; Rubric on a repo is allowed only for a Tickets job. A rubric card whose Inputs line 1 is a repo, and a `soft-green` pick at the CLI interview (it always takes a repo), are refused before anything is made or asked: "A repo job uses a Deterministic check."

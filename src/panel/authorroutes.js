@@ -26,7 +26,7 @@ import { planMatchesClose, listMatchesClose } from '../rubricstep.js';
 import { ticketNumberOf } from '../ticketshape.js';
 import { newestUnrunTicket } from '../ticketnext.js';
 import { readRunList } from '../runlist.js';
-import { createSession, validateJobCard, validateReuseCard, jobBoxesChanged, buildReuseSpec, cardFields, nextFreeJobName, startDestinationProblem, resolveFlowCard, ticketBoxProblem, STEP_LABELS } from './authorsession.js';
+import { createSession, ticketRubricInputs, validateJobCard, validateReuseCard, jobBoxesChanged, buildReuseSpec, cardFields, nextFreeJobName, startDestinationProblem, resolveFlowCard, ticketBoxProblem, STEP_LABELS } from './authorsession.js';
 import { parseInputs } from '../jobblock.js';
 import { isReusableGreen } from './status.js';
 import { proveInputFiles, looksLikeRubricInput, webFetchState } from '../source.js';
@@ -167,13 +167,16 @@ export function createAuthorRoutes(opts) {
     // the session proves every line itself (`proveRubricInputs`), at $0, before any model call.
     const rubric = reuse ? reuse.spec?.verdictType === 'soft-green' : card?.checkType === 'rubric';
     if (reuse) card = { ...card, checkType: rubric ? 'rubric' : 'deterministic' };
-    const filesJob = rubric && inputs.length > 0 && looksLikeRubricInput(inputs[0].value);
     // piece 8: the card's Flow type and MCP pick, decided at $0 before any session (a reuse keeps the signed spec's own MCP). Nothing is started: the pick reads the check log.
     /** @type {ReturnType<typeof resolveFlowCard>} */
     const flow = reuse
       ? { ok: true, flowType: flowTypeOf(reuse.spec), pick: reuse.spec?.mcp ? { server: reuse.spec.mcp.server, tools: reuse.spec.mcp.tools } : null }
       : resolveFlowCard(card, { ...(opts.home !== undefined ? { home: opts.home } : {}), ...(opts.mcpHome !== undefined ? { mcpHome: opts.mcpHome } : {}) });
     if (!flow.ok) return Promise.resolve({ ok: /** @type {false} */ (false), status: 400, error: flow.error });
+    // hamr 2026-11-14 (piece 5): a Tickets + rubric job's one input is its ticket line, numbered 1, by the same owner the card, the session and Reuse read
+    inputs = ticketRubricInputs(inputs, { rubric, flowType: flow.flowType });
+    if (flow.flowType === 'tickets') card = { ...card, flowType: 'tickets' };
+    const filesJob = rubric && inputs.length > 0 && looksLikeRubricInput(inputs[0].value);
     const ticketProblem = ticketBoxProblem(card, flow.flowType);
     if (ticketProblem !== null) return Promise.resolve({ ok: /** @type {false} */ (false), status: 400, error: ticketProblem });
     // piece 9 (R7): the card's Schedule row, decided at $0 before any session exists. A scheduled fire is a headless start with no Schedule row, so it never reaches this.

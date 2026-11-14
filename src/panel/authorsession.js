@@ -51,9 +51,13 @@ import { assertThinkingMode, thinkingPlanFor, thinkingRowText, thinkingCallOptio
 import { RUBRIC_LANG } from '../authoring.js';
 import { rubricGoal, cardOfClose, signedFactNames } from '../rubricstep.js';
 import { redactSecrets } from '../validate.js';
-import { FLOW_TYPES } from '../job.js';
+import { FLOW_TYPES, flowTypeOf } from '../job.js';
 import { mcpPickFor, signFlow } from '../mcppick.js';
 import { parseTicketList, ticketNumberOf, TICKET_NUMBER_WORDS } from '../ticketshape.js';
+import { newestUnrunTicket } from '../ticketnext.js';
+import { readTicket } from '../ticket.js';
+import { readRunList } from '../runlist.js';
+import { fetchPageText } from '../pagefetch.js';
 import { isDropIt, isAgree, stripAgreeLead } from '../pagemap.js';
 import { plainWords, SUGGEST_SYSTEM, sameRuleWords } from '../checkpick.js';
 import { LEDGER_SYSTEM } from '../checklist.js';
@@ -229,13 +233,38 @@ export function nextFreeJobName(origin, runJobs, opts = {}) {
 export const CARD_FIELDS = Object.freeze(['jobName', 'checkType', 'provider', 'model', 'thinking', 'jobText', 'inputs', 'destination', 'capUsd', 'maxWallMs', 'flowType', 'mcp', 'ticket', 'schedule']);
 
 /**
+ * The card's Inputs as the JOB reads them: the one place that decides which lines are inputs (hamr 2026-11-14, piece 5): the fresh card, the session, the
+ * Destination check and Reuse (`buildReuseSpec`) all read THIS, never a copy.
+ * @param {any} card
+ * @param {{rubric?: boolean, flowType?: 'plain'|'mcp'|'tickets'}} [o]
+ * @returns {{ok: true, inputs: import('../jobblock.js').JobInput[]}|{ok: false, error: string}}
+ */
+export function cardInputs(card, o = {}) {
+  const ip = parseInputs(card?.inputs);
+  if (!ip.ok) return ip;
+  return { ok: true, inputs: ticketRubricInputs(ip.inputs, { rubric: o.rubric ?? card?.checkType === 'rubric', flowType: o.flowType ?? flowOfCard(card).flowType }) };
+}
+
+/**
+ * The renumbering itself, for a caller that holds parsed lines already (`startSession`): a Tickets + rubric job reads the ticket and nothing else (a repo line is
+ * not an input of it), so the ticket line stands alone, numbered 1 (a signed spec's inputs must run 1, 2, 3...). Any other job keeps its lines as typed.
+ * @param {import('../jobblock.js').JobInput[]} inputs @param {{rubric: boolean, flowType: 'plain'|'mcp'|'tickets'}} o
+ * @returns {import('../jobblock.js').JobInput[]}
+ */
+export function ticketRubricInputs(inputs, { rubric, flowType }) {
+  if (!rubric || flowType !== 'tickets') return inputs;
+  const line = inputs.find((i) => parseTicketList(i.value).ok);
+  return line ? [{ ...line, n: 1 }] : inputs;
+}
+
+/**
  * The repo a card names: Inputs line 1 (P7 — the Source box is gone; the first input IS the repo). `''` when the Inputs
  * box does not parse (the card validator refuses that before anything uses this).
  * @param {any} card
  * @returns {string}
  */
 export function cardSource(card) {
-  const p = parseInputs(card?.inputs);
+  const p = cardInputs(card);
   return p.ok ? p.inputs[0].value : '';
 }
 
@@ -340,7 +369,7 @@ export function buildReuseSpec(originSpec, card, rows) {
   // an ABSOLUTE Destination is a per-run output folder (a plain-files job): it is never part of the signed spec, and the spec's own
   // fence (inside the run's tree) stays as signed. A repo job's Destination is the fence and is relative (an absolute one is refused).
   if (!isAbsoluteDestination(String(card.destination ?? '').trim())) spec.writeScope = String(card.destination ?? '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
-  const ip = parseInputs(card.inputs);
+  const ip = cardInputs(card, { rubric: spec.verdictType === 'soft-green', flowType: flowTypeOf(spec) });
   if (ip.ok) spec.inputs = ip.inputs; else delete spec.inputs;
   spec.budgetUsd = card.capUsd;
   if (typeof card.maxWallMs === 'number' && Number.isFinite(card.maxWallMs) && card.maxWallMs > 0) spec.maxWallMs = card.maxWallMs;
@@ -396,7 +425,7 @@ export const DESTINATION_HINT = 'Type the folder that holds the files the job sh
  * @returns {string|null} the plain refusal, or null when the Destination is fine
  */
 export function startDestinationProblem(card) {
-  const ip = parseInputs(card?.inputs);
+  const ip = cardInputs(card);
   const source = ip.ok ? (ip.inputs[0]?.value ?? '') : '';
   const destination = typeof card?.destination === 'string' ? card.destination : '';
   const isRepoLike = looksLikeRepoSource(source);
@@ -445,7 +474,7 @@ export function validateJobCard(card, opts = {}) {
   if (card.thinking !== undefined && typeof card.thinking !== 'boolean') return { ok: false, error: 'Thinking on must be on or off' };
   const jb = parseJobBlock(card.jobText);
   if (!jb.ok) return { ok: false, error: jb.error };
-  const ib = parseInputs(card.inputs);
+  const ib = cardInputs(card);
   if (!ib.ok) return { ok: false, error: ib.error };
   // hamr 2026-11-14: a repo job is Deterministic. Rubric on a repo is for a Tickets job only (its input is the ticket, below).
   if (checkType === 'rubric' && flowOfCard(card).flowType !== 'tickets' && looksLikeRepoSource(ib.inputs[0].value)) return { ok: false, error: REPO_RUBRIC_WORDS };
@@ -464,7 +493,7 @@ export function validateJobCard(card, opts = {}) {
  * @param {any} card the validated job card (see {@link validateJobCard})
  * @param {{env?: Record<string,string|undefined>, sessionsRoot?: string, home?: string, timeoutMs?: number,
  *   scout?: any, generate?: Function, pickGenerate?: Function|null, ledgerGenerate?: Function|null, editGenerate?: Function|null, carryFrom?: string, carryKind?: string, confirmGenerate?: Function, authorFn?: Function,
- *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, destFn?: Function|null, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, schedule?: import('../trigger.js').Trigger|null, flow?: {flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null}}} [deps] `scout`..`prepareSigningFn` are
+ *   prepareSigningFn?: Function, npmCiFn?: Function, lookFn?: Function|null, destFn?: Function|null, newestUnrunTicket?: typeof newestUnrunTicket, readTicketFn?: typeof readTicket, fetchUrl?: (url: string) => Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>, draftThinking?: "on"|"off", reuse?: {spec: any, workflowKey: string}, schedule?: import('../trigger.js').Trigger|null, flow?: {flowType: 'plain'|'mcp'|'tickets', pick: {server: string, tools: string[]}|null}}} [deps] `scout`..`prepareSigningFn` are
  *   TEST SEAMS ONLY — see the note just above where each is read, below. `reuse` (Reuse workflow) is NOT a seam: the
  *   caller (`/api/author/start`) sets it only when the server's own same-job rule held.
  * @returns {any} the session object
@@ -478,7 +507,7 @@ export function createSession(card, deps = {}) {
   // block before a session exists; a reuse card's job text is the origin's and is not drafted from.
   const jobParsed = parseJobBlock(card.jobText);
   const jobLines = jobParsed.ok ? jobParsed.lines : [];
-  const inputsParsed = parseInputs(card.inputs);
+  const inputsParsed = cardInputs(card, { flowType: deps.flow?.flowType ?? 'plain' });
   const INPUTS = inputsParsed.ok ? inputsParsed.inputs : [];
   /** the repo — Inputs line 1 */
   const SOURCE = INPUTS[0]?.value ?? '';
@@ -569,7 +598,7 @@ export function createSession(card, deps = {}) {
   };
 
   /** a rubric job on local files words its copy/read steps for files (set once the card is known) */
-  let fileJob = card.checkType === 'rubric' && looksLikeRubricInput(parseInputs(card.inputs).ok ? (/** @type {any} */ (parseInputs(card.inputs))).inputs[0].value : '');
+  let fileJob = card.checkType === 'rubric' && looksLikeRubricInput(INPUTS[0]?.value ?? '');
   /** @param {string} id @param {string} [detail] (absent = keep what the step has) start (or restart) a step; whatever step was running is finished */
   const stepStart = (id, detail) => {
     const labels = fileJob ? { ...STEP_LABELS, ...FILE_JOB_STEP_LABELS } : STEP_LABELS;
@@ -857,7 +886,20 @@ export function createSession(card, deps = {}) {
     /** @type {any} */
     let prep;
     if (RUBRIC_FILES) {
-      const proved = await proveRubricInputs({ inputs: INPUTS, into, destination: card.destination, ...(deps.fetchUrl ? { fetchUrl: deps.fetchUrl } : {}) });
+      // hamr 2026-11-14 (piece 5): a Tickets + rubric job's one input is the ticket. The drafting-time read takes the newest ticket this job has not run
+      // (the product's own lookup, `newestUnrunTicket`) and reads it (`readTicket`): there is no ticket-number box. Run start re-reads the same list row.
+      const ticketFlow = deps.flow?.flowType === 'tickets' && deps.flow.pick ? deps.flow.pick : null;
+      /** @param {string} url @returns {Promise<{ok: true, text: string, url: string}|{ok: false, error: string}>} */
+      const readNewestTicket = async (url) => {
+        const rows = (() => { try { return readRunList({ home: configHome }).rows; } catch { return []; } })();
+        const picked = await (deps.newestUnrunTicket ?? newestUnrunTicket)({ job: card.jobName, rows, inputs: INPUTS, mcp: /** @type {{server: string, tools: string[]}} */ (ticketFlow) });
+        if (!picked.ok) return { ok: false, error: picked.say.replace(/\s*Nothing spent\.$/, '') };
+        const t = await (deps.readTicketFn ?? readTicket)({ mcp: /** @type {{server: string, tools: string[]}} */ (ticketFlow), listUrl: url, number: picked.number });
+        return t.ok ? { ok: true, text: t.ticket.text, url } : { ok: false, error: t.error };
+      };
+      const pageFetch = deps.fetchUrl ?? fetchPageText;
+      const draftFetch = ticketFlow ? (/** @type {string} */ url) => (parseTicketList(url).ok ? readNewestTicket(url) : pageFetch(url)) : deps.fetchUrl;
+      const proved = await proveRubricInputs({ inputs: INPUTS, into, destination: card.destination, ...(draftFetch ? { fetchUrl: draftFetch } : {}) });
       prep = proved.ok ? proved.prep : { stop: proved.error, code: proved.code };
       // what each header-only page read came back with (already secret-masked at capture), so the next live failure shows it
       if (!proved.ok && proved.attempts?.length) appendDraftLog(outDir, { kind: 'page-fetch-attempts', no: Math.max(0, state.steps.length - 1), attempts: proved.attempts, at: new Date().toISOString() });
