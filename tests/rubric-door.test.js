@@ -219,8 +219,9 @@ test('the rubric confirm turn: the PROTECTIONS shown are the code\'s (guard list
   assert.deepEqual(expected, [
     'changed-from-seed — the run must actually change at least one file in scope — a close that reports done without touching anything is refused',
     'write fence — the run may only change files matching: output/',
-    'line 1 file — output/steps/1.json must exist, be complete JSON, and carry text',
-    'line 2 file — output/steps/2.json must exist, be complete JSON, and carry text',
+    // this session drafts with no check block, so there is no signed close to read: "and carry text" is listed only where a close really has a text-present check (lineCarriesText), never unconditionally
+    'line 1 file — output/steps/1.json must exist, be complete JSON',
+    'line 2 file — output/steps/2.json must exist, be complete JSON',
   ]);
   const shown = session.state.pendingAsk.plan.protections;
   assert.deepEqual(shown, expected, 'what the person is shown is the code\'s list, whatever the model said');

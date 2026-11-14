@@ -3385,7 +3385,7 @@ function auditChecksFor(row, records, spec, opts) {
   if (spec.closeDecl && typeof spec.closeDecl.lang === 'string' && typeof spec.verdictType === 'string') {
     try {
       guards = confirmProtections({
-        verdictType: spec.verdictType, lang: spec.closeDecl.lang, jobLines: Array.isArray(spec.jobLines) ? spec.jobLines : null,
+        verdictType: spec.verdictType, lang: spec.closeDecl.lang, jobLines: Array.isArray(spec.jobLines) ? spec.jobLines : null, closeDecl: spec.closeDecl,
         writeScope: Array.isArray(spec.writeScope) && spec.writeScope.every((/** @type {any} */ x) => typeof x === 'string') ? spec.writeScope : null,
       });
     } catch { guards = []; }

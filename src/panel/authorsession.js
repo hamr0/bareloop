@@ -65,6 +65,7 @@ import { ROW_EDIT_SYSTEM } from '../rowedit.js';
 import { readRecordFile, readRowChoices, writeRecordPart, RECORD_FILE, KEPT_WORDS } from '../pickrecord.js';
 import { MAX_REVISES, draftLabelOf, nextRevisesUsed, sessionsRootOf, writeRevisesUsed } from '../revises.js';
 import { runDestPoint, destQuestionText, yesNoOf } from '../destpoint.js';
+import { runNoteAsk } from '../noteask.js';
 import { tallyCalls } from '../text.js';
 import { appendDraftLog, readDraftLedger } from '../draftspend.js';
 import { signingStopText, draftStopText, redsRecord, declarationRecord, tryRefusedText } from '../authorreadout.js';
@@ -713,6 +714,7 @@ export function createSession(card, deps = {}) {
     // progress line shows it briefly, in code's words
     // PRD v1.131 tick 7: the retention counts of a rubric draft, one line when it ends (counts only, no words)
     // the one check list of a rubric job: each row once when it is built and once at the end, and each try's refusals (kind `ledger` / `ledger-try`)
+    if (name === 'note-answered') appendDraftLog(outDir, { kind: 'note-ask', no: Math.max(0, state.steps.length - 1), state: data.state, answers: data.answers, ...(data.reason ? { reason: redactSecrets(String(data.reason)) } : {}), at: new Date().toISOString() });
     if (name === 'ledger-built' && Array.isArray(data.rows)) for (const r of data.rows) appendDraftLog(outDir, { phase: 'built', ...r, kind: 'ledger', no: Math.max(0, state.steps.length - 1), at: new Date().toISOString() });
     if (name === 'draft-ledger-try') appendDraftLog(outDir, { kind: 'ledger-try', no: Math.max(0, state.steps.length - 1), label: data.label, kept: data.kept, refused: data.refused, at: new Date().toISOString() });
     if (name === 'draft-ledger' && Array.isArray(data.rows)) for (const r of data.rows) appendDraftLog(outDir, { phase: 'final', ...r, kind: 'ledger', no: Math.max(0, state.steps.length - 1), at: new Date().toISOString() });
@@ -1256,6 +1258,12 @@ export function createSession(card, deps = {}) {
       return { jobLines, answers, left, picks, choices };
     };
 
+    // 2026-11-14 (b): the note question's own call (src/noteask.js), same provider, model and thinking-off as the destination call; a test that replaces the model boundary never reaches it unless it brings `deps.noteFn`
+    const noteFn = deps.noteFn !== undefined ? deps.noteFn : (deps.generate ? null : (/** @type {any} */ o) => runNoteAsk({
+      ...o, provider, ...(draftPrice?.rates ? { rates: draftPrice.rates } : {}),
+      ...(Object.keys(thinkingCallOptions(provider, draftThinking)).length ? { callOptions: thinkingCallOptions(provider, draftThinking) } : {}),
+    }));
+
     state.phase = 'drafting';
     // no early "drafting" line: the real author phase (PHASE_STEP) starts it, carrying draftDetail (see onPhase)
     // build item 4 — the DISPLAY id (card.model, e.g. "deepseek-flash"), not
@@ -1270,7 +1278,7 @@ export function createSession(card, deps = {}) {
       rates: draftPrice?.rates ?? null,
       draftThinking,
       onPhase, onCall,
-      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, ledgerGenerate, editGenerate, carriedPicks, carriedChoices,
+      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, ledgerGenerate, noteFn, editGenerate, carriedPicks, carriedChoices,
       onChoices: (/** @type {any[]} */ rec) => { try { writeRecordPart(join(outDir, RECORD_FILE), { rowChoices: rec }); } catch { /* a convenience: a disk fault only means the next draft starts without them */ } },
       // R10: this draft's record (the picks it kept and the ones just answered) goes to its own folder for the next draft to carry; each kept pick is logged as such
       onPicks: (/** @type {{entries: any[], kept: {line: number, rule: number, entry: any}[]}} */ o) => {

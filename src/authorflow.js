@@ -89,7 +89,7 @@ import { redactSecrets } from './validate.js';
 import { ledgerRecord } from './checklist.js';
 import { ROW_EDIT_REVISE, rowEditUserText, rowEditChannel, editsOf } from './rowedit.js';
 import { REASON, CheckBlock } from './checkblock.js';
-import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, lineRules } from './rubricstep.js';
+import { stepFileContract, inputLabelsOf, stepFileRel, readFrozenInputs, lineRules, lineCarriesText } from './rubricstep.js';
 import { dropRows, dropLine } from './pagedropwords.js';
 import { renderLookReport } from './inputlook.js';
 import { checkDeclarationWords, labelListsFor } from './factwords.js';
@@ -623,10 +623,12 @@ export const GUARD_DESCRIPTIONS = Object.freeze({
  * close — one source, never a second hand-typed list — rendered through the
  * frozen line in {@link GUARD_DESCRIPTIONS}, plus the write fence (a real,
  * signed fence — {@link writeScopeBlock}'s own subject) when one is set.
- * @param {{verdictType: string, lang: string, writeScope?: string[]|null, jobLines?: {n: number}[]|null}} o
+ * A rubric line's file is listed as carrying text ONLY when the close really puts a text-present check on it ({@link lineCarriesText}, derived from `closeDecl`; one owner): a facts-only line
+ * (results and no note) is listed without it, and with no close to read nothing is claimed about text.
+ * @param {{verdictType: string, lang: string, writeScope?: string[]|null, jobLines?: {n: number}[]|null, closeDecl?: any}} o
  * @returns {string[]}
  */
-export function confirmProtections({ verdictType, lang, writeScope = null, jobLines = null }) {
+export function confirmProtections({ verdictType, lang, writeScope = null, jobLines = null, closeDecl = null }) {
   const guards = classGuards({ verdictType, lang });
   const lines = guards.map((g) => {
     const desc = GUARD_DESCRIPTIONS[g.name];
@@ -642,7 +644,7 @@ export function confirmProtections({ verdictType, lang, writeScope = null, jobLi
   // PART 1a: a rubric job on local files always checks, for EVERY numbered line, that the line's file exists, is complete
   // JSON and has text — a fact of the close's shape (`rubric-step`), not a plan of the model's, so it is listed from code
   if (lang === RUBRIC_LANG && Array.isArray(jobLines)) {
-    for (const l of jobLines) lines.push(`line ${l.n} file — ${stepFileRel(l.n)} must exist, be complete JSON, and carry text`);
+    for (const l of jobLines) lines.push(`line ${l.n} file — ${stepFileRel(l.n)} must exist, be complete JSON${lineCarriesText(closeDecl, l.n) ? ', and carry text' : ''}`);
   }
   return lines;
 }
@@ -2214,7 +2216,7 @@ export async function runConfirmTurn({
   // the prompt below so the model can check `notChecked` against it, and
   // reused (never recomputed) after the call so the shown, prompted, and
   // recorded protections are always the exact same list.
-  const protections = confirmProtections({ verdictType, lang: resolvedLang, writeScope, jobLines });
+  const protections = confirmProtections({ verdictType, lang: resolvedLang, writeScope, jobLines, closeDecl: block !== null ? block.closeView() : null });
 
   // ── up to 2 paid rounds (ruling 5) ─────────────────────────────────────────
   /** @type {string|null} */

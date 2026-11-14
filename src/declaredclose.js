@@ -107,7 +107,7 @@ export const SIGNED_ROW_FIELDS = Object.freeze(['line', 'key', 'from', 'by', 'ki
 export const SIGNED_STATES = Object.freeze(['built', 'not-checked', 'dropped']);
 const SIGNED_FROM = Object.freeze(['rule', 'pick', 'look', 'agent', 'default']);
 const SIGNED_BY = Object.freeze(['you', 'agent', 'default']);
-const SIGNED_KINDS = Object.freeze(['rule', 'fact', 'cited', 'count', 'phrase', 'numbers', 'floor']);
+const SIGNED_KINDS = Object.freeze(['rule', 'fact', 'cited', 'count', 'phrase', 'numbers', 'note', 'floor']);
 
 /**
  * The prefix M1 puts on EVERY gap line of a declared stage (its `ctx.gapKeep`).

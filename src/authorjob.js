@@ -118,6 +118,7 @@ import { runAuthorScout, buildSeedListing, SCOUT_ATTEMPTS } from './authorscout.
 import { runPageMap, tooManyAsksText } from './pagemap.js';
 import { CheckBlock } from './checkblock.js';
 import { questionsOfBlock, applyChoices } from './blockasks.js';
+import { askNotes } from './noteask.js';
 import { scopedRules, codeScope, plainWords } from './checkpick.js';
 import { matchRecord, entriesFromAnswers, KEPT_WORDS } from './pickrecord.js';
 import { runCheckSuggest } from './checksuggest.js';
@@ -437,7 +438,7 @@ function composerRefusal(reds) {
  *   ask?: ((step: {kind: string, [k: string]: any}) => Promise<string|null>)|null,
  *   answerQuestions?: ((o: {questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string, key?: string}[], dropped: {reason: string, raw: any}[], confirmed: any}) =>
  *     Promise<{jobLines: {n: number, text: string, rule?: string}[], answers: Record<string|number, any>, left?: {line: number, rule: number}[], picks?: any[], choices?: {key: string, choice: string, text?: string}[]}|null>)|null,
- *   pickGenerate?: Function|null, ledgerGenerate?: Function|null, editGenerate?: Function|null, carriedPicks?: any[]|null, carriedChoices?: any[]|null, onChoices?: (rec: any[]) => void, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
+ *   pickGenerate?: Function|null, ledgerGenerate?: Function|null, noteFn?: Function|null, editGenerate?: Function|null, carriedPicks?: any[]|null, carriedChoices?: any[]|null, onChoices?: (rec: any[]) => void, onPicks?: (o: {entries: any[], kept: {line: number, rule: number, entry: any}[]}) => void,
  *   confirmGenerate?: Function|null, isRepo?: boolean,
  *   langResult?: {kind: string, candidates?: string[], [k: string]: any}|null}} o
  * @returns {Promise<{ok: boolean, refusal: Refusal|null, verdictType: string|null,
@@ -478,6 +479,8 @@ export async function authorCloseForJob({
   // the model boundary of the list call (a `makeLoopGenerate` bound to LEDGER_SYSTEM), rubric jobs only. ABSENT = the list is built from the look and the defaults with no suggestion call
   // (a test seam, like `pickGenerate`); the CLI and the panel always bring it.
   ledgerGenerate = null,
+  // 2026-11-14 (b): the note question (src/noteask.js), asked ONLY when a rubric line is facts-only; ABSENT = never asked (every older caller and test)
+  noteFn = null,
   // the row-edit turn's own model boundary (src/rowedit.js ROW_EDIT_SYSTEM); a test that replaces `generate` need not bring one
   editGenerate = null,
   // R10 (fwd am17/am18): the picks record of the draft this one follows (`readRecordFile`), and the seam that receives this draft's record + the picks it kept. ABSENT = every rule is asked.
@@ -703,6 +706,8 @@ export async function authorCloseForJob({
       block.applyDelta({ label: 'pre:ledger-suggest', pre: true, edits: adds });
       block.reconcile();
     }
+    // the note question: ONE call, only when a line is facts-only. The AI says yes/no per line; code decides (block.setNotes -> a `$` note row and a countable text part). A failed call leaves the line facts-only with a Not checked row.
+    survey.calls = [...(survey.calls ?? []), ...(await askNotes({ block, jobLines, noteFn, ceilingUsd, onCall, onPhase }))];
     // a Revise keeps the last draft's Drop/Add choices (the suggestions exist now); code still judges every one when the list is reconciled
     if (Array.isArray(carriedChoices)) { block.carryChoices(carriedChoices); onChoices(block.choicesRecord()); }
     block.reconcile();

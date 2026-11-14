@@ -669,7 +669,8 @@ export function checkRubricParts(stages, { inputLabels = null, red, picks = null
           return;
         }
         // keep-both: a fact line may carry a countable part only when it IS one of the person's recorded picks (an offered check, its `rules`, the same line, the same words)
-        const isPick = factLine && Array.isArray(picks) && picks.some((x) => isRec(x) && x.line === step && sameJson(x.part, part)) && OFFERED.includes(part.check) && Array.isArray(part.rules);
+        const isNote = factLine && isDefaultNote(part, step);
+        const isPick = isNote || factLine && Array.isArray(picks) && picks.some((x) => isRec(x) && x.line === step && sameJson(x.part, part)) && OFFERED.includes(part.check) && Array.isArray(part.rules);
         if (factLine && !isPick) {
           red('rubric-fact-text', w, `line ${line}: '${said}' counts or quotes free text, but this line lists facts and has no text. Say it as a fact (a shape and a rule) or remove it. Nothing spent.`, { line: step, stage: label });
           return;
@@ -867,7 +868,7 @@ export function readLimit(shape, text, fact = {}) {
 }
 
 /** the words a list row of kind `$cited` / `$numbers` carries no text for */
-const DEFAULT_ROW_WORDS = Object.freeze({ cited: 'every claim quotes its input', numbers: 'every number matches a quote' });
+const DEFAULT_ROW_WORDS = Object.freeze({ cited: 'every claim quotes its input', numbers: 'every number matches a quote', note: 'the note' });
 
 /**
  * A check-list row named in the person's plain words: `phrase "### Fixed"`. The words are the draft log's; with none, the text after the key's kind prefix (`L1.phrase.### fixed`).
@@ -877,7 +878,7 @@ const DEFAULT_ROW_WORDS = Object.freeze({ cited: 'every claim quotes its input',
  */
 export function listRowName(kind, key, words) {
   const k = typeof kind === 'string' && kind ? kind : 'check';
-  if (k === 'cited' || k === 'numbers') return DEFAULT_ROW_WORDS[k];
+  if (k === 'cited' || k === 'numbers' || k === 'note') return DEFAULT_ROW_WORDS[k];
   const tail = key.replace(/^L\d+\.(?:[^.]*\.)?/, '').trim();
   const w = Array.isArray(words) && words.length ? words : [tail || key];
   return `${k} ${w.map((x) => `"${x}"`).join(', ')}`;
@@ -953,7 +954,7 @@ export function partSentence(part) {
     case 'maxLines': return `the text is at most ${n(part.value, 'line')}`;
     case 'sections': return `the text has the section(s): ${list(part.names)}`;
     case 'sectionWords': return `each section (${list(part.names)}) is about ${part.wordsPerSection} words`;
-    case 'nonEmpty': return 'the text is not empty';
+    case 'nonEmpty': return /^line \d+ writes a note — the note must be there$/.test(String(part.text)) ? String(part.text) : 'the text is not empty';
     case 'listItems': return `the text has exactly ${n(part.value, 'list item')}`;
     case 'maxListItems': return `the text has at most ${n(part.value, 'list item')}`;
     case 'minListItems': return `the text has at least ${n(part.value, 'list item')}`;
@@ -970,6 +971,22 @@ export function partSentence(part) {
 
 /** the words of the default cited check code adds to a text line of a one-input job (the one list's `$` row); the card reads a part with exactly these words as `[default]` @param {string} label @returns {string} */
 export const defaultCitedText = (label) => `every claim is backed by a quote copied from "${label}"`;
+
+/** the words of the default note check code adds to a facts line that also asks for written words (the one list's `$` row, build 2026-11-14 (b)); the card reads a part with exactly these words as `[default]` @param {number} n the job line @returns {string} */
+export const defaultNoteText = (n) => `line ${n} writes a note — the note must be there`;
+/** is this part the default note check of line `n`? */
+const isDefaultNote = (/** @type {any} */ p, /** @type {number} */ n) => isRec(p) && p.class === 'countable' && p.check === 'nonEmpty' && p.text === defaultNoteText(n);
+
+/**
+ * Does the signed close really put a text-present check on job line `n`'s step file? (ONE reader, derived from the close: the protections list and the brief never claim it otherwise.)
+ * A facts line has no text check unless a countable part (a pick, or the default note) sits beside its facts; a line with no stage has none.
+ * @param {any} closeDecl @param {number} n @returns {boolean}
+ */
+export function lineCarriesText(closeDecl, n) {
+  const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
+  return stages.some((/** @type {any} */ st) => isRec(st) && st.kind === 'rubric-step' && isRec(st.params) && st.params.step === n && Array.isArray(st.params.parts)
+    && !(factPartOf(st.params) && !st.params.parts.some((/** @type {any} */ x) => isRec(x) && x.class === 'countable')));
+}
 
 /**
  * The checks a signed close actually runs, per job line, in plain code-written sentences: one per countable part of every
@@ -997,7 +1014,7 @@ export function checksOfClose(closeDecl) {
     ? st.params.parts.flatMap((/** @type {any} */ p, /** @type {number} */ pi) => {
       if (!isRec(p) || (p.class !== 'countable' && p.class !== 'fact')) return [];
       /** @type {'agent'|'you'|'default'} */
-      const by = p.check === 'numbersFromFacts' || (p.check === 'cited' && p.text === defaultCitedText(p.source)) ? 'default' : record.some((/** @type {any} */ x) => isRec(x) && x.line === st.params.step && sameJson(x.part, p)) ? 'you' : 'agent';
+      const by = p.check === 'numbersFromFacts' || isDefaultNote(p, st.params.step) || (p.check === 'cited' && p.text === defaultCitedText(p.source)) ? 'default' : record.some((/** @type {any} */ x) => isRec(x) && x.line === st.params.step && sameJson(x.part, p)) ? 'you' : 'agent';
       // a fact part is one plan row per fact (and one for its count): the person signs the rows, the close runs the same list
       if (p.class !== 'fact') return [{ line: st.params.step, text: partSentence(p), by }];
       const facts = Array.isArray(p.facts) ? p.facts : [];
