@@ -10,6 +10,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 ### Fixed
 
 - panel: the Audit's checks fold (and the Result tab's checks box) show ONLY the run's latest close (the last `outer-close` or fix-loop `close-verdict`), not the `outer-close` precheck that runs before the fix loop; a run that went green in the fix loop no longer shows failed rows, and a stage the latest close never reached (it stops at its first red) reads grey "not reached" instead of the precheck's old result (live run mwg3pov1).
+- panel: the Run summary "checks:" line ("N run · N passed · N failed") reads the same latest close as the Audit checks fold, through `checksOf`, not every step exit check plus the pre-fix-loop precheck; a stage the latest close never reached shows "N not reached" and counts as neither; the tries parenthesis is gone (live run mwg3pov1).
 
 ### Changed
 

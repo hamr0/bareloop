@@ -2256,7 +2256,7 @@ function getRunDetailBody(runid, opts) {
     // Cross-run learnings now ride on the part that received them (`part.learnings`, `part.learningsError`; src/panel/handed.js).
     // PRD v1.106 Part 5 F: the two Run summary rows, worded here (the page prints them)
     callsLine: callsLineOf(rawSpineRecords, scopedBehaviour(row, rawSpineRecords)),
-    checksLine: checksLineOf(rawSpineRecords, enrichedParts),
+    checksLine: checksLineOf(rawSpineRecords, specForParts),
     auditChecks: auditChecksFor(row, rawSpineRecords, specForParts, opts),
     memoryCache: summary.memoryCache,
     // PLACE RULES: what the run start read for each place-rule check (plain lines from code), or null when the run has none; the Audit page's placement of it is not built yet
@@ -3187,53 +3187,17 @@ export function callsLineOf(records, behaviour) {
     : `${model} model · tool calls: no log saved`;
 }
 
-/** "1-5", "2", "1-2, 4" from try numbers @param {number[]} ns */
-function tryRanges(ns) {
-  const out = [];
-  for (let i = 0; i < ns.length; i += 1) {
-    let j = i;
-    while (j + 1 < ns.length && ns[j + 1] === ns[j] + 1) j += 1;
-    out.push(j > i ? `${ns[i]}-${ns[j]}` : String(ns[i]));
-    i = j;
-  }
-  return out.join(', ');
-}
-
 /**
- * "16 run · 8 passed · 8 failed (write-flight-facts tries 1-5, then tries 1-3)" — counts of what ran, never a fraction (the "checks N/M"
- * headline stays withdrawn). Every `exit-eval` result plus every graded `outer-close` stage; the parenthesis names the steps and try ranges
- * that failed, from the same `tries[]` the Audit reads. A run with neither says `not recorded`.
- * @param {any[]} records the run's raw spine @param {any[]|null|undefined} parts the enriched parts
+ * "3 run · 3 passed · 0 failed" (+ " · N not reached") — counts of what the run's LATEST close ran, never a fraction (the "checks N/M" headline stays withdrawn).
+ * Read from {@link checksOf}, the one owner the Audit checks fold and the Result checks box read (live run mwg3pov1): the last staged close, a stage it never reached counts as
+ * neither passed nor failed, and a run no close reached falls back to the checks its steps ran. No history of earlier tries. A run with neither says `not recorded`.
+ * @param {any[]} records the run's raw spine @param {any} spec the run's signed spec (names the stages the close declares)
  * @returns {string}
  */
-export function checksLineOf(records, parts) {
-  let run = 0;
-  let passed = 0;
-  let outerFailed = false;
-  for (const r of records) {
-    if (!r) continue;
-    if (r.type === 'exit-eval' && Array.isArray(r.results)) {
-      for (const x of r.results) { run += 1; if (x && x.pass === true) passed += 1; }
-    } else if (r.type === 'outer-close' && Array.isArray(r.stages)) {
-      for (const x of r.stages) { run += 1; if (x && x.verdict === 'satisfied') passed += 1; else outerFailed = true; }
-    }
-  }
-  if (run === 0) return 'not recorded';
-  /** @type {string[]} */
-  const named = [];
-  /** @type {Set<string>} */
-  const seenLabel = new Set();
-  for (const p of parts ?? []) {
-    if (p.kind !== 'step' || !Array.isArray(p.tries)) continue;
-    const bad = p.tries.filter((/** @type {any} */ t) => t.failed > 0).map((/** @type {any} */ t) => t.n);
-    if (bad.length === 0) continue;
-    const text = `tries ${tryRanges(bad)}`;
-    named.push(seenLabel.has(p.label) ? `then ${text}` : `${p.label} ${text}`);
-    seenLabel.add(p.label);
-  }
-  if (outerFailed) named.push('the outer close');
-  const failed = run - passed;
-  return `${run} run · ${passed} passed · ${failed} failed${named.length ? ` (${named.join(', ')})` : ''}`;
+export function checksLineOf(records, spec) {
+  const c = checksOf(records, spec);
+  if (!c || c.total === 0) return 'not recorded';
+  return `${c.total} run · ${c.passed} passed · ${c.total - c.passed} failed${c.notReached ? ` · ${c.notReached} not reached` : ''}`;
 }
 
 /** 1 -> "1st", 4 -> "4th", 12 -> "12th" @param {number} n */

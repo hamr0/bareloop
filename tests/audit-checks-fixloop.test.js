@@ -55,3 +55,16 @@ test('a stage the latest close never reached reads "not reached" (grey, uncounte
   assert.ok(l2.length > 0 && l2.every((r) => r.result === 'not-reached' && r.word === 'not reached'), JSON.stringify(l2));
   assert.ok(rows.some((r) => r.result === 'failed' && /^line 1/.test(r.text)));
 });
+
+test('the Run summary "checks:" line reads the same latest close as the fold: all passed, no stale precheck failure (live run mwg3pov1)', () => {
+  const d = getRunDetail('mwg3pov1', { home: runHome() });
+  assert.equal(d.checksLine, '3 run · 3 passed · 0 failed');
+});
+
+test('the checks line counts a stage the latest close never reached as neither passed nor failed (live run mwg3pov1 shape)', () => {
+  const d = getRunDetail('mwg3pov1', { home: runHome((recs) => {
+    const last = recs.findLastIndex((r) => r.type === 'close-verdict' && Array.isArray(r.stages));
+    return recs.map((r, i) => (i === last ? { ...r, verdict: 'needs_revision', stages: [{ name: 'changed-from-seed', verdict: 'satisfied' }, { name: 'line-1', verdict: 'needs_revision' }] } : r));
+  }) });
+  assert.equal(d.checksLine, '2 run · 1 passed · 1 failed · 1 not reached');
+});
