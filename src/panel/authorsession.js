@@ -1195,12 +1195,17 @@ export function createSession(card, deps = {}) {
     // signed `jobLines`, the answers text and the plan card all read the same words.
     /** the job text as the draft shows and signs it: the signed lines, the card's box, the answers text and one message (the check list's rebuilt lines, or the lines a try-3 answer added) */
     const syncJobLines = (/** @type {any[]} */ lines, /** @type {string|null} */ say = null, /** @type {any} */ confirmed = null) => {
+      // ONE owner: the session's own lines take the rebuilt ones in place, so the plan cards (`planMessage(..., jobLines)`) and the signed rows read the same words
+      if (lines !== jobLines) jobLines.splice(0, jobLines.length, ...lines);
       draft.jobLines = signedJobLines(lines);
-      // the card's job box holds the rules as they now are (an answer replaced the rule it was asked about), so a Revise reopens the boxes with them
+      // the card's job box holds the rules as they now are (an answer replaced the rule it was asked about), so a Revise reopens the boxes with them; `card` is what card.json stores
       state.card = { ...state.card, jobText: jobBoxText(lines) };
+      card = { ...card, jobText: state.card.jobText };
       answers[1] = renderJobLines(lines);
       if (say !== null) state.messages.push({ ...planMessage({ ...(confirmed ?? {}), ...(pickedSoFar.length ? { picked: [...pickedSoFar] } : {}) }, lines), text: say });
     };
+    /** the answers message of a check-list ask, drawn once the list has rebuilt the lines @type {{say: string, confirmed: any}|null} */
+    let pendingSay = null;
     const answerQuestions = async (/** @type {{questions: {line: number, question: string, rule?: number, source?: string, ask?: string, reading?: string, ruleText?: string, check?: Record<string, any>}[], dropped: {reason: string, raw: any}[], confirmed: any}} */ o) => {
       if (o.dropped.length) appendDraftLog(outDir, { kind: 'questions-dropped', no: Math.max(0, state.steps.length - 1), dropped: o.dropped, at: new Date().toISOString() });
       const total = o.questions.length;
@@ -1254,7 +1259,10 @@ export function createSession(card, deps = {}) {
         const line = jobLines.find((l) => l.n === q.line);
         if (q.source !== 'look' && line) { line.rule = line.rule ? `${line.rule}; ${text}` : text; line.rules.push(text); }
       }
-      syncJobLines(jobLines, left.length === total ? 'Noted: those stay Not checked. Drafting.' : 'Your answers are in on those job lines. Drafting again.', o.confirmed);
+      const said = left.length === total ? 'Noted: those stay Not checked. Drafting.' : 'Your answers are in on those job lines. Drafting again.';
+      // a check-list ask (every question carries a list key): the list has not yet replaced the asked rules, so the message waits for the rebuilt lines (`onJobLines`) and is drawn from them
+      if (o.questions.every((q) => typeof (/** @type {any} */ (q)).key === 'string')) pendingSay = { say: said, confirmed: o.confirmed };
+      else syncJobLines(jobLines, said, o.confirmed);
       return { jobLines, answers, left, picks, choices };
     };
 
@@ -1278,7 +1286,7 @@ export function createSession(card, deps = {}) {
       rates: draftPrice?.rates ?? null,
       draftThinking,
       onPhase, onCall,
-      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, ledgerGenerate, noteFn, onJobLines: (/** @type {any[]} */ lines) => syncJobLines(lines), editGenerate, carriedPicks, carriedChoices,
+      ask, answerQuestions, confirmGenerate, isRepo: !RUBRIC_FILES, langResult, pickGenerate, ledgerGenerate, noteFn, onJobLines: (/** @type {any[]} */ lines) => { const p = pendingSay; pendingSay = null; syncJobLines(lines, p ? p.say : null, p ? p.confirmed : null); }, editGenerate, carriedPicks, carriedChoices,
       onChoices: (/** @type {any[]} */ rec) => { try { writeRecordPart(join(outDir, RECORD_FILE), { rowChoices: rec }); } catch { /* a convenience: a disk fault only means the next draft starts without them */ } },
       // R10: this draft's record (the picks it kept and the ones just answered) goes to its own folder for the next draft to carry; each kept pick is logged as such
       onPicks: (/** @type {{entries: any[], kept: {line: number, rule: number, entry: any}[]}} */ o) => {
