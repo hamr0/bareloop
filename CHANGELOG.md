@@ -16,6 +16,7 @@ feature lands, **patch** = docs, fixes, scaffolding.
 
 ### Fixed
 
+- check list: a `~` money rule written in another currency than the page's fact ("under $150" on a euro price) is Not checked with the plain reason "the amount in your rule is in another currency than the page's prices"; it no longer falls back to the look's or the AI's reading and checks the number on the wrong currency. One spelling of the reason (`WHY_OTHER_CURRENCY`, `src/rubricstep.js`). Found live by fwdloop (run walk-m16-flights run-1, euro page); the same class as bareloop run mwg3pov1's money rows.
 - panel: the Audit's checks fold (and the Result tab's checks box) show ONLY the run's latest close (the last `outer-close` or fix-loop `close-verdict`), not the `outer-close` precheck that runs before the fix loop; a run that went green in the fix loop no longer shows failed rows, and a stage the latest close never reached (it stops at its first red) reads grey "not reached" instead of the precheck's old result (live run mwg3pov1).
 - panel: the Run summary "checks:" line ("N run · N passed · N failed") reads the same latest close as the Audit checks fold, through `checksOf`, not every step exit check plus the pre-fix-loop precheck; a stage the latest close never reached shows "N not reached" and counts as neither; the tries parenthesis is gone (live run mwg3pov1).
 
