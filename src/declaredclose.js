@@ -69,6 +69,7 @@
 // a leaked worktree outlives the process that made it.
 
 import { runStage, makeSeedTrees, STOP_FAULTS, EXIT_RED } from './kinds.js';
+import { guardKeyOf } from './rubricstep.js';
 import {
   validateDeclaration, classGuards, genreOwnedEnvNames, ungroundedGenreEnv, DECLARABLE_LANGUAGES, TYPES_GENRE, catalogueForLang, KIND_CATALOGUE, TEXT_GENRE, genreForLang,
   VERDICT_CLASSES, LIVE_CLASSES, NEVER_OFFERED_KINDS,
@@ -529,13 +530,14 @@ function translate(r, redact) {
  * @param {{timeoutMs?: number, cwd?: string, seedRef?: string,
  *   seedTrees?: any, gapCap?: number, maxBuffer?: number, baselineMode?: 'auto'|'worktree',
  *   humanRuling?: {decision: string, text?: string|null}|null,
- *   onRubricEvidence?: ((e: any) => void)|null}} [opts]
+ *   onRubricEvidence?: ((e: any) => void)|null, list?: any[]|null}} [opts]
+ *   `list` = the signed one check list (`closeDecl.list`): given, each stage entry records a RESULT PER ROW (`rows`, plus `unclaimed` words for a gap no row owns), report-only (Addendum 2026-11-14 (c) piece 4)
  * @returns {Promise<any>}
  */
 export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
   const {
     timeoutMs, cwd, seedRef, seedTrees: shared, gapCap, maxBuffer, baselineMode, humanRuling = null,
-    onRubricEvidence = null,
+    onRubricEvidence = null, list = null,
   } = opts;
   if (!isNonEmptyString(cwd) || !isNonEmptyString(seedRef)) {
     // Refuse rather than guess. A declared close measures against a SEED; a
@@ -568,6 +570,7 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
     humanRuling,
     // REPORT-ONLY seam: what a rubric-step stage's cited checks read (bareguard `full.evidence`); the runner records it, nothing here reads it
     onRubricEvidence,
+    ...(Array.isArray(list) ? { list } : {}),
     seedTrees,
   };
   try {
@@ -592,6 +595,8 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
         // an earlier green's announcement would otherwise be lost behind the
         // stage that decided.
         ...(t.notes !== undefined ? { notes: t.notes } : {}),
+        // a RESULT PER ROW of the signed list (report-only): a rubric step's rows come from its own graded gaps; a guard stage is its own job-level row. Masked at this boundary like every recorded string
+        ...rowsRecordOf(list, st, r, t, redact),
       });
       last = t;
       if (t.verdict !== 'satisfied') {
@@ -613,6 +618,24 @@ export async function runDeclaredStages(stages, redact = (s) => s, opts = {}) {
   } finally {
     if (owned) await seedTrees.cleanup();
   }
+}
+
+/**
+ * The per-row results one stage entry records (Addendum 2026-11-14 (c) piece 4): `{rows, unclaimed?}` or nothing. A rubric step's come from its detail (the runner graded them against the signed list);
+ * a guard stage with a signed `guard` row is that row, passed when the stage was satisfied. The stage's own verdict is never changed by any of this.
+ * @param {any[]|null} list @param {any} st the declared stage @param {any} r the stage result @param {any} t its translation @param {(s: string) => string} redact
+ * @returns {{rows?: any[], unclaimed?: string[]}}
+ */
+function rowsRecordOf(list, st, r, t, redact) {
+  if (!Array.isArray(list)) return {};
+  if (st?.kind === 'rubric-step' && Array.isArray(r?.detail?.rows)) {
+    return {
+      rows: r.detail.rows.map((/** @type {any} */ x) => ({ key: x.key, result: x.result, ...(typeof x.why === 'string' ? { why: redact(x.why) } : {}) })),
+      ...(Array.isArray(r.detail.unclaimed) && r.detail.unclaimed.length ? { unclaimed: r.detail.unclaimed.map((/** @type {string} */ u) => redact(String(u))) } : {}),
+    };
+  }
+  const guard = list.find((/** @type {any} */ x) => x && x.kind === 'guard' && x.key === guardKeyOf(String(st?.name)));
+  return guard ? { rows: [{ key: guard.key, result: t.verdict === 'satisfied' ? 'passed' : 'failed' }] } : {};
 }
 
 /**

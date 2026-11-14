@@ -1240,6 +1240,31 @@ function rubricStagesOf(spec) {
   return stages.filter((/** @type {any} */ s) => s && s.kind === 'rubric-step' && s.params && Number.isInteger(s.params.step));
 }
 
+/**
+ * The per-row results of the run's FINAL close (Addendum 2026-11-14 (c) piece 4): what its stage entries recorded in `rows` (`{key, result, why?}`) and `unclaimed` (words of a gap no row owns), keyed by
+ * the signed list's row key / by job line. A close recorded before rows existed (an older run) yields empty maps: every reader then keeps the stage verdict. Read, never re-derived.
+ * @param {any[]} records @param {any} spec
+ * @returns {{results: Map<string, {result: string, why?: string}>, unclaimed: Map<number, string[]>}}
+ */
+export function rowResultsFromRecords(records, spec) {
+  /** @type {Map<string, {result: string, why?: string}>} */
+  const results = new Map();
+  /** @type {Map<number, string[]>} */
+  const unclaimed = new Map();
+  const oc = records.findLast((r) => r && (r.type === 'close-verdict' || r.type === 'outer-close') && Array.isArray(r.stages));
+  if (!oc) return { results, unclaimed };
+  const lineOf = new Map(rubricStagesOf(spec).map((/** @type {any} */ s) => [s.name, s.params.step]));
+  for (const st of oc.stages) {
+    if (!st || typeof st.name !== 'string') continue;
+    for (const r of Array.isArray(st.rows) ? st.rows : []) {
+      if (r && typeof r.key === 'string' && typeof r.result === 'string') results.set(r.key, { result: r.result, ...(typeof r.why === 'string' ? { why: r.why } : {}) });
+    }
+    const line = lineOf.get(st.name);
+    if (line !== undefined && Array.isArray(st.unclaimed) && st.unclaimed.length) unclaimed.set(line, st.unclaimed.filter((/** @type {unknown} */ u) => typeof u === 'string'));
+  }
+  return { results, unclaimed };
+}
+
 /** what the Result tab's open door asks, after the door's own head words */
 export const RESULT_DOOR_ASK = 'the checks passed; is this what you wanted?';
 
@@ -1760,8 +1785,16 @@ export function getRunResult(runid, /** @type {{ home?: string, sessionsRoot?: s
     const fp = factPartOf(st.params);
     const di = delivered.map((d, i) => ({ d, i })).filter(({ d }) => stepOfDelivered(d.path) === n).pop() ?? null;
     const passed = stagePassedIn(records, st.name);
+    // each row of the line with its OWN mark (piece 4), from the final close's per-row record; a row the record has no result for (an older run) reads the stage's mark
+    const rowRes = rowResultsFromRecords(records, spec);
+    const checkRows = (plan.lines.find((l) => l.n === n)?.checks ?? []).map((c) => {
+      const got = c.key ? rowRes.results.get(c.key) : undefined;
+      return { ...(c.key ? { key: c.key } : {}), text: c.name, by: c.by ?? null, result: got ? (got.result === 'unread' ? 'none' : got.result) : (passed ? 'passed' : 'none'), ...(got?.why ? { why: got.why } : {}) };
+    });
     /** @type {any} */
     const out = {
+      checkRows,
+      unclaimed: rowRes.unclaimed.get(n) ?? [],
       notChecked: tiedToLine(n),
       ...(plan.notCheckedBy ? { notCheckedBy: plan.notCheckedBy } : {}),
       n, text: jl && typeof jl.text === 'string' ? jl.text : '', rules: jl ? lineRules(jl) : [], kind: fp ? 'facts' : 'text', passed,
@@ -3395,7 +3428,7 @@ function auditChecksFor(row, records, spec, opts) {
   const got = checksOf(records, spec);
   const results = got ? new Map(got.stages.filter((/** @type {any} */ x) => !x.notReached).map((/** @type {any} */ x) => [x.name, x.passed === true])) : null;
   const rows = scopedAuditRows(row, records);
-  return auditChecksOf(plan, guards, results, rows === null ? null : writesBlocked(rows), got !== null && got.notReached !== undefined);
+  return auditChecksOf(plan, guards, results, rows === null ? null : writesBlocked(rows), got !== null && got.notReached !== undefined, rowResultsFromRecords(records, spec));
 }
 
 /**

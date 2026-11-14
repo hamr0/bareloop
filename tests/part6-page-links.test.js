@@ -19,7 +19,7 @@ const src = (name) => {
   return PAGE.slice(start, i + 1);
 };
 const ESC = 'function escapeXml(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}';
-const names = ['resultField', 'resultLineBox', 'resultFileWords', 'resultFactsLine', 'resultTextLine', 'resultNotChecked', 'resultPageLink', 'resultLineCard'];
+const names = ['resultField', 'resultLineBox', 'resultFileWords', 'resultFactsLine', 'resultTextLine', 'resultNotChecked', 'resultPageLink', 'resultCheckRowsHtml', 'resultLineCard'];
 const fns = new Function(`${ESC}\nvar RESULT_NONE = "none";\n${names.map(src).join('\n')}\nreturn {${names.join(', ')}};`)();
 
 /** the part5 world with source.json carrying `inputs`, and (optionally) a second rubric line reading input label `second` */

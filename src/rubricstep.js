@@ -477,7 +477,7 @@ export function plainStepGap(step, why, g, params = null) {
  *   the manifest's recorded sha via `inputShas`.
  * @param {Record<string, string>} inputShas the manifest's recorded sha256 per cited label
  * @returns {Promise<{verdict: 'green'|'red'|'stopped', gapLines: string[], fault: string|null, detail: Record<string, any>,
- *   evidence?: any[], evidenceTotal?: number}>} `evidence`/`evidenceTotal` are bareguard's `full.evidence` (what each `cited` check read), carried out
+ *   rawGaps?: any[], extraGaps?: string[], evidence?: any[], evidenceTotal?: number}>} `evidence`/`evidenceTotal` are bareguard's `full.evidence` (what each `cited` check read), carried out
  *   for the report-only `rubric-evidence` spine record; no verdict, gap or count above is derived from them
  */
 export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes = {}, factMissing = [] }, inputShas) {
@@ -529,8 +529,10 @@ export async function gradeStep({ params, bytes, outputBytes, inputs, factQuotes
     ...(Array.isArray(r.full.evidence) && r.full.evidence.length > 0 ? { evidence: r.full.evidence } : {}),
     ...(typeof r.full.evidenceTotal === 'number' ? { evidenceTotal: r.full.evidenceTotal } : {}),
   };
-  if (r.verdict === 'green' && extra.length === 0) return { verdict: 'green', gapLines: [], fault: null, detail, ...seen };
-  return { verdict: 'red', gapLines: [...extra, ...r.gaps.flatMap((g) => plainStepGap(params.step, parsed.why ?? 'empty', g, params).split('\n'))], fault: null, detail, ...seen };
+  // bareguard's own structured gaps (id, check, field, kind, items) and the tie's own lines: what the per-row results (src/rowresults.js) read; no verdict or sentence is derived from them here
+  const raw = { rawGaps: r.full.gaps, extraGaps: extra };
+  if (r.verdict === 'green' && extra.length === 0) return { verdict: 'green', gapLines: [], fault: null, detail, ...raw, ...seen };
+  return { verdict: 'red', gapLines: [...extra, ...r.gaps.flatMap((g) => plainStepGap(params.step, parsed.why ?? 'empty', g, params).split('\n'))], fault: null, detail, ...raw, ...seen };
 }
 
 // ── R11: the sorting rules, applied at DRAFTING ──────────────────────────────────────────────────────────────────────
@@ -1021,7 +1023,7 @@ export function floorWords(n, carriesText) {
  * Each row says who added the check (`by`): `you` = one of the person's picks, as the signed close's own record (`closeDecl.picks`) names it; `agent` = the drafter's;
  * `default` = code's own (the one list's `$` rows: the cited part written by `defaultCitedText`, and the numbers tie of a text step).
  * @param {any} closeDecl
- * @returns {{line: number, text: string, by: 'agent'|'you'|'default', key?: string}[]}
+ * @returns {{line: number, text: string, by: 'agent'|'you'|'default', key?: string, pick?: true}[]}
  */
 export function checksOfClose(closeDecl) {
   const stages = isRec(closeDecl) && Array.isArray(closeDecl.stages) ? closeDecl.stages : [];
@@ -1054,7 +1056,8 @@ export function checksOfClose(closeDecl) {
         // the built row that carries this countable part (piece 3: every check is a row): a row points at its part, or a `~` rule row is named in the part's own `rules`; the first one keys it
         const row = list.find((/** @type {any} */ x) => ['rule', 'cited', 'numbers', 'note'].includes(x.kind) && x.line === st.params.step
           && ((isRec(x.part) && x.part.line === st.params.step && x.part.part === pi) || (x.kind === 'rule' && Array.isArray(p.rules) && p.rules.includes(x.rule))));
-        return [{ line: st.params.step, text: partSentence(p), by, ...(row ? { key: String(row.key) } : {}) }];
+        // `pick`: the person's own count/word pick (the confirm card draws it once, from the picks record, never also as this row)
+        return [{ line: st.params.step, text: partSentence(p), by, ...(row ? { key: String(row.key) } : {}), ...(by === 'you' ? { pick: true } : {}) }];
       }
       const facts = Array.isArray(p.facts) ? p.facts : [];
       return factRows(p).map((/** @type {string} */ text, /** @type {number} */ i) => {
@@ -1081,7 +1084,7 @@ export function signedFactNames(closeDecl) {
  * steps' "you judge it at Accept" lines and the refusals (`ruleNotChecked`, which reads the list's not-checked rows when the close carries the list). Nothing the confirm turn said is merged
  * in: a rubric confirm turn plans the goal only, so a check can never be shown and then silently dropped (run mv5bk400).
  * @param {{closeDecl: any, jobLines?: any[]|null, ledger?: {key: string, words: string[]}[]|null}} o `jobLines` the person's numbered lines, so a ~ rule reads in the person's own words; `ledger` the draft log's final list rows, so a phrase row is named by its words
- * @returns {{checkItems: {text: string, fromLine: number[], by: 'agent'|'you'|'default', key?: string}[], notChecked: string[], notCheckedBy: Record<string, 'you'|'agent'|'default'>}}
+ * @returns {{checkItems: {text: string, fromLine: number[], by: 'agent'|'you'|'default', key?: string, pick?: true}[], notChecked: string[], notCheckedBy: Record<string, 'you'|'agent'|'default'>}}
  */
 export function cardOfClose({ closeDecl, jobLines = null, ledger = null }) {
   const notes = isRec(closeDecl) && !carriesOneList(closeDecl) && Array.isArray(closeDecl.notes) ? closeDecl.notes.filter((/** @type {any} */ n) => typeof n === 'string' && n) : [];
@@ -1090,7 +1093,7 @@ export function cardOfClose({ closeDecl, jobLines = null, ledger = null }) {
   const notCheckedBy = {};
   for (const i of items) if (i.by) notCheckedBy[i.text] = i.by;
   return {
-    checkItems: checksOfClose(closeDecl).map((c) => ({ text: c.text, fromLine: [c.line], by: c.by, ...(c.key ? { key: c.key } : {}) })),
+    checkItems: checksOfClose(closeDecl).map((c) => ({ text: c.text, fromLine: [c.line], by: c.by, ...(c.key ? { key: c.key } : {}), ...(c.pick ? { pick: true } : {}) })),
     notChecked: [...new Set([...notes, ...proseNotChecked(closeDecl), ...items.map((i) => i.text)])],
     notCheckedBy,
   };

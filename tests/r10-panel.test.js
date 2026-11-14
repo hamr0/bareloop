@@ -91,7 +91,8 @@ test('the prepared plan card (through the real drafting loop) has ONE row for th
   const plan = session.state.messages.filter((/** @type {any} */ m) => m.kind === 'plan').at(-1).plan;
   assert.deepEqual(plan.lines[0].picked, ['exactly 3 list items']);
   // the pick is drawn once, from `picked`; the drafter's made-up maxWords 79 is not on the card; the one list's own default check (a text line quotes its input) is, tagged [default]
-  assert.deepEqual(plan.lines[0].checks.map((c) => [c.name, c.by]), [['every claim is backed by a quote copied from "Changelog"', 'default']]);
+  // (and the line's `$` floor row, drawn since Addendum 2026-11-14 (c) piece 1)
+  assert.deepEqual(plan.lines[0].checks.map((c) => [c.name, c.by]), [['every claim is backed by a quote copied from "Changelog"', 'default'], ['its file output/steps/1.json must exist, be complete JSON, and carry text', 'default']]);
   assert.ok(plan.notChecked.some((n) => /"be kind" — You chose to leave it Not checked/.test(n)), JSON.stringify(plan.notChecked));
   // labels: the close's row for the pick is the person's, and the draft log records the checks the draft ended with, each marked
   const logged = readFileSync(join(session.state.outDir, 'draft-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((e) => e.kind === 'draft-checks');

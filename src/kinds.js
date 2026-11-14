@@ -67,6 +67,7 @@ import { join, sep, dirname } from 'node:path';
 import { globToPrefix, isNonEmptyString } from './validate.js';
 import { CLOSE_ENV_DENY } from './ralph.js';
 import { gradeStep, stepFileRel, STEP_MAX_BYTES, citedLabels, sha256Of } from './rubricstep.js';
+import { rowResultsOf } from './rowresults.js';
 
 /** the close's two judgment exits — a stage's verdict, in the shape the
  * hand-written closes already spoke (exit code is truth) */
@@ -228,6 +229,7 @@ export function mechanicalStages(stages) {
  *   gapCap?: number, maxBuffer?: number, seedTrees?: SeedTrees,
  *   humanRuling?: {decision: string, text?: string|null}|null,
  *   onRubricEvidence?: (e: {step: number, evidence: any[], evidenceTotal?: number}) => void,
+ *   list?: any[]|null,
  *   onStage?: (row: {stage: string|null, kind: string|null, verdict: string, durationMs: number}) => void}} Ctx
  *   The arbiter's half of a stage run. Every field here is operator/runner
  *   territory: a declaration parameterises kinds, never the contracts.
@@ -1506,12 +1508,14 @@ async function runRubricStep(stage, ctx) {
   if (notRegular) gap.push(`${stage.name}: line ${step}: ${stepFileRel(step)} is not a regular file`);
   for (const l of graded.gapLines) gap.push(`${stage.name}: ${l}`);
   const red = graded.verdict === 'red' || notRegular;
+  // each row of the line gets its own result (Addendum 2026-11-14 (c) piece 4), when the signed list is at hand: a REPORT of which row each gap belongs to, read by no verdict, governor or money path
+  const per = Array.isArray(ctx.list) ? rowResultsOf(ctx.list, p, notRegular ? { ...graded, rawGaps: [{ id: 'happened', check: 'happened', kind: 'wrong-type' }], detail: { ...graded.detail, why: 'not-object' } } : graded) : null;
   return result(stage, {
     verdict: red ? 'red' : 'green',
     exitCode: red ? EXIT_RED : EXIT_GREEN,
     gapLines: gap.render(),
     // the trend number (`trendValueOf`, src/declaredclose.js, reads `detail.redCount` for a stage with no measurement)
-    detail: { ...graded.detail, ...(notRegular ? { redCount: 1 } : {}) },
+    detail: { ...graded.detail, ...(notRegular ? { redCount: 1 } : {}), ...(per ? { rows: per.rows, unclaimed: per.unclaimed } : {}) },
   });
 }
 
