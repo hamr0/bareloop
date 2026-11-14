@@ -100,19 +100,17 @@ test('block: the drop is never silent - an unmet rule is a Not checked ROW in th
   assert.equal(row?.reason, 'the page never shows a time right after "Departure time", so it is not checked.');
 });
 
-test('runPageMap (the real saved JFK-LAX map): the time fact is dropped, the other facts are kept, and the Not checked line renders', async () => {
+test('runPageMap (the real saved JFK-LAX map): the page writes "Departure time:", so the look word is signed as the page writes it and the time fact is kept', async () => {
+  // before run mwgsl7zx this fact was dropped as reads-no-time (the colon sat between the label and the time); the page rules now sign the page's own word
   const fx = loadFixture('jfk-lax');
   const jobLines = [{ n: 1, text: 'List 3 flights from New York to Los Angeles', rules: ['under $450', 'leaves between 05:00 and 21:59', 'nonstop'] }];
   const provider = { async generate() { return reply({ text: fx.mapText, costUsd: 0.002 }); } };
   const r = await runPageMap({ texts: { Flights: fx.page }, inputs: [{ n: 1, label: 'Flights' }], jobLines, provider, onCall: () => {}, sleep: async () => {} });
   assert.equal(r.state, 'PRESENT');
   const look = /** @type {any} */ (r.facts).look;
-  assert.ok(!look.facts.some((/** @type {any} */ f) => f.name === 'departure time'), 'the time fact is not signed');
+  assert.deepEqual(look.facts.find((/** @type {any} */ f) => f.name === 'departure time')?.words, ['Departure time:'], 'the time fact is signed with the page\'s own word');
   assert.ok(look.facts.some((/** @type {any} */ f) => f.name === 'price'), 'the price fact is kept');
-  const d = look.dropped.filter((/** @type {any} */ x) => x.reason === 'reads-no-time');
-  assert.equal(d.length, 1);
-  assert.equal(dropLine(dropRows(d)[0], jobLines, lineRules),
-    'line 1: "leaves between 05:00 and 21:59" — the page never shows a time right after "Departure time", so it is not checked.');
+  assert.equal(look.dropped.filter((/** @type {any} */ x) => x.reason === 'reads-no-time').length, 0);
   // the money dry read is unaffected
   assert.ok((await dryReadMoney(fx.page, look.facts)).facts.some((/** @type {any} */ f) => f.name === 'price'));
 });

@@ -8,9 +8,11 @@ import assert from 'node:assert/strict';
 import { applyPageRules } from '../src/pagerules.js';
 import { loadFixture, PAGE_KEYS, JOBS } from './idea-a-fixtures.js';
 
-/** the comparable shape of a product result: the POC golden has no line / rule numbers */
+/** the comparable shape of a product result: the POC golden has no line / rule numbers. The POC predates the page's own separator (run mwgsl7zx: a label the page
+ * always writes with a colon is signed with it, `withColon`), so a word's trailing colon is not compared (taken off both sides). */
+const noColon = (/** @type {string} */ w) => (w.endsWith(':') ? w.slice(0, -1) : w);
 const project = (/** @type {ReturnType<typeof applyPageRules>} */ r) => ({
-  facts: r.facts.map((f) => ({ name: f.name, shape: f.shape, from: f.from, words: f.words, ...(f.unit ? { unit: f.unit } : {}), ...(f.currency ? { currency: f.currency } : {}) })),
+  facts: r.facts.map((f) => ({ name: f.name, shape: f.shape, from: f.from, words: f.words.map(noColon), ...(f.unit ? { unit: f.unit } : {}), ...(f.currency ? { currency: f.currency } : {}) })),
   dropped: r.dropped.map((d) => JSON.stringify({ fact: d.fact, word: d.word ?? '(fact)', reason: d.reason })).sort(),
 });
 
@@ -18,7 +20,7 @@ for (const key of PAGE_KEYS) {
   test(`golden port: ${key} - the kept facts and every drop equal the POC with its OUT rules off`, () => {
     const fx = loadFixture(key);
     const got = project(applyPageRules(fx.page, fx.map, key.startsWith('airbnb') ? JOBS.airbnb : JOBS.flights));
-    assert.deepEqual(got.facts, fx.golden.facts);
+    assert.deepEqual(got.facts, fx.golden.facts.map((/** @type {any} */ f) => ({ ...f, words: f.words.map(noColon) })));
     assert.deepEqual(got.dropped, fx.golden.dropped.map((/** @type {any} */ d) => JSON.stringify(d)).sort());
   });
 }
